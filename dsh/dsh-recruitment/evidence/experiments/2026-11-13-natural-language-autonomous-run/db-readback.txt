@@ -1,0 +1,23 @@
+-- 数据库读回（ra_s6s7），PII 打码
+
+select left(a.id::text,8) as app, j.code as job, a.current_stage_code as stage, a.lifecycle_status,
+       a.record_version as rv,
+       left(rv.source_asset_sha256,12) as sha12, left(rv.content_sha256,12) as csha12,
+       (select count(*) from recruitment.decision d where d.application_id=a.id) as decisions
+from recruitment.application a
+join recruitment.job j on j.id=a.job_id
+left join recruitment.resume_version rv on rv.id=a.resume_version_id
+where a.id='bc2f582b-6b38-48fa-900e-8ffa568f503c';
+
+-- 实际输出：
+--   app      | job         | stage | lifecycle_status | rv | sha12        | csha12       | decisions
+--   bc2f582b | DEMO-BE-001 | S6    | ACTIVE           | 1  | ead23e7999e7 | 96ad45527580 | 0
+
+-- candidate（打码）
+--   cand     | name  | phone   | domain  | identity_status
+--   c110817b | 孙*** | +861**** | 163.com | ACTIVE
+
+-- 同一 candidate + job 下的申请数（本实验记录的 P0 缺陷）
+--   00d0f6c0  sha=c6ceb2eef64d  created 01:52:42
+--   bc2f582b  sha=ead23e7999e7  created 02:41:41
+--   两条 content_sha256 都是 96ad45527580 → 同一份简历内容、两个不同 PDF 文件 → 两条申请
