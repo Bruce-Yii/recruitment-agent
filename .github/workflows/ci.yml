@@ -132,7 +132,7 @@ jobs:
       - name: Apply migrations 0001..0006
         run: |
           set -euo pipefail
-          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps; do
+          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity; do
             echo "== $f"
             psql -v ON_ERROR_STOP=1 -q -f "db/migrations/$f.sql"
           done
@@ -140,15 +140,16 @@ jobs:
       - name: Verify every migration
         run: |
           set -euo pipefail
-          for f in verify-0003 verify-0004 verify-0005 verify-0006 verify; do
+          for f in verify-0003 verify-0004 verify-0005 verify-0006 verify-0007 verify; do
             echo "== $f"
             psql -v ON_ERROR_STOP=1 -q -f "db/$f.sql"
           done
 
-      - name: 0006 must be idempotent (second run changes nothing)
+      - name: 0006 + 0007 must be idempotent (second run changes nothing)
         run: |
           set -euo pipefail
           psql -v ON_ERROR_STOP=1 -q -f db/migrations/0006_integrity_gaps.sql
+          psql -v ON_ERROR_STOP=1 -q -f db/migrations/0007_decision_integrity.sql
           echo "second run OK"
 
   # 转换层的两个"兜底"车道。fallback 不需要库（只渲染 + 校验 + 合并语义），
