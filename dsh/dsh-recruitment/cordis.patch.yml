@@ -1,12 +1,17 @@
-# @recruitment/dsh-recruitment bundle patch
+# Bundle layer for @recruitment/dsh-recruitment.
+# Inserted into a profile's layer stack by the plugin loader.
 #
-# 一行插件（id + 包名），由 profile 作为 bundle 层叠加进 cordis 配置。
-# 安装：dsh plugin --profile <profile> add link:<本目录绝对路径>
-# 之后本包名会被自动写进该 profile package.json 的 dsh.profile.bundles。
-#
-# 宿主半部分（exports "."）在宿主进程里注册三个只读工具：
-#   recruitment_resume_read / recruitment_candidate_get / recruitment_job_get
-# 没有浏览器半部分（无 dsh.client 声明），不向 Web GUI 提供任何东西。
+# converter 三项必须齐全，缺任何一项时 recruitment_resume_read 仍会注册，
+# 但调用返回 NOT_CONFIGURED 并列出缺什么（不静默降级）。
 - insert:
     - id: recruitment
       name: '@recruitment/dsh-recruitment'
+      config:
+        converter:
+          python_bin: 'D:\Python3.12.9\python.exe'
+          converter_dir: 'D:\12412\dsh工作区\projects\recruitment-agent\converter'
+          allowed_roots:
+            - 'D:\12412\dsh工作区\projects\resume-talent-pool'
+            - 'D:\12412\dsh工作区\orchestration'
+            - 'D:\12412\CodexWorkspace'
+          timeout_ms: 60000

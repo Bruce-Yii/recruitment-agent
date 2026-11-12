@@ -6,7 +6,7 @@
 // `Error: INVALID_ARGS: ...`，日志与模型看到的是同一个 code，不需要解析自然语言。
 
 /** 本插件允许抛出的稳定错误码。 */
-export type RecruitmentErrorCode = 'INVALID_ARGS' | 'NOT_FOUND'
+export type RecruitmentErrorCode = 'INVALID_ARGS' | 'NOT_FOUND' | 'FORBIDDEN' | 'READER_FAILED' | 'NOT_CONFIGURED'
 
 export class RecruitmentToolError extends Error {
   /** 稳定错误码（同时是 message 的前缀）。 */
@@ -22,3 +22,4 @@ export class RecruitmentToolError extends Error {
     this.code = code
   }
 }
+
