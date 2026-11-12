@@ -100,17 +100,30 @@ decision_rows = 0     ← 没有任何决策被 Agent 代替
 
 ## 7. 未完成项与真实影响（NO-GO 的原因）
 
-### 7.1 硬缺陷：重复执行会重复创建 resume_version + application（P0）
+### 7.1 硬缺陷：同一份简历内容换一个文件，会重复创建 application（P0）
+
 同一候选人在同一岗位下出现了**两条 application**：
 
 ```
-application 00d0f6c0  created 01:52:42  resume_version 276908da
-application bc2f582b  created 02:41:41  resume_version 31ced60b
+application 00d0f6c0  created 01:52:42  source_asset_sha256 c6ceb2eef64d
+application bc2f582b  created 02:41:41  source_asset_sha256 ead23e7999e7
 ```
 
-两次都是同一份 PDF（同一 `sha256`）。也就是说 intake 的幂等没有覆盖"同一材料 + 同一岗位"的重复接入，
-而是各自造了一条 `resume_version` → 各自一条 `application`。
-**这直接违反 Gate C 的「重复执行不会无故重复创建候选人或申请」**，也是本项目历史上最典型的"看起来跑通了"。
+> **2026-11-13 02:55 更正（更精确的诊断）**：我最初写"同一份 PDF 产生了重复"是**不准确的**。
+> 两条申请的 `source_asset_sha256` **不同**（两个不同的 PDF 文件），
+> 但 `content_sha256` **相同**（`96ad45527580` —— 提取出来的文本内容完全一样），
+> 而且是**同一个人、同一个岗位**。
+>
+> 所以真正的缺陷是：**幂等键用了「文件字节 sha」而不是「内容 sha」或「(候选人, 岗位)」**。
+> 同一份简历内容换个格式/重新导出一次（PDF 字节变了、文本没变），就会被当成新材料，
+> 各造一条 `resume_version` → 各造一条 `application`。
+>
+> 真实使用中这非常常见（候选人重发一次、招聘网站重新导出一份），
+> 后果是初筛、面试、决策分裂到不同 application 上。
+>
+> **另一条独立缺陷（结构化 lane 报告）**：replay 路径**不会**把 `structured_json` 写进已存在的
+> `resume_version`（版本行不可变 + 幂等）。即"先接入、后结构化"的顺序下，结构化结果会丢。
+
 
 影响：真实使用中，同一份简历被重复投递/重复扫描会产生多条申请，初筛、面试、决策都会分裂到不同 application 上。
 
