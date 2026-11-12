@@ -149,14 +149,23 @@ create unique index uq_decision_current
 | 先插新行 | `insert ... 同键 current` | `23505` 重复键（`uq_decision_current`） |
 | 先回填旧行 | `update 旧行 set superseded_by_decision_id = 新行id`（新行还不存在） | `23503` 违反 `fk_decision_superseded_by` |
 
-也就是说：**同一 (scope, stage_code) 的决策只能"追加历史/换 key"，不能"先插后改"完成替换**。
-这不是 0007 漏了什么，而是"立即部分唯一索引"这一形态的固有代价。可行的三条路：
+也就是说：**同一 (scope, stage_code) 的决策不能按"先插新行 / 先回填旧行"这两步完成替换**。
+这不是 0007 漏了什么，而是"立即部分唯一索引"这一形态的固有代价。可行的路：
 
 1. 业务上把"替换"改成**另一个 stage_code / 另一个 scope**（键不同 → 不冲突）；或
 2. 需要单事务内先插后改的，把唯一性改成 **`DEFERRABLE INITIALLY DEFERRED` 的排斥约束**
    （`EXCLUDE USING btree (...) WHERE (...)`，PG 支持 deferrable 的排斥约束）——
    这**不在本批授权内**，留给总控裁决；或
 3. 业务接受"先让旧行失效、再插新行"的两阶段（旧行先指向……不可行，见上）。
+
+> **复核补充（2026-11-13 独立实测，`ra_v7` 0007 之后）**：严格说并非"绝对不可能"。
+> 存在一条三段舞，在同一事务内实测 `exit=0`，结束时 current 行数 = 1：
+> ① `insert N (superseded_by_decision_id = D)` —— N 带 superseded 值，不进部分索引；
+> ② `update D set superseded_by_decision_id = N` —— D 退出 current；
+> ③ `update N set superseded_by_decision_id = null` —— N 成为唯一 current。
+> 但它要经过两个中间态：**零条 current**（①②之间）与 **D↔N 互相 supersede 的环**
+> （②③之间；现有 `ck_decision_self_supersede` 只挡自指，不挡环，见 §8 第 4 条）。
+> 所以**工程结论不变**（不要把它写成生产路径），但"只能"二字过强：以上是它的确切边界。
 
 > 结论：如果应用层已经实现了"insert 新决策 → update 旧决策.superseded_by"的替换流程，
 > 0007 合入后它会立刻开始报 `23505`。这是**预期**的行为改动，但必须在合入前对齐顺序。
@@ -491,6 +500,7 @@ commit;
 | 4 | `decision` 的 supersede 环（A→B、B→A）没有被禁止 | 可能出现"零条 current" | 现有 `ck_decision_self_supersede` 只挡自指；可在应用层或未来迁移加环检测 |
 | 5 | `scorecard.job_id` 的填充依赖触发器 | 关掉触发器后仍需显式写（`NOT NULL` 兜底），但"job_id 与申请不一致"这一种脏数据可能回来 | 把 `ALTER TABLE ... DISABLE TRIGGER` 纳入审计；或改成应用层必写 + 去掉填充（会破坏既有写入方） |
 | 6 | `verify-0007.sql` 的负向用例 D-03/D-04、A-05 打在**更早的**不可变护栏上 | 它们证明的是"UPDATE 路径进不到 FK"，不是"FK 在 UPDATE 上拒绝" | A-06 用被引用键的 `ON UPDATE RESTRICT` 补了 FK 在 UPDATE 路径的证据；D 侧没有等价写法（两侧列都不可变） |
+| 7 | **`application` 侧换岗会绕过 GAP-C**：`update application set job_id = 岗位二, job_version_id = 岗位二版本`（两列同改以同时满足 `fk_application_job_version_job`）**实测 `exit=0`**；既有 `scorecard` 的 `job_id` 与 `rubric_version_id` 不跟着变 | GAP-C 的三道锁只锁 **scorecard 写入侧**。"A 岗位的面评用 B 岗位 rubric"可以从申请侧重新出现。实测读回：改前 `scorecard.job_id = 岗位一`、`rubric.job_id = 岗位一`、`application.job_id = 岗位一`；改后 `application.job_id = 岗位二`，而 `scorecard.job_id` / `rubric.job_id` 仍是岗位一 —— 此时 `DATA-0007-04` 的断言（rubric 属于该申请的岗位）在全库维度上已不成立 | 二选一，都是**新增**约束、需授权：① 把 `application.job_id` / `job_version_id` 加入 `fn_guard_columns` 的不可变列（与 0001 其它不可变列同口径，最便宜）；② 在 `application` 上加 before update 触发器：存在 `scorecard` 时拒绝换岗。**注意**：换岗本身可能是合法业务（把候选人转到另一个 Requisition），所以这是产品语义裁决，不是纯技术选择 |
 
 ---
 
@@ -535,6 +545,8 @@ psql -v ON_ERROR_STOP=1 -d ra_v7 -f db/verify.sql
    `DEFERRABLE INITIALLY DEFERRED` 的排斥约束？
 2. **FINAL 唯一性**（§2.4）：要不要再加一条 `(tenant, application) WHERE scope='FINAL'` 的部分唯一索引？
 3. **`interview_record.rubric_version_id`**（§8 第 3 条）：是否在同一批补上 GAP-C 的同型绑定？
+4. **`application` 换岗**（§8 第 7 条）：GAP-C 的保证在"申请被转到另一个岗位"时会失效。
+   是禁止换岗（不可变列 / 触发器），还是允许换岗但要求"必须先作废旧面评"？这是产品语义裁决。
 
 > 另：`db/verify.sql` 的夹具在 0007 之后必须用目录内的 `stage_code`。
 > 那一行已经从 `'INTERVIEW'` 改成 `'S8'`（1 行），并已随 0007 的提交一起入库；

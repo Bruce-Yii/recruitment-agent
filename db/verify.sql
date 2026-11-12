@@ -604,9 +604,10 @@ begin
           values ('aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-0000000000a1',
                   'feishu','mn-noreceipt',1,'DISCOVERED','LIVE','MANUAL','NOT_CONNECTED','x')$q$),
       ('N10', '23514', 'Scorecard SUBMITTED 但缺 submitted_at / items',
-       $q$insert into recruitment.scorecard (tenant_id, interview_id, interviewer_id, rubric_version_id, status)
+       $q$insert into recruitment.scorecard (tenant_id, interview_id, interviewer_id, rubric_version_id, status, status_changed_by_actor_id)
           values ('aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-000000000091',
-                  'aaaaaaaa-0000-0000-0000-000000000092','aaaaaaaa-0000-0000-0000-000000000044','SUBMITTED')$q$),
+                  'aaaaaaaa-0000-0000-0000-000000000092','aaaaaaaa-0000-0000-0000-000000000044','SUBMITTED',
+                  '11111111-1111-1111-1111-111111111111')$q$),
       ('N11', '23514', '已提交 Scorecard 被改写（评价不可覆盖）',
        $q$update recruitment.scorecard set items = '[{"dim":"BACKEND","score":1}]'::jsonb
            where id = 'aaaaaaaa-0000-0000-0000-0000000000d1'$q$),
