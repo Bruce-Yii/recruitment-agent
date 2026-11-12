@@ -1,0 +1,28 @@
+=== CLI list (open items) ===
+item_id                               status     deadline                          overdue  run_status   source_name         age_hours
+--------------------------------------------------------------------------------------------------------------------------------------
+82cc058d-ca3c-483b-9b30-cc4d03f61556  IN_REVIEW  2026-11-14T01:16:12.018284+08:00  False    QUARANTINED  synthetic-demo.pdf  0.01     
+
+=== CLI check-blocking APPROVED subject (4be00c7f-4ece-4812-98f8-3ec4662e31ef) ===
+subject: 4be00c7f-4ece-4812-98f8-3ec4662e31ef (APPLICATION)
+policy:  open_states=['QUEUED', 'IN_REVIEW', 'CORRECTED']
+blocked: False
+reasons: (none — 放行)
+
+exit=0
+=== CLI check-blocking PENDING subject (633ef313-4d45-49df-89fe-3ece392489ee) ===
+subject: 633ef313-4d45-49df-89fe-3ece392489ee (APPLICATION)
+policy:  open_states=['QUEUED', 'IN_REVIEW', 'CORRECTED']
+blocked: True
+reasons:
+  - [REVIEW_PENDING] run e548dafa-30ac-4f7c-a7a6-460a1ec8cade 处于 QUARANTINED，人工队列项未结案（IN_REVIEW）；下游只能显示「待核」 (item=82cc058d-ca3c-483b-9b30-cc4d03f61556, deadline=2026-11-14T01:16:12.018284+08:00, overdue=False)
+
+exit=3
+=== CLI audit (approved item f9e393d1-1df8-4655-bbad-ea90f0b19db0) ===
+audit_seq  from_status  to_status  actor_name  reason                               at                              
+--------------------------------------------------------------------------------------------------------------------
+87         None         QUEUED     合成-转换器（系统）  机器判定：第 2 页纯图像未读（unread_visual_page）  2026-11-13T01:16:12.018284+08:00
+88         QUEUED       IN_REVIEW  合成-复核员甲     机器判定：第 2 页纯图像未读（unread_visual_page）  2026-11-13T01:16:12.018284+08:00
+89         IN_REVIEW    CORRECTED  合成-复核员甲     人工逐页转录：第 2 页（累计 1 条转录 / 当前采用 1 页）    2026-11-13T01:16:12.018284+08:00
+90         CORRECTED    APPROVED   合成-复核员乙     复核：逐页与原件对照，人工转录与原文一致，放行（合成测试）        2026-11-13T01:16:12.018284+08:00
+

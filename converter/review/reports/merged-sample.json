@@ -1,0 +1,123 @@
+{
+  "meta": {
+    "pages": 2,
+    "backend": "demo-test",
+    "source_sha256": "ecc968d319774cac8bb787c5f3ecf798e58b0093b9ae475991d1c45a38896cab"
+  },
+  "text": "合成测试第 1 页文本（非真实简历）。",
+  "chars": 18,
+  "links": [],
+  "title": "合成测试材料（非真实简历）",
+  "blocks": [
+    {
+      "kind": "paragraph",
+      "text": "合成测试第 1 页文本（非真实简历）。",
+      "links": [],
+      "location": {
+        "bbox": [
+          10.0,
+          20.0,
+          200.0,
+          40.0
+        ],
+        "page": 1
+      },
+      "provenance": "native_text"
+    },
+    {
+      "kind": "paragraph",
+      "text": "合成测试第 2 页：人工读到的示例正文（不是真实简历内容）。",
+      "location": {
+        "page": 2,
+        "bbox": null
+      },
+      "links": [],
+      "provenance": "human_read"
+    }
+  ],
+  "fields": {
+    "name": {
+      "state": "present",
+      "value": "示例"
+    },
+    "phone": {
+      "state": "unreadable",
+      "reason": "unread_visual_page"
+    }
+  },
+  "issues": [
+    {
+      "code": "unread_visual_page",
+      "message": "第 2 页几乎是图像，文本层没有可读内容",
+      "location": {
+        "bbox": null,
+        "page": 2
+      }
+    }
+  ],
+  "warnings": [
+    "human_read_applied: page 2 (30 chars, transcription=0d101f68-84ff-4c5d-9d7d-b6f016ffbdb1, bbox=null)"
+  ],
+  "screening": {
+    "blocked_fields": [
+      "phone"
+    ],
+    "eligible_fields": [
+      "name"
+    ]
+  },
+  "completeness": "partial",
+  "needs_visual": true,
+  "protected_attributes": {},
+  "human_read_applied": [
+    {
+      "transcription_id": "0d101f68-84ff-4c5d-9d7d-b6f016ffbdb1",
+      "sha256": "ecc968d319774cac8bb787c5f3ecf798e58b0093b9ae475991d1c45a38896cab",
+      "page": 2,
+      "actor": "a2ef029f-e5ac-4974-b8e4-6f22ddaebdb5",
+      "created_at": "2026-11-12T17:16:12.018284+00:00",
+      "source": "human_read",
+      "applied": true,
+      "chars": 30,
+      "text_sha256": "2fa8f75699b07a435a7efb2fd1a002e1a9cdcb05ef75d7bb69c95b74a76f53c9",
+      "location": {
+        "page": 2,
+        "bbox": null
+      },
+      "block_index": 1
+    }
+  ],
+  "issue_resolutions": [
+    {
+      "issue_index": 0,
+      "code": "unread_visual_page",
+      "page": 2,
+      "status": "resolved_by_human",
+      "basis": "human_transcribed_page",
+      "transcription_id": "0d101f68-84ff-4c5d-9d7d-b6f016ffbdb1",
+      "actor": "a2ef029f-e5ac-4974-b8e4-6f22ddaebdb5",
+      "resolved_at": "2026-11-12T17:17:49.736513+00:00"
+    }
+  ],
+  "text_with_human_read": "合成测试第 1 页文本（非真实简历）。\n\n合成测试第 2 页：人工读到的示例正文（不是真实简历内容）。",
+  "text_native_only": true,
+  "human_read_skipped": [],
+  "human_read_merge": {
+    "schema": "human_read_merge/v1",
+    "item_id": "f9e393d1-1df8-4655-bbad-ea90f0b19db0",
+    "run_id": "fd177c38-f4b5-4231-82ae-fe2bd9e87a03",
+    "merged_by": "00000000-0000-4000-8000-000000000000",
+    "merged_at": "2026-11-12T17:17:49.736513+00:00",
+    "native_blocks": 1,
+    "human_blocks": 1,
+    "applied_pages": [
+      2
+    ],
+    "skipped_already_applied": [],
+    "machine_completeness": "partial",
+    "completeness_unchanged": "partial",
+    "needs_visual_unchanged": true,
+    "machine_chars": 18,
+    "text_native_only": true
+  }
+}
