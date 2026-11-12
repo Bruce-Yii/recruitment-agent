@@ -105,24 +105,27 @@ begin
   raise notice 'S-2 PASS decision 的 stage_code 上没有"不含 tenant_id"的第二条外键';
 
   -- ------------------------------------------------------------------
-  -- S-3 GAP-B：uq_decision_current 是 partial unique + NULLS NOT DISTINCT
+  -- S-3 GAP-B：当前决策唯一性 —— 断言**不变量**，不断言具体对象名
+  --   0007 原本用"部分唯一索引（unique + NULLS NOT DISTINCT + 谓词）"表达；
+  --   0008 把同一个不变量改成"可延迟排斥约束"（否则同一事务里先 INSERT 新
+  --   current、再 UPDATE 旧行永远走不通）。对象形态会随 0008 变化，但
+  --   "同一 (tenant, application, decision_scope, stage_code) 只能一条
+  --   current（superseded_by_decision_id IS NULL）"不变。
+  --   所以这里只断言不变量（现有数据 0 组重复）；"真能拦住"由 §5 的
+  --   B-01 .. B-03 实测（0007 下是 23505，0008 下是 23P01，两者都接受）。
   -- ------------------------------------------------------------------
   select count(*) into v_n
-    from pg_index i
-   where i.indexrelid = to_regclass('recruitment.uq_decision_current')
-     and i.indrelid   = 'recruitment.decision'::regclass
-     and i.indisunique
-     and i.indnullsnotdistinct
-     and i.indpred is not null
-     and (select array_agg(a.attname::text order by a.attname)
-            from pg_attribute a
-           where a.attrelid = i.indrelid and a.attnum = any(i.indkey))
-         = array['application_id', 'decision_scope', 'stage_code', 'tenant_id']::text[]
-     and pg_get_expr(i.indpred, i.indrelid) like '%superseded_by_decision_id IS NULL%';
-  if v_n <> 1 then
-    raise exception 'S-3 uq_decision_current 形态不对（期望 unique + nulls not distinct + (tenant_id, application_id, decision_scope, stage_code) + where superseded_by_decision_id is null；% / 1）', v_n;
+    from (
+      select 1
+        from recruitment.decision
+       where superseded_by_decision_id is null
+       group by tenant_id, application_id, decision_scope, coalesce(stage_code, '')
+      having count(*) > 1
+    ) d;
+  if v_n <> 0 then
+    raise exception 'S-3 不变量被破坏：% 组 (tenant, application, decision_scope, stage_code) 有不止一条 current 决策', v_n;
   end if;
-  raise notice 'S-3 PASS uq_decision_current：partial unique + NULLS NOT DISTINCT；键 = (tenant_id, application_id, decision_scope, stage_code)';
+  raise notice 'S-3 PASS 当前决策唯一性不变量成立：0 组重复 current（执行层由 §5 B-01..B-03 实测，23505/23P01 均接受）';
 
   -- ------------------------------------------------------------------
   -- S-4 GAP-C：scorecard.job_id 存在、uuid、NOT NULL、**无默认值**
@@ -520,13 +523,16 @@ begin
   raise notice 'POS-7-03 PASS 第一条 current (STAGE, S10) 可以落库';
 
   -- 4.4 GAP-B：不同 decision_scope 的当前决策并存是合法的（键含 scope）
+  --     0008 之后 FINAL 另受"每个申请最多一条 current FINAL"约束，而本夹具
+  --     POS-7-02 已经有一条 FINAL/NULL current；为了让夹具在"有/无 0008"
+  --     两种库上都合法，这里用 SCREENING（不同 scope 仍可并存）。
   insert into recruitment.decision
     (id, tenant_id, application_id, decision_scope, stage_code, result, decided_by_actor_id, reason)
   values
     ('dddddddd-dddd-4ddd-8ddd-0000000001d3', 'dddddddd-dddd-4ddd-8ddd-000000000001',
-     'dddddddd-dddd-4ddd-8ddd-000000000141', 'FINAL', 'S10', 'HIRED',
+     'dddddddd-dddd-4ddd-8ddd-000000000141', 'SCREENING', null, 'HOLD',
      'dddddddd-dddd-4ddd-8ddd-000000000101', 'POS-7-04 另一个 scope');
-  raise notice 'POS-7-04 PASS 不同 scope 的 current 决策可以并存（唯一键含 decision_scope）';
+  raise notice 'POS-7-04 PASS 不同 scope 的 current 决策可以并存（唯一键含 decision_scope；0008 后 FINAL 另受"每申请一条"约束，故用 SCREENING）';
 
   -- 4.5 GAP-B：历史行可以指向一条**已存在**的决策表示被它取代（superseded 形态合法）
   insert into recruitment.decision
@@ -628,6 +634,12 @@ end $$;
 \echo ' 5. 负向用例（每条都必须 FAIL，并给出真实 SQLSTATE / 报错）'
 \echo '=================================================================='
 
+-- 0008 把 GAP-B 的唯一性改成了 DEFERRABLE INITIALLY DEFERRED：冲突推迟到
+-- COMMIT 才报。本脚本整体是一个事务、结尾 ROLLBACK，所以必须在这里把延迟
+-- 约束提前成 IMMEDIATE，B-01 .. B-03 才会在同一条语句里报错（而 0007 的
+-- 部分唯一索引本来就是立即校验，这句在"无 0008"的库上是 no-op）。
+set constraints all immediate;
+
 do $$
 declare
   v_state text;
@@ -674,20 +686,21 @@ begin
 
       -- ----------------------------------------------------------------
       -- GAP-B：同一 (tenant, application, scope, stage) 只能有一条 current
+      --   期望 23505（0007 的部分唯一索引）或 23P01（0008 的可延迟排斥约束）
       -- ----------------------------------------------------------------
-      ('B-01', '23505', 'GAP-B INSERT 第二条 current FINAL + stage_code IS NULL（NULLS NOT DISTINCT 必须把两个 NULL 当相等）',
+      ('B-01', '23505|23P01', 'GAP-B INSERT 第二条 current FINAL + stage_code IS NULL（两个 NULL 必须按相等处理：0007 靠 NULLS NOT DISTINCT，0008 靠 coalesce(stage_code, 空串)）',
        $q$insert into recruitment.decision
             (tenant_id, application_id, decision_scope, stage_code, result, decided_by_actor_id, reason)
           values ('dddddddd-dddd-4ddd-8ddd-000000000001','dddddddd-dddd-4ddd-8ddd-000000000141',
                   'FINAL',null,'REJECT','dddddddd-dddd-4ddd-8ddd-000000000101','neg B-01')$q$),
 
-      ('B-02', '23505', 'GAP-B INSERT 第二条 current STAGE/S10（同一键的重复 current）',
+      ('B-02', '23505|23P01', 'GAP-B INSERT 第二条 current STAGE/S10（同一键的重复 current）',
        $q$insert into recruitment.decision
             (tenant_id, application_id, decision_scope, stage_code, result, decided_by_actor_id, reason)
           values ('dddddddd-dddd-4ddd-8ddd-000000000001','dddddddd-dddd-4ddd-8ddd-000000000141',
                   'STAGE','S10','REJECT','dddddddd-dddd-4ddd-8ddd-000000000101','neg B-02')$q$),
 
-      ('B-03', '23505', 'GAP-B UPDATE 把 superseded 行改回 current（触发部分唯一索引）',
+      ('B-03', '23505|23P01', 'GAP-B UPDATE 把 superseded 行改回 current（触发当前唯一性：0007 索引 / 0008 排斥约束）',
        $q$update recruitment.decision set superseded_by_decision_id = null
            where id = 'dddddddd-dddd-4ddd-8ddd-0000000001d2'$q$),
 
@@ -787,7 +800,8 @@ begin
       execute r.sql;
     exception when others then
       get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text;
-      if v_state <> r.expect then
+      -- expect 允许写多个 SQLSTATE（用 | 分隔）：0008 会把 GAP-B 的 23505 变成 23P01
+      if not (v_state = any (string_to_array(r.expect, '|'))) then
         raise exception 'NEGATIVE % 失败但 SQLSTATE 不符（期望 % 实际 %）：% | %',
           r.id, r.expect, v_state, r.what, v_msg;
       end if;
