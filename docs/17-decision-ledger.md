@@ -1,0 +1,731 @@
+# 17 · 决策台账（唯一权威源）
+
+**来源**：`D:\12412\dsh工作区\projects\recruitment-os\work\control\DECISIONS-2026-11-12.md`
+（旧仓，**冻结只读**）。下面是该文件 **530 行的逐字副本**，未改一字。
+**新增裁定**（2026-11-13 起）在 [附录 A](#附录-a--2026-11-13-起新增的裁定)；**引用路径修正**在 [附录 B](#附录-b--引用路径修正2026-11-13)。
+
+---
+
+## 0. 这份文件怎么用（先读这三条）
+
+1. **它是唯一权威源。** 任何裁定不在这里 = 视为未决定（R5）。新裁定**当天追加**到附录 A，不要只写在 commit message 或聊天里。
+2. **`docs/16-design-rationale.md` §8 只是索引**，只挑影响架构的十几条；冲突时以本文件为准。
+3. **引用格式**：`docs/17-decision-ledger.md` + 裁定编号（**不要写行号**，行号会随追加漂移）。
+
+### 0.1 一次真实事故：这份台账曾经被截断
+
+2026-11-13 发现：新仓里曾有一份 `work/decisions/DECISIONS-2026-11-12.md`，
+**只有 82 行**（= 原文前 82 行，到 D-20 为止），而多份契约引用它时写的行号
+（D-21 `:88`、D-22 `:96`、D-33 `:196-214`、D-46 `:299-315`…）**全部超出 82 行**。
+一度被误判为"26 条裁定已永久丢失"。
+
+**实际没丢**：原件 530 行完整保存在旧仓 `work/control/` 下，行号与所有引用逐字吻合。
+教训有两条：
+
+- **复制文件不是迁移。** 新仓那份是复制时被截断的；没有人校验过行数。
+- **台账不要放 `work/`。** 旧仓的 `work/` 是不入库的过程目录，所以新仓从未真正"拥有"这份台账。
+  这就是为什么本文件在 `docs/`（入库）。
+
+---
+
+# 决策台账 · 2026-11-12（总控裁定）
+
+> 按 R5：裁定必须落文档，否则视为未决定。
+> 以下 8 条由总控直接裁定，**不再上抛**；只有涉及产品范围变更的才需要产品负责人。
+
+---
+
+## A 线（PDF 读取器）2 条
+
+### D-19 · `pdf_reading_order_unverified` 维持 HARD
+
+**冲突**：参考实现 `batch.py` 把 `pdf_reading_order_` 整族当 SOFT；`doc 11` A4 要求"页字 <800 必须 HARD"。
+
+**裁定：维持 HARD。** 理由：
+- 顺序错 → 公司/职位/时间可能错配 → 直接影响筛选结论，这是招聘侧最危险的错误
+- 40%（34/84）HARD 不是失败，是**语料真实质量**的反映（77 份里混了 PRD、行业报告、课程讲义）
+- 但要求两条配套：
+  1. 该 issue **必须带证据块**（哪些 block 顺序异常），让人一眼能判断
+  2. 人工队列要支持"**仅顺序问题**"快速放行，不能让人逐个读 40 份
+
+**不改回 SOFT 的理由**：SOFT 意味着系统自己认定"不影响"，而顺序问题恰恰是最难自动判断影响的。
+
+### D-20 · 章节词表未命中 → 一律 `unreadable`，不写 `absent`
+
+**裁定：维持现设计。** 理由：
+- `absent` 的语义是"原文确实没提"，词表没命中推不出这个结论
+- `unreadable` 的代价是进人工队列，`absent` 的代价是**误淘汰**——后者不可接受
+- 补一条回归测试：**未知标题写法 → work/education 必须是 unreadable**，不得 absent
+
+**不做**：不扩词表到无限（会变成猜）。词表是封闭集合这件事要写进 CONTRACT，让下游知道。
+
+---
+
+## B 线（PG Schema）6 条
+
+### D-13 · 领域对象数 = **36**，回抄 docs/03
+
+docs/03 §1 标题写"三十四个业务对象"，表体实为 36 行。**以表体为准 = 36**，回抄标题。
+
+### D-14 · 7 个缓做对象维持缓做，但**必须补 seed**
+
+缓做：Prospect / Pipeline Template / Stage / Stage Activity Template / Offer / Talent Pool / Source Thread —— 全部落在 Deferred 阶段，同意。
+
+**但**：`business_config.stage_catalog` 现在**没有任何配置行**，P1 第一次查阶段目录会是空表。
+→ **必须补 `0002_seed.sql`**：最小 stage_catalog + 一个 demo job + 一个 rubric version。否则联调必返工。
+
+### D-15 · `intake_record` / `intake_asset` / `candidate_merge` 保留，定位为**支撑实体**
+
+它们不在 §1 的 36 行里，但来自 docs/03 正文，且不变量 2（合并保留历史）与 §5 Intake 模型依赖它们。
+**裁定**：保留表；在 SCHEMA.md 明确区分「业务对象（36）」vs「支撑实体（3）」；不把它们算成第 37–39 个业务对象。
+
+### D-16 · v1.0 不新增阶段产物表
+
+- Screening Result → `decision(scope='SCREENING')` ✅
+- Evaluation Summary / Next Round Brief → **派生不落表**（v1.0）；要求：同一输入可复算出同一结果
+- Calendar Event → `meeting.calendar_event_id` ✅
+- Source Event → `event_inbox` 标准化列 ✅
+
+若 P3 要求 Brief 版本化持久化，先改 docs/03 再开 `0002`，**不得先建表后补文档**。
+
+### D-17 · canonical 粒度 = **每会议一个**（v1.0）
+
+`transcript_artifact.is_canonical` 用部分唯一索引（每 meeting 一个 canonical）。`transcript_set` 实体留到 0002。
+
+### D-18 · actor 写入必须 `SET LOCAL` + 统一封装
+
+**裁定**：
+- 所有状态迁移必须 `SET LOCAL recruitment.actor_id = '<uuid>'`（**不能**用 `SET`，连接池会泄漏给下一个请求 → 责任人记错，静默错误）
+- 插件统一封装 `withActor(tx, actorId)`，UPDATE 后 `RETURNING record_version`，不缓存旧版本号
+- 这条写进 C 线的调用约定，且必须有测试
+
+---
+
+## 需要产品负责人（不是总控）的 1 条
+
+### P-1 · 顺序类 HARD 的规模是否可接受
+
+按 D-19，84 份语料里 34 份（40%）会进人工队列。这是**产品侧的运营成本**：
+- 接受 → 维持 D-19
+- 不接受 → 只能降级为 SOFT，代价是可能带着错配的经历进筛选
+
+**默认按 D-19 执行**；若产品负责人另有口径再改。
+
+---
+
+## 第二批裁定（2026-11-13 00:40）
+
+### D-21 · 当前 Rubric 版本用显式指针，不用 max(version_no)
+
+**问题**：`rubric_version` 表没有 `is_current` 列，`job` 也没有指向当前版本的字段。H 线只能用"只有一行"来表达。
+
+**裁定**：新增 `job.current_rubric_version_id`（外键到 `rubric_version`，可空）。
+**理由**：`max(version_no)` 在"回滚到旧版本"时会撒谎——回滚后 max 仍是新版本。当前版本是**业务状态**，必须显式记录。
+
+### D-22 · 阶段 code 唯一口径 = S1–S12
+
+**问题**：seed 用 S1–S12（来自 docs/01），C 线 CONTRACT.md 用 APPLIED/SCREENING/INTERVIEW/OFFER/REJECTED 五档。
+
+**裁定**：**S1–S12 为唯一口径**；五档粗粒度值作废，`CONTRACT.md` 必须改。
+**理由**：粗粒度值无法表达 S6（简历接入）与 S7（初筛）的区别，而这正是本系统的核心。
+
+### D-23 · 建真表 `stage_catalog`，并给 `application.current_stage_code` 加外键
+
+**问题**：阶段目录现在存在 `business_config` 的 JSON 里，`application.current_stage_code` 只有正则约束 → **写进一个不存在的 code 不会报错**，联调时会出现"查得到申请、查不到阶段名"的静默不一致。
+
+**裁定**：`0004` 建 `stage_catalog(code PK, name, sort_order, in_v1_scope)`，种 12 行，`application.current_stage_code` 加外键。
+**理由**：脏 code 是静默错误，必须在数据库层拦住。
+
+---
+
+## 第三批裁定 · 文本→结构化契约（2026-11-13 00:55）
+
+G 线提出 6 个口径问题，逐条裁定：
+
+### D-24 · 输入必须带 `#doc` 文档头（采纳）
+
+**理由（G 线用真实跑批证明）**：阅读顺序不可信这个事实**不在 `issues` 里**，而在 `meta.order_verified=false`。模型看不到它，就会在"顺序不可信"的文档上**合法地写 `absent`**——这正是 doc 11 §9.11-7 的红线。
+
+**裁定**：输入适配器必须供 `#doc`（含 `pages / completeness / issues / unread_pages / order_verified`）。块行格式不变：`#id | page | text`。
+
+### D-25 · `education` 也用条目数组（采纳）
+
+**理由**：§9.1 归属与 §9.4 时间线对教育同等成立；单字符串装不下 3 段学历。
+**裁定**：`education` 与 `work_experience` 同为条目数组，每条带 `block_ids`。
+
+### D-26 · 允许第 13 个 label `research`（采纳）
+
+**理由**：真实语料里「科研经历」独立成章，12 项无处安放；与 `publication`（论文）语义不同。
+**裁定**：保留 13 个 label，但 `labels.md` §5 必须维护 converter 九类 → 契约 13 类的映射表（G 线已做）。
+
+### D-27 · `block_ids` 用字符串（采纳）
+
+**理由**：它对应输入里的 `#12`，是**标识符**不是数量；字符串避免下游误当索引做算术。
+**裁定**：保持字符串。
+
+### D-28 · 受保护属性：不设值字段，但加"已识别类型"清单（折中采纳）
+
+**问题**：G 线把受保护属性做成"只禁止、不给位置"——隔离最强，但审计看不到"系统识别到了年龄/性别"。
+**裁定**：
+- **绝不给值字段**（年龄/性别/婚育/籍贯/民族/照片的值一律不落输出）
+- 允许顶层加 `protected_attributes_detected: string[]`，**只记类型名**（如 `["age","gender"]`），供审计
+- 该清单**明确标注"永不作为筛选特征"**，且下游不得读取
+
+### D-29 · 字段 `state` 以模型层为准，但必须保留 `converter_state` 并受硬校验约束（关键裁定）
+
+**问题（G 线发现）**：同一份 PDF，converter 判 `education=unreadable`，契约允许 `education=present`（条目有学校、日期为 null）。两种都诚实，但下游看到的状态不同。
+
+**裁定**：
+1. **最终 `state` 由模型层给出**——否则模型层没有价值（converter 现在 42%/53% unreadable，正是要改的）
+2. 但结果里**必须同时保留 `converter_state`**，供审计比对
+3. **升级有门槛**：模型把 `unreadable` 升级为 `present` 时，**每一条 entry 必须通过硬校验**（公司/学校 + 至少一个时间或职位，且值均为原文子串）；任何一条不过 → 回退到 `converter_state`
+4. **每次升级记一条 `state_upgrade` 事件**（字段名、converter_state、final_state、依据的 block_ids），用于后续质量复核
+
+**理由**：既不放弃模型层的价值，也不允许它无证据地推翻转换器的判断。
+
+---
+
+## 第四批裁定 · 序列化与校验（2026-11-13 00:45）
+
+### D-30 · 值匹配改为"连续块拼接匹配"，但不放宽逐字要求
+
+**问题（F 线实测）**：块粒度是视觉行。真实数据里 `#6` 结尾「…佣金结算及分账」、`#7` 开头「中台等复杂业务。」是同一句话；PDF 连字符断行还会把 `semantics` 断成 `seman-` / `tics`。只允许"单块子串"会让真实模型频繁失败。
+
+**裁定**：
+1. 允许 `value` 匹配 **引用块按序拼接后的文本**
+2. 但引用块必须**连续且有序**（`block_ids` 相邻），否则拒绝
+3. 匹配时允许三种**归一化**：去掉块内 `⏎`、折叠空白、**跨块连字符断行**（`seman-` + `tics` → `semantics`）
+4. **归一化只用于匹配，不改原文**——原始块文本永远保留（doc 11 A2 字符恒等不受影响）
+5. 归一化规则必须**固定且写进契约**，不允许"语义相等"
+
+### D-31 · 覆盖率必须"每块恰好归入一个 section"，不是"被引用过就算"
+
+**问题（F 线实测）**：模型只要把剩余 id 全塞进 `block_ids` 就能刷满覆盖率（基线 `covered=103/103` 就是这样），所以覆盖率 100% 不能证明抽取完整。
+
+**裁定**：
+1. 覆盖率 = 每个 block **恰好出现在一个 section 的 `block_ids`** 里（重复出现 = 拒绝）
+2. `ignored` 的块必须带 `reason`，且**不得被任何字段引用**
+3. 字段引用的块**必须属于该字段所在 section**（`contact` 类字段除外）
+4. 覆盖率证明的是"没漏块"，**不证明"处理对了"**——后者只能靠下游复核或模型兜底层（doc 12 ③），不得用覆盖率冒充
+
+### D-32 · 校验层不得放宽规则去迁就模型
+
+**问题**：F 线指出"正确改法是让 converter 合并换行，或让契约带 `raw_value` + 归一化字段，**不能**放宽规则 2 去允许语义相等"。
+
+**裁定**：采纳。任何"为了让模型通过"而放宽校验的改动，一律视为**作弊**，必须驳回。规则 2（值必须可回查）不可放宽。
+
+### 附 · 两处需要清理的历史问题（F 线如实报告）
+
+1. `test/harness.mjs` 被 `node --test` 当作测试跑，且它调 `ctx.plugin({...})` 未传 config → `NOT_CONFIGURED` 抛错。**修复**：改为不被测试发现，或补 config。
+2. `test/harness.mjs` §E 的"禁止 fs/child_process"扫描命中 `src/tools/converter.ts`——但该文件**本来就要**起子进程调 Python。**修复**：把 converter.ts 加进白名单，并在扫描规则里写明理由。
+
+---
+
+## 第五批裁定 · 权限与工作台（2026-11-13 01:05）
+
+### D-33 · v1.0 不做 RBAC，改"全局可见 + 个人工作台"
+
+**产品负责人裁定（2026-11-13）**：
+- **不做权限矩阵**。v1.0 所有人**全局可见**（能看到所有候选人/岗位/面试）
+- 但每个人有**属于自己的工作界面**——因为职责不同
+- **暂时不做那么多角色**
+
+**总控落地口径**：
+1. **不建** `role` / `permission` / `actor_role` 的授权判定链路；不做工具级权限检查
+2. 角色**降级为标签**：只用于"我的工作台"过滤和界面展示，**不用于拦截**
+3. **个人工作台**按"分配给我的"过滤，例如：
+   - 我的待办任务
+   - 我负责的面试
+   - 我参与的岗位
+   - 我最近看过的候选人
+4. 数据层保留 `actor_id` 字段（用于归属与审计），但**不校验**
+5. 原计划的"权限矩阵"任务**撤销**，不派发
+
+**风险登记**：这是**有意的产品降级**。将来要开权限时，需要补：数据范围判定、工具级检查、审计。当前不预留"假接口"（不写永远返回 true 的 `can()` 之类）。
+
+---
+
+## 第六批裁定 · 0004 阶段目录与既有脚本冲突（2026-11-13 01:20）
+
+### D-34 · 授权修改 `db/verify.sql` 的 2 处夹具（冲突 1）
+
+**问题**：`verify.sql:398` 的夹具用 `current_stage_code='SCREENING'`，该值已被 **D-22** 作废、不在 S1–S12，加了外键后**必然违反**。
+证据：加 0004 前 `VERIFY PASS`；加 0004 后 `违反外键约束 fk_application_stage_catalog`。
+
+**裁定**：**授权修改** `db/verify.sql` 两处：
+1. 给夹具租户种同一份 stage_catalog
+2. `'SCREENING'` → `'S7'`
+
+**理由**：夹具本身用了一个已作废的值，是夹具错，不是外键错。改完必须仍 `VERIFY PASS`，且除这两处外不得有其它改动。
+
+### D-35 · `stage_catalog` 用 uuid 主键 + tenant_id + unique(tenant_id, code)（覆盖 D-23 字面）
+
+**问题**：D-23 字面写 `code` 主键；但 SCHEMA.md §1 与 `verify.sql` STRUCT-01/02/03 要求每张表单列 uuid `id` + NOT NULL `tenant_id` + tenant 外键。
+
+**裁定**：**采纳实现方的偏离**。理由：外键指向 `(tenant_id, code)` 拦脏 code 的强度不变，且目录按租户隔离更符合多租户模型。**D-23 的字面表述以此条为准。**
+
+### D-36 · 运营类表（0003）也必须用单列 `id` 主键
+
+**问题**：`0003_review_queue.sql` 三张表主键叫 `run_id` / `item_id` / `audit_id`，导致 `verify.sql` STRUCT-01 失败（"这些表的主键不是单列 id"）。这是**跨 lane 冲突**，与 0004 无关。
+
+**裁定**：**要求 0003 改成单列 `id`**，外键相应改指向。
+**理由**：一条约定必须一条到底，否则 STRUCT-01 就成了摆设；"运营表可以例外"这种豁免一旦开口，以后每张新表都会要求例外。
+**代价**：0003 需要一次机械改名，I 线回传后派修正。
+
+### D-37 · `application.current_stage_code` 默认值改为 `'S6'`
+
+**裁定**：**采纳**。D-22 已作废五档值，保留 `'SCREENING'` 默认值会让"不写阶段就插入"永远撞外键，等于换个方式静默失败。
+
+---
+
+## 第七批裁定 · 身份解析（2026-11-13 01:35）
+
+K 线提出 5 个口径 + 3 个结构性发现，逐条裁定：
+
+### D-38 · 身份类的"推不出"一律进人工（补 K 指出的编号错位）
+
+K 线指出任务书把 **D-20** 当身份口径引用，但 D-20 实际是"章节词表未命中 → unreadable"（A 线）。它按同构原则引用，**判断正确、编号错误**。
+
+**裁定**：新立本条——身份判定中**任何推不出唯一结论的情况，一律 fail-closed 到人工**，不得写 absent/不匹配。适用于：`unknown` provenance、姓名 `unreadable`、弱匹配。
+
+### D-39 · "待人工"不进 `candidate.identity_status`（P-1）
+
+**理由（K 线的结构性论证）**：`uq_candidate_active_email/phone` 的谓词写死 `identity_status='ACTIVE'`（`0001:755-758`）。一旦引入第三个非 MERGED 值，同号两条档案可并存，**N26 守的唯一性当场失效**。
+
+**裁定**：待人工状态挂在 `review_queue` 上，`candidate` 保持 ACTIVE；**不加新的 CHECK 值**。
+
+### D-40 · v1.0 接受拆分关闸（P-2）
+
+**裁定**：v1.0 **不支持撤销合并**（`SPLIT_REQUIRES_SCHEMA` 409）。界面必须明说"暂不支持撤销合并"，否则 HR 会去手工改库——那比不支持更危险。
+
+### D-41 · 自动合并必须记 `SYSTEM` actor（P-3）
+
+**裁定**：`decided_by_actor_id` 非空，自动合并记 `SYSTEM` actor；`D-14` 的 seed 必须补这个 actor。**不写 actor 的自动决策一律拒绝**。
+
+### D-42 · 弱匹配产生人工队列（P-5）
+
+**裁定**：姓名 + 公司/学校全同 → **产生人工复核项**（不自动合并）。
+**理由**：漏合并的代价（两个档案）远小于错合并的代价（两个人的经历混在一起、评价挂错人）。
+
+### D-43 · v1.0 demo 用 `MANUAL_ONLY`（P-6）
+
+**裁定**：v1.0 演示阶段身份解析只做**人工闸门**；`AUTO_HIGH_CONFIDENCE` 等 S7 验收通过后再开。
+
+### D-44 · 拆分需要新增审计载体（待办，不阻塞 v1.0）
+
+**问题（K 线 G-3）**：`candidate_merge` 整行不可 UPDATE、无 split 语义列；`candidate` 无 `status_changed_*`，`fn_row_guard` 也不管 `identity_status`。→ **`MERGED→ACTIVE` 数据库拦不住，且不产生任何审计**。
+
+**裁定**：后续迁移新增不可变 `candidate_split` 表 + 扩展 guard。**在此之前拆分一律 409**（与 D-40 一致）。登记为待办，v1.0 不阻塞。
+
+### D-45 · 夹具不得插两条同号 ACTIVE
+
+**问题（K 线发现）**：`uq_candidate_active_email/phone` 使两条 ACTIVE 不可能同时持有同一强标识（`23505`）。
+**裁定**：写夹具/测试时必须遵守；"同手机号自动合并"只能通过"一条持有 + 来料证明另一条是重复档"或"来料自带两个强标识交叉印证"两种形态表达。
+
+---
+
+## 第八批裁定 · 身份规则简化（2026-11-13 01:55）
+
+### D-46 · 撤销 D-42，姓名差异不做闸门（产品负责人纠正）
+
+**我错在哪**：K 线提出"同手机号 + 不同姓名一律人工"，我还认了，并编造了"家庭共用手机号 / 父母代投 / 猎头转发"三个场景来论证。
+
+**产品负责人纠正（2026-11-13）**：真实招聘场景里**简历上的姓名就是候选人本人**——HR 不会用别人名字，候选人不会不填自己名字，猎头转发的也是候选人自己的简历。**那三个场景不成立。**
+
+**真实原因只有两种**：
+1. **姓名写法差异**（高概率）：`张三` / `张 三` / `张三(Zhang San)` / 全半角 / 曾用名 / 英文名
+2. 手机号填错（低概率）
+
+**裁定（撤销 D-42）**：
+1. 姓名先**归一化**：去空格、全半角、大小写、中英文对照、常见后缀（`(Zhang San)`）
+2. 归一化后相同 → **自动合并**
+3. 归一化后确实不同 → **不合并、不阻断**：新建档案 + 标记 `possible_duplicate`（低优先级提示），**不占人工队列**
+4. **D-42 的"弱匹配产生人工队列"作废**
+
+**教训**：把罕见情况做成闸门，会让 99% 的正常简历承担成本。设计风险时先问"这在真实场景里会发生吗、多大概率"，不能凭想象堆防御。
+
+---
+
+## 第九批裁定 · 队列与筛选（2026-11-13 02:15）
+
+### D-47 · 0003 的表豁免 `fn_row_guard`（STRUCT-05），但必须保留自己的守卫
+
+**问题（I 线）**：`verify.sql` 的 STRUCT-05 要求"有 status 列的表必须有 `fn_row_guard` 触发器"。但：
+- `conversion_run` 是 **append-only**（根本没有 UPDATE 路径）
+- `review_queue` 用**专用状态机**（`fn_review_transition_allowed`）+ `review_audit` 留痕
+
+给它们套 `fn_row_guard` 需要加 `status_changed_*` 并向 `event_inbox` 写事件——**为过检查而接一条永不执行的触发器，属 R2 假接线**。
+
+**裁定**：**豁免这两张表**，并在 `verify.sql` 的 STRUCT-05 里写明豁免理由 + 指向各自的真实守卫（`trg_conversion_run_immutable` / `trg_review_queue_before_update` / `trg_review_queue_audit`）。
+**授权修改 `db/verify.sql` 的 STRUCT-05**。
+
+### D-48 · S-1 已由 0004 解决（J 线信息滞后）
+
+J 线说"`job` 没有 `current_rubric_version_id` 列"。**0004 已经加了**（D-21）。
+**裁定**：J 线的 `current(job, as_of)` 推导规则**作废**，直接用 `job.current_rubric_version_id`；该列为空时返回 `NO_RUBRIC`，**不回退推导**。
+
+### D-49 · 修 S-3：版本不得跨 job 引用（新迁移 0005）
+
+**问题（J 线，最该修）**：`application.rubric_version_id` / `job_version_id` 只做 `(id, tenant_id)` 外键，**能指向别的 job 的版本** → "钉版本"形同虚设。
+**裁定**：新迁移 `0005`：
+1. `rubric_version` / `job_version` 加 `unique (id, job_id)`
+2. `application` 改成复合外键 `(rubric_version_id, job_id)` 与 `(job_version_id, job_id)`
+
+### D-50 · R-VAL-14 暂时降级为告警
+
+**问题**：`payload_hash` 的 canonical_json 覆盖范围与序列化规则没有共享实现，写侧读侧各写一份会互相误判。
+**裁定**：在共享实现落地前，R-VAL-14 **降级为告警**，不得据此拒绝。登记待办。
+
+### D-51 · 统一工具错误格式为 `Error: <CODE>: <compact-json>`
+
+**问题（J 线）**：包拿不到结构化 `error.info`，现有 3 个 stub 的错误消息格式不统一。
+**裁定**：一次性统一 `errors.ts`：`Error: <CODE>: <compact-json>`。对现有 stub 是破坏性变更，**允许**（它们本来就是 stub）。
+
+---
+
+## 第十批裁定 · 身份规则再简化（2026-11-13 02:30）
+
+### D-52 · 撤销 D-46 的归一化与"可能重复"机制
+
+**我错在哪**：D-46 里我又编了一堆场景——`张三 / 张 三 / 张三(Zhang San) / 全半角 / 曾用名` 五种"高概率"姓名差异，还加了"手机号填错（少一位多一位）"。
+
+**产品负责人纠正（2026-11-13）**：
+1. 姓名差异**只有前两种可能**（`张三` / `张 三`），而且**模型结构化时不会搞错**，所以连归一化都不需要
+2. **手机号填错不关我们的事**——"你觉得我们是神仙吗"
+
+**裁定（D-46 作废）**：
+1. 手机号 / 邮箱 **trim 后精确匹配** → 同一候选人
+2. **姓名不参与合并判定**
+3. **不做**：姓名归一化、手机号纠错、"possible_duplicate" 标记、为姓名差异建人工队列
+4. 一个手机号对应两个名字这种极罕见情况 → 以最新简历姓名为准，HR 发现不对自己改，**不设特例**
+
+**教训（第二次）**：我连续两次把罕见情况做成机制。**设计前先问：这在我们这里会发生吗？发生了是不是本来就该人管？**
+
+---
+
+## 第十一批裁定 · 版本绑定（2026-11-13 02:45）
+
+### D-53 · D-49 的 2 列外键改为 3 列（含 tenant_id）
+
+**问题（0005 线实测）**：D-49 写 `(rubric_version_id, job_id) → rubric_version (id, job_id)`，2 列**不含 tenant_id**。但 `db/verify.sql` 的 **STRUCT-07** 断言"凡 conkey 超过 1 列的复合外键必须含 tenant_id"（豁免 `source_revision` / `transcript_revision`）→ 0005 一跑 STRUCT-07 必 FAIL，而验收又要求 verify.sql 仍 PASS。**两条按字面不可能同时成立。**
+
+**裁定**：**采纳 3 列**——`(tenant_id, rubric_version_id, job_id) → rubric_version (tenant_id, id, job_id)`，`job_version` 同构。
+**理由**：强度**严格强于** D-49（同 job + 同租户同时物理保证），D-49 要拦的行为照样拦（实测 23503）。**D-49 的字面以此条为准。**
+
+### D-54 · 下游三张表的 rubric 引用漏洞单开 0006
+
+**问题（0005 线发现，如实登记）**：`interview_template_version.rubric_version_id`、`interview_record.rubric_version_id`、`scorecard.rubric_version_id` 仍是 2 列外键 → **仍可引用别的岗位的 rubric**（评分卡能拿别的岗位的标准打分）。
+
+**为什么不在 0005 修**：这三张表**没有 `job_id` 列**，job 要经 `interview → application` 反查，纯外键做不到（需生成列或触发器）——**是设计决策，不是迁移技巧**。
+
+**裁定**：单开 `0006` + 新裁定。**登记为待办，不混进 0005。**
+
+---
+
+## 第十二批裁定 · 校验器与转换器缺陷（2026-11-13 02:55）
+
+### D-55 · 转换器真 bug：同一 URL 在正文出现两次
+
+**发现者**：独立校验器（L 线）扫全量 45 份，`TOTAL 45 passed=43 failed=2`。
+
+**两份失败**：
+- `唐乐-简历.pdf`：2799 → 2825 字，多出的 26 字 = `https://zhitu.kralai.tech/` 印了两遍
+- `tangle-resume.pdf`：1836 → 1887 字，同上（`.../showcase.html`）
+
+**根因**：URL 印在一整行中文里（被当成一个"词"），词中心点落在链接注解矩形外 → 绑不上 → 走 fallback 又生成一个 `[URL](<URL>)` 块 → **同一个 URL 在正文出现两次**。
+
+**裁定**：这是**真缺陷**，必须修（不是"设计如此"）。
+**修法**：fallback 生成 link 块前，先检查该 URI 的文本是否已出现在同页任何 block 里；已出现则不再生成 fallback 块。
+**注意**：我此前把这个"多出字符"解释为"无可见文字的链接用 URL 保留，属设计"——**解释错了一半**：保留是对的，重复是错的。
+
+### D-56 · 给 conftest 加 `--no-corpus` 开关
+
+**问题（L 线）**：既有 `tests/conftest.py` 的语料守卫会让 `pytest tests/` 直接 exit 2，任何不依赖语料的测试都跑不起来。
+**裁定**：conftest 增加 `--no-corpus` 开关；不传时保持现在的 fail-fast 行为（不许静默 skip）。
+
+---
+
+## 第十三批裁定 · 工作台与提交纪律（2026-11-13 03:10）
+
+### D-57 · D-33 措辞回抄："最近看过" → "最近处理过"
+
+**问题（R 线实证）**：0001–0004 的 DDL 全文**没有** `viewed_*` / `last_view*` / `seen_at` / `read_by` 任何浏览记录列（唯一 `last_readback_at` 是"外部回读"，语义不同）。
+**裁定**：D-33 的"我最近看过的候选人"改为"**我最近处理过**的申请"。
+**明确禁止**用 `application.updated_at` 代替——`fn_touch` 每次 UPDATE 都改（含系统内部迁移），会把"系统动过"记成"我动过"。
+
+### D-58 · 时钟参数统一叫 `as_of`，不用 `evaluated_at`
+
+**问题（R 线）**：工作台要判"逾期/最近 14 天"，需要时间输入；但兄弟契约 `job-screening/tool-contracts.md` 规定"无时钟、唯一时间输入是 `as_of`"。R 线引入了 `evaluated_at`，**两套口径并存**。
+**裁定**：**统一用 `as_of`**（与兄弟契约同名同义）。工作台的 `as_of` 为必填。**不允许两套时间参数名并存**（R5）。
+
+### D-59 · `business_task.owner_actor_id` 单开 0006
+
+**问题（R 线）**：`business_task` 没有 owner/assignee 列，工作台只能用 `created_by_actor_id` 充当"责任人"。
+**裁定**：`0006` 加 `business_task.owner_actor_id`（可空，外键到 actor）。
+**明确禁止**：不得通过扩展 `business_refs.kind` 来表达责任人（会撞 `screening-rules.md` §6.2 的 7 值封闭集）。
+
+### D-60 · 提交纪律：只提交"已回传 + mtime 稳定"的文件
+
+**我犯的错**：`d50e675` 提交时，0003 对齐那条线**还在写**，把未完成的 0003 / verify.sql / verify-0003 一并提交了。
+**裁定（以后固定）**：
+1. 只有**该线已回传**且文件 mtime **至少 60 秒未变**，才允许提交
+2. 提交前必须 `git status` 逐个确认文件属于哪条线
+3. 多线并行时，**按线分批提交**，不 `git add -A`
+4. 已发生的混入不回滚（内容无害），但必须在后续提交里修正并说明
+
+### D-61 · 工作台夹具单开一条线
+
+**问题**：R 线的三个用例是"规格期望"，不是实测（`ra_align` 里 interview/interviewer/business_task/approval 均 0 行）。
+**裁定**：单开一条线造夹具 F-WB-A/B/C 并实测。**不阻塞契约**（契约已交付）。
+
+---
+
+## 第十四批裁定 · 面试与转写（2026-11-13 03:25）
+
+### D-62 · `schedule` 接受四合一 intent（不拆工具）
+
+**问题（P 线）**：为让"面试官请假"有执行路径，`recruitment_interview_schedule` 需要四个 intent：`CREATE` / `RESCHEDULE` / `CANCEL` / `WITHDRAW_INTERVIEWER`。
+**裁定**：**接受四合一**，用 `intent` 枚举区分。
+**理由**：拆成 4 个工具会让模型在相似工具间误选；一个工具 + 明确 intent 更可控。语义与错误码逐字沿用。
+
+### D-63 · 错误格式统一（D-51 的落地范围）
+
+**问题（P 线）**：新契约用 `Error: <CODE>: <json>`，与 `CONTRACT.md §2.2` 的散文格式不兼容；`job-screening` 也是同一个未决事项。
+**裁定**：**D-51 即刻生效**——一次性统一 `errors.ts` 为 `Error: <CODE>: <compact-json>`，所有契约与实现对齐。**不允许两套错误格式并存**（R5）。
+
+### D-64 · 转写正文读取工具单独立契约
+
+**问题（P 线）**：`recruitment_interview_get` 不返回转写正文，正文与分页需要另一个工具 `recruitment_transcript_read`。
+**裁定**：**单独立契约**（S10 的后半），本批不做。登记待办。
+
+### D-65 · 打包 0006：四个 schema 缺口
+
+P 线报的缺口里，有四个必须修，打包进 `0006`：
+
+| # | 缺口 | 修法 |
+|---|---|---|
+| 1 | `interview.stage_code` 默认 `'INTERVIEW'`，不在 S1–S12 且无外键 | 改默认 `'S8'` + 加外键到 `stage_catalog` |
+| 2 | `execution_mandate` 的 CHECK **没禁 `submit_scorecard`** → agent 代填面评库层不拦 | 扩展 CHECK 禁止 `submit_scorecard` |
+| 3 | `fk_interview_record_artifact` **未带 tenant_id** → 跨租户引用 artifact 可能成立 | 改成含 tenant_id 的复合外键 |
+| 4 | `business_task` 无 `owner_actor_id`（D-59） | 加可空外键 |
+
+**加上 D-54**（下游三张表的 rubric 引用）——它是设计决策（无 job_id 列，需生成列或触发器），**单独 0007**，不混进 0006。
+
+### D-66 · P 线裁决中我直接认可的（不再讨论）
+
+以下 P 线自己裁决的条款，我认可并写进权威：
+- 改期 = 改同一行（`uq_interview_slot` 物理禁止两条）
+- `RESCHEDULED` 的唯一语义 = 当前无有效时间
+- 取消后重排只能走 `RESCHEDULE`
+- 只有 `required_scorecard=true` 的面试官占时段
+- 绑不上会议不拒绝排期，工具**不做任何外部写**
+- v1.0 只接受 `VIDEO`，其余报 `UNSUPPORTED_DELIVERY_MODE`
+- `NO_TRANSCRIPT` 只挂在 `get.require_transcript`，不挂 `schedule`
+- `transcript_artifact` 一行 = 一次完整回读快照，**不插占位行**
+- `NEEDS_VISUAL` 只作 `business_task.error_code`，不进枚举
+- **一场面试可以有多个会议**（库只在 meeting 侧唯一）
+
+---
+
+## 第十五批裁定 · 模型兜底（2026-11-13 03:40）
+
+### D-67 · `provenance` 枚举扩为四值，`model_read` 单列
+
+**问题（M 线）**：doc 11 D2 的三元组是 `native_text | ocr_title | agent_read`，但模型兜底产出的是"模型看图转录"，与 `agent_read`（Agent 读）语义不同。M 线做了双标 `provenance="model_read"` + `source_class="agent_read"`，但下游若 `switch(provenance)` 把未知值当"可自动合并"，D3 红线会漏。
+
+**裁定**：**枚举扩为四值**：`native_text` / `ocr_title` / `model_read` / `agent_read`。
+**并且**：D3 红线（身份类字段不得驱动自动合并）明确点名 **`ocr_title` / `model_read` / `agent_read` 三者全部适用**，只有 `native_text` 且格式校验通过才可自动。
+
+### D-68 · 渲染按源图 dpi 提示，超大页分块
+
+**问题（M 线实测）**：`image_only_1.pdf` 是 2480×3507 **pt** 的巨型页、内嵌图等效 **72 dpi**。默认 200 dpi 产出 6889×9742（67MP、2.19MB、1.07s）。视觉端点通常把长边压到 ≤4000，压回去正好抹掉要读的小字。
+
+**裁定**：
+1. 渲染 dpi 以 **`source_dpi_hint`** 为准（本例 72 就够），**不把 dpi 当性能旋钮**
+2. 长边 > 4000px 时**分块渲染**（上下或四宫格），不是硬提 dpi
+3. 分块必须记录块坐标，合并时按坐标拼回
+
+### D-69 · 顺序不可信页不合并模型文本
+
+**问题（M 线）**：顺序不可信的页原生文本完整，追加模型文本后同一页有两份内容 → 重复正文。
+**裁定**：模型兜底**只用于"没有可用原生文本"的页**（`pdf_no_text` / `unread_visual_page` / `pdf_text_encoding_unread`）。顺序不可信但文本完整的页，**不合并**。
+
+### D-70 · M 线状态如实登记
+
+**BLOCKED 两项**：
+1. 真实模型链路（余额不足，0 次真实读取）→ doc 12 §2③ 的"必须用真实 Agent 跑"**未做**
+2. 未接线（写范围只有 `fallback/`）
+
+**未证**：图像页无原生文本可比，`overlap=null` → 只能证"没编造、没坏字形、没越界"，**不能证读对了**。
+**裁定**：这三条写进权威，**不得**把该层标为"③层已通过"。
+
+---
+
+## 附录 A · 2026-11-13 起新增的裁定
+
+> 格式：裁定 / 理由 / 证据。证据一律给 `文件:行` 或命令输出，不给"我记得"。
+
+### D-71 · 领域写路径用 TypeScript + node-postgres（`pg`），不做 Python sidecar
+
+**裁定**：招聘域的业务写入实现在 `dsh/dsh-recruitment` 插件内，用 `pg@^8.23.1` 连 PG。
+Python 只保留在它本来就是正确工具的地方：PDF 解析（PyMuPDF）、OCR（仅标题）、页面渲染。
+
+**理由**：DSH 插件是产品面，业务逻辑不该被拆到子进程；一次工具调用起一个 Python 进程
+（~150ms）在演示规模能忍，但会让"一个领域规则"变成"两套实现"。代价是本包不再是零依赖。
+
+**证据**：`dsh/dsh-recruitment/CONTRACT.md:44-49`；commit `677a70a`；
+实测从本包目录连 PG 17.11 → `select count(*) from recruitment.stage_catalog` = 12 行。
+
+### D-72 · S6「简历接入」必须有自己的工具
+
+**裁定**：新增写工具 `recruitment_application_intake`，按 `contracts/identity/` 的规则建
+`candidate` + `application`。决策类写入（advance/reject）仍然只能由人经
+`recruitment_decision_record` 落库。
+
+**理由**：11 个契约工具里没有任何一个创建 candidate/application，而
+`recruitment_screening_evaluate` 明确只读、只吃 `application_id`。不补这个工具，链路在 S6→S7 断开。
+
+**证据**：`dsh/dsh-recruitment/contracts/job-screening/tool-contracts.md:12-20`（"只读 / advisory / 不落决策"）。
+
+### D-73 · 阶段码唯一口径 = `stage_catalog`（S1–S12），老仓 `handoff/15` 的编号不是阶段码
+
+**裁定**：S6=简历接入、S7=初筛、S8=面试规划与排期、S9=面试执行与材料获取、
+S10=综合评价与招聘决策、S11=Offer 与入职交接。契约里凡写成 S8=筛选 / S11=评价决策的，
+**全部改**。老仓 `work/handoff/15-architecture-hv.md` 的 S7 身份解析 / S8 筛选 / S11 评价决策
+是**架构编号**，不是阶段码，不得再用。
+
+**理由**：`stage_catalog` 是唯一被外键强制的口径（`application.current_stage_code` → 0004）；
+D-22 原文也是按生命周期编号写的（"S6（简历接入）与 S7（初筛）"）。
+
+**证据**：`db/migrations/0002_seed.sql:242-243`；`docs/01-business-lifecycle.md:138/152/186`；
+`db/STAGE-CATALOG.md`；`contracts/STAGE-CODES.md`。
+
+### D-74 · `scorecard.items` 是**对象**，不是数组
+
+**裁定**：`items` = 以 rubric 准则 key 为键的对象，保留键 `transcript_basis`；
+证据 kind 用 `SEGMENT`（不是 `TRANSCRIPT_SEGMENT`）。
+
+**理由**：① 已提交的 `interview/transcript-rules.md` TR-E2/TR-E3 与
+`interview/tool-contracts.md` 两处依赖对象形态；② 对象天然能检出"漏评一维"（key 缺失），
+数组要扫描且允许重复 key。
+
+**证据**：`contracts/interview/transcript-rules.md:320-321`；`contracts/interview/tool-contracts.md:209`。
+
+### D-75 · 0007 的范围（决策与面评的完整性缺口）
+
+**裁定**：0007 修五处：
+1. `decision.stage_code` 补外键（照 0006 的 `fk_interview_stage_catalog`）；
+2. `decision` 的 current 唯一性（部分唯一索引，`stage_code` 可空 → 必须处理 NULL）；
+3. `scorecard.rubric_version_id` 必须绑到**该申请的那个岗位**的 rubric；
+4. `ai_summary.fk_ai_summary_artifact` 补 tenant_id（同 0006 GAP-3 的改法）；
+5. 直接 INSERT 终态行绕过 `status_changed_by_actor_id`（先实测是否真能绕，能才改）。
+
+**理由**：这五处都是"错误写法在库层不报错"，与 0006 同一判据。
+特别是第 2 条：`decision` 现在**没有任何唯一约束**，两条互相矛盾的 FINAL 决策可以并存。
+
+**证据**：实测 `decision.stage_code` 的外键数 = 0；全库仅剩 `ai_summary.fk_ai_summary_artifact`
+一条多列外键不含 tenant_id；`decision` 只有 PK 与若干 FK，无 unique。
+
+### D-76 · 0006 GAP-4 用复合外键，收紧 D-59 的字面
+
+**裁定**：`business_task.owner_actor_id` 的外键是 `(owner_actor_id, tenant_id) → actor(id, tenant_id)`，
+不是 D-59 字面的单列。
+
+**理由**：单列会让甲租户任务的"责任人"指向乙租户的 actor，工作台按 actor 过滤时跨租户可见。
+强度严格更强，D-59 要拦的"指向不存在 actor"照样 23503，可空语义不变。
+
+**证据**：`db/migrations/0006_integrity_gaps.sql` §4；`db/verify-0006.sql` G4-01/02/03。
+
+### D-77 · 0006 GAP-3 沿用原约束名
+
+**裁定**：`fk_interview_record_artifact` 改成 3 列后**不改名**。
+
+**理由**：库里只有一条"面试记录→转写版本"外键，改名会让 `SCHEMA.md` 与台账里的名字指向不存在的约束。
+
+**证据**：`db/INTEGRITY-GAPS.md` §5。
+
+### D-78 · 新建租户必须先种 `stage_catalog` 再插面试
+
+**裁定**：任何夹具 / 测试 / 新租户初始化，只要会插 `interview`，必须先把 12 行阶段目录种进该租户。
+
+**理由**：0006 给 `interview.stage_code` 加了 `(tenant_id, stage_code)` 外键；默认值 `'S8'`
+只保证"给了一个合法值"，救不了"该租户目录没种"。这是最可能在集成时炸的一条。
+
+**证据**：`db/migrations/0006_integrity_gaps.sql` §1；`db/verify-0006.sql` G1-01/02/03。
+
+### D-79 · 人类闸门复用 DSH 的审批 seam，不自研
+
+**裁定**：写人类动作的工具（S7 决策 / S8 排期 / S10 面评与决策）必须
+`inject: ['tools', 'approval']`，在写库**之前**调 `ctx.approval.request({agent, tool, callId, reason, signal})`：
+`allow` 才写库，`decided_by_actor_id` 取**审批人**映射的本地 actor，**绝不取模型入参**；
+`deny` / `unavailable` / `cancelled` → `BLOCKED_BY_APPROVAL`，不写任何行。
+
+**理由**：`execute(args, exec)` 的 `exec` 只有 `callId` / `agent?` / `signal` / 传输 token，
+**没有"人还是 agent"的信息**。靠工具自己判断等于没有保证。
+DSH 自带 `@deepseek-ai/dsh-user-approval`（fail-closed）；headless profile 只有 seam 没有 UI →
+请求一律 `unavailable` → 拒绝。于是"无人值守跑批不可能落决策"是**结构性**的，不是纪律性的。
+
+**证据**：`dsh-tools/lib/types/index.d.ts` 的 `ToolExecutionInput`；
+`dsh --profile recruitment --dump-config` → `- id: approval` + `- id: ui-approval`；
+`docs/18-golden-path.md` §6。
+
+**未做到**：审批人 → `actor_id` 的映射还没实现（v1.0 单用户，取配置里的本地 actor）。
+
+### D-80 · v1.0 不做 `decision` 的客户端幂等键
+
+**裁定**：取消"同一 idempotency key 重试返回同一条决策"这个承诺。
+并发与重复的防线改为：`(tenant_id, application_id, decision_scope, stage_code)` 只有一条 current
+（0007 的部分唯一索引），冲突 → 23505 → 工具报 `ALREADY_DECIDED`。
+文档里"靠 `SELECT … FOR UPDATE` 防双插"的说法删掉——**它锁不到不存在的行**。
+
+**理由**：`decision` 表没有可落幂等键的列；加列要迁移；而"重试同一请求"在工具调用里没有语义。
+承诺一个实现不了的幂等比不承诺更糟。
+
+**证据**：`decision` 表无 unique（实测）；`contracts/evaluation/decision-rules.md` DC-38/DC-41 待改。
+
+### D-81 · 模型兜底的"读"由 agent 自己承担，不另起模型调用
+
+**裁定**：`converter/fallback` 的 A（页面渲染）、D（校验）、E（合并）保留复用；
+**B（`model_reader` + `pipeline` 的模型调用）在 DSH 里是多余的** —— agent 自己就是模型，
+它有视觉能力，应该由插件把页面图交给它读，而不是插件内部再调一次模型。
+
+**理由**：在插件里调模型需要一套独立凭据与配额，且模型看不到工具之外的上下文；
+而 agent 本来就在会话里。这符合"复用优先、不重复造模型通道"。
+
+**证据**：`converter/fallback/model_reader.py`（`model_call` 只能注入，包内无 provider SDK）；
+`converter/fallback/README.md` §接线状态（BLOCKED：未接线）。
+
+### D-82 · 契约里的 `work/control/…` 引用一律改指本文件
+
+**裁定**：契约中所有 `work/control/DECISIONS-2026-11-12.md:<行号>` 与
+`work/decisions/DECISIONS-2026-11-12.md` 的引用，统一改成
+`docs/17-decision-ledger.md` + 裁定编号（**去掉行号**）。
+
+**理由**：`work/control/` 在新仓从未存在（实测 `Test-Path` = False），`work/` 也不入库；
+行号会随追加漂移。
+
+**证据**：全仓 27 处引用，其中 20 处写的是 `work/control/`。
+
+### D-83 · 两条口径冲突的裁定
+
+**裁定**：
+1. **PRD FR-V4（原始备注保护）vs 契约 SC-36（全租户可见）不冲突**：前者管**不可覆盖**
+   （`trg_*_immutable`），后者管**可见性**。D-33 的"全局可见 + 个人工作台"继续有效。
+2. **PRD FR-V8（Brief 需下一轮已创建并版本化）vs DC-41/42**：**D-16 赢** ——
+   Brief 派生不落表，v1.0 不版本化。FR-V8 按 v2 处理，不阻塞 v1.0。
+
+**证据**：`docs/16-design-rationale.md` §6（D-33）；D-16 正文见本文件 §C 线；
+`db/migrations/0001_init.sql` 的 `trg_*_immutable`。
+
+---
+
+## 附录 B · 引用路径修正（2026-11-13）
+
+| 之前写的 | 实际情况 | 改成 |
+|---|---|---|
+| `work/control/DECISIONS-2026-11-12.md:<行号>`（20 处） | 该目录**在本仓库从未存在** | `docs/17-decision-ledger.md` + 编号 |
+| `work/decisions/DECISIONS-2026-11-12.md` | 曾是 82 行残本（前 82 行） | 同上；残本已不再作为权威 |
+| `work/handoff/15-architecture-hv.md` | 新仓未收录（只在旧仓） | 不再作为阶段码依据，见 D-73 |
+
+**旧仓位置**（只读参考，不要在里面开发）：
+`D:\12412\dsh工作区\projects\recruitment-os\work\control\DECISIONS-2026-11-12.md`
