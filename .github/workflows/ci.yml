@@ -22,12 +22,28 @@ jobs:
       - name: Compile converter/src
         run: python -m compileall -q converter/src
 
-      - name: Run converter tests (skip when none exist)
+      # No test net means RED, not "success with a notice". A green check that
+      # skipped every assertion is the exact failure mode this project has been
+      # burned by before (105/170 silently skipped while `pnpm test` exited 0).
+      - name: Require a test net
         run: |
           set -euo pipefail
-          if [ -d converter/tests ] && [ -n "$(find converter/tests -type f \( -name 'test_*.py' -o -name '*_test.py' \) -print -quit)" ]; then
-            python -m pip install --quiet --upgrade pip pytest
-            python -m pytest converter/tests -q
-          else
-            echo "::notice title=No tests::converter/tests has no test files — pytest skipped (skip, not pass)."
+          if [ ! -d converter/tests ] || [ -z "$(find converter/tests -type f \( -name 'test_*.py' -o -name '*_test.py' \) -print -quit)" ]; then
+            echo "::error title=No test net::converter/tests contains no test files. CI stays red until the converter ships tests."
+            exit 1
           fi
+
+      - name: Run converter tests
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet --upgrade pip pytest
+          python -m pytest converter/tests -q
+
+      - name: Verify corpus manifest is portable
+        run: |
+          set -euo pipefail
+          if grep -rn --include='*.jsonl' -e 'D:\\' -e 'C:\\' converter/corpus; then
+            echo "::error title=Machine path in manifest::Corpus manifests must use root+rel, never a machine-absolute path."
+            exit 1
+          fi
+          echo "corpus manifests contain no machine-absolute paths"
