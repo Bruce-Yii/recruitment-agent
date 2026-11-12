@@ -1,0 +1,27 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# ---- Node ----
+node_modules/
+
+# ---- 语料：合成难例 PDF 体积大、可重建，不入库 ----
+converter/corpus/synthetic/*.pdf
+
+# ---- 凭据 / 环境 ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- OS / 编辑器 ----
+.DS_Store
+Thumbs.db
+desktop.ini

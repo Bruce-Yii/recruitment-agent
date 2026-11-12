@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  converter:
+    name: converter (compile + tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile converter/src
+        run: python -m compileall -q converter/src
+
+      - name: Run converter tests (skip when none exist)
+        run: |
+          set -euo pipefail
+          if [ -d converter/tests ] && [ -n "$(find converter/tests -type f \( -name 'test_*.py' -o -name '*_test.py' \) -print -quit)" ]; then
+            python -m pip install --quiet --upgrade pip pytest
+            python -m pytest converter/tests -q
+          else
+            echo "::notice title=No tests::converter/tests has no test files — pytest skipped (skip, not pass)."
+          fi
