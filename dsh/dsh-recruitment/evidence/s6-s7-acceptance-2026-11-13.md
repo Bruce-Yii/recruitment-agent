@@ -38,6 +38,19 @@ dsh --profile rec-agent-test "<读契约 → serialize → 结构化 → validat
 **第 3–5 步是 Gate B 的核心证据**：校验器真的拒绝了模型两次，模型按 rejections 改对才通过。
 这不是"测试替身全过"，也不是"模型说什么就是什么"。
 
+> **⚠️ 2026-11-13 02:47 更正（重要）**：上表这两次拒绝，**根因是校验器过度严格，不是模型的错**。
+> 契约 `$comment` 第 (3) 条只要求「字段级 `block_ids` 是条目 `block_ids` 的超集」，
+> 并没有要求字段级列表**必须相邻**；而旧校验器把"值匹配必须连续"这条规则错误地套到了字段级列表上。
+> 模型给出的形状（`sections` 里含 `{label:"education", block_ids:["26"], ignored:{reason:"empty_or_symbol_only"}}`、
+> `fields.education.block_ids=["24","25","30"]`）**是契约合法的**，却被判 `BLOCK_IDS_NOT_CONSECUTIVE`。
+> 模型随后"通过"的方式是把 26 从 `ignored` 里拿出来——那是**违反 prompt §4.1（符号块必须 ignored）**换来的，
+> 不能算对齐。
+>
+> 修好之后（`validate.ts` 字段级列表改为只要求"升序不重复" + 新增 `BLOCK_IDS_NOT_SUPERSET` 补回强度），
+> **同一份契约合法形状第一次就 `accepted=true rejections=0`**，且 `ignored` 保住了。
+> 也就是说：Gate B 真正成立的是**改后**那一次，不是改前那一次。
+
+
 ---
 
 ## 3. 转换输出 ↔ 结构化结果 的证据对应
