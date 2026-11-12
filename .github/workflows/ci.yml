@@ -80,9 +80,33 @@ jobs:
   # 插件自己的测试。历史教训：68 条单测全绿，而 5 个工具从来没有被 DSH 运行时调用过，
   # 第一次真实调用就 INVALID_TOOL_OUTPUT。所以这里只保证"包内不坏"，
   # 真正的可达性证据在 dsh/dsh-recruitment/evidence/ 里（需要真实模型，不进 CI）。
+  #
+  # 集成测试需要真库（`ra_s6s7`）：所以这里起一个 postgres service、跑完 0001→0007 迁移再跑测试。
+  # 不能靠"没库就 skip"——那正是历史上 105/170 静默 skip 而 exit 0 的复发路径（R3）。
   plugin:
-    name: dsh plugin (node --test)
+    name: dsh plugin (node --test + postgres)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ra_s6s7
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: ra_s6s7
+      RECRUITMENT_DB_PASSWORD: postgres
+      RECRUITMENT_TEST_DB: ra_s6s7
     steps:
       - uses: actions/checkout@v4
 
@@ -93,6 +117,13 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 12
+
+      - name: Apply migrations for the plugin integration tests
+        run: |
+          set -euo pipefail
+          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity; do
+            psql -v ON_ERROR_STOP=1 -q -f "db/migrations/$f.sql"
+          done
 
       - name: Install plugin dependencies
         working-directory: dsh/dsh-recruitment

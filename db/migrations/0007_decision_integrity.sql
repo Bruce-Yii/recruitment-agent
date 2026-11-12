@@ -39,10 +39,13 @@
 --
 --  依赖：0001（decision / scorecard / ai_summary / transcript_artifact / actor）、
 --        0004（stage_catalog 的 12 行 + uq_stage_catalog_tenant_code +
---              uq_rubric_version_tenant_job_id）。
---        0006 提供了 uq_transcript_artifact_tenant_id_revision（GAP-D 的被引用键）；
---        若那一步没跑，本文件会按列集合判断后补建同名键（不重复建）。
+--              uq_rubric_version_tenant_job_id）、
+--        0006（既提供 GAP-D 的被引用键 uq_transcript_artifact_tenant_id_revision，
+--              也把 interview_record 的同型 2 列外键补成 3 列 —— §6.9 的"全库多列外键
+--              必须含 tenant_id"断言以它为前提；0006 没跑时 §6.9 会 raise）。
 --        0002 / 0003 / 0005 与本文件无交集，可选。
+--        若 0006 只跑了 GAP-3 之外的段、被引用键不在位，§4.2 会按列集合判断后补建
+--        同名键（不重复建）—— 这是兜底，不改变"0006 是必需依赖"这一事实。
 --
 --  执行：psql -v ON_ERROR_STOP=1 -f db/migrations/0007_decision_integrity.sql
 --        不要加 -1（本文件自带 begin/commit）。

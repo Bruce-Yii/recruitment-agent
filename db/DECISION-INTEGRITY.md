@@ -29,9 +29,11 @@ psql -v ON_ERROR_STOP=1 -d ra_v7 -f db/verify-0007.sql
 ```
 
 依赖：`0001`（decision / scorecard / ai_summary / transcript_artifact / actor）+
-`0004`（stage_catalog 12 行、`uq_stage_catalog_tenant_code`、`uq_rubric_version_tenant_job_id`）。
-`0006` 的 `uq_transcript_artifact_tenant_id_revision` 是 GAP-D 的首选被引用键；
-若 0006 没跑，0007 会按列集合判断后补建同名键（不重复建）。
+`0004`（stage_catalog 12 行、`uq_stage_catalog_tenant_code`、`uq_rubric_version_tenant_job_id`）+
+`0006`（`uq_transcript_artifact_tenant_id_revision`，以及把 `interview_record` 的同类 2 列外键
+修成 3 列 —— `verify-0007.sql` DATA-07 的"全库多列外键必须含 `tenant_id`"以它为前提）。
+`0002 / 0003 / 0005` 与本文件无交集。若 0006 的被引用键不在位，0007 §4.2 会按列集合判断后
+补建同名键（不重复建），但这只是兜底，不改变"0006 是必需依赖"。
 
 ---
 
@@ -535,4 +537,5 @@ psql -v ON_ERROR_STOP=1 -d ra_v7 -f db/verify.sql
 3. **`interview_record.rubric_version_id`**（§8 第 3 条）：是否在同一批补上 GAP-C 的同型绑定？
 
 > 另：`db/verify.sql` 的夹具在 0007 之后必须用目录内的 `stage_code`。
-> 工作区里那一行已经从 `'INTERVIEW'` 改成 `'S8'`（`git diff` 1 行）；该文件不在 0007 的写范围内。
+> 那一行已经从 `'INTERVIEW'` 改成 `'S8'`（1 行），并已随 0007 的提交一起入库；
+> 该文件不在 0007 的写范围内。
