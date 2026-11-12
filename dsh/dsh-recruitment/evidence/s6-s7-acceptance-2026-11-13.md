@@ -139,27 +139,32 @@ application bc2f582b  created 02:41:41  source_asset_sha256 ead23e7999e7
 
 ---
 
-### 7.3 结构化结果落库：只在一个**回滚事务**里证明过，committed 行没有（P0-2）
+### 7.3 结构化结果落库：committed 行**有**，但 D-29 的"unreadable→present 升级"只证到回滚事务
 
-我的验收运行里，`recruitment_application_intake` 返回的是 **`replayed`**（`created=false`）——
-因为同一 `(source_asset_sha256, job_id)` 在 18:41:41Z 已经被前一次 headless 建过。
-也就是说：**那条 committed 的 `resume_version` 里没有 Agent 的结构化结果**。
+> **2026-11-13 03:02 第二次更正**：本节最初写"committed 行里没有结构化结果"，**又错了**。
+> 查 committed 行 `resume_version 31ced60b`（application `bc2f582b`，18:41:41Z 建）：
+> `parsed_fields.structured.source=agent_structured`、`validated=true`、`block_index_entries=47`、
+> `phone.state_source=agent_structured`、`converter_state=present`、`agent_evidence=3` 条。
+> **结构化结果确实落库了，而且是 committed 的。**
 
-"结构化结果真的能写进库"这件事，只在一次**必回滚的事务**里证明过（临时 job 一起回滚）：
+我的验收运行返回 `replayed`（`created=false`）只说明**这一次没新写**，不代表库里没有。
+真正只证到回滚事务的是**另一件事**：D-29 的"转换器 `unreadable` → 模型 `present` 且有逐字证据"
+这个升级方向。committed 那条的 `phone` 转换器本来就是 `present`，所以升级路径没被 committed 证明。
+
+回滚事务里的升级证据（临时 job 一起回滚）：
 
 ```
 created=true  structured.source=agent_structured  validated=true  block_index_entries=47
 education: state=present  state_source=agent_structured  converter_state=unreadable
-           block_ids=[23,24,25,27,28,29,30]  evidence_count=7  agent_evidence=10
+           block_ids=[23,24,25,27,28,29,30]  entry_count=1  evidence_count=7
+           agent_evidence: block 24/25/30…
 TRANSACTION ROLLED BACK
 ```
 
-这是 D-29 的正确方向（转换器 `unreadable` → 模型 `present` 且有逐字证据 → 最终 `present`，
-另存 `converter_state=unreadable`），但**它不是 committed 证据**。
-
-根因是"先接入、后结构化"的顺序：replay 命中时直接返回，不会把 structured 补写进已存在的
-`resume_version`（版本行不可变 + 幂等）。要闭合必须做一个产品级选择：
+**仍然成立的问题**：replay 命中时直接返回，不会把 structured 补写进已存在的 `resume_version`
+（版本行不可变 + 幂等）——"先接入、后结构化"的顺序下结构化结果会丢。这条要产品级选择：
 更新旧 version / 建新 version / 要求首次就带 structured。
+
 
 ### 7.4 字段升级后 S7 会报 `SCREENING_INDEX_INCONSISTENT`（P1）
 
