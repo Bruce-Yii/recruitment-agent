@@ -121,7 +121,7 @@ jobs:
       - name: Apply migrations for the plugin integration tests
         run: |
           set -euo pipefail
-          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity; do
+          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity 0008_decision_uniqueness; do
             psql -v ON_ERROR_STOP=1 -q -f "db/migrations/$f.sql"
           done
 
@@ -163,7 +163,7 @@ jobs:
       - name: Apply migrations 0001..0006
         run: |
           set -euo pipefail
-          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity; do
+          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity 0008_decision_uniqueness; do
             echo "== $f"
             psql -v ON_ERROR_STOP=1 -q -f "db/migrations/$f.sql"
           done
@@ -171,7 +171,7 @@ jobs:
       - name: Verify every migration
         run: |
           set -euo pipefail
-          for f in verify-0003 verify-0004 verify-0005 verify-0006 verify-0007 verify; do
+          for f in verify-0003 verify-0004 verify-0005 verify-0006 verify-0007 verify-0008 verify; do
             echo "== $f"
             psql -v ON_ERROR_STOP=1 -q -f "db/$f.sql"
           done
