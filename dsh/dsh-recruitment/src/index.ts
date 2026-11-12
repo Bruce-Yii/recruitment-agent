@@ -16,6 +16,7 @@ import type { ReadonlyToolDefinition } from './tools/definition.ts'
 import { candidateGetTool } from './tools/candidate-get.ts'
 import { jobGetTool } from './tools/job-get.ts'
 import { createResumeReadTool } from './tools/resume-read.ts'
+import { createResumeSerializeTool, createStructureValidateTool } from './tools/structure-tools.ts'
 import { resolveConverterConfig, type ConverterConfig } from './tools/converter.ts'
 import { RecruitmentToolError } from './tools/errors.ts'
 
@@ -73,9 +74,14 @@ export function apply(ctx: Context, config?: Config): void {
   const resumeRead = resolved === null
     ? unconfiguredResumeReadTool(issues)
     : createResumeReadTool(resolved)
-  const tools: readonly ReadonlyToolDefinition[] = [resumeRead, candidateGetTool, jobGetTool]
+  // 结构化层两端：序列化（给模型看）与校验（防幻觉）。未配置时也注册，调用报 NOT_CONFIGURED。
+  const structureTools = resolved === null
+    ? []
+    : [createResumeSerializeTool(resolved), createStructureValidateTool(resolved)]
+  const tools: readonly ReadonlyToolDefinition[] = [resumeRead, ...structureTools, candidateGetTool, jobGetTool]
   for (const tool of tools) {
     // register() 返回的 disposer 由所在 fiber 接管：插件卸载即注销。
     ctx.tools.register(tool)
   }
 }
+

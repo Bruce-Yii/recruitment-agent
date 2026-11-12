@@ -46,7 +46,8 @@ const DEFAULT_MAX_BLOCKS = 40
 
 interface FieldValue {
   readonly state: string
-  readonly value: string | null
+  /** 只有 state === 'present' 时才出现；absent / unreadable 时整个键省略。 */
+  readonly value?: string
   readonly reason: string
   readonly evidence: readonly {
     readonly page: number
@@ -201,17 +202,25 @@ function toFieldValue(raw: ConverterOutput['fields'], name: string): FieldValue 
   }))
   if (state !== 'present' && state !== 'absent' && state !== 'unreadable') {
     // 转换器没给出可识别状态时，按 unreadable 处理：绝不当成 absent。
-    return { state: 'unreadable', value: null, reason: 'state_missing_from_converter', evidence }
+    return { state: 'unreadable', reason: 'state_missing_from_converter', evidence }
   }
-  return {
+  // value 只在 present 时存在。用「省略」而不是 null 表达「没有值」：
+  // 输出 schema 的 value 是 type:string，而 DSH 的校验器不支持 type 数组
+  // （dsh-tools/lib/types/json-schema.js:245「type arrays are not supported」），
+  // 写 null 会让整个工具调用以 INVALID_TOOL_OUTPUT 失败——这正是 2026-11-13
+  // 第一次真实 headless 调用暴露的缺陷。状态本身已由 state 三元组表达。
+  const base = {
     state,
-    value: typeof entry?.value === 'string' ? entry.value : null,
     reason: typeof entry?.reason === 'string' ? entry.reason : '',
     evidence,
   }
+  return state === 'present' && typeof entry?.value === 'string'
+    ? { ...base, value: entry.value }
+    : base
 }
 
-function toValue(output: ConverterOutput, maxBlocks: number, wanted?: readonly string[]): ResumeReadValue {
+/** 导出只为测试：这是「转换结果 → 工具规范输出」的纯映射，没有 I/O。 */
+export function toValue(output: ConverterOutput, maxBlocks: number, wanted?: readonly string[]): ResumeReadValue {
   const allBlocks = (output.blocks ?? []).map((block, index) => ({
     index,
     type: typeof block.kind === 'string' ? block.kind : 'paragraph',
@@ -287,7 +296,7 @@ export function createResumeReadTool(cfg: ResolvedConverterConfig): ReadonlyTool
           const where = f.evidence.length > 0
             ? ` @p${f.evidence[0].page}`
             : ''
-          lines.push(`  ${name}: ${f.state}${f.value === null ? '' : ` = ${f.value}`}`
+          lines.push(`  ${name}: ${f.state}${f.value === undefined ? '' : ` = ${f.value}`}`
             + `${f.reason === '' ? '' : ` (${f.reason})`}${where}`)
         }
         if (v.screening.blocked_fields.length > 0) {
