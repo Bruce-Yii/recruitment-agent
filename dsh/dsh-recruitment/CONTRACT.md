@@ -41,6 +41,13 @@ code: 'ERR_MODULE_NOT_FOUND'
 不引入任何依赖：`package.json` 没有 `dependencies` / `peerDependencies`，运行时只 import
 本包自己的相对路径文件。
 
+> **2026-11-13 修正（D-71）**：上句已不再成立。领域写路径定为 TypeScript + node-postgres，
+> 本包现在有**唯一一个**运行时依赖 `pg@^8.23.1`（`pnpm add pg`，实测可连 PG 17.11）。
+> 理由：DSH 插件是产品面，业务逻辑不该被拆到 Python sidecar；Python 只保留在它本来就是
+> 正确工具的地方（PDF 解析 / OCR / 页面渲染）。`@deepseek-ai/dsh-tools` 仍然 import 不到
+> （见上面那段实测），所以工具定义仍走原始 `ToolDefinition`。
+> 注意：`pg` 只在本包自己的 `node_modules` 里，`link:` 安装时从本包真实路径解析，可用。
+
 ---
 
 ## 1. 插件形态

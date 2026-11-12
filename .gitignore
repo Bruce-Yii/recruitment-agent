@@ -14,6 +14,9 @@ node_modules/
 # ---- 语料：合成难例 PDF 体积大、可重建，不入库 ----
 converter/corpus/synthetic/*.pdf
 
+# ---- 过程产物：不入库（决策台账已迁到 docs/17，可入库的那份在 docs/）----
+work/
+
 # ---- 凭据 / 环境 ----
 .env
 .env.*
