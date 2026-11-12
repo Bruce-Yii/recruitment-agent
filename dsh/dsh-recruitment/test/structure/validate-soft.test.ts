@@ -59,7 +59,7 @@ test('S4 只有月份倒挂（同年）不算倒挂：规则按「年份」判',
   const doc = serialize({ blocks: [{ kind: 'paragraph', text }] })
   const result = validate({
     result: resultOf([
-      section('work', {
+      section('work_experience', {
         block_ids: [1],
         entries: [
           {
@@ -86,7 +86,7 @@ test('S5 部分重叠（不是完全包含）不报 -> 不误报', () => {
   const doc = serialize({ blocks: [{ kind: 'paragraph', text }] })
   const result = validate({
     result: resultOf([
-      section('work', {
+      section('work_experience', {
         block_ids: [1],
         entries: [
           {
@@ -116,3 +116,4 @@ test('S5 部分重叠（不是完全包含）不报 -> 不误报', () => {
   assert.equal(result.accepted, true, JSON.stringify(result.rejected))
   assert.equal(result.stats.soft, 0, JSON.stringify(result.issues))
 })
+

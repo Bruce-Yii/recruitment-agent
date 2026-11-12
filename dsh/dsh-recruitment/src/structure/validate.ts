@@ -37,16 +37,21 @@ import type { BlockIndex, BlockIndexEntry, SourceBlock } from './serialize.ts'
 import { BLOCK_INDEX_VERSION, NEWLINE_ESCAPE, sha256Hex, toCodePoints } from './serialize.ts'
 
 /** 允许的 section 标签（封闭集合；表外标签一律拒绝，不静默归类）。 */
+// 与 contracts/schema.json 的 $defs.section.label 逐字一致（13 个，D-26 允许 research）。
+// 契约是模型看到的那一份，校验器必须服从契约，不能各用一套。
 export const SECTION_LABELS = [
-  'basic',
+  'contact',
   'summary',
-  'work',
-  'education',
+  'work_experience',
+  'internship',
   'project',
+  'research',
+  'education',
   'skill',
-  'certificate',
   'award',
-  'language',
+  'certificate',
+  'publication',
+  'self_evaluation',
   'other',
 ] as const
 
@@ -61,12 +66,13 @@ export type FieldState = (typeof FIELD_STATES)[number]
 
 /** 每个 section 必须出现的字段（省略 = 拒绝；没有就写 absent）。 */
 export const REQUIRED_SECTION_FIELDS: Readonly<Record<string, readonly string[]>> = {
-  basic: ['name', 'phone', 'email'],
+  contact: ['name', 'phone', 'email'],
 }
 
 /** 每个条目必须出现的字段（省略 = 拒绝）。 */
 export const REQUIRED_ENTRY_FIELDS: Readonly<Record<string, readonly string[]>> = {
-  work: ['company', 'title', 'start', 'end'],
+  work_experience: ['company', 'title', 'start', 'end'],
+  internship: ['company', 'title', 'start', 'end'],
   education: ['school', 'degree', 'start', 'end'],
 }
 
@@ -480,17 +486,36 @@ function createContext(index: BlockIndex, blocks: readonly (SourceBlock | string
   return ctx
 }
 
+/**
+ * 解析一个 block 引用。
+ *
+ * 契约（contracts/schema.json 的 $defs.block_id）用**字符串** `"12"` 对应输入的 `#12`（D-27）；
+ * 同时接受整数以兼容旧输出。空串、0、负数、带前导零、非数字一律返回 null（由调用方记 issue）。
+ */
+function parseBlockIdValue(raw: unknown): number | null {
+  if (typeof raw === 'number') {
+    return Number.isInteger(raw) && raw > 0 ? raw : null
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (!/^[1-9]\d{0,5}$/.test(trimmed)) return null
+    return Number(trimmed)
+  }
+  return null
+}
+
 /** 校验一个 block 引用是否存在（不改变覆盖状态）。 */
 function checkKnownBlockId(ctx: ValidationContext, raw: unknown, path: string): number | null {
-  if (typeof raw !== 'number' || !Number.isInteger(raw)) {
-    pushHard(ctx, 'UNKNOWN_BLOCK_ID', `block id must be an integer, got ${showValue(raw)}`, path)
+  const id = parseBlockIdValue(raw)
+  if (id === null) {
+    pushHard(ctx, 'UNKNOWN_BLOCK_ID', `block id must be a positive integer or numeric string, got ${showValue(raw)}`, path)
     return null
   }
-  if (!ctx.entries.has(raw)) {
-    pushHard(ctx, 'UNKNOWN_BLOCK_ID', `block id ${raw} is not in block_index`, path, raw)
+  if (!ctx.entries.has(id)) {
+    pushHard(ctx, 'UNKNOWN_BLOCK_ID', `block id ${id} is not in block_index`, path, id)
     return null
   }
-  return raw
+  return id
 }
 
 /**
@@ -506,11 +531,12 @@ function parseFieldCitation(
   const singleRaw = raw.block_id
   let single: number | null = null
   if (singleRaw !== null && singleRaw !== undefined) {
-    if (typeof singleRaw !== 'number' || !Number.isInteger(singleRaw)) {
-      pushHard(ctx, 'UNKNOWN_BLOCK_ID', `field ${path} block_id must be an integer, got ${showValue(singleRaw)}`, path)
+    const parsed = parseBlockIdValue(singleRaw)
+    if (parsed === null) {
+      pushHard(ctx, 'UNKNOWN_BLOCK_ID', `field ${path} block_id must be a positive integer or numeric string, got ${showValue(singleRaw)}`, path)
       return null
     }
-    single = singleRaw
+    single = parsed
   }
 
   const listRaw = raw.block_ids
@@ -522,11 +548,12 @@ function parseFieldCitation(
     }
     for (let i = 0; i < listRaw.length; i += 1) {
       const item = listRaw[i]
-      if (typeof item !== 'number' || !Number.isInteger(item)) {
+      const parsedItem = parseBlockIdValue(item)
+      if (parsedItem === null) {
         pushHard(
           ctx,
           'UNKNOWN_BLOCK_ID',
-          `field ${path} block_ids[${i}] must be an integer, got ${showValue(item)}`,
+          `field ${path} block_ids[${i}] must be a positive integer or numeric string, got ${showValue(item)}`,
           path,
         )
         return null
@@ -827,7 +854,7 @@ function checkEntry(
     }
   }
 
-  if (label === 'work') {
+  if (label === 'work_experience' || label === 'internship') {
     const start = checked.get('start')
     const end = checked.get('end')
     if (
@@ -1162,3 +1189,6 @@ export function validate(input: ValidateInput): ValidateResult {
     },
   }
 }
+
+
+

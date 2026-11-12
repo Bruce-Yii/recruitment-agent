@@ -103,7 +103,7 @@ export function basicDocument(): SerializedDocument {
 /** 一份**应该被接受**的结果：每个 block 恰好归入一个 section 或 ignore，硬规则全过。 */
 export function basicValidResult(): Record<string, unknown> {
   return resultOf([
-    section('basic', {
+    section('contact', {
       block_ids: [1, 2],
       fields: {
         name: field('张三', 1),
@@ -111,7 +111,7 @@ export function basicValidResult(): Record<string, unknown> {
         email: field('Zhang.San@Example.com', 2),
       },
     }),
-    section('work', {
+    section('work_experience', {
       // D-31：section.block_ids 是「这个 section 拥有哪些块」的唯一声明，
       // 条目的块必须也在里面（否则字段块的归属检查会拒）。
       block_ids: [3, 4, 5],
@@ -156,3 +156,4 @@ export function longEnglishText(sentences: number): string {
   }
   return parts.join('')
 }
+
