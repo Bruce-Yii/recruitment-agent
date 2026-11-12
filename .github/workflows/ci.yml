@@ -76,3 +76,130 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest converter/tests -q
+
+  # 插件自己的测试。历史教训：68 条单测全绿，而 5 个工具从来没有被 DSH 运行时调用过，
+  # 第一次真实调用就 INVALID_TOOL_OUTPUT。所以这里只保证"包内不坏"，
+  # 真正的可达性证据在 dsh/dsh-recruitment/evidence/ 里（需要真实模型，不进 CI）。
+  plugin:
+    name: dsh plugin (node --test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Install plugin dependencies
+        working-directory: dsh/dsh-recruitment
+        run: pnpm install --frozen-lockfile
+
+      - name: Run plugin tests
+        working-directory: dsh/dsh-recruitment
+        run: node --test
+
+  # 数据库：迁移链 + 每个迁移的自检 + 幂等。这一层是"业务真相归领域"的唯一执行点，
+  # 之前完全没有 CI 覆盖（全靠本机 psql 手跑）。
+  db:
+    name: db (migrations + verify + idempotency)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ra_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: ra_ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply migrations 0001..0006
+        run: |
+          set -euo pipefail
+          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps; do
+            echo "== $f"
+            psql -v ON_ERROR_STOP=1 -q -f "db/migrations/$f.sql"
+          done
+
+      - name: Verify every migration
+        run: |
+          set -euo pipefail
+          for f in verify-0003 verify-0004 verify-0005 verify-0006 verify; do
+            echo "== $f"
+            psql -v ON_ERROR_STOP=1 -q -f "db/$f.sql"
+          done
+
+      - name: 0006 must be idempotent (second run changes nothing)
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -q -f db/migrations/0006_integrity_gaps.sql
+          echo "second run OK"
+
+  # 转换层的两个"兜底"车道。fallback 不需要库（只渲染 + 校验 + 合并语义），
+  # review 需要库（队列状态机在 0003 的触发器里）。
+  python-lanes:
+    name: converter lanes (model fallback + human review)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ra_review_check
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: ra_review_check
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet -r converter/requirements.txt "psycopg[binary]>=3.2"
+
+      - name: Apply 0001..0003 for the review lane
+        run: |
+          set -euo pipefail
+          for f in 0001_init 0002_seed 0003_review_queue; do
+            psql -v ON_ERROR_STOP=1 -q -f "db/migrations/$f.sql"
+          done
+
+      - name: model fallback tests (no database)
+        working-directory: converter
+        run: python -m pytest fallback/tests -q
+
+      - name: human review tests (needs the database)
+        working-directory: converter
+        run: python -m pytest review/tests -q
+
