@@ -40,7 +40,7 @@
 
 ### 2.1 为什么 append-only
 
-- doc 12 **OBS-02**：同一文件跑两次 → **两条记录**，`source_sha256` 相同、`run_id` 不同。
+- doc 12 **OBS-02**：同一文件跑两次 → **两条记录**，`source_sha256` 相同、`id` 不同。
   所以 `source_sha256` **不能**建唯一约束——建了就等于「同一文件只能记录一次」，重跑会把历史挤掉。
 - doc 12 **OBS-03**：读取器崩溃 → `status=CRASHED`，「不是没有这条」。
   所以没有 `RUNNING` 状态：**调用结束（含监护进程补记）才写一行**，`finished_at` 必填，不存在半条记录。
@@ -51,7 +51,7 @@
 
 | 字段 | 说明 |
 |---|---|
-| `run_id` | 主键；**每次调用新生成**，不复用 |
+| `id` | 主键（D-36；原 `run_id`）；**每次调用新生成**，不复用 |
 | `tenant_id` | 0001 的全局约定（除 `organization` 外每表都有），带外键；也是 `review_queue` 复合外键的一半 |
 | `source_sha256` | 小写 64 位十六进制（`^[0-9a-f]{64}$`）；按文件查历史的 join key。**有索引**：`ix_conversion_run_sha (source_sha256, started_at desc)` |
 | `source_name` | **只存 basename**，不存绝对路径（路径常含候选人姓名/目录名，R7） |
@@ -104,7 +104,7 @@ doc 11 §1：「**未知 issue code 一律按 HARD 处理**」。
 
 | 约束 | 为什么 |
 |---|---|
-| `uq_review_queue_run (run_id)` | **一次失败只排一次队**。重复入队会让「入队率 100%」和「阻断率 100%」两个判据同时失真。重跑 = 新 `run_id` = 新条目，不是「同一条重开」 |
+| `uq_review_queue_run (run_id)` | **一次失败只排一次队**。重复入队会让「入队率 100%」和「阻断率 100%」两个判据同时失真。重跑 = 新 `id` = 新条目，不是「同一条重开」 |
 | `fk_review_queue_run (run_id, tenant_id)` | 复合外键：物理上不可能把甲租户的 run 排进乙租户的队列 |
 | `fk_review_queue_assignee (assignee, tenant_id)` | 受理人必须是**真实 actor**，且同租户；不许写一段自由文本当「负责人」 |
 | `ck_review_queue_corrected` | `CORRECTED` ⇒ `human_result` 非空（任务书硬要求；触发器先给 `QUEUE_CORRECTED_NEEDS_HUMAN_RESULT` 的可读报错） |
@@ -118,7 +118,7 @@ doc 11 §1：「**未知 issue code 一律按 HARD 处理**」。
 
 ### 3.2 不可变列（触发器强制，不是文档约定）
 
-- `item_id` / `run_id` / `tenant_id` / `opened_at` / `machine_result`：**一次写入，永不修改**。
+- `id` / `run_id` / `tenant_id` / `opened_at` / `machine_result`：**一次写入，永不修改**。
   最后一条是 HUM-05 的落点：人工补正**不许覆盖**机器结果，只能新增 `human_result`。
 - `deadline`：只能**延长**（`QUEUE_DEADLINE_NOT_EXTENDED`），已结案不许改（`QUEUE_DEADLINE_CLOSED`）。
   缩短 deadline 等于绕过 HUM-04 的升级计时，所以禁掉。
@@ -175,7 +175,7 @@ doc 11 §1：「**未知 issue code 一律按 HARD 处理**」。
 
 ### 4.4 `REPROCESS` 为什么是终态
 
-退回机器重跑后，**这一条就该关闭**（`closed_at` + `reason` 必填）。重跑产生新的 `run_id`；如果又失败，会得到**新的条目**。这样：
+退回机器重跑后，**这一条就该关闭**（`closed_at` + `reason` 必填）。重跑产生新的 `id`（新 run）；如果又失败，会得到**新的条目**。这样：
 
 - 每条条目只对应一次机器判定 → 审计序列无环；
 - `uq_review_audit_transition (item_id, to_status)` 可以把「同一个目标状态出现两次」直接判为 23505（重复/伪造）；
@@ -220,7 +220,7 @@ values ($tenant, $run_id,
 -- ③ 受理 / 补正 / 放行：都要带 record_version
 update recruitment.review_queue
    set status = 'IN_REVIEW', assignee = $human_actor
- where item_id = $item and record_version = $expected;      -- 0 行 = 被抢了，重读
+ where id = $item and record_version = $expected;      -- 0 行 = 被抢了，重读（D-36：主键列叫 id）
 ```
 
 ### 5.3 终态理由必须「本次给出」
@@ -380,18 +380,19 @@ $env:PGPASSWORD='123456'; $psql='D:\12412\PostgreSQL\bin\psql.exe'
 
 - **不改 0001**：本迁移只新增对象；`organization` / `actor` / `fn_block_delete` / `fn_guard_columns` 直接复用。
 - **沿用 0001 的约定**：`recruitment` schema、uuid 主键、`tenant_id NOT NULL` + 外键、状态用 `text + CHECK`、actor 用 `SET LOCAL`、历史禁删、幂等迁移。
-- **不沿用 `fn_row_guard`**：它假定主键列叫 `id`、每表有 `status_changed_*` 且要写 `event_inbox`。队列的「状态变更」语义是**队列状态机 + 人工审计**，不是业务对象的 `status` 轴；硬套会产生「每条队列表项都往事件表写事件」的噪声。所以本迁移用专用 guard（§4/§5），错误码前缀也独立（`QUEUE_*`）。
+- **不沿用 `fn_row_guard`**：它假定每表有 `status_changed_*` 且要写 `event_inbox`。队列的「状态变更」语义是**队列状态机 + 人工审计**，不是业务对象的 `status` 轴；硬套会产生「每条队列表项都往事件表写事件」的噪声。所以本迁移用专用 guard（§4/§5），错误码前缀也独立（`QUEUE_*`）。**D-47 已正式豁免这两张表**，`verify.sql` 的 `STRUCT-05` 现在把豁免理由写在断言里，并逐条断言真实守卫（`trg_conversion_run_immutable` / `trg_review_queue_before_update` / `trg_review_queue_audit`）存在。
+- **主键列名遵循 0001 的 `id` 约定（D-36）**：0003 曾用 `run_id` / `item_id` / `audit_id`，2026-11-13 按 D-36 改名 `id`，因此 `verify.sql` 的 `STRUCT-01` **不需要**任何放宽或 allowlist。
 - **依赖 0001 但不依赖 0002**：`0003` 前置检查会显式报 `MIGRATION_PRECONDITION`（而不是在某条 SQL 上莫名失败）。
 
-### 12.1 与 `db/verify.sql` 的两处冲突（**需要总控裁决，本迁移无权改 verify.sql**）
+### 12.1 与 `db/verify.sql` 的两处口径差 —— **已裁决并落地（2026-11-13）**
 
-`db/verify.sql` 里有两类**全局**结构断言，写的是 0001 的形状；0003 按任务书故意不同，因此现在跑 `verify.sql` 会在第一条就停：
+两条都曾让 `verify.sql` 停在第一条断言上。裁定见 `work/control/DECISIONS-2026-11-12.md`：
 
-| 断言 | 现状 | 冲突原因 | 最小改法（由 verify.sql 的属主改） |
-|---|---|---|---|
-| `STRUCT-01` | `exit 3`：`这些表的主键不是单列 id/event_id：review_queue, review_audit, conversion_run` | 任务书要求主键叫 `run_id` / `item_id` / `audit_id`；0001 假定一律 `id`（`event_inbox` 是唯一例外） | 把 `in (array['id'], array['event_id'])` 扩成 `..., array['run_id'], array['item_id'], array['audit_id']`（或直接放宽为「单列 uuid 主键」） |
-| `STRUCT-05` | 修掉上一条后报：`这些表有状态列但没有 fn_row_guard 触发器：conversion_run, review_queue` | 这两个表的状态语义不是业务对象的 `status` 轴：`conversion_run` 是 append-only（根本没有 UPDATE），`review_queue` 用专用状态机 + `review_audit`。硬套 `fn_row_guard` 会要求给它们加 `status_changed_*` 并向 `event_inbox` 写事件（**为了过检查而接一条永不执行的触发器**，属 R2 假接线） | 在该检查里排除 `conversion_run` / `review_queue`，注释说明它们由 `trg_conversion_run_immutable` / `trg_review_queue_before_update` / `trg_review_queue_audit` 覆盖 |
+| 断言 | 裁定 | 落地 |
+|---|---|---|
+| `STRUCT-01`（主键名只认 `id` / `event_id`） | **D-36**：0003 改成单列 `id`，**不开 allowlist、不放宽**（「运营表可以例外」一旦开口，以后每张新表都会要求例外） | `0003` 三张表主键改为 `id`（`ALTER ... RENAME COLUMN` 幂等升级块 + 新库直接建 `id`）；`verify.sql` 的 STRUCT-01 保持封闭白名单，并补上原先缺失的 **uuid 类型**断言 |
+| `STRUCT-05`（有 status 列的表必须有 `fn_row_guard`） | **D-47**：豁免 `conversion_run` / `review_queue`，但必须写明理由并指向各自真实守卫 | `verify.sql` 的 STRUCT-05 排除这两张表，并**逐条断言** `trg_conversion_run_immutable` / `trg_conversion_run_no_delete` / `trg_review_queue_before_update` / `trg_review_queue_audit` 存在 —— 豁免不是免检 |
 
-**实测**：把上面两处按最小改法改到一份**临时副本**（未改仓库里的 `verify.sql`）后，`verify.sql` 在同一库上 `VERIFY PASS`、`exit 0`、32/32 负向测试通过、禁删触发器 41 个。
+**实测（本机 PG 17，库 `ra_align`，2026-11-13）**：`0001 → 0002 → 0003 → 0004 → 0003（第二遍幂等）→ verify-0003 → verify-0004 → verify.sql` 全部 `exit=0`，`verify.sql` 结尾 `VERIFY PASS`（32/32 负向测试），`verify-0003.sql` 25/25 负向测试通过、收尾 `8 runs / 5 条目 / 12 条审计 / 1 条漏记`。
 
-> 这两条不是 0003 的缺陷，而是「0001 的全局断言」与「0003 的局部设计」之间的口径差。按 R5，口径必须由唯一权威源裁决；本迁移只负责把冲突连同证据摆出来。
+> 结论：这两条从来不是 0003 的缺陷，而是「0001 的全局断言」与「0003 的局部设计」之间的口径差。按 R5 由总控裁定后，一处靠**改名对齐**（D-36），一处靠**有理由的豁免 + 守卫可核查**（D-47）。
