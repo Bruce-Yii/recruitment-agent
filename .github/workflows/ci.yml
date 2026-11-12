@@ -176,11 +176,12 @@ jobs:
             psql -v ON_ERROR_STOP=1 -q -f "db/$f.sql"
           done
 
-      - name: 0006 + 0007 must be idempotent (second run changes nothing)
+      - name: 0006 + 0007 + 0008 must be idempotent (second run changes nothing)
         run: |
           set -euo pipefail
           psql -v ON_ERROR_STOP=1 -q -f db/migrations/0006_integrity_gaps.sql
           psql -v ON_ERROR_STOP=1 -q -f db/migrations/0007_decision_integrity.sql
+          psql -v ON_ERROR_STOP=1 -q -f db/migrations/0008_decision_uniqueness.sql
           echo "second run OK"
 
   # 转换层的两个"兜底"车道。fallback 不需要库（只渲染 + 校验 + 合并语义），

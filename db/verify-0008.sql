@@ -306,8 +306,10 @@ select g.tgname, pg_get_triggerdef(g.oid) as definition
 -- =====================================================================
 --  §3  夹具（本脚本结束 ROLLBACK，不留数据）
 --
---  用 0002 演示租户的既有链（application 701 属于 job 401 / rubric 403），
---  再补：第二个岗位（job 402 + rubric 404）、一个会议 + 一份转写、一场面试。
+--  用 0002 演示租户的既有身份链（job 401 / rubric 403 / candidate 601），
+--  再补：**一个专用申请**（7a2，属于 job 401 —— 不借用演示申请 701，避免
+--  库里已有的决策让本脚本无法复跑）、第二个岗位（job 402 + rubric 404）、
+--  一个会议 + 一份转写、一场面试。
 --  所有 id 前缀 8888，避免与其它 verify 的夹具撞号。
 -- =====================================================================
 
@@ -348,30 +350,42 @@ values
    'feishu', 'v8-mn-1', 1, 'DISCOVERED', 'FIXTURE', 'MANUAL', 'NOT_CONNECTED',
    '[00:00] V8 演示转写');
 
--- 3.3 面试（application 701 属于 job 401；不写 stage_code → 0006 的默认值 S8）
+-- 3.3 专用申请（属于 job 401；决策夹具全挂在这条申请上，不碰演示申请 701）
+insert into recruitment.application
+  (id, tenant_id, candidate_id, job_id, job_version_id, rubric_version_id, current_stage_code)
+values
+  ('88888888-8888-4888-8888-0000000007a2',
+   '11111111-1111-4111-8111-000000000001',
+   '11111111-1111-4111-8111-000000000601',
+   '11111111-1111-4111-8111-000000000401',
+   '11111111-1111-4111-8111-000000000402',
+   '11111111-1111-4111-8111-000000000403',
+   'S8');
+
+-- 3.4 面试（申请 7a2 属于 job 401；不写 stage_code → 0006 的默认值 S8）
 insert into recruitment.interview
   (id, tenant_id, application_id, round_no, slot_code, status,
    scheduled_start_at, scheduled_end_at)
 values
   ('88888888-8888-4888-8888-000000000601',
    '11111111-1111-4111-8111-000000000001',
-   '11111111-1111-4111-8111-000000000701', 1, 'V8', 'SCHEDULED',
+   '88888888-8888-4888-8888-0000000007a2', 1, 'V8', 'SCHEDULED',
    now() + interval '1 day', now() + interval '1 day 1 hour');
 
--- 3.4 两条"重评前"的 current 决策（SCREENING 与 FINAL 各一条；不同 scope，可并存）
+-- 3.5 两条"重评前"的 current 决策（SCREENING 与 FINAL 各一条；不同 scope，可并存）
 insert into recruitment.decision
   (id, tenant_id, application_id, decision_scope, stage_code, result, decided_by_actor_id, reason)
 values
   ('88888888-8888-4888-8888-000000000701',
    '11111111-1111-4111-8111-000000000001',
-   '11111111-1111-4111-8111-000000000701', 'SCREENING', null, 'REJECT',
+   '88888888-8888-4888-8888-0000000007a2', 'SCREENING', null, 'REJECT',
    '11111111-1111-4111-8111-000000000101', '旧 rubric v1 下的筛选拒绝'),
-  ('88888888-8888-4888-8888-000000000702',
+  ('88888888-8888-4888-8888-0000000007d2',
    '11111111-1111-4111-8111-000000000001',
-   '11111111-1111-4111-8111-000000000701', 'FINAL', null, 'REJECT',
+   '88888888-8888-4888-8888-0000000007a2', 'FINAL', null, 'REJECT',
    '11111111-1111-4111-8111-000000000101', '旧 rubric v1 下的最终拒绝');
 
-\echo ' 夹具就绪：演示租户（0002 链）+ 岗位二 402/rubric 404 + 会议 501/转写 502 + 面试 601 + 两条重评前 current 决策'
+\echo ' 夹具就绪：演示租户（0002 链）+ 专用申请 7a2（job 401）+ 岗位二 402/rubric 404 + 会议 501/转写 502 + 面试 601 + 两条重评前 current 决策'
 
 
 -- =====================================================================
@@ -394,7 +408,7 @@ insert into recruitment.decision
 values
   ('88888888-8888-4888-8888-000000000703',
    '11111111-1111-4111-8111-000000000001',
-   '11111111-1111-4111-8111-000000000701', 'SCREENING', null, 'ADVANCE',
+   '88888888-8888-4888-8888-0000000007a2', 'SCREENING', null, 'ADVANCE',
    '11111111-1111-4111-8111-000000000101', '新 rubric v2 下的筛选通过');
 \echo '   INSERT 成功 —— 0007 会在这里 23505；0008 延迟到 COMMIT 才检查'
 
@@ -410,11 +424,11 @@ insert into recruitment.decision
 values
   ('88888888-8888-4888-8888-000000000704',
    '11111111-1111-4111-8111-000000000001',
-   '11111111-1111-4111-8111-000000000701', 'FINAL', 'S10', 'HIRED',
+   '88888888-8888-4888-8888-0000000007a2', 'FINAL', 'S10', 'HIRED',
    '11111111-1111-4111-8111-000000000101', '新 rubric v2 下的最终录用');
 update recruitment.decision
    set superseded_by_decision_id = '88888888-8888-4888-8888-000000000704'
- where id = '88888888-8888-4888-8888-000000000702';
+ where id = '88888888-8888-4888-8888-0000000007d2';
 \echo '   FINAL 重评的两步都成功（中间态有两条 current FINAL，但提交前就修好了）'
 
 -- 下面这一句 = 把"COMMIT 时的检查"提前到当前事务内执行。
@@ -430,7 +444,7 @@ begin
   -- 每个 (application, scope, stage) 恰好一条 current
   select count(*) into v_n from (
     select 1 from recruitment.decision
-     where application_id = '11111111-1111-4111-8111-000000000701'
+     where application_id = '88888888-8888-4888-8888-0000000007a2'
        and superseded_by_decision_id is null
      group by decision_scope, coalesce(stage_code, '')
     having count(*) > 1) d;
@@ -440,7 +454,7 @@ begin
 
   select count(*) into v_n
     from recruitment.decision
-   where application_id = '11111111-1111-4111-8111-000000000701'
+   where application_id = '88888888-8888-4888-8888-0000000007a2'
      and decision_scope = 'SCREENING' and superseded_by_decision_id is null;
   if v_n <> 1 then
     raise exception 'POS-8-01 重评后 current SCREENING 应恰好 1 条（% / 1）', v_n;
@@ -449,14 +463,14 @@ begin
 
   select count(*) into v_n
     from recruitment.decision
-   where application_id = '11111111-1111-4111-8111-000000000701'
+   where application_id = '88888888-8888-4888-8888-0000000007a2'
      and decision_scope = 'FINAL' and superseded_by_decision_id is null;
   if v_n <> 1 then
     raise exception 'POS-8-02 重评后 current FINAL 应恰好 1 条（% / 1）', v_n;
   end if;
   select count(*) into v_n
     from recruitment.decision
-   where application_id = '11111111-1111-4111-8111-000000000701'
+   where application_id = '88888888-8888-4888-8888-0000000007a2'
      and decision_scope = 'FINAL' and stage_code = 'S10' and superseded_by_decision_id is null;
   if v_n <> 1 then
     raise exception 'POS-8-02 重评后的 current FINAL 应是 S10（% / 1）', v_n;
@@ -535,7 +549,7 @@ begin
       ('N-1', '23P01|23505', 'GAP-A INSERT 同一 (SCREENING, NULL) 的第二条 current（此刻已有一条 current）',
        $q$insert into recruitment.decision
             (tenant_id, application_id, decision_scope, stage_code, result, decided_by_actor_id, reason)
-          values ('11111111-1111-4111-8111-000000000001','11111111-1111-4111-8111-000000000701',
+          values ('11111111-1111-4111-8111-000000000001','88888888-8888-4888-8888-0000000007a2',
                   'SCREENING',null,'REJECT','11111111-1111-4111-8111-000000000101','neg N-1')$q$),
 
       -- ----------------------------------------------------------------
@@ -546,7 +560,7 @@ begin
       ('N-2', '23P01|23505', 'GAP-B INSERT 第二条 current FINAL（已有 FINAL/S10 current，本条 FINAL/NULL）',
        $q$insert into recruitment.decision
             (tenant_id, application_id, decision_scope, stage_code, result, decided_by_actor_id, reason)
-          values ('11111111-1111-4111-8111-000000000001','11111111-1111-4111-8111-000000000701',
+          values ('11111111-1111-4111-8111-000000000001','88888888-8888-4888-8888-0000000007a2',
                   'FINAL',null,'ADVANCE','11111111-1111-4111-8111-000000000101','neg N-2')$q$),
 
       -- ----------------------------------------------------------------
@@ -688,3 +702,4 @@ rollback;
 \echo ''
 \echo '=================================================================='
 \echo ' VERIFY-0008 PASS：7 条结构断言 + 4 条正向（含契约两步重评事务在同一事务内成功）+ 4 条负向 + 5 条数据面全部通过（A 可延迟排斥约束 / B current FINAL 唯一 / C interview_record 岗位绑定）'
+
