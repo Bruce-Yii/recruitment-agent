@@ -139,6 +139,37 @@ application bc2f582b  created 02:41:41  source_asset_sha256 ead23e7999e7
 
 ---
 
+### 7.3 结构化结果落库：只在一个**回滚事务**里证明过，committed 行没有（P0-2）
+
+我的验收运行里，`recruitment_application_intake` 返回的是 **`replayed`**（`created=false`）——
+因为同一 `(source_asset_sha256, job_id)` 在 18:41:41Z 已经被前一次 headless 建过。
+也就是说：**那条 committed 的 `resume_version` 里没有 Agent 的结构化结果**。
+
+"结构化结果真的能写进库"这件事，只在一次**必回滚的事务**里证明过（临时 job 一起回滚）：
+
+```
+created=true  structured.source=agent_structured  validated=true  block_index_entries=47
+education: state=present  state_source=agent_structured  converter_state=unreadable
+           block_ids=[23,24,25,27,28,29,30]  evidence_count=7  agent_evidence=10
+TRANSACTION ROLLED BACK
+```
+
+这是 D-29 的正确方向（转换器 `unreadable` → 模型 `present` 且有逐字证据 → 最终 `present`，
+另存 `converter_state=unreadable`），但**它不是 committed 证据**。
+
+根因是"先接入、后结构化"的顺序：replay 命中时直接返回，不会把 structured 补写进已存在的
+`resume_version`（版本行不可变 + 幂等）。要闭合必须做一个产品级选择：
+更新旧 version / 建新 version / 要求首次就带 structured。
+
+### 7.4 字段升级后 S7 会报 `SCREENING_INDEX_INCONSISTENT`（P1）
+
+intake 只改五个业务字段的 `state` 与证据，**不动**转换器的
+`completeness` / `issues` / `screening.eligible_fields` / `timeline` / `parse_status`。
+于是当 Agent 把 `work_experience` / `education` 升成 `present` 之后，
+S7 读到的 `eligible_fields` / `timeline` 仍是旧口径 → 会报 `SCREENING_INDEX_INCONSISTENT`
+（S7 自己声明"以 fields 为准"）。
+另外：若升级字段引用的 block 没有 page/bbox（转换器没给坐标），S7 的 `evidenceFor` 会丢证据并把它降回 `unreadable`。
+
 ## 8. 下一轮最值得推进的招聘业务能力
 
 1. **修 §7.1 的幂等**（唯一 P0）：intake 的幂等键必须覆盖"同一材料 + 同一岗位"，
