@@ -521,7 +521,7 @@ insert into recruitment.decision (
 values (
   'aaaaaaaa-0000-0000-0000-0000000000e1', 'aaaaaaaa-0000-0000-0000-000000000001',
   'aaaaaaaa-0000-0000-0000-000000000071', 'aaaaaaaa-0000-0000-0000-000000000091',
-  'STAGE', 'INTERVIEW', 'ADVANCE', '11111111-1111-1111-1111-111111111111', '技术面通过');
+  'STAGE', 'S8', 'ADVANCE', '11111111-1111-1111-1111-111111111111', '技术面通过');
 
 insert into recruitment.business_task (id, tenant_id, task_type, title, trigger_event_id, idempotency_key) values
   ('aaaaaaaa-0000-0000-0000-0000000000f1', 'aaaaaaaa-0000-0000-0000-000000000001',
