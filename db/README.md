@@ -6,6 +6,12 @@
 | 文件 | 作用 |
 |---|---|
 | `migrations/0001_init.sql` | 建 schema / 39 张表 / 161 个外键 / 181 条 CHECK / 72 个触发器。**幂等**，可重复执行 |
+| `migrations/0002_seed.sql` | 种子：租户、4 个 actor、12 条阶段目录、示例岗位 / rubric / 候选人 |
+| `migrations/0003_review_queue.sql` | 转换层人工复核：`conversion_run` / `review_queue` / `review_audit` + 状态机触发器 |
+| `migrations/0004_stage_catalog.sql` | `stage_catalog` 真表 + `application.current_stage_code` 外键 + `job.current_rubric_version_id` 显式指针 |
+| `migrations/0005_version_binding.sql` | 申请绑定的 rubric / job 版本必须是**本岗位**的（三列复合外键，含 tenant_id） |
+| `migrations/0006_integrity_gaps.sql` | 五个完整性缺口：`interview.stage_code` 默认值+外键、`execution_mandate` 禁 `submit_scorecard`、`fk_interview_record_artifact` 补 tenant_id、`business_task.owner_actor_id`、`meeting`/`meeting_binding` 的 `record_version` 触发器 |
+| `verify-0003.sql` … `verify-0006.sql` | 每个迁移配套自检，各自独立建库可跑，**全部通过才 exit 0** |
 | `SCHEMA.md` | 对象 → 表/约束映射、状态机、不变量台账、缓做清单、映射裁决 |
 | `verify.sql` | 自检：结构断言 + 状态机覆盖 + 对象覆盖 + **32 条负向测试** + 正向断言，**全部通过才 exit 0**，结尾 ROLLBACK 不改数据 |
 | `README.md` | 本文件：怎么跑、怎么验、写入方必须遵守什么 |
