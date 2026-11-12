@@ -1,0 +1,33 @@
+{
+  "name": "@recruitment/dsh-recruitment",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 只读招聘工具包：recruitment_resume_read / recruitment_candidate_get / recruitment_job_get（stub 实现，无写库路径）。",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "src/**/*.ts",
+    "cordis.patch.yml",
+    "CONTRACT.md"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "recruitment",
+    "agent-tool"
+  ],
+  "license": "UNLICENSED"
+}

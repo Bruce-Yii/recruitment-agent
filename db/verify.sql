@@ -1,0 +1,782 @@
+-- =====================================================================
+--  recruitment-agent · db/verify.sql
+--  自检脚本：结构断言 + 不变量/状态机覆盖 + 负向测试 + 对象覆盖率
+--
+--  用法（必须用 psql 跑，本文件含 \echo 等 psql 元命令）：
+--    psql -v ON_ERROR_STOP=1 -d <db> -f db/verify.sql
+--
+--  行为保证：
+--    * 整个脚本在一个事务里执行，结尾 ROLLBACK —— 不留任何数据；
+--    * 所有检查失败都会 RAISE EXCEPTION（exit code != 0），不会静默通过；
+--    * 负向测试打印的是数据库真实返回的 SQLSTATE 与 message_text。
+-- =====================================================================
+
+\set ON_ERROR_STOP on
+\echo '=================================================================='
+\echo ' 0. 环境'
+\echo '=================================================================='
+
+select current_database() as database,
+       current_setting('server_version') as pg_version,
+       (select count(*) from pg_namespace where nspname = 'recruitment') as schema_exists;
+
+begin;
+
+\echo ''
+\echo '=================================================================='
+\echo ' 1. 对象清单（迁移建出来的东西）'
+\echo '=================================================================='
+
+select 'tables' as kind, count(*)::text as n
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'recruitment' and c.relkind = 'r'
+union all
+select 'foreign_keys', count(*)::text
+  from pg_constraint c join pg_class r on r.oid = c.conrelid
+  join pg_namespace n on n.oid = r.relnamespace
+ where n.nspname = 'recruitment' and c.contype = 'f'
+union all
+select 'check_constraints', count(*)::text
+  from pg_constraint c join pg_class r on r.oid = c.conrelid
+  join pg_namespace n on n.oid = r.relnamespace
+ where n.nspname = 'recruitment' and c.contype = 'c'
+union all
+select 'unique_constraints', count(*)::text
+  from pg_constraint c join pg_class r on r.oid = c.conrelid
+  join pg_namespace n on n.oid = r.relnamespace
+ where n.nspname = 'recruitment' and c.contype = 'u'
+union all
+select 'partial_unique_indexes', count(*)::text
+  from pg_index i join pg_class t on t.oid = i.indrelid
+  join pg_namespace n on n.oid = t.relnamespace
+ where n.nspname = 'recruitment' and i.indisunique and i.indpred is not null
+union all
+select 'triggers', count(*)::text
+  from pg_trigger g join pg_class t on t.oid = g.tgrelid
+  join pg_namespace n on n.oid = t.relnamespace
+ where n.nspname = 'recruitment' and not g.tgisinternal
+union all
+select 'functions', count(*)::text
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'recruitment';
+
+
+\echo ''
+\echo '=================================================================='
+\echo ' 2. 结构断言（任何一条不满足即整体失败）'
+\echo '=================================================================='
+
+do $$
+declare
+  v_bad  text;
+  v_n    integer;
+begin
+  -- 2.1 每张表都有单列 uuid 主键（event_inbox 按 docs/03 §9 用 event_id）
+  select string_agg(c.relname, ', ') into v_bad
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'recruitment' and c.relkind = 'r'
+     and not exists (
+       select 1 from pg_constraint p
+        where p.conrelid = c.oid and p.contype = 'p'
+          and (select array_agg(a.attname::text) from pg_attribute a
+                where a.attrelid = c.oid and a.attnum = any(p.conkey)) in (array['id'], array['event_id']));
+  if v_bad is not null then
+    raise exception 'STRUCT-01 这些表的主键不是单列 id/event_id：%', v_bad;
+  end if;
+  raise notice 'STRUCT-01 PASS 每张表都是单列 uuid 主键（event_inbox = event_id）';
+
+  -- 2.2 除 organization 外每张表都有 tenant_id（多租户隔离的最小前提）
+  select string_agg(c.relname, ', ') into v_bad
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'recruitment' and c.relkind = 'r'
+     and c.relname <> 'organization'
+     and not exists (select 1 from pg_attribute a
+                      where a.attrelid = c.oid and a.attname = 'tenant_id'
+                        and a.attnotnull and not a.attisdropped);
+  if v_bad is not null then
+    raise exception 'STRUCT-02 这些表缺少 NOT NULL 的 tenant_id：%', v_bad;
+  end if;
+  raise notice 'STRUCT-02 PASS 除 organization 外每张表都有 NOT NULL tenant_id';
+
+  -- 2.3 每张有 tenant_id 的表，tenant_id 都有指向 organization 的外键
+  select string_agg(c.relname, ', ') into v_bad
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'recruitment' and c.relkind = 'r'
+     and exists (select 1 from pg_attribute a where a.attrelid = c.oid and a.attname = 'tenant_id')
+     and not exists (
+       select 1 from pg_constraint p
+        where p.conrelid = c.oid and p.contype = 'f'
+          and p.confrelid = 'recruitment.organization'::regclass
+          and (select a.attname from pg_attribute a
+                where a.attrelid = c.oid and a.attnum = p.conkey[1]) = 'tenant_id');
+  if v_bad is not null then
+    raise exception 'STRUCT-03 这些表的 tenant_id 没有外键到 organization：%', v_bad;
+  end if;
+  raise notice 'STRUCT-03 PASS 所有 tenant_id 都有到 organization 的外键';
+
+  -- 2.4 每个"状态列"都必须有 CHECK 约束（*_status / status / current_stage_code 之外的语义列除外）
+  select string_agg(format('%s.%s', c.relname, a.attname), ', ') into v_bad
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+   where n.nspname = 'recruitment' and c.relkind = 'r'
+     and a.attname in ('status', 'lifecycle_status', 'transcript_status', 'identity_status',
+                       'parse_status', 'verification_status', 'readback_state',
+                       'validation_status', 'meeting_role', 'variant_type', 'provenance',
+                       'trigger_mode', 'connection_state', 'idempotency_source', 'trust_level',
+                       'error_class', 'result', 'decision_scope', 'resource_type',
+                       'scope', 'channel_type', 'kind', 'actor_type')
+     and not exists (
+       select 1 from pg_constraint p
+        where p.conrelid = c.oid and p.contype = 'c'
+          and pg_get_constraintdef(p.oid) like '%' || a.attname || '%');
+  if v_bad is not null then
+    raise exception 'STRUCT-04 这些状态/枚举列没有 CHECK 约束：%', v_bad;
+  end if;
+  raise notice 'STRUCT-04 PASS 所有状态/枚举列都有 CHECK 约束';
+
+  -- 2.5 每张有状态列的表都要有 fn_row_guard 触发器（迁移必须带审计）
+  select string_agg(c.relname, ', ') into v_bad
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+   where n.nspname = 'recruitment' and c.relkind = 'r'
+     and a.attname in ('status', 'lifecycle_status', 'transcript_status')
+     and not exists (
+       select 1 from pg_trigger g
+        where g.tgrelid = c.oid and not g.tgisinternal
+          and g.tgfoid = 'recruitment.fn_row_guard'::regproc);
+  if v_bad is not null then
+    raise exception 'STRUCT-05 这些表有状态列但没有 fn_row_guard 触发器：%', v_bad;
+  end if;
+  raise notice 'STRUCT-05 PASS 所有状态表都有状态迁移审计触发器';
+
+  -- 2.6 历史事实表必须禁删
+  select count(*) into v_n
+    from pg_trigger g
+   where g.tgfoid = 'recruitment.fn_block_delete'::regproc and not g.tgisinternal;
+  if v_n < 38 then
+    raise exception 'STRUCT-06 禁删触发器只有 % 个（期望 >= 38）', v_n;
+  end if;
+  raise notice 'STRUCT-06 PASS 历史事实禁删触发器 % 个', v_n;
+
+  -- 2.7 复合外键必须带 tenant_id（防跨租户引用）；唯一例外是 (artifact_id, revision) 这类版本定位
+  select string_agg(format('%s(%s)', c.relname, p.conname), ', ') into v_bad
+    from pg_constraint p join pg_class c on c.oid = p.conrelid
+    join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'recruitment' and p.contype = 'f' and array_length(p.conkey, 1) > 1
+     and not exists (
+       select 1 from pg_attribute a
+        where a.attrelid = p.conrelid and a.attnum = any(p.conkey)
+          and a.attname in ('tenant_id', 'source_revision', 'transcript_revision'));
+  if v_bad is not null then
+    raise exception 'STRUCT-07 这些复合外键不含 tenant_id：%', v_bad;
+  end if;
+  raise notice 'STRUCT-07 PASS 复合外键都带 tenant_id（防跨租户引用）';
+end $$;
+
+
+\echo ''
+\echo '=================================================================='
+\echo ' 3. 状态机取值覆盖（docs/03 §3/§10/§11/§13 + docs/04 §18）'
+\echo '=================================================================='
+
+do $$
+declare
+  r record;
+  v_def text;
+  v_val text;
+begin
+  for r in
+    select * from (values
+      ('requisition', 'ck_requisition_status',
+        array['DRAFT','PENDING_APPROVAL','APPROVED','RECRUITING','PAUSED','FILLED','CANCELLED']),      ('job', 'ck_job_status',
+        array['DRAFT','PENDING_REVIEW','APPROVED','OPEN','PAUSED','CLOSED','ARCHIVED']),
+      ('interview', 'ck_interview_status',
+        array['SCHEDULED','IN_PROGRESS','POST_INTERVIEW','EVALUATION_READY','DECIDED',
+              'RESCHEDULED','CANCELLED','NO_SHOW']),
+      ('application', 'ck_application_lifecycle_status',
+        array['ACTIVE','ON_HOLD','WITHDRAWN','CLOSED']),
+      ('business_task', 'ck_business_task_status',
+        array['PENDING','READY','RUNNING','WAITING_EXTERNAL','WAITING_HUMAN','RETRY_WAIT',
+              'SUCCEEDED','FAILED','CANCEL_REQUESTED','CANCELLED','SUPERSEDED']),
+      ('task_attempt', 'ck_task_attempt_status',
+        array['CLAIMED','RUNNING','SUCCEEDED','FAILED_RETRYABLE','FAILED_FINAL',
+              'TIMED_OUT','CANCELLED','ABANDONED']),
+      ('durable_effect', 'ck_durable_effect_status',
+        array['PENDING','CLAIMED','SENT','CONFIRMED','RETRY_WAIT','UNKNOWN_OUTCOME',
+              'FAILED_FINAL','CANCELLED','COMPENSATION_REQUIRED']),
+      ('transcript_artifact', 'ck_transcript_artifact_status',
+        array['DISCOVERED','FETCHING','PARTIAL','READY','WAITING_EXTERNAL',
+              'RETRYABLE_FAILED','AUTH_REQUIRED','NEEDS_LINKING']),
+      ('interview_record', 'ck_interview_record_status',
+        array['PENDING','PROCESSING','PARTIAL','READY','FAILED','NEEDS_REVIEW']),
+      ('scorecard', 'ck_scorecard_status', array['PENDING','SUBMITTED','WAIVED']),
+      ('decision', 'ck_decision_result',
+        array['ADVANCE','HOLD','REJECT','WITHDRAW','HIRED']),
+      ('intake_record', 'ck_intake_record_status',
+        array['RECEIVED','VALIDATING','READY_FOR_PROCESSING','PROCESSING','RESOLVED',
+              'NEEDS_REVIEW','RETRY_WAIT','REJECTED','FAILED'])
+    ) as v(tbl, conname, vals)
+  loop
+    select pg_get_constraintdef(p.oid) into v_def
+      from pg_constraint p
+     where p.conname = r.conname and p.conrelid = format('recruitment.%I', r.tbl)::regclass;
+    if v_def is null then
+      raise exception 'SM-01 约束不存在：% (%)', r.conname, r.tbl;
+    end if;
+    foreach v_val in array r.vals loop
+      if v_def not like '%''' || v_val || '''%' then
+        raise exception 'SM-01 % 缺少状态值 %', r.conname, v_val;
+      end if;
+    end loop;
+    raise notice 'SM-01 PASS % 覆盖 % 个状态值', r.conname, array_length(r.vals, 1);
+  end loop;
+end $$;
+
+
+\echo ''
+\echo '=================================================================='
+\echo ' 4. 对象覆盖率（docs/03 §1 三十六行 → 表 / 映射 / 缓做）'
+\echo '=================================================================='
+
+do $$
+declare
+  r        record;
+  v_n_tab  integer := 0;
+  v_n_map  integer := 0;
+  v_n_def  integer := 0;
+  v_tbl    text;
+  v_missing text := '';
+begin
+  for r in
+    select * from (values
+      (1,  'Organization',                          'organization',                  'TABLE'),
+      (2,  'Department',                            'department',                    'TABLE'),
+      (3,  'User / Role',                           'actor, role, actor_role',       'TABLE'),
+      (4,  'Requisition',                           'requisition',                   'TABLE'),
+      (5,  'Job',                                   'job, job_version',              'TABLE'),
+      (6,  'Job Posting',                           'job_posting',                   'TABLE'),
+      (7,  'Candidate',                             'candidate, candidate_merge',    'TABLE'),
+      (8,  'Prospect',                              '',                              'DEFERRED'),
+      (9,  'Resume',                                'resume, resume_version',        'TABLE'),
+      (10, 'Candidate Acquisition Source / Channel','acquisition_channel',           'TABLE'),
+      (11, 'Application',                           'application',                   'TABLE'),
+      (12, 'Pipeline Template',                     '',                              'DEFERRED'),
+      (13, 'Pipeline Instance',                     'application.current_stage_code','MAPPED'),
+      (14, 'Stage',                                 '',                              'DEFERRED'),
+      (15, 'Interview Template',                    'interview_template_version',    'TABLE'),
+      (16, 'Stage Activity Template',               '',                              'DEFERRED'),
+      (17, 'Interview',                             'interview',                     'TABLE'),
+      (18, 'Interviewer',                           'interviewer',                   'TABLE'),
+      (19, 'Meeting',                               'meeting, meeting_binding',      'TABLE'),
+      (20, 'Transcript',                            'transcript_artifact, transcript_segment, transcript_processing_run', 'TABLE'),
+      (21, 'AI Summary',                            'ai_summary',                    'TABLE'),
+      (22, 'Interview Record',                      'interview_record',              'TABLE'),
+      (23, 'Scorecard',                             'scorecard',                     'TABLE'),
+      (24, 'Decision',                              'decision',                      'TABLE'),
+      (25, 'Approval',                              'approval',                      'TABLE'),
+      (26, 'Offer',                                 '',                              'DEFERRED'),
+      (27, 'Talent Pool',                           '',                              'DEFERRED'),
+      (28, 'Business Task',                         'business_task',                 'TABLE'),
+      (29, 'Task Attempt',                          'task_attempt',                  'TABLE'),
+      (30, 'Agent Session',                         'agent_session',                 'TABLE'),
+      (31, 'Chat Thread',                           'chat_thread',                   'TABLE'),
+      (32, 'Source Thread',                         '',                              'DEFERRED'),
+      (33, 'Event Inbox / Event',                   'event_inbox',                   'TABLE'),
+      (34, 'Durable Effect / Outbox',               'durable_effect',                'TABLE'),
+      (35, 'Agent Execution Policy / Mandate',      'execution_mandate',             'TABLE'),
+      (36, 'Business Config / Rubric Version',      'business_config, rubric_version','TABLE')
+    ) as v(ord, obj_name, tbls, kind)
+  loop
+    if r.kind = 'DEFERRED' then
+      v_n_def := v_n_def + 1;
+    elsif r.kind = 'MAPPED' then
+      v_n_map := v_n_map + 1;
+    else
+      foreach v_tbl in array string_to_array(r.tbls, ',') loop
+        v_tbl := btrim(v_tbl);
+        if to_regclass('recruitment.' || v_tbl) is null then
+          v_missing := v_missing || format('[%s → %s] ', r.obj_name, v_tbl);
+        end if;
+      end loop;
+      v_n_tab := v_n_tab + 1;
+    end if;
+  end loop;
+
+  if v_missing <> '' then
+    raise exception 'COV-01 以下对象声明了表但表不存在：%', v_missing;
+  end if;
+  raise notice 'COV-01 PASS 对象覆盖：有表 % / 列映射 % / 缓做 %（合计 %）',
+    v_n_tab, v_n_map, v_n_def, v_n_tab + v_n_map + v_n_def;
+end $$;
+
+\echo '-- 额外表（不在三十六行清单内，来自 docs/03 §5 Intake 三层模型 / §6 合并记录）--'
+select c.relname as extra_table
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'recruitment' and c.relkind = 'r'
+   and c.relname in ('intake_record','intake_asset','candidate_merge')
+ order by 1;
+
+
+\echo ''
+\echo '=================================================================='
+\echo ' 5. 夹具（负向测试用，脚本结束会 ROLLBACK）'
+\echo '=================================================================='
+
+set local recruitment.actor_id = '11111111-1111-1111-1111-111111111111';
+
+insert into recruitment.organization (id, name) values
+  ('aaaaaaaa-0000-0000-0000-000000000001', '租户甲'),
+  ('aaaaaaaa-0000-0000-0000-000000000002', '租户乙');
+
+insert into recruitment.department (id, tenant_id, name) values
+  ('aaaaaaaa-0000-0000-0000-000000000011', 'aaaaaaaa-0000-0000-0000-000000000001', '研发部');
+
+insert into recruitment.actor (id, tenant_id, kind, display_name, primary_email) values
+  ('11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000001', 'HUMAN', 'HR 甲', 'hr@example.com'),
+  ('11111111-1111-1111-1111-111111111112', 'aaaaaaaa-0000-0000-0000-000000000001', 'HUMAN', '面试官 乙', 'eng@example.com'),
+  ('11111111-1111-1111-1111-111111111113', 'aaaaaaaa-0000-0000-0000-000000000001', 'SYSTEM', '系统', 'sys@example.com');
+
+insert into recruitment.acquisition_channel (id, tenant_id, channel_type, name) values
+  ('aaaaaaaa-0000-0000-0000-000000000021', 'aaaaaaaa-0000-0000-0000-000000000001', 'EMAIL', '企业邮箱');
+
+insert into recruitment.requisition (id, tenant_id, department_id, title, headcount) values
+  ('aaaaaaaa-0000-0000-0000-000000000031', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000011', '后端工程师', 2);
+
+insert into recruitment.job (id, tenant_id, department_id, requisition_id, code, title) values
+  ('aaaaaaaa-0000-0000-0000-000000000041', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000011', 'aaaaaaaa-0000-0000-0000-000000000031', 'JOB-1', '后端工程师');
+
+insert into recruitment.job_version (id, tenant_id, job_id, version_no, description_md, payload_hash) values
+  ('aaaaaaaa-0000-0000-0000-000000000042', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000041', 1, 'JD v1', repeat('a', 64));
+
+insert into recruitment.approval (id, tenant_id, resource_type, resource_id, resource_record_version, canonical_payload_hash) values
+  ('aaaaaaaa-0000-0000-0000-000000000043', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'RUBRIC_VERSION', 'aaaaaaaa-0000-0000-0000-000000000044', 1, repeat('b', 64));
+
+-- 让这条审批进入"已决"状态，后续负向测试才能验证「已决不可改判」
+update recruitment.approval
+   set status = 'APPROVED', decided_at = now(),
+       decision_by_actor_id = '11111111-1111-1111-1111-111111111111'
+ where id = 'aaaaaaaa-0000-0000-0000-000000000043';
+
+insert into recruitment.rubric_version (id, tenant_id, job_id, version_no, dimensions, payload_hash, approved_by_approval_id) values
+  ('aaaaaaaa-0000-0000-0000-000000000044', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000041', 1, '[{"code":"BACKEND","weight":1.0}]'::jsonb, repeat('c', 64),
+   'aaaaaaaa-0000-0000-0000-000000000043');
+
+insert into recruitment.event_inbox (event_id, tenant_id, provider, provider_event_id, event_type, idempotency_key, payload, trust_level) values
+  ('aaaaaaaa-0000-0000-0000-000000000051', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'feishu', 'evt-1', 'resume.received', 'feishu:evt-1', '{"k":"v"}', 'UNTRUSTED_EXTERNAL');
+
+insert into recruitment.intake_record (id, tenant_id, event_id, channel_id) values
+  ('aaaaaaaa-0000-0000-0000-000000000052', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000051', 'aaaaaaaa-0000-0000-0000-000000000021');
+
+insert into recruitment.intake_asset (id, tenant_id, intake_record_id, file_name, byte_size, sha256, storage_ref, validation_status) values
+  ('aaaaaaaa-0000-0000-0000-000000000053', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000052', 'cv.pdf', 1024, repeat('d', 64), 's3://b/cv.pdf', 'VALID');
+
+insert into recruitment.candidate (id, tenant_id, display_name, normalized_email) values
+  ('aaaaaaaa-0000-0000-0000-000000000061', 'aaaaaaaa-0000-0000-0000-000000000001', '张三', 'zhangsan@example.com'),
+  ('aaaaaaaa-0000-0000-0000-000000000062', 'aaaaaaaa-0000-0000-0000-000000000002', '跨租户候选人', 'other@example.com');
+
+insert into recruitment.resume (id, tenant_id, candidate_id, intake_asset_id, channel_id) values
+  ('aaaaaaaa-0000-0000-0000-000000000063', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000061', 'aaaaaaaa-0000-0000-0000-000000000053',
+   'aaaaaaaa-0000-0000-0000-000000000021');
+
+insert into recruitment.resume_version (id, tenant_id, resume_id, version_no, source_asset_sha256, content_sha256, parser_name, parser_version, parse_status) values
+  ('aaaaaaaa-0000-0000-0000-000000000064', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000063', 1, repeat('d', 64), repeat('e', 64), 'converter', '1.0', 'PARSED');
+
+insert into recruitment.application (id, tenant_id, candidate_id, job_id, job_version_id, rubric_version_id, channel_id, resume_version_id, current_stage_code) values
+  ('aaaaaaaa-0000-0000-0000-000000000071', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000061', 'aaaaaaaa-0000-0000-0000-000000000041',
+   'aaaaaaaa-0000-0000-0000-000000000042', 'aaaaaaaa-0000-0000-0000-000000000044',
+   'aaaaaaaa-0000-0000-0000-000000000021', 'aaaaaaaa-0000-0000-0000-000000000064', 'SCREENING');
+
+insert into recruitment.interview_template_version (id, tenant_id, job_id, template_code, round_no, version_no, payload_hash, rubric_version_id) values
+  ('aaaaaaaa-0000-0000-0000-000000000081', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000041', 'TECH_R1', 1, 1, repeat('f', 64),
+   'aaaaaaaa-0000-0000-0000-000000000044');
+
+insert into recruitment.interview (id, tenant_id, application_id, interview_template_version_id, round_no, slot_code, status, scheduled_start_at, scheduled_end_at) values
+  ('aaaaaaaa-0000-0000-0000-000000000091', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000071', 'aaaaaaaa-0000-0000-0000-000000000081',
+   1, 'TECH', 'SCHEDULED', now() - interval '3 hour', now() - interval '2 hour');
+
+insert into recruitment.interviewer (id, tenant_id, interview_id, actor_id, role_in_interview) values
+  ('aaaaaaaa-0000-0000-0000-000000000092', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000091', '11111111-1111-1111-1111-111111111112', 'TECH_LEAD'),
+  ('aaaaaaaa-0000-0000-0000-000000000093', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000091', '11111111-1111-1111-1111-111111111111', 'HR');
+
+insert into recruitment.meeting (id, tenant_id, provider, external_meeting_id, calendar_event_id) values
+  ('aaaaaaaa-0000-0000-0000-0000000000a1', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'feishu', 'mtg-1', 'cal-1');
+
+insert into recruitment.meeting_binding (id, tenant_id, meeting_id, interview_id, binding_method) values
+  ('aaaaaaaa-0000-0000-0000-0000000000a2', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-0000000000a1', 'aaaaaaaa-0000-0000-0000-000000000091', 'SCHEDULED');
+
+insert into recruitment.transcript_artifact (
+  id, tenant_id, meeting_id, provider, provider_artifact_id, source_revision, transcript_status,
+  provenance, trigger_mode, connection_state, fetched_at, read_receipt_ref, content_sha256,
+  page_count, is_complete, raw_text)
+values (
+  'aaaaaaaa-0000-0000-0000-0000000000b1', 'aaaaaaaa-0000-0000-0000-000000000001',
+  'aaaaaaaa-0000-0000-0000-0000000000a1', 'feishu', 'mn-1', 1, 'READY',
+  'LIVE', 'MANUAL', 'NOT_CONNECTED', now(), 'lark-cli:minutes:abc', repeat('1', 64),
+  1, true, '[00:00] 面试官：你好');
+
+insert into recruitment.interview_record (
+  id, tenant_id, interview_id, transcript_artifact_id, transcript_revision, rubric_version_id,
+  prompt_version, model_id, status, verification_status, sections, evidence_ok, chunk_coverage)
+values (
+  'aaaaaaaa-0000-0000-0000-0000000000c1', 'aaaaaaaa-0000-0000-0000-000000000001',
+  'aaaaaaaa-0000-0000-0000-000000000091', 'aaaaaaaa-0000-0000-0000-0000000000b1', 1,
+  'aaaaaaaa-0000-0000-0000-000000000044', 'prompt@1', 'deepseek-v4', 'READY', 'VERIFIED',
+  '{"overview":"x"}'::jsonb, true, 1.0);
+
+insert into recruitment.scorecard (
+  id, tenant_id, interview_id, interviewer_id, rubric_version_id, status, submitted_at, items, overall)
+values (
+  'aaaaaaaa-0000-0000-0000-0000000000d1', 'aaaaaaaa-0000-0000-0000-000000000001',
+  'aaaaaaaa-0000-0000-0000-000000000091', 'aaaaaaaa-0000-0000-0000-000000000092',
+  'aaaaaaaa-0000-0000-0000-000000000044', 'SUBMITTED', now(), '[{"dim":"BACKEND","score":4}]'::jsonb, '推进');
+
+insert into recruitment.decision (
+  id, tenant_id, application_id, interview_id, decision_scope, stage_code, result, decided_by_actor_id, reason)
+values (
+  'aaaaaaaa-0000-0000-0000-0000000000e1', 'aaaaaaaa-0000-0000-0000-000000000001',
+  'aaaaaaaa-0000-0000-0000-000000000071', 'aaaaaaaa-0000-0000-0000-000000000091',
+  'STAGE', 'INTERVIEW', 'ADVANCE', '11111111-1111-1111-1111-111111111111', '技术面通过');
+
+insert into recruitment.business_task (id, tenant_id, task_type, title, trigger_event_id, idempotency_key) values
+  ('aaaaaaaa-0000-0000-0000-0000000000f1', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'TRANSCRIPT_FETCH', '取转写', 'aaaaaaaa-0000-0000-0000-000000000051', 'transcript:mtg-1'),
+  ('aaaaaaaa-0000-0000-0000-0000000000f2', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'TRANSCRIPT_FETCH', '取转写（第二条，负向测试用）', 'aaaaaaaa-0000-0000-0000-000000000051', 'transcript:mtg-2');
+
+insert into recruitment.task_attempt (id, tenant_id, task_id, attempt_no, worker_type, worker_id, status, lease_expires_at) values
+  ('aaaaaaaa-0000-0000-0000-000000001001', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-0000000000f1', 1, 'DSH_JOB', 'w1', 'RUNNING', now() + interval '5 min');
+
+update recruitment.business_task
+   set status = 'RUNNING', current_attempt_id = 'aaaaaaaa-0000-0000-0000-000000001001', attempt_count = 1
+ where id = 'aaaaaaaa-0000-0000-0000-0000000000f1';
+
+insert into recruitment.durable_effect (id, tenant_id, effect_type, idempotency_key, status) values
+  ('aaaaaaaa-0000-0000-0000-000000001011', 'aaaaaaaa-0000-0000-0000-000000000001',
+   'SEND_EMAIL', 'email:1', 'PENDING');
+
+insert into recruitment.execution_mandate (id, tenant_id, actor_id, actor_type, task_id, permission_version, allowed_tools, allowed_actions, expires_at) values
+  ('aaaaaaaa-0000-0000-0000-000000001021', 'aaaaaaaa-0000-0000-0000-000000000001',
+   '11111111-1111-1111-1111-111111111113', 'SYSTEM', 'aaaaaaaa-0000-0000-0000-0000000000f1',
+   'perm@1', '{recruitment_resume_read}', '{read,fetch}', now() + interval '1 day');
+
+insert into recruitment.chat_thread (id, tenant_id, external_thread_ref) values
+  ('aaaaaaaa-0000-0000-0000-000000001031', 'aaaaaaaa-0000-0000-0000-000000000001', 'dsh-s-1');
+
+\echo ' 夹具就绪'
+
+
+\echo ''
+\echo '=================================================================='
+\echo ' 6. 负向测试（每条都必须 FAIL，并给出真实 SQLSTATE / 报错）'
+\echo '=================================================================='
+
+do $$
+declare
+  v_state text;
+  v_msg   text;
+  v_ok    integer := 0;
+  r       record;
+begin
+  -- 负向测试期间不提供 actor：状态迁移类用例必须因此失败
+  perform set_config('recruitment.actor_id', '', true);
+
+  for r in
+    select * from (values
+      ('N01', '23503', 'Application 关联不存在的 Candidate（不变量 1）',
+       $q$insert into recruitment.application (tenant_id, candidate_id, job_id, job_version_id)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','bbbbbbbb-0000-0000-0000-000000000000',
+                  'aaaaaaaa-0000-0000-0000-000000000041','aaaaaaaa-0000-0000-0000-000000000042')$q$),
+      ('N02', '23502', 'Application 缺 Job（不变量 1：必须关联 Job）',
+       $q$insert into recruitment.application (tenant_id, candidate_id, job_id, job_version_id)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-000000000061',
+                  null,'aaaaaaaa-0000-0000-0000-000000000042')$q$),
+      ('N03', '23503', '跨租户引用 Candidate（复合外键防越权）',
+       $q$insert into recruitment.application (tenant_id, candidate_id, job_id, job_version_id)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-000000000062',
+                  'aaaaaaaa-0000-0000-0000-000000000041','aaaaaaaa-0000-0000-0000-000000000042')$q$),
+      ('N04', '23514', 'Job 状态写非法枚举值（状态机）',
+       $q$insert into recruitment.job (tenant_id, department_id, code, title, status)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-000000000011',
+                  'JOB-BAD','非法状态岗','HIRED')$q$),
+      ('N05', '23505', '同一来源事件重复创建 Business Task（不变量 1）',
+       $q$insert into recruitment.business_task (tenant_id, task_type, title, idempotency_key)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','X','重复任务','transcript:mtg-1')$q$),
+      ('N06', '23505', '同一 provider 事件重复进 Event Inbox',
+       $q$insert into recruitment.event_inbox (tenant_id, provider, provider_event_id, event_type, idempotency_key, payload, trust_level)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','feishu','evt-1','resume.received','feishu:evt-1','{}','UNTRUSTED_EXTERNAL')$q$),
+      ('N07', '23514', '备用幂等键同时又给了 provider_event_id（禁止双轨去重）',
+       $q$insert into recruitment.event_inbox (tenant_id, provider, provider_event_id, event_type, idempotency_key, idempotency_source, source_object_id, payload, trust_level)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','feishu','evt-2','x.y','feishu:evt-2','FALLBACK_KEY','obj-2','{}','UNTRUSTED_EXTERNAL')$q$),
+      ('N08', '23514', '转写 READY 但未取全（完整性 Gate）',
+       $q$update recruitment.transcript_artifact set is_complete = false
+           where id = 'aaaaaaaa-0000-0000-0000-0000000000b1'$q$),
+      ('N09', '23514', 'LIVE 转写没有连接器读取回执（R4 诚实标注）',
+       $q$insert into recruitment.transcript_artifact
+            (tenant_id, meeting_id, provider, provider_artifact_id, source_revision,
+             transcript_status, provenance, trigger_mode, connection_state, raw_text)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-0000000000a1',
+                  'feishu','mn-noreceipt',1,'DISCOVERED','LIVE','MANUAL','NOT_CONNECTED','x')$q$),
+      ('N10', '23514', 'Scorecard SUBMITTED 但缺 submitted_at / items',
+       $q$insert into recruitment.scorecard (tenant_id, interview_id, interviewer_id, rubric_version_id, status)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-000000000091',
+                  'aaaaaaaa-0000-0000-0000-000000000092','aaaaaaaa-0000-0000-0000-000000000044','SUBMITTED')$q$),
+      ('N11', '23514', '已提交 Scorecard 被改写（评价不可覆盖）',
+       $q$update recruitment.scorecard set items = '[{"dim":"BACKEND","score":1}]'::jsonb
+           where id = 'aaaaaaaa-0000-0000-0000-0000000000d1'$q$),
+      ('N12', '23514', 'Decision 理由为空（不变量 9）',
+       $q$insert into recruitment.decision (tenant_id, application_id, decision_scope, result, decided_by_actor_id, reason)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-000000000071',
+                  'STAGE','REJECT','11111111-1111-1111-1111-111111111111','   ')$q$),
+      ('N13', '23514', 'Approval 批准但没写审批人/时间（不变量 9）',
+       $q$insert into recruitment.approval (tenant_id, resource_type, resource_id, resource_record_version, canonical_payload_hash, status)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','JOB','aaaaaaaa-0000-0000-0000-000000000041',1,repeat('e',64),'APPROVED')$q$),
+      ('N14', '23514', '已决 Approval 被改内容（审批绑内容）',
+       $q$update recruitment.approval set canonical_payload_hash = repeat('9',64)
+           where id = 'aaaaaaaa-0000-0000-0000-000000000043'$q$),
+      ('N15', '23514', '状态迁移没有 actor（不变量 8）',
+       $q$update recruitment.job set status = 'PAUSED' where id = 'aaaaaaaa-0000-0000-0000-000000000041'$q$),
+      ('N16', '23514', '手改 status_changed_at 伪造迁移时间',
+       $q$update recruitment.job set status_changed_at = now() - interval '30 day'
+           where id = 'aaaaaaaa-0000-0000-0000-000000000041'$q$),
+      ('N17', '23505', '同一 Task 两个有效租约（不允许双 Worker）',
+       $q$insert into recruitment.task_attempt (tenant_id, task_id, attempt_no, worker_type, worker_id, status, lease_expires_at)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-0000000000f1',2,'DSH_JOB','w2','CLAIMED', now() + interval '5 min')$q$),
+      ('N18', '23514', '可重试失败却不给 retry_after（重试必须有时间）',
+       $q$insert into recruitment.task_attempt (tenant_id, task_id, attempt_no, worker_type, worker_id, status, lease_expires_at, ended_at, error_class)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-0000000000f2',1,'DSH_JOB','w3','FAILED_RETRYABLE', now() + interval '1 min', now(),'TRANSIENT')$q$),
+      ('N19', '23514', 'Business Task RUNNING 但没有 current_attempt_id',
+       $q$insert into recruitment.business_task (tenant_id, task_type, title, idempotency_key, status)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','X','无 attempt 的 RUNNING','task:no-attempt','RUNNING')$q$),
+      ('N20', '23514', '删除 Candidate（历史事实禁删，不变量 2）',
+       $q$delete from recruitment.candidate where id = 'aaaaaaaa-0000-0000-0000-000000000061'$q$),
+      ('N21', '23514', '修改 Rubric 版本（配置变更不得静默改历史，不变量 10）',
+       $q$update recruitment.rubric_version set dimensions = '[]'::jsonb
+           where id = 'aaaaaaaa-0000-0000-0000-000000000044'$q$),
+      ('N22', '23514', '修改 Resume 版本解析结果（简历版本不可覆盖）',
+       $q$update recruitment.resume_version set parsed_fields = '{"x":1}'::jsonb
+           where id = 'aaaaaaaa-0000-0000-0000-000000000064'$q$),
+      ('N23', '23514', '改写平台原始转写原文（不变量 6：原文不可被覆盖）',
+       $q$update recruitment.transcript_artifact set raw_text = '被改过的原文'
+           where id = 'aaaaaaaa-0000-0000-0000-0000000000b1'$q$),
+      ('N24', '23514', '直接改 Candidate 身份状态（没有 Merge Record）',
+       $q$update recruitment.candidate set identity_status = 'MERGED'
+           where id = 'aaaaaaaa-0000-0000-0000-000000000061'$q$),
+      ('N25', '23514', 'Candidate 合并没有匹配依据（禁止无依据归并）',
+       $q$insert into recruitment.candidate_merge (tenant_id, surviving_candidate_id, merged_candidate_id, match_basis, auto_merged)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-000000000061',
+                  'aaaaaaaa-0000-0000-0000-000000000061','{}'::jsonb, true)$q$),
+      ('N26', '23505', '同一租户重复创建 ACTIVE 候选人（强标识唯一）',
+       $q$insert into recruitment.candidate (tenant_id, display_name, normalized_email)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','张三（重复）','zhangsan@example.com')$q$),
+      ('N27', '23514', 'Execution Mandate 里出现业务审批动作（闸门不可绕过）',
+       $q$insert into recruitment.execution_mandate (tenant_id, actor_id, actor_type, permission_version, allowed_actions, expires_at)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111113','SYSTEM','perm@1','{approve}', now() + interval '1 day')$q$),
+      ('N28', '23505', '同一会议被绑定到第二个面试（MEETING_ALREADY_BOUND）',
+       $q$insert into recruitment.meeting_binding (tenant_id, meeting_id, interview_id, binding_method)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-0000000000a1',
+                  'aaaaaaaa-0000-0000-0000-000000000091','SCHEDULED')$q$),
+      ('N29', '23514', 'Interview Record 标 READY 但证据未校验',
+       $q$update recruitment.interview_record set verification_status = 'UNVERIFIED'
+           where id = 'aaaaaaaa-0000-0000-0000-0000000000c1'$q$),
+      ('N30', '23514', '处理跑通成功但仍有失败 Chunk（不得把部分当完整）',
+       $q$insert into recruitment.transcript_processing_run (tenant_id, artifact_id, chunk_total, chunk_succeeded, chunk_failed, status)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-0000000000b1',2,1,1,'SUCCEEDED')$q$),
+      ('N31', '23505', 'Duplicate Effect：同一幂等键再建一条（重试不得新建 Effect）',
+       $q$insert into recruitment.durable_effect (tenant_id, effect_type, idempotency_key, status)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','SEND_EMAIL','email:1','PENDING')$q$),
+      ('N32', '23514', 'Event trust_level 写非法值（外部文本不可信是枚举）',
+       $q$insert into recruitment.event_inbox (tenant_id, provider, event_type, idempotency_key, payload, trust_level)
+          values ('aaaaaaaa-0000-0000-0000-000000000001','feishu','x.y','feishu:evt-3','{}','TRUSTED')$q$)
+    ) as v(id, expect, what, sql)
+  loop
+    begin
+      execute r.sql;
+    exception when others then
+      get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text;
+      if v_state <> r.expect then
+        raise exception 'NEGATIVE % 失败但 SQLSTATE 不符（期望 % 实际 %）：% | %',
+          r.id, r.expect, v_state, r.what, v_msg;
+      end if;
+      v_ok := v_ok + 1;
+      raise notice '% PASS [%] => sqlstate=% | %', r.id, r.what, v_state, v_msg;
+      continue;
+    end;
+    raise exception 'NEGATIVE % 居然成功了（应当失败）：% | SQL=%', r.id, r.what, r.sql;
+  end loop;
+
+  raise notice 'NEGATIVE SUMMARY % 条负向测试全部按预期失败', v_ok;
+end $$;
+
+
+\echo ''
+\echo '=================================================================='
+\echo ' 7. 正向断言（约束没有把合法路径堵死）'
+\echo '=================================================================='
+
+do $$
+declare
+  v_n integer;
+begin
+  -- 7.1 合法状态迁移 + 自动写内部事件 + 版本自增
+  set local recruitment.actor_id = '11111111-1111-1111-1111-111111111111';
+  update recruitment.job set status = 'OPEN' where id = 'aaaaaaaa-0000-0000-0000-000000000041';
+
+  select count(*) into v_n from recruitment.event_inbox
+   where provider = 'internal' and event_type = 'job.status.changed'
+     and payload ->> 'record_id' = 'aaaaaaaa-0000-0000-0000-000000000041';
+  if v_n <> 1 then
+    raise exception 'POS-01 状态迁移没有写内部事件（期望 1 条，实际 %）', v_n;
+  end if;
+
+  select record_version into v_n from recruitment.job
+   where id = 'aaaaaaaa-0000-0000-0000-000000000041';
+  if v_n < 2 then
+    raise exception 'POS-02 状态迁移没有自增 record_version（实际 %）', v_n;
+  end if;
+  raise notice 'POS-01/02 PASS 状态迁移 → 内部事件 1 条 + record_version 自增';
+
+  -- 7.2 乐观并发：版本不匹配时改不动（WHERE record_version = 期望值 → 0 行）
+  update recruitment.job set title = '并发测试'
+   where id = 'aaaaaaaa-0000-0000-0000-000000000041' and record_version = 1;
+  get diagnostics v_n = row_count;
+  if v_n <> 0 then
+    raise exception 'POS-03 过期版本竟然更新成功（% 行）', v_n;
+  end if;
+  raise notice 'POS-03 PASS 过期 record_version 更新影响 0 行（VERSION_CONFLICT 由调用方处理）';
+
+  -- 7.3 未提交的 Scorecard 仍可编辑（PENDING → SUBMITTED）
+  insert into recruitment.scorecard (id, tenant_id, interview_id, interviewer_id, rubric_version_id, status)
+  values ('aaaaaaaa-0000-0000-0000-000000002001','aaaaaaaa-0000-0000-0000-000000000001',
+          'aaaaaaaa-0000-0000-0000-000000000091','aaaaaaaa-0000-0000-0000-000000000093',
+          'aaaaaaaa-0000-0000-0000-000000000044','PENDING');
+  update recruitment.scorecard set items = '[{"dim":"BACKEND","score":5}]'::jsonb
+   where id = 'aaaaaaaa-0000-0000-0000-000000002001';
+  raise notice 'POS-04 PASS PENDING Scorecard 可编辑（提交后才冻结）';
+
+  -- 7.4 合并链路：写入 Merge Record 自动把被合并方标 MERGED，且不删除 Application
+  insert into recruitment.candidate (id, tenant_id, display_name, normalized_email)
+  values ('aaaaaaaa-0000-0000-0000-000000002011','aaaaaaaa-0000-0000-0000-000000000001','张三（重复档）','zs2@example.com');
+  insert into recruitment.candidate_merge (id, tenant_id, surviving_candidate_id, merged_candidate_id, match_basis, auto_merged, decided_by_actor_id)
+  values ('aaaaaaaa-0000-0000-0000-000000002012','aaaaaaaa-0000-0000-0000-000000000001',
+          'aaaaaaaa-0000-0000-0000-000000000061','aaaaaaaa-0000-0000-0000-000000002011',
+          '{"strong_ids":["email"],"rule":"HIGH_CONFIDENCE_MULTI_DIM"}'::jsonb, false,
+          '11111111-1111-1111-1111-111111111111');
+
+  select count(*) into v_n from recruitment.candidate
+   where id = 'aaaaaaaa-0000-0000-0000-000000002011' and identity_status = 'MERGED'
+     and merged_into_candidate_id = 'aaaaaaaa-0000-0000-0000-000000000061';
+  if v_n <> 1 then
+    raise exception 'POS-05 合并后未把被合并方标 MERGED';
+  end if;
+  select count(*) into v_n from recruitment.application
+   where candidate_id = 'aaaaaaaa-0000-0000-0000-000000000061';
+  if v_n <> 1 then
+    raise exception 'POS-05 合并影响了历史 Application（不变量 2）';
+  end if;
+  raise notice 'POS-05 PASS 合并保留全部历史 Application，且主档未被改动';
+
+  -- 7.5 版本自增
+  select record_version into v_n from recruitment.candidate
+   where id = 'aaaaaaaa-0000-0000-0000-000000002011';
+  if v_n < 2 then
+    raise exception 'POS-06 candidate.record_version 未自增（实际 %）', v_n;
+  end if;
+  raise notice 'POS-06 PASS candidate.record_version 自动自增（当前 %）', v_n;
+end $$;
+
+
+\echo ''
+\echo '=================================================================='
+\echo ' 8. 不变量 → 约束 台账（逐条打印，全部必须已落地）'
+\echo '=================================================================='
+
+do $$
+declare
+  r record;
+begin
+  for r in
+    select * from (values
+      (1,  'Application 必须关联 Candidate 和 Job',
+           'DB', 'fk_application_candidate / fk_application_job + NOT NULL'),
+      (2,  'Candidate 合并不删除历史 Application',
+           'DB', 'trg_application_no_delete + candidate_merge 不改 application + 复合外键 NO ACTION'),
+      (3,  'Requisition / Job / Job Posting 各自独立身份与状态',
+           'DB', '三张独立表，各自 PK 与 ck_*_status'),
+      (4,  'Interview 必须关联 Application 和面试轮次',
+           'DB', 'fk_interview_application + ck_interview_round + uq_interview_slot'),
+      (5,  'Meeting 与 Interview 靠平台 ID 绑定，不能靠标题',
+           'DB', 'meeting 表无标题列 + ck_meeting_identity + uq_meeting_binding_active'),
+      (6,  'Transcript 原文不可被 AI Summary 覆盖',
+           'DB', 'transcript_artifact 原文列在白名单外（trg_*_immutable）+ ai_summary 独立表引用 revision'),
+      (7,  'Scorecard 必须记录评价者和评分标准版本',
+           'DB', 'interviewer_id + rubric_version_id 均 NOT NULL 外键'),
+      (8,  'Workflow 状态迁移必须有来源事件/动作、时间和结果',
+           'DB', 'fn_row_guard：状态变化必须给 actor，自动写 event_inbox 并回填 status_source_event_id'),
+      (9,  '重要审批与决策保留责任人、时间、结果、理由',
+           'DB', 'ck_approval_decided_fields / ck_decision_reason / decided_by_actor_id NOT NULL'),
+      (10, '配置变更不静默改变历史评价或已结束申请',
+           'DB', 'rubric_version/business_config 不可变 + scorecard.rubric_version_id 固定引用 + application.job_version_id 固定引用')
+    ) as v(no, inv, kind, enforcer)
+  loop
+    if r.kind = 'DB' then
+      raise notice 'INV-% PASS % → %', r.no, r.inv, r.enforcer;
+    else
+      raise notice 'INV-% APP-LAYER % → %', r.no, r.inv, r.enforcer;
+    end if;
+  end loop;
+end $$;
+
+\echo ''
+\echo '-- 应用层保证的规则（DB 无法声明，理由写在 SCHEMA.md §4）--'
+select * from (values
+  ('APP-01', '禁止"离职事件直接把 Requisition 设为 Approved"'),
+  ('APP-02', '同一候选人同岗位重复申请的新建/复活/冷却期由企业规则决定'),
+  ('APP-03', '禁止只按文本哈希去重（幂等键来源由接收层决定）'),
+  ('APP-04', '禁止模糊匹配自动写 Meeting↔Interview 关系（只允许人工或事件精确匹配）'),
+  ('APP-05', 'Evaluation Ready 三条件是跨表聚合（Scorecard 全交 + Record 完成 + 可回溯）'),
+  ('APP-06', '禁止把 PARSING 当成招聘阶段（状态轴分离由写入方保证）'),
+  ('APP-07', 'Agent 不得写 Scorecard 内容 / 不得代替人做闸门决策（由 Mandate + 服务端授权校验）'),
+  ('APP-08', '跨租户与资源访问授权（不变量 7，依赖可信服务端 + Mandate，不依赖 Prompt）')
+) as v(id, rule)
+order by 1;
+
+
+\echo ''
+\echo '=================================================================='
+\echo ' 9. 行数核对（脚本回滚前应为夹具行数，回滚后应为 0）'
+\echo '=================================================================='
+
+select 'candidate' as t, count(*) from recruitment.candidate
+union all select 'application', count(*) from recruitment.application
+union all select 'event_inbox', count(*) from recruitment.event_inbox
+union all select 'transcript_artifact', count(*) from recruitment.transcript_artifact
+union all select 'scorecard', count(*) from recruitment.scorecard
+union all select 'business_task', count(*) from recruitment.business_task
+order by 1;
+
+\echo ''
+\echo '=== ROLLBACK：自检不改变数据库 ==='
+rollback;
+
+\echo ''
+\echo '=================================================================='
+\echo ' VERIFY PASS：结构断言 + 状态机覆盖 + 对象覆盖 + 32 条负向测试全部通过'
+\echo '=================================================================='

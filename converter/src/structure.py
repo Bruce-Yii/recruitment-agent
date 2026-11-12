@@ -202,14 +202,11 @@ def _classify_title(text: str, *, is_top_size: bool, page_no: int = 1) -> int:
 
 # ============================ 结构推断 ============================
 def heading_count(blocks: list) -> int:
-    """标题数量（供上层判断"结构是否识别成功"）。"""
-    n = 0
-    for b in blocks or []:
-        if (b.get("level") or 0) > 0:
-            n += 1
-        else:
-            n += len(re.findall(r"^#{1,6}[ \t]+\S", (b.get("text") or "").strip(), re.M))
-    return n
+    """标题数量（供上层判断"结构是否识别成功"）。
+
+    DEVIATION：只数结构层给出的 level，不数正文里的 "#"——PDF 里那是内容。
+    """
+    return sum(1 for b in blocks or [] if (b.get("level") or 0) > 0)
 
 
 def infer_structure(blocks: list, *, page_of: dict | None = None) -> list:
@@ -220,19 +217,12 @@ def infer_structure(blocks: list, *, page_of: dict | None = None) -> list:
     if not blocks:
         return blocks
 
-    has_existing = any(_existing_level(b) for b in blocks)
+    # DEVIATION（相对参考实现）：PDF 里行首的 "#" 是**正文内容**，不是 Markdown 标记。
+    # 参考实现面向 Markdown 源，会把 "# " 前缀剥掉并把该块当 existing_level 标题；
+    # 在这里那样做等于改写原生正文（doc 11 A2/A3 明确禁止），因此不采用
+    # existing_level 证据，也绝不改写 block['text']。
     sizes = [(_font_size(b), b) for b in blocks if _font_size(b) > 0]
     heights = [(_bbox_height(b), b) for b in blocks if _bbox_height(b) > 0]
-
-    if has_existing:
-        for b in blocks:
-            lv = _existing_level(b)
-            b['level'] = lv
-            if lv:
-                m = _MD_HEADING.match((b.get('text') or '').strip())
-                if m:  # DEVIATION: 仅在真的存在 # 前缀时才改写文本
-                    b['text'] = m.group(2).strip()
-        return blocks
 
     if sizes:
         return _infer_by_metric(blocks, sizes, key='font_size', page_of=page_of)
@@ -281,11 +271,6 @@ def _infer_by_metric(blocks: list, pairs: list, *, key: str, page_of=None) -> li
         if rv < threshold and not bold:
             continue
         text = (block.get('text') or '').strip()
-        m = _MD_HEADING.match(text)
-        stripped = False
-        if m:
-            text = m.group(2).strip()
-            stripped = True
         if not _title_candidate(text):
             continue
         norm = re.sub(r'\s+', '', text)
@@ -301,9 +286,7 @@ def _infer_by_metric(blocks: list, pairs: list, *, key: str, page_of=None) -> li
         if counts[lvl] >= 20:
             continue
         counts[lvl] += 1
-        block['level'] = lvl
-        if stripped:  # DEVIATION: 只有真的清过 # 才写回文本
-            block['text'] = text
+        block['level'] = lvl  # 只加 level，绝不动 text
     return blocks
 
 

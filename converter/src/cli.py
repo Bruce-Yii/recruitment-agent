@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def _timeout_result(path: Path, seconds: float) -> dict:
     from . import __version__, content
     from .pdf_reader import BACKEND
-    from .resume_fields import empty_fields
+    from .resume_fields import empty_fields, empty_protected, empty_screening
 
     return content.result(
         blocks=[], completeness="partial", needs_visual=False,
@@ -30,11 +30,9 @@ def _timeout_result(path: Path, seconds: float) -> dict:
               "layout_backend": None, "order_verified": False, "repaired": False,
               "timed_out": True},
         extra={"fields": empty_fields("reader_timeout"),
-               "noise": [], "protected_attributes": {},
-               "screening": {"eligible_fields": [], "blocked_fields": [],
-                             "identity_merge_eligible": [], "identity_manual_review": [],
-                             "protected_excluded": [],
-                             "note": "read timed out; nothing may be used"},
+               "noise": [],
+               "protected_attributes": empty_protected("reader_timeout"),
+               "screening": empty_screening("reader_timeout"),
                "timeline": {}},
     )
 
@@ -42,7 +40,7 @@ def _timeout_result(path: Path, seconds: float) -> dict:
 def _failure_result(path: Path, message: str) -> dict:
     from . import __version__, content
     from .pdf_reader import BACKEND
-    from .resume_fields import empty_fields
+    from .resume_fields import empty_fields, empty_protected, empty_screening
 
     return content.result(
         blocks=[], completeness="partial", needs_visual=False,
@@ -52,11 +50,9 @@ def _failure_result(path: Path, message: str) -> dict:
               "layout_backend": None, "order_verified": False, "repaired": False,
               "failed": True},
         extra={"fields": empty_fields("reader_failed"),
-               "noise": [], "protected_attributes": {},
-               "screening": {"eligible_fields": [], "blocked_fields": [],
-                             "identity_merge_eligible": [], "identity_manual_review": [],
-                             "protected_excluded": [],
-                             "note": "read failed; nothing may be used"},
+               "noise": [],
+               "protected_attributes": empty_protected("reader_failed"),
+               "screening": empty_screening("reader_failed"),
                "timeline": {}},
     )
 

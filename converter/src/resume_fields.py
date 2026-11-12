@@ -88,6 +88,8 @@ _PROTECTED_PATTERNS = {
         re.compile(r"年龄\s*[:：]?\s*(\d{1,2})"),
         re.compile(r"(\d{1,2})\s*岁"),
         re.compile(r"(?:出生(?:日期|年月)?|生日)\s*[:：]?\s*((?:19|20)\d{2}[^\s，,。;；]*)"),
+        # 「男│2003 年│…」：性别紧跟年份的个人信息行，年份即出生年（实测语料写法）
+        re.compile(r"(?:男|女)\s*[│|·・]\s*((?:19|20)\d{2})\s*年"),
     ),
     "marital_or_children": (
         re.compile(r"婚姻状况|已婚|未婚|离异|丧偶|子女|已育|未育"),
@@ -135,8 +137,8 @@ _MONTH_NAMES = {
 _PRESENT_WORDS = ("至今", "今", "现在", "present", "now", "current", "till now", "to date")
 _DATE_CORE = (
     r"(?:"
-    r"(?:19|20)\d{2}\s*[.\-/年]\s*(?:0?[1-9]|1[0-2])"
-    r"(?:\s*[.\-/月]\s*(?:0?[1-9]|[12]\d|3[01])\s*日?)?"
+    r"(?:19|20)\d{2}\s*[.\-/年]\s*(?:0?[1-9]|1[0-2])(?![0-9])"
+    r"(?:\s*[.\-/月]\s*(?:0?[1-9]|[12]\d|3[01])(?![0-9])\s*日?)?"
     r"|(?:19|20)\d{2}"
     r"|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s*,?\s*(?:19|20)\d{2}"
     r")"
@@ -210,7 +212,8 @@ def find_date_ranges(text: str) -> list[dict]:
 _SECTION_KINDS = (
     ("education", ("教育背景", "教育经历", "学习经历", "在校经历", "校园经历", "学历",
                    "教育", "education", "academic background", "academic", "schooling")),
-    ("work", ("工作经历", "工作经验", "职业经历", "任职经历", "工作履历", "实习经历",
+    ("work", ("工作经历", "工作经验", "职业经历", "任职经历", "工作履历", "职业阶段",
+              "职业历程", "工作历程", "职业发展", "从业经历", "实习经历",
               "实习经验", "工作范围", "社会经验", "工作", "experience", "work experience",
               "employment", "employment history", "work history", "professional history",
               "career history", "professional experience")),
@@ -330,6 +333,12 @@ def _field(state: str, *, value=None, evidence=None, reason="", provenance="nati
 _CJK_NAME_RE = re.compile(r"^[\u4e00-\u9fa5]{2,4}$")
 _EN_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z.\-]{1,24}(?:\s+[A-Za-z][A-Za-z.\-]{0,24}){0,2}$")
 _NAME_STOP = re.compile(r"[\d@:：/／]|简历|resume|curriculum", re.I)
+# 「姓名：崔兴」这类带标签写法：字段在原文里被明确标注，属于已读出
+_LABELED_NAME = re.compile(
+    r"(?:姓\s*名|Name)\s*[:：]\s*([\u4e00-\u9fa5]{2,4}|[A-Za-z][A-Za-z.\-]{1,20}(?:\s+[A-Za-z][A-Za-z.\-]{0,20}){0,2})")
+# 出现标签但没读出值 → unreadable，不是 absent（红线：unreadable 不能当 absent）
+_PHONE_LABEL = re.compile(r"电\s*话|手\s*机|联系电话|联系方式|\btel\b|\bmobile\b|\bphone\b", re.I)
+_EMAIL_LABEL = re.compile(r"邮\s*箱|电子邮箱|电子邮件|\bemail\b|\be-mail\b", re.I)
 
 _PHONE_PATTERNS = (
     re.compile(r"(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d[-\s]?\d{4}[-\s]?\d{4}(?!\d)"),
@@ -369,6 +378,17 @@ def _find_name(blocks: list, sha: str) -> dict:
                 candidates.append((index, block, head.group(1),
                                    "heading_level_1_prefix", size))
     if not candidates:
+        for index, block in enumerate(blocks):
+            match = _LABELED_NAME.search(block.get("text") or "")
+            if match:
+                value = match.group(1).strip()
+                return _field(PRESENT, value=value,
+                              evidence=[_evidence(block, index, sha, value)],
+                              extra={"match_rule": "labeled_name"})
+        # 出现"姓名/Name"标签却没读出值 → 读不出，而不是没有
+        if any(_LABELED_NAME.search(b.get("text") or "") or
+               re.search(r"姓\s*名|\bName\b", b.get("text") or "") for b in blocks):
+            return _field(UNREADABLE, reason="name_label_without_readable_value")
         return _field(ABSENT, reason="no_name_candidate")
     # 优先结构层认定的 h1；否则取首页字号最大者（且必须唯一最大）
     h1 = [c for c in candidates if c[3].startswith("heading_level_1")]
@@ -401,6 +421,12 @@ def _find_pattern_field(blocks: list, patterns, sha: str, *, name: str) -> dict:
                                   extra={"normalized": digits})
                 return _field(PRESENT, value=value,
                               evidence=[_evidence(block, index, sha, value)])
+    # 有标签、无值（脱敏/图片化）→ unreadable；不能记 absent
+    label = _PHONE_LABEL if name == "phone" else _EMAIL_LABEL
+    for index, block in enumerate(blocks):
+        if label.search(block.get("text") or ""):
+            return _field(UNREADABLE, reason=f"{name}_label_without_readable_value",
+                          evidence=[_evidence(block, index, sha)])
     return _field(ABSENT, reason=f"no_{name}_pattern")
 
 
@@ -462,6 +488,14 @@ _EDU_MARK_RE = re.compile(
 
 def _is_education_row(text: str) -> bool:
     return bool(_EDU_MARK_RE.search(text or ""))
+
+
+def _residual_text(text: str) -> str:
+    """去掉日期区间后的剩余文字（判"这一行除了日期还有没有别的内容"）。"""
+    residual = text or ""
+    for rng in find_date_ranges(residual):
+        residual = residual.replace(rng["raw"], " ")
+    return residual.strip(" \t\n•·-—|｜,，;；:：")
 
 
 def _split_header(text: str) -> tuple[str | None, str | None, str]:
@@ -568,18 +602,14 @@ def _entries(blocks: list, indices: list, kind: str, sha: str,
         entries.append(entry)
 
         # 归属检查：本行有日期，但同一行/相邻行都找不到组织文本 → 不能拼装
-        has_org_text = any(
-            (blocks[i].get("text") or "").strip()
-            and not find_date_ranges(blocks[i].get("text") or "")
-            and not re.fullmatch(r"[\s•·\-—|｜]+", (blocks[i].get("text") or ""))
-            for i in anchor["blocks"])
+        # "组织上下文"= 同一行里除日期以外的可见文字（公司名常和日期同块）
+        has_org_text = any(len(_residual_text(blocks[i].get("text") or "")) >= 2
+                           for i in anchor["blocks"])
         if not has_org_text:
             near = [c for c in clusters if c["page"] == anchor["page"] and c is not anchor
                     and abs(c["y0"] - anchor["y0"]) <= 3 * line_height]
-            has_org_text = any(
-                not find_date_ranges(blocks[i].get("text") or "")
-                and len((blocks[i].get("text") or "").strip()) >= 2
-                for c in near for i in c["blocks"])
+            has_org_text = any(len(_residual_text(blocks[i].get("text") or "")) >= 2
+                               for c in near for i in c["blocks"])
         if not has_org_text:
             entry["attribution"] = "isolated_row"
             entry["company"] = None
@@ -611,7 +641,8 @@ def _timeline(entries: list) -> tuple[dict, list]:
                 continue
             if date["end_index"] is None:
                 closed.append({"entry": entry["index"], "start": date["start_index"],
-                               "end": None, "open": True, "raw": date["raw"]})
+                               "end": None, "open": True, "raw": date["raw"],
+                               "coarse": date["start"].get("month") is None})
                 continue
             if date["start_index"] > date["end_index"]:
                 issues.append({
@@ -620,12 +651,22 @@ def _timeline(entries: list) -> tuple[dict, list]:
                     "location": {"page": entry["page"], "bbox": entry["bbox"]},
                 })
                 continue
+            coarse = (date["start"].get("month") is None
+                      or (date["end"] or {}).get("month") is None)
             closed.append({"entry": entry["index"], "start": date["start_index"],
-                           "end": date["end_index"], "open": False, "raw": date["raw"]})
+                           "end": date["end_index"], "open": False, "raw": date["raw"],
+                           "coarse": coarse})
     ordered = sorted([c for c in closed if not c["open"]], key=lambda c: (c["start"], c["end"]))
     covered = 0
     cursor = None
+    cursor_coarse = False
     for item in ordered:
+        # 年粒度区间（没有月份）不参与断档/重叠判定：精度不足，判了就是猜
+        if item["coarse"]:
+            if cursor is None or item["end"] > cursor:
+                cursor = item["end"]
+                cursor_coarse = True
+            continue
         if cursor is not None and item["start"] > cursor + 1:
             gap = item["start"] - cursor - 1
             if gap >= 3:
@@ -634,7 +675,7 @@ def _timeline(entries: list) -> tuple[dict, list]:
                     "message": f"{gap} month(s) without any interval before {item['raw']}",
                     "location": {"page": None, "bbox": None},
                 })
-        if cursor is not None and item["start"] <= cursor:
+        if cursor is not None and item["start"] <= cursor and not cursor_coarse:
             overlap = cursor - item["start"] + 1
             if overlap >= 2:
                 issues.append({
@@ -646,10 +687,12 @@ def _timeline(entries: list) -> tuple[dict, list]:
             start = item["start"] if cursor is None else max(item["start"], cursor + 1)
             covered += max(0, item["end"] - start + 1)
             cursor = item["end"]
+            cursor_coarse = False
     summary = {
         "intervals": len(closed),
         "closed_intervals": len(ordered),
         "open_ended_intervals": sum(1 for c in closed if c["open"]),
+        "year_only_intervals": sum(1 for c in closed if c["coarse"]),
         "covered_months_closed": covered,
         "covered_years_closed": round(covered / 12, 2),
         "note": ("open-ended intervals are not converted to months (a date-stamped run "
@@ -700,10 +743,24 @@ def analyze(blocks: list, *, page_info: list, page_count: int, source_sha256: st
     章节区间依赖阅读顺序，因此这些页会让 work/education 的"没有该章节"不成立。
     """
     hard, _ = issue_severity(issues_before)
-    gate_reason = ""
+    # 两类 HARD 后果不同：
+    #   CONTENT_UNREAD —— 有内容没读出来：连"电话/邮箱没有"都不能断言；
+    #   其它 HARD（顺序/结构/归属）—— 文本读全了，只是分区/顺序不可信：
+    #   只影响依赖分区与顺序的 work_experience / education。
+    CONTENT_UNREAD = {"pdf_no_text", "unread_visual_page", "pdf_text_encoding_unread",
+                      "encrypted_pdf", "reader_failed", "reader_timeout",
+                      "pdf_damaged_repaired"}
+    codes = hard_codes(issues_before)
+    content_gate = ""
+    structure_gate = ""
     if hard:
-        codes = hard_codes(issues_before)
-        gate_reason = "document_not_fully_read: " + ",".join(codes[:4])
+        unread = [c for c in codes if c in CONTENT_UNREAD]
+        structure = [c for c in codes if c not in CONTENT_UNREAD]
+        if unread:
+            content_gate = "document_not_fully_read: " + ",".join(unread[:4])
+        if structure:
+            structure_gate = "structure_not_fully_read: " + ",".join(structure[:4])
+    gate_reason = content_gate or structure_gate
     order_pages = sorted(set(order_unverified_pages or []))
     order_reason = ""
     if order_pages:
@@ -747,6 +804,8 @@ def analyze(blocks: list, *, page_info: list, page_count: int, source_sha256: st
         entries_by_kind[kind].extend(entries)
         exp_issues.extend(entry_issues)
         education_rows.extend(skipped)
+    # 条目级问题（跨区块归属 / 同行多块）必须真的进入 issues，否则"报了但没人看见"
+    issues.extend(exp_issues)
 
     for kind, label in (("work", "work_experience"), ("education", "education")):
         entries = entries_by_kind[kind]
@@ -799,10 +858,10 @@ def analyze(blocks: list, *, page_info: list, page_count: int, source_sha256: st
     # 有章节但缺工作章节、正文里却有"没被任何经历章节认领"的日期行：
     # work_experience 同样不能记 absent（那会把"读到了但没归类"说成"没有"）。
     if fields["work_experience"]["state"] == ABSENT:
+        # 任何已识别章节里的日期行都已被该章节"认领"（奖项/项目/科研的日期不是工作经历）
         claimed = set()
-        for kind, start, end in section_ranges:
-            if kind in ("work", "education", "project", "research"):
-                claimed.update(range(start, end))
+        for _kind, start, end in section_ranges:
+            claimed.update(range(start, end))
         unclaimed = [row for row in _document_date_rows(blocks, source_sha256)
                      if not (set(row["blocks"]) & claimed)]
         if unclaimed:
@@ -850,11 +909,13 @@ def analyze(blocks: list, *, page_info: list, page_count: int, source_sha256: st
     for key, field in fields.items():
         if field["state"] != ABSENT:
             continue
-        if gate_reason:
+        structural = key in ("work_experience", "education")
+        reason = content_gate or (structure_gate if structural else "")
+        if reason:
             field["state"] = UNREADABLE
-            field["reason"] = gate_reason
+            field["reason"] = reason
             gated_hard.append(key)
-        elif key in ("work_experience", "education") and order_reason:
+        elif structural and order_reason:
             # 章节区间是从阅读顺序推出来的；顺序不可信时，"没有该章节"不成立。
             field["state"] = UNREADABLE
             field["reason"] = order_reason
@@ -902,7 +963,8 @@ def analyze(blocks: list, *, page_info: list, page_count: int, source_sha256: st
     if images_first_page:
         protected["photo"] = {
             "state": "unverified", "value": None,
-            "evidence": [{"page": 1, "images": images_first_page}],
+            "evidence": [{"page": 1, "images": images_first_page,
+                          "source_sha256": source_sha256}],
             "screening_excluded": True,
             "reason": ("geometry cannot decide whether an image is a portrait; "
                        "reported as unverified, never as a screening feature"),
@@ -968,6 +1030,25 @@ def empty_fields(reason: str) -> dict:
     for key in ("work_experience", "education"):
         out[key] = _field(UNREADABLE, reason=reason, extra={"entries": [], "entry_count": 0})
     return out
+
+
+def empty_screening(reason: str) -> dict:
+    """读取失败/加密/超时时的筛选可用性：全部字段 blocked，全部受保护属性隔离。"""
+    return {"eligible_fields": [],
+            "blocked_fields": [{"field": key, "reason": reason}
+                               for key in ("name", "phone", "email",
+                                           "work_experience", "education")],
+            "identity_merge_eligible": [],
+            "identity_manual_review": [],
+            "protected_excluded": list(PROTECTED_ATTRS),
+            "note": f"{reason}: nothing may be used for screening"}
+
+
+def empty_protected(reason: str) -> dict:
+    """读取失败/加密时的受保护属性表：全部 unreadable 且一律隔离。"""
+    return {attr: {"state": UNREADABLE, "value": None, "evidence": [],
+                   "screening_excluded": True, "reason": reason}
+            for attr in PROTECTED_ATTRS}
 
 
 def split_noise(blocks: list) -> tuple[list, list]:

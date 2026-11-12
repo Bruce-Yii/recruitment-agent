@@ -40,6 +40,10 @@ _OCR_TOOL = Path(__file__).with_name("ocr_titles.py")
 _CID_RE = re.compile(r"\(cid:\d+\)")
 # Cc 控制字符（保留 \t \n \r：它们是合法排版空白）
 _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# "解不出的字形"判据：U+FFFD / (cid:N) / 除 NUL 以外的控制字符。
+# NUL 不在此列——参考实现把 NUL 当"格式解码"（content.normalize 用空格替换），
+# 它不是文本层解码失败；把它算成 HARD 会让一份完全可读的简历变成"读不出"。
+_BAD_GLYPH_RE = re.compile(r"\ufffd|\(cid:\d+\)|[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 # ============================ 保真工具 ============================
@@ -236,12 +240,10 @@ def _failed(path: Path, sha: str | None, code: str, message: str, *,
               "backend": BACKEND, "reader_version": __version__,
               "page_info": [], "layout_backend": None, "order_verified": False,
               "repaired": False, "failed": True},
-        extra={"fields": {}, "noise": [], "protected_attributes": {},
-               "screening": {"eligible_fields": [], "blocked_fields": [],
-                             "identity_merge_eligible": [],
-                             "identity_manual_review": [],
-                             "protected_excluded": [],
-                             "note": "read failed; nothing may be used"},
+        extra={"fields": resume_fields.empty_fields(code),
+               "noise": [],
+               "protected_attributes": resume_fields.empty_protected(code),
+               "screening": resume_fields.empty_screening(code),
                "timeline": {}})
 
 
@@ -275,14 +277,17 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
                      "message": "PDF cannot be opened without a password"}],
             meta={"pages": doc.page_count, "source_sha256": sha, "source_name": path.name,
                   "backend": BACKEND, "reader_version": __version__,
-                  "page_info": [], "layout_backend": None, "order_verified": False,
+                  "page_info": [{"page": n, "chars": None, "images": None, "drawings": None,
+                                 "readable": False, "layout_order_applied": False,
+                                 "image_coverage": None, "block_count": 0,
+                                 "encoding_removed": "", "noise_removed": ""}
+                                for n in range(1, doc.page_count + 1)],
+                  "layout_backend": None, "order_verified": False,
                   "repaired": bool(getattr(doc, "is_repaired", False))},
-            extra={"fields": {}, "noise": [], "protected_attributes": {},
-                   "screening": {"eligible_fields": [], "blocked_fields": [],
-                                 "identity_merge_eligible": [],
-                                 "identity_manual_review": [],
-                                 "protected_excluded": [],
-                                 "note": "encrypted: nothing was read"},
+            extra={"fields": resume_fields.empty_fields("encrypted_pdf"),
+                   "noise": [],
+                   "protected_attributes": resume_fields.empty_protected("encrypted_pdf"),
+                   "screening": resume_fields.empty_screening("encrypted_pdf"),
                    "timeline": {}})
 
     blocks, pages, issues, warnings = [], [], [], []
@@ -320,8 +325,9 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
                 continue
             clean, removed = strip_unreadable(raw[4])
             if removed:
-                encoding_regions.append(list(raw[:4]))
-                encoding_removed.append(removed)
+                encoding_removed.append(removed)          # 已声明移除：保真恒等式要用
+            if removed and _BAD_GLYPH_RE.search(removed):
+                encoding_regions.append(list(raw[:4]))    # 只有真的解不出才算 unread
             if not clean.strip():
                 continue  # 整块只有坏字形：内容已记入 encoding_removed，不造空块
             page_blocks.append(_native_block("paragraph", clean,
@@ -451,6 +457,8 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
             seen_fallback.add(uri)
             label = " ".join(w[4] for w in words if rect.contains(
                 fitz.Point((w[0] + w[2]) / 2, (w[1] + w[3]) / 2))) or uri
+            # 词里可能带坏字形标记：链接记录块同样不允许把 U+FFFD 带进正文
+            label = strip_unreadable(label)[0] or uri
             item = {"text": label, "href": uri,
                     "location": {"page": number, "bbox": list(rect)}}
             page_blocks.append(_native_block("link", content.link_md(label, uri),
@@ -470,6 +478,12 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
         if chars < 80 and (images or drawings):
             issues.append({"code": "unread_visual_page",
                            "message": "low-text page contains graphics",
+                           "location": {"page": number}})
+        elif chars == 0 and not images and not drawings:
+            # doc 11 A1：每页要么有 block，要么有 issue。空白页既没有内容也没有图形，
+            # 必须留一条记录，否则这一页在输出里"消失"了。
+            issues.append({"code": "pdf_page_empty",
+                           "message": "page has no text, no image and no drawing",
                            "location": {"page": number}})
         else:
             note = _pdf_image_note(number, chars, images, coverage)

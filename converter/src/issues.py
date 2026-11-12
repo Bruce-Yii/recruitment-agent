@@ -45,6 +45,7 @@ ADDED_CODES = {
     'resume_timeline_unparsed': ('soft', '含年份但无法归一为区间'),
     'resume_attribution_unverified': ('soft', '经历行的组织上下文不可确认（未做跨区块组合）'),
     'platform_noise_excluded': ('soft', '平台噪声已识别并移出正文（保留记录）'),
+    'pdf_page_empty': ('soft', '该页无文字、无图像、无矢量图形（空页，仅记录）'),
     'resume_protected_attribute_present': ('soft', '识别到受保护属性并隔离，未进入筛选特征'),
     'resume_ocr_heading_inserted': ('soft', '标题来自 OCR 区域补读（正文仍为原生文本）'),
 }
