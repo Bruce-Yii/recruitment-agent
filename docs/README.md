@@ -17,7 +17,9 @@
 | **04** | [连接器与转写](04-connectors-and-transcript.md) | **外部系统怎么接、会议转写怎么拿全**：14 连接器、4 级降级、三平台字段、31 步链路 |
 | **05** | [产品要求摘要](05-product-requirements.md) | **PRD 速查版**：8 类接入、批量与自动初筛、采纳闭环、版本路线 |
 | **06** | [治理、验收与现状](06-governance-and-current-state.md) | **怎么算完成、现在到哪**：审查规则、E1–E4、决策台账、当前状态、引用白名单 |
-| **08** | [**Golden Path 运行手册**](08-DEMO-RUNBOOK.md) | **怎么真的跑起来**：建库→迁移→种子→起 API→真实飞书 MANUAL→验证落库→起 Worker→自动链路边界与排障 |
+| **08** | [Golden Path 运行手册（HISTORICAL）](08-DEMO-RUNBOOK.md) | ⚠️ **老仓 monorepo 底座**的运行手册（pg-boss / `integration/v1.0-flow` / 1106 测试）。那套底座已废弃，**不要照它跑**。现行手册见 **18** |
+| **16** | [**设计理由**](16-design-rationale.md) | **为什么这么设计**：为什么基于 DSH、转换层为什么是四件套、为什么先带 id 序列化、为什么放弃词表拟合、v1.0 为什么不做权限、踩过的两个坑、被否掉的方案 |
+| **18** | [**v1.0 Golden Path（DSH 版）**](18-golden-path.md) | **现在怎么跑**：底座四层、6 个在范围内的阶段、8 步链路、每步写哪些表与要什么证据、当前真实状态（含 ❌/🚧/⛔）、最可能卡住的地方 |
 | **09** | [**DSH 插件化落位**](09-dsh-plugin-architecture.md) | **哪些能力做成工具、哪些必须留确定性服务**：DSH 三层插件机制实测、已装能力、插件市场候选、PDF/Word 解析方案、落地三步 |
 | **10** | [**复用简历项目转换层**](10-conversion-layer-reuse.md) | **PDF/DOCX 到底怎么读**：最新转换层（`codex/conversion-integrated-20261022`）的读取契约、PDF 原生+Layout 只取几何、扫描件不 OCR 造事实、我们采用与不采用的部分 |
 | **11** | [**PDF 转换器验收标准**](11-pdf-acceptance-criteria.md) | **转换器怎么算合格**：六维判据、分层门槛、6+4 条红线、招聘特有的归属/三态/可回溯要求、13 项可执行清单 |
@@ -67,11 +69,12 @@
 
 ## 物理落位
 
-- 仓库克隆：`D:\12412\dsh工作区\projects\recruitment-os`（工作树停在旧文档基线，勿据此判断现状）
-- 各 lane worktree：`D:\12412\DshWorktrees\recruitment-os\*`
-- 过程产物：仓库内 `work/`（未追踪）
-- 总控行为约束：仓库根 `AGENTS.md`（八条铁律 R1–R8）
-- 决策备忘：`work/control/`；研究底稿：`work/research/`
+- 本仓库（新）：`D:\12412\dsh工作区\projects\recruitment-agent`（GitHub `Bruce-Yii/recruitment-agent`，私有）
+- 旧仓库（**冻结，只读参考**）：`D:\12412\dsh工作区\projects\recruitment-os`，`main@6bcfc70`，**不要在里面开发**
+- DSH_HOME：`D:\12412\dsh-home`；产品 profile = `profiles/recruitment`（DSH Web）
+- 过程产物：仓库内 `work/`（已 gitignore，不入库）
+- 总控行为约束：旧仓根 `AGENTS.md`（八条铁律 R1–R8），本项目继续沿用
+- 决策台账：**`docs/17-decision-ledger.md`**（入库，唯一权威源）；旧仓 `work/control/` 仅作历史
 
 ---
 

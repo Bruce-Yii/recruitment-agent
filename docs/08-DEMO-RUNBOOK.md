@@ -1,5 +1,10 @@
 # 08 · Golden Path 运行手册（可复现）
 
+> ⚠️ **HISTORICAL（2026-11-13 标注）**：这份手册描述的是**已废弃的老仓 monorepo** 底座
+> （`integration/v1.0-flow` 分支、pg-boss、`packages/db`、1106 条测试、5 条 lane 合并）。
+> 那套底座已整体废弃，**不要照这份文档跑任何东西**。
+> 当前底座的运行手册见 **`docs/18-golden-path.md`**。本文仅作历史记录保留。
+
 **目标**：一条命令级别的步骤，把 v1.0 Golden Path 在本机跑起来并留下凭据。
 **分支**：`integration/v1.0-flow`（已推送）
 **已实测**：2026-11-12，Windows 11 + Node 24.16 + pnpm 12.3.4 + PostgreSQL 17.11
