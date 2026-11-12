@@ -29,8 +29,19 @@ _LINK_MD = re.compile(r"\[((?:\\.|[^\]])*)\]\(<[^>]*>\)")
 
 
 def load_manifest(path: Path) -> list[dict]:
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+    """Load rows and attach a resolved ``path`` for every row.
+
+    The committed manifests carry a logical ``root`` + ``rel`` pair; tests read
+    ``row["path"]``. Resolution happens once here so no test has to know about
+    the portability scheme.
+    """
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
             if line.strip()]
+    for row in rows:
+        resolved = resolve_original(row)
+        if resolved is not None:
+            row["path"] = str(resolved)
+    return rows
 
 
 # Corpus originals are not in the repository (size + real candidate material).
@@ -204,4 +215,5 @@ def tmp_pdf(tmp_path):
     def _make(name: str, lines, **kwargs) -> Path:
         return build_pdf(tmp_path / name, lines, **kwargs)
     return _make
+
 
