@@ -729,3 +729,14 @@ DSH 自带 `@deepseek-ai/dsh-user-approval`（fail-closed）；headless profile 
 
 **旧仓位置**（只读参考，不要在里面开发）：
 `D:\12412\dsh工作区\projects\recruitment-os\work\control\DECISIONS-2026-11-12.md`
+
+### D-84 · 终局决策不接受"缺面评但逐条确认"的旁路
+
+**裁定**：`ADVANCE(FINAL)` 与 `REJECT` 在缺少任何**必交面试官**的面评时，**一律** `SCORECARD_MISSING`，
+**不允许**用 `acknowledged_missing` 绕过；只有 `ADVANCE(STAGE)` 可以带逐条确认推进。
+`HOLD` / `WITHDRAW` 永远不被面评缺失阻断。
+
+**理由**：错误淘汰不可逆，给终局开"确认旁路"等于把四道防线降级成"记得点确认"。
+方向故意不对称：推进可以保守地少信息，淘汰不行。
+
+**证据**：`contracts/evaluation/decision-rules.md` §4.2.1 + Q-5；`docs/17` D-19（顺序 HARD）同一取向。
