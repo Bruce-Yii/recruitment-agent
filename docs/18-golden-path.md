@@ -81,7 +81,7 @@ agent 不得代填面评、不得代做决策（`execution_mandate` 的 CHECK �
 | S6 接入工具 | 🚧 在建 | 见 `work/`（lane 交付后回填） |
 | S7 初筛工具 | 🚧 在建 | 契约已定稿于 `contracts/job-screening/` |
 | S8/S9/S10 工具 | ❌ 未开始 | 只有契约，零实现 |
-| 产品 profile（DSH Web） | 🟡 可组合，未启动 | `dsh --profile recruitment --dump-config` 通过；**没有起服务**（会与现有 GUI 抢端口） |
+| 产品 profile（DSH Web） | ✅ 能起服务 | `dsh --profile recruitment --no-open --port 61999` → `HTTP 200 / 27660 bytes / title "DeepSeek Harness"`（验证后已关）；**但没有在里面调过招聘工具**，工具是否都能在 Web 会话里跑通还没证 |
 
 **结论**：Golden Path **还没有跑通过一次**。上面任何一个 ❌/🚧 都足以让链路断开。
 
@@ -116,12 +116,39 @@ dsh --profile recruitment
 
 ---
 
-## 6. 现在最可能卡住的地方
+## 6. 人类闸门怎么落地（已查实，2026-11-13）
 
-1. **人类 actor 从哪来**：DSH 的 tool `execute(args, exec)` 里有没有"这是人类还是 agent"的信息，
-   还没验证过。如果拿不到，第 4/7/8 步的"不可代填"就只能在工具层硬编码，
-   而不是结构性保证 —— 那等于没有保证。
-2. **`decision.stage_code` 没有外键**（实测 `fk_count=0`）：写错阶段码数据库不报错，待 0007。
-3. **新租户必须自己种 `stage_catalog`**：0006 给 `interview.stage_code` 加了外键之后，
+**问题**：工具是 agent 调的，`execute(args, exec)` 里的 `exec` 只有
+`callId` / `agent?` / `signal` / 传输 token（`dsh-tools/lib/types/index.d.ts` 的 `ToolExecutionInput`），
+**没有任何"这次是人还是 agent 在按"的信息**。所以"不可代填面评"如果靠工具自己判断，
+只能在工具层硬编码 —— 那等于没有保证。
+
+**答案：复用 DSH 自带的审批 seam，不要自研。**
+
+| 事实 | 证据 |
+|---|---|
+| `@deepseek-ai/dsh-user-approval` 提供 `ctx.approval`（一次性审批，fail-closed） | 包 README.zh.md §请求决定 |
+| 两个 profile 都组合了它 | `dsh --profile recruitment --dump-config` → `- id: approval / name: '@deepseek-ai/dsh-user-approval'`；Web profile 另有 `- id: ui-approval`（人类 UI） |
+| headless profile 只有 seam、没有 UI → 请求解析为 `unavailable` → **拒绝** | 同上（`approval: ask` + 无应答者） |
+
+**因此**：写人类动作的工具（第 4/5/7/8 步）必须
+`inject: ['tools', 'approval']`，在写库**之前**调 `ctx.approval.request({ agent, tool, callId, reason, signal })`：
+
+- `allow` → 才写库，`decided_by_actor_id` 取**审批人**映射的本地 actor，**绝不取模型入参**
+- `deny` / `unavailable` / `cancelled` → 立即 `BLOCKED_BY_APPROVAL`，不写任何行
+
+这样"人类闸门不可绕过"是**结构性**的：无人值守的 headless 跑批根本不可能落一条决策。
+
+**仍然没做到**：审批人 → `actor_id` 的映射还没有实现（v1.0 单用户，取配置里的本地 actor）。
+多用户/多租户下这会不够，届时要接真实身份源。
+
+---
+
+## 7. 现在最可能卡住的地方
+
+1. **`decision.stage_code` 没有外键**（实测 `fk_count=0`）：写错阶段码数据库不报错，待 0007。
+2. **新租户必须自己种 `stage_catalog`**：0006 给 `interview.stage_code` 加了外键之后，
    新建租户若不种 12 行目录，插面试会直接 23503。
-4. **模型额度**：`fallback` 车道仍然 0 次真实读取；Golden Path 第 2 步（结构化）也要真实模型。
+3. **模型额度**：`fallback` 车道仍然 0 次真实读取；Golden Path 第 2 步（结构化）也要真实模型。
+4. **审批 UI 只在 Web profile 里**：`recruitment` profile 组合了 `ui-approval`，但**没有起过服务**，
+   所以"人真的能在界面上点同意"这一点还没有证据。
