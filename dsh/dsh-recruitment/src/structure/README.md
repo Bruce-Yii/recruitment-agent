@@ -63,53 +63,63 @@
 
 ## 3. 模型结果契约
 
+> **权威是 `contracts/schema.json`**（+ 它的散文版 `contracts/prompt.md`）。本节只是索引：
+> 校验器认的每个位置都能在里面找到 `$defs` 路径。
+
 ```jsonc
 {
-  "sections": [
-    { "label": "basic",
-      "block_ids": [1, 2],
-      "fields": {
-        "name":  { "state": "present", "value": "张三", "block_id": 1 },
-        "phone": { "state": "present", "value": "13800001234", "block_id": 2 },
-        "email": { "state": "absent",  "value": null, "block_id": null }
-      } },
-    { "label": "work",
-      "block_ids": [3, 4, 5],
-      "entries": [
-        { "block_ids": [4],
-          "fields": {
-            "company": { "state": "present", "value": "星河科技",   "block_id": 4 },
-            "title":   { "state": "present", "value": "后端工程师", "block_id": 4 },
-            "start":   { "state": "present", "value": "2020.07",    "block_id": 4 },
-            "end":     { "state": "unreadable", "value": null, "block_id": 4, "reason": "原文日期被截断" }
-          } }
-      ] },
-    { "label": "summary",
-      "block_ids": [6, 7],
-      "fields": {
-        // 一句话跨了两块（D-30）：用有序 block_ids 声明，value 匹配拼接后的文本。
-        "note": { "state": "present", "value": "…佣金结算及分账中台等复杂业务。", "block_id": 6, "block_ids": [6, 7] }
-      } }
+  "prompt_version": "1.0.0",
+  "schema_version": "1.0.0",
+  "block_count": 4,
+  "sections": [                       // $defs.section：只有 label / block_ids / ignored
+    { "label": "contact", "block_ids": ["1", "2"] },
+    { "label": "work_experience", "block_ids": ["3", "4"] },
+    { "label": "other", "block_ids": ["5"], "ignored": { "reason": "empty_or_symbol_only" } }
   ],
-  "ignored": [ { "block_id": 8, "reason": "空白块，无正文" } ]
+  "fields": {                         // $defs.fields：五个键恒在（顶层，不在 section 里）
+    "name":  { "state": "present", "value": "张三", "block_ids": ["1"] },          // $defs.identity_field
+    "phone": { "state": "present", "value": "13800001234", "block_ids": ["2"] },
+    "email": { "state": "absent", "block_ids": [], "reason": "not_mentioned" },
+    "work_experience": {              // $defs.structural_field：条目在 value[]，不是 entries[]
+      "state": "present",
+      "block_ids": ["4"],
+      "value": [
+        {                             // $defs.work_entry：事实键平铺，没有 fields 子对象
+          "company": { "value": "星河科技", "block_ids": ["4"] },   // $defs.fact
+          "title":   { "value": "后端工程师", "block_ids": ["4"] },
+          "start":   { "value": "2020.07", "block_ids": ["4"] },
+          "end":     { "value": "2023.06", "block_ids": ["4"] },
+          "block_ids": ["4"],
+          "attribution": "single_block"
+        }
+      ]
+    },
+    "education": { "state": "absent", "block_ids": [], "reason": "not_mentioned" }   // $defs.education_field
+  }
 }
 ```
 
-字段引用有两种写法（二选一，或同时给出且 `block_id === block_ids[0]`）：
+条目数组字段（`work_experience` / `education`）的条目在 **`value[]`**；`education` 的条目键是
+`school` / `major` / `degree` / `start` / `end`，`work_experience` 的是 `company` / `title` / `start` / `end`。
 
-- `block_id`：单个块（旧写法，仍然有效）；
-- `block_ids`：**连续且有序**的块列表（D-30），用于「一句话被 PDF 切成两行」的真实情况。
-  不连续 / 逆序 → `BLOCK_IDS_NOT_CONSECUTIVE`。
+引用只有一种写法：`block_ids`（连续且有序；契约里 id 是**字符串** `"12"`，整数也接受）。
+不连续 / 逆序 → `BLOCK_IDS_NOT_CONSECUTIVE`。
 
 封闭集合：
 
-- `label ∈ {basic, summary, work, education, project, skill, certificate, award, language, other}`；
+- `label ∈ {contact, summary, work_experience, internship, project, research, education, skill, award, certificate, publication, self_evaluation, other}`；
 - `state ∈ {present, absent, unreadable}`；
 - 必填（省略即**拒绝**，没有就写 `absent`）：
-  - `basic`：`name` / `phone` / `email`；
-  - `work` 每个条目：`company` / `title` / `start` / `end`；
-  - `education` 每个条目：`school` / `degree` / `start` / `end`。
-- `present` → 必须带非空 `value` + 存在的 `block_id`（或 `block_ids`）；`absent` / `unreadable` → `value` 必须为 `null`；`unreadable` 还必须带 `reason`。
+  - 顶层 `fields`：`name` / `phone` / `email` / `work_experience` / `education`（`$defs.fields.required`）；
+  - `work_experience` 每个条目：`company` / `title` / `start` / `end`（`$defs.work_entry.required` 的事实键）；
+  - `education` 每个条目：`school` / `major` / `degree` / `start` / `end`（`$defs.education_entry.required` 的事实键）。
+- `present` → 必须带非空 `value` + 非空 `block_ids`；`absent` / `unreadable` → 不得带 `value`
+  （`absent` 还必须 `block_ids: []`）；`unreadable` 还必须带 `reason`；
+- 每个条目还必须带 `block_ids` 与 `attribution ∈ {single_block, same_row_multi_block}`。
+
+**契约里不存在的位置**（`sections[].fields`、`sections[].entries`、`entries[].fields`、
+顶层 `ignored[]`、`entry.block_id` 这类表外键）一律 `SCHEMA_INVALID`——**不静默忽略**，
+否则一份「校验通过」的输出可能根本没被检查过。
 
 ## 4. 八条规则 → code
 
@@ -117,19 +127,22 @@
 |---|---|---|
 | 1 | id 存在性 | `UNKNOWN_BLOCK_ID` |
 | 2 | 值必须能在「引用块按序拼接后的文本」里逐字找到（D-30；三种固定归一化见 §4.1） | `VALUE_NOT_IN_BLOCK` / `BLOCK_IDS_NOT_CONSECUTIVE` |
-| 3 | 每块**恰好**归入一个 section（D-31；或 ignored + reason） | `UNCOVERED_BLOCK` / `BLOCK_DUPLICATED` / `IGNORED_MISSING_REASON` / `IGNORED_BLOCK_REFERENCED` / `FIELD_BLOCK_NOT_IN_SECTION` |
+| 3 | 每块**恰好**归入一个 section（D-31；或该 section 带合法 `ignored.reason`） | `UNCOVERED_BLOCK` / `BLOCK_DUPLICATED` / `IGNORED_MISSING_REASON` / `IGNORED_BLOCK_REFERENCED` |
 | 4 | 标签枚举 | `UNKNOWN_SECTION_LABEL` |
 | 5 | 状态枚举 | `STATE_MISSING` / `STATE_INVALID` / `STATE_VALUE_CONFLICT` |
 | 6 | phone / email / date 专项 | `PHONE_INVALID` / `PHONE_DIGITS_MISMATCH` / `EMAIL_INVALID` / `EMAIL_NOT_IN_SOURCE` / `DATE_INVALID` / `DATE_NOT_IN_SOURCE` |
 | 7 | 跨字段一致性（**软**：记 issue 不拒绝） | `WORK_PERIOD_INVERTED` / `WORK_PERIOD_OVERLAP` |
 | 8 | 不允许省略字段 | `MISSING_FIELD` / `MISSING_ENTRY_FIELD` |
 
-另外三条（都是「账要平」的机械检查，不是业务判断）：
+另外四条（都是「账要平」的机械检查，不是业务判断）：
 
 - `BLOCK_INDEX_INTEGRITY`：索引的 sha256 / `block_no` / 片段偏移与传入的原始块文本对不上；
   **或** `block_index` 版本不是 1（`BLOCK_INDEX_VERSION_UNSUPPORTED`）；
 - `UNREADABLE_MISSING_REASON`：`unreadable` 必须说明为什么读不出来（doc 11 §9.2 红线）；
-- `SCHEMA_INVALID`：形状不对（不是对象 / 数组 / 字段不是对象 / `block_id` 与 `block_ids` 互相矛盾等）。
+- `BLOCK_IDS_NOT_SUPERSET`：条目 block_ids 必须覆盖它各事实引用的块，字段 block_ids 必须覆盖它各条目
+  引用的块（`schema.json` `$comment` 不变量 (3)：字段级 block_ids 是 entries 的超集）；
+- `SCHEMA_INVALID`：形状不对（不是对象 / 数组 / 契约里没有的键 / 事实缺 `value` / 条目缺
+  `attribution` / `absent` 却引用了块等）。
 
 ### 4.1 值匹配的三种**固定**归一化（D-30 §3）
 
@@ -158,18 +171,20 @@ PDF 的连字符断行也会把 `semantics` 断成 `seman-` / `tics`。所以 `v
 - **每个 block 恰好出现在一个 section 的 `block_ids` 里**——重复出现（跨 section 或同一 section
   写两次）→ `BLOCK_DUPLICATED`。旧口径「被引用过就算覆盖」已作废：把剩下的 id 全塞进
   `block_ids` 只能证明「没漏块」，**不能**证明抽取正确（D-31 §4）。
-- `ignored` 的块必须带 `reason`，且**不得被任何字段 / 条目引用**（`IGNORED_BLOCK_REFERENCED`）；
-  既 ignored 又放进 section 也拒绝（双记账）。
-- 字段引用的块必须属于该字段所在 section（`FIELD_BLOCK_NOT_IN_SECTION`）。
-  **唯一例外**：contact 类字段（`name` / `phone` / `email`）——简历页眉的联系方式经常被归到别的
-  section，硬绑会把正确结果判死。
-- 空块也一样要归类，要么被放进某个 section，要么进 `ignored` 并写 `reason`
+- `ignored` 是 section 上的对象（`{ reason, detail? }`）：存在即表示该 section 的这些块不参与
+  字段抽取。`reason` 必须非空，且这些块**不得被任何字段 / 条目 / 事实引用**
+  （`IGNORED_BLOCK_REFERENCED`）。`ignored` 缺 `reason` 时这些块既不算归类也不算排除，
+  覆盖率会再报一次 `UNCOVERED_BLOCK`。
+- **字段与 section 之间没有归属绑定**：`prompt.md §6.1` 明写「取值不受 section 限制」，
+  手机号落在页脚 / 别的章节是常态。所以本层**不再**要求「字段的块属于该字段所在 section」
+  （旧的 `FIELD_BLOCK_NOT_IN_SECTION` 与契约冲突，已删除）。
+- 空块也一样要归类，要么被放进某个 section，要么所在的 section 带合法的 `ignored.reason`
   （空块不丢是序列化层的承诺，校验层负责盯住它真的被处理了）。
-- **「连续且有序」只约束用于拼接匹配的引用**（字段的 `block_ids` 与条目的 `block_ids`）；
+- **「连续且有序」只约束用于拼接匹配的引用**（字段 / 条目 / 事实的 `block_ids`）；
   `section.block_ids` 是**分区清单**，只要求「每个 id 只出现一次」，允许不相邻
   （一个 section 的块被另一个 section 的标题隔开是正常的）。
-- 条目 / 字段的 `block_ids` 是对本节块的**嵌套引用**，不计入分区次数（否则 work section
-  里每个条目都会把自己的块「放第二遍」）；字段的引用另外还要满足 §3 的归属检查。
+- 条目 / 字段的 `block_ids` 是对分区块的**嵌套引用**，不计入分区次数（否则 work section
+  里每个条目都会把自己的块「放第二遍」）；但它们之间要满足超集关系（见 §4）。
 
 数字专项的具体判法：
 
@@ -189,15 +204,17 @@ PDF 的连字符断行也会把 `semantics` 断成 `seman-` / `tics`。所以 `v
 ```powershell
 cd D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment
 
-# 本层单测（67 条，Node 24 直接跑 .ts，无需构建）
+# 本层单测（74 条，Node 24 直接跑 .ts，无需构建）
 node --test "test/structure/*.test.ts"
 
 # 包根全量（必须绿：手动 harness 已挪出 test/，不再被 node --test 发现）
 node --test
 
 # 真实数据验收（3 份 batch2 PDF + 6 个负向样本）
-node test/structure/run-acceptance.mjs            # 读 %TEMP% 缓存
-node test/structure/run-acceptance.mjs --live     # 强制重跑转换器
+# ⚠️ 仍是旧的 section 内嵌形状（sections[].fields / entries[].fields），需要单独更新；
+#    它不在 src/structure 的写范围内，所以本层没有改它。
+node manual/run-acceptance.mjs            # 读 %TEMP% 缓存
+node manual/run-acceptance.mjs --live     # 强制重跑转换器
 
 # 手动单元级 harness（需要 DSH_HOME 的 profiles 模块；不是自动测试，需显式执行）
 node manual/harness.manual.mjs
@@ -218,21 +235,19 @@ node manual/harness.manual.mjs
 - `issues` 同时装 hard 和 soft，软校验只进这里；
 - `stats` 给出 `index_entries / covered / ignored / fields / entries / hard / soft`，用于对账。
 
-## 7. 未接线（诚实声明）
+## 7. 接线状态
 
-本层**没有**接进 `src/index.ts`，也**没有**注册成工具：
-
-- 写范围只给了 `src/structure/` 与 `test/structure/`，`src/index.ts` 不在范围内；
-- 按项目 E4 / R2，**从插件运行入口不可达 = BLOCKED**。所以现在的状态是「层可验收，接线待做」，
-  不是「已完成」。接线的落点是 `recruitment_resume_read` 的 `render()`（把 `serialize().text` 给模型）
-  和模型返回后的 `validate()`；`package.json` 的 `exports` 也需要加一条（同样不在本层写范围）。
+本层现在通过 `src/tools/structure-tools.ts` 注册成两个工具（`recruitment_resume_serialize` /
+`recruitment_structure_validate`），由 `src/index.ts` 装配——这一段是 tools 层做的，不在本层写范围。
+本层代码本身仍是纯函数：不读文件、不联网、不取当前时间，任何调用方都能直接复用。
 
 ## 8. 我认为最容易出问题的两点
 
 1. **`value` 必须逐字可回查**这一条把「模型顺手把日期 / 公司名规范化」变成硬失败。这是刻意的（防幻觉）；
    D-30 之后仍然如此——放开的只有「跨连续块的拼接」和三种固定归一化，**没有**放开语义相等（D-32）。
    如果实测失败率仍然过高，正确的改法是在结果契约里加一个 `raw_value` 字段，而不是放宽规则 2。
-2. **分区 + 拼接的联合约束**：`block_ids` 既要满足「每块恰好一个 section」，又要满足「字段的块属于本节」，
-   还要连续有序。模型一旦把块放错 section，会同时触发 `BLOCK_DUPLICATED` / `FIELD_BLOCK_NOT_IN_SECTION`
-   一类拒绝；这类失败是**契约没读懂**，不是数据脏。切分块（`parent_id`）同理：本层不做「跨片段匹配」，
+2. **分区 + 拼接的联合约束**：`block_ids` 既要满足「每块恰好一个 section」，又要满足
+   「条目 / 事实的引用被字段的 block_ids 覆盖（超集）」，还要连续有序。模型一旦把块放错 section，
+   会触发 `BLOCK_DUPLICATED` / `UNCOVERED_BLOCK` / `BLOCK_IDS_NOT_SUPERSET` 一类拒绝；
+   这类失败是**契约没读懂**，不是数据脏。切分块（`parent_id`）同理：本层不做「跨片段匹配」，
    引用首段却给出跨段 value 仍然必然失败——那会让「值必须逐字可回查」失效。

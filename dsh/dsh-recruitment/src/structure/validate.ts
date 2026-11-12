@@ -3,19 +3,43 @@
 // 这一层不调用任何模型、不联网、不读文件：输入是三个已经存在的内存值，输出是
 // { accepted, rejected[], issues[] }。判定只看机械规则，不做语义判断。
 //
-// 八条规则（对应任务书的 1–8，每条都有单测）：
+// **形状以 contracts/schema.json 为权威**。模型看到的输出形状（`$defs`）是：
+//
+//   result
+//   ├── prompt_version / schema_version / block_count        （$defs，本层只做透传，不核对常量）
+//   ├── sections[]                                           （$defs.section）
+//   │   └── { label, block_ids, ignored? }                   ← 只有这三个键（additionalProperties: false）
+//   │        ignored = { reason, detail? }                   ← 存在即表示这些块不参与字段抽取
+//   └── fields                                               （$defs.fields：五个键恒在）
+//       ├── name / phone / email                             （$defs.identity_field：state + value? + block_ids + reason?）
+//       ├── work_experience                                  （$defs.structural_field）
+//       │   └── value: [ $defs.work_entry ]                  ← 条目挂在 **value[]**，不是 entries[]
+//       └── education                                        （$defs.education_field）
+//           └── value: [ $defs.education_entry ]
+//
+// 条目的**事实键是平铺的**（work_entry 的 company/title/start/end、education_entry 的
+// school/major/degree/start/end），不是嵌在 `entry.fields` 里；每个事实是一个 `$defs.fact`
+// = `{ value: string|null, block_ids }`。
+//
+// **本层不承认契约里不存在的位置**：`sections[].fields`、`sections[].entries`、
+// `entries[].fields`、顶层 `ignored[]` 一律 → `SCHEMA_INVALID`（不静默忽略：静默忽略会让
+// 一份「校验通过」的输出其实没被检查过）。
+//
+// 八条规则（每条都有单测）：
 //   1. id 存在性      —— 结果里引用的每个 block id 必须在 block_index 里；
-//   2. 值必须可回查   —— present 字段的 value 必须在「所引用块按序拼接后的文本」里逐字找到
+//   2. 值必须可回查   —— present 的 value / fact 的 value 必须在「所引用块按序拼接后的文本」里逐字找到
 //                        （D-30：块粒度是视觉行，一句话可以跨连续块；只允许三种**固定**归一化，
 //                         见 normalizeForMatch()。**不是**「语义相等」——D-32 明令不得放宽）；
-//   3. id 分区        —— 每个 block 必须**恰好**归入一个 section 的 block_ids，或被标 ignored 且带
-//                        reason（D-31：重复出现 = 拒绝；ignored 块不得再被引用；覆盖率证明的是
-//                        「没漏块」，不证明「处理对了」）；
+//   3. id 分区        —— 每个 block 必须**恰好**归入一个 section 的 block_ids，或被带合法 ignored.reason
+//                        的 section 标记排除（D-31：重复出现 = 拒绝；ignored 块不得再被引用；
+//                        覆盖率证明的是「没漏块」，不证明「处理对了」）；
 //   4. 标签枚举      —— section.label 必须在 SECTION_LABELS 内；
 //   5. 状态枚举      —— 每个字段必须带 state ∈ {present, absent, unreadable}；
 //   6. 数字专项      —— phone / email / date 各自的格式 + 与原文一致；
 //   7. 跨字段一致性  —— 起始年份不得晚于结束年份、两段工作经历不得完全重叠（软：记 issue 不拒绝）；
-//   8. 不允许省略字段 —— 必填字段缺失 = 拒绝（省略 ≠ absent）。
+//   8. 不允许省略字段 —— 顶层 fields 的五个键（契约 $defs.fields.required）与条目的事实键
+//                        （$defs.work_entry.required / $defs.education_entry.required）缺一即拒绝
+//                        （省略 ≠ absent）。
 //
 // 软 / 硬的分界：issues[] 里两类都记（severity = 'hard' | 'soft'），rejected[] 只装 hard。
 // accepted === (rejected.length === 0)。
@@ -25,11 +49,24 @@
 //   * BLOCK_INDEX_VERSION_UNSUPPORTED —— 不认识的索引版本（不猜结构）；
 //   * UNREADABLE_MISSING_REASON —— unreadable 必须说明为什么读不出来（doc 11 §9.2 的红线）。
 //
-// D-30 / D-31 新增的四条（同样是机械检查，不是语义判断）：
-//   * BLOCK_IDS_NOT_CONSECUTIVE —— 用于拼接匹配的引用列表必须连续且有序（相邻 id）；
-//   * BLOCK_DUPLICATED —— 同一个 block 被放进一个以上的 section（或既 ignored 又放进 section）；
+// D-30 / D-31 的四条（同样是机械检查，不是语义判断）：
+//   * BLOCK_IDS_NOT_CONSECUTIVE —— **一个值**的引用列表必须连续且有序（相邻 id）；
+//     字段级（`fields.<work_experience|education>.block_ids`）是**聚合超集**，只要求「升序、不重复」。
+//     依据：`$defs.block_ids` 原文只写「按升序、不重复」；`$comment` (3) 说字段级 block_ids 是
+//     entries 的**超集**、(5) 说 ignored 块不得进字段 block_ids——教育经历被中间的符号块
+//     （ignored）分开时，(3)+(5)+「必须相邻」三者不可能同时成立；prompt.md §4 也明写
+//     「`block_ids` 因此可以是不连续的，如 ["23","24","25","27"]」。
+//   * BLOCK_DUPLICATED —— 同一个 block 被放进一个以上的 section（或同一 section 写两次）；
 //   * IGNORED_BLOCK_REFERENCED —— 被 ignored 的 block 又被字段 / 条目引用；
-//   * FIELD_BLOCK_NOT_IN_SECTION —— 字段引用的 block 不属于该字段所在 section（contact 类字段除外）。
+//   * BLOCK_IDS_NOT_SUPERSET —— 条目 block_ids 必须覆盖它各事实引用的块；字段 block_ids 必须覆盖
+//     它各条目引用的块（schema.json `$comment` 不变量 (3)：字段级 block_ids 是 entries 的超集）。
+//
+// 契约对齐（本轮）：字段的位置从 `sections[i].fields` 搬回顶层 `fields`；条目从
+// `sections[i].entries` 搬到 `fields.<work_experience|education>.value[]`；条目事实从
+// `entry.fields.<key>` 搬到 `entry.<key>`。旧的 `FIELD_BLOCK_NOT_IN_SECTION`（字段必须引用本
+// section 的块）随之删除：契约 prompt.md §6.1 明写「取值不受 section 限制」，而且顶层字段
+// 根本没有「所在 section」这个锚点。`REQUIRED_SECTION_FIELDS`（contact → name/phone/email）
+// 在契约里没有对应位置，改成文档层的 `REQUIRED_DOCUMENT_FIELDS`（$defs.fields.required 五项）。
 //
 // 归一化只用于比较：**原文与 block_index 里保存的文本 / sha256 一个字符都不改**（D-30 §4）。
 
@@ -58,33 +95,69 @@ export const SECTION_LABELS = [
 /** section 标签类型。 */
 export type SectionLabel = (typeof SECTION_LABELS)[number]
 
-/** 字段三态（doc 11 §9.2）。 */
+/**
+ * section 允许的键（contracts/schema.json → `$defs.section`，`additionalProperties: false`）。
+ * `fields` / `entries` **不在**这里：契约把它们放在顶层 `fields` 里。
+ */
+export const SECTION_KEYS = ['label', 'block_ids', 'ignored'] as const
+
+/** `section.ignored` 允许的键（`$defs.ignored`）。 */
+export const IGNORED_KEYS = ['reason', 'detail'] as const
+
+/** 字段三态（doc 11 §9.2 / `$defs.state`）。 */
 export const FIELD_STATES = ['present', 'absent', 'unreadable'] as const
 
 /** 字段状态类型。 */
 export type FieldState = (typeof FIELD_STATES)[number]
 
-/** 每个 section 必须出现的字段（省略 = 拒绝；没有就写 absent）。 */
-export const REQUIRED_SECTION_FIELDS: Readonly<Record<string, readonly string[]>> = {
-  contact: ['name', 'phone', 'email'],
-}
+/**
+ * 文档级五个字段（contracts/schema.json → `$defs.fields.required`）。
+ * 五个键**恒在**：没读到就写 absent / unreadable，**不允许省略**（省略 ≠ absent）。
+ */
+export const REQUIRED_DOCUMENT_FIELDS = ['name', 'phone', 'email', 'work_experience', 'education'] as const
 
-/** 每个条目必须出现的字段（省略 = 拒绝）。 */
-export const REQUIRED_ENTRY_FIELDS: Readonly<Record<string, readonly string[]>> = {
-  work_experience: ['company', 'title', 'start', 'end'],
-  internship: ['company', 'title', 'start', 'end'],
-  education: ['school', 'degree', 'start', 'end'],
-}
+/** 文档级字段名类型。 */
+export type DocumentFieldKey = (typeof REQUIRED_DOCUMENT_FIELDS)[number]
 
-/** 需要做日期专项校验的字段名。 */
-export const DATE_FIELD_KEYS = ['start', 'end', 'date'] as const
+/** 单值字段（`$defs.identity_field`）。 */
+export const IDENTITY_FIELD_KEYS = ['name', 'phone', 'email'] as const
+
+/** 条目数组字段（`$defs.structural_field` / `$defs.education_field`）——条目在 `.value[]` 里。 */
+export const ENTRY_FIELD_KEYS = ['work_experience', 'education'] as const
+
+/** 条目数组字段名类型。 */
+export type EntryFieldKey = (typeof ENTRY_FIELD_KEYS)[number]
 
 /**
- * contact 类字段（联络信息三件套）。
- * D-31 §3 的唯一例外：这些字段引用的块可以不在该字段所在 section 里——
- * 简历页眉里的电话 / 邮箱经常被归到别的 section，硬绑会让正确结果被拒。
+ * 每个条目必须出现的事实键（`$defs.work_entry.required` / `$defs.education_entry.required`
+ * 里的事实部分；`block_ids` / `attribution` 是结构键，另查）。
+ * 位置：`fields.<work_experience|education>.value[i].<key>`。
  */
-export const CONTACT_FIELD_KEYS = ['name', 'phone', 'email'] as const
+export const REQUIRED_ENTRY_FIELDS: Readonly<Record<EntryFieldKey, readonly string[]>> = {
+  work_experience: ['company', 'title', 'start', 'end'],
+  education: ['school', 'major', 'degree', 'start', 'end'],
+}
+
+/** 条目对象允许的键（`$defs.work_entry` / `$defs.education_entry` 的 properties）。 */
+const ENTRY_KEYS: Readonly<Record<EntryFieldKey, readonly string[]>> = {
+  work_experience: [...REQUIRED_ENTRY_FIELDS.work_experience, 'block_ids', 'attribution', 'reason', 'reason_note'],
+  education: [...REQUIRED_ENTRY_FIELDS.education, 'block_ids', 'attribution', 'reason', 'reason_note'],
+}
+
+/** 字段对象允许的键（`$defs.identity_field` / `structural_field` / `education_field` 都是这五个）。 */
+export const FIELD_KEYS = ['state', 'value', 'block_ids', 'reason', 'reason_note'] as const
+
+/** 事实对象允许的键（`$defs.fact`）。 */
+export const FACT_KEYS = ['value', 'block_ids'] as const
+
+/** 归属枚举（`$defs.attribution`）。 */
+export const ATTRIBUTIONS = ['single_block', 'same_row_multi_block'] as const
+
+/** 需要做日期专项校验的事实键。 */
+export const DATE_FIELD_KEYS = ['start', 'end'] as const
+
+/** 顶层结果允许的键（`schema.json` 的根 `properties`，`additionalProperties: false`）。 */
+export const RESULT_KEYS = ['prompt_version', 'schema_version', 'block_count', 'sections', 'fields'] as const
 
 /** 电话号码格式（任务书给定，逐字照抄）。 */
 export const PHONE_PATTERN = /^\+?\d[\d\-\s]{6,}$/
@@ -110,9 +183,9 @@ export type IssueCode =
   | 'UNKNOWN_BLOCK_ID'
   | 'VALUE_NOT_IN_BLOCK'
   | 'BLOCK_IDS_NOT_CONSECUTIVE'
+  | 'BLOCK_IDS_NOT_SUPERSET'
   | 'BLOCK_DUPLICATED'
   | 'IGNORED_BLOCK_REFERENCED'
-  | 'FIELD_BLOCK_NOT_IN_SECTION'
   | 'UNCOVERED_BLOCK'
   | 'IGNORED_MISSING_REASON'
   | 'UNREADABLE_MISSING_REASON'
@@ -135,7 +208,7 @@ export interface ValidationIssue {
   /** hard = 拒绝；soft = 只记 issue（跨字段一致性用）。 */
   readonly severity: 'hard' | 'soft'
   readonly message: string
-  /** 结果里的位置，如 `sections[0].fields.phone` / `ignored[2]` / `block_index[7]`。 */
+  /** 结果里的位置，如 `fields.phone` / `fields.work_experience.value[0]` / `sections[2].block_ids[0]`。 */
   readonly path: string
   /** 相关 block id（能定位时给）。 */
   readonly block_id?: number
@@ -190,36 +263,18 @@ export interface ParsedDate {
   readonly ongoing: boolean
 }
 
-/** 一个 section 的语境：字段 / 条目归属检查用（D-31 §3）。 */
-interface SectionScope {
-  /** section 在结果里的位置，如 `sections[1]`。 */
-  readonly path: string
-  /** 该 section 放进去的 block id 集合（`section.block_ids`）。 */
-  readonly blocks: ReadonlySet<number>
-}
-
-/** 一次字段引用，留给「字段块必须属于所在 section」的统一判定（D-31 §3）。 */
-interface FieldCitation {
-  readonly path: string
-  /** 字段名（name / phone / company / ...），用于 contact 类字段的例外。 */
-  readonly key: string
-  readonly sectionPath: string
-  readonly sectionBlocks: ReadonlySet<number>
-  readonly ids: readonly number[]
-}
-
 interface ValidationContext {
   readonly issues: ValidationIssue[]
   readonly entries: ReadonlyMap<number, BlockIndexEntry>
   readonly texts: ReadonlyMap<number, string>
   /** 被 section.block_ids 放进分区的 id -> 第一次放置它的 path（D-31 §1）。 */
   readonly placed: Map<number, string>
-  /** 带 reason 的 ignored 条目：id -> `ignored[i]` 的 path（D-31 §2）。 */
+  /** 带合法 reason 的 ignored section 覆盖的 id -> 该 section 的 path（D-31 §2）。 */
   readonly ignoredCovered: Map<number, string>
-  /** 字段 / 条目引用过的块（IGNORED_BLOCK_REFERENCED 用）。 */
+  /** ignored 标记不成立（缺 reason / 不是对象）的 section 的 id —— 不算归类，覆盖率会再报一次。 */
+  readonly ignoredInvalid: Set<number>
+  /** 字段 / 条目 / 事实引用过的块（IGNORED_BLOCK_REFERENCED 用）。 */
   readonly refs: Array<{ readonly id: number; readonly path: string }>
-  /** 字段的块引用（等全部 section 解析完再统一判定归属，诊断信息才准确）。 */
-  readonly fieldCitations: FieldCitation[]
   fields: number
   entryCount: number
   ignored: number
@@ -232,11 +287,10 @@ interface WorkPeriod {
   readonly end: ParsedDate
 }
 
-/** 一个字段的校验结论。 */
-interface CheckedField {
-  readonly state: FieldState
+/** 一个值（字段 / 事实）的校验结论。 */
+interface CheckedValue {
   readonly value: string | null
-  readonly blockId: number | null
+  readonly ids: readonly number[]
   readonly date: ParsedDate | null
 }
 
@@ -403,6 +457,17 @@ function isConsecutive(ids: readonly number[]): boolean {
   return true
 }
 
+/**
+ * 引用 id 列表是否「升序且不重复」——`$defs.block_ids` 的**原文**要求
+ * （"引用块列表，按升序、不重复"；契约里没有「必须相邻」这一条）。
+ */
+function isAscendingUnique(ids: readonly number[]): boolean {
+  for (let i = 1; i < ids.length; i += 1) {
+    if ((ids[i] as number) <= (ids[i - 1] as number)) return false
+  }
+  return true
+}
+
 /** 把一个 block 放进当前 section 的分区；同一个 id 只能放一次（D-31 §1）。 */
 function placeBlock(ctx: ValidationContext, id: number, path: string): void {
   const existing = ctx.placed.get(id)
@@ -419,9 +484,32 @@ function placeBlock(ctx: ValidationContext, id: number, path: string): void {
   ctx.placed.set(id, path)
 }
 
-/** 记一次字段 / 条目的块引用（IGNORED_BLOCK_REFERENCED 用）。 */
+/** 记一次字段 / 条目 / 事实的块引用（IGNORED_BLOCK_REFERENCED 用）。 */
 function noteRef(ctx: ValidationContext, id: number, path: string): void {
   ctx.refs.push({ id, path })
+}
+
+/**
+ * 只允许契约写明的键。契约的每个对象都是 `additionalProperties: false`，
+ * 所以出现表外的键（尤其 `sections[].fields` / `sections[].entries` / `entries[].fields`）
+ * 一律拒绝，**不静默忽略**。
+ */
+function checkAllowedKeys(
+  ctx: ValidationContext,
+  path: string,
+  raw: Record<string, unknown>,
+  allowed: readonly string[],
+  subject: string,
+): void {
+  for (const key of Object.keys(raw).sort()) {
+    if (allowed.includes(key)) continue
+    pushHard(
+      ctx,
+      'SCHEMA_INVALID',
+      `${subject} ${path} carries key ${JSON.stringify(key)}, which the contract does not allow (allowed: ${allowed.join(', ')})`,
+      `${path}.${key}`,
+    )
+  }
 }
 
 /** 建 ctx：解析索引、逐 id 校准原文与 sha256。 */
@@ -432,8 +520,8 @@ function createContext(index: BlockIndex, blocks: readonly (SourceBlock | string
     texts: new Map<number, string>(),
     placed: new Map<number, string>(),
     ignoredCovered: new Map<number, string>(),
+    ignoredInvalid: new Set<number>(),
     refs: [],
-    fieldCitations: [],
     fields: 0,
     entryCount: 0,
     ignored: 0,
@@ -519,80 +607,99 @@ function checkKnownBlockId(ctx: ValidationContext, raw: unknown, path: string): 
 }
 
 /**
- * 解析字段的块引用：`block_ids`（有序列表，D-30 §1）或 `block_id`（单个，旧写法）。
- * 校验：整数、存在于 block_index、多个引用必须连续且有序。
- * @returns 按序排列的 id 列表（空数组 = 没引用块）；引用不合法时已记 issue 并返回 null。
+ * 解析一个 `block_ids` 列表（契约里字段 / 条目 / 事实的唯一引用写法）。
+ *
+ * 校验：是数组、每项是存在的 block id、按升序不重复；`consecutive=true` 时还要求**相邻**
+ * （D-30 §1/§2：一个**值**跨块拼接时，引用的必须是连续的视觉行）。
+ * 契约（`$defs.identity_field` / `structural_field` / `fact` 的 required）要求这个键恒在，
+ * 缺失 → `SCHEMA_INVALID`（不是「没引用」，是形状不对）。
+ * @param required - 缺失时是否报 `SCHEMA_INVALID`。
+ * @param consecutive - 是否要求相邻。**只有「一个值」的引用**才要求；聚合列表见 checkEntryField。
+ * @returns 按序排列的 id 列表（空数组 = 合法但没引用）；不合法时已记 issue 并返回 null。
  */
-function parseFieldCitation(
+function parseBlockIdList(
   ctx: ValidationContext,
   path: string,
   raw: Record<string, unknown>,
+  required: boolean,
+  consecutive = true,
 ): number[] | null {
-  const singleRaw = raw.block_id
-  let single: number | null = null
-  if (singleRaw !== null && singleRaw !== undefined) {
-    const parsed = parseBlockIdValue(singleRaw)
-    if (parsed === null) {
-      pushHard(ctx, 'UNKNOWN_BLOCK_ID', `field ${path} block_id must be a positive integer or numeric string, got ${showValue(singleRaw)}`, path)
-      return null
-    }
-    single = parsed
-  }
-
   const listRaw = raw.block_ids
-  let cited: number[] = []
-  if (listRaw !== undefined && listRaw !== null) {
-    if (!Array.isArray(listRaw)) {
-      pushHard(ctx, 'SCHEMA_INVALID', `field ${path} block_ids must be an array`, path)
+  if (listRaw === undefined || listRaw === null) {
+    if (required) {
+      pushHard(
+        ctx,
+        'SCHEMA_INVALID',
+        `${path} is missing block_ids; the contract requires a block id list on every field, entry and fact`,
+        path,
+      )
       return null
     }
-    for (let i = 0; i < listRaw.length; i += 1) {
-      const item = listRaw[i]
-      const parsedItem = parseBlockIdValue(item)
-      if (parsedItem === null) {
-        pushHard(
-          ctx,
-          'UNKNOWN_BLOCK_ID',
-          `field ${path} block_ids[${i}] must be a positive integer or numeric string, got ${showValue(item)}`,
-          path,
-        )
-        return null
-      }
-      cited.push(item)
-    }
-    if (single !== null) {
-      // 两种写法同时出现时只接受「block_id 就是 block_ids[0]」这一种，避免两套证据。
-      if (cited.length === 0 || cited[0] !== single) {
-        pushHard(
-          ctx,
-          'SCHEMA_INVALID',
-          `field ${path} gives block_id ${single} together with block_ids ${JSON.stringify(cited)}; block_id must equal block_ids[0]`,
-          path,
-        )
-        return null
-      }
-    }
-  } else if (single !== null) {
-    cited = [single]
+    return []
   }
-
-  for (const id of cited) {
-    if (!ctx.entries.has(id)) {
-      pushHard(ctx, 'UNKNOWN_BLOCK_ID', `field ${path} cites block ${id}, which is not in block_index`, path, id)
+  if (!Array.isArray(listRaw)) {
+    pushHard(ctx, 'SCHEMA_INVALID', `${path} block_ids must be an array`, path)
+    return null
+  }
+  const ids: number[] = []
+  let broken = false
+  for (let i = 0; i < listRaw.length; i += 1) {
+    const itemPath = `${path}.block_ids[${i}]`
+    const id = checkKnownBlockId(ctx, listRaw[i], itemPath)
+    if (id === null) {
+      broken = true
+      continue
+    }
+    ids.push(id)
+    noteRef(ctx, id, itemPath)
+  }
+  if (broken) return null
+  if (consecutive) {
+    // 引用列表是「按序拼接」的证据，必须连续且有序（D-30 §1/§2）。
+    if (!isConsecutive(ids)) {
+      pushHard(
+        ctx,
+        'BLOCK_IDS_NOT_CONSECUTIVE',
+        `${path} cites blocks ${ids.join(', ')}; a value may only be matched across consecutive, ascending block ids`,
+        path,
+        ids[0],
+      )
       return null
     }
+    return ids
   }
-  if (!isConsecutive(cited)) {
+  // 聚合列表（字段级超集）：契约只要求「升序、不重复」。要求相邻会与 $comment (3)+(5) 打架，
+  // 因为跨过一个 ignored 块（例如 education 中间的符号块）时，超集必然是不连续的。
+  if (!isAscendingUnique(ids)) {
     pushHard(
       ctx,
       'BLOCK_IDS_NOT_CONSECUTIVE',
-      `field ${path} cites blocks ${cited.join(', ')}; a value may only be matched across consecutive, ascending block ids`,
+      `${path} block_ids must be ascending and unique, got ${ids.join(', ')}`,
       path,
-      cited[0],
+      ids[0],
     )
     return null
   }
-  return cited
+  return ids
+}
+
+/** 读取 state（三个字段类型 / 三个状态）。 */
+function readState(ctx: ValidationContext, path: string, raw: Record<string, unknown>): FieldState | null {
+  const stateRaw = raw.state
+  if (typeof stateRaw !== 'string' || stateRaw === '') {
+    pushHard(ctx, 'STATE_MISSING', `field ${path} is missing state`, path)
+    return null
+  }
+  if (!(FIELD_STATES as readonly string[]).includes(stateRaw)) {
+    pushHard(
+      ctx,
+      'STATE_INVALID',
+      `field ${path} has state ${JSON.stringify(stateRaw)}; allowed: ${FIELD_STATES.join(', ')}`,
+      path,
+    )
+    return null
+  }
+  return stateRaw as FieldState
 }
 
 /** 电话号码专项：格式 + 数字序列必须与原文里那个数字串一致。 */
@@ -681,37 +788,110 @@ function checkDate(
   return parsed
 }
 
+/** 单值字段层面的数字专项（按字段名分派）。 */
+function checkScalarSpecial(
+  ctx: ValidationContext,
+  key: string,
+  value: string,
+  joined: string,
+  path: string,
+  blockId: number,
+): void {
+  if (key === 'phone') checkPhone(ctx, value, joined, path, blockId)
+  else if (key === 'email') checkEmail(ctx, value, joined, path, blockId)
+}
+
 /**
- * 校验一个字段（三态 + 块引用 + 值匹配 + 数字专项）。
- * 引用有两种写法：单个 `block_id`，或有序列表 `block_ids`（D-30：一句话可以跨连续块）。
+ * 校验一个 `$defs.fact`（条目里的 company / title / start / end / school / major / degree）。
+ * 事实**没有 state**：`value` 必须出现（读不出就写 null），`block_ids` 恒在。
+ * @returns 校验结论；形状不对返回 null。
  */
-function checkField(
+function checkFact(
   ctx: ValidationContext,
   path: string,
   key: string,
   raw: unknown,
-  scope: SectionScope,
-): CheckedField | null {
+): CheckedValue | null {
+  if (!isPlainObject(raw)) {
+    pushHard(ctx, 'SCHEMA_INVALID', `fact ${path} must be an object ({ value, block_ids })`, path)
+    return null
+  }
+  checkAllowedKeys(ctx, path, raw, FACT_KEYS, 'fact')
+  if (!('value' in raw)) {
+    pushHard(
+      ctx,
+      'SCHEMA_INVALID',
+      `fact ${path} is missing value; the contract requires value on every fact (write null when it cannot be read)`,
+      path,
+    )
+    return null
+  }
+  const valueRaw = raw.value
+  let value: string | null = null
+  if (typeof valueRaw === 'string') {
+    if (valueRaw.trim() === '') {
+      pushHard(ctx, 'SCHEMA_INVALID', `fact ${path} value must be a non-empty string or null`, path)
+      return null
+    }
+    value = valueRaw
+  } else if (valueRaw !== null) {
+    pushHard(ctx, 'SCHEMA_INVALID', `fact ${path} value must be a string or null, got ${showValue(valueRaw)}`, path)
+    return null
+  }
+
+  const cited = parseBlockIdList(ctx, path, raw, true)
+  if (cited === null) return null
+  if (value === null) return { value: null, ids: cited, date: null }
+  if (cited.length === 0) {
+    pushHard(ctx, 'MISSING_BLOCK_ID', `fact ${path} has a value but no block_ids to prove it`, path)
+    return { value, ids: cited, date: null }
+  }
+
+  const texts: string[] = []
+  for (const id of cited) {
+    const text = ctx.texts.get(id)
+    if (text === undefined) return { value, ids: cited, date: null } // 索引完整性问题已单独记过
+    texts.push(text)
+  }
+  const first = cited[0] as number
+  let substringOk = true
+  if (!valueMatchesTexts(texts, value)) {
+    pushHard(
+      ctx,
+      'VALUE_NOT_IN_BLOCK',
+      `fact ${path} value ${JSON.stringify(value.trim())} is not found in the text of cited block(s) ${cited.join('+')} after the fixed normalizations (no semantic matching)`,
+      path,
+      first,
+    )
+    substringOk = false
+  }
+  let date: ParsedDate | null = null
+  if ((DATE_FIELD_KEYS as readonly string[]).includes(key)) {
+    const parsed = checkDate(ctx, value, texts.join(' '), path, first)
+    // 值都不在原文里时，不拿它去做跨字段一致性（避免用幻觉值再派生软 issue）。
+    date = substringOk ? parsed : null
+  }
+  return { value, ids: cited, date }
+}
+
+/**
+ * 校验一个 `$defs.identity_field`（name / phone / email）：三态 + 块引用 + 值匹配 + 数字专项。
+ * 位置：`fields.<name|phone|email>`。
+ */
+function checkIdentityField(
+  ctx: ValidationContext,
+  path: string,
+  key: string,
+  raw: unknown,
+): CheckedValue | null {
   ctx.fields += 1
   if (!isPlainObject(raw)) {
     pushHard(ctx, 'SCHEMA_INVALID', `field ${path} must be an object`, path)
     return null
   }
-  const stateRaw = raw.state
-  if (typeof stateRaw !== 'string' || stateRaw === '') {
-    pushHard(ctx, 'STATE_MISSING', `field ${path} is missing state`, path)
-    return null
-  }
-  if (!(FIELD_STATES as readonly string[]).includes(stateRaw)) {
-    pushHard(
-      ctx,
-      'STATE_INVALID',
-      `field ${path} has state ${JSON.stringify(stateRaw)}; allowed: ${FIELD_STATES.join(', ')}`,
-      path,
-    )
-    return null
-  }
-  const state = stateRaw as FieldState
+  checkAllowedKeys(ctx, path, raw, FIELD_KEYS, 'field')
+  const state = readState(ctx, path, raw)
+  if (state === null) return null
 
   const valueRaw = raw.value
   let value: string | null = null
@@ -721,11 +901,8 @@ function checkField(
     return null
   }
 
-  const cited = parseFieldCitation(ctx, path, raw)
+  const cited = parseBlockIdList(ctx, path, raw, true)
   if (cited === null) return null
-  for (const id of cited) noteRef(ctx, id, path)
-  // 归属（D-31 §3）留到所有 section 解析完再判：那时「这个块到底被放在哪」才是准确的。
-  ctx.fieldCitations.push({ path, key, sectionPath: scope.path, sectionBlocks: scope.blocks, ids: cited })
 
   if (state === 'present') {
     if (value === null || value.trim() === '') {
@@ -733,17 +910,16 @@ function checkField(
       return null
     }
     if (cited.length === 0) {
-      pushHard(ctx, 'MISSING_BLOCK_ID', `field ${path} is present but has no block_id`, path)
+      pushHard(ctx, 'MISSING_BLOCK_ID', `field ${path} is present but has no block_ids`, path)
       return null
     }
     const first = cited[0] as number
     const texts: string[] = []
     for (const id of cited) {
       const text = ctx.texts.get(id)
-      if (text === undefined) return { state, value, blockId: first, date: null } // 索引完整性问题已单独记过
+      if (text === undefined) return { value, ids: cited, date: null } // 索引完整性问题已单独记过
       texts.push(text)
     }
-    let substringOk = true
     if (!valueMatchesTexts(texts, value)) {
       pushHard(
         ctx,
@@ -752,109 +928,107 @@ function checkField(
         path,
         first,
       )
-      substringOk = false
     }
-    // 数字专项独立判定（规则 6 不因为规则 2 失败就不查）：格式永远查，与原文比对在找得到时才查。
-    const joined = texts.join(' ')
-    let date: ParsedDate | null = null
-    if (key === 'phone') checkPhone(ctx, value, joined, path, first)
-    else if (key === 'email') checkEmail(ctx, value, joined, path, first)
-    else if ((DATE_FIELD_KEYS as readonly string[]).includes(key)) {
-      const parsed = checkDate(ctx, value, joined, path, first)
-      // 值都不在原文里时，不拿它去做跨字段一致性（避免用幻觉值再派生软 issue）。
-      date = substringOk ? parsed : null
-    }
-    return { state, value, blockId: first, date }
+    // 数字专项独立判定（规则 6 不因为规则 2 失败就不查）。
+    checkScalarSpecial(ctx, key, value, texts.join(' '), path, first)
+    return { value, ids: cited, date: null }
   }
 
   if (value !== null) {
     pushHard(ctx, 'STATE_VALUE_CONFLICT', `field ${path} is ${state} but carries a value`, path)
     return null
   }
-
+  if (state === 'absent' && cited.length > 0) {
+    pushHard(
+      ctx,
+      'SCHEMA_INVALID',
+      `field ${path} is absent but cites block(s) ${cited.join(', ')}; absent must carry an empty block_ids (prompt.md §3.1)`,
+      path,
+    )
+  }
   if (state === 'unreadable') {
     const reason = raw.reason
     if (typeof reason !== 'string' || reason.trim() === '') {
       pushHard(ctx, 'UNREADABLE_MISSING_REASON', `field ${path} is unreadable but has no reason`, path)
     }
   }
-
-  return { state, value: null, blockId: cited.length > 0 ? (cited[0] as number) : null, date: null }
+  return { value: null, ids: cited, date: null }
 }
 
-/** 校验一个条目（entries[i]）：block 引用 + 各字段 + 必填字段。 */
+/**
+ * 校验一个条目（`fields.<work_experience|education>.value[i]`）。
+ *
+ * 契约里条目是**平铺**的：事实键（company/title/start/end 或 school/major/degree/start/end）
+ * 与 `block_ids` / `attribution` / `reason` 同级，没有 `fields` 子对象。
+ * @returns 条目自己声明的块 id（字段级超集检查用）；形状不对返回 null。
+ */
 function checkEntry(
   ctx: ValidationContext,
   path: string,
-  label: string | null,
+  fieldKey: EntryFieldKey,
   raw: unknown,
   workPeriods: WorkPeriod[],
-  scope: SectionScope,
-): void {
+): readonly number[] | null {
   ctx.entryCount += 1
   if (!isPlainObject(raw)) {
     pushHard(ctx, 'SCHEMA_INVALID', `entry ${path} must be an object`, path)
-    return
+    return null
   }
-  const blockIds = raw.block_ids
-  if (blockIds !== undefined) {
-    if (!Array.isArray(blockIds)) {
-      pushHard(ctx, 'SCHEMA_INVALID', `entry ${path} block_ids must be an array`, path)
-    } else {
-      const ids: number[] = []
-      for (let i = 0; i < blockIds.length; i += 1) {
-        const idPath = `${path}.block_ids[${i}]`
-        const id = checkKnownBlockId(ctx, blockIds[i], idPath)
-        if (id === null) continue
-        ids.push(id)
-        noteRef(ctx, id, idPath)
-      }
-      // 条目的引用也是「按序拼接」的证据，同样必须连续且有序（D-30 §2）。
-      if (!isConsecutive(ids)) {
+  checkAllowedKeys(ctx, path, raw, ENTRY_KEYS[fieldKey], 'entry')
+  const declared = new Set(Object.keys(raw))
+
+  const entryIds = parseBlockIdList(ctx, path, raw, true)
+
+  const checked = new Map<string, CheckedValue>()
+  for (const key of REQUIRED_ENTRY_FIELDS[fieldKey]) {
+    // 「省略」才报 MISSING_*；写坏了是别的 code 的事，不重复报成缺失。
+    if (!declared.has(key)) {
+      pushHard(
+        ctx,
+        'MISSING_ENTRY_FIELD',
+        `entry ${path} omits field "${key}"; omission is not "absent"`,
+        `${path}.${key}`,
+      )
+      continue
+    }
+    const fact = checkFact(ctx, `${path}.${key}`, key, raw[key])
+    if (fact !== null) checked.set(key, fact)
+  }
+
+  if (!declared.has('attribution')) {
+    pushHard(
+      ctx,
+      'SCHEMA_INVALID',
+      `entry ${path} is missing attribution; the contract requires it on every entry`,
+      path,
+    )
+  } else if (!(ATTRIBUTIONS as readonly string[]).includes(String(raw.attribution))) {
+    pushHard(
+      ctx,
+      'SCHEMA_INVALID',
+      `entry ${path} attribution ${showValue(raw.attribution)} is not one of: ${ATTRIBUTIONS.join(', ')}`,
+      `${path}.attribution`,
+    )
+  }
+
+  // $comment 不变量 (3) 的前半：条目 block_ids 必须覆盖它各事实引用的块。
+  if (entryIds !== null) {
+    const own = new Set(entryIds)
+    for (const [key, fact] of checked) {
+      for (const id of fact.ids) {
+        if (own.has(id)) continue
         pushHard(
           ctx,
-          'BLOCK_IDS_NOT_CONSECUTIVE',
-          `entry ${path} cites blocks ${ids.join(', ')}; entry block ids must be consecutive and ascending`,
+          'BLOCK_IDS_NOT_SUPERSET',
+          `entry ${path} block_ids do not include block ${id}, which its fact "${key}" cites; entry block_ids must cover every fact block`,
           `${path}.block_ids`,
-          ids[0],
+          id,
         )
       }
     }
   }
 
-  const checked = new Map<string, CheckedField>()
-  const declaredKeys = new Set<string>()
-  const fields = raw.fields
-  if (fields !== undefined) {
-    if (!isPlainObject(fields)) {
-      pushHard(ctx, 'SCHEMA_INVALID', `entry ${path} fields must be an object`, path)
-    } else {
-      for (const key of Object.keys(fields).sort()) {
-        declaredKeys.add(key)
-        const field = checkField(ctx, `${path}.fields.${key}`, key, fields[key], scope)
-        if (field !== null) checked.set(key, field)
-      }
-    }
-  }
-
-  if (label !== null) {
-    const required = REQUIRED_ENTRY_FIELDS[label]
-    if (required !== undefined) {
-      for (const key of required) {
-        // 「省略」才报 MISSING_*；写坏了是别的 code 的事，不重复报成缺失。
-        if (!declaredKeys.has(key)) {
-          pushHard(
-            ctx,
-            'MISSING_ENTRY_FIELD',
-            `entry ${path} (section label "${label}") omits field "${key}"; omission is not "absent"`,
-            `${path}.fields.${key}`,
-          )
-        }
-      }
-    }
-  }
-
-  if (label === 'work_experience' || label === 'internship') {
+  if (fieldKey === 'work_experience') {
     const start = checked.get('start')
     const end = checked.get('end')
     if (
@@ -868,26 +1042,151 @@ function checkEntry(
       workPeriods.push({ path, start: start.date, end: end.date })
     }
   }
+  return entryIds
 }
 
 /**
- * 校验一个 section：标签 + block 分区 + 字段 + 条目 + 必填字段。
- * 分区（D-31 §1）：section.block_ids 是「这个 section 拥有哪些块」的**唯一**声明，
- * 同一个块只能出现在一个 section 里。
+ * 校验一个条目数组字段（`$defs.structural_field` / `education_field`）。
+ * 位置：`fields.work_experience` / `fields.education`；条目在 **`value[]`**（不是 `entries[]`）。
+ *
+ * 字段自己的 `block_ids` 是 `$comment` (3) 说的**超集**（entries[*].block_ids ∪ 证据块），
+ * 不是「一个值的拼接范围」：它只要求升序、不重复，**不要求相邻**——否则跨过一个 ignored 块
+ * （如 education 中间那个 `•`）就必然自相矛盾（$comment (3)+(5)）。
  */
-function checkSection(
+function checkEntryField(
   ctx: ValidationContext,
   path: string,
+  fieldKey: EntryFieldKey,
   raw: unknown,
   workPeriods: WorkPeriod[],
 ): void {
+  ctx.fields += 1
+  if (!isPlainObject(raw)) {
+    pushHard(ctx, 'SCHEMA_INVALID', `field ${path} must be an object`, path)
+    return
+  }
+  checkAllowedKeys(ctx, path, raw, FIELD_KEYS, 'field')
+  const state = readState(ctx, path, raw)
+  if (state === null) return
+  const cited = parseBlockIdList(ctx, path, raw, true, false)
+
+  const valueRaw = raw.value
+  const hasValue = valueRaw !== undefined && valueRaw !== null
+
+  if (state !== 'present') {
+    if (hasValue) {
+      pushHard(ctx, 'STATE_VALUE_CONFLICT', `field ${path} is ${state} but carries a value`, path)
+      return
+    }
+    if (state === 'absent' && cited !== null && cited.length > 0) {
+      pushHard(
+        ctx,
+        'SCHEMA_INVALID',
+        `field ${path} is absent but cites block(s) ${cited.join(', ')}; absent must carry an empty block_ids (prompt.md §3.1)`,
+        path,
+      )
+    }
+    if (state === 'unreadable') {
+      const reason = raw.reason
+      if (typeof reason !== 'string' || reason.trim() === '') {
+        pushHard(ctx, 'UNREADABLE_MISSING_REASON', `field ${path} is unreadable but has no reason`, path)
+      }
+    }
+    return
+  }
+
+  if (!hasValue) {
+    pushHard(ctx, 'STATE_VALUE_CONFLICT', `field ${path} is present but has no value array`, path)
+    return
+  }
+  if (!Array.isArray(valueRaw)) {
+    pushHard(ctx, 'SCHEMA_INVALID', `field ${path} value must be an array of entries when present`, path)
+    return
+  }
+  if (valueRaw.length === 0) {
+    pushHard(ctx, 'SCHEMA_INVALID', `field ${path} value must not be empty when present`, path)
+    return
+  }
+  if (cited !== null && cited.length === 0) {
+    pushHard(ctx, 'MISSING_BLOCK_ID', `field ${path} is present but has no block_ids`, path)
+  }
+
+  const fieldSet = cited === null ? null : new Set(cited)
+  for (let i = 0; i < valueRaw.length; i += 1) {
+    const entryPath = `${path}.value[${i}]`
+    const entryIds = checkEntry(ctx, entryPath, fieldKey, valueRaw[i], workPeriods)
+    // $comment 不变量 (3)：字段级 block_ids 必须是其 entries[*].block_ids 的超集。
+    if (entryIds === null || fieldSet === null || fieldSet.size === 0) continue
+    for (const id of entryIds) {
+      if (fieldSet.has(id)) continue
+      pushHard(
+        ctx,
+        'BLOCK_IDS_NOT_SUPERSET',
+        `field ${path} block_ids do not include block ${id}, which ${entryPath} cites; field block_ids must be a superset of every entry's block_ids`,
+        `${path}.block_ids`,
+        id,
+      )
+    }
+  }
+}
+
+/**
+ * 校验顶层 `fields`（`$defs.fields`）：五个键**恒在**，缺一 → MISSING_FIELD（省略 ≠ absent）。
+ * 受保护属性（年龄/性别/婚育/籍贯/民族/照片）在契约里**没有位置**，出现即 SCHEMA_INVALID。
+ */
+function checkDocumentFields(
+  ctx: ValidationContext,
+  raw: unknown,
+  workPeriods: WorkPeriod[],
+): void {
+  if (raw === undefined) {
+    pushHard(
+      ctx,
+      'SCHEMA_INVALID',
+      'result.fields is required; the five fields (name / phone / email / work_experience / education) are always present',
+      'fields',
+    )
+    return
+  }
+  if (!isPlainObject(raw)) {
+    pushHard(ctx, 'SCHEMA_INVALID', 'result.fields must be an object', 'fields')
+    return
+  }
+  checkAllowedKeys(ctx, 'fields', raw, REQUIRED_DOCUMENT_FIELDS, 'fields')
+  for (const key of REQUIRED_DOCUMENT_FIELDS) {
+    if (!(key in raw)) {
+      pushHard(
+        ctx,
+        'MISSING_FIELD',
+        `field "fields.${key}" is omitted; the contract requires all five keys (omission is not "absent")`,
+        `fields.${key}`,
+      )
+      continue
+    }
+    if (key === 'work_experience' || key === 'education') {
+      checkEntryField(ctx, `fields.${key}`, key, raw[key], workPeriods)
+    } else {
+      checkIdentityField(ctx, `fields.${key}`, key, raw[key])
+    }
+  }
+}
+
+/**
+ * 校验一个 section（`$defs.section`）：标签 + block 分区 + ignored。
+ *
+ * **契约里 section 没有 fields / entries**（additionalProperties: false）：这两个键由
+ * checkAllowedKeys() 记成 SCHEMA_INVALID——它们属于顶层 `fields`。
+ * 分区（D-31 §1）：section.block_ids 是「这个 section 拥有哪些块」的**唯一**声明，
+ * 同一个块只能出现在一个 section 里。
+ */
+function checkSection(ctx: ValidationContext, path: string, raw: unknown): void {
   if (!isPlainObject(raw)) {
     pushHard(ctx, 'SCHEMA_INVALID', `section ${path} must be an object`, path)
     return
   }
+  checkAllowedKeys(ctx, path, raw, SECTION_KEYS, 'section')
 
   const labelRaw = raw.label
-  let label: string | null = null
   if (typeof labelRaw !== 'string' || labelRaw === '') {
     pushHard(ctx, 'UNKNOWN_SECTION_LABEL', `section ${path} label must be a non-empty string`, path)
   } else if (!(SECTION_LABELS as readonly string[]).includes(labelRaw)) {
@@ -897,64 +1196,62 @@ function checkSection(
       `section ${path} label ${JSON.stringify(labelRaw)} is not one of: ${SECTION_LABELS.join(', ')}`,
       path,
     )
-  } else {
-    label = labelRaw
   }
 
   const placedHere = new Set<number>()
   const blockIds = raw.block_ids
-  if (blockIds !== undefined) {
-    if (!Array.isArray(blockIds)) {
-      pushHard(ctx, 'SCHEMA_INVALID', `section ${path} block_ids must be an array`, path)
-    } else {
-      for (let i = 0; i < blockIds.length; i += 1) {
-        const idPath = `${path}.block_ids[${i}]`
-        const id = checkKnownBlockId(ctx, blockIds[i], idPath)
-        if (id === null) continue
-        placeBlock(ctx, id, idPath)
-        placedHere.add(id)
-      }
+  if (blockIds === undefined) {
+    pushHard(
+      ctx,
+      'SCHEMA_INVALID',
+      `section ${path} is missing block_ids; the contract requires it on every section`,
+      path,
+    )
+  } else if (!Array.isArray(blockIds)) {
+    pushHard(ctx, 'SCHEMA_INVALID', `section ${path} block_ids must be an array`, path)
+  } else {
+    if (blockIds.length === 0) {
+      pushHard(ctx, 'SCHEMA_INVALID', `section ${path} block_ids must not be empty`, `${path}.block_ids`)
     }
-  }
-  const scope: SectionScope = { path, blocks: placedHere }
-
-  const declaredFieldKeys = new Set<string>()
-  const fields = raw.fields
-  if (fields !== undefined) {
-    if (!isPlainObject(fields)) {
-      pushHard(ctx, 'SCHEMA_INVALID', `section ${path} fields must be an object`, path)
-    } else {
-      for (const key of Object.keys(fields).sort()) {
-        declaredFieldKeys.add(key)
-        checkField(ctx, `${path}.fields.${key}`, key, fields[key], scope)
-      }
+    for (let i = 0; i < blockIds.length; i += 1) {
+      const idPath = `${path}.block_ids[${i}]`
+      const id = checkKnownBlockId(ctx, blockIds[i], idPath)
+      if (id === null) continue
+      placeBlock(ctx, id, idPath)
+      placedHere.add(id)
     }
   }
 
-  const entries = raw.entries
-  if (entries !== undefined) {
-    if (!Array.isArray(entries)) {
-      pushHard(ctx, 'SCHEMA_INVALID', `section ${path} entries must be an array`, path)
+  if (raw.ignored !== undefined) {
+    const ignored = raw.ignored
+    let valid = true
+    if (!isPlainObject(ignored)) {
+      pushHard(ctx, 'SCHEMA_INVALID', `section ${path} ignored must be an object ({ reason, detail? })`, `${path}.ignored`)
+      valid = false
     } else {
-      for (let i = 0; i < entries.length; i += 1) {
-        checkEntry(ctx, `${path}.entries[${i}]`, label, entries[i], workPeriods, scope)
+      checkAllowedKeys(ctx, `${path}.ignored`, ignored, IGNORED_KEYS, 'ignored')
+      const reason = ignored.reason
+      if (typeof reason !== 'string' || reason.trim() === '') {
+        pushHard(
+          ctx,
+          'IGNORED_MISSING_REASON',
+          `section ${path} ignored must carry a non-empty reason (contracts/schema.json $defs.ignored.reason)`,
+          `${path}.ignored.reason`,
+        )
+        valid = false
       }
     }
-  }
-
-  if (label !== null) {
-    const required = REQUIRED_SECTION_FIELDS[label]
-    if (required !== undefined) {
-      for (const key of required) {
-        if (!declaredFieldKeys.has(key)) {
-          pushHard(
-            ctx,
-            'MISSING_FIELD',
-            `section ${path} (label "${label}") omits field "${key}"; omission is not "absent"`,
-            `${path}.fields.${key}`,
-          )
-        }
+    if (valid) {
+      for (const id of placedHere) {
+        // 同一个块被两个 ignored section 覆盖是重复记账（placeBlock 已报 BLOCK_DUPLICATED），
+        // 这里只数第一次，stats.ignored 才不会超过块数。
+        if (ctx.ignoredCovered.has(id)) continue
+        ctx.ignoredCovered.set(id, path)
+        ctx.ignored += 1
       }
+    } else {
+      // ignored 不成立 = 这些块既没被正常归类、也没被合法排除：覆盖率会再报一次（D-31 §2）。
+      for (const id of placedHere) ctx.ignoredInvalid.add(id)
     }
   }
 }
@@ -1038,63 +1335,23 @@ export function validate(input: ValidateInput): ValidateResult {
   if (!isPlainObject(result)) {
     pushHard(ctx, 'SCHEMA_INVALID', `result must be an object, got ${showValue(result)}`, 'result')
   } else {
+    // 契约的根是 additionalProperties: false：顶层 `ignored[]` 之类的键在这里被拒（它们在 section 里）。
+    checkAllowedKeys(ctx, 'result', result, RESULT_KEYS, 'result')
+
     const sections = result.sections
     if (sections === undefined) {
-      pushHard(ctx, 'SCHEMA_INVALID', 'result.sections is required (an empty array is allowed)', 'sections')
+      pushHard(ctx, 'SCHEMA_INVALID', 'result.sections is required', 'sections')
     } else if (!Array.isArray(sections)) {
       pushHard(ctx, 'SCHEMA_INVALID', 'result.sections must be an array', 'sections')
     } else {
       for (let i = 0; i < sections.length; i += 1) {
-        checkSection(ctx, `sections[${i}]`, sections[i], workPeriods)
+        checkSection(ctx, `sections[${i}]`, sections[i])
       }
     }
 
-    const ignored = result.ignored
-    if (ignored !== undefined) {
-      if (!Array.isArray(ignored)) {
-        pushHard(ctx, 'SCHEMA_INVALID', 'result.ignored must be an array', 'ignored')
-      } else {
-        for (let i = 0; i < ignored.length; i += 1) {
-          const item = ignored[i]
-          const path = `ignored[${i}]`
-          if (!isPlainObject(item)) {
-            pushHard(ctx, 'SCHEMA_INVALID', `ignored entry ${path} must be an object`, path)
-            continue
-          }
-          const blockId = checkKnownBlockId(ctx, item.block_id, `${path}.block_id`)
-          const reason = item.reason
-          const reasonOk = typeof reason === 'string' && reason.trim() !== ''
-          if (!reasonOk) {
-            // reason 不合法的 ignored 不算归类：这条 block 仍然没被归入任何 section（覆盖率会再报一次）。
-            pushHard(
-              ctx,
-              'IGNORED_MISSING_REASON',
-              `ignored entry ${path} must carry a non-empty reason`,
-              `${path}.reason`,
-            )
-            continue
-          }
-          if (blockId !== null) {
-            const alreadyIgnored = ctx.ignoredCovered.get(blockId)
-            if (alreadyIgnored !== undefined) {
-              // 同一个块被 ignore 两次同样是双记账（D-31 §1 的「恰好一次」）。
-              pushHard(
-                ctx,
-                'BLOCK_DUPLICATED',
-                `block ${blockId} is ignored more than once (first at ${alreadyIgnored}, again at ${path})`,
-                path,
-                blockId,
-              )
-              continue
-            }
-            ctx.ignoredCovered.set(blockId, path)
-            ctx.ignored += 1
-          }
-        }
-      }
-    }
+    checkDocumentFields(ctx, result.fields, workPeriods)
 
-    // D-31 §2：被 ignored 的块不得再被任何字段 / 条目引用（引用 = 把 ignored 当逃生舱）。
+    // D-31 §2：被 ignored 的块不得再被任何字段 / 条目 / 事实引用（引用 = 把 ignored 当逃生舱）。
     for (const ref of ctx.refs) {
       const ignoredAt = ctx.ignoredCovered.get(ref.id)
       if (ignoredAt !== undefined) {
@@ -1108,42 +1365,26 @@ export function validate(input: ValidateInput): ValidateResult {
       }
     }
 
-    // D-31 §2：ignored 与 section 分区互斥——既 ignored 又放进 section 是双记账，直接拒绝。
-    for (const [id, ignoredAt] of ctx.ignoredCovered) {
-      const placedAt = ctx.placed.get(id)
-      if (placedAt !== undefined) {
-        pushHard(
-          ctx,
-          'BLOCK_DUPLICATED',
-          `block ${id} is ignored at ${ignoredAt} and also placed at ${placedAt}; ignored blocks must not belong to a section`,
-          ignoredAt,
-          id,
-        )
-      }
-    }
-
-    // D-31 §3：字段引用的块必须属于该字段所在 section（contact 类字段除外）。
-    for (const citation of ctx.fieldCitations) {
-      if ((CONTACT_FIELD_KEYS as readonly string[]).includes(citation.key)) continue
-      for (const id of citation.ids) {
-        if (citation.sectionBlocks.has(id)) continue
-        const placedAt = ctx.placed.get(id)
-        pushHard(
-          ctx,
-          'FIELD_BLOCK_NOT_IN_SECTION',
-          `field ${citation.path} cites block ${id}, which ${placedAt === undefined ? 'is not placed in any section' : `is placed at ${placedAt}`}; ${citation.sectionPath} does not own it (a field may only cite blocks of its own section; contact fields are exempt)`,
-          citation.path,
-          id,
-        )
-      }
-    }
-
     checkWorkPeriods(ctx, workPeriods)
   }
 
   // 覆盖率（D-31 §1）：每个 block 必须**恰好**归入一个 section，或被带 reason 的 ignored 明确排除。
+  let covered = 0
   for (const entry of index.entries) {
-    if (!ctx.placed.has(entry.id) && !ctx.ignoredCovered.has(entry.id)) {
+    const invalidIgnored = ctx.ignoredInvalid.has(entry.id)
+    const placed = ctx.placed.has(entry.id)
+    if (!invalidIgnored && placed) covered += 1
+    if (invalidIgnored) {
+      pushHard(
+        ctx,
+        'UNCOVERED_BLOCK',
+        `block ${entry.id} (page ${entry.page === null ? '?' : String(entry.page)}) sits in a section whose ignored marker is invalid, so it is neither classified nor excluded`,
+        `block_index[${entry.id}]`,
+        entry.id,
+      )
+      continue
+    }
+    if (!placed && !ctx.ignoredCovered.has(entry.id)) {
       pushHard(
         ctx,
         'UNCOVERED_BLOCK',
@@ -1170,17 +1411,13 @@ export function validate(input: ValidateInput): ValidateResult {
     )
   }
 
-  const coveredIds = new Set<number>()
-  for (const id of ctx.placed.keys()) coveredIds.add(id)
-  for (const id of ctx.ignoredCovered.keys()) coveredIds.add(id)
-
   return {
     accepted: rejected.length === 0,
     rejected,
     issues: ctx.issues,
     stats: {
       index_entries: index.entries.length,
-      covered: coveredIds.size,
+      covered,
       ignored: ctx.ignored,
       fields: ctx.fields,
       entries: ctx.entryCount,
@@ -1189,6 +1426,3 @@ export function validate(input: ValidateInput): ValidateResult {
     },
   }
 }
-
-
-

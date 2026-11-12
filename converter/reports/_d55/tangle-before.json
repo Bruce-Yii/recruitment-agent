@@ -1,0 +1,1134 @@
+{
+"text": "唐乐\n\n年　　龄\n21 岁\n性　　别\n男\n\n工作年限\n应届生\n电　　话\n18064871268\n\n邮　　箱\n2061790875@qq.com\n政治面貌\n共青团员\n\nGithub\nhttps://github.com/tl66666\n个人网站\nhttps://tl66666.github.io/grjs/\n\n教育背景\n\n2023-10 ～ 至今\n上海应用技术大学\n软件工程 (本科)\n\n思想认识\n\n积极进取，被中共上海应用技术大学委员会评为入党积极分子，已参加我校党校第51期入党积极分子培训班，考试合格，予以结业。\n\n技能特长\n\n语言能力： 英语 CET-6，具备阅读英文技术文档、理解 API 文档和基础英文沟通能力。普通话二级乙等。\n\n计算机： 熟悉 Java、Python、C/C++、JavaScript、TypeScript，熟悉 React、Vue、Vite、Tailwind CSS、Zustand、Express、\n\nFlask、Prisma ORM、MySQL、SQLite 等技术；具备前端页面实现、后端接口开发、数据库设计、REST API、JWT 鉴权、文件上\n\n传、数据可视化和响应式布局实践经验。 具有全栈开发能力，覆盖需求拆解、页面设计、接口实现、数据持久化、交互优化和部署\n\n展示等环节。熟练使用 Codex、Claude Code、Trae、GitHub Copilot 等工具提升开发效率，能够通过 AI 辅助完成代码生成与方案\n\n迭代，并结合自主调试、代码阅读、问题排查和功能验证保证项目质量。\n\n项目经历（以下项目均由本人全程完成需求拆解、页面设计、前后端开发、调试优化、功能验证、交付收口与展示页整理）\n\n职途 AI - AI Agent 求职辅助 Web 系统    项目展示：https://tl66666.github.io/ztai/static/showcase.html\n\n面向求职准备场景独立开发的 AI 辅助 Web 系统，解决简历修改、JD 分析、模拟面试和投递进度分散管理的问题，构建“简历录入 -\n\nJD 解析 - 岗位匹配 - 模拟面试 - 投递看板”的完整流程。\n\n技术栈：Python / Flask / SQLite / JavaScript / Chart.js / MediaRecorder / REST API\n\n核心实现：封装统一 AI 模型调用层，支持多供应商模型切换和本地规则兜底；实现简历解析导出、JD 关键词提取、岗位匹配建议、\n\n技能图谱可视化、语音面试录制回放和投递状态追踪。\n\n星途自律舱 - 星球养成式自律打卡微信小程序    项目展示：https://tl66666.github.io/xtzlc/（含小程序码与功能演示）\n\n面向个人目标管理场景独立开发的自律打卡小程序，解决传统待办工具反馈弱、坚持成本高的问题，将运动、饮食、学习、工作、计\n\n划、睡眠等任务转化为星球成长体系。\n\n技术栈：微信原生小程序 / WXML / WXSS / JavaScript / Node.js\n\n核心实现：实现目标创建、每日打卡、奖励计算、成就解锁、宝箱反馈、生态区入口和数据统计模块；使用 Node.js 测试脚本覆盖奖\n\n励计算、目标进度和成就解锁等核心逻辑。\n\n城会玩 2.0 - 城市照片手账与旅行回忆归档小程序 项目展示：https://tl66666.github.io/chw2.0/（含小程序码与功能演示）\n\n面向旅行记录场景独立开发的城市照片手账小程序，解决旅行照片散落在系统相册中、用户想按城市找回美景和美食时只能反复翻找\n\n的问题，以“城市”为照片和笔记的归档容器。\n\n技术栈：微信原生小程序 / WXML / WXSS / JavaScript / 图片上传 / 数据存储\n\n核心实现：实现地图点亮、城市详情、照片上传归档、相册筛选、动态记录、群组共享和成就反馈；设计“点亮城市 - 上传照片 - 城市\n\n回看 - 成就激励”的完整使用路径。\n\n梦弦 DreamChord - Web 端视觉小说创作平台   项目展示：https://tl66666.github.io/DreamChord/\n\n面向视觉小说创作场景独立开发的 Web 创作平台，解决传统创作工具节点结构复杂、剧情分支管理混乱、素材管理割裂和非技术用\n\n户难以上手的问题。\n\n技术栈：React / TypeScript / Vite / Tailwind CSS / Zustand / Express / Prisma / REST API / JWT\n\n核心实现：构建“章节 - 场景 - 镜头卡”三级结构，支持剧情流程图可视化、分支走向检测、素材管理、AI 助手创作和播放器预览，实\n\n现从创作编辑到作品播放的完整链路。\n\n自我评价\n\n工作积极认真，细心负责，善于在工作中发现问题、解决问题；勤奋好学，踏实肯干，有很强的社会责任感；坚毅不拔，吃苦耐劳。\n\n[https://tl66666.github.io/ztai/static/showcase.html](<https://tl66666.github.io/ztai/static/showcase.html>)",
+"blocks": [
+{
+"kind": "heading",
+"text": "唐乐",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+16.641191482543945,
+61.079288482666016,
+35.868072509765625
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 18.905487060546875
+},
+"level": 1
+},
+{
+"kind": "paragraph",
+"text": "年　　龄\n21 岁\n性　　别\n男",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+53.24908447265625,
+314.84906005859375,
+63.8095703125
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "工作年限\n应届生\n电　　话\n18064871268",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+72.1545639038086,
+363.20928955078125,
+82.71504974365234
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "邮　　箱\n2061790875@qq.com\n政治面貌\n共青团员",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+91.06005096435547,
+343.207275390625,
+101.62053680419922
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "Github\nhttps://github.com/tl66666\n个人网站\nhttps://tl66666.github.io/grjs/",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+109.96553802490234,
+423.6219177246094,
+120.5260238647461
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "教育背景",
+"location": {
+"page": 1,
+"bbox": [
+29.085365295410156,
+141.69308471679688,
+68.76646423339844,
+151.78720092773438
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.92538070678711
+}
+},
+{
+"kind": "heading",
+"text": "2023-10 ～ 至今\n上海应用技术大学\n软件工程 (本科)",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+165.2277374267578,
+572.9716796875,
+175.78822326660156
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438,
+"is_bold": true
+},
+"level": 3
+},
+{
+"kind": "paragraph",
+"text": "思想认识",
+"location": {
+"page": 1,
+"bbox": [
+29.085365295410156,
+193.31961059570312,
+68.76646423339844,
+203.41372680664062
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.92538070678711
+}
+},
+{
+"kind": "paragraph",
+"text": "积极进取，被中共上海应用技术大学委员会评为入党积极分子，已参加我校党校第51期入党积极分子培训班，考试合格，予以结业。",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+224.8527374267578,
+572.5896606445312,
+235.41322326660156
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "技能特长",
+"location": {
+"page": 1,
+"bbox": [
+29.085365295410156,
+253.6717529296875,
+68.76646423339844,
+263.765869140625
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.92538070678711
+}
+},
+{
+"kind": "paragraph",
+"text": "语言能力： 英语 CET-6，具备阅读英文技术文档、理解 API 文档和基础英文沟通能力。普通话二级乙等。",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+279.3877868652344,
+463.37261962890625,
+289.9482727050781
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "计算机： 熟悉 Java、Python、C/C++、JavaScript、TypeScript，熟悉 React、Vue、Vite、Tailwind CSS、Zustand、Express、",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+293.93048095703125,
+557.5305786132812,
+304.490966796875
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "Flask、Prisma ORM、MySQL、SQLite 等技术；具备前端页面实现、后端接口开发、数据库设计、REST API、JWT 鉴权、文件上",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+308.47314453125,
+567.5399169921875,
+319.03363037109375
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "传、数据可视化和响应式布局实践经验。 具有全栈开发能力，覆盖需求拆解、页面设计、接口实现、数据持久化、交互优化和部署",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+323.0158386230469,
+564.7015991210938,
+333.5763244628906
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "展示等环节。熟练使用 Codex、Claude Code、Trae、GitHub Copilot 等工具提升开发效率，能够通过 AI 辅助完成代码生成与方案",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+337.55853271484375,
+564.968994140625,
+348.1190185546875
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "迭代，并结合自主调试、代码阅读、问题排查和功能验证保证项目质量。",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+352.2806091308594,
+325.75640869140625,
+361.73333740234375
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "项目经历（以下项目均由本人全程完成需求拆解、页面设计、前后端开发、调试优化、功能验证、交付收口与展示页整理）",
+"location": {
+"page": 1,
+"bbox": [
+29.085365295410156,
+380.92022705078125,
+564.6951293945312,
+391.01434326171875
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.92538070678711
+}
+},
+{
+"kind": "paragraph",
+"text": "职途 AI - AI Agent 求职辅助 Web 系统    项目展示：https://tl66666.github.io/ztai/static/showcase.html",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+406.6362609863281,
+453.1495056152344,
+417.1967468261719
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438,
+"is_bold": true
+}
+},
+{
+"kind": "paragraph",
+"text": "面向求职准备场景独立开发的 AI 辅助 Web 系统，解决简历修改、JD 分析、模拟面试和投递进度分散管理的问题，构建“简历录入 -",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+421.178955078125,
+567.1631469726562,
+431.73944091796875
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "JD 解析 - 岗位匹配 - 模拟面试 - 投递看板”的完整流程。",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+435.72161865234375,
+254.85150146484375,
+446.2821044921875
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "技术栈：Python / Flask / SQLite / JavaScript / Chart.js / MediaRecorder / REST API",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+450.2643127441406,
+372.9661865234375,
+460.8247985839844
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "核心实现：封装统一 AI 模型调用层，支持多供应商模型切换和本地规则兜底；实现简历解析导出、JD 关键词提取、岗位匹配建议、",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+464.8070068359375,
+571.5325927734375,
+475.36749267578125
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "技能图谱可视化、语音面试录制回放和投递状态追踪。",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+479.5290832519531,
+250.1343994140625,
+488.9818115234375
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "星途自律舱 - 星球养成式自律打卡微信小程序    项目展示：https://tl66666.github.io/xtzlc/（含小程序码与功能演示）",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+493.8923645019531,
+504.39117431640625,
+504.4528503417969
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438,
+"is_bold": true
+}
+},
+{
+"kind": "paragraph",
+"text": "面向个人目标管理场景独立开发的自律打卡小程序，解决传统待办工具反馈弱、坚持成本高的问题，将运动、饮食、学习、工作、计",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+508.6144714355469,
+571.528076171875,
+518.0671997070312
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "划、睡眠等任务转化为星球成长体系。",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+523.1571044921875,
+183.96510314941406,
+532.60986328125
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "技术栈：微信原生小程序 / WXML / WXSS / JavaScript / Node.js",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+537.5203857421875,
+290.7829895019531,
+548.0808715820312
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "核心实现：实现目标创建、每日打卡、奖励计算、成就解锁、宝箱反馈、生态区入口和数据统计模块；使用 Node.js 测试脚本覆盖奖",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+552.0631103515625,
+571.0203247070312,
+562.6235961914062
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "励计算、目标进度和成就解锁等核心逻辑。",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+566.78515625,
+202.87062072753906,
+576.2379150390625
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "城会玩 2.0 - 城市照片手账与旅行回忆归档小程序 项目展示：https://tl66666.github.io/chw2.0/（含小程序码与功能演示）",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+581.1484375,
+523.3211669921875,
+591.7089233398438
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438,
+"is_bold": true
+}
+},
+{
+"kind": "paragraph",
+"text": "面向旅行记录场景独立开发的城市照片手账小程序，解决旅行照片散落在系统相册中、用户想按城市找回美景和美食时只能反复翻找",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+595.8705444335938,
+571.528076171875,
+605.3233032226562
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "的问题，以“城市”为照片和笔记的归档容器。",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+610.2338256835938,
+209.16627502441406,
+620.7943115234375
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "技术栈：微信原生小程序 / WXML / WXSS / JavaScript / 图片上传 / 数据存储",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+624.7764892578125,
+342.23858642578125,
+635.3369750976562
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "核心实现：实现地图点亮、城市详情、照片上传归档、相册筛选、动态记录、群组共享和成就反馈；设计“点亮城市 - 上传照片 - 城市",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+639.3191528320312,
+572.5711669921875,
+649.879638671875
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "回看 - 成就激励”的完整使用路径。",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+653.8618774414062,
+167.1550750732422,
+664.42236328125
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "梦弦 DreamChord - Web 端视觉小说创作平台   项目展示：https://tl66666.github.io/DreamChord/",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+668.404541015625,
+430.1933288574219,
+678.9650268554688
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438,
+"is_bold": true
+}
+},
+{
+"kind": "paragraph",
+"text": "面向视觉小说创作场景独立开发的 Web 创作平台，解决传统创作工具节点结构复杂、剧情分支管理混乱、素材管理割裂和非技术用",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+682.9472045898438,
+567.6878051757812,
+693.5076904296875
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "户难以上手的问题。",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+697.6693115234375,
+108.34307098388672,
+707.1220703125
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "技术栈：React / TypeScript / Vite / Tailwind CSS / Zustand / Express / Prisma / REST API / JWT",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+712.0325927734375,
+424.4471130371094,
+722.5930786132812
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "核心实现：构建“章节 - 场景 - 镜头卡”三级结构，支持剧情流程图可视化、分支走向检测、素材管理、AI 助手创作和播放器预览，实",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+726.5752563476562,
+568.3709106445312,
+737.1357421875
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "现从创作编辑到作品播放的完整链路。",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+741.29736328125,
+183.96510314941406,
+750.7501220703125
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "paragraph",
+"text": "自我评价",
+"location": {
+"page": 1,
+"bbox": [
+29.085365295410156,
+769.9369506835938,
+68.76646423339844,
+780.0310668945312
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.92538070678711
+}
+},
+{
+"kind": "paragraph",
+"text": "工作积极认真，细心负责，善于在工作中发现问题、解决问题；勤奋好学，踏实肯干，有很强的社会责任感；坚毅不拔，吃苦耐劳。",
+"location": {
+"page": 1,
+"bbox": [
+23.268291473388672,
+795.8323974609375,
+571.528076171875,
+805.7322387695312
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.452743530273438
+}
+},
+{
+"kind": "link",
+"text": "[https://tl66666.github.io/ztai/static/showcase.html](<https://tl66666.github.io/ztai/static/showcase.html>)",
+"location": {
+"page": 1,
+"bbox": [
+195.5990753173828,
+406.46795654296875,
+233.41006469726562,
+417.375
+]
+},
+"links": [
+{
+"text": "https://tl66666.github.io/ztai/static/showcase.html",
+"href": "https://tl66666.github.io/ztai/static/showcase.html",
+"location": {
+"page": 1,
+"bbox": [
+195.5990753173828,
+406.46795654296875,
+233.41006469726562,
+417.375
+]
+}
+}
+],
+"provenance": "native_text"
+}
+],
+"title": "about:blank",
+"chars": 2183,
+"completeness": "partial",
+"issues": [
+{
+"code": "unverified_pdf_image",
+"message": "page 1 has 1 embedded image(s), coverage 0.019; confirm image role/content from the original; preserve native text",
+"location": {
+"page": 1
+}
+},
+{
+"code": "resume_protected_attribute_present",
+"message": "protected attributes identified and isolated from screening: age_or_birth, gender",
+"location": {
+"page": null,
+"bbox": null
+}
+}
+],
+"needs_visual": false,
+"warnings": [],
+"meta": {
+"pages": 1,
+"source_sha256": "f8fb0a0455b9636dc4170cb4ffd3bf04e1d28ce977b13dea2bb972b719205391",
+"source_name": "tangle-resume.pdf",
+"backend": "pymupdf/1.28.0",
+"reader_version": "1.0.0",
+"page_info": [
+{
+"page": 1,
+"chars": 2033,
+"images": 1,
+"drawings": 11,
+"layout_order_applied": false,
+"image_coverage": 0.018703365372832396,
+"block_count": 44,
+"encoding_removed": "",
+"noise_removed": ""
+}
+],
+"layout_backend": null,
+"order_verified": false,
+"repaired": false,
+"ocr": "not_needed",
+"noise_blocks": 0,
+"encoding_removed_chars": ""
+},
+"links": [
+{
+"text": "https://tl66666.github.io/ztai/static/showcase.html",
+"href": "https://tl66666.github.io/ztai/static/showcase.html",
+"location": {
+"page": 1,
+"bbox": [
+195.5990753173828,
+406.46795654296875,
+233.41006469726562,
+417.375
+]
+}
+}
+],
+"fields": {
+"name": {
+"state": "present",
+"value": "唐乐",
+"evidence": [
+{
+"page": 1,
+"bbox": [
+23.268291473388672,
+16.641191482543945,
+61.079288482666016,
+35.868072509765625
+],
+"block": 0,
+"text": "唐乐",
+"source_sha256": "f8fb0a0455b9636dc4170cb4ffd3bf04e1d28ce977b13dea2bb972b719205391"
+}
+],
+"provenance": "native_text",
+"reason": "",
+"match_rule": "heading_level_1"
+},
+"phone": {
+"state": "present",
+"value": "18064871268",
+"evidence": [
+{
+"page": 1,
+"bbox": [
+23.268291473388672,
+72.1545639038086,
+363.20928955078125,
+82.71504974365234
+],
+"block": 2,
+"text": "18064871268",
+"source_sha256": "f8fb0a0455b9636dc4170cb4ffd3bf04e1d28ce977b13dea2bb972b719205391"
+}
+],
+"provenance": "native_text",
+"reason": "",
+"normalized": "18064871268"
+},
+"email": {
+"state": "present",
+"value": "2061790875@qq.com",
+"evidence": [
+{
+"page": 1,
+"bbox": [
+23.268291473388672,
+91.06005096435547,
+343.207275390625,
+101.62053680419922
+],
+"block": 3,
+"text": "2061790875@qq.com",
+"source_sha256": "f8fb0a0455b9636dc4170cb4ffd3bf04e1d28ce977b13dea2bb972b719205391"
+}
+],
+"provenance": "native_text",
+"reason": ""
+},
+"work_experience": {
+"state": "absent",
+"value": null,
+"evidence": [],
+"provenance": "native_text",
+"reason": "no_work_section"
+},
+"education": {
+"state": "present",
+"value": null,
+"evidence": [
+{
+"page": 1,
+"bbox": [
+23.268291473388672,
+165.2277374267578,
+572.9716796875,
+175.78822326660156
+],
+"block": 6,
+"text": "2023-10 ～ 至今\n上海应用技术大学\n软件工程 (本科)",
+"source_sha256": "f8fb0a0455b9636dc4170cb4ffd3bf04e1d28ce977b13dea2bb972b719205391"
+}
+],
+"provenance": "native_text",
+"reason": "",
+"entries": [
+{
+"index": 0,
+"page": 1,
+"bbox": [
+23.268291473388672,
+165.2277374267578,
+572.9716796875,
+175.78822326660156
+],
+"header_text": "2023-10 ～ 至今\n上海应用技术大学\n软件工程 (本科)",
+"header_blocks": [
+{
+"page": 1,
+"bbox": [
+23.268291473388672,
+165.2277374267578,
+572.9716796875,
+175.78822326660156
+],
+"block": 6,
+"text": "2023-10 ～ 至今\n上海应用技术大学\n软件工程 (本科)",
+"source_sha256": "f8fb0a0455b9636dc4170cb4ffd3bf04e1d28ce977b13dea2bb972b719205391"
+}
+],
+"company": null,
+"title": null,
+"split_rule": "date_only",
+"dates": [
+{
+"raw": "2023-10 ～ 至今",
+"start": {
+"year": 2023,
+"month": 10
+},
+"end": null,
+"open_ended": true,
+"start_index": 24285,
+"end_index": null
+}
+],
+"other_dates": [],
+"attribution": "single_block",
+"granularity": "date_row",
+"section": "education"
+}
+],
+"entry_count": 1
+}
+},
+"noise": [],
+"protected_attributes": {
+"gender": {
+"state": "present",
+"value": "男",
+"evidence": [
+{
+"page": 1,
+"bbox": [
+23.268291473388672,
+53.24908447265625,
+314.84906005859375,
+63.8095703125
+],
+"block": 1,
+"text": "男",
+"source_sha256": "f8fb0a0455b9636dc4170cb4ffd3bf04e1d28ce977b13dea2bb972b719205391"
+}
+],
+"screening_excluded": true
+},
+"age_or_birth": {
+"state": "present",
+"value": "21 岁",
+"evidence": [
+{
+"page": 1,
+"bbox": [
+23.268291473388672,
+53.24908447265625,
+314.84906005859375,
+63.8095703125
+],
+"block": 1,
+"text": "21 岁",
+"source_sha256": "f8fb0a0455b9636dc4170cb4ffd3bf04e1d28ce977b13dea2bb972b719205391"
+}
+],
+"screening_excluded": true
+},
+"photo": {
+"state": "unverified",
+"value": null,
+"evidence": [
+{
+"page": 1,
+"images": 1,
+"source_sha256": "f8fb0a0455b9636dc4170cb4ffd3bf04e1d28ce977b13dea2bb972b719205391"
+}
+],
+"screening_excluded": true,
+"reason": "geometry cannot decide whether an image is a portrait; reported as unverified, never as a screening feature"
+},
+"marital_or_children": {
+"state": "absent",
+"value": null,
+"evidence": [],
+"screening_excluded": true,
+"reason": ""
+},
+"native_place": {
+"state": "absent",
+"value": null,
+"evidence": [],
+"screening_excluded": true,
+"reason": ""
+},
+"ethnicity": {
+"state": "absent",
+"value": null,
+"evidence": [],
+"screening_excluded": true,
+"reason": ""
+}
+},
+"screening": {
+"eligible_fields": [
+"name",
+"phone",
+"email",
+"education"
+],
+"blocked_fields": [
+{
+"field": "work_experience",
+"reason": "no_work_section"
+}
+],
+"identity_merge_eligible": [
+"phone",
+"email"
+],
+"identity_manual_review": [
+{
+"field": "name",
+"reason": "name matching requires human confirmation"
+}
+],
+"protected_excluded": [
+"age_or_birth",
+"ethnicity",
+"gender",
+"marital_or_children",
+"native_place",
+"photo"
+],
+"note": "unreadable fields must never be used as a negative screening signal; protected attributes never enter screening features"
+},
+"timeline": {
+"intervals": 0,
+"closed_intervals": 0,
+"open_ended_intervals": 0,
+"year_only_intervals": 0,
+"covered_months_closed": 0,
+"covered_years_closed": 0.0,
+"note": "open-ended intervals are not converted to months (a date-stamped run would make the output non-reproducible)"
+}
+}

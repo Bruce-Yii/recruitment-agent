@@ -1,0 +1,12 @@
+== 唐乐-简历.pdf  uri=https://zhitu.kralai.tech/
+  [before] blocks=23 printed_occurrences=2
+      - paragraph: '和生序｜AI 健康管理微信小程序与 Android App｜独立开发 项目展示：https://tl66666.github.io/heshengxu-health/\n技术栈：Vue 3｜uni-app｜TypeScript｜NestJS｜Prisma｜PostgreSQL｜Docker｜Azure｜CloudBase\n独立完成产品设计、'
+      - link: 'https://zhitu.kralai.tech/'
+  [after] blocks=22 printed_occurrences=1
+      - paragraph: '和生序｜AI 健康管理微信小程序与 Android App｜独立开发 项目展示：https://tl66666.github.io/heshengxu-health/\n技术栈：Vue 3｜uni-app｜TypeScript｜NestJS｜Prisma｜PostgreSQL｜Docker｜Azure｜CloudBase\n独立完成产品设计、'
+== tangle-resume.pdf  uri=https://tl66666.github.io/ztai/static/showcase.html
+  [before] blocks=44 printed_occurrences=2
+      - paragraph: '职途 AI - AI Agent 求职辅助 Web 系统    项目展示：https://tl66666.github.io/ztai/static/showcase.html'
+      - link: 'https://tl66666.github.io/ztai/static/showcase.html'
+  [after] blocks=43 printed_occurrences=1
+      - paragraph: '职途 AI - AI Agent 求职辅助 Web 系统    项目展示：https://tl66666.github.io/ztai/static/showcase.html'

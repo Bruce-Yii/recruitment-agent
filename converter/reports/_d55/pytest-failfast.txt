@@ -1,0 +1,6 @@
+
+! _pytest.outcomes.Exit: corpus originals unavailable for 84 row(s) (e.g. talent_pool-01, talent_pool-02, talent_pool-03, talent_pool-04, talent_pool-05).
+Set CORPUS_ROOT_TALENT_POOL / CORPUS_ROOT_ODOO_SAMPLES / CORPUS_ROOT_CODEX_CONVERTED / CORPUS_ROOT_SYNTHETIC, then re-run.
+Corpus tests cannot pass without the originals; they must not be reported as green.
+If you only need the corpus-independent tests, pass --no-corpus (those cases are then reported as skipped, never as passed). !
+no tests ran in 1.26s

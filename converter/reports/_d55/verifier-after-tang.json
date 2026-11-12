@@ -1,0 +1,63 @@
+{
+ "passed": true,
+ "pdf": "D:\\12412\\dsh工作区\\projects\\resume-talent-pool\\.snap-cache\\research\\content\\tl66666__grjs\\fdd29bbeca27c0d4108f9ea7541cba568421f2e4\\唐乐-简历.pdf",
+ "verifier_version": "1.0.0",
+ "checks": [
+  {
+   "name": "V1_page_coverage",
+   "title": "页覆盖",
+   "ok": true,
+   "detail": "meta.pages=1 == 原件 1 页；每页都有 block 或内容级 issue 声明"
+  },
+  {
+   "name": "V2_char_identity",
+   "title": "逐页字符恒等",
+   "ok": true,
+   "detail": "1/1 页字符恒等（链接 label 计入、href 不计；URL-as-label 豁免 0 条；声明剔除：坏字形 0 字 / 噪声 0 字）"
+  },
+  {
+   "name": "V3_no_fabricated_uri",
+   "title": "无凭空 URI",
+   "ok": true,
+   "detail": "输出 4 条 href 全部属于原件 5 条真实 URI（含正文 Markdown 内的 href；裸文本 URL 不在本检查范围）；原件 5 条真实 URI 未出现在输出中 1 条（A5 recall，仅告知，不判失败）"
+  },
+  {
+   "name": "V4_no_bad_glyph_in_body",
+   "title": "坏字形不进正文",
+   "ok": true,
+   "detail": "正文（blocks[].text 与顶层 text）无 U+FFFD、无 (cid:N)"
+  },
+  {
+   "name": "V5_visual_page_declared",
+   "title": "无文本页必须标 visual",
+   "ok": true,
+   "detail": "原件没有『低文字 + 有图形』的页，本检查不适用（通过）"
+  },
+  {
+   "name": "V6_encrypted_or_damaged_reported",
+   "title": "加密/损坏必须报 code",
+   "ok": true,
+   "detail": "原件可正常打开、未加密、未修复，无需报 code"
+  },
+  {
+   "name": "V7_completeness_consistency",
+   "title": "声明一致性",
+   "ok": true,
+   "detail": "completeness=partial，issue=4 条（HARD 0 条），needs_visual=False，一致"
+  },
+  {
+   "name": "V8_idempotent",
+   "title": "幂等",
+   "ok": true,
+   "detail": "两次输出（去掉时间戳/路径后）逐字节相同"
+  }
+ ],
+ "failed": [],
+ "skipped": [],
+ "summary": {
+  "total": 8,
+  "passed": 8,
+  "failed": 0,
+  "skipped": 0
+ }
+}

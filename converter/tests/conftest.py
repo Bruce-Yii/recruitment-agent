@@ -73,11 +73,17 @@ def resolve_original(row: dict) -> Path | None:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _require_corpus() -> None:
+def _require_corpus(request) -> None:
     """Fail fast with an actionable message instead of skipping silently.
 
     A skipped run must never be reported as a passing acceptance run.
+
+    D-56：``--no-corpus`` 是唯一的例外——CI 里没有语料原件时，用它可以跑
+    不依赖语料的用例。它不是"没语料就静默 skip"：不传这个开关时行为完全
+    不变（缺原件 → ``pytest.exit``，退出码 2）。
     """
+    if request.config.getoption("--no-corpus"):
+        return
     missing = [row["id"] for row in load_manifest(MANIFEST) + load_manifest(SYNTH_MANIFEST)
                if resolve_original(row) is None]
     if missing:
@@ -85,26 +91,47 @@ def _require_corpus() -> None:
             "corpus originals unavailable for %d row(s) (e.g. %s).\n"
             "Set CORPUS_ROOT_TALENT_POOL / CORPUS_ROOT_ODOO_SAMPLES / "
             "CORPUS_ROOT_CODEX_CONVERTED / CORPUS_ROOT_SYNTHETIC, then re-run.\n"
-            "Corpus tests cannot pass without the originals; they must not be reported as green."
+            "Corpus tests cannot pass without the originals; they must not be reported as green.\n"
+            "If you only need the corpus-independent tests, pass --no-corpus "
+            "(those cases are then reported as skipped, never as passed)."
             % (len(missing), ", ".join(missing[:5])),
             returncode=2,
         )
 
 
+def pytest_addoption(parser) -> None:
+    parser.addoption(
+        "--no-corpus",
+        action="store_true",
+        default=False,
+        help="run without corpus originals: corpus-dependent cases are skipped "
+             "(never reported as passed); without this flag a missing corpus is a hard exit 2",
+    )
+
+
+def _skip_without_corpus(request) -> None:
+    """D-56：传了 --no-corpus，依赖语料的用例逐个 skip 并说明原因。"""
+    if request.config.getoption("--no-corpus"):
+        pytest.skip("--no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）")
+
+
 @pytest.fixture(scope="session")
-def corpus_rows() -> list[dict]:
+def corpus_rows(request) -> list[dict]:
+    _skip_without_corpus(request)
     rows = load_manifest(MANIFEST)
     rows += load_manifest(SYNTH_MANIFEST)
     return rows
 
 
 @pytest.fixture(scope="session")
-def real_rows() -> list[dict]:
+def real_rows(request) -> list[dict]:
+    _skip_without_corpus(request)
     return load_manifest(MANIFEST)
 
 
 @pytest.fixture(scope="session")
-def synthetic_rows() -> list[dict]:
+def synthetic_rows(request) -> list[dict]:
+    _skip_without_corpus(request)
     return load_manifest(SYNTH_MANIFEST)
 
 

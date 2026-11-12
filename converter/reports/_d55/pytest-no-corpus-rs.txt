@@ -1,0 +1,30 @@
+ssssssssssssssss..s.........s......sssss..s....s.s...................... [ 93%]
+.....                                                                    [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] converter\tests\test_fidelity.py:24: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_fidelity.py:52: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_fidelity.py:69: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_fidelity.py:96: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_fidelity.py:115: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_fidelity.py:137: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_fidelity.py:158: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_fidelity.py:169: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_fidelity.py:199: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_fidelity.py:220: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_fidelity.py:229: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_fidelity.py:243: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_hard_cases.py:22: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_hard_cases.py:42: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_hard_cases.py:53: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_hard_cases.py:65: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_hard_cases.py:94: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_noise_and_review.py:39: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_resume_fields.py:41: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_resume_fields.py:65: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_resume_fields.py:88: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_resume_fields.py:102: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_resume_fields.py:116: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_resume_fields.py:171: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_resume_fields.py:226: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+SKIPPED [1] converter\tests\test_resume_fields.py:248: --no-corpus：依赖语料原件的用例未运行（skipped 不是 passed）
+51 passed, 26 skipped in 1.30s

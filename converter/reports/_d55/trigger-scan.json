@@ -1,0 +1,40 @@
+{
+ "manifest": [
+  {
+   "id": "talent_pool-28",
+   "path": "D:\\12412\\dsh工作区\\projects\\resume-talent-pool\\.snap-cache\\research\\content\\Mobilteee__mobiliteee-archive\\4197bbd034fe1b1b6a15b3f76db0df13f6bb7762\\诸葛童琳2027届_AIGC运营简历.pdf",
+   "hits": [
+    {
+     "page": 1,
+     "href": "https://github.com/Mobilteee",
+     "already_visible": true,
+     "label": "GitHub"
+    }
+   ]
+  }
+ ],
+ "batch2": [
+  {
+   "name": "唐乐-简历.pdf",
+   "hits": [
+    {
+     "page": 1,
+     "href": "https://zhitu.kralai.tech/",
+     "already_visible": true,
+     "label": "https://zhitu.kralai.tech/"
+    }
+   ]
+  },
+  {
+   "name": "tangle-resume.pdf",
+   "hits": [
+    {
+     "page": 1,
+     "href": "https://tl66666.github.io/ztai/static/showcase.html",
+     "already_visible": true,
+     "label": "https://tl66666.github.io/ztai/static/showcase.html"
+    }
+   ]
+  }
+ ]
+}

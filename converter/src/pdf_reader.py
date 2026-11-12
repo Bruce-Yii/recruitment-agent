@@ -44,6 +44,9 @@ _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 # NUL 不在此列——参考实现把 NUL 当"格式解码"（content.normalize 用空格替换），
 # 它不是文本层解码失败；把它算成 HARD 会让一份完全可读的简历变成"读不出"。
 _BAD_GLYPH_RE = re.compile(r"\ufffd|\(cid:\d+\)|[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# `[label](<href>)`（同 content.link_md）；只用于把 block 文本还原成**可见文字**：
+# label 是印在页面上的词，href 只是注解目标，不算"这个 URL 已经出现在正文里"。
+_LINK_MD_RE = re.compile(r"\[((?:\\.|[^\]])*)\]\(<[^>]*>\)")
 
 
 # ============================ 保真工具 ============================
@@ -450,11 +453,25 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
                         _ev["is_bold"] = True
         # A real URI whose visible words cannot be located in a block keeps its
         # own entry rather than being attached to unrelated text.
+        #
+        # D-55：先看这个 URI 的字面文本是不是已经印在本页某个 block 里。
+        # URL 夹在一整行中文里时，整行是一个"词"，词中心点落在注解矩形外 →
+        # 词绑不上 → 走 fallback 再生成一个 [URL](<URL>) → 同一个 URL 在正文
+        # 里出现两次。已出现就不再生成 fallback 块；URL 确实没印出来的链接
+        # 仍然按原设计用 URL 当 label 保留。
+        # 基线只取本页的原生 block（不含本循环刚生成的 fallback 记录），
+        # 否则一个 URL 是另一个 URL 的前缀时结果会依赖遍历顺序；同时把
+        # `[label](<href>)` 还原成 label——href 不是印在页面上的文字，
+        # 若拿它当证据，URI 只是别的链接 href 的前缀时会被误判成"已出现"。
+        visible = re.sub(r"\s", "", _LINK_MD_RE.sub(
+            r"\1", "\n".join(b["text"] for b in page_blocks)))
         seen_fallback = set()
         for rect, uri in rects:
             if uri in used_uris or uri in seen_fallback:
                 continue
             seen_fallback.add(uri)
+            if re.sub(r"\s", "", uri) in visible:
+                continue
             label = " ".join(w[4] for w in words if rect.contains(
                 fitz.Point((w[0] + w[2]) / 2, (w[1] + w[3]) / 2))) or uri
             # 词里可能带坏字形标记：链接记录块同样不允许把 U+FFFD 带进正文

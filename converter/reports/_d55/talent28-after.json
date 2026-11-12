@@ -1,0 +1,1378 @@
+{
+"text": "诸葛童琳\n\nAIGC 内容运营· AI 产品运营\n\n18119956360\nzgtl113@outlook.com\n作品集网站\nGitHub\n\n个人优势\n\n• AIGC 工具开发：独立开发并部署BEtube 视频逆向工程引擎（V2.0），集成yt-dlp 数据抓取、评论语料清洗、多模型动态路由\n（DeepSeek / GPT-4o / Gemini）与Plotly 可视化分析，已对外开放使用。\n\n• 新媒体运营实战：独立运营B 站（莫比里的房子鹅）& 抖音（Mobiliteee）双平台，0 预算实现B 站68.9W+ 播放、抖音\n400W+ 播放/ 79W+ 点赞，单条视频最高完播率38.12%，两天内涨粉1000+。\n\n• AI 工具链应用：熟练使用DeepSeek / ChatGPT / Claude / Gemini 等大模型提效内容生产；本地部署Faster Whisper（CUDA\n加速）+ FFmpeg 实现AI 双语字幕自动生成与烧制，内容生产效率提升40%+。\n\n• 数据分析与选题策略：搭建评论语料爬取与清洗工作流，结合AI 完成受众情绪分析与爆款视频反向工程拆解，形成完整的内容\n策略复盘方法论。\n\n• 文案撰写与社群运营：担任三秋文学社文联部部长，连续一年多负责社群及公众号文案撰写与审校；散文《轮回》入选校报头\n版，征文获湖南省“一校一书”省级三等奖。\n\n项目经历\n\nBEtube 视频逆向工程引擎\n2026.05 — 至今\n\n独立开发者· Python / Streamlit / OpenAI SDK ·\n[betube-analytics-engine.streamlit.app](<https://betube-analytics-engine.streamlit.app>)\n\n• 针对内容运营手动复盘耗时2 小时以上的真实痛点，独立设计并开发轻量级AI 内容审计系统。\n\n• 技术栈：Python 3.10 · Streamlit · yt-dlp · youtube-transcript-api · OpenAI Python SDK · Plotly\n\n• 集成yt-dlp 实现YouTube / B 站双平台数据一键抓取，后台冒泡重排逻辑自动清洗Top 100 高赞评论语料，防止低质数据干扰\nLLM 分析结果。\n\n• 支持DeepSeek、Kimi、通义千问、GPT-4o、Gemini 多模型一键切换，兼容所有OpenAI API 格式，开放自定义代理接口。\n\n• 自动输出四维分析报告：算法指标与留存诊断、评论区情绪画像、跨平台分发风险、二创Hook 提取；基于Plotly 动态生成情绪\n雷达图与受众语料词云。\n\n• 采用UUID 临时文件隔离+ os.remove 物理删除机制，零信任架构保障用户数据安全。\n\n• [GitHub：github.com/Mobilteee/BEtube-Analytics-EngineV1.0](<https://github.com/Mobilteee/BEtube-Analytics-EngineV1.0>)\n\nSketch2Face 简笔画人脸生成系统\n2025.12 — 2026.01\n\n课程设计项目· Python / PyTorch / pix2pix · 课设评分90 分\n[github.com/Mobilteee/sketch2face-](<https://github.com/Mobilteee/sketch2face-augmented>)\n\n[augmented](<https://github.com/Mobilteee/sketch2face-augmented>)\n\n• 基于条件生成对抗网络（cGAN）pix2pix 框架，实现简笔画到人脸图像的端到端生成，训练数据集为FS2K。\n\n• 在原版pix2pix 基础上进行数据增强优化，部署至GitHub 并完整记录实验过程与结果分析。\n\n• 课程设计获90 分，具备深度学习模型训练、调参与工程化部署的完整实践经验。\n\nAI 双语字幕生成工作流\n2026.05\n\n个人工具实践· Faster Whisper / CUDA / FFmpeg / 翻译API\n\n• 本地部署Faster Whisper Large-v1 模型（CUDA 硬件加速），调用翻译API 实现中英双语字幕自动生成。\n\n• 配合FFmpeg 完成字幕烧制，处理完成后导出内嵌双语字幕的完整视频，实际用于B 站1 小时级长视频内容生产。\n\n• 全流程无商业软件依赖，验证了本地AI 工具链在内容生产场景下的可行性。\n\n内容运营经历\n\n[作品集网站](<https://mobilteee.github.io/mobiliteee_profile>)\n\n[GitHub](<https://github.com/Mobilteee>)\n\nB 站独立账号\n2025.03 — 至今\n\nUP 主· 独立运营· 国内外偶像综艺/ 流行文化赛道\n\n• 历史总播放68.9W+，累计互动21,725，收藏数4,206，粉丝核心女性占比82.4%（16-25 岁）。\n\n• 经历三阶段内容定位迭代：CP 向剪辑（25.3—6 月）→HYBE 拉美厂牌选秀资讯（25.7—12 月）→HYBE × GEFFEN 日本选\n秀及女团SAINT SATINE 相关内容（25.11—26.5 月）。\n\n• 独立完成选题策划、中英双语字幕制作、视频剪辑、发布运营全流程；根据后台数据锁定22-24 点高互动时段，定期复盘粉丝画\n像调整选题方向。\n\n抖音账号「Mobiliteee」\n2026.02 — 至今\n\n创作者· 独立运营· 国际生活/ 偶像综艺译制赛道\n\n• 2026 年2—3 月迎来数据爆发期，账号总播放突破400W+，总点赞80W+，单条视频最高完播率38.12%，两天内涨粉\n1000+。\n\n• 累计产出5 条万次播放视频，爆款内容集中于国际生活切片与校园日常译制赛道，具备「反差感+ 情绪共鸣+ 互动钩子」的内\n容设计意识。\n\n• 基于评论语料爬取与AI 分析工具，完成爆款视频受众情绪拆解，输出系统化的内容策略复盘报告，用于指导后续选题迭代。\n\n社团经历与活动策划\n\n三秋文学社文联部部长\n2023.09 — 至今\n\n中南林业科技大学图书馆· 持有正式聘书\n\n• 统筹社团活动策划、成员协调与对外宣传，连续一年多负责图书馆及社团公众号文案撰写与审校。\n\n• 独立策划并主办「人类识别指南——亲密关系」文学讨论会（2024.11）：以电影《犬之力》为解读载体，创新设计「4 人限制\n性命运抉择卡牌游戏」，0 预算实现95% 到场率，现场100% 深度互动发言，15+ 人次高质量提问；会后整理1.2 万字讨论纪\n要定向分发社群，完成私域留存闭环。\n\n荣誉奖项\n\n湖南省“一校一书”征文比赛\n省级三等奖\n\n散文《轮回》入选《中南林业科技大学报》\n头版发表\n\n校级优秀文学创作社团干部\n持有正式聘书\n\n教育经历\n\n中南林业科技大学\n2023.09 — 2027.06（预计）\n\n本科· 人工智能专业· 大三在读\n\n• 主修神经网络与深度学习、自然语言处理、数字图像处理，具备扎实的Python 工程实践基础。\n\n• 熟练使用PyTorch 进行深度学习模型训练与调参，有cGAN / pix2pix 实际项目落地经验。\n\n技能清单\n\n内容生产工具\n剪映· CapCut · AE · FFmpeg · Faster Whisper · yt-dlp\n\nAI 大模型\nDeepSeek · ChatGPT · Claude · Gemini · 通义千问· Kimi\n\n开发技术\nPython 3.10 · Streamlit · OpenAI SDK · Plotly · PyTorch · Git\n\n数据能力\n评论语料爬取清洗· 粉丝画像分析· 完播率/点赞率数据复盘· AI 辅助选题策略\n\n海外素材获取\nPinterest · TikTok · Reddit · YouTube · 中英韩多语种内容理解与编译\n\n资格证书\n大学英语四级· 普通话二甲证书\n\n个人作品集网站\n\n[在线访问：mobilteee.github.io/mobiliteee_profile](<https://mobilteee.github.io/mobiliteee_profile>)\n\n• B 站账号三阶段冷启动全盘数据复盘（含粉丝画像、选题策略迭代记录）\n\n• 抖音爆款视频实操拆解（含完播率38.12%、2s 留存率等真实后台数据）\n\n• BEtube 视频逆向工程引擎项目展示（含示例报告演示，免API Key 可直接体验）\n\n• 原创叙事文本片段展示（《轮回》《妈妈》《爱宠》），体现故事构建与用户情绪感知能力",
+"blocks": [
+{
+"kind": "heading",
+"text": "诸葛童琳",
+"location": {
+"page": 1,
+"bbox": [
+249.47999572753906,
+39.533363342285156,
+345.7190856933594,
+63.533363342285156
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 24.0
+},
+"level": 1
+},
+{
+"kind": "paragraph",
+"text": "AIGC 内容运营· AI 产品运营",
+"location": {
+"page": 1,
+"bbox": [
+227.63999938964844,
+68.1280517578125,
+367.68927001953125,
+83.18920135498047
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 11.050000190734863
+}
+},
+{
+"kind": "paragraph",
+"text": "18119956360\nzgtl113@outlook.com\n作品集网站\nGitHub",
+"location": {
+"page": 1,
+"bbox": [
+67.08000183105469,
+86.13850402832031,
+514.8447875976562,
+97.7239990234375
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.5
+}
+},
+{
+"kind": "paragraph",
+"text": "个人优势",
+"location": {
+"page": 1,
+"bbox": [
+42.0,
+122.54855346679688,
+86.16954803466797,
+133.5985565185547
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 11.050000190734863
+}
+},
+{
+"kind": "paragraph",
+"text": "• AIGC 工具开发：独立开发并部署BEtube 视频逆向工程引擎（V2.0），集成yt-dlp 数据抓取、评论语料清洗、多模型动态路由\n（DeepSeek / GPT-4o / Gemini）与Plotly 可视化分析，已对外开放使用。\n\n• 新媒体运营实战：独立运营B 站（莫比里的房子鹅）& 抖音（Mobiliteee）双平台，0 预算实现B 站68.9W+ 播放、抖音\n400W+ 播放/ 79W+ 点赞，单条视频最高完播率38.12%，两天内涨粉1000+。\n\n• AI 工具链应用：熟练使用DeepSeek / ChatGPT / Claude / Gemini 等大模型提效内容生产；本地部署Faster Whisper（CUDA\n加速）+ FFmpeg 实现AI 双语字幕自动生成与烧制，内容生产效率提升40%+。\n\n• 数据分析与选题策略：搭建评论语料爬取与清洗工作流，结合AI 完成受众情绪分析与爆款视频反向工程拆解，形成完整的内容\n策略复盘方法论。\n\n• 文案撰写与社群运营：担任三秋文学社文联部部长，连续一年多负责社群及公众号文案撰写与审校；散文《轮回》入选校报头\n版，征文获湖南省“一校一书”省级三等奖。",
+"location": {
+"page": 1,
+"bbox": [
+44.040000915527344,
+154.8319549560547,
+554.8800048828125,
+284.3659973144531
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137,
+"is_bold": true
+}
+},
+{
+"kind": "paragraph",
+"text": "项目经历",
+"location": {
+"page": 1,
+"bbox": [
+42.0,
+307.5885314941406,
+86.16954803466797,
+318.6385498046875
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 11.050000190734863
+}
+},
+{
+"kind": "heading",
+"text": "BEtube 视频逆向工程引擎\n2026.05 — 至今",
+"location": {
+"page": 1,
+"bbox": [
+36.0,
+342.3527526855469,
+559.2000122070312,
+356.5912170410156
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137,
+"is_bold": true
+},
+"level": 3
+},
+{
+"kind": "paragraph",
+"text": "独立开发者· Python / Streamlit / OpenAI SDK ·\n[betube-analytics-engine.streamlit.app](<https://betube-analytics-engine.streamlit.app>)",
+"location": {
+"page": 1,
+"bbox": [
+36.0,
+360.8184814453125,
+559.236083984375,
+373.0039978027344
+]
+},
+"links": [
+{
+"text": "betube-analytics-engine.streamlit.app",
+"href": "https://betube-analytics-engine.streamlit.app",
+"location": {
+"page": 1,
+"bbox": [
+417.9590148925781,
+360.8184814453125,
+559.236083984375,
+372.40399169921875
+]
+}
+}
+],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.5
+}
+},
+{
+"kind": "paragraph",
+"text": "• 针对内容运营手动复盘耗时2 小时以上的真实痛点，独立设计并开发轻量级AI 内容审计系统。\n\n• 技术栈：Python 3.10 · Streamlit · yt-dlp · youtube-transcript-api · OpenAI Python SDK · Plotly\n\n• 集成yt-dlp 实现YouTube / B 站双平台数据一键抓取，后台冒泡重排逻辑自动清洗Top 100 高赞评论语料，防止低质数据干扰\nLLM 分析结果。\n\n• 支持DeepSeek、Kimi、通义千问、GPT-4o、Gemini 多模型一键切换，兼容所有OpenAI API 格式，开放自定义代理接口。\n\n• 自动输出四维分析报告：算法指标与留存诊断、评论区情绪画像、跨平台分发风险、二创Hook 提取；基于Plotly 动态生成情绪\n雷达图与受众语料词云。\n\n• 采用UUID 临时文件隔离+ os.remove 物理删除机制，零信任架构保障用户数据安全。\n\n• [GitHub：github.com/Mobilteee/BEtube-Analytics-EngineV1.0](<https://github.com/Mobilteee/BEtube-Analytics-EngineV1.0>)",
+"location": {
+"page": 1,
+"bbox": [
+44.040000915527344,
+388.8309631347656,
+557.0400390625,
+512.833984375
+]
+},
+"links": [
+{
+"text": "GitHub：github.com/Mobilteee/BEtube-Analytics-EngineV1.0",
+"href": "https://github.com/Mobilteee/BEtube-Analytics-EngineV1.0",
+"location": {
+"page": 1,
+"bbox": [
+54.0,
+499.95501708984375,
+299.1138916015625,
+512.833984375
+]
+}
+}
+],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137,
+"is_bold": true
+}
+},
+{
+"kind": "heading",
+"text": "Sketch2Face 简笔画人脸生成系统\n2025.12 — 2026.01",
+"location": {
+"page": 1,
+"bbox": [
+36.0,
+531.0579833984375,
+559.2822265625,
+545.8312377929688
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137,
+"is_bold": true
+},
+"level": 3
+},
+{
+"kind": "paragraph",
+"text": "课程设计项目· Python / PyTorch / pix2pix · 课设评分90 分\n[github.com/Mobilteee/sketch2face-](<https://github.com/Mobilteee/sketch2face-augmented>)",
+"location": {
+"page": 1,
+"bbox": [
+36.0,
+550.0585327148438,
+559.2615356445312,
+562.2440185546875
+]
+},
+"links": [
+{
+"text": "github.com/Mobilteee/sketch2face-",
+"href": "https://github.com/Mobilteee/sketch2face-augmented",
+"location": {
+"page": 1,
+"bbox": [
+427.91900634765625,
+550.0585327148438,
+559.2615356445312,
+561.64404296875
+]
+}
+}
+],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.5
+}
+},
+{
+"kind": "paragraph",
+"text": "[augmented](<https://github.com/Mobilteee/sketch2face-augmented>)",
+"location": {
+"page": 1,
+"bbox": [
+516.718994140625,
+559.7775268554688,
+559.2434692382812,
+571.363037109375
+]
+},
+"links": [
+{
+"text": "augmented",
+"href": "https://github.com/Mobilteee/sketch2face-augmented",
+"location": {
+"page": 1,
+"bbox": [
+516.718994140625,
+559.7775268554688,
+559.2434692382812,
+571.363037109375
+]
+}
+}
+],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.5
+}
+},
+{
+"kind": "paragraph",
+"text": "• 基于条件生成对抗网络（cGAN）pix2pix 框架，实现简笔画到人脸图像的端到端生成，训练数据集为FS2K。\n\n• 在原版pix2pix 基础上进行数据增强优化，部署至GitHub 并完整记录实验过程与结果分析。\n\n• 课程设计获90 分，具备深度学习模型训练、调参与工程化部署的完整实践经验。",
+"location": {
+"page": 1,
+"bbox": [
+44.040000915527344,
+586.5919189453125,
+484.44000244140625,
+629.0737915039062
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137
+}
+},
+{
+"kind": "heading",
+"text": "AI 双语字幕生成工作流\n2026.05",
+"location": {
+"page": 1,
+"bbox": [
+36.0,
+647.5789794921875,
+559.2822265625,
+662.231201171875
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137,
+"is_bold": true
+},
+"level": 3
+},
+{
+"kind": "paragraph",
+"text": "个人工具实践· Faster Whisper / CUDA / FFmpeg / 翻译API",
+"location": {
+"page": 1,
+"bbox": [
+36.0,
+667.41552734375,
+262.1542053222656,
+678.64404296875
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.5
+}
+},
+{
+"kind": "paragraph",
+"text": "• 本地部署Faster Whisper Large-v1 模型（CUDA 硬件加速），调用翻译API 实现中英双语字幕自动生成。\n\n• 配合FFmpeg 完成字幕烧制，处理完成后导出内嵌双语字幕的完整视频，实际用于B 站1 小时级长视频内容生产。\n\n• 全流程无商业软件依赖，验证了本地AI 工具链在内容生产场景下的可行性。",
+"location": {
+"page": 1,
+"bbox": [
+44.040000915527344,
+694.951904296875,
+508.44000244140625,
+737.5538330078125
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137
+}
+},
+{
+"kind": "paragraph",
+"text": "内容运营经历",
+"location": {
+"page": 1,
+"bbox": [
+42.0,
+760.467529296875,
+108.2492446899414,
+771.5175170898438
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 11.050000190734863
+}
+},
+{
+"kind": "link",
+"text": "[作品集网站](<https://mobilteee.github.io/mobiliteee_profile>)",
+"location": {
+"page": 1,
+"bbox": [
+332.3999938964844,
+85.85003662109375,
+391.25,
+97.45001220703125
+]
+},
+"links": [
+{
+"text": "作品集网站",
+"href": "https://mobilteee.github.io/mobiliteee_profile",
+"location": {
+"page": 1,
+"bbox": [
+332.3999938964844,
+85.85003662109375,
+391.25,
+97.45001220703125
+]
+}
+}
+],
+"provenance": "native_text"
+},
+{
+"kind": "link",
+"text": "[GitHub](<https://github.com/Mobilteee>)",
+"location": {
+"page": 1,
+"bbox": [
+472.04998779296875,
+85.85003662109375,
+514.8499755859375,
+97.1500244140625
+]
+},
+"links": [
+{
+"text": "GitHub",
+"href": "https://github.com/Mobilteee",
+"location": {
+"page": 1,
+"bbox": [
+472.04998779296875,
+85.85003662109375,
+514.8499755859375,
+97.1500244140625
+]
+}
+}
+],
+"provenance": "native_text"
+},
+{
+"kind": "heading",
+"text": "B 站独立账号\n2025.03 — 至今",
+"location": {
+"page": 2,
+"bbox": [
+36.0,
+37.55274963378906,
+559.2000122070312,
+51.79119873046875
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137,
+"is_bold": true
+},
+"level": 3
+},
+{
+"kind": "paragraph",
+"text": "UP 主· 独立运营· 国内外偶像综艺/ 流行文化赛道",
+"location": {
+"page": 2,
+"bbox": [
+36.0,
+56.97549819946289,
+227.19467163085938,
+68.20399475097656
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.5
+}
+},
+{
+"kind": "paragraph",
+"text": "• 历史总播放68.9W+，累计互动21,725，收藏数4,206，粉丝核心女性占比82.4%（16-25 岁）。\n\n• 经历三阶段内容定位迭代：CP 向剪辑（25.3—6 月）→HYBE 拉美厂牌选秀资讯（25.7—12 月）→HYBE × GEFFEN 日本选\n秀及女团SAINT SATINE 相关内容（25.11—26.5 月）。\n\n• 独立完成选题策划、中英双语字幕制作、视频剪辑、发布运营全流程；根据后台数据锁定22-24 点高互动时段，定期复盘粉丝画\n像调整选题方向。",
+"location": {
+"page": 2,
+"bbox": [
+44.040000915527344,
+84.03195190429688,
+558.958984375,
+147.95126342773438
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137
+}
+},
+{
+"kind": "heading",
+"text": "抖音账号「Mobiliteee」\n2026.02 — 至今",
+"location": {
+"page": 2,
+"bbox": [
+36.0,
+167.87274169921875,
+559.2000122070312,
+182.11119079589844
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137,
+"is_bold": true
+},
+"level": 3
+},
+{
+"kind": "paragraph",
+"text": "创作者· 独立运营· 国际生活/ 偶像综艺译制赛道",
+"location": {
+"page": 2,
+"bbox": [
+36.0,
+187.29550170898438,
+222.03375244140625,
+198.5240020751953
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.5
+}
+},
+{
+"kind": "paragraph",
+"text": "• 2026 年2—3 月迎来数据爆发期，账号总播放突破400W+，总点赞80W+，单条视频最高完播率38.12%，两天内涨粉\n1000+。\n\n• 累计产出5 条万次播放视频，爆款内容集中于国际生活切片与校园日常译制赛道，具备「反差感+ 情绪共鸣+ 互动钩子」的内\n容设计意识。\n\n• 基于评论语料爬取与AI 分析工具，完成爆款视频受众情绪拆解，输出系统化的内容策略复盘报告，用于指导后续选题迭代。",
+"location": {
+"page": 2,
+"bbox": [
+44.040000915527344,
+214.35195922851562,
+552.47998046875,
+280.1138000488281
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137
+}
+},
+{
+"kind": "paragraph",
+"text": "社团经历与活动策划",
+"location": {
+"page": 2,
+"bbox": [
+42.0,
+303.1485290527344,
+141.36878967285156,
+314.19854736328125
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 11.050000190734863
+}
+},
+{
+"kind": "paragraph",
+"text": "三秋文学社文联部部长\n2023.09 — 至今",
+"location": {
+"page": 2,
+"bbox": [
+36.0,
+338.0989990234375,
+559.2000122070312,
+350.3659973144531
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137
+}
+},
+{
+"kind": "paragraph",
+"text": "中南林业科技大学图书馆· 持有正式聘书",
+"location": {
+"page": 2,
+"bbox": [
+36.0,
+357.3345031738281,
+190.3546600341797,
+368.56298828125
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.5
+}
+},
+{
+"kind": "paragraph",
+"text": "• 统筹社团活动策划、成员协调与对外宣传，连续一年多负责图书馆及社团公众号文案撰写与审校。\n\n• 独立策划并主办「人类识别指南——亲密关系」文学讨论会（2024.11）：以电影《犬之力》为解读载体，创新设计「4 人限制\n性命运抉择卡牌游戏」，0 预算实现95% 到场率，现场100% 深度互动发言，15+ 人次高质量提问；会后整理1.2 万字讨论纪\n要定向分发社群，完成私域留存闭环。",
+"location": {
+"page": 2,
+"bbox": [
+44.040000915527344,
+384.3919677734375,
+553.4400024414062,
+433.791259765625
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137,
+"is_bold": true
+}
+},
+{
+"kind": "paragraph",
+"text": "荣誉奖项",
+"location": {
+"page": 2,
+"bbox": [
+42.0,
+458.66754150390625,
+86.16954803466797,
+469.7175598144531
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 11.050000190734863
+}
+},
+{
+"kind": "paragraph",
+"text": "湖南省“一校一书”征文比赛\n省级三等奖",
+"location": {
+"page": 2,
+"bbox": [
+36.0,
+493.61798095703125,
+559.1995849609375,
+505.8849792480469
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.0
+}
+},
+{
+"kind": "paragraph",
+"text": "散文《轮回》入选《中南林业科技大学报》\n头版发表",
+"location": {
+"page": 2,
+"bbox": [
+36.0,
+512.8702392578125,
+559.319580078125,
+521.8703002929688
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.0
+}
+},
+{
+"kind": "paragraph",
+"text": "校级优秀文学创作社团干部\n持有正式聘书",
+"location": {
+"page": 2,
+"bbox": [
+36.0,
+530.51123046875,
+559.3189697265625,
+539.5112915039062
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.0
+}
+},
+{
+"kind": "paragraph",
+"text": "教育经历",
+"location": {
+"page": 2,
+"bbox": [
+42.0,
+565.9485473632812,
+86.16954803466797,
+576.99853515625
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 11.050000190734863
+}
+},
+{
+"kind": "paragraph",
+"text": "中南林业科技大学\n2023.09 — 2027.06（预计）",
+"location": {
+"page": 2,
+"bbox": [
+36.0,
+600.8989868164062,
+559.3200073242188,
+613.166015625
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137
+}
+},
+{
+"kind": "paragraph",
+"text": "本科· 人工智能专业· 大三在读",
+"location": {
+"page": 2,
+"bbox": [
+36.0,
+620.2359619140625,
+162.43292236328125,
+632.125
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.0
+}
+},
+{
+"kind": "paragraph",
+"text": "• 主修神经网络与深度学习、自然语言处理、数字图像处理，具备扎实的Python 工程实践基础。\n\n• 熟练使用PyTorch 进行深度学习模型训练与调参，有cGAN / pix2pix 实际项目落地经验。",
+"location": {
+"page": 2,
+"bbox": [
+44.040000915527344,
+647.9119262695312,
+429.0,
+675.8738403320312
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137
+}
+},
+{
+"kind": "paragraph",
+"text": "技能清单",
+"location": {
+"page": 2,
+"bbox": [
+42.0,
+698.7885131835938,
+86.16954803466797,
+709.8385009765625
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 11.050000190734863
+}
+},
+{
+"kind": "paragraph",
+"text": "内容生产工具\n剪映· CapCut · AE · FFmpeg · Faster Whisper · yt-dlp",
+"location": {
+"page": 2,
+"bbox": [
+36.0,
+734.2179565429688,
+357.0831298828125,
+746.4849853515625
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.0
+}
+},
+{
+"kind": "paragraph",
+"text": "AI 大模型\nDeepSeek · ChatGPT · Claude · Gemini · 通义千问· Kimi",
+"location": {
+"page": 2,
+"bbox": [
+36.0,
+753.7550048828125,
+370.1562194824219,
+766.6339721679688
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.0,
+"is_bold": true
+}
+},
+{
+"kind": "paragraph",
+"text": "开发技术\nPython 3.10 · Streamlit · OpenAI SDK · Plotly · PyTorch · Git",
+"location": {
+"page": 2,
+"bbox": [
+36.0,
+772.97900390625,
+382.05126953125,
+785.2460327148438
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.0
+}
+},
+{
+"kind": "paragraph",
+"text": "数据能力\n评论语料爬取清洗· 粉丝画像分析· 完播率/点赞率数据复盘· AI 辅助选题策略",
+"location": {
+"page": 3,
+"bbox": [
+36.0,
+38.21900177001953,
+447.4800109863281,
+50.486000061035156
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.0
+}
+},
+{
+"kind": "paragraph",
+"text": "海外素材获取\nPinterest · TikTok · Reddit · YouTube · 中英韩多语种内容理解与编译",
+"location": {
+"page": 3,
+"bbox": [
+36.0,
+57.89900207519531,
+414.0,
+70.16600036621094
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.0
+}
+},
+{
+"kind": "paragraph",
+"text": "资格证书\n大学英语四级· 普通话二甲证书",
+"location": {
+"page": 3,
+"bbox": [
+36.0,
+77.5790023803711,
+264.958984375,
+89.84600067138672
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.0
+}
+},
+{
+"kind": "paragraph",
+"text": "个人作品集网站",
+"location": {
+"page": 3,
+"bbox": [
+42.0,
+116.06855010986328,
+119.28909301757812,
+127.11854553222656
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 11.050000190734863
+}
+},
+{
+"kind": "paragraph",
+"text": "[在线访问：mobilteee.github.io/mobiliteee_profile](<https://mobilteee.github.io/mobiliteee_profile>)",
+"location": {
+"page": 3,
+"bbox": [
+36.0,
+148.97900390625,
+229.75341796875,
+161.24600219726562
+]
+},
+"links": [
+{
+"text": "在线访问：mobilteee.github.io/mobiliteee_profile",
+"href": "https://mobilteee.github.io/mobiliteee_profile",
+"location": {
+"page": 3,
+"bbox": [
+36.0,
+148.97900390625,
+229.75341796875,
+161.24600219726562
+]
+}
+}
+],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.0
+}
+},
+{
+"kind": "paragraph",
+"text": "• B 站账号三阶段冷启动全盘数据复盘（含粉丝画像、选题策略迭代记录）\n\n• 抖音爆款视频实操拆解（含完播率38.12%、2s 留存率等真实后台数据）\n\n• BEtube 视频逆向工程引擎项目展示（含示例报告演示，免API Key 可直接体验）\n\n• 原创叙事文本片段展示（《轮回》《妈妈》《爱宠》），体现故事构建与用户情绪感知能力",
+"location": {
+"page": 3,
+"bbox": [
+44.040000915527344,
+162.99195861816406,
+414.0,
+219.99380493164062
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.949999809265137
+}
+}
+],
+"title": "",
+"chars": 3685,
+"completeness": "partial",
+"issues": [
+{
+"code": "pdf_text_encoding_unread",
+"message": "native PDF text contains undecoded glyphs or invalid control characters. Read the whole page image of this original and return the complete page text (preserve readable native text and real URI links); do not treat this as local wording patches",
+"location": {
+"page": 1,
+"regions": [
+[
+67.08000183105469,
+86.13850402832031,
+514.8447875976562,
+97.7239990234375
+]
+]
+}
+},
+{
+"code": "resume_field_unreadable",
+"message": "work_experience cannot be declared absent: document_not_fully_read: pdf_text_encoding_unread. An unreadable field must never be used as a negative signal",
+"location": {
+"page": null,
+"bbox": null
+}
+},
+{
+"code": "resume_protected_attribute_present",
+"message": "protected attributes identified and isolated from screening: age_or_birth",
+"location": {
+"page": null,
+"bbox": null
+}
+}
+],
+"needs_visual": true,
+"warnings": [],
+"meta": {
+"pages": 3,
+"source_sha256": "51f116f335329c3716b3c9bd12d97cc0d35807dd720b0de9c025e5dba1827563",
+"source_name": "诸葛童琳2027届_AIGC运营简历.pdf",
+"backend": "pymupdf/1.28.0",
+"reader_version": "1.0.0",
+"page_info": [
+{
+"page": 1,
+"chars": 1699,
+"images": 0,
+"drawings": 9,
+"layout_order_applied": false,
+"image_coverage": 0.0,
+"block_count": 19,
+"encoding_removed": "����",
+"noise_removed": ""
+},
+{
+"page": 2,
+"chars": 1200,
+"images": 0,
+"drawings": 4,
+"layout_order_applied": false,
+"image_coverage": 0.0,
+"block_count": 22,
+"encoding_removed": "",
+"noise_removed": ""
+},
+{
+"page": 3,
+"chars": 343,
+"images": 0,
+"drawings": 2,
+"layout_order_applied": false,
+"image_coverage": 0.0,
+"block_count": 6,
+"encoding_removed": "",
+"noise_removed": ""
+}
+],
+"layout_backend": null,
+"order_verified": false,
+"repaired": false,
+"ocr": "not_needed",
+"noise_blocks": 0,
+"encoding_removed_chars": "����"
+},
+"links": [
+{
+"text": "betube-analytics-engine.streamlit.app",
+"href": "https://betube-analytics-engine.streamlit.app",
+"location": {
+"page": 1,
+"bbox": [
+417.9590148925781,
+360.8184814453125,
+559.236083984375,
+372.40399169921875
+]
+}
+},
+{
+"text": "GitHub：github.com/Mobilteee/BEtube-Analytics-EngineV1.0",
+"href": "https://github.com/Mobilteee/BEtube-Analytics-EngineV1.0",
+"location": {
+"page": 1,
+"bbox": [
+54.0,
+499.95501708984375,
+299.1138916015625,
+512.833984375
+]
+}
+},
+{
+"text": "github.com/Mobilteee/sketch2face-",
+"href": "https://github.com/Mobilteee/sketch2face-augmented",
+"location": {
+"page": 1,
+"bbox": [
+427.91900634765625,
+550.0585327148438,
+559.2615356445312,
+561.64404296875
+]
+}
+},
+{
+"text": "augmented",
+"href": "https://github.com/Mobilteee/sketch2face-augmented",
+"location": {
+"page": 1,
+"bbox": [
+516.718994140625,
+559.7775268554688,
+559.2434692382812,
+571.363037109375
+]
+}
+},
+{
+"text": "作品集网站",
+"href": "https://mobilteee.github.io/mobiliteee_profile",
+"location": {
+"page": 1,
+"bbox": [
+332.3999938964844,
+85.85003662109375,
+391.25,
+97.45001220703125
+]
+}
+},
+{
+"text": "GitHub",
+"href": "https://github.com/Mobilteee",
+"location": {
+"page": 1,
+"bbox": [
+472.04998779296875,
+85.85003662109375,
+514.8499755859375,
+97.1500244140625
+]
+}
+},
+{
+"text": "在线访问：mobilteee.github.io/mobiliteee_profile",
+"href": "https://mobilteee.github.io/mobiliteee_profile",
+"location": {
+"page": 3,
+"bbox": [
+36.0,
+148.97900390625,
+229.75341796875,
+161.24600219726562
+]
+}
+}
+],
+"fields": {
+"name": {
+"state": "present",
+"value": "诸葛童琳",
+"evidence": [
+{
+"page": 1,
+"bbox": [
+249.47999572753906,
+39.533363342285156,
+345.7190856933594,
+63.533363342285156
+],
+"block": 0,
+"text": "诸葛童琳",
+"source_sha256": "51f116f335329c3716b3c9bd12d97cc0d35807dd720b0de9c025e5dba1827563"
+}
+],
+"provenance": "native_text",
+"reason": "",
+"match_rule": "heading_level_1"
+},
+"phone": {
+"state": "present",
+"value": "18119956360",
+"evidence": [
+{
+"page": 1,
+"bbox": [
+67.08000183105469,
+86.13850402832031,
+514.8447875976562,
+97.7239990234375
+],
+"block": 2,
+"text": "18119956360",
+"source_sha256": "51f116f335329c3716b3c9bd12d97cc0d35807dd720b0de9c025e5dba1827563"
+}
+],
+"provenance": "native_text",
+"reason": "",
+"normalized": "18119956360"
+},
+"email": {
+"state": "present",
+"value": "zgtl113@outlook.com",
+"evidence": [
+{
+"page": 1,
+"bbox": [
+67.08000183105469,
+86.13850402832031,
+514.8447875976562,
+97.7239990234375
+],
+"block": 2,
+"text": "zgtl113@outlook.com",
+"source_sha256": "51f116f335329c3716b3c9bd12d97cc0d35807dd720b0de9c025e5dba1827563"
+}
+],
+"provenance": "native_text",
+"reason": ""
+},
+"work_experience": {
+"state": "unreadable",
+"value": null,
+"evidence": [],
+"provenance": "native_text",
+"reason": "document_not_fully_read: pdf_text_encoding_unread"
+},
+"education": {
+"state": "present",
+"value": null,
+"evidence": [
+{
+"page": 2,
+"bbox": [
+36.0,
+600.8989868164062,
+559.3200073242188,
+613.166015625
+],
+"block": 34,
+"text": "中南林业科技大学\n2023.09 — 2027.06（预计）",
+"source_sha256": "51f116f335329c3716b3c9bd12d97cc0d35807dd720b0de9c025e5dba1827563"
+}
+],
+"provenance": "native_text",
+"reason": "",
+"entries": [
+{
+"index": 0,
+"page": 2,
+"bbox": [
+36.0,
+600.8989868164062,
+559.3200073242188,
+613.166015625
+],
+"header_text": "中南林业科技大学\n2023.09 — 2027.06（预计）",
+"header_blocks": [
+{
+"page": 2,
+"bbox": [
+36.0,
+600.8989868164062,
+559.3200073242188,
+613.166015625
+],
+"block": 34,
+"text": "中南林业科技大学\n2023.09 — 2027.06（预计）",
+"source_sha256": "51f116f335329c3716b3c9bd12d97cc0d35807dd720b0de9c025e5dba1827563"
+}
+],
+"company": null,
+"title": null,
+"split_rule": "unsplit",
+"dates": [
+{
+"raw": "2023.09 — 2027.06",
+"start": {
+"year": 2023,
+"month": 9
+},
+"end": {
+"year": 2027,
+"month": 6
+},
+"open_ended": false,
+"start_index": 24284,
+"end_index": 24329
+}
+],
+"other_dates": [],
+"attribution": "single_block",
+"granularity": "date_row",
+"section": "education"
+}
+],
+"entry_count": 1
+}
+},
+"noise": [],
+"protected_attributes": {
+"age_or_birth": {
+"state": "present",
+"value": "25 岁",
+"evidence": [
+{
+"page": 2,
+"bbox": [
+44.040000915527344,
+84.03195190429688,
+558.958984375,
+147.95126342773438
+],
+"block": 21,
+"text": "25 岁",
+"source_sha256": "51f116f335329c3716b3c9bd12d97cc0d35807dd720b0de9c025e5dba1827563"
+}
+],
+"screening_excluded": true
+},
+"gender": {
+"state": "unreadable",
+"value": null,
+"evidence": [],
+"screening_excluded": true,
+"reason": "document_not_fully_read: pdf_text_encoding_unread"
+},
+"marital_or_children": {
+"state": "unreadable",
+"value": null,
+"evidence": [],
+"screening_excluded": true,
+"reason": "document_not_fully_read: pdf_text_encoding_unread"
+},
+"native_place": {
+"state": "unreadable",
+"value": null,
+"evidence": [],
+"screening_excluded": true,
+"reason": "document_not_fully_read: pdf_text_encoding_unread"
+},
+"ethnicity": {
+"state": "unreadable",
+"value": null,
+"evidence": [],
+"screening_excluded": true,
+"reason": "document_not_fully_read: pdf_text_encoding_unread"
+},
+"photo": {
+"state": "unreadable",
+"value": null,
+"evidence": [],
+"screening_excluded": true,
+"reason": "document_not_fully_read: pdf_text_encoding_unread"
+}
+},
+"screening": {
+"eligible_fields": [
+"name",
+"phone",
+"email",
+"education"
+],
+"blocked_fields": [
+{
+"field": "work_experience",
+"reason": "document_not_fully_read: pdf_text_encoding_unread"
+}
+],
+"identity_merge_eligible": [
+"phone",
+"email"
+],
+"identity_manual_review": [
+{
+"field": "name",
+"reason": "name matching requires human confirmation"
+}
+],
+"protected_excluded": [
+"age_or_birth",
+"ethnicity",
+"gender",
+"marital_or_children",
+"native_place",
+"photo"
+],
+"note": "unreadable fields must never be used as a negative screening signal; protected attributes never enter screening features"
+},
+"timeline": {
+"intervals": 0,
+"closed_intervals": 0,
+"open_ended_intervals": 0,
+"year_only_intervals": 0,
+"covered_months_closed": 0,
+"covered_years_closed": 0.0,
+"note": "open-ended intervals are not converted to months (a date-stamped run would make the output non-reproducible)"
+}
+}

@@ -1,0 +1,1120 @@
+{
+"text": "唐乐\n\n年　　龄\n21 岁\n性　　别\n男\n\n工作年限\n应届生\n电　　话\n18064871268\n\n邮　　箱\n2061790875@qq.com\n政治面貌\n共青团员\n\nGithub\nhttps://github.com/tl66666\n个人网站\nhttps://grjs.tl666.tech/\n\n教育背景\n\n2023-10 ～ 至今\n上海应用技术大学\n软件工程 (本科)\n\n思想认识\n\n积极进取，被中共上海应用技术大学委员会评为入党积极分子，已参加我校党校第51期入党积极分子培训班，考试合格，予以结业。\n\n实习经历\n\n邦彦技术股份有限公司｜NuwaAI 智能体数字人部门｜Agent 实习工程师\n\n参与企业级 AI Agent“邦小彦”设计与开发，面向销售、SE 和管理人员，辅助处理市场洞察、商机跟进、项目交付及回款等收入链 S1-S14 工作\n\n使用 NuwaAI 平台设计数字人， AIGC 绘图、视频完成素材创作，接入平台 API 开发数字人应用和互动游戏，参与功能验证与交互调整。\n\n纷享销客区域代理团队｜交付顾问实习生\n\n跟随广州、佛山、珠海片区负责人参与客户现场沟通，了解销售管理、客户协同和业务流程需求，整理会议记录与重点摘要，将客户表达转化为需\n求清单、业务流程和产品蓝图。\n\n根据客户场景开发交互 Demo，并结合现场反馈调整产品结构与演示重点，支持售前沟通和方案交付。.\n\n竞赛经历\n\n微信开发者创新工坊「广州·游园会友日」：获评“受期待的开发者”NO.2。字节跳动 TRAE AI创造力大赛：从 3.7 万余名参赛选手中荣获年度 350\n强。阿里云百炼“小有可为”AI 向善创新挑战赛：完成 AI 公益方向产品设计与开发。微信小程序开发大赛：完成小程序产品设计、开发和测试。秒悟\nX学习通全国AI应用创作大赛：完成AI应用创作。\n\n技能特长\n\n英语 CET-6，具备阅读英文技术文档、理解 API 文档和基础英文沟通能力。普通话二级乙等。\nAI 应用开发：熟悉大模型 API、Prompt 设计、上下文构建、Tool Calling、ReAct、分层记忆和结构化输出，具备文本、视觉识别、ASR/TTS 等多模\n态能力接入经验。AI 协作能力：熟练使用 Codex、Claude Code、Trae 等工具进行需求分析、架构设计、代码开发、问题排查和测试，能够审查生成\n代码并独立完成产品交付。全栈开发：熟悉C++、Python、Java、 TypeScript、Vue、React、uni-app、NestJS、FastAPI、Node.js，能够独立开发\nWeb、微信小程序、Android App 和后端 API。数据与安全：熟悉 PostgreSQL、MySQL、SQLite、Prisma、JWT，具备数据库设计、用户认证、数\n据隔离和服务端密钥保护经验。部署上线：熟悉 Docker、Azure、CloudBase、Cloudflare Pages、GitHub Actions，具备容器化部署、CDN 配置及\n上线维护经验。熟练视觉设计，具备想象力与创造力；AIGC 绘图、视频与提示词工程，可独立完成素材创作。快速开发应用、小程序、小游戏并搭建\nAI 工作流，辅助编码与调试、落地原型。熟悉部署与素材剪辑，具备产品思维与审美，自学和协作能力强，能推动项目从构思到上线。\n\n项目经历\n\n和生序｜AI 健康管理微信小程序与 Android App｜独立开发 [项目展示：https://tl66666.github.io/heshengxu-health/](<https://tl66666.github.io/heshengxu-health/>)\n技术栈：Vue 3｜uni-app｜TypeScript｜NestJS｜Prisma｜PostgreSQL｜Docker｜Azure｜CloudBase\n独立完成产品设计、交互界面、双端客户端、服务端 API、数据库、模型接入、部署和 Android 打包。建设包含 49,000+ 条数据的食物库，支持食物\n搜索、营养查询、饮食记录、体重、喝水、睡眠、运动、心情和生理期管理。开发“序序相机”识别链路：读取照片、服务端安全代理、GLM 视觉理\n解、组合菜品拆分、份量与营养估算、用户确认及个人食物库保存。接入混元文本模型开发健康聊天助手，使用 Docker 构建服务镜像并部署至 Azure\nContainer Apps，静态图片通过 CloudBase CDN 分发，完成从开发到上线的完整交付。\n职途 - 在线求职全流程工具（线上多人使用）在线访问：https://zhitu.kralai.tech/ ｜ [源码：https://github.com/tl66666/zhitu](<https://github.com/tl66666/zhitu>)\n围绕「写简历、面试、投递」高频场景，以简历和投递为纽带将三大模块串联闭环。面向线上多用户，具备完整用户认证、数据隔离\n技术栈： Go / Gin / GORM / SQLite / JWT / Vue 3 / TypeScript / Vite / Tailwind CSS /  Pinia / SSE / Whisper / ASR/TTS\n负责全部前端开发，实现简历编辑、版本管理、AI 生成与润色、JD 匹配及求职工作台。将模拟面试拆分为 7 个可控状态，支持文字、语音和混合交\n互，并通过 SSE 展示实时生成结果。对接 ASR/TTS 与后端接口，处理录音、识别、回答生成、语音播放及异常恢复。\n职途 AI Agent [求职工作台（个人本地使用）项目展示：https://tl66666.github.io/ztai/static/showcase.html](<https://tl66666.github.io/ztai/static/showcase.html>)\n面向求职流程的本地Web 系统，将简历管理、JD 匹配、模拟面试、复盘行动串成完整闭环。\n技术栈： Python / FastAPI / SQLAlchemy / Alembic / React 19 / TypeScript / Vite / JSON Schema / Playwright\n核心实现： 有界 Tool-Calling Runtime，由 ContextBuilder 重建业务上下文、MemoryStore 管理六层记忆，ToolRegistry 校验 22 个结构化求职工\n具，覆盖求职诊断、简历匹配、面试出题和行动优先级生成。写操作遵循\"提议 → 预览 → 用户确认 → 领域服务执行 → 幂等回执\"链路，确保 Agent\n不会因模型误判直接修改求职数据。无 API Key 时本地规则引擎可完成诊断、简历选择和面试题生成，配置模型后增强简历改写与开放表达。\nDreamChord Agent | 视觉小说创作 Web 平台    [项目展示：https://tl66666.github.io/DreamChord/](<https://tl66666.github.io/DreamChord/>)\n围绕视觉小说创作中的脚本门槛、分支管理和素材复用问题，设计章节 / 场景 / 镜头卡编辑器、剧情流程图、素材工作室和播放器。\n技术栈： React / TypeScript / Vite / Express / Prisma / SQLite / React Flow / Sharp / Zod\n核心实现： 构建\"章节 - 场景 - 镜头卡\"三级结构与剧情流程图可视化， ReAct 风格项目感知 Agent，结合上下文装配、分层记忆、受控 Tool Calling、\nZod Schema 校验和审批 / 撤销链路，按项目素材与角色精确匹配后生成可审核补丁；无 API Key 降级运行。",
+"blocks": [
+{
+"kind": "heading",
+"text": "唐乐",
+"location": {
+"page": 1,
+"bbox": [
+11.634145736694336,
+18.091096878051758,
+46.53652572631836,
+35.54231643676758
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 17.451217651367188
+},
+"level": 1
+},
+{
+"kind": "paragraph",
+"text": "年　　龄\n21 岁\n性　　别\n男",
+"location": {
+"page": 1,
+"bbox": [
+11.634145736694336,
+53.40073013305664,
+314.1219482421875,
+63.26066589355469
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.725608825683594
+}
+},
+{
+"kind": "paragraph",
+"text": "工作年限\n应届生\n电　　话\n18064871268",
+"location": {
+"page": 1,
+"bbox": [
+11.634145736694336,
+72.30621337890625,
+358.6664123535156,
+82.16615295410156
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.725608825683594
+}
+},
+{
+"kind": "paragraph",
+"text": "邮　　箱\n2061790875@qq.com\n政治面貌\n共青团员",
+"location": {
+"page": 1,
+"bbox": [
+11.634145736694336,
+91.21170043945312,
+340.2989807128906,
+101.07164001464844
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.725608825683594
+}
+},
+{
+"kind": "paragraph",
+"text": "Github\nhttps://github.com/tl66666\n个人网站\nhttps://grjs.tl666.tech/",
+"location": {
+"page": 1,
+"bbox": [
+11.634145736694336,
+110.1171875,
+395.9512939453125,
+119.97712707519531
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.725608825683594
+}
+},
+{
+"kind": "paragraph",
+"text": "教育背景",
+"location": {
+"page": 1,
+"bbox": [
+17.451217651367188,
+134.455810546875,
+54.08514404296875,
+143.61770629882812
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.161890029907227
+}
+},
+{
+"kind": "paragraph",
+"text": "2023-10 ～ 至今\n上海应用技术大学\n软件工程 (本科)",
+"location": {
+"page": 1,
+"bbox": [
+11.634145736694336,
+157.3809051513672,
+584.611572265625,
+167.5375213623047
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.725608825683594
+}
+},
+{
+"kind": "paragraph",
+"text": "思想认识",
+"location": {
+"page": 1,
+"bbox": [
+17.451217651367188,
+177.3567352294922,
+54.08514404296875,
+186.5186309814453
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.161890029907227
+}
+},
+{
+"kind": "paragraph",
+"text": "积极进取，被中共上海应用技术大学委员会评为入党积极分子，已参加我校党校第51期入党积极分子培训班，考试合格，予以结业。",
+"location": {
+"page": 1,
+"bbox": [
+11.634145736694336,
+207.5531463623047,
+518.6830444335938,
+217.4130859375
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.725608825683594
+}
+},
+{
+"kind": "paragraph",
+"text": "实习经历",
+"location": {
+"page": 1,
+"bbox": [
+17.451217651367188,
+227.5289764404297,
+54.08514404296875,
+236.6908721923828
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.161890029907227
+}
+},
+{
+"kind": "paragraph",
+"text": "邦彦技术股份有限公司｜NuwaAI 智能体数字人部门｜Agent 实习工程师",
+"location": {
+"page": 1,
+"bbox": [
+11.634145736694336,
+257.7254333496094,
+295.82061767578125,
+267.88201904296875
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.725608825683594
+}
+},
+{
+"kind": "paragraph",
+"text": "参与企业级 AI Agent“邦小彦”设计与开发，面向销售、SE 和管理人员，辅助处理市场洞察、商机跟进、项目交付及回款等收入链 S1-S14 工作",
+"location": {
+"page": 1,
+"bbox": [
+26.176828384399414,
+269.35955810546875,
+576.6709594726562,
+279.219482421875
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.725608825683594
+}
+},
+{
+"kind": "paragraph",
+"text": "使用 NuwaAI 平台设计数字人， AIGC 绘图、视频完成素材创作，接入平台 API 开发数字人应用和互动游戏，参与功能验证与交互调整。",
+"location": {
+"page": 1,
+"bbox": [
+26.176828384399414,
+283.9022521972656,
+547.0210571289062,
+293.7621765136719
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.725608825683594
+}
+},
+{
+"kind": "paragraph",
+"text": "纷享销客区域代理团队｜交付顾问实习生",
+"location": {
+"page": 1,
+"bbox": [
+11.634145736694336,
+298.4449462890625,
+172.65774536132812,
+308.6015319824219
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.725608825683594
+}
+},
+{
+"kind": "paragraph",
+"text": "跟随广州、佛山、珠海片区负责人参与客户现场沟通，了解销售管理、客户协同和业务流程需求，整理会议记录与重点摘要，将客户表达转化为需\n求清单、业务流程和产品蓝图。",
+"location": {
+"page": 1,
+"bbox": [
+26.176828384399414,
+310.0790710449219,
+584.6199951171875,
+330.4388122558594
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.725608825683594
+}
+},
+{
+"kind": "paragraph",
+"text": "根据客户场景开发交互 Demo，并结合现场反馈调整产品结构与演示重点，支持售前沟通和方案交付。.",
+"location": {
+"page": 1,
+"bbox": [
+26.176828384399414,
+336.25592041015625,
+421.2405090332031,
+346.1158447265625
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.725608825683594
+}
+},
+{
+"kind": "paragraph",
+"text": "竞赛经历",
+"location": {
+"page": 1,
+"bbox": [
+17.451217651367188,
+356.2317199707031,
+54.08514404296875,
+365.39361572265625
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.161890029907227
+}
+},
+{
+"kind": "paragraph",
+"text": "微信开发者创新工坊「广州·游园会友日」：获评“受期待的开发者”NO.2。字节跳动 TRAE AI创造力大赛：从 3.7 万余名参赛选手中荣获年度 350\n强。阿里云百炼“小有可为”AI 向善创新挑战赛：完成 AI 公益方向产品设计与开发。微信小程序开发大赛：完成小程序产品设计、开发和测试。秒悟\nX学习通全国AI应用创作大赛：完成AI应用创作。",
+"location": {
+"page": 1,
+"bbox": [
+11.634145736694336,
+380.611083984375,
+582.93896484375,
+413.7392883300781
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.725608825683594
+}
+},
+{
+"kind": "paragraph",
+"text": "技能特长",
+"location": {
+"page": 1,
+"bbox": [
+17.451217651367188,
+423.8551940917969,
+54.08514404296875,
+433.01708984375
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.161890029907227
+}
+},
+{
+"kind": "paragraph",
+"text": "英语 CET-6，具备阅读英文技术文档、理解 API 文档和基础英文沟通能力。普通话二级乙等。\nAI 应用开发：熟悉大模型 API、Prompt 设计、上下文构建、Tool Calling、ReAct、分层记忆和结构化输出，具备文本、视觉识别、ASR/TTS 等多模\n态能力接入经验。AI 协作能力：熟练使用 Codex、Claude Code、Trae 等工具进行需求分析、架构设计、代码开发、问题排查和测试，能够审查生成\n代码并独立完成产品交付。全栈开发：熟悉C++、Python、Java、 TypeScript、Vue、React、uni-app、NestJS、FastAPI、Node.js，能够独立开发\nWeb、微信小程序、Android App 和后端 API。数据与安全：熟悉 PostgreSQL、MySQL、SQLite、Prisma、JWT，具备数据库设计、用户认证、数\n据隔离和服务端密钥保护经验。部署上线：熟悉 Docker、Azure、CloudBase、Cloudflare Pages、GitHub Actions，具备容器化部署、CDN 配置及\n上线维护经验。熟练视觉设计，具备想象力与创造力；AIGC 绘图、视频与提示词工程，可独立完成素材创作。快速开发应用、小程序、小游戏并搭建\nAI 工作流，辅助编码与调试、落地原型。熟悉部署与素材剪辑，具备产品思维与审美，自学和协作能力强，能推动项目从构思到上线。",
+"location": {
+"page": 1,
+"bbox": [
+11.634145736694336,
+448.23455810546875,
+584.3086547851562,
+539.5335083007812
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.725608825683594
+}
+},
+{
+"kind": "paragraph",
+"text": "项目经历",
+"location": {
+"page": 1,
+"bbox": [
+17.451217651367188,
+549.6494140625,
+54.08514404296875,
+558.811279296875
+]
+},
+"links": [],
+"provenance": "native_text",
+"evidence": {
+"font_size": 9.161890029907227
+}
+},
+{
+"kind": "paragraph",
+"text": "和生序｜AI 健康管理微信小程序与 Android App｜独立开发 [项目展示：https://tl66666.github.io/heshengxu-health/](<https://tl66666.github.io/heshengxu-health/>)\n技术栈：Vue 3｜uni-app｜TypeScript｜NestJS｜Prisma｜PostgreSQL｜Docker｜Azure｜CloudBase\n独立完成产品设计、交互界面、双端客户端、服务端 API、数据库、模型接入、部署和 Android 打包。建设包含 49,000+ 条数据的食物库，支持食物\n搜索、营养查询、饮食记录、体重、喝水、睡眠、运动、心情和生理期管理。开发“序序相机”识别链路：读取照片、服务端安全代理、GLM 视觉理\n解、组合菜品拆分、份量与营养估算、用户确认及个人食物库保存。接入混元文本模型开发健康聊天助手，使用 Docker 构建服务镜像并部署至 Azure\nContainer Apps，静态图片通过 CloudBase CDN 分发，完成从开发到上线的完整交付。\n职途 - 在线求职全流程工具（线上多人使用）在线访问：https://zhitu.kralai.tech/ ｜ [源码：https://github.com/tl66666/zhitu](<https://github.com/tl66666/zhitu>)\n围绕「写简历、面试、投递」高频场景，以简历和投递为纽带将三大模块串联闭环。面向线上多用户，具备完整用户认证、数据隔离\n技术栈： Go / Gin / GORM / SQLite / JWT / Vue 3 / TypeScript / Vite / Tailwind CSS /  Pinia / SSE / Whisper / ASR/TTS\n负责全部前端开发，实现简历编辑、版本管理、AI 生成与润色、JD 匹配及求职工作台。将模拟面试拆分为 7 个可控状态，支持文字、语音和混合交\n互，并通过 SSE 展示实时生成结果。对接 ASR/TTS 与后端接口，处理录音、识别、回答生成、语音播放及异常恢复。\n职途 AI Agent [求职工作台（个人本地使用）项目展示：https://tl66666.github.io/ztai/static/showcase.html](<https://tl66666.github.io/ztai/static/showcase.html>)\n面向求职流程的本地Web 系统，将简历管理、JD 匹配、模拟面试、复盘行动串成完整闭环。\n技术栈： Python / FastAPI / SQLAlchemy / Alembic / React 19 / TypeScript / Vite / JSON Schema / Playwright\n核心实现： 有界 Tool-Calling Runtime，由 ContextBuilder 重建业务上下文、MemoryStore 管理六层记忆，ToolRegistry 校验 22 个结构化求职工\n具，覆盖求职诊断、简历匹配、面试出题和行动优先级生成。写操作遵循\"提议 → 预览 → 用户确认 → 领域服务执行 → 幂等回执\"链路，确保 Agent\n不会因模型误判直接修改求职数据。无 API Key 时本地规则引擎可完成诊断、简历选择和面试题生成，配置模型后增强简历改写与开放表达。\nDreamChord Agent | 视觉小说创作 Web 平台    [项目展示：https://tl66666.github.io/DreamChord/](<https://tl66666.github.io/DreamChord/>)\n围绕视觉小说创作中的脚本门槛、分支管理和素材复用问题，设计章节 / 场景 / 镜头卡编辑器、剧情流程图、素材工作室和播放器。\n技术栈： React / TypeScript / Vite / Express / Prisma / SQLite / React Flow / Sharp / Zod\n核心实现： 构建\"章节 - 场景 - 镜头卡\"三级结构与剧情流程图可视化， ReAct 风格项目感知 Agent，结合上下文装配、分层记忆、受控 Tool Calling、\nZod Schema 校验和审批 / 撤销链路，按项目素材与角色精确匹配后生成可审核补丁；无 API Key 降级运行。",
+"location": {
+"page": 1,
+"bbox": [
+11.634145736694336,
+574.0287475585938,
+583.6893920898438,
+828.2057495117188
+]
+},
+"links": [
+{
+"text": "项目展示：https://tl66666.github.io/DreamChord/",
+"href": "https://tl66666.github.io/DreamChord/",
+"location": {
+"page": 1,
+"bbox": [
+200.03012084960938,
+771.8092651367188,
+411.31573486328125,
+781.9658813476562
+]
+}
+},
+{
+"text": "求职工作台（个人本地使用）项目展示：https://tl66666.github.io/ztai/static/showcase.html",
+"href": "https://tl66666.github.io/ztai/static/showcase.html",
+"location": {
+"page": 1,
+"bbox": [
+68.47314453125,
+702.0043334960938,
+446.32220458984375,
+712.1609497070312
+]
+}
+},
+{
+"text": "源码：https://github.com/tl66666/zhitu",
+"href": "https://github.com/tl66666/zhitu",
+"location": {
+"page": 1,
+"bbox": [
+346.8166198730469,
+643.8336181640625,
+515.0859985351562,
+653.990234375
+]
+}
+},
+{
+"text": "项目展示：https://tl66666.github.io/heshengxu-health/",
+"href": "https://tl66666.github.io/heshengxu-health/",
+"location": {
+"page": 1,
+"bbox": [
+244.88885498046875,
+574.0287475585938,
+479.4508972167969,
+584.1853637695312
+]
+}
+}
+],
+"provenance": "native_text",
+"evidence": {
+"font_size": 8.725608825683594
+}
+}
+],
+"title": "about:blank",
+"chars": 3281,
+"completeness": "partial",
+"issues": [
+{
+"code": "unverified_pdf_image",
+"message": "page 1 has 1 embedded image(s), coverage 0.019; confirm image role/content from the original; preserve native text",
+"location": {
+"page": 1
+}
+},
+{
+"code": "resume_attribution_unverified",
+"message": "entry header spans 11 blocks in one visual row; facts are taken from that row only (no cross-row joining)",
+"location": {
+"page": 1,
+"bbox": [
+11.634145736694336,
+227.5289764404297,
+584.6199951171875,
+539.5335083007812
+]
+}
+},
+{
+"code": "resume_attribution_unverified",
+"message": "work section exists but no date row or entry heading could be segmented; the field stays unreadable",
+"location": {
+"page": 1,
+"bbox": [
+11.634145736694336,
+227.5289764404297,
+584.6199951171875,
+539.5335083007812
+]
+}
+},
+{
+"code": "resume_protected_attribute_present",
+"message": "protected attributes identified and isolated from screening: age_or_birth, gender",
+"location": {
+"page": null,
+"bbox": null
+}
+}
+],
+"needs_visual": false,
+"warnings": [
+"ocr_title_backend_unconfigured: heading_count<=1 and no OCR interpreter configured; titles may be missing (body unaffected)"
+],
+"meta": {
+"pages": 1,
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f",
+"source_name": "唐乐-简历.pdf",
+"backend": "pymupdf/1.28.0",
+"reader_version": "1.0.0",
+"page_info": [
+{
+"page": 1,
+"chars": 3077,
+"images": 1,
+"drawings": 18,
+"layout_order_applied": false,
+"image_coverage": 0.018947845855398347,
+"block_count": 22,
+"encoding_removed": "",
+"noise_removed": ""
+}
+],
+"layout_backend": null,
+"order_verified": false,
+"repaired": false,
+"ocr": "backend_unconfigured",
+"noise_blocks": 0,
+"encoding_removed_chars": ""
+},
+"links": [
+{
+"text": "项目展示：https://tl66666.github.io/DreamChord/",
+"href": "https://tl66666.github.io/DreamChord/",
+"location": {
+"page": 1,
+"bbox": [
+200.03012084960938,
+771.8092651367188,
+411.31573486328125,
+781.9658813476562
+]
+}
+},
+{
+"text": "求职工作台（个人本地使用）项目展示：https://tl66666.github.io/ztai/static/showcase.html",
+"href": "https://tl66666.github.io/ztai/static/showcase.html",
+"location": {
+"page": 1,
+"bbox": [
+68.47314453125,
+702.0043334960938,
+446.32220458984375,
+712.1609497070312
+]
+}
+},
+{
+"text": "源码：https://github.com/tl66666/zhitu",
+"href": "https://github.com/tl66666/zhitu",
+"location": {
+"page": 1,
+"bbox": [
+346.8166198730469,
+643.8336181640625,
+515.0859985351562,
+653.990234375
+]
+}
+},
+{
+"text": "项目展示：https://tl66666.github.io/heshengxu-health/",
+"href": "https://tl66666.github.io/heshengxu-health/",
+"location": {
+"page": 1,
+"bbox": [
+244.88885498046875,
+574.0287475585938,
+479.4508972167969,
+584.1853637695312
+]
+}
+}
+],
+"fields": {
+"name": {
+"state": "present",
+"value": "唐乐",
+"evidence": [
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+18.091096878051758,
+46.53652572631836,
+35.54231643676758
+],
+"block": 0,
+"text": "唐乐",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+}
+],
+"provenance": "native_text",
+"reason": "",
+"match_rule": "heading_level_1"
+},
+"phone": {
+"state": "present",
+"value": "18064871268",
+"evidence": [
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+72.30621337890625,
+358.6664123535156,
+82.16615295410156
+],
+"block": 2,
+"text": "18064871268",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+}
+],
+"provenance": "native_text",
+"reason": "",
+"normalized": "18064871268"
+},
+"email": {
+"state": "present",
+"value": "2061790875@qq.com",
+"evidence": [
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+91.21170043945312,
+340.2989807128906,
+101.07164001464844
+],
+"block": 3,
+"text": "2061790875@qq.com",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+}
+],
+"provenance": "native_text",
+"reason": ""
+},
+"work_experience": {
+"state": "unreadable",
+"value": null,
+"evidence": [
+{
+"page": 1,
+"bbox": [
+17.451217651367188,
+227.5289764404297,
+54.08514404296875,
+236.6908721923828
+],
+"block": 9,
+"text": "实习经历",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+257.7254333496094,
+295.82061767578125,
+267.88201904296875
+],
+"block": 10,
+"text": "邦彦技术股份有限公司｜NuwaAI 智能体数字人部门｜Agent 实习工程师",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+26.176828384399414,
+269.35955810546875,
+576.6709594726562,
+279.219482421875
+],
+"block": 11,
+"text": "参与企业级 AI Agent“邦小彦”设计与开发，面向销售、SE 和管理人员，辅助处理市场洞察、商机跟进、项目交付及回款等收入链 S1-S14 工作",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+26.176828384399414,
+283.9022521972656,
+547.0210571289062,
+293.7621765136719
+],
+"block": 12,
+"text": "使用 NuwaAI 平台设计数字人， AIGC 绘图、视频完成素材创作，接入平台 API 开发数字人应用和互动游戏，参与功能验证与交互调整。",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+298.4449462890625,
+172.65774536132812,
+308.6015319824219
+],
+"block": 13,
+"text": "纷享销客区域代理团队｜交付顾问实习生",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+26.176828384399414,
+310.0790710449219,
+584.6199951171875,
+330.4388122558594
+],
+"block": 14,
+"text": "跟随广州、佛山、珠海片区负责人参与客户现场沟通，了解销售管理、客户协同和业务流程需求，整理会议记录与重点摘要，将客户表达转化为需\n求清单、业务流程和产品蓝图。",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+26.176828384399414,
+336.25592041015625,
+421.2405090332031,
+346.1158447265625
+],
+"block": 15,
+"text": "根据客户场景开发交互 Demo，并结合现场反馈调整产品结构与演示重点，支持售前沟通和方案交付。.",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+17.451217651367188,
+356.2317199707031,
+54.08514404296875,
+365.39361572265625
+],
+"block": 16,
+"text": "竞赛经历",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+380.611083984375,
+582.93896484375,
+413.7392883300781
+],
+"block": 17,
+"text": "微信开发者创新工坊「广州·游园会友日」：获评“受期待的开发者”NO.2。字节跳动 TRAE AI创造力大赛：从 3.7 万余名参赛选手中荣获年度 350\n强。阿里云百炼“小有可为”AI 向善创新挑战赛：完成 AI 公益方向产品设计与开发。微信小程序开发大赛：完成小程序产品设计、开发和测试。秒悟\nX学习通全国AI应用创作大赛：完成AI应用创作。",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+17.451217651367188,
+423.8551940917969,
+54.08514404296875,
+433.01708984375
+],
+"block": 18,
+"text": "技能特长",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+448.23455810546875,
+584.3086547851562,
+539.5335083007812
+],
+"block": 19,
+"text": "英语 CET-6，具备阅读英文技术文档、理解 API 文档和基础英文沟通能力。普通话二级乙等。\nAI 应用开发：熟悉大模型 API、Prompt 设计、上下文构建、Tool Calling、ReAct、分层记忆和结构化输出，具备文本、视觉识别、ASR/TTS 等多模\n态能力接入经验。AI 协作能力：熟练使用 Codex、Claude Code、Trae 等工具进行需求分析、架构设计、代码开发、问题排查和测试，能够审查生成\n代码并独立完成产品交付。全栈开发：熟悉C++、Python、Java、 TypeScript、Vue、React、uni-app、NestJS、FastAPI、Node.js，能够独立开发\nWeb、微信小程序、Android App 和后端 API。数据与安全：熟悉 PostgreSQL、MySQL、SQLite、Prisma、JWT，具备数据库设计、用户认证、数\n据隔离和服务端密钥保护经验。部署上线：熟悉 Docker、Azure、CloudBase、Cloudflare Pages、GitHub Actions，具备容器化部署、CDN 配置及\n上线维护经验。熟练视觉设计，具备想象力与创造力；AIGC 绘图、视频与提示词工程，可独立完成素材创作。快速开发应用、小程序、小游戏并搭建\nAI 工作流，辅助编码与调试、落地原型。熟悉部署与素材剪辑，具备产品思维与审美，自学和协作能力强，能推动项目从构思到上线。",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+}
+],
+"provenance": "native_text",
+"reason": "entries_not_segmentable",
+"candidate_rows": [
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+227.5289764404297,
+584.6199951171875,
+539.5335083007812
+],
+"header_text": "实习经历 | 邦彦技术股份有限公司｜NuwaAI 智能体数字人部门｜Agent 实习工程师 | 参与企业级 AI Agent“邦小彦”设计与开发，面向销售、SE 和管理人员，辅助处理市场洞察、商机跟进、项目交付及回款等收入链 S1-S14 工作 | 使用 NuwaAI 平台设计数字人， AIGC 绘图、视频完成素材创作，接入平台 API 开发数字人应用和互动游戏，参与功能验证与交互调整。 | 纷享",
+"evidence": [
+{
+"page": 1,
+"bbox": [
+17.451217651367188,
+227.5289764404297,
+54.08514404296875,
+236.6908721923828
+],
+"block": 9,
+"text": "实习经历",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+257.7254333496094,
+295.82061767578125,
+267.88201904296875
+],
+"block": 10,
+"text": "邦彦技术股份有限公司｜NuwaAI 智能体数字人部门｜Agent 实习工程师",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+26.176828384399414,
+269.35955810546875,
+576.6709594726562,
+279.219482421875
+],
+"block": 11,
+"text": "参与企业级 AI Agent“邦小彦”设计与开发，面向销售、SE 和管理人员，辅助处理市场洞察、商机跟进、项目交付及回款等收入链 S1-S14 工作",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+26.176828384399414,
+283.9022521972656,
+547.0210571289062,
+293.7621765136719
+],
+"block": 12,
+"text": "使用 NuwaAI 平台设计数字人， AIGC 绘图、视频完成素材创作，接入平台 API 开发数字人应用和互动游戏，参与功能验证与交互调整。",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+298.4449462890625,
+172.65774536132812,
+308.6015319824219
+],
+"block": 13,
+"text": "纷享销客区域代理团队｜交付顾问实习生",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+26.176828384399414,
+310.0790710449219,
+584.6199951171875,
+330.4388122558594
+],
+"block": 14,
+"text": "跟随广州、佛山、珠海片区负责人参与客户现场沟通，了解销售管理、客户协同和业务流程需求，整理会议记录与重点摘要，将客户表达转化为需\n求清单、业务流程和产品蓝图。",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+26.176828384399414,
+336.25592041015625,
+421.2405090332031,
+346.1158447265625
+],
+"block": 15,
+"text": "根据客户场景开发交互 Demo，并结合现场反馈调整产品结构与演示重点，支持售前沟通和方案交付。.",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+17.451217651367188,
+356.2317199707031,
+54.08514404296875,
+365.39361572265625
+],
+"block": 16,
+"text": "竞赛经历",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+380.611083984375,
+582.93896484375,
+413.7392883300781
+],
+"block": 17,
+"text": "微信开发者创新工坊「广州·游园会友日」：获评“受期待的开发者”NO.2。字节跳动 TRAE AI创造力大赛：从 3.7 万余名参赛选手中荣获年度 350\n强。阿里云百炼“小有可为”AI 向善创新挑战赛：完成 AI 公益方向产品设计与开发。微信小程序开发大赛：完成小程序产品设计、开发和测试。秒悟\nX学习通全国AI应用创作大赛：完成AI应用创作。",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+17.451217651367188,
+423.8551940917969,
+54.08514404296875,
+433.01708984375
+],
+"block": 18,
+"text": "技能特长",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+},
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+448.23455810546875,
+584.3086547851562,
+539.5335083007812
+],
+"block": 19,
+"text": "英语 CET-6，具备阅读英文技术文档、理解 API 文档和基础英文沟通能力。普通话二级乙等。\nAI 应用开发：熟悉大模型 API、Prompt 设计、上下文构建、Tool Calling、ReAct、分层记忆和结构化输出，具备文本、视觉识别、ASR/TTS 等多模\n态能力接入经验。AI 协作能力：熟练使用 Codex、Claude Code、Trae 等工具进行需求分析、架构设计、代码开发、问题排查和测试，能够审查生成\n代码并独立完成产品交付。全栈开发：熟悉C++、Python、Java、 TypeScript、Vue、React、uni-app、NestJS、FastAPI、Node.js，能够独立开发\nWeb、微信小程序、Android App 和后端 API。数据与安全：熟悉 PostgreSQL、MySQL、SQLite、Prisma、JWT，具备数据库设计、用户认证、数\n据隔离和服务端密钥保护经验。部署上线：熟悉 Docker、Azure、CloudBase、Cloudflare Pages、GitHub Actions，具备容器化部署、CDN 配置及\n上线维护经验。熟练视觉设计，具备想象力与创造力；AIGC 绘图、视频与提示词工程，可独立完成素材创作。快速开发应用、小程序、小游戏并搭建\nAI 工作流，辅助编码与调试、落地原型。熟悉部署与素材剪辑，具备产品思维与审美，自学和协作能力强，能推动项目从构思到上线。",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+}
+]
+}
+]
+},
+"education": {
+"state": "present",
+"value": null,
+"evidence": [
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+157.3809051513672,
+584.611572265625,
+167.5375213623047
+],
+"block": 6,
+"text": "2023-10 ～ 至今\n上海应用技术大学\n软件工程 (本科)",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+}
+],
+"provenance": "native_text",
+"reason": "",
+"entries": [
+{
+"index": 0,
+"page": 1,
+"bbox": [
+11.634145736694336,
+157.3809051513672,
+584.611572265625,
+167.5375213623047
+],
+"header_text": "2023-10 ～ 至今\n上海应用技术大学\n软件工程 (本科)",
+"header_blocks": [
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+157.3809051513672,
+584.611572265625,
+167.5375213623047
+],
+"block": 6,
+"text": "2023-10 ～ 至今\n上海应用技术大学\n软件工程 (本科)",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+}
+],
+"company": null,
+"title": null,
+"split_rule": "date_only",
+"dates": [
+{
+"raw": "2023-10 ～ 至今",
+"start": {
+"year": 2023,
+"month": 10
+},
+"end": null,
+"open_ended": true,
+"start_index": 24285,
+"end_index": null
+}
+],
+"other_dates": [],
+"attribution": "single_block",
+"granularity": "date_row",
+"section": "education"
+}
+],
+"entry_count": 1
+}
+},
+"noise": [],
+"protected_attributes": {
+"gender": {
+"state": "present",
+"value": "男",
+"evidence": [
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+53.40073013305664,
+314.1219482421875,
+63.26066589355469
+],
+"block": 1,
+"text": "男",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+}
+],
+"screening_excluded": true
+},
+"age_or_birth": {
+"state": "present",
+"value": "21 岁",
+"evidence": [
+{
+"page": 1,
+"bbox": [
+11.634145736694336,
+53.40073013305664,
+314.1219482421875,
+63.26066589355469
+],
+"block": 1,
+"text": "21 岁",
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+}
+],
+"screening_excluded": true
+},
+"photo": {
+"state": "unverified",
+"value": null,
+"evidence": [
+{
+"page": 1,
+"images": 1,
+"source_sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f"
+}
+],
+"screening_excluded": true,
+"reason": "geometry cannot decide whether an image is a portrait; reported as unverified, never as a screening feature"
+},
+"marital_or_children": {
+"state": "absent",
+"value": null,
+"evidence": [],
+"screening_excluded": true,
+"reason": ""
+},
+"native_place": {
+"state": "absent",
+"value": null,
+"evidence": [],
+"screening_excluded": true,
+"reason": ""
+},
+"ethnicity": {
+"state": "absent",
+"value": null,
+"evidence": [],
+"screening_excluded": true,
+"reason": ""
+}
+},
+"screening": {
+"eligible_fields": [
+"name",
+"phone",
+"email",
+"education"
+],
+"blocked_fields": [
+{
+"field": "work_experience",
+"reason": "entries_not_segmentable"
+}
+],
+"identity_merge_eligible": [
+"phone",
+"email"
+],
+"identity_manual_review": [
+{
+"field": "name",
+"reason": "name matching requires human confirmation"
+}
+],
+"protected_excluded": [
+"age_or_birth",
+"ethnicity",
+"gender",
+"marital_or_children",
+"native_place",
+"photo"
+],
+"note": "unreadable fields must never be used as a negative screening signal; protected attributes never enter screening features"
+},
+"timeline": {
+"intervals": 0,
+"closed_intervals": 0,
+"open_ended_intervals": 0,
+"year_only_intervals": 0,
+"covered_months_closed": 0,
+"covered_years_closed": 0.0,
+"note": "open-ended intervals are not converted to months (a date-stamped run would make the output non-reproducible)"
+}
+}
