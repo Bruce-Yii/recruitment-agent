@@ -1,8 +1,15 @@
 # Bundle layer for @recruitment/dsh-recruitment.
 # Inserted into a profile's layer stack by the plugin loader.
 #
-# converter 三项必须齐全，缺任何一项时 recruitment_resume_read 仍会注册，
-# 但调用返回 NOT_CONFIGURED 并列出缺什么（不静默降级）。
+# 两段配置，缺任何一段时对应工具仍会注册，但调用返回 NOT_CONFIGURED
+# 并列出缺什么（不静默降级、不返回假数据）。
+#
+#   converter 三项 —— recruitment_resume_read / _serialize / _validate / _application_intake 要
+#   database        —— recruitment_application_intake（写）/ _screening_evaluate（读）要
+#
+# database 段**没有 password 字段**：密码只从环境变量读（默认 RECRUITMENT_DB_PASSWORD，
+# 可用 password_env 换成别的变量名）。tenant_id / actor_id 也不接受模型传入，
+# 只能来自这里（tool-contracts.md §0 第 4 条、D-18）。
 - insert:
     - id: recruitment
       name: '@recruitment/dsh-recruitment'
@@ -15,3 +22,12 @@
             - 'D:\12412\dsh工作区\orchestration'
             - 'D:\12412\CodexWorkspace'
           timeout_ms: 60000
+        database:
+          host: 127.0.0.1
+          port: 5432
+          user: postgres
+          database: ra_s6s7
+          password_env: RECRUITMENT_DB_PASSWORD
+          # 演示租户（0002_seed.sql §1）与 HR 专员 actor（§3，kind=HUMAN）。
+          tenant_id: '11111111-1111-4111-8111-000000000001'
+          actor_id: '11111111-1111-4111-8111-000000000103'
