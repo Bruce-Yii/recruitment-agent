@@ -1,0 +1,709 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://recruitment-agent.local/contracts/resume-text-to-structure.schema.json",
+  "title": "文本→结构化 抽取输出契约（recruitment-agent）",
+  "description": "模型对『#id | page | text』块序列做分类与抽取后的唯一合法输出形状。本文件只描述**结构**；语义规则（逐字来源、三态判定、归属、时间线、受保护属性）见 prompt.md，标签与 reason 码的判定标准见 labels.md。三者同一版本基线，枚举值必须逐字一致。",
+  "$comment": "本 schema 表达不了的六条不变量（由 prompt.md §5/§8/§9 规定、由检查器机检）：(1) sections[].block_ids 与 ignored 共同构成 {1..block_count} 的**恰好一次**划分；(2) 每个 value 必须是其所引用任一 block 的 text 的**连续子串**；(3) 字段级 block_ids 必须是其 entries[*].block_ids 的**超集**；(4) sections[] 按所含最小 block id 升序；(5) 带 ignored 的 block 不得出现在任何字段 block_ids 里；(6) reason 码还须满足 prompt.md §7 的『字段 × 状态』合法组合，此处只做全局枚举约束。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["prompt_version", "schema_version", "block_count", "sections", "fields"],
+  "properties": {
+    "prompt_version": {
+      "$ref": "#/$defs/prompt_version"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "description": "本 schema 的版本常量，必须原样回填；任何改动都要 bump 并与 prompt_version 同步。"
+    },
+    "block_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "输入中 block 行（#id | page | text）的总数，必须与输入一致；用于核对『每个 block 都归类了』。空输入（0 块）不进入本契约。"
+    },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "description": "块划分。必须覆盖全部 block id，且每个 id 恰好出现一次。",
+      "items": {
+        "$ref": "#/$defs/section"
+      }
+    },
+    "fields": {
+      "$ref": "#/$defs/fields"
+    }
+  },
+  "$defs": {
+    "prompt_version": {
+      "const": "1.0.0",
+      "description": "prompt.md 的版本常量，必须原样回填（不是模型生成的版本号）。"
+    },
+    "block_id": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$",
+      "description": "块 id 的**字符串**形式（输入写作 #12，输出写作 \"12\"）。1 起、按阅读顺序连续、无前导零。"
+    },
+    "block_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/block_id"
+      },
+      "description": "引用块列表，按升序、不重复。"
+    },
+    "state": {
+      "enum": ["present", "absent", "unreadable"],
+      "description": "三态：present=原文有且已读出；absent=原文确实没有提及；unreadable=原文有但读不出。红线：unreadable 绝不能当 absent。"
+    },
+    "reason": {
+      "enum": [
+        "not_mentioned",
+        "label_without_readable_value",
+        "value_masked_or_redacted",
+        "multiple_conflicting_values",
+        "glyphs_unreadable",
+        "image_only_no_text_layer",
+        "page_or_block_unread",
+        "no_section_heading",
+        "section_present_unsplittable",
+        "rows_outside_any_section",
+        "cross_block_assembly_refused",
+        "reading_order_unverified"
+      ],
+      "description": "原因码（封闭集合）。仅当 state != present 时出现。各码合法的『字段 × 状态』组合见 prompt.md §7；此处只约束全局取值域。"
+    },
+    "reason_note": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "可选补充说明，只能用原文片段或事实陈述，不得含推断、翻译或改写后的措辞。"
+    },
+    "ignored_reason": {
+      "enum": [
+        "platform_watermark",
+        "page_number_or_header_footer",
+        "qr_code_or_ad",
+        "empty_or_symbol_only",
+        "non_resume_document",
+        "duplicate_block",
+        "glyphs_unreadable"
+      ],
+      "description": "整块不承载候选人信息时的排除原因（封闭集合），判定标准见 labels.md §2。"
+    },
+    "ignored": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason"],
+      "description": "存在本键 = 这些 block 被排除，不参与任何字段抽取；它们禁止出现在 fields.*.block_ids 里。",
+      "properties": {
+        "reason": {
+          "$ref": "#/$defs/ignored_reason"
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "可选：说明排除了什么（引用原文片段），不得写推断。"
+        }
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "block_ids"],
+      "description": "一个 section = 一组连续或同源的 block + 一个语义标签。label 是封闭枚举（13 项）。",
+      "properties": {
+        "label": {
+          "enum": [
+            "contact",
+            "summary",
+            "work_experience",
+            "internship",
+            "project",
+            "research",
+            "education",
+            "skill",
+            "award",
+            "certificate",
+            "publication",
+            "self_evaluation",
+            "other"
+          ],
+          "description": "section 标签。中文含义、判断标准与反例见 labels.md §1。"
+        },
+        "block_ids": {
+          "$ref": "#/$defs/block_ids"
+        },
+        "ignored": {
+          "$ref": "#/$defs/ignored"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["ignored"]
+          },
+          "then": {
+            "properties": {
+              "label": {
+                "description": "被排除的块仍必须给出 label（按它长什么样），通常是 other；label=other + ignored 才是『非简历内容』。"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "block_ids"],
+      "description": "一条逐字事实。value 必须是 block_ids 所指任一 block 的 text 的连续子串（含全半角、空格、大小写、标点），不得格式化、不补全、不翻译。",
+      "properties": {
+        "value": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "description": "逐字原文片段；读不出/不存在时必须为 null，不得用 \"\" / \"N/A\" / \"未知\" 占位。"
+        },
+        "block_ids": {
+          "$ref": "#/$defs/block_ids"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["value"],
+            "properties": {
+              "value": {
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "block_ids": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "attribution": {
+      "enum": ["single_block", "same_row_multi_block"],
+      "description": "这一条经历的各事实来自哪里：single_block=全部来自同一个 block；same_row_multi_block=来自同一视觉行的多个 block（仅当坐标属于同一行时合法）。跨行/跨页拼装一律不合法，必须放弃拼装并把该项置 null + entry.reason=cross_block_assembly_refused。"
+    },
+    "work_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["company", "title", "start", "end", "block_ids", "attribution"],
+      "description": "一条工作经历。顺序 = 原文阅读顺序，不得按日期重排。",
+      "properties": {
+        "company": {
+          "$ref": "#/$defs/fact"
+        },
+        "title": {
+          "$ref": "#/$defs/fact"
+        },
+        "start": {
+          "$ref": "#/$defs/fact"
+        },
+        "end": {
+          "$ref": "#/$defs/fact"
+        },
+        "block_ids": {
+          "$ref": "#/$defs/block_ids"
+        },
+        "attribution": {
+          "$ref": "#/$defs/attribution"
+        },
+        "reason": {
+          "$ref": "#/$defs/reason"
+        },
+        "reason_note": {
+          "$ref": "#/$defs/reason_note"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "company": {
+                "required": ["value"],
+                "properties": {
+                  "value": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            "required": ["company"]
+          },
+          "then": {
+            "required": ["reason"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "title": {
+                "required": ["value"],
+                "properties": {
+                  "value": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            "required": ["title"]
+          },
+          "then": {
+            "required": ["reason"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "start": {
+                "required": ["value"],
+                "properties": {
+                  "value": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            "required": ["start"]
+          },
+          "then": {
+            "required": ["reason"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "end": {
+                "required": ["value"],
+                "properties": {
+                  "value": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            "required": ["end"]
+          },
+          "then": {
+            "required": ["reason"]
+          }
+        }
+      ]
+    },
+    "education_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["school", "major", "degree", "start", "end", "block_ids", "attribution"],
+      "description": "一条教育经历。字段拆分与 work_entry 同构：学历(degree) 与专业(major) 分开，因为筛选看的是两者。",
+      "properties": {
+        "school": {
+          "$ref": "#/$defs/fact"
+        },
+        "major": {
+          "$ref": "#/$defs/fact"
+        },
+        "degree": {
+          "$ref": "#/$defs/fact"
+        },
+        "start": {
+          "$ref": "#/$defs/fact"
+        },
+        "end": {
+          "$ref": "#/$defs/fact"
+        },
+        "block_ids": {
+          "$ref": "#/$defs/block_ids"
+        },
+        "attribution": {
+          "$ref": "#/$defs/attribution"
+        },
+        "reason": {
+          "$ref": "#/$defs/reason"
+        },
+        "reason_note": {
+          "$ref": "#/$defs/reason_note"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "school": {
+                "required": ["value"],
+                "properties": {
+                  "value": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            "required": ["school"]
+          },
+          "then": {
+            "required": ["reason"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "major": {
+                "required": ["value"],
+                "properties": {
+                  "value": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            "required": ["major"]
+          },
+          "then": {
+            "required": ["reason"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "degree": {
+                "required": ["value"],
+                "properties": {
+                  "value": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            "required": ["degree"]
+          },
+          "then": {
+            "required": ["reason"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "start": {
+                "required": ["value"],
+                "properties": {
+                  "value": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            "required": ["start"]
+          },
+          "then": {
+            "required": ["reason"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "end": {
+                "required": ["value"],
+                "properties": {
+                  "value": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            "required": ["end"]
+          },
+          "then": {
+            "required": ["reason"]
+          }
+        }
+      ]
+    },
+    "identity_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "block_ids"],
+      "description": "单值字段（name / phone / email）。value 是单个逐字片段；有多个互不相同的候选值时必须 unreadable，不得择一。",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "description": "仅 state=present 时出现。逐字照抄，不改格式、不补区号、不加空格、半角全角不动。"
+        },
+        "block_ids": {
+          "$ref": "#/$defs/block_ids"
+        },
+        "reason": {
+          "$ref": "#/$defs/reason"
+        },
+        "reason_note": {
+          "$ref": "#/$defs/reason_note"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["state"],
+            "properties": {
+              "state": {
+                "const": "present"
+              }
+            }
+          },
+          "then": {
+            "required": ["value"],
+            "properties": {
+              "block_ids": {
+                "minItems": 1
+              }
+            },
+            "not": {
+              "required": ["reason"]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["state"],
+            "properties": {
+              "state": {
+                "const": "absent"
+              }
+            }
+          },
+          "then": {
+            "required": ["reason"],
+            "properties": {
+              "block_ids": {
+                "maxItems": 0
+              }
+            },
+            "not": {
+              "required": ["value"]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["state"],
+            "properties": {
+              "state": {
+                "const": "unreadable"
+              }
+            }
+          },
+          "then": {
+            "required": ["reason"],
+            "not": {
+              "required": ["value"]
+            }
+          }
+        }
+      ]
+    },
+    "structural_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "block_ids"],
+      "description": "条目数组字段（work_experience）。state=present 时 value 为非空条目数组；absent/unreadable 时不得出现 value。",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "value": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/work_entry"
+          }
+        },
+        "block_ids": {
+          "$ref": "#/$defs/block_ids"
+        },
+        "reason": {
+          "$ref": "#/$defs/reason"
+        },
+        "reason_note": {
+          "$ref": "#/$defs/reason_note"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["state"],
+            "properties": {
+              "state": {
+                "const": "present"
+              }
+            }
+          },
+          "then": {
+            "required": ["value"],
+            "properties": {
+              "block_ids": {
+                "minItems": 1
+              }
+            },
+            "not": {
+              "required": ["reason"]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["state"],
+            "properties": {
+              "state": {
+                "const": "absent"
+              }
+            }
+          },
+          "then": {
+            "required": ["reason"],
+            "properties": {
+              "block_ids": {
+                "maxItems": 0
+              }
+            },
+            "not": {
+              "required": ["value"]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["state"],
+            "properties": {
+              "state": {
+                "const": "unreadable"
+              }
+            }
+          },
+          "then": {
+            "required": ["reason"],
+            "not": {
+              "required": ["value"]
+            }
+          }
+        }
+      ]
+    },
+    "education_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "block_ids"],
+      "description": "条目数组字段（education），与 work_experience 同构，条目键为 school/major/degree/start/end。",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "value": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/education_entry"
+          }
+        },
+        "block_ids": {
+          "$ref": "#/$defs/block_ids"
+        },
+        "reason": {
+          "$ref": "#/$defs/reason"
+        },
+        "reason_note": {
+          "$ref": "#/$defs/reason_note"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["state"],
+            "properties": {
+              "state": {
+                "const": "present"
+              }
+            }
+          },
+          "then": {
+            "required": ["value"],
+            "properties": {
+              "block_ids": {
+                "minItems": 1
+              }
+            },
+            "not": {
+              "required": ["reason"]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["state"],
+            "properties": {
+              "state": {
+                "const": "absent"
+              }
+            }
+          },
+          "then": {
+            "required": ["reason"],
+            "properties": {
+              "block_ids": {
+                "maxItems": 0
+              }
+            },
+            "not": {
+              "required": ["value"]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["state"],
+            "properties": {
+              "state": {
+                "const": "unreadable"
+              }
+            }
+          },
+          "then": {
+            "required": ["reason"],
+            "not": {
+              "required": ["value"]
+            }
+          }
+        }
+      ]
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "phone", "email", "work_experience", "education"],
+      "description": "五个字段**恒在**（五个键必须全部出现，不能因为没读到就省略）。受保护属性（年龄/性别/婚育/籍贯/民族/照片）没有对应字段——这是刻意的：不给它们位置，它们就不可能进入筛选特征。",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identity_field"
+        },
+        "phone": {
+          "$ref": "#/$defs/identity_field"
+        },
+        "email": {
+          "$ref": "#/$defs/identity_field"
+        },
+        "work_experience": {
+          "$ref": "#/$defs/structural_field"
+        },
+        "education": {
+          "$ref": "#/$defs/education_field"
+        }
+      }
+    }
+  }
+}

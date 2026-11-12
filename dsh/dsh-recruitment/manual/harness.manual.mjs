@@ -1,4 +1,10 @@
-// 单元级验收 harness（不属于插件运行时；package.json 的 files 不含 test/）。
+// 单元级验收 harness（不属于插件运行时；package.json 的 files 不含 manual/ 与 test/）。
+//
+// 为什么在 `manual/` 而不是 `test/`：`node --test`（包根）会把 `test/` 目录下的**所有**
+// .mjs 当成测试文件跑（Node 的默认发现规则里就有 `**/test/**/*.{mjs,js,cjs}`，改文件名躲不掉），
+// 而本文件 ① 需要 DSH_HOME 里的 profiles 模块 ② apply 时没有传 config，一调用就抛
+// NOT_CONFIGURED。放到非 test 目录后 Node 不再发现它（D-32 附的清理）。
+// 要跑它请显式执行：`node manual/harness.manual.mjs`。
 //
 // 它做四件事，全部基于本机 DSH 安装里的真实模块，不重写任何 DSH 逻辑：
 //   A 真实注册：用 cordis Context + @deepseek-ai/dsh-tools 的 ToolsService 挂载本插件，
@@ -8,7 +14,8 @@
 //   C 负向测试：未知参数 / 类型不符 / 缺必填 / 未知 id，捕获真实错误。
 //   D 交叉验证：把同一个坏入参交给官方 validateJsonSchemaValue(paramtersSchema)，
 //     证明「我们自己生成的 parameters schema 本身就是封闭的」。
-//   E 只读静态自检：扫描 src/ 确认没有 fs / net / DB / 写入调用。
+//   E 只读静态自检：扫描 src/ 确认没有 fs / net / DB / 写入 / 子进程调用
+//     （白名单只有 src/tools/converter.ts，理由见 §E 的扫描规则）。
 //
 // 明确边界：这是单元级调用，**不是真实模型会话**（没有 LLM 参与，没有执行策略流水线，
 // 安装包里也没有发布 lib/pipeline.js）。真实会话调用见 CONTRACT.md §7。
@@ -153,7 +160,16 @@ for (const negative of negatives.slice(0, 4)) {
 }
 
 console.log('')
-console.log('=== E 只读静态自检：src/ 里没有写路径 ===')
+console.log('=== E 只读静态自检：src/ 里没有 fs / 子进程 / 网络 / 写路径 ===')
+// 扫描规则：src/ 下的 .ts 文件不得命中下面任何模式，**除非**在 ALLOWED_SOURCE_HITS 里。
+// 白名单（只有一条，且已写进裁定台账 D-32 附）：
+//   src/tools/converter.ts 是**唯一允许起子进程的文件**，它调用本地 Python 读取器
+//   （converter/ 的 PyMuPDF 实现）拿结构化 JSON——这是复用边界，不是通用后门；
+//   它同时需要 node:fs 做「路径必须存在 + realpath」的 fail-closed 校验，故一并放行。
+// 除它之外，任何文件出现 child_process / node:fs 都是违规，必须拆到 converter.ts 或去掉。
+const ALLOWED_SOURCE_HITS = new Map([
+  ['src/tools/converter.ts', new Set(['node:fs', '子进程'])],
+])
 const forbidden = [
   ['node:fs', /node:fs/],
   ['fs', /from\s+'fs'|require\(\s*'fs'\s*\)/],
@@ -173,12 +189,20 @@ const walk = async (dir) => {
   }
 }
 await walk(join(PLUGIN_DIR, 'src'))
-console.log(`扫描 ${sourceFiles.length} 个源文件：${sourceFiles.map((path) => path.slice(PLUGIN_DIR.length + 1)).join(', ')}`)
+const relativeOf = (path) => path.slice(PLUGIN_DIR.length + 1).replaceAll('\\', '/')
+console.log(`扫描 ${sourceFiles.length} 个源文件：${sourceFiles.map(relativeOf).join(', ')}`)
 for (const [label, pattern] of forbidden) {
   const hits = []
   for (const path of sourceFiles) {
     const text = await readFile(path, 'utf8')
-    if (pattern.test(text)) hits.push(path.slice(PLUGIN_DIR.length + 1))
+    if (!pattern.test(text)) continue
+    const relative = relativeOf(path)
+    const allowed = ALLOWED_SOURCE_HITS.get(relative)
+    if (allowed !== undefined && allowed.has(label)) {
+      console.log(`  (白名单) ${relative} 命中「${label}」：converter.ts 调用本地 Python 读取器，允许`)
+      continue
+    }
+    hits.push(relative)
   }
   check(`src/ 无 ${label}`, hits.length === 0, hits.join(', '))
 }

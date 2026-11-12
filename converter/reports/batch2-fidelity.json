@@ -1,0 +1,584 @@
+{
+ "summary": {
+  "files": 45,
+  "page_coverage_fail": [],
+  "counter_fail": [
+   {
+    "file": "唐乐-简历.pdf",
+    "pages": [
+     {
+      "page": 1,
+      "missing": 0,
+      "extra": 26
+     }
+    ]
+   },
+   {
+    "file": "tangle-resume.pdf",
+    "pages": [
+     {
+      "page": 1,
+      "missing": 0,
+      "extra": 51
+     }
+    ]
+   }
+  ],
+  "invented_uri_files": [],
+  "bad_glyph_files": []
+ },
+ "per_file": [
+  {
+   "file": "resume.pdf",
+   "sha256": "55209ede4bc79eb58f933b922fa945cae885d28c7be4c3c1df6087f2dfb48efa",
+   "pages_native": 3,
+   "pages_report": 3,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "AI产品经理简历.pdf",
+   "sha256": "f1171f617020ca9027173cbc6d8040f4a38e5acaa3000cac281bbb72637e2464",
+   "pages_native": 2,
+   "pages_report": 2,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "简历.pdf",
+   "sha256": "6bc260295320a00258f3943e5c10b79467098944ee8120080f016622d0c43084",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "唐乐-简历.pdf",
+   "sha256": "98244bb1eab957ef1be07ffac2f7c6e760f30e419bc07794f47221920911572f",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": false,
+   "bad_pages": [
+    {
+     "page": 1,
+     "missing": 0,
+     "extra": 26
+    }
+   ],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "tangle-resume.pdf",
+   "sha256": "f8fb0a0455b9636dc4170cb4ffd3bf04e1d28ce977b13dea2bb972b719205391",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": false,
+   "bad_pages": [
+    {
+     "page": 1,
+     "missing": 0,
+     "extra": 51
+    }
+   ],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "resume.pdf",
+   "sha256": "d3870021bc00b123c5733971a12c744d9a71b5ed3b643ad45d7e0394da9716e9",
+   "pages_native": 3,
+   "pages_report": 3,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "Prabhu Kiran Konda Resume.pdf",
+   "sha256": "1df94adcec53b51d861413b9fc6568e4aa7b18b26acefaada67936abf8dd9351",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "任悦平-27届产品-研究生.pdf",
+   "sha256": "e6a42b0d920e2504fdfcbd140ee51902b0f85863cc905d191d90cdbe4628255b",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "Chenghao_s_CV__2410_.pdf",
+   "sha256": "6f6dd3f49d7975f856c3472088ca3c55c339ec498c8ba06f46eefbda62f6ad25",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "Chenghao_s_CV__2610__Chinese.pdf",
+   "sha256": "8a762ae8b022c6bee4ad8ed79ae286c37e6bb283f9825f226d35368785969f5b",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "zhaozeyu-resume.pdf",
+   "sha256": "b9155e19e88cf15b581d35bcd28bbb1e455d523bd3efa956689d2e4adf71fd87",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "赵泽宇｜AI 产品经理简历｜紧凑优化版_副本.pdf",
+   "sha256": "409e6d0f8651a66def29f5962196b2aa17b9f5fc09f1e01d77983398ea05c89c",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "Penkun-Lee-graduates-resume.pdf",
+   "sha256": "15d5350f76f8ab9a8f7c806a6a11044503712e961e56fe06b6db0e182d6a03d8",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "Penkun-Lee-resume-20201016(update).pdf",
+   "sha256": "96aefe29da77952e178e4ac2ae7d9908c158acff6db0b10f327457f8d4c65fd1",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "简历_何雪红_内容获客版.pdf",
+   "sha256": "b92cf530de2463f8cafa3213c07432c5a8d39584a30f7c360a91a43821c0bf4d",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "落地数据页_生财GEO.pdf",
+   "sha256": "6cf32bd39d30395080dc253a1c7075a87f77ce1086be70bd73e7636b0c0839f4",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "GEO信源分析报告_五大AI平台实测.pdf",
+   "sha256": "2ac564b40c861b94339032cea80c943c14a8baedec6393b4cf4bb9b8bed7e4bd",
+   "pages_native": 6,
+   "pages_report": 6,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "John_Yumul_Resume.pdf",
+   "sha256": "6f6951ca9b0a76853e60e099095b0feb8445cce90870af608f9925e11f4ee8c8",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "my_resume.pdf",
+   "sha256": "ae6e6f94d5308bb5cfdb6ac403c32b1aa37aa12151ca8a76f93561215b2199e1",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "Jeevan_Siddharth_BC_Resume.pdf",
+   "sha256": "402739654fe8c8b55dc190039047ff18ae5f9402b0b28d7d4edbefdb0b0b3236",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "Jeevan_Siddharth_FDE_Resume.pdf",
+   "sha256": "57c62b6f21e0a1f680f9e68f6409401a9ad48d0e53e6eba0ad6390ef1eb109dc",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "Jeevan_Siddharth_SWE_Resume.pdf",
+   "sha256": "131ac3ecd0292ffe583add718fb5c19d1388c61a47a4ebe40029a47b671cb4cb",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "高涵-15840149228-AI产品经理.pdf",
+   "sha256": "8b878b55e9697b271d5c84de05372f064f851da2efb13e4e69662ba0c5b62c1d",
+   "pages_native": 3,
+   "pages_report": 3,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "高涵-杭州-产品经理.pdf",
+   "sha256": "4224055f28ce18cd93bae97c03ad38886c690f9164f4ddd3add0ed0a8d9aa727",
+   "pages_native": 3,
+   "pages_report": 3,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "Resume-HanJiaxue.pdf",
+   "sha256": "bbe01f86b44f6c54869905425610578c2e506a3f2584694ecfb4f96a9601688b",
+   "pages_native": 2,
+   "pages_report": 2,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "works_portfolio_full_v2.pdf",
+   "sha256": "5e3c044ce45349fe47f480fcbeb11172d7af900da61485b97bb068bd74145c58",
+   "pages_native": 7,
+   "pages_report": 7,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "he-jiaxing-ai-product-manager-resume.pdf",
+   "sha256": "6280d953796220e2fa7092b3814fd64444db84774da700f6f941c90569c45189",
+   "pages_native": 2,
+   "pages_report": 2,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "宠物寄养数字化服务竞品分析报告.pdf",
+   "sha256": "9b87da3f5836a3088fe0be9526e2f136c9366da031642440f269db15dd433a82",
+   "pages_native": 4,
+   "pages_report": 4,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "宠物寄养行业机会分析报告.pdf",
+   "sha256": "b2704f36e2cd7f0b71c01a75bab3efbac92bb7e2dbb08291940de7f12e5a7729",
+   "pages_native": 6,
+   "pages_report": 6,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "梁先生-AI产品经理-13年毕业.pdf",
+   "sha256": "0064ae0f9d1fed0d73cb58b500bb36a44975d82578c72e4230d1c913092827ff",
+   "pages_native": 8,
+   "pages_report": 8,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "Akshay_Kadam_Resume.pdf",
+   "sha256": "87433f6c4f5396e09ef85952e83327412b602c7bc681f86eba3fad7f6804e950",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "resume.pdf",
+   "sha256": "7aaa33818f1b6bbd6afbec2834839c841ab2c29f5df897c082e90dee5625849a",
+   "pages_native": 2,
+   "pages_report": 2,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "Zhang-Shuhui-AI-Product-Manager-Resume-Optimized.pdf",
+   "sha256": "4b4b0901e7042492798d8e77a32aaeb2146068d8d1b074517ec17a55a5013126",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "Zhang-Shuhui-AI-Product-Manager-Resume-Photo-Project-Emphasis.pdf",
+   "sha256": "6cf29b9291db0e2ea81de9e49358a5c14638cfad06a5d6c535da9f47ffff0c5f",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "Zhang-Shuhui-AI-Product-Manager-Resume-Project-Emphasis.pdf",
+   "sha256": "faafe2a35f5693e8914cf08fa17bb2fec98059d88a31d7bc566d2bfc11dd29c4",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "Ashish_Gupta_AI_PO_Resume.pdf",
+   "sha256": "34d391dac4f9e86b92f9d1fb4c1db5cd19c4ccf89ec94b463678622241f105cb",
+   "pages_native": 2,
+   "pages_report": 2,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "resume.pdf",
+   "sha256": "da8f6a9751aea0ca6d625a45499dcf546a94d54d334ace1cf8ab3bf34b5a607b",
+   "pages_native": 2,
+   "pages_report": 2,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "resume.pdf",
+   "sha256": "f9cabc39991f108125a08020f1b0aa28c3e035112fe494a884a638b8a09a4e14",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "resume.pdf",
+   "sha256": "5a716ea4da580d012afb3cae135f46c92b36bb9de26c4d94bd65abece585ae5b",
+   "pages_native": 4,
+   "pages_report": 4,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "cad-PM-CV.pdf",
+   "sha256": "983f8716b4362c4bb679ac06266b41119ff0785144d3f4f1225a48a0d5ed9ce0",
+   "pages_native": 2,
+   "pages_report": 2,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "anjingwen-resume.pdf",
+   "sha256": "07dc34688d31e6a9c832353d24d549c74b6f1879c03e0442032c9150e380292d",
+   "pages_native": 3,
+   "pages_report": 3,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "贾晓伟-产品经理.pdf",
+   "sha256": "07bf2db32d523a6890749a88dd15909a2776143ee0b5470a98a7e87cd21c9942",
+   "pages_native": 2,
+   "pages_report": 2,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "TuckerAustenScrumMaster.pdf",
+   "sha256": "b132ffffc6492fefb9ec8fed9b98ee39e7e860bf6a8256c98adc8c49fca43c15",
+   "pages_native": 2,
+   "pages_report": 2,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "KEC CVPR.pdf",
+   "sha256": "3f61a96e0377409a208eb982a9e52c141e6735b911a824396457f0706d75ddeb",
+   "pages_native": 20,
+   "pages_report": 20,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  },
+  {
+   "file": "Aryan_Panwar_BA_Resume.pdf",
+   "sha256": "134ddf2ce52e3a11839082caafa65ea6aac1609089f41433f774ab4ebe8a66d7",
+   "pages_native": 1,
+   "pages_report": 1,
+   "page_coverage_ok": true,
+   "counter_ok": true,
+   "bad_pages": [],
+   "invented_uri": [],
+   "invented_uri_count": 0,
+   "bad_glyph_in_body": 0
+  }
+ ]
+}

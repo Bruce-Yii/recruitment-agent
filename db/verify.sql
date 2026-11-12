@@ -70,20 +70,34 @@ do $$
 declare
   v_bad  text;
   v_n    integer;
+  r      record;
 begin
-  -- 2.1 每张表都有单列 uuid 主键（event_inbox 按 docs/03 §9 用 event_id）
+  -- 2.1 每张表都有单列 uuid 主键，且列名在封闭白名单 {id, event_id} 内。
+  --
+  -- [D-36 2026-11-13] 白名单**不放宽**：0003 的三张运营表已把 run_id / item_id /
+  --   audit_id 改名为 id，而不是把旧名塞进白名单。D-36 的理由是「一条约定必须
+  --   一条到底」，开口子会让以后每张新表都要求例外。
+  -- [D-47 2026-11-13] 同批裁定只给 STRUCT-05 开豁免，STRUCT-01 **没有**豁免，
+  --   所以这里也不放宽成「随便什么名字的单列主键即可」。
+  -- 唯一例外 event_inbox.event_id 来自 docs/03 §9，且是封闭集合（只此一个）。
+  -- 顺带把「uuid」这半个条件真正断言掉：旧写法只比对列名，消息写着「单列 uuid
+  --   主键」却从不检查类型 —— 名字对而类型不是 uuid 也会 PASS。
   select string_agg(c.relname, ', ') into v_bad
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = 'recruitment' and c.relkind = 'r'
      and not exists (
-       select 1 from pg_constraint p
+       select 1
+         from pg_constraint p
+         join pg_attribute a on a.attrelid = p.conrelid and a.attnum = p.conkey[1]
+         join pg_type t on t.oid = a.atttypid
         where p.conrelid = c.oid and p.contype = 'p'
-          and (select array_agg(a.attname::text) from pg_attribute a
-                where a.attrelid = c.oid and a.attnum = any(p.conkey)) in (array['id'], array['event_id']));
+          and array_length(p.conkey, 1) = 1        -- 单列
+          and a.attname in ('id', 'event_id')      -- 封闭白名单，只此两名
+          and t.typname = 'uuid');                 -- 类型必须真是 uuid
   if v_bad is not null then
-    raise exception 'STRUCT-01 这些表的主键不是单列 id/event_id：%', v_bad;
+    raise exception 'STRUCT-01 这些表的主键不是单列 uuid 的 id（唯一例外 event_inbox.event_id）：%', v_bad;
   end if;
-  raise notice 'STRUCT-01 PASS 每张表都是单列 uuid 主键（event_inbox = event_id）';
+  raise notice 'STRUCT-01 PASS 每张表都是单列 uuid 主键，列名 = id（event_inbox = event_id）';
 
   -- 2.2 除 organization 外每张表都有 tenant_id（多租户隔离的最小前提）
   select string_agg(c.relname, ', ') into v_bad
@@ -135,19 +149,51 @@ begin
   raise notice 'STRUCT-04 PASS 所有状态/枚举列都有 CHECK 约束';
 
   -- 2.5 每张有状态列的表都要有 fn_row_guard 触发器（迁移必须带审计）
+  --
+  -- [D-47 2026-11-13] 豁免 conversion_run / review_queue（封闭集合，理由如下）：
+  --   * conversion_run：append-only，**没有 UPDATE 路径**
+  --       （trg_conversion_run_immutable 让任何列都改不了），
+  --       套 fn_row_guard 需要加 status_changed_* 并向 event_inbox 写事件，
+  --       等于接一条永不执行的触发器 —— 属 R2 假接线。
+  --       真实守卫：trg_conversion_run_immutable / trg_conversion_run_no_delete
+  --   * review_queue：专用状态机 fn_review_transition_allowed + review_audit 留痕，
+  --       状态语义不是业务对象的 status 轴。
+  --       真实守卫：trg_review_queue_before_update / trg_review_queue_audit
+  -- 豁免不是免检：下面逐条断言这些真实守卫存在，否则本断言仍然失败。
+  -- （表不存在时跳过 —— 保持 verify.sql 在只有 0001(+0004) 的库上也能跑。）
   select string_agg(c.relname, ', ') into v_bad
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
     join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
    where n.nspname = 'recruitment' and c.relkind = 'r'
      and a.attname in ('status', 'lifecycle_status', 'transcript_status')
+     and c.relname not in ('conversion_run', 'review_queue')     -- D-47 豁免
      and not exists (
        select 1 from pg_trigger g
         where g.tgrelid = c.oid and not g.tgisinternal
           and g.tgfoid = 'recruitment.fn_row_guard'::regproc);
   if v_bad is not null then
-    raise exception 'STRUCT-05 这些表有状态列但没有 fn_row_guard 触发器：%', v_bad;
+    raise exception 'STRUCT-05 这些表有状态列但没有 fn_row_guard 触发器（D-47 只豁免 conversion_run / review_queue）：%', v_bad;
   end if;
-  raise notice 'STRUCT-05 PASS 所有状态表都有状态迁移审计触发器';
+
+  for r in
+    select * from (values
+      ('conversion_run', 'trg_conversion_run_immutable'),
+      ('conversion_run', 'trg_conversion_run_no_delete'),
+      ('review_queue',   'trg_review_queue_before_update'),
+      ('review_queue',   'trg_review_queue_audit')
+    ) as v(tbl, tname)
+  loop
+    if to_regclass('recruitment.' || r.tbl) is not null
+       and not exists (
+         select 1 from pg_trigger g
+          join pg_class c on c.oid = g.tgrelid
+          join pg_namespace n on n.oid = c.relnamespace
+         where n.nspname = 'recruitment' and c.relname = r.tbl
+           and g.tgname = r.tname and not g.tgisinternal) then
+      raise exception 'STRUCT-05 豁免守卫缺失：%.%（D-47 的豁免以这些触发器为条件）', r.tbl, r.tname;
+    end if;
+  end loop;
+  raise notice 'STRUCT-05 PASS 状态表都有 fn_row_guard；conversion_run / review_queue 按 D-47 豁免，真实守卫已逐条核对';
 
   -- 2.6 历史事实表必须禁删
   select count(*) into v_n
@@ -328,6 +374,29 @@ insert into recruitment.organization (id, name) values
   ('aaaaaaaa-0000-0000-0000-000000000001', '租户甲'),
   ('aaaaaaaa-0000-0000-0000-000000000002', '租户乙');
 
+-- [D-34] 0004 给 application.current_stage_code 加了外键，夹具租户必须有自己的阶段目录。
+-- to_regclass 保护：未跑 0004 时该表不存在，本块自动跳过 —— verify.sql 在"有/无 0004"两种情况下都能跑。
+do $d34$
+begin
+  if to_regclass('recruitment.stage_catalog') is not null then
+    insert into recruitment.stage_catalog (tenant_id, code, name, sort_order, in_v1_scope) values
+      ('aaaaaaaa-0000-0000-0000-000000000001','S1','招聘需求发现',1,false),
+      ('aaaaaaaa-0000-0000-0000-000000000001','S2','Requisition 创建与审批',2,false),
+      ('aaaaaaaa-0000-0000-0000-000000000001','S3','Job / JD / Rubric 设计',3,true),
+      ('aaaaaaaa-0000-0000-0000-000000000001','S4','Job Posting 发布',4,false),
+      ('aaaaaaaa-0000-0000-0000-000000000001','S5','人才获取 / Sourcing',5,false),
+      ('aaaaaaaa-0000-0000-0000-000000000001','S6','简历接入与处理（Intake）',6,true),
+      ('aaaaaaaa-0000-0000-0000-000000000001','S7','初筛 / Screening',7,true),
+      ('aaaaaaaa-0000-0000-0000-000000000001','S8','面试规划与排期',8,true),
+      ('aaaaaaaa-0000-0000-0000-000000000001','S9','面试执行与材料获取',9,true),
+      ('aaaaaaaa-0000-0000-0000-000000000001','S10','综合评价与招聘决策',10,true),
+      ('aaaaaaaa-0000-0000-0000-000000000001','S11','Offer 与入职交接',11,false),
+      ('aaaaaaaa-0000-0000-0000-000000000001','S12','人才沉淀与复盘',12,false)
+    on conflict (tenant_id, code) do nothing;
+  end if;
+end
+$d34$;
+
 insert into recruitment.department (id, tenant_id, name) values
   ('aaaaaaaa-0000-0000-0000-000000000011', 'aaaaaaaa-0000-0000-0000-000000000001', '研发部');
 
@@ -395,7 +464,7 @@ insert into recruitment.application (id, tenant_id, candidate_id, job_id, job_ve
   ('aaaaaaaa-0000-0000-0000-000000000071', 'aaaaaaaa-0000-0000-0000-000000000001',
    'aaaaaaaa-0000-0000-0000-000000000061', 'aaaaaaaa-0000-0000-0000-000000000041',
    'aaaaaaaa-0000-0000-0000-000000000042', 'aaaaaaaa-0000-0000-0000-000000000044',
-   'aaaaaaaa-0000-0000-0000-000000000021', 'aaaaaaaa-0000-0000-0000-000000000064', 'SCREENING');
+   'aaaaaaaa-0000-0000-0000-000000000021', 'aaaaaaaa-0000-0000-0000-000000000064', 'S7');
 
 insert into recruitment.interview_template_version (id, tenant_id, job_id, template_code, round_no, version_no, payload_hash, rubric_version_id) values
   ('aaaaaaaa-0000-0000-0000-000000000081', 'aaaaaaaa-0000-0000-0000-000000000001',
@@ -780,3 +849,4 @@ rollback;
 \echo '=================================================================='
 \echo ' VERIFY PASS：结构断言 + 状态机覆盖 + 对象覆盖 + 32 条负向测试全部通过'
 \echo '=================================================================='
+
