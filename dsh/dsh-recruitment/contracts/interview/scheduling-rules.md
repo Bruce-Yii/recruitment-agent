@@ -1,13 +1,12 @@
-# 面试安排规则（S9 · interview scheduling）
+# 面试安排规则（S8 · interview scheduling）
 
 **日期**：2026-11-13
-**范围**：S9「面试安排」——从「这一轮要面」到「某一时刻、某几个人、某个会议，已被排定 / 改期 / 取消」。
-**不管**：谁该进面试（S8 筛选结论，见 `../job-screening/screening-rules.md`）、面完的转写怎么取（见 `transcript-rules.md`）、面评写什么与最终决策（S11）。
+**范围**：S8「面试安排」——从「这一轮要面」到「某一时刻、某几个人、某个会议，已被排定 / 改期 / 取消」。
+**不管**：谁该进面试（S7 筛选结论，见 `../job-screening/screening-rules.md`）、面完的转写怎么取（见 `transcript-rules.md`）、面评写什么与最终决策（S10）。
 **性质**：合同。不含实现代码、不含 DDL。所有「必须 / 不得」都是可判定的断言，不是建议。
-**上位口径**：与本文冲突时依次以 `work/handoff/15-architecture-hv.md`（S9 定位）、`db/SCHEMA.md` §8/§9/§10（INV / XINV / APP）、`work/control/DECISIONS-2026-11-12.md`（D-33 / D-46）为准。
+**上位口径**：与本文冲突时依次以 老仓 `work/handoff/15-architecture-hv.md`（新仓未收录；阶段码口径已由 D-22 与 `db/stage_catalog` 取代，见 `contracts/STAGE-CODES.md`）（S8 定位）、`db/SCHEMA.md` §8/§9/§10（INV / XINV / APP）、`docs/17-decision-ledger.md`（D-33 / D-46）为准。
 
-> **阶段编号提醒（R5 单一权威）**：本文的 **S9 = 面试安排**、**S10 = 面试执行与材料获取**，沿用 `15-architecture-hv.md:46-49`。
-> 而 `db/migrations/0002_seed.sql:240-242` 的 `stage_catalog` 里 **S8 = 面试规划与排期、S9 = 面试执行与材料获取** —— 两者**错位一格**。
+> **阶段编号提醒（R5 单一权威）**：本文的 **S8 = 面试规划与排期**、**S9 = 面试执行与材料获取**，与 `db/migrations/0002_seed.sql:240-241` 的 `stage_catalog` **逐字一致**（`D-22` 定生命周期编号为唯一口径，见 `contracts/STAGE-CODES.md`）。
 > 落库写 `interview.stage_code` 时**以 `stage_catalog` 的 code 为准**（见 §13 G-4），**不得**把本文的章节号当 stage code 写进库。
 
 ---
@@ -233,7 +232,7 @@ SATISFIED(i) = { r ∈ REQUIRED(i) : ∃ s ∈ scorecard : s.interviewer_id = r.
 EVALUATION_READY(i) = REQUIRED(i) = SATISFIED(i) ∧ record_ok(i) ∧ traceable(i)
 ```
 
-`record_ok` / `traceable` 属 S11（`APP-05`、`docs/04 §18`）；本文只负责 `REQUIRED = SATISFIED` 这一半。
+`record_ok` / `traceable` 属 S10（`APP-05`、`docs/04 §18`）；本文只负责 `REQUIRED = SATISFIED` 这一半。
 
 ### 5.2 不可代填：判定式与"谁来守"
 
@@ -310,7 +309,7 @@ ALREADY_SCHEDULED(args) ⟺ ∃ i ∈ interview :
 ### 7.1 什么时候绑
 
 `docs/04 §10` 逐字：**「Meeting 与 Interview 必须在面试排期时提前绑定，不能等转写生成后才靠 Meeting ID 临时找」**。
-所以绑定是**排期动作的一部分**，不是 S10 的补救动作：
+所以绑定是**排期动作的一部分**，不是 S9 的补救动作：
 
 | 时点 | 绑什么 | `binding_method` |
 |---|---|---|
@@ -354,18 +353,18 @@ binding_state(i) =
 
 必须走：`business_task` → `durable_effect(status='PENDING' → 'CLAIMED' → 'SENT')` → 平台回读 → `CONFIRMED`（`sent_at + confirmed_at` 双非空，`ck_durable_effect_confirmed`）。且 `docs/04 §7` 逐字：**「Graph 的 202 Accepted 仅表示请求被接受处理，不等于收件人已收到邮件」** —— 同理，日历 API 返回 200 不等于候选人收到了邀请。**没有回读就不算发出**（`XINV-10`）。
 
-### 7.5 S9 → S10 的因果链（跨文件不变量，必须记住）
+### 7.5 S8 → S9 的因果链（跨文件不变量，必须记住）
 
 ```
 没有 meeting  →  没有 transcript_artifact（meeting_id NOT NULL）
 没有 binding  →  事件到达时无法定位 interview → NEEDS_LINKING
 ```
 
-也就是说：**§7.3 的"绑不上"直接决定 §9/`transcript-rules.md` 的"取不到"**。排期时省掉的那一步，会在 S10 变成一条 24 小时后才被发现的人工待办。这是本文件唯一的跨阶段后果，写在这里防止两个阶段各自"看起来都没错"。
+也就是说：**§7.3 的"绑不上"直接决定 §9/`transcript-rules.md` 的"取不到"**。排期时省掉的那一步，会在 S9 变成一条 24 小时后才被发现的人工待办。这是本文件唯一的跨阶段后果，写在这里防止两个阶段各自"看起来都没错"。
 
 ---
 
-## 8. 面试状态机（S9 视角）· SC-M
+## 8. 面试状态机（S8 视角）· SC-M
 
 `ck_interview_status`（`0001 L959-961`）的 8 个值与允许的边（`APP-06`：边集由领域服务控制，不写进 DB）：
 
@@ -389,13 +388,13 @@ binding_state(i) =
 | `SCHEDULED → SCHEDULED`（仅时间变） | 改期 | **必须显式写 `interview.rescheduled` 事件**（`fn_row_guard` 不会写，§4.4） | §11-① |
 | `CANCELLED → SCHEDULED` | 复活重排 | 同改期 | §6.3 |
 | `SCHEDULED → CANCELLED` | 取消 | `reason` 非空；§6.2 | `SC-X5` |
-| `SCHEDULED → IN_PROGRESS` | S10（会议开始） | 有 `actual_start_at` 或人工确认 | `docs/04 §18` |
-| `IN_PROGRESS → POST_INTERVIEW` | S10（会议结束） | 有 `actual_end_at` 或人工确认 | 同上 |
-| `POST_INTERVIEW → EVALUATION_READY` | S11 | `REQUIRED = SATISFIED` + `record_ok` + `traceable` | `APP-05` |
-| `EVALUATION_READY → DECIDED` | S11 | `decision` 行存在 | `INV-9` |
+| `SCHEDULED → IN_PROGRESS` | S9（会议开始） | 有 `actual_start_at` 或人工确认 | `docs/04 §18` |
+| `IN_PROGRESS → POST_INTERVIEW` | S9（会议结束） | 有 `actual_end_at` 或人工确认 | 同上 |
+| `POST_INTERVIEW → EVALUATION_READY` | S10 | `REQUIRED = SATISFIED` + `record_ok` + `traceable` | `APP-05` |
+| `EVALUATION_READY → DECIDED` | S10 | `decision` 行存在 | `INV-9` |
 | `SCHEDULED → NO_SHOW` | 人 | 会议已到点且无 `actual_start_at` | — |
 
-**本文不实现** `IN_PROGRESS` 之后的边（属 S10/S11），只登记"哪些边在本文的写工具里被允许"：`CREATE` / `RESCHEDULE` / `CANCEL` 三种 intent 覆盖的边就是 §8 表里带"排期/改期/取消"字样的那些。
+**本文不实现** `IN_PROGRESS` 之后的边（属 S9/S10），只登记"哪些边在本文的写工具里被允许"：`CREATE` / `RESCHEDULE` / `CANCEL` 三种 intent 覆盖的边就是 §8 表里带"排期/改期/取消"字样的那些。
 
 ---
 
@@ -436,7 +435,7 @@ binding_state(i) =
 | # | 容易写成 | 为什么错 | 裁决 |
 |---|---|---|---|
 | **①** | "改期就 `UPDATE` 一下时间，反正状态没变也不用写事件" | `fn_row_guard` 在状态不变时**只自增版本、不写事件**，且禁止手改 `status_changed_at`（`0001 L102-120`）。于是这场面试的时间变化**零痕迹**：事后没人能回答"它原来排几点、谁改的" | 服务层**必须**显式写 `interview.rescheduled`，`payload` 含 `from/to/actor_id/reason`（§4.4）。审计不能指望触发器 |
-| **②** | 把 `RESCHEDULED` 当成"改过期的永久标记"，新时间也保持 `RESCHEDULED` | 该状态在 `ck_interview_scheduled` 里**豁免时间必填**（`L968-970`）；一旦把它当终态，就会出现"没有时间的面试永远合法"，S10 无从判断该不该取材料 | `RESCHEDULED` = **当前无有效时间**；给了新时间必须回 `SCHEDULED`（§4.2 表） |
+| **②** | 把 `RESCHEDULED` 当成"改过期的永久标记"，新时间也保持 `RESCHEDULED` | 该状态在 `ck_interview_scheduled` 里**豁免时间必填**（`L968-970`）；一旦把它当终态，就会出现"没有时间的面试永远合法"，S9 无从判断该不该取材料 | `RESCHEDULED` = **当前无有效时间**；给了新时间必须回 `SCHEDULED`（§4.2 表） |
 | **③** | "取消后想再面同一轮同一场 → 直接 `CREATE` 一条新的" | `uq_interview_slot` 仍占着 `(app, round, slot)` → `23505`。换成新 `slot_code` 绕过，会让"这一轮到底几场"永久说不清 | 取消后重排**只能** `RESCHEDULE` 同一行（§6.3）；`ALREADY_SCHEDULED` 定义涵盖 CANCELLED（§6.4） |
 | ④ | 因为绑不上会议就拒绝排期，或把 `meeting` 建成一个占位行（空 ID） | 前者让"日历授权过期"变成"不能面试"；后者违反 `ck_meeting_identity`（`L1007`），只能靠编造 ID 通过 | 排定成立 + `UNBOUND` + 补绑任务（§7.3）。**永不编造平台 ID** |
 | ⑤ | 把"时长"从 `scheduled_end_at - scheduled_start_at` 反推，允许 `end` 为空 | 库允许 `end` 空（`ck_interview_window` 只在两者都非空时比较，`L966`），于是"没有时长的面试"能存进去；冲突判定会退化成"点 vs 区间" | 契约严于库：`scheduled_end_at` **必填**，`duration_minutes` 是入参不是推导值（§2 A5、§13 S-2） |
@@ -473,7 +472,7 @@ binding_state(i) =
 | **G-1** | `interview` **没有** `delivery_mode`（形式）列，也**没有** `cancel_reason` 列（`0001 L930-971`） | "形式"无法落库（A7）；取消理由只能进事件 `payload` | `0002`: `interview.delivery_mode text not null default 'VIDEO'` + CHECK `in ('VIDEO','ONSITE','PHONE')`；`interview.cancel_reason text` | v1.0 只接受 `VIDEO`；取消理由落 `interview.cancelled` 事件 `payload.reason` |
 | **G-2** | `meeting` **没有计划时间列**（只有 `actual_start_at/actual_end_at`，`L1000-1001`） | 改期后"旧会议原本排几点"无结构化留痕；§3.1 的 `EW` 对未发生的会议只能靠 `interview.scheduled_*` | `0002`: `meeting.scheduled_start_at/end_at` | 旧时间只存在于 `interview.rescheduled` 事件；`meeting` 只记 `REPLACED` 事实 |
 | **G-3** | `interviewer` **没有** `status`/`removed_at`/`record_version`，且在禁删名单里（`L973-990`、`L1725`） | 请假/换人无法结构化表达（§4.3）；并发修改无版本保护（§9 SC-K7） | `0002`: `interviewer.status text` + CHECK `('INVITED','CONFIRMED','DECLINED','REMOVED')`、`removed_at`、`record_version` + `fn_touch` | `required_scorecard=false` + `interviewer.withdrawn` 事件；面试官变更时 touch `interview` 借版本 |
-| **G-4** | `interview.stage_code` 默认 `'INTERVIEW'`（`L937`），**不在 S1–S12**，且**没有**外键到 `stage_catalog` | 与 D-22（S1–S12 唯一口径）冲突；`application.current_stage_code` 已被 0004 加了外键，`interview` 没有 → D-23 的问题在另一张表复发 | `0002`: 默认值改 `'S8'`（`stage_catalog` 里"面试规划与排期"）+ 复合外键 `(tenant_id, stage_code) → stage_catalog(tenant_id, code)` | 写入端**必须**显式给 `stage_code`，取值只能来自 `stage_catalog`；本章节号 (S9/S10) **不是** stage code（见文首提醒） |
+| **G-4** | `interview.stage_code` 默认 `'INTERVIEW'`（`L937`），**不在 S1–S12**，且**没有**外键到 `stage_catalog` | 与 D-22（S1–S12 唯一口径）冲突；`application.current_stage_code` 已被 0004 加了外键，`interview` 没有 → D-23 的问题在另一张表复发 | `0002`: 默认值改 `'S8'`（`stage_catalog` 里"面试规划与排期"）+ 复合外键 `(tenant_id, stage_code) → stage_catalog(tenant_id, code)` | 写入端**必须**显式给 `stage_code`，取值只能来自 `stage_catalog`；本章节号 (S8/S9) **不是** stage code（见文首提醒） |
 | **G-5** | `execution_mandate` 的 CHECK **未禁** `submit_scorecard`（`L1648`） | 库层不阻止 agent 代填面评（§5.2、§11-⑧） | `0002`: 把 `submit_scorecard` 加进禁用动作数组 | 契约用 `SC-I1`（actor 比对）+ `SC-I5`（静态扫描）守 |
 | **G-6** | `meeting_binding.record_version` / `meeting.record_version` 有列但**没有触发器自增**（只在禁删名单里，`L1726`） | 用 `expected_record_version` 保护 meeting/binding 更新是**假的**（永远相等） | `0002`: 给两表加 `fn_touch` | 契约**不得**声称对 meeting/binding 做乐观并发；靠 §9 SC-K7 在 `interview` 上借版本 |
 
@@ -491,9 +490,9 @@ binding_state(i) =
 
 | 代号 | 位置 | 本文用它裁定了什么 |
 |---|---|---|
-| `15-arch §1` | `work/handoff/15-architecture-hv.md:46-49` | S9 = 面试安排（阶段编号口径） |
-| `15-arch §5` | 同上 `:143` | v1.0 S9 = "简版"（单形式、不查空闲、不建会） |
-| `docs/04 §4` | `work/handoff/04-connectors-and-transcript.md:53-57` | 9 类排期约束的取舍；会议室不是默认约束 |
+| `15-arch §1` | 老仓 `work/handoff/15-architecture-hv.md:46-49`（新仓未收录；阶段码口径已由 D-22 与 `db/stage_catalog` 取代，见 `contracts/STAGE-CODES.md`） | S8 = 面试安排（阶段编号口径） |
+| `15-arch §5` | 同上 `:143`（同一老仓文件，新仓未收录） | v1.0 S8 = "简版"（单形式、不查空闲、不建会） |
+| `docs/04 §4` | `docs/04-connectors-and-transcript.md:53-57` | 9 类排期约束的取舍；会议室不是默认约束 |
 | `docs/04 §10` | 同上 `:96-99` | 会后不能才绑；处理与评价并行 |
 | `docs/04 §11` | 同上 `:104-112` | 1 Interview : N Meeting；改期/断线的关系 |
 | `docs/04 §12` | 同上 `:115-125` | 绑定靠平台 6 维 ID；禁止标题/姓名/模糊时间 |
@@ -511,6 +510,6 @@ binding_state(i) =
 | `0001 L213-230` | 同上 | 已提交面评冻结 |
 | `0001 L1648` | 同上 | mandate 禁用动作清单（未含 `submit_scorecard`） |
 | `0004 L55-72` | `db/migrations/0004_stage_catalog.sql` | `stage_catalog` 结构（G-4 的外键目标） |
-| `D-18` | `work/control/DECISIONS-2026-11-12.md:65` | `SET LOCAL` + 不缓存版本号 |
+| `D-18` | `docs/17-decision-ledger.md` | `SET LOCAL` + 不缓存版本号 |
 | `D-33` | 同上 `:196` | v1.0 不做权限矩阵 → 本文**不写**任何"谁能排期"的拦截 |
 | `D-46` | 同上 `:299` | 方法论：不为罕见场景设闸门（§3.4 / §11 注） |

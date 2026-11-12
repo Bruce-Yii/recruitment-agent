@@ -1,4 +1,4 @@
-# tool-contracts.md · S3/S8 两个工具的形状
+# tool-contracts.md · S3/S7 两个工具的形状
 
 **版本**：`tool-contracts 1.0.0`（与 `job-rubric 1.0.0` / `screening 1.0.0` 同一基线）
 **日期**：2026-11-13
@@ -490,7 +490,7 @@ Error: BLOCKED_BY_REVIEW: {"code":"BLOCKED_BY_REVIEW","reason_code":"HUMAN_TASK_
 | 不规定 | 归谁 |
 |---|---|
 | SQL 怎么写、索引怎么建 | 实现方（且不得在工具层拼 SQL 字符串） |
-| 解析器怎么产 `parsed_fields` | S6/S7 契约（`converter` 现状见 `resume_fields.py`） |
+| 解析器怎么产 `parsed_fields` | S6 契约（含身份解析）（`converter` 现状见 `resume_fields.py`） |
 | `decision` 怎么落、谁来签 | 写侧 + `APP-07` + `ck_execution_mandate_no_business_approval` |
 | 岗位关闭后怎么转岗/归档 | `job-rubric-rules.md` §7.3（人工动作，工具不做） |
 | 队列 UI 长什么样 | 前端；本契约只保证 `required_human_action` 与 `blocking_items[]` 够用 |

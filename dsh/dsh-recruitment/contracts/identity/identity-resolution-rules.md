@@ -1,8 +1,8 @@
-# 身份解析与合并规则（S7 · candidate identity resolution）
+# 身份解析与合并规则（S6 的一部分 · candidate identity resolution）
 
 **日期**：2026-11-13
-**范围**：S7「身份解析与合并」——一份新材料进来后，**它是谁、要不要并到已有档案、并错了怎么拆**。
-**不管**：材料怎么进来（S6 接入 / Intake 三层）、进来以后怎么筛（S8）。本文只裁决身份。
+**范围**：S6（简历接入与处理）的一部分——「身份解析与合并」：一份新材料进来后，**它是谁、要不要并到已有档案、并错了怎么拆**。
+**不管**：材料怎么进来（S6 接入 / Intake 三层）、进来以后怎么筛（S7）。本文只裁决身份。
 **状态**：规则已闭环，可判定；**3 处依赖库变更（§13 G-1/G-3/G-4），未落地前对应动作必须 fail-closed**，见 §13。
 **性质**：合同。不含实现代码、不含 DDL。所有「必须/不得」都是可判定的断言，不是建议。
 
@@ -13,7 +13,7 @@
 > **只有「可考来源的强标识」能自动证明两个人是同一个人；姓名、公司、学校一律只能产生"待人工"，不能产生"已合并"。**
 > 合错人的代价不是一条脏数据，而是**把 A 的经历、面试评价、拒绝理由写进 B 的档案，并且这两个人都不知道**。因此本文件里所有拿不准的分支，默认落到「待人工」，没有一个分支默认落到「合并」。
 
-三条与本文冲突时以本文为准的上位口径：`work/handoff/11-pdf-acceptance-criteria.md §9.7`、`db/SCHEMA.md §8 不变量 2`、`work/control/DECISIONS-2026-11-12.md`（D-7/D-15/D-18/D-19/D-20）。
+三条与本文冲突时以本文为准的上位口径：`docs/11-pdf-acceptance-criteria.md §9.7`、`db/SCHEMA.md §8 不变量 2`、`docs/17-decision-ledger.md`（D-7/D-15/D-18/D-19/D-20）。
 
 ---
 
@@ -453,7 +453,7 @@ match_basis = {
 
 | 代号 | 位置 | 本文用它裁定了什么 |
 |---|---|---|
-| `doc11 §9.7` | `work/handoff/11-pdf-acceptance-criteria.md:192-197` | 来源闸门（`IR-G1/G2`）、自动合并的依据记录 |
+| `doc11 §9.7` | `docs/11-pdf-acceptance-criteria.md:192-197` | 来源闸门（`IR-G1/G2`）、自动合并的依据记录 |
 | `doc11 §9.2` | 同上 `:160-169` | 三态；`unreadable ≠ absent` |
 | `doc11 §9.11 #10` | 同上 `:218` | OCR/Agent 身份字段触发自动合并 = 红线 |
 | `doc11 §9.9` | 同上 `:205-207` | 证据必须回指 page+bbox+sha256（`EVID_OK`） |
@@ -463,15 +463,15 @@ match_basis = {
 | `SCHEMA §1 多租户` | 同上 `:19` | 复合外键物理禁止跨租户（`IR-C7`） |
 | `SCHEMA §3 #35` + `0001 L1648` | 同上 `:81` | Agent 永不执行合并（`IR-M5`） |
 | `SCHEMA §12 N20/N24/N25/N26` | 同上 `:256-262` | 删除/直改身份/无依据合并/重复 ACTIVE 的负向断言 |
-| `docs/03 §6.1-6.7` | `work/handoff/03-domain-and-runtime.md:118-128` | 强/弱标识分工、合并记录内容、补偿式 split、`expected_record_version` |
+| `docs/03 §6.1-6.7` | `docs/03-domain-and-runtime.md:118-128` | 强/弱标识分工、合并记录内容、补偿式 split、`expected_record_version` |
 | `docs/03 §19` | 同上 | `decided_at` 不混用时间语义 |
 | `D-7` | `AGENTS.md §6` | 高置信多维且无冲突可自动（= `§5.4 D5` 交叉印证 / `D15` 单命中） |
-| `D-15` | `work/control/DECISIONS-2026-11-12.md:47` | `candidate_merge` 是支撑实体，不是第 37 个对象 |
+| `D-15` | `docs/17-decision-ledger.md` | `candidate_merge` 是支撑实体，不是第 37 个对象 |
 | `D-18` | 同上 `:65` | `SET LOCAL` + 不缓存旧版本号（`IR-M4d/e`） |
 | `D-19` | 同上 `:10` | 顺序类 HARD 不降级 → 顺序问题会污染字段证据，收紧 `HARD_CLEAN` |
 | `D-20` | 同上 `:23` | 「推不出 ≠ 没有」的同构依据：`unknown` 一律人工（`IR-G3`、`IR-C9`） |
-| `FR-C1..C8` / `FR-P1` | `work/handoff/07-PRD.md:111-118`、`:124` | 一人多岗=1 档 N 申请；自动归并的边界 |
-| `15-arch §5` | `work/handoff/15-architecture-hv.md:141` | v1.0 = 强标识 + 人工闸门（对应 `MANUAL_ONLY` 策略） |
+| `FR-C1..C8` / `FR-P1` | `docs/07-PRD.md:111-118`、`:124` | 一人多岗=1 档 N 申请；自动归并的边界 |
+| `15-arch §5` | 老仓 `work/handoff/15-architecture-hv.md:141`（新仓未收录；阶段码口径已由 D-22 与 `db/stage_catalog` 取代，见 `contracts/STAGE-CODES.md`） | v1.0 = 强标识 + 人工闸门（对应 `MANUAL_ONLY` 策略） |
 | `WINDOW-B:50/55` | `work/window-b/WINDOW-B-FINAL-REPORT.md` | merge→split 不可逆（G-3）、建议接口的 PII oracle（`IR-C7`） |
 
 ---
@@ -485,4 +485,4 @@ match_basis = {
 | **P-3** | 自动合并要求 `decided_by_actor_id` 非空（严于库，S-1） | **要求**（否则"谁触发"永久丢失） | 需要 `actor.kind='SYSTEM'` 的系统 actor 先 seed（`D-14` 已要求补 seed） |
 | **P-4** | 姓名冲突（同手机不同名）是否**永远**人工 | **永远人工**（`doc11 §9.7` + `docs03 §6.2` 都指向人工；自动合并只会把"曾用名"变成"两个人互相污染"） | 人工队列量 |
 | **P-5** | 弱匹配（姓名+公司或学校全同）是否产生 review | **产生**（否则"同一人换手机号"永远发现不了） | 人工队列量，同 `D-19` 的运营成本问题，需产品确认可承受 |
-| **P-6** | 是否接受 `identity_policy` 配置（`AUTO_HIGH_CONFIDENCE` / `MANUAL_ONLY`），v1.0 demo 默认哪个 | 建议 **v1.0 demo 用 `MANUAL_ONLY`**（对齐 `15-arch §5`），自动档在 S7 验收后打开 | 决定 demo 演示的是哪条路径 |
+| **P-6** | 是否接受 `identity_policy` 配置（`AUTO_HIGH_CONFIDENCE` / `MANUAL_ONLY`），v1.0 demo 默认哪个 | 建议 **v1.0 demo 用 `MANUAL_ONLY`**（对齐 `15-arch §5`），自动档在 S6 的身份解析验收后打开 | 决定 demo 演示的是哪条路径 |

@@ -2,7 +2,7 @@
 
 **版本**：`labels 1.0.0`（与 `prompt_version 1.0.0` / `schema_version 1.0.0` 同一基线）
 **配套**：`schema.json`（`$defs/section.label` 的 `enum`）、`prompt.md`（§6 归类规则）、`examples.md`
-**依据**：`work/handoff/11-pdf-acceptance-criteria.md` §9（三态 / 归属 / 时间线 / 受保护属性）、`converter/src/resume_fields.py::_SECTION_KINDS`
+**依据**：`docs/11-pdf-acceptance-criteria.md` §9（三态 / 归属 / 时间线 / 受保护属性）、`converter/src/resume_fields.py::_SECTION_KINDS`
 
 > **本文件的唯一职责**：回答「这个 block 属于哪一类」。它**不**回答「这个人合不合适」，也**不**回答「字段抽得对不对」。
 > 枚举值是**封闭集合**：只能取本表 13 个 key 之一，不得新造、不得翻译、不得加后缀（`work_experience_2` 非法）。

@@ -1,4 +1,4 @@
-# 候选人身份状态机（S7 · merge / split state machine）
+# 候选人身份状态机（S6 的一部分 · merge / split state machine）
 
 **日期**：2026-11-13
 **配套**：`identity-resolution-rules.md`（下称 `IR`）。规则怎么判在 `IR`，状态怎么走在这里。

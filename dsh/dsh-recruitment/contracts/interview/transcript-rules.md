@@ -1,12 +1,12 @@
-# 会议材料获取规则（S10 · transcript & materials）
+# 会议材料获取规则（S9 · transcript & materials）
 
 **日期**：2026-11-13
-**范围**：S10「面试执行与材料获取」——会议结束后，**材料（转写产物）从哪来、怎么和那一场面试对上、取不到时系统说什么**。
-**不管**：面试怎么排（见 `scheduling-rules.md`）、面评写什么、结构化记录怎么生成（S11 / `docs/04 §15 D`）。
+**范围**：S9「面试执行与材料获取」——会议结束后，**材料（转写产物）从哪来、怎么和那一场面试对上、取不到时系统说什么**。
+**不管**：面试怎么排（见 `scheduling-rules.md`）、面评写什么、结构化记录怎么生成（S10 / `docs/04 §15 D`）。
 **性质**：合同。不含实现代码、不含 DDL。所有「必须 / 不得」都是可判定的断言。
-**上位口径**：与本文冲突时依次以 `work/handoff/04-connectors-and-transcript.md`（§9–§21 转写链路）、`db/SCHEMA.md` §8/§9/§10、`work/control/DECISIONS-2026-11-12.md`（D-17 / D-33 / D-46）为准。
+**上位口径**：与本文冲突时依次以 `docs/04-connectors-and-transcript.md`（§9–§21 转写链路）、`db/SCHEMA.md` §8/§9/§10、`docs/17-decision-ledger.md`（D-17 / D-33 / D-46）为准。
 
-> **阶段编号提醒（R5）**：本文的 **S10 = 面试执行与材料获取**（`15-architecture-hv.md:49-52`）。`stage_catalog` 里同一活动叫 **S9**（`0002_seed.sql:241`）—— 两者错位一格。落库写 `interview_record` 关联阶段时以 `stage_catalog` 为准，**不得**把章节号当 stage code。
+> **阶段编号提醒（R5）**：本文的 **S9 = 面试执行与材料获取**，与 `stage_catalog`（`0002_seed.sql:241`）**逐字一致**（`D-22` 定生命周期编号为唯一口径，见 `contracts/STAGE-CODES.md`）。落库写 `interview_record` 关联阶段时以 `stage_catalog` 为准，**不得**把章节号当 stage code。
 
 ---
 
@@ -337,7 +337,7 @@ WAIT           = 120 分钟（会议实际结束后的等待窗；可被 busines
 
 > **这张表的立法意图**：不许把"转写挂了"升级成"面试白做了"。但也**不许**让"没有原文"这一事实在评价里消失 —— 一份 `TRANSCRIPT` 标记的面评和一份 `NO_TRANSCRIPT` 标记的面评，在决策桌上是两种不同分量的证据。
 
-### 9.3 下游（S11）必须继承的两条
+### 9.3 下游（S10）必须继承的两条
 
 | # | 规则 |
 |---|---|
@@ -386,7 +386,7 @@ WAIT           = 120 分钟（会议实际结束后的等待窗；可被 busines
 | 不把多个 meeting 的转写拼成一份 | `docs/04 §20 A/B`；跨 meeting canonical 需 `transcript_set`（`0002`） | 人（若要拼，先改文档再建表） |
 | 不覆盖/改写平台原文，不"顺手清洗" | `INV-6`；`docs/04 §21` | 无人（列级不可变） |
 | 不补全平台没给的字段（说话人、时间戳、段落 ID） | `docs/04 §21` 逐字 | 无人；缺失就是缺失 |
-| 不按固定字符数切块（切片属 S11） | `docs/04 §16`：按说话轮次 + Token Budget | S11 |
+| 不按固定字符数切块（切片属 S10） | `docs/04 §16`：按说话轮次 + Token Budget | S10 |
 | 不用转写"推"出候选人身份或评价 | `docs/04 §17 禁止①②`；`APP-07` | 面试官 / HR |
 | 不把 `NO_TRANSCRIPT` 的面评视作无效 | `docs/04 §10②`（并行）+ `TR-E1` | 无人；但必须标注（TR-E2） |
 | 不在 v1.0 做自动重试的无限升级 | `docs/04 §19` 只要求"保留任务、可恢复" | 人的重授权 / 放弃决策（TR-F2、TR-F9） |
@@ -402,7 +402,7 @@ WAIT           = 120 分钟（会议实际结束后的等待窗；可被 busines
 | **G-3** | `meeting_binding` **没有**"匹配依据"列（只有 `binding_method` 枚举） | `EVENT_MATCH` 到底按哪个键匹配的，无法从绑定行看出来（TR-L4） | `0002`: `meeting_binding.match_basis jsonb`（对齐 `candidate_merge.match_basis` 的做法） | 写 `event_inbox(provider='internal', event_type='meeting.bound')` 的 payload |
 | **G-4** | `transcript_artifact` **没有** `needs_visual` / "可读性"标记 | 业务判断无处落列，只能挂在**运维任务**上（§5.1 的两个命名空间） | 不建列（见 §5.1 理由）；若要，加 `content_readability text` 而不是塞进 `transcript_status` | `transcript.state='PARTIAL'`（`reason_code='ONLY_PARTIAL'`）+ `business_task.error_code='NEEDS_VISUAL'` |
 | **G-5** | `interview_record` 的 `fk_interview_record_artifact (transcript_artifact_id, transcript_revision)` **未带 `tenant_id`**（`L1209-1210`） | 跨租户引用 artifact 在库层**可能**成立（违背 `XINV-7` 的复合外键口径；对比同表其它外键都带 tenant） | `0002`: 改为 `(transcript_artifact_id, transcript_revision, tenant_id) → transcript_artifact(id, source_revision, tenant_id)`（需先给 `transcript_artifact` 加 `unique (id, source_revision, tenant_id)`） | **写侧必须**自行校验 artifact 与 interview 同租户（不能指望库） |
-| **G-6** | `meeting` **没有计划时间**（同 `scheduling-rules.md` G-2） | `TR-D` 序 6 的"会议结束时间"在会议未发生时只能用 `interview.scheduled_end_at`；`WAIT` 的起点因此依赖 S9 的字段 | 同 `scheduling-rules.md` G-2 | 用 `coalesce(meeting.actual_end_at, interview.scheduled_end_at)` |
+| **G-6** | `meeting` **没有计划时间**（同 `scheduling-rules.md` G-2） | `TR-D` 序 6 的"会议结束时间"在会议未发生时只能用 `interview.scheduled_end_at`；`WAIT` 的起点因此依赖 S8 的字段 | 同 `scheduling-rules.md` G-2 | 用 `coalesce(meeting.actual_end_at, interview.scheduled_end_at)` |
 
 **两处"契约严于库"**：
 
@@ -417,7 +417,7 @@ WAIT           = 120 分钟（会议实际结束后的等待窗；可被 busines
 
 | 代号 | 位置 | 本文用它裁定了什么 |
 |---|---|---|
-| `docs/04 §9` | `work/handoff/04-connectors-and-transcript.md:87-94` | 不自研 ASR/说话人分离；平台负责原始产物 |
+| `docs/04 §9` | `docs/04-connectors-and-transcript.md:87-94` | 不自研 ASR/说话人分离；平台负责原始产物 |
 | `docs/04 §10` | 同上 `:96-99` | 提前绑定；评价与转写并行 |
 | `docs/04 §11` | 同上 `:104-112` | 1:N 关系；修订建新版本；Record 必须引用具体版本 |
 | `docs/04 §12` | 同上 `:115-125` | 6 维命名；绑定/解析顺序；**禁止标题/姓名/模糊时间** |
@@ -441,6 +441,6 @@ WAIT           = 120 分钟（会议实际结束后的等待窗；可被 busines
 | `0001 L244-247` | 同上 | `payload_pending_ok`（无内容也合法的状态集） |
 | `0001 L1182-1232` | 同上 | `interview_record`（artifact+revision 复合外键、`READY` 需 VERIFIED） |
 | `0001 L1274-1323` | 同上 | `scorecard`（无 transcript 引用，TR-E1 的结构证据） |
-| `D-17` | `work/control/DECISIONS-2026-11-12.md:61` | canonical 粒度 = 每 meeting 一个 |
+| `D-17` | `docs/17-decision-ledger.md` | canonical 粒度 = 每 meeting 一个 |
 | `D-33` | 同上 `:196` | 不做权限拦截；待补进个人工作台 |
 | `D-46` | 同上 `:299` | 不为罕见场景设闸门（§12 的取舍依据） |

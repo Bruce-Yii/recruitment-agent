@@ -3,7 +3,7 @@
 **版本**：`job-rubric 1.0.0`（与 `screening 1.0.0` / `tool-contracts 1.0.0` 同一基线）
 **日期**：2026-11-13
 **范围**：`job` / `job_version` / `rubric_version` / `approval` / `application.rubric_version_id` 的**规则**，不含实现
-**上位**：`work/handoff/15-architecture-hv.md`（S3 纵向、v1.0 要做）、`work/handoff/11-pdf-acceptance-criteria.md` §9（三态 / 拒绝可解释 / 受保护属性）
+**上位**：老仓 `work/handoff/15-architecture-hv.md`（新仓未收录；阶段码口径已由 D-22 与 `db/stage_catalog` 取代，见 `contracts/STAGE-CODES.md`）（S3 纵向、v1.0 要做）、`docs/11-pdf-acceptance-criteria.md` §9（三态 / 拒绝可解释 / 受保护属性）
 **落库依据**：`db/SCHEMA.md`、`db/migrations/0001_init.sql`（行号即该文件行号）
 
 > **本文件的唯一职责**：回答「这个岗位此刻用哪一版标准」「这版标准里什么算硬性、什么算加分」「标准改了以后旧的筛选结论怎么办」。
@@ -19,7 +19,7 @@
 | `XINV-1` … `XINV-10` | 十条**跨模块不变量**（按 SCHEMA.md §9 表行号） | `db/SCHEMA.md` §9 |
 | `APP-01` … `APP-09` | 只能由应用层保证的规则 | `db/SCHEMA.md` §10 |
 | `N01` … `N32` | 负向测试编号（期望 SQLSTATE） | `db/SCHEMA.md` §12 |
-| `D11 §9.x` | PDF 验收标准第 9 章各条 | `work/handoff/11-pdf-acceptance-criteria.md` |
+| `D11 §9.x` | PDF 验收标准第 9 章各条 | `docs/11-pdf-acceptance-criteria.md` |
 | `ck_*` / `uq_*` / `trg_*` | 已存在的库约束或触发器名（逐字取自 `0001_init.sql`） | `db/migrations/0001_init.sql` |
 
 ---
@@ -354,12 +354,12 @@ payload_hash = lowercase_hex( sha256( UTF-8( canonical_json(dimensions) ) ) )
 | **S-2** | `rubric_version` 无 `schema_version` 列；`dimensions` 只有"非空 array"约束（L609） | ⚠️ 部分 | §6 的结构契约**库里拦不住**；脏 Rubric 只能在读取时发现 | `0002`：加 `rubric_version.schema_version integer not null default 1` + 至少一条 `CHECK`（`kind`/`operator` 枚举、键集） |
 | **S-3** | `application.rubric_version_id` 只做 `(id, tenant_id)` 外键（L866-867）→ **能指向别的 job 的 Rubric**；`application.job_version_id` 同样只校 tenant（L864-865） | ❌ | `RUBRIC_JOB_MISMATCH` 类脏数据可入库，且"钉住"形同虚设 | `0002`：`rubric_version` 加 `unique (id, job_id)`、`job_version` 加 `unique (id, job_id)`；`application` 改成复合外键 `(rubric_version_id, job_id)`、`(job_version_id, job_id)`。**这是本表里最该修的一条** |
 | **S-4** | 没有"人工待办"实体；只有 `business_task.status='WAITING_HUMAN'` + `business_refs jsonb`（L1401、L1441-1443），`business_refs` 只校验"是 array"（L1445） | ⚠️ | `screening-rules.md` §6.2 的阻断查询依赖 `business_refs` 的元素形状，现在**库不保证** | 约定 `business_refs` 元素 = `{"kind":..., "id":"<uuid>"}`，`kind` 封闭集见 `screening-rules.md` §6.2；并在 `0002` 加 `CHECK`（或至少写进 `db/README.md`） |
-| **S-5** | `resume_version.parsed_fields` 只有 `jsonb_typeof='object'`（L829）；三态、`evidence`、`timeline` 全部无约束 | ⚠️ | 本契约的**输入**没有库级保证；上游写错时筛选只能降级 | 由 S6/S7 契约保证形状；`screening-rules.md` §3.2 规定"取不到三态就 `UNREADABLE` + warning"，**不猜** |
+| **S-5** | `resume_version.parsed_fields` 只有 `jsonb_typeof='object'`（L829）；三态、`evidence`、`timeline` 全部无约束 | ⚠️ | 本契约的**输入**没有库级保证；上游写错时筛选只能降级 | 由 S6 契约（含身份解析）保证形状；`screening-rules.md` §3.2 规定"取不到三态就 `UNREADABLE` + warning"，**不猜** |
 | **S-6** | `canonical_json` / `payload_hash` 的**覆盖范围**与序列化规则，库里没有、仓库里也没有共享实现 | ❌ | 写侧与读侧各自实现 → `R-VAL-14` 大量误报，或审批绑定形同虚设 | 落一份共享实现（建议 `packages/domain` 或 `db/`），本契约 §6.6 是它的规范；未落地前 `R-VAL-14` 只能作为**告警**而非硬失败（需裁决） |
 | **S-7** | `decision.basis_refs` 只校验"是 array"（L1358）→ `reasons[]` 的证据坐标无结构保证 | ⚠️ | `D11 §9.9`（决策可回溯）只能靠写侧自觉 | 写侧必须存 `tool-contracts.md` §3.7 的 `basis_refs` 结构；`0002` 可加 `CHECK` 或独立证据表（本轮不做） |
 | **S-8** | `rubric_version` 与 `job_version` 之间**没有任何关联列** | ⚠️ 无影响 | 无法回答"这版标准依据哪一版 JD" | v1.0 **不要求**；若审计要，`0002` 加 `rubric_version.basis_job_version_id` |
 
-> **不改表也能跑**：S-1(a) + S-4/S-5/S-7 的应用层约定，足以让 S8 跑通 Golden Path。**S-3 建议优先修**（一条脏数据能让整条结论归错标准）。
+> **不改表也能跑**：S-1(a) + S-4/S-5/S-7 的应用层约定，足以让 S7 跑通 Golden Path。**S-3 建议优先修**（一条脏数据能让整条结论归错标准）。
 
 ---
 

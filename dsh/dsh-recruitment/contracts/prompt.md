@@ -3,7 +3,7 @@
 **prompt_version**：`1.0.0`
 **schema_version**：`1.0.0`（输出形状以 `schema.json` 为准，本文件与它必须逐字一致）
 **labels**：`1.0.0`（标签判定标准见 `labels.md`，本文件已内联，模型无需读其它文件）
-**依据**：`work/handoff/11-pdf-acceptance-criteria.md` §9.1–§9.7；`converter/src/resume_fields.py`（三态语义）
+**依据**：`docs/11-pdf-acceptance-criteria.md` §9.1–§9.7；`converter/src/resume_fields.py`（三态语义）
 
 ---
 

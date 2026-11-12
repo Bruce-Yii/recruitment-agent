@@ -1,9 +1,9 @@
-# screening-rules.md · 筛选（S8）规则
+# screening-rules.md · 筛选（S7）规则
 
 **版本**：`screening 1.0.0`（与 `job-rubric 1.0.0` / `tool-contracts 1.0.0` 同一基线）
 **日期**：2026-11-13
 **范围**：一次"筛选评估"从读取到 `verdict` 的**全部判定规则**，不含实现
-**上位**：`work/handoff/15-architecture-hv.md`（S8 = 建议 + 人工确认）、`work/handoff/11-pdf-acceptance-criteria.md` §9（**本文件的 §3、§8 与该章逐字对齐**）
+**上位**：老仓 `work/handoff/15-architecture-hv.md`（新仓未收录；阶段码口径已由 D-22 与 `db/stage_catalog` 取代，见 `contracts/STAGE-CODES.md`）（S7 = 建议 + 人工确认）、`docs/11-pdf-acceptance-criteria.md` §9（**本文件的 §3、§8 与该章逐字对齐**）
 **配套**：`job-rubric-rules.md`（标准从哪来、结构长什么样）、`tool-contracts.md`（工具形状）
 
 > **本文件的唯一职责**：回答「给定这份材料 + 这条标准，结论是什么，依据是哪一页哪一行」。
@@ -16,7 +16,7 @@
 | 标记 | 含义 | 出处 |
 |---|---|---|
 | `INV-1`…`INV-10` / `XINV-1`…`XINV-10` / `APP-01`…`APP-09` / `N01`…`N32` | 见 `job-rubric-rules.md` §0 | `db/SCHEMA.md` §8/§9/§10/§12 |
-| `D11 §9.x` | PDF 验收标准第 9 章 | `work/handoff/11-pdf-acceptance-criteria.md` |
+| `D11 §9.x` | PDF 验收标准第 9 章 | `docs/11-pdf-acceptance-criteria.md` |
 | `J-1`…`J-8` / `R-VAL-*` | 岗位与标准规则 | `job-rubric-rules.md` |
 | `converter` | `converter/src/resume_fields.py`（**已实现**的字段抽取与三态闸门） | 该文件行号 |
 
@@ -55,8 +55,8 @@
 | 数据 | 为什么 |
 |---|---|
 | `parsed_fields.protected_attributes.*` | `D11 §9.6`：隔离，不得进筛选特征；连读都不该读（读就有误用的可能） |
-| `candidate.display_name` / `normalized_email` / `normalized_phone` | 身份识别归 S7（`D11 §9.7`），筛选不碰身份。**用姓名/手机做筛选 = 身份筛选** |
-| `candidate_merge` | 同上，合并是 S7 的闸门 |
+| `candidate.display_name` / `normalized_email` / `normalized_phone` | 身份识别归 S6（身份解析，属简历接入；`D11 §9.7`），筛选不碰身份。**用姓名/手机做筛选 = 身份筛选** |
+| `candidate_merge` | 同上，合并是 S6（身份解析）的闸门 |
 | `resume_version.parse_error` 的**自由文本** | 只允许取"是否非空"用于报错分类，不得把错误文本当字段值 |
 
 > 实现建议：把 `parsed_fields` 用**白名单投影**读出来（只要 `fields` + `timeline` + `issues` + `screening`），而不是整块 `SELECT parsed_fields` 后到处取。这样"不读 protected"是结构保证，不是自觉。

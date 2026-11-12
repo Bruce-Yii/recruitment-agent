@@ -1,9 +1,9 @@
-# tool-contracts.md · S9/S10 两个工具的形状
+# tool-contracts.md · S8/S9 两个工具的形状
 
 **版本**：`tool-contracts 1.0.0`（与 `scheduling-rules 1.0.0` / `transcript-rules 1.0.0` 同一基线）
 **日期**：2026-11-13
 **范围**：**只写契约**——入参、出参、错误码、必守性质。**不含任何实现**（不写 SQL、不写 TS）。
-**规则来源**：`scheduling-rules.md`（S9）、`transcript-rules.md`（S10）。**本文件与那两份冲突时，以那两份为准**——这里只是形状。
+**规则来源**：`scheduling-rules.md`（S8）、`transcript-rules.md`（S9）。**本文件与那两份冲突时，以那两份为准**——这里只是形状。
 
 ---
 
@@ -222,7 +222,7 @@ JSON 必须**单行、键序稳定（字典序）**，可 `JSON.parse`。
 
 | `code` | 何时 | 严重度 |
 |---|---|---|
-| `MEETING_NOT_BOUND` | `meeting_binding.state='UNBOUND'` | 中（S10 会因此取不到材料） |
+| `MEETING_NOT_BOUND` | `meeting_binding.state='UNBOUND'` | 中（S9 会因此取不到材料） |
 | `MEETING_NOT_BOUND_OVERDUE` | 同上 ∧ `is_overdue_start` | 高 |
 | `CANONICAL_MISSING` | 有 `READY` 但没有 canonical（`transcript-rules.md` TR-D 序 3） | 中 |
 | `NO_REQUIRED_EVALUATOR` | `evaluation.required_scorecards = 0` | 高（没人需要交评，却可能进 Evaluation Ready） |
@@ -244,7 +244,7 @@ JSON 必须**单行、键序稳定（字典序）**，可 `JSON.parse`。
 Error: NO_TRANSCRIPT: {"code":"NO_TRANSCRIPT","reason_code":"NO_MEETING_BOUND","message":"该场面试没有绑定任何会议，因此不可能取得转写","detail":{"interview_id":"0199…","transcript_state":"MISSING","meetings_total":0,"open_tasks":[{"task_type":"BIND_MEETING","status":"WAITING_EXTERNAL"}]}}
 ```
 
-**为什么 `NO_TRANSCRIPT` 是错误而不是字段**：`require_transcript=true` 是调用方**主动声明的硬前置**（典型场景：S11 要生成面试记录）。对这样的调用，"没有转写"意味着**后续所有工作都不该开始**，用 `null` 或空数组表达会让调用方一不留神就在无原文的基础上继续跑。**默认 `false`** 时则相反：缺材料是常态，应该作为状态回显（`transcript.state`），不能报错 —— 否则"查一场还没发生的面试"永远失败。
+**为什么 `NO_TRANSCRIPT` 是错误而不是字段**：`require_transcript=true` 是调用方**主动声明的硬前置**（典型场景：S10 要生成面试记录）。对这样的调用，"没有转写"意味着**后续所有工作都不该开始**，用 `null` 或空数组表达会让调用方一不留神就在无原文的基础上继续跑。**默认 `false`** 时则相反：缺材料是常态，应该作为状态回显（`transcript.state`），不能报错 —— 否则"查一场还没发生的面试"永远失败。
 
 ### 2.6 正例
 
@@ -273,7 +273,7 @@ recruitment_interview_get {"interview_id":"0199c0de-0000-7000-8000-000000000101"
 | `CANCEL` | 取消该场次 | `SCHEDULED/RESCHEDULED → CANCELLED` |
 | `WITHDRAW_INTERVIEWER` | 某面试官退出（请假/换人）：`required_scorecard=false` + 事件 | 不改 `interview.status`；`scheduling-rules.md §4.3` |
 
-**为什么四合一而不是四个工具名**：S9 只有这四种写动作，且四种都必须走**同一套**冲突重算、幂等键、actor 校验、审计事件。拆成四个工具会把这四件事复制四份，只要有一份漏了就出"某条路径绕过了冲突检查"这类事故（`R2` 的经典失败形态）。
+**为什么四合一而不是四个工具名**：S8 只有这四种写动作，且四种都必须走**同一套**冲突重算、幂等键、actor 校验、审计事件。拆成四个工具会把这四件事复制四份，只要有一份漏了就出"某条路径绕过了冲突检查"这类事故（`R2` 的经典失败形态）。
 **代价与条件**：`intent` 是**必填还是默认**、以及要不要拆名，需要上级裁决（§5 第 7 条）。若拆名，**语义与错误码必须逐字沿用本文件**，且 `contract_version` 升 `2.0.0`。
 
 ### 3.2 入参
@@ -414,7 +414,7 @@ recruitment_interview_get {"interview_id":"0199c0de-0000-7000-8000-000000000101"
 | `changes.created/updated` | **逐行**列出真正被写的 `(table, id)`；`table` 闭集：`interview` / `interviewer` / `meeting` / `meeting_binding` / `business_task`。**这张表就是"写没写"的证据**（失败时三数组全空） |
 | `changes.unchanged` | 只为可观测性；不允许用它掩盖"该写没写" |
 | `effects.external_call_made` | **恒为 `false`**（H-2）。若某天变成 `true`，必须同时出现 `durable_effect` 引用 |
-| `next_actions[]` | 由本次写操作派生出的待办；`code` **闭集只有一个**：`BIND_MEETING`（未绑会议时）。**S9 不得创建 `SUPPLY_TRANSCRIPT`**——材料待办属 S10（`transcript-rules.md` TR-F3/TR-F7），S9 建它就是越权 |
+| `next_actions[]` | 由本次写操作派生出的待办；`code` **闭集只有一个**：`BIND_MEETING`（未绑会议时）。**S8 不得创建 `SUPPLY_TRANSCRIPT`**——材料待办属 S9（`transcript-rules.md` TR-F3/TR-F7），S9 建它就是越权 |
 | `interview` | 与 `get` 的元素同形；**这就是"写完立刻可查"的自证**（不需要再查一次） |
 
 **`warnings[]` 的封闭枚举（schedule 专用，与 `get` 的不是同一套）**：
@@ -438,7 +438,7 @@ recruitment_interview_get {"interview_id":"0199c0de-0000-7000-8000-000000000101"
 | `VERSION_CONFLICT` | schedule | `STALE_RECORD_VERSION` | `UPDATE … WHERE record_version = $expected` 影响 0 行 | 空 |
 | `NO_TRANSCRIPT` | **仅 get** | 见 §2.5 | `require_transcript=true` ∧ 无完整转写 | — |
 
-**`NO_TRANSCRIPT` 为什么不属于 `schedule`**：给它挂上会诱导实现者写出"没有转写就不能安排面试"的逻辑 —— 那正好把 S9 和 S10 的因果**倒过来**（面试先发生，才有转写）。**唯一**合法的"要求先有转写"的场景是"读结果/生成记录"，那是 `get` 的 `require_transcript`。
+**`NO_TRANSCRIPT` 为什么不属于 `schedule`**：给它挂上会诱导实现者写出"没有转写就不能安排面试"的逻辑 —— 那正好把 S8 和 S9 的因果**倒过来**（面试先发生，才有转写）。**唯一**合法的"要求先有转写"的场景是"读结果/生成记录"，那是 `get` 的 `require_transcript`。
 
 ### 3.7 `INVALID_ARGS` 的 `reason_code` 封闭枚举
 
