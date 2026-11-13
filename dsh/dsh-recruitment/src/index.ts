@@ -3,14 +3,23 @@
 // 没有浏览器半部分（无 dsh.client 声明），不向 Web GUI 提供任何东西。
 // 依赖只有 tools 服务：注册表就绪后 apply 才会被调用。
 //
-// 五个只读工具 + 两个 S6/S7 工具：
+// 工具全集（S3–S10 一条 Golden Path，按阶段）：
 //   recruitment_resume_read            读本地简历 PDF（真调 converter/）
 //   recruitment_resume_serialize       结构化的有序文本投影
 //   recruitment_structure_validate     校验模型给出的结构化结果
 //   recruitment_candidate_get          查候选人（stub，等 PG 接线）
 //   recruitment_job_get                查岗位 / Rubric（**真查 PG**，契约 tool-contracts.md §2）
+//   recruitment_job_create             **S3 写库**：岗位 + rubric（rubric 落 PENDING，人类批准）
+//   recruitment_job_update             **S3 写库**：改岗位 / 出新 rubric 版本
 //   recruitment_application_intake     **S6 写库**：PDF → candidate → application
 //   recruitment_screening_evaluate     **S7 只读**：对一条申请出带证据的建议
+//   recruitment_interview_schedule     **S8 写库**：约面试（幂等 CREATE-only）
+//   recruitment_interview_get          **S8 只读**：面试 + 会议绑定 + 转写 + 面评状态
+//   recruitment_transcript_import      **S9 写库**：人工导入转写（raw_text 不可变）
+//   recruitment_transcript_read        **S9 只读**：转写状态投影
+//   recruitment_scorecard_submit       **S10 写库**：一位 HUMAN 面试官交自己那份面评
+//   recruitment_evaluation_summarize   **S10 只读**：汇总投影（不产建议结论）
+//   recruitment_decision_record        **S10 写库**：记录人已做出的决定（必须过 ctx.approval）
 //
 // 配置来自 cordis.patch.yml 的 config 段，共两段：
 //   converter: python_bin / converter_dir / allowed_roots   （resume_read + intake 要）
@@ -42,14 +51,84 @@ import {
   createModelTextMergeTool,
   unconfiguredModelTextMergeTool,
 } from './tools/vision-fallback.ts'
+import {
+  createJobCreateTool,
+  createJobUpdateTool,
+  unconfiguredJobCreateTool,
+  unconfiguredJobUpdateTool,
+} from './tools/job-create.ts'
+import {
+  createInterviewScheduleTool,
+  unconfiguredInterviewScheduleTool,
+} from './tools/interview-schedule.ts'
+import { createInterviewGetTool, unconfiguredInterviewGetTool } from './tools/interview-get.ts'
+import {
+  createTranscriptImportTool,
+  unconfiguredTranscriptImportTool,
+} from './tools/transcript-import.ts'
+import {
+  createTranscriptReadTool,
+  unconfiguredTranscriptReadTool,
+} from './tools/transcript-read.ts'
+import { createScorecardSubmitTool } from './tools/scorecard-submit.ts'
+import { createEvaluationSummarizeTool } from './tools/evaluation-summarize.ts'
+import { createDecisionRecordTool } from './tools/decision-record.ts'
 import { resolveDatabaseConfig, type DatabaseConfig } from './db/pool.ts'
 import { RecruitmentToolError } from './tools/errors.ts'
 
 /** 稳定 cordis 插件名（配置行 id 是 `recruitment`，见 cordis.patch.yml）。 */
 export const name = 'recruitment'
 
-/** 所需服务：工具注册表。 */
-export const inject = ['tools']
+/** 所需服务：工具注册表 + 人机批准通道（D-79：正式决策只能由人放行）。 */
+export const inject = ['tools', 'approval']
+
+/**
+ * `ctx.approval` 的窄接口（只取 `request`）。
+ *
+ * 为什么不直接写 `ctx.approval`：cordis 的服务是**声明式**的，没在 `inject` 里声明
+ * 就访问会抛 `cannot get property "approval" without inject`（真实 headless 实测）。
+ * 这里声明了 inject，但仍做一层惰性取值 + 兜底：宿主异常时降级成
+ * `'unavailable'`，让决策工具按 D-79 **fail closed**，而不是把宿主异常漏给模型。
+ */
+interface ApprovalGateway {
+  request(req: {
+    agent?: unknown
+    toolName: string
+    reason?: string
+    signal?: AbortSignal
+  }): Promise<string>
+}
+
+/**
+ * 取批准通道；取不到时返回一个恒 `'unavailable'` 的网关（= 决策工具拒绝写库）。
+ * @param ctx - cordis 上下文。
+ * @returns 满足 `ApprovalGateway` 的对象，永不抛。
+ */
+function resolveApproval(ctx: Context): ApprovalGateway {
+  const lookup = (): unknown => {
+    try {
+      const direct = (ctx as unknown as { approval?: unknown }).approval
+      if (direct !== undefined && direct !== null) return direct
+    } catch {
+      // 没有该服务：继续尝试 ctx.get
+    }
+    try {
+      const getter = (ctx as unknown as { get?: (name: string) => unknown }).get
+      return typeof getter === 'function' ? getter.call(ctx, 'approval') : undefined
+    } catch {
+      return undefined
+    }
+  }
+  return {
+    async request(req): Promise<string> {
+      const service = lookup() as { request?: (r: unknown) => Promise<string> } | undefined
+      if (service === undefined || service === null || typeof service.request !== 'function') {
+        return 'unavailable'
+      }
+      return await service.request(req)
+    },
+  }
+}
 
 /** 插件配置。 */
 export interface Config {
@@ -146,6 +225,41 @@ function unconfiguredResumeReadTool(issues: readonly string[]): ReadonlyToolDefi
 }
 
 /**
+ * 配置不完整时用的通用替身（S10 三个工具没有自己的 `unconfigured*`）。
+ *
+ * 语义与各模块自带的替身一致：**注册同一个工具名**，调用即报 NOT_CONFIGURED 并列出缺什么。
+ * 这样模型看见的是"为什么不能用"，而不是一个不存在的工具——也不会误以为库里没有数据。
+ * @param toolName - 要占位的工具名。
+ * @param summary - 一句话说明这个工具做什么。
+ * @param issues - 缺失的配置项。
+ * @returns 一个调用即抛 `NOT_CONFIGURED` 的工具定义。
+ */
+function notConfiguredTool(
+  toolName: string,
+  summary: string,
+  issues: readonly string[],
+): ReadonlyToolDefinition {
+  return {
+    name: toolName,
+    description: `${summary} Currently NOT CONFIGURED: ${issues.join('; ')}. Calls return NOT_CONFIGURED.`,
+    parameters: {
+      type: 'object',
+      properties: {},
+      additionalProperties: true,
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render(): readonly { type: 'text'; text: string }[] {
+        return [{ type: 'text', text: `${toolName} is not configured: ${issues.join('; ')}` }]
+      },
+    },
+    async execute(): Promise<unknown> {
+      throw new RecruitmentToolError('NOT_CONFIGURED', `${toolName} is not configured: ${issues.join('; ')}`)
+    },
+  }
+}
+
+/**
  * 挂载只读招聘工具 + S6/S7 工具。
  * @param ctx - cordis 上下文，携带 tools 服务。
  * @param config - 插件配置（来自 cordis.patch.yml）。
@@ -162,9 +276,21 @@ export function apply(
   const resumeRead = converter.resolved === null
     ? unconfiguredResumeReadTool(converter.issues)
     : createResumeReadTool(converter.resolved)
-  // 结构化层两端：序列化（给模型看）与校验（防幻觉）。未配置时也注册，调用报 NOT_CONFIGURED。
+  // 结构化层两端：序列化（给模型看）与校验（防幻觉）。
+  // 未配置时也注册占位（注释与行为必须一致：模型看到的是"为什么不能用"，不是一个消失的工具）。
   const structureTools = converter.resolved === null
-    ? []
+    ? [
+      notConfiguredTool(
+        'recruitment_resume_serialize',
+        'Project a resume PDF into ordered, block-id-labelled text for structuring.',
+        converter.issues,
+      ),
+      notConfiguredTool(
+        'recruitment_structure_validate',
+        'Validate a model-produced structured result against the resume blocks.',
+        converter.issues,
+      ),
+    ]
     : [createResumeSerializeTool(converter.resolved), createStructureValidateTool(converter.resolved)]
 
   // S6 两段配置都要：没有 converter 读不了 PDF，没有 database 落不了库。
@@ -189,13 +315,70 @@ export function apply(
     ? unconfiguredModelTextMergeTool(converter.issues)
     : createModelTextMergeTool(converter.resolved)
 
+  // ── S3 岗位线：只要 database。写路径与读路径同一个库，没配置就报 NOT_CONFIGURED，
+  // 绝不退回 fixture（那会让岗位数据看起来是 LIVE 的假象）。
+  const jobCreate = database.resolved === null
+    ? unconfiguredJobCreateTool(database.issues)
+    : createJobCreateTool(database.resolved)
+  const jobUpdate = database.resolved === null
+    ? unconfiguredJobUpdateTool(database.issues)
+    : createJobUpdateTool(database.resolved)
+
+  // ── S8 面试线：只要 database。
+  const interviewSchedule = database.resolved === null
+    ? unconfiguredInterviewScheduleTool(database.issues)
+    : createInterviewScheduleTool(database.resolved)
+  const interviewGet = database.resolved === null
+    ? unconfiguredInterviewGetTool(database.issues)
+    : createInterviewGetTool(database.resolved)
+
+  // ── S9 转写线：只要 database。raw_text 不可变、来源必须显式标 provenance。
+  const transcriptImport = database.resolved === null
+    ? unconfiguredTranscriptImportTool(database.issues)
+    : createTranscriptImportTool(database.resolved)
+  const transcriptRead = database.resolved === null
+    ? unconfiguredTranscriptReadTool(database.issues)
+    : createTranscriptReadTool(database.resolved)
+
+  // ── S10 评价线：三个都要 database；decision 还要 approval（D-79，缺省 = 拒绝）。
+  const scorecardSubmit = database.resolved === null
+    ? notConfiguredTool(
+      'recruitment_scorecard_submit',
+      'S10: one HUMAN interviewer submits their own scorecard for one interview round.',
+      database.issues,
+    )
+    : createScorecardSubmitTool({ database: database.resolved })
+  const evaluationSummarize = database.resolved === null
+    ? notConfiguredTool(
+      'recruitment_evaluation_summarize',
+      'S10: read-only evaluation summary projection (never writes a decision).',
+      database.issues,
+    )
+    : createEvaluationSummarizeTool({ database: database.resolved })
+  const decisionRecord = database.resolved === null
+    ? notConfiguredTool(
+      'recruitment_decision_record',
+      'S10: record a decision a HUMAN already made. Requires a human approval channel.',
+      database.issues,
+    )
+    : createDecisionRecordTool({ database: database.resolved, approval: resolveApproval(ctx) })
+
   const tools: readonly ReadonlyToolDefinition[] = [
     resumeRead,
     ...structureTools,
     candidateGetTool,
     jobGet,
+    jobCreate,
+    jobUpdate,
     intake,
     evaluate,
+    interviewSchedule,
+    interviewGet,
+    transcriptImport,
+    transcriptRead,
+    scorecardSubmit,
+    evaluationSummarize,
+    decisionRecord,
     pageImage,
     modelTextMerge,
   ].map(withStructuredResultContract)
