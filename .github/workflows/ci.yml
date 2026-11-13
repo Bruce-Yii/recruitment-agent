@@ -121,7 +121,7 @@ jobs:
       - name: Apply migrations for the plugin integration tests
         run: |
           set -euo pipefail
-          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity 0008_decision_uniqueness; do
+          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity 0008_decision_uniqueness 0009_application_identity; do
             psql -v ON_ERROR_STOP=1 -q -f "db/migrations/$f.sql"
           done
 
@@ -163,7 +163,7 @@ jobs:
       - name: Apply migrations 0001..0006
         run: |
           set -euo pipefail
-          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity 0008_decision_uniqueness; do
+          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity 0008_decision_uniqueness 0009_application_identity; do
             echo "== $f"
             psql -v ON_ERROR_STOP=1 -q -f "db/migrations/$f.sql"
           done
@@ -171,19 +171,37 @@ jobs:
       - name: Verify every migration
         run: |
           set -euo pipefail
-          for f in verify-0003 verify-0004 verify-0005 verify-0006 verify-0007 verify-0008 verify; do
+          for f in verify-0003 verify-0004 verify-0005 verify-0006 verify-0007 verify-0008 verify-0009 verify; do
             echo "== $f"
             psql -v ON_ERROR_STOP=1 -q -f "db/$f.sql"
           done
 
-      - name: 0006 + 0007 + 0008 must be idempotent (second run changes nothing)
+      - name: Migration lifecycle (fresh / upgrade / re-run)
+        # Issue #1 §4：不能靠"重跑旧迁移"来证明幂等 —— 0008 已经改变了 0007 的目标索引形态，
+        # 在 0008 之后再跑 0007 必然报 DECISION_CURRENT_INDEX_UNEXPECTED（这是 0007 的守卫在正常工作）。
+        # 真实迁移器语义是"每个版本只应用一次"，所以这里验证三组：
+        #   fresh   ：空库一次跑完 0001→0009
+        #   upgrade ：0001→0007 之后再跑 0008、0009（模拟老库升级）
+        #   re-run  ：在已迁移库上重跑**最新一条** 0009（它必须幂等）
         run: |
           set -euo pipefail
-          psql -v ON_ERROR_STOP=1 -q -f db/migrations/0006_integrity_gaps.sql
-          psql -v ON_ERROR_STOP=1 -q -f db/migrations/0007_decision_integrity.sql
-          psql -v ON_ERROR_STOP=1 -q -f db/migrations/0008_decision_uniqueness.sql
-          echo "second run OK"
+          MIGS="0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity 0008_decision_uniqueness 0009_application_identity"
 
+          echo "== fresh: 0001→0009 on a brand-new database"
+          psql -v ON_ERROR_STOP=1 -q -c "create database ra_fresh"
+          for f in $MIGS; do psql -v ON_ERROR_STOP=1 -q -d ra_fresh -f "db/migrations/$f.sql"; done
+
+          echo "== upgrade: 0001→0007, then 0008, then 0009"
+          psql -v ON_ERROR_STOP=1 -q -c "create database ra_upgrade"
+          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity; do
+            psql -v ON_ERROR_STOP=1 -q -d ra_upgrade -f "db/migrations/$f.sql"
+          done
+          psql -v ON_ERROR_STOP=1 -q -d ra_upgrade -f db/migrations/0008_decision_uniqueness.sql
+          psql -v ON_ERROR_STOP=1 -q -d ra_upgrade -f db/migrations/0009_application_identity.sql
+
+          echo "== re-run: latest migration twice on the migrated database"
+          psql -v ON_ERROR_STOP=1 -q -d ra_fresh -f db/migrations/0009_application_identity.sql
+          echo "migration lifecycle OK"
   # 转换层的两个"兜底"车道。fallback 不需要库（只渲染 + 校验 + 合并语义），
   # review 需要库（队列状态机在 0003 的触发器里）。
   python-lanes:
