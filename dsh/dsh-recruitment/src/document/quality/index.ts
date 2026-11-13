@@ -5,10 +5,13 @@ export type {
   AssessmentAction,
   AssessmentFacts,
   AssessmentIssue,
+  AttributionBasis,
+  AttributionConfidence,
   Completeness,
   DocumentContentLike,
   EvidenceLocator,
   EvidenceState,
+  ExperienceAttribution,
   FieldPresence,
   IssueSeverity,
   MediaType,
@@ -24,6 +27,7 @@ export type { CodeLookup, IssueCodeSpec, IssueOrigin } from './issue-codes.ts'
 export {
   CONVERTER_ISSUE_CODES,
   DOCUMENT_ISSUE_CODES,
+  LAYOUT_ONLY_ISSUE_CODES,
   UNREGISTERED_ISSUE_SPEC,
   knownIssueCodes,
   lookupIssueCode,
@@ -44,6 +48,8 @@ export {
 export {
   DOCUMENT_LEVEL_UNREAD,
   VERIFIED_PROVENANCE,
+  attributeExperienceRows,
+  attributionDetail,
   blockLocatorKeys,
   buildIssue,
   checkCharFidelity,
@@ -59,6 +65,9 @@ export {
   hasIdentityTokens,
   hasOrgToken,
   hasRoleToken,
+  hasSubjectText,
+  isAnchorBlock,
+  subjectTextOf,
 } from './checks.ts'
 export type { CheckContext } from './checks.ts'
 

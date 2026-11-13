@@ -105,6 +105,8 @@ interface DocumentReadValue {
     readonly blocking: boolean
     /** 结构化用：版式/顺序/图片类问题不阻断（D-97 第一批）。 */
     readonly blocking_for_structure: boolean
+    /** 只有版式类 HARD（顺序/跨块/未核图片），文字本身可用。 */
+    readonly layout_only_blocking: boolean
     readonly blocking_codes: readonly string[]
     readonly soft_codes: readonly string[]
     readonly actions: readonly { action: string; codes: readonly string[]; blocking: boolean }[]
@@ -187,6 +189,7 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
         completeness: { type: 'string' },
         blocking: { type: 'boolean' },
         blocking_for_structure: { type: 'boolean' },
+        layout_only_blocking: { type: 'boolean' },
         blocking_codes: { type: 'array', items: { type: 'string' } },
         soft_codes: { type: 'array', items: { type: 'string' } },
         actions: {
@@ -204,7 +207,7 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
         },
         issues: { type: 'array', items: ISSUE_SCHEMA },
       },
-      required: ['completeness', 'blocking', 'blocking_for_structure', 'blocking_codes', 'soft_codes', 'actions', 'issues'],
+      required: ['completeness', 'blocking', 'blocking_for_structure', 'layout_only_blocking', 'blocking_codes', 'soft_codes', 'actions', 'issues'],
       additionalProperties: false,
     },
     recovery: {
@@ -324,6 +327,7 @@ async function readOne(filePath: string, cfg: ResolvedConverterConfig): Promise<
       // 不影响"把文字抽成字段"。这些留给第二批（版面分析 + 图片分类修好）再严格。
       // 真正阻断结构化的只有"文字本身不可用"：空文件、乱码、编码读不出。
       blocking_for_structure: STRUCTURE_BLOCKING_CODES.some((code) => assessment.blocking_codes.includes(code)),
+      layout_only_blocking: assessment.layout_only_blocking === true,
       blocking_codes: [...assessment.blocking_codes],
       soft_codes: [...assessment.soft_codes],
       actions: assessment.actions.map((action) => ({

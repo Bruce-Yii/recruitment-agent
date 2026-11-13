@@ -15,17 +15,22 @@ import { fileURLToPath } from 'node:url'
 import {
   CONVERTER_ISSUE_CODES,
   DOCUMENT_ISSUE_CODES,
+  LAYOUT_ONLY_ISSUE_CODES,
   assess,
+  attributeExperienceRows,
   canProceedToStructure,
   countUnreadableMarkers,
   evidenceState,
   fieldPresence,
+  hasSubjectText,
   isBlocked,
   knownIssueCodes,
   lookupIssueCode,
   mayConcludeAbsence,
   nonWhitespaceChars,
+  normalizeContent,
   readerFactsFromSourceMeta,
+  subjectTextOf,
 } from '../../src/document/quality/index.ts'
 import { plan } from '../../src/document/recovery/index.ts'
 
@@ -705,3 +710,312 @@ test('纯函数性：质量层与恢复层不 import 模型/网络/子进程，�
     }
   }
 })
+
+// ---------------------------------------------------------------------------
+// 6. 跨块归因：先给「归属结果」，再决定拦不拦（2026-11-14）
+//
+// 真实语料背景：45 份真实简历里 27 份被 doc_cross_block_attribution 判 HARD，
+// 而它只回答「公司/时间分属不同块」，不回答「这条经历属于哪个块」；报出的
+// 「最近的候选组织」其实是文档顺序里的第一个组织块（几何上可能离得最远）。
+// 这一节把三档 confidence 的判定规则、detail 的可执行判据、以及「不许跨块拼装」的边界钉住。
+// ---------------------------------------------------------------------------
+
+/** 从 issue 里取归属结果（`detail.attribution`）；没有就断言失败。 */
+function attributionDetailOf(
+  assessment: { issues: ReadonlyArray<{ code: string, detail: Record<string, unknown> | null }> },
+  code: string,
+): Record<string, any> {
+  const issue = assessment.issues.find((item) => item.code === code)
+  assert.ok(issue !== undefined, `期望出现 ${code}，实际只有 ${codes(assessment).join(',') || '(空)'}`)
+  const detail = issue?.detail ?? null
+  assert.ok(detail !== null, `${code} 必须带 detail（归属结果是给下游用的，不能只写 message）`)
+  assert.ok(detail?.attribution !== undefined, `${code} 的 detail 里必须有 attribution`)
+  return detail?.attribution as Record<string, any>
+}
+
+test('归因 0：行内主体文本的剔除规则有边界（日期残渣不得混进主体）', () => {
+  // 这是实现时真实踩到的坑：DATE_RANGE 只吃掉结束年份，`2025.03-2025.07` 会留下 `.07`。
+  assert.equal(subjectTextOf('2025.03-2025.07 大赛'), '大赛')
+  assert.equal(subjectTextOf('2023 年 9 月 - 2027 年 6 月'), '')
+  assert.equal(subjectTextOf('Jul 2020 - Jun 2023 Project'), 'Project')
+  // 只有时间 + 职务词的行没有主体：它必须去外面找组织，不能自证。
+  assert.equal(hasSubjectText('2021.07 - 2024.06 后端工程师'), false)
+  assert.equal(hasSubjectText('2021.07-2024.06 负责订单系统重构'), false, '叙述动词不是主体标题')
+  // 奖项行 / 项目行 / 「公司名 时间 职位」同块：主体与时间在同一块内闭合。
+  assert.equal(hasSubjectText('•\n2025年中国高校计算机大赛-网络技术挑战赛\n国家级二等奖\n2025.03-2025.07'), true)
+  assert.equal(hasSubjectText('研究一：SPDR：基于个人流行度去偏的谱正则化推荐模型\n2025 年 10 月 - 至今'), true)
+  assert.equal(hasSubjectText('Example Technology Ltd 2021.07 - 2024.06 后端工程师'), true)
+})
+
+test('归因 1：组织文本就在本块 → same_row / org_in_row，既不报跨块也不发 SOFT 噪声', () => {
+  const blocks = [
+    { block_id: 'row', kind: 'paragraph', order: 1, text: 'Example Technology Ltd 2021.07 - 2024.06 后端工程师', locator: { kind: 'pdf', page: 1, bbox: [50, 160, 480, 178] }, provenance: 'native_text' },
+  ]
+  const attributions = attributeExperienceRows(normalizeContent(makeContent(blocks)))
+  assert.equal(attributions.length, 1)
+  assert.equal(attributions[0].row_block_id, 'row')
+  assert.equal(attributions[0].org_block_id, 'row', '归属到行自己')
+  assert.equal(attributions[0].confidence, 'same_row')
+  assert.equal(attributions[0].basis, 'org_in_row')
+
+  const assessment = assess(makeContent(blocks))
+  assert.equal(codes(assessment).includes('doc_cross_block_attribution'), false)
+  assert.equal(codes(assessment).includes('doc_attribution_resolved'), false, '没有跨块问题就不该有归属噪声')
+  assert.equal(assessment.blocking, false)
+})
+
+test('归因 2（真实语料形状）：奖项行「日期之外还有主体」→ self_subject / same_row 的 SOFT，不再 HARD', () => {
+  // 真实 PDF（个人简历-中国石油大学（华东）-孙光宇）里 4 条 HARD 之一的长相：
+  // 奖项名 + 级别 + 时间全在同一块，公司/组织本来就不该在这里出现。
+  const blocks = [
+    { block_id: 'award', kind: 'paragraph', order: 1, text: '•\n2025年中国高校计算机大赛-网络技术挑战赛\n国家级二等奖\n2025.03-2025.07', locator: { kind: 'pdf', page: 1, bbox: [33, 453, 498, 465] }, provenance: 'native_text' },
+    { block_id: 'school', kind: 'paragraph', order: 2, text: '中国石油大学（华东）  （211）', locator: { kind: 'pdf', page: 1, bbox: [33, 100, 177, 114] }, provenance: 'native_text' },
+  ]
+  const attributions = attributeExperienceRows(normalizeContent(makeContent(blocks)))
+  assert.equal(attributions[0].confidence, 'same_row')
+  assert.equal(attributions[0].basis, 'self_subject')
+  assert.equal(attributions[0].org_block_id, 'award')
+  assert.match(String(attributions[0].org_text), /中国高校计算机大赛/u)
+
+  const assessment = assess(makeContent(blocks))
+  assert.equal(codes(assessment).includes('doc_cross_block_attribution'), false, '能归出结果就不许再 HARD')
+  const issue = issueOf(assessment, 'doc_attribution_resolved')
+  assert.equal(issue.severity, 'SOFT')
+  assert.equal(issue.suggested_action, 'none', 'same_row 只是留档，不派活')
+  assert.equal(assessment.blocking, false)
+  const detail = attributionDetailOf(assessment as any, 'doc_attribution_resolved')
+  assert.equal(detail.confidence, 'same_row')
+  assert.equal(detail.basis, 'self_subject')
+  assert.equal(detail.may_join_same_row, true)
+  assert.equal(detail.needs_human_check, false)
+  assert.equal(detail.org_block_id, 'award')
+})
+
+test('归因 3：日期在右栏、主体在左栏且同一可视行 → same_row / same_row_anchor，两个定位都给出', () => {
+  const blocks = [
+    { block_id: 'school', kind: 'paragraph', order: 1, text: '中国石油大学（华东）', locator: { kind: 'pdf', page: 1, bbox: [33, 100, 177, 114] }, provenance: 'native_text' },
+    { block_id: 'date', kind: 'paragraph', order: 2, text: '2023 年 9 月 - 2027 年 6 月', locator: { kind: 'pdf', page: 1, bbox: [388, 101.5, 501, 113.3] }, provenance: 'native_text' },
+  ]
+  const attributions = attributeExperienceRows(normalizeContent(makeContent(blocks)))
+  assert.equal(attributions[0].row_block_id, 'date')
+  assert.equal(attributions[0].org_block_id, 'school')
+  assert.equal(attributions[0].confidence, 'same_row')
+  assert.equal(attributions[0].basis, 'same_row_anchor')
+  assert.equal(attributions[0].evidence.length, 2, '行 + 归属到的块都要给定位')
+
+  const assessment = assess(makeContent(blocks))
+  const issue = issueOf(assessment, 'doc_attribution_resolved')
+  assert.equal(issue.severity, 'SOFT')
+  assert.equal(assessment.blocking, false)
+  const detail = attributionDetailOf(assessment as any, 'doc_attribution_resolved')
+  assert.equal(detail.may_join_same_row, true)
+})
+
+test('归因 4：主体在紧邻上一行 → adjacent 的 SOFT 但**标待核**（位置相邻 ≠ 可以拼）', () => {
+  const blocks = [
+    { block_id: 'org', kind: 'paragraph', order: 1, text: 'Example Technology Ltd', locator: { kind: 'pdf', page: 1, bbox: [50, 160, 200, 178] }, provenance: 'native_text' },
+    { block_id: 'date', kind: 'paragraph', order: 2, text: '2021.07 - 2024.06', locator: { kind: 'pdf', page: 1, bbox: [50, 180, 200, 192] }, provenance: 'native_text' },
+  ]
+  const attributions = attributeExperienceRows(normalizeContent(makeContent(blocks)))
+  assert.equal(attributions[0].confidence, 'adjacent')
+  assert.equal(attributions[0].basis, 'adjacent_anchor')
+  assert.equal(attributions[0].org_block_id, 'org')
+
+  const assessment = assess(makeContent(blocks))
+  assert.equal(codes(assessment).includes('doc_cross_block_attribution'), false, 'adjacent 不该再 HARD')
+  assert.equal(assessment.blocking, false)
+  const issue = issueOf(assessment, 'doc_attribution_resolved')
+  assert.equal(issue.severity, 'SOFT')
+  assert.equal(issue.suggested_action, 'human_review', 'adjacent 必须人工核对')
+  const detail = attributionDetailOf(assessment as any, 'doc_attribution_resolved')
+  assert.equal(detail.confidence, 'adjacent')
+  assert.equal(detail.may_join_same_row, false, '只有 same_row 才允许当同一行')
+  assert.equal(detail.needs_human_check, true)
+  assert.match(issue.message, /不得当作同一行拼装/u)
+})
+
+test('归因 5：主体在远处另一行 → 仍然 HARD（只有 unresolved 才 HARD），detail 给 unresolved', () => {
+  const blocks = [
+    { block_id: 'org', kind: 'paragraph', order: 1, text: 'Example Technology Ltd', locator: { kind: 'pdf', page: 1, bbox: [300, 160, 480, 178] }, provenance: 'native_text' },
+    { block_id: 'row', kind: 'paragraph', order: 2, text: '2021.07 - 2024.06 后端工程师', locator: { kind: 'pdf', page: 1, bbox: [50, 200, 280, 218] }, provenance: 'native_text' },
+  ]
+  const attributions = attributeExperienceRows(normalizeContent(makeContent(blocks)))
+  assert.equal(attributions[0].confidence, 'unresolved')
+  assert.equal(attributions[0].basis, 'no_anchor')
+  assert.equal(attributions[0].org_block_id, null)
+  assert.deepEqual([...attributions[0].candidate_block_ids], ['org'], '候选（看过的块）必须留证据')
+
+  const assessment = assess(makeContent(blocks))
+  const issue = issueOf(assessment, 'doc_cross_block_attribution')
+  assert.equal(issue.severity, 'HARD')
+  assert.equal(issue.suggested_action, 'human_review')
+  const hardIssue = assessment.issues.find((item) => item.code === 'doc_cross_block_attribution')
+  assert.equal(hardIssue?.locators.length, 2, '行 + 候选块两个定位都要给出（原判据的「原文定位」不能丢）')
+  assert.equal(assessment.blocking, true)
+  const detail = attributionDetailOf(assessment as any, 'doc_cross_block_attribution')
+  assert.equal(detail.confidence, 'unresolved')
+  assert.equal(detail.may_join_same_row, false)
+  assert.equal(detail.candidate_block_ids[0], 'org', 'message 里点名的候选必须和 detail 一致')
+  assert.match(issue.message, /归属 unresolved/u)
+  assert.match(issue.message, /禁止跨块拼装/u)
+})
+
+test('归因 6：同页根本没有候选主体 → unresolved 但不新增阻断（没有可被误拼的对象）', () => {
+  const blocks = [
+    { block_id: 'only', kind: 'paragraph', order: 1, text: '2021.07 - 2024.06', locator: { kind: 'pdf', page: 1, bbox: [50, 200, 200, 218] }, provenance: 'native_text' },
+  ]
+  const attributions = attributeExperienceRows(normalizeContent(makeContent(blocks)))
+  assert.equal(attributions[0].confidence, 'unresolved')
+  assert.equal(attributions[0].basis, 'no_anchor')
+  assert.deepEqual([...attributions[0].candidate_block_ids], [])
+
+  const assessment = assess(makeContent(blocks))
+  assert.equal(codes(assessment).includes('doc_cross_block_attribution'), false)
+  assert.equal(assessment.blocking, false, '不许因为「甲方没写公司」就凭空新增阻断')
+})
+
+test('归因 6b：同页只有职务标题、没有组织文本 → 仍不 HARD（没有可被误拼的公司），但归属仍是 unresolved', () => {
+  // 「有候选就报」是错的：没有组织 token 的块当不了公司，按原判据的边界不报 HARD。
+  // 真实的失败长相：另一条 lane 的 fixture 里有一行「后端工程师」+ 一行只有日期。
+  const blocks = [
+    { block_id: 'role', kind: 'paragraph', order: 1, text: '后端工程师', locator: { kind: 'pdf', page: 1, bbox: [50, 100, 150, 114] }, provenance: 'native_text' },
+    { block_id: 'date', kind: 'paragraph', order: 2, text: '2021.07 - 2024.06', locator: { kind: 'pdf', page: 1, bbox: [50, 200, 200, 218] }, provenance: 'native_text' },
+  ]
+  const attributions = attributeExperienceRows(normalizeContent(makeContent(blocks)))
+  assert.equal(attributions[0].confidence, 'unresolved')
+  assert.deepEqual([...attributions[0].candidate_block_ids], ['role'], '候选（看过的块）照实记录')
+
+  const assessment = assess(makeContent(blocks))
+  assert.equal(codes(assessment).includes('doc_cross_block_attribution'), false)
+  assert.equal(assessment.blocking, false, '没有公司文本就没有「跨块拼公司」的风险')
+})
+
+test('归因 7：没有页/没有 bbox（DOCX）→ 不猜相邻，有候选就仍然 unresolved（不伪造 same_row）', () => {
+  const blocks = [
+    { block_id: 'org', kind: 'paragraph', order: 1, text: 'Example Technology Ltd', locator: { kind: 'docx', part: 'word/document.xml', paragraph_id: 'p1' }, provenance: 'native_text' },
+    { block_id: 'row', kind: 'paragraph', order: 2, text: '2021.07 - 2024.06 后端工程师', locator: { kind: 'docx', part: 'word/document.xml', paragraph_id: 'p2' }, provenance: 'native_text' },
+  ]
+  const content = makeContent(blocks, {
+    media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    meta: { backend: 'docx-adapter/1.0.0' },
+  })
+  const attributions = attributeExperienceRows(normalizeContent(content))
+  assert.equal(attributions[0].confidence, 'unresolved')
+  assert.equal(attributions[0].page, null)
+  assert.deepEqual([...attributions[0].candidate_block_ids], ['org'])
+
+  const assessment = assess(content)
+  const issue = issueOf(assessment, 'doc_cross_block_attribution')
+  assert.equal(issue.severity, 'HARD')
+  assert.equal(assessment.blocking, true)
+  const detail = attributionDetailOf(assessment as any, 'doc_cross_block_attribution')
+  assert.equal(detail.may_join_same_row, false)
+})
+
+test('归因 8：真实一页简历形状（教育右栏日期 + 奖项 + 项目）→ 不再产生跨块 HARD', () => {
+  // 形状取自真实样本：同一页上「教育（左主体/右日期）」「奖项（主体+级别+日期同块）」
+  // 「研究项目（标题+时间同块）」。旧判据会对其中 3 条报 HARD（候选组织在另一区块）。
+  const blocks = [
+    { block_id: 'name', kind: 'heading', order: 1, text: '孙某某', locator: { kind: 'pdf', page: 1, bbox: [227, 31, 263, 47] }, provenance: 'native_text' },
+    { block_id: 'edu-title', kind: 'heading', order: 2, text: '教育背景', locator: { kind: 'pdf', page: 1, bbox: [33, 78, 77, 92] }, provenance: 'native_text' },
+    { block_id: 'school', kind: 'paragraph', order: 3, text: '中国石油大学（华东）  （211）', locator: { kind: 'pdf', page: 1, bbox: [33, 100, 177, 114] }, provenance: 'native_text' },
+    { block_id: 'school-date', kind: 'paragraph', order: 4, text: '2023 年 9 月 - 2027 年 6 月', locator: { kind: 'pdf', page: 1, bbox: [388, 101, 501, 113] }, provenance: 'native_text' },
+    { block_id: 'award', kind: 'paragraph', order: 5, text: '•\n2025年中国高校计算机大赛-网络技术挑战赛\n国家级二等奖\n2025.03-2025.07', locator: { kind: 'pdf', page: 1, bbox: [33, 453, 498, 465] }, provenance: 'native_text' },
+    { block_id: 'research', kind: 'paragraph', order: 6, text: '研究一：SPDR：基于个人流行度去偏的谱正则化推荐模型\n2025 年 10 月 - 至今', locator: { kind: 'pdf', page: 1, bbox: [33, 304, 501, 317] }, provenance: 'native_text' },
+    { block_id: 'research-role', kind: 'paragraph', order: 7, text: '基于大模型和知识图谱的学业规划系统\n第一负责人', locator: { kind: 'pdf', page: 1, bbox: [33, 221, 325, 235] }, provenance: 'native_text' },
+    { block_id: 'research-date', kind: 'paragraph', order: 8, text: '2024 年 11 月 - 至今', locator: { kind: 'pdf', page: 1, bbox: [417, 225, 502, 237] }, provenance: 'native_text' },
+  ]
+  const content = makeContent(blocks)
+  const attributions = attributeExperienceRows(normalizeContent(content))
+  assert.deepEqual(
+    attributions.map((item) => [item.row_block_id, item.confidence, item.basis]),
+    [
+      ['school-date', 'same_row', 'same_row_anchor'],
+      ['award', 'same_row', 'self_subject'],
+      ['research', 'same_row', 'self_subject'],
+      ['research-date', 'same_row', 'same_row_anchor'],
+    ],
+  )
+
+  const assessment = assess(content)
+  assert.equal(codes(assessment).includes('doc_cross_block_attribution'), false)
+  assert.equal(assessment.blocking, false)
+  assert.ok(assessment.soft_codes.includes('doc_attribution_resolved'))
+  assert.equal(assessment.issues.filter((item) => item.code === 'doc_attribution_resolved').length, 4)
+  // 归属是纯函数：同输入两次完全一致，且不改入参
+  assert.deepEqual(attributeExperienceRows(normalizeContent(content)), attributions)
+  assert.equal(normalizeContent(content).blocks.length, blocks.length)
+})
+
+// ---------------------------------------------------------------------------
+// 7. 严重级边界：把「仅版式问题」与「文字不可用」区分开（D-97 第一批，2026-11-14）
+// ---------------------------------------------------------------------------
+
+test('边界 1：layout_only_blocking 只在「全部 HARD 都是版式类」时为 true', () => {
+  // (a) 只有顺序未核（版式类）
+  const orderOnly = assess(goodContent({
+    meta: { pages: 1, order_verified: false, layout_backend: 'pdf-layout/1.28.0' },
+  }))
+  assert.equal(orderOnly.blocking, true)
+  assert.equal(orderOnly.layout_only_blocking, true)
+
+  // (b) 顺序未核 + 字符保真失败（文字不可用）→ 不只是版式
+  const mixed = assess({
+    ...goodContent({ meta: { pages: 1, order_verified: false, layout_backend: 'pdf-layout/1.28.0' } }),
+    source_chars: 999,
+  })
+  assert.equal(mixed.blocking, true)
+  assert.equal(mixed.layout_only_blocking, false, '有「文字不可用」类 HARD 时不许说「仅版式」')
+
+  // (c) 没有 HARD
+  const clean = assess(goodContent())
+  assert.equal(clean.blocking, false)
+  assert.equal(clean.layout_only_blocking, false)
+
+  // (d) 未登记 code 的 HARD：fail-closed，不算版式类
+  const unknown = assess(goodContent({ issues: [{ code: 'some_future_code', message: 'x' }] }))
+  assert.equal(unknown.blocking, true)
+  assert.equal(unknown.layout_only_blocking, false, '未知的阻断可能根本不是版式问题')
+
+  // 契约不合法 / 空文件那类 HARD 也不是版式类
+  assert.equal(assess(null).layout_only_blocking, false)
+})
+
+test('边界 2：未核图片（unverified_pdf_image）算版式类；但它仍未登记，fail-closed 不被掩盖', () => {
+  // 真实 PDF 就停在这一条上：图片存在但内容未核，正文原生文本是好的。
+  assert.equal(LAYOUT_ONLY_ISSUE_CODES.has('unverified_pdf_image'), true)
+  assert.equal(LAYOUT_ONLY_ISSUE_CODES.has('doc_char_fidelity_mismatch'), false)
+  assert.equal(LAYOUT_ONLY_ISSUE_CODES.has('pdf_no_text'), false)
+
+  const imageOnly = assess(goodContent({
+    issues: [{ code: 'unverified_pdf_image', message: 'page 1 has 3 embedded image(s)', location: { page: 1 } }],
+  }))
+  assert.equal(imageOnly.blocking, true, 'blocking 不削弱（D-97：可信筛选仍要等）')
+  assert.equal(imageOnly.layout_only_blocking, true, '仅版式 → 结构化路径可以继续')
+  assert.deepEqual([...imageOnly.blocking_codes], ['unverified_pdf_image'])
+  assert.deepEqual([...imageOnly.unregistered_codes], ['unverified_pdf_image'], '未登记必须原样保留')
+
+  // 同一条图片问题 + 一条文字不可用 → 不再是「仅版式」
+  const imagePlusFidelity = assess({
+    ...goodContent({ issues: [{ code: 'unverified_pdf_image', message: 'x', location: { page: 1 } }] }),
+    source_chars: 999,
+  })
+  assert.equal(imagePlusFidelity.layout_only_blocking, false)
+})
+
+test('边界 3：归因 resolved 之后，真实形状的阻断从「跨块 + 未核图片」降到「仅未核图片」', () => {
+  const blocks = [
+    { block_id: 'school', kind: 'paragraph', order: 1, text: '中国石油大学（华东）', locator: { kind: 'pdf', page: 1, bbox: [33, 100, 177, 114] }, provenance: 'native_text' },
+    { block_id: 'school-date', kind: 'paragraph', order: 2, text: '2023 年 9 月 - 2027 年 6 月', locator: { kind: 'pdf', page: 1, bbox: [388, 101, 501, 113] }, provenance: 'native_text' },
+    { block_id: 'award', kind: 'paragraph', order: 3, text: '•\n2025年中国高校计算机大赛-网络技术挑战赛\n国家级二等奖\n2025.03-2025.07', locator: { kind: 'pdf', page: 1, bbox: [33, 453, 498, 465] }, provenance: 'native_text' },
+  ]
+  const assessment = assess(makeContent(blocks, {
+    issues: [{ code: 'unverified_pdf_image', message: 'page 1 has 3 embedded image(s)', location: { page: 1 } }],
+  }))
+  assert.deepEqual([...assessment.blocking_codes], ['unverified_pdf_image'])
+  assert.equal(assessment.soft_codes.includes('doc_attribution_resolved'), true)
+  assert.equal(assessment.layout_only_blocking, true)
+  // 仍然不许据此下「候选人没有这段经历」的结论（HARD 没解除）
+  assert.equal(mayConcludeAbsence(assessment).allowed, false)
+})
+

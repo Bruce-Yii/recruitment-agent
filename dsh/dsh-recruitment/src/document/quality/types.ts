@@ -40,6 +40,50 @@ export type EvidenceLocator =
   }
   | { kind: 'image', frame?: number, bbox?: [number, number, number, number] }
 
+/** 归属置信度。**只有 `same_row` 允许下游把「主体/公司」与「时间」当成同一行的事实**。 */
+export type AttributionConfidence = 'same_row' | 'adjacent' | 'unresolved'
+
+/**
+ * 归属证据的种类：回答「凭什么给出这个 confidence」。
+ *
+ * * `org_in_row`      —— 该块自己就含组织文本（最强：连相邻性都不用判断）；
+ * * `self_subject`    —— 该块除时间/职务词外还有实质主体文本（奖项行、项目行、`公司名 时间 职位` 同一块），
+ *                        即主体与时间**在同一个块内闭合**，不需要跨块拼装；
+ * * `same_row_anchor` —— 同页同一可视行的**另一个**块含组织/职务文本（复用了 `sameVisualRow` 的判据）；
+ * * `adjacent_anchor` —— 同页紧邻的上一/下一可视行含组织文本。**位置相邻 ≠ 可以拼**，只标待核；
+ * * `no_anchor`       —— 同页找不到任何可用作主体的文本（此时不存在「跨块拼装」的风险对象）。
+ */
+export type AttributionBasis =
+  | 'org_in_row'
+  | 'self_subject'
+  | 'same_row_anchor'
+  | 'adjacent_anchor'
+  | 'no_anchor'
+
+/**
+ * 一条经历行的**归属结果**（不是问题清单，是答案）。
+ *
+ * 为什么需要：`doc_cross_block_attribution` 原来只说「公司/时间分属不同块」，不回答「这条经历属于哪个块」。
+ * 下游拿到 `unresolved` 以外的结果才有东西可用（见 `AssessmentIssue.detail.attribution`）。
+ */
+export interface ExperienceAttribution {
+  /** 含时间区间的行所属块。 */
+  readonly row_block_id: string
+  /** 归属到的块；`unresolved` 时为 null。`org_in_row` / `self_subject` 时就是行自己。 */
+  readonly org_block_id: string | null
+  readonly confidence: AttributionConfidence
+  /** 为什么是这个 confidence（见 `AttributionBasis`）。 */
+  readonly basis: AttributionBasis
+  /** 归属涉及的原文定位（行本身 + 归属到的块）；`unresolved` 时给出「看过的候选」的定位。 */
+  readonly evidence: ReadonlyArray<EvidenceLocator>
+  /** 行所属页（没有页定位为 null）。 */
+  readonly page: number | null
+  /** 承载归属的主体文本（`unresolved` 为 null）。不是「公司名猜测」，是被当作主体的原文片段。 */
+  readonly org_text: string | null
+  /** 本行归属时考虑过的主体候选块（`unresolved` 时是被判「不可拼」的那些）。顺序稳定。 */
+  readonly candidate_block_ids: ReadonlyArray<string>
+}
+
 /** 上游 issue（转换器 `{code,message,location}` 与 docs/19 `{code,message,locator,...}` 都接受）。 */
 export interface RawIssue {
   readonly code?: unknown
@@ -173,6 +217,15 @@ export interface AssessmentIssue {
   readonly registered: boolean
   readonly origin: 'converter' | 'document' | 'unregistered'
   readonly family: string
+  /**
+   * 结构化细节（供下游**程序**消费，不是给人看的措辞）。
+   *
+   * 目前只有归属类 issue 使用：`{ attribution: { row_block_id, org_block_id, confidence, basis,
+   * may_join_same_row, needs_human_check, candidate_block_ids } }`。
+   * 语义约束：`may_join_same_row === true` 才允许把主体与时间当同一行；`needs_human_check === true`
+   * 表示位置相邻但**不许拼**，必须人工核对。没有细节时为 null（不伪装成空对象）。
+   */
+  readonly detail: Readonly<Record<string, unknown>> | null
 }
 
 /** 建议动作的聚合（一条动作可能由多个 code 共同要求）。 */
@@ -188,6 +241,17 @@ export interface Assessment {
   readonly completeness: Completeness
   /** 有 HARD（含未登记 code）即为 true；下游据此拒绝进入可信结构化/S7。 */
   readonly blocking: boolean
+  /**
+   * **仅版式阻断**：`blocking=true` 且**全部** HARD 都属于版式类（顺序 / 跨块归属 / 未核图片）。
+   *
+   * 用途（D-97 第一批）：把「文字可用、只是版面事实未核」与「文字本身不可用」分开。
+   *   * `layout_only_blocking=true` → 版式/顺序/图片问题，文字本身可读；
+   *     结构化路径由 `document_read.assessment.blocking_for_structure` 放行，可信筛选（S7）仍要等。
+   *   * `layout_only_blocking=false` 且 `blocking=true` → 至少有一条「文字不可用」类 HARD
+   *     （空文件 / 乱码 / 编码读不出 / 页或块缺失 / 字符保真失败 / 来源未核 …），连结构化的文字都不该信。
+   * `blocking=false` 时恒为 false（没有阻断就谈不上「仅版式阻断」）。判据见 `LAYOUT_ONLY_ISSUE_CODES`。
+   */
+  readonly layout_only_blocking: boolean
   readonly actions: ReadonlyArray<AssessmentAction>
   readonly issues: ReadonlyArray<AssessmentIssue>
   readonly blocking_codes: ReadonlyArray<string>

@@ -3,20 +3,26 @@
 // 每个检查只做一件事，返回 `AssessmentIssue[]`。所有 issue 的
 // severity/retryable/suggested_action 都来自 `issue-codes.ts` 的稳定表，
 // 这里不写死严重度。
+// 唯一例外（2026-11-14）：`doc_attribution_resolved` 的动作由**置信度**决定
+// （same_row → none 只留档；adjacent → human_review 标待核），因为「位置相邻」本身就需要人看。
 //
 // 覆盖的 6 类（docs/19 §2.2 / §3 U2 行）：
 //   1. 页/块覆盖缺失      -> doc_block_missing / doc_page_count_unverified / doc_page_coverage_missing
 //   2. 字符保真失败        -> doc_char_fidelity_mismatch（+ doc_unreadable_glyph_in_body）
 //   3. URI 丢失或凭空生成  -> doc_uri_lost / doc_uri_fabricated
 //   4. 阅读顺序不可靠      -> doc_reading_order_unverified
-//   5. 跨块错配            -> doc_cross_block_attribution
+//   5. 跨块归属            -> doc_cross_block_attribution（只有 unresolved 才 HARD）
+//                            + doc_attribution_resolved（能归出结果时发 SOFT，结果进 issue.detail）
 //   6. 来源未核            -> doc_provenance_unverified / doc_identity_from_unverified_source
 
 import { lookupIssueCode } from './issue-codes.ts'
 import { locatorKey, locatorPage, nonWhitespaceChars } from './normalize.ts'
 import type {
   AssessmentIssue,
+  AttributionBasis,
+  AttributionConfidence,
   EvidenceLocator,
+  ExperienceAttribution,
   IssueSeverity,
   NormalizedBlock,
   NormalizedContent,
@@ -61,6 +67,8 @@ export function buildIssue(
     readonly severity?: IssueSeverity
     readonly suggested_action?: SuggestedAction
     readonly retryable?: boolean
+    /** 结构化细节（供下游程序消费）；没有就是 null，不伪装成空对象。 */
+    readonly detail?: Readonly<Record<string, unknown>>
   } = {},
 ): AssessmentIssue {
   const { spec, registered } = lookupIssueCode(code)
@@ -77,6 +85,7 @@ export function buildIssue(
     registered,
     origin: registered ? spec.origin : 'unregistered',
     family: spec.family,
+    detail: options.detail ?? null,
   }
 }
 
@@ -272,32 +281,377 @@ export function checkReadingOrder(ctx: CheckContext): AssessmentIssue[] {
   return [buildIssue('doc_reading_order_unverified', `阅读顺序不可信：${reasons.join('；')}`, null)]
 }
 
-/** 5. 跨块错配：日期行缺组织文本，公司/职位/时间来自不同区块。 */
-export function checkCrossBlockAttribution(ctx: CheckContext): AssessmentIssue[] {
-  const blocks = ctx.content.blocks.filter((block) => block.text.trim() !== '')
-  const out: AssessmentIssue[] = []
-  const orgBlocks = blocks.filter((block) => hasOrgToken(block.text) && !hasDateRange(block.text))
+// ---------------------------------------------------------------------------
+// 5. 跨块归属：先产出「归属结果」，再决定拦不拦（2026-11-14）
+//
+// 背景（真实语料）：45 份真实简历里 27 份被 `doc_cross_block_attribution` 判 HARD。
+// 问题不在「发现了跨块」，而在**只拦住、不给结果**：系统知道公司/时间在不同块，
+// 却不产出「这条经历到底属于哪个块」。而且它报的「最近的候选组织」其实是文档顺序里的
+// 第一个组织块，不是几何最近的 —— 等于连线索都是错的。
+//
+// 现在的做法：先算归属（`attributeExperienceRows`），再按归属结果的置信度分级：
+//   * `same_row`   （同块自证 / 同一可视行）→ 归属闭合，**只有它可以允许下游把主体与时间当同一行**；
+//   * `adjacent`   （紧邻上一/下一可视行）→ 位置相邻 **不等于** 可以拼，标待核（human_review）；
+//   * `unresolved` → 同页有主体但都拼不上 → 唯一仍然 HARD 的情况。
+//
+// 「不许跨块拼装」的原则没有放宽：`adjacent` 不给「可拼」的许可，只给「就近的可疑归属」和待核标记。
+// ---------------------------------------------------------------------------
+
+/**
+ * 完整时间区间扫描（连起止两端的年月一起吃掉）。
+ *
+ * 为什么不能只用 `DATE_RANGE` 做 replace：那几个正则用于**检测**（遇到第一个年份就够），
+ * 末尾只吃掉结束年份，`2025.03-2025.07` 会留下 `.07` 这种残渣，被误当成主体文本的一部分。
+ * 注意：这里只影响「从行文本里剔除时间」这一步，`hasDateRange` 的判定口径一个字没改。
+ */
+const DATE_RANGE_SWEEP = /(?:(?:19|20)\d{2}\s*(?:[.\-/年]\s*\d{1,2}\s*月?)?)\s*(?:[-–—~～]|至|到)\s*(?:(?:19|20)\d{2}\s*(?:[.\-/年]\s*\d{1,2}\s*月?)?|至今|现在|present|now)/giu
+/** 英文月份日期（`Jul 2020 – Jun 2023` / `Jan 2021`）：也是时间，不是主体。 */
+const ENGLISH_MONTH_DATE = /(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s*(?:19|20)\d{2}/giu
+/** 全局版本的职务词：从行文本里剔除「职务」部分，剩下的才算主体文本。 */
+const ROLE_TOKENS_ALL = new RegExp(ROLE_TOKENS.source, `${ROLE_TOKENS.flags}g`)
+/** 级别/名次词：属于「职位/奖项级别」，不算主体。 */
+const LEVEL_TOKENS = /国家级|省级|市级|校级|特等奖|一等奖学金|一等奖|二等奖|三等奖|优秀奖|金奖|银奖|铜奖|第[一二三四五六七八九十\d]{1,3}名/gu
+/** 项目符号：不是主体。 */
+const BULLET_CHARS = /[•·▪◦●◆◇■□*]/gu
+/** 正文句末标点：出现即「这是一段叙述」，不是标题行 / 主体行。 */
+const SENTENCE_PUNCT = /[。；;！？!?]/u
+/** 主体文本里不允许出现的分句标点：有它就不是标题，是叙述。 */
+const CLAUSE_PUNCT = /[，,、]/u
+/** 叙述动词：出现即「这是一条工作内容」，不是主体标题（否则 bullet 正文会被当成主体）。 */
+const PROSE_VERBS = /负责|参与|主导|协助|完成|实现|搭建|推动|带领/u
+/** 行内主体文本长度上限（非空白字符）：超过这个长度是段落，不是主体。 */
+const MAX_SUBJECT_CHARS = 48
+/** 主体候选行长度上限：组织/职务标题行一般很短。 */
+const MAX_ANCHOR_CHARS = 60
+/** 认定「紧邻可视行」的垂直间隙上限：0.75 × 较矮行高（≈ 下一行，中间没空行）。 */
+const ADJACENT_GAP_RATIO = 0.75
+/** 紧邻判定的水平容差：列间距不超过较窄者宽度的 2 倍（右对齐日期列 vs 左侧组织列可相邻）。 */
+const ADJACENT_COLUMN_RATIO = 2
+
+/** 一个 pdf bbox 的几何盒（只有 pdf 定位参与几何判定）。 */
+interface Box {
+  readonly x0: number
+  readonly y0: number
+  readonly x1: number
+  readonly y1: number
+}
+
+function boxOf(locator: EvidenceLocator | null): Box | null {
+  if (locator === null || locator.kind !== 'pdf') return null
+  const bbox = locator.bbox
+  if (bbox === undefined) return null
+  const [x0, y0, x1, y1] = bbox
+  return { x0, y0, x1, y1 }
+}
+
+/** 垂直间隙：> 0 表示两行之间有空隙（b 在 a 上方或下方不定），< 0 表示垂直方向重叠。 */
+function verticalGap(a: Box, b: Box): number {
+  return Math.max(b.y0 - a.y1, a.y0 - b.y1)
+}
+
+/** 水平间隙：> 0 表示左右不相交，< 0 表示水平方向重叠。 */
+function horizontalGap(a: Box, b: Box): number {
+  return Math.max(b.x0 - a.x1, a.x0 - b.x1)
+}
+
+function horizontalOverlap(a: Box, b: Box): number {
+  return Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)
+}
+
+/** 行文本里「主体」的部分：去掉时间区间、职务词、级别词、项目符号与空白。 */
+export function subjectTextOf(text: string): string {
+  const out = text
+    .replace(DATE_RANGE_SWEEP, ' ')
+    .replace(ENGLISH_MONTH_DATE, ' ')
+    .replace(ROLE_TOKENS_ALL, ' ')
+    .replace(LEVEL_TOKENS, ' ')
+    .replace(BULLET_CHARS, ' ')
+    // 日期被剔除后留下的孤立连接符（`Jul 2020 - Jun 2023 Project` → `- Project`）不是主体。
+    .replace(/(?:^|\s)[-–—~～]+(?=\s|$)/gu, ' ')
+  return out.replace(/\s+/gu, '')
+}
+
+/**
+ * 行内是否**自带主体文本**（而不是只有时间/职务/级别）。
+ *
+ * 例子：`奖项名 国家级二等奖 2025.03-2025.07`、`XX公司 2021.07-2024.06 后端工程师`、
+ * `研究一：…… 2025 年 10 月 - 至今`。这三种行的主体与时间**在同一个块内闭合**。
+ * 反例：`2021.07 - 2024.06 后端工程师`（去掉时间和职务词后什么都不剩）→ 需要外部主体。
+ */
+export function hasSubjectText(text: string): boolean {
+  const subject = subjectTextOf(text)
+  if (subject.length < 4 || subject.length > MAX_SUBJECT_CHARS) return false
+  if (SENTENCE_PUNCT.test(subject) || CLAUSE_PUNCT.test(subject)) return false
+  if (PROSE_VERBS.test(subject)) return false
+  return /\p{L}/u.test(subject)
+}
+
+/**
+ * 能否被当作「主体/组织标题行」。
+ *
+ * 沿用原判据的边界：含时间区间的块不是组织文本。另外排除长段落与整句叙述
+ * （正文里的 `……大学生……` 常命中组织 token，但它不是组织名，不能拿来归属）。
+ */
+export function isAnchorBlock(block: NormalizedBlock): boolean {
+  const text = block.text.trim()
+  if (text === '') return false
+  if (hasDateRange(text)) return false
+  if (nonWhitespaceChars(text) > MAX_ANCHOR_CHARS) return false
+  if (SENTENCE_PUNCT.test(text)) return false
+  return hasOrgToken(text) || hasRoleToken(text)
+}
+
+/** 紧邻的可视行：垂直间隙 ≤ 0.75 × 较矮行高，且水平方向不是无关的另一栏。 */
+function isAdjacentVisualRow(row: EvidenceLocator | null, candidate: EvidenceLocator | null): boolean {
+  if (row === null || candidate === null) return false
+  if (row.kind !== 'pdf' || candidate.kind !== 'pdf' || row.page !== candidate.page) return false
+  const a = boxOf(row)
+  const b = boxOf(candidate)
+  if (a === null || b === null) return false
+  const minHeight = Math.min(a.y1 - a.y0, b.y1 - b.y0)
+  if (minHeight <= 0) return false
+  const gap = verticalGap(a, b)
+  if (gap < -0.25 * minHeight || gap > ADJACENT_GAP_RATIO * minHeight) return false
+  const minWidth = Math.min(a.x1 - a.x0, b.x1 - b.x0)
+  if (minWidth <= 0) return false
+  return horizontalOverlap(a, b) > 0 || horizontalGap(a, b) <= ADJACENT_COLUMN_RATIO * minWidth
+}
+
+/** 两行之间是否还夹着第三块（「紧邻」必须真的中间没有别的块）。 */
+function hasBlockBetween(
+  row: NormalizedBlock,
+  candidate: NormalizedBlock,
+  blocks: ReadonlyArray<NormalizedBlock>,
+): boolean {
+  const a = boxOf(row.locator)
+  const b = boxOf(candidate.locator)
+  if (a === null || b === null) return false
+  const page = locatorPage(row.locator)
+  const bandTop = Math.min(a.y1, b.y1)
+  const bandBottom = Math.max(a.y0, b.y0)
+  if (bandBottom > bandTop) return false
+  for (const other of blocks) {
+    if (other.block_id === row.block_id || other.block_id === candidate.block_id) continue
+    if (other.text.trim() === '') continue
+    const locator = other.locator
+    if (locator === null || locator.kind !== 'pdf') continue
+    if (locator.page !== page) continue
+    const box = boxOf(locator)
+    if (box === null) continue
+    if (Math.min(box.y1, bandTop) - Math.max(box.y0, bandBottom) > 2) return true
+  }
+  return false
+}
+
+/** 主体候选：同页、不是本行、且像组织/职务标题的块（顺序稳定）。 */
+function anchorCandidates(
+  row: NormalizedBlock,
+  blocks: ReadonlyArray<NormalizedBlock>,
+): NormalizedBlock[] {
+  const rowPage = locatorPage(row.locator)
+  return blocks.filter((candidate) => {
+    if (candidate.block_id === row.block_id) return false
+    if (candidate.text.trim() === '') return false
+    if (!isAnchorBlock(candidate)) return false
+    // 分页材料只和同一页的块比；没有页定位（DOCX）时保留全部候选：
+    // 它们确实在材料里，但**无法建立位置关系** → 仍然 unresolved（不给假归属）。
+    if (rowPage === null) return true
+    return locatorPage(candidate.locator) === rowPage
+  })
+}
+
+function horizontalDistanceBetween(row: NormalizedBlock, candidate: NormalizedBlock): number {
+  const a = boxOf(row.locator)
+  const b = boxOf(candidate.locator)
+  if (a === null || b === null) return Number.MAX_SAFE_INTEGER
+  return horizontalGap(a, b)
+}
+
+function verticalDistanceBetween(row: NormalizedBlock, candidate: NormalizedBlock): number {
+  const a = boxOf(row.locator)
+  const b = boxOf(candidate.locator)
+  if (a === null || b === null) return Number.MAX_SAFE_INTEGER
+  return Math.abs(verticalGap(a, b))
+}
+
+/** 归属详情（JSON 安全、顺序稳定）：`issue.detail.attribution`。 */
+export function attributionDetail(attribution: ExperienceAttribution): Readonly<Record<string, unknown>> {
+  return {
+    attribution: {
+      row_block_id: attribution.row_block_id,
+      org_block_id: attribution.org_block_id,
+      confidence: attribution.confidence,
+      basis: attribution.basis,
+      page: attribution.page,
+      // 可执行判据，不是注释：
+      //   只有 same_row 才允许把主体/公司与时间当同一行；adjacent 只给「就近可疑」+ 待核。
+      may_join_same_row: attribution.confidence === 'same_row',
+      needs_human_check: attribution.confidence === 'adjacent',
+      candidate_block_ids: [...attribution.candidate_block_ids],
+      evidence: attribution.evidence.map((locator) => locatorKey(locator)),
+      org_text: attribution.org_text,
+    },
+  }
+}
+
+function makeAttribution(
+  row: NormalizedBlock,
+  org: NormalizedBlock | null,
+  confidence: AttributionConfidence,
+  basis: AttributionBasis,
+  evidence: ReadonlyArray<EvidenceLocator>,
+  orgText: string | null,
+  candidateIds: ReadonlyArray<string>,
+): ExperienceAttribution {
+  return {
+    row_block_id: row.block_id,
+    org_block_id: org === null ? null : org.block_id,
+    confidence,
+    basis,
+    evidence,
+    page: locatorPage(row.locator),
+    org_text: orgText,
+    candidate_block_ids: candidateIds,
+  }
+}
+
+/** 对一行算归属（纯函数，不改入参）。 */
+function attributeOneRow(
+  row: NormalizedBlock,
+  blocks: ReadonlyArray<NormalizedBlock>,
+): ExperienceAttribution {
+  const candidates = anchorCandidates(row, blocks)
+  const candidateIds = candidates.map((candidate) => candidate.block_id)
+
+  // 1. 组织文本就在本块：连「相邻」都不用判断（原判据里这类行本来也不报）。
+  if (hasOrgToken(row.text)) {
+    const evidence = row.locator === null ? [] : [row.locator]
+    return makeAttribution(row, row, 'same_row', 'org_in_row', evidence, row.text, candidateIds)
+  }
+
+  // 2. 行内自证：时间之外还有主体文本 → 主体与时间在同一块里，不需要跨块拼装。
+  if (hasSubjectText(row.text)) {
+    const evidence = row.locator === null ? [] : [row.locator]
+    return makeAttribution(row, row, 'same_row', 'self_subject', evidence, subjectTextOf(row.text), candidateIds)
+  }
+
+  // 3. 同一可视行的另一块（复用 sameVisualRow；取水平最近的那个）。
+  const sameRowHits = candidates
+    .filter((candidate) => sameVisualRow(row.locator, candidate.locator))
+    .sort((a, b) => {
+      const gap = horizontalDistanceBetween(row, a) - horizontalDistanceBetween(row, b)
+      if (gap !== 0) return gap
+      return a.order - b.order
+    })
+  if (sameRowHits.length > 0) {
+    const picked = sameRowHits[0]
+    const evidence = [row.locator, picked.locator]
+      .filter((locator): locator is EvidenceLocator => locator !== null)
+    return makeAttribution(row, picked, 'same_row', 'same_row_anchor', evidence, picked.text, candidateIds)
+  }
+
+  // 4. 紧邻的上一/下一可视行（位置相邻 ≠ 可拼，只给 adjacent + 待核）。
+  const adjacentHits = candidates
+    .filter((candidate) => isAdjacentVisualRow(row.locator, candidate.locator)
+      && !hasBlockBetween(row, candidate, blocks))
+    .sort((a, b) => {
+      const gap = verticalDistanceBetween(row, a) - verticalDistanceBetween(row, b)
+      if (gap !== 0) return gap
+      return a.order - b.order
+    })
+  if (adjacentHits.length > 0) {
+    const picked = adjacentHits[0]
+    const evidence = [row.locator, picked.locator]
+      .filter((locator): locator is EvidenceLocator => locator !== null)
+    return makeAttribution(row, picked, 'adjacent', 'adjacent_anchor', evidence, picked.text, candidateIds)
+  }
+
+  // 5. 拼不上：同页有候选就给出「看过哪些」的定位，没有候选就是 no_anchor。
+  const nearest = [...candidates].sort((a, b) => {
+    const distance = verticalDistanceBetween(row, a) - verticalDistanceBetween(row, b)
+    if (distance !== 0) return distance
+    return a.order - b.order
+  })
+  const evidence = [row.locator, ...(nearest.length > 0 ? [nearest[0].locator] : [])]
+    .filter((locator): locator is EvidenceLocator => locator !== null)
+  return makeAttribution(row, null, 'unresolved', 'no_anchor', evidence, null, candidateIds)
+}
+
+/**
+ * 对每个「含时间区间的行」产出归属结果（纯函数，不抛异常，不改入参）。
+ *
+ * @param content - 归一化后的统一内容（`normalizeContent` 的输出）。
+ * @returns 与行顺序一致、顺序稳定的归属结果；没有时间行的材料返回空数组。
+ */
+export function attributeExperienceRows(content: NormalizedContent): ExperienceAttribution[] {
+  const blocks = content.blocks.filter((block) => block.text.trim() !== '')
+  const out: ExperienceAttribution[] = []
   for (const row of blocks) {
     if (!hasDateRange(row.text)) continue
-    if (hasOrgToken(row.text)) continue
-    const rowPage = locatorPage(row.locator)
-    const candidates = orgBlocks.filter((candidate) => {
-      if (candidate.block_id === row.block_id) return false
-      const page = locatorPage(candidate.locator)
-      if (rowPage !== null && page !== null) return page === rowPage
-      return true
-    })
-    if (candidates.length === 0) continue
-    if (candidates.some((candidate) => sameVisualRow(row.locator, candidate.locator))) continue
-    const roleNote = hasRoleToken(row.text) ? '职位文本在同块但公司缺失' : '公司/职位文本都不在该块'
-    const locators = [row.locator, candidates[0].locator]
-      .filter((locator): locator is EvidenceLocator => locator !== null)
+    out.push(attributeOneRow(row, blocks))
+  }
+  return out
+}
+
+/**
+ * 5. 跨块归属检查（语义见本节开头）。
+ *
+ * 只有 `unresolved` 且**同页存在候选主体**时才发 HARD（没有候选 = 不存在可被误拼的对象，
+ * 不凭空新增阻断）。`same_row` / `adjacent` 发 SOFT `doc_attribution_resolved` 并带 `detail`。
+ */
+export function checkCrossBlockAttribution(ctx: CheckContext): AssessmentIssue[] {
+  const blocks = ctx.content.blocks.filter((block) => block.text.trim() !== '')
+  const byId = new Map(blocks.map((block) => [block.block_id, block]))
+  const out: AssessmentIssue[] = []
+  for (const attribution of attributeExperienceRows(ctx.content)) {
+    // 行内自带组织文本 = 没有跨块问题（原判据的边界，不新增噪声）。
+    if (attribution.basis === 'org_in_row') continue
+    const row = byId.get(attribution.row_block_id)
+    if (row === undefined) continue
+    const detail = attributionDetail(attribution)
+    const candidates = attribution.candidate_block_ids
+    if (attribution.confidence === 'unresolved') {
+      // 只有**存在组织文本**时才是「公司/时间跨块」的 HARD。
+      // 只有职务标题行（没有组织 token）时不存在可被误拼的公司，不能凭空新增阻断
+      // ——这正是原判据的边界：没有 org 候选时它根本不报，这里不许放宽成「有候选就报」。
+      const orgCandidates = candidates.filter((blockId) => {
+        const candidate = byId.get(blockId)
+        return candidate !== undefined && hasOrgToken(candidate.text)
+      })
+      if (orgCandidates.length === 0) continue
+      const roleNote = hasRoleToken(row.text) ? '职位文本在同块但公司缺失' : '公司/职位文本都不在该块'
+      out.push(buildIssue(
+        'doc_cross_block_attribution',
+        `归属 unresolved（${roleNote}）：同块、同一可视行、紧邻行都没有主体文本，`
+        + `而同页还有 ${orgCandidates.length} 处组织文本（${orgCandidates.slice(0, 3).join('/')}）`
+        + '——公司/职位/时间分属不同块，禁止跨块拼装',
+        row.locator,
+        { locators: attribution.evidence, detail },
+      ))
+      continue
+    }
+    const target = attribution.org_block_id ?? '(unknown)'
+    const where = attribution.confidence === 'same_row'
+      ? (attribution.basis === 'self_subject'
+        ? '同一块内自证（主体文本与时间同块）'
+        : '同一可视行')
+      : '紧邻行（位置相邻，不等于可拼）'
+    const verdict = attribution.confidence === 'same_row'
+      ? (attribution.basis === 'self_subject'
+        ? '时间属于该块的主体文本，不需要跨块拼装'
+        : '公司/时间可视为同一行')
+      : '仍需人工核对，不得当作同一行拼装'
     out.push(buildIssue(
-      'doc_cross_block_attribution',
-      `含时间区间的行缺少组织文本（${roleNote}），最近的候选组织在另一区块`
-      + `（${candidates[0].block_id}）；拼装公司/职位/时间需要跨区块，按不可归属处理`,
+      'doc_attribution_resolved',
+      `归属 ${attribution.confidence}（${attribution.basis}）：时间行 ${row.block_id} 的主体在 ${target}`
+      + `（${where}）；${verdict}。归属结果见 detail.attribution`,
       row.locator,
-      { locators },
+      {
+        locators: attribution.evidence,
+        detail,
+        // 只有 adjacent 需要人核；same_row 只是把结果留档，不派活。
+        suggested_action: attribution.confidence === 'adjacent' ? 'human_review' : 'none',
+      },
     ))
   }
   return out
