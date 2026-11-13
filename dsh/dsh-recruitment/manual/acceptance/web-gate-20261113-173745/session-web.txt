@@ -1,0 +1,113 @@
+# Web profile 会话（dsh --profile recruitment，从 Web composer 输入）
+
+## tool calls
+1. skill "{\"name\":\"recruitment-s6-s7\"}"
+2. recruitment_job_get "{\"job_id\":\"11111111-1111-4111-8111-000000000401\"}"
+3. recruitment_resume_serialize "{\"path\":\"C:\\\\Users\\\\12412\\\\AppData\\\\Local\\\\Temp\\\\recruitment-r7-synthetic\\\\synthetic-resume-text-4.pdf\"}"
+4. recruitment_structure_validate "{\"path\":\"C:\\\\Users\\\\12412\\\\AppData\\\\Local\\\\Temp\\\\recruitment-r7-synthetic\\\\synthetic-resume-text-4.pdf\",\"result_json\":\"{\\\"prompt_version\\\":\\\"1.0.0\\\",\\\"schema_version\\\":\\\"1.0.0\\\",\\\"block_count\\\":9,\\\"sections\\\":[{\\\"label\\\":\\\"contact\\\",\\\"block_ids
+5. recruitment_application_intake "{\"job_id\":\"11111111-1111-4111-8111-000000000401\",\"path\":\"C:\\\\Users\\\\12412\\\\AppData\\\\Local\\\\Temp\\\\recruitment-r7-synthetic\\\\synthetic-resume-text-4.pdf\",\"structured_json\":\"{\\\"prompt_version\\\":\\\"1.0.0\\\",\\\"schema_version\\\":\\\"1.0.0\\\",\\\"block_count\\\":9,\\\"se
+6. recruitment_screening_evaluate "{\"application_id\":\"e1a393a5-fd2f-438c-a32a-dc7896e901ad\"}"
+
+## tool results
+### recruitment_job_get
+job DEMO-BE-001 后端工程师（演示） [OPEN]  (labels: LIVE/MANUAL/CONNECTED)
+  job_id=11111111-1111-4111-8111-000000000401  record_version=5  department_id=11111111-1111-4111-8111-000000000010  requisition_id=null
+job_version v1  hash=aba19e40…  approved_by_approval_id=null
+  description_md: # 后端工程师（演示岗位）
+
+演示用 JD，非真实招聘信息。
+  requirements_md: - 3 年以上后端开发经验（演示样例）
+- 熟悉 PostgreSQL 与消息队列（演示样例）
+rubric v2 (is_current=true, is_approved=true, resolution=JOB_CURRENT, executable=true, version_id=11111111-1111-4111-8111-000000000404)
+    work_exists  [MUST_HAVE]  w=0.5  work_experience EXISTS true — 简历中存在可分割的工作经历条目
+    edu_exists  [MUST_HAVE]  w=0.25  education EXISTS true — 简历中存在可分割的教育经历条目
+    team_lead  [NICE_TO_HAVE]  w=0.25  (judgment) "是否有 ≥1 年、≥3 人的直接带团队经历？" — 有带团队经验
+versions: v1(is_current=false, is_approved=false), v2(is_current=true, is_approved=true)
+as_of 2026-11-13T09:35:16.939Z
+
+### recruitment_resume_serialize
+serialized synthetic-resume-text-4.pdf: 9 lines from 9 blocks
+#doc | pages=1 | completeness=complete | order_verified=false | needs_visual=false | unread_pages=none | issues=none
+
+#1 | p1 | 赵示例
+#2 | p1 | 电话：136 0000 1357
+#3 | p1 | 邮箱：zhao.example@example.test
+#4 | p1 | 工作经历
+#5 | p1 | 紫示例数据科技有限公司 后端工程师 2018.07 - 2023.12
+#6 | p1 | 教育背景
+#7 | p1 | 示例财经大学 计算机科学与技术 本科 2014.09 - 2018.06
+#8 | p1 | 专业技能
+#9 | p1 | Java、PostgreSQL、RabbitMQ
+
+### recruitment_structure_validate
+accepted=true  rejections=0  issues=0
+
+### recruitment_application_intake
+application: CREATED e1a393a5-fd2f-438c-a32a-dc7896e901ad
+structure: saved=true (resume_version v1 4d1ff147-f53d-42d4-a96a-db1940641a1f, APPENDED)
+candidate: 34c0921b-a652-41df-b635-6beb55e58de9 (new, matched_by=created)
+job DEMO-BE-001 [OPEN] stage=S6 lifecycle=ACTIVE
+source: synthetic-resume-text-4.pdf pages=1 bytes=2665
+sha256=2b5a73b122cd0eeb7813c5ccbc32a1619798734469425cbc2a68d92c155e7cea
+parse_status=PARSED completeness=complete hard_issues=0
+identity strong_ids=[email, phone] evidence=2 blocked=[]
+labels: provenance=FIXTURE trigger=MANUAL connection=CONNECTED
+
+### recruitment_screening_evaluate
+recruitment_screening_evaluate 1.0.0 status=OK advisory=true read_only=true
+labels: provenance=FIXTURE trigger=MANUAL connection=CONNECTED
+application e1a393a5-fd2f-438c-a32a-dc7896e901ad stage=S6 lifecycle=ACTIVE rv=1
+job 后端工程师（演示） [OPEN]
+resume_version v1 parse_status=PARSED hard_issues=0 pages=1
+rubric v2 resolution=JOB_CURRENT what_if=false criteria=3
+preconditions: human_queue_checked=7 material_ready=true
+verdict: PASS (criteria_evaluated=true, required_human_action=CONFIRM_DECISION)
+summary: 2 条硬性条件：2 满足 / 0 反证 / 0 不确定；0 条排除条件命中 → 建议通过（全部硬性条件满足、排除条件均未命中）
+  [MUST_HAVE_SATISFIED] work_exists field=work_experience tri_state=present evidence=1 — work_experience 已读出（state=present）
+  [MUST_HAVE_SATISFIED] edu_exists field=education tri_state=present evidence=1 — education 已读出（state=present）
+  bonus [BONUS_NEEDS_JUDGMENT] team_lead — 这条要求机器判不了（第 3 条），需要人回答 rubric 里的原问句
+  warning RUBRIC_PIN_REQUIRED: 本次按 JOB_CURRENT 解析；写侧落 decision 前必须先钉 rubric_version_id
+snapshot: app_rv=1 resume_version_id=4d1ff147-f53d-42d4-a96a-db1940641a1f rubric_version_id=11111111-1111-4111-8111-000000000404
+evaluation_digest=75d5ca279a75ac860bebb013bb5b03fbe10dfb29033c82f822981c1fef7a751d
+
+## final assistant text
+## HR 业务报告：简历入库与初筛
+
+> 说明：岗位为演示岗位（后端工程师（演示）），简历为合成演示数据，本报告仅供流程验证参考。
+
+### 一、申请
+
+- 申请：**新建申请**（申请号 `e1a393a5-fd2f-438c-a32a-dc7896e901ad`；候选人 `34c0921b-a652-41df-b635-6beb55e58de9`；岗位 `DEMO-BE-001` 后端工程师（演示））
+- 结构化结果：**已保存**（材料版本 v1）
+- 初筛：**已得出判断**（建议通过：两项硬性条件均满足）
+
+### 二、初筛结论
+
+- 结论：建议通过（全部硬性条件满足、排除条件未命中）；带团队经历为加分项，需用人经理确认。
+- 依据：
+  - 硬性条件「简历中存在可分割的工作经历条目」：候选人原文「紫示例数据科技有限公司 后端工程师 2018.07 - 2023.12」（第 1 页），系统读出工作经历条目 1 条。
+  - 硬性条件「简历中存在可分割的教育经历条目」：候选人原文「示例财经大学 计算机科学与技术 本科 2014.09 - 2018.06」（第 1 页），系统读出教育经历条目 1 条。
+- 加分/减分项：
+  - 加分：技能含 PostgreSQL、RabbitMQ，与岗位要求的 PostgreSQL 与消息队列匹配（原文「Java、PostgreSQL、RabbitMQ」，第 1 页）。
+  - 待确认加分：评价标准问句「是否有 ≥1 年、≥3 人的直接带团队经历？」无法从简历判定（简历未写团队规模/管理职责）。
+
+### 三、待人工处理
+
+1. 问题：加分项「带团队经历」无法自动判定，需回答评价标准原问句  
+   原文证据：工作经历原文「紫示例数据科技有限公司 后端工程师 2018.07 - 2023.12」未含团队人数或管理职责描述（第 1 页，原文无对应团队信息）  
+   责任人：用人经理  
+   下一步操作：用人经理结合面试/沟通确认是否满足「≥1 年、≥3 人的直接带团队经历」，并将结论记录到申请 `e1a393a5-fd2f-438c-a32a-dc7896e901ad` 后更新初筛
+
+2. 问题：正式记录决定前需确认使用的评价标准版本（当前按当前已批准版本解析）  
+   原文证据：原文无对应片段  
+   责任人：招聘负责人  
+   下一步操作：招聘负责人确认使用当前评价标准版本（v2）并记录决定到申请 `e1a393a5-fd2f-438c-a32a-dc7896e901ad`
+
+3. 问题：简历阅读顺序未经系统验证，经历/教育条目边界由单页文本推断  
+   原文证据：原文「工作经历」「紫示例数据科技有限公司 后端工程师 2018.07 - 2023.12」「教育背景」「示例财经大学 计算机科学与技术 本科 2014.09 - 2018.06」（第 1 页）  
+   责任人：HR 招聘专员  
+   下一步操作：HR 核对简历原文，确认工作/教育条目边界无误后勾选确认
+
+---
+
+**小结**：材料齐全、无阻塞项；两项硬性条件均满足，建议通过；唯一需人工确认的是带团队经历加分项（用人经理）与最终决定记录（招聘负责人）。
