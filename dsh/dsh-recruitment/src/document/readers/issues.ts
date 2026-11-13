@@ -35,16 +35,3 @@ export function hardIssue(
 ): DocumentIssue {
   return makeIssue(code, message, 'HARD', suggestedAction, retryable, locator)
 }
-
-export function softIssue(
-  code: string,
-  message: string,
-  suggestedAction: SuggestedAction = 'none',
-  locator?: EvidenceLocator,
-): DocumentIssue {
-  return makeIssue(code, message, 'SOFT', suggestedAction, false, locator)
-}
-
-export function hasHardIssue(issues: readonly DocumentIssue[]): boolean {
-  return issues.some((issue) => issue.severity === 'HARD')
-}

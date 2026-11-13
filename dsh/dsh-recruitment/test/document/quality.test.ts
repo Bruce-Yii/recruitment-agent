@@ -25,6 +25,7 @@ import {
   lookupIssueCode,
   mayConcludeAbsence,
   nonWhitespaceChars,
+  readerFactsFromSourceMeta,
 } from '../../src/document/quality/index.ts'
 import { plan } from '../../src/document/recovery/index.ts'
 
@@ -329,7 +330,7 @@ test('注入 4b：转换器自己报的顺序问题一定阻断（继承映射�
   const assessment = assess(content)
   const issue = issueOf(assessment, 'pdf_reading_order_unverified')
   assert.equal(issue.severity, 'HARD')
-  assert.equal(issue.suggested_action, 'vision_read')
+  assert.equal(issue.suggested_action, 'switch_reader')
   assert.equal(assessment.blocking, true)
 })
 
@@ -638,12 +639,54 @@ test('canonical 契约（U0 形状、封闭、无 meta）必须显式传 reader 
   assert.equal(fromConverter.completeness, withFacts.completeness)
 })
 
+test('source_meta → reader facts 桥：canonical 内容必须接上旁路证据才可能判合格', () => {
+  const canonical = {
+    schema_version: '1.0.0',
+    asset_sha256: 'f'.repeat(64),
+    media_type: 'application/pdf',
+    reader_id: 'pdf:pymupdf-mounted/1.28.0',
+    reader_version: '1.28.0',
+    text: goodBlocks().map((block) => block.text).join('\n\n'),
+    blocks: goodBlocks().map((block) => ({ ...block })),
+    completeness: 'complete',
+    needs_visual: false,
+    issues: [],
+    elapsed_ms: 5,
+  }
+  // 没有 facts：页覆盖无法核对 → HARD
+  assert.equal(assess(canonical).blocking, true)
+
+  const facts = readerFactsFromSourceMeta({
+    converter_meta: {
+      pages: 1,
+      order_verified: false,
+      layout_backend: null,
+      page_info: [{ page: 1, chars: 120, block_count: 4, readable: true }],
+    },
+  })
+  assert.equal(facts.page_count, 1)
+  assert.equal(facts.order_verified, false)
+  assert.equal(facts.layout_backend, null)
+  assert.equal(facts.page_info?.length, 1)
+
+  const bridged = assess(canonical, facts)
+  assert.equal(bridged.blocking, false)
+  assert.equal(bridged.completeness, 'complete')
+  assert.equal(bridged.facts.page_count, 1)
+
+  // 裸转换器 meta 形状也认；垃圾输入得到空 facts（不抛）
+  assert.equal(readerFactsFromSourceMeta({ pages: 2 }).page_count, 2)
+  assert.deepEqual(readerFactsFromSourceMeta(null), {})
+  assert.deepEqual(readerFactsFromSourceMeta('junk'), {})
+})
+
 test('纯函数性：质量层与恢复层不 import 模型/网络/子进程，也不碰 tools/ 与 db/', () => {
   const files = [
     join(PKG_ROOT, 'src', 'document', 'quality', 'assess.ts'),
     join(PKG_ROOT, 'src', 'document', 'quality', 'checks.ts'),
     join(PKG_ROOT, 'src', 'document', 'quality', 'normalize.ts'),
     join(PKG_ROOT, 'src', 'document', 'quality', 'issue-codes.ts'),
+    join(PKG_ROOT, 'src', 'document', 'quality', 'source-facts.ts'),
     join(PKG_ROOT, 'src', 'document', 'recovery', 'plan.ts'),
     join(PKG_ROOT, 'src', 'document', 'recovery', 'types.ts'),
   ]

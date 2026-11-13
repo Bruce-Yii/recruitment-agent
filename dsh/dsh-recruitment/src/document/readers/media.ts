@@ -6,7 +6,6 @@
 
 import {
   MEDIA_TYPES,
-  type EvidenceLocator,
   type LocatorKind,
   type MediaType,
 } from '../contracts/index.ts'
@@ -46,9 +45,4 @@ export function locatorKindForMedia(media: MediaType): LocatorKind {
   if (media === MEDIA_PDF) return 'pdf'
   if (media === MEDIA_DOCX) return 'docx'
   return 'image'
-}
-
-/** 供测试/日志使用：media 是否对应某种 locator。 */
-export function locatorMatchesMedia(locator: EvidenceLocator, media: MediaType): boolean {
-  return locator.kind === locatorKindForMedia(media)
 }
