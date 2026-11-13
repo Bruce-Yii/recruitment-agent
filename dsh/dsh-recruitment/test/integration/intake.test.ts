@@ -9,7 +9,7 @@ import { observeIdentity, type StrongId } from '../../src/db/identity.ts'
 import { intakeInTransaction, type IntakeMaterial } from '../../src/tools/application-intake.ts'
 import { createApplicationIntakeTool } from '../../src/tools/application-intake.ts'
 import { resolveConverterConfig } from '../../src/tools/converter.ts'
-import { hex64, inRolledBackTx, one, seedScenario, testDatabaseConfig, createTestPool, TENANT, DEMO_JOB } from './db.ts'
+import { hex64, inRolledBackTx, one, seedScenario, testDatabaseConfig, createTestPool, TENANT, DEMO_JOB, uniqueSuffix } from './db.ts'
 import type { DatabaseClient } from '../../src/db/pool.ts'
 
 const cfg = testDatabaseConfig()
@@ -107,17 +107,26 @@ test('幂等：同一 (sha256, job_id) 第二次调用返回同一 application �
 
 test('IR-N5：新建候选人时写的是规范形，不是来料原样', async () => {
   await inRolledBackTx(pool, async (client) => {
+    // 联系方式必须**每次现造**：`candidate` 上有 (tenant_id, normalized_phone/email) 的
+    // 部分唯一索引，连同 "已有档案就复用" 的身份规则 —— 用固定字面量时，只要库里有
+    // 别人的一条同号码/同邮箱的行（例如一次真实 headless 接入），这条用例就会命中它，
+    // 断言 `matched_by='created'` 立刻变成假阴性。真实事故：2026-11-13 库里多了一条
+    // `zhang.san@example.com`。
+    const suffix = uniqueSuffix()
+    const tail = String(1000 + (Number.parseInt(hex64(`irn5-${suffix}`).slice(0, 6), 16) % 9000))
+    const rawPhone = `+86 139-0000-${tail}`
+    const rawEmail = `Zhang.San.${suffix}@Example.COM`
     const material = makeMaterial({
-      phone: { state: 'present', value: '+86 139-0000-2222' },
-      email: { state: 'present', value: 'Zhang.San@Example.COM' },
+      phone: { state: 'present', value: rawPhone },
+      email: { state: 'present', value: rawEmail },
     })
     const value = await intakeInTransaction(client, cfg, material, DEMO_JOB)
     const { rows } = await client.query<{ normalized_phone: string; normalized_email: string; display_name: string; identity_status: string }>(
       'select normalized_phone, normalized_email, display_name, identity_status from recruitment.candidate where id = $1',
       [value.candidate_id],
     )
-    assert.equal(rows[0]?.normalized_phone, '+8613900002222')
-    assert.equal(rows[0]?.normalized_email, 'zhang.san@example.com')
+    assert.equal(rows[0]?.normalized_phone, `+861390000${tail}`)
+    assert.equal(rows[0]?.normalized_email, rawEmail.trim().toLowerCase())
     assert.equal(rows[0]?.identity_status, 'ACTIVE')
     assert.equal(rows[0]?.display_name, '测试候选人')
     assert.equal(value.matched_by, 'created')

@@ -36,10 +36,23 @@ test.after(async () => {
   await pool.end()
 })
 
+/**
+ * 联系方式必须**每次现造**：`candidate` 上有 `(tenant_id, normalized_phone)` 与
+ * `(tenant_id, normalized_email)` 的部分唯一索引（`identity_status='ACTIVE'`），
+ * 而身份规则是"命中已有档案就复用"。库里只要有一条同号码的行 —— 例如一次真实
+ * headless 接入留下的数据 —— 本文件断言的 `created` / `candidate_created`
+ * 就会变成假阴性（真实事故：2026-11-13 `ra_s6s7` 里多了一条
+ * `+8613800001234` 的真实接入结果）。
+ */
+const PHONE_TAIL = String(1000 + (Number.parseInt(hex64(`structured-phone-${uniqueSuffix()}`).slice(0, 6), 16) % 9000))
+const PHONE_RAW = `138 0000 ${PHONE_TAIL}`
+const PHONE_NORM = `+861380000${PHONE_TAIL}`
+const EMAIL_RAW = `zhang.example.${uniqueSuffix()}@example.test`
+
 /** 六块合成简历（自编文本，无真实个人资料）。 */
 const BLOCKS = [
   { kind: 'paragraph', text: '张示例', location: { page: 1, bbox: [72, 100, 300, 120] }, provenance: 'native_text' },
-  { kind: 'paragraph', text: '电话：138 0000 1234  邮箱：zhang.example@example.test', location: { page: 1, bbox: [72, 130, 520, 150] }, provenance: 'native_text' },
+  { kind: 'paragraph', text: `电话：${PHONE_RAW}  邮箱：${EMAIL_RAW}`, location: { page: 1, bbox: [72, 130, 520, 150] }, provenance: 'native_text' },
   { kind: 'heading', text: '工作经历', location: { page: 1, bbox: [72, 170, 300, 190] }, provenance: 'native_text' },
   { kind: 'paragraph', text: '示例科技有限公司 后端工程师 2020.07-2023.06', location: { page: 1, bbox: [72, 200, 520, 220] }, provenance: 'native_text' },
   { kind: 'heading', text: '教育背景', location: { page: 1, bbox: [72, 240, 300, 260] }, provenance: 'native_text' },
@@ -52,9 +65,9 @@ function makeOutput(sha: string, phoneReadable = false): ConverterOutput {
   const phone = phoneReadable
     ? {
         state: 'present',
-        value: '138 0000 1234',
+        value: PHONE_RAW,
         provenance: 'native_text',
-        evidence: [{ page: 1, bbox: [72, 130, 520, 150], block: 2, text: '电话：138 0000 1234' }],
+        evidence: [{ page: 1, bbox: [72, 130, 520, 150], block: 2, text: `电话：${PHONE_RAW}` }],
       }
     : { state: 'unreadable', reason: 'value_masked_or_redacted', provenance: 'native_text', evidence: [] }
   return {
@@ -114,8 +127,8 @@ function contractShape(): Record<string, unknown> {
     ],
     fields: {
       name: { state: 'present', value: '张示例', block_ids: ['1'] },
-      phone: { state: 'present', value: '138 0000 1234', block_ids: ['2'] },
-      email: { state: 'present', value: 'zhang.example@example.test', block_ids: ['2'] },
+      phone: { state: 'present', value: PHONE_RAW, block_ids: ['2'] },
+      email: { state: 'present', value: EMAIL_RAW, block_ids: ['2'] },
       work_experience: {
         state: 'present',
         block_ids: ['3', '4'],
@@ -193,7 +206,7 @@ test('不传 structured_json：行为不变（parsed_fields 仍是转换器投�
     assert.equal(value.created, true)
     const { parsed_fields: parsed } = await readResumeVersion(client, value.resume_version_id)
     assert.equal(parsed.fields.phone.state, 'present')
-    assert.equal(parsed.fields.phone.value, '138 0000 1234')
+    assert.equal(parsed.fields.phone.value, PHONE_RAW)
     assert.equal(Object.hasOwn(parsed.fields.phone, 'state_source'), false)
     assert.equal(Object.hasOwn(parsed.fields.phone, 'converter_state'), false)
     assert.equal(Object.hasOwn(parsed, 'structured'), false, '不传时不得出现结构化标记')
@@ -268,10 +281,10 @@ test('合法结构化 → 写入；state 按 D-29 升级、converter_state 保�
     assert.equal(parsed.fields.phone.state_source, 'agent_structured')
     assert.equal(parsed.fields.phone.provenance, 'agent_read')
     assert.equal(parsed.fields.phone.converter_state, 'unreadable')
-    assert.equal(parsed.fields.phone.value, '138 0000 1234')
+    assert.equal(parsed.fields.phone.value, PHONE_RAW)
     assert.deepEqual(parsed.fields.phone.block_ids, [2])
     assert.equal(parsed.fields.phone.agent_evidence[0].block_id, 2)
-    assert.match(parsed.fields.phone.agent_evidence[0].quote, /138 0000 1234/)
+    assert.ok(String(parsed.fields.phone.agent_evidence[0].quote).includes(PHONE_RAW))
     assert.equal(parsed.fields.phone.evidence[0].page, 1)
     assert.deepEqual(parsed.fields.phone.evidence[0].bbox, [72, 130, 520, 150])
     assert.equal(parsed.fields.phone.evidence[0].source, 'agent_structured')
@@ -298,7 +311,7 @@ test('合法结构化 → 写入；state 按 D-29 升级、converter_state 保�
     assert.ok(agentEvidence.length >= 5)
     const phoneEvidence = agentEvidence.find((item) => item.field === 'phone' && item.block_id === 2)
     assert.ok(phoneEvidence !== undefined)
-    assert.match(String(phoneEvidence.quote), /138 0000 1234/)
+    assert.ok(String(phoneEvidence.quote).includes(PHONE_RAW))
     assert.equal(phoneEvidence.block_no, 2)
     assert.equal(phoneEvidence.page, 1)
     assert.equal(phoneEvidence.source_asset_sha256, material.sha256)
@@ -309,7 +322,7 @@ test('合法结构化 → 写入；state 按 D-29 升级、converter_state 保�
       [value.candidate_id],
     )
     assert.equal(rows[0]?.display_name, '张示例')
-    assert.equal(rows[0]?.normalized_phone, '+8613800001234')
+    assert.equal(rows[0]?.normalized_phone, PHONE_NORM)
   })
 })
 
@@ -321,9 +334,9 @@ test('模型说 unreadable → 最终 unreadable（converter present 不得把�
       ...output.fields,
       phone: {
         state: 'present',
-        value: '138 0000 1234',
+        value: PHONE_RAW,
         provenance: 'native_text',
-        evidence: [{ page: 1, bbox: [72, 130, 520, 150], block: 2, text: '电话：138 0000 1234' }],
+        evidence: [{ page: 1, bbox: [72, 130, 520, 150], block: 2, text: `电话：${PHONE_RAW}` }],
       },
     }
     const structured = contractShape() as Record<string, any>
@@ -339,7 +352,7 @@ test('模型说 unreadable → 最终 unreadable（converter present 不得把�
     const { parsed_fields: parsed } = await readResumeVersion(client, value.resume_version_id)
     assert.equal(parsed.fields.phone.state, 'unreadable')
     assert.equal(parsed.fields.phone.converter_state, 'present')
-    assert.equal(parsed.fields.phone.converter_value, '138 0000 1234')
+    assert.equal(parsed.fields.phone.converter_value, PHONE_RAW)
     assert.equal(Object.hasOwn(parsed.fields.phone, 'value'), false, 'unreadable 不得携带 value')
     assert.equal(parsed.fields.phone.reason, 'value_masked_or_redacted')
     assert.notEqual(parsed.fields.phone.state, 'absent', 'unreadable 绝不能当 absent')
@@ -354,12 +367,17 @@ test('幂等：同一 (sha256, job_id) 带/不带 structured_json 都只有一�
     assert.equal(first.created, true)
 
     // 不带 structured_json 的同一材料 → replay，不新增行、不改写已有版本。
-    const withoutStructured = makeMaterial(sha)
+    // 注意：这份 replay 自己必须带得出身份证据（phone 可读），否则就是
+    // `MATERIAL_ATTRIBUTION_UNKNOWN`（身份只认强标识 + 证据，不能靠文件 sha 认人）。
+    const withoutStructured = makeMaterial(sha, true)
     const second = await intakeInTransaction(client, cfg, withoutStructured, DEMO_JOB)
     assert.equal(second.created, false)
     assert.equal(second.idempotent_replay, true)
     assert.equal(second.application_id, first.application_id)
     assert.equal(second.resume_version_id, first.resume_version_id)
+    // 用一条更贫瘠的版本把 application 指回去是不允许的：既有结构化事实不许被覆盖。
+    assert.equal(second.structure_saved, false)
+    assert.equal(second.resume_version_action, 'UNCHANGED')
 
     // 再带 structured_json 调一次 → 仍是 replay。
     const third = await intakeInTransaction(client, cfg, withStructured, DEMO_JOB)
@@ -379,23 +397,57 @@ test('幂等：同一 (sha256, job_id) 带/不带 structured_json 都只有一�
   })
 })
 
-test('反向幂等：先不带 structured_json 建，再带着结构化重放 → 仍只有一条 application', async () => {
+test('反向幂等：先不带 structured_json 建，再带着结构化重放 → replay 不是 discard，追加新版本', async () => {
   await inRolledBackTx(pool, async (client) => {
     const sha = hex64(`idem-reverse${uniqueSuffix()}`)
     const first = await intakeInTransaction(client, cfg, makeMaterial(sha, true), DEMO_JOB)
     assert.equal(first.created, true)
+    assert.equal(first.application_action, 'CREATED')
+    assert.equal(first.structure_saved, false, '首次接入没有结构化结果')
+    assert.equal(first.resume_version_action, 'APPENDED')
+    assert.equal(first.resume_version_no, 1)
 
     const withStructured = applyStructuredJson(makeMaterial(sha, true), JSON.stringify(contractShape()), DEMO_JOB)
     const second = await intakeInTransaction(client, cfg, withStructured, DEMO_JOB)
+    // 申请身份 = (candidate, job, ACTIVE)：同一周期只复用，不新建。
     assert.equal(second.created, false)
+    assert.equal(second.application_action, 'REUSED')
     assert.equal(second.application_id, first.application_id)
-    assert.equal(second.resume_version_id, first.resume_version_id)
+    // Issue #1 §1.3：新的、通过证据校验的结构化内容 ⇒ 追加一条 resume_version 并显式指向它。
+    assert.equal(second.structure_saved, true)
+    assert.equal(second.resume_version_action, 'APPENDED')
+    assert.notEqual(second.resume_version_id, first.resume_version_id, 'replay 不得丢弃新结构化结果')
+    assert.equal(second.resume_version_no, 2)
 
-    const apps = await count(
-      client,
-      'select count(*) as n from recruitment.application where tenant_id = $1 and job_id = $2 and resume_version_id = $3',
-      [TENANT, DEMO_JOB, first.resume_version_id],
+    // 两条版本行都在；旧版本逐字未改（不可变）。
+    const rows = await client.query<{ id: string; version_no: number; has_structured: boolean }>(
+      `select id, version_no, (parsed_fields ? 'structured') as has_structured
+         from recruitment.resume_version where resume_id = $1 order by version_no`,
+      [first.resume_id],
     )
-    assert.equal(apps, 1)
+    assert.equal(rows.rows.length, 2)
+    assert.deepEqual(rows.rows.map((r) => r.version_no), [1, 2])
+    assert.equal(rows.rows[0]?.has_structured, false, 'v1 保持"无结构化"的原事实')
+    assert.equal(rows.rows[1]?.has_structured, true)
+    assert.equal(rows.rows[0]?.id, first.resume_version_id)
+
+    // 申请指针指向新版本。
+    const app = await client.query<{ resume_version_id: string }>(
+      'select resume_version_id from recruitment.application where id = $1',
+      [first.application_id],
+    )
+    assert.equal(app.rows[0]?.resume_version_id, second.resume_version_id)
+
+    // 再提交同一份结构化结果 → unchanged，不写任何行。
+    const third = await intakeInTransaction(client, cfg, withStructured, DEMO_JOB)
+    assert.equal(third.resume_version_action, 'UNCHANGED')
+    assert.equal(third.structure_saved, false)
+    assert.equal(third.resume_version_id, second.resume_version_id)
+    assert.equal(third.resume_version_no, 2)
+    const after = await client.query<{ n: string }>(
+      'select count(*) as n from recruitment.resume_version where resume_id = $1',
+      [first.resume_id],
+    )
+    assert.equal(Number(after.rows[0]?.n), 2, '幂等重放不得新增版本')
   })
 })

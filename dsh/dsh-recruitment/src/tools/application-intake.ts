@@ -7,10 +7,21 @@
 //   1. 读 PDF（复用 `src/tools/converter.ts` 的 `runConverter`，不重复实现）
 //   2. 身份观察：只认 phone / email 的规范化精确相等，**姓名不参与判定**
 //      （`docs/16-design-rationale.md` §8「D-46→D-52 身份规则简化到三条」）
-//   3. 幂等：同一 `(sha256, job_id)` 已经有 application 就原样返回，`created=false`
-//   4. 落 Intake 三层 + `resume` + `resume_version`（`parsed_fields` 白名单投影）
-//   5. 找到就复用候选人，找不到才新建（`identity_status='ACTIVE'`）
-//   6. 建 `application`，阶段 `S6`（`stage_catalog` 口径；阶段推进到 S7 是人工/写侧动作）
+//   3. 候选人：命中就复用，没命中才新建（`identity_status='ACTIVE'`）
+//   4. 申请：**身份 = `(tenant_id, candidate_id, job_id)` 且 `lifecycle_status='ACTIVE'`**
+//      —— 命中就复用（`application_action=REUSED`），没有才新建（`CREATED`）。
+//      **文件 sha / 内容 sha 一律不参与"这是不是同一条申请"**（Issue #1 §2.4、0009）。
+//   5. 版本：`resume_version` 不可变。新的、通过证据校验的结构化结果 ⇒ **追加**一条
+//      （同 `resume_id`，`version_no=max+1`），再把 `application.resume_version_id`
+//      显式指过去。同一内容+同一结构化结果 ⇒ 不写任何行（`UNCHANGED`）。
+//      校验失败 ⇒ 一行不写，旧事实不动。
+//   6. 落 Intake 三层（event / record / asset）+ `resume`（按 `(candidate, asset)` 唯一口径）
+//
+// **输出把三个状态分开表达**（这是本轮修的核心误导：旧实现把它们混成 `created`）：
+//   * `application_action: CREATED | REUSED`
+//   * `structure_saved: true | false`（本次是否新增了携带结构化结果的版本）
+//   * `resume_version_id`（本次生效的版本）+ `resume_version_action: APPENDED | UNCHANGED`
+//   `created` / `idempotent_replay` 只作**向后兼容的派生键**保留。
 //
 // 三条红线（违反任一条这次交付即不通过）：
 //   * **读不出 ≠ 新人/重复**：phone/email 都不可自动时返回 `BLOCKED_BY_REVIEW`，
@@ -24,7 +35,7 @@ import { createHash } from 'node:crypto'
 import { statSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 
-import { contractError, type ContractErrorCode } from './contract.ts'
+import { contractError, digestOf, type ContractErrorCode } from './contract.ts'
 import { parseContractArgs, toParameterSchema, type ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
@@ -47,6 +58,7 @@ import {
   normEmail,
   normPhone,
   observeIdentity,
+  strongIdentityKey,
   type CandidateHit,
   type ConverterFieldEntry,
   type StrongId,
@@ -130,14 +142,24 @@ interface IntakeValue {
   readonly tool: string
   readonly contract_version: string
   readonly status: 'OK'
+  /** 兼容键：等价于 `application_action === 'CREATED'`（旧调用方/证据脚本仍在读它）。 */
   readonly created: boolean
   readonly candidate_created: boolean
+  /** 兼容键：本次既没新建申请、也没新增版本（两个状态都为"无变化"）。 */
   readonly idempotent_replay: boolean
+  /** 状态一：申请是新建还是复用。**不包含**"结构化有没有保存"。 */
+  readonly application_action: 'CREATED' | 'REUSED'
+  /** 状态二：本次是否新增了一个**携带结构化结果**的版本（首次无结构化的接入为 false）。 */
+  readonly structure_saved: boolean
+  /** 状态三的补充：版本是本次新增的（APPENDED）还是沿用已有的（UNCHANGED）。 */
+  readonly resume_version_action: 'APPENDED' | 'UNCHANGED'
   readonly candidate_id: string
   readonly application_id: string
   readonly matched_by: string
   readonly resume_id: string
+  /** 状态三：本次生效的版本（`application.resume_version_id` 指向它）。 */
   readonly resume_version_id: string
+  readonly resume_version_no: number
   readonly intake_record_id: string
   readonly intake_asset_id: string
   readonly event_id: string
@@ -182,11 +204,15 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
     created: { type: 'boolean' },
     candidate_created: { type: 'boolean' },
     idempotent_replay: { type: 'boolean' },
+    application_action: { type: 'string', enum: ['CREATED', 'REUSED'] },
+    structure_saved: { type: 'boolean' },
+    resume_version_action: { type: 'string', enum: ['APPENDED', 'UNCHANGED'] },
     candidate_id: { type: 'string' },
     application_id: { type: 'string' },
     matched_by: { type: 'string' },
     resume_id: { type: 'string' },
     resume_version_id: { type: 'string' },
+    resume_version_no: { type: 'integer' },
     intake_record_id: { type: 'string' },
     intake_asset_id: { type: 'string' },
     event_id: { type: 'string' },
@@ -272,6 +298,11 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
       additionalProperties: false,
     },
   },
+  // 注意：`application_action` / `structure_saved` / `resume_version_action` /
+  // `resume_version_no` 是**已声明但暂不进 required**：`test/unit/output-schema.test.ts`
+  // 用一份硬编码的旧样本值校验 additionalProperties/required，那份样本在本 lane 的
+  // 写范围之外。实现每次都会输出这四个键（集成/单测逐条断言），
+  // 待 W0 把样本值补齐后再提升为 required。
   required: [
     'tool', 'contract_version', 'status', 'created', 'candidate_created', 'idempotent_replay',
     'candidate_id', 'application_id', 'matched_by', 'resume_id', 'resume_version_id',
@@ -955,6 +986,118 @@ function structuredMetadata(overlay: StructuredOverlay): Record<string, unknown>
   }
 }
 
+// ---------------------------------------------------------------------------
+//  版本决定（Application 身份 + `resume_version` 不可变）
+//
+//  口径（Issue #1 §1.2/§1.3，W0 裁决，本文件不许另发明）：
+//    * Application 身份 = `(tenant_id, candidate_id, job_id)` 且 `lifecycle_status='ACTIVE'`；
+//      文件 sha / 内容 sha 不参与判定。
+//    * `resume_version` 只 append。同一内容 + 同一结构化结果 ⇒ 不写行（UNCHANGED）；
+//      新的、通过校验的结构化结果 ⇒ 新版本（同 `resume_id`，`version_no = max+1`）。
+// ---------------------------------------------------------------------------
+
+/** `parsed_fields.version_digest` 的算法标识（换算法就换这个字符串）。 */
+const VERSION_DIGEST_SCHEMA = 'intake-resume-version/1'
+
+/** 库里已有的一版（只取判定用的键）。 */
+export interface ExistingVersion {
+  readonly id: string
+  readonly version_no: number
+  /** `parsed_fields.version_digest`；旧行没有这一键 ⇒ `null`（永远不匹配）。 */
+  readonly digest: string | null
+  /** 该版本是否携带已通过校验的结构化结果（旧行按 `parsed_fields.structured` 判定）。 */
+  readonly has_structure: boolean
+}
+
+/** 三个状态里"版本"这一维的决定。 */
+export type VersionDecision =
+  | { readonly action: 'APPEND' }
+  | { readonly action: 'UNCHANGED'; readonly matched_version_id: string | null }
+
+/**
+ * 纯判定：这次的提交要不要新增一条 `resume_version`。
+ *
+ * 顺序即规则：
+ *   1. 已有**完全相同** digest 的版本 → `UNCHANGED`（幂等，指向那一版）；
+ *   2. 这条材料链上还没有任何版本 → `APPEND`（首次接入，必须先有事实）；
+ *   3. 本次带结构化结果（已通过证据校验）→ `APPEND`（新派生版本）；
+ *   4. 本次**没有**结构化结果，但已有版本携带结构化结果 → `UNCHANGED`：
+ *      绝不用一条更贫瘠的版本把 `application.resume_version_id` 往回指
+ *      （replay 不是 discard；旧事实不许被覆盖）；
+ *   5. 其余（同材料的重新解析，且还没有任何结构化事实）→ `APPEND`，可追踪。
+ * @param input.digest - `submissionDigest(material)`。
+ * @param input.hasStructured - 本次是否带了通过校验的 `structured_json`。
+ * @param input.existing - 该 `resume` 上已有的版本（按 `version_no` 升序）。
+ */
+export function decideVersionAction(input: {
+  readonly digest: string
+  readonly hasStructured: boolean
+  readonly existing: readonly ExistingVersion[]
+}): VersionDecision {
+  const match = input.existing.find((row) => row.digest !== null && row.digest === input.digest)
+  if (match !== undefined) return { action: 'UNCHANGED', matched_version_id: match.id }
+  if (input.existing.length === 0) return { action: 'APPEND' }
+  if (input.hasStructured) return { action: 'APPEND' }
+  if (input.existing.some((row) => row.has_structure)) {
+    return { action: 'UNCHANGED', matched_version_id: null }
+  }
+  return { action: 'APPEND' }
+}
+
+/**
+ * 一次提交的内容指纹：**只用来判断"这一版是不是同一版"**，不参与申请身份判定。
+ *
+ * 覆盖三部分：原件字节 sha、提取正文 sha、以及（若有的）已校验结构化结果的归一化投影。
+ * 用 `digestOf`（`canonicalJson`：键排序）⇒ 同一份结构化结果换了键顺序/空白，
+ * 指纹不变；任何一个业务字段的 state / value / entry_count / block_ids 变了，指纹就变。
+ * @param material - `buildMaterial()` / `applyStructuredJson()` 的结果。
+ */
+export function submissionDigest(material: IntakeMaterial): string {
+  const overlay = material.structured
+  const structured = overlay === undefined
+    ? null
+    : {
+        prompt_version: overlay.prompt_version,
+        schema_version: overlay.schema_version,
+        block_count: overlay.block_count,
+        issue_codes: [...overlay.issue_codes].sort(),
+        fields: BUSINESS_FIELDS.flatMap((field) => {
+          const agent = overlay.fields[field]
+          if (agent === undefined) return []
+          return [{
+            field,
+            state: agent.state,
+            value: agent.value ?? null,
+            entry_count: agent.entry_count ?? null,
+            reason: agent.reason ?? null,
+            block_ids: [...agent.block_ids],
+          }]
+        }),
+      }
+  const parse = mapParseStatus(material.output.completeness, material.output.chars, material.output.issues)
+  return digestOf({
+    schema: VERSION_DIGEST_SCHEMA,
+    source_asset_sha256: material.sha256,
+    content_sha256: sha256OfText(material.output.text ?? ''),
+    parse_status: parse.status,
+    completeness: material.output.completeness ?? 'unknown',
+    hard_issue_codes: hardIssueCodes(material.output.issues as readonly MaterialIssue[] | undefined),
+    structured,
+  })
+}
+
+/** 落进 `parsed_fields` 的版本元数据（`resume_version` 行本身不可改，所以只能写在 JSON 里）。 */
+function versionMetadata(digest: string, hasStructure: boolean): Record<string, unknown> {
+  return {
+    version_digest: digest,
+    version_meta: {
+      digest_schema: VERSION_DIGEST_SCHEMA,
+      has_structure: hasStructure,
+      submitted_by: TOOL_NAME,
+    },
+  }
+}
+
 interface JobRow {
   readonly id: string
   readonly tenant_id: string
@@ -967,10 +1110,17 @@ interface JobRow {
 /**
  * 在一个**已开启并已设置 actor** 的事务里完成一次 intake。
  *
+ * 顺序是契约的一部分（`Issue #1 §1.2/§1.3`）：
+ *   actor 校验 → 身份锁 → 身份结论 → 岗位 → 候选人 → 申请周期锁 → 版本决定 → 申请（复用/新建）。
+ *
+ * 三处**不许**用文件 sha / 内容 sha：身份匹配、申请复用、版本复用。
+ * sha 只在两种地方用：① `intake_asset`/`resume_version` 的原件溯源列；
+ * ② `submissionDigest()` 判断"这一版是不是同一版"。
+ *
  * 单独导出是为了让集成测试把它放进"必回滚事务"里跑（幂等、身份匹配都要真库）。
  * @param client - 事务内客户端。
  * @param cfg - 已解析配置（租户与 actor 从这里来）。
- * @param material - `buildMaterial()` 的结果。
+ * @param material - `buildMaterial()`（可再经 `applyStructuredJson()`）的结果。
  * @param jobId - 目标岗位 id。
  * @returns 规范输出值。
  */
@@ -995,66 +1145,22 @@ export async function intakeInTransaction(
     })
   }
 
-  // 1) 串行化同一 (材料, 岗位) 的并发调用，避免两个事务都"没查到"然后各插一条。
-  await client.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [
-    `intake:${tenantId}:${material.sha256}:${jobId}`,
-  ])
-
-  // 2) 幂等：同一 (sha256, job_id) 已有申请 → 原样返回，created=false。
-  const replay = await client.query<{
-    application_id: string
-    candidate_id: string
-    resume_version_id: string
-    resume_id: string
-    intake_record_id: string
-    intake_asset_id: string
-    event_id: string
-    stage_code: string
-    lifecycle_status: string
-    record_version: number
-    job_version_id: string
-  }>(
-    `select a.id as application_id, a.candidate_id, a.resume_version_id,
-            a.current_stage_code as stage_code, a.lifecycle_status, a.record_version,
-            a.job_version_id,
-            rv.id as resume_version_id, rv.resume_id,
-            ia.id as intake_asset_id, ir.id as intake_record_id, ir.event_id
-       from recruitment.application a
-       join recruitment.resume_version rv
-         on rv.id = a.resume_version_id and rv.tenant_id = a.tenant_id
-       join recruitment.resume r on r.id = rv.resume_id and r.tenant_id = rv.tenant_id
-       join recruitment.intake_asset ia on ia.id = r.intake_asset_id and ia.tenant_id = r.tenant_id
-       join recruitment.intake_record ir on ir.id = ia.intake_record_id and ir.tenant_id = ia.tenant_id
-       join recruitment.candidate c on c.id = a.candidate_id and c.tenant_id = a.tenant_id
-      where a.tenant_id = $1 and a.job_id = $2 and rv.source_asset_sha256 = $3
-      order by a.created_at
-      limit 1`,
-    [tenantId, jobId, material.sha256],
-  )
-  const existing = replay.rows[0]
+  // 1) 岗位必须在判定身份之前确认：目标岗位不合法是**参数**问题，
+  //    不该被"材料读不出"盖住（`intake.test.ts`「岗位不存在 → NOT_FOUND」）。
+  //    `job_version_id` 也在这里一次性确认，避免写了一半才报错。
   const job = await loadJob(client, tenantId, jobId)
-  if (existing !== undefined) {
-    return assemble({
-      cfg,
-      material,
-      job,
-      created: false,
-      candidateCreated: false,
-      idempotentReplay: true,
-      candidateId: existing.candidate_id,
-      applicationId: existing.application_id,
-      matchedBy: 'existing',
-      resumeId: existing.resume_id,
-      resumeVersionId: existing.resume_version_id,
-      intakeRecordId: existing.intake_record_id,
-      intakeAssetId: existing.intake_asset_id,
-      eventId: existing.event_id,
-      stageCode: existing.stage_code,
-      lifecycleStatus: existing.lifecycle_status,
-      recordVersion: existing.record_version,
-      jobVersionId: existing.job_version_id,
+  if (job.current_job_version_id === null) {
+    throw contractError('NOT_FOUND', {
+      reason_code: 'JOB_VERSION_NOT_FOUND',
+      message: '该岗位还没有 job_version（application.job_version_id 是 NOT NULL）',
+      detail: { job_id: jobId },
     })
   }
+
+  // 2) 串行化"同一个自然人"的并发接入：key 来自**强标识集合**，不是文件 sha。
+  //    否则同一个人的两份不同材料会各自"没查到"并各建一个候选人。
+  const identityKey = strongIdentityKey(material.strong)
+  if (identityKey !== null) await lockTransactionKey(client, `intake:identity:${tenantId}:${identityKey}`)
 
   // 3) 身份结论。命中不到就新建，命中一条就复用，其余一律拒绝（一条行都不写）。
   const hits = await matchByStrongIds(client, tenantId, material.strong)
@@ -1067,14 +1173,7 @@ export async function intakeInTransaction(
     })
   }
 
-  const parse = mapParseStatus(material.output.completeness, material.output.chars, material.output.issues)
-  const hard = hardIssueCodes(material.output.issues as readonly MaterialIssue[] | undefined)
-
-  // 4) Intake 三层 + resume + resume_version。
-  const eventId = await upsertIntakeEvent(client, tenantId, material)
-  const intakeRecordId = await insertIntakeRecord(client, tenantId, eventId, material)
-  const intakeAssetId = await insertIntakeAsset(client, tenantId, intakeRecordId, material)
-
+  // 4) 候选人：命中就复用，没命中才新建。
   let candidateId: string
   let candidateCreated: boolean
   if (decision.kind === 'LINK_EXISTING') {
@@ -1085,65 +1184,351 @@ export async function intakeInTransaction(
     candidateCreated = true
   }
 
-  const resumeId = await insertResume(client, tenantId, candidateId, intakeAssetId)
-  // D-29：有 `structured` 覆盖时五个业务字段以模型层为准；否则逐字等于转换器投影。
-  const fields = effectiveFields(material)
-  const projection = projectParsedFields(material.output) as unknown as Record<string, unknown>
-  projection.fields = fields
-  if (material.structured !== undefined) {
-    projection.structured = structuredMetadata(material.structured)
-  }
-  const resumeVersionId = await insertResumeVersion(client, tenantId, {
-    resumeId,
-    material,
-    parseStatus: parse.status,
-    parseError: parse.parse_error,
-    parsedFields: projection,
-  })
+  // 5) 串行化同一个 (candidate, job) 的申请周期：**这是 Application 身份的唯一来源**。
+  //    库里若已有 0009 的部分唯一索引，这里的 insert 还会有第二条兜底（23505 → 回读复用）。
+  await lockTransactionKey(client, `intake:application:${tenantId}:${candidateId}:${jobId}`)
 
-  // 5) 申请（阶段 S6 = Intake；推进到 S7 是写侧动作，不由本工具代做）。
-  if (job.current_job_version_id === null) {
-    throw contractError('NOT_FOUND', {
-      reason_code: 'JOB_VERSION_NOT_FOUND',
-      message: '该岗位还没有 job_version（application.job_version_id 是 NOT NULL）',
-      detail: { job_id: jobId },
+  const activeApp = await findActiveApplication(client, tenantId, candidateId, jobId)
+  const chain = await findMaterialChain(client, tenantId, candidateId, material.sha256)
+  const existing = chain === null ? [] : await loadVersions(client, tenantId, chain.resume_id)
+
+  const digest = submissionDigest(material)
+  const hasStructured = material.structured !== undefined
+  const versionDecision = decideVersionAction({ digest, hasStructured, existing })
+
+  const parse = mapParseStatus(material.output.completeness, material.output.chars, material.output.issues)
+
+  // 6) 版本：只能 append；已存在的版本行永远不动（库里 `trg_resume_version_immutable` 兜底）。
+  let resumeVersionId: string
+  let resumeVersionNo: number
+  let materialIds: MaterialChainRow
+  let structureSaved = false
+
+  if (versionDecision.action === 'APPEND') {
+    let resumeId: string
+    if (chain !== null) {
+      // 同一 (candidate, 原件) 已经有材料链：复用 event/record/asset/resume，不重复记录到达。
+      materialIds = chain
+      resumeId = chain.resume_id
+    } else {
+      const eventId = await upsertIntakeEvent(client, tenantId, material)
+      const intakeRecordId = await insertIntakeRecord(client, tenantId, eventId, material)
+      const intakeAssetId = await insertIntakeAsset(client, tenantId, intakeRecordId, material)
+      resumeId = await insertResume(client, tenantId, candidateId, intakeAssetId)
+      materialIds = { resume_id: resumeId, intake_asset_id: intakeAssetId, intake_record_id: intakeRecordId, event_id: eventId }
+    }
+    resumeVersionNo = (existing.length === 0 ? 0 : (existing[existing.length - 1] as ExistingVersion).version_no) + 1
+    // D-29：有 `structured` 覆盖时五个业务字段以模型层为准；否则逐字等于转换器投影。
+    const fields = effectiveFields(material)
+    const projection = projectParsedFields(material.output) as unknown as Record<string, unknown>
+    projection.fields = fields
+    if (material.structured !== undefined) {
+      projection.structured = structuredMetadata(material.structured)
+    }
+    Object.assign(projection, versionMetadata(digest, hasStructured))
+    resumeVersionId = await insertResumeVersion(client, tenantId, {
+      resumeId,
+      versionNo: resumeVersionNo,
+      material,
+      parseStatus: parse.status,
+      parseError: parse.parse_error,
+      parsedFields: projection,
     })
+    structureSaved = hasStructured
+  } else {
+    // 不写任何行：沿用那一版（本次提交与它逐字等价，或它比本次提交更有信息）。
+    const effectiveId = versionDecision.matched_version_id
+      ?? activeApp?.resume_version_id
+      ?? (existing.length === 0 ? null : (existing[existing.length - 1] as ExistingVersion).id)
+    if (effectiveId === null) {
+      // 不可达：UNCHANGED 只在"该材料链上已有版本"时返回。
+      throw new RecruitmentToolError('READER_FAILED', 'intake: UNCHANGED without any existing resume_version')
+    }
+    const source = await loadVersionChain(client, tenantId, effectiveId)
+    resumeVersionId = source.resume_version_id
+    resumeVersionNo = source.version_no
+    materialIds = {
+      resume_id: source.resume_id,
+      intake_asset_id: source.intake_asset_id,
+      intake_record_id: source.intake_record_id,
+      event_id: source.event_id,
+    }
   }
-  const application = await client.query<{ id: string; record_version: number }>(
-    `insert into recruitment.application
-       (tenant_id, candidate_id, job_id, job_version_id, resume_version_id,
-        lifecycle_status, current_stage_code)
-     values ($1, $2, $3, $4, $5, 'ACTIVE', 'S6')
-     returning id, record_version`,
-    [tenantId, candidateId, jobId, job.current_job_version_id, resumeVersionId],
-  )
-  const applicationRow = application.rows[0]
-  if (applicationRow === undefined) {
-    throw new RecruitmentToolError('READER_FAILED', 'application insert returned no row')
-  }
+
+  // 7) 申请：复用同 (candidate, job, ACTIVE) 的那条，或新建一条（阶段 S6 = Intake）。
+  const application = await ensureActiveApplication(client, {
+    tenantId,
+    candidateId,
+    jobId,
+    jobVersionId: job.current_job_version_id,
+    resumeVersionId,
+  })
 
   return assemble({
     cfg,
     material,
     job,
-    created: true,
+    applicationAction: application.action,
     candidateCreated,
-    idempotentReplay: false,
+    structureSaved,
+    resumeVersionAction: versionDecision.action === 'APPEND' ? 'APPENDED' : 'UNCHANGED',
+    resumeVersionNo,
     candidateId,
-    applicationId: applicationRow.id,
+    applicationId: application.id,
     matchedBy: decision.kind === 'LINK_EXISTING'
       ? [...new Set(hits.map((hit) => hit.field))].sort().join('+')
       : 'created',
-    resumeId,
+    resumeId: materialIds.resume_id,
     resumeVersionId,
-    intakeRecordId,
-    intakeAssetId,
-    eventId,
-    stageCode: 'S6',
-    lifecycleStatus: 'ACTIVE',
-    recordVersion: applicationRow.record_version,
-    jobVersionId: job.current_job_version_id,
+    intakeRecordId: materialIds.intake_record_id,
+    intakeAssetId: materialIds.intake_asset_id,
+    eventId: materialIds.event_id,
+    stageCode: application.stage_code,
+    lifecycleStatus: application.lifecycle_status,
+    recordVersion: application.record_version,
+    jobVersionId: application.job_version_id,
   })
+}
+
+// ---------------------------------------------------------------------------
+//  申请周期（Application 身份）—— 与文件 sha / 内容 sha 无关
+// ---------------------------------------------------------------------------
+
+/** 库里那条 ACTIVE 申请（判定 + 输出都要用到的列）。 */
+export interface ActiveApplicationRow {
+  readonly id: string
+  readonly record_version: number
+  readonly stage_code: string
+  readonly lifecycle_status: string
+  readonly job_version_id: string
+  readonly resume_version_id: string | null
+}
+
+/** `ensureActiveApplication` 的结果：行 + 这次是新建还是复用。 */
+export interface ActiveApplicationResult extends ActiveApplicationRow {
+  readonly action: 'CREATED' | 'REUSED'
+}
+
+/** 事务级咨询锁：同一 key 串行，不同 key 不互相阻塞。 */
+async function lockTransactionKey(client: DatabaseClient, key: string): Promise<void> {
+  await client.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [key])
+}
+
+/** 唯一约束冲突？（0009 的 `uq_application_active_cycle` 上线后，并发插入会走到这里） */
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === '23505'
+}
+
+/**
+ * 找同 (candidate, job) 的 ACTIVE 申请。**这是 Application 身份的唯一判据**。
+ * @param client - 事务内客户端。
+ * @param tenantId - 租户。
+ * @param candidateId - 已解析的存活档候选人。
+ * @param jobId - 岗位。
+ * @returns 命中行；没有则为 `null`（→ 允许新建一条 ACTIVE）。
+ */
+export async function findActiveApplication(
+  client: DatabaseClient,
+  tenantId: string,
+  candidateId: string,
+  jobId: string,
+): Promise<ActiveApplicationRow | null> {
+  const { rows } = await client.query<ActiveApplicationRow>(
+    `select id, record_version, current_stage_code as stage_code, lifecycle_status,
+            job_version_id, resume_version_id
+       from recruitment.application
+      where tenant_id = $1 and candidate_id = $2 and job_id = $3 and lifecycle_status = 'ACTIVE'
+      order by created_at
+      limit 1`,
+    [tenantId, candidateId, jobId],
+  )
+  return rows[0] ?? null
+}
+
+/**
+ * 复用或新建这条 ACTIVE 申请，并把它的 `resume_version_id` 显式指向本次生效的版本。
+ *
+ * 三种可能：
+ *   1. 已有 ACTIVE → 复用（`REUSED`）；指针不同才 UPDATE（`resume_version` 侧永远只读）；
+ *   2. 没有 → INSERT（`CREATED`）；
+ *   3. INSERT 撞唯一约束（并发/0009 索引）→ 回读那一条当复用（`REUSED`）。
+ *
+ * 更新指针会经过 `fn_row_guard`（两个 status 守卫各加一次 `record_version`），
+ * 所以**必须**用 `RETURNING` 取回新值，不能自己 +1。
+ * @param client - 事务内客户端。
+ * @param input - 租户 / 候选人 / 岗位 / 岗位版本 / 本轮生效的版本。
+ * @returns 申请行 + 动作。
+ */
+export async function ensureActiveApplication(
+  client: DatabaseClient,
+  input: {
+    readonly tenantId: string
+    readonly candidateId: string
+    readonly jobId: string
+    readonly jobVersionId: string
+    readonly resumeVersionId: string
+  },
+): Promise<ActiveApplicationResult> {
+  const existing = await findActiveApplication(client, input.tenantId, input.candidateId, input.jobId)
+  if (existing !== null) {
+    return { ...(await pointApplicationAtVersion(client, existing, input.resumeVersionId)), action: 'REUSED' }
+  }
+  try {
+    const { rows } = await client.query<{
+      id: string
+      record_version: number
+      stage_code: string
+      lifecycle_status: string
+      job_version_id: string
+      resume_version_id: string | null
+    }>(
+      `insert into recruitment.application
+         (tenant_id, candidate_id, job_id, job_version_id, resume_version_id,
+          lifecycle_status, current_stage_code)
+       values ($1, $2, $3, $4, $5, 'ACTIVE', 'S6')
+       returning id, record_version, current_stage_code as stage_code, lifecycle_status,
+                 job_version_id, resume_version_id`,
+      [input.tenantId, input.candidateId, input.jobId, input.jobVersionId, input.resumeVersionId],
+    )
+    const row = rows[0]
+    if (row === undefined) {
+      throw new RecruitmentToolError('READER_FAILED', 'application insert returned no row')
+    }
+    return { ...row, action: 'CREATED' }
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error
+    const raced = await findActiveApplication(client, input.tenantId, input.candidateId, input.jobId)
+    if (raced === null) throw error
+    return { ...(await pointApplicationAtVersion(client, raced, input.resumeVersionId)), action: 'REUSED' }
+  }
+}
+
+/** 把申请的 `resume_version_id` 指到新版本（值相同则一条 UPDATE 都不发）。 */
+async function pointApplicationAtVersion(
+  client: DatabaseClient,
+  row: ActiveApplicationRow,
+  resumeVersionId: string,
+): Promise<ActiveApplicationRow> {
+  if (row.resume_version_id === resumeVersionId) return row
+  const { rows } = await client.query<ActiveApplicationRow>(
+    `update recruitment.application
+        set resume_version_id = $2
+      where id = $1
+      returning id, record_version, current_stage_code as stage_code, lifecycle_status,
+                job_version_id, resume_version_id`,
+    [row.id, resumeVersionId],
+  )
+  const updated = rows[0]
+  if (updated === undefined) {
+    throw new RecruitmentToolError('READER_FAILED', 'application update returned no row')
+  }
+  return updated
+}
+
+// ---------------------------------------------------------------------------
+//  材料链 + 版本（`resume` 的口径：一份原件一条 resume，版本挂在它下面）
+// ---------------------------------------------------------------------------
+
+/** 一条材料链：resume → asset → record → event。 */
+interface MaterialChainRow {
+  readonly resume_id: string
+  readonly intake_asset_id: string
+  readonly intake_record_id: string
+  readonly event_id: string
+}
+
+/** 材料链 + 某一版的版本号。 */
+interface VersionChainRow extends MaterialChainRow {
+  readonly resume_version_id: string
+  readonly version_no: number
+}
+
+/**
+ * 这条 `(candidate, 原件 sha)` 已经有一条 `resume` 吗？
+ *
+ * 用 `intake_asset.sha256` 找原件：**只用于把"同一份原件"挂在同一条 `resume` 下**，
+ * 不用于判断"这是不是同一条申请"（那是 `ensureActiveApplication` 的事）。
+ */
+async function findMaterialChain(
+  client: DatabaseClient,
+  tenantId: string,
+  candidateId: string,
+  sha256: string,
+): Promise<MaterialChainRow | null> {
+  const { rows } = await client.query<MaterialChainRow>(
+    `select r.id as resume_id, r.intake_asset_id, a.intake_record_id, ir.event_id
+       from recruitment.resume r
+       join recruitment.intake_asset a
+         on a.id = r.intake_asset_id and a.tenant_id = r.tenant_id
+       join recruitment.intake_record ir
+         on ir.id = a.intake_record_id and ir.tenant_id = a.tenant_id
+      where r.tenant_id = $1 and r.candidate_id = $2 and a.sha256 = $3
+      order by r.created_at
+      limit 1`,
+    [tenantId, candidateId, sha256],
+  )
+  return rows[0] ?? null
+}
+
+/**
+ * 该 `resume` 上已有的版本（按 `version_no` 升序）。
+ *
+ * `has_structure`：新行读 `parsed_fields.version_meta.has_structure`；
+ * 旧行（本 lane 之前落的）没有这个键，就退回"有没有 `parsed_fields.structured`"——
+ * 否则一条旧的结构化版本会被当成贫瘠版本，replay 时被降级覆盖。
+ */
+async function loadVersions(
+  client: DatabaseClient,
+  tenantId: string,
+  resumeId: string,
+): Promise<ExistingVersion[]> {
+  const { rows } = await client.query<{
+    id: string
+    version_no: number
+    digest: string | null
+    has_structure: boolean
+  }>(
+    `select rv.id, rv.version_no,
+            rv.parsed_fields ->> 'version_digest' as digest,
+            coalesce((rv.parsed_fields -> 'version_meta' ->> 'has_structure')::boolean,
+                     (rv.parsed_fields ? 'structured')) as has_structure
+       from recruitment.resume_version rv
+      where rv.tenant_id = $1 and rv.resume_id = $2
+      order by rv.version_no`,
+    [tenantId, resumeId],
+  )
+  return rows.map((row) => ({
+    id: row.id,
+    version_no: row.version_no,
+    digest: row.digest,
+    has_structure: row.has_structure === true,
+  }))
+}
+
+/** 某一版的完整链（用于 UNCHANGED 时把 event/record/asset/resume 读回来，不新写行）。 */
+async function loadVersionChain(
+  client: DatabaseClient,
+  tenantId: string,
+  resumeVersionId: string,
+): Promise<VersionChainRow> {
+  const { rows } = await client.query<VersionChainRow>(
+    `select rv.id as resume_version_id, rv.version_no, rv.resume_id,
+            r.intake_asset_id, a.intake_record_id, ir.event_id
+       from recruitment.resume_version rv
+       join recruitment.resume r
+         on r.id = rv.resume_id and r.tenant_id = rv.tenant_id
+       join recruitment.intake_asset a
+         on a.id = r.intake_asset_id and a.tenant_id = r.tenant_id
+       join recruitment.intake_record ir
+         on ir.id = a.intake_record_id and ir.tenant_id = a.tenant_id
+      where rv.tenant_id = $1 and rv.id = $2`,
+    [tenantId, resumeVersionId],
+  )
+  const row = rows[0]
+  if (row === undefined) {
+    throw new RecruitmentToolError('READER_FAILED', 'resume_version chain disappeared during intake')
+  }
+  return row
 }
 
 async function loadJob(client: DatabaseClient, tenantId: string, jobId: string): Promise<JobRow> {
@@ -1293,11 +1678,20 @@ async function insertResume(
   return row.id
 }
 
+/**
+ * 追加一条 `resume_version`（**只 insert、永不 update**：库里 `trg_resume_version_immutable`
+ * 会拒绝任何 UPDATE）。
+ * @param client - 事务内客户端。
+ * @param tenantId - 租户。
+ * @param input - `versionNo` 由调用方按 `max(version_no)+1` 算好（同一 `resume_id` 内唯一）。
+ * @returns 新版本行 id。
+ */
 async function insertResumeVersion(
   client: DatabaseClient,
   tenantId: string,
   input: {
     readonly resumeId: string
+    readonly versionNo: number
     readonly material: IntakeMaterial
     readonly parseStatus: string
     readonly parseError: string | undefined
@@ -1309,11 +1703,12 @@ async function insertResumeVersion(
     `insert into recruitment.resume_version
        (tenant_id, resume_id, version_no, source_asset_sha256, content_sha256,
         parser_name, parser_version, parse_status, parse_error, parsed_fields, evidence)
-     values ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb)
      returning id`,
     [
       tenantId,
       input.resumeId,
+      input.versionNo,
       input.material.sha256,
       sha256OfText(input.material.output.text ?? ''),
       backendName(input.material.output.meta?.backend),
@@ -1402,9 +1797,11 @@ function assemble(input: {
   readonly cfg: ResolvedDatabaseConfig
   readonly material: IntakeMaterial
   readonly job: JobRow
-  readonly created: boolean
+  readonly applicationAction: 'CREATED' | 'REUSED'
   readonly candidateCreated: boolean
-  readonly idempotentReplay: boolean
+  readonly structureSaved: boolean
+  readonly resumeVersionAction: 'APPENDED' | 'UNCHANGED'
+  readonly resumeVersionNo: number
   readonly candidateId: string
   readonly applicationId: string
   readonly matchedBy: string
@@ -1428,14 +1825,20 @@ function assemble(input: {
     tool: TOOL_NAME,
     contract_version: CONTRACT_VERSION,
     status: 'OK',
-    created: input.created,
+    // 兼容键：只由 application_action 派生，不再代表"结构化有没有落库"。
+    created: input.applicationAction === 'CREATED',
     candidate_created: input.candidateCreated,
-    idempotent_replay: input.idempotentReplay,
+    idempotent_replay: input.applicationAction === 'REUSED' && input.resumeVersionAction === 'UNCHANGED',
+    // 三个状态：分开表达，谁也不能替谁回答（Issue #1 §1.3）。
+    application_action: input.applicationAction,
+    structure_saved: input.structureSaved,
+    resume_version_action: input.resumeVersionAction,
     candidate_id: input.candidateId,
     application_id: input.applicationId,
     matched_by: input.matchedBy,
     resume_id: input.resumeId,
     resume_version_id: input.resumeVersionId,
+    resume_version_no: input.resumeVersionNo,
     intake_record_id: input.intakeRecordId,
     intake_asset_id: input.intakeAssetId,
     event_id: input.eventId,
@@ -1511,21 +1914,29 @@ export function createApplicationIntakeTool(cfg: IntakeToolConfig): ReadonlyTool
     name: TOOL_NAME,
     description:
       'S6 resume intake. Reads one local resume PDF, resolves the candidate by exact normalized '
-      + 'phone/email only (names are never used for identity), and creates the application at stage S6. '
-      + 'Idempotent per (sha256, job_id): a second call returns the same ids with created=false. '
+      + 'phone/email only (names are never used for identity), and reports THREE independent states: '
+      + '(1) application_action=CREATED|REUSED — the application identity is (candidate, job) while '
+      + 'lifecycle_status=ACTIVE, never the file hash, so a new material for the same candidate+job '
+      + 'reuses that application; (2) structure_saved=true|false — whether this call appended a new '
+      + 'resume_version carrying a validated structured result (resume_version rows are immutable); '
+      + '(3) resume_version_id / resume_version_no / resume_version_action=APPENDED|UNCHANGED — the '
+      + 'version now in effect, which application.resume_version_id points at. A byte-identical '
+      + 'replay returns REUSED/UNCHANGED and writes nothing. '
       + 'If phone and email are both unreadable it refuses with BLOCKED_BY_REVIEW and writes nothing. '
       + 'It never merges candidates. Writes only through SET LOCAL recruitment.actor_id. '
       + 'Optionally accepts structured_json (the structuring agent result for the SAME PDF): it is '
-      + 'validated against this PDF block index, rejected results write nothing, and accepted results '
-      + 'set the five business fields state while preserving converter_state.',
+      + 'validated against this PDF block index, rejected results write nothing (old facts untouched), '
+      + 'and accepted results set the five business fields state while preserving converter_state.',
     parameters: toParameterSchema(PARAMS),
     output: {
       schema: OUTPUT_SCHEMA,
       render(_args: unknown, value: unknown): readonly TextBlock[] {
         const v = value as IntakeValue
         const lines = [
-          `intake: ${v.created ? 'created' : 'replayed'} application ${v.application_id}`,
-          `candidate ${v.candidate_id} (${v.candidate_created ? 'new' : 'existing'}, matched_by=${v.matched_by})`,
+          `application: ${v.application_action} ${v.application_id}`,
+          `structure: saved=${v.structure_saved} (resume_version v${v.resume_version_no} `
+            + `${v.resume_version_id}, ${v.resume_version_action})`,
+          `candidate: ${v.candidate_id} (${v.candidate_created ? 'new' : 'existing'}, matched_by=${v.matched_by})`,
           `job ${v.job.code} [${v.job.status}] stage=${v.application.stage_code} lifecycle=${v.application.lifecycle_status}`,
           `source: ${v.source.file_name} pages=${v.source.pages} bytes=${v.source.byte_size}`,
           `sha256=${v.source.sha256}`,

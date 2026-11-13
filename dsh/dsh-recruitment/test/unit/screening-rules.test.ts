@@ -21,6 +21,8 @@ function makeCtx(overrides: {
   hardIssueCount?: number
   ableFields?: string[]
   evidence?: unknown[]
+  workExtra?: Record<string, unknown>
+  eduExtra?: Record<string, unknown>
 } = {}): EvalContext {
   const evidence = overrides.evidence ?? [
     { page: 1, bbox: [72, 200, 523, 224], block: 3, text: '2020.01 - 至今 某某科技 后端工程师' },
@@ -32,12 +34,14 @@ function makeCtx(overrides: {
       reason: overrides.workState === 'unreadable' ? 'reading_order_unverified' : '',
       evidence: (overrides.workState ?? 'present') === 'present' ? evidence : [],
       ...(overrides.entryCount === undefined ? {} : { entry_count: overrides.entryCount }),
+      ...(overrides.workExtra ?? {}),
     },
     education: {
       state: overrides.eduState ?? 'present',
       provenance: 'native_text',
       reason: overrides.eduState === 'unreadable' ? 'entries_not_segmentable' : '',
       evidence: (overrides.eduState ?? 'present') === 'present' ? evidence : [],
+      ...(overrides.eduExtra ?? {}),
     },
   }
   return {
@@ -196,6 +200,96 @@ test('timeline 在 work_experience 未 present 时 → UNAVAILABLE → UNREADABL
   const result = evaluateCriterion(ctx, MUST_MONTHS_GTE60, 0)
   assert.equal(result.outcome, 'UNREADABLE')
   assert.equal(result.reason.bounds, 'UNAVAILABLE')
+})
+
+// ---------------------------------------------------------------------------
+//  Issue #1 §1.4 / 用例 J：同一有效版本
+//  agent 把 work_experience 从 unreadable 升级成 present 后，converter 的 timeline
+//  是在旧字段上算的，不得继续用来比较——否则旧值 0 会让 GTE 60 变成 UNSATISFIED
+//  （虚假 FAIL），或让 DISQUALIFIER LTE 60 变成 TRIGGERED（同样虚假 FAIL）。
+// ---------------------------------------------------------------------------
+
+test('J：work_experience 被 agent 升级后，旧 converter timeline 不得产生虚假 FAIL', () => {
+  const ctx = makeCtx({
+    workState: 'present',
+    workExtra: { state_source: 'agent_structured', converter_state: 'unreadable', block_ids: [11, 12], entry_count: 2 },
+    timeline: { open_ended_intervals: 0, year_only_intervals: 0, covered_months_closed: 0 },
+  })
+  const gte = evaluateCriterion(ctx, MUST_MONTHS_GTE60, 0)
+  assert.equal(gte.outcome, 'UNREADABLE', '旧 timeline 的 0 个月不能判 UNSATISFIED')
+  assert.equal(gte.reason.bounds, 'UNAVAILABLE')
+  assert.equal(gte.reason.tri_state, 'present', '有效字段本身是 present，只是量未确认')
+  assert.ok(gte.reason.issue_codes.includes('timeline_unconfirmed:work_experience_upgraded_by_agent'))
+  assert.ok(gte.reason.issue_codes.includes('converter_timeline_ignored:covered_months_closed=0'))
+  assert.match(gte.reason.message, /未确认/)
+
+  const lte = evaluateCriterion(ctx, DISQ_MONTHS_LTE60, 0)
+  assert.equal(lte.outcome, 'UNREADABLE', '旧 timeline 的 0 个月不能判 DISQUALIFIER TRIGGERED')
+  assert.notEqual(lte.outcome, 'TRIGGERED')
+})
+
+test('J：三态没变（agent 也看到 present）时，converter timeline 仍是同一版本的事实', () => {
+  const ctx = makeCtx({
+    workState: 'present',
+    workExtra: { state_source: 'agent_structured', converter_state: 'present', block_ids: [3] },
+    timeline: { open_ended_intervals: 0, year_only_intervals: 0, covered_months_closed: 74 },
+  })
+  const result = evaluateCriterion(ctx, MUST_MONTHS_GTE60, 0)
+  assert.equal(result.outcome, 'SATISFIED')
+  assert.equal(result.reason.bounds, 'EXACT')
+  assert.deepEqual(result.reason.issue_codes, [])
+})
+
+test('J：升级后 present 但证据缺 page/bbox → 不静默降级，issue_codes 写明 block_ids 与缺坐标计数', () => {
+  const ctx = makeCtx({
+    workExtra: {
+      state_source: 'agent_structured',
+      converter_state: 'unreadable',
+      block_ids: [24, 25, 30],
+      evidence: [],
+      evidence_unlocatable: true,
+      agent_evidence: [
+        { block_id: 24, block_no: 24, page: 1, bbox: null, quote: '教育背景' },
+        { block_id: 25, block_no: 25, page: 1, bbox: [1, 2, 3, 4], quote: '某大学' },
+      ],
+    },
+  })
+  const result = evaluateCriterion(ctx, MUST_WORK, 0)
+  assert.equal(result.outcome, 'UNREADABLE')
+  assert.ok(result.reason.issue_codes.includes('evidence_unlocatable'))
+  assert.ok(result.reason.issue_codes.includes('agent_evidence_total:2'))
+  assert.ok(result.reason.issue_codes.includes('agent_evidence_with_page_and_bbox:1'))
+  assert.ok(result.reason.issue_codes.includes('field_block_ids:24,25,30'))
+  assert.match(result.reason.message, /没有可定位的证据/)
+})
+
+test('J：证据的 block_id 不在字段 block_ids 里 → 该证据作废并写明原因', () => {
+  const ctx = makeCtx({
+    workExtra: {
+      state_source: 'agent_structured',
+      converter_state: 'unreadable',
+      block_ids: [24],
+      evidence: [{
+        page: 1, bbox: [1, 2, 3, 4], block: 99, block_id: 30,
+        text: '引用了别的块', source: 'agent_structured', source_asset_sha256: SHA,
+      }],
+    },
+  })
+  const result = evaluateCriterion(ctx, MUST_WORK, 0)
+  assert.equal(result.outcome, 'UNREADABLE')
+  assert.ok(result.reason.issue_codes.includes('evidence_block_id_not_in_field_block_ids:30'))
+})
+
+test('J：升级字段的索引不一致只产生说明性 warning，不改变按有效字段得出的结论', () => {
+  const ctx = makeCtx({
+    ableFields: [],
+    workExtra: { state_source: 'agent_structured', converter_state: 'unreadable', block_ids: [11] },
+  })
+  const result = evaluateCriterion(ctx, MUST_WORK, 0)
+  assert.equal(result.outcome, 'SATISFIED')
+  const warning = ctx.warnings.find((w) => w.code === 'SCREENING_INDEX_INCONSISTENT')
+  assert.ok(warning)
+  assert.match(warning.message, /忽略旧索引/)
 })
 
 test('R-VAL-1..13：合法 rubric 零违反；各种坏 rubric 各自命中对应 reason_code', () => {
