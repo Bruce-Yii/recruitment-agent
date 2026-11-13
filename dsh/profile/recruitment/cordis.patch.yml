@@ -195,7 +195,7 @@
             - 'D:\12412\dsh工作区\projects\resume-talent-pool'
             - 'D:\12412\dsh工作区\orchestration'
             - 'D:\12412\CodexWorkspace'
-          timeout_ms: 60000
+          timeout_ms: 180000
         database:
           host: 127.0.0.1
           port: 5432

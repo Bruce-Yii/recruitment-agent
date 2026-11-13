@@ -237,3 +237,74 @@
 | 12 | 决策可回溯到 page+bbox | 机检 | 100% |
 | 13 | 人工读原件对照 | 人读 | 抽 ≥20%，HARD 全读 |
 
+---
+
+## 11. 真实语料回归（2026-11-14 增补）
+
+> **本节是补充，不修改 §0–§10 的任何判据。** §10 的 13 条检查回答的是"给一份文档，这一份判得对不对"；
+> 缺的是"解析层每次改动后，**真实语料整体**有没有退化"。这一节把后者补成准入门槛。
+
+### 11.1 为什么必须单列（设计缺口）
+
+**合成 fixture 全绿 ≠ 真实语料可读。**
+
+- 解析层此前的测试**全部**使用合成 fixture（`test/document/**` 没有一条读真实语料）。
+  fixture 由生成器造，天然只能覆盖生成器想得到的形态；
+  它证明的是"规则按设计执行"，不是"真实文件能被读出来"。
+- 2026-11-14 第一次跑真实语料（52 份真实简历，另见 `evidence/experiments/2026-11-14-real-resume-gate/README.md`）
+  即暴露合成 fixture **无一命中**的问题（例如：仓库里 2 字节的空占位 `.pdf` 被旧消息报成
+  "content does not match PDF, DOCX, PNG or JPEG magic bytes"，看起来像格式不支持，实际是**文件本身是空的**）。
+- 因此：真实语料回归不是"额外测试"，是解析层改动的**准入门槛**；没有跑过它的 PASS 不得计入交付。
+
+### 11.2 执行要求
+
+1. **触发**：任何 `src/document/readers/**`、`src/document/contracts/**`、`src/document/quality/**`、
+   `src/document/recovery/**`、`converter/**` 的改动，合入前必须跑一次真实语料回归。
+2. **抽样规模**：每次 **≥ 20 份**真实文档；语料目录里可读文档不足 20 份时跑全部，并在报告里写实际份数。
+   回归测试缺省抽 20 份；设 `RECRUITMENT_CORPUS_SAMPLE=all` 可全量跑（复核门槛时用全量更可信）。
+3. **语料根目录**：用环境变量 `RECRUITMENT_CORPUS_ROOT` 指定；本机缺省为
+   `D:\12412\dsh工作区\projects\resume-talent-pool\.snap-cache\research\content`。
+   语料**不入库**、不打印候选人正文；报告只允许出现 路径 / 哈希前缀 / 错误码 / 统计数。
+4. **命令**（在 `dsh/dsh-recruitment` 下）：
+
+   ```powershell
+   $env:RECRUITMENT_DB_PASSWORD='123456'
+   node --test test/document/*.test.ts test/regression/*.test.ts
+   ```
+
+5. **语料不存在时**：`test/regression/real-corpus.test.ts` 必须 `skip` 并在输出里写明原因。
+   **skip ≠ 通过**：此时不得宣称本节门槛达标（对应 E2 三数口径）。
+
+### 11.3 门槛（三条硬门槛）
+
+| # | 判据 | 门槛 | 判定口径 |
+|---|---|---|---|
+| R-1 | 读取成功率 | **≥ 95%** | 分子 = reader 返回 canonical content 的份数；分母 = 本次抽样的可读文档数。 |
+| R-2 | `blocking_for_structure` 通过率 | **≥ 90%** | 分子 = `assessment.blocking_for_structure === false` 的份数；分母 = **读取成功**的份数（读不出的已计入 R-1，不重复计）。 |
+| R-3 | 失败可归因 | **100%** | 每份失败必须能归到**一条**明确的 `reason_code`（`DocumentReadErrorCode` 14 个之一），且 message 回答"为什么"（带字节数 / 前 8 字节 hex / 超时值 / 前后 SHA 前缀 / 底层原因等可核事实）。 |
+
+**口径补充**：
+
+- "读不出"只有在**文件本身不可读**（空占位 / 损坏 / 格式不支持 / 编码读不出）时才算 R-1 失败；
+  reader 自身的缺陷（`READER_OUTPUT_INVALID` / `ADAPTER_FAILED`）是代码 bug，不得归入"文件不可读"，
+  必须单独修复，不得用"文件坏了"掩盖。
+- 读取成功但 `completeness=partial` **不算** R-1 失败；partial 的原因必须出现在 `issues` 里（§2.B3）。
+- 门槛按**抽样整体**判定，**禁止**在测试里写死"必须成功 N 份"（语料会变）。
+  测试的职责是统计 + 打印 + 断言 R-3；R-1/R-2 是否达标由人对照本表判定。
+
+### 11.4 2026-11-14 首轮基线（52 份真实简历，全量未抽样）
+
+| 指标 | 实测 | 门槛 | 结论 |
+|---|---|---|---|
+| 可读文档数 | 52（45 PDF + 7 DOCX，按文件计） | — | — |
+| 读取成功 / 失败 | 51 / 1 | R-1 ≥ 95% | **98.1%**，达标 |
+| 失败项 reason_code | `EMPTY_FILE`（2 字节空占位 PDF，message 带真实字节数与前几个字节） | R-3 = 100% | 达标（唯一失败可归因） |
+| completeness 分布 | complete 12 / partial 39 | — | partial 的原因均在 `issues`（§2.B3） |
+| `blocking_for_structure=false` | 51 / 51 | R-2 ≥ 90% | **100%**，达标 |
+
+> 说明：`blocking_for_structure` 只是"文字本身是否可用于结构化"的闸门；`blocking=true`
+> （跨块归属、图片未核等）仍会阻断可信筛选（§5 红线不变）。本节的 R-2 不是放宽 §3 的分层门槛。
+
+**本节门槛不替代 §3 的分层门槛，也不替代 §5 红线。** 真实语料回归达标 ≠ 单份文档读对了；
+反过来，单份 A/B/C/D 全过也不能替代整批回归。
+

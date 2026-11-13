@@ -1029,3 +1029,29 @@ connector 报"无转写" → HR 看到"无转写" → 面试官无法基于证�
 **踩到的坑（记下来）**：converter 说 soft、TS 层说 hard —— 因为 `issues.py::ADDED_CODES` 与
 `map-converter.ts::CONVERTER_SOFT_ISSUE_CODES` 是**两份镜像清单**，只改一边就会不一致。
 已在两边都登记，并在 TS 侧注释里写明"两边必须同步"。
+
+### D-99 · 恢复计划要有**执行器**；真实语料回归进验收门槛
+
+**裁定（2026-11-14，事故审计 ③⑤⑦ 的机制修复）**：
+
+1. **恢复执行器**（`src/document/recovery/execute.ts`）：`plan()` 只出计划不够，系统必须能自己修。
+   保守规则：只自动执行 `retry` / `switch_reader` / `vision_read`；**`human_review` 永不自动执行**
+   （D-79/D-95：闸门价值在于真人看过）。成功判据三条**同时**成立：
+   (a) blocking 变 false 或 HARD 数严格减少；(b) 不出现旧内容没有的新 HARD code（禁止"换病"）；
+   (c) **`step.codes`** 里的 code 全部消失（不硬编码任何 code 名，信任 plan 算出的目标）。
+   初始就不 blocking → 一步不执行（`skipped_reason='NOT_BLOCKING'`）；PDF 重读无页数证据 →
+   `blocked: READER_FACTS_REQUIRED`（不浪费一次真实读取）。
+
+2. **真实语料回归进验收**（`docs/11 §11` + `test/regression/real-corpus.test.ts`）：
+   合成 fixture 全绿 ≠ 真实语料可读。三条硬门槛：读取成功率 **≥95%**、
+   `blocking_for_structure` 通过率 **≥90%**、失败可归因 **100%**（每条失败必须落在 14 个
+   `DocumentReadErrorCode` 之一且 message 回答"为什么"）。语料缺失必须 skip 并写明原因，**skip ≠ 通过**。
+
+3. **错误信息可诊断**：14 个 code 的 message 一律补"为什么"（真实字节数 / 前 8 字节 hex /
+   超时值 / 前后 SHA 前缀 / 底层 cause），且**不得含候选人正文**（R7 有断言）。
+
+**实测（2026-11-14，全量 52 份真实语料）**：read_ok 50 / failed 2（`EMPTY_FILE` + `TIMEOUT`），
+R-1 96.2%、R-2 100%（`blocking_for_structure` 阻断 0 份）、R-3 100%。
+**发现并修**：converter 超时 60s 不够（OCR 后单份可达 53s+）→ 提到 180s。
+
+**证据**：`test/document/recovery-execute.test.ts`（20 条）、`test/regression/**`（9 条）、`docs/11 §11`。
