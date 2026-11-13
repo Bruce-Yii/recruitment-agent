@@ -1,0 +1,78 @@
+[PASS] read 工具返回 transcript.state
+[PASS] read 工具返回原文
+[PASS] read 工具 labels = LIVE/MANUAL/CONNECTED
+[PASS] read 工具 read_only = true
+[PASS] canonical 标记存在
+
+=== DB readback · transcript_artifact ===
+- artifact c8b8c9fd-9301-4406-9f21-c604609c5ee5
+  revision=1 provider=LOCAL_DEMO provider_artifact_id=local:demo-sample:c7a70263-dccd-4e0a-bbac-9d54fc406c91
+  status=READY provenance=FIXTURE trigger=MANUAL connection=NOT_CONNECTED
+  is_complete=true is_canonical=false read_receipt_ref=(none)
+  fetched_at=2026-11-13T10:16:30.195Z raw_chars=1472 content_sha256=d5ee88ae0f69cc1070f4b21cf62c7b9ccd70e97102c8cc4500fb9f9ed255452b
+  recomputed_sha256=d5ee88ae0f69cc1070f4b21cf62c7b9ccd70e97102c8cc4500fb9f9ed255452b sha_self_consistent=true
+  raw_head="[00:00] 面试官 李工：你好，我是本岗位的技术面试官。今天大约四十五分钟，先请你做一个五分" … raw_tail="05] 候选人 C-07：好的，谢谢您的时间。\n"
+[PASS] artifact c8b8c9fd-9301-4406-9f21-c604609c5ee5 的 content_sha256 与 raw_text 自洽
+  segments=22 (sequence 0..21)
+[PASS] artifact c8b8c9fd-9301-4406-9f21-c604609c5ee5 有 segment 行
+- artifact 99f42a7a-1493-4324-980c-3024619c7321
+  revision=2 provider=LOCAL_DEMO provider_artifact_id=local:demo-sample:c7a70263-dccd-4e0a-bbac-9d54fc406c91
+  status=READY provenance=FIXTURE trigger=MANUAL connection=NOT_CONNECTED
+  is_complete=true is_canonical=true read_receipt_ref=(none)
+  fetched_at=2026-11-13T10:17:56.097Z raw_chars=1540 content_sha256=ae462817f0dcfe36cee6b575b89f0a7613a54739a6f282f27de5c899681ae6bf
+  recomputed_sha256=ae462817f0dcfe36cee6b575b89f0a7613a54739a6f282f27de5c899681ae6bf sha_self_consistent=true
+  raw_head="[00:00] 面试官 李工：你好，我是本岗位的技术面试官。今天大约四十五分钟，先请你做一个五分" … raw_tail="修订时新增 revision 而不是覆盖原文。\n"
+[PASS] artifact 99f42a7a-1493-4324-980c-3024619c7321 的 content_sha256 与 raw_text 自洽
+  segments=23 (sequence 0..22)
+[PASS] artifact 99f42a7a-1493-4324-980c-3024619c7321 有 segment 行
+[PASS] revision=1 的原文与 fixture 逐字节相同
+
+=== DB readback · interview_record ===
+- record aa5b9934-0624-484e-b5f9-2524fb42f189
+  transcript_artifact_id=c8b8c9fd-9301-4406-9f21-c604609c5ee5 transcript_revision=1
+  status=NEEDS_REVIEW verification_status=UNVERIFIED evidence_ok=true is_current=false
+  application_job_id=33e67bec-e724-484a-a20a-bbc962a26fb1 rubric_version_id=834a9b19-2844-4658-8935-01c2b2d34468（本机 0008 未应用，interview_record 无 job_id 列）
+  model_id=none:manual-import prompt_version=manual-import/1.0.0
+[PASS] record aa5b9934-0624-484e-b5f9-2524fb42f189 引用的 (artifact, revision) 真实存在
+- record 4ab98f05-cdfd-4dcd-ab0c-da77908a2a3e
+  transcript_artifact_id=99f42a7a-1493-4324-980c-3024619c7321 transcript_revision=2
+  status=NEEDS_REVIEW verification_status=UNVERIFIED evidence_ok=true is_current=true
+  application_job_id=33e67bec-e724-484a-a20a-bbc962a26fb1 rubric_version_id=834a9b19-2844-4658-8935-01c2b2d34468（本机 0008 未应用，interview_record 无 job_id 列）
+  model_id=none:manual-import prompt_version=manual-import/1.0.0
+[PASS] record 4ab98f05-cdfd-4dcd-ab0c-da77908a2a3e 引用的 (artifact, revision) 真实存在
+[PASS] 至少一条 interview_record
+[PASS] 恰有一条 is_current=true 的 interview_record
+
+=== DB readback · transcript_segment（canonical） ===
+  #0 "[00:00] 面试官 李工：你好，我是本岗位的技术面试官。今天大约四十五分钟，先请你做一个五分钟的自我介绍，然后我们会"
+  #1 "[00:30] 候选人 C-07：好的，谢谢。我有六年后端开发经验，最近三年在一家做企业协作工具的公司负责消息与通知服务"
+  #2 "[01:05] 面试官 李工：你提到消息与通知服务，能说一下它当时的规模和最难的一个问题吗？"
+  #3 "[01:20] 候选人 C-07：峰值大概每天两千万条通知，最难的是第三方渠道限流导致的堆积。我们把发送拆成优先级队列，"
+  #4 "[02:10] 面试官 李工：这个方案上线后，堆积问题解决了多少？"
+  #5 "[02:18] 候选人 C-07：渠道侧超时导致的失败率从百分之三降到千分之四，P99 延迟从四十秒降到六秒左右。不过我"
+  #6 "[03:00] 面试官 李工：第二个问题，讲一次你和产品经理意见不一致的经历，最后怎么处理的。"
+  #7 "[03:12] 候选人 C-07：有一次产品希望把通知模板做成完全自由编辑，我担心注入和审核成本。我整理了三个方案和各自"
+  #8 "[04:05] 面试官 李工：我们来做一个系统设计。要设计一个面向企业的面试安排服务，支持同一候选人多轮面试、面试官时间"
+  #9 "[04:25] 候选人 C-07：我会先区分三件事：排期是写业务事实，冲突检测是读模型，转写事件是外部输入。排期表以申请"
+  #10 "[05:30] 面试官 李工：如果外部事件里带的会议标识重复推送三次呢？"
+  #11 "[05:38] 候选人 C-07：事件层用平台事件 ID 做唯一键，重复的直接确认不产生副作用；产物层用会议加平台产物 "
+  #12 "[06:20] 面试官 李工：转写还没生成的时候，面试官能不能先提交评价？"
+  #13 "[06:28] 候选人 C-07：可以，但要标记这份评价没有转写依据。评价和转写是两条并行的链路，不能因为材料没到就阻塞"
+  #14 "[07:00] 面试官 李工：你平时怎么做代码评审？"
+  #15 "[07:08] 候选人 C-07：我会先看变更边界和失败路径，再看测试是否覆盖了错误分支。比较大的改动会要求作者写清楚回"
+  #16 "[07:50] 面试官 李工：最后一个问题，未来一年你想在哪个方向继续深入？"
+  #17 "[07:58] 候选人 C-07：想在分布式任务编排和可观测性上继续深入，尤其是长任务的重试与幂等，这两块我在现在的项目"
+  #18 "[08:30] 面试官 李工：好的，我的问题问完了。你有什么想问我们的？"
+  #19 "[08:38] 候选人 C-07：想了解一下团队现在的发布节奏，以及新人前三个月的主要目标。"
+  #20 "[08:50] 面试官 李工：我们两周一个发布窗口，新人前三个月会先负责一个独立的小服务，从需求到上线完整走一遍。今天就"
+  #21 "[09:05] 候选人 C-07：好的，谢谢您的时间。"
+  #22 "[补录 00:58] 面试官 李工：补充说明，本轮记录为合成演示文本，仅用于验证同一产物修订时新增 revision 而"
+[PASS] canonical 的 segment 数与 read 工具一致
+[PASS] read 工具返回的正文 = DB canonical 原文
+[PASS] read 工具返回的正文 sha256 = canonical content_sha256
+
+=== DB readback · 原文不可变（TR-C7 / §8.3） ===
+[PASS] UPDATE transcript_artifact.raw_text 被触发器拒绝（IMMUTABLE_COLUMN）
+  真实错误：IMMUTABLE_COLUMN: recruitment.transcript_artifact 的列 raw_text 不允许修改（允许修改的列：transcript_status,fetched_at,last_readback_at,page_count,has_more,next_cursor,is_complete,is_canonical,canonical_selected_by_
+
+READBACK: ALL CHECKS PASSED

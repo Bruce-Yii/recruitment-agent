@@ -1,0 +1,21 @@
+=== scorecard（该场面试的全部行，含修订链） ===
+rows=0
+
+=== scorecard 聚合（行数 / current 行数 / 修订数） ===
+rows=0
+
+=== decision（该申请全部行） ===
+rows=0
+
+=== decision 内部事件（provider=internal） ===
+rows=0
+
+=== 面评提交的内部事件（event_type=scorecard.submit） ===
+rows=0
+
+=== interview / interviewer（S8 侧夹具，只读核对） ===
+rows=3
+{"interview_id":"11111111-1111-4111-8111-000000000801","round_no":1,"slot_code":"DEFAULT","status":"POST_INTERVIEW","scheduled_start_at":"2026-11-12T06:00:00.000Z","actor_id":"11111111-1111-4111-8111-000000000105","kind":"HUMAN","role_in_interview":"INTERVIEWER","required_scorecard":true,"scorecard_due_at":"2026-11-12T04:00:00.000Z"}
+{"interview_id":"11111111-1111-4111-8111-000000000801","round_no":1,"slot_code":"DEFAULT","status":"POST_INTERVIEW","scheduled_start_at":"2026-11-12T06:00:00.000Z","actor_id":"11111111-1111-4111-8111-000000000106","kind":"HUMAN","role_in_interview":"INTERVIEWER","required_scorecard":true,"scorecard_due_at":"2026-11-12T04:00:00.000Z"}
+{"interview_id":"11111111-1111-4111-8111-000000000801","round_no":1,"slot_code":"DEFAULT","status":"POST_INTERVIEW","scheduled_start_at":"2026-11-12T06:00:00.000Z","actor_id":"11111111-1111-4111-8111-0000000001a0","kind":"AGENT_WORKER","role_in_interview":"OBSERVER","required_scorecard":false,"scorecard_due_at":null}
+

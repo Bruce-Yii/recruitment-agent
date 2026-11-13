@@ -1,0 +1,10 @@
+# S10 评价线 · patch 层探针（不改 src/index.ts、不建新 profile）
+#
+# 用法：
+#   dsh --profile recruitment --patch "D:\...\manual\evaluation-line\probe\probe.yml" "..."
+#
+# 语义：`insert` 列表把一条插件行插进 profile 的层栈；`name` 是 file URL，
+# cordis-plugin-loader 的 `import(name)` 直接吃 file URL（Node ESM 支持）。
+- insert:
+    - id: evaluation-probe
+      name: 'file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/manual/evaluation-line/probe/eval-probe.mjs'

@@ -1,0 +1,178 @@
+{
+  "tool": "recruitment_transcript_import",
+  "contract_version": "1.0.0",
+  "status": "OK",
+  "write": true,
+  "replayed": false,
+  "labels": {
+    "provenance": "FIXTURE",
+    "trigger": "MANUAL",
+    "connection": "NOT_CONNECTED"
+  },
+  "provenance_basis": "DEMO_SAMPLE_NO_PLATFORM_RECEIPT",
+  "interview": {
+    "id": "ffe144a2-0f0f-4f2e-9685-4d8bfb6af841",
+    "application_id": "e61380dc-13be-4963-879b-2630411f2081",
+    "job_id": "33e67bec-e724-484a-a20a-bbc962a26fb1",
+    "round_no": 1,
+    "stage_code": "S9",
+    "status": "POST_INTERVIEW"
+  },
+  "meeting": {
+    "id": "c7a70263-dccd-4e0a-bbac-9d54fc406c91",
+    "provider": "FEISHU",
+    "meeting_role": "PRIMARY",
+    "binding_id": "d5931f94-57c0-471c-8461-ebd609aeb0ab",
+    "binding_method": "MANUAL",
+    "external_meeting_id": "feishu-demo-meeting-s9"
+  },
+  "artifact": {
+    "id": "99f42a7a-1493-4324-980c-3024619c7321",
+    "meeting_id": "c7a70263-dccd-4e0a-bbac-9d54fc406c91",
+    "provider": "LOCAL_DEMO",
+    "provider_artifact_id": "local:demo-sample:c7a70263-dccd-4e0a-bbac-9d54fc406c91",
+    "source_revision": 2,
+    "variant_type": "ORIGINAL",
+    "language": "zh",
+    "transcript_status": "READY",
+    "provenance": "FIXTURE",
+    "trigger_mode": "MANUAL",
+    "connection_state": "NOT_CONNECTED",
+    "is_canonical": true,
+    "is_complete": true,
+    "has_more": false,
+    "content_sha256": "ae462817f0dcfe36cee6b575b89f0a7613a54739a6f282f27de5c899681ae6bf",
+    "char_count": 1540,
+    "segment_count": 23,
+    "fetched_at": "2026-11-13T10:17:56.097Z"
+  },
+  "changes": {
+    "created": [
+      {
+        "table": "transcript_artifact",
+        "id": "99f42a7a-1493-4324-980c-3024619c7321"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "2e090a5a-d345-45fb-a71c-af071bcda139"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "054f2afb-bbb6-4e96-bd34-74e6feedce35"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "e38f70ae-4367-4eed-94b5-098dac280fbc"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "8e2aeceb-91a4-49b4-8cad-5d8b30f343b2"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "f4141095-45fe-4bfc-b4a6-d225510f0a7b"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "8d28676f-022f-4c1d-b1e8-14cc32ff0554"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "702897ee-9869-47c4-8ad1-6e0c5a28e1c5"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "63631da7-5c26-406b-8788-485f740a2db6"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "ec27d390-2d2c-4edb-98bf-99672759c560"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "75f09f58-5a18-41d4-8769-6a6c08aa141c"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "414e6957-e2d4-42e9-a5cc-fc195ba28ad1"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "d846e6fd-8e36-42b9-ad54-b54618cc4d9d"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "f531df05-83be-4dc5-8248-c5a7e05a79e6"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "b4ddc516-1273-45f1-8ba6-2dec1a23c6a5"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "8f2fd72c-3d67-4f69-a5a8-293cc163332c"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "fc71b061-a31b-4711-8689-d282d7e9ff6b"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "02175118-6210-44bd-8e54-8fdae8d10c10"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "6b74cae4-3684-4716-9d97-3b93b9a2357b"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "346f97cb-32eb-44ba-bb8b-8a358b6a1832"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "7d57b645-bc45-4334-9d73-73327692ec4b"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "a0194f6b-8828-4a69-9616-2fd3040ff465"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "d8399114-fa8c-4ba4-aad7-81c7493bd88b"
+      },
+      {
+        "table": "transcript_segment",
+        "id": "250f1fc9-30ae-4da4-b323-fd9a27c1441c"
+      },
+      {
+        "table": "interview_record",
+        "id": "4ab98f05-cdfd-4dcd-ab0c-da77908a2a3e"
+      }
+    ],
+    "updated": [
+      {
+        "table": "transcript_artifact",
+        "id": "c8b8c9fd-9301-4406-9f21-c604609c5ee5"
+      },
+      {
+        "table": "interview_record",
+        "id": "aa5b9934-0624-484e-b5f9-2524fb42f189"
+      }
+    ]
+  },
+  "warnings": [
+    {
+      "code": "FIXTURE_CONTENT_NOT_LIVE",
+      "message": "DEMO_SAMPLE 是演示/测试文本，不是平台回读内容；provenance 只能是 FIXTURE，不得当作\"已经接通飞书\""
+    }
+  ],
+  "next_actions": [],
+  "record": {
+    "id": "4ab98f05-cdfd-4dcd-ab0c-da77908a2a3e",
+    "status": "NEEDS_REVIEW",
+    "verification_status": "UNVERIFIED",
+    "transcript_revision": 2,
+    "evidence_ok": true,
+    "is_current": true
+  }
+}

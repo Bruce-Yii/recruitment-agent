@@ -1,0 +1,19 @@
+{
+  "seeded": true,
+  "tenant_id": "11111111-1111-4111-8111-000000000001",
+  "actor_id": "11111111-1111-4111-8111-000000000103",
+  "job_id": "33e67bec-e724-484a-a20a-bbc962a26fb1",
+  "job_version_id": "299d04bf-83b4-4b58-ab8d-b61b5c19ecc5",
+  "rubric_version_id": "834a9b19-2844-4658-8935-01c2b2d34468",
+  "candidate_id": "a1d92b77-0528-4996-b790-650553933866",
+  "application_id": "e61380dc-13be-4963-879b-2630411f2081",
+  "interview_id": "ffe144a2-0f0f-4f2e-9685-4d8bfb6af841",
+  "meeting_id": "c7a70263-dccd-4e0a-bbac-9d54fc406c91",
+  "meeting_binding_id": "d5931f94-57c0-471c-8461-ebd609aeb0ab",
+  "meeting": {
+    "provider": "FEISHU",
+    "external_meeting_id": "feishu-demo-meeting-s9",
+    "meeting_role": "PRIMARY"
+  },
+  "note": "S8 排期工具不在本 lane；interview/meeting/binding 是手工夹具，不是产品写路径"
+}

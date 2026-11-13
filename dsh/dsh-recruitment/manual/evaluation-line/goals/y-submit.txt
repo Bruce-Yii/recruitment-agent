@@ -1,0 +1,7 @@
+你是演示面试官 Y（执行上下文 actor = 11111111-1111-4111-8111-000000000106，由 profile 配置给出，你不要也不能在参数里传 actor）。
+
+请**只调用一次**工具 `recruitment_scorecard_submit`，arguments 逐字使用下面这段 JSON（不要增删改任何键、不要先读源码、不要调用别的工具）：
+
+{"interview_id":"11111111-1111-4111-8111-000000000801","idempotency_key":"demo:scorecard:Y:1","items":{"transcript_basis":"TRANSCRIPT","backend_depth":{"assessment":"MET","score":3,"note":"分片键选择讲得清楚，但对再平衡只给了方向。"},"async_pipeline":{"assessment":"MET","score":4,"note":"重试+去重表+死信队列，能说清失败处理边界。","evidence":[{"kind":"SEGMENT","transcript_artifact_id":"11111111-1111-4111-8111-000000000a01","transcript_revision":1,"segment_id":"f6e0bf72-d2ef-4ab5-a119-77a0f31ad1ee","quote":"用消息队列重试三次，幂等靠业务唯一键加去重表"}]},"frontend_basics":{"assessment":"MET","score":2,"note":"只写过管理后台页面，复杂交互没碰过。"}},"overall":"ADVANCE"}
+
+调用完成后，把工具返回的内容**原样**贴出来（不要总结、不要改写、不要加评论）。
