@@ -1,0 +1,72 @@
+{
+  "tool": "recruitment_transcript_import",
+  "contract_version": "1.0.0",
+  "status": "OK",
+  "write": true,
+  "replayed": true,
+  "labels": {
+    "provenance": "FIXTURE",
+    "trigger": "MANUAL",
+    "connection": "NOT_CONNECTED"
+  },
+  "provenance_basis": "DEMO_SAMPLE_NO_PLATFORM_RECEIPT",
+  "interview": {
+    "id": "ffe144a2-0f0f-4f2e-9685-4d8bfb6af841",
+    "application_id": "e61380dc-13be-4963-879b-2630411f2081",
+    "job_id": "33e67bec-e724-484a-a20a-bbc962a26fb1",
+    "round_no": 1,
+    "stage_code": "S9",
+    "status": "POST_INTERVIEW"
+  },
+  "meeting": {
+    "id": "c7a70263-dccd-4e0a-bbac-9d54fc406c91",
+    "provider": "FEISHU",
+    "meeting_role": "PRIMARY",
+    "binding_id": "d5931f94-57c0-471c-8461-ebd609aeb0ab",
+    "binding_method": "MANUAL",
+    "external_meeting_id": "feishu-demo-meeting-s9"
+  },
+  "artifact": {
+    "id": "c8b8c9fd-9301-4406-9f21-c604609c5ee5",
+    "meeting_id": "c7a70263-dccd-4e0a-bbac-9d54fc406c91",
+    "provider": "LOCAL_DEMO",
+    "provider_artifact_id": "local:demo-sample:c7a70263-dccd-4e0a-bbac-9d54fc406c91",
+    "source_revision": 1,
+    "variant_type": "ORIGINAL",
+    "transcript_status": "READY",
+    "provenance": "FIXTURE",
+    "trigger_mode": "MANUAL",
+    "connection_state": "NOT_CONNECTED",
+    "is_canonical": false,
+    "is_complete": true,
+    "has_more": false,
+    "content_sha256": "d5ee88ae0f69cc1070f4b21cf62c7b9ccd70e97102c8cc4500fb9f9ed255452b",
+    "char_count": 1472,
+    "segment_count": 22,
+    "language": "zh",
+    "fetched_at": "2026-11-13T10:16:30.195Z"
+  },
+  "changes": {
+    "created": [],
+    "updated": []
+  },
+  "warnings": [
+    {
+      "code": "REPLAYED_SAME_CONTENT",
+      "message": "同一 (meeting_id, provider_artifact_id) 已有相同 content_sha256 的产物；本次没有新建任何行（TR-U8），返回的是已存在的那一版"
+    },
+    {
+      "code": "FIXTURE_CONTENT_NOT_LIVE",
+      "message": "该行是 DEMO_SAMPLE 演示文本（provenance=FIXTURE），不得当作\"已经接通飞书\""
+    }
+  ],
+  "next_actions": [],
+  "record": {
+    "id": "aa5b9934-0624-484e-b5f9-2524fb42f189",
+    "status": "NEEDS_REVIEW",
+    "verification_status": "UNVERIFIED",
+    "transcript_revision": 1,
+    "evidence_ok": true,
+    "is_current": false
+  }
+}

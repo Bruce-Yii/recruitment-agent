@@ -26,8 +26,16 @@ const DEMO = {
   candidateName: 'S9 演示候选人（合成）',
   departmentId: '11111111-1111-4111-8111-000000000010',
   provider: 'FEISHU',
-  externalMeetingId: 'feishu-demo-meeting-s9',
+  // `--round N` 可造第二轮（用于“干净的一次导入”证据，同时不影响第 1 轮的 revision 证据）。
+  roundNo: (() => {
+    const index = process.argv.indexOf('--round')
+    const value = index >= 0 ? Number(process.argv[index + 1]) : 1
+    return Number.isInteger(value) && value >= 1 && value <= 20 ? value : 1
+  })(),
 }
+const MEETING_EXTERNAL_ID = DEMO.roundNo === 1
+  ? 'feishu-demo-meeting-s9'
+  : `feishu-demo-meeting-s9-r${DEMO.roundNo}`
 
 /** 键按码点排序、无空白的 JSON（与 src/tools/contract.ts 的 canonicalJson 同规则）。 */
 function canonicalJson(value) {
@@ -166,29 +174,29 @@ async function main() {
     // 6. interview（(application, round_no, slot_code) 唯一）
     let interviewId = (await client.query(
       `select id from recruitment.interview where tenant_id = $1 and application_id = $2
-         and round_no = 1 and slot_code = 'DEFAULT'`,
-      [cfg.tenant_id, applicationId],
+         and round_no = $3 and slot_code = 'DEFAULT'`,
+      [cfg.tenant_id, applicationId, DEMO.roundNo],
     )).rows[0]?.id
     if (interviewId === undefined) {
       interviewId = await one(client, `insert into recruitment.interview
           (tenant_id, application_id, round_no, slot_code, stage_code, status,
            scheduled_start_at, scheduled_end_at, timezone)
-          values ($1, $2, 1, 'DEFAULT', 'S9', 'POST_INTERVIEW',
+          values ($1, $2, $3, 'DEFAULT', 'S9', 'POST_INTERVIEW',
                   now() - interval '3 hours', now() - interval '2 hours', 'Asia/Shanghai')
-          returning id`, [cfg.tenant_id, applicationId])
+          returning id`, [cfg.tenant_id, applicationId, DEMO.roundNo])
     }
 
     // 7. meeting（(tenant, provider, external_meeting_id) 唯一；只是本地登记平台标识）
     let meetingId = (await client.query(
       `select id from recruitment.meeting where tenant_id = $1 and provider = $2
          and external_meeting_id = $3`,
-      [cfg.tenant_id, DEMO.provider, DEMO.externalMeetingId],
+      [cfg.tenant_id, DEMO.provider, MEETING_EXTERNAL_ID],
     )).rows[0]?.id
     if (meetingId === undefined) {
       meetingId = await one(client, `insert into recruitment.meeting
           (tenant_id, provider, external_meeting_id, meeting_role, actual_start_at, actual_end_at)
           values ($1, $2, $3, 'PRIMARY', now() - interval '3 hours', now() - interval '2 hours')
-          returning id`, [cfg.tenant_id, DEMO.provider, DEMO.externalMeetingId])
+          returning id`, [cfg.tenant_id, DEMO.provider, MEETING_EXTERNAL_ID])
     } else {
       await client.query(`update recruitment.meeting
           set meeting_role = 'PRIMARY',
@@ -239,9 +247,10 @@ async function main() {
       candidate_id: candidateId,
       application_id: applicationId,
       interview_id: interviewId,
+      interview_round_no: DEMO.roundNo,
       meeting_id: meetingId,
       meeting_binding_id: bindingId,
-      meeting: { provider: DEMO.provider, external_meeting_id: DEMO.externalMeetingId, meeting_role: 'PRIMARY' },
+      meeting: { provider: DEMO.provider, external_meeting_id: MEETING_EXTERNAL_ID, meeting_role: 'PRIMARY' },
       note: 'S8 排期工具不在本 lane；interview/meeting/binding 是手工夹具，不是产品写路径',
     }
     console.log(JSON.stringify(summary, null, 2))
