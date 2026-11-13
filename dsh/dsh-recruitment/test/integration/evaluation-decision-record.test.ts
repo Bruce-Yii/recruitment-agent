@@ -1004,3 +1004,64 @@ test('门禁失败时根本不问人（approve 不被调用）：SCORECARD_MISSI
 function valueOf(value: Record<string, unknown>, key: string): unknown {
   return value[key]
 }
+
+// =====================================================================
+//  D-95：人只做一次决策 —— IN_CHAT 直接落库，不再弹二次确认
+// =====================================================================
+
+/** approval 恒不可用：用来证明 IN_CHAT 路径**根本不走** approval。 */
+const UNAVAILABLE = async (): Promise<ApprovalOutcome> => 'unavailable'
+
+test('D-95：IN_CHAT + 人的原话 → 不走 approval，decision 直接落库', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const panel = await seedPanel(client, {
+      requiredCount: 1,
+      scorecards: [{ who: 'x', overall: 'ADVANCE' }],
+    })
+    const summary = await summaryOf(client, panel, 'STAGE')
+    const args = buildArgs({ panel, summary, result: 'ADVANCE' })
+    const humanText = '就按面试官的意见推进到下一轮'
+    args.human_confirmation = {
+      confirmed_by_actor_id: panel.deciderActorId,
+      confirmed_at: new Date(NOW - 60 * 1000).toISOString(),
+      confirmation_method: 'IN_CHAT',
+      confirmation_text: humanText,
+      confirmation_text_sha256: confirmationTextSha256({
+        result: 'ADVANCE',
+        reason: String(args.reason),
+        override_rationale: null,
+        basis_refs: args.basis_refs as readonly unknown[],
+      }),
+    }
+
+    // 关键：approval 恒 unavailable（模拟 headless 无 answerer）。
+    // 若代码还在走 STEP 6.5 的 approval 闸门，这里会 DECISION_REQUIRES_HUMAN 失败。
+    const value = await recordDecisionInTransaction(client, cfg, args, NOW, UNAVAILABLE)
+    assert.ok(String(valueOf(value as Record<string, unknown>, 'decision_id')).length > 0)
+
+    const rows = await decisionsOf(client, panel.applicationId)
+    assert.equal(rows.length, 1, 'IN_CHAT 下 decision 必须真的落库')
+    assert.equal(rows[0]?.result, 'ADVANCE')
+  })
+})
+
+test('D-95：IN_CHAT 不带人的原话 → MISSING_REQUIRED（授权凭据不能缺）', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const panel = await seedPanel(client, {
+      requiredCount: 1,
+      scorecards: [{ who: 'x', overall: 'ADVANCE' }],
+    })
+    const summary = await summaryOf(client, panel, 'STAGE')
+    const args = buildArgs({ panel, summary, result: 'ADVANCE' })
+    const confirmation = args.human_confirmation as Record<string, unknown>
+    confirmation.confirmation_method = 'IN_CHAT'
+    delete confirmation.confirmation_text
+
+    await rejectsWith(
+      recordDecisionInTransaction(client, cfg, args, NOW, UNAVAILABLE),
+      'INVALID_ARGS',
+      'MISSING_REQUIRED',
+    )
+    assert.equal((await decisionsOf(client, panel.applicationId)).length, 0)
+  })
+})

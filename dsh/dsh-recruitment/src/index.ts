@@ -369,7 +369,7 @@ export function apply(
   const decisionRecord = database.resolved === null
     ? notConfiguredTool(
       'recruitment_decision_record',
-      'S10: record a decision a HUMAN already made. Requires a human approval channel.',
+      'S10: record a decision a HUMAN already made (IN_CHAT confirmation, D-95: no second click).',
       database.issues,
     )
     : createDecisionRecordTool({ database: database.resolved, approval: resolveApproval(ctx) })
