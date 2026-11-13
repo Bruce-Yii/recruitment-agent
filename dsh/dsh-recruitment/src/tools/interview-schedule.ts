@@ -10,6 +10,9 @@
 //   1. 幂等 STORE（`business_task.idempotency_key = 'interview_schedule:' || K`）→ 重放 / 键复用；
 //   2. 申请（同租户 ACTIVE）；3. 语义幂等 `(application, round_no, slot_code)`；
 //   4. 面试官（同租户 + `kind='HUMAN'`）；5. 冲突（`[start, end+buffer)`）；
+//   5.5 **人机闸门（D-79）**：全部校验通过后、第一行 INSERT 前请求人工批准；approval 缺省 /
+//      `rejected` / `cancelled` / `unavailable` → `FORBIDDEN(APPROVAL_UNAVAILABLE|APPROVAL_NOT_GRANTED)`，
+//      零写入（fail closed）。**幂等重放不写库，因此在闸门之前返回。**
 //   6. `INSERT interview`（显式 `stage_code='S8'`）；7. `INSERT interviewer` 逐行；
 //   8. meeting / meeting_binding（只**登记**调用方给的平台 ID）；9. 未给会议 → `INTERVIEW_MEETING_BIND` 任务；
 //  10. 幂等 STORE 行；11. 用 `readInterviewValue` 读回（写完立刻可查的自证）。
@@ -466,6 +469,72 @@ function s8Error(
   if (parts.detail !== undefined) body.detail = parts.detail
   // 运行期只需要一个字符串；类型层的封闭集属 S6/S7（`errors.ts`），本文件不改那份文件。
   return new RecruitmentToolError(code as RecruitmentErrorCode, canonicalJson(body))
+}
+
+// ---------------------------------------------------------------------------
+//  D-79 人机闸门（approval seam）
+// ---------------------------------------------------------------------------
+
+/** DSH `ctx.approval.request` 的封闭结果（与 `decision-record.ts` 同一封闭集）。 */
+export type ApprovalOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
+
+/**
+ * DSH `ctx.approval` 的窄接口（只取 `request`）。
+ *
+ * **缺省 = 一律拒绝**（D-79 fail closed）：不存在"没接 approval 就直接写库"的分支。
+ */
+export interface ApprovalRequester {
+  request(req: {
+    agent?: unknown
+    toolName: string
+    reason?: string
+    signal?: AbortSignal
+  }): Promise<string>
+}
+
+/**
+ * 把 approval 依赖包成"可等待的批准结果"。**缺依赖 = `unavailable`**，
+ * 因此 headless（没有 answerer）恒 fail closed（D-79）。
+ * @param approval - 依赖里的 approval 服务（可缺省）。
+ * @param exec - 执行上下文（`agent` / `signal` 透传给宿主）。
+ * @returns 一个返回 `ApprovalOutcome` 的函数；结果不在封闭集内时归 `unavailable`（不猜）。
+ */
+export function makeApprovalRequest(
+  approval: ApprovalRequester | undefined,
+  exec: { readonly agent?: unknown; readonly signal?: AbortSignal } | undefined,
+): () => Promise<ApprovalOutcome> {
+  return async (): Promise<ApprovalOutcome> => {
+    if (approval === undefined) return 'unavailable'
+    const raw = await approval.request({
+      agent: exec?.agent,
+      toolName: TOOL_NAME,
+      reason: 'S8 面试排期是写库动作，需要人工批准（D-79）',
+      signal: exec?.signal,
+    })
+    if (raw === 'allowed-once' || raw === 'rejected' || raw === 'cancelled' || raw === 'unavailable') return raw
+    // 宿主返回了封闭集之外的字符串：**不猜**，按不可用处理（fail closed）。
+    return 'unavailable'
+  }
+}
+
+/**
+ * 写库前最后一关：**只有 `allowed-once` 放行**；其余一律 `FORBIDDEN`。
+ *
+ * 位置约定（D-79）：参数校验与全部业务校验（A1–A10、冲突）之后、第一行 INSERT 之前。
+ * @param outcome - `approve()` 的结果。
+ * @throws RecruitmentToolError - `FORBIDDEN` + `reason_code`（`APPROVAL_UNAVAILABLE` / `APPROVAL_NOT_GRANTED`）。
+ */
+export function requireApprovalGranted(outcome: ApprovalOutcome): void {
+  if (outcome === 'allowed-once') return
+  const unavailable = outcome === 'unavailable'
+  throw new RecruitmentToolError('FORBIDDEN', canonicalJson({
+    code: 'FORBIDDEN',
+    reason_code: unavailable ? 'APPROVAL_UNAVAILABLE' : 'APPROVAL_NOT_GRANTED',
+    message: unavailable
+      ? '没有可用的批准通道（headless 无 answerer）：排期写库被拒绝（D-79，fail closed）'
+      : '人工没有批准这次排期写库（D-79）',
+    detail: { approval: outcome, tool: TOOL_NAME },
+  }))
 }
 
 /** 从 pg 错误里取 `code` / `constraint`（不是对象就返回空）。 */
@@ -1093,6 +1162,8 @@ function sortConflicts(conflicts: readonly Conflict[]): readonly Conflict[] {
  * @param config - 已解析的配置（tenant/actor 只从这里来）。
  * @param rawArgs - 模型给的 arguments。
  * @param nowMs - 服务端当前时刻（毫秒；测试可注入）。
+ * @param approve - D-79 的人工批准通道；**缺省 = `unavailable` = 一律拒绝**（fail closed）。
+ *   位置：参数/业务校验（A1–A10、冲突）全部通过之后、第一行 INSERT 之前；`allowed-once` 才写库。
  * @returns 契约出参（`tool-contracts.md` §3.5）。
  */
 export async function scheduleInTransaction(
@@ -1100,6 +1171,7 @@ export async function scheduleInTransaction(
   config: ResolvedDatabaseConfig,
   rawArgs: unknown,
   nowMs: number = Date.now(),
+  approve?: () => Promise<ApprovalOutcome>,
 ): Promise<Record<string, unknown>> {
   const args = parseScheduleShape(rawArgs)
   const asOfIso = new Date(nowMs).toISOString()
@@ -1109,7 +1181,7 @@ export async function scheduleInTransaction(
   //   ② 任何失败在**调用方事务内**撤销本次已写的行（W3/W4，见上面的说明）。
   await client.query(`savepoint ${STORE_SAVEPOINT}`)
   try {
-    return await runCreateCommand(client, config, args, nowMs, asOfIso)
+    return await runCreateCommand(client, config, args, nowMs, asOfIso, approve)
   } catch (error) {
     try {
       await client.query(`rollback to savepoint ${STORE_SAVEPOINT}`)
@@ -1127,6 +1199,7 @@ export async function scheduleInTransaction(
  * @param args - 已校验的入参。
  * @param nowMs - 服务端当前时刻（毫秒）。
  * @param asOfIso - `nowMs` 的 ISO 形式（读回与错误 detail 用）。
+ * @param approve - D-79 的人工批准通道（缺省 = 拒绝写入）。
  * @returns 契约出参。
  */
 async function runCreateCommand(
@@ -1135,6 +1208,7 @@ async function runCreateCommand(
   args: ScheduleArgs,
   nowMs: number,
   asOfIso: string,
+  approve: (() => Promise<ApprovalOutcome>) | undefined,
 ): Promise<Record<string, unknown>> {
   const tenantId = config.tenant_id
   const actorId = config.actor_id
@@ -1268,6 +1342,10 @@ async function runCreateCommand(
       },
     })
   }
+
+  // 6.5. 人机闸门（D-79）：参数校验与全部业务校验（申请/模板/语义幂等/面试官/冲突）都过了，
+  //      但还在**第一行 INSERT 之前** —— 没有 `allowed-once` 就一行都不写（fail closed）。
+  requireApprovalGranted(approve === undefined ? 'unavailable' : await approve())
 
   // 7. INSERT interview（显式 stage_code / status / actor：INSERT 不触发 fn_row_guard）。
   const created: ChangeRow[] = []
@@ -1569,11 +1647,31 @@ function interviewersLine(interview: Record<string, unknown>): string {
     .join(' · ')
 }
 
+/** 排期工具的依赖：库配置保持第一个位置参数，approval 是可选的第二组依赖（D-79）。 */
+export interface InterviewScheduleDeps {
+  /** DSH `ctx.approval` 的窄接口。**缺省 = 一律拒绝**，不存在"直接写库"的分支（D-79）。 */
+  readonly approval?: ApprovalRequester
+}
+
+/** 从执行上下文里取 `agent` / `signal`（DSH 的 `exec` 是 unknown）。 */
+function readExecContext(exec: unknown): { agent?: unknown; signal?: AbortSignal } | undefined {
+  if (typeof exec !== 'object' || exec === null || Array.isArray(exec)) return undefined
+  const record = exec as { agent?: unknown; signal?: unknown }
+  return {
+    ...(record.agent === undefined ? {} : { agent: record.agent }),
+    ...(record.signal instanceof AbortSignal ? { signal: record.signal } : {}),
+  }
+}
+
 /**
  * 造真实的排期工具（`intent=CREATE` 切片）。
  * @param config - 已解析的数据库配置（tenant/actor 只从这里来，模型无法传入）。
+ * @param deps - 可选依赖；`approval` 缺省时写库一律被拒（D-79 fail closed）。
  */
-export function createInterviewScheduleTool(config: ResolvedDatabaseConfig): ReadonlyToolDefinition {
+export function createInterviewScheduleTool(
+  config: ResolvedDatabaseConfig,
+  deps: InterviewScheduleDeps = {},
+): ReadonlyToolDefinition {
   return {
     name: TOOL_NAME,
     description:
@@ -1589,6 +1687,8 @@ export function createInterviewScheduleTool(config: ResolvedDatabaseConfig): Rea
       + 'Omitting meeting is allowed and honest: the interview is still scheduled, warning MEETING_NOT_BOUND is '
       + 'returned and an INTERVIEW_MEETING_BIND task is created (next_actions BIND_MEETING). '
       + 'Only CREATE is implemented; RESCHEDULE / CANCEL / WITHDRAW_INTERVIEWER are later slices and are rejected. '
+      + 'D-79 human gate: after every parameter/business check and BEFORE any write it asks the human for approval '
+      + '(missing/unavailable answerer => rejected => nothing is written; FORBIDDEN with reason_code). '
       + 'This tool never writes scorecards or decisions.',
     parameters: PARAMETERS_SCHEMA,
     output: {
@@ -1631,11 +1731,13 @@ export function createInterviewScheduleTool(config: ResolvedDatabaseConfig): Rea
     isConcurrencySafe(): boolean {
       return false
     },
-    async execute(rawArgs: unknown): Promise<unknown> {
+    async execute(rawArgs: unknown, exec: unknown): Promise<unknown> {
+      // D-79：approval 缺省时 `makeApprovalRequest` 恒返回 `unavailable`（= 拒绝写库）。
+      const approve = makeApprovalRequest(deps.approval, readExecContext(exec))
       const pool = createPool(config)
       try {
         return await withActor(pool, config.actor_id, async (client) =>
-          scheduleInTransaction(client, config, rawArgs))
+          scheduleInTransaction(client, config, rawArgs, Date.now(), approve))
       } finally {
         await closePool(pool)
       }

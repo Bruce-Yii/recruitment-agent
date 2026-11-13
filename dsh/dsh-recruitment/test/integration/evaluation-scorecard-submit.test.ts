@@ -19,6 +19,7 @@ import { randomUUID } from 'node:crypto'
 import {
   parseRejectReasonsFromRationale,
   submitScorecardInTransaction,
+  type ApprovalOutcome,
 } from '../../src/tools/scorecard-submit.ts'
 import type { DatabaseClient } from '../../src/db/pool.ts'
 import {
@@ -109,11 +110,22 @@ function idempotencyKey(tag: string): string {
   return `sc:${uniqueSuffix()}:${tag}`
 }
 
+/**
+ * D-79 的 approval 替身：默认放行一次。
+ *
+ * 本文件绝大多数用例验证的是「校验通过之后」的写路径，所以显式给一个「人已批准」的替身；
+ * 闸门本身的负例见 §12（它们直接调 `submitScorecardInTransaction` 并给拒绝/缺省）。
+ */
+function allowOnce(): Promise<ApprovalOutcome> {
+  return Promise.resolve('allowed-once')
+}
+
 async function submit(
   client: DatabaseClient,
   args: Record<string, unknown>,
+  approve: () => Promise<ApprovalOutcome> = allowOnce,
 ): Promise<SubmitOutput> {
-  return (await submitScorecardInTransaction(client, CFG, args, Date.now())) as unknown as SubmitOutput
+  return (await submitScorecardInTransaction(client, CFG, args, Date.now(), approve)) as unknown as SubmitOutput
 }
 
 /** 造一场面试（默认 POST_INTERVIEW + 有排期，`ck_interview_scheduled` 要求非空）。 */
@@ -1142,6 +1154,167 @@ test('provenance=FIXTURE：材料链是 LIVE，但绑定的会议 provider=inter
 
     const ok = await submit(client, submitArgs(interviewId, idempotencyKey('internal-meeting')))
     assert.equal(ok.labels.provenance, 'FIXTURE')
+  })
+})
+
+// =====================================================================
+//  12. D-79 人机闸门：写库前必须 allowed-once；缺省/拒绝/取消 → 一行不写
+//      （P0：回滚事务实测过"无 approval 也写入 SUBMITTED"，这里是它的回归）
+// =====================================================================
+
+/** 本场面试的 scorecard 行数（"零写入"证明口径：按 interview 限定，避开库里既有行）。 */
+async function scorecardRowsFor(client: DatabaseClient, interviewId: string): Promise<number> {
+  return countRows(client, 'scorecard', 'interview_id = $1 and tenant_id = $2', [interviewId, TENANT])
+}
+
+/** 该幂等键的内部事件行数（内部事件同样属于"写入"）。 */
+async function eventRowsFor(client: DatabaseClient, key: string): Promise<number> {
+  return countRows(client, 'event_inbox', 'idempotency_key = $1 and tenant_id = $2', [`scorecard:${key}`, TENANT])
+}
+
+/** 造一个"可提交"的夹具：申请 + 面试 + 面试官（ACTOR_102）+ 执行身份。 */
+async function seedSubmittable(
+  client: DatabaseClient,
+  interviewStatus = 'POST_INTERVIEW',
+): Promise<{ interviewId: string; key: string }> {
+  const scenario = await seedScenario(client, { dimensions: [...DIMENSIONS] })
+  const interviewId = await addInterview(client, scenario.applicationId, { status: interviewStatus })
+  await addInterviewer(client, interviewId, ACTOR_102)
+  await setActor(client, ACTOR_102)
+  return { interviewId, key: idempotencyKey('d79') }
+}
+
+/** 断言一次调用抛 `FORBIDDEN` + 指定 `reason_code`，并核对 `detail`。 */
+async function expectForbidden(
+  run: () => Promise<unknown>,
+  reasonCode: 'APPROVAL_UNAVAILABLE' | 'APPROVAL_NOT_GRANTED',
+  approval: 'unavailable' | 'rejected' | 'cancelled',
+): Promise<Record<string, unknown>> {
+  const body = await expectError(run, 'FORBIDDEN', reasonCode)
+  assert.deepEqual(body.detail, { approval, tool: 'recruitment_scorecard_submit' })
+  return body
+}
+
+test('D-79：没有 approval（缺省）→ FORBIDDEN(APPROVAL_UNAVAILABLE)，scorecard / 事件一行不写', async () => {
+  await inRolledBackTx(POOL, async (client) => {
+    const { interviewId, key } = await seedSubmittable(client)
+    const before = await scorecardRowsFor(client, interviewId)
+    await expectForbidden(
+      () => submitScorecardInTransaction(client, CFG, submitArgs(interviewId, key), Date.now()),
+      'APPROVAL_UNAVAILABLE',
+      'unavailable',
+    )
+    assert.equal(await scorecardRowsFor(client, interviewId), before, '无 approval 不得新增 scorecard 行')
+    assert.equal(await eventRowsFor(client, key), 0, '无 approval 不得写内部事件')
+  })
+})
+
+test('D-79：approval=rejected → FORBIDDEN(APPROVAL_NOT_GRANTED)，一行不写', async () => {
+  await inRolledBackTx(POOL, async (client) => {
+    const { interviewId, key } = await seedSubmittable(client)
+    const before = await scorecardRowsFor(client, interviewId)
+    await expectForbidden(
+      () => submitScorecardInTransaction(client, CFG, submitArgs(interviewId, key), Date.now(), async () => 'rejected'),
+      'APPROVAL_NOT_GRANTED',
+      'rejected',
+    )
+    assert.equal(await scorecardRowsFor(client, interviewId), before)
+    assert.equal(await eventRowsFor(client, key), 0)
+  })
+})
+
+test('D-79：approval=cancelled → FORBIDDEN(APPROVAL_NOT_GRANTED)，一行不写', async () => {
+  await inRolledBackTx(POOL, async (client) => {
+    const { interviewId, key } = await seedSubmittable(client)
+    const before = await scorecardRowsFor(client, interviewId)
+    await expectForbidden(
+      () => submitScorecardInTransaction(client, CFG, submitArgs(interviewId, key), Date.now(), async () => 'cancelled'),
+      'APPROVAL_NOT_GRANTED',
+      'cancelled',
+    )
+    assert.equal(await scorecardRowsFor(client, interviewId), before)
+    assert.equal(await eventRowsFor(client, key), 0)
+  })
+})
+
+test('D-79：approval=allowed-once → 写入成功（SUBMITTED，scorecard +1、内部事件 +1）', async () => {
+  await inRolledBackTx(POOL, async (client) => {
+    const { interviewId, key } = await seedSubmittable(client)
+    const before = await scorecardRowsFor(client, interviewId)
+    const ok = await submitScorecardInTransaction(
+      client, CFG, submitArgs(interviewId, key), Date.now(), allowOnce,
+    ) as unknown as SubmitOutput
+    assert.equal(ok.scorecard.status, 'SUBMITTED')
+    assert.equal(ok.scorecard.actor_id, ACTOR_102)
+    assert.equal(await scorecardRowsFor(client, interviewId), before + 1)
+    assert.equal(await eventRowsFor(client, key), 1)
+    const row = await readScorecard(client, ok.scorecard.id)
+    assert.equal(row.status, 'SUBMITTED')
+    assert.equal(row.status_changed_by_actor_id, ACTOR_102)
+  })
+})
+
+test('D-79：参数非法 → 拒绝且**不去问人**（approval 调用数 = 0、零写入）', async () => {
+  await inRolledBackTx(POOL, async (client) => {
+    const { interviewId } = await seedSubmittable(client)
+    let approvalCalls = 0
+    const spy = async (): Promise<ApprovalOutcome> => {
+      approvalCalls += 1
+      return 'allowed-once'
+    }
+    const before = await scorecardRowsFor(client, interviewId)
+    await expectError(
+      () => submitScorecardInTransaction(client, CFG, {}, Date.now(), spy),
+      'INVALID_ARGS',
+      'MISSING_REQUIRED',
+    )
+    assert.equal(approvalCalls, 0, '参数层就拒了，不得打扰人')
+    assert.equal(await scorecardRowsFor(client, interviewId), before)
+  })
+})
+
+test('D-79：业务校验失败（面试 CANCELLED）→ 也不去问人（approval 调用数 = 0）', async () => {
+  await inRolledBackTx(POOL, async (client) => {
+    const { interviewId, key } = await seedSubmittable(client, 'CANCELLED')
+    let approvalCalls = 0
+    const spy = async (): Promise<ApprovalOutcome> => {
+      approvalCalls += 1
+      return 'allowed-once'
+    }
+    const before = await scorecardRowsFor(client, interviewId)
+    await expectError(
+      () => submitScorecardInTransaction(client, CFG, submitArgs(interviewId, key), Date.now(), spy),
+      'INVALID_ARGS',
+      'INTERVIEW_CANCELLED',
+    )
+    assert.equal(approvalCalls, 0, '业务校验就拒了，不得打扰人')
+    assert.equal(await scorecardRowsFor(client, interviewId), before)
+  })
+})
+
+test('D-79：修订的 expected_record_version 过期 → 拒绝且**不去问人**（approval 调用数 = 0、零写入）', async () => {
+  await inRolledBackTx(POOL, async (client) => {
+    const { interviewId } = await seedSubmittable(client)
+    const first = await submit(client, submitArgs(interviewId, idempotencyKey('stale-v1')))
+    let approvalCalls = 0
+    const spy = async (): Promise<ApprovalOutcome> => {
+      approvalCalls += 1
+      return 'allowed-once'
+    }
+    const before = await scorecardRowsFor(client, interviewId)
+    await expectError(
+      () => submitScorecardInTransaction(client, CFG, submitArgs(interviewId, idempotencyKey('stale-v2'), {
+        revision: {
+          supersedes_scorecard_id: first.scorecard.id,
+          expected_record_version: 7,
+          revision_reason: '并发场景：我不是最后一个写的人',
+        },
+      }), Date.now(), spy),
+      'VERSION_CONFLICT',
+      'RECORD_VERSION_MISMATCH',
+    )
+    assert.equal(approvalCalls, 0, '业务校验（乐观并发）就拒了，不得打扰人')
+    assert.equal(await scorecardRowsFor(client, interviewId), before)
   })
 })
 

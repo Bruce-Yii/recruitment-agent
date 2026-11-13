@@ -79,6 +79,29 @@ function createArgs(applicationId: string, overrides: Record<string, unknown> = 
   }
 }
 
+/**
+ * D-79 的 approval 替身：默认放行一次。
+ *
+ * 本文件绝大多数用例验证的是「校验通过之后」的写路径，所以显式给一个「人已批准」的替身；
+ * 闸门本身的负例见 §8（它们直接调 `scheduleInTransaction` 并给拒绝/缺省）。
+ */
+const allowOnce = async (): Promise<'allowed-once'> => 'allowed-once'
+
+/**
+ * 测试用排期入口：等价于 `scheduleInTransaction(client, cfg, args, nowMs, allowOnce)`。
+ * @param client - 事务内连接。
+ * @param args - CREATE 入参。
+ * @param nowMs - 服务端"现在"（默认 `NOW`）。
+ * @returns 契约出参。
+ */
+function schedule(
+  client: DatabaseClient,
+  args: Record<string, unknown>,
+  nowMs: number = NOW,
+): Promise<Record<string, unknown>> {
+  return scheduleInTransaction(client, cfg, args, nowMs, allowOnce)
+}
+
 /** 数一行（`count(*)::int`）。 */
 async function count(client: DatabaseClient, sql: string, params: readonly unknown[] = []): Promise<number> {
   const { rows } = await client.query<{ n: number }>(sql, [...params])
@@ -216,7 +239,7 @@ test('CREATE 成功：interview/interviewer/meeting/binding/task 全部落库，
       meeting: { provider: 'FEISHU', external_meeting_id: externalId, calendar_event_id: calendarId },
     })
 
-    const value = await scheduleInTransaction(client, cfg, args, NOW)
+    const value = await schedule(client, args, NOW)
 
     // --- 顶层形状 ---
     assert.equal(value.tool, 'recruitment_interview_schedule')
@@ -344,7 +367,7 @@ test('CREATE 成功：interview/interviewer/meeting/binding/task 全部落库，
 test('CREATE 不带 meeting：排定照常成立 + MEETING_NOT_BOUND + BIND_MEETING 任务（H-3）', async () => {
   await inRolledBackTx(pool, async (client) => {
     const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
-    const value = await scheduleInTransaction(client, cfg, createArgs(scenario.applicationId), NOW)
+    const value = await schedule(client, createArgs(scenario.applicationId), NOW)
 
     assert.equal(value.status, 'OK')
     assert.deepEqual(value.effects, { meeting_bound: false, external_call_made: false })
@@ -387,13 +410,13 @@ test('同 key 同参 → replayed=true、changes 空、行数不变；时间已�
     const args = createArgs(scenario.applicationId, {
       meeting: { provider: 'FEISHU', external_meeting_id: `feishu-${uniqueSuffix()}` },
     })
-    const first = await scheduleInTransaction(client, cfg, args, NOW)
+    const first = await schedule(client, args, NOW)
     assert.equal(first.replayed, false)
     const firstInterviewId = String((first.interview as Record<string, unknown>).id)
     const before = await tableCounts(client)
 
     // (a) 同一事务里重放同一 key + 同一参数。
-    const replay = await scheduleInTransaction(client, cfg, args, NOW)
+    const replay = await schedule(client, args, NOW)
     assert.equal(replay.status, 'OK')
     assert.equal(replay.replayed, true)
     assert.deepEqual((replay.changes as Record<string, unknown>).created, [])
@@ -404,7 +427,7 @@ test('同 key 同参 → replayed=true、changes 空、行数不变；时间已�
 
     // (b) 让"现在"越过开始时刻：重放必须仍然成功（START_IN_PAST 在 STORE 命中之后才判）。
     const longAfter = Date.parse('2027-01-01T00:00:00Z')
-    const replayAfterStart = await scheduleInTransaction(client, cfg, args, longAfter)
+    const replayAfterStart = await schedule(client, args, longAfter)
     assert.equal(replayAfterStart.replayed, true, '时间已过的重放不能被误判成 START_IN_PAST')
     assert.equal(String((replayAfterStart.interview as Record<string, unknown>).id), firstInterviewId)
     assert.deepEqual(await tableCounts(client), before)
@@ -412,7 +435,7 @@ test('同 key 同参 → replayed=true、changes 空、行数不变；时间已�
     // (c) 同 key 不同参 → IDEMPOTENCY_KEY_REUSED（detail 带两个 digest）。
     const changed = { ...args, scheduled_start_at: '2026-11-20T14:00:00+08:00' }
     const body = await expectToolError(
-      scheduleInTransaction(client, cfg, changed, NOW),
+      schedule(client, changed, NOW),
       'INVALID_ARGS',
       'IDEMPOTENCY_KEY_REUSED',
     )
@@ -431,13 +454,13 @@ test('同 key 同参 → replayed=true、changes 空、行数不变；时间已�
 test('语义幂等：同 (application, round, slot) → ALREADY_SCHEDULED，零写入（CANCELLED 行同样占位）', async () => {
   await inRolledBackTx(pool, async (client) => {
     const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
-    const first = await scheduleInTransaction(client, cfg, createArgs(scenario.applicationId), NOW)
+    const first = await schedule(client, createArgs(scenario.applicationId), NOW)
     const firstInterviewId = String((first.interview as Record<string, unknown>).id)
     const before = await tableCounts(client)
 
     // 换一个幂等键、同一 slot：语义幂等与 key 无关。
     const body = await expectToolError(
-      scheduleInTransaction(client, cfg, createArgs(scenario.applicationId), NOW),
+      schedule(client, createArgs(scenario.applicationId), NOW),
       'ALREADY_SCHEDULED',
       'SLOT_OCCUPIED',
     )
@@ -453,7 +476,7 @@ test('语义幂等：同 (application, round, slot) → ALREADY_SCHEDULED，零�
       [firstInterviewId, TENANT],
     )
     const cancelledBody = await expectToolError(
-      scheduleInTransaction(client, cfg, createArgs(scenario.applicationId), NOW),
+      schedule(client, createArgs(scenario.applicationId), NOW),
       'ALREADY_SCHEDULED',
       'SLOT_OCCUPIED',
     )
@@ -471,16 +494,15 @@ test('面试官冲突 → CONFLICT_SLOT(INTERVIEWER_BUSY)，detail.conflicts 逐
     // 两场不同的申请（候选人不同），同一面试官。
     const firstScenario = await seedScenario(client, { dimensions: DIMENSIONS })
     const secondScenario = await seedScenario(client, { dimensions: DIMENSIONS })
-    const first = await scheduleInTransaction(
-      client, cfg, createArgs(firstScenario.applicationId, { scheduled_start_at: '2026-11-20T10:00:00+08:00' }), NOW,
+    const first = await schedule(
+      client, createArgs(firstScenario.applicationId, { scheduled_start_at: '2026-11-20T10:00:00+08:00' }), NOW,
     )
     const firstInterviewId = String((first.interview as Record<string, unknown>).id)
     const before = await tableCounts(client)
 
     const body = await expectToolError(
-      scheduleInTransaction(
+      schedule(
         client,
-        cfg,
         createArgs(secondScenario.applicationId, { scheduled_start_at: '2026-11-20T10:30:00+08:00' }),
         NOW,
       ),
@@ -508,16 +530,15 @@ test('面试官冲突 → CONFLICT_SLOT(INTERVIEWER_BUSY)，detail.conflicts 逐
 test('候选人冲突（跨轮次）→ CONFLICT_SLOT(CANDIDATE_BUSY)，零写入', async () => {
   await inRolledBackTx(pool, async (client) => {
     const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
-    const first = await scheduleInTransaction(
-      client, cfg, createArgs(scenario.applicationId, { round_no: 1 }), NOW,
+    const first = await schedule(
+      client, createArgs(scenario.applicationId, { round_no: 1 }), NOW,
     )
     const firstInterviewId = String((first.interview as Record<string, unknown>).id)
     const before = await tableCounts(client)
 
     const body = await expectToolError(
-      scheduleInTransaction(
+      schedule(
         client,
-        cfg,
         createArgs(scenario.applicationId, {
           round_no: 2,
           scheduled_start_at: '2026-11-20T10:30:00+08:00',
@@ -547,7 +568,7 @@ test('会议已被别的面试绑 → MEETING_ALREADY_BOUND，零写入；裸 SQ
     const externalId = `feishu-${uniqueSuffix()}`
 
     // interview #1：用工具正常建会 + 绑定。
-    const first = await scheduleInTransaction(client, cfg, createArgs(firstScenario.applicationId, {
+    const first = await schedule(client, createArgs(firstScenario.applicationId, {
       meeting: { provider: 'FEISHU', external_meeting_id: externalId },
     }), NOW)
     const firstInterviewId = String((first.interview as Record<string, unknown>).id)
@@ -562,7 +583,7 @@ test('会议已被别的面试绑 → MEETING_ALREADY_BOUND，零写入；裸 SQ
 
     // interview #2：同一 external_meeting_id → 拒绝（换一个面试官，避免先撞面试官冲突）。
     const body = await expectToolError(
-      scheduleInTransaction(client, cfg, createArgs(secondScenario.applicationId, {
+      schedule(client, createArgs(secondScenario.applicationId, {
         interviewers: [{ actor_id: INTERVIEWER_B }],
         meeting: { provider: 'FEISHU', external_meeting_id: externalId },
       }), NOW),
@@ -594,7 +615,7 @@ test('同一 (tenant, provider, external_meeting_id) 的第二行 meeting = 2350
   await inRolledBackTx(pool, async (client) => {
     const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
     const externalId = `feishu-${uniqueSuffix()}`
-    const first = await scheduleInTransaction(client, cfg, createArgs(scenario.applicationId, {
+    const first = await schedule(client, createArgs(scenario.applicationId, {
       meeting: { provider: 'FEISHU', external_meeting_id: externalId },
     }), NOW)
     assert.equal(first.status, 'OK')
@@ -642,7 +663,7 @@ test('缺面试官 → INTERVIEWER_REQUIRED，零写入', async () => {
     const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
     const before = await tableCounts(client)
     const body = await expectToolError(
-      scheduleInTransaction(client, cfg, createArgs(scenario.applicationId, { interviewers: [] }), NOW),
+      schedule(client, createArgs(scenario.applicationId, { interviewers: [] }), NOW),
       'INVALID_ARGS',
       'INTERVIEWER_REQUIRED',
     )
@@ -663,7 +684,7 @@ test('AGENT_WORKER 当面试官 → INTERVIEWER_NOT_HUMAN，零写入', async ()
     )
     const before = await tableCounts(client)
     const body = await expectToolError(
-      scheduleInTransaction(client, cfg, createArgs(scenario.applicationId, {
+      schedule(client, createArgs(scenario.applicationId, {
         interviewers: [{ actor_id: agentActorId }],
       }), NOW),
       'INVALID_ARGS',
@@ -680,7 +701,7 @@ test('面试官不存在 / 跨租户 → NOT_FOUND(INTERVIEWER_NOT_FOUND)，零�
     const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
     const before = await tableCounts(client)
     await expectToolError(
-      scheduleInTransaction(client, cfg, createArgs(scenario.applicationId, {
+      schedule(client, createArgs(scenario.applicationId, {
         interviewers: [{ actor_id: '00000000-0000-4000-8000-0000000000ff' }],
       }), NOW),
       'NOT_FOUND',
@@ -694,7 +715,7 @@ test('申请不存在 → NOT_FOUND(APPLICATION_NOT_FOUND)，零写入', async (
   await inRolledBackTx(pool, async (client) => {
     const before = await tableCounts(client)
     await expectToolError(
-      scheduleInTransaction(client, cfg, createArgs('00000000-0000-4000-8000-0000000000aa'), NOW),
+      schedule(client, createArgs('00000000-0000-4000-8000-0000000000aa'), NOW),
       'NOT_FOUND',
       'APPLICATION_NOT_FOUND',
     )
@@ -707,7 +728,7 @@ test('开始时间已过 → START_IN_PAST，零写入（时点校验在事务�
     const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
     const before = await tableCounts(client)
     const body = await expectToolError(
-      scheduleInTransaction(client, cfg, createArgs(scenario.applicationId, {
+      schedule(client, createArgs(scenario.applicationId, {
         scheduled_start_at: '2020-01-01T10:00:00+08:00',
       }), NOW),
       'INVALID_ARGS',
@@ -723,7 +744,7 @@ test('申请不是 ACTIVE → INVALID_ARGS(APPLICATION_NOT_ACTIVE)，零写入',
     const scenario = await seedScenario(client, { dimensions: DIMENSIONS, lifecycleStatus: 'WITHDRAWN' })
     const before = await tableCounts(client)
     await expectToolError(
-      scheduleInTransaction(client, cfg, createArgs(scenario.applicationId), NOW),
+      schedule(client, createArgs(scenario.applicationId), NOW),
       'INVALID_ARGS',
       'APPLICATION_NOT_ACTIVE',
     )
@@ -740,7 +761,7 @@ test('MEETING_ALREADY_BOUND 在同一个未回滚的事务里不留脏行（save
     // 先给"别人的面试"建会 + 绑定。
     const blockerScenario = await seedScenario(client, { dimensions: DIMENSIONS })
     const externalId = `feishu-${uniqueSuffix()}`
-    await scheduleInTransaction(client, cfg, createArgs(blockerScenario.applicationId, {
+    await schedule(client, createArgs(blockerScenario.applicationId, {
       meeting: { provider: 'FEISHU', external_meeting_id: externalId },
     }), NOW)
 
@@ -748,7 +769,7 @@ test('MEETING_ALREADY_BOUND 在同一个未回滚的事务里不留脏行（save
     const targetScenario = await seedScenario(client, { dimensions: DIMENSIONS })
     const before = await tableCounts(client)
     await expectToolError(
-      scheduleInTransaction(client, cfg, createArgs(targetScenario.applicationId, {
+      schedule(client, createArgs(targetScenario.applicationId, {
         // 换一个面试官：本用例要探的是 A9（会议已被绑），不能先被 A8（冲突）拦掉。
         interviewers: [{ actor_id: INTERVIEWER_B }],
         meeting: { provider: 'FEISHU', external_meeting_id: externalId },
@@ -778,5 +799,118 @@ test('MEETING_ALREADY_BOUND 在同一个未回滚的事务里不留脏行（save
       await count(client, 'select count(*)::int as n from recruitment.organization where id = $1', [TENANT]),
       1,
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+//  8. D-79 人机闸门：写库前必须 allowed-once；缺省/拒绝/取消 → 五张表零写入
+//     （P0：回滚事务实测过"无 approval 也写入成功"，这里是它的回归）
+// ---------------------------------------------------------------------------
+
+/** 期望一次调用抛 `FORBIDDEN` + 指定 `reason_code`，并核对 `detail`。 */
+async function expectForbidden(
+  run: Promise<unknown>,
+  reasonCode: 'APPROVAL_UNAVAILABLE' | 'APPROVAL_NOT_GRANTED',
+  approval: 'unavailable' | 'rejected' | 'cancelled',
+): Promise<Record<string, unknown>> {
+  const body = await expectToolError(run, 'FORBIDDEN', reasonCode)
+  assert.deepEqual(body.detail, { approval, tool: 'recruitment_interview_schedule' })
+  return body
+}
+
+test('D-79：没有 approval（缺省）→ FORBIDDEN(APPROVAL_UNAVAILABLE)，五张表零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const before = await tableCounts(client)
+    await expectForbidden(
+      scheduleInTransaction(client, cfg, createArgs(scenario.applicationId), NOW),
+      'APPROVAL_UNAVAILABLE',
+      'unavailable',
+    )
+    assertNoWrites(before, await tableCounts(client), '无 approval')
+  })
+})
+
+test('D-79：approval=rejected → FORBIDDEN(APPROVAL_NOT_GRANTED)，五张表零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const before = await tableCounts(client)
+    await expectForbidden(
+      scheduleInTransaction(
+        client, cfg, createArgs(scenario.applicationId), NOW, async () => 'rejected',
+      ),
+      'APPROVAL_NOT_GRANTED',
+      'rejected',
+    )
+    assertNoWrites(before, await tableCounts(client), 'approval=rejected')
+  })
+})
+
+test('D-79：approval=cancelled → FORBIDDEN(APPROVAL_NOT_GRANTED)，五张表零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const before = await tableCounts(client)
+    await expectForbidden(
+      scheduleInTransaction(
+        client, cfg, createArgs(scenario.applicationId), NOW, async () => 'cancelled',
+      ),
+      'APPROVAL_NOT_GRANTED',
+      'cancelled',
+    )
+    assertNoWrites(before, await tableCounts(client), 'approval=cancelled')
+  })
+})
+
+test('D-79：approval=allowed-once → 写入成功（interview 恰好 +1）', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const before = await tableCounts(client)
+    const value = await scheduleInTransaction(
+      client, cfg, createArgs(scenario.applicationId), NOW, allowOnce,
+    )
+    assert.equal(value.status, 'OK')
+    assert.equal(value.replayed, false)
+    assert.equal((await tableCounts(client)).interview, before.interview + 1)
+  })
+})
+
+test('D-79：参数非法 → 拒绝且**不去问人**（approval 调用数 = 0）', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    let approvalCalls = 0
+    const spy = async (): Promise<'allowed-once'> => {
+      approvalCalls += 1
+      return 'allowed-once'
+    }
+    const before = await tableCounts(client)
+    await expectToolError(
+      scheduleInTransaction(
+        client, cfg, createArgs(scenario.applicationId, { interviewers: [] }), NOW, spy,
+      ),
+      'INVALID_ARGS',
+      'INTERVIEWER_REQUIRED',
+    )
+    assert.equal(approvalCalls, 0, '参数层就拒了，不得打扰人')
+    assertNoWrites(before, await tableCounts(client), '参数非法')
+  })
+})
+
+test('D-79：业务校验失败（申请不存在）→ 也不去问人（approval 调用数 = 0）', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    let approvalCalls = 0
+    const spy = async (): Promise<'allowed-once'> => {
+      approvalCalls += 1
+      return 'allowed-once'
+    }
+    const before = await tableCounts(client)
+    await expectToolError(
+      scheduleInTransaction(
+        client, cfg, createArgs('00000000-0000-4000-8000-0000000000aa'), NOW, spy,
+      ),
+      'NOT_FOUND',
+      'APPLICATION_NOT_FOUND',
+    )
+    assert.equal(approvalCalls, 0, '业务校验就拒了，不得打扰人')
+    assertNoWrites(before, await tableCounts(client), '业务校验失败')
   })
 })
