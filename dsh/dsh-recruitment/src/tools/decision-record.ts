@@ -203,7 +203,13 @@ const HUMAN_CONFIRMATION_SCHEMA: Record<string, unknown> = {
   properties: {
     confirmed_by_actor_id: { type: 'string', description: '必须 = 执行上下文的 actor（UUID）' },
     confirmed_at: { type: 'string', description: 'ISO-8601 带偏移；与 decided_at 相差 ≤ 24h 且不得晚于它' },
-    confirmation_method: { type: 'string', enum: ['IN_APP_CONFIRM', 'SIGNED_RECORD'] },
+    confirmation_method: { type: 'string', enum: ['IN_CHAT', 'IN_APP_CONFIRM', 'SIGNED_RECORD'] },
+    confirmation_text: {
+      type: 'string',
+      description:
+        '人在对话里说过的原话（逐字，≤2000 字符）。confirmation_method=IN_CHAT 时必填：'
+        + '它是"人只决策一次"的授权凭据，落库后可与会话日志对账（D-95）。',
+    },
     confirmation_text_sha256: {
       type: 'string',
       description: 'sha256(canonical_json({result, reason, override_rationale, basis_refs}))，64 位小写 hex',
@@ -750,7 +756,7 @@ export function parseDecisionArgs(raw: unknown, nowMs: number): DecisionArgs {
       pushViolation(violations, 'TYPE_MISMATCH', 'human_confirmation', 'human_confirmation 必须是对象')
     } else {
       for (const key of Object.keys(humanConfirmation)) {
-        if (!['confirmed_by_actor_id', 'confirmed_at', 'confirmation_method', 'confirmation_text_sha256'].includes(key)) {
+        if (!['confirmed_by_actor_id', 'confirmed_at', 'confirmation_method', 'confirmation_text_sha256', 'confirmation_text'].includes(key)) {
           pushViolation(violations, 'UNKNOWN_PARAM', `human_confirmation.${key}`, `human_confirmation 没有 ${key} 这个键`)
         }
       }
@@ -768,12 +774,38 @@ export function parseDecisionArgs(raw: unknown, nowMs: number): DecisionArgs {
         )
       }
       const method = humanConfirmation.confirmation_method
-      if (method !== undefined && !['IN_APP_CONFIRM', 'SIGNED_RECORD'].includes(method as string)) {
+      if (method !== undefined && !['IN_CHAT', 'IN_APP_CONFIRM', 'SIGNED_RECORD'].includes(method as string)) {
         pushViolation(
           violations,
           'ENUM_INVALID',
           'human_confirmation.confirmation_method',
-          'confirmation_method 只能是 IN_APP_CONFIRM 或 SIGNED_RECORD',
+          'confirmation_method 只能是 IN_CHAT / IN_APP_CONFIRM / SIGNED_RECORD',
+        )
+      }
+      // D-95：人在对话里说过的原话是 IN_CHAT 的授权凭据 —— 必须逐字、非空、有长度上限。
+      const confirmText = humanConfirmation.confirmation_text
+      if (confirmText !== undefined && (typeof confirmText !== 'string' || confirmText.trim() === '')) {
+        pushViolation(
+          violations,
+          'TYPE_MISMATCH',
+          'human_confirmation.confirmation_text',
+          'confirmation_text 必须是非空字符串（人的原话）',
+        )
+      }
+      if (typeof confirmText === 'string' && confirmText.length > 2000) {
+        pushViolation(
+          violations,
+          'TYPE_MISMATCH',
+          'human_confirmation.confirmation_text',
+          'confirmation_text 不能超过 2000 字符',
+        )
+      }
+      if (method === 'IN_CHAT' && confirmText === undefined) {
+        pushViolation(
+          violations,
+          'MISSING_REQUIRED',
+          'human_confirmation.confirmation_text',
+          'confirmation_method=IN_CHAT 必须带 confirmation_text（人的原话，D-95）',
         )
       }
       const textHash = humanConfirmation.confirmation_text_sha256
@@ -2545,9 +2577,15 @@ export async function recordDecisionInTransaction(
     }
   }
 
-  // ---- STEP 6.5 D-79 approval（先判定，再问人；没有 allowed-once 就一行都不写）----
-  const approvalOutcome = await approve()
-  requireApprovalGranted(approvalOutcome)
+  // ---- STEP 6.5 人机闸门（D-95：人只做一次决策）----
+  // 人在对话里明确指示过（IN_CHAT + 原话）→ 那就是那一次决策，**不再弹二次确认**。
+  // 只有确实需要留痕签名的旧方式（IN_APP_CONFIRM / SIGNED_RECORD）才走 approval 通道。
+  const confirmationMethod = (args.human_confirmation as { confirmation_method?: string } | undefined)
+    ?.confirmation_method
+  if (confirmationMethod !== 'IN_CHAT') {
+    const approvalOutcome = await approve()
+    requireApprovalGranted(approvalOutcome)
+  }
 
   // ---- STEP 7 写入（内部事件 → decision → 撤回三步舞 → 写后复核）----
   const eventId = randomUUID()
@@ -2571,6 +2609,10 @@ export async function recordDecisionInTransaction(
         actor_id: actor.id,
         summary_digest: view.digest,
         approval_id: args.approval_id ?? null,
+        // D-95：把「人怎么授权的」写进内部事件，事后可与会话日志对账。
+        human_confirmation_method: confirmationMethod ?? null,
+        human_confirmation_text:
+          (args.human_confirmation as { confirmation_text?: string } | undefined)?.confirmation_text ?? null,
       },
     })
     written = await insertDecisionRow(client, {
