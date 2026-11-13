@@ -1,0 +1,15 @@
+{
+  "approval_id": "87fd466d-1b24-441b-8fbf-2e6064456bdc",
+  "status": "APPROVED",
+  "resource_type": "RUBRIC_VERSION",
+  "resource_id": "c9296bf3-ce19-4c13-a7f2-fd55e6b9e5b0",
+  "job_id": "792a10f9-6dd3-4d80-b141-6345880e2399",
+  "rubric_version_no": 1,
+  "canonical_payload_hash": "a3dd2e2a8dbe474b000fd439df9a9623829cd09111a17cf9cbce3f74c5393973",
+  "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+  "decided_at": "2026-11-13T11:58:54.213Z",
+  "record_version": 2
+}
+
+approval 87fd466d-1b24-441b-8fbf-2e6064456bdc -> APPROVED by 11111111-1111-4111-8111-000000000103 at 2026-11-13T11:58:54.213Z
+rubric version 1 of job 792a10f9-6dd3-4d80-b141-6345880e2399; hash a3dd2e2a8dbe474b000fd439df9a9623829cd09111a17cf9cbce3f74c5393973

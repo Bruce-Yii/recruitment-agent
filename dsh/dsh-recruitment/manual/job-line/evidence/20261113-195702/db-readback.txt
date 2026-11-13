@@ -1,0 +1,103 @@
+=== recruitment_job_get render ===
+job JOB-20261113-D0EA8E 后端工程师 [DRAFT]  (labels: LIVE/MANUAL/CONNECTED)
+  job_id=792a10f9-6dd3-4d80-b141-6345880e2399  record_version=2  department_id=11111111-1111-4111-8111-000000000010  requisition_id=null
+job_version v1  hash=95eb126b…  approved_by_approval_id=null
+  description_md: 后端工程师
+rubric v1 (is_current=true, is_approved=true, resolution=JOB_CURRENT, executable=true, version_id=c9296bf3-ce19-4c13-a7f2-fd55e6b9e5b0)
+    three_years_experience  [MUST_HAVE]  w=0.5  timeline.covered_months_closed GTE 36 — 3 年及以上工作经验
+    bachelor_or_above  [MUST_HAVE]  w=0.5  (judgment) "候选人是否具备本科及以上学历？" — 本科及以上学历
+versions: v1(is_current=true, is_approved=true)
+as_of 2026-11-13T12:01:30.233Z
+
+=== recruitment_job_get value (JSON) ===
+{
+  "tool": "recruitment_job_get",
+  "contract_version": "1.0.0",
+  "labels": {
+    "provenance": "LIVE",
+    "trigger": "MANUAL",
+    "connection": "CONNECTED"
+  },
+  "as_of": "2026-11-13T12:01:30.233Z",
+  "job": {
+    "id": "792a10f9-6dd3-4d80-b141-6345880e2399",
+    "code": "JOB-20261113-D0EA8E",
+    "title": "后端工程师",
+    "status": "DRAFT",
+    "department_id": "11111111-1111-4111-8111-000000000010",
+    "requisition_id": null,
+    "current_job_version_id": "e42c184a-6a49-4045-ae9e-5976b6367e13",
+    "record_version": 2,
+    "status_changed_at": "2026-11-13T11:57:11.697Z"
+  },
+  "job_version": {
+    "id": "e42c184a-6a49-4045-ae9e-5976b6367e13",
+    "version_no": 1,
+    "payload_hash": "95eb126b3962f30e2281b73d177a6ca5daf90d9f837820941b5623f2f5958a99",
+    "description_md": "后端工程师",
+    "requirements_md": null,
+    "approved_by_approval_id": null
+  },
+  "rubric": {
+    "version_id": "c9296bf3-ce19-4c13-a7f2-fd55e6b9e5b0",
+    "version_no": 1,
+    "payload_hash": "a3dd2e2a8dbe474b000fd439df9a9623829cd09111a17cf9cbce3f74c5393973",
+    "is_current": true,
+    "is_approved": true,
+    "approved_by_approval_id": null,
+    "created_by_actor_id": "11111111-1111-4111-8111-000000000103",
+    "created_at": "2026-11-13T11:57:11.697Z",
+    "resolution": "JOB_CURRENT",
+    "criteria": [
+      {
+        "key": "three_years_experience",
+        "kind": "MUST_HAVE",
+        "field": "timeline.covered_months_closed",
+        "label": "3 年及以上工作经验",
+        "notes": null,
+        "value": 36,
+        "weight": 0.5,
+        "operator": "GTE",
+        "question": null
+      },
+      {
+        "key": "bachelor_or_above",
+        "kind": "MUST_HAVE",
+        "field": null,
+        "label": "本科及以上学历",
+        "notes": "学历不在机械判定白名单内，由人复核",
+        "value": null,
+        "weight": 0.5,
+        "operator": null,
+        "question": "候选人是否具备本科及以上学历？"
+      }
+    ],
+    "criteria_count": 2,
+    "must_have_count": 2,
+    "nice_to_have_count": 0,
+    "disqualifier_count": 0,
+    "executable": true
+  },
+  "rubric_absence": null,
+  "rubric_versions": [
+    {
+      "version_no": 1,
+      "version_id": "c9296bf3-ce19-4c13-a7f2-fd55e6b9e5b0",
+      "is_current": true,
+      "is_approved": true,
+      "created_at": "2026-11-13T11:57:11.697Z"
+    }
+  ]
+}
+
+=== SQL recruitment.job (1 row(s), uuid masked) ===
+{"id":"792a10f9…","tenant_id":"11111111…","department_id":"11111111…","code":"JOB-20261113-D0EA8E","title":"后端工程师","status":"DRAFT","requisition_id":null,"current_job_version_id":"e42c184a…","record_version":2,"status_changed_at":"2026-11-13T11:57:11.697Z"}
+
+=== SQL recruitment.job_version (1 row(s), uuid masked) ===
+{"id":"e42c184a…","job_id":"792a10f9…","version_no":1,"payload_hash":"95eb126b3962f30e2281b73d177a6ca5daf90d9f837820941b5623f2f5958a99","description_md":"后端工程师","requirements_md":null,"approved_by_approval_id":null,"created_by_actor_id":"11111111…","created_at":"2026-11-13T11:57:11.697Z"}
+
+=== SQL recruitment.rubric_version (1 row(s), uuid masked) ===
+{"id":"c9296bf3…","job_id":"792a10f9…","version_no":1,"payload_hash":"a3dd2e2a8dbe474b000fd439df9a9623829cd09111a17cf9cbce3f74c5393973","dimensions":[{"key":"three_years_experience","kind":"MUST_HAVE","field":"timeline.covered_months_closed","label":"3 年及以上工作经验","notes":null,"value":36,"weight":0.5,"operator":"GTE","question":null},{"key":"bachelor_or_above","kind":"MUST_HAVE","field":null,"label":"本科及以上学历","notes":"学历不在机械判定白名单内，由人复核","value":null,"weight":0.5,"operator":null,"question":"候选人是否具备本科及以上学历？"}],"approved_by_approval_id":null,"created_by_actor_id":"11111111…","created_at":"2026-11-13T11:57:11.697Z"}
+
+=== SQL recruitment.approval (1 row(s), uuid masked) ===
+{"id":"87fd466d…","resource_type":"RUBRIC_VERSION","resource_id":"c9296bf3…","resource_record_version":1,"payload_schema_version":1,"canonical_payload_hash":"a3dd2e2a8dbe474b000fd439df9a9623829cd09111a17cf9cbce3f74c5393973","status":"APPROVED","requested_by_actor_id":"11111111…","decision_by_actor_id":"11111111…","decided_at":"2026-11-13T11:58:54.213Z","reason":null,"record_version":2}
