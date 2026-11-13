@@ -1,0 +1,212 @@
+{
+  "tool": "recruitment_transcript_read",
+  "contract_version": "1.0.0",
+  "status": "OK",
+  "read_only": true,
+  "as_of": "2026-11-13T10:18:47.825Z",
+  "labels": {
+    "provenance": "LIVE",
+    "trigger": "MANUAL",
+    "connection": "CONNECTED"
+  },
+  "interview": {
+    "id": "ffe144a2-0f0f-4f2e-9685-4d8bfb6af841",
+    "application_id": "e61380dc-13be-4963-879b-2630411f2081",
+    "round_no": 1,
+    "stage_code": "S9",
+    "status": "POST_INTERVIEW",
+    "timezone": "Asia/Shanghai",
+    "record_version": 1,
+    "scheduled_start_at": "2026-11-13T07:07:40.930Z",
+    "scheduled_end_at": "2026-11-13T08:07:40.930Z"
+  },
+  "transcript": {
+    "state": "READY",
+    "reason_code": "CANONICAL_STATUS",
+    "wait_minutes": 120,
+    "artifact_count": 2,
+    "meetings": [
+      {
+        "id": "c7a70263-dccd-4e0a-bbac-9d54fc406c91",
+        "provider": "FEISHU",
+        "meeting_role": "PRIMARY",
+        "binding_id": "d5931f94-57c0-471c-8461-ebd609aeb0ab",
+        "binding_method": "MANUAL",
+        "in_transcript_set": true,
+        "external_meeting_id": "feishu-demo-meeting-s9"
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "c8b8c9fd-9301-4406-9f21-c604609c5ee5",
+        "meeting_id": "c7a70263-dccd-4e0a-bbac-9d54fc406c91",
+        "provider": "LOCAL_DEMO",
+        "provider_artifact_id": "local:demo-sample:c7a70263-dccd-4e0a-bbac-9d54fc406c91",
+        "source_revision": 1,
+        "variant_type": "ORIGINAL",
+        "transcript_status": "READY",
+        "provenance": "FIXTURE",
+        "trigger_mode": "MANUAL",
+        "connection_state": "NOT_CONNECTED",
+        "is_canonical": false,
+        "is_complete": true,
+        "has_more": false,
+        "char_count": 1472,
+        "segment_count": 22,
+        "language": "zh",
+        "content_sha256": "d5ee88ae0f69cc1070f4b21cf62c7b9ccd70e97102c8cc4500fb9f9ed255452b",
+        "fetched_at": "2026-11-13T10:16:30.195Z",
+        "created_at": "2026-11-13T10:16:30.195Z"
+      },
+      {
+        "id": "99f42a7a-1493-4324-980c-3024619c7321",
+        "meeting_id": "c7a70263-dccd-4e0a-bbac-9d54fc406c91",
+        "provider": "LOCAL_DEMO",
+        "provider_artifact_id": "local:demo-sample:c7a70263-dccd-4e0a-bbac-9d54fc406c91",
+        "source_revision": 2,
+        "variant_type": "ORIGINAL",
+        "transcript_status": "READY",
+        "provenance": "FIXTURE",
+        "trigger_mode": "MANUAL",
+        "connection_state": "NOT_CONNECTED",
+        "is_canonical": true,
+        "is_complete": true,
+        "has_more": false,
+        "char_count": 1540,
+        "segment_count": 23,
+        "language": "zh",
+        "content_sha256": "ae462817f0dcfe36cee6b575b89f0a7613a54739a6f282f27de5c899681ae6bf",
+        "fetched_at": "2026-11-13T10:17:56.097Z",
+        "created_at": "2026-11-13T10:17:56.097Z"
+      }
+    ],
+    "canonical_artifact_id": "99f42a7a-1493-4324-980c-3024619c7321",
+    "canonical_revision": 2,
+    "selected_artifact_id": "99f42a7a-1493-4324-980c-3024619c7321",
+    "selected_source_revision": 2,
+    "text": {
+      "artifact_id": "99f42a7a-1493-4324-980c-3024619c7321",
+      "source_revision": 2,
+      "content": "[00:00] 面试官 李工：你好，我是本岗位的技术面试官。今天大约四十五分钟，先请你做一个五分钟的自我介绍，然后我们会聊两段项目经历和一道系统设计题，最后留时间给你提问。\n[00:30] 候选人 C-07：好的，谢谢。我有六年后端开发经验，最近三年在一家做企业协作工具的公司负责消息与通知服务，主要语言是 Go，也写过一段时间的 TypeScript。\n[01:05] 面试官 李工：你提到消息与通知服务，能说一下它当时的规模和最难的一个问题吗？\n[01:20] 候选人 C-07：峰值大概每天两千万条通知，最难的是第三方渠道限流导致的堆积。我们把发送拆成优先级队列，低优先级的营销通知允许延迟，事务类通知走独立通道，并且给每个渠道做了令牌桶。\n[02:10] 面试官 李工：这个方案上线后，堆积问题解决了多少？\n[02:18] 候选人 C-07：渠道侧超时导致的失败率从百分之三降到千分之四，P99 延迟从四十秒降到六秒左右。不过我们当时没有做跨可用区的容灾，这是一处欠账。\n[03:00] 面试官 李工：第二个问题，讲一次你和产品经理意见不一致的经历，最后怎么处理的。\n[03:12] 候选人 C-07：有一次产品希望把通知模板做成完全自由编辑，我担心注入和审核成本。我整理了三个方案和各自的维护成本，最后选的是受限变量加白名单片段，产品接受了，后续也没有出过内容事故。\n[04:05] 面试官 李工：我们来做一个系统设计。要设计一个面向企业的面试安排服务，支持同一候选人多轮面试、面试官时间冲突检测，还要能接收外部会议平台的转写事件。你会怎么拆？\n[04:25] 候选人 C-07：我会先区分三件事：排期是写业务事实，冲突检测是读模型，转写事件是外部输入。排期表以申请和轮次为主键，会议用平台给出的外部标识绑定，不用标题匹配。转写事件进来先落事件表做幂等，再按平台会议标识找绑定，找不到就进人工待办，不猜。\n[05:30] 面试官 李工：如果外部事件里带的会议标识重复推送三次呢？\n[05:38] 候选人 C-07：事件层用平台事件 ID 做唯一键，重复的直接确认不产生副作用；产物层用会议加平台产物 ID 加版本做唯一键。原文只追加不覆盖，平台修订就加新版本。\n[06:20] 面试官 李工：转写还没生成的时候，面试官能不能先提交评价？\n[06:28] 候选人 C-07：可以，但要标记这份评价没有转写依据。评价和转写是两条并行的链路，不能因为材料没到就阻塞评价，也不能让没有原文的评价看起来和有原文的一样。\n[07:00] 面试官 李工：你平时怎么做代码评审？\n[07:08] 候选人 C-07：我会先看变更边界和失败路径，再看测试是否覆盖了错误分支。比较大的改动会要求作者写清楚回滚方式，以及线上出问题时看哪个指标。\n[07:50] 面试官 李工：最后一个问题，未来一年你想在哪个方向继续深入？\n[07:58] 候选人 C-07：想在分布式任务编排和可观测性上继续深入，尤其是长任务的重试与幂等，这两块我在现在的项目里只做到了够用，还不到精通。\n[08:30] 面试官 李工：好的，我的问题问完了。你有什么想问我们的？\n[08:38] 候选人 C-07：想了解一下团队现在的发布节奏，以及新人前三个月的主要目标。\n[08:50] 面试官 李工：我们两周一个发布窗口，新人前三个月会先负责一个独立的小服务，从需求到上线完整走一遍。今天就到这里，后续结果会由招聘同学同步给你。\n[09:05] 候选人 C-07：好的，谢谢您的时间。\n[补录 00:58] 面试官 李工：补充说明，本轮记录为合成演示文本，仅用于验证同一产物修订时新增 revision 而不是覆盖原文。\n",
+      "offset": 0,
+      "length": 1540,
+      "total_chars": 1540,
+      "has_more": false
+    },
+    "segments": [
+      {
+        "sequence": 0,
+        "content_text": "[00:00] 面试官 李工：你好，我是本岗位的技术面试官。今天大约四十五分钟，先请你做一个五分钟的自我介绍，然后我们会聊两段项目经历和一道系统设计题，最后留时间给你提问。"
+      },
+      {
+        "sequence": 1,
+        "content_text": "[00:30] 候选人 C-07：好的，谢谢。我有六年后端开发经验，最近三年在一家做企业协作工具的公司负责消息与通知服务，主要语言是 Go，也写过一段时间的 TypeScript。"
+      },
+      {
+        "sequence": 2,
+        "content_text": "[01:05] 面试官 李工：你提到消息与通知服务，能说一下它当时的规模和最难的一个问题吗？"
+      },
+      {
+        "sequence": 3,
+        "content_text": "[01:20] 候选人 C-07：峰值大概每天两千万条通知，最难的是第三方渠道限流导致的堆积。我们把发送拆成优先级队列，低优先级的营销通知允许延迟，事务类通知走独立通道，并且给每个渠道做了令牌桶。"
+      },
+      {
+        "sequence": 4,
+        "content_text": "[02:10] 面试官 李工：这个方案上线后，堆积问题解决了多少？"
+      },
+      {
+        "sequence": 5,
+        "content_text": "[02:18] 候选人 C-07：渠道侧超时导致的失败率从百分之三降到千分之四，P99 延迟从四十秒降到六秒左右。不过我们当时没有做跨可用区的容灾，这是一处欠账。"
+      },
+      {
+        "sequence": 6,
+        "content_text": "[03:00] 面试官 李工：第二个问题，讲一次你和产品经理意见不一致的经历，最后怎么处理的。"
+      },
+      {
+        "sequence": 7,
+        "content_text": "[03:12] 候选人 C-07：有一次产品希望把通知模板做成完全自由编辑，我担心注入和审核成本。我整理了三个方案和各自的维护成本，最后选的是受限变量加白名单片段，产品接受了，后续也没有出过内容事故。"
+      },
+      {
+        "sequence": 8,
+        "content_text": "[04:05] 面试官 李工：我们来做一个系统设计。要设计一个面向企业的面试安排服务，支持同一候选人多轮面试、面试官时间冲突检测，还要能接收外部会议平台的转写事件。你会怎么拆？"
+      },
+      {
+        "sequence": 9,
+        "content_text": "[04:25] 候选人 C-07：我会先区分三件事：排期是写业务事实，冲突检测是读模型，转写事件是外部输入。排期表以申请和轮次为主键，会议用平台给出的外部标识绑定，不用标题匹配。转写事件进来先落事件表做幂等，再按平台会议标识找绑定，找不到就进人工待办，不猜。"
+      },
+      {
+        "sequence": 10,
+        "content_text": "[05:30] 面试官 李工：如果外部事件里带的会议标识重复推送三次呢？"
+      },
+      {
+        "sequence": 11,
+        "content_text": "[05:38] 候选人 C-07：事件层用平台事件 ID 做唯一键，重复的直接确认不产生副作用；产物层用会议加平台产物 ID 加版本做唯一键。原文只追加不覆盖，平台修订就加新版本。"
+      },
+      {
+        "sequence": 12,
+        "content_text": "[06:20] 面试官 李工：转写还没生成的时候，面试官能不能先提交评价？"
+      },
+      {
+        "sequence": 13,
+        "content_text": "[06:28] 候选人 C-07：可以，但要标记这份评价没有转写依据。评价和转写是两条并行的链路，不能因为材料没到就阻塞评价，也不能让没有原文的评价看起来和有原文的一样。"
+      },
+      {
+        "sequence": 14,
+        "content_text": "[07:00] 面试官 李工：你平时怎么做代码评审？"
+      },
+      {
+        "sequence": 15,
+        "content_text": "[07:08] 候选人 C-07：我会先看变更边界和失败路径，再看测试是否覆盖了错误分支。比较大的改动会要求作者写清楚回滚方式，以及线上出问题时看哪个指标。"
+      },
+      {
+        "sequence": 16,
+        "content_text": "[07:50] 面试官 李工：最后一个问题，未来一年你想在哪个方向继续深入？"
+      },
+      {
+        "sequence": 17,
+        "content_text": "[07:58] 候选人 C-07：想在分布式任务编排和可观测性上继续深入，尤其是长任务的重试与幂等，这两块我在现在的项目里只做到了够用，还不到精通。"
+      },
+      {
+        "sequence": 18,
+        "content_text": "[08:30] 面试官 李工：好的，我的问题问完了。你有什么想问我们的？"
+      },
+      {
+        "sequence": 19,
+        "content_text": "[08:38] 候选人 C-07：想了解一下团队现在的发布节奏，以及新人前三个月的主要目标。"
+      },
+      {
+        "sequence": 20,
+        "content_text": "[08:50] 面试官 李工：我们两周一个发布窗口，新人前三个月会先负责一个独立的小服务，从需求到上线完整走一遍。今天就到这里，后续结果会由招聘同学同步给你。"
+      },
+      {
+        "sequence": 21,
+        "content_text": "[09:05] 候选人 C-07：好的，谢谢您的时间。"
+      },
+      {
+        "sequence": 22,
+        "content_text": "[补录 00:58] 面试官 李工：补充说明，本轮记录为合成演示文本，仅用于验证同一产物修订时新增 revision 而不是覆盖原文。"
+      }
+    ],
+    "segment_page": {
+      "offset": 0,
+      "limit": 500,
+      "total": 23,
+      "has_more": false
+    },
+    "record": {
+      "id": "4ab98f05-cdfd-4dcd-ab0c-da77908a2a3e",
+      "status": "NEEDS_REVIEW",
+      "verification_status": "UNVERIFIED",
+      "transcript_revision": 2,
+      "evidence_ok": true,
+      "is_current": true,
+      "created_at": "2026-11-13T10:17:56.097Z"
+    }
+  },
+  "warnings": [
+    {
+      "code": "RECORD_NOT_READY",
+      "message": "interview_record.status=NEEDS_REVIEW（verification_status=UNVERIFIED）：结构化记录还没就绪，与 transcript.state 是两条独立状态轴（TR-D2）"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+# 验收 harness 的 bundle 层：只给 S8 两个工具一段 database 配置。
+#
+# 身份（tenant_id / actor_id）只从这里来，模型无法传入（tool-contracts.md §0 第 4 条、D-18）。
+# 密码仍然只从环境变量读（RECRUITMENT_DB_PASSWORD）。
+- insert:
+    - id: recruitment-s8-demo
+      name: 'dsh-recruitment-s8-demo'
+      config:
+        database:
+          host: 127.0.0.1
+          port: 5432
+          user: postgres
+          database: ra_s6s7
+          password_env: RECRUITMENT_DB_PASSWORD
+          # 0002_seed.sql §1 的演示租户 + §3 的 HR 专员 actor（kind=HUMAN）。
+          tenant_id: '11111111-1111-4111-8111-000000000001'
+          actor_id: '11111111-1111-4111-8111-000000000103'

@@ -1,0 +1,16 @@
+{
+  "name": "dsh-recruitment-s8-demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "S8 面试线验收用的最小 DSH 插件：只注册 recruitment_interview_schedule / recruitment_interview_get，复用 @recruitment/dsh-recruitment 的真实实现。不是产品入口；产品注册由 W0 集成到 src/index.ts。",
+  "type": "module",
+  "main": "index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

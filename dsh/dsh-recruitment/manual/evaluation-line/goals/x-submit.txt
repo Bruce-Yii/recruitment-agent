@@ -1,0 +1,7 @@
+你是演示面试官 X（执行上下文 actor = 11111111-1111-4111-8111-000000000105，由 profile 配置给出，你不要也不能在参数里传 actor）。
+
+请**只调用一次**工具 `recruitment_scorecard_submit`，arguments 逐字使用下面这段 JSON（不要增删改任何键、不要先读源码、不要调用别的工具）：
+
+{"interview_id":"11111111-1111-4111-8111-000000000801","idempotency_key":"demo:scorecard:X:1","items":{"transcript_basis":"TRANSCRIPT","backend_depth":{"assessment":"MET","score":4,"note":"能讲清按用户ID分成64片、热点商家单独走路由表，并说明写入路径。","evidence":[{"kind":"SEGMENT","transcript_artifact_id":"11111111-1111-4111-8111-000000000a01","transcript_revision":1,"segment_id":"a9aa1ed9-4e8e-4d7b-a113-a4e349afd87b","quote":"订单表按用户 ID 分成 64 片，热点商家单独做了一张路由表"}]},"async_pipeline":{"assessment":"MET","score":3,"note":"重试三次 + 业务唯一键去重 + 死信队列，链路完整。"},"frontend_basics":{"assessment":"MET","score":2,"note":"写过管理后台页面，复杂交互未涉及。"}},"overall":"ADVANCE"}
+
+调用完成后，把工具返回的内容**原样**贴出来（不要总结、不要改写、不要加评论）。

@@ -1,0 +1,5 @@
+--- tool/call #1 ---
+{"name": "recruitment_eval_probe", "callId": "call-19ba2e80-a403-4710-b31f-cfe3b82e71ed", "arguments": "{}"}
+--- tool/result #1 (call=call-19ba2e80-a403-4710-b31f-cfe3b82e71ed, tool=recruitment_eval_probe) ---
+{"callId": "call-19ba2e80-a403-4710-b31f-cfe3b82e71ed", "isError": null, "content": {"source": {"kind": "tool", "callId": "call-19ba2e80-a403-4710-b31f-cfe3b82e71ed"}, "content": [{"type": "tool-result", "toolCallId": "call-19ba2e80-a403-4710-b31f-cfe3b82e71ed", "content": [{"type": "text", "text": "probe: {\"ok\":true,\"probe\":\"evaluation-line\",\"at\":\"plugin-eval-probe\"}"}], "isError": false}], "role": "user", "id": "347533b3-2956-4b11-9015-9215b78f1907"}}
+=== tool/call=1 tool/result=1 ===

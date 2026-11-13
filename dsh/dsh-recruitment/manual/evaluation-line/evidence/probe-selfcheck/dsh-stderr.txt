@@ -1,0 +1,4 @@
+dsh: reasoning:
+The user wants me to call recruitment_eval_probe once, then reply with just "ok". Let me do that.
+dsh: reasoning:
+The probe succeeded. Now reply with just "ok".

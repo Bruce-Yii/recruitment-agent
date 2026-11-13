@@ -1,0 +1,27 @@
+# S3 岗位线的 `--patch` 叠加层：把岗位写工具以**独立插件**挂进真实 profile，
+# 不改 `src/index.ts`、不改 profile 目录。
+#
+# 用法（绝对路径最稳，相对 `./` 会按 patch 文件所在目录转 file URL）：
+#   $env:RECRUITMENT_DB_PASSWORD='123456'
+#   dsh --profile rec-agent-test --patch "D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\manual\job-line\patch.yml" --dump-config
+#   dsh --profile rec-agent-test --patch "…\manual\job-line\patch.yml" "<一句话目标>"
+#
+# `name: './plugin-entry.ts'` 是本文件旁边的入口（dsh-app-boot 的
+# anchorInsertedPluginNames 只改 insert 条目里的相对 name → file URL）。
+#
+# database 段与 profile（rec-agent-test/cordis.patch.yml）同参：
+#   127.0.0.1:5432 / postgres / ra_s6s7 / password_env=RECRUITMENT_DB_PASSWORD
+#   tenant_id = 演示租户；actor_id = HR 专员（kind=HUMAN，见 0002_seed.sql §3）
+# 这里**没有** password 字段：密码只从环境变量读（D-18、tool-contracts.md §0 第 4 条）。
+- insert:
+    - id: recruitment-job-line
+      name: './plugin-entry.ts'
+      config:
+        database:
+          host: 127.0.0.1
+          port: 5432
+          user: postgres
+          database: ra_s6s7
+          password_env: RECRUITMENT_DB_PASSWORD
+          tenant_id: '11111111-1111-4111-8111-000000000001'
+          actor_id: '11111111-1111-4111-8111-000000000103'
