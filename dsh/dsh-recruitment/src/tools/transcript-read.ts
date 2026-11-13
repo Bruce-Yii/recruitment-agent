@@ -186,12 +186,23 @@ export type TranscriptReasonCode =
   | 'ONLY_AUTH_REQUIRED'
   | 'NO_ARTIFACT_AFTER_WAIT'
   | 'WAITING'
+  /** 产物在，但正文为空 / 提不出可用文本（TR-F4；D-96 新增）。 */
+  | 'ARTIFACT_EMPTY'
 
 /** 一条产物在派生算法里被用到的三个字段（快照的最小子集）。 */
 export interface TranscriptStateArtifact {
   readonly transcript_status: string
   readonly is_complete: boolean
   readonly is_canonical: boolean
+  /**
+   * 正文可用字符数（length(raw_text)）。
+   *
+   * 为什么派生算法需要它：**状态 READY 不等于有内容**。飞书实测踩过——
+   * 视频会议录制没有生成"妙记"AI 转写，产物存在、状态看着正常，正文却是空的；
+   * 只按 status 派生就会报 READY，把"没读到"说成"有转写"（D-96）。
+   * 缺省（undefined）= 调用方没提供，保持旧行为。
+   */
+  readonly content_chars?: number
 }
 
 /** 一个会议的"实际结束时间"（`meeting.actual_end_at`）。 */
@@ -280,6 +291,11 @@ export function deriveTranscriptState(snapshot: TranscriptStateSnapshot): Transc
   // 序 2：有 canonical → 它的客观状态就是本轮状态。
   if (canonical !== undefined) {
     const mapped = CANONICAL_STATE_MAP[canonical.transcript_status] ?? 'PENDING'
+    // TR-F4 / D-96：状态 READY 不等于有内容。正文为空就**不得**报 READY，
+    // 否则下游会把"没读到"当成"有转写"（飞书视频会议录制踩过这个坑）。
+    if (mapped === 'READY' && canonical.content_chars === 0) {
+      return { state: 'PARTIAL', reason_code: 'ARTIFACT_EMPTY', no_canonical: false }
+    }
     return { state: mapped, reason_code: 'CANONICAL_STATUS', no_canonical: false }
   }
 
@@ -857,6 +873,7 @@ export async function readTranscriptInTransaction(
       transcript_status: artifact.transcript_status,
       is_complete: artifact.is_complete,
       is_canonical: artifact.is_canonical,
+    content_chars: Number(artifact.char_count ?? 0),
     })),
     wait_minutes: waitMinutes,
   })
@@ -915,6 +932,7 @@ export async function readTranscriptInTransaction(
         trigger_mode: artifact.trigger_mode,
         connection_state: artifact.connection_state,
         is_canonical: artifact.is_canonical,
+    content_chars: Number(artifact.char_count ?? 0),
         is_complete: artifact.is_complete,
         has_more: artifact.has_more,
         char_count: toCount(artifact.char_count),

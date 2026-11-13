@@ -183,7 +183,7 @@ WAIT           = 120 分钟（会议实际结束后的等待窗；可被 busines
 > **两个 `reason_code` 命名空间，不许混用**（混了就会出现"这个码查不到定义"）：
 > | 命名空间 | 取值来源 | 封闭集 |
 > |---|---|---|
-> | `transcript.reason_code`（**派生状态**，`get` 回显、`NO_TRANSCRIPT` 透传） | `TR-D` 序 1–7 | `NO_MEETING_BOUND` / `CANONICAL_STATUS` / `READY_NO_CANONICAL` / `ONLY_PARTIAL` / `ONLY_AUTH_REQUIRED` / `NO_ARTIFACT_AFTER_WAIT` / `WAITING` |
+> | `transcript.reason_code`（**派生状态**，`get` 回显、`NO_TRANSCRIPT` 透传） | `TR-D` 序 1–7 | `NO_MEETING_BOUND` / `CANONICAL_STATUS` / `READY_NO_CANONICAL` / `ONLY_PARTIAL` / `ONLY_AUTH_REQUIRED` / `NO_ARTIFACT_AFTER_WAIT` / `WAITING` / `ARTIFACT_EMPTY`（2026-11-14 增补，见下） |
 > | `business_task.error_code`（**运维任务**，`ck_business_task_failed` 只在 `FAILED` 时要求非空） | `TR-F` | `AUTH_REQUIRED` / `NEEDS_VISUAL` / `NEEDS_LINKING` / `EXTERNAL_TIMEOUT` |
 >
 > 例：`NEEDS_VISUAL` **只能**出现在 `business_task.error_code`，不能出现在 `transcript.reason_code` 里（后者由 `TR-D` 七条唯一决定）。
@@ -444,3 +444,12 @@ WAIT           = 120 分钟（会议实际结束后的等待窗；可被 busines
 | `D-17` | `docs/17-decision-ledger.md` | canonical 粒度 = 每 meeting 一个 |
 | `D-33` | 同上 `:196` | 不做权限拦截；待补进个人工作台 |
 | `D-46` | 同上 `:299` | 不为罕见场景设闸门（§12 的取舍依据） |
+
+> **`ARTIFACT_EMPTY` 增补说明（2026-11-14，D-96）**：飞书实测发现"产物在、状态 READY、正文为空"是真实存在的
+> （视频会议录制没有生成"妙记" AI 转写，`+detail --transcript` 只写出表头）。
+> 原七条只按 `transcript_status` 派生，会把这种情况报成 `READY` —— **等于把"没读到"说成"有转写"**，
+> 正是 TR-D3 要禁止的那类错误。
+>
+> 增补规则（并入序 2）：`canonical` 存在且映射为 `READY`，但 `content_chars === 0` 时，
+> 返回 `state='PARTIAL'` + `reason_code='ARTIFACT_EMPTY'`。
+> `content_chars` 缺省（调用方没提供）时保持旧行为，不改变既有语义。
