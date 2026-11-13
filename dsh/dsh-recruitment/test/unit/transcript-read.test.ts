@@ -323,3 +323,35 @@ test('render：多行摘要，含 state/reason/canonical/产物/record/文本计
   assert.ok(text.includes('has_more=false'))
   assert.equal(text.includes('00:00 正文不在这里'), false, '不得回显转写正文')
 })
+
+// =====================================================================
+//  D-96：状态 READY 不等于有内容 —— "空"必须单独分类
+// =====================================================================
+// 飞书实测：视频会议录制没有生成"妙记"AI 转写，产物存在、状态看着正常，
+// 正文却是空的。只按 status 派生会报 READY，把"没读到"说成"有转写"。
+
+test('D-96：canonical 状态 READY 且有正文 → READY / CANONICAL_STATUS', () => {
+  const derived = deriveTranscriptState(snapshot({
+    artifacts: [{ transcript_status: 'READY', is_complete: true, is_canonical: true, content_chars: 2379 }],
+  }))
+  assert.equal(derived.state, 'READY')
+  assert.equal(derived.reason_code, 'CANONICAL_STATUS')
+})
+
+test('D-96：canonical 状态 READY 但正文为空 → PARTIAL / ARTIFACT_EMPTY（不得报 READY）', () => {
+  const derived = deriveTranscriptState(snapshot({
+    artifacts: [{ transcript_status: 'READY', is_complete: true, is_canonical: true, content_chars: 0 }],
+  }))
+  assert.equal(derived.state, 'PARTIAL', '空正文不得报 READY')
+  assert.equal(derived.reason_code, 'ARTIFACT_EMPTY')
+})
+
+test('D-96：两个 fixture 输出必须不同（有内容 vs 空）', () => {
+  const withContent = deriveTranscriptState(snapshot({
+    artifacts: [{ transcript_status: 'READY', is_complete: true, is_canonical: true, content_chars: 100 }],
+  }))
+  const empty = deriveTranscriptState(snapshot({
+    artifacts: [{ transcript_status: 'READY', is_complete: true, is_canonical: true, content_chars: 0 }],
+  }))
+  assert.notDeepEqual(withContent, empty, '“有转写”和“转写为空”必须是两个不同结果')
+})
