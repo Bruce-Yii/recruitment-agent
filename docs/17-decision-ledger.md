@@ -1055,3 +1055,23 @@ R-1 96.2%、R-2 100%（`blocking_for_structure` 阻断 0 份）、R-3 100%。
 **发现并修**：converter 超时 60s 不够（OCR 后单份可达 53s+）→ 提到 180s。
 
 **证据**：`test/document/recovery-execute.test.ts`（20 条）、`test/regression/**`（9 条）、`docs/11 §11`。
+
+### D-100 · 跨块归因要**产出结果**，不能只拦住；版式类阻断与"文字不可用"分开
+
+**裁定（2026-11-14，事故审计 ③⑥）**：
+
+1. **归因引擎**（`quality/checks.ts::attributeExperienceRows`）：对每条"含时间区间的行"产出归属结果
+   `{row_block_id, org_block_id, confidence: 'same_row'|'adjacent'|'unresolved', basis, evidence, may_join_same_row, needs_human_check}`。
+   `doc_cross_block_attribution` 只在 **`unresolved` 且同页确实存在组织候选**时发 HARD；
+   `same_row` / `adjacent` 发 SOFT `doc_attribution_resolved` 并带归属明细。
+   **只有 `same_row` 允许下游把公司/时间视为同一行**；`adjacent` 只是"位置相邻"，仍标待核。
+
+2. **版式类 vs 文字不可用分开**：`Assessment.layout_only_blocking` —— 只有版式类 HARD（顺序 / 跨块 / 未核图片）时为 true。
+   `blocking` 语义**不削弱**（仍是"有 HARD 就 true"），只增加区分位；`document_read` 已把它输出给模型。
+
+**实测（孙光宇那份真实简历）**：`doc_cross_block_attribution` 4 条 HARD → **0 条**，全部变成
+`doc_attribution_resolved` 的 SOFT（3 条 self_subject、1 条 same_row_anchor），`layout_only_blocking=true`。
+**顺带发现旧实现是错的**：它给 4 条日期行找的"最近候选组织"全是 **b4（一项竞赛名称）** —— 连线索都错，
+只是"拦住了"，没"归因对"。这正是审计 ③ 说的"发现能力 ≫ 解决能力"的具体样本。
+
+**证据**：`test/document/quality.test.ts`（37→50 条）、`src/tools/document-read.ts` 的 `layout_only_blocking` 输出。

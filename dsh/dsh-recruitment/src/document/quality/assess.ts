@@ -10,9 +10,15 @@
 //   I3 不以「缺字」推断「候选人缺这段经历」。
 //      实现：`mayConcludeAbsence()` 只在 completeness==='complete' 且 !blocking
 //      时才允许得出「原文没有」的结论。
+//
+// 另有一个**区分位**（D-97 第一批，2026-11-14）：`layout_only_blocking`。
+//   `blocking` 仍然 = 「有 HARD」（不削弱），但下游需要知道这些 HARD 里有没有
+//   「文字本身不可用」的。仅版式（顺序 / 跨块归属 / 未核图片）→ `layout_only_blocking=true`，
+//   结构化路径可以继续（`document_read` 用 `blocking_for_structure` 放行）；
+//   任何「文字不可用」类 HARD 都会让它变 false。
 
 import { buildIssue, checkCharFidelity, checkCompletenessExplained, checkContract, checkCoverage, checkCrossBlockAttribution, checkProvenance, checkReadingOrder, checkUris, checkUnreadableGlyphs, DOCUMENT_LEVEL_UNREAD } from './checks.ts'
-import { lookupIssueCode, stricterSeverity } from './issue-codes.ts'
+import { LAYOUT_ONLY_ISSUE_CODES, lookupIssueCode, stricterSeverity } from './issue-codes.ts'
 import { locatorKey, normalizeContent, normalizeLocator } from './normalize.ts'
 import type {
   Assessment,
@@ -126,6 +132,8 @@ function emptyAssessment(normalized: ReturnType<typeof normalizeContent>, issue:
   return {
     completeness: 'partial',
     blocking: true,
+    // 契约不合法 = 连「这是什么材料」都不知道，绝不是「仅版式问题」。
+    layout_only_blocking: false,
     actions: buildActions(issues),
     issues,
     blocking_codes: [issue.code],
@@ -133,6 +141,19 @@ function emptyAssessment(normalized: ReturnType<typeof normalizeContent>, issue:
     unregistered_codes: issue.registered ? [] : [issue.code],
     facts: factsOf(normalized),
   }
+}
+
+/**
+ * 是否「全部 HARD 都是版式类」（判据见 `LAYOUT_ONLY_ISSUE_CODES`）。
+ *
+ * 三条边界，写在这里而不是散在注释里：
+ *   1. 没有 HARD → false（没有阻断就谈不上「仅版式阻断」）；
+ *   2. 未登记 code → 一律算「非版式」（fail-closed：未知的阻断不许当成版面问题放宽）；
+ *   3. 「文字不可用」类 HARD（空/乱码/编码/覆盖/保真/来源）只要有一条在，就是 false。
+ */
+function isLayoutOnly(hardCodes: ReadonlyArray<string>): boolean {
+  if (hardCodes.length === 0) return false
+  return hardCodes.every((code) => LAYOUT_ONLY_ISSUE_CODES.has(code))
 }
 
 /**
@@ -190,11 +211,13 @@ function finalize(
   issues: ReadonlyArray<AssessmentIssue>,
 ): Assessment {
   const blocking = issues.some((issue) => issue.severity === 'HARD')
+  const hardCodes = issues.filter((issue) => issue.severity === 'HARD').map((issue) => issue.code)
   const derivedCompleteness: Completeness = issues.length === 0 ? 'complete' : 'partial'
   const completeness = minCompleteness(normalized.completeness, derivedCompleteness)
   return {
     completeness,
     blocking,
+    layout_only_blocking: isLayoutOnly(hardCodes),
     actions: buildActions(issues),
     issues,
     blocking_codes: Array.from(new Set(

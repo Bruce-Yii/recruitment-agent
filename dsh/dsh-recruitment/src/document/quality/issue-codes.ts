@@ -145,6 +145,18 @@ export const DOCUMENT_ISSUE_CODES = {
     meaning: '阅读顺序没有经过核对（order_verified 未声明/false，或 order 自相矛盾）',
   },
   // ---- 归属 ----
+  // 2026-11-14：语义改成「只有 unresolved 才 HARD」。能归出结果的（同块自证 / 同一可视行 / 紧邻行）
+  // 发这条 SOFT，并把归属结果放进 issue.detail（下游据此决定能不能把主体与时间当同一行）。
+  doc_attribution_resolved: {
+    code: 'doc_attribution_resolved',
+    origin: 'document',
+    family: 'attribution',
+    severity: 'SOFT',
+    retryable: false,
+    // 默认只是记录；`same_row` 没有任何待办，`adjacent` 由检查层改成 human_review（待核）。
+    suggested_action: 'none',
+    meaning: '含时间区间的行已解析出归属（同块 / 同一可视行 / 紧邻行）；只有 same_row 允许把主体与时间当同一行',
+  },
   doc_cross_block_attribution: {
     code: 'doc_cross_block_attribution',
     origin: 'document',
@@ -152,7 +164,7 @@ export const DOCUMENT_ISSUE_CODES = {
     severity: 'HARD',
     retryable: false,
     suggested_action: 'human_review',
-    meaning: '含时间区间的行缺少组织文本，公司/职位/时间来自不同区块（禁止跨区块拼装）',
+    meaning: '含时间区间的行在同块/同视图行/紧邻行都找不到主体文本，且同页存在别的主体——按不可归属处理（禁止跨块拼装）',
   },
   // ---- 来源核验 ----
   doc_provenance_unverified: {
@@ -530,6 +542,41 @@ export const UNREGISTERED_ISSUE_SPEC: IssueCodeSpec = {
   suggested_action: 'human_review',
   meaning: '未登记的 issue code（按 HARD 兜住，不得当 SOFT 放行；需工程侧补表）',
 }
+
+/**
+ * **仅版式阻断**（`Assessment.layout_only_blocking` 的判据，D-97 第一批）。
+ *
+ * 收录标准：这些问题说明「位置 / 顺序 / 图片有没有核过」不可信，而**正文文字本身仍然可用**
+ * ——模型照样能把文字抽成字段，只是不能据此做可信筛选（S7）或断言版式事实。
+ *
+ * 反过来，下面这些一旦 HARD 就**不在**本表里，因为它们意味着「文字不可用 / 不完整」：
+ * 空文件、乱码与坏字形、编码读不出、页或块缺失、字符保真失败、来源未核、身份信息来自未核来源。
+ *
+ * 两条硬规则：
+ *   1. 未登记的 code **默认**不算版式类；唯一的显式例外是下面的 `unverified_pdf_image`
+ *      （它的语义由转换器源码固定，不是猜测）。其它未知的阻断可能根本不是版式问题，
+ *      不许拿「大概不要紧」去放宽 fail-closed。
+ *   2. 这里的 code 仍然照旧进 `blocking` / `blocking_codes`（D-97：`blocking` 不削弱），
+ *      本表只决定 `layout_only_blocking` 这一个**区分位**。
+ *
+ * `unverified_pdf_image` 的特殊说明：它是 `converter/src/pdf_reader.py:121` 真实发出的稳定 code
+ * （图片存在但内容未核），本层尚未把它登记进稳定表（登记是转换器所有者的权限），所以它现在按
+ * 未登记 code 走 HARD。它的语义是已知的「图片未核」，因此在这里参与版式判定；同时它照样出现在
+ * `unregistered_codes` 里，fail-closed 的告警不会被这条表掩盖。
+ */
+export const LAYOUT_ONLY_ISSUE_CODES: ReadonlySet<string> = new Set<string>([
+  // 顺序（阅读顺序 / 文本框位置）
+  'doc_reading_order_unverified',
+  'doc_docx_textbox_order_unknown',
+  'pdf_reading_order_unverified',
+  'pdf_layout_unread',
+  // 归属（跨块归属 / 结构分区）
+  'doc_cross_block_attribution',
+  'resume_experience_cross_block',
+  'structure_unidentified',
+  // 未核图片（见上面的特殊说明）
+  'unverified_pdf_image',
+])
 
 const REGISTRY: Readonly<Record<string, IssueCodeSpec>> = (() => {
   const out: Record<string, IssueCodeSpec> = {}
