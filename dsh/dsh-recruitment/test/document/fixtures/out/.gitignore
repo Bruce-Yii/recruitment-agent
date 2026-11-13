@@ -1,0 +1,7 @@
+# fixture 产物（PDF / DOCX / 图片 / manifest）不入库。
+#
+# 生成器默认把样本写到 `os.tmpdir()`；如果本地为了排查而显式写到这个目录，
+# 也不允许进 Git（docs/19 §5 G0：合成样本可重建，仓库里不留二进制）。
+# 仓库根的 .gitignore 不归 U0 改，所以这里用目录级规则挡住。
+*
+!.gitignore
