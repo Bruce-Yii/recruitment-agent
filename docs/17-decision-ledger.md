@@ -1075,3 +1075,20 @@ R-1 96.2%、R-2 100%（`blocking_for_structure` 阻断 0 份）、R-3 100%。
 只是"拦住了"，没"归因对"。这正是审计 ③ 说的"发现能力 ≫ 解决能力"的具体样本。
 
 **证据**：`test/document/quality.test.ts`（37→50 条）、`src/tools/document-read.ts` 的 `layout_only_blocking` 输出。
+
+### D-101 · 人机闸门的事务边界：先兜住（超时 + 服务端上限），两阶段记债
+
+**背景（2026-11-14，验收窗口 P0-2 修复中暴露）**：`scorecard_submit` / `interview_schedule` 的 approval 必须在
+**事务内业务校验之后**问人（否则 `ALREADY_SUBMITTED` / `ACTOR_NOT_INTERVIEWER` 这类注定失败的调用会先弹窗，
+Agent 可借此刷人的确认；且幂等重放会误弹）。代价是"弹窗到点击"期间连接处于 `idle in transaction`，
+原来**没有任何上界**（approval 无超时、PG `idle_in_transaction_session_timeout=0`）。
+
+**裁定**：
+1. **approval 等待加 120s 超时**：超时视为 `cancelled` → 回滚 → `FORBIDDEN(APPROVAL_NOT_GRANTED, approval='timeout')`，
+   一行不写；超时后原 approval 才 resolve 的，**仍然不采纳**（防竞态写库）。
+2. **连接池加服务端硬上限**（`db/pool.ts`）：`idle_in_transaction_session_timeout = 300s`（兜底，不是闸门）；
+   同时把**之前定义了却没接线**的 `statement_timeout_ms` 真正下发到会话。
+3. **两阶段重构（只读校验 → 关连接 → 问人 → 写事务重校验）是正解，但记债不做**。
+   触发条件写死：出现"并发写导致人批准后被 `VERSION_CONFLICT` 拒"的实测案例，或 Web UI 开始高频驱动这两个工具时，必须改。
+
+**证据**：`src/db/pool.ts`、两个工具的闸门注释、102 条闸门测试。

@@ -147,7 +147,7 @@ export type DatabaseClient = pg.PoolClient
  * @returns pg 连接池。
  */
 export function createPool(config: ResolvedDatabaseConfig): DatabasePool {
-  return new pg.Pool({
+  const pool = new pg.Pool({
     host: config.host,
     port: config.port,
     user: config.user,
@@ -156,8 +156,16 @@ export function createPool(config: ResolvedDatabaseConfig): DatabasePool {
     max: config.max,
     connectionTimeoutMillis: config.connect_timeout_ms,
     idleTimeoutMillis: 10_000,
+    // 2026-11-14（D-101 配套）：语句超时之前**定义了但没接线** —— 这里真正下发到会话。
+    // 没有它，一条卡住的查询会把连接和事务一直占着。
+    statement_timeout: config.statement_timeout_ms,
+    // 事务里"等人批准"期间连接处于 idle in transaction。给一个服务端硬上限：
+    // 超过 5 分钟服务端直接杀掉悬挂事务，避免人关掉页面后连接永久挂着。
+    // 注意：这是**兜底**，不是闸门本身；正常路径由 approval 等待的 120s 超时先兜住。
+    idle_in_transaction_session_timeout: 300_000,
     application_name: 'dsh-recruitment-s6s7',
   })
+  return pool
 }
 
 /**
