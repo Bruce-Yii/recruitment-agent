@@ -1112,7 +1112,7 @@ function checkScreeningIndex(
     addWarning(ctx.warnings, {
       code: 'SCREENING_INDEX_INCONSISTENT',
       message: upgraded
-        ? `${root} 的旧 converter 索引（${isEligible ? 'eligible' : 'blocked'}）与 agent 升级后的 state=present 不一致；`
+        ? `${root} 的旧 converter 索引（${isEligible ? 'eligible' : 'blocked'}）与 agent 覆盖后的 state=${state} 不一致；`
           + '已按有效字段读取并忽略旧索引，结论不受旧索引影响'
         : `${root} 的 state 与 screening 索引不一致；以 fields[${root}].state 为准`,
       ref: { field: root, source: upgraded ? 'screening.eligible_fields(old)' : 'screening.eligible_fields' },
