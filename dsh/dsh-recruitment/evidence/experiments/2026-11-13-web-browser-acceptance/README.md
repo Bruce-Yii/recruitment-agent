@@ -115,7 +115,9 @@ approval 仍需真人在浏览器里点一次 Allow。
 ## 3. 本轮暴露的问题（必须记，不只记成功）
 
 1. **工作区列表缺 `recruitment-agent`**：本机 `dsh-home` 的工作区注册表里没有这个项目。
-   不影响工具，但影响"在原型里操作自己项目"的体验，需要补注册（用户决定）。
+   根因已查明：`Test-DshWorkspace.ps1` 报 **"项目缺 manifest（legacy-unregistered）: recruitment-agent"** ——
+   项目目录存在但没有登记 manifest，所以 Web 工作区列表里不出现。
+   不影响工具（插件工具来自 profile），但影响"在原型里操作自己项目"的体验，需要补 manifest（用户决定）。
 2. **弱模型抄不了嵌套 JSON**（§2.4）。修法是 UI 表单，不是改 prompt。
 3. **`/json/new` 的 HTTP GET 兼容问题**：改用 `Target.createTarget` + `/json/list` 才稳（已写在 `cdp.mjs`）。
 4. **headless Chrome 也能算"浏览器操作"吗**：算——同一套渲染/事件/网络栈，只是没有可见窗口。
