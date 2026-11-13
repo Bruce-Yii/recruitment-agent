@@ -817,3 +817,24 @@ Owner 回传必须九项齐全（见 `docs/21` §3.5），缺一项算没回传�
 失败记录比成功记录更有价值——它防的是"下次又踩同一个坑"。
 
 **证据**：`docs/21` §6、§7；`evidence/experiments/README.md` 的约定。
+
+### D-91 · 产品实例必须有**自己的 DSH home**，不许复用用户桌面端的 home
+
+**裁定**：本项目的一切"起服务 / 跑原型 / 做浏览器验收"都必须在**独立 `DSH_HOME`** 下进行
+（当前 `D:\12412\dsh-home-recruitment`），只在该进程里用进程级环境变量覆盖，**不改用户级 `DSH_HOME`**。
+
+**理由**：`DSH_HOME` 是**用户级环境变量**（`D:\12412\dsh-home`），桌面端和 `dsh` CLI 都读它。
+复用它 = 产品的会话、工作区列表、凭据、设置、附件与用户桌面端**全部共用**——
+用户打开链接看到的是自己的桌面 DSH，而不是"我们改造的产品"，且测试会话会污染用户的会话库。
+（代码层本来就是独立的：`dsh` CLI 在 `D:\12412\npm-global\`，桌面端是 Electron/asar；**共用的只是数据 home**。）
+
+**落地**：
+- `D:\12412\dsh-home-recruitment\`：`profiles\recruitment\`（4 个配置文件 + `link:` 到本仓库）、
+  `.credentials.yaml`（从桌面 home 复制，密钥不进仓库）、`storages\workspace.json`（只登记 `recruitment-agent`）、
+  自有 `sessions\`。
+- 隔离验证：新实例首屏 `暂无会话`、工作区只有 `recruitment-agent`、工具可调（`后端工程师/DRAFT` 与 DB 一致）；
+  **桌面 home 会话文件数 1291 → 1291 不变**，`workspace.json` 未被写入。
+
+**证据**：`evidence/experiments/2026-11-13-web-browser-acceptance/README.md` §5、`isolated-*.png`。
+
+**教训**：第一次起服务前就该问"这个实例的数据放哪"，而不是顺手复用默认值。
