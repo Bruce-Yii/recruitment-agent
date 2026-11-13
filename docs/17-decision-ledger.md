@@ -962,3 +962,41 @@ connector 报"无转写" → HR 看到"无转写" → 面试官无法基于证�
 **元问题（对我自己的）**：这一轮我反复出现"抽样 → 下结论"（此前还有 3 次未查库就发布结论）。
 不是知识问题，是**工作方式缺陷**：倾向尽快给出结论。机制上唯一的解药就是第 1 条——
 **否定性结论先证明覆盖率，否则不许说**。
+
+### D-97 · 真实简历分**两批**：第一批"版式不阻断"，第二批修完版面/图片再严格跑
+
+**裁定（2026-11-14，产品负责人）**：
+
+- **第一批**：直接出结果并继续后面链路。理由：**模型有结构化能力，版面和阅读顺序不重要**——
+  左右分栏、图片有没有核过，不影响"把文字抽成字段"。
+- **第二批**：把版面分析（阅读顺序）和内容型图片处理都修好之后，再严格跑一遍。
+
+**落地**：`document_read` 的 `assessment` 输出两个阻断位，语义分开、不许混用：
+
+| 字段 | 用途 | 判据 |
+|---|---|---|
+| `blocking` | **可信筛选**（S7/决策） | 所有 HARD，含版式/顺序/图片（保持原样，不削弱） |
+| `blocking_for_structure` | **结构化**（S6 抽取字段） | 只由"文字本身不可用"阻断：空文件、乱码、编码读不出、DOCX 文本框读不出、图片需视觉 |
+
+版式类 HARD（`doc_cross_block_attribution` / `pdf_reading_order_unverified` / `unverified_pdf_image`
+/ `resume_attribution_unverified` / `resume_timeline_unparsed`）**只进 `blocking`，不进 `blocking_for_structure`**。
+
+**实测（45 份真实简历，B1–B7）**：
+
+```
+严格 blocking           41/45   ← 版式/图片问题，S7 前必须处理
+可进结构化（第一批）      39/45   ← 只有 6 份真阻断（文字不可用）
+```
+
+→ 第一批可以跑满 39 份，远超"≥20 份"门槛。
+
+**第二批要修的（简历层本职，不是数据问题）**：
+1. **版面分析**：`converter/src/cli.py` 里 `layout_backend: None` / `order_verified: False` 是**写死的**——
+   从没做几何分栏。要做：按 bbox 聚类成列 → 列内按 y、列间按 x 排 → 自信时写 `order_verified=true`。
+2. **图片分类**：现在任何未核图片一刀切 HARD。要区分**装饰性**（照片/logo/二维码/水印 → 记
+   `ignored.reason`）与**内容性**（扫描件正文 → 走 D-81 视觉补读：`page_image` + agent `read_image`
+   + `model_text_merge`）。只有真读不出才 HARD。
+
+**顺带修的**：`排版经历.pdf` 只有 **2 字节**（空占位文件），旧报错说"content does not match magic bytes"
+让人以为是格式问题。现在 <8 字节一律按 `EMPTY_FILE` 报，并写明真实字节数：
+`file is 2 bytes (only whitespace/line breaks); too small to be any supported document…`

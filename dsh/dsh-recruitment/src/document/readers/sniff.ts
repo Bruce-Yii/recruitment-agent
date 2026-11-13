@@ -236,6 +236,16 @@ export async function sniffFile(filePath: string): Promise<SniffResult> {
     if (size === 0) {
       throw new DocumentReadError('EMPTY_FILE', 'file is empty (0 bytes); nothing can be read')
     }
+    // 真实语料里踩过：`排版经历.pdf` 只有 2 字节（一个 CRLF），是仓库里的空占位文件。
+    // 报 "content does not match magic bytes" 会让人以为是格式问题，其实**文件本身就是空的**。
+    // 任何受支持格式的魔数至少要 4 字节，所以小于 8 字节的文件一律按"空文件"报，并带上真实字节数。
+    if (size < 8) {
+      throw new DocumentReadError(
+        'EMPTY_FILE',
+        `file is ${size} bytes (only whitespace/line breaks); too small to be any supported `
+        + 'document (PDF/DOCX/PNG/JPEG need at least 4–8 magic bytes)',
+      )
+    }
     head = await readRange(handle, 0, Math.min(size, HEAD_BYTES))
   } finally {
     await handle.close()

@@ -9,6 +9,7 @@
   "reader": "pymupdf/1.28.0@1.0.0",
   "completeness": "partial",
   "blocking": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
    "doc_cross_block_attribution",
    "pdf_reading_order_unverified",
@@ -21,7 +22,7 @@
   "chars": 16334,
   "blocks": 133,
   "next": "human",
-  "ms": 450
+  "ms": 530
  },
  {
   "index": 2,
@@ -33,6 +34,7 @@
   "reader": "pymupdf/1.28.0@1.0.0",
   "completeness": "partial",
   "blocking": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
    "doc_cross_block_attribution",
    "pdf_reading_order_unverified",
@@ -43,7 +45,7 @@
   "chars": 16697,
   "blocks": 349,
   "next": "human",
-  "ms": 580
+  "ms": 688
  },
  {
   "index": 3,
@@ -55,6 +57,7 @@
   "reader": "pymupdf/1.28.0@1.0.0",
   "completeness": "partial",
   "blocking": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
    "doc_cross_block_attribution",
    "pdf_reading_order_unverified",
@@ -68,7 +71,7 @@
   "chars": 7133,
   "blocks": 163,
   "next": "human",
-  "ms": 407
+  "ms": 490
  },
  {
   "index": 4,
@@ -80,6 +83,7 @@
   "reader": "pymupdf/1.28.0@1.0.0",
   "completeness": "partial",
   "blocking": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
    "doc_cross_block_attribution",
    "pdf_reading_order_unverified",
@@ -94,7 +98,7 @@
   "chars": 3095,
   "blocks": 93,
   "next": "human",
-  "ms": 838
+  "ms": 1050
  },
  {
   "index": 5,
@@ -106,6 +110,7 @@
   "reader": "pymupdf/1.28.0@1.0.0",
   "completeness": "partial",
   "blocking": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
    "pdf_reading_order_unverified",
    "resume_field_unreadable",
@@ -118,6 +123,6 @@
   "chars": 15801,
   "blocks": 269,
   "next": "human",
-  "ms": 2252
+  "ms": 2482
  }
 ]

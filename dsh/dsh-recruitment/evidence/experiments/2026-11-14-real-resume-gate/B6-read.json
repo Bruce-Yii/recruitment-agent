@@ -9,6 +9,7 @@
   "reader": "python-docx@1.2.0",
   "completeness": "complete",
   "blocking": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
    "doc_cross_block_attribution"
   ],
@@ -17,7 +18,7 @@
   "chars": 5630,
   "blocks": 105,
   "next": "human",
-  "ms": 364
+  "ms": 434
  },
  {
   "index": 2,
@@ -29,6 +30,7 @@
   "reader": "python-docx@1.2.0",
   "completeness": "complete",
   "blocking": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
    "doc_cross_block_attribution"
   ],
@@ -37,7 +39,7 @@
   "chars": 5630,
   "blocks": 105,
   "next": "human",
-  "ms": 377
+  "ms": 357
  },
  {
   "index": 3,
@@ -49,13 +51,14 @@
   "reader": "python-docx@1.2.0",
   "completeness": "complete",
   "blocking": false,
+  "blocking_for_structure": false,
   "blocking_codes": [],
   "soft_codes": [],
   "pages": 0,
   "chars": 10609,
   "blocks": 178,
   "next": "structure",
-  "ms": 367
+  "ms": 363
  },
  {
   "index": 4,
@@ -67,6 +70,7 @@
   "reader": "python-docx@1.2.0",
   "completeness": "complete",
   "blocking": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
    "doc_cross_block_attribution"
   ],
@@ -75,7 +79,7 @@
   "chars": 4795,
   "blocks": 64,
   "next": "human",
-  "ms": 273
+  "ms": 361
  },
  {
   "index": 5,
@@ -87,6 +91,7 @@
   "reader": "python-docx@1.2.0",
   "completeness": "partial",
   "blocking": true,
+  "blocking_for_structure": true,
   "blocking_codes": [
    "doc_block_missing",
    "docx_no_text",
@@ -97,7 +102,7 @@
   "chars": 0,
   "blocks": 0,
   "next": "human",
-  "ms": 241
+  "ms": 314
  },
  {
   "index": 6,
@@ -109,6 +114,7 @@
   "reader": "python-docx@1.2.0",
   "completeness": "partial",
   "blocking": true,
+  "blocking_for_structure": true,
   "blocking_codes": [
    "doc_cross_block_attribution",
    "docx_textbox_unread"
@@ -118,7 +124,7 @@
   "chars": 8542,
   "blocks": 72,
   "next": "human",
-  "ms": 291
+  "ms": 395
  },
  {
   "index": 7,
@@ -130,6 +136,7 @@
   "reader": "python-docx@1.2.0",
   "completeness": "partial",
   "blocking": true,
+  "blocking_for_structure": true,
   "blocking_codes": [
    "docx_header_footer_present",
    "docx_textbox_unread"
@@ -139,6 +146,6 @@
   "chars": 12456,
   "blocks": 445,
   "next": "human",
-  "ms": 385
+  "ms": 469
  }
 ]

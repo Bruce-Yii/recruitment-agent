@@ -27,6 +27,21 @@ import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
 import type { ResolvedConverterConfig } from './converter.ts'
 
+/**
+ * 真正阻断**结构化**的 code（D-97 第一批）。
+ *
+ * 不在这里的 HARD code（跨块归属、阅读顺序、未核图片、归属未核、时间线未解析）
+ * 只影响"可信筛选"，不影响"把文字抽成字段"——模型结构化不需要知道哪句话在左栏。
+ */
+const STRUCTURE_BLOCKING_CODES: readonly string[] = [
+  'doc_empty',
+  'doc_text_unreadable',
+  'pdf_text_encoding_unread',
+  'docx_textbox_unread',
+  'doc_unreadable',
+  'image_requires_vision',
+]
+
 /** 工具名。 */
 const TOOL_NAME = 'recruitment_document_read'
 
@@ -88,6 +103,8 @@ interface DocumentReadValue {
   readonly assessment: {
     readonly completeness: string
     readonly blocking: boolean
+    /** 结构化用：版式/顺序/图片类问题不阻断（D-97 第一批）。 */
+    readonly blocking_for_structure: boolean
     readonly blocking_codes: readonly string[]
     readonly soft_codes: readonly string[]
     readonly actions: readonly { action: string; codes: readonly string[]; blocking: boolean }[]
@@ -169,6 +186,7 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
       properties: {
         completeness: { type: 'string' },
         blocking: { type: 'boolean' },
+        blocking_for_structure: { type: 'boolean' },
         blocking_codes: { type: 'array', items: { type: 'string' } },
         soft_codes: { type: 'array', items: { type: 'string' } },
         actions: {
@@ -186,7 +204,7 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
         },
         issues: { type: 'array', items: ISSUE_SCHEMA },
       },
-      required: ['completeness', 'blocking', 'blocking_codes', 'soft_codes', 'actions', 'issues'],
+      required: ['completeness', 'blocking', 'blocking_for_structure', 'blocking_codes', 'soft_codes', 'actions', 'issues'],
       additionalProperties: false,
     },
     recovery: {
@@ -301,6 +319,11 @@ async function readOne(filePath: string, cfg: ResolvedConverterConfig): Promise<
     assessment: {
       completeness: assessment.completeness,
       blocking: assessment.blocking,
+      // D-97 第一批：**版式与顺序不阻断结构化**。
+      // 模型的结构化能力只依赖文字本身；左右分栏的阅读顺序、图片有没有核过，
+      // 不影响"把文字抽成字段"。这些留给第二批（版面分析 + 图片分类修好）再严格。
+      // 真正阻断结构化的只有"文字本身不可用"：空文件、乱码、编码读不出。
+      blocking_for_structure: STRUCTURE_BLOCKING_CODES.some((code) => assessment.blocking_codes.includes(code)),
       blocking_codes: [...assessment.blocking_codes],
       soft_codes: [...assessment.soft_codes],
       actions: assessment.actions.map((action) => ({
