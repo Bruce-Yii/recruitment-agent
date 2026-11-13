@@ -100,10 +100,12 @@ begin
   raise notice 'STRUCT-01 PASS 每张表都是单列 uuid 主键，列名 = id（event_inbox = event_id）';
 
   -- 2.2 除 organization 外每张表都有 tenant_id（多租户隔离的最小前提）
+  --     例外：schema_migration 是**基础设施台账**，不是租户业务数据（没有租户维度），
+  --     给它造一个假 tenant_id 反而会让人误以为它可以按租户隔离。见 0010 的注释。
   select string_agg(c.relname, ', ') into v_bad
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = 'recruitment' and c.relkind = 'r'
-     and c.relname <> 'organization'
+     and c.relname not in ('organization', 'schema_migration')
      and not exists (select 1 from pg_attribute a
                       where a.attrelid = c.oid and a.attname = 'tenant_id'
                         and a.attnotnull and not a.attisdropped);
