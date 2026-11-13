@@ -18,7 +18,7 @@
   "chars": 5630,
   "blocks": 105,
   "next": "human",
-  "ms": 434
+  "ms": 421
  },
  {
   "index": 2,
@@ -39,7 +39,7 @@
   "chars": 5630,
   "blocks": 105,
   "next": "human",
-  "ms": 357
+  "ms": 363
  },
  {
   "index": 3,
@@ -58,7 +58,7 @@
   "chars": 10609,
   "blocks": 178,
   "next": "structure",
-  "ms": 363
+  "ms": 369
  },
  {
   "index": 4,
@@ -79,7 +79,7 @@
   "chars": 4795,
   "blocks": 64,
   "next": "human",
-  "ms": 361
+  "ms": 348
  },
  {
   "index": 5,
@@ -89,20 +89,18 @@
   "ok": true,
   "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "reader": "python-docx@1.2.0",
-  "completeness": "partial",
-  "blocking": true,
-  "blocking_for_structure": true,
-  "blocking_codes": [
-   "doc_block_missing",
-   "docx_no_text",
-   "docx_textbox_unread"
+  "completeness": "complete",
+  "blocking": false,
+  "blocking_for_structure": false,
+  "blocking_codes": [],
+  "soft_codes": [
+   "doc_docx_textbox_order_unknown"
   ],
-  "soft_codes": [],
   "pages": 0,
-  "chars": 0,
-  "blocks": 0,
-  "next": "human",
-  "ms": 314
+  "chars": 4122,
+  "blocks": 28,
+  "next": "structure",
+  "ms": 309
  },
  {
   "index": 6,
@@ -112,19 +110,20 @@
   "ok": true,
   "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "reader": "python-docx@1.2.0",
-  "completeness": "partial",
+  "completeness": "complete",
   "blocking": true,
-  "blocking_for_structure": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
-   "doc_cross_block_attribution",
-   "docx_textbox_unread"
+   "doc_cross_block_attribution"
   ],
-  "soft_codes": [],
+  "soft_codes": [
+   "doc_docx_textbox_order_unknown"
+  ],
   "pages": 0,
-  "chars": 8542,
-  "blocks": 72,
+  "chars": 8744,
+  "blocks": 80,
   "next": "human",
-  "ms": 395
+  "ms": 380
  },
  {
   "index": 7,
@@ -134,18 +133,19 @@
   "ok": true,
   "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "reader": "python-docx@1.2.0",
-  "completeness": "partial",
+  "completeness": "complete",
   "blocking": true,
-  "blocking_for_structure": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
-   "docx_header_footer_present",
-   "docx_textbox_unread"
+   "docx_header_footer_present"
   ],
-  "soft_codes": [],
+  "soft_codes": [
+   "doc_docx_textbox_order_unknown"
+  ],
   "pages": 0,
-  "chars": 12456,
-  "blocks": 445,
+  "chars": 12486,
+  "blocks": 450,
   "next": "human",
-  "ms": 469
+  "ms": 534
  }
 ]

@@ -251,16 +251,32 @@ def read_docx(path: Path) -> dict:
                             part_name, table_id, row_index, cell_index),
                     })
 
-    # Text boxes: python-docx does not expose them through Paragraph.text.
-    for textbox in document.element.body.iter(_w("txbxContent")):
+    # Text boxes: python-docx does not expose them through Paragraph.text,
+    # 但 Word 里用文本框排版简历是常态 —— 所以**必须把里面的文字读出来**，
+    # 而不是只报一句"读不了"（2026-11-14 实测：中文简历-新.docx 的正文全在 28 个文本框里，
+    # 旧实现把文字收集起来又扔掉，导致整份被判成"没有正文"）。
+    #
+    # 读法：w:txbxContent 里的 w:t 逐段拼接。文本框在视觉上可能浮在页面任意位置，
+    # 与正文的相对顺序**不可知**，所以：
+    #   * 文字照样进 blocks（结构化只需要文字，D-97 第一批口径）；
+    #   * 顺序问题降级成 SOFT（doc_docx_textbox_order_unknown），不再阻断结构化；
+    #   * 保留 docx_textbox_unread 这个 code 只用于"确实一个 w:t 都没读到"的情况。
+    for textbox_index, textbox in enumerate(document.element.body.iter(_w("txbxContent"))):
         joined = "".join((node.text or "") for node in textbox.iter(_w("t"))).strip()
-        if joined:
-            textbox_texts.append(joined)
+        if not joined:
+            continue
+        textbox_texts.append(joined)
+        add_block("paragraph", joined, {
+            "kind": "docx",
+            "part": part_name,
+            "_block_id": "docx:%s:textbox:%d" % (part_name, textbox_index),
+        })
     if textbox_texts:
-        issues.append(_hard(
-            "docx_textbox_unread",
-            "%d text box(es) contain text that this reader does not read; "
-            "the result must not be treated as complete" % len(textbox_texts),
+        issues.append(_soft(
+            "doc_docx_textbox_order_unknown",
+            "%d text box(es) were read into blocks, but their visual position relative to the "
+            "body flow is unknown; text is usable, reading order is not verified"
+            % len(textbox_texts),
             {"kind": "docx", "part": part_name},
         ))
 
