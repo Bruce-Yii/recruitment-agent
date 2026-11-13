@@ -36,6 +36,21 @@ const ADDED_SOFT_CODES: ReadonlySet<string> = new Set([
   'pdf_page_empty', 'resume_protected_attribute_present', 'resume_ocr_heading_inserted',
 ])
 
+/**
+ * **恢复成功标记**（`issues.py:51`，`D-98`）：原生文本层坏掉 → 整页 OCR 重读**成功**，
+ * 页面级 issue 从 HARD `pdf_text_encoding_unread` 降级成它。
+ *
+ * 它**不是**"读不出"，所以既不能算 HARD，也不能把 `parse_status` 从 `PARSED` 降成 `PARTIAL`：
+ * 否则"恢复成功"会被下游当成"没读完"，OCR 兜底等于白做（`D-98` 实测三份简历就是这个后果）。
+ *
+ * 注意（`D-98` 的坑）：`issues.py::ADDED_CODES` 与
+ * `src/document/contracts/map-converter.ts::CONVERTER_SOFT_ISSUE_CODES` 是两份镜像清单；
+ * 本表是**第三份**（S6 落库用）。三处必须同步，改一边就等于又造一次漂移。
+ */
+const RECOVERY_SOFT_CODES: ReadonlySet<string> = new Set([
+  'pdf_text_recovered_by_ocr',
+])
+
 /** 一条 issue（只声明用到的键）。 */
 export interface MaterialIssue {
   readonly code?: string
@@ -53,6 +68,8 @@ export function isHardIssue(code: string): boolean {
   if (HARD_ISSUE_CODES.has(code)) return true
   if (SOFT_ISSUE_PREFIXES.some((prefix) => code.startsWith(prefix))) return false
   if (ADDED_SOFT_CODES.has(code)) return false
+  // D-98：恢复成功标记不是失败（放最后但先于"未知按 HARD"）。
+  if (RECOVERY_SOFT_CODES.has(code)) return false
   return true
 }
 
@@ -90,6 +107,9 @@ export interface ConverterMeta {
  *
  * 为什么 `PARTIAL` 也要看 HARD issue：`PARSED` 的唯一含义是"整篇读完了，`absent` 可信"；
  * 只要有 HARD issue，就不能给出这个承诺（`screening-rules.md` §3.3 第 1/2 行）。
+ *
+ * `pdf_text_recovered_by_ocr` 是**恢复成功**标记（`D-98`），不是 HARD：整页 OCR 已经补齐正文，
+ * `completeness='complete'` 时仍应是 `PARSED`（不得因为"恢复过"反而降级）。
  * @param completeness - converter 的 `completeness`。
  * @param chars - converter 的 `chars`。
  * @param issues - converter 的 `issues[]`。

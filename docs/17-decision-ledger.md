@@ -1115,3 +1115,34 @@ Agent 可借此刷人的确认；且幂等重放会误弹）。代价是"弹窗�
 
 **修复安排**：P0-1 / P0-2 / P0-3 各一条修复 lane；P1 四条并入 P0-3 那条 lane。
 报告全文：`docs/23-acceptance-review-s6-s10.md`（706 行，含附录 A 命令原文与真实输出）。
+
+### D-103 · S7 的决策落库口径 + 23P01 映射 + D-95 哈希版本化（2026-11-14）
+
+**P0-3 · S7 人决定落库**：`decision_record` 接受 `decision_scope='SCREENING'`（S7 写侧）：
+- `stage_code` 由工具写死 `S7`（查 current / 写行 / 写事件 / 出参**共用同一个函数**，避免"查的是一把尺、写的是另一把"）；
+- `result ∈ {ADVANCE,HOLD,REJECT,WITHDRAW}`（**S7 不是终局**，`HIRED` 仍拒）；
+- 不接受 `interview_id` / `summary_digest`；`missing_disposition` 等 S10 专属字段 → `MUTUALLY_EXCLUSIVE`；
+- `basis_refs` 封闭集收窄为 `SCREENING_EVALUATION / RESUME_VERSION / RUBRIC_VERSION / AUTHORITY / SUPERSEDES`；
+  `ADVANCE/REJECT` **必须**带 `SCREENING_EVALUATION`，`HOLD/WITHDRAW` 可 0 条（安全方向，与 §4.2.1 同构）；
+- 只做**绑定核对**（rubric 版本/hash 对库值、材料存在且是申请钉住那份），**不重算 screening**（S7 是瞬态投影，重算=第二份实现）；
+- D-95 闸门不变；唯一性 `(tenant, application, 'SCREENING', 'S7')`。
+
+**P1-1 · 23P01**：0008 的 DEFERRABLE EXCLUDE 在 **COMMIT** 抛 `23P01`，工具原来只映射 23505 → 契约失效。
+现在 `23P01` 映射 `ALREADY_DECIDED`，并在 `execute()` 的 catch 再翻一次（COMMIT 在 `withActor` 里，STEP 7 的 try/catch 之外）。
+
+**P1-2 · D-95 哈希版本化**：`confirmation_text` 进 pre-image，但**版本化**：
+v1 = 旧四键（无原话时逐字节不变，库里旧 hash 不假红）；v2 = 带原话时算
+`{preimage_version:2, 四键, confirmation_text, confirmed_by_actor_id, confirmed_at}`。
+服务端规则：**有原话只接受 v2，无原话只接受 v1**；不等 → `CONFIRMATION_TEXT_MISMATCH`。
+事件 payload 记 `human_confirmation_preimage_version`（`decision` 表无此列）。
+
+**P1-3 · D-98 的恢复标记在 db 层当 SOFT**：`src/db/material.ts` 新增 `RECOVERY_SOFT_CODES`，
+在"未知 code 一律 HARD"**之前**判 SOFT。**这是第三份镜像清单**（`converter/issues.py`、`map-converter.ts`、本表），
+三处必须同步——已在注释里写死。
+
+**同步（写范围外）**：`docs/18:60`（S7 没有 `screening_result` 表，Screening Result = `decision(scope='SCREENING')`）、
+`contracts/evaluation/tool-contracts.md`（`decision_scope` 不再拒收 SCREENING；`summarize` 仍只服务 S10）。
+
+**已知残余（另开跟进）**：DC-27 的 `basis_refs[SCREENING_DECISION].basis_refs` 嵌套键仍被 parser 按
+`UNKNOWN_PARAM` 拒掉（`hasScreeningRejectionBasis` 是死代码）；`screening_evaluate` → `basis_refs` 的组装
+仍是 agent 侧手工按 §3.7 拼，工具不出 `basis_refs`。

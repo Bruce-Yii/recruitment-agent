@@ -23,7 +23,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 
-import { canonicalJson } from '../../src/tools/contract.ts'
+import { canonicalJson, digestOf } from '../../src/tools/contract.ts'
 import {
   confirmationTextSha256,
   recordDecisionInTransaction,
@@ -98,6 +98,8 @@ async function seedPanel(
     readonly requiredCount?: number
     readonly scorecards?: readonly ScorecardSpec[]
     readonly hiringManager?: 'other' | 'none'
+    /** false = 申请不绑材料（S7 写侧"材料版本不存在"的负例要用）。 */
+    readonly bindMaterial?: boolean
   } = {},
 ): Promise<Panel> {
   const suffix = uniqueSuffix()
@@ -113,6 +115,7 @@ async function seedPanel(
   const scenario = await seedScenario(client, {
     dimensions: RUBRIC_DIMENSIONS.map((dimension) => ({ ...dimension })),
     departmentId,
+    ...(options.bindMaterial === undefined ? {} : { bindMaterial: options.bindMaterial }),
   })
   const rubricRow = (await client.query<{ payload_hash: string }>(
     'select payload_hash from recruitment.rubric_version where id = $1',
@@ -1012,7 +1015,7 @@ function valueOf(value: Record<string, unknown>, key: string): unknown {
 /** approval 恒不可用：用来证明 IN_CHAT 路径**根本不走** approval。 */
 const UNAVAILABLE = async (): Promise<ApprovalOutcome> => 'unavailable'
 
-test('D-95：IN_CHAT + 人的原话 → 不走 approval，decision 直接落库', async () => {
+test('D-95：IN_CHAT + 人的原话 → 不走 approval，decision 直接落库（v2 hash + 事件留原话）', async () => {
   await inRolledBackTx(pool, async (client) => {
     const panel = await seedPanel(client, {
       requiredCount: 1,
@@ -1021,16 +1024,21 @@ test('D-95：IN_CHAT + 人的原话 → 不走 approval，decision 直接落库'
     const summary = await summaryOf(client, panel, 'STAGE')
     const args = buildArgs({ panel, summary, result: 'ADVANCE' })
     const humanText = '就按面试官的意见推进到下一轮'
+    const confirmedAt = new Date(NOW - 60 * 1000).toISOString()
     args.human_confirmation = {
       confirmed_by_actor_id: panel.deciderActorId,
-      confirmed_at: new Date(NOW - 60 * 1000).toISOString(),
+      confirmed_at: confirmedAt,
       confirmation_method: 'IN_CHAT',
       confirmation_text: humanText,
+      // P1-2：IN_CHAT 的 hash 必须走 v2（原话进 pre-image）
       confirmation_text_sha256: confirmationTextSha256({
         result: 'ADVANCE',
         reason: String(args.reason),
         override_rationale: null,
         basis_refs: args.basis_refs as readonly unknown[],
+        confirmation_text: humanText,
+        confirmed_by_actor_id: panel.deciderActorId,
+        confirmed_at: confirmedAt,
       }),
     }
 
@@ -1042,6 +1050,50 @@ test('D-95：IN_CHAT + 人的原话 → 不走 approval，decision 直接落库'
     const rows = await decisionsOf(client, panel.applicationId)
     assert.equal(rows.length, 1, 'IN_CHAT 下 decision 必须真的落库')
     assert.equal(rows[0]?.result, 'ADVANCE')
+
+    // D-95：原话 + 哈希 + pre-image 版本号写进同事务的内部事件（decision 表没有 confirmation 列）
+    const event = (await client.query<{ payload: Record<string, unknown> }>(
+      `select payload from recruitment.event_inbox
+        where tenant_id = $1 and event_type = 'decision.record'
+          and payload->>'application_id' = $2`,
+      [TENANT, panel.applicationId],
+    )).rows[0]
+    assert.ok(event !== undefined, 'IN_CHAT 决策必须有内部事件')
+    assert.equal(event?.payload.human_confirmation_method, 'IN_CHAT')
+    assert.equal(event?.payload.human_confirmation_text, humanText)
+    assert.equal(event?.payload.human_confirmation_text_sha256, (args.human_confirmation as Record<string, unknown>).confirmation_text_sha256)
+    assert.equal(event?.payload.human_confirmation_preimage_version, 2)
+  })
+})
+
+test('D-95/P1-2：IN_CHAT 沿用旧四键 hash（或原话被改）→ CONFIRMATION_TEXT_MISMATCH，一行都不写', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const panel = await seedPanel(client, {
+      requiredCount: 1,
+      scorecards: [{ who: 'x', overall: 'ADVANCE' }],
+    })
+    const summary = await summaryOf(client, panel, 'STAGE')
+    const args = buildArgs({ panel, summary, result: 'ADVANCE' })
+    const humanText = '就按面试官的意见推进到下一轮'
+    const legacyHash = confirmationTextSha256({
+      result: 'ADVANCE',
+      reason: String(args.reason),
+      override_rationale: null,
+      basis_refs: args.basis_refs as readonly unknown[],
+    })
+    args.human_confirmation = {
+      confirmed_by_actor_id: panel.deciderActorId,
+      confirmed_at: new Date(NOW - 60 * 1000).toISOString(),
+      confirmation_method: 'IN_CHAT',
+      confirmation_text: humanText,
+      confirmation_text_sha256: legacyHash,
+    }
+    await rejectsWith(
+      recordDecisionInTransaction(client, cfg, args, NOW, UNAVAILABLE),
+      'DECISION_REQUIRES_HUMAN',
+      'CONFIRMATION_TEXT_MISMATCH',
+    )
+    assert.equal((await decisionsOf(client, panel.applicationId)).length, 0)
   })
 })
 
@@ -1063,5 +1115,403 @@ test('D-95：IN_CHAT 不带人的原话 → MISSING_REQUIRED（授权凭据不�
       'MISSING_REQUIRED',
     )
     assert.equal((await decisionsOf(client, panel.applicationId)).length, 0)
+  })
+})
+
+// =====================================================================
+//  7. P0-3 · S7 写侧：`decision_scope='SCREENING'`（契约 §17.1）
+// =====================================================================
+
+/** 该申请绑定的材料版本（S7 写侧要核对 `content_sha256`）。 */
+async function resumeOf(
+  client: DatabaseClient,
+  applicationId: string,
+): Promise<{ id: string; content_sha256: string }> {
+  const row = (await client.query<{ id: string; content_sha256: string }>(
+    `select rv.id, rv.content_sha256
+       from recruitment.application a
+       join recruitment.resume_version rv
+         on rv.id = a.resume_version_id and rv.tenant_id = a.tenant_id
+      where a.id = $1`,
+    [applicationId],
+  )).rows[0]
+  assert.ok(row !== undefined, '夹具必须有绑定的材料版本')
+  return row as { id: string; content_sha256: string }
+}
+
+/** 一条 S7 的 `SCREENING_EVALUATION` 依据（`job-screening/tool-contracts.md` §3.7 形状）。 */
+function screeningEvaluation(
+  panel: Panel,
+  resume: { id: string; content_sha256: string },
+  verdict: 'PASS' | 'FAIL' | 'NEEDS_REVIEW' = 'PASS',
+): Record<string, unknown> {
+  const digest = digestOf({
+    args: { application_id: panel.applicationId },
+    resolved_ids: { rubric_version_id: panel.rubricId, resume_version_id: resume.id },
+    rubric_payload_hash: panel.rubricPayloadHash,
+    resume_content_sha256: resume.content_sha256,
+    verdict,
+    reasons: [],
+  })
+  return {
+    kind: 'SCREENING_EVALUATION',
+    contract_version: '1.0.0',
+    evaluation_digest: digest,
+    verdict,
+    rubric_version_id: panel.rubricId,
+    rubric_payload_hash: panel.rubricPayloadHash,
+    resume_version_id: resume.id,
+    resume_content_sha256: resume.content_sha256,
+    reasons_digest: digestOf([]),
+    criteria_evaluated: true,
+    counts: { must_have: 1, must_have_satisfied: 1, must_have_unsatisfied: 0, unreadable: 0, missing: 0, indeterminate: 0, needs_judgment: 0 },
+    provenance: 'FIXTURE',
+  }
+}
+
+/** S7 每次必带的两种依据（§17.1）。 */
+function screeningBaseBasis(panel: Panel): Record<string, unknown>[] {
+  return [
+    { kind: 'RUBRIC_VERSION', id: panel.rubricId, version_no: 1, payload_hash: panel.rubricPayloadHash },
+    { kind: 'AUTHORITY', actor_id: panel.deciderActorId, is_hiring_manager: false },
+  ]
+}
+
+interface ScreeningArgsInput {
+  readonly panel: Panel
+  readonly basis: readonly Record<string, unknown>[]
+  readonly result: 'ADVANCE' | 'HOLD' | 'REJECT' | 'WITHDRAW'
+  readonly reason?: string
+  readonly supersedes?: { decision_id: string; reason: string; expected_record_version: number }
+  readonly confirmation?: Record<string, unknown>
+}
+
+/** 造一次 S7 调用的入参（无 interview_id / summary_digest；人工确认按 basis 算 hash）。 */
+function screeningArgs(input: ScreeningArgsInput): Record<string, unknown> {
+  const decider = input.panel.deciderActorId
+  const basis = [...input.basis]
+  if (input.supersedes !== undefined) {
+    basis.push({
+      kind: 'SUPERSEDES',
+      decision_id: input.supersedes.decision_id,
+      reason: input.supersedes.reason,
+      opened_by_actor_id: decider,
+    })
+  }
+  const args: Record<string, unknown> = {
+    application_id: input.panel.applicationId,
+    decision_scope: 'SCREENING',
+    as_of: AS_OF,
+    result: input.result,
+    reason: input.reason ?? '按面试结论推进到下一轮',
+    basis_refs: basis,
+    ...(input.supersedes === undefined ? {} : { supersedes: input.supersedes }),
+  }
+  args.human_confirmation = input.confirmation ?? {
+    confirmed_by_actor_id: decider,
+    confirmed_at: new Date(NOW - 60 * 1000).toISOString(),
+    confirmation_method: 'IN_APP_CONFIRM',
+    confirmation_text_sha256: confirmationTextSha256({
+      result: String(args.result),
+      reason: String(args.reason),
+      override_rationale: null,
+      basis_refs: basis,
+    }),
+  }
+  return args
+}
+
+/** current 数（按 scope + stage_code；S7 是 'S7'，S10 是 'S10'）。 */
+async function currentCountOf(
+  client: DatabaseClient,
+  applicationId: string,
+  scope: 'SCREENING' | 'STAGE' | 'FINAL',
+  stageCode: string,
+): Promise<number> {
+  const { rows } = await client.query<{ current_count: number }>(
+    `select count(*)::int as current_count
+       from recruitment.decision
+      where tenant_id = $1 and application_id = $2 and decision_scope = $3
+        and stage_code is not distinct from $4 and superseded_by_decision_id is null`,
+    [TENANT, applicationId, scope, stageCode],
+  )
+  return rows[0]?.current_count ?? -1
+}
+
+test('SCREENING：S7 人决定落库（scope=SCREENING / stage=S7 / 无 interview / 无 gate / 事件含 evaluation_digest）', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    // 注意：**不需要任何面试与面评**（S7 还没有面试）
+    const panel = await seedPanel(client, { requiredCount: 1 })
+    const resume = await resumeOf(client, panel.applicationId)
+    const evaluation = screeningEvaluation(panel, resume, 'PASS')
+    const args = screeningArgs({
+      panel,
+      basis: [evaluation, ...screeningBaseBasis(panel)],
+      result: 'ADVANCE',
+      reason: '三条 MUST_HAVE 全部满足，推进面试',
+    })
+
+    const value = await recordDecisionInTransaction(client, cfg, args, NOW, ALLOWED)
+    assert.equal(value.status, 'OK')
+    assert.equal(value.contract_version, '2.0.0')
+    const decision = value.decision as Record<string, unknown>
+    assert.equal(decision.decision_scope, 'SCREENING')
+    assert.equal(decision.stage_code, 'S7', 'S7 写侧必须写 stage_code=S7（不是 S10）')
+    assert.equal(Object.hasOwn(decision, 'interview_id'), false, 'S7 没有面试')
+    assert.equal(Object.hasOwn(value, 'gate'), false, 'S7 没有 S10 汇总 → 出参没有 gate')
+    assert.equal((value.labels as Record<string, unknown>).provenance, 'FIXTURE')
+    assert.ok(warningCodes(value).includes('FIXTURE_BASIS'))
+    assert.ok(!warningCodes(value).includes('PROCEEDED_WITH_MISSING_SCORECARDS'))
+
+    const rows = await decisionsOf(client, panel.applicationId)
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0]?.decision_scope, 'SCREENING')
+    assert.equal(rows[0]?.stage_code, 'S7')
+    assert.equal(rows[0]?.interview_id, null)
+    assert.equal(rows[0]?.decided_by_actor_id, panel.deciderActorId)
+    assert.equal(canonicalJson(rows[0]?.basis_refs), canonicalJson(args.basis_refs), 'basis_refs 必须逐字落库')
+    assert.equal(await currentCountOf(client, panel.applicationId, 'SCREENING', 'S7'), 1)
+    assert.equal(await currentCountOf(client, panel.applicationId, 'STAGE', 'S10'), 0, 'SCREENING 不得污染 S10 的 current')
+
+    // 内部事件：stage_code=S7 + 那次评估的 digest（S7 没有 summary_digest）
+    const event = (await client.query<{ payload: Record<string, unknown> }>(
+      `select payload from recruitment.event_inbox
+        where tenant_id = $1 and event_type = 'decision.record'
+          and payload->>'application_id' = $2`,
+      [TENANT, panel.applicationId],
+    )).rows[0]
+    assert.ok(event !== undefined, 'S7 决策必须有内部事件')
+    assert.equal(event?.payload.decision_scope, 'SCREENING')
+    assert.equal(event?.payload.stage_code, 'S7')
+    assert.equal(event?.payload.summary_digest, null)
+    assert.equal(event?.payload.screening_evaluation_digest, evaluation.evaluation_digest)
+
+    // DC-47 / N-5：不改任何状态
+    const app = (await client.query<{ current_stage_code: string; lifecycle_status: string }>(
+      'select current_stage_code, lifecycle_status from recruitment.application where id = $1',
+      [panel.applicationId],
+    )).rows[0]
+    assert.equal(app?.current_stage_code, 'S7')
+    assert.equal(app?.lifecycle_status, 'ACTIVE')
+  })
+})
+
+test('SCREENING：ADVANCE/REJECT 缺 SCREENING_EVALUATION → BASIS_REF_EMPTY；HOLD/WITHDRAW 可 0 条（安全方向）', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const panel = await seedPanel(client, { requiredCount: 1 })
+    const base = screeningBaseBasis(panel)
+
+    for (const [result, reason] of [
+      ['ADVANCE', '按面试结论推进'],
+      ['REJECT', 'backend_depth 不满足'],
+    ] as const) {
+      const body = await rejectsWith(
+        recordDecisionInTransaction(client, cfg, screeningArgs({ panel, basis: base, result, reason }), NOW, ALLOWED),
+        'INVALID_ARGS',
+        'BASIS_REF_EMPTY',
+      )
+      const missingKinds = (body.detail as Record<string, unknown>).missing_kinds as string[]
+      assert.ok(missingKinds.includes('SCREENING_EVALUATION'), `missing_kinds=${missingKinds.join(',')}`)
+    }
+    assert.equal((await decisionsOf(client, panel.applicationId)).length, 0, '被拦的 S7 决策不得留行')
+
+    for (const result of ['HOLD', 'WITHDRAW'] as const) {
+      // 每个 result 用一份独立申请：同一 (scope, stage) 只能有一条 current
+      const safePanel = await seedPanel(client, { requiredCount: 1 })
+      const value = await recordDecisionInTransaction(
+        client,
+        cfg,
+        screeningArgs({ panel: safePanel, basis: screeningBaseBasis(safePanel), result, reason: '暂不决定 / 候选人退出' }),
+        NOW,
+        ALLOWED,
+      )
+      assert.equal((value.decision as Record<string, unknown>).result, result)
+      assert.equal((await decisionsOf(client, safePanel.applicationId)).length, 1, `${result} 是安全方向，必须可落`)
+    }
+  })
+})
+
+test('SCREENING：评估绑定必须与申请钉住的 rubric / 材料一致（不对就是 EVIDENCE_INSUFFICIENT）', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const panel = await seedPanel(client, { requiredCount: 1 })
+    const resume = await resumeOf(client, panel.applicationId)
+    const base = screeningBaseBasis(panel)
+    const good = screeningEvaluation(panel, resume, 'PASS')
+
+    // rubric 不是申请钉住的那版
+    const wrongRubric = await rejectsWith(
+      recordDecisionInTransaction(client, cfg, screeningArgs({
+        panel,
+        basis: [{ ...good, rubric_version_id: '11111111-1111-4111-8111-0000000009ff' }, ...base],
+        result: 'ADVANCE',
+      }), NOW, ALLOWED),
+      'EVIDENCE_INSUFFICIENT',
+      'BASIS_SCREENING_RUBRIC_MISMATCH',
+    )
+    assert.equal((wrongRubric.detail as Record<string, unknown>).basis_refs_index, 0)
+
+    // rubric hash 与库值不一致
+    await rejectsWith(
+      recordDecisionInTransaction(client, cfg, screeningArgs({
+        panel,
+        basis: [{ ...good, rubric_payload_hash: 'a'.repeat(64) }, ...base],
+        result: 'ADVANCE',
+      }), NOW, ALLOWED),
+      'EVIDENCE_INSUFFICIENT',
+      'BASIS_SCREENING_RUBRIC_MISMATCH',
+    )
+
+    // 材料 hash 与库值不一致
+    await rejectsWith(
+      recordDecisionInTransaction(client, cfg, screeningArgs({
+        panel,
+        basis: [{ ...good, resume_content_sha256: 'b'.repeat(64) }, ...base],
+        result: 'ADVANCE',
+      }), NOW, ALLOWED),
+      'EVIDENCE_INSUFFICIENT',
+      'BASIS_SCREENING_RESUME_MISMATCH',
+    )
+
+    // 材料版本不存在：申请没钉材料时才会走到"库里查不到这份材料"（钉了材料会先报不匹配）
+    const unboundPanel = await seedPanel(client, { requiredCount: 1, bindMaterial: false })
+    await rejectsWith(
+      recordDecisionInTransaction(client, cfg, screeningArgs({
+        panel: unboundPanel,
+        basis: [{ ...screeningEvaluation(unboundPanel, resume, 'PASS'), resume_version_id: '11111111-1111-4111-8111-0000000009fe' },
+          ...screeningBaseBasis(unboundPanel)],
+        result: 'ADVANCE',
+      }), NOW, ALLOWED),
+      'NOT_FOUND',
+      'RESUME_VERSION_NOT_FOUND',
+    )
+
+    assert.equal((await decisionsOf(client, panel.applicationId)).length, 0, '绑定不对的 S7 决策一行都不写')
+    assert.equal((await decisionsOf(client, unboundPanel.applicationId)).length, 0)
+  })
+})
+
+test('SCREENING：第二次不同结论必须走 supersedes（三步舞）；不走 → ALREADY_DECIDED', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const panel = await seedPanel(client, { requiredCount: 1 })
+    const resume = await resumeOf(client, panel.applicationId)
+    const evaluation = screeningEvaluation(panel, resume, 'NEEDS_REVIEW')
+    const first = await recordDecisionInTransaction(client, cfg, screeningArgs({
+      panel,
+      basis: [evaluation, ...screeningBaseBasis(panel)],
+      result: 'HOLD',
+      reason: '有一位 MUST_HAVE 需要人工判断，暂不决定',
+    }), NOW, ALLOWED)
+    const firstId = String((first.decision as Record<string, unknown>).id)
+    assert.equal(await currentCountOf(client, panel.applicationId, 'SCREENING', 'S7'), 1)
+
+    // 不带 supersedes 的第二次 → STEP 3 先拦
+    await rejectsWith(
+      recordDecisionInTransaction(client, cfg, screeningArgs({
+        panel,
+        basis: [evaluation, ...screeningBaseBasis(panel)],
+        result: 'HOLD',
+        reason: '再来一次',
+      }), NOW, ALLOWED),
+      'ALREADY_DECIDED',
+      'SCOPE_ALREADY_DECIDED',
+    )
+
+    // 走撤回三步舞（SUPERSEDES basis 由 screeningArgs 自动补）
+    const second = await recordDecisionInTransaction(client, cfg, screeningArgs({
+      panel,
+      basis: [evaluation, ...screeningBaseBasis(panel)],
+      result: 'ADVANCE',
+      reason: '人工判断后确认三条 MUST_HAVE 都满足，推进面试',
+      supersedes: { decision_id: firstId, reason: '人工复核后改变结论', expected_record_version: 1 },
+    }), NOW, ALLOWED)
+    const secondId = String((second.decision as Record<string, unknown>).id)
+    assert.notEqual(secondId, firstId)
+    assert.deepEqual(second.superseded, { decision_id: firstId, record_version: 2 })
+    assert.ok(warningCodes(second).includes('SUPERSEDES_APPLIED'))
+    assert.equal(await currentCountOf(client, panel.applicationId, 'SCREENING', 'S7'), 1)
+
+    const rows = await decisionsOf(client, panel.applicationId)
+    assert.equal(rows.length, 2, '两行都留着（DC-31）')
+    const oldRow = rows.find((row) => row.id === firstId)
+    assert.equal(oldRow?.record_version, 2)
+    assert.equal(oldRow?.superseded_by_decision_id, secondId)
+    assert.equal(oldRow?.stage_code, 'S7')
+  })
+})
+
+test('SCREENING：approval 未批（非 IN_CHAT）→ 一行不写；IN_CHAT + v2 hash → 不弹 approval 直接落库', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const panel = await seedPanel(client, { requiredCount: 1 })
+    const resume = await resumeOf(client, panel.applicationId)
+    const evaluation = screeningEvaluation(panel, resume, 'PASS')
+    const basis = [evaluation, ...screeningBaseBasis(panel)]
+    const args = screeningArgs({ panel, basis, result: 'ADVANCE' })
+
+    await rejectsWith(
+      recordDecisionInTransaction(client, cfg, args, NOW, UNAVAILABLE),
+      'DECISION_REQUIRES_HUMAN',
+      'APPROVAL_UNAVAILABLE',
+    )
+    assert.equal((await decisionsOf(client, panel.applicationId)).length, 0)
+
+    // IN_CHAT：原话进 v2 hash，闸门就是那一次对话 —— 不再弹二次确认
+    const humanText = '按面试结论推进到下一轮'
+    const confirmedAt = new Date(NOW - 60 * 1000).toISOString()
+    const inChat = screeningArgs({
+      panel,
+      basis,
+      result: 'ADVANCE',
+      confirmation: {
+        confirmed_by_actor_id: panel.deciderActorId,
+        confirmed_at: confirmedAt,
+        confirmation_method: 'IN_CHAT',
+        confirmation_text: humanText,
+        confirmation_text_sha256: confirmationTextSha256({
+          result: 'ADVANCE',
+          reason: '按面试结论推进到下一轮',
+          override_rationale: null,
+          basis_refs: basis,
+          confirmation_text: humanText,
+          confirmed_by_actor_id: panel.deciderActorId,
+          confirmed_at: confirmedAt,
+        }),
+      },
+    })
+    const value = await recordDecisionInTransaction(client, cfg, inChat, NOW, UNAVAILABLE)
+    assert.equal((value.decision as Record<string, unknown>).decision_scope, 'SCREENING')
+    assert.equal((await decisionsOf(client, panel.applicationId)).length, 1)
+  })
+})
+
+// =====================================================================
+//  8. P1-1 · `23P01` 真触发：0008 的可延迟排斥约束在 INSERT 处冲突
+// =====================================================================
+
+test('P1-1：0008 的 uq_decision_current_final 真抛 23P01 → 工具翻成 ALREADY_DECIDED', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const panel = await seedPanel(client, { requiredCount: 1, scorecards: [{ who: 'x', overall: 'ADVANCE' }] })
+
+    // 先造一条 current FINAL，但 stage_code=NULL：STEP 3 查 (FINAL, stage='S10') 看不到它，
+    // 而 uq_decision_current_final 的键是 (tenant, application) —— 第二条 current FINAL 必撞。
+    await client.query(
+      `insert into recruitment.decision
+         (tenant_id, application_id, interview_id, decision_scope, stage_code, result,
+          decided_by_actor_id, reason, basis_refs, record_version)
+       values ($1, $2, null, 'FINAL', null, 'HOLD', $3, '夹具：另一条 current FINAL（stage_code=NULL）', '[]'::jsonb, 1)`,
+      [TENANT, panel.applicationId, panel.deciderActorId],
+    )
+    // 可延迟约束在测试事务里永远不会 COMMIT → 切成 IMMEDIATE，让冲突在 INSERT 处就抛出来。
+    // 注意要 schema 限定：SET CONSTRAINTS 按 search_path 解析约束名，本连接不在 recruitment 的 path 上。
+    await client.query('set constraints recruitment.uq_decision_current_final immediate')
+
+    const summary = await summaryOf(client, panel, 'FINAL')
+    const body = await rejectsWith(
+      recordDecisionInTransaction(client, cfg, buildArgs({ panel, summary, result: 'HOLD', scope: 'FINAL' }), NOW, ALLOWED),
+      'ALREADY_DECIDED',
+      'SCOPE_ALREADY_DECIDED',
+    )
+    const detail = body.detail as Record<string, unknown>
+    assert.equal(detail.sqlstate, '23P01', '0008 之后冲突 SQLSTATE 是 23P01（不再是 23505）')
+    assert.equal(detail.constraint, 'uq_decision_current_final')
   })
 })

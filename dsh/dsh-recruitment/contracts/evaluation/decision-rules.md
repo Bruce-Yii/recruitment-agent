@@ -235,6 +235,12 @@ STEP 7  写入（decision 行 + 旧行指针 + 内部事件），带版本条件
 | **DC-06** | `decision_scope='STAGE'` ⇒ `interview_id` 必填，否则 `INVALID_ARGS(STAGE_REQUIRES_INTERVIEW)`；`='FINAL'` ⇒ `interview_id` 必须为空，否则 `INVALID_ARGS(FINAL_SCOPE_NO_INTERVIEW)`；其它值 ⇒ `INVALID_ARGS(DECISION_SCOPE_NOT_S10)` | 禁止"自动取最后一轮"——那是 `D11 §9.8`"不得静默择一"的同构错误 |
 | **DC-07** | `stage_code` **不由调用方提供**，工具写 `'S10'`；调用方传了非 `'S10'` 的值 → `INVALID_ARGS(STAGE_CODE_NOT_S10)` | `0001:L1355` 只有正则无外键；`D-22` 唯一口径；`D-24` 同构（脏 code 是静默错误） |
 
+> **2026-11-14 增补（P0-3）**：上面两条只覆盖 **S10**（`STAGE`/`FINAL`）。
+> `decision_scope='SCREENING'`（S7 的人决定）此前**没有写侧**：`decision_record` 明确拒收它，
+> 而 `0008` 之后的 `decision` 实况是 `STAGE=1 / SCREENING=0`。现在 `decision_record` **接受** `SCREENING`，
+> 写死 `stage_code='S7'`、不需要 `interview_id`/`summary_digest`、不走 §4.2 的面评门禁。
+> 完整口径见 **§17.1**（本节只作指引；与 §17.1 冲突时以 §17.1 为准）。
+
 ### 4.4 两个"不作为前置"的裁决（否则必然死锁）
 
 | # | 规则 | 为什么 | 依据 |
@@ -264,11 +270,15 @@ STEP 7  写入（decision 行 + 旧行指针 + 内部事件），带版本条件
 | **DC-08** | 三要素缺一 → `DECISION_REQUIRES_HUMAN(NO_HUMAN_CONFIRMATION)` | — | `APP-07` |
 | **DC-09** | `confirmed_by_actor_id` ≠ 上下文 actor → `DECISION_REQUIRES_HUMAN(CONFIRMATION_SUBJECT_MISMATCH)`（**不能替别人确认**） | — | `D-33` 下没有权限层，唯一能防代确认的就是"确认人 = 调用者" |
 | **DC-10** | 上下文 actor `kind ≠ 'HUMAN'` → `DECISION_REQUIRES_HUMAN(DECIDER_NOT_HUMAN)` | 即使 `actor.kind='SYSTEM'` 也拒 | `ck_execution_mandate_no_business_approval` `0001:L1647-1648`；§1-9 |
-| **DC-11** | `confirmation_text_sha256` 必须等于 **服务端**对"被确认内容"算出的 hash，被确认内容的规范化 JSON **必须且只包含** `{result, reason, override_rationale, basis_refs}` 四个键（`override_rationale` 未给时写 `null`，键不省略）。不等即 `DECISION_REQUIRES_HUMAN(CONFIRMATION_TEXT_MISMATCH)` | 这一条才能证明"人确认的是这一版内容"，不是"人点了个按钮"。**`override_rationale` 必须在 hash 里**：它是"反着来"的唯一理由，若不进 hash，就能出现"人确认时没有理由、落库时理由被程序塞进去"——`DC-28` 的留痕会变成可后补的装饰 | 与 `approval.canonical_payload_hash` 同一手法（`0001:L421-423`）；`INV-9`；`DC-29` |
+| **DC-11** | `confirmation_text_sha256` 必须等于 **服务端**对"被确认内容"算出的 hash，被确认内容的规范化 JSON **必须且只包含** `{result, reason, override_rationale, basis_refs}` 四个键（`override_rationale` 未给时写 `null`，键不省略）。不等即 `DECISION_REQUIRES_HUMAN(CONFIRMATION_TEXT_MISMATCH)`。**（2026-11-14 增补：`IN_CHAT` 的 pre-image 是 **v2** = 这四键 + 原话 + 确认人 + 确认时间 + 版本标记，见 §17.2；四键口径作为 v1 保留给旧记录）** | 这一条才能证明"人确认的是这一版内容"，不是"人点了个按钮"。**`override_rationale` 必须在 hash 里**：它是"反着来"的唯一理由，若不进 hash，就能出现"人确认时没有理由、落库时理由被程序塞进去"——`DC-28` 的留痕会变成可后补的装饰 | 与 `approval.canonical_payload_hash` 同一手法（`0001:L421-423`）；`INV-9`；`DC-29` |
 
 > **为什么"三要素"不够、还要 hash**：如果只记"某人某时点了确认"，那么**确认之后理由被改写**（或被程序改写）就无法发现。hash 把"确认"绑到"内容"上，这是 `approval` 表已经用过的做法（`resource_record_version` + `canonical_payload_hash`，`0001:L421-423`）。
 >
 > **为什么不能只靠 `actor.kind`**：`actor.kind` 是**行数据**，一个被误配成 `HUMAN` 的 SYSTEM actor 会让所有闸门失效。所以契约要求**同时**：`kind='HUMAN'` + 上下文 actor = 确认人 + 内容 hash 三方对齐。库层面只有 `execution_mandate` 的 CHECK（`0001:L1647-1648`）能挡 Agent，剩下的只能靠这三条。
+
+> **2026-11-14 增补（D-95 / P1-2）**：`confirmation_method` 增加 **`IN_CHAT`**（人在对话里明确指示过就**只做一次决策**，不再弹二次确认）；
+> `IN_CHAT` 必须带 **`confirmation_text`（人的原话）**，且原话进 `confirmation_text_sha256` 的 **v2 pre-image**。
+> 旧口径（四键）作为 **v1** 保留，库里已落的旧 hash 仍按 v1 验。完整口径与版本化理由见 **§17.2**。
 
 ### 5.2 系统对"结论"的边界
 
@@ -400,6 +410,12 @@ decision.basis_refs[SCORECARD].fields[].evidence[]
 > - **`0007` 之后**：三步舞是**唯一**可行的写法；漏第 3 步会留下 0 条 current。
 > - **并发重复**：`0007` 之后由库抛 **23505** → 工具映射 `ALREADY_DECIDED(SCOPE_ALREADY_DECIDED)`，**不重试、不覆盖**；`0007` 之前由 STEP 3 的检查 + `WHERE superseded_by_decision_id IS NULL` 的条件更新兜（0 行 → `ALREADY_DECIDED`）。
 > - **禁止**用 `SELECT … FOR UPDATE` 当并发防线（`D-80`）：它锁不到不存在的行。
+
+> **2026-11-14 增补（P1-1）**：`0008` 已把 `uq_decision_current`（和 `uq_decision_current_final`）改成
+> **`DEFERRABLE INITIALLY DEFERRED` 的排斥约束（EXCLUDE）**。于是"同一申请已有当前决策"的库冲突
+> **在 COMMIT 时抛 `23P01`（exclusion_violation）**，不再是 `23505`。写侧必须把 `23P01` 也映射成
+> `ALREADY_DECIDED(SCOPE_ALREADY_DECIDED)`；只映射 `23505` = 契约失效（实测会漏出库内部码）。
+> 详见 **§17.3**。
 
 ### 8.3 审计要求（撤回时全部必须有）
 
@@ -606,3 +622,138 @@ decision.basis_refs[SCORECARD].fields[].evidence[]
 | **Q-3** | 是否加 `uq_decision_current`（`G-1`） | **契约已按"索引存在"写**（§8.2 三步舞），加索引**不需要**再改顺序；`0007` 落地前用条件更新兜 | 总控（`0007` 排期；`0002_seed.sql` **无 DDL**） |
 | **Q-4** | `score`（1–5）是否进任何决策统计 | **不进**（`scorecard-rules.md` Q-2） | 产品负责人 |
 | **Q-5** | `ADVANCE(FINAL)` / `REJECT` 缺面评时能否用 `acknowledged_missing` 放行 | **不能**：`acknowledged_missing` 只对 `ADVANCE(STAGE)` 有效（§4.2.1）。取更严一侧，避免把"终局缺面板 / 错误淘汰"变成可确认的旁路 | 总控（若确要放行 `FINAL`，需明确裁定 + 同步改 §7 防线） |
+
+---
+
+## 17. 2026-11-14 增补（S7 `SCREENING` 写侧 / `IN_CHAT` + v2 pre-image / `23P01`）
+
+> **性质**：本节是**追加**，不修改 §4 / §5 / §6 / §8 的既有 `DC-*` 条目。与它们冲突时，以本节为准
+> （`AGENTS §5` 时间优先：2026-11-14 的裁定晚于 `decision 1.1.0` 的 2026-11-13 基线）。
+> **触发**：独立验收窗口 2026-11-14 实测出的 P0-3（S7 人决定没有落库路径）、P1-1（`23P01` 未映射）、
+> P1-2（D-95 的 `confirmation_text` 未进 pre-image、契约未回抄 `IN_CHAT`）。P1-3（`pdf_text_recovered_by_ocr`
+> 被 `src/db/material.ts` 当 HARD）属 S6 材料层，不在本文件范围。
+
+### 17.1 `decision_scope='SCREENING'` 的写侧口径（补 `DC-06` 的空白）
+
+**背景（三条同时成立才叫缺口）**：① `DC-06` 只定义 `STAGE`/`FINAL`，`SCREENING` → `DECISION_SCOPE_NOT_S10`；
+② §2.2 写"`SCREENING` 归 S7 写侧"，但**S7 写侧从未实现**；③ `docs/18-golden-path.md` 第 4 步要求
+`screening_evaluate → decision_record(scope='SCREENING')`，而 0008 之后的库实况是 `STAGE=1 / SCREENING=0`。
+现在 `recruitment_decision_record` **接受** `SCREENING`。
+
+**S7-01 落库形状**
+
+| 项 | 口径 |
+|---|---|
+| `decision_scope` | `'SCREENING'` |
+| `stage_code` | **工具写死 `'S7'`**（`stage_catalog` 在册）；调用方仍**不得**传 `stage_code`（`DC-07` 的保留键规则不变） |
+| `interview_id` | **必须为空**（S7 还没有面试）。传了 → `INVALID_ARGS(SCREENING_SCOPE_NO_INTERVIEW)` |
+| `summary_digest` | **不接受**（S7 没有 S10 汇总）。传了 → `INVALID_ARGS(SCREENING_SCOPE_NO_SUMMARY)` |
+| `result` | 只允许 `ADVANCE` / `HOLD` / `REJECT` / `WITHDRAW`。**S7 不是终局**：`HIRED` 仍按 v1.0 全局禁用（`RESULT_NOT_IN_V1_SCOPE`），不产生 `FINAL` 语义 |
+| 不适用字段 | `missing_disposition` / `acknowledged_missing` / `acknowledged_dissent` / `override_rationale` → `INVALID_ARGS(MUTUALLY_EXCLUSIVE)`（S7 没有面评面板、没有 `consensus`；理由写 `reason`） |
+| `supersedes` | **可用**。重评 = 新增一条 `SCREENING` 行 + 旧行 `superseded_by_decision_id` 指向新行（`job-rubric-rules.md §5.2` 的写侧顺序），撤销链仍单向 |
+
+**S7-02 `basis_refs` 的 kind 封闭集（对 `DC-13` 的局部口径，不改 `DC-13` 本身）**
+
+`DC-13` 的"九种，多一种都不行"**只约束 S10**（`STAGE`/`FINAL`）。S7 写侧按
+`job-screening/tool-contracts.md §3.7` 的结构存，允许的 kind 只有五种：
+
+| `kind` | 何时 | 关键字段 |
+|---|---|---|
+| `SCREENING_EVALUATION` | `result ∈ {ADVANCE, REJECT}` **必须**；`HOLD`/`WITHDRAW` 可 0 条（安全方向不受证据缺失影响，与 §4.2.1 同构） | `evaluation_digest`(64 hex)、`verdict`、`rubric_version_id`、`rubric_payload_hash`、`resume_version_id`、`resume_content_sha256`（必填）；`contract_version`、`reasons_digest`、`criteria_evaluated`、`counts`、`provenance`（可选） |
+| `RUBRIC_VERSION` | **每次必带** | `id` = `application.rubric_version_id`、`payload_hash` = 库值（`DC-17` 同口径） |
+| `AUTHORITY` | **每次必带** | `actor_id` = 上下文 actor、`is_hiring_manager` = 服务端计算值（`DC-14` 同口径） |
+| `RESUME_VERSION` | 可选 | `id`（必填）+ `content_sha256`（可选，给了就与库值核对） |
+| `SUPERSEDES` | 撤回/重开时 | 同 §6.1（`DC-33` 不变） |
+
+其余 kind（`SCORECARD` / `SUMMARY` / `INTERVIEW_RECORD` / `SCREENING_DECISION` / `MISSING_ACK` / `OVERRIDE`）
+在 `SCREENING` 下 → `INVALID_ARGS(BASIS_KIND_FORBIDDEN)`：S7 没有面评，把别的场次的面评当 S7 依据是污染，
+而 `SCREENING_DECISION` 是"S10 引用 S7"，S7 不能引用自己。
+
+**S7-03 服务端只核对绑定，不重算 verdict**
+
+- `SCREENING_EVALUATION.rubric_version_id` 必须是申请钉住的那版、`rubric_payload_hash` 必须等于库值
+  → 否则 `EVIDENCE_INSUFFICIENT(BASIS_SCREENING_RUBRIC_MISMATCH)`；
+- `resume_version_id` 必须是该租户下存在的材料版本；申请钉了材料时必须是那一份；
+  `resume_content_sha256` 必须等于 `resume_version.content_sha256`
+  → 否则 `EVIDENCE_INSUFFICIENT(BASIS_SCREENING_RESUME_MISMATCH)` / `NOT_FOUND(RESUME_VERSION_NOT_FOUND)`；
+- **不重算** screening 结论：S7 的输出是瞬态投影（`screening-rules.md §11 D-3/P-1`），重算等于在本工具里
+  写第二份实现。**残余风险**：`evaluation_digest` 无法由本工具复算 → 靠"绑定三件套 + `basis_refs` 原样落库
+  + 同事务内部事件（含 digest）"可追，不是密码学意义的重放证明。
+
+**S7-04 人机闸门**：`D-95` 口径**不变** —— `IN_CHAT` + 人的原话（或 `approval`，见 §17.2）；
+`decided_by_actor_id` 仍只来自执行上下文，`actor.kind` 必须 `HUMAN`。
+
+**S7-05 唯一性**：当前唯一键 = `(tenant_id, application_id, 'SCREENING', 'S7')`；`0008` 的排斥约束在
+**COMMIT** 检查，冲突 `23P01` → `ALREADY_DECIDED(SCOPE_ALREADY_DECIDED)`（§17.3）。
+第二次不同结果的 SCREENING 决策必须走 `supersedes`。
+
+**S7-06 出参差异**：`gate` 键**只有 S10 有**（S7 没有汇总，不硬造 `summary_digest`）。`labels.provenance`
+取 `SCREENING_EVALUATION.provenance`，缺省按 `FIXTURE`（R4：没有证据不许自称 `LIVE`），`FIXTURE_BASIS`
+warning 的门槛因此与 S10 不同（S7 看依据里的 provenance，而不是重算汇总的 provenance）。
+内部事件 payload 记 `screening_evaluation_digest` 以便回查。
+
+**S7-07 `DC-18` 仍适用**：`result='REJECT'` 时 `reason` 必须点到至少一个 rubric criterion 的 `key`
+（S7 的 criterion 键名是 `key`，S10 是 `dimension_key`；两处都按"子串、大小写敏感"判）。
+
+**S7-08 不改状态（`DC-47`/`N-5` 不变）**：本工具只落 `decision` 一行；`application.current_stage_code` /
+`lifecycle_status` / `interview.status` 一个都不动。`docs/18` 第 4→5 步的"推进到 S8"由独立命令完成。
+
+### 17.2 `confirmation_method` 增加 `IN_CHAT`；`confirmation_text_sha256` 的 pre-image **v1/v2**（补 `DC-08`/`DC-11`）
+
+**枚举**（补 §5.1 的 `IN_APP_CONFIRM | SIGNED_RECORD`）：`IN_CHAT | IN_APP_CONFIRM | SIGNED_RECORD`。
+
+| 项 | 口径 |
+|---|---|
+| `IN_CHAT` | 人在对话里**明确指示过**（`D-95`：人只做**一次**决策，问一次即执行，不再弹二次确认）。**必须**带 `confirmation_text`（人的原话，逐字、非空、≤2000 字符）；缺失 → `INVALID_ARGS(MISSING_REQUIRED)`（参数层）/ `DECISION_REQUIRES_HUMAN(NO_HUMAN_CONFIRMATION)`（确认层） |
+| `IN_APP_CONFIRM` / `SIGNED_RECORD` | 保留（确实需要留痕签名的场景），仍走 `approval` 通道（`D-79`） |
+
+**pre-image v1（旧口径，2026-11-14 之前的记录；也是无原话的确认方式）**
+
+```
+confirmation_text_sha256 := sha256(canonical_json({result, reason, override_rationale, basis_refs}))
+```
+
+四键，`override_rationale` 缺省写 `null`、**键不省略**。**键集合不得增删**：库里已落的旧 sha256 就是按它算的，
+往 v1 里加键会让**所有旧记录验不过**（把历史记录变成假红）。
+
+**pre-image v2（`D-95`，仅 `IN_CHAT`）**
+
+```
+confirmation_text_sha256 := sha256(canonical_json({
+  preimage_version: 2,
+  result, reason, override_rationale, basis_refs,
+  confirmation_text, confirmed_by_actor_id, confirmed_at
+}))
+```
+
+**为什么版本化**：v2 把"人说过的那句话 + 谁说的 + 什么时候说的"绑进 hash（`D-95` 的原话要求）；
+不加版本标记就无法区分"旧四键 hash"与"新七键 hash"，旧记录会全部失配。
+
+**服务端的选择规则（不猜）**：`confirmation_text` 非空 → **只接受 v2**；为空 → **只接受 v1**。
+不等 → `DECISION_REQUIRES_HUMAN(CONFIRMATION_TEXT_MISMATCH)`，`detail` 带 `expected` / `provided` /
+`preimage_version`。
+
+**残余风险（沿用 `D-95` 原话）**：工具无法证明"人真的说过这句话"——Agent 理论上可以编造
+`confirmation_text`。缓解是**可审计**而不是可阻止：原话 + 哈希 + 会话日志三者对不上就能查出来。
+
+**落库位置**：`decision` 表没有 confirmation 列（`0001:L1325-1361`）→ 原话/哈希/版本号写进同事务的内部事件
+`event_inbox`（`event_type='decision.record'`，payload 键 `human_confirmation_method` /
+`human_confirmation_text` / `human_confirmation_text_sha256` / `human_confirmation_preimage_version`）。
+事件与 `decision` 行同事务，事后可与会话日志对账，且不可改。
+
+### 17.3 `23P01`（exclusion_violation）→ `ALREADY_DECIDED`（补 §2.3 / §8.2 的 `23505` 口径）
+
+**0008 改了什么**：`uq_decision_current` 从 0007 的**部分唯一索引**改成
+`EXCLUDE USING btree (tenant_id with =, application_id with =, decision_scope with =, (coalesce(stage_code,'')) with =)
+WHERE superseded_by_decision_id IS NULL DEFERRABLE INITIALLY DEFERRED`；
+另加 `uq_decision_current_final`（`(tenant_id, application_id)`，`WHERE decision_scope='FINAL' AND superseded IS NULL`）。
+原因见 `db/migrations/0008_decision_uniqueness.sql` 文件头（重评事务在同一事务里要"先插新 current、再改旧行"，
+立即检查的唯一索引两步都死）。
+
+| 事实 | 后果 |
+|---|---|
+| 排斥约束是可延迟的 | 重复 current 由 **COMMIT** 时报错，SQLSTATE **`23P01`**（不再是 `23505`） |
+| `23505` 仍可能来自其它唯一约束 | 原映射保留（`constraint='uq_decision_current'` → `ALREADY_DECIDED`；其它 → `DB_CONSTRAINT_VIOLATION(UNIQUE_VIOLATION)`） |
+| 写侧必须映射 `23P01` | 一律 `ALREADY_DECIDED(SCOPE_ALREADY_DECIDED)`，`detail` 带 `constraint` / `sqlstate`。**不重试、不覆盖** |
+| 时点陷阱 | STEP 7 的 `try/catch` 抓不到 COMMIT：工具入口（`execute`）必须对 `withActor` 抛出的错误**再映射一次** |
+| 测试怎么真触发 | 可延迟约束可在同一事务内用 `SET CONSTRAINTS recruitment.uq_decision_current_final IMMEDIATE`（**schema 限定**：按 search_path 解析约束名）提前检查 → 真跑出一条 `23P01`（集成测试即此口径） |

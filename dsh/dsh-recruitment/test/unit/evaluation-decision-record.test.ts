@@ -23,7 +23,9 @@ import {
   makeApprovalRequest,
   parseDecisionArgs,
   requireApprovalGranted,
+  stageCodeOf,
   stripNulls,
+  translateWriteError,
   type ApprovalOutcome,
 } from '../../src/tools/decision-record.ts'
 import { digestOf } from '../../src/tools/contract.ts'
@@ -174,10 +176,10 @@ test('idempotency_key 不在 schema → UNKNOWN_PARAM（D-80：v1.0 不做客户
   assert.equal(allowed.includes('idempotency_key'), false)
 })
 
-test('scope/interview 互斥：STAGE 必填 / FINAL 禁止 / SCREENING 不属于 S10', () => {
+test('scope/interview 互斥：STAGE 必填 / FINAL 禁止 / SCREENING 禁止（S7 没有面试）', () => {
   parseRejects({ interview_id: undefined }, 'STAGE_REQUIRES_INTERVIEW', 'interview_id')
   parseRejects({ decision_scope: 'FINAL' }, 'FINAL_SCOPE_NO_INTERVIEW', 'interview_id')
-  parseRejects({ decision_scope: 'SCREENING' }, 'DECISION_SCOPE_NOT_S10', 'decision_scope')
+  parseRejects({ decision_scope: 'SCREENING' }, 'SCREENING_SCOPE_NO_INTERVIEW', 'interview_id')
 })
 
 test('as_of：缺失 → MISSING_REQUIRED；未来 → AS_OF_IN_FUTURE；格式错 → TYPE_MISMATCH', () => {
@@ -694,4 +696,329 @@ test('render()：中文摘要含决策 id/result/scope/gate/warnings 计数，�
   assert.match(text, /warnings\(1\)/)
   assert.match(text, /FIXTURE_BASIS/)
   assert.equal(/name|phone|email|候选人姓名/.test(text), false)
+})
+
+// =====================================================================
+//  6. 2026-11-14 增补：SCREENING 写侧（P0-3）/ 23P01（P1-1）/ pre-image v2（P1-2）
+//     （契约 §17；这里只覆盖**不连库**的形状与纯函数部分，落库由 integration 证明）
+// =====================================================================
+
+const RESUME = '11111111-1111-4111-8111-000000000901'
+const EVAL_DIGEST = 'e'.repeat(64)
+const RESUME_SHA = 'f'.repeat(64)
+
+/** S7 写侧的一条 `SCREENING_EVALUATION` 依据（tool-contracts §3.7 形状）。 */
+function screeningEvaluationRef(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    kind: 'SCREENING_EVALUATION',
+    contract_version: '1.0.0',
+    evaluation_digest: EVAL_DIGEST,
+    verdict: 'PASS',
+    rubric_version_id: RUBRIC,
+    rubric_payload_hash: PAYLOAD_HASH,
+    resume_version_id: RESUME,
+    resume_content_sha256: RESUME_SHA,
+    reasons_digest: '1'.repeat(64),
+    criteria_evaluated: true,
+    counts: { must_have: 3, must_have_satisfied: 3 },
+    provenance: 'FIXTURE',
+    ...overrides,
+  }
+}
+
+/** SCREENING 的 basis：评估 + 钉住的 rubric + AUTHORITY（§17.1 的必带三件套）。 */
+function screeningBasis(extra: Record<string, unknown>[] = []): Record<string, unknown>[] {
+  return [
+    screeningEvaluationRef(),
+    { kind: 'RUBRIC_VERSION', id: RUBRIC, version_no: 1, payload_hash: PAYLOAD_HASH },
+    { kind: 'AUTHORITY', actor_id: HUMAN, is_hiring_manager: false },
+    ...extra,
+  ]
+}
+
+/** 一条合法的 S7 入参（无 interview、无 summary_digest）。 */
+function screeningArgs(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    application_id: APP,
+    decision_scope: 'SCREENING',
+    as_of: AS_OF,
+    result: 'ADVANCE',
+    reason: '三条 MUST_HAVE 全部满足，推进面试',
+    basis_refs: screeningBasis(),
+    human_confirmation: {
+      confirmed_by_actor_id: HUMAN,
+      confirmed_at: '2026-11-13T01:59:00+08:00',
+      confirmation_method: 'IN_APP_CONFIRM',
+      confirmation_text_sha256: 'd'.repeat(64),
+    },
+    ...overrides,
+  }
+}
+
+test('P0-3 正例：SCREENING 不需要 interview_id / summary_digest，scope 被归一化', () => {
+  const args = parseDecisionArgs(screeningArgs(), NOW)
+  assert.equal(args.decision_scope, 'SCREENING')
+  assert.equal(args.interview_id, undefined)
+  assert.equal(args.summary_digest, undefined)
+  assert.equal(args.result, 'ADVANCE')
+  assert.equal(args.basis_refs.length, 3)
+  assert.equal(stageCodeOf('SCREENING'), 'S7')
+  assert.equal(stageCodeOf('STAGE'), 'S10')
+  assert.equal(stageCodeOf('FINAL'), 'S10')
+})
+
+/** SCREENING 入参的负例断言（只看第一条违反项）。 */
+function screeningRejects(overrides: Record<string, unknown>, reasonCode: string, pathIncludes?: string): ErrorBody {
+  const body = errorBodyOf(() => parseDecisionArgs(screeningArgs(overrides), NOW))
+  assert.equal(body.code, 'INVALID_ARGS')
+  assert.equal(body.reason_code, reasonCode, `期望 ${reasonCode}，实际 ${body.reason_code}：${body.message}`)
+  const violations = (body.detail as { violations?: { reason_code: string; path: string }[] }).violations ?? []
+  assert.ok(violations.length > 0)
+  if (pathIncludes !== undefined) {
+    assert.ok(violations[0]?.path.includes(pathIncludes), `期望 path 含 ${pathIncludes}，实际 ${violations[0]?.path}`)
+  }
+  return body
+}
+
+test('P0-3 负例：SCREENING 不接受 summary_digest / 缺人确认 / dissent / override_rationale', () => {
+  screeningRejects({ summary_digest: SUMMARY_DIGEST }, 'SCREENING_SCOPE_NO_SUMMARY', 'summary_digest')
+  screeningRejects(
+    { missing_disposition: 'PROCEED_WITH_MISSING', acknowledged_missing: [{ interviewer_id: INTERVIEWER_X, why_proceed: '补' }] },
+    'MUTUALLY_EXCLUSIVE',
+    'missing_disposition',
+  )
+  screeningRejects({ acknowledged_dissent: true }, 'MUTUALLY_EXCLUSIVE', 'acknowledged_dissent')
+  screeningRejects({ override_rationale: '我不同意' }, 'MUTUALLY_EXCLUSIVE', 'override_rationale')
+  // S7 不是终局：HIRED 仍是全局禁用
+  screeningRejects({ result: 'HIRED' }, 'RESULT_NOT_IN_V1_SCOPE', 'result')
+  // S7 没有面试
+  screeningRejects({ interview_id: INTERVIEW }, 'SCREENING_SCOPE_NO_INTERVIEW', 'interview_id')
+})
+
+test('P0-3 kind 封闭集按 scope 收窄：S7 拒 S10 的 kind，S10 拒 S7 的 kind', () => {
+  // SCREENING 下 SCORECARD/SUMMARY/INTERVIEW_RECORD/MISSING_ACK/OVERRIDE/SCREENING_DECISION 都不适用
+  for (const kind of ['SCORECARD', 'SUMMARY', 'INTERVIEW_RECORD', 'MISSING_ACK', 'OVERRIDE', 'SCREENING_DECISION']) {
+    const body = errorBodyOf(() => parseDecisionArgs(
+      screeningArgs({ basis_refs: [...screeningBasis(), { kind }] }),
+      NOW,
+    ))
+    assert.equal(body.code, 'INVALID_ARGS')
+    assert.equal(body.reason_code, 'BASIS_KIND_FORBIDDEN', `kind=${kind}`)
+  }
+  // S10 下 SCREENING_EVALUATION / RESUME_VERSION 也不适用（DC-13 的九种封闭集不变）
+  for (const kind of ['SCREENING_EVALUATION', 'RESUME_VERSION']) {
+    const body = errorBodyOf(() => parseDecisionArgs(baseArgs({ basis_refs: [...basisRefs(), { kind }] }), NOW))
+    assert.equal(body.reason_code, 'BASIS_KIND_FORBIDDEN', `kind=${kind}`)
+  }
+})
+
+test('P0-3 SCREENING_EVALUATION 形状：verdict / digest / 必填键 / criteria / counts', () => {
+  screeningRejects(
+    { basis_refs: [screeningEvaluationRef({ verdict: 'MAYBE' }), ...screeningBasis().slice(1)] },
+    'ENUM_INVALID',
+    'verdict',
+  )
+  screeningRejects(
+    { basis_refs: [screeningEvaluationRef({ evaluation_digest: 'zz' }), ...screeningBasis().slice(1)] },
+    'TYPE_MISMATCH',
+    'evaluation_digest',
+  )
+  screeningRejects(
+    { basis_refs: [screeningEvaluationRef({ resume_version_id: 'r1' }), ...screeningBasis().slice(1)] },
+    'ID_NOT_UUID',
+    'resume_version_id',
+  )
+  screeningRejects(
+    { basis_refs: [{ kind: 'SCREENING_EVALUATION', evaluation_digest: EVAL_DIGEST }, ...screeningBasis().slice(1)] },
+    'MISSING_REQUIRED',
+    'verdict',
+  )
+  screeningRejects(
+    { basis_refs: [screeningEvaluationRef({ criteria_evaluated: 'yes' }), ...screeningBasis().slice(1)] },
+    'TYPE_MISMATCH',
+    'criteria_evaluated',
+  )
+  screeningRejects(
+    { basis_refs: [screeningEvaluationRef({ counts: [] }), ...screeningBasis().slice(1)] },
+    'TYPE_MISMATCH',
+    'counts',
+  )
+  // S7 只认五种 kind 的键集：多带一个未知键就是 UNKNOWN_PARAM
+  screeningRejects(
+    { basis_refs: [screeningEvaluationRef({ reported_by: HUMAN }), ...screeningBasis().slice(1)] },
+    'UNKNOWN_PARAM',
+    'reported_by',
+  )
+})
+
+// ---- P1-2：pre-image v1 / v2 ----
+
+test('P1-2 v1 旧口径逐字保留：无原话时与旧实现（四键 digestOf）完全相同', () => {
+  const legacy = digestOf({
+    result: 'HOLD',
+    reason: CONFIRMATION_REASON,
+    override_rationale: null,
+    basis_refs: CONFIRMATION_BASIS,
+  })
+  const v1 = confirmationTextSha256({
+    result: 'HOLD',
+    reason: CONFIRMATION_REASON,
+    override_rationale: null,
+    basis_refs: CONFIRMATION_BASIS,
+  })
+  assert.equal(v1, legacy, '旧记录就是按这个 hash 落的；多一个键就会让它们全部验不过')
+})
+
+test('P1-2 v2：confirmation_text 进 pre-image，改原话/确认人/确认时间都会变红', () => {
+  const base = {
+    result: 'HOLD' as const,
+    reason: CONFIRMATION_REASON,
+    override_rationale: null,
+    basis_refs: CONFIRMATION_BASIS,
+    confirmation_text: '就按面试官的意见推进',
+    confirmed_by_actor_id: HUMAN,
+    confirmed_at: '2026-11-13T01:59:00+08:00',
+  }
+  const v2 = confirmationTextSha256(base)
+  assert.equal(v2, digestOf({
+    preimage_version: 2,
+    result: 'HOLD',
+    reason: CONFIRMATION_REASON,
+    override_rationale: null,
+    basis_refs: CONFIRMATION_BASIS,
+    confirmation_text: '就按面试官的意见推进',
+    confirmed_by_actor_id: HUMAN,
+    confirmed_at: '2026-11-13T01:59:00+08:00',
+  }))
+  assert.notEqual(v2, confirmationTextSha256({ ...base, confirmation_text: '就按面试官的意见推进。' }))
+  assert.notEqual(v2, confirmationTextSha256({ ...base, confirmed_by_actor_id: OTHER_HUMAN }))
+  assert.notEqual(v2, confirmationTextSha256({ ...base, confirmed_at: '2026-11-13T01:58:00+08:00' }))
+  // 同一份四键内容：v1 与 v2 必须不同（否则版本化没意义）
+  assert.notEqual(v2, confirmationTextSha256({
+    result: 'HOLD', reason: CONFIRMATION_REASON, override_rationale: null, basis_refs: CONFIRMATION_BASIS,
+  }))
+  // v2 缺确认人/确认时间 = 调用错误（不静默降级成 v1）
+  assert.throws(() => confirmationTextSha256({ ...base, confirmed_by_actor_id: undefined } as never), TypeError)
+})
+
+/** 一份 IN_CHAT 的人工确认（v2 hash）。 */
+function inChatConfirmation(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const base = {
+    confirmed_by_actor_id: HUMAN,
+    confirmed_at: '2026-11-13T01:59:00+08:00',
+    confirmation_method: 'IN_CHAT',
+    confirmation_text: '就按面试官的意见推进',
+  }
+  return {
+    ...base,
+    confirmation_text_sha256: confirmationTextSha256({
+      result: 'HOLD',
+      reason: CONFIRMATION_REASON,
+      override_rationale: null,
+      basis_refs: CONFIRMATION_BASIS,
+      confirmation_text: base.confirmation_text,
+      confirmed_by_actor_id: base.confirmed_by_actor_id,
+      confirmed_at: base.confirmed_at,
+    }),
+    ...overrides,
+  }
+}
+
+test('P1-2 IN_CHAT：v2 hash 放行；v1 hash（旧口径）与篡改原话都 → CONFIRMATION_TEXT_MISMATCH', () => {
+  assert.doesNotThrow(() => assertHuman({ confirmation: inChatConfirmation() }))
+  // 旧口径（四键）hash：IN_CHAT 下不再接受 —— 否则改原话仍能过闸
+  const legacyHash = confirmationTextSha256({
+    result: 'HOLD', reason: CONFIRMATION_REASON, override_rationale: null, basis_refs: CONFIRMATION_BASIS,
+  })
+  const body = errorBodyOf(() => assertHuman({ confirmation: inChatConfirmation({ confirmation_text_sha256: legacyHash }) }))
+  assert.equal(body.reason_code, 'CONFIRMATION_TEXT_MISMATCH')
+  assert.equal((body.detail as Record<string, unknown>).preimage_version, 2)
+  // 篡改原话但沿用旧 hash
+  const tampered = errorBodyOf(() => assertHuman({
+    confirmation: inChatConfirmation({ confirmation_text: '就按面试官的意见推进（改过的）' }),
+  }))
+  assert.equal(tampered.reason_code, 'CONFIRMATION_TEXT_MISMATCH')
+})
+
+test('P1-2 IN_CHAT 不带原话 → NO_HUMAN_CONFIRMATION（授权凭据不能缺）', () => {
+  const confirmation = inChatConfirmation()
+  delete (confirmation as Record<string, unknown>).confirmation_text
+  const body = errorBodyOf(() => assertHuman({ confirmation }))
+  assert.equal(body.code, 'DECISION_REQUIRES_HUMAN')
+  assert.equal(body.reason_code, 'NO_HUMAN_CONFIRMATION')
+})
+
+// ---- P1-1：23P01（可延迟排斥约束在 COMMIT 报冲突）----
+
+/** 造一个 pg 风格的错误（code / constraint 可写）。 */
+function pgError(code: string, constraint?: string): Error {
+  const error = new Error(`pg failure ${code}`)
+  Object.defineProperty(error, 'code', { value: code })
+  if (constraint !== undefined) Object.defineProperty(error, 'constraint', { value: constraint })
+  return error
+}
+
+test('P1-1 23P01 → ALREADY_DECIDED(SCOPE_ALREADY_DECIDED)（两个排斥约束 + 无 constraint 都算）', () => {
+  for (const constraint of ['uq_decision_current', 'uq_decision_current_final', undefined]) {
+    const body = errorBodyOf(() => translateWriteError(pgError('23P01', constraint)))
+    assert.equal(body.code, 'ALREADY_DECIDED', `constraint=${String(constraint)}`)
+    assert.equal(body.reason_code, 'SCOPE_ALREADY_DECIDED')
+    assert.equal((body.detail as Record<string, unknown>).sqlstate, '23P01')
+  }
+})
+
+test('P1-1 23505 旧口径不变：uq_decision_current → ALREADY_DECIDED；其它唯一约束 → DB_CONSTRAINT_VIOLATION', () => {
+  const current = errorBodyOf(() => translateWriteError(pgError('23505', 'uq_decision_current')))
+  assert.equal(current.code, 'ALREADY_DECIDED')
+  const other = errorBodyOf(() => translateWriteError(pgError('23505', 'uq_scorecard_current')))
+  assert.equal(other.code, 'DB_CONSTRAINT_VIOLATION')
+  assert.equal(other.reason_code, 'UNIQUE_VIOLATION')
+})
+
+test('P1-1 其它库错误不假扮业务错误：原样抛出（连接中断不能变成 ALREADY_DECIDED）', () => {
+  const connectionError = pgError('08006')
+  assert.throws(() => translateWriteError(connectionError), (error: unknown) => error === connectionError)
+})
+
+// ---- schema 层：SCREENING 进枚举、gate 不再全局 required ----
+
+test('SCREENING 进 schema：decision_scope 含 SCREENING、stage_code 含 S7、gate 不是全局 required', () => {
+  const properties = (TOOL.parameters as { properties: Record<string, { enum?: string[] }> }).properties
+  assert.deepEqual([...(properties.decision_scope?.enum ?? [])].sort(), ['FINAL', 'SCREENING', 'STAGE'])
+  const output = TOOL.output.schema as {
+    required: string[]
+    properties: { decision: { properties: { stage_code: { enum: string[] }; decision_scope: { enum: string[] } } } }
+  }
+  assert.equal(output.required.includes('gate'), false, 'SCREENING 没有汇总 → gate 不能是全局 required')
+  assert.equal(output.required.includes('decision'), true)
+  assert.deepEqual([...output.properties.decision.properties.stage_code.enum].sort(), ['S10', 'S7'])
+  assert.deepEqual([...output.properties.decision.properties.decision_scope.enum].sort(), ['FINAL', 'SCREENING', 'STAGE'])
+})
+
+/** 一份 SCREENING 出参样本（没有 gate、没有 interview_id）。 */
+function sampleScreeningValue(): Record<string, unknown> {
+  const base = sampleDecisionValue()
+  const decision = { ...(base.decision as Record<string, unknown>) }
+  delete decision.interview_id
+  return {
+    tool: base.tool,
+    contract_version: base.contract_version,
+    status: base.status,
+    replayed: base.replayed,
+    labels: base.labels,
+    decision: { ...decision, decision_scope: 'SCREENING', stage_code: 'S7' },
+    superseded: null,
+    event: base.event,
+    warnings: [{ code: 'FIXTURE_BASIS', message: '演练数据' }],
+  }
+}
+
+test('SCREENING 出参：没有 gate、没有 interview_id，stripNulls 后仍过 output.schema', () => {
+  const value = stripNulls(sampleScreeningValue()) as Record<string, unknown>
+  assert.equal(Object.hasOwn(value, 'gate'), false)
+  assert.equal(Object.hasOwn(value.decision as Record<string, unknown>, 'interview_id'), false)
+  assert.deepEqual(valueViolations(TOOL.output.schema, value), [])
+  const text = TOOL.output.render({}, value)[0]?.text ?? ''
+  assert.match(text, /scope=SCREENING stage=S7/)
+  assert.match(text, /gate: —（SCREENING 没有 S10 汇总）/)
 })

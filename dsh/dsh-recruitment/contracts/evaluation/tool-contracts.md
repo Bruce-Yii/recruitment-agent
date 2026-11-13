@@ -272,7 +272,7 @@ recruitment_scorecard_submit {"interview_id":"0199…91","idempotency_key":"sc:i
 | 参数 | 类型 | 必填 | 约束 | 含义 |
 |---|---|---|---|---|
 | `application_id` | string | ✅ | UUID | 汇总对象是**申请** |
-| `decision_scope` | string | ✅ | `STAGE` \| `FINAL`（`SCREENING` → `INVALID_ARGS(DECISION_SCOPE_NOT_S10)`） | 决定门禁口径（`DC-06`） |
+| `decision_scope` | string | ✅ | `STAGE` \| `FINAL` \| `SCREENING`（SCREENING 是 **S7 写侧**：无 `interview_id`/`summary_digest`、`stage_code='S7'`，见 `decision-rules.md §17.1`；2026-11-14 起不再拒收） | 决定门禁口径（`DC-06`） |
 | `interview_id` | string | 条件 | `STAGE` 必填；`FINAL` 必须缺省 | 指定汇哪一场 |
 | `as_of` | string | ✅ **必填** | ISO-8601 带偏移，**不得晚于服务端 now** | 时间相关判定的**唯一**基准（逾期、审批）。**不设缺省**：缺省成 `now()` 会让同一输入在不同时刻算出不同 `overdue`/`summary_digest`（`D-16`、`SC-27`） |
 | `require_complete` | boolean | — | 默认 `false` | `true` 且存在缺失 → 抛 `SCORECARD_MISSING`（供"决策前预检"用） |
@@ -643,7 +643,7 @@ Error: BLOCKED_BY_REVIEW: {"code":"BLOCKED_BY_REVIEW","reason_code":"REJECT_BASI
 | 3 | `interview_id="iv_0001"` | `INVALID_ARGS(ID_NOT_UUID)` |
 | 4 | `record` 传 `result="HIRED"` | `INVALID_ARGS(RESULT_NOT_IN_V1_SCOPE)` |
 | 5 | `record` 传 `stage_code` | `INVALID_ARGS(UNKNOWN_PARAM)`（键都不存在） |
-| 6 | `summarize` 传 `decision_scope="SCREENING"` | `INVALID_ARGS(DECISION_SCOPE_NOT_S10)` |
+| 6 | `summarize` 传 `decision_scope="SCREENING"` | `INVALID_ARGS(DECISION_SCOPE_NOT_S10)`（**summarize 仍只服务 S10**；SCREENING 决策写侧走 `decision_record`，见 `decision-rules.md §17.1`） |
 | 7 | 所有错误消息体 | 单行、可 `JSON.parse`（在 `Error: <CODE>: ` 之后）；键序 `code`→`reason_code`→(`family`)→`message`→`detail` |
 | 8 | 三个工具的 `output.schema` | 每个错误码 + 正常路径各跑一次，零违反 |
 | 9 | `summarize` / `record` **不传** `as_of` | `INVALID_ARGS(MISSING_REQUIRED)`（`as_of` 必填，`D-16`） |
