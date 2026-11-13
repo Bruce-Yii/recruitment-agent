@@ -1,0 +1,87 @@
+# 飞书：不需要重新授权，现有身份就能读（2026-11-14）
+
+**用户报错**："请求不合法"（设备码链接）。**结论：那条链接确实失效了，但这条路本来就不用走。**
+
+---
+
+## 1. 为什么不用重新登录
+
+`lark-cli auth status` 实测：
+
+```json
+{
+  "identity": "user",
+  "user": {
+    "status": "needs_refresh",
+    "available": true,
+    "userName": "余奕",
+    "expiresAt": "2026-11-12T09:57:02+08:00",
+    "refreshExpiresAt": "2026-11-19T07:57:02+08:00",
+    "note": "will be refreshed automatically on the next user API call"
+  }
+}
+```
+
+关键三点：
+1. `available: true` + **refresh token 有效到 2026-11-19** —— 访问令牌过期会自动刷新，不需要人重新授权；
+2. **scopes 里早就有**我们需要的：`minutes:minutes:readonly`、`minutes:minutes.basic:read`,
+   `minutes:minutes.transcript:export`、`minutes:minutes.artifacts:read`、`vc:meeting.meetingevent:read`、
+   `vc:record:readonly`、`offline_access`；
+3. 设备码（device flow）是**重新授权**才需要的一次性动作，10 分钟就过期 ——
+   "请求不合法"就是链接过期/已消费，不是应用或权限有问题。
+
+**教训**：先查 `auth status`，再决定要不要走 device flow。我上一轮直接开设备码流程，方向就错了。
+
+## 2. 真实 LIVE 读取（实测成功，不是"应该能读"）
+
+### 2.1 列会议（`minutes +search --owner-ids me`）
+
+```json
+{ "ok": true, "identity": "user",
+  "data": { "has_more": true, "items": [
+    { "token": "obcn3ju642ita9ak1787v354", "display_info": "yi的视频会议 … 时长: 6 分 23 秒" },
+    { "token": "obcn3j6t382yf32e4z2usp46", "display_info": "yi的视频会议 … 时长: 14 分 6 秒" },
+    { "token": "obcn1p87v1pulu18iej94h2c", "display_info": "新录音 … 时长: 8 秒" },
+    { "token": "obcnza1v2lgxo8qv1r5pc5d9", "display_info": "yi的视频会议 … 时长: 28 秒" }
+  ] } }
+```
+
+### 2.2 取转写（`minutes +detail --transcript`）
+
+```
+[minutes +detail] writing transcript: minutes\artifact-yi的视频会议-obcn3j6t382yf32e4z2usp46\transcript.txt
+[minutes +detail] done: 1 total, 1 succeeded, 0 failed
+```
+
+四个 token 的转写都取到了（**只记度量，不记内容**，R7）：
+
+| minute_token | 字符数 | 行数 | sha256（前 16） |
+|---|---|---|---|
+| `obcn3ju642ita9ak1787v354` | 71 | 8 | `9395b98fc433f93a…` |
+| `obcn3j6t382yf32e4z2usp46` | 46 | 5 | — |
+| `obcn1p87v1pulu18iej94h2c` | 40 | 5 | `6b8b9ff4d7298d5a…` |
+| `obcnza1v2lgxo8qv1r5pc5d9` | 41 | 5 | `d9a1d469908766be…` |
+
+**都是几十个字符**：这几段录音本身很短（8s / 28s）或没有语音，转写内容几乎为空。
+所以：**"能读通"证明了，"有意义的转写"还没有** —— 缺一段真的有说话的会议。
+
+## 3. 现在的标签（三维正交，不许混）
+
+| 维度 | 值 | 依据 |
+|---|---|---|
+| `provenance` | **LIVE** | 真实飞书 API 返回真实 minute_token 与转写文件（非 fixture） |
+| `trigger` | **MANUAL** | 我手工跑 CLI 触发，不是事件自动摄取 |
+| `connection` | **CONNECTED（仅限 CLI 路径）** | 用户身份 + scopes 实测可用 |
+
+**仍未闭环**：
+1. 产品 connector（`src/connectors/feishu/adapter.ts`）是**零 I/O 骨架**，`fetchTranscript()` 不会真的调 CLI —— 这段代码还没写；
+2. 需要一段**有真实语音**的会议，才能满足 demo gate 的"真实 provider artifact"要求；
+3. 产品自有飞书应用凭据仍未提供（现在用的是本机 `lark-cli` 的开发者 profile，按禁止清单第 6 条不能作为产品连接器凭据）。
+
+## 4. 复现
+
+```powershell
+lark-cli auth status
+lark-cli minutes +search --owner-ids me --page-size 5 --json
+lark-cli minutes +detail --minute-tokens <token> --transcript --json --output-dir ./minutes
+```
