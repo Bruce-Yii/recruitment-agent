@@ -145,7 +145,7 @@ manual/transcript-line/**                 新建（本目录）
 **诚实性判据（测试机检）**：
 
 1. 骨架所有出口的 `labels.provenance !== 'LIVE'`、`connection !== 'CONNECTED'`、`trigger === 'MANUAL'`（无已验证事件）。
-2. `2081003/2091003` → `WAITING_EXTERNAL`；`2091005` → `AUTH_REQUIRED`；**都不得**建 artifact。
+2. `2091003` → `WAITING_EXTERNAL`；`2091005` → `AUTH_REQUIRED`；**都不得**建 artifact。未在 `docs/04` 出现的码一律 `UNKNOWN`（不编造、不猜）。
 3. `buildArtifactLabelsFromReadback` 对 Fixture / webhook payload / 缺回执 → 抛错；只有"完整回读对象"才返回 `LIVE/MANUAL|EVENT/CONNECTED`。
 4. `src/connectors/feishu/**` 静态扫描：无 `fetch(`、`node:http(s)`、`undici`、子进程。
 5. `trigger` 只有 `readback.trigger='EVENT'` 且 `event.provider_event_id` 与 `event.verified===true` 时才允许 `EVENT`。
@@ -168,4 +168,101 @@ node manual/transcript-line/feishu-probe.mjs
 
 DB 基线：`ra_s6s7`（PG17 @127.0.0.1:5432，实测迁移 0001–0007 + 0009；0008 未应用，见 §2 末注）。租户 `11111111-1111-4111-8111-000000000001`，HR actor `11111111-1111-4111-8111-000000000103`。
 
-**基线（本文件写下时）**：`node --test` → `tests 389 / pass 389 / fail 0 / skipped 0`。本轮**不得**新增 fail，也不得新增 skip。
+**基线（本 lane 开工时，commit `5581c26`）**：`node --test` → `tests 389 / pass 389 / fail 0 / skipped 0`。
+
+---
+
+## 6. 本轮实测证据（2026-11-13 20:05 +08）
+
+> 工作树在本 lane 执行期间被其它 lane 并行改动（HEAD 从 `5581c26` → `9be0d0e` → W0 的 WIP 提交 `6741e61`），
+> 所以“全量”数字包含别的 lane 的测试且**会随他们增删而变**；**S9 自己的子集单独报**。
+
+### 6.1 测试四个数
+
+```text
+node --test
+→ tests 708 / pass 708 / fail 0 / skipped 0   （全量，20:08 +08，真实 ra_s6s7）
+node --test "test/unit/transcript-*.test.ts"
+→ tests 53 / pass 53 / fail 0 / skipped 0     （13 import + 16 read + 6 readonly + 18 feishu honesty）
+node --test "test/integration/transcript-*.test.ts"
+→ tests 18 / pass 18 / fail 0 / skipped 0     （9 import + 9 read）
+```
+
+S9 合计 **71 例**，全部通过；全量里其余测试属于并行其它 lane，数字随他们增删变动。
+
+S9 测试文件：
+
+| 文件 | 例数 | 覆盖 |
+|---|---|---|
+| `test/unit/transcript-import.test.ts` | 13 | 标签诚实性（DEMO=FIXTURE、EXPORT=LIVE 但恒 MANUAL/NOT_CONNECTED）、参数 reason_code、schema 封闭、错误格式、render 不回显正文 |
+| `test/unit/transcript-read.test.ts` | 16 | TR-D 七条顺序、WAIT 覆盖、`as_of` 闭集、输出无 null、render |
+| `test/unit/transcript-readonly.test.ts` | 6 | 全文零 DML、只 import `withReadOnly`、不引用写模块、`read_only:true`、负向对照 |
+| `test/unit/transcript-feishu.test.ts` | 18 | **所有出口永不 `LIVE`/`CONNECTED`**；错误码映射；无网络 I/O |
+| `test/integration/transcript-import.test.ts` | 9 | 首次导入 / replay / revision / PLATFORM_EXPORT 回执 / NO_MEETING_BOUND / 多会议 / 无 rubric |
+| `test/integration/transcript-read.test.ts` | 9 | READY / MISSING×2 / PENDING / READY_NO_CANONICAL / wait 覆盖 / artifact 过滤 / REPLACED |
+
+### 6.2 Headless 导入 + DB readback（真实库）
+
+口径：headless = **直接 import 工具定义 + 真实 `execute()` + 真库**。`src/index.ts` 归 W0，
+本轮**未注册进 cordis 插件**（R2 接线待 W0），所以不谎称“DSH 会话里可调用”。
+
+| 场景 | interview | artifact | revision | provenance | canonical | record |
+|---|---|---|---|---|---|---|
+| 第 1 轮首次导入 | `ffe144a2-…-4d8bfb6af841` | `c8b8c9fd-…-c604609c5ee5` | 1 | `FIXTURE` | ❌（迁到 rev2） | `aa5b9934-…`（is_current=false） |
+| 第 1 轮修订导入（加一行补录） | 同上 | `99f42a7a-…-3024619c7321` | **2** | `FIXTURE` | ✅ | `4ab98f05-…`（is_current=true） |
+| 第 2 轮干净首次导入 | `81a3ade3-…-83cec6b6acbb` | `a26c15b0-…-43947644714d` | 1 | `FIXTURE` | ✅ | `5409bd40-…`（is_current=true） |
+
+- 三条 artifact 的 **`trigger_mode=MANUAL`、`connection_state=NOT_CONNECTED`**（人工导入不冒充自动摄取/已接通）。
+- 三条 artifact 的 `content_sha256` 与 `raw_text` **逐个自洽**；`revision=1` 原文与 fixture **逐字节相同**。
+- 三条 `transcript_segment` 分组：22 / 22 / 23 行；**没有一行为编造说话人**（`speaker_ref/label` 全空，平台没给就不补）。
+- 同一 meeting 下 canonical **≤1**（SQL 机检 0 违规）。
+- `UPDATE transcript_artifact SET raw_text=…` 被触发器拒绝：`IMMUTABLE_COLUMN`（原文不可改）。
+- 证据文件：`evidence/import-result-*.json`、`evidence/readback-*.txt`、`evidence/read-tool-result.json`、`evidence/seed.json`。
+
+### 6.3 飞书三维标签（LIVE Gate = BLOCKED）
+
+`node manual/transcript-line/feishu-probe.mjs`（真实输出）：
+
+```json
+{
+  "connector": "feishu-minutes",
+  "contract_version": "1.0.0",
+  "live_eligible": false,
+  "credentials": { "app_id_present": false, "app_secret_present": false,
+                    "user_token_present": false, "tenant_token_present": false },
+  "connection_state": "NOT_CONNECTED",
+  "labels": { "provenance": "FIXTURE", "trigger": "MANUAL", "connection": "NOT_CONNECTED" },
+  "provenance_basis": "NO_LIVE_READ",
+  "blocked_reason": "NO_APP_CREDENTIALS",
+  "missing": ["FEISHU_APP_ID", "FEISHU_APP_SECRET"]
+}
+LIVE_GATE=BLOCKED
+```
+
+`test/unit/transcript-feishu.test.ts` 的 18 条断言里有一条专门遍历所有出口，断言
+`provenance !== 'LIVE'`、`connection !== 'CONNECTED'`、`trigger === 'MANUAL'`；
+唯一能产出 `LIVE` 的纯函数 `buildArtifactLabelsFromReadback()` 要求六项回读证据齐全，
+否则抛 `LABEL_DISHONEST_LIVE`。骨架**没有传输层**（静态扫描断言无 `fetch`/`http`/子进程）。
+
+### 6.4 边界自检
+
+- 本轮新增/修改文件全部落在 §1 的白名单内；`contracts/interview/**`、`db/**`、`src/db/**`、
+  `src/index.ts`、`converter/**`、`src/document/**`、`application-intake.ts`、`screening-evaluate.ts`
+  在 `git status` 中**零改动**。
+- 未 commit、未 push（HEAD 的 WIP 提交由 W0 在他自己的汇总步骤产生，不是本 lane 做的）。
+- 截至本文件最后更新，S9 仍有 **3 个未跟踪文件**（需 W0 汇总时一起纳入）：
+  `test/unit/transcript-import.test.ts`、`test/unit/transcript-read.test.ts`、
+  `test/unit/transcript-readonly.test.ts`；另有 3 处相对 HEAD 的已跟踪改动
+  （`src/tools/transcript-import.ts`、`src/tools/transcript-read.ts`、
+  `test/integration/transcript-read.test.ts`）。
+
+### 6.5 已知缺口（复核时优先看这三处）
+
+| # | 缺口 | 影响 | 现状 |
+|---|---|---|---|
+| 1 | **未接线**：两个工具没有注册进 `src/index.ts`（W0 独占） | R2 意义上“会话内不可达”；本目录的 headless 是直接 `execute()` | 交付工厂函数 + `unconfigured*`，W0 加两行注册即可；**不得**据此宣称产品已接通 |
+| 2 | **并发**：`23505 → savepoint → replay` 只做了单线程路径；同一面试两个并发导入**不同内容**时 `uq_interview_record_current` 可能抛原始 23505 | 极端并发下错误码不契约化 | 已在 code 里用 savepoint 处理 artifact 竞争；record 竞争未覆盖，未写并发测试 |
+| 3 | **字符数口径**：import 的 `char_count` 是 JS `content.length`（UTF-16 单元），read 的 `total_chars` 是 PG `length()`（code point） | 含 emoji 时两数不等（本 demo 文本无 emoji，测试也未覆盖） | 文档显式记差异；若要求一致需统一口径（属契约级决定） |
+
+另：本机 `ra_s6s7` **0008 未应用**（`interview_record` 无 `job_id`、无 `fk_interview_record_rubric_job`、无 job guard 触发器）。
+写侧省略 `job_id` 对 0008 前向兼容（其触发器会在 `job_id is null` 时推导），但**与 0008 形态的文档描述不同**，已在 §2 末注写明。

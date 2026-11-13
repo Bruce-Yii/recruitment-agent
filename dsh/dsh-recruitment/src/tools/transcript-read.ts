@@ -12,9 +12,9 @@
 // 只读怎么保证（不是自我声称，三层）：
 //   1. **数据库层**：整个读取跑在 `begin transaction read only` 里（`src/db/pool.ts` 的
 //      `withReadOnly`），任何写语句直接 25006；
-//   2. **源码层**：本文件不出现任何写语句，也不 import `withActor`
+//   2. **源码层**：本文件不出现任何写语句，也不引入写事务封装
 //      （`test/unit/transcript-readonly.test.ts` 静态断言）；
-//   3. **模块图**：本文件**不** import `transcript-import.ts` —— 只读模块图里不能出现写 SQL。
+//   3. **模块图**：本文件**不**引用写路径模块 —— 只读模块图里不能出现写 SQL。
 //
 // 输出里**没有 null**：DSH 校验器不支持 `type` 数组，写 null 会让整次调用 INVALID_TOOL_OUTPUT
 // （2026-11-13 真实事故）。缺失一律**省略键**，用 `warnings` 说明缺什么。
@@ -25,7 +25,9 @@ import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { closePool, createPool, withReadOnly, type DatabaseClient, type ResolvedDatabaseConfig } from '../db/pool.ts'
 
 const TOOL_NAME = 'recruitment_transcript_read'
-const CONTRACT_VERSION = '1.0.0'
+/** 契约版本（`tool-contracts.md` / RD §3 同一基线）。 */
+export const TRANSCRIPT_READ_CONTRACT_VERSION = '1.0.0'
+const CONTRACT_VERSION = TRANSCRIPT_READ_CONTRACT_VERSION
 /** TR-D：等待窗默认 120 分钟（可被 business_config 覆盖）。 */
 const DEFAULT_WAIT_MINUTES = 120
 const DEFAULT_MAX_CHARS = 20_000

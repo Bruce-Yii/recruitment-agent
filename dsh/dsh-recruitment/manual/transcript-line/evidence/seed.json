@@ -7,12 +7,13 @@
   "rubric_version_id": "834a9b19-2844-4658-8935-01c2b2d34468",
   "candidate_id": "a1d92b77-0528-4996-b790-650553933866",
   "application_id": "e61380dc-13be-4963-879b-2630411f2081",
-  "interview_id": "ffe144a2-0f0f-4f2e-9685-4d8bfb6af841",
-  "meeting_id": "c7a70263-dccd-4e0a-bbac-9d54fc406c91",
-  "meeting_binding_id": "d5931f94-57c0-471c-8461-ebd609aeb0ab",
+  "interview_id": "81a3ade3-8e96-44e3-9f8b-83cec6b6acbb",
+  "interview_round_no": 2,
+  "meeting_id": "ab2bd166-d657-4a04-91d8-2d9a7bb93eb3",
+  "meeting_binding_id": "89a7d34c-1951-4630-a755-71137819d1d4",
   "meeting": {
     "provider": "FEISHU",
-    "external_meeting_id": "feishu-demo-meeting-s9",
+    "external_meeting_id": "feishu-demo-meeting-s9-r2",
     "meeting_role": "PRIMARY"
   },
   "note": "S8 排期工具不在本 lane；interview/meeting/binding 是手工夹具，不是产品写路径"

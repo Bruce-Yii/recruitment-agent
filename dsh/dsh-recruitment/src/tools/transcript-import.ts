@@ -28,7 +28,9 @@ import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { closePool, createPool, withActor, type DatabaseClient, type ResolvedDatabaseConfig } from '../db/pool.ts'
 
 const TOOL_NAME = 'recruitment_transcript_import'
-const CONTRACT_VERSION = '1.0.0'
+/** 契约版本（`tool-contracts.md` / RD §3 同一基线）。 */
+export const TRANSCRIPT_IMPORT_CONTRACT_VERSION = '1.0.0'
+const CONTRACT_VERSION = TRANSCRIPT_IMPORT_CONTRACT_VERSION
 /** `content` 的上界（RD §3.1：1..400000 字符，逐字节保存）。 */
 export const MAX_CONTENT_CHARS = 400_000
 /** `sections.turns` / `sections.citations` 的上界（RD §2）。 */
@@ -1099,23 +1101,26 @@ export function createTranscriptImportTool(database: ResolvedDatabaseConfig): Re
         const meeting = v.meeting
         const artifact = v.artifact
         const record = v.record
+        // **一行**摘要（RD §3.1）：只回身份/状态/计数，不回显转写正文。
         const summary = [
           `${v.tool} ${v.contract_version} status=${v.status} write=${String(v.write)} replayed=${String(v.replayed)}`,
-          `interview ${String(v.interview.id)} stage=${String(v.interview.stage_code)} status=${String(v.interview.status)}`
-            + ` round=${String(v.interview.round_no)}`,
-          `meeting ${String(meeting.id)} ${String(meeting.provider)} role=${String(meeting.meeting_role)}`
-            + ` binding=${String(meeting.binding_method)}`,
-          `artifact ${String(artifact.id)} rev=${String(artifact.source_revision)}`
+          `interview=${String(v.interview.id)} stage=${String(v.interview.stage_code)}`
+            + ` interview_status=${String(v.interview.status)} round=${String(v.interview.round_no)}`,
+          `meeting=${String(meeting.id)} provider=${String(meeting.provider)}`
+            + ` role=${String(meeting.meeting_role)} binding=${String(meeting.binding_method)}`,
+          `artifact=${String(artifact.id)} rev=${String(artifact.source_revision)}`
             + ` status=${String(artifact.transcript_status)} provenance=${v.labels.provenance}`
             + ` trigger=${v.labels.trigger} connection=${v.labels.connection}`
-            + ` canonical=${String(artifact.is_canonical)} sha=${String(artifact.content_sha256).slice(0, 12)}…`
-            + ` chars=${String(artifact.char_count)} segments=${String(artifact.segment_count)}`,
-          `record ${record === undefined ? '(none: no rubric)' : `${String(record.id)} status=${String(record.status)}`
-            + ` verification=${String(record.verification_status)} rev=${String(record.transcript_revision)}`}`,
-          `changes created=${v.changes.created.length} updated=${v.changes.updated.length}`,
+            + ` canonical=${String(artifact.is_canonical)} chars=${String(artifact.char_count)}`
+            + ` segments=${String(artifact.segment_count)}`,
+          `record=${record === undefined
+            ? 'none(no rubric)'
+            : `${String(record.id)} status=${String(record.status)}`
+              + ` verification=${String(record.verification_status)} rev=${String(record.transcript_revision)}`}`,
+          `changes: created=${v.changes.created.length} updated=${v.changes.updated.length}`,
+          ...[...v.warnings].map((warning) => `warning ${warning.code}`),
         ]
-        for (const warning of v.warnings) summary.push(`warning ${warning.code}: ${warning.message}`)
-        return [{ type: 'text', text: summary.join('\n') }]
+        return [{ type: 'text', text: summary.join(' | ') }]
       },
     },
     isConcurrencySafe(): boolean {

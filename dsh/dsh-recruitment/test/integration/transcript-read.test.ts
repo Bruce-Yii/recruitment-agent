@@ -52,6 +52,8 @@ async function seedInterview(
     readonly actualEnd?: Date
     readonly role?: string
     readonly schedule?: boolean
+    /** 同一申请下再造一场（`uq_interview_slot` = application × round × slot）。 */
+    readonly roundNo?: number
   } = {},
 ): Promise<Fixture> {
   const scheduledStart = options.scheduledStart ?? new Date(Date.now() - 120 * 60_000)
@@ -60,9 +62,9 @@ async function seedInterview(
     `insert into recruitment.interview
        (tenant_id, application_id, round_no, slot_code, stage_code, status,
         scheduled_start_at, scheduled_end_at)
-     values ($1, $2, 1, 'DEFAULT', 'S9', 'POST_INTERVIEW', $3, $4)
+     values ($1, $2, $3, 'DEFAULT', 'S9', 'POST_INTERVIEW', $4, $5)
      returning id`,
-    [TENANT, applicationId, scheduledStart, scheduledEnd],
+    [TENANT, applicationId, options.roundNo ?? 1, scheduledStart, scheduledEnd],
   )
   const interviewId = (rows[0] as { id: string }).id
   if (options.schedule === false) return { interviewId, meetingId: '' }
@@ -311,7 +313,7 @@ test('artifact_id 过滤：非 canonical → 警告但仍返回它自己的正�
     assert.ok(value.warnings.some((warning) => warning.code === 'ARTIFACT_FILTER_NOT_CANONICAL'))
 
     // 属于另一场面试的 artifact → ARTIFACT_NOT_FOUND
-    const other = await seedInterview(client, scenario.applicationId)
+    const other = await seedInterview(client, scenario.applicationId, { roundNo: 2 })
     const otherImport = await importContent(client, other.interviewId, '00:00 面试官：另一场')
     await assert.rejects(
       async () => readTranscriptInTransaction(client, cfg, {
