@@ -47,6 +47,10 @@
 //      （TC §1.1 第 6 条"重复元素拒绝"；S- 组里唯一表达"重复"的码；`items` 是对象，维度键不可能重复）。
 //  10. **`DB_CONSTRAINT_VIOLATION` 的 `constraint` 只在库真的给了约束名时出现**（PL/pgSQL `raise`
 //      不带 `constraint` 时 `error.constraint` 为空，编一个名字等于伪造证据）。
+//  11. **D-79 人机闸门**（2026-11-14）：写库前强制 `approval.request`，只有 `allowed-once` 才写；
+//      `unavailable` / `rejected` / `cancelled` → `FORBIDDEN(APPROVAL_UNAVAILABLE|APPROVAL_NOT_GRANTED)`，
+//      **一行都不写**。approval 依赖**缺省即拒绝**（headless fail closed）；闸门位于全部参数/业务校验
+//      之后、第一行写库之前（无效参数不打扰人）；幂等重放不写库，因此在闸门之前返回。
 //
 // 不打印 PII：日志与错误 detail 只放 UUID、计数、键名（R7）。
 
@@ -135,6 +139,72 @@ export function evalError(
   if (detail !== undefined) body.detail = detail
   // `RecruitmentToolError` 的 `code` 运行期就是传入值（`this.code = code`），但联合类型不含 S10 的码。
   return new RecruitmentToolError(code as never, canonicalJson(body))
+}
+
+// =====================================================================
+//  D-79 人机闸门（approval seam）
+// =====================================================================
+
+/** DSH `ctx.approval.request` 的封闭结果（与 `decision-record.ts` 同一封闭集）。 */
+export type ApprovalOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
+
+/**
+ * DSH `ctx.approval` 的窄接口（只取 `request`）。
+ *
+ * **缺省 = 一律拒绝**（D-79 fail closed）：不存在"没接 approval 就直接写库"的分支。
+ */
+export interface ApprovalRequester {
+  request(req: {
+    agent?: unknown
+    toolName: string
+    reason?: string
+    signal?: AbortSignal
+  }): Promise<string>
+}
+
+/**
+ * 把 approval 依赖包成"可等待的批准结果"。**缺依赖 = `unavailable`**，
+ * 因此 headless（没有 answerer）恒 fail closed（D-79）。
+ * @param approval - 依赖里的 approval 服务（可缺省）。
+ * @param exec - 执行上下文（`agent` / `signal` 透传给宿主）。
+ * @returns 一个返回 `ApprovalOutcome` 的函数；结果不在封闭集内时归 `unavailable`（不猜）。
+ */
+export function makeApprovalRequest(
+  approval: ApprovalRequester | undefined,
+  exec: { readonly agent?: unknown; readonly signal?: AbortSignal } | undefined,
+): () => Promise<ApprovalOutcome> {
+  return async (): Promise<ApprovalOutcome> => {
+    if (approval === undefined) return 'unavailable'
+    const raw = await approval.request({
+      agent: exec?.agent,
+      toolName: TOOL_NAME,
+      reason: 'S10 面评只能由面试官本人提交，需要人工批准（D-79）',
+      signal: exec?.signal,
+    })
+    if (raw === 'allowed-once' || raw === 'rejected' || raw === 'cancelled' || raw === 'unavailable') return raw
+    // 宿主返回了封闭集之外的字符串：**不猜**，按不可用处理（fail closed）。
+    return 'unavailable'
+  }
+}
+
+/**
+ * 写库前最后一关：**只有 `allowed-once` 放行**；其余一律 `FORBIDDEN`。
+ *
+ * 位置约定（D-79）：参数校验与全部业务校验之后、第一行写库之前。没有它不写任何行。
+ * @param outcome - `approve()` 的结果。
+ * @throws RecruitmentToolError - `FORBIDDEN` + `reason_code`（`APPROVAL_UNAVAILABLE` / `APPROVAL_NOT_GRANTED`）。
+ */
+export function requireApprovalGranted(outcome: ApprovalOutcome): void {
+  if (outcome === 'allowed-once') return
+  const unavailable = outcome === 'unavailable'
+  throw new RecruitmentToolError('FORBIDDEN', canonicalJson({
+    code: 'FORBIDDEN',
+    reason_code: unavailable ? 'APPROVAL_UNAVAILABLE' : 'APPROVAL_NOT_GRANTED',
+    message: unavailable
+      ? '没有可用的批准通道（headless 无 answerer）：面评写库被拒绝（D-79，fail closed）'
+      : '人工没有批准这次面评写库（D-79）',
+    detail: { approval: outcome, tool: TOOL_NAME },
+  }))
 }
 
 // =====================================================================
@@ -1132,6 +1202,12 @@ interface ResolvedContext {
   readonly transcriptBasis: string
 }
 
+/** 全部业务校验通过后得到的写库计划（D-79 的 approval 闸门位于"计划"和"写入"之间）。 */
+type ScorecardWritePlan =
+  | { readonly kind: 'insert'; readonly scorecardId: string }
+  | { readonly kind: 'promote'; readonly current: CurrentScorecardRow }
+  | { readonly kind: 'revise'; readonly current: CurrentScorecardRow; readonly expectedRecordVersion: number }
+
 // =====================================================================
 //  读路径
 // =====================================================================
@@ -1718,14 +1794,17 @@ function buildOutput(context: OutputContext): Record<string, unknown> {
  * @param rawArgs - 模型给的 arguments（未校验）。
  * @param nowMs - 服务端"现在"（毫秒）。本工具不把它写进任何时间列——时间一律用库的 `now()`；
  *   参数保留它是为了与另外两个工具同形（DESIGN §1）。
+ * @param approve - D-79 的人工批准通道；**缺省 = `unavailable` = 一律拒绝**（fail closed）。
+ *   位置：参数/业务校验全部通过之后、第一行写库之前。返回 `allowed-once` 才写库。
  * @returns TC §2.2 的规范输出。
- * @throws RecruitmentToolError - 契约错误（TC §5 封闭集）。
+ * @throws RecruitmentToolError - 契约错误（TC §5 封闭集）；闸门拒绝是 `FORBIDDEN`。
  */
 export async function submitScorecardInTransaction(
   client: DatabaseClient,
   cfg: ResolvedDatabaseConfig,
   rawArgs: unknown,
   nowMs: number,
+  approve?: () => Promise<ApprovalOutcome>,
 ): Promise<Record<string, unknown>> {
   void nowMs
   const tenantId = cfg.tenant_id
@@ -1768,6 +1847,7 @@ export async function submitScorecardInTransaction(
   // ---- 7) 幂等（G-2 / SC-37）----
   const idempotencyKey = `scorecard:${args.idempotency_key}`
   const recorded = await loadIdempotencyRecord(client, tenantId, idempotencyKey)
+  // 幂等重放**不写库**，因此在 D-79 闸门之前返回：闸门只约束"写库"，重放没有新行可写。
   if (recorded !== undefined) {
     if (recorded.payload_hash !== payloadHash) {
       throw evalError(
@@ -1829,69 +1909,25 @@ export async function submitScorecardInTransaction(
     transcriptBasis: args.items[TRANSCRIPT_BASIS_KEY] as string,
   }
 
-  // ---- 9) 已有 current 行？----
+  // ---- 9) 已有 current 行？**只判定，不写库** ----
+  // D-79：先做完参数层 + 全部业务校验（含"这个人能不能改 / 该怎么改"），再去问人。
+  // 无效参数或注定失败的调用不打扰人，也保证问人之前**一行都没写**。
   const current = await loadCurrentScorecard(client, tenantId, interview.id, interviewer.id)
-  let scorecardId: string
-  let superseded: { scorecard_id: string; revision_no: number } | undefined
-
-  try {
-    if (current === undefined) {
-      if (args.revision !== undefined) {
-        // 修订指向的行不是当前行 → SCORECARD_ALREADY_SUPERSEDED（TC §2.5）。
-        throw evalError(
-          'ALREADY_SUBMITTED',
-          'SCORECARD_ALREADY_SUPERSEDED',
-          'revision.supersedes_scorecard_id 指向的不是当前面评行',
-          { supersedes_scorecard_id: args.revision.supersedes_scorecard_id },
-        )
-      }
-      scorecardId = randomUUID()
-      const eventId = await insertInternalEvent(client, tenantId, idempotencyKey, scorecardId, {
-        payload_hash: payloadHash,
-        scorecard_id: scorecardId,
-        interview_id: interview.id,
-        interviewer_id: interviewer.id,
-      })
-      await insertSubmittedScorecard(client, context, scorecardId, eventId, 1, null)
-    } else if (current.status === 'PENDING') {
-      // 历史/别的路径留下的 PENDING 当前行 → 必须原地转正（TC §2.5、SC-45）。
-      if (args.revision !== undefined) {
-        if (args.revision.supersedes_scorecard_id !== current.id) {
-          throw evalError(
-            'ALREADY_SUBMITTED',
-            'SCORECARD_ALREADY_SUPERSEDED',
-            'revision.supersedes_scorecard_id 指向的不是当前行',
-            { supersedes_scorecard_id: args.revision.supersedes_scorecard_id, current_scorecard_id: current.id },
-          )
-        }
-        if (args.revision.expected_record_version !== current.record_version) {
-          throw evalError('VERSION_CONFLICT', 'RECORD_VERSION_MISMATCH', '当前面评的 record_version 与入参不一致', {
-            scorecard_id: current.id,
-            expected_record_version: args.revision.expected_record_version,
-            actual_record_version: current.record_version,
-          })
-        }
-      }
-      if (current.rubric_version_id !== rubric.id) {
-        throw evalError(
-          'INVALID_ARGS',
-          'RUBRIC_MISMATCH',
-          '这条 PENDING 面评绑的 rubric 与本次解析出的不一致（不得静默改绑，SC-42）',
-          { pending_rubric_version_id: current.rubric_version_id, rubric_version_id: rubric.id },
-        )
-      }
-      scorecardId = current.id
-      await promotePendingScorecard(client, context, current)
-    } else {
-      // SUBMITTED / WAIVED 当前行：只能走修订（SC-04 / SC-17..20）。
-      if (args.revision === undefined) {
-        throw evalError(
-          'ALREADY_SUBMITTED',
-          'SCORECARD_ALREADY_SUBMITTED',
-          '这位面试官对这场面试已经有一份当前面评；要改必须走 revision（SC-04/SC-18）',
-          { scorecard_id: current.id, revision_no: current.revision_no, status: current.status },
-        )
-      }
+  let plan: ScorecardWritePlan
+  if (current === undefined) {
+    if (args.revision !== undefined) {
+      // 修订指向的行不是当前行 → SCORECARD_ALREADY_SUPERSEDED（TC §2.5）。
+      throw evalError(
+        'ALREADY_SUBMITTED',
+        'SCORECARD_ALREADY_SUPERSEDED',
+        'revision.supersedes_scorecard_id 指向的不是当前面评行',
+        { supersedes_scorecard_id: args.revision.supersedes_scorecard_id },
+      )
+    }
+    plan = { kind: 'insert', scorecardId: randomUUID() }
+  } else if (current.status === 'PENDING') {
+    // 历史/别的路径留下的 PENDING 当前行 → 必须原地转正（TC §2.5、SC-45）。
+    if (args.revision !== undefined) {
       if (args.revision.supersedes_scorecard_id !== current.id) {
         throw evalError(
           'ALREADY_SUBMITTED',
@@ -1900,8 +1936,80 @@ export async function submitScorecardInTransaction(
           { supersedes_scorecard_id: args.revision.supersedes_scorecard_id, current_scorecard_id: current.id },
         )
       }
-      superseded = { scorecard_id: current.id, revision_no: current.revision_no }
-      scorecardId = await reviseScorecard(client, context, current, args.revision.expected_record_version)
+      if (args.revision.expected_record_version !== current.record_version) {
+        throw evalError('VERSION_CONFLICT', 'RECORD_VERSION_MISMATCH', '当前面评的 record_version 与入参不一致', {
+          scorecard_id: current.id,
+          expected_record_version: args.revision.expected_record_version,
+          actual_record_version: current.record_version,
+        })
+      }
+    }
+    if (current.rubric_version_id !== rubric.id) {
+      throw evalError(
+        'INVALID_ARGS',
+        'RUBRIC_MISMATCH',
+        '这条 PENDING 面评绑的 rubric 与本次解析出的不一致（不得静默改绑，SC-42）',
+        { pending_rubric_version_id: current.rubric_version_id, rubric_version_id: rubric.id },
+      )
+    }
+    plan = { kind: 'promote', current }
+  } else {
+    // SUBMITTED / WAIVED 当前行：只能走修订（SC-04 / SC-17..20）。
+    if (args.revision === undefined) {
+      throw evalError(
+        'ALREADY_SUBMITTED',
+        'SCORECARD_ALREADY_SUBMITTED',
+        '这位面试官对这场面试已经有一份当前面评；要改必须走 revision（SC-04/SC-18）',
+        { scorecard_id: current.id, revision_no: current.revision_no, status: current.status },
+      )
+    }
+    if (args.revision.supersedes_scorecard_id !== current.id) {
+      throw evalError(
+        'ALREADY_SUBMITTED',
+        'SCORECARD_ALREADY_SUPERSEDED',
+        'revision.supersedes_scorecard_id 指向的不是当前行',
+        { supersedes_scorecard_id: args.revision.supersedes_scorecard_id, current_scorecard_id: current.id },
+      )
+    }
+    // D-79：过期的 expected_record_version 是**业务校验失败**，必须在问人之前拒掉（也保证此时零写入）。
+    if (args.revision.expected_record_version !== current.record_version) {
+      throw evalError('VERSION_CONFLICT', 'RECORD_VERSION_MISMATCH', '当前面评的 record_version 与入参不一致', {
+        scorecard_id: current.id,
+        expected_record_version: args.revision.expected_record_version,
+        actual_record_version: current.record_version,
+      })
+    }
+    plan = {
+      kind: 'revise',
+      current,
+      expectedRecordVersion: args.revision.expected_record_version,
+    }
+  }
+
+  // ---- 9.5) 人机闸门（D-79）----
+  // 位置 = 全部参数校验与业务校验之后、第一行写库之前。缺省 / 拒绝 / 取消 →
+  // `FORBIDDEN(APPROVAL_UNAVAILABLE|APPROVAL_NOT_GRANTED)`，**一行都不写**（fail closed）。
+  requireApprovalGranted(approve === undefined ? 'unavailable' : await approve())
+
+  // ---- 10) 写入（SC-44 / SC-45 / §5.2 三步舞）----
+  let scorecardId: string
+  let superseded: { scorecard_id: string; revision_no: number } | undefined
+  try {
+    if (plan.kind === 'insert') {
+      scorecardId = plan.scorecardId
+      const eventId = await insertInternalEvent(client, tenantId, idempotencyKey, scorecardId, {
+        payload_hash: payloadHash,
+        scorecard_id: scorecardId,
+        interview_id: interview.id,
+        interviewer_id: interviewer.id,
+      })
+      await insertSubmittedScorecard(client, context, scorecardId, eventId, 1, null)
+    } else if (plan.kind === 'promote') {
+      scorecardId = plan.current.id
+      await promotePendingScorecard(client, context, plan.current)
+    } else {
+      superseded = { scorecard_id: plan.current.id, revision_no: plan.current.revision_no }
+      scorecardId = await reviseScorecard(client, context, plan.current, plan.expectedRecordVersion)
     }
   } catch (error) {
     mapConstraintError(error)
@@ -1946,14 +2054,32 @@ async function supersededOf(
 //  工具定义
 // =====================================================================
 
+/** 面评提交工具的依赖：库配置 + （可选但**缺省即拒绝**的）approval 窄接口（D-79）。 */
+export interface ScorecardSubmitDeps {
+  readonly database: ResolvedDatabaseConfig
+  /** DSH `ctx.approval` 的窄接口。**缺省 = 一律拒绝**，不存在"直接写库"的分支（D-79）。 */
+  readonly approval?: ApprovalRequester
+}
+
+/** 从执行上下文里取 `agent` / `signal`（DSH 的 `exec` 是 unknown）。 */
+function readExecContext(exec: unknown): { agent?: unknown; signal?: AbortSignal } | undefined {
+  if (typeof exec !== 'object' || exec === null || Array.isArray(exec)) return undefined
+  const record = exec as { agent?: unknown; signal?: unknown }
+  return {
+    ...(record.agent === undefined ? {} : { agent: record.agent }),
+    ...(record.signal instanceof AbortSignal ? { signal: record.signal } : {}),
+  }
+}
+
 /**
  * 造一个绑定配置的面评提交工具。
  *
  * `execute()` 用 `withActor(pool, cfg.actor_id, …)` 开事务（GUC = 配置里的 actor），
- * 然后调 `submitScorecardInTransaction(…, Date.now())`；`finally` 关池。
- * @param deps - `{ database }`（已解析的库配置）。
+ * 然后调 `submitScorecardInTransaction(…, Date.now(), approve)`；`finally` 关池。
+ * `approve` 来自 `deps.approval` + 本次 `exec`（D-79：人放行一次才写一次；没有通道即拒绝）。
+ * @param deps - `{ database, approval? }`（已解析的库配置 + 可选批准通道）。
  */
-export function createScorecardSubmitTool(deps: { database: ResolvedDatabaseConfig }): ReadonlyToolDefinition {
+export function createScorecardSubmitTool(deps: ScorecardSubmitDeps): ReadonlyToolDefinition {
   const cfg = deps.database
   return {
     name: TOOL_NAME,
@@ -1968,8 +2094,11 @@ export function createScorecardSubmitTool(deps: { database: ResolvedDatabaseConf
       + 'with NOT_MET. overall is ADVANCE|HOLD|REJECT; REJECT needs 1..10 reject_reasons backed by NOT_MET '
       + 'dimensions (never by NOT_OBSERVED/UNREADABLE). Idempotent by idempotency_key. Re-submission goes through '
       + 'revision {supersedes_scorecard_id, expected_record_version, revision_reason} (new revision_no, old row kept). '
+      + 'D-79 human gate: after every parameter/business check and BEFORE any write it asks the human for approval '
+      + '(DSH approval; missing/unavailable answerer => rejected => nothing is written). '
       + 'Errors: INVALID_ARGS / NOT_FOUND / INTERVIEWER_MISMATCH / ALREADY_SUBMITTED / VERSION_CONFLICT / '
-      + 'EVIDENCE_INSUFFICIENT / DB_CONSTRAINT_VIOLATION with reason_code.',
+      + 'EVIDENCE_INSUFFICIENT / DB_CONSTRAINT_VIOLATION with reason_code; approval denial is '
+      + 'FORBIDDEN(APPROVAL_UNAVAILABLE|APPROVAL_NOT_GRANTED).',
     parameters: SUBMIT_PARAMETERS,
     output: {
       schema: OUTPUT_SCHEMA,
@@ -2010,11 +2139,13 @@ export function createScorecardSubmitTool(deps: { database: ResolvedDatabaseConf
     isConcurrencySafe(): boolean {
       return false
     },
-    async execute(rawArgs: unknown): Promise<unknown> {
+    async execute(rawArgs: unknown, exec: unknown): Promise<unknown> {
+      // D-79：approval 缺省时 `makeApprovalRequest` 恒返回 `unavailable`（= 拒绝写库）。
+      const approve = makeApprovalRequest(deps.approval, readExecContext(exec))
       const pool = createPool(cfg)
       try {
         return await withActor(pool, cfg.actor_id, (client) =>
-          submitScorecardInTransaction(client, cfg, rawArgs, Date.now()))
+          submitScorecardInTransaction(client, cfg, rawArgs, Date.now(), approve))
       } finally {
         await closePool(pool)
       }

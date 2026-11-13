@@ -338,7 +338,7 @@ export function apply(
   // ── S8 面试线：只要 database。
   const interviewSchedule = database.resolved === null
     ? unconfiguredInterviewScheduleTool(database.issues)
-    : createInterviewScheduleTool(database.resolved)
+    : createInterviewScheduleTool(database.resolved, { approval: resolveApproval(ctx) })
   const interviewGet = database.resolved === null
     ? unconfiguredInterviewGetTool(database.issues)
     : createInterviewGetTool(database.resolved)
@@ -358,7 +358,7 @@ export function apply(
       'S10: one HUMAN interviewer submits their own scorecard for one interview round.',
       database.issues,
     )
-    : createScorecardSubmitTool({ database: database.resolved })
+    : createScorecardSubmitTool({ database: database.resolved, approval: resolveApproval(ctx) })
   const evaluationSummarize = database.resolved === null
     ? notConfiguredTool(
       'recruitment_evaluation_summarize',

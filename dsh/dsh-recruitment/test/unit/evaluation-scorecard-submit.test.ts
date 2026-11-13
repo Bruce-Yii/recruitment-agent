@@ -17,11 +17,14 @@ import {
   buildRationale,
   computeScorecardPayloadHash,
   createScorecardSubmitTool,
+  makeApprovalRequest,
   parseRejectReasonsFromRationale,
   parseScorecardSubmitArgs,
+  requireApprovalGranted,
   validateScorecardSemantics,
   type ScorecardRejectReason,
 } from '../../src/tools/scorecard-submit.ts'
+import { RecruitmentToolError } from '../../src/tools/errors.ts'
 import { canonicalJson, digestOf } from '../../src/tools/contract.ts'
 import { resolveDatabaseConfig } from '../../src/db/pool.ts'
 
@@ -908,3 +911,60 @@ test('工具名与 contract_version 锁死（TC §2 / §2.2）', () => {
   // 写工具不可并行（同 key 并发提交必须由库/幂等判定拦）
   assert.equal(TOOL.isConcurrencySafe?.({}), false)
 })
+
+// =====================================================================
+//  D-79 人机闸门（纯函数）：缺省即拒绝 / 只有 allowed-once 放行
+//  （集成层见 test/integration/evaluation-scorecard-submit.test.ts §12）
+// =====================================================================
+
+test('S10 D-79：approval 缺省 → makeApprovalRequest 返回 unavailable（= 拒绝写库）', async () => {
+  assert.equal(await makeApprovalRequest(undefined, undefined)(), 'unavailable')
+})
+
+test('S10 D-79：makeApprovalRequest 透传 toolName/agent/signal，并把封闭集原样返回', async () => {
+  const requests: Record<string, unknown>[] = []
+  const agent = { id: 'agent-1' }
+  const signal = new AbortController().signal
+  const approval = {
+    async request(req: Record<string, unknown>): Promise<string> {
+      requests.push(req)
+      return 'allowed-once'
+    },
+  }
+  const approve = makeApprovalRequest(approval, { agent, signal })
+  assert.equal(await approve(), 'allowed-once')
+  assert.equal(requests.length, 1)
+  const req = requests[0] ?? {}
+  assert.equal(req.toolName, 'recruitment_scorecard_submit')
+  assert.equal(req.agent, agent)
+  assert.equal(req.signal, signal)
+  assert.equal(typeof req.reason, 'string')
+  for (const outcome of ['rejected', 'cancelled', 'unavailable'] as const) {
+    assert.equal(await makeApprovalRequest({ request: async () => outcome }, undefined)(), outcome)
+  }
+  // 封闭集之外的字符串：不猜，按不可用处理（fail closed）。
+  assert.equal(await makeApprovalRequest({ request: async () => 'allow' }, undefined)(), 'unavailable')
+})
+
+test('S10 D-79：requireApprovalGranted 只在 allowed-once 放行，其余 FORBIDDEN + reason_code', () => {
+  requireApprovalGranted('allowed-once')
+  for (const [outcome, reasonCode] of [
+    ['unavailable', 'APPROVAL_UNAVAILABLE'],
+    ['rejected', 'APPROVAL_NOT_GRANTED'],
+    ['cancelled', 'APPROVAL_NOT_GRANTED'],
+  ] as const) {
+    assert.throws(
+      () => requireApprovalGranted(outcome),
+      (error: unknown) => {
+        assert.ok(error instanceof RecruitmentToolError, '必须是 RecruitmentToolError')
+        assert.equal((error as RecruitmentToolError).code, 'FORBIDDEN')
+        const body = errorBody(error)
+        assert.equal(body.code, 'FORBIDDEN')
+        assert.equal(body.reason_code, reasonCode)
+        assert.deepEqual(body.detail, { approval: outcome, tool: 'recruitment_scorecard_submit' })
+        return true
+      },
+    )
+  }
+})
+
