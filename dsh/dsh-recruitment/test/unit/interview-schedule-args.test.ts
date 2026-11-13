@@ -189,9 +189,9 @@ test('裸本地时间（无偏移）→ TIMESTAMP_WITHOUT_OFFSET', () => {
   )
 })
 
-test('round_no 越界 → OUT_OF_RANGE；非整数 → TYPE_MISMATCH', () => {
-  expectInvalidArgs(() => parseScheduleArgs(base({ round_no: 0 }), NOW), 'OUT_OF_RANGE')
-  expectInvalidArgs(() => parseScheduleArgs(base({ round_no: 21 }), NOW), 'OUT_OF_RANGE')
+test('round_no 越界 → ROUND_OUT_OF_RANGE；非整数 → TYPE_MISMATCH', () => {
+  expectInvalidArgs(() => parseScheduleArgs(base({ round_no: 0 }), NOW), 'ROUND_OUT_OF_RANGE')
+  expectInvalidArgs(() => parseScheduleArgs(base({ round_no: 21 }), NOW), 'ROUND_OUT_OF_RANGE')
   expectInvalidArgs(() => parseScheduleArgs(base({ round_no: 1.5 }), NOW), 'TYPE_MISMATCH')
   expectInvalidArgs(() => parseScheduleArgs(base({ round_no: '2' }), NOW), 'TYPE_MISMATCH')
 })

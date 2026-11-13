@@ -262,7 +262,7 @@ test('CREATE 成功：interview/interviewer/meeting/binding/task 全部落库，
     assert.equal(iso(row.scheduled_end_at), END_ISO, 'scheduled_end_at = start + 60min')
     assert.equal(row.status_changed_by_actor_id, HR_ACTOR, 'INSERT 也必须显式写 status_changed_by_actor_id')
     assert.equal(row.record_version, 1)
-    assert.equal(row.interview_template_version_id, undefined)
+    assert.equal(row.interview_template_version_id, null, '没给模板时该列就是 NULL（输出里则省略键）')
 
     // --- interviewer 行 ---
     const interviewerRows = (await client.query<Record<string, unknown>>(
@@ -560,9 +560,10 @@ test('会议已被别的面试绑 → MEETING_ALREADY_BOUND，零写入；裸 SQ
     )
     const before = await tableCounts(client)
 
-    // interview #2：同一 external_meeting_id → 拒绝。
+    // interview #2：同一 external_meeting_id → 拒绝（换一个面试官，避免先撞面试官冲突）。
     const body = await expectToolError(
       scheduleInTransaction(client, cfg, createArgs(secondScenario.applicationId, {
+        interviewers: [{ actor_id: INTERVIEWER_B }],
         meeting: { provider: 'FEISHU', external_meeting_id: externalId },
       }), NOW),
       'MEETING_ALREADY_BOUND',
@@ -731,32 +732,51 @@ test('申请不是 ACTIVE → INVALID_ARGS(APPLICATION_NOT_ACTIVE)，零写入',
 })
 
 // ---------------------------------------------------------------------------
-//  8. 单事务（W4）：后半段失败不得留下 interview 行
+//  8. 单事务（W4）：失败要在**同一个未回滚的事务里**撤销已写的行
 // ---------------------------------------------------------------------------
 
-test('后半段失败整笔回滚：meeting_binding 撞 23505 时 interview/interviewer/meeting 也不得留下', async () => {
+test('MEETING_ALREADY_BOUND 在同一个未回滚的事务里不留脏行（savepoint 撤销，事务仍可用）', async () => {
   await inRolledBackTx(pool, async (client) => {
-    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
-    const externalId = `feishu-${uniqueSuffix()}`
-    const before = await tableCounts(client)
-
-    // 先造一条 meeting 行，但没有 active binding（unbound_at 已置），工具会复用它并插 binding。
-    // 为了让 binding 插入失败，我们先在该 meeting 上挂一条 active binding（绑到另一场）。
+    // 先给"别人的面试"建会 + 绑定。
     const blockerScenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const externalId = `feishu-${uniqueSuffix()}`
     await scheduleInTransaction(client, cfg, createArgs(blockerScenario.applicationId, {
       meeting: { provider: 'FEISHU', external_meeting_id: externalId },
     }), NOW)
-    const afterFirst = await tableCounts(client)
 
-    // 第二个申请复用同一 external_meeting_id：工具在"已有 active binding"处直接拒绝（不靠 SQL 错误）。
+    // 目标申请：CREATE 会**先** INSERT interview + interviewer，之后才在 meeting 绑定处被拒。
+    const targetScenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const before = await tableCounts(client)
     await expectToolError(
-      scheduleInTransaction(client, cfg, createArgs(scenario.applicationId, {
+      scheduleInTransaction(client, cfg, createArgs(targetScenario.applicationId, {
+        // 换一个面试官：本用例要探的是 A9（会议已被绑），不能先被 A8（冲突）拦掉。
+        interviewers: [{ actor_id: INTERVIEWER_B }],
         meeting: { provider: 'FEISHU', external_meeting_id: externalId },
       }), NOW),
       'MEETING_ALREADY_BOUND',
       'BOUND_TO_OTHER_INTERVIEW',
     )
-    assert.deepEqual(await tableCounts(client), afterFirst, '整笔回滚后不得留下 interview/interviewer/meeting/binding')
-    assert.ok(afterFirst.interview === before.interview + 1)
+
+    // 关键：**不回滚整个测试事务**，直接在同一事务里数行（比"外层回滚后行数不变"更强）。
+    const after = await tableCounts(client)
+    assert.equal(after.interview, before.interview, 'interview 行数不变：已插入的 interview 必须被 savepoint 撤销')
+    assert.equal(after.interviewer, before.interviewer, 'interviewer 行数不变')
+    assert.equal(after.meeting, before.meeting, 'meeting 行数不变')
+    assert.equal(after.meeting_binding, before.meeting_binding, 'meeting_binding 行数不变')
+    assert.equal(after.business_task, before.business_task, 'business_task 行数不变')
+    // 该申请名下必须一行 interview 都没有（不是"恰好等量替换"）。
+    assert.equal(
+      await count(
+        client,
+        'select count(*)::int as n from recruitment.interview where application_id = $1',
+        [targetScenario.applicationId],
+      ),
+      0,
+    )
+    // 事务仍然可用（说明是 savepoint 回滚，不是事务已被废掉）。
+    assert.equal(
+      await count(client, 'select count(*)::int as n from recruitment.organization where id = $1', [TENANT]),
+      1,
+    )
   })
 })

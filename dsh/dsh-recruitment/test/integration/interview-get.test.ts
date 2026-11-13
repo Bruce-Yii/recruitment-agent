@@ -547,7 +547,12 @@ test('TR-D 序 2：canonical READY → READY/CANONICAL_STATUS', async () => {
     assert.deepEqual(interview.transcript, {
       state: 'READY', reason_code: 'CANONICAL_STATUS', no_transcript: false,
     })
-    assert.equal(interview.warnings.length, 0, 'canonical 存在时不该有 CANONICAL_MISSING')
+    // 该夹具没有面试官 → NO_REQUIRED_EVALUATOR 是应该出的；但 canonical 存在时**不该**有 CANONICAL_MISSING。
+    assert.equal(
+      interview.warnings.some((warning) => warning.code === 'CANONICAL_MISSING'),
+      false,
+      'canonical 存在时不该有 CANONICAL_MISSING',
+    )
     assert.ok(artifactId.length > 0)
     assertNoNull(output)
 
@@ -651,7 +656,10 @@ test('evaluation 的 NO_REQUIRED_EVALUATOR + 面评缺 transcript_basis → 两�
     const output = await read(client, { interview_id: interviewId, as_of: AS_OF })
     const interview = output.interviews[0] as LooseInterview
     assert.equal(interview.evaluation.required_scorecards, 0)
-    assert.equal(interview.evaluation.submitted, 1)
+    // 计数只数 required 面试官：这位是 `required_scorecard=false`，他交的评**不**计入
+    // submitted（否则 required=0 却 submitted=1 会与 evaluation_ready 的语义打架）。
+    assert.equal(interview.evaluation.submitted, 0)
+    assert.equal(interview.evaluation.waived, 0)
     assert.equal(interview.evaluation.pending, 0)
     assert.equal(interview.evaluation.evaluation_ready, false, 'required=0 时永远不是 ready')
     assert.deepEqual(interview.evaluation.blockers.map((blocker) => blocker.code), [
@@ -689,5 +697,53 @@ test('跨租户：真实存在的面试 id 在别的租户下一律 NOT_FOUND（
     const body = errorBody(caught)
     assert.equal(body.code, 'NOT_FOUND')
     assert.equal(body.reason_code, 'INTERVIEW_NOT_FOUND')
+  })
+})
+
+test('evaluation 计数只数 required 面试官：非 required 已交评不抵消 required 的 PENDING', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const app = await newApplication(client)
+    const interviewId = await insertInterview(client, {
+      applicationId: app.applicationId,
+      roundNo: 4,
+      startAt: '2026-11-10T10:00:00+08:00',
+      endAt: '2026-11-10T11:00:00+08:00',
+    })
+    const requiredInterviewerId = await insertInterviewer(client, {
+      interviewId, actorId: '11111111-1111-4111-8111-000000000104', requiredScorecard: true,
+    })
+    const observerInterviewerId = await insertInterviewer(client, {
+      interviewId, actorId: '11111111-1111-4111-8111-000000000101', requiredScorecard: false,
+    })
+    // 非 required 的面试官已经交了评：它**不能**把 required 的 pending 抵消成 0。
+    await insertScorecard(client, {
+      interviewId, interviewerId: observerInterviewerId, rubricId: app.rubricId, status: 'SUBMITTED',
+    })
+
+    const output = await read(client, { interview_id: interviewId })
+    const interview = output.interviews[0]
+    assert.deepEqual(interview?.evaluation, {
+      required_scorecards: 1,
+      submitted: 0,
+      waived: 0,
+      pending: 1,
+      evaluation_ready: false,
+      blockers: [
+        {
+          code: 'SCORECARD_PENDING',
+          interviewer_id: requiredInterviewerId,
+          actor_id: '11111111-1111-4111-8111-000000000104',
+        },
+        { code: 'RECORD_NOT_READY' },
+      ],
+    })
+    assert.equal(
+      (interview?.evaluation.blockers as unknown[]).some(
+        (blocker) => (blocker as Record<string, unknown>).interviewer_id === observerInterviewerId,
+      ),
+      false,
+      '非 required 的面试官不得出现在 SCORECARD_PENDING 里',
+    )
+    assertNoNull(output)
   })
 })

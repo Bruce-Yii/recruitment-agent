@@ -1,0 +1,6 @@
+[PASS] NEG1 缺面试官被拒且零写入 — code=INVALID_ARGS reason_code=INTERVIEWER_REQUIRED interview_rows=5（ROLLBACK 后仍 5）
+[PASS] NEG2 同一会议绑第二场被拒且零写入 — code=MEETING_ALREADY_BOUND reason_code=BOUND_TO_OTHER_INTERVIEW interview_rows=5（ROLLBACK 后仍 5）
+[PASS] NEG3 第二条 active binding 被库拒绝 — SQLSTATE=23505 constraint=uq_meeting_binding_active
+[PASS] NEG4 非法 stage_code 被外键拒绝 — SQLSTATE=23503 constraint=fk_interview_stage_catalog
+
+=== negatives: pass=4 fail=0 ===
