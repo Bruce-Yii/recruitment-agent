@@ -552,13 +552,32 @@ export interface ConverterStateEntry {
   readonly value?: string | number | boolean | null
   readonly reason?: string
   readonly provenance?: string
+  /** 三态是谁给的：缺省 = converter；`agent_structured` = agent 结构化覆写（S6 写入）。 */
+  readonly state_source?: string
+  /** 被覆写前 converter 给的原始三态（D-29 要求两者同时保留，否则看不出是否升级过）。 */
+  readonly converter_state?: string
   readonly entry_count?: number
+  /** agent 结构化结果引用的 block id（升序）；用于把证据限定在字段自己引用的块上。 */
+  readonly block_ids?: readonly number[]
+  /** agent 有证据但缺 page/bbox，S6 已标记可回查（不得静默当成"没有证据"）。 */
+  readonly evidence_unlocatable?: boolean
   readonly evidence?: readonly {
     readonly page?: number
     readonly bbox?: readonly number[]
     readonly block?: number
+    /** agent 块 id（converter 证据没有这个键）。 */
+    readonly block_id?: number
     readonly text?: string
+    readonly source?: string
     readonly source_asset_sha256?: string
+  }[]
+  /** agent 的全部证据（含缺坐标的）；只在说明"为什么降级"时读。 */
+  readonly agent_evidence?: readonly {
+    readonly block_id?: number
+    readonly block_no?: number
+    readonly page?: number | null
+    readonly bbox?: readonly number[] | null
+    readonly quote?: string
   }[]
 }
 
@@ -941,7 +960,7 @@ function resolveFieldFact(ctx: EvalContext, field: string): FieldFact {
   const root = field.split('.')[0] as string
   const entry = ctx.parsed.fields[root]
   const state = entry?.state
-  const evidence = evidenceFor(ctx, entry)
+  const scan = evidenceFor(ctx, entry)
   if (state !== 'present' && state !== 'absent' && state !== 'unreadable') {
     addWarning(ctx.warnings, {
       code: 'FIELD_STATE_UNDECLARED',
@@ -950,10 +969,16 @@ function resolveFieldFact(ctx: EvalContext, field: string): FieldFact {
     })
     return { tri_state: 'unreadable', issue_codes: ['field_state_undeclared'], evidence: [] }
   }
-  checkScreeningIndex(ctx, root, state)
-  if (state === 'present' && evidence.length === 0) {
+  checkScreeningIndex(ctx, root, state, entry)
+  if (state === 'present' && scan.evidence.length === 0) {
     // SR §8.2：present 必须有 ≥1 条 page+bbox+sha256 齐全的证据，否则等于没读出。
-    return { tri_state: 'unreadable', issue_codes: ['evidence_missing'], evidence: [] }
+    // 但**不得静默降级**：agent 升级过的字段必须说明"哪几个 block、缺了什么坐标"，
+    // 否则人只看到 unreadable，会误以为原文真的读不出。
+    return {
+      tri_state: 'unreadable',
+      issue_codes: evidenceGapCodes(entry, scan),
+      evidence: [],
+    }
   }
   const adjusted = adjustAbsent(ctx, root, state)
   const numeric = entry?.entry_count
@@ -962,23 +987,50 @@ function resolveFieldFact(ctx: EvalContext, field: string): FieldFact {
     ...(adjusted.state === 'present' && typeof numeric === 'number' ? { value: numeric } : {}),
     issue_codes: adjusted.state === 'unreadable'
       ? [typeof entry?.reason === 'string' && entry.reason !== '' ? entry.reason : 'field_unreadable']
-      : [],
-    evidence: adjusted.state === 'present' ? evidence : [],
+      : adjusted.state === 'present'
+        ? scan.issue_codes
+        : [],
+    evidence: adjusted.state === 'present' ? scan.evidence : [],
   }
 }
 
 /**
  * `timeline.*` 的三态与 bounds（SR §4.2.2 / §4.2.3）。
+ *
+ * **单一事实来源（Issue #1 §1.4）**：时间线只能来自当前有效版本的同一批字段。
+ * converter 的 `timeline` 是在 converter 的 `fields` 上算出来的；一旦 agent 把
+ * `work_experience` 从 `unreadable/absent` 升级成 `present`，这份 timeline 就不是
+ * 同一份事实了——继续用它会产生**虚假的 FAIL**（例如旧值 0 个月 + GTE 60 → UNSATISFIED）。
+ * 这种情况下不猜、不改写 converter 索引，只把量标为不可用（UNAVAILABLE → 未确认）。
+ *
  * `covered_months_closed` 只是**闭区间下界**，直接比大小会系统性误杀在岗候选人。
  */
 function resolveTimelineFact(ctx: EvalContext, field: string): FieldFact {
-  const workState = ctx.parsed.fields.work_experience?.state
+  const workEntry = ctx.parsed.fields.work_experience
+  const workState = workEntry?.state
   const timeline = ctx.parsed.timeline
   const months = timeline?.covered_months_closed
   const openEnded = timeline?.open_ended_intervals
   const yearOnly = timeline?.year_only_intervals
   const inversion = ctx.parsed.issues.some((issue) => issue.code === 'resume_timeline_inversion')
-  if (timeline === undefined || typeof months !== 'number' || !Number.isInteger(months) || workState !== 'present') {
+  const usable = typeof months === 'number' && Number.isInteger(months)
+
+  // 字段被 agent 升级过：旧 timeline 与有效字段不是同一版本的事实 → 不派生、不猜。
+  if (workState === 'present' && upgradedByAgent(workEntry)) {
+    return {
+      tri_state: 'present',
+      bounds: 'UNAVAILABLE',
+      issue_codes: [
+        'timeline_unconfirmed:work_experience_upgraded_by_agent',
+        usable
+          ? `converter_timeline_ignored:covered_months_closed=${months as number}`
+          : 'converter_timeline_missing',
+      ],
+      evidence: [],
+    }
+  }
+
+  if (workState !== 'present' || !usable) {
     const absent = workState === 'absent'
     return {
       tri_state: absent ? 'absent' : 'unreadable',
@@ -987,31 +1039,83 @@ function resolveTimelineFact(ctx: EvalContext, field: string): FieldFact {
       evidence: [],
     }
   }
-  const evidence = evidenceFor(ctx, ctx.parsed.fields.work_experience)
-  if (evidence.length === 0) {
-    return { tri_state: 'unreadable', bounds: 'UNAVAILABLE', issue_codes: ['evidence_missing'], evidence: [] }
+  const scan = evidenceFor(ctx, workEntry)
+  if (scan.evidence.length === 0) {
+    // 字段 present，但支撑它的证据不可定位 → 时间线也不可信（不是"没有工作经历"）。
+    return {
+      tri_state: 'present',
+      bounds: 'UNAVAILABLE',
+      issue_codes: [
+        'timeline_unconfirmed:work_experience_evidence_unlocatable',
+        ...evidenceGapCodes(workEntry, scan),
+      ],
+      evidence: [],
+    }
   }
   const exact = openEnded === 0 && yearOnly === 0 && !inversion
-  if (exact) return { tri_state: 'present', bounds: 'EXACT', value: months, evidence, issue_codes: [] }
+  if (exact) return { tri_state: 'present', bounds: 'EXACT', value: months, evidence: scan.evidence, issue_codes: [] }
   return {
     tri_state: 'present',
     bounds: 'LOWER_BOUND',
     lower_bound: months,
-    evidence,
+    evidence: scan.evidence,
     issue_codes: [],
   }
 }
 
+/**
+ * 字段是不是被 agent 结构化**升级**过（三态变了）。
+ *
+ * `converter_state` 是 S6 在覆写时保留的原值（D-29）；缺它就保守地当作升级过，
+ * 因为"不知道原值"不能当成"原值一样"。
+ * @param entry - 有效版本的字段条目。
+ */
+function upgradedByAgent(entry: ConverterStateEntry | undefined): boolean {
+  if (entry === undefined) return false
+  const agentSourced = entry.state_source === 'agent_structured' || entry.provenance === 'agent_read'
+  if (!agentSourced) return false
+  if (typeof entry.converter_state !== 'string') return true
+  return entry.converter_state !== entry.state
+}
+
+/** 证据为什么不够：逐条写清 block_ids 与缺的坐标，供 reason.message 直接展示。 */
+function evidenceGapCodes(entry: ConverterStateEntry | undefined, scan: EvidenceScan): string[] {
+  const codes = ['evidence_missing', ...scan.issue_codes]
+  const agentTotal = entry?.agent_evidence?.length ?? 0
+  if (agentTotal > 0) {
+    const located = (entry?.agent_evidence ?? []).filter((item) => (
+      typeof item.page === 'number' && item.page >= 1
+      && Array.isArray(item.bbox) && item.bbox.length === 4
+      && item.bbox.every((n) => typeof n === 'number' && Number.isFinite(n))
+    )).length
+    codes.push(`agent_evidence_total:${agentTotal}`, `agent_evidence_with_page_and_bbox:${located}`)
+  }
+  if (entry?.evidence_unlocatable === true) codes.push('evidence_unlocatable')
+  const blockIds = Array.isArray(entry?.block_ids) ? entry.block_ids : []
+  if (blockIds.length > 0) codes.push(`field_block_ids:${blockIds.join(',')}`)
+  if (upgradedByAgent(entry)) codes.push('field_upgraded_by_agent:state_from_agent_structured')
+  return [...new Set(codes)]
+}
+
 /** SR §3.2 第 3 条：`eligible_fields` / `blocked_fields` 与 `fields[*].state` 必须自洽。 */
-function checkScreeningIndex(ctx: EvalContext, root: string, state: string): void {
+function checkScreeningIndex(
+  ctx: EvalContext,
+  root: string,
+  state: string,
+  entry: ConverterStateEntry | undefined,
+): void {
   const eligible = ctx.parsed.screening?.eligible_fields
   if (eligible === undefined) return
   const isEligible = eligible.includes(root)
   if ((state === 'present') !== isEligible) {
+    const upgraded = upgradedByAgent(entry)
     addWarning(ctx.warnings, {
       code: 'SCREENING_INDEX_INCONSISTENT',
-      message: `${root} 的 state 与 screening 索引不一致；以 fields[${root}].state 为准`,
-      ref: { field: root, source: 'screening.eligible_fields' },
+      message: upgraded
+        ? `${root} 的旧 converter 索引（${isEligible ? 'eligible' : 'blocked'}）与 agent 升级后的 state=present 不一致；`
+          + '已按有效字段读取并忽略旧索引，结论不受旧索引影响'
+        : `${root} 的 state 与 screening 索引不一致；以 fields[${root}].state 为准`,
+      ref: { field: root, source: upgraded ? 'screening.eligible_fields(old)' : 'screening.eligible_fields' },
     })
   }
 }
@@ -1036,13 +1140,40 @@ function adjustAbsent(
   return { state: 'unreadable', reason: 'document_not_fully_read' }
 }
 
-/** 取字段的证据条目，并把 sha256 不一致的条目剔除（SR §8.2 / TC §5.3 第 4 条）。 */
-function evidenceFor(ctx: EvalContext, entry: ConverterStateEntry | undefined): ScreenEvidence[] {
+/** 证据扫描结果：可用证据 + 被剔除的原因（原因进 reason.issue_codes，不静默丢）。 */
+interface EvidenceScan {
+  readonly evidence: ScreenEvidence[]
+  readonly issue_codes: readonly string[]
+}
+
+/**
+ * 取字段的证据条目（SR §8.2 / TC §5.3 第 4 条）。
+ *
+ * 三道闸门，全部**显式记录原因**：
+ *   1. agent 证据引用的 `block_id` 必须落在该字段自己的 `block_ids` 里；
+ *   2. `page ≥ 1` 且 `bbox` 是 4 个有限数（缺一个就不算可定位）；
+ *   3. `source_asset_sha256` 必须与当前材料一致。
+ * @param ctx - 评估上下文。
+ * @param entry - 有效版本的字段条目。
+ */
+function evidenceFor(ctx: EvalContext, entry: ConverterStateEntry | undefined): EvidenceScan {
   const out: ScreenEvidence[] = []
+  const codes: string[] = []
+  const fieldBlockIds = Array.isArray(entry?.block_ids) ? entry.block_ids : []
+  let agentWithoutCoords = 0
   for (const item of entry?.evidence ?? []) {
+    const agentSourced = item.source === 'agent_structured' || typeof item.block_id === 'number'
+    if (agentSourced && typeof item.block_id === 'number' && fieldBlockIds.length > 0
+      && !fieldBlockIds.includes(item.block_id)) {
+      codes.push(`evidence_block_id_not_in_field_block_ids:${item.block_id}`)
+      continue
+    }
     const page = typeof item.page === 'number' ? item.page : 0
     const bbox = (item.bbox ?? []).map((n) => (typeof n === 'number' ? n : Number.NaN))
-    if (page < 1 || bbox.length !== 4 || !bbox.every((n) => Number.isFinite(n))) continue
+    if (page < 1 || bbox.length !== 4 || !bbox.every((n) => Number.isFinite(n))) {
+      if (agentSourced) agentWithoutCoords += 1
+      continue
+    }
     const declared = item.source_asset_sha256
     if (typeof declared === 'string' && declared !== '' && declared !== ctx.rv.source_asset_sha256) {
       addWarning(ctx.warnings, {
@@ -1062,7 +1193,8 @@ function evidenceFor(ctx: EvalContext, entry: ConverterStateEntry | undefined): 
       provenance: typeof entry?.provenance === 'string' ? entry.provenance : 'unknown',
     })
   }
-  return out
+  if (agentWithoutCoords > 0) codes.push(`agent_evidence_without_page_or_bbox:${agentWithoutCoords}`)
+  return { evidence: out, issue_codes: [...new Set(codes)] }
 }
 
 /** `kind` + `outcome` → `reason.code`（SR §7.3 的封闭表）。 */
@@ -1150,7 +1282,18 @@ export function evaluateCriterion(ctx: EvalContext, criterion: Criterion, index:
     message = `原文确实没有提到 ${criterion.field}（材料已读完、无 HARD issue）`
   } else if (fact.tri_state === 'unreadable') {
     outcome = 'UNREADABLE'
-    message = `${criterion.field} 有原文但读不出（issue: ${fact.issue_codes.join(', ')}）；不得据此判定不满足`
+    const codes = fact.issue_codes.join(', ')
+    // 只有"字段本身 present、但证据不可定位"这一族才换措辞；`field_state_undeclared` 不是。
+    const evidenceGap = fact.issue_codes.some((code) => (
+      code === 'evidence_missing'
+      || code.startsWith('evidence_')
+      || code.startsWith('agent_evidence_')
+      || code.startsWith('field_block_ids')
+      || code.startsWith('field_upgraded_by_agent')
+    ))
+    message = evidenceGap
+      ? `${criterion.field} 的有效字段状态是 present，但没有可定位的证据（${codes}）；按未确认处理，不得据此判定不满足`
+      : `${criterion.field} 有原文但读不出（issue: ${codes}）；不得据此判定不满足`
   } else if (operator === 'EXISTS') {
     outcome = 'SATISFIED'
     message = `${criterion.field} 已读出（state=present）`
@@ -1195,7 +1338,9 @@ export function evaluateCriterion(ctx: EvalContext, criterion: Criterion, index:
       }
     } else {
       outcome = 'UNREADABLE'
-      message = `${criterion.field} 的时间线不可用（work_experience 未读出）`
+      // 有效字段本身是 present，但这份版本没有可复算的时间线：**未确认**，不是"读不出这个人"。
+      message = `${criterion.field} 的时间线未确认（${fact.issue_codes.join('; ')}）；`
+        + '不据此判定满足或不满足'
     }
   }
 
@@ -1246,7 +1391,15 @@ export function evaluateCriterion(ctx: EvalContext, criterion: Criterion, index:
 //  主流程
 // =====================================================================
 
-/** 把 `parsed_fields` 拆成 S7 需要的四块（白名单：fields / timeline / issues / screening / meta）。 */
+/**
+ * 把 `parsed_fields` 拆成 S7 需要的四块（白名单：fields / timeline / issues / screening / meta）。
+ *
+ * **单一事实来源**：`screening` 里保留的是 converter 原索引，**只用于诊断 warning**
+ * （SR §3.2 的自洽检查）；任何 outcome / verdict 都不读它——eligibility 由
+ * `fields[*].state` 在读取时派生。`timeline` 是否可用由 `resolveTimelineFact()`
+ * 按"是否被 agent 升级过"判定（旧 timeline 不得污染升级后的字段）。
+ * @param raw - `resume_version.parsed_fields`。
+ */
 function readParsedFields(raw: Record<string, unknown>): EvalContext['parsed'] {
   const fields = (typeof raw.fields === 'object' && raw.fields !== null ? raw.fields : {}) as Record<string, ConverterStateEntry | undefined>
   const issues = Array.isArray(raw.issues) ? (raw.issues as readonly MaterialIssue[]) : []
@@ -1850,7 +2003,9 @@ export function createScreeningEvaluateTool(cfg: ResolvedDatabaseConfig): Readon
           lines.push(`  bonus [${signal.code}] ${signal.criterion_key ?? '-'} — ${signal.message}`)
         }
         for (const warning of v.warnings) lines.push(`  warning ${warning.code}: ${warning.message}`)
-        lines.push(`snapshot: app_rv=${v.snapshot.application_record_version} rubric=${v.snapshot.rubric_version_id}`)
+        lines.push(`snapshot: app_rv=${v.snapshot.application_record_version} `
+          + `resume_version_id=${v.snapshot.resume_version_id} `
+          + `rubric_version_id=${v.snapshot.rubric_version_id}`)
         lines.push(`evaluation_digest=${v.evaluation_digest}`)
         return [{ type: 'text', text: lines.join('\n') }]
       },

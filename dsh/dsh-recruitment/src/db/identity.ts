@@ -191,6 +191,27 @@ export function observeIdentity(
   return { strong, blocked }
 }
 
+/**
+ * 强标识集合的**规范化指纹**。只服务一件事：把"同一个自然人"的并发接入串行化
+ * （`pg_advisory_xact_lock` 的 key 成分）。
+ *
+ * 它**不是**身份判据、更不是申请身份：申请身份只由
+ * `(tenant_id, candidate_id, job_id, lifecycle_status='ACTIVE')` 决定，
+ * 文件 sha / 内容 sha 一律不参与（Issue #1 §1.1/§1.2）。
+ *
+ * 只有真正能进自动匹配的标识才进指纹（`region_ambiguous` 的不进——它本来就不产生关联，
+ * 若把它算进来会让两笔本可并行的接入互相等）。
+ * @param strong - 本次材料可自动的强标识。
+ * @returns 排序去重后的 `field=norm`（`|` 连接）；没有可用标识时为 `null`。
+ */
+export function strongIdentityKey(strong: readonly StrongId[]): string | null {
+  const parts = strong
+    .filter((id) => !id.region_ambiguous)
+    .map((id) => `${id.field}=${id.norm}`)
+  if (parts.length === 0) return null
+  return [...new Set(parts)].sort().join('|')
+}
+
 /** 一个命中的旧档案。 */
 export interface CandidateHit {
   readonly candidate_id: string
