@@ -740,3 +740,18 @@ DSH 自带 `@deepseek-ai/dsh-user-approval`（fail-closed）；headless profile 
 方向故意不对称：推进可以保守地少信息，淘汰不行。
 
 **证据**：`contracts/evaluation/decision-rules.md` §4.2.1 + Q-5；`docs/17` D-19（顺序 HARD）同一取向。
+
+### D-85 · 解析层唯一权威契约 = `DocumentContent`（docs/19），`converter` 是它的实现细节
+
+**裁定**：同一层只能有一个真相。`DocumentContent`（docs/19 §2.1）是解析层的**唯一权威契约**；
+`converter/` 的现有输出不是与它并列的第二套契约，而是必须被**无损映射**进 `DocumentContent` 的实现细节。
+旧的更好就吸收进新契约（page/bbox、字符保真、独立校验器），不保留"两套并行、下游自己挑"。
+
+**理由**：本项目历史上所有大坑都来自"两套权威并存"（`docs/10` vs Notion、`handoff/15` 阶段码 vs `stage_catalog`、
+`work/control` 台账残本）。解析层再来一次就是第三次。
+
+**落地**：`dsh/dsh-recruitment/src/document/README.md` 写死映射表与硬断言——
+同一份 PDF，`converter` 直出的 block 数/文本/page/bbox 与映射后的 `DocumentContent` **逐项一致**；
+`completeness` 只有一套；`issues[].code` 由 U2 消费不得重命名。
+
+**证据**：Issue #3 与 docs/19；用户裁定原话"到底哪个好，就以哪个为准呗，并不是冲突的关系，本质上都是在做这一层"。
