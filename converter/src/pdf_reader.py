@@ -28,6 +28,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import unicodedata
 from pathlib import Path
 
@@ -233,6 +234,58 @@ def _ocr_heading_inserts(path: Path, max_pages: int = 3) -> tuple[list, str]:
     return inserts, ""
 
 
+# ==================== OCR 兜底：原生文本层坏掉的整页 ====================
+def _ocr_page_blocks(path: Path, pages: list[int]) -> tuple[list, str]:
+    """对指定页整页 OCR，返回带 bbox 的块（provenance='ocr'）。
+
+    为什么需要它（2026-11-14 真实语料事故）：PDF 用自定义字体编码时，原生文本层
+    抽出来是乱码/控制字符。旧实现只报 `pdf_text_encoding_unread` 然后放弃，
+    整份简历就被判成"读不出"——而用户打开看是**完全正常**的简历。
+
+    为什么用 OCR 而不是视觉模型：
+      * 印刷体中文 OCR 准确率更高（~97–99%）、确定性、**带 bbox**（能指回原文位置）；
+      * 视觉模型会"顺"文本，且没有可靠的字符级坐标 —— 简历要的是逐字准确 + 可定位。
+
+    诚实性：OCR 出来的块 `provenance='ocr'`，绝不冒充 `native_text`；
+    下游（身份归并/年限计算）看到它就知道"这是机器认的字，要交叉核对"。
+    """
+    if not _OCR_TOOL.is_file():
+        return [], "ocr_tool_missing"
+    py = os.environ.get("RESUME_CONVERSION_OCR_PYTHON", "").strip() or sys.executable
+    max_pages = max(pages) if pages else 1
+    try:
+        proc = subprocess.run([py, str(_OCR_TOOL), str(path), "--max-pages", str(max_pages)],
+                              capture_output=True, timeout=300)
+    except Exception as exc:  # noqa: BLE001
+        return [], f"ocr_run_failed: {exc}"
+    if proc.returncode != 0:
+        return [], "ocr_exit_%d: %s" % (proc.returncode,
+                                        proc.stderr.decode("utf-8", "replace")[:200])
+    try:
+        data = json.loads(proc.stdout.decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        return [], f"ocr_bad_json: {exc}"
+    if not data.get("ok"):
+        return [], "ocr_not_ok: " + str(data.get("error"))
+
+    wanted = set(pages)
+    blocks = []
+    for page in data.get("pages") or []:
+        pno = int(page.get("page") or 0)
+        if pno not in wanted:
+            continue
+        for ln in page.get("lines") or []:
+            text = (ln.get("text") or "").strip()
+            rect = ln.get("bbox_pdf") or []
+            if not text or len(rect) != 4:
+                continue
+            block = content.block("paragraph", text,
+                                  {"page": pno, "bbox": [float(x) for x in rect]})
+            block["provenance"] = "ocr"
+            blocks.append(block)
+    return blocks, "" if blocks else "ocr_no_text"
+
+
 # ============================ 失败返回 ============================
 def _failed(path: Path, sha: str | None, code: str, message: str, *,
             needs_visual: bool = False) -> dict:
@@ -337,18 +390,30 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
                                              {"page": number, "bbox": list(raw[:4])}))
             page_sizes.append(_lookup_size(size_map, list(raw[:4])))
         if encoding_regions:
-            # One page-level task: the Agent reads the whole selected page and
-            # returns the whole page text. Region bboxes are evidence for where
-            # the native layer failed, not a request to patch those spots only.
+            # 原生文本层坏了 -> 整页 OCR 兜底（2026-11-14 修）。
+            # 旧实现只报 pdf_text_encoding_unread 就放弃，导致正常简历被判"读不出"。
             cause = ('; text is drawn with Type3 vector fonts, so the native '
                      'text layer is unreliable' if type3_fonts else '')
-            issues.append({'code': 'pdf_text_encoding_unread',
-                           'message': ('native PDF text contains undecoded glyphs or invalid '
-                                       'control characters' + cause + '. Read the whole page '
-                                       'image of this original and return the complete page text '
-                                       '(preserve readable native text and real URI links); do not '
-                                       'treat this as local wording patches'),
-                           'location': {'page': number, 'regions': encoding_regions}})
+            ocr_blocks, ocr_note = _ocr_page_blocks(path, [number])
+            if ocr_blocks:
+                page_blocks = [b for b in page_blocks
+                               if (b.get('location') or {}).get('page') != number]
+                page_blocks.extend(ocr_blocks)
+                issues.append({'code': 'pdf_text_recovered_by_ocr',
+                               'message': ('native PDF text contained undecoded glyphs or invalid '
+                                           'control characters' + cause + '; the whole page was '
+                                           're-read by OCR and the recovered text is marked '
+                                           'provenance=ocr (machine-recognised, not native). '
+                                           'Verify identity fields before using them.'),
+                               'location': {'page': number, 'regions': encoding_regions}})
+            else:
+                issues.append({'code': 'pdf_text_encoding_unread',
+                               'message': ('native PDF text contains undecoded glyphs or invalid '
+                                           'control characters' + cause + '; OCR fallback did not '
+                                           'recover this page (' + (ocr_note or 'unknown') + '). '
+                                           'Read the whole page image of this original and return '
+                                           'the complete page text'),
+                               'location': {'page': number, 'regions': encoding_regions}})
         if layout is not None:
             try:
                 ordered = pdf_layout.order_page(page, layout['pages'][number - 1], number)

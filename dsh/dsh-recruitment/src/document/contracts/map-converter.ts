@@ -155,6 +155,9 @@ export const CONVERTER_SOFT_ISSUE_PREFIXES: readonly string[] = [
 
 /** 已登记的 SOFT code（逐字抄自 `converter/src/issues.py` 的 `ADDED_CODES` 中 soft 项）。 */
 export const CONVERTER_SOFT_ISSUE_CODES: readonly string[] = [
+  // 2026-11-14: 原生文本层坏掉时整页 OCR 重读成功（恢复标记，不是失败）。
+  // 这份清单是 Python issues.py::ADDED_CODES 的镜像，两边必须同步；只改一边会变成 Python 说 soft、TS 说 hard。
+  'pdf_text_recovered_by_ocr',
   'resume_timeline_gap',
   'resume_timeline_overlap',
   'resume_timeline_inversion',
