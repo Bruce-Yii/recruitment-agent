@@ -44,14 +44,31 @@ function unconfigured(toolName, issues) {
 }
 
 /**
- * 懒取 `ctx.approval`：cordis 的服务访问在插件未声明 inject 时可能不可用，
- * 所以每次调用时再取；取不到就返回 fail-closed 的 'unavailable'。
+ * 懒取 `ctx.approval`：cordis 在插件**没有声明 inject** 时访问服务会直接抛
+ * `cannot get property "approval" without inject`（真实 headless 实测），所以这里
+ * 必须 try/catch：取不到就 fail-closed 成 `'unavailable'`，让工具报
+ * `DECISION_REQUIRES_HUMAN(APPROVAL_UNAVAILABLE)`，而不是把宿主异常当工具结果漏给模型。
+ *
+ * W0 集成到 `src/index.ts` 时的正确做法：在插件里声明 `inject: ['tools','approval']`
+ * 并把 `ctx.approval` 传给 `createDecisionRecordTool`（D-79）；不要依赖本文件的兜底。
  */
 function approvalGateway(ctx) {
+  const lookup = () => {
+    try {
+      const direct = ctx.approval
+      if (direct !== undefined && direct !== null) return direct
+    } catch {
+      // 没 inject → 正常情况，继续尝试 ctx.get
+    }
+    try {
+      return typeof ctx.get === 'function' ? ctx.get('approval') : undefined
+    } catch {
+      return undefined
+    }
+  }
   return {
     async request(req) {
-      const service = ctx.approval
-        ?? (typeof ctx.get === 'function' ? ctx.get('approval') : undefined)
+      const service = lookup()
       if (service === undefined || service === null || typeof service.request !== 'function') {
         return 'unavailable'
       }

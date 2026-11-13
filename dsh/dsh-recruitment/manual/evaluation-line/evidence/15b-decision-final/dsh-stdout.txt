@@ -1,0 +1,7 @@
+工具返回内容如下（原样贴出）：
+
+```
+Error: SCORECARD_MISSING: {"code":"SCORECARD_MISSING","detail":{"missing":["073b043e-3381-47c4-9dce-b57b49a7a6dd","3c556559-053a-4600-b518-9d5ec95134f1","4bc71a64-e377-4dd3-917f-54421e2b5e84","01cd78fe-0dcf-40b7-8053-82d4c84d9fad","3eb47ee6-97e6-4f3c-84bd-ae5eead4dd75","5585399d-bd0c-48a4-8867-7b257536d8b4"],"scope":"FINAL"},"message":"终局决策不接受残缺面板：必交面评缺失，逐条确认不放行 FINAL（DC §4.2.1）","reason_code":"REQUIRED_SCORECARDS_INCOMPLETE"}
+```
+
+按要求，仅调用一次，未重试。

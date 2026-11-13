@@ -1,0 +1,1 @@
+dsh: QUOTA: 429: {"type":"GoUsageLimitError","message":"OpenCode Go usage limit reached (monthly, resets in 16d 3h). To keep going now, turn on Extra Usage or upgrade to Go Plus at https://opencode.ai/console/org_01M6469H91C83SMDM7ZR2QRK3Q/go."}

@@ -61,39 +61,38 @@ let args
 try {
   await client.query('begin transaction read only')
   const { rows: appRows } = await client.query(
-    `select a.id, a.job_id, a.rubric_version_id, d.hiring_manager_actor_id
+    `select a.id, a.tenant_id, a.job_id, a.rubric_version_id, d.hiring_manager_actor_id
        from recruitment.application a
        join recruitment.job j on j.id = a.job_id and j.tenant_id = a.tenant_id
        join recruitment.department d on d.id = j.department_id and d.tenant_id = j.tenant_id
       where a.id = $1`, [applicationId])
   const app = appRows[0]
   if (app === undefined) throw new Error(`application ${applicationId} 不存在`)
+  const tenantId = app.tenant_id
   const isHiringManager = app.hiring_manager_actor_id === actor
 
-  const scorecardWhere = scope === 'STAGE'
-    ? 'and s.interview_id = $2'
-    : ''
-  const params = scope === 'STAGE' ? [applicationId, interviewId] : [applicationId]
+  const scorecardWhere = scope === 'STAGE' ? 'and s.interview_id = $3' : ''
+  const params = scope === 'STAGE' ? [tenantId, applicationId, interviewId] : [tenantId, applicationId]
   const { rows: scorecards } = await client.query(
     `select s.id, s.revision_no, s.interviewer_id, i.actor_id, s.payload_hash, s.overall, s.items,
             s.rationale, s.status
        from recruitment.scorecard s
        join recruitment.interviewer i on i.id = s.interviewer_id and i.tenant_id = s.tenant_id
        join recruitment.interview iv on iv.id = s.interview_id and iv.tenant_id = s.tenant_id
-      where s.tenant_id = $1 and iv.application_id = $1 and s.superseded_by_scorecard_id is null
+      where s.tenant_id = $1 and iv.application_id = $2 and s.superseded_by_scorecard_id is null
         and s.status in ('SUBMITTED','WAIVED') ${scorecardWhere}
       order by s.interviewer_id`, params)
 
-  const { rows: transcriptRows } = scope === 'STAGE'
-    ? await client.query(
+  const transcriptRows = scope === 'STAGE'
+    ? (await client.query(
       `select ta.transcript_status
          from recruitment.meeting_binding mb
          join recruitment.transcript_artifact ta
            on ta.meeting_id = mb.meeting_id and ta.tenant_id = mb.tenant_id and ta.is_canonical
         where mb.tenant_id = $1 and mb.interview_id = $2 and mb.unbound_at is null
-        order by ta.source_revision desc limit 1`, [applicationId, interviewId])
-    : [[], []]
-  const transcriptState = transcriptRows?.[0]?.transcript_status ?? 'NO_TRANSCRIPT'
+        order by ta.source_revision desc limit 1`, [tenantId, interviewId])).rows
+    : []
+  const transcriptState = transcriptRows[0]?.transcript_status ?? 'NO_TRANSCRIPT'
 
   const basisRefs = [
     {

@@ -1,0 +1,49 @@
+{
+  "application_id": "11111111-1111-4111-8111-000000000701",
+  "decision_scope": "FINAL",
+  "as_of": "2026-11-13T19:00:00+08:00",
+  "result": "ADVANCE",
+  "reason": "backend_depth 两个维度均 MET，尝试在 FINAL 缺面评时推进（应被拒）",
+  "basis_refs": [
+    {
+      "kind": "SUMMARY",
+      "summary_digest": "96d2f7a364b2ea9eb53c40fea8053fee35d783be17eda577443aefa5eac259a3",
+      "contract_version": "2.0.0",
+      "coverage": {
+        "required_total": 8,
+        "submitted": 2,
+        "waived": 0,
+        "missing": 6,
+        "unusable": 0,
+        "not_required": 0,
+        "overdue": 0,
+        "completion_ratio": 0.25
+      },
+      "tally": {
+        "advance": 2,
+        "hold": 0,
+        "reject": 0,
+        "waived": 0
+      },
+      "consensus": "UNANIMOUS_ADVANCE"
+    },
+    {
+      "kind": "RUBRIC_VERSION",
+      "id": "11111111-1111-4111-8111-000000000403",
+      "version_no": 1,
+      "payload_hash": "a74e84bb9fa05063c72303924ffdf9aa497682b33f2e94f752daf2a14dc39d79"
+    },
+    {
+      "kind": "AUTHORITY",
+      "actor_id": "11111111-1111-4111-8111-000000000103",
+      "is_hiring_manager": false
+    }
+  ],
+  "summary_digest": "96d2f7a364b2ea9eb53c40fea8053fee35d783be17eda577443aefa5eac259a3",
+  "human_confirmation": {
+    "confirmed_by_actor_id": "11111111-1111-4111-8111-000000000103",
+    "confirmed_at": "2026-11-13T19:00:00+08:00",
+    "confirmation_method": "IN_APP_CONFIRM",
+    "confirmation_text_sha256": "7393056ebb89176d955b616bcd0bef20d5ecba2b8473b2d229e652916db4d0ec"
+  }
+}

@@ -1,0 +1,8 @@
+dsh: reasoning:
+
+The user asks me to call recruitment_decision_record once with the exact JSON. I should do exactly that, no other tool calls. Then paste the returned content verbatim and end.
+
+Let me construct the call with the exact arguments.
+dsh: reasoning:
+
+The tool returned an error. The user said: call once, then paste the returned content verbatim, then end. Don't retry. So I paste the raw output.

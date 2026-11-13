@@ -1,0 +1,1 @@
+Error: INVALID_ARGS: {"code":"INVALID_ARGS","detail":{"missing_kinds":["SCORECARD"],"submitted":2},"message":"面板里有可用面评时，basis_refs 至少要引一条 SCORECARD（DC §6.1）","reason_code":"BASIS_REF_EMPTY"}

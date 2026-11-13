@@ -1,0 +1,7 @@
+工具返回内容原样如下：
+
+```
+Error: DECISION_REQUIRES_HUMAN: {"code":"DECISION_REQUIRES_HUMAN","detail":{"approval":"unavailable"},"message":"没有可用的批准通道（headless 无 answerer）：正式决策不放行（D-79，fail closed）","reason_code":"APPROVAL_UNAVAILABLE"}
+```
+
+按要求只调用这一次，未重试，就此结束。

@@ -53,7 +53,7 @@
 // 只读保证：本文件没有写语句，不 import 写事务封装；`execute()` 走 withReadOnly。
 // 输出不含 generated_at/now；唯一时间输入是 as_of（原样回显）。
 
-import { parseContractArgs, toParameterSchema, type ParamMap, type ParamSpec } from './args.ts'
+import { collectArgViolations, toParameterSchema, type ParamMap, type ParamSpec } from './args.ts'
 import { canonicalJson, checkAsOf, digestOf } from './contract.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
@@ -195,7 +195,9 @@ const SCHEMA_PARAMS: ParamMap = {
 // `type:'null'`，所以可空节点用 `oneOf: [<正形状>, { const: null }]` 表达
 // （`oneOf`/`const` 都在官方子集里）。其余"可为空"的字段一律省略键。
 
-const NULL_CONST: Record<string, unknown> = { const: null }
+// DSH 的子集允许 `type:"null"` 作为 scalar type，但要求 `const` 旁必须有 `type`
+// （`assertSupportedJsonSchema`：`const requires type or oneOf`）。
+const NULL_CONST: Record<string, unknown> = { type: 'null', const: null }
 
 const MISSING_SCHEMA: Record<string, unknown> = {
   type: 'object',
@@ -509,10 +511,13 @@ function evalError(
   message: string,
   detail?: unknown,
 ): RecruitmentToolError {
-  const body: Record<string, unknown> = { code, reason_code: reasonCode, message }
-  if (detail !== undefined) body.detail = detail
+  // TC §1.2 要求键序固定为 code → reason_code → (family) → message → detail。
+  // 这里**不**用 canonicalJson 包整包（它会按字典序排键）；detail 内部仍用规范化 JSON。
+  const head = `{"code":${JSON.stringify(code)},"reason_code":${JSON.stringify(reasonCode)},`
+    + `"message":${JSON.stringify(message)}`
+  const body = detail === undefined ? `${head}}` : `${head},"detail":${canonicalJson(detail)}}`
   // `RecruitmentToolError` 的 code 联合不含 S10 新码；运行期 code 就是传入值（DESIGN §2）。
-  return new RecruitmentToolError(code as never, canonicalJson(body))
+  return new RecruitmentToolError(code as never, body)
 }
 
 // =====================================================================
@@ -911,7 +916,24 @@ function parseSummaryArgs(rawArgs: unknown, nowMs: number): SummaryArgs {
     }
   }
 
-  const parsed = parseContractArgs(ACCEPTED_PARAMS, rawArgs)
+  const { parsed, violations } = collectArgViolations(ACCEPTED_PARAMS, rawArgs)
+  if (violations.length > 0) {
+    const first = violations[0]
+    if (first === undefined) throw new Error('unreachable: empty arg violations')
+    throw evalError(
+      'INVALID_ARGS',
+      first.reason,
+      '参数不合法，逐条见 detail.violations',
+      {
+        allowed: ALLOWED_KEYS,
+        violations: violations.map((violation) => ({
+          reason_code: violation.reason,
+          path: violation.path,
+          message: violation.message,
+        })),
+      },
+    )
+  }
   const applicationId = parsed.application_id as string
   const scopeRaw = parsed.decision_scope as string
 
@@ -1346,6 +1368,16 @@ export async function computeEvaluationSummaryIn(
     }
   })
 
+  // `require_complete` 只用于"决策前预检"；默认不抛（汇总的职责就是报告缺）。
+  if (args.require_complete && missingCount > 0) {
+    throw evalError(
+      'SCORECARD_MISSING',
+      'REQUIRED_SCORECARDS_INCOMPLETE',
+      `${missingCount} 份必填面评缺失（含形状不可用的），require_complete=true 拒绝出汇总`,
+      { missing_count: missingCount },
+    )
+  }
+
   // ---- consensus / minority（DC §3.3；少数派原文不得摘要：DC-03）----
   const consensus = consensusOf(tally)
   const consensusScope = missingCount === 0 ? 'FULL_PANEL' : 'PARTIAL_PANEL'
@@ -1482,9 +1514,6 @@ export async function computeEvaluationSummaryIn(
 
   // ---- provenance（TC §1.3；只贴标签，不因 FIXTURE 改判）----
   const provenance = await computeProvenance(client, tenantId, app, interviewIds)
-  if (provenance === 'FIXTURE') {
-    // 由 warnings 统一生成，此处只保留分支可读性。
-  }
 
   // ---- blockers（TC §3.5 封闭集；顺序固定，digest 取 code）----
   const blockers: Record<string, unknown>[] = []
@@ -1557,12 +1586,8 @@ export async function computeEvaluationSummaryIn(
     })
   }
 
-  const blockerCodes = new Set<string>()
-  for (const blocker of blockers) {
-    for (const result of blocker.blocks_results as string[]) blockerCodes.add(`${blocker.code}:${result}`)
-  }
   const permittedResults = BASE_PERMITTED_RESULTS.filter(
-    (result) => !blockerCodes.has(`__never__:${result}`) && !blockers.some(
+    (result) => !blockers.some(
       (blocker) => (blocker.blocks_results as string[]).includes(result),
     ),
   )
@@ -1878,6 +1903,7 @@ export function createEvaluationSummarizeTool(
         const permitted = summary.permitted_results as readonly string[]
         const warnings = summary.warnings as readonly Record<string, unknown>[]
         const lines: string[] = [
+          'S10 汇总投影（只读，不代决）',
           `${String(summary.tool)} ${String(summary.contract_version)} `
             + `advisory=${String(summary.advisory)} read_only=${String(summary.read_only)} `
             + `as_of=${String(summary.as_of)}`,
@@ -1920,9 +1946,14 @@ export function createEvaluationSummarizeTool(
     async execute(rawArgs: unknown): Promise<unknown> {
       const pool = createPool(deps.database)
       try {
-        return await withReadOnly(pool, async (client) => (
-          computeEvaluationSummaryIn(client, deps.database, rawArgs, Date.now())
-        ))
+        return await withReadOnly(pool, async (client) => {
+          // 汇总也要**可追责的调用身份**：`computeEvaluationSummaryIn` 从 GUC 读 actor
+          // （DESIGN §3.5①）。只读事务里 `set_config(..., true)` 是事务局部的 SET LOCAL，
+          // 不写任何表，因此不破坏"只读"这条性质（库层仍用 read-only transaction 兜底）。
+          // 少了这一步，真实 headless 调用会在第一步就 `ACTOR_REQUIRED`——集成实测踩到过。
+          await client.query("select set_config('recruitment.actor_id', $1, true)", [deps.database.actor_id])
+          return await computeEvaluationSummaryIn(client, deps.database, rawArgs, Date.now())
+        })
       } finally {
         await closePool(pool)
       }

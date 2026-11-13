@@ -1,0 +1,16 @@
+dsh: reasoning:
+The user wants me to call `recruitment_decision_record` once with a specific JSON arguments. But the user's message seems cut off - they said "用下面这段 JSON" but didn't include the JSON. Let me re-read.
+
+"只调用一次工具 recruitment_decision_record，arguments 用下面这段 JSON，逐字复制、一个键都不要改、不要少键："
+
+Then the message ends. The JSON isn't provided. Hmm. This is the user's instruction but the JSON payload is missing. 
+
+Wait, maybe the JSON is supposed to follow but got truncated. I should ask the user for the JSON. But the instruction says to call it. Without the JSON I can't.
+
+Actually, let me check if there's anything in the conversation. No. The user message ends with a colon. So the JSON is missing.
+
+I should ask the user to provide the JSON. But maybe I'm supposed to wait. Let me respond asking for the JSON.
+
+Actually, the task is clear: call the tool once with the given JSON. But the JSON isn't given. I need to ask. Let me just ask the user to provide the JSON.
+
+But wait - maybe this is a test and the JSON is expected to be in the next message? No, I should respond. Let me ask.

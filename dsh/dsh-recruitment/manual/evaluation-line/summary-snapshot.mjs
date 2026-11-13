@@ -57,7 +57,11 @@ const args = {
 const pool = createPool(resolved)
 let summary
 try {
-  summary = await withReadOnly(pool, (client) => computeEvaluationSummaryIn(client, resolved, args, Date.now()))
+  summary = await withReadOnly(pool, async (client) => {
+    // 与工具 `execute()` 同一做法：只读事务里设事务局部 actor，再算投影。
+    await client.query("select set_config('recruitment.actor_id', $1, true)", [resolved.actor_id])
+    return await computeEvaluationSummaryIn(client, resolved, args, Date.now())
+  })
 } catch (error) {
   console.error(`summarize 失败：${error?.code ?? error?.name}: ${error?.message ?? String(error)}`)
   process.exitCode = 1

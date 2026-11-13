@@ -1,0 +1,7 @@
+面评已提交（面评工具 2.0.0）：scorecard 3370da09-bb06-4ec5-a083-15bc339a5253 revision_no=1 status=SUBMITTED（幂等重放，未新增行）
+面试：round_no=1 slot_code=DEFAULT status=POST_INTERVIEW
+rubric 11111111-1111-4111-8111-000000000403（APPLICATION_PINNED） transcript_basis=TRANSCRIPT
+维度覆盖 3/3：met=3 not_met=0 not_observed=0 unreadable=0
+标签：provenance=FIXTURE trigger=MANUAL connection=CONNECTED
+审计：status_changed_by_actor_id=11111111-1111-4111-8111-000000000105 status_source_event_id=c5767dae-d3c3-411c-a1f7-f5a8791cc840 record_version=1
+提示：FIXTURE_BASIS

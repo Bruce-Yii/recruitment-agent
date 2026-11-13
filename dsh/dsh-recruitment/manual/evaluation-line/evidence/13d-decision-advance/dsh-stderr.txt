@@ -1,0 +1,12 @@
+dsh: reasoning:
+
+The user wants me to call the tool once with exact JSON. I need to pass the arguments exactly. The tool schema requires application_id, decision_scope, as_of, result, reason, basis_refs, summary_digest, human_confirmation.
+
+Note the JSON given uses unquoted keys, but the tool expects JSON object. I'll pass the JSON as an object. Must be verbatim values. Let me construct.
+
+basis_refs: array of objects as given. Note kind SUMMARY has summary_digest, contract_version, coverage, tally, consensus. RUBRIC_VERSION, AUTHORITY, SCORECARD twice with fields.
+
+I'll call the tool once.
+dsh: reasoning:
+
+

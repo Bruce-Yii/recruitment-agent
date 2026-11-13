@@ -32,9 +32,13 @@ const profile = option('--profile')
 const overlayArg = option('--overlay')
 const overlay = overlayArg === undefined ? undefined : resolve(overlayArg)
 const label = option('--label', `run-${Date.now()}`)
-const goal = option('--goal')
+// --goal-file 让目标文本（含大段 JSON 与中文）从文件读，避免 PowerShell 引号/换行把参数弄坏。
+const goalFile = option('--goal-file')
+const goal = goalFile === undefined
+  ? option('--goal')
+  : readFileSync(resolve(goalFile), 'utf8')
 if (profile === undefined || overlay === undefined || goal === undefined) {
-  console.error('usage: run-headless.mjs --profile <p> --overlay <overlay.yml> --label <label> --goal "<text>"')
+  console.error('usage: run-headless.mjs --profile <p> --overlay <overlay.yml> --label <label> (--goal "<text>" | --goal-file <path>)')
   process.exit(2)
 }
 

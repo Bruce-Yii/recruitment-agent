@@ -13,7 +13,7 @@
 //   * DC-12/13/14/15/16/17/18/19 `basis_refs` 的 9 种 kind、非空、AUTHORITY 计算值、
 //     SUMMARY digest、RUBRIC_VERSION 哈希、REJECT 必须引到维度、approval 绑定
 //   * DC-20 只比对重算出来的 `summary_digest`（**不重算**：唯一实现是 evaluation-summarize.ts）
-//   * DC-21..DC-29 四道防线（REJECT 不得建立在缺失/读不出之上；反着来必须签字）
+//   * DC-22/23/24/25/26/27/28/29 四道防线（REJECT 不得建立在缺失/读不出之上；反着来必须签字）
 //   * DC-30..DC-40 撤回三步舞（反向插 → 换指针 → 清空；旧行 record_version 手动 +1；
 //     单向链；**禁止 `SELECT … FOR UPDATE`**，D-80）
 //   * DC-38 同事务写内部事件（`provider='internal'`/`trust_level='INTERNAL'`/
@@ -543,7 +543,7 @@ function checkBasisRefs(raw: unknown, violations: Violation[]): Record<string, u
       return
     }
     const spec = BASIS_KEYS[kind] as { required: readonly string[]; optional: readonly string[] }
-    const allowed = new Set([...spec.required, ...spec.optional])
+    const allowed = new Set(['kind', ...spec.required, ...spec.optional])
     for (const key of Object.keys(item)) {
       if (!allowed.has(key)) {
         pushViolation(
@@ -1490,6 +1490,60 @@ function computeIsHiringManager(authority: AuthorityRow, actorId: string): boole
 }
 
 /**
+ * DC-19：`approval_id` 给了就必须真的绑到**这一条**决策上。
+ *
+ * 库只保证 `resource_type` 的枚举与"已决必有审批人+时间"（`0001:L448-449`、`L455-459`）；
+ * `resource_id = 本决策 id` 与 `decided_at ≤ decision.decided_at` **只能由写侧校验**
+ * （`approval.resource_id` 是普通 uuid 列，没有反向外键）。
+ * 顺序陷阱（`G-3`）：`decision` 整行不可改 ⇒ 必须**预生成** decision id 才能先建 approval。
+ * @param client - 事务内客户端。
+ * @param tenantId - 租户。
+ * @param approvalId - 入参 `approval_id`。
+ * @param decisionId - 本次预生成的决策 id。
+ * @param nowMs - 服务端"现在"。
+ */
+async function checkApprovalBinding(
+  client: DatabaseClient,
+  tenantId: string,
+  approvalId: string,
+  decisionId: string,
+  nowMs: number,
+): Promise<void> {
+  const { rows } = await client.query<{
+    resource_type: string
+    resource_id: string
+    status: string
+    decided_at: string | Date | null
+  }>(
+    `select a.resource_type, a.resource_id, a.status, a.decided_at
+       from recruitment.approval a
+      where a.id = $1 and a.tenant_id = $2`,
+    [approvalId, tenantId],
+  )
+  const row = rows[0]
+  const fail = (detail: Record<string, unknown>): never => {
+    throw evalError(
+      'INVALID_ARGS',
+      'APPROVAL_BINDING_INVALID',
+      'approval_id 没有绑到本次决策上（DC-19：resource_type/resource_id/status/decided_at 四条都要满足）',
+      { approval_id: approvalId, decision_id: decisionId, ...detail },
+    )
+  }
+  if (row === undefined) fail({ found: false })
+  if (row !== undefined && row.resource_type !== 'DECISION') fail({ resource_type: row.resource_type })
+  if (row !== undefined && row.resource_id !== decisionId) fail({ resource_id: row.resource_id })
+  if (row !== undefined && row.status !== 'APPROVED') fail({ status: row.status })
+  if (row !== undefined) {
+    const decidedAt = row.decided_at === null
+      ? Number.NaN
+      : row.decided_at instanceof Date ? row.decided_at.getTime() : Date.parse(row.decided_at)
+    if (!Number.isFinite(decidedAt) || decidedAt > nowMs) {
+      fail({ decided_at: row.decided_at, now: new Date(nowMs).toISOString() })
+    }
+  }
+}
+
+/**
  * STEP 2（`basis_refs` 部分）：每个 kind 的必带项与语义校验。
  *
  * 顺序：先「必带哪几种 kind」（DC-12/§6.1 表），再逐条语义（DC-14/16/17/19/29/33）。
@@ -1690,6 +1744,11 @@ function familyOfReviewBlocker(code: string): string {
   return code === 'OPEN_REVIEW_TASK' ? 'QUEUE' : 'EVIDENCE'
 }
 
+/** TC §3.5：blocker code → 本工具的错误 reason_code（只有 `UNREADABLE_NOT_RESOLVED` 会改名）。 */
+function reasonCodeOfReviewBlocker(code: string): string {
+  return code === 'UNREADABLE_NOT_RESOLVED' ? 'REJECT_BASIS_UNREADABLE' : code
+}
+
 /**
  * STEP 5：汇总里的阻断是否命中本次 `result`。
  *
@@ -1699,9 +1758,7 @@ function familyOfReviewBlocker(code: string): string {
  * @param ctx - 汇总 + 入参。
  */
 function checkSummaryBlockers(ctx: { readonly args: DecisionArgs; readonly view: SummaryView }): void {
-  const citesRecord = refsOfKind(ctx.args.basis_refs, 'INTERVIEW_RECORD').length > 0 || (
-    Array.isArray(ctx.view.raw.record) && false
-  )
+  const citesRecord = refsOfKind(ctx.args.basis_refs, 'INTERVIEW_RECORD').length > 0
   const items: Record<string, unknown>[] = []
   for (const blocker of ctx.view.blockers) {
     if (!(REVIEW_BLOCKER_CODES as readonly string[]).includes(blocker.code)) continue
@@ -1711,9 +1768,11 @@ function checkSummaryBlockers(ctx: { readonly args: DecisionArgs; readonly view:
     }
     if (blocker.code === 'RECORD_NOT_VERIFIED' && !citesRecord) continue
     const detail = asRecord(blocker.detail)
+    const reasonCode = reasonCodeOfReviewBlocker(blocker.code)
     items.push({
-      code: blocker.code,
+      code: reasonCode,
       family: blocker.family === '' ? familyOfReviewBlocker(blocker.code) : blocker.family,
+      blocker_code: blocker.code,
       ...(detail === undefined ? {} : detail),
     })
   }
@@ -1729,7 +1788,7 @@ function checkSummaryBlockers(ctx: { readonly args: DecisionArgs; readonly view:
       result: ctx.args.result,
       blocking_items: items,
     },
-    familyOfReviewBlocker(reasonCode),
+    familyOfReviewBlocker(String(first.blocker_code ?? reasonCode)),
   )
 }
 
@@ -2307,6 +2366,8 @@ export async function recordDecisionInTransaction(
   const tenantId = cfg.tenant_id
   // ---- STEP 0 参数 ----
   const args = parseDecisionArgs(rawArgs, nowMs)
+  // 决策 id 必须**预生成**：DC-19 的 `approval.resource_id` 要指向它，而 `decision` 整行不可改（G-3）。
+  const decisionId = randomUUID()
 
   // ---- STEP 1 身份 + human_confirmation ----
   const gucActor = await currentActorId(client)
@@ -2342,6 +2403,10 @@ export async function recordDecisionInTransaction(
   const rubric = await loadRubricVersion(client, tenantId, application.rubric_version_id)
   if (args.interview_id !== undefined) {
     await loadInterview(client, tenantId, args.interview_id, application.id)
+  }
+  // DC-19：approval_id（v1.0 不要求；给了就必须真的绑到这条决策）
+  if (args.approval_id !== undefined) {
+    await checkApprovalBinding(client, tenantId, args.approval_id, decisionId, nowMs)
   }
   const scopeScorecards = await loadScopeScorecards(client, tenantId, application.id, args.interview_id)
 
@@ -2485,7 +2550,6 @@ export async function recordDecisionInTransaction(
   requireApprovalGranted(approvalOutcome)
 
   // ---- STEP 7 写入（内部事件 → decision → 撤回三步舞 → 写后复核）----
-  const decisionId = randomUUID()
   const eventId = randomUUID()
   let written: WrittenDecision
   let supersededRecordVersion: number | undefined

@@ -1,0 +1,2 @@
+recruitment_decision_record
+Error: EVIDENCE_INSUFFICIENT: {"code":"EVIDENCE_INSUFFICIENT","detail":{"application_id":"11111111-1111-4111-8111-000000000701","missing_count":1,"submitted":0},"message":"没有任何一份可用面评时，推进/淘汰都没有依据（DC §4.2.1、N-9）","reason_code":"NO_SUBMITTED_SCORECARD"}
