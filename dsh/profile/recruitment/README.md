@@ -15,7 +15,7 @@
 产品跑**项目自带的 DSH 副本**，不用全局 CLI、不碰桌面端：
 
 ```
-D:\12412\recruitment-runtime\          ← npm i @deepseek-ai/dsh@0.2.2-rc.1
+D:\12412\recruitment-runtime\          ← npm i @deepseek-ai/dsh@0.2.2-rc.3
   node_modules\.bin\dsh.cmd            ← 用这个跑，不是 PATH 上的 dsh
 ```
 
@@ -25,7 +25,7 @@ D:\12412\recruitment-runtime\          ← npm i @deepseek-ai/dsh@0.2.2-rc.1
 New-Item -ItemType Directory -Force D:\12412\recruitment-runtime | Out-Null
 cd D:\12412\recruitment-runtime
 '{"name":"recruitment-runtime","private":true}' | Set-Content package.json
-npm install @deepseek-ai/dsh@0.2.2-rc.1 --registry https://registry.npmmirror.com
+npm install @deepseek-ai/dsh@0.2.2-rc.3 --registry https://registry.npmmirror.com
 ```
 
 ## 起服务（隔离 home，不碰桌面端）

@@ -877,3 +877,22 @@ Owner 回传必须九项齐全（见 `docs/21` §3.5），缺一项算没回传�
 以后任何"模型调不通"，先按本表核对，再怀疑代码。
 
 **证据**：`evidence/experiments/2026-11-14-dsh-022-base/README.md` §3.3。
+
+### D-94 · 产品底座跟到 `0.2.2-rc.3`（与桌面端同版）；升级只升项目副本
+
+**裁定（2026-11-14）**：产品底座 = `@deepseek-ai/dsh@0.2.2-rc.3`（项目目录 `D:\12412\recruitment-runtime` 里的副本）。
+`npm dist-tags.latest` 还停在 `0.2.2-rc.1`、新版只在 `next` 上，而**桌面端已自动更新到 rc.3** ——
+"与桌面同版"就必须跟到 rc.3。全局 CLI 与桌面端一律不动。
+
+**升级指南结论**：rc.3 的 npm 包自带 `docs/upgrade-guide/`。索引只有 `## v0.2.2-rc.1` 段（rc.1→rc.2 的 19 条破坏性变更），
+**没有 `v0.2.2-rc.2` 段 ⇒ rc.2→rc.3 无破坏性变更**。19 条逐条对我们使用面（`ctx.tools.register` + 原始 ToolDefinition、
+`ctx.approval`、`cordis.patch.yml`、无 client 半部分）**全部不命中**。Node 最低版本升到 `>=24.9`，本机 `v24.16.0` 满足。
+
+**验证**：rc.3 + 隔离 home + 产品 profile，真浏览器里 `recruitment_job_get` → `后端工程师 / DRAFT`、
+`recruitment_candidate_get` → `演示候选人-张样例`，两条 `VERIFY_EXIT=0`，**插件一行代码没改**。
+
+**升级流程**（以后照做，不靠记忆）：看 `npm dist-tags` → 看桌面端 `FileVersion` → 读 `docs/upgrade-guide/README.md`
+命中我们使用面的 guide → 只 `npm install` 到项目目录 → 浏览器验证两条 → 记录台账。
+升级不过就回滚版本号；`DSH_HOME` 永远用产品自己的。
+
+**证据**：`evidence/experiments/2026-11-14-dsh-022-rc3-upgrade/`。
