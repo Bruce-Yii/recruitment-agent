@@ -124,6 +124,17 @@ export const DOCUMENT_ISSUE_CODES = {
     meaning: '输出里出现原件没有的 URI（凭空生成，任何下游都不得引用）',
   },
   // ---- 顺序 ----
+  // 2026-11-14 新增：DOCX 文本框的文字**已经读进来了**（进 blocks），只是它相对正文的
+  // 视觉位置不可知。按 D-97 第一批口径：文字可用 → 不阻断结构化；顺序未核 → SOFT。
+  doc_docx_textbox_order_unknown: {
+    code: 'doc_docx_textbox_order_unknown',
+    origin: 'document',
+    family: 'order',
+    severity: 'SOFT',
+    retryable: false,
+    suggested_action: 'human_review',
+    meaning: 'DOCX 文本框的文字已读入 blocks，但其相对正文的视觉位置不可知（顺序未核，文字可用）',
+  },
   doc_reading_order_unverified: {
     code: 'doc_reading_order_unverified',
     origin: 'document',

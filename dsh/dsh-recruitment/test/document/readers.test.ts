@@ -329,16 +329,23 @@ test('S6 DOCX 表格按行列展开 + 超链接保留', { skip: SKIP_REASON }, a
   assert.equal((linked.links?.[0].locator as DocxLocator).kind, 'docx')
 })
 
-test('S7 DOCX 文本框不可读 → PARTIAL + HARD，且不伪造文本', { skip: SKIP_REASON }, async () => {
+// 2026-11-14 改判：Word 里用文本框排版简历是常态（实测 中文简历-新.docx 的正文全在 28 个文本框里），
+// 旧实现把文字收集起来又扔掉、只报一句"读不了"，等于把正常简历判成没内容。
+// 新口径：文本框文字**读进 blocks**（结构化只需要文字），顺序不可知降级为 SOFT。
+test('S7 DOCX 文本框：文字必须读出来，顺序不可知记 SOFT（D-97 第一批）', { skip: SKIP_REASON }, async () => {
   const content = await readDocument(derived('textbox.docx'), requireConfig())
-  const issue = content.issues.find((item) => item.code === 'docx_textbox_unread')
-  assert.ok(issue !== undefined, '必须报告 docx_textbox_unread')
-  assert.equal(issue.severity, 'HARD')
-  assert.equal(content.completeness, 'partial')
   assert.equal(
     content.blocks.some((block) => block.text.includes('Textbox only sentence')),
+    true,
+    '文本框里的文字必须进 blocks —— 不许再"收集后扔掉"',
+  )
+  const order = content.issues.find((item) => item.code === 'doc_docx_textbox_order_unknown')
+  assert.ok(order !== undefined, '必须报告 doc_docx_textbox_order_unknown')
+  assert.equal(order.severity, 'SOFT', '顺序未知只影响可信筛选，不阻断结构化')
+  assert.equal(
+    content.issues.some((item) => item.code === 'docx_textbox_unread' && item.severity === 'HARD'),
     false,
-    '文本框内容不得被伪造成已读文本',
+    '文字读出来了就不许再报 HARD 的"文本框读不了"',
   )
 })
 
