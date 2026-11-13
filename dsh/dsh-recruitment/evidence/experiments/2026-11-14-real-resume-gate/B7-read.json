@@ -1,0 +1,34 @@
+[
+ {
+  "index": 1,
+  "file": "排版经历.pdf",
+  "sha": "7eb70257593da06f",
+  "kb": 0,
+  "ok": false,
+  "error": "READER_FAILED: {\"reason_code\":\"UNSUPPORTED_MEDIA\",\"message\":\"content does not match PDF, DOCX, PNG or JPEG magic bytes\"}",
+  "ms": 3
+ },
+ {
+  "index": 2,
+  "file": "（替换）HTML+CSS day01.pdf",
+  "sha": "b2a39049c8519cb2",
+  "kb": 1426,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "pdf_reading_order_unverified",
+   "resume_field_unreadable",
+   "unread_visual_page",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [],
+  "pages": 68,
+  "chars": 6935,
+  "blocks": 388,
+  "next": "human",
+  "ms": 736
+ }
+]

@@ -1,0 +1,174 @@
+[
+ {
+  "index": 1,
+  "file": "Penkun-Lee-resume-20201016(update).pdf",
+  "sha": "96aefe29da77952e",
+  "kb": 463,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_attribution_unverified",
+   "resume_protected_attribute_present",
+   "resume_timeline_unparsed"
+  ],
+  "pages": 1,
+  "chars": 1691,
+  "blocks": 13,
+  "next": "human",
+  "ms": 1178
+ },
+ {
+  "index": 2,
+  "file": "cui-xing-resume.pdf",
+  "sha": "65a434f2c103c0be",
+  "kb": 467,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "complete",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution"
+  ],
+  "soft_codes": [],
+  "pages": 2,
+  "chars": 2506,
+  "blocks": 56,
+  "next": "human",
+  "ms": 474
+ },
+ {
+  "index": 3,
+  "file": "Anish_Shankar_PM_Resume.pdf",
+  "sha": "bc857cd718af5f18",
+  "kb": 501,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "complete",
+  "blocking": false,
+  "blocking_codes": [],
+  "soft_codes": [],
+  "pages": 1,
+  "chars": 3550,
+  "blocks": 13,
+  "next": "structure",
+  "ms": 328
+ },
+ {
+  "index": 4,
+  "file": "赵泽宇｜AI 产品经理简历｜紧凑优化版_副本.pdf",
+  "sha": "409e6d0f8651a66d",
+  "kb": 502,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [],
+  "pages": 1,
+  "chars": 2519,
+  "blocks": 35,
+  "next": "human",
+  "ms": 367
+ },
+ {
+  "index": 5,
+  "file": "AI产品经理简历.pdf",
+  "sha": "f1171f617020ca90",
+  "kb": 630,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": false,
+  "blocking_codes": [],
+  "soft_codes": [
+   "pdf_page_empty"
+  ],
+  "pages": 1,
+  "chars": 1512,
+  "blocks": 37,
+  "next": "structure",
+  "ms": 283
+ },
+ {
+  "index": 6,
+  "file": "AI产品经理实习-李梓琪.pdf",
+  "sha": "74445c2d7e15d06c",
+  "kb": 717,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_attribution_unverified"
+  ],
+  "pages": 1,
+  "chars": 2543,
+  "blocks": 48,
+  "next": "human",
+  "ms": 374
+ },
+ {
+  "index": 7,
+  "file": "唐乐-简历.pdf",
+  "sha": "98244bb1eab957ef",
+  "kb": 800,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_attribution_unverified",
+   "resume_protected_attribute_present"
+  ],
+  "pages": 1,
+  "chars": 3281,
+  "blocks": 22,
+  "next": "human",
+  "ms": 675
+ },
+ {
+  "index": 8,
+  "file": "王楚杰_AI内容运营.pdf",
+  "sha": "4b253845e5e738ce",
+  "kb": 803,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_protected_attribute_present",
+   "resume_timeline_gap"
+  ],
+  "pages": 2,
+  "chars": 3321,
+  "blocks": 48,
+  "next": "human",
+  "ms": 405
+ }
+]

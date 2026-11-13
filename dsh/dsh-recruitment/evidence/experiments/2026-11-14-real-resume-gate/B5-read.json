@@ -1,0 +1,123 @@
+[
+ {
+  "index": 1,
+  "file": "Byronlee's resume（English）.pdf",
+  "sha": "47f52dedddadf1ee",
+  "kb": 397,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "pdf_reading_order_unverified",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_attribution_unverified"
+  ],
+  "pages": 11,
+  "chars": 16334,
+  "blocks": 133,
+  "next": "human",
+  "ms": 450
+ },
+ {
+  "index": 2,
+  "file": "online-resume-full.pdf",
+  "sha": "cc1e7f16bc2484dd",
+  "kb": 699,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "pdf_reading_order_unverified",
+   "resume_field_unreadable"
+  ],
+  "soft_codes": [],
+  "pages": 12,
+  "chars": 16697,
+  "blocks": 349,
+  "next": "human",
+  "ms": 580
+ },
+ {
+  "index": 3,
+  "file": "个人简历李江华（中文）.pdf",
+  "sha": "c432f2de7a3176cf",
+  "kb": 827,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "pdf_reading_order_unverified",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_attribution_unverified",
+   "resume_protected_attribute_present"
+  ],
+  "pages": 11,
+  "chars": 7133,
+  "blocks": 163,
+  "next": "human",
+  "ms": 407
+ },
+ {
+  "index": 4,
+  "file": "王京的个人简历20260109_compressed.pdf",
+  "sha": "2aea0b66b28e3d52",
+  "kb": 1514,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "pdf_reading_order_unverified",
+   "resume_field_unreadable",
+   "unread_visual_page",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_protected_attribute_present"
+  ],
+  "pages": 6,
+  "chars": 3095,
+  "blocks": 93,
+  "next": "human",
+  "ms": 838
+ },
+ {
+  "index": 5,
+  "file": "samsung-ai-trend-education-medical.pdf",
+  "sha": "4df06e7cfa095dd3",
+  "kb": 3202,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "pdf_reading_order_unverified",
+   "resume_field_unreadable",
+   "structure_unidentified",
+   "unread_visual_page",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [],
+  "pages": 14,
+  "chars": 15801,
+  "blocks": 269,
+  "next": "human",
+  "ms": 2252
+ }
+]

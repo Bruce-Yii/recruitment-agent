@@ -1,0 +1,144 @@
+[
+ {
+  "index": 1,
+  "file": "resume-ai-operations.docx",
+  "sha": "b7fefa208ef34443",
+  "kb": 28,
+  "ok": true,
+  "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "reader": "python-docx@1.2.0",
+  "completeness": "complete",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution"
+  ],
+  "soft_codes": [],
+  "pages": 0,
+  "chars": 5630,
+  "blocks": 105,
+  "next": "human",
+  "ms": 364
+ },
+ {
+  "index": 2,
+  "file": "resume-missing-section.docx",
+  "sha": "e0a2ab9b1afd0239",
+  "kb": 28,
+  "ok": true,
+  "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "reader": "python-docx@1.2.0",
+  "completeness": "complete",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution"
+  ],
+  "soft_codes": [],
+  "pages": 0,
+  "chars": 5630,
+  "blocks": 105,
+  "next": "human",
+  "ms": 377
+ },
+ {
+  "index": 3,
+  "file": "智能家庭管家产品功能定义需求说明书_副本.docx",
+  "sha": "7107fe465cda337e",
+  "kb": 38,
+  "ok": true,
+  "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "reader": "python-docx@1.2.0",
+  "completeness": "complete",
+  "blocking": false,
+  "blocking_codes": [],
+  "soft_codes": [],
+  "pages": 0,
+  "chars": 10609,
+  "blocks": 178,
+  "next": "structure",
+  "ms": 367
+ },
+ {
+  "index": 4,
+  "file": "郭豪鑫_18019068207_求职意向_产品经理_总的简历.docx",
+  "sha": "d141e6de1a4588a1",
+  "kb": 54,
+  "ok": true,
+  "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "reader": "python-docx@1.2.0",
+  "completeness": "complete",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution"
+  ],
+  "soft_codes": [],
+  "pages": 0,
+  "chars": 4795,
+  "blocks": 64,
+  "next": "human",
+  "ms": 273
+ },
+ {
+  "index": 5,
+  "file": "中文简历-新.docx",
+  "sha": "20de5d4cac0bb259",
+  "kb": 73,
+  "ok": true,
+  "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "reader": "python-docx@1.2.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_block_missing",
+   "docx_no_text",
+   "docx_textbox_unread"
+  ],
+  "soft_codes": [],
+  "pages": 0,
+  "chars": 0,
+  "blocks": 0,
+  "next": "human",
+  "ms": 241
+ },
+ {
+  "index": 6,
+  "file": "示例简历模板.docx",
+  "sha": "84b32e91f41a14c1",
+  "kb": 120,
+  "ok": true,
+  "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "reader": "python-docx@1.2.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "docx_textbox_unread"
+  ],
+  "soft_codes": [],
+  "pages": 0,
+  "chars": 8542,
+  "blocks": 72,
+  "next": "human",
+  "ms": 291
+ },
+ {
+  "index": 7,
+  "file": "git基本操作指南.docx",
+  "sha": "43458be0ee545349",
+  "kb": 206,
+  "ok": true,
+  "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "reader": "python-docx@1.2.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "docx_header_footer_present",
+   "docx_textbox_unread"
+  ],
+  "soft_codes": [],
+  "pages": 0,
+  "chars": 12456,
+  "blocks": 445,
+  "next": "human",
+  "ms": 385
+ }
+]

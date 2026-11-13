@@ -1,0 +1,190 @@
+[
+ {
+  "index": 1,
+  "file": "陈黄勇_产品经理_系统策划_编导_简历.pdf",
+  "sha": "92fa1454bc8a445a",
+  "kb": 1076,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_attribution_unverified",
+   "resume_protected_attribute_present",
+   "resume_timeline_unparsed"
+  ],
+  "pages": 1,
+  "chars": 2497,
+  "blocks": 6,
+  "next": "human",
+  "ms": 759
+ },
+ {
+  "index": 2,
+  "file": "tangle-resume.pdf",
+  "sha": "f8fb0a0455b9636d",
+  "kb": 1091,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_protected_attribute_present"
+  ],
+  "pages": 1,
+  "chars": 2073,
+  "blocks": 43,
+  "next": "human",
+  "ms": 853
+ },
+ {
+  "index": 3,
+  "file": "zhaozeyu-resume.pdf",
+  "sha": "b9155e19e88cf15b",
+  "kb": 1141,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [],
+  "pages": 1,
+  "chars": 2499,
+  "blocks": 42,
+  "next": "human",
+  "ms": 696
+ },
+ {
+  "index": 4,
+  "file": "任悦平-27届产品-研究生.pdf",
+  "sha": "e6a42b0d920e2504",
+  "kb": 1582,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "pdf_text_encoding_unread",
+   "resume_field_unreadable",
+   "structure_unidentified",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [],
+  "pages": 1,
+  "chars": 2085,
+  "blocks": 29,
+  "next": "human",
+  "ms": 755
+ },
+ {
+  "index": 5,
+  "file": "resume.pdf",
+  "sha": "55209ede4bc79eb5",
+  "kb": 180,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_protected_attribute_present"
+  ],
+  "pages": 3,
+  "chars": 4215,
+  "blocks": 103,
+  "next": "human",
+  "ms": 350
+ },
+ {
+  "index": 6,
+  "file": "黄嘉杰简历.pdf",
+  "sha": "7bd8089985ea1d96",
+  "kb": 184,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "pdf_page_empty",
+   "resume_attribution_unverified",
+   "resume_protected_attribute_present",
+   "resume_timeline_gap"
+  ],
+  "pages": 3,
+  "chars": 4479,
+  "blocks": 106,
+  "next": "human",
+  "ms": 334
+ },
+ {
+  "index": 7,
+  "file": "resume.pdf",
+  "sha": "d3870021bc00b123",
+  "kb": 207,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution"
+  ],
+  "soft_codes": [
+   "resume_attribution_unverified",
+   "resume_timeline_gap",
+   "resume_timeline_overlap",
+   "resume_timeline_unparsed"
+  ],
+  "pages": 3,
+  "chars": 2409,
+  "blocks": 22,
+  "next": "human",
+  "ms": 309
+ },
+ {
+  "index": 8,
+  "file": "诸葛童琳2027届_AIGC运营简历.pdf",
+  "sha": "51f116f335329c37",
+  "kb": 217,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "pdf_text_encoding_unread",
+   "resume_field_unreadable"
+  ],
+  "soft_codes": [
+   "resume_protected_attribute_present"
+  ],
+  "pages": 3,
+  "chars": 3685,
+  "blocks": 47,
+  "next": "human",
+  "ms": 314
+ }
+]

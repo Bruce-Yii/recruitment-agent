@@ -1,0 +1,185 @@
+[
+ {
+  "index": 1,
+  "file": "曹静致-AI内容运营-简历.pdf",
+  "sha": "06bd93cd77be7f6f",
+  "kb": 320,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_protected_attribute_present"
+  ],
+  "pages": 2,
+  "chars": 2526,
+  "blocks": 65,
+  "next": "human",
+  "ms": 330
+ },
+ {
+  "index": 2,
+  "file": "resume.pdf",
+  "sha": "f606e4deb111d882",
+  "kb": 326,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [],
+  "pages": 2,
+  "chars": 1853,
+  "blocks": 53,
+  "next": "human",
+  "ms": 330
+ },
+ {
+  "index": 3,
+  "file": "成佳俊AI.pdf",
+  "sha": "84b0756c3c68d10f",
+  "kb": 346,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_protected_attribute_present",
+   "resume_timeline_gap"
+  ],
+  "pages": 2,
+  "chars": 2596,
+  "blocks": 43,
+  "next": "human",
+  "ms": 302
+ },
+ {
+  "index": 4,
+  "file": "王伟权-AI-Agent产品经理-简历V13.pdf",
+  "sha": "b34436488bfd72bd",
+  "kb": 372,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "complete",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution"
+  ],
+  "soft_codes": [],
+  "pages": 2,
+  "chars": 3297,
+  "blocks": 109,
+  "next": "human",
+  "ms": 292
+ },
+ {
+  "index": 5,
+  "file": "中文简历-新.pdf",
+  "sha": "81c59495d6726e35",
+  "kb": 375,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_attribution_unverified",
+   "resume_protected_attribute_present",
+   "resume_timeline_unparsed"
+  ],
+  "pages": 1,
+  "chars": 1880,
+  "blocks": 47,
+  "next": "human",
+  "ms": 280
+ },
+ {
+  "index": 6,
+  "file": "Chenghao_s_CV__2610__Chinese.pdf",
+  "sha": "8a762ae8b022c6be",
+  "kb": 432,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_attribution_unverified",
+   "resume_timeline_unparsed"
+  ],
+  "pages": 1,
+  "chars": 2123,
+  "blocks": 40,
+  "next": "human",
+  "ms": 331
+ },
+ {
+  "index": 7,
+  "file": "Penkun-Lee-graduates-resume.pdf",
+  "sha": "15d5350f76f8ab9a",
+  "kb": 443,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_attribution_unverified",
+   "resume_protected_attribute_present",
+   "resume_timeline_unparsed"
+  ],
+  "pages": 1,
+  "chars": 1827,
+  "blocks": 16,
+  "next": "human",
+  "ms": 997
+ },
+ {
+  "index": 8,
+  "file": "简历.pdf",
+  "sha": "6bc260295320a002",
+  "kb": 450,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "pdf_reading_order_unverified",
+   "resume_field_unreadable"
+  ],
+  "soft_codes": [
+   "resume_attribution_unverified"
+  ],
+  "pages": 1,
+  "chars": 748,
+  "blocks": 24,
+  "next": "human",
+  "ms": 457
+ }
+]
