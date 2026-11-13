@@ -11,7 +11,7 @@
 //      实现：`mayConcludeAbsence()` 只在 completeness==='complete' 且 !blocking
 //      时才允许得出「原文没有」的结论。
 
-import { buildIssue, DOCUMENT_LEVEL_UNREAD, hasIdentityTokens, checkCharFidelity, checkCompletenessExplained, checkContract, checkCoverage, checkCrossBlockAttribution, checkProvenance, checkReadingOrder, checkUris, checkUnreadableGlyphs } from './checks.ts'
+import { buildIssue, checkCharFidelity, checkCompletenessExplained, checkContract, checkCoverage, checkCrossBlockAttribution, checkProvenance, checkReadingOrder, checkUris, checkUnreadableGlyphs, DOCUMENT_LEVEL_UNREAD } from './checks.ts'
 import { lookupIssueCode, stricterSeverity } from './issue-codes.ts'
 import { locatorKey, normalizeContent, normalizeLocator } from './normalize.ts'
 import type {

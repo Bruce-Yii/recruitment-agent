@@ -43,6 +43,8 @@ const ERROR_CODE_MAP: Readonly<Record<string, DocumentReadErrorCode>> = {
 export interface AdapterResponse {
   readonly ok: boolean
   readonly content?: unknown
+  /** 契约之外的读取器证据（DOCX part 统计 / 图片 EXIF）；canonical content 是封闭键集。 */
+  readonly source_meta?: unknown
   readonly code?: string
   readonly message?: string
 }
