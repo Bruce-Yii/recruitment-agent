@@ -33,6 +33,7 @@ import type { ReadonlyToolDefinition } from './tools/definition.ts'
 import { createCandidateGetTool, unconfiguredCandidateGetTool } from './tools/candidate-get.ts'
 import { createJobGetTool, unconfiguredJobGetTool } from './tools/job-get.ts'
 import { createResumeReadTool } from './tools/resume-read.ts'
+import { createDocumentReadTool, unconfiguredDocumentReadTool } from './tools/document-read.ts'
 import { createResumeSerializeTool, createStructureValidateTool } from './tools/structure-tools.ts'
 import { resolveConverterConfig, type ConverterConfig } from './tools/converter.ts'
 import {
@@ -311,6 +312,11 @@ export function apply(
   const jobGet = database.resolved === null
     ? unconfiguredJobGetTool(database.issues)
     : createJobGetTool(database.resolved)
+  // U3 收口：多格式统一入口（PDF/DOCX/PNG/JPEG）→ 质量判定 → 恢复计划。
+  // 之前解析层能力齐全但没暴露成工具，agent 调不到（R2 假接线）。
+  const documentRead = converter.resolved === null
+    ? unconfiguredDocumentReadTool(converter.issues)
+    : createDocumentReadTool(converter.resolved)
   // 模型兜底两步（D-81）：A 渲染交图（agent 自己用 read_image 读）、
   // B 校验后合并。两步都只要 converter，不调模型、不写库。
   const pageImage = converter.resolved === null
@@ -370,6 +376,7 @@ export function apply(
 
   const tools: readonly ReadonlyToolDefinition[] = [
     resumeRead,
+    documentRead,
     ...structureTools,
     candidateGet,
     jobGet,
