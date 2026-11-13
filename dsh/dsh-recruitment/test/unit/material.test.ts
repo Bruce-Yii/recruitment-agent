@@ -81,6 +81,28 @@ test('projectParsedFields：白名单只留 fields/timeline/issues/screening/met
   assert.equal(projection.meta.pages, 2)
 })
 
+test('D-98：pdf_text_recovered_by_ocr 是**恢复成功**标记（SOFT），不得把 parse_status 降级', () => {
+  // 实测回归（P1-3）：mapParseStatus('complete', 1000, [recovered]) 曾返回 PARTIAL ——
+  // 因为未知 code 一律按 HARD。这正是 D-98 说的"恢复成功被当成失败"。
+  assert.equal(isHardIssue('pdf_text_recovered_by_ocr'), false)
+  assert.deepEqual(hardIssueCodes([{ code: 'pdf_text_recovered_by_ocr' }]), [])
+  assert.deepEqual(
+    mapParseStatus('complete', 1000, [{ code: 'pdf_text_recovered_by_ocr' }]),
+    { status: 'PARSED' },
+    '整页 OCR 已补齐正文 → 仍是 PARSED；降成 PARTIAL 等于"恢复成功反而被当成没读完"',
+  )
+  // 恢复标记不能掩盖真的 HARD：两者同时出现时 HARD 仍然生效
+  assert.deepEqual(
+    mapParseStatus('complete', 1000, [{ code: 'pdf_text_recovered_by_ocr' }, { code: 'pdf_no_text' }]),
+    { status: 'PARTIAL' },
+  )
+  assert.deepEqual(
+    mapParseStatus('partial', 0, [{ code: 'pdf_text_recovered_by_ocr' }]),
+    { status: 'FAILED', parse_error: 'pdf_no_text' },
+    '一个字符都没有时仍是 FAILED（恢复标记不提供 parse_error）',
+  )
+})
+
 test('projectParsedFields：缺省输入产出稳定形状（fields={} / issues=[] / pages=0）', () => {
   const projection = projectParsedFields({})
   assert.deepEqual(projection.fields, {})

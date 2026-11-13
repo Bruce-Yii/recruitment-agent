@@ -7,10 +7,15 @@
 //
 // 本文件负责的条款（实现清单）：
 //   * DC-05 判定顺序 STEP 0→7（顺序本身是规则；STEP 6.5 是 D-79 的 approval 闸门）
-//   * DC-06 scope/interview 互斥；DC-07 `stage_code` 写死 'S10'（入参不接受）
-//   * DC-08/09/10/11 人工确认四要素 + `confirmation_text_sha256` 的 pre-image
-//     `{result, reason, override_rationale, basis_refs}`（四键都在，缺失写 null）
-//   * DC-12/13/14/15/16/17/18/19 `basis_refs` 的 9 种 kind、非空、AUTHORITY 计算值、
+//   * DC-06 scope/interview 互斥；DC-07 `stage_code` **由 scope 写死**（STAGE/FINAL→'S10'，
+//     SCREENING→'S7'；入参一律不接受）。**SCREENING 写侧**是 2026-11-14 的增补
+//     （`decision-rules.md` §17.1，补 DC-06 的空白；见文件头末尾"2026-11-14 增补"）
+//   * DC-08/09/10/11 人工确认四要素 + `confirmation_text_sha256` 的 pre-image（**版本化**）：
+//     v1（旧口径）= `{result, reason, override_rationale, basis_refs}`；
+//     v2（D-95，IN_CHAT）= v1 + `{preimage_version:2, confirmation_text, confirmed_by_actor_id, confirmed_at}`
+//   * DC-12/13/14/15/16/17/18/19 `basis_refs` 的 9 种 kind（**S10 口径**；SCREENING 用
+//     `job-screening/tool-contracts.md` §3.7 的 SCREENING_EVALUATION/RESUME_VERSION，
+//     见 `decision-rules.md` §17.1）、非空、AUTHORITY 计算值、
 //     SUMMARY digest、RUBRIC_VERSION 哈希、REJECT 必须引到维度、approval 绑定
 //   * DC-20 只比对重算出来的 `summary_digest`（**不重算**：唯一实现是 evaluation-summarize.ts）
 //   * DC-22/23/24/25/26/27/28/29 四道防线（REJECT 不得建立在缺失/读不出之上；反着来必须签字）
@@ -39,7 +44,8 @@
 //      本文件**没有**第二份 digest 实现。
 //   6. 库缺口（DESIGN §4）：`decision` 无 current 部分唯一索引 → 先查 current +
 //      `WHERE superseded_by_decision_id IS NULL` 的条件更新 + **写后复核**；
-//      23505 若来自 `uq_decision_current`（`0007` 之后）→ `ALREADY_DECIDED`（不是兜底码）。
+//      `0008` 之后 `uq_decision_current` 是 **DEFERRABLE EXCLUDE**，并发/重复在 COMMIT 抛
+//      **23P01**（exclusion_violation）→ `ALREADY_DECIDED`；23505 仍按原口径映射（P1-1）。
 //   7. 输出里**没有 null**（DSH 校验器不支持 `type` 数组，`type:'null'` 不可表达）：
 //      `recordDecisionInTransaction` 返回契约逐字形状（TC §4.3 里画成 `null` 的
 //      `superseded` / `decision.superseded_by_decision_id` 保留 `null`），
@@ -53,6 +59,19 @@
 //      单个 kind 缺键报 `MISSING_REQUIRED`。
 //   10. `AUTHORITY.actor_id` 与服务端 actor 不一致报 `BASIS_AUTHORITY_MISMATCH`
 //      （DC-14 只写了 `is_hiring_manager`；本文件把「替别人盖章」当同一种不一致）。
+//   11. **SCREENING 出参没有 `gate`**（S7 没有 S10 的汇总，硬造一个 `summary_digest`
+//      等于把没有的绑定画出来）。`OUTPUT_SCHEMA.required` 因此不再要求 `gate`；S10 仍必带。
+//      `decision.stage_code` 按 scope 取值（'S7'/'S10'），不再是单一枚举。
+//   12. `confirmation_text_sha256` 的 pre-image **版本化**（D-95 + P1-2）：传了
+//      `confirmation_text`（IN_CHAT）→ v2，旧记录/旧调用（无原话）→ v1。**v1 的四个键
+//      一字节都不能动**，否则库里已有的旧 sha256 全部验不过（`decision-rules.md` §17.2）。
+//
+// 2026-11-14 增补（`decision-rules.md` §17；与既有 DC 条目冲突时以 §17 为准）：
+//   * P0-3：`decision_scope='SCREENING'` 是 S7 人决定的落库路径（`stage_code='S7'`，
+//     不需要 `interview_id`、不需要 S10 汇总；`result` 只允许 ADVANCE/HOLD/REJECT/WITHDRAW，
+//     S7 不是终局；D-95 的人机闸门不变）。它**不**走 STEP 4/5/6（那三步是 S10 面评面板的门禁）。
+//   * P1-1：`0008` 的可延迟排斥约束在 COMMIT 抛 23P01 → `ALREADY_DECIDED`（execute 也要兜）。
+//   * P1-2：D-95 的 `confirmation_text` 进 v2 pre-image；契约补 `IN_CHAT`。
 //
 // 不做什么（TC §0 六条）：不代决、不用缺失面评算分、不用 unreadable 拒绝人、不接受
 // 调用方给的身份/租户/阶段码、不改任何状态、不输出恒真权限字段。
@@ -73,8 +92,19 @@ import { computeEvaluationSummaryIn, type EvaluationSummary } from './evaluation
 
 const TOOL_NAME = 'recruitment_decision_record'
 const CONTRACT_VERSION = '2.0.0'
-/** 阶段码**由工具写死**（DC-07）；入参出现它一律拒收。 */
+/** 阶段码**由工具按 scope 写死**（DC-07 + §17.1）；入参出现它一律拒收。 */
 const STAGE_CODE = 'S10'
+/** S7 写侧（`decision_scope='SCREENING'`）的阶段码（§17.1；`stage_catalog` 里 S7 在册）。 */
+const SCREENING_STAGE_CODE = 'S7'
+
+/**
+ * `decision_scope` → 该行**写死**的 `stage_code`（DC-07 + §17.1）。
+ * 不接受调用方传值：那是"把阶段码当参数"，同名脏值能绕过 `stage_catalog`（`D-24` 同构）。
+ * @param decisionScope - 入参 `decision_scope`。
+ */
+export function stageCodeOf(decisionScope: string): string {
+  return decisionScope === 'SCREENING' ? SCREENING_STAGE_CODE : STAGE_CODE
+}
 /** 服务端时钟（DC-48）。 */
 const CONFIRMATION_MAX_AGE_MS = 24 * 60 * 60 * 1000
 /** `basis_refs` 的上下界（TC §4.1）。 */
@@ -138,7 +168,7 @@ export interface DecisionToolDeps {
   }
 }
 
-/** `basis_refs[].kind` 封闭集（DC §6.1，**九种，多一种都不行**）。 */
+/** `basis_refs[].kind` 封闭集（DC §6.1，**九种，多一种都不行**）。**只约束 S10 口径**。 */
 const BASIS_KINDS = [
   'SCORECARD',
   'SUMMARY',
@@ -150,6 +180,23 @@ const BASIS_KINDS = [
   'MISSING_ACK',
   'SUPERSEDES',
 ] as const
+
+/**
+ * S7 写侧专属 kind（`job-screening/tool-contracts.md` §3.7 的写侧结构）：
+ * `SCREENING_EVALUATION`（这次筛选评估的瞬态输出摘要）+ `RESUME_VERSION`（这次评估用的材料版本）。
+ * **只在 `decision_scope='SCREENING'` 下接受**；SCORECARD/SUMMARY/INTERVIEW_RECORD 等 S10 依据
+ * 在 S7 下无意义 → `BASIS_KIND_FORBIDDEN`（`decision-rules.md` §17.1）。
+ */
+const SCREENING_BASIS_KINDS = [
+  'SCREENING_EVALUATION',
+  'RESUME_VERSION',
+  'RUBRIC_VERSION',
+  'AUTHORITY',
+  'SUPERSEDES',
+] as const
+
+/** 入参 schema 里 `kind` 的完整枚举（声明面）；运行期按 scope 收窄（`checkBasisRefs`）。 */
+const DECLARED_BASIS_KINDS = [...BASIS_KINDS, 'SCREENING_EVALUATION', 'RESUME_VERSION'] as const
 
 /** 面评四态（SC §4.5）。 */
 const ASSESSMENTS = ['MET', 'NOT_MET', 'NOT_OBSERVED', 'UNREADABLE'] as const
@@ -174,6 +221,12 @@ const BASIS_KEYS: Record<string, { readonly required: readonly string[]; readonl
   OVERRIDE: { required: ['acknowledged_dissent', 'override_rationale'], optional: [] },
   MISSING_ACK: { required: ['interviewer_ids', 'rationale'], optional: [] },
   SUPERSEDES: { required: ['decision_id', 'reason', 'opened_by_actor_id'], optional: [] },
+  // ---- S7 写侧（只在 decision_scope='SCREENING' 下接受；§17.1）----
+  SCREENING_EVALUATION: {
+    required: ['evaluation_digest', 'verdict', 'rubric_version_id', 'rubric_payload_hash', 'resume_version_id', 'resume_content_sha256'],
+    optional: ['contract_version', 'reasons_digest', 'criteria_evaluated', 'counts', 'provenance'],
+  },
+  RESUME_VERSION: { required: ['id'], optional: ['content_sha256', 'version_no'] },
 }
 
 /**
@@ -208,11 +261,15 @@ const HUMAN_CONFIRMATION_SCHEMA: Record<string, unknown> = {
       type: 'string',
       description:
         '人在对话里说过的原话（逐字，≤2000 字符）。confirmation_method=IN_CHAT 时必填：'
-        + '它是"人只决策一次"的授权凭据，落库后可与会话日志对账（D-95）。',
+        + '它是"人只决策一次"的授权凭据，落库后可与会话日志对账（D-95）。'
+        + '**原话进 pre-image v2**（§17.2）：改了原话、哈希就对不上。',
     },
     confirmation_text_sha256: {
       type: 'string',
-      description: 'sha256(canonical_json({result, reason, override_rationale, basis_refs}))，64 位小写 hex',
+      description:
+        '64 位 hex。v1（无原话，旧口径）：sha256(canonical_json({result, reason, override_rationale, basis_refs}))；'
+        + 'v2（IN_CHAT，D-95）：上述四键 + {preimage_version:2, confirmation_text, confirmed_by_actor_id, confirmed_at}'
+        + '（键序由 canonical_json 固定；见 decision-rules.md §17.2）。',
     },
   },
   required: ['confirmed_by_actor_id', 'confirmed_at', 'confirmation_method', 'confirmation_text_sha256'],
@@ -222,7 +279,7 @@ const HUMAN_CONFIRMATION_SCHEMA: Record<string, unknown> = {
 const BASIS_REF_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
-    kind: { type: 'string', enum: [...BASIS_KINDS] },
+    kind: { type: 'string', enum: [...DECLARED_BASIS_KINDS] },
     id: { type: 'string' },
     revision_no: { type: 'integer' },
     interviewer_id: { type: 'string' },
@@ -265,6 +322,17 @@ const BASIS_REF_SCHEMA: Record<string, unknown> = {
     decision_id: { type: 'string' },
     reason: { type: 'string' },
     opened_by_actor_id: { type: 'string' },
+    // ---- S7 写侧（SCREENING_EVALUATION / RESUME_VERSION；§17.1）----
+    evaluation_digest: { type: 'string' },
+    verdict: { type: 'string', enum: ['PASS', 'FAIL', 'NEEDS_REVIEW'] },
+    rubric_version_id: { type: 'string' },
+    rubric_payload_hash: { type: 'string' },
+    resume_version_id: { type: 'string' },
+    resume_content_sha256: { type: 'string' },
+    reasons_digest: { type: 'string' },
+    criteria_evaluated: { type: 'boolean' },
+    counts: { type: 'object', additionalProperties: true },
+    content_sha256: { type: 'string' },
   },
   required: ['kind'],
   additionalProperties: false,
@@ -297,22 +365,28 @@ const PARAMETERS: Record<string, unknown> = {
     application_id: { type: 'string', description: '申请 id（UUID）。决策对象是申请，不是人也不是岗位。' },
     decision_scope: {
       type: 'string',
-      enum: ['STAGE', 'FINAL'],
-      description: 'STAGE 必须带 interview_id；FINAL 必须不带（DC-06）',
+      enum: ['SCREENING', 'STAGE', 'FINAL'],
+      description:
+        'STAGE 必须带 interview_id；FINAL 必须不带（DC-06）；SCREENING 是 S7 的人决定'
+        + '（不需要 interview_id / S10 汇总，stage_code 写 S7，§17.1）',
     },
-    interview_id: { type: 'string', description: 'STAGE 必填 / FINAL 禁止（UUID）' },
+    interview_id: { type: 'string', description: 'STAGE 必填 / FINAL、SCREENING 禁止（UUID）' },
     as_of: {
       type: 'string',
-      description: '必填：ISO-8601 带时区偏移，不得晚于服务端 now。必须与 summarize 用的那个 as_of 相同，否则 SUMMARY_STALE。',
+      description: '必填：ISO-8601 带时区偏移，不得晚于服务端 now。STAGE/FINAL 必须与 summarize 用的那个 as_of 相同，否则 SUMMARY_STALE。',
     },
     result: {
       type: 'string',
       enum: ['ADVANCE', 'HOLD', 'WITHDRAW', 'REJECT'],
-      description: '人做出的结论；HIRED 在 v1.0 禁用（RESULT_NOT_IN_V1_SCOPE）',
+      description: '人做出的结论；HIRED 在 v1.0 禁用（RESULT_NOT_IN_V1_SCOPE）。SCREENING 不是终局（不许 HIRED）',
     },
-    reason: { type: 'string', description: '1..4000；REJECT 时必须含至少一个 rubric dimension_key' },
-    basis_refs: { type: 'array', items: BASIS_REF_SCHEMA, description: '1..200；kind ∈ 九种（DC §6.1）' },
-    summary_digest: { type: 'string', description: '64 位 hex，必须 = 本次重算值（DC-16）' },
+    reason: { type: 'string', description: '1..4000；REJECT 时必须含至少一个 rubric dimension_key（S7 是 criterion key）' },
+    basis_refs: {
+      type: 'array',
+      items: BASIS_REF_SCHEMA,
+      description: '1..200；S10：kind ∈ 九种（DC §6.1）；SCREENING：SCREENING_EVALUATION/RESUME_VERSION/RUBRIC_VERSION/AUTHORITY/SUPERSEDES（§17.1）',
+    },
+    summary_digest: { type: 'string', description: 'STAGE/FINAL 必填，64 位 hex 且必须 = 本次重算值（DC-16）；SCREENING 没有汇总，不接受' },
     human_confirmation: HUMAN_CONFIRMATION_SCHEMA,
     missing_disposition: {
       type: 'string',
@@ -329,16 +403,18 @@ const PARAMETERS: Record<string, unknown> = {
     actor_id: { type: 'string', description: '保留键：只能来自执行上下文，一律拒收' },
     interviewer_id: { type: 'string', description: '保留键：只能来自执行上下文，一律拒收' },
     decided_by_actor_id: { type: 'string', description: '保留键：决策人只能来自执行上下文，一律拒收' },
-    stage_code: { type: 'string', description: '保留键：工具写死 S10（DC-07），一律拒收' },
+    stage_code: { type: 'string', description: '保留键：工具按 scope 写死（S10/S7，DC-07/§17.1），一律拒收' },
     round_no: { type: 'integer', description: '保留键：轮次由 interview_id 决定，一律拒收' },
     slot_code: { type: 'string', description: '保留键：轮次由 interview_id 决定，一律拒收' },
     submitted_at: { type: 'string', description: '保留键：时间由服务端取，一律拒收' },
     decided_at: { type: 'string', description: '保留键：时间由服务端取（DC-48），一律拒收' },
     status: { type: 'string', description: '保留键：本工具不写状态，一律拒收' },
   },
+  // `summary_digest` **不在 schema 层必填**：SCREENING 没有 S10 汇总（§17.1）；
+  // STAGE/FINAL 由运行期（parseDecisionArgs）按 scope 强制必填，见 STEP 0。
   required: [
     'application_id', 'decision_scope', 'as_of', 'result', 'reason',
-    'basis_refs', 'summary_digest', 'human_confirmation',
+    'basis_refs', 'human_confirmation',
   ],
   additionalProperties: false,
 }
@@ -365,8 +441,8 @@ const DECISION_OBJECT_SCHEMA: Record<string, unknown> = {
     id: { type: 'string' },
     application_id: { type: 'string' },
     interview_id: { type: 'string' },
-    decision_scope: { type: 'string', enum: ['STAGE', 'FINAL'] },
-    stage_code: { type: 'string', enum: [STAGE_CODE] },
+    decision_scope: { type: 'string', enum: ['SCREENING', 'STAGE', 'FINAL'] },
+    stage_code: { type: 'string', enum: [SCREENING_STAGE_CODE, STAGE_CODE] },
     result: { type: 'string', enum: ['ADVANCE', 'HOLD', 'WITHDRAW', 'REJECT'] },
     decided_by_actor_id: { type: 'string' },
     decided_at: { type: 'string' },
@@ -442,7 +518,8 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
       },
     },
   },
-  required: ['tool', 'contract_version', 'status', 'replayed', 'labels', 'decision', 'gate', 'event', 'warnings'],
+  // `gate` 是 S10 的汇总门禁回显：SCREENING 没有汇总 → 出参没有这个键（文件头偏差 11）。
+  required: ['tool', 'contract_version', 'status', 'replayed', 'labels', 'decision', 'event', 'warnings'],
   additionalProperties: false,
 }
 
@@ -463,12 +540,13 @@ export interface AcknowledgedMissing {
   readonly why_proceed: string
 }
 
-/** 人工确认四要素（DC §5.1）。 */
+/** 人工确认四要素（DC §5.1 + D-95：IN_CHAT 必带原话）。 */
 export interface HumanConfirmation {
   readonly confirmed_by_actor_id: string
   readonly confirmed_at: string
   readonly confirmation_method: string
   readonly confirmation_text_sha256: string
+  readonly confirmation_text?: string
 }
 
 /** 撤回/重开的三绑定（§8）。 */
@@ -481,13 +559,13 @@ export interface SupersedesArgs {
 /** `parseDecisionArgs` 的产物（只含已声明键；语义校验留给后续 STEP）。 */
 export interface DecisionArgs {
   readonly application_id: string
-  readonly decision_scope: 'STAGE' | 'FINAL'
+  readonly decision_scope: 'SCREENING' | 'STAGE' | 'FINAL'
   readonly interview_id?: string
   readonly as_of: string
   readonly result: 'ADVANCE' | 'HOLD' | 'REJECT' | 'WITHDRAW'
   readonly reason: string
   readonly basis_refs: readonly Record<string, unknown>[]
-  readonly summary_digest: string
+  readonly summary_digest?: string
   readonly human_confirmation?: Record<string, unknown>
   readonly missing_disposition?: 'PROCEED_WITH_MISSING'
   readonly acknowledged_missing: readonly AcknowledgedMissing[]
@@ -515,10 +593,20 @@ function nonEmptyString(value: unknown): value is string {
 
 /**
  * 校验 `basis_refs`（DC-12/13 + 每个 kind 的键集），返回逐条解析结果。
+ *
+ * **按 scope 收窄 kind 封闭集**：S10（STAGE/FINAL）只认九种（DC-13）；
+ * SCREENING 只认 S7 写侧的 `SCREENING_BASIS_KINDS`（§17.1）。
  * @param raw - 入参 `basis_refs`。
  * @param violations - 违反项收集器。
+ * @param decisionScope - 入参 `decision_scope`（未知值按 S10 口径处理，更严）。
  */
-function checkBasisRefs(raw: unknown, violations: Violation[]): Record<string, unknown>[] {
+function checkBasisRefs(
+  raw: unknown,
+  violations: Violation[],
+  decisionScope: unknown,
+): Record<string, unknown>[] {
+  const screeningScope = decisionScope === 'SCREENING'
+  const allowedKinds: readonly string[] = screeningScope ? SCREENING_BASIS_KINDS : BASIS_KINDS
   if (!Array.isArray(raw)) {
     pushViolation(violations, 'TYPE_MISMATCH', 'basis_refs', 'basis_refs 必须是数组')
     return []
@@ -543,9 +631,12 @@ function checkBasisRefs(raw: unknown, violations: Violation[]): Record<string, u
       pushViolation(violations, 'MISSING_REQUIRED', `${path}.kind`, '每条依据都必须有 kind')
       return
     }
-    if (!(BASIS_KINDS as readonly string[]).includes(kind)) {
-      // DC-13：`AI_SUMMARY` 或任何其它值都不许当依据。
-      pushViolation(violations, 'BASIS_KIND_FORBIDDEN', `${path}.kind`, `kind=${kind} 不在九种之内（DC §6.1）`)
+    if (!allowedKinds.includes(kind)) {
+      // DC-13：`AI_SUMMARY` 或任何其它值都不许当依据；SCREENING 下 S10 的 kind 同样不许。
+      const message = screeningScope
+        ? `kind=${kind} 不适用于 SCREENING（S7 只接受 ${SCREENING_BASIS_KINDS.join(' / ')}，§17.1）`
+        : `kind=${kind} 不在九种之内（DC §6.1）`
+      pushViolation(violations, 'BASIS_KIND_FORBIDDEN', `${path}.kind`, message)
       return
     }
     const spec = BASIS_KEYS[kind] as { required: readonly string[]; optional: readonly string[] }
@@ -566,14 +657,23 @@ function checkBasisRefs(raw: unknown, violations: Violation[]): Record<string, u
       }
     }
     // 逐字段类型
-    const uuidKeys = ['id', 'interviewer_id', 'actor_id', 'decision_id', 'opened_by_actor_id']
+    const uuidKeys = [
+      'id', 'interviewer_id', 'actor_id', 'decision_id', 'opened_by_actor_id',
+      // S7 写侧（§17.1）
+      'rubric_version_id', 'resume_version_id',
+    ]
     for (const key of uuidKeys) {
       const value = item[key]
       if (value !== undefined && !isUuid(value)) {
         pushViolation(violations, 'ID_NOT_UUID', `${path}.${key}`, `${key} 必须是 UUID`)
       }
     }
-    for (const key of ['payload_hash', 'summary_digest']) {
+    const hexKeys = [
+      'payload_hash', 'summary_digest',
+      // S7 写侧（§17.1）：评估摘要 / 原文 reasons 摘要 / 被评估的 rubric 与材料版本
+      'evaluation_digest', 'reasons_digest', 'rubric_payload_hash', 'resume_content_sha256', 'content_sha256',
+    ]
+    for (const key of hexKeys) {
       const value = item[key]
       if (value !== undefined && (typeof value !== 'string' || !HEX64_RE.test(value))) {
         pushViolation(violations, 'TYPE_MISMATCH', `${path}.${key}`, `${key} 必须是 64 位小写 hex`)
@@ -596,6 +696,16 @@ function checkBasisRefs(raw: unknown, violations: Violation[]): Record<string, u
     }
     if (item.acknowledged_dissent !== undefined && typeof item.acknowledged_dissent !== 'boolean') {
       pushViolation(violations, 'TYPE_MISMATCH', `${path}.acknowledged_dissent`, 'acknowledged_dissent 必须是布尔')
+    }
+    // S7 写侧（§17.1）：verdict / criteria_evaluated / counts 的形状
+    if (item.verdict !== undefined && !['PASS', 'FAIL', 'NEEDS_REVIEW'].includes(item.verdict as string)) {
+      pushViolation(violations, 'ENUM_INVALID', `${path}.verdict`, 'verdict 只能是 PASS/FAIL/NEEDS_REVIEW（SR §5）')
+    }
+    if (item.criteria_evaluated !== undefined && typeof item.criteria_evaluated !== 'boolean') {
+      pushViolation(violations, 'TYPE_MISMATCH', `${path}.criteria_evaluated`, 'criteria_evaluated 必须是布尔')
+    }
+    if (item.counts !== undefined && !isPlainObject(item.counts)) {
+      pushViolation(violations, 'TYPE_MISMATCH', `${path}.counts`, 'counts 必须是对象')
     }
     if (item.fields !== undefined) {
       if (!Array.isArray(item.fields)) {
@@ -683,8 +793,10 @@ export function parseDecisionArgs(raw: unknown, nowMs: number): DecisionArgs {
     }
   }
 
-  // 2) 必填（human_confirmation 例外：缺整个对象 → STEP 1 的 NO_HUMAN_CONFIRMATION）
-  const required = ['application_id', 'decision_scope', 'as_of', 'result', 'reason', 'basis_refs', 'summary_digest']
+  // 2) 必填（human_confirmation 例外：缺整个对象 → STEP 1 的 NO_HUMAN_CONFIRMATION；
+  //    `summary_digest` 例外：SCREENING 没有 S10 汇总，不要求也不接受，见 STEP 0 下方）
+  const required = ['application_id', 'decision_scope', 'as_of', 'result', 'reason', 'basis_refs']
+  if (raw.decision_scope !== 'SCREENING') required.push('summary_digest')
   for (const key of required) {
     if (raw[key] === undefined) {
       pushViolation(violations, 'MISSING_REQUIRED', key, `缺少必填参数 ${key}`)
@@ -696,11 +808,15 @@ export function parseDecisionArgs(raw: unknown, nowMs: number): DecisionArgs {
     pushViolation(violations, 'ID_NOT_UUID', 'application_id', 'application_id 必须是 UUID')
   }
   const scope = raw.decision_scope
+  const screeningScope = scope === 'SCREENING'
   if (scope !== undefined) {
-    if (scope === 'SCREENING') {
-      pushViolation(violations, 'DECISION_SCOPE_NOT_S10', 'decision_scope', 'SCREENING 不是 S10 的范围（DC-06）')
-    } else if (scope !== 'STAGE' && scope !== 'FINAL') {
-      pushViolation(violations, 'ENUM_INVALID', 'decision_scope', 'decision_scope 只能是 STAGE 或 FINAL')
+    if (scope !== 'SCREENING' && scope !== 'STAGE' && scope !== 'FINAL') {
+      pushViolation(
+        violations,
+        'ENUM_INVALID',
+        'decision_scope',
+        'decision_scope 只能是 SCREENING / STAGE / FINAL（DC-06 + §17.1；SCREENING 是 S7 写侧）',
+      )
     }
   }
   const interviewId = raw.interview_id
@@ -712,6 +828,10 @@ export function parseDecisionArgs(raw: unknown, nowMs: number): DecisionArgs {
   }
   if (scope === 'FINAL' && interviewId !== undefined) {
     pushViolation(violations, 'FINAL_SCOPE_NO_INTERVIEW', 'interview_id', 'FINAL 决策不得给 interview_id（DC-06）')
+  }
+  if (screeningScope && interviewId !== undefined) {
+    // S7 还没有面试：SCREENING 不是"某一场面试的决策"（§17.1）。
+    pushViolation(violations, 'SCREENING_SCOPE_NO_INTERVIEW', 'interview_id', 'SCREENING 决策不得给 interview_id（S7 没有面试，§17.1）')
   }
   const asOf = raw.as_of
   if (asOf !== undefined) {
@@ -745,10 +865,15 @@ export function parseDecisionArgs(raw: unknown, nowMs: number): DecisionArgs {
       pushViolation(violations, 'OUT_OF_RANGE', 'reason', `reason 最多 ${REASON_MAX} 字符`)
     }
   }
-  const basisRefs = raw.basis_refs !== undefined ? checkBasisRefs(raw.basis_refs, violations) : []
+  const basisRefs = raw.basis_refs !== undefined ? checkBasisRefs(raw.basis_refs, violations, scope) : []
   const summaryDigest = raw.summary_digest
-  if (summaryDigest !== undefined && (typeof summaryDigest !== 'string' || !HEX64_RE.test(summaryDigest))) {
-    pushViolation(violations, 'TYPE_MISMATCH', 'summary_digest', 'summary_digest 必须是 64 位小写 hex')
+  if (summaryDigest !== undefined) {
+    if (screeningScope) {
+      // S7 没有 S10 汇总；存一个无法复算的 digest 等于留一条假绑定（§17.1）。
+      pushViolation(violations, 'SCREENING_SCOPE_NO_SUMMARY', 'summary_digest', 'SCREENING 决策没有 S10 汇总，不接受 summary_digest（§17.1）')
+    } else if (typeof summaryDigest !== 'string' || !HEX64_RE.test(summaryDigest)) {
+      pushViolation(violations, 'TYPE_MISMATCH', 'summary_digest', 'summary_digest 必须是 64 位小写 hex')
+    }
   }
   const humanConfirmation = raw.human_confirmation
   if (humanConfirmation !== undefined) {
@@ -886,6 +1011,23 @@ export function parseDecisionArgs(raw: unknown, nowMs: number): DecisionArgs {
       pushViolation(violations, 'OUT_OF_RANGE', 'override_rationale', `override_rationale 最多 ${REASON_MAX} 字符`)
     }
   }
+  if (screeningScope) {
+    // S7 写侧（§17.1）：没有 S10 汇总 → 没有"缺面评确认"/"与 consensus 相反"这两个概念。
+    if (disposition !== undefined || ack.length > 0) {
+      pushViolation(
+        violations,
+        'MUTUALLY_EXCLUSIVE',
+        'missing_disposition',
+        'SCREENING 没有面评面板，不接受 missing_disposition/acknowledged_missing（§17.1）',
+      )
+    }
+    if (dissent !== undefined) {
+      pushViolation(violations, 'MUTUALLY_EXCLUSIVE', 'acknowledged_dissent', 'SCREENING 没有 consensus，不接受 acknowledged_dissent（§17.1）')
+    }
+    if (overrideRationale !== undefined) {
+      pushViolation(violations, 'MUTUALLY_EXCLUSIVE', 'override_rationale', 'SCREENING 没有 consensus，不接受 override_rationale（理由写 reason，§17.1）')
+    }
+  }
   let supersedes: SupersedesArgs | undefined
   const supersedesRaw = raw.supersedes
   if (supersedesRaw !== undefined) {
@@ -944,13 +1086,13 @@ export function parseDecisionArgs(raw: unknown, nowMs: number): DecisionArgs {
 
   const args: DecisionArgs = {
     application_id: applicationId as string,
-    decision_scope: scope as 'STAGE' | 'FINAL',
+    decision_scope: scope as 'SCREENING' | 'STAGE' | 'FINAL',
     ...(interviewId === undefined ? {} : { interview_id: interviewId as string }),
     as_of: asOf as string,
     result: result as DecisionArgs['result'],
     reason: reason as string,
     basis_refs: basisRefs,
-    summary_digest: summaryDigest as string,
+    ...(summaryDigest === undefined ? {} : { summary_digest: summaryDigest as string }),
     ...(humanConfirmation === undefined ? {} : { human_confirmation: humanConfirmation as Record<string, unknown> }),
     ...(disposition === undefined ? {} : { missing_disposition: disposition as 'PROCEED_WITH_MISSING' }),
     acknowledged_missing: ack,
@@ -966,21 +1108,63 @@ export function parseDecisionArgs(raw: unknown, nowMs: number): DecisionArgs {
 //  STEP 1：人工确认（DC-08/09/10/11）
 // =====================================================================
 
-/**
- * `confirmation_text_sha256` 的 pre-image（DC-11）。
- *
- * **必须且只包含** `{result, reason, override_rationale, basis_refs}` 四个键；
- * `override_rationale` 未给时写 `null`，**不省略键**（否则「人确认时没有理由、
- * 落库时理由被程序塞进去」就发现不了）。
- * @param input - 被确认内容的四元组。
- * @returns `sha256(canonical_json(...))`，小写 hex。
- */
-export function confirmationTextSha256(input: {
+/** v1 pre-image（旧口径，2026-11-14 之前落库的记录）：**只有这四个键**。 */
+export interface ConfirmationPreimageV1 {
   readonly result: string
   readonly reason: string
   readonly override_rationale: string | null
   readonly basis_refs: readonly unknown[]
-}): string {
+}
+
+/** v2 pre-image（D-95，`IN_CHAT`）：v1 四键 + 原话 + 确认人 + 确认时间（+ 版本标记）。 */
+export interface ConfirmationPreimageV2 extends ConfirmationPreimageV1 {
+  readonly confirmation_text: string
+  readonly confirmed_by_actor_id: string
+  readonly confirmed_at: string
+}
+
+/**
+ * `confirmation_text_sha256` 的 pre-image（DC-11 + D-95，**版本化**）。
+ *
+ * **v1**（无原话的确认方式：`IN_APP_CONFIRM` / `SIGNED_RECORD`；也是 2026-11-14 之前
+ * 所有记录的口径）：
+ *   `{result, reason, override_rationale, basis_refs}` —— **四键，绝不加键**。
+ *   库里已落的旧 sha256 就是按这个算的；往 v1 里加任何一个键，旧记录全部验不过
+ *   （那会把"历史记录"变成假红，也是本函数必须同时保留 v1 的唯一理由）。
+ *
+ * **v2**（D-95，`IN_CHAT`：人只做一次决策，原话就是授权凭据）：
+ *   v1 四键 + `{preimage_version: 2, confirmation_text, confirmed_by_actor_id, confirmed_at}`。
+ *   多出的三个键把"人说过的那句话"绑进 hash —— 改原话、改确认人、改确认时间，
+ *   hash 都会变；审计时"原话 + hash + 会话日志"三者必须对得上。
+ *
+ * 版本由入参决定（**不猜**）：传了非空 `confirmation_text` → v2；没传 → v1。
+ * @param input - v1 四元组，或 v2 的七元组。
+ * @returns `sha256(canonical_json(...))`，小写 hex。
+ */
+export function confirmationTextSha256(input: ConfirmationPreimageV1 | ConfirmationPreimageV2): string {
+  const text = (input as Partial<ConfirmationPreimageV2>).confirmation_text
+  if (text !== undefined) {
+    const confirmedBy = (input as Partial<ConfirmationPreimageV2>).confirmed_by_actor_id
+    const confirmedAt = (input as Partial<ConfirmationPreimageV2>).confirmed_at
+    if (typeof text !== 'string' || text.trim() === ''
+      || typeof confirmedBy !== 'string' || confirmedBy === ''
+      || typeof confirmedAt !== 'string' || confirmedAt === '') {
+      throw new TypeError(
+        'confirmationTextSha256: v2 pre-image 需要 confirmation_text + confirmed_by_actor_id + confirmed_at（D-95）',
+      )
+    }
+    return digestOf({
+      preimage_version: 2,
+      result: input.result,
+      reason: input.reason,
+      override_rationale: input.override_rationale,
+      basis_refs: input.basis_refs,
+      confirmation_text: text,
+      confirmed_by_actor_id: confirmedBy,
+      confirmed_at: confirmedAt,
+    })
+  }
+  // v1：键集合与旧实现**逐字相同**（DC-11 原口径；旧记录按旧口径验）。
   return digestOf({
     result: input.result,
     reason: input.reason,
@@ -1044,19 +1228,43 @@ export function assertHumanDecider(input: {
       { confirmed_by_actor_id: confirmation.confirmed_by_actor_id, actor_id: input.actorId },
     )
   }
-  // DC-11：人确认的是**这一版**内容。
-  const expected = confirmationTextSha256({
+  // DC-11 + D-95：人确认的是**这一版**内容；IN_CHAT 的原话必须进 v2 pre-image。
+  const method = String(confirmation.confirmation_method)
+  const confirmationText = typeof confirmation.confirmation_text === 'string' && confirmation.confirmation_text.trim() !== ''
+    ? confirmation.confirmation_text
+    : undefined
+  if (method === 'IN_CHAT' && confirmationText === undefined) {
+    // D-95：原话是"人只决策一次"的授权凭据，缺它就不是 IN_CHAT 的确认。
+    throw evalError(
+      'DECISION_REQUIRES_HUMAN',
+      'NO_HUMAN_CONFIRMATION',
+      'confirmation_method=IN_CHAT 必须带 confirmation_text（人的原话，D-95）',
+      { missing: ['confirmation_text'], confirmation_method: method },
+    )
+  }
+  const v1Preimage = {
     result: input.result,
     reason: input.reason,
     override_rationale: input.overrideRationale,
     basis_refs: input.basisRefs,
-  })
+  }
+  const expected = confirmationText === undefined
+    ? confirmationTextSha256(v1Preimage)
+    : confirmationTextSha256({
+      ...v1Preimage,
+      confirmation_text: confirmationText,
+      confirmed_by_actor_id: String(confirmation.confirmed_by_actor_id),
+      confirmed_at: String(confirmation.confirmed_at),
+    })
+  const preimageVersion = confirmationText === undefined ? 1 : 2
   if (String(confirmation.confirmation_text_sha256).toLowerCase() !== expected) {
     throw evalError(
       'DECISION_REQUIRES_HUMAN',
       'CONFIRMATION_TEXT_MISMATCH',
-      'confirmation_text_sha256 与服务端按 {result, reason, override_rationale, basis_refs} 算出的 hash 不一致（DC-11）',
-      { expected, provided: confirmation.confirmation_text_sha256 },
+      confirmationText === undefined
+        ? 'confirmation_text_sha256 与服务端按 {result, reason, override_rationale, basis_refs} 算出的 hash 不一致（DC-11）'
+        : 'confirmation_text_sha256 与服务端按 v2 pre-image（含 confirmation_text，D-95）算出的 hash 不一致',
+      { expected, provided: confirmation.confirmation_text_sha256, preimage_version: preimageVersion },
     )
   }
   // 时间窗：≤ now 且相差 ≤ 24h（TC §4.2）。
@@ -1144,8 +1352,15 @@ interface ApplicationRow {
   readonly candidate_id: string
   readonly job_id: string
   readonly rubric_version_id: string | null
+  readonly resume_version_id: string | null
   readonly lifecycle_status: string
   readonly current_stage_code: string
+}
+
+/** `resume_version` 里 S7 写侧要核对的两个事实（§17.1）。 */
+interface ResumeVersionRow {
+  readonly id: string
+  readonly content_sha256: string
 }
 
 interface AuthorityRow {
@@ -1216,7 +1431,8 @@ async function loadApplication(
   applicationId: string,
 ): Promise<ApplicationRow> {
   const { rows } = await client.query<ApplicationRow>(
-    `select a.id, a.candidate_id, a.job_id, a.rubric_version_id, a.lifecycle_status, a.current_stage_code
+    `select a.id, a.candidate_id, a.job_id, a.rubric_version_id, a.resume_version_id,
+            a.lifecycle_status, a.current_stage_code
        from recruitment.application a
       where a.id = $1 and a.tenant_id = $2`,
     [applicationId, tenantId],
@@ -1267,6 +1483,32 @@ async function loadRubricVersion(
   return row
 }
 
+/**
+ * 读一份材料版本（S7 写侧核对用，§17.1）：`content_sha256` 是 screening 评估的输入事实之一。
+ * @param client - 事务内客户端。
+ * @param tenantId - 租户。
+ * @param resumeVersionId - `resume_version.id`。
+ */
+async function loadResumeVersion(
+  client: DatabaseClient,
+  tenantId: string,
+  resumeVersionId: string,
+): Promise<ResumeVersionRow> {
+  const { rows } = await client.query<ResumeVersionRow>(
+    `select id, content_sha256
+       from recruitment.resume_version
+      where id = $1 and tenant_id = $2`,
+    [resumeVersionId, tenantId],
+  )
+  const row = rows[0]
+  if (row === undefined) {
+    throw evalError('NOT_FOUND', 'RESUME_VERSION_NOT_FOUND', '该租户下没有这份材料版本', {
+      resume_version_id: resumeVersionId,
+    })
+  }
+  return row
+}
+
 async function loadInterview(
   client: DatabaseClient,
   tenantId: string,
@@ -1293,7 +1535,11 @@ async function loadInterview(
 }
 
 /**
- * 当前同类决策（`superseded_by_decision_id is null` + 同 scope + `stage_code='S10'`）。
+ * 当前同类决策（`superseded_by_decision_id is null` + 同 scope + 同 stage_code）。
+ *
+ * `stageCode` 由 `decision_scope` 写死（S7→'S7'，S10→'S10'，`stageCodeOf`）：它与
+ * `0008` 的 `uq_decision_current` 键（tenant, application, scope, coalesce(stage_code,'')）
+ * 一致 —— 查的和库拦的必须是同一把尺子。
  * **不加 `FOR UPDATE`**：它锁不到不存在的行（D-80）。
  */
 async function loadCurrentDecision(
@@ -1301,6 +1547,7 @@ async function loadCurrentDecision(
   tenantId: string,
   applicationId: string,
   decisionScope: string,
+  stageCode: string,
 ): Promise<DecisionRow | undefined> {
   const { rows } = await client.query<DecisionRow>(
     `select d.id, d.result, d.record_version, d.superseded_by_decision_id, d.application_id,
@@ -1313,7 +1560,7 @@ async function loadCurrentDecision(
         and d.superseded_by_decision_id is null
       order by d.decided_at desc, d.created_at desc
       limit 1`,
-    [tenantId, applicationId, decisionScope, STAGE_CODE],
+    [tenantId, applicationId, decisionScope, stageCode],
   )
   return rows[0]
 }
@@ -1575,35 +1822,29 @@ async function checkApprovalBinding(
   }
 }
 
+/** `RUBRIC_VERSION` / `AUTHORITY` 校验需要的事实（S10 与 S7 写侧共用）。 */
+interface BasisBindingContext {
+  readonly basis: readonly Record<string, unknown>[]
+  readonly application: ApplicationRow
+  readonly rubric: RubricRow
+  readonly actorId: string
+  readonly isHiringManager: boolean
+  readonly hiringManagerActorId: string | null
+}
+
 /**
- * STEP 2（`basis_refs` 部分）：每个 kind 的必带项与语义校验。
- *
- * 顺序：先「必带哪几种 kind」（DC-12/§6.1 表），再逐条语义（DC-14/16/17/19/29/33）。
+ * RUBRIC_VERSION（DC-17）：id 必须是申请钉住的那版、payload_hash 与库值一致、且属于同一岗位。
+ * **S10 与 S7 同口径** —— S7 也要证明"筛的是钉住的那版标准"（§17.1）。
  * @param client - 事务内客户端。
  * @param tenantId - 租户。
- * @param ctx - 应用/标准/权限/面评等已加载事实。
+ * @param ctx - 绑定事实。
  */
-async function checkBasisSemantics(
+async function checkRubricVersionRefs(
   client: DatabaseClient,
   tenantId: string,
-  ctx: BasisContext,
+  ctx: BasisBindingContext,
 ): Promise<void> {
-  const basis = ctx.args.basis_refs
-  const missingKinds: string[] = []
-  if (refsOfKind(basis, 'SUMMARY').length === 0) missingKinds.push('SUMMARY')
-  if (refsOfKind(basis, 'RUBRIC_VERSION').length === 0) missingKinds.push('RUBRIC_VERSION')
-  if (refsOfKind(basis, 'AUTHORITY').length === 0) missingKinds.push('AUTHORITY')
-  if (missingKinds.length > 0) {
-    throw evalError(
-      'INVALID_ARGS',
-      'BASIS_REF_EMPTY',
-      'basis_refs 缺少每次必带的依据（SUMMARY / RUBRIC_VERSION / AUTHORITY，DC §6.1）',
-      { missing_kinds: missingKinds },
-    )
-  }
-
-  // RUBRIC_VERSION（DC-17）：id 必须是申请钉住的那版、payload_hash 必须与库值一致、且属于同一岗位。
-  for (const ref of refsOfKind(basis, 'RUBRIC_VERSION')) {
+  for (const ref of refsOfKind(ctx.basis, 'RUBRIC_VERSION')) {
     const id = asString(ref.id)
     const row = id === ctx.rubric.id ? ctx.rubric : await loadRubricVersion(client, tenantId, id)
     if (id !== ctx.application.rubric_version_id) {
@@ -1631,9 +1872,14 @@ async function checkBasisSemantics(
       )
     }
   }
+}
 
-  // AUTHORITY（DC-14）：actor 只能是执行上下文的人；is_hiring_manager 只认服务端计算值。
-  for (const ref of refsOfKind(basis, 'AUTHORITY')) {
+/**
+ * AUTHORITY（DC-14/DC-15）：actor 只能是执行上下文的人；`is_hiring_manager` 只认服务端计算值。
+ * @param ctx - 绑定事实。
+ */
+function checkAuthorityRefs(ctx: BasisBindingContext): void {
+  for (const ref of refsOfKind(ctx.basis, 'AUTHORITY')) {
     const actorInRef = asString(ref.actor_id)
     if (actorInRef.toLowerCase() !== ctx.actorId.toLowerCase()) {
       throw evalError(
@@ -1652,6 +1898,44 @@ async function checkBasisSemantics(
       )
     }
   }
+}
+
+/**
+ * STEP 2（`basis_refs` 部分，**S10 口径**）：每个 kind 的必带项与语义校验。
+ *
+ * 顺序：先「必带哪几种 kind」（DC-12/§6.1 表），再逐条语义（DC-14/16/17/19/29/33）。
+ * @param client - 事务内客户端。
+ * @param tenantId - 租户。
+ * @param ctx - 应用/标准/权限/面评等已加载事实。
+ */
+async function checkBasisSemantics(
+  client: DatabaseClient,
+  tenantId: string,
+  ctx: BasisContext,
+): Promise<void> {
+  const basis = ctx.args.basis_refs
+  const missingKinds: string[] = []
+  if (refsOfKind(basis, 'SUMMARY').length === 0) missingKinds.push('SUMMARY')
+  if (refsOfKind(basis, 'RUBRIC_VERSION').length === 0) missingKinds.push('RUBRIC_VERSION')
+  if (refsOfKind(basis, 'AUTHORITY').length === 0) missingKinds.push('AUTHORITY')
+  if (missingKinds.length > 0) {
+    throw evalError(
+      'INVALID_ARGS',
+      'BASIS_REF_EMPTY',
+      'basis_refs 缺少每次必带的依据（SUMMARY / RUBRIC_VERSION / AUTHORITY，DC §6.1）',
+      { missing_kinds: missingKinds },
+    )
+  }
+  const binding: BasisBindingContext = {
+    basis,
+    application: ctx.application,
+    rubric: ctx.rubric,
+    actorId: ctx.actorId,
+    isHiringManager: ctx.isHiringManager,
+    hiringManagerActorId: ctx.hiringManagerActorId,
+  }
+  await checkRubricVersionRefs(client, tenantId, binding)
+  checkAuthorityRefs(binding)
 
   // SCORECARD（TC §7.3 4b / INV-9）：必须含 overall/transcript_basis/transcript_state，且与库值一致。
   for (const ref of refsOfKind(basis, 'SCORECARD')) {
@@ -1761,6 +2045,125 @@ async function checkBasisSemantics(
       throw evalError('INVALID_ARGS', 'MISSING_ACK_MISMATCH', 'acknowledged_missing 引用了不存在的面试官', {
         unknown_interviewer_ids: unknown,
       })
+    }
+  }
+}
+
+// =====================================================================
+//  STEP 2'S（S7 写侧）：SCREENING 的 basis_refs 语义（§17.1）
+// =====================================================================
+
+/**
+ * STEP 2'S：`decision_scope='SCREENING'` 的 `basis_refs` 语义校验。
+ *
+ * **不重算 screening**（S7 是瞬态投影，唯一持久化载体就是 `basis_refs`，
+ * `screening-rules.md §11 D-3/P-1`）；只做**绑定**核对：
+ *   * `RUBRIC_VERSION` / `AUTHORITY`：与 S10 同口径（DC-14/17）；
+ *   * `SCREENING_EVALUATION`：`rubric_version_id` 必须是申请钉住的那版、`rubric_payload_hash`
+ *     与库值相同、`resume_version_id`/`resume_content_sha256` 必须与库里的材料版本一致
+ *     （申请钉了材料就必须是那一份）；
+ *   * `RESUME_VERSION`（可选）：给了就与库值核对。
+ *
+ * 门禁（§17.1）：`result ∈ {ADVANCE, REJECT}` **必须**带 `SCREENING_EVALUATION`
+ * （推进/淘汰要有那次评估做依据）；`HOLD`/`WITHDRAW` 可以不带（安全方向，与 §4.2.1 同构）。
+ * @param client - 事务内客户端。
+ * @param tenantId - 租户。
+ * @param ctx - 申请/标准/权限等已加载事实 + 入参。
+ */
+async function checkScreeningBasisSemantics(
+  client: DatabaseClient,
+  tenantId: string,
+  ctx: {
+    readonly args: DecisionArgs
+    readonly application: ApplicationRow
+    readonly rubric: RubricRow
+    readonly actorId: string
+    readonly isHiringManager: boolean
+    readonly hiringManagerActorId: string | null
+  },
+): Promise<void> {
+  const basis = ctx.args.basis_refs
+  const missingKinds: string[] = []
+  if (refsOfKind(basis, 'RUBRIC_VERSION').length === 0) missingKinds.push('RUBRIC_VERSION')
+  if (refsOfKind(basis, 'AUTHORITY').length === 0) missingKinds.push('AUTHORITY')
+  const evaluations = refsOfKind(basis, 'SCREENING_EVALUATION')
+  if (evaluations.length === 0 && (ctx.args.result === 'ADVANCE' || ctx.args.result === 'REJECT')) {
+    // 推进/淘汰必须有那次筛选评估做依据；HOLD/WITHDRAW 是安全方向，不因此阻断。
+    missingKinds.push('SCREENING_EVALUATION')
+  }
+  if (missingKinds.length > 0) {
+    throw evalError(
+      'INVALID_ARGS',
+      'BASIS_REF_EMPTY',
+      'SCREENING 的 basis_refs 缺少必带依据（RUBRIC_VERSION / AUTHORITY；ADVANCE、REJECT 另需 SCREENING_EVALUATION，§17.1）',
+      { missing_kinds: missingKinds, decision_scope: 'SCREENING', result: ctx.args.result },
+    )
+  }
+  const binding: BasisBindingContext = {
+    basis,
+    application: ctx.application,
+    rubric: ctx.rubric,
+    actorId: ctx.actorId,
+    isHiringManager: ctx.isHiringManager,
+    hiringManagerActorId: ctx.hiringManagerActorId,
+  }
+  await checkRubricVersionRefs(client, tenantId, binding)
+  checkAuthorityRefs(binding)
+
+  // 材料版本（可选 kind）：给了就必须是该租户下的那一版，且 hash 对得上。
+  for (const ref of refsOfKind(basis, 'RESUME_VERSION')) {
+    const id = asString(ref.id)
+    const row = await loadResumeVersion(client, tenantId, id)
+    if (ref.content_sha256 !== undefined && asString(ref.content_sha256) !== row.content_sha256) {
+      throw evalError(
+        'EVIDENCE_INSUFFICIENT',
+        'BASIS_RESUME_HASH_MISMATCH',
+        'RESUME_VERSION 依据的 content_sha256 与库值不一致（§17.1）',
+        { resume_version_id: id, expected: row.content_sha256, provided: asString(ref.content_sha256) },
+      )
+    }
+  }
+
+  // 评估摘要：只核对绑定（rubric / resume / hash 形状已在 STEP 0 校验）。
+  for (const [index, ref] of evaluations.entries()) {
+    const rubricVersionId = asString(ref.rubric_version_id)
+    if (rubricVersionId !== ctx.application.rubric_version_id) {
+      throw evalError(
+        'EVIDENCE_INSUFFICIENT',
+        'BASIS_SCREENING_RUBRIC_MISMATCH',
+        'SCREENING_EVALUATION 不是按申请钉住的那版标准做的（§17.1）',
+        { expected: ctx.application.rubric_version_id, provided: rubricVersionId, basis_refs_index: index },
+      )
+    }
+    if (asString(ref.rubric_payload_hash) !== ctx.rubric.payload_hash) {
+      throw evalError(
+        'EVIDENCE_INSUFFICIENT',
+        'BASIS_SCREENING_RUBRIC_MISMATCH',
+        'SCREENING_EVALUATION 的 rubric_payload_hash 与库值不一致（§17.1）',
+        { expected: ctx.rubric.payload_hash, provided: asString(ref.rubric_payload_hash), basis_refs_index: index },
+      )
+    }
+    const resumeVersionId = asString(ref.resume_version_id)
+    if (ctx.application.resume_version_id !== null && resumeVersionId !== ctx.application.resume_version_id) {
+      throw evalError(
+        'EVIDENCE_INSUFFICIENT',
+        'BASIS_SCREENING_RESUME_MISMATCH',
+        'SCREENING_EVALUATION 用的不是申请钉住的那份材料（§17.1）',
+        {
+          expected: ctx.application.resume_version_id,
+          provided: resumeVersionId,
+          basis_refs_index: index,
+        },
+      )
+    }
+    const resume = await loadResumeVersion(client, tenantId, resumeVersionId)
+    if (asString(ref.resume_content_sha256) !== resume.content_sha256) {
+      throw evalError(
+        'EVIDENCE_INSUFFICIENT',
+        'BASIS_SCREENING_RESUME_MISMATCH',
+        'SCREENING_EVALUATION 的 resume_content_sha256 与库值不一致（§17.1）',
+        { expected: resume.content_sha256, provided: asString(ref.resume_content_sha256), basis_refs_index: index },
+      )
     }
   }
 }
@@ -2163,10 +2566,19 @@ interface WrittenDecision {
 /**
  * 把 pg 的约束错误翻成契约错误（TC §5.3）。
  *
- * **唯一的"不是兜底"的 23505**：`uq_decision_current` → `ALREADY_DECIDED`（`0007` 之后）。
+ * 两条"不是兜底"的唯一性冲突：
+ *   * `23505`（`0007` 之前的 `uq_decision_current` 部分唯一索引 / 其它唯一约束）；
+ *   * **`23P01` exclusion_violation**：`0008` 把 `uq_decision_current` 换成
+ *     `DEFERRABLE INITIALLY DEFERRED` 的排斥约束后，重复当前决策在 **COMMIT** 时才报错，
+ *     SQLSTATE 不再是 23505。不映射它 = 用户看到 `23P01` 这种库内部码（P1-1）。
+ *     两个约束（`uq_decision_current` / `uq_decision_current_final`）语义都是
+ *     "同一申请已有当前决策"，一律 `ALREADY_DECIDED`。
+ *
+ * 本函数会**再次抛错**（返回类型 `never`）；在 `execute()` 的 catch 里对 `withActor`
+ * （含 COMMIT）抛出的错误也调用它一次 —— 否则延迟约束的冲突逃到宿主。
  * @param error - 捕获到的异常。
  */
-function translateWriteError(error: unknown): never {
+export function translateWriteError(error: unknown): never {
   if (error instanceof RecruitmentToolError) throw error
   const sqlstate = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : ''
   const constraint = typeof (error as { constraint?: unknown }).constraint === 'string'
@@ -2185,6 +2597,15 @@ function translateWriteError(error: unknown): never {
       constraint,
       message: rawMessage.slice(0, 300),
     })
+  }
+  if (sqlstate === '23P01') {
+    // `0008` 的可延迟排斥约束：检查在 COMMIT 触发（D-80 之后的唯一防线）。
+    throw evalError(
+      'ALREADY_DECIDED',
+      'SCOPE_ALREADY_DECIDED',
+      '同一 (申请, scope, 阶段) 已有当前决策：可延迟排斥约束在提交时报冲突（23P01，§17.3）',
+      { constraint, sqlstate },
+    )
   }
   if (sqlstate === '23514') {
     const mutation = rawMessage.startsWith('IMMUTABLE_COLUMN') || rawMessage.includes('IMMUTABLE_COLUMN')
@@ -2225,7 +2646,7 @@ async function insertDecisionEvent(
   )
 }
 
-/** 插一条决策（新行 `record_version=1`，`stage_code` 写死 S10）。 */
+/** 插一条决策（新行 `record_version=1`；`stage_code` 由 scope 写死 —— `stageCodeOf`）。 */
 async function insertDecisionRow(
   client: DatabaseClient,
   input: {
@@ -2234,6 +2655,7 @@ async function insertDecisionRow(
     actorId: string
     decisionId: string
     supersededBy: string | null
+    stageCode: string
   },
 ): Promise<WrittenDecision> {
   const { rows } = await client.query<{
@@ -2253,7 +2675,7 @@ async function insertDecisionRow(
       input.args.application_id,
       input.args.interview_id ?? null,
       input.args.decision_scope,
-      STAGE_CODE,
+      input.stageCode,
       input.args.result,
       input.actorId,
       input.args.reason,
@@ -2317,12 +2739,13 @@ async function rewireSupersede(
   return row.record_version
 }
 
-/** 写后复核：同 `(application, scope, stage_code='S10')` 的 current 必须**恰好 1 条**。 */
+/** 写后复核：同 `(application, scope, stage_code)` 的 current 必须**恰好 1 条**。 */
 async function assertSingleCurrent(
   client: DatabaseClient,
   tenantId: string,
   applicationId: string,
   decisionScope: string,
+  stageCode: string,
 ): Promise<void> {
   const { rows } = await client.query<{ current_count: number }>(
     `select count(*)::int as current_count
@@ -2332,12 +2755,12 @@ async function assertSingleCurrent(
         and d.decision_scope = $3
         and d.stage_code is not distinct from $4
         and d.superseded_by_decision_id is null`,
-    [tenantId, applicationId, decisionScope, STAGE_CODE],
+    [tenantId, applicationId, decisionScope, stageCode],
   )
   const count = rows[0]?.current_count ?? 0
   if (count === 1) return
   if (count > 1) {
-    // 0007 之前没有部分唯一索引：并发双插只能在这一步被发现（D-80 的现状口径）。
+    // 0008 之后这一步通常被 COMMIT 的 23P01 先撞到；留着是为了"索引未生效/被 disable"时也 fail closed。
     throw evalError('ALREADY_DECIDED', 'SCOPE_ALREADY_DECIDED', '同一 (申请, scope, 阶段) 出现了多条当前决策（并发重复）', {
       current_count: count,
     })
@@ -2424,6 +2847,9 @@ export async function recordDecisionInTransaction(
   })
 
   // ---- STEP 2 存在性 ----
+  const screeningScope = args.decision_scope === 'SCREENING'
+  // `stage_code` 由 scope 写死（S7→'S7'，S10→'S10'）；查 current / 写行 / 写事件都用同一值。
+  const stageCode = stageCodeOf(args.decision_scope)
   const application = await loadApplication(client, tenantId, args.application_id)
   const authority = await loadAuthority(client, tenantId, application.job_id)
   const isHiringManager = computeIsHiringManager(authority, actor.id)
@@ -2440,10 +2866,13 @@ export async function recordDecisionInTransaction(
   if (args.approval_id !== undefined) {
     await checkApprovalBinding(client, tenantId, args.approval_id, decisionId, nowMs)
   }
-  const scopeScorecards = await loadScopeScorecards(client, tenantId, application.id, args.interview_id)
+  // S7 写侧没有面评面板（也没有面试）：不查 SCORECARD，避免把"别的场次的面评"当成 S7 的依据。
+  const scopeScorecards = screeningScope
+    ? []
+    : await loadScopeScorecards(client, tenantId, application.id, args.interview_id)
 
   // ---- STEP 3 已有 current / 撤回三绑定 ----
-  const current = await loadCurrentDecision(client, tenantId, application.id, args.decision_scope)
+  const current = await loadCurrentDecision(client, tenantId, application.id, args.decision_scope, stageCode)
   let supersedeTarget: DecisionRow | undefined
   if (args.supersedes !== undefined) {
     const target = await loadDecisionById(client, tenantId, args.supersedes.decision_id)
@@ -2515,73 +2944,99 @@ export async function recordDecisionInTransaction(
   }
 
   // ---- STEP 4 重算汇总（唯一实现）+ 比对 digest ----
-  const summaryRaw = await computeEvaluationSummaryIn(client, cfg, {
-    application_id: args.application_id,
-    decision_scope: args.decision_scope,
-    ...(args.interview_id === undefined ? {} : { interview_id: args.interview_id }),
-    as_of: args.as_of,
-  }, nowMs)
-  const view = readSummary(summaryRaw as EvaluationSummary)
-  if (view.digest !== args.summary_digest.toLowerCase()) {
-    throw evalError('INVALID_ARGS', 'SUMMARY_STALE', 'summary_digest 不是本次重算的值（不得拿旧汇总做新决定，DC-16/DC-34）', {
-      expected: view.digest,
-      provided: args.summary_digest,
+  // S7（SCREENING）**没有 S10 汇总**：跳过 STEP 4/5/6，改走 §17.1 的 S7 依据校验。
+  let view: SummaryView | undefined
+  if (!screeningScope) {
+    const summaryRaw = await computeEvaluationSummaryIn(client, cfg, {
+      application_id: args.application_id,
+      decision_scope: args.decision_scope,
+      ...(args.interview_id === undefined ? {} : { interview_id: args.interview_id }),
       as_of: args.as_of,
-    })
-  }
-  for (const ref of refsOfKind(args.basis_refs, 'SUMMARY')) {
-    if (asString(ref.summary_digest) !== view.digest) {
-      throw evalError('INVALID_ARGS', 'SUMMARY_STALE', 'basis_refs[SUMMARY].summary_digest 与本次重算值不一致（DC-16）', {
+    }, nowMs)
+    view = readSummary(summaryRaw as EvaluationSummary)
+    const summaryDigest = args.summary_digest as string
+    if (view.digest !== summaryDigest.toLowerCase()) {
+      throw evalError('INVALID_ARGS', 'SUMMARY_STALE', 'summary_digest 不是本次重算的值（不得拿旧汇总做新决定，DC-16/DC-34）', {
         expected: view.digest,
-        provided: asString(ref.summary_digest),
+        provided: args.summary_digest,
+        as_of: args.as_of,
       })
     }
-  }
-  const basisCtx: BasisContext = {
-    args,
-    view,
-    application,
-    rubric,
-    actorId: actor.id,
-    isHiringManager,
-    hiringManagerActorId: authority.hiring_manager_actor_id,
-    scorecards: scopeScorecards,
-  }
-  await checkBasisSemantics(client, tenantId, basisCtx)
+    for (const ref of refsOfKind(args.basis_refs, 'SUMMARY')) {
+      if (asString(ref.summary_digest) !== view.digest) {
+        throw evalError('INVALID_ARGS', 'SUMMARY_STALE', 'basis_refs[SUMMARY].summary_digest 与本次重算值不一致（DC-16）', {
+          expected: view.digest,
+          provided: asString(ref.summary_digest),
+        })
+      }
+    }
+    const basisCtx: BasisContext = {
+      args,
+      view,
+      application,
+      rubric,
+      actorId: actor.id,
+      isHiringManager,
+      hiringManagerActorId: authority.hiring_manager_actor_id,
+      scorecards: scopeScorecards,
+    }
+    await checkBasisSemantics(client, tenantId, basisCtx)
 
-  // ---- STEP 5 阻断（未处理人工队列 / 未澄清 unreadable / record 未校验）----
-  checkSummaryBlockers({ args, view })
+    // ---- STEP 5 阻断（未处理人工队列 / 未澄清 unreadable / record 未校验）----
+    checkSummaryBlockers({ args, view })
 
-  // ---- STEP 6 结果门禁 ----
-  await checkReasonCitesDimension(client, tenantId, args)
-  checkResultGate({ args, view, scorecards: scopeScorecards })
-  // DC §6.1：默认每次决策至少 1 条 SCORECARD 依据；唯一例外是 {WITHDRAW,HOLD} ∧ submitted=0。
-  const scorecardRefs = refsOfKind(args.basis_refs, 'SCORECARD')
-  const scorecardBasisRequired = view.submitted > 0
-  if (scorecardBasisRequired && scorecardRefs.length === 0) {
-    throw evalError('INVALID_ARGS', 'BASIS_REF_EMPTY', '面板里有可用面评时，basis_refs 至少要引一条 SCORECARD（DC §6.1）', {
-      missing_kinds: ['SCORECARD'],
-      submitted: view.submitted,
+    // ---- STEP 6 结果门禁 ----
+    await checkReasonCitesDimension(client, tenantId, args)
+    checkResultGate({ args, view, scorecards: scopeScorecards })
+    // DC §6.1：默认每次决策至少 1 条 SCORECARD 依据；唯一例外是 {WITHDRAW,HOLD} ∧ submitted=0。
+    const scorecardRefs = refsOfKind(args.basis_refs, 'SCORECARD')
+    const scorecardBasisRequired = view.submitted > 0
+    if (scorecardBasisRequired && scorecardRefs.length === 0) {
+      throw evalError('INVALID_ARGS', 'BASIS_REF_EMPTY', '面板里有可用面评时，basis_refs 至少要引一条 SCORECARD（DC §6.1）', {
+        missing_kinds: ['SCORECARD'],
+        submitted: view.submitted,
+      })
+    }
+    // DC §6.1：PROCEED_WITH_MISSING 时必须带 MISSING_ACK，且集合与逐条确认一致。
+    if (args.missing_disposition === 'PROCEED_WITH_MISSING') {
+      const ackIds = args.acknowledged_missing.map((entry) => entry.interviewer_id)
+      const ackBasis = refsOfKind(args.basis_refs, 'MISSING_ACK')
+      const basisIds = ackBasis.flatMap((ref) => asArray(ref.interviewer_ids).map((id) => String(id)))
+      if (ackBasis.length === 0 || !sameIdSet(basisIds, ackIds)) {
+        throw evalError('INVALID_ARGS', 'MISSING_ACK_MISMATCH', 'basis_refs[MISSING_ACK].interviewer_ids 必须与 acknowledged_missing 集合一致（DC §6.1）', {
+          acknowledged_missing: ackIds,
+          basis_interviewer_ids: basisIds,
+        })
+      }
+    }
+  } else {
+    // ---- STEP 2'S（S7 写侧）：§17.1 ----
+    await checkScreeningBasisSemantics(client, tenantId, {
+      args,
+      application,
+      rubric,
+      actorId: actor.id,
+      isHiringManager,
+      hiringManagerActorId: authority.hiring_manager_actor_id,
     })
+    // DC-18 对 S7 的 REJECT 同样适用（理由要引到 rubric 的 criterion key）。
+    await checkReasonCitesDimension(client, tenantId, args)
   }
-  // DC §6.1：PROCEED_WITH_MISSING 时必须带 MISSING_ACK，且集合与逐条确认一致。
-  if (args.missing_disposition === 'PROCEED_WITH_MISSING') {
-    const ackIds = args.acknowledged_missing.map((entry) => entry.interviewer_id)
-    const ackBasis = refsOfKind(args.basis_refs, 'MISSING_ACK')
-    const basisIds = ackBasis.flatMap((ref) => asArray(ref.interviewer_ids).map((id) => String(id)))
-    if (ackBasis.length === 0 || !sameIdSet(basisIds, ackIds)) {
-      throw evalError('INVALID_ARGS', 'MISSING_ACK_MISMATCH', 'basis_refs[MISSING_ACK].interviewer_ids 必须与 acknowledged_missing 集合一致（DC §6.1）', {
-        acknowledged_missing: ackIds,
-        basis_interviewer_ids: basisIds,
-      })
-    }
-  }
+  const scorecardRefs = refsOfKind(args.basis_refs, 'SCORECARD')
 
   // ---- STEP 6.5 人机闸门（D-95：人只做一次决策）----
   // 人在对话里明确指示过（IN_CHAT + 原话）→ 那就是那一次决策，**不再弹二次确认**。
   // 只有确实需要留痕签名的旧方式（IN_APP_CONFIRM / SIGNED_RECORD）才走 approval 通道。
-  const confirmationMethod = (args.human_confirmation as { confirmation_method?: string } | undefined)
-    ?.confirmation_method
+  const humanConfirmation = args.human_confirmation as Record<string, unknown> | undefined
+  const confirmationMethod = typeof humanConfirmation?.confirmation_method === 'string'
+    ? humanConfirmation.confirmation_method
+    : undefined
+  const confirmationText = typeof humanConfirmation?.confirmation_text === 'string'
+    && humanConfirmation.confirmation_text.trim() !== ''
+    ? humanConfirmation.confirmation_text
+    : undefined
+  // pre-image 版本：有原话 = v2（D-95）；没有 = v1（旧口径，旧记录仍按它验）。
+  const confirmationPreimageVersion = confirmationText === undefined ? 1 : 2
   if (confirmationMethod !== 'IN_CHAT') {
     const approvalOutcome = await approve()
     requireApprovalGranted(approvalOutcome)
@@ -2589,6 +3044,7 @@ export async function recordDecisionInTransaction(
 
   // ---- STEP 7 写入（内部事件 → decision → 撤回三步舞 → 写后复核）----
   const eventId = randomUUID()
+  const screeningEvaluation = refsOfKind(args.basis_refs, 'SCREENING_EVALUATION')[0]
   let written: WrittenDecision
   let supersededRecordVersion: number | undefined
   try {
@@ -2602,17 +3058,26 @@ export async function recordDecisionInTransaction(
         application_id: application.id,
         interview_id: args.interview_id ?? null,
         decision_scope: args.decision_scope,
-        stage_code: STAGE_CODE,
+        stage_code: stageCode,
         result: args.result,
         from_result: supersedeTarget?.result ?? null,
         to_result: args.result,
         actor_id: actor.id,
-        summary_digest: view.digest,
+        // S10：重算出来的 summary_digest；S7：那次 screening 评估的 evaluation_digest（§17.1）。
+        summary_digest: view === undefined ? null : view.digest,
+        screening_evaluation_digest: screeningEvaluation === undefined
+          ? null
+          : asString(screeningEvaluation.evaluation_digest),
         approval_id: args.approval_id ?? null,
-        // D-95：把「人怎么授权的」写进内部事件，事后可与会话日志对账。
+        // D-95：把「人怎么授权的」写进内部事件，事后可与会话日志对账（原话 + 哈希 + 会话日志）。
         human_confirmation_method: confirmationMethod ?? null,
-        human_confirmation_text:
-          (args.human_confirmation as { confirmation_text?: string } | undefined)?.confirmation_text ?? null,
+        human_confirmation_text: typeof humanConfirmation?.confirmation_text === 'string'
+          ? humanConfirmation.confirmation_text
+          : null,
+        human_confirmation_text_sha256: typeof humanConfirmation?.confirmation_text_sha256 === 'string'
+          ? humanConfirmation.confirmation_text_sha256
+          : null,
+        human_confirmation_preimage_version: confirmationPreimageVersion,
       },
     })
     written = await insertDecisionRow(client, {
@@ -2621,6 +3086,7 @@ export async function recordDecisionInTransaction(
       actorId: actor.id,
       decisionId,
       supersededBy: supersedeTarget?.id ?? null,
+      stageCode,
     })
     if (supersedeTarget !== undefined) {
       supersededRecordVersion = await rewireSupersede(client, {
@@ -2630,10 +3096,16 @@ export async function recordDecisionInTransaction(
         expectedRecordVersion: supersedeTarget.record_version,
       })
     }
-    await assertSingleCurrent(client, tenantId, application.id, args.decision_scope)
+    await assertSingleCurrent(client, tenantId, application.id, args.decision_scope, stageCode)
   } catch (error) {
     translateWriteError(error)
   }
+
+  // provenance：S10 取重算汇总的标签；S7 取 SCREENING_EVALUATION.provenance，缺省 = FIXTURE
+  // （R4：没有证据就不许自称 LIVE；`screening_evaluate` 的 labels 由写侧抄进依据）。
+  const decisionProvenance = view !== undefined
+    ? view.provenance
+    : (asString(screeningEvaluation?.provenance) === 'LIVE' ? 'LIVE' : 'FIXTURE')
 
   // ---- warnings（TC §4.7 封闭集，顺序固定）----
   const warnings: Warning[] = []
@@ -2649,24 +3121,26 @@ export async function recordDecisionInTransaction(
       message: '该部门没有登记招聘负责人，is_hiring_manager 一律为 false（DC-15）',
     })
   }
-  if (args.missing_disposition === 'PROCEED_WITH_MISSING') {
-    warnings.push({
-      code: 'PROCEEDED_WITH_MISSING_SCORECARDS',
-      message: `${args.acknowledged_missing.length} 份必填面评缺失，已逐条确认后推进`,
-    })
+  if (!screeningScope && view !== undefined) {
+    if (args.missing_disposition === 'PROCEED_WITH_MISSING') {
+      warnings.push({
+        code: 'PROCEEDED_WITH_MISSING_SCORECARDS',
+        message: `${args.acknowledged_missing.length} 份必填面评缺失，已逐条确认后推进`,
+      })
+    }
+    if (view.minorityCount > 0) {
+      warnings.push({ code: 'MINORITY_DISSENT', message: '面板里有少数派意见，原文见汇总的 minority_reports[]' })
+    }
+    const opposite = (args.result === 'REJECT' && consensusDirection(view.consensus) === 'ADVANCE')
+      || (args.result === 'ADVANCE' && consensusDirection(view.consensus) === 'REJECT')
+    if (opposite) {
+      warnings.push({ code: 'OVERRIDE_APPLIED', message: '结论与汇总的 consensus 相反，已要求决策人写明理由（DC-28）' })
+    }
+    if (scorecardRefs.some((ref) => ref.evidence_state === 'MEMORY_ONLY')) {
+      warnings.push({ code: 'REJECT_BASIS_MEMORY_ONLY', message: '依据里有凭现场记忆的面评（evidence=[]、evidence_state=MEMORY_ONLY，DC-22）' })
+    }
   }
-  if (view.minorityCount > 0) {
-    warnings.push({ code: 'MINORITY_DISSENT', message: '面板里有少数派意见，原文见汇总的 minority_reports[]' })
-  }
-  const opposite = (args.result === 'REJECT' && consensusDirection(view.consensus) === 'ADVANCE')
-    || (args.result === 'ADVANCE' && consensusDirection(view.consensus) === 'REJECT')
-  if (opposite) {
-    warnings.push({ code: 'OVERRIDE_APPLIED', message: '结论与汇总的 consensus 相反，已要求决策人写明理由（DC-28）' })
-  }
-  if (scorecardRefs.some((ref) => ref.evidence_state === 'MEMORY_ONLY')) {
-    warnings.push({ code: 'REJECT_BASIS_MEMORY_ONLY', message: '依据里有凭现场记忆的面评（evidence=[]、evidence_state=MEMORY_ONLY，DC-22）' })
-  }
-  if (view.provenance === 'FIXTURE') {
+  if (decisionProvenance === 'FIXTURE') {
     warnings.push({ code: 'FIXTURE_BASIS', message: '本次决策依据的是演练数据（provenance=FIXTURE），不是真实外部事实' })
   }
   if (supersedeTarget !== undefined) {
@@ -2676,30 +3150,33 @@ export async function recordDecisionInTransaction(
     warnings.push({ code: 'APPROVAL_ATTACHED', message: '已按 DC-19 绑定审批记录（v1.0 不要求）' })
   }
 
-  const gate: Record<string, unknown> = {
-    as_of: args.as_of,
-    ready_for_decision: view.ready,
-    ...(args.missing_disposition === undefined ? {} : { missing_disposition: args.missing_disposition }),
-    acknowledged_missing: args.acknowledged_missing.map((entry) => ({
-      interviewer_id: entry.interviewer_id,
-      why_proceed: entry.why_proceed,
-    })),
-    permitted_results_echo: [...view.permitted],
-    summary_digest: view.digest,
-  }
+  // S10 出参带 `gate`（汇总门禁回显）；S7（SCREENING）没有汇总 → 出参没有这个键（偏差 11）。
+  const gate: Record<string, unknown> | undefined = screeningScope || view === undefined
+    ? undefined
+    : {
+      as_of: args.as_of,
+      ready_for_decision: view.ready,
+      ...(args.missing_disposition === undefined ? {} : { missing_disposition: args.missing_disposition }),
+      acknowledged_missing: args.acknowledged_missing.map((entry) => ({
+        interviewer_id: entry.interviewer_id,
+        why_proceed: entry.why_proceed,
+      })),
+      permitted_results_echo: [...view.permitted],
+      summary_digest: view.digest,
+    }
 
   return {
     tool: TOOL_NAME,
     contract_version: CONTRACT_VERSION,
     status: 'OK',
     replayed: false,
-    labels: { provenance: view.provenance, trigger: 'MANUAL', connection: 'CONNECTED' },
+    labels: { provenance: decisionProvenance, trigger: 'MANUAL', connection: 'CONNECTED' },
     decision: {
       id: written.id,
       application_id: args.application_id,
       ...(args.interview_id === undefined ? {} : { interview_id: args.interview_id }),
       decision_scope: args.decision_scope,
-      stage_code: STAGE_CODE,
+      stage_code: stageCode,
       result: args.result,
       decided_by_actor_id: actor.id,
       decided_at: written.decided_at,
@@ -2707,7 +3184,7 @@ export async function recordDecisionInTransaction(
       // 新行在 STEP 7 的第 3 步之后一定是 NULL（契约画 null；execute() 会去掉这个键）。
       superseded_by_decision_id: written.superseded_by_decision_id,
     },
-    gate,
+    ...(gate === undefined ? {} : { gate }),
     superseded: supersedeTarget === undefined
       ? null
       : { decision_id: supersedeTarget.id, record_version: supersededRecordVersion ?? supersedeTarget.record_version + 1 },
@@ -2734,7 +3211,7 @@ function readExecContext(exec: unknown): { agent?: unknown; signal?: AbortSignal
 function renderDecision(value: unknown): readonly TextBlock[] {
   const v = value as Record<string, unknown>
   const decision = (v.decision ?? {}) as Record<string, unknown>
-  const gate = (v.gate ?? {}) as Record<string, unknown>
+  const gate = isPlainObject(v.gate) ? v.gate : undefined
   const warnings = Array.isArray(v.warnings) ? (v.warnings as Record<string, unknown>[]) : []
   const labels = (v.labels ?? {}) as Record<string, unknown>
   const event = (v.event ?? {}) as Record<string, unknown>
@@ -2745,15 +3222,24 @@ function renderDecision(value: unknown): readonly TextBlock[] {
     `decision ${String(decision.id)} scope=${String(decision.decision_scope)} stage=${String(decision.stage_code)} `
       + `result=${String(decision.result)} record_version=${String(decision.record_version)}`,
     `decided_at=${String(decision.decided_at)} decided_by=${String(decision.decided_by_actor_id)}`,
-    `gate: as_of=${String(gate.as_of)} ready_for_decision=${String(gate.ready_for_decision)} `
+  ]
+  if (gate === undefined) {
+    // SCREENING：没有 S10 汇总门禁（§17.1）。
+    lines.push('gate: —（SCREENING 没有 S10 汇总）')
+  } else {
+    lines.push(
+      `gate: as_of=${String(gate.as_of)} ready_for_decision=${String(gate.ready_for_decision)} `
       + `permitted=[${(Array.isArray(gate.permitted_results_echo) ? gate.permitted_results_echo : []).join(',')}]`,
-    `summary_digest=${String(gate.summary_digest)}`,
+    )
+    lines.push(`summary_digest=${String(gate.summary_digest)}`)
+  }
+  lines.push(
     superseded === undefined
       ? 'superseded: —（本次不是撤回）'
       : `superseded: ${String(superseded.decision_id)} → record_version=${String(superseded.record_version)}`,
     `event ${String(event.event_id)} ${String(event.provider)}/${String(event.trust_level)}`,
     `warnings(${warnings.length})`,
-  ]
+  )
   for (const warning of warnings) lines.push(`  ${String(warning.code)}: ${String(warning.message)}`)
   return [{ type: 'text', text: lines.join('\n') }]
 }
@@ -2766,13 +3252,16 @@ export function createDecisionRecordTool(deps: DecisionToolDeps): ReadonlyToolDe
   return {
     name: TOOL_NAME,
     description:
-      'S10 formal decision record for ONE application. The decision itself is made by a HUMAN; this tool only '
-      + 'verifies and records it: it re-computes the evaluation summary (same as_of), enforces the result gate '
-      + '(WITHDRAW/HOLD always allowed; ADVANCE(FINAL)/REJECT blocked when required scorecards are missing), '
-      + 'requires human_confirmation whose sha256 covers {result, reason, override_rationale, basis_refs}, asks '
-      + "the human for approval (DSH approval; no answerer => unavailable => nothing is written), then writes "
-      + 'one decision row plus its internal event in the same transaction (supersede = reverse-insert, rewire, '
-      + 'clear). It never writes application/interview status and accepts no tenant/actor/stage_code input.',
+      'Formal decision record for ONE application: decision_scope=SCREENING (S7, stage_code=S7, no interview_id '
+      + 'and no S10 summary) or STAGE/FINAL (S10, stage_code=S10). The decision itself is made by a HUMAN; this '
+      + 'tool only verifies and records it: for S10 it re-computes the evaluation summary (same as_of) and enforces '
+      + 'the result gate (WITHDRAW/HOLD always allowed; ADVANCE(FINAL)/REJECT blocked when required scorecards are '
+      + 'missing); for S7 it only checks the screening-evaluation binding. It requires human_confirmation whose '
+      + 'sha256 covers {result, reason, override_rationale, basis_refs} (plus the human\'s verbatim words for '
+      + 'IN_CHAT, D-95), asks the human for approval when the confirmation is not IN_CHAT (no answerer => '
+      + 'unavailable => nothing is written), then writes one decision row plus its internal event in the same '
+      + 'transaction (supersede = reverse-insert, rewire, clear). It never writes application/interview status and '
+      + 'accepts no tenant/actor/stage_code input.',
     parameters: PARAMETERS,
     output: { schema: OUTPUT_SCHEMA, render: (_args: unknown, value: unknown) => renderDecision(value) },
     isConcurrencySafe(): boolean {
@@ -2789,6 +3278,11 @@ export function createDecisionRecordTool(deps: DecisionToolDeps): ReadonlyToolDe
         ))
         // DSH 的输出校验器不支持 null（见文件头偏差 7）→ 契约里画 null 的键在这里被省略。
         return stripNulls(value)
+      } catch (error) {
+        // P1-1：`0008` 的 `uq_decision_current` 是 DEFERRABLE，冲突在 **COMMIT** 才抛 23P01。
+        // 那次 COMMIT 发生在 `withActor` 里（STEP 7 的 try/catch 之外），所以这里必须再翻一次，
+        // 否则模型/用户会看到库内部 SQLSTATE 而不是 `ALREADY_DECIDED`。
+        translateWriteError(error)
       } finally {
         await closePool(pool)
       }
