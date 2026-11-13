@@ -1092,3 +1092,26 @@ Agent 可借此刷人的确认；且幂等重放会误弹）。代价是"弹窗�
    触发条件写死：出现"并发写导致人批准后被 `VERSION_CONFLICT` 拒"的实测案例，或 Web UI 开始高频驱动这两个工具时，必须改。
 
 **证据**：`src/db/pool.ts`、两个工具的闸门注释、102 条闸门测试。
+
+### D-102 · S6–S10 独立验收结论：**半通**，四个关键不变量是假的（2026-11-14）
+
+**独立验收窗口**（`reviewer-s6-s10`，只读、不复用任何人的自述）对简历层**之后**的 12 个工具逐个复核，结论：
+
+> **工具都能从 `apply()` 调到、真连库、测试全绿，但四个关键不变量是假的。**
+
+| # | 问题 | 严重度 | 证据 |
+|---|---|---|---|
+| 1 | **S6 身份来源闸门失效**：`structured_json` 的 `agent_read` 电话/邮箱被直接 push 进 `strong`；converter 对 OCR 块抽字段仍标 `native_text` | P0 | `application-intake.ts:760/765/775`；合成块实测 `phone.provenance=native_text` |
+| 2 | **S8/S10 人机闸门未实现**：`index.ts` 只给 `decision_record` 传 approval；`scorecard_submit` / `interview_schedule` 无闸门 → Agent 可代 HR 交面评 | P0 | 回滚事务实测：scorecard 无 approval 写入 SUBMITTED；DB 中该 actor 正是必交面试官 |
+| 3 | **S7 的 `decision(SCREENING)` 无写入路径**：`decision-record.ts` 拒收 SCREENING，DB `decision` 按 scope 只有 `STAGE=1` | P0 | `docs/18:60` 与实现矛盾 |
+| 4 | **没有一条申请真正从 S6 走到 S10**：7 条 S6 申请全停 S6；走到 S10 的那条 `resume_version_id IS NULL` | P0 | DB 实况 |
+
+**P1**：0008 的 DEFERRABLE EXCLUDE 在 COMMIT 抛 **23P01**，工具只映射 23505；D-95 的 `confirmation_text` 未进哈希 pre-image 且契约无 `IN_CHAT`；S8 只实现 CREATE（D-62 要求四 intent）；D-98 的 `pdf_text_recovered_by_ocr` 在 `src/db/material.ts` 仍被当 HARD。
+
+**计数**：范围内 12 个工具 **PASS 6 / BLOCKED 6**；Feishu connector 未接线 = BLOCKED 1。
+
+**因此纠正一条先前的表述**：2026-11-14 早先说的"Golden Path 跑通一次"**不成立** ——
+那只是 S10 单点写了一条决策，不是端到端。本条以此为准。
+
+**修复安排**：P0-1 / P0-2 / P0-3 各一条修复 lane；P1 四条并入 P0-3 那条 lane。
+报告全文：`docs/23-acceptance-review-s6-s10.md`（706 行，含附录 A 命令原文与真实输出）。
