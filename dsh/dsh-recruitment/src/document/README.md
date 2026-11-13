@@ -74,3 +74,26 @@ U0 落地后发现树上有**两个同名 `validateDocumentContent()`、两套�
 
 **执行**：U1/U2 收尾时自己改；若它们已结束，由 W0 在 U3 前统一改，并补一条测试断言
 「`src/document/{readers,quality,recovery}` 里不存在 `export function validateDocumentContent`」（防复发）。
+
+## 6. 两条 U1 提出的裁决（2026-11-13，W0 定）
+
+### 6.1 `provenance` 增加 `reader_metadata`（图片块无文字时用）
+
+图片经 Pillow 读出尺寸/EXIF 后，block 的 `text` 是空的。现有枚举 `native_text|docling|ocr|agent_read|human_confirmed`
+没有一个诚实值：
+- `native_text` 暗示"抽到了原生文字"——图片没有；
+- `ocr` / `agent_read` 暗示"模型生成过文字"——没有，写上去就是**假声明**。
+
+**裁决**：枚举增加 **`reader_metadata`**，语义 = "该块由确定性读取器产出，只含结构/元数据，不含文字"。
+图片块必须用它；`text` 必须为空字符串；`needs_visual=true` + HARD `image_requires_vision` 不变。
+**禁止**为了凑枚举把图片块写成 `ocr`/`agent_read`（那是把"没读"说成"读过"）。
+
+### 6.2 `source_meta` 走旁路，不进 `DocumentContent`
+
+`DocumentContent` 保持**封闭键集**（D-85）。converter 的 `pages` / `page_info` / `order_verified` / `fields` /
+`screening` / `timeline` 由 `readDocumentDetailed()` 的 `source_meta` 旁路返回。
+
+**U3 接线硬要求**：必须 `const {content, source_meta} = await readDocumentDetailed(...)`，
+再把 `readerFactsFromSourceMeta(source_meta)` 喂给 `assess()`。
+**只消费 `readDocument()` 会丢掉 facts**，症状是每份 PDF 都命中 `doc_page_count_unverified`（HARD）。
+这条要写成 U3 的集成测试断言。
