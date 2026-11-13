@@ -1,13 +1,36 @@
-// recruitment_candidate_get —— 按 id 取一个候选人档案（只读，stub 数据）。
+// recruitment_candidate_get —— 按 id 取一个候选人档案（**真查 PG**，只读）。
 //
-// 只读证据：本文件不 import 任何 fs / net / DB 模块；execute 只做「按 id 取常量
-// + 按开关脱敏」，不修改任何模块级状态。
+// 2026-11-14 从 fixture stub 改成真库读：
+//   * 旧版返回 `CANDIDATE_STUBS` 里写死的人，`stub=true`、`provenance=FIXTURE`；
+//     产品里"查候选人"会给出一个编造的人 —— 这是假能力，不是占位。
+//   * 新版只读 `recruitment.candidate` + `recruitment.application`（+ job 的 code/title），
+//     租户只来自插件配置（`database.tenant_id`），模型无法传入。
+//
+// 三个诚实点（不许省）：
+//   1. **PII**：联系方式默认脱敏；`include_contacts=true` 才返回原文，且输出里明确 `visible`。
+//   2. **不编造**：查不到就 `NOT_FOUND`，绝不回退到样例数据。
+//   3. **只读**：整段查询在 `begin transaction read only` 里（`withReadOnly`），
+//      写语句会直接 25006，不靠"源码里没写 INSERT"这种自觉。
+//
+// 输出形状与旧版保持兼容的字段：`candidate_id` / `display_name` / `contacts` / `applications`；
+// 去掉 `provenance`（stub 时代的概念）与 `status`（旧枚举是 ARCHIVED，与库里的 ACTIVE/MERGED 不符），
+// 改成库里的 `identity_status` + `source: 'DATABASE'`。
 
 import { parseArgs, toParameterSchema } from './args.ts'
 import type { ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
-import { APPLICATION_STAGES, CANDIDATE_STUBS, CANDIDATE_STATUSES, STUB_PROVENANCE } from './stubs.ts'
+import {
+  closePool,
+  createPool,
+  isUuidText,
+  withReadOnly,
+  type DatabaseClient,
+  type ResolvedDatabaseConfig,
+} from '../db/pool.ts'
+
+/** 工具名（index.ts 与测试都按这个名字找）。 */
+const TOOL_NAME = 'recruitment_candidate_get'
 
 /** 入参声明。 */
 const PARAMS: ParamMap = {
@@ -15,15 +38,38 @@ const PARAMS: ParamMap = {
     kind: 'string',
     required: true,
     maxLength: 64,
-    description: 'Candidate identifier, e.g. "candidate_0001". Non-empty, at most 64 characters.',
+    description: 'Candidate UUID (recruitment.candidate.id). Non-empty, at most 64 characters.',
   },
   include_contacts: {
     kind: 'boolean',
-    description: 'When true, return full email/phone. Defaults to false, which masks both.',
+    description:
+      'When true, return full email/phone (PII). Defaults to false, which masks both. '
+      + 'Only set it when the caller is allowed to see personal contact data.',
   },
 }
 
-/** 输出：联系方式。 */
+/** `recruitment.candidate` 的一行（只取用得到的列）。 */
+interface CandidateRow {
+  readonly id: string
+  readonly display_name: string
+  readonly normalized_email: string | null
+  readonly normalized_phone: string | null
+  readonly identity_status: string
+  readonly merged_into_candidate_id: string | null
+  readonly record_version: number
+}
+
+/** 一条申请关系（连带岗位的 code/title，方便 HR 直接看懂）。 */
+interface ApplicationRow {
+  readonly id: string
+  readonly job_id: string
+  readonly job_code: string | null
+  readonly job_title: string | null
+  readonly current_stage_code: string
+  readonly lifecycle_status: string
+}
+
+/** 输出：联系方式（永远带 visible，避免"看着像原文其实是脱敏"的误读）。 */
 interface Contacts {
   readonly visible: boolean
   readonly email: string
@@ -34,29 +80,35 @@ interface Contacts {
 interface ApplicationValue {
   readonly application_id: string
   readonly job_id: string
-  readonly stage: string
+  readonly job_code: string
+  readonly job_title: string
+  readonly stage_code: string
+  readonly lifecycle_status: string
 }
 
 /** 输出：规范值。 */
 interface CandidateGetValue {
   readonly candidate_id: string
   readonly display_name: string
-  readonly status: string
-  readonly provenance: string
-  readonly stub: boolean
+  readonly identity_status: string
+  /** 只在 MERGED 且确实指向另一行时出现（DSH 输出 schema 没有 null，所以用"缺键"表达）。 */
+  readonly merged_into_candidate_id?: string
+  readonly record_version: number
+  readonly source: 'DATABASE'
   readonly contacts: Contacts
   readonly applications: readonly ApplicationValue[]
 }
 
-/** 规范输出 schema（只用官方强制子集里的关键字）。 */
+/** 规范输出 schema（只用官方强制子集里的关键字；不用 type 数组、不用 null）。 */
 const OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
     candidate_id: { type: 'string' },
     display_name: { type: 'string' },
-    status: { type: 'string', enum: [...CANDIDATE_STATUSES] },
-    provenance: { type: 'string', enum: ['FIXTURE', 'LIVE'] },
-    stub: { type: 'boolean' },
+    identity_status: { type: 'string', enum: ['ACTIVE', 'MERGED'] },
+    merged_into_candidate_id: { type: 'string' },
+    record_version: { type: 'number' },
+    source: { type: 'string', enum: ['DATABASE'] },
     contacts: {
       type: 'object',
       properties: {
@@ -74,23 +126,30 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
         properties: {
           application_id: { type: 'string' },
           job_id: { type: 'string' },
-          stage: { type: 'string', enum: [...APPLICATION_STAGES] },
+          job_code: { type: 'string' },
+          job_title: { type: 'string' },
+          stage_code: { type: 'string' },
+          lifecycle_status: {
+            type: 'string',
+            enum: ['ACTIVE', 'ON_HOLD', 'WITHDRAWN', 'CLOSED'],
+          },
         },
-        required: ['application_id', 'job_id', 'stage'],
+        required: ['application_id', 'job_id', 'job_code', 'job_title', 'stage_code', 'lifecycle_status'],
         additionalProperties: false,
       },
     },
   },
-  required: ['candidate_id', 'display_name', 'status', 'provenance', 'stub', 'contacts', 'applications'],
+  required: ['candidate_id', 'display_name', 'identity_status', 'record_version', 'source', 'contacts', 'applications'],
   additionalProperties: false,
 }
 
 /**
  * 邮箱脱敏：保留首字母与域名。
- * @param email - 原始邮箱。
+ * @param email - 原始邮箱；空串原样返回。
  * @returns 脱敏后的邮箱。
  */
 function maskEmail(email: string): string {
+  if (email === '') return ''
   const at = email.indexOf('@')
   if (at <= 0) return '***'
   return `${email.slice(0, 1)}***${email.slice(at)}`
@@ -98,70 +157,168 @@ function maskEmail(email: string): string {
 
 /**
  * 手机号脱敏：保留前 3 位与后 4 位。
- * @param phone - 原始号码。
+ * @param phone - 原始号码；空串原样返回。
  * @returns 脱敏后的号码。
  */
 function maskPhone(phone: string): string {
+  if (phone === '') return ''
   const digits = phone.replace(/[^0-9]/g, '')
   if (digits.length < 8) return '***'
   return `${digits.slice(0, 3)}****${digits.slice(-4)}`
 }
 
-/** 只读候选人工具。 */
-export const candidateGetTool: ReadonlyToolDefinition = {
-  name: 'recruitment_candidate_get',
-  description:
-    'Get one candidate profile by id, including its application links. '
-    + 'Read-only stub over fixture data: provenance is always FIXTURE and no database is touched. '
-    + 'Contacts are masked unless include_contacts is true. Returns NOT_FOUND for an unknown id.',
-  parameters: toParameterSchema(PARAMS),
-  output: {
-    schema: OUTPUT_SCHEMA,
-    render(_args: unknown, value: unknown): readonly TextBlock[] {
-      const v = value as CandidateGetValue
-      const lines: string[] = [
-        `candidate ${v.candidate_id} / ${v.display_name} (status=${v.status}, `
-          + `provenance=${v.provenance}, stub=${String(v.stub)})`,
-        `contacts: ${v.contacts.email} / ${v.contacts.phone} (visible=${String(v.contacts.visible)})`,
-        `applications: ${v.applications.length}`,
-      ]
-      for (const application of v.applications) {
-        lines.push(`  ${application.application_id} -> ${application.job_id} @ ${application.stage}`)
-      }
-      return [{ type: 'text', text: lines.join('\n') }]
+/**
+ * 在只读事务里取候选人档案。
+ * @param client - 只读事务连接。
+ * @param cfg - 已解析的库配置（租户只从这里来）。
+ * @param args - 已校验的入参。
+ * @returns 规范输出值。
+ */
+export async function readCandidateValue(
+  client: DatabaseClient,
+  cfg: ResolvedDatabaseConfig,
+  args: Record<string, unknown>,
+): Promise<CandidateGetValue> {
+  const candidateId = args.candidate_id as string
+
+  const candidateResult = await client.query<CandidateRow>(
+    `select id, display_name, normalized_email, normalized_phone,
+            identity_status, merged_into_candidate_id, record_version
+       from recruitment.candidate
+      where id = $1 and tenant_id = $2`,
+    [candidateId, cfg.tenant_id],
+  )
+  const candidate = candidateResult.rows[0]
+  if (candidate === undefined) {
+    throw new RecruitmentToolError(
+      'NOT_FOUND',
+      JSON.stringify({ reason_code: 'CANDIDATE_NOT_FOUND', candidate_id: candidateId }),
+    )
+  }
+
+  const applicationResult = await client.query<ApplicationRow>(
+    `select a.id, a.job_id, j.code as job_code, j.title as job_title,
+            a.current_stage_code, a.lifecycle_status
+       from recruitment.application a
+       left join recruitment.job j on j.id = a.job_id and j.tenant_id = a.tenant_id
+      where a.tenant_id = $1 and a.candidate_id = $2
+      order by a.created_at, a.id`,
+    [cfg.tenant_id, candidateId],
+  )
+
+  const visible = args.include_contacts === true
+  const email = candidate.normalized_email ?? ''
+  const phone = candidate.normalized_phone ?? ''
+
+  const value: CandidateGetValue = {
+    candidate_id: candidate.id,
+    display_name: candidate.display_name,
+    identity_status: candidate.identity_status,
+    record_version: candidate.record_version,
+    source: 'DATABASE',
+    contacts: {
+      visible,
+      email: visible ? email : maskEmail(email),
+      phone: visible ? phone : maskPhone(phone),
     },
-  },
-  isConcurrencySafe(): boolean {
-    return true
-  },
-  async execute(rawArgs: unknown): Promise<unknown> {
-    const args = parseArgs(PARAMS, rawArgs)
-    const candidateId = args.candidate_id as string
-    const record = CANDIDATE_STUBS[candidateId]
-    if (record === undefined) {
-      throw new RecruitmentToolError(
-        'NOT_FOUND',
-        `candidate "${candidateId}" not found; known stub ids: ${Object.keys(CANDIDATE_STUBS).join(', ')}`,
-      )
-    }
-    const visible = args.include_contacts === true
-    const value: CandidateGetValue = {
-      candidate_id: record.candidate_id,
-      display_name: record.display_name,
-      status: record.status,
-      provenance: STUB_PROVENANCE,
-      stub: true,
-      contacts: {
-        visible,
-        email: visible ? record.email : maskEmail(record.email),
-        phone: visible ? record.phone : maskPhone(record.phone),
+    applications: applicationResult.rows.map((row) => ({
+      application_id: row.id,
+      job_id: row.job_id,
+      job_code: row.job_code ?? '',
+      job_title: row.job_title ?? '',
+      stage_code: row.current_stage_code,
+      lifecycle_status: row.lifecycle_status,
+    })),
+  }
+  // MERGED 但没有指向目标 = 脏数据；此时不编造一个 id，只保留 identity_status 让调用方看见异常。
+  if (candidate.identity_status === 'MERGED' && candidate.merged_into_candidate_id !== null) {
+    return { ...value, merged_into_candidate_id: candidate.merged_into_candidate_id }
+  }
+  return value
+}
+
+/**
+ * 配置不完整时的替身：注册同一个工具名，调用即报 NOT_CONFIGURED。
+ * @param issues - 缺失的配置项。
+ * @returns 调用即抛错的工具定义。
+ */
+export function unconfiguredCandidateGetTool(issues: readonly string[]): ReadonlyToolDefinition {
+  return {
+    name: TOOL_NAME,
+    description:
+      'Get one candidate profile by id from the business database. Currently NOT CONFIGURED: '
+      + `${issues.join('; ')}. Calls return NOT_CONFIGURED.`,
+    parameters: toParameterSchema(PARAMS),
+    output: {
+      schema: OUTPUT_SCHEMA,
+      render(): readonly TextBlock[] {
+        return [{ type: 'text', text: `${TOOL_NAME} is not configured: ${issues.join('; ')}` }]
       },
-      applications: record.applications.map((application) => ({
-        application_id: application.application_id,
-        job_id: application.job_id,
-        stage: application.stage,
-      })),
-    }
-    return value
-  },
+    },
+    async execute(): Promise<unknown> {
+      throw new RecruitmentToolError('NOT_CONFIGURED', issues.join('; '))
+    },
+  }
+}
+
+/**
+ * 造真实的候选人查询工具。
+ * @param config - 已解析的库配置（租户/连接只从这里来，模型无法传入）。
+ * @returns 工具定义。
+ */
+export function createCandidateGetTool(config: ResolvedDatabaseConfig): ReadonlyToolDefinition {
+  return {
+    name: TOOL_NAME,
+    description:
+      'Get one candidate profile by id, read straight from the business database '
+      + '(source=DATABASE, read-only). Returns display_name, identity_status (ACTIVE/MERGED), '
+      + 'record_version, masked contacts, and every application of this candidate with its '
+      + 'job code/title, stage_code and lifecycle_status. Contacts are masked unless '
+      + 'include_contacts is true (PII). Returns NOT_FOUND for an unknown id — it never falls '
+      + 'back to sample data.',
+    parameters: toParameterSchema(PARAMS),
+    output: {
+      schema: OUTPUT_SCHEMA,
+      render(_args: unknown, value: unknown): readonly TextBlock[] {
+        const v = value as CandidateGetValue
+        const lines: string[] = [
+          `candidate ${v.candidate_id} / ${v.display_name} `
+            + `(identity_status=${v.identity_status}, record_version=${v.record_version}, source=${v.source})`,
+        ]
+        if (v.merged_into_candidate_id !== undefined) {
+          lines.push(`  merged_into_candidate_id=${v.merged_into_candidate_id}`)
+        }
+        lines.push(
+          `  contacts: ${v.contacts.email} / ${v.contacts.phone} (visible=${String(v.contacts.visible)})`,
+        )
+        lines.push(`  applications: ${v.applications.length}`)
+        for (const application of v.applications) {
+          lines.push(
+            `    ${application.application_id} -> ${application.job_code} ${application.job_title} `
+              + `@ ${application.stage_code} (${application.lifecycle_status})`,
+          )
+        }
+        return [{ type: 'text', text: lines.join('\n') }]
+      },
+    },
+    isConcurrencySafe(): boolean {
+      return true
+    },
+    async execute(rawArgs: unknown): Promise<unknown> {
+      const args = parseArgs(PARAMS, rawArgs)
+      const candidateId = args.candidate_id as string
+      if (!isUuidText(candidateId)) {
+        throw new RecruitmentToolError(
+          'INVALID_ARGS',
+          JSON.stringify({ reason_code: 'NOT_A_UUID', path: 'candidate_id', value: candidateId }),
+        )
+      }
+      const pool = createPool(config)
+      try {
+        return await withReadOnly(pool, async (client) => readCandidateValue(client, config, args))
+      } finally {
+        await closePool(pool)
+      }
+    },
+  }
 }
