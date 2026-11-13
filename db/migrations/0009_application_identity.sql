@@ -41,27 +41,51 @@ begin
   ) d;
 
   if bad_count > 0 then
-    select string_agg(
-             format('  tenant=%s candidate=%s job=%s ids=%s',
-                    tenant_id, candidate_id, job_id, ids), E'\n')
-      into detail
-      from (
-        select tenant_id, candidate_id, job_id,
-               string_agg(id::text, ',' order by created_at) as ids
+    -- 非破坏性处置（Issue #1 §5-G）：保留**最早**一条为 ACTIVE，其余转 CLOSED 并记录依据；
+    -- 若被处置的那条已有面试/决策依赖 → 停下，不替人决定。
+    perform set_config('recruitment.actor_id',
+                       '11111111-1111-4111-8111-000000000103', true);
+
+    declare dep_count integer;
+    begin
+      select count(*) into dep_count
+        from recruitment.application a
+       where a.lifecycle_status = 'ACTIVE'
+         and a.id not in (
+           select distinct on (tenant_id, candidate_id, job_id) id
+             from recruitment.application
+            where lifecycle_status = 'ACTIVE'
+            order by tenant_id, candidate_id, job_id, created_at, id
+         )
+         and (exists (select 1 from recruitment.interview i where i.application_id = a.id)
+              or exists (select 1 from recruitment.decision d where d.application_id = a.id));
+
+      if dep_count > 0 then
+        raise exception using
+          errcode = '23505',
+          message = format(
+            'APPLICATION_ACTIVE_DUPLICATE_HAS_DEPENDENTS: %s 条待处置的重复 ACTIVE 申请已有面试/决策引用，'
+            '不替人合并或关闭，请人工处置。', dep_count);
+      end if;
+
+      with keep as (
+        select distinct on (tenant_id, candidate_id, job_id) id
           from recruitment.application
          where lifecycle_status = 'ACTIVE'
-         group by tenant_id, candidate_id, job_id
-        having count(*) > 1
-      ) x;
+         order by tenant_id, candidate_id, job_id, created_at, id
+      )
+      update recruitment.application a
+         set lifecycle_status = 'CLOSED',
+             stage_blocked_reason = '0009:MIGRATED_DUPLICATE_ACTIVE'
+        where a.lifecycle_status = 'ACTIVE'
+          and a.id not in (select id from keep);
 
-    raise exception using
-      errcode = '23505',
-      message = format(
-        'APPLICATION_ACTIVE_DUPLICATE: %s 组 (candidate, job) 已存在多条 ACTIVE 申请；'
-        '不猜哪条该保留，请先人工处置后再迁移。', bad_count),
-      detail  = detail;
+      get diagnostics dep_count = row_count;
+      raise notice '0009 §1 非破坏性处置：% 条重复 ACTIVE 已转 CLOSED（依据 0009:MIGRATED_DUPLICATE_ACTIVE，行未删除）', dep_count;
+    end;
+  else
+    raise notice '0009 §1 OK：无重复 ACTIVE 申请';
   end if;
-  raise notice '0009 §1 OK：无重复 ACTIVE 申请';
 end $$;
 
 -- ---------------------------------------------------------------------
@@ -145,7 +169,7 @@ begin
   ) then
     raise exception '0009 POST-CHECK FAIL: trg_application_cycle_guard 不存在';
   end if;
-  raise notice '0009 DONE：Application 身份由 (candidate, job, ACTIVE) 决定（单事务提交，无数据改动）';
+  raise notice '0009 DONE：Application 身份由 (candidate, job, ACTIVE) 决定（单事务提交；数据改动只可能是 §1 的重复 ACTIVE 非破坏性转 CLOSED）';
 end $$;
 
 commit;
