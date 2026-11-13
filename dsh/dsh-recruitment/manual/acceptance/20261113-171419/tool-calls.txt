@@ -1,0 +1,6 @@
+1. skill "{\"name\":\"recruitment-s6-s7\"}"
+2. recruitment_job_get "{\"job_id\":\"11111111-1111-4111-8111-000000000401\"}"
+3. recruitment_resume_serialize "{\"path\":\"C:\\\\Users\\\\12412\\\\AppData\\\\Local\\\\Temp\\\\recruitment-r7-synthetic\\\\synthetic-resume-text-2.pdf\"}"
+4. recruitment_structure_validate "{\"path\":\"C:\\\\Users\\\\12412\\\\AppData\\\\Local\\\\Temp\\\\recruitment-r7-synthetic\\\\synthetic-resume-text-2.pdf\",\"result_json\":\"{\\\"prompt_version\\\":\\\"1.0.0\\\",\\\"schema_version\\\":\\\"1.0.0\\\",\\\"block_count\\\":11,\\\"sections\\\":[{\\\"label\\\":\\\"contact\\\",\\\"block_ids\\\":[\\\"1\\\",\\\"2\\\",\\\"3\\\"]},{\\\"label\\\":\\\"summary\\\",\\\"block_ids\\\":[\\\"4\\\",\
+5. recruitment_application_intake "{\"job_id\":\"11111111-1111-4111-8111-000000000401\",\"path\":\"C:\\\\Users\\\\12412\\\\AppData\\\\Local\\\\Temp\\\\recruitment-r7-synthetic\\\\synthetic-resume-text-2.pdf\",\"structured_json\":\"{\\\"prompt_version\\\":\\\"1.0.0\\\",\\\"schema_version\\\":\\\"1.0.0\\\",\\\"block_count\\\":11,\\\"sections\\\":[{\\\"label\\\":\\\"contact\\\",\\\"block_ids\\\":[\\\"1\\\",\\\"2\\\",\\\"3\\\"]},{\\\"
+6. recruitment_screening_evaluate "{\"application_id\":\"8bf1d3fe-3c56-4bc0-86a3-1a20d54342bb\"}"

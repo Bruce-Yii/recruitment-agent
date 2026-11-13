@@ -1,0 +1,104 @@
+dsh: reasoning:
+用户要求把一份简历 PDF 收进招聘系统，岗位 job_id 已给。任务匹配 recruitment-s6-s7 skill。先加载 skill。
+dsh: reasoning:
+按 skill 流程。第一步：确认岗位。job_id=11111111-1111-4111-8111-000000000401。同时可以读 PDF serialize。但 skill 说第一步确认岗位。并行做 job_get 和 serialize? job_get 先；serialize 不依赖 job。可以并行。让我并行调用。
+dsh: reasoning:
+岗位：后端工程师（演示），DEMO-BE-001，OPEN。Rubric v2，version_id=...0404，criteria:
+- work_exists MUST_HAVE w=0.5: work_experience EXISTS true
+- edu_exists MUST_HAVE w=0.25: education EXISTS true
+- team_lead NICE_TO_HAVE w=0.25 judgment: "是否有 ≥1 年、≥3 人的直接带团队经历？"
+
+doc_header: pages=1, completeness=complete, order_verified=false, needs_visual=false, unread_pages=none, issues=none.
+
+注意 order_verified=false。所以 work_experience/education 不能 absent，要用 reading_order_unverified。但值读得出 => present。name/phone/email present。
+
+blocks 11 行。block_count=11.
+
+需要 sections 覆盖所有 block ids 1..11 恰好一次。ignored 可用于块？所有块都有内容，无 ignored。label 选。#4 "个人简介" heading? 可标 summary section 包含 4,5。#6 work_experience 包含 6,7。#8 education 8,9. #10 skill 10,11. #1 contact 1,2,3.
+
+order_verified=false -> work_experience/education present（读得出）。
+
+结构化 JSON。work_experience value: company 蓝示例科技有限公司, title 高级后端工程师, start 2019.03, end 2024.08, block_ids [7], attribution single_block. education: school 示例理工大学, major 软件工程, degree 本科, start 2014.09, end 2018.06, block_ids [9].
+
+phone value "139 0000 5678" 逐字。email "li.example@example.test". name "李示例".
+
+sections:
+contact [1,2,3]
+summary [4,5]
+work_experience [6,7]
+education [8,9]
+skill [10,11]
+
+ignored 无。
+
+block_count 11.
+
+先 validate。
+dsh: reasoning:
+validate accepted. 现在 intake。structured_json 字符串。path, job_id.
+dsh: reasoning:
+intake: application CREATED, application_id 8bf1d3fe-3c56-4bc0-86a3-1a20d54342bb, structure saved true, resume_version v1 8d4497bb..., candidate 27b67bae-... new matched_by created.
+
+现在 S7 screening evaluate application_id.
+dsh: reasoning:
+screening verdict PASS, criteria_evaluated true, required_human_action CONFIRM_DECISION. team_lead bonus needs judgment (ANSWER_JUDGMENT? Actually bonus [BONUS_NEEDS_JUDGMENT]). required_human_action CONFIRM_DECISION.
+
+现在需要 HR 报告。三态：
+- 申请：新建（application_id 8bf...; candidate 27b...; 岗位 DEMO-BE-001 后端工程师（演示））
+- 结构化结果：已保存（材料版本 v1）
+- 初筛：已得出判断（PASS，建议通过）
+
+二、初筛结论：
+- 结论：建议通过（全部硬性条件满足、排除条件均未命中）
+- 依据：工作经历存在（work_exists）——简历第1页第7块 "蓝示例科技有限公司 高级后端工程师 2019.03 - 2024.08"；教育经历存在（edu_exists）——第1页第9块 "示例理工大学 软件工程 本科 2014.09 - 2018.06"
+- 加分项：team_lead 需人工判断："是否有 ≥1 年、≥3 人的直接带团队经历？" 简历原文无带团队描述，需用人经理判断。Actually bonus needs judgment: rubric 原问句。原文 nowhere mentions team lead. So 待人工。
+
+三、待人工处理：
+1. team_lead 加分项无法由机器判定
+   原文证据：「原文未提及带团队经历」? 原文没有对应片段。写"原文无对应片段"
+   责任人：用人经理（ANSWER_JUDGMENT 映射：用人经理）
+   下一步：打开申请 ... 由用人经理回答 rubric 原问句。
+
+2. CONFIRM_DECISION -> 招聘负责人确认推进。问题：初筛建议通过，需招聘负责人确认是否推进。原文证据？ maybe "全部硬性条件满足"。 责任人 招聘负责人。下一步 招聘负责人确认推进。
+
+Also warning RUBRIC_PIN_REQUIRED: 写侧落 decision 前必须先钉 rubric_version_id. 这是内部 warning; HR 报告禁止写 warning 代码。但业务含义：落决策前需钉 Rubric 版本。是否写？ "需要人工核实的地方要写清问题和下一步"。可以作为待人工项：确认推进前需钉 Rubric 版本（招聘负责人/招聘运营）。但禁止写 "RUBRIC_PIN_REQUIRED"。描述业务：在记录最终决策前，需先固定当前 Rubric 版本（v2）。责任人 招聘负责人。下一步：确认使用当前 Rubric v2 作为决策依据。Hmm.
+
+Let's also mention candidate name 李示例.
+
+Need to output in Chinese business report. Not include debug. Let's craft.
+
+Also maybe mention reading order unverified? doc_header order_verified=false. But we marked present. Does screening care? It passed. Should we note for HR? The skill says document has content issue? order_verified=false is a condition where work_experience/education cannot be absent but can be present. Since present, fine. But maybe should mention "阅读顺序未校验，经历条目按原文块呈现，建议人工确认经历归属" as a 待人工? Hmm. The skill's 4.2 says order_verified=false => work_experience/education 不许 absent, use reading_order_unverified. But we set present because value readable. Should we have marked unreadable? Let's re-read: "order_verified=false 或 pdf_reading_order_unverified：work_experience / education 不许 absent，用 reading_order_unverified." It says cannot be absent; use reading_order_unverified. But state options: present/absent/unreadable. If not absent, could be present or unreadable? The reason reading_order_unverified is for absent/unreadable. "不许 absent" means if unreadable? Hmm. The reason reading_order_unverified is in absent/unreadable reasons. So if order unverified, field should be unreadable with reason reading_order_unverified? But then work_exists would be unreadable -> screening? Let's think.
+
+Skill 4.2: "文档有内容类问题（#doc 的 pdf_no_text / unread_visual_page / unread_pages 非空等）：5 个字段都不许 absent；该标 unreadable + page_or_block_unread." and "order_verified=false 或 pdf_reading_order_unverified：work_experience / education 不许 absent，用 reading_order_unverified."
+
+So for order_verified=false, work_experience/education cannot be absent; if cannot present? They can be present if value readable? The phrase "不许 absent" only forbids absent; present is allowed if value readable. But reason reading_order_unverified applies to absent/unreadable. If we mark present, no reason. Is that okay? The machine check 5: present prohibits reason. So if we believe value readable and order verified enough to cite block, present. But order_verified=false means reading order unverified; does that make value not verbatim? Value is verbatim substring of block #7, so present okay. The "reading_order_unverified" is for cases where we cannot confidently assign field because order unverified. But here single block contains full experience, so present is fine. Screening passed.
+
+Thus no need to mention order. But maybe note "阅读顺序未校验" as a caveat? The skill says report only business meaning. Could mention as 待人工? Probably not necessary; but to be safe, maybe not. The user asked "需要人工核实的地方要写清问题和下一步". The screening explicitly gives required_human_action CONFIRM_DECISION and bonus needs judgment. Also warning about rubric pin. Let's include those.
+
+Let's write final report. Ensure no forbidden terms. Let's draft.
+
+一、申请
+- 申请：新建申请（申请号 8bf1d3fe-3c56-4bc0-86a3-1a20d54342bb；候选人 27b67bae-7c9a-4f6b-a79e-80462d568d31；岗位 DEMO-BE-001 后端工程师（演示））
+- 结构化结果：已保存（材料版本 v1）
+- 初筛：已得出判断（建议通过）
+
+二、初筛结论
+- 结论：建议通过——全部硬性条件满足，排除条件均未命中。
+- 依据：
+  - 工作经历存在：「蓝示例科技有限公司 高级后端工程师 2019.03 - 2024.08」（第 1 页）
+  - 教育经历存在：「示例理工大学 软件工程 本科 2014.09 - 2018.06」（第 1 页）
+- 加分/减分项：带团队经历（加分项）无法由系统判定，需用人经理回答原问句「是否有 ≥1 年、≥3 人的直接带团队经历？」；简历原文未提及带团队经历。
+
+三、待人工处理
+1. 问题：加分项「带团队经历」无法由系统判定，需用人经理回答原问句。
+   原文证据：原文无对应片段（简历未提及带团队经历）
+   责任人：用人经理
+   下一步操作：打开申请 8bf1d3fe-3c56-4bc0-86a3-1a20d54342bb，由用人经理回答「是否有 ≥1 年、≥3 人的直接带团队经历？」
+2. 问题：初筛建议通过，需招聘负责人确认是否推进录用流程。
+   原文证据：「5 年后端开发经验，熟悉 PostgreSQL 与消息队列。」（第 1 页）——支持硬性条件满足
+   责任人：招聘负责人
+   下一步操作：确认推进申请 8bf1d3fe-3c56-4bc0-86a3-1a20d54342bb；记录最终决策前先固定当前 Rubric 版本（v2）作为决策依据。
+
+Maybe also mention candidate name? Could add "候选人：李示例". Good.
+
+Let's final.

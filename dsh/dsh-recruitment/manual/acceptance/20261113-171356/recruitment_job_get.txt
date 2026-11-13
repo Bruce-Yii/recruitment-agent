@@ -1,0 +1,15 @@
+isError=False
+job DEMO-BE-001 后端工程师（演示） [OPEN]  (labels: LIVE/MANUAL/CONNECTED)
+  job_id=11111111-1111-4111-8111-000000000401  record_version=5  department_id=11111111-1111-4111-8111-000000000010  requisition_id=null
+job_version v1  hash=aba19e40…  approved_by_approval_id=null
+  description_md: # 后端工程师（演示岗位）
+
+演示用 JD，非真实招聘信息。
+  requirements_md: - 3 年以上后端开发经验（演示样例）
+- 熟悉 PostgreSQL 与消息队列（演示样例）
+rubric v2 (is_current=true, is_approved=true, resolution=JOB_CURRENT, executable=true, version_id=11111111-1111-4111-8111-000000000404)
+    work_exists  [MUST_HAVE]  w=0.5  work_experience EXISTS true — 简历中存在可分割的工作经历条目
+    edu_exists  [MUST_HAVE]  w=0.25  education EXISTS true — 简历中存在可分割的教育经历条目
+    team_lead  [NICE_TO_HAVE]  w=0.25  (judgment) "是否有 ≥1 年、≥3 人的直接带团队经历？" — 有带团队经验
+versions: v1(is_current=false, is_approved=false), v2(is_current=true, is_approved=true)
+as_of 2026-11-13T09:10:37.315Z

@@ -1064,9 +1064,9 @@ function resolveTimelineFact(ctx: EvalContext, field: string): FieldFact {
 }
 
 /**
- * 字段是不是被 agent 结构化**升级**过（三态变了）。
+ * 字段的三态是不是被 agent 结构化**覆盖**过（升级或降级都算；键名沿用 "upgraded"）。
  *
- * `converter_state` 是 S6 在覆写时保留的原值（D-29）；缺它就保守地当作升级过，
+ * `converter_state` 是 S6 在覆写时保留的原值（D-29）；缺它就保守地当作覆盖过，
  * 因为"不知道原值"不能当成"原值一样"。
  * @param entry - 有效版本的字段条目。
  */

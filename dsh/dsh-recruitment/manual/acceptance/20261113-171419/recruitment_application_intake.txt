@@ -1,0 +1,10 @@
+isError=False
+application: CREATED 8bf1d3fe-3c56-4bc0-86a3-1a20d54342bb
+structure: saved=true (resume_version v1 8d4497bb-5801-4e88-ab1f-411382af676d, APPENDED)
+candidate: 27b67bae-7c9a-4f6b-a79e-80462d568d31 (new, matched_by=created)
+job DEMO-BE-001 [OPEN] stage=S6 lifecycle=ACTIVE
+source: synthetic-resume-text-2.pdf pages=1 bytes=3035
+sha256=042942606463522dda503687f873fa7980525c763f297ff8dbc14b4b3591f090
+parse_status=PARSED completeness=complete hard_issues=0
+identity strong_ids=[email, phone] evidence=2 blocked=[]
+labels: provenance=FIXTURE trigger=MANUAL connection=CONNECTED
