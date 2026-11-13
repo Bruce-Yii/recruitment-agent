@@ -121,7 +121,7 @@ jobs:
       - name: Apply migrations for the plugin integration tests
         run: |
           set -euo pipefail
-          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity 0008_decision_uniqueness 0009_application_identity; do
+          for f in $(ls db/migrations/*.sql | sort); do f=$(basename "$f" .sql);
             psql -v ON_ERROR_STOP=1 -q -f "db/migrations/$f.sql"
           done
 
@@ -163,7 +163,7 @@ jobs:
       - name: Apply migrations 0001..0006
         run: |
           set -euo pipefail
-          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity 0008_decision_uniqueness 0009_application_identity; do
+          for f in $(ls db/migrations/*.sql | sort); do f=$(basename "$f" .sql);
             echo "== $f"
             psql -v ON_ERROR_STOP=1 -q -f "db/migrations/$f.sql"
           done
@@ -171,7 +171,7 @@ jobs:
       - name: Verify every migration
         run: |
           set -euo pipefail
-          for f in verify-0003 verify-0004 verify-0005 verify-0006 verify-0007 verify-0008 verify-0009 verify; do
+          for f in verify-0003 verify-0004 verify-0005 verify-0006 verify-0007 verify-0008 verify-0009 verify-0010 verify; do
             echo "== $f"
             psql -v ON_ERROR_STOP=1 -q -f "db/$f.sql"
           done
@@ -185,22 +185,29 @@ jobs:
         #   re-run  ：在已迁移库上重跑**最新一条** 0009（它必须幂等）
         run: |
           set -euo pipefail
-          MIGS="0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity 0008_decision_uniqueness 0009_application_identity"
+          MIGS=$(ls db/migrations/*.sql | sort | xargs -n1 basename | sed 's/\.sql$//')
 
-          echo "== fresh: 0001→0009 on a brand-new database"
+          echo "== fresh: 0001→latest on a brand-new database"
           psql -v ON_ERROR_STOP=1 -q -c "create database ra_fresh"
           for f in $MIGS; do psql -v ON_ERROR_STOP=1 -q -d ra_fresh -f "db/migrations/$f.sql"; done
 
-          echo "== upgrade: 0001→0007, then 0008, then 0009"
+          echo "== upgrade: 0001→0007, then 0008, then the rest"
           psql -v ON_ERROR_STOP=1 -q -c "create database ra_upgrade"
           for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity; do
             psql -v ON_ERROR_STOP=1 -q -d ra_upgrade -f "db/migrations/$f.sql"
           done
           psql -v ON_ERROR_STOP=1 -q -d ra_upgrade -f db/migrations/0008_decision_uniqueness.sql
-          psql -v ON_ERROR_STOP=1 -q -d ra_upgrade -f db/migrations/0009_application_identity.sql
+          for f in 0009_application_identity 0010_migration_ledger; do
+            psql -v ON_ERROR_STOP=1 -q -d ra_upgrade -f "db/migrations/$f.sql"
+          done
 
           echo "== re-run: latest migration twice on the migrated database"
-          psql -v ON_ERROR_STOP=1 -q -d ra_fresh -f db/migrations/0009_application_identity.sql
+          psql -v ON_ERROR_STOP=1 -q -d ra_fresh -f db/migrations/0010_migration_ledger.sql
+
+          echo "== ledger vs files: 台账必须与 db/migrations/*.sql 完全一致（漏跑 / 幽灵迁移都红）"
+          ls db/migrations/*.sql | sort | xargs -n1 basename | sed 's/\.sql$//' > /tmp/files.txt
+          psql -t -A -d ra_fresh -c "select version from recruitment.schema_migration order by version" > /tmp/ledger.txt
+          diff -u /tmp/files.txt /tmp/ledger.txt && echo "ledger matches files"
           echo "migration lifecycle OK"
   # 转换层的两个"兜底"车道。fallback 不需要库（只渲染 + 校验 + 合并语义），
   # review 需要库（队列状态机在 0003 的触发器里）。

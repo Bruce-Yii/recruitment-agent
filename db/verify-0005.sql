@@ -235,7 +235,11 @@ insert into recruitment.rubric_version (id, tenant_id, job_id, version_no, dimen
 
 insert into recruitment.candidate (id, tenant_id, display_name, normalized_email) values
   ('dddddddd-dddd-4ddd-8ddd-000000000051', 'dddddddd-dddd-4ddd-8ddd-000000000001', 'V5 候选人甲', 'v5-c1@example.test'),
-  ('dddddddd-dddd-4ddd-8ddd-000000000052', 'dddddddd-dddd-4ddd-8ddd-000000000002', 'V5 候选人乙', 'v5-c2@example.test');
+  ('dddddddd-dddd-4ddd-8ddd-000000000052', 'dddddddd-dddd-4ddd-8ddd-000000000002', 'V5 候选人乙', 'v5-c2@example.test'),
+  -- 0009 之后 (tenant, candidate, job) 只能有一条 ACTIVE 申请：POS-05-02/03 需要不同候选人，
+  -- 否则 23505 会抢在约束断言前面（verify 必须能在 0001→N 全链重放）。
+  ('dddddddd-dddd-4ddd-8ddd-000000000053', 'dddddddd-dddd-4ddd-8ddd-000000000001', 'V5 候选人丙', 'v5-c3@example.test'),
+  ('dddddddd-dddd-4ddd-8ddd-000000000054', 'dddddddd-dddd-4ddd-8ddd-000000000001', 'V5 候选人丁（负例专用）', 'v5-c4@example.test');
 
 \echo ' 夹具就绪：T1 = job1(021)/job2(022)，T2 = job9(023)；版本各 1 行'
 
@@ -307,7 +311,7 @@ begin
   -- 4.2 rubric 可空：还没定评分标准的申请仍然可以存在（MATCH SIMPLE 语义不变）
   insert into recruitment.application (id, tenant_id, candidate_id, job_id, job_version_id, rubric_version_id)
   values ('dddddddd-dddd-4ddd-8ddd-000000000062', 'dddddddd-dddd-4ddd-8ddd-000000000001',
-          'dddddddd-dddd-4ddd-8ddd-000000000051', 'dddddddd-dddd-4ddd-8ddd-000000000021',
+          'dddddddd-dddd-4ddd-8ddd-000000000053', 'dddddddd-dddd-4ddd-8ddd-000000000021',
           'dddddddd-dddd-4ddd-8ddd-000000000031', null);
 
   select count(*) into v_n from recruitment.application
@@ -320,7 +324,7 @@ begin
   -- 4.3 同岗位的第二条申请（同 job、同版本）也应成功
   insert into recruitment.application (id, tenant_id, candidate_id, job_id, job_version_id, rubric_version_id)
   values ('dddddddd-dddd-4ddd-8ddd-000000000063', 'dddddddd-dddd-4ddd-8ddd-000000000001',
-          'dddddddd-dddd-4ddd-8ddd-000000000051', 'dddddddd-dddd-4ddd-8ddd-000000000022',
+          'dddddddd-dddd-4ddd-8ddd-000000000053', 'dddddddd-dddd-4ddd-8ddd-000000000022',
           'dddddddd-dddd-4ddd-8ddd-000000000032', 'dddddddd-dddd-4ddd-8ddd-000000000042');
   raise notice 'POS-05-03 PASS 岗位二自己的版本组合也成功（约束不是"只允许一条"）';
 end $$;
@@ -346,25 +350,25 @@ begin
     select * from (values
       ('V5-01', '23503', '申请指向**别的 job** 的 rubric（同租户：job1 的申请钉 job2 的 rubric）',
        $q$insert into recruitment.application (tenant_id, candidate_id, job_id, job_version_id, rubric_version_id)
-          values ('dddddddd-dddd-4ddd-8ddd-000000000001','dddddddd-dddd-4ddd-8ddd-000000000051',
+          values ('dddddddd-dddd-4ddd-8ddd-000000000001','dddddddd-dddd-4ddd-8ddd-000000000054',
                   'dddddddd-dddd-4ddd-8ddd-000000000021','dddddddd-dddd-4ddd-8ddd-000000000031',
                   'dddddddd-dddd-4ddd-8ddd-000000000042')$q$),
 
       ('V5-02', '23503', '申请指向**别的 job** 的 job_version（job1 的申请钉 job2 的 JD 版本）',
        $q$insert into recruitment.application (tenant_id, candidate_id, job_id, job_version_id, rubric_version_id)
-          values ('dddddddd-dddd-4ddd-8ddd-000000000001','dddddddd-dddd-4ddd-8ddd-000000000051',
+          values ('dddddddd-dddd-4ddd-8ddd-000000000001','dddddddd-dddd-4ddd-8ddd-000000000054',
                   'dddddddd-dddd-4ddd-8ddd-000000000021','dddddddd-dddd-4ddd-8ddd-000000000032',
                   'dddddddd-dddd-4ddd-8ddd-000000000041')$q$),
 
       ('V5-03', '23503', '反方向：job2 的申请钉 job1 的 rubric',
        $q$insert into recruitment.application (tenant_id, candidate_id, job_id, job_version_id, rubric_version_id)
-          values ('dddddddd-dddd-4ddd-8ddd-000000000001','dddddddd-dddd-4ddd-8ddd-000000000051',
+          values ('dddddddd-dddd-4ddd-8ddd-000000000001','dddddddd-dddd-4ddd-8ddd-000000000054',
                   'dddddddd-dddd-4ddd-8ddd-000000000022','dddddddd-dddd-4ddd-8ddd-000000000032',
                   'dddddddd-dddd-4ddd-8ddd-000000000041')$q$),
 
       ('V5-04', '23503', '跨租户：甲租户的申请钉乙租户的 rubric（job9 的 rubric）',
        $q$insert into recruitment.application (tenant_id, candidate_id, job_id, job_version_id, rubric_version_id)
-          values ('dddddddd-dddd-4ddd-8ddd-000000000001','dddddddd-dddd-4ddd-8ddd-000000000051',
+          values ('dddddddd-dddd-4ddd-8ddd-000000000001','dddddddd-dddd-4ddd-8ddd-000000000054',
                   'dddddddd-dddd-4ddd-8ddd-000000000021','dddddddd-dddd-4ddd-8ddd-000000000031',
                   'dddddddd-dddd-4ddd-8ddd-000000000043')$q$),
 

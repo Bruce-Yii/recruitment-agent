@@ -30,6 +30,12 @@ select current_database() as database,
 
 begin;
 
+-- 0009 之后 (tenant, candidate, job) 只能有一条 ACTIVE 申请。负例夹具必须用**专属候选人**，
+-- 否则 23505（uq_application_active_cycle）会抢在 23503（fk_application_stage_catalog）前面，
+-- 断言失败——这不是迁移错，是 verify 脚本没有"在 0001→N 全链上可重放"。
+insert into recruitment.candidate (id, tenant_id, display_name)
+values ('dddddddd-dddd-4ddd-8ddd-0000000006f1',
+        '11111111-1111-4111-8111-000000000001', 'V4 负例候选人（合成）');
 \echo ''
 \echo '=================================================================='
 \echo ' verify-0004 · 1. 本迁移新增的对象（约束定义原文）'
@@ -233,7 +239,7 @@ begin
        $q$insert into recruitment.application
             (tenant_id, candidate_id, job_id, job_version_id, current_stage_code)
           values ('11111111-1111-4111-8111-000000000001',
-                  '11111111-1111-4111-8111-000000000601',
+                  'dddddddd-dddd-4ddd-8ddd-0000000006f1',
                   '11111111-1111-4111-8111-000000000401',
                   '11111111-1111-4111-8111-000000000402', 'S99')$q$),
 
@@ -273,7 +279,7 @@ begin
        $q$insert into recruitment.application
             (tenant_id, candidate_id, job_id, job_version_id, current_stage_code)
           values ('11111111-1111-4111-8111-000000000001',
-                  '11111111-1111-4111-8111-000000000601',
+                  'dddddddd-dddd-4ddd-8ddd-0000000006f1',
                   '11111111-1111-4111-8111-000000000401',
                   '11111111-1111-4111-8111-000000000402', 'SX1')$q$)
     ) as v(id, expect, conname, what, sql)
@@ -315,7 +321,7 @@ begin
     (id, tenant_id, candidate_id, job_id, job_version_id, current_stage_code)
   values ('cccccccc-cccc-4ccc-8ccc-000000000001',
           '11111111-1111-4111-8111-000000000001',
-          '11111111-1111-4111-8111-000000000601',
+          'dddddddd-dddd-4ddd-8ddd-0000000006f1',
           '11111111-1111-4111-8111-000000000401',
           '11111111-1111-4111-8111-000000000402', 'S6');
 
