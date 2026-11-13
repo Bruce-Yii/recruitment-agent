@@ -31,3 +31,18 @@
           # 演示租户（0002_seed.sql §1）与 HR 专员 actor（§3，kind=HUMAN）。
           tenant_id: '11111111-1111-4111-8111-000000000001'
           actor_id: '11111111-1111-4111-8111-000000000103'
+
+# ---------------------------------------------------------------------------
+# 把本包自带的 DSH skill 接进技能目录扫描根（复用 @deepseek-ai/dsh-skill-filesystem，
+# 不自研 orchestrator、不另造 Agent Loop）。
+#
+# 为什么不放仓库根 `.dsh/skills`：那里是工作区本地状态（`.dsh/` 不入库），而这份
+# skill 是产品交付物，必须跟着插件包走、随 profile 的 bundle 列表生效。
+#
+# 语义：非 insert 的 patch 按 `id` 命中已有行，**整体替换**该行的 `config`
+# （`dsh-app-boot` 的 applyEntryPatches）。skill-filesystem 默认 config 为空，
+# 这里只加 `customSkillDirs`；`includeDefaultRoots` / `watch` 仍走默认值。
+- id: skill-filesystem
+  config:
+    customSkillDirs:
+      - 'D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\skill'
