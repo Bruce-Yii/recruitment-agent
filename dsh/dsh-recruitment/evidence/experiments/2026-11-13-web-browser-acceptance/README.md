@@ -97,7 +97,17 @@ PERSISTED_PROMPT: true     # 原始提问还在
 **动态结构不能靠模型自由生成，必须在 UI 上表单化**（rubric 维度表单、basis_refs 分 kind 表单）。
 本轮把这条从"建议"升级为**必须做**（见 `docs/21` §5、`docs/17` D-89）。
 
-**BLOCKED 状态未变**：`decision` 行仍未落库（`decision rows=0`），approval 仍需真人在浏览器里点一次 Allow。
+**模型自己的证词**（界面上原文，`s10-04-stopped.png`）：
+
+> I keep repeating the same mistake. I'm not able to transcribe the minimal RUBRIC_VERSION entry
+> correctly. The bloated template is too strong in my context.
+
+它甚至自己起了一个子代理去"帮我正确地调用工具"，仍然失败；最后烧到 **1.7M tok / 29 步**，
+我按"停止生成"把它掐了。这段必须留着——它说明**这不是提示词问题**：
+模板越全，弱模型越容易把别的 kind 的键一起抄过来。
+
+**BLOCKED 状态未变**：`decision` 行仍未落库（`decision rows=0`，同一时刻 `psql` 直查），
+approval 仍需真人在浏览器里点一次 Allow。
 本次实验至少证明了**前半段**：工具在浏览器里可达、契约校验在真实会话里生效、错误逐条回给模型。
 
 ---
