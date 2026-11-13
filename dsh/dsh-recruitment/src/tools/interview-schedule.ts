@@ -13,6 +13,8 @@
 //   5.5 **人机闸门（D-79）**：全部校验通过后、第一行 INSERT 前请求人工批准；approval 缺省 /
 //      `rejected` / `cancelled` / `unavailable` → `FORBIDDEN(APPROVAL_UNAVAILABLE|APPROVAL_NOT_GRANTED)`，
 //      零写入（fail closed）。**幂等重放不写库，因此在闸门之前返回。**
+//      等待人工批准超过 **120 秒** → 按 `cancelled` 判（`detail.approval='timeout'`）并回滚，
+//      不占着连接等一个不在的人；超时后宿主晚到的 Allow 不采纳（D-101 两阶段见闸门段注释）。
 //   6. `INSERT interview`（显式 `stage_code='S8'`）；7. `INSERT interviewer` 逐行；
 //   8. meeting / meeting_binding（只**登记**调用方给的平台 ID）；9. 未给会议 → `INTERVIEW_MEETING_BIND` 任务；
 //  10. 幂等 STORE 行；11. 用 `readInterviewValue` 读回（写完立刻可查的自证）。
@@ -478,6 +480,20 @@ function s8Error(
 /** DSH `ctx.approval.request` 的封闭结果（与 `decision-record.ts` 同一封闭集）。 */
 export type ApprovalOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
 
+/** 本工具 `approve()` 的最终结果：宿主的四个封闭值 + 等待超时哨兵（超时按 `cancelled` 判）。 */
+export type ApprovalDecision = ApprovalOutcome | 'timeout'
+
+/**
+ * 人工批准等待上限：**120 秒**。
+ *
+ * 为什么是 120s：人点一次按钮的正常上限远小于它（Web 里真人点 Allow 是秒级）；
+ * 再长说明人不在（或窗口已关）。此时**占着事务/连接等人回来**比让调用失败更糟：
+ * 超时按 `cancelled` 判 → 回滚 → `FORBIDDEN(APPROVAL_NOT_GRANTED, detail.approval='timeout')`，
+ * 一行不写；人要办就重来一次（D-95：人只决策一次，重来是新的决策）。
+ * 这只是本工具内的上界兜底；DB 侧 `idle_in_transaction_session_timeout` 由 `db/pool.ts` 另配。
+ */
+export const APPROVAL_TIMEOUT_MS = 120_000
+
 /**
  * DSH `ctx.approval` 的窄接口（只取 `request`）。
  *
@@ -493,24 +509,53 @@ export interface ApprovalRequester {
 }
 
 /**
+ * 让"等宿主批准"与"等 timeoutMs"赛跑。超时返回哨兵；**不等待原 promise**。
+ * 原 promise 之后 resolve / reject 都不会影响本次结果（`Promise.race` 已给它挂了
+ * handler，不会产生 unhandledRejection）。
+ * @param request - 宿主的批准 promise。
+ * @param timeoutMs - 等待上限（毫秒）。
+ * @returns 宿主结果或 `'timeout'`。
+ */
+async function raceApproval(request: Promise<string>, timeoutMs: number): Promise<string | 'timeout'> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), timeoutMs)
+  })
+  try {
+    return await Promise.race([request, timeout])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
+/**
  * 把 approval 依赖包成"可等待的批准结果"。**缺依赖 = `unavailable`**，
- * 因此 headless（没有 answerer）恒 fail closed（D-79）。
+ * 因此 headless（没有 answerer）恒 fail closed（D-79）。等待超过 `timeoutMs` → `'timeout'`。
  * @param approval - 依赖里的 approval 服务（可缺省）。
  * @param exec - 执行上下文（`agent` / `signal` 透传给宿主）。
- * @returns 一个返回 `ApprovalOutcome` 的函数；结果不在封闭集内时归 `unavailable`（不猜）。
+ * @param timeoutMs - 等待上限（默认 `APPROVAL_TIMEOUT_MS`；测试注入更短的值）。
+ * @returns 一个返回 `ApprovalDecision` 的函数；结果不在封闭集内时归 `unavailable`（不猜）。
  */
 export function makeApprovalRequest(
   approval: ApprovalRequester | undefined,
   exec: { readonly agent?: unknown; readonly signal?: AbortSignal } | undefined,
-): () => Promise<ApprovalOutcome> {
-  return async (): Promise<ApprovalOutcome> => {
+  timeoutMs: number = APPROVAL_TIMEOUT_MS,
+): () => Promise<ApprovalDecision> {
+  return async (): Promise<ApprovalDecision> => {
     if (approval === undefined) return 'unavailable'
-    const raw = await approval.request({
+    const pending = approval.request({
       agent: exec?.agent,
       toolName: TOOL_NAME,
       reason: 'S8 面试排期是写库动作，需要人工批准（D-79）',
       signal: exec?.signal,
     })
+    const raw = await raceApproval(pending, timeoutMs)
+    if (raw === 'timeout') {
+      // 超时后宿主才点的 Allow：**不采纳**（工具已返回、事务已回滚，写不了库）；
+      // 仍挂空 handler，保证晚到的 resolve/reject 不会变成 unhandledRejection。
+      pending.then(() => undefined, () => undefined)
+      return 'timeout'
+    }
     if (raw === 'allowed-once' || raw === 'rejected' || raw === 'cancelled' || raw === 'unavailable') return raw
     // 宿主返回了封闭集之外的字符串：**不猜**，按不可用处理（fail closed）。
     return 'unavailable'
@@ -521,21 +566,31 @@ export function makeApprovalRequest(
  * 写库前最后一关：**只有 `allowed-once` 放行**；其余一律 `FORBIDDEN`。
  *
  * 位置约定（D-79）：参数校验与全部业务校验（A1–A10、冲突）之后、第一行 INSERT 之前。
+ * `'timeout'` 与 `cancelled` 同判（`APPROVAL_NOT_GRANTED`，`detail.approval='timeout'`）。
  * @param outcome - `approve()` 的结果。
  * @throws RecruitmentToolError - `FORBIDDEN` + `reason_code`（`APPROVAL_UNAVAILABLE` / `APPROVAL_NOT_GRANTED`）。
  */
-export function requireApprovalGranted(outcome: ApprovalOutcome): void {
+export function requireApprovalGranted(outcome: ApprovalDecision): void {
   if (outcome === 'allowed-once') return
   const unavailable = outcome === 'unavailable'
+  const timedOut = outcome === 'timeout'
   throw new RecruitmentToolError('FORBIDDEN', canonicalJson({
     code: 'FORBIDDEN',
     reason_code: unavailable ? 'APPROVAL_UNAVAILABLE' : 'APPROVAL_NOT_GRANTED',
     message: unavailable
       ? '没有可用的批准通道（headless 无 answerer）：排期写库被拒绝（D-79，fail closed）'
-      : '人工没有批准这次排期写库（D-79）',
+      : timedOut
+        ? `等待人工批准超时（${APPROVAL_TIMEOUT_MS / 1000} 秒）：排期写库被拒绝（D-79，fail closed）`
+        : '人工没有批准这次排期写库（D-79）',
     detail: { approval: outcome, tool: TOOL_NAME },
   }))
 }
+
+// ---- D-101 技术债（2026-11-14）----
+// 两阶段「只读校验 → 关连接 → 问人 → 写事务重校验」是"人等待不占连接 + 先判定再问人 +
+// 重放不问人"三者同时成立的正解，但代价是双倍读 + TOCTOU。**现在不做**。
+// 触发条件（写死）：出现"并发写导致人批准后仍被 VERSION_CONFLICT 拒"的实测案例，
+// 或 Web UI 开始高频驱动本工具时，必须改成两阶段。
 
 /** 从 pg 错误里取 `code` / `constraint`（不是对象就返回空）。 */
 function pgInfo(error: unknown): PgErrorInfo {
@@ -1163,7 +1218,8 @@ function sortConflicts(conflicts: readonly Conflict[]): readonly Conflict[] {
  * @param rawArgs - 模型给的 arguments。
  * @param nowMs - 服务端当前时刻（毫秒；测试可注入）。
  * @param approve - D-79 的人工批准通道；**缺省 = `unavailable` = 一律拒绝**（fail closed）。
- *   位置：参数/业务校验（A1–A10、冲突）全部通过之后、第一行 INSERT 之前；`allowed-once` 才写库。
+ *   位置：参数/业务校验（A1–A10、冲突）全部通过之后、第一行 INSERT 之前；`allowed-once` 才写库；
+ *   等待超过 `APPROVAL_TIMEOUT_MS`（120s）返回 `'timeout'` → 拒绝。
  * @returns 契约出参（`tool-contracts.md` §3.5）。
  */
 export async function scheduleInTransaction(
@@ -1171,7 +1227,7 @@ export async function scheduleInTransaction(
   config: ResolvedDatabaseConfig,
   rawArgs: unknown,
   nowMs: number = Date.now(),
-  approve?: () => Promise<ApprovalOutcome>,
+  approve?: () => Promise<ApprovalDecision>,
 ): Promise<Record<string, unknown>> {
   const args = parseScheduleShape(rawArgs)
   const asOfIso = new Date(nowMs).toISOString()
@@ -1208,7 +1264,7 @@ async function runCreateCommand(
   args: ScheduleArgs,
   nowMs: number,
   asOfIso: string,
-  approve: (() => Promise<ApprovalOutcome>) | undefined,
+  approve: (() => Promise<ApprovalDecision>) | undefined,
 ): Promise<Record<string, unknown>> {
   const tenantId = config.tenant_id
   const actorId = config.actor_id
@@ -1345,6 +1401,8 @@ async function runCreateCommand(
 
   // 6.5. 人机闸门（D-79）：参数校验与全部业务校验（申请/模板/语义幂等/面试官/冲突）都过了，
   //      但还在**第一行 INSERT 之前** —— 没有 `allowed-once` 就一行都不写（fail closed）。
+  //      等待超过 120s 按 `cancelled` 判（`detail.approval='timeout'`），见 `APPROVAL_TIMEOUT_MS`。
+  // 幂等重放不写库：闸门之前返回、不打扰人（D-95：人只决策一次）
   requireApprovalGranted(approve === undefined ? 'unavailable' : await approve())
 
   // 7. INSERT interview（显式 stage_code / status / actor：INSERT 不触发 fn_row_guard）。

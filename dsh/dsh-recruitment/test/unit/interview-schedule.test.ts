@@ -14,6 +14,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  APPROVAL_TIMEOUT_MS,
   makeApprovalRequest,
   requireApprovalGranted,
   scheduleInTransaction,
@@ -89,6 +90,7 @@ test('S8 D-79：requireApprovalGranted 只在 allowed-once 放行，其余 FORBI
     ['unavailable', 'APPROVAL_UNAVAILABLE'],
     ['rejected', 'APPROVAL_NOT_GRANTED'],
     ['cancelled', 'APPROVAL_NOT_GRANTED'],
+    ['timeout', 'APPROVAL_NOT_GRANTED'],
   ] as const) {
     assert.throws(
       () => requireApprovalGranted(outcome),
@@ -103,6 +105,27 @@ test('S8 D-79：requireApprovalGranted 只在 allowed-once 放行，其余 FORBI
       },
     )
   }
+})
+
+test('S8 D-79：approval 等待超时（默认 120s；测试注入 20ms）→ timeout；晚到的 allowed-once 不改变结论', async () => {
+  // 裁定值写死：生产上限就是 120 秒（改它必须同时改测试与注释）。
+  assert.equal(APPROVAL_TIMEOUT_MS, 120_000)
+
+  // 宿主永远不回答 → 超过注入的 20ms 上限 → 'timeout'。
+  const never = { request: () => new Promise<string>(() => undefined) }
+  assert.equal(await makeApprovalRequest(never, undefined, 20)(), 'timeout')
+
+  // 超时之后宿主才 resolve：本次结论已固定为 timeout，不会变成 allowed-once。
+  let resolveLate: ((value: string) => void) | undefined
+  const late = new Promise<string>((resolve) => {
+    resolveLate = resolve
+  })
+  const approve = makeApprovalRequest({ request: () => late }, undefined, 20)
+  const result = await approve()
+  assert.equal(result, 'timeout')
+  resolveLate?.('allowed-once')
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  assert.equal(result, 'timeout', '超时后晚到的批准不得改写本次结论')
 })
 
 test('S8 D-79：参数非法 → INVALID_ARGS，且**不去问人**（approval 调用数 = 0、零 SQL）', async () => {

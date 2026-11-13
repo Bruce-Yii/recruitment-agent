@@ -17,6 +17,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 
 import {
+  makeApprovalRequest,
   parseRejectReasonsFromRationale,
   submitScorecardInTransaction,
   type ApprovalOutcome,
@@ -1188,7 +1189,7 @@ async function seedSubmittable(
 async function expectForbidden(
   run: () => Promise<unknown>,
   reasonCode: 'APPROVAL_UNAVAILABLE' | 'APPROVAL_NOT_GRANTED',
-  approval: 'unavailable' | 'rejected' | 'cancelled',
+  approval: 'unavailable' | 'rejected' | 'cancelled' | 'timeout',
 ): Promise<Record<string, unknown>> {
   const body = await expectError(run, 'FORBIDDEN', reasonCode)
   assert.deepEqual(body.detail, { approval, tool: 'recruitment_scorecard_submit' })
@@ -1315,6 +1316,54 @@ test('D-79：修订的 expected_record_version 过期 → 拒绝且**不去问�
     )
     assert.equal(approvalCalls, 0, '业务校验（乐观并发）就拒了，不得打扰人')
     assert.equal(await scorecardRowsFor(client, interviewId), before)
+  })
+})
+
+// ---------------------------------------------------------------------------
+//  12b. approval 等待超时（生产 120s 上界，测试注入 25ms）
+//       超时按 cancelled 判 → FORBIDDEN(APPROVAL_NOT_GRANTED, approval='timeout')，一行不写；
+//       超时后宿主才 resolve 的 Allow **不采纳**（防竞态写库）。
+// ---------------------------------------------------------------------------
+
+test('D-79：approval 等待超时 → FORBIDDEN(APPROVAL_NOT_GRANTED, approval=timeout)，一行不写', async () => {
+  await inRolledBackTx(POOL, async (client) => {
+    const { interviewId, key } = await seedSubmittable(client)
+    const before = await scorecardRowsFor(client, interviewId)
+    // 宿主永远不回答；注入 25ms 超时（`APPROVAL_TIMEOUT_MS` 在生产是 120_000ms）。
+    const approve = makeApprovalRequest(
+      { request: () => new Promise<string>(() => undefined) },
+      undefined,
+      25,
+    )
+    await expectForbidden(
+      () => submitScorecardInTransaction(client, CFG, submitArgs(interviewId, key), Date.now(), approve),
+      'APPROVAL_NOT_GRANTED',
+      'timeout',
+    )
+    assert.equal(await scorecardRowsFor(client, interviewId), before, '超时不得新增 scorecard 行')
+    assert.equal(await eventRowsFor(client, key), 0, '超时不得写内部事件')
+  })
+})
+
+test('D-79：超时后原 approval 才 resolve → 仍然不采纳（竞态不写库）', async () => {
+  await inRolledBackTx(POOL, async (client) => {
+    const { interviewId, key } = await seedSubmittable(client)
+    const before = await scorecardRowsFor(client, interviewId)
+    let resolveLate: ((value: string) => void) | undefined
+    const late = new Promise<string>((resolve) => {
+      resolveLate = resolve
+    })
+    const approve = makeApprovalRequest({ request: () => late }, undefined, 25)
+    await expectForbidden(
+      () => submitScorecardInTransaction(client, CFG, submitArgs(interviewId, key), Date.now(), approve),
+      'APPROVAL_NOT_GRANTED',
+      'timeout',
+    )
+    // 超时之后宿主 UI 才点了 Allow：工具已返回、事务已回滚，不得补写任何行。
+    resolveLate?.('allowed-once')
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    assert.equal(await scorecardRowsFor(client, interviewId), before, '超时后的批准不得补写 scorecard 行')
+    assert.equal(await eventRowsFor(client, key), 0, '超时后的批准不得写内部事件')
   })
 })
 

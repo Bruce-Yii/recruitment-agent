@@ -16,7 +16,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { scheduleInTransaction } from '../../src/tools/interview-schedule.ts'
+import { makeApprovalRequest, scheduleInTransaction } from '../../src/tools/interview-schedule.ts'
 import type { DatabaseClient } from '../../src/db/pool.ts'
 import {
   createTestPool,
@@ -811,7 +811,7 @@ test('MEETING_ALREADY_BOUND 在同一个未回滚的事务里不留脏行（save
 async function expectForbidden(
   run: Promise<unknown>,
   reasonCode: 'APPROVAL_UNAVAILABLE' | 'APPROVAL_NOT_GRANTED',
-  approval: 'unavailable' | 'rejected' | 'cancelled',
+  approval: 'unavailable' | 'rejected' | 'cancelled' | 'timeout',
 ): Promise<Record<string, unknown>> {
   const body = await expectToolError(run, 'FORBIDDEN', reasonCode)
   assert.deepEqual(body.detail, { approval, tool: 'recruitment_interview_schedule' })
@@ -912,5 +912,51 @@ test('D-79：业务校验失败（申请不存在）→ 也不去问人（approv
     )
     assert.equal(approvalCalls, 0, '业务校验就拒了，不得打扰人')
     assertNoWrites(before, await tableCounts(client), '业务校验失败')
+  })
+})
+
+// ---------------------------------------------------------------------------
+//  8b. approval 等待超时（生产 120s 上界，测试注入 25ms）
+//      超时按 cancelled 判 → FORBIDDEN(APPROVAL_NOT_GRANTED, approval='timeout')，五张表零写入；
+//      超时后宿主才 resolve 的 Allow **不采纳**（防竞态写库）。
+// ---------------------------------------------------------------------------
+
+test('D-79：approval 等待超时 → FORBIDDEN(APPROVAL_NOT_GRANTED, approval=timeout)，五张表零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const before = await tableCounts(client)
+    // 宿主永远不回答；注入 25ms 超时（`APPROVAL_TIMEOUT_MS` 在生产是 120_000ms）。
+    const approve = makeApprovalRequest(
+      { request: () => new Promise<string>(() => undefined) },
+      undefined,
+      25,
+    )
+    await expectForbidden(
+      scheduleInTransaction(client, cfg, createArgs(scenario.applicationId), NOW, approve),
+      'APPROVAL_NOT_GRANTED',
+      'timeout',
+    )
+    assertNoWrites(before, await tableCounts(client), 'approval 超时')
+  })
+})
+
+test('D-79：超时后原 approval 才 resolve → 仍然不采纳（竞态零写入）', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const before = await tableCounts(client)
+    let resolveLate: ((value: string) => void) | undefined
+    const late = new Promise<string>((resolve) => {
+      resolveLate = resolve
+    })
+    const approve = makeApprovalRequest({ request: () => late }, undefined, 25)
+    await expectForbidden(
+      scheduleInTransaction(client, cfg, createArgs(scenario.applicationId), NOW, approve),
+      'APPROVAL_NOT_GRANTED',
+      'timeout',
+    )
+    // 超时之后宿主 UI 才点了 Allow：工具已返回、事务已回滚，不得补写任何行。
+    resolveLate?.('allowed-once')
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    assertNoWrites(before, await tableCounts(client), '超时后的批准')
   })
 })
