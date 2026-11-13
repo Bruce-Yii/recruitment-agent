@@ -9,6 +9,7 @@
   "reader": "pymupdf/1.28.0@1.0.0",
   "completeness": "partial",
   "blocking": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
    "unverified_pdf_image"
   ],
@@ -21,7 +22,7 @@
   "chars": 1691,
   "blocks": 13,
   "next": "human",
-  "ms": 1178
+  "ms": 1424
  },
  {
   "index": 2,
@@ -33,6 +34,7 @@
   "reader": "pymupdf/1.28.0@1.0.0",
   "completeness": "complete",
   "blocking": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
    "doc_cross_block_attribution"
   ],
@@ -41,7 +43,7 @@
   "chars": 2506,
   "blocks": 56,
   "next": "human",
-  "ms": 474
+  "ms": 556
  },
  {
   "index": 3,
@@ -53,13 +55,14 @@
   "reader": "pymupdf/1.28.0@1.0.0",
   "completeness": "complete",
   "blocking": false,
+  "blocking_for_structure": false,
   "blocking_codes": [],
   "soft_codes": [],
   "pages": 1,
   "chars": 3550,
   "blocks": 13,
   "next": "structure",
-  "ms": 328
+  "ms": 428
  },
  {
   "index": 4,
@@ -71,6 +74,7 @@
   "reader": "pymupdf/1.28.0@1.0.0",
   "completeness": "partial",
   "blocking": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
    "unverified_pdf_image"
   ],
@@ -79,7 +83,7 @@
   "chars": 2519,
   "blocks": 35,
   "next": "human",
-  "ms": 367
+  "ms": 522
  },
  {
   "index": 5,
@@ -91,6 +95,7 @@
   "reader": "pymupdf/1.28.0@1.0.0",
   "completeness": "partial",
   "blocking": false,
+  "blocking_for_structure": false,
   "blocking_codes": [],
   "soft_codes": [
    "pdf_page_empty"
@@ -99,7 +104,7 @@
   "chars": 1512,
   "blocks": 37,
   "next": "structure",
-  "ms": 283
+  "ms": 501
  },
  {
   "index": 6,
@@ -111,6 +116,7 @@
   "reader": "pymupdf/1.28.0@1.0.0",
   "completeness": "partial",
   "blocking": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
    "doc_cross_block_attribution",
    "unverified_pdf_image"
@@ -122,7 +128,7 @@
   "chars": 2543,
   "blocks": 48,
   "next": "human",
-  "ms": 374
+  "ms": 631
  },
  {
   "index": 7,
@@ -134,6 +140,7 @@
   "reader": "pymupdf/1.28.0@1.0.0",
   "completeness": "partial",
   "blocking": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
    "unverified_pdf_image"
   ],
@@ -145,7 +152,7 @@
   "chars": 3281,
   "blocks": 22,
   "next": "human",
-  "ms": 675
+  "ms": 927
  },
  {
   "index": 8,
@@ -157,6 +164,7 @@
   "reader": "pymupdf/1.28.0@1.0.0",
   "completeness": "partial",
   "blocking": true,
+  "blocking_for_structure": false,
   "blocking_codes": [
    "doc_cross_block_attribution",
    "unverified_pdf_image"
@@ -169,6 +177,6 @@
   "chars": 3321,
   "blocks": 48,
   "next": "human",
-  "ms": 405
+  "ms": 649
  }
 ]
