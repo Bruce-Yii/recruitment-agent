@@ -1,0 +1,180 @@
+[
+ {
+  "index": 1,
+  "file": "luna-report-preview.pdf",
+  "sha": "c0be84762c74df56",
+  "kb": 22,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "complete",
+  "blocking": false,
+  "blocking_codes": [],
+  "soft_codes": [],
+  "pages": 1,
+  "chars": 498,
+  "blocks": 9,
+  "next": "structure",
+  "ms": 315
+ },
+ {
+  "index": 2,
+  "file": "Chenghao_s_CV__2410_.pdf",
+  "sha": "6f6dd3f49d7975f8",
+  "kb": 92,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "complete",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution"
+  ],
+  "soft_codes": [],
+  "pages": 1,
+  "chars": 2645,
+  "blocks": 18,
+  "next": "human",
+  "ms": 355
+ },
+ {
+  "index": 3,
+  "file": "resume.pdf",
+  "sha": "c8ecbf6a809ff484",
+  "kb": 135,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_protected_attribute_present",
+   "resume_timeline_gap",
+   "resume_timeline_overlap"
+  ],
+  "pages": 1,
+  "chars": 2005,
+  "blocks": 42,
+  "next": "human",
+  "ms": 332
+ },
+ {
+  "index": 4,
+  "file": "Prabhu Kiran Konda Resume.pdf",
+  "sha": "1df94adcec53b51d",
+  "kb": 145,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "pdf_text_encoding_unread",
+   "resume_field_unreadable"
+  ],
+  "soft_codes": [],
+  "pages": 1,
+  "chars": 4505,
+  "blocks": 35,
+  "next": "human",
+  "ms": 336
+ },
+ {
+  "index": 5,
+  "file": "Yue-Zhao-Senior-AI-Product-Designer-Resume.pdf",
+  "sha": "c46dbda8fa46e005",
+  "kb": 166,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_timeline_overlap"
+  ],
+  "pages": 2,
+  "chars": 6620,
+  "blocks": 73,
+  "next": "human",
+  "ms": 319
+ },
+ {
+  "index": 6,
+  "file": "赵越-高级AI产品设计师-简历.pdf",
+  "sha": "edef0f38bd2d25ce",
+  "kb": 166,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_timeline_overlap"
+  ],
+  "pages": 2,
+  "chars": 6620,
+  "blocks": 73,
+  "next": "human",
+  "ms": 303
+ },
+ {
+  "index": 7,
+  "file": "resume.pdf",
+  "sha": "ead23e7999e7db3c",
+  "kb": 246,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_attribution_unverified",
+   "resume_timeline_unparsed"
+  ],
+  "pages": 1,
+  "chars": 2028,
+  "blocks": 47,
+  "next": "human",
+  "ms": 289
+ },
+ {
+  "index": 8,
+  "file": "个人简历-中国石油大学（华东）-孙光宇 .pdf",
+  "sha": "49afd21e06693edc",
+  "kb": 277,
+  "ok": true,
+  "media_type": "application/pdf",
+  "reader": "pymupdf/1.28.0@1.0.0",
+  "completeness": "partial",
+  "blocking": true,
+  "blocking_codes": [
+   "doc_cross_block_attribution",
+   "unverified_pdf_image"
+  ],
+  "soft_codes": [
+   "resume_attribution_unverified",
+   "resume_timeline_unparsed"
+  ],
+  "pages": 1,
+  "chars": 1912,
+  "blocks": 47,
+  "next": "human",
+  "ms": 306
+ }
+]
