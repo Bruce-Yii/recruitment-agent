@@ -185,6 +185,17 @@ export type DocumentIssueCode = keyof typeof DOCUMENT_ISSUE_CODES
  * 新增 code 属于转换器所有者的权限，本层遇到就按未登记 HARD 兜住。
  */
 export const CONVERTER_ISSUE_CODES = {
+  // 2026-11-14：原生文本层坏掉时整页 OCR 重读成功（恢复标记，不是失败）。
+  // 由 converter 发出（issues.py::ADDED_CODES 的 soft 条目），所以属于 converter 组。
+  pdf_text_recovered_by_ocr: {
+    code: 'pdf_text_recovered_by_ocr',
+    origin: 'converter',
+    family: 'encoding',
+    severity: 'SOFT',
+    retryable: false,
+    suggested_action: 'human_review',
+    meaning: '原生文本层含未解码字形，整页已由 OCR 重读；恢复文本 provenance=ocr，身份字段需交叉核对',
+  },
   // issues.py `_HARD_ISSUE_CODES`（抄自 batch.py:117-124，原样）
   unread_visual_page: {
     code: 'unread_visual_page',

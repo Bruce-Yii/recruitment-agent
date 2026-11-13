@@ -1000,3 +1000,32 @@ connector 报"无转写" → HR 看到"无转写" → 面试官无法基于证�
 **顺带修的**：`排版经历.pdf` 只有 **2 字节**（空占位文件），旧报错说"content does not match magic bytes"
 让人以为是格式问题。现在 <8 字节一律按 `EMPTY_FILE` 报，并写明真实字节数：
 `file is 2 bytes (only whitespace/line breaks); too small to be any supported document…`
+
+### D-98 · 原生文本层坏掉 → **整页 OCR 兜底**（不再直接判"读不出"）
+
+**触发**：3 份真实简历（Prabhu / 任悦平 / 诸葛童琳）被 `pdf_text_encoding_unread` 判成"读不出"，
+用户逐个打开确认**都是正常简历**——PDF 用自定义字体编码，原生文本层抽出来是乱码。
+
+**裁定**：原生文本层含未解码字形时，**该页整页转图 OCR 重读**，用 OCR 结果替换本页原生块：
+- OCR 块 `provenance='ocr'`，**绝不冒充 `native_text`**；
+- 页面级 issue 从 HARD `pdf_text_encoding_unread` 降为 SOFT **`pdf_text_recovered_by_ocr`**（恢复标记，不是失败）；
+- 身份字段（姓名/电话/公司/时间）仍按"待核证据"处理（`doc_provenance_unverified` / `doc_identity_from_unverified_source` 保留），
+  因为 OCR 是机器认字，不是原文。
+
+**为什么用 OCR 而不是视觉模型**：印刷体中文 OCR 准确率更高（~97–99%）、**确定性**（同图同结果）、
+**带 bbox**（能指回原文位置）；视觉模型会"顺"文本且无可靠字符级坐标。视觉只留给 OCR 也读不出的
+手写/印章/艺术字。
+
+**实测（3 份）**：
+
+| 文件 | 修复前 | 修复后 |
+|---|---|---|
+| Prabhu Kiran Konda Resume.pdf | 乱码、判"读不出" | **4365 字 / 65 块**，`pdf_text_recovered_by_ocr` SOFT |
+| 任悦平-27届产品-研究生.pdf | 乱码、判"读不出" | **2197 字 / 55 块** |
+| 诸葛童琳2027届_AIGC运营简历.pdf | 乱码、判"读不出" | **3642 字 / 77 块** |
+
+三份 `blocking_for_structure=false` → 都能进第一批结构化。
+
+**踩到的坑（记下来）**：converter 说 soft、TS 层说 hard —— 因为 `issues.py::ADDED_CODES` 与
+`map-converter.ts::CONVERTER_SOFT_ISSUE_CODES` 是**两份镜像清单**，只改一边就会不一致。
+已在两边都登记，并在 TS 侧注释里写明"两边必须同步"。

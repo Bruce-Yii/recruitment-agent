@@ -48,6 +48,7 @@ ADDED_CODES = {
     'pdf_page_empty': ('soft', '该页无文字、无图像、无矢量图形（空页，仅记录）'),
     'resume_protected_attribute_present': ('soft', '识别到受保护属性并隔离，未进入筛选特征'),
     'resume_ocr_heading_inserted': ('soft', '标题来自 OCR 区域补读（正文仍为原生文本）'),
+    'pdf_text_recovered_by_ocr': ('soft', '原生文本层含未解码字形，整页已由 OCR 重读；恢复文本 provenance=ocr，身份字段需交叉核对'),
 }
 
 # doc 11 A4 覆盖 batch.py 的 soft 前缀：
