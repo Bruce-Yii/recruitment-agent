@@ -209,17 +209,33 @@ async function prefixContainsDocxParts(filePath: string, size: number): Promise<
   }
 }
 
-function unsupported(code: string, message: string, filePath: string, extra: Record<string, unknown> = {}): never {
+function unsupported(
+  code: string,
+  message: string,
+  filePath: string,
+  size: number,
+  head: Buffer,
+  extra: Record<string, unknown> = {},
+): never {
   const extension = extname(filePath).toLowerCase()
-  throw new DocumentReadError('UNSUPPORTED_MEDIA', message, {
-    details: { reason: code, extension, ...extra },
-    issues: [
-      hardIssue(
-        'unsupported_media',
-        'the file content is not one of PDF / DOCX / PNG / JPEG; the extension was not used to guess a reader',
-      ),
-    ],
-  })
+  // 消息必须回答"为什么"，且可被机器复核（docs/11 §11）：真实字节数 + 前 8 字节 hex
+  // + 扩展名声明的格式。扩展名只用于说明"没有拿它猜 reader"，不参与选 reader。
+  const declared = extension === '' ? 'no extension' : extension
+  const prefixHex = head.subarray(0, 16).toString('hex')
+  const first8Hex = head.subarray(0, 8).toString('hex')
+  throw new DocumentReadError(
+    'UNSUPPORTED_MEDIA',
+    `${message} (bytes=${size}, first8=${first8Hex}, declared=${declared})`,
+    {
+      details: { reason: code, extension, declared, bytes: size, prefix_hex: prefixHex, ...extra },
+      issues: [
+        hardIssue(
+          'unsupported_media',
+          'the file content is not one of PDF / DOCX / PNG / JPEG; the extension was not used to guess a reader',
+        ),
+      ],
+    },
+  )
 }
 
 /** 嗅探一份真实文件。读不出/无法识别时抛结构化错误，不返回猜测结果。 */
@@ -231,19 +247,34 @@ export async function sniffFile(filePath: string): Promise<SniffResult> {
     const stats = await handle.stat()
     size = stats.size
     if (!stats.isFile()) {
-      throw new DocumentReadError('INVALID_ARGS', `path is not a regular file: ${filePath}`)
+      const kind = stats.isDirectory() ? 'a directory' : 'a non-file entry'
+      throw new DocumentReadError(
+        'INVALID_ARGS',
+        `path is not a regular file: ${filePath}; it is ${kind}, and only regular files carry `
+          + 'document bytes, so nothing was read',
+      )
     }
     if (size === 0) {
-      throw new DocumentReadError('EMPTY_FILE', 'file is empty (0 bytes); nothing can be read')
+      // 0 字节不是"损坏的文档"，是**空占位文件**。
+      throw new DocumentReadError(
+        'EMPTY_FILE',
+        'file is empty (0 bytes); a 0-byte file has no PDF/DOCX/PNG/JPEG magic bytes to parse, '
+          + 'so this is an empty placeholder rather than a corrupt document',
+        { details: { bytes: 0 } },
+      )
     }
     // 真实语料里踩过：`排版经历.pdf` 只有 2 字节（一个 CRLF），是仓库里的空占位文件。
     // 报 "content does not match magic bytes" 会让人以为是格式问题，其实**文件本身就是空的**。
-    // 任何受支持格式的魔数至少要 4 字节，所以小于 8 字节的文件一律按"空文件"报，并带上真实字节数。
+    // 任何受支持格式的魔数至少要 3 字节（JPEG FF D8 FF），PDF 要 5 字节，PNG 要 8 字节；
+    // 小于 8 字节的文件一律按"空文件"报，并带上真实字节数与真实前几个字节。
     if (size < 8) {
+      const prefix = await readRange(handle, 0, size)
       throw new DocumentReadError(
         'EMPTY_FILE',
-        `file is ${size} bytes (only whitespace/line breaks); too small to be any supported `
-        + 'document (PDF/DOCX/PNG/JPEG need at least 4–8 magic bytes)',
+        `file is ${size} byte${size === 1 ? '' : 's'}, first bytes ${prefix.toString('hex')}; that is `
+          + 'too small to hold any supported magic (JPEG needs 3 bytes, PDF needs "%PDF-", PNG needs '
+          + 'an 8-byte signature), so this is an empty placeholder rather than a corrupt document',
+        { details: { bytes: size, prefix_hex: prefix.toString('hex') } },
       )
     }
     head = await readRange(handle, 0, Math.min(size, HEAD_BYTES))
@@ -260,6 +291,8 @@ export async function sniffFile(filePath: string): Promise<SniffResult> {
       'ole_container',
       'legacy binary Office (OLE) containers are not supported by this reader; re-export as .docx explicitly',
       filePath,
+      size,
+      head,
       { container: 'ole' },
     )
   }
@@ -268,7 +301,8 @@ export async function sniffFile(filePath: string): Promise<SniffResult> {
       'unknown_magic',
       'content does not match PDF, DOCX, PNG or JPEG magic bytes',
       filePath,
-      { prefix_hex: head.subarray(0, 16).toString('hex') },
+      size,
+      head,
     )
   }
 
@@ -280,6 +314,8 @@ export async function sniffFile(filePath: string): Promise<SniffResult> {
         'zip_without_word_part',
         'ZIP container is not a Word document (missing [Content_Types].xml or word/document.xml)',
         filePath,
+        size,
+        head,
         { container: 'zip' },
       )
     }
@@ -292,12 +328,12 @@ export async function sniffFile(filePath: string): Promise<SniffResult> {
     return sniffResult(filePath, size, 'docx', evidence, head)
   }
   if (entries.includes(XLSX_WORKBOOK)) {
-    unsupported('zip_is_xlsx', 'ZIP container is an Excel workbook, not a Word document', filePath, {
+    unsupported('zip_is_xlsx', 'ZIP container is an Excel workbook, not a Word document', filePath, size, head, {
       container: 'xlsx',
     })
   }
   if (entries.includes(PPTX_PRESENTATION)) {
-    unsupported('zip_is_pptx', 'ZIP container is a PowerPoint deck, not a Word document', filePath, {
+    unsupported('zip_is_pptx', 'ZIP container is a PowerPoint deck, not a Word document', filePath, size, head, {
       container: 'pptx',
     })
   }
@@ -305,6 +341,8 @@ export async function sniffFile(filePath: string): Promise<SniffResult> {
     'zip_without_word_part',
     'ZIP container is not a Word document (missing [Content_Types].xml or word/document.xml)',
     filePath,
+    size,
+    head,
     { container: 'zip' },
   )
 }
