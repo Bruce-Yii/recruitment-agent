@@ -896,3 +896,32 @@ Owner 回传必须九项齐全（见 `docs/21` §3.5），缺一项算没回传�
 升级不过就回滚版本号；`DSH_HOME` 永远用产品自己的。
 
 **证据**：`evidence/experiments/2026-11-14-dsh-022-rc3-upgrade/`。
+
+### D-95 · 人只做**一次**决策：对话里定过就不再点第二次（修正 D-79 的落库闸门）
+
+**裁定（2026-11-14，产品负责人）**：**人只做一次决策**。两种情形都只做一次：
+① Agent 主动把问题抛出来问 → 人回答完，**直接执行**，不再弹确认；
+② 人自己提出来要办 → 人已决策，**直接执行**，不再弹确认。
+
+`ctx.approval` 不再作为 `recruitment_decision_record` 的**二次确认**闸门。
+人机闸门的形态改成**"问一次"**：决策的授权来自人的那一次回答，而不是回答完再点一下按钮。
+
+**落地口径**：
+- `human_confirmation.confirmation_method` 增加 **`IN_CHAT`**：表示"人在对话里明确指示过"；
+- `IN_CHAT` 必须带 **`confirmation_text`（人的原话，逐字）**，它与 `confirmed_by_actor_id` / `confirmed_at`
+  一起进 `confirmation_text_sha256` 的 pre-image；
+- 落库时把原话与哈希一起写进 `decision`，**事后可对回会话日志**；
+- `decided_by_actor_id` 仍只来自配置的 actor（模型传不进来）；
+- `IN_APP_CONFIRM` / `SIGNED_RECORD` 两种旧方式保留（用于确实需要留痕签名的场景），但**不再是默认路径**。
+
+**残余风险（必须写在明处）**：工具本身无法证明"人真的说过这句话"——
+Agent 理论上可以编造 `confirmation_text`。缓解是**可审计**而不是**可阻止**：
+原话 + 哈希 + 会话日志三者对不上就能查出来。这比"点一下按钮但 Agent 仍可能听错"更强，
+但不是密码学意义的证明。若将来要"可阻止"，只能回到 approval 通道（即用户否决的方案）。
+
+**理由（产品负责人原话）**："要么主动提问…问完直接执行，要么人提出来，人决策，相同点就是人只做一次决策。"
+重复确认把"人已经说清楚的事"再问一遍，是**摩擦**而不是安全。
+
+**影响面**：`src/tools/decision-record.ts`（STEP 6.5 闸门 + `human_confirmation` schema/pre-image）、
+`src/index.ts`（`decision_record` 不再强依赖 `ctx.approval`）、S10 的 headless 验收（`decision` 可落库，
+不再 BLOCKED）。**D-79 的其余部分不变**：Agent 不能自己"决定"，只能记录人已经做出的决定。
