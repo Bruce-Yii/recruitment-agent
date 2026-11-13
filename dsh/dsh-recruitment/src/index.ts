@@ -30,7 +30,7 @@
 // 不静默降级、不假装能读、不返回假数据（沿用 unconfiguredResumeReadTool 的既有做法）。
 import type { Context } from '@deepseek-ai/cordis'
 import type { ReadonlyToolDefinition } from './tools/definition.ts'
-import { candidateGetTool } from './tools/candidate-get.ts'
+import { createCandidateGetTool, unconfiguredCandidateGetTool } from './tools/candidate-get.ts'
 import { createJobGetTool, unconfiguredJobGetTool } from './tools/job-get.ts'
 import { createResumeReadTool } from './tools/resume-read.ts'
 import { createResumeSerializeTool, createStructureValidateTool } from './tools/structure-tools.ts'
@@ -301,6 +301,11 @@ export function apply(
   const evaluate = database.resolved === null
     ? unconfiguredScreeningEvaluateTool(database.issues)
     : createScreeningEvaluateTool(database.resolved)
+  // 候选人档案也是**真查库**（2026-11-14 起；之前是 fixture stub）：没配置就报 NOT_CONFIGURED，
+  // 绝不退回样例数据 —— 否则"查候选人"会返回一个编造的人。
+  const candidateGet = database.resolved === null
+    ? unconfiguredCandidateGetTool(database.issues)
+    : createCandidateGetTool(database.resolved)
   // 岗位 / Rubric 是**真查库**（tool-contracts.md §2）：没配置就报 NOT_CONFIGURED，
   // 绝不退回 fixture——那样会让岗位数据看起来是 LIVE 的假象。
   const jobGet = database.resolved === null
@@ -366,7 +371,7 @@ export function apply(
   const tools: readonly ReadonlyToolDefinition[] = [
     resumeRead,
     ...structureTools,
-    candidateGetTool,
+    candidateGet,
     jobGet,
     jobCreate,
     jobUpdate,
