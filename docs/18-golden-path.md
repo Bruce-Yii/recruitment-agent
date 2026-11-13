@@ -78,12 +78,20 @@ agent 不得代填面评、不得代做决策（`execution_mandate` 的 CHECK �
 | 模型兜底 | ⛔ **BLOCKED** | 真实模型 0 次成功（额度）；且未接线 |
 | 人工复核队列 | ✅ 成立 | `converter/review/`，51 条测试；CI `python-lanes` job 绿 |
 | 插件 5 个工具从运行时可达 | ✅ 成立 | `dsh/dsh-recruitment/evidence/r2-tool-reachability-2026-11-13.md` |
-| S6 接入工具 | 🚧 在建 | 见 `work/`（lane 交付后回填） |
-| S7 初筛工具 | 🚧 在建 | 契约已定稿于 `contracts/job-screening/` |
-| S8/S9/S10 工具 | ❌ 未开始 | 只有契约，零实现 |
-| 产品 profile（DSH Web） | ✅ 能起服务 | `dsh --profile recruitment --no-open --port 61999` → `HTTP 200 / 27660 bytes / title "DeepSeek Harness"`（验证后已关）；**但没有在里面调过招聘工具**，工具是否都能在 Web 会话里跑通还没证 |
+| **插件 18 个工具注册 + Web 入口可达** | ✅ **成立（2026-11-13 晚）** | `src/index.ts` 注册 18 个（含 S3/S8/S9/S10 十条，`884bc81`）；浏览器实测 `recruitment_job_get` 返回值与 DB 一致，硬刷新后会话保持 —— `evidence/experiments/2026-11-13-web-browser-acceptance/` |
+| S3 岗位 / Rubric 工具 | ✅ 交付（24/24） | `src/tools/job-create.ts`（rubric 落 PENDING，人类批准） |
+| S6 接入工具 | ✅ 交付 | `src/tools/application-intake.ts` |
+| S7 初筛工具 | ✅ 交付 | `src/tools/screening-evaluate.ts` |
+| S8 面试工具 | ✅ 交付（46 单测 + 29 集成） | `src/tools/interview-{schedule,get}.ts` |
+| S9 转写工具 | ✅ 交付（71/71，飞书 LIVE Gate BLOCKED） | `src/tools/transcript-{import,read}.ts` |
+| S10 评价/决策工具 | ✅ 交付（149 测试）；**决策落库 BLOCKED** | `src/tools/{scorecard-submit,evaluation-summarize,decision-record}.ts`；headless 无 approval answerer → `APPROVAL_UNAVAILABLE` fail closed；Web 里真人点 Allow 是唯一解 |
+| 产品 profile（DSH Web） | ✅ 能起服务 + 能在里面调招聘工具 | `dsh --profile recruitment --no-open --port 49301`；浏览器实测见上 |
 
-**结论**：Golden Path **还没有跑通过一次**。上面任何一个 ❌/🚧 都足以让链路断开。
+**结论（2026-11-13 晚更新）**：**接线层已通**（18 个工具注册、Web 会话真调到、刷新保持），
+但 Golden Path **仍未端到端跑通过一次**。剩下两道硬门槛：
+① S6→S7 用 **≥20 份真实简历**跑通并给出 ≥5 份可解释结论；
+② S10 决策必须在 **Web 里由真人点一次 approval** 才能落库。
+
 
 ---
 
