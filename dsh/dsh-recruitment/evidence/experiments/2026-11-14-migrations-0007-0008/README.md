@@ -80,15 +80,37 @@ psql -d ra_s6s7 -f db/migrations/0008_decision_uniqueness.sql
 | `verify-0009.sql` | PASS：3 结构 + 3 正向 + 3 负向 + 1 数据面 |
 | `verify.sql` | PASS：结构 + 状态机 + 对象覆盖 + 32 条负向 |
 
-## 3. 现在库里真的有什么
+## 3. 现在库里真的有什么（逐个查出来的，不是照抄任务书）
 
 ```
-uq_decision_current          ✅ 存在（可延迟排斥约束版，0008 重做）
-scorecard.idempotency_key    ✅ 存在
-fk_scorecard_rubric_job      ✅ 存在
-fk_interview_record_rubric_job ✅ 存在
-scorecard.job_id             ✅ NOT NULL（2 行已回填）
+uq_decision_current            ✅ 存在（0007 建，0008 重做成可延迟排斥约束版）
+uq_decision_current_final      ✅ 存在（0008 新增：每个申请最多一条 current FINAL）
+fk_decision_stage_catalog      ✅ 存在（0007 GAP-A）
+fk_scorecard_rubric_job        ✅ 存在（0007 GAP-C）
+fk_interview_record_rubric_job ✅ 存在（0008 同型缺口）
+ck_scorecard_terminal_actor    ✅ 存在
+scorecard.job_id               ✅ NOT NULL（2 行已按 §7 回填）
+trg_scorecard_job_guard        ✅ 存在（负责给 job_id 填充 + 校验与申请一致）
+trg_scorecard_terminal_actor_guard ✅ 存在
+trg_interview_record_job_guard ✅ 存在
 ```
+
+### ⚠️ 一处**事实更正**（我先前写错了，这里改过来）
+
+我原先写"`scorecard.idempotency_key` ✅ 存在"。**实测不存在，而且 0007/0008 从来没建过这一列。**
+
+```sql
+select count(*) from information_schema.columns
+ where table_schema='recruitment' and table_name='scorecard'
+   and column_name='idempotency_key';   -- → 0
+select count(*) from (select 1) x where false;  -- 0007/0008 源码里 'idempotency' 出现 0 次
+```
+
+**面评提交的幂等不靠 scorecard 列**，而是靠 `event_inbox(tenant_id, idempotency_key)`
+的 `uq_event_inbox_idempotency`（0001 就有）。所以 S10 lane 任务书里
+"0007 落地后 scorecard.idempotency_key 就有了"这句话本身就是错的，我照抄了一遍。
+
+**教训**：迁移"落地了"必须逐对象查库确认，不能照抄任务书里对迁移内容的描述。
 
 ## 4. 还没做的根因机制（下一步）
 
