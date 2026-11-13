@@ -55,3 +55,22 @@ PyMuPDF 读出来的东西必须被**无损映射**成 `DocumentContent`，映�
 - 让 `DocumentContent` 与 `converter` 输出**长期并存**给下游自己挑。
 - 用 Markdown / 非空字数冒充"忠实读取"。
 - 把 `ocr` / `agent_read` 出来的姓名/电话/邮箱直接触发自动并人。
+
+## 5. 收口规则（2026-11-13 追加，W0 裁决）
+
+U0 落地后发现树上有**两个同名 `validateDocumentContent()`、两套文档类型**：
+`src/document/contracts/**`（U0，权威）与 `src/document/readers/{types,validate}.ts`（U1 在 U0 落地前自己写的）。
+按 D-85，**这必须立刻收口，不允许两套并存**。
+
+**硬规则**：
+
+1. `src/document/contracts/**` 是**唯一**类型与校验器来源。
+2. `readers/**`、`quality/**`、`recovery/**` **不得**再声明自己的 `DocumentContent` / `DocumentBlock` / `EvidenceLocator`，
+   必须 `import ... from '../contracts/index.ts'`。
+3. `readers/validate.ts` 若保留，只能 re-export contracts 的实现；**不得**有第二份 `validateDocumentContent`。
+4. 校验器语义以 contracts 版为准：**不抛异常、收集 violations**。
+   reader 需要在"输出不合法"时抛错，就在 reader 层自己包一层 `throw new ReaderOutputInvalid(violations)`，不要改契约校验器的语义。
+5. 合并时**删除**重复文件，不是留两份再"以哪份为准"——留两份就是 D-85 说的第三次两套权威。
+
+**执行**：U1/U2 收尾时自己改；若它们已结束，由 W0 在 U3 前统一改，并补一条测试断言
+「`src/document/{readers,quality,recovery}` 里不存在 `export function validateDocumentContent`」（防复发）。
