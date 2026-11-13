@@ -7,9 +7,10 @@
 //      旧 converter 的 screening/timeline **不得**反向污染结论（否则旧 timeline=0 会制造虚假 FAIL）。
 //   K  无效/未被选中的结构化结果不得污染 S7：没被钉住的更新版本不参与评估；
 //      即使一份缺证据的 present 混进被钉版本，也只能是"未确认"，不能变成 PASS。
-//   L  真实简历（ra_s6s7 里那两版）的脱敏事实投影：只有 UNREADABLE 字段，**无法合法**走出
-//      PASS/FAIL；本用例把"为什么不能"钉成可回归的断言，而不是编一个 PASS。
-//      （另有一条 FIXTURE capability probe：合成 PDF 五字段 present 时能 PASS/FAIL，
+//   L  真实简历（ra_s6s7 的 resume.pdf 版本）的脱敏事实投影：只有 UNREADABLE 字段，
+//      **无法合法**走出 PASS/FAIL；本用例把"为什么不能"钉成可回归的断言，而不是编一个 PASS。
+//      （platform_noise.pdf 是 corpus/synthetic 下的语料文件，虽有相同 content_sha，不算真实简历；
+//       另有一条 FIXTURE capability probe：合成 PDF 五字段 present 时能 PASS/FAIL，
 //       只证明机制，不作为真实简历的 L 证据。）
 //   M  verdict 必须绑定正确的 Job/Rubric 与有效 resume_version（snapshot + 每条 evidence）。
 //
@@ -391,18 +392,20 @@ test('能力探针（FIXTURE，不算 L）：五字段 present 的合成简历 �
   })
 })
 
-test('L：真实简历（两版均 work/education unreadable）→ 精确理由说明为什么不能产生 PASS/FAIL', async () => {
+test('L：真实简历 `resume.pdf`（work/education unreadable）→ 精确理由说明为什么不能产生 PASS/FAIL', async () => {
   await inRolledBackTx(pool, async (client) => {
-    // 以下 state / issue code / timeline / screening 逐项来自 ra_s6s7 的真实两版
-    // （276908da… / 31ced60b…，均为真实 PDF：platform_noise.pdf / resume.pdf）。
+    // 以下 state / issue code / timeline / screening 逐项来自 ra_s6s7 的真实版本
+    // 31ced60b…（resume.pdf，251,476B，真实候选人材料，parse_status=PARTIAL）。
+    // 276908da…（platform_noise.pdf，256,228B）与它同 content_sha，但是 converter/corpus/synthetic
+    // 下的语料文件（sha 逐字节相同）——本用例不把 276908da 当"真实简历"。
     // **只保留非个人信息**：没有姓名/手机/邮箱值，没有 quote，没有 issue message。
     const realProjection: Record<string, unknown> = {
       fields: {
-        name: { state: 'present', provenance: 'native_text', evidence: [{ page: 1, bbox: [1, 2, 3, 4], block: 1, text: '（已脱敏）' }] },
-        phone: { state: 'present', provenance: 'native_text', evidence: [{ page: 1, bbox: [1, 2, 3, 4], block: 2, text: '（已脱敏）' }] },
-        email: { state: 'present', provenance: 'native_text', evidence: [{ page: 1, bbox: [1, 2, 3, 4], block: 3, text: '（已脱敏）' }] },
-        work_experience: { state: 'unreadable', provenance: 'native_text', reason: 'reading_order_unverified: page(s) 1', evidence: [] },
-        education: { state: 'unreadable', provenance: 'native_text', reason: 'entries_not_segmentable', evidence: [] },
+        name: { state: 'present', state_source: 'agent_structured', converter_state: 'present', provenance: 'agent_read', block_ids: [1], evidence: [{ page: 1, bbox: [1, 2, 3, 4], block: 1, text: '（已脱敏）' }] },
+        phone: { state: 'present', state_source: 'agent_structured', converter_state: 'present', provenance: 'agent_read', block_ids: [2], evidence: [{ page: 1, bbox: [1, 2, 3, 4], block: 2, text: '（已脱敏）' }] },
+        email: { state: 'present', state_source: 'agent_structured', converter_state: 'present', provenance: 'agent_read', block_ids: [3], evidence: [{ page: 1, bbox: [1, 2, 3, 4], block: 3, text: '（已脱敏）' }] },
+        work_experience: { state: 'unreadable', state_source: 'agent_structured', converter_state: 'unreadable', provenance: 'agent_read', reason: 'reading_order_unverified', block_ids: [], evidence: [] },
+        education: { state: 'unreadable', state_source: 'agent_structured', converter_state: 'unreadable', provenance: 'agent_read', reason: 'section_present_unsplittable', block_ids: [], evidence: [] },
       },
       timeline: {
         intervals: 0, closed_intervals: 0, open_ended_intervals: 0, year_only_intervals: 0, covered_months_closed: 0,
@@ -416,8 +419,8 @@ test('L：真实简历（两版均 work/education unreadable）→ 精确理由�
       screening: {
         eligible_fields: ['name', 'phone', 'email'],
         blocked_fields: [
-          { field: 'work_experience', reason: 'reading_order_unverified: page(s) 1' },
-          { field: 'education', reason: 'entries_not_segmentable' },
+          { field: 'work_experience', reason: 'reading_order_unverified' },
+          { field: 'education', reason: 'section_present_unsplittable' },
         ],
       },
       meta: { pages: 1 },
@@ -449,10 +452,10 @@ test('L：真实简历（两版均 work/education unreadable）→ 精确理由�
     // 精确理由：工作/教育字段 unreadable，timeline 又不独立于 work_experience 成立。
     const work = value.reasons.find((r) => r.criterion_key === 'work_exists')
     assert.equal(work?.tri_state, 'unreadable')
-    assert.ok(work?.issue_codes.includes('reading_order_unverified: page(s) 1'))
+    assert.ok(work?.issue_codes.includes('reading_order_unverified'))
     const edu = value.reasons.find((r) => r.criterion_key === 'edu_exists')
     assert.equal(edu?.tri_state, 'unreadable')
-    assert.ok(edu?.issue_codes.includes('entries_not_segmentable'))
+    assert.ok(edu?.issue_codes.includes('section_present_unsplittable'))
     const months = value.reasons.find((r) => r.criterion_key === 'months')
     assert.equal(months?.outcome, 'UNREADABLE')
     assert.equal(months?.bounds, 'UNAVAILABLE')
