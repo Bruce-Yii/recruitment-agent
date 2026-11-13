@@ -838,3 +838,42 @@ Owner 回传必须九项齐全（见 `docs/21` §3.5），缺一项算没回传�
 **证据**：`evidence/experiments/2026-11-13-web-browser-acceptance/README.md` §5、`isolated-*.png`。
 
 **教训**：第一次起服务前就该问"这个实例的数据放哪"，而不是顺手复用默认值。
+
+### D-92 · 产品底座 = **项目自带**的 DSH 副本（0.2.2-rc.1），不用全局 CLI、不碰桌面端
+
+**裁定**：产品跑 `D:\12412\recruitment-runtime\` 下 `npm i @deepseek-ai/dsh@0.2.2-rc.1` 装出来的副本，
+用它的 `node_modules\.bin\dsh.cmd` 启动。**禁止**用 PATH 上的全局 `dsh`（`D:\12412\npm-global`，0.1.5-rc.3，
+2026-09-24 装），**禁止** `npm install -g`，**禁止**把 `DSH_HOME` 指向桌面端的 `D:\12412\dsh-home`。
+产品 profile 的定义（`package.json` + `cordis.patch.yml`）**入库**到 `dsh/profile/recruitment/`，
+`$DSH_HOME/profiles/recruitment/` 只是它的运行时副本。
+
+**理由**：用户原话"你当时不应该去仓库下一个吗，然后对下载的dsh进行改造"。
+用全局 CLI = 产品建在一个**旧版、且不属于项目**的运行时上：版本不可控、来源不可审计、
+升级会跟用户其它用途抢同一个安装。桌面端 0.2.2-rc.1 与本产品对齐后，插件 API 才有可比性。
+
+**代价（已实测）**：0.1.5 时代的 provider 段搬到 0.2.2 不通；必须按 0.2.2 的写法重配（见 D-93）。
+这就是"零件不通用"的真实成本，不是环境问题。
+
+**证据**：`evidence/experiments/2026-11-14-dsh-022-base/`；`dsh/profile/recruitment/README.md`。
+
+### D-93 · 模型通道现状：只剩免费通道可用，付费通道全部额度用尽
+
+**裁定（2026-11-14 实测，直接打 provider 端点）**：
+
+| provider / model | 结果 |
+|---|---|
+| `longcat-2.5-free` | ✅ HTTP 200（**唯一支持图片输入的免费模型**） |
+| `iceman-contributor-free` | ✅ HTTP 200（不支持 vision） |
+| `beam-free` | ⛔ `rate_limit_error` |
+| `glm-5.3` / `glm-5.3-flash` | ⛔ `GoUsageLimitError`（月度额度用尽） |
+| DeepSeek 官方账号路由 | ⛔ `QUOTA` |
+| DeepSeek API key | ⛔ `Insufficient Balance` |
+
+**落地**：产品默认模型 = `opencode-go-openai-key2` / `longcat-2.5-free`。
+换模型只改 `cordis.patch.yml` 的 `agent-default-model.model`，且**只对新会话生效**
+（旧会话钉住模型选择，症状是 `no adapter registered for provider …`）。
+
+**为什么这条要写进台账**：本项目多次把"额度问题"误判成"代码问题"。
+以后任何"模型调不通"，先按本表核对，再怀疑代码。
+
+**证据**：`evidence/experiments/2026-11-14-dsh-022-base/README.md` §3.3。
