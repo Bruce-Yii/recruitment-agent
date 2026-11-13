@@ -38,12 +38,12 @@ function mask(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(text) ? `${text.slice(0, 8)}…` : text
 }
 
-/** 一行里的 uuid 列打码，其余列原样（时间转 ISO）。 */
+/** 一行里的 uuid 列打码（含主键 `id`），其余列原样（时间转 ISO）。 */
 function maskRow(row) {
   const out = {}
   for (const [key, value] of Object.entries(row)) {
     out[key] = value instanceof Date ? value.toISOString()
-      : key.endsWith('_id') ? mask(value)
+      : key === 'id' || key.endsWith('_id') ? mask(value)
         : value
   }
   return out

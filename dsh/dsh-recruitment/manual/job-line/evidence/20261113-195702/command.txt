@@ -1,0 +1,1 @@
+dsh --profile rec-agent-test --patch "D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\manual\job-line\patch.yml" "建一个后端工程师岗位，标准是 3 年经验 + 本科；建好后把岗位读回来给我看。"

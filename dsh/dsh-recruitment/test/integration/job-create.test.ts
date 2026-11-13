@@ -359,7 +359,20 @@ test('⑥ 租户隔离：另一个 tenant_id 的 cfg 调 update → JOB_NOT_FOUN
       department_id: DEMO_DEPARTMENT,
       criteria: CRITERIA_V1,
     })
-    const otherCfg = { ...cfg, tenant_id: OTHER_TENANT }
+    // 只换 tenant_id 会先被"actor 不在该租户"的 fail-closed 检查挡住（FORBIDDEN），
+    // 那样证明不了 job/approval 查询真的按 tenant 过滤。所以先在事务里建第二个租户
+    // 与其自己的 HUMAN actor，再拿它去越权。
+    const otherActorId = '22222222-2222-4222-8222-000000000103'
+    await client.query(
+      'insert into recruitment.organization (id, name) values ($1, $2)',
+      [OTHER_TENANT, '第二演示租户（集成测试）'],
+    )
+    await client.query(
+      `insert into recruitment.actor (id, tenant_id, kind, display_name)
+       values ($1, $2, 'HUMAN', $3)`,
+      [otherActorId, OTHER_TENANT, '第二租户 HR'],
+    )
+    const otherCfg = { ...cfg, tenant_id: OTHER_TENANT, actor_id: otherActorId }
 
     await assert.rejects(
       () => updateJobInTransaction(client, otherCfg, { job_id: created.job.id, title: '越权更新' }),

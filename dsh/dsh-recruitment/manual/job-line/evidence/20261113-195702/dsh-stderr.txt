@@ -1,0 +1,81 @@
+dsh: reasoning:
+用户要求：建一个后端工程师岗位，标准是 3 年经验 + 本科；建好后把岗位读回来给我看。
+
+让我先理解需求：
+- 建立一个岗位（job），岗位名称"后端工程师"（后端工程师）
+- 标准：3 年经验 + 本科
+- 建好后读回来给我看
+
+我需要使用 recruitment_job_create 工具。让我先查看一下需要的参数。
+
+创建 job 需要：
+- title: "后端工程师"
+- criteria: 数组，包含 criterion 对象
+
+criteria 的每个对象有 9 个 key：key, label, kind, weight, field, operator, value, question, notes
+
+标准：
+1. 3 年经验 → field=timeline.covered_months_closed, operator=GTE, value=36 (3 年 = 36 个月)
+2. 本科 → 这是学历，没有 mechanical field，需要作为 judgment criterion with question
+
+"3 年经验 + 本科" - 至少需要一个 MUST_HAVE 或 DISQUALIFIER。
+
+weight 总和必须为 1。
+
+让我设计 criteria：
+- criterion 1: 3 年经验
+  - key: "three_years_experience"
+  - label: "3 年及以上工作经验"
+  - kind: "MUST_HAVE"
+  - weight: 0.5
+  - field: "timeline.covered_months_closed"
+  - operator: "GTE"
+  - value: 36
+  - question: null? 不，mechanical criterion 不需要 question。但 schema 要求 9 keys。question 可以 null/omit? 工具说 exactly 9 keys, any extra rejected。但没说所有 key 必填。让我看 schema：question 是 optional（required? schema 中 "question?" 带 ?）。value 也是 optional。notes optional。
+
+  所以 mechanical criterion: key, label, kind, weight, field, operator, value。question 和 notes 可以 omit？但说 exactly 9 keys... hmm。让我重新读。
+
+"criteria — EXACTLY 9 KEYS, ANY EXTRA KEY IS REJECTED
+{"key","label","kind","weight","field","operator","value","question","notes"}"
+
+这意味着 criterion 对象只能有这 9 个 key 中的子集（exactly 这些 key，不能有额外的）。不是说必须全部提供。Mechanical criterion 提供 field/operator/value；judgment criterion 提供 question。其他可选。
+
+- criterion 2: 本科及以上学历
+  - key: "bachelor_or_above"
+  - label: "本科及以上学历"
+  - kind: "MUST_HAVE"
+  - weight: 0.5
+  - question: "候选人是否具备本科及以上学历？"
+  - notes: "学历不在机械判定白名单内，由人复核"
+
+weight 总和 = 0.5 + 0.5 = 1.0 ✓
+
+department: 用户没指定。omit both to use tenant's only department. 如果有多个会 fail。让我先试试。
+
+title: "后端工程师"
+
+status: 默认 DRAFT。用户说"建一个岗位"，可能想要 OPEN？但 rubric 需要 approval。让我用默认 DRAFT 或者... 用户没说状态。用默认 DRAFT。
+
+description_md / requirements_md: 用户没提供 JD。omit both → title stored as placeholder, jd_source=TITLE_PLACEHOLDER。那 okay。
+
+让我调用 recruitment_job_create。
+
+注意：department 可能需要指定。先试试 omit。
+
+Let me also think about code: omit to auto-generate.
+
+Let me call.
+dsh: reasoning:
+岗位创建成功。现在按用户要求"建好后把岗位读回来给我看"，调用 recruitment_job_get 读取岗位。
+
+job_id = 792a10f9-6dd3-4d80-b141-6345880e2399
+
+Let me call recruitment_job_get.
+dsh: reasoning:
+岗位读回来了。rubric 是 PENDING（未批准），这是预期状态。
+
+现在我需要给用户一个清晰的回复。总结：
+- 岗位创建成功
+- 读回的详情
+
+让我组织回复。用中文。

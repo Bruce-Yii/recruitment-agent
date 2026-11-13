@@ -1830,9 +1830,12 @@ function criterionLine(raw: unknown): string {
 /**
  * 渲染模型可见文本（SPEC §6：至少含 code/title/status、job_id、版本号、rubric 概览、
  * `approval PENDING → 需人类批准`、`next: recruitment_job_get(job_id=…)`）。
+ * 签名必须是 `(args, value)`：DSH 运行时按两参调用 `output.render`，只写一个参数会把
+ * `args` 当规范值渲染（真实事故：单测 `render()` 读到 `v.outcome === undefined` 直接抛）。
+ * @param _args - 本次调用的入口（本工具渲染不依赖它）。
  * @param value - 本工具的规范输出值。
  */
-function renderJobWrite(value: unknown): readonly TextBlock[] {
+function renderJobWrite(_args: unknown, value: unknown): readonly TextBlock[] {
   const v = value as JobWriteValue
   const labels = v.labels === undefined
     ? 'LABELS_MISSING'

@@ -1,0 +1,15 @@
+已读回岗位 `792a10f9-6dd3-4d80-b141-6345880e2399`（JOB-20261113-D0EA8E，后端工程师）的当前标准，确认如下：
+
+**rubric v1**（version_id = `c9296bf3-ce19-4c13-a7f2-fd55e6b9e5b0`）：
+
+| criterion key | 类型 | 权重 | 要求 |
+|---|---|---|---|
+| `three_years_experience` | MUST_HAVE | 0.5 | 经验年限：`timeline.covered_months_closed GTE 36` → **3 年及以上工作经验** |
+| `bachelor_or_above` | MUST_HAVE | 0.5 | 学历：judgment "候选人是否具备本科及以上学历？" → **本科及以上学历** |
+
+**版本状态确认**：
+- `is_current = true`，`is_approved = true`，`resolution = JOB_CURRENT`，`executable = true`
+- versions 列表中 v1 同时标记为 `is_current=true, is_approved=true`
+- `as_of` = 2026-11-13T11:59:45.470Z
+
+结论：该 rubric 是**已批准且已生效的当前版本**，与您描述的人工批准状态一致。经验年限要求为 3 年及以上，学历要求为本科及以上。

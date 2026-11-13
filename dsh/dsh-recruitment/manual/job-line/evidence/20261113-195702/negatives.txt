@@ -1,0 +1,80 @@
+=== S3 岗位线负例（真实库 ra_s6s7；会真写库，不删行）===
+本次运行 code 前缀：S3N-MWEXDA2TGAO7-
+
+### ① 只建岗位、不建标准 → job_get 回报 NO_RUBRIC_AT_ALL
+[created] ① 只建岗位: job_id=702364db-3a63-4a19-b304-5768aa6341f9 code=S3N-MWEXDA2TGAO7-1
+  job_get: rubric=null rubric_absence.code=NO_RUBRIC_AT_ALL
+  message: 岗位 702364db-3a63-4a19-b304-5768aa6341f9 还没有任何 Rubric 版本
+  [PASS] ① job_get = NO_RUBRIC_AT_ALL — got NO_RUBRIC_AT_ALL
+
+### ② 建了标准但仍是 PENDING → job_get 回报 NO_APPROVED_RUBRIC
+[created] ② 标准待批: job_id=2ffe6269-4e5a-4d57-a2a8-ff054e0e6d51 code=S3N-MWEXDA2TGAO7-2 approval_id=2c03014f-bdf9-450a-ba70-c3a74d07a68f
+  job_get: rubric=null rubric_absence.code=NO_APPROVED_RUBRIC
+  message: 岗位 2ffe6269-4e5a-4d57-a2a8-ff054e0e6d51 有 1 个 Rubric 版本，但 2026-11-13T12:00:18.386Z 时刻没有一版处于已批准状态
+  [PASS] ② job_get = NO_APPROVED_RUBRIC — got NO_APPROVED_RUBRIC
+
+### ③ 非法 UUID（不写库）
+
+--- ③a create department_id=not-a-uuid ---
+Error: INVALID_ARGS: {"code":"INVALID_ARGS","detail":{"allowed":["title","code","department_id","department_name","description_md","requirements_md","status","criteria"],"violations":[{"message":"\"department_id\" must be a UUID","path":"department_id","reason_code":"ID_NOT_UUID"}]},"message":"参数不合法，逐条见 detail.violations","reason_code":"ID_NOT_UUID"}
+  code=INVALID_ARGS reason_code=ID_NOT_UUID
+  detail={"allowed":["title","code","department_id","department_name","description_md","requirements_md","status","criteria"],"violations":[{"message":"\"department_id\" must be a UUID","path":"department_id","reason_code":"ID_NOT_UUID"}]}
+
+  [PASS] ③a INVALID_ARGS/ID_NOT_UUID — got INVALID_ARGS/ID_NOT_UUID
+
+--- ③b update job_id=job_0001 ---
+Error: INVALID_ARGS: {"code":"INVALID_ARGS","detail":{"allowed":["job_id","expected_record_version","title","description_md","requirements_md","status","criteria"],"violations":[{"message":"\"job_id\" must be a UUID","path":"job_id","reason_code":"ID_NOT_UUID"}]},"message":"参数不合法，逐条见 detail.violations","reason_code":"ID_NOT_UUID"}
+  code=INVALID_ARGS reason_code=ID_NOT_UUID
+  detail={"allowed":["job_id","expected_record_version","title","description_md","requirements_md","status","criteria"],"violations":[{"message":"\"job_id\" must be a UUID","path":"job_id","reason_code":"ID_NOT_UUID"}]}
+
+  [PASS] ③b INVALID_ARGS/ID_NOT_UUID — got INVALID_ARGS/ID_NOT_UUID
+
+### ④ 重复 code → 真 SQLSTATE 23505
+[created] ④ 首次使用该 code: job_id=ed94b72d-73f9-47f8-a25e-1bae05aba1b0 code=S3N-MWEXDA2TGAO7-3
+
+--- ④ 同一 code 再建一次 ---
+Error: INVALID_ARGS: {"code":"INVALID_ARGS","detail":{"code":"DUPLICATE_JOB_CODE","constraint":"uq_job_code","sqlstate":"23505","table":"job"},"message":"岗位 code 已存在（同租户唯一；SQLSTATE 23505 / uq_job_code）","reason_code":"DUPLICATE_JOB_CODE"}
+  code=INVALID_ARGS reason_code=DUPLICATE_JOB_CODE
+  detail={"code":"DUPLICATE_JOB_CODE","constraint":"uq_job_code","sqlstate":"23505","table":"job"}
+
+  [PASS] ④ DUPLICATE_JOB_CODE + sqlstate 23505 — got INVALID_ARGS/DUPLICATE_JOB_CODE sqlstate=23505 constraint=uq_job_code
+
+### ⑤ weight Σ=0.9 → INVALID_ARGS/RUBRIC_INVALID(WEIGHT_SUM)
+
+--- ⑤ weight Σ=0.9 ---
+Error: INVALID_ARGS: {"code":"INVALID_ARGS","detail":{"violations":[{"got":"a","path":"dimensions[0].key","reason_code":"CRITERION_KEY","rule":"R-VAL-3"},{"got":"b","path":"dimensions[1].key","reason_code":"CRITERION_KEY","rule":"R-VAL-3"},{"got":0.9,"path":"dimensions","reason_code":"WEIGHT_SUM","rule":"R-VAL-6"}]},"message":"criteria 没有通过 R-VAL-1..13，逐条见 detail.violations","reason_code":"RUBRIC_INVALID"}
+  code=INVALID_ARGS reason_code=RUBRIC_INVALID
+  detail={"violations":[{"got":"a","path":"dimensions[0].key","reason_code":"CRITERION_KEY","rule":"R-VAL-3"},{"got":"b","path":"dimensions[1].key","reason_code":"CRITERION_KEY","rule":"R-VAL-3"},{"got":0.9,"path":"dimensions","reason_code":"WEIGHT_SUM","rule":"R-VAL-6"}]}
+
+  [PASS] ⑤ RUBRIC_INVALID + WEIGHT_SUM — got INVALID_ARGS/RUBRIC_INVALID violations=["CRITERION_KEY","CRITERION_KEY","WEIGHT_SUM"]
+
+### ⑥ 同一 approval 批两次 → APPROVAL_NOT_PENDING
+[created] ⑥ 待批标准: job_id=2c01392c-2d23-4f38-b6db-92710035d29e code=S3N-MWEXDA2TGAO7-5 approval_id=55c6f5e7-a5db-460f-95d4-e7c7d7eff5d4
+  第一次批准：status=APPROVED decided_by=11111111-1111-4111-8111-000000000103
+
+--- ⑥ 同一 approval 再批一次 ---
+Error: INVALID_ARGS: {"code":"INVALID_ARGS","detail":{"approval_id":"55c6f5e7-a5db-460f-95d4-e7c7d7eff5d4","status":"APPROVED"},"message":"审批 55c6f5e7-a5db-460f-95d4-e7c7d7eff5d4 已经是 APPROVED，不能重复决定","reason_code":"APPROVAL_NOT_PENDING"}
+  code=INVALID_ARGS reason_code=APPROVAL_NOT_PENDING
+  detail={"approval_id":"55c6f5e7-a5db-460f-95d4-e7c7d7eff5d4","status":"APPROVED"}
+
+  [PASS] ⑥ INVALID_ARGS/APPROVAL_NOT_PENDING — got INVALID_ARGS/APPROVAL_NOT_PENDING
+
+### ⑦ REJECT 缺 reason → INVALID_ARGS/REASON_REQUIRED
+[created] ⑦ 待批标准（拒绝缺理由）: job_id=c49e6c45-d6ba-4bb5-a55e-03da255d2a78 code=S3N-MWEXDA2TGAO7-6 approval_id=738ee49e-2181-48a9-9520-fd87ad7e12c7
+
+--- ⑦ REJECT 不给 reason ---
+Error: INVALID_ARGS: {"code":"INVALID_ARGS","detail":{"approval_id":"738ee49e-2181-48a9-9520-fd87ad7e12c7","decision":"REJECT"},"message":"拒绝审批必须给 reason（拒绝理由会进入审批历史）","reason_code":"REASON_REQUIRED"}
+  code=INVALID_ARGS reason_code=REASON_REQUIRED
+  detail={"approval_id":"738ee49e-2181-48a9-9520-fd87ad7e12c7","decision":"REJECT"}
+
+  [PASS] ⑦ INVALID_ARGS/REASON_REQUIRED — got INVALID_ARGS/REASON_REQUIRED
+
+=== 本次真实写入的行（历史事实，禁删；仅供人工取证/清理决策）===
+  ① 只建岗位  job_id=702364db-3a63-4a19-b304-5768aa6341f9  code=S3N-MWEXDA2TGAO7-1
+  ② 标准待批  job_id=2ffe6269-4e5a-4d57-a2a8-ff054e0e6d51  code=S3N-MWEXDA2TGAO7-2  approval_id=2c03014f-bdf9-450a-ba70-c3a74d07a68f
+  ④ 首次使用该 code  job_id=ed94b72d-73f9-47f8-a25e-1bae05aba1b0  code=S3N-MWEXDA2TGAO7-3
+  ⑥ 待批标准  job_id=2c01392c-2d23-4f38-b6db-92710035d29e  code=S3N-MWEXDA2TGAO7-5  approval_id=55c6f5e7-a5db-460f-95d4-e7c7d7eff5d4
+  ⑦ 待批标准（拒绝缺理由）  job_id=c49e6c45-d6ba-4bb5-a55e-03da255d2a78  code=S3N-MWEXDA2TGAO7-6  approval_id=738ee49e-2181-48a9-9520-fd87ad7e12c7
+
+=== result: 5 job(s) created, 0 check(s) failed ===
+ALL NEGATIVES MATCHED THE CONTRACT

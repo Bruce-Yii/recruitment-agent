@@ -1,0 +1,3 @@
+R-VAL-14 digest(readback dimensions) == rubric.payload_hash: true
+approval.canonical_payload_hash == rubric.payload_hash: true
+rubric.payload_hash = a3dd2e2a8dbe474b000fd439df9a9623829cd09111a17cf9cbce3f74c5393973

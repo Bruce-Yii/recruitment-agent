@@ -1,0 +1,14 @@
+岗位已建好并读回，详情如下：
+
+**岗位：后端工程师**
+- 岗位编码：`JOB-20261113-D0EA8E`
+- job_id：`792a10f9-6dd3-4d80-b141-6345880e2399`
+- 状态：`DRAFT`（草稿）
+- 部门：研发部（演示）
+- JD：占位（仅标题 "后端工程师"，未提供正文）
+
+**Rubric v1（待人工批准）** — 2 条 criteria，权重各 0.5：
+1. `three_years_experience` [MUST_HAVE] — 机械判定：`timeline.covered_months_closed GTE 36`（3 年 = 36 个月）
+2. `bachelor_or_above` [MUST_HAVE] — 人审判定：「候选人是否具备本科及以上学历？」
+
+**注意**：Rubric 当前为 `PENDING`（未批准），这是预期状态——批准是人类动作，我不会代为批准。岗位读回时 rubric 显示为 `NO_APPROVED_RUBRIC`，在人类批准 Rubric 前，该岗位不能用于自动初筛。如果需要把岗位状态改为 `OPEN` 或补充 JD 正文/要求，我可以继续操作。
