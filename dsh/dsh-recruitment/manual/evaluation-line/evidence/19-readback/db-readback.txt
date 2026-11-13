@@ -1,0 +1,27 @@
+=== scorecard（该场面试的全部行，含修订链） ===
+rows=2
+{"id":"a8108983-8702-4330-b423-a2b7d278bb90","revision_no":1,"status":"SUBMITTED","overall":"ADVANCE","interview_id":"11111111-1111-4111-8111-000000000801","interviewer_id":"3c4bb25e-1679-4949-8dd9-311bc91fee82","interviewer_actor_id":"11111111-1111-4111-8111-000000000106","interviewer_kind":"HUMAN","interviewer_name":"演示-面试官Y","rubric_version_id":"11111111-1111-4111-8111-000000000403","rubric_version_no":1,"rubric_job_id":"11111111-1111-4111-8111-000000000401","submitted_at":"2026-11-13T12:15:57.336Z","payload_hash":"51858eafb387dd7c8b2e7e0b5304fb43454a2cbd8097cc873a5279024a4b424b","status_changed_by_actor_id":"11111111-1111-4111-8111-000000000106","status_source_event_id":"c256d254-3101-48b7-b4fd-d820a27454b8","source_event_rows":"1","superseded_by_scorecard_id":null,"record_version":1,"item_keys":"async_pipeline,backend_depth,frontend_basics,transcript_basis"}
+{"id":"3370da09-bb06-4ec5-a083-15bc339a5253","revision_no":1,"status":"SUBMITTED","overall":"ADVANCE","interview_id":"11111111-1111-4111-8111-000000000801","interviewer_id":"9c09fcd8-9032-4047-bdcd-fb5d3276791f","interviewer_actor_id":"11111111-1111-4111-8111-000000000105","interviewer_kind":"HUMAN","interviewer_name":"演示-面试官X","rubric_version_id":"11111111-1111-4111-8111-000000000403","rubric_version_no":1,"rubric_job_id":"11111111-1111-4111-8111-000000000401","submitted_at":"2026-11-13T12:13:35.803Z","payload_hash":"d8a164ba60173f410e004d9e20c19a529fcb37f5a3eb980c4db3a4674c19827f","status_changed_by_actor_id":"11111111-1111-4111-8111-000000000105","status_source_event_id":"c5767dae-d3c3-411c-a1f7-f5a8791cc840","source_event_rows":"1","superseded_by_scorecard_id":null,"record_version":1,"item_keys":"async_pipeline,backend_depth,frontend_basics,transcript_basis"}
+
+=== scorecard 聚合（行数 / current 行数 / 修订数） ===
+rows=2
+{"interviewer_id":"3c4bb25e-1679-4949-8dd9-311bc91fee82","rows":"1","current_rows":"1","revisions":"1","first_submitted_at":"2026-11-13T12:15:57.336Z","last_submitted_at":"2026-11-13T12:15:57.336Z"}
+{"interviewer_id":"9c09fcd8-9032-4047-bdcd-fb5d3276791f","rows":"1","current_rows":"1","revisions":"1","first_submitted_at":"2026-11-13T12:13:35.803Z","last_submitted_at":"2026-11-13T12:13:35.803Z"}
+
+=== decision（该申请全部行） ===
+rows=0
+
+=== decision 内部事件（provider=internal） ===
+rows=0
+
+=== 面评提交的内部事件（event_type=scorecard.submit） ===
+rows=2
+{"event_id":"c5767dae-d3c3-411c-a1f7-f5a8791cc840","event_type":"scorecard.submit","idempotency_key":"scorecard:demo:scorecard:X:1","idempotency_source":"FALLBACK_KEY","source_object_id":"3370da09-bb06-4ec5-a083-15bc339a5253","payload_hash":"d8a164ba60173f410e004d9e20c19a529fcb37f5a3eb980c4db3a4674c19827f","recorded_at":"2026-11-13T12:13:35.803Z"}
+{"event_id":"c256d254-3101-48b7-b4fd-d820a27454b8","event_type":"scorecard.submit","idempotency_key":"scorecard:demo:scorecard:Y:1","idempotency_source":"FALLBACK_KEY","source_object_id":"a8108983-8702-4330-b423-a2b7d278bb90","payload_hash":"51858eafb387dd7c8b2e7e0b5304fb43454a2cbd8097cc873a5279024a4b424b","recorded_at":"2026-11-13T12:15:57.336Z"}
+
+=== interview / interviewer（S8 侧夹具，只读核对） ===
+rows=3
+{"interview_id":"11111111-1111-4111-8111-000000000801","round_no":1,"slot_code":"DEFAULT","status":"POST_INTERVIEW","scheduled_start_at":"2026-11-12T06:00:00.000Z","actor_id":"11111111-1111-4111-8111-000000000105","kind":"HUMAN","role_in_interview":"INTERVIEWER","required_scorecard":true,"scorecard_due_at":"2026-11-12T04:00:00.000Z"}
+{"interview_id":"11111111-1111-4111-8111-000000000801","round_no":1,"slot_code":"DEFAULT","status":"POST_INTERVIEW","scheduled_start_at":"2026-11-12T06:00:00.000Z","actor_id":"11111111-1111-4111-8111-000000000106","kind":"HUMAN","role_in_interview":"INTERVIEWER","required_scorecard":true,"scorecard_due_at":"2026-11-12T04:00:00.000Z"}
+{"interview_id":"11111111-1111-4111-8111-000000000801","round_no":1,"slot_code":"DEFAULT","status":"POST_INTERVIEW","scheduled_start_at":"2026-11-12T06:00:00.000Z","actor_id":"11111111-1111-4111-8111-0000000001a0","kind":"AGENT_WORKER","role_in_interview":"OBSERVER","required_scorecard":false,"scorecard_due_at":null}
+

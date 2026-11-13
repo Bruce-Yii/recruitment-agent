@@ -1,0 +1,53 @@
+# decision 写路径回滚试跑
+
+approval = 测试替身 `() => "allowed-once"`（**不是真人批准**）
+事务结束时 **ROLLBACK**：库层不留任何行
+
+=== 出参（节选） ===
+{
+  "decision": {
+    "id": "71f90b77-36c5-4348-9100-d6112f7d02d9",
+    "application_id": "11111111-1111-4111-8111-000000000701",
+    "interview_id": "11111111-1111-4111-8111-000000000801",
+    "decision_scope": "STAGE",
+    "stage_code": "S10",
+    "result": "ADVANCE",
+    "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+    "decided_at": "2026-11-13T12:49:56.111Z",
+    "record_version": 1,
+    "superseded_by_decision_id": null
+  },
+  "gate": {
+    "as_of": "2026-11-13T19:00:00+08:00",
+    "ready_for_decision": true,
+    "acknowledged_missing": [],
+    "permitted_results_echo": [
+      "ADVANCE",
+      "HOLD",
+      "WITHDRAW"
+    ],
+    "summary_digest": "f687d22768f85379077118ed41bf9cc8044aeed3dd518cbd572fd2f07abe10fd"
+  },
+  "event": {
+    "event_id": "a0f02c02-1aaa-4031-85a2-85b828f1c8f5",
+    "provider": "internal",
+    "trust_level": "INTERNAL"
+  },
+  "warnings": [
+    {
+      "code": "DECIDER_NOT_HIRING_MANAGER",
+      "message": "决策人不是该部门的招聘负责人；v1.0 不拦截，仅记录（DC-14）"
+    },
+    {
+      "code": "FIXTURE_BASIS",
+      "message": "本次决策依据的是演练数据（provenance=FIXTURE），不是真实外部事实"
+    }
+  ]
+}
+
+=== 库内读回（同一事务，随后回滚） ===
+{"id":"71f90b77-36c5-4348-9100-d6112f7d02d9","application_id":"11111111-1111-4111-8111-000000000701","interview_id":"11111111-1111-4111-8111-000000000801","decision_scope":"STAGE","stage_code":"S10","result":"ADVANCE","decided_by_actor_id":"11111111-1111-4111-8111-000000000103","decider_kind":"HUMAN","decider_name":"演示-HR 专员","decided_at":"2026-11-13T12:49:56.111Z","record_version":1,"superseded_by_decision_id":null,"basis_refs_count":5,"internal_events":1}
+
+=== 结论 ===
+写路径成立：decision 行 + 内部事件 + basis_refs 都写进了库；
+但这**不是**真人批准：approval 是测试替身，且事务已回滚，库里没有这条决策。

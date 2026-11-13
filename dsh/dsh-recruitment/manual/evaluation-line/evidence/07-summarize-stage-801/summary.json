@@ -1,0 +1,8 @@
+{
+  "label": "07-summarize-stage-801",
+  "profile": "rec-eval-decider",
+  "overlay": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\dsh\\dsh-recruitment\\manual\\evaluation-line\\patch\\overlay-decider.yml",
+  "exit": 0,
+  "tool_calls": 1,
+  "tool_results": 1
+}

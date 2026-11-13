@@ -1,0 +1,7 @@
+工具返回内容原样如下：
+
+```
+Error: cannot get property "approval" without inject
+```
+
+按你的要求，只调用了这一次，不再重试。

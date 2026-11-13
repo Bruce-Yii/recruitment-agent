@@ -22,6 +22,8 @@ const ACTOR_AGENT = '11111111-1111-4111-8111-0000000001a0'
 const APPLICATION = '11111111-1111-4111-8111-000000000701'
 const RUBRIC_V1 = '11111111-1111-4111-8111-000000000403'
 const INTERVIEW = '11111111-1111-4111-8111-000000000801'
+const INTERVIEW_R2 = '11111111-1111-4111-8111-000000000802'
+const ACTOR_R2 = '11111111-1111-4111-8111-000000000104'
 const MEETING = '11111111-1111-4111-8111-000000000901'
 const ARTIFACT = '11111111-1111-4111-8111-000000000a01'
 
@@ -130,6 +132,23 @@ try {
         (tenant_id, meeting_id, interview_id, binding_method, bound_by_actor_id)
         values ($1, $2, $3, 'MANUAL', $4)`, [TENANT, MEETING, INTERVIEW, ACTOR_HR])
   }
+
+  // 5b) 第二轮面试（802）：只用于**负例**——它有一位必交面试官（104）还没交面评，
+  // 于是 summarize(STAGE,802) 的 missing=1、summarize(FINAL) 的 missing 也 ≥1。
+  // 这样"缺面评时 REJECT / FINAL 被拒"就能在真实库里被构造出来，而不必把 801 弄脏。
+  await client.query(`insert into recruitment.interview
+      (id, tenant_id, application_id, round_no, slot_code, stage_code, status,
+       scheduled_start_at, scheduled_end_at, timezone)
+      values ($1, $2, $3, 2, 'DEFAULT', 'S8', 'SCHEDULED',
+              timestamptz '2026-11-20 14:00:00+08', timestamptz '2026-11-20 15:00:00+08', 'Asia/Shanghai')
+      on conflict (id) do nothing`, [INTERVIEW_R2, TENANT, APPLICATION])
+  await client.query(`insert into recruitment.interviewer
+      (tenant_id, interview_id, actor_id, role_in_interview, required_scorecard, scorecard_due_at)
+      values ($1, $2, $3, 'INTERVIEWER', true, $4::timestamptz)
+      on conflict (interview_id, actor_id) do update
+        set required_scorecard = excluded.required_scorecard,
+            scorecard_due_at = excluded.scorecard_due_at`,
+  [TENANT, INTERVIEW_R2, ACTOR_R2, '2026-11-21 12:00:00+08'])
 
   // 6) 转写产物：人工导入、FIXTURE、NOT_CONNECTED、MANUAL、READY、canonical
   const { rows: shaRows } = await client.query(

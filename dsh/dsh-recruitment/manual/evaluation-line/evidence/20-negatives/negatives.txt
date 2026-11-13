@@ -1,0 +1,21 @@
+--- items 传数组 ---
+expect=INVALID_ARGS  got=INVALID_ARGS  PASS
+message=INVALID_ARGS: {"code":"INVALID_ARGS","detail":{"allowed":["interview_id","rubric_version_id","items","overall","reject_reasons","revision","idempotency_key","tenant_id","actor_id","interviewer_id","decided_by_actor_id","decided_at","round_no","slot_code","submitted_at","status","stage_code"],"violations":[{"message":"\"items\" 必须是对象（键 = rubric 维度 key ∪ {transcript_basis}）；数组形态已作废（D-74）","path":"items","reason_code":"TYPE_MISMATCH"}]},"message":"参数不合法，逐条见 detail.violations","reason_code":"TYPE_MISMATCH"}
+
+--- 证据 kind=TRANSCRIPT_SEGMENT（已作废） ---
+expect=INVALID_ARGS  got=INVALID_ARGS  PASS
+message=INVALID_ARGS: {"code":"INVALID_ARGS","detail":{"allowed":["interview_id","rubric_version_id","items","overall","reject_reasons","revision","idempotency_key","tenant_id","actor_id","interviewer_id","decided_by_actor_id","decided_at","round_no","slot_code","submitted_at","status","stage_code"],"violations":[{"message":"items.backend_depth.evidence[0].kind 只能是 SEGMENT（TRANSCRIPT_SEGMENT 已作废，D-74 / TR-E3）","path":"items.backend_depth.evidence[0].kind","reason_code":"ENUM_INVALID"}]},"message":"参数不合法，逐条见 detail.violations","reason_code":"ENUM_INVALID"}
+
+--- 保留键 actor_id ---
+expect=INVALID_ARGS  got=INVALID_ARGS  PASS
+message=INVALID_ARGS: {"code":"INVALID_ARGS","detail":{"allowed":["interview_id","rubric_version_id","items","overall","reject_reasons","revision","idempotency_key","tenant_id","actor_id","interviewer_id","decided_by_actor_id","decided_at","round_no","slot_code","submitted_at","status","stage_code"],"violations":[{"message":"actor_id 只能来自执行上下文，不接受入参","path":"actor_id","reason_code":"TENANT_OR_ACTOR_NOT_ALLOWED"}]},"message":"参数不合法，逐条见 detail.violations","reason_code":"TENANT_OR_ACTOR_NOT_ALLOWED"}
+
+--- decision 传 idempotency_key（D-80 不接受） ---
+expect=INVALID_ARGS  got=INVALID_ARGS  PASS
+message=INVALID_ARGS: {"code":"INVALID_ARGS","detail":{"allowed":["application_id","decision_scope","interview_id","as_of","result","reason","basis_refs","summary_digest","human_confirmation","missing_disposition","acknowledged_missing","acknowledged_dissent","override_rationale","supersedes","approval_id","tenant_id","actor_id","interviewer_id","decided_by_actor_id","stage_code","round_no","slot_code","submitted_at","decided_at","status"],"violations":[{"message":"未知参数 idempotency_key（允许：application_id, decision_scope, interview_id, as_of, result, reason, basis_refs, summary_digest, human_confirmation, missing_disposition, acknowledged_missing, acknowledged_dissent, override_rationale, supersedes, approval_id, tenant_id, actor_id, interviewer_id, decided_by_actor_id, stage_code, round_no, slot_code, submitted_at, decided_at, status）","path":"idempotency_key","reason_code":"UNKNOWN_PARAM"},{"message":"summary_digest 必须是 64 位小写 hex","path":"basis_refs[0].summary_digest","reason_code":"TYPE_MISMATCH"}]},"message":"参数不合法，逐条见 detail.violations","reason_code":"UNKNOWN_PARAM"}
+
+--- decision result=HIRED（v1.0 不做的） ---
+expect=INVALID_ARGS  got=INVALID_ARGS  PASS
+message=INVALID_ARGS: {"code":"INVALID_ARGS","detail":{"allowed":["application_id","decision_scope","interview_id","as_of","result","reason","basis_refs","summary_digest","human_confirmation","missing_disposition","acknowledged_missing","acknowledged_dissent","override_rationale","supersedes","approval_id","tenant_id","actor_id","interviewer_id","decided_by_actor_id","stage_code","round_no","slot_code","submitted_at","decided_at","status"],"violations":[{"message":"HIRED 在 v1.0 禁用（S11 缓做）","path":"result","reason_code":"RESULT_NOT_IN_V1_SCOPE"},{"message":"summary_digest 必须是 64 位小写 hex","path":"basis_refs[0].summary_digest","reason_code":"TYPE_MISMATCH"}]},"message":"参数不合法，逐条见 detail.violations","reason_code":"RESULT_NOT_IN_V1_SCOPE"}
+
+=== 5/5 PASS，0 FAIL ===

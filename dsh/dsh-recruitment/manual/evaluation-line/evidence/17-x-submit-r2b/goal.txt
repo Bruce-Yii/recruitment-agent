@@ -1,0 +1,11 @@
+你是演示面试官 X（执行上下文 actor = 11111111-1111-4111-8111-000000000105，由 profile 配置给出，不要在参数里传 actor）。
+
+只调用一次工具 `recruitment_scorecard_submit`，arguments 用下面这段 JSON，**一个键都不要改、一个键都不要少**：
+
+{"interview_id":"11111111-1111-4111-8111-000000000802","idempotency_key":"demo:scorecard:X:R2","items":{"transcript_basis":"TRANSCRIPT","backend_depth":{"assessment":"MET","score":4,"note":"能讲清按用户ID分成64片、热点商家单独走路由表，并说明写入路径。","evidence":[{"kind":"SEGMENT","transcript_artifact_id":"11111111-1111-4111-8111-000000000a01","transcript_revision":1,"segment_id":"a9aa1ed9-4e8e-4d7b-a113-a4e349afd87b","quote":"订单表按用户 ID 分成 64 片，热点商家单独做了一张路由表"}]},"async_pipeline":{"assessment":"MET","score":3,"note":"重试三次 + 业务唯一键去重 + 死信队列，链路完整。"},"frontend_basics":{"assessment":"MET","score":2,"note":"写过管理后台页面，复杂交互未涉及。"}},"overall":"ADVANCE"}
+
+特别注意：`items` 里必须有 **4 个键** —— `transcript_basis`、`backend_depth`、`async_pipeline`、`frontend_basics`。少任何一个都会被工具拒绝（DIMENSION_COVERAGE_INCOMPLETE）。
+
+调用完成后把工具返回内容**原样**贴出来，然后立刻结束。无论成功或报错都**只调用这一次**，不要重试。
+
+

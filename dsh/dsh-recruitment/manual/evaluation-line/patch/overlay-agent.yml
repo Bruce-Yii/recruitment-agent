@@ -1,11 +1,11 @@
 # S10 评价线 · headless 演示 overlay（身份 agent）
 #
 # 用 dsh --profile rec-eval-agent --patch <本文件> "<目标>" 启动。
-# 这里只做两件事：把仓库内的 plugin-eval.mjs 插进层栈，并把**执行上下文 actor**
+# 这里只做两件事：把仓库内的 plugin-eval-core.mjs 插进层栈，并把**执行上下文 actor**
 # 固定成演示身份 11111111-1111-4111-8111-0000000001a0（入参里永远不接受 actor_id，见 tool-contracts.md §1.4/§1.6）。
 - insert:
     - id: recruitment-evaluation
-      name: 'file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/manual/evaluation-line/plugin-eval.mjs'
+      name: 'file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/manual/evaluation-line/plugin-eval-core.mjs'
       config:
         database:
           host: 127.0.0.1
@@ -15,3 +15,4 @@
           password_env: RECRUITMENT_DB_PASSWORD
           tenant_id: '11111111-1111-4111-8111-000000000001'
           actor_id: '11111111-1111-4111-8111-0000000001a0'
+

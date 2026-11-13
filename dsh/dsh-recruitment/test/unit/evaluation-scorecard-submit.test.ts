@@ -125,11 +125,13 @@ test('未知键 → INVALID_ARGS(UNKNOWN_PARAM) 且 allowed[] 列出允许的键
   assert.equal(violationsOf(body)[0]?.path, 'whatever')
 })
 
-test('保留键声明在 schema 里但一律拒收：8 个全给 → 8 条 TENANT_OR_ACTOR_NOT_ALLOWED', () => {
+test('保留键声明在 schema 里但一律拒收：10 个全给 → 10 条 TENANT_OR_ACTOR_NOT_ALLOWED', () => {
   const reserved = {
     tenant_id: '11111111-1111-4111-8111-000000000001',
     actor_id: '11111111-1111-4111-8111-000000000103',
     interviewer_id: '11111111-1111-4111-8111-000000000f02',
+    decided_by_actor_id: '11111111-1111-4111-8111-000000000102',
+    decided_at: '2026-11-13T01:00:00+08:00',
     round_no: 1,
     slot_code: 'DEFAULT',
     submitted_at: '2026-11-13T01:00:00+08:00',
@@ -142,7 +144,7 @@ test('保留键声明在 schema 里但一律拒收：8 个全给 → 8 条 TENAN
     'TENANT_OR_ACTOR_NOT_ALLOWED',
   )
   const violations = violationsOf(body)
-  assert.equal(violations.length, 8, `8 个保留键应各报一条，实际 ${violations.length}`)
+  assert.equal(violations.length, 10, `10 个保留键应各报一条，实际 ${violations.length}`)
   for (const violation of violations) {
     assert.equal(violation.reason_code, 'TENANT_OR_ACTOR_NOT_ALLOWED')
   }
@@ -800,8 +802,11 @@ test('parameters 是封闭对象根（additionalProperties:false），保留键�
   assert.equal(parameters.additionalProperties, false)
   assert.deepEqual(schemaViolations(parameters), [])
   const properties = parameters.properties as Record<string, unknown>
-  for (const key of ['tenant_id', 'actor_id', 'interviewer_id', 'round_no', 'slot_code', 'submitted_at', 'status', 'stage_code']) {
-    assert.ok(Object.hasOwn(properties, key), `保留键 ${key} 必须显式声明（TC §1.6）`)
+  for (const key of [
+    'tenant_id', 'actor_id', 'interviewer_id', 'decided_by_actor_id', 'decided_at',
+    'round_no', 'slot_code', 'submitted_at', 'status', 'stage_code',
+  ]) {
+    assert.ok(Object.hasOwn(properties, key), `保留键 ${key} 必须显式声明（TC §1.6 / §7.1 第 2 条）`)
   }
   const required = parameters.required as string[]
   assert.deepEqual([...required].sort(), ['idempotency_key', 'interview_id', 'items', 'overall'])

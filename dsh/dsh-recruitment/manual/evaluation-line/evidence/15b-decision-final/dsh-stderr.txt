@@ -1,0 +1,10 @@
+dsh: reasoning:
+
+The user wants me to call recruitment_decision_record exactly once with the given arguments, verbatim. I need to construct the JSON. Note the tool schema requires certain fields. Let me just pass exactly as specified.
+
+Note: the arguments are in a JSON-like format but not strict JSON (no quotes on keys). I'll convert to proper JSON since tool calls require JSON objects. The values must remain exactly as specified.
+
+Let me make the call.
+dsh: reasoning:
+
+The tool returned an error. The user asked me to paste the tool's return content verbatim and then end immediately. Let me do that.

@@ -1,0 +1,6 @@
+dsh: reasoning:
+
+
+dsh: reasoning:
+
+The tool returned the expected rejection. I should paste the content verbatim and end immediately.

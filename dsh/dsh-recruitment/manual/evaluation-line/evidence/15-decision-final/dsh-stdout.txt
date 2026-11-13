@@ -1,0 +1,7 @@
+工具已调用一次，返回内容原样如下：
+
+```
+Error: INVALID_ARGS: {"code":"INVALID_ARGS","detail":{"as_of":"2026-11-13T19:00:00+08:00","expected":"96d2f7a364b2ea9eb53c40fea8053fee35d783be17eda577443aefa5eac259a3","provided":"d8a2ebeb46070799f55781904be0a1c824e9fa75c28087b4edea4a821474baa8"},"message":"summary_digest 不是本次重算的值（不得拿旧汇总做新决定，DC-16/DC-34）","reason_code":"SUMMARY_STALE"}
+```
+
+调用到此结束，未重试。

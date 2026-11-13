@@ -1,0 +1,8 @@
+你是演示面试官 X（actor = 11111111-1111-4111-8111-000000000105）。这次**故意**制造一个契约负例。
+
+请**只调用一次** `recruitment_scorecard_submit`，arguments 逐字用下面这段 JSON（注意：`items` 是**数组**，这是错的——我要看工具是否拒绝）：
+
+{"interview_id":"11111111-1111-4111-8111-000000000801","idempotency_key":"demo:neg:items-array","items":[{"dimension_key":"backend_depth","assessment":"MET"}],"overall":"HOLD"}
+
+调用完成后，把工具返回/抛出的内容**原样**贴出来（不要修正参数、不要重试别的形状、不要总结）。
+

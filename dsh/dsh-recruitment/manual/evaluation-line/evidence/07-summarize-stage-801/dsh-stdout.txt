@@ -1,0 +1,18 @@
+S10 汇总投影（只读，不代决）
+recruitment_evaluation_summarize 2.0.0 advisory=true read_only=true as_of=2026-11-13T19:00:00+08:00
+scope=STAGE stage=S10 rubric=v1 source=APPLICATION_PINNED
+coverage: required=2 submitted=2 waived=0 missing=0 unusable=0 not_required=0 overdue=0 completion=1
+missing: 0 人
+tally: advance=2 hold=0 reject=0 waived=0
+consensus: UNANIMOUS_ADVANCE (FULL_PANEL)
+minority_reports: 0
+aggregation: method=PER_DIMENSION_SUBMITTED_ONLY average=3
+record: state=ABSENT
+ready_for_decision=true
+permitted_results: [ADVANCE, HOLD, WITHDRAW]
+blockers: 1
+  - NO_REJECTING_SCORECARD family=EVIDENCE blocks=[REJECT]
+required_human_action: RESOLVE_BLOCKER
+warnings: 1
+  - FIXTURE_BASIS
+summary_digest=f687d22768f85379077118ed41bf9cc8044aeed3dd518cbd572fd2f07abe10fd

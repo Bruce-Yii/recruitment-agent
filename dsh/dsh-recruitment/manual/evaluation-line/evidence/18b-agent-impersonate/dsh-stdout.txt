@@ -1,0 +1,7 @@
+工具返回内容（原样）：
+
+```
+Error: INTERVIEWER_MISMATCH: {"code":"INTERVIEWER_MISMATCH","detail":{"actor_id":"11111111-1111-4111-8111-0000000001a0","kind":"AGENT_WORKER"},"message":"面评作者必须是 HUMAN actor（Agent 不得写面评内容，APP-07）","reason_code":"ACTOR_NOT_HUMAN"}
+```
+
+调用已结束，未重试。

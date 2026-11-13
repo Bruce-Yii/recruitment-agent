@@ -91,9 +91,14 @@ const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9:_-]{1,128}$/
 /**
  * 保留键（TC §1.6）：**声明在 schema 里，但一律拒收**，报
  * `INVALID_ARGS(TENANT_OR_ACTOR_NOT_ALLOWED)`。
+ *
+ * `decided_by_actor_id` / `decided_at` 在 TC §1.6 的表里只归 `record`，但 **TC §7.1 第 2 条**
+ * 明写「`submit` 传 `interviewer_id` / `decided_by_actor_id` / `tenant_id` → `TENANT_OR_ACTOR_NOT_ALLOWED`」。
+ * 两条取更严的一侧：它们也声明在这里并拒收（否则会退化成 `UNKNOWN_PARAM`，验收第 2 条会红）。
  */
 const RESERVED_PARAM_KEYS = [
-  'tenant_id', 'actor_id', 'interviewer_id', 'round_no', 'slot_code', 'submitted_at', 'status', 'stage_code',
+  'tenant_id', 'actor_id', 'interviewer_id', 'decided_by_actor_id', 'decided_at',
+  'round_no', 'slot_code', 'submitted_at', 'status', 'stage_code',
 ] as const
 
 /** 声明过的全部键（未知键的错误里列这个）。 */
@@ -190,6 +195,9 @@ const SUBMIT_PARAMETERS: Record<string, unknown> = {
       description:
         '逐维度评价。**对象**，不是数组：键 = rubric 的 dimensions[].key（恰好覆盖，缺一维即 DIMENSION_COVERAGE_INCOMPLETE）'
         + ' ∪ {"transcript_basis"}（保留键，必填 TRANSCRIPT|NO_TRANSCRIPT）。'
+        + '注意：本 schema 只声明了保留键，**维度键必须由调用方按该申请钉住的 rubric 逐个补齐**——'
+        + '维度 key 来自 rubric_version.dimensions[].key（可先用 recruitment_job_get 读岗位 rubric，'
+        + '或用 recruitment_evaluation_summarize 的 rubric 回显确认版本），漏一个键整次调用会被拒。'
         + '每个维度对象：assessment（MET|NOT_MET|NOT_OBSERVED|UNREADABLE，必填）、'
         + 'score（仅在 MET|NOT_MET 时允许 1..5；NOT_OBSERVED|UNREADABLE 必须缺省或 null）、'
         + `note（${MAX_NOTE_LENGTH} 字以内；NOT_MET 时必填）、evidence[]（最多 ${MAX_EVIDENCE_PER_ITEM} 条）。`,
@@ -203,6 +211,12 @@ const SUBMIT_PARAMETERS: Record<string, unknown> = {
         },
       },
       required: [TRANSCRIPT_BASIS_KEY],
+      // DSH 的 schema 子集只允许 `additionalProperties` 是**布尔**（实测：
+      // "schema.properties.items.additionalProperties must be a boolean"），所以动态维度键
+      // 无法在 schema 里给出值形状。这里放开为 true，并在 description 里写清"每个维度键填什么"——
+      // 模型只看到 transcript_basis 时会漏掉全部维度（真实 headless 实测：连续 34 次只交保留键）。
+      // 维度键集合仍由工具按 rubric 校验（SC-12/13），schema 不承担这个职责。
+      additionalProperties: true,
     },
     overall: {
       type: 'string',
@@ -238,6 +252,8 @@ const SUBMIT_PARAMETERS: Record<string, unknown> = {
     tenant_id: { type: 'string', description: '**拒收**：租户只从执行上下文取（TENANT_OR_ACTOR_NOT_ALLOWED）' },
     actor_id: { type: 'string', description: '**拒收**：作者只从执行上下文取（SC-01/SC-05）' },
     interviewer_id: { type: 'string', description: '**拒收**：作者只从执行上下文取（SC-01/SC-05）' },
+    decided_by_actor_id: { type: 'string', description: '**拒收**：本工具不产生决策，决策人只从执行上下文取' },
+    decided_at: { type: 'string', description: '**拒收**：本工具不产生决策，时间由服务端取' },
     round_no: { type: 'integer', description: '**拒收**：轮次由 interview_id 决定（SC-07）' },
     slot_code: { type: 'string', description: '**拒收**：轮次由 interview_id 决定（SC-07）' },
     submitted_at: { type: 'string', description: '**拒收**：时间由服务端取（SC-14）' },
@@ -1029,13 +1045,21 @@ export function computeScorecardPayloadHash(input: {
   readonly overall: string
   readonly reject_reasons?: readonly unknown[]
 }): string {
-  return digestOf({
-    interview_id: input.interview_id,
-    rubric_version_id: input.rubric_version_id,
-    items: input.items,
-    overall: input.overall,
-    reject_reasons: input.reject_reasons ?? [],
-  })
+  try {
+    return digestOf({
+      interview_id: input.interview_id,
+      rubric_version_id: input.rubric_version_id,
+      items: input.items,
+      overall: input.overall,
+      reject_reasons: input.reject_reasons ?? [],
+    })
+  } catch (error) {
+    // 只有非 JSON 值（undefined / NaN / BigInt …）会让 canonicalJson 抛；参数层已挡掉，
+    // 走到这里就是真正"提交内容不可规范化" → PAYLOAD_NOT_CANONICAL（SC-38），不猜一个哈希。
+    throw evalError('INVALID_ARGS', 'PAYLOAD_NOT_CANONICAL', '提交内容不可规范化（canonicalJson 失败）', {
+      error: error instanceof Error ? error.message.slice(0, 200) : 'unknown',
+    })
+  }
 }
 
 // =====================================================================
