@@ -150,6 +150,6 @@ $env:RECRUITMENT_DB_PASSWORD='<密码>'; node --test
    `createScorecardSubmitTool({database})`、`createEvaluationSummarizeTool({database})`、
    `createDecisionRecordTool({database, approval: ctx.approval})`。
 2. 未配置时注册 `NOT_CONFIGURED` 替身（与既有工具同一手法）。
-3. 迁移 `0007`（`scorecard.idempotency_key` + `uq_decision_current` + `ck_scorecard_terminal_actor`）落地后，
+3. 迁移 `0007`/`0008`（`uq_decision_current` + `uq_decision_current_final` + `ck_scorecard_terminal_actor` + `fk_scorecard_rubric_job`）**已于 2026-11-14 落地**；~~`scorecard.idempotency_key`~~ 这一列**从未存在过**（面评幂等走 `event_inbox.uq_event_inbox_idempotency`，见 db 证据 §3 的事实更正）。接下来要做的是：
    把 `uq_decision_current` 的 23505 映射成 `ALREADY_DECIDED`（`decision-record.ts` 已留分支）。
 4. Web UI：一层 approval 提示（`dsh-client-ui-approval` 已存在）+ 决策表单（`permitted_results` / `blockers` / `minority_reports` 够用）。
