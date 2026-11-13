@@ -1,0 +1,63 @@
+INTERVIEW_COUNT: 1
+--- interview ---
+  id: 838dc59e-3cfd-4f20-92a8-39a4efdd2c0f
+  application_id: 11111111-1111-4111-8111-000000000701
+  tenant_id: 11111111-1111-4111-8111-000000000001
+  round_no: 1
+  slot_code: S8T2005
+  stage_code: S8
+  status: SCHEDULED
+  scheduled_start_at: 2026-11-18T07:00:00.000Z
+  scheduled_end_at: 2026-11-18T08:00:00.000Z
+  timezone: Asia/Shanghai
+  record_version: 1
+  status_changed_at: 2026-11-13T12:06:01.287Z
+  status_changed_by_actor_id: 11111111-1111-4111-8111-000000000103
+  created_at: 2026-11-13T12:06:01.287Z
+  candidate_id: 11111111-1111-4111-8111-000000000601
+  job_id: 11111111-1111-4111-8111-000000000401
+  lifecycle_status: ACTIVE
+  application_record_version: 2
+  INTERVIEWER_COUNT: 2
+  --- interviewer ---
+    interviewer_id: 4bc71a64-e377-4dd3-917f-54421e2b5e84
+    actor_id: 11111111-1111-4111-8111-000000000103
+    display_name: 演示-HR 专员
+    kind: HUMAN
+    role_in_interview: INTERVIEWER
+    required_scorecard: true
+    scorecard_due_at: null
+  --- interviewer ---
+    interviewer_id: 01cd78fe-0dcf-40b7-8053-82d4c84d9fad
+    actor_id: 11111111-1111-4111-8111-000000000104
+    display_name: 演示-面试官
+    kind: HUMAN
+    role_in_interview: INTERVIEWER
+    required_scorecard: true
+    scorecard_due_at: null
+  BINDING_COUNT: 1
+  --- meeting_binding ---
+    binding_id: d59b62ee-4ce6-4785-a38a-33e183f04a79
+    binding_method: SCHEDULED
+    bound_by_actor_id: 11111111-1111-4111-8111-000000000103
+    bound_at: 2026-11-13T12:06:01.287Z
+    unbound_at: null
+    unbound_reason: null
+    meeting_id: 4e7936a0-6d97-4a79-89a1-5a7647b1650f
+    provider: FEISHU
+    account_scope: null
+    external_meeting_id: feishu-s8-demo-20261113-200552
+    calendar_event_id: null
+    meeting_role: PRIMARY
+    actual_start_at: null
+    actual_end_at: null
+  BUSINESS_TASK_COUNT: 1
+  --- business_task ---
+    id: f1f0f95d-9e33-429e-bab0-23ad43e413ac
+    task_type: INTERVIEW_SCHEDULE
+    status: SUCCEEDED
+    idempotency_key: interview_schedule:demo-s8-20261113-200552
+    business_refs: [{"id":"838dc59e-3cfd-4f20-92a8-39a4efdd2c0f","kind":"INTERVIEW"},{"args_digest":"sha256:8dfe8f4ab92cbe050f5ebee7c7c8826cf7f4608659311ae3f33976a21d615b1b","result_interview_id":"838dc59e-3cfd-4f20-92a8-39a4efdd2c0f"}]
+    due_at: null
+    completed_at: 2026-11-13T12:06:01.287Z
+    created_at: 2026-11-13T12:06:01.287Z

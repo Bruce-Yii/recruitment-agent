@@ -105,22 +105,23 @@ try {
   // ---- NEG1 缺面试官 ----
   {
     const slot = `NEG1${Date.now().toString(36).toUpperCase()}`
+    // 行数在**事务外**数：事务里的部分写在 ROLLBACK 后必须消失，这才是"零写入"的事实。
+    const before = await countInterviews(pool)
     const outcome = await inRolledBackTx(async (client) => {
-      const before = await countInterviews(client)
       try {
         await scheduleInTransaction(client, config, baseArgs(slot, { interviewers: [] }))
-        return { threw: false, before }
+        return { threw: false }
       } catch (error) {
-        const after = await countInterviews(client)
-        return { threw: true, body: errorBody(error), before, after }
+        return { threw: true, body: errorBody(error) }
       }
     })
+    const after = await countInterviews(pool)
     if (!outcome.ok) {
       fail('NEG1 缺面试官', `事务意外失败：${outcome.error}`)
     } else {
-      const { threw, body, before, after } = outcome.value
+      const { threw, body } = outcome.value
       const ok = threw && body.code === 'INVALID_ARGS' && body.reason_code === 'INTERVIEWER_REQUIRED' && before === after
-      const detail = `code=${body.code} reason_code=${body.reason_code} interview_rows ${before}→${after}`
+      const detail = `code=${body.code} reason_code=${body.reason_code} interview_rows=${before}（ROLLBACK 后仍 ${after}）`
       ok ? pass('NEG1 缺面试官被拒且零写入', detail) : fail('NEG1 缺面试官', detail)
     }
   }
@@ -141,24 +142,29 @@ try {
       console.log('[N/A]  NEG2 当前库没有"已绑定的外部会议"，先跑一次成功 CREATE 再来')
     } else {
       const slot = `NEG2${Date.now().toString(36).toUpperCase()}`
+      // 用另一个面试官（0102）且错开时间，避免先撞 CONFLICT_SLOT（会议检查在冲突检查之后）。
+      const start = new Date(Date.now() + 9 * 24 * 3600 * 1000)
+      start.setUTCHours(2, 0, 0, 0)
+      const before = await countInterviews(pool)
       const outcome = await inRolledBackTx(async (client) => {
-        const before = await countInterviews(client)
         try {
           await scheduleInTransaction(client, config, baseArgs(slot, {
+            interviewers: [{ actor_id: '11111111-1111-4111-8111-000000000102' }],
+            scheduled_start_at: start.toISOString(),
             meeting: { provider: meeting.provider, external_meeting_id: meeting.external_meeting_id },
           }))
-          return { threw: false, before }
+          return { threw: false }
         } catch (error) {
-          const after = await countInterviews(client)
-          return { threw: true, body: errorBody(error), before, after }
+          return { threw: true, body: errorBody(error) }
         }
       })
+      const after = await countInterviews(pool)
       if (!outcome.ok) {
         fail('NEG2 同一会议绑第二场', `事务意外失败：${outcome.error}`)
       } else {
-        const { threw, body, before, after } = outcome.value
+        const { threw, body } = outcome.value
         const ok = threw && body.code === 'MEETING_ALREADY_BOUND' && before === after
-        const detail = `code=${body.code} reason_code=${body.reason_code ?? '-'} interview_rows ${before}→${after}`
+        const detail = `code=${body.code} reason_code=${body.reason_code ?? '-'} interview_rows=${before}（ROLLBACK 后仍 ${after}）`
         ok ? pass('NEG2 同一会议绑第二场被拒且零写入', detail) : fail('NEG2 同一会议绑第二场', detail)
       }
     }

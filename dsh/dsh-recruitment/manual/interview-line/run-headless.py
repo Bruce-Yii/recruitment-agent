@@ -57,7 +57,9 @@ def build_goal(application: str, slot: str, external_id: str, today: datetime) -
         f'给招聘系统里的这条申请安排一场面试：application_id={application}，第 1 轮，'
         f'场次代码 {slot}。面试官是「演示-面试官」（actor_id={INTERVIEWER}）和'
         f'「演示-HR 专员」（actor_id={HR}），两人都要交面评。'
-        f'时间是下周三下午两点（今天是 {today:%Y-%m-%d} 周{"一二三四五六日"[today.weekday()]}），'
+        # 用"下午三点"而不是两点：演示库里可能已有一场同一天 14:00 的面试（同一批面试官），
+        # 15:00 与它背靠背（半开区间不相交），既不冲突又保留"下周三下午"的自然语言。
+        f'时间是下周三下午三点（今天是 {today:%Y-%m-%d} 周{"一二三四五六日"[today.weekday()]}），'
         f'时长 60 分钟，线上视频面试。会议先按飞书会议登记：provider=FEISHU，'
         f'external_meeting_id={external_id}。排好后用读工具把这场面试回读给我确认，'
         f'我需要看到时间、面试官和会议绑定。全程自己决定怎么做，不要问我。'

@@ -1,0 +1,13 @@
+面试已排好并回读确认，关键信息如下：
+
+- **面试 ID**：`838dc59e-3cfd-4f20-92a8-39a4efdd2c0f`
+- **申请**：`11111111-1111-4111-8111-000000000701`，第 1 轮，场次代码 `S8T2005`，阶段 S8
+- **时间**：2026-11-18（下周三）15:00–16:00（Asia/Shanghai），时长 60 分钟
+- **形式**：线上视频面试（VIDEO）
+- **面试官**（均需提交面评）：
+  - 演示-HR 专员（actor_id …0103）
+  - 演示-面试官（actor_id …0104）
+- **会议绑定**：`BOUND_ACTIVE`，FEISHU，external_meeting_id `feishu-s8-demo-20261113-200552`，角色 PRIMARY
+- **当前状态**：SCHEDULED；transcript PENDING；面评 0/2 已提交，evaluation_ready=false（正常，待面试后提交）。
+
+如需调整时间/面试官或解绑会议，告诉我即可（当前仅支持 CREATE，改期/取消为后续切片）。

@@ -34,6 +34,10 @@ import type { ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { canonicalJson, contractError, digestOf, isUuid } from './contract.ts'
 import { RecruitmentToolError, type RecruitmentErrorCode } from './errors.ts'
+// 与 `recruitment_interview_get` 共用**同一份** `interviews[]` 元素 schema 与**同一个**读回实现
+// （`tool-contracts.md` §3.5：`schedule.interview` 与 `get.interviews[]` 同一形状、同一规则）。
+// 复用而不是各写一份，是为了让两个工具的形状不可能漂移。
+import { INTERVIEW_VALUE_SCHEMA, readInterviewValue } from './interview-get.ts'
 import {
   closePool,
   createPool,
@@ -109,9 +113,9 @@ const SCALAR_PARAMS: ParamMap = {
   round_no: {
     kind: 'integer',
     required: true,
-    min: MIN_ROUND_NO,
-    max: MAX_ROUND_NO,
-    description: 'Interview round number, integer 1..20 (INV-4).',
+    // 上下界**不**放在这里：`args.ts` 会给 OUT_OF_RANGE，而 `scheduling-rules.md` §2.3 明确用
+    // ROUND_OUT_OF_RANGE（§3.7 的 OUT_OF_RANGE 是同一格的另一种写法），所以这里自己判。
+    description: 'Interview round number, integer 1..20 (INV-4). Out of range fails with ROUND_OUT_OF_RANGE.',
   },
   slot_code: {
     kind: 'string',
@@ -234,15 +238,6 @@ const PARAMETERS_SCHEMA: Record<string, unknown> = (() => {
     additionalProperties: false,
   }
 })()
-
-/** `interview` 字段与 `recruitment_interview_get` 的 `interviews[]` 元素**同一形状**，这里只声明为对象。 */
-const INTERVIEW_VALUE_SCHEMA: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: true,
-  description:
-    "The interview as read back from the database right after the write (same shape as "
-    + "recruitment_interview_get.interviews[]). Absent database values omit the key; null never appears.",
-}
 
 /** `changes.created/updated/unchanged` 的一项。 */
 const CHANGES_ITEM_SCHEMA: Record<string, unknown> = {
@@ -444,14 +439,6 @@ interface PgErrorInfo {
   readonly code?: string
   readonly constraint?: string
 }
-
-/** 兄弟工具（`src/tools/interview-get.ts`，另一条泳道）暴露的读回函数签名。 */
-type ReadInterviewValue = (
-  client: DatabaseClient,
-  tenantId: string,
-  interviewId: string,
-  asOfIso: string,
-) => Promise<Record<string, unknown>>
 
 // ---------------------------------------------------------------------------
 //  小工具
@@ -754,6 +741,14 @@ function parseScheduleShape(raw: unknown): ScheduleArgs {
 
   const applicationId = (scalars.application_id as string).toLowerCase()
   const roundNo = scalars.round_no as number
+  if (!Number.isInteger(roundNo) || roundNo < MIN_ROUND_NO || roundNo > MAX_ROUND_NO) {
+    // `scheduling-rules.md` §2.3 的 A2 行：越界用 ROUND_OUT_OF_RANGE。
+    fail(
+      'ROUND_OUT_OF_RANGE',
+      `round_no 必须是 ${MIN_ROUND_NO}..${MAX_ROUND_NO} 的整数`,
+      { path: 'round_no', value: roundNo },
+    )
+  }
 
   const slotCode = (scalars.slot_code as string | undefined) ?? DEFAULT_SLOT_CODE
   if (!SLOT_CODE_RE.test(slotCode)) {
@@ -876,17 +871,22 @@ function storeInterviewId(store: StoreRow): string | null {
   return null
 }
 
-/** 读回一场面试（兄弟工具 `interview-get.ts` 的 `readInterviewValue`，动态 import）。 */
+/**
+ * 读回一场面试：直接复用 `interview-get.ts` 的 `readInterviewValue`（`SPEC.md` §3.2 的运行时签名）。
+ * 返回值的形状就是 `INTERVIEW_VALUE_SCHEMA`，也就是 `get.interviews[]` 的元素（契约 §3.5「同一形状」）。
+ * @param client - 事务内客户端（写事务即可，读回只发 SELECT）。
+ * @param tenantId - 租户（只来自配置）。
+ * @param interviewId - 刚 `INSERT ... RETURNING id` 拿到的 id。
+ * @param asOfIso - 本次判定的基准时刻。
+ * @returns `interviews[]` 元素。
+ */
 async function readInterviewBack(
   client: DatabaseClient,
   tenantId: string,
   interviewId: string,
   asOfIso: string,
 ): Promise<Record<string, unknown>> {
-  // 动态 import 只为不在**模块加载期**硬依赖另一条泳道的文件（单测只测纯函数）；
-  // 运行时签名必须与 `SPEC.md` §3.2 一致。
-  const mod = await import('./interview-get.ts') as unknown as { readInterviewValue: ReadInterviewValue }
-  return await mod.readInterviewValue(client, tenantId, interviewId, asOfIso)
+  return await readInterviewValue(client, tenantId, interviewId, asOfIso) as unknown as Record<string, unknown>
 }
 
 /** 从读回的 `interview` 里取 `meeting_binding`（B 的形状，防御性读取）。 */
@@ -1084,6 +1084,11 @@ function sortConflicts(conflicts: readonly Conflict[]): readonly Conflict[] {
  * 顺序（`SPEC.md` §4.3，重放优先于时点校验）：
  * 形状 → 幂等 STORE（重放 / 键复用）→ `START_IN_PAST` → 申请 → 模板 → 语义幂等 →
  * 面试官 → 冲突 → 五张表的写入 → 读回。
+ *
+ * **失败零写入的强口径**（`tool-contracts.md` §5.1 W3/W4）：函数开头建一个保存点，任何抛出都
+ * `rollback to savepoint` 后原样再抛。这样即使调用方（集成测试、未来的编排器）把这个函数放进
+ * **更大的事务**并吞掉错误，本次已写的 `interview` / `interviewer` / `meeting` / … 也不会残留成脏行。
+ * 生产路径 `execute()` 里 `withActor` 还会整笔 ROLLBACK，两层互不冲突。
  * @param client - 已有事务的客户端（`withActor` 已 `SET LOCAL recruitment.actor_id`）。
  * @param config - 已解析的配置（tenant/actor 只从这里来）。
  * @param rawArgs - 模型给的 arguments。
@@ -1098,11 +1103,41 @@ export async function scheduleInTransaction(
 ): Promise<Record<string, unknown>> {
   const args = parseScheduleShape(rawArgs)
   const asOfIso = new Date(nowMs).toISOString()
+
+  // 保存点放在所有读写之前，有两个用处：
+  //   ① 并发同键撞 `uq_business_task_idempotency` 时退回命令开头再重放；
+  //   ② 任何失败在**调用方事务内**撤销本次已写的行（W3/W4，见上面的说明）。
+  await client.query(`savepoint ${STORE_SAVEPOINT}`)
+  try {
+    return await runCreateCommand(client, config, args, nowMs, asOfIso)
+  } catch (error) {
+    try {
+      await client.query(`rollback to savepoint ${STORE_SAVEPOINT}`)
+    } catch {
+      // 回滚失败会随连接回收；不要用第二个错误盖住第一个（与 `withActor` 同一做法）。
+    }
+    throw error
+  }
+}
+
+/**
+ * `scheduleInTransaction` 的事务体（形状已校验、保存点已建立）。
+ * @param client - 事务内客户端。
+ * @param config - 已解析的配置。
+ * @param args - 已校验的入参。
+ * @param nowMs - 服务端当前时刻（毫秒）。
+ * @param asOfIso - `nowMs` 的 ISO 形式（读回与错误 detail 用）。
+ * @returns 契约出参。
+ */
+async function runCreateCommand(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  args: ScheduleArgs,
+  nowMs: number,
+  asOfIso: string,
+): Promise<Record<string, unknown>> {
   const tenantId = config.tenant_id
   const actorId = config.actor_id
-
-  // 保存点放在所有写之前：并发同键撞 `uq_business_task_idempotency` 时整笔退回这里再重放。
-  await client.query(`savepoint ${STORE_SAVEPOINT}`)
 
   // 1. 幂等 STORE。
   const store = await loadStore(client, tenantId, args.idempotency_key)
