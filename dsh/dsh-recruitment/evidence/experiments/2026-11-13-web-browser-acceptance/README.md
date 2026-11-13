@@ -144,3 +144,57 @@ node refresh.mjs  s3
 
 **证据文件**：`s3-01-typed.png`（打字后）、`s3-02-result.png`（模型回合 + 工具调用 + 结果）、
 `s3-03-after-reload.png`（刷新后）、`s10-01-typed.png` / `s10-02-approval-1.png` / `s10-03-final.png`（失败现场）。
+
+---
+
+## 5. 补充（同日 21:20）：产品实例改为**独立 DSH home**
+
+### 5.1 问题
+
+用户质问："你改造的 dsh 为什么会跟我的桌面端扯上关系？你改造的不应该是独立的一个东西吗？"
+
+**根因**：`DSH_HOME` 是**用户级环境变量**（`[Environment]::GetEnvironmentVariable('DSH_HOME','User')` = `D:\12412\dsh-home`）。
+桌面端和 `dsh` CLI **都读它**。我第一次起服务时显式把它设成了同一个值，于是：
+会话库（`sessions/`）、工作区注册表（`storages/workspace.json`）、凭据（`.credentials.yaml`）、
+设置（`settings.yaml`）、附件（`attachments/`）**全部共用** —— 所以打开就是桌面端那个样子。
+
+**注意**：运行时本身一直是独立的（`dsh` CLI 在 `D:\12412\npm-global\`，桌面端是 `D:\12412\DeepSeek Harness\` 的 Electron/asar）。
+**共用的只有数据 home**，不是代码。
+
+### 5.2 修法（已落地）
+
+```
+D:\12412\dsh-home-recruitment\        ← 产品自己的 home，与桌面端无关
+  profiles\recruitment\               ← 只放 recruitment profile（4 个配置文件 + link: 到本仓库）
+  .credentials.yaml                   ← 从桌面 home 复制（同一台机、同一用户；密钥不写进仓库）
+  storages\workspace.json             ← 只登记一个工作区：recruitment-agent
+  sessions\                           ← 自己的一套会话，从 0 开始
+```
+
+启动命令（进程级 env，**不动用户级环境变量**）：
+
+```powershell
+$env:DSH_HOME='D:\12412\dsh-home-recruitment'
+$env:RECRUITMENT_DB_PASSWORD='<密码>'
+dsh --profile recruitment --no-open --port 49302
+# → dsh web: http://127.0.0.1:49302/?token=<新 token>
+```
+
+profile 的依赖用 `pnpm install --frozen-lockfile` 重建（只有一条 `link:` 到本仓库，112ms）。
+
+### 5.3 隔离验证（不是"我觉得独立了"）
+
+| 检查 | 结果 | 证据 |
+|---|---|---|
+| 新实例首屏 | **`工作区 / 暂无会话` + `选择工作区`**（全新 home 的首次体验） | `isolated-01-landing.png` |
+| 新实例工作区列表 | **只有 `recruitment-agent`**，没有 vivic / boss-zhipin-scraper 等用户项目 | `isolated-04-workspace.png` |
+| 新实例里工具能用 | `recruitment_job_get` → `title：后端工程师 / status：DRAFT`，与 DB 一致 | `isolated-05-typed.png`、`isolated-06-result.png` |
+| 新实例会话落在自己家里 | `dsh-home-recruitment\sessions\--D-12412-...recruitment-agent--\` | 目录实测 |
+| **桌面 home 没被动过** | 会话文件数 **1291 → 1291**（不变）；`workspace.json` 里**没有** `recruitment-agent` | 前后各查一次 |
+| 用户级 `DSH_HOME` | **未修改**（仍是 `D:\12412\dsh-home`），只在这个进程里覆盖 | `[Environment]::GetEnvironmentVariable` 复查 |
+
+### 5.4 教训（写进 D-91）
+
+"基于 DSH Web 开发" ≠ "和用户的 DSH 共用一个 home"。**产品必须有自己的 home**；
+第一次起服务前就该问清楚"这个实例的数据放哪"，而不是顺手复用默认值。
+`isolated-01/04` 这两张图以后就是"产品实例"的标准长相，`s3-*` 那批（共用 home）只作为接线证据。
