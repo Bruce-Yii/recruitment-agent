@@ -1,0 +1,100 @@
+{
+  "server": {
+    "db": "ra_s6s7",
+    "now": "2026-11-14T13:03:47.598Z",
+    "version": "PostgreSQL 17.11 on x86_64-windows, compiled by msvc-19.44.35229, 64-bit"
+  },
+  "migrations": [
+    "0001_init",
+    "0002_seed",
+    "0003_review_queue",
+    "0004_stage_catalog",
+    "0005_version_binding",
+    "0006_integrity_gaps",
+    "0007_decision_integrity",
+    "0008_decision_uniqueness",
+    "0009_application_identity",
+    "0010_migration_ledger",
+    "0011_task_runtime",
+    "0012_engine_state",
+    "0013_trace_chain",
+    "0014_tenant_config",
+    "0015_runtime_cutover"
+  ],
+  "job": {
+    "id": "11111111-1111-4111-8111-000000000401",
+    "code": "DEMO-BE-001",
+    "title": "后端工程师（演示）",
+    "status": "OPEN",
+    "current_job_version_id": "11111111-1111-4111-8111-000000000402",
+    "current_rubric_version_id": "11111111-1111-4111-8111-000000000404",
+    "hiring_manager_actor_id": "11111111-1111-4111-8111-000000000102"
+  },
+  "rubrics": [
+    {
+      "id": "11111111-1111-4111-8111-000000000403",
+      "version_no": 1,
+      "payload_hash": "a74e84bb9fa05063c72303924ffdf9aa497682b33f2e94f752daf2a14dc39d79",
+      "approvals": [],
+      "dimension_count": 3,
+      "dimension_keys": [
+        "backend_depth",
+        "async_pipeline",
+        "frontend_basics"
+      ]
+    },
+    {
+      "id": "11111111-1111-4111-8111-000000000404",
+      "version_no": 2,
+      "payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
+      "approvals": [
+        {
+          "status": "APPROVED",
+          "hash_match": true
+        }
+      ],
+      "dimension_count": 3,
+      "dimension_keys": [
+        "work_exists",
+        "edu_exists",
+        "team_lead"
+      ]
+    }
+  ],
+  "actor": {
+    "id": "11111111-1111-4111-8111-000000000103",
+    "kind": "HUMAN",
+    "display_name": "演示-HR 专员"
+  },
+  "hiring_manager_is_actor": false,
+  "counts": {
+    "application": 56,
+    "business_task": 5,
+    "candidate": 50,
+    "decision": 9,
+    "event_inbox": 150,
+    "intake_asset": 61,
+    "intake_record": 61,
+    "interview": 8,
+    "interview_record": 3,
+    "interviewer": 13,
+    "meeting": 7,
+    "meeting_binding": 7,
+    "resume": 61,
+    "resume_version": 62,
+    "scorecard": 4,
+    "transcript_artifact": 6,
+    "transcript_segment": 97
+  },
+  "decisions_by_scope": [
+    {
+      "decision_scope": "SCREENING",
+      "n": 8
+    },
+    {
+      "decision_scope": "STAGE",
+      "n": 1
+    }
+  ],
+  "both_bound": 15
+}

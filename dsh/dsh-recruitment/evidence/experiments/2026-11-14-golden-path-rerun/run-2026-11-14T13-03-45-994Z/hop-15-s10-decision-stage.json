@@ -1,0 +1,225 @@
+{
+  "id": "s10-decision-stage",
+  "kind": "write",
+  "hop": 15,
+  "label": "S10 decision_record(STAGE)（真实 summary_digest + 真实面评依据 + IN_CHAT v2）",
+  "tool": "recruitment_decision_record",
+  "started_at": "2026-11-14T13:03:58.358Z",
+  "request": {
+    "application_id": "5b16c710-d75c-4a26-ab19-0b9c0591be1e",
+    "decision_scope": "STAGE",
+    "interview_id": "cc3403e6-3bd2-48c8-b4f0-db5812054437",
+    "as_of": "2026-11-14T21:03:53+08:00",
+    "result": "ADVANCE",
+    "reason": "面试评估通过：工作经历与教育背景满足岗位 MUST_HAVE，建议进入下一轮。",
+    "summary_digest": "695faa7387d7e81ad6578e071f81e123ad5b9a475e1b0e78feee21923cf8e4c4",
+    "basis_refs": [
+      {
+        "kind": "SUMMARY",
+        "summary_digest": "695faa7387d7e81ad6578e071f81e123ad5b9a475e1b0e78feee21923cf8e4c4",
+        "contract_version": "2.0.0",
+        "coverage": {
+          "required_total": 2,
+          "submitted": 2,
+          "waived": 0,
+          "missing": 0,
+          "unusable": 0,
+          "not_required": 0,
+          "overdue": 0,
+          "completion_ratio": 1
+        },
+        "tally": {
+          "advance": 2,
+          "hold": 0,
+          "reject": 0,
+          "waived": 0
+        },
+        "consensus": "UNANIMOUS_ADVANCE",
+        "provenance": "FIXTURE"
+      },
+      {
+        "kind": "RUBRIC_VERSION",
+        "id": "11111111-1111-4111-8111-000000000404",
+        "payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
+        "version_no": 2
+      },
+      {
+        "kind": "AUTHORITY",
+        "actor_id": "11111111-1111-4111-8111-000000000103",
+        "is_hiring_manager": false
+      },
+      {
+        "kind": "SCORECARD",
+        "id": "b246062a-f243-4342-8bda-1c72a2e43c6a",
+        "overall": "ADVANCE",
+        "transcript_basis": "TRANSCRIPT",
+        "transcript_state": "READY",
+        "revision_no": 1,
+        "interviewer_id": "06ae4ab4-b527-43e2-8177-3c5a137b67ab",
+        "payload_hash": "b5c05e74689a3c193a2789deae99581a0f657f015501cee2af9dea95f0ee6040"
+      },
+      {
+        "kind": "SCORECARD",
+        "id": "ed634dc3-10a7-4b80-b3ba-6e49a54cac62",
+        "overall": "ADVANCE",
+        "transcript_basis": "TRANSCRIPT",
+        "transcript_state": "READY",
+        "revision_no": 1,
+        "interviewer_id": "23bccf46-f7e2-4e63-9dd5-a5caeb2aa76e",
+        "payload_hash": "b5c05e74689a3c193a2789deae99581a0f657f015501cee2af9dea95f0ee6040"
+      }
+    ],
+    "human_confirmation": {
+      "confirmed_by_actor_id": "11111111-1111-4111-8111-000000000103",
+      "confirmed_at": "2026-11-14T21:02:58+08:00",
+      "confirmation_method": "IN_CHAT",
+      "confirmation_text": "我确认：林承宇这一轮面试通过，进入下一轮。",
+      "confirmation_text_sha256": "7e8bd55a06e7011aad4a49ebe130c02121c3bf7665064b8e14a68ceaf38ce792"
+    }
+  },
+  "ok": true,
+  "result": {
+    "tool": "recruitment_decision_record",
+    "contract_version": "2.0.0",
+    "status": "OK",
+    "replayed": false,
+    "labels": {
+      "provenance": "FIXTURE",
+      "trigger": "MANUAL",
+      "connection": "CONNECTED"
+    },
+    "decision": {
+      "id": "447e3479-5dac-4524-948a-94059d8a053d",
+      "application_id": "5b16c710-d75c-4a26-ab19-0b9c0591be1e",
+      "interview_id": "cc3403e6-3bd2-48c8-b4f0-db5812054437",
+      "decision_scope": "STAGE",
+      "stage_code": "S10",
+      "result": "ADVANCE",
+      "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+      "decided_at": "2026-11-14T13:03:58.442Z",
+      "record_version": 1
+    },
+    "gate": {
+      "as_of": "2026-11-14T21:03:53+08:00",
+      "ready_for_decision": true,
+      "acknowledged_missing": [],
+      "permitted_results_echo": [
+        "ADVANCE",
+        "HOLD",
+        "WITHDRAW"
+      ],
+      "summary_digest": "695faa7387d7e81ad6578e071f81e123ad5b9a475e1b0e78feee21923cf8e4c4"
+    },
+    "event": {
+      "event_id": "45e66f59-8926-4cae-895e-5000b862fc75",
+      "provider": "internal",
+      "trust_level": "INTERNAL"
+    },
+    "warnings": [
+      {
+        "code": "DECIDER_NOT_HIRING_MANAGER",
+        "message": "决策人不是该部门的招聘负责人；v1.0 不拦截，仅记录（DC-14）"
+      },
+      {
+        "code": "FIXTURE_BASIS",
+        "message": "本次决策依据的是演练数据（provenance=FIXTURE），不是真实外部事实"
+      }
+    ]
+  },
+  "rendered": "recruitment_decision_record 2.0.0 status=OK\nlabels: provenance=FIXTURE trigger=MANUAL connection=CONNECTED\ndecision 447e3479-5dac-4524-948a-94059d8a053d scope=STAGE stage=S10 result=ADVANCE record_version=1\ndecided_at=2026-11-14T13:03:58.442Z decided_by=11111111-1111-4111-8111-000000000103\ngate: as_of=2026-11-14T21:03:53+08:00 ready_for_decision=true permitted=[ADVANCE,HOLD,WITHDRAW]\nsummary_digest=695faa7387d7e81ad6578e071f81e123ad5b9a475e1b0e78feee21923cf8e4c4\nsuperseded: —（本次不是撤回）\nevent 45e66f59-8926-4cae-895e-5000b862fc75 internal/INTERNAL\nwarnings(2)\n  DECIDER_NOT_HIRING_MANAGER: 决策人不是该部门的招聘负责人；v1.0 不拦截，仅记录（DC-14）\n  FIXTURE_BASIS: 本次决策依据的是演练数据（provenance=FIXTURE），不是真实外部事实",
+  "row_counts_before": {
+    "application": 57,
+    "business_task": 6,
+    "candidate": 51,
+    "decision": 10,
+    "event_inbox": 156,
+    "intake_asset": 62,
+    "intake_record": 62,
+    "interview": 9,
+    "interview_record": 4,
+    "interviewer": 15,
+    "meeting": 8,
+    "meeting_binding": 8,
+    "resume": 62,
+    "resume_version": 63,
+    "scorecard": 6,
+    "transcript_artifact": 7,
+    "transcript_segment": 108
+  },
+  "row_counts_after": {
+    "application": 57,
+    "business_task": 6,
+    "candidate": 51,
+    "decision": 11,
+    "event_inbox": 157,
+    "intake_asset": 62,
+    "intake_record": 62,
+    "interview": 9,
+    "interview_record": 4,
+    "interviewer": 15,
+    "meeting": 8,
+    "meeting_binding": 8,
+    "resume": 62,
+    "resume_version": 63,
+    "scorecard": 6,
+    "transcript_artifact": 7,
+    "transcript_segment": 108
+  },
+  "row_count_delta": {
+    "decision": 1,
+    "event_inbox": 1
+  },
+  "readback": {
+    "application": {
+      "id": "5b16c710-d75c-4a26-ab19-0b9c0591be1e",
+      "candidate_id": "d47ddb32-bafc-4987-8d83-1a02043aeb01",
+      "job_id": "11111111-1111-4111-8111-000000000401",
+      "job_version_id": "11111111-1111-4111-8111-000000000402",
+      "rubric_version_id": "11111111-1111-4111-8111-000000000404",
+      "resume_version_id": "5fba8b67-929e-472e-a472-77e3c1bda933",
+      "lifecycle_status": "ACTIVE",
+      "current_stage_code": "S8",
+      "record_version": 3,
+      "created_at": "2026-11-14T13:03:53.901Z",
+      "stage_entered_at": "2026-11-14T13:03:55.462Z",
+      "stage_changed_at": "2026-11-14T13:03:55.451Z",
+      "stage_changed_by_actor_id": "11111111-1111-4111-8111-000000000103"
+    },
+    "decisions": [
+      {
+        "id": "1fc6e88d-3883-40b7-8246-7cb20c9f4b35",
+        "decision_scope": "SCREENING",
+        "stage_code": "S7",
+        "result": "ADVANCE",
+        "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+        "decided_at": "2026-11-14T13:03:55.273Z",
+        "basis_count": 4,
+        "basis_kinds": [
+          "AUTHORITY",
+          "RESUME_VERSION",
+          "RUBRIC_VERSION",
+          "SCREENING_EVALUATION"
+        ],
+        "superseded_by_decision_id": null
+      },
+      {
+        "id": "447e3479-5dac-4524-948a-94059d8a053d",
+        "decision_scope": "STAGE",
+        "stage_code": "S10",
+        "result": "ADVANCE",
+        "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+        "decided_at": "2026-11-14T13:03:58.442Z",
+        "basis_count": 5,
+        "basis_kinds": [
+          "AUTHORITY",
+          "RUBRIC_VERSION",
+          "SCORECARD",
+          "SUMMARY"
+        ],
+        "superseded_by_decision_id": null
+      }
+    ],
+    "approval_service_calls": 0
+  },
+  "outcome": "PASS"
+}

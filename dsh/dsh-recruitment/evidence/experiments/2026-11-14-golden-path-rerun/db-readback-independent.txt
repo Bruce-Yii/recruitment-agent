@@ -1,0 +1,41 @@
+db-readback（只读） application_id=5b16c710-d75c-4a26-ab19-0b9c0591be1e
+database=ra_s6s7 now=2026-11-14 21:07:11.279936+08
+db_version=PostgreSQL 17.11
+
+-- 1. application（阶段码 / rubric pin / 材料） -------------------------------------
+{"id":"5b16c710-d75c-4a26-ab19-0b9c0591be1e","job_id":"11111111-1111-4111-8111-000000000401","candidate_id":"d47ddb32-bafc-4987-8d83-1a02043aeb01","resume_version_id":"5fba8b67-929e-472e-a472-77e3c1bda933","rubric_version_id":"11111111-1111-4111-8111-000000000404","lifecycle_status":"ACTIVE","current_stage_code":"S8","record_version":3,"created_at":"2026-11-14 21:03:53.901436+08","stage_entered_at":"2026-11-14 21:03:55.462118+08","stage_changed_at":"2026-11-14 21:03:55.451745+08","stage_changed_by_actor_id":"11111111-1111-4111-8111-000000000103"}
+
+-- 2. candidate（联系方式打码） ------------------------------------------------------
+{"id":"d47ddb32-bafc-4987-8d83-1a02043aeb01","identity_status":"ACTIVE","display_name":"林承宇","email_masked":"lin***@example.test","phone_masked":"+86136***88"}
+
+-- 3. 材料链（resume_version / intake_asset / 摄入事件） ------------------------------
+{"resume_version_id":"5fba8b67-929e-472e-a472-77e3c1bda933","version_no":1,"parse_status":"PARSED","content_sha256":"de19b5ca1186544f4e288579c2a90e059ccde999cb43394abcc987dec7e3f5c8","source_asset_sha256":"aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df","intake_asset_id":"1abe0ac1-890b-42a9-8aec-440a27b7fed2","file_name":"synthetic-resume-golden-path.pdf","byte_size":"10919","asset_sha256":"aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df","validation_status":"VALID"}
+{"event_id":"426e0c99-daf1-4ad0-b929-c1cfa1cb19e1","provider":"internal","trust_level":"INTERNAL","event_type":"resume.intake.received","idempotency_source":"FALLBACK_KEY","source_object_id":"aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df","occurred_at":"2026-11-14 21:03:53.901436+08"}
+
+-- 4. decision（S7 SCREENING / S10 STAGE） -------------------------------------
+{"id":"1fc6e88d-3883-40b7-8246-7cb20c9f4b35","decision_scope":"SCREENING","stage_code":"S7","result":"ADVANCE","interview_id":null,"decided_by_actor_id":"11111111-1111-4111-8111-000000000103","decided_at":"2026-11-14 21:03:55.273604+08","record_version":1,"basis_count":4,"basis_kinds":["AUTHORITY","RESUME_VERSION","RUBRIC_VERSION","SCREENING_EVALUATION"],"superseded_by_decision_id":null,"decision_summary_digest":null,"confirmation_method":"IN_CHAT","confirmation_text_sha256":"1307daee1e77d31f3fbf3f051a3561dd9a85352fca41c07d047a8574e502d957","confirmation_preimage_version":"2","decision_event_id":"9dc6834c-5bc8-4b9d-a9b3-78c60b4099ee"}
+{"id":"447e3479-5dac-4524-948a-94059d8a053d","decision_scope":"STAGE","stage_code":"S10","result":"ADVANCE","interview_id":"cc3403e6-3bd2-48c8-b4f0-db5812054437","decided_by_actor_id":"11111111-1111-4111-8111-000000000103","decided_at":"2026-11-14 21:03:58.442381+08","record_version":1,"basis_count":5,"basis_kinds":["AUTHORITY","RUBRIC_VERSION","SCORECARD","SUMMARY"],"superseded_by_decision_id":null,"decision_summary_digest":"695faa7387d7e81ad6578e071f81e123ad5b9a475e1b0e78feee21923cf8e4c4","confirmation_method":"IN_CHAT","confirmation_text_sha256":"7e8bd55a06e7011aad4a49ebe130c02121c3bf7665064b8e14a68ceaf38ce792","confirmation_preimage_version":"2","decision_event_id":"45e66f59-8926-4cae-895e-5000b862fc75"}
+
+-- 5. interview / interviewer / meeting_binding / business_task --------------
+{"id":"cc3403e6-3bd2-48c8-b4f0-db5812054437","round_no":1,"slot_code":"DEFAULT","stage_code":"S8","status":"SCHEDULED","scheduled_start_at":"2026-12-09 10:00:00+08","scheduled_end_at":"2026-12-09 11:00:00+08","timezone":"Asia/Shanghai","record_version":1}
+{"interview_id":"cc3403e6-3bd2-48c8-b4f0-db5812054437","actor_id":"11111111-1111-4111-8111-000000000103","display_name":"演示-HR 专员","role_in_interview":"INTERVIEWER","required_scorecard":true}
+{"interview_id":"cc3403e6-3bd2-48c8-b4f0-db5812054437","actor_id":"11111111-1111-4111-8111-000000000104","display_name":"演示-面试官","role_in_interview":"INTERVIEWER","required_scorecard":true}
+{"interview_id":"cc3403e6-3bd2-48c8-b4f0-db5812054437","meeting_id":"b45c24eb-0e19-421c-8e5e-b06693088499","provider":"SYNTHETIC_DEMO","account_scope":"golden-path","external_meeting_id":"synthetic-meeting-5b16c710d75c","calendar_event_id":"synthetic-calendar-5b16c710d75c","binding_method":"SCHEDULED","bound_at":"2026-11-14 21:03:56.256979+08","unbound_at":null}
+{"id":"85b52269-595e-424f-a674-3c49789dbf5f","task_type":"INTERVIEW_SCHEDULE","status":"SUCCEEDED","ref0_kind":"INTERVIEW","ref0_id":"cc3403e6-3bd2-48c8-b4f0-db5812054437"}
+
+-- 6. 转写（transcript_artifact / segments / interview_record） ------------------
+{"id":"c9b03128-ed33-4688-a288-e9ad9f248091","source_revision":1,"is_canonical":true,"provenance":"FIXTURE","trigger_mode":"MANUAL","connection_state":"NOT_CONNECTED","transcript_status":"READY","content_sha256":"c8198254ebd961b871bc7a22e4a87f88bd667d6f54a4be1c17dc6e9de19290ab","provider":"LOCAL_DEMO","provider_artifact_id":"local:demo-sample:b45c24eb-0e19-421c-8e5e-b06693088499","segment_count":11}
+{"id":"204a735a-4e53-4a4f-a6a0-9c7fc2f7c1e0","interview_id":"cc3403e6-3bd2-48c8-b4f0-db5812054437","transcript_artifact_id":"c9b03128-ed33-4688-a288-e9ad9f248091","transcript_revision":1,"status":"NEEDS_REVIEW","verification_status":"UNVERIFIED","evidence_ok":true,"is_current":true}
+
+-- 7. scorecard（含 items.transcript_basis） ------------------------------------
+{"id":"b246062a-f243-4342-8bda-1c72a2e43c6a","interview_id":"cc3403e6-3bd2-48c8-b4f0-db5812054437","interviewer_id":"06ae4ab4-b527-43e2-8177-3c5a137b67ab","rubric_version_id":"11111111-1111-4111-8111-000000000404","status":"SUBMITTED","overall":"ADVANCE","revision_no":1,"record_version":1,"payload_hash":"b5c05e74689a3c193a2789deae99581a0f657f015501cee2af9dea95f0ee6040","transcript_basis":"TRANSCRIPT","status_changed_by_actor_id":"11111111-1111-4111-8111-000000000103"}
+{"id":"ed634dc3-10a7-4b80-b3ba-6e49a54cac62","interview_id":"cc3403e6-3bd2-48c8-b4f0-db5812054437","interviewer_id":"23bccf46-f7e2-4e63-9dd5-a5caeb2aa76e","rubric_version_id":"11111111-1111-4111-8111-000000000404","status":"SUBMITTED","overall":"ADVANCE","revision_no":1,"record_version":1,"payload_hash":"b5c05e74689a3c193a2789deae99581a0f657f015501cee2af9dea95f0ee6040","transcript_basis":"TRANSCRIPT","status_changed_by_actor_id":"11111111-1111-4111-8111-000000000104"}
+
+-- 8. 阶段 / pin 审计事件（fn_row_guard 写的真实迁移） -------------------------------------
+{"event_id":"438ca3d3-16ec-4040-aad1-911ec1f29190","event_type":"application.current_stage_code.changed","source_object_id":"5b16c710-d75c-4a26-ab19-0b9c0591be1e","occurred_at":"2026-11-14 21:03:54.090558+08","from_stage":"S6","to_stage":"S7","actor_id":"11111111-1111-4111-8111-000000000103"}
+{"event_id":"5e3dda05-68a3-4ba3-9116-55673692123c","event_type":"application.current_stage_code.changed","source_object_id":"5b16c710-d75c-4a26-ab19-0b9c0591be1e","occurred_at":"2026-11-14 21:03:55.451745+08","from_stage":"S7","to_stage":"S8","actor_id":"11111111-1111-4111-8111-000000000103"}
+
+-- 9. 全库计数（预检 / 终态对比口径） ------------------------------------------------------
+{"applications":57,"with_material":56,"with_rubric":17,"both_bound":16}
+{"decision_scope":"SCREENING","stage_code":"S7","n":9}
+{"decision_scope":"STAGE","stage_code":"S10","n":2}

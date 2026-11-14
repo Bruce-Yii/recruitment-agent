@@ -1,0 +1,36 @@
+# git state（复跑 lane 收尾快照）
+
+## 快照 commit（本次 Golden Path 复跑实际运行的代码）
+SNAPSHOT_COMMIT=30f501c9d98afc38404288e0a8857ea0f6165a5b
+SNAPSHOT_SUBJECT=feat(document): RTF 进格式覆盖，读不出来要说清为什么（修 4a5dfd3 的 media.ts 缺导出）
+
+## 报告写作时的分支 HEAD（并发 lane 仍在提交）
+HEAD=b0136a47a60fd488cf76886e9a0dda3c869a081d
+BRANCH=feat/unified-document-intake
+
+## 快照以来 Golden Path 相关代码是否有变化（空 = 无变化）
+(无变化)
+
+## 快照之后的提交（其它 lane）
+b0136a4 chore: 忽略 runtime 测试的临时工作目录
+006607c test(isolation): 每个测试文件独立库 + 统一测试入口，CI 不再把 helper 当测试跑
+2329d2e fix(runtime): 0015 迁移入库 + 历史积压拆成"候选/审计"两类给运维看（修 4a5dfd3 的迁移未入库）
+
+## 本 lane 只新增这些文件（未 commit / 未 push / 未切分支）
+?? dsh/dsh-recruitment/evidence/experiments/2026-11-14-golden-path-rerun/
+?? dsh/dsh-recruitment/manual/golden-path/
+
+## 工作树里其它 lane 的未提交改动（本 lane 未触碰；仅证明工作树不是干净快照，故必须用 git archive 取 HEAD）
+porcelain_count=50
+ M db/README.md
+ M db/SCHEMA.md
+ M docs/18-golden-path.md
+ M docs/23-acceptance-review-s6-s10.md
+ M dsh/dsh-recruitment/README.md
+ M dsh/dsh-recruitment/contracts/job-screening/job-rubric-rules.md
+ M dsh/dsh-recruitment/contracts/job-screening/screening-rules.md
+ M dsh/dsh-recruitment/contracts/job-screening/tool-contracts.md
+ M dsh/dsh-recruitment/contracts/stage-advance/tool-contracts.md
+ M dsh/dsh-recruitment/manual/screening-decision/README.md
+ M dsh/dsh-recruitment/src/document/README.md
+ M dsh/dsh-recruitment/src/document/contracts/README.md
