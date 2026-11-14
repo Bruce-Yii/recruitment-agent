@@ -114,6 +114,9 @@ import {
 // G1（事件自动驱动）：周期 tick-loop。**故意**从文件直连而不动 `./runtime/index.ts`
 // 的公共出口（出口文件不在本 lane 写范围，且它只是 re-export，不影响装配）。
 import { startTickLoop, type TickLoop } from './runtime/tick-loop.ts'
+// G10（事件处置）：attach 调用与 sink 工厂同处一个装配段；**故意**直连文件不走 `./runtime/index.ts`
+// （出口文件不在 lane 写范围，且它只是 re-export）。
+import { createPgEventDispositionSink } from './runtime/event-runtime.ts'
 import { resolveFeishuConnector, type FeishuConnectorConfig } from './connectors/feishu/index.ts'
 import { registerOverviewHttp, type OverviewHostContext } from './http/overview.ts'
 import { RecruitmentToolError } from './tools/errors.ts'
@@ -392,6 +395,12 @@ export function apply(
               workerType: 'DSH_WORKER',
               workerId: `router:${process.pid}`,
             })
+            // G10：事件处置记录（append-only）。必须在注册 HTTP 与启动 tick-loop **之前**挂上，
+            // 否则第一轮 tick 路由掉的事件会"已终态但没有处置"，health 只能如实报缺口。
+            // 不改 store.ts：处置是审计事实，写入口统一走 `createPgEventDispositionSink`（同一个 pool）。
+            composed.events.attachDispositionSink(
+              createPgEventDispositionSink(pool, runtimeDb.tenant_id),
+            )
             const disposeHttp = registerRuntimeHttp(
               child as unknown as RuntimeHostContext,
               {

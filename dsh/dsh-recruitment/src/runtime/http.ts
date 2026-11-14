@@ -7,7 +7,7 @@
 // 读回端点：
 //   GET  /recruitment/runtime/tasks/:id   三层身份投影（Task/Attempt/Session/Wakeup）
 //   GET  /recruitment/runtime/tasks       最近任务列表
-//   GET  /recruitment/runtime/health      事件/任务/尝试/会话计数
+//   GET  /recruitment/runtime/health      事件/任务/尝试/会话计数 + 事件处置健康度（G10）
 //
 // 安全边界：只允许本机回环 + 同源请求头；非回环监听**不注册**（fail closed）。
 // 路由是否注册由 `config.runtime.enabled === true` 决定（见 src/index.ts）。
@@ -47,6 +47,46 @@ export interface RuntimeHttpOptions {
 }
 
 const ROUTE_PREFIX = '/recruitment/runtime'
+/**
+ * 未挂处置 sink 时的 `disposition` 段：**形状与已挂时完全一致**，读数全 null。
+ *
+ * 为什么不能填 0：0 是"库事实为零"，null 是"这条读数不存在"。用 0 冒充会让
+ * 运维把"没接线"读成"处置做得很干净"——那正是 G10 要消灭的假读数。
+ */
+const DISPOSITION_SINK_NOT_ATTACHED = {
+  available: false,
+  reason: 'DISPOSITION_SINK_NOT_ATTACHED',
+  events_total: null,
+  events_internal_audit: null,
+  events_in_scope: null,
+  events_disposed: null,
+  events_disposed_in_scope: null,
+  events_undisposed: null,
+  events_undisposed_oldest_wait_seconds: null,
+  events_undisposed_oldest_received_at: null,
+  write_failures: 0,
+  last_write_error: null,
+} as const
+
+/** health 的 `disposition` 段：库事实照抄，未挂 sink 时如实报 available=false。 */
+async function dispositionSnapshot(events: EventRuntime): Promise<Record<string, unknown>> {
+  const report = await events.dispositionHealth()
+  if (report === null) return { ...DISPOSITION_SINK_NOT_ATTACHED }
+  return {
+    available: true,
+    events_total: report.eventsTotal,
+    events_internal_audit: report.eventsInternalAudit,
+    events_in_scope: report.eventsInScope,
+    events_disposed: report.eventsDisposed,
+    events_disposed_in_scope: report.eventsDisposedInScope,
+    events_undisposed: report.eventsUndisposed,
+    events_undisposed_oldest_wait_seconds: report.eventsUndisposedOldestWaitSeconds,
+    events_undisposed_oldest_received_at: report.eventsUndisposedOldestReceivedAt,
+    write_failures: report.writeFailures,
+    last_write_error: report.lastWriteError,
+  }
+}
+
 const NO_STORE = {
   'content-type': 'application/json; charset=utf-8',
   'cache-control': 'no-store',
@@ -155,7 +195,12 @@ export function registerRuntimeHttp(ctx: RuntimeHostContext, options: RuntimeHtt
         return
       }
       if (path === `${ROUTE_PREFIX}/health` && req.method === 'GET') {
-        json(res, 200, { ok: true, counts: await options.router.counts() })
+        // counts 一个键都不动（既有消费者零影响）；disposition 是**追加**字段。
+        json(res, 200, {
+          ok: true,
+          counts: await options.router.counts(),
+          disposition: await dispositionSnapshot(options.events),
+        })
         return
       }
       if (path === `${ROUTE_PREFIX}/tasks` && req.method === 'GET') {
