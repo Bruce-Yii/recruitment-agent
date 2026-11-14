@@ -1,0 +1,11 @@
+# 2026-11-14T09:03:15.696Z mode=intake job=11111111-1111-4111-8111-000000000401
+# 语料根：resume-talent-pool/.snap-cache/research/content（真实语料；日志不含文件名/PII）
+[1] F20 sha=6f6dd3f49d79 .pdf 93831B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=complete needs_visual=false blocking=false pages=1 chars=2645 blocks=18
+    READ blocking_codes=[] recovery_next=structure execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=REUSED candidate_created=false matched_by=email+phone
+    INTAKE ids candidate=3035960e-c5c2-4a4f-846e-aad966b7f3bc application=00fe6fbd-c4c2-45c7-944f-9222579a5e53 resume_version=060862ed-74ea-45d0-a001-8dcfa7dfe538 asset=968d9352-ac3a-4102-9a6d-715f52a9e825
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (926ms, 累计 CREATED=0)
+
+## 汇总 mode=intake 处理=1 读成功=1 intake成功=1 BLOCKED=0 CREATED=0

@@ -1,0 +1,97 @@
+[
+ {
+  "label": "F46",
+  "sha12": "e0a2ab9b1afd",
+  "bytes": 28692,
+  "ext": ".docx",
+  "read": {
+   "ok": true,
+   "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+   "reader": "python-docx@1.2.0",
+   "completeness": "complete",
+   "needs_visual": false,
+   "blocking": false,
+   "blocking_codes": [],
+   "soft_codes": [
+    "doc_attribution_resolved"
+   ],
+   "pages": 0,
+   "chars": 5630,
+   "blocks": 105,
+   "recovery_next": "structure",
+   "recovery_steps": [],
+   "execution": {
+    "ran": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "content_updated": false
+   }
+  },
+  "ms": 291
+ },
+ {
+  "label": "F36",
+  "sha12": "b7fefa208ef3",
+  "bytes": 28693,
+  "ext": ".docx",
+  "read": {
+   "ok": true,
+   "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+   "reader": "python-docx@1.2.0",
+   "completeness": "complete",
+   "needs_visual": false,
+   "blocking": false,
+   "blocking_codes": [],
+   "soft_codes": [
+    "doc_attribution_resolved"
+   ],
+   "pages": 0,
+   "chars": 5630,
+   "blocks": 105,
+   "recovery_next": "structure",
+   "recovery_steps": [],
+   "execution": {
+    "ran": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "content_updated": false
+   }
+  },
+  "ms": 245
+ },
+ {
+  "label": "F27",
+  "sha12": "84b32e91f41a",
+  "bytes": 122652,
+  "ext": ".docx",
+  "read": {
+   "ok": true,
+   "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+   "reader": "python-docx@1.2.0",
+   "completeness": "complete",
+   "needs_visual": false,
+   "blocking": true,
+   "blocking_codes": [
+    "doc_cross_block_attribution"
+   ],
+   "soft_codes": [
+    "doc_attribution_resolved",
+    "doc_docx_textbox_order_unknown"
+   ],
+   "pages": 0,
+   "chars": 8744,
+   "blocks": 80,
+   "recovery_next": "human",
+   "recovery_steps": [
+    "undefined:planned"
+   ],
+   "execution": {
+    "ran": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "content_updated": false
+   }
+  },
+  "ms": 268
+ }
+]

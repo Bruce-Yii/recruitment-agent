@@ -1,0 +1,94 @@
+[
+ {
+  "label": "F44",
+  "sha12": "d141e6de1a45",
+  "bytes": 55543,
+  "ext": ".docx",
+  "read": {
+   "ok": true,
+   "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+   "reader": "python-docx@1.2.0",
+   "completeness": "complete",
+   "needs_visual": false,
+   "blocking": false,
+   "blocking_codes": [],
+   "soft_codes": [
+    "doc_attribution_resolved"
+   ],
+   "pages": 0,
+   "chars": 4795,
+   "blocks": 64,
+   "recovery_next": "structure",
+   "recovery_steps": [],
+   "execution": {
+    "ran": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "content_updated": false
+   }
+  },
+  "intake": {
+   "ok": false,
+   "code": "INVALID_ARGS",
+   "reason_code": "PATH_INVALID",
+   "blocked": false
+  },
+  "ms": 485
+ },
+ {
+  "label": "F05",
+  "sha12": "20de5d4cac0b",
+  "bytes": 74875,
+  "ext": ".docx",
+  "read": {
+   "ok": true,
+   "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+   "reader": "python-docx@1.2.0",
+   "completeness": "complete",
+   "needs_visual": false,
+   "blocking": false,
+   "blocking_codes": [],
+   "soft_codes": [
+    "doc_docx_textbox_order_unknown"
+   ],
+   "pages": 0,
+   "chars": 4122,
+   "blocks": 28,
+   "recovery_next": "structure",
+   "recovery_steps": [
+    "undefined:planned"
+   ],
+   "execution": {
+    "ran": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "content_updated": false
+   }
+  },
+  "intake": {
+   "ok": false,
+   "code": "INVALID_ARGS",
+   "reason_code": "PATH_INVALID",
+   "blocked": false
+  },
+  "ms": 284
+ },
+ {
+  "label": "F29",
+  "sha12": "918894c484b7",
+  "bytes": 639853,
+  "ext": ".rtf",
+  "read": {
+   "ok": false,
+   "code": "READER_FAILED",
+   "reason_code": "UNSUPPORTED_MEDIA"
+  },
+  "intake": {
+   "ok": false,
+   "code": "INVALID_ARGS",
+   "reason_code": "PATH_INVALID",
+   "blocked": false
+  },
+  "ms": 5
+ }
+]

@@ -1,0 +1,20 @@
+# 2026-11-14T08:59:31.403Z mode=intake job=11111111-1111-4111-8111-000000000401
+# 语料根：resume-talent-pool/.snap-cache/research/content（真实语料；日志不含文件名/PII）
+[1] F44 sha=d141e6de1a45 .docx 55543B
+    READ ok reader=python-docx@1.2.0 media=application/vnd.openxmlformats-officedocument.wordprocessingml.document completeness=complete needs_visual=false blocking=false pages=0 chars=4795 blocks=64
+    READ blocking_codes=[] recovery_next=structure execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE FAIL code=INVALID_ARGS reason=PATH_INVALID（闸门拒绝，未写任何行）
+    (485ms, 累计 CREATED=0)
+
+[2] F05 sha=20de5d4cac0b .docx 74875B
+    READ ok reader=python-docx@1.2.0 media=application/vnd.openxmlformats-officedocument.wordprocessingml.document completeness=complete needs_visual=false blocking=false pages=0 chars=4122 blocks=28
+    READ blocking_codes=[] recovery_next=structure execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE FAIL code=INVALID_ARGS reason=PATH_INVALID（闸门拒绝，未写任何行）
+    (284ms, 累计 CREATED=0)
+
+[3] F29 sha=918894c484b7 .rtf 639853B
+    READ FAIL code=READER_FAILED reason=UNSUPPORTED_MEDIA
+    INTAKE FAIL code=INVALID_ARGS reason=PATH_INVALID（闸门拒绝，未写任何行）
+    (5ms, 累计 CREATED=0)
+
+## 汇总 mode=intake 处理=3 读成功=2 intake成功=0 BLOCKED=0 CREATED=0

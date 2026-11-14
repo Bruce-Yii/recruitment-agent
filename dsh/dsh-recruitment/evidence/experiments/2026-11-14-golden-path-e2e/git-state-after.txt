@@ -1,0 +1,38 @@
+# Golden Path e2e · 收尾时的 git 状态（第二快照；只读采集）
+# 采集时间 : 2026-11-14T16:59:45.4536310+08:00
+# 说明     : 第一次快照（git-state.txt）之后，并发 lane 继续改动工作树（docs/18、contracts、src/engine 等）。
+#            本 lane 仍未修改任何已跟踪文件、未 commit / 未 push / 未切分支。
+
+git rev-parse HEAD = 92bdc41f9fe45e0bde7a3cb0b66e99a100029be2
+
+## 完整 git status --porcelain
+ M docs/18-golden-path.md
+ M dsh/dsh-recruitment/CONTRACT.md
+ M dsh/dsh-recruitment/README.md
+ M dsh/dsh-recruitment/contracts/job-screening/tool-contracts.md
+ M dsh/dsh-recruitment/package.json
+ M dsh/dsh-recruitment/pnpm-lock.yaml
+ M dsh/dsh-recruitment/src/connectors/feishu/README.md
+ M dsh/dsh-recruitment/src/connectors/feishu/index.ts
+ M dsh/dsh-recruitment/src/index.ts
+ M dsh/dsh-recruitment/src/tools/transcript-import.ts
+ M dsh/dsh-recruitment/test/integration/transcript-import.test.ts
+ M dsh/dsh-recruitment/test/unit/transcript-import.test.ts
+?? dsh/dsh-recruitment/evidence/experiments/2026-11-14-ci-rehearsal/
+?? dsh/dsh-recruitment/evidence/experiments/2026-11-14-golden-path-e2e/
+?? dsh/dsh-recruitment/evidence/experiments/2026-11-14-real-intake-20/
+?? dsh/dsh-recruitment/manual/golden-path/
+?? dsh/dsh-recruitment/prompts/
+?? dsh/dsh-recruitment/skills/
+?? dsh/dsh-recruitment/src/connectors/feishu/wiring.ts
+?? dsh/dsh-recruitment/src/engine/
+?? dsh/dsh-recruitment/test/unit/transcript-feishu-wiring.test.ts
+
+## 本 lane 的写范围（仍只有两个新增未跟踪目录）
+?? dsh/dsh-recruitment/evidence/experiments/2026-11-14-golden-path-e2e/
+?? dsh/dsh-recruitment/manual/golden-path/
+
+## 与本 lane 结论相关的并发改动（不是本 lane 改的；读取时是未提交 WIP）
+## - docs/18-golden-path.md：更新工具数/表数/决策写侧状态，仍写「S6→S10 端到端 BLOCKED」
+## - contracts/job-screening/tool-contracts.md：补 S7 basis_refs 的 AUTHORITY / provenance / reasons_digest 说明
+## - dsh/dsh-recruitment/src/tools/transcript-import.ts：转写工具大改（与 HOP 7/8 相关，干净快照需复跑）

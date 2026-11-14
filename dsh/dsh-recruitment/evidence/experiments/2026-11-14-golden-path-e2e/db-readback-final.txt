@@ -1,0 +1,92 @@
+不使用分页器.
+===== 1. 申请（阶段 / 材料 / rubric pin / record_version） =====
+                  id                  |             candidate_id             |                job_id                |            job_version_id            | rubric_version_id |          resume_version_id           | lifecycle_status | current_stage_code | record_version |          created_at           
+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+-------------------+--------------------------------------+------------------+--------------------+----------------+-------------------------------
+ 9d408044-e30c-42be-9c7a-bd6dda78456c | 96485f3c-0e73-43e8-89c3-7d87bb53f9cd | 11111111-1111-4111-8111-000000000401 | 11111111-1111-4111-8111-000000000402 |                   | d3de2b99-b2d5-4de8-8cc6-b7643b924915 | ACTIVE           | S6                 |              1 | 2026-11-14 16:42:18.581983+08
+(1 行记录)
+
+===== 2. 候选人（联系方式打码） =====
+                  id                  | display_name | identity_status |    email_masked     | phone_masked | record_version |          created_at           
+--------------------------------------+--------------+-----------------+---------------------+--------------+----------------+-------------------------------
+ 96485f3c-0e73-43e8-89c3-7d87bb53f9cd | 林承宇       | ACTIVE          | lin***@example.test | +86136***33  |              1 | 2026-11-14 16:42:18.581983+08
+(1 行记录)
+
+===== 3. 材料链：intake_asset / resume / resume_version =====
+           intake_asset_id            |            file_name             | byte_size |                              sha256                              | validation_status |           intake_record_id           |              resume_id               |          resume_version_id           | version_no | parse_status |                       source_asset_sha256                        |                          content_sha256                          
+--------------------------------------+----------------------------------+-----------+------------------------------------------------------------------+-------------------+--------------------------------------+--------------------------------------+--------------------------------------+------------+--------------+------------------------------------------------------------------+------------------------------------------------------------------
+ be358974-14a8-4f74-9a75-b07364100c6d | synthetic-resume-golden-path.pdf |     10920 | 9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356 | VALID             | 99ba46ca-110c-4da4-82d7-c7732cd2b022 | 1ae8e83f-9d45-400e-b897-abfd5b35091d | d3de2b99-b2d5-4de8-8cc6-b7643b924915 |          1 | PARSED       | 9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356 | 555ba23a42e0aa98e713751b5d7a8f03dd41f8a985f44c1d6c89d1faad121236
+(1 行记录)
+
+===== 4. 材料摄入事件 event_inbox =====
+               event_id               | provider | trust_level |       event_type       | idempotency_source |                                idempotency_key                                 |                         source_object_id                         |          occurred_at          
+--------------------------------------+----------+-------------+------------------------+--------------------+--------------------------------------------------------------------------------+------------------------------------------------------------------+-------------------------------
+ f35f2ebe-87c4-4c3c-b83b-e2f237e647b3 | internal | INTERNAL    | resume.intake.received | FALLBACK_KEY       | resume.intake:9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356 | 9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356 | 2026-11-14 16:42:18.581983+08
+(1 行记录)
+
+===== 5. decision（本申请 = 0 条；全库按 scope） =====
+ id | decision_scope | stage_code | result | decided_by_actor_id | decided_at 
+----+----------------+------------+--------+---------------------+------------
+(0 行记录)
+
+ decision_scope | stage_code | n 
+----------------+------------+---
+ STAGE          | S10        | 1
+(1 行记录)
+
+===== 6. 面试 + 面试官 + 会议绑定 =====
+                  id                  |            application_id            | round_no | slot_code | stage_code |  status   |   scheduled_start_at   |    scheduled_end_at    |   timezone    | record_version 
+--------------------------------------+--------------------------------------+----------+-----------+------------+-----------+------------------------+------------------------+---------------+----------------
+ 6efc6919-0d63-4f80-847c-4813c6b5a475 | 9d408044-e30c-42be-9c7a-bd6dda78456c |        1 | DEFAULT   | S8         | SCHEDULED | 2026-12-02 10:00:00+08 | 2026-12-02 11:00:00+08 | Asia/Shanghai |              1
+(1 行记录)
+
+               actor_id               | display_name | role_in_interview | required_scorecard 
+--------------------------------------+--------------+-------------------+--------------------
+ 11111111-1111-4111-8111-000000000103 | 演示-HR 专员 | INTERVIEWER       | t
+ 11111111-1111-4111-8111-000000000104 | 演示-面试官  | INTERVIEWER       | t
+(2 行记录)
+
+              binding_id              |    provider    | account_scope |      external_meeting_id       |        calendar_event_id        | binding_method |           bound_at            | unbound_at 
+--------------------------------------+----------------+---------------+--------------------------------+---------------------------------+----------------+-------------------------------+------------
+ 0391ef5d-7508-4df6-9f11-52432d7670ee | SYNTHETIC_DEMO | golden-path   | synthetic-meeting-9d408044e30c | synthetic-calendar-9d408044e30c | SCHEDULED      | 2026-11-14 16:42:18.837626+08 | 
+(1 行记录)
+
+===== 7. S8 附带产物 business_task =====
+                  id                  |     task_type      |  status   |                                                                                                          business_refs                                                                                                           
+--------------------------------------+--------------------+-----------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 160f8295-3e63-4de5-bb33-f9b6b324340f | INTERVIEW_SCHEDULE | SUCCEEDED | [{"id": "6efc6919-0d63-4f80-847c-4813c6b5a475", "kind": "INTERVIEW"}, {"args_digest": "sha256:bef1bc68ff2fa4b42d02da241646b6c8321032bb7e02d66b0d2567bf594d0468", "result_interview_id": "6efc6919-0d63-4f80-847c-4813c6b5a475"}]
+(1 行记录)
+
+===== 8. transcript_artifact（canonical / revision / 标签） + 片段数 =====
+                  id                  | source_revision | is_canonical | provenance | trigger_mode | connection_state | transcript_status |  provider  |                  provider_artifact_id                  |                          content_sha256                          | is_complete 
+--------------------------------------+-----------------+--------------+------------+--------------+------------------+-------------------+------------+--------------------------------------------------------+------------------------------------------------------------------+-------------
+ 74aae1db-c1a7-4031-9869-10710695e933 |               1 | t            | FIXTURE    | MANUAL       | NOT_CONNECTED    | READY             | LOCAL_DEMO | local:demo-sample:3f270e4d-8f8e-4875-895b-2d4930f007f7 | c8198254ebd961b871bc7a22e4a87f88bd667d6f54a4be1c17dc6e9de19290ab | t
+(1 行记录)
+
+ segment_count 
+---------------
+            11
+(1 行记录)
+
+===== 9. scorecard（面试官本人 / rubric / payload_hash） =====
+                  id                  |             interview_id             |            interviewer_id            |          rubric_version_id           | revision_no |  status   | overall |                           payload_hash                           | record_version |         submitted_at          
+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+-------------+-----------+---------+------------------------------------------------------------------+----------------+-------------------------------
+ 5c55f58f-2154-4d81-b476-d2f6d5968898 | 6efc6919-0d63-4f80-847c-4813c6b5a475 | c45cc4d8-38d4-4737-8b6a-2613a0eb2d2b | 11111111-1111-4111-8111-000000000404 |           1 | SUBMITTED | ADVANCE | 5be13bd8f977352fe5882a317536437d2535753534bcdbf1473518ef0c545abc |              1 | 2026-11-14 16:42:19.169018+08
+(1 行记录)
+
+===== 10. 全库关键计数（both_bound 仍是 0：没有一条申请同时有材料与 rubric pin） =====
+ applications | with_material | with_rubric | both_bound 
+--------------+---------------+-------------+------------
+           15 |            13 |           2 |          0
+(1 行记录)
+
+===== 11. 本 lane 试跑残留（合成候选人；官方申请是 9d408044，其余是 harness 迭代残留） =====
+             candidate_id             |    email_masked     |            application_id            | current_stage_code | lifecycle_status | has_material | has_rubric | interviews | decisions 
+--------------------------------------+---------------------+--------------------------------------+--------------------+------------------+--------------+------------+------------+-----------
+ c928afec-32d2-4814-96b1-302632e7e81b | lin***@example.test | 9088069a-105d-4f60-9838-ca99b52b4e86 | S6                 | ACTIVE           | t            | f          |          0 |         0
+ bf6c114b-9a81-4fed-927f-93c898875e66 | lin***@example.test | 0c2c0f88-4d92-447f-b775-86aa2bcc9d10 | S6                 | ACTIVE           | t            | f          |          1 |         0
+ 07d17c9e-bc8a-41da-91c6-2f1957530265 | lin***@example.test | 4dfc1184-8be9-467d-84c7-c0f7ecc8c0da | S6                 | ACTIVE           | t            | f          |          0 |         0
+ 652e5907-97f9-421c-8f77-15ad6a2c68ad | lin***@example.test | 0067457a-774b-4efa-b9f8-0c114c48e6e4 | S6                 | ACTIVE           | t            | f          |          0 |         0
+ 5511419c-ffba-401c-a594-357b1f5ee06d | lin***@example.test | 030c9bb4-a03f-4170-9593-b175fc923b10 | S6                 | ACTIVE           | t            | f          |          0 |         0
+ 96485f3c-0e73-43e8-89c3-7d87bb53f9cd | lin***@example.test | 9d408044-e30c-42be-9c7a-bd6dda78456c | S6                 | ACTIVE           | t            | f          |          1 |         0
+(6 行记录)
+

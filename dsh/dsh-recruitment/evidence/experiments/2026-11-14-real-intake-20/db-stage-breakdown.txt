@@ -1,0 +1,8 @@
+=== application by stage / lifecycle ===
+{"current_stage_code":"S6","lifecycle_status":"ACTIVE","n":36}
+{"current_stage_code":"S6","lifecycle_status":"CLOSED","n":1}
+{"current_stage_code":"S7","lifecycle_status":"ACTIVE","n":1}
+{"current_stage_code":"S9","lifecycle_status":"ACTIVE","n":1}
+
+applications_with_resume_version = 37
+applications_created_in_this_run = 24

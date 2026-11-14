@@ -1,0 +1,189 @@
+{
+  "id": "s6-intake",
+  "kind": "write",
+  "hop": 1,
+  "label": "S6 application_intake（简历 → candidate + application，绑定 material/version）",
+  "tool": "recruitment_application_intake",
+  "started_at": "2026-11-14T08:42:31.103Z",
+  "request": {
+    "path": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\dsh\\dsh-recruitment\\manual\\golden-path\\fixtures\\synthetic-resume-golden-path.pdf",
+    "job_id": "11111111-1111-4111-8111-000000000401"
+  },
+  "ok": true,
+  "result": {
+    "tool": "recruitment_application_intake",
+    "contract_version": "1.0.0",
+    "status": "OK",
+    "created": false,
+    "candidate_created": false,
+    "idempotent_replay": true,
+    "application_action": "REUSED",
+    "structure_saved": false,
+    "resume_version_action": "UNCHANGED",
+    "candidate_id": "96485f3c-0e73-43e8-89c3-7d87bb53f9cd",
+    "application_id": "9d408044-e30c-42be-9c7a-bd6dda78456c",
+    "matched_by": "email+phone",
+    "resume_id": "1ae8e83f-9d45-400e-b897-abfd5b35091d",
+    "resume_version_id": "d3de2b99-b2d5-4de8-8cc6-b7643b924915",
+    "resume_version_no": 1,
+    "intake_record_id": "99ba46ca-110c-4da4-82d7-c7732cd2b022",
+    "intake_asset_id": "be358974-14a8-4f74-9a75-b07364100c6d",
+    "event_id": "f35f2ebe-87c4-4c3c-b83b-e2f237e647b3",
+    "provenance": "FIXTURE",
+    "labels": {
+      "provenance": "FIXTURE",
+      "trigger": "MANUAL",
+      "connection": "CONNECTED",
+      "source_kind": "LOCAL_FILE",
+      "event_provider": "internal"
+    },
+    "source": {
+      "file_name": "synthetic-resume-golden-path.pdf",
+      "sha256": "9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356",
+      "pages": 2,
+      "byte_size": 10920,
+      "completeness": "complete",
+      "parse_status": "PARSED",
+      "hard_issue_count": 0
+    },
+    "identity": {
+      "strong_ids": [
+        "email",
+        "phone"
+      ],
+      "identity_merge_eligible": [
+        "email",
+        "phone"
+      ],
+      "weak_fields": [],
+      "blocked_fields": [],
+      "evidence": [
+        {
+          "field": "phone",
+          "page": 1,
+          "bbox": [
+            56,
+            101.5,
+            570.5,
+            114.0999984741211
+          ],
+          "block": 2
+        },
+        {
+          "field": "email",
+          "page": 1,
+          "bbox": [
+            56,
+            101.5,
+            570.5,
+            114.0999984741211
+          ],
+          "block": 2
+        }
+      ]
+    },
+    "job": {
+      "id": "11111111-1111-4111-8111-000000000401",
+      "code": "DEMO-BE-001",
+      "title": "后端工程师（演示）",
+      "status": "OPEN"
+    },
+    "application": {
+      "job_id": "11111111-1111-4111-8111-000000000401",
+      "job_version_id": "11111111-1111-4111-8111-000000000402",
+      "stage_code": "S6",
+      "lifecycle_status": "ACTIVE",
+      "record_version": 1
+    }
+  },
+  "rendered": "application: REUSED 9d408044-e30c-42be-9c7a-bd6dda78456c\nstructure: saved=false (resume_version v1 d3de2b99-b2d5-4de8-8cc6-b7643b924915, UNCHANGED)\ncandidate: 96485f3c-0e73-43e8-89c3-7d87bb53f9cd (existing, matched_by=email+phone)\njob DEMO-BE-001 [OPEN] stage=S6 lifecycle=ACTIVE\nsource: synthetic-resume-golden-path.pdf pages=2 bytes=10920\nsha256=9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356\nparse_status=PARSED completeness=complete hard_issues=0\nidentity strong_ids=[email, phone] merge_eligible=[email, phone] weak=[] evidence=2 blocked=[]\nlabels: provenance=FIXTURE trigger=MANUAL connection=CONNECTED",
+  "row_counts_before": {
+    "application": 15,
+    "business_task": 4,
+    "candidate": 14,
+    "decision": 1,
+    "event_inbox": 24,
+    "intake_asset": 14,
+    "intake_record": 14,
+    "interview": 8,
+    "interview_record": 3,
+    "interviewer": 13,
+    "meeting": 7,
+    "meeting_binding": 7,
+    "resume": 14,
+    "resume_version": 15,
+    "scorecard": 4,
+    "transcript_artifact": 6,
+    "transcript_segment": 97
+  },
+  "row_counts_after": {
+    "application": 15,
+    "business_task": 4,
+    "candidate": 14,
+    "decision": 1,
+    "event_inbox": 24,
+    "intake_asset": 14,
+    "intake_record": 14,
+    "interview": 8,
+    "interview_record": 3,
+    "interviewer": 13,
+    "meeting": 7,
+    "meeting_binding": 7,
+    "resume": 14,
+    "resume_version": 15,
+    "scorecard": 4,
+    "transcript_artifact": 6,
+    "transcript_segment": 97
+  },
+  "row_count_delta": {},
+  "readback": {
+    "application": {
+      "id": "9d408044-e30c-42be-9c7a-bd6dda78456c",
+      "candidate_id": "96485f3c-0e73-43e8-89c3-7d87bb53f9cd",
+      "job_id": "11111111-1111-4111-8111-000000000401",
+      "job_version_id": "11111111-1111-4111-8111-000000000402",
+      "rubric_version_id": null,
+      "resume_version_id": "d3de2b99-b2d5-4de8-8cc6-b7643b924915",
+      "lifecycle_status": "ACTIVE",
+      "current_stage_code": "S6",
+      "record_version": 1,
+      "created_at": "2026-11-14T08:42:18.581Z"
+    },
+    "candidate": {
+      "id": "96485f3c-0e73-43e8-89c3-7d87bb53f9cd",
+      "identity_status": "ACTIVE",
+      "display_name": "林承宇",
+      "email_masked": "lin***@example.test",
+      "phone_masked": "+86136***33"
+    },
+    "resume_version": {
+      "id": "d3de2b99-b2d5-4de8-8cc6-b7643b924915",
+      "version_no": 1,
+      "parse_status": "PARSED",
+      "content_sha256": "555ba23a42e0aa98e713751b5d7a8f03dd41f8a985f44c1d6c89d1faad121236",
+      "source_asset_sha256": "9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356",
+      "resume_id": "1ae8e83f-9d45-400e-b897-abfd5b35091d",
+      "intake_asset_id": "be358974-14a8-4f74-9a75-b07364100c6d"
+    },
+    "intake_asset": {
+      "id": "be358974-14a8-4f74-9a75-b07364100c6d",
+      "file_name": "synthetic-resume-golden-path.pdf",
+      "byte_size": "10920",
+      "sha256": "9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356",
+      "validation_status": "VALID",
+      "intake_record_id": "99ba46ca-110c-4da4-82d7-c7732cd2b022"
+    },
+    "events": [
+      {
+        "event_id": "f35f2ebe-87c4-4c3c-b83b-e2f237e647b3",
+        "provider": "internal",
+        "trust_level": "INTERNAL",
+        "event_type": "resume.intake.received",
+        "idempotency_source": "FALLBACK_KEY",
+        "source_object_id": "9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356",
+        "occurred_at": "2026-11-14T08:42:18.581Z"
+      }
+    ]
+  },
+  "outcome": "PASS"
+}

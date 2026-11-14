@@ -1,0 +1,222 @@
+{
+  "run_id": "2026-11-14T08-54-41-513Z",
+  "generated_at": "2026-11-14T08:54:43.903Z",
+  "harness": {
+    "path": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\dsh\\dsh-recruitment\\manual\\golden-path\\run-golden-path.mjs",
+    "sha256": "23fcaec3380ce1433978d2a1d67395a2c58f6db2a15666b31496a56818f2ade7"
+  },
+  "fixture": {
+    "path": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\dsh\\dsh-recruitment\\manual\\golden-path\\fixtures\\synthetic-resume-golden-path.pdf",
+    "sha256": "9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356"
+  },
+  "database": {
+    "host": "127.0.0.1",
+    "port": 5432,
+    "database": "ra_s6s7",
+    "tenant_id": "11111111-1111-4111-8111-000000000001",
+    "actor_id": "11111111-1111-4111-8111-000000000103"
+  },
+  "application_id": "9d408044-e30c-42be-9c7a-bd6dda78456c",
+  "candidate_id": "96485f3c-0e73-43e8-89c3-7d87bb53f9cd",
+  "interview_id": "6efc6919-0d63-4f80-847c-4813c6b5a475",
+  "hops": [
+    {
+      "hop": 1,
+      "id": "s6-intake",
+      "kind": "write",
+      "tool": "recruitment_application_intake",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {}
+    },
+    {
+      "hop": 2,
+      "id": "s7-screening-evaluate",
+      "kind": "read",
+      "tool": "recruitment_screening_evaluate",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {}
+    },
+    {
+      "hop": 3,
+      "id": "s7-decision-screening",
+      "kind": "expected-blocker",
+      "tool": "recruitment_decision_record",
+      "outcome": "PASS",
+      "ok": false,
+      "error_code": "NOT_FOUND",
+      "reason_code": "RUBRIC_VERSION_NOT_FOUND",
+      "row_delta": {}
+    },
+    {
+      "hop": 4,
+      "id": "s8-schedule-denied",
+      "kind": "negative-control",
+      "tool": "recruitment_interview_schedule",
+      "outcome": "PASS",
+      "ok": false,
+      "error_code": "FORBIDDEN",
+      "reason_code": "APPROVAL_NOT_GRANTED",
+      "row_delta": {}
+    },
+    {
+      "hop": 5,
+      "id": "s8-schedule-allow-once",
+      "kind": "write",
+      "tool": "recruitment_interview_schedule",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {}
+    },
+    {
+      "hop": 6,
+      "id": "s8-interview-get",
+      "kind": "read",
+      "tool": "recruitment_interview_get",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {}
+    },
+    {
+      "hop": 7,
+      "id": "s9-transcript-import",
+      "kind": "write",
+      "tool": "recruitment_transcript_import",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {}
+    },
+    {
+      "hop": 8,
+      "id": "s9-transcript-read",
+      "kind": "read",
+      "tool": "recruitment_transcript_read",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {}
+    },
+    {
+      "hop": 9,
+      "id": "s10-scorecard-denied",
+      "kind": "negative-control",
+      "tool": "recruitment_scorecard_submit",
+      "outcome": "PASS",
+      "ok": false,
+      "error_code": "ALREADY_SUBMITTED",
+      "reason_code": "SCORECARD_ALREADY_SUBMITTED",
+      "row_delta": {}
+    },
+    {
+      "hop": 10,
+      "id": "s10-scorecard-allow-once",
+      "kind": "write",
+      "tool": "recruitment_scorecard_submit",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {}
+    },
+    {
+      "hop": 11,
+      "id": "s10-evaluation-summarize",
+      "kind": "expected-blocker",
+      "tool": "recruitment_evaluation_summarize",
+      "outcome": "PASS",
+      "ok": false,
+      "error_code": "NOT_FOUND",
+      "reason_code": "RUBRIC_VERSION_NOT_FOUND",
+      "row_delta": {}
+    },
+    {
+      "hop": 12,
+      "id": "s10-decision-stage",
+      "kind": "expected-blocker",
+      "tool": "recruitment_decision_record",
+      "outcome": "PASS",
+      "ok": false,
+      "error_code": "NOT_FOUND",
+      "reason_code": "RUBRIC_VERSION_NOT_FOUND",
+      "row_delta": {}
+    }
+  ],
+  "product_blockers": [
+    {
+      "hop": 3,
+      "id": "s7-decision-screening",
+      "code": "NOT_FOUND",
+      "reason_code": "RUBRIC_VERSION_NOT_FOUND",
+      "detail": {
+        "application_id": "9d408044-e30c-42be-9c7a-bd6dda78456c"
+      }
+    },
+    {
+      "hop": 11,
+      "id": "s10-evaluation-summarize",
+      "code": "NOT_FOUND",
+      "reason_code": "RUBRIC_VERSION_NOT_FOUND",
+      "detail": {
+        "application_id": "9d408044-e30c-42be-9c7a-bd6dda78456c"
+      }
+    },
+    {
+      "hop": 12,
+      "id": "s10-decision-stage",
+      "code": "NOT_FOUND",
+      "reason_code": "RUBRIC_VERSION_NOT_FOUND",
+      "detail": {
+        "application_id": "9d408044-e30c-42be-9c7a-bd6dda78456c"
+      }
+    }
+  ],
+  "negative_controls": [
+    {
+      "hop": 4,
+      "id": "s8-schedule-denied",
+      "blocked": true,
+      "code": "FORBIDDEN",
+      "reason_code": "APPROVAL_NOT_GRANTED",
+      "row_delta": {}
+    },
+    {
+      "hop": 9,
+      "id": "s10-scorecard-denied",
+      "blocked": true,
+      "code": "ALREADY_SUBMITTED",
+      "reason_code": "SCORECARD_ALREADY_SUBMITTED",
+      "row_delta": {}
+    }
+  ],
+  "failures": [],
+  "final_state": {
+    "application_stage": "S6",
+    "application_rubric_version_id": null,
+    "decision_count": 0,
+    "decision_scopes": [
+      {
+        "decision_scope": "STAGE",
+        "stage_code": "S10",
+        "n": 1
+      }
+    ],
+    "interview_count": 1,
+    "counts": {
+      "application": 15,
+      "business_task": 4,
+      "candidate": 14,
+      "decision": 1,
+      "event_inbox": 24,
+      "intake_asset": 14,
+      "intake_record": 14,
+      "interview": 8,
+      "interview_record": 3,
+      "interviewer": 13,
+      "meeting": 7,
+      "meeting_binding": 7,
+      "resume": 14,
+      "resume_version": 15,
+      "scorecard": 4,
+      "transcript_artifact": 6,
+      "transcript_segment": 97
+    }
+  }
+}

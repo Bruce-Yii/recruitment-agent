@@ -1,0 +1,50 @@
+# Golden Path e2e · git 状态（只读采集；本 lane 未 commit / 未 push / 未切分支）
+
+采集时间 : 2026-11-14T16:45:03.7619252+08:00
+采集目录 : D:\12412\dsh工作区\projects\recruitment-agent
+
+## 基线（本 lane 开始时任务书写的是 HEAD = e8dd864；执行期间分支被其他 lane 推进）
+git rev-parse HEAD = 92bdc41f9fe45e0bde7a3cb0b66e99a100029be2
+git branch --show-current = feat/unified-document-intake
+
+## git log --oneline -6
+92bdc41 docs(evidence): 工作台面板验收记录——浏览器/API/DB 三层同时刻对齐（E1–E4） 294ea2a fix(panel): 计数命名含糊 + 在办按阶段明细被丢弃 e8dd864 feat(feishu): 补上 lark-cli 传输层，LIVE Gate 仍是 BLOCKED 8342221 feat(panel): 第一个浏览器工作台——「待人工决定」从 DB 读到页面上 e00bf29 docs: D-107 视觉补读边界在 agent 侧（visionRead 永不注入，remaining 即交接） aa5280d fix(recovery): executePlan 从工具入口真正可达（R2），并修 2 个既有输出缺陷
+
+## 完整 git status --porcelain
+ M dsh/dsh-recruitment/package.json
+ M dsh/dsh-recruitment/pnpm-lock.yaml
+ M dsh/dsh-recruitment/src/connectors/feishu/index.ts
+ M dsh/dsh-recruitment/src/index.ts
+ M dsh/dsh-recruitment/src/tools/transcript-import.ts
+?? dsh/dsh-recruitment/evidence/experiments/2026-11-14-golden-path-e2e/
+?? dsh/dsh-recruitment/manual/golden-path/
+?? dsh/dsh-recruitment/src/connectors/feishu/wiring.ts
+
+## 其中：**本 lane 的写范围**（唯一两处，均为新增未跟踪目录）
+?? dsh/dsh-recruitment/evidence/experiments/2026-11-14-golden-path-e2e/
+?? dsh/dsh-recruitment/manual/golden-path/
+
+## 其中：**不是本 lane 的改动**（并发 lane 的未提交 WIP；本 lane 未编辑其中任何一个）
+ M dsh/dsh-recruitment/package.json
+ M dsh/dsh-recruitment/pnpm-lock.yaml
+ M dsh/dsh-recruitment/src/connectors/feishu/index.ts
+ M dsh/dsh-recruitment/src/index.ts
+ M dsh/dsh-recruitment/src/tools/transcript-import.ts
+?? dsh/dsh-recruitment/src/connectors/feishu/wiring.ts
+
+## git diff --stat（已跟踪文件的 diff 全部来自并发 lane，不是本 lane 的改动）
+ dsh/dsh-recruitment/package.json                   |   4 +-
+ dsh/dsh-recruitment/pnpm-lock.yaml                 |  47 ++
+ dsh/dsh-recruitment/src/connectors/feishu/index.ts |  10 +
+ dsh/dsh-recruitment/src/index.ts                   |  22 +-
+ dsh/dsh-recruitment/src/tools/transcript-import.ts | 640 ++++++++++++++++++---
+ 5 files changed, 634 insertions(+), 89 deletions(-)
+
+## 说明
+- 本 lane 只新增：manual/golden-path/**、evidence/experiments/2026-11-14-golden-path-e2e/**；
+  没有修改任何已跟踪文件，没有 commit / push / 切分支。
+- 上述已跟踪文件的未提交修改出现在本 lane 执行期间（并发 lane 在改 feishu 传输层/转写工具）。
+  harness 通过 import 直接加载 src/tools/*.ts；因此**证据边界**：两次官方 run（08:42:17Z / 08:42:31Z）
+  跑在「HEAD=92bdc41f9fe45e0bde7a3cb0b66e99a100029be2 + 并发 lane 的未提交改动」的工作树上，不是单一 commit 快照。
+- 这不影响「S7/S10 决策被 rubric pin 挡住」的结论（decision-record.ts / application-intake.ts / screening-evaluate.ts
+  都不在并发改动清单里）；但 transcript/scorecard 段在干净快照上应复跑一次（docs/23 §8.6 的同类边界）。
