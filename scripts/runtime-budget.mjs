@@ -55,7 +55,7 @@ const RUNTIME_DIR = join(REPO_ROOT, 'dsh', 'dsh-recruitment', 'src', 'runtime')
  * 已在 `docs/17` D-109.2 追加修订（新增多少行 / 为什么必须加 / 排除了什么替代做法 /
  * 是否触发换实现条件），再同步本常量。**这就是这条门该有的工作方式。**
  */
-const CEILING = 3824
+const CEILING = 3961
 
 const EXCLUDED = [
   {

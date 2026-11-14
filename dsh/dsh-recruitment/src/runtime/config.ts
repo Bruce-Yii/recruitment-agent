@@ -38,6 +38,8 @@ export interface RuntimeConfig {
   readonly pending_batch_size?: number
   /** 单条事件最多重试路由几次，默认 5。 */
   readonly max_route_attempts?: number
+  readonly auto_tick?: boolean // 是否自动周期驱动 router.tick；默认 true
+  readonly tick_interval_ms?: number // 自动 tick 周期（毫秒），默认 2000；边界 [100, 600000]
   /** 出站通知目标（可选）；配置后 Task 进入 WAITING_* / FAILED 时登记消息，默认不发。 */
   readonly notification?: {
     readonly source?: string
@@ -57,6 +59,8 @@ export interface ResolvedRuntimeConfig {
   readonly workspaceRoot: string | undefined
   readonly pendingBatchSize: number
   readonly maxRouteAttempts: number
+  readonly autoTick: boolean
+  readonly tickIntervalMs: number
   readonly notification: NotificationTarget | undefined
 }
 
@@ -65,6 +69,10 @@ const DEFAULT_LEASE_MS = 900_000
 const DEFAULT_MAX_ATTEMPTS = 3
 const DEFAULT_PENDING_BATCH = 20
 const DEFAULT_MAX_ROUTE_ATTEMPTS = 5
+/** 自动 tick 周期的默认值/边界（导出：装配与测试共用同一组数字，不各自硬编码）。 */
+export const DEFAULT_TICK_INTERVAL_MS = 2000
+export const TICK_INTERVAL_MIN_MS = 100
+export const TICK_INTERVAL_MAX_MS = 600_000
 
 function positiveInt(value: number | undefined, fallback: number): number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : fallback
@@ -106,6 +114,13 @@ export function resolveRuntimeConfig(
   if (dshBin === '' && fallbackBin === '') {
     issues.push('config.runtime.dsh_bin is required, or set DSH_INSTALL_DIR in the host environment')
   }
+
+  // 自动 tick 默认开（tick 是幂等恢复入口）；非法值 fail closed，不静默回退成龙套配置。
+  const autoTick = config.auto_tick === undefined ? true : config.auto_tick
+  if (typeof autoTick !== 'boolean') issues.push('config.runtime.auto_tick must be a boolean')
+  const tickIntervalMs = config.tick_interval_ms === undefined ? DEFAULT_TICK_INTERVAL_MS : config.tick_interval_ms
+  const tickIntervalOk = typeof tickIntervalMs === 'number' && Number.isInteger(tickIntervalMs) && tickIntervalMs >= TICK_INTERVAL_MIN_MS && tickIntervalMs <= TICK_INTERVAL_MAX_MS
+  if (!tickIntervalOk) issues.push(`config.runtime.tick_interval_ms must be an integer between ${TICK_INTERVAL_MIN_MS} and ${TICK_INTERVAL_MAX_MS} (got ${String(config.tick_interval_ms)})`)
 
   // 出站通知可选；一旦配置就必须完整，缺字段逐个列 issue（不静默发到空地址）。
   let notification: NotificationTarget | undefined
@@ -152,6 +167,8 @@ export function resolveRuntimeConfig(
       workspaceRoot: nonEmpty(config.workspace_root) === '' ? undefined : nonEmpty(config.workspace_root),
       pendingBatchSize: positiveInt(config.pending_batch_size, DEFAULT_PENDING_BATCH),
       maxRouteAttempts: positiveInt(config.max_route_attempts, DEFAULT_MAX_ROUTE_ATTEMPTS),
+      autoTick,
+      tickIntervalMs,
       notification,
     },
     issues: [],
