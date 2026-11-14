@@ -26,6 +26,11 @@
 //     `labels.connection` 恒 `NOT_CONNECTED`；
 //   * 不写 `scorecard` / `decision`（`SC-I5`），不猜会议（`APP-04`），不猜 intent（§6.4）。
 //
+// R4 三维标签（`contracts/tenant-provenance.md`）：`provenance` **按租户的合成标记算**，
+// 不写死 `LIVE`（演示租户 / 缺正面证据 ⇒ `FIXTURE`）；`trigger` 恒 `MANUAL`；
+// `connection` 恒 `NOT_CONNECTED`（本工具不接日历/会议平台）。"这次真的写进了库"**不是**
+// `LIVE` 的证据——演示租户的合成数据同样写进了库，那正是 R4 里 "Fixture 冒充 LIVE" 的入口。
+//
 // 只写 5 张表（`tool-contracts.md` §5.1 W1）：`interview` / `interviewer` / `meeting` /
 // `meeting_binding` / `business_task`。
 //
@@ -43,6 +48,9 @@ import { RecruitmentToolError, type RecruitmentErrorCode } from './errors.ts'
 // （`tool-contracts.md` §3.5：`schedule.interview` 与 `get.interviews[]` 同一形状、同一规则）。
 // 复用而不是各写一份，是为了让两个工具的形状不可能漂移。
 import { INTERVIEW_VALUE_SCHEMA, readInterviewValue } from './interview-get.ts'
+// R4 三维标签：`provenance` 必须按**这次调用**的租户事实算，不许写死 `LIVE`
+// （`contracts/tenant-provenance.md`；判定式与 candidate_get / job_create 共用同一份实现）。
+import { buildThreeAxisLabels } from './candidate-get.ts'
 import {
   closePool,
   createPool,
@@ -1062,13 +1070,16 @@ async function replayFromStore(
   const warnings: { code: string; message: string }[] = []
   if (binding !== null && binding.state === 'UNBOUND') warnings.push(meetingNotBoundWarning())
 
+  // 重放读的是同一租户的既有行：标签按租户事实重算（不缓、不写死）。
+  const labels = await buildThreeAxisLabels(client, config.tenant_id)
+
   return {
     tool: TOOL_NAME,
     contract_version: CONTRACT_VERSION,
     status: 'OK',
     write: true,
     replayed: true,
-    labels: { provenance: 'LIVE', trigger: 'MANUAL', connection: 'NOT_CONNECTED' },
+    labels,
     intent: 'CREATE',
     command: { idempotency_key: args.idempotency_key, args_digest: args.args_digest },
     interview,
@@ -1662,13 +1673,16 @@ async function runCreateCommand(
     }
   }
 
+  // R4 三维标签：按租户事实算（演示租户 ⇒ FIXTURE），不写死 LIVE。
+  const labels = await buildThreeAxisLabels(client, tenantId)
+
   return {
     tool: TOOL_NAME,
     contract_version: CONTRACT_VERSION,
     status: 'OK',
     write: true,
     replayed: false,
-    labels: { provenance: 'LIVE', trigger: 'MANUAL', connection: 'NOT_CONNECTED' },
+    labels,
     intent: 'CREATE',
     command: { idempotency_key: args.idempotency_key, args_digest: args.args_digest },
     interview,
@@ -1736,7 +1750,9 @@ export function createInterviewScheduleTool(
       'S8 interview scheduling — CREATE slice. Creates one interview session (application + round_no + slot_code), '
       + 'its interviewer rows, and optionally registers an existing meeting + binding in the LOCAL database. '
       + 'It never calls any external system (no calendar creation, no invitations), so labels.connection is always '
-      + 'NOT_CONNECTED and effects.external_call_made is always false. '
+      + 'NOT_CONNECTED and effects.external_call_made is always false. labels.provenance is computed from the '
+      + 'tenant\'s synthetic marker (FIXTURE unless the tenant is explicitly declared non-synthetic; never '
+      + 'hard-coded LIVE) and labels.trigger is always MANUAL. '
       + 'Requires a caller-generated idempotency_key: same key + same arguments replays the first result '
       + '(replayed=true, changes.created empty); same key + different arguments fails with '
       + 'INVALID_ARGS(IDEMPOTENCY_KEY_REUSED). Semantic idempotency is independent of the key: an existing '

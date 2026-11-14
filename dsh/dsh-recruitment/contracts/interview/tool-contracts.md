@@ -71,9 +71,15 @@ JSON 必须**单行、键序稳定（字典序）**，可 `JSON.parse`。
 
 | 维度 | 取值 | `get` 的含义 | `schedule` 的含义 |
 |---|---|---|---|
-| `provenance` | `LIVE` \| `FIXTURE` | `LIVE` = 数据来自真实数据库行；**不**断言面试在业务上真实发生 | `LIVE` = 真实写入了库；`FIXTURE` = 在 fixture 租户上写（测试专用） |
+| `provenance` | `LIVE` \| `FIXTURE` | `LIVE` = 数据来自真实数据库行；**不**断言面试在业务上真实发生 | 按 `contracts/tenant-provenance.md §2` 的判定式算：`LIVE` 需要该租户**被显式声明为非合成**；缺声明 / 有合成标记 ⇒ `FIXTURE`（**不再**用"这次真的写进了库"当 `LIVE` 证据） |
 | `trigger` | `EVENT` \| `MANUAL` | `MANUAL` = 模型/人在会话里调用 | `MANUAL`（本工具不被事件驱动） |
 | `connection` | `CONNECTED` \| `NOT_CONNECTED` \| `AUTH_REQUIRED` | `CONNECTED` = 直连业务库（**与外部会议平台无关**） | **恒为 `NOT_CONNECTED`** |
+
+> **2026-11-14 修正（N10 / `docs/23` P2-03）**：`schedule` 的 `provenance` 原先写成
+> "`LIVE` = 真实写入了库"，把"写进库"当成了"数据真实"。`ra_s6s7` 是 `0002_seed` 的**演示租户 + 合成数据**，
+> 按旧口径排期会返回 `LIVE`——合成数据冒充真实能力。现在统一按 `contracts/tenant-provenance.md §2`
+> 的判定式（与 `recruitment_job_create` / `_job_update` / `_candidate_get` 同一个实现），fail-closed：
+> 没有"非合成"的**正面证据**就是 `FIXTURE`；`connection` 仍是 `NOT_CONNECTED`（两个维度正交，不合并）。
 
 > **`connection` 的关键裁决**：`schedule` 的 `connection` 恒为 `NOT_CONNECTED`，因为**本工具不发起任何外部调用**（H-2）。这正是 `R4` 想表达的那件事：*"产品有没有能力自己读/自己写外部系统"* 和 *"这次调用有没有改到我们的库"* 是**两个正交的事实**，不许用一个"success" 压平。
 > **artifact 级的三维不进 `labels`**：每个转写产物的 `provenance` / `trigger_mode` / `connection_state` 是**那一行数据**的属性（`transcript_artifact` 上真有这三列，`0001 L1058-1060`），在 `transcript.artifacts[]` 里逐个回显。**禁止**把它们汇总成一个值塞进 `labels`。

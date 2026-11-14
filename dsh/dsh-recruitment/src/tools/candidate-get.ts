@@ -15,6 +15,16 @@
 // 输出形状与旧版保持兼容的字段：`candidate_id` / `display_name` / `contacts` / `applications`；
 // 去掉 `provenance`（stub 时代的概念）与 `status`（旧枚举是 ARCHIVED，与库里的 ACTIVE/MERGED 不符），
 // 改成库里的 `identity_status` + `source: 'DATABASE'`。
+//
+// R4 三维标签（2026-11-14 补齐，`contracts/tenant-provenance.md`）：
+//   旧版用一维的 `source:'DATABASE'` 代替三维标签；现在 `labels` 三轴齐全。
+//   `source` 保留（它回答"从哪读的"），但**不能**再替代 `provenance`。
+//
+//   `resolveTenantProvenance()` 是**三个工具共用的一份判定**（本文件导出，job-create /
+//   interview-schedule import 同一函数——"三处统一读同一判定"，不各写一份防漂移）：
+//   `LIVE` 需要**正面证据**（租户被显式声明为非合成），否则 `FIXTURE`（fail-closed）。
+//   把"真的写进了库 / 真的读到了库"当 `LIVE` 是错的：演示租户的合成数据同样真的在库里，
+//   那正是 `docs/23` P2-03 里 "Fixture 冒充 LIVE" 的入口。
 
 import { parseArgs, toParameterSchema } from './args.ts'
 import type { ParamMap } from './args.ts'
@@ -31,6 +41,88 @@ import {
 
 /** 工具名（index.ts 与测试都按这个名字找）。 */
 const TOOL_NAME = 'recruitment_candidate_get'
+
+/** 租户合成声明的配置键（`contracts/tenant-provenance.md` §2）。 */
+const TENANT_PROVENANCE_CONFIG_KEY = 'tenant_provenance'
+/** 阶段目录配置键：`payload.demo=true` 是 0002_seed 写下的合成标记。 */
+const STAGE_CATALOG_CONFIG_KEY = 'stage_catalog'
+
+/**
+ * R4 · `provenance` 的唯一判定式（**三个工具共用这一份实现**，见 `contracts/tenant-provenance.md`）。
+ *
+ * ```text
+ * provenance = 'LIVE'
+ *   ⟺ 租户行存在
+ *      ∧ 该租户在 business_config 里被**显式声明为非合成**
+ *        （config_key='tenant_provenance' 的最新一版 payload->>'synthetic' = 'false'）
+ *      ∧ 没有任何合成标记（config_key='stage_catalog' 的最新一版 payload->>'demo' ≠ 'true'）
+ *   否则 'FIXTURE'   // 缺租户行 / 缺声明 / 有合成标记 —— 一律 fail-closed
+ * ```
+ *
+ * 为什么不是"真的写进/读到了业务库就算 LIVE"：演示租户（`ra_s6s7` / `0002_seed`）里的合成数据
+ * 同样"真的在库里"，按那条口径会把它标成 LIVE —— 这就是 `docs/23` P2-03 的"Fixture 冒充 LIVE"。
+ * 为什么不是"没有外部系统就 FIXTURE"：那会把两个正交维度（数据真假 / 能否自己读写外部系统）
+ * 压成一维，是 R4 的原始事故；能不能读外部系统由 `connection` 回答（本文件的三个工具都是
+ * `NOT_CONNECTED`，见各自的工具契约）。
+ *
+ * @param client - 事务内客户端（业务库；`recruitment.business_config` / `organization` 只读）。
+ * @param tenantId - 租户（只来自插件配置，模型无法传入）。
+ * @returns `LIVE` 仅当有正面证据；其余一律 `FIXTURE`。
+ */
+export async function resolveTenantProvenance(
+  client: DatabaseClient,
+  tenantId: string,
+): Promise<'LIVE' | 'FIXTURE'> {
+  const { rows } = await client.query<{
+    tenant_exists: boolean
+    demo: string | null
+    synthetic: string | null
+  }>(
+    // 每个 config_key 只取最新版本：`uq_business_config` 允许同键多版本，旧版本不得覆盖新版本。
+    `with latest as (
+       select distinct on (config_key) config_key, payload
+         from recruitment.business_config
+        where tenant_id = $1 and scope = 'ORGANIZATION'
+        order by config_key, version_no desc
+     )
+     select
+       exists (select 1 from recruitment.organization where id = $1) as tenant_exists,
+       (select payload->>'demo' from latest where config_key = $2) as demo,
+       (select payload->>'synthetic' from latest where config_key = $3) as synthetic`,
+    [tenantId, STAGE_CATALOG_CONFIG_KEY, TENANT_PROVENANCE_CONFIG_KEY],
+  )
+  const row = rows[0]
+  if (row === undefined || row.tenant_exists !== true) return 'FIXTURE'
+  if (row.demo === 'true') return 'FIXTURE'
+  if (row.synthetic === 'false') return 'LIVE'
+  return 'FIXTURE'
+}
+
+/** 三维标签（R4；取值是封闭集合，不加第四种）。 */
+export interface ThreeAxisLabels {
+  readonly provenance: 'LIVE' | 'FIXTURE'
+  readonly trigger: 'MANUAL'
+  readonly connection: 'NOT_CONNECTED'
+}
+
+/**
+ * 造本工具的三维标签：`provenance` 由 {@link resolveTenantProvenance} 算，其余两轴是常量。
+ * @param client - 事务内客户端。
+ * @param tenantId - 租户。
+ * @returns 三维标签。
+ */
+export async function buildThreeAxisLabels(
+  client: DatabaseClient,
+  tenantId: string,
+): Promise<ThreeAxisLabels> {
+  return {
+    provenance: await resolveTenantProvenance(client, tenantId),
+    // 模型/人在会话里调用；本工具不被事件驱动。
+    trigger: 'MANUAL',
+    // 本工具不调用任何外部系统（不读飞书、不读日历），只读本产品自己的业务库。
+    connection: 'NOT_CONNECTED',
+  }
+}
 
 /** 入参声明。 */
 const PARAMS: ParamMap = {
@@ -94,6 +186,8 @@ interface CandidateGetValue {
   /** 只在 MERGED 且确实指向另一行时出现（DSH 输出 schema 没有 null，所以用"缺键"表达）。 */
   readonly merged_into_candidate_id?: string
   readonly record_version: number
+  /** R4 三维标签（`contracts/tenant-provenance.md`）；**不是** `source` 的替代品。 */
+  readonly labels: ThreeAxisLabels
   readonly source: 'DATABASE'
   readonly contacts: Contacts
   readonly applications: readonly ApplicationValue[]
@@ -108,6 +202,17 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
     identity_status: { type: 'string', enum: ['ACTIVE', 'MERGED'] },
     merged_into_candidate_id: { type: 'string' },
     record_version: { type: 'number' },
+    labels: {
+      type: 'object',
+      properties: {
+        provenance: { type: 'string', enum: ['LIVE', 'FIXTURE'] },
+        trigger: { type: 'string', enum: ['MANUAL'] },
+        // 本工具不接任何外部系统：唯一如实取值是 NOT_CONNECTED（枚举里不放 CONNECTED）。
+        connection: { type: 'string', enum: ['NOT_CONNECTED'] },
+      },
+      required: ['provenance', 'trigger', 'connection'],
+      additionalProperties: false,
+    },
     source: { type: 'string', enum: ['DATABASE'] },
     contacts: {
       type: 'object',
@@ -139,7 +244,10 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
       },
     },
   },
-  required: ['candidate_id', 'display_name', 'identity_status', 'record_version', 'source', 'contacts', 'applications'],
+  required: [
+    'candidate_id', 'display_name', 'identity_status', 'record_version', 'labels', 'source',
+    'contacts', 'applications',
+  ],
   additionalProperties: false,
 }
 
@@ -209,12 +317,15 @@ export async function readCandidateValue(
   const visible = args.include_contacts === true
   const email = candidate.normalized_email ?? ''
   const phone = candidate.normalized_phone ?? ''
+  // R4：三维标签由库里的租户合成标记算出（不是写死；演示租户 ⇒ FIXTURE）。
+  const labels = await buildThreeAxisLabels(client, cfg.tenant_id)
 
   const value: CandidateGetValue = {
     candidate_id: candidate.id,
     display_name: candidate.display_name,
     identity_status: candidate.identity_status,
     record_version: candidate.record_version,
+    labels,
     source: 'DATABASE',
     contacts: {
       visible,
@@ -275,7 +386,10 @@ export function createCandidateGetTool(config: ResolvedDatabaseConfig): Readonly
       + 'record_version, masked contacts, and every application of this candidate with its '
       + 'job code/title, stage_code and lifecycle_status. Contacts are masked unless '
       + 'include_contacts is true (PII). Returns NOT_FOUND for an unknown id — it never falls '
-      + 'back to sample data.',
+      + 'back to sample data. Output carries R4 three-axis labels: labels.provenance is computed '
+      + 'from the tenant\'s synthetic marker (FIXTURE unless the tenant is explicitly declared '
+      + 'non-synthetic), labels.trigger is MANUAL, labels.connection is NOT_CONNECTED because no '
+      + 'external system is read.',
     parameters: toParameterSchema(PARAMS),
     output: {
       schema: OUTPUT_SCHEMA,
@@ -284,6 +398,7 @@ export function createCandidateGetTool(config: ResolvedDatabaseConfig): Readonly
         const lines: string[] = [
           `candidate ${v.candidate_id} / ${v.display_name} `
             + `(identity_status=${v.identity_status}, record_version=${v.record_version}, source=${v.source})`,
+          `  labels: ${v.labels.provenance}/${v.labels.trigger}/${v.labels.connection}`,
         ]
         if (v.merged_into_candidate_id !== undefined) {
           lines.push(`  merged_into_candidate_id=${v.merged_into_candidate_id}`)

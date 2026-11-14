@@ -81,6 +81,8 @@ test('candidate_get：真库读回（姓名/状态/申请/岗位 code 与 title�
     assert.equal(value.display_name, '测试候选人（合成）')
     assert.equal(value.identity_status, 'ACTIVE')
     assert.equal(value.source, 'DATABASE')
+    // R4（`contracts/tenant-provenance.md`）：ra_s6s7 是演示租户（合成数据），且本工具不接外部系统。
+    assert.deepEqual(value.labels, { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'NOT_CONNECTED' })
     assert.equal(value.record_version, 1)
     assert.equal(value.applications.length, 1)
     assert.equal(value.applications[0].application_id, applicationId)
