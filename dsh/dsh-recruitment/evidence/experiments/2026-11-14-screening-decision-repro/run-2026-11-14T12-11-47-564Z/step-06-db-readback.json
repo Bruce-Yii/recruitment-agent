@@ -1,0 +1,47 @@
+{
+  "step": 6,
+  "id": "db-readback",
+  "label": "DB 读回（决策行 / 内部事件 / 申请链条 / 行数差）",
+  "tool": "(只读 SQL)",
+  "run_mode": "FIRST_RUN",
+  "started_at": "2026-11-14T12:11:51.017Z",
+  "request": null,
+  "ok": false,
+  "error": {
+    "name": "error",
+    "code": "42883",
+    "message": "操作符不存在: text = uuid"
+  },
+  "row_counts_before": {
+    "application": 52,
+    "approval": 17,
+    "business_task": 5,
+    "candidate": 49,
+    "decision": 6,
+    "event_inbox": 138,
+    "intake_asset": 60,
+    "intake_record": 60,
+    "job": 17,
+    "job_version": 20,
+    "resume": 60,
+    "resume_version": 61,
+    "rubric_version": 19
+  },
+  "row_counts_after": {
+    "application": 52,
+    "approval": 17,
+    "business_task": 5,
+    "candidate": 49,
+    "decision": 6,
+    "event_inbox": 138,
+    "intake_asset": 60,
+    "intake_record": 60,
+    "job": 17,
+    "job_version": 20,
+    "resume": 60,
+    "resume_version": 61,
+    "rubric_version": 19
+  },
+  "row_count_delta": {},
+  "outcome": "FAIL"
+}

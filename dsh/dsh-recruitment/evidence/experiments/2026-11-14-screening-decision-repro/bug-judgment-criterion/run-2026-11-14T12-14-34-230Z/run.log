@@ -1,0 +1,27 @@
+复现：判断型 rubric 准则（job_create 存 field=null）→ screening_evaluate TypeError
+运行时间   : 2026-11-14T12:14:34.238Z
+数据库     : postgres@127.0.0.1:5432/ra_s6s7
+合成简历   : D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\manual\screening-decision\fixtures\synthetic-resume-screening-repro.pdf sha256=56f93d3be582a988a4713c1cba22c411e17b20371de73c2147962adde4c24ce5
+证据目录   : D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\evidence\experiments\2026-11-14-screening-decision-repro\bug-judgment-criterion\run-2026-11-14T12-14-34-230Z\
+
+STEP 1 job_create  : CREATED job=4b4a2e89-f8ed-4444-b4ef-4f8bb84cd623 rubric=1ef2a8c6-fd46-4a65-89e6-430b4322e197
+STEP 2 approve     : outcome=APPROVED replayed=false
+STEP 3 intake      : status=OK application_action=CREATED application=8677368d-a97e-4c93-b73a-5f3e60d0a203
+STEP 4 rubric 形状 : 判断型准则的 field 落库值
+  work_exists: field="work_experience" question=null
+  edu_exists: field="education" question=null
+  team_lead: field=null question="是否有 ≥1 年、≥3 人的直接带团队经历？"
+STEP 5 screening   : TypeError — Cannot read properties of null (reading 'startsWith')
+
+  stack:
+    TypeError: Cannot read properties of null (reading 'startsWith')
+        at resolveFieldFact (file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/src/tools/screening-evaluate.ts:965:13)
+        at evaluateCriterion (file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/src/tools/screening-evaluate.ts:1278:16)
+        at file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/src/tools/screening-evaluate.ts:1751:20
+        at Array.forEach (<anonymous>)
+        at evaluateInTransaction (file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/src/tools/screening-evaluate.ts:1750:12)
+        at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+        at async file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/src/tools/screening-evaluate.ts:2053:20
+        at async withReadOnly (file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/src/db/pool.ts:235:20)
+        at async Object.execute (file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/src/tools/screening-evaluate.ts:2051:16)
+        at async file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/manual/screening-decision/probe-judgment-criterion-bug.mjs:248:20

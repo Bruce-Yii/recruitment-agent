@@ -1,0 +1,215 @@
+S6 → S7 决策落库**仓库内可复现** harness
+运行时间        : 2026-11-14T12:07:49.701Z
+仓库 HEAD       : d6f4aa5bb84fabe661b6977a53339dc58f6f3634
+数据库          : postgres@127.0.0.1:5432/ra_s6s7（只读读回；写只经工具）
+租户 / actor    : 11111111-1111-4111-8111-000000000001 / 11111111-1111-4111-8111-000000000103（演示-HR 专员，HUMAN）
+岗位 code       : REPRO-S6S7-SCREENING（固定 → 第二次跑会被唯一约束挡住）
+合成简历        : D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\manual\screening-decision\fixtures\synthetic-resume-screening-repro.pdf
+fixture sha256  : 56f93d3be582a988a4713c1cba22c411e17b20371de73c2147962adde4c24ce5（10931 bytes）
+合成身份        : 「示例甲」 repro.candidate.a@example.test / +8613600004242（合成值，不对应任何真实候选人）
+证据目录        : D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\evidence\experiments\2026-11-14-screening-decision-repro\run-2026-11-14T12-07-49-638Z\
+
+
+──────── STEP 0 · 预检（库 / 迁移 / 演示租户 / 既有岗位 / 行数） ────────
+tool      : (只读 SQL)
+result    : OK
+row delta : {}
+outcome   : PASS
+db=ra_s6s7  migrations=0001_init,0002_seed,0003_review_queue,0004_stage_catalog,0005_version_binding,0006_integrity_gaps,0007_decision_integrity,0008_decision_uniqueness,0009_application_identity,0010_migration_ledger,0011_task_runtime,0012_engine_state,0013_trace_chain,0014_tenant_config
+department=研发部（演示） hiring_manager=11111111-1111-4111-8111-000000000102
+decision 按 scope（全租户）：[{"decision_scope":"SCREENING","n":4},{"decision_scope":"STAGE","n":1}]
+固定 code 的岗位是否已存在：否（首次跑）
+
+──────── STEP 1 · S3 job_create（含 3 条 rubric 准则；只写 PENDING 审批） ────────
+tool      : [object Object]
+request   : {
+             "title": "后端工程师（S6→S7 决策复现演示岗）",
+             "code": "REPRO-S6S7-SCREENING",
+             "status": "OPEN",
+             "description_md": "演示岗位：用于证明 S6→S7 的 SCREENING 决策能在仓库内被重跑出来（合成数据）。",
+             "requirements_md": "后端开发经验；能读懂并落实接口契约。",
+             "criteria": [
+              {
+               "key": "work_exists",
+               "label": "简历中存在可分割的工作经历条目",
+               "kind": "MUST_HAVE",
+               "weight": 0.5,
+               "field": "work_experience",
+               "operator": "EXISTS",
+               "value": true,
+               "notes": "EXISTS 判的是 state=present（读到了），不是\"这个人有工作经历\""
+              },
+              {
+               "key": "edu_exists",
+               "label": "简历中存在可分割的教育经历条目",
+               "kind": "MUST_HAVE",
+               "weight": 0.25,
+               "field": "education",
+               "operator": "EXISTS",
+               "value": true,
+               "notes": "state=absent → MISSING；state=unreadable → UNREADABLE"
+              },
+              {
+               "key": "team_lead",
+               "label": "有带团队经验",
+               "kind": "NICE_TO_HAVE",
+               "weight": 0.25,
+               "question": "是否有 ≥1 年、≥3 人的直接带团队经历？",
+               "notes": "判断型：机器不判，只进 bonus_signals"
+              }
+             ]
+            }
+result    : OK
+  created job REPRO-S6S7-SCREENING 后端工程师（S6→S7 决策复现演示岗） [OPEN]  (labels: FIXTURE/MANUAL/NOT_CONNECTED)
+    job_id=951f46e8-3b9f-4724-8a3b-833be97027d9  record_version=2  department=研发部（演示） (11111111-1111-4111-8111-000000000010)
+    job_version v1  hash=a699c27e…  jd_source=PROVIDED  description_md=47 chars  requirements_md=18 chars
+    rubric v1  version_id=5645fcc0-509a-42eb-bdad-bb77f32c741d  (3 criteria: 2 must / 1 nice / 0 disqualifier, is_approved=false)
+      work_exists  [MUST_HAVE]  w=0.5  work_experience EXISTS true — 简历中存在可分割的工作经历条目
+      edu_exists  [MUST_HAVE]  w=0.25  education EXISTS true — 简历中存在可分割的教育经历条目
+      team_lead  [NICE_TO_HAVE]  w=0.25  (judgment) "是否有 ≥1 年、≥3 人的直接带团队经历？" — 有带团队经验
+    approval f03eee74-40f3-48c4-b9c8-b0a8e5647f5d PENDING → 需人类批准（PENDING；批准不是模型的动作）
+  next: recruitment_job_get(job_id=951f46e8-3b9f-4724-8a3b-833be97027d9)
+row delta : {"approval":1,"job":1,"job_version":1,"rubric_version":1}
+readback  : {
+             "job_by_code": {
+              "id": "951f46e8-3b9f-4724-8a3b-833be97027d9",
+              "code": "REPRO-S6S7-SCREENING",
+              "title": "后端工程师（S6→S7 决策复现演示岗）",
+              "status": "OPEN",
+              "department_id": "11111111-1111-4111-8111-000000000010",
+              "current_job_version_id": "81ebbcb5-9c50-4e77-be44-b60e93fb116f",
+              "current_rubric_version_id": null,
+              "record_version": 2,
+              "created_at": "2026-11-14T12:07:49.939Z"
+             }
+            }
+outcome   : PASS
+RUN_MODE=FIRST_RUN  job=951f46e8-3b9f-4724-8a3b-833be97027d9 rubric_version=5645fcc0-509a-42eb-bdad-bb77f32c741d approval=PENDING
+
+──────── STEP 2 · S3 job_rubric_approve（人机闸门 allow-once → 批准 + 把 current 指针指过去） ────────
+tool      : [object Object]
+request   : {
+             "job_id": "951f46e8-3b9f-4724-8a3b-833be97027d9",
+             "rubric_version_id": "5645fcc0-509a-42eb-bdad-bb77f32c741d",
+             "reason": "复现 harness：人确认批准该版标准（approval seam 替身 allow-once，闸门本身照常调用）"
+            }
+result    : OK
+  approved rubric v1 approval for job REPRO-S6S7-SCREENING 后端工程师（S6→S7 决策复现演示岗） [OPEN]  (labels: FIXTURE/MANUAL/NOT_CONNECTED)
+    job_id=951f46e8-3b9f-4724-8a3b-833be97027d9  record_version=3
+    rubric version_id=5645fcc0-509a-42eb-bdad-bb77f32c741d  payload_hash=c7041e8c…  is_approved=true  is_current=true
+    approval f03eee74-40f3-48c4-b9c8-b0a8e5647f5d APPROVED by 11111111-1111-4111-8111-000000000103 at 2026-11-14T12:07:50.127Z
+    current_rubric_version_id: none -> 5645fcc0-509a-42eb-bdad-bb77f32c741d
+    replayed=false  gate: requested=true result=allowed-once
+    changes: written=true tables=[approval, job, event_inbox] events=[7302101c-830f-4505-baa4-d1ebf947c8d9]
+  next: recruitment_job_get(job_id=951f46e8-3b9f-4724-8a3b-833be97027d9)
+row delta : {"event_inbox":2}
+readback  : {
+             "job": {
+              "id": "951f46e8-3b9f-4724-8a3b-833be97027d9",
+              "code": "REPRO-S6S7-SCREENING",
+              "title": "后端工程师（S6→S7 决策复现演示岗）",
+              "status": "OPEN",
+              "department_id": "11111111-1111-4111-8111-000000000010",
+              "current_job_version_id": "81ebbcb5-9c50-4e77-be44-b60e93fb116f",
+              "current_rubric_version_id": "5645fcc0-509a-42eb-bdad-bb77f32c741d",
+              "record_version": 3
+             },
+             "rubric_and_approvals": {
+              "rubrics": [
+               {
+                "id": "5645fcc0-509a-42eb-bdad-bb77f32c741d",
+                "job_id": "951f46e8-3b9f-4724-8a3b-833be97027d9",
+                "version_no": 1,
+                "payload_hash": "c7041e8ce6c49fbc19a456d7bdbb31db610d52db88e76775a5b010a4de009d5d",
+                "dimension_count": 3,
+                "dimension_keys": [
+                 "work_exists",
+                 "edu_exists",
+                 "team_lead"
+                ]
+               }
+              ],
+              "approvals": [
+               {
+                "id": "f03eee74-40f3-48c4-b9c8-b0a8e5647f5d",
+                "resource_id": "5645fcc0-509a-42eb-bdad-bb77f32c741d",
+                "status": "APPROVED",
+                "canonical_payload_hash": "c7041e8ce6c49fbc19a456d7bdbb31db610d52db88e76775a5b010a4de009d5d",
+                "superseded_by_approval_id": null,
+                "expires_at": null,
+                "decided_at": "2026-11-14T12:07:50.127Z",
+                "decision_by_actor_id": "11111111-1111-4111-8111-000000000103"
+               }
+              ]
+             },
+             "approval_service_calls": 1
+            }
+outcome   : PASS
+approve outcome=APPROVED replayed=false gate={"requested":true,"result":"allowed-once"}
+job.current_rubric_version_id=5645fcc0-509a-42eb-bdad-bb77f32c741d（= 获批版本？ true）
+approval=f03eee74-40f3-48c4-b9c8-b0a8e5647f5d status=APPROVED hash_match=true
+
+──────── STEP 3 · S6 application_intake（合成简历 → candidate + application；F1：新建时钉住 rubric） ────────
+tool      : [object Object]
+request   : {
+             "path": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\dsh\\dsh-recruitment\\manual\\screening-decision\\fixtures\\synthetic-resume-screening-repro.pdf",
+             "job_id": "951f46e8-3b9f-4724-8a3b-833be97027d9"
+            }
+result    : OK
+  application: CREATED 5358e0b8-756a-4583-8417-3cf4b4966b27
+  structure: saved=false (resume_version v1 cec1c064-df8e-4df9-8043-4f2f27a8cfac, APPENDED)
+  candidate: 86ea316a-3a7f-49fc-9f05-c77f9e4d2797 (new, matched_by=created)
+  job REPRO-S6S7-SCREENING [OPEN] stage=S6 lifecycle=ACTIVE
+  source: synthetic-resume-screening-repro.pdf pages=2 bytes=10931
+  sha256=56f93d3be582a988a4713c1cba22c411e17b20371de73c2147962adde4c24ce5
+  parse_status=PARSED completeness=complete hard_issues=0
+  identity strong_ids=[email, phone] merge_eligible=[email, phone] weak=[] evidence=2 blocked=[]
+  labels: provenance=FIXTURE trigger=MANUAL connection=CONNECTED
+row delta : {"application":1,"candidate":1,"event_inbox":1,"intake_asset":1,"intake_record":1,"resume":1,"resume_version":1}
+readback  : {
+             "application": {
+              "id": "5358e0b8-756a-4583-8417-3cf4b4966b27",
+              "job_id": "951f46e8-3b9f-4724-8a3b-833be97027d9",
+              "candidate_id": "86ea316a-3a7f-49fc-9f05-c77f9e4d2797",
+              "job_version_id": "81ebbcb5-9c50-4e77-be44-b60e93fb116f",
+              "rubric_version_id": "5645fcc0-509a-42eb-bdad-bb77f32c741d",
+              "resume_version_id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+              "lifecycle_status": "ACTIVE",
+              "current_stage_code": "S6",
+              "record_version": 1,
+              "created_at": "2026-11-14T12:07:50.883Z"
+             }
+            }
+outcome   : PASS
+intake status=OK application_action=CREATED application=5358e0b8-756a-4583-8417-3cf4b4966b27
+candidate=86ea316a-3a7f-49fc-9f05-c77f9e4d2797（联系方式打码：rep***@example.test / +86136***42）
+application.rubric_version_id=5645fcc0-509a-42eb-bdad-bb77f32c741d（= 获批版本？ true）
+application.resume_version_id=cec1c064-df8e-4df9-8043-4f2f27a8cfac stage=S6
+
+──────── STEP 4 · S7 screening_evaluate（只读、advisory、带逐准则证据） ────────
+tool      : [object Object]
+request   : {
+             "application_id": "5358e0b8-756a-4583-8417-3cf4b4966b27",
+             "as_of": "2026-11-14T20:07:45+08:00"
+            }
+result    : NO_RUBRIC — NO_RUBRIC: {"code":"NO_RUBRIC","detail":{"job_id":"951f46e8-3b9f-4724-8a3b-833be97027d9","rubric_version_id":"5645fcc0-509a-42eb-bdad-bb77f32c741d","status":"APPROVED","version_no":1},"message":"该 Rubric 版本在 as_of 时刻没有处于已批准状态的审批（JR §4.2）","reason_code":"NO_APPROVED_RUBRIC"}
+row delta : {}
+readback  : {
+             "application": {
+              "id": "5358e0b8-756a-4583-8417-3cf4b4966b27",
+              "job_id": "951f46e8-3b9f-4724-8a3b-833be97027d9",
+              "candidate_id": "86ea316a-3a7f-49fc-9f05-c77f9e4d2797",
+              "job_version_id": "81ebbcb5-9c50-4e77-be44-b60e93fb116f",
+              "rubric_version_id": "5645fcc0-509a-42eb-bdad-bb77f32c741d",
+              "resume_version_id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+              "lifecycle_status": "ACTIVE",
+              "current_stage_code": "S6",
+              "record_version": 1,
+              "created_at": "2026-11-14T12:07:50.883Z"
+             },
+             "decisions": [],
+             "rubric_resolution": null
+            }
+outcome   : FAIL
+
+BLOCKED：screening_evaluate 没有按申请钉住的 rubric 完成评估（见 step-04）

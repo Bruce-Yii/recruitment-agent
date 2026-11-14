@@ -1,0 +1,99 @@
+{
+  "step": 1,
+  "id": "job-create",
+  "label": "S3 job_create（含 2 条机械型 rubric 准则；只写 PENDING 审批）",
+  "tool": "recruitment_job_create",
+  "run_mode": "UNKNOWN",
+  "started_at": "2026-11-14T12:19:18.547Z",
+  "request": {
+    "title": "后端工程师（S6→S7 决策复现演示岗）",
+    "code": "REPRO-S6S7-DECISION-3",
+    "status": "OPEN",
+    "description_md": "演示岗位：用于证明 S6→S7 的 SCREENING 决策能在仓库内被重跑出来（合成数据）。",
+    "requirements_md": "后端开发经验；能读懂并落实接口契约。",
+    "criteria": [
+      {
+        "key": "work_exists",
+        "label": "简历中存在可分割的工作经历条目",
+        "kind": "MUST_HAVE",
+        "weight": 0.5,
+        "field": "work_experience",
+        "operator": "EXISTS",
+        "value": true,
+        "notes": "EXISTS 判的是 state=present（读到了），不是\"这个人有工作经历\""
+      },
+      {
+        "key": "edu_exists",
+        "label": "简历中存在可分割的教育经历条目",
+        "kind": "MUST_HAVE",
+        "weight": 0.5,
+        "field": "education",
+        "operator": "EXISTS",
+        "value": true,
+        "notes": "state=absent → MISSING；state=unreadable → UNREADABLE"
+      }
+    ]
+  },
+  "ok": false,
+  "error": {
+    "name": "RecruitmentToolError",
+    "code": "INVALID_ARGS",
+    "message": "INVALID_ARGS: {\"code\":\"INVALID_ARGS\",\"detail\":{\"code\":\"DUPLICATE_JOB_CODE\",\"constraint\":\"uq_job_code\",\"sqlstate\":\"23505\",\"table\":\"job\"},\"message\":\"岗位 code 已存在（同租户唯一；SQLSTATE 23505 / uq_job_code）\",\"reason_code\":\"DUPLICATE_JOB_CODE\"}"
+  },
+  "error_body": {
+    "code": "INVALID_ARGS",
+    "detail": {
+      "code": "DUPLICATE_JOB_CODE",
+      "constraint": "uq_job_code",
+      "sqlstate": "23505",
+      "table": "job"
+    },
+    "message": "岗位 code 已存在（同租户唯一；SQLSTATE 23505 / uq_job_code）",
+    "reason_code": "DUPLICATE_JOB_CODE"
+  },
+  "row_counts_before": {
+    "application": 55,
+    "approval": 20,
+    "business_task": 5,
+    "candidate": 49,
+    "decision": 8,
+    "event_inbox": 146,
+    "intake_asset": 60,
+    "intake_record": 60,
+    "job": 20,
+    "job_version": 23,
+    "resume": 60,
+    "resume_version": 61,
+    "rubric_version": 22
+  },
+  "row_counts_after": {
+    "application": 55,
+    "approval": 20,
+    "business_task": 5,
+    "candidate": 49,
+    "decision": 8,
+    "event_inbox": 146,
+    "intake_asset": 60,
+    "intake_record": 60,
+    "job": 20,
+    "job_version": 23,
+    "resume": 60,
+    "resume_version": 61,
+    "rubric_version": 22
+  },
+  "row_count_delta": {},
+  "readback": {
+    "job_by_code": {
+      "id": "4b46d9f7-3956-4c55-8907-b5dde88edbdf",
+      "code": "REPRO-S6S7-DECISION-3",
+      "title": "后端工程师（S6→S7 决策复现演示岗）",
+      "status": "OPEN",
+      "department_id": "11111111-1111-4111-8111-000000000010",
+      "current_job_version_id": "90c181b9-1511-4aaf-84e6-d12ce03f8dc5",
+      "current_rubric_version_id": "dac1002a-367f-43e1-b583-b8479d407e2e",
+      "record_version": 3,
+      "created_at": "2026-11-14T12:19:05.339Z"
+    }
+  },
+  "outcome": "PASS"
+}
