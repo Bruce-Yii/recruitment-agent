@@ -45,9 +45,9 @@ Use three practical work perspectives, not a matrix of separate mini-apps:
 
 These are views inside the same Recruitment Agent workspace. The same internal person may act as recruiter and interviewer on different jobs; the active assignment and authorization determine the current view and available actions.
 
-Do **not** create a standalone "Recruiting Lead" role or approval workspace for the current product. The Recruiting Lead owns formal recruiting decisions by default. If an enterprise genuinely requires an extra approval step, model it as an optional configurable gate assigned to an existing authorized internal role—not as another mandatory product persona or another top-level workspace.
+Do **not** create a standalone "Approver" role or approval workspace for the current product. The Recruiting Lead owns formal recruiting decisions by default. If an enterprise genuinely requires an extra approval step, model it as an optional configurable gate assigned to an existing authorized internal role—not as another mandatory product persona or another top-level workspace.
 
-Do **not** create a separate daily "Configuration permission" workspace in this product. Enterprise-level configuration is a settings area within the same workspace, normally managed by the Recruiting Lead or another internal user explicitly granted configuration permission. Configuration permission is an authorization, not a fourth daily work persona.
+Do **not** create a separate daily "Enterprise Administrator" role or configuration workspace in this product. Enterprise-level configuration is a settings area within the same workspace, normally managed by the Recruiting Lead or another internal user explicitly granted configuration permission. Configuration permission is an authorization, not a fourth daily work persona.
 
 ### Interview-round-specific experience
 
