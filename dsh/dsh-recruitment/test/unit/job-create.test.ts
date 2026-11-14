@@ -5,7 +5,9 @@
 //      且通过官方 `assertSupportedJsonSchema`；
 //   2. `output.schema` 通过官方 `assertSupportedJsonSchema`，样例值通过官方
 //      `validateJsonSchemaValue`（带 rubric / 不带 rubric 两份样例）；
-//   3. `normalizeCriteria` 补齐**恰好 9 键**、缺省写 null、顺序保持、undefined→null；
+//   3. `normalizeCriteria` 把入参投影到**封闭 9 键**子集：没给的可选键**省略**（不写 null）、
+//      顺序保持、`undefined`/`null` 同义；判断型准则**没有** `field`/`operator`/`value` 键
+//      （2026-11-14 S7 `TypeError ... reading 'startsWith'` 的根因就是这里写了 `field: null`）；
 //   4. R-VAL 负例走 `validateDimensions`（写侧在入库前必须调用它）：权重和 0.9、
 //      `field='name'`、只有 NICE_TO_HAVE、未知键；
 //   5. `mapDatabaseError` 保留 SQLSTATE / constraint，`uq_job_code` 映射为
@@ -35,6 +37,7 @@ import {
   unconfiguredJobUpdateTool,
 } from '../../src/tools/job-create.ts'
 import { validateDimensions } from '../../src/tools/screening-evaluate.ts'
+import { digestOf } from '../../src/tools/contract.ts'
 import { RecruitmentToolError } from '../../src/tools/errors.ts'
 import { resolveDatabaseConfig } from '../../src/db/pool.ts'
 
@@ -57,7 +60,7 @@ const DATABASE = resolveDatabaseConfig({
   ReturnType<typeof resolveDatabaseConfig>['resolved']
 >
 
-/** criterion 的 9 个合法键（JR §6.1）；normalizeCriteria 必须补齐成恰好这些。 */
+/** criterion 的 9 个合法键（JR §6.1 的封闭键集；实际落库只含实际给出的键）。 */
 const CRITERION_KEYS = [
   'field', 'key', 'kind', 'label', 'notes', 'operator', 'question', 'value', 'weight',
 ] as const
@@ -210,7 +213,7 @@ function errorBody(error: unknown): Record<string, unknown> {
   return JSON.parse(error.message.slice(marker + 2)) as Record<string, unknown>
 }
 
-/** 一条完整的 9 键 criterion（默认合法；覆盖字段造负例）。 */
+/** 一条完整的 9 键 criterion（历史形状：缺省键写 null；读侧必须容忍，写侧不再产出）。 */
 function criterion(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     key: 'work_exists',
@@ -226,13 +229,16 @@ function criterion(overrides: Record<string, unknown> = {}): Record<string, unkn
   }
 }
 
-/** 规范化后的两条硬性标准（render / sample 值共用）。 */
+/** 规范化后的两条硬性标准（render / sample 值共用；机械型没有 question 键，也没有 null）。 */
 const NORMALIZED_CRITERIA = [
-  criterion({ key: 'work_exists', weight: 0.5 }),
-  criterion({
-    key: 'months_gte36', label: '至少 36 个月', weight: 0.5,
+  {
+    key: 'work_exists', label: '有工作经历', kind: 'MUST_HAVE', weight: 0.5,
+    field: 'work_experience', operator: 'EXISTS', value: true,
+  },
+  {
+    key: 'months_gte36', label: '至少 36 个月', kind: 'MUST_HAVE', weight: 0.5,
     field: 'timeline.covered_months_closed', operator: 'GTE', value: 36,
-  }),
+  },
 ]
 
 /** 一份与 SPEC §6 同形的输出样例（带 rubric）。 */
@@ -396,47 +402,67 @@ test('output.schema 有牙：删掉 job.code 会被判违反（不是 additional
   }
 })
 
-test('normalizeCriteria：补齐恰好 9 键、缺省 null、顺序保持', () => {
+test('normalizeCriteria：投影到封闭 9 键——机械型没有 question 键，判断型没有 field 键（不写 null）', () => {
   const normalized = normalizeCriteria([
     { key: 'work_exists', label: '有工作经历', kind: 'MUST_HAVE', weight: 0.5, field: 'work_experience', operator: 'EXISTS', value: true },
     { key: 'degree', label: '本科及以上', kind: 'NICE_TO_HAVE', weight: 0.5, question: '候选人是否具备本科及以上学历？' },
   ])
   assert.equal(normalized.length, 2)
-  assert.deepEqual(Object.keys(normalized[0] as Record<string, unknown>).sort(), [...CRITERION_KEYS])
-  assert.deepEqual(Object.keys(normalized[1] as Record<string, unknown>).sort(), [...CRITERION_KEYS])
   // 顺序保持
   assert.equal((normalized[0] as Record<string, unknown>).key, 'work_exists')
   assert.equal((normalized[1] as Record<string, unknown>).key, 'degree')
-  // 缺省写 null，而不是 undefined / 丢键
+  // 机械型：4 个必填 + field/operator/value；没给的 question/notes **省略**，不是写 null
+  const first = normalized[0] as Record<string, unknown>
+  assert.deepEqual(Object.keys(first).sort(), ['field', 'key', 'kind', 'label', 'operator', 'value', 'weight'])
+  assert.equal(Object.hasOwn(first, 'question'), false)
+  assert.equal(Object.hasOwn(first, 'notes'), false)
+  // 判断型：**没有 field/operator/value 键**（这就是 2026-11-14 S7 TypeError 的根因形状）
   const second = normalized[1] as Record<string, unknown>
-  assert.equal(second.field, null)
-  assert.equal(second.operator, null)
-  assert.equal(second.value, null)
-  assert.equal(second.notes, null)
-  assert.equal(Object.hasOwn(second, 'notes'), true)
+  assert.deepEqual(Object.keys(second).sort(), ['key', 'kind', 'label', 'question', 'weight'])
+  for (const absent of ['field', 'operator', 'value', 'notes']) {
+    assert.equal(Object.hasOwn(second, absent), false, `判断型准则不允许有 ${absent} 键（连 null 也不行）`)
+  }
   // 给出的值原样保留
-  assert.equal((normalized[0] as Record<string, unknown>).weight, 0.5)
-  assert.equal((normalized[0] as Record<string, unknown>).value, true)
+  assert.equal(first.weight, 0.5)
+  assert.equal(first.value, true)
 })
 
-test('normalizeCriteria：undefined → null；未知键不被规范化保留（由 validateDimensions 抓住）', () => {
+test('normalizeCriteria：undefined 与显式 null 同义（都省略）；未知键不被规范化保留（由 validateDimensions 抓住）', () => {
   const normalized = normalizeCriteria([
     {
       key: 'a', label: 'A', kind: 'MUST_HAVE', weight: 1,
       field: 'work_experience', operator: 'EXISTS', value: true,
-      question: undefined, notes: undefined, bogus: '不要静默吞掉',
+      question: undefined, notes: null, bogus: '不要静默吞掉',
     },
   ])
   const only = normalized[0] as Record<string, unknown>
-  assert.equal(only.question, null)
-  assert.equal(only.notes, null)
-  assert.deepEqual(Object.keys(only).sort(), [...CRITERION_KEYS])
+  assert.equal(Object.hasOwn(only, 'question'), false)
+  assert.equal(Object.hasOwn(only, 'notes'), false)
+  assert.deepEqual(Object.keys(only).sort(), ['field', 'key', 'kind', 'label', 'operator', 'value', 'weight'])
   // 写入前的 job-create 必须先 validateDimensions(raw)：多余键在这里报 CRITERION_UNKNOWN_KEY
   const violations = validateDimensions([{
     key: 'a', label: 'A', kind: 'MUST_HAVE', weight: 1,
     field: 'work_experience', operator: 'EXISTS', value: true, bogus: 'x',
   }])
   assert.ok(violations.some((violation) => violation.reason_code === 'CRITERION_UNKNOWN_KEY'))
+})
+
+test('normalizeCriteria：判断型准则的 null 占位（field/operator/value）与"根本没写"得到同一份规范化结果', () => {
+  // 模型可能按"9 键都要给"的旧说明传 null：规范化必须收敛成同一种诚实形状，
+  // 否则同一份标准会因为"写不写 null"而产生两个 payload_hash（= 两个 rubric 版本）。
+  const withNulls = normalizeCriteria([{
+    key: 'degree', label: '本科及以上', kind: 'MUST_HAVE', weight: 1,
+    field: null, operator: null, value: null,
+    question: '候选人是否具备本科及以上学历？', notes: null,
+  }])
+  const withoutNulls = normalizeCriteria([{
+    key: 'degree', label: '本科及以上', kind: 'MUST_HAVE', weight: 1,
+    question: '候选人是否具备本科及以上学历？',
+  }])
+  assert.deepEqual(withNulls, withoutNulls)
+  assert.equal(digestOf(withNulls), digestOf(withoutNulls))
+  // 收敛后的形状本身是合法 rubric（R-VAL 不因"缺 field"报 PARTIAL）
+  assert.deepEqual(validateDimensions(withNulls), [])
 })
 
 test('R-VAL 负例：权重和 0.9 → WEIGHT_SUM（两者都是合法数值，只有 Σ 不合法）', () => {

@@ -172,14 +172,16 @@ const UPDATE_SCALAR_PARAMS: ParamMap = {
   },
 }
 
-/** `criteria` 数组的模型可见 schema（9 键封闭；值语义交给 validateDimensions）。 */
+/** `criteria` 数组的模型可见 schema（封闭 9 键；值语义交给 validateDimensions）。 */
 const CRITERIA_PARAMETER_SCHEMA: Record<string, unknown> = {
   type: 'array',
   description:
-    '1..50 rubric criteria. The object below has exactly 9 keys and no others. '
+    '1..50 rubric criteria. The object below is closed over exactly 9 keys and no others; only '
+    + 'key/label/kind/weight are required. '
     + 'kind is MUST_HAVE | NICE_TO_HAVE | DISQUALIFIER (at least one MUST_HAVE or DISQUALIFIER). '
     + 'weight is 0..1 and the array MUST sum to 1 (tolerance 1e-6). '
-    + 'A mechanical criterion gives field+operator+value together; a judgment criterion gives question instead. '
+    + 'A mechanical criterion gives field+operator+value together; a judgment criterion gives question instead '
+    + 'and omits field/operator/value entirely (do not send null placeholders). '
     + 'Allowed mechanical fields: timeline.covered_months_closed / work_experience.entry_count / '
     + 'education.entry_count with GTE|LTE and an integer value; work_experience / education with EXISTS and true. '
     + 'name / phone / email / protected.* are forbidden as field.',
@@ -272,11 +274,12 @@ function nullableObject(
   }
 }
 
-/** 一条 criterion 在输出里逐字回显（键由 normalizeCriteria 保证 9 个）。 */
+/** 一条 criterion 在输出里逐字回显（只含实际给出的键：判断型没有 field/operator/value）。 */
 const CRITERION_OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: true,
-  description: 'One normalized criterion echoed verbatim (exactly the 9 rubric keys).',
+  description: 'One normalized criterion echoed verbatim: the 4 required keys plus only the optional keys '
+    + 'that apply (a judgment criterion has no field/operator/value; a mechanical criterion has no question).',
 }
 
 const APPROVAL_OUTPUT_SCHEMA_PROPERTIES: Record<string, unknown> = {
@@ -612,7 +615,7 @@ function checkCriteriaShape(criteria: unknown, violations: ArgViolation[]): void
 /**
  * 校验并归一化 criteria（SPEC §5）：先验 raw（抓多余键），再归一化，再防御性二次验。
  * @param criteria - 已通过结构校验的 criteria 数组。
- * @returns 恰好 9 键的归一化数组 + 其 canonical hash。
+ * @returns 投影到封闭 9 键子集的归一化数组（缺省的可选键不写 null，直接省略）+ 其 canonical hash。
  */
 function validateAndNormalizeCriteria(
   criteria: readonly unknown[],
@@ -773,8 +776,17 @@ function prepareUpdateArgs(raw: unknown): PreparedUpdate {
 // ---------------------------------------------------------------------------
 
 /**
- * 每个 criterion 补齐为**恰好 9 键**，缺省写 null；数组顺序保持，多余键被丢弃
+ * 把入参 criterion 投影到**封闭的 9 键**子集：只保留**真的给了值**的键
+ * （`undefined` / `null` 一律省略），数组顺序与给出的值原样保留，多余键被丢弃
  * （多余键由调用方在归一化前用 validateDimensions 拒绝）。
+ *
+ * **为什么不给缺省键写 `null`**（这是 2026-11-14 那个 S7 崩溃的根因）：
+ * 判断型准则本来就没有 `field` / `operator` / `value`，机械型准则本来就没有 `question`；
+ * 把「没有这个键」写成「这个键的值是 null」是**数据形状不诚实**——读侧只要有一处没判空，
+ * 就会把 `field: null` 当成机械型字段送进 `resolveFieldFact()`（实测:
+ * `TypeError: Cannot read properties of null (reading 'startsWith')`，
+ * 凡是用产品入口建的、含判断型准则的 rubric 在 S7 一律崩）。落库形状要说真话：
+ * 没有的键就不出现；`question` / `notes` 入参允许显式 `null`，按"没给"处理。
  * @param criteria - 模型给的（已通过结构校验）数组。
  * @returns 归一化数组（R-VAL-14 的 payload_hash 就对这个值求）。
  */
@@ -784,7 +796,11 @@ export function normalizeCriteria(criteria: readonly unknown[]): readonly Record
       ? (item as Record<string, unknown>)
       : {}
     const normalized: Record<string, unknown> = {}
-    for (const key of CRITERION_KEYS) normalized[key] = record[key] ?? null
+    for (const key of CRITERION_KEYS) {
+      const value = record[key]
+      // `null` 与"没给"同义（输入 schema 允许 question/notes 显式 null）：不写这个键。
+      if (value !== undefined && value !== null) normalized[key] = value
+    }
     return normalized
   })
 }
@@ -1733,7 +1749,7 @@ export async function decideRubricApproval(
 /** 两个工具共用的 criteria 契约（§8 第 2/3/5 条）。 */
 const CRITERIA_HELP = [
   '',
-  'criteria — EXACTLY 9 KEYS, ANY EXTRA KEY IS REJECTED',
+  'criteria — CLOSED KEY SET (9 rubric keys), ANY EXTRA KEY IS REJECTED',
   '{"key","label","kind","weight","field","operator","value","question","notes"}',
   '- key: ^[a-z][a-z0-9_]{1,40}$, unique inside the version.',
   '- label: 1..200 characters.',
@@ -1741,14 +1757,17 @@ const CRITERIA_HELP = [
     + 'a version made only of NICE_TO_HAVE cannot decide anything.',
   '- weight: 0..1, and the sum over the whole array MUST be 1 (tolerance 1e-6). Weight is display/sort only; '
     + 'it never decides a verdict.',
+  '- Omit the keys that do not apply. Do NOT send null placeholders: a judgment criterion has no '
+    + 'field/operator/value keys at all, and a mechanical criterion has no question key. The stored rubric keeps '
+    + 'the honest shape (an absent key means "not applicable"), and a null placeholder is rejected by the reader.',
   '- Mechanical criterion: field + operator + value together, or none of the three.',
   '  * numeric fields (operator GTE | LTE, integer value): timeline.covered_months_closed, '
     + 'work_experience.entry_count, education.entry_count',
   '  * boolean fields (operator EXISTS, value MUST be true): work_experience, education',
   '  * "3 years of experience" => field=timeline.covered_months_closed, operator=GTE, value=36 '
     + '(unit = MONTHS, integer: 3 x 12).',
-  '- Judgment criterion (no field/operator/value): question is mandatory, 1..500 characters, one answerable '
-    + 'yes/no question.',
+  '- Judgment criterion (NO field/operator/value keys): question is mandatory, 1..500 characters, one '
+    + 'answerable yes/no question.',
   '- FORBIDDEN as field: name, phone, email, protected.* (age / gender / marital status / native place / photo) '
     + 'and any field not listed above.',
   '',

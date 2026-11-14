@@ -141,13 +141,13 @@ provenance = 'LIVE'
     "criteria": [
       { "key": "backend_years", "label": "后端方向 5 年以上", "kind": "MUST_HAVE",
         "weight": 0.4, "field": "timeline.covered_months_closed",
-        "operator": "GTE", "value": 60, "question": null, "notes": "…" },
+        "operator": "GTE", "value": 60, "notes": "…" },
       { "key": "team_lead", "label": "有带团队经验", "kind": "NICE_TO_HAVE",
-        "weight": 0.4, "field": null, "operator": null, "value": null,
-        "question": "是否有 ≥1 年、≥3 人的直接带团队经历？", "notes": null },
+        "weight": 0.4,
+        "question": "是否有 ≥1 年、≥3 人的直接带团队经历？" },
       { "key": "notice_period", "label": "到岗时间不超过 60 天", "kind": "DISQUALIFIER",
-        "weight": 0.2, "field": null, "operator": null, "value": null,
-        "question": "期望到岗时间是否超过 60 天？", "notes": null }
+        "weight": 0.2,
+        "question": "期望到岗时间是否超过 60 天？" }
     ],
     "criteria_count": 3, "must_have_count": 1, "nice_to_have_count": 1,
     "disqualifier_count": 1, "executable": true
@@ -166,7 +166,7 @@ provenance = 'LIVE'
 
 | 字段 | 规则 |
 |---|---|
-| `rubric.criteria[]` | **逐字回显 `rubric_version.dimensions` 的元素**，一个键都不许增删改。禁止在这里"顺便归一化"——一旦归一化，工具输出与库里的 `payload_hash` 就对不上，审批绑定失效（`job-rubric-rules.md` §6.6） |
+| `rubric.criteria[]` | **逐字回显 `rubric_version.dimensions` 的元素**，一个键都不许增删改。禁止在这里"顺便归一化"——一旦归一化，工具输出与库里的 `payload_hash` 就对不上，审批绑定失效（`job-rubric-rules.md` §6.6）。形状遵守 `job-rubric-rules.md` §6.1：机械型有 `field`/`operator`/`value`、**没有** `question`；判断型有 `question`、**没有** `field`/`operator`/`value`；缺失的可选键就是**缺席**，不是 `null` |
 | `rubric.is_current` | `version_id == current(job)`，而 **`current(job)` = `job.current_rubric_version_id` 指向的版本（D-21）**，不是 `max(version_no)`；没有可用当前版本（指针为空/指向的版本不在该岗位下）时**全部** `false` |
 | `rubric.is_approved` | §4.2 的 `approved(v, as_of)` 判定式（与"被指针指着"是两条独立事实） |
 | `rubric.resolution` | `EXPLICIT_VERSION_NO` \| `EXPLICIT_VERSION_ID` \| `JOB_CURRENT`（与 `evaluate` 的 `APPLICATION_PINNED` **不是同一套枚举**，刻意区分：查岗位永远不带申请） |
@@ -321,12 +321,11 @@ recruitment_job_get {"job_id":"0199c0de-0000-7000-8000-000000000001"}
   ],
 
   "bonus_signals": [
-    { "code": "BONUS_SATISFIED", "failure_class": "HARD_PASS",
-      "criterion_key": "team_lead", "kind": "NICE_TO_HAVE", "outcome": "SATISFIED",
-      "field": null, "tri_state": "present", "bounds": null,
-      "expected": null, "observed": null,
-      "evidence": [ { "…": "…" } ], "absence": null, "issue_codes": [],
-      "message": "第 2 页有「技术负责人，带 5 人」可直接引用" }
+    { "code": "BONUS_NEEDS_JUDGMENT", "failure_class": "JUDGMENT",
+      "criterion_key": "team_lead", "kind": "NICE_TO_HAVE", "outcome": "NEEDS_JUDGMENT",
+      "question": "是否有 ≥1 年、≥3 人的直接带团队经历？",
+      "evidence": [], "issue_codes": [],
+      "message": "这条要求机器判不了（第 3 条），需要人回答 rubric 里的原问句" }
   ],
 
   "warnings": [
@@ -356,7 +355,7 @@ recruitment_job_get {"job_id":"0199c0de-0000-7000-8000-000000000001"}
 | `verdict_summary` | 由**固定模板**生成的单行中文摘要（数量 + 决定性原因），不含时钟/随机；只供展示，**判定以 `verdict` + `reasons[]` 为准** | — |
 | `reasons[]` | **只装决定性条目**。`criteria_evaluated=true` 时条数 = `must_have_count + disqualifier_count`；`false` 时只装 GATE 条目（1 条起） | `screening-rules.md` §7.3 |
 | `bonus_signals[]` | 只装 `NICE_TO_HAVE`，**与 `reasons[]` 同一 schema**（一个序列化器，两个数组） | `screening-rules.md` §5 V-3 |
-| `reasons[].tri_state` | **只能** `present` \| `absent` \| `unreadable` \| `null`（`null` 仅当 `outcome='NEEDS_JUDGMENT'`）；出现第四个值 = 违约 | `D11 §9.2`、`screening-rules.md` §3.1 |
+| `reasons[].tri_state` | 机械型只能是 `present` \| `absent` \| `unreadable`；**判断型（`outcome='NEEDS_JUDGMENT'`）省略该键，不写 `null`**（`job-rubric-rules.md` §6.1 的"未给出的键缺席"裁决）。出现第四个值 = 违约 | `D11 §9.2`、`screening-rules.md` §3.1 |
 | `reasons[].evidence[]` | `tri_state='present'` 时 ≥1 条；`absent`/`unreadable` 时可空，但必须分别给 `absence` / `issue_codes[]` | `screening-rules.md` §8.2 |
 | `preconditions.human_queue_checked` | 本次执行的阻断查询条数，当前必须 **= 7**（`screening-rules.md` §6.2 HQ-1…HQ-7）。**缺这个字段等于无法证明检查发生过** | `screening-rules.md` §6.3 |
 | `criteria_evaluated` | GATE 命中时为 `false`，此时 `reasons[]` 只有 GATE 条目 | `screening-rules.md` §5 STEP 1 |

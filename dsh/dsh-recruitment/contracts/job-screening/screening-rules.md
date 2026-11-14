@@ -28,7 +28,7 @@
 |---|---|---|
 | **R-1** | **`unreadable` 绝不当 `absent`，更绝不当"不满足"。** 读不出来 → 只能产 `NEEDS_REVIEW`，永远不能进 `FAIL` | `verdict=FAIL` 时，**不存在** `tri_state='unreadable'` 的 reason 充当拒绝依据（§7.2 断言 A2） |
 | **R-2** | **有未处理的人工队列项时，必须拒绝出结论**（`BLOCKED_BY_REVIEW`），**不得静默跳过该项**继续算 | §6 的 5 条查询任一命中 → 必抛错，且 `blocking_items[]` 非空 |
-| **R-3** | **每条结论都要能回到"哪一页、哪个框、哪份原件"**：`field` + `tri_state` + `evidence(page/bbox/sha256)` 三者缺一不可 | §8 的证据完整性检查 |
+| **R-3** | **每一条机械型结论都要能回到"哪一页、哪个框、哪份原件"**：`field` + `tri_state` + `evidence(page/bbox/sha256)` 三者缺一不可（判断型没有这三样，它的凭据是 `question`，见 §4.3） | §8 的证据完整性检查 |
 | **R-4** | **受保护属性不得进特征**：不读、不算、不输出值 | 输出中不存在 `protected.*` 字段（枚举扫描，`D11 §9.6`） |
 | **R-5** | **不得由模型估算替代可复算字段**（尤其是工作年限） | `timeline.*` 的 `bounds` 必须与 `parsed_fields.timeline` 一致（§4.2），不一致即 `INDETERMINATE` |
 
@@ -73,7 +73,7 @@
 | `absent` | 原文确实没有提及 | 只能说"简历里没有"，**不构成 `FAIL`**（§4.4）；对 `DISQUALIFIER` 也**不构成 `CLEAR`**（§4.4） |
 | `unreadable` | 原文有但读不出 | **只能产 `NEEDS_REVIEW`**；任何把它当 `absent` 或当"不满足"的实现直接判 `R-1` 违规 |
 
-**禁止的第四态**：不得新增 `unknown` / `null` / `n/a` / `""`。缺失信息一律落进这三态之一；判断型 criterion 的"无机械三态"用 `tri_state: null` 表达，且**必须**同时有 `outcome='NEEDS_JUDGMENT'`（两者一一对应，不得只给其一）。
+**禁止的第四态**：不得新增 `unknown` / `null` / `n/a` / `""`。缺失信息一律落进这三态之一；判断型 criterion 的"无机械三态"用**省略 `tri_state` 键**表达（不写 `null`），且**必须**同时有 `outcome='NEEDS_JUDGMENT'`（两者一一对应，不得只给其一）。
 
 ### 3.2 三态从哪里来（唯一来源，不得自造）
 
@@ -117,7 +117,7 @@ tri_state(criterion) :=
 | `present` 但量不可比（§4.2） | `INDETERMINATE` | — |
 | `absent` | `MISSING` | — |
 | `unreadable` | `UNREADABLE` | — |
-| 无机械三态（判断型） | — | `NEEDS_JUDGMENT`（`tri_state: null`） |
+| 无机械三态（判断型） | — | `NEEDS_JUDGMENT`（**省略** `tri_state`，不写 `null`） |
 
 **六种结果分两族**（`verdict` 只用这两族，`screening-rules.md` §5）：
 
@@ -179,9 +179,13 @@ UNAVAILABLE  timeline 缺失 / covered_months_closed 不是整数 / work_experie
 
 > 若产品要求"年限必须能判"，正确做法是**上游补一个可复算的 `total_months_upto_as_of`**（用 `as_of` 补齐开放区间，输出可复现），而不是让筛选去估算。这是 `job-rubric-rules.md` §9 第 2 条的变更路径。
 
-### 4.3 判断型（无 `field`）
+### 4.3 判断型（`field` 键缺席**或值为 `null`**）
 
-- 结果恒为 `NEEDS_JUDGMENT`，`tri_state = null`；
+> 判据是 `field == null`（同时覆盖 `undefined` 与 `null`）：判断型准则**没有** `field` 键（`job-rubric-rules.md`
+> §6.1），但历史行（2026-11-14 之前 `job_create` 的 9 键归一化）可能写成 `"field": null`。两种形状必须走同一条分支——
+> 只认 `undefined` 会让 `null` 掉进字段解析并崩溃（P0，见 `job-rubric-rules.md` §6.1 的单一裁决）。
+
+- 结果恒为 `NEEDS_JUDGMENT`，`tri_state` **省略该键**（不写 `null`，§8.1 的"未给出的键缺席"）；
 - **永不影响 `FAIL`**，即使一个模型"觉得"候选人不满足（`D11 §9.3`、`APP-07`）；
 - 输出必须带 `question`（rubric 里的原问句），供人工/下游直接作答；
 - 允许附 `notes`（模型观察），但 `notes` **不是证据**，不得进 `evidence[]`。
@@ -319,10 +323,10 @@ STEP 5  PASS（其余全部）
 | 信息 | 字段 | 取值 |
 |---|---|---|
 | **发生了什么** | `reason.code` | 见 §7.3 的封闭表 |
-| **你凭什么这么说** | `reason.tri_state` | `present` / `absent` / `unreadable` / `null`（判断型） |
+| **你凭什么这么说** | `reason.tri_state` | `present` / `absent` / `unreadable`；**判断型没有这个键**（不是 `null`） |
 | **它有多硬** | `reason.failure_class` | `HARD_FAIL` / `HARD_PASS` / `NOT_PROVEN` / `UNREADABLE` / `INDETERMINATE` / `JUDGMENT` / `GATE` |
 
-**三者必须同时出现**。只有 `code` 而没有 `tri_state` = 违反 `R-3`；只有 `tri_state` 而没有 `evidence` = 违反 `R-3`。
+**机械型的 `code` / `tri_state` / `evidence` 三者必须同时出现**（`R-3`）：只有 `code` 而没有 `tri_state` = 违反 `R-3`；只有 `tri_state` 而没有 `evidence` = 违反 `R-3`。判断型没有机械三态，它的凭据是 `question`（原问句）——`code=*_NEEDS_JUDGMENT` + `failure_class=JUDGMENT` + `question` 三者同时出现。
 
 ### 7.2 四条机检断言（验收时直接跑）
 
@@ -407,7 +411,7 @@ STEP 5  PASS（其余全部）
 | `present` | ≥1 条 `evidence[]`，每条含 `page`(≥1) + `bbox`(4 个数) + `source_asset_sha256` | 精确到框 | `D11 §9.9`、`D11 §2 D1`（结构化字段必须回指 `page + bbox`） |
 | `absent` | `absence` 对象（**没有 bbox 是正常的**） | `{document_sha256, page_count, completeness:"complete", searched_scopes:[...], basis:"parsed_fields.fields.<x>.state=absent", hard_issue_count:0}` | `D11 §9.2`、`§9.3` |
 | `unreadable` | ≥1 个 `issue_codes[]`（来自 `parsed_fields.issues[].code` 或 `fields[x].reason`） | 代码而非散文 | `D11 §1 B3`（不可静默）、`§9.3` |
-| `null`（判断型） | `question` 非空 | 原问句 | `job-rubric-rules.md` §6.1 |
+| 无 `tri_state`（判断型） | `question` 非空 | 原问句 | `job-rubric-rules.md` §6.1（判断型省略 `tri_state`，不写 `null`） |
 
 **`bbox` 的坐标约定**（否则同一份 PDF 两个人算出的框不可比）：
 
