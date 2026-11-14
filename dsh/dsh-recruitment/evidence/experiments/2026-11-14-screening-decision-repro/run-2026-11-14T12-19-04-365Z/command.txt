@@ -1,0 +1,10 @@
+# 真实执行命令（PowerShell；cwd = D:\12412\dsh工作区\projects\recruitment-agent）
+#
+# 密码按约定从环境变量注入，**不写进任何文件/日志**
+$env:RECRUITMENT_DB_PASSWORD='<本机演示库密码>'
+$env:REPRO_JOB_CODE='REPRO-S6S7-DECISION-3'
+
+node dsh/dsh-recruitment/manual/screening-decision/run-screening-decision.mjs
+
+# 退出码：0
+# 说明：当前 HEAD b2d51cd 上的 FIRST_RUN（新 code）：六步全 PASS，决策 42324a14-e276-4b2d-827d-8f31b668a4f8 真实落库（+decision:1 / +event_inbox:1）。

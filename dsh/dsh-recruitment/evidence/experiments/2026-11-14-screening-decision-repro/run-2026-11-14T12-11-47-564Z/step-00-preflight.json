@@ -1,0 +1,101 @@
+{
+  "step": 0,
+  "id": "preflight",
+  "label": "预检（库 / 迁移 / 演示租户 / 既有岗位 / 行数）",
+  "tool": "(只读 SQL)",
+  "run_mode": "UNKNOWN",
+  "started_at": "2026-11-14T12:11:48.300Z",
+  "request": null,
+  "ok": true,
+  "result": {
+    "server": {
+      "db": "ra_s6s7",
+      "now": "2026-11-14T12:11:48.300Z",
+      "version": "PostgreSQL 17.11 on x86_64-windows, compiled by msvc-19.44.35229, 64-bit"
+    },
+    "migrations": [
+      "0001_init",
+      "0002_seed",
+      "0003_review_queue",
+      "0004_stage_catalog",
+      "0005_version_binding",
+      "0006_integrity_gaps",
+      "0007_decision_integrity",
+      "0008_decision_uniqueness",
+      "0009_application_identity",
+      "0010_migration_ledger",
+      "0011_task_runtime",
+      "0012_engine_state",
+      "0013_trace_chain",
+      "0014_tenant_config"
+    ],
+    "department": {
+      "id": "11111111-1111-4111-8111-000000000010",
+      "name": "研发部（演示）",
+      "hiring_manager_actor_id": "11111111-1111-4111-8111-000000000102"
+    },
+    "actor": {
+      "id": "11111111-1111-4111-8111-000000000103",
+      "kind": "HUMAN",
+      "display_name": "演示-HR 专员"
+    },
+    "existing_job_with_fixed_code": null,
+    "decisions_by_scope": [
+      {
+        "decision_scope": "SCREENING",
+        "n": 4
+      },
+      {
+        "decision_scope": "STAGE",
+        "n": 1
+      }
+    ],
+    "counts": {
+      "application": 51,
+      "approval": 16,
+      "business_task": 5,
+      "candidate": 49,
+      "decision": 5,
+      "event_inbox": 135,
+      "intake_asset": 60,
+      "intake_record": 60,
+      "job": 16,
+      "job_version": 19,
+      "resume": 60,
+      "resume_version": 61,
+      "rubric_version": 18
+    }
+  },
+  "row_counts_before": {
+    "application": 51,
+    "approval": 16,
+    "business_task": 5,
+    "candidate": 49,
+    "decision": 5,
+    "event_inbox": 135,
+    "intake_asset": 60,
+    "intake_record": 60,
+    "job": 16,
+    "job_version": 19,
+    "resume": 60,
+    "resume_version": 61,
+    "rubric_version": 18
+  },
+  "row_counts_after": {
+    "application": 51,
+    "approval": 16,
+    "business_task": 5,
+    "candidate": 49,
+    "decision": 5,
+    "event_inbox": 135,
+    "intake_asset": 60,
+    "intake_record": 60,
+    "job": 16,
+    "job_version": 19,
+    "resume": 60,
+    "resume_version": 61,
+    "rubric_version": 18
+  },
+  "row_count_delta": {},
+  "outcome": "PASS"
+}

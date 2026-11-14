@@ -1,0 +1,780 @@
+{
+  "step": 5,
+  "id": "decision-record-screening",
+  "label": "S7 decision_record(decision_scope=SCREENING)（D-95 IN_CHAT v2，真实写库）",
+  "tool": {
+    "name": "recruitment_decision_record",
+    "description": "Formal decision record for ONE application: decision_scope=SCREENING (S7, stage_code=S7, no interview_id and no S10 summary) or STAGE/FINAL (S10, stage_code=S10). The decision itself is made by a HUMAN; this tool only verifies and records it: for S10 it re-computes the evaluation summary (same as_of) and enforces the result gate (WITHDRAW/HOLD always allowed; ADVANCE(FINAL)/REJECT blocked when required scorecards are missing); for S7 it only checks the screening-evaluation binding. It requires human_confirmation whose sha256 covers {result, reason, override_rationale, basis_refs} (plus the human's verbatim words for IN_CHAT, D-95), asks the human for approval when the confirmation is not IN_CHAT (no answerer => unavailable => nothing is written), then writes one decision row plus its internal event in the same transaction (supersede = reverse-insert, rewire, clear). It never writes application/interview status and accepts no tenant/actor/stage_code input.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "application_id": {
+          "type": "string",
+          "description": "申请 id（UUID）。决策对象是申请，不是人也不是岗位。"
+        },
+        "decision_scope": {
+          "type": "string",
+          "enum": [
+            "SCREENING",
+            "STAGE",
+            "FINAL"
+          ],
+          "description": "STAGE 必须带 interview_id；FINAL 必须不带（DC-06）；SCREENING 是 S7 的人决定（不需要 interview_id / S10 汇总，stage_code 写 S7，§17.1）"
+        },
+        "interview_id": {
+          "type": "string",
+          "description": "STAGE 必填 / FINAL、SCREENING 禁止（UUID）"
+        },
+        "as_of": {
+          "type": "string",
+          "description": "必填：ISO-8601 带时区偏移，不得晚于服务端 now。STAGE/FINAL 必须与 summarize 用的那个 as_of 相同，否则 SUMMARY_STALE。"
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "ADVANCE",
+            "HOLD",
+            "WITHDRAW",
+            "REJECT"
+          ],
+          "description": "人做出的结论；HIRED 在 v1.0 禁用（RESULT_NOT_IN_V1_SCOPE）。SCREENING 不是终局（不许 HIRED）"
+        },
+        "reason": {
+          "type": "string",
+          "description": "1..4000；REJECT 时必须含至少一个 rubric dimension_key（S7 是 criterion key）"
+        },
+        "basis_refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "SCORECARD",
+                  "SUMMARY",
+                  "RUBRIC_VERSION",
+                  "INTERVIEW_RECORD",
+                  "SCREENING_DECISION",
+                  "AUTHORITY",
+                  "OVERRIDE",
+                  "MISSING_ACK",
+                  "SUPERSEDES",
+                  "SCREENING_EVALUATION",
+                  "RESUME_VERSION"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "revision_no": {
+                "type": "integer"
+              },
+              "interviewer_id": {
+                "type": "string"
+              },
+              "payload_hash": {
+                "type": "string"
+              },
+              "overall": {
+                "type": "string",
+                "enum": [
+                  "ADVANCE",
+                  "HOLD",
+                  "REJECT"
+                ]
+              },
+              "transcript_basis": {
+                "type": "string",
+                "enum": [
+                  "TRANSCRIPT",
+                  "NO_TRANSCRIPT"
+                ]
+              },
+              "transcript_state": {
+                "type": "string"
+              },
+              "evidence_state": {
+                "type": "string",
+                "enum": [
+                  "MEMORY_ONLY"
+                ]
+              },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "dimension_key": {
+                      "type": "string"
+                    },
+                    "assessment": {
+                      "type": "string",
+                      "enum": [
+                        "MET",
+                        "NOT_MET",
+                        "NOT_OBSERVED",
+                        "UNREADABLE"
+                      ]
+                    },
+                    "evidence": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "dimension_key",
+                    "assessment"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "summary_digest": {
+                "type": "string"
+              },
+              "contract_version": {
+                "type": "string"
+              },
+              "coverage": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "tally": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "consensus": {
+                "type": "string"
+              },
+              "provenance": {
+                "type": "string",
+                "enum": [
+                  "LIVE",
+                  "FIXTURE"
+                ]
+              },
+              "version_no": {
+                "type": "integer"
+              },
+              "transcript_artifact_id": {
+                "type": "string"
+              },
+              "transcript_revision": {
+                "type": "integer"
+              },
+              "verification_status": {
+                "type": "string"
+              },
+              "result": {
+                "type": "string"
+              },
+              "decided_at": {
+                "type": "string"
+              },
+              "actor_id": {
+                "type": "string"
+              },
+              "is_hiring_manager": {
+                "type": "boolean"
+              },
+              "acknowledged_dissent": {
+                "type": "boolean"
+              },
+              "override_rationale": {
+                "type": "string"
+              },
+              "interviewer_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "rationale": {
+                "type": "string"
+              },
+              "decision_id": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "opened_by_actor_id": {
+                "type": "string"
+              },
+              "evaluation_digest": {
+                "type": "string"
+              },
+              "verdict": {
+                "type": "string",
+                "enum": [
+                  "PASS",
+                  "FAIL",
+                  "NEEDS_REVIEW"
+                ]
+              },
+              "rubric_version_id": {
+                "type": "string"
+              },
+              "rubric_payload_hash": {
+                "type": "string"
+              },
+              "resume_version_id": {
+                "type": "string"
+              },
+              "resume_content_sha256": {
+                "type": "string"
+              },
+              "reasons_digest": {
+                "type": "string"
+              },
+              "criteria_evaluated": {
+                "type": "boolean"
+              },
+              "counts": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "content_sha256": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          "description": "1..200；S10：kind ∈ 九种（DC §6.1）；SCREENING：SCREENING_EVALUATION/RESUME_VERSION/RUBRIC_VERSION/AUTHORITY/SUPERSEDES（§17.1）"
+        },
+        "summary_digest": {
+          "type": "string",
+          "description": "STAGE/FINAL 必填，64 位 hex 且必须 = 本次重算值（DC-16）；SCREENING 没有汇总，不接受"
+        },
+        "human_confirmation": {
+          "type": "object",
+          "properties": {
+            "confirmed_by_actor_id": {
+              "type": "string",
+              "description": "必须 = 执行上下文的 actor（UUID）"
+            },
+            "confirmed_at": {
+              "type": "string",
+              "description": "ISO-8601 带偏移；与 decided_at 相差 ≤ 24h 且不得晚于它"
+            },
+            "confirmation_method": {
+              "type": "string",
+              "enum": [
+                "IN_CHAT",
+                "IN_APP_CONFIRM",
+                "SIGNED_RECORD"
+              ]
+            },
+            "confirmation_text": {
+              "type": "string",
+              "description": "人在对话里说过的原话（逐字，≤2000 字符）。confirmation_method=IN_CHAT 时必填：它是\"人只决策一次\"的授权凭据，落库后可与会话日志对账（D-95）。**原话进 pre-image v2**（§17.2）：改了原话、哈希就对不上。"
+            },
+            "confirmation_text_sha256": {
+              "type": "string",
+              "description": "64 位 hex。v1（无原话，旧口径）：sha256(canonical_json({result, reason, override_rationale, basis_refs}))；v2（IN_CHAT，D-95）：上述四键 + {preimage_version:2, confirmation_text, confirmed_by_actor_id, confirmed_at}（键序由 canonical_json 固定；见 decision-rules.md §17.2）。"
+            }
+          },
+          "required": [
+            "confirmed_by_actor_id",
+            "confirmed_at",
+            "confirmation_method",
+            "confirmation_text_sha256"
+          ],
+          "additionalProperties": false
+        },
+        "missing_disposition": {
+          "type": "string",
+          "enum": [
+            "PROCEED_WITH_MISSING"
+          ],
+          "description": "只对 ADVANCE(STAGE) 且 missing≠∅ 时有效（DC §4.2 矩阵）"
+        },
+        "acknowledged_missing": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "interviewer_id": {
+                "type": "string",
+                "description": "缺的那位（UUID）"
+              },
+              "why_proceed": {
+                "type": "string",
+                "description": "1..1000，为什么可以不等人"
+              }
+            },
+            "required": [
+              "interviewer_id",
+              "why_proceed"
+            ],
+            "additionalProperties": false
+          },
+          "description": "集合必须与 missing[].interviewer_id 完全相等"
+        },
+        "acknowledged_dissent": {
+          "type": "boolean",
+          "description": "结论与 consensus 相反时必须 true"
+        },
+        "override_rationale": {
+          "type": "string",
+          "description": "同上，非空；进 confirmation_text_sha256 的 pre-image"
+        },
+        "supersedes": {
+          "type": "object",
+          "properties": {
+            "decision_id": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "expected_record_version": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "decision_id",
+            "reason",
+            "expected_record_version"
+          ],
+          "additionalProperties": false
+        },
+        "approval_id": {
+          "type": "string",
+          "description": "可选 UUID（v1.0 不要求，DC-19）"
+        },
+        "tenant_id": {
+          "type": "string",
+          "description": "保留键：只能来自执行上下文，一律拒收"
+        },
+        "actor_id": {
+          "type": "string",
+          "description": "保留键：只能来自执行上下文，一律拒收"
+        },
+        "interviewer_id": {
+          "type": "string",
+          "description": "保留键：只能来自执行上下文，一律拒收"
+        },
+        "decided_by_actor_id": {
+          "type": "string",
+          "description": "保留键：决策人只能来自执行上下文，一律拒收"
+        },
+        "stage_code": {
+          "type": "string",
+          "description": "保留键：工具按 scope 写死（S10/S7，DC-07/§17.1），一律拒收"
+        },
+        "round_no": {
+          "type": "integer",
+          "description": "保留键：轮次由 interview_id 决定，一律拒收"
+        },
+        "slot_code": {
+          "type": "string",
+          "description": "保留键：轮次由 interview_id 决定，一律拒收"
+        },
+        "submitted_at": {
+          "type": "string",
+          "description": "保留键：时间由服务端取，一律拒收"
+        },
+        "decided_at": {
+          "type": "string",
+          "description": "保留键：时间由服务端取（DC-48），一律拒收"
+        },
+        "status": {
+          "type": "string",
+          "description": "保留键：本工具不写状态，一律拒收"
+        }
+      },
+      "required": [
+        "application_id",
+        "decision_scope",
+        "as_of",
+        "result",
+        "reason",
+        "basis_refs",
+        "human_confirmation"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "type": "string"
+          },
+          "contract_version": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "replayed": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "labels": {
+            "type": "object",
+            "properties": {
+              "provenance": {
+                "type": "string",
+                "enum": [
+                  "LIVE",
+                  "FIXTURE"
+                ]
+              },
+              "trigger": {
+                "type": "string",
+                "enum": [
+                  "MANUAL"
+                ]
+              },
+              "connection": {
+                "type": "string",
+                "enum": [
+                  "CONNECTED",
+                  "NOT_CONNECTED"
+                ]
+              }
+            },
+            "required": [
+              "provenance",
+              "trigger",
+              "connection"
+            ],
+            "additionalProperties": false
+          },
+          "decision": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "application_id": {
+                "type": "string"
+              },
+              "interview_id": {
+                "type": "string"
+              },
+              "decision_scope": {
+                "type": "string",
+                "enum": [
+                  "SCREENING",
+                  "STAGE",
+                  "FINAL"
+                ]
+              },
+              "stage_code": {
+                "type": "string",
+                "enum": [
+                  "S7",
+                  "S10"
+                ]
+              },
+              "result": {
+                "type": "string",
+                "enum": [
+                  "ADVANCE",
+                  "HOLD",
+                  "WITHDRAW",
+                  "REJECT"
+                ]
+              },
+              "decided_by_actor_id": {
+                "type": "string"
+              },
+              "decided_at": {
+                "type": "string"
+              },
+              "record_version": {
+                "type": "integer"
+              },
+              "superseded_by_decision_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "application_id",
+              "decision_scope",
+              "stage_code",
+              "result",
+              "decided_by_actor_id",
+              "decided_at",
+              "record_version"
+            ],
+            "additionalProperties": false
+          },
+          "gate": {
+            "type": "object",
+            "properties": {
+              "as_of": {
+                "type": "string"
+              },
+              "ready_for_decision": {
+                "type": "boolean"
+              },
+              "missing_disposition": {
+                "type": "string",
+                "enum": [
+                  "PROCEED_WITH_MISSING"
+                ]
+              },
+              "acknowledged_missing": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "interviewer_id": {
+                      "type": "string",
+                      "description": "缺的那位（UUID）"
+                    },
+                    "why_proceed": {
+                      "type": "string",
+                      "description": "1..1000，为什么可以不等人"
+                    }
+                  },
+                  "required": [
+                    "interviewer_id",
+                    "why_proceed"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "permitted_results_echo": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "summary_digest": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "as_of",
+              "ready_for_decision",
+              "acknowledged_missing",
+              "permitted_results_echo",
+              "summary_digest"
+            ],
+            "additionalProperties": false
+          },
+          "superseded": {
+            "type": "object",
+            "properties": {
+              "decision_id": {
+                "type": "string"
+              },
+              "record_version": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "decision_id",
+              "record_version"
+            ],
+            "additionalProperties": false
+          },
+          "event": {
+            "type": "object",
+            "properties": {
+              "event_id": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "internal"
+                ]
+              },
+              "trust_level": {
+                "type": "string",
+                "enum": [
+                  "INTERNAL"
+                ]
+              }
+            },
+            "required": [
+              "event_id",
+              "provider",
+              "trust_level"
+            ],
+            "additionalProperties": false
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "DECIDER_NOT_HIRING_MANAGER",
+                    "HIRING_MANAGER_UNSET",
+                    "PROCEEDED_WITH_MISSING_SCORECARDS",
+                    "MINORITY_DISSENT",
+                    "OVERRIDE_APPLIED",
+                    "REJECT_BASIS_MEMORY_ONLY",
+                    "FIXTURE_BASIS",
+                    "SUPERSEDES_APPLIED",
+                    "APPROVAL_ATTACHED"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "tool",
+          "contract_version",
+          "status",
+          "replayed",
+          "labels",
+          "decision",
+          "event",
+          "warnings"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "run_mode": "FIRST_RUN",
+  "started_at": "2026-11-14T12:11:50.777Z",
+  "request": {
+    "application_id": "cdbb3b1f-457e-42ea-ac14-a38edf9260e1",
+    "decision_scope": "SCREENING",
+    "as_of": "2026-11-14T20:11:50+08:00",
+    "result": "ADVANCE",
+    "reason": "初筛通过：work_exists 与 edu_exists 两条 MUST_HAVE 均满足（依据 SCREENING_EVALUATION 的逐准则证据）。",
+    "basis_refs": [
+      {
+        "kind": "RUBRIC_VERSION",
+        "id": "29b65a1c-672e-4ab3-8b65-999cfb4d3ace",
+        "payload_hash": "7246c814b84cac1384da6194a5e28d28bac11fe884de8f4f71e937f694e6650b",
+        "version_no": 1
+      },
+      {
+        "kind": "AUTHORITY",
+        "actor_id": "11111111-1111-4111-8111-000000000103",
+        "is_hiring_manager": false
+      },
+      {
+        "kind": "SCREENING_EVALUATION",
+        "evaluation_digest": "1ea82164416472f9095065303fc81479c9666df6fe3900e2040422c406f04b37",
+        "verdict": "PASS",
+        "rubric_version_id": "29b65a1c-672e-4ab3-8b65-999cfb4d3ace",
+        "rubric_payload_hash": "7246c814b84cac1384da6194a5e28d28bac11fe884de8f4f71e937f694e6650b",
+        "resume_version_id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+        "resume_content_sha256": "3a899ebbc826d0410594e5471c31a04bc170cbd38f605cff5c108ddb1c9c69a3",
+        "contract_version": "1.0.0",
+        "criteria_evaluated": true,
+        "provenance": "FIXTURE"
+      },
+      {
+        "kind": "RESUME_VERSION",
+        "id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+        "content_sha256": "3a899ebbc826d0410594e5471c31a04bc170cbd38f605cff5c108ddb1c9c69a3"
+      }
+    ],
+    "human_confirmation": {
+      "confirmed_by_actor_id": "11111111-1111-4111-8111-000000000103",
+      "confirmed_at": "2026-11-14T20:10:50+08:00",
+      "confirmation_method": "IN_CHAT",
+      "confirmation_text": "我确认：示例甲这条申请初筛通过，推进到面试。",
+      "confirmation_text_sha256": "4d9d2f85e047059b207a5f874b5b83b8d6b216ea1adeb96c3a4ef01863f87ee1"
+    }
+  },
+  "ok": true,
+  "result": {
+    "tool": "recruitment_decision_record",
+    "contract_version": "2.0.0",
+    "status": "OK",
+    "replayed": false,
+    "labels": {
+      "provenance": "FIXTURE",
+      "trigger": "MANUAL",
+      "connection": "CONNECTED"
+    },
+    "decision": {
+      "id": "3dff62db-8fac-4768-a7d0-d9b8a8600b0a",
+      "application_id": "cdbb3b1f-457e-42ea-ac14-a38edf9260e1",
+      "decision_scope": "SCREENING",
+      "stage_code": "S7",
+      "result": "ADVANCE",
+      "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+      "decided_at": "2026-11-14T12:11:50.842Z",
+      "record_version": 1
+    },
+    "event": {
+      "event_id": "d7f54c16-e197-4324-b147-fc3c0ae9838d",
+      "provider": "internal",
+      "trust_level": "INTERNAL"
+    },
+    "warnings": [
+      {
+        "code": "DECIDER_NOT_HIRING_MANAGER",
+        "message": "决策人不是该部门的招聘负责人；v1.0 不拦截，仅记录（DC-14）"
+      },
+      {
+        "code": "FIXTURE_BASIS",
+        "message": "本次决策依据的是演练数据（provenance=FIXTURE），不是真实外部事实"
+      }
+    ]
+  },
+  "rendered": "recruitment_decision_record 2.0.0 status=OK\nlabels: provenance=FIXTURE trigger=MANUAL connection=CONNECTED\ndecision 3dff62db-8fac-4768-a7d0-d9b8a8600b0a scope=SCREENING stage=S7 result=ADVANCE record_version=1\ndecided_at=2026-11-14T12:11:50.842Z decided_by=11111111-1111-4111-8111-000000000103\ngate: —（SCREENING 没有 S10 汇总）\nsuperseded: —（本次不是撤回）\nevent d7f54c16-e197-4324-b147-fc3c0ae9838d internal/INTERNAL\nwarnings(2)\n  DECIDER_NOT_HIRING_MANAGER: 决策人不是该部门的招聘负责人；v1.0 不拦截，仅记录（DC-14）\n  FIXTURE_BASIS: 本次决策依据的是演练数据（provenance=FIXTURE），不是真实外部事实",
+  "row_counts_before": {
+    "application": 52,
+    "approval": 17,
+    "business_task": 5,
+    "candidate": 49,
+    "decision": 5,
+    "event_inbox": 137,
+    "intake_asset": 60,
+    "intake_record": 60,
+    "job": 17,
+    "job_version": 20,
+    "resume": 60,
+    "resume_version": 61,
+    "rubric_version": 19
+  },
+  "row_counts_after": {
+    "application": 52,
+    "approval": 17,
+    "business_task": 5,
+    "candidate": 49,
+    "decision": 6,
+    "event_inbox": 138,
+    "intake_asset": 60,
+    "intake_record": 60,
+    "job": 17,
+    "job_version": 20,
+    "resume": 60,
+    "resume_version": 61,
+    "rubric_version": 19
+  },
+  "row_count_delta": {
+    "decision": 1,
+    "event_inbox": 1
+  },
+  "readback_error": "error: 操作符不存在: text = uuid",
+  "outcome": "PASS"
+}

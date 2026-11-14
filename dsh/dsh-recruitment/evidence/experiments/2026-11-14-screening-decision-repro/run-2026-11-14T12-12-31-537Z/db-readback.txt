@@ -1,0 +1,166 @@
+run_mode: FIRST_RUN
+run_id: 2026-11-14T12-12-31-537Z
+git_head: d6f4aa5bb84fabe661b6977a53339dc58f6f3634
+
+-- job --
+{
+  "id": "9641498e-5e78-4dc7-b785-c99eee20caa8",
+  "code": "REPRO-S6S7-DECISION-2",
+  "title": "后端工程师（S6→S7 决策复现演示岗）",
+  "status": "OPEN",
+  "department_id": "11111111-1111-4111-8111-000000000010",
+  "current_job_version_id": "42e18a6e-87d6-4af8-9826-8027653cfbe1",
+  "current_rubric_version_id": "bf5071a1-6960-48b8-9a46-63d80abd1f58",
+  "record_version": 3
+}
+
+-- rubric_version + approvals --
+{
+  "rubrics": [
+    {
+      "id": "bf5071a1-6960-48b8-9a46-63d80abd1f58",
+      "job_id": "9641498e-5e78-4dc7-b785-c99eee20caa8",
+      "version_no": 1,
+      "payload_hash": "7246c814b84cac1384da6194a5e28d28bac11fe884de8f4f71e937f694e6650b",
+      "dimension_count": 2,
+      "dimension_keys": [
+        "work_exists",
+        "edu_exists"
+      ]
+    }
+  ],
+  "approvals": [
+    {
+      "id": "ab55d849-82b8-4646-9956-ed727a84bd58",
+      "resource_id": "bf5071a1-6960-48b8-9a46-63d80abd1f58",
+      "status": "APPROVED",
+      "canonical_payload_hash": "7246c814b84cac1384da6194a5e28d28bac11fe884de8f4f71e937f694e6650b",
+      "superseded_by_approval_id": null,
+      "expires_at": null,
+      "decided_at": "2026-11-14T12:12:32.649Z",
+      "decision_by_actor_id": "11111111-1111-4111-8111-000000000103"
+    }
+  ]
+}
+
+-- candidate (masked, R7) --
+{
+  "id": "86ea316a-3a7f-49fc-9f05-c77f9e4d2797",
+  "identity_status": "ACTIVE",
+  "display_name": "示例甲",
+  "email_masked": "rep***@example.test",
+  "phone_masked": "+86136***42"
+}
+
+-- application --
+{
+  "id": "4ddf49ce-9254-4f72-999c-85691f4e32f7",
+  "job_id": "9641498e-5e78-4dc7-b785-c99eee20caa8",
+  "candidate_id": "86ea316a-3a7f-49fc-9f05-c77f9e4d2797",
+  "job_version_id": "42e18a6e-87d6-4af8-9826-8027653cfbe1",
+  "rubric_version_id": "bf5071a1-6960-48b8-9a46-63d80abd1f58",
+  "resume_version_id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+  "lifecycle_status": "ACTIVE",
+  "current_stage_code": "S6",
+  "record_version": 1,
+  "created_at": "2026-11-14T12:12:34.040Z"
+}
+
+-- decision(SCREENING) --
+[
+  {
+    "id": "3742cde3-2448-4930-a203-e368a285291e",
+    "application_id": "4ddf49ce-9254-4f72-999c-85691f4e32f7",
+    "decision_scope": "SCREENING",
+    "stage_code": "S7",
+    "result": "ADVANCE",
+    "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+    "decided_by_display_name": "演示-HR 专员",
+    "decided_at": "2026-11-14T12:12:34.380Z",
+    "record_version": 1,
+    "superseded_by_decision_id": null,
+    "approval_id": null,
+    "reason": "初筛通过：work_exists 与 edu_exists 两条 MUST_HAVE 均满足（依据 SCREENING_EVALUATION 的逐准则证据）。",
+    "basis_ref_count": 4,
+    "basis_kinds": [
+      "AUTHORITY",
+      "RESUME_VERSION",
+      "RUBRIC_VERSION",
+      "SCREENING_EVALUATION"
+    ],
+    "basis_refs": [
+      {
+        "id": "bf5071a1-6960-48b8-9a46-63d80abd1f58",
+        "kind": "RUBRIC_VERSION",
+        "version_no": 1,
+        "payload_hash": "7246c814b84cac1384da6194a5e28d28bac11fe884de8f4f71e937f694e6650b"
+      },
+      {
+        "kind": "AUTHORITY",
+        "actor_id": "11111111-1111-4111-8111-000000000103",
+        "is_hiring_manager": false
+      },
+      {
+        "kind": "SCREENING_EVALUATION",
+        "verdict": "PASS",
+        "provenance": "FIXTURE",
+        "contract_version": "1.0.0",
+        "evaluation_digest": "7d06c50f4fcc4d7586ce8f64ff6be8dd6e52e340dc8cf6d8852540ff9ca281e8",
+        "resume_version_id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+        "rubric_version_id": "bf5071a1-6960-48b8-9a46-63d80abd1f58",
+        "criteria_evaluated": true,
+        "rubric_payload_hash": "7246c814b84cac1384da6194a5e28d28bac11fe884de8f4f71e937f694e6650b",
+        "resume_content_sha256": "3a899ebbc826d0410594e5471c31a04bc170cbd38f605cff5c108ddb1c9c69a3"
+      },
+      {
+        "id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+        "kind": "RESUME_VERSION",
+        "content_sha256": "3a899ebbc826d0410594e5471c31a04bc170cbd38f605cff5c108ddb1c9c69a3"
+      }
+    ]
+  }
+]
+
+-- decision.record 内部事件 --
+[
+  {
+    "event_id": "6646c503-acaa-466b-8600-3e63214d7c94",
+    "provider": "internal",
+    "trust_level": "INTERNAL",
+    "event_type": "decision.record",
+    "idempotency_key": "decision:3742cde3-2448-4930-a203-e368a285291e",
+    "idempotency_source": "FALLBACK_KEY",
+    "source_object_id": "3742cde3-2448-4930-a203-e368a285291e",
+    "occurred_at": "2026-11-14T12:12:34.380Z",
+    "decision_scope": "SCREENING",
+    "result": "ADVANCE",
+    "screening_evaluation_digest": "7d06c50f4fcc4d7586ce8f64ff6be8dd6e52e340dc8cf6d8852540ff9ca281e8",
+    "human_confirmation_method": "IN_CHAT",
+    "human_confirmation_text": "我确认：示例甲这条申请初筛通过，推进到面试。",
+    "human_confirmation_text_sha256": "34695561b04125459d2af3f204a2fd7bd6d2c7e6cbd9c7b93936b2919d76fbbf",
+    "human_confirmation_preimage_version": "2"
+  }
+]
+
+-- decisions by scope (tenant) --
+[
+  {
+    "decision_scope": "SCREENING",
+    "n": 6
+  },
+  {
+    "decision_scope": "STAGE",
+    "n": 1
+  }
+]
+
+-- counts delta vs preflight --
+{
+  "application": 1,
+  "approval": 1,
+  "decision": 1,
+  "event_inbox": 3,
+  "job": 1,
+  "job_version": 1,
+  "rubric_version": 1
+}

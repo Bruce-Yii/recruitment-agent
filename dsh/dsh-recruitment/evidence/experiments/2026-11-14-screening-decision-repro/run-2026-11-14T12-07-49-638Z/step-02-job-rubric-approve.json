@@ -1,0 +1,410 @@
+{
+  "step": 2,
+  "id": "job-rubric-approve",
+  "label": "S3 job_rubric_approve（人机闸门 allow-once → 批准 + 把 current 指针指过去）",
+  "tool": {
+    "name": "recruitment_job_rubric_approve",
+    "description": "Approve ONE rubric version of a job as a HUMAN action and point job.current_rubric_version_id at it. This is the product entry for S3 rubric approval (docs/23 N7): recruitment_job_create / _update only write approval(status=PENDING); until a human approves it, recruitment_job_get answers NO_APPROVED_RUBRIC.\n\nD-79 HUMAN GATE (why an agent cannot approve by itself)\n- Before ANY write the tool asks the host for human approval (ctx.approval). Only an explicit human \"allowed-once\" continues; rejected / cancelled / unavailable / 120s timeout => FORBIDDEN(APPROVAL_UNAVAILABLE|APPROVAL_NOT_GRANTED) and NOTHING is written.\n- Call this tool only when the user explicitly asks to approve this rubric version. Never invent a user instruction and never describe a rubric as approved before this tool returns outcome=APPROVED / NO_OP / CURRENT_UPDATED.\n\nWHAT IT WRITES (one transaction)\n- approval: PENDING -> APPROVED via the same human decision function the CLI uses. The rubric_version row is never touched (it is immutable); rubric_version.approved_by_approval_id stays null by contract (J-1/J-5).\n- job.current_rubric_version_id -> the approved version (only when it differs). This is the explicit current pointer (D-21/D-48), not max(version_no); the composite FK fk_job_current_rubric rejects versions of another job/tenant.\n- event_inbox: one internal event job.rubric_version.approved with job/rubric/approval ids and the previous -> current pointer values. The approval status transition itself is audited by the database trigger (approval.status_source_event_id).\n\nIDEMPOTENCY\n- Already approved AND pointer already points at it => outcome=NO_OP, replayed=true, the human is NOT asked and NOTHING is written (record_version and event count stay unchanged).\n- Already approved but the pointer is stale (legacy CLI approval) => outcome=CURRENT_UPDATED, replayed=true; the human gate is still required because moving the current pointer is business-visible.\n- This call performed the PENDING -> APPROVED decision => outcome=APPROVED, replayed=false.\n\nINPUTS\n- job_id: UUID of the job (from recruitment_job_create / _update / _get).\n- rubric_version_id: UUID of the rubric version (rubric.version_id from the same tools). It must belong to job_id, otherwise NOT_FOUND(RUBRIC_VERSION_NOT_FOUND) lists the job's known version numbers.\n- reason: optional human note (1..500 characters), recorded on the approval row and the audit event.\n- tenant_id / actor_id are never accepted from the model: identity comes from the execution context.\n\nFAILURES (closed set)\n- INVALID_ARGS: bad arguments, PAYLOAD_HASH_MISMATCH (approval hash != rubric payload hash), APPROVAL_NOT_PENDING / APPROVAL_EXPIRED / APPROVAL_SUPERSEDED, UNSUPPORTED_PAYLOAD_SCHEMA_VERSION.\n- NOT_FOUND: JOB_NOT_FOUND, RUBRIC_VERSION_NOT_FOUND, APPROVAL_NOT_FOUND.\n- FORBIDDEN: ACTOR_NOT_IN_TENANT, ACTOR_NOT_HUMAN, APPROVAL_UNAVAILABLE, APPROVAL_NOT_GRANTED.\n\nVerify the result with recruitment_job_get(job_id=...): rubric.is_current=true, rubric.is_approved=true.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "description": "Job id (UUID) of the rubric owner. Must belong to the configured tenant. Take it from recruitment_job_create / recruitment_job_update / recruitment_job_get."
+        },
+        "rubric_version_id": {
+          "type": "string",
+          "description": "Rubric version id (UUID) to approve. Must belong to job_id (fk_job_current_rubric). Take rubric.version_id from recruitment_job_create / _update / _get."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Optional human note (1..500 characters) recorded on the approval row and the audit event. Omit when there is nothing to say."
+        }
+      },
+      "required": [
+        "job_id",
+        "rubric_version_id"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "type": "string",
+            "enum": [
+              "recruitment_job_rubric_approve"
+            ]
+          },
+          "contract_version": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "object",
+            "properties": {
+              "provenance": {
+                "type": "string",
+                "enum": [
+                  "LIVE",
+                  "FIXTURE"
+                ]
+              },
+              "trigger": {
+                "type": "string",
+                "enum": [
+                  "MANUAL"
+                ]
+              },
+              "connection": {
+                "type": "string",
+                "enum": [
+                  "NOT_CONNECTED"
+                ]
+              }
+            },
+            "required": [
+              "provenance",
+              "trigger",
+              "connection"
+            ],
+            "additionalProperties": false
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "CURRENT_UPDATED",
+              "NO_OP"
+            ]
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "gate": {
+            "type": "object",
+            "properties": {
+              "requested": {
+                "type": "boolean"
+              },
+              "result": {
+                "type": "string",
+                "enum": [
+                  "allowed-once",
+                  "not-required"
+                ]
+              }
+            },
+            "required": [
+              "requested",
+              "result"
+            ],
+            "additionalProperties": false
+          },
+          "job": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "current_rubric_version_id": {
+                "type": "string"
+              },
+              "previous_current_rubric_version_id": {
+                "type": "string"
+              },
+              "record_version": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "title",
+              "status",
+              "current_rubric_version_id",
+              "record_version"
+            ],
+            "additionalProperties": false
+          },
+          "rubric": {
+            "type": "object",
+            "properties": {
+              "version_id": {
+                "type": "string"
+              },
+              "version_no": {
+                "type": "integer"
+              },
+              "payload_hash": {
+                "type": "string"
+              },
+              "is_approved": {
+                "type": "boolean"
+              },
+              "is_current": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "version_id",
+              "version_no",
+              "payload_hash",
+              "is_approved",
+              "is_current"
+            ],
+            "additionalProperties": false
+          },
+          "approval": {
+            "type": "object",
+            "properties": {
+              "approval_id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "APPROVED"
+                ]
+              },
+              "decided_at": {
+                "type": "string"
+              },
+              "decided_by_actor_id": {
+                "type": "string"
+              },
+              "canonical_payload_hash": {
+                "type": "string"
+              },
+              "record_version": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "approval_id",
+              "status",
+              "decided_at",
+              "decided_by_actor_id",
+              "canonical_payload_hash",
+              "record_version"
+            ],
+            "additionalProperties": false
+          },
+          "changes": {
+            "type": "object",
+            "properties": {
+              "written": {
+                "type": "boolean"
+              },
+              "tables": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "event_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "written",
+              "tables",
+              "event_ids"
+            ],
+            "additionalProperties": false
+          },
+          "next_action": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "READ_BACK"
+                ]
+              },
+              "job_id": {
+                "type": "string"
+              },
+              "verify_with": {
+                "type": "string",
+                "enum": [
+                  "recruitment_job_get"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "job_id",
+              "verify_with"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "tool",
+          "contract_version",
+          "labels",
+          "outcome",
+          "replayed",
+          "gate",
+          "job",
+          "rubric",
+          "approval",
+          "changes",
+          "next_action"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "run_mode": "FIRST_RUN",
+  "started_at": "2026-11-14T12:07:49.964Z",
+  "request": {
+    "job_id": "951f46e8-3b9f-4724-8a3b-833be97027d9",
+    "rubric_version_id": "5645fcc0-509a-42eb-bdad-bb77f32c741d",
+    "reason": "复现 harness：人确认批准该版标准（approval seam 替身 allow-once，闸门本身照常调用）"
+  },
+  "ok": true,
+  "result": {
+    "tool": "recruitment_job_rubric_approve",
+    "contract_version": "1.0.0",
+    "labels": {
+      "provenance": "FIXTURE",
+      "trigger": "MANUAL",
+      "connection": "NOT_CONNECTED"
+    },
+    "outcome": "APPROVED",
+    "replayed": false,
+    "gate": {
+      "requested": true,
+      "result": "allowed-once"
+    },
+    "job": {
+      "id": "951f46e8-3b9f-4724-8a3b-833be97027d9",
+      "code": "REPRO-S6S7-SCREENING",
+      "title": "后端工程师（S6→S7 决策复现演示岗）",
+      "status": "OPEN",
+      "current_rubric_version_id": "5645fcc0-509a-42eb-bdad-bb77f32c741d",
+      "record_version": 3
+    },
+    "rubric": {
+      "version_id": "5645fcc0-509a-42eb-bdad-bb77f32c741d",
+      "version_no": 1,
+      "payload_hash": "c7041e8ce6c49fbc19a456d7bdbb31db610d52db88e76775a5b010a4de009d5d",
+      "is_approved": true,
+      "is_current": true
+    },
+    "approval": {
+      "approval_id": "f03eee74-40f3-48c4-b9c8-b0a8e5647f5d",
+      "status": "APPROVED",
+      "decided_at": "2026-11-14T12:07:50.127Z",
+      "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+      "canonical_payload_hash": "c7041e8ce6c49fbc19a456d7bdbb31db610d52db88e76775a5b010a4de009d5d",
+      "record_version": 2
+    },
+    "changes": {
+      "written": true,
+      "tables": [
+        "approval",
+        "job",
+        "event_inbox"
+      ],
+      "event_ids": [
+        "7302101c-830f-4505-baa4-d1ebf947c8d9"
+      ]
+    },
+    "next_action": {
+      "kind": "READ_BACK",
+      "job_id": "951f46e8-3b9f-4724-8a3b-833be97027d9",
+      "verify_with": "recruitment_job_get"
+    }
+  },
+  "rendered": "approved rubric v1 approval for job REPRO-S6S7-SCREENING 后端工程师（S6→S7 决策复现演示岗） [OPEN]  (labels: FIXTURE/MANUAL/NOT_CONNECTED)\n  job_id=951f46e8-3b9f-4724-8a3b-833be97027d9  record_version=3\n  rubric version_id=5645fcc0-509a-42eb-bdad-bb77f32c741d  payload_hash=c7041e8c…  is_approved=true  is_current=true\n  approval f03eee74-40f3-48c4-b9c8-b0a8e5647f5d APPROVED by 11111111-1111-4111-8111-000000000103 at 2026-11-14T12:07:50.127Z\n  current_rubric_version_id: none -> 5645fcc0-509a-42eb-bdad-bb77f32c741d\n  replayed=false  gate: requested=true result=allowed-once\n  changes: written=true tables=[approval, job, event_inbox] events=[7302101c-830f-4505-baa4-d1ebf947c8d9]\nnext: recruitment_job_get(job_id=951f46e8-3b9f-4724-8a3b-833be97027d9)",
+  "row_counts_before": {
+    "application": 49,
+    "approval": 15,
+    "business_task": 5,
+    "candidate": 48,
+    "decision": 5,
+    "event_inbox": 130,
+    "intake_asset": 59,
+    "intake_record": 59,
+    "job": 15,
+    "job_version": 18,
+    "resume": 59,
+    "resume_version": 60,
+    "rubric_version": 17
+  },
+  "row_counts_after": {
+    "application": 49,
+    "approval": 15,
+    "business_task": 5,
+    "candidate": 48,
+    "decision": 5,
+    "event_inbox": 132,
+    "intake_asset": 59,
+    "intake_record": 59,
+    "job": 15,
+    "job_version": 18,
+    "resume": 59,
+    "resume_version": 60,
+    "rubric_version": 17
+  },
+  "row_count_delta": {
+    "event_inbox": 2
+  },
+  "readback": {
+    "job": {
+      "id": "951f46e8-3b9f-4724-8a3b-833be97027d9",
+      "code": "REPRO-S6S7-SCREENING",
+      "title": "后端工程师（S6→S7 决策复现演示岗）",
+      "status": "OPEN",
+      "department_id": "11111111-1111-4111-8111-000000000010",
+      "current_job_version_id": "81ebbcb5-9c50-4e77-be44-b60e93fb116f",
+      "current_rubric_version_id": "5645fcc0-509a-42eb-bdad-bb77f32c741d",
+      "record_version": 3
+    },
+    "rubric_and_approvals": {
+      "rubrics": [
+        {
+          "id": "5645fcc0-509a-42eb-bdad-bb77f32c741d",
+          "job_id": "951f46e8-3b9f-4724-8a3b-833be97027d9",
+          "version_no": 1,
+          "payload_hash": "c7041e8ce6c49fbc19a456d7bdbb31db610d52db88e76775a5b010a4de009d5d",
+          "dimension_count": 3,
+          "dimension_keys": [
+            "work_exists",
+            "edu_exists",
+            "team_lead"
+          ]
+        }
+      ],
+      "approvals": [
+        {
+          "id": "f03eee74-40f3-48c4-b9c8-b0a8e5647f5d",
+          "resource_id": "5645fcc0-509a-42eb-bdad-bb77f32c741d",
+          "status": "APPROVED",
+          "canonical_payload_hash": "c7041e8ce6c49fbc19a456d7bdbb31db610d52db88e76775a5b010a4de009d5d",
+          "superseded_by_approval_id": null,
+          "expires_at": null,
+          "decided_at": "2026-11-14T12:07:50.127Z",
+          "decision_by_actor_id": "11111111-1111-4111-8111-000000000103"
+        }
+      ]
+    },
+    "approval_service_calls": 1
+  },
+  "outcome": "PASS"
+}

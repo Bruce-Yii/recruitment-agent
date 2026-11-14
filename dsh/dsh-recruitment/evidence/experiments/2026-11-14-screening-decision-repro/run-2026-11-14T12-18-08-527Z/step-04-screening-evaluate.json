@@ -1,0 +1,252 @@
+{
+  "step": 4,
+  "id": "screening-evaluate",
+  "label": "S7 screening_evaluate（只读、advisory、带逐准则证据）",
+  "tool": "recruitment_screening_evaluate",
+  "run_mode": "RERUN",
+  "started_at": "2026-11-14T12:18:09.227Z",
+  "request": {
+    "application_id": "cdbb3b1f-457e-42ea-ac14-a38edf9260e1",
+    "as_of": "2026-11-14T20:18:09+08:00"
+  },
+  "ok": true,
+  "result": {
+    "tool": "recruitment_screening_evaluate",
+    "contract_version": "1.0.0",
+    "status": "OK",
+    "advisory": true,
+    "read_only": true,
+    "labels": {
+      "provenance": "FIXTURE",
+      "trigger": "MANUAL",
+      "connection": "CONNECTED"
+    },
+    "as_of": "2026-11-14T20:18:09+08:00",
+    "application": {
+      "id": "cdbb3b1f-457e-42ea-ac14-a38edf9260e1",
+      "job_id": "d83a7d09-d26b-43ac-a3a4-192aea13b1c8",
+      "candidate_id": "86ea316a-3a7f-49fc-9f05-c77f9e4d2797",
+      "job_version_id": "53275b99-92f5-468a-8265-0733c261895a",
+      "rubric_version_id": "29b65a1c-672e-4ab3-8b65-999cfb4d3ace",
+      "lifecycle_status": "ACTIVE",
+      "current_stage_code": "S6",
+      "record_version": 1
+    },
+    "job": {
+      "id": "d83a7d09-d26b-43ac-a3a4-192aea13b1c8",
+      "title": "后端工程师（S6→S7 决策复现演示岗）",
+      "status": "OPEN"
+    },
+    "resume_version": {
+      "id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+      "version_no": 1,
+      "parse_status": "PARSED",
+      "source_asset_sha256": "56f93d3be582a988a4713c1cba22c411e17b20371de73c2147962adde4c24ce5",
+      "content_sha256": "3a899ebbc826d0410594e5471c31a04bc170cbd38f605cff5c108ddb1c9c69a3",
+      "parser_name": "pymupdf",
+      "parser_version": "1.0.0",
+      "page_count": 2,
+      "hard_issue_count": 0
+    },
+    "rubric": {
+      "version_id": "29b65a1c-672e-4ab3-8b65-999cfb4d3ace",
+      "version_no": 1,
+      "payload_hash": "7246c814b84cac1384da6194a5e28d28bac11fe884de8f4f71e937f694e6650b",
+      "is_current": true,
+      "is_approved": true,
+      "resolution": "APPLICATION_PINNED",
+      "what_if": false,
+      "rubric_pin_required": false,
+      "criteria_count": 2
+    },
+    "preconditions": {
+      "human_queue_checked": 7,
+      "human_queue_clear": true,
+      "material_bound": true,
+      "material_ready": true,
+      "rubric_approved": true
+    },
+    "verdict": "PASS",
+    "verdict_summary": "2 条硬性条件：2 满足 / 0 反证 / 0 不确定；0 条排除条件命中 → 建议通过（全部硬性条件满足、排除条件均未命中）",
+    "criteria_evaluated": true,
+    "required_human_action": "CONFIRM_DECISION",
+    "reasons": [
+      {
+        "code": "MUST_HAVE_SATISFIED",
+        "failure_class": "HARD_PASS",
+        "criterion_key": "work_exists",
+        "kind": "MUST_HAVE",
+        "field": "work_experience",
+        "outcome": "SATISFIED",
+        "tri_state": "present",
+        "expected": {
+          "operator": "EXISTS",
+          "value_boolean": true
+        },
+        "evidence": [
+          {
+            "resume_version_id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+            "source_asset_sha256": "56f93d3be582a988a4713c1cba22c411e17b20371de73c2147962adde4c24ce5",
+            "page": 1,
+            "bbox": [
+              56,
+              257.5,
+              434,
+              270.1000061035156
+            ],
+            "block": 9,
+            "quote": "示例云启科技有限公司　　后端开发工程师　　2019.07-2021.06",
+            "provenance": "native_text"
+          },
+          {
+            "resume_version_id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+            "source_asset_sha256": "56f93d3be582a988a4713c1cba22c411e17b20371de73c2147962adde4c24ce5",
+            "page": 1,
+            "bbox": [
+              56,
+              329.5,
+              455,
+              342.1000061035156
+            ],
+            "block": 13,
+            "quote": "示例蓝海数据技术有限公司　　高级后端工程师　　2021.07-2023.06",
+            "provenance": "native_text"
+          },
+          {
+            "resume_version_id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+            "source_asset_sha256": "56f93d3be582a988a4713c1cba22c411e17b20371de73c2147962adde4c24ce5",
+            "page": 1,
+            "bbox": [
+              56,
+              401.5,
+              455,
+              414.1000061035156
+            ],
+            "block": 17,
+            "quote": "示例星野网络科技有限公司　　后端开发实习生　　2018.07-2019.06",
+            "provenance": "native_text"
+          }
+        ],
+        "issue_codes": [],
+        "question": null,
+        "notes": "EXISTS 判的是 state=present（读到了），不是\"这个人有工作经历\"",
+        "message": "work_experience 已读出（state=present）"
+      },
+      {
+        "code": "MUST_HAVE_SATISFIED",
+        "failure_class": "HARD_PASS",
+        "criterion_key": "edu_exists",
+        "kind": "MUST_HAVE",
+        "field": "education",
+        "outcome": "SATISFIED",
+        "tri_state": "present",
+        "expected": {
+          "operator": "EXISTS",
+          "value_boolean": true
+        },
+        "evidence": [
+          {
+            "resume_version_id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+            "source_asset_sha256": "56f93d3be582a988a4713c1cba22c411e17b20371de73c2147962adde4c24ce5",
+            "page": 2,
+            "bbox": [
+              56,
+              75.5,
+              444.5,
+              88.0999984741211
+            ],
+            "block": 25,
+            "quote": "示例理工大学　　计算机科学与技术　　本科　　2014.09-2018.06",
+            "provenance": "native_text"
+          }
+        ],
+        "issue_codes": [],
+        "question": null,
+        "notes": "state=absent → MISSING；state=unreadable → UNREADABLE",
+        "message": "education 已读出（state=present）"
+      }
+    ],
+    "bonus_signals": [],
+    "warnings": [],
+    "snapshot": {
+      "application_record_version": 1,
+      "resume_version_id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+      "resume_content_sha256": "3a899ebbc826d0410594e5471c31a04bc170cbd38f605cff5c108ddb1c9c69a3",
+      "rubric_version_id": "29b65a1c-672e-4ab3-8b65-999cfb4d3ace",
+      "rubric_payload_hash": "7246c814b84cac1384da6194a5e28d28bac11fe884de8f4f71e937f694e6650b"
+    },
+    "evaluation_digest": "5e08631ce588c0824dba2d48412dd13d6f0fe9f4c6d523b591543c9f13297dfb",
+    "prior_screening": {
+      "decision_id": "3dff62db-8fac-4768-a7d0-d9b8a8600b0a",
+      "result": "ADVANCE",
+      "rubric_version_id": "29b65a1c-672e-4ab3-8b65-999cfb4d3ace",
+      "decided_at": "2026-11-14T12:11:50.842Z"
+    }
+  },
+  "rendered": "recruitment_screening_evaluate 1.0.0 status=OK advisory=true read_only=true\nlabels: provenance=FIXTURE trigger=MANUAL connection=CONNECTED\napplication cdbb3b1f-457e-42ea-ac14-a38edf9260e1 stage=S6 lifecycle=ACTIVE rv=1\njob 后端工程师（S6→S7 决策复现演示岗） [OPEN]\nresume_version v1 parse_status=PARSED hard_issues=0 pages=2\nrubric v1 resolution=APPLICATION_PINNED what_if=false criteria=2\npreconditions: human_queue_checked=7 material_ready=true\nverdict: PASS (criteria_evaluated=true, required_human_action=CONFIRM_DECISION)\nsummary: 2 条硬性条件：2 满足 / 0 反证 / 0 不确定；0 条排除条件命中 → 建议通过（全部硬性条件满足、排除条件均未命中）\n  [MUST_HAVE_SATISFIED] work_exists field=work_experience tri_state=present evidence=3 — work_experience 已读出（state=present）\n  [MUST_HAVE_SATISFIED] edu_exists field=education tri_state=present evidence=1 — education 已读出（state=present）\nsnapshot: app_rv=1 resume_version_id=cec1c064-df8e-4df9-8043-4f2f27a8cfac rubric_version_id=29b65a1c-672e-4ab3-8b65-999cfb4d3ace\nevaluation_digest=5e08631ce588c0824dba2d48412dd13d6f0fe9f4c6d523b591543c9f13297dfb",
+  "row_counts_before": {
+    "application": 54,
+    "approval": 19,
+    "business_task": 5,
+    "candidate": 49,
+    "decision": 7,
+    "event_inbox": 143,
+    "intake_asset": 60,
+    "intake_record": 60,
+    "job": 19,
+    "job_version": 22,
+    "resume": 60,
+    "resume_version": 61,
+    "rubric_version": 21
+  },
+  "row_counts_after": {
+    "application": 54,
+    "approval": 19,
+    "business_task": 5,
+    "candidate": 49,
+    "decision": 7,
+    "event_inbox": 143,
+    "intake_asset": 60,
+    "intake_record": 60,
+    "job": 19,
+    "job_version": 22,
+    "resume": 60,
+    "resume_version": 61,
+    "rubric_version": 21
+  },
+  "row_count_delta": {},
+  "readback": {
+    "application": {
+      "id": "cdbb3b1f-457e-42ea-ac14-a38edf9260e1",
+      "job_id": "d83a7d09-d26b-43ac-a3a4-192aea13b1c8",
+      "candidate_id": "86ea316a-3a7f-49fc-9f05-c77f9e4d2797",
+      "job_version_id": "53275b99-92f5-468a-8265-0733c261895a",
+      "rubric_version_id": "29b65a1c-672e-4ab3-8b65-999cfb4d3ace",
+      "resume_version_id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+      "lifecycle_status": "ACTIVE",
+      "current_stage_code": "S6",
+      "record_version": 1,
+      "created_at": "2026-11-14T12:11:50.583Z"
+    },
+    "decisions": [
+      {
+        "id": "3dff62db-8fac-4768-a7d0-d9b8a8600b0a",
+        "decision_scope": "SCREENING",
+        "result": "ADVANCE",
+        "decided_at": "2026-11-14T12:11:50.842Z"
+      }
+    ],
+    "rubric_resolution": {
+      "version_id": "29b65a1c-672e-4ab3-8b65-999cfb4d3ace",
+      "version_no": 1,
+      "payload_hash": "7246c814b84cac1384da6194a5e28d28bac11fe884de8f4f71e937f694e6650b",
+      "is_current": true,
+      "is_approved": true,
+      "resolution": "APPLICATION_PINNED",
+      "what_if": false,
+      "rubric_pin_required": false,
+      "criteria_count": 2
+    }
+  },
+  "outcome": "PASS"
+}

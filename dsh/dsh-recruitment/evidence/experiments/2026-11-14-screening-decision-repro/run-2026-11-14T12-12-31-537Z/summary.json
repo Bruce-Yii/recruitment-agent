@@ -1,0 +1,2845 @@
+{
+  "run_id": "2026-11-14T12-12-31-537Z",
+  "run_mode": "FIRST_RUN",
+  "decision_already_in_db_before_step5": false,
+  "decision_written_this_run": true,
+  "generated_at": "2026-11-14T12:12:34.445Z",
+  "harness": {
+    "path": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\dsh\\dsh-recruitment\\manual\\screening-decision\\run-screening-decision.mjs",
+    "sha256": "9a4ca85fc0a27bc0f4e4e7197587d0306ff4ea1c67fc287468c9c3745612e16c"
+  },
+  "git_head": "d6f4aa5bb84fabe661b6977a53339dc58f6f3634",
+  "code_files_sha256": {
+    "src/tools/job-create.ts": "1d8501d3ce599370d7f0150567277db1a57c9de844b08056ca286ad596d8712d",
+    "src/tools/job-rubric-approve.ts": "15be28265222afc5a85d301b6fc7543090ca85ec0b65555e0e0d5fecdc63211f",
+    "src/tools/application-intake.ts": "c375eb3fbaf526b24dc8f1882fe2feafd6a2d1217aa7c1179f3e152f62646cca",
+    "src/tools/screening-evaluate.ts": "446f812b60f5289e01571ef639780720bc6caa3b5fe12fecc2125225a76228d2",
+    "src/tools/decision-record.ts": "f41a872d03c7f1cdaee62d856bdc7d90dbf972a755673aedf8c7ee13f7eb5e28"
+  },
+  "fixture": {
+    "path": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\dsh\\dsh-recruitment\\manual\\screening-decision\\fixtures\\synthetic-resume-screening-repro.pdf",
+    "sha256": "56f93d3be582a988a4713c1cba22c411e17b20371de73c2147962adde4c24ce5",
+    "bytes": 10931
+  },
+  "database": {
+    "host": "127.0.0.1",
+    "port": 5432,
+    "database": "ra_s6s7",
+    "tenant_id": "11111111-1111-4111-8111-000000000001",
+    "actor_id": "11111111-1111-4111-8111-000000000103"
+  },
+  "job": {
+    "id": "9641498e-5e78-4dc7-b785-c99eee20caa8",
+    "code": "REPRO-S6S7-DECISION-2",
+    "title": "后端工程师（S6→S7 决策复现演示岗）",
+    "status": "OPEN",
+    "department_id": "11111111-1111-4111-8111-000000000010",
+    "current_job_version_id": "42e18a6e-87d6-4af8-9826-8027653cfbe1",
+    "current_rubric_version_id": "bf5071a1-6960-48b8-9a46-63d80abd1f58",
+    "record_version": 3
+  },
+  "rubric": {
+    "version_id": "bf5071a1-6960-48b8-9a46-63d80abd1f58",
+    "version_no": 1,
+    "approvals": [
+      {
+        "id": "ab55d849-82b8-4646-9956-ed727a84bd58",
+        "resource_id": "bf5071a1-6960-48b8-9a46-63d80abd1f58",
+        "status": "APPROVED",
+        "canonical_payload_hash": "7246c814b84cac1384da6194a5e28d28bac11fe884de8f4f71e937f694e6650b",
+        "superseded_by_approval_id": null,
+        "expires_at": null,
+        "decided_at": "2026-11-14T12:12:32.649Z",
+        "decision_by_actor_id": "11111111-1111-4111-8111-000000000103"
+      }
+    ]
+  },
+  "candidate_masked": {
+    "id": "86ea316a-3a7f-49fc-9f05-c77f9e4d2797",
+    "identity_status": "ACTIVE",
+    "display_name": "示例甲",
+    "email_masked": "rep***@example.test",
+    "phone_masked": "+86136***42"
+  },
+  "application": {
+    "id": "4ddf49ce-9254-4f72-999c-85691f4e32f7",
+    "job_id": "9641498e-5e78-4dc7-b785-c99eee20caa8",
+    "candidate_id": "86ea316a-3a7f-49fc-9f05-c77f9e4d2797",
+    "job_version_id": "42e18a6e-87d6-4af8-9826-8027653cfbe1",
+    "rubric_version_id": "bf5071a1-6960-48b8-9a46-63d80abd1f58",
+    "resume_version_id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+    "lifecycle_status": "ACTIVE",
+    "current_stage_code": "S6",
+    "record_version": 1,
+    "created_at": "2026-11-14T12:12:34.040Z"
+  },
+  "screening": {
+    "verdict": "PASS",
+    "evaluation_digest": "7d06c50f4fcc4d7586ce8f64ff6be8dd6e52e340dc8cf6d8852540ff9ca281e8",
+    "rubric_resolution": "APPLICATION_PINNED",
+    "what_if": false,
+    "rubric_pin_required": false,
+    "criteria_evaluated": true,
+    "labels": {
+      "provenance": "FIXTURE",
+      "trigger": "MANUAL",
+      "connection": "CONNECTED"
+    },
+    "warnings": []
+  },
+  "decision": {
+    "id": "3742cde3-2448-4930-a203-e368a285291e",
+    "application_id": "4ddf49ce-9254-4f72-999c-85691f4e32f7",
+    "decision_scope": "SCREENING",
+    "stage_code": "S7",
+    "result": "ADVANCE",
+    "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+    "decided_by_display_name": "演示-HR 专员",
+    "decided_at": "2026-11-14T12:12:34.380Z",
+    "record_version": 1,
+    "superseded_by_decision_id": null,
+    "approval_id": null,
+    "reason": "初筛通过：work_exists 与 edu_exists 两条 MUST_HAVE 均满足（依据 SCREENING_EVALUATION 的逐准则证据）。",
+    "basis_ref_count": 4,
+    "basis_kinds": [
+      "AUTHORITY",
+      "RESUME_VERSION",
+      "RUBRIC_VERSION",
+      "SCREENING_EVALUATION"
+    ],
+    "basis_refs": [
+      {
+        "id": "bf5071a1-6960-48b8-9a46-63d80abd1f58",
+        "kind": "RUBRIC_VERSION",
+        "version_no": 1,
+        "payload_hash": "7246c814b84cac1384da6194a5e28d28bac11fe884de8f4f71e937f694e6650b"
+      },
+      {
+        "kind": "AUTHORITY",
+        "actor_id": "11111111-1111-4111-8111-000000000103",
+        "is_hiring_manager": false
+      },
+      {
+        "kind": "SCREENING_EVALUATION",
+        "verdict": "PASS",
+        "provenance": "FIXTURE",
+        "contract_version": "1.0.0",
+        "evaluation_digest": "7d06c50f4fcc4d7586ce8f64ff6be8dd6e52e340dc8cf6d8852540ff9ca281e8",
+        "resume_version_id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+        "rubric_version_id": "bf5071a1-6960-48b8-9a46-63d80abd1f58",
+        "criteria_evaluated": true,
+        "rubric_payload_hash": "7246c814b84cac1384da6194a5e28d28bac11fe884de8f4f71e937f694e6650b",
+        "resume_content_sha256": "3a899ebbc826d0410594e5471c31a04bc170cbd38f605cff5c108ddb1c9c69a3"
+      },
+      {
+        "id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+        "kind": "RESUME_VERSION",
+        "content_sha256": "3a899ebbc826d0410594e5471c31a04bc170cbd38f605cff5c108ddb1c9c69a3"
+      }
+    ]
+  },
+  "decision_events": [
+    {
+      "event_id": "6646c503-acaa-466b-8600-3e63214d7c94",
+      "provider": "internal",
+      "trust_level": "INTERNAL",
+      "event_type": "decision.record",
+      "idempotency_key": "decision:3742cde3-2448-4930-a203-e368a285291e",
+      "idempotency_source": "FALLBACK_KEY",
+      "source_object_id": "3742cde3-2448-4930-a203-e368a285291e",
+      "occurred_at": "2026-11-14T12:12:34.380Z",
+      "decision_scope": "SCREENING",
+      "result": "ADVANCE",
+      "screening_evaluation_digest": "7d06c50f4fcc4d7586ce8f64ff6be8dd6e52e340dc8cf6d8852540ff9ca281e8",
+      "human_confirmation_method": "IN_CHAT",
+      "human_confirmation_text": "我确认：示例甲这条申请初筛通过，推进到面试。",
+      "human_confirmation_text_sha256": "34695561b04125459d2af3f204a2fd7bd6d2c7e6cbd9c7b93936b2919d76fbbf",
+      "human_confirmation_preimage_version": "2"
+    }
+  ],
+  "steps": [
+    {
+      "step": 0,
+      "id": "preflight",
+      "tool": "(只读 SQL)",
+      "run_mode": "UNKNOWN",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {}
+    },
+    {
+      "step": 1,
+      "id": "job-create",
+      "tool": {
+        "name": "recruitment_job_create",
+        "description": "Create a job (requisition) in the business database and, when criteria are given, its first rubric version. Output carries R4 three-axis labels: provenance is computed from the tenant's synthetic marker (FIXTURE unless the tenant is explicitly declared non-synthetic; never hard-coded LIVE), trigger is MANUAL, and connection is NOT_CONNECTED (no external system is read or written).\n\nWHAT IT WRITES (one transaction)\n- recruitment.job: code is unique per tenant (omit code to auto-generate JOB-<YYYYMMDD>-<6 hex>).\n- job_version v1 with the JD text: description_md / requirements_md. A job_version is never UPDATEd; later edits append a new version. If you omit BOTH JD fields, the title is stored as a placeholder and the output says jd_source=TITLE_PLACEHOLDER (no fake JD content is invented).\n- If criteria are given: rubric_version v1 plus an approval row with status=PENDING.\n\nWHERE job_id COMES FROM / GOES\n- This tool returns job.id (a UUID). Every later step (applications, screening) references that UUID.\n- Read it back with recruitment_job_get(job_id=...), which resolves the current approved rubric.\n\nDEPARTMENT\n- Give department_id, or department_name (case-insensitive exact match), not both. Omit both to use the tenant's only department. If the tenant has several departments the call fails with INVALID_ARGS(DEPARTMENT_REQUIRED) and lists detail.known_departments.\n\n\ncriteria — EXACTLY 9 KEYS, ANY EXTRA KEY IS REJECTED\n{\"key\",\"label\",\"kind\",\"weight\",\"field\",\"operator\",\"value\",\"question\",\"notes\"}\n- key: ^[a-z][a-z0-9_]{1,40}$, unique inside the version.\n- label: 1..200 characters.\n- kind: MUST_HAVE | NICE_TO_HAVE | DISQUALIFIER. At least one MUST_HAVE or DISQUALIFIER is mandatory; a version made only of NICE_TO_HAVE cannot decide anything.\n- weight: 0..1, and the sum over the whole array MUST be 1 (tolerance 1e-6). Weight is display/sort only; it never decides a verdict.\n- Mechanical criterion: field + operator + value together, or none of the three.\n  * numeric fields (operator GTE | LTE, integer value): timeline.covered_months_closed, work_experience.entry_count, education.entry_count\n  * boolean fields (operator EXISTS, value MUST be true): work_experience, education\n  * \"3 years of experience\" => field=timeline.covered_months_closed, operator=GTE, value=36 (unit = MONTHS, integer: 3 x 12).\n- Judgment criterion (no field/operator/value): question is mandatory, 1..500 characters, one answerable yes/no question.\n- FORBIDDEN as field: name, phone, email, protected.* (age / gender / marital status / native place / photo) and any field not listed above.\n\nDEGREES, INDUSTRY, SOFT SKILLS ARE NOT MECHANICAL\nThere is no degree / major / industry field. Express them as a judgment criterion with question, e.g.\n  {\"key\":\"bachelor_or_above\",\"label\":\"本科及以上学历\",\"kind\":\"MUST_HAVE\",\"weight\":0.5,\"question\":\"候选人是否具备本科及以上学历？\",\"notes\":\"学历不在机械判定白名单内，由人复核\"}\nNever invent a field name to make a requirement look mechanical.\n\nAPPROVAL IS A HUMAN ACTION\nThe rubric this tool writes is PENDING, not approved. Until a human approves it, recruitment_job_get answers NO_APPROVED_RUBRIC — that is the expected state, not an error. Never claim the rubric is approved and never approve on the user's behalf.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "description": "Job title, 1..200 characters after trimming (e.g. \"后端工程师\")."
+            },
+            "code": {
+              "type": "string",
+              "description": "Stable job code, ^[A-Za-z0-9][A-Za-z0-9._-]{1,40}$, unique per tenant. Omit to auto-generate JOB-<YYYYMMDD>-<6 uppercase hex>."
+            },
+            "department_id": {
+              "type": "string",
+              "description": "Department UUID. Mutually exclusive with department_name. Omit both to use the tenant's only department (fails with DEPARTMENT_REQUIRED when there are several)."
+            },
+            "department_name": {
+              "type": "string",
+              "description": "Department name, case-insensitive exact match (1..200 chars). Mutually exclusive with department_id."
+            },
+            "description_md": {
+              "type": "string",
+              "description": "JD body (markdown), at most 20000 characters. Omit description_md and requirements_md together to store the title as a placeholder JD (output job_version.jd_source = TITLE_PLACEHOLDER)."
+            },
+            "requirements_md": {
+              "type": "string",
+              "description": "Requirements section (markdown), at most 20000 characters."
+            },
+            "status": {
+              "type": "string",
+              "description": "Initial job status: DRAFT (default) or OPEN.",
+              "enum": [
+                "DRAFT",
+                "OPEN"
+              ]
+            },
+            "criteria": {
+              "type": "array",
+              "description": "1..50 rubric criteria. The object below has exactly 9 keys and no others. kind is MUST_HAVE | NICE_TO_HAVE | DISQUALIFIER (at least one MUST_HAVE or DISQUALIFIER). weight is 0..1 and the array MUST sum to 1 (tolerance 1e-6). A mechanical criterion gives field+operator+value together; a judgment criterion gives question instead. Allowed mechanical fields: timeline.covered_months_closed / work_experience.entry_count / education.entry_count with GTE|LTE and an integer value; work_experience / education with EXISTS and true. name / phone / email / protected.* are forbidden as field.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "description": "Stable machine key, ^[a-z][a-z0-9_]{1,40}$, unique inside the version."
+                  },
+                  "label": {
+                    "type": "string",
+                    "description": "Human label, 1..200 characters."
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "MUST_HAVE",
+                      "NICE_TO_HAVE",
+                      "DISQUALIFIER"
+                    ],
+                    "description": "MUST_HAVE | NICE_TO_HAVE | DISQUALIFIER."
+                  },
+                  "weight": {
+                    "type": "number",
+                    "description": "0..1 display weight; the sum over the array must be 1 (tolerance 1e-6). Weight never decides."
+                  },
+                  "field": {
+                    "type": "string",
+                    "description": "Mechanical field from the closed whitelist (timeline.covered_months_closed, work_experience.entry_count, education.entry_count, work_experience, education)."
+                  },
+                  "operator": {
+                    "type": "string",
+                    "enum": [
+                      "EXISTS",
+                      "GTE",
+                      "LTE"
+                    ],
+                    "description": "EXISTS (boolean fields) | GTE | LTE (integer fields)."
+                  },
+                  "value": {
+                    "oneOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ],
+                    "description": "EXISTS requires true; GTE/LTE require an integer (months for timeline.covered_months_closed)."
+                  },
+                  "question": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Judgment criterion: one answerable yes/no question, 1..500 characters. Required when field/operator/value are absent (e.g. degrees, industry, soft skills)."
+                  },
+                  "notes": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Optional explanation, at most 1000 characters; never used for a decision."
+                  }
+                },
+                "required": [
+                  "key",
+                  "label",
+                  "kind",
+                  "weight"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "enum": [
+                  "recruitment_job_create",
+                  "recruitment_job_update"
+                ]
+              },
+              "contract_version": {
+                "type": "string"
+              },
+              "labels": {
+                "type": "object",
+                "properties": {
+                  "provenance": {
+                    "type": "string",
+                    "enum": [
+                      "LIVE",
+                      "FIXTURE"
+                    ]
+                  },
+                  "trigger": {
+                    "type": "string",
+                    "enum": [
+                      "MANUAL"
+                    ]
+                  },
+                  "connection": {
+                    "type": "string",
+                    "enum": [
+                      "NOT_CONNECTED"
+                    ]
+                  }
+                },
+                "required": [
+                  "provenance",
+                  "trigger",
+                  "connection"
+                ],
+                "additionalProperties": false
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "CREATED",
+                  "UPDATED",
+                  "UNCHANGED"
+                ]
+              },
+              "department": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "additionalProperties": false
+              },
+              "job": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "department_id": {
+                    "type": "string"
+                  },
+                  "requisition_id": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "current_job_version_id": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "record_version": {
+                    "type": "integer"
+                  },
+                  "status_changed_at": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "code",
+                  "title",
+                  "status",
+                  "department_id",
+                  "requisition_id",
+                  "current_job_version_id",
+                  "record_version",
+                  "status_changed_at"
+                ],
+                "additionalProperties": false
+              },
+              "job_version": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "version_no": {
+                        "type": "integer"
+                      },
+                      "payload_hash": {
+                        "type": "string"
+                      },
+                      "description_md": {
+                        "oneOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "requirements_md": {
+                        "oneOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "approved_by_approval_id": {
+                        "oneOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "jd_source": {
+                        "type": "string",
+                        "enum": [
+                          "PROVIDED",
+                          "TITLE_PLACEHOLDER"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version_no",
+                      "payload_hash",
+                      "description_md",
+                      "requirements_md",
+                      "approved_by_approval_id",
+                      "jd_source"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rubric": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "version_id": {
+                        "type": "string"
+                      },
+                      "version_no": {
+                        "type": "integer"
+                      },
+                      "payload_hash": {
+                        "type": "string"
+                      },
+                      "criteria": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "description": "One normalized criterion echoed verbatim (exactly the 9 rubric keys)."
+                        }
+                      },
+                      "criteria_count": {
+                        "type": "integer"
+                      },
+                      "must_have_count": {
+                        "type": "integer"
+                      },
+                      "nice_to_have_count": {
+                        "type": "integer"
+                      },
+                      "disqualifier_count": {
+                        "type": "integer"
+                      },
+                      "is_approved": {
+                        "type": "boolean"
+                      },
+                      "approval": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "approval_id": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "PENDING",
+                                  "APPROVED",
+                                  "REJECTED",
+                                  "EXPIRED",
+                                  "SUPERSEDED",
+                                  "WITHDRAWN"
+                                ]
+                              },
+                              "payload_schema_version": {
+                                "type": "integer"
+                              },
+                              "canonical_payload_hash": {
+                                "type": "string"
+                              },
+                              "requested_by_actor_id": {
+                                "oneOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "approval_id",
+                              "status",
+                              "payload_schema_version",
+                              "canonical_payload_hash",
+                              "requested_by_actor_id"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "version_id",
+                      "version_no",
+                      "payload_hash",
+                      "criteria",
+                      "criteria_count",
+                      "must_have_count",
+                      "nice_to_have_count",
+                      "disqualifier_count",
+                      "is_approved",
+                      "approval"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "next_action": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "APPROVE_RUBRIC",
+                      "READ_BACK"
+                    ]
+                  },
+                  "job_id": {
+                    "type": "string"
+                  },
+                  "approval_id": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "verify_with": {
+                    "type": "string",
+                    "enum": [
+                      "recruitment_job_get"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "job_id",
+                  "approval_id",
+                  "verify_with"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "contract_version",
+              "labels",
+              "outcome",
+              "department",
+              "job",
+              "job_version",
+              "rubric",
+              "next_action"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "run_mode": "UNKNOWN",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {
+        "approval": 1,
+        "job": 1,
+        "job_version": 1,
+        "rubric_version": 1
+      }
+    },
+    {
+      "step": 2,
+      "id": "job-rubric-approve",
+      "tool": {
+        "name": "recruitment_job_rubric_approve",
+        "description": "Approve ONE rubric version of a job as a HUMAN action and point job.current_rubric_version_id at it. This is the product entry for S3 rubric approval (docs/23 N7): recruitment_job_create / _update only write approval(status=PENDING); until a human approves it, recruitment_job_get answers NO_APPROVED_RUBRIC.\n\nD-79 HUMAN GATE (why an agent cannot approve by itself)\n- Before ANY write the tool asks the host for human approval (ctx.approval). Only an explicit human \"allowed-once\" continues; rejected / cancelled / unavailable / 120s timeout => FORBIDDEN(APPROVAL_UNAVAILABLE|APPROVAL_NOT_GRANTED) and NOTHING is written.\n- Call this tool only when the user explicitly asks to approve this rubric version. Never invent a user instruction and never describe a rubric as approved before this tool returns outcome=APPROVED / NO_OP / CURRENT_UPDATED.\n\nWHAT IT WRITES (one transaction)\n- approval: PENDING -> APPROVED via the same human decision function the CLI uses. The rubric_version row is never touched (it is immutable); rubric_version.approved_by_approval_id stays null by contract (J-1/J-5).\n- job.current_rubric_version_id -> the approved version (only when it differs). This is the explicit current pointer (D-21/D-48), not max(version_no); the composite FK fk_job_current_rubric rejects versions of another job/tenant.\n- event_inbox: one internal event job.rubric_version.approved with job/rubric/approval ids and the previous -> current pointer values. The approval status transition itself is audited by the database trigger (approval.status_source_event_id).\n\nIDEMPOTENCY\n- Already approved AND pointer already points at it => outcome=NO_OP, replayed=true, the human is NOT asked and NOTHING is written (record_version and event count stay unchanged).\n- Already approved but the pointer is stale (legacy CLI approval) => outcome=CURRENT_UPDATED, replayed=true; the human gate is still required because moving the current pointer is business-visible.\n- This call performed the PENDING -> APPROVED decision => outcome=APPROVED, replayed=false.\n\nINPUTS\n- job_id: UUID of the job (from recruitment_job_create / _update / _get).\n- rubric_version_id: UUID of the rubric version (rubric.version_id from the same tools). It must belong to job_id, otherwise NOT_FOUND(RUBRIC_VERSION_NOT_FOUND) lists the job's known version numbers.\n- reason: optional human note (1..500 characters), recorded on the approval row and the audit event.\n- tenant_id / actor_id are never accepted from the model: identity comes from the execution context.\n\nFAILURES (closed set)\n- INVALID_ARGS: bad arguments, PAYLOAD_HASH_MISMATCH (approval hash != rubric payload hash), APPROVAL_NOT_PENDING / APPROVAL_EXPIRED / APPROVAL_SUPERSEDED, UNSUPPORTED_PAYLOAD_SCHEMA_VERSION.\n- NOT_FOUND: JOB_NOT_FOUND, RUBRIC_VERSION_NOT_FOUND, APPROVAL_NOT_FOUND.\n- FORBIDDEN: ACTOR_NOT_IN_TENANT, ACTOR_NOT_HUMAN, APPROVAL_UNAVAILABLE, APPROVAL_NOT_GRANTED.\n\nVerify the result with recruitment_job_get(job_id=...): rubric.is_current=true, rubric.is_approved=true.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "job_id": {
+              "type": "string",
+              "description": "Job id (UUID) of the rubric owner. Must belong to the configured tenant. Take it from recruitment_job_create / recruitment_job_update / recruitment_job_get."
+            },
+            "rubric_version_id": {
+              "type": "string",
+              "description": "Rubric version id (UUID) to approve. Must belong to job_id (fk_job_current_rubric). Take rubric.version_id from recruitment_job_create / _update / _get."
+            },
+            "reason": {
+              "type": "string",
+              "description": "Optional human note (1..500 characters) recorded on the approval row and the audit event. Omit when there is nothing to say."
+            }
+          },
+          "required": [
+            "job_id",
+            "rubric_version_id"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "enum": [
+                  "recruitment_job_rubric_approve"
+                ]
+              },
+              "contract_version": {
+                "type": "string"
+              },
+              "labels": {
+                "type": "object",
+                "properties": {
+                  "provenance": {
+                    "type": "string",
+                    "enum": [
+                      "LIVE",
+                      "FIXTURE"
+                    ]
+                  },
+                  "trigger": {
+                    "type": "string",
+                    "enum": [
+                      "MANUAL"
+                    ]
+                  },
+                  "connection": {
+                    "type": "string",
+                    "enum": [
+                      "NOT_CONNECTED"
+                    ]
+                  }
+                },
+                "required": [
+                  "provenance",
+                  "trigger",
+                  "connection"
+                ],
+                "additionalProperties": false
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "APPROVED",
+                  "CURRENT_UPDATED",
+                  "NO_OP"
+                ]
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "gate": {
+                "type": "object",
+                "properties": {
+                  "requested": {
+                    "type": "boolean"
+                  },
+                  "result": {
+                    "type": "string",
+                    "enum": [
+                      "allowed-once",
+                      "not-required"
+                    ]
+                  }
+                },
+                "required": [
+                  "requested",
+                  "result"
+                ],
+                "additionalProperties": false
+              },
+              "job": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "current_rubric_version_id": {
+                    "type": "string"
+                  },
+                  "previous_current_rubric_version_id": {
+                    "type": "string"
+                  },
+                  "record_version": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id",
+                  "code",
+                  "title",
+                  "status",
+                  "current_rubric_version_id",
+                  "record_version"
+                ],
+                "additionalProperties": false
+              },
+              "rubric": {
+                "type": "object",
+                "properties": {
+                  "version_id": {
+                    "type": "string"
+                  },
+                  "version_no": {
+                    "type": "integer"
+                  },
+                  "payload_hash": {
+                    "type": "string"
+                  },
+                  "is_approved": {
+                    "type": "boolean"
+                  },
+                  "is_current": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "version_id",
+                  "version_no",
+                  "payload_hash",
+                  "is_approved",
+                  "is_current"
+                ],
+                "additionalProperties": false
+              },
+              "approval": {
+                "type": "object",
+                "properties": {
+                  "approval_id": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "APPROVED"
+                    ]
+                  },
+                  "decided_at": {
+                    "type": "string"
+                  },
+                  "decided_by_actor_id": {
+                    "type": "string"
+                  },
+                  "canonical_payload_hash": {
+                    "type": "string"
+                  },
+                  "record_version": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "approval_id",
+                  "status",
+                  "decided_at",
+                  "decided_by_actor_id",
+                  "canonical_payload_hash",
+                  "record_version"
+                ],
+                "additionalProperties": false
+              },
+              "changes": {
+                "type": "object",
+                "properties": {
+                  "written": {
+                    "type": "boolean"
+                  },
+                  "tables": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "event_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "written",
+                  "tables",
+                  "event_ids"
+                ],
+                "additionalProperties": false
+              },
+              "next_action": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "READ_BACK"
+                    ]
+                  },
+                  "job_id": {
+                    "type": "string"
+                  },
+                  "verify_with": {
+                    "type": "string",
+                    "enum": [
+                      "recruitment_job_get"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "job_id",
+                  "verify_with"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "contract_version",
+              "labels",
+              "outcome",
+              "replayed",
+              "gate",
+              "job",
+              "rubric",
+              "approval",
+              "changes",
+              "next_action"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "run_mode": "FIRST_RUN",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {
+        "event_inbox": 2
+      }
+    },
+    {
+      "step": 3,
+      "id": "application-intake",
+      "tool": {
+        "name": "recruitment_application_intake",
+        "description": "S6 resume intake. Reads one local resume file (PDF or DOCX; the media type is sniffed from the CONTENT, so the extension never decides whether a file is accepted), resolves the candidate by exact normalized phone/email only (names are never used for identity), and reports THREE independent states: (1) application_action=CREATED|REUSED — the application identity is (candidate, job) while lifecycle_status=ACTIVE, never the file hash, so a new material for the same candidate+job reuses that application; (2) structure_saved=true|false — whether this call appended a new resume_version carrying a validated structured result (resume_version rows are immutable); (3) resume_version_id / resume_version_no / resume_version_action=APPENDED|UNCHANGED — the version now in effect, which application.resume_version_id points at. A byte-identical replay returns REUSED/UNCHANGED and writes nothing. If phone and email are both unreadable it refuses with BLOCKED_BY_REVIEW and writes nothing. Only a native_text phone/email from the reader may auto-merge; OCR / agent-read values stay weak (BLOCKED_BY_REVIEW), which is unaffected by the accepted-file-format list. It never merges candidates. Writes only through SET LOCAL recruitment.actor_id. Optionally accepts structured_json (the structuring agent result for the SAME material): it is validated against this material block index, rejected results write nothing (old facts untouched), and accepted results set the five business fields state while preserving converter_state. RUBRIC PIN: when the target job's current_rubric_version_id points at a version that is APPROVED at call time, a NEW application is created with application.rubric_version_id pinned to exactly that version (D-21/D-48: current is the explicit pointer, never max(version_no)). When the job has no approved current rubric the field stays EMPTY and intake still succeeds — receiving a resume must not require a rubric first; recruitment_application_stage_advance pins it later once the rubric is approved. Only the create path pins: an existing (REUSED) application is never re-pinned here.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Absolute path of a local resume file (PDF or DOCX). The media type is sniffed from the file CONTENT, never from the extension. Must exist and must be inside the configured allowed_roots (fail-closed: any other path is rejected with FORBIDDEN). Images are rejected with reason_code=IMAGE_REQUIRES_VISION (S6 has no OCR/vision attribution step); RTF and other containers are rejected with READER_FAILED(reason_code=UNSUPPORTED_MEDIA)."
+            },
+            "job_id": {
+              "type": "string",
+              "description": "Target job id, UUID text form (e.g. 11111111-1111-4111-8111-000000000401)."
+            },
+            "structured_json": {
+              "type": "string",
+              "description": "Optional: the structuring agent's JSON result for the SAME material, as a JSON string (<= 400000 characters). When present it is validated against the block index of this material (the same serialize()/validate() used by recruitment_resume_serialize + recruitment_structure_validate); a rejected result writes nothing. When present the five business fields take their state from this result (converter state is preserved separately). When absent, behavior is unchanged."
+            }
+          },
+          "required": [
+            "path",
+            "job_id"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string"
+              },
+              "contract_version": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "OK"
+                ]
+              },
+              "created": {
+                "type": "boolean"
+              },
+              "candidate_created": {
+                "type": "boolean"
+              },
+              "idempotent_replay": {
+                "type": "boolean"
+              },
+              "application_action": {
+                "type": "string",
+                "enum": [
+                  "CREATED",
+                  "REUSED"
+                ]
+              },
+              "structure_saved": {
+                "type": "boolean"
+              },
+              "resume_version_action": {
+                "type": "string",
+                "enum": [
+                  "APPENDED",
+                  "UNCHANGED"
+                ]
+              },
+              "candidate_id": {
+                "type": "string"
+              },
+              "application_id": {
+                "type": "string"
+              },
+              "matched_by": {
+                "type": "string"
+              },
+              "resume_id": {
+                "type": "string"
+              },
+              "resume_version_id": {
+                "type": "string"
+              },
+              "resume_version_no": {
+                "type": "integer"
+              },
+              "intake_record_id": {
+                "type": "string"
+              },
+              "intake_asset_id": {
+                "type": "string"
+              },
+              "event_id": {
+                "type": "string"
+              },
+              "provenance": {
+                "type": "string",
+                "enum": [
+                  "LIVE",
+                  "FIXTURE"
+                ]
+              },
+              "labels": {
+                "type": "object",
+                "properties": {
+                  "provenance": {
+                    "type": "string"
+                  },
+                  "trigger": {
+                    "type": "string"
+                  },
+                  "connection": {
+                    "type": "string"
+                  },
+                  "source_kind": {
+                    "type": "string"
+                  },
+                  "event_provider": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provenance",
+                  "trigger",
+                  "connection",
+                  "source_kind",
+                  "event_provider"
+                ],
+                "additionalProperties": false
+              },
+              "source": {
+                "type": "object",
+                "properties": {
+                  "file_name": {
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "type": "string"
+                  },
+                  "pages": {
+                    "type": "integer"
+                  },
+                  "byte_size": {
+                    "type": "integer"
+                  },
+                  "completeness": {
+                    "type": "string"
+                  },
+                  "parse_status": {
+                    "type": "string"
+                  },
+                  "hard_issue_count": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "file_name",
+                  "sha256",
+                  "pages",
+                  "byte_size",
+                  "completeness",
+                  "parse_status",
+                  "hard_issue_count"
+                ],
+                "additionalProperties": false
+              },
+              "identity": {
+                "type": "object",
+                "properties": {
+                  "strong_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "identity_merge_eligible": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "weak_fields": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "provenance": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "provenance",
+                        "reason"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "blocked_fields": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "reason"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "page": {
+                          "type": "integer"
+                        },
+                        "bbox": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
+                        "block": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "page",
+                        "bbox",
+                        "block"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "strong_ids",
+                  "blocked_fields",
+                  "evidence"
+                ],
+                "additionalProperties": false
+              },
+              "job": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "code",
+                  "title",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              "application": {
+                "type": "object",
+                "properties": {
+                  "job_id": {
+                    "type": "string"
+                  },
+                  "job_version_id": {
+                    "type": "string"
+                  },
+                  "stage_code": {
+                    "type": "string"
+                  },
+                  "lifecycle_status": {
+                    "type": "string"
+                  },
+                  "record_version": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "job_id",
+                  "job_version_id",
+                  "stage_code",
+                  "lifecycle_status",
+                  "record_version"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool",
+              "contract_version",
+              "status",
+              "created",
+              "candidate_created",
+              "idempotent_replay",
+              "candidate_id",
+              "application_id",
+              "matched_by",
+              "resume_id",
+              "resume_version_id",
+              "intake_record_id",
+              "intake_asset_id",
+              "event_id",
+              "provenance",
+              "labels",
+              "source",
+              "identity",
+              "job",
+              "application"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "run_mode": "FIRST_RUN",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {
+        "application": 1
+      }
+    },
+    {
+      "step": 4,
+      "id": "screening-evaluate",
+      "tool": {
+        "name": "recruitment_screening_evaluate",
+        "description": "S7 advisory screening evaluation for ONE application (read-only, advisory=true, never writes a decision). Reads the pinned material + rubric, runs the 7 human-queue/material blocking checks, evaluates the rubric criteria with three-state fields (present/absent/unreadable), and returns PASS | FAIL | NEEDS_REVIEW with page/bbox/sha256 evidence. Runs inside a read-only transaction. Errors are BLOCKED_BY_REVIEW / NO_RUBRIC / NOT_FOUND / INVALID_ARGS with reason_code.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "application_id": {
+              "type": "string",
+              "description": "Application id (UUID). The evaluation target is an application, not a candidate x job pair."
+            },
+            "resume_version_id": {
+              "type": "string",
+              "description": "Optional material version override (UUID). Must belong to the same candidate as the application, otherwise INVALID_ARGS(RESUME_NOT_BELONG_TO_CANDIDATE)."
+            },
+            "rubric_version_id": {
+              "type": "string",
+              "description": "Optional rubric version override (UUID) = what_if. When it differs from the pinned version the output carries rubric.what_if=true and must not be used to write a decision."
+            },
+            "as_of": {
+              "type": "string",
+              "description": "ISO-8601 timestamp WITH timezone offset (e.g. 2026-11-13T00:00:00+08:00). Must not be later than the server clock. When omitted the output omits as_of (no wall-clock fields are ever emitted)."
+            }
+          },
+          "required": [
+            "application_id"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string"
+              },
+              "contract_version": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "OK"
+                ]
+              },
+              "advisory": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "read_only": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "labels": {
+                "type": "object",
+                "properties": {
+                  "provenance": {
+                    "type": "string",
+                    "enum": [
+                      "LIVE",
+                      "FIXTURE"
+                    ]
+                  },
+                  "trigger": {
+                    "type": "string",
+                    "enum": [
+                      "MANUAL"
+                    ]
+                  },
+                  "connection": {
+                    "type": "string",
+                    "enum": [
+                      "CONNECTED",
+                      "NOT_CONNECTED"
+                    ]
+                  }
+                },
+                "required": [
+                  "provenance",
+                  "trigger",
+                  "connection"
+                ],
+                "additionalProperties": false
+              },
+              "as_of": {
+                "type": "string"
+              },
+              "application": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "job_id": {
+                    "type": "string"
+                  },
+                  "candidate_id": {
+                    "type": "string"
+                  },
+                  "job_version_id": {
+                    "type": "string"
+                  },
+                  "rubric_version_id": {
+                    "type": "string"
+                  },
+                  "lifecycle_status": {
+                    "type": "string"
+                  },
+                  "current_stage_code": {
+                    "type": "string"
+                  },
+                  "stage_blocked_reason": {
+                    "type": "string"
+                  },
+                  "record_version": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id",
+                  "job_id",
+                  "candidate_id",
+                  "job_version_id",
+                  "lifecycle_status",
+                  "current_stage_code",
+                  "record_version"
+                ],
+                "additionalProperties": false
+              },
+              "job": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              "resume_version": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version_no": {
+                    "type": "integer"
+                  },
+                  "parse_status": {
+                    "type": "string"
+                  },
+                  "source_asset_sha256": {
+                    "type": "string"
+                  },
+                  "content_sha256": {
+                    "type": "string"
+                  },
+                  "parser_name": {
+                    "type": "string"
+                  },
+                  "parser_version": {
+                    "type": "string"
+                  },
+                  "page_count": {
+                    "type": "integer"
+                  },
+                  "hard_issue_count": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id",
+                  "version_no",
+                  "parse_status",
+                  "source_asset_sha256",
+                  "content_sha256",
+                  "parser_name",
+                  "parser_version",
+                  "page_count",
+                  "hard_issue_count"
+                ],
+                "additionalProperties": false
+              },
+              "rubric": {
+                "type": "object",
+                "properties": {
+                  "version_id": {
+                    "type": "string"
+                  },
+                  "version_no": {
+                    "type": "integer"
+                  },
+                  "payload_hash": {
+                    "type": "string"
+                  },
+                  "is_current": {
+                    "type": "boolean"
+                  },
+                  "is_approved": {
+                    "type": "boolean"
+                  },
+                  "resolution": {
+                    "type": "string",
+                    "enum": [
+                      "ARGUMENT",
+                      "APPLICATION_PINNED",
+                      "JOB_CURRENT"
+                    ]
+                  },
+                  "what_if": {
+                    "type": "boolean"
+                  },
+                  "rubric_pin_required": {
+                    "type": "boolean"
+                  },
+                  "criteria_count": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "version_id",
+                  "version_no",
+                  "payload_hash",
+                  "is_current",
+                  "is_approved",
+                  "resolution",
+                  "what_if",
+                  "rubric_pin_required",
+                  "criteria_count"
+                ],
+                "additionalProperties": false
+              },
+              "preconditions": {
+                "type": "object",
+                "properties": {
+                  "human_queue_checked": {
+                    "type": "integer"
+                  },
+                  "human_queue_clear": {
+                    "type": "boolean"
+                  },
+                  "material_bound": {
+                    "type": "boolean"
+                  },
+                  "material_ready": {
+                    "type": "boolean"
+                  },
+                  "rubric_approved": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "human_queue_checked",
+                  "human_queue_clear",
+                  "material_bound",
+                  "material_ready",
+                  "rubric_approved"
+                ],
+                "additionalProperties": false
+              },
+              "verdict": {
+                "type": "string",
+                "enum": [
+                  "PASS",
+                  "FAIL",
+                  "NEEDS_REVIEW"
+                ]
+              },
+              "verdict_summary": {
+                "type": "string"
+              },
+              "criteria_evaluated": {
+                "type": "boolean"
+              },
+              "required_human_action": {
+                "type": "string",
+                "enum": [
+                  "NONE",
+                  "CONFIRM_DECISION",
+                  "REVIEW_MISSING_FIELDS",
+                  "REVIEW_UNREADABLE",
+                  "REVIEW_INDETERMINATE",
+                  "ANSWER_JUDGMENT",
+                  "RESOLVE_BLOCKER"
+                ]
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "MUST_HAVE_SATISFIED",
+                        "MUST_HAVE_UNSATISFIED",
+                        "MUST_HAVE_MISSING",
+                        "MUST_HAVE_UNREADABLE",
+                        "MUST_HAVE_INDETERMINATE",
+                        "MUST_HAVE_NEEDS_JUDGMENT",
+                        "DISQUALIFIER_TRIGGERED",
+                        "DISQUALIFIER_CLEAR",
+                        "DISQUALIFIER_MISSING",
+                        "DISQUALIFIER_UNREADABLE",
+                        "DISQUALIFIER_INDETERMINATE",
+                        "DISQUALIFIER_NEEDS_JUDGMENT",
+                        "BONUS_SATISFIED",
+                        "BONUS_UNSATISFIED",
+                        "BONUS_MISSING",
+                        "BONUS_UNREADABLE",
+                        "BONUS_INDETERMINATE",
+                        "BONUS_NEEDS_JUDGMENT",
+                        "GATE_JOB_CLOSED",
+                        "GATE_JOB_ARCHIVED",
+                        "GATE_JOB_NOT_OPEN",
+                        "GATE_APPLICATION_NOT_ACTIVE"
+                      ]
+                    },
+                    "failure_class": {
+                      "type": "string",
+                      "enum": [
+                        "HARD_PASS",
+                        "HARD_FAIL",
+                        "NOT_PROVEN",
+                        "UNREADABLE",
+                        "INDETERMINATE",
+                        "JUDGMENT",
+                        "GATE"
+                      ]
+                    },
+                    "criterion_key": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "MUST_HAVE",
+                        "NICE_TO_HAVE",
+                        "DISQUALIFIER"
+                      ]
+                    },
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "SATISFIED",
+                        "UNSATISFIED",
+                        "TRIGGERED",
+                        "CLEAR",
+                        "MISSING",
+                        "UNREADABLE",
+                        "INDETERMINATE",
+                        "NEEDS_JUDGMENT"
+                      ]
+                    },
+                    "field": {
+                      "type": "string"
+                    },
+                    "tri_state": {
+                      "type": "string",
+                      "enum": [
+                        "present",
+                        "absent",
+                        "unreadable"
+                      ]
+                    },
+                    "bounds": {
+                      "type": "string",
+                      "enum": [
+                        "EXACT",
+                        "LOWER_BOUND",
+                        "UNAVAILABLE"
+                      ]
+                    },
+                    "expected": {
+                      "type": "object",
+                      "properties": {
+                        "operator": {
+                          "type": "string"
+                        },
+                        "value_integer": {
+                          "type": "integer"
+                        },
+                        "value_boolean": {
+                          "type": "boolean"
+                        },
+                        "unit": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "observed": {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "integer"
+                        },
+                        "lower_bound": {
+                          "type": "integer"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "evidence": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "resume_version_id": {
+                            "type": "string"
+                          },
+                          "source_asset_sha256": {
+                            "type": "string"
+                          },
+                          "page": {
+                            "type": "integer"
+                          },
+                          "bbox": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            }
+                          },
+                          "block": {
+                            "type": "integer"
+                          },
+                          "quote": {
+                            "type": "string"
+                          },
+                          "provenance": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "resume_version_id",
+                          "source_asset_sha256",
+                          "page",
+                          "bbox",
+                          "block",
+                          "quote",
+                          "provenance"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "absence": {
+                      "type": "object",
+                      "properties": {
+                        "document_sha256": {
+                          "type": "string"
+                        },
+                        "page_count": {
+                          "type": "integer"
+                        },
+                        "completeness": {
+                          "type": "string"
+                        },
+                        "searched_scopes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "basis": {
+                          "type": "string"
+                        },
+                        "hard_issue_count": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "document_sha256",
+                        "page_count",
+                        "completeness",
+                        "searched_scopes",
+                        "basis",
+                        "hard_issue_count"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "issue_codes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "question": {
+                      "type": "string"
+                    },
+                    "notes": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "failure_class",
+                    "evidence",
+                    "issue_codes",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "bonus_signals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "MUST_HAVE_SATISFIED",
+                        "MUST_HAVE_UNSATISFIED",
+                        "MUST_HAVE_MISSING",
+                        "MUST_HAVE_UNREADABLE",
+                        "MUST_HAVE_INDETERMINATE",
+                        "MUST_HAVE_NEEDS_JUDGMENT",
+                        "DISQUALIFIER_TRIGGERED",
+                        "DISQUALIFIER_CLEAR",
+                        "DISQUALIFIER_MISSING",
+                        "DISQUALIFIER_UNREADABLE",
+                        "DISQUALIFIER_INDETERMINATE",
+                        "DISQUALIFIER_NEEDS_JUDGMENT",
+                        "BONUS_SATISFIED",
+                        "BONUS_UNSATISFIED",
+                        "BONUS_MISSING",
+                        "BONUS_UNREADABLE",
+                        "BONUS_INDETERMINATE",
+                        "BONUS_NEEDS_JUDGMENT",
+                        "GATE_JOB_CLOSED",
+                        "GATE_JOB_ARCHIVED",
+                        "GATE_JOB_NOT_OPEN",
+                        "GATE_APPLICATION_NOT_ACTIVE"
+                      ]
+                    },
+                    "failure_class": {
+                      "type": "string",
+                      "enum": [
+                        "HARD_PASS",
+                        "HARD_FAIL",
+                        "NOT_PROVEN",
+                        "UNREADABLE",
+                        "INDETERMINATE",
+                        "JUDGMENT",
+                        "GATE"
+                      ]
+                    },
+                    "criterion_key": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "MUST_HAVE",
+                        "NICE_TO_HAVE",
+                        "DISQUALIFIER"
+                      ]
+                    },
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "SATISFIED",
+                        "UNSATISFIED",
+                        "TRIGGERED",
+                        "CLEAR",
+                        "MISSING",
+                        "UNREADABLE",
+                        "INDETERMINATE",
+                        "NEEDS_JUDGMENT"
+                      ]
+                    },
+                    "field": {
+                      "type": "string"
+                    },
+                    "tri_state": {
+                      "type": "string",
+                      "enum": [
+                        "present",
+                        "absent",
+                        "unreadable"
+                      ]
+                    },
+                    "bounds": {
+                      "type": "string",
+                      "enum": [
+                        "EXACT",
+                        "LOWER_BOUND",
+                        "UNAVAILABLE"
+                      ]
+                    },
+                    "expected": {
+                      "type": "object",
+                      "properties": {
+                        "operator": {
+                          "type": "string"
+                        },
+                        "value_integer": {
+                          "type": "integer"
+                        },
+                        "value_boolean": {
+                          "type": "boolean"
+                        },
+                        "unit": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "observed": {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "integer"
+                        },
+                        "lower_bound": {
+                          "type": "integer"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "evidence": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "resume_version_id": {
+                            "type": "string"
+                          },
+                          "source_asset_sha256": {
+                            "type": "string"
+                          },
+                          "page": {
+                            "type": "integer"
+                          },
+                          "bbox": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            }
+                          },
+                          "block": {
+                            "type": "integer"
+                          },
+                          "quote": {
+                            "type": "string"
+                          },
+                          "provenance": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "resume_version_id",
+                          "source_asset_sha256",
+                          "page",
+                          "bbox",
+                          "block",
+                          "quote",
+                          "provenance"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "absence": {
+                      "type": "object",
+                      "properties": {
+                        "document_sha256": {
+                          "type": "string"
+                        },
+                        "page_count": {
+                          "type": "integer"
+                        },
+                        "completeness": {
+                          "type": "string"
+                        },
+                        "searched_scopes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "basis": {
+                          "type": "string"
+                        },
+                        "hard_issue_count": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "document_sha256",
+                        "page_count",
+                        "completeness",
+                        "searched_scopes",
+                        "basis",
+                        "hard_issue_count"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "issue_codes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "question": {
+                      "type": "string"
+                    },
+                    "notes": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "failure_class",
+                    "evidence",
+                    "issue_codes",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "APPLICATION_ON_HOLD",
+                        "JOB_PAUSED",
+                        "FIELD_STATE_UNDECLARED",
+                        "ABSENT_DOWNGRADED",
+                        "SCREENING_INDEX_INCONSISTENT",
+                        "EVIDENCE_SHA_MISMATCH",
+                        "RUBRIC_PIN_REQUIRED",
+                        "WHAT_IF_EVALUATION"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ref": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "source": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "snapshot": {
+                "type": "object",
+                "properties": {
+                  "application_record_version": {
+                    "type": "integer"
+                  },
+                  "resume_version_id": {
+                    "type": "string"
+                  },
+                  "resume_content_sha256": {
+                    "type": "string"
+                  },
+                  "rubric_version_id": {
+                    "type": "string"
+                  },
+                  "rubric_payload_hash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "application_record_version",
+                  "resume_version_id",
+                  "resume_content_sha256",
+                  "rubric_version_id",
+                  "rubric_payload_hash"
+                ],
+                "additionalProperties": false
+              },
+              "prior_screening": {
+                "type": "object",
+                "properties": {
+                  "decision_id": {
+                    "type": "string"
+                  },
+                  "result": {
+                    "type": "string"
+                  },
+                  "rubric_version_id": {
+                    "type": "string"
+                  },
+                  "decided_at": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "decision_id",
+                  "result",
+                  "decided_at"
+                ],
+                "additionalProperties": false
+              },
+              "evaluation_digest": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "tool",
+              "contract_version",
+              "status",
+              "advisory",
+              "read_only",
+              "labels",
+              "application",
+              "job",
+              "resume_version",
+              "rubric",
+              "preconditions",
+              "verdict",
+              "verdict_summary",
+              "criteria_evaluated",
+              "required_human_action",
+              "reasons",
+              "bonus_signals",
+              "warnings",
+              "snapshot",
+              "evaluation_digest"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "run_mode": "FIRST_RUN",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {}
+    },
+    {
+      "step": 5,
+      "id": "decision-record-screening",
+      "tool": {
+        "name": "recruitment_decision_record",
+        "description": "Formal decision record for ONE application: decision_scope=SCREENING (S7, stage_code=S7, no interview_id and no S10 summary) or STAGE/FINAL (S10, stage_code=S10). The decision itself is made by a HUMAN; this tool only verifies and records it: for S10 it re-computes the evaluation summary (same as_of) and enforces the result gate (WITHDRAW/HOLD always allowed; ADVANCE(FINAL)/REJECT blocked when required scorecards are missing); for S7 it only checks the screening-evaluation binding. It requires human_confirmation whose sha256 covers {result, reason, override_rationale, basis_refs} (plus the human's verbatim words for IN_CHAT, D-95), asks the human for approval when the confirmation is not IN_CHAT (no answerer => unavailable => nothing is written), then writes one decision row plus its internal event in the same transaction (supersede = reverse-insert, rewire, clear). It never writes application/interview status and accepts no tenant/actor/stage_code input.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "application_id": {
+              "type": "string",
+              "description": "申请 id（UUID）。决策对象是申请，不是人也不是岗位。"
+            },
+            "decision_scope": {
+              "type": "string",
+              "enum": [
+                "SCREENING",
+                "STAGE",
+                "FINAL"
+              ],
+              "description": "STAGE 必须带 interview_id；FINAL 必须不带（DC-06）；SCREENING 是 S7 的人决定（不需要 interview_id / S10 汇总，stage_code 写 S7，§17.1）"
+            },
+            "interview_id": {
+              "type": "string",
+              "description": "STAGE 必填 / FINAL、SCREENING 禁止（UUID）"
+            },
+            "as_of": {
+              "type": "string",
+              "description": "必填：ISO-8601 带时区偏移，不得晚于服务端 now。STAGE/FINAL 必须与 summarize 用的那个 as_of 相同，否则 SUMMARY_STALE。"
+            },
+            "result": {
+              "type": "string",
+              "enum": [
+                "ADVANCE",
+                "HOLD",
+                "WITHDRAW",
+                "REJECT"
+              ],
+              "description": "人做出的结论；HIRED 在 v1.0 禁用（RESULT_NOT_IN_V1_SCOPE）。SCREENING 不是终局（不许 HIRED）"
+            },
+            "reason": {
+              "type": "string",
+              "description": "1..4000；REJECT 时必须含至少一个 rubric dimension_key（S7 是 criterion key）"
+            },
+            "basis_refs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "SCORECARD",
+                      "SUMMARY",
+                      "RUBRIC_VERSION",
+                      "INTERVIEW_RECORD",
+                      "SCREENING_DECISION",
+                      "AUTHORITY",
+                      "OVERRIDE",
+                      "MISSING_ACK",
+                      "SUPERSEDES",
+                      "SCREENING_EVALUATION",
+                      "RESUME_VERSION"
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision_no": {
+                    "type": "integer"
+                  },
+                  "interviewer_id": {
+                    "type": "string"
+                  },
+                  "payload_hash": {
+                    "type": "string"
+                  },
+                  "overall": {
+                    "type": "string",
+                    "enum": [
+                      "ADVANCE",
+                      "HOLD",
+                      "REJECT"
+                    ]
+                  },
+                  "transcript_basis": {
+                    "type": "string",
+                    "enum": [
+                      "TRANSCRIPT",
+                      "NO_TRANSCRIPT"
+                    ]
+                  },
+                  "transcript_state": {
+                    "type": "string"
+                  },
+                  "evidence_state": {
+                    "type": "string",
+                    "enum": [
+                      "MEMORY_ONLY"
+                    ]
+                  },
+                  "fields": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "dimension_key": {
+                          "type": "string"
+                        },
+                        "assessment": {
+                          "type": "string",
+                          "enum": [
+                            "MET",
+                            "NOT_MET",
+                            "NOT_OBSERVED",
+                            "UNREADABLE"
+                          ]
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        }
+                      },
+                      "required": [
+                        "dimension_key",
+                        "assessment"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "summary_digest": {
+                    "type": "string"
+                  },
+                  "contract_version": {
+                    "type": "string"
+                  },
+                  "coverage": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "tally": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "consensus": {
+                    "type": "string"
+                  },
+                  "provenance": {
+                    "type": "string",
+                    "enum": [
+                      "LIVE",
+                      "FIXTURE"
+                    ]
+                  },
+                  "version_no": {
+                    "type": "integer"
+                  },
+                  "transcript_artifact_id": {
+                    "type": "string"
+                  },
+                  "transcript_revision": {
+                    "type": "integer"
+                  },
+                  "verification_status": {
+                    "type": "string"
+                  },
+                  "result": {
+                    "type": "string"
+                  },
+                  "decided_at": {
+                    "type": "string"
+                  },
+                  "actor_id": {
+                    "type": "string"
+                  },
+                  "is_hiring_manager": {
+                    "type": "boolean"
+                  },
+                  "acknowledged_dissent": {
+                    "type": "boolean"
+                  },
+                  "override_rationale": {
+                    "type": "string"
+                  },
+                  "interviewer_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "rationale": {
+                    "type": "string"
+                  },
+                  "decision_id": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "opened_by_actor_id": {
+                    "type": "string"
+                  },
+                  "evaluation_digest": {
+                    "type": "string"
+                  },
+                  "verdict": {
+                    "type": "string",
+                    "enum": [
+                      "PASS",
+                      "FAIL",
+                      "NEEDS_REVIEW"
+                    ]
+                  },
+                  "rubric_version_id": {
+                    "type": "string"
+                  },
+                  "rubric_payload_hash": {
+                    "type": "string"
+                  },
+                  "resume_version_id": {
+                    "type": "string"
+                  },
+                  "resume_content_sha256": {
+                    "type": "string"
+                  },
+                  "reasons_digest": {
+                    "type": "string"
+                  },
+                  "criteria_evaluated": {
+                    "type": "boolean"
+                  },
+                  "counts": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "content_sha256": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              "description": "1..200；S10：kind ∈ 九种（DC §6.1）；SCREENING：SCREENING_EVALUATION/RESUME_VERSION/RUBRIC_VERSION/AUTHORITY/SUPERSEDES（§17.1）"
+            },
+            "summary_digest": {
+              "type": "string",
+              "description": "STAGE/FINAL 必填，64 位 hex 且必须 = 本次重算值（DC-16）；SCREENING 没有汇总，不接受"
+            },
+            "human_confirmation": {
+              "type": "object",
+              "properties": {
+                "confirmed_by_actor_id": {
+                  "type": "string",
+                  "description": "必须 = 执行上下文的 actor（UUID）"
+                },
+                "confirmed_at": {
+                  "type": "string",
+                  "description": "ISO-8601 带偏移；与 decided_at 相差 ≤ 24h 且不得晚于它"
+                },
+                "confirmation_method": {
+                  "type": "string",
+                  "enum": [
+                    "IN_CHAT",
+                    "IN_APP_CONFIRM",
+                    "SIGNED_RECORD"
+                  ]
+                },
+                "confirmation_text": {
+                  "type": "string",
+                  "description": "人在对话里说过的原话（逐字，≤2000 字符）。confirmation_method=IN_CHAT 时必填：它是\"人只决策一次\"的授权凭据，落库后可与会话日志对账（D-95）。**原话进 pre-image v2**（§17.2）：改了原话、哈希就对不上。"
+                },
+                "confirmation_text_sha256": {
+                  "type": "string",
+                  "description": "64 位 hex。v1（无原话，旧口径）：sha256(canonical_json({result, reason, override_rationale, basis_refs}))；v2（IN_CHAT，D-95）：上述四键 + {preimage_version:2, confirmation_text, confirmed_by_actor_id, confirmed_at}（键序由 canonical_json 固定；见 decision-rules.md §17.2）。"
+                }
+              },
+              "required": [
+                "confirmed_by_actor_id",
+                "confirmed_at",
+                "confirmation_method",
+                "confirmation_text_sha256"
+              ],
+              "additionalProperties": false
+            },
+            "missing_disposition": {
+              "type": "string",
+              "enum": [
+                "PROCEED_WITH_MISSING"
+              ],
+              "description": "只对 ADVANCE(STAGE) 且 missing≠∅ 时有效（DC §4.2 矩阵）"
+            },
+            "acknowledged_missing": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "interviewer_id": {
+                    "type": "string",
+                    "description": "缺的那位（UUID）"
+                  },
+                  "why_proceed": {
+                    "type": "string",
+                    "description": "1..1000，为什么可以不等人"
+                  }
+                },
+                "required": [
+                  "interviewer_id",
+                  "why_proceed"
+                ],
+                "additionalProperties": false
+              },
+              "description": "集合必须与 missing[].interviewer_id 完全相等"
+            },
+            "acknowledged_dissent": {
+              "type": "boolean",
+              "description": "结论与 consensus 相反时必须 true"
+            },
+            "override_rationale": {
+              "type": "string",
+              "description": "同上，非空；进 confirmation_text_sha256 的 pre-image"
+            },
+            "supersedes": {
+              "type": "object",
+              "properties": {
+                "decision_id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "expected_record_version": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "decision_id",
+                "reason",
+                "expected_record_version"
+              ],
+              "additionalProperties": false
+            },
+            "approval_id": {
+              "type": "string",
+              "description": "可选 UUID（v1.0 不要求，DC-19）"
+            },
+            "tenant_id": {
+              "type": "string",
+              "description": "保留键：只能来自执行上下文，一律拒收"
+            },
+            "actor_id": {
+              "type": "string",
+              "description": "保留键：只能来自执行上下文，一律拒收"
+            },
+            "interviewer_id": {
+              "type": "string",
+              "description": "保留键：只能来自执行上下文，一律拒收"
+            },
+            "decided_by_actor_id": {
+              "type": "string",
+              "description": "保留键：决策人只能来自执行上下文，一律拒收"
+            },
+            "stage_code": {
+              "type": "string",
+              "description": "保留键：工具按 scope 写死（S10/S7，DC-07/§17.1），一律拒收"
+            },
+            "round_no": {
+              "type": "integer",
+              "description": "保留键：轮次由 interview_id 决定，一律拒收"
+            },
+            "slot_code": {
+              "type": "string",
+              "description": "保留键：轮次由 interview_id 决定，一律拒收"
+            },
+            "submitted_at": {
+              "type": "string",
+              "description": "保留键：时间由服务端取，一律拒收"
+            },
+            "decided_at": {
+              "type": "string",
+              "description": "保留键：时间由服务端取（DC-48），一律拒收"
+            },
+            "status": {
+              "type": "string",
+              "description": "保留键：本工具不写状态，一律拒收"
+            }
+          },
+          "required": [
+            "application_id",
+            "decision_scope",
+            "as_of",
+            "result",
+            "reason",
+            "basis_refs",
+            "human_confirmation"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string"
+              },
+              "contract_version": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "OK"
+                ]
+              },
+              "replayed": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              },
+              "labels": {
+                "type": "object",
+                "properties": {
+                  "provenance": {
+                    "type": "string",
+                    "enum": [
+                      "LIVE",
+                      "FIXTURE"
+                    ]
+                  },
+                  "trigger": {
+                    "type": "string",
+                    "enum": [
+                      "MANUAL"
+                    ]
+                  },
+                  "connection": {
+                    "type": "string",
+                    "enum": [
+                      "CONNECTED",
+                      "NOT_CONNECTED"
+                    ]
+                  }
+                },
+                "required": [
+                  "provenance",
+                  "trigger",
+                  "connection"
+                ],
+                "additionalProperties": false
+              },
+              "decision": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "application_id": {
+                    "type": "string"
+                  },
+                  "interview_id": {
+                    "type": "string"
+                  },
+                  "decision_scope": {
+                    "type": "string",
+                    "enum": [
+                      "SCREENING",
+                      "STAGE",
+                      "FINAL"
+                    ]
+                  },
+                  "stage_code": {
+                    "type": "string",
+                    "enum": [
+                      "S7",
+                      "S10"
+                    ]
+                  },
+                  "result": {
+                    "type": "string",
+                    "enum": [
+                      "ADVANCE",
+                      "HOLD",
+                      "WITHDRAW",
+                      "REJECT"
+                    ]
+                  },
+                  "decided_by_actor_id": {
+                    "type": "string"
+                  },
+                  "decided_at": {
+                    "type": "string"
+                  },
+                  "record_version": {
+                    "type": "integer"
+                  },
+                  "superseded_by_decision_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "application_id",
+                  "decision_scope",
+                  "stage_code",
+                  "result",
+                  "decided_by_actor_id",
+                  "decided_at",
+                  "record_version"
+                ],
+                "additionalProperties": false
+              },
+              "gate": {
+                "type": "object",
+                "properties": {
+                  "as_of": {
+                    "type": "string"
+                  },
+                  "ready_for_decision": {
+                    "type": "boolean"
+                  },
+                  "missing_disposition": {
+                    "type": "string",
+                    "enum": [
+                      "PROCEED_WITH_MISSING"
+                    ]
+                  },
+                  "acknowledged_missing": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "interviewer_id": {
+                          "type": "string",
+                          "description": "缺的那位（UUID）"
+                        },
+                        "why_proceed": {
+                          "type": "string",
+                          "description": "1..1000，为什么可以不等人"
+                        }
+                      },
+                      "required": [
+                        "interviewer_id",
+                        "why_proceed"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "permitted_results_echo": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "summary_digest": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "as_of",
+                  "ready_for_decision",
+                  "acknowledged_missing",
+                  "permitted_results_echo",
+                  "summary_digest"
+                ],
+                "additionalProperties": false
+              },
+              "superseded": {
+                "type": "object",
+                "properties": {
+                  "decision_id": {
+                    "type": "string"
+                  },
+                  "record_version": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "decision_id",
+                  "record_version"
+                ],
+                "additionalProperties": false
+              },
+              "event": {
+                "type": "object",
+                "properties": {
+                  "event_id": {
+                    "type": "string"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "internal"
+                    ]
+                  },
+                  "trust_level": {
+                    "type": "string",
+                    "enum": [
+                      "INTERNAL"
+                    ]
+                  }
+                },
+                "required": [
+                  "event_id",
+                  "provider",
+                  "trust_level"
+                ],
+                "additionalProperties": false
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "DECIDER_NOT_HIRING_MANAGER",
+                        "HIRING_MANAGER_UNSET",
+                        "PROCEEDED_WITH_MISSING_SCORECARDS",
+                        "MINORITY_DISSENT",
+                        "OVERRIDE_APPLIED",
+                        "REJECT_BASIS_MEMORY_ONLY",
+                        "FIXTURE_BASIS",
+                        "SUPERSEDES_APPLIED",
+                        "APPROVAL_ATTACHED"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "tool",
+              "contract_version",
+              "status",
+              "replayed",
+              "labels",
+              "decision",
+              "event",
+              "warnings"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "run_mode": "FIRST_RUN",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {
+        "decision": 1,
+        "event_inbox": 1
+      }
+    },
+    {
+      "step": 6,
+      "id": "db-readback",
+      "tool": "(只读 SQL)",
+      "run_mode": "FIRST_RUN",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {}
+    }
+  ],
+  "counts_delta_vs_preflight": {
+    "application": 1,
+    "approval": 1,
+    "decision": 1,
+    "event_inbox": 3,
+    "job": 1,
+    "job_version": 1,
+    "rubric_version": 1
+  }
+}

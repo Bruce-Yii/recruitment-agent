@@ -1,0 +1,12 @@
+# 真实执行命令（PowerShell；cwd = D:\12412\dsh工作区\projects\recruitment-agent）
+#
+# 环境变量（密码按约定注入，不落盘；本文件里的值是本机演示库约定值）
+# （密码按约定从环境变量注入，**不写进任何文件/日志**）
+$env:RECRUITMENT_DB_PASSWORD='<本机演示库密码>'
+# 本次跑的 job code：REPRO-S6S7-SCREENING
+$env:REPRO_JOB_CODE='REPRO-S6S7-SCREENING'
+
+node dsh/dsh-recruitment/manual/screening-decision/run-screening-decision.mjs
+
+# 退出码：3
+# 说明：尝试 #1：harness 第一版（当时默认 code 是 REPRO-S6S7-SCREENING、rubric 含判断型准则、screening 的 as_of 用了 now-5s）。卡在 STEP 4：NO_RUBRIC/NO_APPROVED_RUBRIC。

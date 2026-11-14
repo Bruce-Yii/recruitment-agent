@@ -1,0 +1,28 @@
+{
+  "run_id": "2026-11-14T12-13-46-538Z",
+  "started_at": "2026-11-14T12:13:46.647Z",
+  "argv": [
+    "D:\\node.exe",
+    "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\dsh\\dsh-recruitment\\manual\\screening-decision\\run-screening-decision.mjs"
+  ],
+  "cwd": "D:\\12412\\dsh工作区\\projects\\recruitment-agent",
+  "node": "v24.16.0",
+  "platform": "win32/x64",
+  "git_head": "d6f4aa5bb84fabe661b6977a53339dc58f6f3634",
+  "code_files_sha256": {
+    "src/tools/job-create.ts": "1d8501d3ce599370d7f0150567277db1a57c9de844b08056ca286ad596d8712d",
+    "src/tools/job-rubric-approve.ts": "15be28265222afc5a85d301b6fc7543090ca85ec0b65555e0e0d5fecdc63211f",
+    "src/tools/application-intake.ts": "261774d141be34026c50b4451c518c2f4e0da5970a4bc16227678ff3e9941600",
+    "src/tools/screening-evaluate.ts": "446f812b60f5289e01571ef639780720bc6caa3b5fe12fecc2125225a76228d2",
+    "src/tools/decision-record.ts": "f41a872d03c7f1cdaee62d856bdc7d90dbf972a755673aedf8c7ee13f7eb5e28"
+  },
+  "database": {
+    "host": "127.0.0.1",
+    "port": 5432,
+    "database": "ra_s6s7",
+    "tenant_id": "11111111-1111-4111-8111-000000000001",
+    "actor_id": "11111111-1111-4111-8111-000000000103"
+  },
+  "fixture_sha256": "56f93d3be582a988a4713c1cba22c411e17b20371de73c2147962adde4c24ce5",
+  "job_code": "REPRO-S6S7-DECISION"
+}
