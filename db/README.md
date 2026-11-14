@@ -17,7 +17,15 @@
 | `migrations/0004_stage_catalog.sql` | `stage_catalog` 真表 + `application.current_stage_code` 外键 + `job.current_rubric_version_id` 显式指针 |
 | `migrations/0005_version_binding.sql` | 申请绑定的 rubric / job 版本必须是**本岗位**的（三列复合外键，含 tenant_id） |
 | `migrations/0006_integrity_gaps.sql` | 五个完整性缺口：`interview.stage_code` 默认值+外键、`execution_mandate` 禁 `submit_scorecard`、`fk_interview_record_artifact` 补 tenant_id、`business_task.owner_actor_id`、`meeting`/`meeting_binding` 的 `record_version` 触发器 |
-| `verify-0003.sql` … `verify-0006.sql` | 每个迁移配套自检，各自独立建库可跑，**全部通过才 exit 0** |
+| `migrations/0007_decision_integrity.sql` | 决策完整性（含 `decision.stage_code` 外键、`scorecard.job_id` 回填） |
+| `migrations/0008_decision_uniqueness.sql` | 决策唯一性（`uq_decision_current`，DEFERRABLE EXCLUDE） |
+| `migrations/0009_application_identity.sql` | 申请身份 `(tenant, candidate, job, ACTIVE)` 部分唯一 |
+| `migrations/0010_migration_ledger.sql` | 迁移台账 `schema_migration`（0001–0009 回填 + 自登记；此后每条迁移自己登记自己） |
+| `migrations/0011_task_runtime.sql` | 任务运行时：`task_wakeup` |
+| `migrations/0012_engine_state.sql` | 执行引擎状态：`engine_*` 9 张表（trigger / disposition / trigger_thread / thread / ticket / decision / outbox / effect / kv） |
+| `migrations/0013_trace_chain.sql` | 执行追溯：`tool_call` |
+| `migrations/0014_tenant_config.sql` | 企业自建配置：`role` 扩列（权限范围/描述/版本）+ `hiring_team` / `hiring_team_member` + `pipeline_template` / `pipeline_template_stage` / `pipeline_template_stage_template` |
+| `verify-0003.sql` … `verify-0010.sql` | 每个迁移配套自检，各自独立建库可跑，**全部通过才 exit 0**（0011–0014 的自检写在迁移文件内；CI 另有台账比对兜底） |
 | `SCHEMA.md` | 对象 → 表/约束映射、状态机、不变量台账、缓做清单、映射裁决 |
 | `verify.sql` | 自检：结构断言 + 状态机覆盖 + 对象覆盖 + **32 条负向测试** + 正向断言，**全部通过才 exit 0**，结尾 ROLLBACK 不改数据 |
 | `README.md` | 本文件：怎么跑、怎么验、写入方必须遵守什么 |
@@ -45,7 +53,14 @@ $psql = 'D:\12412\PostgreSQL\bin\psql.exe'
 ## 3. 跑迁移（空库 → 全量）
 
 ```powershell
-& $psql -U postgres -h 127.0.0.1 -d ra_schema_check -v ON_ERROR_STOP=1 -f db/migrations/0001_init.sql
+# 按 0001→0014 顺序全链重放（每条都自带 begin/commit，幂等）
+foreach ($f in Get-ChildItem db/migrations/*.sql | Sort-Object Name) {
+  & $psql -U postgres -h 127.0.0.1 -d ra_schema_check -v ON_ERROR_STOP=1 -q -f $f.FullName
+}
+# 迁移配套自检（目录驱动：0011–0014 的自检写在迁移文件内，没有独立 verify-00XX）
+foreach ($v in Get-ChildItem db/verify-*.sql | Sort-Object Name) {
+  & $psql -U postgres -h 127.0.0.1 -d ra_schema_check -v ON_ERROR_STOP=1 -q -f $v.FullName
+}
 ```
 
 - **不要加 `-1`**：文件自带 `begin/commit`，再加 `-1` 会嵌套事务。
@@ -56,9 +71,10 @@ $psql = 'D:\12412\PostgreSQL\bin\psql.exe'
 & $psql -U postgres -h 127.0.0.1 -d ra_schema_check -t -A `
   -c "select 'tables='||count(*) from information_schema.tables where table_schema='recruitment';" `
   -c "select 'triggers='||count(*) from information_schema.triggers where trigger_schema='recruitment';"
-# 期望：tables=39  triggers=72（两遍一致）——**这是 0001_init.sql 基线的期望值**。
-# 当前迁移已到 0010，实测 44 张基表 + 3 视图（口径见 db/SCHEMA.md 顶部说明）。
-# 用 verify.sql 数基表时别把视图算进去，否则会得出 47 这个数。
+# 0001_init.sql 单跑：期望 tables=39  triggers=72（两遍一致）——**这是 0001 基线**。
+# 全链（0001→0014）实测：60 张基表 + 3 个视图（information_schema 口径 = 63）；
+#   fn_block_delete 触发器 50 个、非内部触发器 111 个（`db/verify.sql` §1 实测）。
+# 用 verify.sql 数基表时别把视图算进去，否则会得出 63 这个数。
 ```
 
 输出里会有大量 `注意: 关系 ... 的触发器 ... 不存在，跳过` —— 这是 `DROP TRIGGER IF EXISTS` 的正常提示，不是错误。
@@ -129,7 +145,7 @@ update recruitment.application
 
 ### 6.3 不许物理删除
 
-38 张表装了 `trg_*_no_delete`，`DELETE` 直接报 `DELETE_FORBIDDEN`。要"删"就软关闭（状态迁移）或新建版本。
+50 张表装了 `trg_*_no_delete`（`fn_block_delete` 触发器，`verify.sql` STRUCT-06 实测 50 个），`DELETE` 直接报 `DELETE_FORBIDDEN`。要"删"就软关闭（状态迁移）或新建版本。
 
 ## 7. 常见报错 → 怎么处理
 
@@ -177,7 +193,9 @@ update recruitment.application
 | 项 | 结果 |
 |---|---|
 | 环境 | Windows 11 + PostgreSQL 17.11（`D:\12412\PostgreSQL`） |
-| 空库跑迁移 | `0001_init.sql` 一次通过，对象数：39 表 / 161 外键 / 181 CHECK / 55 唯一 / 72 触发器 |
+| 空库跑迁移 | `0001_init.sql` 单跑实测：39 表 / 161 外键 / 181 CHECK / 55 唯一 / 72 触发器（0001 基线） |
+| 全链（0001→0014）实测 | **60 张基表 + 3 视图**（`verify.sql` §1 口径：60）；foreign_keys 212 / check 254 / unique 88 / partial 16 / triggers 111 / functions 34；`fn_block_delete` 50 个（2026-11-14 `ra_s6s7` 实测） |
+| ⚠️ 并发迁移（同一时刻） | 另一 lane 的**未提交** `0015_runtime_cutover.sql` 已应用到本机 `ra_s6s7`（+2 表 → 62 基表 / 52 禁删触发器 / 117 触发器 / 41 函数）；本表以上一行（0014 链）为准，0015 合入后需再回抄 |
 | 幂等 | 同库连跑第二遍 exit 0，零 ERROR，对象数不变 |
-| 自检 | `verify.sql` → `VERIFY PASS`，exit 0（32/32 负向测试按预期失败） |
+| 自检 | `verify.sql` → `VERIFY PASS`，exit 0（32/32 负向测试按预期失败）；COV-01 = 有表 30 / 列映射 1 / 缓做 5 |
 | 数据库 | 只在自建库 `ra_schema_check` 上执行；未触碰任何已有库 |
