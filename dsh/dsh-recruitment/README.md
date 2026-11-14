@@ -1,16 +1,18 @@
 # `@recruitment/dsh-recruitment` · 怎么跑、怎么验
 
-**当前注册 19 个工具**（`src/index.ts:414-433`；配置齐/缺两条路径都注册）：
+**当前注册 25 个工具**（`src/index.ts:577-600`；配置齐/缺两条路径都注册）：
 
 | 阶段 | 工具 |
 |---|---|
 | 简历读 / 解析 | `recruitment_resume_read`、`recruitment_document_read`、`recruitment_resume_serialize`、`recruitment_structure_validate`、`recruitment_page_image`、`recruitment_model_text_merge` |
-| S3 岗位 | `recruitment_job_get`、`recruitment_job_create`、`recruitment_job_update` |
+| S3 岗位 | `recruitment_job_get`、`recruitment_job_create`、`recruitment_job_update`、`recruitment_job_rubric_approve`（人类批准入口，过 `ctx.approval`） |
 | S6 接入 | `recruitment_application_intake`、`recruitment_candidate_get` |
+| 阶段推进 | `recruitment_application_stage_advance`（`application.current_stage_code` 的唯一写入口，N8） |
 | S7 初筛 | `recruitment_screening_evaluate`（只读；人决定落库走 `recruitment_decision_record`） |
-| S8 面试 | `recruitment_interview_schedule`、`recruitment_interview_get` |
+| S8 面试 | `recruitment_interview_schedule`（D-62 四 intent：CREATE / RESCHEDULE / CANCEL / WITHDRAW_INTERVIEWER）、`recruitment_interview_get` |
 | S9 转写 | `recruitment_transcript_import`、`recruitment_transcript_read` |
 | S10 评价 / 决策 | `recruitment_scorecard_submit`、`recruitment_evaluation_summarize`、`recruitment_decision_record` |
+| 追溯 / 配置 | `recruitment_trace_get`、`recruitment_config_role`、`recruitment_config_team`、`recruitment_config_pipeline` |
 
 > 本文 §1–§3 的建库 / 联调步骤与 S6/S7 测试仍是有效口径；S3/S8/S9/S10 的工具契约见
 > `contracts/` 下对应子目录，不在本文件重复。
@@ -49,8 +51,8 @@ $psql='D:\12412\PostgreSQL\bin\psql.exe'
 $env:PGPASSWORD='123456'; $env:PGCLIENTENCODING='UTF8'
 & $psql -h 127.0.0.1 -U postgres -d postgres -c "create database ra_s6s7;"
 cd D:\12412\dsh工作区\projects\recruitment-agent
-# 0001→0010 全链重放（0010 是迁移台账，跳步会 verify-0010 红）
-foreach ($f in '0001_init','0002_seed','0003_review_queue','0004_stage_catalog','0005_version_binding','0006_integrity_gaps','0007_decision_integrity','0008_decision_uniqueness','0009_application_identity','0010_migration_ledger') {
+# 0001→0014 全链重放（0010 是迁移台账，跳步会 verify-0010 红；0011–0014 各自带自检）
+foreach ($f in '0001_init','0002_seed','0003_review_queue','0004_stage_catalog','0005_version_binding','0006_integrity_gaps','0007_decision_integrity','0008_decision_uniqueness','0009_application_identity','0010_migration_ledger','0011_task_runtime','0012_engine_state','0013_trace_chain','0014_tenant_config') {
   & $psql -h 127.0.0.1 -U postgres -d ra_s6s7 -v ON_ERROR_STOP=1 -q -f "db\migrations\$f.sql"
   Write-Output "EXIT_$f=$LASTEXITCODE"
 }
@@ -74,22 +76,45 @@ node manual/apply-demo-rubric.mjs      # 幂等；只写 rubric_version + approv
 
 ## 2. 测试
 
+**正确跑法只有两种**（`node --test <目录>` 在 Node 24 + Windows 上会把目录当模块加载，
+报 `Error: Cannot find module ...\test\acceptance` —— 那是"跑不起来"，**不是**"没有测试"、更不是"跳过"）：
+
 ```powershell
 cd D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment
-
-# 单元（不连库）
-node --test "test/unit/*.test.ts"
-
-# 集成（连 ra_s6s7，每个用例结束 ROLLBACK）
 $env:RECRUITMENT_DB_PASSWORD='123456'
-node --test "test/integration/*.test.ts"
 
-# 全部（以本次输出的 tests / pass / fail / skipped 为准；不要引用历史条数）
-node --test
+# 全部（默认：node --test 的文件级并行；run-all 自己展开 test/**/*.test.ts，不依赖 shell glob）
+node test/run-all.mjs
+# 等价于 pnpm test / npm test
+
+# 串行（只用于排查并发问题；不是默认口径）
+node test/run-all.mjs --test-concurrency=1
+
+# 只跑某一类
+node --test "test/unit/*.test.ts"          # 单元（不连库）
+node --test "test/integration/*.test.ts"   # 集成（连 ra_s6s7，每个用例结束 ROLLBACK）
+node --test "test/acceptance/*.test.ts"    # 验收门槛
+node --test "test/runtime/*.test.ts"       # 运行时（每个文件一个一次性空库）
 ```
 
-**报数必须三个都看**：`tests / pass / fail / skipped`。`skipped > 0` 不算绿。
+`package.json` 里有同名脚本：`test` / `test:serial` / `test:unit` / `test:db`。
+**报数必须四个都看**：`tests / pass / fail / skipped`。`skipped > 0` 不算绿。
 集成测试**不会静默 skip**：缺环境变量时直接失败，并提示先跑 §1.1（R3：skip 会让"没跑"看起来像"绿了"）。
+
+### 2.0 并发跑（默认）的隔离模型
+
+`node --test` 默认**并行跑测试文件**（每个文件一个子进程）。所有测试按下面三类隔离，
+**不要**用 `--test-concurrency=1` 掩盖干扰、也不要给测试加 skip：
+
+| 类型 | 用在哪 | 隔离方式 |
+|---|---|---|
+| **事务回滚**（默认） | 绝大多数 `test/integration/*.test.ts`、`test/acceptance/*.test.ts` | `inRolledBackTx()` 里造夹具，结束一律 `ROLLBACK`；事务是 `REPEATABLE READ`，**同一个快照**下做"写前 count / 写后 count"的零写入断言，别的并行文件提交行不会让它漂移 |
+| **一次性空库**（真提交） | `test/runtime/*.test.ts`、引擎 effect/outbox 相关（`test/acceptance/engine-gates.test.ts`、`test/integration/engine-*-pg.test.ts`） | `createIsolatedTestDatabase()` 建一个 `ra_<label>_<pid>_<rand>` 空库并按 0001→N 重放迁移，跑完 `DROP DATABASE ... WITH (FORCE)`；引擎的 effect 队列是**全局按 kind 消费**的（`src/engine/app/effects.ts`），只有独占库才不会互相偷行 |
+| **提交 + 清理**（少数） | `test/integration/stage-advance.test.ts` 的已提交夹具、`tenant-config.test.ts` 的清理 | 只用唯一键（`uniqueSuffix()`）；**先提交删除，再单独验证**——验证失败不会把删除一起回滚（曾经放在同一事务里，断言一红就把夹具永久留在库里） |
+
+守护这些纪律的是 `test/isolation.test.ts`：它静态扫描所有测试文件的"共享库裸写 / 整租户清引擎表 /
+`advisory lock` 串行 / 固定未来时段"等反模式，并跨进程断言 `uniqueSuffix()`、`FILE_NAMESPACE`、
+一次性库名**真的不重叠**。
 
 `test/integration/db.ts` 是夹具底座（文件名不含 `.test`，不会被当成测试文件）。
 它造的每一条 `candidate` / `application` / `rubric_version` / `approval` / `resume_version`
@@ -97,9 +122,11 @@ node --test
 
 ### 2.1 单测覆盖什么（下表是 S6/S7 阶段的代表用例，不是全部）
 
-> 19 个工具的单测还有：`job-create.test.ts`（S3）、`interview-*.test.ts`（S8）、`transcript-*.test.ts`（S9）、
+> 25 个工具的单测还有：`job-create.test.ts`（S3）、`interview-*.test.ts`（S8）、`transcript-*.test.ts`（S9）、
 > `evaluation-*.test.ts` / `evaluation-decision-record.test.ts`（S10）、`application-intake-structured.test.ts`、
-> `vision-fallback.test.ts`（`webServer` 可选注入的守卫）等；以 `test/unit/` 目录实际文件为准。
+> `vision-fallback.test.ts`（`webServer` 可选注入的守卫）等；另有 `stage-advance.test.ts`（N8）、
+> `job-create-rubric-approve.test.ts`（N7）、`trace-integrity.test.ts`、`tenant-config-validate.test.ts`；
+> 以 `test/unit/` 目录实际文件为准。
 
 | 文件 | 守什么 |
 |---|---|
@@ -201,8 +228,9 @@ config:
    取不到就省略该键。库只校验 `basis_refs` 是 array（`0001_init.sql:1358`）。
 7. **S6 建申请时不钉 `rubric_version_id`**：钉版本是写侧/人工动作（`job-rubric-rules.md` §4.3
    第 3 步），所以新申请的 S7 评估走 `JOB_CURRENT` 并输出 `rubric_pin_required=true` +
-   `warnings: RUBRIC_PIN_REQUIRED`。阶段停在 `S6`（推进到 `S7` 也是一次状态迁移，不由本工具代做；
-   **当前没有任何工具写 `application.current_stage_code`，阶段推进是产品缺口**，见 `docs/23` N8 与 `docs/18 §7`）。
+   `warnings: RUBRIC_PIN_REQUIRED`。阶段停在 `S6`；推进到 `S7` 不是本工具代做——2026-11-14 起由
+   `recruitment_application_stage_advance`（`src/tools/stage-advance.ts`，注册于 `src/index.ts:588`）
+   作为唯一受控入口（N8 已实现，只承认已发生事实、不新增授权），见 `docs/18 §3`。
 8. **`manual/harness.manual.mjs` 在本次改动之前就已经跑不绿**（它用旧入参 `resume_id` 调
    `recruitment_resume_read`，且 `apply(ctx)` 不传 config ⇒ 直接 `NOT_CONFIGURED`；A 段还写死
    "恰好 3 个工具"）。本次没有修它（不在本 lane 范围），改用

@@ -27,6 +27,13 @@
 > **S6 身份闸门修复仍是「未提交 WIP」（行为已实测修复，但不可签收）**；
 > **S8 四 intent、S3 批准入口、真实简历门槛、阶段推进、端到端 仍未闭合**。
 > 逐项结论与未闭合清单见 **§8**（第一轮的 706 行内容作为历史记录保留，不覆盖）。
+>
+> **第三轮回抄（2026-11-14 20:19，lane `docs-sync`；只改过时结论，历史记录保留）。**
+> 本轮现场实测：插件注册 **25 个工具**（S8 四 intent / `recruitment_job_rubric_approve` /
+> `recruitment_application_stage_advance` / `recruitment_trace_get` / 3 个 `recruitment_config_*` 均已注册）；
+> DB 迁移到 **0014**、**60 张基表 + 3 视图**；`db/verify.sql` exit 0 / `VERIFY PASS`。
+> 因此上文「S8 四 intent、S3 批准入口、阶段推进 未闭合」与 §8.4/§8.5 的 **P1-07 / P1-09 / P2-01 / P2-02 / N6 / N7 / N8 / N11**
+> **已过时**，逐条更正与证据见文末 **§9**。仍未闭合的仍是 **N4 端到端、N5 真实简历的 S7 可解释结论、N9 飞书连接器 LIVE**。
 
 ---
 
@@ -89,6 +96,9 @@ $env:RECRUITMENT_DB_PASSWORD='123456'; node --test
 但注意：**测试全绿不等于链路可验收**——见 §3 的 BLOCKED，其中 3 条是测试根本覆盖不到的（测试反而把错误行为断言成正确：`test/unit/application-intake-structured.test.ts:248` 断言 `material.strong[0].provenance === 'agent_read'`）。
 
 ### 1.3 接线证据（R2）：19 个工具真的注册 + 一次真实调用
+
+> **2026-11-14 20:19 回抄**：下面是本窗口当时的实测记录（19 = 历史事实）。当前注册为 **25 个**
+> （`src/index.ts:577-600`；假 ctx 调 `apply()` 捕获 25 个注册名），增量见 §9。
 
 用插件自己的入口 `apply()` 捕获注册表（不是单测里的局部函数），再用捕获到的定义执行：
 
@@ -364,6 +374,10 @@ mapParseStatus(complete, 1000, [recovered])= {"status":"PARTIAL"}
 
 ### P1-07 · S8 只实现 `CREATE`，与 D-62 四 intent 契约不一致
 
+> **2026-11-14 20:19 回抄：已修（见 §9-1）**。`intent` enum 现为
+> `CREATE / RESCHEDULE / CANCEL / WITHDRAW_INTERVIEWER`（`src/tools/interview-schedule.ts:92`）。
+> 本节保留为第一轮的历史记录。
+
 **文件:行**
 - `docs/17-decision-ledger.md:485-489`（D-62：接受四合一 intent）
 - `src/tools/interview-schedule.ts:92`（`intent` enum 只有 `CREATE`）
@@ -409,6 +423,9 @@ mapParseStatus(complete, 1000, [recovered])= {"status":"PARTIAL"}
 
 ### P1-09 · 阶段状态机没有驱动入口（`application.current_stage_code` 没有工具能推进）
 
+> **2026-11-14 20:19 回抄：已修（见 §9-2）**。唯一写入口 = `recruitment_application_stage_advance`
+> （`src/tools/stage-advance.ts`，注册于 `src/index.ts:588`）。本节保留为第一轮的历史记录。
+
 **文件:行**
 - `src/tools/**`：只有 `application-intake.ts:1387-1389` 在**新建**申请时写 `'S6'`；没有任何工具更新 `current_stage_code`（全仓 grep 只在这些行出现）
 - `contracts/evaluation/decision-rules.md:238-245`（DC-47/G-5：状态推进是独立命令，决策不写状态）
@@ -430,6 +447,9 @@ mapParseStatus(complete, 1000, [recovered])= {"status":"PARTIAL"}
 
 ### P2-01 · `docs/18` 已与事实不符（18 个工具 / 决策 BLOCKED / S8 交付 / 40 张表）
 
+> **2026-11-14 20:19 回抄：本轮已回抄（见 §9-3）**。`docs/18` 现为 25 个工具 / 60 张基表 + 3 视图 /
+> 迁移到 0014 / S8 四 intent / 阶段推进入口已实现。本节保留为第一轮的历史记录。
+
 **文件:行**：`docs/18-golden-path.md:23`（40 张表；实况 47）、`:60`（S7 步骤含 SCREENING 决策）、`:81`（18 个工具；实况 19）、`:85`（S8 ✅ 交付；实况仅 CREATE）、`:87`（S10 决策落库 BLOCKED；实况已有 IN_CHAT 决策落库）、`:93`（Web 真人点 approval 是唯一解；D-95 已取代）。
 
 **为什么是问题**：docs/18 是「当前状态」手册，验收/交接会照它读；现在它同时低估（19 个工具、决策可落库）和高估（S8 全交付、approval 必点）两层，属于 R5 口径漂移。
@@ -439,6 +459,10 @@ mapParseStatus(complete, 1000, [recovered])= {"status":"PARTIAL"}
 ---
 
 ### P2-02 · S3 的「人类批准标准」没有产品入口（只有 CLI 脚本）
+
+> **2026-11-14 20:19 回抄：已修（见 §9-4）**。产品入口 = `recruitment_job_rubric_approve`
+> （`src/tools/job-rubric-approve.ts`，注册于 `src/index.ts:585`；写库前过 `ctx.approval`，fail-closed）。
+> 本节保留为第一轮的历史记录。
 
 **文件:行**：`src/tools/job-create.ts:1696`（`decideRubricApproval` 导出）、`manual/job-line/approve-rubric.mjs:63`（唯一调用方之一）、`src/index.ts`（19 个工具里没有 rubric approve）；`docs/18:82`（写「rubric 落 PENDING，人类批准」但没给路径）。
 
@@ -549,7 +573,7 @@ docs/22 的结论是「判据体系不错、执行体系是空的」。本轮并
 1. `git rev-parse HEAD` + `git status --short`：记录被测 commit；确认工作树干净（本窗口期间分支被并发 lane 推进过，必须记录）。
 2. 全量 `node --test`：报 `tests / pass / fail / skipped` 四个数；**skipped>0 不得宣称全绿**；同时记录是否有并发 lane 新增的测试。
 3. `node --test` 跑 `test/integration/*.test.ts`：单独报四个数，确认真连 `ra_s6s7`。
-4. 用 `apply()` 捕获注册表：断言 **19 个工具名**、无重复；再 `apply({})` 断言 **19/19 NOT_CONFIGURED**。
+4. 用 `apply()` 捕获注册表：断言 **25 个工具名**（2026-11-14 20:19 回抄值）、无重复；再 `apply({})` 断言 **25/25 NOT_CONFIGURED**。
 5. 对每个读工具做一次真实调用（job_get / candidate_get / interview_get / transcript_read / evaluation_summarize / screening_evaluate）。
 6. 对每个写工具做一次**回滚事务内**真实写入（本报告 §3 P0-03 的两段探针可复用），确认：
    - 有 approval 时写入成功、无 approval 时**一行都不写**；
@@ -889,11 +913,11 @@ candidate=8；intake_asset=8；schema_migration=10（0001..0010）
 | P1-04 | 0008 的 23P01 未映射 | **PASS** | `translateWriteError` 23P01→`ALREADY_DECIDED`（8.2-E）；`execute()` 的 catch 再翻一次（`decision-record.ts:3281-3285`） |
 | P1-05 | `pdf_text_recovered_by_ocr` 在 S6/S7 当 HARD | **PASS** | 8.2-F；`material.ts` 加 `RECOVERY_SOFT_CODES` + 单测 |
 | P1-06 | D-95 原话未进哈希 / 契约无 `IN_CHAT` | **PASS** | v2 强制：v1+原话被拒（8.2-D）；`decision-rules.md §17.2` 已回抄；v1 旧口径仍可用（8.2-E） |
-| P1-07 | S8 四 intent 未实现 | **FAIL（未修）** | enum 仍只有 `CREATE` |
-| P1-08 | 真实简历 S6→S7 门槛未达成 | **BLOCKED（未修）** | DB：8 assets、7 S6、0 SCREENING；evidence README 仍写「结构化+入库+初筛 还没做」 |
-| P1-09 | 阶段推进无入口 | **BLOCKED（未修）** | `src/tools/**` 无更新 `application.current_stage_code` 的写路径（grep 0 命中） |
-| P2-01 | docs/18 与事实不符 | **FAIL（仅修了第 60 行）** | `docs/18:23` 40 张表、`:75` DB 40 表、`:81` 18 个工具、`:85` S8 交付、`:87` 决策落库 BLOCKED、`:90` 仍写 18 个工具 |
-| P2-02 | S3 人类批准无产品入口 | **BLOCKED（未修）** | 同上 row 3 |
+| P1-07 | S8 四 intent 未实现 | ~~FAIL（未修）~~ **已修（2026-11-14 20:19 回抄，见 §9-1）** | `intent` enum 已含四值（`interview-schedule.ts:92`） |
+| P1-08 | 真实简历 S6→S7 门槛未达成 | **BLOCKED（仍未达成 S7 半边）** | 入库半边已达 26 份真实语料申请 / 25 ACTIVE（`evidence/experiments/2026-11-14-real-intake-20/`，该报告明确只做 S6、不宣称 S7）；≥5 份可解释 S7 结论仍无证据 |
+| P1-09 | 阶段推进无入口 | ~~BLOCKED（未修）~~ **已修（2026-11-14 20:19 回抄，见 §9-2）** | `recruitment_application_stage_advance` 已注册（`src/tools/stage-advance.ts`） |
+| P2-01 | docs/18 与事实不符 | ~~FAIL（仅修了第 60 行）~~ **已修（2026-11-14 20:19 回抄，见 §9-3）** | `docs/18` 现为 25 工具 / 60 表 / 0014 / S8 四 intent / 阶段推进已实现 |
+| P2-02 | S3 人类批准无产品入口 | ~~BLOCKED（未修）~~ **已修（2026-11-14 20:19 回抄，见 §9-4）** | `recruitment_job_rubric_approve` 已注册（`src/tools/job-rubric-approve.ts`） |
 | P2-03 | 写工具硬编码 `LIVE` / candidate_get 无三轴标签 | **FAIL（未修）** | `interview-schedule.ts:1071/1671`、`job-create.ts:1036`；`candidate-get.ts` 无 labels |
 | P2-04 | Feishu connector 未接线 / LIVE 依赖自述回执 | **BLOCKED（未修）** | 同上 connector 行；`transcript-import.ts:48/782-788` |
 | P2-05 | CONTRACT.md/README 未回抄 | **FAIL（未修）** | `CONTRACT.md:6/12/77/98` 仍是「三个工具/stub」；`README.md:3` 仍是「七个工具」 |
@@ -909,12 +933,12 @@ candidate=8；intake_asset=8；schema_migration=10（0001..0010）
 | N3 | **`SCREENING_DECISION.basis_refs` 嵌套键被 parser 拒** | P1 / 已知残余 | `BASIS_KEYS.SCREENING_DECISION`（`decision-record.ts:219`）只允许 `id/result/decided_at`；`§17.1` 自述 `hasScreeningRejectionBasis` 成死代码 | 补嵌套 `basis_refs` 的 schema + DC-27 反证路径测试 |
 | N4 | **S6→S10 端到端未发生** | **P0 / BLOCKED** | DB：`both_bound=0`、`SCREENING=0`、7 条 S6 申请全部停在 S6 | 选定 1 条申请，按 `application_id` 跑完 8 步并留 DB 读回；阶段推进用受控命令或明确标注手工 |
 | N5 | **真实简历门槛未达** | **P0 / BLOCKED** | DB 8 assets；`evidence/.../real-resume-gate/README.md:66-69` 自述 intake/screening 未做 | 按 docs/21 §8 跑 ≥20 份，报四数 + ≥5 份可解释抽样 |
-| N6 | **S8 四 intent 未实现** | P1 / FAIL | `intent enum=['CREATE']` | 实现 `RESCHEDULE/CANCEL/WITHDRAW_INTERVIEWER` 或把 v1.0 子集写进契约/台账并改 docs/18 |
-| N7 | **S3 rubric 批准无产品入口** | P1 / BLOCKED | 无注册工具；仅 `manual/job-line/approve-rubric.mjs` | 注册人类通道工具或明确 CLI 运维口并回抄 |
-| N8 | **阶段推进无入口** | P1 / BLOCKED | `src/tools/**` 无 `current_stage_code` 更新 | 补受控推进命令（或明确 v1.0 不做） |
+| N6 | **S8 四 intent 未实现** | ~~P1 / FAIL~~ **已修（2026-11-14 20:19 回抄，§9-1）** | `intent enum` = CREATE/RESCHEDULE/CANCEL/WITHDRAW_INTERVIEWER | — |
+| N7 | **S3 rubric 批准无产品入口** | ~~P1 / BLOCKED~~ **已修（2026-11-14 20:19 回抄，§9-4）** | `recruitment_job_rubric_approve` 已注册（过 `ctx.approval`） | — |
+| N8 | **阶段推进无入口** | ~~P1 / BLOCKED~~ **已修（2026-11-14 20:19 回抄，§9-2）** | `recruitment_application_stage_advance` 已注册 | — |
 | N9 | **Feishu connector 未接线** | P1 / BLOCKED | `src/` 无工具 import connector | 真实 provider 回读（独立 LIVE gate）或保持诚实 BLOCKED |
 | N10 | **标签二义性/缺三轴** | P2 / FAIL | schedule/job-create 硬编码 LIVE；candidate_get 无 labels | 契约钉死 fixture 租户口径；candidate_get 补三轴或书面豁免 |
-| N11 | **docs/18 / CONTRACT.md / README 口径漂移** | P1 / FAIL | 8.4 P2-01/P2-05 | 集成时一次性回抄（工具数 19、表 47、S8 子集、决策路径、D-95） |
+| N11 | **docs/18 / CONTRACT.md / README 口径漂移** | ~~P1 / FAIL~~ **已回抄（2026-11-14 20:19，§9-3）** | 工具数 25、表 60、迁移 0014、S8 四 intent、阶段推进已实现；CONTRACT/README 同步 | — |
 | N12 | **approval 在事务内等待**（D-101 记债） | P2 / 债务 | 两个工具的 approval 在业务校验后、写库前，最长 120s 持事务；`pool.ts` 加 `idle_in_transaction_session_timeout=300s` 兜底 | 按 D-101 触发条件做两阶段重构（触发条件已写死） |
 | N13 | **DB 数据卫生**：2 条 `interview.stage_code='S9'` | P2 / FAIL | 8.2-G | 修 seed 脚本；契约明确 `interview.stage_code` 合法集合 |
 | N14 | **未配置替身开放 schema** | P3 / FAIL | `index.ts:214/249/252` | 改 `additionalProperties:false` |
@@ -961,4 +985,69 @@ cd dsh\dsh-recruitment; $env:RECRUITMENT_DB_PASSWORD='123456'; node --test
 
 # 8) DB：decision 按 scope（S7 决策提交后应出现 SCREENING/S7 行）；both_bound>0；verify.sql + verify-0006..0010 全 PASS
 ```
+
+---
+
+## 9. 第三轮回抄（2026-11-14 20:19；只更正过时结论，前文历史记录保留）
+
+> 口径：本节只记"现在是什么"，证据一律给 `file:line` 或命令输出。**不重开已关闭的轮次**，也不改前文的现场记录。
+
+### 9-1 N6 / P1-07：S8 四 intent 已实现
+
+- `INTENTS = ['CREATE','RESCHEDULE','CANCEL','WITHDRAW_INTERVIEWER'] as const`
+  —— `src/tools/interview-schedule.ts:92`（文件头 `:8-16` 逐条写四个 intent 的边；**没有** `COMPLETE`）。
+- 注册可达：`src/index.ts:589`；工厂在 `src/index.ts:513-516`（`ctx.approval` 闸门保留，D-79 + 120s，D-101）。
+- 测试：`test/unit/interview-schedule*.test.ts`、`test/integration/interview-schedule.test.ts` 存在；**本轮未跑**（未验收，只回抄事实）。
+
+### 9-2 N8 / P1-09：阶段推进已有唯一写入口
+
+- 工具：`recruitment_application_stage_advance`（`src/tools/stage-advance.ts:1`、`:47`；注册于 `src/index.ts:588`）。
+- 领域写路径：`src/domain/stage-advance.ts:741-742`（`update recruitment.application set rubric_version_id = $3`，T1 补钉）
+  与同文件 `:79` 的 `current_stage_code` + `record_version` 条件 UPDATE；actor 来自 `withActor`（`SET LOCAL recruitment.actor_id`）。
+- 契约：`contracts/stage-advance/tool-contracts.md`；测试：`test/unit/stage-advance.test.ts`、`test/integration/stage-advance.test.ts`。
+- **边界（不许夸大）**：它只承认"已发生的事实"、不新增授权、不写决策；因此"谁做的决定"仍只能由 `decision` 行证明。
+
+### 9-3 P2-01 / N11：`docs/18` + `CONTRACT.md` + `README.md` + `package.json` 已回抄
+
+| 项 | 旧 | 现（证据） |
+|---|---|---|
+| 工具数 | 19（`src/index.ts:414-433`） | **25**（`src/index.ts:577-600`；假 ctx 调 `apply()` 实测 25 个注册名） |
+| 表数 / 迁移 | 44 张 / 0010 | **60 张基表 + 3 视图 / 0014**（`db/migrations/0014_tenant_config.sql`；`verify.sql` §1 实测 60） |
+| S8 | 仅 `CREATE` | 四 intent（§9-1） |
+| 阶段推进 | 无入口 | 有唯一入口（§9-2） |
+| S3 rubric 批准 | 仅 CLI | 产品工具（§9-4） |
+| `package.json` `description` | "只读工具包、stub、无写库路径" | 25 个工具、读写 PG 17、S3–S10 |
+
+### 9-4 N7 / P2-02：S3 rubric 批准的产品入口已注册
+
+- 工具：`recruitment_job_rubric_approve`（`src/tools/job-rubric-approve.ts:1`；注册于 `src/index.ts:585`，
+  工厂 `src/index.ts:509-511` 传入 `ctx.approval`）。
+- 语义：人批准才写（`ctx.approval` fail-closed）；批准后把 `job.current_rubric_version_id` 指向该版本；
+  重复批准 → `NO_OP`（见该文件头 `:1-45`）。**未在真实库上复跑**，只回抄入口存在。
+
+### 9-5 DB 口径回抄（`db/verify.sql` 本轮改动 + 实测）
+
+- COV 清单：`(12,'Pipeline Template','pipeline_template','TABLE')`、`(14,'Stage','pipeline_template_stage','TABLE')`
+  —— 依据 `0014_tenant_config.sql:332` / `:359` 建表，且 0014 头注释 `:20-24` 点名的正是这两行旧 `DEFERRED`；
+  `(13,'Pipeline Instance','application.current_stage_code','MAPPED')` **保持 MAPPED**（0014 头注释同口径）。
+- 实测输出（`ra_s6s7`，2026-11-14，两次探测；exit code 0 都成立）：
+  - 20:19（Git 追踪链 0001–0014）：`tables 60 / triggers 111 / functions 34`、
+    `STRUCT-06 PASS 历史事实禁删触发器 50 个`、`COV-01 PASS 对象覆盖：有表 30 / 列映射 1 / 缓做 5（合计 36）`、末行 `VERIFY PASS`。
+  - 20:2x（同一时刻另一 lane 把**未提交**的 `0015_runtime_cutover.sql` 应用到本机库）：
+    `tables 62 / triggers 117 / functions 41`、`STRUCT-06 ... 52 个`、`COV-01 ... 30/1/5`、末行 `VERIFY PASS`。
+    说明：0015 **不在本 lane 写范围、也未提交**；文档口径按 0014 链写，0015 合入后需再回抄。
+- 注意：`(16,'Stage Activity Template')` 仍是 `DEFERRED` —— 0014 的 `pipeline_template_stage_template`
+  只覆盖"阶段 → 面试模板版本"引用，不含待办/通知/材料收集，**是否升为 TABLE / MAPPED 需裁决**（见回报）。
+
+### 9-6 本轮**没有**改变、仍按未闭合处理
+
+- **N4 端到端**：仍无一次「一条申请 S6→S10 全绿」的独立复跑证据；最新尝试是
+  `evidence/experiments/2026-11-14-golden-path-e2e/README.md`（12 跳 9 跳符合预期，S7/S10 决策被 rubric pin 挡住）。
+  该报告的 F1 写入路径（intake 新建时钉 rubric + stage_advance T1 补钉）本轮已能在源码里看到
+  （`application-intake.ts:1427-1434` / `:1672-1685`、`domain/stage-advance.ts:741-742`），**但尚未复跑**。
+- **N5 真实简历门槛**：入库半边已达（26 份真实语料申请 / 25 ACTIVE，
+  `evidence/experiments/2026-11-14-real-intake-20/README.md`）；该报告明确"只做 S6、不宣称 S7 能力"，
+  所以「≥5 份可解释 S7 结论」这半边**仍无证据**。
+- **N9 飞书 LIVE**：仍 BLOCKED（无真实凭据/回读；本轮回抄没有改 R4 三维标签口径）。
+- **§8.5 的 N1/N2/N3/N10/N12/N13/N14/N15**：本轮未重新取证，状态不变。
 

@@ -7,10 +7,14 @@
 
 > 计数口径来自 `psql -f db/verify.sql` 第 1 节实测输出（PG 17.11）。
 
-> **本文数字是 `0001_init.sql` 基线，不是当前库。** 迁移已到 `0010`（另有 `0012` 为执行器状态表，
-> 未合入前不计），当前实测为 **44 张基表 + 3 个视图**（视图在 `0003_review_queue.sql`）。
-> `verify.sql` 用 `pg_class.relkind='r'` 只数基表，所以"44"和"47（含视图）"是两种口径，别混用。
-> 引用表数时必须写明口径与迁移版本，否则会像复审 N11 那样出现"40/44/47"三个数并存。
+> **本文数字是 `0001_init.sql` 基线，不是当前库。** 迁移已到 **`0014`**（0010 台账 + 0011 任务运行时 +
+> 0012 执行器状态 + 0013 追溯链 + 0014 企业自建配置），当前实测为 **60 张基表 + 3 个视图**
+> （视图 `v_conversion_ledger` / `v_review_open` / `v_source_gate` 在 `0003_review_queue.sql:538/567/617`）。
+> `verify.sql` 用 `pg_class.relkind='r'` 只数基表，所以"**60**"和"**63**（`information_schema.tables` 含视图）"是两种口径，别混用。
+> 引用表数时必须写明口径与迁移版本，否则会像复审 N11 那样出现"40/44/47"三个数并存（2026-11-14 回抄：实测 60/63）。
+> ⚠️ **并发迁移提醒**：本机 `ra_s6s7` 在同一时刻已有另一 lane **未提交**的 `0015_runtime_cutover.sql`
+> （+`runtime_watermark` / `runtime_watermark_change` → 62 张基表 / 52 个禁删触发器）。本文按 **Git 追踪的
+> 0001–0014 链**写（60）；0015 合入后需再回抄。
 
 ---
 
@@ -22,11 +26,11 @@
 | 主键 | 单列 `uuid`，`gen_random_uuid()`（PG13+ 内置，**不装扩展**） | 无需 pgcrypto |
 | 例外 | `event_inbox` 主键叫 `event_id`（不是 `id`） | docs/03 §9 字段名逐字 |
 | 多租户 | 除 `organization` 外每表 `tenant_id NOT NULL` 且有外键到 `organization`；关键关系用 **(id, tenant_id) 复合外键**，物理上禁止跨租户引用 | docs/03 §16 不变量 7 |
-| 乐观并发 | 22 张可为变表带 `record_version`（所有状态表 + candidate/decision/approval/business_task/task_attempt/...），`fn_row_guard` / `fn_touch` 在每次 UPDATE 自动 +1；调用方必须 `WHERE record_version = $expected`，0 行即 `VERSION_CONFLICT`。**另 17 张不带**：要么整行不可变（新版本 = 新行，如 `rubric_version` / `job_version` / `resume_version` / `event_inbox` / `business_config` / `candidate_merge`），要么只是维度/挂接表（`organization` / `role` / `department` / `acquisition_channel` / `actor_role` / `interviewer` / `intake_asset` / `execution_mandate` / `resume`）或派生索引（`transcript_segment`） | docs/03 §18 |
+| 乐观并发 | **27 张表带 `record_version`**（`information_schema.columns` 实测；所有状态表 + `candidate`/`decision`/`approval`/`business_task`/`task_attempt`/`job`/`interview`/…，0014 起 `role`/`hiring_team`/`hiring_team_member`/`pipeline_template` 也带），`fn_row_guard` / `fn_touch` 在每次 UPDATE 自动 +1；调用方必须 `WHERE record_version = $expected`，0 行即 `VERSION_CONFLICT`。**另 33 张不带**：要么整行不可变（新版本 = 新行，如 `rubric_version` / `job_version` / `resume_version` / `event_inbox` / `business_config` / `candidate_merge`），要么只是维度/挂接表（`organization` / `department` / `acquisition_channel` / `actor_role` / `interviewer` / `intake_asset` / `execution_mandate` / `resume`）或派生索引 / 配置 / 引擎状态表（`transcript_segment`、`stage_catalog`、`engine_*` 等） | docs/03 §18 |
 | 状态审计 | 有状态的表都有 `status_changed_at / status_changed_by_actor_id / status_source_event_id`；`application` 另有一组 `stage_changed_*` | docs/03 §4 不变量 8、§19 |
 | actor | 状态迁移必须能确定 actor：`SET LOCAL recruitment.actor_id = '<uuid>'`，或显式写 `status_changed_by_actor_id`；两者都没有 → `ACTOR_REQUIRED` | docs/03 §12（工具每次执行都要重新校验授权） |
 | 内部事件 | 每次状态迁移由触发器自动写一条 `event_inbox`（`provider='internal'`、`trust_level='INTERNAL'`），事件 id 回填到 `status_source_event_id` | docs/03 §9 / §4 不变量 8 |
-| 历史不可删 | 38 张表装了 `trg_*_no_delete`，物理 DELETE 直接报 `DELETE_FORBIDDEN`；修正只能追加新版本 / 软关闭。**唯一例外 `transcript_segment`**：它是"可重建的派生索引"（docs/04 §16），允许重建 | docs/03 §4 不变量 2、§6、§11 |
+| 历史不可删 | **50 张表**装了 `trg_*_no_delete`（`fn_block_delete` 触发器；`verify.sql` STRUCT-06 实测 50），物理 DELETE 直接报 `DELETE_FORBIDDEN`；修正只能追加新版本 / 软关闭。**唯一例外 `transcript_segment`**：它是"可重建的派生索引"（docs/04 §16），允许重建 | docs/03 §4 不变量 2、§6、§11 |
 | 原文不可改 | `resume_version` / `rubric_version` / `job_version` / `business_config` / `interview_template_version` / `candidate_merge` 整行不可 UPDATE；`decision` / `ai_summary` 只允许改 `superseded_by_*` 指针（+ 状态）；`transcript_artifact` 只允许改状态与抓取元数据（白名单） | docs/03 §4 不变量 6/10、docs/04 §16 |
 | 时间语义 | `occurred_at`（外部发生，没给就留空）/ `received_at` / `recorded_at` / `state_changed_at` / `sent_at` / `confirmed_at` / `last_readback_at` 分列，互不冒充 | docs/03 §19 |
 | 枚举 | 一律 `text + CHECK`（不用 PG enum）：可读、可幂等重建、扩值只改 CHECK | 迁移可重复执行 |
@@ -60,11 +64,11 @@
 | 9 | Resume | `resume` + `resume_version` | 版本不可覆盖（整行不可 UPDATE）；保留原件哈希 `source_asset_sha256` |
 | 10 | Candidate Acquisition Source / Channel | `acquisition_channel` | 只表达**业务渠道**；技术 Connector 身份在 `event_inbox.provider`，两者不混（docs/03 §1 逐字要求） |
 | 11 | Application | `application` | 不变量 1 的 (candidate, job) NOT NULL 复合外键；**四轴分列**，见 §7 |
-| 12 | Pipeline Template | **缓做** | 模板族 v1.0 不做，见 §5 / M-3 |
-| 13 | Pipeline Instance | **列映射** | `application.current_stage_code` + `stage_changed_at/by/source_event` + 内部事件历史（1 Application : 1 Instance） |
-| 14 | Stage | **缓做** | stage 取值来自 `business_config(scope='STAGE'/'ORGANIZATION', key='stage_catalog')`，见 M-3 |
+| 12 | Pipeline Template | `pipeline_template` | **2026-11-14 回抄**：`0014_tenant_config.sql:332` 建表（旧口径为"缓做"）；`(tenant_id, code)` 唯一、`is_active` 软关闭、`fn_touch` 版本自增；有序阶段在 #14 |
+| 13 | Pipeline Instance | **列映射** | `application.current_stage_code` + `stage_changed_at/by/source_event` + 内部事件历史（1 Application : 1 Instance；0014 头注释同口径） |
+| 14 | Stage | `pipeline_template_stage` | **2026-11-14 回抄**：`0014_tenant_config.sql:359` 建表（旧口径为"缓做"）；`(template, sort_order)` / `(template, stage_code)` 唯一，`stage_code` 复合外键到本租户 `stage_catalog`（拼错 = INSERT 即拒绝）；阶段引用的面试模板在 `pipeline_template_stage_template`（#16 只被部分覆盖） |
 | 15 | Interview Template | `interview_template_version` | 不可变；`round_no` + Focus Attributes + 问题模板 + Feedback Form |
-| 16 | Stage Activity Template | **缓做** | v1.0 的阶段活动直接落 `business_task`（`task_type` + `business_refs`） |
+| 16 | Stage Activity Template | **缓做**（0014 的 `pipeline_template_stage_template` 只覆盖"阶段 → 面试模板版本"引用，不含待办/通知/材料收集） | v1.0 的阶段活动直接落 `business_task`（`task_type` + `business_refs`） |
 | 17 | Interview | `interview` | 不变量 4：`application_id NOT NULL` + `round_no` + `slot_code`（同轮可多场）；8 状态 CHECK |
 | 18 | Interviewer | `interviewer` | `(interview_id, actor_id)` 唯一；`required_scorecard` 决定 Evaluation Ready 条件 |
 | 19 | Meeting | `meeting` + `meeting_binding` | **不存标题**（结构上禁止按标题猜绑定）；`meeting_binding` 部分唯一索引保证「一个会议同时只绑一个面试」 |
@@ -86,7 +90,7 @@
 | 35 | Agent Execution Policy / Mandate | `execution_mandate` | 技术授权；**CHECK 禁止** `approve/reject/decide/merge_candidate/waive_scorecard` 出现在 `allowed_actions` → 闸门不可绕过 |
 | 36 | Business Config / Rubric Version | `business_config` + `rubric_version` | 都不可变（新版本 = 新行）；`(scope, scope_id, key, version_no)` 唯一；`rubric_version` 被 Scorecard 固定引用 |
 
-**合计**：28 行有表 · 1 行列映射（#13）· 7 行缓做（#8/#12/#14/#16/#26/#27/#32）= **36**。
+**合计**：30 行有表 · 1 行列映射（#13）· 5 行缓做（#8/#16/#26/#27/#32）= **36**（对应 `verify.sql` 第 4 节实测：有表 30 / 列映射 1 / 缓做 5）。
 
 ---
 
@@ -104,18 +108,19 @@
 | 10 评价与决策 | Scorecard、Decision、Evaluation Summary、Next Round Brief | `scorecard`、`decision`、（派生，见 §6） | ✅（M-2） |
 | 跨切面运行时 | Business Task、Task Attempt、Agent Session、Chat Thread、Durable Effect、Mandate、Business Config、Approval | 对应 8 张表 | ✅ |
 
-**结论：v1.0 需要的对象 100% 有落点**（28 张对象表 + 1 个列映射 + 3 张 §5 的支撑表）。`db/verify.sql` 第 4 节会把 36 行逐条断言一遍（表不存在即整体失败）。
+**结论：v1.0 需要的对象 100% 有落点**（30 张对象表 + 1 个列映射；另有 §6 的 21 张非清单表供运行时 / 配置 / 台账使用）。`db/verify.sql` 第 4 节会把 36 行逐条断言一遍（表不存在即整体失败）。
 
 ---
 
-## 5. 缓做对象（7 个，不建表）与理由
+## 5. 缓做对象（5 个，不建表）与理由
+
+> **2026-11-14 回抄**：Pipeline Template / Stage 已于 `0014_tenant_config.sql` 建表（`pipeline_template` /
+> `pipeline_template_stage`），从本清单移除（见 §3 #12/#14 与 `verify.sql` COV 行）。
 
 | 对象 | 缓做理由（可追溯到哪一节） | 什么时候做 |
 |---|---|---|
 | Prospect | `docs/01 §9` 阶段 5 Sourcing = **Deferred**（10.0 对象）；`docs/03 §7` 也把 Sourcing Activity 列为 10.0 | 接 BOSS/公开来源时（P2 之后） |
-| Pipeline Template | v1.0 Golden Path 只有一条流程；模板族一旦建表就要冻结「并行/条件跳转/版本迁移」语义，代价大于收益 | 第二家企业/第二条流程要跑时 |
-| Stage | 阶段取值先落 `business_config.stage_catalog`（code + kind + 顺序），不建独立实体；`application.current_stage_code` 引用它 | 要按岗位配置不同阶段序列时 |
-| Stage Activity Template | v1.0 的「进入阶段要建什么待办」直接由 `business_task(task_type, business_refs)` 表达 | 待办种类 > 5 或要按模板批量生成时 |
+| Stage Activity Template | v1.0 的「进入阶段要建什么待办」直接由 `business_task(task_type, business_refs)` 表达；0014 的 `pipeline_template_stage_template` 只覆盖"阶段 → 面试模板版本"引用 | 待办种类 > 5 或要按模板批量生成时 |
 | Offer | `docs/01 §9` 阶段 11 = Deferred；`docs/10` 明确本 PRD 不冻结薪酬/谈判/审批链 | P3 之后单独的 Offer 设计 |
 | Talent Pool | `docs/01 §9` 阶段 12 v1.0 只有指标采集，`docs/03 §7` 属 10.0 | 人才沉淀产品化时 |
 | Source Thread | 外部邮件/消息上下文不进 golden path；原始证据已由 `event_inbox.payload_ref` + `intake_asset` 保留 | 要按邮件线程聚合沟通时 |
@@ -124,15 +129,24 @@
 
 ---
 
-## 6. 不在 36 行清单内、但确实落表的 3 张表
+## 6. 不在 36 行清单内、但确实落表的表（60 − 39 = 21 张）
 
-| 表 | 为什么要有 | 归属 |
+> **2026-11-14 回抄**：表总数 60，其中 39 张是 §3 的映射表、**21 张**在 36 行清单之外。
+> 按迁移分组如下（引用表数时请把这 21 张算进"基表 60"，不要重复计入 #7 的 `candidate_merge`）。
+
+| 来源 | 表 | 归属 / 理由 |
 |---|---|---|
-| `intake_record` | docs/03 §5 Intake 三层：**一封转发邮件三份资料 → 三条 Intake Record**；没有它就无法表达「一次收到」与「文件」的层级 | 属 #9 Resume 的上游接收记录（docs/03 §5 逐字） |
-| `intake_asset` | 同上：原文件、类型、大小、checksum、来源、校验结果 | 同上 |
-| `candidate_merge` | docs/03 §6 第 4 条要求 **不可变 Merge Record + 别名映射 + 操作者 + 时间 + 字段处理 + 来源版本**；不变量 2（合并不删历史 Application）必须靠它留下审计 | 属 #7 Candidate 的合并记录，**不是新对象** |
+| 0001 | `intake_record` / `intake_asset` | docs/03 §5 Intake 三层：**一封转发邮件三份资料 → 三条 Intake Record**；属 #9 Resume 的上游接收记录 |
+| 0003 | `conversion_run` / `review_queue` / `review_audit` | 转换层人工复核（0003 迁移头：状态机 + 审计留痕） |
+| 0004 | `stage_catalog` | 阶段目录（#14 的 `stage_code` 取值来源；`application.current_stage_code` 外键引用） |
+| 0010 | `schema_migration` | 迁移台账（D-96 / 根因 C：哪些迁移应用过必须可查询） |
+| 0011 | `task_wakeup` | 任务运行时的唤醒表（`business_task` 之外的调度辅助） |
+| 0012 | `engine_trigger` / `engine_disposition` / `engine_trigger_thread` / `engine_thread` / `engine_ticket` / `engine_decision` / `engine_outbox` / `engine_effect` / `engine_kv` | 执行引擎状态（vendor 自 dsh-superagent-prototype，MIT；业务真相仍在领域表） |
+| 0013 | `tool_call` | 执行追溯链（Notion 08 §11.3 第 9 步） |
+| 0014 | `hiring_team` / `hiring_team_member` / `pipeline_template_stage_template` | 企业自建配置；`pipeline_template_stage_template` 是 #16 的**部分**覆盖（只到"阶段 → 面试模板版本"） |
 
-> 这三张表都来自 docs/03 正文，不是自造。若总控认定它们算「额外对象」，删掉它们会直接削弱不变量 2 与 §5 的 Intake 模型 —— 这条请在复核时裁决。
+> 这些表都来自 `docs/03` 正文或已批准的裁决 / 迁移头注释，不是自造。若总控认定其中某些算「额外对象」，
+> 删除会直接削弱不变量 2、§5 的 Intake 模型或运行时能力 —— 这条请在复核时裁决。
 
 **未建表、也不打算建表的阶段产物**（因为 docs/03 §1 没有把它们列为对象，建表就等于发明第 37 个对象）：
 
@@ -226,7 +240,7 @@
 |---|---|---|
 | M-1 | Screening Result **不建表**，用 `decision(decision_scope='SCREENING')` 表达 | 它不是 docs/03 §1 的 36 行之一；建表等于发明对象。阶段决策本来就在 `Decision`（"阶段或最终决策"）里 |
 | M-2 | Evaluation Summary / Next Round Brief **不建表**（派生 + 版本化快照） | 同上；docs/03 §7「只做投影，不建事实库」。若 P3 要求 Brief 可被下轮面试官读到具体版本，需先把 Brief 写进 docs/03，再开 `0002` |
-| M-3 | Pipeline Instance → `application` 的列 + 内部事件历史；Stage 的取值 → `business_config.stage_catalog` | v1.0 是 1 Application : 1 Instance，独立表纯冗余；stage 是配置不是实体。**若总控要求"阶段迁移历史表"，请明确要哪张，我加 0002** |
+| M-3 | Pipeline Instance → `application` 的列 + 内部事件历史 | v1.0 是 1 Application : 1 Instance，独立表纯冗余。**已被 0014 部分取代（2026-11-14 回抄）**：Pipeline Template / Stage 已建表（`pipeline_template` / `pipeline_template_stage` / `pipeline_template_stage_template`），`verify.sql` 的 COV #12/#14 同步改为 TABLE；Pipeline Instance 仍按本条落 `application` 列 |
 | M-4 | Calendar Event → `meeting.calendar_event_id`（不建日历对象） | docs/03 §1 没有 Calendar 对象；排期约束计算在 Scheduling Service（docs/04 §4），不在库里 |
 | M-5 | Transcript 用三张表（artifact / segment / processing_run） | docs/04 §16 逐字给了「四张逻辑表」（含 `interview_record`）；segment 是"可重建的派生索引" |
 | M-6 | canonical variant 的粒度 = **Meeting**（部分唯一索引） | docs/04 §20 B 说"本轮选一个 canonical variant"。本轮可含多个 Meeting，各自选 canonical 是更保守的落法（宁多不丢）；若要跨 Meeting 选一个，需要 `transcript_set` 实体 → 属 0002 |
