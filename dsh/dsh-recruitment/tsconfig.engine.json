@@ -13,5 +13,5 @@
     "types": ["node"],
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/engine/**/*.ts", "test/integration/engine-mechanisms-pg.test.ts"]
+  "include": ["src/engine/**/*.ts", "test/integration/engine-mechanisms-pg.test.ts", "test/integration/recruitment-task-adapter-pg.test.ts"]
 }

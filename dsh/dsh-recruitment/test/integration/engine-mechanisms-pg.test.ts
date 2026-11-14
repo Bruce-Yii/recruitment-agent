@@ -269,3 +269,84 @@ test('同步桥的代价与失败语义：语句超时被取消、worker 被杀�
     store.close()
   }
 })
+test('回读端口：present 不重发 / absent 才重发 / 回读抛错不重发', async () => {
+  const cfg = testDatabaseConfig()
+  const board = new HealthBoard()
+  const sidecar = new pg.Client({ host: cfg.host, port: cfg.port, user: cfg.user, database: cfg.database, password: cfg.password })
+  await sidecar.connect()
+  const store = new Store({
+    host: cfg.host, port: cfg.port, user: cfg.user, database: cfg.database, password: cfg.password,
+    tenant_id: TENANT, statementTimeoutMs: 5_000, applicationName: 'engine-readback-test',
+  }, undefined, board.claim('store'))
+  try {
+    await reset(sidecar)
+
+    /** 跑一轮：第一次 send 抛错（模拟"发出去了但回执没写回"，或"根本没出去"），退避期过后换一个进程重跑。 */
+    const run = async (id: string, options: {
+      readonly firstSendReachesWire: boolean
+      readonly lookup?: () => Promise<'present' | 'absent'>
+    }): Promise<{ wire: string[]; calls: number; status: string | undefined }> => {
+      const wire: string[] = []
+      let calls = 0
+      const channels = {
+        instance: () => ({ enabled: true }),
+        channelAllowed: () => true,
+        send: async (message: OutboundMessage) => {
+          calls++
+          if (calls === 1) {
+            if (options.firstSendReachesWire) { wire.push(message.id); throw new Error('ACK_LOST') }
+            throw new Error('connection reset before send')
+          }
+          wire.push(message.id)
+          return 'sent' as const
+        },
+        lookup: options.lookup,
+      }
+      const effects = new Effects(store, new HealthBoard())
+      effects.start()
+      const outbox = new Outbox({ store, effects, sources: channels, commands: undefined, paused: () => false })
+      outbox.send(message(id))
+      await outbox.sent()
+      // 让退避到期，并用一个新进程（新的 Effects/Outbox）重试 —— 与 §9.12-9 的验收口径一致。
+      await sidecar.query("update recruitment.engine_effect set due = 0 where kind = 'reply'")
+      const restarted = new Effects(store, new HealthBoard())
+      const again = new Outbox({ store, effects: restarted, sources: channels, commands: undefined, paused: () => false })
+      restarted.start()
+      await again.sent()
+      return { wire, calls, status: again.status(id) }
+    }
+
+    // A. 回读说「线上已有」：补记 sent，线上仍然只有 1 条。
+    const present = await run('m-readback-present', { firstSendReachesWire: true, lookup: async () => 'present' })
+    assert.deepEqual(present.wire, ['m-readback-present'], '线上已有时不得重发')
+    assert.equal(present.calls, 1, '回读到已有：不得再次调用 send')
+    assert.equal(present.status, 'sent', '回读到已有，必须补记 sent')
+    const presentReceipt = await readRow(sidecar, 'engine_outbox', 'message_id', 'm-readback-present') as { attempt?: unknown }
+    assert.equal(presentReceipt.attempt, undefined, 'settle 后不该留下发送标记')
+
+    // B. 回读说「确认没有」：才允许重发，线上应当恰好 2 次（1 次真实发送 + 1 次重发）。
+    const absent = await run('m-readback-absent', { firstSendReachesWire: false, lookup: async () => 'absent' })
+    assert.equal(absent.calls, 2, '回读确认没有时必须重发（第二次 send）')
+    assert.deepEqual(absent.wire, ['m-readback-absent'], '重发只允许在线上确认没有时发生')
+    assert.equal(absent.status, 'sent')
+
+    // C. 回读本身抛错：不猜、不重发，保持 pending 并记原因。
+    const broken = await run('m-readback-error', {
+      firstSendReachesWire: true,
+      lookup: async () => { throw new Error('readback endpoint unavailable') },
+    })
+    assert.deepEqual(broken.wire, ['m-readback-error'], '回读失败时绝不重发')
+    assert.equal(broken.calls, 1, '回读失败：不得再次调用 send')
+    assert.equal(broken.status, 'pending', '回读失败必须保持 pending')
+    const brokenReceipt = await readRow(sidecar, 'engine_outbox', 'message_id', 'm-readback-error') as {
+      attempt?: { state?: string }; reconcile?: { outcome?: string; reason?: string }
+    }
+    assert.equal(brokenReceipt.attempt?.state, 'sending', '回读失败必须保留发送标记，供下次继续对账')
+    assert.equal(brokenReceipt.reconcile?.outcome, 'error', '回读失败的原因必须落库')
+    assert.match(String(brokenReceipt.reconcile?.reason), /readback failed/)
+  } finally {
+    await reset(sidecar)
+    await sidecar.end()
+    store.close()
+  }
+})
