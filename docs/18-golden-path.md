@@ -94,7 +94,7 @@ agent 不得代填面评、不得代做决策（`execution_mandate` 的 CHECK �
 
 | 环节 | 状态 | 证据 / 缺口 |
 |---|---|---|
-| DB 63 张基表（+3 视图）+ 0001–0016 迁移 | ✅ 成立（静态核对；本轮未复跑 CI） | 迁移链 `db/migrations/0001–0016`（迁移台账 16 行，2026-11-14 21:00 实测）；`db/verify.sql` §1 计数口径实测 62、exit 0 / `VERIFY PASS`；CI `db` job 目录驱动覆盖全链 + `db/verify-*.sql` + 迁移台账比对（`.github/workflows/ci.yml:169-265`） |
+| DB 63 张基表（+3 视图）+ 0001–0016 迁移 | ✅ 成立（CI db job 绿；全链见 §5.3） | 迁移链 `db/migrations/0001–0016`（迁移台账 16 行，2026-11-14 21:00 实测）；`db/verify.sql` §1 计数口径实测 62、exit 0 / `VERIFY PASS`；CI `db` job 目录驱动覆盖全链 + `db/verify-*.sql` + 迁移台账比对（`.github/workflows/ci.yml:169-265`） |
 | 转换器（S6 读） | ✅ 成立 | `converter/reports/acceptance.md`：13/13，553/553 页身份一致 |
 | 独立校验器 | ✅ 成立 | `converter/verify/`，V1–V8，24 条测试 |
 | 模型兜底 | ⛔ **converter 内车道不接线（设计改道）** | D-81 + D-107：模型调用不进插件；视觉补读由 agent 侧承担 —— `recruitment_page_image` → `read_image` → `recruitment_model_text_merge`（两个工具已注册，`src/index.ts:598-599`）；`converter/fallback/model_reader.py` 仍不接 provider |
@@ -133,7 +133,7 @@ $psql='D:\12412\PostgreSQL\bin\psql.exe'; $env:PGPASSWORD='123456'
 & $psql -U postgres -h 127.0.0.1 -c "DROP DATABASE IF EXISTS ra_goldenpath"
 & $psql -U postgres -h 127.0.0.1 -c "CREATE DATABASE ra_goldenpath"
 cd D:\12412\dsh工作区\projects\recruitment-agent\db
-foreach ($f in '0001_init','0002_seed','0003_review_queue','0004_stage_catalog','0005_version_binding','0006_integrity_gaps','0007_decision_integrity','0008_decision_uniqueness','0009_application_identity','0010_migration_ledger','0011_task_runtime','0012_engine_state','0013_trace_chain','0014_tenant_config','0015_runtime_cutover') {
+foreach ($f in '0001_init','0002_seed','0003_review_queue','0004_stage_catalog','0005_version_binding','0006_integrity_gaps','0007_decision_integrity','0008_decision_uniqueness','0009_application_identity','0010_migration_ledger','0011_task_runtime','0012_engine_state','0013_trace_chain','0014_tenant_config','0015_runtime_cutover','0016_v1_consistency') {
   & $psql -U postgres -h 127.0.0.1 -d ra_goldenpath -v ON_ERROR_STOP=1 -q -f "migrations\$f.sql"
 }
 # 每个迁移自带自检 + 总自检（与 CI 的 db job 同一份清单，见 .github/workflows/ci.yml:201-211）
@@ -169,7 +169,32 @@ dsh --profile recruitment
 ```
 ⚠️ **不要与现有 Web GUI 抢同一个端口**。现有 GUI 在 `http://127.0.0.1:61475`（profile `desktop`）。
 
-### 5.3 每步取证的最小要求（E1–E4）
+### 5.3 一条命令跑完 S6→S10（G4 harness）
+
+```powershell
+$env:RECRUITMENT_DB_PASSWORD='123456'
+$env:RECRUITMENT_DB_NAME='ra_goldenpath'
+node scripts/bootstrap-demo.mjs            # G5 前置（见 5.1.1）
+$env:GOLDEN_PATH_EVIDENCE_DIR='evidence/experiments/2026-11-15-golden-path-clean/local-first-run'
+node dsh/dsh-recruitment/manual/golden-path/run-golden-path-rerun.mjs
+```
+
+判据（任一不满足即 exit 非 0）：`hops=16 / passed=16 / failed=0 / skipped=0`；终态
+`application.current_stage_code=S10`；S10 至少 1 份 `SUBMITTED` 面评、canonical READY 转写存在；
+`v_application_stage_consistency` 0 违规。同一库再跑一次必须是 `RERUN` + `NO_OP`（零写入）。
+证据目录里保留 `summary.json`、`run.log`、`db-readback.txt` 与逐跳文件。
+
+### 5.4 CI 门：`golden-path` job
+
+CI 的 `golden-path` job 用独立 Postgres 服务库重放 0001→最新、跑 bootstrap + FIRST_RUN + RERUN，
+再跑两道独立机检（node 断言 summary 四数/模式/S10/视图 + psql 直接断言库事实），
+任一失败该 job 红；证据以 artifact `golden-path-evidence/` 上传。
+
+> 注意：converter 配置要求 `python_bin` 是**绝对路径**；CI 在 setup-python 后用
+> `command -v python` 写进 `GITHUB_ENV`。本地跑同样要给绝对路径，否则 harness 会以
+> `config.python_bin must be absolute` 退出（这不是测试失败，是配置校验）。
+
+### 5.5 每步取证的最小要求（E1–E4）
 - **E1** 命令原文 + 真实输出（不是"已实现"）
 - **E2** DB 读回（`select` 出刚写的行，敏感字段打码）
 - **E3** `passed / failed / skipped` 三个数；`skipped > 0` 不算绿
