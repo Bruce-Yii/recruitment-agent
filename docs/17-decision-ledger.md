@@ -1272,3 +1272,43 @@ V-15 "无处置事件"告警阈值，三个数未定，实现前必须先定。
 
 **残留（另开，不在本条）**：`switch_reader` 若产品要求真正换读取器，需要 U1 的读取器注册表，
 不是工具层自己造。
+
+### D-108 · 申请钉 rubric 版本的口径（F1）：默认钉岗位当前版本，显式入参优先，缺版本时**收下不钉**
+
+**裁定（2026-11-14，总控；回答独立验收的 F1 二选一）**：
+
+1. **写侧**：`application_intake` 建申请时，若岗位的 `job.current_rubric_version_id` 非空且该版本已批准，
+   就写入 `application.rubric_version_id`；调用方显式传入 `rubric_version_id` 时以入参为准（须属同一岗位且已批准）。
+2. **缺版本时：收下不钉，不拒绝。** 理由：
+   - 收到简历是**已经发生的业务事实**，拒绝接入不会让事实不存在，只会让事实分裂到系统外；
+   - 企业自建配置的现实是「材料常先到、rubric 后批」，把两者耦合会让接入被流程卡死；
+   - 系统已有显式暴露：`application_stage_advance` 返回 `BLOCKED: RUBRIC_NOT_PINNED`，带
+     `owner_role`（JOB_HIRING_MANAGER）+ `next_action_code`（PIN_RUBRIC_VERSION），HR 能看到"谁该去批"。
+     **静默失败才是问题，显式阻塞不是。**
+3. **读侧**：`job_get` 与 `screening_evaluate` 的 "当前版本" 判定**只认 `job.current_rubric_version_id`**，
+   不许再按 `version_no` 最大值取（D-21/D-48 已定：当前 ≠ 最新，指针支持回滚）。
+4. **补钉**：申请已存在但未钉、岗位之后批准了 rubric 时，`application_stage_advance` 的 T1 前置判定
+   在同一事务内补钉，带审计，不绕过 `fn_row_guard`。
+
+**反例（明确不做）**：不因为"缺 rubric"而拒绝 intake；不自动把"最新版本"当成"当前版本"；
+不在决策工具里静默补钉（钉版本必须是可审计的独立动作）。
+
+### D-109 · 运行时的认领/租约与 pg-boss 的关系（R1 gap proof）
+
+**裁定（2026-11-14，总控；回答独立验收的治理缺口）**：`src/runtime/**` 的任务认领、租约回收与重试
+**使用 PostgreSQL 原生的行锁与条件更新**（`FOR UPDATE SKIP LOCKED` + `lease_expires_at` +
+`uq_task_attempt_active_lease`），**没有引入 pg-boss，也没有自研队列**。
+
+1. **为什么这不算违反 R1**：R1 禁止的是"自研通用队列/调度器"。这里用的是 PG 的既有事务与行锁能力，
+   没有新建队列、没有新进程、没有新协议；任务状态与业务事实在**同一个库、同一个事务边界**内。
+2. **与 D-5 的关系**：D-5 说 v1.0 以 PG + pg-boss 为底座。**本条不推翻 D-5**：pg-boss 仍是
+   v1.0 的持久任务队列候选，用于「跨天、需要延迟/重试/优先级」的业务任务；runtime 的认领/租约是
+   **任务派发语义**（谁在跑、租约何时过期），不是队列语义。两者职责不同，可以并存。
+3. **何时必须换成 pg-boss 或等价实现**（触发条件写死，避免"以后再说"）：
+   - 需要跨实例公平调度或多优先级队列；
+   - 需要延迟投递/定时唤醒超出 PG 轮询能承受的范围；
+   - 单轮 tick 的派发吞吐成为瓶颈（实测当前单轮 1 个 Task，远未到）。
+4. **不做的**：不在 v1.0 引入 Redis/Kafka/独立调度平台；不为"看起来用了队列"而套一层 pg-boss。
+
+**证据**：`db/migrations/0011_task_runtime.sql`（租约回收索引与唯一约束）、
+`src/runtime/task-runtime.ts`（认领/回收）、`contracts/runtime/task-runtime.md`。
