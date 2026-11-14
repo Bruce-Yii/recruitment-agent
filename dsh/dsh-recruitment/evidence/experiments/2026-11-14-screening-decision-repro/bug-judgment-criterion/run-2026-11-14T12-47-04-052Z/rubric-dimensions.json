@@ -1,0 +1,30 @@
+{
+  "rubric_version_id": "1ef2a8c6-fd46-4a65-89e6-430b4322e197",
+  "version_no": 1,
+  "criteria": [
+    {
+      "key": "work_exists",
+      "kind": "MUST_HAVE",
+      "has_field_key": true,
+      "field": "work_experience",
+      "question": null
+    },
+    {
+      "key": "edu_exists",
+      "kind": "MUST_HAVE",
+      "has_field_key": true,
+      "field": "education",
+      "question": null
+    },
+    {
+      "key": "team_lead",
+      "kind": "NICE_TO_HAVE",
+      "has_field_key": true,
+      "field": null,
+      "question": "是否有 ≥1 年、≥3 人的直接带团队经历？"
+    }
+  ],
+  "judgment_criteria_with_null_field": [
+    "team_lead"
+  ]
+}

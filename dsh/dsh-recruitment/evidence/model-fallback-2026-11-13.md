@@ -23,7 +23,7 @@
 | profile 配置 | `D:\12412\dsh-home\profiles\rec-agent-test\cordis.patch.yml`（本轮给 `allowed_roots` 加了一行临时目录） |
 | 插件 | `@recruitment/dsh-recruitment`（`link:` 到本仓） |
 | sandbox | `permission/preset=workspace-write`、`sandbox/mode=workspace-write`（两条会话都有这条记录） |
-| 输入 PDF | `%TEMP%\recruitment-r7-synthetic\synthetic-resume-r7.pdf`（合成、image-only，见 §4） |
+| 输入 PDF | 现场合成的 image-only PDF（`%TEMP%` 产物，**已删除、按设计不入库**；sha256 见下行） |
 | PDF sha256 | `4aa2ce4fcedfb8d6a861be631b4907c8c500726b67c5c4748f014d452b6e8b38` |
 
 ---
@@ -48,8 +48,7 @@
 
 ## 3. Run B：`longcat-2.5-free` —— 渲染 → 看图 → 合并，三段原文
 
-overlay patch（一次性，不写进 profile）：
-`%TEMP%\recruitment-r7-synthetic\model-image-capable.patch.yml`
+overlay patch（一次性，不写进 profile；现场文件已删除、按设计不入库）：
 
 ```yaml
 - id: agent-default-model
@@ -105,7 +104,7 @@ Run B 的 text 与页面版式一致但夹带视觉伪影 —— 与"模型真�
 
 ## 4. 合成 PDF 怎么造的（R7）
 
-生成脚本：原件 `%TEMP%\recruitment-r7-synthetic\make_resume_pdf.py`，
+生成脚本：原件在 `%TEMP%`（**已删除、按设计不入库**），
 同内容副本见 `evidence/model-fallback-synthetic-pdf-2026-11-13.py`（**PDF 本身不入库**）。
 
 1. 用 PyMuPDF + `C:\Windows\Fonts\simhei.ttf` 把**自编**的中文简历样式文本画在 A4 页上（中间产物还有文本层）；

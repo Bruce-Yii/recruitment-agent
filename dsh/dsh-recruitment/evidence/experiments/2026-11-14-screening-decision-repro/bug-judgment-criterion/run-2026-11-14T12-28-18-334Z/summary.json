@@ -1,0 +1,50 @@
+{
+  "reproduced": true,
+  "reproduced_at": "2026-11-14T12:28:19.864Z",
+  "job_id": "4b4a2e89-f8ed-4444-b4ef-4f8bb84cd623",
+  "job_created_this_run": false,
+  "rubric_version_id": "1ef2a8c6-fd46-4a65-89e6-430b4322e197",
+  "application_id": "8677368d-a97e-4c93-b73a-5f3e60d0a203",
+  "fixture_sha256": "56f93d3be582a988a4713c1cba22c411e17b20371de73c2147962adde4c24ce5",
+  "rubric_shape": {
+    "rubric_version_id": "1ef2a8c6-fd46-4a65-89e6-430b4322e197",
+    "version_no": 1,
+    "criteria": [
+      {
+        "key": "work_exists",
+        "kind": "MUST_HAVE",
+        "has_field_key": true,
+        "field": "work_experience",
+        "question": null
+      },
+      {
+        "key": "edu_exists",
+        "kind": "MUST_HAVE",
+        "has_field_key": true,
+        "field": "education",
+        "question": null
+      },
+      {
+        "key": "team_lead",
+        "kind": "NICE_TO_HAVE",
+        "has_field_key": true,
+        "field": null,
+        "question": "是否有 ≥1 年、≥3 人的直接带团队经历？"
+      }
+    ],
+    "judgment_criteria_with_null_field": [
+      "team_lead"
+    ]
+  },
+  "screening_error": {
+    "name": "TypeError",
+    "message": "Cannot read properties of null (reading 'startsWith')",
+    "stack": "TypeError: Cannot read properties of null (reading 'startsWith')\n    at resolveFieldFact (file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/src/tools/screening-evaluate.ts:965:13)\n    at evaluateCriterion (file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/src/tools/screening-evaluate.ts:1278:16)\n    at file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/src/tools/screening-evaluate.ts:1751:20\n    at Array.forEach (<anonymous>)\n    at evaluateInTransaction (file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/src/tools/screening-evaluate.ts:1750:12)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/src/tools/screening-evaluate.ts:2053:20\n    at async withReadOnly (file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/src/db/pool.ts:235:20)\n    at async Object.execute (file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/src/tools/screening-evaluate.ts:2051:16)\n    at async file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/manual/screening-decision/probe-judgment-criterion-bug.mjs:248:20"
+  },
+  "screening_value_if_ok": null,
+  "expected": {
+    "tool": "recruitment_screening_evaluate",
+    "failing_frame": "src/tools/screening-evaluate.ts resolveFieldFact (field.startsWith)",
+    "root_cause": "job_create 把判断型准则归一化成 \"field\": null；screening_evaluate 只把 undefined 当判断型"
+  }
+}

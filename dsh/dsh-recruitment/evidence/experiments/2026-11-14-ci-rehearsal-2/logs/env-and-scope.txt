@@ -1,0 +1,22 @@
+rehearsal: 2026-11-14 (Asia/Singapore)  hosted-by: DSH subagent ci-rehearsal-2
+repo root : D:\12412\dsh工作区\projects\recruitment-agent
+branch    : feat/unified-document-intake (ahead 19 of origin)
+HEAD      : 2bae29412f1d9729ad7c1d28b95098684197e7ad
+HEAD tree export : D:\12412\dsh工作区\temp\ra_ci_rehearsal2\head  (git archive HEAD, 657 files)
+working tree dirty entries (git status --porcelain --untracked-files=all): 171
+local OS  : Windows (win32 x64)   PowerShell 7
+python    : Python 3.12.9 (CI: actions/setup-python@v5 python-version "3.12")
+node      : v24.16.0 (CI: actions/setup-node@v4 node-version "24")
+pnpm      : 12.18.0 (CI: pnpm/action-setup@v4 version 12)
+postgres  : PostgreSQL 17.11 on x86_64-windows (CI: postgres:17 service image)
+psql      : D:\12412\PostgreSQL\bin\psql.exe
+git bash  : D:\Git\bin\bash.exe
+gh        : authed as Bruce-Yii; run list for branch feat/unified-document-intake = EMPTY (branch never pushed / no CI run)
+corpus-acceptance job: repo variable CORPUS_AVAILABLE = (empty, gh variable list empty) -> GitHub skips job
+rehearsal DBs used (all created this run, dropped afterwards):
+  ra_ci_rehearsal2          (db job primary, replaces CI's ra_ci)
+  ra_ci_rehearsal2_plugin   (plugin job, replaces CI's ra_s6s7)
+  ra_ci_rehearsal2_review   (python-lanes apply step, replaces CI's ra_review_check for the apply only)
+  ra_review_check           (pre-existing local DB of the exact CI name; used ONLY to run review pytest because conftest hard-requires current_database()='ra_review_check'; tests roll back)
+  ra_fresh / ra_upgrade     (created by the verbatim lifecycle step, dropped afterwards)
+NOT touched: ra_s6s7, and any other pre-existing database.

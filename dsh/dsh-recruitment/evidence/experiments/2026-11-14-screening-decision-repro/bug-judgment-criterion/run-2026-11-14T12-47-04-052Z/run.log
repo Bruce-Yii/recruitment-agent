@@ -1,0 +1,14 @@
+复现：判断型 rubric 准则（job_create 存 field=null）→ screening_evaluate TypeError
+运行时间   : 2026-11-14T12:47:04.061Z
+数据库     : postgres@127.0.0.1:5432/ra_s6s7
+合成简历   : D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\manual\screening-decision\fixtures\synthetic-resume-screening-repro.pdf sha256=56f93d3be582a988a4713c1cba22c411e17b20371de73c2147962adde4c24ce5
+证据目录   : D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\evidence\experiments\2026-11-14-screening-decision-repro\bug-judgment-criterion\run-2026-11-14T12-47-04-052Z\
+
+STEP 1 job_create  : DUPLICATE_JOB_CODE → 复用 job=4b4a2e89-f8ed-4444-b4ef-4f8bb84cd623 rubric=1ef2a8c6-fd46-4a65-89e6-430b4322e197
+STEP 2 approve     : outcome=NO_OP replayed=true
+STEP 3 intake      : status=OK application_action=REUSED application=8677368d-a97e-4c93-b73a-5f3e60d0a203
+STEP 4 rubric 形状 : 判断型准则的 field 落库值
+  work_exists: field="work_experience" question=null
+  edu_exists: field="education" question=null
+  team_lead: field=null question="是否有 ≥1 年、≥3 人的直接带团队经历？"
+STEP 5 screening   : UNEXPECTED OK verdict=PASS

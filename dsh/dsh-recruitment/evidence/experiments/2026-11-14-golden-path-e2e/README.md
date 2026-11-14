@@ -286,7 +286,7 @@ S6 留下了**合成**候选人+申请。它们全部经工具创建，`normaliz
    其中 `transcript-import.ts` 的 WIP 与本 lane 的 HOP 7/8 相关 → **干净快照上应复跑一次**；
    F1/F2/F3 涉及的 `application-intake.ts` / `decision-record.ts` / `evaluation-summarize.ts` **不在并发改动清单里**，
    结论不受影响。
-   收尾时并发 lane 又新增了 `src/engine/`、`prompts/`、`skills/`、`docs/18`、`contracts/**` 等 WIP；
+   收尾时并发 lane 又新增了 `src/engine/` 与 prompts/skills（当时是临时 WIP 目录，**未入库**）、`docs/18`、`contracts/**` 等 WIP；
    **这些 WIP 里也没有任何“写 application.rubric_version_id”的入口**（收尾快照 `git-state-after.txt` 可与
    `git diff` 复核），F1 不是被并发改动临时造成的。
 2. **没有真实模型**：intake 未传 `structured_json`，未覆盖 agent 结构化路径。

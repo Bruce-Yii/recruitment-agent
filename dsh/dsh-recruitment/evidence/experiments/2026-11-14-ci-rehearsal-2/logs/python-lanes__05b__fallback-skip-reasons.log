@@ -1,0 +1,4 @@
+................s.....................................................   [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] fallback\tests\test_fallback_merge_pipeline.py:263: synthetic corpus PDF not present
+69 passed, 1 skipped in 2.89s

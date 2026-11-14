@@ -45,7 +45,7 @@ BLOCKED_BY_REVIEW**（RTF 没有 bbox，IR-G1 的"证据坐标齐全"不成立�
   striprtf，其它 → 合法失败（不猜扩展名）。`cli.py` / `reader_worker.py` / `batch_run.py`
   共用这一个分派点。
 - `src/document/**` 契约扩第五种媒体 `application/rtf` + `RtfLocator{paragraph, page?}`；
-  `sniff.ts` 认 `{\rtf`；`readers/rtf.ts` 复用 converter CLI + `mapConverterToDocumentContent`。
+  `sniff.ts` 认 `{\rtf`；`src/document/readers/rtf.ts` 复用 converter CLI + `mapConverterToDocumentContent`。
 - `application-intake.ts` 的 `resolveIntakeSource()` 增加 `rtf` 分支（S6 收 RTF 的**读取**，
   但不放宽身份闸门）。
 

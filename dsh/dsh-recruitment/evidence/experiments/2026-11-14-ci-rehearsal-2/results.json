@@ -1,0 +1,138 @@
+{
+  "rehearsal": "2026-11-14-ci-rehearsal-2",
+  "branch": "feat/unified-document-intake",
+  "head": "8a659f6b17cebd7acef26a36dd75ccddedfd08ab",
+  "head_ahead_of_origin": 19,
+  "working_tree_dirty_entries": 186,
+  "branch_has_ci_run": false,
+  "inputs": {
+    "worktree_delta": "HEAD + 0012_engine_state.sql + engine sources/tests + package.json + pnpm-lock.yaml + tsconfig.engine.json",
+    "clean_tree": "git archive HEAD (657 files)"
+  },
+  "jobs": [
+    {
+      "not_reproducible": 2,
+      "pass": 4,
+      "status": "PASS",
+      "notes": "compileall exit 0; corpus portability grep exit 0",
+      "job": "compile",
+      "steps_total": 6
+    },
+    {
+      "not_reproducible": 4,
+      "steps_total": 4,
+      "status": "NOT_RUN",
+      "job": "corpus-acceptance",
+      "notes": "vars.CORPUS_AVAILABLE unset -> GitHub skips; corpus originals not in repo"
+    },
+    {
+      "tests": 893,
+      "passed": 893,
+      "status": "PASS",
+      "skipped": 0,
+      "job": "plugin",
+      "pass": 3,
+      "steps_total": 6,
+      "not_reproducible": 3,
+      "failed": 0,
+      "notes": "pnpm install --frozen-lockfile exit 0; node --test 37s"
+    },
+    {
+      "not_reproducible": 1,
+      "pass": 3,
+      "status": "PASS_WITH_CAVEAT",
+      "notes": "migrations 0001-0010 applied; 9 verify scripts pass; lifecycle exit 0 but ledger guard cannot fail build (diff && echo)",
+      "job": "db",
+      "steps_total": 4
+    },
+    {
+      "not_reproducible": 2,
+      "pass": 4,
+      "status": "PASS",
+      "notes": "fallback 69 passed/1 skipped; review 51 passed only when DB name = ra_review_check (hardcoded guard)",
+      "job": "python-lanes",
+      "steps_total": 6
+    }
+  ],
+  "step_totals": {
+    "terminal_fail": 0,
+    "not_reproducible": 12,
+    "pass": 14,
+    "total": 26
+  },
+  "diff_points": [
+    "D1 uncommitted files invisible to CI (186 dirty entries)",
+    "D2 committed machine-absolute paths in converter/corpus/batch2-picked.json; portability grep only scans *.jsonl",
+    "D3 ledger guard diff && echo never fails; verified locally diff mismatch + exit 0",
+    "D4 CRLF vs LF makes local ledger diff fail spuriously",
+    "D5 review tests hardcode EXPECTED_DB=ra_review_check; renamed DB -> 47 errors, exact name -> 51 passed",
+    "D6 apply uses glob but verify/upgrade/re-run use hardcoded lists; 0012 not in ra_upgrade ledger",
+    "D7 fallback suite has 1 skipped but job green (R3 violation)",
+    "D8 local untracked corpus PDFs make local env richer than CI",
+    "D9 major-pinned but floating versions (node 24, pnpm 12, python 3.12)",
+    "D10 local DB password differs (env-only, harmless)",
+    "D11 branch never pushed; no CI run for this branch"
+  ],
+  "historical_ci": {
+    "fixed_by": "c59d960 (ancestor of HEAD)",
+    "failing_jobs": [
+      "db: Verify every migration (NV-01 expected SQLSTATE 23503 got 23505)",
+      "plugin: Run plugin tests (9 fail; ENOENT D:\\\\...zero_text.pdf; INSERT in read-only transaction)"
+    ],
+    "failures": 5,
+    "date": "2026-11-13",
+    "branch": "fix/s6-s7-unified"
+  },
+  "cleanup": {
+    "commit_made": false,
+    "push_made": false,
+    "ci_yml_modified": false,
+    "dropped_dbs": [
+      "ra_ci_rehearsal2",
+      "ra_ci_rehearsal2_plugin",
+      "ra_ci_rehearsal2_wt",
+      "ra_ci_rehearsal2_review",
+      "ra_fresh",
+      "ra_upgrade"
+    ],
+    "not_touched": [
+      "ra_s6s7 (never connected)",
+      "ra_review_check (pre-existing; only SELECT + rollback tests)"
+    ]
+  },
+  "evidence": {
+    "scripts": "scripts/",
+    "logs": "logs/",
+    "readme": "README.md",
+    "steps": "ci-steps.md"
+  },
+  "worktree_snapshot": {
+    "dirty_entries_at_snapshot": 186,
+    "dirty_entries_at_end": 182,
+    "note": "worktree is live (other lanes editing); 0013_trace_chain.sql appeared during rehearsal; worktree-delta conclusions cover 0012+engine snapshot only"
+  },
+  "head_moved_during_rehearsal": {
+    "rehearsal_start_head": "8a659f6b17cebd7acef26a36dd75ccddedfd08ab",
+    "intermediate": "f2f6bea",
+    "tip_at_end": "2bae29412f1d9729ad7c1d28b95098684197e7ad",
+    "tip_commit": "feat(engine): vendor 四个优先机制 + 同步 PG 桥 + DSH 会话边界 (27 files, +3311)",
+    "tip_rehearsal": {
+      "compile_compileall": "PASS",
+      "compile_portability_grep": "PASS",
+      "plugin_apply_migrations": "PASS (incl 0012)",
+      "plugin_pnpm_install_frozen": "PASS (1s)",
+      "plugin_node_test": {
+        "fail": 0,
+        "elapsed_s": 44,
+        "tests": 904,
+        "pass": 904,
+        "skipped": 0
+      },
+      "db_verify_hardcoded_list": "PASS (incl 9 engine_* tables)",
+      "not_rerun_on_tip": [
+        "python-lanes (tip did not touch converter)",
+        "db lifecycle (D6 known: hardcoded upgrade/re-run lists exclude 0012)"
+      ]
+    }
+  }
+}

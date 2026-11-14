@@ -1,0 +1,3 @@
+? Verifying lockfile against supply-chain policies (114 entries)...
+✓ Lockfile passes supply-chain policies (114 entries in 2.9s)
+Done in 3s using pnpm v12.18.0

@@ -174,6 +174,6 @@
 - 仓库克隆：`D:\12412\dsh工作区\projects\recruitment-os`（工作树停在旧文档基线）
 - 各 lane worktree：`D:\12412\DshWorktrees\recruitment-os\*`
 - 本地控制面（历史）：`D:\12412\dsh工作区\orchestration\recruitment-os`
-- 过程产物：仓库内 `work/`（未追踪）；决策备忘 `work/control/`；研究底稿 `work/research/`
+- 过程产物：仓库内 `work/`（未追踪；本地实际为 `work/decisions/`、`work/review/`、`work/scratch/`，**按设计不入库**）；决策备忘/研究底稿属本地工作区产物，不入库
 - 总控行为约束：仓库根 `AGENTS.md`（八条铁律 R1–R8）
 - 文档集索引：[README.md](README.md)

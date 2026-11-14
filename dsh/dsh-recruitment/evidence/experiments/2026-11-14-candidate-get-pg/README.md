@@ -1,6 +1,6 @@
 # `candidate_get` 从 fixture stub 改成真库读（2026-11-14）
 
-**根因**：早期为了让模型"看见能力边界"先占了位，返回值来自 `src/tools/stubs.ts` 里写死的人，
+**根因**：早期为了让模型"看见能力边界"先占了位，返回值来自早期占位文件 `src/tools/stubs.ts`（**已删除**，属历史引用；当时内容见 git 历史）里写死的人，
 `stub=true` / `provenance=FIXTURE`。产品里"查候选人"会给出一个**编造的人** —— 这是假能力，不是占位。
 没有"stub 清零清单"，所以它一直没被排期清掉（根因 B/C）。
 
@@ -20,7 +20,7 @@
 | 只读性 | "源码里没写 INSERT" | `begin transaction read only`（写语句直接 25006） |
 | PII | 默认脱敏 | 默认脱敏，`include_contacts=true` 才给原文，且输出永远带 `visible` |
 
-**顺手删掉 `src/tools/stubs.ts`**：改完后全仓库零引用（`src/` + `test/` 全扫过）。
+**顺手删掉 `src/tools/stubs.ts`（该文件现已删除，属历史引用）**：改完后全仓库零引用（`src/` + `test/` 全扫过）。
 假数据从代码里消失，就不存在"以后又被人 import 回来"的可能。
 
 ## 2. 测试

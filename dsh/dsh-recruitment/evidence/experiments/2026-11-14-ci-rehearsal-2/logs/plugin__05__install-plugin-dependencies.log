@@ -1,0 +1,18 @@
+✓ Lockfile passes supply-chain policies (verified 9h ago)
+Lockfile is up to date, resolution step is skipped
+Packages are hard linked from the content-addressable store to the virtual store.
+  Content-addressable store is at: D:\12412\.pnpm-store\v11
+  Virtual store is at:             node_modules/.pnpm
+Packages: +49
++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 49, reused 49, downloaded 0, added 49, done
+
+dependencies:
++ pg 8.23.1
+
+devDependencies:
++ @types/react 18.3.28
++ tsdown 0.22.14
++ typescript 6.0.3
+
+Done in 471ms using pnpm v12.18.0

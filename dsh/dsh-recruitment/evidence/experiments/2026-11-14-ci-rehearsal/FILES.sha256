@@ -1,0 +1,11 @@
+c955c8586398329d3045f78ad4e171fe0e79275c82f36c5fa21cdd5accf77026         272  logs/compile__03__install-converter-dependencies.log
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855           0  logs/compile__04__compile-converter-src.log
+9ca4fc6324fd45821b0568af1bb3f5fb28856c4425a82bfb8c270e2e8a4d83ca          51  logs/compile__05__corpus-manifests-must-be-portable.log
+a20a0142b61f2c4e29e0f69c8df62307a286b9d407c7964b95e36c106d8fe5af         307  logs/compile__06__report-acceptance-test-availability.log
+1ee4b6cd101d00557af14e798dc615403a34570e5bc6ea4e08664ea4d59700b8       35640  logs/db__02__apply-migrations-0001-0006.log
+bfa8afad6fd08b73a6d42ab1f07ef0b503e7c013084014f103ae7a7a60c8ed0d       92004  logs/db__03__verify-every-migration.log
+87df04d64c3f332cb9bc8af5451c559bddd526ddc0abc40f3f37de134a677193       71244  logs/db__04__migration-lifecycle-fresh-upgrade-re-run.log
+1d6ee7f2a877f2994950e9dbdeadee736f78150571969c4d5874d15669d5b579       90659  logs/plugin__06__run-plugin-tests.log
+22f34fd9a22c7f3bbbdee83a2d3cf965eacfefd280265c194e2940eee423b868      379405  logs/plugin__06__run-plugin-tests.raw.log
+95218e072214941513ac71d993978521b9644c7e43fd22b496220b0a7af55bdf       12187  logs/python-lanes__04__apply-0001-0003-for-the-review-lane.log
+e03f0fc63301dae2736a5e4ad64a4f71b7b5c06f99c5fee6a75c8860839bb0d5        7030  README.md

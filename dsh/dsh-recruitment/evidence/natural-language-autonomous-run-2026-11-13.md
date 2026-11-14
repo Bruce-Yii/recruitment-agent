@@ -17,7 +17,7 @@ job_id=11111111-1111-4111-8111-000000000401。
 
 - 入口：`dsh --profile rec-agent-test`（headless，真实模型 `beam-free`）
 - 会话：`session-84b3fc5d-85b3-4716-9063-0f824f283ac6`
-- PDF：`...\assets\proofs\resume.pdf`（1 页 47 blocks，`order_verified=false`）
+- PDF：本机真实简历原件（仓库外路径，**按设计不入库**；1 页 47 blocks，`order_verified=false`；R7：不复制正文/姓名）
 
 ---
 

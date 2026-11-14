@@ -1,0 +1,1202 @@
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE....                      [100%]
+=================================== ERRORS ====================================
+___ ERROR at setup of test_unresolved_queue_blocks_and_matches_source_gate ____
+
+fixturedef = <FixtureDef argname='dsn' scope='session' baseid='review/tests'>
+request = <SubRequest 'dsn' for <Function test_unresolved_queue_blocks_and_matches_source_gate>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        if (
+            fixturedef.argname == "event_loop_policy"
+            and fixturedef.func.__module__ != __name__
+        ):
+            warnings.warn(
+                PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
+            )
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+>               return (yield)
+                        ^^^^^
+
+C:\Users\12412\AppData\Roaming\Python\Python312\site-packages\pytest_asyncio\plugin.py:924: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+___ ERROR at setup of test_approved_queue_releases_and_matches_source_gate ____
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_ ERROR at setup of test_corrected_still_blocks_by_default_but_policy_can_release _
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+______ ERROR at setup of test_run_without_queue_item_blocks_fail_closed _______
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_______ ERROR at setup of test_latest_accepted_run_clears_older_failure _______
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_ ERROR at setup of test_any_unresolved_item_blocks_even_after_newer_accepted_run _
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_ ERROR at setup of test_rejected_verdict_releases_auto_screening_but_is_not_approved _
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+________________ ERROR at setup of test_unknown_subject_raises ________________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+___________ ERROR at setup of test_candidate_without_source_blocks ____________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_________ ERROR at setup of test_source_without_conversion_run_blocks _________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+__ ERROR at setup of test_merge_appends_human_block_without_touching_native ___
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+___ ERROR at setup of test_merge_keeps_original_issue_and_marks_resolution ____
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_________________ ERROR at setup of test_merge_is_idempotent __________________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_____________ ERROR at setup of test_merge_does_not_mutate_input ______________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_______ ERROR at setup of test_merge_rejects_two_versions_of_same_page ________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+______________ ERROR at setup of test_merge_rejects_sha_mismatch ______________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+___________ ERROR at setup of test_merge_requires_human_correction ____________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_________ ERROR at setup of test_merge_after_approve_still_available __________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+____________ ERROR at setup of test_db_rejects_queued_to_approved _____________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+______ ERROR at setup of test_db_rejects_corrected_without_human_result _______
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+________ ERROR at setup of test_db_forbids_overwriting_machine_result _________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+__________________ ERROR at setup of test_db_requires_actor ___________________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+______________ ERROR at setup of test_db_rejects_deadline_shrink ______________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+________________ ERROR at setup of test_db_audit_is_immutable _________________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+____________ ERROR at setup of test_db_forbids_deleting_queue_item ____________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+________ ERROR at setup of test_approve_does_not_touch_machine_result _________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+____ ERROR at setup of test_enqueue_creates_queued_with_deadline_and_audit ____
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_____________ ERROR at setup of test_enqueue_rejects_accepted_run _____________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+___________ ERROR at setup of test_enqueue_same_run_twice_rejected ____________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_____________ ERROR at setup of test_enqueue_rejects_blank_reason _____________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_________ ERROR at setup of test_claim_sets_assignee_and_writes_audit _________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_________________ ERROR at setup of test_claim_twice_rejected _________________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+________ ERROR at setup of test_approve_directly_from_queued_rejected _________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_______________ ERROR at setup of test_approve_requires_reason ________________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_______ ERROR at setup of test_approve_rejects_reusing_previous_reason ________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+____ ERROR at setup of test_approve_after_corrected_keeps_full_audit_chain ____
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_____________________ ERROR at setup of test_reject_flow ______________________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+______ ERROR at setup of test_list_pending_reports_deadline_and_overdue _______
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_______ ERROR at setup of test_audit_is_written_even_for_content_edits ________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+______________ ERROR at setup of test_missing_item_is_not_found _______________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_____ ERROR at setup of test_db_error_is_surfaced_with_code_and_sqlstate ______
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_ ERROR at setup of test_submit_keeps_machine_result_and_writes_human_result __
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_ ERROR at setup of test_multiple_transcriptions_same_page_keep_history_and_can_switch _
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_________________ ERROR at setup of test_find_by_sha_and_page _________________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+_____________ ERROR at setup of test_submit_rejected_before_claim _____________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+______________ ERROR at setup of test_submit_rejects_blank_text _______________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+______________ ERROR at setup of test_submit_rejects_bad_page_no ______________
+
+    @pytest.fixture(scope="session")
+    def dsn() -> str:
+        dsn = _dsn()
+        try:
+            conn = psycopg.connect(dsn)
+        except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题，直接失败不跳过
+            pytest.fail(
+                f"连不上 PostgreSQL（dsn={dsn!r}）：{exc}\n"
+                "本测试要求 D:\\12412\\PostgreSQL 17 在跑，且 REVIEW_TEST_DSN / PGHOST / "
+                "PGUSER / PGPASSWORD / PGDATABASE 指向 ra_review_check。"
+            )
+        try:
+            with conn.cursor() as cur:
+                db = cur.execute("select current_database()").fetchone()[0]
+                ok = cur.execute(
+                    "select to_regclass('recruitment.review_queue') is not null"
+                ).fetchone()[0]
+            if db != EXPECTED_DB:
+>               pytest.fail(f"测试只允许跑在 {EXPECTED_DB}，当前连的是 {db!r}（任务边界：不碰其它库）")
+E               Failed: 测试只允许跑在 ra_review_check，当前连的是 'ra_ci_rehearsal2_review'（任务边界：不碰其它库）
+
+review\tests\conftest.py:52: Failed
+=========================== short test summary info ===========================
+ERROR review/tests/test_blocking.py::test_unresolved_queue_blocks_and_matches_source_gate
+ERROR review/tests/test_blocking.py::test_approved_queue_releases_and_matches_source_gate
+ERROR review/tests/test_blocking.py::test_corrected_still_blocks_by_default_but_policy_can_release
+ERROR review/tests/test_blocking.py::test_run_without_queue_item_blocks_fail_closed
+ERROR review/tests/test_blocking.py::test_latest_accepted_run_clears_older_failure
+ERROR review/tests/test_blocking.py::test_any_unresolved_item_blocks_even_after_newer_accepted_run
+ERROR review/tests/test_blocking.py::test_rejected_verdict_releases_auto_screening_but_is_not_approved
+ERROR review/tests/test_blocking.py::test_unknown_subject_raises - Failed: 测...
+ERROR review/tests/test_blocking.py::test_candidate_without_source_blocks - F...
+ERROR review/tests/test_blocking.py::test_source_without_conversion_run_blocks
+ERROR review/tests/test_merge.py::test_merge_appends_human_block_without_touching_native
+ERROR review/tests/test_merge.py::test_merge_keeps_original_issue_and_marks_resolution
+ERROR review/tests/test_merge.py::test_merge_is_idempotent - Failed: 测试只允...
+ERROR review/tests/test_merge.py::test_merge_does_not_mutate_input - Failed: ...
+ERROR review/tests/test_merge.py::test_merge_rejects_two_versions_of_same_page
+ERROR review/tests/test_merge.py::test_merge_rejects_sha_mismatch - Failed: ...
+ERROR review/tests/test_merge.py::test_merge_requires_human_correction - Fail...
+ERROR review/tests/test_merge.py::test_merge_after_approve_still_available - ...
+ERROR review/tests/test_negatives.py::test_db_rejects_queued_to_approved - Fa...
+ERROR review/tests/test_negatives.py::test_db_rejects_corrected_without_human_result
+ERROR review/tests/test_negatives.py::test_db_forbids_overwriting_machine_result
+ERROR review/tests/test_negatives.py::test_db_requires_actor - Failed: 测试只...
+ERROR review/tests/test_negatives.py::test_db_rejects_deadline_shrink - Faile...
+ERROR review/tests/test_negatives.py::test_db_audit_is_immutable - Failed: 测...
+ERROR review/tests/test_negatives.py::test_db_forbids_deleting_queue_item - F...
+ERROR review/tests/test_negatives.py::test_approve_does_not_touch_machine_result
+ERROR review/tests/test_queue.py::test_enqueue_creates_queued_with_deadline_and_audit
+ERROR review/tests/test_queue.py::test_enqueue_rejects_accepted_run - Failed:...
+ERROR review/tests/test_queue.py::test_enqueue_same_run_twice_rejected - Fail...
+ERROR review/tests/test_queue.py::test_enqueue_rejects_blank_reason - Failed:...
+ERROR review/tests/test_queue.py::test_claim_sets_assignee_and_writes_audit
+ERROR review/tests/test_queue.py::test_claim_twice_rejected - Failed: 测试只...
+ERROR review/tests/test_queue.py::test_approve_directly_from_queued_rejected
+ERROR review/tests/test_queue.py::test_approve_requires_reason - Failed: 测试...
+ERROR review/tests/test_queue.py::test_approve_rejects_reusing_previous_reason
+ERROR review/tests/test_queue.py::test_approve_after_corrected_keeps_full_audit_chain
+ERROR review/tests/test_queue.py::test_reject_flow - Failed: 测试只允许跑在 r...
+ERROR review/tests/test_queue.py::test_list_pending_reports_deadline_and_overdue
+ERROR review/tests/test_queue.py::test_audit_is_written_even_for_content_edits
+ERROR review/tests/test_queue.py::test_missing_item_is_not_found - Failed: 测...
+ERROR review/tests/test_queue.py::test_db_error_is_surfaced_with_code_and_sqlstate
+ERROR review/tests/test_transcription.py::test_submit_keeps_machine_result_and_writes_human_result
+ERROR review/tests/test_transcription.py::test_multiple_transcriptions_same_page_keep_history_and_can_switch
+ERROR review/tests/test_transcription.py::test_find_by_sha_and_page - Failed:...
+ERROR review/tests/test_transcription.py::test_submit_rejected_before_claim
+ERROR review/tests/test_transcription.py::test_submit_rejects_blank_text - Fa...
+ERROR review/tests/test_transcription.py::test_submit_rejects_bad_page_no - F...
+4 passed, 47 errors in 1.12s

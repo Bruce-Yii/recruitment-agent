@@ -254,7 +254,7 @@ node evidence/experiments/2026-11-14-real-intake-20/attribute-diff.mjs | Set-Con
 - **未**用 SQL 写业务表；`db-*.txt` 全部在 `begin transaction read only` 里跑。
 - **未**把简历内容、姓名、电话、邮箱写进仓库或日志：`run-log.txt` 做过机器扫描
   （11 位手机号 0 命中、email 形态 0 命中、绝对路径 0 命中、“简历”字样 0 命中）。
-  语料**绝对路径映射**（含文件名里的姓名）写在 `%TEMP%\recruitment-real-intake-20\corpus-paths.json`，
+  语料**绝对路径映射**（含文件名里的姓名）写在本地临时文件（`%TEMP%` 产物，**已删除、按设计不入库**），
   **不在仓库内**。
 - 时间：约 40 分钟完成 45 次 `document_read` / 42 次 `intake`（含 `F20` 幂等复跑与 4 次闸门拒收），单份 0.3–4.4 s，
   唯一慢的是 `F47` 的 OCR 兜底 67 s。
