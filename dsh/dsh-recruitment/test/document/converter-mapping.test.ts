@@ -34,6 +34,7 @@ import {
 } from '../../src/document/contracts/map-converter.ts'
 import { validateDocumentContent } from '../../src/document/contracts/validate.ts'
 import type { DocumentContent } from '../../src/document/contracts/types.ts'
+import { MEDIA_RTF } from '../../src/document/readers/media.ts'
 import { CONVERTER_DIR, ensureFixtures, fixturePath, sha256OfFile, type Fixtures } from './fixtures.ts'
 
 let fixtures: Fixtures | null = null
@@ -480,4 +481,58 @@ test('M18 审计不越界：非 PDF 内容直接说「不适用」，不给假�
   const audit = auditConverterMapping(output, nonPdf)
   assert.equal(audit.ok, false)
   assert.match(audit.problems[0] ?? '', /only covers PDF mappings/)
+})
+
+test('M19 RTF 映射：locator_kind=rtf 时定位是 paragraph（可选 page），不伪造 bbox', () => {
+  const sha = 'e'.repeat(64)
+  const raw: ConverterLikeOutput = {
+    text: 'SYNTHETIC RTF A\n\nSYNTHETIC RTF B',
+    blocks: [
+      {
+        kind: 'paragraph',
+        text: 'SYNTHETIC RTF A',
+        location: { page: 1, paragraph: 0 },
+        provenance: 'native_text',
+      },
+      {
+        kind: 'paragraph',
+        text: 'SYNTHETIC RTF B',
+        // 有硬分页符的文件：读取器只给段落序号（不编页码、不编 bbox）。
+        location: { paragraph: 1 },
+        provenance: 'native_text',
+      },
+    ],
+    completeness: 'partial',
+    needs_visual: false,
+    issues: [
+      { code: 'unverified_rtf_pagination', message: '1 hard page break; per-page layout not reconstructed' },
+    ],
+    meta: { source_sha256: sha, backend: 'striprtf/0.0.35', reader_version: '1.0.0' },
+  }
+  const content = mapConverterToDocumentContent(raw, {
+    media_type: MEDIA_RTF,
+    locator_kind: 'rtf',
+    asset_sha256: sha,
+  })
+
+  assert.equal(content.media_type, MEDIA_RTF)
+  assert.equal(content.blocks.length, 2)
+  const first = content.blocks[0]?.locator as { kind: string, paragraph?: number, page?: number }
+  assert.deepEqual(first, { kind: 'rtf', paragraph: 0, page: 1 })
+  const second = content.blocks[1]?.locator as { kind: string, paragraph?: number, page?: number }
+  assert.deepEqual(second, { kind: 'rtf', paragraph: 1 }, '没有页声明时不许补 page')
+  for (const block of content.blocks) {
+    assert.equal((block.locator as { bbox?: unknown }).bbox, undefined, 'RTF 没有 bbox')
+  }
+  const validation = validateDocumentContent(content)
+  assert.equal(validation.valid, true, validation.violations.map((v) => v.code).join(', '))
+
+  // 不给 locator_kind 时仍是历史 PDF 行为（零回归）；RTF 内容用 pdf 定位会被校验器拒绝。
+  const asPdfLocator = mapConverterToDocumentContent(raw, {
+    media_type: MEDIA_RTF,
+    asset_sha256: sha,
+  })
+  assert.equal(asPdfLocator.blocks[0]?.locator.kind, 'pdf')
+  assert.equal(validateDocumentContent(asPdfLocator).valid, false)
+  assert.ok(validateDocumentContent(asPdfLocator).violations.some((v) => v.code === 'LOCATOR_MEDIA_MISMATCH'))
 })

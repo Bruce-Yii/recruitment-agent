@@ -12,7 +12,7 @@
 // （U0 README §5：同层只能有一个真相）。
 //
 // 读取器的附加证据（converter 的 pages/page_info/fields、DOCX 的 part 统计、
-// 图片的 EXIF）通过 `readDocumentDetailed()` 的 `source_meta` 旁路返回；
+// RTF 的 rtf 统计、图片的 EXIF）通过 `readDocumentDetailed()` 的 `source_meta` 旁路返回；
 // canonical content 是封闭键集，不带 `meta`。
 
 import type { MediaType } from '../contracts/index.ts'
@@ -23,6 +23,7 @@ import { assertReadableFile } from './files.ts'
 import { readImageDocumentDetailed } from './image.ts'
 import type { DocumentReadOutcome } from './outcome.ts'
 import { readPdfDocumentDetailed } from './pdf.ts'
+import { readRtfDocumentDetailed } from './rtf.ts'
 import { mediaMismatchIssue, sniffFile } from './sniff.ts'
 import { assertValidDocumentContent } from './output-guard.ts'
 
@@ -31,7 +32,7 @@ export interface ReadDocumentOptions {
 }
 
 /**
- * 读取一份本地 PDF / DOCX / PNG / JPEG，并保留读取器的附加证据。
+ * 读取一份本地 PDF / DOCX / RTF / PNG / JPEG，并保留读取器的附加证据。
  *
  * @param filePath - 绝对路径；必须落在 cfg.allowed_roots 内。
  * @param cfg - 与 converter 相同的配置（python_bin / converter_dir / allowed_roots / timeout_ms）。
@@ -55,6 +56,9 @@ export async function readDocumentDetailed(
         break
       case 'docx':
         outcome = await readDocxDocumentDetailed(file.real_path, cfg, options.signal)
+        break
+      case 'rtf':
+        outcome = await readRtfDocumentDetailed(file.real_path, cfg, options.signal)
         break
       case 'png':
       case 'jpeg':
@@ -125,6 +129,7 @@ export { DocumentReadError, isDocumentReadError } from './errors.ts'
 export type { DocumentReadErrorCode } from './errors.ts'
 export { readPdfDocument, readPdfDocumentDetailed, mapPdfOutput } from './pdf.ts'
 export { readDocxDocument, readDocxDocumentDetailed } from './docx.ts'
+export { readRtfDocument, readRtfDocumentDetailed, mapRtfOutput } from './rtf.ts'
 export { readImageDocument, readImageDocumentDetailed } from './image.ts'
 export { assertReadableFile, sha256File } from './files.ts'
 export { sniffFile, detectMagic, mediaMismatchIssue, EXTENSION_FORMATS } from './sniff.ts'
@@ -138,6 +143,7 @@ export {
   MEDIA_JPEG,
   MEDIA_PDF,
   MEDIA_PNG,
+  MEDIA_RTF,
   formatOfMedia,
   isMedia,
   locatorKindForMedia,

@@ -451,3 +451,117 @@ test('N23 辅助函数：isDocumentContent 窄化 + formatViolations 可读', ()
   assert.match(text, /HARD ASSET_SHA_INVALID asset_sha256:/)
   assert.equal(formatViolations(validateDocumentContent(validPdfContent())), 'ok: no violations')
 })
+
+// ---------------------------------------------------------------------------
+// RTF（2026-11-14 新增的第五种媒体）：定位是 paragraph（+ 可选 page），没有 bbox
+// ---------------------------------------------------------------------------
+
+/** 一份合法的 RTF 内容：段落序号定位；没有 bbox。 */
+function validRtfContent(): Record<string, unknown> {
+  return {
+    schema_version: '1.0.0',
+    asset_sha256: 'b'.repeat(64),
+    media_type: 'application/rtf',
+    reader_id: 'striprtf/0.0.35',
+    reader_version: '1.0.0',
+    text: 'SYNTHETIC RTF LINE ONE\n\nSYNTHETIC RTF LINE TWO',
+    blocks: [
+      {
+        block_id: 'b1',
+        kind: 'paragraph',
+        text: 'SYNTHETIC RTF LINE ONE',
+        order: 0,
+        locator: { kind: 'rtf', paragraph: 0, page: 1 },
+        provenance: 'native_text',
+      },
+      {
+        block_id: 'b2',
+        kind: 'paragraph',
+        text: 'SYNTHETIC RTF LINE TWO',
+        order: 1,
+        // 有硬分页符的文件：读取器不重建逐页归属 → 只给段落序号（不编页码）。
+        locator: { kind: 'rtf', paragraph: 1 },
+        provenance: 'native_text',
+      },
+    ],
+    completeness: 'partial',
+    needs_visual: false,
+    issues: [
+      {
+        code: 'unverified_rtf_embedded_image',
+        message: 'RTF embeds 1 image(s); images are not read by this text reader',
+        locator: { kind: 'rtf', page: 1 },
+        severity: 'HARD',
+        retryable: false,
+        suggested_action: 'human_review',
+      },
+    ],
+    elapsed_ms: 5,
+  }
+}
+
+test('R1 合法 RTF 内容通过：段落序号定位 + 可选逻辑页 + 无 bbox', () => {
+  const validation = validateDocumentContent(validRtfContent())
+  assert.deepEqual(validation.violations, [], formatViolations(validation))
+  assert.equal(validation.valid, true)
+  assert.equal(validation.stats.media_type, 'application/rtf')
+})
+
+test('R2 RTF 的 media_type 与 locator kind 必须一致（pdf 定位长在 RTF 上 = 证据指错类型）', () => {
+  const content = structuredClone(validRtfContent())
+  ;(content.blocks as Record<string, unknown>[])[0]!.locator = { kind: 'pdf', page: 1 }
+  expectViolation(content, 'LOCATOR_MEDIA_MISMATCH')
+})
+
+test('R3 RTF 定位不带 bbox；paragraph / page 至少一个（都没有 = 没有证据）', () => {
+  // 带 bbox：表外键 → 非法（RTF 没有 PDF 用户空间坐标）。
+  expectViolation(
+    withRtfPatch((copy) => {
+      blockAt(copy, 0).locator = { kind: 'rtf', paragraph: 0, bbox: [1, 2, 3, 4] }
+    }),
+    'UNEXPECTED_KEY',
+  )
+  // 两个都不给：等于没有定位，不能"看起来没问题"。
+  expectViolation(
+    withRtfPatch((copy) => {
+      blockAt(copy, 0).locator = { kind: 'rtf' }
+    }),
+    'LOCATOR_INVALID',
+  )
+  // paragraph 非法（负数 / 非整数）。
+  expectViolation(
+    withRtfPatch((copy) => {
+      blockAt(copy, 0).locator = { kind: 'rtf', paragraph: -1 }
+    }),
+    'LOCATOR_INVALID',
+  )
+  expectViolation(
+    withRtfPatch((copy) => {
+      blockAt(copy, 0).locator = { kind: 'rtf', paragraph: 1.5 }
+    }),
+    'LOCATOR_INVALID',
+  )
+  // page 0 是"读取器没报页码"的哨兵：宁可判非法，也不编一个真实页。
+  expectViolation(
+    withRtfPatch((copy) => {
+      blockAt(copy, 0).locator = { kind: 'rtf', paragraph: 0, page: 0 }
+    }),
+    'LOCATOR_INVALID',
+  )
+})
+
+test('R4 issue 的 RTF 定位可以只有 page（问题指向某页，不指向具体段落）', () => {
+  const content = structuredClone(validRtfContent())
+  const validation = validateDocumentContent(content)
+  assert.equal(validation.valid, true, formatViolations(validation))
+  // 负例：issue 的 page 0 哨兵同样非法。
+  ;(content.issues as Record<string, unknown>[])[0]!.locator = { kind: 'rtf', page: 0 }
+  expectViolation(content, 'ISSUE_LOCATOR_INVALID')
+})
+
+/** 从 RTF 正例派生一个只改一处的副本。 */
+function withRtfPatch(patch: (copy: Record<string, unknown>) => void): Record<string, unknown> {
+  const copy = structuredClone(validRtfContent())
+  patch(copy)
+  return copy
+}

@@ -1,7 +1,8 @@
-// 内容嗅探：按字节判断 PDF / DOCX / PNG / JPEG，扩展名永远不参与选 reader。
+// 内容嗅探：按字节判断 PDF / DOCX / RTF / PNG / JPEG，扩展名永远不参与选 reader。
 //
-// 判定规则（docs/19 U1）：
+// 判定规则（docs/19 U1；2026-11-14 增补 RTF）：
 //   PDF  : 前 8 字节 `%PDF-`
+//   RTF  : 前 5 字节 `{\rtf`（RTF 规范定义的唯一开头；没有 BOM/前导空白的变体）
 //   PNG  : 8 字节 PNG 签名 `89 50 4E 47 0D 0A 1A 0A`
 //   JPEG : `FF D8 FF`
 //   DOCX : ZIP 局部头 `PK\x03\x04`，且 ZIP 目录里**同时**存在
@@ -28,6 +29,7 @@ import {
   MEDIA_JPEG,
   MEDIA_PDF,
   MEDIA_PNG,
+  MEDIA_RTF,
   type MediaFormat,
 } from './media.ts'
 import type { MediaType } from '../contracts/index.ts'
@@ -39,6 +41,7 @@ const EOCD_MAX_COMMENT = 65_535
 const MAX_CENTRAL_DIRECTORY_BYTES = 32 * 1024 * 1024
 
 const SIG_PDF = Buffer.from('%PDF-', 'ascii')
+const SIG_RTF = Buffer.from('{\\rtf', 'ascii')
 const SIG_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const SIG_JPEG = Buffer.from([0xff, 0xd8, 0xff])
 const SIG_ZIP_LOCAL = Buffer.from([0x50, 0x4b, 0x03, 0x04])
@@ -51,12 +54,13 @@ const WORD_DOCUMENT = 'word/document.xml'
 const XLSX_WORKBOOK = 'xl/workbook.xml'
 const PPTX_PRESENTATION = 'ppt/presentation.xml'
 
-export type DetectedContainer = 'pdf' | 'png' | 'jpeg' | 'zip' | 'ole' | null
+export type DetectedContainer = 'pdf' | 'rtf' | 'png' | 'jpeg' | 'zip' | 'ole' | null
 
 /** 扩展名 → 它**声明**的格式；未知扩展名返回 undefined（不算 mismatch）。 */
 export const EXTENSION_FORMATS: Readonly<Record<string, MediaFormat | 'other'>> = {
   '.pdf': 'pdf',
   '.docx': 'docx',
+  '.rtf': 'rtf',
   '.png': 'png',
   '.jpg': 'jpeg',
   '.jpeg': 'jpeg',
@@ -73,7 +77,6 @@ export const EXTENSION_FORMATS: Readonly<Record<string, MediaFormat | 'other'>> 
   '.tiff': 'other',
   '.heic': 'other',
   '.svg': 'other',
-  '.rtf': 'other',
   '.odt': 'other',
   '.txt': 'other',
   '.md': 'other',
@@ -97,6 +100,7 @@ export interface SniffResult {
 /** 纯函数：只看字节判断容器。 */
 export function detectMagic(head: Buffer): DetectedContainer {
   if (head.length >= SIG_PDF.length && head.subarray(0, SIG_PDF.length).equals(SIG_PDF)) return 'pdf'
+  if (head.length >= SIG_RTF.length && head.subarray(0, SIG_RTF.length).equals(SIG_RTF)) return 'rtf'
   if (head.length >= SIG_PNG.length && head.subarray(0, SIG_PNG.length).equals(SIG_PNG)) return 'png'
   if (head.length >= SIG_JPEG.length && head.subarray(0, SIG_JPEG.length).equals(SIG_JPEG)) return 'jpeg'
   if (head.length >= SIG_ZIP_LOCAL.length
@@ -117,6 +121,8 @@ function mediaForFormat(format: MediaFormat): MediaType {
       return MEDIA_PNG
     case 'jpeg':
       return MEDIA_JPEG
+    case 'rtf':
+      return MEDIA_RTF
   }
 }
 
@@ -231,7 +237,7 @@ function unsupported(
       issues: [
         hardIssue(
           'unsupported_media',
-          'the file content is not one of PDF / DOCX / PNG / JPEG; the extension was not used to guess a reader',
+          'the file content is not one of PDF / DOCX / RTF / PNG / JPEG; the extension was not used to guess a reader',
         ),
       ],
     },
@@ -258,7 +264,7 @@ export async function sniffFile(filePath: string): Promise<SniffResult> {
       // 0 字节不是"损坏的文档"，是**空占位文件**。
       throw new DocumentReadError(
         'EMPTY_FILE',
-        'file is empty (0 bytes); a 0-byte file has no PDF/DOCX/PNG/JPEG magic bytes to parse, '
+        'file is empty (0 bytes); a 0-byte file has no PDF/DOCX/RTF/PNG/JPEG magic bytes to parse, '
           + 'so this is an empty placeholder rather than a corrupt document',
         { details: { bytes: 0 } },
       )
@@ -272,8 +278,9 @@ export async function sniffFile(filePath: string): Promise<SniffResult> {
       throw new DocumentReadError(
         'EMPTY_FILE',
         `file is ${size} byte${size === 1 ? '' : 's'}, first bytes ${prefix.toString('hex')}; that is `
-          + 'too small to hold any supported magic (JPEG needs 3 bytes, PDF needs "%PDF-", PNG needs '
-          + 'an 8-byte signature), so this is an empty placeholder rather than a corrupt document',
+          + 'too small to hold any supported magic (JPEG needs 3 bytes, PDF needs "%PDF-", RTF needs '
+          + '"{\\rtf", PNG needs an 8-byte signature), so this is an empty placeholder rather than a '
+          + 'corrupt document',
         { details: { bytes: size, prefix_hex: prefix.toString('hex') } },
       )
     }
@@ -284,6 +291,7 @@ export async function sniffFile(filePath: string): Promise<SniffResult> {
 
   const container = detectMagic(head)
   if (container === 'pdf') return sniffResult(filePath, size, 'pdf', 'magic:%PDF-', head)
+  if (container === 'rtf') return sniffResult(filePath, size, 'rtf', 'magic:{\\rtf', head)
   if (container === 'png') return sniffResult(filePath, size, 'png', 'magic:png-signature', head)
   if (container === 'jpeg') return sniffResult(filePath, size, 'jpeg', 'magic:ffd8ff', head)
   if (container === 'ole') {
@@ -299,7 +307,7 @@ export async function sniffFile(filePath: string): Promise<SniffResult> {
   if (container !== 'zip') {
     unsupported(
       'unknown_magic',
-      'content does not match PDF, DOCX, PNG or JPEG magic bytes',
+      'content does not match PDF, DOCX, RTF, PNG or JPEG magic bytes',
       filePath,
       size,
       head,

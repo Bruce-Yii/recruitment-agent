@@ -71,7 +71,7 @@ export function assertReadableFile(filePath: string, cfg: ResolvedConverterConfi
     // 0 字节不是"损坏的 PDF"，是**空占位文件**：没有任何字节可解析。
     throw new DocumentReadError(
       'EMPTY_FILE',
-      'file is empty (0 bytes); a 0-byte file has no PDF/DOCX/PNG/JPEG magic bytes to parse, '
+      'file is empty (0 bytes); a 0-byte file has no PDF/DOCX/RTF/PNG/JPEG magic bytes to parse, '
         + 'so this is an empty placeholder rather than a corrupt document',
       { details: { bytes: 0 } },
     )

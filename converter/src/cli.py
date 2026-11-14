@@ -1,4 +1,8 @@
-"""CLI: ``python -m src.cli <pdf>`` -> JSON to stdout.
+"""CLI: ``python -m src.cli <document>`` -> JSON to stdout.
+
+The reader is selected by **content** (see :mod:`src.reader`): PDF and OOXML
+DOCX go through PyMuPDF, RTF goes through the pure-Python striprtf reader.
+The extension is never used to decide.
 
 Timeout policy (doc 11 C3): the read runs in an isolated child process and the
 parent kills it after ``--timeout`` seconds.  A timeout is reported as an issue
@@ -16,17 +20,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _timeout_result(path: Path, seconds: float) -> dict:
+def _timeout_result(path: Path, seconds: float, backend: str | None = None) -> dict:
     from . import __version__, content
-    from .pdf_reader import BACKEND
     from .resume_fields import empty_fields, empty_protected, empty_screening
 
+    if backend is None:
+        from .reader import backend_name
+        backend = backend_name(path)
     return content.result(
         blocks=[], completeness="partial", needs_visual=False,
         issues=[{"code": "reader_timeout",
                  "message": f"reading exceeded {seconds:g}s; process was killed, no partial body kept"}],
         meta={"pages": 0, "source_sha256": None, "source_name": path.name,
-              "backend": BACKEND, "reader_version": __version__, "page_info": [],
+              "backend": backend, "reader_version": __version__, "page_info": [],
               "layout_backend": None, "order_verified": False, "repaired": False,
               "timed_out": True},
         extra={"fields": empty_fields("reader_timeout"),
@@ -37,16 +43,18 @@ def _timeout_result(path: Path, seconds: float) -> dict:
     )
 
 
-def _failure_result(path: Path, message: str) -> dict:
+def _failure_result(path: Path, message: str, backend: str | None = None) -> dict:
     from . import __version__, content
-    from .pdf_reader import BACKEND
     from .resume_fields import empty_fields, empty_protected, empty_screening
 
+    if backend is None:
+        from .reader import backend_name
+        backend = backend_name(path)
     return content.result(
         blocks=[], completeness="partial", needs_visual=False,
         issues=[{"code": "reader_failed", "message": message}],
         meta={"pages": 0, "source_sha256": None, "source_name": path.name,
-              "backend": BACKEND, "reader_version": __version__, "page_info": [],
+              "backend": backend, "reader_version": __version__, "page_info": [],
               "layout_backend": None, "order_verified": False, "repaired": False,
               "failed": True},
         extra={"fields": empty_fields("reader_failed"),
@@ -84,15 +92,15 @@ def read_isolated(path, timeout: float = 50.0) -> dict:
 
 def read_any(path, timeout: float = 50.0, isolated: bool = True) -> dict:
     if not isolated or not timeout or timeout <= 0:
-        from .pdf_reader import read_pdf
-        return read_pdf(path)
+        from .reader import read_document
+        return read_document(path)
     return read_isolated(path, timeout)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m src.cli",
-                                     description="read one PDF and print the JSON result")
-    parser.add_argument("pdf", help="path to the original PDF (read-only)")
+                                     description="read one document (PDF / DOCX / RTF) and print the JSON result")
+    parser.add_argument("document", help="path to the original document (read-only)")
     parser.add_argument("--timeout", type=float, default=50.0,
                         help="kill the reader after N seconds (0 disables isolation)")
     parser.add_argument("--no-isolation", action="store_true",
@@ -103,12 +111,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="print a compact summary instead of the full JSON")
     args = parser.parse_args(argv)
 
-    result = read_any(args.pdf, timeout=args.timeout, isolated=not args.no_isolation)
+    result = read_any(args.document, timeout=args.timeout, isolated=not args.no_isolation)
     if args.summary:
         from .issues import issue_severity
         hard, soft = issue_severity(result.get("issues"))
         payload = json.dumps({
-            "path": str(args.pdf),
+            "path": str(args.document),
             "completeness": result.get("completeness"),
             "needs_visual": result.get("needs_visual"),
             "pages": (result.get("meta") or {}).get("pages"),

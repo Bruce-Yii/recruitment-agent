@@ -44,7 +44,12 @@ import { DOCUMENT_CONTENT_SCHEMA_VERSION, LOCATOR_PAGE_UNKNOWN, MEDIA_TYPES } fr
 export interface ConverterLikeBlock {
   readonly kind?: string
   readonly text?: string
-  readonly location?: { readonly page?: number; readonly bbox?: readonly number[] }
+  /** RTF 读取器只给 `paragraph`（块流序号），PDF 给 `page`(+`bbox`)；两者都不编造。 */
+  readonly location?: {
+    readonly page?: number
+    readonly bbox?: readonly number[]
+    readonly paragraph?: number
+  }
   readonly provenance?: string
   readonly links?: ReadonlyArray<{ readonly href?: string; readonly text?: string }>
 }
@@ -52,7 +57,11 @@ export interface ConverterLikeBlock {
 export interface ConverterLikeIssue {
   readonly code?: string
   readonly message?: string
-  readonly location?: { readonly page?: number; readonly bbox?: readonly number[] }
+  readonly location?: {
+    readonly page?: number
+    readonly bbox?: readonly number[]
+    readonly paragraph?: number
+  }
 }
 
 export interface ConverterLikeOutput {
@@ -88,6 +97,14 @@ export interface MapOptions {
    * 不能在纯映射里编。给了就用它，没给才用 `meta.source_sha256`。
    */
   readonly asset_sha256?: string
+  /**
+   * converter `location` 该映射成哪种 locator。
+   *
+   * PDF/DOCX-via-MuPDF 用 `page(+bbox)` → `{kind:"pdf"}`（默认）；RTF 没有页面坐标，
+   * 用块流序号 → `{kind:"rtf", paragraph}`。**只改证据形状，不改数据**；不给就是 pdf，
+   * 与历史调用逐字一致（零回归）。
+   */
+  readonly locator_kind?: 'pdf' | 'rtf'
 }
 
 /**
@@ -141,6 +158,9 @@ export const CONVERTER_HARD_ISSUE_CODES: readonly string[] = [
   'resume_field_unreadable',
   'resume_experience_cross_block',
   'platform_noise_inline_unresolved',
+  // RTF reader（converter/src/rtf_reader.py，2026-11-14）：文本容器读不出/解不开。
+  'rtf_no_text',
+  'rtf_text_encoding_unread',
 ]
 
 /** SOFT code 前缀（逐字抄自 `converter/src/issues.py` 的 `_SOFT_ISSUE_PREFIXES`）。 */
@@ -212,6 +232,9 @@ const HARD_ISSUE_ACTIONS: Readonly<Record<string, { readonly retryable: boolean;
   resume_field_unreadable: { retryable: false, suggested_action: 'human_review' },
   resume_experience_cross_block: { retryable: false, suggested_action: 'human_review' },
   platform_noise_inline_unresolved: { retryable: false, suggested_action: 'human_review' },
+  // RTF：没有第二种读取器可换（MuPDF 不认 RTF，striprtf 就是唯一实现），交给人工最诚实。
+  rtf_no_text: { retryable: false, suggested_action: 'human_review' },
+  rtf_text_encoding_unread: { retryable: false, suggested_action: 'human_review' },
 }
 
 /** 未知 code 的兜底动作：与「未知一律 HARD」同口径，交给人工，不自动重试。 */
@@ -326,6 +349,50 @@ export function mapPdfLocator(
     : { kind: 'pdf', page, bbox, block_id: blockId }
 }
 
+/**
+ * RTF 的 `location` → `{kind:"rtf", paragraph, page?}`。
+ *
+ * RTF 读取器不重建版面：`paragraph` 是**块流序号**（0-based，= 原文段落顺序），
+ * 没有 bbox 可搬。`page` 只在读取器真的声明了页码时出现（RTF 没有硬分页符时
+ * 第 1 页是格式等价事实）；没有就**省略**，绝不拿哨兵 0 冒充页码。
+ * @param location - converter 块的 location（RTF 读取器给 `paragraph`/可选 `page`）。
+ * @param readerBlockIndex - 该块在读取器输出数组里的下标（0-based，就是 paragraph）。
+ */
+export function mapRtfLocator(
+  location: { readonly page?: number; readonly paragraph?: number } | undefined,
+  readerBlockIndex?: number,
+): EvidenceLocator {
+  const rawParagraph = location?.paragraph
+  const paragraph = typeof rawParagraph === 'number' && Number.isInteger(rawParagraph) && rawParagraph >= 0
+    ? rawParagraph
+    : (readerBlockIndex ?? 0)
+  const page = location?.page
+  if (typeof page === 'number' && Number.isInteger(page) && page >= 1) {
+    return { kind: 'rtf', paragraph, page }
+  }
+  return { kind: 'rtf', paragraph }
+}
+
+/**
+ * RTF issue 的 locator：只搬读取器**真的给了**的 `paragraph` / `page`，绝不补默认值。
+ * 两者都没有 → 不挂 locator（issue 的 locator 在契约里是可选的）。
+ */
+function mapRtfIssueLocator(
+  location: { readonly page?: number; readonly paragraph?: number } | undefined,
+): EvidenceLocator | undefined {
+  if (location === undefined || location === null) return undefined
+  const paragraph = typeof location.paragraph === 'number' && Number.isInteger(location.paragraph)
+    && location.paragraph >= 0 ? location.paragraph : undefined
+  const page = typeof location.page === 'number' && Number.isInteger(location.page) && location.page >= 1
+    ? location.page
+    : undefined
+  if (paragraph === undefined && page === undefined) return undefined
+  const locator: { kind: 'rtf', paragraph?: number, page?: number } = { kind: 'rtf' }
+  if (paragraph !== undefined) locator.paragraph = paragraph
+  if (page !== undefined) locator.page = page
+  return locator
+}
+
 /** 块内链接：文本与 href 逐字搬运（缺就留空串，由校验器判）。 */
 function mapLinks(links: ConverterLikeBlock['links']): DocumentLink[] | undefined {
   if (!Array.isArray(links) || links.length === 0) return undefined
@@ -347,6 +414,9 @@ function mapLinks(links: ConverterLikeBlock['links']): DocumentLink[] | undefine
  */
 export function mapConverterToDocumentContent(output: ConverterLikeOutput, options: MapOptions = {}): DocumentContent {
   const meta = output.meta ?? {}
+  const locatorKind = options.locator_kind ?? 'pdf'
+  const blockLocator = (location: ConverterLikeBlock['location'], index?: number): EvidenceLocator =>
+    locatorKind === 'rtf' ? mapRtfLocator(location, index) : mapPdfLocator(location, index)
   const rawBlocks = Array.isArray(output.blocks) ? output.blocks : []
   const blocks: DocumentBlock[] = rawBlocks.map((raw, index) => {
     const block: DocumentBlock = {
@@ -354,7 +424,7 @@ export function mapConverterToDocumentContent(output: ConverterLikeOutput, optio
       kind: mapBlockKind(raw?.kind),
       text: typeof raw?.text === 'string' ? raw.text : '',
       order: index,
-      locator: mapPdfLocator(raw?.location, index),
+      locator: blockLocator(raw?.location, index),
       // 枚举外的 provenance 原样保留（不猜成 native_text），由校验器报 PROVENANCE_INVALID。
       provenance: (typeof raw?.provenance === 'string' ? raw.provenance : '') as Provenance,
     }
@@ -376,6 +446,10 @@ export function mapConverterToDocumentContent(output: ConverterLikeOutput, optio
     // issue 的 locator 在契约里是**可选**的，所以这里和块不一样：
     // 读取器只说「有问题」而没给页码时，就**不挂 locator**，而不是挂一个 0 页哨兵。
     // （块必须挂：block.locator 是必填，缺页码必须被校验器看见。）
+    if (locatorKind === 'rtf') {
+      const rtfLocator = mapRtfIssueLocator(raw?.location)
+      return rtfLocator === undefined ? issue : { ...issue, locator: rtfLocator }
+    }
     if (usablePage(raw?.location) !== undefined) return { ...issue, locator: mapPdfLocator(raw.location) }
     return issue
   })
