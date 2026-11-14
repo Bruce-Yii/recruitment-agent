@@ -21,8 +21,8 @@ export function Workbench() {
   const issues = data?.issues ?? []
   const configured = data?.configured ?? false
   const pendingTotal = data?.counts.pending_total ?? 0
-  const activeApplications = data?.counts.active_applications ?? 0
-  const byStageEntries = Object.entries(data?.counts.by_stage ?? {})
+  const activeTotal = data?.counts.active_total ?? 0
+  const pendingByStageEntries = Object.entries(data?.counts.pending_by_stage ?? {})
 
   return (
     <section>
@@ -58,14 +58,14 @@ export function Workbench() {
 
       {data !== undefined ? (
         <p>
-          待人工决定 {pendingTotal} 条；在办申请 {activeApplications} 条。
+          待人工决定 {pendingTotal} 条；在办申请 {activeTotal} 条。
         </p>
       ) : null}
 
-      {byStageEntries.length > 0 ? (
+      {pendingByStageEntries.length > 0 ? (
         <p>
           按阶段：
-          {byStageEntries.map(([stageCode, count]) => `${stageCode} ${count} 条`).join(' · ')}
+          {pendingByStageEntries.map(([stageCode, count]) => `${stageCode} ${count} 条`).join(' · ')}
         </p>
       ) : null}
 
