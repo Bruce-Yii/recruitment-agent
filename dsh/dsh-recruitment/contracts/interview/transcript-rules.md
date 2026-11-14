@@ -281,6 +281,13 @@ WAIT           = 120 分钟（会议实际结束后的等待窗；可被 busines
 | **TR-C4** | 只有完整性 Gate 通过才 `READY` | `is_complete=true` ⇔ `status='READY'`（双向，`ck_transcript_artifact_not_complete`，`L1106-1107`） | 库强制 |
 | **TR-C5** | `LIVE` 必须有读取回执 | `read_receipt_ref` 非空 ∧ `fetched_at` 非空 | `ck_transcript_artifact_live_receipt`（`L1109-1110`）、负向测试 `N09` |
 | **TR-C6** | `READY` ≠ 记录完成 | `interview_record.status` 单独判定；`Transcript READY` 只是"原文齐了" | `docs/04 §18` 逐字 |
+| **TR-C6b**（2026-11-14 补，D-B） | **记录状态迁移只有一个人工入口**：`NEEDS_REVIEW/UNVERIFIED → READY/VERIFIED` 只能由 `recruitment_interview_record_verify` 完成，且必须过 `ctx.approval` 人机闸门；模型/Agent 不得自行把记录标 `VERIFIED` | 合法源态只有 `NEEDS_REVIEW/UNVERIFIED`（且必须是 `is_current`）；其它状态 → `INVALID_ARGS(STATUS_NOT_VERIFIABLE)`；幂等重放 = `NO_OP` 零写入。入口契约见 `contracts/interview/tool-contracts.md §8`；下游要求见 `decision-rules.md DC-23` | 库层 `ck_interview_record_ready`（`0001:L1228`）；D-79；D-B 修复 |
+
+> **为什么需要 TR-C6b**：`transcript_import` 建出的记录是**确定性中性记录**（不是模型抽取），
+> 所以它落 `NEEDS_REVIEW/UNVERIFIED` 是正确行为；但 2026-11-14 之前**没有任何产品工具**能把它
+> 推到 `READY/VERIFIED`，于是 `evaluation_summarize` 永远只能给 `record.state=NOT_READY`，
+> S10 决策按 DC-23 无法引用 `INTERVIEW_RECORD`。人工核验入口补上之后，"转写 → 结构化记录 →
+> 决策依据"这条证据链才在**产品内**闭环。
 
 ### 8.3 P-2 的结构性后果（**这是本节最重要的一条，实现者几乎必错**）
 

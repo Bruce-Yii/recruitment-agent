@@ -78,6 +78,11 @@ import {
   createTranscriptReadTool,
   unconfiguredTranscriptReadTool,
 } from './tools/transcript-read.ts'
+// S9 记录线的人类核验入口（D-B）：NEEDS_REVIEW/UNVERIFIED → READY/VERIFIED，必须过 approval 闸门。
+import {
+  createInterviewRecordVerifyTool,
+  unconfiguredInterviewRecordVerifyTool,
+} from './tools/interview-record-verify.ts'
 import { createScorecardSubmitTool } from './tools/scorecard-submit.ts'
 import { createEvaluationSummarizeTool } from './tools/evaluation-summarize.ts'
 import { createDecisionRecordTool } from './tools/decision-record.ts'
@@ -333,6 +338,7 @@ export function apply(
   // **必须用可选注入，不能把 webServer 放进顶层 inject。** 顶层 inject 是硬依赖：
   // headless / tui 等没有 webServer 的 profile 下，整个插件会因此**不激活**，
   // 19 个工具一起消失——面板是加分项，不是插件存在的前提。
+  // （2026-11-14：现注册 26 个工具；这里的历史数字只说明"整插件会被一起拖下水"。）
   // 有 webServer 才注册路由；没有就静默跳过（面板不可用，工具照常）。
   ctx.inject(['webServer'], (child) => {
     child.effect(
@@ -348,7 +354,7 @@ export function apply(
   // 才注册回环 + 同源的 `/recruitment/runtime/*` 路由（见 src/runtime/http.ts）。
   //
   // 为什么仍用可选注入：与 overview 同理，headless/tui 等没有 webServer 的 profile
-  // 不能因为运行时路由而让整个插件不激活（19 个工具必须照常存在）。
+  // 不能因为运行时路由而让整个插件不激活（26 个工具必须照常存在）。
   if (config?.runtime?.enabled === true) {
     const runtime = resolveRuntimeConfig(config.runtime, env)
     if (runtime.resolved === null || database.resolved === null) {
@@ -529,6 +535,12 @@ export function apply(
   const transcriptRead = database.resolved === null
     ? unconfiguredTranscriptReadTool(database.issues)
     : createTranscriptReadTool(database.resolved)
+  // 记录核验（D-B）：写工具，必须带 approval 闸门（D-79，缺省 = 拒绝）。
+  // 它是 interview_record 从 NEEDS_REVIEW/UNVERIFIED 到 READY/VERIFIED 的**唯一产品入口**
+  // （DC-23 要求 READY+VERIFIED 才能被决策引用）。
+  const interviewRecordVerify = database.resolved === null
+    ? unconfiguredInterviewRecordVerifyTool(database.issues)
+    : createInterviewRecordVerifyTool(database.resolved, { approval: resolveApproval(ctx) })
 
   // ── S10 评价线：三个都要 database；decision 还要 approval（D-79，缺省 = 拒绝）。
   const scorecardSubmit = database.resolved === null
@@ -590,6 +602,7 @@ export function apply(
     interviewGet,
     transcriptImport,
     transcriptRead,
+    interviewRecordVerify,
     scorecardSubmit,
     evaluationSummarize,
     decisionRecord,

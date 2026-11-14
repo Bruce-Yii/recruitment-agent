@@ -360,6 +360,13 @@ decision.basis_refs[SCORECARD].fields[].evidence[]
 | **DC-22** | `evidence=[]` 且该面评 `evidence_state='MEMORY_ONLY'` 时，`decision` **仍可成立**，但必须**由决策人显式确认**（`human_confirmation` 已覆盖）且输出 `warnings: REJECT_BASIS_MEMORY_ONLY` | 强制时间戳会逼人编造（`docs/03 §14` 允许无转写）；**但必须公开承认**——"排除要有记录"（`D11 §9.5` 同构） |
 | **DC-23** | 引用 `INTERVIEW_RECORD` ⇒ 该 record 必须 `status='READY'` ∧ `verification_status='VERIFIED'`（`ck_interview_record_ready` `0001:L1228`）；否则 `BLOCKED_BY_REVIEW(RECORD_NOT_VERIFIED)`。**不引用它则不检查**（转写失败不能阻塞决策，`docs/03 §14`） | `0001:L1182-1229`、`L1231-1232`（current） |
 
+> **DC-23 的产品入口（2026-11-14 补，D-B）**：把 `interview_record` 从
+> `NEEDS_REVIEW/UNVERIFIED` 推到 `READY/VERIFIED` 的**唯一产品入口**是
+> `recruitment_interview_record_verify`（人类闸门 D-79；状态机、合法前置、幂等与错误码见
+> `contracts/interview/tool-contracts.md §8`、`contracts/interview/transcript-rules.md TR-C6b`）。
+> 在此之前全仓没有任何工具能写 `VERIFIED` —— DC-23 的"引用面试记录"实际上不可达（D-B）：
+> 本工具补上后，`evaluation_summarize` 的 `RECORD_NOT_READY` 才会随之消失。
+
 ---
 
 ## 7. 错误淘汰的四道防线（本文件最重要的一节）
@@ -389,7 +396,7 @@ decision.basis_refs[SCORECARD].fields[].evidence[]
 | 场景 | 正确行为 | 错误行为（= 事故） |
 |---|---|---|
 | 转写缺失（`transcript_artifact` 无 `READY`） | 面评可提交（§1-7），决策依据不含 `SEGMENT` | 拒决策 / 或编造 segment 引用 |
-| `interview_record.verification_status='UNVERIFIED'` | 不作为依据；`record.state='NOT_CITED'` | 引用未校验的模型产物当证据 |
+| `interview_record.verification_status='UNVERIFIED'` | 不作为依据；`record.state='NOT_CITED'`；要当依据必须先走 `recruitment_interview_record_verify`（人类闸门，DC-23 注） | 引用未校验的模型产物当证据 |
 | 简历某字段 `unreadable`（来自 S7 basis） | 该字段不得出现在 `REJECT` 依据链上 | 用"没读出来"当"不满足" |
 
 ### 防线 4 · 结论与面板相反时，必须有人签字

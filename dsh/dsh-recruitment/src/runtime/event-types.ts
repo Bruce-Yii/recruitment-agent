@@ -129,6 +129,8 @@ export const EVENT_TYPES = {
   INTERVIEWER_WITHDRAWN: 'interviewer.withdrawn',
   /** 岗位 rubric 版本批准：`recruitment_job_rubric_approve` 的审计事件。 */
   JOB_RUBRIC_VERSION_APPROVED: 'job.rubric_version.approved',
+  /** 人工核验面试记录（NEEDS_REVIEW/UNVERIFIED → READY/VERIFIED）：`recruitment_interview_record_verify` 的审计事件。 */
+  INTERVIEW_RECORD_VERIFIED: 'interview.record.verified',
   /** 阶段推进时把 rubric 版本钉到申请上：`src/domain/stage-advance.ts` 的审计事件。 */
   APPLICATION_RUBRIC_VERSION_PINNED: 'application.rubric_version.pinned',
 } as const
@@ -310,6 +312,24 @@ const WRITER_EVENTS: readonly EventTypeDefinition[] = [
       reason:
         'rubric 批准已由命令事务写库（版本 + approval + job.current_rubric_version_id 指针）；'
         + '事件是 schema/0001 口径的审计事实，不进待路由队列。',
+    },
+  },
+  {
+    type: EVENT_TYPES.INTERVIEW_RECORD_VERIFIED,
+    constKey: 'INTERVIEW_RECORD_VERIFIED',
+    producer: {
+      kind: 'TOOL',
+      file: 'src/tools/interview-record-verify.ts',
+      detail: 'insertRecordVerifiedEvent()（工具 recruitment_interview_record_verify：人工核验面试记录）',
+    },
+    // 该插入点写 normalizer_version='schema/0001'（与状态护栏审计事件同一口径）。
+    normalizerVersion: 'schema/0001',
+    routing: {
+      kind: 'IGNORED',
+      reason:
+        '记录核验已由命令事务写库（interview_record 两条状态轴 + fn_row_guard 的状态迁移审计'
+        + ' interview_record.status.changed）；本事件是 schema/0001 口径的审计事实，'
+        + '不进待路由队列，也没有需要自动执行的后续工作（决策侧读的是库里的 VERIFIED 状态，不是事件）。',
     },
   },
   {
