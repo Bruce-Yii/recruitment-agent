@@ -11,7 +11,8 @@
  *   3. `python`
  * 找不到不抛错——由调用方按各自语义决定 skip 还是 fail（**不许静默当成通过**）。
  */
-import { existsSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync } from 'node:fs'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -29,8 +30,64 @@ export const SYNTHETIC_DIR = join(CONVERTER_DIR, 'corpus', 'synthetic')
 /** 插件包根（`dsh/dsh-recruitment`）。 */
 export const PLUGIN_ROOT = resolve(here, '..', '..')
 
-/** 一个合成语料文件的绝对路径（按仓库位置派生，不写死盘符）。 */
-export const syntheticPath = (name: string): string => join(SYNTHETIC_DIR, name)
+/**
+ * 一个合成语料文件的绝对路径（按仓库位置派生，不写死盘符）。
+ *
+ * **为什么这个函数要负责"保证文件存在"**：`converter/corpus/synthetic/*.pdf` 被
+ * `.gitignore` 挡着（合成难例体积大、且 `platform_noise.pdf` 里其实是真实个人资料，
+ * R7 禁止入库），所以**干净检出里一个合成 PDF 都没有**。真实 CI 首次运行就是这么红的：
+ * 本机恰好有 `zero_text.pdf` 所以绿，Linux runner 上 `ENOENT: stat '.../zero_text.pdf'`，
+ * 一次连坐 20 多条测试。把"夹具到底在不在"这件事留在每个测试里各判一次，等于让每个
+ * 测试都有机会"因为本机有文件而绿"。
+ *
+ * 现在的规则只有两条，写在唯一一处：
+ *   1. 文件在 → 直接用。
+ *   2. 文件不在、但这个夹具**能在没有真实语料的前提下确定性重建**（见 `REGENERABLE`）
+ *      → 当场重建再返回。重建不了（例如 `platform_noise.pdf` 需要真实简历、`image_only_*`
+ *      需要真实语料）→ **原样返回不存在的路径**，让调用方照旧 fail。
+ *      绝不返回一个"看起来能用"的假文件，也绝不 skip（R3：skip ≠ pass）。
+ */
+export const syntheticPath = (name: string): string => {
+  const path = join(SYNTHETIC_DIR, name)
+  if (existsSync(path)) return path
+
+  const script = REGENERABLE[name]
+  if (script === undefined) return path
+
+  if (PYTHON_BIN === undefined) {
+    throw new Error(
+      `syntheticPath: ${name} 不在仓库里，需要 Python + PyMuPDF 才能重建，但 PATH 上找不到 python3/python`
+      + `（可用 RECRUITMENT_PYTHON 指定绝对路径）。这不是 skip 的理由。`,
+    )
+  }
+  mkdirSync(SYNTHETIC_DIR, { recursive: true })
+  // 路径走 argv 而不是拼进脚本字符串：Windows 盘符里的 `\` 在 Python 字面量里是转义。
+  execFileSync(PYTHON_BIN, ['-c', script, path], { stdio: 'pipe' })
+  if (!existsSync(path)) {
+    throw new Error(`syntheticPath: 重建 ${name} 失败（脚本跑完文件仍不存在）`)
+  }
+  return path
+}
+
+/**
+ * 能在**没有真实语料**的前提下确定性重建的合成夹具 → 重建脚本。
+ *
+ * 只登记这一类：`converter/corpus/build_synthetic.py` 里**不依赖真实简历**的那几段。
+ * `zero_text.pdf` 原文就是 `fitz.open(); new_page(); save()`——一页空白，无文字无图片，
+ * 与真实语料无关，所以可以随时重建（本机 518 字节）。
+ * 其余合成难例（image_only / encrypted / corrupted / platform_noise）都要真实简历做原料，
+ * **故意不登记**：它们缺了就该红，不该被伪造出来。
+ */
+const REGENERABLE: Readonly<Record<string, string>> = {
+  'zero_text.pdf': [
+    'import sys, fitz',
+    'doc = fitz.open()',
+    'doc.new_page()',
+    'doc.save(sys.argv[1])',
+    'doc.close()',
+  ].join('\n'),
+}
+
 
 /** 候选 Python 解释器（按优先级）。 */
 export const PYTHON_CANDIDATES: readonly string[] = [
