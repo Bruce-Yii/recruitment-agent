@@ -1,6 +1,7 @@
-// S8 排期（`intent=CREATE`）的集成测试：**连真库 ra_s6s7**，每个用例在自己的事务里跑、结束一律 ROLLBACK。
+// S8 排期（`intent=CREATE | RESCHEDULE | CANCEL | WITHDRAW_INTERVIEWER`）的集成测试：
+// **连真库 ra_s6s7**，每个用例在自己的事务里跑、结束一律 ROLLBACK。
 //
-// 覆盖（`SPEC.md` §5.2 / `manual/interview-line/SPEC.md` §4）：
+// 覆盖（`SPEC.md` §5.2 / `manual/interview-line/SPEC.md` §4 / `contracts/interview/scheduling-rules.md`）：
 //   1. 成功 CREATE：落库字段、interviewer 行、meeting+binding、changes.created 逐行对得上、无 null；
 //   2. 幂等：同 key 同参 → replayed=true + changes 空 + 行数不变（且**时间已过**时仍能重放 =
 //      重放先于 START_IN_PAST）；同 key 不同参 → INVALID_ARGS(IDEMPOTENCY_KEY_REUSED)；
@@ -11,6 +12,8 @@
 //   6. 非法 stage_code 裸 SQL → 真实 23503 + fk_interview_stage_catalog；
 //   7. 缺面试官 → INTERVIEWER_REQUIRED；AGENT_WORKER 当面试官 → INTERVIEWER_NOT_HUMAN；
 //      申请不存在 → NOT_FOUND(APPLICATION_NOT_FOUND)；过去时间 → START_IN_PAST；全部零写入。
+//   8. D-79 闸门（缺省/拒绝/取消/超时）零写入；
+//   9. 其余三个 intent（D-62）：每个都有 正向 + 幂等 + 闸门拒绝 + 非法状态迁移 四类。
 //
 // 断言错误用 `errorBody(error)`（`Error: <CODE>: <compact-json>` → JSON.parse）。
 import test from 'node:test'
@@ -253,7 +256,7 @@ test('CREATE 成功：interview/interviewer/meeting/binding/task 全部落库，
 
     // --- 顶层形状 ---
     assert.equal(value.tool, 'recruitment_interview_schedule')
-    assert.equal(value.contract_version, '1.0.0')
+    assert.equal(value.contract_version, '1.1.0')
     assert.equal(value.status, 'OK')
     assert.equal(value.write, true)
     assert.equal(value.replayed, false)
@@ -970,5 +973,938 @@ test('D-79：超时后原 approval 才 resolve → 仍然不采纳（竞态零�
     resolveLate?.('allowed-once')
     await new Promise((resolve) => setTimeout(resolve, 60))
     assertNoWrites(before, await tableCounts(client), '超时后的批准')
+  })
+})
+
+// ---------------------------------------------------------------------------
+//  9. 其余三个 intent（D-62）：RESCHEDULE / CANCEL / WITHDRAW_INTERVIEWER
+//     每个 intent 至少四类：正向 + 幂等 + 闸门拒绝 + 非法状态迁移。
+//     **时段一律由 `at(minutes)` 派生**（文件头的 SLOT_BASE_MS 不许写死，见它的说明）。
+// ---------------------------------------------------------------------------
+
+/** 一场面试当前的排期关键列（直接用 SQL 读，不经过工具）。 */
+interface InterviewStateRow {
+  readonly status: string
+  readonly record_version: number
+  readonly scheduled_start_at: string | Date
+  readonly scheduled_end_at: string | Date
+  readonly status_source_event_id: string | null
+}
+
+/** 读一场面试的当前状态。 */
+async function readState(client: DatabaseClient, interviewId: string): Promise<InterviewStateRow> {
+  const { rows } = await client.query<InterviewStateRow>(
+    `select status, record_version, scheduled_start_at, scheduled_end_at, status_source_event_id
+       from recruitment.interview
+      where id = $1 and tenant_id = $2`,
+    [interviewId, TENANT],
+  )
+  const row = rows[0]
+  assert.ok(row !== undefined, `interview ${interviewId} 不存在`)
+  return row
+}
+
+/** CREATE 一场并返回 `{id, version}`（测试夹具）。 */
+async function scheduleNew(
+  client: DatabaseClient,
+  applicationId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<{ readonly id: string; readonly version: number }> {
+  const value = await schedule(client, createArgs(applicationId, overrides), NOW)
+  const interview = value.interview as Record<string, unknown>
+  return { id: String(interview.id), version: Number(interview.record_version) }
+}
+
+/** RESCHEDULE 入参（幂等键每次不同；默认挪到 `at(1440)`）。 */
+function rescheduleArgs(
+  interviewId: string,
+  expectedRecordVersion: number,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    intent: 'RESCHEDULE',
+    idempotency_key: `it-${uniqueSuffix()}`,
+    interview_id: interviewId,
+    expected_record_version: expectedRecordVersion,
+    scheduled_start_at: at(1440),
+    ...overrides,
+  }
+}
+
+/** CANCEL 入参。 */
+function cancelArgs(
+  interviewId: string,
+  expectedRecordVersion: number,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    intent: 'CANCEL',
+    idempotency_key: `it-${uniqueSuffix()}`,
+    interview_id: interviewId,
+    expected_record_version: expectedRecordVersion,
+    reason: '候选人改约，本次取消',
+    ...overrides,
+  }
+}
+
+/** WITHDRAW_INTERVIEWER 入参。 */
+function withdrawArgs(
+  interviewerId: string,
+  expectedRecordVersion: number,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    intent: 'WITHDRAW_INTERVIEWER',
+    idempotency_key: `it-${uniqueSuffix()}`,
+    interviewer_id: interviewerId,
+    expected_record_version: expectedRecordVersion,
+    reason: '面试官临时请假',
+    ...overrides,
+  }
+}
+
+/** 取一场面试里某个 actor 的 interviewer 行 id。 */
+async function interviewerRowId(
+  client: DatabaseClient,
+  interviewId: string,
+  actorId: string,
+): Promise<string> {
+  return await one(
+    client,
+    `select id from recruitment.interviewer
+      where tenant_id = $1 and interview_id = $2 and actor_id = $3`,
+    [TENANT, interviewId, actorId],
+  )
+}
+
+/** 本工具写出的审计事件（按 `payload.interview_id` 归到一场面试）。 */
+async function readAuditEvents(
+  client: DatabaseClient,
+  eventType: string,
+  interviewId: string,
+): Promise<Record<string, unknown>[]> {
+  const { rows } = await client.query<Record<string, unknown>>(
+    `select event_id, provider, event_type, trust_level, idempotency_key, source_object_id, payload
+       from recruitment.event_inbox
+      where tenant_id = $1 and event_type = $2 and payload->>'interview_id' = $3
+      order by recorded_at, event_id`,
+    [TENANT, eventType, interviewId],
+  )
+  return rows
+}
+
+/** `event_inbox` 行数（审计写入的零写入证明；失败路径必须不变）。 */
+async function eventCount(client: DatabaseClient): Promise<number> {
+  return await count(client, 'select count(*)::int as n from recruitment.event_inbox')
+}
+
+/** 一场面试当前全部 active binding（含 meeting 的角色与平台 ID）。 */
+async function activeBindingRows(
+  client: DatabaseClient,
+  interviewId: string,
+): Promise<Record<string, unknown>[]> {
+  const { rows } = await client.query<Record<string, unknown>>(
+    `select b.id as binding_id, b.meeting_id, b.unbound_at, b.unbound_reason,
+            m.meeting_role, m.external_meeting_id
+       from recruitment.meeting_binding b
+       join recruitment.meeting m on m.id = b.meeting_id and m.tenant_id = b.tenant_id
+      where b.tenant_id = $1 and b.interview_id = $2 and b.unbound_at is null
+      order by b.bound_at, b.id`,
+    [TENANT, interviewId],
+  )
+  return rows
+}
+
+/** `changes` 里的 `table:id` 列表（逐行断言比只看长度更强）。 */
+function changePairs(changes: Record<string, unknown>, bucket: 'created' | 'updated'): string[] {
+  const rows = changes[bucket]
+  assert.ok(Array.isArray(rows), `changes.${bucket} 必须是数组`)
+  return rows.map((row) => {
+    const item = row as Record<string, unknown>
+    return `${String(item.table)}:${String(item.id)}`
+  })
+}
+
+/** 期望一次调用抛 `FORBIDDEN`（D-79 闸门），并核对 `detail`。 */
+async function expectForbiddenOutcome(
+  run: Promise<unknown>,
+  reasonCode: 'APPROVAL_UNAVAILABLE' | 'APPROVAL_NOT_GRANTED',
+  approval: 'unavailable' | 'rejected' | 'cancelled' | 'timeout',
+): Promise<void> {
+  const body = await expectToolError(run, 'FORBIDDEN', reasonCode)
+  assert.deepEqual(body.detail, { approval, tool: 'recruitment_interview_schedule' })
+}
+
+// ---------------------------------------------------------------------------
+//  9a. RESCHEDULE
+// ---------------------------------------------------------------------------
+
+test('RESCHEDULE 正向：改同一行的时间 + interview.rescheduled 事件（from/to/actor/reason/reschedule_no）', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const created = await scheduleNew(client, scenario.applicationId)
+    const beforeEvents = await eventCount(client)
+    const args = rescheduleArgs(created.id, created.version, {
+      scheduled_start_at: at(1440),
+      duration_minutes: 90,
+      reason: '面试官改约',
+    })
+
+    const value = await schedule(client, args, NOW)
+
+    assert.equal(value.intent, 'RESCHEDULE')
+    assert.equal(value.contract_version, '1.1.0')
+    assert.equal(value.status, 'OK')
+    assert.equal(value.write, true)
+    assert.equal(value.replayed, false)
+    assert.deepEqual(value.labels, { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'NOT_CONNECTED' })
+    assert.deepEqual(value.effects, { meeting_bound: false, external_call_made: false })
+    assertNoNulls(value)
+
+    const interview = value.interview as Record<string, unknown>
+    assert.equal(String(interview.id), created.id, 'H-1：改期必须改同一行，不新建')
+    assert.equal(interview.status, 'SCHEDULED')
+    assert.equal(interview.scheduled_start_at, at(1440))
+    assert.equal(interview.scheduled_end_at, at(1530))
+    assert.equal(interview.duration_minutes, 90)
+    assert.equal(interview.record_version, created.version + 1)
+
+    // 落库：同一行、只有一行。
+    const state = await readState(client, created.id)
+    assert.equal(state.status, 'SCHEDULED')
+    assert.equal(iso(state.scheduled_start_at), at(1440))
+    assert.equal(iso(state.scheduled_end_at), at(1530))
+    assert.equal(state.record_version, created.version + 1)
+    assert.equal(
+      await count(
+        client,
+        'select count(*)::int as n from recruitment.interview where application_id = $1',
+        [scenario.applicationId],
+      ),
+      1,
+      '不得新建第二行（uq_interview_slot / H-1）',
+    )
+
+    // changes：updated 里有 interview；created 里有审计事件 + 幂等 STORE。
+    const changes = value.changes as Record<string, unknown>
+    assert.deepEqual(changePairs(changes, 'updated'), [`interview:${created.id}`])
+    const createdPairs = changePairs(changes, 'created')
+    assert.ok(createdPairs.some((pair) => pair.startsWith('event_inbox:')))
+    assert.ok(createdPairs.some((pair) => pair.startsWith('business_task:')))
+
+    // 显式审计事件（§4.4 / §11-①：同状态改时间 fn_row_guard 不写事件，必须服务层写）。
+    const events = await readAuditEvents(client, 'interview.rescheduled', created.id)
+    assert.equal(events.length, 1)
+    assert.equal(events[0]?.provider, 'internal')
+    assert.equal(events[0]?.trust_level, 'INTERNAL')
+    assert.equal(events[0]?.source_object_id, created.id)
+    const payload = events[0]?.payload as Record<string, unknown>
+    assert.deepEqual(payload.from, { start: START_ISO, end: END_ISO })
+    assert.deepEqual(payload.to, { start: at(1440), end: at(1530) })
+    assert.equal(payload.actor_id, HR_ACTOR)
+    assert.equal(payload.reason, '面试官改约')
+    assert.equal(payload.reschedule_no, 1)
+    assert.equal(payload.status_from, 'SCHEDULED')
+    assert.equal(payload.status_to, 'SCHEDULED')
+    assert.equal(await eventCount(client), beforeEvents + 1, '只写一条显式事件（同状态改时间没有触发器的状态事件）')
+
+    // 幂等 STORE（§4.3）。
+    const store = (await client.query<Record<string, unknown>>(
+      `select id, task_type, status, result_ref
+         from recruitment.business_task
+        where tenant_id = $1 and idempotency_key = $2`,
+      [TENANT, `interview_schedule:${String(args.idempotency_key)}`],
+    )).rows
+    assert.equal(store.length, 1)
+    assert.equal(store[0]?.task_type, 'INTERVIEW_SCHEDULE')
+    assert.equal(store[0]?.status, 'SUCCEEDED')
+    assert.equal(store[0]?.result_ref, created.id)
+  })
+})
+
+test('RESCHEDULE 幂等：同 key 同参 → replayed=true 零写入；同 key 不同参 → IDEMPOTENCY_KEY_REUSED', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const created = await scheduleNew(client, scenario.applicationId)
+    const args = rescheduleArgs(created.id, created.version)
+    const first = await schedule(client, args, NOW)
+    assert.equal(first.replayed, false)
+
+    const before = await tableCounts(client)
+    const beforeEvents = await eventCount(client)
+
+    const replay = await schedule(client, args, NOW)
+    assert.equal(replay.status, 'OK')
+    assert.equal(replay.replayed, true)
+    assert.equal(replay.intent, 'RESCHEDULE')
+    assert.deepEqual((replay.changes as Record<string, unknown>).created, [])
+    assert.deepEqual((replay.changes as Record<string, unknown>).updated, [])
+    assert.deepEqual((replay.changes as Record<string, unknown>).unchanged, [])
+    assert.equal(String((replay.interview as Record<string, unknown>).id), created.id)
+    assert.equal((replay.interview as Record<string, unknown>).scheduled_start_at, at(1440))
+    assert.deepEqual(await tableCounts(client), before, '重放不得写任何行')
+    assert.equal(await eventCount(client), beforeEvents, '重放不得写审计事件')
+
+    const body = await expectToolError(
+      schedule(client, { ...args, scheduled_start_at: at(1500) }, NOW),
+      'INVALID_ARGS',
+      'IDEMPOTENCY_KEY_REUSED',
+    )
+    const detail = body.detail as Record<string, unknown>
+    assert.match(String(detail.first_args_digest), /^sha256:[0-9a-f]{64}$/)
+    assert.match(String(detail.this_args_digest), /^sha256:[0-9a-f]{64}$/)
+    assert.notEqual(detail.first_args_digest, detail.this_args_digest)
+    assert.deepEqual(await tableCounts(client), before, '键复用不得写任何行')
+    assert.equal(await eventCount(client), beforeEvents)
+  })
+})
+
+test('RESCHEDULE 闸门（D-79）：approval 缺省/拒绝 → FORBIDDEN，面试行不变、零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const created = await scheduleNew(client, scenario.applicationId)
+    const before = await tableCounts(client)
+    const beforeEvents = await eventCount(client)
+
+    // 缺省 approval = unavailable（fail closed）。
+    await expectForbiddenOutcome(
+      scheduleInTransaction(client, cfg, rescheduleArgs(created.id, created.version), NOW),
+      'APPROVAL_UNAVAILABLE',
+      'unavailable',
+    )
+    const afterUnavailable = await readState(client, created.id)
+    assert.equal(afterUnavailable.status, 'SCHEDULED')
+    assert.equal(afterUnavailable.record_version, created.version)
+    assert.equal(iso(afterUnavailable.scheduled_start_at), START_ISO)
+
+    // 人拒绝：同样一行不写。
+    await expectForbiddenOutcome(
+      scheduleInTransaction(
+        client, cfg, rescheduleArgs(created.id, created.version), NOW, async () => 'rejected',
+      ),
+      'APPROVAL_NOT_GRANTED',
+      'rejected',
+    )
+    assert.deepEqual(await tableCounts(client), before, '闸门拒绝必须零写入')
+    assert.equal(await eventCount(client), beforeEvents, '闸门拒绝不得写审计事件')
+  })
+})
+
+test('RESCHEDULE 非法迁移/版本冲突：POST_INTERVIEW → INVALID_STATE_TRANSITION；旧版本 → VERSION_CONFLICT，零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const created = await scheduleNew(client, scenario.applicationId)
+    await client.query(
+      `update recruitment.interview set status = 'POST_INTERVIEW' where id = $1 and tenant_id = $2`,
+      [created.id, TENANT],
+    )
+    const posted = await readState(client, created.id)
+    const before = await tableCounts(client)
+    const beforeEvents = await eventCount(client)
+
+    const body = await expectToolError(
+      schedule(client, rescheduleArgs(created.id, posted.record_version), NOW),
+      'INVALID_ARGS',
+      'INVALID_STATE_TRANSITION',
+    )
+    assert.equal((body.detail as Record<string, unknown>).status, 'POST_INTERVIEW')
+    assert.deepEqual(await tableCounts(client), before, '非法迁移必须零写入')
+    assert.equal(await eventCount(client), beforeEvents)
+
+    // 版本落后（用更大的期望版本制造 STALE，避免 0 被形状层栏成 OUT_OF_RANGE）。
+    const secondScenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const second = await scheduleNew(client, secondScenario.applicationId)
+    const secondBefore = await tableCounts(client)
+    const secondEvents = await eventCount(client)
+    const versionBody = await expectToolError(
+      schedule(client, rescheduleArgs(second.id, second.version + 1), NOW),
+      'VERSION_CONFLICT',
+      'STALE_RECORD_VERSION',
+    )
+    const detail = versionBody.detail as Record<string, unknown>
+    assert.equal(detail.expected_record_version, second.version + 1)
+    assert.equal(detail.actual_record_version, second.version)
+    assert.deepEqual(await tableCounts(client), secondBefore, 'VERSION_CONFLICT 必须零写入')
+    assert.equal(await eventCount(client), secondEvents, 'VERSION_CONFLICT 不得写审计事件')
+  })
+})
+
+test('RESCHEDULE 冲突重算：新时段撞面试官/候选人 → CONFLICT_SLOT，面试行不变、零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    // 面试官冲突：两个不同申请、同一面试官 A。
+    const firstScenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const secondScenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const first = await scheduleNew(client, firstScenario.applicationId, { scheduled_start_at: START })
+    const second = await scheduleNew(client, secondScenario.applicationId, { scheduled_start_at: at(1440) })
+    const before = await tableCounts(client)
+    const beforeEvents = await eventCount(client)
+
+    const body = await expectToolError(
+      schedule(client, rescheduleArgs(second.id, second.version, { scheduled_start_at: at(30) }), NOW),
+      'CONFLICT_SLOT',
+      'INTERVIEWER_BUSY',
+    )
+    const conflicts = (body.detail as Record<string, unknown>).conflicts as Record<string, unknown>[]
+    assert.ok(conflicts.length >= 1, 'CONFLICT_SLOT 必须逐条回列冲突')
+    assert.equal(conflicts[0]?.kind, 'INTERVIEWER')
+    assert.equal(conflicts[0]?.ref_kind, 'INTERVIEW')
+    assert.equal(conflicts[0]?.ref_id, first.id, '改期要排除自己、只报**别的**场次')
+    assert.equal((await readState(client, second.id)).record_version, second.version)
+    assert.deepEqual(await tableCounts(client), before)
+    assert.equal(await eventCount(client), beforeEvents)
+
+    // 候选人冲突：同一申请的 round 1 / round 2（不同面试官、不同时段），把 round 2 挪进 round 1 的窗口。
+    const thirdScenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const round1 = await scheduleNew(client, thirdScenario.applicationId, {
+      round_no: 1,
+      scheduled_start_at: at(3000),
+    })
+    const round2 = await scheduleNew(client, thirdScenario.applicationId, {
+      round_no: 2,
+      scheduled_start_at: at(1440),
+      interviewers: [{ actor_id: INTERVIEWER_B }],
+    })
+    const candidateBody = await expectToolError(
+      schedule(client, rescheduleArgs(round2.id, round2.version, { scheduled_start_at: at(3030) }), NOW),
+      'CONFLICT_SLOT',
+      'CANDIDATE_BUSY',
+    )
+    const candidateConflicts = (candidateBody.detail as Record<string, unknown>).conflicts as Record<string, unknown>[]
+    assert.ok(candidateConflicts.length >= 1)
+    assert.equal(candidateConflicts[0]?.kind, 'CANDIDATE')
+    assert.equal(candidateConflicts[0]?.ref_id, round1.id)
+  })
+})
+
+test('RESCHEDULE 换会议：旧 binding 解绑 + 旧 meeting 标 REPLACED + 新 binding 生效（§4.2 第 2 步）', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const oldExternal = `feishu-${uniqueSuffix()}`
+    const newExternal = `feishu-${uniqueSuffix()}`
+    const created = await scheduleNew(client, scenario.applicationId, {
+      meeting: { provider: 'FEISHU', external_meeting_id: oldExternal },
+    })
+
+    const value = await schedule(client, rescheduleArgs(created.id, created.version, {
+      meeting: { provider: 'FEISHU', external_meeting_id: newExternal },
+    }), NOW)
+
+    assert.equal(value.replayed, false)
+    assert.deepEqual(value.effects, { meeting_bound: true, external_call_made: false })
+    const binding = (value.interview as Record<string, unknown>).meeting_binding as Record<string, unknown>
+    assert.equal(binding.state, 'BOUND_ACTIVE')
+    assert.equal(binding.count, 1)
+    const bindings = binding.bindings as Record<string, unknown>[]
+    assert.equal(bindings[0]?.external_meeting_id, newExternal)
+    assert.equal(bindings[0]?.meeting_role, 'PRIMARY')
+    assert.deepEqual(value.warnings, [])
+
+    // 旧 binding 解绑（unbound_reason 必须非空，ck_meeting_binding_unbound）+ 旧 meeting REPLACED。
+    const old = (await client.query<Record<string, unknown>>(
+      `select b.id as binding_id, b.unbound_at, b.unbound_reason, m.id as meeting_id, m.meeting_role
+         from recruitment.meeting m
+         join recruitment.meeting_binding b on b.meeting_id = m.id and b.tenant_id = m.tenant_id
+        where m.tenant_id = $1 and m.external_meeting_id = $2`,
+      [TENANT, oldExternal],
+    )).rows[0]
+    assert.ok(old !== undefined)
+    assert.equal(old.unbound_reason, 'INTERVIEW_RESCHEDULED')
+    assert.ok(
+      old.unbound_at instanceof Date || typeof old.unbound_at === 'string',
+      'unbound_at 必须被写（行保留、软关闭）',
+    )
+    assert.equal(old.meeting_role, 'REPLACED')
+    const updatedPairs = changePairs(value.changes as Record<string, unknown>, 'updated')
+    assert.ok(updatedPairs.includes(`meeting:${String(old.meeting_id)}`))
+    assert.ok(updatedPairs.includes(`meeting_binding:${String(old.binding_id)}`))
+    assert.ok(
+      changePairs(value.changes as Record<string, unknown>, 'created').some((pair) => pair.startsWith('meeting:')),
+      '新 meeting 行要出现在 changes.created',
+    )
+  })
+})
+
+test('RESCHEDULE 复活已取消的场次（§6.3）：CANCELLED → SCHEDULED，仍是同一行', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const created = await scheduleNew(client, scenario.applicationId)
+    const cancelled = await schedule(client, cancelArgs(created.id, created.version), NOW)
+    assert.equal((cancelled.interview as Record<string, unknown>).status, 'CANCELLED')
+    const afterCancel = await readState(client, created.id)
+
+    const value = await schedule(
+      client,
+      rescheduleArgs(created.id, afterCancel.record_version, { scheduled_start_at: at(2880) }),
+      NOW,
+    )
+    assert.equal(value.intent, 'RESCHEDULE')
+    assert.equal((value.interview as Record<string, unknown>).status, 'SCHEDULED')
+    assert.equal(String((value.interview as Record<string, unknown>).id), created.id)
+    assert.equal((await readState(client, created.id)).status, 'SCHEDULED')
+  })
+})
+
+// ---------------------------------------------------------------------------
+//  9b. CANCEL
+// ---------------------------------------------------------------------------
+
+test('CANCEL 正向：status=CANCELLED + interview.cancelled 事件 + 未发生的会议解绑并标 CANCELLED', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const external = `feishu-${uniqueSuffix()}`
+    const created = await scheduleNew(client, scenario.applicationId, {
+      meeting: { provider: 'FEISHU', external_meeting_id: external },
+    })
+    const beforeEvents = await eventCount(client)
+    const args = cancelArgs(created.id, created.version, { reason: '候选人已接受其它 offer' })
+
+    const value = await schedule(client, args, NOW)
+
+    assert.equal(value.intent, 'CANCEL')
+    assert.equal(value.contract_version, '1.1.0')
+    assert.equal(value.replayed, false)
+    assert.deepEqual(value.labels, { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'NOT_CONNECTED' })
+    assert.deepEqual(value.effects, { meeting_bound: false, external_call_made: false })
+    assertNoNulls(value)
+
+    const interview = value.interview as Record<string, unknown>
+    assert.equal(interview.status, 'CANCELLED')
+    assert.equal(interview.record_version, created.version + 1)
+    assert.equal(
+      String((interview.meeting_binding as Record<string, unknown>).state),
+      'NONE_EXPECTED',
+      '取消后没有 active binding → NONE_EXPECTED（§7.2）',
+    )
+
+    // 行保留（trg_interview_no_delete），版本 +1，触发器回填 status_source_event_id。
+    const state = await readState(client, created.id)
+    assert.equal(state.status, 'CANCELLED')
+    assert.equal(state.record_version, created.version + 1)
+    assert.ok(state.status_source_event_id !== null, 'fn_row_guard 必须回填 status_source_event_id')
+
+    // 显式审计事件（SC-X5：interview 没有 cancel_reason 列，理由只能落事件 payload）。
+    const events = await readAuditEvents(client, 'interview.cancelled', created.id)
+    assert.equal(events.length, 1)
+    assert.equal(events[0]?.provider, 'internal')
+    assert.equal(events[0]?.trust_level, 'INTERNAL')
+    assert.equal(events[0]?.source_object_id, created.id)
+    const payload = events[0]?.payload as Record<string, unknown>
+    assert.equal(payload.reason, '候选人已接受其它 offer')
+    assert.equal(payload.from_status, 'SCHEDULED')
+    assert.equal(payload.to_status, 'CANCELLED')
+    assert.equal(payload.actor_id, HR_ACTOR)
+    assert.equal(await eventCount(client), beforeEvents + 2, '触发器状态事件 + 显式取消事件各 1 条')
+
+    // SC-X6：会议尚未发生 → 解绑（理由非空）+ meeting_role=CANCELLED。
+    assert.deepEqual(await activeBindingRows(client, created.id), [])
+    const meeting = (await client.query<Record<string, unknown>>(
+      `select b.unbound_at, b.unbound_reason, m.meeting_role
+         from recruitment.meeting_binding b
+         join recruitment.meeting m on m.id = b.meeting_id and m.tenant_id = b.tenant_id
+        where b.tenant_id = $1 and b.interview_id = $2`,
+      [TENANT, created.id],
+    )).rows[0]
+    assert.equal(meeting?.unbound_reason, 'INTERVIEW_CANCELLED')
+    assert.ok(meeting?.unbound_at instanceof Date || typeof meeting?.unbound_at === 'string')
+    assert.equal(meeting?.meeting_role, 'CANCELLED')
+
+    const changes = value.changes as Record<string, unknown>
+    const updatedPairs = changePairs(changes, 'updated')
+    assert.ok(updatedPairs.includes(`interview:${created.id}`))
+    assert.ok(updatedPairs.some((pair) => pair.startsWith('meeting_binding:')))
+    assert.ok(updatedPairs.some((pair) => pair.startsWith('meeting:')))
+    assert.ok(changePairs(changes, 'created').some((pair) => pair.startsWith('event_inbox:')))
+    assert.ok(changePairs(changes, 'created').some((pair) => pair.startsWith('business_task:')))
+  })
+})
+
+test('CANCEL 幂等：同 key 重放零写入；换 key 重复取消 → 成功且零写入、不重复写事件（§6.1）', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const created = await scheduleNew(client, scenario.applicationId)
+    const args = cancelArgs(created.id, created.version, { reason: '同一理由' })
+    const first = await schedule(client, args, NOW)
+    assert.equal(first.replayed, false)
+    const afterCancel = await readState(client, created.id)
+
+    const before = await tableCounts(client)
+    const beforeEvents = await eventCount(client)
+
+    // (a) 同 key 同参 → 重放：零写入。
+    const replay = await schedule(client, args, NOW)
+    assert.equal(replay.replayed, true)
+    assert.equal(replay.intent, 'CANCEL')
+    assert.equal((replay.interview as Record<string, unknown>).status, 'CANCELLED')
+    assert.deepEqual((replay.changes as Record<string, unknown>).created, [])
+    assert.deepEqual((replay.changes as Record<string, unknown>).updated, [])
+    assert.deepEqual(await tableCounts(client), before, '重放不得写任何行')
+    assert.equal(await eventCount(client), beforeEvents, '重放不得写审计事件')
+
+    // 同 key 不同参（reason 变了）→ IDEMPOTENCY_KEY_REUSED，零写入。
+    const reused = await expectToolError(
+      schedule(client, { ...args, reason: '另一个理由' }, NOW),
+      'INVALID_ARGS',
+      'IDEMPOTENCY_KEY_REUSED',
+    )
+    assert.match(String((reused.detail as Record<string, unknown>).first_args_digest), /^sha256:[0-9a-f]{64}$/)
+    assert.deepEqual(await tableCounts(client), before, '键复用不得写任何行')
+    assert.equal(await eventCount(client), beforeEvents)
+
+    // (b) 换 key 重复取消 → 幂等成功、零写入、不重复写事件（§6.1 的"CANCELLED 上重复取消"）。
+    const noop = await schedule(
+      client,
+      cancelArgs(created.id, afterCancel.record_version, { reason: '同一理由' }),
+      NOW,
+    )
+    assert.equal(noop.status, 'OK')
+    assert.equal(noop.replayed, false)
+    assert.equal((noop.interview as Record<string, unknown>).status, 'CANCELLED')
+    assert.deepEqual((noop.changes as Record<string, unknown>).created, [])
+    assert.deepEqual((noop.changes as Record<string, unknown>).updated, [])
+    assert.deepEqual(await tableCounts(client), before, '重复取消不得写任何行')
+    assert.equal(await eventCount(client), beforeEvents, '不重复写事件')
+    assert.equal((await readState(client, created.id)).record_version, afterCancel.record_version, '不得再 bump 版本')
+  })
+})
+
+test('CANCEL 闸门（D-79）：approval 缺省/拒绝 → FORBIDDEN，面试仍 SCHEDULED、零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const created = await scheduleNew(client, scenario.applicationId)
+    const before = await tableCounts(client)
+    const beforeEvents = await eventCount(client)
+
+    await expectForbiddenOutcome(
+      scheduleInTransaction(client, cfg, cancelArgs(created.id, created.version), NOW),
+      'APPROVAL_UNAVAILABLE',
+      'unavailable',
+    )
+    const afterUnavailable = await readState(client, created.id)
+    assert.equal(afterUnavailable.status, 'SCHEDULED')
+    assert.equal(afterUnavailable.record_version, created.version)
+
+    await expectForbiddenOutcome(
+      scheduleInTransaction(
+        client, cfg, cancelArgs(created.id, created.version), NOW, async () => 'rejected',
+      ),
+      'APPROVAL_NOT_GRANTED',
+      'rejected',
+    )
+    assert.deepEqual(await tableCounts(client), before, '闸门拒绝必须零写入')
+    assert.equal(await eventCount(client), beforeEvents, '闸门拒绝不得写审计事件')
+  })
+})
+
+test('CANCEL 非法状态迁移：IN_PROGRESS/POST_INTERVIEW/NO_SHOW/EVALUATION_READY/DECIDED → INVALID_STATE_TRANSITION，零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const statuses = ['IN_PROGRESS', 'POST_INTERVIEW', 'NO_SHOW', 'EVALUATION_READY', 'DECIDED']
+    for (const [index, status] of statuses.entries()) {
+      const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+      // 每个状态用不同时段：IN_PROGRESS 仍占位（SC-C4），同面试官同窗口会先撞冲突。
+      const created = await scheduleNew(client, scenario.applicationId, {
+        scheduled_start_at: at(720 * index),
+      })
+      await client.query(
+        `update recruitment.interview set status = $1 where id = $2 and tenant_id = $3`,
+        [status, created.id, TENANT],
+      )
+      const current = await readState(client, created.id)
+      const before = await tableCounts(client)
+      const beforeEvents = await eventCount(client)
+
+      const body = await expectToolError(
+        schedule(client, cancelArgs(created.id, current.record_version), NOW),
+        'INVALID_ARGS',
+        'INVALID_STATE_TRANSITION',
+      )
+      assert.equal((body.detail as Record<string, unknown>).status, status)
+      assert.deepEqual(await tableCounts(client), before, `${status} 上的 CANCEL 必须零写入`)
+      assert.equal(await eventCount(client), beforeEvents, `${status} 上的 CANCEL 不得写审计事件`)
+    }
+
+    // 旧版本（SC-K6）：VERSION_CONFLICT，detail 给真实版本。
+    const versionScenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    // 避开上面各状态用例仍占位的窗口（IN_PROGRESS 占位，SC-C4）。
+    const versionTarget = await scheduleNew(client, versionScenario.applicationId, {
+      scheduled_start_at: at(720 * statuses.length),
+    })
+    const versionBefore = await tableCounts(client)
+    const versionEvents = await eventCount(client)
+    const versionBody = await expectToolError(
+      schedule(client, cancelArgs(versionTarget.id, versionTarget.version + 1), NOW),
+      'VERSION_CONFLICT',
+      'STALE_RECORD_VERSION',
+    )
+    const versionDetail = versionBody.detail as Record<string, unknown>
+    assert.equal(versionDetail.expected_record_version, versionTarget.version + 1)
+    assert.equal(versionDetail.actual_record_version, versionTarget.version)
+    assert.deepEqual(await tableCounts(client), versionBefore)
+    assert.equal(await eventCount(client), versionEvents)
+  })
+})
+
+// ---------------------------------------------------------------------------
+//  9c. WITHDRAW_INTERVIEWER
+// ---------------------------------------------------------------------------
+
+test('WITHDRAW_INTERVIEWER 正向：required_scorecard=false + interviewer.withdrawn 事件 + touch interview（status 不变）', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const created = await scheduleNew(client, scenario.applicationId, {
+      interviewers: [{ actor_id: INTERVIEWER_A }, { actor_id: INTERVIEWER_B }],
+    })
+    const interviewerId = await interviewerRowId(client, created.id, INTERVIEWER_A)
+    const beforeEvents = await eventCount(client)
+    const args = withdrawArgs(interviewerId, created.version, { reason: '面试官请假' })
+
+    const value = await schedule(client, args, NOW)
+
+    assert.equal(value.intent, 'WITHDRAW_INTERVIEWER')
+    assert.equal(value.contract_version, '1.1.0')
+    assert.equal(value.replayed, false)
+    assertNoNulls(value)
+
+    const interview = value.interview as Record<string, unknown>
+    assert.equal(interview.status, 'SCHEDULED', '§4.3：不改 interview.status')
+    assert.equal(interview.record_version, created.version + 1, 'SC-K7：必须 touch interview 借版本')
+    assert.equal((interview.interviewers as unknown[]).length, 2, '不删 interviewer 行')
+
+    const rows = (await client.query<Record<string, unknown>>(
+      `select id, actor_id, required_scorecard
+         from recruitment.interviewer
+        where interview_id = $1 and tenant_id = $2
+        order by actor_id`,
+      [created.id, TENANT],
+    )).rows
+    assert.equal(rows.length, 2, '不删行（trg_interviewer_no_delete）')
+    const target = rows.find((row) => row.id === interviewerId)
+    assert.equal(target?.required_scorecard, false, '退出者不再阻塞 Evaluation Ready（§4.3 第 1 步）')
+
+    // §4.3 第 2 步的 payload 必填键。
+    const events = await readAuditEvents(client, 'interviewer.withdrawn', created.id)
+    assert.equal(events.length, 1)
+    assert.equal(events[0]?.source_object_id, interviewerId)
+    const payload = events[0]?.payload as Record<string, unknown>
+    assert.equal(payload.interview_id, created.id)
+    assert.equal(payload.interviewer_id, interviewerId)
+    assert.equal(payload.actor_id, INTERVIEWER_A)
+    assert.equal(payload.reason, '面试官请假')
+    assert.equal(payload.effective_from, new Date(NOW).toISOString())
+    assert.equal(await eventCount(client), beforeEvents + 1, '只写一条 interviewer.withdrawn 事件')
+
+    const updatedPairs = changePairs(value.changes as Record<string, unknown>, 'updated')
+    assert.ok(updatedPairs.includes(`interview:${created.id}`))
+    assert.ok(updatedPairs.includes(`interviewer:${interviewerId}`))
+    assert.ok(changePairs(value.changes as Record<string, unknown>, 'created').some((pair) => pair.startsWith('event_inbox:')))
+  })
+})
+
+test('WITHDRAW_INTERVIEWER 幂等：同 key 重放零写入；换 key 重复退出 → 成功且零写入、不重复写事件', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const created = await scheduleNew(client, scenario.applicationId)
+    const interviewerId = await interviewerRowId(client, created.id, INTERVIEWER_A)
+    const args = withdrawArgs(interviewerId, created.version)
+    const first = await schedule(client, args, NOW)
+    assert.equal(first.replayed, false)
+    const afterWithdraw = await readState(client, created.id)
+
+    const before = await tableCounts(client)
+    const beforeEvents = await eventCount(client)
+
+    const replay = await schedule(client, args, NOW)
+    assert.equal(replay.replayed, true)
+    assert.deepEqual((replay.changes as Record<string, unknown>).created, [])
+    assert.deepEqual((replay.changes as Record<string, unknown>).updated, [])
+    assert.deepEqual(await tableCounts(client), before, '重放不得写任何行')
+    assert.equal(await eventCount(client), beforeEvents, '重放不得写审计事件')
+
+    // 同 key 不同参（reason 变了）→ IDEMPOTENCY_KEY_REUSED，零写入。
+    const reused = await expectToolError(
+      schedule(client, { ...args, reason: '另一个理由' }, NOW),
+      'INVALID_ARGS',
+      'IDEMPOTENCY_KEY_REUSED',
+    )
+    assert.match(String((reused.detail as Record<string, unknown>).first_args_digest), /^sha256:[0-9a-f]{64}$/)
+    assert.deepEqual(await tableCounts(client), before, '键复用不得写任何行')
+    assert.equal(await eventCount(client), beforeEvents)
+
+    // 换 key 再退一次（该人已退出）→ 幂等成功、零写入、不重复写事件。
+    const noop = await schedule(
+      client,
+      withdrawArgs(interviewerId, afterWithdraw.record_version, { reason: '再次提交' }),
+      NOW,
+    )
+    assert.equal(noop.status, 'OK')
+    assert.equal(noop.replayed, false)
+    assert.deepEqual((noop.changes as Record<string, unknown>).created, [])
+    assert.deepEqual((noop.changes as Record<string, unknown>).updated, [])
+    assert.deepEqual(await tableCounts(client), before, '重复退出不得写任何行')
+    assert.equal(await eventCount(client), beforeEvents, '不重复写事件')
+    assert.equal(
+      (await readState(client, created.id)).record_version,
+      afterWithdraw.record_version,
+      '不得再 bump 版本',
+    )
+  })
+})
+
+test('WITHDRAW_INTERVIEWER 闸门（D-79）：approval 缺省/拒绝 → FORBIDDEN，required_scorecard 仍为 true、零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const created = await scheduleNew(client, scenario.applicationId)
+    const interviewerId = await interviewerRowId(client, created.id, INTERVIEWER_A)
+    const before = await tableCounts(client)
+    const beforeEvents = await eventCount(client)
+
+    await expectForbiddenOutcome(
+      scheduleInTransaction(client, cfg, withdrawArgs(interviewerId, created.version), NOW),
+      'APPROVAL_UNAVAILABLE',
+      'unavailable',
+    )
+    await expectForbiddenOutcome(
+      scheduleInTransaction(
+        client, cfg, withdrawArgs(interviewerId, created.version), NOW, async () => 'rejected',
+      ),
+      'APPROVAL_NOT_GRANTED',
+      'rejected',
+    )
+
+    const row = (await client.query<Record<string, unknown>>(
+      `select required_scorecard from recruitment.interviewer where id = $1 and tenant_id = $2`,
+      [interviewerId, TENANT],
+    )).rows[0]
+    assert.equal(row?.required_scorecard, true, '闸门拒绝不得改动 required_scorecard')
+    assert.equal((await readState(client, created.id)).record_version, created.version)
+    assert.deepEqual(await tableCounts(client), before, '闸门拒绝必须零写入')
+    assert.equal(await eventCount(client), beforeEvents, '闸门拒绝不得写审计事件')
+  })
+})
+
+test('WITHDRAW_INTERVIEWER 负例：interviewer 不存在 → NOT_FOUND；旧版本 → VERSION_CONFLICT；缺 reason → REASON_REQUIRED，零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const created = await scheduleNew(client, scenario.applicationId)
+    const before = await tableCounts(client)
+    const beforeEvents = await eventCount(client)
+
+    // 不存在的 interviewer_id → NOT_FOUND(INTERVIEWER_NOT_FOUND)（不确认对方存在）。
+    await expectToolError(
+      schedule(client, withdrawArgs('00000000-0000-4000-8000-0000000000ee', created.version), NOW),
+      'NOT_FOUND',
+      'INTERVIEWER_NOT_FOUND',
+    )
+
+    const interviewerId = await interviewerRowId(client, created.id, INTERVIEWER_A)
+    // 旧版本 → VERSION_CONFLICT，detail 给真实值。
+    const versionBody = await expectToolError(
+      schedule(client, withdrawArgs(interviewerId, created.version + 1), NOW),
+      'VERSION_CONFLICT',
+      'STALE_RECORD_VERSION',
+    )
+    const detail = versionBody.detail as Record<string, unknown>
+    assert.equal(detail.expected_record_version, created.version + 1)
+    assert.equal(detail.actual_record_version, created.version)
+
+    // 缺 reason → REASON_REQUIRED（§3.7 / SC-X5；参数层就拒，不碰库、不问人）。
+    const missingReason = withdrawArgs(interviewerId, created.version)
+    delete missingReason.reason
+    await expectToolError(schedule(client, missingReason, NOW), 'INVALID_ARGS', 'REASON_REQUIRED')
+
+    assert.deepEqual(await tableCounts(client), before, '负例必须零写入')
+    assert.equal(await eventCount(client), beforeEvents, '负例不得写审计事件')
+    assert.equal(
+      (await client.query<{ required_scorecard: boolean }>(
+        `select required_scorecard from recruitment.interviewer where id = $1 and tenant_id = $2`,
+        [interviewerId, TENANT],
+      )).rows[0]?.required_scorecard,
+      true,
+      '负例不得把 required_scorecard 改成 false',
+    )
+  })
+})
+
+test('CANCEL 对已发生的会议不解绑（SC-X6）：binding 仍 active、meeting_role 不变', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const external = `feishu-${uniqueSuffix()}`
+    const created = await scheduleNew(client, scenario.applicationId, {
+      meeting: { provider: 'FEISHU', external_meeting_id: external },
+    })
+    // 会议"已经发生"：actual_* 由平台回读写入，不是排期工具写的（§3.1：actual 优先）。
+    await client.query(
+      `update recruitment.meeting
+          set actual_start_at = $1::timestamptz, actual_end_at = $2::timestamptz
+        where tenant_id = $3 and external_meeting_id = $4`,
+      [START, END_ISO, TENANT, external],
+    )
+
+    const value = await schedule(client, cancelArgs(created.id, created.version), NOW)
+    assert.equal((value.interview as Record<string, unknown>).status, 'CANCELLED')
+    assert.deepEqual(value.effects, { meeting_bound: true, external_call_made: false })
+
+    const bindings = await activeBindingRows(client, created.id)
+    assert.equal(bindings.length, 1, 'SC-X6：已发生的会议不解绑（之后仍可能有材料要取）')
+    assert.equal(bindings[0]?.meeting_role, 'PRIMARY', 'meeting_role 不改成 CANCELLED')
+    assert.equal(bindings[0]?.external_meeting_id, external)
+  })
+})
+
+test('RESCHEDULE 从 RESCHEDULED（无有效时间）补时间 → SCHEDULED；只给时长 → MISSING_REQUIRED（B-2）', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const created = await scheduleNew(client, scenario.applicationId)
+    // 制造"时间作废、待重排"的行（v1.0 没有产生它的入口：本工具只把 RESCHEDULED 当**源**状态读）。
+    await client.query(
+      `update recruitment.interview
+          set status = 'RESCHEDULED', scheduled_start_at = null, scheduled_end_at = null
+        where id = $1 and tenant_id = $2`,
+      [created.id, TENANT],
+    )
+    const pending = await readState(client, created.id)
+    assert.equal(pending.status, 'RESCHEDULED')
+    assert.equal(pending.scheduled_start_at, null)
+
+    // B-2：只给 duration 拼不出窗口（ck_interview_scheduled 不允许 SCHEDULED 行缺开始时间）。
+    const before = await tableCounts(client)
+    await expectToolError(
+      schedule(client, rescheduleArgs(created.id, pending.record_version, {
+        scheduled_start_at: undefined,
+        duration_minutes: 30,
+      }), NOW),
+      'INVALID_ARGS',
+      'MISSING_REQUIRED',
+    )
+    assert.deepEqual(await tableCounts(client), before, 'B-2 的拒绝必须零写入')
+
+    // 补上新时间 → §8 的 RESCHEDULED → SCHEDULED 边。
+    const value = await schedule(client, rescheduleArgs(created.id, pending.record_version, {
+      scheduled_start_at: at(1440),
+      duration_minutes: 45,
+    }), NOW)
+    assert.equal((value.interview as Record<string, unknown>).status, 'SCHEDULED')
+    assert.equal((value.interview as Record<string, unknown>).scheduled_start_at, at(1440))
+    assert.equal((value.interview as Record<string, unknown>).scheduled_end_at, at(1485))
+    assert.equal((await readState(client, created.id)).status, 'SCHEDULED')
+  })
+})
+
+test('RESCHEDULE / CANCEL 的面试不存在 → NOT_FOUND(INTERVIEW_NOT_FOUND)，零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const before = await tableCounts(client)
+    const beforeEvents = await eventCount(client)
+    const missing = '00000000-0000-4000-8000-0000000000dd'
+    await expectToolError(
+      schedule(client, rescheduleArgs(missing, 1), NOW),
+      'NOT_FOUND',
+      'INTERVIEW_NOT_FOUND',
+    )
+    await expectToolError(
+      schedule(client, cancelArgs(missing, 1), NOW),
+      'NOT_FOUND',
+      'INTERVIEW_NOT_FOUND',
+    )
+    assert.deepEqual(await tableCounts(client), before, 'NOT_FOUND 必须零写入')
+    assert.equal(await eventCount(client), beforeEvents, 'NOT_FOUND 不得写审计事件')
   })
 })

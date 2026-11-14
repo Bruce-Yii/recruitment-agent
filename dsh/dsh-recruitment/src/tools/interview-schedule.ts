@@ -1,27 +1,37 @@
-// recruitment_interview_schedule —— S8 面试排期（**本切片只做 `intent=CREATE`**）。
+// recruitment_interview_schedule —— S8 面试排期（D-62 的**四合一** intent）。
 //
 // 合同（**不得修改**）：
-//   * `contracts/interview/scheduling-rules.md`（§2 A1–A10 判定式、§3 冲突、§6.4 ALREADY_SCHEDULED、
-//     §7 meeting_binding、§9 幂等）——`SC-*`。
+//   * `contracts/interview/scheduling-rules.md`（§2 A1–A10 判定式、§3 冲突、§4 改期、§6 取消、
+//     §8 状态机、§9 幂等）——`SC-*`。
 //   * `contracts/interview/tool-contracts.md`（§1 通用、§3 schedule、§4 幂等、§5.1 写工具证明口径）。
-//   * `manual/interview-line/SPEC.md` §2 / §4（本切片的落点与顺序）。
 //
-// 一次调用在**一个** `withActor` 事务里做这些事（任何一步失败整笔回滚）：
+// 四个 intent（`docs/17` D-62；`tool-contracts.md` §3.1）：
+//   * `CREATE`               ∅ → SCHEDULED（新建一场 + 必要时登记会议绑定）；
+//   * `RESCHEDULE`           SCHEDULED/RESCHEDULED/CANCELLED → SCHEDULED（**改同一行**，H-1）；
+//   * `CANCEL`               SCHEDULED/RESCHEDULED → CANCELLED（已 CANCELLED → 幂等成功、零写入）；
+//   * `WITHDRAW_INTERVIEWER` 不改 `interview.status`：`required_scorecard=false` + 内部事件（§4.3）。
+//   **没有 `COMPLETE`**：`IN_PROGRESS → POST_INTERVIEW` 等边属 S9（`scheduling-rules.md` §8 末段），
+//   本工具不实现、也不接受该取值（enum 之外 → `INVALID_ARGS(OUT_OF_RANGE)`）。
+//
+// 四个 intent **共用同一条管道**（这正是 D-62 不拆工具的理由，代码里也必须只有一份）：
 //   1. 幂等 STORE（`business_task.idempotency_key = 'interview_schedule:' || K`）→ 重放 / 键复用；
-//   2. 申请（同租户 ACTIVE）；3. 语义幂等 `(application, round_no, slot_code)`；
-//   4. 面试官（同租户 + `kind='HUMAN'`）；5. 冲突（`[start, end+buffer)`）；
-//   5.5 **人机闸门（D-79）**：全部校验通过后、第一行 INSERT 前请求人工批准；approval 缺省 /
+//   2. 业务校验（申请 / 面试官 / 状态机 / 乐观并发 / 冲突 / 会议）；
+//   3. **人机闸门（D-79）**：全部校验通过后、第一行写之前请求人工批准；approval 缺省 /
 //      `rejected` / `cancelled` / `unavailable` → `FORBIDDEN(APPROVAL_UNAVAILABLE|APPROVAL_NOT_GRANTED)`，
 //      零写入（fail closed）。**幂等重放不写库，因此在闸门之前返回。**
 //      等待人工批准超过 **120 秒** → 按 `cancelled` 判（`detail.approval='timeout'`）并回滚，
 //      不占着连接等一个不在的人；超时后宿主晚到的 Allow 不采纳（D-101 两阶段见闸门段注释）。
-//   6. `INSERT interview`（显式 `stage_code='S8'`）；7. `INSERT interviewer` 逐行；
-//   8. meeting / meeting_binding（只**登记**调用方给的平台 ID）；9. 未给会议 → `INTERVIEW_MEETING_BIND` 任务；
-//  10. 幂等 STORE 行；11. 用 `readInterviewValue` 读回（写完立刻可查的自证）。
+//   4. 写（`interview` / `interviewer` / `meeting` / `meeting_binding` / `business_task` / `event_inbox`）
+//      + 幂等 STORE + 用 `readInterviewValue` 读回（写完立刻可查的自证）。
+//
+// 审计事件为什么必须**显式**写（`event_inbox`；`scheduling-rules.md` §4.3 / §4.4 / SC-X5）：
+//   `fn_row_guard` 只在**状态变化**时自动写事件；"同状态改时间"（`SCHEDULED → SCHEDULED`）零痕迹，
+//   而 `interview` 没有 `cancel_reason` 列、`interviewer` 没有 `status` 列 —— 改期理由、取消理由、
+//   退出理由都只能落内部事件 `interview.rescheduled` / `interview.cancelled` / `interviewer.withdrawn`。
+//   `event_inbox` 因此是**允许写的第 6 张表**（`tool-contracts.md` §0/§1.3/§5.1 W1 已按
+//   `scheduling-rules.md` 优先的口径补注：规则合同要求写的事件，形状合同必须给位置）。
 //
 // 本文件**不**做的事（写进 description，不假装）：
-//   * `RESCHEDULE` / `CANCEL` / `WITHDRAW_INTERVIEWER`（后续切片；`intent` 的 enum 只有 `CREATE`，
-//     其它值由 `parseContractArgs` 的 enum 校验拒成 `INVALID_ARGS(OUT_OF_RANGE)`）；
 //   * 任何外部调用（H-2）：无 fetch / http / 子进程 / SDK import，`effects.external_call_made` 恒 `false`，
 //     `labels.connection` 恒 `NOT_CONNECTED`；
 //   * 不写 `scorecard` / `decision`（`SC-I5`），不猜会议（`APP-04`），不猜 intent（§6.4）。
@@ -31,8 +41,8 @@
 // `connection` 恒 `NOT_CONNECTED`（本工具不接日历/会议平台）。"这次真的写进了库"**不是**
 // `LIVE` 的证据——演示租户的合成数据同样写进了库，那正是 R4 里 "Fixture 冒充 LIVE" 的入口。
 //
-// 只写 5 张表（`tool-contracts.md` §5.1 W1）：`interview` / `interviewer` / `meeting` /
-// `meeting_binding` / `business_task`。
+// 只写 6 张表（`tool-contracts.md` §5.1 W1）：`interview` / `interviewer` / `meeting` /
+// `meeting_binding` / `business_task` / `event_inbox`。
 //
 // 契约错误：`INVALID_ARGS` / `NOT_FOUND` 走 `contractError`（`contract.ts`）；S8 专有的
 // `CONFLICT_SLOT` / `ALREADY_SCHEDULED` / `MEETING_ALREADY_BOUND` / `VERSION_CONFLICT` 不在
@@ -40,7 +50,7 @@
 // 构造（`Error: <CODE>: <单行 compact-json>`），运行时行为与 `contractError` 一致。
 
 import { parseContractArgs, toParameterSchema } from './args.ts'
-import type { ParamMap } from './args.ts'
+import type { ParamMap, ParamSpec } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { canonicalJson, contractError, digestOf, isUuid } from './contract.ts'
 import { RecruitmentToolError, type RecruitmentErrorCode } from './errors.ts'
@@ -60,13 +70,31 @@ import {
 } from '../db/pool.ts'
 
 const TOOL_NAME = 'recruitment_interview_schedule'
-const CONTRACT_VERSION = '1.0.0'
+/**
+ * 契约版本：`1.1.0`。
+ *
+ * 为什么从 `1.0.0` 升到 `1.1.0`：四个 intent 的语义与错误码在 `1.0.0` 里**已经**写全（D-62），
+ * 本次只是把实现补齐；出参唯一变化是 `changes[].table` 的闭集新增 `event_inbox`
+ * （`scheduling-rules.md` §4.4 要求服务层显式写审计事件，而旧闭集没有它的位置）。
+ * 按契约 §7「出参增删字段 → bump `1.x.0`」，故为 `1.1.0`。
+ */
+const CONTRACT_VERSION = '1.1.0'
 
 /** 落库的 `interview.stage_code`：只能取自 `stage_catalog`（G-4 / D-22）。 */
 const INTERVIEW_STAGE_CODE = 'S8'
 const DEFAULT_SLOT_CODE = 'DEFAULT'
 const DEFAULT_TIMEZONE = 'Asia/Shanghai'
 const ONLY_DELIVERY_MODE = 'VIDEO'
+
+/** 四个 intent（D-62 / `tool-contracts.md` §3.1）。**没有** `COMPLETE`：面试结束属 S9。 */
+const INTENTS = ['CREATE', 'RESCHEDULE', 'CANCEL', 'WITHDRAW_INTERVIEWER'] as const
+/** 本工具接受的 `intent` 取值。 */
+export type ScheduleIntent = (typeof INTENTS)[number]
+
+/** `RESCHEDULE` 的合法源状态（`scheduling-rules.md` §8 + §6.3 的 CANCELLED 复活边）。 */
+const RESCHEDULABLE_STATUSES: readonly string[] = ['SCHEDULED', 'RESCHEDULED', 'CANCELLED']
+/** `CANCEL` 的合法源状态（§6.1：`CANCELLABLE = {SCHEDULED, RESCHEDULED}`）。 */
+const CANCELLABLE_STATUSES: readonly string[] = ['SCHEDULED', 'RESCHEDULED']
 
 /** 幂等 STORE 的键前缀（`scheduling-rules.md` §9 SC-K1）。 */
 const STORE_KEY_PREFIX = 'interview_schedule:'
@@ -75,6 +103,16 @@ const BIND_TASK_KEY_PREFIX = 'bind_meeting:'
 const STORE_TASK_TYPE = 'INTERVIEW_SCHEDULE'
 const BIND_TASK_TYPE = 'INTERVIEW_MEETING_BIND'
 const SCHEDULING_POLICY_KEY = 'interview_scheduling_policy'
+
+/** 内部审计事件（`scheduling-rules.md` §4.3 / §4.4 / SC-X5；`event_inbox` 的 provider/trust 契约）。 */
+const EVENT_PROVIDER = 'internal'
+const EVENT_TRUST_LEVEL = 'INTERNAL'
+const RESCHEDULE_EVENT_TYPE = 'interview.rescheduled'
+const CANCEL_EVENT_TYPE = 'interview.cancelled'
+const WITHDRAW_EVENT_TYPE = 'interviewer.withdrawn'
+/** `meeting_binding.unbound_reason` 必须非空（`ck_meeting_binding_unbound`，0001 L1039）。 */
+const UNBOUND_REASON_RESCHEDULED = 'INTERVIEW_RESCHEDULED'
+const UNBOUND_REASON_CANCELLED = 'INTERVIEW_CANCELLED'
 
 const MIN_ROUND_NO = 1
 const MAX_ROUND_NO = 20
@@ -98,78 +136,224 @@ const ROLE_IN_INTERVIEW_RE = /^[A-Z][A-Z0-9_]{1,30}$/
 /** 幂等键字符集（`tool-contracts.md` §3.2）。 */
 const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9_.:-]+$/
 
-/** 顶层声明的**标量**参数（交给 `parseContractArgs` 校验）。 */
-const SCALAR_PARAMS: ParamMap = {
-  intent: {
-    kind: 'string',
-    values: ['CREATE'],
-    description:
-      'Action. This slice implements CREATE only (default). RESCHEDULE / CANCEL / WITHDRAW_INTERVIEWER '
-      + 'are NOT implemented and are rejected with INVALID_ARGS(OUT_OF_RANGE).',
-  },
-  idempotency_key: {
-    kind: 'string',
-    required: true,
-    maxLength: 200,
-    description:
-      'Caller-generated idempotency key, 1..200 chars from [A-Za-z0-9_.:-]. '
-      + 'Same key + same arguments replays the first result (replayed=true, changes empty); '
-      + 'same key + different arguments fails with INVALID_ARGS(IDEMPOTENCY_KEY_REUSED).',
-  },
-  application_id: {
-    kind: 'string',
-    required: true,
-    uuid: true,
-    maxLength: 36,
-    description: 'Application id (UUID text form). The interview belongs to this application (INV-1).',
-  },
-  round_no: {
-    kind: 'integer',
-    required: true,
-    // 上下界**不**放在这里：`args.ts` 会给 OUT_OF_RANGE，而 `scheduling-rules.md` §2.3 明确用
-    // ROUND_OUT_OF_RANGE（§3.7 的 OUT_OF_RANGE 是同一格的另一种写法），所以这里自己判。
-    description: 'Interview round number, integer 1..20 (INV-4). Out of range fails with ROUND_OUT_OF_RANGE.',
-  },
-  slot_code: {
-    kind: 'string',
-    maxLength: 21,
-    description:
-      "Parallel session code within the round, default 'DEFAULT', must match ^[A-Z][A-Z0-9_]{1,20}$. "
-      + '(application_id, round_no, slot_code) is unique, including CANCELLED rows.',
-  },
-  scheduled_start_at: {
-    kind: 'string',
-    required: true,
-    maxLength: 40,
-    description:
-      'Absolute start instant as ISO-8601 WITH an offset (e.g. 2026-11-20T10:00:00+08:00). '
-      + 'Must be later than now; a bare local time is rejected (TIMESTAMP_WITHOUT_OFFSET).',
-  },
-  duration_minutes: {
-    kind: 'integer',
-    required: true,
-    description:
-      'Duration in minutes, integer 15..480 (required, never derived from an end time). '
-      + 'scheduled_end_at is computed as start + duration and is always written (contract stricter than the table).',
-  },
-  timezone: {
-    kind: 'string',
-    maxLength: 64,
-    description: "IANA time zone used for DISPLAY only (default 'Asia/Shanghai'); it never participates in comparisons.",
-  },
-  delivery_mode: {
-    kind: 'string',
-    maxLength: 16,
-    description: "Interview form, default and only accepted value in v1.0: 'VIDEO' (no delivery_mode column yet, G-1).",
-  },
-  interview_template_version_id: {
-    kind: 'string',
-    uuid: true,
-    maxLength: 36,
-    description:
-      'Optional interview template version (UUID). It must belong to the same job as the application, '
-      + 'otherwise INVALID_ARGS(TEMPLATE_JOB_MISMATCH).',
-  },
+// ---------------------------------------------------------------------------
+//  参数声明（`tool-contracts.md` §3.2：通用 / CREATE / RESCHEDULE / CANCEL / WITHDRAW）
+// ---------------------------------------------------------------------------
+
+/** `intent`（四个值，CREATE 缺省；D-62）。 */
+const INTENT_PARAM: ParamSpec = {
+  kind: 'string',
+  values: [...INTENTS],
+  description:
+    'Action. CREATE (default) creates a session; RESCHEDULE moves the SAME row to a new time; CANCEL cancels '
+    + 'SCHEDULED/RESCHEDULED sessions; WITHDRAW_INTERVIEWER only clears that interviewer\'s required_scorecard. '
+    + 'There is no COMPLETE intent (post-interview edges belong to S9).',
+}
+
+/** `idempotency_key`（四个 intent 都必填）。 */
+const IDEMPOTENCY_KEY_PARAM: ParamSpec = {
+  kind: 'string',
+  required: true,
+  maxLength: 200,
+  description:
+    'Caller-generated idempotency key, 1..200 chars from [A-Za-z0-9_.:-]. '
+    + 'Same key + same arguments replays the first result (replayed=true, changes empty); '
+    + 'same key + different arguments fails with INVALID_ARGS(IDEMPOTENCY_KEY_REUSED).',
+}
+
+const APPLICATION_ID_PARAM: ParamSpec = {
+  kind: 'string',
+  required: true,
+  uuid: true,
+  maxLength: 36,
+  description: 'Application id (UUID text form). The interview belongs to this application (INV-1).',
+}
+
+const ROUND_NO_PARAM: ParamSpec = {
+  kind: 'integer',
+  required: true,
+  // 上下界**不**放在这里：`args.ts` 会给 OUT_OF_RANGE，而 `scheduling-rules.md` §2.3 明确用
+  // ROUND_OUT_OF_RANGE（§3.7 的 OUT_OF_RANGE 是同一格的另一种写法），所以这里自己判。
+  description: 'Interview round number, integer 1..20 (INV-4). Out of range fails with ROUND_OUT_OF_RANGE.',
+}
+
+const SLOT_CODE_PARAM: ParamSpec = {
+  kind: 'string',
+  maxLength: 21,
+  description:
+    "Parallel session code within the round, default 'DEFAULT', must match ^[A-Z][A-Z0-9_]{1,20}$. "
+    + '(application_id, round_no, slot_code) is unique, including CANCELLED rows.',
+}
+
+/** CREATE 的 `scheduled_start_at`（必填）/ RESCHEDULE 的（可选，至少与 duration 给一个）。 */
+const SCHEDULED_START_PARAM: ParamSpec = {
+  kind: 'string',
+  maxLength: 40,
+  description:
+    'Absolute instant as ISO-8601 WITH an offset (e.g. 2026-11-20T10:00:00+08:00). '
+    + 'Must be later than now; a bare local time is rejected (TIMESTAMP_WITHOUT_OFFSET).',
+}
+const CREATE_START_PARAM: ParamSpec = {
+  ...SCHEDULED_START_PARAM,
+  required: true,
+  description: `${SCHEDULED_START_PARAM.description} Required for CREATE.`,
+}
+const RESCHEDULE_START_PARAM: ParamSpec = {
+  ...SCHEDULED_START_PARAM,
+  description: `${SCHEDULED_START_PARAM.description} Optional for RESCHEDULE, but it (or duration_minutes) is required.`,
+}
+
+const DURATION_PARAM: ParamSpec = {
+  kind: 'integer',
+  description:
+    'Duration in minutes, integer 15..480. scheduled_end_at is computed as start + duration and is always written '
+    + '(contract stricter than the table: never derived from, or left as, an end time).',
+}
+const CREATE_DURATION_PARAM: ParamSpec = {
+  ...DURATION_PARAM,
+  required: true,
+  description: `${DURATION_PARAM.description} Required for CREATE.`,
+}
+
+const TIMEZONE_PARAM: ParamSpec = {
+  kind: 'string',
+  maxLength: 64,
+  description: "IANA time zone used for DISPLAY only (default 'Asia/Shanghai'); it never participates in comparisons.",
+}
+
+const DELIVERY_MODE_PARAM: ParamSpec = {
+  kind: 'string',
+  maxLength: 16,
+  description: "Interview form, default and only accepted value in v1.0: 'VIDEO' (no delivery_mode column yet, G-1).",
+}
+
+const TEMPLATE_VERSION_PARAM: ParamSpec = {
+  kind: 'string',
+  uuid: true,
+  maxLength: 36,
+  description:
+    'Optional interview template version (UUID). It must belong to the same job as the application, '
+    + 'otherwise INVALID_ARGS(TEMPLATE_JOB_MISMATCH).',
+}
+
+const INTERVIEW_ID_PARAM: ParamSpec = {
+  kind: 'string',
+  required: true,
+  uuid: true,
+  maxLength: 36,
+  description: 'Interview id (UUID text form): the SAME row is moved/cancelled, never a new row (H-1).',
+}
+
+/** 乐观并发（D-18 / SC-K6）：`interview.record_version` 的期望值。 */
+const EXPECTED_RECORD_VERSION_PARAM: ParamSpec = {
+  kind: 'integer',
+  required: true,
+  description:
+    'Optimistic concurrency: the interview.record_version the caller last read (>= 1). '
+    + 'A 0-row update fails with VERSION_CONFLICT(STALE_RECORD_VERSION); never reuse an old version on retry.',
+}
+
+/** `reason` 由本文件手写校验（`REASON_REQUIRED` 优先于 `args.ts` 的 TYPE_MISMATCH），只进模型 schema。 */
+const REASON_PARAM: ParamSpec = {
+  kind: 'string',
+  maxLength: 500,
+  description:
+    'Human-readable reason, 1..500 chars. Required for CANCEL / WITHDRAW_INTERVIEWER (SC-X5); optional for '
+    + 'RESCHEDULE (it is written into the interview.rescheduled audit event).',
+}
+
+const INTERVIEWER_ID_PARAM: ParamSpec = {
+  kind: 'string',
+  required: true,
+  uuid: true,
+  maxLength: 36,
+  description: 'interviewer row id (UUID) — NOT the actor_id (§3.2 WITHDRAW_INTERVIEWER).',
+}
+
+/** 四个 intent 都接受的标量（`intent` + 幂等键）。 */
+const COMMON_PARAMS: ParamMap = {
+  intent: INTENT_PARAM,
+  idempotency_key: IDEMPOTENCY_KEY_PARAM,
+}
+
+/** `CREATE` 的标量（`tool-contracts.md` §3.2）。 */
+const CREATE_PARAMS: ParamMap = {
+  application_id: APPLICATION_ID_PARAM,
+  round_no: ROUND_NO_PARAM,
+  slot_code: SLOT_CODE_PARAM,
+  scheduled_start_at: CREATE_START_PARAM,
+  duration_minutes: CREATE_DURATION_PARAM,
+  timezone: TIMEZONE_PARAM,
+  delivery_mode: DELIVERY_MODE_PARAM,
+  interview_template_version_id: TEMPLATE_VERSION_PARAM,
+}
+
+/** `RESCHEDULE` 的标量。 */
+const RESCHEDULE_PARAMS: ParamMap = {
+  interview_id: INTERVIEW_ID_PARAM,
+  expected_record_version: EXPECTED_RECORD_VERSION_PARAM,
+  scheduled_start_at: RESCHEDULE_START_PARAM,
+  duration_minutes: DURATION_PARAM,
+}
+
+/** `CANCEL` 的标量。 */
+const CANCEL_PARAMS: ParamMap = {
+  interview_id: INTERVIEW_ID_PARAM,
+  expected_record_version: EXPECTED_RECORD_VERSION_PARAM,
+}
+
+/** `WITHDRAW_INTERVIEWER` 的标量。 */
+const WITHDRAW_PARAMS: ParamMap = {
+  interviewer_id: INTERVIEWER_ID_PARAM,
+  expected_record_version: EXPECTED_RECORD_VERSION_PARAM,
+}
+
+/** 每个 intent 交给 `parseContractArgs` 的标量声明（`reason` 不在这里：手写判 REASON_REQUIRED）。 */
+const INTENT_PARAMS: Readonly<Record<ScheduleIntent, ParamMap>> = {
+  CREATE: CREATE_PARAMS,
+  RESCHEDULE: RESCHEDULE_PARAMS,
+  CANCEL: CANCEL_PARAMS,
+  WITHDRAW_INTERVIEWER: WITHDRAW_PARAMS,
+}
+
+/** 每个 intent 的结构化键（`args.ts` 不支持对象 / 对象数组，由本文件手写校验）。 */
+const INTENT_STRUCTURED_KEYS: Readonly<Record<ScheduleIntent, readonly string[]>> = {
+  CREATE: ['interviewers', 'meeting'],
+  RESCHEDULE: ['meeting', 'interviewer_additions'],
+  CANCEL: [],
+  WITHDRAW_INTERVIEWER: [],
+}
+
+/** 每个 intent 额外接受、但不进 `args.ts` 的键（`reason` 的 `REASON_REQUIRED` 优先级更高）。 */
+const INTENT_EXTRA_KEYS: Readonly<Record<ScheduleIntent, readonly string[]>> = {
+  CREATE: [],
+  RESCHEDULE: ['reason'],
+  CANCEL: ['reason'],
+  WITHDRAW_INTERVIEWER: ['reason'],
+}
+
+/**
+ * 去掉 `required`：模型可见 schema 只把 `idempotency_key` 标成必填 —— JSON Schema 表达不了
+ * "按 intent 条件必填"（DSH 子集没有 if/then），各 intent 的必填项由工具自己判
+ * （缺失 → `INVALID_ARGS(MISSING_REQUIRED / REASON_REQUIRED)`，比让宿主静默放行更诚实）。
+ */
+function withoutRequired(map: ParamMap): ParamMap {
+  const out: Record<string, ParamSpec> = {}
+  for (const [key, spec] of Object.entries(map)) {
+    out[key] = spec.required === true ? { ...spec, required: false } : spec
+  }
+  return out
+}
+
+/** 模型可见的标量参数（`intent` 缺省 CREATE；幂等键是唯一硬必填）。 */
+const MODEL_SCALAR_PARAMS: ParamMap = {
+  intent: INTENT_PARAM,
+  idempotency_key: IDEMPOTENCY_KEY_PARAM,
+  ...withoutRequired(CREATE_PARAMS),
+  ...withoutRequired(RESCHEDULE_PARAMS),
+  ...withoutRequired(CANCEL_PARAMS),
+  ...withoutRequired(WITHDRAW_PARAMS),
+  reason: REASON_PARAM,
 }
 
 /** `interviewers[]` 元素的模型可见 schema（对象数组，`args.ts` 不支持，由本文件手写校验）。 */
@@ -231,23 +415,36 @@ const MEETING_INPUT_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
 }
 
-/** 模型可见的入参 schema（标量部分由 `toParameterSchema` 编译，两个结构化键手工追加）。 */
+/** 模型可见的入参 schema（标量由 `toParameterSchema` 编译，结构化键手工追加）。 */
 const PARAMETERS_SCHEMA: Record<string, unknown> = (() => {
-  const scalar = toParameterSchema(SCALAR_PARAMS)
+  const scalar = toParameterSchema(MODEL_SCALAR_PARAMS)
   const properties = { ...(scalar.properties as Record<string, unknown>) }
   properties.interviewers = {
     type: 'array',
     description:
-      'Interviewers, minItems 1. Each element is { actor_id (UUID, required), role_in_interview?, '
+      'CREATE only. Interviewers, minItems 1. Each element is { actor_id (UUID, required), role_in_interview?, '
       + 'required_scorecard?, scorecard_due_at? }. An empty array fails with INTERVIEWER_REQUIRED; '
       + 'a duplicated actor_id fails with DUPLICATE_INTERVIEWER.',
     items: INTERVIEWER_INPUT_SCHEMA,
   }
-  properties.meeting = MEETING_INPUT_SCHEMA
+  properties.interviewer_additions = {
+    type: 'array',
+    description:
+      'RESCHEDULE only. Interviewers to ADD (never remove; removal is WITHDRAW_INTERVIEWER). Elements have the same '
+      + 'shape as interviewers[]. actor_ids already on the session are skipped with warning ALREADY_ASSIGNED; '
+      + 'a duplicated actor_id in this array fails with DUPLICATE_INTERVIEWER.',
+    items: INTERVIEWER_INPUT_SCHEMA,
+  }
+  properties.meeting = {
+    ...MEETING_INPUT_SCHEMA,
+    description: `${String(MEETING_INPUT_SCHEMA.description)} For RESCHEDULE it REPLACES the current meeting: `
+      + 'the old binding is unbound (unbound_reason) and the old meeting is marked REPLACED (kept as history).',
+  }
   return {
     type: 'object',
     properties,
-    required: [...(scalar.required as string[]), 'interviewers'],
+    // 只有幂等键是硬必填：各 intent 的必填项由工具按 intent 自己判（见 withoutRequired 的说明）。
+    required: ['idempotency_key'],
     additionalProperties: false,
   }
 })()
@@ -258,7 +455,8 @@ const CHANGES_ITEM_SCHEMA: Record<string, unknown> = {
   properties: {
     table: {
       type: 'string',
-      enum: ['interview', 'interviewer', 'meeting', 'meeting_binding', 'business_task'],
+      // 第 6 项 `event_inbox`：`scheduling-rules.md` §4.3/§4.4/SC-X5 要求服务层显式写的审计事件。
+      enum: ['interview', 'interviewer', 'meeting', 'meeting_binding', 'business_task', 'event_inbox'],
     },
     id: { type: 'string' },
     reason: { type: 'string' },
@@ -310,7 +508,7 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
       required: ['provenance', 'trigger', 'connection'],
       additionalProperties: false,
     },
-    intent: { type: 'string', enum: ['CREATE'] },
+    intent: { type: 'string', enum: [...INTENTS] },
     command: {
       type: 'object',
       properties: {
@@ -375,10 +573,20 @@ export interface ScheduleMeetingArgs {
   readonly meeting_role: 'PRIMARY' | 'CONTINUATION'
 }
 
-/** `parseScheduleArgs` 的返回：**已补默认值**的规范形态（`SPEC.md` §4.2）。 */
-export interface ScheduleArgs {
-  readonly intent: 'CREATE'
+/** 四个 intent 共有的命令字段（`tool-contracts.md` §4.3 的幂等键 + digest）。 */
+interface CommandBase {
   readonly idempotency_key: string
+  /**
+   * `'sha256:' + sha256(canonicalJson(原始入参去掉 idempotency_key))`。
+   * **原始**入参 = 调用方给什么算什么，**不补**默认值（`intent`/`slot_code`/`timezone`/`delivery_mode`
+   * 和面试官元素的默认值都不进 digest），只有 `idempotency_key` 被剔除（`tool-contracts.md` §4.3）。
+   */
+  readonly args_digest: string
+}
+
+/** `intent=CREATE` 的规范形态（**已补默认值**）。 */
+export interface CreateCommand extends CommandBase {
+  readonly intent: 'CREATE'
   readonly application_id: string
   readonly round_no: number
   readonly slot_code: string
@@ -396,17 +604,50 @@ export interface ScheduleArgs {
   readonly delivery_mode: 'VIDEO'
   readonly meeting?: ScheduleMeetingArgs
   readonly interview_template_version_id?: string
-  /**
-   * `'sha256:' + sha256(canonicalJson(原始入参去掉 idempotency_key))`。
-   * **原始**入参 = 调用方给什么算什么，**不补**默认值（`intent`/`slot_code`/`timezone`/`delivery_mode`
-   * 和面试官元素的默认值都不进 digest），只有 `idempotency_key` 被剔除（`tool-contracts.md` §4.3）。
-   */
-  readonly args_digest: string
 }
 
-/** `changes.created` 的一项。 */
+/** `intent=RESCHEDULE` 的规范形态。 */
+export interface RescheduleCommand extends CommandBase {
+  readonly intent: 'RESCHEDULE'
+  readonly interview_id: string
+  readonly expected_record_version: number
+  /** 新开始时刻（规范化 ISO）；缺省 = 沿用现有 `scheduled_start_at`。 */
+  readonly scheduled_start_at?: string
+  readonly start_ms?: number
+  /** 新时长；缺省 = 沿用现有 `scheduled_end_at - scheduled_start_at`。 */
+  readonly duration_minutes?: number
+  /** 换会议（旧 binding 解绑、旧 meeting 标 REPLACED）。 */
+  readonly meeting?: ScheduleMeetingArgs
+  /** 只增不减；已在该场的人 → `warnings: ALREADY_ASSIGNED`。 */
+  readonly interviewer_additions: readonly ScheduleInterviewerArgs[]
+  readonly reason?: string
+}
+
+/** `intent=CANCEL` 的规范形态。 */
+export interface CancelCommand extends CommandBase {
+  readonly intent: 'CANCEL'
+  readonly interview_id: string
+  readonly expected_record_version: number
+  readonly reason: string
+}
+
+/** `intent=WITHDRAW_INTERVIEWER` 的规范形态。 */
+export interface WithdrawInterviewerCommand extends CommandBase {
+  readonly intent: 'WITHDRAW_INTERVIEWER'
+  readonly interviewer_id: string
+  readonly expected_record_version: number
+  readonly reason: string
+}
+
+/** `parseScheduleArgs` 的返回：按 `intent` 区分的四选一命令。 */
+export type ScheduleCommand = CreateCommand | RescheduleCommand | CancelCommand | WithdrawInterviewerCommand
+
+/** 兼容旧名（`intent=CREATE` 的规范形态）。 */
+export type ScheduleArgs = CreateCommand
+
+/** `changes` 的收集器（一行真正被写的 `(table, id)`）。 */
 interface ChangeRow {
-  readonly table: 'interview' | 'interviewer' | 'meeting' | 'meeting_binding' | 'business_task'
+  readonly table: 'interview' | 'interviewer' | 'meeting' | 'meeting_binding' | 'business_task' | 'event_inbox'
   readonly id: string
 }
 
@@ -424,6 +665,36 @@ interface Conflict {
 interface InterviewSlotRow {
   readonly id: string
   readonly status: string
+}
+
+/** `RESCHEDULE` / `CANCEL` 需要读的 interview 行（`for update`）。 */
+interface InterviewCommandRow {
+  readonly id: string
+  readonly application_id: string
+  readonly status: string
+  readonly record_version: number
+  readonly scheduled_start_at: string | Date | null
+  readonly scheduled_end_at: string | Date | null
+  readonly round_no: number
+  readonly slot_code: string
+}
+
+/** `interviewer` + 所属 `interview` 的行（`WITHDRAW_INTERVIEWER` 用）。 */
+interface InterviewerCommandRow {
+  readonly id: string
+  readonly interview_id: string
+  readonly actor_id: string
+  readonly required_scorecard: boolean
+  readonly interview_status: string
+  readonly record_version: number
+}
+
+/** 一条 active 绑定 + 它的 meeting（`SC-X6` / §4.2 的换绑与解绑都要看 meeting 是否已发生）。 */
+interface ActiveBindingRow {
+  readonly binding_id: string
+  readonly meeting_id: string
+  readonly meeting_role: string
+  readonly actual_start_at: string | Date | null
 }
 
 /** `application` 行（排期需要的那几列）。 */
@@ -712,60 +983,61 @@ const INTERVIEWER_KEYS: readonly string[] = [
 const MEETING_KEYS: readonly string[] = [
   'provider', 'account_scope', 'calendar_event_id', 'external_meeting_id', 'meeting_role',
 ]
-/** 顶层允许的键（标量声明 + 两个结构化键）。 */
-const TOP_LEVEL_KEYS: readonly string[] = [
-  ...Object.keys(SCALAR_PARAMS), 'interviewers', 'meeting',
-]
-
 /**
- * 手写校验 `interviewers`（`SPEC.md` §4.1）：非空、无重复 actor、默认值补齐。
+ * 手写校验面试官数组（`SPEC.md` §4.1）：无重复 actor、默认值补齐。
  * @param value - 入参原值。
+ * @param path - 参数路径（`interviewers` / `interviewer_additions`）。
+ * @param mode - `CREATE` 要求非空（A4）；`ADDITIONS` 允许空数组（只增不减，空 = 没加人）。
  * @returns 规范化后的面试官数组。
  */
-function parseInterviewers(value: unknown): readonly ScheduleInterviewerArgs[] {
-  if (value === undefined) fail('MISSING_REQUIRED', '缺少必填参数 "interviewers"', { path: 'interviewers' })
-  if (!Array.isArray(value)) fail('TYPE_MISMATCH', '"interviewers" 必须是对象数组', { path: 'interviewers' })
-  if (value.length === 0) {
-    fail('INTERVIEWER_REQUIRED', '至少需要一名面试官（A4）', { path: 'interviewers' })
+function parseInterviewerList(
+  value: unknown,
+  path: string,
+  mode: 'CREATE' | 'ADDITIONS',
+): readonly ScheduleInterviewerArgs[] {
+  if (value === undefined) fail('MISSING_REQUIRED', `缺少必填参数 "${path}"`, { path })
+  if (!Array.isArray(value)) fail('TYPE_MISMATCH', `"${path}" 必须是对象数组`, { path })
+  if (value.length === 0 && mode === 'CREATE') {
+    fail('INTERVIEWER_REQUIRED', '至少需要一名面试官（A4）', { path })
   }
   const interviewers: ScheduleInterviewerArgs[] = []
   const seen = new Set<string>()
   for (const [index, raw] of value.entries()) {
-    const path = `interviewers[${index}]`
-    if (!isPlainObject(raw)) fail('TYPE_MISMATCH', `"${path}" 必须是对象`, { path })
-    assertNoUnknownKeys(raw, INTERVIEWER_KEYS, path)
+    const elementPath = `${path}[${index}]`
+    if (!isPlainObject(raw)) fail('TYPE_MISMATCH', `"${elementPath}" 必须是对象`, { path: elementPath })
+    assertNoUnknownKeys(raw, INTERVIEWER_KEYS, elementPath)
 
-    if (raw.actor_id === undefined) fail('MISSING_REQUIRED', `"${path}.actor_id" 必填`, { path: `${path}.actor_id` })
-    if (typeof raw.actor_id !== 'string') fail('TYPE_MISMATCH', `"${path}.actor_id" 必须是字符串`, { path })
+    if (raw.actor_id === undefined) fail('MISSING_REQUIRED', `"${elementPath}.actor_id" 必填`, { path: `${elementPath}.actor_id` })
+    if (typeof raw.actor_id !== 'string') fail('TYPE_MISMATCH', `"${elementPath}.actor_id" 必须是字符串`, { path: elementPath })
     if (!isUuid(raw.actor_id)) {
-      fail('ID_NOT_UUID', `"${path}.actor_id" 必须是 UUID 文本形式`, { path: `${path}.actor_id` })
+      fail('ID_NOT_UUID', `"${elementPath}.actor_id" 必须是 UUID 文本形式`, { path: `${elementPath}.actor_id` })
     }
     const actorId = raw.actor_id.toLowerCase()
     if (seen.has(actorId)) {
-      fail('DUPLICATE_INTERVIEWER', `面试官 ${actorId} 在 interviewers 里出现了两次`, { actor_id: actorId })
+      fail('DUPLICATE_INTERVIEWER', `面试官 ${actorId} 在 ${path} 里出现了两次`, { path, actor_id: actorId })
     }
     seen.add(actorId)
 
     const roleValue = raw.role_in_interview === undefined ? 'INTERVIEWER' : raw.role_in_interview
     if (typeof roleValue !== 'string') {
-      fail('TYPE_MISMATCH', `"${path}.role_in_interview" 必须是字符串`, { path: `${path}.role_in_interview` })
+      fail('TYPE_MISMATCH', `"${elementPath}.role_in_interview" 必须是字符串`, { path: `${elementPath}.role_in_interview` })
     }
     if (!ROLE_IN_INTERVIEW_RE.test(roleValue)) {
       // 契约 §3.3 只给了正则，没给独立 reason_code；用封闭集里最接近的 OUT_OF_RANGE。
-      fail('OUT_OF_RANGE', `"${path}.role_in_interview" 必须匹配 ^[A-Z][A-Z0-9_]{1,30}$`, {
-        path: `${path}.role_in_interview`,
+      fail('OUT_OF_RANGE', `"${elementPath}.role_in_interview" 必须匹配 ^[A-Z][A-Z0-9_]{1,30}$`, {
+        path: `${elementPath}.role_in_interview`,
         value: roleValue,
       })
     }
 
     const requiredValue = raw.required_scorecard === undefined ? true : raw.required_scorecard
     if (typeof requiredValue !== 'boolean') {
-      fail('TYPE_MISMATCH', `"${path}.required_scorecard" 必须是布尔值`, { path: `${path}.required_scorecard` })
+      fail('TYPE_MISMATCH', `"${elementPath}.required_scorecard" 必须是布尔值`, { path: `${elementPath}.required_scorecard` })
     }
 
     const dueAt = raw.scorecard_due_at === undefined
       ? undefined
-      : new Date(parseIsoWithOffset(raw.scorecard_due_at, `${path}.scorecard_due_at`)).toISOString()
+      : new Date(parseIsoWithOffset(raw.scorecard_due_at, `${elementPath}.scorecard_due_at`)).toISOString()
 
     interviewers.push(compact({
       actor_id: actorId,
@@ -826,51 +1098,110 @@ function parseMeeting(value: unknown): ScheduleMeetingArgs {
   }) as unknown as ScheduleMeetingArgs
 }
 
-/**
- * 形状校验（**不含**"时间是否已过去"）。`scheduleInTransaction` 用它先过形状，
- * 再查幂等 STORE，最后才判时点（`SPEC.md` §4.2：重放不能被"时间已过"影响）。
- * @param raw - 模型给的 arguments。
- * @returns 规范化后的 `ScheduleArgs`。
- */
-function parseScheduleShape(raw: unknown): ScheduleArgs {
-  if (!isPlainObject(raw)) {
-    // 交给 args.ts 产出与其它工具一致的 `arguments must be a JSON object`。
-    parseContractArgs(SCALAR_PARAMS, raw)
-    fail('TYPE_MISMATCH', 'arguments 必须是 JSON 对象', { path: 'arguments' })
-  }
-  const input = raw as Record<string, unknown>
-
-  // 1. 未知键（含 tenant_id / actor_id / force / allow_conflict / skip_conflict_check /
-  //    status / record_version / reason）：声明键 = 标量声明 + interviewers + meeting。
-  const unknown = Object.keys(input).filter((key) => !TOP_LEVEL_KEYS.includes(key)).sort()
-  if (unknown.length > 0) {
-    const first = unknown[0] as string
-    const reason = first === 'tenant_id' || first === 'actor_id' ? 'TENANT_OR_ACTOR_NOT_ALLOWED' : 'UNKNOWN_PARAM'
-    fail(reason, `未知参数 "${first}"（allowed: ${TOP_LEVEL_KEYS.join(', ')}）`, {
-      param: first,
-      unknown,
-      allowed: [...TOP_LEVEL_KEYS],
+/** 读 `intent`（缺省 `CREATE`；未知取值 → `INVALID_ARGS(OUT_OF_RANGE)`）。 */
+function readIntentValue(input: Record<string, unknown>): ScheduleIntent {
+  const raw = input.intent
+  if (raw === undefined) return 'CREATE'
+  if (typeof raw !== 'string') fail('TYPE_MISMATCH', '"intent" 必须是字符串', { path: 'intent' })
+  if (!(INTENTS as readonly string[]).includes(raw)) {
+    fail('OUT_OF_RANGE', `intent 必须是 ${INTENTS.join(' / ')} 之一（收到 "${raw}"）`, {
+      path: 'intent',
+      value: raw,
+      allowed: [...INTENTS],
     })
   }
+  return raw as ScheduleIntent
+}
 
-  // 2. 标量参数交给 args.ts（两份声明合并后的未知键检测已在上面做完）。
-  const scalarInput: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(input)) {
-    if (key !== 'interviewers' && key !== 'meeting') scalarInput[key] = value
-  }
-  const scalars = parseContractArgs(SCALAR_PARAMS, scalarInput)
+/** 顶层未知键（含 `tenant_id` / `actor_id`：**不静默忽略**，§0 第 4 条）。 */
+function assertTopLevelKeys(input: Record<string, unknown>, allowed: readonly string[]): void {
+  const unknown = Object.keys(input).filter((key) => !allowed.includes(key)).sort()
+  if (unknown.length === 0) return
+  const first = unknown[0] as string
+  const reason = first === 'tenant_id' || first === 'actor_id' ? 'TENANT_OR_ACTOR_NOT_ALLOWED' : 'UNKNOWN_PARAM'
+  fail(reason, `未知参数 "${first}"（allowed: ${allowed.join(', ')}）`, {
+    param: first,
+    unknown,
+    allowed: [...allowed],
+  })
+}
 
-  const intent = (scalars.intent as string | undefined) ?? 'CREATE'
-  const idempotencyKey = scalars.idempotency_key as string
-  if (!IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
+/** 幂等键字符集（非空 / 长度已由 `args.ts` 判）。 */
+function readIdempotencyKey(value: unknown): string {
+  if (typeof value !== 'string') fail('TYPE_MISMATCH', '"idempotency_key" 必须是字符串', { path: 'idempotency_key' })
+  if (!IDEMPOTENCY_KEY_RE.test(value)) {
     // 契约 §3.7 没有"键字符非法"的独立 reason_code，用封闭集里的 OUT_OF_RANGE。
+    fail('OUT_OF_RANGE', 'idempotency_key 只能包含 [A-Za-z0-9_.:-]', { path: 'idempotency_key', value })
+  }
+  return value
+}
+
+/**
+ * `'sha256:' + sha256(canonicalJson(原始入参去掉 idempotency_key))`（§4.3）。
+ * **原始**入参 = 调用方给什么算什么，**不补**默认值，所以"省略默认值"与"显式写默认值"是两组参数。
+ */
+function digestOfArgs(input: Record<string, unknown>): string {
+  const digestInput: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(input)) {
+    if (key !== 'idempotency_key') digestInput[key] = value
+  }
+  return `sha256:${digestOf(digestInput)}`
+}
+
+/** `expected_record_version` 的 `>= 1` 判定（类型错已由 `args.ts` 判）。 */
+function readExpectedRecordVersion(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    fail('TYPE_MISMATCH', '"expected_record_version" 必须是整数', { path: 'expected_record_version' })
+  }
+  if (value < 1) {
+    fail('OUT_OF_RANGE', '"expected_record_version" 必须 >= 1', { path: 'expected_record_version', value })
+  }
+  return value
+}
+
+/** `duration_minutes` 的 15..480 判定（类型错已由 `args.ts` 判）。 */
+function readDurationMinutes(value: unknown): number {
+  const duration = value as number
+  if (!Number.isInteger(duration) || duration < MIN_DURATION_MINUTES || duration > MAX_DURATION_MINUTES) {
+    // `scheduling-rules.md` §2.3 明确 A5 用 DURATION_OUT_OF_RANGE（§3.7 的 OUT_OF_RANGE 是同一格的另一种写法）。
     fail(
-      'OUT_OF_RANGE',
-      'idempotency_key 只能包含 [A-Za-z0-9_.:-]',
-      { path: 'idempotency_key', value: idempotencyKey },
+      'DURATION_OUT_OF_RANGE',
+      `duration_minutes 必须是 ${MIN_DURATION_MINUTES}..${MAX_DURATION_MINUTES} 的整数`,
+      { path: 'duration_minutes', value },
     )
   }
+  return duration
+}
 
+/**
+ * `reason`（SC-X5）：`CANCEL` / `WITHDRAW_INTERVIEWER` 必填，`RESCHEDULE` 可省。
+ *
+ * 为什么手写而不交给 `args.ts`：契约把"为空"映射到 `INVALID_ARGS(REASON_REQUIRED)`，
+ * 而 `args.ts` 对空串先给 `TYPE_MISMATCH`。两者同为 `INVALID_ARGS`，但 `reason_code` 必须按契约来。
+ */
+function readReason(value: unknown, required: boolean): string | undefined {
+  if (value === undefined) {
+    if (required) fail('REASON_REQUIRED', '该 intent 必须给非空 reason（SC-X5）', { path: 'reason' })
+    return undefined
+  }
+  if (typeof value !== 'string') fail('TYPE_MISMATCH', '"reason" 必须是字符串', { path: 'reason' })
+  if (value.length > 500) {
+    fail('OUT_OF_RANGE', '"reason" 不能超过 500 个字符', { path: 'reason', length: value.length })
+  }
+  if (value.trim() === '') {
+    if (required) fail('REASON_REQUIRED', 'reason 不能为空（SC-X5）', { path: 'reason' })
+    return undefined
+  }
+  return value
+}
+
+/** `CREATE` 的形状（原切片逻辑逐条保留）。 */
+function parseCreateCommand(
+  input: Record<string, unknown>,
+  scalars: Record<string, unknown>,
+  idempotencyKey: string,
+  argsDigest: string,
+): CreateCommand {
   const applicationId = (scalars.application_id as string).toLowerCase()
   const roundNo = scalars.round_no as number
   if (!Number.isInteger(roundNo) || roundNo < MIN_ROUND_NO || roundNo > MAX_ROUND_NO) {
@@ -891,15 +1222,7 @@ function parseScheduleShape(raw: unknown): ScheduleArgs {
   }
 
   const startMs = parseIsoWithOffset(scalars.scheduled_start_at, 'scheduled_start_at')
-  const duration = scalars.duration_minutes as number
-  if (!Number.isInteger(duration) || duration < MIN_DURATION_MINUTES || duration > MAX_DURATION_MINUTES) {
-    // `scheduling-rules.md` §2.3 明确 A5 用 DURATION_OUT_OF_RANGE（§3.7 的 OUT_OF_RANGE 是同一格的另一种写法）。
-    fail(
-      'DURATION_OUT_OF_RANGE',
-      `duration_minutes 必须是 ${MIN_DURATION_MINUTES}..${MAX_DURATION_MINUTES} 的整数`,
-      { path: 'duration_minutes', value: duration },
-    )
-  }
+  const duration = readDurationMinutes(scalars.duration_minutes)
   const endMs = startMs + duration * 60_000
 
   const timezone = (scalars.timezone as string | undefined) ?? DEFAULT_TIMEZONE
@@ -912,20 +1235,14 @@ function parseScheduleShape(raw: unknown): ScheduleArgs {
     )
   }
 
-  const interviewers = parseInterviewers(input.interviewers)
+  const interviewers = parseInterviewerList(input.interviewers, 'interviewers', 'CREATE')
   const meeting = input.meeting === undefined ? undefined : parseMeeting(input.meeting)
   const templateId = scalars.interview_template_version_id === undefined
     ? undefined
     : (scalars.interview_template_version_id as string).toLowerCase()
 
-  // 3. args_digest：**原始入参**去掉 idempotency_key（不补默认值），字典序规范化。
-  const digestInput: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(input)) {
-    if (key !== 'idempotency_key') digestInput[key] = value
-  }
-
   return compact({
-    intent: intent as 'CREATE',
+    intent: 'CREATE',
     idempotency_key: idempotencyKey,
     application_id: applicationId,
     round_no: roundNo,
@@ -940,8 +1257,142 @@ function parseScheduleShape(raw: unknown): ScheduleArgs {
     delivery_mode: ONLY_DELIVERY_MODE,
     meeting,
     interview_template_version_id: templateId,
-    args_digest: `sha256:${digestOf(digestInput)}`,
-  }) as unknown as ScheduleArgs
+    args_digest: argsDigest,
+  }) as unknown as CreateCommand
+}
+
+/** `RESCHEDULE` 的形状（时点 / 状态 / 冲突在事务里、幂等 STORE 之后判）。 */
+function parseRescheduleCommand(
+  input: Record<string, unknown>,
+  scalars: Record<string, unknown>,
+  idempotencyKey: string,
+  argsDigest: string,
+): RescheduleCommand {
+  const interviewId = (scalars.interview_id as string).toLowerCase()
+  const expected = readExpectedRecordVersion(scalars.expected_record_version)
+
+  let startIso: string | undefined
+  let startMs: number | undefined
+  if (scalars.scheduled_start_at !== undefined) {
+    startMs = parseIsoWithOffset(scalars.scheduled_start_at, 'scheduled_start_at')
+    startIso = new Date(startMs).toISOString()
+  }
+  const duration = scalars.duration_minutes === undefined
+    ? undefined
+    : readDurationMinutes(scalars.duration_minutes)
+  if (startIso === undefined && duration === undefined) {
+    // §3.2：`scheduled_start_at` 与 `duration_minutes` 至少要给一个 → 否则 NO_CHANGE。
+    fail(
+      'NO_CHANGE',
+      'RESCHEDULE 至少要给 scheduled_start_at 或 duration_minutes 之一，否则没有任何可改字段',
+      { path: 'scheduled_start_at', allowed: ['scheduled_start_at', 'duration_minutes'] },
+    )
+  }
+
+  const meeting = input.meeting === undefined ? undefined : parseMeeting(input.meeting)
+  const additions = input.interviewer_additions === undefined
+    ? []
+    : parseInterviewerList(input.interviewer_additions, 'interviewer_additions', 'ADDITIONS')
+  const reason = readReason(input.reason, false)
+
+  return compact({
+    intent: 'RESCHEDULE',
+    idempotency_key: idempotencyKey,
+    interview_id: interviewId,
+    expected_record_version: expected,
+    scheduled_start_at: startIso,
+    start_ms: startMs,
+    duration_minutes: duration,
+    meeting,
+    interviewer_additions: additions,
+    reason,
+    args_digest: argsDigest,
+  }) as unknown as RescheduleCommand
+}
+
+/** `CANCEL` 的形状。 */
+function parseCancelCommand(
+  input: Record<string, unknown>,
+  scalars: Record<string, unknown>,
+  idempotencyKey: string,
+  argsDigest: string,
+): CancelCommand {
+  return compact({
+    intent: 'CANCEL',
+    idempotency_key: idempotencyKey,
+    interview_id: (scalars.interview_id as string).toLowerCase(),
+    expected_record_version: readExpectedRecordVersion(scalars.expected_record_version),
+    reason: readReason(input.reason, true),
+    args_digest: argsDigest,
+  }) as unknown as CancelCommand
+}
+
+/** `WITHDRAW_INTERVIEWER` 的形状。 */
+function parseWithdrawInterviewerCommand(
+  input: Record<string, unknown>,
+  scalars: Record<string, unknown>,
+  idempotencyKey: string,
+  argsDigest: string,
+): WithdrawInterviewerCommand {
+  return compact({
+    intent: 'WITHDRAW_INTERVIEWER',
+    idempotency_key: idempotencyKey,
+    interviewer_id: (scalars.interviewer_id as string).toLowerCase(),
+    expected_record_version: readExpectedRecordVersion(scalars.expected_record_version),
+    reason: readReason(input.reason, true),
+    args_digest: argsDigest,
+  }) as unknown as WithdrawInterviewerCommand
+}
+
+/**
+ * 形状校验（**不含**"时间是否已过去"，也不碰库）。`scheduleInTransaction` 用它先过形状，
+ * 再查幂等 STORE，最后才判时点/状态（`SPEC.md` §4.2：重放不能被"时间已过"影响）。
+ * @param raw - 模型给的 arguments。
+ * @returns 按 `intent` 区分的四选一命令。
+ */
+function parseScheduleShape(raw: unknown): ScheduleCommand {
+  if (!isPlainObject(raw)) {
+    // 交给 args.ts 产出与其它工具一致的 `arguments must be a JSON object`。
+    parseContractArgs(COMMON_PARAMS, raw)
+    fail('TYPE_MISMATCH', 'arguments 必须是 JSON 对象', { path: 'arguments' })
+  }
+  const input = raw as Record<string, unknown>
+
+  // 1. `intent` 决定后面所有键集（每个 intent 的入参表见 `tool-contracts.md` §3.2）。
+  const intent = readIntentValue(input)
+  const intentParams = INTENT_PARAMS[intent]
+  const structuredKeys = INTENT_STRUCTURED_KEYS[intent]
+  const allowedKeys = [
+    ...Object.keys(COMMON_PARAMS),
+    ...Object.keys(intentParams),
+    ...structuredKeys,
+    ...INTENT_EXTRA_KEYS[intent],
+  ]
+
+  // 2. 未知键（含 tenant_id / actor_id / force / allow_conflict / skip_conflict_check / status /
+  //    record_version）一次性拒绝：声明键 = 通用 + 该 intent 的标量 + 该 intent 的结构化键。
+  assertTopLevelKeys(input, allowedKeys)
+
+  // 3. 标量交给 args.ts；`reason` 手写（见 readReason），结构化键手写。
+  const scalarInput: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(input)) {
+    if (structuredKeys.includes(key) || key === 'reason') continue
+    scalarInput[key] = value
+  }
+  const scalars = parseContractArgs({ ...COMMON_PARAMS, ...intentParams }, scalarInput)
+  const idempotencyKey = readIdempotencyKey(scalars.idempotency_key)
+  const argsDigest = digestOfArgs(input)
+
+  switch (intent) {
+    case 'CREATE':
+      return parseCreateCommand(input, scalars, idempotencyKey, argsDigest)
+    case 'RESCHEDULE':
+      return parseRescheduleCommand(input, scalars, idempotencyKey, argsDigest)
+    case 'CANCEL':
+      return parseCancelCommand(input, scalars, idempotencyKey, argsDigest)
+    case 'WITHDRAW_INTERVIEWER':
+      return parseWithdrawInterviewerCommand(input, scalars, idempotencyKey, argsDigest)
+  }
 }
 
 /**
@@ -949,7 +1400,7 @@ function parseScheduleShape(raw: unknown): ScheduleArgs {
  *
  * 明确**不**在这里判 `START_IN_PAST`：`SPEC.md` §4.2 要求"先查幂等 STORE，再判时点"，
  * 否则同一 key 同参的重放会因为"那场面试已经到点/过去了"被误判成 400。
- * 时点校验在 `scheduleInTransaction` 里、幂等命中判定之后抛（见该函数第 2 步）。
+ * 时点校验在 `scheduleInTransaction` 里、幂等命中判定之后抛（见各 run*Command 的说明）。
  * `_nowMs` 只为对齐 `SPEC.md` §4.2 的导出签名而保留，**不参与**任何判断。
  *
  * `args_digest` 只覆盖**原始入参去掉 idempotency_key**——默认值（`intent` / `slot_code` /
@@ -957,9 +1408,9 @@ function parseScheduleShape(raw: unknown): ScheduleArgs {
  * 所以"省略默认值"和"显式写默认值"会被当成两次不同请求（契约 §4.3 的逐字要求：digest 的对象是 args 本身）。
  * @param raw - 模型给的 arguments。
  * @param _nowMs - 服务端当前时刻（毫秒；保留签名，形状校验不需要它）。
- * @returns 规范化后的 `ScheduleArgs`。
+ * @returns 按 `intent` 区分的四选一命令。
  */
-export function parseScheduleArgs(raw: unknown, _nowMs?: number): ScheduleArgs {
+export function parseScheduleArgs(raw: unknown, _nowMs?: number): ScheduleCommand {
   return parseScheduleShape(raw)
 }
 
@@ -1035,12 +1486,20 @@ function meetingNotBoundWarning(): { readonly code: string; readonly message: st
   }
 }
 
-/** 重放：返回首次结果（`changes` 三数组全空，`interview` 从库重新读）。 */
+/**
+ * 重放：返回首次结果（`changes` 三数组全空，`interview` 从库重新读）。
+ *
+ * 闭环口径（§4.3）：`STORE` 有行 ∧ digest 相同 → `replayed=true`、**不写任何新行**。
+ * 四个 intent 共用同一个 STORE 前缀，所以重放与 intent 无关；`interview` 一律从库里重读，
+ * 不会出现"用本次入参拼出一个没写过的结果"。
+ * @param store - 首次执行留下的 STORE 行。
+ * @param command - 本次命令（四个 intent 之一）。
+ */
 async function replayFromStore(
   client: DatabaseClient,
   config: ResolvedDatabaseConfig,
   store: StoreRow,
-  args: ScheduleArgs,
+  command: ScheduleCommand,
   asOfIso: string,
 ): Promise<Record<string, unknown>> {
   const storedDigest = storeDigest(store)
@@ -1048,18 +1507,18 @@ async function replayFromStore(
   if (storedDigest === null || interviewId === null) {
     fail(
       'IDEMPOTENCY_KEY_REUSED',
-      `幂等键 "${args.idempotency_key}" 已被另一条无法解析的命令占用`,
-      { idempotency_key: args.idempotency_key, store_task_id: store.id },
+      `幂等键 "${command.idempotency_key}" 已被另一条无法解析的命令占用`,
+      { idempotency_key: command.idempotency_key, store_task_id: store.id },
     )
   }
-  if (storedDigest !== args.args_digest) {
+  if (storedDigest !== command.args_digest) {
     fail(
       'IDEMPOTENCY_KEY_REUSED',
-      `幂等键 "${args.idempotency_key}" 已用于另一组参数（digest 不一致）`,
+      `幂等键 "${command.idempotency_key}" 已用于另一组参数（digest 不一致）`,
       {
-        idempotency_key: args.idempotency_key,
+        idempotency_key: command.idempotency_key,
         first_args_digest: storedDigest,
-        this_args_digest: args.args_digest,
+        this_args_digest: command.args_digest,
         first_interview_id: interviewId,
       },
     )
@@ -1068,7 +1527,9 @@ async function replayFromStore(
   const interview = await readInterviewBack(client, config.tenant_id, interviewId, asOfIso)
   const binding = meetingBindingOf(interview)
   const warnings: { code: string; message: string }[] = []
-  if (binding !== null && binding.state === 'UNBOUND') warnings.push(meetingNotBoundWarning())
+  // 只有排期类 intent 才谈"没绑会议"；CANCEL 之后 `binding_state` 是 `NONE_EXPECTED`，不是缺陷。
+  if ((command.intent === 'CREATE' || command.intent === 'RESCHEDULE')
+    && binding !== null && binding.state === 'UNBOUND') warnings.push(meetingNotBoundWarning())
 
   // 重放读的是同一租户的既有行：标签按租户事实重算（不缓、不写死）。
   const labels = await buildThreeAxisLabels(client, config.tenant_id)
@@ -1080,8 +1541,8 @@ async function replayFromStore(
     write: true,
     replayed: true,
     labels,
-    intent: 'CREATE',
-    command: { idempotency_key: args.idempotency_key, args_digest: args.args_digest },
+    intent: command.intent,
+    command: { idempotency_key: command.idempotency_key, args_digest: command.args_digest },
     interview,
     changes: { created: [], updated: [], unchanged: [] },
     effects: {
@@ -1111,13 +1572,17 @@ async function readBufferMinutes(client: DatabaseClient, tenantId: string): Prom
   return raw
 }
 
-/** 面试官冲突（`scheduling-rules.md` §3.2，`required_scorecard=true` 才占位）。 */
+/**
+ * 面试官冲突（`scheduling-rules.md` §3.2，`required_scorecard=true` 才占位）。
+ * @param excludeInterviewId - 本次要改期的场次自身（`RESCHEDULE` 要排除自己，§4.2 第 1 步）。
+ */
 async function findInterviewerConflicts(
   client: DatabaseClient,
   tenantId: string,
   actorIds: readonly string[],
   startIso: string,
   bufferedEndIso: string,
+  excludeInterviewId?: string,
 ): Promise<readonly Conflict[]> {
   if (actorIds.length === 0) return []
   const { rows } = await client.query<{
@@ -1141,6 +1606,7 @@ async function findInterviewerConflicts(
           and i.status in ('SCHEDULED', 'IN_PROGRESS')
           and r.required_scorecard = true
           and r.actor_id = any($2::uuid[])
+          and ($5::uuid is null or i.id <> $5::uuid)
         group by i.id, r.actor_id
      )
      select interview_id, actor_id, ew_start, ew_end
@@ -1148,7 +1614,7 @@ async function findInterviewerConflicts(
       where ew_start < $3::timestamptz
         and $4::timestamptz < ew_end
       order by actor_id, interview_id`,
-    [tenantId, actorIds, bufferedEndIso, startIso],
+    [tenantId, actorIds, bufferedEndIso, startIso, excludeInterviewId ?? null],
   )
   return rows.map((row) => compact({
     kind: 'INTERVIEWER' as const,
@@ -1159,13 +1625,17 @@ async function findInterviewerConflicts(
   }) as unknown as Conflict)
 }
 
-/** 候选人冲突（跨轮次；不加 buffer，SC-C2）。 */
+/**
+ * 候选人冲突（跨轮次；不加 buffer，SC-C2）。
+ * @param excludeInterviewId - 本次要改期的场次自身（`RESCHEDULE` 要排除自己）。
+ */
 async function findCandidateConflicts(
   client: DatabaseClient,
   tenantId: string,
   candidateId: string,
   startIso: string,
   endIso: string,
+  excludeInterviewId?: string,
 ): Promise<readonly Conflict[]> {
   const { rows } = await client.query<{
     interview_id: string
@@ -1186,6 +1656,7 @@ async function findCandidateConflicts(
         where i.tenant_id = $1
           and i.status in ('SCHEDULED', 'IN_PROGRESS')
           and a.candidate_id = $2
+          and ($5::uuid is null or i.id <> $5::uuid)
         group by i.id
      )
      select interview_id, ew_start, ew_end
@@ -1193,7 +1664,7 @@ async function findCandidateConflicts(
       where ew_start < $3::timestamptz
         and $4::timestamptz < ew_end
       order by interview_id`,
-    [tenantId, candidateId, endIso, startIso],
+    [tenantId, candidateId, endIso, startIso, excludeInterviewId ?? null],
   )
   return rows.map((row) => compact({
     kind: 'CANDIDATE' as const,
@@ -1213,12 +1684,441 @@ function sortConflicts(conflicts: readonly Conflict[]): readonly Conflict[] {
   })
 }
 
+// ---------------------------------------------------------------------------
+//  四个 intent 共用的读写小件（**只有一份**：D-62 不拆工具的理由）
+// ---------------------------------------------------------------------------
+
+/** 读一场面试并加行锁（`RESCHEDULE` / `CANCEL` / `WITHDRAW_INTERVIEWER` 都要它）。 */
+async function loadInterviewForUpdate(
+  client: DatabaseClient,
+  tenantId: string,
+  interviewId: string,
+): Promise<InterviewCommandRow> {
+  const { rows } = await client.query<InterviewCommandRow>(
+    `select id, application_id, status, record_version, scheduled_start_at, scheduled_end_at,
+            round_no, slot_code
+       from recruitment.interview
+      where id = $1 and tenant_id = $2
+      for update`,
+    [interviewId, tenantId],
+  )
+  const row = rows[0]
+  if (row === undefined) {
+    // 跨租户一律 NOT_FOUND：不确认对方租户里那一行是否存在（IR-C7 同构）。
+    throw contractError('NOT_FOUND', {
+      reason_code: 'INTERVIEW_NOT_FOUND',
+      message: `该租户下没有面试 ${interviewId}`,
+      detail: { interview_id: interviewId },
+    })
+  }
+  return row
+}
+
+/** 乐观并发（§4.4 / SC-K6 / D-18）：版本不匹配 → `VERSION_CONFLICT(STALE_RECORD_VERSION)`。 */
+function assertExpectedVersion(row: InterviewCommandRow, expected: number, interviewId: string): void {
+  if (row.record_version === expected) return
+  throw s8Error('VERSION_CONFLICT', {
+    reason_code: 'STALE_RECORD_VERSION',
+    message: `该面试已被他人修改（期望版本 ${expected}，实际 ${row.record_version}）`,
+    detail: {
+      interview_id: interviewId,
+      expected_record_version: expected,
+      actual_record_version: row.record_version,
+    },
+  })
+}
+
+/** 状态机（§8）：不在允许边内 → `INVALID_ARGS(INVALID_STATE_TRANSITION)`，零写入。 */
+function assertStatusAllowed(
+  row: InterviewCommandRow,
+  allowedStatuses: readonly string[],
+  intent: ScheduleIntent,
+): void {
+  if (allowedStatuses.includes(row.status)) return
+  fail(
+    'INVALID_STATE_TRANSITION',
+    `${intent} 不允许从状态 ${row.status} 出发（allowed: ${allowedStatuses.join(' / ')}；状态机见 scheduling-rules §8）`,
+    { interview_id: row.id, status: row.status, allowed_statuses: [...allowedStatuses] },
+  )
+}
+
+/** 读面试所属申请的候选人 id（候选人冲突 SC-C3 要用）。 */
+async function loadCandidateOfInterview(
+  client: DatabaseClient,
+  tenantId: string,
+  interviewId: string,
+): Promise<string> {
+  const { rows } = await client.query<{ candidate_id: string }>(
+    `select a.candidate_id
+       from recruitment.interview i
+       join recruitment.application a
+         on a.id = i.application_id and a.tenant_id = i.tenant_id
+      where i.id = $1 and i.tenant_id = $2`,
+    [interviewId, tenantId],
+  )
+  const row = rows[0]
+  if (row === undefined) {
+    throw new RecruitmentToolError('READER_FAILED', `interview ${interviewId} 没有可读的 application`)
+  }
+  return row.candidate_id
+}
+
+/** 一场面试当前的面试官行。 */
+async function listInterviewers(
+  client: DatabaseClient,
+  tenantId: string,
+  interviewId: string,
+): Promise<readonly { readonly id: string; readonly actor_id: string; readonly required_scorecard: boolean }[]> {
+  const { rows } = await client.query<{ id: string; actor_id: string; required_scorecard: boolean }>(
+    `select id, actor_id, required_scorecard
+       from recruitment.interviewer
+      where tenant_id = $1 and interview_id = $2
+      order by actor_id`,
+    [tenantId, interviewId],
+  )
+  return rows
+}
+
+/** 面试官集合的 A4 校验（同租户存在 + `kind='HUMAN'`，空集/重复在形状层已拒）。 */
+async function assertInterviewerActors(
+  client: DatabaseClient,
+  tenantId: string,
+  actorIds: readonly string[],
+): Promise<void> {
+  if (actorIds.length === 0) return
+  const actorResult = await client.query<ActorRow>(
+    `select id, kind, display_name
+       from recruitment.actor
+      where tenant_id = $1 and id = any($2::uuid[])`,
+    [tenantId, actorIds],
+  )
+  const actors = new Map(actorResult.rows.map((row) => [row.id.toLowerCase(), row]))
+  for (const actorId of actorIds) {
+    const actor = actors.get(actorId)
+    if (actor === undefined) {
+      // 跨租户 / 不存在一律 NOT_FOUND，不确认对方存在（IR-C7 同构）。
+      throw contractError('NOT_FOUND', {
+        reason_code: 'INTERVIEWER_NOT_FOUND',
+        message: `该租户下没有面试官 actor ${actorId}`,
+        detail: { actor_id: actorId },
+      })
+    }
+    if (actor.kind !== 'HUMAN') {
+      fail(
+        'INTERVIEWER_NOT_HUMAN',
+        `actor ${actorId} 的 kind=${actor.kind}，Agent / SYSTEM 不能当面试官（A4）`,
+        { actor_id: actorId, kind: actor.kind },
+      )
+    }
+  }
+}
+
+/** 该面试的全部 active 绑定（`unbound_at is null`），带 meeting 的角色与"是否已发生"。 */
+async function listActiveBindings(
+  client: DatabaseClient,
+  tenantId: string,
+  interviewId: string,
+): Promise<readonly ActiveBindingRow[]> {
+  const { rows } = await client.query<ActiveBindingRow>(
+    `select b.id as binding_id, b.meeting_id, m.meeting_role, m.actual_start_at
+       from recruitment.meeting_binding b
+       join recruitment.meeting m on m.id = b.meeting_id and m.tenant_id = b.tenant_id
+      where b.tenant_id = $1 and b.interview_id = $2 and b.unbound_at is null
+      order by b.bound_at, b.id`,
+    [tenantId, interviewId],
+  )
+  return rows
+}
+
+/** 按平台 ID 找已有 meeting 行（`external_meeting_id` 优先，与 CREATE 同一口径）。 */
+async function findMeetingRowId(
+  client: DatabaseClient,
+  tenantId: string,
+  meeting: ScheduleMeetingArgs,
+): Promise<string | undefined> {
+  if (meeting.external_meeting_id !== undefined) {
+    const found = await client.query<{ id: string }>(
+      `select id
+         from recruitment.meeting
+        where tenant_id = $1 and provider = $2 and external_meeting_id = $3
+        order by created_at
+        limit 1`,
+      [tenantId, meeting.provider, meeting.external_meeting_id],
+    )
+    return found.rows[0]?.id
+  }
+  if (meeting.calendar_event_id !== undefined) {
+    const found = await client.query<{ id: string }>(
+      `select id
+         from recruitment.meeting
+        where tenant_id = $1 and provider = $2 and calendar_event_id = $3
+        order by created_at desc
+        limit 1`,
+      [tenantId, meeting.provider, meeting.calendar_event_id],
+    )
+    return found.rows[0]?.id
+  }
+  return undefined
+}
+
+/** 某个 meeting 当前的 active binding（`uq_meeting_binding_active` 保证至多一条）。 */
+async function findActiveBindingOfMeeting(
+  client: DatabaseClient,
+  tenantId: string,
+  meetingId: string,
+): Promise<{ readonly id: string; readonly interview_id: string } | undefined> {
+  const { rows } = await client.query<{ id: string; interview_id: string }>(
+    `select id, interview_id
+       from recruitment.meeting_binding
+      where tenant_id = $1 and meeting_id = $2 and unbound_at is null`,
+    [tenantId, meetingId],
+  )
+  return rows[0]
+}
+
+/** `MEETING_ALREADY_BOUND(BOUND_TO_OTHER_INTERVIEW)`。 */
+function meetingAlreadyBoundError(detail: Record<string, unknown>): RecruitmentToolError {
+  return s8Error('MEETING_ALREADY_BOUND', {
+    reason_code: 'BOUND_TO_OTHER_INTERVIEW',
+    message: '该会议已被另一场面试的 active binding 占用（A9 / uq_meeting_binding_active）',
+    detail,
+  })
+}
+
+/** INSERT 一行 meeting（只登记平台 ID，绝不创建日历事件，H-2）。 */
+async function insertMeetingRow(
+  client: DatabaseClient,
+  tenantId: string,
+  meeting: ScheduleMeetingArgs,
+  meetingRole: string,
+): Promise<string> {
+  try {
+    const inserted = await client.query<{ id: string }>(
+      `insert into recruitment.meeting
+         (tenant_id, provider, account_scope, external_meeting_id, calendar_event_id, meeting_role)
+       values ($1, $2, $3, $4, $5, $6)
+       returning id`,
+      [
+        tenantId,
+        meeting.provider,
+        meeting.account_scope ?? null,
+        meeting.external_meeting_id ?? null,
+        meeting.calendar_event_id ?? null,
+        meetingRole,
+      ],
+    )
+    const row = inserted.rows[0]
+    if (row === undefined) throw new RecruitmentToolError('READER_FAILED', 'meeting insert returned no row')
+    return row.id
+  } catch (error) {
+    if (isUniqueViolation(error, 'uq_meeting_external')) {
+      throw meetingAlreadyBoundError({
+        provider: meeting.provider,
+        external_meeting_id: meeting.external_meeting_id,
+      })
+    }
+    throw error
+  }
+}
+
+/** INSERT 一行 `meeting_binding(binding_method='SCHEDULED')`。 */
+async function insertBindingRow(
+  client: DatabaseClient,
+  tenantId: string,
+  meetingId: string,
+  interviewId: string,
+  actorId: string,
+): Promise<string> {
+  try {
+    const inserted = await client.query<{ id: string }>(
+      `insert into recruitment.meeting_binding
+         (tenant_id, meeting_id, interview_id, binding_method, bound_by_actor_id)
+       values ($1, $2, $3, 'SCHEDULED', $4)
+       returning id`,
+      [tenantId, meetingId, interviewId, actorId],
+    )
+    const row = inserted.rows[0]
+    if (row === undefined) throw new RecruitmentToolError('READER_FAILED', 'meeting_binding insert returned no row')
+    return row.id
+  } catch (error) {
+    if (isUniqueViolation(error, 'uq_meeting_binding_active')) {
+      throw meetingAlreadyBoundError({ meeting_id: meetingId, this_interview_id: interviewId })
+    }
+    throw error
+  }
+}
+
+/** 写一条**显式**内部审计事件（`event_inbox`；`scheduling-rules.md` §4.3/§4.4/SC-X5）。 */
+async function insertInternalEvent(
+  client: DatabaseClient,
+  tenantId: string,
+  event: {
+    readonly eventType: string
+    readonly idempotencyKey: string
+    readonly sourceObjectId: string
+    readonly payload: Record<string, unknown>
+  },
+): Promise<string> {
+  const inserted = await client.query<{ event_id: string }>(
+    `insert into recruitment.event_inbox
+       (tenant_id, provider, event_type, schema_version, occurred_at, received_at, recorded_at,
+        idempotency_key, idempotency_source, source_object_id, payload, trust_level,
+        normalized_event_type, normalizer_version)
+     values ($1, $2, $3, 1, now(), now(), now(), $4, 'FALLBACK_KEY', $5, $6::jsonb, $7, $3,
+             'schema/interview-schedule')
+     returning event_id`,
+    [
+      tenantId,
+      EVENT_PROVIDER,
+      event.eventType,
+      event.idempotencyKey,
+      event.sourceObjectId,
+      JSON.stringify(event.payload),
+      EVENT_TRUST_LEVEL,
+    ],
+  )
+  const row = inserted.rows[0]
+  if (row === undefined) throw new RecruitmentToolError('READER_FAILED', 'event_inbox insert returned no row')
+  return row.event_id
+}
+
 /**
- * 在给定事务里跑一次 `intent=CREATE`。
+ * 审计事件的幂等键：同一命令（同一 `idempotency_key`）对同一事件类型只会写一次。
+ * `uq_event_inbox_idempotency (tenant_id, idempotency_key)` 兜住并发重复写。
+ */
+function auditEventKey(command: ScheduleCommand, eventType: string): string {
+  return `${STORE_KEY_PREFIX}${command.idempotency_key}:${eventType}`
+}
+
+/** 数该面试已有的某类事件（改期序号 `reschedule_no` / 幂等判重都要）。 */
+async function countInterviewEvents(
+  client: DatabaseClient,
+  tenantId: string,
+  eventType: string,
+  interviewId: string,
+): Promise<number> {
+  const { rows } = await client.query<{ n: number }>(
+    `select count(*)::int as n
+       from recruitment.event_inbox
+      where tenant_id = $1 and event_type = $2 and payload->>'interview_id' = $3`,
+    [tenantId, eventType, interviewId],
+  )
+  return rows[0]?.n ?? 0
+}
+
+/** 幂等 STORE 行的写入结果：成功给了 `taskId`；撞 `uq_business_task_idempotency` 返回 `conflict`。 */
+type StoreWriteResult =
+  | { readonly kind: 'created'; readonly taskId: string }
+  | { readonly kind: 'conflict' }
+
+/** 写幂等 STORE（§4.3：`business_task.idempotency_key = 'interview_schedule:' || K`）。 */
+async function insertStoreCommand(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  command: ScheduleCommand,
+  interviewId: string,
+  title: string,
+  description: string,
+): Promise<StoreWriteResult> {
+  const storeRefs = [
+    { kind: 'INTERVIEW', id: interviewId },
+    { args_digest: command.args_digest, result_interview_id: interviewId },
+  ]
+  try {
+    const inserted = await client.query<{ id: string }>(
+      `insert into recruitment.business_task
+         (tenant_id, task_type, business_refs, title, description, priority, created_by_actor_id,
+          idempotency_key, status, result_ref, completed_at, status_changed_by_actor_id)
+       values ($1, $2, $3::jsonb, $4, $5, 2, $6, $7, 'SUCCEEDED', $8, now(), $6)
+       returning id`,
+      [
+        config.tenant_id,
+        STORE_TASK_TYPE,
+        JSON.stringify(storeRefs),
+        title,
+        description,
+        config.actor_id,
+        `${STORE_KEY_PREFIX}${command.idempotency_key}`,
+        interviewId,
+      ],
+    )
+    const row = inserted.rows[0]
+    if (row === undefined) throw new RecruitmentToolError('READER_FAILED', 'store task insert returned no row')
+    return { kind: 'created', taskId: row.id }
+  } catch (error) {
+    // 并发同键（SC-K5）：交给调用方退回命令开头 → 重读 STORE → 重放。
+    if (isUniqueViolation(error, 'uq_business_task_idempotency')) return { kind: 'conflict' }
+    throw error
+  }
+}
+
+/**
+ * 并发同键（SC-K5）：退回命令开头（撤销本次已写的行）→ 重读 STORE → 按首次结果重放。
+ * 服务层必须把它翻译成"重放"，**不得**抛 500。
+ */
+async function replayAfterStoreConflict(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  command: ScheduleCommand,
+  asOfIso: string,
+): Promise<Record<string, unknown>> {
+  await client.query(`rollback to savepoint ${STORE_SAVEPOINT}`)
+  const winner = await loadStore(client, config.tenant_id, command.idempotency_key)
+  if (winner === null) {
+    throw new RecruitmentToolError(
+      'READER_FAILED',
+      '同键并发写入后读不到 STORE 行（幂等 STORE 的 winner 应当已提交）',
+    )
+  }
+  return await replayFromStore(client, config, winner, command, asOfIso)
+}
+
+/**
+ * 四个 intent 共用的成功出参（`tool-contracts.md` §3.5）：读回 + 三维标签 + `changes`。
+ * 读回就是"写完立刻可查"的自证（与 `get.interviews[]` 同一份实现）。
+ */
+async function buildCommandResult(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  command: ScheduleCommand,
+  interviewId: string,
+  asOfIso: string,
+  changes: { readonly created: ChangeRow[]; readonly updated: ChangeRow[] },
+  warnings: { code: string; message: string }[],
+  nextActions: readonly { code: string; task_id: string; due_at: string }[],
+): Promise<Record<string, unknown>> {
+  const interview = await readInterviewBack(client, config.tenant_id, interviewId, asOfIso)
+  const binding = meetingBindingOf(interview)
+  const meetingBound = binding !== null && typeof binding.count === 'number' && binding.count >= 1
+  // 排期类 intent 未绑会议 → 告警（H-3），与 CREATE 的历史行为一致。
+  if ((command.intent === 'CREATE' || command.intent === 'RESCHEDULE') && !meetingBound) {
+    warnings.unshift(meetingNotBoundWarning())
+  }
+  // R4 三维标签：按租户事实算（演示租户 ⇒ FIXTURE），不写死 LIVE。
+  const labels = await buildThreeAxisLabels(client, config.tenant_id)
+  return {
+    tool: TOOL_NAME,
+    contract_version: CONTRACT_VERSION,
+    status: 'OK',
+    write: true,
+    replayed: false,
+    labels,
+    intent: command.intent,
+    command: { idempotency_key: command.idempotency_key, args_digest: command.args_digest },
+    interview,
+    changes: { created: [...changes.created], updated: [...changes.updated], unchanged: [] },
+    effects: { meeting_bound: meetingBound, external_call_made: false },
+    warnings,
+    next_actions: [...nextActions],
+  }
+}
+
+/**
+ * 在给定事务里跑**一条**面试排期命令（四个 intent 共用同一条管道）。
  *
  * 顺序（`SPEC.md` §4.3，重放优先于时点校验）：
- * 形状 → 幂等 STORE（重放 / 键复用）→ `START_IN_PAST` → 申请 → 模板 → 语义幂等 →
- * 面试官 → 冲突 → 五张表的写入 → 读回。
+ * 形状 → 幂等 STORE（重放 / 键复用）→ 业务校验（时点/申请/模板/语义幂等/面试官/冲突/状态机）→
+ * **D-79 闸门** → 写 → 幂等 STORE 行 → 读回。
  *
  * **失败零写入的强口径**（`tool-contracts.md` §5.1 W3/W4）：函数开头建一个保存点，任何抛出都
  * `rollback to savepoint` 后原样再抛。这样即使调用方（集成测试、未来的编排器）把这个函数放进
@@ -1229,7 +2129,7 @@ function sortConflicts(conflicts: readonly Conflict[]): readonly Conflict[] {
  * @param rawArgs - 模型给的 arguments。
  * @param nowMs - 服务端当前时刻（毫秒；测试可注入）。
  * @param approve - D-79 的人工批准通道；**缺省 = `unavailable` = 一律拒绝**（fail closed）。
- *   位置：参数/业务校验（A1–A10、冲突）全部通过之后、第一行 INSERT 之前；`allowed-once` 才写库；
+ *   位置：参数/业务校验全部通过之后、第一行写之前；`allowed-once` 才写库；
  *   等待超过 `APPROVAL_TIMEOUT_MS`（120s）返回 `'timeout'` → 拒绝。
  * @returns 契约出参（`tool-contracts.md` §3.5）。
  */
@@ -1248,7 +2148,16 @@ export async function scheduleInTransaction(
   //   ② 任何失败在**调用方事务内**撤销本次已写的行（W3/W4，见上面的说明）。
   await client.query(`savepoint ${STORE_SAVEPOINT}`)
   try {
-    return await runCreateCommand(client, config, args, nowMs, asOfIso, approve)
+    switch (args.intent) {
+      case 'CREATE':
+        return await runCreateCommand(client, config, args, nowMs, asOfIso, approve)
+      case 'RESCHEDULE':
+        return await runRescheduleCommand(client, config, args, nowMs, asOfIso, approve)
+      case 'CANCEL':
+        return await runCancelCommand(client, config, args, asOfIso, approve)
+      case 'WITHDRAW_INTERVIEWER':
+        return await runWithdrawInterviewerCommand(client, config, args, asOfIso, approve)
+    }
   } catch (error) {
     try {
       await client.query(`rollback to savepoint ${STORE_SAVEPOINT}`)
@@ -1260,10 +2169,10 @@ export async function scheduleInTransaction(
 }
 
 /**
- * `scheduleInTransaction` 的事务体（形状已校验、保存点已建立）。
+ * `intent=CREATE` 的事务体（形状已校验、保存点已建立）。
  * @param client - 事务内客户端。
  * @param config - 已解析的配置。
- * @param args - 已校验的入参。
+ * @param args - 已校验的 CREATE 命令。
  * @param nowMs - 服务端当前时刻（毫秒）。
  * @param asOfIso - `nowMs` 的 ISO 形式（读回与错误 detail 用）。
  * @param approve - D-79 的人工批准通道（缺省 = 拒绝写入）。
@@ -1272,7 +2181,7 @@ export async function scheduleInTransaction(
 async function runCreateCommand(
   client: DatabaseClient,
   config: ResolvedDatabaseConfig,
-  args: ScheduleArgs,
+  args: CreateCommand,
   nowMs: number,
   asOfIso: string,
   approve: (() => Promise<ApprovalDecision>) | undefined,
@@ -1361,30 +2270,7 @@ async function runCreateCommand(
 
   // 5. 面试官（A4：同租户存在 + kind='HUMAN'；空集/重复已在形状校验里拒掉）。
   const actorIds = args.interviewers.map((interviewer) => interviewer.actor_id)
-  const actorResult = await client.query<ActorRow>(
-    `select id, kind, display_name
-       from recruitment.actor
-      where tenant_id = $1 and id = any($2::uuid[])`,
-    [tenantId, actorIds],
-  )
-  const actors = new Map(actorResult.rows.map((row) => [row.id.toLowerCase(), row]))
-  for (const interviewer of args.interviewers) {
-    const actor = actors.get(interviewer.actor_id)
-    if (actor === undefined) {
-      throw contractError('NOT_FOUND', {
-        reason_code: 'INTERVIEWER_NOT_FOUND',
-        message: `该租户下没有面试官 actor ${interviewer.actor_id}`,
-        detail: { actor_id: interviewer.actor_id },
-      })
-    }
-    if (actor.kind !== 'HUMAN') {
-      fail(
-        'INTERVIEWER_NOT_HUMAN',
-        `actor ${interviewer.actor_id} 的 kind=${actor.kind}，Agent / SYSTEM 不能当面试官（A4）`,
-        { actor_id: interviewer.actor_id, kind: actor.kind },
-      )
-    }
-  }
+  await assertInterviewerActors(client, tenantId, actorIds)
 
   // 6. 冲突（`[start, end+buffer)` 对 `EW(x)`；buffer 只加在面试官一侧）。
   const bufferMinutes = await readBufferMinutes(client, tenantId)
@@ -1484,53 +2370,19 @@ async function runCreateCommand(
 
   // 9. meeting / meeting_binding（只登记，不创建日历、不发邀请）。
   const warnings: { code: string; message: string }[] = []
-  let meetingBound = false
   if (args.meeting !== undefined) {
     const meeting = args.meeting
-    let meetingId: string | undefined
-
     // 先按平台 ID 找已有 meeting 行（有则复用，未绑定才行）。
-    if (meeting.external_meeting_id !== undefined) {
-      const found = await client.query<{ id: string }>(
-        `select id
-           from recruitment.meeting
-          where tenant_id = $1 and provider = $2 and external_meeting_id = $3
-          order by created_at
-          limit 1`,
-        [tenantId, meeting.provider, meeting.external_meeting_id],
-      )
-      meetingId = found.rows[0]?.id
-    } else if (meeting.calendar_event_id !== undefined) {
-      const found = await client.query<{ id: string }>(
-        `select id
-           from recruitment.meeting
-          where tenant_id = $1 and provider = $2 and calendar_event_id = $3
-          order by created_at desc
-          limit 1`,
-        [tenantId, meeting.provider, meeting.calendar_event_id],
-      )
-      meetingId = found.rows[0]?.id
-    }
-
+    let meetingId = await findMeetingRowId(client, tenantId, meeting)
     if (meetingId !== undefined) {
       // 已有 meeting 行：被别的场次 active 绑着 → 拒绝；未绑定 → 复用。
-      const binding = await client.query<{ id: string; interview_id: string }>(
-        `select id, interview_id
-           from recruitment.meeting_binding
-          where tenant_id = $1 and meeting_id = $2 and unbound_at is null`,
-        [tenantId, meetingId],
-      )
-      const active = binding.rows[0]
+      const active = await findActiveBindingOfMeeting(client, tenantId, meetingId)
       if (active !== undefined && active.interview_id !== interviewId) {
-        throw s8Error('MEETING_ALREADY_BOUND', {
-          reason_code: 'BOUND_TO_OTHER_INTERVIEW',
-          message: `会议已被另一场面试绑定（interview ${active.interview_id}）`,
-          detail: {
-            meeting_id: meetingId,
-            existing_interview_id: active.interview_id,
-            existing_binding_id: active.id,
-            this_interview_id: interviewId,
-          },
+        throw meetingAlreadyBoundError({
+          meeting_id: meetingId,
+          existing_interview_id: active.interview_id,
+          existing_binding_id: active.id,
+          this_interview_id: interviewId,
         })
       }
       warnings.push({
@@ -1538,63 +2390,11 @@ async function runCreateCommand(
         message: `复用已存在的 meeting 行 ${meetingId}（未绑定），未新建 meeting`,
       })
     } else {
-      try {
-        const insertedMeeting = await client.query<{ id: string }>(
-          `insert into recruitment.meeting
-             (tenant_id, provider, account_scope, external_meeting_id, calendar_event_id, meeting_role)
-           values ($1, $2, $3, $4, $5, $6)
-           returning id`,
-          [
-            tenantId,
-            meeting.provider,
-            meeting.account_scope ?? null,
-            meeting.external_meeting_id ?? null,
-            meeting.calendar_event_id ?? null,
-            meeting.meeting_role,
-          ],
-        )
-        const inserted = insertedMeeting.rows[0]
-        if (inserted === undefined) throw new RecruitmentToolError('READER_FAILED', 'meeting insert returned no row')
-        meetingId = inserted.id
-        created.push({ table: 'meeting', id: meetingId })
-      } catch (error) {
-        if (isUniqueViolation(error, 'uq_meeting_external')) {
-          throw s8Error('MEETING_ALREADY_BOUND', {
-            reason_code: 'BOUND_TO_OTHER_INTERVIEW',
-            message: '该 external_meeting_id 已被占用（并发）',
-            detail: {
-              provider: meeting.provider,
-              external_meeting_id: meeting.external_meeting_id,
-              this_interview_id: interviewId,
-            },
-          })
-        }
-        throw error
-      }
+      meetingId = await insertMeetingRow(client, tenantId, meeting, meeting.meeting_role)
+      created.push({ table: 'meeting', id: meetingId })
     }
-
-    try {
-      const bindingResult = await client.query<{ id: string; bound_at: string | Date }>(
-        `insert into recruitment.meeting_binding
-           (tenant_id, meeting_id, interview_id, binding_method, bound_by_actor_id)
-         values ($1, $2, $3, 'SCHEDULED', $4)
-         returning id, bound_at`,
-        [tenantId, meetingId, interviewId, actorId],
-      )
-      const inserted = bindingResult.rows[0]
-      if (inserted === undefined) throw new RecruitmentToolError('READER_FAILED', 'meeting_binding insert returned no row')
-      created.push({ table: 'meeting_binding', id: inserted.id })
-      meetingBound = true
-    } catch (error) {
-      if (isUniqueViolation(error, 'uq_meeting_binding_active')) {
-        throw s8Error('MEETING_ALREADY_BOUND', {
-          reason_code: 'BOUND_TO_OTHER_INTERVIEW',
-          message: '该会议已被另一场面试的 active binding 占用（并发）',
-          detail: { meeting_id: meetingId, this_interview_id: interviewId },
-        })
-      }
-      throw error
-    }
+    const bindingId = await insertBindingRow(client, tenantId, meetingId, interviewId, actorId)
+    created.push({ table: 'meeting_binding', id: bindingId })
   } else {
     // 10. 没给会议：排定照常成立（H-3），落补绑任务。
     const bindTaskResult = await client.query<{ id: string; due_at: string | Date }>(
@@ -1620,77 +2420,611 @@ async function runCreateCommand(
   }
 
   // 11. 幂等 STORE（`business_refs` 带 args_digest + result_interview_id）。
-  const storeRefs = [
-    { kind: 'INTERVIEW', id: interviewId },
-    { args_digest: args.args_digest, result_interview_id: interviewId },
-  ]
-  let storeTaskId: string
-  try {
-    const storeResult = await client.query<{ id: string }>(
-      `insert into recruitment.business_task
-         (tenant_id, task_type, business_refs, title, description, priority, created_by_actor_id,
-          idempotency_key, status, result_ref, completed_at, status_changed_by_actor_id)
-       values ($1, $2, $3::jsonb, $4, $5, 2, $6, $7, 'SUCCEEDED', $8, now(), $6)
+  const storeWrite = await insertStoreCommand(
+    client,
+    config,
+    args,
+    interviewId,
+    `面试排期：第 ${args.round_no} 轮 ${args.slot_code}`,
+    `CREATE interview ${interviewId}（${args.scheduled_start_at}，${args.duration_minutes} 分钟）`,
+  )
+  // 并发同键（SC-K5）：退回命令开头 → 重读 STORE → 重放；本次已写的行一并撤销。
+  if (storeWrite.kind === 'conflict') return await replayAfterStoreConflict(client, config, args, asOfIso)
+  created.push({ table: 'business_task', id: storeWrite.taskId })
+
+  // 12. 读回（写完立刻可查的自证；输出 `interview` 与 get 同形）+ 出参。
+  const nextActions: { code: string; task_id: string; due_at: string }[] = []
+  if (args.meeting === undefined) {
+    // `created` 里第一条 `business_task` 就是补绑任务（STORE 行在它之后才 push）。
+    const bindTaskRow = created.find((row) => row.table === 'business_task')
+    if (bindTaskRow !== undefined) {
+      nextActions.push({ code: 'BIND_MEETING', task_id: bindTaskRow.id, due_at: args.scheduled_start_at })
+    }
+  }
+  return await buildCommandResult(
+    client, config, args, interviewId, asOfIso, { created, updated: [] }, warnings, nextActions,
+  )
+}
+
+// ---------------------------------------------------------------------------
+//  RESCHEDULE / CANCEL / WITHDRAW_INTERVIEWER 的事务体
+// ---------------------------------------------------------------------------
+
+/** `VERSION_CONFLICT(STALE_RECORD_VERSION)`（§4.4 / SC-K6 / D-18）。 */
+function versionConflictError(interviewId: string, expected: number, actual: number): RecruitmentToolError {
+  return s8Error('VERSION_CONFLICT', {
+    reason_code: 'STALE_RECORD_VERSION',
+    message: `该面试已被他人修改（期望版本 ${expected}，实际 ${actual}）`,
+    detail: {
+      interview_id: interviewId,
+      expected_record_version: expected,
+      actual_record_version: actual,
+    },
+  })
+}
+
+/** 一条冲突的完整 `CONFLICT_SLOT` 错误（§4.1：`conflicts[]` 必须逐条，`slot` 含 buffer 后的右端）。 */
+function conflictSlotError(
+  conflicts: readonly Conflict[],
+  interviewerBusy: boolean,
+  startIso: string,
+  bufferedEndIso: string,
+  bufferMinutes: number,
+): RecruitmentToolError {
+  return s8Error('CONFLICT_SLOT', {
+    reason_code: interviewerBusy ? 'INTERVIEWER_BUSY' : 'CANDIDATE_BUSY',
+    message: interviewerBusy
+      ? `面试官在 ${startIso} 起的时段已有另一场面试（buffer=${bufferMinutes} 分钟）`
+      : `候选人在 ${startIso} 起的时段已有另一场面试`,
+    detail: { slot: { start: startIso, end: bufferedEndIso }, conflicts },
+  })
+}
+
+/**
+ * 解析 `interviewer_additions`：已在该场的 actor 只告警（`ALREADY_ASSIGNED`），不重复插入（§3.5）。
+ * 真正要新增的人在这里做 A4 校验（同租户 + `HUMAN`）。
+ */
+async function resolveInterviewerAdditions(
+  client: DatabaseClient,
+  tenantId: string,
+  interviewId: string,
+  additions: readonly ScheduleInterviewerArgs[],
+): Promise<{
+  readonly toInsert: readonly ScheduleInterviewerArgs[]
+  readonly warnings: readonly { code: string; message: string }[]
+}> {
+  const warnings: { code: string; message: string }[] = []
+  if (additions.length === 0) return { toInsert: [], warnings }
+  const current = await listInterviewers(client, tenantId, interviewId)
+  const existing = new Set(current.map((row) => row.actor_id.toLowerCase()))
+  const toInsert = additions.filter((addition) => {
+    if (!existing.has(addition.actor_id)) return true
+    warnings.push({
+      code: 'ALREADY_ASSIGNED',
+      message: `面试官 ${addition.actor_id} 已在该场次，忽略本次新增（幂等语义，不报错）`,
+    })
+    return false
+  })
+  await assertInterviewerActors(client, tenantId, toInsert.map((row) => row.actor_id))
+  return { toInsert, warnings }
+}
+
+/**
+ * `RESCHEDULE` 的换会议（`scheduling-rules.md` §4.2 第 2 步）：
+ * 旧 binding 解绑（`unbound_at` + 非空 `unbound_reason`）→ 旧 meeting 标 `REPLACED`（保留历史）→
+ * 新 meeting + 新 binding（`binding_method='SCHEDULED'`）。**只登记平台 ID，不发任何外部调用**（H-2）。
+ */
+async function bindMeetingForReschedule(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  interviewId: string,
+  meeting: ScheduleMeetingArgs,
+  created: ChangeRow[],
+  updated: ChangeRow[],
+  warnings: { code: string; message: string }[],
+): Promise<void> {
+  const tenantId = config.tenant_id
+  let meetingId = await findMeetingRowId(client, tenantId, meeting)
+
+  if (meetingId !== undefined) {
+    const active = await findActiveBindingOfMeeting(client, tenantId, meetingId)
+    if (active !== undefined && active.interview_id !== interviewId) {
+      throw meetingAlreadyBoundError({
+        meeting_id: meetingId,
+        existing_interview_id: active.interview_id,
+        existing_binding_id: active.id,
+        this_interview_id: interviewId,
+      })
+    }
+    if (active !== undefined) {
+      // 目标会议已经绑在这场面试上：换会议是空操作，也不解绑别的会议（避免把"复用"写成破坏）。
+      return
+    }
+  }
+
+  // 解绑旧的 active binding（除目标会议），旧 meeting → REPLACED。
+  for (const binding of await listActiveBindings(client, tenantId, interviewId)) {
+    if (binding.meeting_id === meetingId) continue
+    const unbound = await client.query(
+      `update recruitment.meeting_binding
+          set unbound_at = now(), unbound_reason = $1, updated_at = now()
+        where id = $2 and tenant_id = $3 and unbound_at is null`,
+      [UNBOUND_REASON_RESCHEDULED, binding.binding_id, tenantId],
+    )
+    if ((unbound.rowCount ?? 0) > 0) updated.push({ table: 'meeting_binding', id: binding.binding_id })
+    if (binding.meeting_role !== 'REPLACED') {
+      const replaced = await client.query(
+        `update recruitment.meeting
+            set meeting_role = 'REPLACED', updated_at = now()
+          where id = $1 and tenant_id = $2`,
+        [binding.meeting_id, tenantId],
+      )
+      if ((replaced.rowCount ?? 0) > 0) updated.push({ table: 'meeting', id: binding.meeting_id })
+    }
+  }
+
+  // TR-B1：每条面试至多 1 个 PRIMARY；已有 PRIMARY → 本次强制 CONTINUATION + 告警。
+  let role = meeting.meeting_role
+  const remaining = await listActiveBindings(client, tenantId, interviewId)
+  if (role === 'PRIMARY' && remaining.some((binding) => binding.meeting_role === 'PRIMARY')) {
+    role = 'CONTINUATION'
+    warnings.push({
+      code: 'MEETING_ROLE_DOWNGRADED',
+      message: '该面试已有 PRIMARY 会议，本次 meeting_role 被强制为 CONTINUATION（TR-B1）',
+    })
+  }
+
+  if (meetingId === undefined) {
+    meetingId = await insertMeetingRow(client, tenantId, meeting, role)
+    created.push({ table: 'meeting', id: meetingId })
+  } else {
+    // 复用未绑定的旧行：角色以本次绑定的意图为准（REPLACED/CANCELLED 的旧行要能被重新启用）。
+    const oldRole = await client.query<{ meeting_role: string }>(
+      `select meeting_role from recruitment.meeting where id = $1 and tenant_id = $2`,
+      [meetingId, tenantId],
+    )
+    if (oldRole.rows[0]?.meeting_role !== role) {
+      await client.query(
+        `update recruitment.meeting set meeting_role = $1, updated_at = now() where id = $2 and tenant_id = $3`,
+        [role, meetingId, tenantId],
+      )
+      updated.push({ table: 'meeting', id: meetingId })
+    }
+    warnings.push({
+      code: 'BINDING_REUSED',
+      message: `复用已存在的 meeting 行 ${meetingId}（未绑定），未新建 meeting`,
+    })
+  }
+
+  created.push({
+    table: 'meeting_binding',
+    id: await insertBindingRow(client, tenantId, meetingId, interviewId, config.actor_id),
+  })
+}
+
+/**
+ * `intent=RESCHEDULE` 的事务体（§4.2 改期三步；**改同一行**，H-1）。
+ * 状态结论按 §4.2 表：给了新时间 → `SCHEDULED`（本工具要求至少给 start/duration，故不会产出 `RESCHEDULED`）。
+ */
+async function runRescheduleCommand(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  args: RescheduleCommand,
+  nowMs: number,
+  asOfIso: string,
+  approve: (() => Promise<ApprovalDecision>) | undefined,
+): Promise<Record<string, unknown>> {
+  const tenantId = config.tenant_id
+  const actorId = config.actor_id
+
+  // 1. 幂等 STORE（重放优先于时点/状态判定：旧时间已过去也要能重放）。
+  const store = await loadStore(client, tenantId, args.idempotency_key)
+  if (store !== null) return await replayFromStore(client, config, store, args, asOfIso)
+
+  // 2. 目标行 + 乐观并发 + 状态机（§4.4 / §8）。
+  const row = await loadInterviewForUpdate(client, tenantId, args.interview_id)
+  assertExpectedVersion(row, args.expected_record_version, args.interview_id)
+  assertStatusAllowed(row, RESCHEDULABLE_STATUSES, 'RESCHEDULE')
+
+  // 3. 新窗口：缺的那一半沿用现有值（`RESCHEDULED` 行可能没有时间）。
+  const currentStartMs = row.scheduled_start_at === null ? null : new Date(row.scheduled_start_at).getTime()
+  const currentEndMs = row.scheduled_end_at === null ? null : new Date(row.scheduled_end_at).getTime()
+  const startMs = args.start_ms ?? currentStartMs
+  if (startMs === null) {
+    fail(
+      'MISSING_REQUIRED',
+      '该场面试当前没有有效时间（RESCHEDULED 行），必须给 scheduled_start_at 才能重排',
+      { path: 'scheduled_start_at', interview_id: args.interview_id },
+    )
+  }
+  let durationMinutes = args.duration_minutes
+  if (durationMinutes === undefined) {
+    if (currentStartMs === null || currentEndMs === null) {
+      fail(
+        'MISSING_REQUIRED',
+        '该场面试没有可推断的时长（scheduled_end_at 为空），必须给 duration_minutes',
+        { path: 'duration_minutes', interview_id: args.interview_id },
+      )
+    }
+    durationMinutes = Math.round((currentEndMs - currentStartMs) / 60_000)
+    if (!Number.isInteger(durationMinutes)
+      || durationMinutes < MIN_DURATION_MINUTES || durationMinutes > MAX_DURATION_MINUTES) {
+      fail(
+        'DURATION_OUT_OF_RANGE',
+        `现有窗口换算出的时长 ${durationMinutes} 不是 ${MIN_DURATION_MINUTES}..${MAX_DURATION_MINUTES} 的整数分钟`,
+        { path: 'duration_minutes', value: durationMinutes },
+      )
+    }
+  }
+  const endMs = startMs + durationMinutes * 60_000
+  const startIso = new Date(startMs).toISOString()
+  const endIso = new Date(endMs).toISOString()
+  // A5：改期后的窗口必须在未来（重放已在上一步返回，所以不影响重放）。
+  if (startMs <= nowMs) {
+    fail(
+      'START_IN_PAST',
+      `改期后的 scheduled_start_at 必须晚于当前时间（收到 ${startIso}）`,
+      { path: 'scheduled_start_at', value: startIso, now: asOfIso },
+    )
+  }
+
+  // 4. 面试官新增（不删行；已在该场的只告警）。
+  const addition = await resolveInterviewerAdditions(
+    client, tenantId, args.interview_id, args.interviewer_additions,
+  )
+  const warnings: { code: string; message: string }[] = [...addition.warnings]
+
+  // 5. 冲突重算（§4.2 第 1 步：对新窗口重跑 §3.2，**排除自己**）。
+  const currentInterviewers = await listInterviewers(client, tenantId, args.interview_id)
+  const actorIds = [...new Set([
+    ...currentInterviewers.map((interviewer) => interviewer.actor_id.toLowerCase()),
+    ...addition.toInsert.map((interviewer) => interviewer.actor_id),
+  ])]
+  const candidateId = await loadCandidateOfInterview(client, tenantId, args.interview_id)
+  const bufferMinutes = await readBufferMinutes(client, tenantId)
+  const bufferedEndIso = new Date(endMs + bufferMinutes * 60_000).toISOString()
+  const interviewerConflicts = await findInterviewerConflicts(
+    client, tenantId, actorIds, startIso, bufferedEndIso, args.interview_id,
+  )
+  const candidateConflicts = await findCandidateConflicts(
+    client, tenantId, candidateId, startIso, endIso, args.interview_id,
+  )
+  const conflicts = sortConflicts([...interviewerConflicts, ...candidateConflicts])
+  if (conflicts.length > 0) {
+    throw conflictSlotError(conflicts, interviewerConflicts.length > 0, startIso, bufferedEndIso, bufferMinutes)
+  }
+
+  // 6. 人机闸门（D-79）：校验全部通过、第一行写之前。
+  requireApprovalGranted(approve === undefined ? 'unavailable' : await approve())
+
+  // 7. 写（同一事务；任何失败由外层保存点撤销）。
+  const created: ChangeRow[] = []
+  const updated: ChangeRow[] = []
+
+  // 7a. 换会议（给了 `meeting` 才动；不给 = 保持现有绑定）。
+  if (args.meeting !== undefined) {
+    await bindMeetingForReschedule(client, config, args.interview_id, args.meeting, created, updated, warnings)
+  }
+
+  // 7b. 新增面试官。
+  for (const interviewer of addition.toInsert) {
+    const inserted = await client.query<{ id: string }>(
+      `insert into recruitment.interviewer
+         (tenant_id, interview_id, actor_id, role_in_interview, required_scorecard, scorecard_due_at)
+       values ($1, $2, $3, $4, $5, $6::timestamptz)
        returning id`,
       [
         tenantId,
-        STORE_TASK_TYPE,
-        JSON.stringify(storeRefs),
-        `面试排期：第 ${args.round_no} 轮 ${args.slot_code}`,
-        `CREATE interview ${interviewId}（${args.scheduled_start_at}，${args.duration_minutes} 分钟）`,
-        actorId,
-        `${STORE_KEY_PREFIX}${args.idempotency_key}`,
-        interviewId,
+        args.interview_id,
+        interviewer.actor_id,
+        interviewer.role_in_interview,
+        interviewer.required_scorecard,
+        interviewer.scorecard_due_at ?? null,
       ],
     )
-    const inserted = storeResult.rows[0]
-    if (inserted === undefined) throw new RecruitmentToolError('READER_FAILED', 'store task insert returned no row')
-    storeTaskId = inserted.id
-    created.push({ table: 'business_task', id: storeTaskId })
-  } catch (error) {
-    // 并发同键（SC-K5）：退回命令开头 → 重读 STORE → 重放；本次已写的行一并撤销。
-    if (isUniqueViolation(error, 'uq_business_task_idempotency')) {
-      await client.query(`rollback to savepoint ${STORE_SAVEPOINT}`)
-      const winner = await loadStore(client, tenantId, args.idempotency_key)
-      if (winner === null) throw error
-      return await replayFromStore(client, config, winner, args, asOfIso)
+    const insertedRow = inserted.rows[0]
+    if (insertedRow === undefined) {
+      throw new RecruitmentToolError('READER_FAILED', 'interviewer insert returned no row')
     }
-    throw error
+    created.push({ table: 'interviewer', id: insertedRow.id })
   }
 
-  // 12. 读回（写完立刻可查的自证；输出 `interview` 与 get 同形）。
-  const interview = await readInterviewBack(client, tenantId, interviewId, asOfIso)
-  if (!meetingBound) warnings.unshift(meetingNotBoundWarning())
-  const nextActions: { code: string; task_id: string; due_at: string }[] = []
-  if (!meetingBound) {
-    const bindTaskRow = created.find((row) => row.table === 'business_task')
-    if (bindTaskRow !== undefined) {
-      nextActions.push({
-        code: 'BIND_MEETING',
-        task_id: bindTaskRow.id,
-        due_at: args.scheduled_start_at,
-      })
+  // 7c. UPDATE 同一行（H-1）。状态按 §4.2：`SCHEDULED` 保持，`RESCHEDULED`/`CANCELLED` 回到 `SCHEDULED`。
+  //     两条 SQL 的参数表**分开给**（PG 不允许参数编号出现空洞：未引用的 $n 会报 42P18）。
+  const statusChanging = row.status !== 'SCHEDULED'
+  const changed = statusChanging
+    ? await client.query<{ id: string }>(
+      `update recruitment.interview
+          set scheduled_start_at = $1::timestamptz, scheduled_end_at = $2::timestamptz,
+              status = 'SCHEDULED', status_changed_by_actor_id = $3
+        where id = $4 and tenant_id = $5 and record_version = $6
+        returning id`,
+      [startIso, endIso, actorId, args.interview_id, tenantId, args.expected_record_version],
+    )
+    : await client.query<{ id: string }>(
+      `update recruitment.interview
+          set scheduled_start_at = $1::timestamptz, scheduled_end_at = $2::timestamptz
+        where id = $3 and tenant_id = $4 and record_version = $5
+        returning id`,
+      [startIso, endIso, args.interview_id, tenantId, args.expected_record_version],
+    )
+  if (changed.rows[0] === undefined) {
+    // 行锁已拿住仍 0 行 = 版本被并发改动（防御性翻译，不抛 500）。
+    const fresh = await loadInterviewForUpdate(client, tenantId, args.interview_id)
+    throw versionConflictError(args.interview_id, args.expected_record_version, fresh.record_version)
+  }
+  updated.push({ table: 'interview', id: args.interview_id })
+
+  // 7d. 显式审计事件（§4.4 / §11-①：同状态改时间不会触发 fn_row_guard，服务层必须自己写）。
+  const rescheduleNo = await countInterviewEvents(
+    client, tenantId, RESCHEDULE_EVENT_TYPE, args.interview_id,
+  ) + 1
+  const eventId = await insertInternalEvent(client, tenantId, {
+    eventType: RESCHEDULE_EVENT_TYPE,
+    idempotencyKey: auditEventKey(args, RESCHEDULE_EVENT_TYPE),
+    sourceObjectId: args.interview_id,
+    payload: compact({
+      interview_id: args.interview_id,
+      from: compact({
+        start: row.scheduled_start_at === null ? undefined : toIso(row.scheduled_start_at),
+        end: row.scheduled_end_at === null ? undefined : toIso(row.scheduled_end_at),
+      }),
+      to: { start: startIso, end: endIso },
+      actor_id: actorId,
+      reason: args.reason,
+      reschedule_no: rescheduleNo,
+      status_from: row.status,
+      status_to: 'SCHEDULED',
+    }),
+  })
+  created.push({ table: 'event_inbox', id: eventId })
+
+  // 8. 幂等 STORE。
+  const storeWrite = await insertStoreCommand(
+    client,
+    config,
+    args,
+    args.interview_id,
+    `面试改期：第 ${row.round_no} 轮 ${row.slot_code}`,
+    `RESCHEDULE interview ${args.interview_id} → ${startIso}（${durationMinutes} 分钟）`,
+  )
+  if (storeWrite.kind === 'conflict') return await replayAfterStoreConflict(client, config, args, asOfIso)
+  created.push({ table: 'business_task', id: storeWrite.taskId })
+
+  return await buildCommandResult(
+    client, config, args, args.interview_id, asOfIso, { created, updated }, warnings, [],
+  )
+}
+
+/**
+ * `intent=CANCEL` 的事务体（§6：行保留、面评保留、`status='CANCELLED'`）。
+ * 已 `CANCELLED` 的重复取消 → 幂等成功且**零写入**（§6.1；连 STORE 也不写，见函数内注释）。
+ */
+async function runCancelCommand(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  args: CancelCommand,
+  asOfIso: string,
+  approve: (() => Promise<ApprovalDecision>) | undefined,
+): Promise<Record<string, unknown>> {
+  const tenantId = config.tenant_id
+  const actorId = config.actor_id
+
+  const store = await loadStore(client, tenantId, args.idempotency_key)
+  if (store !== null) return await replayFromStore(client, config, store, args, asOfIso)
+
+  const row = await loadInterviewForUpdate(client, tenantId, args.interview_id)
+  assertExpectedVersion(row, args.expected_record_version, args.interview_id)
+
+  // §6.1：`CANCELLED` 上重复取消是幂等成功，"成功且不写行、不重复写事件"。
+  // 这里连幂等 STORE 都不写（§6.1 的"不写行"取强口径）；重试仍安全：状态检查本身就是幂等的，
+  // 两次调用返回同一个库内事实（输出只差 `replayed` 标记）。
+  if (row.status === 'CANCELLED') {
+    return await buildCommandResult(
+      client, config, args, args.interview_id, asOfIso, { created: [], updated: [] }, [], [],
+    )
+  }
+  assertStatusAllowed(row, CANCELLABLE_STATUSES, 'CANCEL')
+
+  // 闸门（D-79）：状态/版本校验通过、第一行写之前。
+  requireApprovalGranted(approve === undefined ? 'unavailable' : await approve())
+
+  const created: ChangeRow[] = []
+  const updated: ChangeRow[] = []
+
+  // 1. UPDATE 同一行 → CANCELLED（fn_row_guard 自动写 `interview.status.changed` 事件）。
+  const cancelled = await client.query<{ id: string }>(
+    `update recruitment.interview
+        set status = 'CANCELLED', status_changed_by_actor_id = $1
+      where id = $2 and tenant_id = $3 and record_version = $4
+      returning id`,
+    [actorId, args.interview_id, tenantId, args.expected_record_version],
+  )
+  if (cancelled.rows[0] === undefined) {
+    const fresh = await loadInterviewForUpdate(client, tenantId, args.interview_id)
+    throw versionConflictError(args.interview_id, args.expected_record_version, fresh.record_version)
+  }
+  updated.push({ table: 'interview', id: args.interview_id })
+
+  // 2. 会议（SC-X6）：未发生 → 解绑 + `meeting_role='CANCELLED'`；已发生 → 不解绑（仍可能有材料要取）。
+  for (const binding of await listActiveBindings(client, tenantId, args.interview_id)) {
+    if (binding.actual_start_at !== null) continue
+    const unbound = await client.query(
+      `update recruitment.meeting_binding
+          set unbound_at = now(), unbound_reason = $1, updated_at = now()
+        where id = $2 and tenant_id = $3 and unbound_at is null`,
+      [UNBOUND_REASON_CANCELLED, binding.binding_id, tenantId],
+    )
+    if ((unbound.rowCount ?? 0) > 0) updated.push({ table: 'meeting_binding', id: binding.binding_id })
+    if (binding.meeting_role !== 'CANCELLED') {
+      const marked = await client.query(
+        `update recruitment.meeting
+            set meeting_role = 'CANCELLED', updated_at = now()
+          where id = $1 and tenant_id = $2`,
+        [binding.meeting_id, tenantId],
+      )
+      if ((marked.rowCount ?? 0) > 0) updated.push({ table: 'meeting', id: binding.meeting_id })
     }
   }
 
-  // R4 三维标签：按租户事实算（演示租户 ⇒ FIXTURE），不写死 LIVE。
-  const labels = await buildThreeAxisLabels(client, tenantId)
+  // 3. 显式审计事件（SC-X5：`interview` 没有 cancel_reason 列，理由只能落事件 payload）。
+  const eventId = await insertInternalEvent(client, tenantId, {
+    eventType: CANCEL_EVENT_TYPE,
+    idempotencyKey: auditEventKey(args, CANCEL_EVENT_TYPE),
+    sourceObjectId: args.interview_id,
+    payload: {
+      interview_id: args.interview_id,
+      reason: args.reason,
+      from_status: row.status,
+      to_status: 'CANCELLED',
+      actor_id: actorId,
+    },
+  })
+  created.push({ table: 'event_inbox', id: eventId })
 
-  return {
-    tool: TOOL_NAME,
-    contract_version: CONTRACT_VERSION,
-    status: 'OK',
-    write: true,
-    replayed: false,
-    labels,
-    intent: 'CREATE',
-    command: { idempotency_key: args.idempotency_key, args_digest: args.args_digest },
-    interview,
-    changes: { created, updated: [], unchanged: [] },
-    effects: { meeting_bound: meetingBound, external_call_made: false },
-    warnings,
-    next_actions: nextActions,
+  // 4. 幂等 STORE。
+  const storeWrite = await insertStoreCommand(
+    client,
+    config,
+    args,
+    args.interview_id,
+    `面试取消：第 ${row.round_no} 轮 ${row.slot_code}`,
+    `CANCEL interview ${args.interview_id}（${args.reason}）`,
+  )
+  if (storeWrite.kind === 'conflict') return await replayAfterStoreConflict(client, config, args, asOfIso)
+  created.push({ table: 'business_task', id: storeWrite.taskId })
+
+  return await buildCommandResult(
+    client, config, args, args.interview_id, asOfIso, { created, updated }, [], [],
+  )
+}
+
+/** 该 interviewer 行是否已有 `interviewer.withdrawn` 事件（§4.3 / §11-⑦：退出只看事件，不看布尔值）。 */
+async function countInterviewerWithdrawEvents(
+  client: DatabaseClient,
+  tenantId: string,
+  interviewId: string,
+  interviewerId: string,
+): Promise<number> {
+  const { rows } = await client.query<{ n: number }>(
+    `select count(*)::int as n
+       from recruitment.event_inbox
+      where tenant_id = $1 and event_type = $2
+        and payload->>'interview_id' = $3 and payload->>'interviewer_id' = $4`,
+    [tenantId, WITHDRAW_EVENT_TYPE, interviewId, interviewerId],
+  )
+  return rows[0]?.n ?? 0
+}
+
+/**
+ * `intent=WITHDRAW_INTERVIEWER` 的事务体（§4.3）：
+ * **不改 `interview.status`**，`required_scorecard=false` + `interviewer.withdrawn` 事件，
+ * 并在同一事务里 touch `interview` 借版本（SC-K7：`interviewer` 没有 `record_version` 列）。
+ * 已退出（有事件）→ 幂等成功且零写入。
+ */
+async function runWithdrawInterviewerCommand(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  args: WithdrawInterviewerCommand,
+  asOfIso: string,
+  approve: (() => Promise<ApprovalDecision>) | undefined,
+): Promise<Record<string, unknown>> {
+  const tenantId = config.tenant_id
+
+  const store = await loadStore(client, tenantId, args.idempotency_key)
+  if (store !== null) return await replayFromStore(client, config, store, args, asOfIso)
+
+  const loaded = await client.query<InterviewerCommandRow>(
+    `select r.id, r.interview_id, r.actor_id, r.required_scorecard,
+            i.status as interview_status, i.record_version
+       from recruitment.interviewer r
+       join recruitment.interview i
+         on i.id = r.interview_id and i.tenant_id = r.tenant_id
+      where r.id = $1 and r.tenant_id = $2
+      for update of i`,
+    [args.interviewer_id, tenantId],
+  )
+  const row = loaded.rows[0]
+  if (row === undefined) {
+    // `interviewer_id` 必须属于**本租户**的面试（跨租户一律 NOT_FOUND，不确认对方存在）。
+    throw contractError('NOT_FOUND', {
+      reason_code: 'INTERVIEWER_NOT_FOUND',
+      message: `该租户下没有 interviewer 行 ${args.interviewer_id}`,
+      detail: { interviewer_id: args.interviewer_id },
+    })
   }
+  if (row.record_version !== args.expected_record_version) {
+    throw versionConflictError(row.interview_id, args.expected_record_version, row.record_version)
+  }
+
+  // 已退出（有 `interviewer.withdrawn` 事件）→ 幂等成功且零写入（不重复写事件、不重复 touch 版本）。
+  if (await countInterviewerWithdrawEvents(client, tenantId, row.interview_id, row.id) > 0) {
+    return await buildCommandResult(
+      client, config, args, row.interview_id, asOfIso, { created: [], updated: [] }, [], [],
+    )
+  }
+
+  // 闸门（D-79）：版本/存在性校验通过、第一行写之前。
+  requireApprovalGranted(approve === undefined ? 'unavailable' : await approve())
+
+  const created: ChangeRow[] = []
+  const updated: ChangeRow[] = []
+
+  // 1. touch `interview`（SC-K7：面试官集合变更必须借 interview 的版本，否则并发"各加一人"互不可见）。
+  const touched = await client.query<{ id: string }>(
+    `update recruitment.interview
+        set updated_at = now()
+      where id = $1 and tenant_id = $2 and record_version = $3
+      returning id`,
+    [row.interview_id, tenantId, args.expected_record_version],
+  )
+  if (touched.rows[0] === undefined) {
+    const fresh = await loadInterviewForUpdate(client, tenantId, row.interview_id)
+    throw versionConflictError(row.interview_id, args.expected_record_version, fresh.record_version)
+  }
+  updated.push({ table: 'interview', id: row.interview_id })
+
+  // 2. `required_scorecard = false`（不删行：`trg_interviewer_no_delete`；也不改 actor）。
+  if (row.required_scorecard) {
+    await client.query(
+      `update recruitment.interviewer
+          set required_scorecard = false, updated_at = now()
+        where id = $1 and tenant_id = $2`,
+      [row.id, tenantId],
+    )
+    updated.push({ table: 'interviewer', id: row.id })
+  }
+
+  // 3. 显式审计事件（§4.3 第 2 步：payload 必须含 interview_id/actor_id/interviewer_id/reason/effective_from）。
+  const eventId = await insertInternalEvent(client, tenantId, {
+    eventType: WITHDRAW_EVENT_TYPE,
+    idempotencyKey: auditEventKey(args, WITHDRAW_EVENT_TYPE),
+    sourceObjectId: row.id,
+    payload: {
+      interview_id: row.interview_id,
+      actor_id: row.actor_id,
+      interviewer_id: row.id,
+      reason: args.reason,
+      effective_from: asOfIso,
+    },
+  })
+  created.push({ table: 'event_inbox', id: eventId })
+
+  // 4. 幂等 STORE。
+  const storeWrite = await insertStoreCommand(
+    client,
+    config,
+    args,
+    row.interview_id,
+    `面试官退出：${row.actor_id}`,
+    `WITHDRAW_INTERVIEWER ${row.id}（${args.reason}）`,
+  )
+  if (storeWrite.kind === 'conflict') return await replayAfterStoreConflict(client, config, args, asOfIso)
+  created.push({ table: 'business_task', id: storeWrite.taskId })
+
+  return await buildCommandResult(
+    client, config, args, row.interview_id, asOfIso, { created, updated }, [], [],
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -1736,7 +3070,7 @@ function readExecContext(exec: unknown): { agent?: unknown; signal?: AbortSignal
 }
 
 /**
- * 造真实的排期工具（`intent=CREATE` 切片）。
+ * 造真实的排期工具（D-62 四合一 intent：CREATE / RESCHEDULE / CANCEL / WITHDRAW_INTERVIEWER）。
  * @param config - 已解析的数据库配置（tenant/actor 只从这里来，模型无法传入）。
  * @param deps - 可选依赖；`approval` 缺省时写库一律被拒（D-79 fail closed）。
  */
@@ -1747,23 +3081,35 @@ export function createInterviewScheduleTool(
   return {
     name: TOOL_NAME,
     description:
-      'S8 interview scheduling — CREATE slice. Creates one interview session (application + round_no + slot_code), '
-      + 'its interviewer rows, and optionally registers an existing meeting + binding in the LOCAL database. '
+      'S8 interview scheduling with four intents (D-62): CREATE (default) creates one interview session '
+      + '(application_id + round_no + slot_code) with its interviewer rows and optionally registers an existing '
+      + 'meeting + binding; RESCHEDULE moves the SAME interview row to a new time (at least one of '
+      + 'scheduled_start_at / duration_minutes), re-runs the conflict check on the new window excluding itself, '
+      + 'optionally replaces the meeting (old binding unbound + old meeting marked REPLACED) and adds interviewers '
+      + '(add-only; already assigned => warning ALREADY_ASSIGNED); CANCEL marks SCHEDULED/RESCHEDULED as CANCELLED '
+      + 'with a required reason and releases not-yet-happened meetings (already-cancelled => idempotent success, '
+      + 'zero writes); WITHDRAW_INTERVIEWER clears that interviewer\'s required_scorecard (never deletes the row, '
+      + 'never changes interview.status) and records an interviewer.withdrawn event. There is NO COMPLETE intent: '
+      + 'post-interview edges belong to S9. '
+      + 'Every intent shares one pipeline: caller-generated idempotency_key (same key + same arguments replays the '
+      + 'first result with replayed=true and empty changes; same key + different arguments fails with '
+      + 'INVALID_ARGS(IDEMPOTENCY_KEY_REUSED)), optimistic concurrency via expected_record_version on '
+      + 'RESCHEDULE/CANCEL/WITHDRAW_INTERVIEWER (0-row update => VERSION_CONFLICT), the §8 state machine '
+      + '(illegal edge => INVALID_ARGS(INVALID_STATE_TRANSITION)), and one D-79 human approval gate after every '
+      + 'parameter/business check and BEFORE the first write (missing/unavailable answerer => rejected => nothing '
+      + 'written; FORBIDDEN with reason_code; 120s timeout => cancelled). Failures write nothing (savepoint rollback). '
+      + 'Audit facts that no column can hold are written explicitly to event_inbox: interview.rescheduled '
+      + '(from/to/actor/reason/reschedule_no), interview.cancelled (reason) and interviewer.withdrawn '
+      + '(interview_id/actor_id/interviewer_id/reason/effective_from). '
       + 'It never calls any external system (no calendar creation, no invitations), so labels.connection is always '
       + 'NOT_CONNECTED and effects.external_call_made is always false. labels.provenance is computed from the '
       + 'tenant\'s synthetic marker (FIXTURE unless the tenant is explicitly declared non-synthetic; never '
       + 'hard-coded LIVE) and labels.trigger is always MANUAL. '
-      + 'Requires a caller-generated idempotency_key: same key + same arguments replays the first result '
-      + '(replayed=true, changes.created empty); same key + different arguments fails with '
-      + 'INVALID_ARGS(IDEMPOTENCY_KEY_REUSED). Semantic idempotency is independent of the key: an existing '
-      + '(application_id, round_no, slot_code) — any status, including CANCELLED — fails with ALREADY_SCHEDULED. '
-      + 'Interviewer and candidate conflicts reject the request with CONFLICT_SLOT and write nothing. '
-      + 'Omitting meeting is allowed and honest: the interview is still scheduled, warning MEETING_NOT_BOUND is '
-      + 'returned and an INTERVIEW_MEETING_BIND task is created (next_actions BIND_MEETING). '
-      + 'Only CREATE is implemented; RESCHEDULE / CANCEL / WITHDRAW_INTERVIEWER are later slices and are rejected. '
-      + 'D-79 human gate: after every parameter/business check and BEFORE any write it asks the human for approval '
-      + '(missing/unavailable answerer => rejected => nothing is written; FORBIDDEN with reason_code). '
-      + 'This tool never writes scorecards or decisions.',
+      + 'Semantic idempotency is independent of the key: CREATE on an existing (application_id, round_no, slot_code) '
+      + '— any status, including CANCELLED — fails with ALREADY_SCHEDULED. Interviewer and candidate conflicts '
+      + 'reject the request with CONFLICT_SLOT and write nothing. Omitting meeting on CREATE is allowed and honest: '
+      + 'the interview is still scheduled, warning MEETING_NOT_BOUND is returned and an INTERVIEW_MEETING_BIND task '
+      + 'is created (next_actions BIND_MEETING). This tool never writes scorecards or decisions.',
     parameters: PARAMETERS_SCHEMA,
     output: {
       schema: OUTPUT_SCHEMA,
@@ -1785,7 +3131,7 @@ export function createInterviewScheduleTool(
           `  interviewers: ${interviewersLine(interview)}`,
           `  meeting_binding: ${binding === null ? 'unknown' : String(binding.state)} `
             + `(${binding === null ? 0 : String(binding.count)} active)`,
-          `  replayed=${String(v.replayed)}  changes.created=${created.length}  `
+          `  intent=${String(v.intent)} replayed=${String(v.replayed)}  changes.created=${created.length}  `
             + `labels: ${String(labels.provenance)}/${String(labels.trigger)}/${String(labels.connection)}`,
         ]
         for (const change of created) {
@@ -1827,8 +3173,9 @@ export function unconfiguredInterviewScheduleTool(issues: readonly string[]): Re
   return {
     name: TOOL_NAME,
     description:
-      'S8 interview scheduling (CREATE slice). Currently NOT CONFIGURED: the plugin config is missing database '
-      + 'settings (or the database password environment variable). Calls return NOT_CONFIGURED.',
+      'S8 interview scheduling (CREATE / RESCHEDULE / CANCEL / WITHDRAW_INTERVIEWER). Currently NOT CONFIGURED: '
+      + 'the plugin config is missing database settings (or the database password environment variable). '
+      + 'Calls return NOT_CONFIGURED.',
     parameters: PARAMETERS_SCHEMA,
     output: {
       schema: { type: 'object', additionalProperties: true },

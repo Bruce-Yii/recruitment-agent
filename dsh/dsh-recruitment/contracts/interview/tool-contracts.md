@@ -1,9 +1,17 @@
 # tool-contracts.md · S8/S9 两个工具的形状
 
-**版本**：`tool-contracts 1.0.0`（与 `scheduling-rules 1.0.0` / `transcript-rules 1.0.0` 同一基线）
-**日期**：2026-11-13
+**版本**：`tool-contracts 1.1.0`（与 `scheduling-rules 1.0.0` / `transcript-rules 1.0.0` 同一基线）
+**日期**：2026-11-13（**1.1.0 补注：2026-11-14**，S8 四 intent 落地时回抄口径，见 §3.9）
 **范围**：**只写契约**——入参、出参、错误码、必守性质。**不含任何实现**（不写 SQL、不写 TS）。
 **规则来源**：`scheduling-rules.md`（S8）、`transcript-rules.md`（S9）。**本文件与那两份冲突时，以那两份为准**——这里只是形状。
+
+> **1.0.0 → 1.1.0 改了什么（只补口径，不改语义）**：
+> ① `schedule` 的允许写表从 5 张扩为 **6 张**（新增 `event_inbox`）：`scheduling-rules.md` §4.3/§4.4/SC-X5
+> 要求服务层**显式**写 `interview.rescheduled` / `interview.cancelled` / `interviewer.withdrawn`，
+> 而旧形状表没有给这个写留位置——按本文件首段的优先级（与 `scheduling-rules.md` 冲突时以它为准），
+> 形状必须容纳规则要求的写。`changes.created/updated` 的 `table` 闭集同步加入 `event_inbox`。
+> ② 把四 intent 落地时遇到的边界写成 §3.9 的可判定条款（不存在"实现者自己发明"的空间）。
+> 按末段版本规则（出参增删字段 → bump `1.x.0`），故为 `1.1.0`；错误码集合与 `intent` 集合都没变。
 
 ---
 
@@ -12,7 +20,7 @@
 | 工具 | 一句话 | 读 | 写 | 会对外发东西吗 | 能产 `decision` / `scorecard` 吗 |
 |---|---|---|---|---|---|
 | `recruitment_interview_get` | 查一场（或一份申请下的若干场）面试：谁面、几点、会议绑没绑、转写有没有 | 库 | **无** | 否 | 否 |
-| `recruitment_interview_schedule` | 排定 / 改期 / 取消一场面试，并在**本地**登记会议绑定 | 库 | **有**（`interview` / `interviewer` / `meeting` / `meeting_binding` / `business_task`） | **否**（H-2） | 否 |
+| `recruitment_interview_schedule` | 排定 / 改期 / 取消一场面试，并在**本地**登记会议绑定 | 库 | **有**（`interview` / `interviewer` / `meeting` / `meeting_binding` / `business_task` / `event_inbox`） | **否**（H-2） | 否 |
 
 **六个"永远不做"**（每个都有对应的库约束或红线）：
 
@@ -61,7 +69,7 @@ JSON 必须**单行、键序稳定（字典序）**，可 `JSON.parse`。
 
 | 性质 | `recruitment_interview_get` | `recruitment_interview_schedule` |
 |---|---|---|
-| 写库 | **零写入**（静态扫描：无 `INSERT`/`UPDATE`/`DELETE`/`fs`/`fetch`/子进程） | 允许写 §0 列的 5 张表；**不得**写其它表 |
+| 写库 | **零写入**（静态扫描：无 `INSERT`/`UPDATE`/`DELETE`/`fs`/`fetch`/子进程） | 允许写 §0 列的 6 张表（含 `event_inbox` 的**内部审计事件**）；**不得**写其它表 |
 | 时钟 | 输出**不含** `evaluated_at`/`now`；唯一时间输入是显式 `as_of`，原样回显 | 写操作的时间由 DB 生成（`now()`）；**输出不含** `scheduled_by_now` 之类字段 |
 | 幂等 | 天然（同一 `(args, 数据快照)` → 逐字节相同） | **必须**显式幂等键（§4.3） |
 | 并发 | `isConcurrencySafe: true` | `isConcurrencySafe: false` |
@@ -417,7 +425,7 @@ recruitment_interview_get {"interview_id":"0199c0de-0000-7000-8000-000000000101"
 | 字段 | 规则 |
 |---|---|
 | `replayed` | `true` ⇔ 本次是幂等重放（§4.3）；此时 `changes` 的 `created`/`updated` **必须为空** |
-| `changes.created/updated` | **逐行**列出真正被写的 `(table, id)`；`table` 闭集：`interview` / `interviewer` / `meeting` / `meeting_binding` / `business_task`。**这张表就是"写没写"的证据**（失败时三数组全空） |
+| `changes.created/updated` | **逐行**列出真正被写的 `(table, id)`；`table` 闭集：`interview` / `interviewer` / `meeting` / `meeting_binding` / `business_task` / `event_inbox`（第 6 项是 §4.4 / SC-X5 / §4.3 要求的**显式审计事件**）。**这张表就是"写没写"的证据**（失败时三数组全空） |
 | `changes.unchanged` | 只为可观测性；不允许用它掩盖"该写没写" |
 | `effects.external_call_made` | **恒为 `false`**（H-2）。若某天变成 `true`，必须同时出现 `durable_effect` 引用 |
 | `next_actions[]` | 由本次写操作派生出的待办；`code` **闭集只有一个**：`BIND_MEETING`（未绑会议时）。**S8 不得创建 `SUPPLY_TRANSCRIPT`**——材料待办属 S9（`transcript-rules.md` TR-F3/TR-F7），S9 建它就是越权 |
@@ -484,6 +492,26 @@ Error: ALREADY_SCHEDULED: {"code":"ALREADY_SCHEDULED","reason_code":"SLOT_OCCUPI
 Error: VERSION_CONFLICT: {"code":"VERSION_CONFLICT","reason_code":"STALE_RECORD_VERSION","message":"该面试已被他人修改（期望版本 3，实际 4）","detail":{"interview_id":"0199…","expected_record_version":3,"actual_record_version":4}}
 ```
 
+### 3.9 四 intent 落地时补的可判定口径（2026-11-14，`1.1.0`）
+
+> 这些不是新语义，是把 §3.1 / §4.2 / §6 / §8 **没写到的边界**写成可判定条款：
+> 实现者不需要"自己发明"，复核者也不需要靠读代码猜口径。
+
+| # | 情形 | 结论 |
+|---|---|---|
+| **B-1** | `RESCHEDULE` 成功后 `interview.status` | 恒为 `SCHEDULED`。§3.2 要求 `scheduled_start_at` 与 `duration_minutes` 至少给一个（否则 `NO_CHANGE`），因此**经本工具产不出** `RESCHEDULED`（"时间作废、待重排"）这个中间态；§8 的 `SCHEDULED → RESCHEDULED` 边仍合法，只是需要"只作废时间"的入口，v1.0 不提供（本工具只允许 `RESCHEDULED` 作为**源**状态）。 |
+| **B-2** | `RESCHEDULE` 只给 `duration_minutes`，且该场当前没有 `scheduled_start_at` | `INVALID_ARGS(MISSING_REQUIRED)`（`detail.path='scheduled_start_at'`）：`ck_interview_scheduled` 不允许 `SCHEDULED` 行缺开始时间，不能用"空开始 + 新时长"拼窗口。 |
+| **B-3** | `RESCHEDULE` 只给 `duration_minutes` | 时长由现有窗口换算 `(end - start) / 60000`，必须是 15..480 的**整数**分钟（否则 `DURATION_OUT_OF_RANGE`）；且**改期后的窗口必须晚于 now**，否则 `START_IN_PAST`（对"只改时长"同样成立：过期窗口不能借改时长复活）。 |
+| **B-4** | `RESCHEDULE` 的 `meeting` 指向**已经绑在本场**的会议 | 视为空操作：不新建 binding、也不解绑其它会议（不把"重复提交同一个会议"写成破坏）；不产生 `BINDING_REUSED`。 |
+| **B-5** | `CANCEL` 打到已经 `CANCELLED` 的行 | **成功且零写入**（§6.1）：不改 `interview`、不写事件、**也不写幂等 STORE**。该分支 `replayed=false`（本次没有"首次结果"可重放），调用方重试得到同一个库内事实；不得报 `INVALID_STATE_TRANSITION`。 |
+| **B-6** | `WITHDRAW_INTERVIEWER` 打到已经退出的人（存在 `interviewer.withdrawn` 事件） | **成功且零写入**（不重复写事件、不重复 touch `interview` 版本、不写 STORE）。判"已退出"只看事件，**不看** `required_scorecard` 布尔值（§11-⑦：旁听与退出的成因不同）。 |
+| **B-7** | `WITHDRAW_INTERVIEWER` 对 `interview.status` 的要求 | **不设限制**：该 intent 不改 `status`（§3.1 / §4.3），也不在 §8 的边集里，故不对任何状态额外拦截；版本与存在性仍要过。 |
+| **B-8** | `WITHDRAW_INTERVIEWER` 的 `effective_from` | 取**本次调用的服务端时刻**（DB `now()` 的 ISO 文本）：退出是"人现在做的动作"，不拿 `scheduled_start_at` 冒充生效时刻。 |
+| **B-9** | 审计事件进不进 `changes` | 进。本工具**显式**写的 `event_inbox` 行逐条出现在 `changes.created[table='event_inbox']`；`fn_row_guard` 因状态迁移**自动**写的 `interview.status.changed` 事件不由工具写，故不列（它的证据是读回行里的 `status_source_event_id`）。 |
+| **B-10** | 审计事件的形状 | `provider='internal'` / `trust_level='INTERNAL'` / `idempotency_source='FALLBACK_KEY'`（无 `provider_event_id`，`source_object_id` = interview id 或 interviewer id）；`idempotency_key='interview_schedule:' || K || ':' || event_type`，同一命令对同一事件类型只可能写一次（`uq_event_inbox_idempotency` 兜底）。 |
+| **B-11** | `RESCHEDULE` 对未绑会议的场次 | 排定照常成立（H-3）；改期后仍无 active binding → `warnings: MEETING_NOT_BOUND`（与 CREATE 同口径）。**不**新建/不刷新补绑任务（`next_actions: BIND_MEETING` 仍是 CREATE 的语义；补绑任务 `due_at` 的刷新不在 v1.0 契约内）。 |
+| **B-12** | `RESCHEDULE` 的 `interviewer_additions` | 只增不减；已在场 → `warnings: ALREADY_ASSIGNED`（不算失败）；新增的人与既有面试官**一起**参与新窗口的冲突判定（A8）。 |
+
 ---
 
 ## 4. 幂等与冲突返回（写操作的硬要求）
@@ -523,6 +551,10 @@ DIGEST   = 'sha256:' || hex( sha256( canonical_json( args 去掉 idempotency_key
 | 执行失败（任何错误码） | — | **不留下 `SUCCEEDED` 的 STORE**：失败时该任务行 `status ∈ {FAILED, CANCELLED}` 或整笔回滚（推荐后者）。**禁止**把失败也记成可重放成功 |
 | 并发两次同 key | 后者撞 `uq_business_task_idempotency`（`0001 L1430`）→ `23505` | 服务层必须把它翻译成"重放查询 → 返回首次结果"，**不得**抛 500 |
 
+**不写 STORE 的例外（只有两处，且都是"成功但零域写入"）**：`CANCEL` 打到已 `CANCELLED`（§3.9 B-5）、
+`WITHDRAW_INTERVIEWER` 打到已退出的人（§3.9 B-6）。它们不改变任何业务事实，若写 STORE 就违反
+§6.1 的"成功且不写行"；重试仍安全，因为状态/事件检查本身就是幂等的。
+
 **幂等键由调用方生成**（不由工具生成）：工具生成就等于"每次调用都是新请求"，幂等失效。
 **语义级幂等不依赖 key**：`CREATE` 撞已有场次 → `ALREADY_SCHEDULED`（`scheduling-rules.md §6.4`）；即使调用方每次都换 key，也造不出第二场。
 
@@ -555,7 +587,7 @@ DIGEST   = 'sha256:' || hex( sha256( canonical_json( args 去掉 idempotency_key
 
 | # | 证明项 | 怎么查 |
 |---|---|---|
-| W1 | **只写 5 张表** | 静态扫描：除 `interview` / `interviewer` / `meeting` / `meeting_binding` / `business_task` 外零写语句 |
+| W1 | **只写 6 张表** | 静态扫描：除 `interview` / `interviewer` / `meeting` / `meeting_binding` / `business_task` / `event_inbox`（内部审计事件）外零写语句 |
 | W2 | **零外部调用** | 静态扫描：无 `fetch` / `http` / 子进程 / SDK import；`effects.external_call_made` 恒 `false` |
 | W3 | **失败零写入** | 用 7 个错误码各跑一次，断言 `changes.created/updated` 为空 ∧ 相关表行数不变 |
 | W4 | **单事务** | 注入一个后半段失败（如 binding 时 `23505`），断言 `interview` 行也不存在 |
