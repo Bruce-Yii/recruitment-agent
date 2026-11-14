@@ -58,8 +58,11 @@ const TOOL_NAME = 'recruitment_application_stage_advance'
  * v1.2.0（D-A 修复）：梯子从两条边扩到四条（S8→S9 / S9→S10），新增 blocker 码
  * （`INTERVIEW_NOT_COMPLETED` / `TRANSCRIPT_NOT_READY`）与 next_action_code
  * （`SCHEDULE_INTERVIEW` / `IMPORT_TRANSCRIPT` / `RESCHEDULE_INTERVIEW` / `REIMPORT_TRANSCRIPT`）。
+ * v1.3.0（G3 裁决 B）：T3 = 材料就绪（canonical READY 转写），`interview.status` 只作排期状态；
+ * T4 增加「该申请关联面试 ≥1 份 SUBMITTED 面评」前置 → 新 blocker 码 `SCORECARD_REQUIRED`
+ * 与新 next_action_code `SUBMIT_SCORECARD`（0 份时零写入）。
  */
-const CONTRACT_VERSION = '1.2.0'
+const CONTRACT_VERSION = '1.3.0'
 
 // =====================================================================
 //  入参（**只有一个键**）
@@ -186,24 +189,30 @@ const DESCRIPTION = [
   '            AND application.rubric_version_id is set (rubric version pinned);',
   '  T2 S7->S8: the current (superseded_by_decision_id is null) decision with',
   '            decision_scope=SCREENING has result=ADVANCE;',
-  '  T3 S8->S9: the interview ALREADY happened — some interview of this application has status',
-  '            IN_PROGRESS / POST_INTERVIEW / EVALUATION_READY / DECIDED, OR a transcript artifact',
-  '            for this application already exists (material in hand proves the interview happened);',
-  '  T4 S9->S10: a canonical + READY transcript artifact exists (complete source text acquired =',
-  '            the S9 material work is done). S10 is TERMINAL: stage_catalog.in_v1_scope ends at S10,',
-  '            so the pointer stops at S10 (no invented S11 edge); the S10 decision lives in the',
-  '            decision rows, not in the stage pointer.',
+  '  T3 S8->S9: the material is READY — a canonical + READY transcript artifact exists for this',
+  '            application (complete source text acquired). interview.status is ONLY a scheduling',
+  '            state (watched for hints / reschedule advice): it NEVER proves the interview happened',
+  '            and is NOT a pass condition (G3 decision B);',
+  '  T4 S9->S10: the material is usable (canonical + READY transcript) AND this application has',
+  '            AT LEAST ONE SUBMITTED scorecard (scorecard.status = SUBMITTED on one of its',
+  '            interviews); zero submitted scorecards -> BLOCKED(SCORECARD_REQUIRED) with ZERO',
+  '            writes. S10 is TERMINAL: stage_catalog.in_v1_scope ends at S10, so the pointer stops',
+  '            at S10 (no invented S11 edge); the S10 decision lives in the decision rows, not in',
+  '            the stage pointer.',
   'Returns status=ADVANCED (transitions[] lists the applied edges; one stage-change event per edge),',
   'status=NO_OP (nothing to do: the pointer already reflects the facts, or the next fact is still',
   'pending — ZERO update), or',
   'status=BLOCKED (blockers[] names the blocking fact: RUBRIC_NOT_PINNED, MATERIAL_NOT_LINKED,',
+  'status=BLOCKED (blockers[] names the blocking fact: RUBRIC_NOT_PINNED, MATERIAL_NOT_LINKED,',
   'MATERIAL_PARSE_FAILED, SCREENING_DECISION_NOT_ADVANCE, INTERVIEW_NOT_COMPLETED, TRANSCRIPT_NOT_READY,',
+  'SCORECARD_REQUIRED, APPLICATION_NOT_ACTIVE, STAGE_NOT_ON_LADDER).',
   'APPLICATION_NOT_ACTIVE, STAGE_NOT_ON_LADDER).',
   'Every blocker/warning is STRUCTURED for the workbench: it always carries owner_role',
   '(JOB_HIRING_MANAGER / RECRUITMENT_OWNER / SCREENING_DECIDER / PLATFORM_OPERATOR) and next_action_code',
   '(PIN_RUBRIC_VERSION / LINK_INTAKE_MATERIAL / REPARSE_MATERIAL / RECORD_SCREENING_DECISION /',
   'SUPERSEDE_SCREENING_DECISION / SCHEDULE_INTERVIEW / IMPORT_TRANSCRIPT / RESCHEDULE_INTERVIEW /',
-  'REIMPORT_TRANSCRIPT / REOPEN_APPLICATION / START_AT_INTAKE / VERIFY_STAGE_PROGRESSION /',
+  'REIMPORT_TRANSCRIPT / SUBMIT_SCORECARD / REOPEN_APPLICATION / START_AT_INTAKE / VERIFY_STAGE_PROGRESSION /',
+  'ADVANCE_STAGE / CONTINUE_DOWNSTREAM), plus owner_actor_id / owner_display_name when the responsible',
   'ADVANCE_STAGE / CONTINUE_DOWNSTREAM), plus owner_actor_id / owner_display_name when the responsible',
   'person is derivable from the database (job department hiring manager, or the human who made the',
   'SCREENING decision). Never regresses and never skips: if the pointer is already past S10 it returns a',

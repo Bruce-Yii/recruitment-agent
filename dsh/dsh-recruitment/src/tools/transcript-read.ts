@@ -493,7 +493,7 @@ const OUTPUT_SCHEMA = {
           type: 'string',
           enum: [
             'NO_MEETING_BOUND', 'CANONICAL_STATUS', 'READY_NO_CANONICAL', 'ONLY_PARTIAL',
-            'ONLY_AUTH_REQUIRED', 'NO_ARTIFACT_AFTER_WAIT', 'WAITING',
+            'ONLY_AUTH_REQUIRED', 'NO_ARTIFACT_AFTER_WAIT', 'WAITING', 'ARTIFACT_EMPTY',
           ],
           description: 'TR-D §5 封闭集。',
         },
@@ -881,7 +881,7 @@ export async function readTranscriptInTransaction(
       transcript_status: artifact.transcript_status,
       is_complete: artifact.is_complete,
       is_canonical: artifact.is_canonical,
-    content_chars: Number(artifact.char_count ?? 0),
+      content_chars: Number(artifact.char_count ?? 0),
     })),
     wait_minutes: waitMinutes,
   })
@@ -940,7 +940,6 @@ export async function readTranscriptInTransaction(
         trigger_mode: artifact.trigger_mode,
         connection_state: artifact.connection_state,
         is_canonical: artifact.is_canonical,
-    content_chars: Number(artifact.char_count ?? 0),
         is_complete: artifact.is_complete,
         has_more: artifact.has_more,
         char_count: toCount(artifact.char_count),
