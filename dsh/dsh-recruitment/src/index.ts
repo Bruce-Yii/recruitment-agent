@@ -86,6 +86,10 @@ import {
   unconfiguredStageAdvanceTool,
 } from './tools/stage-advance.ts'
 import { createTraceGetTool, unconfiguredTraceGetTool } from './tools/trace-get.ts'
+// 引擎持久副作用（vendor 自 dsh-superagent-prototype，MIT）：runtime 入队、这里派发。
+import { Store } from './engine/app/store.ts'
+import { Effects } from './engine/app/effects.ts'
+import { HealthBoard } from './engine/infra/health.ts'
 import { resolveDatabaseConfig, type DatabaseConfig } from './db/pool.ts'
 import {
   closePool,
@@ -359,6 +363,7 @@ export function apply(
               pool,
               tenantId: runtimeDb.tenant_id,
               actorId: runtimeDb.actor_id,
+              notification: runtimeConfig.notification,
             })
             const composed = composeRuntime({
               store,
@@ -381,8 +386,39 @@ export function apply(
                 tasks: composed.tasks,
               },
             )
+            // 引擎持久副作用（Effects 队列）的**插件侧派发者**。
+            //
+            // runtime 在它自己的异步事务里用 `effects-async.ts` 入队（launch/delivery/reply），
+            // 那些行落在 `recruitment.engine_effect`；没有这个派发者，副作用会**安全地排队但永不执行**
+            // （不丢、不假报 sent，但也没人干活）。这里把消费端接上。
+            //
+            // 同步桥的 statement_timeout 必须压到 5s：它阻塞事件循环，长查询会冻结宿主 turn。
+            const board = new HealthBoard()
+            const engineStore = new Store(
+              { ...runtimeDb, tenant_id: runtimeDb.tenant_id, statementTimeoutMs: 5_000 },
+              (error: unknown) => {
+                const logger = (ctx as unknown as { logger?: { warn(message: string): void } }).logger
+                logger?.warn(`recruitment: engine store error: ${String(error)}`)
+              },
+              board.claim('store'),
+            )
+            const engineEffects = new Effects(engineStore, board)
+            // launch / delivery 的消费者就是 runtime 自己的 tick —— 派发是幂等的（库里 SKIP LOCKED），
+            // 所以崩溃后重放安全。quiet：失败已经记在 effect 行上，不重复升级健康。
+            const drive = (): void => {
+              const controller = new AbortController()
+              void composed.router.tick(controller.signal).catch(() => undefined)
+            }
+            engineEffects.handle('launch', drive, { quiet: true })
+            engineEffects.handle('delivery', drive, { quiet: true })
+            // reply/notice 需要外部发送通道；v1.0 没有配置通道时**如实失败**，不许假装发出去。
+            engineEffects.handle('reply', () => {
+              throw new Error('no outbound channel configured (v1.0: 外发通道未配置)')
+            }, { quiet: true })
+            void engineEffects.drain()
             return () => {
               disposeHttp()
+              engineStore.close()
               void closePool(pool)
             }
           } catch (error) {

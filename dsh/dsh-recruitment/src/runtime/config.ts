@@ -3,6 +3,7 @@
 // 为什么默认关：产品 profile 一启动就多两个 POST 口子（即使有 loopback/同源校验）
 // 不是好默认；事件运行时是要显式打开的运行时能力。
 import { join } from 'node:path'
+import type { NotificationTarget } from './types.ts'
 import type { DshWorkerConfig } from './worker.ts'
 
 /** `cordis.patch.yml` 里的 `runtime` 段。 */
@@ -37,6 +38,13 @@ export interface RuntimeConfig {
   readonly pending_batch_size?: number
   /** 单条事件最多重试路由几次，默认 5。 */
   readonly max_route_attempts?: number
+  /** 出站通知目标（可选）；配置后 Task 进入 WAITING_* / FAILED 时登记消息，默认不发。 */
+  readonly notification?: {
+    readonly source?: string
+    readonly thread?: string
+    readonly address?: Readonly<Record<string, string>>
+    readonly kind?: 'notice' | 'reply' | 'acknowledgement'
+  }
 }
 
 /** 已补默认值并校验通过的运行时配置。 */
@@ -49,6 +57,7 @@ export interface ResolvedRuntimeConfig {
   readonly workspaceRoot: string | undefined
   readonly pendingBatchSize: number
   readonly maxRouteAttempts: number
+  readonly notification: NotificationTarget | undefined
 }
 
 const DEFAULT_TIMEOUT_MS = 180_000
@@ -97,6 +106,31 @@ export function resolveRuntimeConfig(
   if (dshBin === '' && fallbackBin === '') {
     issues.push('config.runtime.dsh_bin is required, or set DSH_INSTALL_DIR in the host environment')
   }
+
+  // 出站通知可选；一旦配置就必须完整，缺字段逐个列 issue（不静默发到空地址）。
+  let notification: NotificationTarget | undefined
+  if (config.notification !== undefined) {
+    const source = nonEmpty(config.notification.source)
+    const thread = nonEmpty(config.notification.thread) === '' ? 'runtime' : nonEmpty(config.notification.thread)
+    const address = config.notification.address
+    if (source === '') issues.push('config.runtime.notification.source is required when notification is configured')
+    if (address === undefined || address === null || typeof address !== 'object' || Array.isArray(address)) {
+      issues.push('config.runtime.notification.address must be an object')
+    } else {
+      const pairs = Object.entries(address)
+      if (pairs.length === 0) issues.push('config.runtime.notification.address must not be empty')
+      for (const [name, value] of pairs) {
+        if (nonEmpty(value) === '') issues.push(`config.runtime.notification.address.${name} must be a non-empty string`)
+      }
+    }
+    const kind = config.notification.kind ?? 'notice'
+    if (kind !== 'notice' && kind !== 'reply' && kind !== 'acknowledgement') {
+      issues.push('config.runtime.notification.kind must be notice | reply | acknowledgement')
+    }
+    if (source !== '' && address !== undefined && typeof address === 'object' && !Array.isArray(address) && Object.keys(address).length > 0) {
+      notification = { source, thread, address: { ...address }, kind }
+    }
+  }
   if (issues.length > 0) return { resolved: null, issues }
 
   return {
@@ -118,7 +152,9 @@ export function resolveRuntimeConfig(
       workspaceRoot: nonEmpty(config.workspace_root) === '' ? undefined : nonEmpty(config.workspace_root),
       pendingBatchSize: positiveInt(config.pending_batch_size, DEFAULT_PENDING_BATCH),
       maxRouteAttempts: positiveInt(config.max_route_attempts, DEFAULT_MAX_ROUTE_ATTEMPTS),
+      notification,
     },
     issues: [],
   }
 }
+

@@ -163,6 +163,20 @@ export function registerRuntimeHttp(ctx: RuntimeHostContext, options: RuntimeHtt
         json(res, 200, { tasks: await options.store.listTasks(limit) })
         return
       }
+      if (path.startsWith(`${ROUTE_PREFIX}/messages/`) && req.method === 'GET') {
+        const messageId = decodeURIComponent(path.slice(`${ROUTE_PREFIX}/messages/`.length))
+        if (messageId === '') {
+          json(res, 400, { error: 'message id is required' })
+          return
+        }
+        const receipt = await options.store.readMessageReceipt(messageId)
+        if (receipt === null) {
+          json(res, 404, { error: 'receipt not found', message_id: messageId })
+          return
+        }
+        json(res, 200, { message_id: messageId, receipt })
+        return
+      }
       if (path.startsWith(`${ROUTE_PREFIX}/tasks/`) && req.method === 'GET') {
         const taskId = path.slice(`${ROUTE_PREFIX}/tasks/`.length)
         if (taskId === '') {
