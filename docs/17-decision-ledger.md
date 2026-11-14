@@ -1054,6 +1054,12 @@ connector 报"无转写" → HR 看到"无转写" → 面试官无法基于证�
 R-1 96.2%、R-2 100%（`blocking_for_structure` 阻断 0 份）、R-3 100%。
 **发现并修**：converter 超时 60s 不够（OCR 后单份可达 53s+）→ 提到 180s。
 
+**更正（2026-11-14 复核，D-104）**：上述 50/2、R-1 96.2% 是 **60s 口径/高负载**下的数，
+其中 `TIMEOUT` 是**假失败**（reader 没坏，是超时预算不足）。180s 口径复跑全量 52 份为
+**read_ok 51 / failed 1（仅 `EMPTY_FILE`）**，**R-1 98.1%**、R-2 100%、R-3 100%，
+最慢单份 46.6s（高并发时曾 127s，仍余 53s）。门槛判定从此**强制全量语料**（见 D-104），
+默认抽样只作开发回路且必须打印 `SAMPLED — 不构成门槛判定`。
+
 **证据**：`test/document/recovery-execute.test.ts`（20 条）、`test/regression/**`（9 条）、`docs/11 §11`。
 
 ### D-100 · 跨块归因要**产出结果**，不能只拦住；版式类阻断与"文字不可用"分开
@@ -1146,3 +1152,45 @@ v1 = 旧四键（无原话时逐字节不变，库里旧 hash 不假红）；v2 
 **已知残余（另开跟进）**：DC-27 的 `basis_refs[SCREENING_DECISION].basis_refs` 嵌套键仍被 parser 按
 `UNKNOWN_PARAM` 拒掉（`hasScreeningRejectionBasis` 是死代码）；`screening_evaluate` → `basis_refs` 的组装
 仍是 agent 侧手工按 §3.7 拼，工具不出 `basis_refs`。
+
+### D-104 · 门槛判定必须跑全量语料；抽样只作开发回路
+
+**裁定（2026-11-14，总控）**：
+
+1. **门槛判定强制全量**：R-1/R-2/R-3 的达标结论只允许在 `RECRUITMENT_CORPUS_GATE=1` +
+   `RECRUITMENT_CORPUS_SAMPLE=all`（52/52）下得出。声明 GATE 却没跑全量 → 测试直接 fail，
+   **不允许被默认抽样绕过**。
+   理由（算术）：1/52 的坏文件默认抽 20 份命中概率约 38%，即默认跑法下有 62% 的概率
+   R-3 是空断言——门槛等于不存在。
+2. **抽样保留但降级**：默认 20 份仍可跑，必须打印 `mode = SAMPLED — 不构成门槛判定`
+   且 `thresholds = NOT EVALUATED`，断言只作"样本内 smoke"，不得出现任何达标结论。
+3. **超时口径跟产品走**：回归用 180s（`RECRUITMENT_CORPUS_TIMEOUT_MS` 可覆盖），
+   不再硬编码 60s。60s 下的 `TIMEOUT` 是假失败（D-99 更正：51/1、R-1 98.1%）。
+4. **失败必须分类**：`file_unreadable` / `reader_defect` / `reader_failed_or_slow` /
+   `not_attempted` 四类分别打印，reader 自身缺陷不得被算成"语料坏了"。
+
+**门槛跑实测**：52/52，read_ok 51 / read_failed 1（`EMPTY_FILE`，2 字节占位文件），
+R-1 98.1% PASS、R-2 100% PASS、R-3 100% PASS。
+
+**证据**：`dsh/dsh-recruitment/test/regression/real-corpus.test.ts`、`docs/11 §11.2–§11.4`。
+
+### D-105 · 复用 dsh-superagent 原型的四个部件（研究结论，未采纳其代码）
+
+**裁定（2026-11-14，总控）**：`deepseek-ai/dsh-superagent-prototype`（MIT，研究原型，单 commit）
+是同一运行时上的完整参考实现。**只复用形状，不 vendor 代码**，按价值排序：
+
+1. **人类闸门 = 领域对象 `Attention` + 面板一行**（`core/model.ts:275`），不是 `ctx.approval`。
+   该原型解决的就是我们 D-79 的四个病（headless 无应答者、120s 超时、只认一次点击、跨会话恢复不了）：
+   问题是一条可持久化的记录，答完即消失，无超时。**待产品负责人确认后另立决策取代 D-79 的机制。**
+2. **工作台面板骨架**：`dsh.client` + `ctx.slots.inject` 三行注册 + 宿主 `registerHttp`。
+   已在隔离实例验证：宿主插件 + 客户端插件 + bundle 三层在 DSH 0.2.2-rc.3 + Windows 上可同时工作，零改 DSH 源码。
+3. **飞书 Source 四段循环**（`feishu-read/loops/trigger/channel`）：读群历史 → 轮询订阅线程 →
+   事件消费 → 回写。我们仍是零 I/O 骨架，卡在真实凭据。
+4. **执行器规则**（抄规则不抄代码）：一个工单 = 一个持久 session + 一个目录；后台作业 30 分钟上限；
+   人工唤醒可插队槽位；重启带 recovery note。
+5. **不抄**：`core/` 的 Eval/Policy/Mandate（我们五事实更贴招聘）、`store.ts` 的单机 SQLite（与 D-5 冲突）。
+
+**可移植性警告（实测）**：该原型是 POSIX-only 写的，`deployment.ts:13` 的绝对路径校验为 `/^\//`，
+Windows 上插件直接不激活。我们自己的 DSH 插件凡校验路径处**必须验 Windows 绝对路径**。
+
+**证据**：`recruitment-os/work/research/2026-11-14-dsh-superagent-assessment.md`（含 B 档受控试装记录与截图）。
