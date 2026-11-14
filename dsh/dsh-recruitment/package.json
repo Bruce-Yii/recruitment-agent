@@ -39,9 +39,12 @@
   ],
   "license": "UNLICENSED",
   "dependencies": {
+    "@deepseek-ai/cordis": "4.1.0",
     "pg": "^8.23.1"
   },
   "devDependencies": {
+    "@types/node": "22.20.0",
+    "@types/pg": "8.15.5",
     "@types/react": "18.3.28",
     "tsdown": "0.22.14",
     "typescript": "6.0.3"
