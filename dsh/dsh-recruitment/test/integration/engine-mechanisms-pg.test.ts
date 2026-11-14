@@ -12,7 +12,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import pg from 'pg'
 
-import { testDatabaseConfig } from './db.ts'
+import { assertPrivateDatabase, createIsolatedTestDatabase, testDatabaseConfig, type IsolatedTestDatabase } from './db.ts'
+import type { ResolvedDatabaseConfig } from '../../src/db/pool.ts'
 import { Store } from '../../src/engine/app/store.ts'
 import { Effects, Later } from '../../src/engine/app/effects.ts'
 import { Outbox } from '../../src/engine/app/outbox.ts'
@@ -28,6 +29,26 @@ const TENANT = '11111111-1111-4111-8111-000000000001'
 const ENGINE_TABLES = ['engine_trigger', 'engine_disposition', 'engine_trigger_thread', 'engine_thread',
   'engine_ticket', 'engine_decision', 'engine_outbox', 'engine_effect', 'engine_kv']
 
+// ── 隔离（并发跑的硬前提）──────────────────────────────────────────────
+// 引擎的副作用队列是**全局按 kind 消费**的：`src/engine/app/effects.ts` 的 dispatch 只按
+// `kind` 选行（没有 tenant 过滤），Outbox 的 `message_id` 也是全局唯一。共用 `ra_s6s7` 时，
+// 并行跑的另一个测试文件会把本文件排队的 effect 取走执行并删行，或把本文件的行整表清掉
+// （实测：effect 行凭空消失、同一 trigger 的第二次投递从 duplicate 变回 stored）。
+// 加 advisory lock 串行只是掩盖症状；根因是**共享的可变全局状态**，所以本文件独占一个
+// 一次性空库（迁移 0001→N 在空库重放，顺带验证迁移链）。
+let database: IsolatedTestDatabase
+let cfg: ResolvedDatabaseConfig
+
+test.before(async () => {
+  database = await createIsolatedTestDatabase('engine_mechanisms')
+  assertPrivateDatabase(database.name)
+  cfg = { ...testDatabaseConfig(), database: database.name }
+})
+
+test.after(async () => {
+  await database?.drop()
+})
+
 const readRow = async (client: pg.Client, table: string, column: string, value: string) =>
   (await client.query(`select value from recruitment.${table} where ${column} = $1`, [value])).rows[0]?.value as Record<string, unknown> | undefined
 
@@ -37,16 +58,30 @@ const readEffect = async (client: pg.Client, key: string) =>
     .rows[0] as { kind: string; key: string; seq: string; generation: number; attempts: number; error: string; due: string } | undefined
 
 /**
- * 清空本租户的引擎表，让测试可重复。
+ * 清本文件用到的键（私有库里其实可以直接清整表；仍然按 key 清是为了让"本文件只负责自己的
+ * 键空间"这条纪律在代码里可见）。
  *
- * engine_trigger / engine_decision 挂着 0012 的“历史事实禁删”触发器（`fn_block_delete`）；本测试要保留那个守卫，
- * 所以清理时显式切 `session_replication_role = replica` 绕过触发器（superuser 连接，仅在清理这一段生效）。
- * 守卫本身是否生效，由“用正常 DELETE 直击 engine_trigger 应被拒绝”这一条断言覆盖。
+ * `fn_block_delete` 的守卫仍然保留：清理时切 `session_replication_role = replica`
+ * 绕过它，另有一条断言专门验证「正常 DELETE 会被拒绝」。
  */
+const OWN = {
+  effectKeys: ['notice-1', 'relay-1', 'later-1'],
+  outboxIds: ['m-1', 'm-2', 'm-readback-present', 'm-readback-absent', 'm-readback-error'],
+  triggerIds: ['tg-1', 'tg-2', 'tg-3', 'tg-4'],
+  threadKeys: ['probe:thread-1'],
+  ticketIds: ['ticket-fanout'],
+}
+
 async function reset(client: pg.Client): Promise<void> {
   await client.query('set session_replication_role = replica')
   try {
-    for (const table of ENGINE_TABLES) await client.query(`delete from recruitment.${table} where tenant_id = $1`, [TENANT])
+    await client.query('delete from recruitment.engine_effect where key = any($1::text[])', [OWN.effectKeys])
+    await client.query('delete from recruitment.engine_outbox where message_id = any($1::text[])', [OWN.outboxIds])
+    await client.query('delete from recruitment.engine_disposition where disposition_id = any($1::text[])', [OWN.triggerIds])
+    await client.query('delete from recruitment.engine_trigger_thread where trigger_id = any($1::text[])', [OWN.triggerIds])
+    await client.query('delete from recruitment.engine_trigger where trigger_id = any($1::text[])', [OWN.triggerIds])
+    await client.query('delete from recruitment.engine_thread where thread_key = any($1::text[])', [OWN.threadKeys])
+    await client.query('delete from recruitment.engine_ticket where ticket_id = any($1::text[])', [OWN.ticketIds])
   } finally {
     await client.query('set session_replication_role = default')
   }
@@ -58,7 +93,6 @@ const message = (id: string): OutboundMessage => ({
 })
 
 test('四个优先机制在真实 PostgreSQL 上端到端成立', async () => {
-  const cfg = testDatabaseConfig()
   const board = new HealthBoard()
   const sidecar = new pg.Client({ host: cfg.host, port: cfg.port, user: cfg.user, database: cfg.database, password: cfg.password })
   await sidecar.connect()
@@ -116,7 +150,7 @@ test('四个优先机制在真实 PostgreSQL 上端到端成立', async () => {
     outbox.send(message('m-1'))
     assert.equal((await readRow(sidecar, 'engine_outbox', 'message_id', 'm-1') as { status?: string }).status, 'pending')
     outbox.send(message('m-1'))
-    assert.equal((await sidecar.query('select count(*)::int n from recruitment.engine_outbox')).rows[0].n, 1, '同一 message_id 只能有一条回执')
+    assert.equal((await sidecar.query("select count(*)::int n from recruitment.engine_outbox where message_id in ('m-1','m-2')")).rows[0].n, 1, '同一 message_id 只能有一条回执')
     await outbox.sent()
     assert.deepEqual(sent, ['m-1'])
     assert.equal((await readRow(sidecar, 'engine_outbox', 'message_id', 'm-1') as { status?: string }).status, 'sent')
@@ -221,7 +255,7 @@ test('四个优先机制在真实 PostgreSQL 上端到端成立', async () => {
   }
 })
 
-test('effect 的 Later 不消耗失败次数（暂停/无槽位重排队）', async () => {  const cfg = testDatabaseConfig()
+test('effect 的 Later 不消耗失败次数（暂停/无槽位重排队）', async () => {
   const board = new HealthBoard()
   const sidecar = new pg.Client({ host: cfg.host, port: cfg.port, user: cfg.user, database: cfg.database, password: cfg.password })
   await sidecar.connect()
@@ -249,7 +283,6 @@ test('effect 的 Later 不消耗失败次数（暂停/无槽位重排队）', as
 })
 
 test('同步桥的代价与失败语义：语句超时被取消、worker 被杀后重建', async () => {
-  const cfg = testDatabaseConfig()
   const board = new HealthBoard()
   const store = new Store({
     host: cfg.host, port: cfg.port, user: cfg.user, database: cfg.database, password: cfg.password,
@@ -270,7 +303,6 @@ test('同步桥的代价与失败语义：语句超时被取消、worker 被杀�
   }
 })
 test('回读端口：present 不重发 / absent 才重发 / 回读抛错不重发', async () => {
-  const cfg = testDatabaseConfig()
   const board = new HealthBoard()
   const sidecar = new pg.Client({ host: cfg.host, port: cfg.port, user: cfg.user, database: cfg.database, password: cfg.password })
   await sidecar.connect()

@@ -11,7 +11,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import pg from 'pg'
 
-import { cfg, TENANT } from './harness.ts'
+import { cfg as sharedCfg, TENANT } from './harness.ts'
+import {
+  assertPrivateDatabase,
+  createIsolatedTestDatabase,
+  type IsolatedTestDatabase,
+} from '../integration/db.ts'
+import type { ResolvedDatabaseConfig } from '../../src/db/pool.ts'
 import { Store } from '../../src/engine/app/store.ts'
 import { Effects } from '../../src/engine/app/effects.ts'
 import { Outbox } from '../../src/engine/app/outbox.ts'
@@ -24,6 +30,28 @@ import type { OutboundMessage, Ticket, Trigger } from '../../src/engine/core/ind
 
 const ENGINE_TABLES = ['engine_trigger', 'engine_disposition', 'engine_trigger_thread', 'engine_thread',
   'engine_ticket', 'engine_decision', 'engine_outbox', 'engine_effect', 'engine_kv']
+
+// ── 隔离（并发跑的硬前提）──────────────────────────────────────────────
+// 引擎的 effect 队列是**全局按 kind 消费**的（`src/engine/app/effects.ts` 的 dispatch 只按
+// kind 选行，没有 tenant 过滤），Outbox 的 message_id 也全局唯一。共用 `ra_s6s7` 时，
+// 并行跑的 `engine-mechanisms-pg` / `engine-effects-junction-pg` 会与本文件互相偷行/清行
+// （实测：effect 行凭空消失、`count(*)` 断言 1 !== 0）。加 advisory lock 串行只是掩盖症状；
+// 根因是共享的可变全局状态，所以本文件独占一个一次性空库（迁移 0001→N 在空库重放）。
+let database: IsolatedTestDatabase
+let cfg: ResolvedDatabaseConfig
+
+test.before(async () => {
+  database = await createIsolatedTestDatabase('accept_engine')
+  assertPrivateDatabase(database.name)
+  // 同名租户（0002_seed 的演示租户）在空库里同样存在，所以 TENANT 不变；
+  // 只把连接指向本文件自己的库（不碰共享的 ra_s6s7）。
+  assert.notEqual(database.name, sharedCfg.database, '本文件必须独占数据库，不许回落到共享库')
+  cfg = { ...sharedCfg, database: database.name }
+})
+
+test.after(async () => {
+  await database?.drop()
+})
 
 /** 清空本租户的引擎表（保留禁删触发器；只在这一段临时切 replica）。 */
 async function reset(client: pg.Client): Promise<void> {

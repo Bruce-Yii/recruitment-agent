@@ -148,7 +148,10 @@ test('关联 ≠ 合并：强标识命中已有档案 → 复用 candidate、新
     assert.equal(value.candidate_created, false)
     assert.equal(value.matched_by, 'phone')
     assert.equal(value.created, true)
-    const merges = await count(client, 'select count(*) as n from recruitment.candidate_merge where tenant_id = $1', [TENANT])
+    // 只数本用例这两个人相关的合并行：共享库里别的测试/别的 lane 可能合法地提交过合并行
+    // （并行跑时整表 `count(*) ... = 0` 会把"别人有历史"误判成"本次写脏了"）。
+    const merges = await count(client, `select count(*) as n from recruitment.candidate_merge
+       where tenant_id = $1 and (surviving_candidate_id = $2 or merged_candidate_id = $2)`, [TENANT, existing])
     assert.equal(merges, 0, '关联不是合并：不得写 candidate_merge')
   })
 })

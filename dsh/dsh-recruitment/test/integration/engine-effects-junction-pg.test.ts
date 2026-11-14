@@ -10,7 +10,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import pg from 'pg'
 
-import { testDatabaseConfig } from './db.ts'
+import { assertPrivateDatabase, createIsolatedTestDatabase, testDatabaseConfig, type IsolatedTestDatabase } from './db.ts'
+import type { ResolvedDatabaseConfig } from '../../src/db/pool.ts'
 import { Store } from '../../src/engine/app/store.ts'
 import { Effects } from '../../src/engine/app/effects.ts'
 import { Outbox } from '../../src/engine/app/outbox.ts'
@@ -22,9 +23,27 @@ const TENANT = '11111111-1111-4111-8111-000000000001'
 const ENGINE_TABLES = ['engine_trigger', 'engine_disposition', 'engine_trigger_thread', 'engine_thread',
   'engine_ticket', 'engine_decision', 'engine_outbox', 'engine_effect', 'engine_kv']
 
+// ── 隔离（并发跑的硬前提）──────────────────────────────────────────────
+// 引擎的 effect 队列是**全局按 kind 消费**的（`src/engine/app/effects.ts` 的 dispatch 没有
+// tenant 过滤），Outbox 的 `message_id` 也全局唯一。共用 `ra_s6s7` 时并行跑的另一个测试文件
+// 会消费/清掉本文件的行（实测 effect 行凭空消失）。加锁串行只是掩盖症状；根因是共享的
+// 可变全局状态，所以本文件独占一个一次性空库（顺带验证 0001→N 迁移链可在空库跑通）。
+let database: IsolatedTestDatabase
+let cfg: ResolvedDatabaseConfig
+
+test.before(async () => {
+  database = await createIsolatedTestDatabase('engine_junction')
+  assertPrivateDatabase(database.name)
+  cfg = { ...testDatabaseConfig(), database: database.name }
+})
+
+test.after(async () => {
+  await database?.drop()
+})
+
 /**
- * 只清本文件自己的键（不清整表）：`node --test` 会并行跑多个测试文件，共用同一租户的 engine_* 表。
- * 本文件用到的键固定，重复跑前先按它们清理。
+ * 清本文件用到的键。私有库里其实可以直接清整表；仍然按 key 清，是为了让
+ * "每个文件只负责自己的键空间"这条纪律在代码里可见。
  */
 async function reset(client: pg.Client): Promise<void> {
   await client.query('set session_replication_role = replica')
@@ -42,11 +61,9 @@ const message = (id: string): OutboundMessage => ({
 })
 
 test('runtime 的异步事务写副作用 → 插件的 Effects/Outbox 派发（同一批表）', async () => {
-  const cfg = testDatabaseConfig()
   const board = new HealthBoard()
   const sidecar = new pg.Client({ host: cfg.host, port: cfg.port, user: cfg.user, database: cfg.database, password: cfg.password })
   await sidecar.connect()
-  await acquireTestLock(sidecar)
   const store = new Store({
     host: cfg.host, port: cfg.port, user: cfg.user, database: cfg.database, password: cfg.password,
     tenant_id: TENANT, statementTimeoutMs: 5_000, applicationName: 'engine-junction-test',
@@ -105,22 +122,7 @@ test('runtime 的异步事务写副作用 → 插件的 Effects/Outbox 派发（
   } finally {
     await runtimeClient.end()
     await reset(sidecar)
-    await releaseTestLock(sidecar)
     await sidecar.end()
     store.close()
   }
 })
-
-/**
- * 这三个集成测试文件共用同一个租户的 engine_* 表（尤其 engine_effect 是**单一队列**：
- * 任何持有 Effects 的进程都会消费同 kind 的行）。`node --test` 默认并行跑文件，
- * 两个进程同时消费同一队列会互相偷行，所以用 PG 会话级 advisory lock 把这三个文件串起来。
- * 锁超时 30s：上一个测试若崩溃没释放，这里会明确报错而不是永久挂住。
- */
-async function acquireTestLock(client: pg.Client): Promise<void> {
-  await client.query("set lock_timeout = '30s'")
-  await client.query("select pg_advisory_lock(hashtext('recruitment_engine_integration'))")
-}
-async function releaseTestLock(client: pg.Client): Promise<void> {
-  await client.query("select pg_advisory_unlock(hashtext('recruitment_engine_integration'))")
-}
