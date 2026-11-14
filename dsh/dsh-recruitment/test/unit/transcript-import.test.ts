@@ -103,16 +103,19 @@ test('content 上限：MAX 通过，MAX+1 被拒 OUT_OF_RANGE', () => {
   })
 })
 
-test('入参 schema：封闭对象根；labels 的 trigger/connection 是单值闭集（不可能出现 EVENT/CONNECTED）', () => {
+test('入参 schema：封闭对象根；labels 的 trigger/connection 是闭集（不可能出现 EVENT/CONNECTED）', () => {
   assert.notEqual(DATABASE, null)
   const tool = createTranscriptImportTool(DATABASE!)
   const parameters = tool.parameters as {
     type: string
     additionalProperties: boolean
+    required: string[]
     properties: Record<string, { enum?: string[] }>
   }
   assert.equal(parameters.type, 'object')
   assert.equal(parameters.additionalProperties, false)
+  // content 变成可选（连接器回读路径不给正文），但 interview_id 仍然必填。
+  assert.deepEqual([...parameters.required], ['interview_id'])
   assert.deepEqual([...((parameters.properties.source_kind?.enum) ?? [])], ['PLATFORM_EXPORT', 'DEMO_SAMPLE'])
 
   const schema = tool.output.schema as {
@@ -121,7 +124,9 @@ test('入参 schema：封闭对象根；labels 的 trigger/connection 是单值�
     }
   }
   assert.deepEqual([...schema.properties.labels.properties.trigger.enum], ['MANUAL'])
-  assert.deepEqual([...schema.properties.labels.properties.connection.enum], ['NOT_CONNECTED'])
+  // 连接器回读可以如实说 AUTH_REQUIRED；但绝不出现 CONNECTED（Live Gate=BLOCKED）。
+  assert.deepEqual([...schema.properties.labels.properties.connection.enum], ['NOT_CONNECTED', 'AUTH_REQUIRED'])
+  assert.equal(schema.properties.labels.properties.connection.enum.includes('CONNECTED'), false)
 })
 
 test('输出 schema 只用 DSH 子集：没有 type:null / type 数组', () => {

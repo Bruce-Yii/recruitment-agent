@@ -15,16 +15,19 @@
 //   recruitment_screening_evaluate     **S7 只读**：对一条申请出带证据的建议
 //   recruitment_interview_schedule     **S8 写库**：约面试（幂等 CREATE-only）
 //   recruitment_interview_get          **S8 只读**：面试 + 会议绑定 + 转写 + 面评状态
-//   recruitment_transcript_import      **S9 写库**：人工导入转写（raw_text 不可变）
+//   recruitment_transcript_import      **S9 写库**：人工导入 / 飞书连接器回读转写（raw_text 不可变）
 //   recruitment_transcript_read        **S9 只读**：转写状态投影
 //   recruitment_scorecard_submit       **S10 写库**：一位 HUMAN 面试官交自己那份面评
 //   recruitment_evaluation_summarize   **S10 只读**：汇总投影（不产建议结论）
 //   recruitment_decision_record        **S10 写库**：记录人已做出的决定（必须过 ctx.approval）
 //
-// 配置来自 cordis.patch.yml 的 config 段，共两段：
+// 配置来自 cordis.patch.yml 的 config 段，共三段：
 //   converter: python_bin / converter_dir / allowed_roots   （resume_read + intake 要）
 //   database:  host / port / user / database / tenant_id / actor_id / password_env
 //              **密码只从环境变量读**（默认 RECRUITMENT_DB_PASSWORD），配置里不出现密码。
+//   feishu:    cli（lark-cli 的**绝对路径**）/ timeout_ms / max_attempts / page_size / max_pages
+//              **可选**：给了才装配飞书连接器传输层；缺省 = 不装配（连接器回读路径
+//              BLOCKED/TRANSPORT_NOT_CONFIGURED，不拉子进程）。**绝不放宽**成读 PATH / 环境变量。
 //
 // 缺任何一段时**工具仍然注册**，但调用返回 NOT_CONFIGURED 并列出缺什么——
 // 不静默降级、不假装能读、不返回假数据（沿用 unconfiguredResumeReadTool 的既有做法）。
@@ -75,6 +78,7 @@ import { createScorecardSubmitTool } from './tools/scorecard-submit.ts'
 import { createEvaluationSummarizeTool } from './tools/evaluation-summarize.ts'
 import { createDecisionRecordTool } from './tools/decision-record.ts'
 import { resolveDatabaseConfig, type DatabaseConfig } from './db/pool.ts'
+import { resolveFeishuConnector, type FeishuConnectorConfig } from './connectors/feishu/index.ts'
 import { registerOverviewHttp, type OverviewHostContext } from './http/overview.ts'
 import { RecruitmentToolError } from './tools/errors.ts'
 
@@ -143,6 +147,12 @@ export interface Config {
   readonly converter?: ConverterConfig
   /** 业务库（S6 写 / S7 读）。密码只在环境变量里。 */
   readonly database?: DatabaseConfig
+  /**
+   * 飞书连接器（**可选**）。只有给了 `cli`（lark-cli 的绝对路径）才装配传输层；
+   * 缺省 = 不装配，`recruitment_transcript_import` 的连接器回读路径返回
+   * BLOCKED/TRANSPORT_NOT_CONFIGURED，不拉任何子进程。
+   */
+  readonly feishu?: FeishuConnectorConfig
 }
 
 /**
@@ -280,6 +290,10 @@ export function apply(
 ): void {
   const converter = resolveConverterConfig(config?.converter ?? {})
   const database = resolveDatabaseConfig(config?.database ?? {}, env)
+  // 飞书连接器（E4 接线）：**只从插件配置**装配传输层；没配 feishu.cli 时 connector=undefined，
+  // 转写导入的连接器回读路径 fail-closed（BLOCKED/TRANSPORT_NOT_CONFIGURED，不拉子进程）。
+  // env 只用于适配器判断凭据**存在性**（布尔），绝不用于取 CLI 路径（R7 / AGENTS.md §7.6）。
+  const feishu = resolveFeishuConnector(config?.feishu ?? {}, env)
   // 工作台面板（浏览器侧唯一数据入口）：只读、loopback、同源校验；见 src/http/overview.ts。
   //
   // **必须用可选注入，不能把 webServer 放进顶层 inject。** 顶层 inject 是硬依赖：
@@ -363,9 +377,13 @@ export function apply(
     : createInterviewGetTool(database.resolved)
 
   // ── S9 转写线：只要 database。raw_text 不可变、来源必须显式标 provenance。
+  // 连接器回读依赖由插件配置 `feishu` 装配：没配 = 默认态（BLOCKED，不拉子进程）。
   const transcriptImport = database.resolved === null
     ? unconfiguredTranscriptImportTool(database.issues)
-    : createTranscriptImportTool(database.resolved)
+    : createTranscriptImportTool(database.resolved, {
+      connector: feishu.connector,
+      connector_issues: feishu.issues,
+    })
   const transcriptRead = database.resolved === null
     ? unconfiguredTranscriptReadTool(database.issues)
     : createTranscriptReadTool(database.resolved)

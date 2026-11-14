@@ -9,10 +9,21 @@
 //     `source_revision` 在插入后**不可改**（`0001 L1777` 的列级白名单）；
 //   * 所以**不插占位行**（TR-C7）：首次 INSERT 就带全内容 + 终态 `READY` + sha + 回执（LIMIT 见 TR-C8）；
 //   * 平台修订 → 新 `source_revision` 行（TR-U7），canonical 同事务迁移（TR-U9），旧行保留；
-//   * 内容 sha 没变 → 一行都不写（TR-U8，`replayed=true`）；
-//   * 人工导入**不冒充飞书已接通**：`trigger_mode` 恒 `MANUAL`、`connection_state` 恒 `NOT_CONNECTED`；
-//     `provenance='LIVE'` 只给声明为 `PLATFORM_EXPORT` 且给出导出文件名的调用，并附
-//     `EXPORT_RECEIPT_IS_SELF_DECLARED`（回执是人工自述，我们没连平台，TR-S3/TR-S4）。
+//   * 内容 sha 没变 → 一行都不写（TR-U8，`replayed=true`）。
+//
+// **两条来源路径**（2026-11-14 起；此前只有人工上传）：
+//   1. `MANUAL`：调用方给 `content`（+`source_kind`）。人工上传**不冒充飞书已接通**：
+//      `trigger_mode` 恒 `MANUAL`、`connection_state` 恒 `NOT_CONNECTED`；`provenance='LIVE'`
+//      只给声明为 `PLATFORM_EXPORT` 且给出导出文件名的调用，并附
+//      `EXPORT_RECEIPT_IS_SELF_DECLARED`（回执是人工自述，我们没连平台，TR-S3/TR-S4）。
+//   2. `CONNECTOR_READBACK`：调用方**不给正文**、给 `minute_token`（或 `external_meeting_id`），
+//      由飞书连接器 `fetchTranscript()` 回读取正文。**默认态是 fail-closed**：
+//      插件配置里没有 `feishu.cli`（lark-cli 绝对路径）时不装配传输层，本路径直接
+//      `BLOCKED / TRANSPORT_NOT_CONFIGURED`，不拉进程、不读正文、不写任何行。
+//      即使装配了传输层并读到字节，Live Gate 仍是 `BLOCKED` → 回读对象
+//      `transport='FIXTURE'`，落库标签只能是 `provenance=FIXTURE + trigger=MANUAL +
+//      connection∈{NOT_CONNECTED, AUTH_REQUIRED}`；本工具**永不**把回读写成 LIVE/CONNECTED
+//      （要升级必须由人先按 `connectors/feishu/README.md §7` 解锁 Gate 并改本文件）。
 //
 // 写事务：`withActor`（`set_config('recruitment.actor_id', …, true)`，等价 SET LOCAL），单事务；
 // 任何失败整笔回滚 —— `changes` 全空就是"没写"的证明（TC §1.3）。
@@ -26,6 +37,17 @@ import { parseContractArgs, toParameterSchema, type ParamMap } from './args.ts'
 import { canonicalJson } from './contract.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { closePool, createPool, withActor, type DatabaseClient, type ResolvedDatabaseConfig } from '../db/pool.ts'
+import {
+  FEISHU_MINUTES_CONNECTOR_ID,
+  FEISHU_MINUTES_PROVIDER,
+  readNonEmptyString,
+  type Connection,
+  type FeishuCliTranscriptReadback,
+  type FeishuConnectorDependency,
+  type FeishuMinutesAdapter,
+  type FeishuTranscriptBlocked,
+  type FeishuTranscriptWaitingExternal,
+} from '../connectors/feishu/index.ts'
 
 const TOOL_NAME = 'recruitment_transcript_import'
 /** 契约版本（`tool-contracts.md` / RD §3 同一基线）。 */
@@ -44,8 +66,20 @@ const RECORD_SCHEMA_VERSION = 1
 const SECTIONS_SCHEMA = 'manual-import.sections/1'
 /** 片段来源引用（可追溯是谁写的：人工导入）。 */
 const SEGMENT_RAW_SOURCE_REF = 'manual-import'
+/** 片段来源引用（连接器回读：字节来自 `lark-cli-transport`，但 Gate=BLOCKED 时不代表平台来源已核实）。 */
+const SEGMENT_RAW_SOURCE_REF_CONNECTOR = 'feishu-connector-readback'
 /** 同 meeting 下按 provider_artifact_id 生成（**不编造平台标识**，RD §2）。 */
 const ARTIFACT_ID_PREFIX = 'local:'
+/** 连接器回读产物的 provider_artifact_id 前缀（`local:` 明确表示「未经平台核实」）。 */
+const FEISHU_READBACK_ARTIFACT_PREFIX = `${ARTIFACT_ID_PREFIX}feishu-minutes:`
+/** 连接器回读的确定性记录（不是模型抽取，与人工导入同形，但来源不同）。 */
+const CONNECTOR_RECORD_MODEL_ID = 'none:connector-readback'
+const CONNECTOR_RECORD_PROMPT_VERSION = 'connector-readback/1.0.0'
+const CONNECTOR_SECTIONS_SCHEMA = 'feishu-connector-readback.sections/1'
+/** 连接器回读的 `provenance_basis`：读到了字节，但 Gate=BLOCKED 不构成 LIVE 依据。 */
+export const FEISHU_READBACK_PROVENANCE_BASIS = 'FEISHU_READBACK_NO_LIVE_GATE'
+/** `sections.source.kind`：连接器回读（与人工上传的 PLATFORM_EXPORT / DEMO_SAMPLE 并列）。 */
+const SECTIONS_SOURCE_KIND_CONNECTOR = 'FEISHU_CONNECTOR_READBACK'
 
 /** 本工具接受的来源（TR-S3 平台导出件 / 演示样本，TR-S5 手打纪要不在其中）。 */
 export const SOURCE_KINDS = ['PLATFORM_EXPORT', 'DEMO_SAMPLE'] as const
@@ -54,13 +88,15 @@ export type TranscriptSourceKind = (typeof SOURCE_KINDS)[number]
 /** 进来时允许的 `meeting_role`（TR-D4：REPLACED / CANCELLED 不进 M(i)）。 */
 const TRANSCRIPT_MEETING_ROLES = ['PRIMARY', 'CONTINUATION'] as const
 
-/** 本工具抛出的错误码（RD §3.1 的封闭集；`errors.ts` 的窄联合**不改**）。 */
+/** 本工具抛出的错误码（RD §3.1 的封闭集 + 连接器回读的 `BLOCKED`；`errors.ts` 的窄联合**不改**）。 */
 export type TranscriptImportErrorCode =
   | 'INVALID_ARGS'
   | 'NOT_FOUND'
   | 'NO_MEETING_BOUND'
   | 'AMBIGUOUS_MEETING'
   | 'NOT_CONFIGURED'
+  /** 连接器回读路径 fail-closed：没有传输层 / 平台生成中 / 传输层失败 / 回读自检不过。detail.reason_code 说清哪一环。 */
+  | 'BLOCKED'
 
 /**
  * 本工具的错误：message 恒为 `<CODE>: <compact-json>`（TC §1.2），并带 `.code`
@@ -112,20 +148,38 @@ const PARAMS: ParamMap = {
   },
   content: {
     kind: 'string',
-    required: true,
+    // 可选：与 minute_token / external_meeting_id **二选一**（见 validateTranscriptImportArgs）。
     maxLength: MAX_CONTENT_CHARS,
     description:
       '转写原文（1..400000 字符）。逐字节保存为 raw_text，不清洗、不摘要、不改写；'
-      + '按 \\r?\\n 切行写入 transcript_segment（空行跳过但序号不重排）。',
+      + '按 \\r?\\n 切行写入 transcript_segment（空行跳过但序号不重排）。'
+      + '人工上传路径必填，且必须给 source_kind；与 minute_token/external_meeting_id 不能同时给。',
+  },
+  minute_token: {
+    kind: 'string',
+    maxLength: 255,
+    description:
+      '飞书妙记的 minute_token（连接器回读路径）。没给 content 时给这个（或只给 external_meeting_id，'
+      + '用于定位会议）就会由飞书连接器 fetchTranscript() 取正文；回读被阻断时返回 BLOCKED，不写任何行。'
+      + '本机默认未装配传输层（插件配置没有 feishu.cli），因此默认就是 BLOCKED/TRANSPORT_NOT_CONFIGURED。',
+  },
+  external_meeting_id: {
+    kind: 'string',
+    maxLength: 255,
+    description:
+      '飞书会议 id（可选，连接器回读路径）：多会议绑同一场面试时按**平台会议 id**消歧（不按标题/时间猜）。'
+      + '给了就必须与该面试某条 active 绑定的 external_meeting_id 精确相等，否则 NOT_FOUND(MEETING_NOT_FOUND)。'
+      + '只有它、没有 minute_token 时不会发起回读（INVALID_ARGS/MINUTE_TOKEN_REQUIRED）。',
   },
   source_kind: {
     kind: 'string',
-    required: true,
     values: [...SOURCE_KINDS],
     description:
-      'PLATFORM_EXPORT = 人上传的"平台导出的转写文件"（provenance=LIVE，必须给 exported_file_name）；'
+      '人工上传路径必填（给了 content 就必须给）。'
+      + 'PLATFORM_EXPORT = 人上传的"平台导出的转写文件"（provenance=LIVE，必须给 exported_file_name）；'
       + 'DEMO_SAMPLE = 演示/测试文本（provenance=FIXTURE，一律附 FIXTURE_CONTENT_NOT_LIVE，'
-      + '绝不当 LIVE）。人工手打的会议纪要不得走这两个值（TR-S5）。',
+      + '绝不当 LIVE）。人工手打的会议纪要不得走这两个值（TR-S5）。'
+      + '连接器回读路径不得给（provenance 由回读结果决定，不接受自报）。',
   },
   exported_file_name: {
     kind: 'string',
@@ -230,15 +284,23 @@ const OUTPUT_SCHEMA = {
         trigger: { type: 'string', enum: ['MANUAL'], description: '本工具只由人/模型在会话里调用，恒 MANUAL。' },
         connection: {
           type: 'string',
-          enum: ['NOT_CONNECTED'],
-          description: '本工具不连任何会议平台（人工上传），恒 NOT_CONNECTED。',
+          enum: ['NOT_CONNECTED', 'AUTH_REQUIRED'],
+          description:
+            '人工上传恒 NOT_CONNECTED；连接器回读路径按连接器 probe() 的真实状态给 NOT_CONNECTED/AUTH_REQUIRED，'
+            + '**永不** CONNECTED（Live Gate=BLOCKED）。',
         },
       },
       description:
-        '三维正交标签（R4）。LIVE 当且仅当 source_kind=PLATFORM_EXPORT 且给出导出文件名；'
-        + 'replayed=true 时回显既有行的真实标注，不因本次入参而升级。',
+        '三维正交标签（R4）。人工路径：LIVE 当且仅当 source_kind=PLATFORM_EXPORT 且给出导出文件名；'
+        + '连接器回读路径：provenance 恒 FIXTURE（Gate=BLOCKED，回读 transport=FIXTURE），'
+        + 'connection 只能是 NOT_CONNECTED/AUTH_REQUIRED。replayed=true 时回显既有行的真实标注，不因本次入参而升级。',
     },
-    provenance_basis: { type: 'string', description: 'provenance 的判定依据（一句话理由码）。' },
+    provenance_basis: {
+      type: 'string',
+      description:
+        'provenance 的判定依据（一句话理由码）。人工路径两值；连接器回读为 '
+        + `${FEISHU_READBACK_PROVENANCE_BASIS}（读到了字节，但 Gate=BLOCKED 不构成 LIVE 依据）。`,
+    },
     interview: {
       type: 'object',
       additionalProperties: false,
@@ -286,7 +348,11 @@ const OUTPUT_SCHEMA = {
         transcript_status: { type: 'string', enum: ['READY'], description: '一次性带全内容后才 READY（TR-C8）。' },
         provenance: { type: 'string', enum: ['FIXTURE', 'LIVE'] },
         trigger_mode: { type: 'string', enum: ['MANUAL'] },
-        connection_state: { type: 'string', enum: ['NOT_CONNECTED'] },
+        connection_state: {
+          type: 'string',
+          enum: ['NOT_CONNECTED', 'AUTH_REQUIRED'],
+          description: '**这一行**自己的连接标注；连接器回读也绝不写 CONNECTED（Gate=BLOCKED）。',
+        },
         is_canonical: { type: 'boolean' },
         is_complete: { type: 'boolean' },
         has_more: { type: 'boolean' },
@@ -393,42 +459,313 @@ export function parseImportArgs(raw: unknown): Record<string, unknown> {
   return args
 }
 
-/** 入参在 schema 之外还需要的两条业务校验（都在**任何数据库访问之前**跑）。 */
+/**
+ * 入参在 schema 之外还需要的业务校验（都在**任何数据库访问 / 任何外部读取之前**跑）。
+ *
+ * 两条路径的判别与互斥也在这里（纯函数）：
+ *   * 给了 `content` → 人工上传路径：`source_kind` 必填、导出文件名规则照旧；
+ *   * 没给 `content` → 连接器回读路径：必须给 `minute_token`/`external_meeting_id`，
+ *     且不得带 `source_kind`/`exported_file_name`（provenance 不接受自报）。
+ */
 export function validateTranscriptImportArgs(args: Record<string, unknown>): void {
-  const sourceKind = args.source_kind as TranscriptSourceKind
+  const content = typeof args.content === 'string' ? args.content : undefined
+  const sourceKind = typeof args.source_kind === 'string' ? (args.source_kind as TranscriptSourceKind) : undefined
   const fileName = typeof args.exported_file_name === 'string' ? args.exported_file_name : undefined
-  const content = args.content as string
+  const minuteToken = readNonEmptyString(args.minute_token)
+  const externalMeetingId = readNonEmptyString(args.external_meeting_id)
+  const connectorRequested = minuteToken !== null || externalMeetingId !== null
 
-  if (content.length < 1 || content.length > MAX_CONTENT_CHARS) {
+  // ---- 路径判别 -------------------------------------------------------------
+  if (content === undefined && !connectorRequested) {
     fail('INVALID_ARGS', {
-      reason_code: 'OUT_OF_RANGE',
-      message: `content 必须是 1..${MAX_CONTENT_CHARS} 个字符`,
-      detail: { content_length: content.length },
+      reason_code: 'MISSING_REQUIRED',
+      message: '必须给出 content（人工上传正文）或 minute_token / external_meeting_id（连接器回读）之一：'
+        + '本工具不接受空导入，也不会自己去猜一场会议',
+      detail: { required_any_of: ['content', 'minute_token', 'external_meeting_id'] },
     })
   }
-  if (sourceKind === 'PLATFORM_EXPORT' && fileName === undefined) {
-    fail('INVALID_ARGS', {
-      reason_code: 'EXPORT_FILE_NAME_REQUIRED',
-      message: 'source_kind=PLATFORM_EXPORT 时必须给出 exported_file_name：'
-        + '录不上"这是哪个平台导出文件"，就没有任何证据说这批字节来自平台（TR-S3 / TR-S4）',
-      detail: { source_kind: sourceKind },
-    })
-  }
-  if (sourceKind === 'DEMO_SAMPLE' && fileName !== undefined) {
+  if (content !== undefined && connectorRequested) {
     fail('INVALID_ARGS', {
       reason_code: 'MUTUALLY_EXCLUSIVE',
-      message: 'source_kind=DEMO_SAMPLE 不得带 exported_file_name：演示文本不是平台导出件，'
-        + '带文件名会凭空造出一份"导出回执"',
-      detail: { exported_file_name: fileName, source_kind: sourceKind },
+      message: 'content 与 minute_token / external_meeting_id 不能同时给：有正文就走人工上传，没有正文才回读；'
+        + '否则说不清落库的字节到底来自哪一条路径',
+      detail: {
+        content_present: true,
+        minute_token_present: minuteToken !== null,
+        external_meeting_id_present: externalMeetingId !== null,
+      },
     })
   }
-  if (fileName !== undefined && /[;\r\n]/.test(fileName)) {
+
+  // ---- 人工上传路径（既有规则一条不放松）------------------------------------
+  if (content !== undefined) {
+    if (content.length < 1 || content.length > MAX_CONTENT_CHARS) {
+      fail('INVALID_ARGS', {
+        reason_code: 'OUT_OF_RANGE',
+        message: `content 必须是 1..${MAX_CONTENT_CHARS} 个字符`,
+        detail: { content_length: content.length },
+      })
+    }
+    if (sourceKind === undefined) {
+      fail('INVALID_ARGS', {
+        reason_code: 'MISSING_REQUIRED',
+        message: '给了 content 就必须给 source_kind：'
+          + '不说清"这是平台导出件还是演示文本"，就没有任何依据标 provenance（TR-S3/S4/S5）',
+        detail: { required: ['source_kind'] },
+      })
+    }
+    if (sourceKind === 'PLATFORM_EXPORT' && fileName === undefined) {
+      fail('INVALID_ARGS', {
+        reason_code: 'EXPORT_FILE_NAME_REQUIRED',
+        message: 'source_kind=PLATFORM_EXPORT 时必须给出 exported_file_name：'
+          + '录不上"这是哪个平台导出文件"，就没有任何证据说这批字节来自平台（TR-S3 / TR-S4）',
+        detail: { source_kind: sourceKind },
+      })
+    }
+    if (sourceKind === 'DEMO_SAMPLE' && fileName !== undefined) {
+      fail('INVALID_ARGS', {
+        reason_code: 'MUTUALLY_EXCLUSIVE',
+        message: 'source_kind=DEMO_SAMPLE 不得带 exported_file_name：演示文本不是平台导出件，'
+          + '带文件名会凭空造出一份"导出回执"',
+        detail: { exported_file_name: fileName, source_kind: sourceKind },
+      })
+    }
+    if (fileName !== undefined && /[;\r\n]/.test(fileName)) {
+      fail('INVALID_ARGS', {
+        reason_code: 'OUT_OF_RANGE',
+        message: 'exported_file_name 不得含 ";" 或换行：它要原样拼进 read_receipt_ref，'
+          + '含分隔符会让回执无法解析',
+        detail: { exported_file_name: fileName },
+      })
+    }
+    return
+  }
+
+  // ---- 连接器回读路径 -------------------------------------------------------
+  if (sourceKind !== undefined || fileName !== undefined) {
+    fail('INVALID_ARGS', {
+      reason_code: 'MUTUALLY_EXCLUSIVE',
+      message: 'source_kind / exported_file_name 只属于人工上传路径：连接器回读的 provenance 由回读结果决定，'
+        + '不接受调用方自报来源',
+      detail: {
+        source_kind_present: sourceKind !== undefined,
+        exported_file_name_present: fileName !== undefined,
+      },
+    })
+  }
+  if (minuteToken === null) {
+    fail('INVALID_ARGS', {
+      reason_code: 'MINUTE_TOKEN_REQUIRED',
+      message: '连接器回读必须给 minute_token：只给 external_meeting_id 定位得到会议，'
+        + '但没有平台产物标识就不能回读，也不猜（不发起任何读取、不写任何行）',
+      detail: { external_meeting_id_present: externalMeetingId !== null, required: ['minute_token'] },
+    })
+  }
+  // 回执形如 lark:minutes+detail:<token>@<revision>：token 里的 @ 会让回执不可解析，
+  // 在发起任何读取之前就拒绝（传输层 validate 阶段也有同样的自检，这里是更早的一道）。
+  if (minuteToken.includes('@') || /[\r\n]/.test(minuteToken)) {
     fail('INVALID_ARGS', {
       reason_code: 'OUT_OF_RANGE',
-      message: 'exported_file_name 不得含 ";" 或换行：它要原样拼进 read_receipt_ref，'
-        + '含分隔符会让回执无法解析',
-      detail: { exported_file_name: fileName },
+      message: 'minute_token 不得含 "@" 或换行：它要原样拼进读取回执 lark:minutes+detail:<token>@<revision>',
+      detail: { minute_token_length: minuteToken.length },
     })
+  }
+}
+
+/**
+ * 连接器回读落库时**允许**的三维标签（纯函数，**永不 LIVE / CONNECTED**）。
+ *
+ * provenance 恒 `FIXTURE`、trigger 恒 `MANUAL`；connection 只保留
+ * `NOT_CONNECTED` / `AUTH_REQUIRED`（任何别的值，包括 `CONNECTED`，一律**降级**为
+ * `AUTH_REQUIRED`——降级是保守方向，永远不会把没核实的东西说成已连接）。
+ * 要允许 LIVE/CONNECTED，必须先由人解锁 `FEISHU_MINUTES_LIVE_GATE` 并显式改这里
+ * （`connectors/feishu/README.md §7`），不能靠调用方传参。
+ * @param connection - 连接器 probe() 给出的连接状态（不可信输入，逐值收敛）。
+ */
+export function connectorReadbackLabels(connection: Connection | string): {
+  readonly provenance: 'FIXTURE'
+  readonly trigger: 'MANUAL'
+  readonly connection: 'NOT_CONNECTED' | 'AUTH_REQUIRED'
+} {
+  return {
+    provenance: 'FIXTURE',
+    trigger: 'MANUAL',
+    connection: connection === 'NOT_CONNECTED' ? 'NOT_CONNECTED' : 'AUTH_REQUIRED',
+  }
+}
+
+/** 一次导入的正文来源（两条路径的判别联合；调用方看不到正文之外的原始回读对象）。 */
+export type TranscriptImportSource =
+  | {
+      readonly mode: 'MANUAL'
+      readonly content: string
+      readonly sourceKind: TranscriptSourceKind
+      readonly exportedFileName?: string
+    }
+  | {
+      readonly mode: 'CONNECTOR_READBACK'
+      readonly content: string
+      readonly readback: FeishuCliTranscriptReadback
+      readonly minuteToken: string
+      readonly labels: ReturnType<typeof connectorReadbackLabels>
+    }
+
+/** 连接器回读被阻断 → 本工具的 `BLOCKED` 错误（detail 里逐项说清，不回显正文/minute_token）。 */
+function failConnectorBlocked(result: FeishuTranscriptBlocked, issues: readonly string[]): never {
+  const detail: Record<string, unknown> = {
+    connector: result.connector,
+    connector_result: 'BLOCKED',
+    error_code: result.error_code,
+    blocked_reason: result.blocked_reason,
+    connection_state: result.connection_state,
+    labels: result.labels,
+    creates_artifact: false,
+    requested: result.requested,
+  }
+  if (result.failure !== undefined) detail.failure = result.failure
+  if (issues.length > 0) detail.config_issues = [...issues]
+  fail('BLOCKED', {
+    reason_code: result.blocked_reason,
+    message: `飞书连接器回读被阻断（error_code=${result.error_code}, blocked_reason=${result.blocked_reason}）：`
+      + `${result.message} 本次没有读到正文，也没有写任何 artifact。`,
+    detail,
+  })
+}
+
+/** 平台说「还在生成」：不是失败，但本次没有正文可写（TR-F1 / P-3）。 */
+function failConnectorWaiting(result: FeishuTranscriptWaitingExternal): never {
+  fail('BLOCKED', {
+    reason_code: 'PROVIDER_GENERATING',
+    message: `飞书平台说产物还在生成（provider_code=${result.provider_code}）：不是失败，`
+      + `但本次没有正文也没有 artifact；等生成完再重试。${result.message}`,
+    detail: {
+      connector: result.connector,
+      connector_result: 'WAITING_EXTERNAL',
+      task_state: result.task_state,
+      provider_code: result.provider_code,
+      connection_state: result.connection_state,
+      labels: result.labels,
+      creates_artifact: false,
+    },
+  })
+}
+
+/**
+ * 决定这次导入的正文从哪来。**在任何数据库访问之前**调用（`execute()` 里先于建连，
+ * 核心函数里先于所有 SELECT/INSERT），所以任何 BLOCKED 都保证「一行没写」。
+ *
+ * 连接器路径的四类出口全部映射为**抛错**（不返回半成品）：
+ *   * `ERROR`（缺 minute_token）→ `INVALID_ARGS`；
+ *   * `BLOCKED`（凭据/传输层/平台失败）→ `BLOCKED` + 闭集 `reason_code` + connector 的 error_code；
+ *   * `WAITING_EXTERNAL`（2091003）→ `BLOCKED/PROVIDER_GENERATING`（不是失败，但本次无正文）；
+ *   * `READ` → 自检正文（非空、不超过 `MAX_CONTENT_CHARS`）后返回 `CONNECTOR_READBACK` 来源。
+ *
+ * @param args - 已通过 `validateTranscriptImportArgs()` 的入参。
+ * @param connector - 插件配置装配出的连接器；`undefined` = 默认态（不装配传输层）。
+ * @param connectorIssues - 装配配置问题（例如 cli 不是绝对路径），只进 BLOCKED 的 detail。
+ */
+export async function resolveImportSource(
+  args: Record<string, unknown>,
+  connector?: FeishuConnectorDependency,
+  connectorIssues: readonly string[] = [],
+): Promise<TranscriptImportSource> {
+  const content = typeof args.content === 'string' ? args.content : undefined
+  if (content !== undefined) {
+    const sourceKind = args.source_kind as TranscriptSourceKind
+    const fileName = typeof args.exported_file_name === 'string' ? args.exported_file_name : undefined
+    return fileName === undefined
+      ? { mode: 'MANUAL', content, sourceKind }
+      : { mode: 'MANUAL', content, sourceKind, exportedFileName: fileName }
+  }
+
+  const minuteToken = readNonEmptyString(args.minute_token)
+  if (minuteToken === null) {
+    fail('INVALID_ARGS', {
+      reason_code: 'MINUTE_TOKEN_REQUIRED',
+      message: '连接器回读必须有 minute_token：本次没有正文、没有发起读取、没有写任何行',
+      detail: { required: ['minute_token'] },
+    })
+  }
+  // 默认态：插件配置没装配传输层 → fail-closed。**不**回退到环境变量 / PATH 上的 CLI。
+  if (connector === undefined || connector.transport_configured !== true) {
+    const detail: Record<string, unknown> = {
+      connector: FEISHU_MINUTES_CONNECTOR_ID,
+      connector_result: 'BLOCKED',
+      blocked_reason: 'TRANSPORT_NOT_CONFIGURED',
+      transport_configured: false,
+      // README §5 的既有口径：**传输层未装配**本身就归 AUTH_REQUIRED（不是 CONNECTED，也不假装有数据）。
+      connection_state: 'AUTH_REQUIRED',
+      creates_artifact: false,
+      requested: {
+        minute_token_present: true,
+        external_meeting_id_present: readNonEmptyString(args.external_meeting_id) !== null,
+      },
+    }
+    if (connectorIssues.length > 0) detail.config_issues = [...connectorIssues]
+    fail('BLOCKED', {
+      reason_code: 'TRANSPORT_NOT_CONFIGURED',
+      message: '连接器回读路径没有可用的传输层：插件配置里没有装配 feishu.cli（lark-cli 的绝对路径），'
+        + '本工具默认不拉起任何子进程、也不从环境变量 / PATH 找 CLI。'
+        + '本次没有读正文，也没有写任何 artifact（先注入传输层再重试）。',
+      detail,
+    })
+  }
+
+  const adapter: FeishuMinutesAdapter = connector.adapter
+  let result: Awaited<ReturnType<FeishuMinutesAdapter['fetchTranscript']>>
+  try {
+    result = await adapter.fetchTranscript({
+      minute_token: minuteToken,
+      external_meeting_id: args.external_meeting_id,
+    })
+  } catch (error) {
+    // 适配器本身抛异常（不该发生）：按 fail-closed 处理，不回显异常 message（可能带内部路径）。
+    fail('BLOCKED', {
+      reason_code: 'CONNECTOR_CALL_FAILED',
+      message: '飞书连接器调用抛出非预期异常：按 fail-closed 处理，本次没有正文也没有写任何 artifact。',
+      detail: {
+        connector: FEISHU_MINUTES_CONNECTOR_ID,
+        connector_result: 'BLOCKED',
+        error_name: error instanceof Error ? error.name : typeof error,
+        creates_artifact: false,
+      },
+    })
+  }
+
+  if (result.kind === 'ERROR') {
+    fail('INVALID_ARGS', {
+      reason_code: result.reason_code,
+      message: `${result.message} 本次没有发起读取，也没有写任何行。`,
+      detail: { connector: result.connector, requested: result.requested },
+    })
+  }
+  if (result.kind === 'BLOCKED') failConnectorBlocked(result, connectorIssues)
+  if (result.kind === 'WAITING_EXTERNAL') failConnectorWaiting(result)
+
+  // ---- READ：只认完整回读 + 非空正文；标签永远是 FIXTURE（Gate=BLOCKED）----
+  const readback = result.readback
+  if (typeof readback.raw_text !== 'string' || readback.raw_text.trim() === '') {
+    fail('BLOCKED', {
+      reason_code: 'READBACK_INVALID',
+      message: '连接器声称读成功，但回读对象没有正文：拒绝把空内容当产物（P-2），没有写任何 artifact。',
+      detail: { connector: FEISHU_MINUTES_CONNECTOR_ID, readback_transport: readback.transport, creates_artifact: false },
+    })
+  }
+  if (readback.raw_text.length > MAX_CONTENT_CHARS) {
+    fail('BLOCKED', {
+      reason_code: 'TRANSCRIPT_TOO_LARGE',
+      message: `回读正文 ${readback.raw_text.length} 字符，超过本工具上限 ${MAX_CONTENT_CHARS}：`
+        + '不截断、不摘要，也没有写任何 artifact。',
+      detail: { char_count: readback.raw_text.length, max_chars: MAX_CONTENT_CHARS, creates_artifact: false },
+    })
+  }
+  return {
+    mode: 'CONNECTOR_READBACK',
+    content: readback.raw_text,
+    readback,
+    minuteToken,
+    // 不信任适配器给的标签：连接状态收敛到 NOT_CONNECTED/AUTH_REQUIRED，provenance 恒 FIXTURE。
+    labels: connectorReadbackLabels(result.labels.connection),
   }
 }
 
@@ -558,10 +895,16 @@ async function loadBindings(
 }
 
 /**
- * 决定这次导入落到哪个会议：给了 `meeting_id` 就精确匹配，否则必须唯一。
+ * 决定这次导入落到哪个会议：给了 `meeting_id` 就精确匹配；否则给了
+ * `external_meeting_id` 就按**平台会议 id** 精确匹配；都没给则必须唯一。
+ * 任何"多个候选"都不猜（TR-L3：不按标题 / 时间 / 参会人绑定）。
  * @returns 选中的绑定。
  */
-function chooseMeeting(bindings: readonly BindingRow[], requestedMeetingId: string | undefined, interviewId: string): BindingRow {
+function chooseMeeting(
+  bindings: readonly BindingRow[],
+  request: { readonly meeting_id?: string; readonly external_meeting_id?: string },
+  interviewId: string,
+): BindingRow {
   if (bindings.length === 0) {
     fail('NO_MEETING_BOUND', {
       reason_code: 'NO_MEETING_BOUND',
@@ -575,16 +918,39 @@ function chooseMeeting(bindings: readonly BindingRow[], requestedMeetingId: stri
       },
     })
   }
-  if (requestedMeetingId !== undefined) {
-    const matched = bindings.find((binding) => binding.meeting_id === requestedMeetingId)
+  if (request.meeting_id !== undefined) {
+    const matched = bindings.find((binding) => binding.meeting_id === request.meeting_id)
     if (matched === undefined) {
       fail('NOT_FOUND', {
         reason_code: 'MEETING_NOT_FOUND',
         message: '入参 meeting_id 不是该面试的 active 绑定会议（或它的 meeting_role 不在转写集合里）',
-        detail: { interview_id: interviewId, meeting_count: bindings.length, meeting_id: requestedMeetingId },
+        detail: { interview_id: interviewId, meeting_count: bindings.length, meeting_id: request.meeting_id },
       })
     }
     return matched
+  }
+  if (request.external_meeting_id !== undefined) {
+    const matched = bindings.filter((binding) => binding.external_meeting_id === request.external_meeting_id)
+    if (matched.length === 1) return matched[0] as BindingRow
+    if (matched.length === 0) {
+      fail('NOT_FOUND', {
+        reason_code: 'MEETING_NOT_FOUND',
+        message: '入参 external_meeting_id 不匹配该面试任何一条 active 绑定会议的平台会议 id；'
+          + '不按标题 / 时间猜，也未写入任何行',
+        detail: {
+          interview_id: interviewId,
+          meeting_count: bindings.length,
+          external_meeting_id_present: true,
+          hint: 'external_meeting_id 必须与 recruitment.meeting.external_meeting_id 精确相等',
+        },
+      })
+    }
+    fail('AMBIGUOUS_MEETING', {
+      reason_code: 'AMBIGUOUS_MEETING',
+      message: '同一个 external_meeting_id 匹配到多条 active 绑定会议，必须改用 meeting_id 明确指定；'
+        + '未写入任何行',
+      detail: { interview_id: interviewId, match_count: matched.length },
+    })
   }
   if (bindings.length > 1) {
     fail('AMBIGUOUS_MEETING', {
@@ -735,11 +1101,23 @@ function artifactFromRow(row: ArtifactRow, segmentCount: number): Record<string,
   return artifact
 }
 
+/** 一次导入的依赖（连接器由插件配置装配；缺省 = 没有传输层）。 */
+export interface TranscriptImportDeps {
+  /** 飞书连接器（`feishu.cli` 装配成功时才有）。缺省 ⇒ 回读路径 BLOCKED。 */
+  readonly connector?: FeishuConnectorDependency
+  /** 连接器配置问题（例如 cli 不是绝对路径）；只进 BLOCKED 的 detail。 */
+  readonly connector_issues?: readonly string[]
+  /** 已解析好的来源（`execute()` 用它避免"先读一次再在事务里读第二次"）。 */
+  readonly source?: TranscriptImportSource
+}
+
 /**
- * 在**调用方给定的事务**里完成一次人工导入（单独导出是为了让集成测试在
+ * 在**调用方给定的事务**里完成一次转写导入（单独导出是为了让集成测试在
  * "必回滚事务"里跑完整写路径，不然测试会往 ra_s6s7 里留真行）。
  *
  * 步骤固定（RD §2 / TR 对应条款见每步注释）：
+ *   0. **先决定正文来源**（人工正文 or 连接器回读）：回读失败在这里抛 BLOCKED，
+ *      此时**一行都没写**（也是"零 artifact"的证明）；
  *   1. 面试（NOT_FOUND）；2. active 绑定会议（NO_MEETING_BOUND / AMBIGUOUS_MEETING / MEETING_NOT_FOUND）；
  *   3. sha256 + 字符数；4. 同 (meeting, provider_artifact_id) 去重 → replay 或 +1 revision；
  *   5. 一次 INSERT 带全内容（TR-C7/C8）；6. 逐行切 segment；7. 建 interview_record（无 rubric 则不建）。
@@ -749,43 +1127,81 @@ function artifactFromRow(row: ArtifactRow, segmentCount: number): Record<string,
  * @param args - 入参（本函数自己再跑一遍 `parseImportArgs`，直接调用也拿到同一套校验）。
  * @param _nowMs - 保留形参以便与读工具的核心函数同形；本工具不用它：
  *   `fetched_at` 由库的 `now()` 生成，输出里不出现"我们的墙上时间"。
+ * @param deps - 连接器依赖 / 已解析来源（见 `TranscriptImportDeps`）。
  */
 export async function importTranscriptInTransaction(
   client: DatabaseClient,
   cfg: ResolvedDatabaseConfig,
   args: Record<string, unknown>,
   _nowMs?: number,
+  deps: TranscriptImportDeps = {},
 ): Promise<TranscriptImportValue> {
   const parsed = parseImportArgs(args)
   const tenantId = cfg.tenant_id
   const actorId = cfg.actor_id
   const interviewId = parsed.interview_id as string
-  const content = parsed.content as string
-  const sourceKind = parsed.source_kind as TranscriptSourceKind
-  const fileName = typeof parsed.exported_file_name === 'string' ? parsed.exported_file_name : undefined
   const language = typeof parsed.language === 'string' ? parsed.language : 'zh'
   const requestedMeetingId = typeof parsed.meeting_id === 'string' ? parsed.meeting_id : undefined
+  const requestedExternalMeetingId = typeof parsed.external_meeting_id === 'string' ? parsed.external_meeting_id : undefined
+
+  // ---- 0. 正文来源（在任何 DB 访问之前：回读失败 = 零写入）-------------------
+  const source = deps.source ?? await resolveImportSource(parsed, deps.connector, deps.connector_issues ?? [])
+  const content = source.content
 
   // ---- 1. 面试 --------------------------------------------------------------
   const interview = await loadInterview(client, tenantId, interviewId)
 
   // ---- 2. active 绑定会议（REPLACED / CANCELLED 在 SQL 里就排掉，TR-D4）----
   const bindings = await loadBindings(client, tenantId, interviewId)
-  const binding = chooseMeeting(bindings, requestedMeetingId, interviewId)
+  const binding = chooseMeeting(
+    bindings,
+    {
+      ...(requestedMeetingId === undefined ? {} : { meeting_id: requestedMeetingId }),
+      ...(requestedExternalMeetingId === undefined ? {} : { external_meeting_id: requestedExternalMeetingId }),
+    },
+    interviewId,
+  )
+  // 连接器只读飞书妙记：会议不是飞书会议时不许把回读内容挂上去（不猜、不跨平台冒充）。
+  if (source.mode === 'CONNECTOR_READBACK' && binding.provider !== FEISHU_MINUTES_PROVIDER) {
+    fail('INVALID_ARGS', {
+      reason_code: 'SOURCE_CONNECTOR_MISMATCH',
+      message: `连接器回读只读飞书妙记，但这场面试选中的会议 provider=${binding.provider}，不是 ${FEISHU_MINUTES_PROVIDER}；`
+        + '未写入任何行（也不接受改标来源）',
+      detail: { interview_id: interviewId, meeting_id: binding.meeting_id, provider: binding.provider },
+    })
+  }
 
   // ---- 3. 内容指纹（原文逐字节保存，不做任何清洗）--------------------------
   const sha = createHash('sha256').update(content, 'utf8').digest('hex')
   const charCount = content.length
 
   // 固定列取值（RD §2）：不编造平台标识；provenance 只由来源决定。
-  const provider = sourceKind === 'PLATFORM_EXPORT' ? binding.provider : 'LOCAL_DEMO'
-  const providerArtifactId = sourceKind === 'PLATFORM_EXPORT'
-    ? `${ARTIFACT_ID_PREFIX}platform-export:${binding.meeting_id}`
-    : `${ARTIFACT_ID_PREFIX}demo-sample:${binding.meeting_id}`
-  const labels = artifactLabelsForSourceKind(sourceKind)
-  const readReceiptRef = sourceKind === 'PLATFORM_EXPORT' && fileName !== undefined
-    ? `upload:${actorId}:sha256:${sha};file=${fileName}`
-    : undefined
+  // 连接器回读：provider 用会议的真实平台名，provider_artifact_id 用 `local:` 前缀
+  // （Gate=BLOCKED 时我们没法核实平台标识，不写"看起来像平台前缀"的 id）。
+  const provider = source.mode === 'CONNECTOR_READBACK'
+    ? binding.provider
+    : source.sourceKind === 'PLATFORM_EXPORT'
+      ? binding.provider
+      : 'LOCAL_DEMO'
+  const providerArtifactId = source.mode === 'CONNECTOR_READBACK'
+    ? `${FEISHU_READBACK_ARTIFACT_PREFIX}${source.minuteToken}`
+    : source.sourceKind === 'PLATFORM_EXPORT'
+      ? `${ARTIFACT_ID_PREFIX}platform-export:${binding.meeting_id}`
+      : `${ARTIFACT_ID_PREFIX}demo-sample:${binding.meeting_id}`
+  const labels = source.mode === 'CONNECTOR_READBACK'
+    ? source.labels
+    : artifactLabelsForSourceKind(source.sourceKind)
+  const readReceiptRef = source.mode === 'CONNECTOR_READBACK'
+    ? source.readback.read_receipt_ref
+    : source.sourceKind === 'PLATFORM_EXPORT' && source.exportedFileName !== undefined
+      ? `upload:${actorId}:sha256:${sha};file=${source.exportedFileName}`
+      : undefined
+  const provenanceBasis = source.mode === 'CONNECTOR_READBACK'
+    ? FEISHU_READBACK_PROVENANCE_BASIS
+    : provenanceBasisFor(labels.provenance)
+  const segmentSourceRef = source.mode === 'CONNECTOR_READBACK'
+    ? SEGMENT_RAW_SOURCE_REF_CONNECTOR
+    : SEGMENT_RAW_SOURCE_REF
 
   // ---- 4. 去重 / revision ---------------------------------------------------
   const revisions = await loadArtifactRevisions(client, tenantId, binding.meeting_id, providerArtifactId)
@@ -807,7 +1223,21 @@ export async function importTranscriptInTransaction(
   const movesCanonical = canonical !== undefined && canonical.provider_artifact_id === providerArtifactId
   const isCanonical = canonical === undefined || movesCanonical
   const warnings: WarningRow[] = []
-  if (sourceKind === 'DEMO_SAMPLE') {
+  if (source.mode === 'CONNECTOR_READBACK') {
+    warnings.push({
+      code: 'FEISHU_READBACK_NOT_LIVE',
+      message: '正文由飞书连接器回读（lark-cli-transport），但 Live Gate=BLOCKED：'
+        + 'readback.transport=FIXTURE，无法证明这些字节来自飞书平台（可能是假 CLI / 回放 / 缓存）；'
+        + `provenance 只能是 FIXTURE、trigger 只能是 MANUAL、connection=${labels.connection}，不得当作"已经接通飞书"`,
+    })
+    if (labels.connection === 'AUTH_REQUIRED') {
+      warnings.push({
+        code: 'FEISHU_CONNECTION_AUTH_REQUIRED',
+        message: '连接器 probe() 判定 AUTH_REQUIRED：应用凭据/用户令牌/传输层还未构成一次可核实的真实回读，'
+          + '这一行只是 FIXTURE 语料，不是平台已接通',
+      })
+    }
+  } else if (source.sourceKind === 'DEMO_SAMPLE') {
     warnings.push({
       code: 'FIXTURE_CONTENT_NOT_LIVE',
       message: 'DEMO_SAMPLE 是演示/测试文本，不是平台回读内容；provenance 只能是 FIXTURE，'
@@ -852,16 +1282,16 @@ export async function importTranscriptInTransaction(
          status_changed_by_actor_id
        ) values (
          $1, $2, $3, $4, $5, 'ORIGINAL', $6,
-         'READY', $7, 'MANUAL', 'NOT_CONNECTED', now(), $8,
+         'READY', $7, 'MANUAL', $13, now(), $8,
          $9, $10, true, false, $11, $12,
-         $13
+         $14
        )
        returning id, fetched_at`,
       [
         tenantId, binding.meeting_id, provider, providerArtifactId, nextRevision, language,
         labels.provenance, readReceiptRef ?? null,
         sha, content, isCanonical, isCanonical ? actorId : null,
-        actorId,
+        labels.connection, actorId,
       ],
     )
     inserted = result.rows[0]
@@ -892,7 +1322,7 @@ export async function importTranscriptInTransaction(
     for (const segment of chunk) {
       const base = values.length
       tuples.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`)
-      values.push(tenantId, artifactId, segment.sequence, segment.text, SEGMENT_RAW_SOURCE_REF)
+      values.push(tenantId, artifactId, segment.sequence, segment.text, segmentSourceRef)
     }
     const result = await client.query<{ id: string }>(
       `insert into recruitment.transcript_segment (
@@ -923,16 +1353,30 @@ export async function importTranscriptInTransaction(
     const citedSequences = turns.map((segment) => segment.sequence)
     const evidenceOk = citedSequences.length > 0
     const sections = {
-      schema: SECTIONS_SCHEMA,
-      source: {
-        kind: sourceKind,
-        provider,
-        sha,
-        segment_count: segments.length,
-        char_count: charCount,
-        language,
-        ...(fileName === undefined ? {} : { file: fileName }),
-      },
+      schema: source.mode === 'CONNECTOR_READBACK' ? CONNECTOR_SECTIONS_SCHEMA : SECTIONS_SCHEMA,
+      source: source.mode === 'CONNECTOR_READBACK'
+        ? {
+          kind: SECTIONS_SOURCE_KIND_CONNECTOR,
+          provider,
+          // 回读对象的 transport 在 Gate=BLOCKED 时恒 FIXTURE：写进来就是"不冒充平台来源"的证据。
+          transport: source.readback.transport,
+          read_receipt_ref: source.readback.read_receipt_ref,
+          revision: source.readback.revision,
+          page_count: source.readback.page_count,
+          sha,
+          segment_count: segments.length,
+          char_count: charCount,
+          language,
+        }
+        : {
+          kind: source.sourceKind,
+          provider,
+          sha,
+          segment_count: segments.length,
+          char_count: charCount,
+          language,
+          ...(source.exportedFileName === undefined ? {} : { file: source.exportedFileName }),
+        },
       basis: { artifact_id: artifactId, revision: nextRevision },
       turns: turns.map((segment) => ({ sequence: segment.sequence, text: segment.text })),
       citations: citedSequences.map((sequence) => ({ kind: 'SEGMENT', sequence })),
@@ -960,7 +1404,10 @@ export async function importTranscriptInTransaction(
        returning id, status, verification_status, transcript_revision, evidence_ok, is_current`,
       [
         tenantId, interviewId, artifactId, nextRevision, interview.rubric_version_id,
-        RECORD_SCHEMA_VERSION, RECORD_PROMPT_VERSION, RECORD_MODEL_ID, JSON.stringify(sections),
+        RECORD_SCHEMA_VERSION,
+        source.mode === 'CONNECTOR_READBACK' ? CONNECTOR_RECORD_PROMPT_VERSION : RECORD_PROMPT_VERSION,
+        source.mode === 'CONNECTOR_READBACK' ? CONNECTOR_RECORD_MODEL_ID : RECORD_MODEL_ID,
+        JSON.stringify(sections),
         evidenceOk, actorId,
       ],
     )
@@ -1000,7 +1447,7 @@ export async function importTranscriptInTransaction(
       fetched_at: iso(inserted?.fetched_at),
     },
     labels,
-    provenanceBasis: provenanceBasisFor(labels.provenance),
+    provenanceBasis,
     replayed: false,
     record,
     created,
@@ -1031,15 +1478,22 @@ async function replayValue(
         + '本次没有新建任何行（TR-U8），返回的是已存在的那一版',
     },
   ]
+  const isConnectorRow = existing.provider_artifact_id.startsWith(FEISHU_READBACK_ARTIFACT_PREFIX)
   warnings.push(existing.provenance === 'LIVE'
     ? {
       code: 'EXPORT_RECEIPT_IS_SELF_DECLARED',
       message: '该行的回执由人工自述（upload:<actor>:sha256:<hex>;file=<name>），不是平台 API 回读',
     }
-    : {
-      code: 'FIXTURE_CONTENT_NOT_LIVE',
-      message: '该行是 DEMO_SAMPLE 演示文本（provenance=FIXTURE），不得当作"已经接通飞书"',
-    })
+    : isConnectorRow
+      ? {
+        code: 'FEISHU_READBACK_NOT_LIVE',
+        message: '该行是飞书连接器回读的 FIXTURE 语料（Live Gate=BLOCKED，回读 transport=FIXTURE），'
+          + '不得当作"已经接通飞书"',
+      }
+      : {
+        code: 'FIXTURE_CONTENT_NOT_LIVE',
+        message: '该行是 DEMO_SAMPLE 演示文本（provenance=FIXTURE），不得当作"已经接通飞书"',
+      })
   return buildValue({
     interview,
     binding,
@@ -1049,7 +1503,8 @@ async function replayValue(
       trigger: existing.trigger_mode,
       connection: existing.connection_state,
     },
-    provenanceBasis: provenanceBasisFor(existing.provenance),
+    // 连接器回读行的依据是"Gate 未解锁"，不能用人工样本的理由码（那会是假话）。
+    provenanceBasis: isConnectorRow ? FEISHU_READBACK_PROVENANCE_BASIS : provenanceBasisFor(existing.provenance),
     replayed: true,
     record: record === undefined
       ? undefined
@@ -1067,29 +1522,41 @@ async function replayValue(
   })
 }
 
-/** 工具描述（模型可见）：入参、错误码、标签语义、两条状态轴分开。 */
+/** 工具描述（模型可见）：入参、两条来源路径、错误码、标签语义、两条状态轴分开。 */
 const DESCRIPTION =
-  'S9 转写导入（人工上传/粘贴平台导出的转写文本，写库）。'
-  + '入参：interview_id(UUID, 必填)、content(1..400000 字符，逐字节保存)、'
-  + 'source_kind∈{PLATFORM_EXPORT, DEMO_SAMPLE}（必填）、exported_file_name（PLATFORM_EXPORT 必填）、'
+  'S9 转写导入（两条来源路径，写库）：'
+  + '(a) 人工上传：给 content + source_kind；'
+  + '(b) 飞书连接器回读：不给 content、给 minute_token（可加 external_meeting_id 消歧），由连接器 fetchTranscript() 取正文。'
+  + '入参：interview_id(UUID, 必填)、content(1..400000 字符，逐字节保存；与 token 二选一)、'
+  + 'minute_token（连接器回读）、external_meeting_id（可选，按平台会议 id 消歧）、'
+  + 'source_kind∈{PLATFORM_EXPORT, DEMO_SAMPLE}（人工路径必填）、exported_file_name（PLATFORM_EXPORT 必填）、'
   + 'language（默认 zh）、meeting_id（多会议消歧）、note。'
   + 'tenant_id/actor_id 不接受模型传入（出现即 INVALID_ARGS(TENANT_OR_ACTOR_NOT_ALLOWED)）。'
   + '行为：只落到该面试 active 绑定且 meeting_role∈{PRIMARY,CONTINUATION} 的会议；'
   + '同一 (meeting, provider_artifact_id) 内容 sha 相同 → 一行不写（replayed=true）；'
   + 'sha 变了 → source_revision=max+1 的新行，canonical 同事务迁移，旧行与旧 interview_record 全部保留。'
+  + '连接器路径**默认 fail-closed**：本机插件配置没有 feishu.cli（lark-cli 绝对路径）时不装配传输层，'
+  + '调用直接 BLOCKED/TRANSPORT_NOT_CONFIGURED，不拉子进程、不读正文、不写任何行。'
   + '错误码：INVALID_ARGS（reason_code 见 detail）/ NOT_FOUND(INTERVIEW_NOT_FOUND|MEETING_NOT_FOUND) / '
-  + 'NO_MEETING_BOUND / AMBIGUOUS_MEETING / NOT_CONFIGURED。'
-  + '三维标签：trigger 恒 MANUAL、connection 恒 NOT_CONNECTED（本工具不连会议平台）；'
-  + 'provenance=FIXTURE 当且仅当 DEMO_SAMPLE（附 FIXTURE_CONTENT_NOT_LIVE）；'
+  + 'NO_MEETING_BOUND / AMBIGUOUS_MEETING / NOT_CONFIGURED / BLOCKED（reason_code=连接器 blocked_reason 或 '
+  + 'TRANSPORT_NOT_CONFIGURED/PROVIDER_GENERATING/CONNECTOR_CALL_FAILED/READBACK_INVALID/TRANSCRIPT_TOO_LARGE）。'
+  + '三维标签：trigger 恒 MANUAL；人工路径 connection 恒 NOT_CONNECTED；连接器回读 connection 只能是 '
+  + 'NOT_CONNECTED/AUTH_REQUIRED（Live Gate=BLOCKED，永不 CONNECTED）。'
+  + '人工路径 provenance=FIXTURE 当且仅当 DEMO_SAMPLE（附 FIXTURE_CONTENT_NOT_LIVE）；'
   + 'provenance=LIVE 只给 PLATFORM_EXPORT + 导出文件名（附 EXPORT_RECEIPT_IS_SELF_DECLARED —— 回执是人工自述）。'
+  + '连接器路径 provenance 恒 FIXTURE（附 FEISHU_READBACK_NOT_LIVE：回读 transport=FIXTURE，不能证明字节来自平台）。'
   + '注意：artifact.transcript_status=READY 只代表原文已完整落库，'
   + '不代表 interview_record READY（后者是 status=NEEDS_REVIEW / verification_status=UNVERIFIED，需人工复核）。'
 
 /**
  * 造一个绑定配置的转写导入工具（写路径；`isConcurrencySafe=false`）。
  * @param database - 已解析的 database 配置（租户 / actor 只从这里来）。
+ * @param deps - 连接器依赖（由插件配置装配；缺省 ⇒ 连接器回读路径 BLOCKED）。
  */
-export function createTranscriptImportTool(database: ResolvedDatabaseConfig): ReadonlyToolDefinition {
+export function createTranscriptImportTool(
+  database: ResolvedDatabaseConfig,
+  deps: TranscriptImportDeps = {},
+): ReadonlyToolDefinition {
   return {
     name: TOOL_NAME,
     description: DESCRIPTION,
@@ -1128,12 +1595,14 @@ export function createTranscriptImportTool(database: ResolvedDatabaseConfig): Re
     },
     async execute(rawArgs: unknown): Promise<unknown> {
       const args = parseContractArgs(PARAMS, rawArgs)
-      // 参数级失败必须在**建连之前**抛：NOT_CONFIGURED / INVALID_ARGS 不该先占一个连接。
+      // 参数级失败必须在**建连之前**抛：INVALID_ARGS 不该先占一个连接。
       validateTranscriptImportArgs(args)
+      // 连接器回读也必须在**建连之前**完成：BLOCKED = 零 artifact（也不占数据库连接）。
+      const source = await resolveImportSource(args, deps.connector, deps.connector_issues ?? [])
       const pool = createPool(database)
       try {
         return await withActor(pool, database.actor_id, async (client) =>
-          importTranscriptInTransaction(client, database, args))
+          importTranscriptInTransaction(client, database, args, undefined, { ...deps, source }))
       } finally {
         await closePool(pool)
       }

@@ -12,9 +12,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import type { DatabaseClient } from '../../src/db/pool.ts'
 import { importTranscriptInTransaction } from '../../src/tools/transcript-import.ts'
+import {
+  createFeishuMinutesAdapter,
+  createLarkCliTransport,
+  createProcessCliRunner,
+  type FeishuConnectorDependency,
+} from '../../src/connectors/feishu/index.ts'
 import {
   createTestPool, errorBody, hex64, inRolledBackTx, seedScenario, testDatabaseConfig,
   TENANT, HR_ACTOR, uniqueSuffix,
@@ -22,6 +30,37 @@ import {
 
 const cfg = testDatabaseConfig()
 const pool = createTestPool(cfg)
+
+const HERE = dirname(fileURLToPath(import.meta.url))
+const PLUGIN_DIR = resolve(HERE, '..', '..')
+/** 假 Lark CLI（真实子进程）：只回放固定 JSON，不是 lark-cli，也不发任何网络请求。 */
+const FAKE_LARK_CLI = join(PLUGIN_DIR, 'test', 'fixtures', 'feishu', 'fake-lark-cli.mjs')
+/** 假凭据（不是真实飞书凭据）：只为让适配器走到「传输层」这一环。 */
+const FAKE_FEISHU_ENV: Readonly<Record<string, string>> = {
+  FEISHU_APP_ID: 'cli_app_test',
+  FEISHU_APP_SECRET: 'app-secret-test',
+  FEISHU_USER_ACCESS_TOKEN: 'user-token-test',
+}
+/** 与 `fake-lark-cli.mjs` 的 `single` 场景逐字一致（用来核对落库字节）。 */
+const FAKE_LINE_1 = '面试官：请先介绍一下你最近三年做过的项目，重点讲你负责的部分和遇到的困难。'
+const FAKE_LINE_2 = '候选人：我主要负责订单链路的稳定性，把超时率从百分之三降到千分之二，做法是加熔断和分级降级。'
+
+/**
+ * 装配一个「配置层给出的」连接器依赖：真实 `lark-cli-transport` + 真实子进程 +
+ * `test/fixtures/feishu/fake-lark-cli.mjs`。它读到的字节永远只能标 FIXTURE
+ * （Live Gate=BLOCKED，`readback.transport=FIXTURE`）。
+ */
+function fixtureConnector(scenario = 'single'): FeishuConnectorDependency {
+  const runner = createProcessCliRunner({
+    command: process.execPath,
+    extra_args: [FAKE_LARK_CLI],
+    env: { ...process.env, FAKE_LARK_CLI_SCENARIO: scenario },
+    timeout_ms: 30_000,
+  })
+  const transport = createLarkCliTransport({ runner, max_attempts: 1, retry_base_ms: 0, timeout_ms: 30_000 })
+  const adapter = createFeishuMinutesAdapter({ env: FAKE_FEISHU_ENV, transport })
+  return { adapter, transport_configured: true }
+}
 
 test.after(async () => {
   await pool.end()
@@ -37,13 +76,15 @@ interface InterviewFixture {
   readonly interviewId: string
   readonly applicationId: string
   readonly meetingIds: readonly string[]
+  /** 与 `meetingIds` 一一对应的平台会议 id（连接器回读按它消歧）。 */
+  readonly externalMeetingIds: readonly string[]
 }
 
 /**
  * 造"面试 + 会议 + 绑定"（给 `seedScenario` 之后的同一个 client 用）。
  * @param client - 事务内客户端。
  * @param applicationId - 已造好的申请。
- * @param options - 会议角色列表 / 计划时间 / 是否绑成 MANUAL。
+ * @param options - 会议角色列表 / 计划时间 / 平台名 / 是否绑成 MANUAL。
  */
 async function seedInterview(
   client: DatabaseClient,
@@ -54,11 +95,14 @@ async function seedInterview(
     readonly scheduledEnd?: Date
     readonly actualStart?: Date
     readonly actualEnd?: Date
+    /** 会议平台名，默认 FEISHU（连接器回读要求 FEISHU，其它值会被拒）。 */
+    readonly provider?: string
   } = {},
 ): Promise<InterviewFixture> {
   const roles = options.roles ?? ['PRIMARY']
   const scheduledStart = options.scheduledStart ?? new Date(Date.now() - 120 * 60_000)
   const scheduledEnd = options.scheduledEnd ?? new Date(Date.now() - 60 * 60_000)
+  const provider = options.provider ?? 'FEISHU'
   const { rows } = await client.query<{ id: string }>(
     `insert into recruitment.interview
        (tenant_id, application_id, round_no, slot_code, stage_code, status,
@@ -69,15 +113,18 @@ async function seedInterview(
   )
   const interviewId = (rows[0] as { id: string }).id
   const meetingIds: string[] = []
+  const externalMeetingIds: string[] = []
   for (const role of roles) {
+    const externalMeetingId = `mtg-${uniqueSuffix()}`
     const meeting = await client.query<{ id: string }>(
       `insert into recruitment.meeting
          (tenant_id, provider, external_meeting_id, meeting_role, actual_start_at, actual_end_at)
-       values ($1, 'FEISHU', $2, $3, $4, $5)
+       values ($1, $2, $3, $4, $5, $6)
        returning id`,
       [
         TENANT,
-        `mtg-${uniqueSuffix()}`,
+        provider,
+        externalMeetingId,
         role,
         options.actualStart ?? (role === 'PRIMARY' ? scheduledStart : null),
         options.actualEnd ?? (role === 'PRIMARY' ? scheduledEnd : null),
@@ -85,6 +132,7 @@ async function seedInterview(
     )
     const meetingId = (meeting.rows[0] as { id: string }).id
     meetingIds.push(meetingId)
+    externalMeetingIds.push(externalMeetingId)
     await client.query(
       `insert into recruitment.meeting_binding
          (tenant_id, meeting_id, interview_id, binding_method, bound_by_actor_id)
@@ -92,7 +140,7 @@ async function seedInterview(
       [TENANT, meetingId, interviewId, HR_ACTOR],
     )
   }
-  return { interviewId, applicationId, meetingIds }
+  return { interviewId, applicationId, meetingIds, externalMeetingIds }
 }
 
 /** 该会议/面试下三类行的现有数量（"零写入"的证明用）。 */
@@ -519,5 +567,224 @@ test('未知面试 → NOT_FOUND(INTERVIEW_NOT_FOUND)；入参校验失败不建
         return true
       },
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 飞书连接器回读路径（E4 接线）：blocked 零写入 / fake transport 成功但只标 FIXTURE
+// ---------------------------------------------------------------------------
+
+/** 该 token 在全库任何 artifact 里出现的次数（"零写入"的更强证明，不只看本会议）。 */
+async function artifactsMentioning(client: DatabaseClient, needle: string): Promise<number> {
+  const { rows } = await client.query<{ n: string }>(
+    `select count(*) as n from recruitment.transcript_artifact
+      where provider_artifact_id = $1 or read_receipt_ref like $2`,
+    [`local:feishu-minutes:${needle}`, `lark:minutes+detail:${needle}@%`],
+  )
+  return Number(rows[0]?.n ?? 0)
+}
+
+test('连接器回读无传输层 → BLOCKED/TRANSPORT_NOT_CONFIGURED，零 artifact 落库（表行数前后一致）', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const fixture = await seedInterview(client, scenario.applicationId)
+    const before = await countsFor(client, fixture.meetingIds, fixture.interviewId)
+    assert.deepEqual(before, { artifacts: 0, segments: 0, records: 0 })
+
+    await assert.rejects(
+      // 不给第 5 个参数 = 没装配连接器（默认态，与 src/index.ts 不给 feishu.cli 时一致）。
+      async () => importTranscriptInTransaction(client, cfg, {
+        interview_id: fixture.interviewId,
+        minute_token: 'mt_fixture_blocked',
+      }, undefined),
+      (error: unknown) => {
+        const body = errorBody(error)
+        assert.equal(body.code, 'BLOCKED')
+        assert.equal(body.reason_code, 'TRANSPORT_NOT_CONFIGURED')
+        const detail = body.detail as Record<string, unknown>
+        assert.equal(detail.transport_configured, false)
+        assert.equal(detail.creates_artifact, false)
+        assert.equal(detail.blocked_reason, 'TRANSPORT_NOT_CONFIGURED')
+        assert.equal(JSON.stringify(body).includes('mt_fixture_blocked'), false, '不得回声 minute_token')
+        return true
+      },
+    )
+
+    const after = await countsFor(client, fixture.meetingIds, fixture.interviewId)
+    assert.deepEqual(after, before, 'BLOCKED 之后表行数必须完全不变（零 artifact / 零 segment / 零 record）')
+    assert.equal(await artifactsMentioning(client, 'mt_fixture_blocked'), 0)
+  })
+})
+
+test('连接器回读（fake lark-cli 真实子进程）读成功：落库行带诚实标签 FIXTURE/MANUAL/AUTH_REQUIRED，绝不是 LIVE', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const fixture = await seedInterview(client, scenario.applicationId)
+    const expectedText = `${FAKE_LINE_1}\n${FAKE_LINE_2}`
+    const expectedSha = createHash('sha256').update(expectedText, 'utf8').digest('hex')
+    const connector = fixtureConnector('single')
+
+    const value = await importTranscriptInTransaction(client, cfg, {
+      interview_id: fixture.interviewId,
+      minute_token: 'mt_fixture_read',
+    }, undefined, { connector })
+
+    // ---- 出参：三维标签诚实（不是 LIVE / 不是 CONNECTED）----
+    assert.deepEqual(value.labels, { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'AUTH_REQUIRED' })
+    assert.equal(value.provenance_basis, 'FEISHU_READBACK_NO_LIVE_GATE')
+    assert.equal(value.replayed, false)
+    assert.ok(value.warnings.some((warning) => warning.code === 'FEISHU_READBACK_NOT_LIVE'))
+    assert.ok(value.warnings.some((warning) => warning.code === 'FEISHU_CONNECTION_AUTH_REQUIRED'))
+    assert.equal(value.artifact.provider, 'FEISHU')
+    assert.equal(value.artifact.provider_artifact_id, 'local:feishu-minutes:mt_fixture_read')
+    assert.equal(value.artifact.provenance, 'FIXTURE')
+    assert.equal(value.artifact.trigger_mode, 'MANUAL')
+    assert.equal(value.artifact.connection_state, 'AUTH_REQUIRED')
+    assert.equal(value.artifact.content_sha256, expectedSha)
+    assert.equal(value.artifact.char_count, expectedText.length)
+    assert.equal(value.artifact.segment_count, 2)
+    assert.equal(value.artifact.transcript_status, 'READY')
+    assert.equal(value.record?.status, 'NEEDS_REVIEW')
+
+    // ---- DB 读回：原文逐字节相等；连接标注不是 CONNECTED ----
+    const artifact = (await client.query<Record<string, unknown>>(
+      `select id, meeting_id, provider, provider_artifact_id, source_revision, transcript_status,
+              provenance, trigger_mode, connection_state, read_receipt_ref, content_sha256,
+              raw_text, is_complete, has_more, is_canonical
+         from recruitment.transcript_artifact where id = $1`,
+      [value.artifact.id],
+    )).rows[0] as Record<string, unknown>
+    assert.equal(artifact.meeting_id, fixture.meetingIds[0])
+    assert.equal(artifact.provider, 'FEISHU')
+    assert.equal(artifact.raw_text, expectedText)
+    assert.ok(Buffer.from(artifact.raw_text as string, 'utf8').equals(Buffer.from(expectedText, 'utf8')))
+    assert.equal(artifact.content_sha256, expectedSha)
+    assert.equal(artifact.provenance, 'FIXTURE', 'fake CLI 读到的字节永远不是 LIVE')
+    assert.equal(artifact.trigger_mode, 'MANUAL')
+    assert.equal(artifact.connection_state, 'AUTH_REQUIRED')
+    assert.equal(artifact.is_complete, true)
+    // 回执来自传输层（lark:...），但 provenance=FIXTURE 表明没被当成平台已核实来源。
+    assert.match(String(artifact.read_receipt_ref), /^lark:minutes\+detail:mt_fixture_read@\d+$/)
+    assert.equal(artifact.id, value.artifact.id)
+
+    const segments = (await client.query<{ sequence: number; content_text: string; raw_source_ref: string | null }>(
+      'select sequence, content_text, raw_source_ref from recruitment.transcript_segment where artifact_id = $1 order by sequence',
+      [value.artifact.id],
+    )).rows
+    assert.equal(segments.length, 2)
+    assert.equal(segments[0]?.content_text, FAKE_LINE_1)
+    assert.equal(segments[1]?.content_text, FAKE_LINE_2)
+    assert.equal(segments[0]?.raw_source_ref, 'feishu-connector-readback')
+
+    const record = (await client.query<Record<string, unknown>>(
+      'select model_id, prompt_version, status, sections from recruitment.interview_record where id = $1',
+      [value.record?.id],
+    )).rows[0] as Record<string, unknown>
+    assert.equal(record.model_id, 'none:connector-readback')
+    assert.equal(record.prompt_version, 'connector-readback/1.0.0')
+    assert.equal(record.status, 'NEEDS_REVIEW')
+    const sections = record.sections as { schema: string; source: Record<string, unknown> }
+    assert.equal(sections.schema, 'feishu-connector-readback.sections/1')
+    assert.equal(sections.source.kind, 'FEISHU_CONNECTOR_READBACK')
+    assert.equal(sections.source.transport, 'FIXTURE', '回读对象的 transport 必须是 FIXTURE（Gate=BLOCKED）')
+    assert.equal(sections.source.read_receipt_ref, artifact.read_receipt_ref)
+
+    // ---- 同一内容重导 → replayed=true，一行都不写（TR-U8）----
+    const beforeReplay = await countsFor(client, fixture.meetingIds, fixture.interviewId)
+    const replay = await importTranscriptInTransaction(client, cfg, {
+      interview_id: fixture.interviewId,
+      minute_token: 'mt_fixture_read',
+    }, undefined, { connector })
+    assert.equal(replay.replayed, true)
+    assert.deepEqual(replay.labels, value.labels, 'replay 回显既有行标签，不因本次入参升级')
+    assert.equal(replay.provenance_basis, 'FEISHU_READBACK_NO_LIVE_GATE')
+    assert.ok(replay.warnings.some((warning) => warning.code === 'FEISHU_READBACK_NOT_LIVE'))
+    assert.deepEqual(await countsFor(client, fixture.meetingIds, fixture.interviewId), beforeReplay)
+  })
+})
+
+test('连接器回读按 external_meeting_id 消歧：落到 CONTINUATION 会议；不匹配 → NOT_FOUND 且零新增', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const fixture = await seedInterview(client, scenario.applicationId, { roles: ['PRIMARY', 'CONTINUATION'] })
+    const connector = fixtureConnector('single')
+    const continuation = fixture.meetingIds[1] as string
+
+    const value = await importTranscriptInTransaction(client, cfg, {
+      interview_id: fixture.interviewId,
+      minute_token: 'mt_fixture_ext',
+      external_meeting_id: fixture.externalMeetingIds[1],
+    }, undefined, { connector })
+    assert.equal(value.meeting.id, continuation, '必须按平台会议 id 精确落到 CONTINUATION 会议')
+    assert.equal(value.meeting.meeting_role, 'CONTINUATION')
+    assert.equal(value.labels.provenance, 'FIXTURE')
+
+    const before = await countsFor(client, fixture.meetingIds, fixture.interviewId)
+    assert.equal(before.artifacts, 1)
+    await assert.rejects(
+      async () => importTranscriptInTransaction(client, cfg, {
+        interview_id: fixture.interviewId,
+        minute_token: 'mt_fixture_ext_mismatch',
+        external_meeting_id: 'no-such-external-meeting-id',
+      }, undefined, { connector }),
+      (error: unknown) => {
+        const body = errorBody(error)
+        assert.equal(body.code, 'NOT_FOUND')
+        assert.equal(body.reason_code, 'MEETING_NOT_FOUND')
+        return true
+      },
+    )
+    assert.deepEqual(await countsFor(client, fixture.meetingIds, fixture.interviewId), before, '不匹配时零新增')
+    assert.equal(await artifactsMentioning(client, 'mt_fixture_ext_mismatch'), 0)
+  })
+})
+
+test('连接器回读取到的会议不是飞书 → INVALID_ARGS(SOURCE_CONNECTOR_MISMATCH)，零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const fixture = await seedInterview(client, scenario.applicationId, { provider: 'ZOOM' })
+    const connector = fixtureConnector('single')
+    const before = await countsFor(client, fixture.meetingIds, fixture.interviewId)
+    await assert.rejects(
+      async () => importTranscriptInTransaction(client, cfg, {
+        interview_id: fixture.interviewId,
+        minute_token: 'mt_fixture_zoom',
+      }, undefined, { connector }),
+      (error: unknown) => {
+        const body = errorBody(error)
+        assert.equal(body.code, 'INVALID_ARGS')
+        assert.equal(body.reason_code, 'SOURCE_CONNECTOR_MISMATCH')
+        return true
+      },
+    )
+    assert.deepEqual(await countsFor(client, fixture.meetingIds, fixture.interviewId), before)
+    assert.equal(await artifactsMentioning(client, 'mt_fixture_zoom'), 0)
+  })
+})
+
+test('平台 2091003（生成中）→ BLOCKED/PROVIDER_GENERATING，零 artifact（不是失败，但本次无正文）', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const fixture = await seedInterview(client, scenario.applicationId)
+    const connector = fixtureConnector('generating')
+    const before = await countsFor(client, fixture.meetingIds, fixture.interviewId)
+    await assert.rejects(
+      async () => importTranscriptInTransaction(client, cfg, {
+        interview_id: fixture.interviewId,
+        minute_token: 'mt_fixture_generating',
+      }, undefined, { connector }),
+      (error: unknown) => {
+        const body = errorBody(error)
+        assert.equal(body.code, 'BLOCKED')
+        assert.equal(body.reason_code, 'PROVIDER_GENERATING')
+        const detail = body.detail as Record<string, unknown>
+        assert.equal(detail.task_state, 'WAITING_EXTERNAL')
+        assert.equal(detail.provider_code, '2091003')
+        assert.equal(detail.creates_artifact, false)
+        return true
+      },
+    )
+    assert.deepEqual(await countsFor(client, fixture.meetingIds, fixture.interviewId), before)
+    assert.equal(await artifactsMentioning(client, 'mt_fixture_generating'), 0)
   })
 })
