@@ -1,0 +1,1524 @@
+{
+  "generated_at": "2026-11-14T20:48:31.248Z",
+  "purpose": "B 的 CI 等价复跑 vs A 的本地证据 vs psql 独立读回，逐项对账",
+  "runs": {
+    "b": {
+      "first": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-first-run\\run-2026-11-14T20-33-26-200Z",
+      "rerun": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-rerun\\run-2026-11-14T20-33-30-573Z"
+    },
+    "a": {
+      "first": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-15-golden-path-clean\\local-first-run\\run-2026-11-14T20-20-03-842Z",
+      "rerun": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-15-golden-path-clean\\local-rerun\\run-2026-11-14T20-20-25-061Z"
+    }
+  },
+  "summary": {
+    "b_first": {
+      "run_mode": "FIRST_RUN",
+      "counts": {
+        "hops": 16,
+        "passed": 16,
+        "failed": 0,
+        "skipped": 0
+      },
+      "acceptance_ok": true,
+      "final_state": {
+        "application_stage": "S10",
+        "application_rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+        "decision_count": 2,
+        "decision_scopes": [
+          {
+            "decision_scope": "SCREENING",
+            "stage_code": "S7",
+            "n": 1
+          },
+          {
+            "decision_scope": "STAGE",
+            "stage_code": "S10",
+            "n": 1
+          }
+        ],
+        "interview_count": 1,
+        "transcript_artifact_count": 1,
+        "interview_record_count": 1,
+        "scorecard_count": 2,
+        "submitted_scorecard_count": 2,
+        "consistency_view_violations_for_app": 0,
+        "consistency_view_violations_all": 0,
+        "consistency_violation_rows_for_app": [],
+        "stage_events": [
+          {
+            "event_id": "e8155162-37ba-4607-b402-651250fc2354",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+            "occurred_at": "2026-11-14T20:33:28.039Z",
+            "from_stage": "S6",
+            "to_stage": "S7",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          },
+          {
+            "event_id": "a6244008-3d33-4c01-8b8f-d2199351b746",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+            "occurred_at": "2026-11-14T20:33:28.338Z",
+            "from_stage": "S7",
+            "to_stage": "S8",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          },
+          {
+            "event_id": "f27228d4-ea3f-439d-bf6e-0dbba04e15b5",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+            "occurred_at": "2026-11-14T20:33:29.671Z",
+            "from_stage": "S8",
+            "to_stage": "S9",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          },
+          {
+            "event_id": "2c756446-d859-4b57-8bae-13124fcff9e5",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+            "occurred_at": "2026-11-14T20:33:29.671Z",
+            "from_stage": "S9",
+            "to_stage": "S10",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          }
+        ],
+        "counts": {
+          "application": 2,
+          "business_task": 1,
+          "candidate": 2,
+          "decision": 2,
+          "event_inbox": 13,
+          "intake_asset": 1,
+          "intake_record": 1,
+          "interview": 1,
+          "interview_record": 1,
+          "interviewer": 2,
+          "meeting": 1,
+          "meeting_binding": 1,
+          "resume": 1,
+          "resume_version": 1,
+          "scorecard": 2,
+          "transcript_artifact": 1,
+          "transcript_segment": 11
+        },
+        "counts_delta_vs_preflight": {
+          "application": 1,
+          "business_task": 1,
+          "candidate": 1,
+          "decision": 2,
+          "event_inbox": 9,
+          "intake_asset": 1,
+          "intake_record": 1,
+          "interview": 1,
+          "interview_record": 1,
+          "interviewer": 2,
+          "meeting": 1,
+          "meeting_binding": 1,
+          "resume": 1,
+          "resume_version": 1,
+          "scorecard": 2,
+          "transcript_artifact": 1,
+          "transcript_segment": 11
+        }
+      },
+      "negative_controls": [
+        {
+          "hop": 6,
+          "id": "s8-schedule-denied",
+          "outcome": "PASS",
+          "blocked": true,
+          "code": "FORBIDDEN",
+          "reason_code": "APPROVAL_NOT_GRANTED",
+          "reject_path": null,
+          "had_scorecard_before": null,
+          "row_delta": {}
+        },
+        {
+          "hop": 11,
+          "id": "s10-scorecard-denied",
+          "outcome": "PASS",
+          "blocked": true,
+          "code": "FORBIDDEN",
+          "reason_code": "APPROVAL_NOT_GRANTED",
+          "reject_path": "FORBIDDEN/APPROVAL_NOT_GRANTED",
+          "had_scorecard_before": false,
+          "row_delta": {}
+        }
+      ],
+      "bootstrap": {
+        "path": "C:\\Users\\12412\\AppData\\Local\\Temp\\g4-snapshot-b-2d987d4\\scripts\\bootstrap-demo.mjs",
+        "sha256": "65e05b0bcc95d1e6dfd489c5ef5ebcea9546e228d6c237f26707f860f692b5cc",
+        "outcome": "NO_OP",
+        "exit_code": 0,
+        "state": "NO_OP",
+        "writes": {
+          "written": false,
+          "steps": []
+        },
+        "demo_approval_mode": "allow-once"
+      },
+      "repository": {
+        "head": "2d987d4d923c90683790ab98b8e115f4983a9b78",
+        "head_source": "env:GOLDEN_PATH_HEAD",
+        "branch": null,
+        "dirty_lines": null,
+        "worktree_state": "snapshot",
+        "note": "快照目录由 git archive 导出、没有 .git：HEAD 由 GOLDEN_PATH_HEAD 显式绑定，worktree_state=snapshot"
+      },
+      "harness_sha256": "fb1061cd3683e05f6b026e9558de5bf0ced646e8a9b4c7036f5a4f03df0e257e"
+    },
+    "b_rerun": {
+      "run_mode": "RERUN",
+      "counts": {
+        "hops": 16,
+        "passed": 16,
+        "failed": 0,
+        "skipped": 0
+      },
+      "acceptance_ok": true,
+      "final_state": {
+        "application_stage": "S10",
+        "application_rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+        "decision_count": 2,
+        "decision_scopes": [
+          {
+            "decision_scope": "SCREENING",
+            "stage_code": "S7",
+            "n": 1
+          },
+          {
+            "decision_scope": "STAGE",
+            "stage_code": "S10",
+            "n": 1
+          }
+        ],
+        "interview_count": 1,
+        "transcript_artifact_count": 1,
+        "interview_record_count": 1,
+        "scorecard_count": 2,
+        "submitted_scorecard_count": 2,
+        "consistency_view_violations_for_app": 0,
+        "consistency_view_violations_all": 0,
+        "consistency_violation_rows_for_app": [],
+        "stage_events": [
+          {
+            "event_id": "e8155162-37ba-4607-b402-651250fc2354",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+            "occurred_at": "2026-11-14T20:33:28.039Z",
+            "from_stage": "S6",
+            "to_stage": "S7",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          },
+          {
+            "event_id": "a6244008-3d33-4c01-8b8f-d2199351b746",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+            "occurred_at": "2026-11-14T20:33:28.338Z",
+            "from_stage": "S7",
+            "to_stage": "S8",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          },
+          {
+            "event_id": "f27228d4-ea3f-439d-bf6e-0dbba04e15b5",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+            "occurred_at": "2026-11-14T20:33:29.671Z",
+            "from_stage": "S8",
+            "to_stage": "S9",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          },
+          {
+            "event_id": "2c756446-d859-4b57-8bae-13124fcff9e5",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+            "occurred_at": "2026-11-14T20:33:29.671Z",
+            "from_stage": "S9",
+            "to_stage": "S10",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          }
+        ],
+        "counts": {
+          "application": 2,
+          "business_task": 1,
+          "candidate": 2,
+          "decision": 2,
+          "event_inbox": 13,
+          "intake_asset": 1,
+          "intake_record": 1,
+          "interview": 1,
+          "interview_record": 1,
+          "interviewer": 2,
+          "meeting": 1,
+          "meeting_binding": 1,
+          "resume": 1,
+          "resume_version": 1,
+          "scorecard": 2,
+          "transcript_artifact": 1,
+          "transcript_segment": 11
+        },
+        "counts_delta_vs_preflight": {}
+      },
+      "negative_controls": [
+        {
+          "hop": 6,
+          "id": "s8-schedule-denied",
+          "outcome": "PASS",
+          "blocked": true,
+          "code": "FORBIDDEN",
+          "reason_code": "APPROVAL_NOT_GRANTED",
+          "reject_path": null,
+          "had_scorecard_before": null,
+          "row_delta": {}
+        },
+        {
+          "hop": 11,
+          "id": "s10-scorecard-denied",
+          "outcome": "PASS",
+          "blocked": true,
+          "code": "ALREADY_SUBMITTED",
+          "reason_code": "SCORECARD_ALREADY_SUBMITTED",
+          "reject_path": "ALREADY_SUBMITTED/SCORECARD_ALREADY_SUBMITTED",
+          "had_scorecard_before": true,
+          "row_delta": {}
+        }
+      ],
+      "bootstrap": {
+        "path": "C:\\Users\\12412\\AppData\\Local\\Temp\\g4-snapshot-b-2d987d4\\scripts\\bootstrap-demo.mjs",
+        "sha256": "65e05b0bcc95d1e6dfd489c5ef5ebcea9546e228d6c237f26707f860f692b5cc",
+        "outcome": "NO_OP",
+        "exit_code": 0,
+        "state": "NO_OP",
+        "writes": {
+          "written": false,
+          "steps": []
+        },
+        "demo_approval_mode": "allow-once"
+      },
+      "repository": {
+        "head": "2d987d4d923c90683790ab98b8e115f4983a9b78",
+        "head_source": "env:GOLDEN_PATH_HEAD",
+        "branch": null,
+        "dirty_lines": null,
+        "worktree_state": "snapshot",
+        "note": "快照目录由 git archive 导出、没有 .git：HEAD 由 GOLDEN_PATH_HEAD 显式绑定，worktree_state=snapshot"
+      },
+      "harness_sha256": "fb1061cd3683e05f6b026e9558de5bf0ced646e8a9b4c7036f5a4f03df0e257e"
+    },
+    "a_first": {
+      "run_mode": "FIRST_RUN",
+      "counts": {
+        "hops": 16,
+        "passed": 16,
+        "failed": 0,
+        "skipped": 0
+      },
+      "final_state": {
+        "application_stage": "S10",
+        "application_rubric_version_id": "d1438ba1-3fd2-4493-a430-c6fa8c6f1098",
+        "decision_count": 2,
+        "decision_scopes": [
+          {
+            "decision_scope": "SCREENING",
+            "stage_code": "S7",
+            "n": 1
+          },
+          {
+            "decision_scope": "STAGE",
+            "stage_code": "S10",
+            "n": 1
+          }
+        ],
+        "interview_count": 1,
+        "transcript_artifact_count": 1,
+        "interview_record_count": 1,
+        "scorecard_count": 2,
+        "submitted_scorecard_count": 2,
+        "consistency_view_violations_for_app": 0,
+        "consistency_view_violations_all": 0,
+        "consistency_violation_rows_for_app": [],
+        "stage_events": [
+          {
+            "event_id": "d09c63ba-e956-462c-adf6-be40f7daae16",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+            "occurred_at": "2026-11-14T20:20:05.570Z",
+            "from_stage": "S6",
+            "to_stage": "S7",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          },
+          {
+            "event_id": "636180ee-9ef3-4667-a2cd-c23c457142dd",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+            "occurred_at": "2026-11-14T20:20:05.824Z",
+            "from_stage": "S7",
+            "to_stage": "S8",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          },
+          {
+            "event_id": "025c520e-6ffe-4214-ab86-a93daf2f70da",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+            "occurred_at": "2026-11-14T20:20:06.764Z",
+            "from_stage": "S8",
+            "to_stage": "S9",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          },
+          {
+            "event_id": "4c9bce1c-e5b8-4e8b-9f23-cf11e52f30aa",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+            "occurred_at": "2026-11-14T20:20:06.764Z",
+            "from_stage": "S9",
+            "to_stage": "S10",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          }
+        ],
+        "counts": {
+          "application": 2,
+          "business_task": 1,
+          "candidate": 2,
+          "decision": 2,
+          "event_inbox": 13,
+          "intake_asset": 1,
+          "intake_record": 1,
+          "interview": 1,
+          "interview_record": 1,
+          "interviewer": 2,
+          "meeting": 1,
+          "meeting_binding": 1,
+          "resume": 1,
+          "resume_version": 1,
+          "scorecard": 2,
+          "transcript_artifact": 1,
+          "transcript_segment": 11
+        },
+        "counts_delta_vs_preflight": {
+          "application": 1,
+          "business_task": 1,
+          "candidate": 1,
+          "decision": 2,
+          "event_inbox": 9,
+          "intake_asset": 1,
+          "intake_record": 1,
+          "interview": 1,
+          "interview_record": 1,
+          "interviewer": 2,
+          "meeting": 1,
+          "meeting_binding": 1,
+          "resume": 1,
+          "resume_version": 1,
+          "scorecard": 2,
+          "transcript_artifact": 1,
+          "transcript_segment": 11
+        }
+      },
+      "repository": {
+        "head": "2d987d4d923c90683790ab98b8e115f4983a9b78",
+        "head_source": "env:GOLDEN_PATH_HEAD",
+        "branch": null,
+        "dirty_lines": null,
+        "worktree_state": "snapshot",
+        "note": "快照目录由 git archive 导出、没有 .git：HEAD 由 GOLDEN_PATH_HEAD 显式绑定，worktree_state=snapshot"
+      }
+    },
+    "a_rerun": {
+      "run_mode": "RERUN",
+      "counts": {
+        "hops": 16,
+        "passed": 16,
+        "failed": 0,
+        "skipped": 0
+      },
+      "final_state": {
+        "application_stage": "S10",
+        "application_rubric_version_id": "d1438ba1-3fd2-4493-a430-c6fa8c6f1098",
+        "decision_count": 2,
+        "decision_scopes": [
+          {
+            "decision_scope": "SCREENING",
+            "stage_code": "S7",
+            "n": 1
+          },
+          {
+            "decision_scope": "STAGE",
+            "stage_code": "S10",
+            "n": 1
+          }
+        ],
+        "interview_count": 1,
+        "transcript_artifact_count": 1,
+        "interview_record_count": 1,
+        "scorecard_count": 2,
+        "submitted_scorecard_count": 2,
+        "consistency_view_violations_for_app": 0,
+        "consistency_view_violations_all": 0,
+        "consistency_violation_rows_for_app": [],
+        "stage_events": [
+          {
+            "event_id": "d09c63ba-e956-462c-adf6-be40f7daae16",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+            "occurred_at": "2026-11-14T20:20:05.570Z",
+            "from_stage": "S6",
+            "to_stage": "S7",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          },
+          {
+            "event_id": "636180ee-9ef3-4667-a2cd-c23c457142dd",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+            "occurred_at": "2026-11-14T20:20:05.824Z",
+            "from_stage": "S7",
+            "to_stage": "S8",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          },
+          {
+            "event_id": "025c520e-6ffe-4214-ab86-a93daf2f70da",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+            "occurred_at": "2026-11-14T20:20:06.764Z",
+            "from_stage": "S8",
+            "to_stage": "S9",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          },
+          {
+            "event_id": "4c9bce1c-e5b8-4e8b-9f23-cf11e52f30aa",
+            "event_type": "application.current_stage_code.changed",
+            "source_object_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+            "occurred_at": "2026-11-14T20:20:06.764Z",
+            "from_stage": "S9",
+            "to_stage": "S10",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          }
+        ],
+        "counts": {
+          "application": 2,
+          "business_task": 1,
+          "candidate": 2,
+          "decision": 2,
+          "event_inbox": 13,
+          "intake_asset": 1,
+          "intake_record": 1,
+          "interview": 1,
+          "interview_record": 1,
+          "interviewer": 2,
+          "meeting": 1,
+          "meeting_binding": 1,
+          "resume": 1,
+          "resume_version": 1,
+          "scorecard": 2,
+          "transcript_artifact": 1,
+          "transcript_segment": 11
+        },
+        "counts_delta_vs_preflight": {}
+      }
+    }
+  },
+  "psql_readback": {
+    "database": "ra_g4_ci_replay",
+    "applications": [
+      "id=11111111-1111-4111-8111-000000000701 candidate=11111111-1111-4111-8111-000000000601 job=11111111-1111-4111-8111-000000000401 stage=S7 lifecycle=ACTIVE rubric_version=11111111-1111-4111-8111-000000000403 resume_version=null applied_at=2026-11-15 04:33:21.089075+08",
+      "id=dc8b0681-9f2a-466d-b668-936d023207f5 candidate=c2d0cc31-18c4-469e-8e13-ef25bd656a26 job=11111111-1111-4111-8111-000000000401 stage=S10 lifecycle=ACTIVE rubric_version=4facfb68-64ec-4500-b26a-7ff4db6c2f46 resume_version=137bbf97-ba2f-49f1-b4c2-f78943c5ff35 applied_at=2026-11-15 04:33:27.916774+08"
+    ],
+    "decisions": [
+      "scope=SCREENING stage=S7 result=ADVANCE superseded_by=null decided_at=2026-11-15 04:33:28.238048+08",
+      "scope=STAGE stage=S10 result=ADVANCE superseded_by=null decided_at=2026-11-15 04:33:29.518255+08"
+    ],
+    "submitted_scorecards": 2,
+    "transcript": [
+      "revision=1 status=READY canonical=true provenance=FIXTURE trigger=MANUAL connection=NOT_CONNECTED content_sha256=c8198254ebd961b871bc7a22e4a87f88bd667d6f54a4be1c17dc6e9de19290ab"
+    ],
+    "stage_events": [
+      "application.current_stage_code.changed S6->S7 at=2026-11-15 04:33:21.089075+08",
+      "application.current_stage_code.changed S6->S7 at=2026-11-15 04:33:28.039254+08",
+      "application.current_stage_code.changed S7->S8 at=2026-11-15 04:33:28.338678+08",
+      "application.current_stage_code.changed S8->S9 at=2026-11-15 04:33:29.671549+08",
+      "application.current_stage_code.changed S9->S10 at=2026-11-15 04:33:29.671549+08"
+    ],
+    "view_rows_all": 0,
+    "view_rows_this_app": 0,
+    "stage_event_S8_S9": 1,
+    "stage_event_S9_S10": 1,
+    "row_counts": {
+      "application": 2,
+      "candidate": 2,
+      "resume": 1,
+      "resume_version": 1,
+      "intake_asset": 1,
+      "interview": 1,
+      "interview_record": 1,
+      "scorecard": 2,
+      "decision": 2,
+      "ai_summary": 0,
+      "transcript_artifact": 1,
+      "meeting": 1,
+      "business_task": 1,
+      "event_inbox": 13
+    },
+    "dup": {
+      "dup_scorecard_revision": 0,
+      "dup_current_decision": 0,
+      "dup_active_application": 0
+    }
+  },
+  "expected_differences": [
+    "数据库名不同：B=ra_g4_ci_replay（本 lane 一次性库） vs A=ra_g4_clean（A 的一次性库）——同一套 0001→0016 + 同一 HEAD + 同一 harness。",
+    "内置 bootstrap outcome 不同：A 的 harness 首次运行内做 bootstrap（BOOTSTRAPPED）；B 按 CI job 顺序先显式跑 bootstrap，harness 内置那次是 NO_OP（零写入）——这是 CI 步骤设计的预期差异，不是行为分歧。",
+    "application/candidate 等 UUID 与时间戳不同：两库独立运行，不参与对账。"
+  ],
+  "checks": [
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-first-run 四数",
+      "ok": true,
+      "detail": {
+        "actual": {
+          "hops": 16,
+          "passed": 16,
+          "failed": 0,
+          "skipped": 0
+        },
+        "expected": {
+          "hops": 16,
+          "passed": 16,
+          "failed": 0,
+          "skipped": 0
+        }
+      }
+    },
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-first-run acceptance.ok",
+      "ok": true,
+      "detail": {
+        "actual": true,
+        "expected": true
+      }
+    },
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-first-run final_state.application_stage",
+      "ok": true,
+      "detail": {
+        "actual": "S10",
+        "expected": "S10"
+      }
+    },
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-first-run submitted_scorecard_count",
+      "ok": true,
+      "detail": {
+        "actual": 2,
+        "expected": 2
+      }
+    },
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-first-run consistency_view_violations_all",
+      "ok": true,
+      "detail": {
+        "actual": 0,
+        "expected": 0
+      }
+    },
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-first-run harness.sha256",
+      "ok": true,
+      "detail": {
+        "actual": "fb1061cd3683e05f6b026e9558de5bf0ced646e8a9b4c7036f5a4f03df0e257e",
+        "expected": "fb1061cd3683e05f6b026e9558de5bf0ced646e8a9b4c7036f5a4f03df0e257e"
+      }
+    },
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-first-run repository.head",
+      "ok": true,
+      "detail": {
+        "actual": "2d987d4d923c90683790ab98b8e115f4983a9b78",
+        "expected": "2d987d4d923c90683790ab98b8e115f4983a9b78"
+      }
+    },
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-first-run workspace 模式（快照）",
+      "ok": true,
+      "detail": {
+        "actual": "snapshot",
+        "expected": "snapshot"
+      }
+    },
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-rerun 四数",
+      "ok": true,
+      "detail": {
+        "actual": {
+          "hops": 16,
+          "passed": 16,
+          "failed": 0,
+          "skipped": 0
+        },
+        "expected": {
+          "hops": 16,
+          "passed": 16,
+          "failed": 0,
+          "skipped": 0
+        }
+      }
+    },
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-rerun acceptance.ok",
+      "ok": true,
+      "detail": {
+        "actual": true,
+        "expected": true
+      }
+    },
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-rerun final_state.application_stage",
+      "ok": true,
+      "detail": {
+        "actual": "S10",
+        "expected": "S10"
+      }
+    },
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-rerun submitted_scorecard_count",
+      "ok": true,
+      "detail": {
+        "actual": 2,
+        "expected": 2
+      }
+    },
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-rerun consistency_view_violations_all",
+      "ok": true,
+      "detail": {
+        "actual": 0,
+        "expected": 0
+      }
+    },
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-rerun harness.sha256",
+      "ok": true,
+      "detail": {
+        "actual": "fb1061cd3683e05f6b026e9558de5bf0ced646e8a9b4c7036f5a4f03df0e257e",
+        "expected": "fb1061cd3683e05f6b026e9558de5bf0ced646e8a9b4c7036f5a4f03df0e257e"
+      }
+    },
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-rerun repository.head",
+      "ok": true,
+      "detail": {
+        "actual": "2d987d4d923c90683790ab98b8e115f4983a9b78",
+        "expected": "2d987d4d923c90683790ab98b8e115f4983a9b78"
+      }
+    },
+    {
+      "name": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\work\\verify-2026-11-15-g4\\ci-rehearsal\\phase2-rerun workspace 模式（快照）",
+      "ok": true,
+      "detail": {
+        "actual": "snapshot",
+        "expected": "snapshot"
+      }
+    },
+    {
+      "name": "B FIRST_RUN run_mode + 守卫",
+      "ok": true,
+      "detail": {
+        "actual": [
+          "FIRST_RUN",
+          true
+        ],
+        "expected": [
+          "FIRST_RUN",
+          true
+        ]
+      }
+    },
+    {
+      "name": "B RERUN run_mode + 守卫",
+      "ok": true,
+      "detail": {
+        "actual": [
+          "RERUN",
+          true
+        ],
+        "expected": [
+          "RERUN",
+          true
+        ]
+      }
+    },
+    {
+      "name": "first 四数 B == A",
+      "ok": true,
+      "detail": {
+        "actual": {
+          "hops": 16,
+          "passed": 16,
+          "failed": 0,
+          "skipped": 0
+        },
+        "expected": {
+          "hops": 16,
+          "passed": 16,
+          "failed": 0,
+          "skipped": 0
+        }
+      }
+    },
+    {
+      "name": "first acceptance B == A",
+      "ok": true,
+      "detail": {
+        "actual": {
+          "all_hops_pass": true,
+          "stage_s10": true,
+          "submitted_scorecards_ge_1": true,
+          "consistency_view_zero_violations": true,
+          "negative_controls_blocked": true,
+          "ok": true
+        },
+        "expected": {
+          "all_hops_pass": true,
+          "stage_s10": true,
+          "submitted_scorecards_ge_1": true,
+          "consistency_view_zero_violations": true,
+          "negative_controls_blocked": true,
+          "ok": true
+        }
+      }
+    },
+    {
+      "name": "first run_mode B == A",
+      "ok": true,
+      "detail": {
+        "actual": "FIRST_RUN",
+        "expected": "FIRST_RUN"
+      }
+    },
+    {
+      "name": "first final_state 关键字段 B == A",
+      "ok": true,
+      "detail": {
+        "actual": {
+          "application_stage": "S10",
+          "decision_count": 2,
+          "interview_count": 1,
+          "transcript_artifact_count": 1,
+          "interview_record_count": 1,
+          "scorecard_count": 2,
+          "submitted_scorecard_count": 2,
+          "consistency_view_violations_for_app": 0,
+          "consistency_view_violations_all": 0
+        },
+        "expected": {
+          "application_stage": "S10",
+          "decision_count": 2,
+          "interview_count": 1,
+          "transcript_artifact_count": 1,
+          "interview_record_count": 1,
+          "scorecard_count": 2,
+          "submitted_scorecard_count": 2,
+          "consistency_view_violations_for_app": 0,
+          "consistency_view_violations_all": 0
+        }
+      }
+    },
+    {
+      "name": "first negative_controls B == A（逐条）",
+      "ok": true,
+      "detail": {
+        "actual": [
+          {
+            "hop": 6,
+            "id": "s8-schedule-denied",
+            "outcome": "PASS",
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason_code": "APPROVAL_NOT_GRANTED",
+            "reject_path": null,
+            "had_scorecard_before": null,
+            "row_delta": {}
+          },
+          {
+            "hop": 11,
+            "id": "s10-scorecard-denied",
+            "outcome": "PASS",
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason_code": "APPROVAL_NOT_GRANTED",
+            "reject_path": "FORBIDDEN/APPROVAL_NOT_GRANTED",
+            "had_scorecard_before": false,
+            "row_delta": {}
+          }
+        ],
+        "expected": [
+          {
+            "hop": 6,
+            "id": "s8-schedule-denied",
+            "outcome": "PASS",
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason_code": "APPROVAL_NOT_GRANTED",
+            "reject_path": null,
+            "had_scorecard_before": null,
+            "row_delta": {}
+          },
+          {
+            "hop": 11,
+            "id": "s10-scorecard-denied",
+            "outcome": "PASS",
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason_code": "APPROVAL_NOT_GRANTED",
+            "reject_path": "FORBIDDEN/APPROVAL_NOT_GRANTED",
+            "had_scorecard_before": false,
+            "row_delta": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "rerun 四数 B == A",
+      "ok": true,
+      "detail": {
+        "actual": {
+          "hops": 16,
+          "passed": 16,
+          "failed": 0,
+          "skipped": 0
+        },
+        "expected": {
+          "hops": 16,
+          "passed": 16,
+          "failed": 0,
+          "skipped": 0
+        }
+      }
+    },
+    {
+      "name": "rerun acceptance B == A",
+      "ok": true,
+      "detail": {
+        "actual": {
+          "all_hops_pass": true,
+          "stage_s10": true,
+          "submitted_scorecards_ge_1": true,
+          "consistency_view_zero_violations": true,
+          "negative_controls_blocked": true,
+          "ok": true
+        },
+        "expected": {
+          "all_hops_pass": true,
+          "stage_s10": true,
+          "submitted_scorecards_ge_1": true,
+          "consistency_view_zero_violations": true,
+          "negative_controls_blocked": true,
+          "ok": true
+        }
+      }
+    },
+    {
+      "name": "rerun run_mode B == A",
+      "ok": true,
+      "detail": {
+        "actual": "RERUN",
+        "expected": "RERUN"
+      }
+    },
+    {
+      "name": "rerun final_state 关键字段 B == A",
+      "ok": true,
+      "detail": {
+        "actual": {
+          "application_stage": "S10",
+          "decision_count": 2,
+          "interview_count": 1,
+          "transcript_artifact_count": 1,
+          "interview_record_count": 1,
+          "scorecard_count": 2,
+          "submitted_scorecard_count": 2,
+          "consistency_view_violations_for_app": 0,
+          "consistency_view_violations_all": 0
+        },
+        "expected": {
+          "application_stage": "S10",
+          "decision_count": 2,
+          "interview_count": 1,
+          "transcript_artifact_count": 1,
+          "interview_record_count": 1,
+          "scorecard_count": 2,
+          "submitted_scorecard_count": 2,
+          "consistency_view_violations_for_app": 0,
+          "consistency_view_violations_all": 0
+        }
+      }
+    },
+    {
+      "name": "rerun negative_controls B == A（逐条）",
+      "ok": true,
+      "detail": {
+        "actual": [
+          {
+            "hop": 6,
+            "id": "s8-schedule-denied",
+            "outcome": "PASS",
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason_code": "APPROVAL_NOT_GRANTED",
+            "reject_path": null,
+            "had_scorecard_before": null,
+            "row_delta": {}
+          },
+          {
+            "hop": 11,
+            "id": "s10-scorecard-denied",
+            "outcome": "PASS",
+            "blocked": true,
+            "code": "ALREADY_SUBMITTED",
+            "reason_code": "SCORECARD_ALREADY_SUBMITTED",
+            "reject_path": "ALREADY_SUBMITTED/SCORECARD_ALREADY_SUBMITTED",
+            "had_scorecard_before": true,
+            "row_delta": {}
+          }
+        ],
+        "expected": [
+          {
+            "hop": 6,
+            "id": "s8-schedule-denied",
+            "outcome": "PASS",
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason_code": "APPROVAL_NOT_GRANTED",
+            "reject_path": null,
+            "had_scorecard_before": null,
+            "row_delta": {}
+          },
+          {
+            "hop": 11,
+            "id": "s10-scorecard-denied",
+            "outcome": "PASS",
+            "blocked": true,
+            "code": "ALREADY_SUBMITTED",
+            "reason_code": "SCORECARD_ALREADY_SUBMITTED",
+            "reject_path": "ALREADY_SUBMITTED/SCORECARD_ALREADY_SUBMITTED",
+            "had_scorecard_before": true,
+            "row_delta": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "B FIRST_RUN HOP16 status/transitions",
+      "ok": true,
+      "detail": {
+        "actual": [
+          "ADVANCED",
+          [
+            {
+              "from": "S8",
+              "to": "S9"
+            },
+            {
+              "from": "S9",
+              "to": "S10"
+            }
+          ]
+        ],
+        "expected": [
+          "ADVANCED",
+          [
+            {
+              "from": "S8",
+              "to": "S9"
+            },
+            {
+              "from": "S9",
+              "to": "S10"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "name": "A FIRST_RUN HOP16 status/transitions",
+      "ok": true,
+      "detail": {
+        "actual": [
+          "ADVANCED",
+          [
+            {
+              "from": "S8",
+              "to": "S9"
+            },
+            {
+              "from": "S9",
+              "to": "S10"
+            }
+          ]
+        ],
+        "expected": [
+          "ADVANCED",
+          [
+            {
+              "from": "S8",
+              "to": "S9"
+            },
+            {
+              "from": "S9",
+              "to": "S10"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "name": "B RERUN HOP16 status/transitions",
+      "ok": true,
+      "detail": {
+        "actual": [
+          "NO_OP",
+          []
+        ],
+        "expected": [
+          "NO_OP",
+          []
+        ]
+      }
+    },
+    {
+      "name": "A RERUN HOP16 status/transitions",
+      "ok": true,
+      "detail": {
+        "actual": [
+          "NO_OP",
+          []
+        ],
+        "expected": [
+          "NO_OP",
+          []
+        ]
+      }
+    },
+    {
+      "name": "B FIRST_RUN HOP16 stage_code",
+      "ok": true,
+      "detail": {
+        "actual": "S10",
+        "expected": "S10"
+      }
+    },
+    {
+      "name": "B RERUN HOP16 stage_code",
+      "ok": true,
+      "detail": {
+        "actual": "S10",
+        "expected": "S10"
+      }
+    },
+    {
+      "name": "B FIRST_RUN 负例（零写入 + 拒绝路径）",
+      "ok": true,
+      "detail": {
+        "actual": {
+          "hop6": {
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason": "APPROVAL_NOT_GRANTED",
+            "delta": {},
+            "path": null
+          },
+          "hop11": {
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason": "APPROVAL_NOT_GRANTED",
+            "delta": {},
+            "path": "FORBIDDEN/APPROVAL_NOT_GRANTED"
+          }
+        },
+        "expected": {
+          "hop6": {
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason": "APPROVAL_NOT_GRANTED",
+            "delta": {},
+            "path": null
+          },
+          "hop11": {
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason": "APPROVAL_NOT_GRANTED",
+            "delta": {},
+            "path": "FORBIDDEN/APPROVAL_NOT_GRANTED"
+          }
+        }
+      }
+    },
+    {
+      "name": "A FIRST_RUN 负例（零写入 + 拒绝路径）",
+      "ok": true,
+      "detail": {
+        "actual": {
+          "hop6": {
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason": "APPROVAL_NOT_GRANTED",
+            "delta": {},
+            "path": null
+          },
+          "hop11": {
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason": "APPROVAL_NOT_GRANTED",
+            "delta": {},
+            "path": "FORBIDDEN/APPROVAL_NOT_GRANTED"
+          }
+        },
+        "expected": {
+          "hop6": {
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason": "APPROVAL_NOT_GRANTED",
+            "delta": {},
+            "path": null
+          },
+          "hop11": {
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason": "APPROVAL_NOT_GRANTED",
+            "delta": {},
+            "path": "FORBIDDEN/APPROVAL_NOT_GRANTED"
+          }
+        }
+      }
+    },
+    {
+      "name": "B RERUN 负例（零写入 + 拒绝路径）",
+      "ok": true,
+      "detail": {
+        "actual": {
+          "hop6": {
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason": "APPROVAL_NOT_GRANTED",
+            "delta": {},
+            "path": null
+          },
+          "hop11": {
+            "blocked": true,
+            "code": "ALREADY_SUBMITTED",
+            "reason": "SCORECARD_ALREADY_SUBMITTED",
+            "delta": {},
+            "path": "ALREADY_SUBMITTED/SCORECARD_ALREADY_SUBMITTED"
+          }
+        },
+        "expected": {
+          "hop6": {
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason": "APPROVAL_NOT_GRANTED",
+            "delta": {},
+            "path": null
+          },
+          "hop11": {
+            "blocked": true,
+            "code": "ALREADY_SUBMITTED",
+            "reason": "SCORECARD_ALREADY_SUBMITTED",
+            "delta": {},
+            "path": "ALREADY_SUBMITTED/SCORECARD_ALREADY_SUBMITTED"
+          }
+        }
+      }
+    },
+    {
+      "name": "A RERUN 负例（零写入 + 拒绝路径）",
+      "ok": true,
+      "detail": {
+        "actual": {
+          "hop6": {
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason": "APPROVAL_NOT_GRANTED",
+            "delta": {},
+            "path": null
+          },
+          "hop11": {
+            "blocked": true,
+            "code": "ALREADY_SUBMITTED",
+            "reason": "SCORECARD_ALREADY_SUBMITTED",
+            "delta": {},
+            "path": "ALREADY_SUBMITTED/SCORECARD_ALREADY_SUBMITTED"
+          }
+        },
+        "expected": {
+          "hop6": {
+            "blocked": true,
+            "code": "FORBIDDEN",
+            "reason": "APPROVAL_NOT_GRANTED",
+            "delta": {},
+            "path": null
+          },
+          "hop11": {
+            "blocked": true,
+            "code": "ALREADY_SUBMITTED",
+            "reason": "SCORECARD_ALREADY_SUBMITTED",
+            "delta": {},
+            "path": "ALREADY_SUBMITTED/SCORECARD_ALREADY_SUBMITTED"
+          }
+        }
+      }
+    },
+    {
+      "name": "B RERUN counts_delta_vs_preflight == {}（零写入）",
+      "ok": true,
+      "detail": {
+        "actual": {},
+        "expected": {}
+      }
+    },
+    {
+      "name": "A RERUN counts_delta_vs_preflight == {}（零写入）",
+      "ok": true,
+      "detail": {
+        "actual": {},
+        "expected": {}
+      }
+    },
+    {
+      "name": "B RERUN 终态行数 == FIRST_RUN 终态行数",
+      "ok": true,
+      "detail": {
+        "actual": {
+          "application": 2,
+          "business_task": 1,
+          "candidate": 2,
+          "decision": 2,
+          "event_inbox": 13,
+          "intake_asset": 1,
+          "intake_record": 1,
+          "interview": 1,
+          "interview_record": 1,
+          "interviewer": 2,
+          "meeting": 1,
+          "meeting_binding": 1,
+          "resume": 1,
+          "resume_version": 1,
+          "scorecard": 2,
+          "transcript_artifact": 1,
+          "transcript_segment": 11
+        },
+        "expected": {
+          "application": 2,
+          "business_task": 1,
+          "candidate": 2,
+          "decision": 2,
+          "event_inbox": 13,
+          "intake_asset": 1,
+          "intake_record": 1,
+          "interview": 1,
+          "interview_record": 1,
+          "interviewer": 2,
+          "meeting": 1,
+          "meeting_binding": 1,
+          "resume": 1,
+          "resume_version": 1,
+          "scorecard": 2,
+          "transcript_artifact": 1,
+          "transcript_segment": 11
+        }
+      }
+    },
+    {
+      "name": "A FIRST_RUN 内置 bootstrap",
+      "ok": true,
+      "detail": {
+        "actual": [
+          "BOOTSTRAPPED",
+          true
+        ],
+        "expected": [
+          "BOOTSTRAPPED",
+          true
+        ]
+      }
+    },
+    {
+      "name": "B FIRST_RUN harness 内置 bootstrap（显式 bootstrap 已先跑 → NO_OP 且零写入）",
+      "ok": true,
+      "detail": {
+        "actual": [
+          "NO_OP",
+          false,
+          0
+        ],
+        "expected": [
+          "NO_OP",
+          false,
+          0
+        ]
+      }
+    },
+    {
+      "name": "B/A bootstrap 脚本 sha256 相同",
+      "ok": true,
+      "detail": {
+        "actual": "65e05b0bcc95d1e6dfd489c5ef5ebcea9546e228d6c237f26707f860f692b5cc",
+        "expected": "65e05b0bcc95d1e6dfd489c5ef5ebcea9546e228d6c237f26707f860f692b5cc"
+      }
+    },
+    {
+      "name": "A bootstrap 脚本 sha256",
+      "ok": true,
+      "detail": {
+        "actual": "65e05b0bcc95d1e6dfd489c5ef5ebcea9546e228d6c237f26707f860f692b5cc",
+        "expected": "65e05b0bcc95d1e6dfd489c5ef5ebcea9546e228d6c237f26707f860f692b5cc"
+      }
+    },
+    {
+      "name": "psql 读回：存在 S10 申请",
+      "ok": true,
+      "detail": "id=dc8b0681-9f2a-466d-b668-936d023207f5 candidate=c2d0cc31-18c4-469e-8e13-ef25bd656a26 job=11111111-1111-4111-8111-000000000401 stage=S10 lifecycle=ACTIVE rubric_version=4facfb68-64ec-4500-b26a-7ff4db6c2f46 resume_version=137bbf97-ba2f-49f1-b4c2-f78943c5ff35 applied_at=2026-11-15 04:33:27.916774+08"
+    },
+    {
+      "name": "psql 读回：application 行数 = 2（seed 1 + harness 1）",
+      "ok": true,
+      "detail": {
+        "appCount": 2
+      }
+    },
+    {
+      "name": "psql 读回：SUBMITTED 面评数 = 2（与 summary 一致）",
+      "ok": true,
+      "detail": {
+        "actual": 2,
+        "expected": 2
+      }
+    },
+    {
+      "name": "psql 读回：decision 数 = 2",
+      "ok": true,
+      "detail": {
+        "actual": 2,
+        "expected": 2
+      }
+    },
+    {
+      "name": "psql 读回：decision scopes = SCREENING/S7/ADVANCE + STAGE/S10/ADVANCE",
+      "ok": true,
+      "detail": {
+        "actual": [
+          "SCREENING/S7/ADVANCE",
+          "STAGE/S10/ADVANCE"
+        ],
+        "expected": [
+          "SCREENING/S7/ADVANCE",
+          "STAGE/S10/ADVANCE"
+        ]
+      }
+    },
+    {
+      "name": "psql 读回：一致性视图全部违规 = 0",
+      "ok": true,
+      "detail": {
+        "actual": 0,
+        "expected": 0
+      }
+    },
+    {
+      "name": "psql 读回：一致性视图本申请违规 = 0",
+      "ok": true,
+      "detail": {
+        "actual": 0,
+        "expected": 0
+      }
+    },
+    {
+      "name": "psql 读回：阶段事件 S8→S9 = 1",
+      "ok": true,
+      "detail": {
+        "actual": 1,
+        "expected": 1
+      }
+    },
+    {
+      "name": "psql 读回：阶段事件 S9→S10 = 1",
+      "ok": true,
+      "detail": {
+        "actual": 1,
+        "expected": 1
+      }
+    },
+    {
+      "name": "psql 读回：transcript canonical READY",
+      "ok": true,
+      "detail": [
+        "revision=1 status=READY canonical=true provenance=FIXTURE trigger=MANUAL connection=NOT_CONNECTED content_sha256=c8198254ebd961b871bc7a22e4a87f88bd667d6f54a4be1c17dc6e9de19290ab"
+      ]
+    },
+    {
+      "name": "psql 读回：dup 检查全 0",
+      "ok": true,
+      "detail": {
+        "actual": [
+          0,
+          0,
+          0
+        ],
+        "expected": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "psql 读回：关键表行数与 summary 终态一致",
+      "ok": true,
+      "detail": {
+        "actual": [
+          2,
+          2,
+          1,
+          1,
+          2,
+          2,
+          1,
+          13
+        ],
+        "expected": [
+          2,
+          2,
+          1,
+          1,
+          2,
+          2,
+          1,
+          13
+        ]
+      }
+    },
+    {
+      "name": "psql 读回：数据库 = ra_g4_ci_replay",
+      "ok": true,
+      "detail": {
+        "actual": "ra_g4_ci_replay",
+        "expected": "ra_g4_ci_replay"
+      }
+    },
+    {
+      "name": "psql 读回：迁移台账 16 条（latest 0016）",
+      "ok": true,
+      "detail": {
+        "actual": "16 (latest=0016_v1_consistency)",
+        "expected": "16 (latest=0016_v1_consistency)"
+      }
+    },
+    {
+      "name": "psql 读回：bootstrap approval = APPROVED",
+      "ok": true,
+      "detail": {
+        "actual": true,
+        "expected": true
+      }
+    }
+  ],
+  "failed_count": 0
+}

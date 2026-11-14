@@ -1,0 +1,165 @@
+{
+  "purpose": "B 的 CI 等价复跑（本地；非远端 GitHub Actions run）",
+  "database": "ra_g4_ci_replay",
+  "head": "2d987d4d923c90683790ab98b8e115f4983a9b78",
+  "first_run": {
+    "run_dir": "ci-sim-first-run/run-2026-11-14T20-33-26-200Z",
+    "run_mode": "FIRST_RUN",
+    "run_mode_guard": {
+      "expected": "FIRST_RUN",
+      "actual": "FIRST_RUN",
+      "ok": true
+    },
+    "counts": {
+      "hops": 16,
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0
+    },
+    "acceptance_ok": true,
+    "application_stage": "S10",
+    "submitted_scorecard_count": 2,
+    "consistency_view_violations_all": 0,
+    "decision_count": 2,
+    "scorecard_count": 2,
+    "interview_count": 1,
+    "transcript_artifact_count": 1,
+    "counts_delta_vs_preflight": {
+      "application": 1,
+      "business_task": 1,
+      "candidate": 1,
+      "decision": 2,
+      "event_inbox": 9,
+      "intake_asset": 1,
+      "intake_record": 1,
+      "interview": 1,
+      "interview_record": 1,
+      "interviewer": 2,
+      "meeting": 1,
+      "meeting_binding": 1,
+      "resume": 1,
+      "resume_version": 1,
+      "scorecard": 2,
+      "transcript_artifact": 1,
+      "transcript_segment": 11
+    },
+    "negative_controls": [
+      {
+        "hop": 6,
+        "id": "s8-schedule-denied",
+        "outcome": "PASS",
+        "blocked": true,
+        "code": "FORBIDDEN",
+        "reason_code": "APPROVAL_NOT_GRANTED",
+        "reject_path": null,
+        "had_scorecard_before": null,
+        "row_delta": {}
+      },
+      {
+        "hop": 11,
+        "id": "s10-scorecard-denied",
+        "outcome": "PASS",
+        "blocked": true,
+        "code": "FORBIDDEN",
+        "reason_code": "APPROVAL_NOT_GRANTED",
+        "reject_path": "FORBIDDEN/APPROVAL_NOT_GRANTED",
+        "had_scorecard_before": false,
+        "row_delta": {}
+      }
+    ],
+    "bootstrap": {
+      "path": "C:\\Users\\12412\\AppData\\Local\\Temp\\g4-snapshot-b-2d987d4\\scripts\\bootstrap-demo.mjs",
+      "sha256": "65e05b0bcc95d1e6dfd489c5ef5ebcea9546e228d6c237f26707f860f692b5cc",
+      "outcome": "NO_OP",
+      "exit_code": 0,
+      "state": "NO_OP",
+      "writes": {
+        "written": false,
+        "steps": []
+      },
+      "demo_approval_mode": "allow-once"
+    },
+    "database": "ra_g4_ci_replay",
+    "repository": {
+      "head_source": "env:GOLDEN_PATH_HEAD",
+      "worktree_state": "snapshot",
+      "head": "2d987d4d923c90683790ab98b8e115f4983a9b78"
+    },
+    "harness_sha256": "fb1061cd3683e05f6b026e9558de5bf0ced646e8a9b4c7036f5a4f03df0e257e",
+    "generated_at": "2026-11-14T20:33:29.754Z"
+  },
+  "rerun": {
+    "run_dir": "ci-sim-rerun/run-2026-11-14T20-33-30-573Z",
+    "run_mode": "RERUN",
+    "run_mode_guard": {
+      "expected": "RERUN",
+      "actual": "RERUN",
+      "ok": true
+    },
+    "counts": {
+      "hops": 16,
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0
+    },
+    "acceptance_ok": true,
+    "application_stage": "S10",
+    "submitted_scorecard_count": 2,
+    "consistency_view_violations_all": 0,
+    "decision_count": 2,
+    "scorecard_count": 2,
+    "interview_count": 1,
+    "transcript_artifact_count": 1,
+    "counts_delta_vs_preflight": {},
+    "negative_controls": [
+      {
+        "hop": 6,
+        "id": "s8-schedule-denied",
+        "outcome": "PASS",
+        "blocked": true,
+        "code": "FORBIDDEN",
+        "reason_code": "APPROVAL_NOT_GRANTED",
+        "reject_path": null,
+        "had_scorecard_before": null,
+        "row_delta": {}
+      },
+      {
+        "hop": 11,
+        "id": "s10-scorecard-denied",
+        "outcome": "PASS",
+        "blocked": true,
+        "code": "ALREADY_SUBMITTED",
+        "reason_code": "SCORECARD_ALREADY_SUBMITTED",
+        "reject_path": "ALREADY_SUBMITTED/SCORECARD_ALREADY_SUBMITTED",
+        "had_scorecard_before": true,
+        "row_delta": {}
+      }
+    ],
+    "bootstrap": {
+      "path": "C:\\Users\\12412\\AppData\\Local\\Temp\\g4-snapshot-b-2d987d4\\scripts\\bootstrap-demo.mjs",
+      "sha256": "65e05b0bcc95d1e6dfd489c5ef5ebcea9546e228d6c237f26707f860f692b5cc",
+      "outcome": "NO_OP",
+      "exit_code": 0,
+      "state": "NO_OP",
+      "writes": {
+        "written": false,
+        "steps": []
+      },
+      "demo_approval_mode": "allow-once"
+    },
+    "database": "ra_g4_ci_replay",
+    "repository": {
+      "head_source": "env:GOLDEN_PATH_HEAD",
+      "worktree_state": "snapshot",
+      "head": "2d987d4d923c90683790ab98b8e115f4983a9b78"
+    },
+    "harness_sha256": "fb1061cd3683e05f6b026e9558de5bf0ced646e8a9b4c7036f5a4f03df0e257e",
+    "generated_at": "2026-11-14T20:33:33.717Z"
+  },
+  "ci_identical_checks": {
+    "psql_block": "GOLDEN_PATH_DB_CHECK: PASS（见 verify.txt §3）",
+    "independent_psql_readback": "exit=0（见 db-readback.txt）",
+    "node_summary_check": "GOLDEN_PATH_CHECK: PASS（见 verify.txt §2）",
+    "reconciliation": "60 项全过（见 reconciliation.json / verify.txt §5）"
+  }
+}

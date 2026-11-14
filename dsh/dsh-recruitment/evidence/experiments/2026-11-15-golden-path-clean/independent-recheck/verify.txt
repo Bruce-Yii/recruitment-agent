@@ -1,0 +1,140 @@
+# G4-B · Phase 2 独立复核（B 的本地 CI 等价复跑）
+
+说明：本目录是 B（CI lane）用自己的干净快照（2d987d4 + A 终版 manual/golden-path overlay）
+在新库 ra_g4_ci_replay 上做的 CI 等价复跑证据。**不是远端 GitHub Actions run**
+（本 lane 禁 push，见 REPORT 的限制说明）。
+
+## 1) overlay sha256（A 终版 harness 覆盖进 B 的快照）
+
+2618333ed1353f114a8793c25e6306d4661316f748f5d3073e0997fdf452c69c  db-readback.mjs
+521775943f1195659ccf65f7b40f222482c44664210c2570d3ab6c9803b77545  fixtures/build_synthetic_resume.py
+aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df  fixtures/gp-rerun-2/synthetic-resume-golden-path.pdf
+e693b1872700fc54246b175dd11c6b074cf1948fe65ff61d0f0076778a28921d  fixtures/gp-rerun/synthetic-resume-golden-path.pdf
+9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356  fixtures/synthetic-resume-golden-path.pdf
+69bd26961489ae6ed63dd7cdf5c20efa7bdeba00573b3b0920e591ace365df4f  README.md
+fb1061cd3683e05f6b026e9558de5bf0ced646e8a9b4c7036f5a4f03df0e257e  run-golden-path-rerun.mjs
+23fcaec3380ce1433978d2a1d67395a2c58f6db2a15666b31496a56818f2ade7  run-golden-path.mjs
+
+
+## 2) CI 里同一份 node 机检（两份 summary：四数 / run_mode / 终态 / 视图）
+
+== FIRST_RUN（证据根: D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-check-root\golden-path-evidence\first-run）
+  run dir : D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-check-root\golden-path-evidence\first-run\run-2026-11-14T20-33-26-200Z
+  summary : D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-check-root\golden-path-evidence\first-run\run-2026-11-14T20-33-26-200Z\summary.json
+  四数    : hops=16 passed=16 failed=0 skipped=0
+  ok   run_mode="FIRST_RUN"
+  ok   counts.hops=16
+  ok   counts.passed=16
+  ok   counts.failed=0
+  ok   counts.skipped=0
+  ok   acceptance.ok=true
+  ok   final_state.application_stage="S10"
+  ok   final_state.submitted_scorecard_count=2（>= 1）
+  ok   final_state.consistency_view_violations_all=0
+== RERUN（证据根: D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-check-root\golden-path-evidence\rerun）
+  run dir : D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-check-root\golden-path-evidence\rerun\run-2026-11-14T20-33-30-573Z
+  summary : D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-check-root\golden-path-evidence\rerun\run-2026-11-14T20-33-30-573Z\summary.json
+  四数    : hops=16 passed=16 failed=0 skipped=0
+  ok   run_mode="RERUN"
+  ok   counts.hops=16
+  ok   counts.passed=16
+  ok   counts.failed=0
+  ok   counts.skipped=0
+  ok   acceptance.ok=true
+  ok   final_state.application_stage="S10"
+  ok   final_state.submitted_scorecard_count=2（>= 1）
+  ok   final_state.consistency_view_violations_all=0
+GOLDEN_PATH_CHECK: PASS
+
+
+## 3) CI 里同一份 psql 断言块（不 import 产品代码）
+
+DO
+psql:D:/12412/dsh工作区/projects/recruitment-agent/work/verify-2026-11-15-g4/ci-rehearsal/phase2-ci-psql-block.sql:36: 注意:  读回：application=2 S10申请=1 SUBMITTED面评=2 视图违规=0 decision=2
+psql:D:/12412/dsh工作区/projects/recruitment-agent/work/verify-2026-11-15-g4/ci-rehearsal/phase2-ci-psql-block.sql:36: 注意:  GOLDEN_PATH_DB_CHECK: PASS
+
+
+## 4) psql 独立读回（本目录 db-readback.txt 的摘要；完整输出见该文件）
+
+# B 的 CI 等价复跑 · 全部 exit code（0 = 成功）
+first_run_exit=0（日志：ci-sim-first-run/run-2026-11-14T20-33-26-200Z/run.log；harness 退出码见 phase2-exit-codes.txt）
+rerun_exit=0（日志：ci-sim-rerun/run-2026-11-14T20-33-30-573Z/run.log）
+machine_check_node_exit=0（CI 里同一份 node 机检，见 verify.txt §2）
+ci_psql_block_exit=0（CI 里同一份 psql 断言块，见 verify.txt §3）
+independent_psql_readback_exit=0（见 db-readback.txt 与 verify.txt §4）
+reconciliation_exit=0（60 项对账全过，见 verify.txt §5）
+
+## 5) 与 A 的自述逐项对账（60 项）
+
+== 逐项对账（B 本地 CI 等价复跑 vs A 自述 vs psql 独立读回）
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-first-run 四数
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-first-run acceptance.ok
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-first-run final_state.application_stage
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-first-run submitted_scorecard_count
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-first-run consistency_view_violations_all
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-first-run harness.sha256
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-first-run repository.head
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-first-run workspace 模式（快照）
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun 四数
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun acceptance.ok
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun final_state.application_stage
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun submitted_scorecard_count
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun consistency_view_violations_all
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun harness.sha256
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun repository.head
+  ok   D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun workspace 模式（快照）
+  ok   B FIRST_RUN run_mode + 守卫
+  ok   B RERUN run_mode + 守卫
+  ok   first 四数 B == A
+  ok   first acceptance B == A
+  ok   first run_mode B == A
+  ok   first final_state 关键字段 B == A
+  ok   first negative_controls B == A（逐条）
+  ok   rerun 四数 B == A
+  ok   rerun acceptance B == A
+  ok   rerun run_mode B == A
+  ok   rerun final_state 关键字段 B == A
+  ok   rerun negative_controls B == A（逐条）
+  ok   B FIRST_RUN HOP16 status/transitions
+  ok   A FIRST_RUN HOP16 status/transitions
+  ok   B RERUN HOP16 status/transitions
+  ok   A RERUN HOP16 status/transitions
+  ok   B FIRST_RUN HOP16 stage_code
+  ok   B RERUN HOP16 stage_code
+  ok   B FIRST_RUN 负例（零写入 + 拒绝路径）
+  ok   A FIRST_RUN 负例（零写入 + 拒绝路径）
+  ok   B RERUN 负例（零写入 + 拒绝路径）
+  ok   A RERUN 负例（零写入 + 拒绝路径）
+  ok   B RERUN counts_delta_vs_preflight == {}（零写入）
+  ok   A RERUN counts_delta_vs_preflight == {}（零写入）
+  ok   B RERUN 终态行数 == FIRST_RUN 终态行数
+  ok   A FIRST_RUN 内置 bootstrap
+  ok   B FIRST_RUN harness 内置 bootstrap（显式 bootstrap 已先跑 → NO_OP 且零写入）
+  ok   B/A bootstrap 脚本 sha256 相同
+  ok   A bootstrap 脚本 sha256
+  ok   psql 读回：存在 S10 申请
+  ok   psql 读回：application 行数 = 2（seed 1 + harness 1）
+  ok   psql 读回：SUBMITTED 面评数 = 2（与 summary 一致）
+  ok   psql 读回：decision 数 = 2
+  ok   psql 读回：decision scopes = SCREENING/S7/ADVANCE + STAGE/S10/ADVANCE
+  ok   psql 读回：一致性视图全部违规 = 0
+  ok   psql 读回：一致性视图本申请违规 = 0
+  ok   psql 读回：阶段事件 S8→S9 = 1
+  ok   psql 读回：阶段事件 S9→S10 = 1
+  ok   psql 读回：transcript canonical READY
+  ok   psql 读回：dup 检查全 0
+  ok   psql 读回：关键表行数与 summary 终态一致
+  ok   psql 读回：数据库 = ra_g4_ci_replay
+  ok   psql 读回：迁移台账 16 条（latest 0016）
+  ok   psql 读回：bootstrap approval = APPROVED
+
+checks=60 failed=0
+RECONCILIATION: PASS（60 项全过）
+
+
+## 6) 预期差异（不是分歧）
+
+- 数据库名不同：B=ra_g4_ci_replay vs A=ra_g4_clean（各自一次性库；同一套 0001→0016 + 同一 HEAD + 同一 harness）。
+- 内置 bootstrap outcome 不同：A 的 harness 首次运行内做 bootstrap（BOOTSTRAPPED）；B 按 CI job 顺序**先**显式跑 bootstrap，
+  所以 harness 内置那次是 NO_OP（零写入，exit 0）。这是 CI 步骤设计的预期差异，bootstrap 脚本 sha256 两边一致。
+- UUID / 时间戳 / 证据 run 目录名不同：两库独立运行，不参与对账。

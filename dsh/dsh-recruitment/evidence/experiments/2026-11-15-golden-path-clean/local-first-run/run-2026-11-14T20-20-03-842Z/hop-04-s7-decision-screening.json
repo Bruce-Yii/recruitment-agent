@@ -1,0 +1,171 @@
+{
+  "id": "s7-decision-screening",
+  "kind": "write",
+  "hop": 4,
+  "run_mode": "FIRST_RUN",
+  "label": "S7 decision_record(SCREENING)（D-103 写侧 + D-95 IN_CHAT v2；F1 后必须真落库）",
+  "tool": "recruitment_decision_record",
+  "expect_note": "ok=true + decision 行 +1（真写；STEP 3 走\"没有 current SCREENING 决策\"的写分支）",
+  "started_at": "2026-11-14T20:20:05.693Z",
+  "request": {
+    "application_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+    "decision_scope": "SCREENING",
+    "as_of": "2026-11-15T04:20:05+08:00",
+    "result": "ADVANCE",
+    "reason": "初筛通过：work_exists 与 edu_exists 两条 MUST_HAVE 均满足（依据 SCREENING_EVALUATION 的逐准则证据）。",
+    "basis_refs": [
+      {
+        "kind": "RUBRIC_VERSION",
+        "id": "d1438ba1-3fd2-4493-a430-c6fa8c6f1098",
+        "payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
+        "version_no": 2
+      },
+      {
+        "kind": "AUTHORITY",
+        "actor_id": "11111111-1111-4111-8111-000000000103",
+        "is_hiring_manager": false
+      },
+      {
+        "kind": "SCREENING_EVALUATION",
+        "evaluation_digest": "4ad4098bde3f4cf26835f4ce23065fa7feda9cc029ce290e16754f1f44d39c53",
+        "verdict": "PASS",
+        "rubric_version_id": "d1438ba1-3fd2-4493-a430-c6fa8c6f1098",
+        "rubric_payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
+        "resume_version_id": "be531dc3-6ea0-426f-89e9-5f55f7f08a9b",
+        "resume_content_sha256": "de19b5ca1186544f4e288579c2a90e059ccde999cb43394abcc987dec7e3f5c8",
+        "contract_version": "1.0.0",
+        "criteria_evaluated": true,
+        "provenance": "FIXTURE"
+      },
+      {
+        "kind": "RESUME_VERSION",
+        "id": "be531dc3-6ea0-426f-89e9-5f55f7f08a9b",
+        "content_sha256": "de19b5ca1186544f4e288579c2a90e059ccde999cb43394abcc987dec7e3f5c8"
+      }
+    ],
+    "human_confirmation": {
+      "confirmed_by_actor_id": "11111111-1111-4111-8111-000000000103",
+      "confirmed_at": "2026-11-15T04:19:05+08:00",
+      "confirmation_method": "IN_CHAT",
+      "confirmation_text": "我确认：林承宇这条申请初筛通过，推进到面试。",
+      "confirmation_text_sha256": "d660b30c12edefe2f22e3ea2b54eaf43be0e6dc6840b83c15d08e8f6c01d0cd9"
+    }
+  },
+  "ok": true,
+  "result": {
+    "tool": "recruitment_decision_record",
+    "contract_version": "2.0.0",
+    "status": "OK",
+    "replayed": false,
+    "labels": {
+      "provenance": "FIXTURE",
+      "trigger": "MANUAL",
+      "connection": "CONNECTED"
+    },
+    "decision": {
+      "id": "63b81d32-84c3-4586-9fb2-a810684f3964",
+      "application_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+      "decision_scope": "SCREENING",
+      "stage_code": "S7",
+      "result": "ADVANCE",
+      "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+      "decided_at": "2026-11-14T20:20:05.741Z",
+      "record_version": 1
+    },
+    "event": {
+      "event_id": "ec1f75af-8124-4841-8185-a6dc68a5af74",
+      "provider": "internal",
+      "trust_level": "INTERNAL"
+    },
+    "warnings": [
+      {
+        "code": "DECIDER_NOT_HIRING_MANAGER",
+        "message": "决策人不是该部门的招聘负责人；v1.0 不拦截，仅记录（DC-14）"
+      },
+      {
+        "code": "FIXTURE_BASIS",
+        "message": "本次决策依据的是演练数据（provenance=FIXTURE），不是真实外部事实"
+      }
+    ]
+  },
+  "rendered": "recruitment_decision_record 2.0.0 status=OK\nlabels: provenance=FIXTURE trigger=MANUAL connection=CONNECTED\ndecision 63b81d32-84c3-4586-9fb2-a810684f3964 scope=SCREENING stage=S7 result=ADVANCE record_version=1\ndecided_at=2026-11-14T20:20:05.741Z decided_by=11111111-1111-4111-8111-000000000103\ngate: —（SCREENING 没有 S10 汇总）\nsuperseded: —（本次不是撤回）\nevent ec1f75af-8124-4841-8185-a6dc68a5af74 internal/INTERNAL\nwarnings(2)\n  DECIDER_NOT_HIRING_MANAGER: 决策人不是该部门的招聘负责人；v1.0 不拦截，仅记录（DC-14）\n  FIXTURE_BASIS: 本次决策依据的是演练数据（provenance=FIXTURE），不是真实外部事实",
+  "row_counts_before": {
+    "application": 2,
+    "business_task": 0,
+    "candidate": 2,
+    "decision": 0,
+    "event_inbox": 6,
+    "intake_asset": 1,
+    "intake_record": 1,
+    "interview": 0,
+    "interview_record": 0,
+    "interviewer": 0,
+    "meeting": 0,
+    "meeting_binding": 0,
+    "resume": 1,
+    "resume_version": 1,
+    "scorecard": 0,
+    "transcript_artifact": 0,
+    "transcript_segment": 0
+  },
+  "row_counts_after": {
+    "application": 2,
+    "business_task": 0,
+    "candidate": 2,
+    "decision": 1,
+    "event_inbox": 7,
+    "intake_asset": 1,
+    "intake_record": 1,
+    "interview": 0,
+    "interview_record": 0,
+    "interviewer": 0,
+    "meeting": 0,
+    "meeting_binding": 0,
+    "resume": 1,
+    "resume_version": 1,
+    "scorecard": 0,
+    "transcript_artifact": 0,
+    "transcript_segment": 0
+  },
+  "row_count_delta": {
+    "decision": 1,
+    "event_inbox": 1
+  },
+  "readback": {
+    "application": {
+      "id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+      "candidate_id": "5a317cd4-85c1-4236-8270-8d7261265754",
+      "job_id": "11111111-1111-4111-8111-000000000401",
+      "job_version_id": "11111111-1111-4111-8111-000000000402",
+      "rubric_version_id": "d1438ba1-3fd2-4493-a430-c6fa8c6f1098",
+      "resume_version_id": "be531dc3-6ea0-426f-89e9-5f55f7f08a9b",
+      "lifecycle_status": "ACTIVE",
+      "current_stage_code": "S7",
+      "record_version": 2,
+      "created_at": "2026-11-14T20:20:05.359Z",
+      "stage_entered_at": "2026-11-14T20:20:05.584Z",
+      "stage_changed_at": "2026-11-14T20:20:05.570Z",
+      "stage_changed_by_actor_id": "11111111-1111-4111-8111-000000000103"
+    },
+    "decisions": [
+      {
+        "id": "63b81d32-84c3-4586-9fb2-a810684f3964",
+        "decision_scope": "SCREENING",
+        "stage_code": "S7",
+        "result": "ADVANCE",
+        "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+        "decided_at": "2026-11-14T20:20:05.741Z",
+        "basis_count": 4,
+        "basis_kinds": [
+          "AUTHORITY",
+          "RESUME_VERSION",
+          "RUBRIC_VERSION",
+          "SCREENING_EVALUATION"
+        ],
+        "superseded_by_decision_id": null
+      }
+    ],
+    "approval_service_calls": 0
+  },
+  "outcome": "PASS"
+}

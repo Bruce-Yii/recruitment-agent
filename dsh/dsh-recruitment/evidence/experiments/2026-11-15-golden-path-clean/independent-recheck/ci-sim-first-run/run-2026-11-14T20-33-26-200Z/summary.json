@@ -1,0 +1,402 @@
+{
+  "run_id": "2026-11-14T20-33-26-200Z",
+  "generated_at": "2026-11-14T20:33:29.754Z",
+  "expectation": {
+    "stage_advance_contract": "1.3.0",
+    "terminal_stage": "S10",
+    "total_hops": 16,
+    "note": "hop 0（预检）与 hop 17（终态读回）不计入 16；16 = 写/读/负例跳"
+  },
+  "repository": {
+    "head": "2d987d4d923c90683790ab98b8e115f4983a9b78",
+    "head_source": "env:GOLDEN_PATH_HEAD",
+    "branch": null,
+    "dirty_lines": null,
+    "worktree_state": "snapshot",
+    "note": "快照目录由 git archive 导出、没有 .git：HEAD 由 GOLDEN_PATH_HEAD 显式绑定，worktree_state=snapshot"
+  },
+  "harness": {
+    "path": "C:\\Users\\12412\\AppData\\Local\\Temp\\g4-snapshot-b-2d987d4\\dsh\\dsh-recruitment\\manual\\golden-path\\run-golden-path-rerun.mjs",
+    "sha256": "fb1061cd3683e05f6b026e9558de5bf0ced646e8a9b4c7036f5a4f03df0e257e"
+  },
+  "harness_derived_from": {
+    "path": "manual/golden-path/run-golden-path.mjs",
+    "sha256": "23fcaec3380ce1433978d2a1d67395a2c58f6db2a15666b31496a56818f2ade7",
+    "note": "旧报告 run A/B/C 的原始 harness（保持不动）；本文件是它的 G4 派生版：终值 S10 + FIRST_RUN/RERUN + 内置 bootstrap + 证据根可配"
+  },
+  "fixture": {
+    "path": "C:\\Users\\12412\\AppData\\Local\\Temp\\g4-snapshot-b-2d987d4\\dsh\\dsh-recruitment\\manual\\golden-path\\fixtures\\gp-rerun-2\\synthetic-resume-golden-path.pdf",
+    "sha256": "aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df",
+    "bytes": 10919
+  },
+  "bootstrap": {
+    "path": "C:\\Users\\12412\\AppData\\Local\\Temp\\g4-snapshot-b-2d987d4\\scripts\\bootstrap-demo.mjs",
+    "sha256": "65e05b0bcc95d1e6dfd489c5ef5ebcea9546e228d6c237f26707f860f692b5cc",
+    "outcome": "NO_OP",
+    "exit_code": 0,
+    "state": "NO_OP",
+    "writes": {
+      "written": false,
+      "steps": []
+    },
+    "demo_approval_mode": "allow-once"
+  },
+  "database": {
+    "host": "127.0.0.1",
+    "port": 5432,
+    "database": "ra_g4_ci_replay",
+    "tenant_id": "11111111-1111-4111-8111-000000000001",
+    "actor_id": "11111111-1111-4111-8111-000000000103"
+  },
+  "run_mode": "FIRST_RUN",
+  "run_mode_guard": {
+    "expected": "FIRST_RUN",
+    "actual": "FIRST_RUN",
+    "ok": true
+  },
+  "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+  "candidate_id": "c2d0cc31-18c4-469e-8e13-ef25bd656a26",
+  "interview_id": "53c520cd-2cf1-4922-8308-06b112062a06",
+  "hops": [
+    {
+      "hop": 1,
+      "id": "s6-intake",
+      "kind": "write",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_application_intake",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {
+        "application": 1,
+        "candidate": 1,
+        "event_inbox": 1,
+        "intake_asset": 1,
+        "intake_record": 1,
+        "resume": 1,
+        "resume_version": 1
+      }
+    },
+    {
+      "hop": 2,
+      "id": "s6s7-stage-advance",
+      "kind": "write",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_application_stage_advance",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {
+        "event_inbox": 1
+      }
+    },
+    {
+      "hop": 3,
+      "id": "s7-screening-evaluate",
+      "kind": "read",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_screening_evaluate",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {}
+    },
+    {
+      "hop": 4,
+      "id": "s7-decision-screening",
+      "kind": "write",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_decision_record",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {
+        "decision": 1,
+        "event_inbox": 1
+      }
+    },
+    {
+      "hop": 5,
+      "id": "s7s8-stage-advance",
+      "kind": "write",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_application_stage_advance",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {
+        "event_inbox": 1
+      }
+    },
+    {
+      "hop": 6,
+      "id": "s8-schedule-denied",
+      "kind": "negative-control",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_interview_schedule",
+      "outcome": "PASS",
+      "ok": false,
+      "error_code": "FORBIDDEN",
+      "reason_code": "APPROVAL_NOT_GRANTED",
+      "row_delta": {}
+    },
+    {
+      "hop": 7,
+      "id": "s8-schedule-allow-once",
+      "kind": "write",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_interview_schedule",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {
+        "business_task": 1,
+        "interview": 1,
+        "interviewer": 2,
+        "meeting": 1,
+        "meeting_binding": 1
+      }
+    },
+    {
+      "hop": 8,
+      "id": "s8-interview-get",
+      "kind": "read",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_interview_get",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {}
+    },
+    {
+      "hop": 9,
+      "id": "s9-transcript-import",
+      "kind": "write",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_transcript_import",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {
+        "interview_record": 1,
+        "transcript_artifact": 1,
+        "transcript_segment": 11
+      }
+    },
+    {
+      "hop": 10,
+      "id": "s9-transcript-read",
+      "kind": "read",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_transcript_read",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {}
+    },
+    {
+      "hop": 11,
+      "id": "s10-scorecard-denied",
+      "kind": "negative-control",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_scorecard_submit",
+      "outcome": "PASS",
+      "ok": false,
+      "error_code": "FORBIDDEN",
+      "reason_code": "APPROVAL_NOT_GRANTED",
+      "row_delta": {}
+    },
+    {
+      "hop": 12,
+      "id": "s10-scorecard-allow-once",
+      "kind": "write",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_scorecard_submit",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {
+        "event_inbox": 1,
+        "scorecard": 1
+      }
+    },
+    {
+      "hop": 13,
+      "id": "s10-scorecard-2",
+      "kind": "write",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_scorecard_submit",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {
+        "event_inbox": 1,
+        "scorecard": 1
+      }
+    },
+    {
+      "hop": 14,
+      "id": "s10-evaluation-summarize",
+      "kind": "read",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_evaluation_summarize",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {}
+    },
+    {
+      "hop": 15,
+      "id": "s10-decision-stage",
+      "kind": "write",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_decision_record",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {
+        "decision": 1,
+        "event_inbox": 1
+      }
+    },
+    {
+      "hop": 16,
+      "id": "s10-stage-advance-after-decision",
+      "kind": "read",
+      "run_mode": "FIRST_RUN",
+      "tool": "recruitment_application_stage_advance",
+      "outcome": "PASS",
+      "ok": true,
+      "row_delta": {
+        "event_inbox": 2
+      }
+    }
+  ],
+  "counts": {
+    "hops": 16,
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0
+  },
+  "negative_controls": [
+    {
+      "hop": 6,
+      "id": "s8-schedule-denied",
+      "outcome": "PASS",
+      "blocked": true,
+      "code": "FORBIDDEN",
+      "reason_code": "APPROVAL_NOT_GRANTED",
+      "reject_path": null,
+      "had_scorecard_before": null,
+      "row_delta": {}
+    },
+    {
+      "hop": 11,
+      "id": "s10-scorecard-denied",
+      "outcome": "PASS",
+      "blocked": true,
+      "code": "FORBIDDEN",
+      "reason_code": "APPROVAL_NOT_GRANTED",
+      "reject_path": "FORBIDDEN/APPROVAL_NOT_GRANTED",
+      "had_scorecard_before": false,
+      "row_delta": {}
+    }
+  ],
+  "failures": [],
+  "final_state": {
+    "application_stage": "S10",
+    "application_rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+    "decision_count": 2,
+    "decision_scopes": [
+      {
+        "decision_scope": "SCREENING",
+        "stage_code": "S7",
+        "n": 1
+      },
+      {
+        "decision_scope": "STAGE",
+        "stage_code": "S10",
+        "n": 1
+      }
+    ],
+    "interview_count": 1,
+    "transcript_artifact_count": 1,
+    "interview_record_count": 1,
+    "scorecard_count": 2,
+    "submitted_scorecard_count": 2,
+    "consistency_view_violations_for_app": 0,
+    "consistency_view_violations_all": 0,
+    "consistency_violation_rows_for_app": [],
+    "stage_events": [
+      {
+        "event_id": "e8155162-37ba-4607-b402-651250fc2354",
+        "event_type": "application.current_stage_code.changed",
+        "source_object_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+        "occurred_at": "2026-11-14T20:33:28.039Z",
+        "from_stage": "S6",
+        "to_stage": "S7",
+        "actor_id": "11111111-1111-4111-8111-000000000103"
+      },
+      {
+        "event_id": "a6244008-3d33-4c01-8b8f-d2199351b746",
+        "event_type": "application.current_stage_code.changed",
+        "source_object_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+        "occurred_at": "2026-11-14T20:33:28.338Z",
+        "from_stage": "S7",
+        "to_stage": "S8",
+        "actor_id": "11111111-1111-4111-8111-000000000103"
+      },
+      {
+        "event_id": "f27228d4-ea3f-439d-bf6e-0dbba04e15b5",
+        "event_type": "application.current_stage_code.changed",
+        "source_object_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+        "occurred_at": "2026-11-14T20:33:29.671Z",
+        "from_stage": "S8",
+        "to_stage": "S9",
+        "actor_id": "11111111-1111-4111-8111-000000000103"
+      },
+      {
+        "event_id": "2c756446-d859-4b57-8bae-13124fcff9e5",
+        "event_type": "application.current_stage_code.changed",
+        "source_object_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+        "occurred_at": "2026-11-14T20:33:29.671Z",
+        "from_stage": "S9",
+        "to_stage": "S10",
+        "actor_id": "11111111-1111-4111-8111-000000000103"
+      }
+    ],
+    "counts": {
+      "application": 2,
+      "business_task": 1,
+      "candidate": 2,
+      "decision": 2,
+      "event_inbox": 13,
+      "intake_asset": 1,
+      "intake_record": 1,
+      "interview": 1,
+      "interview_record": 1,
+      "interviewer": 2,
+      "meeting": 1,
+      "meeting_binding": 1,
+      "resume": 1,
+      "resume_version": 1,
+      "scorecard": 2,
+      "transcript_artifact": 1,
+      "transcript_segment": 11
+    },
+    "counts_delta_vs_preflight": {
+      "application": 1,
+      "business_task": 1,
+      "candidate": 1,
+      "decision": 2,
+      "event_inbox": 9,
+      "intake_asset": 1,
+      "intake_record": 1,
+      "interview": 1,
+      "interview_record": 1,
+      "interviewer": 2,
+      "meeting": 1,
+      "meeting_binding": 1,
+      "resume": 1,
+      "resume_version": 1,
+      "scorecard": 2,
+      "transcript_artifact": 1,
+      "transcript_segment": 11
+    }
+  },
+  "acceptance": {
+    "all_hops_pass": true,
+    "stage_s10": true,
+    "submitted_scorecards_ge_1": true,
+    "consistency_view_zero_violations": true,
+    "negative_controls_blocked": true,
+    "ok": true
+  }
+}

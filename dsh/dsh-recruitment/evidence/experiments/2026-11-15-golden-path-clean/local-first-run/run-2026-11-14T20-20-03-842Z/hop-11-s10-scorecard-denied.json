@@ -1,0 +1,94 @@
+{
+  "id": "s10-scorecard-denied",
+  "kind": "negative-control",
+  "hop": 11,
+  "run_mode": "FIRST_RUN",
+  "label": "S10 scorecard_submit 负例：approval=deny（D-79 fail closed，必须一行不写）",
+  "tool": "recruitment_scorecard_submit",
+  "expect_note": "FIRST_RUN 口径：approval=deny → 必须 FORBIDDEN/APPROVAL_NOT_GRANTED 且 scorecard 行 +0（D-79 fail closed）",
+  "started_at": "2026-11-14T20:20:06.289Z",
+  "request": {
+    "interview_id": "427947a6-ccfe-4847-a1b7-0f54811525c1",
+    "rubric_version_id": "d1438ba1-3fd2-4493-a430-c6fa8c6f1098",
+    "items": {
+      "work_exists": {
+        "assessment": "MET",
+        "score": 4,
+        "note": "候选人有 3 段可分割的后端工作经历，职责边界清楚。"
+      },
+      "edu_exists": {
+        "assessment": "MET",
+        "score": 4,
+        "note": "本科计算机科学与技术，学历与时间线完整。"
+      },
+      "team_lead": {
+        "assessment": "MET",
+        "note": "候选人自述在第二段经历中带过 3 人小组约一年；面试中能讲清分工与复盘。"
+      },
+      "transcript_basis": "TRANSCRIPT"
+    },
+    "overall": "ADVANCE",
+    "idempotency_key": "gp-e2e:facf76c2-d8bc-417e-aca1-2740f749ad4c:scorecard-103-denied"
+  },
+  "ok": false,
+  "error": {
+    "name": "RecruitmentToolError",
+    "code": "FORBIDDEN",
+    "message": "FORBIDDEN: {\"code\":\"FORBIDDEN\",\"detail\":{\"approval\":\"rejected\",\"tool\":\"recruitment_scorecard_submit\"},\"message\":\"人工没有批准这次面评写库（D-79）\",\"reason_code\":\"APPROVAL_NOT_GRANTED\"}"
+  },
+  "error_body": {
+    "code": "FORBIDDEN",
+    "detail": {
+      "approval": "rejected",
+      "tool": "recruitment_scorecard_submit"
+    },
+    "message": "人工没有批准这次面评写库（D-79）",
+    "reason_code": "APPROVAL_NOT_GRANTED"
+  },
+  "row_counts_before": {
+    "application": 2,
+    "business_task": 1,
+    "candidate": 2,
+    "decision": 1,
+    "event_inbox": 8,
+    "intake_asset": 1,
+    "intake_record": 1,
+    "interview": 1,
+    "interview_record": 1,
+    "interviewer": 2,
+    "meeting": 1,
+    "meeting_binding": 1,
+    "resume": 1,
+    "resume_version": 1,
+    "scorecard": 0,
+    "transcript_artifact": 1,
+    "transcript_segment": 11
+  },
+  "row_counts_after": {
+    "application": 2,
+    "business_task": 1,
+    "candidate": 2,
+    "decision": 1,
+    "event_inbox": 8,
+    "intake_asset": 1,
+    "intake_record": 1,
+    "interview": 1,
+    "interview_record": 1,
+    "interviewer": 2,
+    "meeting": 1,
+    "meeting_binding": 1,
+    "resume": 1,
+    "resume_version": 1,
+    "scorecard": 0,
+    "transcript_artifact": 1,
+    "transcript_segment": 11
+  },
+  "row_count_delta": {},
+  "readback": {
+    "approval_requests": 1,
+    "scorecards": 0
+  },
+  "outcome": "PASS",
+  "reject_path": "FORBIDDEN/APPROVAL_NOT_GRANTED",
+  "had_scorecard_before": false
+}

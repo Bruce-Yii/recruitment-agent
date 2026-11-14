@@ -1,0 +1,309 @@
+{
+  "application": {
+    "id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+    "candidate_id": "5a317cd4-85c1-4236-8270-8d7261265754",
+    "job_id": "11111111-1111-4111-8111-000000000401",
+    "job_version_id": "11111111-1111-4111-8111-000000000402",
+    "rubric_version_id": "d1438ba1-3fd2-4493-a430-c6fa8c6f1098",
+    "resume_version_id": "be531dc3-6ea0-426f-89e9-5f55f7f08a9b",
+    "lifecycle_status": "ACTIVE",
+    "current_stage_code": "S10",
+    "record_version": 5,
+    "created_at": "2026-11-14T20:20:05.359Z",
+    "stage_entered_at": "2026-11-14T20:20:06.780Z",
+    "stage_changed_at": "2026-11-14T20:20:06.764Z",
+    "stage_changed_by_actor_id": "11111111-1111-4111-8111-000000000103"
+  },
+  "candidate": {
+    "id": "5a317cd4-85c1-4236-8270-8d7261265754",
+    "identity_status": "ACTIVE",
+    "display_name": "林承宇",
+    "email_masked": "lin***@example.test",
+    "phone_masked": "+86136***88"
+  },
+  "resume_version": {
+    "id": "be531dc3-6ea0-426f-89e9-5f55f7f08a9b",
+    "version_no": 1,
+    "parse_status": "PARSED",
+    "content_sha256": "de19b5ca1186544f4e288579c2a90e059ccde999cb43394abcc987dec7e3f5c8",
+    "source_asset_sha256": "aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df",
+    "resume_id": "341038cd-2881-4f46-82b6-29c95cf4c19d",
+    "intake_asset_id": "4dee9eee-84cd-41d3-88ad-10b90bcfe5be"
+  },
+  "intake_asset": {
+    "id": "4dee9eee-84cd-41d3-88ad-10b90bcfe5be",
+    "file_name": "synthetic-resume-golden-path.pdf",
+    "byte_size": "10919",
+    "sha256": "aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df",
+    "validation_status": "VALID",
+    "intake_record_id": "69b55201-106d-4f12-a956-5c9cda7c5683"
+  },
+  "application_events": [
+    {
+      "event_id": "591ae812-b152-4a3c-96bd-5437e8d60e4b",
+      "provider": "internal",
+      "trust_level": "INTERNAL",
+      "event_type": "resume.intake.received",
+      "idempotency_source": "FALLBACK_KEY",
+      "source_object_id": "aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df",
+      "occurred_at": "2026-11-14T20:20:05.359Z"
+    }
+  ],
+  "stage_events": [
+    {
+      "event_id": "d09c63ba-e956-462c-adf6-be40f7daae16",
+      "event_type": "application.current_stage_code.changed",
+      "source_object_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+      "occurred_at": "2026-11-14T20:20:05.570Z",
+      "from_stage": "S6",
+      "to_stage": "S7",
+      "actor_id": "11111111-1111-4111-8111-000000000103"
+    },
+    {
+      "event_id": "636180ee-9ef3-4667-a2cd-c23c457142dd",
+      "event_type": "application.current_stage_code.changed",
+      "source_object_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+      "occurred_at": "2026-11-14T20:20:05.824Z",
+      "from_stage": "S7",
+      "to_stage": "S8",
+      "actor_id": "11111111-1111-4111-8111-000000000103"
+    },
+    {
+      "event_id": "025c520e-6ffe-4214-ab86-a93daf2f70da",
+      "event_type": "application.current_stage_code.changed",
+      "source_object_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+      "occurred_at": "2026-11-14T20:20:06.764Z",
+      "from_stage": "S8",
+      "to_stage": "S9",
+      "actor_id": "11111111-1111-4111-8111-000000000103"
+    },
+    {
+      "event_id": "4c9bce1c-e5b8-4e8b-9f23-cf11e52f30aa",
+      "event_type": "application.current_stage_code.changed",
+      "source_object_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+      "occurred_at": "2026-11-14T20:20:06.764Z",
+      "from_stage": "S9",
+      "to_stage": "S10",
+      "actor_id": "11111111-1111-4111-8111-000000000103"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "63b81d32-84c3-4586-9fb2-a810684f3964",
+      "decision_scope": "SCREENING",
+      "stage_code": "S7",
+      "result": "ADVANCE",
+      "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+      "decided_at": "2026-11-14T20:20:05.741Z",
+      "basis_count": 4,
+      "basis_kinds": [
+        "AUTHORITY",
+        "RESUME_VERSION",
+        "RUBRIC_VERSION",
+        "SCREENING_EVALUATION"
+      ],
+      "superseded_by_decision_id": null
+    },
+    {
+      "id": "34c95440-9122-4c56-a73f-d3c3c9222006",
+      "decision_scope": "STAGE",
+      "stage_code": "S10",
+      "result": "ADVANCE",
+      "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+      "decided_at": "2026-11-14T20:20:06.674Z",
+      "basis_count": 5,
+      "basis_kinds": [
+        "AUTHORITY",
+        "RUBRIC_VERSION",
+        "SCORECARD",
+        "SUMMARY"
+      ],
+      "superseded_by_decision_id": null
+    }
+  ],
+  "interviews": [
+    {
+      "interview": {
+        "id": "427947a6-ccfe-4847-a1b7-0f54811525c1",
+        "application_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+        "round_no": 1,
+        "slot_code": "DEFAULT",
+        "stage_code": "S8",
+        "status": "SCHEDULED",
+        "scheduled_start_at": "2026-12-09T02:00:00.000Z",
+        "scheduled_end_at": "2026-12-09T03:00:00.000Z",
+        "timezone": "Asia/Shanghai",
+        "record_version": 1
+      },
+      "interviewers": [
+        {
+          "actor_id": "11111111-1111-4111-8111-000000000103",
+          "display_name": "演示-HR 专员",
+          "role_in_interview": "INTERVIEWER",
+          "required_scorecard": true,
+          "scorecard_due_at": null
+        },
+        {
+          "actor_id": "11111111-1111-4111-8111-000000000104",
+          "display_name": "演示-面试官",
+          "role_in_interview": "INTERVIEWER",
+          "required_scorecard": true,
+          "scorecard_due_at": null
+        }
+      ],
+      "meeting_bindings": [
+        {
+          "id": "0d4e02ff-5d6b-4745-97e5-44710e02f65d",
+          "meeting_id": "225aef71-9793-41ff-a5ce-d92f40fe68f9",
+          "provider": "SYNTHETIC_DEMO",
+          "account_scope": "golden-path",
+          "external_meeting_id": "synthetic-meeting-facf76c2d8bc",
+          "calendar_event_id": "synthetic-calendar-facf76c2d8bc",
+          "binding_method": "SCHEDULED",
+          "bound_at": "2026-11-14T20:20:05.980Z",
+          "unbound_at": null
+        }
+      ],
+      "transcript_artifacts": [
+        {
+          "id": "394088a3-e1ca-41b9-97ff-93c56fd3d1d4",
+          "source_revision": 1,
+          "is_canonical": true,
+          "provenance": "FIXTURE",
+          "trigger_mode": "MANUAL",
+          "connection_state": "NOT_CONNECTED",
+          "transcript_status": "READY",
+          "content_sha256": "c8198254ebd961b871bc7a22e4a87f88bd667d6f54a4be1c17dc6e9de19290ab",
+          "provider": "LOCAL_DEMO",
+          "provider_artifact_id": "local:demo-sample:225aef71-9793-41ff-a5ce-d92f40fe68f9"
+        }
+      ],
+      "transcript_segment_count": 11,
+      "interview_records": [
+        {
+          "id": "3d76898a-7e65-4301-922e-b3235f90e961",
+          "transcript_artifact_id": "394088a3-e1ca-41b9-97ff-93c56fd3d1d4",
+          "transcript_revision": 1,
+          "status": "NEEDS_REVIEW",
+          "verification_status": "UNVERIFIED",
+          "evidence_ok": true,
+          "is_current": true
+        }
+      ],
+      "scorecards": [
+        {
+          "id": "c2a5a8bb-8ea9-4ee8-b5ee-630144bef7a2",
+          "interviewer_id": "c4a48b8d-a6f8-4a0b-8db6-eca9044c78c4",
+          "rubric_version_id": "d1438ba1-3fd2-4493-a430-c6fa8c6f1098",
+          "status": "SUBMITTED",
+          "overall": "ADVANCE",
+          "revision_no": 1,
+          "record_version": 1,
+          "superseded_by_scorecard_id": null
+        },
+        {
+          "id": "8df99328-7808-4e00-8ada-da98998efe68",
+          "interviewer_id": "64eb163b-162a-4754-804d-288bae374170",
+          "rubric_version_id": "d1438ba1-3fd2-4493-a430-c6fa8c6f1098",
+          "status": "SUBMITTED",
+          "overall": "ADVANCE",
+          "revision_no": 1,
+          "record_version": 1,
+          "superseded_by_scorecard_id": null
+        }
+      ],
+      "business_tasks": [
+        {
+          "id": "0af1c3a9-89f6-4208-8f5c-0f9806a78df7",
+          "task_type": "INTERVIEW_SCHEDULE",
+          "status": "SUCCEEDED",
+          "business_refs": [
+            {
+              "id": "427947a6-ccfe-4847-a1b7-0f54811525c1",
+              "kind": "INTERVIEW"
+            },
+            {
+              "args_digest": "sha256:d034911acc53dd5b7c21f56c45dc5f4cfaebf66cbda0ffb6e1345dc8d9f7c474",
+              "result_interview_id": "427947a6-ccfe-4847-a1b7-0f54811525c1"
+            }
+          ]
+        }
+      ],
+      "events": []
+    }
+  ],
+  "counts": {
+    "application": 2,
+    "business_task": 1,
+    "candidate": 2,
+    "decision": 2,
+    "event_inbox": 13,
+    "intake_asset": 1,
+    "intake_record": 1,
+    "interview": 1,
+    "interview_record": 1,
+    "interviewer": 2,
+    "meeting": 1,
+    "meeting_binding": 1,
+    "resume": 1,
+    "resume_version": 1,
+    "scorecard": 2,
+    "transcript_artifact": 1,
+    "transcript_segment": 11
+  },
+  "counts_delta_vs_preflight": {
+    "application": 1,
+    "business_task": 1,
+    "candidate": 1,
+    "decision": 2,
+    "event_inbox": 9,
+    "intake_asset": 1,
+    "intake_record": 1,
+    "interview": 1,
+    "interview_record": 1,
+    "interviewer": 2,
+    "meeting": 1,
+    "meeting_binding": 1,
+    "resume": 1,
+    "resume_version": 1,
+    "scorecard": 2,
+    "transcript_artifact": 1,
+    "transcript_segment": 11
+  },
+  "decisions_by_scope": [
+    {
+      "decision_scope": "SCREENING",
+      "stage_code": "S7",
+      "n": 1
+    },
+    {
+      "decision_scope": "STAGE",
+      "stage_code": "S10",
+      "n": 1
+    }
+  ],
+  "submitted_scorecards": [
+    {
+      "id": "c2a5a8bb-8ea9-4ee8-b5ee-630144bef7a2",
+      "interviewer_id": "c4a48b8d-a6f8-4a0b-8db6-eca9044c78c4",
+      "rubric_version_id": "d1438ba1-3fd2-4493-a430-c6fa8c6f1098",
+      "status": "SUBMITTED",
+      "overall": "ADVANCE",
+      "revision_no": 1,
+      "record_version": 1,
+      "superseded_by_scorecard_id": null
+    },
+    {
+      "id": "8df99328-7808-4e00-8ada-da98998efe68",
+      "interviewer_id": "64eb163b-162a-4754-804d-288bae374170",
+      "rubric_version_id": "d1438ba1-3fd2-4493-a430-c6fa8c6f1098",
+      "status": "SUBMITTED",
+      "overall": "ADVANCE",
+      "revision_no": 1,
+      "record_version": 1,
+      "superseded_by_scorecard_id": null
+    }
+  ],
+  "consistency_view_violations_for_app": [],
+  "consistency_view_violations_all": []
+}

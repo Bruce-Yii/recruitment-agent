@@ -1,0 +1,1552 @@
+Golden Path end-to-end harness（S6 → S10 · 终值 S10 · FIRST_RUN/RERUN 双模式）
+运行时间        : 2026-11-14T20:33:30.850Z
+仓库 HEAD       : 2d987d4d923c90683790ab98b8e115f4983a9b78（来源 env:GOLDEN_PATH_HEAD）
+工作树          : snapshot branch=(n/a)
+数据库          : postgres@127.0.0.1:5432/ra_g4_ci_replay（只读读回；写只经工具）
+租户 / actor    : 11111111-1111-4111-8111-000000000001 / 11111111-1111-4111-8111-000000000103（HUMAN）
+岗位            : 11111111-1111-4111-8111-000000000401（DEMO-BE-001，合成演示租户）
+合成简历        : C:\Users\12412\AppData\Local\Temp\g4-snapshot-b-2d987d4\dsh\dsh-recruitment\manual\golden-path\fixtures\gp-rerun-2\synthetic-resume-golden-path.pdf
+合成身份        : lin.chengyu.gp8@example.test / +8613600000888（合成值，不对应任何真实候选人）
+证据根          : D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun（GOLDEN_PATH_EVIDENCE_DIR=D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun）
+证据目录        : D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun\run-2026-11-14T20-33-30-573Z
+RUN_MODE 守卫   : RERUN
+
+fixture sha256  : aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df（10919 bytes）
+
+════════ BOOTSTRAP · scripts/bootstrap-demo.mjs（G5：干净库的 demo 前置，内置） ════════
+bootstrap       : outcome=NO_OP exit_code=0 state=NO_OP
+bootstrap sha256: 65e05b0bcc95d1e6dfd489c5ef5ebcea9546e228d6c237f26707f860f692b5cc
+bootstrap writes: {"written":false,"steps":[]}
+
+════════ HOP 0 · 预检（DB / 迁移 / 岗位 / rubric） ════════
+db=ra_g4_ci_replay  migrations=0001_init,0002_seed,0003_review_queue,0004_stage_catalog,0005_version_binding,0006_integrity_gaps,0007_decision_integrity,0008_decision_uniqueness,0009_application_identity,0010_migration_ledger,0011_task_runtime,0012_engine_state,0013_trace_chain,0014_tenant_config,0015_runtime_cutover,0016_v1_consistency
+job=DEMO-BE-001 status=OPEN current_rubric=4facfb68-64ec-4500-b26a-7ff4db6c2f46
+hiring_manager_actor_id=11111111-1111-4111-8111-000000000102（actor 103 是 hiring manager? false）
+rubric v1 id=11111111-1111-4111-8111-000000000403 hash=a74e84bb9fa05063… dims=["backend_depth","async_pipeline","frontend_basics"] approvals=[]
+rubric v2 id=4facfb68-64ec-4500-b26a-7ff4db6c2f46 hash=0c95d70de3f24d66… dims=["work_exists","edu_exists","team_lead"] approvals=[{"status":"APPROVED","hash_match":true}]
+预检行数：{"application":2,"business_task":1,"candidate":2,"decision":2,"event_inbox":13,"intake_asset":1,"intake_record":1,"interview":1,"interview_record":1,"interviewer":2,"meeting":1,"meeting_binding":1,"resume":1,"resume_version":1,"scorecard":2,"transcript_artifact":1,"transcript_segment":11}
+全库 decision 按 scope：[{"decision_scope":"SCREENING","n":1},{"decision_scope":"STAGE","n":1}]
+全库「材料 + rubric 都已绑定」的申请数（both_bound）：1
+用于 S7 的已批准 rubric：v2 4facfb68-64ec-4500-b26a-7ff4db6c2f46
+
+──────── HOP 1 · S6 application_intake（简历 → candidate + application，绑定 material/version） ────────
+tool      : recruitment_application_intake
+request   : {
+             "path": "C:\\Users\\12412\\AppData\\Local\\Temp\\g4-snapshot-b-2d987d4\\dsh\\dsh-recruitment\\manual\\golden-path\\fixtures\\gp-rerun-2\\synthetic-resume-golden-path.pdf",
+             "job_id": "11111111-1111-4111-8111-000000000401"
+            }
+result    : OK
+  application: REUSED dc8b0681-9f2a-466d-b668-936d023207f5
+  structure: saved=false (resume_version v1 137bbf97-ba2f-49f1-b4c2-f78943c5ff35, UNCHANGED)
+  candidate: c2d0cc31-18c4-469e-8e13-ef25bd656a26 (existing, matched_by=email+phone)
+  job DEMO-BE-001 [OPEN] stage=S10 lifecycle=ACTIVE
+  source: synthetic-resume-golden-path.pdf pages=2 bytes=10919
+  sha256=aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df
+  parse_status=PARSED completeness=complete hard_issues=0
+  identity strong_ids=[email, phone] merge_eligible=[email, phone] weak=[] evidence=2 blocked=[]
+  labels: provenance=FIXTURE trigger=MANUAL connection=CONNECTED
+row delta : {}
+readback  : {
+             "application": {
+              "id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+              "candidate_id": "c2d0cc31-18c4-469e-8e13-ef25bd656a26",
+              "job_id": "11111111-1111-4111-8111-000000000401",
+              "job_version_id": "11111111-1111-4111-8111-000000000402",
+              "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+              "resume_version_id": "137bbf97-ba2f-49f1-b4c2-f78943c5ff35",
+              "lifecycle_status": "ACTIVE",
+              "current_stage_code": "S10",
+              "record_version": 5,
+              "created_at": "2026-11-14T20:33:27.916Z",
+              "stage_entered_at": "2026-11-14T20:33:29.700Z",
+              "stage_changed_at": "2026-11-14T20:33:29.671Z",
+              "stage_changed_by_actor_id": "11111111-1111-4111-8111-000000000103"
+             },
+             "candidate": {
+              "id": "c2d0cc31-18c4-469e-8e13-ef25bd656a26",
+              "identity_status": "ACTIVE",
+              "display_name": "林承宇",
+              "email_masked": "lin***@example.test",
+              "phone_masked": "+86136***88"
+             },
+             "resume_version": {
+              "id": "137bbf97-ba2f-49f1-b4c2-f78943c5ff35",
+              "version_no": 1,
+              "parse_status": "PARSED",
+              "content_sha256": "de19b5ca1186544f4e288579c2a90e059ccde999cb43394abcc987dec7e3f5c8",
+              "source_asset_sha256": "aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df",
+              "resume_id": "165d03c3-d044-4d0a-9854-dbb77ff18071",
+              "intake_asset_id": "70fd33ac-d006-4b84-b181-643fe1b903f4"
+             },
+             "intake_asset": {
+              "id": "70fd33ac-d006-4b84-b181-643fe1b903f4",
+              "file_name": "synthetic-resume-golden-path.pdf",
+              "byte_size": "10919",
+              "sha256": "aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df",
+              "validation_status": "VALID",
+              "intake_record_id": "6ee70fe8-ec3e-4f97-bf44-edb926f71a30"
+             },
+             "events": [
+              {
+               "event_id": "903e826f-e3ec-45cc-b73d-79e6a781aa89",
+               "provider": "internal",
+               "trust_level": "INTERNAL",
+               "event_type": "resume.intake.received",
+               "idempotency_source": "FALLBACK_KEY",
+               "source_object_id": "aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df",
+               "occurred_at": "2026-11-14T20:33:27.916Z"
+              }
+             ]
+            }
+outcome   : PASS
+RUN_MODE=RERUN（依据：HOP1 application_action=REUSED，rank.delta.application=0）
+application=dc8b0681-9f2a-466d-b668-936d023207f5 stage=S10 lifecycle=ACTIVE rubric_version_id=4facfb68-64ec-4500-b26a-7ff4db6c2f46
+candidate=c2d0cc31-18c4-469e-8e13-ef25bd656a26 resume_version=137bbf97-ba2f-49f1-b4c2-f78943c5ff35 rubric_pinned=true
+
+──────── HOP 2 · 阶段推进 T1 幂等调用（RERUN）：申请已在 S10，必须 NO_OP 且零迁移 ────────
+tool      : recruitment_application_stage_advance
+request   : {
+             "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5"
+            }
+result    : OK
+  recruitment_application_stage_advance 1.3.0: NO_OP application dc8b0681-9f2a-466d-b668-936d023207f5 @ S10 (record_version=5)
+    stage_changed_by_actor_id = 执行账号（SET LOCAL recruitment.actor_id），不代表决策人；T1 是自动推进。
+    labels: provenance=FIXTURE trigger=MANUAL connection=NOT_CONNECTED
+row delta : {}
+readback  : {
+             "application": {
+              "id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+              "candidate_id": "c2d0cc31-18c4-469e-8e13-ef25bd656a26",
+              "job_id": "11111111-1111-4111-8111-000000000401",
+              "job_version_id": "11111111-1111-4111-8111-000000000402",
+              "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+              "resume_version_id": "137bbf97-ba2f-49f1-b4c2-f78943c5ff35",
+              "lifecycle_status": "ACTIVE",
+              "current_stage_code": "S10",
+              "record_version": 5,
+              "created_at": "2026-11-14T20:33:27.916Z",
+              "stage_entered_at": "2026-11-14T20:33:29.700Z",
+              "stage_changed_at": "2026-11-14T20:33:29.671Z",
+              "stage_changed_by_actor_id": "11111111-1111-4111-8111-000000000103"
+             }
+            }
+outcome   : PASS
+stage after T1 = S10 transitions=[]
+
+──────── HOP 3 · S7 screening_evaluate（只读、advisory、带证据） ────────
+tool      : recruitment_screening_evaluate
+request   : {
+             "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+             "as_of": "2026-11-15T04:33:32+08:00"
+            }
+result    : OK
+  recruitment_screening_evaluate 1.0.0 status=OK advisory=true read_only=true
+  labels: provenance=FIXTURE trigger=MANUAL connection=CONNECTED
+  application dc8b0681-9f2a-466d-b668-936d023207f5 stage=S10 lifecycle=ACTIVE rv=5
+  job 后端工程师（演示） [OPEN]
+  resume_version v1 parse_status=PARSED hard_issues=0 pages=2
+  rubric v2 resolution=APPLICATION_PINNED what_if=false criteria=3
+  preconditions: human_queue_checked=7 material_ready=true
+  verdict: PASS (criteria_evaluated=true, required_human_action=CONFIRM_DECISION)
+  summary: 2 条硬性条件：2 满足 / 0 反证 / 0 不确定；0 条排除条件命中 → 建议通过（全部硬性条件满足、排除条件均未命中）
+    [MUST_HAVE_SATISFIED] work_exists field=work_experience tri_state=present evidence=3 — work_experience 已读出（state=present）
+    [MUST_HAVE_SATISFIED] edu_exists field=education tri_state=present evidence=1 — education 已读出（state=present）
+    bonus [BONUS_NEEDS_JUDGMENT] team_lead — 这条要求机器判不了（第 3 条），需要人回答 rubric 里的原问句
+  snapshot: app_rv=5 resume_version_id=137bbf97-ba2f-49f1-b4c2-f78943c5ff35 rubric_version_id=4facfb68-64ec-4500-b26a-7ff4db6c2f46
+  evaluation_digest=d1bd32b47a84fe7386317343014eef1b7eed48de512fa821c56277bc44c8c9a2
+row delta : {}
+readback  : {
+             "application": {
+              "id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+              "candidate_id": "c2d0cc31-18c4-469e-8e13-ef25bd656a26",
+              "job_id": "11111111-1111-4111-8111-000000000401",
+              "job_version_id": "11111111-1111-4111-8111-000000000402",
+              "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+              "resume_version_id": "137bbf97-ba2f-49f1-b4c2-f78943c5ff35",
+              "lifecycle_status": "ACTIVE",
+              "current_stage_code": "S10",
+              "record_version": 5,
+              "created_at": "2026-11-14T20:33:27.916Z",
+              "stage_entered_at": "2026-11-14T20:33:29.700Z",
+              "stage_changed_at": "2026-11-14T20:33:29.671Z",
+              "stage_changed_by_actor_id": "11111111-1111-4111-8111-000000000103"
+             },
+             "decisions": [
+              {
+               "id": "057a7ff1-2ce2-47ed-ac9e-d6f66e261a36",
+               "decision_scope": "SCREENING",
+               "stage_code": "S7",
+               "result": "ADVANCE",
+               "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+               "decided_at": "2026-11-14T20:33:28.238Z",
+               "basis_count": 4,
+               "basis_kinds": [
+                "AUTHORITY",
+                "RESUME_VERSION",
+                "RUBRIC_VERSION",
+                "SCREENING_EVALUATION"
+               ],
+               "superseded_by_decision_id": null
+              },
+              {
+               "id": "6ff6b16e-f306-449a-a893-bd6ddda81611",
+               "decision_scope": "STAGE",
+               "stage_code": "S10",
+               "result": "ADVANCE",
+               "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+               "decided_at": "2026-11-14T20:33:29.518Z",
+               "basis_count": 5,
+               "basis_kinds": [
+                "AUTHORITY",
+                "RUBRIC_VERSION",
+                "SCORECARD",
+                "SUMMARY"
+               ],
+               "superseded_by_decision_id": null
+              }
+             ]
+            }
+outcome   : PASS
+verdict=PASS evaluation_digest=d1bd32b47a84fe7386317343014eef1b7eed48de512fa821c56277bc44c8c9a2
+rubric resolution=APPLICATION_PINNED pin_required=false what_if=false
+warnings=[]
+criteria_evaluated=true reasons=["work_exists:MUST_HAVE_SATISFIED:SATISFIED","edu_exists:MUST_HAVE_SATISFIED:SATISFIED"]
+
+──────── HOP 4 · S7 decision_record(SCREENING) 重复提交（RERUN）：当前 SCREENING 决策已存在，必须 ALREADY_DECIDED 且零写入 ────────
+tool      : recruitment_decision_record
+request   : {
+             "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+             "decision_scope": "SCREENING",
+             "as_of": "2026-11-15T04:33:32+08:00",
+             "result": "ADVANCE",
+             "reason": "初筛通过：work_exists 与 edu_exists 两条 MUST_HAVE 均满足（依据 SCREENING_EVALUATION 的逐准则证据）。",
+             "basis_refs": [
+              {
+               "kind": "RUBRIC_VERSION",
+               "id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+               "payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
+               "version_no": 2
+              },
+              {
+               "kind": "AUTHORITY",
+               "actor_id": "11111111-1111-4111-8111-000000000103",
+               "is_hiring_manager": false
+              },
+              {
+               "kind": "SCREENING_EVALUATION",
+               "evaluation_digest": "d1bd32b47a84fe7386317343014eef1b7eed48de512fa821c56277bc44c8c9a2",
+               "verdict": "PASS",
+               "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+               "rubric_payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
+               "resume_version_id": "137bbf97-ba2f-49f1-b4c2-f78943c5ff35",
+               "resume_content_sha256": "de19b5ca1186544f4e288579c2a90e059ccde999cb43394abcc987dec7e3f5c8",
+               "contract_version": "1.0.0",
+               "criteria_evaluated": true,
+               "provenance": "FIXTURE"
+              },
+              {
+               "kind": "RESUME_VERSION",
+               "id": "137bbf97-ba2f-49f1-b4c2-f78943c5ff35",
+               "content_sha256": "de19b5ca1186544f4e288579c2a90e059ccde999cb43394abcc987dec7e3f5c8"
+              }
+             ],
+             "human_confirmation": {
+              "confirmed_by_actor_id": "11111111-1111-4111-8111-000000000103",
+              "confirmed_at": "2026-11-15T04:32:32+08:00",
+              "confirmation_method": "IN_CHAT",
+              "confirmation_text": "我确认：林承宇这条申请初筛通过，推进到面试。",
+              "confirmation_text_sha256": "376126101e176a70132d2434cfb9765d33470e653b34498e92b12b0555b586c4"
+             }
+            }
+result    : ALREADY_DECIDED — ALREADY_DECIDED: {"code":"ALREADY_DECIDED","detail":{"application_id":"dc8b0681-9f2a-466d-b668-936d023207f5","decision_scope":"SCREENING","existing_decision_id":"057a7ff1-2ce2-47ed-ac9e-d6f66e261a36","existing_record_version":1,"existing_result":"ADVANCE"},"message":"同一 (申请, scope, 阶段) 已有当前决策；要改必须走 supersedes 撤回（DC §4.3 STEP 3）","reason_code":"SCOPE_ALREADY_DECIDED"}
+row delta : {}
+readback  : {
+             "application": {
+              "id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+              "candidate_id": "c2d0cc31-18c4-469e-8e13-ef25bd656a26",
+              "job_id": "11111111-1111-4111-8111-000000000401",
+              "job_version_id": "11111111-1111-4111-8111-000000000402",
+              "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+              "resume_version_id": "137bbf97-ba2f-49f1-b4c2-f78943c5ff35",
+              "lifecycle_status": "ACTIVE",
+              "current_stage_code": "S10",
+              "record_version": 5,
+              "created_at": "2026-11-14T20:33:27.916Z",
+              "stage_entered_at": "2026-11-14T20:33:29.700Z",
+              "stage_changed_at": "2026-11-14T20:33:29.671Z",
+              "stage_changed_by_actor_id": "11111111-1111-4111-8111-000000000103"
+             },
+             "decisions": [
+              {
+               "id": "057a7ff1-2ce2-47ed-ac9e-d6f66e261a36",
+               "decision_scope": "SCREENING",
+               "stage_code": "S7",
+               "result": "ADVANCE",
+               "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+               "decided_at": "2026-11-14T20:33:28.238Z",
+               "basis_count": 4,
+               "basis_kinds": [
+                "AUTHORITY",
+                "RESUME_VERSION",
+                "RUBRIC_VERSION",
+                "SCREENING_EVALUATION"
+               ],
+               "superseded_by_decision_id": null
+              },
+              {
+               "id": "6ff6b16e-f306-449a-a893-bd6ddda81611",
+               "decision_scope": "STAGE",
+               "stage_code": "S10",
+               "result": "ADVANCE",
+               "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+               "decided_at": "2026-11-14T20:33:29.518Z",
+               "basis_count": 5,
+               "basis_kinds": [
+                "AUTHORITY",
+                "RUBRIC_VERSION",
+                "SCORECARD",
+                "SUMMARY"
+               ],
+               "superseded_by_decision_id": null
+              }
+             ],
+             "approval_service_calls": 0
+            }
+outcome   : PASS
+SCREENING 决策结果：FAILED(ALREADY_DECIDED/SCOPE_ALREADY_DECIDED)
+approval.request 调用次数：0（IN_CHAT 按 D-95 不再二次弹确认）
+
+──────── HOP 5 · 阶段推进 T2 幂等调用（RERUN）：申请已在 S10，必须 NO_OP 且零迁移 ────────
+tool      : recruitment_application_stage_advance
+request   : {
+             "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5"
+            }
+result    : OK
+  recruitment_application_stage_advance 1.3.0: NO_OP application dc8b0681-9f2a-466d-b668-936d023207f5 @ S10 (record_version=5)
+    stage_changed_by_actor_id = 执行账号（SET LOCAL recruitment.actor_id），不代表决策人；T1 是自动推进。
+    labels: provenance=FIXTURE trigger=MANUAL connection=NOT_CONNECTED
+row delta : {}
+readback  : {
+             "application": {
+              "id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+              "candidate_id": "c2d0cc31-18c4-469e-8e13-ef25bd656a26",
+              "job_id": "11111111-1111-4111-8111-000000000401",
+              "job_version_id": "11111111-1111-4111-8111-000000000402",
+              "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+              "resume_version_id": "137bbf97-ba2f-49f1-b4c2-f78943c5ff35",
+              "lifecycle_status": "ACTIVE",
+              "current_stage_code": "S10",
+              "record_version": 5,
+              "created_at": "2026-11-14T20:33:27.916Z",
+              "stage_entered_at": "2026-11-14T20:33:29.700Z",
+              "stage_changed_at": "2026-11-14T20:33:29.671Z",
+              "stage_changed_by_actor_id": "11111111-1111-4111-8111-000000000103"
+             },
+             "decisions": [
+              {
+               "id": "057a7ff1-2ce2-47ed-ac9e-d6f66e261a36",
+               "decision_scope": "SCREENING",
+               "stage_code": "S7",
+               "result": "ADVANCE",
+               "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+               "decided_at": "2026-11-14T20:33:28.238Z",
+               "basis_count": 4,
+               "basis_kinds": [
+                "AUTHORITY",
+                "RESUME_VERSION",
+                "RUBRIC_VERSION",
+                "SCREENING_EVALUATION"
+               ],
+               "superseded_by_decision_id": null
+              },
+              {
+               "id": "6ff6b16e-f306-449a-a893-bd6ddda81611",
+               "decision_scope": "STAGE",
+               "stage_code": "S10",
+               "result": "ADVANCE",
+               "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+               "decided_at": "2026-11-14T20:33:29.518Z",
+               "basis_count": 5,
+               "basis_kinds": [
+                "AUTHORITY",
+                "RUBRIC_VERSION",
+                "SCORECARD",
+                "SUMMARY"
+               ],
+               "superseded_by_decision_id": null
+              }
+             ]
+            }
+outcome   : PASS
+stage after T2 = S10 transitions=[]
+
+──────── HOP 6 · S8 interview_schedule 负例：approval=deny（D-79 fail closed，必须一行不写） ────────
+tool      : recruitment_interview_schedule
+request   : {
+             "intent": "CREATE",
+             "idempotency_key": "gp-e2e:dc8b0681-9f2a-466d-b668-936d023207f5:schedule-r2-denied",
+             "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+             "round_no": 2,
+             "slot_code": "DEFAULT",
+             "scheduled_start_at": "2026-12-03T10:00:00+08:00",
+             "duration_minutes": 60,
+             "timezone": "Asia/Shanghai",
+             "delivery_mode": "VIDEO",
+             "interviewers": [
+              {
+               "actor_id": "11111111-1111-4111-8111-000000000103",
+               "role_in_interview": "INTERVIEWER",
+               "required_scorecard": true
+              },
+              {
+               "actor_id": "11111111-1111-4111-8111-000000000104",
+               "role_in_interview": "INTERVIEWER",
+               "required_scorecard": true
+              }
+             ]
+            }
+result    : FORBIDDEN — FORBIDDEN: {"code":"FORBIDDEN","detail":{"approval":"rejected","tool":"recruitment_interview_schedule"},"message":"人工没有批准这次排期写库（D-79）","reason_code":"APPROVAL_NOT_GRANTED"}
+row delta : {}
+readback  : {
+             "approval_requests": 1,
+             "interviews_for_application": [
+              {
+               "round_no": 1,
+               "slot_code": "DEFAULT",
+               "status": "SCHEDULED"
+              }
+             ]
+            }
+outcome   : PASS
+denied 负例：FORBIDDEN/APPROVAL_NOT_GRANTED（approval requests=1）
+
+──────── HOP 7 · S8 interview_schedule 幂等重放（RERUN）：同 idempotency_key + 同参数 → replayed=true、零写入 ────────
+tool      : recruitment_interview_schedule
+request   : {
+             "intent": "CREATE",
+             "idempotency_key": "gp-e2e:dc8b0681-9f2a-466d-b668-936d023207f5:schedule-r1",
+             "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+             "round_no": 1,
+             "slot_code": "DEFAULT",
+             "scheduled_start_at": "2026-12-09T10:00:00+08:00",
+             "duration_minutes": 60,
+             "timezone": "Asia/Shanghai",
+             "delivery_mode": "VIDEO",
+             "interviewers": [
+              {
+               "actor_id": "11111111-1111-4111-8111-000000000103",
+               "role_in_interview": "INTERVIEWER",
+               "required_scorecard": true
+              },
+              {
+               "actor_id": "11111111-1111-4111-8111-000000000104",
+               "role_in_interview": "INTERVIEWER",
+               "required_scorecard": true
+              }
+             ],
+             "meeting": {
+              "provider": "SYNTHETIC_DEMO",
+              "account_scope": "golden-path",
+              "calendar_event_id": "synthetic-calendar-dc8b06819f2a",
+              "external_meeting_id": "synthetic-meeting-dc8b06819f2a",
+              "meeting_role": "PRIMARY"
+             }
+            }
+result    : OK
+  interview 53c520cd-2cf1-4922-8308-06b112062a06 round=1 slot=DEFAULT [SCHEDULED] stage=S8  2026-12-09T02:00:00.000Z → 2026-12-09T03:00:00.000Z
+    application=dc8b0681-9f2a-466d-b668-936d023207f5 candidate=c2d0cc31-18c4-469e-8e13-ef25bd656a26 job=11111111-1111-4111-8111-000000000401 timezone=Asia/Shanghai
+    interviewers: 演示-HR 专员(INTERVIEWER, required) · 演示-面试官(INTERVIEWER, required)
+    meeting_binding: BOUND_ACTIVE (1 active)
+    intent=CREATE replayed=true  changes.created=0  labels: FIXTURE/MANUAL/NOT_CONNECTED
+row delta : {}
+readback  : {
+             "approval_requests": 0,
+             "interview": {
+              "interview": {
+               "id": "53c520cd-2cf1-4922-8308-06b112062a06",
+               "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+               "round_no": 1,
+               "slot_code": "DEFAULT",
+               "stage_code": "S8",
+               "status": "SCHEDULED",
+               "scheduled_start_at": "2026-12-09T02:00:00.000Z",
+               "scheduled_end_at": "2026-12-09T03:00:00.000Z",
+               "timezone": "Asia/Shanghai",
+               "record_version": 1
+              },
+              "interviewers": [
+               {
+                "actor_id": "11111111-1111-4111-8111-000000000103",
+                "display_name": "演示-HR 专员",
+                "role_in_interview": "INTERVIEWER",
+                "required_scorecard": true,
+                "scorecard_due_at": null
+               },
+               {
+                "actor_id": "11111111-1111-4111-8111-000000000104",
+                "display_name": "演示-面试官",
+                "role_in_interview": "INTERVIEWER",
+                "required_scorecard": true,
+                "scorecard_due_at": null
+               }
+              ],
+              "meeting_bindings": [
+               {
+                "id": "b53b054b-19a0-4d30-9734-af5f918420be",
+                "meeting_id": "6de8758f-ca86-4edb-92d9-9e9b773267ca",
+                "provider": "SYNTHETIC_DEMO",
+                "account_scope": "golden-path",
+                "external_meeting_id": "synthetic-meeting-dc8b06819f2a",
+                "calendar_event_id": "synthetic-calendar-dc8b06819f2a",
+                "binding_method": "SCHEDULED",
+                "bound_at": "2026-11-14T20:33:28.540Z",
+                "unbound_at": null
+               }
+              ],
+              "transcript_artifacts": [
+               {
+                "id": "94c87c9e-5a80-4ede-95e4-db623fda892d",
+                "source_revision": 1,
+                "is_canonical": true,
+                "provenance": "FIXTURE",
+                "trigger_mode": "MANUAL",
+                "connection_state": "NOT_CONNECTED",
+                "transcript_status": "READY",
+                "content_sha256": "c8198254ebd961b871bc7a22e4a87f88bd667d6f54a4be1c17dc6e9de19290ab",
+                "provider": "LOCAL_DEMO",
+                "provider_artifact_id": "local:demo-sample:6de8758f-ca86-4edb-92d9-9e9b773267ca"
+               }
+              ],
+              "transcript_segment_count": 11,
+              "interview_records": [
+               {
+                "id": "3ce45aeb-c1af-4701-a11b-6e99a24e4d40",
+                "transcript_artifact_id": "94c87c9e-5a80-4ede-95e4-db623fda892d",
+                "transcript_revision": 1,
+                "status": "NEEDS_REVIEW",
+                "verification_status": "UNVERIFIED",
+                "evidence_ok": true,
+                "is_current": true
+               }
+              ],
+              "scorecards": [
+               {
+                "id": "c7f649df-9e5c-445a-8c6b-d8283be17803",
+                "interviewer_id": "c25fa9c4-0067-4e84-b198-153951a7a2cf",
+                "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+                "status": "SUBMITTED",
+                "overall": "ADVANCE",
+                "revision_no": 1,
+                "record_version": 1,
+                "superseded_by_scorecard_id": null
+               },
+               {
+                "id": "c6a4b7b6-6745-4039-9ef4-e5d4906c0b56",
+                "interviewer_id": "51a8464b-d896-457d-a3cc-9576f4f67098",
+                "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+                "status": "SUBMITTED",
+                "overall": "ADVANCE",
+                "revision_no": 1,
+                "record_version": 1,
+                "superseded_by_scorecard_id": null
+               }
+              ],
+              "business_tasks": [
+               {
+                "id": "fb633eb8-9b60-4def-a2cf-823d2cf27fd8",
+                "task_type": "INTERVIEW_SCHEDULE",
+                "status": "SUCCEEDED",
+                "business_refs": [
+                 {
+                  "id": "53c520cd-2cf1-4922-8308-06b112062a06",
+                  "kind": "INTERVIEW"
+                 },
+                 {
+                  "args_digest": "sha256:a57e191d450a8ce31860b36ea077c0a73263b29403b0573d73dcd97e5f4aa3d2",
+                  "result_interview_id": "53c520cd-2cf1-4922-8308-06b112062a06"
+                 }
+                ]
+               }
+              ],
+              "events": []
+             }
+            }
+outcome   : PASS
+interview_id=53c520cd-2cf1-4922-8308-06b112062a06 approval requests=0
+used interview_id=53c520cd-2cf1-4922-8308-06b112062a06
+readback interview.status=SCHEDULED stage=S8 round=1
+readback interviewers=["演示-HR 专员:INTERVIEWER","演示-面试官:INTERVIEWER"]
+readback meeting_bindings=["SYNTHETIC_DEMO:synthetic-meeting-dc8b06819f2a:unbound=null"]
+
+──────── HOP 8 · S8 interview_get（面试 + 会议绑定 + 转写 + 面评状态） ────────
+tool      : recruitment_interview_get
+request   : {
+             "interview_id": "53c520cd-2cf1-4922-8308-06b112062a06"
+            }
+result    : OK
+  recruitment_interview_get 1.0.0  (labels: FIXTURE/MANUAL/CONNECTED)  as_of=2026-11-14T20:33:32.781Z
+  query: {"mode":"BY_INTERVIEW","interview_id":"53c520cd-2cf1-4922-8308-06b112062a06"}  count=1
+  interview 53c520cd-2cf1-4922-8308-06b112062a06  round=1 slot=DEFAULT stage=S8 [SCHEDULED]  2026-12-09T02:00:00.000Z – 2026-12-09T03:00:00.000Z
+    application_id=dc8b0681-9f2a-466d-b668-936d023207f5  candidate_id=c2d0cc31-18c4-469e-8e13-ef25bd656a26  job_id=11111111-1111-4111-8111-000000000401
+    interviewers:
+    演示-HR 专员(required, SUBMITTED rev1/TRANSCRIPT @2026-11-14T20:33:29.203Z)
+    演示-面试官(required, SUBMITTED rev1/TRANSCRIPT @2026-11-14T20:33:29.318Z)
+    meeting_binding: BOUND_ACTIVE  SYNTHETIC_DEMO synthetic-meeting-dc8b06819f2a → PRIMARY (binding_method=SCHEDULED, meeting_id=6de8758f-ca86-4edb-92d9-9e9b773267ca)
+    transcript: READY CANONICAL_STATUS (no_transcript=false)
+    evaluation: required=2 submitted=2 waived=0 pending=0 → evaluation_ready=false
+      blockers: RECORD_NOT_READY(3ce45aeb-c1af-4701-a11b-6e99a24e4d40)
+    warnings: —
+row delta : {}
+readback  : {
+             "interview": {
+              "id": "53c520cd-2cf1-4922-8308-06b112062a06",
+              "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+              "round_no": 1,
+              "slot_code": "DEFAULT",
+              "stage_code": "S8",
+              "status": "SCHEDULED",
+              "scheduled_start_at": "2026-12-09T02:00:00.000Z",
+              "scheduled_end_at": "2026-12-09T03:00:00.000Z",
+              "timezone": "Asia/Shanghai",
+              "record_version": 1
+             },
+             "interviewers": [
+              {
+               "actor_id": "11111111-1111-4111-8111-000000000103",
+               "display_name": "演示-HR 专员",
+               "role_in_interview": "INTERVIEWER",
+               "required_scorecard": true,
+               "scorecard_due_at": null
+              },
+              {
+               "actor_id": "11111111-1111-4111-8111-000000000104",
+               "display_name": "演示-面试官",
+               "role_in_interview": "INTERVIEWER",
+               "required_scorecard": true,
+               "scorecard_due_at": null
+              }
+             ],
+             "meeting_bindings": [
+              {
+               "id": "b53b054b-19a0-4d30-9734-af5f918420be",
+               "meeting_id": "6de8758f-ca86-4edb-92d9-9e9b773267ca",
+               "provider": "SYNTHETIC_DEMO",
+               "account_scope": "golden-path",
+               "external_meeting_id": "synthetic-meeting-dc8b06819f2a",
+               "calendar_event_id": "synthetic-calendar-dc8b06819f2a",
+               "binding_method": "SCHEDULED",
+               "bound_at": "2026-11-14T20:33:28.540Z",
+               "unbound_at": null
+              }
+             ],
+             "transcript_artifacts": [
+              {
+               "id": "94c87c9e-5a80-4ede-95e4-db623fda892d",
+               "source_revision": 1,
+               "is_canonical": true,
+               "provenance": "FIXTURE",
+               "trigger_mode": "MANUAL",
+               "connection_state": "NOT_CONNECTED",
+               "transcript_status": "READY",
+               "content_sha256": "c8198254ebd961b871bc7a22e4a87f88bd667d6f54a4be1c17dc6e9de19290ab",
+               "provider": "LOCAL_DEMO",
+               "provider_artifact_id": "local:demo-sample:6de8758f-ca86-4edb-92d9-9e9b773267ca"
+              }
+             ],
+             "transcript_segment_count": 11,
+             "interview_records": [
+              {
+               "id": "3ce45aeb-c1af-4701-a11b-6e99a24e4d40",
+               "transcript_artifact_id": "94c87c9e-5a80-4ede-95e4-db623fda892d",
+               "transcript_revision": 1,
+               "status": "NEEDS_REVIEW",
+               "verification_status": "UNVERIFIED",
+               "evidence_ok": true,
+               "is_current": true
+              }
+             ],
+             "scorecards": [
+              {
+               "id": "c7f649df-9e5c-445a-8c6b-d8283be17803",
+               "interviewer_id": "c25fa9c4-0067-4e84-b198-153951a7a2cf",
+               "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+               "status": "SUBMITTED",
+               "overall": "ADVANCE",
+               "revision_no": 1,
+               "record_version": 1,
+               "superseded_by_scorecard_id": null
+              },
+              {
+               "id": "c6a4b7b6-6745-4039-9ef4-e5d4906c0b56",
+               "interviewer_id": "51a8464b-d896-457d-a3cc-9576f4f67098",
+               "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+               "status": "SUBMITTED",
+               "overall": "ADVANCE",
+               "revision_no": 1,
+               "record_version": 1,
+               "superseded_by_scorecard_id": null
+              }
+             ],
+             "business_tasks": [
+              {
+               "id": "fb633eb8-9b60-4def-a2cf-823d2cf27fd8",
+               "task_type": "INTERVIEW_SCHEDULE",
+               "status": "SUCCEEDED",
+               "business_refs": [
+                {
+                 "id": "53c520cd-2cf1-4922-8308-06b112062a06",
+                 "kind": "INTERVIEW"
+                },
+                {
+                 "args_digest": "sha256:a57e191d450a8ce31860b36ea077c0a73263b29403b0573d73dcd97e5f4aa3d2",
+                 "result_interview_id": "53c520cd-2cf1-4922-8308-06b112062a06"
+                }
+               ]
+              }
+             ],
+             "events": []
+            }
+outcome   : PASS
+
+──────── HOP 9 · S9 transcript_import（人工导入合成转写；DEMO_SAMPLE → FIXTURE 标签） ────────
+tool      : recruitment_transcript_import
+request   : {
+             "interview_id": "53c520cd-2cf1-4922-8308-06b112062a06",
+             "content": "（合成演示转写，仅用于 Golden Path 联调，不对应任何真实会议）\n面试官：先做个自我介绍吧。\n候选人：我是林承宇，做后端开发六年，主要做交易链路和数据同步。\n面试官：讲一个你做过的幂等改造。\n候选人：支付回调以前会重复入账，我加了幂等键和状态机，重复回调直接返回成功。\n面试官：如果重试一直失败，你们怎么处理？\n候选人：进死信队列，人工确认后重放，同时保留原始报文做对账。\n面试官：设计一个任务调度服务，怎么保证不重复执行？\n候选人：先按任务 ID 做唯一约束，再在消费端做幂等，配合租约和超时。\n面试官：时间差不多了，后续有消息会同步给你。\n候选人：好的，谢谢。",
+             "source_kind": "DEMO_SAMPLE",
+             "language": "zh",
+             "meeting_id": "6de8758f-ca86-4edb-92d9-9e9b773267ca",
+             "note": "Golden Path 端到端联调：合成演示转写"
+            }
+result    : OK
+  recruitment_transcript_import 1.0.0 status=OK write=true replayed=true | interview=53c520cd-2cf1-4922-8308-06b112062a06 stage=S8 interview_status=SCHEDULED round=1 | meeting=6de8758f-ca86-4edb-92d9-9e9b773267ca provider=SYNTHETIC_DEMO role=PRIMARY binding=SCHEDULED | artifact=94c87c9e-5a80-4ede-95e4-db623fda892d rev=1 status=READY provenance=FIXTURE trigger=MANUAL connection=NOT_CONNECTED canonical=true chars=287 segments=11 | record=3ce45aeb-c1af-4701-a11b-6e99a24e4d40 status=NEEDS_REVIEW verification=UNVERIFIED rev=1 | changes: created=0 updated=0 | warning REPLAYED_SAME_CONTENT | warning FIXTURE_CONTENT_NOT_LIVE
+row delta : {}
+readback  : {
+             "interview": {
+              "id": "53c520cd-2cf1-4922-8308-06b112062a06",
+              "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+              "round_no": 1,
+              "slot_code": "DEFAULT",
+              "stage_code": "S8",
+              "status": "SCHEDULED",
+              "scheduled_start_at": "2026-12-09T02:00:00.000Z",
+              "scheduled_end_at": "2026-12-09T03:00:00.000Z",
+              "timezone": "Asia/Shanghai",
+              "record_version": 1
+             },
+             "interviewers": [
+              {
+               "actor_id": "11111111-1111-4111-8111-000000000103",
+               "display_name": "演示-HR 专员",
+               "role_in_interview": "INTERVIEWER",
+               "required_scorecard": true,
+               "scorecard_due_at": null
+              },
+              {
+               "actor_id": "11111111-1111-4111-8111-000000000104",
+               "display_name": "演示-面试官",
+               "role_in_interview": "INTERVIEWER",
+               "required_scorecard": true,
+               "scorecard_due_at": null
+              }
+             ],
+             "meeting_bindings": [
+              {
+               "id": "b53b054b-19a0-4d30-9734-af5f918420be",
+               "meeting_id": "6de8758f-ca86-4edb-92d9-9e9b773267ca",
+               "provider": "SYNTHETIC_DEMO",
+               "account_scope": "golden-path",
+               "external_meeting_id": "synthetic-meeting-dc8b06819f2a",
+               "calendar_event_id": "synthetic-calendar-dc8b06819f2a",
+               "binding_method": "SCHEDULED",
+               "bound_at": "2026-11-14T20:33:28.540Z",
+               "unbound_at": null
+              }
+             ],
+             "transcript_artifacts": [
+              {
+               "id": "94c87c9e-5a80-4ede-95e4-db623fda892d",
+               "source_revision": 1,
+               "is_canonical": true,
+               "provenance": "FIXTURE",
+               "trigger_mode": "MANUAL",
+               "connection_state": "NOT_CONNECTED",
+               "transcript_status": "READY",
+               "content_sha256": "c8198254ebd961b871bc7a22e4a87f88bd667d6f54a4be1c17dc6e9de19290ab",
+               "provider": "LOCAL_DEMO",
+               "provider_artifact_id": "local:demo-sample:6de8758f-ca86-4edb-92d9-9e9b773267ca"
+              }
+             ],
+             "transcript_segment_count": 11,
+             "interview_records": [
+              {
+               "id": "3ce45aeb-c1af-4701-a11b-6e99a24e4d40",
+               "transcript_artifact_id": "94c87c9e-5a80-4ede-95e4-db623fda892d",
+               "transcript_revision": 1,
+               "status": "NEEDS_REVIEW",
+               "verification_status": "UNVERIFIED",
+               "evidence_ok": true,
+               "is_current": true
+              }
+             ],
+             "scorecards": [
+              {
+               "id": "c7f649df-9e5c-445a-8c6b-d8283be17803",
+               "interviewer_id": "c25fa9c4-0067-4e84-b198-153951a7a2cf",
+               "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+               "status": "SUBMITTED",
+               "overall": "ADVANCE",
+               "revision_no": 1,
+               "record_version": 1,
+               "superseded_by_scorecard_id": null
+              },
+              {
+               "id": "c6a4b7b6-6745-4039-9ef4-e5d4906c0b56",
+               "interviewer_id": "51a8464b-d896-457d-a3cc-9576f4f67098",
+               "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+               "status": "SUBMITTED",
+               "overall": "ADVANCE",
+               "revision_no": 1,
+               "record_version": 1,
+               "superseded_by_scorecard_id": null
+              }
+             ],
+             "business_tasks": [
+              {
+               "id": "fb633eb8-9b60-4def-a2cf-823d2cf27fd8",
+               "task_type": "INTERVIEW_SCHEDULE",
+               "status": "SUCCEEDED",
+               "business_refs": [
+                {
+                 "id": "53c520cd-2cf1-4922-8308-06b112062a06",
+                 "kind": "INTERVIEW"
+                },
+                {
+                 "args_digest": "sha256:a57e191d450a8ce31860b36ea077c0a73263b29403b0573d73dcd97e5f4aa3d2",
+                 "result_interview_id": "53c520cd-2cf1-4922-8308-06b112062a06"
+                }
+               ]
+              }
+             ],
+             "events": []
+            }
+outcome   : PASS
+
+──────── HOP 10 · S9 transcript_read（canonical 状态 + 正文切片） ────────
+tool      : recruitment_transcript_read
+request   : {
+             "interview_id": "53c520cd-2cf1-4922-8308-06b112062a06",
+             "include_text": false,
+             "as_of": "2026-11-15T04:33:28+08:00"
+            }
+result    : OK
+  recruitment_transcript_read 1.0.0 status=OK read_only=true as_of=2026-11-15T04:33:28+08:00
+  interview 53c520cd-2cf1-4922-8308-06b112062a06 stage=S8 status=SCHEDULED round=1
+  transcript state=READY reason=CANONICAL_STATUS wait_minutes=120 artifacts=1
+  labels: provenance=FIXTURE trigger=MANUAL connection=CONNECTED
+    meeting 6de8758f-ca86-4edb-92d9-9e9b773267ca SYNTHETIC_DEMO role=PRIMARY in_set=true
+    canonical 94c87c9e-5a80-4ede-95e4-db623fda892d rev=1
+    artifact 94c87c9e-5a80-4ede-95e4-db623fda892d rev=1 status=READY provenance=FIXTURE trigger=MANUAL connection=NOT_CONNECTED canonical=true chars=287 segments=11
+    text: (omitted)
+    record 3ce45aeb-c1af-4701-a11b-6e99a24e4d40 status=NEEDS_REVIEW verification=UNVERIFIED
+    warning RECORD_NOT_READY: interview_record.status=NEEDS_REVIEW（verification_status=UNVERIFIED）：结构化记录还没就绪，与 transcript.state 是两条独立状态轴（TR-D2）
+row delta : {}
+readback  : {
+             "interview": {
+              "id": "53c520cd-2cf1-4922-8308-06b112062a06",
+              "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+              "round_no": 1,
+              "slot_code": "DEFAULT",
+              "stage_code": "S8",
+              "status": "SCHEDULED",
+              "scheduled_start_at": "2026-12-09T02:00:00.000Z",
+              "scheduled_end_at": "2026-12-09T03:00:00.000Z",
+              "timezone": "Asia/Shanghai",
+              "record_version": 1
+             },
+             "interviewers": [
+              {
+               "actor_id": "11111111-1111-4111-8111-000000000103",
+               "display_name": "演示-HR 专员",
+               "role_in_interview": "INTERVIEWER",
+               "required_scorecard": true,
+               "scorecard_due_at": null
+              },
+              {
+               "actor_id": "11111111-1111-4111-8111-000000000104",
+               "display_name": "演示-面试官",
+               "role_in_interview": "INTERVIEWER",
+               "required_scorecard": true,
+               "scorecard_due_at": null
+              }
+             ],
+             "meeting_bindings": [
+              {
+               "id": "b53b054b-19a0-4d30-9734-af5f918420be",
+               "meeting_id": "6de8758f-ca86-4edb-92d9-9e9b773267ca",
+               "provider": "SYNTHETIC_DEMO",
+               "account_scope": "golden-path",
+               "external_meeting_id": "synthetic-meeting-dc8b06819f2a",
+               "calendar_event_id": "synthetic-calendar-dc8b06819f2a",
+               "binding_method": "SCHEDULED",
+               "bound_at": "2026-11-14T20:33:28.540Z",
+               "unbound_at": null
+              }
+             ],
+             "transcript_artifacts": [
+              {
+               "id": "94c87c9e-5a80-4ede-95e4-db623fda892d",
+               "source_revision": 1,
+               "is_canonical": true,
+               "provenance": "FIXTURE",
+               "trigger_mode": "MANUAL",
+               "connection_state": "NOT_CONNECTED",
+               "transcript_status": "READY",
+               "content_sha256": "c8198254ebd961b871bc7a22e4a87f88bd667d6f54a4be1c17dc6e9de19290ab",
+               "provider": "LOCAL_DEMO",
+               "provider_artifact_id": "local:demo-sample:6de8758f-ca86-4edb-92d9-9e9b773267ca"
+              }
+             ],
+             "transcript_segment_count": 11,
+             "interview_records": [
+              {
+               "id": "3ce45aeb-c1af-4701-a11b-6e99a24e4d40",
+               "transcript_artifact_id": "94c87c9e-5a80-4ede-95e4-db623fda892d",
+               "transcript_revision": 1,
+               "status": "NEEDS_REVIEW",
+               "verification_status": "UNVERIFIED",
+               "evidence_ok": true,
+               "is_current": true
+              }
+             ],
+             "scorecards": [
+              {
+               "id": "c7f649df-9e5c-445a-8c6b-d8283be17803",
+               "interviewer_id": "c25fa9c4-0067-4e84-b198-153951a7a2cf",
+               "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+               "status": "SUBMITTED",
+               "overall": "ADVANCE",
+               "revision_no": 1,
+               "record_version": 1,
+               "superseded_by_scorecard_id": null
+              },
+              {
+               "id": "c6a4b7b6-6745-4039-9ef4-e5d4906c0b56",
+               "interviewer_id": "51a8464b-d896-457d-a3cc-9576f4f67098",
+               "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+               "status": "SUBMITTED",
+               "overall": "ADVANCE",
+               "revision_no": 1,
+               "record_version": 1,
+               "superseded_by_scorecard_id": null
+              }
+             ],
+             "business_tasks": [
+              {
+               "id": "fb633eb8-9b60-4def-a2cf-823d2cf27fd8",
+               "task_type": "INTERVIEW_SCHEDULE",
+               "status": "SUCCEEDED",
+               "business_refs": [
+                {
+                 "id": "53c520cd-2cf1-4922-8308-06b112062a06",
+                 "kind": "INTERVIEW"
+                },
+                {
+                 "args_digest": "sha256:a57e191d450a8ce31860b36ea077c0a73263b29403b0573d73dcd97e5f4aa3d2",
+                 "result_interview_id": "53c520cd-2cf1-4922-8308-06b112062a06"
+                }
+               ]
+              }
+             ],
+             "events": []
+            }
+outcome   : PASS
+
+──────── HOP 11 · S10 scorecard_submit 负例：面评已存在（业务拒绝路径不得写行；不再重复证明闸门） ────────
+tool      : recruitment_scorecard_submit
+request   : {
+             "interview_id": "53c520cd-2cf1-4922-8308-06b112062a06",
+             "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+             "items": {
+              "work_exists": {
+               "assessment": "MET",
+               "score": 4,
+               "note": "候选人有 3 段可分割的后端工作经历，职责边界清楚。"
+              },
+              "edu_exists": {
+               "assessment": "MET",
+               "score": 4,
+               "note": "本科计算机科学与技术，学历与时间线完整。"
+              },
+              "team_lead": {
+               "assessment": "MET",
+               "note": "候选人自述在第二段经历中带过 3 人小组约一年；面试中能讲清分工与复盘。"
+              },
+              "transcript_basis": "TRANSCRIPT"
+             },
+             "overall": "ADVANCE",
+             "idempotency_key": "gp-e2e:dc8b0681-9f2a-466d-b668-936d023207f5:scorecard-103-denied"
+            }
+result    : ALREADY_SUBMITTED — ALREADY_SUBMITTED: {"code":"ALREADY_SUBMITTED","detail":{"revision_no":1,"scorecard_id":"c7f649df-9e5c-445a-8c6b-d8283be17803","status":"SUBMITTED"},"message":"这位面试官对这场面试已经有一份当前面评；要改必须走 revision（SC-04/SC-18）","reason_code":"SCORECARD_ALREADY_SUBMITTED"}
+row delta : {}
+readback  : {
+             "approval_requests": 0,
+             "scorecards": 2
+            }
+outcome   : PASS
+scorecard denied：ALREADY_SUBMITTED/SCORECARD_ALREADY_SUBMITTED（approval requests=0，had_scorecard_before=true，拒绝路径=ALREADY_SUBMITTED/SCORECARD_ALREADY_SUBMITTED）
+
+──────── HOP 12 · S10 scorecard_submit 幂等重放（RERUN）：同 key 同 payload → replayed=true、零写入 ────────
+tool      : recruitment_scorecard_submit
+request   : {
+             "interview_id": "53c520cd-2cf1-4922-8308-06b112062a06",
+             "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+             "items": {
+              "work_exists": {
+               "assessment": "MET",
+               "score": 4,
+               "note": "候选人有 3 段可分割的后端工作经历，职责边界清楚。"
+              },
+              "edu_exists": {
+               "assessment": "MET",
+               "score": 4,
+               "note": "本科计算机科学与技术，学历与时间线完整。"
+              },
+              "team_lead": {
+               "assessment": "MET",
+               "note": "候选人自述在第二段经历中带过 3 人小组约一年；面试中能讲清分工与复盘。"
+              },
+              "transcript_basis": "TRANSCRIPT"
+             },
+             "overall": "ADVANCE",
+             "idempotency_key": "gp-e2e:dc8b0681-9f2a-466d-b668-936d023207f5:scorecard-103"
+            }
+result    : OK
+  面评已提交（面评工具 2.0.0）：scorecard c7f649df-9e5c-445a-8c6b-d8283be17803 revision_no=1 status=SUBMITTED（幂等重放，未新增行）
+  面试：round_no=1 slot_code=DEFAULT status=SCHEDULED
+  rubric 4facfb68-64ec-4500-b26a-7ff4db6c2f46（APPLICATION_PINNED） transcript_basis=TRANSCRIPT
+  维度覆盖 3/3：met=3 not_met=0 not_observed=0 unreadable=0
+  标签：provenance=FIXTURE trigger=MANUAL connection=CONNECTED
+  审计：status_changed_by_actor_id=11111111-1111-4111-8111-000000000103 status_source_event_id=e6721de1-6aac-4671-8a2e-98b72f6cf2b5 record_version=1
+  提示：FIXTURE_BASIS
+row delta : {}
+readback  : {
+             "interview": {
+              "id": "53c520cd-2cf1-4922-8308-06b112062a06",
+              "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+              "round_no": 1,
+              "slot_code": "DEFAULT",
+              "stage_code": "S8",
+              "status": "SCHEDULED",
+              "scheduled_start_at": "2026-12-09T02:00:00.000Z",
+              "scheduled_end_at": "2026-12-09T03:00:00.000Z",
+              "timezone": "Asia/Shanghai",
+              "record_version": 1
+             },
+             "interviewers": [
+              {
+               "actor_id": "11111111-1111-4111-8111-000000000103",
+               "display_name": "演示-HR 专员",
+               "role_in_interview": "INTERVIEWER",
+               "required_scorecard": true,
+               "scorecard_due_at": null
+              },
+              {
+               "actor_id": "11111111-1111-4111-8111-000000000104",
+               "display_name": "演示-面试官",
+               "role_in_interview": "INTERVIEWER",
+               "required_scorecard": true,
+               "scorecard_due_at": null
+              }
+             ],
+             "meeting_bindings": [
+              {
+               "id": "b53b054b-19a0-4d30-9734-af5f918420be",
+               "meeting_id": "6de8758f-ca86-4edb-92d9-9e9b773267ca",
+               "provider": "SYNTHETIC_DEMO",
+               "account_scope": "golden-path",
+               "external_meeting_id": "synthetic-meeting-dc8b06819f2a",
+               "calendar_event_id": "synthetic-calendar-dc8b06819f2a",
+               "binding_method": "SCHEDULED",
+               "bound_at": "2026-11-14T20:33:28.540Z",
+               "unbound_at": null
+              }
+             ],
+             "transcript_artifacts": [
+              {
+               "id": "94c87c9e-5a80-4ede-95e4-db623fda892d",
+               "source_revision": 1,
+               "is_canonical": true,
+               "provenance": "FIXTURE",
+               "trigger_mode": "MANUAL",
+               "connection_state": "NOT_CONNECTED",
+               "transcript_status": "READY",
+               "content_sha256": "c8198254ebd961b871bc7a22e4a87f88bd667d6f54a4be1c17dc6e9de19290ab",
+               "provider": "LOCAL_DEMO",
+               "provider_artifact_id": "local:demo-sample:6de8758f-ca86-4edb-92d9-9e9b773267ca"
+              }
+             ],
+             "transcript_segment_count": 11,
+             "interview_records": [
+              {
+               "id": "3ce45aeb-c1af-4701-a11b-6e99a24e4d40",
+               "transcript_artifact_id": "94c87c9e-5a80-4ede-95e4-db623fda892d",
+               "transcript_revision": 1,
+               "status": "NEEDS_REVIEW",
+               "verification_status": "UNVERIFIED",
+               "evidence_ok": true,
+               "is_current": true
+              }
+             ],
+             "scorecards": [
+              {
+               "id": "c7f649df-9e5c-445a-8c6b-d8283be17803",
+               "interviewer_id": "c25fa9c4-0067-4e84-b198-153951a7a2cf",
+               "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+               "status": "SUBMITTED",
+               "overall": "ADVANCE",
+               "revision_no": 1,
+               "record_version": 1,
+               "superseded_by_scorecard_id": null
+              },
+              {
+               "id": "c6a4b7b6-6745-4039-9ef4-e5d4906c0b56",
+               "interviewer_id": "51a8464b-d896-457d-a3cc-9576f4f67098",
+               "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+               "status": "SUBMITTED",
+               "overall": "ADVANCE",
+               "revision_no": 1,
+               "record_version": 1,
+               "superseded_by_scorecard_id": null
+              }
+             ],
+             "business_tasks": [
+              {
+               "id": "fb633eb8-9b60-4def-a2cf-823d2cf27fd8",
+               "task_type": "INTERVIEW_SCHEDULE",
+               "status": "SUCCEEDED",
+               "business_refs": [
+                {
+                 "id": "53c520cd-2cf1-4922-8308-06b112062a06",
+                 "kind": "INTERVIEW"
+                },
+                {
+                 "args_digest": "sha256:a57e191d450a8ce31860b36ea077c0a73263b29403b0573d73dcd97e5f4aa3d2",
+                 "result_interview_id": "53c520cd-2cf1-4922-8308-06b112062a06"
+                }
+               ]
+              }
+             ],
+             "events": []
+            }
+outcome   : PASS
+scorecard allow-once approval requests=0
+
+──────── HOP 13 · S10 第 2 份面评幂等重放（RERUN）：同 key 同 payload → replayed=true、零写入 ────────
+tool      : recruitment_scorecard_submit
+request   : {
+             "interview_id": "53c520cd-2cf1-4922-8308-06b112062a06",
+             "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+             "items": {
+              "work_exists": {
+               "assessment": "MET",
+               "score": 4,
+               "note": "候选人有 3 段可分割的后端工作经历，职责边界清楚。"
+              },
+              "edu_exists": {
+               "assessment": "MET",
+               "score": 4,
+               "note": "本科计算机科学与技术，学历与时间线完整。"
+              },
+              "team_lead": {
+               "assessment": "MET",
+               "note": "候选人自述在第二段经历中带过 3 人小组约一年；面试中能讲清分工与复盘。"
+              },
+              "transcript_basis": "TRANSCRIPT"
+             },
+             "overall": "ADVANCE",
+             "idempotency_key": "gp-e2e:dc8b0681-9f2a-466d-b668-936d023207f5:scorecard-104"
+            }
+result    : OK
+  面评已提交（面评工具 2.0.0）：scorecard c6a4b7b6-6745-4039-9ef4-e5d4906c0b56 revision_no=1 status=SUBMITTED（幂等重放，未新增行）
+  面试：round_no=1 slot_code=DEFAULT status=SCHEDULED
+  rubric 4facfb68-64ec-4500-b26a-7ff4db6c2f46（APPLICATION_PINNED） transcript_basis=TRANSCRIPT
+  维度覆盖 3/3：met=3 not_met=0 not_observed=0 unreadable=0
+  标签：provenance=FIXTURE trigger=MANUAL connection=CONNECTED
+  审计：status_changed_by_actor_id=11111111-1111-4111-8111-000000000104 status_source_event_id=f17c1ada-2dff-42d5-ae26-56a5142214fb record_version=1
+  提示：FIXTURE_BASIS
+row delta : {}
+readback  : {
+             "interview": {
+              "id": "53c520cd-2cf1-4922-8308-06b112062a06",
+              "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+              "round_no": 1,
+              "slot_code": "DEFAULT",
+              "stage_code": "S8",
+              "status": "SCHEDULED",
+              "scheduled_start_at": "2026-12-09T02:00:00.000Z",
+              "scheduled_end_at": "2026-12-09T03:00:00.000Z",
+              "timezone": "Asia/Shanghai",
+              "record_version": 1
+             },
+             "interviewers": [
+              {
+               "actor_id": "11111111-1111-4111-8111-000000000103",
+               "display_name": "演示-HR 专员",
+               "role_in_interview": "INTERVIEWER",
+               "required_scorecard": true,
+               "scorecard_due_at": null
+              },
+              {
+               "actor_id": "11111111-1111-4111-8111-000000000104",
+               "display_name": "演示-面试官",
+               "role_in_interview": "INTERVIEWER",
+               "required_scorecard": true,
+               "scorecard_due_at": null
+              }
+             ],
+             "meeting_bindings": [
+              {
+               "id": "b53b054b-19a0-4d30-9734-af5f918420be",
+               "meeting_id": "6de8758f-ca86-4edb-92d9-9e9b773267ca",
+               "provider": "SYNTHETIC_DEMO",
+               "account_scope": "golden-path",
+               "external_meeting_id": "synthetic-meeting-dc8b06819f2a",
+               "calendar_event_id": "synthetic-calendar-dc8b06819f2a",
+               "binding_method": "SCHEDULED",
+               "bound_at": "2026-11-14T20:33:28.540Z",
+               "unbound_at": null
+              }
+             ],
+             "transcript_artifacts": [
+              {
+               "id": "94c87c9e-5a80-4ede-95e4-db623fda892d",
+               "source_revision": 1,
+               "is_canonical": true,
+               "provenance": "FIXTURE",
+               "trigger_mode": "MANUAL",
+               "connection_state": "NOT_CONNECTED",
+               "transcript_status": "READY",
+               "content_sha256": "c8198254ebd961b871bc7a22e4a87f88bd667d6f54a4be1c17dc6e9de19290ab",
+               "provider": "LOCAL_DEMO",
+               "provider_artifact_id": "local:demo-sample:6de8758f-ca86-4edb-92d9-9e9b773267ca"
+              }
+             ],
+             "transcript_segment_count": 11,
+             "interview_records": [
+              {
+               "id": "3ce45aeb-c1af-4701-a11b-6e99a24e4d40",
+               "transcript_artifact_id": "94c87c9e-5a80-4ede-95e4-db623fda892d",
+               "transcript_revision": 1,
+               "status": "NEEDS_REVIEW",
+               "verification_status": "UNVERIFIED",
+               "evidence_ok": true,
+               "is_current": true
+              }
+             ],
+             "scorecards": [
+              {
+               "id": "c7f649df-9e5c-445a-8c6b-d8283be17803",
+               "interviewer_id": "c25fa9c4-0067-4e84-b198-153951a7a2cf",
+               "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+               "status": "SUBMITTED",
+               "overall": "ADVANCE",
+               "revision_no": 1,
+               "record_version": 1,
+               "superseded_by_scorecard_id": null
+              },
+              {
+               "id": "c6a4b7b6-6745-4039-9ef4-e5d4906c0b56",
+               "interviewer_id": "51a8464b-d896-457d-a3cc-9576f4f67098",
+               "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+               "status": "SUBMITTED",
+               "overall": "ADVANCE",
+               "revision_no": 1,
+               "record_version": 1,
+               "superseded_by_scorecard_id": null
+              }
+             ],
+             "business_tasks": [
+              {
+               "id": "fb633eb8-9b60-4def-a2cf-823d2cf27fd8",
+               "task_type": "INTERVIEW_SCHEDULE",
+               "status": "SUCCEEDED",
+               "business_refs": [
+                {
+                 "id": "53c520cd-2cf1-4922-8308-06b112062a06",
+                 "kind": "INTERVIEW"
+                },
+                {
+                 "args_digest": "sha256:a57e191d450a8ce31860b36ea077c0a73263b29403b0573d73dcd97e5f4aa3d2",
+                 "result_interview_id": "53c520cd-2cf1-4922-8308-06b112062a06"
+                }
+               ]
+              }
+             ],
+             "events": []
+            }
+outcome   : PASS
+scorecard #2（104）approval requests=0
+
+──────── HOP 14 · S10 evaluation_summarize（只读汇总，不产结论） ────────
+tool      : recruitment_evaluation_summarize
+request   : {
+             "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+             "decision_scope": "STAGE",
+             "interview_id": "53c520cd-2cf1-4922-8308-06b112062a06",
+             "as_of": "2026-11-15T04:33:33+08:00"
+            }
+result    : OK
+  S10 汇总投影（只读，不代决）
+  recruitment_evaluation_summarize 2.0.0 advisory=true read_only=true as_of=2026-11-15T04:33:33+08:00
+  scope=STAGE stage=S10 rubric=v2 source=APPLICATION_PINNED
+  coverage: required=2 submitted=2 waived=0 missing=0 unusable=0 not_required=0 overdue=0 completion=1
+  missing: 0 人
+  tally: advance=2 hold=0 reject=0 waived=0
+  consensus: UNANIMOUS_ADVANCE (FULL_PANEL)
+  minority_reports: 0
+  aggregation: method=PER_DIMENSION_SUBMITTED_ONLY average=4
+  record: state=NOT_READY
+  ready_for_decision=false
+  permitted_results: []
+  blockers: 2
+    - ALREADY_DECIDED family=STATE blocks=[ADVANCE, HOLD, WITHDRAW, REJECT]
+    - NO_REJECTING_SCORECARD family=EVIDENCE blocks=[REJECT]
+  required_human_action: SUPERSEDE_EXISTING_DECISION
+  warnings: 2
+    - RECORD_NOT_READY
+    - FIXTURE_BASIS
+  summary_digest=a5255bf8f22ed6f27b7685c6c64a367f4ac5d6595ae049cc026a911f7ab91d1b
+row delta : {}
+readback  : {
+             "application": {
+              "id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+              "candidate_id": "c2d0cc31-18c4-469e-8e13-ef25bd656a26",
+              "job_id": "11111111-1111-4111-8111-000000000401",
+              "job_version_id": "11111111-1111-4111-8111-000000000402",
+              "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+              "resume_version_id": "137bbf97-ba2f-49f1-b4c2-f78943c5ff35",
+              "lifecycle_status": "ACTIVE",
+              "current_stage_code": "S10",
+              "record_version": 5,
+              "created_at": "2026-11-14T20:33:27.916Z",
+              "stage_entered_at": "2026-11-14T20:33:29.700Z",
+              "stage_changed_at": "2026-11-14T20:33:29.671Z",
+              "stage_changed_by_actor_id": "11111111-1111-4111-8111-000000000103"
+             }
+            }
+outcome   : PASS
+summarize：OK
+  summary_digest=a5255bf8f22ed6f27b7685c6c64a367f4ac5d6595ae049cc026a911f7ab91d1b
+  coverage={"required_total":2,"submitted":2,"waived":0,"missing":0,"unusable":0,"not_required":0,"overdue":0,"completion_ratio":1}
+  tally={"advance":2,"hold":0,"reject":0,"waived":0} consensus=UNANIMOUS_ADVANCE (FULL_PANEL)
+  record={"state":"NOT_READY","interview_record_id":"3ce45aeb-c1af-4701-a11b-6e99a24e4d40","verification_status":"UNVERIFIED"} ready_for_decision=false
+  blockers=["ALREADY_DECIDED","NO_REJECTING_SCORECARD"] permitted_results=[]
+  rubric={"version_id":"4facfb68-64ec-4500-b26a-7ff4db6c2f46","version_no":2,"payload_hash":"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f","source":"APPLICATION_PINNED"}
+decision basis: SCORECARD refs=2 transcript_state=READY
+
+──────── HOP 15 · S10 decision_record(STAGE) 重复提交（RERUN）：STAGE@S10 决策已存在，必须 ALREADY_DECIDED 且零写入 ────────
+tool      : recruitment_decision_record
+request   : {
+             "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+             "decision_scope": "STAGE",
+             "interview_id": "53c520cd-2cf1-4922-8308-06b112062a06",
+             "as_of": "2026-11-15T04:33:33+08:00",
+             "result": "ADVANCE",
+             "reason": "面试评估通过：工作经历与教育背景满足岗位 MUST_HAVE，建议进入下一轮。",
+             "summary_digest": "a5255bf8f22ed6f27b7685c6c64a367f4ac5d6595ae049cc026a911f7ab91d1b",
+             "basis_refs": [
+              {
+               "kind": "SUMMARY",
+               "summary_digest": "a5255bf8f22ed6f27b7685c6c64a367f4ac5d6595ae049cc026a911f7ab91d1b",
+               "contract_version": "2.0.0",
+               "coverage": {
+                "required_total": 2,
+                "submitted": 2,
+                "waived": 0,
+                "missing": 0,
+                "unusable": 0,
+                "not_required": 0,
+                "overdue": 0,
+                "completion_ratio": 1
+               },
+               "tally": {
+                "advance": 2,
+                "hold": 0,
+                "reject": 0,
+                "waived": 0
+               },
+               "consensus": "UNANIMOUS_ADVANCE",
+               "provenance": "FIXTURE"
+              },
+              {
+               "kind": "RUBRIC_VERSION",
+               "id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+               "payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
+               "version_no": 2
+              },
+              {
+               "kind": "AUTHORITY",
+               "actor_id": "11111111-1111-4111-8111-000000000103",
+               "is_hiring_manager": false
+              },
+              {
+               "kind": "SCORECARD",
+               "id": "c7f649df-9e5c-445a-8c6b-d8283be17803",
+               "overall": "ADVANCE",
+               "transcript_basis": "TRANSCRIPT",
+               "transcript_state": "READY",
+               "revision_no": 1,
+               "interviewer_id": "c25fa9c4-0067-4e84-b198-153951a7a2cf",
+               "payload_hash": "154303d16051fc000cd27a41648c9f4e573f4983b9b124736a51e7acededab3f"
+              },
+              {
+               "kind": "SCORECARD",
+               "id": "c6a4b7b6-6745-4039-9ef4-e5d4906c0b56",
+               "overall": "ADVANCE",
+               "transcript_basis": "TRANSCRIPT",
+               "transcript_state": "READY",
+               "revision_no": 1,
+               "interviewer_id": "51a8464b-d896-457d-a3cc-9576f4f67098",
+               "payload_hash": "154303d16051fc000cd27a41648c9f4e573f4983b9b124736a51e7acededab3f"
+              }
+             ],
+             "human_confirmation": {
+              "confirmed_by_actor_id": "11111111-1111-4111-8111-000000000103",
+              "confirmed_at": "2026-11-15T04:32:33+08:00",
+              "confirmation_method": "IN_CHAT",
+              "confirmation_text": "我确认：林承宇这一轮面试通过，进入下一轮。",
+              "confirmation_text_sha256": "937d16d2efbb9ed78c713870aa540e9f9f2e63e05db97a7fb73569c62d9e2f52"
+             }
+            }
+result    : ALREADY_DECIDED — ALREADY_DECIDED: {"code":"ALREADY_DECIDED","detail":{"application_id":"dc8b0681-9f2a-466d-b668-936d023207f5","decision_scope":"STAGE","existing_decision_id":"6ff6b16e-f306-449a-a893-bd6ddda81611","existing_record_version":1,"existing_result":"ADVANCE"},"message":"同一 (申请, scope, 阶段) 已有当前决策；要改必须走 supersedes 撤回（DC §4.3 STEP 3）","reason_code":"SCOPE_ALREADY_DECIDED"}
+row delta : {}
+readback  : {
+             "application": {
+              "id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+              "candidate_id": "c2d0cc31-18c4-469e-8e13-ef25bd656a26",
+              "job_id": "11111111-1111-4111-8111-000000000401",
+              "job_version_id": "11111111-1111-4111-8111-000000000402",
+              "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+              "resume_version_id": "137bbf97-ba2f-49f1-b4c2-f78943c5ff35",
+              "lifecycle_status": "ACTIVE",
+              "current_stage_code": "S10",
+              "record_version": 5,
+              "created_at": "2026-11-14T20:33:27.916Z",
+              "stage_entered_at": "2026-11-14T20:33:29.700Z",
+              "stage_changed_at": "2026-11-14T20:33:29.671Z",
+              "stage_changed_by_actor_id": "11111111-1111-4111-8111-000000000103"
+             },
+             "decisions": [
+              {
+               "id": "057a7ff1-2ce2-47ed-ac9e-d6f66e261a36",
+               "decision_scope": "SCREENING",
+               "stage_code": "S7",
+               "result": "ADVANCE",
+               "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+               "decided_at": "2026-11-14T20:33:28.238Z",
+               "basis_count": 4,
+               "basis_kinds": [
+                "AUTHORITY",
+                "RESUME_VERSION",
+                "RUBRIC_VERSION",
+                "SCREENING_EVALUATION"
+               ],
+               "superseded_by_decision_id": null
+              },
+              {
+               "id": "6ff6b16e-f306-449a-a893-bd6ddda81611",
+               "decision_scope": "STAGE",
+               "stage_code": "S10",
+               "result": "ADVANCE",
+               "decided_by_actor_id": "11111111-1111-4111-8111-000000000103",
+               "decided_at": "2026-11-14T20:33:29.518Z",
+               "basis_count": 5,
+               "basis_kinds": [
+                "AUTHORITY",
+                "RUBRIC_VERSION",
+                "SCORECARD",
+                "SUMMARY"
+               ],
+               "superseded_by_decision_id": null
+              }
+             ],
+             "approval_service_calls": 0
+            }
+outcome   : PASS
+STAGE 决策：FAILED(ALREADY_DECIDED/SCOPE_ALREADY_DECIDED)
+
+──────── HOP 16 · 阶段推进终跳幂等调用（RERUN）：申请已在 S10（v1.0 终态），必须 NO_OP 且零迁移 ────────
+tool      : recruitment_application_stage_advance
+request   : {
+             "application_id": "dc8b0681-9f2a-466d-b668-936d023207f5"
+            }
+result    : OK
+  recruitment_application_stage_advance 1.3.0: NO_OP application dc8b0681-9f2a-466d-b668-936d023207f5 @ S10 (record_version=5)
+    stage_changed_by_actor_id = 执行账号（SET LOCAL recruitment.actor_id），不代表决策人；T1 是自动推进。
+    labels: provenance=FIXTURE trigger=MANUAL connection=NOT_CONNECTED
+row delta : {}
+readback  : {
+             "application": {
+              "id": "dc8b0681-9f2a-466d-b668-936d023207f5",
+              "candidate_id": "c2d0cc31-18c4-469e-8e13-ef25bd656a26",
+              "job_id": "11111111-1111-4111-8111-000000000401",
+              "job_version_id": "11111111-1111-4111-8111-000000000402",
+              "rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+              "resume_version_id": "137bbf97-ba2f-49f1-b4c2-f78943c5ff35",
+              "lifecycle_status": "ACTIVE",
+              "current_stage_code": "S10",
+              "record_version": 5,
+              "created_at": "2026-11-14T20:33:27.916Z",
+              "stage_entered_at": "2026-11-14T20:33:29.700Z",
+              "stage_changed_at": "2026-11-14T20:33:29.671Z",
+              "stage_changed_by_actor_id": "11111111-1111-4111-8111-000000000103"
+             }
+            }
+outcome   : PASS
+stage after decision advance call = S10 status=NO_OP
+
+════════ HOP 17 · 终态读回（同一条申请 S6→S10 的全部事实；纯 SQL，不 import 产品代码） ════════
+application.current_stage_code = S10（终态断言：必须 = S10 = v1.0 终态的最后一格）
+application.stage_entered_at    = Sun Nov 15 2026 04:33:29 GMT+0800 (新加坡标准时间)
+stage / pin 审计事件            = ["application.current_stage_code.changed:S6->S7","application.current_stage_code.changed:S7->S8","application.current_stage_code.changed:S8->S9","application.current_stage_code.changed:S9->S10"]
+application.rubric_version_id   = 4facfb68-64ec-4500-b26a-7ff4db6c2f46
+application.resume_version_id   = 137bbf97-ba2f-49f1-b4c2-f78943c5ff35
+decisions for this application  = 2 条 ["SCREENING/S7/ADVANCE","STAGE/S10/ADVANCE"]
+interviews for this application = 1 场 ["r1/SCHEDULED"]
+transcript artifacts            = [["rev1/canonical=true/READY/FIXTURE"]]
+scorecards                      = [["SUBMITTED/ADVANCE/author=2cf","SUBMITTED/ADVANCE/author=098"]]
+submitted scorecards（现行）     = 2 份
+一致性视图 v_application_stage_consistency：本申请违规 0 行 / 全租户 0 行（0 行 = 合规）
+行数对比（预检 → 终态，只列变化）：{}
+
+════════ HOP 汇总表 ════════
+hop | kind             | run_mode  | id                        | outcome | error/reason                          | row delta
+----+------------------+-----------+---------------------------+---------+---------------------------------------+----------
+  1 | write            | RERUN     | s6-intake                 | PASS    |                                       | {}
+  2 | write            | RERUN     | s6s7-stage-advance        | PASS    |                                       | {}
+  3 | read             | RERUN     | s7-screening-evaluate     | PASS    |                                       | {}
+  4 | write            | RERUN     | s7-decision-screening     | PASS    | ALREADY_DECIDED/SCOPE_ALREADY_DECIDED | {}
+  5 | write            | RERUN     | s7s8-stage-advance        | PASS    |                                       | {}
+  6 | negative-control | RERUN     | s8-schedule-denied        | PASS    | FORBIDDEN/APPROVAL_NOT_GRANTED        | {}
+  7 | write            | RERUN     | s8-schedule-allow-once    | PASS    |                                       | {}
+  8 | read             | RERUN     | s8-interview-get          | PASS    |                                       | {}
+  9 | write            | RERUN     | s9-transcript-import      | PASS    |                                       | {}
+ 10 | read             | RERUN     | s9-transcript-read        | PASS    |                                       | {}
+ 11 | negative-control | RERUN     | s10-scorecard-denied      | PASS    | ALREADY_SUBMITTED/SCORECARD_ALREADY_SUBMITTED | {}
+ 12 | write            | RERUN     | s10-scorecard-allow-once  | PASS    |                                       | {}
+ 13 | write            | RERUN     | s10-scorecard-2           | PASS    |                                       | {}
+ 14 | read             | RERUN     | s10-evaluation-summarize  | PASS    |                                       | {}
+ 15 | write            | RERUN     | s10-decision-stage        | PASS    | ALREADY_DECIDED/SCOPE_ALREADY_DECIDED | {}
+ 16 | read             | RERUN     | s10-stage-advance-after-decision | PASS    |                                       | {}
+
+四数：hops=16 passed=16 failed=0 skipped=0
+闸门负例（期望被拒）：HOP6(s8-schedule-denied) BLOCKED FORBIDDEN/APPROVAL_NOT_GRANTED path= delta={} ; HOP11(s10-scorecard-denied) BLOCKED ALREADY_SUBMITTED/SCORECARD_ALREADY_SUBMITTED path=ALREADY_SUBMITTED/SCORECARD_ALREADY_SUBMITTED delta={}
+意外失败（outcome=FAIL）：0 个
+阶段码终值：S10（终态断言 S10 PASS）
+acceptance：all_hops_pass=true stage_s10=true submitted_scorecards_ge_1=true consistency_view_zero_violations=true negative_controls_blocked=true → ok=true
+
+summary    : D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun\run-2026-11-14T20-33-30-573Z\summary.json
+summary.md : D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun\run-2026-11-14T20-33-30-573Z\summary.md
+bootstrap  : D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun\run-2026-11-14T20-33-30-573Z\bootstrap.json / bootstrap.log
+run.log    : D:\12412\dsh工作区\projects\recruitment-agent\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun\run-2026-11-14T20-33-30-573Z\run.log

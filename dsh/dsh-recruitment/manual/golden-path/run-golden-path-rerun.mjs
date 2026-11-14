@@ -1,25 +1,29 @@
-// Golden Path 端到端 harness（S6 → S10）**修复后复跑版（rerun）**：
-// **真实工具对象 execute() + 真实 PostgreSQL + 真实 converter + 干净 HEAD 快照**。
+// Golden Path 端到端 harness（S6 → S10）—— **G4：终值 S10 + FIRST_RUN/RERUN 双模式 + 内置 bootstrap**。
 //
-// ⚠️ 本文件是 `run-golden-path.mjs`（sha256=23fcaec3…，旧报告 run A/B/C 用的那版）的**派生副本**，
-// 不是原版。原版保持不动，作为旧报告的复现入口。派生原因（逐条写在 evidence 的 README「harness 变更」）：
-//   1. 原版把证据写死在 `evidence/experiments/2026-11-14-golden-path-e2e/`；本次必须写进
-//      `evidence/experiments/2026-11-14-golden-path-rerun/`，否则会污染旧证据目录。
-//   2. 原版的期望值编码的是 **F1 修复前**的已知阻断（S7 决策 / S10 汇总 / S10 决策都期望
-//      `NOT_FOUND/RUBRIC_VERSION_NOT_FOUND`）。F1 已修（1b23fff，D-108）——继续把这些失败标成
-//      "预期 PASS" 等于**把缺陷当成功**。派生版把它们改成**必须成功**（失败就是 FAIL）。
-//   3. 原版因为拿不到 `summary_digest`，S10 决策传的是**形状合法的假 digest**、`INTERVIEW_RECORD`
-//      是**随机 UUID**。F1 修好后这些假值只会制造 `SUMMARY_STALE` 这种**harness 自造的失败**。
-//      派生版改为：先真实调用 `evaluation_summarize`，用**真实** digest / 真实面评 id / 真实
-//      rubric 组装 `basis_refs`；**闸门与校验一条都没有放宽**。
-//   4. 原版只交 1 份面评（2 个必交面试官里缺 1 个），且没有调用阶段推进工具。派生版补上
-//      第 2 位面试官的真实面评（同样过 allow-once 闸门），并调用
-//      `recruitment_application_stage_advance` 记录真实的阶段指针（docs/18 §3）。
-//   5. 换了一份**新的合成身份**（gp7 / 136 0000 0777）的 fixture：旧身份 `lin.chengyu.gp6` 的申请
-//      创建于 F1 修复前（`rubric_version_id=null`），intake 复用它只会 REUSED、不会补钉 ——
-//      复跑必须走**新建 id 的 intake 路径**才能验证 F1。
+// 真实工具对象 execute() + 真实 PostgreSQL + 真实 converter + 干净 HEAD 快照。16 个写/读/负例跳
+// （hop 1..16；hop 0 预检、hop 17 终态读回不计入 16），最后一条申请必须停在 **S10（v1.0 终态）**。
 //
-// 硬边界（任务书）：
+// 与 `run-golden-path.mjs`（旧版，旧报告 run A/B/C 的复现入口，**保持不动**）的关系：
+//   * 同一个业务链、同样的真实工具调用方式、同样的闸门（一条都没放宽）；
+//   * 期望值升级到 **stage-advance contract v1.3.0 的四条边**：S6→S7→S8→S9→S10。
+//     旧版把"梯子终值=S8"当成功（那是 G3 之前的实现事实）；本版 HOP16 必须真实走完
+//     S8→S9（canonical READY 转写）→ S9→S10（材料可用 + ≥1 份 SUBMITTED 面评）两条边。
+//   * 新增 FIRST_RUN / RERUN 双模式：同一条命令在干净库上跑完 S10 之后，**再跑一次**必须得到
+//     逐跳的幂等结果（NO_OP / replayed=true / ALREADY_DECIDED），而不是同一份期望值两次都成立、
+//     也不是"任何失败都算过"。判定方式照抄 `manual/screening-decision/run-screening-decision.mjs`：
+//     HOP1（S6 intake）返回 `application_action=CREATED` → FIRST_RUN；`REUSED` → RERUN；其余 FAIL。
+//     可选守卫 `GOLDEN_PATH_EXPECT_RUN_MODE=FIRST_RUN|RERUN`：实际模式不符 → 直接 FAIL（exit 1）。
+//   * 内置 bootstrap 前置：预检之前先 `spawn(process.execPath, [<repo>/scripts/bootstrap-demo.mjs])`
+//     （cwd=仓库根），把 stdout/stderr 落 `bootstrap.log`、末行 `BOOTSTRAP_RESULT:` JSON 落
+//     `bootstrap.json`；子进程非 0 或解析不到 → 日志说明后 **exit 2（fail closed）**。
+//     于是干净库只差"建库 + 按名重放迁移"，不需要手工补审批。
+//   * 证据根由 `GOLDEN_PATH_EVIDENCE_DIR` 控制（相对路径按 cwd 解析）；未设置时默认
+//     `<pkg>/evidence/experiments/2026-11-15-golden-path-clean/`，其下仍建 `run-<UTC stamp>/`。
+//   * 证据必须绑 SHA：`GOLDEN_PATH_HEAD` 优先，否则 `git -C <repo> rev-parse HEAD`；两者都没有
+//     → exit 2（不落半份无 SHA 的证据）。summary 记 repository{head, head_source, branch?,
+//     dirty_lines?/worktree_state}；git archive 导出的快照没有 .git → worktree_state=snapshot。
+//
+// 硬边界（与旧版一致）：
 //   * 不放宽任何闸门：S8/S10 的 approval 用 allow-once 替身（或 denied 负例），但**闸门本身照常调用**；
 //     decision 走 D-95 v2（IN_CHAT + 逐字 confirmation_text + 服务端同一份 hash 实现）。
 //   * 不伪造 LIVE：本 harness 的数据全是合成 fixture；工具若返回 LIVE 而事实是 FIXTURE，按 R4 记账为工具缺陷。
@@ -29,9 +33,16 @@
 // 用法（PowerShell；在**干净快照**里跑，见 evidence README）：
 //   $env:RECRUITMENT_DB_PASSWORD='<本机演示库密码，按约定注入，不落盘>'
 //   $env:GOLDEN_PATH_HEAD='<快照对应的 commit>'
+//   $env:RECRUITMENT_TEST_DB='<一次性库名>'            # harness 主配置（不是 RECRUITMENT_DB_NAME）
+//   $env:GOLDEN_PATH_EXPECT_RUN_MODE='FIRST_RUN'       # 可选守卫；第二次跑写 RERUN
 //   node manual/golden-path/run-golden-path-rerun.mjs
+//
+// 出口码：0 = 16 跳全 PASS 且 acceptance.ok；1 = 有 hop FAIL / acceptance 不成立；
+//         2 = 配置缺失 / 证据绑不到 SHA / bootstrap 前置不满足（fail closed）。
+import { spawn, spawnSync } from 'node:child_process'
 import { randomUUID, createHash } from 'node:crypto'
 import { mkdir, writeFile, readFile, copyFile, appendFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import pg from 'pg'
@@ -73,6 +84,11 @@ const SYNTHETIC_PHONE_NORM = process.env.GOLDEN_PATH_PHONE_NORM ?? '+86136000008
 const HERE = new URL('./', import.meta.url)
 const PKG_ROOT = new URL('../../', HERE)
 const REPO_ROOT = new URL('../../../../', HERE)
+const REPO_ROOT_PATH = fileURLToPath(REPO_ROOT)
+/** 本 harness 自己（summary 里记 path + sha256；证据要能复核到跑的是哪份代码）。 */
+const HARNESS_PATH = fileURLToPath(new URL('./run-golden-path-rerun.mjs', HERE))
+/** 内置 bootstrap 的入口（产品工具链；本 harness 只 spawn，不改它的语义）。 */
+const BOOTSTRAP_PATH = join(REPO_ROOT_PATH, 'scripts', 'bootstrap-demo.mjs')
 /** rerun 专用 fixture（同一个人设、**新**电话/邮箱；sha256 记入 fixture.json）。
  *  可用 GOLDEN_PATH_FIXTURE 指向别的合成 PDF（再跑一次时必须换一个未入库的身份）。 */
 const FIXTURE_PDF = process.env.GOLDEN_PATH_FIXTURE === undefined
@@ -80,11 +96,27 @@ const FIXTURE_PDF = process.env.GOLDEN_PATH_FIXTURE === undefined
   : new URL(`file://${process.env.GOLDEN_PATH_FIXTURE.replaceAll('\\', '/')}`)
 const CONVERTER_DIR = new URL('converter/', REPO_ROOT)
 const PYTHON_BIN = process.env.RECRUITMENT_PYTHON_BIN ?? 'D:\\Python3.12.9\\python.exe'
-const EVIDENCE_ROOT = new URL('./evidence/experiments/2026-11-14-golden-path-rerun/', PKG_ROOT)
+/** 证据根：`GOLDEN_PATH_EVIDENCE_DIR` 优先（相对路径按 **cwd** 解析）；缺省 = 本 lane 的新证据目录。
+ *  注意：缺省值不再是 2026-11-14 的旧目录 —— 旧证据是旧版 harness 的产物，不能被这次重跑污染。 */
+const DEFAULT_EVIDENCE_ROOT = fileURLToPath(
+  new URL('./evidence/experiments/2026-11-15-golden-path-clean/', PKG_ROOT),
+)
+const EVIDENCE_DIR_ENV = (process.env.GOLDEN_PATH_EVIDENCE_DIR ?? '').trim()
+const EVIDENCE_ROOT = EVIDENCE_DIR_ENV === ''
+  ? DEFAULT_EVIDENCE_ROOT
+  : resolve(process.cwd(), EVIDENCE_DIR_ENV)
+/** 可选守卫：本次"应该"是 FIRST_RUN 还是 RERUN；HOP1 判定出真实模式后立即比对，不符 → FAIL。 */
+const EXPECT_RUN_MODE = (process.env.GOLDEN_PATH_EXPECT_RUN_MODE ?? '').trim() === ''
+  ? null
+  : (process.env.GOLDEN_PATH_EXPECT_RUN_MODE ?? '').trim()
+if (EXPECT_RUN_MODE !== null && EXPECT_RUN_MODE !== 'FIRST_RUN' && EXPECT_RUN_MODE !== 'RERUN') {
+  console.error(`[golden-path] GOLDEN_PATH_EXPECT_RUN_MODE 只能是 FIRST_RUN / RERUN（收到 ${JSON.stringify(EXPECT_RUN_MODE)}）`)
+  process.exit(2)
+}
 
 const stamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')
-const RUN_DIR = new URL(`run-${stamp}/`, EVIDENCE_ROOT)
-const LOG_PATH = fileURLToPath(new URL('run.log', RUN_DIR))
+const RUN_DIR = join(EVIDENCE_ROOT, `run-${stamp}`)
+const LOG_PATH = join(RUN_DIR, 'run.log')
 
 // ---------------------------------------------------------------------------
 //  小工具
@@ -106,11 +138,57 @@ function flushLog() {
 }
 
 async function saveJson(name, value) {
-  await writeFile(new URL(name, RUN_DIR), JSON.stringify(value, null, 2), 'utf8')
+  await writeFile(join(RUN_DIR, name), JSON.stringify(value, null, 2), 'utf8')
 }
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex')
+}
+
+/**
+ * 只读取 git 事实（**绝不写 git**）：用于把证据绑到 SHA 与工作树状态。
+ * 快照目录（git archive 导出、没有 .git）会返回 null，调用方按"snapshot"记账。
+ * @param args - `git -C <repo>` 之后的参数。
+ * @returns 成功时 trim 后的 stdout；失败/不可用返回 null。
+ */
+function gitReadOnly(args) {
+  try {
+    const result = spawnSync('git', ['-C', REPO_ROOT_PATH, ...args], { encoding: 'utf8' })
+    return result.status === 0 ? String(result.stdout ?? '').trim() : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 证据必须绑 SHA：`GOLDEN_PATH_HEAD` 优先，否则 `git -C <repo> rev-parse HEAD`。
+ * 同时记录工作树状态（git 仓库里 = clean/dirty + dirty_lines；无 .git 的快照 = snapshot）。
+ * @returns `{ head, head_source, branch, dirty_lines, worktree_state, note? }`；head 可能为 null。
+ */
+function resolveRepository() {
+  const envHead = (process.env.GOLDEN_PATH_HEAD ?? '').trim()
+  const gitHead = gitReadOnly(['rev-parse', 'HEAD'])
+  const head = envHead !== '' ? envHead : gitHead
+  const headSource = envHead !== ''
+    ? 'env:GOLDEN_PATH_HEAD'
+    : (gitHead === null ? 'missing' : 'git rev-parse HEAD')
+  const branch = gitReadOnly(['rev-parse', '--abbrev-ref', 'HEAD'])
+  const statusText = gitReadOnly(['status', '--porcelain'])
+  const isGitRepo = branch !== null || statusText !== null || gitReadOnly(['rev-parse', '--git-dir']) !== null
+  const dirtyLines = statusText === null
+    ? null
+    : statusText.split('\n').map((line) => line.trim()).filter((line) => line !== '').length
+  const worktreeState = isGitRepo ? (dirtyLines === 0 ? 'clean' : 'dirty') : 'snapshot'
+  return {
+    head: head === '' ? null : head,
+    head_source: headSource,
+    branch,
+    dirty_lines: dirtyLines,
+    worktree_state: worktreeState,
+    ...(isGitRepo
+      ? {}
+      : { note: '快照目录由 git archive 导出、没有 .git：HEAD 由 GOLDEN_PATH_HEAD 显式绑定，worktree_state=snapshot' }),
+  }
 }
 
 /** 带 +08:00 偏移的 ISO-8601（工具只接受带偏移的时间）。 */
@@ -243,6 +321,11 @@ function diffCounts(before, after) {
 //  HOP 记录器
 // ---------------------------------------------------------------------------
 const hops = []
+/** 本次运行的语义模式：HOP1 的 intake 结果决定（CREATED→FIRST_RUN / REUSED→RERUN）。
+ *  HOP1 记录在判定前写文件，判定后回填 `run_mode` 并重写 hop-01 证据。 */
+let RUN_MODE = 'UNKNOWN'
+/** 声明式 skip 计数（HOP 未执行 = skipped；正常路径必须为 0，否则四数不齐）。 */
+let skippedHops = 0
 
 /**
  * 每跳的角色：write = 正常写库；read = 只读；
@@ -270,7 +353,7 @@ const HOP_KIND = {
 
 /**
  * 跑一跳：调用真实工具 + 读回数据库。
- * @param {object} input - { id, hop, label, tool, args, readback?, expect? }
+ * @param {object} input - { id, hop, label, tool, args, readback?, expect?, expect_note? }
  */
 async function runHop(input) {
   const before = await rowCounts()
@@ -278,8 +361,10 @@ async function runHop(input) {
     id: input.id,
     kind: HOP_KIND[input.id] ?? 'unknown',
     hop: input.hop,
+    run_mode: RUN_MODE,
     label: input.label,
     tool: input.tool.name,
+    ...(input.expect_note === undefined ? {} : { expect_note: input.expect_note }),
     started_at: new Date().toISOString(),
     request: input.args,
   }
@@ -440,20 +525,136 @@ async function readInterview(interviewId) {
 }
 
 // ---------------------------------------------------------------------------
+//  内置 bootstrap（G5：scripts/bootstrap-demo.mjs）
+// ---------------------------------------------------------------------------
+/**
+ * 跑一次 demo bootstrap：**只 spawn 产品脚本，不在这里复制它的逻辑**。
+ *
+ * 子进程环境显式映射（父进程的 `RECRUITMENT_TEST_DB` 是 harness 自己的主配置，
+ * 不能混给 bootstrap —— 它认的是 `RECRUITMENT_DB_NAME`）：
+ *   `RECRUITMENT_DB_HOST/PORT/USER/NAME`（NAME = 已解析的 `config.database`）、
+ *   `RECRUITMENT_DB_PASSWORD`（透传，绝不打印）、`RECRUITMENT_TENANT_ID/ACTOR_ID`、
+ *   `DEMO_APPROVAL_MODE`（默认 allow-once）。
+ *
+ * 产物：`bootstrap.log`（stdout/stderr 原文）+ `bootstrap.json`（末行 BOOTSTRAP_RESULT 的 JSON）。
+ * fail closed：子进程非 0 / 解析不到末行 → 调用方 exit 2（不拿"没审批的干净库"继续跑）。
+ * @returns `{ ok, record }`；`record` 就是写进 summary 的那份 bootstrap 账。
+ */
+async function runBootstrapStep() {
+  const demoApprovalMode = (process.env.DEMO_APPROVAL_MODE ?? '').trim() === ''
+    ? 'allow-once'
+    : (process.env.DEMO_APPROVAL_MODE ?? '').trim()
+  const env = {
+    ...process.env,
+    RECRUITMENT_DB_HOST: DB.host,
+    RECRUITMENT_DB_PORT: String(DB.port),
+    RECRUITMENT_DB_USER: DB.user,
+    RECRUITMENT_DB_NAME: DB.database,
+    RECRUITMENT_DB_PASSWORD: process.env.RECRUITMENT_DB_PASSWORD,
+    RECRUITMENT_TENANT_ID: TENANT_ID,
+    RECRUITMENT_ACTOR_ID: ACTOR_ID,
+    DEMO_APPROVAL_MODE: demoApprovalMode,
+  }
+  const child = spawn(process.execPath, [BOOTSTRAP_PATH], {
+    cwd: REPO_ROOT_PATH,
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let stdout = ''
+  let stderr = ''
+  child.stdout.setEncoding('utf8')
+  child.stderr.setEncoding('utf8')
+  child.stdout.on('data', (chunk) => { stdout += chunk })
+  child.stderr.on('data', (chunk) => { stderr += chunk })
+  const settled = await new Promise((resolvePromise) => {
+    child.on('error', (error) => resolvePromise(error))
+    child.on('close', (code) => resolvePromise(code ?? -1))
+  })
+  const exitCode = typeof settled === 'number' ? settled : null
+
+  const bootstrapLog = [
+    '# scripts/bootstrap-demo.mjs（本 harness 的内置前置；不是 harness 自己补数据）',
+    `# cwd=${REPO_ROOT_PATH}`,
+    `# node=${process.execPath}`,
+    `# DEMO_APPROVAL_MODE=${demoApprovalMode}`,
+    `# exit_code=${exitCode === null ? `spawn error: ${String(settled)}` : exitCode}`,
+    '--- stdout ---',
+    stdout.trimEnd(),
+    '--- stderr ---',
+    stderr.trimEnd(),
+    '',
+  ].join('\n')
+  await writeFile(join(RUN_DIR, 'bootstrap.log'), bootstrapLog, 'utf8')
+
+  // 脚本约定：最后**一行**机器可读 `BOOTSTRAP_RESULT: <单行 JSON>`（NO_OP / deny / 失败同样输出）。
+  let parsed = null
+  let parseError = null
+  const resultLines = stdout.split(/\r?\n/).filter((line) => line.startsWith('BOOTSTRAP_RESULT: '))
+  const resultLine = resultLines[resultLines.length - 1]
+  if (resultLine === undefined) {
+    parseError = 'stdout 里没有以 "BOOTSTRAP_RESULT: " 开头的行'
+  } else {
+    try {
+      parsed = JSON.parse(resultLine.slice('BOOTSTRAP_RESULT: '.length))
+    } catch (error) {
+      parseError = `BOOTSTRAP_RESULT JSON 解析失败：${String(error)}`
+    }
+  }
+
+  const record = {
+    path: BOOTSTRAP_PATH,
+    sha256: sha256(await readFile(BOOTSTRAP_PATH)),
+    exit_code: exitCode,
+    command: `${process.execPath} ${BOOTSTRAP_PATH}`,
+    cwd: REPO_ROOT_PATH,
+    env_mapping: {
+      RECRUITMENT_DB_HOST: DB.host,
+      RECRUITMENT_DB_PORT: String(DB.port),
+      RECRUITMENT_DB_USER: DB.user,
+      RECRUITMENT_DB_NAME: DB.database,
+      RECRUITMENT_DB_PASSWORD: '(透传，不落盘)',
+      RECRUITMENT_TENANT_ID: TENANT_ID,
+      RECRUITMENT_ACTOR_ID: ACTOR_ID,
+      DEMO_APPROVAL_MODE: demoApprovalMode,
+    },
+    stdout_bytes: Buffer.byteLength(stdout, 'utf8'),
+    stderr_bytes: Buffer.byteLength(stderr, 'utf8'),
+    outcome: parsed?.outcome ?? null,
+    state: parsed?.state ?? null,
+    writes: parsed?.writes ?? null,
+    demo_approval_mode: demoApprovalMode,
+    result: parsed,
+    ...(parseError === null ? {} : { parse_error: parseError }),
+  }
+  await saveJson('bootstrap.json', record)
+  return { ok: exitCode === 0 && parsed !== null, record }
+}
+
+// ---------------------------------------------------------------------------
 //  主流程
 // ---------------------------------------------------------------------------
-await mkdir(RUN_DIR, { recursive: true })
+// 证据必须绑 SHA（先绑、后落证据；两者都没有就 exit 2，不产出半份无 SHA 的"证据"）。
+const repository = resolveRepository()
+if (repository.head === null) {
+  console.error('[golden-path] 证据必须绑 SHA：GOLDEN_PATH_HEAD 未设置，且 git -C <repo> rev-parse HEAD 也失败'
+    + '（git archive 导出的快照没有 .git，必须显式传 GOLDEN_PATH_HEAD）。')
+  process.exit(2)
+}
 await mkdir(EVIDENCE_ROOT, { recursive: true })
+await mkdir(RUN_DIR, { recursive: true })
 
-log('Golden Path end-to-end harness（S6 → S10）')
+log('Golden Path end-to-end harness（S6 → S10 · 终值 S10 · FIRST_RUN/RERUN 双模式）')
 log(`运行时间        : ${new Date().toISOString()}`)
-log(`仓库 HEAD       : ${process.env.GOLDEN_PATH_HEAD ?? '(未设置 GOLDEN_PATH_HEAD；请在命令里带上 git rev-parse HEAD)'}`)
+log(`仓库 HEAD       : ${repository.head}（来源 ${repository.head_source}）`)
+log(`工作树          : ${repository.worktree_state}${repository.dirty_lines === null ? '' : `（dirty_lines=${repository.dirty_lines}）`} branch=${repository.branch ?? '(n/a)'}`)
 log(`数据库          : ${DB.user}@${DB.host}:${DB.port}/${DB.database}（只读读回；写只经工具）`)
 log(`租户 / actor    : ${TENANT_ID} / ${ACTOR_ID}（HUMAN）`)
 log(`岗位            : ${JOB_ID}（DEMO-BE-001，合成演示租户）`)
 log(`合成简历        : ${fileURLToPath(FIXTURE_PDF)}`)
 log(`合成身份        : ${SYNTHETIC_EMAIL} / ${SYNTHETIC_PHONE_NORM}（合成值，不对应任何真实候选人）`)
-log(`证据目录        : ${fileURLToPath(RUN_DIR)}`)
+log(`证据根          : ${EVIDENCE_ROOT}${EVIDENCE_DIR_ENV === '' ? '（默认）' : `（GOLDEN_PATH_EVIDENCE_DIR=${EVIDENCE_DIR_ENV}）`}`)
+log(`证据目录        : ${RUN_DIR}`)
+log(`RUN_MODE 守卫   : ${EXPECT_RUN_MODE ?? '未设置（由 HOP1 的 application_action 判定）'}`)
 log('')
 
 const fixtureBytes = await readFile(FIXTURE_PDF)
@@ -465,7 +666,24 @@ await saveJson('fixture.json', {
   bytes: fixtureBytes.length,
   content_note: '合成候选人「林承宇」；电话/邮箱为保留示例值，不对应任何真实候选人（R7）',
 })
-await copyFile(FIXTURE_PDF, fileURLToPath(new URL('fixture-synthetic-resume-golden-path.pdf', RUN_DIR)))
+await copyFile(FIXTURE_PDF, join(RUN_DIR, 'fixture-synthetic-resume-golden-path.pdf'))
+
+// ---- 内置 bootstrap（必须在预检之前：干净库没有 APPROVED 审批时 S7 会 NO_APPROVED_RUBRIC）----
+log('')
+log('════════ BOOTSTRAP · scripts/bootstrap-demo.mjs（G5：干净库的 demo 前置，内置） ════════')
+const bootstrap = await runBootstrapStep()
+log(`bootstrap       : outcome=${bootstrap.record.outcome} exit_code=${bootstrap.record.exit_code} state=${bootstrap.record.state}`)
+log(`bootstrap sha256: ${bootstrap.record.sha256}`)
+log(`bootstrap writes: ${JSON.stringify(bootstrap.record.writes)}`)
+if (bootstrap.record.parse_error !== undefined) log(`bootstrap parse : ${bootstrap.record.parse_error}`)
+await flushLog()
+if (!bootstrap.ok) {
+  log('')
+  log('BLOCKED（fail closed）：内置 bootstrap 非 0 或没有可解析的 BOOTSTRAP_RESULT —— demo 前置不成立，不继续预检。')
+  await flushLog()
+  await pool.end()
+  process.exit(2)
+}
 
 // ---- 0 预检：库 / 迁移 / 岗位 / rubric ----
 log('')
@@ -535,7 +753,11 @@ if (approvedRubric === undefined) {
 }
 log(`用于 S7 的已批准 rubric：v${approvedRubric.version_no} ${approvedRubric.id}`)
 
-// ---- 1 S6 intake ----
+// ---- 1 S6 intake —— **本跳决定 RUN_MODE**（照抄 screening-decision harness 的判定方式）----
+// FIRST_RUN = 干净库上的第一次：intake 必须新建申请（application_action=CREATED，application 行 +1）；
+// RERUN     = 同一库第二次：同 candidate+job 复用同一条 ACTIVE 申请（application_action=REUSED，
+//             application 行 +0；material 内容 sha 未变 → 版本 UNCHANGED，一行都不写）。
+// 其余取值（缺 status / 缺 application_id / 其它 action）→ FAIL，后续不猜模式、不继续。
 const intakeTool = createApplicationIntakeTool({ converter: CONV, database: DB })
 const intake = await runHop({
   id: 's6-intake',
@@ -553,13 +775,17 @@ const intake = await runHop({
     if (rows[0] === undefined) return { found: false }
     return readApplicationChain(rows[0].id)
   },
-  expect: (record) => record.ok === true
-    && record.result?.status === 'OK'
-    // rerun 必须走**新建**路径：REUSED 的申请不会补钉 rubric（F1 只在新建立即钉），
-    // 那等于拿旧数据冒充新路径，必须 FAIL 而不是悄悄继续。
-    && record.result?.application_action === 'CREATED'
-    && typeof record.result?.application_id === 'string'
-    && typeof record.result?.resume_version_id === 'string',
+  expect_note: 'CREATED→FIRST_RUN（application 行 +1）/ REUSED→RERUN（application 行 +0）；两种模式都必须有 application_id 与 resume_version_id',
+  expect: (record) => {
+    if (record.ok !== true || record.result?.status !== 'OK') return false
+    if (typeof record.result?.application_id !== 'string') return false
+    if (typeof record.result?.resume_version_id !== 'string') return false
+    const action = record.result?.application_action
+    // CREATED/REUSED 是封闭集；同时用行数增量验证"这句 action 是真的"（不是只看工具自称）。
+    if (action === 'CREATED') return (record.row_count_delta.application ?? 0) === 1
+    if (action === 'REUSED') return (record.row_count_delta.application ?? 0) === 0
+    return false
+  },
 })
 const applicationId = intake.result?.application_id
 const candidateId = intake.result?.candidate_id
@@ -571,27 +797,78 @@ if (typeof applicationId !== 'string') {
   await pool.end()
   process.exit(2)
 }
+// RUN_MODE 由库内事实决定（不是由入口脚本猜）：CREATED→FIRST_RUN / REUSED→RERUN / 其它→FAIL。
+const intakeAction = intake.result?.application_action
+if (intakeAction === 'CREATED') RUN_MODE = 'FIRST_RUN'
+else if (intakeAction === 'REUSED') RUN_MODE = 'RERUN'
+else {
+  log('')
+  log(`BLOCKED：HOP1 的 application_action=${JSON.stringify(intakeAction)} 不在 {CREATED, REUSED} 里，无法判定 FIRST_RUN/RERUN。`)
+  await flushLog()
+  await pool.end()
+  process.exit(1)
+}
+// HOP1 记录在模式判定前落盘过（run_mode=UNKNOWN），这里回填真实模式并重写证据。
+intake.run_mode = RUN_MODE
+await saveJson(`hop-${String(intake.hop).padStart(2, '0')}-${intake.id}.json`, intake)
+log(`RUN_MODE=${RUN_MODE}（依据：HOP1 application_action=${intakeAction}，rank.delta.application=${intake.row_count_delta.application ?? 0}）`)
+// 可选守卫：命令行声明的模式必须与库内事实一致，不一致就是环境/证据用错了 → 直接 FAIL。
+if (EXPECT_RUN_MODE !== null && EXPECT_RUN_MODE !== RUN_MODE) {
+  await saveJson('run-mode-guard.json', {
+    expected: EXPECT_RUN_MODE,
+    actual: RUN_MODE,
+    intake_application_action: intakeAction,
+    application_id: applicationId,
+    ok: false,
+  })
+  log('')
+  log(`FAIL（RUN_MODE 守卫）：GOLDEN_PATH_EXPECT_RUN_MODE=${EXPECT_RUN_MODE}，但库内事实判定为 ${RUN_MODE}。`
+    + '—— 这次没跑成"声明的那一次"，证据不能混用。')
+  await flushLog()
+  await pool.end()
+  process.exit(1)
+}
+if (EXPECT_RUN_MODE !== null) {
+  await saveJson('run-mode-guard.json', {
+    expected: EXPECT_RUN_MODE,
+    actual: RUN_MODE,
+    intake_application_action: intakeAction,
+    application_id: applicationId,
+    ok: true,
+  })
+}
 const appAfterIntake = await readApplication(applicationId)
 log(`application=${applicationId} stage=${appAfterIntake.current_stage_code} lifecycle=${appAfterIntake.lifecycle_status} rubric_version_id=${appAfterIntake.rubric_version_id}`)
 log(`candidate=${candidateId} resume_version=${resumeVersionIdFromHop} rubric_pinned=${appAfterIntake.rubric_version_id !== null}`)
 
 // ---- 2 S7 前置：阶段推进 T1（S6→S7）----
-// 事实：材料已绑定 + 解析不是 FAILED + rubric 已钉（F1 后 intake 新建即钉）。
-// 本工具是 `application.current_stage_code` 的**唯一写入口**（docs/18 §3）；不调它，阶段码永远停在 S6。
+// FIRST_RUN：材料已绑定 + 解析不是 FAILED + rubric 已钉（F1 后 intake 新建即钉）→ 必须真前移一格；
+// RERUN    ：指针已在 S10（终态），T1 的事实早已满足 → 幂等结果必须是 NO_OP@S10、零迁移、零 UPDATE。
+// 本工具是 `application.current_stage_code` 的**唯一写入口**（docs/18 §3）。
 const stageAdvanceTool = createStageAdvanceTool(DB)
 const advanceS6S7 = await runHop({
   id: 's6s7-stage-advance',
   hop: 2,
-  label: '阶段推进 T1（S6→S7）：材料 + rubric pin 已成立（F1 后无需补钉）',
+  label: RUN_MODE === 'FIRST_RUN'
+    ? '阶段推进 T1（S6→S7）：材料 + rubric pin 已成立（F1 后无需补钉）'
+    : '阶段推进 T1 幂等调用（RERUN）：申请已在 S10，必须 NO_OP 且零迁移',
   tool: stageAdvanceTool,
   args: { application_id: applicationId },
   readback: async () => ({ application: await readApplication(applicationId) }),
-  expect: (record) => record.ok === true
-    && record.result?.status === 'ADVANCED'
-    && (record.result?.transitions ?? []).length === 1
-    && record.result.transitions[0]?.from === 'S6'
-    && record.result.transitions[0]?.to === 'S7'
-    && record.result?.stage_code === 'S7',
+  expect_note: RUN_MODE === 'FIRST_RUN'
+    ? 'ADVANCED + transitions 逐字 [{S6→S7}] + stage_code=S7'
+    : 'NO_OP + stage_code=S10 + transitions=[]（零 UPDATE；旧断言"梯子只到 S8"已作废）',
+  expect: (record) => {
+    if (record.ok !== true) return false
+    if (RUN_MODE === 'FIRST_RUN') {
+      return record.result?.status === 'ADVANCED'
+        && JSON.stringify(record.result?.transitions ?? []) === JSON.stringify([{ from: 'S6', to: 'S7' }])
+        && record.result?.stage_code === 'S7'
+    }
+    return record.result?.status === 'NO_OP'
+      && record.result?.stage_code === 'S10'
+      && (record.result?.transitions ?? []).length === 0
+  },
 })
 log(`stage after T1 = ${advanceS6S7.result?.stage_code} transitions=${JSON.stringify(advanceS6S7.result?.transitions)}`)
 // 幂等键按 application_id 派生：同一条申请重跑 → 同一个键（replay）；
@@ -602,17 +879,22 @@ const scorecardKey = `gp-e2e:${applicationId}:scorecard-103`
 const scorecardKeyDenied = `gp-e2e:${applicationId}:scorecard-103-denied`
 
 // ---- 3 S7 screening_evaluate ----
+// ⚠️ as_of 必须是"现在"：内置 bootstrap **刚刚**批准 rubric，若像旧版那样回溯 5 秒，
+// `approved(v, as_of)` 会判成"该时刻还没批准" → NO_RUBRIC/NO_APPROVED_RUBRIC。
+// 这是 as_of 语义的**正确行为**，不是产品缺陷（`manual/screening-decision` 同一 harness 踩过并改成 now）。
+const screeningAsOf = toOffsetIso()
 const screeningTool = createScreeningEvaluateTool(DB)
 const screening = await runHop({
   id: 's7-screening-evaluate',
   hop: 3,
   label: 'S7 screening_evaluate（只读、advisory、带证据）',
   tool: screeningTool,
-  args: { application_id: applicationId, as_of: nowMinus(5) },
+  args: { application_id: applicationId, as_of: screeningAsOf },
   readback: async () => ({
     application: await readApplication(applicationId),
     decisions: await readDecisions(applicationId),
   }),
+  expect_note: '两模式都 ok=true + verdict 字符串（只读；RERUN 读同一份已钉 rubric/材料；RO/RERUN 都必须真过 approved(v, as_of)）',
   expect: (record) => record.ok === true && record.result?.status === 'OK' && typeof record.result?.verdict === 'string',
 })
 const screeningValue = screening.result
@@ -664,7 +946,8 @@ const screeningConfirmedAt = nowMinus(60)
 const screeningDecisionArgs = {
   application_id: applicationId,
   decision_scope: 'SCREENING',
-  as_of: nowMinus(5),
+  // 与 screening_evaluate 同一个 as_of（都取"这次运行里 rubric 已批准之后"的时刻）。
+  as_of: screeningAsOf,
   result: screeningValue?.verdict === 'PASS' ? 'ADVANCE' : 'HOLD',
   reason: screeningReason,
   basis_refs: screeningBasisRefs,
@@ -689,7 +972,9 @@ const decisionTool = createDecisionRecordTool({ database: DB, approval: screenin
 const screeningDecision = await runHop({
   id: 's7-decision-screening',
   hop: 4,
-  label: 'S7 decision_record(SCREENING)（D-103 写侧 + D-95 IN_CHAT v2；F1 后必须真落库）',
+  label: RUN_MODE === 'FIRST_RUN'
+    ? 'S7 decision_record(SCREENING)（D-103 写侧 + D-95 IN_CHAT v2；F1 后必须真落库）'
+    : 'S7 decision_record(SCREENING) 重复提交（RERUN）：当前 SCREENING 决策已存在，必须 ALREADY_DECIDED 且零写入',
   tool: decisionTool,
   args: screeningDecisionArgs,
   readback: async () => ({
@@ -697,26 +982,47 @@ const screeningDecision = await runHop({
     decisions: await readDecisions(applicationId),
     approval_service_calls: screeningApproval.calls.length,
   }),
-  expect: (record) => record.ok === true,
+  expect_note: RUN_MODE === 'FIRST_RUN'
+    ? 'ok=true + decision 行 +1（真写；STEP 3 走"没有 current SCREENING 决策"的写分支）'
+    : 'ok=false + ALREADY_DECIDED/SCOPE_ALREADY_DECIDED + decision 行 +0（STEP 3 在汇总重算之前就拒绝）',
+  expect: (record) => {
+    if (RUN_MODE === 'FIRST_RUN') {
+      return record.ok === true && (record.row_count_delta.decision ?? 0) === 1
+    }
+    return record.ok === false
+      && record.error?.code === 'ALREADY_DECIDED'
+      && (record.row_count_delta.decision ?? 0) === 0
+  },
 })
 log(`SCREENING 决策结果：${screeningDecision.ok ? 'WROTE' : `FAILED(${screeningDecision.error?.code}/${screeningDecision.error_body?.reason_code ?? '?'})`}`)
 log(`approval.request 调用次数：${screeningApproval.calls.length}（IN_CHAT 按 D-95 不再二次弹确认）`)
 
 // ---- 5 S8 前置：阶段推进 T2（S7→S8）----
-// 事实：current SCREENING 决策 = ADVANCE（上一步刚写）。HOLD/REJECT 会 BLOCKED 且阶段留在 S7。
+// FIRST_RUN：current SCREENING=ADVANCE（上一步刚写）→ 必须真前移一格到 S8；
+// RERUN    ：指针已在 S10 → 幂等结果必须是 NO_OP@S10、零迁移。
 const advanceS7S8 = await runHop({
   id: 's7s8-stage-advance',
   hop: 5,
-  label: '阶段推进 T2（S7→S8）：current SCREENING 决策 = ADVANCE',
+  label: RUN_MODE === 'FIRST_RUN'
+    ? '阶段推进 T2（S7→S8）：current SCREENING 决策 = ADVANCE'
+    : '阶段推进 T2 幂等调用（RERUN）：申请已在 S10，必须 NO_OP 且零迁移',
   tool: stageAdvanceTool,
   args: { application_id: applicationId },
   readback: async () => ({ application: await readApplication(applicationId), decisions: await readDecisions(applicationId) }),
-  expect: (record) => record.ok === true
-    && record.result?.status === 'ADVANCED'
-    && (record.result?.transitions ?? []).length === 1
-    && record.result.transitions[0]?.from === 'S7'
-    && record.result.transitions[0]?.to === 'S8'
-    && record.result?.stage_code === 'S8',
+  expect_note: RUN_MODE === 'FIRST_RUN'
+    ? 'ADVANCED + transitions 逐字 [{S7→S8}] + stage_code=S8'
+    : 'NO_OP + stage_code=S10 + transitions=[]（零 UPDATE）',
+  expect: (record) => {
+    if (record.ok !== true) return false
+    if (RUN_MODE === 'FIRST_RUN') {
+      return record.result?.status === 'ADVANCED'
+        && JSON.stringify(record.result?.transitions ?? []) === JSON.stringify([{ from: 'S7', to: 'S8' }])
+        && record.result?.stage_code === 'S8'
+    }
+    return record.result?.status === 'NO_OP'
+      && record.result?.stage_code === 'S10'
+      && (record.result?.transitions ?? []).length === 0
+  },
 })
 log(`stage after T2 = ${advanceS7S8.result?.stage_code} transitions=${JSON.stringify(advanceS7S8.result?.transitions)}`)
 
@@ -778,6 +1084,8 @@ const scheduleDenied = await runHop({
       'select round_no, slot_code, status from recruitment.interview where tenant_id = $1 and application_id = $2 order by round_no',
       [TENANT_ID, applicationId]),
   }),
+  expect_note: '两模式都必须 FORBIDDEN/APPROVAL_NOT_GRANTED 且 interview 行 +0（负例用 round 2，从未有人真的排上它；'
+    + 'RERUN 下 round 1 的面试已存在不影响这条负例：闸门在业务冲突判定之前就拒绝）',
   expect: (record) => record.ok === false
     && record.error?.code === 'FORBIDDEN'
     && record.error_body?.reason_code === 'APPROVAL_NOT_GRANTED'
@@ -790,7 +1098,9 @@ const scheduleTool = createInterviewScheduleTool(DB, { approval: scheduleApprova
 const schedule = await runHop({
   id: 's8-schedule-allow-once',
   hop: 7,
-  label: 'S8 interview_schedule（人机闸门 allow-once + 真实写库）',
+  label: RUN_MODE === 'FIRST_RUN'
+    ? 'S8 interview_schedule（人机闸门 allow-once + 真实写库）'
+    : 'S8 interview_schedule 幂等重放（RERUN）：同 idempotency_key + 同参数 → replayed=true、零写入',
   tool: scheduleTool,
   args: scheduleArgs,
   readback: async () => {
@@ -802,8 +1112,20 @@ const schedule = await runHop({
       interview: rows[0] === undefined ? null : await readInterview(rows[0].id),
     }
   },
-  expect: (record) => record.ok === true
-    && typeof scheduleResultId(record) === 'string',
+  expect_note: RUN_MODE === 'FIRST_RUN'
+    ? 'ok=true + replayed=false + 返回 interview id + interview 行 +1（真过闸门真写）'
+    : 'ok=true + replayed=true + 能从结果/库里读到既有 interview + interview 行 +0（STORE 命中，零写入）',
+  expect: (record) => {
+    if (record.ok !== true) return false
+    const resultId = scheduleResultId(record)
+    const readbackId = record.readback?.interview?.interview?.id
+    const knownId = typeof resultId === 'string' ? resultId : (typeof readbackId === 'string' ? readbackId : undefined)
+    if (knownId === undefined) return false
+    if (RUN_MODE === 'FIRST_RUN') {
+      return record.result?.replayed === false && (record.row_count_delta.interview ?? 0) === 1
+    }
+    return record.result?.replayed === true && (record.row_count_delta.interview ?? 0) === 0
+  },
 })
 let interviewId = scheduleResultId(schedule)
 log(`interview_id=${interviewId ?? '(none)'} approval requests=${scheduleApproval.calls.length}`)
@@ -836,9 +1158,11 @@ if (interviewId !== undefined) {
     tool: interviewGetTool,
     args: { interview_id: interviewId },
     readback: async () => readInterview(interviewId),
+    expect_note: '两模式都 ok=true（只读；RERUN 读的是同一场既有面试）',
     expect: (record) => record.ok === true,
   })
 } else {
+  skippedHops += 1
   log('HOP 8 SKIPPED：没有 interview_id。')
 }
 
@@ -873,9 +1197,18 @@ if (interviewId !== undefined) {
       note: 'Golden Path 端到端联调：合成演示转写',
     },
     readback: async () => readInterview(interviewId),
-    expect: (record) => record.ok === true,
+    expect_note: 'FIRST_RUN: ok=true + replayed=false + transcript_artifact 行 +1（真写 canonical 材料）；'
+      + 'RERUN: ok=true + replayed=true + transcript_artifact 行 +0（同 (meeting, provider_artifact_id) 同内容 sha，TR-U8 一行不写）',
+    expect: (record) => {
+      if (record.ok !== true) return false
+      if (RUN_MODE === 'FIRST_RUN') {
+        return record.result?.replayed === false && (record.row_count_delta.transcript_artifact ?? 0) === 1
+      }
+      return record.result?.replayed === true && (record.row_count_delta.transcript_artifact ?? 0) === 0
+    },
   })
 } else {
+  skippedHops += 1
   log('HOP 9 SKIPPED：没有 interview_id。')
 }
 
@@ -890,9 +1223,11 @@ if (interviewId !== undefined) {
     tool: transcriptReadTool,
     args: { interview_id: interviewId, include_text: false, as_of: nowMinus(5) },
     readback: async () => readInterview(interviewId),
-    expect: (record) => record.ok === true,
+    expect_note: '两模式都 ok=true 且 transcript.state=READY（T3/T4"材料可用"的判据；只读）',
+    expect: (record) => record.ok === true && record.result?.transcript?.state === 'READY',
   })
 } else {
+  skippedHops += 1
   log('HOP 10 SKIPPED：没有 interview_id。')
 }
 
@@ -944,26 +1279,50 @@ if (interviewId !== undefined) {
         'select count(*)::int as n from recruitment.scorecard where tenant_id = $1 and interview_id = $2',
         [TENANT_ID, interviewId]))[0].n,
     }),
+    expect_note: hadScorecardBefore
+      ? 'RERUN 口径：面评已存在 → 拒绝路径不再是"D-79 闸门"（业务校验先行拒绝也只能证明停写）；'
+        + '仍必须 ok=false 且 scorecard 行 +0，实际拒绝路径在 summary.negative_controls[].reject_path 里如实记录'
+      : 'FIRST_RUN 口径：approval=deny → 必须 FORBIDDEN/APPROVAL_NOT_GRANTED 且 scorecard 行 +0（D-79 fail closed）',
     expect: (record) => {
       if ((record.row_count_delta.scorecard ?? 0) !== 0) return false
       if (record.ok) return false
-      if (hadScorecardBefore) return true
+      // RERUN：面评已存在时"先撞业务校验"是产品真实行为；沿用既有口径"任何拒绝路径都不得写行"，
+      // 但拒绝路径必须能在证据里被指名（下面把 code/reason 写进 hop 记录与 summary），不宽松成"随便失败都行"。
+      if (hadScorecardBefore) return typeof record.error?.code === 'string'
       return record.error?.code === 'FORBIDDEN'
         && record.error_body?.reason_code === 'APPROVAL_NOT_GRANTED'
     },
   })
-  log(`scorecard denied：${scorecardDenied.ok ? 'UNEXPECTED WRITE' : `${scorecardDenied.error?.code}/${scorecardDenied.error_body?.reason_code}（approval requests=${scorecardDeniedApproval.calls.length}）`}`)
+  // 如实记录这条负例实际走的是哪条拒绝路径（FIRST_RUN 是闸门；RERUN 面评已存在时可能是业务校验）。
+  scorecardDenied.reject_path = scorecardDenied.ok
+    ? 'UNEXPECTED_WRITE'
+    : `${scorecardDenied.error?.code ?? '?'}/${scorecardDenied.error_body?.reason_code ?? '?'}`
+  scorecardDenied.had_scorecard_before = hadScorecardBefore
+  await saveJson(`hop-${String(scorecardDenied.hop).padStart(2, '0')}-${scorecardDenied.id}.json`, scorecardDenied)
+  log(`scorecard denied：${scorecardDenied.ok ? 'UNEXPECTED WRITE' : `${scorecardDenied.error?.code}/${scorecardDenied.error_body?.reason_code}`
+    + `（approval requests=${scorecardDeniedApproval.calls.length}，had_scorecard_before=${hadScorecardBefore}，拒绝路径=${scorecardDenied.reject_path}）`}`)
 
   const scorecardApproval = makeApproval('allow-once')
   const scorecardTool = createScorecardSubmitTool({ database: DB, approval: scorecardApproval })
   await runHop({
     id: 's10-scorecard-allow-once',
     hop: 12,
-    label: 'S10 scorecard_submit（面试官 103 本人 + 人机闸门 allow-once）',
+    label: RUN_MODE === 'FIRST_RUN'
+      ? 'S10 scorecard_submit（面试官 103 本人 + 人机闸门 allow-once）'
+      : 'S10 scorecard_submit 幂等重放（RERUN）：同 key 同 payload → replayed=true、零写入',
     tool: scorecardTool,
     args: { ...scorecardArgs, idempotency_key: scorecardKey },
     readback: async () => readInterview(interviewId),
-    expect: (record) => record.ok === true,
+    expect_note: RUN_MODE === 'FIRST_RUN'
+      ? 'ok=true + replayed=false + scorecard id + scorecard 行 +1（真过闸门真写）'
+      : 'ok=true + replayed=true + scorecard id + scorecard 行 +0（幂等重放在 D-79 闸门之前返回，不问人）',
+    expect: (record) => {
+      if (record.ok !== true || typeof record.result?.scorecard?.id !== 'string') return false
+      if (RUN_MODE === 'FIRST_RUN') {
+        return record.result?.replayed === false && (record.row_count_delta.scorecard ?? 0) === 1
+      }
+      return record.result?.replayed === true && (record.row_count_delta.scorecard ?? 0) === 0
+    },
   })
   log(`scorecard allow-once approval requests=${scorecardApproval.calls.length}`)
 
@@ -979,23 +1338,36 @@ if (interviewId !== undefined) {
   await runHop({
     id: 's10-scorecard-2',
     hop: 13,
-    label: 'S10 scorecard_submit（面试官 104 本人 + allow-once；补齐必交面板）',
+    label: RUN_MODE === 'FIRST_RUN'
+      ? 'S10 scorecard_submit（面试官 104 本人 + allow-once；补齐必交面板）'
+      : 'S10 第 2 份面评幂等重放（RERUN）：同 key 同 payload → replayed=true、零写入',
     tool: scorecard2Tool,
     args: {
       ...scorecardArgs,
       idempotency_key: `gp-e2e:${applicationId}:scorecard-104`,
     },
     readback: async () => readInterview(interviewId),
-    expect: (record) => record.ok === true,
+    expect_note: RUN_MODE === 'FIRST_RUN'
+      ? 'ok=true + replayed=false + scorecard id + scorecard 行 +1'
+      : 'ok=true + replayed=true + scorecard id + scorecard 行 +0',
+    expect: (record) => {
+      if (record.ok !== true || typeof record.result?.scorecard?.id !== 'string') return false
+      if (RUN_MODE === 'FIRST_RUN') {
+        return record.result?.replayed === false && (record.row_count_delta.scorecard ?? 0) === 1
+      }
+      return record.result?.replayed === true && (record.row_count_delta.scorecard ?? 0) === 0
+    },
   })
   log(`scorecard #2（104）approval requests=${scorecard2Approval.calls.length}`)
 } else {
+  skippedHops += 3
   log('HOP 11/12/13 SKIPPED：没有 interview_id。')
 }
 
 // ---- 14 S10 evaluation_summarize（F1 后必须成功；旧版这里被 pin 挡住） ----
+// as_of 同样取"现在"（不能早于本次 run 里刚提交的面评/刚批准的 rubric；见 HOP3 的注释）。
 const summarizeTool = createEvaluationSummarizeTool({ database: DB })
-const summarizeAsOf = nowMinus(5)
+const summarizeAsOf = toOffsetIso()
 const summarizeHop = interviewId === undefined ? null : await runHop({
   id: 's10-evaluation-summarize',
   hop: 14,
@@ -1003,6 +1375,7 @@ const summarizeHop = interviewId === undefined ? null : await runHop({
   tool: summarizeTool,
   args: { application_id: applicationId, decision_scope: 'STAGE', interview_id: interviewId, as_of: summarizeAsOf },
   readback: async () => ({ application: await readApplication(applicationId) }),
+  expect_note: '两模式都 ok=true 且 summary_digest 是非空字符串（真实汇总；RERUN 读同一批已提交面评）',
   expect: (record) => record.ok === true && typeof record.result?.summary_digest === 'string',
 })
 const summaryValue = summarizeHop?.result
@@ -1087,6 +1460,7 @@ const stageDecisionArgs = {
 if (interviewId === undefined || summaryValue === undefined) {
   // 上游没有面试 / 汇总没成功时，不存在合法的 summary_digest 与面评依据；
   // 此时硬调 decision 只会得到一个 harness 自造的 INVALID_ARGS（旧版就踩过），如实标 SKIPPED。
+  skippedHops += 1
   log('HOP 15 SKIPPED：HOP 7 没有面试 或 HOP 14 汇总未成功，无法构造合法 basis_refs。')
 } else {
   const stageApproval = makeApproval('unavailable')
@@ -1094,7 +1468,9 @@ if (interviewId === undefined || summaryValue === undefined) {
   const stageDecision = await runHop({
     id: 's10-decision-stage',
     hop: 15,
-    label: 'S10 decision_record(STAGE)（真实 summary_digest + 真实面评依据 + IN_CHAT v2）',
+    label: RUN_MODE === 'FIRST_RUN'
+      ? 'S10 decision_record(STAGE)（真实 summary_digest + 真实面评依据 + IN_CHAT v2）'
+      : 'S10 decision_record(STAGE) 重复提交（RERUN）：STAGE@S10 决策已存在，必须 ALREADY_DECIDED 且零写入',
     tool: stageDecisionTool,
     args: stageDecisionArgs,
     readback: async () => ({
@@ -1102,29 +1478,56 @@ if (interviewId === undefined || summaryValue === undefined) {
       decisions: await readDecisions(applicationId),
       approval_service_calls: stageApproval.calls.length,
     }),
-    expect: (record) => record.ok === true,
+    expect_note: RUN_MODE === 'FIRST_RUN'
+      ? 'ok=true + decision 行 +1（真实 digest/依据过闸门真写）'
+      : 'ok=false + ALREADY_DECIDED/SCOPE_ALREADY_DECIDED + decision 行 +0（STEP 3 先于汇总重算）',
+    expect: (record) => {
+      if (RUN_MODE === 'FIRST_RUN') {
+        return record.ok === true && (record.row_count_delta.decision ?? 0) === 1
+      }
+      return record.ok === false
+        && record.error?.code === 'ALREADY_DECIDED'
+        && (record.row_count_delta.decision ?? 0) === 0
+    },
   })
   log(`STAGE 决策：${stageDecision.ok ? 'WROTE' : `FAILED(${stageDecision.error?.code}/${stageDecision.error_body?.reason_code ?? '?'})`}`)
 }
 
-// ---- 16 再调一次阶段推进：本工具梯子只覆盖 S6→S7→S8（docs/18 §3 / stage-advance 契约） ----
+// ---- 16 阶段推进终跳（**终值 S10**）：contract v1.3.0 的四条边，一次调用走完 S8→S9→S10 ----
+// FIRST_RUN：到这里 canonical READY 转写（HOP9/10）与 ≥1 份 SUBMITTED 面评（HOP12/13）都已成立，
+//             一次调用必须**逐字**给出两条迁移 [{S8→S9},{S9→S10}]，阶段码落到 S10（v1.0 终态）。
+// RERUN    ：指针已在 S10（终态）→ 必须 NO_OP@S10、transitions=[]（零 UPDATE）。
+// 旧版把"梯子只到 S8、期望 NO_OP@S8"当成功 —— 那是 G3 之前的实现事实，本版已删除该断言。
 const advanceAfterDecision = await runHop({
   id: 's10-stage-advance-after-decision',
   hop: 16,
-  label: '阶段推进（S10 决策之后）：梯子只到 S8，期望 NO_OP 且阶段码仍是 S8',
+  label: RUN_MODE === 'FIRST_RUN'
+    ? '阶段推进终跳：S8→S9（canonical READY 转写）→ S9→S10（材料可用 + ≥1 SUBMITTED 面评），一次调用走完'
+    : '阶段推进终跳幂等调用（RERUN）：申请已在 S10（v1.0 终态），必须 NO_OP 且零迁移',
   tool: stageAdvanceTool,
   args: { application_id: applicationId },
   readback: async () => ({ application: await readApplication(applicationId) }),
-  expect: (record) => record.ok === true
-    && record.result?.status === 'NO_OP'
-    && record.result?.stage_code === 'S8'
-    && (record.result?.transitions ?? []).length === 0,
+  expect_note: RUN_MODE === 'FIRST_RUN'
+    ? 'ADVANCED + transitions 逐字 [{S8→S9},{S9→S10}] + stage_code=S10'
+    : 'NO_OP + stage_code=S10 + transitions=[]（S10 是终态，不再前进、不发明 S11）',
+  expect: (record) => {
+    if (record.ok !== true) return false
+    if (RUN_MODE === 'FIRST_RUN') {
+      return record.result?.status === 'ADVANCED'
+        && JSON.stringify(record.result?.transitions ?? [])
+          === JSON.stringify([{ from: 'S8', to: 'S9' }, { from: 'S9', to: 'S10' }])
+        && record.result?.stage_code === 'S10'
+    }
+    return record.result?.status === 'NO_OP'
+      && record.result?.stage_code === 'S10'
+      && (record.result?.transitions ?? []).length === 0
+  },
 })
 log(`stage after decision advance call = ${advanceAfterDecision.result?.stage_code} status=${advanceAfterDecision.result?.status}`)
 
 // ---- 17 终态读回 ----
 log('')
-log('════════ HOP 17 · 终态读回（同一条申请 S6→S10 的全部事实） ════════')
+log('════════ HOP 17 · 终态读回（同一条申请 S6→S10 的全部事实；纯 SQL，不 import 产品代码） ════════')
 const finalChain = await readApplicationChain(applicationId)
 const finalDecisions = await readDecisions(applicationId)
 const finalInterviews = await query(`
@@ -1144,6 +1547,18 @@ const finalStageEvents = await query(`
    where tenant_id = $1 and source_object_id = $2
      and event_type in ('application.current_stage_code.changed', 'application.rubric_version.pinned')
    order by recorded_at`, [TENANT_ID, applicationId])
+// 0016 的一致性视图：**0 行 = 合规**（列：application_id / tenant_id / current_stage_code / violation_code / detail）。
+const finalConsistencyViolationsForApp = await query(`
+  select application_id, current_stage_code, violation_code, detail
+    from recruitment.v_application_stage_consistency
+   where tenant_id = $1 and application_id = $2
+   order by violation_code`, [TENANT_ID, applicationId])
+const finalConsistencyViolationsAll = await query(`
+  select application_id, current_stage_code, violation_code
+    from recruitment.v_application_stage_consistency
+   where tenant_id = $1 order by application_id, violation_code`, [TENANT_ID])
+const submittedScorecardRows = finalInterviewDetails.flatMap((detail) =>
+  (detail?.scorecards ?? []).filter((row) => row.status === 'SUBMITTED' && row.superseded_by_scorecard_id === null))
 const finalState = {
   application: finalChain?.application ?? null,
   candidate: finalChain?.candidate ?? null,
@@ -1158,25 +1573,51 @@ const finalState = {
   decisions_by_scope: await query(`
     select decision_scope, stage_code, count(*)::int as n from recruitment.decision
      where tenant_id = $1 group by 1, 2 order by 1, 2`, [TENANT_ID]),
+  submitted_scorecards: submittedScorecardRows,
+  consistency_view_violations_for_app: finalConsistencyViolationsForApp,
+  consistency_view_violations_all: finalConsistencyViolationsAll,
 }
 await saveJson('hop-17-final-state.json', finalState)
-log(`application.current_stage_code = ${finalState.application?.current_stage_code}（本仓 stage_advance 的梯子只到 S8：S6→S7→S8）`)
+const finalStage = finalState.application?.current_stage_code
+log(`application.current_stage_code = ${finalStage}（终态断言：必须 = S10 = v1.0 终态的最后一格）`)
 log(`application.stage_entered_at    = ${finalState.application?.stage_entered_at ?? '(未读)'}`)
 log(`stage / pin 审计事件            = ${JSON.stringify(finalStageEvents.map((e) => `${e.event_type}:${e.from_stage ?? ''}->${e.to_stage ?? ''}`))}`)
 log(`application.rubric_version_id   = ${finalState.application?.rubric_version_id}`)
 log(`application.resume_version_id   = ${finalState.application?.resume_version_id}`)
 log(`decisions for this application  = ${finalDecisions.length} 条 ${JSON.stringify(finalDecisions.map((d) => `${d.decision_scope}/${d.stage_code}/${d.result}`))}`)
 log(`interviews for this application = ${finalInterviews.length} 场 ${JSON.stringify(finalInterviews.map((i) => `r${i.round_no}/${i.status}`))}`)
-log(`transcript artifacts            = ${JSON.stringify(finalInterviewDetails.map((d) => (d?.transcript_artifacts ?? []).map((a) => `rev${a.source_revision}/canonical=${a.is_canonical}/${a.provenance}`)))}`)
+log(`transcript artifacts            = ${JSON.stringify(finalInterviewDetails.map((d) => (d?.transcript_artifacts ?? []).map((a) => `rev${a.source_revision}/canonical=${a.is_canonical}/${a.transcript_status}/${a.provenance}`)))}`)
 log(`scorecards                      = ${JSON.stringify(finalInterviewDetails.map((d) => (d?.scorecards ?? []).map((s) => `${s.status}/${s.overall}/author=${s.interviewer_id.slice(-3)}`)))}`)
+log(`submitted scorecards（现行）     = ${submittedScorecardRows.length} 份`)
+log(`一致性视图 v_application_stage_consistency：本申请违规 ${finalConsistencyViolationsForApp.length} 行 / 全租户 ${finalConsistencyViolationsAll.length} 行（0 行 = 合规）`)
 log(`行数对比（预检 → 终态，只列变化）：${JSON.stringify(finalState.counts_delta_vs_preflight)}`)
 await flushLog()
 
-// ---- 14 汇总 ----
+// ---- 汇总：四数 / 负例 / 终态 / acceptance ----
+const counts = {
+  hops: hops.length,
+  passed: hops.filter((record) => record.outcome === 'PASS').length,
+  failed: hops.filter((record) => record.outcome === 'FAIL').length,
+  skipped: skippedHops,
+}
+const negativeControls = hops
+  .filter((record) => record.kind === 'negative-control')
+  .map((record) => ({
+    hop: record.hop,
+    id: record.id,
+    outcome: record.outcome,
+    blocked: record.ok === false,
+    code: record.error?.code,
+    reason_code: record.error_body?.reason_code,
+    reject_path: record.reject_path ?? null,
+    had_scorecard_before: record.had_scorecard_before ?? null,
+    row_delta: record.row_count_delta,
+  }))
 const HOP_TABLE = hops.map((record) => ({
   hop: record.hop,
   id: record.id,
   kind: record.kind,
+  run_mode: record.run_mode,
   tool: record.tool,
   outcome: record.outcome,
   ok: record.ok,
@@ -1184,40 +1625,68 @@ const HOP_TABLE = hops.map((record) => ({
   reason_code: record.error_body?.reason_code,
   row_delta: record.row_count_delta,
 }))
-const harnessSha = sha256(await readFile(fileURLToPath(new URL('./run-golden-path-rerun.mjs', HERE))))
+/** 验收五条（任何一条 false → exit 1；不是"尽量满足"）。 */
+const acceptance = {
+  all_hops_pass: counts.hops === 16 && counts.passed === 16 && counts.failed === 0 && counts.skipped === 0,
+  stage_s10: finalStage === 'S10',
+  submitted_scorecards_ge_1: submittedScorecardRows.length >= 1,
+  consistency_view_zero_violations:
+    finalConsistencyViolationsForApp.length === 0 && finalConsistencyViolationsAll.length === 0,
+  negative_controls_blocked: negativeControls.length === 2
+    && negativeControls.every((control) => control.outcome === 'PASS' && control.blocked === true),
+}
+acceptance.ok = acceptance.all_hops_pass
+  && acceptance.stage_s10
+  && acceptance.submitted_scorecards_ge_1
+  && acceptance.consistency_view_zero_violations
+  && acceptance.negative_controls_blocked
+
+const harnessSha = sha256(await readFile(HARNESS_PATH))
+const derivedHarnessSha = sha256(await readFile(fileURLToPath(new URL('./run-golden-path.mjs', HERE))))
 const summary = {
   run_id: stamp,
   generated_at: new Date().toISOString(),
-  harness: { path: fileURLToPath(new URL('./run-golden-path-rerun.mjs', HERE)), sha256: harnessSha },
+  expectation: {
+    stage_advance_contract: '1.3.0',
+    terminal_stage: 'S10',
+    total_hops: 16,
+    note: 'hop 0（预检）与 hop 17（终态读回）不计入 16；16 = 写/读/负例跳',
+  },
+  repository,
+  harness: { path: HARNESS_PATH, sha256: harnessSha },
   harness_derived_from: {
     path: 'manual/golden-path/run-golden-path.mjs',
-    sha256: '23fcaec3380ce1433978d2a1d67395a2c58f6db2a15666b31496a56818f2ade7',
-    note: '旧报告 run A/B/C 的原始 harness；本文件是它的复跑派生版，差异见 evidence README「harness 变更」',
+    sha256: derivedHarnessSha,
+    note: '旧报告 run A/B/C 的原始 harness（保持不动）；本文件是它的 G4 派生版：终值 S10 + FIRST_RUN/RERUN + 内置 bootstrap + 证据根可配',
   },
-  fixture: { path: fileURLToPath(FIXTURE_PDF), sha256: fixtureSha },
+  fixture: { path: fileURLToPath(FIXTURE_PDF), sha256: fixtureSha, bytes: fixtureBytes.length },
+  bootstrap: {
+    path: bootstrap.record.path,
+    sha256: bootstrap.record.sha256,
+    outcome: bootstrap.record.outcome,
+    exit_code: bootstrap.record.exit_code,
+    state: bootstrap.record.state,
+    writes: bootstrap.record.writes,
+    demo_approval_mode: bootstrap.record.demo_approval_mode,
+  },
   database: { host: DB.host, port: DB.port, database: DB.database, tenant_id: TENANT_ID, actor_id: ACTOR_ID },
+  run_mode: RUN_MODE,
+  run_mode_guard: {
+    expected: EXPECT_RUN_MODE,
+    actual: RUN_MODE,
+    ok: EXPECT_RUN_MODE === null ? null : EXPECT_RUN_MODE === RUN_MODE,
+  },
   application_id: applicationId,
   candidate_id: candidateId,
   interview_id: interviewId,
   hops: HOP_TABLE,
-  // 产品缺陷导致的“期望内的失败”：这些跳**不允许**被当作 PASS，也不允许为了跑通而绕过。
-  product_blockers: hops
-    .filter((record) => record.kind === 'expected-blocker' && record.ok === false)
-    .map((record) => ({
-      hop: record.hop, id: record.id, code: record.error?.code,
-      reason_code: record.error_body?.reason_code, detail: record.error_body?.detail,
-    })),
-  negative_controls: hops
-    .filter((record) => record.kind === 'negative-control')
-    .map((record) => ({
-      hop: record.hop, id: record.id, blocked: record.ok === false,
-      code: record.error?.code, reason_code: record.error_body?.reason_code,
-      row_delta: record.row_count_delta,
-    })),
-  failures: hops.filter((record) => record.outcome === 'FAIL').map((record) => ({ hop: record.hop, id: record.id, code: record.error?.code, message: record.error?.message })),
+  counts,
+  negative_controls: negativeControls,
+  failures: hops
+    .filter((record) => record.outcome === 'FAIL')
+    .map((record) => ({ hop: record.hop, id: record.id, code: record.error?.code, message: record.error?.message })),
   final_state: {
-    application_stage: finalState.application?.current_stage_code,
-    stage_advance_ladder_terminal: 'S8',
+    application_stage: finalStage,
     application_rubric_version_id: finalState.application?.rubric_version_id,
     decision_count: finalDecisions.length,
     decision_scopes: finalState.decisions_by_scope,
@@ -1225,27 +1694,104 @@ const summary = {
     transcript_artifact_count: finalInterviewDetails.reduce((n, d) => n + (d?.transcript_artifacts ?? []).length, 0),
     interview_record_count: finalInterviewDetails.reduce((n, d) => n + (d?.interview_records ?? []).length, 0),
     scorecard_count: finalInterviewDetails.reduce((n, d) => n + (d?.scorecards ?? []).length, 0),
+    submitted_scorecard_count: submittedScorecardRows.length,
+    consistency_view_violations_for_app: finalConsistencyViolationsForApp.length,
+    consistency_view_violations_all: finalConsistencyViolationsAll.length,
+    consistency_violation_rows_for_app: finalConsistencyViolationsForApp,
     stage_events: finalStageEvents,
     counts: finalCounts,
+    counts_delta_vs_preflight: finalState.counts_delta_vs_preflight,
   },
+  acceptance,
 }
 await saveJson('summary.json', summary)
 
+// ---- 人读 summary.md（逐跳表 + 四数 + 终态 + acceptance） ----
+const mdTable = HOP_TABLE.map((row) => {
+  const err = row.error_code === undefined ? '' : `${row.error_code}/${row.reason_code ?? ''}`
+  return `| ${row.hop} | ${row.id} | ${row.kind} | ${row.run_mode} | ${row.outcome} | ${err} | ${JSON.stringify(row.row_delta)} |`
+})
+const mdNegative = negativeControls.map((control) =>
+  `| ${control.hop} | ${control.id} | ${control.blocked ? 'BLOCKED' : 'UNEXPECTED-WRITE'} | ${control.code ?? ''}/${control.reason_code ?? ''} | ${control.reject_path ?? ''} | ${JSON.stringify(control.row_delta)} |`)
+const mdLines = [
+  `# Golden Path run ${stamp} — ${RUN_MODE}`,
+  '',
+  `- 生成时间：${summary.generated_at}`,
+  `- 仓库 HEAD：\`${repository.head}\`（来源 ${repository.head_source}；工作树 ${repository.worktree_state}${repository.dirty_lines === null ? '' : `，dirty_lines=${repository.dirty_lines}`}；branch=${repository.branch ?? '(n/a)'}）`,
+  `- harness：\`${HARNESS_PATH}\` sha256=\`${harnessSha}\``,
+  `- fixture：\`${fileURLToPath(FIXTURE_PDF)}\` sha256=\`${fixtureSha}\`（${fixtureBytes.length} bytes）`,
+  `- bootstrap：\`${bootstrap.record.path}\` sha256=\`${bootstrap.record.sha256}\` outcome=${bootstrap.record.outcome} exit_code=${bootstrap.record.exit_code} writes=${JSON.stringify(bootstrap.record.writes)}`,
+  `- 数据库：${DB.user}@${DB.host}:${DB.port}/${DB.database}（tenant=${TENANT_ID}）`,
+  `- run_mode：**${RUN_MODE}**（守卫：${EXPECT_RUN_MODE === null ? '未设置' : `${EXPECT_RUN_MODE} → ${EXPECT_RUN_MODE === RUN_MODE ? 'MATCH' : 'MISMATCH'}`}）`,
+  '',
+  '## 四数（16 跳）',
+  '',
+  `- hops=${counts.hops}`,
+  `- passed=${counts.passed}`,
+  `- failed=${counts.failed}`,
+  `- skipped=${counts.skipped}`,
+  '',
+  '## 逐跳',
+  '',
+  '| hop | id | kind | run_mode | outcome | error/reason | row delta |',
+  '|---:|---|---|---|---|---|---|',
+  ...mdTable,
+  '',
+  '## 负例（期望被拒 + 零写入）',
+  '',
+  '| hop | id | result | code/reason | 实际拒绝路径 | row delta |',
+  '|---:|---|---|---|---|---|',
+  ...mdNegative,
+  '',
+  '## 终态（DB 独立读回）',
+  '',
+  `- application.current_stage_code = **${finalStage}**（终态断言：S10）`,
+  `- application.rubric_version_id = ${finalState.application?.rubric_version_id ?? '(null)'}`,
+  `- decisions = ${finalDecisions.length}（${JSON.stringify(finalState.decisions_by_scope)}）`,
+  `- interviews = ${finalInterviews.length}`,
+  `- transcript artifacts = ${summary.final_state.transcript_artifact_count}`,
+  `- interview_record = ${summary.final_state.interview_record_count}`,
+  `- scorecards = ${summary.final_state.scorecard_count}（SUBMITTED 现行 = ${submittedScorecardRows.length}）`,
+  `- v_application_stage_consistency 违规：本申请 ${finalConsistencyViolationsForApp.length} 行 / 全租户 ${finalConsistencyViolationsAll.length} 行（0 行 = 合规）`,
+  `- stage / pin 审计事件：${JSON.stringify(finalStageEvents.map((e) => `${e.event_type}:${e.from_stage ?? ''}->${e.to_stage ?? ''}`))}`,
+  '',
+  '## acceptance',
+  '',
+  `- all_hops_pass=${acceptance.all_hops_pass}`,
+  `- stage_s10=${acceptance.stage_s10}`,
+  `- submitted_scorecards_ge_1=${acceptance.submitted_scorecards_ge_1}`,
+  `- consistency_view_zero_violations=${acceptance.consistency_view_zero_violations}`,
+  `- negative_controls_blocked=${acceptance.negative_controls_blocked}`,
+  `- **ok=${acceptance.ok}**`,
+  '',
+  '> 数据全部为合成 fixture（R4 provenance=FIXTURE）；写只经产品工具 execute()，本 harness 不手工 UPDATE 业务行。',
+  '',
+]
+await writeFile(join(RUN_DIR, 'summary.md'), mdLines.join('\n'), 'utf8')
+
 log('')
 log('════════ HOP 汇总表 ════════')
-log('hop | kind             | id                        | outcome | error/reason                          | row delta')
-log('----+------------------+---------------------------+---------+---------------------------------------+----------')
+log('hop | kind             | run_mode  | id                        | outcome | error/reason                          | row delta')
+log('----+------------------+-----------+---------------------------+---------+---------------------------------------+----------')
 for (const row of HOP_TABLE) {
   const err = row.error_code === undefined ? '' : `${row.error_code}/${row.reason_code ?? ''}`
-  log(`${String(row.hop).padStart(3)} | ${String(row.kind).padEnd(16)} | ${row.id.padEnd(25)} | ${row.outcome.padEnd(7)} | ${err.padEnd(37)} | ${JSON.stringify(row.row_delta)}`)
+  log(`${String(row.hop).padStart(3)} | ${String(row.kind).padEnd(16)} | ${String(row.run_mode).padEnd(9)} | ${row.id.padEnd(25)} | ${row.outcome.padEnd(7)} | ${err.padEnd(37)} | ${JSON.stringify(row.row_delta)}`)
 }
 log('')
-log(`产品缺陷阻断跳（expected-blocker 且被拒）：${summary.product_blockers.map((b) => `HOP${b.hop}(${b.id}) ${b.code}/${b.reason_code}`).join(' ; ') || '无'}`)
-log(`闸门负例（期望被拒）：${summary.negative_controls.map((b) => `HOP${b.hop}(${b.id}) ${b.blocked ? 'BLOCKED' : 'UNEXPECTED-WRITE'} ${b.code}/${b.reason_code ?? ''} delta=${JSON.stringify(b.row_delta)}`).join(' ; ') || '无'}`)
+log(`四数：hops=${counts.hops} passed=${counts.passed} failed=${counts.failed} skipped=${counts.skipped}`)
+log(`闸门负例（期望被拒）：${negativeControls.map((control) => `HOP${control.hop}(${control.id}) ${control.blocked ? 'BLOCKED' : 'UNEXPECTED-WRITE'} ${control.code}/${control.reason_code ?? ''} path=${control.reject_path ?? ''} delta=${JSON.stringify(control.row_delta)}`).join(' ; ') || '无'}`)
 log(`意外失败（outcome=FAIL）：${summary.failures.length} 个`)
-log(`阶段码终值：${summary.final_state.application_stage}（stage_advance 梯子终值=${summary.final_state.stage_advance_ladder_terminal}）`)
+log(`阶段码终值：${finalStage}（终态断言 S10 ${finalStage === 'S10' ? 'PASS' : 'FAIL'}）`)
+log(`acceptance：all_hops_pass=${acceptance.all_hops_pass} stage_s10=${acceptance.stage_s10}`
+  + ` submitted_scorecards_ge_1=${acceptance.submitted_scorecards_ge_1}`
+  + ` consistency_view_zero_violations=${acceptance.consistency_view_zero_violations}`
+  + ` negative_controls_blocked=${acceptance.negative_controls_blocked} → ok=${acceptance.ok}`)
 log('')
-log(`summary: ${fileURLToPath(new URL('summary.json', RUN_DIR))}`)
+log(`summary    : ${join(RUN_DIR, 'summary.json')}`)
+log(`summary.md : ${join(RUN_DIR, 'summary.md')}`)
+log(`bootstrap  : ${join(RUN_DIR, 'bootstrap.json')} / bootstrap.log`)
+log(`run.log    : ${LOG_PATH}`)
 await flushLog()
 await pool.end()
-if (summary.failures.length > 0) process.exitCode = 1
+// 任何 hop FAIL 或 acceptance 不成立 → 非 0（不接受"跳全绿但终态/一致性不对"）。
+if (counts.failed > 0 || acceptance.ok !== true) process.exitCode = 1

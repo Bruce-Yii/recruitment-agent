@@ -1,0 +1,16 @@
+# scripts/bootstrap-demo.mjs（本 harness 的内置前置；不是 harness 自己补数据）
+# cwd=C:\Users\12412\AppData\Local\Temp\g4-snapshot-b-2d987d4\
+# node=D:\node.exe
+# DEMO_APPROVAL_MODE=allow-once
+# exit_code=0
+--- stdout ---
+bootstrap-demo · database=ra_g4_ci_replay tenant=11111111-1111-4111-8111-000000000001 actor=11111111-1111-4111-8111-000000000103 approval_mode=allow-once
+[1] preflight.migration | latest=0016_v1_consistency ok=true
+[2] preflight.actor | kind=HUMAN roles=[HR_SPECIALIST] ok=true
+[3] lookup.job | code=DEMO-BE-001 found=true id=11111111-1111-4111-8111-000000000401 status=OPEN current_rubric_version_id=4facfb68-64ec-4500-b26a-7ff4db6c2f46 record_version=5
+[4] plan | state=NO_OP target=4facfb68-64ec-4500-b26a-7ff4db6c2f46 (v2)
+[5] gate.pre-write | skipped (state=NO_OP：不问人、零写入)
+outcome=NO_OP exit_code=0 writes=none (zero rows)
+BOOTSTRAP_RESULT: {"tool":"bootstrap-demo","outcome":"NO_OP","exit_code":0,"state":"NO_OP","database":"ra_g4_ci_replay","database_host":"127.0.0.1","database_port":5432,"database_user":"postgres","tenant_id":"11111111-1111-4111-8111-000000000001","actor_id":"11111111-1111-4111-8111-000000000103","approval_mode":"allow-once","job":{"id":"11111111-1111-4111-8111-000000000401","code":"DEMO-BE-001","title":"后端工程师（演示）","status":"OPEN","current_rubric_version_id":"4facfb68-64ec-4500-b26a-7ff4db6c2f46","record_version":5,"ref":"recruitment.job/DEMO-BE-001"},"rubric":{"version_id":"4facfb68-64ec-4500-b26a-7ff4db6c2f46","version_no":2,"payload_hash":"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f","ref":"recruitment.rubric_version/v2"},"approval":{"approval_id":"a3ad9fdd-a94d-4ecc-8d32-03fce6cc0434","status":"APPROVED","payload_schema_version":1,"canonical_payload_hash":"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f","decided_by_actor_id":"11111111-1111-4111-8111-000000000103","decided_at":"2026-11-14T20:33:24.516Z","record_version":2,"expires_at":null,"superseded_by_approval_id":null,"outcome":"NO_OP"},"pointer":{"before":"4facfb68-64ec-4500-b26a-7ff4db6c2f46","after":"4facfb68-64ec-4500-b26a-7ff4db6c2f46","aligned":true},"gate":{"requested":false,"result":"not-required","requests":[]},"writes":{"written":false,"steps":[]},"steps":[{"index":1,"step":"preflight.migration","tool":null,"summary":"latest=0016_v1_consistency ok=true","ok":true},{"index":2,"step":"preflight.actor","tool":null,"summary":"kind=HUMAN roles=[HR_SPECIALIST] ok=true","ok":true},{"index":3,"step":"lookup.job","tool":null,"summary":"code=DEMO-BE-001 found=true id=11111111-1111-4111-8111-000000000401 status=OPEN current_rubric_version_id=4facfb68-64ec-4500-b26a-7ff4db6c2f46 record_version=5","ok":true,"job_count":1},{"index":4,"step":"plan","tool":null,"summary":"state=NO_OP target=4facfb68-64ec-4500-b26a-7ff4db6c2f46 (v2)","ok":true},{"index":5,"step":"gate.pre-write","tool":null,"summary":"skipped (state=NO_OP：不问人、零写入)","ok":true}],"migration":{"latest":"0016_v1_consistency","required":"0015","ok":true},"actor":{"actor_id":"11111111-1111-4111-8111-000000000103","kind":"HUMAN","roles":["HR_SPECIALIST"],"ok":true}}
+--- stderr ---
+

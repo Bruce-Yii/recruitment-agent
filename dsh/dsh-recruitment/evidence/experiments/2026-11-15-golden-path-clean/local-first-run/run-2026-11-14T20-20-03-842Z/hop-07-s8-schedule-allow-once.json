@@ -1,0 +1,288 @@
+{
+  "id": "s8-schedule-allow-once",
+  "kind": "write",
+  "hop": 7,
+  "run_mode": "FIRST_RUN",
+  "label": "S8 interview_schedule（人机闸门 allow-once + 真实写库）",
+  "tool": "recruitment_interview_schedule",
+  "expect_note": "ok=true + replayed=false + 返回 interview id + interview 行 +1（真过闸门真写）",
+  "started_at": "2026-11-14T20:20:05.920Z",
+  "request": {
+    "intent": "CREATE",
+    "idempotency_key": "gp-e2e:facf76c2-d8bc-417e-aca1-2740f749ad4c:schedule-r1",
+    "application_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+    "round_no": 1,
+    "slot_code": "DEFAULT",
+    "scheduled_start_at": "2026-12-09T10:00:00+08:00",
+    "duration_minutes": 60,
+    "timezone": "Asia/Shanghai",
+    "delivery_mode": "VIDEO",
+    "interviewers": [
+      {
+        "actor_id": "11111111-1111-4111-8111-000000000103",
+        "role_in_interview": "INTERVIEWER",
+        "required_scorecard": true
+      },
+      {
+        "actor_id": "11111111-1111-4111-8111-000000000104",
+        "role_in_interview": "INTERVIEWER",
+        "required_scorecard": true
+      }
+    ],
+    "meeting": {
+      "provider": "SYNTHETIC_DEMO",
+      "account_scope": "golden-path",
+      "calendar_event_id": "synthetic-calendar-facf76c2d8bc",
+      "external_meeting_id": "synthetic-meeting-facf76c2d8bc",
+      "meeting_role": "PRIMARY"
+    }
+  },
+  "ok": true,
+  "result": {
+    "tool": "recruitment_interview_schedule",
+    "contract_version": "1.1.0",
+    "status": "OK",
+    "write": true,
+    "replayed": false,
+    "labels": {
+      "provenance": "FIXTURE",
+      "trigger": "MANUAL",
+      "connection": "NOT_CONNECTED"
+    },
+    "intent": "CREATE",
+    "command": {
+      "idempotency_key": "gp-e2e:facf76c2-d8bc-417e-aca1-2740f749ad4c:schedule-r1",
+      "args_digest": "sha256:d034911acc53dd5b7c21f56c45dc5f4cfaebf66cbda0ffb6e1345dc8d9f7c474"
+    },
+    "interview": {
+      "id": "427947a6-ccfe-4847-a1b7-0f54811525c1",
+      "application_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+      "candidate_id": "5a317cd4-85c1-4236-8270-8d7261265754",
+      "job_id": "11111111-1111-4111-8111-000000000401",
+      "round_no": 1,
+      "slot_code": "DEFAULT",
+      "stage_code": "S8",
+      "status": "SCHEDULED",
+      "record_version": 1,
+      "scheduled_start_at": "2026-12-09T02:00:00.000Z",
+      "scheduled_end_at": "2026-12-09T03:00:00.000Z",
+      "duration_minutes": 60,
+      "timezone": "Asia/Shanghai",
+      "status_changed_at": "2026-11-14T20:20:05.980Z",
+      "is_overdue_start": false,
+      "interviewers": [
+        {
+          "interviewer_id": "c4a48b8d-a6f8-4a0b-8db6-eca9044c78c4",
+          "actor_id": "11111111-1111-4111-8111-000000000103",
+          "display_name": "演示-HR 专员",
+          "role_in_interview": "INTERVIEWER",
+          "required_scorecard": true
+        },
+        {
+          "interviewer_id": "64eb163b-162a-4754-804d-288bae374170",
+          "actor_id": "11111111-1111-4111-8111-000000000104",
+          "display_name": "演示-面试官",
+          "role_in_interview": "INTERVIEWER",
+          "required_scorecard": true
+        }
+      ],
+      "meeting_binding": {
+        "state": "BOUND_ACTIVE",
+        "count": 1,
+        "bindings": [
+          {
+            "binding_id": "0d4e02ff-5d6b-4745-97e5-44710e02f65d",
+            "meeting_id": "225aef71-9793-41ff-a5ce-d92f40fe68f9",
+            "binding_method": "SCHEDULED",
+            "bound_at": "2026-11-14T20:20:05.980Z",
+            "bound_by_actor_id": "11111111-1111-4111-8111-000000000103",
+            "provider": "SYNTHETIC_DEMO",
+            "account_scope": "golden-path",
+            "external_meeting_id": "synthetic-meeting-facf76c2d8bc",
+            "calendar_event_id": "synthetic-calendar-facf76c2d8bc",
+            "meeting_role": "PRIMARY"
+          }
+        ]
+      },
+      "transcript": {
+        "state": "PENDING",
+        "reason_code": "WAITING",
+        "no_transcript": true
+      },
+      "evaluation": {
+        "required_scorecards": 2,
+        "submitted": 0,
+        "waived": 0,
+        "pending": 2,
+        "evaluation_ready": false,
+        "blockers": [
+          {
+            "code": "SCORECARD_PENDING",
+            "interviewer_id": "c4a48b8d-a6f8-4a0b-8db6-eca9044c78c4",
+            "actor_id": "11111111-1111-4111-8111-000000000103"
+          },
+          {
+            "code": "SCORECARD_PENDING",
+            "interviewer_id": "64eb163b-162a-4754-804d-288bae374170",
+            "actor_id": "11111111-1111-4111-8111-000000000104"
+          },
+          {
+            "code": "RECORD_NOT_READY"
+          }
+        ]
+      },
+      "warnings": []
+    },
+    "changes": {
+      "created": [
+        {
+          "table": "interview",
+          "id": "427947a6-ccfe-4847-a1b7-0f54811525c1"
+        },
+        {
+          "table": "interviewer",
+          "id": "c4a48b8d-a6f8-4a0b-8db6-eca9044c78c4"
+        },
+        {
+          "table": "interviewer",
+          "id": "64eb163b-162a-4754-804d-288bae374170"
+        },
+        {
+          "table": "meeting",
+          "id": "225aef71-9793-41ff-a5ce-d92f40fe68f9"
+        },
+        {
+          "table": "meeting_binding",
+          "id": "0d4e02ff-5d6b-4745-97e5-44710e02f65d"
+        },
+        {
+          "table": "business_task",
+          "id": "0af1c3a9-89f6-4208-8f5c-0f9806a78df7"
+        }
+      ],
+      "updated": [],
+      "unchanged": []
+    },
+    "effects": {
+      "meeting_bound": true,
+      "external_call_made": false
+    },
+    "warnings": [],
+    "next_actions": []
+  },
+  "rendered": "interview 427947a6-ccfe-4847-a1b7-0f54811525c1 round=1 slot=DEFAULT [SCHEDULED] stage=S8  2026-12-09T02:00:00.000Z → 2026-12-09T03:00:00.000Z\n  application=facf76c2-d8bc-417e-aca1-2740f749ad4c candidate=5a317cd4-85c1-4236-8270-8d7261265754 job=11111111-1111-4111-8111-000000000401 timezone=Asia/Shanghai\n  interviewers: 演示-HR 专员(INTERVIEWER, required) · 演示-面试官(INTERVIEWER, required)\n  meeting_binding: BOUND_ACTIVE (1 active)\n  intent=CREATE replayed=false  changes.created=6  labels: FIXTURE/MANUAL/NOT_CONNECTED\n    + interview 427947a6-ccfe-4847-a1b7-0f54811525c1\n    + interviewer c4a48b8d-a6f8-4a0b-8db6-eca9044c78c4\n    + interviewer 64eb163b-162a-4754-804d-288bae374170\n    + meeting 225aef71-9793-41ff-a5ce-d92f40fe68f9\n    + meeting_binding 0d4e02ff-5d6b-4745-97e5-44710e02f65d\n    + business_task 0af1c3a9-89f6-4208-8f5c-0f9806a78df7",
+  "row_counts_before": {
+    "application": 2,
+    "business_task": 0,
+    "candidate": 2,
+    "decision": 1,
+    "event_inbox": 8,
+    "intake_asset": 1,
+    "intake_record": 1,
+    "interview": 0,
+    "interview_record": 0,
+    "interviewer": 0,
+    "meeting": 0,
+    "meeting_binding": 0,
+    "resume": 1,
+    "resume_version": 1,
+    "scorecard": 0,
+    "transcript_artifact": 0,
+    "transcript_segment": 0
+  },
+  "row_counts_after": {
+    "application": 2,
+    "business_task": 1,
+    "candidate": 2,
+    "decision": 1,
+    "event_inbox": 8,
+    "intake_asset": 1,
+    "intake_record": 1,
+    "interview": 1,
+    "interview_record": 0,
+    "interviewer": 2,
+    "meeting": 1,
+    "meeting_binding": 1,
+    "resume": 1,
+    "resume_version": 1,
+    "scorecard": 0,
+    "transcript_artifact": 0,
+    "transcript_segment": 0
+  },
+  "row_count_delta": {
+    "business_task": 1,
+    "interview": 1,
+    "interviewer": 2,
+    "meeting": 1,
+    "meeting_binding": 1
+  },
+  "readback": {
+    "approval_requests": 1,
+    "interview": {
+      "interview": {
+        "id": "427947a6-ccfe-4847-a1b7-0f54811525c1",
+        "application_id": "facf76c2-d8bc-417e-aca1-2740f749ad4c",
+        "round_no": 1,
+        "slot_code": "DEFAULT",
+        "stage_code": "S8",
+        "status": "SCHEDULED",
+        "scheduled_start_at": "2026-12-09T02:00:00.000Z",
+        "scheduled_end_at": "2026-12-09T03:00:00.000Z",
+        "timezone": "Asia/Shanghai",
+        "record_version": 1
+      },
+      "interviewers": [
+        {
+          "actor_id": "11111111-1111-4111-8111-000000000103",
+          "display_name": "演示-HR 专员",
+          "role_in_interview": "INTERVIEWER",
+          "required_scorecard": true,
+          "scorecard_due_at": null
+        },
+        {
+          "actor_id": "11111111-1111-4111-8111-000000000104",
+          "display_name": "演示-面试官",
+          "role_in_interview": "INTERVIEWER",
+          "required_scorecard": true,
+          "scorecard_due_at": null
+        }
+      ],
+      "meeting_bindings": [
+        {
+          "id": "0d4e02ff-5d6b-4745-97e5-44710e02f65d",
+          "meeting_id": "225aef71-9793-41ff-a5ce-d92f40fe68f9",
+          "provider": "SYNTHETIC_DEMO",
+          "account_scope": "golden-path",
+          "external_meeting_id": "synthetic-meeting-facf76c2d8bc",
+          "calendar_event_id": "synthetic-calendar-facf76c2d8bc",
+          "binding_method": "SCHEDULED",
+          "bound_at": "2026-11-14T20:20:05.980Z",
+          "unbound_at": null
+        }
+      ],
+      "transcript_artifacts": [],
+      "transcript_segment_count": 0,
+      "interview_records": [],
+      "scorecards": [],
+      "business_tasks": [
+        {
+          "id": "0af1c3a9-89f6-4208-8f5c-0f9806a78df7",
+          "task_type": "INTERVIEW_SCHEDULE",
+          "status": "SUCCEEDED",
+          "business_refs": [
+            {
+              "id": "427947a6-ccfe-4847-a1b7-0f54811525c1",
+              "kind": "INTERVIEW"
+            },
+            {
+              "args_digest": "sha256:d034911acc53dd5b7c21f56c45dc5f4cfaebf66cbda0ffb6e1345dc8d9f7c474",
+              "result_interview_id": "427947a6-ccfe-4847-a1b7-0f54811525c1"
+            }
+          ]
+        }
+      ],
+      "events": []
+    }
+  },
+  "outcome": "PASS"
+}

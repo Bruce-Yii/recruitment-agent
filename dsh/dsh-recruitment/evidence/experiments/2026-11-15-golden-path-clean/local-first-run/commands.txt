@@ -1,0 +1,30 @@
+# Golden Path harness 命令原文（口令按约定脱敏，不落盘）
+
+# 0) 一次性库：只 drop/建 ra_g4_clean（共享库 ra_s6s7 / ra_ci_clean 不碰）
+$env:PGPASSWORD='<本机演示库口令，按约定注入，不落盘>'
+$psql='D:\12412\PostgreSQL\bin\psql.exe'
+& $psql -U postgres -h 127.0.0.1 -p 5432 -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ra_g4_clean"
+& $psql -U postgres -h 127.0.0.1 -p 5432 -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ra_g4_clean"
+Get-ChildItem db\migrations\*.sql | Sort-Object Name | ForEach-Object { & $psql -U postgres -h 127.0.0.1 -p 5432 -d ra_g4_clean -v ON_ERROR_STOP=1 -q -f $_.FullName }
+
+# 1) 干净快照（见 work/verify-2026-11-15-g4/a/SNAPSHOT.txt）
+git -C <repo> archive --format=tar -o "$env:TEMP\g4-snapshot-2d987d4.tar" 2d987d4d923c90683790ab98b8e115f4983a9b78
+tar -x -f "$env:TEMP\g4-snapshot-2d987d4.tar" -C "$env:TEMP\g4-snapshot-2d987d4"
+Copy-Item -Recurse -Force <repo>\dsh\dsh-recruitment\manual\golden-path\* <snap>\dsh\dsh-recruitment\manual\golden-path\
+New-Item -ItemType Junction -Path <snap>\dsh\dsh-recruitment\node_modules -Target <repo>\dsh\dsh-recruitment\node_modules
+
+# local-first-run（本次证据的这次运行）
+$env:GOLDEN_PATH_EVIDENCE_DIR='D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\evidence\experiments\2026-11-15-golden-path-clean\local-first-run'
+$env:GOLDEN_PATH_EXPECT_RUN_MODE='FIRST_RUN'
+$env:GOLDEN_PATH_HEAD='2d987d4d923c90683790ab98b8e115f4983a9b78'
+$env:RECRUITMENT_TEST_DB='ra_g4_clean'
+$env:RECRUITMENT_TEST_DB_HOST='127.0.0.1'
+$env:RECRUITMENT_TEST_DB_PORT='5432'
+$env:RECRUITMENT_TEST_DB_USER='postgres'
+$env:RECRUITMENT_DB_PASSWORD='<本机演示库口令>'
+$env:RECRUITMENT_PYTHON_BIN='D:\Python3.12.9\python.exe'
+node <snap>\dsh\dsh-recruitment\manual\golden-path\run-golden-path-rerun.mjs
+
+# 独立读回（只读）
+$psql -U postgres -h 127.0.0.1 -p 5432 -d ra_g4_clean -f work/verify-2026-11-15-g4/a/db-readback.sql
+

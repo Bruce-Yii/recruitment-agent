@@ -1,0 +1,92 @@
+{
+  "server": {
+    "db": "ra_g4_ci_replay",
+    "now": "2026-11-14T20:33:27.077Z",
+    "version": "PostgreSQL 17.11 on x86_64-windows, compiled by msvc-19.44.35229, 64-bit"
+  },
+  "migrations": [
+    "0001_init",
+    "0002_seed",
+    "0003_review_queue",
+    "0004_stage_catalog",
+    "0005_version_binding",
+    "0006_integrity_gaps",
+    "0007_decision_integrity",
+    "0008_decision_uniqueness",
+    "0009_application_identity",
+    "0010_migration_ledger",
+    "0011_task_runtime",
+    "0012_engine_state",
+    "0013_trace_chain",
+    "0014_tenant_config",
+    "0015_runtime_cutover",
+    "0016_v1_consistency"
+  ],
+  "job": {
+    "id": "11111111-1111-4111-8111-000000000401",
+    "code": "DEMO-BE-001",
+    "title": "后端工程师（演示）",
+    "status": "OPEN",
+    "current_job_version_id": "11111111-1111-4111-8111-000000000402",
+    "current_rubric_version_id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+    "hiring_manager_actor_id": "11111111-1111-4111-8111-000000000102"
+  },
+  "rubrics": [
+    {
+      "id": "11111111-1111-4111-8111-000000000403",
+      "version_no": 1,
+      "payload_hash": "a74e84bb9fa05063c72303924ffdf9aa497682b33f2e94f752daf2a14dc39d79",
+      "approvals": [],
+      "dimension_count": 3,
+      "dimension_keys": [
+        "backend_depth",
+        "async_pipeline",
+        "frontend_basics"
+      ]
+    },
+    {
+      "id": "4facfb68-64ec-4500-b26a-7ff4db6c2f46",
+      "version_no": 2,
+      "payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
+      "approvals": [
+        {
+          "status": "APPROVED",
+          "hash_match": true
+        }
+      ],
+      "dimension_count": 3,
+      "dimension_keys": [
+        "work_exists",
+        "edu_exists",
+        "team_lead"
+      ]
+    }
+  ],
+  "actor": {
+    "id": "11111111-1111-4111-8111-000000000103",
+    "kind": "HUMAN",
+    "display_name": "演示-HR 专员"
+  },
+  "hiring_manager_is_actor": false,
+  "counts": {
+    "application": 1,
+    "business_task": 0,
+    "candidate": 1,
+    "decision": 0,
+    "event_inbox": 4,
+    "intake_asset": 0,
+    "intake_record": 0,
+    "interview": 0,
+    "interview_record": 0,
+    "interviewer": 0,
+    "meeting": 0,
+    "meeting_binding": 0,
+    "resume": 0,
+    "resume_version": 0,
+    "scorecard": 0,
+    "transcript_artifact": 0,
+    "transcript_segment": 0
+  },
+  "decisions_by_scope": [],
+  "both_bound": 0
+}

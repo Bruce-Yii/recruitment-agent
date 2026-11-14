@@ -412,3 +412,256 @@ jobs:
         working-directory: converter
         run: python -m pytest review/tests -q
 
+  # ==========================================================================
+  # G4 · Golden Path 端到端门（干净库 S6 → S10，FIRST_RUN + RERUN）
+  #
+  # 为什么要有这个 job（R3 证据铁律 / E1 端到端可达）：
+  #   * 上面 4 个 job 只证明"代码自洽"：编译、插件单测、迁移链、converter 两道；
+  #   * v1.0 的验收标准是**一条真实业务链端到端跑通**（S6 接入 → S7 初筛 → S8 排期 →
+  #     S9 转写 → S10 面评/汇总/决策/阶段推进），而这条链此前**没有任何 CI 覆盖**；
+  #   * 本 job 从**空库**按名重放 0001→最新迁移 + G5 bootstrap，再用 harness 跑两遍
+  #     （FIRST_RUN 建链、RERUN 证幂等），最后 summary 机检 + psql 独立读回双重判定。
+  #
+  # 失败语义：任一步失败 → job 红；断言只认 exit code 与机检结果，不看"日志像不像通过"。
+  # 证据：两轮 run dir 全量上传 artifact（`if: always()`——失败现场比成功现场更值钱）。
+  # ==========================================================================
+  golden-path:
+    name: golden path (clean db S6→S10, FIRST_RUN + RERUN)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ra_golden_path
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: ra_golden_path
+      RECRUITMENT_DB_PASSWORD: postgres
+      RECRUITMENT_TEST_DB: ra_golden_path
+      RECRUITMENT_DB_NAME: ra_golden_path
+      RECRUITMENT_PYTHON_BIN: python
+      GOLDEN_PATH_HEAD: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Install plugin dependencies
+        working-directory: dsh/dsh-recruitment
+        run: pnpm install --frozen-lockfile
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install converter dependencies (PyMuPDF / python-docx / Pillow)
+        # harness 走真实 converter 解析合成 PDF；缺依赖时 converter 明确 fail（不是 skip），
+        # 所以这里必须装。复用同一份 converter/requirements.txt，不新增依赖。
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet -r converter/requirements.txt
+
+      - name: Apply migrations 0001 → latest on the clean database
+        # 目录驱动（不硬编码文件名）：新增迁移自动纳入，杜绝"CI 绿但新迁移从没被重放"。
+        # 逐条 -f + ON_ERROR_STOP=1：一条失败即整步红，日志里留下具体文件名。
+        run: |
+          set -euo pipefail
+          for f in $(ls db/migrations/*.sql | sort); do
+            echo "== $f"
+            psql -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      - name: Bootstrap demo preconditions (G5)
+        # 干净库重放迁移后**没有任何 approval 行** → S7 必然 NO_APPROVED_RUBRIC，harness 会 BLOCKED。
+        # 所以 bootstrap 是 harness 的显式前置，不藏进 harness：失败时红在这一步，责任清楚。
+        run: node scripts/bootstrap-demo.mjs
+
+      - name: Golden Path FIRST_RUN (S6 → S10)
+        run: |
+          set -euo pipefail
+          GOLDEN_PATH_EVIDENCE_DIR="$GITHUB_WORKSPACE/golden-path-evidence/first-run" \
+          GOLDEN_PATH_EXPECT_RUN_MODE=FIRST_RUN \
+            node dsh/dsh-recruitment/manual/golden-path/run-golden-path-rerun.mjs
+
+      - name: Golden Path RERUN (same chain, must be RERUN semantics)
+        # 第二轮不是"再跑一遍求稳"：它证明同一库上重跑是幂等的（replay 不产生重复事实），
+        # 以及 harness 能区分 FIRST_RUN / RERUN 语义。
+        run: |
+          set -euo pipefail
+          GOLDEN_PATH_EVIDENCE_DIR="$GITHUB_WORKSPACE/golden-path-evidence/rerun" \
+          GOLDEN_PATH_EXPECT_RUN_MODE=RERUN \
+            node dsh/dsh-recruitment/manual/golden-path/run-golden-path-rerun.mjs
+
+      - name: Golden Path 机检（四数 + 阶段 S10 + 视图 0 违规）
+        # 两道**独立**判定，任一失败即整步红：
+        #   (a) summary.json 机检：harness 自述的四数 / run_mode / 终态 / 视图计数；
+        #   (b) psql 断言块：**不经过 harness**，直接查干净库的业务事实。
+        # 只有 (a) 不够——harness 自己写 summary、自己判自己（R8 不自审）；
+        # 只有 (b) 不够——库对了不代表 harness 的 16 跳真的都跑过、失败数真的是 0。
+        run: |
+          set -uo pipefail
+          STATUS=0
+          {
+            node - <<'NODE'
+            const fs = require('node:fs')
+            const path = require('node:path')
+
+            const root = path.join(process.env.GITHUB_WORKSPACE ?? process.cwd(), 'golden-path-evidence')
+            const modes = [['FIRST_RUN', path.join(root, 'first-run')], ['RERUN', path.join(root, 'rerun')]]
+            const show = (v) => JSON.stringify(v)
+
+            let bad = 0
+            const fail = (msg) => { bad += 1; console.error('::error title=Golden Path 机检::' + msg) }
+            const ok = (msg) => console.log('  ok   ' + msg)
+
+            function findSummaries(dir) {
+              const found = []
+              const walk = (d) => {
+                for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+                  const p = path.join(d, e.name)
+                  if (e.isDirectory()) { if (e.name !== 'node_modules') walk(p) }
+                  else if (e.name === 'summary.json') found.push(p)
+                }
+              }
+              if (fs.existsSync(dir)) walk(dir)
+              return found
+            }
+
+            for (const [mode, dir] of modes) {
+              console.log('== ' + mode + '（证据根: ' + dir + '）')
+              const files = findSummaries(dir)
+              if (files.length !== 1) {
+                fail(mode + ': 期望恰好 1 个 summary.json，实际 ' + files.length + ' 个（dir=' + dir + '）')
+                continue
+              }
+              const file = files[0]
+              const runDir = path.dirname(file)
+              let summary
+              try { summary = JSON.parse(fs.readFileSync(file, 'utf8')) } catch (err) {
+                fail(mode + ': summary.json 不是合法 JSON：' + err.message)
+                continue
+              }
+              const counts = summary.counts ?? {}
+              const acceptance = summary.acceptance ?? {}
+              const finalState = summary.final_state ?? {}
+              console.log('  run dir : ' + runDir)
+              console.log('  summary : ' + file)
+              console.log('  四数    : hops=' + show(counts.hops) + ' passed=' + show(counts.passed) + ' failed=' + show(counts.failed) + ' skipped=' + show(counts.skipped))
+
+              const eq = (label, actual, expected) => {
+                if (actual === expected) { ok(label + '=' + show(actual)); return }
+                fail(mode + ': ' + label + '=' + show(actual) + '，期望 ' + show(expected))
+              }
+              const ge = (label, actual, min) => {
+                if (typeof actual === 'number' && actual >= min) { ok(label + '=' + actual + '（>= ' + min + '）'); return }
+                fail(mode + ': ' + label + '=' + show(actual) + '，期望 >= ' + min)
+              }
+
+              eq('run_mode', summary.run_mode, mode)
+              eq('counts.hops', counts.hops, 16)
+              eq('counts.passed', counts.passed, 16)
+              eq('counts.failed', counts.failed, 0)
+              eq('counts.skipped', counts.skipped, 0)
+              eq('acceptance.ok', acceptance.ok, true)
+              eq('final_state.application_stage', finalState.application_stage, 'S10')
+              ge('final_state.submitted_scorecard_count', finalState.submitted_scorecard_count, 1)
+              eq('final_state.consistency_view_violations_all', finalState.consistency_view_violations_all, 0)
+            }
+
+            if (bad > 0) {
+              console.error('GOLDEN_PATH_CHECK: FAIL（' + bad + ' 项断言失败）')
+              process.exit(1)
+            }
+            console.log('GOLDEN_PATH_CHECK: PASS')
+          NODE
+          } 2>&1 | tee /tmp/golden-path-check.log || STATUS=$?
+
+          echo "== psql 独立读回（干净库断言；不 import 产品代码）"
+          psql -v ON_ERROR_STOP=1 <<'SQL' 2>&1 | tee -a /tmp/golden-path-check.log || STATUS=$?
+          DO $$
+          DECLARE
+            v_application int;
+            v_s10 int;
+            v_submitted int;
+            v_violations int;
+            v_decisions int;
+          BEGIN
+            select count(*) into v_application from recruitment.application;
+            select count(*) into v_s10 from recruitment.application where current_stage_code = 'S10';
+            select count(*) into v_submitted from recruitment.scorecard where status = 'SUBMITTED';
+            select count(*) into v_violations from recruitment.v_application_stage_consistency;
+            select count(*) into v_decisions from recruitment.decision;
+
+            raise notice '读回：application=% S10申请=% SUBMITTED面评=% 视图违规=% decision=%',
+              v_application, v_s10, v_submitted, v_violations, v_decisions;
+
+            if v_application < 1 then
+              raise exception 'Golden Path 断言失败：application 行数 = %（期望 >= 1）', v_application;
+            end if;
+            if v_s10 < 1 then
+              raise exception 'Golden Path 断言失败：current_stage_code=S10 的申请数 = %（期望 >= 1）', v_s10;
+            end if;
+            if v_submitted < 1 then
+              raise exception 'Golden Path 断言失败：status=SUBMITTED 的面评数 = %（期望 >= 1）', v_submitted;
+            end if;
+            if v_violations <> 0 then
+              raise exception 'Golden Path 断言失败：v_application_stage_consistency 违规行 = %（期望 = 0）', v_violations;
+            end if;
+            if v_decisions < 2 then
+              raise exception 'Golden Path 断言失败：decision 行数 = %（期望 >= 2：SCREENING/S7 + STAGE/S10）', v_decisions;
+            end if;
+
+            raise notice 'GOLDEN_PATH_DB_CHECK: PASS';
+          END
+          $$;
+          SQL
+
+          {
+            echo "## Golden Path 机检（四数 + 阶段 S10 + 视图 0 违规）"
+            echo ""
+            echo '```'
+            cat /tmp/golden-path-check.log
+            echo '```'
+            echo ""
+            echo "- 证据目录: \`golden-path-evidence/\`（artifact \`golden-path-evidence\`，两轮 run dir 全量）"
+            if [ "$STATUS" -ne 0 ]; then
+              echo "- 结果: **FAIL**（exit $STATUS）"
+            else
+              echo "- 结果: **PASS**"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::error title=Golden Path 机检 FAIL::summary 机检或 psql 独立读回失败（见上方日志）"
+            exit 1
+          fi
+          echo "GOLDEN_PATH_CHECK: PASS"
+
+      - name: Upload golden-path evidence
+        # if: always()：harness 失败时 run dir 里恰好有最有价值的现场；
+        # 只在成功时收证据等于"只留下能证明自己对的东西"。
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-path-evidence
+          path: golden-path-evidence/
+          if-no-files-found: warn
+

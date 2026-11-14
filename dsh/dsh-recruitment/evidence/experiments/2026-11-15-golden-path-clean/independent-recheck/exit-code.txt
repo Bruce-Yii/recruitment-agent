@@ -1,0 +1,7 @@
+# B 的 CI 等价复跑 · 全部 exit code（0 = 成功）
+first_run_exit=0（日志：ci-sim-first-run/run-2026-11-14T20-33-26-200Z/run.log；harness 退出码见 phase2-exit-codes.txt）
+rerun_exit=0（日志：ci-sim-rerun/run-2026-11-14T20-33-30-573Z/run.log）
+machine_check_node_exit=0（CI 里同一份 node 机检，见 verify.txt §2）
+ci_psql_block_exit=0（CI 里同一份 psql 断言块，见 verify.txt §3）
+independent_psql_readback_exit=0（见 db-readback.txt 与 verify.txt §4）
+reconciliation_exit=0（60 项对账全过，见 verify.txt §5）

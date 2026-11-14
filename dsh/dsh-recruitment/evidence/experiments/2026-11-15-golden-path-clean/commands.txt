@@ -1,0 +1,134 @@
+# G4 复现命令原文（owner-g4 汇总；口令一律 `<本机演示库口令>`，不落盘）
+
+> 对应证据：`dsh/dsh-recruitment/evidence/experiments/2026-11-15-golden-path-clean/`
+> 子证据目录里的 `local-first-run/commands.txt`、`local-rerun/commands.txt` 是 A 的原始命令；
+> 本文件是**汇总 + 独立复核 + CI 等价复跑**的命令清单。Windows PowerShell（pwsh）为准，CI（bash）见 §7。
+
+---
+
+## 0. 环境
+
+```powershell
+# 仓库根 = D:\12412\dsh工作区\projects\recruitment-agent
+$env:PGPASSWORD='<本机演示库口令>'
+$psql='D:\12412\PostgreSQL\bin\psql.exe'
+node --version        # v24.16.0
+& 'D:\Python3.12.9\python.exe' --version   # Python 3.12.9（converter 用）
+```
+
+---
+
+## 1. 干净快照（绑定显式 SHA，不用工作树）
+
+```powershell
+$env:TEMP
+git -C <repo> archive --format=tar -o "$env:TEMP\g4-snapshot-2d987d4.tar" 2d987d4d923c90683790ab98b8e115f4983a9b78
+# archive sha256 = 8fd214b9f5748de96f18c380f6b10be5247f7dcd1df463cac4b3127cfb2d51de  (18,421,760 bytes)
+tar -x -f "$env:TEMP\g4-snapshot-2d987d4.tar" -C "$env:TEMP\g4-snapshot-2d987d4"
+# overlay 本 lane 的 harness（工作树版本；sha256 = fb1061cd3683e05f6b026e9558de5bf0ced646e8a9b4c7036f5a4f03df0e257e）
+Copy-Item -Recurse -Force <repo>\dsh\dsh-recruitment\manual\golden-path\* "$env:TEMP\g4-snapshot-2d987d4\dsh\dsh-recruitment\manual\golden-path\"
+# 依赖（不入库）：junction 指回真实仓库
+New-Item -ItemType Junction -Path "$env:TEMP\g4-snapshot-2d987d4\dsh\dsh-recruitment\node_modules" -Target <repo>\dsh\dsh-recruitment\node_modules
+```
+
+## 2. 一次性干净库 + 重放迁移（0001→0016）
+
+```powershell
+& $psql -U postgres -h 127.0.0.1 -p 5432 -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ra_g4_clean"
+& $psql -U postgres -h 127.0.0.1 -p 5432 -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ra_g4_clean"
+Get-ChildItem db\migrations\*.sql | Sort-Object Name | ForEach-Object {
+  & $psql -U postgres -h 127.0.0.1 -p 5432 -d ra_g4_clean -v ON_ERROR_STOP=1 -q -f $_.FullName
+  if ($LASTEXITCODE -ne 0) { throw "migration failed: $($_.Name)" }
+}
+# 台账应为 0001..0016 共 16 行
+& $psql -U postgres -h 127.0.0.1 -p 5432 -d ra_g4_clean -tAc "select count(*), max(version) from recruitment.schema_migration"
+```
+
+## 3. FIRST_RUN（内置 bootstrap；一条 harness 命令）
+
+```powershell
+$env:GOLDEN_PATH_HEAD='2d987d4d923c90683790ab98b8e115f4983a9b78'
+$env:GOLDEN_PATH_EVIDENCE_DIR='<repo>\dsh\dsh-recruitment\evidence\experiments\2026-11-15-golden-path-clean\local-first-run'
+$env:GOLDEN_PATH_EXPECT_RUN_MODE='FIRST_RUN'
+$env:RECRUITMENT_TEST_DB='ra_g4_clean'
+$env:RECRUITMENT_TEST_DB_HOST='127.0.0.1'
+$env:RECRUITMENT_TEST_DB_PORT='5432'
+$env:RECRUITMENT_TEST_DB_USER='postgres'
+$env:RECRUITMENT_DB_PASSWORD='<本机演示库口令>'
+$env:RECRUITMENT_PYTHON_BIN='D:\Python3.12.9\python.exe'
+node "$env:TEMP\g4-snapshot-2d987d4\dsh\dsh-recruitment\manual\golden-path\run-golden-path-rerun.mjs"
+# 期望 exit 0；summary.json => counts={hops:16,passed:16,failed:0,skipped:0}, acceptance.ok=true, final_state.application_stage='S10'
+```
+
+## 4. RERUN（同一库同一快照；逐跳幂等、零写入）
+
+```powershell
+$env:GOLDEN_PATH_EVIDENCE_DIR='<repo>\dsh\dsh-recruitment\evidence\experiments\2026-11-15-golden-path-clean\local-rerun'
+$env:GOLDEN_PATH_EXPECT_RUN_MODE='RERUN'
+node "$env:TEMP\g4-snapshot-2d987d4\dsh\dsh-recruitment\manual\golden-path\run-golden-path-rerun.mjs"
+# 期望 exit 0；run_mode=RERUN；HOP2/5/16 NO_OP；HOP4/15 ALREADY_DECIDED；HOP7/9/12/13 replayed=true；
+# counts_delta_vs_preflight={}（全库零写入）
+```
+
+## 5. 独立 psql 只读读回（不 import 产品代码）
+
+```powershell
+# A 的读回
+& $psql -U postgres -h 127.0.0.1 -p 5432 -d ra_g4_clean -f work\verify-2026-11-15-g4\a\db-readback.sql
+# Owner 的独立读回（app_id 取自 summary.json 的 application_id）
+& $psql -U postgres -h 127.0.0.1 -p 5432 -d ra_g4_clean -v app_id='<application_id>' -f work\verify-2026-11-15-g4\owner\independent-readback.sql
+```
+
+期望值断言（owner 读回 SQL 最后一段）：`stage_is_s10=t`、`submitted_ge_1=t`、`screening_advance=t`、
+`stage_decision_s10=t`、`view_zero_violations=t`、`stage_event_s9_s10_once=t`。
+
+## 6. 反证（不为了绿放宽断言）
+
+```powershell
+# 6.1 负例（harness 内）：HOP6 / HOP11 用 approval=deny → FORBIDDEN/APPROVAL_NOT_GRANTED，行数 +0
+#     证据：local-first-run/run-*/summary.negative_controls
+# 6.2 RUN_MODE 守卫反证：库内是 RERUN，却声明 FIRST_RUN → exit 1 + run-mode-guard.json(ok=false)
+$env:GOLDEN_PATH_EXPECT_RUN_MODE='FIRST_RUN'
+node "$env:TEMP\g4-snapshot-2d987d4\dsh\dsh-recruitment\manual\golden-path\run-golden-path-rerun.mjs"
+# 期望 exit 1（现场：work/verify-2026-11-15-g4/a/debug/guard-test/）
+```
+
+## 7. CI job 的本地等价复跑（B；完整脚本见 `work/verify-2026-11-15-g4/ci-rehearsal/`）
+
+```powershell
+# YAML 语法/结构/既有 job 等价/bash -n：
+& 'D:\Python3.12.9\python.exe' work\verify-2026-11-15-g4\ci-rehearsal\validate-ci-yaml.py <repo> 2d987d4d923c90683790ab98b8e115f4983a9b78 work\verify-2026-11-15-g4\ci-rehearsal
+#   => CI-YAML-VALIDATE: PASS
+# 机检脚本反例（证明守卫会失败）：
+& work\verify-2026-11-15-g4\ci-rehearsal\checker-fixtures\run-guard-tests.ps1
+#   => GUARD-FAIL-TEST: PASS
+# 完整两轮 CI 等价门（新库 ra_g4_ci_replay → 迁移 → 显式 bootstrap → FIRST_RUN → RERUN → 机检 → psql）：
+& work\verify-2026-11-15-g4\ci-rehearsal\phase2-replay.ps1
+#   => PHASE2-REPLAY: PASS（两轮 exit 0）
+& work\verify-2026-11-15-g4\ci-rehearsal\phase2-machine-check.ps1
+#   => GOLDEN_PATH_CHECK: PASS
+& $psql -U postgres -h 127.0.0.1 -p 5432 -d ra_g4_ci_replay -v ON_ERROR_STOP=1 -f work\verify-2026-11-15-g4\ci-rehearsal\phase2-ci-psql-block.sql
+#   => GOLDEN_PATH_DB_CHECK: PASS
+```
+
+CI 端的等价步骤（`.github/workflows/ci.yml` 的 `golden-path` job）：
+`config service postgres:17@ra_golden_path` → checkout → node 24 → pnpm install → python 3.12 +
+`pip install -r converter/requirements.txt` → 目录驱动重放 `0001→最新` → `node scripts/bootstrap-demo.mjs` →
+`GOLDEN_PATH_EXPECT_RUN_MODE=FIRST_RUN` harness → `...=RERUN` harness → summary 机检（node）+ psql `DO $$` 断言块 →
+`actions/upload-artifact@v4`（`if: always()`）。
+
+> **远端 CI 未执行**：本 lane 禁止 git push；workflow 只能跑已推送提交。需总控提交/推送后 `gh workflow run CI`
+> （或 push 到 `main` / PR）验证 job 在 GitHub Actions 的 ubuntu-latest + postgres service 上真实 green。
+
+## 8. Owner 做的独立核对（不依赖 A/B 自述）
+
+```powershell
+# 8.1 两次 summary.json 的四数/终态/acceptance/绑定 SHA
+$s = Get-Content '<run>\summary.json' -Raw | ConvertFrom-Json
+$s.run_mode; $s.counts; $s.final_state.application_stage; $s.acceptance
+# 8.2 证据 SHA256SUMS 全量重算（A 的每个 local-* 目录）
+# 8.3 MANIFEST.sha256 全量重算（本证据目录）
+# 8.4 独立 psql 读回（见 §5）与 summary 逐项对账
+```
+
+核对输出见 `work/verify-2026-11-15-g4/REPORT.md` §6。

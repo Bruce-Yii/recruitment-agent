@@ -1,0 +1,54 @@
+# G4-B Phase 2 · 命令原文（口令脱敏：仅以 env 注入，不落盘、不进日志）
+# 快照：git archive 2d987d4d923c90683790ab98b8e115f4983a9b78 -> %TEMP%\g4-snapshot-b-2d987d4
+#       + overlay dsh/dsh-recruitment/manual/golden-path/**（A 终版）
+
+$env:PGPASSWORD="<本机演示库口令>"
+$env:PGUSER="postgres"; $env:PGHOST="127.0.0.1"; $env:PGPORT="5432"
+
+# 0) 只创建/清理本 lane 的一次性库 ra_g4_ci_replay（共享库 ra_s6s7 未触碰）
+$psql = "D:\12412\PostgreSQL\bin\psql.exe"
+& $psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS ra_g4_ci_replay"
+& $psql -U postgres -d postgres -c "CREATE DATABASE ra_g4_ci_replay"
+
+# 1) 按名重放 0001→0016（快照源码）
+Get-ChildItem "$env:TEMP\g4-snapshot-b-2d987d4\db\migrations\*.sql" | Sort-Object Name | ForEach-Object {
+  & $psql -d ra_g4_ci_replay -v ON_ERROR_STOP=1 -q -f $_.FullName
+  if ($LASTEXITCODE -ne 0) { throw "migration failed: $($_.Name)" } }
+
+# 2) 显式 bootstrap（与 ci.yml golden-path job 的 step 一一对应）
+$env:RECRUITMENT_DB_NAME="ra_g4_ci_replay"; $env:RECRUITMENT_DB_PASSWORD=$env:PGPASSWORD
+Push-Location "$env:TEMP\g4-snapshot-b-2d987d4"; node scripts/bootstrap-demo.mjs; Pop-Location
+
+# 3) harness FIRST_RUN（证据根 = work/verify-2026-11-15-g4/ci-rehearsal/phase2-first-run）
+$env:RECRUITMENT_TEST_DB="ra_g4_ci_replay"; $env:RECRUITMENT_TEST_DB_HOST="127.0.0.1"
+$env:RECRUITMENT_TEST_DB_PORT="5432"; $env:RECRUITMENT_TEST_DB_USER="postgres"
+$env:RECRUITMENT_PYTHON_BIN="D:\Python3.12.9\python.exe"
+$env:GOLDEN_PATH_HEAD="2d987d4d923c90683790ab98b8e115f4983a9b78"
+$env:GOLDEN_PATH_EVIDENCE_DIR="<repo>\work\verify-2026-11-15-g4\ci-rehearsal\phase2-first-run"
+$env:GOLDEN_PATH_EXPECT_RUN_MODE="FIRST_RUN"
+node "$env:TEMP\g4-snapshot-b-2d987d4\dsh\dsh-recruitment\manual\golden-path\run-golden-path-rerun.mjs"
+
+# 4) harness RERUN（同库同快照；证据根换 phase2-rerun）
+$env:GOLDEN_PATH_EVIDENCE_DIR="<repo>\work\verify-2026-11-15-g4\ci-rehearsal\phase2-rerun"
+$env:GOLDEN_PATH_EXPECT_RUN_MODE="RERUN"
+node "$env:TEMP\g4-snapshot-b-2d987d4\dsh\dsh-recruitment\manual\golden-path\run-golden-path-rerun.mjs"
+
+# 5) CI 同一份 node 机检（两份 summary）+ CI 同一份 psql 断言块
+powershell -File work\verify-2026-11-15-g4\ci-rehearsal\phase2-machine-check.ps1
+
+# 6) psql 独立读回（不 import 产品代码）
+& $psql -d ra_g4_ci_replay -v ON_ERROR_STOP=1 -A -F " | " -f work\verify-2026-11-15-g4\ci-rehearsal\phase2-db-readback.sql
+
+# 7) 与 A 的证据逐项对账
+node work\verify-2026-11-15-g4\ci-rehearsal\phase2-compare.mjs <repo>
+
+# overlay（A 终版 manual/golden-path/** -> B 快照）的 sha256：
+2618333ed1353f114a8793c25e6306d4661316f748f5d3073e0997fdf452c69c  db-readback.mjs
+521775943f1195659ccf65f7b40f222482c44664210c2570d3ab6c9803b77545  fixtures/build_synthetic_resume.py
+aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df  fixtures/gp-rerun-2/synthetic-resume-golden-path.pdf
+e693b1872700fc54246b175dd11c6b074cf1948fe65ff61d0f0076778a28921d  fixtures/gp-rerun/synthetic-resume-golden-path.pdf
+9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356  fixtures/synthetic-resume-golden-path.pdf
+69bd26961489ae6ed63dd7cdf5c20efa7bdeba00573b3b0920e591ace365df4f  README.md
+fb1061cd3683e05f6b026e9558de5bf0ced646e8a9b4c7036f5a4f03df0e257e  run-golden-path-rerun.mjs
+23fcaec3380ce1433978d2a1d67395a2c58f6db2a15666b31496a56818f2ade7  run-golden-path.mjs
+
