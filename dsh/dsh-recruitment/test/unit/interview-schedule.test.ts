@@ -146,3 +146,70 @@ test('S8 D-79：参数非法 → INVALID_ARGS，且**不去问人**（approval �
   assert.equal(approvalCalls, 0, '参数层就拒了，不得打扰人')
   assert.equal(client.calls, 0, '参数层就拒了，不得访问数据库')
 })
+
+// ---------------------------------------------------------------------------
+//  D-62 的另外三个 intent 走**同一条**管道：参数层就在碰库 / 问人之前拒。
+//  （闸门本身的四个封闭值见上面的 `makeApprovalRequest` / `requireApprovalGranted` 用例；
+//    DB 实跑的正/负例见 test/integration/interview-schedule.test.ts §9。）
+// ---------------------------------------------------------------------------
+
+test('S8 D-79：RESCHEDULE / CANCEL / WITHDRAW 的参数非法也在碰库/问人之前拒（approval 调用数 = 0、零 SQL）', async () => {
+  let approvalCalls = 0
+  const spy = async (): Promise<'allowed-once'> => {
+    approvalCalls += 1
+    return 'allowed-once'
+  }
+  const cases: { readonly args: Record<string, unknown>; readonly reason: string }[] = [
+    // RESCHEDULE 没有任何可改字段 → NO_CHANGE。
+    {
+      args: {
+        intent: 'RESCHEDULE',
+        idempotency_key: 'k-reschedule',
+        interview_id: CFG.actor_id,
+        expected_record_version: 1,
+      },
+      reason: 'NO_CHANGE',
+    },
+    // CANCEL 缺 reason → REASON_REQUIRED（不是先去问人再拒）。
+    {
+      args: {
+        intent: 'CANCEL',
+        idempotency_key: 'k-cancel',
+        interview_id: CFG.actor_id,
+        expected_record_version: 1,
+      },
+      reason: 'REASON_REQUIRED',
+    },
+    // WITHDRAW 缺 expected_record_version → MISSING_REQUIRED。
+    {
+      args: {
+        intent: 'WITHDRAW_INTERVIEWER',
+        idempotency_key: 'k-withdraw',
+        interviewer_id: CFG.actor_id,
+        reason: '面试官请假',
+      },
+      reason: 'MISSING_REQUIRED',
+    },
+    // 没有 COMPLETE 这个 intent。
+    {
+      args: { intent: 'COMPLETE', idempotency_key: 'k-complete' },
+      reason: 'OUT_OF_RANGE',
+    },
+  ]
+  for (const testCase of cases) {
+    const client = new ExplodingClient()
+    await assert.rejects(
+      scheduleInTransaction(
+        client as unknown as DatabaseClient, CFG, testCase.args, Date.now(), spy,
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof RecruitmentToolError, '必须是 RecruitmentToolError')
+        assert.equal((error as RecruitmentToolError).code, 'INVALID_ARGS')
+        assert.equal(errorBody(error).reason_code, testCase.reason)
+        return true
+      },
+    )
+    assert.equal(client.calls, 0, `${testCase.reason}：参数层就拒了，不得访问数据库`)
+  }
+  assert.equal(approvalCalls, 0, '参数层就拒了，不得打扰人')
+})
