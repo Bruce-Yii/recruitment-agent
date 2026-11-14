@@ -239,8 +239,10 @@
           model_route: 'opencode-go-openai-key2/longcat-2.5-free'
           # G1（事件自动驱动）：插件进程内用专用连接持有 PG 咨询锁
           # hashtext('recruitment:tick')，周期 router.tick()；多实例只有一个派发者。
-          # 缺省 true / 2000ms，此处显式写出便于 grep 与审计。
-          auto_tick: true
+          # **发布闸门（2026-11-15 独立复核 P1）**：G2（Worker 能执行业务工具 + 就绪检查）
+          # 落地前必须为 false——否则每收一份简历就自动拉起跑不了业务的 Worker，
+          # attempts 耗尽后任务 FAILED、简历解析永不完成。G2 验收同批才翻回 true。
+          auto_tick: false
           tick_interval_ms: 2000
 
 # ---------------------------------------------------------------------------

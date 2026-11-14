@@ -1488,6 +1488,6 @@ feishu 不装配）。L1（干净 env 启动产品 profile + 一次真实读取�
   购买商业许可、或换底座，待产品负责人裁决。RapidOCR(Apache) 纳入声明配置不依赖该裁决。
 - **入库机器路径**：`dsh/dsh-recruitment/cordis.patch.yml:18-23,48` 与
   `dsh/profile/recruitment/cordis.patch.yml:192-197,243` 仍含机器绝对路径；G9 落地 `${ENV}` 后必须清掉（缺陷修复）。
-- **研究结论（2026-11-15）**：DSH 0.2.2-rc.3 是最新官方版（npm `latest` 反而停在 rc.1，禁止"跟 latest 升级"）；
+- **发布闸门（2026-11-15 独立复核 P1）**：G1 `runtime.auto_tick` 在产品 profile 置 **false**（Wave1 复核发现：单独开启会为每份简历自动拉起跑不了业务的 Worker，attempts 耗尽 → 任务 FAILED、简历解析永不完成）。**G2（Worker 能执行业务工具 + 派发前就绪检查）验收同批才翻回 true**；测试需要 tick 时用测试专用 profile/patch 显式开启，不改仓库产品 profile。`n- **研究结论（2026-11-15）**：DSH 0.2.2-rc.3 是最新官方版（npm `latest` 反而停在 rc.1，禁止"跟 latest 升级"）；
   Agent Teams 是 rc.2 起的**开发流程**能力（同进程/root 会话、任务真相在 session log、writeScopes 仅建议），
   产品运行时不用；`dsh-superagent-prototype` 是官方研究原型（private、单提交、SQLite 第二 owner），只借 Attention/面板形状。
