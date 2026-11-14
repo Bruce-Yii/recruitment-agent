@@ -15,7 +15,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
@@ -211,10 +211,19 @@ test('回执 / sha / 时间：都是纯函数，格式与 labels.ts 的闸门一
 })
 
 test('resolveOutputFile：只接受工作目录内的相对路径（绝对路径 / .. 越界一律拒绝）', () => {
-  const workdir = join('C:', 'tmp', 'feishu-work')
+  // 工作目录必须是**本平台**的绝对路径：`join('C:', ...)` 在 POSIX 上是相对路径
+  // （`resolve()` 会把它挂到 cwd 下面），旧写法等于在测宿主平台。
+  const workdir = join(sep === '\\' ? 'C:\\' : '/', 'tmp', 'feishu-work')
+  // CLI 在 Windows 上写 `\`、在 POSIX 上写 `/`（`transport.ts:730` 已明确两种都可能来），
+  // 两种分隔符都必须落到同一个工作目录里。
   assert.equal(resolveOutputFile(workdir, 'minutes\\a\\transcript.txt')?.endsWith(join('minutes', 'a', 'transcript.txt')), true)
   assert.equal(resolveOutputFile(workdir, 'minutes/a/transcript.txt')?.endsWith(join('minutes', 'a', 'transcript.txt')), true)
-  assert.equal(resolveOutputFile(workdir, 'C:\\outside\\x.txt'), null)
+  // 绝对路径一律拒绝。这里必须用**本平台**的绝对路径：
+  // `C:\outside\x.txt` 只在 win32 上是绝对路径，在 POSIX 上它是一个含盘符的**相对名**
+  // （`node:path` 的 isAbsolute 为 false），拿它断言"绝对路径被拒"在 Linux CI 上必然红
+  // （2026-11-14 真实 CI：expected null，actual `…/C:/tmp/feishu-work/C:/outside/x.txt`）。
+  const absoluteOutside = sep === '\\' ? 'C:\\outside\\x.txt' : '/outside/x.txt'
+  assert.equal(resolveOutputFile(workdir, absoluteOutside), null)
   assert.equal(resolveOutputFile(workdir, '..\\outside.txt'), null)
   assert.equal(resolveOutputFile(workdir, 'minutes\\..\\..\\outside.txt'), null)
   assert.equal(resolveOutputFile(workdir, ''), null)

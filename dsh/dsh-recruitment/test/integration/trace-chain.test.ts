@@ -30,6 +30,7 @@ import {
   intakeInTransaction,
   type IntakeMaterial,
 } from '../../src/tools/application-intake.ts'
+import { digestOf } from '../../src/tools/contract.ts'
 import { evaluateInTransaction } from '../../src/tools/screening-evaluate.ts'
 import {
   confirmationTextSha256,
@@ -49,16 +50,11 @@ import {
   createTestPool,
   hex64,
   inRolledBackTx,
+  one,
   seedScenario,
   testDatabaseConfig,
   uniqueSuffix,
 } from './db.ts'
-
-/**
- * 0002_seed 里演示岗位 DEMO-BE-001 的已批准 rubric v2（payload_hash 与 approval 对齐，
- * 审批时间早于任何测试的 as_of）。用它是为了不另造"追溯链专用"的批准夹具。
- */
-const DEMO_RUBRIC = '11111111-1111-4111-8111-000000000404'
 
 const cfg: ResolvedDatabaseConfig = testDatabaseConfig()
 const pool = createTestPool(cfg)
@@ -69,6 +65,67 @@ const DIMENSIONS = [
   { key: 'edu_exists', label: '有教育背景', kind: 'MUST_HAVE', weight: 0.3, question: '学历？' },
   { key: 'team_lead', label: '带过团队', kind: 'NICE_TO_HAVE', weight: 0.3, question: '带过几个人？' },
 ]
+
+/**
+ * 真链路 `/ 断链检出` 用例用的 rubric：**必须能被 S7 机械判定**（判据全在字段上），
+ * 这样同一条链上的 screening 结论与 decision 是真实产物，不是靠"人工问题"兜着。
+ * 形状/权重与 `screening-evaluate.ts` 的 R-VAL-1..13 对齐（Σweight=1、有 deciding 准则）。
+ */
+const CHAIN_DIMENSIONS = [
+  {
+    key: 'work_exists',
+    label: '有工作经历',
+    kind: 'MUST_HAVE',
+    weight: 1,
+    field: 'work_experience',
+    operator: 'EXISTS',
+    value: true,
+  },
+]
+
+/**
+ * 给演示岗位造一个**已批准**的 rubric 版本，并把 `job.current_rubric_version_id` 指过去。
+ *
+ * **为什么必须自己造（干净库上实测，2026-11-14）**：
+ *   * `0002_seed.sql` 只种 rubric v1（`…0403`），`db/migrations/*.sql` 里**一条
+ *     `insert into recruitment.approval` 都没有** —— 干净库上没有任何"已批准"版本；
+ *   * 旧常量 `DEMO_RUBRIC=…0404` 是本机 `ra_s6s7` 的历史手工数据，干净库/CI 里它
+ *     根本不存在 → 5 条用例全部死在迁移 0005 的 `fk_application_rubric_job`
+ *     （"申请钉的 rubric 必须属于同一个 job"，见 `0005_version_binding.sql:227-251`）。
+ * 语义与生产写路径一致：`job_rubric_approve` 的库级效果 = APPROVED 审批 + 指针前移；
+ * 之后 intake 的 F1 写侧会把它钉到新申请上（`application-intake.ts:1351-1375`）。
+ * @param client - 事务内客户端（结束回滚，不污染共享库）。
+ * @returns 这个已批准版本的 id（= 申请应当钉住的版本）。
+ */
+async function seedApprovedRubric(client: DatabaseClient): Promise<string> {
+  const payloadHash = digestOf(CHAIN_DIMENSIONS)
+  // `created_at` 必须显式写成过去：`approvedAt()` 的第一条判据是
+  // `rubric_version.created_at <= as_of`（`screening-evaluate.ts:1879` 附近的 approvedAt），
+  // 而本用例的 as_of = now - 5min。默认 `now()` 会让一个"刚造出来"的版本在 as_of 时刻
+  // 还不存在 → 正确地报 NO_APPROVED_RUBRIC。真实库里版本总是先存在、后有 as_of。
+  // 注意 `rubric_version` 的 `trg_rubric_version_immutable` 只挂 BEFORE UPDATE，
+  // 所以 INSERT 时给 created_at 合法；事后 UPDATE 会被 IMMUTABLE_COLUMN 拒绝。
+  const rubricId = await one(
+    client,
+    `insert into recruitment.rubric_version
+       (tenant_id, job_id, version_no, dimensions, payload_hash, created_by_actor_id, created_at)
+     values ($1, $2, 2, $3::jsonb, $4, $5, now() - interval '1 hour') returning id`,
+    [TENANT, DEMO_JOB, JSON.stringify(CHAIN_DIMENSIONS), payloadHash, HR_ACTOR],
+  )
+  await client.query(
+    `insert into recruitment.approval
+       (tenant_id, resource_type, resource_id, resource_record_version, payload_schema_version,
+        canonical_payload_hash, status, requested_by_actor_id, decision_by_actor_id, decided_at, reason)
+     values ($1, 'RUBRIC_VERSION', $2, 1, 1, $3, 'APPROVED', $4, $4, now() - interval '30 minutes',
+             '追溯链集成测试批准')`,
+    [TENANT, rubricId, payloadHash, HR_ACTOR],
+  )
+  await client.query(
+    'update recruitment.job set current_rubric_version_id = $2 where tenant_id = $1 and id = $3',
+    [TENANT, rubricId, DEMO_JOB],
+  )
+  return rubricId
+}
 
 /** 带 +08:00 偏移的 ISO（工具只接受带偏移的时间）。 */
 function toOffsetIso(date: Date, offsetMinutes = 480): string {
@@ -160,9 +217,12 @@ async function runRealChain(client: DatabaseClient, input: {
   /** 本次决策的理由原文（R7 断言用：追溯输出里必须没有它）。 */
   readonly reasonText: string
 }> {
-  // 目标岗位 = 0002_seed 的演示岗位（OPEN + 已批准 rubric v2，审批时间早于 as_of）；
-  // 不再另造夹具岗位，这样 screening / decision 用的是种子里**真实存在**的已批准 rubric。
-  // 申请 / 候选人 / 材料由下面的**真实 intake** 产生（唯一夹具动作 = 钉 rubric，见 F1）。
+  // 目标岗位 = 0002_seed 的演示岗位（OPEN）；本用例自己给它造一个**已批准**的
+  // current rubric（干净库上没有审批行，见 `seedApprovedRubric` 的注释）。
+  // 申请 / 候选人 / 材料由下面的**真实 intake** 产生；rubric 版本由 intake 按 F1 自动钉住。
+
+  // ---- 第 0 步：造"同 job 的已批准 rubric"这个前置事实 ----
+  const rubricVersionId = await seedApprovedRubric(client)
 
   // ---- 第 1 步：真实 intake ----
   const material = makeMaterial({
@@ -173,14 +233,13 @@ async function runRealChain(client: DatabaseClient, input: {
   const intake = await intakeInTransaction(client, cfg, material, DEMO_JOB) as Record<string, unknown>
   const applicationId = String(intake.application_id)
   const resumeVersionId = String(intake.resume_version_id)
-  // 产品缺口 F1：intake 不钉 rubric（S7 写侧要求已钉）。这里显式钉版本，**不是**追溯链路造假，
-  // 而是把"人工已批准/已钉版本"这个前置事实补上（工具里没有对应写路径，见回报未决问题）。
-  await client.query(
-    `update recruitment.application a
-        set rubric_version_id = $2
-      where a.id = $1 and a.tenant_id = $3`,
-    [applicationId, DEMO_RUBRIC, TENANT],
-  )
+  // F1 写侧（D-108）：指针非空且此刻已批准 ⇒ 新建申请必须钉住它。这里读回来断言，
+  // 而不是"手工 update 成我们想要的版本"——否则测试自己制造了要验的事实。
+  const pinned = (await client.query<{ rubric_version_id: string | null }>(
+    'select rubric_version_id from recruitment.application where id = $1 and tenant_id = $2',
+    [applicationId, TENANT],
+  )).rows[0]?.rubric_version_id
+  assert.equal(pinned, rubricVersionId, 'intake 必须钉住 job.current_rubric_version_id（F1 写侧 / D-108）')
   await recordRealCall(client, 'recruitment_application_intake', `trace-test:intake:${input.suffix}`, [
     { kind: 'APPLICATION', id: applicationId },
   ])

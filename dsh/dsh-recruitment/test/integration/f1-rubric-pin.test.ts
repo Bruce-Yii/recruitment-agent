@@ -132,9 +132,16 @@ async function jobPointer(client: DatabaseClient, jobId: string): Promise<string
 
 test('F1 写侧：岗位有已批准的 current → 新建申请时写入同一个 rubric_version_id', async () => {
   await inRolledBackTx(pool, async (client) => {
-    // DEMO_JOB 的 current 指针由 0004 迁移回填（v2），审批在 0002 seed 里已是 APPROVED。
+    // DEMO_JOB 的 current 指针由 0004 迁移回填（干净库里是该 job 唯一的 rubric v1 = …0403）。
     const pointer = await jobPointer(client, DEMO_JOB)
     assert.ok(pointer !== null, '演示岗位必须有 current rubric 指针（0004 回填）')
+
+    // **干净库事实（2026-11-14 复现）**：`db/migrations/*.sql` 里 `insert into recruitment.approval`
+    // 一条都没有（0002_seed 只种 rubric version，不种审批），0004 也只回填指针。
+    // 本机 ra_s6s7 里那条 APPROVED 是历史手工数据，干净库/CI 上不存在 —— 所以
+    // "岗位的 current 已批准"这个前置事实必须由本用例自己造，否则 intake 正确地不钉
+    // （`application-intake.ts:1351-1375` 要求 exists(APPROVED + hash 一致 + 未取代 + 未过期)）。
+    await approveAndPoint(client, DEMO_JOB, pointer)
 
     const result = await intakeInTransaction(client, cfg, makeMaterial(freshPhone()), DEMO_JOB)
     assert.equal(result.application_action, 'CREATED')

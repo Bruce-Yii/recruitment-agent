@@ -355,22 +355,43 @@ test('工具级：零文本 PDF（无 PII）→ 真实 converter 读出"全不�
 })
 
 test('工具级：allowed_roots 之外的路径 → FORBIDDEN（fail-closed）', async () => {
+  // 合同出处（越界 = FORBIDDEN，不是"参数不合法"、也不是"找不到"）：
+  //   * `skill/recruitment-s6-s7/SKILL.md:91`：所有 `path` 必须是配置允许的本地绝对路径；越界会返回 `FORBIDDEN`；
+  //   * `skill/recruitment-s6-s7/SKILL.md:237`：`READER_FAILED` / `FORBIDDEN` = 转换器失败 / 路径越界；
+  //   * 模型可见描述 `src/tools/application-intake.ts:119-124`：must be inside allowed_roots,
+  //     "any other path is rejected with FORBIDDEN"；
+  //   * 实现 `src/document/readers/files.ts:58-69`（FORBIDDEN）→
+  //     `src/tools/application-intake.ts:2276-2284` 映射成契约码 FORBIDDEN + PATH_OUTSIDE_ALLOWED_ROOTS。
+  //
+  // **这里必须用"真实存在 + 绝对"的越界路径**：路径校验的顺序是
+  //   非空 → 绝对 → 存在 → 普通文件 → allowed_roots → 非空文件（`files.ts:28-79`），
+  // 所以"不存在的路径"先命中 NOT_FOUND，根本走不到越界判定。
+  // 旧断言拿 `C:\Windows\win.ini.pdf` 期望 NOT_FOUND：在 Windows 上该文件不存在恰好绿，
+  // 在 Linux 上它不是绝对路径 → INVALID_ARGS（CI 首次在 Linux 跑就红在这里）。
+  // 那条断言测的是宿主平台，不是契约。
+  for (const outside of [
+    join(CONVERTER_DIR, 'src', 'cli.py'), // 扩展名不是 .pdf，照样先判越界（扩展名从不参与判定）
+    join(CONVERTER_DIR, 'requirements.txt'),
+  ]) {
+    await assert.rejects(
+      tool.execute({ path: outside, job_id: DEMO_JOB }, { signal: new AbortController().signal }),
+      (error: unknown) => {
+        assert.equal((error as { code?: string }).code, 'FORBIDDEN')
+        assert.match((error as Error).message, /PATH_OUTSIDE_ALLOWED_ROOTS/)
+        return true
+      },
+    )
+  }
+  // 反向：allowed_roots 之内但**不存在** → NOT_FOUND(FILE_NOT_FOUND)（存在性判定在越界判定之前）。
+  // 这条是平台无关的（绝对路径 + 允许根内 + 一定不存在），补上被旧断言盖住的那一半语义。
   await assert.rejects(
-    tool.execute({ path: 'C:\\Windows\\win.ini.pdf', job_id: DEMO_JOB }, { signal: new AbortController().signal }),
+    tool.execute({
+      path: join(SYNTHETIC_DIR, `no-such-fixture-${uniqueSuffix()}.pdf`),
+      job_id: DEMO_JOB,
+    }, { signal: new AbortController().signal }),
     (error: unknown) => {
       assert.equal((error as { code?: string }).code, 'NOT_FOUND')
-      return true
-    },
-  )
-  // 2026-11-14：allowed_roots 是**最外层**边界，现在先判路径再判媒体类型。
-  // 修 S6 的格式盲区（DOCX 进不来）时去掉了"扩展名必须是 .pdf"的第一道判定，
-  // 所以越界文件无论扩展名是什么，答案都是 FORBIDDEN —— 这才是 fail-closed 的正确顺序
-  // （旧实现先按扩展名判 INVALID_ARGS，把"越界"说成了"参数不合法"）。
-  await assert.rejects(
-    tool.execute({ path: join(CONVERTER_DIR, 'src', 'cli.py'), job_id: DEMO_JOB }, { signal: new AbortController().signal }),
-    (error: unknown) => {
-      assert.equal((error as { code?: string }).code, 'FORBIDDEN')
-      assert.match((error as Error).message, /PATH_OUTSIDE_ALLOWED_ROOTS/)
+      assert.match((error as Error).message, /FILE_NOT_FOUND/)
       return true
     },
   )
