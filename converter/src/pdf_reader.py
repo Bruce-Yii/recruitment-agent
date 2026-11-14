@@ -369,6 +369,7 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
         encoding_regions = []
         encoding_removed = []
         layout_applied = False
+        page_layout_backend = None
         try:
             type3_fonts = sum(1 for font in (page.get_fonts(full=True) or [])
                               if len(font) > 2 and font[2] == 'Type3')
@@ -427,22 +428,52 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
                 for block in page_blocks:
                     block.setdefault("provenance", "native_text")
                 layout_applied = True
+                page_layout_backend = (layout or {}).get('backend')
             except Exception as exc:  # noqa: BLE001
                 issues.append({'code': 'pdf_layout_unread', 'message': str(exc),
                                'location': {'page': number}})
-        elif pdf_layout.stream_order_issue(page_blocks):
-            order_msg = ('native content stream jumps backwards across page regions; '
-                         'layout order is unverified')
-            page_chars = len(page.get_text("text").strip())
-            order_unverified_pages.append(number)
-            # 敏感度分级：本页文字已充足时，顺序瑕疵不影响内容完整性，
-            # 降级为 warning（不阻断、不产生 Agent 请求），仅记录证据。
-            # 注意：warning 不等于"顺序可信"——字段层仍据此拒绝断言"没有该章节"。
-            if page_chars >= 800:
-                warnings.append(f"pdf_reading_order_soft: page {number} {order_msg}")
-            else:
-                issues.append({'code': 'pdf_reading_order_unverified',
-                               'message': order_msg, 'location': {'page': number}})
+        else:
+            # 没有外部版面后端：先用纯几何判列/判行（pdf_layout.geometric_order）。
+            # 只在"顺序唯一"时采用；不自信就返回 None，保持原生内容流顺序，
+            # 再由下面的 stream_order_issue 兜底判定（需求：兜底逻辑保留）。
+            plan = None
+            try:
+                plan = pdf_layout.geometric_order(page_blocks, page.rect.width)
+            except Exception as exc:  # noqa: BLE001 —— 几何实现自身失败也要留证
+                issues.append({'code': 'pdf_layout_unread', 'message': str(exc),
+                               'location': {'page': number}})
+            if plan is not None:
+                try:
+                    order = plan['order']
+                    ordered = [page_blocks[index] for index in order]
+                    # 字符守恒：重排前后 Counter(非空白字符) 必须完全相等，
+                    # 否则放弃重排并记 pdf_layout_unread（沿用外部版面分支的约定）。
+                    before = ''.join(re.sub(r'\s', '', b['text']) for b in page_blocks)
+                    after = ''.join(re.sub(r'\s', '', b['text']) for b in ordered)
+                    if non_space_counter(before) != non_space_counter(after):
+                        raise ValueError('layout does not preserve native text exactly once')
+                    if len(page_sizes) == len(page_blocks):
+                        page_sizes = [page_sizes[index] for index in order]
+                    page_blocks = ordered
+                    layout_applied = True
+                    page_layout_backend = plan['backend']
+                except Exception as exc:  # noqa: BLE001
+                    issues.append({'code': 'pdf_layout_unread', 'message': str(exc),
+                                   'location': {'page': number}})
+            if not layout_applied and pdf_layout.stream_order_issue(page_blocks):
+                # 几何不敢下结论时，仍按旧口径承认"顺序不可信"，绝不假装排好了。
+                order_msg = ('native content stream jumps backwards across page regions; '
+                             'layout order is unverified')
+                page_chars = len(page.get_text("text").strip())
+                order_unverified_pages.append(number)
+                # 敏感度分级：本页文字已充足时，顺序瑕疵不影响内容完整性，
+                # 降级为 warning（不阻断、不产生 Agent 请求），仅记录证据。
+                # 注意：warning 不等于"顺序可信"——字段层仍据此拒绝断言"没有该章节"。
+                if page_chars >= 800:
+                    warnings.append(f"pdf_reading_order_soft: page {number} {order_msg}")
+                else:
+                    issues.append({'code': 'pdf_reading_order_unverified',
+                                   'message': order_msg, 'location': {'page': number}})
 
         # 链接归属：把 URI 注解挂到它覆盖的可见词上，再按块改写原文一次（从右到左）
         words = page.get_text("words", sort=False)
@@ -554,6 +585,7 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
         coverage = _pdf_image_coverage(page, images)
         pages.append({"page": number, "chars": chars, "images": len(images),
                       "drawings": drawings, "layout_order_applied": layout_applied,
+                      "layout_backend": page_layout_backend,
                       "image_coverage": coverage,
                       "block_count": len(page_blocks),
                       "encoding_removed": "".join(encoding_removed)})
@@ -657,6 +689,26 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
     needs_visual = (not blocks
                     or any(i["code"] == "pdf_text_encoding_unread" for i in issues)
                     or any(i["code"] == "unread_visual_page" for i in issues))
+    # ---- 版面结论 ----
+    # 外部后端优先（原有语义不变）。没有外部后端时，只有"所有有文字的页都完成了
+    # 纯几何排序"才敢写 order_verified=True + layout_backend：质量层把
+    # "layout_backend 非空但 order_verified=false" 判成 HARD，两者必须同进同退。
+    if layout is not None:
+        layout_backend = (layout or {}).get("backend")
+        order_verified = bool(layout) and all(p["layout_order_applied"] for p in pages)
+    else:
+        text_pages = [p for p in pages if (p.get("chars") or 0) > 0]
+        geometric_done = [p for p in text_pages
+                          if p.get("layout_order_applied")
+                          and p.get("layout_backend") in pdf_layout.GEOMETRIC_BACKENDS]
+        if text_pages and len(geometric_done) == len(text_pages):
+            modes = {p["layout_backend"] for p in geometric_done}
+            layout_backend = (modes.pop() if len(modes) == 1
+                              else "+".join(sorted(modes)))
+            order_verified = True
+        else:
+            layout_backend = None
+            order_verified = False
     return content.result(
         blocks=blocks,
         title=(doc.metadata or {}).get("title") or "",
@@ -666,8 +718,8 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
         needs_visual=needs_visual,
         meta={"pages": doc.page_count, "source_sha256": sha, "source_name": path.name,
               "backend": BACKEND, "reader_version": __version__,
-              "page_info": pages, "layout_backend": (layout or {}).get("backend") if layout else None,
-              "order_verified": bool(layout) and all(p["layout_order_applied"] for p in pages),
+              "page_info": pages, "layout_backend": layout_backend,
+              "order_verified": order_verified,
               "repaired": repaired, "ocr": ocr_note,
               "noise_blocks": len(noise),
               "encoding_removed_chars": "".join(p["encoding_removed"] for p in pages)},

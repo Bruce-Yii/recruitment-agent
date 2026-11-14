@@ -139,3 +139,62 @@ docs/11 的红线是给"转换器质量"定的（印刷体、干净排版），�
 2. 版面 → 几何分栏，写回 `order_verified`
 3. 归因 → 产出"这段经历属于哪个块"的结果，而不是只拦
 4. 恢复计划 → 加 executor（至少把 OCR / 视觉 / 换 reader 三条自动跑完）
+
+---
+
+## 四、实装记录：纯几何版面（2026-11-14）
+
+对应上面"下一批要补"第 2 条。**只改 `converter/src/pdf_layout.py` +
+`converter/src/pdf_reader.py`**，不依赖任何外部版面模型；几何只读每个 block 的
+bbox 与非空白字符数（后者只用于选主列），**不改写文本**。
+
+### 4.1 判据（"何时才敢写 order_verified=True"）
+
+1. **单列页（`layout_backend='geometric-order'`）**：按 x 区间重叠度聚类，取
+   "非空白字符最多"的簇为主列；**通栏块**（x 跨度 >= 主列宽 90% 且与主列相交，
+   或居中且宽 >= 页宽 60%）不参与列判定，按 y 夹在主列块之间；其余块必须落在
+   主列内（x 与主列重叠 >= 90%）。真实简历的"居中姓名 + 左对齐正文"不再被误判。
+2. **多列页（`layout_backend='geometric-columns'`）**：列间存在 >= max(8pt, 2% 页宽)
+   的无块跨越竖向白缝；两侧列宽比 >= 0.28；两列不能是逐行对齐的表（逐行配对率
+   < 0.45，否则必须按行读，按列读会把"公司/时间"拆开）。
+3. **行内唯一**：同一视觉行（y 重叠 >= 50%）内块 x 区间不得互相重叠。
+4. **行间唯一**：相邻跨行块的 y 区间不得**实质交错**。判据是
+   **交叠 > 较矮块字高的 25%**，不是固定 pt。
+5. **字符守恒**：重排前后 `Counter(非空白字符)` 必须完全相等，否则放弃重排并记
+   `pdf_layout_unread`（兜底判定 `stream_order_issue` 保留）。
+6. 只有"所有有文字的页都完成几何排序"才写 `order_verified=True` +
+   `layout_backend`（质量层把"backend 非空但 order_verified=false"判 HARD，两者
+   必须同进同退）；逐页后端记在 `meta.page_info[].layout_backend`。
+
+### 4.2 为什么固定 0.5pt 是错的口径（已废弃）
+
+相邻行 bbox 的 ascender/descender 交叠是**排版本性**：同一页里 12–14pt 字号的行
+盒普遍交叠 0.6–2.5pt（约字高 5–20%），这与"上下关系不可判"无关。固定 0.5pt 是
+给某一种字号调出来的常数，换字号或 OCR 重建（Tesseract/RapidOCR 的 bbox 含 padding）
+就会误判。实测：严格 0.5pt 口径下，孙光宇（0.60pt）、诸葛童琳（2.47pt）两个真实
+单列简历被挡在 `order_verified=False`；改成"交叠 <= 较矮块字高 25% 视为行盒噪声"
+后两者通过，且"30% / 33% 字高的实质交错"仍被拒绝（负例测试覆盖，含 25% 边界）。
+
+### 4.3 实测（本地只读快照，2026-11-14；语料 = `converter/corpus/batch2-picked.json` 45 份）
+
+| 指标 | 改前 | 0.5pt 口径（已废弃） | 25% 字高口径（当前） |
+|---|---|---|---|
+| `order_verified=true` | 0/45 | 28/45 | **29/45** |
+| `pdf_reading_order_unverified`（HARD） | 6 份 | 3 份 | 3 份 |
+| 3 份验收样本 | 全部 False | 1 True / 2 False | **3 True** |
+
+3 份验收样本前后：
+- `个人简历-…-孙光宇.pdf`：`False/None` → `True/geometric-order`（内容流乱序被 y 重排修正：教育背景 → 科研经历 → 荣誉奖项 → 项目经历）
+- `任悦平-27届产品-研究生.pdf`：`False/None` → `True/geometric-order`（整页 OCR 重建，**provenance=ocr 提示保留在 issues**）
+- `诸葛童琳2027届_AIGC运营简历.pdf`：`False/None` → `True/geometric-order`（3 页全部核验）
+
+字符守恒：45/45 文件、3/3 样本**逐页无字符丢失**（按 `Counter(非空白字符)` 复核）。
+
+### 4.4 记录边界
+
+- 本表是**本机快照实测**，不是 CI 结果。`codex_converted` 语料（30 份）本机缺失，
+  完整 `python -m pytest tests -q` 本地 exit 2；`--no-corpus` 快照为
+  **82 passed / 27 skipped / 0 failed**（skipped 全是缺语料用例，**不是全绿**）。
+- 真实语料里 29 份全部走 `geometric-order`；`geometric-columns` 目前由合成 PDF
+  用例覆盖（2 列 / 3 列 / 整行页眉）。多列判定对"块 bbox 相互嵌套/逐行对齐"的真实
+  简历仍保守拒绝（如 Penkun 两份双列简历），宁可 False 也不误排序。
