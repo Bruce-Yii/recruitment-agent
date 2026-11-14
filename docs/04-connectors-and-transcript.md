@@ -256,3 +256,162 @@ Recruitment OS 直接处理的是**平台已经生成的正式 Transcript Artifa
 **P1**：真实会议事件订阅与自动回调 / 多平台并行接入 / 失败自动重试与授权恢复 / 更细的 Brief 可见字段配置 / 音视频播放器与时间轴联动。
 
 **当前不做**：自研 ASR / 说话人分离 / 自建音视频存储平台 / Kafka·独立向量库·复杂文档处理基础设施 / 生产级多租户 / 重新实现会议平台内部授权与合规。
+
+## 23. 来源读取位点、处置记录与出站重试（外部事实的机检层，v0.3 增量；决策 D-106）
+
+> **本节补什么**：§13 说"事件是触发信号，回读才是数据"，§15 说"链路怎么走"，§19 说"出错了怎么办"，§21 说"平台没有的不许补"。但**没有一条**规定：① 读过的外部事件还能不能重放；② 每条外部事件最后去了哪里；③ 发出去的消息失败了退多久、什么时候算丢。本节补这三件事——它们是"外部事实诚实"的**机检层**：不靠人标注，靠记录。
+> **来源**：`参考 dsh-superagent docs/001-domain.md §Concepts / §Glossary（Source:"Holds its read position … A restart must not replay events"；Disposition:"The record of a Trigger being filtered, evaluated or fanned out"）`、`docs/003-execution.md §Source failure / §Channel failure / §Stored work`、`docs/006-deployment.md §Stored work / §Channel failure`、`src/app/outbox.ts`、`src/app/effects.ts`。
+> **原型是研究代码，只借规则不借实现**：不 vendor 其代码，不采用其单机 SQLite（D-5：PG + pg-boss）。本节只写规则；**实现状态见 §23.6**。
+
+### 23.0 四个术语（与既有字段不撞车）
+
+| 本节用语 | 定义 | 明确**不是** |
+|---|---|---|
+| **读取位点** `read_position` | 一个来源实例（或一个订阅线程）**已经消费到哪**的持久位置 | 不是 §14 的 `next_cursor`（单次抓取的翻页游标）；不是 `fetched_at`（一次读取的时间） |
+| **事件去向** `event_disposition` | 一条外部事件**最终去哪**的记录，取值 `FILTERED` / `EVALUATED` / `FANNED_OUT` | **不是** S10 评价里的 `missing_disposition`（"缺面评时允不允许推进"）；两者**禁止共用列名** |
+| **出站消息** `reply` | 对外部渠道发出的消息（经 Outbox → Effect） | 不是工作单元内部的 `relay`（`docs/03 §21.5`，转发给主 Session / 人） |
+| **连续失败数** `consecutive_failures` | 同一 `(kind, item)` 连续失败次数，成功一次清零 | 不是 `attempts` 总数（总数只用于审计，不用来升级） |
+
+### 23.1 读取位点：重启不得重放已处理事件
+
+**规则**
+
+1. 每个来源实例**必须**持久化自己的读取位点；来源若有多个订阅线程，则**每个线程一条**，并另存"最保守的可推进位置"用于重启。
+2. **推进条件**：位点之前的**每一条**事件都已有处置记录（§23.2）且处理完成（成功 / 明确过滤 / 明确评估 / 明确扇出）。**有事件没有处置记录 → 位点不得越过它。**
+3. 位点必须与"处理结果 + 处置记录"**同一事务**提交；**禁止**先推进位点再补处置，或先处置再补位点（两种都会在崩溃窗口里丢事实）。
+4. 重启后从位点继续，**不得**从头重读已处理区间；"位点之后未处理"的区间**允许**重读，重复投递由 §15 B 的事件去重兜第二道。
+5. 位点只能由**该来源实例自己的消费者**推进；人工"重跑"必须**显式**改位点并留审计（谁、为什么、从哪改到哪）。
+
+**判定条件（可机检）**
+
+- 重启前后 `read_position` **单调不减**（人工重跑留痕的除外）。
+- 已消费区间的 `(source, provider_event_id)` 的处置记录数**不因重启增加**。
+- 存在 `read_position` 越过了"无处置记录的事件" → 合同违反。
+
+**边界**
+
+- 位点是**来源级**的，不是租户级 / 全局级：一个来源坏掉不影响别的来源推进（原型："The GitHub Source reads each Issue, pull request and Thread on its own"）。
+- 分页拉取中途失败 → **位点不动**；§19"保留已完成页与 cursor、支持断点续取"继续有效——`cursor` 是页内游标，位点是来源位置，**两者分开存**。
+- 事件表达的是"只在一段时间内成立"的条件（例：转写仍在生成）→ 位点**停在该事件**，同线程后续事件不得越过它；回读由 §15 C 的完整性 Gate 触发，**不靠位点重放**。
+
+**失败时的行为**
+
+- 位点写失败（库不可用）→ 不消费、不丢弃：处理结果与位点同事务，整体失败重来（幂等由 §15 B 兜）。
+- 位点丢失（例如来源配置重建）→ 视为**从未读过**：从头读但**每条都记处置**，并用事件去重保证不重复建 Task；来源健康必须报 `READ_POSITION_LOST`，**不得**静默当成"没数据"。
+- 位点倒退（人工重跑除外）→ 合同违反，**停机等人工**（否则会重放外部副作用）。
+
+> 来源：参考 dsh-superagent `docs/001-domain.md` §Concepts（Source 规则："Holds its read position and its own bot identity"；"A restart must not replay events"）+ `docs/003-execution.md` §Source failure（"Its read position stays where it was, so a later notification or a poll of its Thread reads what the failed reads missed"）。原型是研究代码，只借规则不借实现。
+
+### 23.2 事件去向：不允许静默丢弃
+
+**规则**
+
+1. 每条进入 Event Inbox 的外部事件，**必须**在有限时间内留下**终态处置**：`FANNED_OUT`（扇出到工作单元 / 订阅线程）/ `EVALUATED`（进准入判定，产生了接受 / 忽略 / 未完成的结论）/ `FILTERED`（进入领域**之前**被过滤）。
+2. `FILTERED` **必须**带**封闭集合**里的原因码，不允许自由文本：`SELF_MESSAGE`（来源自己的 bot / 账号发的）、`OUT_OF_SCOPE`（不在该来源实例监听范围）、`DUPLICATE`（同 `(tenant, idempotency_key)` 已存在）、`UNTRUSTED_SOURCE`（验源失败）、`MALFORMED`（解析不出）、`POLICY_DENIED`（人 / 规则明确不允许）。
+3. `EVALUATED` **必须**带判定引用（`accept` / `ignore` / `unavailable`，见 `docs/02 §5` 语义准入路径）；`FANNED_OUT` **必须**带目标列表（工作单元 id 或订阅 id），不得为空。
+4. 一条事件**可以**同时有 `FANNED_OUT` 与 `EVALUATED`（既扇出给订阅单元、又进研判），此时是**两条记录**，不是一条记录的两个取值。
+5. "已入库但无处置"= **未处理完成**：必须在来源健康里可见（计数 + 最老一条的等待时长），且**位点不得越过它**（§23.1.2）。
+6. **禁止用日志代替处置记录**：日志重启就没了，不算记录。
+
+**判定条件（可机检）**
+
+- 稳态下 `count(event_inbox) − count(distinct 有处置的 event_id) = 0`；处理中的差额必须能在健康里看到（不是看不见）。
+- 每条 `FILTERED` 的原因 ∈ 6 个封闭值；每条 `EVALUATED` 有判定引用；每条 `FANNED_OUT` 的目标非空。
+- 出现"事件在 Inbox、超过阈值仍无处置"→ 来源健康报错（阈值**未定**，见 §23.6 V-15）。
+
+**边界**
+
+- **与 `docs/02 §5` 两条事件路径的对应**（防止出现第三套词）：确定性事件路径 → `FANNED_OUT`（按类型与状态直接路由到既有 / 新建工作单元）；语义准入路径 → `EVALUATED`（先确定性 Gate，再由 Router / Assessor 出 accept / ignore / unavailable）；进入领域前的丢弃（bot 自己的消息、不在监听范围、验源不过）→ `FILTERED`。
+- 一条事件被 `FILTERED` **不是错误**：过滤是正常去向，只要留了原因码。
+- 处置记录属 §21 的"我们自己的处理记录"：**不得**塞进事件的 `payload`（那会被当成平台字段），**不得**改写平台原始内容。
+- 承载：优先落在既有 `recruitment.event_inbox`（`0001_init.sql` 已有 `processed_at`）；`disposition` / `disposition_reason` / `disposition_at` 是加列还是加子表**待决策**（§23.6 V-10），按 `docs/03 §20` 先证不能复用再加最小字段。
+
+**失败时的行为**
+
+- 消费者崩在"已入库、未处置"之间 → 重启后必须**重做**这条事件的处置（不是丢弃）；位点未推进保证它会被再看到。
+- 处置记录写失败 → 与位点同事务，整体失败重来。
+- 确实无法处置（平台返回残缺 / 未知类型）→ 记 `FILTERED / MALFORMED` 并把来源健康标 `error`，**不静默跳过**。
+
+> 来源：参考 dsh-superagent `docs/001-domain.md` §Glossary（Disposition 去向："The record of a Trigger being filtered, evaluated or fanned out"）+ Source 规则（"Drops the bot's own messages and Triggers outside what it listens to before they enter the domain"）+ `docs/003-execution.md` §Source failure（"A malformed item in a GitHub list or a Feishu page is skipped, and the Source's state counts it"）。原型是研究代码，只借规则不借实现。
+
+### 23.3 出站消息：先落库、退避重试、dropped 留痕
+
+**规则**
+
+1. 对外发送**必须先落库**（Outbox / Receipt）再发；同一消息的任何重试**沿用原消息 ID**，不新建记录。
+2. 退避：首次失败后 **5 秒**重试，之后每次**翻倍**，上限 **300 秒**——即 `5s → 10s → 20s → 40s → 80s → 160s → 300s → 300s …`。
+3. 保序：同一工作单元发给同一会话的消息按入队顺序发；前一条没发出去时后一条**等**；前一条**连续失败 3 次并升级为系统问题后**，后续消息**放行**（不再被它挡住）。
+4. `dropped` 只有两种原因，且**必须**记录原因 + 时间 + 归属工作单元：
+   - `CHANNEL_IGNORED`：来源答复该会话**永不接收**（例：会话被锁、对象已删除）；
+   - `CHANNEL_GONE`：来源**不再监听**该会话。
+   其他情况（来源关闭 / 不可达 / 限流）**不是** dropped，一律**等待**。
+5. dropped 的消息**保留记录**、**永不再入队**；展示上"已发"与"已丢"必须可区分（dropped 的确认消息读作 dropped，不读作 sent）。
+6. 有失败尝试但未 dropped 的消息 = **系统问题**，直到发出或被撤回。
+
+**判定条件（可机检）**
+
+- 同一逻辑消息的所有尝试共享一个 `message_id`，`attempt_no` 递增。
+- 退避序列符合 `5s × 2^n`（上限 300s）；出现"每次固定 5s"或"退避不封顶"→ 违规。
+- `status = dropped` 的行必须有 `dropped_reason ∈ {CHANNEL_IGNORED, CHANNEL_GONE}` + `dropped_at`；缺任一项 → 违规。
+- 同一（工作单元, 会话）内，若消息 A 未出且未达 3 次失败，消息 B **不得**先出。
+
+**边界**
+
+- 本节只管**出站**；入站失败仍按 §19（`WAITING_EXTERNAL` / `AUTH_REQUIRED` / `RETRYABLE_FAILED` 继续有效）。
+- 状态机以 `docs/03 §13` 为准（`PENDING → CLAIMED → SENT → CONFIRMED` + 异常态）；本节 `5s → 300s` 只是**出站 kind 的默认退避参数**，`SENT ≠ CONFIRMED` 与"先回读"继续有效。
+- 当前 v1.0 的 8 步链路**没有对外发送**（`docs/18 §3`）——本节是**合同条款**，实现状态见 §23.6；在真实 provider 上跑过一次之前，**不得**声明"重试已具备"。
+- 真实外部写受 R7 约束（不使用真实候选人资料、不做真实外部写）；验证只能用测试会话 / fixture 渠道。
+
+**失败时的行为**
+
+- 人工撤回 → 记 `withdrawn` 并取消排队，**不**记 dropped。
+- 永久失败但**不满足**上述两种 drop 原因 → 保留为系统问题等人工，**不**自动标 dropped（自动标就是静默丢消息）。
+- 重启：排队中与正在发的消息都必须从库恢复；"正在发"按"可能已发出"处理 → **先回读**（`docs/03 §13` `UNKNOWN_OUTCOME`），不重复发。
+
+> 来源：参考 dsh-superagent `docs/003-execution.md` §Channel failure（"Outgoing messages are stored and sent as stored work, retried with backoff from 5 seconds, doubling up to 300"；同一工单同一会话保序，"until that one has failed three times in a row"；drop 条件与"keeps its record, with when and why it was dropped"）+ `docs/006-deployment.md` §Channel failure + `src/app/outbox.ts`（`retry: [5000, 300_000]`）。原型是研究代码，只借规则不借实现。
+
+### 23.4 三振才报错（口径在 `docs/03 §21.6`，本节只列适用与例外）
+
+**定义不在这里重复**：连续失败计数、1–2 次只记录、3 次才升级、成功即清零——**唯一定义在 `docs/03 §21.6`**；本节只说明它在外部事实这条链上的适用对象与例外，避免两套口径。
+
+1. **适用**：来源读取失败（按**来源**聚合计"连续几次轮询失败"）、出站消息失败、事件处置失败。
+2. **不计数**（最容易被搞成告警轰炸的四类）：
+   - `AUTH_REQUIRED`（授权过期：这是配置问题，走 §19"重授权后恢复"，**不计失败次数**）；
+   - `WAIT_EXTERNAL`（转写仍在生成：正常等待，§15 / §19）；
+   - 处理暂停 / 槽位满 / 前置未满足（"暂不可执行"，`Later` 语义，见 `docs/03 §21.5.4`）；
+   - 人工显式重试 → **重新计数**（既不清零，也不沿用旧计数）。
+3. **不适用**：内容质量问题（Chunk 失败、Evidence 引用不存在等）按 §19 各自的行处理，**不并入**三振——它们是内容问题，不是连接失败。
+4. 恢复后系统问题条目**自动清除**（"each part clears its own entry once it works again"）。
+
+> 判定：`consecutive_failures` 与系统问题条目**双向一致**；`AUTH_REQUIRED` 连发 10 次也**不得**产生系统问题；单次网络抖动（1 次失败后成功）后系统问题条目必须消失。
+> 来源：参考 dsh-superagent `docs/003-execution.md` §Source failure（"counts towards an error of the Source, which it reports after three failed polls in a row by default; any successful poll resets the count"）+ §Stored work + `src/app/effects.ts`（`FAILURES_BEFORE_ERROR = 3`；`Later` 不计数）。原型是研究代码，只借规则不借实现。
+
+### 23.5 与现有条款的关系（逐条，判据不并存两套）
+
+| 现有条款 | 关系 | 判据以哪处为准 | 说明 |
+|---|---|---|---|
+| §13「事件是触发信号，回读结果才是数据来源」 | **继续有效** | §13 原文 | 读位点只决定"从哪继续读"，**不改变**"以回读结果为准" |
+| §14 `next_cursor` / `has_more` | **继续有效** | §14 原文 | 分页游标 ≠ 读取位点（§23.0），**两者分开存**，不得互相顶替 |
+| §15 A–F 内部执行链路 | **继续有效** | §15 原文 | 本节不改链路顺序；只在 §15 B 的去重之外加"位点"这一道 |
+| §15 B「用 `provider_event_id` 去重」 | **继续有效，但不再是唯一防线** | 去重判据在 §15 B；"不重放"判据在 §23.1 | 去重只能防"重复建 Task"，防不住"整段重读"。**冲突不成立**：去重处理重复投递，位点处理重放 |
+| §19 十一行 | **继续有效**；其中 3 行由本节补前提 | 各行的错误处理以 §19 为准；"位点能不能推进"以 §23.1.2 为准 | ①「同一事件重复推送 → 去重」→ 补：位点保证不重放，去重兜底；②「转写仍在生成 → `WAITING_EXTERNAL`」→ 补：**`WAITING_EXTERNAL` 不是已处理，位点停在该事件不推进**（否则"人工重试后继续"会失去对象）；③「API 分页中断 → 保留 cursor」→ 补：位点不动，cursor 单独存 |
+| 时间语义（`docs/03 §19` 七种时间，`occurred_at` 不得被记录时间冒充） | **继续有效** | `docs/03 §19` | `disposition_at` / `dropped_at` / `read_position_updated_at` 属**我们自己的处理时间**，**禁止**写进 `occurred_at` |
+| §21 原样接入边界（最重要的一条） | **继续有效，本节受其约束** | §21 原文 | 位点 / 处置 / 出站记录全部是 §21 最后一条所指的"Recruitment OS 自己的处理记录"：**不塞进平台原始内容、不包装成"平台缺字段"的告警** |
+| `docs/06 §8` 三维诚实标签 | **继续有效；本节不新增第四维、不改取值** | 标签语义仍以 `docs/06 §8` + 各 `contracts/*/tool-contracts.md §1.4` 为准 | 本节补的是**判据**不是**标签**：`connection = CONNECTED` 只答"有读的能力"，`provenance = LIVE` 只答"这批数据是真的"；**"这次真读了"只能由读取位点 + 处置记录 + `read_receipt_ref` 证明** |
+| `docs/06 §8`「绝不 READY 冒充已读取」 | **继续有效 + 由本节第一次给出机检判据** | 禁令本身在 `docs/06`；判据在 §23.1 / §23.2 | 这是本次唯一"旧条款只有禁令、没有判据"的补齐，属**补充**。因为不改取值、不冲突，`docs/06` **无需回抄**（不会形成两套权威） |
+| `docs/07` FR-X9 三维诚实标注（P0） | **继续有效** | `docs/07` 原文 | 本节不新增需求编号；要立新需求走 `docs/07` 流程 |
+| `docs/04 §22` P1「失败自动重试与授权恢复」 | **继续有效（范围不同，冲突不成立）** | P1 范围仍以 §22 为准 | §22 的 P1 指**会议转写链路的自动恢复**；§23.3 只约束**出站消息**。两者不重合，出站重试不因这条被降级为 P1 |
+| 各 `contracts/*/tool-contracts.md §1.4` | **继续有效**（本节不改任何 tool contract） | 契约文件仍是**接口形状**的唯一权威 | 本节只定判据；`contracts/**` 本次**未改动**（写范围外） |
+
+### 23.6 实现状态与待验证（不许把本节读成"已经具备"）
+
+| # | 事项 | 现状 | 验证方法 |
+|---|---|---|---|
+| V-9 | 读取位点 | **未实现**：代码里没有 `read_position` / `cursor` 字段；`src/connectors/feishu` 只有骨架，`fetchTranscript()` 恒 `BLOCKED` | 真实凭据就绪后：连续两次读同一范围，第二次必须 0 新增处置；kill 进程重启后续读，不得重放 |
+| V-10 | 处置记录的承载落点 | **待决策**：`event_inbox` 加最小列，还是加子表 | 先查 `processed_at` 能否区分三种去向与 6 个原因码（不能）；按 `docs/03 §20` 证不能复用后再选；**选前不改 schema** |
+| V-11 | `FILTERED` 原因码封闭集合是否够用 | **待验证** | 用 §19 十一行 + 近 30 天的夹具事件逐条归类；出现归不进去的，先立决策再扩枚举，**不许**就地加自由文本 |
+| V-12 | 出站 `5s → 300s` 退避 | **未实现**：当前无 Outbox（`dsh/dsh-recruitment/src` 里无 outbox / retry） | 测试会话里让发送连续失败 8 次，核对间隔序列与上限；再核对 dropped 三字段齐全 |
+| V-13 | 保序与"三振后放行" | **未实现** | 并发投 3 条同一（工作单元, 会话）消息，让第 1 条一直失败：前 2 次失败时后 2 条不得先发；第 3 次失败后必须放行 |
+| V-14 | `AUTH_REQUIRED` 不计数 | **待验证** | 让 transport 连续返回 401 十次，来源健康必须停在 `AUTH_REQUIRED`，**不**产生系统问题条目 |
+| V-15 | "无处置事件"的可见性阈值 | **未定** | 需产品负责人给阈值（建议 1 个轮询周期 + 5 分钟）；**未定前**健康只显示计数，不判失败 |
+| V-16 | `event_disposition` 与既有 `missing_disposition` 的撞名风险 | **已核实不撞车**：全仓 grep，`missing_disposition` 只出现在评价链路（`src/tools/decision-record.ts:391/464/570` 的入参、`contracts/evaluation/*` 的条件字段），`event_disposition` **零命中**（本节是首次出现） | 后续新增字段沿用两个名字前再 grep 一次；任何工具出参若同时出现两个 `*disposition`，**必须改名**（`contracts/**` / `src/**` 属写范围外，需另派 lane） |
