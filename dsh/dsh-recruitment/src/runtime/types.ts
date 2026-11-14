@@ -31,6 +31,32 @@ export interface BusinessObjectRef {
 export type TrustLevel = 'UNTRUSTED_EXTERNAL' | 'INTERNAL'
 
 /**
+ * 出站通知目标（runtime → 引擎 Outbox）。
+ *
+ * 只有配置了它，Task 进入 `WAITING_*` / `FAILED` 时才会登记一条出站消息；
+ * 默认不配 = 不发消息（正常自动化保持安静，Notion `04` §10 的意图）。
+ */
+export interface NotificationTarget {
+  /** 引擎 Channel 的 source 名（Outbox 用它找 Source 实例）。 */
+  readonly source: string
+  /** 外部会话/线程标识（Outbox 按它排序）。 */
+  readonly thread: string
+  /** 通道地址（交给 Source 的具体寻址字段）。 */
+  readonly address: Readonly<Record<string, string>>
+  /** 出站消息类型；默认 `notice`。 */
+  readonly kind: 'notice' | 'reply' | 'acknowledgement'
+}
+
+/** 一次出站登记的结果（同事务读回，状态应是 `pending`）。 */
+export interface RuntimeNotification {
+  readonly messageId: string
+  /** 本次是否**新**登记（false = 同一 message id 已存在，幂等忽略）。 */
+  readonly inserted: boolean
+  /** 登记后立即从 `engine_outbox` 读回的状态。 */
+  readonly status: string
+}
+
+/**
  * 进站事件的规范化输入。
  *
  * 字段与 0001 `event_inbox` 的 Event Envelope 对齐；`idempotencyKey` 缺省时由
@@ -294,6 +320,8 @@ export interface TickReceipt {
     readonly attemptStatus: AttemptStatus
     readonly errorCode: string | null
     readonly resumedSession: boolean
+    /** 本次执行产生的出站通知登记（未配置通知或未到通知状态时为 null）。 */
+    readonly notification: RuntimeNotification | null
   } | null
   /** 没有派发时的原因（可解释的空闲，不是把故障说成空）。 */
   readonly idleReason: string | null

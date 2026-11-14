@@ -30,14 +30,19 @@ export interface RuntimeTestDatabase {
 const HERE = dirname(fileURLToPath(import.meta.url))
 const MIGRATIONS_DIR = join(HERE, '..', '..', '..', '..', 'db', 'migrations')
 
-/** 迁移文件清单：只取 0001..0011（0012/0013 属于其它 lane，不在本 lane 验收范围）。 */
+/**
+ * 迁移文件清单：按 0001 之后全部重放。
+ *
+ * 运行时现在依赖 `recruitment.engine_effect` / `engine_outbox`（0012）作为
+ * **持久副作用表**，所以测试库必须至少到 0012；以后新增迁移也应一起重放，
+ * 否则 CI（全链 0001→N）与测试库会分叉。
+ */
 function migrationFiles(): readonly string[] {
   const all = readdirSync(MIGRATIONS_DIR)
     .filter((name) => /^\d{4}_[a-z0-9_]+\.sql$/.test(name))
-    .filter((name) => name <= '0011_task_runtime.sql')
     .sort()
-  if (all.length !== 11) {
-    throw new Error(`expected 11 migrations (0001..0011), found ${all.length}: ${all.join(', ')}`)
+  if (all.length < 12) {
+    throw new Error(`expected at least 12 migrations (0001..0012), found ${all.length}: ${all.join(', ')}`)
   }
   return all
 }
@@ -77,6 +82,13 @@ export async function createRuntimeTestDatabase(label: string): Promise<RuntimeT
     for (const file of migrations) {
       const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8')
       await client.query(sql)
+    }
+    // runtime ↔ 引擎 Effects/Outbox 交界的表必须真的存在（否则测试会绿成"没接线"）。
+    const engine = await client.query<{ effect: string | null; outbox: string | null }>(
+      "select to_regclass('recruitment.engine_effect')::text as effect, to_regclass('recruitment.engine_outbox')::text as outbox",
+    )
+    if (engine.rows[0]?.effect === null || engine.rows[0]?.outbox === null) {
+      throw new Error('engine_effect/engine_outbox tables are missing: apply 0012_engine_state.sql')
     }
   } catch (error) {
     client.release()

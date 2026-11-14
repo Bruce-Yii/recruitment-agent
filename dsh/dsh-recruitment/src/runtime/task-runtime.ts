@@ -17,6 +17,7 @@ import type { RuntimeStore, RecoveredAttempt, TaskClaim } from './store.ts'
 import type {
   AttemptStatus,
   TaskStatus,
+  RuntimeNotification,
   TaskRuntimeView,
   WorkerLauncher,
   WorkerOutcome,
@@ -53,6 +54,7 @@ export interface DispatchResult {
   readonly attemptStatus: AttemptStatus
   readonly errorCode: string | null
   readonly resumedSession: boolean
+  readonly notification: RuntimeNotification | null
 }
 
 /** Task 运行时：只做"某一次执行"的生命周期，不做事件路由。 */
@@ -215,6 +217,8 @@ export class TaskRuntime {
       attemptStatus: finished.attemptStatus,
       errorCode: finished.errorCode,
       resumedSession: request.resumeSessionId !== null,
+      notification: finished.notification,
     }
   }
 }
+

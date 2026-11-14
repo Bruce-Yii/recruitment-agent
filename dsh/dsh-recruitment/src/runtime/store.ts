@@ -19,6 +19,8 @@ import type {
   BusinessObjectRef,
   BusinessTaskRecord,
   InboundEvent,
+  NotificationTarget,
+  RuntimeNotification,
   TaskAttemptRecord,
   TaskErrorClass,
   TaskRuntimeView,
@@ -27,12 +29,20 @@ import type {
 } from './types.ts'
 import type { RouteDecision } from './types.ts'
 import { taskIdempotencyKey } from './routing.ts'
+// runtime ↔ 引擎 Effects/Outbox 的唯一交界（type-only import，不会拉起同步桥 worker）。
+// 三个函数都接收**调用方事务里的异步 client**：业务写入与副作用入队同事务提交。
+import { enqueueEffect, readReceipt, recordOutbound } from '../engine/app/effects-async.ts'
 
 /** 运行时写库需要的配置（tenant/actor 来自插件配置，不接受模型入参）。 */
 export interface RuntimeStoreOptions {
   readonly pool: DatabasePool
   readonly tenantId: string
   readonly actorId: string
+  /**
+   * 出站通知目标（可选）。配置后才在 Task 进入 WAITING_* / FAILED 时登记消息；
+   * 默认不配 = 不发消息。
+   */
+  readonly notification?: NotificationTarget
 }
 
 /** `insertEvent` 的结果：本次是新入库还是命中幂等。 */
@@ -103,6 +113,8 @@ export interface FinishAttemptResult {
   readonly taskStatus: TaskStatus
   readonly attemptStatus: AttemptStatus
   readonly errorCode: string | null
+  /** 本次收尾登记的出站通知（同事务读回 pending；未配置/不需要通知时为 null）。 */
+  readonly notification: RuntimeNotification | null
 }
 
 /** 回收失联 Attempt 的结果。 */
@@ -226,6 +238,7 @@ export class RuntimeStore {
   private readonly pool: DatabasePool
   private readonly tenantId: string
   private readonly actorId: string
+  private readonly notification: NotificationTarget | undefined
 
   /**
    * @param options - 连接池 + 租户 + actor（全部来自插件配置）。
@@ -234,6 +247,7 @@ export class RuntimeStore {
     this.pool = options.pool
     this.tenantId = options.tenantId
     this.actorId = options.actorId
+    this.notification = options.notification
   }
 
   /** 当前租户 id（测试/HTTP 回执用）。 */
@@ -486,14 +500,16 @@ export class RuntimeStore {
     return withActor(this.pool, this.actorId, async (client) => {
       let taskId: string | null = null
       let created = false
-      const existing = await client.query<{ id: string }>(
-        `select id::text from recruitment.business_task
+      let existingStatus: string | null = null
+      const existing = await client.query<{ id: string; status: string }>(
+        `select id::text, status from recruitment.business_task
           where tenant_id = $1::uuid and idempotency_key = $2
           for update`,
         [this.tenantId, key],
       )
       if (existing.rows[0] !== undefined) {
         taskId = existing.rows[0].id
+        existingStatus = existing.rows[0].status
       } else {
         const inserted = await client.query<{ id: string }>(
           `insert into recruitment.business_task (
@@ -579,6 +595,17 @@ export class RuntimeStore {
             where tenant_id = $1::uuid and id = $3::uuid`,
           [this.tenantId, eventId, taskId],
         )
+        // 调用点 1b：任务正在执行时又到达新事件 → 入队 `delivery` 副作用（同事务）。
+        // 运行时记录唤醒事实；把"新输入交给运行中的 Worker"这件异步动作留给插件侧
+        // Effects 处理器，避免 runtime 与引擎两套投递逻辑并存。
+        if (existingStatus === 'RUNNING') {
+          await enqueueEffect(client, {
+            tenantId: this.tenantId,
+            kind: 'delivery',
+            key: taskId,
+            payload: { ticketId: taskId },
+          })
+        }
       }
       return { taskId, created: false, wakeInserted, wakeSeq: wakeInserted ? num(wake.rows[0].wake_seq) : null }
     })
@@ -706,6 +733,15 @@ export class RuntimeStore {
         where tenant_id = $1::uuid and id = $4::uuid`,
       [this.tenantId, attemptId, attemptNo, input.taskId],
     )
+    // 调用点 1a：派发任务前把 `launch` 副作用原子入队（与 Attempt/Task 写入同事务）。
+    // payload 用引擎的 launch 形状；runtime 的 task/attempt 映射到 ticket/assignment 两个字段，
+    // 插件侧的 Effects 处理器据 key（= attemptId）决定要做什么，不反写任务身份。
+    await enqueueEffect(client, {
+      tenantId: this.tenantId,
+      kind: 'launch',
+      key: attemptId,
+      payload: { ticketId: input.taskId, assignmentId: attemptId },
+    })
     const lastSession = await client.query<{ runtime_session_id: string | null }>(
       `select s.runtime_session_id
          from recruitment.agent_session s
@@ -904,12 +940,90 @@ export class RuntimeStore {
         ],
       )
 
+      // 4) 调用点 2/3：需要人/最终失败时登记出站通知，并**同事务读回**回执状态。
+      //    `recordOutbound` 会同时入队 `reply` effect；runtime 不再单独写
+      //    `engine_outbox`/`durable_effect`，避免两套回执。
+      const notification = await this.writeNotification(client, {
+        taskId: input.taskId,
+        attemptNo,
+        taskStatus,
+        summary: input.summary,
+      })
+
       return {
         taskStatus,
         attemptStatus,
         errorCode: taskErrorCode,
-        // 保留 attemptNo 给调用方日志用（不回写语义，只读字段）
-      } satisfies FinishAttemptResult & { attemptNo?: number }
+        notification,
+      }
+    })
+  }
+
+  /**
+   * 登记一条任务通知并读回回执（调用点 2/3 的实现；必须在调用方事务里）。
+   *
+   * 只有 `WAITING_EXTERNAL` / `WAITING_HUMAN` / `FAILED` 才发消息：正常自动化
+   * 保持安静（Notion `04` §10）。message id 由 (task, attempt, status) 决定，
+   * 同一状态重复收尾不会产生第二条回执。
+   */
+  private async writeNotification(
+    client: DatabaseClient,
+    input: {
+      readonly taskId: string
+      readonly attemptNo: number
+      readonly taskStatus: TaskStatus
+      readonly summary: string
+    },
+  ): Promise<RuntimeNotification | null> {
+    const target = this.notification
+    if (target === undefined) return null
+    if (input.taskStatus !== 'WAITING_EXTERNAL'
+        && input.taskStatus !== 'WAITING_HUMAN'
+        && input.taskStatus !== 'FAILED') {
+      return null
+    }
+    const messageId = `task:${input.taskId}:attempt:${input.attemptNo}:${input.taskStatus}`
+    const message = {
+      id: messageId,
+      channel: {
+        source: target.source,
+        thread: target.thread,
+        address: { ...target.address },
+      },
+      text: `task ${input.taskId} attempt ${input.attemptNo} -> ${input.taskStatus}: ${input.summary}`.slice(0, 1000),
+      kind: target.kind,
+      ticketId: input.taskId,
+    }
+    const inserted = await recordOutbound(client, { tenantId: this.tenantId, message })
+    const receipt = await readReceipt(client, messageId)
+    const status = receipt !== undefined && typeof receipt.status === 'string' ? receipt.status : 'missing'
+    return { messageId, inserted, status }
+  }
+
+  /**
+   * 运行时主动登记一条任务通知（运维/旁路入口；与 `finishAttempt` 同一实现）。
+   * 重复调用同一 (task, attempt, status) 幂等：第二次 `inserted=false`。
+   * @param input - 任务 + attempt + 状态 + 摘要。
+   * @returns 回执登记结果（同事务读回 pending）。
+   */
+  async publishNotification(input: {
+    readonly taskId: string
+    readonly attemptNo: number
+    readonly taskStatus: TaskStatus
+    readonly summary: string
+  }): Promise<RuntimeNotification | null> {
+    return withActor(this.pool, this.actorId, async (client) => this.writeNotification(client, input))
+  }
+
+  /**
+   * 读一条出站消息的当前回执（调用点 3 的读路径；插件侧派发后用同一函数确认）。
+   * @param messageId - `engine_outbox.message_id`。
+   * @returns 回执 JSON（status 等）；不存在返回 null。
+   */
+  async readMessageReceipt(messageId: string): Promise<Record<string, unknown> | null> {
+    return withReadOnly(this.pool, async (client) => {
+      const receipt = await readReceipt(client, messageId)
+      return receipt ?? null
     })
   }
 

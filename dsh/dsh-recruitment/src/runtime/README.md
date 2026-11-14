@@ -90,6 +90,29 @@ Attempt 属于 A 而 Session 挂 B、ROUTER 角色挂 attempt、挂 attempt 但�
 
 未开启时：不注册任何路由，现有 19 个工具与 overview 路由完全不变。
 
+## 与引擎 Effects/Outbox 的边界（2026-11-14 接）
+
+职责切分：**任务身份与执行归本目录**；**持久副作用（队列/回执/派发/对账/退避）
+归 `src/engine/` 的 `Effects` / `Outbox` / `Passes`**。两边只通过
+`src/engine/app/effects-async.ts` 的三个函数交接，且都传 runtime 自己的
+`DatabaseClient`（同一个异步 PG 事务，崩溃窗口为零）：
+
+| 调用点 | 位置 | 事务 |
+|---|---|---|
+| 派发前 `enqueueEffect(kind='launch')` | `store.ts` `insertAttemptAndMarkRunning` | 与 Attempt insert + Task→RUNNING 同一 `withActor` 事务 |
+| 运行中唤醒 `enqueueEffect(kind='delivery')` | `store.ts` `createOrWakeTask` | 与 `task_wakeup` insert + Task 更新同一事务 |
+| 需要人/最终失败 `recordOutbound` + `readReceipt` | `store.ts` `writeNotification`（由 `finishAttempt` 调用） | 与 Attempt/Task/Session 收尾同一事务；回执立即读回 `pending` |
+| 事后查回执 `readReceipt` | `store.ts` `readMessageReceipt` / `GET /recruitment/runtime/messages/:id` | 只读事务 |
+
+只有 `WAITING_EXTERNAL` / `WAITING_HUMAN` / `FAILED` 才登记出站通知（正常自动化
+保持安静）；`notification` 未配置时**不发任何消息**，也不假装有回执。同一
+`(task, attempt, status)` 的 message id 固定，重复收尾/重复登记幂等。
+
+验证：`test/runtime/engine-junction.test.ts`（真实 PG + 真实同步桥）证明
+runtime 异步事务写的 `launch`/`reply` 行被插件侧 `Effects`/`Outbox` 派发，
+回执 `pending → sent`，重复登记只有一条回执；vendor 侧的
+`test/integration/engine-effects-junction-pg.test.ts` 是同一交界的独立测试。
+
 ## 手工证据（不进 `node --test`）
 
 ```powershell
