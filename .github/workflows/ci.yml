@@ -450,7 +450,6 @@ jobs:
       RECRUITMENT_DB_PASSWORD: postgres
       RECRUITMENT_TEST_DB: ra_golden_path
       RECRUITMENT_DB_NAME: ra_golden_path
-      RECRUITMENT_PYTHON_BIN: python
       GOLDEN_PATH_HEAD: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -470,6 +469,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Resolve absolute python path for converter
+        # converter 配置要求 python_bin 是**绝对路径**（生产解析器同口径）；job env 里写
+        # `python` 会被配置校验拒绝（G4 首跑 CI 实测：config.python_bin must be absolute）。
+        # setup-python 之后解析真实路径，后续 bootstrap/harness 步骤通过 GITHUB_ENV 继承。
+        run: echo "RECRUITMENT_PYTHON_BIN=$(command -v python)" >> "$GITHUB_ENV"
 
       - name: Install converter dependencies (PyMuPDF / python-docx / Pillow)
         # harness 走真实 converter 解析合成 PDF；缺依赖时 converter 明确 fail（不是 skip），
