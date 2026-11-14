@@ -197,12 +197,12 @@ begin
   end loop;
   raise notice 'STRUCT-05 PASS 状态表都有 fn_row_guard；conversion_run / review_queue 按 D-47 豁免，真实守卫已逐条核对';
 
-  -- 2.6 历史事实表必须禁删（地板 38 = 0001_init 基线，保证本文件在只有 0001(+0004) 的库上仍可跑；2026-11-14 回抄实测：0014 链 50 / 本机另含未提交 0015 时 52）
+  -- 2.6 历史事实表必须禁删（地板 38 = 0001_init 基线，保证本文件在只有 0001(+0004) 的库上仍可跑；2026-11-14 21:00 回抄实测：0015 链 52）
   select count(*) into v_n
     from pg_trigger g
    where g.tgfoid = 'recruitment.fn_block_delete'::regproc and not g.tgisinternal;
   if v_n < 38 then
-    raise exception 'STRUCT-06 禁删触发器只有 % 个（期望 >= 38；0001 基线 38，2026-11-14 实测 50–52，见 notice）', v_n;
+    raise exception 'STRUCT-06 禁删触发器只有 % 个（期望 >= 38；0001 基线 38，2026-11-14 实测 52，见 notice）', v_n;
   end if;
   raise notice 'STRUCT-06 PASS 历史事实禁删触发器 % 个', v_n;
 

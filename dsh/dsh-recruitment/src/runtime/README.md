@@ -157,7 +157,7 @@ $env:RECRUITMENT_DB_PASSWORD='<local dev db password>'
 node src/runtime/evidence/intake-event-routing.evidence.ts
 ```
 
-脚本会：建一次性空库（重放 0001→0014）→ 用**产品同一个**
+脚本会：建一次性空库（重放 0001→0015）→ 用**产品同一个**
 `createApplicationIntakeTool(...).execute()` 真跑一次 S6 接入（真 Python converter 读合成 PDF，
 真工具事务写库）→ 读回工具写下的 `resume.intake.received` 事件行 → 用**生产同一个**
 `EventRuntime.processPending()` 路由 → 从库里读回 `event_inbox` 投影 + `business_task`

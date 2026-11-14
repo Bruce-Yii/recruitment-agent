@@ -20,6 +20,9 @@ work/
 # ---- 测试运行产物：runtime 测试的临时工作目录（隔离库/中间文件，可重建）----
 .runtime-test-work/
 
+# ---- OCR 抽标题的临时产物（每次运行一个随机后缀目录，可重建）----
+converter/ocr_titles_*/
+
 # ---- 凭据 / 环境 ----
 .env
 .env.*
