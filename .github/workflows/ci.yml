@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # 手动触发：feature 分支不满足 push/pull_request 条件时，CI 永远跑不到，
+  # 于是"本机绿"成了唯一证据（R8 独立验证缺失）。加 workflow_dispatch 后可以
+  # `gh workflow run CI --ref <branch>` 在**不开 PR**的前提下跑真实 CI。
+  workflow_dispatch:
 
 permissions:
   contents: read
