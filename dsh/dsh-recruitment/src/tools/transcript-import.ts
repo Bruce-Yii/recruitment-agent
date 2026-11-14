@@ -20,10 +20,14 @@
 //      由飞书连接器 `fetchTranscript()` 回读取正文。**默认态是 fail-closed**：
 //      插件配置里没有 `feishu.cli`（lark-cli 绝对路径）时不装配传输层，本路径直接
 //      `BLOCKED / TRANSPORT_NOT_CONFIGURED`，不拉进程、不读正文、不写任何行。
-//      即使装配了传输层并读到字节，Live Gate 仍是 `BLOCKED` → 回读对象
-//      `transport='FIXTURE'`，落库标签只能是 `provenance=FIXTURE + trigger=MANUAL +
-//      connection∈{NOT_CONNECTED, AUTH_REQUIRED}`；本工具**永不**把回读写成 LIVE/CONNECTED
-//      （要升级必须由人先按 `connectors/feishu/README.md §7` 解锁 Gate 并改本文件）。
+//      落库标签由 `evaluateLiveGate()` 按**本次回读证据**算（不是全局开关）：
+//        * 证据齐全 → `provenance=LIVE`、`trigger=MANUAL`、`connection=CONNECTED`，
+//          `provider_artifact_id` 用真实分钟标识（`feishu:minutes:<token>`）；
+//        * 缺任何一项 → `FIXTURE / MANUAL / {NOT_CONNECTED, AUTH_REQUIRED}`，
+//          并把缺项写进 warnings / detail（说清缺什么）；
+//        * 回读对象**自相矛盾**（声明的 sha / 回执 / 重读哈希与正文不一致）→
+//          `BLOCKED / READBACK_INVALID`，一行不写（不一致是失败，不是警告）。
+//      工具**永不**把调用方自报的 LIVE 当依据：只看回读证据。
 //
 // 写事务：`withActor`（`set_config('recruitment.actor_id', …, true)`，等价 SET LOCAL），单事务；
 // 任何失败整笔回滚 —— `changes` 全空就是"没写"的证明（TC §1.3）。
@@ -40,13 +44,17 @@ import { closePool, createPool, withActor, type DatabaseClient, type ResolvedDat
 import {
   FEISHU_MINUTES_CONNECTOR_ID,
   FEISHU_MINUTES_PROVIDER,
+  LIVE_READBACK_PROVENANCE_BASIS,
+  evaluateLiveGate,
   readNonEmptyString,
+  readbackConsistencyViolations,
   type Connection,
   type FeishuCliTranscriptReadback,
   type FeishuConnectorDependency,
   type FeishuMinutesAdapter,
   type FeishuTranscriptBlocked,
   type FeishuTranscriptWaitingExternal,
+  type LiveGateDecision,
 } from '../connectors/feishu/index.ts'
 
 const TOOL_NAME = 'recruitment_transcript_import'
@@ -66,17 +74,21 @@ const RECORD_SCHEMA_VERSION = 1
 const SECTIONS_SCHEMA = 'manual-import.sections/1'
 /** 片段来源引用（可追溯是谁写的：人工导入）。 */
 const SEGMENT_RAW_SOURCE_REF = 'manual-import'
-/** 片段来源引用（连接器回读：字节来自 `lark-cli-transport`，但 Gate=BLOCKED 时不代表平台来源已核实）。 */
+/** 片段来源引用（连接器回读：字节来自 `lark-cli-transport`；是否 LIVE 由证据算）。 */
 const SEGMENT_RAW_SOURCE_REF_CONNECTOR = 'feishu-connector-readback'
 /** 同 meeting 下按 provider_artifact_id 生成（**不编造平台标识**，RD §2）。 */
 const ARTIFACT_ID_PREFIX = 'local:'
-/** 连接器回读产物的 provider_artifact_id 前缀（`local:` 明确表示「未经平台核实」）。 */
+/** 连接器回读但**不满足 LIVE 证据**时的 provider_artifact_id 前缀（`local:` = 未经平台核实）。 */
 const FEISHU_READBACK_ARTIFACT_PREFIX = `${ARTIFACT_ID_PREFIX}feishu-minutes:`
+/** 连接器回读且 **LIVE 证据齐全**时的 provider_artifact_id 前缀（真实平台分钟标识）。 */
+const FEISHU_LIVE_ARTIFACT_PREFIX = 'feishu:minutes:'
+/** 两条连接器产物前缀：replay 时用来认「这一行是不是连接器回读写的」。 */
+const FEISHU_CONNECTOR_ARTIFACT_PREFIXES = [FEISHU_READBACK_ARTIFACT_PREFIX, FEISHU_LIVE_ARTIFACT_PREFIX] as const
 /** 连接器回读的确定性记录（不是模型抽取，与人工导入同形，但来源不同）。 */
 const CONNECTOR_RECORD_MODEL_ID = 'none:connector-readback'
 const CONNECTOR_RECORD_PROMPT_VERSION = 'connector-readback/1.0.0'
 const CONNECTOR_SECTIONS_SCHEMA = 'feishu-connector-readback.sections/1'
-/** 连接器回读的 `provenance_basis`：读到了字节，但 Gate=BLOCKED 不构成 LIVE 依据。 */
+/** 连接器回读但**证据不齐**时的 `provenance_basis`（读到了字节，但不构成 LIVE 依据）。 */
 export const FEISHU_READBACK_PROVENANCE_BASIS = 'FEISHU_READBACK_NO_LIVE_GATE'
 /** `sections.source.kind`：连接器回读（与人工上传的 PLATFORM_EXPORT / DEMO_SAMPLE 并列）。 */
 const SECTIONS_SOURCE_KIND_CONNECTOR = 'FEISHU_CONNECTOR_READBACK'
@@ -284,22 +296,24 @@ const OUTPUT_SCHEMA = {
         trigger: { type: 'string', enum: ['MANUAL'], description: '本工具只由人/模型在会话里调用，恒 MANUAL。' },
         connection: {
           type: 'string',
-          enum: ['NOT_CONNECTED', 'AUTH_REQUIRED'],
+          enum: ['NOT_CONNECTED', 'AUTH_REQUIRED', 'CONNECTED'],
           description:
-            '人工上传恒 NOT_CONNECTED；连接器回读路径按连接器 probe() 的真实状态给 NOT_CONNECTED/AUTH_REQUIRED，'
-            + '**永不** CONNECTED（Live Gate=BLOCKED）。',
+            '人工上传恒 NOT_CONNECTED；连接器回读：证据齐全（evaluateLiveGate=LIVE）才是 CONNECTED，'
+            + '否则按 probe() 的真实状态给 NOT_CONNECTED/AUTH_REQUIRED。',
         },
       },
       description:
         '三维正交标签（R4）。人工路径：LIVE 当且仅当 source_kind=PLATFORM_EXPORT 且给出导出文件名；'
-        + '连接器回读路径：provenance 恒 FIXTURE（Gate=BLOCKED，回读 transport=FIXTURE），'
-        + 'connection 只能是 NOT_CONNECTED/AUTH_REQUIRED。replayed=true 时回显既有行的真实标注，不因本次入参而升级。',
+        + '连接器回读路径：provenance/connection 由**本次回读证据**算出（平台通道 + 回执绑定哈希 + '
+        + 'content_sha256 与 raw_text 重算一致 + 重读哈希 + 带偏移 fetched_at + 完整分页 + 非空正文）：'
+        + '全齐 → LIVE/MANUAL/CONNECTED，缺一项 → FIXTURE/MANUAL/{NOT_CONNECTED,AUTH_REQUIRED}。'
+        + 'replayed=true 时回显既有行的真实标注，不因本次入参而升级。',
     },
     provenance_basis: {
       type: 'string',
       description:
-        'provenance 的判定依据（一句话理由码）。人工路径两值；连接器回读为 '
-        + `${FEISHU_READBACK_PROVENANCE_BASIS}（读到了字节，但 Gate=BLOCKED 不构成 LIVE 依据）。`,
+        'provenance 的判定依据（一句话理由码）。人工路径两值；连接器回读：证据齐全为 '
+        + `${LIVE_READBACK_PROVENANCE_BASIS}，证据不齐为 ${FEISHU_READBACK_PROVENANCE_BASIS}（说清缺哪项见 warnings）。`,
     },
     interview: {
       type: 'object',
@@ -350,8 +364,9 @@ const OUTPUT_SCHEMA = {
         trigger_mode: { type: 'string', enum: ['MANUAL'] },
         connection_state: {
           type: 'string',
-          enum: ['NOT_CONNECTED', 'AUTH_REQUIRED'],
-          description: '**这一行**自己的连接标注；连接器回读也绝不写 CONNECTED（Gate=BLOCKED）。',
+          enum: ['NOT_CONNECTED', 'AUTH_REQUIRED', 'CONNECTED'],
+          description:
+            '**这一行**自己的连接标注。人工路径恒 NOT_CONNECTED；连接器回读：LIVE 证据齐全才 CONNECTED，否则收敛为 NOT_CONNECTED/AUTH_REQUIRED。',
         },
         is_canonical: { type: 'boolean' },
         is_complete: { type: 'boolean' },
@@ -572,21 +587,30 @@ export function validateTranscriptImportArgs(args: Record<string, unknown>): voi
   }
 }
 
-/**
- * 连接器回读落库时**允许**的三维标签（纯函数，**永不 LIVE / CONNECTED**）。
- *
- * provenance 恒 `FIXTURE`、trigger 恒 `MANUAL`；connection 只保留
- * `NOT_CONNECTED` / `AUTH_REQUIRED`（任何别的值，包括 `CONNECTED`，一律**降级**为
- * `AUTH_REQUIRED`——降级是保守方向，永远不会把没核实的东西说成已连接）。
- * 要允许 LIVE/CONNECTED，必须先由人解锁 `FEISHU_MINUTES_LIVE_GATE` 并显式改这里
- * （`connectors/feishu/README.md §7`），不能靠调用方传参。
- * @param connection - 连接器 probe() 给出的连接状态（不可信输入，逐值收敛）。
- */
-export function connectorReadbackLabels(connection: Connection | string): {
-  readonly provenance: 'FIXTURE'
+/** 连接器回读落库允许的三维标签（永不 CONNECTED，除非 gate 真的 LIVE）。 */
+export type ConnectorReadbackLabels = {
+  readonly provenance: 'LIVE' | 'FIXTURE'
   readonly trigger: 'MANUAL'
-  readonly connection: 'NOT_CONNECTED' | 'AUTH_REQUIRED'
-} {
+  readonly connection: 'CONNECTED' | 'NOT_CONNECTED' | 'AUTH_REQUIRED'
+}
+
+/**
+ * 连接器回读落库时的三维标签（纯函数，由**回读证据**算出，不接受自报）。
+ *
+ * 规则只有一条：`evaluateLiveGate(readback)` 给 `LIVE` → `LIVE / MANUAL / CONNECTED`；
+ * 否则 `FIXTURE / MANUAL / {NOT_CONNECTED, AUTH_REQUIRED}`。
+ * 缺任何一项证据都不是 LIVE；`CONNECTED` 这个值只能从 gate 成功路径来，
+ * 调用方传什么（包括 probe 自报）都不能把它「升」成 CONNECTED。
+ * @param readback - 连接器回读对象（不可信输入，逐项核对）。
+ * @param connection - 连接器 probe() 的连接态（只在非 LIVE 时使用；`NOT_CONNECTED` 原样保留，其余收敛为 AUTH_REQUIRED）。
+ */
+export function connectorReadbackLabels(
+  readback: unknown,
+  connection: Connection | string = 'AUTH_REQUIRED',
+): ConnectorReadbackLabels {
+  if (evaluateLiveGate(readback).gate === 'LIVE') {
+    return { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' }
+  }
   return {
     provenance: 'FIXTURE',
     trigger: 'MANUAL',
@@ -607,7 +631,9 @@ export type TranscriptImportSource =
       readonly content: string
       readonly readback: FeishuCliTranscriptReadback
       readonly minuteToken: string
-      readonly labels: ReturnType<typeof connectorReadbackLabels>
+      readonly labels: ConnectorReadbackLabels
+      /** 本次回读的 Gate 结论（LIVE / BLOCKED + 缺哪项 + 证据快照）。 */
+      readonly liveGate: LiveGateDecision
     }
 
 /** 连接器回读被阻断 → 本工具的 `BLOCKED` 错误（detail 里逐项说清，不回显正文/minute_token）。 */
@@ -742,7 +768,7 @@ export async function resolveImportSource(
   if (result.kind === 'BLOCKED') failConnectorBlocked(result, connectorIssues)
   if (result.kind === 'WAITING_EXTERNAL') failConnectorWaiting(result)
 
-  // ---- READ：只认完整回读 + 非空正文；标签永远是 FIXTURE（Gate=BLOCKED）----
+  // ---- READ：正文必须非空且回读自洽；标签由 evaluateLiveGate() 按证据算 ----------
   const readback = result.readback
   if (typeof readback.raw_text !== 'string' || readback.raw_text.trim() === '') {
     fail('BLOCKED', {
@@ -759,13 +785,31 @@ export async function resolveImportSource(
       detail: { char_count: readback.raw_text.length, max_chars: MAX_CONTENT_CHARS, creates_artifact: false },
     })
   }
+  // 回读对象自相矛盾 = 失败，不是警告：声明的 sha / 回执摘要 / 重读哈希
+  // 必须与 raw_text 对得上，否则不写任何行（降到 FIXTURE 继续写会把矛盾洗白）。
+  const contradictions = readbackConsistencyViolations(readback)
+  if (contradictions.length > 0) {
+    fail('BLOCKED', {
+      reason_code: 'READBACK_INVALID',
+      message: '连接器回读对象自相矛盾：声明的 content_sha256 / read_receipt_ref / reread_sha256 '
+        + '与 raw_text 重新计算的结果不一致。回读不一致是失败，不是警告；本次没有正文，也没有写任何 artifact。',
+      detail: {
+        connector: FEISHU_MINUTES_CONNECTOR_ID,
+        connector_result: 'BLOCKED',
+        violations: [...contradictions],
+        creates_artifact: false,
+      },
+    })
+  }
+  const liveGate = evaluateLiveGate(readback)
   return {
     mode: 'CONNECTOR_READBACK',
     content: readback.raw_text,
     readback,
     minuteToken,
-    // 不信任适配器给的标签：连接状态收敛到 NOT_CONNECTED/AUTH_REQUIRED，provenance 恒 FIXTURE。
-    labels: connectorReadbackLabels(result.labels.connection),
+    // 不信任适配器给的标签：标签只由本次回读的证据算；缺证据就只能 FIXTURE。
+    labels: connectorReadbackLabels(readback, result.labels.connection),
+    liveGate,
   }
 }
 
@@ -1175,16 +1219,17 @@ export async function importTranscriptInTransaction(
   const sha = createHash('sha256').update(content, 'utf8').digest('hex')
   const charCount = content.length
 
-  // 固定列取值（RD §2）：不编造平台标识；provenance 只由来源决定。
-  // 连接器回读：provider 用会议的真实平台名，provider_artifact_id 用 `local:` 前缀
-  // （Gate=BLOCKED 时我们没法核实平台标识，不写"看起来像平台前缀"的 id）。
+  // 固定列取值（RD §2）：不编造平台标识；provenance 只由来源 + 证据决定。
+  // 连接器回读：provider 用会议的真实平台名；**只有 LIVE 证据齐全**才写真实平台
+  // 分钟标识（`feishu:minutes:<token>`），否则用 `local:` 前缀明确表示「未经平台核实」。
+  const connectorLive = source.mode === 'CONNECTOR_READBACK' && source.liveGate.gate === 'LIVE'
   const provider = source.mode === 'CONNECTOR_READBACK'
     ? binding.provider
     : source.sourceKind === 'PLATFORM_EXPORT'
       ? binding.provider
       : 'LOCAL_DEMO'
   const providerArtifactId = source.mode === 'CONNECTOR_READBACK'
-    ? `${FEISHU_READBACK_ARTIFACT_PREFIX}${source.minuteToken}`
+    ? `${connectorLive ? FEISHU_LIVE_ARTIFACT_PREFIX : FEISHU_READBACK_ARTIFACT_PREFIX}${source.minuteToken}`
     : source.sourceKind === 'PLATFORM_EXPORT'
       ? `${ARTIFACT_ID_PREFIX}platform-export:${binding.meeting_id}`
       : `${ARTIFACT_ID_PREFIX}demo-sample:${binding.meeting_id}`
@@ -1197,7 +1242,7 @@ export async function importTranscriptInTransaction(
       ? `upload:${actorId}:sha256:${sha};file=${source.exportedFileName}`
       : undefined
   const provenanceBasis = source.mode === 'CONNECTOR_READBACK'
-    ? FEISHU_READBACK_PROVENANCE_BASIS
+    ? (connectorLive ? LIVE_READBACK_PROVENANCE_BASIS : FEISHU_READBACK_PROVENANCE_BASIS)
     : provenanceBasisFor(labels.provenance)
   const segmentSourceRef = source.mode === 'CONNECTOR_READBACK'
     ? SEGMENT_RAW_SOURCE_REF_CONNECTOR
@@ -1224,18 +1269,29 @@ export async function importTranscriptInTransaction(
   const isCanonical = canonical === undefined || movesCanonical
   const warnings: WarningRow[] = []
   if (source.mode === 'CONNECTOR_READBACK') {
-    warnings.push({
-      code: 'FEISHU_READBACK_NOT_LIVE',
-      message: '正文由飞书连接器回读（lark-cli-transport），但 Live Gate=BLOCKED：'
-        + 'readback.transport=FIXTURE，无法证明这些字节来自飞书平台（可能是假 CLI / 回放 / 缓存）；'
-        + `provenance 只能是 FIXTURE、trigger 只能是 MANUAL、connection=${labels.connection}，不得当作"已经接通飞书"`,
-    })
-    if (labels.connection === 'AUTH_REQUIRED') {
+    if (connectorLive) {
       warnings.push({
-        code: 'FEISHU_CONNECTION_AUTH_REQUIRED',
-        message: '连接器 probe() 判定 AUTH_REQUIRED：应用凭据/用户令牌/传输层还未构成一次可核实的真实回读，'
-          + '这一行只是 FIXTURE 语料，不是平台已接通',
+        code: 'FEISHU_LIVE_MANUAL_OPERATOR_READ',
+        message: '本行 provenance=LIVE 的依据是本次回读证据齐全：平台通道（FEISHU_MINUTES_API）+ '
+          + 'read_receipt_ref 绑定内容哈希 + content_sha256 与 raw_text 重算一致'
+          + (source.readback.reread_sha256 === undefined ? '' : ' + 两次完整回读哈希一致')
+          + ' + 带偏移 fetched_at + 分页取完 + 非空正文。trigger=MANUAL：这是操作者发起的读取，不是事件自动摄取。'
+          + '产品自有 OAuth / 事件订阅（F2）仍是 P1、未实现；LIVE 只说明这批字节来自平台，不代表产品已具备自动摄取能力。',
       })
+    } else {
+      warnings.push({
+        code: 'FEISHU_READBACK_NOT_LIVE',
+        message: '正文由飞书连接器回读（lark-cli-transport），但本次读取**不满足 LIVE 证据**：'
+          + `${source.liveGate.violations.join('；')}。`
+          + `因此 provenance 只能是 FIXTURE、trigger 只能是 MANUAL、connection=${labels.connection}，不得当作"已经接通飞书"`,
+      })
+      if (labels.connection === 'AUTH_REQUIRED') {
+        warnings.push({
+          code: 'FEISHU_CONNECTION_AUTH_REQUIRED',
+          message: '连接器 probe() 判定 AUTH_REQUIRED：应用凭据/用户令牌/传输层还未构成一次证据齐全的真实回读，'
+            + '这一行只是 FIXTURE 语料，不是平台已接通',
+        })
+      }
     }
   } else if (source.sourceKind === 'DEMO_SAMPLE') {
     warnings.push({
@@ -1358,10 +1414,15 @@ export async function importTranscriptInTransaction(
         ? {
           kind: SECTIONS_SOURCE_KIND_CONNECTOR,
           provider,
-          // 回读对象的 transport 在 Gate=BLOCKED 时恒 FIXTURE：写进来就是"不冒充平台来源"的证据。
+          // 回读对象的 transport 是通道事实（平台通道才有 API）：写进来就是来源证据。
           transport: source.readback.transport,
+          minute_token: source.readback.minute_token,
           read_receipt_ref: source.readback.read_receipt_ref,
           revision: source.readback.revision,
+          content_sha256: source.readback.content_sha256,
+          ...(source.readback.reread_sha256 === undefined ? {} : { reread_sha256: source.readback.reread_sha256 }),
+          live_gate: source.liveGate.gate,
+          ...(source.liveGate.gate === 'LIVE' ? {} : { live_gate_violations: source.liveGate.violations }),
           page_count: source.readback.page_count,
           sha,
           segment_count: segments.length,
@@ -1478,17 +1539,26 @@ async function replayValue(
         + '本次没有新建任何行（TR-U8），返回的是已存在的那一版',
     },
   ]
-  const isConnectorRow = existing.provider_artifact_id.startsWith(FEISHU_READBACK_ARTIFACT_PREFIX)
-  warnings.push(existing.provenance === 'LIVE'
-    ? {
-      code: 'EXPORT_RECEIPT_IS_SELF_DECLARED',
-      message: '该行的回执由人工自述（upload:<actor>:sha256:<hex>;file=<name>），不是平台 API 回读',
-    }
+  const isConnectorRow = FEISHU_CONNECTOR_ARTIFACT_PREFIXES.some(
+    (prefix) => existing.provider_artifact_id.startsWith(prefix),
+  )
+  const existingLive = existing.provenance === 'LIVE'
+  warnings.push(existingLive
+    ? isConnectorRow
+      ? {
+        code: 'FEISHU_LIVE_MANUAL_OPERATOR_READ',
+        message: '该行是飞书连接器回读的 LIVE 产物（回执绑定内容哈希 + 证据齐全，trigger=MANUAL）；'
+          + '产品自有 OAuth / 事件订阅（F2）仍是 P1，未实现——LIVE 只说明字节来自平台，不代表自动摄取能力',
+      }
+      : {
+        code: 'EXPORT_RECEIPT_IS_SELF_DECLARED',
+        message: '该行的回执由人工自述（upload:<actor>:sha256:<hex>;file=<name>），不是平台 API 回读',
+      }
     : isConnectorRow
       ? {
         code: 'FEISHU_READBACK_NOT_LIVE',
-        message: '该行是飞书连接器回读的 FIXTURE 语料（Live Gate=BLOCKED，回读 transport=FIXTURE），'
-          + '不得当作"已经接通飞书"',
+        message: '该行是飞书连接器回读的 FIXTURE 语料（本次回读未通过 LIVE 证据：'
+          + '回执/哈希/重读/完整性缺项，标签停在 FIXTURE），不得当作"已经接通飞书"',
       }
       : {
         code: 'FIXTURE_CONTENT_NOT_LIVE',
@@ -1503,8 +1573,11 @@ async function replayValue(
       trigger: existing.trigger_mode,
       connection: existing.connection_state,
     },
-    // 连接器回读行的依据是"Gate 未解锁"，不能用人工样本的理由码（那会是假话）。
-    provenanceBasis: isConnectorRow ? FEISHU_READBACK_PROVENANCE_BASIS : provenanceBasisFor(existing.provenance),
+    // 连接器回读行的依据分两种：LIVE 行是「证据齐全」，非 LIVE 行是「证据不齐」，
+    // 都不能用人工样本的理由码（那会是假话）。
+    provenanceBasis: isConnectorRow
+      ? (existingLive ? LIVE_READBACK_PROVENANCE_BASIS : FEISHU_READBACK_PROVENANCE_BASIS)
+      : provenanceBasisFor(existing.provenance),
     replayed: true,
     record: record === undefined
       ? undefined
@@ -1540,11 +1613,14 @@ const DESCRIPTION =
   + '错误码：INVALID_ARGS（reason_code 见 detail）/ NOT_FOUND(INTERVIEW_NOT_FOUND|MEETING_NOT_FOUND) / '
   + 'NO_MEETING_BOUND / AMBIGUOUS_MEETING / NOT_CONFIGURED / BLOCKED（reason_code=连接器 blocked_reason 或 '
   + 'TRANSPORT_NOT_CONFIGURED/PROVIDER_GENERATING/CONNECTOR_CALL_FAILED/READBACK_INVALID/TRANSCRIPT_TOO_LARGE）。'
-  + '三维标签：trigger 恒 MANUAL；人工路径 connection 恒 NOT_CONNECTED；连接器回读 connection 只能是 '
-  + 'NOT_CONNECTED/AUTH_REQUIRED（Live Gate=BLOCKED，永不 CONNECTED）。'
+  + '三维标签：trigger 恒 MANUAL；人工路径 connection 恒 NOT_CONNECTED；连接器回读 connection 由**本次回读证据**算：'
+  + '证据齐全（平台通道 + 回执绑定内容哈希 + content_sha256 与 raw_text 重算一致 + 带偏移 fetched_at + '
+  + '完整分页 + 非空正文）才 CONNECTED，否则 NOT_CONNECTED/AUTH_REQUIRED。'
   + '人工路径 provenance=FIXTURE 当且仅当 DEMO_SAMPLE（附 FIXTURE_CONTENT_NOT_LIVE）；'
   + 'provenance=LIVE 只给 PLATFORM_EXPORT + 导出文件名（附 EXPORT_RECEIPT_IS_SELF_DECLARED —— 回执是人工自述）。'
-  + '连接器路径 provenance 恒 FIXTURE（附 FEISHU_READBACK_NOT_LIVE：回读 transport=FIXTURE，不能证明字节来自平台）。'
+  + '连接器路径 provenance=LIVE 当且仅当证据齐全（附 FEISHU_LIVE_MANUAL_OPERATOR_READ：MANUAL 读取、产品自有 OAuth 属 P1）；'
+  + '证据不齐 → FIXTURE（附 FEISHU_READBACK_NOT_LIVE，并逐条列出缺哪项证据）；'
+  + '回读对象自相矛盾（哈希/回执/重读不一致）→ BLOCKED/READBACK_INVALID，一行不写。'
   + '注意：artifact.transcript_status=READY 只代表原文已完整落库，'
   + '不代表 interview_record READY（后者是 status=NEEDS_REVIEW / verification_status=UNVERIFIED，需人工复核）。'
 

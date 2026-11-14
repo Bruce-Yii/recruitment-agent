@@ -15,9 +15,11 @@
 //      直接拒绝装配并写清 issue —— 否则就会变成「PATH 上恰好装了就能跑」，
 //      那正是要禁掉的那条路。
 //
-// LIVE 标签纪律不变：本文件不产任何标签；即使装配了传输层，Gate 仍由
-// `contract.ts` 的 `FEISHU_MINUTES_LIVE_GATE` 决定（当前 `BLOCKED`），
-// 传输层读成功也只给 `readback.transport='FIXTURE'`。见 README §5/§6。
+// LIVE 标签纪律不变：本文件不产任何标签；它只负责声明「这条 runner 是不是
+// 平台通道」（`platform_channel: true`）。是否 LIVE 仍由 `labels.ts` 的
+// `evaluateLiveGate()` 按**本次回读证据**算出：通道声明只是证据之一，回执
+// `@sha256:` / content_sha256 与 raw_text 重算一致 / 重读哈希 / 带偏移
+// fetched_at / 完整分页 / 非空正文缺一项就不是 LIVE。见 README §5/§7。
 import { isAbsolute } from 'node:path'
 
 import { createFeishuMinutesAdapter, type FeishuMinutesAdapter } from './adapter.ts'
@@ -99,6 +101,10 @@ export function resolveFeishuConnector(
       command: rawCli,
       ...(config.timeout_ms === undefined ? {} : { timeout_ms: config.timeout_ms }),
     }),
+    // 插件配置给了 lark-cli 的绝对路径 = 这条 runner 是**真实平台通道**。
+    // 这不是数据证据：LIVE 还要过 evaluateLiveGate() 的全部证据项；
+    // 但把假 CLI 配进生产配置就是运维在撒谎，本地代码无法识别。
+    platform_channel: true,
     ...(config.timeout_ms === undefined ? {} : { timeout_ms: config.timeout_ms }),
     ...(config.max_attempts === undefined ? {} : { max_attempts: config.max_attempts }),
     ...(config.retry_base_ms === undefined ? {} : { retry_base_ms: config.retry_base_ms }),

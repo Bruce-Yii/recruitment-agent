@@ -1,22 +1,25 @@
 // 线 2 · 飞书 Minutes Connector 的**诚实性**机检。
 //
-// 本文件只证明一件事：在没有真实飞书授权的情况下，系统的每一个出口都**说清楚
-// 自己没连上、还差什么**，且**永远不会**输出 `provenance='LIVE'` /
-// `connection='CONNECTED'`；唯一能产出 LIVE 的入口（完整回读）对 Fixture、
-// webhook payload、缺回执、不完整内容一律抛 `LABEL_DISHONEST_LIVE`。
+// 本文件只证明一件事：`provenance='LIVE'` **只能由回读证据算出**，不是常量、
+// 不是自报。`evaluateLiveGate()` 是唯一判定入口：证据齐全 → LIVE；缺任何一项
+// （平台通道 / 回执 @sha256 / content_sha256 与 raw_text 重算一致 / 重读哈希 /
+// 带偏移 fetched_at / 完整分页 / 非空正文 / MANUAL|EVENT）→ BLOCKED，并逐条
+// 点名缺什么。回读不一致是**失败**，不是警告。
 //
 // 依据：`contracts/interview/transcript-rules.md` §2（TR-S1..S8）、§5（TR-F）、
-// §8（完整性 Gate）、`tool-contracts.md §1.4`（三维标签正交）、`R4`。
+// §8（完整性 Gate）、`tool-contracts.md §1.4`（三维标签正交）、`R4`、`D-1`。
 //
 // 这些不是「防御性单测」：任何一条变绿都意味着某处把外部资源说成了它还不是的东西。
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { readdir, readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
   FEISHU_LARK_CLI,
+  FEISHU_LIVE_GATE_POLICY,
   FEISHU_MINUTES_CONTRACT_VERSION,
   FEISHU_MINUTES_ENDPOINTS,
   FEISHU_MINUTES_ENDPOINT_NOTES,
@@ -30,10 +33,16 @@ import {
   mapFeishuError,
 } from '../../src/connectors/feishu/contract.ts'
 import {
+  LIVE_EVIDENCE_ITEMS,
+  LIVE_READBACK_PROVENANCE_BASIS,
   buildArtifactLabelsFromReadback,
   buildConnectorLabels,
+  evaluateLiveGate,
   isLiveEligible,
   liveEligibilityViolations,
+  liveGateEvidence,
+  parseReadReceipt,
+  readbackConsistencyViolations,
   triggerModeForEvent,
 } from '../../src/connectors/feishu/labels.ts'
 import { createFeishuMinutesAdapter } from '../../src/connectors/feishu/index.ts'
@@ -55,18 +64,22 @@ const USER_ENV: Readonly<Record<string, string>> = {
   FEISHU_USER_ACCESS_TOKEN: 'user-token-test',
 }
 
-/** 64 位小写 hex（合法 sha256 形态）。 */
-const VALID_SHA = 'a'.repeat(64)
+/** 合成正文（不是任何真实候选人/会议内容，R7）。 */
+const RAW_TEXT = '面试官：请先自我介绍一下。候选人：好的，我最近三年主要做订单链路。'
+/** 与 `RAW_TEXT` 逐字节一致的 sha256（回读对象声明的 content_sha256 必须是它）。 */
+const VALID_SHA = createHash('sha256').update(RAW_TEXT, 'utf8').digest('hex')
 
-/** 一个「完整回读」样本；逐条覆盖 `liveEligibilityViolations()` 的六项证据。 */
+/** 一个「四样 LIVE 证据齐全」样本；逐条覆盖 `liveEligibilityViolations()` 的证据项。 */
 function validReadback(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     transport: 'FEISHU_MINUTES_API',
-    read_receipt_ref: 'lark:minutes+detail:mt_1@1',
+    read_receipt_ref: `lark:minutes+detail:mt_1@sha256:${VALID_SHA}`,
     fetched_at: '2026-11-13T10:00:00+08:00',
     content_sha256: VALID_SHA,
+    // 第二次独立完整回读的哈希：与 content_sha256 一致（重读校验通过）。
+    reread_sha256: VALID_SHA,
     is_complete: true,
-    raw_text: '面试官：请先自我介绍一下。候选人：好的……',
+    raw_text: RAW_TEXT,
     trigger: 'MANUAL',
     ...overrides,
   }
@@ -124,12 +137,16 @@ function collectLabels(
   return out
 }
 
-test('describe()：live_gate=BLOCKED，且明确列出没实现的东西', () => {
+test('describe()：live_gate 是口径名 EVIDENCE_DRIVEN（不是开关），且列出没实现的东西与证据项', () => {
   const described = createFeishuMinutesAdapter({ env: EMPTY_ENV }).describe()
   assert.equal(described.connector, 'feishu-minutes')
   assert.equal(described.contract_version, FEISHU_MINUTES_CONTRACT_VERSION)
-  // 传输层已实现，但 LIVE Gate 仍是 BLOCKED：实现传输层 ≠ 拿到 LIVE 授权。
-  assert.equal(described.live_gate, 'BLOCKED')
+  // Gate 不再是「开/关」常量：describe 只报口径 + 证据清单，状态按每次读取算。
+  assert.equal(FEISHU_LIVE_GATE_POLICY, 'EVIDENCE_DRIVEN')
+  assert.equal(described.live_gate, 'EVIDENCE_DRIVEN')
+  assert.deepEqual([...described.live_gate_evidence], [...LIVE_EVIDENCE_ITEMS])
+  assert.ok(described.live_gate_evidence.includes('read_receipt_ref'))
+  assert.ok(described.live_gate_evidence.includes('readback_hash_consistency'))
   assert.deepEqual(
     [...described.implemented].sort(),
     ['auth-check', 'contract', 'error-mapping', 'labels', 'lark-cli-transport'],
@@ -259,27 +276,21 @@ test('buildConnectorLabels：无连接强制 FIXTURE/MANUAL；硬传 LIVE 抛 LA
   assert.equal(connected.labels.provenance, 'FIXTURE')
 })
 
-test('buildArtifactLabelsFromReadback：Fixture / webhook payload / 缺证据一律抛', () => {
-  assert.throws(() => buildArtifactLabelsFromReadback(validReadback({ transport: 'FIXTURE' })), isDishonestLive)
-  assert.throws(() => buildArtifactLabelsFromReadback(validReadback({ transport: 'WEBHOOK_PAYLOAD' })), isDishonestLive)
-  assert.match(
-    caughtError(() => buildArtifactLabelsFromReadback(validReadback({ read_receipt_ref: undefined }))).message,
-    /回执/,
-  )
-  assert.throws(() => buildArtifactLabelsFromReadback(validReadback({ is_complete: false })), isDishonestLive)
-  assert.throws(() => buildArtifactLabelsFromReadback(validReadback({ is_complete: 'true' })), isDishonestLive)
-  assert.throws(() => buildArtifactLabelsFromReadback(validReadback({ content_sha256: 'deadbeef' })), isDishonestLive)
-  assert.throws(() => buildArtifactLabelsFromReadback(validReadback({ content_sha256: 'A'.repeat(64) })), isDishonestLive)
-  assert.throws(() => buildArtifactLabelsFromReadback(validReadback({ fetched_at: '2026-11-13 10:00' })), isDishonestLive)
-  assert.throws(() => buildArtifactLabelsFromReadback(validReadback({ raw_text: '   ' })), isDishonestLive)
-  assert.throws(() => buildArtifactLabelsFromReadback(validReadback({ trigger: 'AUTO' })), isDishonestLive)
-  assert.throws(() => buildArtifactLabelsFromReadback(validReadback({ trigger: undefined })), isDishonestLive)
+test('evaluateLiveGate：四样证据齐全 → LIVE / MANUAL，且给出 LIVE_READBACK_VERIFIED', () => {
+  const decision = evaluateLiveGate(validReadback())
+  assert.equal(decision.gate, 'LIVE')
+  assert.deepEqual(decision.labels, { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' })
+  assert.equal(decision.provenance_basis, LIVE_READBACK_PROVENANCE_BASIS)
+  assert.deepEqual(decision.violations, [])
+  // 证据快照：声明的哈希与重算哈希逐字相等（回读重新读取一致）。
+  assert.equal(decision.evidence.content_sha256, VALID_SHA)
+  assert.equal(decision.evidence.content_sha256_recomputed, VALID_SHA)
+  assert.equal(decision.evidence.reread_sha256, VALID_SHA)
+  assert.equal(decision.evidence.minute_token, 'mt_1')
+  assert.equal(decision.evidence.raw_text_chars, RAW_TEXT.length)
 
-  assert.deepEqual(buildArtifactLabelsFromReadback(validReadback()), {
-    provenance: 'LIVE',
-    trigger: 'MANUAL',
-    connection: 'CONNECTED',
-  })
+  // buildArtifactLabelsFromReadback 只是同一判定的抛错版本。
+  assert.deepEqual(buildArtifactLabelsFromReadback(validReadback()), decision.labels)
   assert.deepEqual(buildArtifactLabelsFromReadback(validReadback({ trigger: 'EVENT' })), {
     provenance: 'LIVE',
     trigger: 'EVENT',
@@ -287,7 +298,117 @@ test('buildArtifactLabelsFromReadback：Fixture / webhook payload / 缺证据一
   })
 })
 
-test('isLiveEligible：只有完整回读对象才 true，且与违规列表一致', () => {
+test('evaluateLiveGate 负例：缺任何一样证据都不是 LIVE，并说清缺什么（不是「全局 Gate 没开」）', () => {
+  /** 断言 gate=BLOCKED 且违规里能匹配到指定证据关键词。 */
+  function expectBlocked(overrides: Record<string, unknown>, pattern: RegExp, label: string): void {
+    const decision = evaluateLiveGate(validReadback(overrides))
+    assert.equal(decision.gate, 'BLOCKED', `${label} 不该是 LIVE`)
+    assert.equal(decision.labels.provenance, 'FIXTURE', `${label} 的 provenance 不该是 LIVE`)
+    assert.notEqual(decision.labels.connection, 'CONNECTED', `${label} 的 connection 不该是 CONNECTED`)
+    assert.equal(decision.provenance_basis, 'NO_LIVE_READ')
+    assert.ok(decision.violations.length > 0, `${label} 必须给出违规原因`)
+    assert.ok(
+      decision.violations.some((violation) => pattern.test(violation)),
+      `${label} 的违规里应点名 ${pattern}，实际：${decision.violations.join('；')}`,
+    )
+    // 抛错版本必须同样拒绝，且错误 message 里带同样原因。
+    assert.throws(() => buildArtifactLabelsFromReadback(validReadback(overrides)), isDishonestLive)
+    assert.match(
+      caughtError(() => buildArtifactLabelsFromReadback(validReadback(overrides))).message,
+      pattern,
+    )
+  }
+
+  expectBlocked({ transport: 'FIXTURE' }, /transport/, 'fake transport（FIXTURE）')
+  expectBlocked({ transport: 'WEBHOOK_PAYLOAD' }, /transport/, 'webhook payload 冒充逐字稿')
+  expectBlocked({ read_receipt_ref: undefined }, /回执/, '缺 read_receipt_ref')
+  expectBlocked({ read_receipt_ref: '' }, /回执/, '空 read_receipt_ref')
+  expectBlocked(
+    { read_receipt_ref: 'lark:minutes+detail:mt_1@1' },
+    /回执形状不对/,
+    '回执只有 revision、没绑内容哈希',
+  )
+  expectBlocked(
+    { read_receipt_ref: `lark:minutes+detail:mt_1@sha256:${'0'.repeat(12)}` },
+    /回执哈希与内容不一致/,
+    '回执哈希与 content_sha256 不一致',
+  )
+  // sha 格式不对：短 hex / 大写 / 非 hex。
+  expectBlocked({ content_sha256: 'deadbeef' }, /content_sha256/, 'sha 太短')
+  expectBlocked({ content_sha256: 'A'.repeat(64) }, /content_sha256/, 'sha 大写')
+  expectBlocked({ content_sha256: 'z'.repeat(64) }, /content_sha256/, 'sha 非 hex')
+  // 回读哈希不一致：声明的 sha 与 raw_text 重算结果不等 = 失败，不是警告。
+  expectBlocked(
+    { content_sha256: 'b'.repeat(64), read_receipt_ref: `lark:minutes+detail:mt_1@sha256:${'b'.repeat(64)}` },
+    /回读哈希不一致/,
+    'content_sha256 与 raw_text 不一致',
+  )
+  expectBlocked({ reread_sha256: 'c'.repeat(64) }, /重读哈希不一致/, 'reread_sha256 与 content_sha256 不一致')
+  expectBlocked({ reread_sha256: 'short' }, /reread_sha256/, 'reread_sha256 格式不对')
+  // fetched_at 无时区 / 非法 / 日历越界。
+  expectBlocked({ fetched_at: '2026-11-13 10:00' }, /fetched_at/, 'fetched_at 无时区')
+  expectBlocked({ fetched_at: '2026-11-13T10:00:00' }, /fetched_at/, 'fetched_at 缺偏移')
+  expectBlocked({ fetched_at: '2026-02-30T10:00:00+08:00' }, /fetched_at/, 'fetched_at 非法日期')
+  expectBlocked({ is_complete: false }, /is_complete/, '分页没取完')
+  expectBlocked({ is_complete: 'true' }, /is_complete/, 'is_complete 不是布尔')
+  expectBlocked({ raw_text: '   ' }, /raw_text/, '正文为空')
+  expectBlocked({ trigger: 'AUTO' }, /trigger/, 'trigger 不是 EVENT/MANUAL')
+  expectBlocked({ trigger: undefined }, /trigger/, '缺 trigger')
+
+  // 缺证据时出口**逐条**列出缺什么，不是一句「Gate 没开」。
+  const many = evaluateLiveGate(validReadback({ transport: 'FIXTURE', fetched_at: 'bad' }))
+  assert.ok(many.violations.length >= 2)
+  assert.ok(many.violations.some((violation) => violation.includes('transport')))
+  assert.ok(many.violations.some((violation) => violation.includes('fetched_at')))
+
+  assert.equal(evaluateLiveGate(null).gate, 'BLOCKED')
+  assert.equal(evaluateLiveGate('回读').gate, 'BLOCKED')
+})
+
+test('readbackConsistencyViolations：不一致是失败（可单独取出），格式缺失不算硬矛盾', () => {
+  // 一致 → 没有硬矛盾。
+  assert.deepEqual(readbackConsistencyViolations(validReadback()), [])
+  // 声明的 sha 与正文不符 → 硬矛盾。
+  assert.ok(
+    readbackConsistencyViolations(validReadback({ content_sha256: 'b'.repeat(64), read_receipt_ref: `lark:minutes+detail:mt_1@sha256:${'b'.repeat(64)}` }))
+      .some((violation) => violation.includes('raw_text')),
+  )
+  // 回执绑定的哈希与 content_sha256 不符 → 硬矛盾。
+  assert.ok(
+    readbackConsistencyViolations(validReadback({ read_receipt_ref: `lark:minutes+detail:mt_1@sha256:${'0'.repeat(12)}` }))
+      .some((violation) => violation.includes('read_receipt_ref')),
+  )
+  // 重读哈希与 content_sha256 不符 → 硬矛盾。
+  assert.ok(
+    readbackConsistencyViolations(validReadback({ reread_sha256: 'c'.repeat(64) }))
+      .some((violation) => violation.includes('reread_sha256')),
+  )
+  // 只是「缺证据」（格式不对 / 缺字段）不是硬矛盾：那是降级 FIXTURE 的路径。
+  assert.deepEqual(readbackConsistencyViolations(validReadback({ content_sha256: 'deadbeef' })), [])
+  assert.deepEqual(readbackConsistencyViolations(validReadback({ read_receipt_ref: undefined })), [])
+})
+
+test('parseReadReceipt：只认 lark:minutes+detail:<token>@sha256:<64位hex|前12位>', () => {
+  const full = parseReadReceipt(`lark:minutes+detail:mt_1@sha256:${VALID_SHA}`)
+  assert.deepEqual(full, {
+    minute_token: 'mt_1',
+    digest: VALID_SHA,
+    digest_length: 64,
+    raw: `lark:minutes+detail:mt_1@sha256:${VALID_SHA}`,
+  })
+  const short = parseReadReceipt(`lark:minutes+detail:mt_1@sha256:${VALID_SHA.slice(0, 12)}`)
+  assert.equal(short?.digest_length, 12)
+  assert.equal(short?.digest, VALID_SHA.slice(0, 12))
+
+  // 旧形态（只有 revision）/ 大写 hex / token 里带 @ / 非字符串一律 null。
+  assert.equal(parseReadReceipt('lark:minutes+detail:mt_1@7'), null)
+  assert.equal(parseReadReceipt(`lark:minutes+detail:mt_1@sha256:${'A'.repeat(64)}`), null)
+  assert.equal(parseReadReceipt('lark:minutes+detail:mt@x@sha256:' + VALID_SHA), null)
+  assert.equal(parseReadReceipt('upload:actor:sha256:abc;file=x'), null)
+  assert.equal(parseReadReceipt(undefined), null)
+})
+
+test('isLiveEligible：只有四样证据齐全才 true，且与违规列表一致', () => {
   assert.equal(isLiveEligible(validReadback()), true)
   assert.deepEqual(liveEligibilityViolations(validReadback()), [])
 
@@ -295,8 +416,11 @@ test('isLiveEligible：只有完整回读对象才 true，且与违规列表一�
     { transport: 'FIXTURE' },
     { transport: 'WEBHOOK_PAYLOAD' },
     { read_receipt_ref: '' },
+    { read_receipt_ref: 'lark:minutes+detail:mt_1@7' },
     { fetched_at: '' },
     { content_sha256: '' },
+    { content_sha256: 'deadbeef' },
+    { reread_sha256: 'c'.repeat(64) },
     { is_complete: false },
     { raw_text: '' },
     { trigger: 'AUTO' },
@@ -307,6 +431,13 @@ test('isLiveEligible：只有完整回读对象才 true，且与违规列表一�
   }
   assert.equal(isLiveEligible(null), false)
   assert.equal(isLiveEligible('回读'), false)
+
+  // 证据快照不抛异常：不可信输入一律给 null/false。
+  const evidence = liveGateEvidence(null)
+  assert.equal(evidence.transport, null)
+  assert.equal(evidence.content_sha256_recomputed, null)
+  assert.equal(evidence.raw_text_chars, 0)
+  assert.equal(evidence.is_complete, false)
 })
 
 test('triggerModeForEvent：只有已验证 + 有 provider_event_id 才是 EVENT', () => {

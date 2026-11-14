@@ -1,9 +1,15 @@
 // 飞书 Minutes Connector 契约：纯常量 / 类型 / 纯函数，零 I/O。
 //
 // 本文件是「线 2」的合同面：把**平台事实**写成可断言的字符串常量与类型，
-// 不 import 任何 I/O 模块、不发起任何请求、不调用子进程。真实 LIVE 取数
-// Gate = BLOCKED（本机没有飞书应用与用户授权，也不允许伪造凭据），因此每个
-// 常量都按下面的口径标注依据，**不要把占位当成已核实**：
+// 不 import 任何 I/O 模块、不发起任何请求、不调用子进程。
+//
+// **LIVE Gate 不是一个写死的状态**：它由 `labels.ts` 的 `evaluateLiveGate()`
+// 按**每一次回读的证据**（平台通道 / 回执 `@sha256:` / content_sha256 与
+// raw_text 重算一致 / 重读哈希 / 带偏移的 fetched_at / 完整分页 / 非空正文 /
+// MANUAL|EVENT）算出。本文件只固定「口径名」，不固定「开还是关」，也不许
+// 任何调用方传参自称 LIVE。
+//
+// 每个常量都按下面的口径标注依据，**不要把占位当成已核实**：
 //
 //   已核对（逐字）：
 //     * 事件名、`2091003` / `2091005` 的语义、`minutes.minute.generated_v1`
@@ -31,11 +37,22 @@ export const FEISHU_MINUTES_CONNECTOR_ID = 'feishu-minutes'
 export const FEISHU_MINUTES_PROVIDER = 'FEISHU'
 
 /**
- * LIVE Gate 状态。本机没有真实飞书应用/用户授权 → 恒为 `BLOCKED`。
- * 只有「真实 app 凭据 + 用户 OAuth(`offline_access`) + 一次真实 minute_token
- * 完整回读」三件同时成立，才允许改成别的值；改之前先改本节与 README。
+ * LIVE Gate 的**判定口径**：`EVIDENCE_DRIVEN`。
+ *
+ * 这不是一个「开 / 关」开关，而是「没有证据就没有 LIVE」的口径名：
+ * 每次读取由 `labels.ts` 的 `evaluateLiveGate()` 逐项核对证据，
+ * 全齐才返回 `gate='LIVE'`，缺任何一项就是 `BLOCKED` 并列出缺哪一项。
+ *
+ * 之所以不再用一个常量表示 Gate 状态：常量只能表达「全开 / 全关」，
+ * 会把「这次回读到底有哪些真实证据」压成一个布尔，正是 R4 禁止的压平。
  */
-export const FEISHU_MINUTES_LIVE_GATE = 'BLOCKED'
+export const FEISHU_LIVE_GATE_POLICY = 'EVIDENCE_DRIVEN'
+
+/** LIVE Gate 的判定口径类型。 */
+export type FeishuLiveGatePolicy = typeof FEISHU_LIVE_GATE_POLICY
+
+/** 一次读取的 Gate 结论：由证据算出，不接受调用方传入。 */
+export type FeishuLiveGateState = 'LIVE' | 'BLOCKED'
 
 /**
  * 飞书 Minutes 回读的 HTTP 端点。**仅作为契约常量，本骨架不发起请求。**
@@ -90,8 +107,9 @@ export const FEISHU_MINUTES_DEFAULT_PAGE_SIZE = 50
 
 /**
  * 权限点。**未核实/占位**：docs/04 §13 没有列 scope 名称，编码前必须按官方
- * 权限列表核对。`offline_access` 是用户 OAuth 拿 refresh token 所需，也是
- * LIVE Gate 的解锁条件之一（见 `src/connectors/feishu/README.md`）。
+ * 权限列表核对。`offline_access` 是用户 OAuth 拿 refresh token 所需，属
+ * 产品自有 OAuth（F2 / P1）的能力，不是 demo 的 LIVE 证据（D-1：LIVE 由真实
+ * 回读证据决定，MANUAL 读取不要求产品 OAuth）。
  */
 export const FEISHU_MINUTES_SCOPES = {
   minutes_read: 'minutes:minutes:readonly',

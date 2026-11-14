@@ -7,10 +7,13 @@
 //
 // 三条不许破的规矩：
 //
-//   1. **本文件不产 LIVE**。`FEISHU_MINUTES_LIVE_GATE === 'BLOCKED'` 时，
-//      即使 CLI 读成功，回读对象的 `transport` 也只会是 `FIXTURE`：本机没有
-//      真实凭据，无法证明这些字节来自飞书平台（可能是假 CLI / 回放 / 缓存）。
-//      想拿 `transport='FEISHU_MINUTES_API'`，必须先按 README §6 解锁 Gate。
+//   1. **通道身份由接线层负责，证据由本文件产出**：`createLarkCliTransport` 的
+//      `platform_channel` 只有接线层（`wiring.ts`，插件配置里的 `feishu.cli`
+//      绝对路径）才会置 true。置 false（默认）= 测试 / 回放通道，回读对象的
+//      `transport` 恒 `FIXTURE`，读成功也不可能 LIVE。
+//      platform_channel=true 时本文件会**再完整读一次**做重读校验：两次的
+//      sha256 必须一致，不一致直接失败（`READBACK_INVALID`），不产出正文；
+//      一致才把 `reread_sha256` 写进回读对象，交 `evaluateLiveGate()` 判定。
 //   2. **失败要说清哪一步**：`stage` ∈ {locate-cli, invoke, parse, paginate,
 //      validate}，外加原始退出码与脱敏后的 stderr 前 N 字节。诊断里**永不**
 //      出现正文、argv、平台 `msg`（R7：不把候选人内容写进任何日志）。
@@ -20,19 +23,26 @@
 // 「生成中」不是失败：`2091003` 经 `mapFeishuError()` 映射成
 // `task_state='WAITING_EXTERNAL'`，调用方去等新事件或人工重试（TR-F1）。
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
 
 import {
   FEISHU_LARK_CLI,
+  FEISHU_LIVE_GATE_POLICY,
   FEISHU_MINUTES_DEFAULT_PAGE_SIZE,
-  FEISHU_MINUTES_LIVE_GATE,
   FEISHU_MINUTES_PAGINATION,
   FEISHU_TRANSPORT,
   isPageComplete,
   mapFeishuError,
   readNonEmptyString,
+  type FeishuLiveGatePolicy,
   type FeishuTransport,
 } from './contract.ts'
+import {
+  isLiveEligible,
+  liveEligibilityViolations,
+  sha256Hex,
+} from './labels.ts'
+
+export { sha256Hex }
 
 /** 传输层标识（`describe().not_implemented` 里被移除的那一项就是这个值）。 */
 export const FEISHU_CLI_TRANSPORT_ID = 'lark-cli-transport'
@@ -390,23 +400,33 @@ export class FeishuTransportError extends Error {
 
 /**
  * CLI 读回来的全文回读对象。**形状对齐 `labels.ts` 的 `TranscriptReadbackLike`**，
- * 但 `transport` 由 LIVE Gate 决定：Gate=BLOCKED 时恒 `FIXTURE`（见文件头注 1）。
+ * 但 `transport` 由**通道身份 + 本次证据**决定：`platform_channel=false`（测试 /
+ * 回放通道）恒 `FIXTURE`；`platform_channel=true` 且重读校验一致才是
+ * `FEISHU_MINUTES_API`。`transport` 不是自报来源，是「这条 runner 是不是平台通道」
+ * 这一接线事实 + 「这次回读是否完整自洽」两个条件的合取。
  */
 export interface FeishuCliTranscriptReadback {
-  /** Gate 未解锁时恒 `FIXTURE`：本机无法证明字节来自飞书平台。 */
+  /** 平台通道 + 证据齐全时才是 `FEISHU_MINUTES_API`；否则恒 `FIXTURE`。 */
   readonly transport: FeishuTransport
   readonly minute_token: string
-  /** 平台 revision（用于回执 `@<revision>`）；缺失即失败，不补默认值。 */
+  /** 平台 revision（用于人工回溯）；回执本身绑的是内容哈希，不是 revision。 */
   readonly revision: string
-  /** `lark:minutes+detail:<minute_token>@<revision>`。 */
+  /** `lark:minutes+detail:<minute_token>@sha256:<content_sha256>`。 */
   readonly read_receipt_ref: string
   /** 回读时刻，带本地时区偏移的 ISO-8601。 */
   readonly fetched_at: string
   /** 原文 sha256，64 位小写 hex。 */
   readonly content_sha256: string
+  /**
+   * 第二次独立完整回读得到的 sha256（重读校验）。只有 `platform_channel=true`
+   * 才会出现；它与 `content_sha256` 逐字相等——不一致时本函数直接失败，不产出回读。
+   */
+  readonly reread_sha256?: string
   /** 分页全部取完才为 true（TR-C2）。 */
   readonly is_complete: boolean
   readonly raw_text: string
+  /** 触发方式：CLI 回读不涉及事件，恒 `MANUAL`（D-1 口径）。 */
+  readonly trigger: 'MANUAL'
   readonly page_count: number
   readonly transcript_chars: number
 }
@@ -453,8 +473,11 @@ export interface FeishuTransportDescription {
   readonly page_size: number
   readonly max_pages: number
   readonly diagnostic_bytes: number
-  readonly live_gate: typeof FEISHU_MINUTES_LIVE_GATE
-  /** Gate 未解锁时恒 `FIXTURE`：读成功也不冒充平台来源。 */
+  /** Gate 口径名（不是开关）：`EVIDENCE_DRIVEN`。 */
+  readonly live_gate: FeishuLiveGatePolicy
+  /** 这条 runner 是否被接线层声明为真实平台通道。 */
+  readonly platform_channel: boolean
+  /** 该通道的**标称**回读 transport；某个回读到底算不算 LIVE，由证据判定。 */
   readonly readback_transport: FeishuTransport
   /** 参数名核实状态（恒 false，直到有人对着 --help 核对过）。 */
   readonly argument_flags_verified: false
@@ -468,19 +491,16 @@ export interface FeishuTransportDescription {
 // ---------------------------------------------------------------------------
 
 /**
- * 构造读取回执 `lark:minutes+detail:<minute_token>@<revision>`。
- * 只做拼接，不做转义：`minute_token` / `revision` 由平台给，含 `@` 会被
- * `validate` 阶段拒绝（见 `read()`）。
+ * 构造读取回执 `lark:minutes+detail:<minute_token>@sha256:<content_sha256>`。
+ *
+ * 回执必须**绑到这次读到的字节**：只写 `@<revision>` 无法证明「回执说的那次读」
+ * 与「这次产出的正文」是同一份字节，所以 D-1 口径要求回执带内容哈希。
+ * 只做拼接，不做转义：`minute_token` 含 `@` 会被 `validate` 阶段拒绝（见 `read()`）。
  * @param minuteToken - 平台 minute_token。
- * @param revision - 平台 revision。
+ * @param contentSha256 - 原文的 64 位小写 sha256。
  */
-export function buildReadReceipt(minuteToken: string, revision: string): string {
-  return `lark:minutes+detail:${minuteToken}@${revision}`
-}
-
-/** 原文 sha256（64 位小写 hex）。 */
-export function sha256Hex(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex')
+export function buildReadReceipt(minuteToken: string, contentSha256: string): string {
+  return `lark:minutes+detail:${minuteToken}@sha256:${contentSha256}`
 }
 
 /** 两位补零。 */
@@ -505,12 +525,16 @@ export function isoWithOffset(date: Date = new Date()): string {
 }
 
 /**
- * 回读对象应当声明的 `transport`。
- * **Gate=BLOCKED 时恒 `FIXTURE`**：本机没有真实凭据，读成功也不能自称平台来源。
- * 只有人按 README §6 解锁 Gate 之后，这里才可能给出 `FEISHU_MINUTES_API`。
+ * 这条通道**标称**会给出的回读 `transport`。
+ *
+ * 只由接线事实决定：`platform_channel=true`（接线层声明它是真实 lark-cli）→
+ * `FEISHU_MINUTES_API`；否则 → `FIXTURE`（测试 / 回放通道）。
+ * 一个具体回读到底算不算 LIVE 仍要过 `evaluateLiveGate()`：这里的值只是
+ * 「这条 runner 声称自己是哪种通道」，不是「这次读就一定是 LIVE」。
+ * @param platformChannel - 接线层是否声明这条 runner 是真实平台通道。
  */
-export function readbackTransport(): FeishuTransport {
-  return FEISHU_MINUTES_LIVE_GATE === 'BLOCKED' ? FEISHU_TRANSPORT.fixture : FEISHU_TRANSPORT.api
+export function readbackTransport(platformChannel: boolean): FeishuTransport {
+  return platformChannel ? FEISHU_TRANSPORT.api : FEISHU_TRANSPORT.fixture
 }
 
 // ---------------------------------------------------------------------------
@@ -633,6 +657,15 @@ function parseCliPage(stdout: string, attempts: number): ParsedCliPage {
 export interface FeishuLarkCliTransportConfig {
   /** **必填**：怎么跑 CLI。生产用 `createProcessCliRunner()`，测试用假 runner。 */
   readonly runner: FeishuCliRunner
+  /**
+   * 这条 runner 是否指向**真实平台通道**（lark-cli）。**只有接线层**按部署配置
+   * 置 true（`wiring.ts`：插件配置里的 `feishu.cli` 绝对路径）；直接 new 一个
+   * 传输层（单测 / 回放）默认 false = 测试通道，回读 `transport` 恒 `FIXTURE`。
+   *
+   * 这是「这条通道是不是平台通道」的接线事实，不是数据证据；把它指向假 CLI
+   * 就是运维在撒谎，本地代码无法识别。LIVE 仍要过 `evaluateLiveGate()` 的全部证据。
+   */
+  readonly platform_channel?: boolean
   readonly timeout_ms?: number
   readonly max_attempts?: number
   readonly retry_base_ms?: number
@@ -668,6 +701,10 @@ export function buildTranscriptArgs(extraArgs: readonly string[] = []): string[]
  *   locate → invoke（带超时 + 指数退避重试）→ parse（信封/正文）→
  *   paginate（`isPageComplete` 走到 `has_more=false`）→ validate（回执/sha/时间）。
  *
+ * `platform_channel=true` 时还会**再完整读一次**做重读校验：两次原始正文的
+ * sha256 与 revision 必须一致，不一致直接 `READBACK_INVALID` 失败（不产出正文）。
+ * 重读一致才把 `reread_sha256` 写进回读对象，供 `evaluateLiveGate()` 核对。
+ *
  * 失败的三种落点：`WAITING_EXTERNAL`（2091003，不是失败）、`FAILED`（带
  * `stage`/`code`/退出码/脱敏 stderr）、`READ`（带完整回读对象）。
  * @param config - 见 `FeishuLarkCliTransportConfig`；`runner` 必填。
@@ -683,6 +720,7 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
   const extraArgs = config.extra_args ?? []
   const now = config.now ?? ((): Date => new Date())
   const sleep = config.sleep ?? defaultSleep
+  const platformChannel = config.platform_channel === true
 
   /** 退避：base * 2^(n-1)，封顶 `FEISHU_CLI_MAX_RETRY_DELAY_MS`。 */
   function backoff(attempt: number): number {
@@ -798,22 +836,12 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
     throw lastError ?? new FeishuTransportError({ stage: 'invoke', code: 'CLI_SPAWN_FAILED', detail: '没有拿到任何结果。', retryable: false, attempts: maxAttempts })
   }
 
-  async function read(request: { readonly minute_token: string }): Promise<FeishuTransportReadResult> {
-    const minuteToken = readNonEmptyString(request?.minute_token)
-    if (minuteToken === null) {
-      return {
-        status: 'FAILED',
-        attempts: 0,
-        error: new FeishuTransportError({
-          stage: 'validate',
-          code: 'READBACK_INVALID',
-          detail: '缺 minute_token：没有平台产物标识就不能调用 CLI。',
-          retryable: false,
-          attempts: 0,
-        }),
-      }
-    }
-
+  /**
+   * 一次**完整**读取：分页走完 + 回执自检，产出一个回读对象。
+   * `platform_channel` 的通道身份会写进 `transport`；重读校验在 `read()` 里做。
+   * @param minuteToken - 已校验非空的平台 minute_token。
+   */
+  async function readOnce(minuteToken: string): Promise<FeishuTransportReadResult> {
     const base = buildTranscriptArgs(extraArgs)
     let cursor: string | null = null
     const texts: string[] = []
@@ -941,7 +969,7 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
         error: new FeishuTransportError({
           stage: 'validate',
           code: 'REVISION_REQUIRED',
-          detail: 'CLI 返回里没有 revision：回执 lark:minutes+detail:<token>@<revision> 拼不出来，不补默认值。',
+          detail: 'CLI 返回里没有 revision：平台产物版本无法回溯，不补默认值。',
           retryable: false,
           attempts: 1,
         }),
@@ -974,19 +1002,94 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
       }
     }
 
+    const contentSha256 = sha256Hex(rawText)
     const readback: FeishuCliTranscriptReadback = {
-      transport: readbackTransport(),
+      transport: readbackTransport(platformChannel),
       minute_token: minuteToken,
       revision,
-      read_receipt_ref: buildReadReceipt(minuteToken, revision),
+      read_receipt_ref: buildReadReceipt(minuteToken, contentSha256),
       fetched_at: isoWithOffset(now()),
-      content_sha256: sha256Hex(rawText),
+      content_sha256: contentSha256,
       is_complete: true,
       raw_text: rawText,
+      trigger: 'MANUAL',
       page_count: pageCount,
       transcript_chars: rawText.length,
     }
     return { status: 'READ', readback, attempts: totalAttempts, pages: pageCount }
+  }
+
+  /**
+   * 对外读取入口。`platform_channel=true` 时做**重读校验**：
+   *   * 再完整读一次，两次的 `content_sha256` 与 `revision` 必须一致；
+   *   * 不一致 → `FAILED / READBACK_INVALID`（不一致是失败，不产出正文）；
+   *   * 一致 → 回读对象带上 `reread_sha256`（= 第二次的哈希），交 Gate 判定。
+   * 非平台通道（测试 / 回放）只读一次，回读 `transport` 恒 `FIXTURE`。
+   */
+  async function read(request: { readonly minute_token: string }): Promise<FeishuTransportReadResult> {
+    const minuteToken = readNonEmptyString(request?.minute_token)
+    if (minuteToken === null) {
+      return {
+        status: 'FAILED',
+        attempts: 0,
+        error: new FeishuTransportError({
+          stage: 'validate',
+          code: 'READBACK_INVALID',
+          detail: '缺 minute_token：没有平台产物标识就不能调用 CLI。',
+          retryable: false,
+          attempts: 0,
+        }),
+      }
+    }
+
+    const first = await readOnce(minuteToken)
+    if (first.status !== 'READ') return first
+
+    let attempts = first.attempts
+    let rereadSha256: string | undefined
+    if (platformChannel) {
+      const second = await readOnce(minuteToken)
+      attempts += second.attempts
+      if (second.status === 'WAITING_EXTERNAL') return second
+      if (second.status === 'FAILED') return { ...second, attempts }
+      if (second.readback.content_sha256 !== first.readback.content_sha256 || second.readback.revision !== first.readback.revision) {
+        return {
+          status: 'FAILED',
+          attempts,
+          error: new FeishuTransportError({
+            stage: 'validate',
+            code: 'READBACK_INVALID',
+            detail:
+              '重读校验失败：第二次完整回读的 content_sha256 / revision 与第一次不一致。'
+              + '回读不一致是失败，不是警告：本次不产出正文，也不写任何 artifact。',
+            retryable: false,
+            attempts: second.attempts,
+          }),
+        }
+      }
+      rereadSha256 = second.readback.content_sha256
+    }
+
+    const readback: FeishuCliTranscriptReadback = {
+      ...first.readback,
+      ...(rereadSha256 === undefined ? {} : { reread_sha256: rereadSha256 }),
+    }
+    // fail-closed 自检：平台通道却没拿到完整 LIVE 证据 → 不产出回读对象
+    // （否则会退化成「读到了但不能证明」的 FIXTURE 假阳性，且掩盖真正的缺项）。
+    if (platformChannel && !isLiveEligible(readback)) {
+      return {
+        status: 'FAILED',
+        attempts,
+        error: new FeishuTransportError({
+          stage: 'validate',
+          code: 'READBACK_INVALID',
+          detail: `平台通道回读未通过 LIVE 证据自检：${liveEligibilityViolations(readback).join('；')}`,
+          retryable: false,
+          attempts,
+        }),
+      }
+    }
+    return { status: 'READ', readback, attempts, pages: first.pages }
   }
 
   function describe(): FeishuTransportDescription {
@@ -999,13 +1102,17 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
       page_size: pageSize,
       max_pages: maxPages,
       diagnostic_bytes: diagnosticBytes,
-      live_gate: FEISHU_MINUTES_LIVE_GATE,
-      readback_transport: readbackTransport(),
+      live_gate: FEISHU_LIVE_GATE_POLICY,
+      platform_channel: platformChannel,
+      readback_transport: readbackTransport(platformChannel),
       argument_flags_verified: false,
       envelope_verified: false,
       note:
-        'lark-cli-transport 已实现：子进程调 FEISHU_LARK_CLI.minutesDetailTranscript，带超时/指数退避/分页/回执。' +
-        '但参数名与信封形状**未核实**，且本机 Live Gate=BLOCKED，所以读成功也只给 transport=FIXTURE。',
+        'lark-cli-transport 已实现：子进程调 FEISHU_LARK_CLI.minutesDetailTranscript，带超时/指数退避/分页/回执。'
+        + '参数名与信封形状**未核实**；LIVE 由证据算出（evaluateLiveGate），'
+        + (platformChannel
+          ? '本 transport 被接线层声明为平台通道：成功读取后会再读一次做重读校验，两次哈希/版本一致才把 transport 标为 FEISHU_MINUTES_API。'
+          : '本 transport 不是平台通道（测试 / 回放）：回读 transport 恒 FIXTURE，读成功也不可能 LIVE。'),
     }
   }
 
