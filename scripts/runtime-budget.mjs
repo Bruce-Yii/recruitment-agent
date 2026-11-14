@@ -47,8 +47,15 @@ const RUNTIME_DIR = join(REPO_ROOT, 'dsh', 'dsh-recruitment', 'src', 'runtime')
  * `event-types.ts` 391 + `cutover.ts` 459 即到本值——两边口径一致。
  * 原条款写的 1,500 从未定义过度量口径，在写下它的那个 SHA 上就已超出——问题在条款不可执行，
  * 不在实现超标（reviewer 的判断成立）。
+ *
+ * **棘轮第一次真的咬到人（2026-11-14，+20 行）**：第 26 个工具
+ * `recruitment_interview_record_verify` 的审计事件 `interview.record.verified` 必须进
+ * `src/runtime/event-types.ts` 的权威注册表（不登记就会被语义 Gate 当未登记事件拒掉，
+ * 那正是刚修过的"假接线"坑）→ `event-types.ts` 391 → 411，合计 3,804 → 3,824。
+ * 已在 `docs/17` D-109.2 追加修订（新增多少行 / 为什么必须加 / 排除了什么替代做法 /
+ * 是否触发换实现条件），再同步本常量。**这就是这条门该有的工作方式。**
  */
-const CEILING = 3804
+const CEILING = 3824
 
 const EXCLUDED = [
   {
