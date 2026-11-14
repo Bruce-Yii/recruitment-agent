@@ -34,6 +34,12 @@
 > DB 迁移到 **0014**、**60 张基表 + 3 视图**；`db/verify.sql` exit 0 / `VERIFY PASS`。
 > 因此上文「S8 四 intent、S3 批准入口、阶段推进 未闭合」与 §8.4/§8.5 的 **P1-07 / P1-09 / P2-01 / P2-02 / N6 / N7 / N8 / N11**
 > **已过时**，逐条更正与证据见文末 **§9**。仍未闭合的仍是 **N4 端到端、N5 真实简历的 S7 可解释结论、N9 飞书连接器 LIVE**。
+>
+> **第四轮回抄（2026-11-14 21:00，`0015` 落库后；只改 DB 口径，历史记录保留）。**
+> `0015_runtime_cutover` 已应用到 `ra_s6s7`（台账 `applied_at = 2026-11-14 20:17:05 +08`），现场实测
+> **62 张基表 + 3 视图**（`information_schema.tables` 含视图 = 65）、`fn_block_delete` 触发器 **52 个**，
+> `db/verify.sql` exit 0 / 末行 `VERIFY PASS`。上一轮的 **0014 / 60 张表 / 触发器 50** 是 20:19 当时的快照；
+> 现行口径见 **§9-5**，`docs/18` / `db/SCHEMA.md` / `db/README.md` 已同步。
 
 ---
 
@@ -447,8 +453,8 @@ mapParseStatus(complete, 1000, [recovered])= {"status":"PARTIAL"}
 
 ### P2-01 · `docs/18` 已与事实不符（18 个工具 / 决策 BLOCKED / S8 交付 / 40 张表）
 
-> **2026-11-14 20:19 回抄：本轮已回抄（见 §9-3）**。`docs/18` 现为 25 个工具 / 60 张基表 + 3 视图 /
-> 迁移到 0014 / S8 四 intent / 阶段推进入口已实现。本节保留为第一轮的历史记录。
+> **2026-11-14 20:19 回抄：本轮已回抄（见 §9-3）；21:00 随 `0015` 落库再更新表数 / 迁移号（见 §9-5）**。`docs/18` 现为 25 个工具 / 62 张基表 + 3 视图 /
+> 迁移到 0015 / S8 四 intent / 阶段推进入口已实现。本节保留为第一轮的历史记录。
 
 **文件:行**：`docs/18-golden-path.md:23`（40 张表；实况 47）、`:60`（S7 步骤含 SCREENING 决策）、`:81`（18 个工具；实况 19）、`:85`（S8 ✅ 交付；实况仅 CREATE）、`:87`（S10 决策落库 BLOCKED；实况已有 IN_CHAT 决策落库）、`:93`（Web 真人点 approval 是唯一解；D-95 已取代）。
 
@@ -916,7 +922,7 @@ candidate=8；intake_asset=8；schema_migration=10（0001..0010）
 | P1-07 | S8 四 intent 未实现 | ~~FAIL（未修）~~ **已修（2026-11-14 20:19 回抄，见 §9-1）** | `intent` enum 已含四值（`interview-schedule.ts:92`） |
 | P1-08 | 真实简历 S6→S7 门槛未达成 | **BLOCKED（仍未达成 S7 半边）** | 入库半边已达 26 份真实语料申请 / 25 ACTIVE（`evidence/experiments/2026-11-14-real-intake-20/`，该报告明确只做 S6、不宣称 S7）；≥5 份可解释 S7 结论仍无证据 |
 | P1-09 | 阶段推进无入口 | ~~BLOCKED（未修）~~ **已修（2026-11-14 20:19 回抄，见 §9-2）** | `recruitment_application_stage_advance` 已注册（`src/tools/stage-advance.ts`） |
-| P2-01 | docs/18 与事实不符 | ~~FAIL（仅修了第 60 行）~~ **已修（2026-11-14 20:19 回抄，见 §9-3）** | `docs/18` 现为 25 工具 / 60 表 / 0014 / S8 四 intent / 阶段推进已实现 |
+| P2-01 | docs/18 与事实不符 | ~~FAIL（仅修了第 60 行）~~ **已修（2026-11-14 20:19 回抄，21:00 随 0015 更新表数，见 §9-3 / §9-5）** | `docs/18` 现为 25 工具 / 62 表 / 迁移 0015 / S8 四 intent / 阶段推进已实现 |
 | P2-02 | S3 人类批准无产品入口 | ~~BLOCKED（未修）~~ **已修（2026-11-14 20:19 回抄，见 §9-4）** | `recruitment_job_rubric_approve` 已注册（`src/tools/job-rubric-approve.ts`） |
 | P2-03 | 写工具硬编码 `LIVE` / candidate_get 无三轴标签 | **FAIL（未修）** | `interview-schedule.ts:1071/1671`、`job-create.ts:1036`；`candidate-get.ts` 无 labels |
 | P2-04 | Feishu connector 未接线 / LIVE 依赖自述回执 | **BLOCKED（未修）** | 同上 connector 行；`transcript-import.ts:48/782-788` |
@@ -938,7 +944,7 @@ candidate=8；intake_asset=8；schema_migration=10（0001..0010）
 | N8 | **阶段推进无入口** | ~~P1 / BLOCKED~~ **已修（2026-11-14 20:19 回抄，§9-2）** | `recruitment_application_stage_advance` 已注册 | — |
 | N9 | **Feishu connector 未接线** | P1 / BLOCKED | `src/` 无工具 import connector | 真实 provider 回读（独立 LIVE gate）或保持诚实 BLOCKED |
 | N10 | **标签二义性/缺三轴** | P2 / FAIL | schedule/job-create 硬编码 LIVE；candidate_get 无 labels | 契约钉死 fixture 租户口径；candidate_get 补三轴或书面豁免 |
-| N11 | **docs/18 / CONTRACT.md / README 口径漂移** | ~~P1 / FAIL~~ **已回抄（2026-11-14 20:19，§9-3）** | 工具数 25、表 60、迁移 0014、S8 四 intent、阶段推进已实现；CONTRACT/README 同步 | — |
+| N11 | **docs/18 / CONTRACT.md / README 口径漂移** | ~~P1 / FAIL~~ **已回抄（2026-11-14 20:19，§9-3；21:00 随 0015 再回抄表数/迁移号）** | 工具数 25、表 62、迁移 0015、S8 四 intent、阶段推进已实现；CONTRACT/README 同步 | — |
 | N12 | **approval 在事务内等待**（D-101 记债） | P2 / 债务 | 两个工具的 approval 在业务校验后、写库前，最长 120s 持事务；`pool.ts` 加 `idle_in_transaction_session_timeout=300s` 兜底 | 按 D-101 触发条件做两阶段重构（触发条件已写死） |
 | N13 | **DB 数据卫生**：2 条 `interview.stage_code='S9'` | P2 / FAIL | 8.2-G | 修 seed 脚本；契约明确 `interview.stage_code` 合法集合 |
 | N14 | **未配置替身开放 schema** | P3 / FAIL | `index.ts:214/249/252` | 改 `additionalProperties:false` |
@@ -1012,7 +1018,7 @@ cd dsh\dsh-recruitment; $env:RECRUITMENT_DB_PASSWORD='123456'; node --test
 | 项 | 旧 | 现（证据） |
 |---|---|---|
 | 工具数 | 19（`src/index.ts:414-433`） | **25**（`src/index.ts:577-600`；假 ctx 调 `apply()` 实测 25 个注册名） |
-| 表数 / 迁移 | 44 张 / 0010 | **60 张基表 + 3 视图 / 0014**（`db/migrations/0014_tenant_config.sql`；`verify.sql` §1 实测 60） |
+| 表数 / 迁移 | 44 张 / 0010 | **62 张基表 + 3 视图 / 0015**（`db/migrations/0015_runtime_cutover.sql`，已入库 `2329d2e`；`verify.sql` §1 实测 62，2026-11-14 21:00） |
 | S8 | 仅 `CREATE` | 四 intent（§9-1） |
 | 阶段推进 | 无入口 | 有唯一入口（§9-2） |
 | S3 rubric 批准 | 仅 CLI | 产品工具（§9-4） |
@@ -1030,12 +1036,17 @@ cd dsh\dsh-recruitment; $env:RECRUITMENT_DB_PASSWORD='123456'; node --test
 - COV 清单：`(12,'Pipeline Template','pipeline_template','TABLE')`、`(14,'Stage','pipeline_template_stage','TABLE')`
   —— 依据 `0014_tenant_config.sql:332` / `:359` 建表，且 0014 头注释 `:20-24` 点名的正是这两行旧 `DEFERRED`；
   `(13,'Pipeline Instance','application.current_stage_code','MAPPED')` **保持 MAPPED**（0014 头注释同口径）。
-- 实测输出（`ra_s6s7`，2026-11-14，两次探测；exit code 0 都成立）：
-  - 20:19（Git 追踪链 0001–0014）：`tables 60 / triggers 111 / functions 34`、
+- 实测输出（`ra_s6s7`，2026-11-14；exit code 全为 0）：
+  - 20:19（当时追踪链 0001–0014）：`tables 60 / triggers 111 / functions 34`、
     `STRUCT-06 PASS 历史事实禁删触发器 50 个`、`COV-01 PASS 对象覆盖：有表 30 / 列映射 1 / 缓做 5（合计 36）`、末行 `VERIFY PASS`。
-  - 20:2x（同一时刻另一 lane 把**未提交**的 `0015_runtime_cutover.sql` 应用到本机库）：
-    `tables 62 / triggers 117 / functions 41`、`STRUCT-06 ... 52 个`、`COV-01 ... 30/1/5`、末行 `VERIFY PASS`。
-    说明：0015 **不在本 lane 写范围、也未提交**；文档口径按 0014 链写，0015 合入后需再回抄。
+    保留为当时快照；**0014 / 60 / 50 自 21:00 起不再作为现行口径**。
+  - **21:00（`0015_runtime_cutover` 已落库；现行口径）**：`tables 62 / foreign_keys 217 / check 259 / unique 91 / partial 16 / triggers 117 / functions 41`、
+    `STRUCT-06 PASS 历史事实禁删触发器 52 个`、`COV-01 PASS 对象覆盖：有表 30 / 列映射 1 / 缓做 5（合计 36）`、末行 `VERIFY PASS`（exit 0）。
+    取数命令原文：
+    `select count(*) from information_schema.tables where table_schema='recruitment' and table_type='BASE TABLE';` → **62**；
+    `select count(*) from pg_trigger where tgfoid='recruitment.fn_block_delete'::regproc and not tgisinternal;` → **52**；
+    `psql -v ON_ERROR_STOP=1 -d ra_s6s7 -f db/verify.sql` → §1 七项 + `STRUCT-06 … 52 个` + 末行 `VERIFY PASS`。
+  - 迁移号口径：**0015**（迁移文件已入库 `2329d2e`；台账 `0015_runtime_cutover @ 2026-11-14 20:17:05 +08`，台账共 15 行）。
 - 注意：`(16,'Stage Activity Template')` 仍是 `DEFERRED` —— 0014 的 `pipeline_template_stage_template`
   只覆盖"阶段 → 面试模板版本"引用，不含待办/通知/材料收集，**是否升为 TABLE / MAPPED 需裁决**（见回报）。
 

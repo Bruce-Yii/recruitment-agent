@@ -20,7 +20,7 @@ node dsh/dsh-recruitment/manual/screening-decision/run-screening-decision.mjs
 
 | 项 | 要求 |
 |---|---|
-| 数据库 | `ra_s6s7`（可用 `RECRUITMENT_TEST_DB` 覆盖），**迁移 0001–0014 已应用**（含 `0002_seed` 的演示租户/部门/actor） |
+| 数据库 | `ra_s6s7`（可用 `RECRUITMENT_TEST_DB` 覆盖），**迁移 0001–0015 已应用**（含 `0002_seed` 的演示租户/部门/actor） |
 | 密码 | 只从 `RECRUITMENT_DB_PASSWORD` 环境变量读，不落盘 |
 | Python | converter 依赖 PyMuPDF；默认 `D:\Python3.12.9\python.exe`，可用 `RECRUITMENT_PYTHON_BIN` 覆盖 |
 | 合成简历 | `fixtures/synthetic-resume-screening-repro.pdf`（仓库内；由同目录 `fixtures/build-synthetic-resume.py` 生成） |
