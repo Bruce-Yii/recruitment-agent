@@ -20,8 +20,11 @@ export interface PendingDecision {
 /** 计数（全部为非负整数）。 */
 export interface OverviewCounts {
   readonly pending_total: number
-  readonly by_stage: Readonly<Record<string, number>>
-  readonly active_applications: number
+  /** 待人工决定按闸门阶段聚合（≠ 在办按阶段）。 */
+  readonly pending_by_stage: Readonly<Record<string, number>>
+  readonly active_total: number
+  /** 在办申请按当前阶段聚合（与 `pending_by_stage` 是两个不同集合）。 */
+  readonly active_by_stage: Readonly<Record<string, number>>
 }
 
 /** 工作台投影响应（与宿主 `OverviewResponse` 对齐）。 */
@@ -76,12 +79,17 @@ export function normalizeOverview(value: unknown): OverviewResponse {
   }
 
   const countsRaw = (raw.counts !== null && typeof raw.counts === 'object' ? raw.counts : {}) as Record<string, unknown>
-  const byStageRaw = (countsRaw.by_stage !== null && typeof countsRaw.by_stage === 'object' ? countsRaw.by_stage : {}) as Record<string, unknown>
-  const by_stage: Record<string, number> = {}
-  for (const [stageCode, count] of Object.entries(byStageRaw)) {
-    const key = asText(stageCode)
-    if (key !== '') by_stage[key] = asCount(count)
+  const stageMap = (value: unknown): Record<string, number> => {
+    const source = (value !== null && typeof value === 'object' ? value : {}) as Record<string, unknown>
+    const out: Record<string, number> = {}
+    for (const [stageCode, count] of Object.entries(source)) {
+      const key = asText(stageCode)
+      if (key !== '') out[key] = asCount(count)
+    }
+    return out
   }
+  const pendingByStage = stageMap(countsRaw.pending_by_stage)
+  const activeByStage = stageMap(countsRaw.active_by_stage)
 
   const issues = Array.isArray(raw.issues)
     ? raw.issues.filter((issue): issue is string => typeof issue === 'string')
@@ -92,8 +100,9 @@ export function normalizeOverview(value: unknown): OverviewResponse {
     pending,
     counts: {
       pending_total: countsRaw.pending_total === undefined ? pending.length : asCount(countsRaw.pending_total),
-      by_stage,
-      active_applications: asCount(countsRaw.active_applications),
+      pending_by_stage: pendingByStage,
+      active_total: asCount(countsRaw.active_total),
+      active_by_stage: activeByStage,
     },
     ...(issues.length > 0 ? { issues } : {}),
   }

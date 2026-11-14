@@ -35,20 +35,26 @@ window.__ModuleLoader__.load({
 				});
 			}
 			const countsRaw = raw.counts !== null && typeof raw.counts === "object" ? raw.counts : {};
-			const byStageRaw = countsRaw.by_stage !== null && typeof countsRaw.by_stage === "object" ? countsRaw.by_stage : {};
-			const by_stage = {};
-			for (const [stageCode, count] of Object.entries(byStageRaw)) {
-				const key = asText(stageCode);
-				if (key !== "") by_stage[key] = asCount(count);
-			}
+			const stageMap = (value) => {
+				const source = value !== null && typeof value === "object" ? value : {};
+				const out = {};
+				for (const [stageCode, count] of Object.entries(source)) {
+					const key = asText(stageCode);
+					if (key !== "") out[key] = asCount(count);
+				}
+				return out;
+			};
+			const pendingByStage = stageMap(countsRaw.pending_by_stage);
+			const activeByStage = stageMap(countsRaw.active_by_stage);
 			const issues = Array.isArray(raw.issues) ? raw.issues.filter((issue) => typeof issue === "string") : [];
 			return {
 				configured: raw.configured === true,
 				pending,
 				counts: {
 					pending_total: countsRaw.pending_total === void 0 ? pending.length : asCount(countsRaw.pending_total),
-					by_stage,
-					active_applications: asCount(countsRaw.active_applications)
+					pending_by_stage: pendingByStage,
+					active_total: asCount(countsRaw.active_total),
+					active_by_stage: activeByStage
 				},
 				...issues.length > 0 ? { issues } : {}
 			};
@@ -129,8 +135,8 @@ window.__ModuleLoader__.load({
 			const issues = data?.issues ?? [];
 			const configured = data?.configured ?? false;
 			const pendingTotal = data?.counts.pending_total ?? 0;
-			const activeApplications = data?.counts.active_applications ?? 0;
-			const byStageEntries = Object.entries(data?.counts.by_stage ?? {});
+			const activeTotal = data?.counts.active_total ?? 0;
+			const pendingByStageEntries = Object.entries(data?.counts.pending_by_stage ?? {});
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", { children: [
 				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "待人工决定" }),
 				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "下面这些申请在等一个真人做决定。" }),
@@ -149,10 +155,10 @@ window.__ModuleLoader__.load({
 					"待人工决定 ",
 					pendingTotal,
 					" 条；在办申请 ",
-					activeApplications,
+					activeTotal,
 					" 条。"
 				] }) : null,
-				byStageEntries.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", { children: ["按阶段：", byStageEntries.map(([stageCode, count]) => `${stageCode} ${count} 条`).join(" · ")] }) : null,
+				pendingByStageEntries.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", { children: ["按阶段：", pendingByStageEntries.map(([stageCode, count]) => `${stageCode} ${count} 条`).join(" · ")] }) : null,
 				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 					type: "button",
 					onClick: reload,

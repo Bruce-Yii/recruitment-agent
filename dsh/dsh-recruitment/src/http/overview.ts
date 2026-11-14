@@ -35,10 +35,18 @@ export interface PendingDecisionRow {
 export interface OverviewCounts {
   /** 待人工决定总条数。 */
   readonly pending_total: number
-  /** 按闸门阶段码聚合的待人工决定条数。 */
-  readonly by_stage: Readonly<Record<string, number>>
+  /**
+   * 按闸门阶段码聚合的**待人工决定**条数。
+   *
+   * 名字里必须带 `pending`：曾经叫 `by_stage`，与下面的 `active_by_stage` 极易混淆，
+   * 读的人会以为它是"在办申请按阶段"（实测连总控本人都误读过一次）。
+   * 两个集合的语义不同：待人工 = 卡在闸门上等人；在办 = 所有 ACTIVE 申请。
+   */
+  readonly pending_by_stage: Readonly<Record<string, number>>
   /** 在办（`lifecycle_status='ACTIVE'`）申请总数，作为分母/上下文。 */
-  readonly active_applications: number
+  readonly active_total: number
+  /** 在办申请按当前阶段码聚合（与 `pending_by_stage` 是两个不同集合，别混用）。 */
+  readonly active_by_stage: Readonly<Record<string, number>>
 }
 
 /** 工作台投影响应（客户端据此渲染；`configured=false` 时列表必为空，绝不编造数据）。 */
@@ -113,7 +121,7 @@ function unconfiguredOverview(issues: readonly string[]): OverviewResponse {
   return {
     configured: false,
     pending: [],
-    counts: { pending_total: 0, by_stage: {}, active_applications: 0 },
+    counts: { pending_total: 0, pending_by_stage: {}, active_total: 0, active_by_stage: {} },
     issues,
   }
 }
@@ -153,14 +161,26 @@ export async function readOverview(database: ResolvedDatabaseConfig): Promise<Ov
       stage_code: row.stage_code,
       reason: pendingReason(row.stage_code, row.stage_blocked_reason),
     }))
-    const byStage: Record<string, number> = {}
-    for (const row of pending) byStage[row.stage_code] = (byStage[row.stage_code] ?? 0) + 1
-    const activeApplications = activeRows.reduce((sum, row) => sum + (Number.isFinite(row.n) ? row.n : 0), 0)
+    const pendingByStage: Record<string, number> = {}
+    for (const row of pending) pendingByStage[row.stage_code] = (pendingByStage[row.stage_code] ?? 0) + 1
+    // 在办按阶段：查询本来就返回了明细，之前只取总和把明细丢掉了（"算了不输出"）。
+    const activeByStage: Record<string, number> = {}
+    let activeTotal = 0
+    for (const row of activeRows) {
+      const n = Number.isFinite(row.n) ? row.n : 0
+      activeByStage[row.stage_code] = (activeByStage[row.stage_code] ?? 0) + n
+      activeTotal += n
+    }
 
     return {
       configured: true,
       pending,
-      counts: { pending_total: pending.length, by_stage: byStage, active_applications: activeApplications },
+      counts: {
+        pending_total: pending.length,
+        pending_by_stage: pendingByStage,
+        active_total: activeTotal,
+        active_by_stage: activeByStage,
+      },
     }
   } finally {
     await closePool(pool)
