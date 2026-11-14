@@ -505,7 +505,7 @@ test('mapFeishuError：2091003/2091005 已核对，未知码不猜，任何错�
 })
 
 test('契约常量：端点 / CLI / 事件 / scope / 错误码都在，且带依据注记', () => {
-  assert.equal(FEISHU_MINUTES_CONTRACT_VERSION, '1.0.0')
+  assert.equal(FEISHU_MINUTES_CONTRACT_VERSION, '1.1.0')
 
   assert.equal(FEISHU_MINUTES_ENDPOINTS['minutes.detail'], '/open-apis/minutes/v1/minutes/{minute_token}')
   assert.equal(FEISHU_MINUTES_ENDPOINTS['minutes.transcript'], '/open-apis/minutes/v1/minutes/{minute_token}/transcript')
@@ -515,7 +515,7 @@ test('契约常量：端点 / CLI / 事件 / scope / 错误码都在，且带依
     assert.ok(typeof note === 'string' && note.includes('未核实'), `${key} 必须注明「未核实/骨架占位」`)
   }
 
-  assert.equal(FEISHU_LARK_CLI.minutesDetailTranscript, 'minutes +detail --transcript')
+  assert.match(FEISHU_LARK_CLI.minutesDetailTranscript, /^minutes \+detail --as user --minute-tokens <tokens> --transcript --output-dir <dir>$/)
   assert.equal(FEISHU_LARK_CLI.vcRecording, 'vc +recording')
 
   assert.equal(FEISHU_MINUTES_EVENTS.minutes_generated, 'minutes.minute.generated_v1')

@@ -1,9 +1,13 @@
-// 飞书 Minutes **传输层**：`lark-cli-transport`（子进程读全文 + 分页 + 重试 + 超时）。
+// 飞书 Minutes **传输层**：`lark-cli-transport`（子进程读全文 + 重读校验 + 重试 + 超时）。
 //
-// 这是本连接器**唯一**允许发起外部调用的文件。它复用 `docs/04 §13` 指定的
-// Lark CLI（MIT）形态（`FEISHU_LARK_CLI.minutesDetailTranscript`），结构照抄
-// `dsh-superagent-prototype/src/sources/feishu-loops.ts` + `infra/commands.ts`
-// 的四段循环（**读 → 判 → 重试 → 报错**），但**不抄**它的领域逻辑。
+// 这是本连接器**唯一**允许发起外部调用的文件。2026-11-14 在本机对着真实
+// lark-cli 1.0.81 核对过形态（`minutes +detail --help` + 两次真实读取，见
+// `evidence/experiments/2026-11-14-feishu-live-read/`）：
+//
+//   命令：`lark-cli minutes +detail --as user --minute-tokens <token> --transcript --output-dir <相对目录>`
+//   stdout：`{ok, identity, data:{minutes:[{minute_token, title, artifacts:{transcript_file}}]}, meta}`
+//   正文：**不在 stdout**，在 `transcript_file`（相对子进程 cwd 的落盘文件）里；
+//         传输层把文件读成字节、算 sha256、再删掉临时目录（正文不留在仓库/日志里）。
 //
 // 三条不许破的规矩：
 //
@@ -14,25 +18,30 @@
 //      platform_channel=true 时本文件会**再完整读一次**做重读校验：两次的
 //      sha256 必须一致，不一致直接失败（`READBACK_INVALID`），不产出正文；
 //      一致才把 `reread_sha256` 写进回读对象，交 `evaluateLiveGate()` 判定。
-//   2. **失败要说清哪一步**：`stage` ∈ {locate-cli, invoke, parse, paginate,
+//   2. **失败要说清哪一步**：`stage` ∈ {locate-cli, invoke, parse, read-output,
 //      validate}，外加原始退出码与脱敏后的 stderr 前 N 字节。诊断里**永不**
 //      出现正文、argv、平台 `msg`（R7：不把候选人内容写进任何日志）。
-//   3. **不猜、不补**：`has_more` 缺省、分页游标不前进、正文形状不认识、缺
-//      `revision` —— 一律失败（fail-closed），绝不用空串或默认值凑一个回读。
+//   3. **不猜、不补**：信封形状不认识、`transcript_file` 缺失、文件不存在 /
+//      越出工作目录 / 不是合法 UTF-8、正文为空 —— 一律失败（fail-closed），
+//      绝不用空串或默认值凑一个回读。
 //
 // 「生成中」不是失败：`2091003` 经 `mapFeishuError()` 映射成
 // `task_state='WAITING_EXTERNAL'`，调用方去等新事件或人工重试（TR-F1）。
+//
+// `argument_flags_verified` / `envelope_verified` **不是常量**：前者由一次真实
+// `--help` 探测（或成功真实调用）决定，后者只由成功解析过真实信封决定，
+// 默认 false；见 `verifyContract()`。
 import { spawn } from 'node:child_process'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 
 import {
   FEISHU_LARK_CLI,
   FEISHU_LIVE_GATE_POLICY,
-  FEISHU_MINUTES_DEFAULT_PAGE_SIZE,
-  FEISHU_MINUTES_PAGINATION,
-  FEISHU_TRANSPORT,
-  isPageComplete,
   mapFeishuError,
   readNonEmptyString,
+  FEISHU_TRANSPORT,
   type FeishuLiveGatePolicy,
   type FeishuTransport,
 } from './contract.ts'
@@ -62,43 +71,72 @@ export const FEISHU_CLI_MAX_RETRY_DELAY_MS = 30_000
 /** 默认保留多少**字节**的 stderr 诊断（已脱敏、已截断）。 */
 export const FEISHU_CLI_DEFAULT_DIAGNOSTIC_BYTES = 512
 
-/** 分页上限：防止 `has_more` 永远为 true 的平台缺陷把进程拖死。 */
-export const FEISHU_CLI_DEFAULT_MAX_PAGES = 200
-
-/** 子进程 stdout 硬上限（超了直接杀掉，避免内存被灌爆）。 */
+/** 子进程 stdout / 转写文件硬上限（超了直接杀掉或拒绝，避免内存被灌爆）。 */
 export const FEISHU_CLI_MAX_OUTPUT_BYTES = 32 * 1024 * 1024
 
+/** 工作目录前缀（`mkdtemp` 用；读完即删，正文不留在磁盘上）。 */
+export const FEISHU_CLI_WORKDIR_PREFIX = 'feishu-minutes-'
+
+/** 相对 `--output-dir`（真实 CLI 要求相对路径；工作目录由本层每次读取新建）。 */
+export const FEISHU_CLI_DEFAULT_OUTPUT_DIR = 'minutes'
+
+/** `--as` 的取值：妙记是 user identity（2026-11-14 实测 `--as user` 可用）。 */
+export const FEISHU_CLI_IDENTITY = 'user'
+
 /**
- * CLI 参数名（**未核实**）。
- * `docs/04 §13` 只给到命令形态 `minutes +detail --transcript`，没给参数名；
- * 这里的 `--minute-token` / `--page-size` / `--page-token` 按 lark-cli 既有
- * 习惯（参考实现确有 `--page-size` / `--page-token`）推断，接入真实 CLI 前
- * 必须在 `lark-cli minutes +detail --help` 下逐字核对。
+ * `minutes +detail` 的真实 flag（2026-11-14 逐字核对 `lark-cli minutes +detail --help`）。
+ * 复数 `--minute-tokens`（逗号分隔批量）是实测事实，不要改回单数。
  */
 export const FEISHU_CLI_TRANSCRIPT_FLAGS = {
-  minute_token: '--minute-token',
-  page_size: '--page-size',
-  page_token: '--page-token',
+  as: '--as',
+  minute_tokens: '--minute-tokens',
+  transcript: '--transcript',
+  output_dir: '--output-dir',
+  /** 其它 artifact flag（本次只验证了 `--transcript` 可用，其余同名 flag 来自 --help）。 */
+  summary: '--summary',
+  chapter: '--chapter',
+  todo: '--todo',
+  keyword: '--keyword',
 } as const
+
+/** `+search` 的真实 flag（2026-11-14 实测；`data.items[].token` 不叫 minute_token）。 */
+export const FEISHU_CLI_SEARCH_FLAGS = {
+  as: '--as',
+  owner_ids: '--owner-ids',
+  page_size: '--page-size',
+} as const
+
+/** `minutes +detail --help` 的 argv（真实探测用，不带 token、不带输出目录）。 */
+export const FEISHU_CLI_DETAIL_HELP_ARGS = ['minutes', '+detail', '--help'] as const
+
+/** `--help` 输出里必须出现的 flag（缺一个就说明真实 CLI 形态变了）。 */
+export const FEISHU_CLI_REQUIRED_HELP_FLAGS = [
+  FEISHU_CLI_TRANSCRIPT_FLAGS.as,
+  FEISHU_CLI_TRANSCRIPT_FLAGS.minute_tokens,
+  FEISHU_CLI_TRANSCRIPT_FLAGS.transcript,
+  FEISHU_CLI_TRANSCRIPT_FLAGS.output_dir,
+] as const
 
 /** 参数名的核实状态注记（引用这个常量，不要另写一份口径）。 */
 export const FEISHU_CLI_TRANSCRIPT_FLAGS_NOTE =
-  '未核实：docs/04 §13 只给了 `minutes +detail --transcript` 的命令形态，没给参数名。--minute-token / --page-size / --page-token 是按 lark-cli 既有习惯推断的，接真实 CLI 前必须用 --help 逐字核对。'
+  '已实测（2026-11-14，lark-cli 1.0.81，`minutes +detail --help` + 两次真实读取）：'
+  + '`--as user`、`--minute-tokens`（**复数**、逗号分隔批量）、`--transcript`、`--output-dir`'
+  + '（**必须相对路径**，绝对路径会被 CLI 拒绝）；另有 `--summary/--chapter/--todo/--keyword`。'
+  + '`+search` 用 `--as user --owner-ids me --page-size N`。'
 
-/**
- * CLI 输出信封的核实状态注记。
- * 参考实现的 `commands.lark()` 读的是 `{ok, data, error:{code,message}}`；
- * 本实现按该形态解析，但飞书妙记是否真的走同一个信封**未核实**。
- */
+/** CLI 输出信封的核实状态注记（真实读取核对过）。 */
 export const FEISHU_CLI_ENVELOPE_NOTE =
-  '未核实：按参考实现 lark-cli 的 {ok, data, error:{code,message}} 信封解析；飞书妙记 minutes 子命令是否同形需在真实 CLI 上复核。形状不认识时一律失败（fail-closed），不猜。'
+  '已实测（2026-11-14）：stdout 是纯 JSON（进度日志走 stderr），形状为 '
+  + '`{ok, identity, data:{minutes:[{minute_token, title, note_id, artifacts:{transcript_file}}]}, meta:{count}}`；'
+  + '**转写正文不在 stdout**，在 `artifacts.transcript_file` 指向的落盘文件里（相对子进程 cwd）。'
+  + '形状不认识时一律失败（fail-closed），不猜。'
 
 // ---------------------------------------------------------------------------
 // 四段循环的第 0 段：把「跑一条 CLI」抽成可注入的 runner
 // ---------------------------------------------------------------------------
 
 /** 传输失败落在哪一段。诊断 message 必须点名这一段。 */
-export type FeishuTransportStage = 'locate-cli' | 'invoke' | 'parse' | 'paginate' | 'validate'
+export type FeishuTransportStage = 'locate-cli' | 'invoke' | 'parse' | 'read-output' | 'validate'
 
 /** 传输失败的机器可判码（闭集；新增要在这里写名字，并在 README 解释含义）。 */
 export type FeishuTransportErrorCode =
@@ -114,19 +152,17 @@ export type FeishuTransportErrorCode =
   /** 输出形状不认识（parse）。 */
   | 'ENVELOPE_UNRECOGNIZED'
   | 'TRANSCRIPT_UNRECOGNIZED'
-  /** 分页没走完（paginate）。 */
-  | 'PAGINATION_STALLED'
-  | 'PAGINATION_INCOMPLETE'
-  | 'PAGE_LIMIT_EXCEEDED'
+  /** 落盘文件读不出来 / 越界 / 不是合法 UTF-8（read-output）。 */
+  | 'OUTPUT_FILE_MISSING'
+  | 'OUTPUT_FILE_INVALID'
   /** 回读对象自检不过（validate）。 */
-  | 'REVISION_REQUIRED'
   | 'TRANSCRIPT_EMPTY'
   | 'READBACK_INVALID'
 
 /**
  * 一次子进程调用的入参。
  * 只给 **argv**：可执行文件由 runner 自己配置（`createProcessCliRunner({command})`），
- * 传输层不碰路径，也就没有「悄悄用 PATH 上的全局 CLI」这条路。
+ * 传输层不碰「CLI 从哪来」这件事，也就没有「悄悄用 PATH 上的全局 CLI」这条路。
  * **argv 永不进入任何诊断**（可能带会议标识）。
  */
 export interface FeishuCliInvocation {
@@ -134,6 +170,12 @@ export interface FeishuCliInvocation {
   readonly timeout_ms: number
   /** 本次是第几次尝试（从 1 开始），只用于日志/测试观察。 */
   readonly attempt: number
+  /**
+   * 子进程工作目录。`--output-dir` 是相对路径，CLI 会把转写写在 `cwd/<output-dir>/…`；
+   * 传输层每次读取新建一个临时目录，读完即删（正文不留在仓库 / 日志里）。
+   * 不给 = 继承 runner 配置 / 调用进程的 cwd。
+   */
+  readonly cwd?: string
 }
 
 /** 子进程调用结局。`stderr` 是**未脱敏**原文，只有 `sanitizeDiagnostic()` 之后才许外出。 */
@@ -163,6 +205,8 @@ export interface FeishuProcessCliRunnerConfig {
   readonly timeout_ms?: number
   /** 子进程环境；默认继承 `process.env`。 */
   readonly env?: Readonly<Record<string, string | undefined>>
+  /** 固定工作目录；调用级 `invocation.cwd` 优先。默认继承当前进程 cwd。 */
+  readonly cwd?: string
   /** SIGTERM 之后等多久再 SIGKILL；默认 5 s。 */
   readonly kill_grace_ms?: number
 }
@@ -211,6 +255,7 @@ export function createProcessCliRunner(config: FeishuProcessCliRunnerConfig): Fe
         child = spawn(config.command, [...extra, ...invocation.args], {
           stdio: ['ignore', 'pipe', 'pipe'],
           env: env as NodeJS.ProcessEnv,
+          cwd: invocation.cwd ?? config.cwd ?? process.cwd(),
           // 不用 shell：参数里可能有会议标识，shell 会多一层转义与注入面。
           shell: false,
           windowsHide: true,
@@ -409,37 +454,35 @@ export interface FeishuCliTranscriptReadback {
   /** 平台通道 + 证据齐全时才是 `FEISHU_MINUTES_API`；否则恒 `FIXTURE`。 */
   readonly transport: FeishuTransport
   readonly minute_token: string
-  /** 平台 revision（用于人工回溯）；回执本身绑的是内容哈希，不是 revision。 */
-  readonly revision: string
+  /** 平台 revision（真实信封没给就省略；回执绑的是内容哈希，不是 revision）。 */
+  readonly revision?: string
   /** `lark:minutes+detail:<minute_token>@sha256:<content_sha256>`。 */
   readonly read_receipt_ref: string
   /** 回读时刻，带本地时区偏移的 ISO-8601。 */
   readonly fetched_at: string
-  /** 原文 sha256，64 位小写 hex。 */
+  /** 落盘正文的 sha256（对文件字节算，64 位小写 hex）。 */
   readonly content_sha256: string
   /**
    * 第二次独立完整回读得到的 sha256（重读校验）。只有 `platform_channel=true`
    * 才会出现；它与 `content_sha256` 逐字相等——不一致时本函数直接失败，不产出回读。
    */
   readonly reread_sha256?: string
-  /** 分页全部取完才为 true（TR-C2）。 */
+  /**
+   * 完整性结论。`+detail --transcript` 是**整文件写盘**操作（CLI 一次写完整份
+   * 转写、没有分页），文件存在且非空 + token 回显一致即视为完整；`has_more` /
+   * 分页概念不适用于本条路径（TR-C2 的「不许半截」由「整文件 + 非空 + token 一致」承担）。
+   */
   readonly is_complete: boolean
   readonly raw_text: string
   /** 触发方式：CLI 回读不涉及事件，恒 `MANUAL`（D-1 口径）。 */
   readonly trigger: 'MANUAL'
+  /** CLI stdout 里给出的落盘相对路径（`artifacts.transcript_file`，只作证据，不留存）。 */
+  readonly transcript_file: string
+  /** 落盘文件字节数（= sha256 的输入字节数）。 */
+  readonly file_bytes: number
+  /** 读取次数口径：整文件操作恒 1（保留字段给调用方渲染）。 */
   readonly page_count: number
   readonly transcript_chars: number
-}
-
-/** 一页的解析结果（内部形状）。 */
-interface ParsedCliPage {
-  readonly has_more: unknown
-  readonly page_token: string | null
-  readonly revision: string | null
-  readonly minute_token: string | null
-  readonly text: string
-  /** 本页是否存在可识别的正文容器。false + 空文本 = 形状不认识。 */
-  readonly transcript_present: boolean
 }
 
 /** 传输层读一次的结局。 */
@@ -456,22 +499,46 @@ export type FeishuTransportReadResult =
     }
   | { readonly status: 'FAILED'; readonly error: FeishuTransportError; readonly attempts: number }
 
+/**
+ * CLI 形态的真实探测证据（`argument_flags_verified` / `envelope_verified` 的来源）。
+ * 全部默认 false，**只有真实探测 / 真实成功调用**才会变成 true。
+ */
+export interface FeishuCliContractEvidence {
+  /** `--help` 里是否逐字出现全部必需 flag（`FEISHU_CLI_REQUIRED_HELP_FLAGS`）。 */
+  readonly argument_flags_verified: boolean
+  /** 是否成功解析过一次真实 JSON 信封（`data.minutes[].artifacts.transcript_file`）。 */
+  readonly envelope_verified: boolean
+  /** 探测时刻（带偏移 ISO-8601）；从没探测过 = null。 */
+  readonly checked_at: string | null
+  /** 是否真的跑过 `--help`。 */
+  readonly help_checked: boolean
+  /** `--help` 的退出码（没跑过 = null）。 */
+  readonly help_exit_code: number | null
+  /** `--help` 里缺的必需 flag（空数组 = 全齐）。 */
+  readonly missing_flags: readonly string[]
+  readonly note: string
+}
+
 /** 传输层。`kind` 恒 `lark-cli-transport`（与 `describe()` 的口径同源）。 */
 export interface FeishuMinutesTranscriptTransport {
   readonly kind: typeof FEISHU_CLI_TRANSPORT_ID
   readonly read: (request: { readonly minute_token: string }) => Promise<FeishuTransportReadResult>
   readonly describe: () => FeishuTransportDescription
+  /**
+   * 跑一次真实 `lark-cli minutes +detail --help`，按**真实输出**判定
+   * `argument_flags_verified`（缺 flag 就是 false）。`envelope_verified` 不会被
+   * `--help` 置 true——信封形状只能由一次成功的真实读取证明。不抛异常。
+   */
+  readonly verifyContract: () => Promise<FeishuCliContractEvidence>
 }
 
-/** `transport.describe()`：把「未核实的部分」也写进机器可读出口。 */
+/** `transport.describe()`：把「已核实 / 未核实」都写进机器可读出口。 */
 export interface FeishuTransportDescription {
   readonly transport: typeof FEISHU_CLI_TRANSPORT_ID
   readonly command_constant: string
   readonly timeout_ms: number
   readonly max_attempts: number
   readonly retry_base_ms: number
-  readonly page_size: number
-  readonly max_pages: number
   readonly diagnostic_bytes: number
   /** Gate 口径名（不是开关）：`EVIDENCE_DRIVEN`。 */
   readonly live_gate: FeishuLiveGatePolicy
@@ -479,10 +546,14 @@ export interface FeishuTransportDescription {
   readonly platform_channel: boolean
   /** 该通道的**标称**回读 transport；某个回读到底算不算 LIVE，由证据判定。 */
   readonly readback_transport: FeishuTransport
-  /** 参数名核实状态（恒 false，直到有人对着 --help 核对过）。 */
-  readonly argument_flags_verified: false
-  /** 信封形状核实状态（恒 false）。 */
-  readonly envelope_verified: false
+  /** 参数名核实状态：由真实 `--help` 探测 / 成功真实调用决定，默认 false。 */
+  readonly argument_flags_verified: boolean
+  /** 信封形状核实状态：由成功解析过真实信封决定，默认 false。 */
+  readonly envelope_verified: boolean
+  /** 最近一次真实探测 / 成功调用的时刻；从没有过 = null。 */
+  readonly contract_checked_at: string | null
+  /** `--help` 里缺的必需 flag（空数组 = 全齐 / 还没探测）。 */
+  readonly missing_flags: readonly string[]
   readonly note: string
 }
 
@@ -538,48 +609,30 @@ export function readbackTransport(platformChannel: boolean): FeishuTransport {
 }
 
 // ---------------------------------------------------------------------------
-// 解析：信封 → 一页
+// 解析：真实信封 → 落盘文件
 // ---------------------------------------------------------------------------
 
-/** 读 `has_more`：只接受布尔；缺省即「不知道」，由调用方按未读完处理。 */
-function readHasMore(value: unknown): unknown {
-  return typeof value === 'boolean' ? value : undefined
-}
-
-/** 从 `transcript` 容器里取正文；形状不认识返回 null。 */
-function textFromTranscript(container: unknown): string | null {
-  if (typeof container === 'string') return container
-  if (typeof container !== 'object' || container === null) return null
-  const node = container as Record<string, unknown>
-  const chars = readNonEmptyString(node.text)
-  if (chars !== null) return chars
-  for (const key of ['sentences', 'paragraphs']) {
-    const list = node[key]
-    if (!Array.isArray(list)) continue
-    const lines: string[] = []
-    for (const item of list) {
-      if (typeof item === 'string') {
-        lines.push(item)
-        continue
-      }
-      if (typeof item !== 'object' || item === null) continue
-      const text = readNonEmptyString((item as Record<string, unknown>).text)
-      if (text !== null) lines.push(text)
-    }
-    if (lines.length > 0) return lines.join('\n')
-  }
-  return null
+/** 真实 `+detail` 信封里一个 minute 条目的关键字段。 */
+interface ParsedDetailEntry {
+  readonly minute_token: string
+  /** stdout 给出的落盘相对路径（`data.minutes[].artifacts.transcript_file`）。 */
+  readonly transcript_file: string
+  /** 平台 revision（真实信封可能没有；没有就 null，不补默认值）。 */
+  readonly revision: string | null
 }
 
 /**
- * 解析 CLI 的一页输出。fail-closed：形状不认识就抛 `parse` 阶段错误。
- * @param stdout - 子进程 stdout。
- * @param attempts - 本次尝试次数（进诊断）。
+ * 解析真实 `+detail` stdout（2026-11-14 实测形状）。fail-closed：形状不认识、
+ * 回显里没有请求的 `minute_token`、没有 `artifacts.transcript_file` 一律失败。
+ * stdout 内容**不回显**（可能含标题等租户内容）。
+ * @param stdout - 子进程 stdout（真实 CLI 下是纯 JSON；进度日志走 stderr）。
+ * @param minuteToken - 本次请求的 minute_token。
+ * @param attempts - 尝试次数（进诊断）。
  */
-function parseCliPage(stdout: string, attempts: number): ParsedCliPage {
+function parseDetailEnvelope(stdout: string, minuteToken: string, attempts: number): ParsedDetailEntry {
   let root: unknown
   try {
-    root = JSON.parse(stdout)
+    root = JSON.parse(stdout.trim())
   } catch {
     // 非 JSON 输出里可能有正文：**整段丢弃**，只报字节数。
     throw new FeishuTransportError({
@@ -600,7 +653,7 @@ function parseCliPage(stdout: string, attempts: number): ParsedCliPage {
     })
   }
   const envelope = root as Record<string, unknown>
-  if ('ok' in envelope && envelope.ok !== true) {
+  if (envelope.ok !== true) {
     // `{ok:false, error:{code}}`：这里只认错误码，不回显 msg。
     const code = providerCodeOf(envelope)
     throw new FeishuTransportError({
@@ -616,7 +669,7 @@ function parseCliPage(stdout: string, attempts: number): ParsedCliPage {
       diagnostic: sanitizeDiagnostic(JSON.stringify(envelope.error ?? '')),
     })
   }
-  const data = envelope.ok === true ? envelope.data : envelope
+  const data = envelope.data
   if (typeof data !== 'object' || data === null) {
     throw new FeishuTransportError({
       stage: 'parse',
@@ -626,26 +679,138 @@ function parseCliPage(stdout: string, attempts: number): ParsedCliPage {
       attempts,
     })
   }
-  const page = data as Record<string, unknown>
-  const transcript = textFromTranscript(page.transcript)
-  const flat = transcript === null ? readNonEmptyString(page.text) : transcript
-  const text = flat ?? ''
-  if (flat === null && text === '' && page.transcript === undefined && page.text === undefined) {
+  const minutes = (data as Record<string, unknown>).minutes
+  if (!Array.isArray(minutes)) {
     throw new FeishuTransportError({
       stage: 'parse',
       code: 'TRANSCRIPT_UNRECOGNIZED',
-      detail: 'CLI 返回里找不到可识别的正文容器（transcript.sentences / transcript.paragraphs / transcript.text）：拒绝把不认识的输出当逐字稿。',
+      detail: 'CLI 信封里没有 data.minutes 数组（真实形态应为 data.minutes[].artifacts.transcript_file）：拒绝把不认识的输出当逐字稿。',
+      retryable: false,
+      attempts,
+    })
+  }
+  const entries = minutes.filter(
+    (entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null,
+  )
+  const matched = entries.find((entry) => readNonEmptyString(entry.minute_token) === minuteToken)
+  if (matched === undefined) {
+    throw new FeishuTransportError({
+      stage: 'validate',
+      code: 'READBACK_INVALID',
+      detail: `平台回显里没有请求的 minute_token（回显 ${entries.length} 条，均非本次请求）：拒绝把别的会议内容当本次产物。`,
+      retryable: false,
+      attempts,
+    })
+  }
+  const artifacts = matched.artifacts
+  const transcriptFile =
+    typeof artifacts === 'object' && artifacts !== null
+      ? readNonEmptyString((artifacts as Record<string, unknown>).transcript_file)
+      : null
+  if (transcriptFile === null) {
+    throw new FeishuTransportError({
+      stage: 'parse',
+      code: 'TRANSCRIPT_UNRECOGNIZED',
+      detail: '条目里没有 artifacts.transcript_file：拒绝把不认识的输出当逐字稿（本 CLI 版本把正文写盘，stdout 只给路径）。',
       retryable: false,
       attempts,
     })
   }
   return {
-    has_more: readHasMore(page[FEISHU_MINUTES_PAGINATION.has_more]),
-    page_token: readNonEmptyString(page[FEISHU_MINUTES_PAGINATION.page_token]),
-    revision: readNonEmptyString(page.revision) ?? readNonEmptyString(page.minute_revision),
-    minute_token: readNonEmptyString(page.minute_token),
-    text,
-    transcript_present: flat !== null,
+    minute_token: minuteToken,
+    transcript_file: transcriptFile,
+    revision: readNonEmptyString(matched.revision) ?? readNonEmptyString(matched.minute_revision),
+  }
+}
+
+/**
+ * 把 CLI 给的相对路径安全地落到工作目录里。绝对路径 / `..` 越界一律返回 null
+ * （不许读工作目录之外的文件）。
+ * @param workDir - 本次读取的临时工作目录（子进程 cwd）。
+ * @param relativePath - stdout 里的 `transcript_file`（Windows 用 `\`，POSIX 用 `/`）。
+ */
+export function resolveOutputFile(workDir: string, relativePath: string): string | null {
+  const root = resolve(workDir)
+  const normalized = relativePath.replace(/[\\/]+/g, sep)
+  if (normalized === '' || resolve(root, normalized) === root) return null
+  const absolute = resolve(root, normalized)
+  if (!absolute.startsWith(root.endsWith(sep) ? root : root + sep)) return null
+  return absolute
+}
+
+/** 去掉 UTF-8 BOM（真实 CLI 文件通常没有；有也按字节边界处理，不改变其余字节）。 */
+function stripUtf8Bom(buffer: Buffer): Buffer {
+  if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
+    return buffer.subarray(3)
+  }
+  return buffer
+}
+
+/**
+ * 读落盘转写文件 → 字节数 + 文本。fail-closed：文件不存在 / 越界 / 权限问题
+ * 报 `OUTPUT_FILE_MISSING`，不是合法 UTF-8（再编码后字节不等）报 `OUTPUT_FILE_INVALID`。
+ * @param workDir - 本次读取的临时工作目录。
+ * @param relativePath - `artifacts.transcript_file`。
+ * @param attempts - 尝试次数（进诊断）。
+ */
+async function readTranscriptOutput(workDir: string, relativePath: string, attempts: number): Promise<{ readonly text: string; readonly bytes: number }> {
+  const absolute = resolveOutputFile(workDir, relativePath)
+  if (absolute === null) {
+    throw new FeishuTransportError({
+      stage: 'read-output',
+      code: 'OUTPUT_FILE_INVALID',
+      detail: 'CLI 给的 transcript_file 不是工作目录内的相对路径（绝对路径或 .. 越界）：拒绝读取工作目录之外的文件。',
+      retryable: false,
+      attempts,
+    })
+  }
+  let raw: Buffer
+  try {
+    raw = await readFile(absolute)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? ''
+    throw new FeishuTransportError({
+      stage: 'read-output',
+      code: 'OUTPUT_FILE_MISSING',
+      detail: `CLI 说转写已落盘，但读不到 transcript_file（${code === '' ? '未知文件错误' : code}）：不产出正文。`,
+      retryable: false,
+      attempts,
+    })
+  }
+  if (raw.byteLength > FEISHU_CLI_MAX_OUTPUT_BYTES) {
+    throw new FeishuTransportError({
+      stage: 'read-output',
+      code: 'OUTPUT_FILE_INVALID',
+      detail: `转写文件 ${raw.byteLength} 字节，超过上限 ${FEISHU_CLI_MAX_OUTPUT_BYTES}：不截断、不产出正文。`,
+      retryable: false,
+      attempts,
+    })
+  }
+  const bytes = stripUtf8Bom(raw)
+  const text = bytes.toString('utf8')
+  if (!Buffer.from(text, 'utf8').equals(bytes)) {
+    throw new FeishuTransportError({
+      stage: 'read-output',
+      code: 'OUTPUT_FILE_INVALID',
+      detail: '转写文件不是合法 UTF-8（重新编码后的字节与原文件不一致）：无法给出可核对的 content_sha256，不产出正文。',
+      retryable: false,
+      attempts,
+    })
+  }
+  return { text, bytes: bytes.byteLength }
+}
+
+/**
+ * 删掉本次读取的临时工作目录（**正文不留在磁盘上**）。只删自己用
+ * `mkdtemp` 建出来的目录（按前缀校验）；删除失败不改变本次读取结论。
+ * @param workDir - `mkdtemp` 返回的目录。
+ */
+async function removeWorkDir(workDir: string): Promise<void> {
+  if (!basename(workDir).startsWith(FEISHU_CLI_WORKDIR_PREFIX)) return
+  try {
+    await rm(workDir, { recursive: true, force: true })
+  } catch {
+    // 清理失败不掩盖真实错误；正文仍不会进入仓库 / 日志。
   }
 }
 
@@ -669,10 +834,8 @@ export interface FeishuLarkCliTransportConfig {
   readonly timeout_ms?: number
   readonly max_attempts?: number
   readonly retry_base_ms?: number
-  readonly page_size?: number
-  readonly max_pages?: number
   readonly diagnostic_bytes?: number
-  /** 追加到 `FEISHU_LARK_CLI.minutesDetailTranscript` 之后的固定参数。 */
+  /** 追加到真实 argv 之后的固定参数（默认无；不要塞 `--page-size` 之类 `+detail` 不认的 flag）。 */
   readonly extra_args?: readonly string[]
   /** 时钟（测试注入）。 */
   readonly now?: () => Date
@@ -685,21 +848,49 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
+/** `buildTranscriptArgs()` 的入参。 */
+export interface FeishuTranscriptArgsInput {
+  /** minute_token（一个即可；批量由 CLI 的逗号分隔形态承担）。 */
+  readonly tokens: readonly string[]
+  /** 相对 `--output-dir`（真实 CLI 只收相对路径）。 */
+  readonly output_dir?: string
+  /** 追加参数。 */
+  readonly extra_args?: readonly string[]
+}
+
 /**
- * 把 `FEISHU_LARK_CLI.minutesDetailTranscript` 拆成 argv。
- * 只做空格切分（该常量里没有引号），保证「契约常量 → 实际调用」是同一份。
- * @param extraArgs - 追加参数。
+ * 按**实测真实形态**拼 `minutes +detail` 的 argv：
+ * `minutes +detail --as user --minute-tokens <tokens> --transcript --output-dir <dir>`。
+ *
+ * 不消费 `FEISHU_LARK_CLI.minutesDetailTranscript` 的空格切分（那只是人读模板，
+ * 含 `<tokens>` 占位符）；flag 来自 `FEISHU_CLI_TRANSCRIPT_FLAGS`，两者同源。
+ * @param input - token 列表 / 相对输出目录 / 追加参数。
  */
-export function buildTranscriptArgs(extraArgs: readonly string[] = []): string[] {
-  return [...FEISHU_LARK_CLI.minutesDetailTranscript.split(/\s+/).filter((part) => part !== ''), ...extraArgs]
+export function buildTranscriptArgs(input: FeishuTranscriptArgsInput): string[] {
+  if (input.tokens.length === 0) throw new Error('buildTranscriptArgs: tokens 不能为空')
+  const outputDir = input.output_dir ?? FEISHU_CLI_DEFAULT_OUTPUT_DIR
+  return [
+    'minutes',
+    '+detail',
+    FEISHU_CLI_TRANSCRIPT_FLAGS.as,
+    FEISHU_CLI_IDENTITY,
+    FEISHU_CLI_TRANSCRIPT_FLAGS.minute_tokens,
+    input.tokens.join(','),
+    FEISHU_CLI_TRANSCRIPT_FLAGS.transcript,
+    FEISHU_CLI_TRANSCRIPT_FLAGS.output_dir,
+    outputDir,
+    ...(input.extra_args ?? []),
+  ]
 }
 
 /**
  * 造一个 `lark-cli-transport`。
  *
- * 读一次的流程（照抄参考实现的四段循环）：
- *   locate → invoke（带超时 + 指数退避重试）→ parse（信封/正文）→
- *   paginate（`isPageComplete` 走到 `has_more=false`）→ validate（回执/sha/时间）。
+ * 读一次的流程（真实 CLI 实测形态）：
+ *   invoke（`+detail` 整文件写盘；带超时 + 指数退避重试）→ parse（stdout 元数据
+ *   → `artifacts.transcript_file`）→ read-output（读落盘文件，算字节数/sha256）
+ *   → validate（回执 / 时间 / 删临时目录）。
+ *   **没有分页**：`+detail --transcript` 一次写完整份转写；`+search` 才用 `--page-size`。
  *
  * `platform_channel=true` 时还会**再完整读一次**做重读校验：两次原始正文的
  * sha256 与 revision 必须一致，不一致直接 `READBACK_INVALID` 失败（不产出正文）。
@@ -714,13 +905,44 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
   const timeoutMs = config.timeout_ms ?? FEISHU_CLI_DEFAULT_TIMEOUT_MS
   const maxAttempts = Math.max(1, config.max_attempts ?? FEISHU_CLI_DEFAULT_MAX_ATTEMPTS)
   const retryBase = Math.max(0, config.retry_base_ms ?? FEISHU_CLI_DEFAULT_RETRY_BASE_MS)
-  const pageSize = Math.max(1, config.page_size ?? FEISHU_MINUTES_DEFAULT_PAGE_SIZE)
-  const maxPages = Math.max(1, config.max_pages ?? FEISHU_CLI_DEFAULT_MAX_PAGES)
   const diagnosticBytes = Math.max(0, config.diagnostic_bytes ?? FEISHU_CLI_DEFAULT_DIAGNOSTIC_BYTES)
   const extraArgs = config.extra_args ?? []
   const now = config.now ?? ((): Date => new Date())
   const sleep = config.sleep ?? defaultSleep
   const platformChannel = config.platform_channel === true
+
+  // ---- CLI 形态探测状态（**默认 false**；只由真实 --help / 真实成功调用置 true）----
+  let argumentFlagsVerified = false
+  let envelopeVerified = false
+  let contractCheckedAt: string | null = null
+  let helpChecked = false
+  let helpExitCode: number | null = null
+  let missingFlags: string[] = [...FEISHU_CLI_REQUIRED_HELP_FLAGS]
+
+  /** 当前探测证据（`describe()` / `verifyContract()` 共用）。 */
+  function contractEvidence(): FeishuCliContractEvidence {
+    return {
+      argument_flags_verified: argumentFlagsVerified,
+      envelope_verified: envelopeVerified,
+      checked_at: contractCheckedAt,
+      help_checked: helpChecked,
+      help_exit_code: helpExitCode,
+      missing_flags: [...missingFlags],
+      note: argumentFlagsVerified
+        ? (envelopeVerified
+          ? '参数名与信封形状都由真实 --help / 真实成功读取核对过。'
+          : '参数名由真实 --help 核对过；信封形状还没有一次成功真实读取证明。')
+        : '还没有一次真实 --help 或成功真实读取：参数名/信封都按未核实处理（argument_flags_verified=false、envelope_verified=false）。',
+    }
+  }
+
+  /** 一次真实成功读取（解析信封 + 读到落盘文件）就是信封形状的真实证据。 */
+  function markEnvelopeVerified(): void {
+    argumentFlagsVerified = true
+    envelopeVerified = true
+    contractCheckedAt = isoWithOffset(now())
+    missingFlags = []
+  }
 
   /** 退避：base * 2^(n-1)，封顶 `FEISHU_CLI_MAX_RETRY_DELAY_MS`。 */
   function backoff(attempt: number): number {
@@ -796,32 +1018,19 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
     })
   }
 
-  /** 调一次（含重试）；`2091003` 不算失败，直接返回 WAITING_EXTERNAL 信号。 */
-  async function callOnce(args: readonly string[]): Promise<
-    { readonly kind: 'PAGE'; readonly page: ParsedCliPage; readonly attempts: number } | { readonly kind: 'GENERATING'; readonly attempts: number }
-  > {
+  /** 调一次（含重试）；`2091003` 不算失败，直接返回 GENERATING 信号。 */
+  async function callOnce(
+    args: readonly string[],
+    workDir: string,
+  ): Promise<{ readonly kind: 'OK'; readonly stdout: string; readonly attempts: number } | { readonly kind: 'GENERATING'; readonly attempts: number }> {
     let lastError: FeishuTransportError | null = null
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const result = await runner({ args, timeout_ms: timeoutMs, attempt })
+      const result = await runner({ args, timeout_ms: timeoutMs, attempt, cwd: workDir })
       if (result.status === 'OK') {
         // 先看信封里的飞书错误码：ok=false + 2091003 是「生成中」，不是失败。
         const providerCode = extractProviderCode(result.stdout)
         if (providerCode === '2091003') return { kind: 'GENERATING', attempts: attempt }
-        try {
-          return { kind: 'PAGE', page: parseCliPage(result.stdout, attempt), attempts: attempt }
-        } catch (error) {
-          if (error instanceof FeishuTransportError) {
-            // 解析/权限类错误不重试：同样的输入重跑一次还是同样的形状。
-            throw error
-          }
-          throw new FeishuTransportError({
-            stage: 'parse',
-            code: 'ENVELOPE_UNRECOGNIZED',
-            detail: `解析 CLI 输出时抛出非预期异常（${error instanceof Error ? error.name : typeof error}）。`,
-            retryable: false,
-            attempts: attempt,
-          })
-        }
+        return { kind: 'OK', stdout: result.stdout, attempts: attempt }
       }
       const failure = errorFromRun(result, attempt)
       // 非零退出也可能是「生成中」：lark-cli 会把平台错误码打到 stderr，同样按 2091003 处理。
@@ -837,25 +1046,49 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
   }
 
   /**
-   * 一次**完整**读取：分页走完 + 回执自检，产出一个回读对象。
-   * `platform_channel` 的通道身份会写进 `transport`；重读校验在 `read()` 里做。
-   * @param minuteToken - 已校验非空的平台 minute_token。
+   * 一次**完整**读取：跑一次 CLI（整文件写盘）→ 解析 stdout → 读落盘正文 →
+   * 算字节数 / sha256 / 回执 → 删掉临时工作目录。`platform_channel` 的通道
+   * 身份会写进 `transport`；重读校验在 `read()` 里做。
+   *
+   * 临时目录是必要的：CLI 的 `--output-dir` 只收相对路径，正文按相对子进程 cwd
+   * 落盘；读完即删（R7：真实转写正文不留在仓库 / 日志 / 磁盘上）。
+   * @param minuteToken - 已校验非空的平台 minute_token（不含 `@`）。
    */
   async function readOnce(minuteToken: string): Promise<FeishuTransportReadResult> {
-    const base = buildTranscriptArgs(extraArgs)
-    let cursor: string | null = null
-    const texts: string[] = []
-    let revision: string | null = null
-    let pageCount = 0
-    let totalAttempts = 0
-    let complete = false
-
-    for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
-      const args = [...base, FEISHU_CLI_TRANSCRIPT_FLAGS.minute_token, minuteToken, FEISHU_CLI_TRANSCRIPT_FLAGS.page_size, String(pageSize)]
-      if (cursor !== null) args.push(FEISHU_CLI_TRANSCRIPT_FLAGS.page_token, cursor)
-      let outcome
+    if (minuteToken.includes('@') || /[\r\n]/.test(minuteToken)) {
+      return {
+        status: 'FAILED',
+        attempts: 0,
+        error: new FeishuTransportError({
+          stage: 'validate',
+          code: 'READBACK_INVALID',
+          detail: 'minute_token 含 "@" 或换行：会破坏读取回执格式，拒绝调用。',
+          retryable: false,
+          attempts: 0,
+        }),
+      }
+    }
+    let workDir: string
+    try {
+      workDir = await mkdtemp(join(tmpdir(), FEISHU_CLI_WORKDIR_PREFIX))
+    } catch (error) {
+      return {
+        status: 'FAILED',
+        attempts: 0,
+        error: new FeishuTransportError({
+          stage: 'read-output',
+          code: 'OUTPUT_FILE_INVALID',
+          detail: `无法创建临时工作目录（${error instanceof Error ? error.name : typeof error}）：不调用 CLI、不产出正文。`,
+          retryable: false,
+          attempts: 0,
+        }),
+      }
+    }
+    try {
+      const args = buildTranscriptArgs({ tokens: [minuteToken], extra_args: extraArgs })
+      let outcome: Awaited<ReturnType<typeof callOnce>>
       try {
-        outcome = await callOnce(args)
+        outcome = await callOnce(args, workDir)
       } catch (error) {
         const failure =
           error instanceof FeishuTransportError
@@ -865,11 +1098,10 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
                 code: 'CLI_SPAWN_FAILED',
                 detail: '调用 CLI 时抛出非预期异常。',
                 retryable: false,
-                attempts: pageIndex + 1,
+                attempts: 1,
               })
-        return { status: 'FAILED', error: failure, attempts: totalAttempts + failure.attempts }
+        return { status: 'FAILED', error: failure, attempts: failure.attempts }
       }
-      totalAttempts += outcome.attempts
       if (outcome.kind === 'GENERATING') {
         // 「生成中」按已核对错误码映射成 WAITING_EXTERNAL，不当失败（TR-F1 / P-3）。
         const mapped = mapFeishuError('2091003')
@@ -878,145 +1110,82 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
           reason: 'GENERATING',
           provider_code: '2091003',
           task_state: mapped.task_state as 'WAITING_EXTERNAL',
-          attempts: totalAttempts,
+          attempts: outcome.attempts,
           message: mapped.message,
           creates_artifact: false,
         }
       }
-      const page = outcome.page
-      pageCount += 1
-      if (revision === null) revision = page.revision
-      if (page.minute_token !== null && page.minute_token !== minuteToken) {
+
+      let entry: ParsedDetailEntry
+      try {
+        entry = parseDetailEnvelope(outcome.stdout, minuteToken, outcome.attempts)
+      } catch (error) {
+        const failure =
+          error instanceof FeishuTransportError
+            ? error
+            : new FeishuTransportError({
+                stage: 'parse',
+                code: 'ENVELOPE_UNRECOGNIZED',
+                detail: `解析 CLI 输出时抛出非预期异常（${error instanceof Error ? error.name : typeof error}）。`,
+                retryable: false,
+                attempts: outcome.attempts,
+              })
+        return { status: 'FAILED', error: failure, attempts: outcome.attempts }
+      }
+
+      let output: { readonly text: string; readonly bytes: number }
+      try {
+        output = await readTranscriptOutput(workDir, entry.transcript_file, outcome.attempts)
+      } catch (error) {
+        const failure =
+          error instanceof FeishuTransportError
+            ? error
+            : new FeishuTransportError({
+                stage: 'read-output',
+                code: 'OUTPUT_FILE_INVALID',
+                detail: '读取落盘转写文件时抛出非预期异常。',
+                retryable: false,
+                attempts: outcome.attempts,
+              })
+        return { status: 'FAILED', error: failure, attempts: outcome.attempts }
+      }
+      if (output.text.trim() === '') {
         return {
           status: 'FAILED',
-          attempts: totalAttempts,
+          attempts: outcome.attempts,
           error: new FeishuTransportError({
             stage: 'validate',
-            code: 'READBACK_INVALID',
-            detail: '平台回显的 minute_token 与请求的不一致：拒绝把别的会议内容当本次产物。',
+            code: 'TRANSCRIPT_EMPTY',
+            detail: 'CLI 写出的转写文件是空的：空正文不能当产物（P-2）。',
             retryable: false,
             attempts: outcome.attempts,
           }),
         }
       }
-      if (page.transcript_present && page.text.trim() !== '') texts.push(page.text)
-      if (isPageComplete({ has_more: page.has_more, page_token: page.page_token ?? undefined })) {
-        complete = true
-        break
-      }
-      // 没读完：必须给出**前进**的游标，否则就是分页缺陷，不能拿半截当全文。
-      if (page.has_more !== true) {
-        return {
-          status: 'FAILED',
-          attempts: totalAttempts,
-          error: new FeishuTransportError({
-            stage: 'paginate',
-            code: 'PAGINATION_INCOMPLETE',
-            detail: 'has_more 缺失或不是布尔：按「没读完」处理，内容不完整就不产出 artifact（TR-C2）。',
-            retryable: false,
-            attempts: outcome.attempts,
-          }),
-        }
-      }
-      if (page.page_token === null) {
-        return {
-          status: 'FAILED',
-          attempts: totalAttempts,
-          error: new FeishuTransportError({
-            stage: 'paginate',
-            code: 'PAGINATION_STALLED',
-            detail: 'has_more=true 但没有下一页游标：分页卡住，不能拿半截当全文。',
-            retryable: false,
-            attempts: outcome.attempts,
-          }),
-        }
-      }
-      if (cursor !== null && page.page_token === cursor) {
-        return {
-          status: 'FAILED',
-          attempts: totalAttempts,
-          error: new FeishuTransportError({
-            stage: 'paginate',
-            code: 'PAGINATION_STALLED',
-            detail: '下一页游标与本次相同：分页没有前进，不能拿半截当全文。',
-            retryable: false,
-            attempts: outcome.attempts,
-          }),
-        }
-      }
-      cursor = page.page_token
-    }
 
-    if (!complete) {
-      return {
-        status: 'FAILED',
-        attempts: totalAttempts,
-        error: new FeishuTransportError({
-          stage: 'paginate',
-          code: 'PAGE_LIMIT_EXCEEDED',
-          detail: `分页超过上限 ${maxPages} 页仍未走完：内容可能不完整，不产出 artifact。`,
-          retryable: false,
-          attempts: 1,
-        }),
-      }
-    }
+      // 成功解析真实信封 + 用户要求的文件确实写出并被读到：信封形状由此被真实调用证明。
+      markEnvelopeVerified()
 
-    const rawText = texts.join('\n')
-    if (revision === null) {
-      return {
-        status: 'FAILED',
-        attempts: totalAttempts,
-        error: new FeishuTransportError({
-          stage: 'validate',
-          code: 'REVISION_REQUIRED',
-          detail: 'CLI 返回里没有 revision：平台产物版本无法回溯，不补默认值。',
-          retryable: false,
-          attempts: 1,
-        }),
+      const contentSha256 = sha256Hex(output.text)
+      const readback: FeishuCliTranscriptReadback = {
+        transport: readbackTransport(platformChannel),
+        minute_token: minuteToken,
+        ...(entry.revision === null ? {} : { revision: entry.revision }),
+        read_receipt_ref: buildReadReceipt(minuteToken, contentSha256),
+        fetched_at: isoWithOffset(now()),
+        content_sha256: contentSha256,
+        is_complete: true,
+        raw_text: output.text,
+        trigger: 'MANUAL',
+        transcript_file: entry.transcript_file,
+        file_bytes: output.bytes,
+        page_count: 1,
+        transcript_chars: output.text.length,
       }
+      return { status: 'READ', readback, attempts: outcome.attempts, pages: 1 }
+    } finally {
+      await removeWorkDir(workDir)
     }
-    if (rawText.trim() === '') {
-      return {
-        status: 'FAILED',
-        attempts: totalAttempts,
-        error: new FeishuTransportError({
-          stage: 'validate',
-          code: 'TRANSCRIPT_EMPTY',
-          detail: '分页走完但正文为空：空正文不能当产物（P-2）。',
-          retryable: false,
-          attempts: 1,
-        }),
-      }
-    }
-    if (minuteToken.includes('@') || revision.includes('@')) {
-      return {
-        status: 'FAILED',
-        attempts: totalAttempts,
-        error: new FeishuTransportError({
-          stage: 'validate',
-          code: 'READBACK_INVALID',
-          detail: 'minute_token 或 revision 含 @：回执格式会被破坏，拒绝产出。',
-          retryable: false,
-          attempts: 1,
-        }),
-      }
-    }
-
-    const contentSha256 = sha256Hex(rawText)
-    const readback: FeishuCliTranscriptReadback = {
-      transport: readbackTransport(platformChannel),
-      minute_token: minuteToken,
-      revision,
-      read_receipt_ref: buildReadReceipt(minuteToken, contentSha256),
-      fetched_at: isoWithOffset(now()),
-      content_sha256: contentSha256,
-      is_complete: true,
-      raw_text: rawText,
-      trigger: 'MANUAL',
-      page_count: pageCount,
-      transcript_chars: rawText.length,
-    }
-    return { status: 'READ', readback, attempts: totalAttempts, pages: pageCount }
   }
 
   /**
@@ -1052,7 +1221,8 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
       attempts += second.attempts
       if (second.status === 'WAITING_EXTERNAL') return second
       if (second.status === 'FAILED') return { ...second, attempts }
-      if (second.readback.content_sha256 !== first.readback.content_sha256 || second.readback.revision !== first.readback.revision) {
+      if (second.readback.content_sha256 !== first.readback.content_sha256
+        || (second.readback.revision ?? '') !== (first.readback.revision ?? '')) {
         return {
           status: 'FAILED',
           attempts,
@@ -1092,29 +1262,65 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
     return { status: 'READ', readback, attempts, pages: first.pages }
   }
 
+  /**
+   * 真实 `--help` 探测：跑一次 `minutes +detail --help`，按**真实输出**判断
+   * 必需 flag 是否全在。不抛异常；`envelope_verified` 不在这里置 true
+   * （信封形状只能由一次成功的真实读取证明）。
+   */
+  async function verifyContract(): Promise<FeishuCliContractEvidence> {
+    helpChecked = true
+    let result: FeishuCliRunResult | null = null
+    try {
+      result = await runner({
+        args: [...FEISHU_CLI_DETAIL_HELP_ARGS],
+        timeout_ms: Math.min(timeoutMs, 30_000),
+        attempt: 1,
+      })
+    } catch {
+      result = null
+    }
+    if (result === null) {
+      missingFlags = [...FEISHU_CLI_REQUIRED_HELP_FLAGS]
+      contractCheckedAt = isoWithOffset(now())
+      return contractEvidence()
+    }
+    helpExitCode = result.exit_code
+    const text = result.status === 'OK' ? `${result.stdout}\n${result.stderr}` : result.stderr
+    const missing = FEISHU_CLI_REQUIRED_HELP_FLAGS.filter((flag) => !text.includes(flag))
+    missingFlags = [...missing]
+    // 一次真实 --help 跑通且 flag 全在 = 参数名核实；已核实过就不会被后续偶发失败降级。
+    argumentFlagsVerified = argumentFlagsVerified || (result.status === 'OK' && missing.length === 0)
+    contractCheckedAt = isoWithOffset(now())
+    return contractEvidence()
+  }
+
   function describe(): FeishuTransportDescription {
+    const evidence = contractEvidence()
     return {
       transport: FEISHU_CLI_TRANSPORT_ID,
       command_constant: FEISHU_LARK_CLI.minutesDetailTranscript,
       timeout_ms: timeoutMs,
       max_attempts: maxAttempts,
       retry_base_ms: retryBase,
-      page_size: pageSize,
-      max_pages: maxPages,
       diagnostic_bytes: diagnosticBytes,
       live_gate: FEISHU_LIVE_GATE_POLICY,
       platform_channel: platformChannel,
       readback_transport: readbackTransport(platformChannel),
-      argument_flags_verified: false,
-      envelope_verified: false,
+      argument_flags_verified: evidence.argument_flags_verified,
+      envelope_verified: evidence.envelope_verified,
+      contract_checked_at: evidence.checked_at,
+      missing_flags: evidence.missing_flags,
       note:
-        'lark-cli-transport 已实现：子进程调 FEISHU_LARK_CLI.minutesDetailTranscript，带超时/指数退避/分页/回执。'
-        + '参数名与信封形状**未核实**；LIVE 由证据算出（evaluateLiveGate），'
+        'lark-cli-transport：`minutes +detail --as user --minute-tokens <token> --transcript --output-dir <dir>`；'
+        + 'stdout 只给 `artifacts.transcript_file`，正文从落盘文件读、算 sha 后删临时目录。'
+        + `参数名核实=${String(evidence.argument_flags_verified)}（由真实 --help 决定），`
+        + `信封核实=${String(evidence.envelope_verified)}（由真实成功读取决定）。`
+        + 'LIVE 由证据算出（evaluateLiveGate）；'
         + (platformChannel
           ? '本 transport 被接线层声明为平台通道：成功读取后会再读一次做重读校验，两次哈希/版本一致才把 transport 标为 FEISHU_MINUTES_API。'
           : '本 transport 不是平台通道（测试 / 回放）：回读 transport 恒 FIXTURE，读成功也不可能 LIVE。'),
     }
   }
 
-  return { kind: FEISHU_CLI_TRANSPORT_ID, read, describe }
+  return { kind: FEISHU_CLI_TRANSPORT_ID, read, describe, verifyContract }
 }

@@ -27,8 +27,8 @@
 //
 // 端点常量**不会**被本骨架使用：`adapter.ts` 故意没有传输层（见该文件头注）。
 
-/** 本契约版本。端点/事件/错误码任何一处口径变化都必须 +1。 */
-export const FEISHU_MINUTES_CONTRACT_VERSION = '1.0.0'
+/** 本契约版本。端点/事件/错误码/CLI 形态任何一处口径变化都必须 +1。 */
+export const FEISHU_MINUTES_CONTRACT_VERSION = '1.1.0'
 
 /** Connector 标识（与 `describe().connector`、`probe().connector` 同一个值）。 */
 export const FEISHU_MINUTES_CONNECTOR_ID = 'feishu-minutes'
@@ -76,21 +76,30 @@ export const FEISHU_MINUTES_ENDPOINT_NOTES: Readonly<Record<FeishuMinutesEndpoin
 
 /**
  * 飞书妙记的 **CLI 形态**（`docs/04 §9.6 / §13` 逐字「直接复用 Lark CLI（MIT）」）。
- * 一等契约常量：传输层若接入，首选实现是这两个命令，不是自己拼 HTTP。
- * 本骨架**不调用**它们（也不允许 import 子进程模块）。
+ *
+ * 2026-11-14 在本机（lark-cli 1.0.81）用 `minutes +detail --help` 与真实读取核对过，
+ * 真实形态与 docs/04 的简写不同：**复数的 `--minute-tokens`（逗号分隔）、
+ * `--as user`、`--transcript`、相对路径 `--output-dir`**；stdout 只给 artifact
+ * 文件路径，**正文落盘在 `artifacts.transcript_file`**。
  */
 export const FEISHU_LARK_CLI = {
-  minutesDetailTranscript: 'minutes +detail --transcript',
+  minutesDetailTranscript: 'minutes +detail --as user --minute-tokens <tokens> --transcript --output-dir <dir>',
   vcRecording: 'vc +recording',
 } as const
 
-/** CLI 常量的依据注记。 */
+/** CLI 常量的依据注记（已核对 vs 未核对分开写）。 */
 export const FEISHU_LARK_CLI_NOTE =
-  'docs/04 §13 指定复用 Lark CLI（MIT）：`minutes +detail --transcript` 取全文（能处理生成中），`vc +recording` 由 Meeting ID 反查 minute_token。本骨架只写常量，不执行 CLI。'
+  '2026-11-14 实测（lark-cli 1.0.81）：`minutes +detail` 用复数 `--minute-tokens`（逗号分隔批量）、'
+  + '`--as user`、`--transcript`、相对路径 `--output-dir`（绝对路径会被拒：'
+  + '"--output must be a relative path within the current directory"）；stdout 是 JSON 元数据，'
+  + '正文写在 `data.minutes[].artifacts.transcript_file` 指向的文件里。`+search` 的形态是 '
+  + '`--as user --owner-ids me --page-size N`（返回 `data.items[].token`，不叫 minute_token）。'
+  + '`vc +recording` 仍未实测（docs/04 §13 的简写形态保留为待核对）。'
 
 /**
- * 分页字段名。**未核实/骨架占位**：docs/04 §13 没有给飞书的分页参数，
- * 只要求「按平台分页规则读完全部内容」（TR-C2）。
+ * 分页字段名。**未核实/骨架占位**：飞书 `+detail` 是**整文件写盘**操作（--transcript
+ * 直接把全文写进 transcript_file），没有分页；分页只属于 `+search`（`--page-size`）。
+ * 这些常量保留给未来 `+search` 接入，**不用于** `+detail` 回读。
  */
 export const FEISHU_MINUTES_PAGINATION = {
   page_size: 'page_size',
@@ -102,7 +111,7 @@ export const FEISHU_MINUTES_PAGINATION = {
 /** 同一对象的别名（调用方按「分页字段」命名时用）。 */
 export const FEISHU_MINUTES_PAGINATION_FIELDS = FEISHU_MINUTES_PAGINATION
 
-/** 默认页大小。**未核实/骨架占位**，只是给实现者一个起点，不是平台事实。 */
+/** 默认页大小（`+search` 用；`+detail` 是整文件操作，不用它）。 */
 export const FEISHU_MINUTES_DEFAULT_PAGE_SIZE = 50
 
 /**

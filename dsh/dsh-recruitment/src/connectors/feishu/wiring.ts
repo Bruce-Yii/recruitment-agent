@@ -41,10 +41,8 @@ export interface FeishuConnectorConfig {
   readonly max_attempts?: number
   /** 指数退避基数（ms），默认 1000。 */
   readonly retry_base_ms?: number
-  /** 分页大小，默认 `FEISHU_MINUTES_DEFAULT_PAGE_SIZE`。 */
-  readonly page_size?: number
-  /** 分页上限，默认 200。 */
-  readonly max_pages?: number
+  // 说明：不再有 page_size / max_pages —— `+detail --transcript` 是整文件写盘，
+  // 没有分页；分页只属于 `+search`（未来接入时单独加配置）。
 }
 
 /**
@@ -108,8 +106,6 @@ export function resolveFeishuConnector(
     ...(config.timeout_ms === undefined ? {} : { timeout_ms: config.timeout_ms }),
     ...(config.max_attempts === undefined ? {} : { max_attempts: config.max_attempts }),
     ...(config.retry_base_ms === undefined ? {} : { retry_base_ms: config.retry_base_ms }),
-    ...(config.page_size === undefined ? {} : { page_size: config.page_size }),
-    ...(config.max_pages === undefined ? {} : { max_pages: config.max_pages }),
   })
   // env 只影响凭据存在性布尔；适配器不会把值外传（见 adapter.ts probe()）。
   const adapter = createFeishuMinutesAdapter({ transport, env })

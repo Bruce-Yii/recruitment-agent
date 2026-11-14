@@ -3,7 +3,7 @@
 > **LIVE Gate = `EVIDENCE_DRIVEN`（口径名，不是开/关常量）。**
 > 每次读取由 `evaluateLiveGate()` 按**本次回读证据**算出 `LIVE | BLOCKED`：
 > 平台通道 + `read_receipt_ref` 绑定内容哈希 + `content_sha256` 与 `raw_text`
-> 重算一致（+ 可选重读哈希一致）+ 带偏移 `fetched_at` + 完整分页 + 非空正文 +
+> 重算一致（+ 可选重读哈希一致）+ 带偏移 `fetched_at` + 完整正文 + 非空正文 +
 > `MANUAL|EVENT`。全齐才 `LIVE`；缺任何一项就 `BLOCKED`，并逐条点名缺什么。
 > 回读对象自相矛盾（哈希不一致）是**失败**，不是警告。
 >
@@ -26,16 +26,16 @@
 | 端点 / 分页 / 权限点 / 事件 / 错误码的**字符串契约** | 一个自带 OAuth 的产品级 Connector（F2 属 **P1**） |
 | 凭据**存在性**检查（只布尔，不打印值） | OAuth 流程、令牌刷新（`probe()` 不会仅凭令牌存在就 CONNECTED） |
 | `2091003 → WAITING_EXTERNAL`、`2091005 → AUTH_REQUIRED` 的纯函数映射 | 重试调度器 / `business_task` 写入（那属业务层） |
-| **Lark CLI 传输层**：子进程 + 超时 + 指数退避 + 分页 + 回执 + **重读校验** + 脱敏诊断 | HTTP 传输（`http-transport` 仍未实现） |
+| **Lark CLI 传输层**：子进程 + 超时 + 指数退避 + 落盘正文 + 回执 + **重读校验** + 脱敏诊断 | HTTP 传输（`http-transport` 仍未实现） |
 | 三维标签的**唯一口径**与证据闸门：`evaluateLiveGate()` 逐项核对 | 「全局 Gate 已开」这种一维开关 |
 
 ## 2. 文件
 
 | 文件 | 职责 |
 |---|---|
-| `contract.ts` | 纯常量 / 类型 / 纯函数：端点、CLI、分页、scope、事件、错误码、绑定键、`mapFeishuError()` |
-| `labels.ts` | 三维标签：`buildConnectorLabels()`、`buildArtifactLabelsFromReadback()`、`triggerModeForEvent()` |
-| `transport.ts` | **`lark-cli-transport`**：调 Lark CLI 读全文、分页、重试、超时、回执、诊断脱敏 |
+| `contract.ts` | 纯常量 / 类型 / 纯函数：端点、CLI、scope、事件、错误码、绑定键、`mapFeishuError()` |
+| `labels.ts` | 三维标签 + **LIVE 证据闸门**：`evaluateLiveGate()` / `liveEligibilityViolations()` / `readbackConsistencyViolations()` |
+| `transport.ts` | **`lark-cli-transport`**：调真实 Lark CLI（`--minute-tokens` / `--transcript` / `--output-dir`）→ 读落盘正文 → 重读校验 → 回执 / 脱敏 / 形态探测 |
 | `adapter.ts` | `describe()` / `probe()` / `fetchTranscript()` / `mapProviderError()` / `subscriptionNotes()` |
 | `index.ts` | 唯一出口（显式逐个导出） |
 
@@ -46,12 +46,16 @@
 
 ## 3. 契约表
 
-**CLI（已核对，`docs/04 §13` 逐字「直接复用 Lark CLI（MIT）」）**
+**CLI（2026-11-14 对 lark-cli 1.0.81 实测核对）**
 
 | 常量 | 值 | 用途 |
 |---|---|---|
-| `FEISHU_LARK_CLI.minutesDetailTranscript` | `minutes +detail --transcript` | 取全文；能处理「生成中」 |
-| `FEISHU_LARK_CLI.vcRecording` | `vc +recording` | 有 Meeting ID 无 `minute_token` 时反查 |
+| `FEISHU_LARK_CLI.minutesDetailTranscript` | `minutes +detail --as user --minute-tokens <tokens> --transcript --output-dir <dir>` | 取全文（落盘文件）；能处理「生成中」 |
+| `FEISHU_LARK_CLI.vcRecording` | `vc +recording` | 有 Meeting ID 无 `minute_token` 时反查（**未实测**） |
+
+`translateArgs` 的实际 flag 见 `FEISHU_CLI_TRANSCRIPT_FLAGS`（复数 `--minute-tokens`、
+`--output-dir` 必须相对路径）；`+search` 的 flag 见 `FEISHU_CLI_SEARCH_FLAGS`
+（`--owner-ids` / `--page-size`，返回 `data.items[].token`）。
 
 **HTTP 端点（未核实 / 骨架占位，编码前必须在官方 API Explorer 复核）**
 
@@ -63,8 +67,9 @@
 
 `docs/04 §13` 对飞书只给了 CLI 形态，没有给 HTTP 路径；`FEISHU_MINUTES_ENDPOINT_NOTES` 逐个标了「未核实」。
 
-**分页**：`has_more` / `page_token` / `page_size`（`FEISHU_MINUTES_PAGINATION`，同样未核实）；
-`isPageComplete(page)` 只认 `has_more === false` 且没有下一页游标（TR-C2）。
+**分页**：`+detail --transcript` 是**整文件写盘**操作，没有分页；`has_more` / `page_token` /
+`page_size`（`FEISHU_MINUTES_PAGINATION`）只属于未来的 `+search` 接入，`isPageComplete(page)`
+保留给那条路径（TR-C2 的「不许半截」在 `+detail` 路径由「整文件 + 非空 + token 一致」承担）。
 
 **权限点**（`FEISHU_MINUTES_SCOPES`，未核实）：`minutes:minutes:readonly`、
 `minutes:minutes.transcript:readonly`、`offline_access`（用户 OAuth 刷新所需）。
@@ -88,28 +93,47 @@
 
 ## 4. 传输层（`lark-cli-transport`）
 
-结构照抄 `dsh-superagent-prototype/src/sources/feishu-loops.ts` + `infra/commands.ts` 的
-四段循环（读 → 判 → 重试 → 报错），**不抄**它的工单/线程领域逻辑。
+**2026-11-14 对着真实 lark-cli 1.0.81 核对过**（`minutes +detail --help` + 两次真实读取，
+证据见 `evidence/experiments/2026-11-14-feishu-live-read/`）：
+
+```
+lark-cli minutes +detail --as user --minute-tokens <token> --transcript --output-dir <相对目录>
+```
+
+- flag 是**复数** `--minute-tokens`（逗号分隔批量），不是单数；
+- `--output-dir` **必须相对路径**（绝对路径被 CLI 拒绝）；
+- **正文不在 stdout**：stdout 是 JSON 元数据，正文写在
+  `data.minutes[].artifacts.transcript_file`（相对子进程 cwd 的落盘文件）里；
+  传输层读文件 → 算字节数 / sha256 → **删临时目录**（正文不留在仓库 / 日志 / 磁盘上）。
 
 | 项 | 取值 / 行为 |
 |---|---|
-| 命令 | `FEISHU_LARK_CLI.minutesDetailTranscript` 拆成 argv（`buildTranscriptArgs()`，不另写一份） |
-| 可执行文件 | **由调用方显式配置**（`createProcessCliRunner({ command })`），不读全局 profile（`AGENTS.md §7.6`） |
+| 命令 | `buildTranscriptArgs({ tokens, output_dir })` 按实测 flag 拼接（与 `FEISHU_CLI_TRANSCRIPT_FLAGS` 同源） |
+| 可执行文件 | **由调用方显式配置**（`createProcessCliRunner({ command })`），不读全局 profile（`AGENTS.md §7.6`）；npm shim 背后是原生 `bin/lark-cli.exe`，配它 |
+| 工作目录 | 每次读取 `mkdtemp(<tmp>/feishu-minutes-)`，子进程 `cwd` 指过去；`--output-dir minutes` 相对它落盘；读完 `rm -rf`（只删自己建的前缀目录） |
 | 超时 | 默认 `180_000 ms`（`FEISHU_CLI_DEFAULT_TIMEOUT_MS`），可配置；超时 SIGTERM，5 s 后 SIGKILL |
 | 重试 | 默认最多 3 次（含首次），指数退避 1 s → 2 s（上限 30 s）。**只重试传输抖动** |
-| 不重试 | CLI 找不到 / 不可执行、输出形状不认识、分页缺陷、回执自检失败、`2091005` 无权限 |
-| 分页 | `has_more` / `page_token` / `page_size`；用 `isPageComplete()` 判完；游标不前进 → `PAGINATION_STALLED`；页数上限 200 |
-| 回执 | `read_receipt_ref = lark:minutes+detail:<minute_token>@sha256:<content_sha256>`：**绑到这次读到的字节**；缺 `revision` 仍直接失败，不补默认值（revision 另存 `readback.revision` 供回溯） |
+| 不重试 | CLI 找不到 / 不可执行、信封/落盘形状不认识、文件缺失/越界、重读不一致、`2091005` 无权限 |
+| 分页 | **不适用**：`+detail --transcript` 一次写完整份转写（没有 `has_more`）；分页只属于 `+search`（`--page-size`，未来接入） |
+| 回执 | `read_receipt_ref = lark:minutes+detail:<minute_token>@sha256:<content_sha256>`：**绑到这次读到的字节**；真实信封没有 `revision` 就不补默认值（`revision` 另存 `readback.revision`，可为空） |
 | 重读校验 | `platform_channel=true` 时再**完整读一次**：两次 `content_sha256` / `revision` 必须一致；不一致 → `READBACK_INVALID` 失败（不产出正文）；一致才写 `reread_sha256` |
-| 完整性 | 只有分页全部走完（`has_more=false` 且无残留游标）才 `is_complete=true` |
+| 完整性 | 整文件操作：文件存在、非空、token 回显一致、合法 UTF-8 → `is_complete=true`（TR-C2 的「不许半截」由「整文件 + 非空 + token 一致」承担） |
+| 落盘安全 | `transcript_file` 只接受**工作目录内相对路径**；绝对路径 / `..` 越界 → `OUTPUT_FILE_INVALID`，不读目录外文件；UTF-8 往返不一致 → `OUTPUT_FILE_INVALID` |
 | 「生成中」 | `2091003`（`ok:false` 或非零退出的 stderr）→ `WAITING_EXTERNAL`，**不算失败**、不重试 |
-| 诊断 | 失败 message 点名 `stage` ∈ {`locate-cli`,`invoke`,`parse`,`paginate`,`validate`} + `code` + 原始退出码 + stderr 前 512 字节 |
+| 诊断 | 失败 message 点名 `stage` ∈ {`locate-cli`,`invoke`,`parse`,`read-output`,`validate`} + `code` + 原始退出码 + stderr 前 512 字节 |
 | 脱敏（R7） | stderr 只外传**脱敏切片**：JSON 的 content-bearing 键抹成 `<redacted>`、≥8 字连续中文抹成 `[redacted:cjk]`、≥64 字符 blob 抹成 `[redacted:blob]`；**正文、argv、平台 `msg` 永不出现** |
 
-**未核实的部分（机器可读）**：`transport.describe()` 里 `argument_flags_verified: false`、
-`envelope_verified: false`。参数名 `--minute-token` / `--page-size` / `--page-token` 与
-`{ok, data, error:{code,message}}` 信封都是按 lark-cli 既有习惯推断的，
-接真实 CLI 前必须用 `lark-cli minutes +detail --help` 逐字核对。
+**已核实 / 未核实（机器可读，不是硬编码）**：
+
+- `transport.verifyContract()` 跑一次真实 `minutes +detail --help`；四个必需 flag
+  （`--as` / `--minute-tokens` / `--transcript` / `--output-dir`）全在且 exit 0 →
+  `argument_flags_verified=true`，缺哪个写进 `missing_flags`。
+- `envelope_verified` **只**由一次成功真实读取（解析 `data.minutes[].artifacts.transcript_file`
+  并读到文件）置 true；`--help` 不会把它置 true。
+- 两者**默认都是 false**，`describe()` 里还有 `contract_checked_at`；真实读取成功后
+  `live-read.json` 记录的就是 `true/true`。
+- `+search`（`--as user --owner-ids me --page-size N`，返回 `data.items[].token`）只登记
+  flag 常量，尚未接入传输层；`vc +recording` 仍未实测。
 
 ## 5. 三维标签规则（R4，唯一口径）
 
@@ -130,7 +154,7 @@
      也必须逐字相等。**任何一处不等 = 失败**（适配器 / 工具直接 `BLOCKED / READBACK_INVALID`），
      不是「警告后照样标 LIVE」；
   5. `fetched_at` 是**带时区偏移**的合法 ISO-8601（`2026-02-30` 这种日历越界也不收）；
-  6. `is_complete === true`（分页全部取完，TR-C2/TR-C4）；
+  6. `is_complete === true`（`+detail --transcript` 整文件写盘 + 非空 + token 一致，TR-C2/TR-C4）；
   7. `raw_text` 非空（P-2）；
   8. `trigger ∈ {EVENT, MANUAL}`。
   缺任何一项 → `gate='BLOCKED'`，`violations` 逐条写清缺什么；不压平成「全局 Gate 没开」。
@@ -173,9 +197,9 @@
 | `CLI_TIMEOUT` | CLI 调用超时，重试也超时 |
 | `CLI_FAILED` | 非零退出且诊断里没有已核对错误码 |
 | `PROVIDER_NO_PERMISSION` | 平台 `2091005`，需要人重新授权（`error_code='AUTH_REQUIRED'`） |
-| `READ_PARSE_FAILED` | 输出信封 / 正文形状不认识（fail-closed，绝不猜） |
-| `PAGINATION_INCOMPLETE` | 分页没走完 / 游标不前进 / 超页数 |
-| `READBACK_INVALID` | 回执、`revision`、正文自检不过；**重读校验不一致**；或回读对象自相矛盾（`content_sha256` / `read_receipt_ref` / `reread_sha256` 与 `raw_text` 对不上） |
+| `READ_PARSE_FAILED` | 输出信封 / 落盘文件形状不认识（fail-closed，绝不猜） |
+| `PAGINATION_INCOMPLETE` | 保留值：`+detail` 没有分页；未来 `+search` 分页传输才可能用到 |
+| `READBACK_INVALID` | 回执、重读校验、落盘正文自检不过；或回读对象自相矛盾（`content_sha256` / `read_receipt_ref` / `reread_sha256` 与 `raw_text` 对不上） |
 
 传输层失败时还会带 `failure: { stage, code, attempts, exit_code }`，方便运维定位。
 回读对象自相矛盾时走 `BLOCKED / READBACK_INVALID`（**不**降级成 FIXTURE 继续写库）。
@@ -191,7 +215,7 @@
 | 3 | 内容哈希 | `content_sha256` 64 位小写 hex，且 = `sha256(raw_text)`（重新读取一致） |
 | 4 | 重读校验 | 有 `reread_sha256` 时必须 = `content_sha256`；平台通道在 `read()` 里真实重读，不一致直接 `READBACK_INVALID` |
 | 5 | 回读时刻 | `fetched_at` 带时区偏移、日历合法 |
-| 6 | 完整性 | `is_complete === true`（分页取完，`has_more=false`） |
+| 6 | 完整性 | `is_complete === true`（整文件写盘 + 非空 + token 回显一致） |
 | 7 | 正文 | `raw_text` 非空 |
 | 8 | 触发 | `trigger ∈ {EVENT, MANUAL}`（CLI 回读恒 `MANUAL`） |
 
@@ -206,7 +230,12 @@
 **信任边界（诚实说明）**：`platform_channel` 是**接线层**（`wiring.ts`，插件配置
 `feishu.cli` 绝对路径）声明的部署事实，不是数据证据。把假 CLI 配进生产配置 = 运维撒谎，
 本地代码无法识别；D-1 接受的是**操作者真实跑过一次**的读取证据（真实 minute_token /
-revision / hash / readback），不是本地可密码学验证的平台签名。
+hash / readback），不是本地可密码学验证的平台签名。
+
+**真实读取已跑通（2026-11-14）**：用本机 lark-cli 1.0.81 + 上述产品传输层读了两场真实
+会议，`gate=LIVE`、`labels=LIVE/MANUAL/CONNECTED`，两份 `content_sha256` 与任务书证据
+逐字一致（6397 B / `e17ffd5d…`、4485 B / `f3f45d49…`）。证据（只含 token / 字节数 /
+哈希 / 回执，**不含正文**）：`evidence/experiments/2026-11-14-feishu-live-read/`。
 
 ## 8. 用法
 
@@ -224,11 +253,15 @@ adapter.probe()               // { connection_state, labels, blocked_reason, tra
 
 // 2) 真实读取：显式给 CLI 的**绝对路径** + 声明这是平台通道（接线层做的事）。
 const transport = createLarkCliTransport({
-  runner: createProcessCliRunner({ command: '/opt/lark-cli/lark-cli' }),
+  runner: createProcessCliRunner({
+    command: 'D:\\12412\\npm-global\\node_modules\\@larksuite\\cli\\bin\\lark-cli.exe',
+  }),
   platform_channel: true,
   timeout_ms: 180_000,
   max_attempts: 3,
 })
+// 形态探测（可选）：真实跑一次 `minutes +detail --help`
+await transport.verifyContract()   // → argument_flags_verified=true（flag 全在时）
 const wired = createFeishuMinutesAdapter({ transport })
 const result = await wired.fetchTranscript({ minute_token })
 // → READ: live_gate 由证据算（LIVE 或 BLOCKED + live_gate_violations）
@@ -265,7 +298,7 @@ LIVE_GATE=EVIDENCE_DRIVEN
 | 落库标签 | 由**本次回读证据**算（`evaluateLiveGate`）：证据齐全 → `LIVE / MANUAL / CONNECTED`、`provenance_basis=LIVE_READBACK_VERIFIED`、`provider_artifact_id=feishu:minutes:<token>`、附 `FEISHU_LIVE_MANUAL_OPERATOR_READ`；证据不齐 → `FIXTURE / MANUAL / {NOT_CONNECTED, AUTH_REQUIRED}`、`provenance_basis=FEISHU_READBACK_NO_LIVE_GATE`、附 `FEISHU_READBACK_NOT_LIVE`（消息里逐条列缺项） |
 | 回读不一致 | `content_sha256` / `read_receipt_ref` / `reread_sha256` 与 `raw_text` 对不上 → `BLOCKED / READBACK_INVALID`，**一行不写**（不一致是失败，不是警告） |
 | 会议约束 | 只接受 `provider=FEISHU` 的会议（否则 `INVALID_ARGS/SOURCE_CONNECTOR_MISMATCH`）；`external_meeting_id` 必须精确匹配 active 绑定 |
-| 装配配置 | `feishu: { cli: '<绝对路径>', timeout_ms?, max_attempts?, retry_base_ms?, page_size?, max_pages? }`（见 `wiring.ts`） |
+| 装配配置 | `feishu: { cli: '<绝对路径>', timeout_ms?, max_attempts?, retry_base_ms? }`（见 `wiring.ts`；`+detail` 没有分页参数） |
 
 工具侧**永不**把调用方自报的 `LIVE/CONNECTED` 当依据：`connectorReadbackLabels(readback, …)`
 只认 `evaluateLiveGate()` 的结论；证据不齐时把 `CONNECTED` 自报降级成 `AUTH_REQUIRED`，
@@ -285,8 +318,9 @@ LIVE_GATE=EVIDENCE_DRIVEN
 ```powershell
 cd dsh\dsh-recruitment
 node --test "test/unit/transcript-feishu.test.ts"            # 21/21（证据驱动 LIVE 的诚实性机检 + 负例）
-node --test "test/unit/transcript-feishu-transport.test.ts"  # 33/33（传输层：分页/超时/脱敏 + 重读校验 + 平台通道 LIVE）
+node --test "test/unit/transcript-feishu-transport.test.ts"  # 41/41（真实 CLI 形态：argv/落盘文件/重读/探测/脱敏）
 node --test "test/unit/transcript-feishu-wiring.test.ts"     # 16/16（接线：配置→适配器→传输层 / 标签按证据算 / 注册入口可达）
 node --test "test/integration/transcript-import.test.ts"     # 15/15（fake CLI 仍 FIXTURE；合成 LIVE 证据落库为 LIVE/CONNECTED）
 node manual/transcript-line/feishu-probe.mjs                 # 末尾 LIVE_GATE=EVIDENCE_DRIVEN，退出码 0
+node evidence/experiments/2026-11-14-feishu-live-read/run-live-read.mjs   # 真实读取证据（需本机 lark-cli）
 ```
