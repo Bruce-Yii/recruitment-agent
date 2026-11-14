@@ -116,6 +116,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout must be pristine (不许依赖未入库文件)
+        # 历史教训：三次"HEAD 不自洽"都是同一形态——某个已入库文件 import 了**还没入库**的模块
+        # （event-types.ts / media.ts 的 MEDIA_RTF / integration/db.ts 的 assertPrivateDatabase），
+        # 本机因为工作树里恰好有那个文件所以绿，干净检出直接 ERR_MODULE_NOT_FOUND。
+        # 这条门本身不能修那种缺陷，但它保证"下面那条干净加载门"测的确实是干净树。
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error title=Checkout not pristine::检出不是干净的，干净加载门将失去意义"
+            git status --porcelain
+            exit 1
+          fi
+          echo "checkout is pristine"
+
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -134,6 +148,20 @@ jobs:
       - name: Install plugin dependencies
         working-directory: dsh/dsh-recruitment
         run: pnpm install --frozen-lockfile
+
+      - name: Clean-load gate (干净检出必须能 import 插件入口)
+        # 为什么要单独设一道门：跑测试要几分钟才暴露"缺模块"，而 import 一秒就能暴露。
+        # `src/index.ts` 是唯一的装配入口（25 个工具、runtime、http 全从它挂上去），
+        # import 它等于把整张依赖图走一遍——任何"引用了没入库的模块"都会在这里当场炸。
+        # 不许用 `--check` 之类只看语法的方式代替：语法对、模块缺，正是历史缺陷的形态。
+        # 逻辑落在 scripts/clean-load.mjs 而不是内联 `node -e`：多行 JS 在 bash 与
+        # PowerShell 里引号规则不一致，本机验不了的守卫等于没有守卫。
+        run: node scripts/clean-load.mjs
+
+      - name: D-109 调度预算机检
+        # D-109 §3 的预算条款原本没有度量口径、也没有机检 —— 一个无法失败的预算不是预算。
+        # 口径与棘轮规则见 docs/17 的 D-109.1 修订与 scripts/runtime-budget.mjs 的文件头。
+        run: node scripts/runtime-budget.mjs
 
       # 插件测试会调真实 converter（Python）并生成合成 fixture，需要
       # PyMuPDF + python-docx + Pillow。缺了不是 skip 而是**失败**（fixtures.ts 明确
