@@ -23,8 +23,11 @@ Router 处置）、外部副作用对账（`durable_effect`）、多租户调度
 "Session 认领别的 Task 的 Attempt"、"ROUTER 角色挂 attempt"、"挂 attempt 但无 task_id"。
 
 **允许的合法映射**：一个 Task 可以有 N 个 Attempt；每个 Attempt 可以有多个
-Agent Session（例如续跑同一 DSH Session 的多次执行）；一个 DSH Session 只能对应
-同一租户/runtime 的一行 `agent_session`（`uq_agent_session_runtime`）。
+Agent Session（**不同 DSH Session** 时，例如重建会话）；**同一 DSH Session 的续跑接管既有
+`agent_session` 行**（更新 `attempt_id`/`status`/`last_heartbeat`，不插新行）；一个 DSH Session
+只能对应同一租户/runtime 的一行 `agent_session`（`uq_agent_session_runtime`）。
+> 2026-11-15 G2 实现回抄：续跑（`resume_sessions=true` 且 worker 复用同一 `runtime_session_id`）
+> 复用既有行；这正是 G2 修掉的 P0（旧实现每 Attempt 插新行 → finish 撞唯一约束、attempt 停 RUNNING）。
 
 ---
 

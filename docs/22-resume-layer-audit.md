@@ -13,7 +13,7 @@
 
 | # | 设计 | 落在哪 |
 |---|---|---|
-| 1 | `DocumentContent` 统一契约，**封闭键集**，同层只能有一个真相（D-85） | `src/document/contracts/types.ts` |
+| 1 | `DocumentContent` 统一契约，**封闭键集**，同层只能有一个真相（D-85）；含 `tables[]` 结构化表格视图（page/bbox/单元格，空单元格 `""`，`provenance=native_text`，与正文同源） | `src/document/contracts/types.ts` |
 | 2 | 机械校验器：**不抛异常、收集 violations**（把"不合法"变成可判定事实） | `contracts/validate.ts` |
 | 3 | converter 输出 → `DocumentContent` 的**无损映射** | `contracts/map-converter.ts` |
 | 4 | `provenance` 枚举：`native_text` / `docling` / `ocr` / `agent_read` / `human_confirmed` / `reader_metadata` | `contracts/types.ts` |
