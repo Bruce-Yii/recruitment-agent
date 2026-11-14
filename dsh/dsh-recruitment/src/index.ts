@@ -415,11 +415,23 @@ export function apply(
             engineEffects.handle('reply', () => {
               throw new Error('no outbound channel configured (v1.0: 外发通道未配置)')
             }, { quiet: true })
-            void engineEffects.drain()
+            // 必须 start()：`Effects.dispatch()` 第一行是 `if (!this.started || this.stopped) return`，
+            // 不 start 就永远不派发（此前这里误写成 `void engineEffects.drain()`，而 drain 会置
+            // stopped=true —— 等于接了个空转的派发者，队列只进不出）。
+            engineEffects.start()
+            // runtime 走 `effects-async.ts` 在**自己的异步事务**里入队，不经过这个实例，
+            // 所以不会触发 kick；而 Effects 自己没有定时器（原型靠 Passes 的 2s interval，
+            // v1.0 未装配 Passes）。这里补一个同频 pump。
+            const pump = setInterval(() => { engineEffects.kick() }, 2_000)
             return () => {
               disposeHttp()
-              engineStore.close()
-              void closePool(pool)
+              clearInterval(pump)
+              // 关闭顺序：先停接新活、等运行中 effect 结束，再关同步桥
+              // （否则 in-flight 语句会被杀在连接上）。
+              void engineEffects.drain().finally(() => {
+                engineStore.close()
+                void closePool(pool)
+              })
             }
           } catch (error) {
             void closePool(pool)
