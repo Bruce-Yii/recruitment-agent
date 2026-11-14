@@ -11,6 +11,8 @@ import { createApplicationIntakeTool } from '../../src/tools/application-intake.
 import { resolveConverterConfig } from '../../src/tools/converter.ts'
 import { hex64, inRolledBackTx, one, seedScenario, testDatabaseConfig, createTestPool, TENANT, DEMO_JOB, uniqueSuffix } from './db.ts'
 import type { DatabaseClient } from '../../src/db/pool.ts'
+import { join } from 'node:path'
+import { CONVERTER_DIR, PYTHON_BIN, SYNTHETIC_DIR, syntheticPath } from '../helpers/paths.ts'
 
 const cfg = testDatabaseConfig()
 const pool = createTestPool(cfg)
@@ -328,9 +330,9 @@ test('岗位不存在 → NOT_FOUND(JOB_NOT_FOUND)', async () => {
 // ---------------------------------------------------------------------------
 
 const converter = resolveConverterConfig({
-  python_bin: 'D:\\Python3.12.9\\python.exe',
-  converter_dir: 'D:\\12412\\dsh工作区\\projects\\recruitment-agent\\converter',
-  allowed_roots: ['D:\\12412\\dsh工作区\\projects\\recruitment-agent\\converter\\corpus\\synthetic'],
+  python_bin: PYTHON_BIN ?? 'python3',
+  converter_dir: CONVERTER_DIR,
+  allowed_roots: [SYNTHETIC_DIR],
 })
 const tool = createApplicationIntakeTool({
   converter: converter.resolved as NonNullable<typeof converter.resolved>,
@@ -338,7 +340,7 @@ const tool = createApplicationIntakeTool({
 })
 
 test('工具级：零文本 PDF（无 PII）→ 真实 converter 读出"全不可读"→ BLOCKED_BY_REVIEW，不写库', async () => {
-  const zeroText = 'D:\\12412\\dsh工作区\\projects\\recruitment-agent\\converter\\corpus\\synthetic\\zero_text.pdf'
+  const zeroText = syntheticPath('zero_text.pdf')
   await assert.rejects(
     tool.execute({ path: zeroText, job_id: DEMO_JOB }, { signal: new AbortController().signal }),
     (error: unknown) => {
@@ -362,7 +364,7 @@ test('工具级：allowed_roots 之外的路径 → FORBIDDEN（fail-closed）',
   // 所以越界文件无论扩展名是什么，答案都是 FORBIDDEN —— 这才是 fail-closed 的正确顺序
   // （旧实现先按扩展名判 INVALID_ARGS，把"越界"说成了"参数不合法"）。
   await assert.rejects(
-    tool.execute({ path: 'D:\\12412\\dsh工作区\\projects\\recruitment-agent\\converter\\src\\cli.py', job_id: DEMO_JOB }, { signal: new AbortController().signal }),
+    tool.execute({ path: join(CONVERTER_DIR, 'src', 'cli.py'), job_id: DEMO_JOB }, { signal: new AbortController().signal }),
     (error: unknown) => {
       assert.equal((error as { code?: string }).code, 'FORBIDDEN')
       assert.match((error as Error).message, /PATH_OUTSIDE_ALLOWED_ROOTS/)

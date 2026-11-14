@@ -38,10 +38,11 @@ import {
   testDatabaseConfig,
   uniqueSuffix,
 } from './db.ts'
+import { PYTHON_BIN } from '../helpers/paths.ts'
 
 const HERE = import.meta.dirname
 const CONVERTER_DIR = resolve(HERE, '..', '..', '..', '..', 'converter')
-const PYTHON = 'D:\\Python3.12.9\\python.exe'
+const PYTHON = PYTHON_BIN ?? 'python3'
 const CAN_RUN_PYTHON = existsSync(PYTHON) && existsSync(join(CONVERTER_DIR, 'src', 'cli.py'))
 const SKIP_PYTHON = CAN_RUN_PYTHON ? false : `本机没有 python（${PYTHON}）或 converter/，无法造合成材料`
 

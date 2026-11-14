@@ -27,10 +27,11 @@ import {
   testDatabaseConfig,
   uniqueSuffix,
 } from './db.ts'
+import { CONVERTER_DIR, PYTHON_BIN, SYNTHETIC_DIR, syntheticPath } from '../helpers/paths.ts'
 
 const cfg = testDatabaseConfig()
 const pool = createTestPool(cfg)
-const PDF = 'D:\\12412\\dsh工作区\\projects\\recruitment-agent\\converter\\corpus\\synthetic\\zero_text.pdf'
+const PDF = syntheticPath('zero_text.pdf')
 
 test.after(async () => {
   await pool.end()

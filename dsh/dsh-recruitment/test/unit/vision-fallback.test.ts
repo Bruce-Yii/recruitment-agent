@@ -31,10 +31,11 @@ import {
   toModelTextMergeValue,
   unconfiguredModelTextMergeTool,
 } from '../../src/tools/vision-fallback.ts'
+import { PYTHON_BIN } from '../helpers/paths.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CONVERTER_DIR = resolve(HERE, '..', '..', '..', '..', 'converter')
-const PYTHON = 'D:\\Python3.12.9\\python.exe'
+const PYTHON = PYTHON_BIN ?? 'python3'
 const CAN_RUN_PYTHON = existsSync(PYTHON)
   && existsSync(join(CONVERTER_DIR, 'fallback', 'merge.py'))
   && existsSync(join(CONVERTER_DIR, 'src', 'cli.py'))
