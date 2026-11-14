@@ -454,9 +454,17 @@ test('D 反证（缺密码）：不传 RECRUITMENT_DB_PASSWORD → 退出码 2 �
   }
   assert.equal(after.recordVersion, before.recordVersion, '缺密码路径不得改 job.record_version')
   // 密码绝不能进任何输出（脚本自带 scrub；这里独立断言一次）。
+  // 不能用 `includes(PASSWORD)`：CI 的密码可能就是 `postgres`，而 "user postgres" 是合法输出
+  // （环境相关断言会误报）。这里断言"泄漏形状"：赋值式密码或带密码的连接串。
+  const combined = run.stdout + run.stderr
   assert.equal(
-    run.stdout.includes(PASSWORD) || run.stderr.includes(PASSWORD),
+    /RECRUITMENT_DB_PASSWORD\s*[=:]\s*\S/i.test(combined),
     false,
-    '脚本输出里绝不允许出现数据库密码',
+    '脚本输出里绝不允许出现 RECRUITMENT_DB_PASSWORD=<值>',
+  )
+  assert.equal(
+    /postgres(?:ql)?:\/\/[^\s]*:[^\s@]+@/i.test(combined),
+    false,
+    '脚本输出里绝不允许出现带密码的连接串',
   )
 })

@@ -832,7 +832,10 @@ test('A6 并发（两连接）：恰好 1 条阶段事件；另一侧 VERSION_CO
     const pendingB = advanceApplicationStage(b as unknown as DatabaseClient, {
       tenantId: TENANT,
       applicationId: fixture.applicationId,
-    })
+    }).then(
+      () => null,
+      (error: unknown) => error as Error & { code?: string },
+    )
 
     // 等 B 真的进入等锁状态，再让 A 提交（不靠固定 sleep 猜时序）。
     const deadline = Date.now() + 5_000
@@ -850,7 +853,7 @@ test('A6 并发（两连接）：恰好 1 条阶段事件；另一侧 VERSION_CO
     assert.ok(blocked, '第二个连接没有进入锁等待（并发用例不成立）')
     await a.query('commit')
 
-    const outcome = await pendingB.then(() => null, (error: unknown) => error as Error & { code?: string })
+    const outcome = await pendingB
     assert.ok(outcome !== null, 'B 必须失败，不能悄悄成功')
     assert.equal(outcome.code, 'VERSION_CONFLICT', `B 的音：${outcome.message}`)
     await b.query('rollback').catch(() => {})
