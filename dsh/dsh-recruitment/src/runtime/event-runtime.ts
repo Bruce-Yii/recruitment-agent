@@ -14,6 +14,7 @@
 //     判断是否需要授权 / Mandate；本运行时不会把它派给 Worker。
 import { isUuidText } from '../db/pool.ts'
 import { RuntimeError, runtimeFailure } from './errors.ts'
+import { eventTypeRegistration } from './event-types.ts'
 import { decideRoute, idempotencyFor, DefaultSemanticGate } from './routing.ts'
 import type { EventRow, RuntimeStore } from './store.ts'
 import type { BusinessObjectRef, EventReceiveResult, InboundEvent } from './types.ts'
@@ -159,11 +160,44 @@ export class EventRuntime {
 
   /**
    * 重放"已落库但未路由完"的事件（进程重启 / 路由崩溃后的恢复入口）。
-   * @returns 本轮处理的事件结果（单条失败不阻断其它事件）。
+   *
+   * **cutover 水位是这里的第一步**（顺序不能换）：
+   *   1. 读该租户的水位；没有 → 抛 `CUTOVER_WATERMARK_MISSING`（fail closed：
+   *      没有声明过"历史边界"就不派发任何事件，绝不猜一个"现在"）；
+   *   2. 把本批次 `received_at < cutover_at` 的事件标 `IGNORED`
+   *      （原因 `BEFORE_RUNTIME_CUTOVER`）：只改 dispatch 投影，不建 Task、
+   *      不写唤醒、不入队副作用、事件主体不可变；
+   *   3. 再重放跨过水位的待路由事件（`listPendingEvents` 的 SQL 里已 join 水位，
+   *      即使第 2 步漏掉也不可能取到历史事件）。
+   *
+   * 为什么先扫历史再派发，而不是先派发：历史扫尾的代价是常量的（一条 UPDATE），
+   * 而派发会建 Task / 起 Worker。顺序反了会出现"这一轮先把新事件派出去、历史
+   * 还没标完"的中间态，虽然最终一致，但可解释性差（tick 回执会混着两类结果）。
+   * @returns 本轮处理的事件结果（历史扫尾结果 + 正常重放结果；单条失败不阻断其它事件）。
    */
   async processPending(): Promise<readonly EventReceiveResult[]> {
+    const cutover = await this.store.cutover.read()
+    if (cutover === null) {
+      throw new RuntimeError(
+        'CUTOVER_WATERMARK_MISSING',
+        `tenant ${this.store.tenant} has no runtime watermark row; refusing to dispatch any pending event. `
+        + 'Declare the history boundary first (recruitment.fn_runtime_watermark_upsert / 0015 migration bootstrap).',
+      )
+    }
+
+    const swept = await this.store.cutover.sweepBefore(this.pendingBatchSize, this.maxRouteAttempts)
+    const results: EventReceiveResult[] = swept.map((hit) => ({
+      outcome: 'stored',
+      eventId: hit.eventId,
+      dispatchState: 'IGNORED',
+      taskId: null,
+      taskCreated: false,
+      wakeInserted: false,
+      businessObject: null,
+      reason: hit.reason,
+    }))
+
     const ids = await this.store.listPendingEvents(this.pendingBatchSize, this.maxRouteAttempts)
-    const results: EventReceiveResult[] = []
     for (const eventId of ids) {
       const row = await this.store.getEvent(eventId)
       if (row === null) continue
@@ -190,7 +224,7 @@ export class EventRuntime {
 
   /** 对一个**已持久化**的事件执行路由（receive 与 processPending 共用）。 */
   private async routeStoredEvent(eventId: string, event: InboundEvent): Promise<EventReceiveResult> {
-    const decision = decideRoute(event, this.gate)
+    const decision = decideRoute(event, this.gate, await this.resolveEventRowObject(eventId, event))
     if (decision.kind === 'ignored') {
       await this.store.markEventIgnored(eventId, decision.reason)
       return {
@@ -222,6 +256,28 @@ export class EventRuntime {
       businessObject,
       reason: decision.kind === 'semantic' ? decision.reason : null,
     }
+  }
+
+  /**
+   * 按**事件行事实**解析业务对象（payload 里没有对象 id 的类型才查）。
+   *
+   * 只对注册表里显式声明了 `byEventRow` 的确定性事件做查询——这是登记表告诉运行时
+   * "这个事件的对象不在 payload 里"的唯一方式；其它类型不查库（保持路由轻）。
+   * @param eventId - 已落库的事件 id。
+   * @param event - 事件信封。
+   * @returns 解析到的对象引用；不需要/解析不到 → `null`（路由层落 BUSINESS_OBJECT_NOT_FOUND）。
+   */
+  private async resolveEventRowObject(eventId: string, event: InboundEvent): Promise<BusinessObjectRef | null> {
+    const registration = eventTypeRegistration(event.eventType)
+    if (registration === null || registration.routing.kind !== 'DETERMINISTIC') return null
+    const byEventRow = registration.routing.object.byEventRow
+    if (byEventRow === null) return null
+    if (byEventRow === 'INTAKE_RECORD') {
+      const id = await this.store.intakeRecordIdForEvent(eventId)
+      return id === null ? null : { type: 'INTAKE_RECORD', id }
+    }
+    // 不可达：`byEventRow` 是联合类型，新增取值时必须在这里实现解析。
+    throw new RuntimeError('EVENT_ROUTE_FAILED', `unsupported event-row object lookup: ${String(byEventRow)}`)
   }
 }
 

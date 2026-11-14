@@ -73,6 +73,8 @@ import {
   type DatabaseClient,
   type ResolvedDatabaseConfig,
 } from '../db/pool.ts'
+// 事件名只从注册表取（`src/runtime/event-types.ts`）；机检测试会扫发射点。
+import { EVENT_TYPES } from '../runtime/event-types.ts'
 
 /** 工具名（模型可见，冻结；与 `recruitment_job_create` / `_update` 同一命名风格）。 */
 export const JOB_RUBRIC_APPROVE_TOOL = 'recruitment_job_rubric_approve'
@@ -521,10 +523,10 @@ async function insertApprovedEvent(
         occurred_at, received_at, recorded_at, correlation_id, causation_id,
         idempotency_key, idempotency_source, source_object_id,
         payload_ref, payload, trust_level, normalized_event_type, normalizer_version)
-     values ($1, 'internal', null, 'job.rubric_version.approved', 1,
+     values ($1, 'internal', null, '${EVENT_TYPES.JOB_RUBRIC_VERSION_APPROVED}', 1,
              now(), now(), now(), null, null,
              $2, 'FALLBACK_KEY', $3,
-             null, $4::jsonb, 'INTERNAL', 'job.rubric_version.approved', 'schema/0001')
+             null, $4::jsonb, 'INTERNAL', '${EVENT_TYPES.JOB_RUBRIC_VERSION_APPROVED}', 'schema/0001')
      returning event_id`,
     [
       input.tenantId,

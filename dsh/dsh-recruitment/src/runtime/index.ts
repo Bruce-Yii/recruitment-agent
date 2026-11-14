@@ -13,6 +13,40 @@ export { resolveRuntimeConfig } from './config.ts'
 export type { ResolvedRuntimeConfig, RuntimeConfig } from './config.ts'
 export { EventRuntime, eventRowToInbound, validateInboundEvent } from './event-runtime.ts'
 export type { EventRuntimeOptions } from './event-runtime.ts'
+export {
+  DETERMINISTIC_EVENT_TYPES,
+  EVENT_TYPE_NAME_PATTERN,
+  EVENT_TYPE_REGISTRY,
+  EVENT_TYPES,
+  IGNORED_EVENT_TYPES,
+  REGISTERED_EVENT_TYPES,
+  ROW_GUARD_EVENT_TYPES,
+  ROW_GUARD_TRIGGERS,
+  eventTypeRegistration,
+  rowGuardEventType,
+} from './event-types.ts'
+export type {
+  DeterministicObject,
+  EventProducer,
+  EventProducerKind,
+  EventRouteKind,
+  EventRouting,
+  EventTypeDefinition,
+  EventTypeName,
+} from './event-types.ts'
+export {
+  BEFORE_CUTOVER_REASON_PREFIX,
+  EVENT_DISPATCHABLE_SQL,
+  RuntimeCutoverStore,
+} from './cutover.ts'
+export type {
+  CutoverLegacyBacklog,
+  CutoverPreview,
+  CutoverPreviewBreakdown,
+  CutoverSweepHit,
+  RuntimeCutover,
+  RuntimeCutoverStoreOptions,
+} from './cutover.ts'
 export { RuntimeError, runtimeFailure } from './errors.ts'
 export type { RuntimeErrorCode } from './errors.ts'
 export { registerRuntimeHttp } from './http.ts'

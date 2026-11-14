@@ -64,7 +64,7 @@ import {
 // 所以"扩展名是 .pdf 才算简历"这个硬编码不会再出现在 S6 的入口。
 import { assertReadableFile } from '../document/readers/files.ts'
 import { isDocumentReadError } from '../document/readers/errors.ts'
-import { MEDIA_DOCX, MEDIA_PDF } from '../document/readers/media.ts'
+import { MEDIA_DOCX, MEDIA_PDF, MEDIA_RTF } from '../document/readers/media.ts'
 import { sniffFile } from '../document/readers/sniff.ts'
 import {
   closePool,
@@ -489,8 +489,8 @@ export interface IntakeMaterial {
   /**
    * **嗅探出来的**媒体类型（`intake_asset.mime_type` 写这个）。
    *
-   * 为什么必须是嗅探值而不是扩展名：S6 现在收 PDF + DOCX 两种，写死
-   * `'application/pdf'` 会让 DOCX 的材料在库里留下假标签；扩展名本身也不可信
+   * 为什么必须是嗅探值而不是扩展名：S6 现在收 PDF + DOCX + RTF 三种，写死
+   * `'application/pdf'` 会让 DOCX/RTF 的材料在库里留下假标签；扩展名本身也不可信
    * （改个后缀就是"另一种格式"是假的）。
    */
   readonly mime_type: string
@@ -2201,12 +2201,13 @@ export interface IntakeSource {
 /**
  * 入口判定：路径安全 + 内容嗅探 + S6 能否接这种媒体。
  *
- * 规则只有一条：**按内容判，不按扩展名**。`sniffFile()` 已经把 PDF / DOCX / PNG /
- * JPEG 分出来了，本函数只决定 S6 接不接：
- *   * `pdf` / `docx` → 接（两者都走同一个 converter，字段抽取与 provenance 口径一致）；
+ * 规则只有一条：**按内容判，不按扩展名**。`sniffFile()` 已经把 PDF / DOCX / RTF /
+ * PNG / JPEG 分出来了，本函数只决定 S6 接不接：
+ *   * `pdf` / `docx` / `rtf` → 接（三者都走同一个 converter，字段抽取与 provenance 口径一致：
+ *     PDF/DOCX 由 MuPDF 读，RTF 由 converter 的 striprtf reader 读，块都是 `native_text`）；
  *   * `png` / `jpeg`  → **明确拒绝**：S6 没有 OCR/视觉归属步骤，收下一张图就等于
  *     拿"读不出的文字"去猜"这是谁"；
- *   * 其它字节（RTF / 旧 OLE Office / xlsx / pptx / 未知）→ 由 `sniffFile()` 抛
+ *   * 其它字节（旧 OLE Office / xlsx / pptx / 未知）→ 由 `sniffFile()` 抛
  *     `UNSUPPORTED_MEDIA`，消息里带真实字节数、前 8 字节 hex 与声明扩展名。
  *
  * @param requested - 模型传入的路径（未校验）。
@@ -2226,6 +2227,10 @@ export async function resolveIntakeSource(
       return { real_path: file.real_path, media_type: MEDIA_PDF }
     case 'docx':
       return { real_path: file.real_path, media_type: MEDIA_DOCX }
+    case 'rtf':
+      // RTF 是文本容器：converter 的 striprtf reader 抽出的 block/字段 provenance 是
+      // `native_text`（不是 OCR），所以 S6 的身份闸门口径与其他原生格式完全一致。
+      return { real_path: file.real_path, media_type: MEDIA_RTF }
     case 'png':
     case 'jpeg':
       throw contractError('READER_FAILED', {
@@ -2303,7 +2308,7 @@ export function createApplicationIntakeTool(cfg: IntakeToolConfig): ReadonlyTool
   return {
     name: TOOL_NAME,
     description:
-      'S6 resume intake. Reads one local resume file (PDF or DOCX; the media type is sniffed from the '
+      'S6 resume intake. Reads one local resume file (PDF, DOCX or RTF; the media type is sniffed from the '
       + 'CONTENT, so the extension never decides whether a file is accepted), resolves the candidate '
       + 'by exact normalized '
       + 'phone/email only (names are never used for identity), and reports THREE independent states: '

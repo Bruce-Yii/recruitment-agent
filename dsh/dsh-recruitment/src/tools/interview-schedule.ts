@@ -68,6 +68,8 @@ import {
   type DatabaseClient,
   type ResolvedDatabaseConfig,
 } from '../db/pool.ts'
+// 事件名常量来自唯一权威注册表（`src/runtime/event-types.ts`），不在本文件写死字面量。
+import { EVENT_TYPES } from '../runtime/event-types.ts'
 
 const TOOL_NAME = 'recruitment_interview_schedule'
 /**
@@ -107,9 +109,10 @@ const SCHEDULING_POLICY_KEY = 'interview_scheduling_policy'
 /** 内部审计事件（`scheduling-rules.md` §4.3 / §4.4 / SC-X5；`event_inbox` 的 provider/trust 契约）。 */
 const EVENT_PROVIDER = 'internal'
 const EVENT_TRUST_LEVEL = 'INTERNAL'
-const RESCHEDULE_EVENT_TYPE = 'interview.rescheduled'
-const CANCEL_EVENT_TYPE = 'interview.cancelled'
-const WITHDRAW_EVENT_TYPE = 'interviewer.withdrawn'
+// 事件名只从注册表取（`src/runtime/event-types.ts`）；机检测试会扫发射点。
+const RESCHEDULE_EVENT_TYPE = EVENT_TYPES.INTERVIEW_RESCHEDULED
+const CANCEL_EVENT_TYPE = EVENT_TYPES.INTERVIEW_CANCELLED
+const WITHDRAW_EVENT_TYPE = EVENT_TYPES.INTERVIEWER_WITHDRAWN
 /** `meeting_binding.unbound_reason` 必须非空（`ck_meeting_binding_unbound`，0001 L1039）。 */
 const UNBOUND_REASON_RESCHEDULED = 'INTERVIEW_RESCHEDULED'
 const UNBOUND_REASON_CANCELLED = 'INTERVIEW_CANCELLED'

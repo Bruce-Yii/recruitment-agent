@@ -38,7 +38,8 @@
 | 文件 | 职责 | 不做什么 |
 |---|---|---|
 | `config.ts` | 解析插件 `runtime` 段；默认关闭、缺配置列 issues | 不静默降级成假运行时 |
-| `routing.ts` | 事件类型 → Task 类型/业务对象；语义准入 Gate | 不做模型判断 |
+| `event-types.ts` | **事件类型唯一权威注册表**（规范名 / 产生者 / 是否确定性 / task type / 业务对象） | 不做路由判断 |
+| `routing.ts` | 从注册表**派生**确定性路由表 + 显式忽略表；语义准入 Gate | 不手抄第二份事件名；不做模型判断 |
 | `store.ts` | PG 事务读写：事件幂等 / 唤醒 / 三层身份 / 租约回收 | 不做业务规则 |
 | `event-runtime.ts` | 事件到达 → 验源 → 去重 → 定位对象 → 建/唤醒 Task | 不在回调里做重活 |
 | `worker.ts` | `dsh --profile <worker> --json` 启动独立 Worker Session | 不伪造工具执行 |
@@ -46,12 +47,46 @@
 | `router.ts` | `tick()`：事件 → Attempt → Worker → Task | 不直接写招聘业务表 |
 | `http.ts` | 回环 + 同源的 HTTP 入口（默认不挂） | 不对公网开放 |
 
+## 事件类型注册表（唯一权威源）
+
+事件名只写一次：`src/runtime/event-types.ts` 的 `EVENT_TYPES` / `EVENT_TYPE_REGISTRY`。
+发射方（工具 / 领域写路径）引用 `EVENT_TYPES.*` 常量，路由方从注册表派生路由表。
+
+```ts
+EVENT_TYPE_REGISTRY = [
+  { type: 'resume.intake.received',  producer: TOOL application-intake, routing: DETERMINISTIC RESUME_PARSE / INTAKE_RECORD },
+  { type: 'scorecard.submit',        producer: TOOL scorecard-submit,   routing: DETERMINISTIC EVALUATION_SYNTHESIZE / INTERVIEW },
+  { type: 'decision.record',         producer: TOOL decision-record,    routing: IGNORED（原因） },
+  ...
+  { type: '<table>.<column>.changed' × 19, producer: DB_TRIGGER fn_row_guard, routing: IGNORED（原因） },
+]
+```
+
+**为什么要它**（2026-11-14 真实缺陷）：工具发的是 `resume.intake.received` / `scorecard.submit`
+/ `decision.record`，而 `routing.ts` 手抄的路由表只认 `resume_received` / `scorecard_submitted`
+/ `transcript_ready` 这些**没有发射方**的旧名字。结果 40 条真实事件全被语义 Gate 拒掉
+（`SEMANTIC_GATE_REJECTED`），"事件自动触发"整条链是断的；而单测因为手工构造事件名一直是绿的。
+
+**机检**（`test/runtime/event-types.test.ts`，本任务最重要的产出）：
+
+1. 扫描 `src/**` 所有 `insert into recruitment.event_inbox` 的 SQL 与 `eventType: …` 调用点，
+   **每个发射的事件名都必须在注册表里**（发射未登记的名字 → 测试红）；
+2. 反向：每个登记项的生产者文件必须**真的引用注册表常量**（登记一个没人发的名字 → 红）；
+3. 库触发器事件名与 `db/migrations/0001_init.sql` §9.2 的挂载点**逐项比对**（迁移加了触发器
+   却没登记 → 红）；
+4. 裁决与运行时可达性一致：`normalizer_version='schema/0001'` 的审计事件**不能**登记成
+   `DETERMINISTIC`（它根本不进待路由队列，登记了也是假接线）。
+
+**未登记 ≠ 忽略**：未登记的事件仍然走 `DefaultSemanticGate`（准入规则一个字都没放宽），
+但那是给外部未知信号用的；本项目自己的发射方必须登记，`IGNORED` 也必须写明原因
+（落 `event_inbox.route_error = 'REGISTERED_IGNORED: …'`，可审计）。
+
 ## 两条事件路径（Notion `04` §10）
 
-* **确定性事件**：`resume_received` / `transcript_ready` / `scorecard_submitted` /
-  `application_stage_entered` 等已知类型，按事件类型 + 业务状态直接建/唤醒
-  Task，不让模型先判断"要不要接单"；
-* **语义准入**：未知类型先过 `DefaultSemanticGate`（INTERNAL + 显式
+* **确定性事件**：注册表里 `DETERMINISTIC` 的 2 个类型（`resume.intake.received` →
+  `RESUME_PARSE`；`scorecard.submit` → `EVALUATION_SYNTHESIZE`），按事件类型 + 业务对象
+  直接建/唤醒 Task，不让模型先判断"要不要接单"；
+* **语义准入**：未登记类型先过 `DefaultSemanticGate`（INTERNAL + 显式
   `semantic.*`/`router.*` 或 payload.intent），通过后只创建 `ROUTER_TRIAGE`
   任务（`WAITING_HUMAN`），**不自动派发 Worker**，等 Router 决定授权。
 
@@ -114,6 +149,22 @@ runtime 异步事务写的 `launch`/`reply` 行被插件侧 `Effects`/`Outbox` �
 `test/integration/engine-effects-junction-pg.test.ts` 是同一交界的独立测试。
 
 ## 手工证据（不进 `node --test`）
+
+### 1) 事件自动触发：真实工具 → 真实事件 → 确定性路由（本 lane 的验收）
+
+```powershell
+$env:RECRUITMENT_DB_PASSWORD='<local dev db password>'
+node src/runtime/evidence/intake-event-routing.evidence.ts
+```
+
+脚本会：建一次性空库（重放 0001→0014）→ 用**产品同一个**
+`createApplicationIntakeTool(...).execute()` 真跑一次 S6 接入（真 Python converter 读合成 PDF，
+真工具事务写库）→ 读回工具写下的 `resume.intake.received` 事件行 → 用**生产同一个**
+`EventRuntime.processPending()` 路由 → 从库里读回 `event_inbox` 投影 + `business_task`
+（`RESUME_PARSE` / `INTAKE_RECORD`）+ `task_wakeup`，再用 scripted Worker 派发一次
+（Worker 是替身，标签写明）。修复前这一步是 `IGNORED / SEMANTIC_GATE_REJECTED`。
+
+### 2) 真实 DSH Worker 执行
 
 ```powershell
 $env:RECRUITMENT_DB_PASSWORD='<local dev db password>'
