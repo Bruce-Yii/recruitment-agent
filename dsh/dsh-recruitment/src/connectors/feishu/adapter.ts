@@ -1,16 +1,26 @@
-// 飞书 Minutes Connector **适配器骨架**：授权检查 + 错误映射 + 三维标签 + 阻断语义。
+// 飞书 Minutes Connector 适配器：授权检查 + 传输层装载 + 错误映射 + 三维标签 + 阻断语义。
 //
-// 传输层**故意未实现**：本文件不 import 任何 HTTP 客户端 / 套接字 / 子进程模块，
-// 也不调用全局取数函数。真实 LIVE Gate = BLOCKED（本机没有飞书应用与用户授权，
-// 且不允许伪造凭据），所以任何出口都不可能给出 `provenance='LIVE'` 或
-// `connection='CONNECTED'`——没有真实回读就没有 LIVE（TR-S4、R4）。
+// 传输层**已实现**（`transport.ts` 的 `lark-cli-transport`），但**不默认装配**：
+// 本文件不 import 任何子进程模块，只有调用方显式注入 `transport` 才会发起外部
+// 调用。理由有两条，都不是洁癖：
+//   * LIVE Gate = BLOCKED：本机没有真实飞书应用与用户授权，也不允许伪造凭据；
+//   * `AGENTS.md §7.6` 禁止把「开发者全局 CLI profile」当产品连接器凭据，
+//     所以 CLI 必须由调用方用绝对路径显式配置，不能悄悄调用 PATH 上的 `lark-cli`。
+//
+// 于是 `fetchTranscript()` 有四种出口，每一种都**不产 LIVE**：
+//   * `ERROR / INVALID_ARGS`：缺 `minute_token`；
+//   * `BLOCKED`：凭据/传输层/读取任何一环不成立，带 `blocked_reason` 说清是哪一环；
+//   * `WAITING_EXTERNAL`：平台说 `2091003`（生成中），不是失败（TR-F1）；
+//   * `READ`：真实读到了正文，但 `provenance_basis='NO_LIVE_READ'`、
+//     `readback.transport='FIXTURE'`（Gate 未解锁时无法证明字节来自平台），
+//     交不交 artifact 由调用方按 `labels` 决定——本适配器永不返回 `LIVE`。
 //
 // 三个必须记住的口径：
 //   * `2091003` 生成中 → `WAITING_EXTERNAL`，不建 artifact；`2091005` 无权限 →
 //     `WAITING_HUMAN` + `AUTH_REQUIRED`，不建 artifact（见 `contract.ts`）；
 //   * `minutes.minute.generated_v1` 是 **user identity** 订阅，应用凭据不够，
 //     缺用户令牌就是 `AUTH_REQUIRED`，不是 `NOT_CONNECTED` 也不是 `CONNECTED`；
-//   * 令牌「存在」不等于「有效」：本骨架没有传输层，无法校验，所以即使 env 里
+//   * 令牌「存在」不等于「有效」：没有一次真实成功的平台回读之前，即使 env 里
 //     四个值全在，也只能是 `AUTH_REQUIRED` + `TOKEN_PRESENT_UNVERIFIED`。
 import {
   FEISHU_MINUTES_CONNECTOR_ID,
@@ -22,6 +32,13 @@ import {
   type FeishuProviderError,
 } from './contract.ts'
 import { buildConnectorLabels, type Connection, type ThreeAxisLabels } from './labels.ts'
+import {
+  FEISHU_CLI_TRANSPORT_ID,
+  FeishuTransportError,
+  readbackTransport,
+  type FeishuCliTranscriptReadback,
+  type FeishuMinutesTranscriptTransport,
+} from './transport.ts'
 
 /** 默认环境变量名。**只读存在性，不读也不打印值**（R7）。 */
 export const FEISHU_DEFAULT_ENV = {
@@ -42,7 +59,14 @@ export interface FeishuAdapterConfig {
   /** 用户访问令牌的变量名，默认 `FEISHU_USER_ACCESS_TOKEN`。 */
   readonly user_access_token_env?: string
   /** 租户访问令牌的变量名，默认 `FEISHU_TENANT_ACCESS_TOKEN`。 */
-  readonly tenant_access_token_env?: string
+  readonly tenant_token_env?: string
+  /**
+   * 传输层。**默认不装配**（见文件头注）：想真读就显式注入
+   * `createLarkCliTransport({ runner: createProcessCliRunner({ command }) })`。
+   * 不注入时 `fetchTranscript()` 只会返回 `BLOCKED / TRANSPORT_NOT_CONFIGURED`，
+   * 绝不拉起任何进程。
+   */
+  readonly transport?: FeishuMinutesTranscriptTransport
 }
 
 /** 凭据存在性（**只有布尔**，绝不带值）。 */
@@ -57,9 +81,9 @@ export interface FeishuCredentialPresence {
 export interface FeishuAdapterDescription {
   readonly connector: typeof FEISHU_MINUTES_CONNECTOR_ID
   readonly contract_version: string
-  /** 本骨架**做到**的事。 */
+  /** 本适配器**做到**的事。 */
   readonly implemented: readonly string[]
-  /** 本骨架**没做**的事；`live_gate` 为 BLOCKED 的直接原因。 */
+  /** 本适配器**没做**的事；`live_gate` 为 BLOCKED 的直接原因。 */
   readonly not_implemented: readonly string[]
   readonly live_gate: typeof FEISHU_MINUTES_LIVE_GATE
 }
@@ -81,6 +105,8 @@ export interface FeishuProbeResult {
   /** 下一步该做什么（人读）。 */
   readonly next_steps: readonly string[]
   readonly credentials: FeishuCredentialPresence
+  /** 传输层有没有被显式装配（只有布尔）。 */
+  readonly transport_configured: boolean
   /** 仅在 `TOKEN_PRESENT_UNVERIFIED` 时出现：为什么还不能算连上。 */
   readonly note?: string
 }
@@ -96,6 +122,36 @@ export interface FeishuTranscriptRequestedFlags {
   readonly minute_token_present: boolean
   readonly external_meeting_id_present: boolean
 }
+
+/**
+ * `fetchTranscript()` 的阻断原因（闭集，逐个说明含义；新增必须写进 README）：
+ *   * `NO_APP_CREDENTIALS` —— 连应用凭据都没有；
+ *   * `USER_IDENTITY_REQUIRED` —— 缺用户令牌（妙记事件是 user identity）；
+ *   * `TOKEN_PRESENT_UNVERIFIED` —— 令牌在，但还没有一次真实成功的回读；
+ *   * `TRANSPORT_NOT_CONFIGURED` —— 传输层没装配（本机默认状态）。
+ *   * `CLI_UNAVAILABLE` —— 装配了但找不到/起不来 CLI（locate-cli 失败）；
+ *   * `CLI_TIMEOUT` —— CLI 调用超时，重试也超时；
+ *   * `CLI_FAILED` —— CLI 非零退出且诊断里没有已核对错误码；
+ *   * `PROVIDER_NO_PERMISSION` —— 平台 2091005，需要人重新授权；
+ *   * `READ_PARSE_FAILED` —— 输出信封/正文形状不认识（fail-closed）；
+ *   * `PAGINATION_INCOMPLETE` —— 分页没走完/游标不前进/超页数；
+ *   * `READBACK_INVALID` —— 回执、revision、正文自检不过。
+ */
+export type FeishuTranscriptBlockedReason =
+  | 'NO_APP_CREDENTIALS'
+  | 'USER_IDENTITY_REQUIRED'
+  | 'TOKEN_PRESENT_UNVERIFIED'
+  | 'TRANSPORT_NOT_CONFIGURED'
+  | 'CLI_UNAVAILABLE'
+  | 'CLI_TIMEOUT'
+  | 'CLI_FAILED'
+  | 'PROVIDER_NO_PERMISSION'
+  | 'READ_PARSE_FAILED'
+  | 'PAGINATION_INCOMPLETE'
+  | 'READBACK_INVALID'
+
+/** 阻断结果里允许出现的 `error_code`（闭集）。 */
+export type FeishuTranscriptBlockedErrorCode = 'AUTH_REQUIRED' | 'NOT_CONNECTED' | 'READ_FAILED'
 
 /** 参数不合法时的返回（形状稳定，不抛异常也能判）。 */
 export interface FeishuTranscriptInvalidArgs {
@@ -117,13 +173,55 @@ export interface FeishuTranscriptBlocked {
   readonly connection_state: Connection
   readonly labels: ThreeAxisLabels
   readonly creates_artifact: false
-  readonly error_code: 'AUTH_REQUIRED' | 'NOT_CONNECTED'
+  readonly error_code: FeishuTranscriptBlockedErrorCode
+  /** 具体卡在哪一环（闭集，见 `FeishuTranscriptBlockedReason`）。 */
+  readonly blocked_reason: FeishuTranscriptBlockedReason
+  readonly message: string
+  readonly requested: FeishuTranscriptRequestedFlags
+  /** 传输层失败时的阶段/机器码（只有 `transport` 失败才会有）。 */
+  readonly failure?: { readonly stage: string; readonly code: string; readonly attempts: number; readonly exit_code: number | null }
+}
+
+/**
+ * 读成功但**不授予 LIVE** 的返回。
+ * `readback.transport` 在 Gate=BLOCKED 时恒 `FIXTURE`（本机无法证明来源），
+ * `live_eligible` 恒 false，`labels` 恒 `FIXTURE / MANUAL`。
+ */
+export interface FeishuTranscriptRead {
+  readonly kind: 'READ'
+  readonly connector: typeof FEISHU_MINUTES_CONNECTOR_ID
+  readonly connection_state: Connection
+  readonly labels: ThreeAxisLabels
+  readonly provenance_basis: 'NO_LIVE_READ'
+  readonly live_eligible: false
+  readonly live_gate: typeof FEISHU_MINUTES_LIVE_GATE
+  readonly creates_artifact: false
+  /** 交给业务层决定是否落库；内容来自 CLI，Gate 未解锁时只按 FIXTURE 对待。 */
+  readonly readback: FeishuCliTranscriptReadback
+  readonly requested: FeishuTranscriptRequestedFlags
+  readonly note: string
+}
+
+/** 平台说「还在生成」：不是失败，去等新事件或人工重试。 */
+export interface FeishuTranscriptWaitingExternal {
+  readonly kind: 'WAITING_EXTERNAL'
+  readonly connector: typeof FEISHU_MINUTES_CONNECTOR_ID
+  readonly connection_state: Connection
+  readonly labels: ThreeAxisLabels
+  readonly creates_artifact: false
+  readonly error_code: 'WAITING_EXTERNAL'
+  readonly provider_code: string
+  readonly task_state: 'WAITING_EXTERNAL'
   readonly message: string
   readonly requested: FeishuTranscriptRequestedFlags
 }
 
-/** `fetchTranscript()` 的可能返回（永不返回正文）。 */
-export type FeishuTranscriptResult = FeishuTranscriptInvalidArgs | FeishuTranscriptBlocked
+/** `fetchTranscript()` 的可能返回（永不返回 `LIVE` 标签）。 */
+export type FeishuTranscriptResult =
+  | FeishuTranscriptInvalidArgs
+  | FeishuTranscriptBlocked
+  | FeishuTranscriptRead
+  | FeishuTranscriptWaitingExternal
 
 /** 一条事件订阅注记（由契约表生成，不在适配器里另写一份口径）。 */
 export interface FeishuSubscriptionNote {
@@ -141,11 +239,11 @@ export interface FeishuSubscriptionNotes {
   readonly rules: readonly string[]
 }
 
-/** 适配器（本骨架的全部能力）。 */
+/** 适配器（本包的全部能力）。 */
 export interface FeishuMinutesAdapter {
   readonly describe: () => FeishuAdapterDescription
   readonly probe: () => FeishuProbeResult
-  readonly fetchTranscript: (request: FeishuTranscriptRequest) => FeishuTranscriptResult
+  readonly fetchTranscript: (request: FeishuTranscriptRequest) => Promise<FeishuTranscriptResult>
   readonly mapProviderError: (response: unknown) => FeishuProviderError
   readonly subscriptionNotes: () => FeishuSubscriptionNotes
 }
@@ -160,17 +258,50 @@ function present(env: Readonly<Record<string, string | undefined>>, name: string
 }
 
 /**
- * 创建一个飞书 Minutes 适配器。**零网络 I/O**：构造时只记下 env 引用、不读任何值，
- * 每次 `probe()` / `fetchTranscript()` 现读存在性（便于测试注入、便于观察）。
+ * 传输层失败码 → 适配器级的阻断原因（两份口径合一，避免漂移）。
+ * @param error - 传输层错误。
+ */
+function blockedReasonFor(error: FeishuTransportError): FeishuTranscriptBlockedReason {
+  switch (error.code) {
+    case 'CLI_NOT_FOUND':
+    case 'CLI_NOT_EXECUTABLE':
+    case 'CLI_SPAWN_FAILED':
+      return 'CLI_UNAVAILABLE'
+    case 'CLI_TIMEOUT':
+      return 'CLI_TIMEOUT'
+    case 'PROVIDER_NO_PERMISSION':
+    case 'PROVIDER_REJECTED':
+      return 'PROVIDER_NO_PERMISSION'
+    case 'ENVELOPE_UNRECOGNIZED':
+    case 'TRANSCRIPT_UNRECOGNIZED':
+      return 'READ_PARSE_FAILED'
+    case 'PAGINATION_STALLED':
+    case 'PAGINATION_INCOMPLETE':
+    case 'PAGE_LIMIT_EXCEEDED':
+      return 'PAGINATION_INCOMPLETE'
+    case 'REVISION_REQUIRED':
+    case 'TRANSCRIPT_EMPTY':
+    case 'READBACK_INVALID':
+      return 'READBACK_INVALID'
+    default:
+      return 'CLI_FAILED'
+  }
+}
+
+/**
+ * 创建一个飞书 Minutes 适配器。**默认零网络 I/O / 零子进程**：传输层必须由
+ * 调用方显式注入（见 `FeishuAdapterConfig.transport`），否则 `fetchTranscript()`
+ * 只会说「传输层没装配」。
  * @param config - 见 `FeishuAdapterConfig`；全部可省略。
- * @returns 骨架适配器。
+ * @returns 适配器。
  */
 export function createFeishuMinutesAdapter(config: FeishuAdapterConfig = {}): FeishuMinutesAdapter {
   const env = config.env ?? process.env
   const appIdEnv = FEISHU_DEFAULT_ENV.app_id
   const appSecretEnv = config.app_secret_env ?? FEISHU_DEFAULT_ENV.app_secret
   const userTokenEnv = config.user_access_token_env ?? FEISHU_DEFAULT_ENV.user_access_token
-  const tenantTokenEnv = config.tenant_access_token_env ?? FEISHU_DEFAULT_ENV.tenant_access_token
+  const tenantTokenEnv = config.tenant_token_env ?? FEISHU_DEFAULT_ENV.tenant_access_token
+  const transport = config.transport
 
   /** 凭据存在性；`config.app_id` 优先于变量。 */
   function credentials(): FeishuCredentialPresence {
@@ -186,8 +317,9 @@ export function createFeishuMinutesAdapter(config: FeishuAdapterConfig = {}): Fe
     return {
       connector: FEISHU_MINUTES_CONNECTOR_ID,
       contract_version: FEISHU_MINUTES_CONTRACT_VERSION,
-      implemented: ['contract', 'auth-check', 'error-mapping', 'labels'],
-      not_implemented: ['http-transport', 'lark-cli-transport', 'oauth-flow', 'event-subscription'],
+      // `lark-cli-transport` 已实现（`transport.ts`）；HTTP 传输 / OAuth / 事件订阅没有。
+      implemented: ['contract', 'auth-check', 'error-mapping', 'labels', FEISHU_CLI_TRANSPORT_ID],
+      not_implemented: ['http-transport', 'oauth-flow', 'event-subscription'],
       live_gate: FEISHU_MINUTES_LIVE_GATE,
     }
   }
@@ -199,7 +331,8 @@ export function createFeishuMinutesAdapter(config: FeishuAdapterConfig = {}): Fe
       contract_version: FEISHU_MINUTES_CONTRACT_VERSION,
       live_eligible: false as const,
       credentials: presence,
-    }
+      transport_configured: transport !== undefined,
+    } as const
     if (!presence.app_id_present || !presence.app_secret_present) {
       const missing = [
         ...(presence.app_id_present ? [] : [appIdEnv]),
@@ -230,7 +363,7 @@ export function createFeishuMinutesAdapter(config: FeishuAdapterConfig = {}): Fe
         next_steps: [
           'minutes.minute.generated_v1 标注为 user identity，不能用 Bot / 租户身份代替（docs/04 §13）。',
           '用应用凭据走用户 OAuth（含 offline_access）取得 user access token。',
-          `把令牌放进 ${userTokenEnv} 后重跑 probe()；本骨架仍无法校验令牌有效性，所以仍不会标 CONNECTED。`,
+          `把令牌放进 ${userTokenEnv} 后重跑 probe()；本适配器仍不会仅凭令牌存在就标 CONNECTED。`,
         ],
       }
     }
@@ -242,24 +375,55 @@ export function createFeishuMinutesAdapter(config: FeishuAdapterConfig = {}): Fe
       blocked_reason: 'TOKEN_PRESENT_UNVERIFIED',
       missing: [],
       next_steps: [
-        '本骨架未实现 HTTP 传输与 Lark CLI 调用，无法校验令牌是否有效。',
-        '实现传输层并完成一次真实 minute_token 完整回读（回执 + sha256 + is_complete）后，才允许把 connection 标为 CONNECTED。',
+        transport === undefined
+          ? '本机没有装配传输层：注入 transport（Lark CLI + 绝对路径）后才可能真读。'
+          : '传输层已装配：还需要用真实 minute_token 成功回读一次（回执 + sha256 + is_complete）。',
+        '完成一次真实 minute_token 完整回读后，才允许把 connection 标为 CONNECTED。',
         '在那之前，任何出口都必须保持 provenance=FIXTURE、live_eligible=false。',
       ],
-      note: '骨架未实现 HTTP 传输，无法验证令牌；不得据此宣称 CONNECTED',
+      note:
+        transport === undefined
+          ? '令牌存在但本机未装配传输层（且不得把开发者全局 CLI 当产品凭据），无法验证令牌；不得据此宣称 CONNECTED'
+          : '传输层已装配，但还没有一次成功回读，令牌仍无法验证；不得据此宣称 CONNECTED',
     }
   }
 
-  function fetchTranscript(request: FeishuTranscriptRequest): FeishuTranscriptResult {
-    const minuteTokenPresent = readNonEmptyString(request?.minute_token) !== null
+  /** 传输层失败 → BLOCKED（带阶段/机器码，不回声 token、不退正文）。 */
+  function blockedFromTransportFailure(
+    failure: FeishuTransportError,
+    requested: FeishuTranscriptRequestedFlags,
+    state: FeishuProbeResult,
+  ): FeishuTranscriptBlocked {
+    const reason = blockedReasonFor(failure)
+    return {
+      kind: 'BLOCKED',
+      connector: FEISHU_MINUTES_CONNECTOR_ID,
+      connection_state: state.connection_state,
+      labels: state.labels,
+      creates_artifact: false,
+      error_code: reason === 'PROVIDER_NO_PERMISSION' ? 'AUTH_REQUIRED' : 'READ_FAILED',
+      blocked_reason: reason,
+      message: `传输层失败，没有正文也没有 artifact。${failure.message}`,
+      requested,
+      failure: {
+        stage: failure.stage,
+        code: failure.code,
+        attempts: failure.attempts,
+        exit_code: failure.exit_code,
+      },
+    }
+  }
+
+  async function fetchTranscript(request: FeishuTranscriptRequest): Promise<FeishuTranscriptResult> {
+    const minuteToken = readNonEmptyString(request?.minute_token)
     const meetingIdPresent = readNonEmptyString(request?.external_meeting_id) !== null
     const requested: FeishuTranscriptRequestedFlags = {
-      minute_token_present: minuteTokenPresent,
+      minute_token_present: minuteToken !== null,
       external_meeting_id_present: meetingIdPresent,
     }
     const state = probe()
     const labels = state.labels
-    if (!minuteTokenPresent) {
+    if (minuteToken === null) {
       return {
         kind: 'ERROR',
         connector: FEISHU_MINUTES_CONNECTOR_ID,
@@ -272,21 +436,74 @@ export function createFeishuMinutesAdapter(config: FeishuAdapterConfig = {}): Fe
         requested,
       }
     }
-    return {
+
+    /** 凭据这一环：缺任何一个都直接阻断，不去碰 CLI。 */
+    const locked = (reason: FeishuTranscriptBlockedReason, message: string, errorCode: FeishuTranscriptBlockedErrorCode): FeishuTranscriptBlocked => ({
       kind: 'BLOCKED',
       connector: FEISHU_MINUTES_CONNECTOR_ID,
       connection_state: state.connection_state,
       labels,
       creates_artifact: false,
-      error_code: state.connection_state === 'NOT_CONNECTED' ? 'NOT_CONNECTED' : 'AUTH_REQUIRED',
-      message:
-        '本骨架不发起任何平台请求：没有真实回读就没有正文，也就没有 artifact。' +
-        (state.blocked_reason === 'TOKEN_PRESENT_UNVERIFIED'
-          ? '令牌存在但无法验证（无传输层），不得据此宣称 CONNECTED。'
-          : state.blocked_reason === 'USER_IDENTITY_REQUIRED'
-            ? '还缺用户身份令牌：妙记事件是 user identity 订阅。'
-            : '还缺应用凭据。'),
+      error_code: errorCode,
+      blocked_reason: reason,
+      message,
       requested,
+    })
+
+    if (state.blocked_reason === 'NO_APP_CREDENTIALS') {
+      return locked('NO_APP_CREDENTIALS', '没有真实回读就没有正文，也就没有 artifact。还缺应用凭据。', 'NOT_CONNECTED')
+    }
+    if (state.blocked_reason === 'USER_IDENTITY_REQUIRED') {
+      return locked(
+        'USER_IDENTITY_REQUIRED',
+        '没有真实回读就没有正文，也就没有 artifact。还缺用户身份令牌：妙记事件是 user identity 订阅。',
+        'AUTH_REQUIRED',
+      )
+    }
+    /** 凭据齐了（但未验证）。下一环是传输层。 */
+    if (transport === undefined) {
+      return locked(
+        'TRANSPORT_NOT_CONFIGURED',
+        '本机没有装配传输层：本适配器默认不拉起任何子进程（也不允许把开发者全局 CLI 当产品凭据）。' +
+          '要用真实读取，先注入 createLarkCliTransport({ runner: createProcessCliRunner({ command: <绝对路径> }) })。',
+        'AUTH_REQUIRED',
+      )
+    }
+
+    const result = await transport.read({ minute_token: minuteToken })
+    if (result.status === 'WAITING_EXTERNAL') {
+      return {
+        kind: 'WAITING_EXTERNAL',
+        connector: FEISHU_MINUTES_CONNECTOR_ID,
+        connection_state: state.connection_state,
+        labels,
+        creates_artifact: false,
+        error_code: 'WAITING_EXTERNAL',
+        provider_code: result.provider_code,
+        task_state: 'WAITING_EXTERNAL',
+        message: `平台说产物还在生成（${result.provider_code}）：不是失败，等新事件或人工重试即可。${result.message}`,
+        requested,
+      }
+    }
+    if (result.status === 'FAILED') {
+      return blockedFromTransportFailure(result.error, requested, state)
+    }
+    // 读成功也**不**授予 LIVE：Gate 未解锁时无法证明这些字节来自平台。
+    return {
+      kind: 'READ',
+      connector: FEISHU_MINUTES_CONNECTOR_ID,
+      connection_state: state.connection_state,
+      labels,
+      provenance_basis: 'NO_LIVE_READ',
+      live_eligible: false,
+      live_gate: FEISHU_MINUTES_LIVE_GATE,
+      creates_artifact: false,
+      readback: { ...result.readback, transport: readbackTransport() },
+      requested,
+      note:
+        FEISHU_MINUTES_LIVE_GATE === 'BLOCKED'
+          ? '读到了字节，但 Live Gate=BLOCKED：这些字节不能证明来自飞书平台（可能是假 CLI / 回放），所以 readback.transport=FIXTURE、provenance_basis=NO_LIVE_READ。解锁条件见 README §6。'
+          : 'Live Gate 已解锁：仍须由调用方用 buildArtifactLabelsFromReadback() 显式判定 LIVE。',
     }
   }
 
@@ -306,7 +523,7 @@ export function createFeishuMinutesAdapter(config: FeishuAdapterConfig = {}): Fe
       rules: [
         'minutes.minute.generated_v1 当前标注为 user identity，不能默认 Bot 也能订阅（docs/04 §13）。',
         'vc.recording.recording_transcript_generated_v1 是转写片段事件，不带完整 Meeting 关联，不得作为批量归档的唯一依据（transcript-rules §2.2）。',
-        'webhook payload 只是触发信号，正文必须来自回读结果（TR-S7）；本骨架没有任何回读路径，所以没有正文。',
+        'webhook payload 只是触发信号，正文必须来自回读结果（TR-S7）；本适配器只有显式注入的 Lark CLI 传输层才能回读。',
       ],
     }
   }

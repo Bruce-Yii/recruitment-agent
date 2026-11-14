@@ -82,8 +82,52 @@ export type {
   FeishuTranscriptRequestedFlags,
   FeishuTranscriptInvalidArgs,
   FeishuTranscriptBlocked,
+  FeishuTranscriptBlockedReason,
+  FeishuTranscriptBlockedErrorCode,
+  FeishuTranscriptRead,
+  FeishuTranscriptWaitingExternal,
   FeishuTranscriptResult,
   FeishuSubscriptionNote,
   FeishuSubscriptionNotes,
   FeishuMinutesAdapter,
 } from './adapter.ts'
+
+// 传输层（`lark-cli-transport`）。**默认不装配**：只有显式注入 runner 才会真去调 CLI。
+export {
+  FEISHU_CLI_TRANSPORT_ID,
+  FEISHU_CLI_DEFAULT_TIMEOUT_MS,
+  FEISHU_CLI_DEFAULT_MAX_ATTEMPTS,
+  FEISHU_CLI_DEFAULT_RETRY_BASE_MS,
+  FEISHU_CLI_DEFAULT_DIAGNOSTIC_BYTES,
+  FEISHU_CLI_DEFAULT_MAX_PAGES,
+  FEISHU_CLI_TRANSCRIPT_FLAGS,
+  FEISHU_CLI_TRANSCRIPT_FLAGS_NOTE,
+  FEISHU_CLI_ENVELOPE_NOTE,
+  FeishuTransportError,
+  buildTranscriptArgs,
+  buildReadReceipt,
+  createLarkCliTransport,
+  createProcessCliRunner,
+  extractProviderCode,
+  isoWithOffset,
+  readbackTransport,
+  sanitizeDiagnostic,
+  sha256Hex,
+} from './transport.ts'
+
+export type {
+  FeishuCliInvocation,
+  FeishuCliRunResult,
+  FeishuCliRunStatus,
+  FeishuCliRunner,
+  FeishuCliTranscriptReadback,
+  FeishuDiagnostic,
+  FeishuLarkCliTransportConfig,
+  FeishuMinutesTranscriptTransport,
+  FeishuProcessCliRunnerConfig,
+  FeishuTransportDescription,
+  FeishuTransportErrorCode,
+  FeishuTransportReadResult,
+  FeishuTransportStage,
+} from './transport.ts'
+
