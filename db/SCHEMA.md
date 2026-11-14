@@ -7,15 +7,15 @@
 
 > 计数口径来自 `psql -f db/verify.sql` 第 1 节实测输出（PG 17.11）。
 
-> **本文数字是 `0001_init.sql` 基线，不是当前库。** 迁移已到 **`0015`**（0010 台账 + 0011 任务运行时 +
-> 0012 执行器状态 + 0013 追溯链 + 0014 企业自建配置 + 0015 runtime cutover 水位），当前实测为 **62 张基表 + 3 个视图**
+> **本文数字是 `0001_init.sql` 基线，不是当前库。** 迁移已到 **`0016`**（0010 台账 + 0011 任务运行时 +
+> 0012 执行器状态 + 0013 追溯链 + 0014 企业自建配置 + 0015 runtime cutover 水位），当前实测为 **63 张基表 + 3 个视图**
 > （视图 `v_conversion_ledger` / `v_review_open` / `v_source_gate` 在 `0003_review_queue.sql:538/567/617`）。
 > `verify.sql` 用 `pg_class.relkind='r'` 只数基表，所以"**62**"和"**65**（`information_schema.tables` 含视图）"是两种口径，别混用。
 > 引用表数时必须写明口径与迁移版本，否则会像复审 N11 那样出现"40/44/47"三个数并存（**2026-11-14 21:00 回抄**：实测 62/65）。
 > **取数命令**（`ra_s6s7`，`psql -U postgres -d ra_s6s7`）：
 > `select count(*) from information_schema.tables where table_schema='recruitment' and table_type='BASE TABLE';` → **62**；
 > `psql -v ON_ERROR_STOP=1 -f db/verify.sql` §1 → `tables 62 / triggers 117 / functions 41`，`STRUCT-06 … 52 个`，末行 `VERIFY PASS`（exit 0）。
-> 口径以**当前库（0001–0015 已应用）**为准：`0015_runtime_cutover` 见 `recruitment.schema_migration`
+> 口径以**当前库（0001–0016 已应用）**为准：`0015_runtime_cutover` 见 `recruitment.schema_migration`
 > （`applied_at = 2026-11-14 20:17:05 +08`），迁移文件已入库（commit `2329d2e`）。
 
 ---

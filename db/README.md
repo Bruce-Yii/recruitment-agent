@@ -26,7 +26,7 @@
 | `migrations/0013_trace_chain.sql` | 执行追溯：`tool_call` |
 | `migrations/0014_tenant_config.sql` | 企业自建配置：`role` 扩列（权限范围/描述/版本）+ `hiring_team` / `hiring_team_member` + `pipeline_template` / `pipeline_template_stage` / `pipeline_template_stage_template` |
 | `migrations/0015_runtime_cutover.sql` | 历史事件 cutover 水位：`runtime_watermark`（每租户一行/只进不退）+ `runtime_watermark_change`（append-only 审计）+ 三段显式写入函数 + 组织创建自动建水位 |
-| `verify-0003.sql` … `verify-0010.sql` | 每个迁移配套自检，各自独立建库可跑，**全部通过才 exit 0**（0011–0015 的自检写在迁移文件内；CI 另有台账比对兜底） |
+| `verify-0003.sql` … `verify-0010.sql` | 每个迁移配套自检，各自独立建库可跑，**全部通过才 exit 0**（0011–0016 的自检写在迁移文件内；CI 另有台账比对兜底） |
 | `SCHEMA.md` | 对象 → 表/约束映射、状态机、不变量台账、缓做清单、映射裁决 |
 | `verify.sql` | 自检：结构断言 + 状态机覆盖 + 对象覆盖 + **32 条负向测试** + 正向断言，**全部通过才 exit 0**，结尾 ROLLBACK 不改数据 |
 | `README.md` | 本文件：怎么跑、怎么验、写入方必须遵守什么 |
@@ -54,11 +54,11 @@ $psql = 'D:\12412\PostgreSQL\bin\psql.exe'
 ## 3. 跑迁移（空库 → 全量）
 
 ```powershell
-# 按 0001→0015 顺序全链重放（每条都自带 begin/commit，幂等）
+# 按 0001→0016 顺序全链重放（每条都自带 begin/commit，幂等）
 foreach ($f in Get-ChildItem db/migrations/*.sql | Sort-Object Name) {
   & $psql -U postgres -h 127.0.0.1 -d ra_schema_check -v ON_ERROR_STOP=1 -q -f $f.FullName
 }
-# 迁移配套自检（目录驱动：0011–0015 的自检写在迁移文件内，没有独立 verify-00XX）
+# 迁移配套自检（目录驱动：0011–0016 的自检写在迁移文件内，没有独立 verify-00XX）
 foreach ($v in Get-ChildItem db/verify-*.sql | Sort-Object Name) {
   & $psql -U postgres -h 127.0.0.1 -d ra_schema_check -v ON_ERROR_STOP=1 -q -f $v.FullName
 }
@@ -73,7 +73,7 @@ foreach ($v in Get-ChildItem db/verify-*.sql | Sort-Object Name) {
   -c "select 'tables='||count(*) from information_schema.tables where table_schema='recruitment';" `
   -c "select 'triggers='||count(*) from information_schema.triggers where trigger_schema='recruitment';"
 # 0001_init.sql 单跑：期望 tables=39  triggers=72（两遍一致）——**这是 0001 基线**。
-# 全链（0001→0015）实测（**2026-11-14 21:00**，`ra_s6s7`）：62 张基表 + 3 个视图（information_schema 口径 = 65）；
+# 全链（0001→0016）实测（**2026-11-15**，干净库）：63 张基表 + 3 个视图（information_schema 口径 = 65）；
 #   fn_block_delete 触发器 52 个、非内部触发器 117 个（`db/verify.sql` §1 实测）。
 # 用 verify.sql 数基表时别把视图算进去，否则会得出 65 这个数。
 ```
@@ -195,7 +195,7 @@ update recruitment.application
 |---|---|
 | 环境 | Windows 11 + PostgreSQL 17.11（`D:\12412\PostgreSQL`） |
 | 空库跑迁移 | `0001_init.sql` 单跑实测：39 表 / 161 外键 / 181 CHECK / 55 唯一 / 72 触发器（0001 基线） |
-| 全链（0001→0015）实测 | **62 张基表 + 3 视图**（`verify.sql` §1 口径：62；`information_schema.tables` 含视图 = 65）；foreign_keys 217 / check 259 / unique 91 / partial 16 / triggers 117 / functions 41；`fn_block_delete` 52 个（**2026-11-14 21:00** `ra_s6s7` 实测） |
+| 全链（0001→0016）实测 | **63 张基表 + 3 视图**（`verify.sql` §1 口径：62；`information_schema.tables` 含视图 = 65）；foreign_keys 217 / check 259 / unique 91 / partial 16 / triggers 117 / functions 41；`fn_block_delete` 52 个（**2026-11-14 21:00** `ra_s6s7` 实测） |
 | 0015 落库 | `0015_runtime_cutover` 已应用到本机 `ra_s6s7`（台账 `applied_at = 2026-11-14 20:17:05 +08`）：+2 表（`runtime_watermark` / `runtime_watermark_change`）→ 62 基表 / 52 禁删触发器 / 117 触发器 / 41 函数；上一行已按此回抄。迁移文件已入库（commit `2329d2e`） |
 | 幂等 | 同库连跑第二遍 exit 0，零 ERROR，对象数不变 |
 | 自检 | `verify.sql` → `VERIFY PASS`，exit 0（32/32 负向测试按预期失败）；COV-01 = 有表 30 / 列映射 1 / 缓做 5 |
