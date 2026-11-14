@@ -1,14 +1,18 @@
 // 飞书 Minutes Connector 的唯一出口。
 //
 // 这里**不**注册任何 DSH 工具、**不**改 `src/index.ts`（R2 接线归 W0/子代理 A）：
-// 本模块只是一组可被 import 的契约、标签与骨架，真实 LIVE Gate = BLOCKED。
+// 本模块只是一组可被 import 的契约、标签、传输层与骨架。
+//
+// **LIVE Gate 不是一个写死的常量**：`FEISHU_LIVE_GATE_POLICY` 只是口径名
+// （`EVIDENCE_DRIVEN`），每次读取由 `evaluateLiveGate(readback)` 按证据算出
+// `LIVE | BLOCKED`。缺任何一项证据就不是 LIVE，且违规列表会点名缺什么。
 // 显式逐个导出（不用 `export *`），新增导出必须在这里写名字，避免两个文件
 // 同名导出时悄悄变成「谁先谁赢」。
 export {
   FEISHU_MINUTES_CONTRACT_VERSION,
   FEISHU_MINUTES_CONNECTOR_ID,
   FEISHU_MINUTES_PROVIDER,
-  FEISHU_MINUTES_LIVE_GATE,
+  FEISHU_LIVE_GATE_POLICY,
   FEISHU_MINUTES_ENDPOINTS,
   FEISHU_MINUTES_ENDPOINT_NOTES,
   FEISHU_LARK_CLI,
@@ -30,6 +34,8 @@ export {
 } from './contract.ts'
 
 export type {
+  FeishuLiveGatePolicy,
+  FeishuLiveGateState,
   FeishuMinutesEndpointKey,
   FeishuEventIdentity,
   FeishuEventNote,
@@ -47,11 +53,17 @@ export type {
 
 export {
   LABEL_DISHONEST_LIVE,
+  LIVE_EVIDENCE_ITEMS,
+  LIVE_READBACK_PROVENANCE_BASIS,
   REQUEST_BODY_IS_TRANSCRIPT,
   buildConnectorLabels,
   buildArtifactLabelsFromReadback,
+  evaluateLiveGate,
   isLiveEligible,
   liveEligibilityViolations,
+  liveGateEvidence,
+  parseReadReceipt,
+  readbackConsistencyViolations,
   triggerModeForEvent,
 } from './labels.ts'
 
@@ -65,6 +77,10 @@ export type {
   ConnectorLabelResult,
   TranscriptReadbackLike,
   ConnectorEventLike,
+  ParsedReadReceipt,
+  LiveEvidenceItem,
+  LiveGateEvidence,
+  LiveGateDecision,
 } from './labels.ts'
 
 export {

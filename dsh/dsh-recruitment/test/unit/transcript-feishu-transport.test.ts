@@ -1,13 +1,15 @@
-// `lark-cli-transport` 的机检：分页 / 生成中 / 超时 / 缺 CLI / 非零退出 / 回执 / 脱敏。
+// `lark-cli-transport` 的机检：分页 / 生成中 / 超时 / 缺 CLI / 非零退出 / 回执 / 脱敏 / 重读校验。
 //
 // 两个层次的假 CLI：
 //   1. **注入的 runner**（纯内存）：验证重试计数、退避、分页游标、解析分支；
 //   2. **真实子进程跑 `test/fixtures/feishu/fake-lark-cli.mjs`**：验证进程管理
 //      （ENOENT、非零退出、超时杀进程、stdout/stderr 采集）。
 //
-// 贯穿全文件的一条硬断言：**这些假数据永远不可能被标成 LIVE**。
-// `FEISHU_MINUTES_LIVE_GATE` 保持 `BLOCKED`，`readback.transport` 只能是
-// `FIXTURE`，`buildArtifactLabelsFromReadback()` 必须抛 `LABEL_DISHONEST_LIVE`。
+// 贯穿全文件的一条硬断言：**测试通道（默认 `platform_channel=false`）读到的假数据
+// 永远不可能被标成 LIVE**：`readback.transport=FIXTURE`，
+// `buildArtifactLabelsFromReadback()` 抛 `LABEL_DISHONEST_LIVE`。
+// 只有接线层声明 `platform_channel=true` 且两次完整回读哈希一致时，回读才可能
+// 证据齐全（本文件有正例；正文都是合成语料，R7）。
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readdir, readFile } from 'node:fs/promises'
@@ -16,11 +18,13 @@ import { fileURLToPath } from 'node:url'
 
 import {
   FEISHU_LARK_CLI,
-  FEISHU_MINUTES_LIVE_GATE,
+  FEISHU_LIVE_GATE_POLICY,
   FEISHU_TRANSPORT,
 } from '../../src/connectors/feishu/contract.ts'
 import {
+  LIVE_READBACK_PROVENANCE_BASIS,
   buildArtifactLabelsFromReadback,
+  evaluateLiveGate,
   isLiveEligible,
   liveEligibilityViolations,
 } from '../../src/connectors/feishu/labels.ts'
@@ -94,8 +98,11 @@ function page(texts: readonly string[], extra: Record<string, unknown> = {}): st
   return envelope({ minute_token: 'mt_1', revision: '7', has_more: false, transcript: { sentences: texts.map((text) => ({ text })) }, ...extra })
 }
 
-/** 一个只跑假 CLI 的传输层（真实子进程）。 */
-function processTransport(scenario: string, options: { timeout_ms?: number; max_attempts?: number; extra_env?: Record<string, string> } = {}) {
+/** 一个只跑假 CLI 的传输层（真实子进程；默认是**测试通道**，回读 transport=FIXTURE）。 */
+function processTransport(
+  scenario: string,
+  options: { timeout_ms?: number; max_attempts?: number; extra_env?: Record<string, string>; platform_channel?: boolean } = {},
+) {
   const env: Record<string, string> = { ...process.env, FAKE_LARK_CLI_SCENARIO: scenario, ...options.extra_env }
   const runner = createProcessCliRunner({
     command: process.execPath,
@@ -103,7 +110,13 @@ function processTransport(scenario: string, options: { timeout_ms?: number; max_
     env,
     timeout_ms: options.timeout_ms,
   })
-  return createLarkCliTransport({ runner, max_attempts: options.max_attempts ?? 1, retry_base_ms: 0, timeout_ms: options.timeout_ms })
+  return createLarkCliTransport({
+    runner,
+    max_attempts: options.max_attempts ?? 1,
+    retry_base_ms: 0,
+    timeout_ms: options.timeout_ms,
+    platform_channel: options.platform_channel === true,
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -119,7 +132,10 @@ test('buildTranscriptArgs：argv 由 FEISHU_LARK_CLI 常量拆出，不另写一
 })
 
 test('回执 / sha / 时间：都是纯函数，格式与 labels.ts 的闸门一致', () => {
-  assert.equal(buildReadReceipt('mt_1', '7'), 'lark:minutes+detail:mt_1@7')
+  const text = '面试官：开始吧。\n候选人：好的。'
+  const digest = sha256Hex(text)
+  // 回执必须把 minute_token 绑到**内容哈希**上（D-1：真实 revision 之外还要 hash）。
+  assert.equal(buildReadReceipt('mt_1', digest), `lark:minutes+detail:mt_1@sha256:${digest}`)
   assert.equal(sha256Hex('abc'), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad')
   const iso = isoWithOffset(new Date('2026-11-13T10:00:00Z'))
   // labels.ts 的 fetched_at 闸门只收带偏移的 ISO-8601。
@@ -131,22 +147,25 @@ test('回执 / sha / 时间：都是纯函数，格式与 labels.ts 的闸门一
 // 成功路径（注入 runner）
 // ---------------------------------------------------------------------------
 
-test('单页成功：回执 / sha 自洽 / is_complete=true，但 transport 只能是 FIXTURE', async () => {
+test('测试通道单页成功：回执绑定哈希 / sha 自洽，但 transport 只能是 FIXTURE', async () => {
+  const text = '面试官：开始吧。\n候选人：好的。'
   const { runner, calls } = scripted([ok(page(['面试官：开始吧。', '候选人：好的。']))])
   const transport = createLarkCliTransport({ runner, retry_base_ms: 0, now: () => new Date('2026-11-13T10:00:00Z') })
   const result = await transport.read({ minute_token: 'mt_1' })
   assert.equal(result.status, 'READ')
   if (result.status !== 'READ') return
   const readback = result.readback
-  assert.equal(readback.read_receipt_ref, 'lark:minutes+detail:mt_1@7')
+  assert.equal(readback.read_receipt_ref, `lark:minutes+detail:mt_1@sha256:${sha256Hex(text)}`)
   assert.equal(readback.is_complete, true)
   assert.equal(readback.page_count, 1)
-  assert.equal(readback.raw_text, '面试官：开始吧。\n候选人：好的。')
+  assert.equal(readback.raw_text, text)
   assert.equal(readback.content_sha256, sha256Hex(readback.raw_text))
   assert.match(readback.content_sha256, /^[0-9a-f]{64}$/)
+  assert.equal(readback.trigger, 'MANUAL')
+  // 测试通道没有重读校验，也没有平台通道身份。
+  assert.equal(readback.reread_sha256, undefined)
 
-  // 关键：Gate=BLOCKED，读成功也不冒充平台来源 → 永远不满足 LIVE 六项证据。
-  assert.equal(FEISHU_MINUTES_LIVE_GATE, 'BLOCKED')
+  // 关键：默认 platform_channel=false，读成功也不冒充平台来源 → 永远不可能 LIVE。
   assert.equal(readback.transport, FEISHU_TRANSPORT.fixture)
   assert.equal(isLiveEligible(readback), false)
   assert.ok(liveEligibilityViolations(readback).some((violation) => violation.includes('transport')))
@@ -158,6 +177,74 @@ test('单页成功：回执 / sha 自洽 / is_complete=true，但 transport 只�
   assert.equal(calls[0]!.args.includes(FEISHU_CLI_TRANSCRIPT_FLAGS.minute_token), true)
   assert.equal(calls[0]!.args.includes('mt_1'), true)
   assert.equal(calls[0]!.args[0], 'minutes', 'argv[0] 是契约常量里的子命令，可执行文件由 runner 配')
+})
+
+// ---------------------------------------------------------------------------
+// 平台通道：重读校验 + 证据驱动 LIVE（合成正文，R7）
+// ---------------------------------------------------------------------------
+
+test('平台通道（platform_channel=true）：两次完整回读哈希一致 → 回读证据齐全 → LIVE/MANUAL', async () => {
+  const text = '面试官：开始吧。\n候选人：好的。'
+  const calls: FeishuCliInvocation[] = []
+  const runner: FeishuCliRunner = async (invocation) => {
+    calls.push(invocation)
+    return ok(page(['面试官：开始吧。', '候选人：好的。']))
+  }
+  const transport = createLarkCliTransport({
+    runner,
+    retry_base_ms: 0,
+    platform_channel: true,
+    now: () => new Date('2026-11-13T10:00:00Z'),
+  })
+  const result = await transport.read({ minute_token: 'mt_1' })
+  assert.equal(result.status, 'READ')
+  if (result.status !== 'READ') return
+  const readback = result.readback
+
+  // 平台通道身份 + 重读哈希 + 完整回执。
+  assert.equal(readback.transport, FEISHU_TRANSPORT.api)
+  assert.equal(readback.reread_sha256, sha256Hex(text))
+  assert.equal(readback.content_sha256, sha256Hex(text))
+  assert.equal(readback.read_receipt_ref, `lark:minutes+detail:mt_1@sha256:${sha256Hex(text)}`)
+  assert.equal(calls.length, 2, '平台通道必须完整读两次做重读校验')
+
+  const decision = evaluateLiveGate(readback)
+  assert.equal(decision.gate, 'LIVE')
+  assert.deepEqual(decision.labels, { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' })
+  assert.equal(decision.provenance_basis, LIVE_READBACK_PROVENANCE_BASIS)
+  assert.deepEqual(decision.violations, [])
+  assert.deepEqual(buildArtifactLabelsFromReadback(readback), decision.labels)
+})
+
+test('平台通道：两次回读哈希不一致 → FAILED/READBACK_INVALID（不一致是失败，不是警告）', async () => {
+  let call = 0
+  const runner: FeishuCliRunner = async () => {
+    call += 1
+    // 第一遍是「甲」，第二遍是「乙」：同一 minute_token 两次读到的字节不同。
+    return ok(call === 1 ? page(['甲：合成内容第一遍。']) : page(['乙：合成内容第二遍。']))
+  }
+  const transport = createLarkCliTransport({ runner, retry_base_ms: 0, platform_channel: true })
+  const result = await transport.read({ minute_token: 'mt_1' })
+  assert.equal(result.status, 'FAILED')
+  if (result.status !== 'FAILED') return
+  assert.equal(result.error.stage, 'validate')
+  assert.equal(result.error.code, 'READBACK_INVALID')
+  assert.match(result.error.message, /重读校验失败/)
+  assert.equal(result.error.message.includes('合成内容'), false, '诊断不得回显正文')
+  assert.equal(call, 2)
+})
+
+test('平台通道：第二次读取失败 → 整个读取 FAILED（不拿第一次的半证据当结果）', async () => {
+  let call = 0
+  const runner: FeishuCliRunner = async () => {
+    call += 1
+    return call === 1 ? ok(page(['甲：合成内容。'])) : exitWith(3, 'boom')
+  }
+  const transport = createLarkCliTransport({ runner, retry_base_ms: 0, platform_channel: true })
+  const result = await transport.read({ minute_token: 'mt_1' })
+  assert.equal(result.status, 'FAILED')
+  if (result.status !== 'FAILED') return
+  assert.equal(result.error.code, 'CLI_NON_ZERO_EXIT')
 })
 
 test('分页：has_more=true → 带 page_token 取下一页，直到 has_more=false 才算完整', async () => {
@@ -414,13 +501,22 @@ test('真实子进程：非零退出码被原样报出（exit=3）', async () =>
 // 适配器：默认不接线、不产 LIVE、说清卡在哪一环
 // ---------------------------------------------------------------------------
 
-test('describe()：lark-cli-transport 已从 not_implemented 移除，live_gate 仍是 BLOCKED', () => {
+test('describe()：lark-cli-transport 已从 not_implemented 移除；live_gate 是口径名，状态按读取算', () => {
   const described = createFeishuMinutesAdapter({ env: USER_ENV }).describe()
-  assert.equal(described.live_gate, 'BLOCKED')
+  assert.equal(described.live_gate, 'EVIDENCE_DRIVEN')
+  assert.equal(FEISHU_LIVE_GATE_POLICY, 'EVIDENCE_DRIVEN')
+  assert.ok(described.live_gate_evidence.length > 0)
   assert.ok(described.implemented.includes('lark-cli-transport'))
   assert.deepEqual([...described.not_implemented], ['http-transport', 'oauth-flow', 'event-subscription'])
   assert.equal(described.not_implemented.includes('lark-cli-transport'), false)
-  assert.equal(FEISHU_MINUTES_LIVE_GATE, 'BLOCKED')
+})
+
+test('transport.describe()：默认测试通道 = platform_channel:false / readback_transport:FIXTURE', () => {
+  const transport = createLarkCliTransport({ runner: async () => ok(page(['甲。'])) })
+  const described = transport.describe()
+  assert.equal(described.live_gate, 'EVIDENCE_DRIVEN')
+  assert.equal(described.platform_channel, false)
+  assert.equal(described.readback_transport, FEISHU_TRANSPORT.fixture)
 })
 
 test('适配器默认不装配传输层：不 spawn 进程，BLOCKED / TRANSPORT_NOT_CONFIGURED', async () => {
@@ -443,7 +539,7 @@ test('适配器默认不装配传输层：不 spawn 进程，BLOCKED / TRANSPORT
   }
 })
 
-test('适配器接上假 CLI：READ 但 live_eligible=false，且 LIVE 闸门仍然拒绝它', async () => {
+test('适配器接上假 CLI（测试通道）：READ 但 live_eligible=false，回执已绑哈希、缺平台通道证据', async () => {
   const adapter = createFeishuMinutesAdapter({ env: USER_ENV, transport: processTransport('single') })
   const result = await adapter.fetchTranscript({ minute_token: 'mt_1' })
   assert.equal(result.kind, 'READ')
@@ -453,11 +549,86 @@ test('适配器接上假 CLI：READ 但 live_eligible=false，且 LIVE 闸门仍
   assert.equal(result.provenance_basis, 'NO_LIVE_READ')
   assert.deepEqual(result.labels, { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'AUTH_REQUIRED' })
   assert.equal(result.readback.transport, FEISHU_TRANSPORT.fixture)
-  assert.match(result.readback.read_receipt_ref, /^lark:minutes\+detail:mt_1@11$/)
+  assert.match(result.readback.read_receipt_ref, /^lark:minutes\+detail:mt_1@sha256:[0-9a-f]{64}$/)
+  assert.ok(result.live_gate_violations.some((violation) => violation.includes('transport')))
   assert.throws(() => buildArtifactLabelsFromReadback(result.readback), isDishonestLive)
   const json = JSON.stringify(result)
   assert.equal(json.includes('"provenance":"LIVE"'), false)
   assert.equal(json.includes('"connection":"CONNECTED"'), false)
+})
+
+test('适配器 + 平台通道（合成假 CLI）：两次回读一致 → READ 就是 LIVE/MANUAL/CONNECTED', async () => {
+  const adapter = createFeishuMinutesAdapter({
+    env: USER_ENV,
+    transport: processTransport('single', { platform_channel: true }),
+  })
+  const result = await adapter.fetchTranscript({ minute_token: 'mt_1' })
+  assert.equal(result.kind, 'READ')
+  if (result.kind !== 'READ') return
+  assert.equal(result.live_gate, 'LIVE')
+  assert.equal(result.live_eligible, true)
+  assert.equal(result.provenance_basis, LIVE_READBACK_PROVENANCE_BASIS)
+  assert.deepEqual(result.labels, { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' })
+  assert.equal(result.connection_state, 'CONNECTED')
+  assert.equal(result.readback.transport, FEISHU_TRANSPORT.api)
+  assert.match(result.readback.read_receipt_ref, /^lark:minutes\+detail:mt_1@sha256:[0-9a-f]{64}$/)
+  assert.equal(result.readback.reread_sha256, result.readback.content_sha256)
+  assert.deepEqual(result.live_gate_violations, [])
+  assert.deepEqual(buildArtifactLabelsFromReadback(result.readback), result.labels)
+  // 合成正文不得写进诊断/日志（R7）：只检查 note 里没有正文片段。
+  assert.equal(JSON.stringify(result.note).includes('候选人'), false)
+})
+
+test('适配器：注入的假传输层声称平台通道但回读自相矛盾 → BLOCKED/READBACK_INVALID（失败，不是警告）', async () => {
+  // 一个伪造的「解码后」回读：content_sha256 与 raw_text 对不上。
+  const fakeTransport = {
+    kind: 'lark-cli-transport' as const,
+    read: async () => ({
+      status: 'READ' as const,
+      attempts: 1,
+      pages: 1,
+      readback: {
+        transport: 'FEISHU_MINUTES_API' as const,
+        minute_token: 'mt_1',
+        revision: '7',
+        read_receipt_ref: `lark:minutes+detail:mt_1@sha256:${'a'.repeat(64)}`,
+        fetched_at: '2026-11-13T10:00:00+08:00',
+        content_sha256: 'a'.repeat(64),
+        reread_sha256: 'a'.repeat(64),
+        is_complete: true,
+        raw_text: '面试官：合成内容。',
+        trigger: 'MANUAL' as const,
+        page_count: 1,
+        transcript_chars: 10,
+      },
+    }),
+    describe: () => ({
+      transport: 'lark-cli-transport' as const,
+      command_constant: FEISHU_LARK_CLI.minutesDetailTranscript,
+      timeout_ms: 1_000,
+      max_attempts: 1,
+      retry_base_ms: 0,
+      page_size: 50,
+      max_pages: 1,
+      diagnostic_bytes: 0,
+      live_gate: FEISHU_LIVE_GATE_POLICY as 'EVIDENCE_DRIVEN',
+      platform_channel: true,
+      readback_transport: 'FEISHU_MINUTES_API' as const,
+      argument_flags_verified: false as const,
+      envelope_verified: false as const,
+      note: 'fake',
+    }),
+  }
+  const adapter = createFeishuMinutesAdapter({ env: USER_ENV, transport: fakeTransport })
+  const result = await adapter.fetchTranscript({ minute_token: 'mt_1' })
+  assert.equal(result.kind, 'BLOCKED')
+  if (result.kind !== 'BLOCKED') return
+  assert.equal(result.blocked_reason, 'READBACK_INVALID')
+  assert.equal(result.error_code, 'READ_FAILED')
+  assert.equal(result.creates_artifact, false)
+  assert.match(result.message, /回读对象自相矛盾/)
+  assert.match(result.message, /content_sha256/)
+  assert.equal(JSON.stringify(result).includes('"provenance":"LIVE"'), false)
 })
 
 test('适配器：生成中 → WAITING_EXTERNAL（不是失败，不建 artifact）', async () => {

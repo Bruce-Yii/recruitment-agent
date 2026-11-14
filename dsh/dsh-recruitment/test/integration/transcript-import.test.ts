@@ -22,6 +22,7 @@ import {
   createLarkCliTransport,
   createProcessCliRunner,
   type FeishuConnectorDependency,
+  type FeishuMinutesAdapter,
 } from '../../src/connectors/feishu/index.ts'
 import {
   createTestPool, errorBody, hex64, inRolledBackTx, seedScenario, testDatabaseConfig,
@@ -47,8 +48,8 @@ const FAKE_LINE_2 = '候选人：我主要负责订单链路的稳定性，把�
 
 /**
  * 装配一个「配置层给出的」连接器依赖：真实 `lark-cli-transport` + 真实子进程 +
- * `test/fixtures/feishu/fake-lark-cli.mjs`。它读到的字节永远只能标 FIXTURE
- * （Live Gate=BLOCKED，`readback.transport=FIXTURE`）。
+ * `test/fixtures/feishu/fake-lark-cli.mjs`。它**不是**平台通道（`platform_channel`
+ * 默认 false），所以回读 `transport=FIXTURE`：读到的字节永远只能标 FIXTURE。
  */
 function fixtureConnector(scenario = 'single'): FeishuConnectorDependency {
   const runner = createProcessCliRunner({
@@ -59,6 +60,63 @@ function fixtureConnector(scenario = 'single'): FeishuConnectorDependency {
   })
   const transport = createLarkCliTransport({ runner, max_attempts: 1, retry_base_ms: 0, timeout_ms: 30_000 })
   const adapter = createFeishuMinutesAdapter({ env: FAKE_FEISHU_ENV, transport })
+  return { adapter, transport_configured: true }
+}
+
+/** 一条合成正文（R7：集成测试只用合成文本，不是真实转写）。 */
+const LIVE_RAW_TEXT = '面试官：请先做个自我介绍。\n候选人：我最近三年在做订单链路的稳定性治理。'
+/** 该正文的 sha256（回读对象声明的哈希，必须与正文逐字一致）。 */
+const LIVE_SHA = createHash('sha256').update(LIVE_RAW_TEXT, 'utf8').digest('hex')
+
+/**
+ * 一个**合成**的 LIVE 回读连接器：`fetchTranscript()` 返回证据齐全的 READ 结局
+ * （平台通道 + 回执绑哈希 + content_sha256 与正文一致 + 重读哈希一致 + 带偏移
+ * fetched_at + 完整分页 + 非空正文）。**不是真实平台读取**：只用来验证落库路径
+ * 会把证据齐全的标签透出成 LIVE/CONNECTED，并把关键证据写进 DB / sections。
+ * 真实读取路径由 `lark-cli-transport`（`transport.ts`）负责，fake CLI 那条路仍是 FIXTURE。
+ */
+function syntheticLiveConnector(minuteToken = 'mt_synthetic_live'): FeishuConnectorDependency {
+  const readback = {
+    transport: 'FEISHU_MINUTES_API',
+    minute_token: minuteToken,
+    revision: '7',
+    read_receipt_ref: `lark:minutes+detail:${minuteToken}@sha256:${LIVE_SHA}`,
+    fetched_at: '2026-11-14T10:00:00.000+08:00',
+    content_sha256: LIVE_SHA,
+    reread_sha256: LIVE_SHA,
+    is_complete: true,
+    raw_text: LIVE_RAW_TEXT,
+    trigger: 'MANUAL',
+    page_count: 1,
+    transcript_chars: LIVE_RAW_TEXT.length,
+  }
+  const adapter = {
+    describe: () => ({
+      connector: 'feishu-minutes',
+      contract_version: '1.0.0',
+      implemented: ['contract', 'labels', 'lark-cli-transport'],
+      not_implemented: ['http-transport', 'oauth-flow', 'event-subscription'],
+      live_gate: 'EVIDENCE_DRIVEN',
+      live_gate_evidence: [],
+    }),
+    probe: () => ({ connection_state: 'AUTH_REQUIRED', labels: { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'AUTH_REQUIRED' } }),
+    fetchTranscript: async () => ({
+      kind: 'READ',
+      connector: 'feishu-minutes',
+      connection_state: 'CONNECTED',
+      labels: { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' },
+      provenance_basis: 'LIVE_READBACK_VERIFIED',
+      live_eligible: true,
+      live_gate: 'LIVE',
+      live_gate_violations: [],
+      creates_artifact: false,
+      readback,
+      requested: { minute_token_present: true, external_meeting_id_present: false },
+      note: '合成 LIVE 回读（测试）',
+    }),
+    mapProviderError: () => { throw new Error('不该调用') },
+    subscriptionNotes: () => { throw new Error('不该调用') },
+  } as unknown as FeishuMinutesAdapter
   return { adapter, transport_configured: true }
 }
 
@@ -663,8 +721,8 @@ test('连接器回读（fake lark-cli 真实子进程）读成功：落库行带
     assert.equal(artifact.trigger_mode, 'MANUAL')
     assert.equal(artifact.connection_state, 'AUTH_REQUIRED')
     assert.equal(artifact.is_complete, true)
-    // 回执来自传输层（lark:...），但 provenance=FIXTURE 表明没被当成平台已核实来源。
-    assert.match(String(artifact.read_receipt_ref), /^lark:minutes\+detail:mt_fixture_read@\d+$/)
+    // 回执来自传输层（lark:...@sha256:<hash>），但 provenance=FIXTURE 表明没被当成平台来源。
+    assert.match(String(artifact.read_receipt_ref), /^lark:minutes\+detail:mt_fixture_read@sha256:[0-9a-f]{64}$/)
     assert.equal(artifact.id, value.artifact.id)
 
     const segments = (await client.query<{ sequence: number; content_text: string; raw_source_ref: string | null }>(
@@ -699,6 +757,85 @@ test('连接器回读（fake lark-cli 真实子进程）读成功：落库行带
     assert.deepEqual(replay.labels, value.labels, 'replay 回显既有行标签，不因本次入参升级')
     assert.equal(replay.provenance_basis, 'FEISHU_READBACK_NO_LIVE_GATE')
     assert.ok(replay.warnings.some((warning) => warning.code === 'FEISHU_READBACK_NOT_LIVE'))
+    assert.deepEqual(await countsFor(client, fixture.meetingIds, fixture.interviewId), beforeReplay)
+  })
+})
+
+test('连接器回读（合成 LIVE 证据齐全）：落库为 LIVE/MANUAL/CONNECTED + 真实 provider_artifact_id + 回执绑哈希', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+    const fixture = await seedInterview(client, scenario.applicationId)
+    const connector = syntheticLiveConnector('mt_synthetic_live')
+
+    const value = await importTranscriptInTransaction(client, cfg, {
+      interview_id: fixture.interviewId,
+      minute_token: 'mt_synthetic_live',
+    }, undefined, { connector })
+
+    // ---- 出参：证据齐全才 LIVE；trigger 恒 MANUAL（D-1）；连接是 CONNECTED ----
+    assert.deepEqual(value.labels, { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' })
+    assert.equal(value.provenance_basis, 'LIVE_READBACK_VERIFIED')
+    assert.equal(value.replayed, false)
+    assert.ok(value.warnings.some((warning) => warning.code === 'FEISHU_LIVE_MANUAL_OPERATOR_READ'))
+    assert.equal(
+      value.warnings.some((warning) => warning.code === 'FEISHU_READBACK_NOT_LIVE'),
+      false,
+      'LIVE 行不该再带 FIXTURE 警告',
+    )
+    // D-1：真实 provider artifact ID（分钟标识），不是 `local:` 假 id。
+    assert.equal(value.artifact.provider, 'FEISHU')
+    assert.equal(value.artifact.provider_artifact_id, 'feishu:minutes:mt_synthetic_live')
+    assert.equal(value.artifact.provenance, 'LIVE')
+    assert.equal(value.artifact.trigger_mode, 'MANUAL')
+    assert.equal(value.artifact.connection_state, 'CONNECTED')
+    assert.equal(value.artifact.content_sha256, LIVE_SHA)
+    assert.equal(value.artifact.char_count, LIVE_RAW_TEXT.length)
+    assert.equal(value.artifact.segment_count, 2)
+
+    // ---- DB 读回：LIVE 必须带回执 + 哈希 + 原文，且标签逐列正确 ----
+    const artifact = (await client.query<Record<string, unknown>>(
+      `select id, meeting_id, provider, provider_artifact_id, source_revision, transcript_status,
+              provenance, trigger_mode, connection_state, read_receipt_ref, content_sha256,
+              raw_text, is_complete, has_more, is_canonical, fetched_at
+         from recruitment.transcript_artifact where id = $1`,
+      [value.artifact.id],
+    )).rows[0] as Record<string, unknown>
+    assert.equal(artifact.meeting_id, fixture.meetingIds[0])
+    assert.equal(artifact.provider, 'FEISHU')
+    assert.equal(artifact.provider_artifact_id, 'feishu:minutes:mt_synthetic_live')
+    assert.equal(artifact.raw_text, LIVE_RAW_TEXT)
+    assert.equal(artifact.content_sha256, LIVE_SHA)
+    assert.equal(artifact.provenance, 'LIVE')
+    assert.equal(artifact.trigger_mode, 'MANUAL')
+    assert.equal(artifact.connection_state, 'CONNECTED')
+    assert.equal(artifact.is_complete, true)
+    assert.match(String(artifact.read_receipt_ref), /^lark:minutes\+detail:mt_synthetic_live@sha256:[0-9a-f]{64}$/)
+    assert.ok(artifact.fetched_at instanceof Date, 'LIVE 行必须有 fetched_at（ck_transcript_artifact_live_receipt）')
+
+    // sections.source 里保留回读证据：平台通道 / 回执 / 两次哈希 / gate 结论。
+    const record = (await client.query<Record<string, unknown>>(
+      'select sections from recruitment.interview_record where id = $1',
+      [value.record?.id],
+    )).rows[0] as Record<string, unknown>
+    const sections = record.sections as { source: Record<string, unknown> }
+    assert.equal(sections.source.kind, 'FEISHU_CONNECTOR_READBACK')
+    assert.equal(sections.source.transport, 'FEISHU_MINUTES_API')
+    assert.equal(sections.source.live_gate, 'LIVE')
+    assert.equal(sections.source.minute_token, 'mt_synthetic_live')
+    assert.equal(sections.source.read_receipt_ref, artifact.read_receipt_ref)
+    assert.equal(sections.source.content_sha256, LIVE_SHA)
+    assert.equal(sections.source.reread_sha256, LIVE_SHA)
+
+    // ---- 同一内容重导 → replayed=true，回显 LIVE，一行都不写（TR-U8）----
+    const beforeReplay = await countsFor(client, fixture.meetingIds, fixture.interviewId)
+    const replay = await importTranscriptInTransaction(client, cfg, {
+      interview_id: fixture.interviewId,
+      minute_token: 'mt_synthetic_live',
+    }, undefined, { connector })
+    assert.equal(replay.replayed, true)
+    assert.deepEqual(replay.labels, { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' })
+    assert.equal(replay.provenance_basis, 'LIVE_READBACK_VERIFIED')
+    assert.ok(replay.warnings.some((warning) => warning.code === 'FEISHU_LIVE_MANUAL_OPERATOR_READ'))
     assert.deepEqual(await countsFor(client, fixture.meetingIds, fixture.interviewId), beforeReplay)
   })
 })

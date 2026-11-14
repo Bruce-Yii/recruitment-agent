@@ -3,39 +3,56 @@
 // 传输层**已实现**（`transport.ts` 的 `lark-cli-transport`），但**不默认装配**：
 // 本文件不 import 任何子进程模块，只有调用方显式注入 `transport` 才会发起外部
 // 调用。理由有两条，都不是洁癖：
-//   * LIVE Gate = BLOCKED：本机没有真实飞书应用与用户授权，也不允许伪造凭据；
 //   * `AGENTS.md §7.6` 禁止把「开发者全局 CLI profile」当产品连接器凭据，
-//     所以 CLI 必须由调用方用绝对路径显式配置，不能悄悄调用 PATH 上的 `lark-cli`。
+//     所以 CLI 必须由调用方用绝对路径显式配置，不能悄悄调用 PATH 上的 `lark-cli`；
+//   * 默认态没有任何外部读取，也就没有任何 LIVE 证据。
 //
-// 于是 `fetchTranscript()` 有四种出口，每一种都**不产 LIVE**：
+// **LIVE 由证据算出，不是一个全局开关**：`fetchTranscript()` 读到正文后调用
+// `evaluateLiveGate()` 逐项核对回读证据（平台通道 / 回执 `@sha256:` /
+// content_sha256 与 raw_text 重算一致 / 重读哈希 / 带偏移 fetched_at /
+// is_complete / 非空正文 / MANUAL|EVENT）。全齐 → `provenance=LIVE`、
+// `connection=CONNECTED`；缺任何一项 → `FIXTURE`、`live_eligible=false`，并把
+// **缺哪一项**逐条放进 `live_gate_violations`（不压平成「Gate 没开」）。
+//
+// `fetchTranscript()` 有四种出口：
 //   * `ERROR / INVALID_ARGS`：缺 `minute_token`；
 //   * `BLOCKED`：凭据/传输层/读取任何一环不成立，带 `blocked_reason` 说清是哪一环；
+//     回读对象**自相矛盾**（哈希不一致）也在这里失败（`READBACK_INVALID`，
+//     回读不一致是失败，不是警告）；
 //   * `WAITING_EXTERNAL`：平台说 `2091003`（生成中），不是失败（TR-F1）；
-//   * `READ`：真实读到了正文，但 `provenance_basis='NO_LIVE_READ'`、
-//     `readback.transport='FIXTURE'`（Gate 未解锁时无法证明字节来自平台），
-//     交不交 artifact 由调用方按 `labels` 决定——本适配器永不返回 `LIVE`。
+//   * `READ`：读到了正文；标签由 `evaluateLiveGate()` 算，可能在证据齐全时 LIVE。
 //
 // 三个必须记住的口径：
 //   * `2091003` 生成中 → `WAITING_EXTERNAL`，不建 artifact；`2091005` 无权限 →
 //     `WAITING_HUMAN` + `AUTH_REQUIRED`，不建 artifact（见 `contract.ts`）；
 //   * `minutes.minute.generated_v1` 是 **user identity** 订阅，应用凭据不够，
 //     缺用户令牌就是 `AUTH_REQUIRED`，不是 `NOT_CONNECTED` 也不是 `CONNECTED`；
-//   * 令牌「存在」不等于「有效」：没有一次真实成功的平台回读之前，即使 env 里
-//     四个值全在，也只能是 `AUTH_REQUIRED` + `TOKEN_PRESENT_UNVERIFIED`。
+//   * 令牌「存在」不等于「有效」：`probe()` 永远不把令牌存在当作 CONNECTED，
+//     只有一次证据齐全的真实回读才在 `READ` 出口给 `CONNECTED`。
 import {
+  FEISHU_LIVE_GATE_POLICY,
   FEISHU_MINUTES_CONNECTOR_ID,
   FEISHU_MINUTES_CONTRACT_VERSION,
   FEISHU_MINUTES_EVENT_NOTES,
-  FEISHU_MINUTES_LIVE_GATE,
   mapFeishuError,
   readNonEmptyString,
+  type FeishuLiveGatePolicy,
+  type FeishuLiveGateState,
   type FeishuProviderError,
 } from './contract.ts'
-import { buildConnectorLabels, type Connection, type ThreeAxisLabels } from './labels.ts'
+import {
+  LIVE_EVIDENCE_ITEMS,
+  buildConnectorLabels,
+  evaluateLiveGate,
+  readbackConsistencyViolations,
+  type Connection,
+  type LiveEvidenceItem,
+  type ProvenanceBasis,
+  type ThreeAxisLabels,
+} from './labels.ts'
 import {
   FEISHU_CLI_TRANSPORT_ID,
   FeishuTransportError,
-  readbackTransport,
   type FeishuCliTranscriptReadback,
   type FeishuMinutesTranscriptTransport,
 } from './transport.ts'
@@ -83,9 +100,12 @@ export interface FeishuAdapterDescription {
   readonly contract_version: string
   /** 本适配器**做到**的事。 */
   readonly implemented: readonly string[]
-  /** 本适配器**没做**的事；`live_gate` 为 BLOCKED 的直接原因。 */
+  /** 本适配器**没做**的事。 */
   readonly not_implemented: readonly string[]
-  readonly live_gate: typeof FEISHU_MINUTES_LIVE_GATE
+  /** Gate 口径名（不是开关）：`EVIDENCE_DRIVEN`，每次读取按证据算 LIVE/BLOCKED。 */
+  readonly live_gate: FeishuLiveGatePolicy
+  /** LIVE 需要的证据项（机器可读；缺一项就不会 LIVE）。 */
+  readonly live_gate_evidence: readonly LiveEvidenceItem[]
 }
 
 /** `probe()` 的阻断原因（闭集）。 */
@@ -183,20 +203,23 @@ export interface FeishuTranscriptBlocked {
 }
 
 /**
- * 读成功但**不授予 LIVE** 的返回。
- * `readback.transport` 在 Gate=BLOCKED 时恒 `FIXTURE`（本机无法证明来源），
- * `live_eligible` 恒 false，`labels` 恒 `FIXTURE / MANUAL`。
+ * 读成功的返回。标签由 `evaluateLiveGate()` 按**这次回读的证据**算出：
+ *   * 证据齐全 → `provenance=LIVE`、`connection=CONNECTED`、`live_eligible=true`；
+ *   * 缺任何一项 → `FIXTURE`、`live_eligible=false`，缺项逐条在
+ *     `live_gate_violations` 里（不是压成一句「全局 Gate 没开」）。
  */
 export interface FeishuTranscriptRead {
   readonly kind: 'READ'
   readonly connector: typeof FEISHU_MINUTES_CONNECTOR_ID
   readonly connection_state: Connection
   readonly labels: ThreeAxisLabels
-  readonly provenance_basis: 'NO_LIVE_READ'
-  readonly live_eligible: false
-  readonly live_gate: typeof FEISHU_MINUTES_LIVE_GATE
+  readonly provenance_basis: ProvenanceBasis
+  readonly live_eligible: boolean
+  readonly live_gate: FeishuLiveGateState
+  /** 为什么不是 LIVE（LIVE 时为空数组；每条点名缺的证据）。 */
+  readonly live_gate_violations: readonly string[]
   readonly creates_artifact: false
-  /** 交给业务层决定是否落库；内容来自 CLI，Gate 未解锁时只按 FIXTURE 对待。 */
+  /** 交给业务层决定是否落库；标签由本次回读的证据决定，不接受调用方自报。 */
   readonly readback: FeishuCliTranscriptReadback
   readonly requested: FeishuTranscriptRequestedFlags
   readonly note: string
@@ -216,7 +239,7 @@ export interface FeishuTranscriptWaitingExternal {
   readonly requested: FeishuTranscriptRequestedFlags
 }
 
-/** `fetchTranscript()` 的可能返回（永不返回 `LIVE` 标签）。 */
+/** `fetchTranscript()` 的可能返回（标签由证据算出，不接受调用方自报）。 */
 export type FeishuTranscriptResult =
   | FeishuTranscriptInvalidArgs
   | FeishuTranscriptBlocked
@@ -320,7 +343,8 @@ export function createFeishuMinutesAdapter(config: FeishuAdapterConfig = {}): Fe
       // `lark-cli-transport` 已实现（`transport.ts`）；HTTP 传输 / OAuth / 事件订阅没有。
       implemented: ['contract', 'auth-check', 'error-mapping', 'labels', FEISHU_CLI_TRANSPORT_ID],
       not_implemented: ['http-transport', 'oauth-flow', 'event-subscription'],
-      live_gate: FEISHU_MINUTES_LIVE_GATE,
+      live_gate: FEISHU_LIVE_GATE_POLICY,
+      live_gate_evidence: [...LIVE_EVIDENCE_ITEMS],
     }
   }
 
@@ -488,22 +512,42 @@ export function createFeishuMinutesAdapter(config: FeishuAdapterConfig = {}): Fe
     if (result.status === 'FAILED') {
       return blockedFromTransportFailure(result.error, requested, state)
     }
-    // 读成功也**不**授予 LIVE：Gate 未解锁时无法证明这些字节来自平台。
+    // 读成功也要过证据闸门：自相矛盾（哈希不一致）直接失败；证据不齐 → 说清缺哪项。
+    const contradictions = readbackConsistencyViolations(result.readback)
+    if (contradictions.length > 0) {
+      return {
+        kind: 'BLOCKED',
+        connector: FEISHU_MINUTES_CONNECTOR_ID,
+        connection_state: state.connection_state,
+        labels,
+        creates_artifact: false,
+        error_code: 'READ_FAILED',
+        blocked_reason: 'READBACK_INVALID',
+        message: `回读对象自相矛盾，按失败处理（不一致不是警告）：${contradictions.join('；')}。本次没有正文，也没有 artifact。`,
+        requested,
+      }
+    }
+    const decision = evaluateLiveGate(result.readback)
+    const isLive = decision.gate === 'LIVE'
     return {
       kind: 'READ',
       connector: FEISHU_MINUTES_CONNECTOR_ID,
-      connection_state: state.connection_state,
-      labels,
-      provenance_basis: 'NO_LIVE_READ',
-      live_eligible: false,
-      live_gate: FEISHU_MINUTES_LIVE_GATE,
+      connection_state: isLive ? 'CONNECTED' : state.connection_state,
+      labels: isLive ? decision.labels : labels,
+      provenance_basis: decision.provenance_basis,
+      live_eligible: isLive,
+      live_gate: decision.gate,
+      live_gate_violations: decision.violations,
       creates_artifact: false,
-      readback: { ...result.readback, transport: readbackTransport() },
+      readback: result.readback,
       requested,
-      note:
-        FEISHU_MINUTES_LIVE_GATE === 'BLOCKED'
-          ? '读到了字节，但 Live Gate=BLOCKED：这些字节不能证明来自飞书平台（可能是假 CLI / 回放），所以 readback.transport=FIXTURE、provenance_basis=NO_LIVE_READ。解锁条件见 README §6。'
-          : 'Live Gate 已解锁：仍须由调用方用 buildArtifactLabelsFromReadback() 显式判定 LIVE。',
+      note: isLive
+        ? '本次回读的 LIVE 证据齐全（平台通道 + 回执绑定内容哈希 + 哈希重算一致'
+          + (result.readback.reread_sha256 === undefined ? '' : ' + 重读校验一致')
+          + ' + 带偏移 fetched_at + 完整分页 + 非空正文）：provenance=LIVE、trigger=MANUAL、connection=CONNECTED。'
+          + '产品自有 OAuth / 事件订阅（F2）仍是 P1，不阻塞本 demo。'
+        : `读到了字节，但证据不齐，只能是 FIXTURE：${decision.violations.join('；')}。`
+          + '这不是「全局 Gate 没开」，而是这次回读确实缺上面的证据；补齐后才可能 LIVE。',
     }
   }
 

@@ -9,21 +9,24 @@
 //      路径返回 `BLOCKED / TRANSPORT_NOT_CONFIGURED`，且是在**建连/写入之前**失败
 //      （测试用"连不上的数据库配置"当哨兵：真去连就会是连接错误，而不是 BLOCKED）。
 //   3. **标签诚实**：即使适配器谎报 `provenance=LIVE / connection=CONNECTED`，
-//      工具侧也只按 `FIXTURE / MANUAL / AUTH_REQUIRED` 落库；`FEISHU_MINUTES_LIVE_GATE`
-//      保持 `BLOCKED`（labels.ts 的证据闸门一条没放松）。
+//      工具侧也只按**回读证据**算标签：证据不齐 → `FIXTURE / MANUAL / AUTH_REQUIRED`；
+//      证据齐全（合成样本）→ `LIVE / MANUAL / CONNECTED`。`live_gate` 是口径名
+//      `EVIDENCE_DRIVEN`，不是开/关常量。
 //   4. **注册入口可达**：`src/index.ts` 的 `apply()` → 注册表 → 工具 `execute()`
 //      → 适配器 → `lark-cli-transport`（真实发起一次子进程定位）→ `BLOCKED/CLI_UNAVAILABLE`。
 //
 // 本文件不连数据库、不写 ra_s6s7：数据库配置故意指向 127.0.0.1:1，任何建连都会失败。
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 import {
-  FEISHU_MINUTES_LIVE_GATE,
+  FEISHU_LIVE_GATE_POLICY,
+  LIVE_READBACK_PROVENANCE_BASIS,
   createFeishuMinutesAdapter,
   resolveFeishuConnector,
   type FeishuMinutesAdapter,
@@ -93,7 +96,8 @@ function fakeAdapter(
       contract_version: '1.0.0',
       implemented: ['contract', 'labels', 'lark-cli-transport'],
       not_implemented: ['http-transport', 'oauth-flow', 'event-subscription'],
-      live_gate: 'BLOCKED',
+      live_gate: FEISHU_LIVE_GATE_POLICY,
+      live_gate_evidence: [],
     }),
     probe: () => {
       throw new Error('接线测试里不该调用 probe()')
@@ -111,7 +115,15 @@ function fakeAdapter(
   } as unknown as FeishuMinutesAdapter
 }
 
-/** 一条合法的 READ 结局（回读对象的 transport=FIXTURE：Gate=BLOCKED 的真实形状）。 */
+/** 一条合成正文（R7：测试只用合成文本，不是真实转写）。 */
+const WIRING_RAW_TEXT = '面试官：请先自我介绍一下。\n候选人：好的，我最近三年主要做订单链路。'
+/** 该正文的 sha256（回读对象声明的哈希，必须自洽）。 */
+const WIRING_SHA = createHash('sha256').update(WIRING_RAW_TEXT, 'utf8').digest('hex')
+
+/**
+ * 一条 READ 结局。默认是**证据不齐**的形态：回读 transport=FIXTURE，
+ * 回执/哈希自洽但没有平台通道与重读证据 → 工具侧只能落 FIXTURE。
+ */
 function readResult(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const { readback: readbackOverrides, labels: labelOverrides, ...rest } = overrides
   return {
@@ -122,23 +134,52 @@ function readResult(overrides: Record<string, unknown> = {}): Record<string, unk
     provenance_basis: 'NO_LIVE_READ',
     live_eligible: false,
     live_gate: 'BLOCKED',
+    live_gate_violations: ['transport 必须是 FEISHU_MINUTES_API（当前 FIXTURE）'],
     creates_artifact: false,
     readback: {
       transport: 'FIXTURE',
       minute_token: 'mt_wiring_1',
       revision: '7',
-      read_receipt_ref: 'lark:minutes+detail:mt_wiring_1@7',
+      read_receipt_ref: `lark:minutes+detail:mt_wiring_1@sha256:${WIRING_SHA}`,
       fetched_at: '2026-11-14T10:00:00.000+08:00',
-      content_sha256: 'a'.repeat(64),
+      content_sha256: WIRING_SHA,
       is_complete: true,
-      raw_text: '面试官：请先自我介绍一下。\n候选人：好的，我最近三年主要做订单链路。',
+      raw_text: WIRING_RAW_TEXT,
+      trigger: 'MANUAL',
       page_count: 1,
-      transcript_chars: 30,
+      transcript_chars: WIRING_RAW_TEXT.length,
       ...(readbackOverrides as Record<string, unknown> | undefined),
     },
     requested: { minute_token_present: true, external_meeting_id_present: false },
-    note: '读到了字节，但 Live Gate=BLOCKED',
+    note: '读到字节，但证据不齐只能是 FIXTURE',
     ...rest,
+  }
+}
+
+/** 一条「四样 LIVE 证据齐全」的合成 READ 结局（不是真实平台读取，只验证标签透出）。 */
+function liveReadResult(): Record<string, unknown> {
+  return {
+    ...readResult(),
+    connection_state: 'CONNECTED',
+    labels: { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' },
+    provenance_basis: LIVE_READBACK_PROVENANCE_BASIS,
+    live_eligible: true,
+    live_gate: 'LIVE',
+    live_gate_violations: [],
+    readback: {
+      transport: 'FEISHU_MINUTES_API',
+      minute_token: 'mt_wiring_live',
+      revision: '7',
+      read_receipt_ref: `lark:minutes+detail:mt_wiring_live@sha256:${WIRING_SHA}`,
+      fetched_at: '2026-11-14T10:00:00.000+08:00',
+      content_sha256: WIRING_SHA,
+      reread_sha256: WIRING_SHA,
+      is_complete: true,
+      raw_text: WIRING_RAW_TEXT,
+      trigger: 'MANUAL',
+      page_count: 1,
+      transcript_chars: WIRING_RAW_TEXT.length,
+    },
   }
 }
 
@@ -178,8 +219,8 @@ function waitingResult(): Record<string, unknown> {
 // 1. 装配来源：插件配置（绝对路径）才是唯一入口
 // ---------------------------------------------------------------------------
 
-test('resolveFeishuConnector：缺省 = 不装配传输层（默认态，不碰任何进程），live_gate 仍是 BLOCKED', () => {
-  assert.equal(FEISHU_MINUTES_LIVE_GATE, 'BLOCKED', 'LIVE Gate 不许在接线时被改开')
+test('resolveFeishuConnector：缺省 = 不装配传输层（默认态，不碰任何进程），live_gate 是口径名', () => {
+  assert.equal(FEISHU_LIVE_GATE_POLICY, 'EVIDENCE_DRIVEN', 'Gate 不许退回硬编码开关')
   const resolved = resolveFeishuConnector(undefined, {})
   assert.equal(resolved.connector, undefined)
   assert.equal(resolved.transport_configured, false)
@@ -204,7 +245,7 @@ test('resolveFeishuConnector：绝对路径才装配；CLI 不存在时真实发
   assert.equal(resolved.transport_configured, true)
   assert.deepEqual(resolved.issues, [])
   const adapter = (resolved.connector as { adapter: FeishuMinutesAdapter }).adapter
-  assert.equal(adapter.describe().live_gate, 'BLOCKED')
+  assert.equal(adapter.describe().live_gate, FEISHU_LIVE_GATE_POLICY)
 
   const result = await adapter.fetchTranscript({ minute_token: 'mt_wiring_1' }) as {
     kind: string
@@ -410,27 +451,34 @@ test('回读正文为空 / 超长 → BLOCKED（READBACK_INVALID / TRANSCRIPT_TO
 })
 
 // ---------------------------------------------------------------------------
-// 5. 标签诚实：适配器谎报 LIVE/CONNECTED 也越不过工具侧
+// 5. 标签诚实：标签由**回读证据**算，适配器谎报也越不过工具侧
 // ---------------------------------------------------------------------------
 
-test('connectorReadbackLabels：只有 FIXTURE/MANUAL/{NOT_CONNECTED,AUTH_REQUIRED}，CONNECTED 被降级', () => {
-  assert.deepEqual(connectorReadbackLabels('NOT_CONNECTED'), {
+test('connectorReadbackLabels：证据不齐只给 FIXTURE/MANUAL/{NOT_CONNECTED,AUTH_REQUIRED}，自报 CONNECTED 被降级', () => {
+  // 证据不齐（FIXTURE 通道）的回读：provenance 恒 FIXTURE、trigger 恒 MANUAL。
+  assert.deepEqual(connectorReadbackLabels({ transport: 'FIXTURE' }, 'NOT_CONNECTED'), {
     provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'NOT_CONNECTED',
   })
-  assert.deepEqual(connectorReadbackLabels('AUTH_REQUIRED'), {
+  assert.deepEqual(connectorReadbackLabels({ transport: 'FIXTURE' }, 'AUTH_REQUIRED'), {
     provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'AUTH_REQUIRED',
   })
-  // 适配器（或任何上游）谎报 CONNECTED：工具侧只能降级，不可能写 CONNECTED。
-  assert.deepEqual(connectorReadbackLabels('CONNECTED'), {
+  // 适配器（或任何上游）谎报 CONNECTED：证据不齐就只能降级为 AUTH_REQUIRED。
+  assert.deepEqual(connectorReadbackLabels({ transport: 'FIXTURE' }, 'CONNECTED'), {
     provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'AUTH_REQUIRED',
+  })
+  // 证据齐全的合成回读：gate=LIVE 才允许 LIVE/CONNECTED。
+  const live = (liveReadResult().readback) as Record<string, unknown>
+  assert.deepEqual(connectorReadbackLabels(live, 'AUTH_REQUIRED'), {
+    provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED',
   })
 })
 
-test('resolveImportSource：适配器谎报 LIVE/EVENT/CONNECTED 的 READ → 来源标签仍被收敛为 FIXTURE/MANUAL/AUTH_REQUIRED', async () => {
+test('resolveImportSource：证据不齐的 READ 即使适配器谎报 LIVE/EVENT/CONNECTED，也只落 FIXTURE/MANUAL/AUTH_REQUIRED', async () => {
   const reading = readResult({
     labels: { provenance: 'LIVE', trigger: 'EVENT', connection: 'CONNECTED' },
     connection_state: 'CONNECTED',
-    readback: { transport: 'FEISHU_MINUTES_API' },
+    // 自报标签是假的，但回读证据也不齐：通道仍是测试通道 FIXTURE。
+    readback: { transport: 'FIXTURE' },
   })
   const source = await resolveImportSource(
     { interview_id: INTERVIEW, minute_token: 'mt_wiring_lying' },
@@ -439,8 +487,52 @@ test('resolveImportSource：适配器谎报 LIVE/EVENT/CONNECTED 的 READ → �
   assert.equal(source.mode, 'CONNECTOR_READBACK')
   if (source.mode !== 'CONNECTOR_READBACK') return
   assert.deepEqual(source.labels, { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'AUTH_REQUIRED' })
+  assert.equal(source.liveGate.gate, 'BLOCKED')
+  assert.ok(source.liveGate.violations.some((violation) => violation.includes('transport')))
   assert.equal(source.minuteToken, 'mt_wiring_lying')
   assert.equal(source.content.includes('面试官'), true)
+})
+
+test('resolveImportSource：证据齐全的 READ → LIVE/MANUAL/CONNECTED + LIVE_READBACK_VERIFIED（标签透出）', async () => {
+  const source = await resolveImportSource(
+    { interview_id: INTERVIEW, minute_token: 'mt_wiring_live' },
+    { adapter: fakeAdapter(async () => liveReadResult()), transport_configured: true },
+  )
+  assert.equal(source.mode, 'CONNECTOR_READBACK')
+  if (source.mode !== 'CONNECTOR_READBACK') return
+  assert.deepEqual(source.labels, { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' })
+  assert.equal(source.liveGate.gate, 'LIVE')
+  assert.equal(source.liveGate.provenance_basis, LIVE_READBACK_PROVENANCE_BASIS)
+  assert.deepEqual(source.liveGate.violations, [])
+  assert.equal(source.readback.read_receipt_ref.includes('@sha256:'), true)
+})
+
+test('resolveImportSource：回读对象自相矛盾（哈希不一致）→ BLOCKED/READBACK_INVALID，不是降级写 FIXTURE', async () => {
+  // 回执/声明哈希都是 aaaa…，但 raw_text 是 WIRING_RAW_TEXT：重算哈希对不上。
+  const reading = readResult({
+    readback: {
+      transport: 'FEISHU_MINUTES_API',
+      content_sha256: 'a'.repeat(64),
+      read_receipt_ref: `lark:minutes+detail:mt_wiring_bad@sha256:${'a'.repeat(64)}`,
+      reread_sha256: 'a'.repeat(64),
+    },
+  })
+  await assert.rejects(
+    () => resolveImportSource(
+      { interview_id: INTERVIEW, minute_token: 'mt_wiring_bad' },
+      { adapter: fakeAdapter(async () => reading), transport_configured: true },
+    ),
+    (error: unknown) => {
+      const parsed = errorBody(error)
+      assert.equal(parsed.code, 'BLOCKED')
+      assert.equal(parsed.reason_code, 'READBACK_INVALID')
+      const detail = parsed.detail as Record<string, unknown>
+      assert.equal(detail.creates_artifact, false)
+      assert.ok(Array.isArray(detail.violations) && (detail.violations as unknown[]).length > 0)
+      assert.match(String(parsed.message), /回读不一致是失败/)
+      return true
+    },
+  )
 })
 
 // ---------------------------------------------------------------------------

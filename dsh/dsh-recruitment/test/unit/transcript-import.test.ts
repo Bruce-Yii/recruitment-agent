@@ -103,7 +103,7 @@ test('content 上限：MAX 通过，MAX+1 被拒 OUT_OF_RANGE', () => {
   })
 })
 
-test('入参 schema：封闭对象根；labels 的 trigger/connection 是闭集（不可能出现 EVENT/CONNECTED）', () => {
+test('入参 schema：封闭对象根；labels 的 trigger/connection 是闭集（EVENT 不可能出现，CONNECTED 只给证据齐全）', () => {
   assert.notEqual(DATABASE, null)
   const tool = createTranscriptImportTool(DATABASE!)
   const parameters = tool.parameters as {
@@ -121,12 +121,20 @@ test('入参 schema：封闭对象根；labels 的 trigger/connection 是闭集�
   const schema = tool.output.schema as {
     properties: {
       labels: { properties: { trigger: { enum: string[] }; connection: { enum: string[] } } }
+      artifact: { properties: { connection_state: { enum: string[] } } }
     }
   }
   assert.deepEqual([...schema.properties.labels.properties.trigger.enum], ['MANUAL'])
-  // 连接器回读可以如实说 AUTH_REQUIRED；但绝不出现 CONNECTED（Live Gate=BLOCKED）。
-  assert.deepEqual([...schema.properties.labels.properties.connection.enum], ['NOT_CONNECTED', 'AUTH_REQUIRED'])
-  assert.equal(schema.properties.labels.properties.connection.enum.includes('CONNECTED'), false)
+  // CONNECTED 只在连接器回读**证据齐全**（evaluateLiveGate=LIVE）时出现；
+  // 它不再是常量禁止值，但也不是调用方可以自报的值（schema 是闭集，代码只认证据）。
+  assert.deepEqual(
+    [...schema.properties.labels.properties.connection.enum],
+    ['NOT_CONNECTED', 'AUTH_REQUIRED', 'CONNECTED'],
+  )
+  assert.deepEqual(
+    [...schema.properties.artifact.properties.connection_state.enum],
+    ['NOT_CONNECTED', 'AUTH_REQUIRED', 'CONNECTED'],
+  )
 })
 
 test('输出 schema 只用 DSH 子集：没有 type:null / type 数组', () => {
