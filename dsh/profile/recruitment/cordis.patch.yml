@@ -189,13 +189,24 @@
       name: '@recruitment/dsh-recruitment'
       config:
         converter:
-          python_bin: 'D:\Python3.12.9\python.exe'
-          converter_dir: 'D:\12412\dsh工作区\projects\recruitment-agent\converter'
+          # D-112/G9：仓库受管 profile **零机器路径**；值由部署环境提供，缺变量即
+          # fail-closed（`src/tools/converter.ts::resolveConverterConfig(config, env)` 逐条列 issue）。
+          # 变量名见 dsh/profile/recruitment/README.md 与 work/verify-2026-11-15-g7g9/wiring/env.example.ps1。
+          python_bin: '${RECRUITMENT_PYTHON_BIN}'
+          converter_dir: '${RECRUITMENT_CONVERTER_DIR}'
+          # 三个可读根各自一个变量：不做分隔符拆分（不猜格式、未定义即 fail-closed）。
           allowed_roots:
-            - 'D:\12412\dsh工作区\projects\resume-talent-pool'
-            - 'D:\12412\dsh工作区\orchestration'
-            - 'D:\12412\CodexWorkspace'
+            - '${RECRUITMENT_ALLOWED_ROOT_RESUME_POOL}'
+            - '${RECRUITMENT_ALLOWED_ROOT_ORCHESTRATION}'
+            - '${RECRUITMENT_ALLOWED_ROOT_CODEX}'
           timeout_ms: 180000
+        # G7：飞书 Minutes 只读连接器（真实读取）。cli 必须是绝对路径（禁止 PATH 回退）；
+        # profile 必须显式给出，绝不隐式落到 lark-cli 的开发者全局默认档案。
+        feishu:
+          cli: '${RECRUITMENT_FEISHU_CLI}'
+          profile: 'recruitment'
+          timeout_ms: 180000
+          max_attempts: 1
         database:
           host: 127.0.0.1
           port: 5432
@@ -226,6 +237,11 @@
           worker_profile: recruitment-worker
           runtime_version: '0.2.2-rc.3'
           model_route: 'opencode-go-openai-key2/longcat-2.5-free'
+          # G1（事件自动驱动）：插件进程内用专用连接持有 PG 咨询锁
+          # hashtext('recruitment:tick')，周期 router.tick()；多实例只有一个派发者。
+          # 缺省 true / 2000ms，此处显式写出便于 grep 与审计。
+          auto_tick: true
+          tick_interval_ms: 2000
 
 # ---------------------------------------------------------------------------
 # 把本包自带的 DSH skill 接进技能目录扫描根（复用 @deepseek-ai/dsh-skill-filesystem）。
@@ -235,7 +251,10 @@
 - id: skill-filesystem
   config:
     customSkillDirs:
-      - 'D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\skill'
+      # D-112/G9：目录由部署环境给出。DSH 的 profile patch 支持 `!!js` 表达式
+      # （`cordis-plugin-loader` 的 interpolate 只求值 `!!js`，普通字符串不展开 env），
+      # 所以这里用 DSH 原生能力，不 fork、不改基础包；缺变量时加载期 fail-closed。
+      - !!js process.env.RECRUITMENT_SKILL_DIR
 - id: ui-settings-general
   name: "@deepseek-ai/dsh-client-ui-settings-general"
   config:

@@ -35,6 +35,7 @@ import { createFeishuMinutesAdapter } from '../../src/connectors/feishu/index.ts
 import {
   FEISHU_CLI_DETAIL_HELP_ARGS,
   FEISHU_CLI_IDENTITY,
+  FEISHU_CLI_PROFILE_FLAG,
   FEISHU_CLI_REQUIRED_HELP_FLAGS,
   FEISHU_CLI_SEARCH_FLAGS,
   FEISHU_CLI_TRANSCRIPT_FLAGS,
@@ -43,6 +44,7 @@ import {
   buildTranscriptArgs,
   createLarkCliTransport,
   createProcessCliRunner,
+  detectCliConfigFailure,
   isoWithOffset,
   resolveOutputFile,
   sanitizeDiagnostic,
@@ -185,6 +187,27 @@ test('buildTranscriptArgs：实测真实 argv（复数 --minute-tokens / --as us
   assert.throws(() => buildTranscriptArgs({ tokens: [] }), /tokens 不能为空/)
 })
 
+test('buildTranscriptArgs：给了 profile → argv **最前面**插 --profile（全局 flag 必须在子命令前）；不给则逐字不变', () => {
+  assert.equal(FEISHU_CLI_PROFILE_FLAG, '--profile')
+  assert.deepEqual(buildTranscriptArgs({ tokens: ['mt_1'], profile: 'recruitment' }), [
+    '--profile', 'recruitment', 'minutes', '+detail', '--as', 'user', '--minute-tokens', 'mt_1',
+    '--transcript', '--output-dir', 'minutes',
+  ])
+  // 批量 + 追加参数时也只在最前面插一次。
+  assert.deepEqual(buildTranscriptArgs({ tokens: ['mt_1', 'mt_2'], profile: 'recruitment', extra_args: ['--format', 'json'] }).slice(0, 3), [
+    '--profile', 'recruitment', 'minutes',
+  ])
+  // 不给 profile = 与既有实测形态逐字一致（**不偷偷补**一个默认 profile）。
+  assert.equal(buildTranscriptArgs({ tokens: ['mt_1'] }).includes('--profile'), false)
+  assert.equal(buildTranscriptArgs({ tokens: ['mt_1'] })[0], 'minutes')
+  // 空白 profile 按「没配」处理：不产生 `--profile ''` 这种坏 argv。
+  assert.equal(buildTranscriptArgs({ tokens: ['mt_1'], profile: '   ' }).includes('--profile'), false)
+  // 合法 profile 名不改变 token / 输出目录语义。
+  const args = buildTranscriptArgs({ tokens: ['mt_1'], profile: 'recruitment' })
+  assert.equal(args[args.indexOf('--minute-tokens') + 1], 'mt_1')
+  assert.equal(args[args.indexOf('--output-dir') + 1], 'minutes')
+})
+
 test('flag 常量：与真实 --help 一致（复数 minute_tokens、output_dir、as user）', () => {
   assert.equal(FEISHU_CLI_TRANSCRIPT_FLAGS.minute_tokens, '--minute-tokens')
   assert.equal(FEISHU_CLI_TRANSCRIPT_FLAGS.transcript, '--transcript')
@@ -295,6 +318,32 @@ test('平台通道（脚本 runner）：两次完整回读哈希一致 → READ 
   assert.equal(described.envelope_verified, true)
   assert.equal(described.contract_checked_at !== null, true)
   assert.deepEqual([...described.missing_flags], [])
+})
+
+test('传输层：配了 profile → 每次调用（含重读校验两次）argv 都以 --profile 开头；没配则一次都不带', async () => {
+  const withProfile = writingRunner([TEXT, TEXT])
+  const transport = createLarkCliTransport({
+    runner: withProfile.runner,
+    retry_base_ms: 0,
+    platform_channel: true,
+    profile: 'recruitment',
+  })
+  const result = await transport.read({ minute_token: 'mt_1' })
+  assert.equal(result.status, 'READ')
+  assert.equal(withProfile.calls.length, 2, '平台通道必须完整读两次做重读校验')
+  for (const call of withProfile.calls) {
+    assert.deepEqual(call.args.slice(0, 3), ['--profile', 'recruitment', 'minutes'], '每次调用（含重读）都要带 --profile')
+    assert.equal(call.args.includes('--profile'), true)
+  }
+  assert.equal(transport.describe().profile_configured, true)
+
+  const without = writingRunner([TEXT])
+  const plain = createLarkCliTransport({ runner: without.runner, retry_base_ms: 0 })
+  assert.equal((await plain.read({ minute_token: 'mt_1' })).status, 'READ')
+  assert.equal(without.calls.length, 1)
+  assert.equal(without.calls[0]!.args.includes('--profile'), false, '没配 profile 时 argv 与旧形态一致')
+  assert.equal(without.calls[0]!.args[0], 'minutes')
+  assert.equal(plain.describe().profile_configured, false)
 })
 
 test('平台通道：两次回读哈希不一致 → FAILED/READBACK_INVALID（不一致是失败，不是警告）', async () => {
@@ -478,6 +527,79 @@ test('非零退出 + 2091005：AUTH_REQUIRED 语义，不重试（TR-F2）', asy
   assert.equal(calls.length, 1, '无权限不得重试到死')
 })
 
+test('detectCliConfigFailure：只认 error.type ∈ {config,auth} 或 subtype=not_configured，其它一律 null', () => {
+  for (const stderr of [
+    JSON.stringify({ ok: false, error: { type: 'config', subtype: 'not_configured', message: 'profile "x" not found' } }),
+    JSON.stringify({ ok: false, error: { type: 'auth', message: 'token expired' } }),
+    JSON.stringify({ ok: false, error: { subtype: 'not_configured' } }),
+  ]) {
+    assert.notEqual(detectCliConfigFailure(stderr), null, stderr)
+  }
+  assert.deepEqual(detectCliConfigFailure(JSON.stringify({ error: { type: 'auth' } })), { type: 'auth', subtype: null })
+  assert.deepEqual(detectCliConfigFailure(JSON.stringify({ error: { subtype: 'not_configured' } })), { type: null, subtype: 'not_configured' })
+  // 其它形状：不认识就是 null（交原有逻辑），不猜。
+  for (const stderr of [
+    '',
+    'boom',
+    `warning: ${JSON.stringify({ error: { type: 'config' } })}`,
+    JSON.stringify({ error: { type: 'network', code: 2091003 } }),
+    JSON.stringify({ error: { code: 2091005 } }),
+    JSON.stringify({ ok: false }),
+    '  {not json',
+  ]) {
+    assert.equal(detectCliConfigFailure(stderr), null, `不该识别为配置/凭据失败：${stderr}`)
+  }
+})
+
+test('CLI 配置/凭据层失败（坏 profile：exit 3 + stderr config JSON）→ PROVIDER_REJECTED / retryable=false，不重试', async () => {
+  const configError = JSON.stringify({
+    ok: false,
+    identity: 'user',
+    error: {
+      type: 'config',
+      subtype: 'not_configured',
+      message: 'profile "__recruitment_no_such_profile__" not found',
+      hint: 'available profiles: recruitment',
+    },
+    _notice: { tip: 'x' },
+  })
+  const { runner, calls } = scripted([exitWith(3, configError), exitWith(3, configError), exitWith(3, configError)])
+  const transport = createLarkCliTransport({
+    runner,
+    retry_base_ms: 0,
+    max_attempts: 3,
+    profile: '__recruitment_no_such_profile__',
+  })
+  const result = await transport.read({ minute_token: 'mt_1' })
+  assert.equal(result.status, 'FAILED')
+  if (result.status !== 'FAILED') return
+  assert.equal(result.error.stage, 'invoke')
+  assert.equal(result.error.code, 'PROVIDER_REJECTED')
+  assert.equal(result.error.retryable, false, '配置/凭据错误重试不可能变好')
+  assert.equal(result.error.attempts, 1)
+  assert.equal(result.error.exit_code, 3)
+  assert.equal(result.error.provider_code, '', '这类 JSON 没有 code 就不编一个')
+  assert.equal(calls.length, 1, '默认 max_attempts=3 也不得重试')
+  assert.match(result.error.message, /配置\/凭据错误/)
+  assert.match(result.error.message, /不重试/)
+  assert.equal(result.error.message.includes('__recruitment_no_such_profile__'), false, '诊断不得回显 profile 名')
+  assert.equal(result.error.message.includes('mt_1'), false, '诊断不得回显 argv / minute_token')
+})
+
+test('ok=false 的配置类错误（stdout 信封）仍是 parse 阶段的 PROVIDER_REJECTED（既有映射不回归）', async () => {
+  const { runner, calls } = scripted([
+    ok(JSON.stringify({ ok: false, identity: 'user', error: { type: 'config', subtype: 'not_configured', message: 'profile "x" not found' } })),
+  ])
+  const transport = createLarkCliTransport({ runner, retry_base_ms: 0, max_attempts: 3, profile: 'recruitment' })
+  const result = await transport.read({ minute_token: 'mt_1' })
+  assert.equal(result.status, 'FAILED')
+  if (result.status !== 'FAILED') return
+  assert.equal(result.error.stage, 'invoke')
+  assert.equal(result.error.code, 'PROVIDER_REJECTED')
+  assert.equal(result.error.retryable, false)
+  assert.equal(calls.length, 1)
+})
+
 test('形状不认识：非 JSON → stage=parse / ENVELOPE_UNRECOGNIZED，且不回显输出内容', async () => {
   const { runner } = scripted([ok(`not json：${SECRET_BODY}`)])
   const transport = createLarkCliTransport({ runner, retry_base_ms: 0 })
@@ -558,6 +680,24 @@ test('verifyContract：默认 false；真实 --help 全 flag → argument=true�
   assert.equal(after.contract_checked_at !== null, true)
 })
 
+test('verifyContract：配了 profile 时 --help 探测也带 --profile（与真实调用同一条 argv 纪律）', async () => {
+  const helpText = [
+    'Usage:',
+    '  lark-cli minutes +detail [flags]',
+    'Flags:',
+    '      --as string              identity type: user',
+    '      --minute-tokens string   minute tokens, comma-separated for batch',
+    '      --output-dir string      output directory for transcript files',
+    '      --transcript             include transcript (saved to file)',
+  ].join('\n')
+  const { runner, calls } = scripted([ok(helpText)])
+  const transport = createLarkCliTransport({ runner, retry_base_ms: 0, profile: 'recruitment' })
+  const evidence = await transport.verifyContract()
+  assert.equal(evidence.argument_flags_verified, true)
+  assert.deepEqual(calls[0]!.args, ['--profile', 'recruitment', 'minutes', '+detail', '--help'])
+  assert.equal(calls[0]!.args.indexOf(FEISHU_CLI_PROFILE_FLAG), 0, '--profile 必须是 argv 第一个 token')
+})
+
 test('verifyContract：--help 缺 flag → argument 仍 false，并列出缺哪些', async () => {
   const { runner } = scripted([ok('Flags:\n  --as string\n  --transcript\n')])
   const transport = createLarkCliTransport({ runner, retry_base_ms: 0 })
@@ -594,6 +734,7 @@ test('describe()：默认测试通道 / 形态未探测 / live_gate 口径名', 
   assert.equal(described.live_gate, 'EVIDENCE_DRIVEN')
   assert.equal(FEISHU_LIVE_GATE_POLICY, 'EVIDENCE_DRIVEN')
   assert.equal(described.platform_channel, false)
+  assert.equal(described.profile_configured, false)
   assert.equal(described.readback_transport, FEISHU_TRANSPORT.fixture)
   assert.equal(described.argument_flags_verified, false)
   assert.equal(described.envelope_verified, false)
@@ -606,6 +747,14 @@ test('describe()：平台通道 → 标称 readback_transport=API', () => {
   const transport = createLarkCliTransport({ runner: async () => ok('{}'), platform_channel: true })
   assert.equal(transport.describe().platform_channel, true)
   assert.equal(transport.describe().readback_transport, FEISHU_TRANSPORT.api)
+})
+
+test('describe()：profile_configured 只报布尔、不输出 profile 名（诊断不带 argv）', () => {
+  const transport = createLarkCliTransport({ runner: async () => ok('{}'), profile: 'recruitment' })
+  const described = transport.describe()
+  assert.equal(described.profile_configured, true)
+  assert.equal(JSON.stringify(described).includes('recruitment'), false, 'describe() 不得输出 profile 名')
+  assert.match(described.note, /--profile/)
 })
 
 // ---------------------------------------------------------------------------

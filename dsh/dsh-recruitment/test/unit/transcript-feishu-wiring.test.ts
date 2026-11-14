@@ -3,8 +3,10 @@
 // 背景：连接器包（contract / labels / adapter / transport）早就实现完整，但全仓
 // 没有任何工具 import 它 —— 只被单测调用 = R2 的 BLOCKED，不是能力。本文件证明四件事：
 //
-//   1. **传输层只能从插件配置装配**：只有 `feishu.cli` 的**绝对路径**才会建
-//      `lark-cli-transport`；相对路径/裸命令名被拒绝，绝不回退 PATH / 宿主环境变量（R7）。
+//   1. **传输层只能从插件配置装配**：只有 `feishu.cli` 的**绝对路径** + 显式
+//      `feishu.profile` 才会建 `lark-cli-transport`；相对路径/裸命令名被拒绝，
+//      缺/坏 profile 也被拒绝（不传 `--profile` = 隐式回退开发者全局档案），
+//      绝不回退 PATH / 宿主环境变量（R7）。
 //   2. **默认态 fail-closed**：没配传输层时 `recruitment_transcript_import` 的连接器回读
 //      路径返回 `BLOCKED / TRANSPORT_NOT_CONFIGURED`，且是在**建连/写入之前**失败
 //      （测试用"连不上的数据库配置"当哨兵：真去连就会是连接错误，而不是 BLOCKED）。
@@ -28,7 +30,10 @@ import {
   FEISHU_LIVE_GATE_POLICY,
   LIVE_READBACK_PROVENANCE_BASIS,
   createFeishuMinutesAdapter,
+  createLarkCliTransport,
   resolveFeishuConnector,
+  type FeishuCliInvocation,
+  type FeishuCliRunner,
   type FeishuMinutesAdapter,
 } from '../../src/connectors/feishu/index.ts'
 import {
@@ -240,7 +245,8 @@ test('resolveFeishuConnector：相对路径 / 裸命令名一律拒绝（绝不�
 })
 
 test('resolveFeishuConnector：绝对路径才装配；CLI 不存在时真实发起调用 → BLOCKED/CLI_UNAVAILABLE，标签仍 FIXTURE', async () => {
-  const resolved = resolveFeishuConnector({ cli: MISSING_CLI, timeout_ms: 5_000, max_attempts: 1 }, FAKE_AUTH_ENV)
+  // G7 语义收紧：cli 与 profile 必须**同时**配置才装配（不传 --profile = 隐式回退默认档案）。
+  const resolved = resolveFeishuConnector({ cli: MISSING_CLI, profile: 'recruitment', timeout_ms: 5_000, max_attempts: 1 }, FAKE_AUTH_ENV)
   assert.ok(resolved.connector, '绝对路径必须装配出连接器依赖')
   assert.equal(resolved.transport_configured, true)
   assert.deepEqual(resolved.issues, [])
@@ -263,6 +269,144 @@ test('resolveFeishuConnector：绝对路径才装配；CLI 不存在时真实发
   // 真实走过 locate-cli 阶段（ENOENT），说明装配出来的确实是会发起调用的传输层。
   assert.equal(result.failure?.code, 'CLI_NOT_FOUND')
   assert.equal(JSON.stringify(result).includes('mt_wiring_1'), false, '不得回声 minute_token')
+})
+
+// ---------------------------------------------------------------------------
+// 1b. profile：必须显式给出且合法（不传 --profile = 隐式回退开发者全局档案）
+// ---------------------------------------------------------------------------
+
+test('resolveFeishuConnector：cli 绝对但没给 profile（缺省/空串/纯空白）→ 拒绝装配', () => {
+  for (const config of [
+    { cli: MISSING_CLI },
+    { cli: MISSING_CLI, profile: '' },
+    { cli: MISSING_CLI, profile: '   ' },
+  ]) {
+    const resolved = resolveFeishuConnector(config, FAKE_AUTH_ENV)
+    assert.equal(resolved.connector, undefined, `缺 profile 不得装配：${JSON.stringify(config)}`)
+    assert.equal(resolved.transport_configured, false)
+    assert.equal(resolved.issues.length, 1)
+    assert.match(resolved.issues[0] ?? '', /feishu\.profile is required/)
+    assert.match(resolved.issues[0] ?? '', /developer global default profile/)
+    assert.match(resolved.issues[0] ?? '', /forbidden/)
+  }
+})
+
+test('resolveFeishuConnector：非法 profile 名（含空白/换行、以 - 开头）→ 拒绝装配，且不回显 profile 值', () => {
+  for (const profile of ['recruitment worker', 'recruitment\nsecond', '-recruitment', 'rec ruitment']) {
+    const resolved = resolveFeishuConnector({ cli: MISSING_CLI, profile }, FAKE_AUTH_ENV)
+    assert.equal(resolved.connector, undefined, `${JSON.stringify(profile)} 不得被装配`)
+    assert.equal(resolved.transport_configured, false)
+    assert.equal(resolved.issues.length, 1)
+    assert.match(resolved.issues[0] ?? '', /config\.feishu\.profile 非法/)
+    assert.equal(resolved.issues[0]?.includes(profile.trim()), false, '不得回显 profile 值')
+  }
+})
+
+test('resolveFeishuConnector：${ENV} 展开成功才装配；未定义/空值变量逐条 issue（点名变量、不猜默认值）', () => {
+  const envCli = join(tmpdir(), 'dsh-feishu-env-expand', process.platform === 'win32' ? 'lark-cli.exe' : 'lark-cli')
+  const expanded = resolveFeishuConnector(
+    { cli: '${RECRUITMENT_FEISHU_CLI}', profile: '${RECRUITMENT_FEISHU_PROFILE}' },
+    { RECRUITMENT_FEISHU_CLI: envCli, RECRUITMENT_FEISHU_PROFILE: 'recruitment' },
+  )
+  assert.equal(expanded.transport_configured, true, '两个变量都能展开时必须装配')
+  assert.ok(expanded.connector)
+  assert.deepEqual(expanded.issues, [])
+
+  const missingCli = resolveFeishuConnector({ cli: '${RECRUITMENT_FEISHU_CLI}', profile: 'recruitment' }, {})
+  assert.equal(missingCli.connector, undefined)
+  assert.equal(missingCli.transport_configured, false)
+  assert.equal(missingCli.issues.length, 1)
+  assert.match(missingCli.issues[0] ?? '', /config\.feishu\.cli/)
+  assert.match(missingCli.issues[0] ?? '', /RECRUITMENT_FEISHU_CLI/)
+
+  const blankCli = resolveFeishuConnector(
+    { cli: '${RECRUITMENT_FEISHU_CLI}', profile: 'recruitment' },
+    { RECRUITMENT_FEISHU_CLI: '   ' },
+  )
+  assert.equal(blankCli.connector, undefined, '空值变量不得拿原文当值、也不猜默认值')
+  assert.match(blankCli.issues[0] ?? '', /RECRUITMENT_FEISHU_CLI/)
+
+  const missingProfile = resolveFeishuConnector({ cli: envCli, profile: '${RECRUITMENT_FEISHU_PROFILE}' }, {})
+  assert.equal(missingProfile.connector, undefined)
+  assert.equal(missingProfile.issues.length, 1)
+  assert.match(missingProfile.issues[0] ?? '', /config\.feishu\.profile/)
+  assert.match(missingProfile.issues[0] ?? '', /RECRUITMENT_FEISHU_PROFILE/)
+
+  // 只认 `${NAME}` 这一种形状：`$NAME` 原样保留（不猜、不吞）→ 仍是相对名 → 绝对路径拒绝。
+  const unknownShape = resolveFeishuConnector({ cli: '$RECRUITMENT_FEISHU_CLI', profile: 'recruitment' }, {})
+  assert.equal(unknownShape.connector, undefined)
+  assert.match(unknownShape.issues[0] ?? '', /absolute path/)
+})
+
+test('profile-backed 凭据桥（presence-only）：空 env 也跨过 NO_APP_CREDENTIALS 门 → 真实调用 CLI_UNAVAILABLE', async () => {
+  // 空 env：没有 presence-only 凭据桥时，adapter 会在传输层之前 BLOCKED/NO_APP_CREDENTIALS。
+  const resolved = resolveFeishuConnector(
+    { cli: MISSING_CLI, profile: 'recruitment', timeout_ms: 5_000, max_attempts: 1 },
+    {},
+  )
+  assert.ok(resolved.connector, 'cli + profile 必须装配（凭据由 CLI profile 持有）')
+  assert.equal(resolved.transport_configured, true)
+  const result = await resolved.connector.adapter.fetchTranscript({ minute_token: 'mt_profile_bridge' }) as {
+    kind: string
+    error_code?: string
+    blocked_reason?: string
+    creates_artifact?: boolean
+    failure?: { code?: string; stage?: string }
+  }
+  assert.equal(result.kind, 'BLOCKED')
+  assert.equal(result.blocked_reason, 'CLI_UNAVAILABLE', '必须走到传输层（而不是 NO_APP_CREDENTIALS）')
+  assert.equal(result.failure?.code, 'CLI_NOT_FOUND')
+  assert.equal(result.failure?.stage, 'locate-cli')
+  assert.equal(result.creates_artifact, false)
+  assert.equal(JSON.stringify(result).includes('mt_profile_bridge'), false, '不得回声 minute_token')
+  // 哨兵值不得出现在出口里（它只是让存在性判断通过）。
+  assert.equal(JSON.stringify(result).includes('<lark-cli-profile>'), false)
+})
+
+test('坏 profile：配置/凭据层失败 → adapter 出口 AUTH_REQUIRED（不重试、零 artifact、不回显 profile 名）', async () => {
+  const calls: FeishuCliInvocation[] = []
+  /** 实测坏 profile 的形态：exit 3、stdout 空、stderr 是 JSON。 */
+  const CONFIG_ERROR_STDERR = JSON.stringify({
+    ok: false,
+    identity: 'user',
+    error: {
+      type: 'config',
+      subtype: 'not_configured',
+      message: 'profile "__recruitment_no_such_profile__" not found',
+      hint: 'available profiles: recruitment',
+    },
+    _notice: { tip: 'run `lark-cli profile list`' },
+  })
+  const runner: FeishuCliRunner = async (invocation) => {
+    calls.push(invocation)
+    return { status: 'NON_ZERO_EXIT', exit_code: 3, signal: null, stdout: '', stderr: CONFIG_ERROR_STDERR }
+  }
+  const transport = createLarkCliTransport({
+    runner,
+    platform_channel: true,
+    profile: '__recruitment_no_such_profile__',
+    max_attempts: 3,
+    retry_base_ms: 0,
+  })
+  const adapter = createFeishuMinutesAdapter({ env: FAKE_AUTH_ENV, transport })
+  const result = await adapter.fetchTranscript({ minute_token: 'mt_bad_profile' }) as {
+    kind: string
+    error_code?: string
+    blocked_reason?: string
+    creates_artifact?: boolean
+    failure?: { code?: string; stage?: string; attempts?: number }
+  }
+  assert.equal(result.kind, 'BLOCKED')
+  assert.equal(result.error_code, 'AUTH_REQUIRED', 'G7 验收：坏 profile → AUTH_REQUIRED')
+  // adapter.ts 的既有映射（本 lane 不改 adapter）：PROVIDER_REJECTED → PROVIDER_NO_PERMISSION。
+  assert.equal(result.blocked_reason, 'PROVIDER_NO_PERMISSION')
+  assert.equal(result.creates_artifact, false)
+  assert.equal(result.failure?.code, 'PROVIDER_REJECTED')
+  assert.equal(result.failure?.stage, 'invoke')
+  assert.equal(result.failure?.attempts, 1)
+  assert.equal(calls.length, 1, '配置/凭据错误不得重试')
+  assert.equal(JSON.stringify(result).includes('__recruitment_no_such_profile__'), false, '不得回显 profile 名')
+  assert.equal(JSON.stringify(result).includes('mt_bad_profile'), false, '不得回声 minute_token')
 })
 
 // ---------------------------------------------------------------------------
@@ -557,7 +701,7 @@ test('apply() 注册入口：feishu.cli（插件配置）→ 注册的 recruitme
       tenant_id: TENANT,
       actor_id: ACTOR,
     },
-    feishu: { cli: MISSING_CLI, timeout_ms: 5_000, max_attempts: 1 },
+    feishu: { cli: MISSING_CLI, profile: 'recruitment', timeout_ms: 5_000, max_attempts: 1 },
   }, { ...FAKE_AUTH_ENV, RECRUITMENT_DB_PASSWORD: 'unused-in-this-test' })
 
   const names = registered.map((tool) => tool.name)

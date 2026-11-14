@@ -4,7 +4,9 @@
 // lark-cli 1.0.81 核对过形态（`minutes +detail --help` + 两次真实读取，见
 // `evidence/experiments/2026-11-14-feishu-live-read/`）：
 //
-//   命令：`lark-cli minutes +detail --as user --minute-tokens <token> --transcript --output-dir <相对目录>`
+//   命令：`lark-cli [--profile <name>] minutes +detail --as user --minute-tokens <token> --transcript --output-dir <相对目录>`
+//         （`--profile` 是**全局 flag**，必须写在 `minutes` 之前；不传会回退默认档案，
+//          接线层因此要求 `feishu.cli` 与 `feishu.profile` 同时配置，见 `wiring.ts`。）
 //   stdout：`{ok, identity, data:{minutes:[{minute_token, title, artifacts:{transcript_file}}]}, meta}`
 //   正文：**不在 stdout**，在 `transcript_file`（相对子进程 cwd 的落盘文件）里；
 //         传输层把文件读成字节、算 sha256、再删掉临时目录（正文不留在仓库/日志里）。
@@ -82,6 +84,14 @@ export const FEISHU_CLI_DEFAULT_OUTPUT_DIR = 'minutes'
 
 /** `--as` 的取值：妙记是 user identity（2026-11-14 实测 `--as user` 可用）。 */
 export const FEISHU_CLI_IDENTITY = 'user'
+
+/**
+ * 全局 `--profile` flag（2026-11-15 实测：`lark-cli --profile <name> <domain> …`，
+ * **必须写在子命令之前**）。不给 profile 时 lark-cli 会回退到默认档案（本机是
+ * 开发者全局 profile `cli_aae49f8438f8dce4`），这正是 `AGENTS.md §7.6` 禁止的
+ * 「拿开发者全局 CLI 当产品凭据」那条路，所以接线层要求 `cli` 与 `profile` 同时配置。
+ */
+export const FEISHU_CLI_PROFILE_FLAG = '--profile'
 
 /**
  * `minutes +detail` 的真实 flag（2026-11-14 逐字核对 `lark-cli minutes +detail --help`）。
@@ -390,6 +400,49 @@ function providerCodeOf(value: unknown): string | null {
   return null
 }
 
+/** lark-cli **配置/授权层**错误的结构投影（只取结构字段，不取 message）。 */
+export interface FeishuCliConfigFailure {
+  /** `error.type`；不是字符串时 null。 */
+  readonly type: string | null
+  /** `error.subtype`；不是字符串时 null。 */
+  readonly subtype: string | null
+}
+
+/**
+ * 识别「lark-cli 配置/授权层失败」。
+ *
+ * 2026-11-15 实测坏 profile 的形态：**exit 3、stdout 为空、stderr 是 JSON**：
+ * `{"ok":false,"identity":"user","error":{"type":"config","subtype":"not_configured",
+ *   "message":"profile \"…\" not found","hint":"available profiles: …"},"_notice":{…}}`。
+ * 这类失败**不是传输抖动**（重试不可能变好），也不是「生成中」。只认：
+ *   * `error.type ∈ {config, auth}`，或
+ *   * `error.subtype === 'not_configured'`；
+ * 其它形状（含非 JSON、别的 type）返回 null，交原有逻辑处理。
+ * **不取 message**：平台/CLI 的 message 可能带租户内容或 profile 名，不进诊断文本
+ * （原文只经 `sanitizeDiagnostic()` 之后才可能出现在 stderr 切片里）。
+ * @param stderr - 子进程 stderr 原文。
+ * @returns 结构投影；不是配置/授权层失败时返回 null（不猜）。
+ */
+export function detectCliConfigFailure(stderr: string): FeishuCliConfigFailure | null {
+  const text = typeof stderr === 'string' ? stderr.trim() : ''
+  if (!text.startsWith('{')) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null
+  const nested = (parsed as Record<string, unknown>).error
+  if (typeof nested !== 'object' || nested === null) return null
+  const error = nested as Record<string, unknown>
+  const type = typeof error.type === 'string' ? error.type : null
+  const subtype = typeof error.subtype === 'string' ? error.subtype : null
+  if (type === 'config' || type === 'auth') return { type, subtype }
+  if (subtype === 'not_configured') return { type, subtype }
+  return null
+}
+
 // ---------------------------------------------------------------------------
 // 错误
 // ---------------------------------------------------------------------------
@@ -544,6 +597,11 @@ export interface FeishuTransportDescription {
   readonly live_gate: FeishuLiveGatePolicy
   /** 这条 runner 是否被接线层声明为真实平台通道。 */
   readonly platform_channel: boolean
+  /**
+   * 是否配置了 lark-cli profile（`--profile <name>`）。**只报布尔、不输出名字**：
+   * profile 名不是 secret，但诊断里也没有必要带它（argv 不外泄的既有纪律）。
+   */
+  readonly profile_configured: boolean
   /** 该通道的**标称**回读 transport；某个回读到底算不算 LIVE，由证据判定。 */
   readonly readback_transport: FeishuTransport
   /** 参数名核实状态：由真实 `--help` 探测 / 成功真实调用决定，默认 false。 */
@@ -823,6 +881,13 @@ export interface FeishuLarkCliTransportConfig {
   /** **必填**：怎么跑 CLI。生产用 `createProcessCliRunner()`，测试用假 runner。 */
   readonly runner: FeishuCliRunner
   /**
+   * lark-cli 的 profile 名（`--profile <name>`，**全局 flag，必须在子命令前**）。
+   * 给了 profile 时每次真实调用（含 `--help` 形态探测与重读校验）的 argv 最前面
+   * 都会插入 `['--profile', name]`；不给 = argv 与旧形态一致，**由调用方保证**
+   * 这不是「隐式回退开发者全局档案」——接线层（`wiring.ts`）已经拒绝这种配置。
+   */
+  readonly profile?: string
+  /**
    * 这条 runner 是否指向**真实平台通道**（lark-cli）。**只有接线层**按部署配置
    * 置 true（`wiring.ts`：插件配置里的 `feishu.cli` 绝对路径）；直接 new 一个
    * 传输层（单测 / 回放）默认 false = 测试通道，回读 `transport` 恒 `FIXTURE`。
@@ -856,20 +921,26 @@ export interface FeishuTranscriptArgsInput {
   readonly output_dir?: string
   /** 追加参数。 */
   readonly extra_args?: readonly string[]
+  /** lark-cli profile 名；给了就插到 argv **最前面**（全局 flag 必须在子命令前）。 */
+  readonly profile?: string
 }
 
 /**
  * 按**实测真实形态**拼 `minutes +detail` 的 argv：
- * `minutes +detail --as user --minute-tokens <tokens> --transcript --output-dir <dir>`。
+ * 不带 profile：`minutes +detail --as user --minute-tokens <tokens> --transcript --output-dir <dir>`；
+ * 带 profile：`--profile <name> minutes +detail …`（`--profile` 是全局 flag，实测必须
+ * 写在子命令之前；2026-11-15）。
  *
  * 不消费 `FEISHU_LARK_CLI.minutesDetailTranscript` 的空格切分（那只是人读模板，
  * 含 `<tokens>` 占位符）；flag 来自 `FEISHU_CLI_TRANSCRIPT_FLAGS`，两者同源。
- * @param input - token 列表 / 相对输出目录 / 追加参数。
+ * @param input - token 列表 / 相对输出目录 / 追加参数 / profile。
  */
 export function buildTranscriptArgs(input: FeishuTranscriptArgsInput): string[] {
   if (input.tokens.length === 0) throw new Error('buildTranscriptArgs: tokens 不能为空')
   const outputDir = input.output_dir ?? FEISHU_CLI_DEFAULT_OUTPUT_DIR
+  const profile = readNonEmptyString(input.profile)
   return [
+    ...(profile === null ? [] : [FEISHU_CLI_PROFILE_FLAG, profile]),
     'minutes',
     '+detail',
     FEISHU_CLI_TRANSCRIPT_FLAGS.as,
@@ -910,6 +981,9 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
   const now = config.now ?? ((): Date => new Date())
   const sleep = config.sleep ?? defaultSleep
   const platformChannel = config.platform_channel === true
+  // profile 语义：给了就每次调用都带 `--profile <name>`（含重读校验与 --help 探测）。
+  // 空串/空白按「没配」处理（接线层已经拒绝这种配置，这里只是不让空 flag 进 argv）。
+  const profile = readNonEmptyString(config.profile)
 
   // ---- CLI 形态探测状态（**默认 false**；只由真实 --help / 真实成功调用置 true）----
   let argumentFlagsVerified = false
@@ -1006,6 +1080,26 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
         diagnostic,
       })
     }
+    // CLI **配置/授权层**失败（坏 profile / 未授权 / 没有可用 profile 等）：重试不可能
+    // 变好，也不是「生成中」。复用既有错误码 PROVIDER_REJECTED 而不是新造一个：
+    // `adapter.ts` 的 `blockedReasonFor()` 只把 PROVIDER_NO_PERMISSION / PROVIDER_REJECTED
+    // 映射到 `error_code=AUTH_REQUIRED` —— 这是「坏 profile → AUTH_REQUIRED」在既有闭集
+    // 里唯一可达的路径（adapter.ts 不在本 lane 写范围，不得为此改它）。
+    // detail 只写通用文案：不带 profile 名、不带 argv（argv 可能含会议标识）。
+    if (detectCliConfigFailure(result.stderr) !== null) {
+      return new FeishuTransportError({
+        stage: 'invoke',
+        code: 'PROVIDER_REJECTED',
+        detail:
+          'lark-cli 配置/凭据错误：profile 不存在或未授权；不重试、不产出正文，'
+          + '交人工修复 profile / 重新授权（本次没有正文，也没有 artifact）。',
+        exit_code: result.exit_code,
+        provider_code: providerCode,
+        retryable: false,
+        attempts: attempt,
+        diagnostic,
+      })
+    }
     return new FeishuTransportError({
       stage: 'invoke',
       code: 'CLI_NON_ZERO_EXIT',
@@ -1085,7 +1179,11 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
       }
     }
     try {
-      const args = buildTranscriptArgs({ tokens: [minuteToken], extra_args: extraArgs })
+      const args = buildTranscriptArgs({
+        tokens: [minuteToken],
+        extra_args: extraArgs,
+        ...(profile === null ? {} : { profile }),
+      })
       let outcome: Awaited<ReturnType<typeof callOnce>>
       try {
         outcome = await callOnce(args, workDir)
@@ -1272,7 +1370,8 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
     let result: FeishuCliRunResult | null = null
     try {
       result = await runner({
-        args: [...FEISHU_CLI_DETAIL_HELP_ARGS],
+        // 形态探测与真实调用走同一条 argv 纪律：配了 profile 就先带 `--profile`。
+        args: [...(profile === null ? [] : [FEISHU_CLI_PROFILE_FLAG, profile]), ...FEISHU_CLI_DETAIL_HELP_ARGS],
         timeout_ms: Math.min(timeoutMs, 30_000),
         attempt: 1,
       })
@@ -1305,6 +1404,7 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
       diagnostic_bytes: diagnosticBytes,
       live_gate: FEISHU_LIVE_GATE_POLICY,
       platform_channel: platformChannel,
+      profile_configured: profile !== null,
       readback_transport: readbackTransport(platformChannel),
       argument_flags_verified: evidence.argument_flags_verified,
       envelope_verified: evidence.envelope_verified,
@@ -1315,6 +1415,9 @@ export function createLarkCliTransport(config: FeishuLarkCliTransportConfig): Fe
         + 'stdout 只给 `artifacts.transcript_file`，正文从落盘文件读、算 sha 后删临时目录。'
         + `参数名核实=${String(evidence.argument_flags_verified)}（由真实 --help 决定），`
         + `信封核实=${String(evidence.envelope_verified)}（由真实成功读取决定）。`
+        + (profile === null
+          ? '本 transport 未配置 lark-cli profile（argv 不带 --profile）：只有接线层保证不会隐式回退开发者全局档案时才允许这样装配。'
+          : '本 transport 配置了 lark-cli profile：每次真实调用（含 --help 探测与重读校验）的 argv 最前面都带 --profile（名字不输出）。')
         + 'LIVE 由证据算出（evaluateLiveGate）；'
         + (platformChannel
           ? '本 transport 被接线层声明为平台通道：成功读取后会再读一次做重读校验，两次哈希/版本一致才把 transport 标为 FEISHU_MINUTES_API。'
