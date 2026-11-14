@@ -1,18 +1,25 @@
 // 真实语料回归（docs/11 §11「真实语料回归」的唯一可执行入口）。
 //
-// 为什么单列：解析层的 73 条测试**全部**是合成 fixture，证明的是"规则按设计执行"，
+// 为什么单列：解析层此前的测试**全部**是合成 fixture，证明的是"规则按设计执行"，
 // 不能证明"真实文件能读出来"。2026-11-14 第一次跑 52 份真实简历就暴露了合成 fixture
 // 无一命中的问题（2 字节空占位 PDF 被旧消息报成"格式不支持"）。所以每次解析层改动，
 // 都必须用真实语料抽样回归，见 docs/11 §11.2。
 //
-// 这个文件的三条纪律：
+// 这个文件的五条纪律：
 //   1. **不依赖语料存在**：语料目录不存在 / 里面没有可读文档 / 本机没有 Python 时
 //      `test.skip`，并在 skip 原因里写清缺什么。跳过不是通过（E2 三数口径）。
-//   2. **不断言具体份数与成功率**：语料会变。统计表只打印给人看，
-//      是否达到 R-1（≥95%）/ R-2（≥90%）由人对照 docs/11 §11.3 判定。
-//   3. **只断言一件事**：每一份失败都必须能归到一条明确的 `reason_code`
-//      （`DocumentReadErrorCode` 14 个之一），且 message 非空——即 R-3「失败可归因」。
-//      这条是"错误可诊断"的硬约束：不允许出现"失败了"三个字。
+//   2. **门槛判定只认全量**（总控 2026-11-14 裁决）：R-1/R-2/R-3 是否达标只有覆盖全部文档
+//      的跑法才能下结论——1/52 的坏文件在默认 20 份里命中概率只有 ~38%，抽样跑的 R-3 是空断言。
+//      门槛跑法：`RECRUITMENT_CORPUS_GATE=1` + `RECRUITMENT_CORPUS_SAMPLE=all`；
+//      声明了 GATE 却没用全量 → 直接 fail（不允许被抽样绕过）。
+//   3. **默认抽样保留但只做开发回路**：输出 `SAMPLED — 不构成门槛判定`，
+//      断言里不得出现 R-3 达标结论（只对"本次观察到的失败"做可归因 smoke 检查）。
+//   4. **不断言具体份数与成功率**：语料会变。统计表只打印给人看；R-1/R-2 是否达标由人看
+//      全量跑法打印的 thresholds 行判定，测试不因 R-1/R-2 数字失败。
+//   5. **超时口径跟产品走**：缺省 180s（与 `dsh/profile/recruitment/cordis.patch.yml`
+//      一致），不是 60s——OCR 兜底后单份真实简历可达 53s+，用 60s 会把"慢"误报成"读不出"。
+//      失败还会按 file_unreadable / reader_defect / reader_failed_or_slow / not_attempted
+//      归类打印，避免把 reader bug 混成"语料坏了"（D-99 / docs/11 §11.3）。
 //
 // 走的是**真实工具入口** `recruitment_document_read`（createDocumentReadTool），
 // 不是绕过工具直接调 reader：`blocking_for_structure` 的判定逻辑只存在于
@@ -43,6 +50,14 @@ const CORPUS_ROOT = (process.env.RECRUITMENT_CORPUS_ROOT ?? '').trim() === ''
 const DEFAULT_SAMPLE_SIZE = 20
 
 /**
+ * 缺省单份读取超时：**与产品配置一致**（`dsh/profile/recruitment/cordis.patch.yml`
+ * 的 `timeout_ms: 180000`）。合成 fixture 只要 0.3–2s，真实简历在 OCR 兜底后可达 53s+；
+ * 若这里按 60s 卡，会把"慢"误报成"读不出"（D-99 实测踩过）。可用
+ * `RECRUITMENT_CORPUS_TIMEOUT_MS` 覆盖。
+ */
+const DEFAULT_READ_TIMEOUT_MS = 180_000
+
+/**
  * 只有这四种格式是"可读文档"。**故意不含图片**（png/jpg）：一张扫描件被判定为
  * `blocking_for_structure=true`（需要 vision 补读）是**正确行为**，不是回归失败；
  * 把它混进 R-2 的分母会把正确判定算成退化。
@@ -69,6 +84,34 @@ const DOCUMENT_READ_ERROR_CODES: readonly DocumentReadErrorCode[] = [
   'READER_OUTPUT_INVALID',
   'ADAPTER_FAILED',
 ]
+
+/**
+ * 失败的**归类**（docs/11 §11.3 口径补充：reader 缺陷不得混成"文件不可读"）。
+ *
+ * - `file_unreadable`：文件本身不可用（空占位/损坏/格式不支持/超限/读取期间被改）；
+ * - `reader_defect`：reader 自身违反契约（输出非法/适配器协议失败）——是代码 bug；
+ * - `reader_failed_or_slow`：reader 进程失败或超时——可能环境/负载，也可能文件过于复杂；
+ * - `not_attempted`：路径/配置就没通过校验，根本没读文件。
+ */
+type FailureClass = 'file_unreadable' | 'reader_defect' | 'reader_failed_or_slow' | 'not_attempted'
+
+/** 14 个 code → 归类（覆盖必须完整，测试内有断言）。 */
+const FAILURE_CLASS_BY_CODE: Readonly<Record<DocumentReadErrorCode, FailureClass>> = {
+  EMPTY_FILE: 'file_unreadable',
+  UNSUPPORTED_MEDIA: 'file_unreadable',
+  READ_TOO_LARGE: 'file_unreadable',
+  DOCX_UNREADABLE: 'file_unreadable',
+  IMAGE_UNREADABLE: 'file_unreadable',
+  SOURCE_CHANGED_DURING_READ: 'file_unreadable',
+  READER_OUTPUT_INVALID: 'reader_defect',
+  ADAPTER_FAILED: 'reader_defect',
+  READER_FAILED: 'reader_failed_or_slow',
+  TIMEOUT: 'reader_failed_or_slow',
+  INVALID_ARGS: 'not_attempted',
+  NOT_FOUND: 'not_attempted',
+  FORBIDDEN: 'not_attempted',
+  CONFIG_INVALID: 'not_attempted',
+}
 
 /** 工具输出的最小投影（只取本测试用到的字段，避免对 tool 内部类型做假设）。 */
 interface DocumentReadValue {
@@ -138,6 +181,26 @@ function resolveSampleSize(total: number): number {
   if (raw === '') return Math.min(DEFAULT_SAMPLE_SIZE, total)
   const parsed = Number.parseInt(raw, 10)
   return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, total) : Math.min(DEFAULT_SAMPLE_SIZE, total)
+}
+
+/** 单份读取超时：`RECRUITMENT_CORPUS_TIMEOUT_MS` 覆盖，否则用与产品一致的 180s。 */
+function resolveReadTimeoutMs(): number {
+  const raw = (process.env.RECRUITMENT_CORPUS_TIMEOUT_MS ?? '').trim()
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_READ_TIMEOUT_MS
+}
+
+/**
+ * 门槛意图：显式声明"这次跑法要下门槛结论"。
+ * 与 `RECRUITMENT_CORPUS_SAMPLE=all` 配合；只声明 intent 却没跑全量 → 直接 fail，
+ * 防止"用默认抽样跑绿就当门槛达标"（总控 2026-11-14 裁决）。
+ */
+const GATE_INTENT = (process.env.RECRUITMENT_CORPUS_GATE ?? '').trim() === '1'
+
+/** reason_code → 归类；未知 code 归 `not_attempted`（并为 undefined 时给 `unknown`）。 */
+function failureClassOf(code: string | null): FailureClass | 'unknown' {
+  if (code === null) return 'unknown'
+  return FAILURE_CLASS_BY_CODE[code as DocumentReadErrorCode] ?? 'unknown'
 }
 
 /** 工具配置要求 python_bin 是绝对路径；`python` 可能只是 PATH 上的名字。 */
@@ -211,7 +274,7 @@ const SKIP_REASON: string | false = !CORPUS_EXISTS
     ? `corpus root contains no PDF/DOCX documents: ${CORPUS_ROOT} (${ALL_FILES.length} files scanned; skipped, NOT passed)`
     : false
 
-test('真实语料回归：抽样读取统计 + 失败逐条可归因（docs/11 §11）', { skip: SKIP_REASON }, async (t) => {
+test('真实语料回归：全量=门槛判定 / 抽样=开发回路（SAMPLED 不构成门槛）+ 失败逐条可归因（docs/11 §11）', { skip: SKIP_REASON }, async (t) => {
   // Python 探测放在 test 体内：语料不存在时不该在模块加载期起子进程。
   const python = resolvePython()
   if (!python.ok) {
@@ -222,7 +285,7 @@ test('真实语料回归：抽样读取统计 + 失败逐条可归因（docs/11 
     python_bin: absolutePython(python.bin),
     converter_dir: CONVERTER_DIR,
     allowed_roots: [CORPUS_ROOT],
-    timeout_ms: 60_000,
+    timeout_ms: resolveReadTimeoutMs(),
   })
   if (resolution.resolved === null) {
     t.skip(`reader config is invalid: ${resolution.issues.join('; ')} (skipped, NOT passed)`)
@@ -232,6 +295,19 @@ test('真实语料回归：抽样读取统计 + 失败逐条可归因（docs/11 
   const tool = createDocumentReadTool(cfg)
   const sampleSize = resolveSampleSize(DOCUMENT_FILES.length)
   const sampled = pickEvenly(DOCUMENT_FILES, sampleSize)
+
+  // 门槛判定只认"显式要求 + 覆盖全部文档"的跑法（总控 2026-11-14 裁决）：
+  // 1/52 的坏文件在默认抽样 20 份里命中概率只有 ~38%，抽样跑出来的 R-3 是空断言。
+  // 显式要求 = `RECRUITMENT_CORPUS_SAMPLE=all`（或明确声明 GATE 意图且确实覆盖全部）。
+  const fullCoverage = sampled.length === DOCUMENT_FILES.length
+  const explicitAll = (process.env.RECRUITMENT_CORPUS_SAMPLE ?? '').trim().toLowerCase() === 'all'
+  const gateMode = fullCoverage && (explicitAll || GATE_INTENT)
+  if (GATE_INTENT && !gateMode) {
+    assert.fail(
+      'RECRUITMENT_CORPUS_GATE=1 要求全量语料（RECRUITMENT_CORPUS_SAMPLE=all），'
+        + `当前 ${sampled.length}/${DOCUMENT_FILES.length} 份：门槛判定不允许被抽样绕过`,
+    )
+  }
 
   const outcomes: SampleOutcome[] = []
   for (const file of sampled) {
@@ -282,23 +358,58 @@ test('真实语料回归：抽样读取统计 + 失败逐条可归因（docs/11 
   const b4sTrue = ok.filter((outcome) => outcome.blocking_for_structure === true).length
   const blockingTrue = ok.filter((outcome) => outcome.blocking === true).length
   const blockingFalse = ok.filter((outcome) => outcome.blocking === false).length
+  const failureClasses = countBy(failed.map((outcome) => failureClassOf(outcome.reason_code)))
+  const classCounts = (['file_unreadable', 'reader_defect', 'reader_failed_or_slow', 'not_attempted', 'unknown'] as const)
+    .map((name) => `${name}:${failureClasses.find(([key]) => key === name)?.[1] ?? 0}`)
+    .join(', ')
+  const fileUnreadable = failed.filter((outcome) => failureClassOf(outcome.reason_code) === 'file_unreadable').length
+  const readerDefect = failed.filter((outcome) => failureClassOf(outcome.reason_code) === 'reader_defect').length
 
-  // ---- 统计表（给人看的；R-1 / R-2 是否达标由人对照 docs/11 §11.3 判定）----
+  // 门槛判定：只有全量跑法才允许下结论；抽样跑法一律 NOT EVALUATED。
+  const r1Rate = outcomes.length === 0 ? 0 : ok.length / outcomes.length
+  const r2Rate = ok.length === 0 ? 0 : b4sFalse / ok.length
+  const r3Rate = failed.length === 0
+    ? 1
+    : failed.filter((outcome) => failureClassOf(outcome.reason_code) !== 'unknown').length / failed.length
+  const r1Pass = r1Rate >= 0.95
+  const r2Pass = r2Rate >= 0.9
+  const r3Pass = r3Rate === 1
+  const thresholdLines = gateMode
+    ? [
+      `thresholds = R-1 ${rate(ok.length, outcomes.length)} (>=95% ${r1Pass ? 'PASS' : 'FAIL'}), `
+        + `R-2 ${rate(b4sFalse, ok.length)} (>=90% ${r2Pass ? 'PASS' : 'FAIL'}), `
+        + `R-3 ${failed.length === 0 ? '100% (0 failures, vacuous)' : rate(failed.length - failed.filter((o) => failureClassOf(o.reason_code) === 'unknown').length, failed.length)} `
+        + `(100% ${r3Pass ? 'PASS' : 'FAIL'})`,
+    ]
+    : ['thresholds = NOT EVALUATED — SAMPLED — 不构成门槛判定（门槛跑法：RECRUITMENT_CORPUS_GATE=1 RECRUITMENT_CORPUS_SAMPLE=all）']
+
+  // ---- 统计表（给人看的）----
   const lines: string[] = [
     '真实语料回归（docs/11 §11）',
+    gateMode
+      ? `mode = FULL (${sampled.length}/${DOCUMENT_FILES.length} documents) — 可用于 R-1/R-2/R-3 门槛判定`
+      : `mode = SAMPLED (${sampled.length}/${DOCUMENT_FILES.length}) — 不构成门槛判定`,
+    ...(gateMode ? [] : ['>> SAMPLED — 不构成门槛判定（开发回路；门槛判定必须全量）']),
     `corpus_root = ${CORPUS_ROOT}`,
     `documents_found = ${DOCUMENT_FILES.length} (pdf/docx)`,
     `images_excluded = ${IMAGE_FILE_COUNT} (a scan image blocking structure is correct behavior, not a regression)`,
     `sample_size = ${sampled.length} / ${DOCUMENT_FILES.length} `
       + `(default ${DEFAULT_SAMPLE_SIZE}; all = RECRUITMENT_CORPUS_SAMPLE=all)`,
+    `read_timeout_ms = ${cfg.timeout_ms} (product profile uses 180000; OCR fallback can take 53s+)`,
     `read_ok = ${ok.length}`,
     `read_failed = ${failed.length}`,
-    `read_success_rate = ${rate(ok.length, outcomes.length)} (R-1 threshold >= 95%, docs/11 §11.3)`,
+    `read_success_rate = ${rate(ok.length, outcomes.length)} `
+      + `(${gateMode ? 'R-1 threshold >= 95%, docs/11 §11.3' : 'SAMPLED — 不构成门槛判定'})`,
+    `failure_classes = ${classCounts} `
+      + `(file_unreadable=${fileUnreadable}, reader_defect=${readerDefect}; `
+      + 'reader_defect is a code bug, must not be reported as "corpus is broken")',
+    ...thresholdLines,
     `completeness = ${completeCount === 0 && partialCount === 0
       ? 'n/a'
       : `complete=${completeCount}, partial=${partialCount}, failed=${failed.length}`}`,
     `blocking_for_structure = false:${b4sFalse}, true:${b4sTrue} `
-      + `(rate among read_ok = ${rate(b4sFalse, ok.length)}; R-2 threshold >= 90%)`,
+      + `(rate among read_ok = ${rate(b4sFalse, ok.length)}; `
+      + `${gateMode ? 'R-2 threshold >= 90%' : 'SAMPLED — 不构成门槛判定'})`,
     `blocking (trusted screening) = true:${blockingTrue}, false:${blockingFalse} `
       + '(blocking=true does NOT fail R-2; it only blocks trusted screening, docs/11 §11.4)',
     `needs_visual = true: ${ok.filter((outcome) => outcome.needs_visual).length} / ${ok.length}`,
@@ -315,37 +426,64 @@ test('真实语料回归：抽样读取统计 + 失败逐条可归因（docs/11 
     for (const [index, outcome] of failed.entries()) {
       lines.push(
         `  ${index + 1}. ${outcome.relative_path}`,
-        `     reason_code=${outcome.reason_code ?? '(missing)'} elapsed_ms=${outcome.elapsed_ms}`,
+        `     class=${failureClassOf(outcome.reason_code)} reason_code=${outcome.reason_code ?? '(missing)'} `
+          + `elapsed_ms=${outcome.elapsed_ms}`,
         `     message=${outcome.message}`,
       )
     }
   }
   t.diagnostic(lines.join('\n'))
 
-  // ---- R-3 唯一硬断言：失败必须可归因（docs/11 §11.3）----
+  // ---- R-3：失败必须可归因（docs/11 §11.3）----
+  // 全量跑法：这是门槛的 R-3 证据（覆盖全部文档）。
+  // 抽样跑法：只是对"本次观察到的失败"做 smoke 检查，**不构成 R-3 门槛结论**
+  //           （抽样可能漏掉失败项，所以这里不打印/不断言"R-3 达标"）。
+  const scope = gateMode ? 'R-3 门槛（全量）' : '样本内 smoke（非门槛结论）'
+  for (const code of DOCUMENT_READ_ERROR_CODES) {
+    assert.notEqual(
+      FAILURE_CLASS_BY_CODE[code],
+      undefined,
+      `失败归类表漏了 code=${code}：14 个 code 都必须能归类（file_unreadable / reader_defect / ...）`,
+    )
+  }
   for (const outcome of failed) {
     assert.notEqual(
       outcome.reason_code,
       null,
-      `失败项必须带可诊断的 reason_code，但 ${outcome.relative_path} 的报错里解析不到：${outcome.message}`,
+      `${scope}：失败项必须带可诊断的 reason_code，但 ${outcome.relative_path} 的报错里解析不到：${outcome.message}`,
     )
     assert.ok(
       (DOCUMENT_READ_ERROR_CODES as readonly string[]).includes(outcome.reason_code as string),
-      `失败项 ${outcome.relative_path} 的 reason_code=${outcome.reason_code} 不在 DocumentReadErrorCode 闭集内 `
+      `${scope}：${outcome.relative_path} 的 reason_code=${outcome.reason_code} 不在 DocumentReadErrorCode 闭集内 `
         + `(允许: ${DOCUMENT_READ_ERROR_CODES.join(', ')})`,
+    )
+    assert.notEqual(
+      failureClassOf(outcome.reason_code),
+      'unknown',
+      `${scope}：${outcome.relative_path} 的 reason_code=${outcome.reason_code} 没有归类`,
     )
     assert.notEqual(
       outcome.message.trim(),
       '',
-      `失败项 ${outcome.relative_path} 的 message 为空：有 code 没原因，等于"失败了"三个字`,
+      `${scope}：${outcome.relative_path} 的 message 为空：有 code 没原因，等于"失败了"三个字`,
+    )
+  }
+
+  // 全量跑法必须真的覆盖了全部文档；这条是"不被抽样绕过"的兜底断言。
+  if (gateMode) {
+    assert.equal(
+      sampled.length,
+      DOCUMENT_FILES.length,
+      `门槛跑法必须全量：本次 ${sampled.length}/${DOCUMENT_FILES.length} 份（不允许被默认抽样绕过）`,
     )
   }
 
   // 断言"确实真的读过"：读取成功的份数不能是 0（否则统计表毫无意义）。
-  // 注意这里**不**断言份数下限或成功率——语料会变；那两条由人对照 docs/11 §11.3 判定。
+  // 注意这里**不**断言份数下限或成功率——语料会变；门槛判定由统计表的 thresholds 行给出，
+  // 只在全量跑法（FULL）下才有意义。
   assert.ok(
     ok.length > 0,
-    `抽样 ${sampled.length} 份全部读取失败，回归没有产生任何有效样本：`
+    `${gateMode ? '全量' : '抽样'} ${sampled.length} 份全部读取失败，回归没有产生任何有效样本：`
       + failed.map((outcome) => `${outcome.relative_path}:${outcome.reason_code}`).join('; '),
   )
 })

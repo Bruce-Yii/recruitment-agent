@@ -260,20 +260,42 @@
 
 1. **触发**：任何 `src/document/readers/**`、`src/document/contracts/**`、`src/document/quality/**`、
    `src/document/recovery/**`、`converter/**` 的改动，合入前必须跑一次真实语料回归。
-2. **抽样规模**：每次 **≥ 20 份**真实文档；语料目录里可读文档不足 20 份时跑全部，并在报告里写实际份数。
-   回归测试缺省抽 20 份；设 `RECRUITMENT_CORPUS_SAMPLE=all` 可全量跑（复核门槛时用全量更可信）。
+2. **门槛判定强制全量**（2026-11-14 总控裁决）：R-1/R-2/R-3 是否达标，**只有覆盖全部可读文档的跑法**
+   才能下结论。理由：52 份里 1 份坏文件，默认抽 20 份的命中概率约 38%——抽样跑的 R-3 会变成空断言，
+   等于门槛在默认跑法下不存在。**抽样只留给开发回路**，且必须打印 `SAMPLED — 不构成门槛判定`，
+   其输出与断言不得出现"R-3 达标"结论。门槛跑法：`RECRUITMENT_CORPUS_GATE=1` + `RECRUITMENT_CORPUS_SAMPLE=all`
+   （只声明 GATE 却没跑全量 → 测试直接 fail，不允许被抽样绕过）。
+   即使语料不足 20 份、默认抽样碰巧覆盖了全部，也**必须显式** `RECRUITMENT_CORPUS_SAMPLE=all`
+   （或声明 `RECRUITMENT_CORPUS_GATE=1`）才算门槛判定；否则一律按 SAMPLED 处理。
 3. **语料根目录**：用环境变量 `RECRUITMENT_CORPUS_ROOT` 指定；本机缺省为
    `D:\12412\dsh工作区\projects\resume-talent-pool\.snap-cache\research\content`。
    语料**不入库**、不打印候选人正文；报告只允许出现 路径 / 哈希前缀 / 错误码 / 统计数。
 4. **命令**（在 `dsh/dsh-recruitment` 下）：
+
+   **门槛跑法（判定 R-1/R-2/R-3，必须全量）**：
+
+   ```powershell
+   $env:RECRUITMENT_DB_PASSWORD='123456'
+   $env:RECRUITMENT_CORPUS_GATE='1'
+   $env:RECRUITMENT_CORPUS_SAMPLE='all'
+   node --test test/document/*.test.ts test/regression/*.test.ts
+   ```
+
+   **开发回路（默认抽样，只做 smoke）**：
 
    ```powershell
    $env:RECRUITMENT_DB_PASSWORD='123456'
    node --test test/document/*.test.ts test/regression/*.test.ts
    ```
 
+   后者输出 `mode = SAMPLED … 不构成门槛判定` + `thresholds = NOT EVALUATED`，
+   **不得**用它宣称门槛达标。
+
 5. **语料不存在时**：`test/regression/real-corpus.test.ts` 必须 `skip` 并在输出里写明原因。
    **skip ≠ 通过**：此时不得宣称本节门槛达标（对应 E2 三数口径）。
+6. **超时口径跟产品走**：回归用 **180s**（与 `dsh/profile/recruitment/cordis.patch.yml` 的
+   `timeout_ms: 180000` 一致），可用 `RECRUITMENT_CORPUS_TIMEOUT_MS` 覆盖。
+   **不要用 60s**：OCR 兜底后单份真实简历可达 53s+（D-99 实测），60s 会把"慢"误报成"读不出"。
 
 ### 11.3 门槛（三条硬门槛）
 
@@ -285,22 +307,42 @@
 
 **口径补充**：
 
-- "读不出"只有在**文件本身不可读**（空占位 / 损坏 / 格式不支持 / 编码读不出）时才算 R-1 失败；
-  reader 自身的缺陷（`READER_OUTPUT_INVALID` / `ADAPTER_FAILED`）是代码 bug，不得归入"文件不可读"，
-  必须单独修复，不得用"文件坏了"掩盖。
+- 每份失败必须按四类归类打印，**不允许只报一个总数**：
+  `file_unreadable`（空占位 / 损坏 / 格式不支持 / 编码读不出 / 读取期间被改）、
+  `reader_defect`（`READER_OUTPUT_INVALID` / `ADAPTER_FAILED`，reader 自己违反契约）、
+  `reader_failed_or_slow`（`READER_FAILED` / `TIMEOUT`，进程失败或超时，可能环境也可能文件过复杂）、
+  `not_attempted`（路径/配置没过校验，根本没走到读文件）。
+- `reader_defect` **是代码 bug**，不得归入"文件不可读"，不得用"语料坏了"掩盖；即使它计入
+  R-1 的失败数，也必须单列并单独修复。
 - 读取成功但 `completeness=partial` **不算** R-1 失败；partial 的原因必须出现在 `issues` 里（§2.B3）。
 - 门槛按**抽样整体**判定，**禁止**在测试里写死"必须成功 N 份"（语料会变）。
-  测试的职责是统计 + 打印 + 断言 R-3；R-1/R-2 是否达标由人对照本表判定。
+  全量跑法会打印 `thresholds = R-1 … PASS/FAIL, R-2 … PASS/FAIL, R-3 … PASS/FAIL`；
+  R-1/R-2 不作为测试硬失败（语料会变，由人看 thresholds 行判定），R-3 在测试内断言。
+  **抽样跑法（SAMPLED）不得输出 thresholds 结论**（只打印 `NOT EVALUATED — 不构成门槛判定`）。
 
-### 11.4 2026-11-14 首轮基线（52 份真实简历，全量未抽样）
+### 11.4 2026-11-14 基线（全量 52 份真实语料，未抽样）
+
+**复核口径**（2026-11-14，`feat/unified-document-intake`，含 D-98 OCR / D-100 跨块归因）：
+**门槛跑法**（`RECRUITMENT_CORPUS_GATE=1` + `RECRUITMENT_CORPUS_SAMPLE=all`）、超时 **180s**
+（与产品 profile 一致）、全量 52 份、走真实工具入口 `recruitment_document_read`。
+本次复核在**工作树**上跑（含其他 lane 尚未提交的 `converter/**` 改动）；那些改动提交后应复跑本表确认数字。
 
 | 指标 | 实测 | 门槛 | 结论 |
 |---|---|---|---|
-| 可读文档数 | 52（45 PDF + 7 DOCX，按文件计） | — | — |
-| 读取成功 / 失败 | 51 / 1 | R-1 ≥ 95% | **98.1%**，达标 |
-| 失败项 reason_code | `EMPTY_FILE`（2 字节空占位 PDF，message 带真实字节数与前几个字节） | R-3 = 100% | 达标（唯一失败可归因） |
-| completeness 分布 | complete 12 / partial 39 | — | partial 的原因均在 `issues`（§2.B3） |
-| `blocking_for_structure=false` | 51 / 51 | R-2 ≥ 90% | **100%**，达标 |
+| 可读文档数 | 52（45 PDF + 7 DOCX，其中 1 份 PDF 读取失败） | — | — |
+| 读取成功 / 失败 | **51 / 1** | R-1 ≥ 95% | **98.1%**，达标 |
+| 失败分类 | `file_unreadable:1, reader_defect:0, reader_failed_or_slow:0, not_attempted:0` | — | 无 reader 缺陷 |
+| 失败项 reason_code | `EMPTY_FILE`（2 字节空占位 PDF；message 带真实字节数+首字节 hex） | R-3 = 100% | 达标（唯一失败可归因） |
+| completeness 分布 | complete 12 / partial 39 | — | partial 原因均在 `issues`（§2.B3） |
+| `blocking_for_structure=false` | **51 / 51** | R-2 ≥ 90% | **100%**，达标 |
+| `blocking=true`（可信筛选） | 39 / 51 | — | 正常阻断（跨块归属/图片未核等），不影响 R-2 |
+| 单份最慢 | **127s**（高并发时；本次门槛跑 46.6s） | — | **说明为何必须用 180s**：60s 口径下同一份会被误报 `TIMEOUT` |
+
+**与 D-99 记录的差异（必须记住的教训）**：D-99 台账记的同日实测是 **read_ok 50 / failed 2
+（`EMPTY_FILE` + `TIMEOUT`），R-1 96.2%**。差异全部来自那一份 `TIMEOUT`：它出现在 60s 口径
+（或高负载）下，把超时对齐到产品 180s 后不再复现（本次最慢 127s，仍余 53s）。
+→ 结论：**超时是负载敏感项，不能算"文件不可读"**；它必须落在 `reader_failed_or_slow` 分类里，
+且回归超时口径必须与产品一致（§11.2 第 6 条），否则 R-1 数字会随机器负载漂移。
 
 > 说明：`blocking_for_structure` 只是"文字本身是否可用于结构化"的闸门；`blocking=true`
 > （跨块归属、图片未核等）仍会阻断可信筛选（§5 红线不变）。本节的 R-2 不是放宽 §3 的分层门槛。
