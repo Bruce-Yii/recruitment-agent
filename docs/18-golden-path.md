@@ -173,8 +173,9 @@ dsh --profile recruitment
 
 ```powershell
 $env:RECRUITMENT_DB_PASSWORD='123456'
-$env:RECRUITMENT_DB_NAME='ra_goldenpath'
+$env:RECRUITMENT_DB_NAME='ra_goldenpath'   # bootstrap 认这个
 node scripts/bootstrap-demo.mjs            # G5 前置（见 5.1.1）
+$env:RECRUITMENT_TEST_DB='ra_goldenpath'   # harness 认这个（不是 RECRUITMENT_DB_NAME）
 $env:GOLDEN_PATH_EVIDENCE_DIR='evidence/experiments/2026-11-15-golden-path-clean/local-first-run'
 node dsh/dsh-recruitment/manual/golden-path/run-golden-path-rerun.mjs
 ```

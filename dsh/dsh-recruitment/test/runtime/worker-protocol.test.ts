@@ -93,6 +93,19 @@ describe('runtime config resolution', () => {
     assert.ok(issues.some((issue) => issue.includes('model_route')))
   })
 
+  test('workspace_root 的 ${ENV} 引用必须展开；缺失环境变量 fail-closed（复核 P1）', () => {
+    const expanded = resolveRuntimeConfig(
+      { ...valid, workspace_root: '${RECRUITMENT_WORKSPACE_ROOT}' },
+      { RECRUITMENT_WORKSPACE_ROOT: 'D:/dsh-home/runtime-workspaces' },
+    )
+    assert.deepEqual(expanded.issues, [])
+    assert.equal(expanded.resolved?.workspaceRoot, 'D:/dsh-home/runtime-workspaces')
+
+    const missing = resolveRuntimeConfig({ ...valid, workspace_root: '${RECRUITMENT_WORKSPACE_ROOT}' }, {})
+    assert.equal(missing.resolved, null)
+    assert.ok(missing.issues.some((issue) => issue.includes('workspace_root') && issue.includes('RECRUITMENT_WORKSPACE_ROOT')))
+  })
+
   test('lease must exceed worker timeout', () => {
     const { resolved, issues } = resolveRuntimeConfig({ ...valid, timeout_ms: 120000, lease_ms: 60000 }, {})
     assert.equal(resolved, null)

@@ -238,6 +238,19 @@ function makeApproval(mode) {
 // ---------------------------------------------------------------------------
 //  配置（产品同一份 resolver；密码只从环境变量）
 // ---------------------------------------------------------------------------
+// 复核 P1：harness 的主配置是 `RECRUITMENT_TEST_DB`（bootstrap 认 `RECRUITMENT_DB_NAME`）。
+// 两个 env 不一致时**直接失败**，禁止静默落到 demo 库（否则 RUN_MODE 会变成 RERUN、16 跳"通过"但零写入）。
+const harnessDb = (process.env.RECRUITMENT_TEST_DB ?? '').trim()
+const dbNameEnv = (process.env.RECRUITMENT_DB_NAME ?? '').trim()
+if (harnessDb === '') {
+  console.error('[golden-path] 缺少 RECRUITMENT_TEST_DB（harness 主配置；不是 RECRUITMENT_DB_NAME）。')
+  process.exit(2)
+}
+if (dbNameEnv !== '' && dbNameEnv !== harnessDb) {
+  console.error(`[golden-path] RECRUITMENT_DB_NAME(${dbNameEnv}) 与 RECRUITMENT_TEST_DB(${harnessDb}) 不一致；拒绝运行（避免静默落到 demo 库）。`)
+  process.exit(2)
+}
+
 const dbResolved = resolveDatabaseConfig({
   host: process.env.RECRUITMENT_TEST_DB_HOST ?? '127.0.0.1',
   port: Number(process.env.RECRUITMENT_TEST_DB_PORT ?? 5432),

@@ -146,6 +146,20 @@ export function resolveRuntimeConfig(
       notification = { source, thread, address: { ...address }, kind }
     }
   }
+  // 工作目录：受管 profile 只允许写 `${ENV}` 引用（仓库零机器路径，D-112/复核 P1）。
+  // 展开失败一律 fail-closed（issues 非空 → runtime 不注册），不允许回退进程 cwd。
+  const workspaceRootRaw = nonEmpty(config.workspace_root)
+  let workspaceRoot: string | undefined
+  if (workspaceRootRaw !== '') {
+    const match = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(workspaceRootRaw)
+    if (match) {
+      const value = nonEmpty(env[match[1] ?? ''])
+      if (value === '') issues.push(`config.runtime.workspace_root references undefined environment variable ${match[1] ?? ''}`)
+      else workspaceRoot = value
+    } else {
+      workspaceRoot = workspaceRootRaw
+    }
+  }
   if (issues.length > 0) return { resolved: null, issues }
 
   return {
@@ -164,7 +178,7 @@ export function resolveRuntimeConfig(
       leaseMs,
       maxAttempts: positiveInt(config.max_attempts, DEFAULT_MAX_ATTEMPTS),
       resumeSessions: config.resume_sessions === true,
-      workspaceRoot: nonEmpty(config.workspace_root) === '' ? undefined : nonEmpty(config.workspace_root),
+      workspaceRoot,
       pendingBatchSize: positiveInt(config.pending_batch_size, DEFAULT_PENDING_BATCH),
       maxRouteAttempts: positiveInt(config.max_route_attempts, DEFAULT_MAX_ROUTE_ATTEMPTS),
       autoTick,
