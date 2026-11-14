@@ -31,3 +31,6 @@ desktop.ini
 
 # 语料隔离区：只入库 README，文件本身不入库（见 converter/corpus-quarantine/README.md）
 converter/corpus-quarantine/*.pdf
+
+# 机器本地语料清单：含本机绝对路径（R7），不入库。需要时从工作区 temp/ 取回。
+converter/corpus/batch2-picked.json
