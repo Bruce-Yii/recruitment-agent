@@ -9,15 +9,20 @@
 //   1. **按内容嗅探**决定媒体类型，扩展名不参与 → DOCX 进得来，改名成 .pdf 也照样进；
 //   2. DOCX 的 phone/email 来自 `native_text` 才可自动归并（与 PDF 同一套字段口径）；
 //   3. PDF 不回归；
-//   4. 图片 / RTF / 未知字节仍然被**明确拒绝**（放宽格式 ≠ 什么都收）；
+//   4. 图片 / 旧 OLE / 未知字节仍然被**明确拒绝**（放宽格式 ≠ 什么都收）；
 //   5. 身份闸门**没有**因为放宽格式而放宽：OCR / agent_read 来源依然只能 weak。
+//
+// 2026-11-14 补（RTF lane）：RTF 也有了 reader —— 它进 S6 的读取路径，但**在身份闸门处
+// 正确 BLOCKED**：RTF 没有 PDF 的 page+bbox 坐标，IR-G1 要求"证据坐标齐全"才可自动归并，
+// 本 lane 不放宽这条闸门（见 `test('RTF 进入 S6 读取路径……')`）。这正是"能读 ≠ 能自动认人"。
 //
 // 全部用**合成假资料**（`example.invalid` / `138 0000 xxxx`），不碰真实候选人（R7）。
 // 依赖本机 python + converter/：缺任一项时 skip 并说明原因（不伪装成通过）。
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -29,7 +34,7 @@ import {
 } from '../../src/tools/application-intake.ts'
 import type { ConverterOutput, ResolvedConverterConfig } from '../../src/tools/converter.ts'
 import { resolveConverterConfig, runConverter } from '../../src/tools/converter.ts'
-import { MEDIA_DOCX, MEDIA_PDF } from '../../src/document/readers/media.ts'
+import { MEDIA_DOCX, MEDIA_PDF, MEDIA_RTF } from '../../src/document/readers/media.ts'
 import {
   createTestPool,
   DEMO_JOB,
@@ -139,6 +144,11 @@ function errorBody(error: unknown): { code?: string; reason_code?: string; messa
   const index = message.indexOf(': ')
   const json = index >= 0 ? message.slice(index + 2) : message
   return JSON.parse(json) as { code?: string; reason_code?: string; message?: string }
+}
+
+/** 文件字节的 sha256（测试自己算，不采信 converter 自报）。 */
+function material_sha_of(path: string): string {
+  return createHash('sha256').update(readFileSync(path)).digest('hex')
 }
 
 /** intake 会写的六张表的当前行数（用于"拒绝时一行不写"）。 */
@@ -285,24 +295,74 @@ test('图片被明确拒绝：READER_FAILED(IMAGE_REQUIRES_VISION)，且一行�
   assert.deepEqual(await rowCounts(), before, '被拒绝的图片不得写入任何一行')
 })
 
-test('RTF 被明确拒绝：READER_FAILED(UNSUPPORTED_MEDIA)——需要单独的 reader，属能力缺口', async () => {
-  const rtf = join(WORK_DIR, 'resume.rtf')
-  writeFileSync(rtf, '{\\rtf1\\ansi\\ansicpg936 {\\fonttbl\\f0\\fnil\\fcharset134 SimSun;}\\f0 示例简历}\\n', 'utf8')
+test('RTF 进入 S6 读取路径（不再是 UNSUPPORTED_MEDIA），身份闸门按"缺坐标证据"正确 BLOCKED', { skip: SKIP_PYTHON }, async () => {
+  // 合成 RTF：正文含假 phone/email（R7）。converter 的 striprtf reader 会把它读成
+  // native_text 字段，但 RTF 没有 bbox → IR-G1 的"证据坐标齐全"不成立 → 只能人工。
+  const rtf = join(WORK_DIR, 'synthetic-resume.rtf')
+  writeFileSync(rtf, [
+    '{\\rtf1\\ansi\\ansicpg1252{\\fonttbl{\\f0\\fnil Arial;}}\\f0',
+    `\\pard SYNTHETIC SAMPLE - NOT A REAL RESUME\\par`,
+    `\\pard Phone: ${PHONE_RAW}   Email: ${EMAIL_RAW}\\par`,
+    `\\pard Work experience\\par`,
+    '\\pard 2021.07 - 2024.06  Example Technology Ltd  Backend Engineer\\par}',
+  ].join(''), 'utf8')
+
+  // 1) 入口判定：按内容嗅探成 RTF，不再被"不是 .pdf"拒掉。
+  const source = await resolveIntakeSource(rtf, cfg)
+  assert.equal(source.media_type, MEDIA_RTF, 'RTF 必须被嗅探成 application/rtf，而不是被格式闸门拒掉')
+
+  // 2) converter 真的读了：backend 是 striprtf，字段是 native_text（不是 OCR/模型）。
+  const output = await runConverter(cfg, source.real_path)
+  assert.match(String(output.meta?.backend), /^striprtf\//, 'RTF 的读取后端必须如实写 striprtf')
+  assert.equal(output.meta?.source_sha256, material_sha_of(rtf), 'sha 必须是原件的 sha（内容寻址）')
+  assert.equal(output.fields?.phone?.state, 'present')
+  assert.equal(output.fields?.phone?.provenance, 'native_text')
+  assert.equal(output.fields?.email?.provenance, 'native_text')
+
+  // 3) 身份闸门：读出来了，但 RTF 没有 bbox 坐标 → evidence_missing → 不得自动并人。
+  //    **这条是有意保留的 fail-closed**，不是格式缺口复发；放宽它需要改 IR-G1（不在本 lane 权限内）。
+  const material = buildMaterial(source.real_path, output, source.media_type)
+  assert.equal(material.mime_type, MEDIA_RTF)
+  assert.deepEqual(material.strong, [], '缺坐标证据时 strong 必须为空：不许拿"读出来了"当"可自动认人"')
+  assert.ok(
+    material.blocked.some((item) => item.field === 'phone' && item.reason === 'evidence_missing'),
+    `phone 的拒绝原因必须可机检：${JSON.stringify(material.blocked)}`,
+  )
+
+  // 4) 真实入口：BLOCKED_BY_REVIEW（不是 READER_FAILED / UNSUPPORTED_MEDIA / PATH_INVALID），一行不写。
   const tool = createApplicationIntakeTool({ converter: cfg, database: dbCfg })
   const before = await rowCounts()
   await assert.rejects(
     () => tool.execute({ path: rtf, job_id: DEMO_JOB }),
     (error: unknown) => {
       const body = errorBody(error)
-      assert.equal(body.code, 'READER_FAILED', JSON.stringify(body))
-      assert.equal(body.reason_code, 'UNSUPPORTED_MEDIA', JSON.stringify(body))
-      // 可诊断：消息里必须有真实字节数与"不支持的媒体"，而不是含糊的"路径无效"。
-      assert.match(String(body.message), /not one of PDF|UNSUPPORTED|magic|unsupported/u)
+      assert.equal(body.code, 'BLOCKED_BY_REVIEW', JSON.stringify(body))
+      assert.equal(body.reason_code, 'MATERIAL_ATTRIBUTION_UNKNOWN', JSON.stringify(body))
+      assert.notEqual(body.reason_code, 'UNSUPPORTED_MEDIA')
       assert.notEqual(body.reason_code, 'PATH_INVALID')
       return true
     },
   )
-  assert.deepEqual(await rowCounts(), before, '被拒绝的 RTF 不得写入任何一行')
+  assert.deepEqual(await rowCounts(), before, '身份闸门拒收的 RTF 不得写入任何一行')
+})
+
+test('旧 OLE（.doc）仍然被明确拒绝：READER_FAILED(UNSUPPORTED_MEDIA)——没有 reader 就不假装有', async () => {
+  const doc = join(WORK_DIR, 'legacy.doc')
+  // OLE 容器魔数 + 垃圾体：内容嗅探必须认成旧二进制 Office 并拒绝。
+  writeFileSync(doc, Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00, 0x01]))
+  const tool = createApplicationIntakeTool({ converter: cfg, database: dbCfg })
+  const before = await rowCounts()
+  await assert.rejects(
+    () => tool.execute({ path: doc, job_id: DEMO_JOB }),
+    (error: unknown) => {
+      const body = errorBody(error)
+      assert.equal(body.code, 'READER_FAILED', JSON.stringify(body))
+      assert.equal(body.reason_code, 'UNSUPPORTED_MEDIA', JSON.stringify(body))
+      assert.notEqual(body.reason_code, 'PATH_INVALID')
+      return true
+    },
+  )
+  assert.deepEqual(await rowCounts(), before, '被拒绝的旧 OLE 不得写入任何一行')
 })
 
 test('未知字节仍然被拒绝（放宽格式 ≠ 什么都收）', async () => {

@@ -1,0 +1,55 @@
+{
+ "generated_at": "2026-11-14T13:25:00Z",
+ "note": "三条数口径：passed / failed / skipped。数字来自真实运行，原文见同名 .log 文件。",
+ "converter_full_corpus": {
+  "command": "python -m pytest tests -q",
+  "cwd": "converter",
+  "corpus_roots": [
+   "CORPUS_ROOT_TALENT_POOL",
+   "CORPUS_ROOT_ODOO_SAMPLES",
+   "CORPUS_ROOT_CODEX_CONVERTED",
+   "CORPUS_ROOT_SYNTHETIC"
+  ],
+  "passed": 121,
+  "failed": 0,
+  "skipped": 0,
+  "duration": "959.14s",
+  "evidence": "pytest-converter-full-corpus.log"
+ },
+ "converter_no_corpus": {
+  "command": "python -m pytest tests -q --no-corpus",
+  "cwd": "converter",
+  "passed": 94,
+  "failed": 0,
+  "skipped": 27,
+  "duration": "4.14s",
+  "evidence": "pytest-converter-no-corpus.log"
+ },
+ "plugin_document": {
+  "command": "node --test \"test/document/*.test.ts\"",
+  "cwd": "dsh/dsh-recruitment",
+  "passed": 187,
+  "failed": 0,
+  "skipped": 0,
+  "evidence": "node-test-document.log"
+ },
+ "plugin_related": {
+  "command": "node --test test/integration/document-read.test.ts test/integration/application-intake-docx.test.ts test/tools/resume-read-output.test.ts test/tools/resume-read-formats.test.ts test/unit/label-honesty.test.ts test/regression/error-diagnosability.test.ts test/unit/output-schema.test.ts",
+  "cwd": "dsh/dsh-recruitment",
+  "passed": 55,
+  "failed": 0,
+  "skipped": 0,
+  "evidence": "node-test-related.log"
+ },
+ "format_coverage_e2e": {
+  "script": "run-format-e2e.mjs",
+  "output": "results.json",
+  "formats": {
+   "rtf": "PARTIAL",
+   "docx": "PASS",
+   "docx-no-identity": "PARTIAL",
+   "pdf": "PASS",
+   "image": "FAILED"
+  }
+ }
+}

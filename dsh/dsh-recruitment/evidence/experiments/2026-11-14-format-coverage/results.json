@@ -1,0 +1,394 @@
+{
+ "generated_at": "2026-11-14T13:24:53.433Z",
+ "environment": {
+  "python": "D:\\Python3.12.9\\python.exe",
+  "converter_dir": "<repo>/converter",
+  "database": "ra_s6s7@127.0.0.1"
+ },
+ "labels_policy": {
+  "provenance": "LIVE = 真实语料文件（sha256 可复核）；FIXTURE = 本脚本现造的合成件",
+  "trigger": "MANUAL = 由本取证脚本显式调用产品工具",
+  "connection": "CONNECTED = 本地读取器 + 本地数据库，产品自己能读"
+ },
+ "db_before": {
+  "candidate": 51,
+  "application": 57,
+  "resume": 62,
+  "resume_version": 63,
+  "intake_record": 62,
+  "intake_asset": 62
+ },
+ "formats": [
+  {
+   "format": "rtf",
+   "byte_size": 639853,
+   "sha12": "918894c484b7",
+   "labels": {
+    "provenance": "LIVE",
+    "trigger": "MANUAL",
+    "connection": "CONNECTED"
+   },
+   "document_read": {
+    "ok": true,
+    "media_type": "application/rtf",
+    "reader_id": "striprtf/0.0.35",
+    "reader_version": "1.0.0",
+    "completeness": "partial",
+    "needs_visual": false,
+    "page_count": 1,
+    "blocks": 70,
+    "block_pages": [
+     1
+    ],
+    "blocking": true,
+    "blocking_for_structure": false,
+    "layout_only_blocking": true,
+    "blocking_codes": [
+     "unverified_rtf_embedded_image"
+    ],
+    "soft_codes": [
+     "doc_attribution_resolved",
+     "resume_attribution_unverified",
+     "resume_timeline_unparsed"
+    ],
+    "recovery_next": "human"
+   },
+   "resume_read": {
+    "ok": true,
+    "media_type": "application/rtf",
+    "backend": "striprtf/0.0.35",
+    "pages": 1,
+    "completeness": "partial",
+    "blocks": 70,
+    "provenance": "LIVE",
+    "provenance_basis": "FILE_BYTES_SHA256_VERIFIED",
+    "field_states": {
+     "name": "absent",
+     "phone": "present",
+     "email": "present",
+     "work_experience": "unreadable",
+     "education": "unreadable"
+    },
+    "issue_codes": [
+     "unverified_rtf_embedded_image",
+     "resume_attribution_unverified",
+     "resume_timeline_unparsed"
+    ]
+   },
+   "intake": {
+    "outcome": "BLOCKED_OR_REJECTED",
+    "code": "BLOCKED_BY_REVIEW",
+    "reason_code": "MATERIAL_ATTRIBUTION_UNKNOWN"
+   },
+   "db": {
+    "asset_before": false,
+    "asset_after": null,
+    "application": null
+   },
+   "coverage": "PARTIAL"
+  },
+  {
+   "format": "docx",
+   "byte_size": 74875,
+   "sha12": "20de5d4cac0b",
+   "labels": {
+    "provenance": "LIVE",
+    "trigger": "MANUAL",
+    "connection": "CONNECTED"
+   },
+   "document_read": {
+    "ok": true,
+    "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "reader_id": "python-docx",
+    "reader_version": "1.2.0",
+    "completeness": "complete",
+    "needs_visual": false,
+    "page_count": 0,
+    "blocks": 28,
+    "block_pages": [
+     0
+    ],
+    "blocking": false,
+    "blocking_for_structure": false,
+    "layout_only_blocking": false,
+    "blocking_codes": [],
+    "soft_codes": [
+     "doc_docx_textbox_order_unknown"
+    ],
+    "recovery_next": "structure"
+   },
+   "resume_read": {
+    "ok": true,
+    "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "backend": "pymupdf/1.28.0",
+    "pages": 6,
+    "completeness": "partial",
+    "blocks": 72,
+    "provenance": "LIVE",
+    "provenance_basis": "FILE_BYTES_SHA256_VERIFIED",
+    "field_states": {
+     "name": "unreadable",
+     "phone": "present",
+     "email": "present",
+     "work_experience": "unreadable",
+     "education": "unreadable"
+    },
+    "issue_codes": [
+     "resume_attribution_unverified",
+     "resume_protected_attribute_present"
+    ]
+   },
+   "intake": {
+    "outcome": "REUSED",
+    "application_id": "31928175-ddd1-40af-b944-101403fd3311",
+    "candidate_id": "8fbdefe5-5709-4463-a2ef-44e27af35c86",
+    "candidate_created": false,
+    "matched_by": "email+phone",
+    "resume_version_no": 1,
+    "structure_saved": false,
+    "source": {
+     "parse_status": "PARTIAL",
+     "pages": 6,
+     "completeness": "partial"
+    },
+    "labels": {
+     "provenance": "FIXTURE",
+     "trigger": "MANUAL",
+     "connection": "CONNECTED",
+     "source_kind": "LOCAL_FILE",
+     "event_provider": "internal"
+    }
+   },
+   "db": {
+    "asset_before": true,
+    "asset_after": {
+     "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+     "validation_status": "VALID",
+     "parser_name": "pymupdf",
+     "parser_version": "1.0.0",
+     "parse_status": "PARTIAL"
+    },
+    "application": {
+     "id": "31928175-ddd1-40af-b944-101403fd3311",
+     "current_stage_code": "S6",
+     "lifecycle_status": "ACTIVE",
+     "job_id": "11111111-1111-4111-8111-000000000401",
+     "candidate_id": "8fbdefe5-5709-4463-a2ef-44e27af35c86",
+     "record_version": 2
+    }
+   },
+   "coverage": "PASS"
+  },
+  {
+   "format": "docx-no-identity",
+   "byte_size": 39350,
+   "sha12": "7107fe465cda",
+   "labels": {
+    "provenance": "LIVE",
+    "trigger": "MANUAL",
+    "connection": "CONNECTED"
+   },
+   "document_read": {
+    "ok": true,
+    "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "reader_id": "python-docx",
+    "reader_version": "1.2.0",
+    "completeness": "complete",
+    "needs_visual": false,
+    "page_count": 0,
+    "blocks": 178,
+    "block_pages": [
+     0
+    ],
+    "blocking": false,
+    "blocking_for_structure": false,
+    "layout_only_blocking": false,
+    "blocking_codes": [],
+    "soft_codes": [],
+    "recovery_next": "structure"
+   },
+   "resume_read": {
+    "ok": true,
+    "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "backend": "pymupdf/1.28.0",
+    "pages": 15,
+    "completeness": "complete",
+    "blocks": 186,
+    "provenance": "LIVE",
+    "provenance_basis": "FILE_BYTES_SHA256_VERIFIED",
+    "field_states": {
+     "name": "unreadable",
+     "phone": "unreadable",
+     "email": "absent",
+     "work_experience": "absent",
+     "education": "absent"
+    },
+    "issue_codes": []
+   },
+   "intake": {
+    "outcome": "BLOCKED_OR_REJECTED",
+    "code": "BLOCKED_BY_REVIEW",
+    "reason_code": "MATERIAL_ATTRIBUTION_UNKNOWN"
+   },
+   "db": {
+    "asset_before": false,
+    "asset_after": null,
+    "application": null
+   },
+   "coverage": "PARTIAL"
+  },
+  {
+   "format": "pdf",
+   "byte_size": 251476,
+   "sha12": "ead23e7999e7",
+   "labels": {
+    "provenance": "LIVE",
+    "trigger": "MANUAL",
+    "connection": "CONNECTED"
+   },
+   "document_read": {
+    "ok": true,
+    "media_type": "application/pdf",
+    "reader_id": "pymupdf/1.28.0",
+    "reader_version": "1.0.0",
+    "completeness": "partial",
+    "needs_visual": false,
+    "page_count": 1,
+    "blocks": 47,
+    "block_pages": [
+     1
+    ],
+    "blocking": true,
+    "blocking_for_structure": false,
+    "layout_only_blocking": true,
+    "blocking_codes": [
+     "doc_cross_block_attribution",
+     "unverified_pdf_image"
+    ],
+    "soft_codes": [
+     "doc_attribution_resolved",
+     "resume_attribution_unverified",
+     "resume_timeline_unparsed"
+    ],
+    "recovery_next": "human"
+   },
+   "resume_read": {
+    "ok": true,
+    "media_type": "application/pdf",
+    "backend": "pymupdf/1.28.0",
+    "pages": 1,
+    "completeness": "partial",
+    "blocks": 47,
+    "provenance": "LIVE",
+    "provenance_basis": "FILE_BYTES_SHA256_VERIFIED",
+    "field_states": {
+     "name": "present",
+     "phone": "present",
+     "email": "present",
+     "work_experience": "absent",
+     "education": "unreadable"
+    },
+    "issue_codes": [
+     "unverified_pdf_image",
+     "resume_attribution_unverified",
+     "resume_timeline_unparsed"
+    ]
+   },
+   "intake": {
+    "outcome": "REUSED",
+    "application_id": "00d0f6c0-c7b0-4e62-be62-ae7f0c6ea0bc",
+    "candidate_id": "c110817b-b09b-472f-b6a8-a09c1ceabe2f",
+    "candidate_created": false,
+    "matched_by": "email+phone",
+    "resume_version_no": 1,
+    "structure_saved": false,
+    "source": {
+     "parse_status": "PARTIAL",
+     "pages": 1,
+     "completeness": "partial"
+    },
+    "labels": {
+     "provenance": "FIXTURE",
+     "trigger": "MANUAL",
+     "connection": "CONNECTED",
+     "source_kind": "LOCAL_FILE",
+     "event_provider": "internal"
+    }
+   },
+   "db": {
+    "asset_before": true,
+    "asset_after": {
+     "mime_type": "application/pdf",
+     "validation_status": "VALID",
+     "parser_name": "pymupdf",
+     "parser_version": "1.0.0",
+     "parse_status": "PARTIAL"
+    },
+    "application": {
+     "id": "00d0f6c0-c7b0-4e62-be62-ae7f0c6ea0bc",
+     "current_stage_code": "S6",
+     "lifecycle_status": "ACTIVE",
+     "job_id": "11111111-1111-4111-8111-000000000401",
+     "candidate_id": "c110817b-b09b-472f-b6a8-a09c1ceabe2f",
+     "record_version": 2
+    }
+   },
+   "coverage": "PASS"
+  },
+  {
+   "format": "image",
+   "byte_size": 181,
+   "sha12": "df43710cdc74",
+   "labels": {
+    "provenance": "FIXTURE",
+    "trigger": "MANUAL",
+    "connection": "CONNECTED"
+   },
+   "document_read": {
+    "ok": true,
+    "media_type": "image/png",
+    "reader_id": "Pillow",
+    "reader_version": "12.3.0",
+    "completeness": "partial",
+    "needs_visual": true,
+    "page_count": 0,
+    "blocks": 1,
+    "block_pages": [
+     0
+    ],
+    "blocking": true,
+    "blocking_for_structure": true,
+    "layout_only_blocking": false,
+    "blocking_codes": [
+     "image_requires_vision"
+    ],
+    "soft_codes": [],
+    "recovery_next": "human"
+   },
+   "resume_read": {
+    "ok": false,
+    "code": "READER_FAILED",
+    "reason_code": "IMAGE_REQUIRES_VISION"
+   },
+   "intake": {
+    "outcome": "BLOCKED_OR_REJECTED",
+    "code": "READER_FAILED",
+    "reason_code": "IMAGE_REQUIRES_VISION"
+   },
+   "db": {
+    "asset_before": false,
+    "asset_after": null,
+    "application": null
+   },
+   "coverage": "FAILED"
+  }
+ ],
+ "db_after": {
+  "candidate": 51,
+  "application": 57,
+  "resume": 62,
+  "resume_version": 63,
+  "intake_record": 62,
+  "intake_asset": 62
+ }
+}

@@ -35,7 +35,8 @@ import {
 ## 四条不能妥协的约定
 
 1. **不伪造定位**：PDF 用 `{kind:"pdf", page, bbox?}`；DOCX 用 `{kind:"docx", part, …}`；
-   图片用 `{kind:"image", frame?, bbox?}`。**不要求** DOCX / 图片伪造 `page+bbox`。
+   RTF 用 `{kind:"rtf", paragraph, page?}`（段落序号，**没有 bbox**）；图片用
+   `{kind:"image", frame?, bbox?}`。**不要求** DOCX / RTF / 图片伪造 `page+bbox`。
    PDF 块没有页码时映射写 `page: 0`（哨兵，见 `types.ts`），校验器一定判非法。
 2. **不伪装来源**：OCR / 模型读出的文字只能是 `ocr` / `agent_read`，不能标 `native_text`。
 3. **失败要能表达**：读失败是**合法内容**（0 块 + HARD issue + `partial`），不是异常；
