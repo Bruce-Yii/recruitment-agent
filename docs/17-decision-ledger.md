@@ -1488,6 +1488,8 @@ feishu 不装配）。L1（干净 env 启动产品 profile + 一次真实读取�
   购买商业许可、或换底座，待产品负责人裁决。RapidOCR(Apache) 纳入声明配置不依赖该裁决。
 - **入库机器路径**：`dsh/dsh-recruitment/cordis.patch.yml:18-23,48` 与
   `dsh/profile/recruitment/cordis.patch.yml:192-197,243` 仍含机器绝对路径；G9 落地 `${ENV}` 后必须清掉（缺陷修复）。
-- **发布闸门（2026-11-15 独立复核 P1）**：G1 `runtime.auto_tick` 在产品 profile 置 **false**（Wave1 复核发现：单独开启会为每份简历自动拉起跑不了业务的 Worker，attempts 耗尽 → 任务 FAILED、简历解析永不完成）。**G2（Worker 能执行业务工具 + 派发前就绪检查）验收同批才翻回 true**；测试需要 tick 时用测试专用 profile/patch 显式开启，不改仓库产品 profile。`n- **研究结论（2026-11-15）**：DSH 0.2.2-rc.3 是最新官方版（npm `latest` 反而停在 rc.1，禁止"跟 latest 升级"）；
+- **发布闸门（2026-11-15 独立复核 P1）**：G1 `runtime.auto_tick` 在产品 profile 置 **false**（Wave1 复核发现：单独开启会为每份简历自动拉起跑不了业务的 Worker，attempts 耗尽 → 任务 FAILED、简历解析永不完成）。**G2（Worker 能执行业务工具 + 派发前就绪检查）验收同批才翻回 true**；测试需要 tick 时用测试专用 profile/patch 显式开启，不改仓库产品 profile。`n- **D-109.4（2026-11-15，总控；G10 预算追认）**：**+391** 物理行（`event-runtime.ts` 271→617? 以脚本口径 283→629 = +346；`http.ts` +45），合计 3,961→**4,352**。理由：G10 事件处置写入（每条事件终态一行 append-only 处置 + `target_task_ids`）与 health 暴露（无处置数/最老等待秒/内部审计单列）；无队列/调度语义变化，D-109 三项阈值未触发。排除：把处置塞进 `event_inbox` 列（覆盖历史投影）、异步遥测（不落 PG 审计）、外部队列（第二 owner）。机检：`runtime-budget PASS（4352/4352）`；干净归档实测 +391（`work/control/budget-clean-g10`）。G2/G12 的增长另立 D-109.5/6，不用本条兜底。
+- **事件处置稳态口径（2026-11-15 裁决）**：`count(events)-count(disposed)` 不要求全表字面 0——`event_inbox` 同时承载 `schema/0001` 触发器的内部审计事件（派发谓词本身排除，0016 回填也不覆盖）。G10 的验收口径是：**in-scope undisposed = 0**，且恒等式 `total = disposed + internal_audit + undisposed`；health 单列 `events_internal_audit`。要求审计事件也写处置会造成语义冲突，不做。
+- **研究结论（2026-11-15）**：DSH 0.2.2-rc.3 是最新官方版（npm `latest` 反而停在 rc.1，禁止"跟 latest 升级"）；
   Agent Teams 是 rc.2 起的**开发流程**能力（同进程/root 会话、任务真相在 session log、writeScopes 仅建议），
   产品运行时不用；`dsh-superagent-prototype` 是官方研究原型（private、单提交、SQLite 第二 owner），只借 Attention/面板形状。
