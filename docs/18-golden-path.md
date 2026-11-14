@@ -147,6 +147,21 @@ foreach ($v in 'verify-0003','verify-0004','verify-0005','verify-0006','verify-0
 > 只到 0010；0011–0015 的自检写在各自迁移文件里（例如 0014/0015 的"迁移后自检"段），CI 另用
 > `db/migrations/*.sql` 与台账逐行比对兜底（`.github/workflows/ci.yml:255-265`）。
 
+### 5.1.1 demo 前置（G5，一条命令）
+
+> 干净库只有 `0002_seed` 的 demo 岗位 + rubric v1，**没有 `approval` 行** ⇒ S7 必然
+> `NO_APPROVED_RUBRIC`（`contracts/job-screening/job-rubric-rules.md` §4.2）。用产品工具链补齐：
+
+```powershell
+$env:RECRUITMENT_DB_PASSWORD='123456'   # 密码只走环境变量（R7）
+$env:RECRUITMENT_DB_NAME='ra_goldenpath'
+node scripts/bootstrap-demo.mjs          # job_create/job_update + job_rubric_approve（allow-once 审批 seam）
+```
+
+期望末行 `BOOTSTRAP_RESULT: {"outcome":"BOOTSTRAPPED",...}`；重复跑为 `NO_OP`（零写入）。
+读回：`job.current_rubric_version_id` 指向的版本有 `APPROVED` 且
+`canonical_payload_hash = rubric_version.payload_hash`。
+
 ### 5.2 起产品 profile
 ```powershell
 $env:RECRUITMENT_DB_PASSWORD='123456'   # 密码只走环境变量，不写进任何文件（R7）
