@@ -1,8 +1,15 @@
 // 招聘任务执行器（本 lane 自写；**不是** vendor）。
 //
+// ⚠️ **已退休，不得接线**（2026-11-14 总控裁决）：
+//   任务身份与执行归 `src/runtime/**`（已接线，且有真实证据：event_inbox → task_wakeup → business_task
+//   → task_attempt → agent_session，DSH headless 真进程 + 真实模型 + 真实工具调用）。
+//   两个执行器写同一批表会造成「两套权威并存」，所以本文件**保留作参考实现**，不再从任何入口注册。
+//   持久副作用（Effects / Outbox / Passes）仍归 `src/engine/`；两者交界见 `app/effects-async.ts`。
+//
+// 以下为原始设计记录（参考用）：
 // 文档判定（Notion `04｜Agent Runtime & Reuse Architecture` §08）：不搬 prototype 的 `executor/dsh.ts`
 // —— 它强绑 Coding Worktree / Shell / GitHub PR / Coding Prompt。可复用的是 **DSH Session 集成边界**
-// （见 `dsh/session-boundary.ts`）与 **Effects 队列**；真正的执行器按招聘领域重写，就是这份文件。
+// （见 `dsh/session-boundary.ts`）与 **Effects 队列**；真正的执行器按招聘领域重写，就是本文件。
 //
 // 三件与原型不同的事：
 //   1. 工具白名单是**招聘工具**，不是 coding 工具（没有 bash/write/edit，没有 git/worktree）；

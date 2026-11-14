@@ -109,16 +109,15 @@ interface DshSessionBoundary {
 
 没有任何 worktree/PR/Shell 概念进入这个文件。
 
-### 4.4 `RecruitmentTaskExecutor`（`exec/recruitment-task-executor.ts`，104 行）
+### 4.4 `RecruitmentTaskExecutor`（`exec/recruitment-task-executor.ts`，**已退休，仅作参考**）
 
-按文档重写的执行器（**不是**搬 coding executor），落地方案：
+**2026-11-14 总控裁决：本文件不接线。** 任务身份与执行归 `src/runtime/**`（已接线并有真实证据：
+`event_inbox → task_wakeup → business_task → task_attempt → agent_session`，DSH headless 真进程 +
+真实模型 + 真实工具调用）。两个执行器写同一批表＝两套权威并存，所以本文件保留为**参考实现**，
+不从任何入口注册；文件头已写死这一点。
 
-- 实现 core 的 `Executor` 端口（`start/deliver/stop`），**启动与投递都经 Effects 入队**（与命令同事务，进程崩了不丢），真正的 Session 创建在 `launch()` 里做；
-- 每个任务一个稳定 worker Session（`recruitment-worker-<ticketId>`），跨会话续做；
-- 工具白名单是**招聘工具**（`RECRUITMENT_TOOLS`：resume_read / candidate_get / job_get / interview_get / transcript_read / report / note），**没有** bash/write/edit/git/worktree；
-- 任务消息显式写明边界「不做代码改动、不碰仓库」。
-
-**接线状态（R2 诚实标注）：尚未挂到任何 HTTP 路由或 Worker 入口，也还没接我们的领域表。** 现在它能被 Effects 驱动、被 `Tickets` 的 Executor 端口调用；距"可达"还差：①领域适配（Ticket ↔ Application/Interview 任务）；②插件入口注册（`src/index.ts` 属其他 lane）。未经接线不得当作能力交付。
+原始设计记录（仅供参考，不要照此接线）：实现 core `Executor` 端口（start/deliver/stop），启动与投递经 Effects 入队；
+每个任务一个稳定 worker Session；工具白名单是招聘工具（无 bash/write/edit/git）；任务消息写死"不做代码改动"。
 
 ### 4.5 招聘领域适配层（`adapters/recruitment-tasks.ts`，约 260 行）
 
@@ -149,10 +148,12 @@ interface DshSessionBoundary {
 ```ts
 import { Store } from './engine/app/store.ts'
 import { Effects } from './engine/app/effects.ts'
+import { Outbox } from './engine/app/outbox.ts'
+import { Passes } from './engine/app/passes.ts'
 import { HealthBoard } from './engine/infra/health.ts'
-import { RecruitmentTaskAdapter } from './engine/adapters/recruitment-tasks.ts'
-import { RecruitmentTaskExecutor } from './engine/exec/recruitment-task-executor.ts'
 ```
+
+> **不要 import 或注册 `RecruitmentTaskExecutor`**（§4.4：已退休，任务执行归 `src/runtime/**`）。
 
 **装配（一次）**：
 
@@ -170,18 +171,11 @@ const adapter = new RecruitmentTaskAdapter(store, {
   runtimeVersion: 'dsh@0.2.2-rc.3',
   modelRoute: '<配置里的模型路由>',
 })
-const executor = new RecruitmentTaskExecutor({
-  sessions,                            // 实现 DshSessionBoundary 的 DSH 适配（见 §4.3）
-  reports,                             // 引擎回报的窄接口（assignmentStarted / inputsDelivered / report / …）
-  effects,
-  health: board.claim('worker'),
-  workspaceRoot: join(stateDir, 'tasks'),
-  lifetime,                            // AbortSignal
-  load: ticketId => { /* 从引擎仓库取 ticket 与其最新 assignment */ },
-  closing: () => false,
-})
+const outbox = new Outbox({ store, effects, sources: <OutboxChannels 实现>, commands, paused: () => false })
+const passes = new Passes({ engine: <PassesEngine>, effects, health: board.claim('passes'), lifetime, configured: () => true, closing: () => false })
+passes.start()
 // 关闭顺序：先排空 effect 队列，再关同步桥（否则 in-flight 语句会被杀在连接上）。
-ctx.effect(() => () => { void effects.drain(); store.close() })
+ctx.effect(() => () => { void passes.stop(); void effects.drain(); store.close() })
 ```
 
 **依赖的已注册服务**：只有 `ctx`（logger）与 `config.database`、环境变量 `RECRUITMENT_DB_PASSWORD`。`Store`/`Effects`/`RecruitmentTaskAdapter` 不依赖任何其他插件服务；`RecruitmentTaskExecutor` 只依赖上面注入的窄接口，**不直接依赖 Cordis Context**。
@@ -203,7 +197,7 @@ ctx.effect(() => () => { void effects.drain(); store.close() })
 
 **当前状态：以上均未注册**。`RecruitmentTaskExecutor` 与 `RecruitmentTaskAdapter` 已能被直接构造并运行（集成测试为证），但没有从任何运行中的入口可达 —— 按 R2 不得称为可用能力。
 
-**自写合计：约 1,000 行**（PG 适配层 293 + 同步桥 237 + DSH 边界 59 + 执行器 130 + 领域适配层 283）。
+**自写合计：约 1,120 行**（PG 适配层 320 + 异步副作用写半边 86 + 同步桥 237 + DSH 边界 59 + 领域适配层 283；退休的执行器 137 行不计入在役）。
 
 ### 4.8 对账修复：外部动作成功但回执丢失（§9.12-9 / Notion 08 §9.8 第 5 条）
 
@@ -228,6 +222,47 @@ ctx.effect(() => () => { void effects.drain(); store.close() })
 - `test/acceptance/engine-gates.test.ts` §9.12-9 **由红转绿**，断言未改（`wire.length === 1` 仍是唯一判据）；
 - 本 lane 补了三条正向/反向证据（`test/integration/engine-mechanisms-pg.test.ts`「回读端口」用例）：
   `present` → `send` 只被调用 1 次且回执变 `sent`；`absent` → 第 2 次 `send` 发生且线上只有 1 条；回读抛错 → `send` 仍只 1 次、回执 `pending`、原因落库。
+
+### 4.9 职责切分：任务执行归 `src/runtime/**`，持久副作用归本目录
+
+**裁决（2026-11-14，总控）**：`src/runtime/**` 那条 lane 已经完成并**接线**了任务执行
+（`event_inbox → task_wakeup → business_task → task_attempt → agent_session`，DSH headless 真进程 +
+真实模型 + 真实工具执行，有逐字证据）。本 lane 的 `RecruitmentTaskExecutor` 与它写同一批表，
+等于"两套权威并存"，因此**按职责切开，只保留一个执行器**：
+
+| 职责 | 归属 | 状态 |
+|---|---|---|
+| 任务身份与执行（business_task / task_attempt / agent_session 的推进） | `src/runtime/**` | ✅ 已接线、有真实证据 |
+| 持久副作用：Effects 队列 / Outbox 回执 / Passes 驱动 | `src/engine/`（本目录） | 已就绪，待注册（§4.6） |
+| 领域状态回写（Ticket→business_task 等） | `src/engine/adapters/recruitment-tasks.ts` | 保留（供 runtime 复用） |
+| `RecruitmentTaskExecutor` | `exec/` | ⛔ **退休**，仅作参考，不接线（§4.4） |
+
+**两者交界（runtime → 本目录）**：`src/engine/app/effects-async.ts`（本 lane 自写）。
+
+- runtime 在自己的**异步事务**里调用 `enqueueEffect(client, …)` / `recordOutbound(client, …)`，
+  副作用与业务写入**同一 PG 事务**（崩溃窗口为零）；
+- 派发与对账由持有**同步桥**的一侧（插件进程）用 `Effects` / `Outbox` 完成；
+- 对账走 `Outbox.lookup`（§4.8）；runtime 需要知道某条消息状态时用 `readReceipt(client, messageId)`。
+
+**runtime 能不能直接复用 `Effects` / `Outbox`？**
+
+- **路径上能**：同一包内相对导入 `../engine/app/effects.ts` 即可，无包边界、无新依赖；
+  `effects-async.ts` 对 `effects.ts` 只有 **type-only** 导入（运行时不会连带拉起同步桥的 worker 线程）。
+- **直接用不行**：`Effects`/`Outbox` 的端口是**同步**的（`Store.db.prepare` + `atomic<T>(work: () => T): T`，
+  引擎命令要求同步事务），而 `src/runtime/store.ts` 是**异步** `withActor/withReadOnly` + `DatabaseClient`。
+  同步桥有自己的连接，**无法加入 runtime 的异步事务**——硬接会丢掉"业务写入与副作用同事务"这条保证。
+- **最小暴露方式（已实现）**：runtime 只引 `src/engine/app/effects-async.ts` 一个文件，用
+  `enqueueEffect` / `recordOutbound` / `readReceipt` 三个函数；不需要引入 `Store`、`Effects` 或同步桥。
+  这就是"写半边在 runtime、派发半边在插件"的切分。
+
+**证据**：`test/integration/engine-effects-junction-pg.test.ts` —— 用 runtime 同形态的异步事务入队通知与回执，
+提交后由插件的 `Effects`/`Outbox` 从同一批表派发，回执 `pending → sent`，重复登记幂等。
+
+```
+$ node --test test/integration/engine-effects-junction-pg.test.ts
+✔ runtime 的异步事务写副作用 → 插件的 Effects/Outbox 派发（同一批表）
+ℹ pass 1  fail 0  skipped 0
+```
 
 ## 5. 按文档判定**没有搬**的东西（逐条理由）
 | 上游文件 | 没搬的理由 |
@@ -256,15 +291,22 @@ ctx.effect(() => () => { void effects.drain(); store.close() })
 ```powershell
 cd dsh\dsh-recruitment
 $env:RECRUITMENT_DB_PASSWORD='123456'
-node --test test/integration/engine-mechanisms-pg.test.ts          # 四机制 + 桥的失败语义
+node --test test/integration/engine-mechanisms-pg.test.ts          # 四机制 + 回读对账 + 桥的失败语义
 node --test test/integration/recruitment-task-adapter-pg.test.ts   # 领域适配：business_task/task_attempt/agent_session
+node --test test/integration/engine-effects-junction-pg.test.ts    # runtime 异步事务 ↔ 插件 Effects/Outbox
+node --test test/acceptance/engine-gates.test.ts                   # §9.12-9 等运行时门槛（其他 lane 的验收）
 npx tsc -p tsconfig.engine.json                                    # 类型检查
 node work/engine-probe/probe-sync-store.mjs                        # 同步桥实测（含 0.275–0.35ms/call 数字）
 ```
 
+> 三个 `test/integration/engine-*.test.ts` 共用同一租户的 `engine_*` 表，而 `engine_effect` 是**单一队列**
+> （持有 Effects 的进程会消费同 kind 的行）。文件内部用 PG 会话级 advisory lock 串行化，
+> 所以 `node --test` 并行跑文件也不会互相偷行；锁超时 30s，冲突会明确报错而不是挂住。
+
 实测汇总（2026-11-14，`ra_s6s7`）：
 
-- `node --test` 两个文件：**tests 5 / pass 5 / fail 0 / skipped 0**；
+- 本 lane 三个集成测试文件并行跑：**tests 7 / pass 7 / fail 0 / skipped 0**；
+- `test/acceptance/engine-gates.test.ts` 回归：**tests 6 / pass 6 / fail 0 / skipped 0**；
 - `npx tsc -p tsconfig.engine.json`：exit 0；
 - 同步桥往返：**0.275–0.349 ms/call**；`select pg_sleep(6)` 被 statement_timeout 取消且连接仍可用；worker 被杀后下一次调用重建成功。
 
