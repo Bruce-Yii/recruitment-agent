@@ -28,14 +28,26 @@ import { withReadOnly, type DatabaseClient } from '../../src/db/pool.ts'
 import {
   createTestPool,
   HR_ACTOR,
+  createIsolatedTestDatabase,
   inRolledBackTx,
   seedScenario,
   TENANT,
   testDatabaseConfig,
 } from './db.ts'
 
-const cfg = testDatabaseConfig()
-const pool = createTestPool(cfg)
+const cfgBase = testDatabaseConfig()
+/**
+ * 本文件**独占一个一次性空库**（不是共享的 `ra_s6s7`）。
+ *
+ * 为什么必须独占：这个文件里有**真提交**的夹具（并发用例必须提交，否则第二个连接看不见
+ * 未提交行），提交型测试留在共享库上就会与其它文件/其它用例的提交和清理互相干扰。
+ * 2026-11-14 实测：同一个 SHA 连跑两次 CI，一次全绿、一次红在 `A6 并发（两连接）`
+ * 的 `VERSION_CONFLICT`——偶发红会直接废掉"绿就是绿"这个信号。
+ * 这也正是 `test/integration/db.ts` 里那条纪律："会真提交的测试独占一次性库"。
+ */
+let isolated: Awaited<ReturnType<typeof createIsolatedTestDatabase>> | undefined
+let cfg = cfgBase
+let pool = createTestPool(cfgBase)
 
 /** 演示租户研发部的招聘负责人（0002 seed：department.hiring_manager_actor_id，责任人推导的兜底）。 */
 const DEMO_RECRUITMENT_OWNER = '11111111-1111-4111-8111-000000000102'
@@ -747,6 +759,10 @@ async function countCommittedStageEvents(applicationId: string): Promise<number>
 }
 
 test.before(async () => {
+  isolated = await createIsolatedTestDatabase('stage-advance')
+  await pool.end().catch(() => {})
+  pool = isolated.pool
+  cfg = { ...cfgBase, database: isolated.name }
   committed = await createCommittedFixture()
 })
 
@@ -754,7 +770,8 @@ test.after(async () => {
   try {
     if (committed !== undefined) await cleanupCommittedFixture(committed)
   } finally {
-    await pool.end()
+    await pool.end().catch(() => {})
+    if (isolated !== undefined) await isolated.drop().catch(() => {})
   }
 })
 
@@ -800,30 +817,11 @@ test('A6 并发（两连接）：恰好 1 条阶段事件；另一侧 VERSION_CO
     await a.query('begin')
     await a.query("select set_config('recruitment.actor_id', $1, true)", [HR_ACTOR])
     // A 先拿到行锁并完成推进，但**先不提交**：B 会在 select … for update 上等这把锁。
-    //
-    // **这一步是夹具准备，不是被测行为**，所以给它一次有界重试：CI（Linux + Docker PG）上
-    // 偶发 `could not serialize access due to concurrent update` —— 上一行 `setCommittedStage`
-    // 刚用**另一个连接**提交过这条申请，A 的行锁请求偶尔会与那条刚结束的事务交错。
-    // 被测断言是"B 必须被拒"，那条**一个字没放宽**；这里重试两次仍失败就照常红，不掩盖任何东西。
-    let resultA: Awaited<ReturnType<typeof advanceApplicationStage>> | undefined
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
-      try {
-        resultA = await advanceApplicationStage(a as unknown as DatabaseClient, {
-          tenantId: TENANT,
-          applicationId: fixture.applicationId,
-        })
-        break
-      } catch (error) {
-        const code = (error as { code?: string }).code
-        if (code !== 'VERSION_CONFLICT' || attempt === 2) throw error
-        // 产品在冲突时已整体回滚本次调用；重新开事务并把阶段重置回 S6 再试一次。
-        await a.query('rollback').catch(() => {})
-        await setCommittedStage(fixture.applicationId, 'S6')
-        await a.query('begin')
-        await a.query("select set_config('recruitment.actor_id', $1, true)", [HR_ACTOR])
-      }
-    }
-    assert.ok(resultA !== undefined, 'A 的推进没有产生结果')
+    // （本文件独占一次性空库，所以这一步不会与其它文件的提交交错——不需要任何重试兜底。）
+    const resultA = await advanceApplicationStage(a as unknown as DatabaseClient, {
+      tenantId: TENANT,
+      applicationId: fixture.applicationId,
+    })
     assert.equal(resultA.status, 'ADVANCED')
     assert.equal(resultA.stage_code, 'S7')
 
