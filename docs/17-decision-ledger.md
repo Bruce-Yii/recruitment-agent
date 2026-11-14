@@ -1250,3 +1250,25 @@ Outbox，`src/connectors/feishu` 的 `fetchTranscript()` 恒 `BLOCKED`。
 V-15 "无处置事件"告警阈值，三个数未定，实现前必须先定。
 **V-5 风险**：pg-boss 能否表达"`maxWorkers` + 1 个人工超额槽且不挤掉在跑任务"未验证；
 做不到要按 R1 先证候选池不足，**不得在业务层自研调度**。
+
+### D-107 · 视觉补读的执行边界在 agent 侧：`visionRead` 永不注入，`remaining` 即交接
+
+**裁定（2026-11-14，总控）**：`executePlan` 的 `RecoveryCapabilities.visionRead` 在本产品
+**永远不注入**。这不是"缺能力待补"，是 D-81 的执行边界在恢复执行器上的体现：
+
+- 视觉补读的既定路径是 agent 侧 `recruitment_page_image` → `read_image` → `recruitment_model_text_merge`，
+  **插件内不得新建模型客户端**（D-81）。
+- 因此执行器遇到 `vision_read` 步时，正确行为是**原样留在 `remaining`** 并给出 1-based 页号，
+  由 agent 执行；不得伪造成功、不得把图像帧号谎报成页码、不得为了"闭环"去调模型。
+- `switch_reader` 同理：U1 按内容嗅探每种媒体只注册一个 reader，**没有候选就如实 `failed`**，
+  不许把"再读一遍同路径"伪装成换读取器。
+
+**为什么单独立一条**：这个参数看起来像"没接完的接口"，实测上会被反复误读成缺口。上一轮
+`wire-recovery` 就把它列为"主要缺口"并给出三个补法（其中一个正是 D-81 明令禁止的）。
+留这条是为了让下一个人先读到"这是边界"，而不是先写代码。
+
+**机检面**：`test/document/document-read-wiring.test.ts` 第 6、7 条——vision_read 不可执行时
+不调能力、不伪造成功，`vision_pages=[1]` 留给 agent；图像帧补读 `vision_pages=[]`。
+
+**残留（另开，不在本条）**：`switch_reader` 若产品要求真正换读取器，需要 U1 的读取器注册表，
+不是工具层自己造。
