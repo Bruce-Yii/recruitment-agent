@@ -3,13 +3,38 @@
 **日期**：2026-11-12
 **任务卡**：`work/handoff/14-parallel-task-cards.md` §C（插件骨架 + 工具契约）
 **上位文档**：`work/handoff/09-dsh-plugin-architecture.md` §2-A（只读/草稿类工具）
-**状态**：可安装、可注册、可调用（stub 数据）；**真实模型会话未跑通 —— 账号余额不足**，见 §7.3
+**状态（2026-11-14 回抄）**：可安装、可注册、可调用；当前注册 **19 个工具**（`src/index.ts:414-433`），
+S3–S10 一条链路，既有只读也有**真写 PostgreSQL** 的工具。本文 §2–§9 是 **2026-11-12 的三工具 stub 快照**，
+与现状冲突时以本节 §0.1 + `docs/17-decision-ledger.md` 为准。
+
+---
+
+## 0.1 现状回抄（2026-11-14，逐条带证据；取代下文同名旧口径）
+
+| # | 本文旧口径 | 现状 | 证据 |
+|---|---|---|---|
+| 1 | 三个工具（§0） | **19 个**：`resume_read` / `document_read` / `resume_serialize` / `structure_validate` / `candidate_get` / `job_get` / `job_create` / `job_update` / `application_intake` / `screening_evaluate` / `interview_schedule` / `interview_get` / `transcript_import` / `transcript_read` / `scorecard_submit` / `evaluation_summarize` / `decision_record` / `page_image` / `model_text_merge` | `src/index.ts:414-433`（17 具名 + `...structureTools` 2 = 19）；`evidence/experiments/2026-11-14-document-read-u3/README.md` |
+| 2 | 全部只读、不连库（§0 / §2.3 / §6） | 读走 `withReadOnly`、写走 `withActor`，真连 PG 17；S3/S6/S8/S9/S10 都有写库路径 | `src/db/pool.ts`；`src/index.ts` 的 `create*Tool`；各 `src/tools/*.ts` |
+| 3 | `provenance` 恒 `FIXTURE`（§0 / §2.4） | 按 R4 三维标签计算；**缺省**才是 `FIXTURE`，真实读取为 `LIVE` | `src/tools/screening-evaluate.ts:1692-1693`；`src/tools/decision-record.ts:1686-1693`；D-95 / D-103 |
+| 4 | 依赖服务 `inject = ['tools']`（§1） | `inject = ['tools', 'approval']`（人类闸门，D-79） | `src/index.ts:95` |
+| 5 | 无浏览器半部分（§1 / §8.6） | 有：`package.json` 声明 `dsh.client.platform=web` + `lib/client.js`；工作台面板在 `src/client/` | `package.json`；`src/http/overview.ts`；`evidence/experiments/2026-11-14-workbench-panel/` |
+| 6 | 散文错误格式、只有 `INVALID_ARGS`/`NOT_FOUND`（§2.2） | **D-63 已裁定统一** `Error: <CODE>: <compact-json>`，不允许两套并存；错误码见 `RecruitmentErrorCode`。**实现尚未全部切换**：`resume-read` / `candidate-get` / `document-read` / `page-image` / `structure-tools` / `vision-fallback` 仍走 `parseArgs` 散文格式 | `docs/17` D-63（`:491-494`）；`src/tools/errors.ts:15-23`；`src/tools/args.ts:23-24` |
+| 7 | `resume_read` 入参 `resume_id`（§3） | 入参是 `path`（`allowed_roots` 内的绝对路径） | `src/tools/resume-read.ts:25-30` |
+| 8 | `candidate_get` 返回 stub 的 `provenance` 常量 / `stub: true`（§4） | 旧 stub 的 `provenance` 常量与 `stub` 字段已删；**真查 PG**（只读），输出 `identity_status` + `source:'DATABASE'`，联系方式默认脱敏；三维 `labels` 的补齐见 `docs/23` P2-03 | `src/tools/candidate-get.ts:1-17` |
+| 9 | `job_get` 是 stub 契约（§5） | 被 `contracts/job-screening/tool-contracts.md §2` **取代**（同名工具面，破坏性差异见该文件 §4） | `contracts/job-screening/tool-contracts.md §4` |
+| 10 | 自检入口 `test/harness.mjs`（§9） | 该文件**已不存在**；当前入口是 `node --test` + `manual/` 下脚本 | `test/`；`manual/` |
+| 11 | 真实模型会话未跑通（§7.3 / §8.1） | 2026-11-13 已跑通：headless + 真模型（`beam-free`）25 步自主完成 S6→S7 | `evidence/experiments/2026-11-13-natural-language-autonomous-run/README.md` |
+
+> **§3–§9 保留作 2026-11-12 历史快照**，不再作为当前工具面的验收依据。
+> 现行契约：`contracts/job-screening/`（S3/S7）、`contracts/evaluation/`（S10）、`contracts/interview/`（S8）、
+> `contracts/workbench/`，以及各 `src/tools/*.ts` 里模型可见的 `parameters`。
 
 ---
 
 ## 0. 一句话 + 一条必须先说的实测结论
 
-三个工具（不多不少），全部只读，全部返回 stub 数据，`provenance` 恒为 `FIXTURE`。
+> **以下这句是 2026-11-12 的历史口径，已被 §0.1 取代（现状 19 个工具、有写库）：**
+> 三个工具（不多不少），全部只读，全部返回 stub 数据，`provenance` 恒为 `FIXTURE`。
 
 **实测结论（会改变后续所有插件写法，必须上报）**：通过 `dsh plugin add link:` 装进 profile
 的插件**无法 `import` `@deepseek-ai/dsh-tools`**。宿主按包名 import 本插件时，Node 从本包
@@ -59,9 +84,9 @@ code: 'ERR_MODULE_NOT_FOUND'
 | 宿主加载方式 | 包 `main` 直接指向 `.ts`；Node ≥22.19 的类型擦除负责去类型（**无构建步骤**） |
 | 声明 | `dsh.bundle.patch: "./cordis.patch.yml"` |
 | 配置行 | `id: recruitment`，`name: '@recruitment/dsh-recruitment'` |
-| 浏览器半部分 | **无**（不声明 `dsh.client`，不渲染任何 UI） |
-| 依赖服务 | `inject = ['tools']` |
-| 运行时 import | 只有本包内相对路径（`./tools/*.ts`）；`import type` 全部被擦除 |
+| 浏览器半部分 | **有**：`dsh.client.platform = web`，客户端入口 `lib/client.js`（源码 `src/client/`），工作台面板 |
+| 依赖服务 | `inject = ['tools', 'approval']`（`tools` 为硬依赖；`webServer` 是可选注入） |
+| 运行时 import | 本包内相对路径 + **`pg`**（唯一运行时依赖，D-71）；`import type` 全部被擦除 |
 
 安装 / 卸载：
 
@@ -74,7 +99,7 @@ dsh plugin --profile <profile> remove @recruitment/dsh-recruitment
 
 ---
 
-## 2. 公共约定（三个工具一致）
+## 2. 公共约定（**2026-11-12 的"三个 stub 工具"口径；19 个工具的现状见 §0.1**）
 
 ### 2.1 入参校验规则（`src/tools/args.ts`）
 
@@ -101,7 +126,13 @@ dsh plugin --profile <profile> remove @recruitment/dsh-recruitment
 **为什么不带 `error.info`**：DSH 只对 `HarnessError` 实例保留结构化 `error.info`，本包无法 import
 它的基类（§0）。所以把 code 放进 message，保证模型与日志看到同一个 code，不靠解析自然语言。
 
-### 2.3 只读契约（三个工具共有）
+> **2026-11-14 现状**：D-63 已裁定统一 `Error: <CODE>: <compact-json>`，**不允许两套错误格式并存**
+> （`docs/17` D-63，`:491-494`）。上表两种散文消息是历史口径；现行错误码见 `RecruitmentErrorCode`
+> （`src/tools/errors.ts:15-23`）。**实现仍有两套**：`resume-read` / `candidate-get` / `document-read` /
+> `page-image` / `structure-tools` / `vision-fallback` 仍用 `parseArgs` 的散文格式，其余用 `parseContractArgs`
+> 的 JSON 格式（`src/tools/args.ts:23-24`）——这是待收口的实现缺口，不是"两种格式都合法"。
+
+### 2.3 只读契约（**仅 2026-11-12 的 3 个 stub 工具；对 S3/S6/S8/S9/S10 写工具不成立**）
 
 - 源码里**没有** `node:fs` / `node:net` / `node:http` / 任何 DB 驱动 / `fetch` / 子进程（§5 静态自检）。
 - 不写任何模块级状态；`execute` 只做「按键取常量 → 过滤 → 切片 → 组装返回值」。
@@ -117,9 +148,19 @@ dsh plugin --profile <profile> remove @recruitment/dsh-recruitment
 | `connection` | `NOT_CONNECTED` | 不连接数据库，也不连接任何外部系统 |
 | `trigger` | 不适用 | 由模型在会话里调用，不是事件触发；没有「已读取外部系统」这层含义 |
 
+> **2026-11-14 现状**：上表只描述 2026-11-12 的 3 个 stub 工具。现行口径按 R4 **三维正交**
+> （`provenance` / `trigger` / `connection`）逐工具计算，**缺省才是 `FIXTURE`**：
+> DB 工具 `connection=CONNECTED`，转写类按来源给 `LIVE`/`FIXTURE`。
+> 证据：`src/tools/screening-evaluate.ts:1692-1693`、`src/tools/decision-record.ts:1686-1693`；详见 §0.1 第 3 条。
+
 ---
 
 ## 3. `recruitment_resume_read`
+
+> **历史快照（2026-11-12 stub 版）**。现行实现：入参 `path`（`allowed_roots` 内绝对路径）、
+> 真调 `converter/` 读 PDF，不再有 `resume_id` / `stub` / 恒定 `provenance`（`src/tools/resume-read.ts:25-30`）。
+> 结构化/校验拆成 `recruitment_resume_serialize` + `recruitment_structure_validate`（`src/tools/structure-tools.ts`）。
+> 本节只保留作历史，不用于验收。
 
 读一份简历的解析结果（有序内容块）。
 
@@ -168,6 +209,10 @@ recruitment_resume_read {"resume_id":"resume_0001","max_blocks":3}
 
 ## 4. `recruitment_candidate_get`
 
+> **历史快照（2026-11-12 stub 版）**。现行实现：**真查 PG（只读）**，旧 stub 的 `provenance` 常量与
+> `stub` 字段已删；输出 `identity_status` + `source:'DATABASE'`，联系方式默认脱敏；查不到即 `NOT_FOUND`，
+> 不回退样例数据；三维 `labels` 的补齐见 `docs/23` P2-03（`src/tools/candidate-get.ts:1-17`）。本节只保留作历史。
+
 按 id 取一个候选人档案 + 其申请关系。
 
 ### 入参
@@ -205,6 +250,11 @@ recruitment_candidate_get {"candidate_id":"candidate_0001"}
 ---
 
 ## 5. `recruitment_job_get`
+
+> **历史快照（2026-11-12 stub 版）——已被取代**。现行契约是
+> `contracts/job-screening/tool-contracts.md §2`（同名工具面，破坏性差异见该文件 §4）：
+> `rubric_version` 字符串入参 → `rubric_version_no` / `rubric_version_id`，`stub` 字段删除，
+> `provenance` 改为计算值，错误消息改 JSON。本节只保留作历史。
 
 取一个岗位 + 其中一个 Rubric 版本。
 
@@ -245,6 +295,12 @@ recruitment_job_get {"job_id":"job_0001"}
 ---
 
 ## 6. 只读是怎么证明的（不是自我声称）
+
+> **历史快照：本节的静态扫描只覆盖 2026-11-12 的 3 个 stub 工具。**
+> 19 个工具的现状**不是全部只读**：S3/S6/S8/S9/S10 有写库路径（§0.1 第 2 条）。
+> 当前只读证明按工具分别做：S7 `screening_evaluate` 用 `withReadOnly` + `test/unit/screening-readonly.test.ts`；
+> 其余只读工具同样在 `begin transaction read only` 里跑（`src/db/pool.ts`）。
+> `test/harness.mjs` 已不存在，本节命令不可复跑。
 
 **A. 静态**：`test/harness.mjs` E 段扫描 `src/` 全部 8 个 `.ts` 文件，对 8 类写路径逐一断言为 0 命中：
 
@@ -300,7 +356,7 @@ $ dsh --profile rec-plugin-test --dump-config | Select-String 'recruitment'
 EXIT=0
 ```
 
-### 7.3 工具可被调用 —— **单元级已证，真实会话 BLOCKED**
+### 7.3 工具可被调用 —— **单元级已证；真实会话 2026-11-12 BLOCKED（已被 2026-11-13 证据取代，见 §0.1 第 11 条）**
 
 **真实宿主能加载本插件**（同一命令在 import 失败时会大声报错，见 §0）：
 
@@ -334,7 +390,7 @@ ALL CHECKS PASSED
 EXIT=0
 ```
 
-**真实模型会话未跑通 —— BLOCKED，原因是账号余额不足**（不是插件问题）：
+**真实模型会话未跑通 —— BLOCKED，原因是账号余额不足**（不是插件问题；**这是 2026-11-12 的记录，已被 2026-11-13 的会话证据取代，见 §0.1 第 11 条**）：
 
 ```text
 $ dsh --profile rec-plugin-session "Call the tool recruitment_job_get with job_id=job_0001 ..."
@@ -381,31 +437,39 @@ exit=1
 
 ### 7.5 三个工具全部只读
 
+> 仅对 2026-11-12 的 3 个 stub 工具成立；19 个工具的现状见 §0.1 第 2 条。
+
 见 §6（静态扫描 8/8 项 0 命中 + 结构说明）。
 
 ---
 
-## 8. 已知边界 / 没做到的
+## 8. 已知边界 / 没做到的（2026-11-12 记录；现状差异见下列标注）
 
-1. **真实模型会话未跑通**：`QUOTA: Insufficient Balance`（§7.3 原文）。所以「工具在真实会话里
-   被模型调用」这一条**只有单元级证据，没有会话级证据**。
-2. **未接任何真实数据源**：stub 数据内联在 `src/tools/stubs.ts`；B 线（PG schema）完成后，
-   需要在这里换成「调我们自己的只读 API」，届时工具签名不变、实现替换。
+1. ~~**真实模型会话未跑通**~~：**已于 2026-11-13 跑通**（headless + 真模型 `beam-free`，25 步自主完成 S6→S7）——
+   `evidence/experiments/2026-11-13-natural-language-autonomous-run/README.md`。本条只保留当时的 QUOTA 记录。
+2. ~~**未接任何真实数据源**~~：**已接 PostgreSQL 17**（`pg@8.23.1`，D-71）；各工具未配置时注册
+   `NOT_CONFIGURED` 占位，不退回样例数据（`src/index.ts` 的 `unconfigured*` 分支）。
 3. **未做服务端授权**（Actor × Scope × Mandate）：`docs/09 §5.3` 要求「工具必须服务端授权」。
-   本插件是纯 stub，没有可授权的数据面；接真实数据源时必须先过服务端授权，不能在工具里判断。
+   现状是写工具用 `withActor`（`SET LOCAL recruitment.actor_id`）+ 人类闸门（D-79/D-95），
+   没有通用 RBAC 层（v1.0 无权限矩阵，D-33）。
 4. **没有结构化 `error.info`**：见 §0 / §2.2，受限于无法 import `HarnessError`。
 5. **`max_blocks` / `block_types` 的过滤只作用于返回集**，不会改变 `blocks[].index`（刻意保持
-   原始序号，便于回链到原文）。
-6. **未做 client 半部分**：不声明 `dsh.client`，Web GUI 里这三个工具只会走通用工具卡片。
+   原始序号，便于回链到原文）。这条仍适用于现行 `resume_read`。
+6. ~~**未做 client 半部分**~~：**现有浏览器半部分**（`dsh.client.platform=web` + `lib/client.js`，
+   工作台面板 `src/client/`）；§0.1 第 5 条。
 
 ---
 
 ## 9. 自检怎么跑
 
+> **2026-11-14 更正**：`test/harness.mjs` **已不存在**，本条原命令不可复跑。当前自检入口：
+
 ```powershell
-$env:DSH_HOME='D:\12412\dsh-home'
-node D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\test\harness.mjs
-# 期望最后一行：ALL CHECKS PASSED（退出码 0）
+cd D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment
+node --test        # 全量；报 tests / pass / fail / skipped 四个数，skipped>0 不算绿
 ```
+
+运行时验收（R2/R3）见 `evidence/`：`r2-tool-reachability-2026-11-13.md`、
+`experiments/2026-11-13-web-browser-acceptance/`、`experiments/2026-11-14-workbench-panel/`。
 
 `test/` 不进 `package.json` 的 `files`，不会被当成插件运行时的一部分。
