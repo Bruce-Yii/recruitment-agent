@@ -6,6 +6,14 @@ Status: design reference for Issue #4 D5. This document is not a new product PRD
 
 Recruitment Agent is an Agent that performs recruiting work, not an ATS with a chat assistant. The Agent owns routine execution within its mandate; PostgreSQL domain records remain the source of truth; the user handles only genuine recruiting decisions. Do not expose parser defects, internal tool traces, or routine unverified labels as HR work.
 
+### User boundary — hard product constraint
+
+- The product is exclusively for the recruiting organization's internal users: HR / recruiters, recruiting leads / HR owners, interviewers, approvers, and (where needed) enterprise administrators.
+- A candidate is a recruiting business entity and external process participant, **never a Recruitment Agent system user**. Candidate IDs may identify records, applications, resumes, interview participants, and transcript speakers; they must never be treated as login identities, permission principals, Agent operators, Scorecard authors, or decision-makers.
+- Do not build candidate login, candidate accounts, a candidate portal, candidate-facing workspace, candidate self-service flows, or candidate-side Agent chat as part of this product.
+- Candidates may receive recruiter-managed invitations or communications and may reply or participate in meetings. Those messages/replies/transcripts are external business events or source materials ingested for the internal recruiting team; they do not make the candidate a product user.
+- Every UI surface, Agent conversation, task, notification, and action is for an authorized internal recruiting user. A question *about* a candidate is an internal user's request, not a candidate interaction.
+
 ## 2. Host and extension boundary
 
 - DSH Web remains the only host. Do not create a parallel standalone production app, router, Agent runtime, API server, or second conversation system.
@@ -21,7 +29,7 @@ Keep the product surface small and contextual:
 2. One global Human Attention entry: a single count in the host navigation and one actionable list. Do not repeat the same count or the phrase 'Agent has prepared results and is waiting for your decision' in banners, cards, summaries, and drawers.
 3. Recruitment records are retrieved when needed. Job, Candidate, Application, ResumeVersion, Interview, Transcript, Scorecard, and Decision are not seven mandatory top-level destinations.
 4. Detailed source material and event history are progressive disclosure. Default view shows recruiting conclusions and useful next actions, not internal execution logs.
-5. Keep one Agent conversation entry. Its context must be explicit and stable: job-level requests stay job-scoped; candidate questions stay application-scoped. Switching context must never silently carry the previous application.
+5. Keep one Agent conversation entry. Its context must be explicit and stable: job-level requests stay job-scoped; an internal recruiter's questions about a candidate stay scoped to that candidate's Application. Switching context must never silently carry the previous application.
 
 ## 4. Resume and screening behavior
 
@@ -48,7 +56,7 @@ Keep the product surface small and contextual:
 - Show each fact once, at the point where it supports a decision or action.
 - The same pending item appears in one global attention list; other views may show the business state but must not repeat the same alert copy.
 - Routine Agent execution is quiet. Show outcomes and blockers; expose detailed traces only on demand.
-- One clear primary action per current context. After an action, update the business state and continue to the next relevant candidate/task without forcing a return to the home screen.
+- One clear primary action per current context. After an action, update the business state and continue to the next relevant Application/task without forcing a return to the home screen.
 - No destructive change before a user confirms a replacement: editing/rescheduling is a draft until saved; canceling an editor preserves the previous confirmed state.
 - Role restrictions must be enforced by the domain/tool action, not only by hiding UI buttons.
 - All actions must support keyboard access and visible focus; dialogs manage focus and restore it on close; mobile controls must not obscure primary content.
@@ -68,6 +76,7 @@ Keep the product surface small and contextual:
 - One Application can traverse the Issue #4 local Golden Path: Job/Rubric → resume intake/accepted structure → screening recommendation → explicit human screening decision → one Interview → manual transcript import → two independent demo-actor Scorecards → Agent summary → explicit human Decision.
 - Every write is read back from PostgreSQL. Refresh/session recovery preserves the same business state.
 - The transcript branch and Scorecard branch can proceed independently.
+- No candidate login/account/portal or candidate-facing product surface exists; candidate records and transcript speakers are never treated as system users or action authors.
 - Human Attention has one canonical entry point; the same task is not duplicated in multiple cards/banners.
 - Real Agent tool trace demonstrates autonomous routine work; human actions are performed by the user/approved actor, never fabricated by the Agent.
 - Feishu LIVE is reported separately. Manual import does not satisfy the LIVE gate.
@@ -85,4 +94,4 @@ Keep the product surface small and contextual:
 
 ## 10. Explicit non-goals
 
-No main-branch changes, no direct changes to shared plugin entry, no new issue, no Notion write, no independent production frontend, no fake Feishu connection, no fake calendar/email delivery, no production HR organization or multi-tenant administration.
+No main-branch changes, no direct changes to shared plugin entry, no new issue, no Notion write, no independent production frontend, no fake Feishu connection, no fake calendar/email delivery, no production HR organization or multi-tenant administration. No candidate login, account, portal, candidate-facing workspace, self-service product, or candidate-side Agent interaction.
