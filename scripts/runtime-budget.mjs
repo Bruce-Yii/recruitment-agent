@@ -26,7 +26,10 @@
 //     `types.ts`     纯类型声明（interface / type），零运行时行为；
 //     `index.ts`     纯 re-export barrel，零运行时行为。
 //
-// 行数口径：物理行数（以 `\n` 切分，忽略文件末尾换行造成的空尾行）。与 `wc -l` 一致。
+// 行数口径（D-109.5，2026-11-15）：**代码行** = 物理行去掉空行、整行/行尾注释、
+// `import ... from` 与 `export ... from`（含多行）后的剩余行。物理行口径在 G12 拆分后
+// 因 import/export/委托结构行虚增（+314），故切换为代码行；G12 拆分自身代码行 +164。
+// 口径仍是"往大算"：只排除没有运行时行为的语法，不排除任何业务/调度逻辑。
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -55,7 +58,7 @@ const RUNTIME_DIR = join(REPO_ROOT, 'dsh', 'dsh-recruitment', 'src', 'runtime')
  * 已在 `docs/17` D-109.2 追加修订（新增多少行 / 为什么必须加 / 排除了什么替代做法 /
  * 是否触发换实现条件），再同步本常量。**这就是这条门该有的工作方式。**
  */
-const CEILING = 4352
+const CEILING = 3280
 
 const EXCLUDED = [
   {
@@ -84,6 +87,27 @@ function countLines(text) {
   return parts.length
 }
 
+/**
+ * 代码行口径（D-109.4）：物理行里去掉空行、整行/行尾注释、`import ... from` 与
+ * `export ... from`（含多行），剩余行数。度量可复核，不改变"往大算"的原则：
+ * 只排除**没有运行时行为**的语法，不排除任何业务/调度逻辑。
+ */
+function countCodeLines(text) {
+  let body = text.replace(/\/\*[\s\S]*?\*\//g, '')
+  body = body.replace(/^[ \t]*import[\s\S]*?from\s+['"][^'"]+['"];?[ \t]*$/gm, '')
+  body = body.replace(/^[ \t]*export\s+(?:type\s+)?\{[\s\S]*?\}\s+from\s+['"][^'"]+['"];?[ \t]*$/gm, '')
+  let count = 0
+  for (const raw of body.split('\n')) {
+    let line = raw.trim()
+    if (line === '') continue
+    if (line.startsWith('//') || line.startsWith('/*') || line.startsWith('*') || line.startsWith('*/')) continue
+    line = line.replace(/\s\/\/.*$/, '').trim()
+    if (line === '') continue
+    count += 1
+  }
+  return count
+}
+
 /** 递归列出目录下所有 .ts 文件（相对 RUNTIME_DIR，用平台分隔符）。 */
 function walk(dir) {
   const out = []
@@ -107,7 +131,7 @@ for (const file of files) {
     excluded.push({ ...file, label: hit.label, reason: hit.reason })
     continue
   }
-  counted.push({ ...file, lines: countLines(readFileSync(file.full, 'utf8')) })
+  counted.push({ ...file, lines: countCodeLines(readFileSync(file.full, 'utf8')) })
 }
 
 // 每个排除规则都必须真的排到了东西：规则失效（例如文件被改名）时不能静默通过，
@@ -131,7 +155,7 @@ if (process.argv.includes('--json')) {
   process.exit(0)
 }
 
-console.log('D-109 §3 调度预算（物理行数，口径见本文件头部）')
+console.log('D-109 §3 调度预算（代码行：非注释、非 import/export-from；口径见本文件头部）')
 console.log('')
 console.log('计入：')
 for (const file of counted) {
