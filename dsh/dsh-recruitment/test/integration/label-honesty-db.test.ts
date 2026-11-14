@@ -44,8 +44,6 @@ const pool = createTestPool(cfg)
 const DEMO_CANDIDATE = '11111111-1111-4111-8111-000000000601'
 /** 演示租户的种子面试官。 */
 const INTERVIEWER_A = '11111111-1111-4111-8111-000000000104'
-/** 演示租户里一场有转写产物的面试（`0002_seed`：meeting 0901 → artifact a01，provenance=FIXTURE）。 */
-const DEMO_INTERVIEW = '11111111-1111-4111-8111-000000000801'
 
 /** 服务端"现在"（与集成测试其它文件同一注入口径）。 */
 const NOW = Date.parse('2026-11-13T00:00:00Z')
@@ -281,7 +279,52 @@ async function seedDeclaredRealReadChain(client: DatabaseClient): Promise<{
   return { cfg: real.cfg, jobId, interviewId }
 }
 
-test('演示租户（ra_s6s7 合成数据）：三个**读库**工具出口都是 FIXTURE，**不出现 LIVE**', async () => {
+/**
+ * 在演示租户里造"一场有转写产物的面试"（同一事务，结束回滚）。
+ *
+ * **为什么必须自己造**（2026-11-14 在只重放 0001→0015 的空库上实测）：
+ * `0002_seed.sql` 只种 organization / department / actor / role / job / job_version /
+ * rubric_version / business_config / candidate / application —— `recruitment.interview`
+ * 与 `recruitment.transcript_artifact` **各 0 行**（迁移里也没有任何一条 insert 到这两张表）。
+ * 旧常量 `DEMO_INTERVIEW=…801` 指向本机 `ra_s6s7` 里一条历史手工数据，CI 的干净库里它
+ * 不存在 → `NOT_FOUND(INTERVIEW_NOT_FOUND)`。夹具必须自足。
+ *
+ * 产物走**产品真实写路径**（`importTranscriptInTransaction`），不是手搓 artifact 行：
+ * 这样"读到的产物"与真实导入产生的行同形（含 meeting_binding 前置）。
+ * @param client - 事务连接（结束回滚）。
+ * @returns 本用例自己的面试 id。
+ */
+async function seedInterviewWithTranscript(client: DatabaseClient): Promise<{ readonly interviewId: string }> {
+  const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
+  const scheduledStart = new Date(Date.now() - 120 * 60_000)
+  const scheduledEnd = new Date(Date.now() - 60 * 60_000)
+  const interviewId = await one(client,
+    `insert into recruitment.interview
+       (tenant_id, application_id, round_no, slot_code, stage_code, status,
+        scheduled_start_at, scheduled_end_at, timezone)
+     values ($1, $2, 1, 'DEFAULT', 'S9', 'POST_INTERVIEW', $3, $4, 'Asia/Shanghai') returning id`,
+    [TENANT, scenario.applicationId, scheduledStart, scheduledEnd])
+  const meetingId = await one(client,
+    `insert into recruitment.meeting
+       (tenant_id, provider, external_meeting_id, meeting_role, actual_start_at, actual_end_at)
+     values ($1, 'FEISHU', $2, 'PRIMARY', $3, $4) returning id`,
+    [TENANT, `mtg-${uniqueSuffix()}`, scheduledStart, scheduledEnd])
+  await client.query(
+    `insert into recruitment.meeting_binding
+       (tenant_id, meeting_id, interview_id, binding_method, bound_by_actor_id)
+     values ($1, $2, $3, 'MANUAL', $4)`,
+    [TENANT, meetingId, interviewId, HR_ACTOR],
+  )
+  const { importTranscriptInTransaction } = await import('../../src/tools/transcript-import.ts')
+  await importTranscriptInTransaction(client, cfg, {
+    interview_id: interviewId,
+    content: '00:00 面试官：请自我介绍\n00:08 候选人：做过招聘系统\n00:20 面试官：说说难点',
+    source_kind: 'DEMO_SAMPLE',
+  }, NOW)
+  return { interviewId }
+}
+
+test('演示租户（0002_seed 合成数据）：三个**读库**工具出口都是 FIXTURE，**不出现 LIVE**', async () => {
   // 1) recruitment_job_get：走生产入口（工具自己开池 + 只读事务）。
   const jobGet = await createJobGetTool(cfg).execute({ job_id: DEMO_JOB }) as {
     labels: Record<string, string>
@@ -290,8 +333,9 @@ test('演示租户（ra_s6s7 合成数据）：三个**读库**工具出口都�
   assertThreeAxis(jobGet.labels, { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'CONNECTED' }, 'job_get')
 
   await inRolledBackTx(pool, async (client) => {
-    // 2) recruitment_interview_get：真读演示租户的一场面试。
-    const interviewGet = await getInTransaction(client, cfg, { interview_id: DEMO_INTERVIEW }, NOW)
+    // 2) recruitment_interview_get：真读演示租户里**本用例自己造**的一场面试。
+    const fixture = await seedInterviewWithTranscript(client)
+    const interviewGet = await getInTransaction(client, cfg, { interview_id: fixture.interviewId }, NOW)
     assertThreeAxis(
       interviewGet.labels as Record<string, string>,
       { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'CONNECTED' },
@@ -300,7 +344,7 @@ test('演示租户（ra_s6s7 合成数据）：三个**读库**工具出口都�
 
     // 3) recruitment_transcript_read：顶层的 provenance 与逐条产物的 provenance 不许互相矛盾。
     const transcriptRead = await readTranscriptInTransaction(
-      client, cfg, { interview_id: DEMO_INTERVIEW, include_text: false }, NOW,
+      client, cfg, { interview_id: fixture.interviewId, include_text: false }, NOW,
     )
     assertThreeAxis(
       transcriptRead.labels as Record<string, string>,
