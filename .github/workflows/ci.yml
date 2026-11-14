@@ -33,7 +33,9 @@ jobs:
       - name: Corpus manifests must be portable
         run: |
           set -euo pipefail
-          if grep -rn --include='*.jsonl' -e 'D:\\' -e 'C:\\' converter/corpus; then
+          # 旧守卫只扫 `*.jsonl`，而实际泄露绝对路径的是 `*.json`（batch2-picked.json 里
+          # 十几条 `D:\12412\...`）。覆盖窄的守卫比没有守卫更危险：它会给出"检查过了"的错觉。
+          if grep -rn --include='*.jsonl' --include='*.json' -e 'D:\\' -e 'C:\\' converter/corpus; then
             echo "::error title=Machine path in manifest::Corpus manifests must use root+rel, never a machine-absolute path."
             exit 1
           fi
@@ -131,7 +133,18 @@ jobs:
 
       - name: Run plugin tests
         working-directory: dsh/dsh-recruitment
-        run: node --test
+        # R3：必须报 passed / failed / skipped 三个数，`skipped > 0` 不得宣称全绿。
+        # `node --test` 在 skip 时 exit 0，所以只靠退出码会把"静默跳过"当成通过——
+        # 这正是历史上 105/170 静默 skip 而 exit 0 的复发路径。
+        run: |
+          set -euo pipefail
+          node --test 2>&1 | tee /tmp/plugin-tests.log
+          grep -E '^ℹ (tests|pass|fail|skipped) ' /tmp/plugin-tests.log || true
+          SKIPPED=$(grep -E '^ℹ skipped ' /tmp/plugin-tests.log | awk '{print $3}' | tail -1)
+          if [ -n "${SKIPPED:-}" ] && [ "$SKIPPED" -gt 0 ]; then
+            echo "::error title=Tests skipped::插件测试有 $SKIPPED 条被跳过；skip 不等于通过（R3）"
+            exit 1
+          fi
 
   # 数据库：迁移链 + 每个迁移的自检 + 幂等。这一层是"业务真相归领域"的唯一执行点，
   # 之前完全没有 CI 覆盖（全靠本机 psql 手跑）。
@@ -169,12 +182,16 @@ jobs:
           done
 
       - name: Verify every migration
+        # 目录驱动：新增 verify-00XX.sql 自动纳入，不用改 CI（旧的硬编码列表漏掉了 0011/0012，
+        # 结果是"CI 绿但新迁移从没被 verify 过"）。
         run: |
           set -euo pipefail
-          for f in verify-0003 verify-0004 verify-0005 verify-0006 verify-0007 verify-0008 verify-0009 verify-0010 verify; do
-            echo "== $f"
-            psql -v ON_ERROR_STOP=1 -q -f "db/$f.sql"
+          for f in $(ls db/verify-*.sql | sort); do
+            echo "== $(basename "$f")"
+            psql -v ON_ERROR_STOP=1 -q -f "$f"
           done
+          echo "== verify.sql"
+          psql -v ON_ERROR_STOP=1 -q -f db/verify.sql
 
       - name: Migration lifecycle (fresh / upgrade / re-run)
         # Issue #1 §4：不能靠"重跑旧迁移"来证明幂等 —— 0008 已经改变了 0007 的目标索引形态，
@@ -185,29 +202,49 @@ jobs:
         #   re-run  ：在已迁移库上重跑**最新一条** 0009（它必须幂等）
         run: |
           set -euo pipefail
-          MIGS=$(ls db/migrations/*.sql | sort | xargs -n1 basename | sed 's/\.sql$//')
+          # 目录驱动：新增迁移自动纳入 fresh / upgrade / re-run 三组。旧的硬编码列表让
+          # 0012 提交后 ra_upgrade 台账止于 0010、re-run 也没测它 —— CI 绿但新迁移没被覆盖。
+          mapfile -t ALL < <(ls db/migrations/*.sql | sort)
+          MIGS=$(printf '%s\n' "${ALL[@]}" | xargs -n1 basename | sed 's/\.sql$//')
 
           echo "== fresh: 0001→latest on a brand-new database"
           psql -v ON_ERROR_STOP=1 -q -c "create database ra_fresh"
-          for f in $MIGS; do psql -v ON_ERROR_STOP=1 -q -d ra_fresh -f "db/migrations/$f.sql"; done
+          for f in "${ALL[@]}"; do psql -v ON_ERROR_STOP=1 -q -d ra_fresh -f "$f"; done
 
-          echo "== upgrade: 0001→0007, then 0008, then the rest"
+          echo "== upgrade: 0001→0007, then 0008 alone, then the rest"
           psql -v ON_ERROR_STOP=1 -q -c "create database ra_upgrade"
-          for f in 0001_init 0002_seed 0003_review_queue 0004_stage_catalog 0005_version_binding 0006_integrity_gaps 0007_decision_integrity; do
-            psql -v ON_ERROR_STOP=1 -q -d ra_upgrade -f "db/migrations/$f.sql"
+          for f in "${ALL[@]}"; do
+            case "$(basename "$f")" in
+              000[1-7]_*) psql -v ON_ERROR_STOP=1 -q -d ra_upgrade -f "$f" ;;
+            esac
           done
-          psql -v ON_ERROR_STOP=1 -q -d ra_upgrade -f db/migrations/0008_decision_uniqueness.sql
-          for f in 0009_application_identity 0010_migration_ledger; do
-            psql -v ON_ERROR_STOP=1 -q -d ra_upgrade -f "db/migrations/$f.sql"
+          for f in "${ALL[@]}"; do
+            case "$(basename "$f")" in
+              0008_*) psql -v ON_ERROR_STOP=1 -q -d ra_upgrade -f "$f" ;;
+            esac
+          done
+          for f in "${ALL[@]}"; do
+            case "$(basename "$f")" in
+              000[1-8]_*) : ;;
+              *) psql -v ON_ERROR_STOP=1 -q -d ra_upgrade -f "$f" ;;
+            esac
           done
 
           echo "== re-run: latest migration twice on the migrated database"
-          psql -v ON_ERROR_STOP=1 -q -d ra_fresh -f db/migrations/0010_migration_ledger.sql
+          LATEST=$(printf '%s\n' "${ALL[@]}" | tail -1)
+          echo "   latest = $LATEST"
+          psql -v ON_ERROR_STOP=1 -q -d ra_fresh -f "$LATEST"
 
           echo "== ledger vs files: 台账必须与 db/migrations/*.sql 完全一致（漏跑 / 幽灵迁移都红）"
-          ls db/migrations/*.sql | sort | xargs -n1 basename | sed 's/\.sql$//' > /tmp/files.txt
+          # 旧写法 `diff -u ... && echo ok` 没有 exit 1：diff 报了 11 行差异，step 仍 exit 0
+          # 并打印 "migration lifecycle OK"。守卫必须能失败，否则它不是守卫。
+          printf '%s\n' $MIGS > /tmp/files.txt
           psql -t -A -d ra_fresh -c "select version from recruitment.schema_migration order by version" > /tmp/ledger.txt
-          diff -u /tmp/files.txt /tmp/ledger.txt && echo "ledger matches files"
+          if ! diff -u /tmp/files.txt /tmp/ledger.txt; then
+            echo "::error::ledger 与 db/migrations/*.sql 不一致（上面是 diff）：漏跑的迁移或幽灵迁移"
+            exit 1
+          fi
+          echo "ledger matches files"
           echo "migration lifecycle OK"
   # 转换层的两个"兜底"车道。fallback 不需要库（只渲染 + 校验 + 合并语义），
   # review 需要库（队列状态机在 0003 的触发器里）。
