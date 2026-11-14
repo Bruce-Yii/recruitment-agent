@@ -5,9 +5,13 @@
     "profile": {
       "bundles": [
         "@deepseek-ai/dsh-base",
-        "@deepseek-ai/dsh-headless"
+        "@deepseek-ai/dsh-headless",
+        "@recruitment/dsh-recruitment"
       ],
       "patchReload": "startup"
     }
+  },
+  "dependencies": {
+    "@recruitment/dsh-recruitment": "link:../../dsh-recruitment"
   }
 }

@@ -190,3 +190,36 @@
   disabled: false
 - id: deepseek-account
   disabled: true
+
+# ---------------------------------------------------------------------------
+# G2：Worker Session 必须能调招聘业务工具（此前 worker 只有 dsh-base+headless）。
+#
+# **按 id 覆盖，不用 insert**：bundle 层已经 insert 了一个 recruitment 行，patch 层再 insert
+# 会追加第二个同 id 行 → 插件装配两次（工具重复注册/双份 runtime）。DSH 的 applyEntryPatches
+# 语义是"按 id 命中 → 整体替换 config"，所以这里把 runtime/database/converter 三段完整写出。
+# - runtime.enabled=false：Worker 只执行一次 Attempt，不得再起 tick/event 运行时（防递归派发）。
+# - converter/database 与产品 profile 同源（D-112：值由环境变量提供，零机器路径）。
+# - 写类工具仍走 ctx.approval；headless 无应答者时 fail-closed（D-79）。
+- id: recruitment
+  config:
+    # G2：Worker 会话不派发任务（防递归 tick / 防多 ticker）。
+    runtime:
+      enabled: false
+    # 业务库：只读工具取证用（trace_get / job_get / candidate_get / assessment 投影）。
+    database:
+      host: 127.0.0.1
+      port: 5432
+      user: postgres
+      database: ra_s6s7
+      password_env: RECRUITMENT_DB_PASSWORD
+      tenant_id: '11111111-1111-4111-8111-000000000001'
+      actor_id: '11111111-1111-4111-8111-000000000103'
+    # 解析类工具（RESUME_PARSE 的真实工具面）：值由部署环境提供，缺值 fail-closed。
+    converter:
+      python_bin: '${RECRUITMENT_PYTHON_BIN}'
+      converter_dir: '${RECRUITMENT_CONVERTER_DIR}'
+      allowed_roots:
+        - '${RECRUITMENT_ALLOWED_ROOT_RESUME_POOL}'
+        - '${RECRUITMENT_ALLOWED_ROOT_ORCHESTRATION}'
+        - '${RECRUITMENT_ALLOWED_ROOT_CODEX}'
+      timeout_ms: 180000

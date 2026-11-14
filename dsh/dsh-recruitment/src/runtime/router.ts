@@ -20,6 +20,7 @@ import type { EventReceiveResult, InboundEvent, TickReceipt } from './types.ts'
 import type { DshWorkerConfig } from './worker.ts'
 import { DshHeadlessWorkerLauncher } from './worker.ts'
 import { TaskRuntime as ConcreteTaskRuntime } from './task-runtime.ts'
+import { createStoreTaskContextSource } from './task-context.ts'
 
 /** Router 的配置。 */
 export interface RouterOptions {
@@ -118,7 +119,13 @@ export interface ComposedRuntime {
  * @returns 可直接 `tick()` 的运行时。
  */
 export function composeRuntime(options: ComposeRuntimeOptions): ComposedRuntime {
-  const launcher = new DshHeadlessWorkerLauncher(options.worker)
+  // G2（长任务跨会话）：把业务上下文（trigger event / business objects / 版本钉 /
+  // 证据 locator）注入 Worker 任务书。只注入既有 RuntimeStore 能回答的事实；
+  // 查不到的项由 task-context 归入 UNKNOWNS，绝不编造（R3）。
+  const launcher = new DshHeadlessWorkerLauncher({
+    ...options.worker,
+    taskContext: options.worker.taskContext ?? createStoreTaskContextSource(options.store),
+  })
   const events = new EventRuntime({
     store: options.store,
     pendingBatchSize: options.pendingBatchSize,

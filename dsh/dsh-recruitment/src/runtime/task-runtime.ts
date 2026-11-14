@@ -140,6 +140,10 @@ export class TaskRuntime {
    */
   private async executeClaim(claim: TaskClaim, signal: AbortSignal): Promise<DispatchResult> {
     await this.store.startAttempt(claim.attemptId, this.leaseMs)
+    // 续跑时传上次的 DSH Session id：store 会**接管既有 agent_session 行**而不是插新行
+    // （一个 DSH Session 只允许一行 agent_session，契约 §1；否则收尾会撞
+    // uq_agent_session_runtime 把 Attempt 卡在 RUNNING）。
+    const resumedSessionId = this.resumeSessions ? claim.lastRuntimeSessionId : null
     const agentSessionId = await this.store.createAgentSession({
       taskId: claim.taskId,
       attemptId: claim.attemptId,
@@ -147,6 +151,7 @@ export class TaskRuntime {
       runtimeVersion: this.launcher.runtimeVersion,
       modelRoute: this.launcher.modelRoute,
       runtimeWorkerRole: 'WORKER',
+      resumedRuntimeSessionId: resumedSessionId,
     })
     const workspaceDir = join(this.workspaceRoot, claim.taskId)
     try {
@@ -163,7 +168,8 @@ export class TaskRuntime {
       description: claim.description,
       businessRefs: claim.businessRefs,
       prompt: '',
-      resumeSessionId: this.resumeSessions ? claim.lastRuntimeSessionId : null,
+      // 与 createAgentSession 的接管口径**同源**：续跑的就是这一条 DSH Session id。
+      resumeSessionId: resumedSessionId,
       workspaceDir,
     }
 

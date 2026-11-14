@@ -175,7 +175,11 @@ export class RuntimeStore {
     return lease.startAttempt(this.pool, this.tenantId, this.actorId, attemptId, leaseMs)
   }
 
-  /** 登记一次 Agent Session（执行上下文）。执行前插入，`runtime_session_id` 可后补。 */
+  /**
+   * 登记一次 Agent Session（执行上下文）。执行前登记，`runtime_session_id` 可后补。
+   * `resumedRuntimeSessionId` 非空时**接管**既有 session 行（一个 DSH Session 只允许一行，
+   * 契约 §1；避免续跑收尾撞 `uq_agent_session_runtime`）。
+   */
   createAgentSession(input: {
     readonly taskId: string
     readonly attemptId: string
@@ -183,6 +187,7 @@ export class RuntimeStore {
     readonly runtimeVersion: string
     readonly modelRoute: string
     readonly runtimeWorkerRole?: 'ROUTER' | 'WORKER'
+    readonly resumedRuntimeSessionId?: string | null
   }): Promise<string> {
     return lease.createAgentSession(this.pool, this.tenantId, this.actorId, input)
   }

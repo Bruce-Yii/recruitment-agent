@@ -66,7 +66,27 @@ export async function startAttempt(
   })
 }
 
-/** 登记一次 Agent Session（执行上下文）。执行前插入，`runtime_session_id` 可后补。 */
+/**
+ * 登记一次 Agent Session（执行上下文）。执行前登记，`runtime_session_id` 可后补。
+ *
+ * **续跑复用（G2 P0 缺陷修复，2026-11-15）**：`resumedRuntimeSessionId` 非空时，说明本次
+ * Attempt 会用 `--session-id` 续跑**同一个 DSH Session**。契约
+ * `contracts/runtime/task-runtime.md §1` 规定「一个 DSH Session 只能对应一行 agent_session」，
+ * 因此这里按 `(tenant_id, runtime_kind, runtime_session_id)` 找既有行并**接管**它
+ * （attempt_id=本次 Attempt、status=ACTIVE、last_heartbeat=now、ended_at=null），**不插新行**。
+ *
+ * 为什么必须这样做：旧实现每次都插新行，`finishAttempt` 再把同一个 `runtime_session_id`
+ * 写回新行 → 撞 `uq_agent_session_runtime (tenant_id, runtime_kind, runtime_session_id)`，
+ * 整个收尾事务回滚、Attempt 永久停在 RUNNING（现场证据见
+ * `work/verify-2026-11-15-g2/B/logs/kill-worker-driver-b.log`）。
+ * 找不到既有行（例如会话日志已被清理）→ 退回插入新行（正常新会话路径）。
+ *
+ * 接管时**不改** runtime_version / model_route：这两列描述该 DSH Session 被创建时的路由事实；
+ * 续跑会话内部的模型由 DSH 会话自身钉住，改写历史会制造假审计。
+ *
+ * @param input - 含可选的 `resumedRuntimeSessionId`（= TaskClaim.lastRuntimeSessionId）。
+ * @returns 本次 Attempt 关联的 `agent_session.id`（既有被接管行或新插入行）。
+ */
 export async function createAgentSession(
   pool: DatabasePool,
   tenantId: string,
@@ -78,9 +98,40 @@ export async function createAgentSession(
     readonly runtimeVersion: string
     readonly modelRoute: string
     readonly runtimeWorkerRole?: 'ROUTER' | 'WORKER'
+    /** 本次要续跑的 DSH Session id（`null`/缺省 = 新会话）。 */
+    readonly resumedRuntimeSessionId?: string | null
   },
 ): Promise<string> {
   return withActor(pool, actorId, async (client) => {
+    const resumed = typeof input.resumedRuntimeSessionId === 'string'
+      ? input.resumedRuntimeSessionId.trim()
+      : ''
+    if (resumed !== '') {
+      const existing = await client.query<{ id: string }>(
+        `select id::text
+           from recruitment.agent_session
+          where tenant_id = $1::uuid
+            and task_id = $2::uuid
+            and runtime_kind = $3
+            and runtime_session_id = $4
+          for update`,
+        [tenantId, input.taskId, input.runtimeKind, resumed],
+      )
+      const adopted = existing.rows[0]
+      if (adopted !== undefined) {
+        await client.query(
+          `update recruitment.agent_session
+              set task_id = $2::uuid,
+                  attempt_id = $3::uuid,
+                  status = 'ACTIVE',
+                  ended_at = null,
+                  last_heartbeat_at = now()
+            where tenant_id = $1::uuid and id = $4::uuid`,
+          [tenantId, input.taskId, input.attemptId, adopted.id],
+        )
+        return adopted.id
+      }
+    }
     const { rows } = await client.query<{ id: string }>(
       `insert into recruitment.agent_session (
            tenant_id, task_id, attempt_id, runtime_kind, runtime_version, model_route,
@@ -127,7 +178,15 @@ export async function finishAttempt(
       throw new Error(`ATTEMPT_NOT_FOUND: ${input.attemptId} for task ${input.taskId}`)
     }
     const attemptNo = num(attemptRow.rows[0].attempt_no)
-    const errorClass = input.errorClass ?? (input.outcomeState === 'succeeded' ? null : 'TRANSIENT')
+    const errorClass = input.errorClass ?? (
+      input.outcomeState === 'succeeded'
+        ? null
+        // 契约 §3.1：waiting → WAIT_EXTERNAL；blocked → WAIT_EXTERNAL（= 等外部/人等事实，
+        // 不是瞬态故障）。此前一律落 TRANSIENT，审计会把"等人"误读成"网络抖动"（C 复核 D-5）。
+        : input.outcomeState === 'waiting' || input.outcomeState === 'blocked'
+          ? 'WAIT_EXTERNAL'
+          : 'TRANSIENT'
+    )
     const retryAfter = input.retryAfter
     let attemptStatus: AttemptStatus
     let taskStatus: TaskStatus
@@ -197,8 +256,11 @@ export async function finishAttempt(
         tenantId, attemptStatus, input.resultRef ?? input.rawOutputRef, errorClass,
         input.errorCode, input.outcomeState === 'succeeded' ? null : input.summary.slice(0, 4000),
         input.retryable,
-        // FAILED_RETRYABLE 的 CHECK 要求 retry_after 非空
-        attemptStatus === 'FAILED_RETRYABLE' ? (retryAfter ?? new Date(Date.now() + 30_000).toISOString()) : null,
+        // FAILED_RETRYABLE 的 CHECK 要求 retry_after 非空。
+        // 口径与 Task 的 next_run_at **同源**（failed=retryAfter??30s / waiting=1h / blocked=24h）：
+        // 此前 Attempt 一律写 +30s，导致 attempt.retry_after 与 task.next_run_at 打架（C 复核 D-6），
+        // 审计读回会误判"什么时候会再跑"。
+        attemptStatus === 'FAILED_RETRYABLE' ? (taskNextRunAt ?? new Date(Date.now() + 30_000).toISOString()) : null,
         Math.max(0, Math.round(input.durationMs)), input.attemptId,
       ],
     )
