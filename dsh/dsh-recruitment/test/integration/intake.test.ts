@@ -357,10 +357,15 @@ test('工具级：allowed_roots 之外的路径 → FORBIDDEN（fail-closed）',
       return true
     },
   )
+  // 2026-11-14：allowed_roots 是**最外层**边界，现在先判路径再判媒体类型。
+  // 修 S6 的格式盲区（DOCX 进不来）时去掉了"扩展名必须是 .pdf"的第一道判定，
+  // 所以越界文件无论扩展名是什么，答案都是 FORBIDDEN —— 这才是 fail-closed 的正确顺序
+  // （旧实现先按扩展名判 INVALID_ARGS，把"越界"说成了"参数不合法"）。
   await assert.rejects(
     tool.execute({ path: 'D:\\12412\\dsh工作区\\projects\\recruitment-agent\\converter\\src\\cli.py', job_id: DEMO_JOB }, { signal: new AbortController().signal }),
     (error: unknown) => {
-      assert.equal((error as { code?: string }).code, 'INVALID_ARGS')
+      assert.equal((error as { code?: string }).code, 'FORBIDDEN')
+      assert.match((error as Error).message, /PATH_OUTSIDE_ALLOWED_ROOTS/)
       return true
     },
   )
