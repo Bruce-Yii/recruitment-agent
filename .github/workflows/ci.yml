@@ -220,7 +220,14 @@ jobs:
           # 注意不用 `set -e`：要保证**失败时也把四数打出来**（历史教训：`node --test | tee`
           # 配 `set -e` 会在第一次非零退出时直接掐断，四数一条都没打印，于是"红得没有信息"）。
           STATUS=0
-          node test/run-all.mjs 2>&1 | tee /tmp/plugin-tests.log || STATUS=$?
+          # **为什么 CI 跑串行**：`node --test` 默认按文件并行。插件测试里有少量用例
+          # **故意提交**数据到共享库（并发用例必须提交，否则第二个连接看不见未提交行），
+          # 并行跑时它们与其它文件的提交/清理互相干扰，表现为偶发 `VERSION_CONFLICT`
+          # （2026-11-14 实测：同一 SHA 连跑两次，一次 plugin job 红在
+          # `A6 并发（两连接）`、一次全绿）。CI 门的价值是"绿就是绿"，偶发红会直接
+          # 废掉这个信号。串行不会降低覆盖——test-isolation 已实测"并行=串行、失败集合逐条一致"；
+          # 并行仍保留为本地默认（`pnpm test`），用来开发时快跑。
+          node test/run-all.mjs --test-concurrency=1 2>&1 | tee /tmp/plugin-tests.log || STATUS=$?
 
           echo "== 四数（R3/E2：tests / pass / fail / skipped 必须都报）"
           grep -E '^ℹ (tests|pass|fail|skipped) ' /tmp/plugin-tests.log || true
