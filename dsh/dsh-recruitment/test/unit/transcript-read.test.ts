@@ -9,11 +9,13 @@ import {
   createTranscriptReadTool,
   deriveTranscriptState,
   parseReadArgs,
+  readTranscriptInTransaction,
   unconfiguredTranscriptReadTool,
   type TranscriptStateArtifact,
   type TranscriptStateSnapshot,
 } from '../../src/tools/transcript-read.ts'
 import { resolveDatabaseConfig } from '../../src/db/pool.ts'
+import type { DatabaseClient, ResolvedDatabaseConfig } from '../../src/db/pool.ts'
 
 const INTERVIEW = '11111111-1111-4111-8111-000000000abc'
 const DATABASE = resolveDatabaseConfig({
@@ -283,7 +285,7 @@ test('输出值：无 null、required 齐全、无未声明键；极简形状（
 test('reason_code 只取 §5 封闭集，且序 1 优先于序 2 / 序 3 要求 is_complete', () => {
   const closed = new Set([
     'NO_MEETING_BOUND', 'CANONICAL_STATUS', 'READY_NO_CANONICAL', 'ONLY_PARTIAL',
-    'ONLY_AUTH_REQUIRED', 'NO_ARTIFACT_AFTER_WAIT', 'WAITING',
+    'ONLY_AUTH_REQUIRED', 'NO_ARTIFACT_AFTER_WAIT', 'WAITING', 'ARTIFACT_EMPTY',
   ])
   const sweep: TranscriptStateSnapshot[] = [
     snapshot({ meetings: [] }),
@@ -293,6 +295,7 @@ test('reason_code 只取 §5 封闭集，且序 1 优先于序 2 / 序 3 要求 
     snapshot({ artifacts: [AUTH] }),
     snapshot({ artifacts: [canon(READY)] }),
     snapshot({ artifacts: [canon(PARTIAL)] }),
+    snapshot({ artifacts: [{ transcript_status: 'READY', is_complete: true, is_canonical: true, content_chars: 0 }] }),
   ]
   for (const item of sweep) {
     assert.ok(closed.has(deriveTranscriptState(item).reason_code), `越界 reason_code：${deriveTranscriptState(item).reason_code}`)
@@ -354,4 +357,305 @@ test('D-96：两个 fixture 输出必须不同（有内容 vs 空）', () => {
     artifacts: [{ transcript_status: 'READY', is_complete: true, is_canonical: true, content_chars: 0 }],
   }))
   assert.notDeepEqual(withContent, empty, '“有转写”和“转写为空”必须是两个不同结果')
+})
+
+// =====================================================================
+//  真值 vs output.schema（2026-11-15 P0 回归）
+// =====================================================================
+// 事故：`transcript.artifacts[]` 的输出对象多写了一个 `content_chars`，而
+// `ARTIFACT_SCHEMA`（`additionalProperties:false`）只声明 `char_count`，
+// 真 DSH 会话对工具输出逐值校验 → 任何返回至少 1 个 artifact 的调用都
+// `INVALID_TOOL_OUTPUT`（证据：`work/handoff/FALSIFICATION-2026-11-15.md §1`）。
+//
+// 为什么以前没抓到：上面的 `sampleOutput()` 是**人以为的形状**，它从来不含
+// `content_chars`；真实路径没人跑过。这里用假 `DatabaseClient`（只实现 `query`）
+// 调 **`execute()` 的同一核心函数** `readTranscriptInTransaction()`，把返回的
+// **完整值**按 DSH 子集（`additionalProperties:false` / `required` / `type` / `enum`）
+// 严格校验。判据与 `test/unit/output-schema.test.ts` 的 `valueViolations` 一致。
+
+/** 真会话用的那三个 id（`work/verify-2026-11-15-l1/session/goal.txt`）。 */
+const REAL_INTERVIEW = '11111111-1111-4111-8111-000000000801'
+const REAL_ARTIFACT = '11111111-1111-4111-8111-000000000a01'
+const REAL_MEETING = '11111111-1111-4111-8111-000000000901'
+const REAL_APPLICATION = '11111111-1111-4111-8111-000000000701'
+/** 服务端"现在"（固定值；`as_of` 缺省就用它）。 */
+const REAL_NOW_MS = Date.parse('2026-11-13T11:00:00+08:00')
+
+const READ_CFG = DATABASE as ResolvedDatabaseConfig
+const READ_TOOL = createTranscriptReadTool(READ_CFG)
+
+/** 一份"库里的行"（默认值 = 演示库 `ra_s6s7` 里 801 面试的等价形状）。 */
+function interviewRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: REAL_INTERVIEW,
+    application_id: REAL_APPLICATION,
+    round_no: 1,
+    stage_code: 'S8',
+    status: 'POST_INTERVIEW',
+    scheduled_start_at: new Date('2026-11-12T06:00:00.000Z'),
+    scheduled_end_at: new Date('2026-11-12T07:00:00.000Z'),
+    timezone: 'Asia/Shanghai',
+    record_version: 1,
+    ...overrides,
+  }
+}
+
+function meetingRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    binding_id: '11111111-1111-4111-8111-000000000b01',
+    binding_method: 'MANUAL',
+    meeting_id: REAL_MEETING,
+    provider: 'FEISHU',
+    external_meeting_id: 'manual-demo-2026-11-12',
+    meeting_role: 'PRIMARY',
+    actual_start_at: new Date('2026-11-12T06:00:00.000Z'),
+    actual_end_at: new Date('2026-11-12T07:00:00.000Z'),
+    ...overrides,
+  }
+}
+
+function artifactRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: REAL_ARTIFACT,
+    meeting_id: REAL_MEETING,
+    provider: 'FEISHU',
+    provider_artifact_id: 'feishu:transcript:demo',
+    source_revision: 1,
+    variant_type: 'ORIGINAL',
+    language: 'zh',
+    transcript_status: 'READY',
+    provenance: 'FIXTURE',
+    trigger_mode: 'MANUAL',
+    connection_state: 'CONNECTED',
+    is_canonical: true,
+    is_complete: true,
+    has_more: false,
+    content_sha256: 'a'.repeat(64),
+    fetched_at: new Date('2026-11-12T07:00:00.000Z'),
+    created_at: new Date('2026-11-12T07:00:00.000Z'),
+    char_count: '376',
+    segment_count: '8',
+    ...overrides,
+  }
+}
+
+function recordRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: '11111111-1111-4111-8111-000000000c01',
+    status: 'NEEDS_REVIEW',
+    verification_status: 'UNVERIFIED',
+    transcript_revision: 1,
+    transcript_artifact_id: REAL_ARTIFACT,
+    evidence_ok: false,
+    is_current: true,
+    created_at: new Date('2026-11-12T07:30:00.000Z'),
+    ...overrides,
+  }
+}
+
+/** 假库的场景（只描述"查出来是什么行"，不模拟 SQL 语义）。 */
+interface FakeTranscriptDb {
+  readonly interview: Record<string, unknown>
+  readonly meetings: readonly Record<string, unknown>[]
+  readonly artifacts: readonly Record<string, unknown>[]
+  readonly textRows: readonly Record<string, unknown>[]
+  readonly segments: readonly Record<string, unknown>[]
+  readonly segmentTotal: number
+  readonly record: Record<string, unknown> | undefined
+  readonly waitMinutes: string | null
+  readonly tenant: Record<string, unknown>
+}
+
+/**
+ * 只实现 `query` 的假 `DatabaseClient`：按 SQL 文本返回造好的行。
+ *
+ * 为什么要假库而不是连库：本文件是**纯单测**（CI 无库也能跑），但必须走到
+ * 真实核心函数（`readTranscriptInTransaction`）里的每一处取值/拼装，
+ * 否则"输出值 vs schema"的漂移仍然抓不到。
+ * @param scenario - 覆盖默认场景的字段（默认 = 有正文、canonical、record 未就绪）。
+ */
+function fakeTranscriptClient(scenario: Partial<FakeTranscriptDb> = {}): DatabaseClient {
+  const db: FakeTranscriptDb = {
+    interview: interviewRow(),
+    meetings: [meetingRow()],
+    artifacts: [artifactRow()],
+    textRows: [],
+    segments: [],
+    segmentTotal: 0,
+    record: recordRow(),
+    waitMinutes: '120',
+    tenant: { tenant_exists: true, demo: 'true', synthetic: null },
+    ...scenario,
+  }
+  const fake = {
+    async query<T>(sql: string): Promise<{ rows: T[] }> {
+      const text = String(sql)
+      if (text.includes('from recruitment.interview_record')) {
+        return { rows: (db.record === undefined ? [] : [db.record]) as T[] }
+      }
+      if (text.includes('from recruitment.interview i')) return { rows: [db.interview] as T[] }
+      if (text.includes('from recruitment.meeting_binding b')) return { rows: [...db.meetings] as T[] }
+      if (text.includes('coalesce(length(a.raw_text)')) return { rows: [...db.artifacts] as T[] }
+      if (text.includes('substring(raw_text from')) return { rows: [...db.textRows] as T[] }
+      if (text.includes('count(*) as total from recruitment.transcript_segment')) {
+        return { rows: [{ total: db.segmentTotal }] as T[] }
+      }
+      if (text.includes('from recruitment.transcript_segment')) return { rows: [...db.segments] as T[] }
+      if (text.includes('tenant_exists')) return { rows: [db.tenant] as T[] }
+      if (text.includes('wait_minutes')) {
+        return { rows: (db.waitMinutes === null ? [] : [{ wait_minutes: db.waitMinutes }]) as T[] }
+      }
+      throw new Error(`fake client 未匹配的 SQL：${text}`)
+    },
+  }
+  return fake as unknown as DatabaseClient
+}
+
+/**
+ * 把**返回值**按 DSH 子集校验（与 `test/unit/output-schema.test.ts` 同一判据）：
+ * 类型、enum、required、additionalProperties:false、数组 items。空数组 = 合法。
+ * @param schema - 工具的 `output.schema`。
+ * @param value - 工具真实返回的值。
+ * @param path - 报错路径前缀。
+ * @returns 违规描述数组。
+ */
+function valueViolations(schema: unknown, value: unknown, path = 'value'): string[] {
+  const node = schema as Record<string, unknown>
+  const out: string[] = []
+  const type = node.type as string | undefined
+  const typeOk = (): boolean => {
+    switch (type) {
+      case 'object': return typeof value === 'object' && value !== null && !Array.isArray(value)
+      case 'array': return Array.isArray(value)
+      case 'string': return typeof value === 'string'
+      case 'integer': return typeof value === 'number' && Number.isInteger(value)
+      case 'number': return typeof value === 'number' && Number.isFinite(value)
+      case 'boolean': return typeof value === 'boolean'
+      default: return true
+    }
+  }
+  if (!typeOk()) return [`${path} 类型不符（期望 ${type}）`]
+  if (Array.isArray(node.enum) && !(node.enum as unknown[]).includes(value)) {
+    out.push(`${path} 不在 enum 里：${JSON.stringify(value)}`)
+  }
+  if (type === 'array' && node.items !== undefined) {
+    ;(value as unknown[]).forEach((item, index) => out.push(...valueViolations(node.items, item, `${path}[${index}]`)))
+  }
+  if (type === 'object') {
+    const record = value as Record<string, unknown>
+    const properties = (node.properties ?? {}) as Record<string, unknown>
+    for (const key of (node.required ?? []) as string[]) {
+      if (!Object.hasOwn(record, key)) out.push(`${path}.${key} 缺失（required）`)
+    }
+    if (node.additionalProperties === false) {
+      for (const key of Object.keys(record)) {
+        if (!Object.hasOwn(properties, key)) out.push(`${path}.${key} 是未声明的键`)
+      }
+    }
+    for (const [key, child] of Object.entries(record)) {
+      if (Object.hasOwn(properties, key)) out.push(...valueViolations(properties[key], child, `${path}.${key}`))
+    }
+  }
+  return out
+}
+
+/** 一次真值读取（走 `readTranscriptInTransaction`，不是手写样例）。 */
+async function readRealValue(
+  scenario: Partial<FakeTranscriptDb> = {},
+  args: Record<string, unknown> = { interview_id: REAL_INTERVIEW, artifact_id: REAL_ARTIFACT },
+): Promise<Record<string, unknown>> {
+  return await readTranscriptInTransaction(
+    fakeTranscriptClient(scenario), READ_CFG, args, REAL_NOW_MS,
+  ) as Record<string, unknown>
+}
+
+test('真值 vs output.schema：readTranscriptInTransaction 完整返回值严格通过（artifact 不得有 content_chars）', async () => {
+  const value = await readRealValue({
+    textRows: [{ content: '00:00 这', total_chars: '376', slice_len: '8' }],
+    segments: [{ sequence: 0, content_text: '00:00 这', speaker_ref: null }],
+    segmentTotal: 1,
+  }, { interview_id: REAL_INTERVIEW, artifact_id: REAL_ARTIFACT, include_segments: true })
+
+  assert.deepEqual(nullPaths(value), [], '输出值里不得有 null（缺省靠省略键）')
+  assert.deepEqual(valueViolations(READ_TOOL.output.schema, value), [], '返回值与 output.schema 不一致')
+
+  const transcript = value.transcript as Record<string, unknown>
+  assert.equal(transcript.state, 'READY')
+  assert.equal(transcript.reason_code, 'CANONICAL_STATUS')
+  assert.equal(transcript.wait_minutes, 120)
+  assert.equal(transcript.artifact_count, 1)
+  const artifact = (transcript.artifacts as Record<string, unknown>[])[0] as Record<string, unknown>
+  // 2026-11-15 P0 的最小回归断言：这个键不属于 schema，出现即真会话 INVALID_TOOL_OUTPUT。
+  assert.equal(Object.hasOwn(artifact, 'content_chars'), false, 'artifact 对象不得有 schema 未声明的 content_chars')
+  assert.equal(artifact.char_count, 376)
+  assert.equal(artifact.segment_count, 8)
+  const text = transcript.text as Record<string, unknown>
+  assert.equal(text.total_chars, 376)
+  assert.equal(text.has_more, true)
+  assert.equal(text.next_offset, 8)
+  assert.equal((transcript.segment_page as Record<string, unknown>).total, 1)
+})
+
+test('负控：把 content_chars 加回真实返回值 → 校验器必须报"未声明的键"（证明本回归抓得到该 P0）', async () => {
+  const value = await readRealValue()
+  const withDrift = structuredClone(value) as Record<string, unknown>
+  const transcript = withDrift.transcript as Record<string, unknown>
+  const artifact = (transcript.artifacts as Record<string, unknown>[])[0] as Record<string, unknown>
+  // 这就是 2026-11-15 真会话失败的那个形状（`0a24395` 引入、:943 写死）。
+  artifact.content_chars = 376
+  const violations = valueViolations(READ_TOOL.output.schema, withDrift)
+  assert.ok(
+    violations.includes('value.transcript.artifacts[0].content_chars 是未声明的键'),
+    `负控未被抓到，violations=${JSON.stringify(violations)}`,
+  )
+})
+
+test('ARTIFACT_EMPTY 的真值也严格通过 schema（reason_code enum 回归）', async () => {
+  const tool = createTranscriptReadTool(READ_CFG)
+  const schema = tool.output.schema as {
+    properties: { transcript: { properties: { reason_code: { enum: string[] } } } }
+  }
+  const enumValues = schema.properties.transcript.properties.reason_code.enum
+  assert.ok(enumValues.includes('ARTIFACT_EMPTY'), `reason_code enum 缺 ARTIFACT_EMPTY：${JSON.stringify(enumValues)}`)
+
+  const value = await readRealValue({
+    artifacts: [artifactRow({ transcript_status: 'READY', is_complete: true, is_canonical: true, char_count: '0', segment_count: '0' })],
+    textRows: [{ content: '', total_chars: '0', slice_len: '0' }],
+  })
+  const transcript = value.transcript as Record<string, unknown>
+  assert.equal(transcript.state, 'PARTIAL', '空正文不得报 READY（D-96）')
+  assert.equal(transcript.reason_code, 'ARTIFACT_EMPTY')
+  assert.equal((transcript.artifacts as Record<string, unknown>[])[0]?.char_count, 0)
+  assert.deepEqual(valueViolations(tool.output.schema, value), [])
+})
+
+test('output.schema 的 reason_code enum 与 TR-D §5 封闭集逐一相等（8 个，含 ARTIFACT_EMPTY）', () => {
+  const tool = createTranscriptReadTool(READ_CFG)
+  const schema = tool.output.schema as {
+    properties: { transcript: { properties: { reason_code: { enum: string[] } } } }
+  }
+  const actual = [...schema.properties.transcript.properties.reason_code.enum].sort()
+  const contract = [
+    'NO_MEETING_BOUND', 'CANONICAL_STATUS', 'READY_NO_CANONICAL', 'ONLY_PARTIAL',
+    'ONLY_AUTH_REQUIRED', 'NO_ARTIFACT_AFTER_WAIT', 'WAITING', 'ARTIFACT_EMPTY',
+  ].sort()
+  assert.deepEqual(actual, contract, 'schema enum 必须与 contracts/interview/transcript-rules.md §5 一致')
+})
+
+test('最小真值（无产物/无正文/无片段/无 record）也严格通过 schema', async () => {
+  const value = await readRealValue({
+    meetings: [],
+    artifacts: [],
+    record: undefined,
+  }, { interview_id: REAL_INTERVIEW })
+
+  assert.deepEqual(nullPaths(value), [])
+  assert.deepEqual(valueViolations(READ_TOOL.output.schema, value), [])
+  const transcript = value.transcript as Record<string, unknown>
+  assert.equal(transcript.state, 'MISSING')
+  assert.equal(transcript.reason_code, 'NO_MEETING_BOUND')
+  for (const optional of ['text', 'segments', 'segment_page', 'record', 'canonical_artifact_id', 'selected_artifact_id']) {
+    assert.equal(Object.hasOwn(transcript, optional), false, `${optional} 缺省必须省略键（不写 null）`)
+  }
+  assert.ok((value.warnings as readonly { code: string }[]).some((warning) => warning.code === 'RECORD_MISSING'))
 })

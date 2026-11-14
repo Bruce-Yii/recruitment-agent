@@ -8,10 +8,12 @@
 // 断言的"事实"全部来自 `src/domain/stage-advance.ts` 的契约：
 //   T1 S6→S7：material（resume_version_id 非空、parse_status ≠ FAILED）+ rubric_version_id 非空
 //   T2 S7→S8：current（superseded_by_decision_id is null）SCREENING 决策 result=ADVANCE
-//   T3 S8→S9：面试已真正发生（interview.status ∈ IN_PROGRESS/POST_INTERVIEW/… 或已有转写产物）
-//   T4 S9→S10：canonical + READY 转写（材料可用）
+//   T3 S8→S9：**canonical READY 转写**（材料就绪）—— interview.status 只作排期状态，
+//             不承载"面试是否发生"，**不是** PASS 依据
+//   T4 S9→S10：canonical + READY 转写（材料可用）+ **≥1 份 SUBMITTED 面评**
 //   HOLD/REJECT → BLOCKED（留在 S7）；没有决策 → WAIT/NO_OP；面试全被取消 → BLOCKED（留在 S8）；
-//   转写取不回来 → BLOCKED（留在 S9）；指针超前（S11/S12）→ STAGE_AHEAD（零 UPDATE）；S10 = 终态。
+//   转写取不回来 → BLOCKED（留在 S8/S9）；材料可用但没有已提交面评 → BLOCKED（留在 S9）；
+//   指针超前（S11/S12）→ STAGE_AHEAD（零 UPDATE）；S10 = 终态。
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
@@ -151,6 +153,12 @@ interface FakeInput {
     readonly transcript_status: string
     readonly is_canonical: boolean
   }[]
+  /**
+   * T4 的面评事实：库里 `status='SUBMITTED'` 的 scorecard 行（只用到它挂在哪个申请上）。
+   * 假库按 `interview → application_id` 归属分派（`countSubmittedScorecards` 的 $2）。
+   * 省略 = 一份已提交面评都没有（→ 材料可用时 BLOCKED SCORECARD_REQUIRED）。
+   */
+  readonly submittedScorecards?: readonly { readonly application_id: string }[]
   /** 依次消费；不提供就按 params 自动生成"成功"的 RETURNING。 */
   readonly updateResults?: readonly (FakeUpdatedRow | null)[]
   /** 让某类查询抛错（模拟 40001 等），例如 `{ match: 'for update', error }`。 */
@@ -185,6 +193,14 @@ function fakeClient(input: FakeInput): DatabaseClient & { readonly calls: readon
       }
       if (text.includes('recruitment.stage_catalog')) {
         return { rows: [...(input.stageOrders ?? STAGE_ORDERS)] }
+      }
+      // T4：数"该申请关联面试下的 SUBMITTED 面评"（按 `interview.application_id` 归属分派；
+      // 必须放在 interview/scorecard 通用分派之前，否则会被"该申请面试"分支截走）。
+      if (text.includes('count(*)::int as n') && text.includes("s.status = 'SUBMITTED'")) {
+        const applicationId = String(params[1])
+        const count = (input.submittedScorecards ?? [])
+          .filter((row) => row.application_id === applicationId).length
+        return { rows: [{ n: count }] }
       }
       // T3/T4：该申请可达的转写产物（经有效 meeting_binding 归属）；默认空 = 没有材料。
       if (text.includes('from recruitment.transcript_artifact')) {
@@ -602,37 +618,121 @@ test('T2 还没有决策 → WAIT → NO_OP（不是错误、零 UPDATE；幂等
 })
 
 // =====================================================================
-//  T3：S8 → S9（面试已真正发生 / 材料已在手）
+//  T3：S8 → S9（**材料就绪**：canonical READY 转写；interview.status 只作排期状态）
 // =====================================================================
 
-test('T3 正例：面试状态 IN_PROGRESS（会议已开始）→ ADVANCED S9，一条 UPDATE，条件是 S8 + record_version', async () => {
+/** 一条"已提交面评"的面评事实（T4 的正例需要它；省略 = 该申请没有任何已提交面评）。 */
+const SUBMITTED_SCORECARD = { application_id: APP_ID }
+
+test('T3 正例：canonical + READY 转写（材料就绪）→ ADVANCED S9；排期状态不参与判定', async () => {
   const { result, client } = await advanceWith({
     application: appRow({ current_stage_code: 'S8', record_version: 5 }),
-    interviews: [interviewRow({ status: 'IN_PROGRESS' })],
+    // 故意用"还没开始"的 SCHEDULED：T3 的 PASS 只看材料，不看面试状态。
+    interviews: [interviewRow({ status: 'SCHEDULED' })],
+    transcripts: [transcriptRow()],
   })
   assert.equal(result.status, 'ADVANCED')
   assert.equal(result.stage_code, 'S9')
   assert.deepEqual(result.transitions, [{ from: 'S8', to: 'S9' }])
-  assert.deepEqual(result.blockers, [], 'T3 通过后 T4 只是 WAIT（还没有材料），不是 blocker')
+  // T3 通过后 T4 因"没有任何已提交面评"停在 S9：这是 blocker，但不是 T3 的失败。
+  assert.deepEqual(result.blockers.map((b) => b.code), ['SCORECARD_REQUIRED'])
   assert.deepEqual(result.warnings, [])
   assert.equal(result.record_version, 6)
   assert.equal(updateCalls(client), 1)
   const update = client.calls.find((call) => call.text.trimStart().startsWith('update recruitment.application'))
   assert.deepEqual(update?.params, [APP_ID, TENANT, 'S8', 'S9', 5], 'UPDATE 必须带 from + record_version')
-  // 只读事实：面试/转写都是 select；除阶段 UPDATE 外没有任何写语句。
+  // 只读事实：面试/转写/面评计数都是 select；除阶段 UPDATE 外没有任何写语句。
   assert.equal(client.calls.filter((call) => call.text.trimStart().startsWith('select')).length >= 3, true)
 })
 
-test('T3 正例：面试还是 SCHEDULED，但已有转写产物（材料在手 ⇒ 面试已发生）→ ADVANCED S9', async () => {
+test('T3 正例：材料就绪 + 已有 SUBMITTED 面评 → 一次调用 S8→S9→S10', async () => {
   const { result, client } = await advanceWith({
     application: appRow({ current_stage_code: 'S8', record_version: 2 }),
-    interviews: [interviewRow({ status: 'SCHEDULED' })],
-    transcripts: [transcriptRow({ transcript_status: 'PARTIAL', is_canonical: false })],
+    interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+    transcripts: [transcriptRow()],
+    submittedScorecards: [SUBMITTED_SCORECARD],
   })
   assert.equal(result.status, 'ADVANCED')
-  assert.equal(result.stage_code, 'S9')
-  assert.deepEqual(result.transitions, [{ from: 'S8', to: 'S9' }])
-  assert.equal(updateCalls(client), 1, 'T4 还没成立（材料不可用）→ 只走一跳')
+  assert.equal(result.stage_code, 'S10')
+  assert.deepEqual(result.transitions, [{ from: 'S8', to: 'S9' }, { from: 'S9', to: 'S10' }])
+  assert.deepEqual(result.blockers, [])
+  assert.equal(result.record_version, 4, '两条 UPDATE 各 +1')
+  assert.equal(updateCalls(client), 2)
+})
+
+test('T3 核心负例：面试 IN_PROGRESS/POST_INTERVIEW 但没有转写 → 不推进（NO_OP，零 UPDATE）', async () => {
+  // 这四条状态在旧语义里是"面试已发生"的 PASS 依据；G3=B 之后它们只是排期状态，
+  // 没有材料就**一个字节都不许动**。
+  for (const status of ['IN_PROGRESS', 'POST_INTERVIEW', 'EVALUATION_READY', 'DECIDED']) {
+    const { result, client } = await advanceWith({
+      application: appRow({ current_stage_code: 'S8', record_version: 3 }),
+      interviews: [interviewRow({ status })],
+    })
+    assert.equal(result.status, 'NO_OP', `${status} 没有材料 ⇒ 不推进`)
+    assert.deepEqual(result.transitions, [])
+    assert.deepEqual(result.blockers, [], `${status} 是"等人/等材料"，不是反向事实`)
+    assert.equal(result.stage_code, 'S8')
+    assert.equal(result.record_version, 3)
+    assert.equal(updateCalls(client), 0, `${status} 必须零 UPDATE`)
+
+    const { view } = await viewWith({
+      application: appRow({ current_stage_code: 'S8', record_version: 3 }),
+      interviews: [interviewRow({ status })],
+    })
+    assert.equal(view.status, 'NO_OP')
+    assert.equal(view.next_action.code, 'IMPORT_TRANSCRIPT', `${status} 的下一步是去导转写`)
+  }
+})
+
+test('T3 等待：材料处理中（DISCOVERED / FETCHING / PARTIAL / WAITING_EXTERNAL）→ NO_OP，零 UPDATE；下一步 = IMPORT_TRANSCRIPT', async () => {
+  for (const status of ['DISCOVERED', 'FETCHING', 'PARTIAL', 'WAITING_EXTERNAL']) {
+    const { result, client } = await advanceWith({
+      application: appRow({ current_stage_code: 'S8', record_version: 4 }),
+      interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+      transcripts: [transcriptRow({ transcript_status: status, is_canonical: false })],
+    })
+    assert.equal(result.status, 'NO_OP', `${status} 材料还没就绪 ⇒ 等待`)
+    assert.deepEqual(result.blockers, [])
+    assert.equal(result.stage_code, 'S8')
+    assert.equal(updateCalls(client), 0)
+
+    const { view } = await viewWith({
+      application: appRow({ current_stage_code: 'S8', record_version: 4 }),
+      interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+      transcripts: [transcriptRow({ transcript_status: status, is_canonical: false })],
+    })
+    assert.equal(view.next_action.code, 'IMPORT_TRANSCRIPT')
+  }
+})
+
+test('T3 负例：材料存在但取不回来（AUTH_REQUIRED / RETRYABLE_FAILED / NEEDS_LINKING）→ BLOCKED TRANSCRIPT_NOT_READY，零 UPDATE（与 T4 同文案同责任）', async () => {
+  for (const status of ['AUTH_REQUIRED', 'RETRYABLE_FAILED', 'NEEDS_LINKING']) {
+    const { result, client } = await advanceWith({
+      application: appRow({ current_stage_code: 'S8', record_version: 6 }),
+      interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+      transcripts: [transcriptRow({ transcript_status: status, is_canonical: false })],
+    })
+    assert.equal(result.status, 'BLOCKED', `${status} 应 BLOCKED`)
+    assert.deepEqual(result.blockers.map((b) => b.code), ['TRANSCRIPT_NOT_READY'])
+    const blocker = result.blockers[0] as NonNullable<typeof result.blockers[0]>
+    assertStructuredResponsibility(blocker, 'TRANSCRIPT_NOT_READY')
+    assert.equal(blocker.owner_role, 'RECRUITMENT_OWNER')
+    assert.equal(blocker.next_action_code, 'REIMPORT_TRANSCRIPT')
+    assert.match(blocker.message, new RegExp(status))
+    assert.equal(result.stage_code, 'S8', '阶段留在 S8')
+    assert.equal(result.record_version, 6)
+    assert.equal(updateCalls(client), 0)
+
+    // 同口径：T4 在 S9 遇到同一份材料，产出的文案必须**逐字一致**（共享构造器的机检）。
+    const t4 = await advanceWith({
+      application: appRow({ current_stage_code: 'S9', record_version: 6 }),
+      interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+      transcripts: [transcriptRow({ transcript_status: status, is_canonical: false })],
+    })
+    assert.equal(t4.result.blockers[0]?.code, 'TRANSCRIPT_NOT_READY')
+    assert.equal(t4.result.blockers[0]?.message, blocker.message, 'T3/T4 的 TRANSCRIPT_NOT_READY 必须同文案')
+    assert.equal(updateCalls(t4.client), 0)
+  }
 })
 
 test('T3 负例：面试全部 CANCELLED / NO_SHOW → BLOCKED INTERVIEW_NOT_COMPLETED，零 UPDATE；责任/下一步结构化', async () => {
@@ -671,7 +771,7 @@ test('T3 等待：还没有面试（没排期）→ NO_OP，零 UPDATE；视图�
   assert.equal(view.next_action.code, 'SCHEDULE_INTERVIEW')
 })
 
-test('T3 等待：面试已排期但还没发生 → NO_OP（零 UPDATE）；视图下一步 = IMPORT_TRANSCRIPT', async () => {
+test('T3 等待：面试已排期但还没有材料 → NO_OP（零 UPDATE）；视图下一步 = IMPORT_TRANSCRIPT', async () => {
   const { result, client } = await advanceWith({
     application: appRow({ current_stage_code: 'S8', record_version: 2 }),
     interviews: [interviewRow({ status: 'SCHEDULED' })],
@@ -696,17 +796,26 @@ test('T3 等待：一场取消、另一场仍排期 → 仍等待（不是 BLOCK
   assert.equal(result.status, 'NO_OP')
   assert.deepEqual(result.blockers, [])
   assert.equal(updateCalls(client), 0)
+  // 混合态不是"全部取消"（不是反向事实）也不是"全部排期态"：pending 落 TRANSCRIPT_MATERIAL，
+  // 但两种 WAIT 的下一步本来都是 IMPORT_TRANSCRIPT（视图口径不变）。
+  const { view } = await viewWith({
+    application: appRow({ current_stage_code: 'S8', record_version: 2 }),
+    interviews: [interviewRow({ status: 'CANCELLED' }), interviewRow({ id: `${INTERVIEW_ID}-2`, status: 'SCHEDULED' })],
+  })
+  assert.equal(view.status, 'NO_OP')
+  assert.equal(view.next_action.code, 'IMPORT_TRANSCRIPT')
 })
 
 // =====================================================================
-//  T4：S9 → S10（canonical + READY 转写 = 材料可用）
+//  T4：S9 → S10（canonical + READY 转写 = 材料可用 **+ ≥1 份 SUBMITTED 面评**）
 // =====================================================================
 
-test('T4 正例：canonical + READY 转写 → ADVANCED S10（v1.0 终态）', async () => {
+test('T4 正例：canonical + READY 转写 + ≥1 份 SUBMITTED 面评 → ADVANCED S10（v1.0 终态）', async () => {
   const { result, client } = await advanceWith({
     application: appRow({ current_stage_code: 'S9', record_version: 7 }),
     interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
     transcripts: [transcriptRow()],
+    submittedScorecards: [SUBMITTED_SCORECARD],
   })
   assert.equal(result.status, 'ADVANCED')
   assert.equal(result.stage_code, 'S10')
@@ -715,6 +824,65 @@ test('T4 正例：canonical + READY 转写 → ADVANCED S10（v1.0 终态）', a
   assert.equal(updateCalls(client), 1)
   const update = client.calls.find((call) => call.text.trimStart().startsWith('update recruitment.application'))
   assert.deepEqual(update?.params, [APP_ID, TENANT, 'S9', 'S10', 7])
+  // 计数查询本身的口径也要钉住：同租户 + 该申请 + 只看 SUBMITTED + **不按 superseded 过滤**。
+  const count = client.calls.find((call) => call.text.includes('count(*)::int as n'))
+  assert.ok(count !== undefined, '材料可用后必须查一次 SUBMITTED 面评计数')
+  assert.match(count.text, /from recruitment\.scorecard s/)
+  assert.match(count.text, /join recruitment\.interview i/)
+  assert.match(count.text, /i\.application_id = \$2/)
+  assert.match(count.text, /s\.status = 'SUBMITTED'/)
+  assert.doesNotMatch(count.text, /superseded_by_scorecard_id/, '刻意不按 superseded 过滤（指令原文=至少 1 份 SUBMITTED）')
+  assert.deepEqual(count.params, [TENANT, APP_ID], '必须按本申请过滤（别人的面评不算）')
+})
+
+test('T4 负例：材料可用但没有任何 SUBMITTED 面评 → BLOCKED SCORECARD_REQUIRED，零 UPDATE；结构化 owner/next', async () => {
+  const { result, client } = await advanceWith({
+    application: appRow({ current_stage_code: 'S9', record_version: 7 }),
+    interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+    transcripts: [transcriptRow()],
+  })
+  assert.equal(result.status, 'BLOCKED')
+  assert.deepEqual(result.blockers.map((b) => b.code), ['SCORECARD_REQUIRED'])
+  const blocker = result.blockers[0] as NonNullable<typeof result.blockers[0]>
+  assertStructuredResponsibility(blocker, 'SCORECARD_REQUIRED')
+  assert.equal(blocker.owner_role, 'JOB_HIRING_MANAGER', '该找岗位/部门的招聘负责人')
+  assert.equal(blocker.next_action_code, 'SUBMIT_SCORECARD')
+  assert.equal(blocker.owner_actor_id, OWNER_ACTOR, '能推出招聘负责人就填')
+  assert.match(blocker.message, /recruitment_scorecard_submit/, 'message 必须指向真实的人提交入口')
+  assert.match(blocker.message, /SUBMITTED/)
+  assert.deepEqual(result.transitions, [])
+  assert.equal(result.stage_code, 'S9', '阶段留在 S9')
+  assert.equal(result.record_version, 7, 'record_version 不变（零 UPDATE 的硬证据）')
+  assert.equal(updateCalls(client), 0)
+  // 结构化下一步的人读说明必须登记在案（不是自由文本）。
+  const { view } = await viewWith({
+    application: appRow({ current_stage_code: 'S9', record_version: 7 }),
+    interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+    transcripts: [transcriptRow()],
+  })
+  assert.equal(view.status, 'BLOCKED')
+  assert.equal(view.blocked, true)
+  assert.equal(view.next_action.code, 'SUBMIT_SCORECARD')
+  assert.match(view.next_action.message, /recruitment_scorecard_submit/)
+  assert.equal(updateCalls(client), 0, '只读视图也零写入')
+})
+
+test('T4 负例：SUBMITTED 面评挂在**别的申请**的面试上 → 不算（仍 BLOCKED SCORECARD_REQUIRED）', async () => {
+  const OTHER_APPLICATION = '11111111-1111-4111-8111-000000000799'
+  const { result, client } = await advanceWith({
+    application: appRow({ current_stage_code: 'S9', record_version: 7 }),
+    interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+    transcripts: [transcriptRow()],
+    submittedScorecards: [{ application_id: OTHER_APPLICATION }],
+  })
+  assert.equal(result.status, 'BLOCKED')
+  assert.deepEqual(result.blockers.map((b) => b.code), ['SCORECARD_REQUIRED'])
+  assert.equal(result.stage_code, 'S9')
+  assert.equal(result.record_version, 7)
+  assert.equal(updateCalls(client), 0)
+  // 计数查询只认本申请（$2 = APP_ID），别的申请的面评不会被算进来。
+  const count = client.calls.find((call) => call.text.includes('count(*)::int as n'))
+  assert.deepEqual(count?.params, [TENANT, APP_ID])
 })
 
 test('T4 负例：转写取不回来（AUTH_REQUIRED / RETRYABLE_FAILED / NEEDS_LINKING）→ BLOCKED TRANSCRIPT_NOT_READY，零 UPDATE', async () => {
@@ -737,7 +905,7 @@ test('T4 负例：转写取不回来（AUTH_REQUIRED / RETRYABLE_FAILED / NEEDS_
   }
 })
 
-test('T4 等待：面试已执行但还没有材料 → NO_OP（停在 S9，零 UPDATE）；视图下一步 = IMPORT_TRANSCRIPT', async () => {
+test('T4 等待：材料还没到手 → NO_OP（停在 S9，零 UPDATE）；视图下一步 = IMPORT_TRANSCRIPT', async () => {
   const { result, client } = await advanceWith({
     application: appRow({ current_stage_code: 'S9', record_version: 4 }),
     interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
@@ -786,6 +954,7 @@ test('全链：T1–T4 同时成立 → 一次调用 S6→S7→S8→S9→S10（�
     decision: { id: DECISION_ID, result: 'ADVANCE', decided_by_actor_id: '11111111-1111-4111-8111-000000000102' },
     interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
     transcripts: [transcriptRow()],
+    submittedScorecards: [SUBMITTED_SCORECARD],
   })
   assert.equal(result.status, 'ADVANCED')
   assert.equal(result.stage_code, 'S10')
@@ -988,8 +1157,13 @@ test('§11.6-8 所有阻塞/告警都带结构化 owner_role + next_action_code�
       decision: { id: DECISION_ID, result: 'HOLD', decided_by_actor_id: '11111111-1111-4111-8111-000000000104' } }, // SCREENING_DECISION_NOT_ADVANCE
     { application: appRow({ current_stage_code: 'S8' }),
       interviews: [interviewRow({ status: 'CANCELLED' })] },                                          // INTERVIEW_NOT_COMPLETED
+    { application: appRow({ current_stage_code: 'S8' }),
+      interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+      transcripts: [transcriptRow({ transcript_status: 'AUTH_REQUIRED' })] },                         // TRANSCRIPT_NOT_READY（T3 侧）
     { application: appRow({ current_stage_code: 'S9' }),
-      transcripts: [transcriptRow({ transcript_status: 'AUTH_REQUIRED' })] },                         // TRANSCRIPT_NOT_READY
+      transcripts: [transcriptRow({ transcript_status: 'AUTH_REQUIRED' })] },                         // TRANSCRIPT_NOT_READY（T4 侧）
+    { application: appRow({ current_stage_code: 'S9' }),
+      transcripts: [transcriptRow()] },                                                               // SCORECARD_REQUIRED
     { application: appRow({ current_stage_code: 'S11' }) },                                           // STAGE_AHEAD（warning）
   ]
   for (const input of cases) {
@@ -1219,11 +1393,20 @@ test('描述里的梯子 = 四条边（S6→S7→S8→S9→S10），且写明 S1
 })
 
 test('封闭集：新增 blocker / next_action / pending_fact 都登记在案（防止"只加一个码不写契约"）', () => {
-  for (const code of ['INTERVIEW_NOT_COMPLETED', 'TRANSCRIPT_NOT_READY']) {
+  for (const code of ['INTERVIEW_NOT_COMPLETED', 'TRANSCRIPT_NOT_READY', 'SCORECARD_REQUIRED']) {
     assert.ok((BLOCKER_CODES as readonly string[]).includes(code), `${code} 不在 BLOCKER_CODES`)
   }
-  for (const code of ['SCHEDULE_INTERVIEW', 'IMPORT_TRANSCRIPT', 'RESCHEDULE_INTERVIEW', 'REIMPORT_TRANSCRIPT']) {
+  for (const code of [
+    'SCHEDULE_INTERVIEW', 'IMPORT_TRANSCRIPT', 'RESCHEDULE_INTERVIEW', 'REIMPORT_TRANSCRIPT', 'SUBMIT_SCORECARD',
+  ]) {
     assert.ok((NEXT_ACTION_CODES as readonly string[]).includes(code), `${code} 不在 NEXT_ACTION_CODES`)
+  }
+  // 只许追加，不许删既有码（G3=B 的封闭集变更范围 = +SCORECARD_REQUIRED / +SUBMIT_SCORECARD）。
+  for (const code of ['INTERVIEW_NOT_COMPLETED', 'INTERVIEW_SCHEDULING', 'INTERVIEW_EXECUTION']) {
+    assert.ok(
+      (BLOCKER_CODES as readonly string[]).includes(code) || (PENDING_FACTS as readonly string[]).includes(code),
+      `${code} 是既有码，不许删`,
+    )
   }
   assert.deepEqual(
     [...PENDING_FACTS],

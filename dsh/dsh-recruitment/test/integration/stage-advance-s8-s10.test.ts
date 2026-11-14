@@ -1,25 +1,27 @@
-// 阶段推进（D-A 修复）× 真实 PostgreSQL（ra_s6s7）：证明 S8→S9→S10 **真的能推进**，
+// 阶段推进（D-A 修复 + G3=B）× 真实 PostgreSQL（ra_s6s7）：证明 S8→S9→S10 **真的能推进**，
 // 并且 `application.current_stage_code` 读回是 S10。
 //
-// 背景（不是"跑通了所以加个测试"，而是一条已实测确认的范围缺口）：
-//   Golden Path 跑完 S10（`decisions` 里已有 `STAGE/S10/ADVANCE`、`scorecards=2`、
-//   `transcript_artifact=1`、`interview_record=1`）之后，`application.current_stage_code`
-//   仍是 S8；梯子只有 S6→S7→S8 两条边（`src/domain/stage-advance.ts` 的 LADDER）。
-//   本文件用真库证明补完 S8→S9（T3）与 S9→S10（T4）之后，同一个终态形状能读回 **S10**。
+// G3=B（2026-11-15 产品裁决）之后这两条边的语义是：
+//   * T3 S8→S9 = **材料就绪**：`is_canonical=true` 且 `transcript_status='READY'` 的转写经未解绑
+//     `meeting_binding` 可达。`interview.status` **只作排期状态**，不是 PASS 依据
+//     （"面试 IN_PROGRESS 但没有材料"必须**不推进**）。
+//   * T4 S9→S10 = 材料可用 **+ ≥1 份 `status='SUBMITTED'` 的面评**（先材料、后面评；
+//     0 份 → BLOCKED `SCORECARD_REQUIRED`、零写入）。
 //
 // 每条断言都**读库回验**，不信函数返回值自述：
-//   A12 S8→S9 正向 + "材料未齐时停在 S9" + 补材料后 S9→S10；终态读回 current_stage_code='S10'。
-//   A13 S8→S9→S10 一次调用两跳（Golden Path 终态形状：面试已执行 + canonical READY 转写 +
+//   A12 S8→S9 正向（先材料）+ 没有面评时停在 S9 + 补面评后 S9→S10；终态读回 current_stage_code='S10'。
+//   A13 S8→S9→S10 一次调用两跳（Golden Path 终态形状：canonical READY 转写 + SUBMITTED 面评 +
 //       interview_record(NEEDS_REVIEW/UNVERIFIED) + decision(STAGE/S10/ADVANCE)）→ 读回 S10。
 //   A14 负例：面试全部取消/未到场 → BLOCKED(INTERVIEW_NOT_COMPLETED)，零写入。
 //   A15 负例：转写取不回来（AUTH_REQUIRED）→ BLOCKED(TRANSCRIPT_NOT_READY)，零写入。
 //   A16 只读阻塞视图（真库）：S8 等排期 / S9 等材料 / S10 终态 的 next_action 正确，且只发读语句。
+//   A17 负例：材料可用但没有 SUBMITTED 面评 → BLOCKED(SCORECARD_REQUIRED)，**逐表 delta=0**。
 //
 // 事务纪律（沿用 test/integration/db.ts）：
 //   * 每个用例都在 `inRolledBackTx`（REPEATABLE READ）里跑，结束一律 ROLLBACK ——
 //     `ra_s6s7` 是共享演示库，本文件**不提交任何行**；
 //   * 夹具直接用 SQL 造（工具端点不提供造夹具入口）：interview / meeting / meeting_binding /
-//     transcript_artifact / interview_record 都是"已经发生的事实"，与 Golden Path 的真实形状一致。
+//     transcript_artifact / interview_record / scorecard 都是"已经发生的事实"，与 Golden Path 的形状一致。
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
@@ -27,6 +29,7 @@ import { advanceApplicationStage, readStageBlockedView } from '../../src/domain/
 import type { DatabaseClient } from '../../src/db/pool.ts'
 import {
   createTestPool,
+  hex64,
   HR_ACTOR,
   inRolledBackTx,
   one,
@@ -245,6 +248,59 @@ async function insertStageDecision(client: DatabaseClient, applicationId: string
 }
 
 /**
+ * 插一条 `SUBMITTED` 面评（T4 的后半闸门：材料可用 + ≥1 份已提交面评）。
+ *
+ * 先建 `interviewer` 行（`scorecard.interviewer_id` 的复合外键要求它属于同一场面试），
+ * 再插终态行。`job_id` 由 0007 的 GAP-C 要求非空，且 `trg_scorecard_job_guard` 会校验
+ * 它 = `interview → application.job_id`；终态行还必须带 `status_changed_by_actor_id`
+ * （0007 的 GAP-E）。这些都是**与迁移同源**的库约束，测试不绕过它们。
+ * @param client - 事务内连接。
+ * @param scenario - `seedScenario` 的 id 集合（要 applicationId / jobId / rubricId）。
+ * @param interviewId - 面评归属的面试。
+ * @returns 面评 id。
+ */
+async function insertSubmittedScorecard(
+  client: DatabaseClient,
+  scenario: { readonly applicationId: string; readonly jobId: string; readonly rubricId: string },
+  interviewId: string,
+): Promise<string> {
+  const interviewerId = await one(client, `insert into recruitment.interviewer
+      (tenant_id, interview_id, actor_id, role_in_interview)
+      values ($1, $2, $3, 'INTERVIEWER') returning id`, [
+    TENANT, interviewId, HR_ACTOR,
+  ])
+  return await one(client, `insert into recruitment.scorecard
+      (tenant_id, job_id, interview_id, interviewer_id, rubric_version_id, revision_no, status,
+       submitted_at, items, overall, rationale, payload_hash,
+       status_changed_at, status_changed_by_actor_id)
+      values ($1, $2, $3, $4, $5, 1, 'SUBMITTED',
+              now(), '{"transcript_basis":"TRANSCRIPT"}'::jsonb, 'ADVANCE',
+              '集成测试：合成面评（不含 PII）', $6, now(), $7) returning id`, [
+    TENANT, scenario.jobId, interviewId, interviewerId, scenario.rubricId,
+    hex64(`scorecard-${uniqueSuffix()}`), HR_ACTOR,
+  ])
+}
+
+/** "零写入"的逐表证据：这些表的行数在 BLOCKED 调用前后必须一个都不变。 */
+const ZERO_WRITE_TABLES = [
+  'application', 'event_inbox', 'scorecard', 'interview', 'transcript_artifact', 'decision', 'business_task',
+] as const
+
+/**
+ * 读一组表的行数（REPEATABLE READ 同一快照里比较：并行跑的文件提交的新行既不进来也不出去）。
+ * @param client - 事务内连接。
+ * @returns 表名 → 行数。
+ */
+async function tableRowCounts(client: DatabaseClient): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {}
+  for (const table of ZERO_WRITE_TABLES) {
+    const { rows } = await client.query<{ n: string }>(`select count(*)::text as n from recruitment.${table}`)
+    counts[table] = Number(rows[0]?.n ?? 0)
+  }
+  return counts
+}
+
+/**
  * 造"申请停在 S8"的夹具：默认 rubric 已钉、材料已绑（S6/S7 的事实已成立，只剩面试这一段）。
  * @param client - 事务内连接。
  * @returns `seedScenario` 的 id 集合（applicationId / rubricId 等）。
@@ -258,10 +314,10 @@ async function seedAtS8(
 }
 
 // =====================================================================
-//  A12 · S8 → S9（面试已发生）+ 材料未齐时停在 S9 + 材料齐后 S9 → S10
+//  A12 · S8 → S9（**材料就绪**：先有 canonical READY 转写）+ 没有面评时停在 S9 + 补面评后 S9 → S10
 // =====================================================================
 
-test('A12 S8→S9：面试已开始（IN_PROGRESS）→ 真库推进到 S9；材料未齐 NO_OP；补 canonical READY 后 S9→S10，读回 S10', async () => {
+test('A12 S8→S9：面试状态动了但**没有材料** → 不推进（NO_OP）；canonical READY 后 → S9；无 SUBMITTED 面评被 SCORECARD_REQUIRED 挡住；补面评后 S9→S10，读回 S10', async () => {
   await inRolledBackTx(pool, async (client) => {
     const scenario = await seedAtS8(client)
     const chain = await insertInterviewChain(client, scenario.applicationId, 'IN_PROGRESS')
@@ -269,7 +325,26 @@ test('A12 S8→S9：面试已开始（IN_PROGRESS）→ 真库推进到 S9；材
     // 夹具把申请拖到 S8 时 `fn_row_guard` 已经写过一条 S7→S8 事件；下面只比较**本次推进新增**的事件。
     const eventsBefore = await stageChangeEvents(client, scenario.applicationId)
 
-    // ---- 第一跳：S8 → S9（T3 的事实 = 会议已经开始）----
+    // ---- G3=B 的核心语义：interview.status=IN_PROGRESS 但**没有任何转写材料** → 不推进 ----
+    const waiting = await advanceApplicationStage(client, {
+      tenantId: TENANT,
+      applicationId: scenario.applicationId,
+    })
+    assert.equal(waiting.status, 'NO_OP', '面试状态只是排期状态：没有材料就不许推进（旧实现会在这里 ADVANCED）')
+    assert.deepEqual(waiting.transitions, [])
+    assert.deepEqual(waiting.blockers, [], '等人/等材料 ≠ 被挡住')
+    assert.equal(waiting.stage_code, 'S8')
+    const afterWaiting = await readApp(client, scenario.applicationId)
+    assert.equal(afterWaiting.current_stage_code, 'S8', '阶段一个字节都不动')
+    assert.equal(afterWaiting.record_version, before.record_version, '零 UPDATE ⇒ 版本不变')
+    assert.equal(
+      (await stageChangeEvents(client, scenario.applicationId)).length,
+      eventsBefore.length,
+      '不许产生阶段事件',
+    )
+
+    // ---- 材料就绪（canonical READY 转写）：S8 → S9 ----
+    await insertTranscriptArtifact(client, chain.meetingId, 'READY', true)
     const first = await advanceApplicationStage(client, {
       tenantId: TENANT,
       applicationId: scenario.applicationId,
@@ -277,7 +352,8 @@ test('A12 S8→S9：面试已开始（IN_PROGRESS）→ 真库推进到 S9；材
     assert.equal(first.status, 'ADVANCED')
     assert.equal(first.stage_code, 'S9')
     assert.deepEqual(first.transitions, [{ from: 'S8', to: 'S9' }])
-    assert.deepEqual(first.blockers, [], 'T3 通过、T4 只是 WAIT（还没有材料）→ 不是 blocker')
+    // T4 先材料、后面评：材料已可用但一份 SUBMITTED 面评都没有 ⇒ 阶段**已经**到 S9，再被 blocker 挡住。
+    assert.deepEqual(first.blockers.map((b) => b.code), ['SCORECARD_REQUIRED'])
 
     const afterFirst = await readApp(client, scenario.applicationId)
     assert.equal(afterFirst.current_stage_code, 'S9', '库里的阶段必须真的变成 S9')
@@ -292,27 +368,28 @@ test('A12 S8→S9：面试已开始（IN_PROGRESS）→ 真库推进到 S9；材
     assert.ok(appliedEvent !== undefined, '必须真的写了一条 S8→S9 阶段事件')
     assert.equal(afterFirst.stage_source_event_id, appliedEvent.event_id, 'stage_source_event_id 由触发器回填')
 
-    // ---- 停在 S9：还没有材料（T4 WAIT）→ NO_OP、零 UPDATE ----
-    const second = await advanceApplicationStage(client, {
+    // ---- 停在 S9：材料可用，但没有 SUBMITTED 面评（T4 反向事实）→ BLOCKED、零 UPDATE ----
+    const blocked = await advanceApplicationStage(client, {
       tenantId: TENANT,
       applicationId: scenario.applicationId,
     })
-    assert.equal(second.status, 'NO_OP', '材料还没到手 ≠ 被挡住')
-    assert.deepEqual(second.transitions, [])
-    assert.deepEqual(second.blockers, [])
-    assert.equal(second.stage_code, 'S9')
-    const afterSecond = await readApp(client, scenario.applicationId)
-    assert.equal(afterSecond.record_version, afterFirst.record_version, 'NO_OP 不许发 UPDATE')
+    assert.equal(blocked.status, 'BLOCKED')
+    assert.deepEqual(blocked.blockers.map((b) => b.code), ['SCORECARD_REQUIRED'])
+    const blockedBlocker = blocked.blockers[0] as NonNullable<(typeof blocked.blockers)[0]>
+    assert.equal(blockedBlocker.owner_role, 'JOB_HIRING_MANAGER')
+    assert.equal(blockedBlocker.next_action_code, 'SUBMIT_SCORECARD')
+    assert.match(blockedBlocker.message, /recruitment_scorecard_submit/)
+    assert.equal(blocked.stage_code, 'S9')
+    const afterBlocked = await readApp(client, scenario.applicationId)
+    assert.equal(afterBlocked.record_version, afterFirst.record_version, 'BLOCKED 不许发 UPDATE')
     assert.equal(
       (await stageChangeEvents(client, scenario.applicationId)).length,
       eventsAfterFirst.length,
-      'NO_OP 不许产生事件',
+      'BLOCKED 不许产生事件',
     )
 
-    // ---- 材料到手（canonical READY）：S9 → S10 ----
-    const artifactId = await insertTranscriptArtifact(client, chain.meetingId, 'READY', true)
-    await insertInterviewRecord(client, chain.interviewId, artifactId, scenario.rubricId)
-
+    // ---- 提交一份面评（SUBMITTED）：S9 → S10 ----
+    await insertSubmittedScorecard(client, scenario, chain.interviewId)
     const third = await advanceApplicationStage(client, {
       tenantId: TENANT,
       applicationId: scenario.applicationId,
@@ -320,6 +397,7 @@ test('A12 S8→S9：面试已开始（IN_PROGRESS）→ 真库推进到 S9；材
     assert.equal(third.status, 'ADVANCED')
     assert.equal(third.stage_code, 'S10')
     assert.deepEqual(third.transitions, [{ from: 'S9', to: 'S10' }])
+    assert.deepEqual(third.blockers, [])
 
     // **本用例的核心断言**：读回的阶段码必须是 S10（D-A 的缺陷就是这里读回 S8）。
     const final = await readApp(client, scenario.applicationId)
@@ -351,7 +429,7 @@ test('A12 S8→S9：面试已开始（IN_PROGRESS）→ 真库推进到 S9；材
 //  A13 · 一次调用两跳：S8 → S9 → S10（Golden Path 终态形状）
 // =====================================================================
 
-test('A13 Golden Path 终态形状（面试已执行 + canonical READY 转写 + interview_record 未就绪 + STAGE/S10 决策）→ 一次调用 S8→S9→S10，读回 S10', async () => {
+test('A13 Golden Path 终态形状（canonical READY 转写 + SUBMITTED 面评 + interview_record 未就绪 + STAGE/S10 决策）→ 一次调用 S8→S9→S10，读回 S10', async () => {
   await inRolledBackTx(pool, async (client) => {
     const scenario = await seedAtS8(client)
     const chain = await insertInterviewChain(client, scenario.applicationId, 'POST_INTERVIEW')
@@ -360,6 +438,8 @@ test('A13 Golden Path 终态形状（面试已执行 + canonical READY 转写 + 
     await insertInterviewRecord(client, chain.interviewId, artifactId, scenario.rubricId)
     // Golden Path HOP 15 的真实结果：`decision(STAGE, S10, ADVANCE)` 已经落库。
     const decisionId = await insertStageDecision(client, scenario.applicationId)
+    // G3=B：S9→S10 还要求 ≥1 份已提交面评（人/面试官用 recruitment_scorecard_submit 交的那份）。
+    await insertSubmittedScorecard(client, scenario, chain.interviewId)
     const before = await readApp(client, scenario.applicationId)
     const eventsBefore = await stageChangeEvents(client, scenario.applicationId)
 
@@ -466,6 +546,51 @@ test('A15 负例：转写 AUTH_REQUIRED（取不回来）→ BLOCKED(TRANSCRIPT_
     assert.equal(after.current_stage_code, 'S9', '阶段留在 S9')
     assert.equal(after.record_version, before.record_version, '零 UPDATE ⇒ 版本不变')
     assert.equal((await stageChangeEvents(client, scenario.applicationId)).length, eventsBefore.length)
+  })
+})
+
+// =====================================================================
+//  A17 · 负例：材料可用但没有 SUBMITTED 面评 → BLOCKED，逐表零写入
+// =====================================================================
+
+test('A17 负例：材料可用但没有任何 SUBMITTED 面评 → BLOCKED(SCORECARD_REQUIRED)，阶段留 S9、逐表 delta=0', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const scenario = await seedAtS8(client)
+    const chain = await insertInterviewChain(client, scenario.applicationId, 'POST_INTERVIEW')
+    // 材料可用（canonical READY），但没有已提交面评 —— 这是 G3=B 之后最常见的"停在 S9"形状。
+    await insertTranscriptArtifact(client, chain.meetingId, 'READY', true)
+    await setStage(client, scenario.applicationId, 'S9')
+    const before = await readApp(client, scenario.applicationId)
+    const eventsBefore = await stageChangeEvents(client, scenario.applicationId)
+    const countsBefore = await tableRowCounts(client)
+
+    const result = await advanceApplicationStage(client, {
+      tenantId: TENANT,
+      applicationId: scenario.applicationId,
+    })
+
+    assert.equal(result.status, 'BLOCKED')
+    assert.deepEqual(result.blockers.map((b) => b.code), ['SCORECARD_REQUIRED'])
+    const blocker = result.blockers[0] as NonNullable<(typeof result.blockers)[0]>
+    assert.equal(blocker.owner_role, 'JOB_HIRING_MANAGER')
+    assert.equal(blocker.next_action_code, 'SUBMIT_SCORECARD')
+    assert.equal(blocker.owner_actor_id, '11111111-1111-4111-8111-000000000102', '责任人=部门招聘负责人')
+    assert.match(blocker.message, /recruitment_scorecard_submit/)
+    assert.deepEqual(result.transitions, [])
+
+    // 阶段指针 / 版本 / 事件全部不动。
+    const after = await readApp(client, scenario.applicationId)
+    assert.equal(after.current_stage_code, 'S9', '阶段留在 S9')
+    assert.equal(after.record_version, before.record_version, '零 UPDATE ⇒ 版本不变')
+    assert.equal(after.stage_source_event_id, before.stage_source_event_id)
+    assert.equal((await stageChangeEvents(client, scenario.applicationId)).length, eventsBefore.length, '不产生阶段事件')
+
+    // L5 反证：**逐表 delta=0**（application / event_inbox / scorecard / interview /
+    // transcript_artifact / decision / business_task 一行都不许变）。
+    const countsAfter = await tableRowCounts(client)
+    assert.deepEqual(countsAfter, countsBefore, `BLOCKED 必须零写入，实际 delta=${JSON.stringify(
+      Object.fromEntries(Object.keys(countsAfter).map((table) => [table, countsAfter[table]! - countsBefore[table]!])),
+    )}`)
   })
 })
 

@@ -7,20 +7,22 @@
 //           不是 `FAILED`、且已钉住 rubric 版本（`rubric_version_id` 非空）。
 //       T2  S7 → S8：存在 **current**（`superseded_by_decision_id is null`）的
 //           `decision(decision_scope='SCREENING', result='ADVANCE')`。
-//       T3  S8 → S9（面试执行与材料获取）：该申请的面试**已经发生** ——
-//           `interview.status ∈ {IN_PROGRESS, POST_INTERVIEW, EVALUATION_READY, DECIDED}`
-//           （`contracts/interview/scheduling-rules.md §8`：`SCHEDULED → IN_PROGRESS` 属 S9），
-//           **或**已存在该申请的转写产物（`transcript_artifact`：材料已到手 ⇒ 面试已发生；
-//           `transcript-rules.md §7.5` 的 S8→S9 因果链）。全部面试被取消/未到场 → BLOCKED。
-//       T4  S9 → S10（综合评价与招聘决策）：存在该申请的 **canonical + READY** 转写
-//           （`transcript-rules.md §3/§8 TR-C`：canonical READY = 完整原文已获取 = S9 的材料
-//           工作完成）。材料取不回来（AUTH_REQUIRED / RETRYABLE_FAILED / NEEDS_LINKING）→ BLOCKED。
+//       T3  S8 → S9（**材料就绪**）：该申请存在 `is_canonical=true` 且
+//           `transcript_status='READY'` 的转写产物（经**未解绑**的 `meeting_binding` 可达；
+//           `transcript-rules.md §3/§8 TR-C`：canonical READY = 完整原文已获取）。
+//           `interview.status` **只作排期状态**（会议排到哪一步），**不承载"面试是否发生"**，
+//           因此**不是**本边的 PASS 依据；材料取不回来（AUTH_REQUIRED / RETRYABLE_FAILED /
+//           NEEDS_LINKING）→ BLOCKED。
+//       T4  S9 → S10（**材料可用 + ≥1 份已提交面评**）：先要求 canonical READY 转写（同上：
+//           材料可用），再要求该申请关联面试下至少有一份 `scorecard.status='SUBMITTED'`
+//           （由人/面试官用 `recruitment_scorecard_submit` 提交；本命令不代填面评）。
+//           材料可用但一份已提交面评都没有 → BLOCKED（`SCORECARD_REQUIRED`）。
 //   * S10 是**终态**：`stage_catalog.in_v1_scope` 到 S10 为止（S11/S12 = false），v1.0 没有
 //     S10→S11 的合法阶段码可用，**本命令不发明第 13 个码**；指针停在 S10 不再前进。
 //     S10 的决策由 `decision` 行表达（`decision_scope='STAGE'/'FINAL'`），不再改阶段指针。
 //   * 没有事实就没有推进（NO_OP）；有**反向事实**（SCREENING 结果是 HOLD/REJECT、
-//     材料解析失败、rubric 未钉、面试被取消/未到场、转写取不回来）就是 BLOCKED ——
-//     并给出可执行的下一步。
+//     材料解析失败、rubric 未钉、面试全部被取消/未到场、转写取不回来、材料可用但没有
+//     已提交的面评）就是 BLOCKED —— 并给出可执行的下一步。
 //   * 不接受目标阶段、不接受 actor、不写 decision、不建任务：那些不是"承认事实"，
 //     而是"下命令"。命令入口一旦存在，模型就能绕过人（D-79 / D-95 的人机闸门形同虚设）。
 //
@@ -109,7 +111,7 @@
 //     它写的是一个已经由人批准过的事实，不是本命令新造的授权；
 //   * 不倒退（指针已超前于本命令能推导的事实 → `STAGE_AHEAD` 警告 + 一条 UPDATE 都不发）；
 //   * 不跳阶（只走 S6→S7→S8→S9→S10 四条边；中间任一前置不成立就停在那一步 ——
-//     例如 S8 的面试还没发生就停在 S8，S9 的材料还没可用就停在 S9）。
+//     例如 S8 的材料还没就绪就停在 S8，S9 的材料不可用 / 没有已提交面评就停在 S9）。
 
 import { randomUUID } from 'node:crypto'
 
@@ -143,6 +145,8 @@ export const BLOCKER_CODES = [
   'INTERVIEW_NOT_COMPLETED',
   // T4 反向事实（S9 → S10）：材料存在但取不回来（授权/重试失败/会议未绑定）。
   'TRANSCRIPT_NOT_READY',
+  // T4 反向事实（S9 → S10）：材料可用，但该申请一份已提交（SUBMITTED）的面评都没有。
+  'SCORECARD_REQUIRED',
 ] as const
 
 /** 一条 blocker 的稳定码。 */
@@ -177,12 +181,13 @@ export const NEXT_ACTION_CODES = [
   'REPARSE_MATERIAL',
   'RECORD_SCREENING_DECISION',
   'SUPERSEDE_SCREENING_DECISION',
-  // T3（S8 → S9）：面试 / 材料获取这一段的下一步
+  // T3（S8 → S9）：材料就绪 / 材料获取这一段的下一步
   'SCHEDULE_INTERVIEW',
   'IMPORT_TRANSCRIPT',
   'RESCHEDULE_INTERVIEW',
-  // T4（S9 → S10）：材料取不回来时的下一步
+  // T4（S9 → S10）：材料取不回来 / 材料可用但没有已提交面评时的下一步
   'REIMPORT_TRANSCRIPT',
+  'SUBMIT_SCORECARD',
   'REOPEN_APPLICATION',
   'START_AT_INTAKE',
   'VERIFY_STAGE_PROGRESSION',
@@ -204,10 +209,11 @@ export const NEXT_ACTION_MESSAGES: Readonly<Record<StageNextActionCode, string>>
   REPARSE_MATERIAL: '修复或重新导入材料（parse_status 不能是 FAILED），再重试推进。',
   RECORD_SCREENING_DECISION: '由人完成初筛并落一条 SCREENING 决策（recruitment_decision_record），再重试推进。',
   SUPERSEDE_SCREENING_DECISION: '若结论需要改，由人做一次新的 SCREENING 决策取代当前这条，再重试推进。',
-  SCHEDULE_INTERVIEW: '用 recruitment_interview_schedule（intent=CREATE，人过 approval）为这条申请排一场面试；排期后本命令会把阶段推进到 S9。',
-  IMPORT_TRANSCRIPT: '面试结束后用 recruitment_transcript_import 导入/回读会议转写（canonical READY），材料可用后本命令会把阶段推进到 S10。',
-  RESCHEDULE_INTERVIEW: '该申请的面试全部被取消或未到场（没有真正发生）：由人用 recruitment_interview_schedule 重新排期（CREATE / RESCHEDULE），面试发生后再重试推进。',
+  SCHEDULE_INTERVIEW: '用 recruitment_interview_schedule（intent=CREATE，人过 approval）为这条申请排一场面试；排期后本命令会继续等材料就绪。',
+  IMPORT_TRANSCRIPT: '用 recruitment_transcript_import 导入/回读会议转写，直到出现 canonical READY（完整原文已获取）；材料就绪后本命令会把阶段推进到 S9。',
+  RESCHEDULE_INTERVIEW: '该申请的面试全部被取消或未到场：由人用 recruitment_interview_schedule 重新排期（CREATE / RESCHEDULE）。注意：重排不会让材料自己出现，仍要等转写材料就绪。',
   REIMPORT_TRANSCRIPT: '转写产物取不回来（AUTH_REQUIRED / RETRYABLE_FAILED / NEEDS_LINKING）：先修复连接器授权或会议绑定（meeting_binding），再用 recruitment_transcript_import 重新导入，然后重试推进。',
+  SUBMIT_SCORECARD: '该申请还没有任何已提交（SUBMITTED）的面评：由人/面试官用 recruitment_scorecard_submit 提交至少一份面评（本命令不代填），然后重试推进到 S10。',
   REOPEN_APPLICATION: '申请已不在 ACTIVE：确认是否需要重开/重新建档（不在本命令范围）。',
   START_AT_INTAKE: '先用 intake 把申请带到 S6；本命令只覆盖 S6→S7→S8→S9→S10。',
   VERIFY_STAGE_PROGRESSION: '核对这次阶段推进是谁做的：本命令不倒退；S11/S12 不在 v1.0 范围（in_v1_scope=false），不由本命令推进。',
@@ -340,8 +346,8 @@ export interface StageBlockedView {
  * 一条梯子边对应的判定规则（`rule` 只用于注释/契约对照，不进输出）：
  *   * `T1` S6→S7（材料 + rubric）；
  *   * `T2` S7→S8（current SCREENING=ADVANCE）；
- *   * `T3` S8→S9（面试已发生 / 材料已在手）；
- *   * `T4` S9→S10（canonical READY 转写 = 材料可用）。
+ *   * `T3` S8→S9（材料就绪：canonical READY 转写已在手；`interview.status` 只作排期状态）；
+ *   * `T4` S9→S10（材料可用 + ≥1 份 SUBMITTED 面评）。
  */
 type StageRule = 'T1' | 'T2' | 'T3' | 'T4'
 
@@ -378,8 +384,10 @@ const LADDER_CODES: readonly string[] = [...new Set(LADDER.flatMap((edge) => [ed
  *
  *   * `SCREENING_DECISION`   S7 等人工初筛结论；
  *   * `INTERVIEW_SCHEDULING` S8 还没排面试（T3 的事实完全没开始）；
- *   * `INTERVIEW_EXECUTION`  S8 已排期但面试还没发生（T3 等会议开始/结束）；
- *   * `TRANSCRIPT_MATERIAL`  S9 等材料可用（T4 等 canonical READY 转写）。
+ *   * `INTERVIEW_EXECUTION`  S8 的面试都还停在排期态（SCHEDULED/RESCHEDULED），没有材料在手
+ *                            —— 下一步是把会议开起来（不是"面试已发生"的判定）；
+ *   * `TRANSCRIPT_MATERIAL`  S8/S9 等材料就绪（T3/T4 等 canonical READY 转写；含材料仍在
+ *                            DISCOVERED / FETCHING / PARTIAL / WAITING_EXTERNAL 的处理中状态）。
  */
 export const PENDING_FACTS = [
   'SCREENING_DECISION',
@@ -984,7 +992,7 @@ async function readCurrentScreeningDecision(
 //  T3 / T4 的事实读取（只读；写路径与只读视图共用）
 // =====================================================================
 
-/** 一条面试（T3 的唯一事实源：面试有没有真正发生）。 */
+/** 一条面试（**只取排期状态**：`interview.status` 不承载"面试是否发生"）。 */
 interface InterviewRow {
   readonly id: string
   readonly status: string
@@ -1055,6 +1063,36 @@ async function readTranscriptArtifacts(
     [tenantId, applicationId],
   )
   return rows
+}
+
+/**
+ * 数"该申请关联面试下的已提交面评"（T4 的后半闸门：材料可用 + ≥1 份 SUBMITTED）。
+ *
+ * 口径是**刻意**的，与 `v_application_stage_consistency` 视图逐条同源（不许两侧各说各话）：
+ *   * 同租户 + 该申请关联的面试（`s.interview_id → interview.application_id`）；
+ *   * 只看 `status='SUBMITTED'`；
+ *   * **不按 `superseded_by_scorecard_id` 过滤** —— 指令原文是"至少 1 份 SUBMITTED"，
+ *     而修订前的旧行也是一份"人真的提交过"的面评；把它排除会让"交过、后来改了一版"的申请
+ *     被永远挡在 S10 外（修订语义是 SC-17..20，不是"没交过"）。
+ * @param client - 事务内连接。
+ * @param tenantId - 租户。
+ * @param applicationId - 申请 id。
+ * @returns SUBMITTED 面评的条数（没有则 0）。
+ */
+async function countSubmittedScorecards(
+  client: DatabaseClient,
+  tenantId: string,
+  applicationId: string,
+): Promise<number> {
+  const { rows } = await client.query<{ n: number }>(
+    `select count(*)::int as n
+       from recruitment.scorecard s
+       join recruitment.interview i
+         on i.id = s.interview_id and i.tenant_id = s.tenant_id
+      where s.tenant_id = $1 and i.application_id = $2 and s.status = 'SUBMITTED'`,
+    [tenantId, applicationId],
+  )
+  return rows[0]?.n ?? 0
 }
 
 // =====================================================================
@@ -1151,16 +1189,50 @@ type EdgeOutcome =
   | { readonly kind: 'WAIT'; readonly pending?: StagePendingFact }
   | { readonly kind: 'BLOCKED'; readonly blockers: readonly RawBlocker[] }
 
-/** T3：面试"已经真正发生"的状态（`scheduling-rules.md §8`：`SCHEDULED → IN_PROGRESS` 属 S9）。 */
-const EXECUTED_INTERVIEW_STATUSES: readonly string[] = [
-  'IN_PROGRESS', 'POST_INTERVIEW', 'EVALUATION_READY', 'DECIDED',
-]
+/**
+ * T3 的**排期状态子集**：面试都还停在"排好了期、会议没开始"。
+ *
+ * 注意：这些状态**只用于决定 WAIT 的 pending 是哪一个**（下一步是"把会议开起来"还是"去导材料"），
+ * 不参与 PASS 判定 —— PASS 的唯一依据是 canonical READY 转写（见 {@link evaluateT3}）。
+ */
+const SCHEDULED_INTERVIEW_STATUSES: readonly string[] = ['SCHEDULED', 'RESCHEDULED']
 
 /** T3 的反向事实：这些状态下这场面试不会发生了（除非重新排期）。 */
 const DEAD_INTERVIEW_STATUSES: readonly string[] = ['CANCELLED', 'NO_SHOW']
 
 /** T4 的反向事实：材料存在但取不回来（`transcript-rules.md` 的平台状态轴）。 */
 const FAILED_TRANSCRIPT_STATUSES: readonly string[] = ['AUTH_REQUIRED', 'RETRYABLE_FAILED', 'NEEDS_LINKING']
+
+/**
+ * "材料存在但取不回来"的唯一构造器（T3 与 T4 共用：同口径、同文案、同责任/下一步）。
+ * @param failed - 取不回来的转写产物（至少 1 条；调用方已判）。
+ * @returns 原始阻塞（actor 由 {@link enrichObstructions} 统一补）。
+ */
+function transcriptNotReadyBlocker(failed: readonly TranscriptArtifactRow[]): RawBlocker {
+  const statuses = [...new Set(failed.map((row) => row.transcript_status))]
+  return {
+    code: 'TRANSCRIPT_NOT_READY',
+    message: `该申请的转写产物取不回来（${statuses.join(' / ')}，共 ${failed.length} 份，`
+      + '没有任何一份可用的 canonical READY）：阶段不前进。'
+      + '先修复连接器授权 / 会议绑定，再用 recruitment_transcript_import 重新导入，然后重试。',
+    owner_role: 'RECRUITMENT_OWNER',
+    next_action_code: 'REIMPORT_TRANSCRIPT',
+  }
+}
+
+/**
+ * T4 的"材料可用但没有已提交面评"构造器（G3=B 新增语义）。
+ * @returns 原始阻塞（owner=岗位招聘负责人；下一步=提交面评，本命令不代填）。
+ */
+function submittedScorecardBlocker(): RawBlocker {
+  return {
+    code: 'SCORECARD_REQUIRED',
+    message: '该申请还没有任何已提交（status=SUBMITTED）的面评：材料可用，但阶段不能进入 S10。'
+      + '由人/面试官用 recruitment_scorecard_submit 提交至少一份面评（本命令不代填），再重试推进。',
+    owner_role: 'JOB_HIRING_MANAGER',
+    next_action_code: 'SUBMIT_SCORECARD',
+  }
+}
 
 /**
  * T1（`from=S6`）的判定：材料 + rubric 齐 → PASS；缺任何一条 → BLOCKED。
@@ -1225,21 +1297,23 @@ async function evaluateT2(
 }
 
 /**
- * T3（`from=S8`）的判定：该申请的面试**已经真正发生** → PASS。
+ * T3（`from=S8`）的判定：该申请存在 **canonical + READY** 转写 → PASS（**材料就绪**）。
  *
- * "发生"的判据（两条等价证据，任一成立）：
- *   1. `interview.status ∈ {IN_PROGRESS, POST_INTERVIEW, EVALUATION_READY, DECIDED}`
- *      —— `contracts/interview/scheduling-rules.md §8` 把 `SCHEDULED → IN_PROGRESS`
- *      （会议开始）与 `IN_PROGRESS → POST_INTERVIEW`（会议结束）明确归到 **S9**；
- *      `SCHEDULED` / `RESCHEDULED` 只是"排期完成"，还没执行，**不算**发生。
- *   2. 已存在该申请的转写产物（`transcript_artifact`，经有效 `meeting_binding` 可达）
- *      —— `transcript-rules.md §7.5` 的跨阶段因果链：材料存在 ⇒ 那场面试已经发生。
- *      这是 v1.0 里**唯一有产品写入口**的执行证据（`interview_schedule` 没有 START/COMPLETE
- *      intent，见 `docs/18 §4`；`transcript_import` 是 MANUAL 的产品入口）。
- *
- * 反向事实：该申请的所有面试都已被取消 / 未到场（且没有任何材料）→ BLOCKED
- * （`INTERVIEW_NOT_COMPLETED`，下一步=重新排期）。没有任何面试 → WAIT（还没排期）。
- * 排了但还没发生 → WAIT（等会议开始）。
+ * 为什么**不看** `interview.status`：G3 裁决（B）把 S8→S9 的事实定为"材料就绪" ——
+ * "面试是否发生"是外部事实，只有材料能证明它；`interview.status` 只是**排期状态**
+ * （会议排到哪一步的生命周期投影），**不承载"面试是否发生"**。v1.0 也没有把
+ * `IN_PROGRESS → POST_INTERVIEW` 暴露成产品写入口（`docs/18 §4`），把它当 PASS 依据
+ * 等于让"排期表动了"冒充"材料到了"。所以：
+ *   * **PASS 的唯一条件** = `readTranscriptArtifacts` 里有 `is_canonical && transcript_status='READY'`
+ *     （经未解绑的 `meeting_binding` 可达；`transcript-rules.md §3/§8 TR-C`：canonical READY =
+ *     完整原文已获取 = S9 的材料工作完成）。有产物但取不回来（AUTH_REQUIRED /
+ *     RETRYABLE_FAILED / NEEDS_LINKING）→ BLOCKED `TRANSCRIPT_NOT_READY`（与 T4 同一构造器）；
+ *   * 没有任何面试 → WAIT `INTERVIEW_SCHEDULING`（下一步=排期）；
+ *   * 全部面试 CANCELLED / NO_SHOW → BLOCKED `INTERVIEW_NOT_COMPLETED`（码保留；下一步=重排）；
+ *   * 有材料但还没 READY（DISCOVERED / FETCHING / PARTIAL / WAITING_EXTERNAL）→ WAIT
+ *     `TRANSCRIPT_MATERIAL`（下一步=导入转写）；
+ *   * 还有面试但没材料：全部 SCHEDULED/RESCHEDULED → WAIT `INTERVIEW_EXECUTION`；
+ *     否则（已 IN_PROGRESS 等）→ WAIT `TRANSCRIPT_MATERIAL`。两者 next 都是 IMPORT_TRANSCRIPT。
  * @param client - 事务内连接。
  * @param tenantId - 租户。
  * @param app - 读到的申请。
@@ -1254,9 +1328,14 @@ async function evaluateT3(
     readInterviews(client, tenantId, app.id),
     readTranscriptArtifacts(client, tenantId, app.id),
   ])
-  // 证据 1：面试状态已越过"排期完成"；证据 2：材料已在手（⇒ 面试已发生）。
-  const executed = interviews.some((row) => EXECUTED_INTERVIEW_STATUSES.includes(row.status))
-  if (executed || transcripts.length > 0) return { kind: 'PASS' }
+  // PASS 的唯一依据：canonical READY（材料就绪）。面试状态不参与这个判断。
+  const materialReady = transcripts.some((row) => row.is_canonical && row.transcript_status === 'READY')
+  if (materialReady) return { kind: 'PASS' }
+  // 有材料但取不回来 = 反向事实（与 T4 同一口径）。
+  const failed = transcripts.filter((row) => FAILED_TRANSCRIPT_STATUSES.includes(row.transcript_status))
+  if (failed.length > 0) {
+    return { kind: 'BLOCKED', blockers: [transcriptNotReadyBlocker(failed)] }
+  }
   if (interviews.length === 0) return { kind: 'WAIT', pending: 'INTERVIEW_SCHEDULING' }
   // 面试全部取消/未到场 = 已经发生的反向事实（不是"再等等就有了"）：停下并给出重排动作。
   const allDead = interviews.every((row) => DEAD_INTERVIEW_STATUSES.includes(row.status))
@@ -1267,29 +1346,43 @@ async function evaluateT3(
         code: 'INTERVIEW_NOT_COMPLETED',
         message: `该申请的 ${interviews.length} 场面试全部处于 ${interviews.map((row) => row.status).join(' / ')}`
           + '（没有真正发生），也没有可用的会议材料：阶段留在 S8。'
-          + '由人重新排期（recruitment_interview_schedule 的 CREATE / RESCHEDULE），面试发生后再重试。',
+          + '由人重新排期（recruitment_interview_schedule 的 CREATE / RESCHEDULE），材料就绪后再重试。',
         owner_role: 'JOB_HIRING_MANAGER',
         next_action_code: 'RESCHEDULE_INTERVIEW',
       }],
     }
   }
-  // 还有 SCHEDULED / RESCHEDULED 的面试：事实还没发生（等人把面试开起来）。
-  return { kind: 'WAIT', pending: 'INTERVIEW_EXECUTION' }
+  // 材料已在库里但还没就绪：等人把材料取齐。
+  if (transcripts.length > 0) return { kind: 'WAIT', pending: 'TRANSCRIPT_MATERIAL' }
+  // 还有面试、但一份材料都没有：全在排期态 → 等会议；否则（已开始等）→ 等材料。
+  if (interviews.every((row) => SCHEDULED_INTERVIEW_STATUSES.includes(row.status))) {
+    return { kind: 'WAIT', pending: 'INTERVIEW_EXECUTION' }
+  }
+  return { kind: 'WAIT', pending: 'TRANSCRIPT_MATERIAL' }
 }
 
 /**
- * T4（`from=S9`）的判定：存在该申请的 **canonical + READY** 转写 → PASS。
+ * T4（`from=S9`）的判定：**材料可用 + ≥1 份已提交面评** → PASS。
  *
- * `contracts/interview/transcript-rules.md` 的口径（逐条对应，不另立判据）：
+ * 顺序固定：**先材料、后面评**（材料不可用时根本不该讨论面评）。
+ *
+ * 材料闸门（既有口径，`contracts/interview/transcript-rules.md`，逐条对应、不另立判据）：
  *   * `READY` = 完整原文已获取（`TR-C4`：`is_complete=true` 且 `content_sha256` 非空，库 CHECK 强制）；
  *   * canonical = 该 meeting 本轮唯一被选中的那版（`uq_transcript_artifact_canonical`）；
  *   * `canonical READY` 才是 `transcript.state='READY'`（§4 派生表第 2 行）→ 材料可用。
  * `interview_record` 的状态**不是**本边的闸门：`READY` 记录要求 `verification_status='VERIFIED'`，
  * 而 v1.0 没有把它转 `VERIFIED` 的产品入口（`docs/18` 的 D-B），把它当闸门会让阶段永远到不了 S10。
- * 这条产品口径写进合同 §14「待产品裁决」，本边按"材料可用"（更接近 TR-E6 的底线）实现。
- *
- * 反向事实：材料在库里但取不回来（AUTH_REQUIRED / RETRYABLE_FAILED / NEEDS_LINKING）→ BLOCKED
+ * 本边按"材料可用"（更接近 TR-E6 的底线）实现；"是否要求 record VERIFIED"已由产品裁决
+ * （D-111：S9→S10 推进不要求 record VERIFIED），不再是待裁决项。
+ * 材料在库里但取不回来（AUTH_REQUIRED / RETRYABLE_FAILED / NEEDS_LINKING）→ BLOCKED
  * （`TRANSCRIPT_NOT_READY`，下一步=修连接器/绑定后重导）。没有材料 / 材料处理中 → WAIT。
+ *
+ * 面评闸门（G3=B 的**新增语义**）：材料就绪后，还要该申请关联面试下**至少 1 份**
+ * `scorecard.status='SUBMITTED'`（计数 SQL 见 {@link countSubmittedScorecards}：
+ * 同租户、`s.interview_id → i.application_id`、**不按 superseded 过滤**——刻意，
+ * 指令原文是"至少 1 份 SUBMITTED"，修订前的旧行也是一份人真的交过的面评；视图同一谓词）。
+ * 0 份 → BLOCKED `SCORECARD_REQUIRED`（owner=JOB_HIRING_MANAGER、next=SUBMIT_SCORECARD，
+ * 指向 `recruitment_scorecard_submit`；本命令不代填面评）；≥1 份 → PASS。
  * @param client - 事务内连接。
  * @param tenantId - 租户。
  * @param app - 读到的申请。
@@ -1302,24 +1395,16 @@ async function evaluateT4(
 ): Promise<EdgeOutcome> {
   const transcripts = await readTranscriptArtifacts(client, tenantId, app.id)
   const usable = transcripts.some((row) => row.is_canonical && row.transcript_status === 'READY')
-  if (usable) return { kind: 'PASS' }
-  const failed = transcripts.filter((row) => FAILED_TRANSCRIPT_STATUSES.includes(row.transcript_status))
-  if (failed.length > 0) {
-    const statuses = [...new Set(failed.map((row) => row.transcript_status))]
-    return {
-      kind: 'BLOCKED',
-      blockers: [{
-        code: 'TRANSCRIPT_NOT_READY',
-        message: `该申请的转写产物取不回来（${statuses.join(' / ')}，共 ${failed.length} 份，`
-          + '没有任何一份可用的 canonical READY）：阶段留在 S9。'
-          + '先修复连接器授权 / 会议绑定，再用 recruitment_transcript_import 重新导入，然后重试。',
-        owner_role: 'RECRUITMENT_OWNER',
-        next_action_code: 'REIMPORT_TRANSCRIPT',
-      }],
-    }
+  if (!usable) {
+    const failed = transcripts.filter((row) => FAILED_TRANSCRIPT_STATUSES.includes(row.transcript_status))
+    if (failed.length > 0) return { kind: 'BLOCKED', blockers: [transcriptNotReadyBlocker(failed)] }
+    // 没有材料，或材料还在 DISCOVERED / FETCHING / PARTIAL / WAITING_EXTERNAL：等人把材料取齐。
+    return { kind: 'WAIT', pending: 'TRANSCRIPT_MATERIAL' }
   }
-  // 没有材料，或材料还在 DISCOVERED / FETCHING / PARTIAL / WAITING_EXTERNAL：等人把材料取齐。
-  return { kind: 'WAIT', pending: 'TRANSCRIPT_MATERIAL' }
+  // 材料可用 → 再看面评：至少 1 份 SUBMITTED 才允许进 S10（G3=B）。
+  const submitted = await countSubmittedScorecards(client, tenantId, app.id)
+  if (submitted === 0) return { kind: 'BLOCKED', blockers: [submittedScorecardBlocker()] }
+  return { kind: 'PASS' }
 }
 
 // =====================================================================
@@ -1426,8 +1511,9 @@ async function diagnose(
   //
   // 每条边有三种结局：
   //   PASS    事实成立 → 记一条边，指针前移一格再试下一条边；
-  //   WAIT    事实还没发生（例如还没有人的 SCREENING 结论 / 面试还没发生 / 材料还没齐）→ 停下，不算错误；
-  //   BLOCKED 事实明确反对（HOLD/REJECT、材料解析失败、rubric 未钉、面试全被取消、转写取不回来）→ 停下并报 blockers。
+  //   WAIT    事实还没发生（例如还没有人的 SCREENING 结论 / 材料还没就绪 / 没有已提交面评）→ 停下，不算错误；
+  //   BLOCKED 事实明确反对（HOLD/REJECT、材料解析失败、rubric 未钉、面试全被取消、转写取不回来、
+  //           材料可用但没有已提交面评）→ 停下并报 blockers。
   // 这个三分法是幂等性的来源：第二次调用在"已到的事实位置"上得到 WAIT → NO_OP，零 UPDATE。
   const applied: StageEdge[] = []
   const rawBlockers: RawBlocker[] = []
