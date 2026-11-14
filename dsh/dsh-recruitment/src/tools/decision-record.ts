@@ -26,6 +26,11 @@
 //     `provider_event_id=NULL`）
 //   * DC-47/DC-48 不改任何状态；`decided_at` 由服务端时钟
 //   * TC §4.7 `warnings[]` 封闭集、TC §4.3 出参形状、DESIGN §3.5 ④ D-79 approval
+//   * **SC-11（版本绑定）**：本 scope 的**全部**现行面评（current `SUBMITTED`/`WAIVED`）必须
+//     绑在申请钉住的那个 `rubric_version_id` 上；任何一条不一致 → STEP 2 就拒绝
+//     `EVIDENCE_INSUFFICIENT(SCORECARD_RUBRIC_MISMATCH)`（detail 带两边版本 + 冲突面评明细），
+//     **零写入**。`basis_refs[SCORECARD].rubric_version_id`（可选）也按库值核对。
+//     与 `evaluation-summarize.ts` 的 `warnings: SCORECARD_RUBRIC_MISMATCH` 同一个错误码。
 //
 // 已知偏差（必须与交付说明一致，逐条登记）：
 //   1. **`APPROVAL_UNAVAILABLE` / `APPROVAL_NOT_GRANTED` 是本文件新增的两个 `reason_code`**
@@ -207,7 +212,9 @@ const ASSESSMENTS = ['MET', 'NOT_MET', 'NOT_OBSERVED', 'UNREADABLE'] as const
 const BASIS_KEYS: Record<string, { readonly required: readonly string[]; readonly optional: readonly string[] }> = {
   SCORECARD: {
     required: ['id', 'overall', 'transcript_basis', 'transcript_state'],
-    optional: ['revision_no', 'interviewer_id', 'payload_hash', 'fields', 'evidence_state'],
+    // `rubric_version_id`（SC-11）：这条面评绑的标准版本。给了就必须与库值一致，
+    // 且**所有参与本次决策的现行面评**都必须绑在申请钉住的那一版上（否则 SCORECARD_RUBRIC_MISMATCH）。
+    optional: ['revision_no', 'interviewer_id', 'payload_hash', 'rubric_version_id', 'fields', 'evidence_state'],
   },
   SUMMARY: {
     required: ['summary_digest'],
@@ -327,7 +334,7 @@ const BASIS_REF_SCHEMA: Record<string, unknown> = {
     // ---- S7 写侧（SCREENING_EVALUATION / RESUME_VERSION；§17.1）----
     evaluation_digest: { type: 'string' },
     verdict: { type: 'string', enum: ['PASS', 'FAIL', 'NEEDS_REVIEW'] },
-    rubric_version_id: { type: 'string' },
+    rubric_version_id: { type: 'string', description: 'S7 写侧必填；S10 的 SCORECARD 依据可选，给了就必须等于库里该面评绑定的版本（SC-11）' },
     rubric_payload_hash: { type: 'string' },
     resume_version_id: { type: 'string' },
     resume_content_sha256: { type: 'string' },
@@ -1408,6 +1415,8 @@ interface ScorecardRow {
   readonly items: Record<string, unknown> | null
   readonly superseded_by_scorecard_id: string | null
   readonly application_id: string
+  /** 这条面评绑的 rubric 版本（SC-11：必须等于申请钉住的那一版）。 */
+  readonly rubric_version_id: string
 }
 
 /** 当前事务的 actor（DESIGN §3.5 ①：**不是** `cfg.actor_id`）。 */
@@ -1593,7 +1602,7 @@ async function loadScorecard(
 ): Promise<ScorecardRow> {
   const { rows } = await client.query<ScorecardRow>(
     `select s.id, s.interview_id, s.interviewer_id, s.overall, s.status, s.revision_no,
-            s.payload_hash, s.items, s.superseded_by_scorecard_id, i.application_id
+            s.payload_hash, s.items, s.superseded_by_scorecard_id, s.rubric_version_id, i.application_id
        from recruitment.scorecard s
        join recruitment.interview i
          on i.id = s.interview_id and i.tenant_id = s.tenant_id
@@ -1616,7 +1625,7 @@ async function loadScopeScorecards(
 ): Promise<ScorecardRow[]> {
   const { rows } = await client.query<ScorecardRow>(
     `select s.id, s.interview_id, s.interviewer_id, s.overall, s.status, s.revision_no,
-            s.payload_hash, s.items, s.superseded_by_scorecard_id, i.application_id
+            s.payload_hash, s.items, s.superseded_by_scorecard_id, s.rubric_version_id, i.application_id
        from recruitment.scorecard s
        join recruitment.interview i
          on i.id = s.interview_id and i.tenant_id = s.tenant_id
@@ -1629,6 +1638,49 @@ async function loadScopeScorecards(
     [tenantId, applicationId, interviewId ?? null],
   )
   return rows
+}
+
+/**
+ * SC-11：参与本次决策的**所有现行面评**必须绑在申请钉住的同一个 rubric 版本上。
+ *
+ * 为什么必须在决策侧再判一次（而不是只靠 `evaluation_summarize` 剔除）：
+ *   * 汇总是"描述世界"的投影，剔除 + warning 足够；但**决策是承诺**，不能建立在
+ *     "面板里一部分票来自旧版标准"的事实上——哪怕那部分已被剔出 tally，
+ *     也不能假装"这份申请的面板是干净的"（SC-11 明令禁止混用）；
+ *   * 读侧口径（`loadScopeScorecards`）与汇总侧完全一致：只取 current（未被取代）的
+ *     `SUBMITTED` / `WAIVED` 行，所以这里判的就是"真的会参与决策的那批面评"。
+ *
+ * 错误码与汇总 warnings 同一个：`SCORECARD_RUBRIC_MISMATCH`（汇总报它、决策拒它）。
+ * @param application - 申请（`rubric_version_id` 非空已在 STEP 2 保证）。
+ * @param scorecards - 本 scope 的现行面评。
+ * @throws RecruitmentToolError - `EVIDENCE_INSUFFICIENT(SCORECARD_RUBRIC_MISMATCH)`。
+ */
+function assertPanelRubricVersionsMatch(
+  application: ApplicationRow,
+  scorecards: readonly ScorecardRow[],
+): void {
+  const pinned = application.rubric_version_id
+  if (pinned === null) return
+  const mismatched = scorecards.filter((scorecard) => scorecard.rubric_version_id !== pinned)
+  if (mismatched.length === 0) return
+  throw evalError(
+    'EVIDENCE_INSUFFICIENT',
+    'SCORECARD_RUBRIC_MISMATCH',
+    `本次决策有 ${mismatched.length} 份现行面评绑的 rubric 版本不是申请钉住的版本`
+      + `（申请钉住 ${pinned}）：不同版本的面评不得混用进同一次决策（SC-11）。`
+      + '先由人裁决：或把申请钉到她/他们实际使用的版本，或先作废/重做这些面评。',
+    {
+      application_id: application.id,
+      application_rubric_version_id: pinned,
+      mismatched_count: mismatched.length,
+      scorecards: mismatched.map((scorecard) => ({
+        scorecard_id: scorecard.id,
+        interviewer_id: scorecard.interviewer_id,
+        status: scorecard.status,
+        rubric_version_id: scorecard.rubric_version_id,
+      })),
+    },
+  )
 }
 
 // =====================================================================
@@ -1946,6 +1998,32 @@ async function checkBasisSemantics(
       throw evalError('NOT_FOUND', 'SCORECARD_NOT_FOUND', '依据引用的面评不属于该申请', {
         scorecard_id: row.id,
       })
+    }
+    // SC-11：库里这条面评绑的版本必须就是申请钉住的那一版（不允许拿旧版面评当依据）。
+    if (row.rubric_version_id !== ctx.application.rubric_version_id) {
+      throw evalError(
+        'EVIDENCE_INSUFFICIENT',
+        'SCORECARD_RUBRIC_MISMATCH',
+        'SCORECARD 依据绑的 rubric 版本不是申请钉住的版本（SC-11：不得跨版本混用）',
+        {
+          scorecard_id: row.id,
+          application_rubric_version_id: ctx.application.rubric_version_id,
+          scorecard_rubric_version_id: row.rubric_version_id,
+        },
+      )
+    }
+    // 依据里声明的 `rubric_version_id`（可选）必须与库值一致：声明面不得与事实矛盾。
+    if (ref.rubric_version_id !== undefined && asString(ref.rubric_version_id) !== row.rubric_version_id) {
+      throw evalError(
+        'EVIDENCE_INSUFFICIENT',
+        'SCORECARD_RUBRIC_MISMATCH',
+        'SCORECARD 依据声明的 rubric_version_id 与库里该面评绑定的版本不一致',
+        {
+          scorecard_id: row.id,
+          expected: row.rubric_version_id,
+          provided: asString(ref.rubric_version_id),
+        },
+      )
     }
     if (ctx.args.interview_id !== undefined && row.interview_id !== ctx.args.interview_id) {
       throw evalError('NOT_FOUND', 'SCORECARD_NOT_FOUND', '依据引用的面评不属于这场面试（STAGE 口径）', {
@@ -2872,6 +2950,9 @@ export async function recordDecisionInTransaction(
   const scopeScorecards = screeningScope
     ? []
     : await loadScopeScorecards(client, tenantId, application.id, args.interview_id)
+  // SC-11：面板必须整批绑在申请钉住的那一版 rubric 上；有任何一条不一致就在 STEP 2 拒绝
+  // （此时一行都没写：决策行/审批行/事件都还没开始写）。
+  if (!screeningScope) assertPanelRubricVersionsMatch(application, scopeScorecards)
 
   // ---- STEP 3 已有 current / 撤回三绑定 ----
   const current = await loadCurrentDecision(client, tenantId, application.id, args.decision_scope, stageCode)

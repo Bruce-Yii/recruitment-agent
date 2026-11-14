@@ -328,6 +328,19 @@ recruitment_scorecard_submit {"interview_id":"0199…91","idempotency_key":"sc:i
 >
 > **为什么机检必须容忍它**（`H7`）：形状不合法的行**仍然**是 DB 里 `status='SUBMITTED'` 的行。若断言直接拿 `select count(*) ... where status='SUBMITTED'` 去比 `tally` 总和，就会把"被正确剔除"判成"票数不符"。**正确做法**：先把 `unusable` 减掉，或用 `coverage.submitted`（它已经是剔除后的数）——见 §7.0 的 M-2 说明。
 
+### 3.4.1 SC-11 版本绑定（读侧校验，2026-11-14 增补）
+
+面评行还带 `rubric_version_id`（`0001` 的 `scorecard.rubric_version_id`）。汇总只接受**与申请钉住的版本一致**的面评：
+
+* 不一致 → 该条**不进** `tally` / `aggregation` / `minority_reports` / `snapshot` / `summary_digest`；
+  必填面试官的这条同时落进 `missing`（面板不完整 → 既有门禁不放行 `ADVANCE`/`REJECT`）；
+* **必须**在 `warnings[]` 报 `SCORECARD_RUBRIC_MISMATCH`，`detail = {application_rubric_version_id,
+  mismatched_count, scorecards:[{scorecard_id, interviewer_id, status, rubric_version_id}]}` ——
+  **不许静默跳过**（SC-11：不同版本的面评不得混用；调用方必须看得见"哪几条、两边版本"）；
+* `coverage.unusable` **不**因它增加（`unusable` 仍是"形状不合法"口径），但 `missing` 会包含它；
+  `missing`/`submitted`/`waived` 的守恒等式不变（断言 M-3 仍成立）。
+* 决策侧同一口径：`decision_record` 在 STEP 2 直接拒绝 `EVIDENCE_INSUFFICIENT(SCORECARD_RUBRIC_MISMATCH)`（§4.5）。
+
 ### 3.5 门禁与 `permitted_results` 的计算（**唯一权威表**）
 
 `result` 的允许性（`T = tally`，`M = missing`）：
@@ -504,7 +517,7 @@ recruitment_evaluation_summarize {"application_id":"0199…71","decision_scope":
 | `BLOCKED_BY_REVIEW` | `OPEN_REVIEW_TASK` \| `REJECT_BASIS_UNREADABLE` \| `UNREADABLE_NOT_RESOLVED` \| `RECORD_NOT_VERIFIED` | `blocking_items[]` **至少 1 项**，空数组 = 违约 |
 | `DECISION_REQUIRES_HUMAN` | §4.2 五个 | — |
 | `ALREADY_DECIDED` | `SCOPE_ALREADY_DECIDED` | 同 `(tenant_id, application_id, decision_scope, stage_code)` 已有 current 且未带 `supersedes`；**`0007` 之后由 23505 触发**（不靠 `FOR UPDATE`，`D-80`） |
-| `EVIDENCE_INSUFFICIENT` | `REJECT_WITHOUT_REJECTING_SCORECARD` \| `SCORECARD_SHAPE_INVALID` \| `BASIS_RUBRIC_HASH_MISMATCH` \| **`NO_SUBMITTED_SCORECARD`** | `DC-27`；零提交时 `ADVANCE`/`REJECT` 恒被 `NO_SUBMITTED_SCORECARD` 挡（`decision-rules.md §4.2.1`） |
+| `EVIDENCE_INSUFFICIENT` | `REJECT_WITHOUT_REJECTING_SCORECARD` \| `SCORECARD_SHAPE_INVALID` \| `SCORECARD_RUBRIC_MISMATCH` \| `BASIS_RUBRIC_HASH_MISMATCH` \| **`NO_SUBMITTED_SCORECARD`** | `DC-27`；零提交时 `ADVANCE`/`REJECT` 恒被 `NO_SUBMITTED_SCORECARD` 挡（`decision-rules.md §4.2.1`）。`SCORECARD_RUBRIC_MISMATCH`：本 scope 任一现行面评的 `rubric_version_id` ≠ `application.rubric_version_id`（`detail` 带两边版本 + 冲突面评明细），STEP 2 拒绝、**零写入**（`decision-rules.md §6.1.1`） |
 | `VERSION_CONFLICT` | `DECISION_RECORD_VERSION_MISMATCH` | 撤回时 `expected_record_version` 不匹配（`DC-39`） |
 | `DB_CONSTRAINT_VIOLATION` | `DECISION_IMMUTABLE` \| `UNIQUE_VIOLATION` \| `FK_VIOLATION` | §5.3（**`uq_decision_current` 的 23505 必须映射成 `ALREADY_DECIDED`，不是兜底**） |
 
@@ -514,6 +527,8 @@ recruitment_evaluation_summarize {"application_id":"0199…71","decision_scope":
 STEP 0 参数（含 HIRED 禁用、scope/interview 互斥、as_of 必填、idempotency_key 不在 schema）
 STEP 1 身份 + human_confirmation 四校验（hash pre-image 含 override_rationale）
 STEP 2 存在性（应用/面试/rubric/basis_refs 指向的行）
+STEP 2+ SC-11：本 scope 全部现行面评的 rubric 版本必须 = application.rubric_version_id
+       （否则 EVIDENCE_INSUFFICIENT(SCORECARD_RUBRIC_MISMATCH)，零写入）
 STEP 3 已存在 current 同类决策 → ALREADY_DECIDED（带 supersedes 则走撤回校验）
 STEP 4 重算汇总（同一个 as_of），比对 summary_digest → SUMMARY_STALE
 STEP 5 阻断检查（open review task / unreadable / record）

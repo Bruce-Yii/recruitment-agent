@@ -30,6 +30,11 @@
 //     * **只读视图不补钉**：`readStageBlockedView` 走 `allowPin=false`，一条写语句都不发，
 //       仍按"当前事实"报 `RUBRIC_NOT_PINNED`。视图与写路径的这点差异是刻意的：
 //       视图回答"库里现在缺什么"，写路径回答"这次调用能不能把事实补齐后推进"。
+//     * **补钉前先查"现存面评绑的是哪一版"**（SC-11）：只要该申请还有现行面评
+//       （`status ∈ {SUBMITTED, WAIVED}` 且未被取代）绑在**别的** rubric 版本上，
+//       补钉就**拒绝**（`INVARIANT_VIOLATION(RUBRIC_PIN_CONFLICT_WITH_SCORECARD)`，**零写入**）。
+//       否则 V1 的面评会被静默算进绑 V2 的汇总/决策 —— 那正是 SC-11 明令禁止的"混用"。
+//       这是人工裁决点：要么把申请钉到面评实际用的版本，要么先作废/重做那些面评。
 //     * 本命令**不**因此获得任何新授权：rubric 版本已经由人批准过，补钉只是把同一个
 //       已批准事实记录到申请上（没有批准就没有可钉的版本）。
 //
@@ -112,6 +117,10 @@ export const BLOCKER_CODES = [
   'MATERIAL_NOT_LINKED',
   'MATERIAL_PARSE_FAILED',
   'RUBRIC_NOT_PINNED',
+  // T1 前置的**冲突形态**：申请没钉，但已有现存面评绑在"岗位当前要钉的版本"以外的版本上。
+  // 只读视图报它（写路径直接抛 `INVARIANT_VIOLATION(RUBRIC_PIN_CONFLICT_WITH_SCORECARD)`）：
+  // 补钉会让旧版面评被静默算进绑新版的汇总/决策（SC-11）。
+  'RUBRIC_PIN_CONFLICT_WITH_SCORECARD',
   // 申请本身不在推进范围
   'APPLICATION_NOT_ACTIVE',
   'STAGE_NOT_ON_LADDER',
@@ -146,6 +155,7 @@ export type StageOwnerRole = (typeof OWNER_ROLES)[number]
  */
 export const NEXT_ACTION_CODES = [
   'PIN_RUBRIC_VERSION',
+  'RESOLVE_RUBRIC_PIN_CONFLICT',
   'LINK_INTAKE_MATERIAL',
   'REPARSE_MATERIAL',
   'RECORD_SCREENING_DECISION',
@@ -166,6 +176,7 @@ export type StageNextActionCode = (typeof NEXT_ACTION_CODES)[number]
  */
 export const NEXT_ACTION_MESSAGES: Readonly<Record<StageNextActionCode, string>> = {
   PIN_RUBRIC_VERSION: '批准岗位的一个 rubric 版本（recruitment_job_rubric_approve 会同时把 job.current_rubric_version_id 指过去），再调用 recruitment_application_stage_advance：写路径会在同一事务里把该版本钉到申请上。若申请已钉、只是岗位换了当前版本，同样先批准再推进。',
+  RESOLVE_RUBRIC_PIN_CONFLICT: '该申请已有的面评绑在别的 rubric 版本上：由人先裁决口径 —— 或把申请钉到她/他们实际使用的版本（先批准该版本再重试），或先作废/重做那些面评，再钉新版本。SC-11 禁止把旧版面评混进绑新版的决策。',
   LINK_INTAKE_MATERIAL: '跑一次 recruitment_application_intake，把候选人的材料绑定到这条申请上。',
   REPARSE_MATERIAL: '修复或重新导入材料（parse_status 不能是 FAILED），再重试推进。',
   RECORD_SCREENING_DECISION: '由人完成初筛并落一条 SCREENING 决策（recruitment_decision_record），再重试推进。',
@@ -645,6 +656,96 @@ async function readPinnableRubric(client: DatabaseClient, tenantId: string, appl
 }
 
 /**
+ * 一条"绑在别的 rubric 版本上的现行面评"（补钉冲突的证据）。
+ */
+interface ConflictingScorecardRow {
+  readonly id: string
+  readonly interviewer_id: string
+  readonly status: string
+  readonly rubric_version_id: string
+}
+
+/**
+ * 读"该申请已有的、绑在**别的** rubric 版本上的现行面评"（SC-11 的补钉前置）。
+ *
+ * 口径与读侧（`evaluation-summarize` / `decision-record`）**完全一致**，否则两侧会各说各话：
+ *   * 只看**现行**行（`superseded_by_scorecard_id is null`）——历史修订不进决策；
+ *   * 只看 `SUBMITTED` / `WAIVED`——`PENDING` 是草稿，不是评价（且它无法跨版本转正，写侧 fail closed）；
+ *   * 只看本申请的面试（`interview.application_id`）——别人的面评不属于本申请。
+ * @param client - 事务内连接。
+ * @param tenantId - 租户。
+ * @param applicationId - 申请 id。
+ * @param targetRubricVersionId - 本次准备钉住的版本。
+ * @returns 冲突面评（按版本号、id 排序；空数组表示可以补钉）。
+ */
+async function readConflictingScorecards(
+  client: DatabaseClient,
+  tenantId: string,
+  applicationId: string,
+  targetRubricVersionId: string,
+): Promise<readonly ConflictingScorecardRow[]> {
+  const { rows } = await client.query<ConflictingScorecardRow>(
+    `select s.id, s.interviewer_id, s.status, s.rubric_version_id
+       from recruitment.scorecard s
+       join recruitment.interview iv
+         on iv.id = s.interview_id and iv.tenant_id = s.tenant_id
+      where s.tenant_id = $1
+        and iv.application_id = $2
+        and s.superseded_by_scorecard_id is null
+        and s.status in ('SUBMITTED', 'WAIVED')
+        and s.rubric_version_id is distinct from $3
+      order by s.rubric_version_id, s.id`,
+    [tenantId, applicationId, targetRubricVersionId],
+  )
+  return rows
+}
+
+/**
+ * SC-11 的补钉前置：**已经有面评绑在别的版本上时，拒绝补钉**（零写入）。
+ *
+ * 为什么**写路径**必须是硬错误而不是 BLOCKED：V1 的面评和 V2 的标准同时在库里是**既成事实**，
+ * 补钉只会制造"V1 的票算进绑 V2 的决策"这种无法回滚的混用；能否推进取决于人的口径裁决
+ * （沿用面评所在版本，还是作废/重做面评），不是等一等就会消失的缺失。
+ * （只读视图 `readStageBlockedView` 把同一冲突报成 `BLOCKED`，见 `upgradePinConflictBlocker`。）
+ * @param client - 事务内连接。
+ * @param tenantId - 租户。
+ * @param app - 本次读到的申请（`rubric_version_id` 为空）。
+ * @param target - 岗位当前已批准的版本（本次待钉目标）。
+ * @throws RecruitmentToolError - `INVARIANT_VIOLATION(RUBRIC_PIN_CONFLICT_WITH_SCORECARD)`。
+ */
+async function assertNoScorecardRubricConflict(
+  client: DatabaseClient,
+  tenantId: string,
+  app: ApplicationRow,
+  target: RubricPinTarget,
+): Promise<void> {
+  const conflicting = await readConflictingScorecards(client, tenantId, app.id, target.rubric_version_id)
+  if (conflicting.length === 0) return
+  const conflictingVersions = [...new Set(conflicting.map((row) => row.rubric_version_id))]
+  throw stageError(
+    'INVARIANT_VIOLATION',
+    'RUBRIC_PIN_CONFLICT_WITH_SCORECARD',
+    `补钉被拒：该申请已有 ${conflicting.length} 份现行面评绑在别的 rubric 版本上`
+      + `（冲突版本 ${conflictingVersions.join(' / ')}，待钉版本 ${target.rubric_version_id}）。`
+      + '补钉会让旧版面评被算进绑新版标准的汇总/决策（SC-11 明令禁止混用）：'
+      + '由人先裁决口径 —— 或把申请钉到她/他们实际使用的版本，或先作废/重做这些面评，再重试。',
+    {
+      application_id: app.id,
+      job_id: target.job_id,
+      pin_target_rubric_version_id: target.rubric_version_id,
+      pin_target_version_no: target.version_no,
+      conflicting_rubric_version_ids: conflictingVersions,
+      conflicting_scorecard_count: conflicting.length,
+      conflicting_scorecard_ids: conflicting.map((row) => row.id),
+      conflicting_interviewer_ids: [...new Set(conflicting.map((row) => row.interviewer_id))],
+      // 结构化"该找谁 / 下一步做什么"（与 blockers[] 同一封闭集），调用方不必解析 message。
+      owner_role: 'JOB_HIRING_MANAGER',
+      next_action_code: 'RESOLVE_RUBRIC_PIN_CONFLICT',
+    },
+  )
+}
+
+/**
  * 把审计事件落到 `event_inbox`（内部事实，`FALLBACK_KEY` 必须绑 `source_object_id`）。
  * @param client - 事务内连接。
  * @param input - 事件字段。
@@ -709,6 +810,9 @@ async function insertRubricPinnedEvent(
  *
  * 只在"申请的 rubric_version_id 为空"时被调用（调用方已判）。顺序：
  *   1. 读岗位当前指针并当场复核它此刻已批准（**只读**；没有目标就返回 `null`，不要求 actor）；
+ *   1b. **SC-11 冲突检查**（只读）：该申请已有的现行面评若绑在别的版本上，
+ *       直接拒绝补钉（`INVARIANT_VIOLATION(RUBRIC_PIN_CONFLICT_WITH_SCORECARD)`），
+ *       一条写语句都不发（见 `assertNoScorecardRubricConflict`）；
  *   2. 读 actor（必须已 `SET LOCAL recruitment.actor_id`；没有就拒绝，不做匿名写入）；
  *   3. 条件 UPDATE（`rubric_version_id is null`，经 `fn_row_guard` 自增 `record_version`）；
  *      0 行 ⇒ 并发/冲突，抛 `VERSION_CONFLICT`（本事务已 `select … for update`，正常不可达）；
@@ -718,7 +822,8 @@ async function insertRubricPinnedEvent(
  * @param tenantId - 租户。
  * @param app - 本次读到的申请（带岗位信息）。
  * @returns 补钉结果；"没有可钉的目标"返回 `null`（调用方据此仍报 `RUBRIC_NOT_PINNED`）。
- * @throws RecruitmentToolError - `INVALID_ARGS`（没有 actor）/ `VERSION_CONFLICT`。
+ * @throws RecruitmentToolError - `INVALID_ARGS`（没有 actor）/ `VERSION_CONFLICT`
+ *   / `INVARIANT_VIOLATION(RUBRIC_PIN_CONFLICT_WITH_SCORECARD)`（已有面评绑在别的版本上）。
  */
 async function pinCurrentRubric(
   client: DatabaseClient,
@@ -728,6 +833,8 @@ async function pinCurrentRubric(
   // 先只读确认"真的有一个已批准的当前版本"：没有就返回 null（不写、也不要求 actor）。
   const target = await readPinnableRubric(client, tenantId, app.id)
   if (target === null) return null
+  // SC-11：已有现行面评绑在**别的**版本上 → 拒绝补钉（零写入），不做"先钉了再说"。
+  await assertNoScorecardRubricConflict(client, tenantId, app, target)
   const pinnedBy = await currentActorId(client)
   if (pinnedBy === null) {
     throw stageError(
@@ -1294,10 +1401,53 @@ export async function advanceApplicationStage(
 // =====================================================================
 
 /**
+ * 只读视图的 SC-11 升级：把"只是没钉 rubric"改报成"补钉会撞已有面评（版本错配）"。
+ *
+ * 为什么视图要单独做：视图走 `allowPin=false`，不会执行补钉，所以它原本只看得见
+ * `RUBRIC_NOT_PINNED`（事实 = 现在没钉）。但工作台更需要知道**为什么不能补钉**：
+ * 如果岗位已有可钉的已批准版本、而申请已有面评绑在别的版本上，那么补钉一定被写路径拒绝
+ * （`RUBRIC_PIN_CONFLICT_WITH_SCORECARD`）。把这条冲突提前报出来，人才能在点"推进"之前
+ * 看到真正要裁决的事（沿用旧版 / 作废重做），而不是点了才收到错误。
+ *
+ * 仍然**只读**：`readPinnableRubric` / `readConflictingScorecards` 都是普通 `select`。
+ * @param client - 连接（可以来自只读事务）。
+ * @param tenantId - 租户。
+ * @param diagnosis - `allowPin=false` 得到的诊断（可能含 `RUBRIC_NOT_PINNED`）。
+ * @returns 升级后的诊断（没有冲突时原样返回）。
+ */
+async function upgradePinConflictBlocker(
+  client: DatabaseClient,
+  tenantId: string,
+  diagnosis: StageDiagnosis,
+): Promise<StageDiagnosis> {
+  const pinIndex = diagnosis.blockers.findIndex((blocker) => blocker.code === 'RUBRIC_NOT_PINNED')
+  if (pinIndex < 0) return diagnosis
+  const target = await readPinnableRubric(client, tenantId, diagnosis.app.id)
+  if (target === null) return diagnosis
+  const conflicting = await readConflictingScorecards(client, tenantId, diagnosis.app.id, target.rubric_version_id)
+  if (conflicting.length === 0) return diagnosis
+  const conflictingVersions = [...new Set(conflicting.map((row) => row.rubric_version_id))]
+  const upgraded = [...diagnosis.blockers]
+  upgraded[pinIndex] = {
+    code: 'RUBRIC_PIN_CONFLICT_WITH_SCORECARD',
+    message: `该申请还没钉 rubric，但已有 ${conflicting.length} 份现行面评绑在别的版本上`
+      + `（冲突版本 ${conflictingVersions.join(' / ')}；岗位当前已批准的是 ${target.rubric_version_id}，v${target.version_no}）。`
+      + '现在补钉会把旧版面评混进绑新版的汇总/决策（SC-11）：先由人裁决口径 —— '
+      + '沿用面评实际使用的版本，或先作废/重做这些面评 —— 再推进。',
+    owner_role: 'JOB_HIRING_MANAGER',
+    next_action_code: 'RESOLVE_RUBRIC_PIN_CONFLICT',
+  }
+  return { ...diagnosis, blockers: upgraded }
+}
+
+/**
  * 只读的「阻塞视图」：给工作台渲染「当前状态、阻塞原因、责任人、下一步」。
  *
  * **只读**：判定走 `diagnose(lock=false, allowPin=false)`（普通 `select`、不补钉），因此可以安全地跑在
  * `withReadOnly` 事务里；本函数**不发任何 UPDATE/INSERT**，也不需要 actor。
+ * 若"只是没钉 rubric"其实会撞已有面评的版本（SC-11），这里把 blocker 升级成
+ * `RUBRIC_PIN_CONFLICT_WITH_SCORECARD`（结构化给出 `owner_role` + `next_action_code`），
+ * 让人在点推进之前就看到真正要裁决的事（写路径会以同一 code 拒绝补钉）。
  *
  * 整条申请级别的 `owner` / `next_action` 取"优先级最高的一条"：
  * blockers（按判定顺序）优先，其次 warnings；都没有时给一个通用下一步
@@ -1327,14 +1477,17 @@ export async function readStageBlockedView(
     throw error
   }
 
+  // SC-11：只读地把"没钉 rubric"升级成"补钉会撞已有面评"（若确有此冲突）。
+  const upgradedDiagnosis = await upgradePinConflictBlocker(client, tenantId, diagnosis)
+
   const obstructions: StageObstruction[] = [
-    ...diagnosis.blockers.map((item): StageObstruction => ({ kind: 'BLOCKER', ...item })),
-    ...diagnosis.warnings.map((item): StageObstruction => ({ kind: 'WARNING', ...item })),
+    ...upgradedDiagnosis.blockers.map((item): StageObstruction => ({ kind: 'BLOCKER', ...item })),
+    ...upgradedDiagnosis.warnings.map((item): StageObstruction => ({ kind: 'WARNING', ...item })),
   ]
 
   // 阶段名：目录里查；诊断已经读过目录（这里为视图单独再读一次，保持函数自洽）。
-  const catalog = await readStageCatalog(client, tenantId, [diagnosis.app.current_stage_code])
-  const stageName = catalog.get(diagnosis.app.current_stage_code)?.name ?? diagnosis.app.current_stage_code
+  const catalog = await readStageCatalog(client, tenantId, [upgradedDiagnosis.app.current_stage_code])
+  const stageName = catalog.get(upgradedDiagnosis.app.current_stage_code)?.name ?? upgradedDiagnosis.app.current_stage_code
 
   let owner: StageOwner
   let nextAction: StageNextAction
@@ -1354,9 +1507,9 @@ export async function readStageBlockedView(
   } else {
     // 没有阻塞也没有告警：给"下一步"（谁来做仍然由招聘负责人兜底）。
     const resolved = await resolveRecruitmentOwner(client, tenantId, applicationId)
-    const code: StageNextActionCode = diagnosis.status === 'ADVANCED'
+    const code: StageNextActionCode = upgradedDiagnosis.status === 'ADVANCED'
       ? 'ADVANCE_STAGE'
-      : diagnosis.pending_fact === 'SCREENING_DECISION'
+      : upgradedDiagnosis.pending_fact === 'SCREENING_DECISION'
         ? 'RECORD_SCREENING_DECISION'
         : 'CONTINUE_DOWNSTREAM'
     owner = {
@@ -1373,13 +1526,13 @@ export async function readStageBlockedView(
   }
 
   return {
-    application_id: diagnosis.app.id,
-    stage: diagnosis.app.current_stage_code,
+    application_id: upgradedDiagnosis.app.id,
+    stage: upgradedDiagnosis.app.current_stage_code,
     stage_name: stageName,
-    lifecycle_status: diagnosis.app.lifecycle_status,
-    record_version: diagnosis.app.record_version,
-    status: diagnosis.status,
-    blocked: diagnosis.status === 'BLOCKED',
+    lifecycle_status: upgradedDiagnosis.app.lifecycle_status,
+    record_version: upgradedDiagnosis.app.record_version,
+    status: upgradedDiagnosis.status,
+    blocked: upgradedDiagnosis.status === 'BLOCKED',
     blockers: obstructions,
     owner,
     next_action: nextAction,

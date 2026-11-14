@@ -110,6 +110,16 @@ interface FakeInput {
    * 省略 = 岗位没有可钉的当前版本（→ 仍报 RUBRIC_NOT_PINNED，零写入）。
    */
   readonly pinnable?: { rubric_version_id: string; version_no: number } | null
+  /**
+   * SC-11：该申请已有的、绑在**别的** rubric 版本上的现行面评（补钉冲突的证据）。
+   * 省略 = 没有冲突（可以补钉）。
+   */
+  readonly conflictingScorecards?: readonly {
+    id: string
+    interviewer_id: string
+    status: string
+    rubric_version_id: string
+  }[]
   /** 执行账号 GUC（`SET LOCAL recruitment.actor_id`）；`null` = 没有 actor（补钉必须拒绝）。 */
   readonly actorId?: string | null
   /** 依次消费；不提供就按 params 自动生成"成功"的 RETURNING。 */
@@ -155,6 +165,10 @@ function fakeClient(input: FakeInput): DatabaseClient & { readonly calls: readon
       if (text.includes('recruitment.rubric_version') && text.includes('current_rubric_version_id')) {
         const target = input.pinnable
         return { rows: target === undefined || target === null ? [] : [target] }
+      }
+      // SC-11：补钉/只读视图前读"该申请已有的、绑在别的版本上的现行面评"（只读；默认空 = 无冲突）。
+      if (text.includes('recruitment.scorecard')) {
+        return { rows: [...(input.conflictingScorecards ?? [])] }
       }
       // F1：补钉写审计事件（event_inbox）。
       if (text.includes('insert into recruitment.event_inbox')) {
@@ -399,7 +413,7 @@ test('F1 补钉：执行上下文没有 actor → INVALID_ARGS(ACTOR_REQUIRED)�
   )
 })
 
-test('F1 只读视图不补钉：岗位当前已批准 → 视图仍按**当前事实**报 RUBRIC_NOT_PINNED，且一条写语句都不发', async () => {
+test('F1 只读视图不补钉：岗位当前已批准（且无版本冲突）→ 视图仍按**当前事实**报 RUBRIC_NOT_PINNED，一条写语句都不发', async () => {
   const { view, client } = await viewWith({
     application: appRow({ rubric_version_id: null }),
     material: { parse_status: 'PARSED' },
@@ -414,11 +428,69 @@ test('F1 只读视图不补钉：岗位当前已批准 → 视图仍按**当前�
     0,
     '只读视图一条 INSERT 都不发（含审计事件）',
   )
+  // SC-11 之后视图会**只读地**多查两件事（岗位可钉版本 + 已有面评的版本），
+  // 但那仍然是 select：视图的边界是"不改库"，不是"不看库"。
   assert.equal(
-    client.calls.filter((call) => call.text.includes('recruitment.rubric_version')).length,
+    client.calls.filter((call) => !call.text.trimStart().startsWith('select')).length,
     0,
-    '只读视图连"读可钉版本"都不做（补钉是写路径的事）',
+    '只读视图只允许 select（不得出现任何写语句）',
   )
+})
+
+// =====================================================================
+//  SC-11 · 面评版本与补钉目标错配（补钉必须被拒、视图必须结构化报出来）
+// =====================================================================
+
+const CONFLICTING_SCORECARD = {
+  id: '11111111-1111-4111-8111-000000000c01',
+  interviewer_id: '11111111-1111-4111-8111-000000000c02',
+  status: 'SUBMITTED',
+  rubric_version_id: '11111111-1111-4111-8111-000000000404',
+}
+
+test('SC-11 补钉：已有现行面评绑在别的版本 → 拒绝 RUBRIC_PIN_CONFLICT_WITH_SCORECARD，零 UPDATE、零审计', async () => {
+  const client = fakeClient(withDefaultOwner({
+    application: appRow({ rubric_version_id: null }),
+    material: { parse_status: 'PARSED' },
+    pinnable: { rubric_version_id: RUBRIC_ID, version_no: 2 },
+    conflictingScorecards: [CONFLICTING_SCORECARD],
+    actorId: PIN_ACTOR,
+  }))
+  await assert.rejects(
+    advanceApplicationStage(client, { tenantId: TENANT, applicationId: APP_ID }),
+    (error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error)
+      assert.match(message, /INVARIANT_VIOLATION/)
+      assert.match(message, /RUBRIC_PIN_CONFLICT_WITH_SCORECARD/)
+      assert.match(message, /conflicting_scorecard_count/)
+      assert.match(message, /RESOLVE_RUBRIC_PIN_CONFLICT/)
+      return true
+    },
+  )
+  assert.equal(updateCalls(client), 0, '补钉被拒必须零写入（阶段 UPDATE 也不许发）')
+  assert.equal(
+    client.calls.filter((call) => call.text.includes('insert into recruitment.event_inbox')).length,
+    0,
+    '没有补钉就没有补钉审计事件',
+  )
+})
+
+test('SC-11 只读视图：冲突时把 RUBRIC_NOT_PINNED 升级成 RUBRIC_PIN_CONFLICT_WITH_SCORECARD（结构化责任/下一步）', async () => {
+  const { view, client } = await viewWith({
+    application: appRow({ rubric_version_id: null }),
+    material: { parse_status: 'PARSED' },
+    pinnable: { rubric_version_id: RUBRIC_ID, version_no: 2 },
+    conflictingScorecards: [CONFLICTING_SCORECARD],
+  })
+  assert.equal(view.status, 'BLOCKED')
+  assert.deepEqual(view.blockers.map((item) => item.code), ['RUBRIC_PIN_CONFLICT_WITH_SCORECARD'])
+  const blocker = view.blockers[0] as NonNullable<typeof view.blockers[0]>
+  assertStructuredResponsibility(blocker, 'RUBRIC_PIN_CONFLICT_WITH_SCORECARD')
+  assert.equal(blocker.owner_role, 'JOB_HIRING_MANAGER')
+  assert.equal(blocker.next_action_code, 'RESOLVE_RUBRIC_PIN_CONFLICT')
+  assert.equal(view.owner.role, 'JOB_HIRING_MANAGER')
+  assert.equal(view.next_action.code, 'RESOLVE_RUBRIC_PIN_CONFLICT')
+  assert.equal(updateCalls(client), 0, '视图仍然零写入')
 })
 
 test('T1 材料 parse_status=FAILED → BLOCKED MATERIAL_PARSE_FAILED，零 UPDATE', async () => {

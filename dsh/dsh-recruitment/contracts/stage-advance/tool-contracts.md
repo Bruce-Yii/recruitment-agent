@@ -68,6 +68,7 @@ S6 ──T1──▶ S7 ──T2──▶ S8
 | 1 | `application.resume_version_id` 非空 | `MATERIAL_NOT_LINKED` | `RECRUITMENT_OWNER` | `LINK_INTAKE_MATERIAL` |
 | 2 | 该 `resume_version.parse_status <> 'FAILED'` | `MATERIAL_PARSE_FAILED` | `RECRUITMENT_OWNER` | `REPARSE_MATERIAL` |
 | 3 | `application.rubric_version_id` 非空 | `RUBRIC_NOT_PINNED` | `JOB_HIRING_MANAGER` | `PIN_RUBRIC_VERSION` |
+| 3b | **补钉不会撞已有面评的版本**（SC-11） | `RUBRIC_PIN_CONFLICT_WITH_SCORECARD`（**只读视图**报；写路径以同一 code 抛错） | `JOB_HIRING_MANAGER` | `RESOLVE_RUBRIC_PIN_CONFLICT` |
 
 **实现口径（写死）**：材料只用 `resume_version.parse_status` 判定，**只把 `FAILED` 当反向事实**；
 `PARSED` / `PARTIAL` / `NEEDS_REVIEW` / `PENDING` / `PARSING` 都放行（设计如此；见 §13 未决 1）。
@@ -89,13 +90,24 @@ S6 ──T1──▶ S7 ──T2──▶ S8
    `rubric_version.payload_hash` 一致 + 未被取代 + 未过期（`job-rubric-rules.md` §4.2 的 `approved(v, as_of)`）。
    **不读** `rubric_version.approved_by_approval_id`（可空指针，不保证是 APPROVED、不保证 hash 一致）。
 3. **只在 T1 的唯一缺口就是这个 rubric 时**补钉：材料还没绑 / 解析失败时一行都不写（BLOCKED 必须零写入）。
+3b. **SC-11 冲突前置（本命令唯一的业务拒绝）**：补钉前必须确认该申请**没有**绑在别的
+   rubric 版本上的现行面评（`scorecard.superseded_by_scorecard_id is null` ∧
+   `status ∈ {SUBMITTED, WAIVED}` ∧ `rubric_version_id ≠ 待钉版本`）。
+   有冲突 → `INVARIANT_VIOLATION(RUBRIC_PIN_CONFLICT_WITH_SCORECARD)`，**零写入**，
+   `detail` 带 `pin_target_rubric_version_id` / `conflicting_rubric_version_ids` /
+   `conflicting_scorecard_count` / `conflicting_scorecard_ids` / `owner_role` / `next_action_code`。
+   理由：补钉会让旧版面评被静默算进绑新版的汇总/决策 —— **SC-11 明令禁止混用**；
+   这是人工裁决点（沿用面评实际使用的版本，或作废/重做那些面评），不是等一等会消失的缺失。
 4. 同一事务内顺序：条件 `UPDATE application … where rubric_version_id is null`（经 `fn_row_guard`，
    `record_version` 自增）→ 写一条内部审计事件 → 才发阶段 UPDATE。
    阶段 UPDATE 的乐观并发条件必须用**补钉之后**的 `record_version`。
 5. `UPDATE` 前必须已 `SET LOCAL recruitment.actor_id`（`withActor`）；没有 actor → `INVALID_ARGS(ACTOR_REQUIRED)`，
    **拒绝匿名写入**。审计事件里记的就是这个执行账号（它不是"决策人"，见 §9）。
-6. **只读视图不补钉**（`allowPin=false`）：它一条写语句都不发，仍按"当前事实"报 `RUBRIC_NOT_PINNED`。
-   这不是两套判据 —— 视图回答"库里现在缺什么"，写路径回答"这次调用能不能把已批准的事实补齐后推进"。
+6. **只读视图不补钉**（`allowPin=false`）：它一条写语句都不发；如果"没钉 rubric"其实会撞
+   已有面评的版本（3b），视图直接报 `BLOCKED(RUBRIC_PIN_CONFLICT_WITH_SCORECARD)`（结构化
+   `owner_role=JOB_HIRING_MANAGER` + `next_action_code=RESOLVE_RUBRIC_PIN_CONFLICT`），
+   否则仍按"当前事实"报 `RUBRIC_NOT_PINNED`。
+   这不是两套判据 —— 视图回答"库里现在缺什么/为什么补不了"，写路径回答"这次调用能不能把已批准的事实补齐后推进"。
 7. 本命令**不因此获得任何新授权**：rubric 版本已经由人批准过；没有批准就没有可钉的版本。
 
 ### 2.2 T2：S7 → S8（人已经做出的初筛结论）
@@ -209,6 +221,7 @@ select d.id, d.result, d.decided_by_actor_id
 | 取值 | 用在 | 人读说明（`NEXT_ACTION_MESSAGES`） |
 |---|---|---|
 | `PIN_RUBRIC_VERSION` | `RUBRIC_NOT_PINNED` | 先由 `recruitment_job_rubric_approve` 批准一版（它会更新 `job.current_rubric_version_id`），再调用本命令：写路径会在同一事务里把该版本钉到申请上 |
+| `RESOLVE_RUBRIC_PIN_CONFLICT` | `RUBRIC_PIN_CONFLICT_WITH_SCORECARD`（SC-11） | 已有面评绑在别的版本上：由人先裁决口径 —— 或把申请钉到面评实际使用的版本（先批准该版本再重试），或先作废/重做那些面评，再钉新版本 |
 | `LINK_INTAKE_MATERIAL` | `MATERIAL_NOT_LINKED` | 跑一次 intake，把材料绑定到这条申请 |
 | `REPARSE_MATERIAL` | `MATERIAL_PARSE_FAILED` | 修复或重新导入材料（不能是 FAILED） |
 | `RECORD_SCREENING_DECISION` | 视图：S7 在等决策 | 由人完成初筛并落一条 SCREENING 决策 |
@@ -361,6 +374,16 @@ select rv.id as rubric_version_id, rv.version_no
                   and ap.superseded_by_approval_id is null
                   and (ap.expires_at is null or ap.expires_at > now()));
 
+-- ①b SC-11 冲突前置（只读）：已有现行面评绑在**别的**版本上 → 拒绝补钉（零写入）
+select s.id, s.interviewer_id, s.status, s.rubric_version_id
+  from recruitment.scorecard s
+  join recruitment.interview iv
+    on iv.id = s.interview_id and iv.tenant_id = s.tenant_id
+ where s.tenant_id = $1 and iv.application_id = $2
+   and s.superseded_by_scorecard_id is null
+   and s.status in ('SUBMITTED', 'WAIVED')
+   and s.rubric_version_id is distinct from $3;   -- 非空 ⇒ 抛 RUBRIC_PIN_CONFLICT_WITH_SCORECARD
+
 -- ② 条件写：只有"仍然没钉"才写（值相同不发，歧义不覆盖）
 update recruitment.application
    set rubric_version_id = $3
@@ -376,8 +399,14 @@ values (... 'application.rubric_version.pinned', ...,
                  actor_id, application_record_version, source, reason});
 ```
 
+* ①b 命中（哪怕 1 条）→ `INVARIANT_VIOLATION(RUBRIC_PIN_CONFLICT_WITH_SCORECARD)`，**一条写语句都不发**。
 * 0 行（并发/被别的写路径抢动）→ `VERSION_CONFLICT(APPLICATION_RUBRIC_PIN_CONFLICT)`，整体回滚。
 * 审计事件写不进去 → `INVARIANT_VIOLATION(PIN_AUDIT_EVENT_MISSING)`，整体回滚（不写"无审计的补钉"）。
+* **`fn_row_guard` 实测**（`test/integration/scorecard-rubric-version-gate.test.ts`）：
+  `application` 上挂着两个 `fn_row_guard`（`lifecycle_status` / `current_stage_code`）+
+  `trg_application_cycle_guard` + `trg_application_no_delete` + `trg_application_trace`（只 INSERT）。
+  补钉 UPDATE 只改 `rubric_version_id`，两个守卫都走"状态未变"分支：`record_version` **恰好 +1**、
+  **不写** `event_inbox`（补钉审计是应用层自己写的）、不动 `status_changed_at`/`stage_changed_at`。
 
 ### 7.3 不倒退 / 不跳阶（`STAGE_AHEAD`）
 
@@ -469,6 +498,7 @@ values (... 'application.rubric_version.pinned', ...,
 | `VERSION_CONFLICT` | `APPLICATION_RECORD_VERSION_MISMATCH` | UPDATE 0 行 | 否（整体回滚） |
 | `VERSION_CONFLICT` | `APPLICATION_CONCURRENT_UPDATE` | `40001` / `40P01` | 否（整体回滚） |
 | `VERSION_CONFLICT` | `APPLICATION_RUBRIC_PIN_CONFLICT` | 补钉 UPDATE 0 行（并发抢动） | 否（整体回滚） |
+| `INVARIANT_VIOLATION` | `RUBRIC_PIN_CONFLICT_WITH_SCORECARD` | **SC-11**：该申请已有现行面评绑在待钉版本以外的 rubric 版本上 → 拒绝补钉（`detail` 带两边版本、冲突面评数与 `owner_role`/`next_action_code`） | 否（零写入） |
 | `INVARIANT_VIOLATION` | `PIN_AUDIT_EVENT_MISSING` | 补钉审计事件写不进去 | 否（整体回滚） |
 | `INVALID_ARGS` | `ACTOR_REQUIRED` | 补钉写库前发现没有 `recruitment.actor_id`（拒绝匿名审计） | 否 |
 | `INVARIANT_VIOLATION` | `STAGE_ENTERED_AT_NOT_ADVANCED` / `STAGE_ENTERED_AT_NOT_MONOTONIC` / `STAGE_CODE_MISMATCH` / `STAGE_CATALOG_INCOMPLETE` | 写后断言失败（本仓缺陷回归的兜底） | 否（整体回滚） |
@@ -495,6 +525,7 @@ values (... 'application.rubric_version.pinned', ...,
 | A8 | 不倒退（S9） | `NO_OP` + `STAGE_AHEAD`、零 UPDATE；**告警带 `owner_actor_id` / `owner_role` / `next_action_code`** |
 | A9 | **§11.6-8 只读阻塞视图**（真库） | RUBRIC 场景：`stage/stage_name/status/blocked/blockers/owner/next_action` 齐；**只发读语句**（逐条 SQL 检查 + 逐表零写）；`withReadOnly`（库层只读）里可跑；STAGE_AHEAD 场景：`kind=WARNING`、`blocked=false`、仍有 owner+next_action |
 | A10 | **F1 补钉**（`test/integration/f1-rubric-pin.test.ts`） | 申请先建（无 rubric）→ 岗位批准 → 本命令：`ADVANCED`、S7、`application.rubric_version_id` = `job.current_rubric_version_id`、`record_version` +2（补钉+迁移）、恰好 1 条 `application.rubric_version.pinned`（`source_object_id`=申请、`actor_id`=执行账号、`from=null`）；第二次 `NO_OP` 且事件不重复；只读视图在同一情形下零写入 |
+| A11 | **SC-11 补钉冲突**（`test/integration/scorecard-rubric-version-gate.test.ts`） | 完整真工具路径：intake（不钉）→ 排期 → 面评显式 V1 → 批准 V2 → `stage_advance` 抛 `INVARIANT_VIOLATION(RUBRIC_PIN_CONFLICT_WITH_SCORECARD)`，`detail` 带 V1/V2 + 冲突面评数；**零写入**（申请/阶段/`record_version` 不变、补钉事件 0、阶段事件 0）；只读视图在同一情形报 `BLOCKED(RUBRIC_PIN_CONFLICT_WITH_SCORECARD)` + `owner_role` + `next_action_code`；强行绕过补钉后 `evaluation_summarize` 报 `SCORECARD_RUBRIC_MISMATCH` 且 `decision_record` 拒绝（同一 reason_code） |
 
 **门槛对照（§11.6-8）**：HR 看到「当前状态（`stage`/`status`）＋阻塞原因（`blockers[].code/message`）＋
 责任人（`owner_role` + `owner_actor_id`/`owner_display_name`）＋下一步（`next_action_code` + §5.2 的人读说明）」——
