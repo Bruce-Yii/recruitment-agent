@@ -164,6 +164,7 @@ consensus_scope := FULL_PANEL    if missing = 0
 | `MINORITY_DISSENT` | `minority_reports[]` 非空 |
 | `SCORECARD_WAIVED` | `waived > 0`（豁免不等于有分，原 `waive_reason` 必须回显） |
 | `SCORECARD_SHAPE_INVALID` | 有面评形状不合法被剔除出 tally（`tool-contracts.md §3.4`） |
+| `SCORECARD_RUBRIC_MISMATCH` | **SC-11**：有面评绑的 `rubric_version_id` ≠ 申请钉住的版本，被剔除出 tally/aggregation/snapshot（`detail.application_rubric_version_id` + 每条 `{scorecard_id, interviewer_id, status, rubric_version_id}`）。**不许静默跳过**：调用方必须看得见"哪几条、两边版本" |
 | `RECORD_NOT_READY` | `record.state='NOT_READY'`（转写/记录没就绪，**不阻塞**决策，见 `DC-23`） |
 | `HIRING_MANAGER_UNSET` | 该部门的 `hiring_manager_actor_id` 为空（`DC-15`） |
 | `FIXTURE_BASIS` | `provenance='FIXTURE'`（§1.3） |
@@ -295,7 +296,7 @@ STEP 7  写入（decision 行 + 旧行指针 + 内部事件），带版本条件
 
 | `kind` | 何时必须出现 | 关键字段 |
 |---|---|---|
-| `SCORECARD` | **默认每次决策至少 1 条**；**唯一例外**：`result ∈ {WITHDRAW, HOLD}` ∧ `submitted_count = 0` → **允许 0 条**（不得因缺它报 `BASIS_REF_EMPTY`） | `id`,`revision_no`,`interviewer_id`,`payload_hash`,`overall`,`transcript_basis`,`transcript_state`,`fields[]`（`dimension_key`+`assessment`+`evidence[]`）。**`overall` 就是 `scorecard.overall` 列**（不是 `recommendation`）；`transcript_basis`/`transcript_state` 是 `TR-E7` 强制要求 |
+| `SCORECARD` | **默认每次决策至少 1 条**；**唯一例外**：`result ∈ {WITHDRAW, HOLD}` ∧ `submitted_count = 0` → **允许 0 条**（不得因缺它报 `BASIS_REF_EMPTY`） | `id`,`revision_no`,`interviewer_id`,`payload_hash`,`overall`,`transcript_basis`,`transcript_state`,`fields[]`（`dimension_key`+`assessment`+`evidence[]`）；**可选** `rubric_version_id`（给了必须等于库里该面评绑定的版本）。**`overall` 就是 `scorecard.overall` 列**（不是 `recommendation`）；`transcript_basis`/`transcript_state` 是 `TR-E7` 强制要求 |
 | `SUMMARY` | **每次必带** | `summary_digest`,`contract_version`,`coverage`,`tally`,`consensus` |
 | `RUBRIC_VERSION` | **每次必带** | `id`,`version_no`,`payload_hash` |
 | `INTERVIEW_RECORD` | 仅当决策引用了 Record 内容 | `id`,`transcript_artifact_id`,`transcript_revision`,`verification_status`（必须 `VERIFIED`） |
@@ -317,9 +318,23 @@ STEP 7  写入（decision 行 + 旧行指针 + 内部事件），带版本条件
 | **DC-19** | 若给 `approval_id`：`approval.resource_type='DECISION'` ∧ `resource_id = 本次 decision.id` ∧ `status='APPROVED'` ∧ `decided_at ≤ decision.decided_at`；否则 `INVALID_ARGS(APPROVAL_BINDING_INVALID)` | 库只支持前两条的**前半**：`ck_approval_resource_type` 含 `'DECISION'`（`0001:L448-449`）、非 `PENDING` 必须有 `decided_at` + `decision_by_actor_id`（`ck_approval_decided_fields`，`0001:L455-459`）。**"`resource_id` = 本决策 id" 和 "`decided_at ≤ decision.decided_at`" 两条库层完全不保证**（`approval.resource_id` 只是普通 uuid 列，`0001:L420`，没有反向外键），只能由写侧校验。**顺序陷阱**：`decision` 整行不可改 ⇒ 必须**预生成 decision id** 先建 approval 再插 decision（`G-3`） | `0001:L448-449`、`0001:L455-459`（**不要引 `L461-462`**：那是 `ck_approval_supersede_link` 与 `ck_approval_expiry`，与本条无关） |
 | **DC-20** | `summary_digest := sha256(canonical_json(§3.2 的固定子集))`，子集**只含** `contract_version / as_of / application_id / decision_scope / interview_id / rubric{version_id,payload_hash} / scorecards[{id,revision_no,interviewer_id,payload_hash,status}] (按 interviewer_id 排序) / record{id,revision,verification_status} / coverage / tally / missing[ids] / blockers[codes]`，**不含任何墙钟与随机**。`as_of` 必须进子集：`coverage.overdue` 由它决定，不写进去就会出现"不同 `as_of` 同一 digest"（`record` 就无法保证用同一个基准重算） | 子集固定是"同一输入复算出同一结果"的前提（`D-16`） | `D-16`；`screening-rules.md §11 D-3` |
 
-### 6.2 证据坐标的层级（不是每条都要求 bbox）
+### 6.1.1 SC-11 版本绑定（2026-11-14 增补，binding）
 
-```
+> **同一场决策里，所有参与的面评必须绑在同一个 rubric 版本上，且该版本 = `application.rubric_version_id`。**
+
+* 汇总侧：版本不一致的面评**不进** `tally`/`aggregation`/`snapshot`/`digest`，并在
+  `warnings[]` 报 `SCORECARD_RUBRIC_MISMATCH`（写明哪几条、两边版本）。必填面试官的这条
+  同时落进 `missing`，面板因此不完整 → 既有门禁不放行 `ADVANCE`/`REJECT`。
+* 决策侧：STEP 2（存在性）就把**全部现行面评**（current `SUBMITTED`/`WAIVED`）与
+  `application.rubric_version_id` 逐条比对，任何一条不一致 → 拒绝
+  `EVIDENCE_INSUFFICIENT(SCORECARD_RUBRIC_MISMATCH)`，`detail` 带
+  `application_rubric_version_id` + 每条冲突面评的 `{scorecard_id, interviewer_id, status, rubric_version_id}`；
+  `basis_refs[SCORECARD].rubric_version_id` 给了也要与库值一致。**零写入**。
+* 为什么必须两边都做：汇总的职责是"如实报告世界"（剔除 + 可见警告），决策是"承诺"——
+  不能把"面板里有一部分票来自旧版标准"当成没发生过。`stage-advance` 的补钉前置
+  （`RUBRIC_PIN_CONFLICT_WITH_SCORECARD`）是第三道闸：从源头不让"申请钉 V2 而面评绑 V1"成立。
+
+### 6.2 证据坐标的层级（不是每条都要求 bbox）```
 decision.basis_refs[SCORECARD].fields[].evidence[]
    ├─ 若面评引用了转写 → {kind:"SEGMENT", transcript_artifact_id, transcript_revision, segment_id, quote}
    ├─ 若面评引用了简历 → {kind:"RESUME_SPAN", resume_version_id, source_asset_sha256, page, bbox}   （来自 S7 的 basis 透传）

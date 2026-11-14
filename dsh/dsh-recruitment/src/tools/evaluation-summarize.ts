@@ -25,6 +25,10 @@
 //   * DC-23 record.state；DC-41..46 next round brief（派生、带 digest、无自由文本）。
 //   * SC §6：SC-21..SC-28（分母只含 required_interviewers、缺不是 0 分/反对票/平均、
 //     豁免原样回显、as_of 决定 overdue）；SC-46（observer 只进 not_required）。
+//   * SC-11：面评绑的 `rubric_version_id` 必须等于申请钉住的版本；不一致的条目**剔除出汇总**
+//     （不进 tally/aggregation/snapshot/digest），并由 `warnings: SCORECARD_RUBRIC_MISMATCH`
+//     逐条列出（scorecard_id / interviewer_id / status / 版本）——**不静默跳过**。
+//     必填面试官的这条同时落进 `missing`，所以决策侧不可能在"面板缺人"的情况下放行。
 //
 // 已知偏差（与契约字面不一致，按 DESIGN §2/§3.5 的口径执行，必须登记）：
 //   1. `as_of` 格式错报 `INVALID_ARGS(TYPE_MISMATCH)`，不是 TC §5.1 里不存在的 AS_OF_FORMAT
@@ -83,6 +87,7 @@ const WARNING_CODES = [
   'MINORITY_DISSENT',
   'SCORECARD_WAIVED',
   'SCORECARD_SHAPE_INVALID',
+  'SCORECARD_RUBRIC_MISMATCH',
   'RECORD_NOT_READY',
   'HIRING_MANAGER_UNSET',
   'FIXTURE_BASIS',
@@ -1262,12 +1267,25 @@ export async function computeEvaluationSummaryIn(
   const invalidRequiredIds: string[] = []
   const waivedRows: { readonly interviewer: InterviewerRow; readonly scorecard: ScorecardRow }[] = []
   const unreadableDimensions: { readonly scorecard_id: string; readonly dimension_key: string }[] = []
+  /**
+   * SC-11：面评绑的 rubric 版本 ≠ 申请钉的版本 → 该条**不进汇总**（不是静默跳过：
+   * 后面会报 `warnings: SCORECARD_RUBRIC_MISMATCH` 并列出每一条 + 两边版本）。
+   * 必填面试官的这条还会落进 `missing`（面板因此不完整 → 决策被既有门禁挡住）。
+   */
+  const rubricMismatch: { readonly interviewer: InterviewerRow; readonly scorecard: ScorecardRow }[] = []
 
   for (const interviewer of interviewerRows) {
     const isRequired = interviewer.required_scorecard === true
     const scorecard = scorecardByInterviewer.get(interviewer.id)
 
     if (scorecard === undefined) {
+      if (isRequired) missingRows.push(interviewer)
+      continue
+    }
+    // SC-11：只认"申请钉住的那一版"的面评。版本不一致的票绝不能进 tally/consensus/aggregation，
+    // 也不进 snapshot/digest（否则它仍然"出现在这份绑新版的汇总里"）。
+    if (scorecard.rubric_version_id !== app.rubric_version_id) {
+      rubricMismatch.push({ interviewer, scorecard })
       if (isRequired) missingRows.push(interviewer)
       continue
     }
@@ -1607,7 +1625,12 @@ export async function computeEvaluationSummaryIn(
   } else requiredHumanAction = 'CONFIRM_DECISION'
 
   // ---- snapshot + digest（DC-20）----
-  const sortedScorecards = [...scorecards].sort((left, right) => {
+  // SC-11：版本不一致的面评**不属于**这份汇总（不进 snapshot、不进 digest）——它们只出现在
+  // `warnings: SCORECARD_RUBRIC_MISMATCH` 的明细里，让调用方看得见、但不算进这份投影。
+  const projectableScorecards = scorecards.filter(
+    (scorecard) => scorecard.rubric_version_id === app.rubric_version_id,
+  )
+  const sortedScorecards = [...projectableScorecards].sort((left, right) => {
     const byInterviewer = left.interviewer_id.localeCompare(right.interviewer_id)
     return byInterviewer !== 0 ? byInterviewer : left.id.localeCompare(right.id)
   })
@@ -1678,6 +1701,23 @@ export async function computeEvaluationSummaryIn(
           scorecard_id: entry.scorecard.id,
           interviewer_id: entry.interviewer.id,
           violations: [...entry.violations],
+        })),
+      },
+    })
+  }
+  if (rubricMismatch.length > 0) {
+    warnings.push({
+      code: 'SCORECARD_RUBRIC_MISMATCH',
+      message: `${rubricMismatch.length} 份面评绑的 rubric 版本与申请钉住的版本不一致，已从汇总剔除`
+        + '（SC-11：不同版本的面评不得混用；这些票不进 tally/aggregation/snapshot）',
+      detail: {
+        application_rubric_version_id: app.rubric_version_id,
+        mismatched_count: rubricMismatch.length,
+        scorecards: rubricMismatch.map((entry) => ({
+          scorecard_id: entry.scorecard.id,
+          interviewer_id: entry.interviewer.id,
+          status: entry.scorecard.status,
+          rubric_version_id: entry.scorecard.rubric_version_id,
         })),
       },
     })
