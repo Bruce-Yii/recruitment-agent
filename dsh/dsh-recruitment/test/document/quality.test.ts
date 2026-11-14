@@ -948,6 +948,147 @@ test('归因 8：真实一页简历形状（教育右栏日期 + 奖项 + 项目
 })
 
 // ---------------------------------------------------------------------------
+// 6b. DOCX 表格：没有 bbox 不等于「不可归属」（2026-11-14 真实语料补齐）
+//
+// 真实语料（52 份）里剩 25 条 unresolved，其中 12 条是无 bbox 的 DOCX；
+// 10 条是「一行三格：公司 | 职位 | 时间」的**记录表**——表格行是精确的行身份，
+// 不该像 PDF 那样因为没有 bbox 就一律 unresolved。但只认记录表，且同行只能有一个组织格。
+// ---------------------------------------------------------------------------
+
+/** 造一个 DOCX 表格单元格块（不涉及 bbox；表格行靠 table_id + row 定位）。 */
+function docxCell(
+  block_id: string,
+  tableId: string,
+  row: number,
+  cell: number,
+  text: string,
+): Record<string, unknown> {
+  return {
+    block_id,
+    kind: 'table_cell',
+    order: row * 10 + cell,
+    text,
+    locator: { kind: 'docx', part: 'word/document.xml', table_id: tableId, row, cell },
+    provenance: 'native_text',
+  }
+}
+
+/** DOCX 媒体的统一内容（没有页数，走 docx 分支）。 */
+function docxContent(blocks: Record<string, unknown>[]): Record<string, unknown> {
+  return makeContent(blocks as any, {
+    media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    meta: { backend: 'docx-adapter/1.0.0' },
+  })
+}
+
+test('归因 9：DOCX 记录表「公司 | 职位 | 时间」同一行 → same_row / same_table_row，不再 HARD', () => {
+  const blocks = [
+    docxCell('t0r0c0', 'table0', 0, 0, 'Example Technology Ltd'),
+    docxCell('t0r0c1', 'table0', 0, 1, '后端工程师'),
+    docxCell('t0r0c2', 'table0', 0, 2, '2021.07 - 2024.06'),
+    docxCell('t0r1c0', 'table0', 1, 0, 'Second Corp'),
+    docxCell('t0r1c1', 'table0', 1, 1, '产品经理'),
+    docxCell('t0r1c2', 'table0', 1, 2, '2019.07 - 2021.06'),
+  ]
+  const content = docxContent(blocks)
+  const attributions = attributeExperienceRows(normalizeContent(content))
+  assert.deepEqual(
+    attributions.map((item) => [item.row_block_id, item.confidence, item.basis, item.org_block_id]),
+    [
+      ['t0r0c2', 'same_row', 'same_table_row', 't0r0c0'],
+      ['t0r1c2', 'same_row', 'same_table_row', 't0r1c0'],
+    ],
+  )
+
+  const assessment = assess(content)
+  assert.equal(codes(assessment).includes('doc_cross_block_attribution'), false, '表格行闭合就不许再 HARD')
+  assert.equal(assessment.blocking, false)
+  assert.equal(assessment.issues.filter((item) => item.code === 'doc_attribution_resolved').length, 2)
+  const detail = attributionDetailOf(assessment as any, 'doc_attribution_resolved')
+  assert.equal(detail.basis, 'same_table_row')
+  assert.equal(detail.may_join_same_row, true)
+  assert.equal(detail.needs_human_check, false)
+  const issue = issueOf(assessment, 'doc_attribution_resolved')
+  assert.equal(issue.severity, 'SOFT')
+  assert.equal(issue.suggested_action, 'none')
+  assert.match(issue.message, /同一表格行/u)
+})
+
+test('归因 9b：DOCX 表格的三种反例 —— 不同行 / 单行排版表 / 同行多个组织格 → 仍然 unresolved（不许猜）', () => {
+  // (a) 公司只在上一条记录的行，日期在下一行：不能跨行拼。
+  const crossRow = docxContent([
+    docxCell('t0r0c0', 'table0', 0, 0, 'Example Technology Ltd'),
+    docxCell('t0r0c1', 'table0', 0, 1, '后端工程师'),
+    docxCell('t0r1c0', 'table0', 1, 0, '产品经理'),
+    docxCell('t0r1c1', 'table0', 1, 1, '2021.07 - 2024.06'),
+  ])
+  assert.equal(attributeExperienceRows(normalizeContent(crossRow))[0].confidence, 'unresolved')
+  assert.equal(codes(assess(crossRow)).includes('doc_cross_block_attribution'), true)
+
+  // (b) 单行表 = 排版外框（整段简历塞一格），不是「一条记录一行」：宁可人工，不猜。
+  const layoutTable = docxContent([
+    docxCell('t0r0c0', 'table0', 0, 0, 'Example Technology Ltd'),
+    docxCell('t0r0c1', 'table0', 0, 1, '2021.07 - 2024.06'),
+  ])
+  assert.equal(attributeExperienceRows(normalizeContent(layoutTable))[0].confidence, 'unresolved')
+
+  // (c) 同一行出现两个组织格：无法确定谁是公司 → 不拼。
+  const ambiguous = docxContent([
+    docxCell('t0r0c0', 'table0', 0, 0, 'Example Technology Ltd'),
+    docxCell('t0r0c1', 'table0', 0, 1, 'Another Corp'),
+    docxCell('t0r0c2', 'table0', 0, 2, '2021.07 - 2024.06'),
+    docxCell('t0r1c0', 'table0', 1, 0, 'Third Corp'),
+    docxCell('t0r1c1', 'table0', 1, 1, '产品经理'),
+    docxCell('t0r1c2', 'table0', 1, 2, '2019.07 - 2021.06'),
+  ])
+  const ambiguousAttributions = attributeExperienceRows(normalizeContent(ambiguous))
+  assert.equal(ambiguousAttributions[0].row_block_id, 't0r0c2')
+  assert.equal(ambiguousAttributions[0].confidence, 'unresolved')
+  assert.equal(codes(assess(ambiguous)).includes('doc_cross_block_attribution'), true)
+
+  // (d) 同一行有两个标题格、谁都不是组织：仍然歧义 → 不拼。
+  const twoSubjects = docxContent([
+    docxCell('t0r0c0', 'table0', 0, 0, '数学建模竞赛'),
+    docxCell('t0r0c1', 'table0', 0, 1, '程序设计竞赛'),
+    docxCell('t0r0c2', 'table0', 0, 2, '2022.03 - 2022.07'),
+    docxCell('t0r1c0', 'table0', 1, 0, '英语演讲比赛'),
+    docxCell('t0r1c1', 'table0', 1, 1, '一等奖'),
+    docxCell('t0r1c2', 'table0', 1, 2, '2021.03 - 2021.07'),
+  ])
+  assert.equal(attributeExperienceRows(normalizeContent(twoSubjects))[0].confidence, 'unresolved')
+})
+
+test('归因 9c：DOCX 表格行里没有组织格、只有一个标题格（项目/奖项名）→ 该行仍闭合（same_table_row）', () => {
+  // 真实语料里的长相：荣誉/项目表「奖项名 | 级别/角色 | 时间」——整行就是一条记录，
+  // 时间属于这一行的标题，不需要跨行找公司。行内没有组织 token 也不该因此 HARD。
+  const blocks = [
+    docxCell('t0r0c0', 'table0', 0, 0, '省级优秀大创项目'),
+    docxCell('t0r0c1', 'table0', 0, 1, '第一负责人'),
+    docxCell('t0r0c2', 'table0', 0, 2, '2024 年 11 月 - 至今'),
+    docxCell('t0r1c0', 'table0', 1, 0, '课程设计优秀奖'),
+    docxCell('t0r1c1', 'table0', 1, 1, '三等奖'),
+    docxCell('t0r1c2', 'table0', 1, 2, '2023.03 - 2023.07'),
+    // 标题格带顿号：表格结构已经证明它是字段，不是叙述段落，允许。
+    docxCell('t0r2c0', 'table0', 2, 0, '数学建模竞赛、程序设计竞赛'),
+    docxCell('t0r2c1', 'table0', 2, 1, '国家级二等奖'),
+    docxCell('t0r2c2', 'table0', 2, 2, '2022.03 - 2022.07'),
+  ]
+  const content = docxContent(blocks)
+  const attributions = attributeExperienceRows(normalizeContent(content))
+  assert.deepEqual(
+    attributions.map((item) => [item.row_block_id, item.confidence, item.basis, item.org_block_id]),
+    [
+      ['t0r0c2', 'same_row', 'same_table_row', 't0r0c0'],
+      ['t0r1c2', 'same_row', 'same_table_row', 't0r1c0'],
+      ['t0r2c2', 'same_row', 'same_table_row', 't0r2c0'],
+    ],
+  )
+  const assessment = assess(content)
+  assert.equal(codes(assessment).includes('doc_cross_block_attribution'), false)
+  assert.equal(assessment.blocking, false)
+})
+
+// ---------------------------------------------------------------------------
 // 7. 严重级边界：把「仅版式问题」与「文字不可用」区分开（D-97 第一批，2026-11-14）
 // ---------------------------------------------------------------------------
 

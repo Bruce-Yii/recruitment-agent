@@ -290,7 +290,8 @@ export function checkReadingOrder(ctx: CheckContext): AssessmentIssue[] {
 // 第一个组织块，不是几何最近的 —— 等于连线索都是错的。
 //
 // 现在的做法：先算归属（`attributeExperienceRows`），再按归属结果的置信度分级：
-//   * `same_row`   （同块自证 / 同一可视行）→ 归属闭合，**只有它可以允许下游把主体与时间当同一行**；
+//   * `same_row`   （同块自证 / PDF 同一可视行 / DOCX 同一表格行）→ 归属闭合，
+//                   **只有它可以允许下游把主体与时间当同一行**；
 //   * `adjacent`   （紧邻上一/下一可视行）→ 位置相邻 **不等于** 可以拼，标待核（human_review）；
 //   * `unresolved` → 同页有主体但都拼不上 → 唯一仍然 HARD 的情况。
 //
@@ -387,7 +388,21 @@ export function hasSubjectText(text: string): boolean {
 }
 
 /**
- * 能否被当作「主体/组织标题行」。
+ * 表格**单元格**里的标题判据：比行内自证宽一档。
+ *
+ * 差别只有一个：允许 `，、` 这类分句标点。理由：表格结构已经证明「这一格是一个字段」，
+ * 它不是叙述段落，标题里带顿号很常见（`全国大学生数学建模竞赛、美国大学生数学建模竞赛`）。
+ * 仍然保留：去时间/职务/级别后 4–48 字、无句末标点（`。；!?` 出现即叙述）、无叙述动词。
+ */
+function isTableCellSubject(text: string): boolean {
+  const subject = subjectTextOf(text)
+  if (subject.length < 4 || subject.length > MAX_SUBJECT_CHARS) return false
+  if (SENTENCE_PUNCT.test(subject)) return false
+  if (PROSE_VERBS.test(subject)) return false
+  return /\p{L}/u.test(subject)
+}
+
+/** 能否被当作「主体/组织标题行」。
  *
  * 沿用原判据的边界：含时间区间的块不是组织文本。另外排除长段落与整句叙述
  * （正文里的 `……大学生……` 常命中组织 token，但它不是组织名，不能拿来归属）。
@@ -460,6 +475,50 @@ function anchorCandidates(
   })
 }
 
+/** DOCX 表格行的身份键：同部件 + 同表 + 同行（`null` = 这一行不在表格里）。 */
+function tableRowKey(locator: EvidenceLocator | null): string | null {
+  if (locator === null || locator.kind !== 'docx') return null
+  const { part, table_id: tableId, row } = locator
+  if (tableId === undefined || row === undefined) return null
+  return `${part}|${tableId}|${row}`
+}
+
+/** 每张 DOCX 表有几行：单行表通常是**排版用的外框表**，不是「一条记录一行」的记录表。 */
+function docxTableRowCounts(
+  blocks: ReadonlyArray<NormalizedBlock>,
+): ReadonlyMap<string, number> {
+  const rowsByTable = new Map<string, Set<number>>()
+  for (const block of blocks) {
+    const locator = block.locator
+    if (locator === null || locator.kind !== 'docx') continue
+    if (locator.table_id === undefined || locator.row === undefined) continue
+    const key = `${locator.part}|${locator.table_id}`
+    const rows = rowsByTable.get(key) ?? new Set<number>()
+    rows.add(locator.row)
+    rowsByTable.set(key, rows)
+  }
+  const counts = new Map<string, number>()
+  for (const [key, rows] of rowsByTable) counts.set(key, rows.size)
+  return counts
+}
+
+/**
+ * DOCX 表格里的「同排」关系：同部件、同表、同一行，且**不是同一个单元格**。
+ *
+ * 为什么需要：DOCX 没有 bbox，`sameVisualRow` 永远为 false，于是「一行三格：公司 | 职位 | 时间」
+ * 这种最常见的简历表格 100% 会掉进 unresolved（真实语料里整整 10 行）。
+ * 表格行是精确的行身份，比 PDF 的「视觉同排」更强，所以 `same_row` 的语义完全成立；
+ * 但**只对记录表生效**：单行表（排版外框）不算，同行出现多个组织格（无法确定谁是公司）也不算。
+ */
+function sameTableRow(row: EvidenceLocator | null, candidate: EvidenceLocator | null): boolean {
+  const rowKey = tableRowKey(row)
+  if (rowKey === null) return false
+  if (tableRowKey(candidate) !== rowKey) return false
+  const a = row as Extract<EvidenceLocator, { kind: 'docx' }>
+  const b = candidate as Extract<EvidenceLocator, { kind: 'docx' }>
+  return a.cell !== b.cell
+}
+
 function horizontalDistanceBetween(row: NormalizedBlock, candidate: NormalizedBlock): number {
   const a = boxOf(row.locator)
   const b = boxOf(candidate.locator)
@@ -519,6 +578,7 @@ function makeAttribution(
 function attributeOneRow(
   row: NormalizedBlock,
   blocks: ReadonlyArray<NormalizedBlock>,
+  tableRowCounts: ReadonlyMap<string, number>,
 ): ExperienceAttribution {
   const candidates = anchorCandidates(row, blocks)
   const candidateIds = candidates.map((candidate) => candidate.block_id)
@@ -535,7 +595,7 @@ function attributeOneRow(
     return makeAttribution(row, row, 'same_row', 'self_subject', evidence, subjectTextOf(row.text), candidateIds)
   }
 
-  // 3. 同一可视行的另一块（复用 sameVisualRow；取水平最近的那个）。
+  // 3a. PDF：同一可视行的另一块（复用 sameVisualRow；取水平最近的那个）。
   const sameRowHits = candidates
     .filter((candidate) => sameVisualRow(row.locator, candidate.locator))
     .sort((a, b) => {
@@ -548,6 +608,35 @@ function attributeOneRow(
     const evidence = [row.locator, picked.locator]
       .filter((locator): locator is EvidenceLocator => locator !== null)
     return makeAttribution(row, picked, 'same_row', 'same_row_anchor', evidence, picked.text, candidateIds)
+  }
+
+  // 3b. DOCX 表格：同一表格行是精确的行身份（没有 bbox 也不影响）。
+  //   行内「谁算主体」按强弱取，且必须唯一（不唯一就是歧义 → 不拼）：
+  //     ① 唯一一个组织格 → 用它；
+  //     ② 没有组织格时，唯一一个「标题格」（奖项名/项目名）→ 用它（表格行 = 一条记录，
+  //        时间属于这一行的主体；这与 PDF 的 self_subject 是同一条道理）。
+  //   单行表通常是排版外框，不算「一条记录一行」→ 不参与。
+  const rowKey = tableRowKey(row.locator)
+  const tableKey = rowKey === null ? null : rowKey.slice(0, rowKey.lastIndexOf('|'))
+  const tableMultiRow = tableKey !== null && (tableRowCounts.get(tableKey) ?? 0) >= 2
+  const tableSiblings = !tableMultiRow
+    ? []
+    : blocks.filter((block) => block.block_id !== row.block_id
+      && block.text.trim() !== ''
+      && sameTableRow(row.locator, block.locator)
+      && !hasDateRange(block.text))
+  const tableOrgSiblings = tableSiblings.filter((block) => hasOrgToken(block.text))
+  const tableSubjectSiblings = tableSiblings.filter((block) => isTableCellSubject(block.text))
+  const tableOwner = tableOrgSiblings.length === 1
+    ? tableOrgSiblings[0]
+    : (tableOrgSiblings.length === 0 && tableSubjectSiblings.length === 1 ? tableSubjectSiblings[0] : null)
+  if (tableOwner !== null) {
+    const evidence = [row.locator, tableOwner.locator]
+      .filter((locator): locator is EvidenceLocator => locator !== null)
+    const ids = candidateIds.includes(tableOwner.block_id)
+      ? candidateIds
+      : [...candidateIds, tableOwner.block_id]
+    return makeAttribution(row, tableOwner, 'same_row', 'same_table_row', evidence, tableOwner.text, ids)
   }
 
   // 4. 紧邻的上一/下一可视行（位置相邻 ≠ 可拼，只给 adjacent + 待核）。
@@ -585,10 +674,11 @@ function attributeOneRow(
  */
 export function attributeExperienceRows(content: NormalizedContent): ExperienceAttribution[] {
   const blocks = content.blocks.filter((block) => block.text.trim() !== '')
+  const tableRowCounts = docxTableRowCounts(blocks)
   const out: ExperienceAttribution[] = []
   for (const row of blocks) {
     if (!hasDateRange(row.text)) continue
-    out.push(attributeOneRow(row, blocks))
+    out.push(attributeOneRow(row, blocks, tableRowCounts))
   }
   return out
 }
@@ -631,16 +721,19 @@ export function checkCrossBlockAttribution(ctx: CheckContext): AssessmentIssue[]
       continue
     }
     const target = attribution.org_block_id ?? '(unknown)'
-    const where = attribution.confidence === 'same_row'
-      ? (attribution.basis === 'self_subject'
+    const sameRow = attribution.confidence === 'same_row'
+    const where = !sameRow
+      ? '紧邻行（位置相邻，不等于可拼）'
+      : attribution.basis === 'self_subject'
         ? '同一块内自证（主体文本与时间同块）'
-        : '同一可视行')
-      : '紧邻行（位置相邻，不等于可拼）'
-    const verdict = attribution.confidence === 'same_row'
-      ? (attribution.basis === 'self_subject'
+        : attribution.basis === 'same_table_row'
+          ? '同一表格行（同表同排的不同单元格）'
+          : '同一可视行'
+    const verdict = !sameRow
+      ? '仍需人工核对，不得当作同一行拼装'
+      : attribution.basis === 'self_subject'
         ? '时间属于该块的主体文本，不需要跨块拼装'
-        : '公司/时间可视为同一行')
-      : '仍需人工核对，不得当作同一行拼装'
+        : '公司/时间可视为同一行'
     out.push(buildIssue(
       'doc_attribution_resolved',
       `归属 ${attribution.confidence}（${attribution.basis}）：时间行 ${row.block_id} 的主体在 ${target}`
