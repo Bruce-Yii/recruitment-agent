@@ -193,7 +193,16 @@ test('§11.6-2 重复候选人资料不静默覆盖历史，也不把不同 Appl
       [1, 1],
       '每个 (candidate, job) 只能有一条 ACTIVE',
     )
-    assert.equal(await count(client, 'select count(*)::int as n from recruitment.candidate_merge where tenant_id = $1', [TENANT]), 0)
+    // 只数本用例这几位候选人相关的合并行（不是整表）：共享库里别的测试 / 别的 lane 的
+    // 合并历史与本用例无关，并行跑时整表 `= 0` 会把别人的历史误判成本用例写脏了。
+    assert.equal(
+      await count(client, `select count(*)::int as n from recruitment.candidate_merge
+         where tenant_id = $1
+           and (surviving_candidate_id = any($2::uuid[]) or merged_candidate_id = any($2::uuid[]))`, [
+        TENANT, [first.candidate_id, other.candidate_id],
+      ]),
+      0,
+    )
   })
 })
 

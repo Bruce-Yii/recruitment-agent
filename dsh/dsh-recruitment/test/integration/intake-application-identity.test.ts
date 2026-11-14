@@ -290,9 +290,14 @@ test('用例 C：不同人、相同模板正文 → 不得因 content hash 合�
     assert.deepEqual(await applicationCounts(client, first.candidate_id, DEMO_JOB), { total: 1, active: 1 })
     assert.deepEqual(await applicationCounts(client, second.candidate_id, DEMO_JOB), { total: 1, active: 1 })
 
-    // 关联 ≠ 合并：一条 candidate_merge 都不许出现。
+    // 关联 ≠ 合并：本用例涉及的两个人之间一条 candidate_merge 都不许出现。
+    // 只数这两个 candidate（不是整表）：共享库里别的测试/别的 lane 的合并行与本用例无关。
     assert.equal(
-      await count(client, 'select count(*) as n from recruitment.candidate_merge where tenant_id = $1', [TENANT]),
+      await count(client, `select count(*) as n from recruitment.candidate_merge
+         where tenant_id = $1
+           and (surviving_candidate_id = any($2::uuid[]) or merged_candidate_id = any($2::uuid[]))`, [
+        TENANT, [first.candidate_id, second.candidate_id],
+      ]),
       0,
       '身份只认强标识 + 证据；同正文不构成合并理由',
     )
