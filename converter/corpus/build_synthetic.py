@@ -1,66 +1,137 @@
 # -*- coding: utf-8 -*-
-"""Build synthetic hard cases the real corpus does not contain."""
-import hashlib, json, sys
+"""Build synthetic hard cases **entirely from generated fake documents**.
+
+R7 / docs21 §8：synthetic 目录里的东西必须真的是合成的。旧实现从真实语料 manifest
+取 text_rich 原件来派生 image_only/encrypted/corrupted/platform_noise —— 目录名叫
+synthetic，内容却是真实候选人材料（corrupted.pdf 的 OCR 甚至读出了姓名/手机/邮箱）。
+本实现不再读取任何真实语料：所有 fixture 都从下面 `_fake_resume()` 生成的假简历派生
+（姓名/电话/邮箱均为 example.invalid / 1360000xxxx 保留示例值）。
+
+用法：python converter/corpus/build_synthetic.py <out_dir>
+输出：<out_dir>/synthetic-manifest.jsonl + 7 个 PDF。
+"""
+import hashlib
+import json
+import sys
 from pathlib import Path
+
 import fitz
 
 OUT = Path(sys.argv[1])
-SRC_MANIFEST = Path(sys.argv[2])
 OUT.mkdir(parents=True, exist_ok=True)
-
-rows = [json.loads(l) for l in SRC_MANIFEST.read_text(encoding="utf-8").splitlines() if l.strip()]
-rich = [r for r in rows if "text_rich" in r["tags"] and "error" not in r][:6]
 
 made = []
 
-def add(path, layer, note):
-    data = path.read_bytes()
-    made.append({"id": f"synthetic-{layer}", "source": "synthetic", "path": str(path),
-                 "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
-                 "pages": None, "native_chars": None, "images": None,
-                 "tags": [layer], "synthetic": True, "note": note})
 
-# 1) image_only: render first 2 pages of a rich resume to images, rebuild as image-only PDF
-for index, row in enumerate(rich[:3], 1):
-    src = fitz.open(row["path"])
+def _fake_resume(path: Path, n: int, pages: int = 2) -> None:
+    """写一份纯假的简历 PDF（无真实个人资料）。"""
+    doc = fitz.open()
+    for page_no in range(pages):
+        page = doc.new_page()
+        text = (
+            f"Demo Candidate {n}\n"
+            f"Phone: 1360000{n:04d}\n"
+            f"Email: demo{n}@example.invalid\n"
+            f"Work Experience\n"
+            f"Example Technology Co. - Backend Engineer 2018.07 - 2023.12\n"
+            f"Education\n"
+            f"Example University - BSc Computer Science 2014.09 - 2018.06\n"
+            f"Skills\n"
+            f"Python PostgreSQL RabbitMQ (synthetic sample)\n"
+            f"Page {page_no + 1} / {pages}"
+        )
+        page.insert_text((72, 96), text, fontsize=10)
+    doc.save(str(path))
+    doc.close()
+
+
+def add(path: Path, layer: str, note: str, id_suffix: int | None = None) -> None:
+    data = path.read_bytes()
+    made.append(
+        {
+            "id": f"synthetic-{layer}" + (f"-{id_suffix}" if id_suffix is not None else ""),
+            "source": "synthetic",
+            "path": str(path),
+            "bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "pages": None,
+            "native_chars": None,
+            "images": None,
+            "tags": [layer],
+            "synthetic": True,
+            "note": note,
+            "root": "synthetic",
+            "rel": path.name,
+        }
+    )
+
+
+# 1) image_only ×3：把 2 页假简历渲染成图片，再重建为无文字层 PDF
+for index in (1, 2, 3):
+    src = OUT / f"_fake_{index}.pdf"
+    _fake_resume(src, index, pages=2)
+    doc = fitz.open(str(src))
     out = fitz.open()
-    for page in list(src)[:2]:
+    for page in doc:
         pix = page.get_pixmap(dpi=150)
         target = out.new_page(width=pix.width, height=pix.height)
         img = OUT / f"_tmp_{index}.png"
-        pix.save(img)
+        pix.save(str(img))
         target.insert_image(fitz.Rect(0, 0, pix.width, pix.height), filename=str(img))
         img.unlink()
-    path = OUT / f"image_only_{index}.pdf"
-    out.save(path); out.close(); src.close()
-    add(path, "image_only", "rendered text pages as images; no text layer")
+    out.save(str(OUT / f"image_only_{index}.pdf"))
+    out.close()
+    doc.close()
+    src.unlink()
+    add(OUT / f"image_only_{index}.pdf", "image_only", "rendered fake resume pages as images; no text layer", id_suffix=index)
 
-# 2) encrypted: password-protected copy
-src = fitz.open(rich[0]["path"])
-path = OUT / "encrypted.pdf"
-src.save(path, encryption=fitz.PDF_ENCRYPT_AES_256, owner_pw="owner", user_pw="secret")
-src.close()
-add(path, "encrypted", "AES-256, user password set")
+# 2) encrypted：假简历加密
+src = OUT / "_fake_encrypted.pdf"
+_fake_resume(src, 9, pages=1)
+doc = fitz.open(str(src))
+doc.save(
+    str(OUT / "encrypted.pdf"),
+    encryption=fitz.PDF_ENCRYPT_AES_256,
+    owner_pw="owner",
+    user_pw="secret",
+)
+doc.close()
+src.unlink()
+add(OUT / "encrypted.pdf", "encrypted", "AES-256, user password set (fake content)")
 
-# 3) corrupted: truncated bytes
-data = Path(rich[1]["path"]).read_bytes()
-path = OUT / "corrupted.pdf"
-path.write_bytes(data[: len(data) // 3])
-add(path, "corrupted", "truncated to one third of original bytes")
+# 3) corrupted：假简历字节截断（不是真实材料截断）
+src = OUT / "_fake_corrupted.pdf"
+_fake_resume(src, 10, pages=1)
+data = src.read_bytes()
+(OUT / "corrupted.pdf").write_bytes(data[: len(data) // 3])
+src.unlink()
+add(OUT / "corrupted.pdf", "corrupted", "fake resume truncated to one third of generated bytes")
 
-# 4) platform_noise: stamp a recruiting-site watermark into every page
-src = fitz.open(rich[2]["path"])
-for page in src:
+# 4) platform_noise：假简历 + 招聘网站水印（平台名是公开信息，非个人信息）
+src = OUT / "_fake_noise.pdf"
+_fake_resume(src, 11, pages=1)
+doc = fitz.open(str(src))
+for page in doc:
     rect = page.rect
-    page.insert_text((rect.width * 0.3, 20), "BOSS直聘  www.zhipin.com", fontsize=9, color=(0.6, 0.6, 0.6))
-src.save(OUT / "platform_noise.pdf"); src.close()
-add(OUT / "platform_noise.pdf", "platform_noise", "BOSS直聘 watermark stamped on every page")
+    page.insert_text(
+        (rect.width * 0.3, 20),
+        "BOSS直聘  www.zhipin.com",
+        fontsize=9,
+        color=(0.6, 0.6, 0.6),
+    )
+doc.save(str(OUT / "platform_noise.pdf"))
+doc.close()
+src.unlink()
+add(OUT / "platform_noise.pdf", "platform_noise", "fake resume with job-board watermark")
 
-# 5) zero_text: a PDF with no text and no images at all
-doc = fitz.open(); doc.new_page(); doc.save(OUT / "zero_text.pdf"); doc.close()
+# 5) zero_text：空白页
+doc = fitz.open()
+doc.new_page()
+doc.save(str(OUT / "zero_text.pdf"))
+doc.close()
 add(OUT / "zero_text.pdf", "zero_text", "blank page; no text, no images")
 
-with (OUT / "synthetic-manifest.jsonl").open("w", encoding="utf-8") as fh:
+with (OUT / "synthetic-manifest.jsonl").open("w", encoding="utf-8") as handle:
     for row in made:
-        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-print(json.dumps({"created": len(made), "layers": [r["tags"][0] for r in made]}, ensure_ascii=False))
+        handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+print(json.dumps({"created": len(made), "layers": [row["tags"][0] for row in made]}, ensure_ascii=False))

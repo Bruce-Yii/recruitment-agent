@@ -48,7 +48,7 @@
 | `manifest.jsonl` | **77 份真实 PDF**（30 真实简历 + 17 Odoo 公开 CV + 30 转换件） |
 | `synthetic/synthetic-manifest.jsonl` | **7 份合成难例**：`image_only`×3、`encrypted`、`corrupted`、`platform_noise`、`zero_text` |
 | `build_corpus.py` | 从真实根目录重建 manifest |
-| `build_synthetic.py` | 重建合成难例（需原件，生成到 `synthetic/`） |
+| `build_synthetic.py` | 重建合成难例（**纯自生成假简历，不读真实语料**，生成到 `synthetic/`） |
 | `sanitize_manifest.py` | 把绝对路径改写成 `root + rel` |
 
 ## 铁律

@@ -25,3 +25,20 @@
 | 记账人 | 总控 |
 
 **判定为什么不改 reader**：`EMPTY_FILE` 这个错误码本身是对的——它准确回答了"为什么读不出来"。问题在语料侧：一份 2 字节的占位文件不该出现在"真实简历"里。改语料，不改判定逻辑。
+
+### 2026-11-15 · 从真实语料派生的 synthetic 目录 PDF（6 份）+ zero_text（1 份）
+
+**判定**：`converter/corpus/build_synthetic.py` 旧实现从真实语料 manifest 取 `text_rich` 原件，派生
+`image_only_* / encrypted / corrupted / platform_noise`——目录标 `synthetic`，内容却是**真实候选人材料**
+（`corrupted.pdf` 的 OCR 已读出姓名/手机/邮箱）。这违反 R7 与 `docs/21 §8`「目录名叫合成 ≠ 数据是合成的」。
+本区只做隔离，不删除；同时重写 `build_synthetic.py` 为**纯自生成假简历**，回归不再依赖真实材料。
+
+| 文件 | 字节 | sha256 | 判定依据 |
+|---|---:|---|---|| `corrupted.pdf` | 367312 | `86EE00DD415FF977C23B9DA4DFC9AC7955FFA634737E2FA18D2CC211FF978282` | 旧 build_synthetic 从真实语料派生；移出回归 |
+| `encrypted.pdf` | 1089908 | `7755B946BA8E4351CC5C24A1B86745B6A7453893EC07CA71986F807DD0424F76` | 旧 build_synthetic 从真实语料派生；移出回归 |
+| `image_only_1.pdf` | 26095654 | `D33176D0B22C0889D5C7BEDB8F23A3E4A1B05A6A23BB5AD336A6C3FAF59604FD` | 旧 build_synthetic 从真实语料派生；移出回归 |
+| `image_only_2.pdf` | 26095654 | `9D8CEA119989C762E384418872FF359E2F6AF23FFABD610CB29E03CD9FD329E8` | 旧 build_synthetic 从真实语料派生；移出回归 |
+| `image_only_3.pdf` | 5487947 | `0113658D1EFADEE0D215B386360EBED2EF4339EAE923EB71A41F35D2A645864A` | 旧 build_synthetic 从真实语料派生；移出回归 |
+| `platform_noise.pdf` | 256228 | `C6CEB2EEF64DFC3FAC4061A06A54F6576DC85659731387F036F2506B7D640893` | 旧 build_synthetic 从真实语料派生；移出回归 |
+| `zero_text.pdf` | 518 | `C0F69688976A2ADD4EAA69BB33B5D01BE3365B04E0EE66DD883980E7D190A715` | 旧 build_synthetic 从真实语料派生；移出回归 |
+
