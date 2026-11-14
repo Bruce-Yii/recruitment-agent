@@ -1,13 +1,13 @@
 {
   "summary": {
-    "generated_at": "2026-11-15T05:26:01+08:00",
+    "generated_at": "2026-11-15T07:08:36+08:00",
     "generated_by": "work/review/e1-e4-audit/probes/build-evidence-index.ps1",
     "scan_rules": "扫描 docs/** + dsh/dsh-recruitment/{evidence,manual,contracts}/** + 两份 README/CONTRACT 的反引号路径；在仓库根/文档同级/包根/contracts/experiments/evidence/manual/converter 等基准下 Test-Path；transcript.txt/dialogue-only.txt 内的引用按\"原始转录不可改写\"豁免，其余缺失必须在同一行显式标注 按设计不入库/未入库/外部包/已删除/历史引用 才允许豁免",
     "reference_tsv": "work/review/e1-e4-audit/referenced-files.tsv",
-    "experiments_total": 21,
+    "experiments_total": 22,
     "references_checked_total": 160.0,
     "verdicts": {
-      "FILES_PRESENT": 18,
+      "FILES_PRESENT": 19,
       "REFERENCED_MISSING_BY_DESIGN": 3,
       "REFERENCED_MISSING": 0,
       "FAIL_NO_README": 0
@@ -1729,6 +1729,19 @@
           "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
         }
       ],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-15-d5-workbench",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-15T07:08:35+08:00",
+      "artifacts_present": "",
+      "subdirs": "shots",
+      "references_checked": 0,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [],
       "verdict": "FILES_PRESENT"
     },
     {

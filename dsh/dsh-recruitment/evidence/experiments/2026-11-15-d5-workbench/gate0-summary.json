@@ -1,0 +1,204 @@
+{
+  "gate": 0,
+  "lane": "D5",
+  "agent": "gate0-host",
+  "generatedAt": "2026-11-15T06:16:00+08:00",
+  "report": "work/d5/gate0/GATE0-REPORT.md",
+  "workspace": "D:\\12412\\dsh工作区\\projects\\recruitment-agent",
+  "dsh": {
+    "version": "0.2.2-rc.3",
+    "package": "D:\\12412\\recruitment-runtime\\node_modules\\@deepseek-ai\\dsh\\package.json",
+    "packageLine": 4,
+    "enginesNode": ">=24.9.0",
+    "node": "v24.16.0"
+  },
+  "host": {
+    "url": "http://127.0.0.1:49303/",
+    "profile": "recruitment",
+    "port": 49303,
+    "listen": "127.0.0.1:49303",
+    "pid": 42368,
+    "startedAt": "2026-11-15T06:05:05+08:00",
+    "dshHome": "D:\\12412\\dsh-home-recruitment",
+    "commandLine": "\"node\" \"D:\\12412\\recruitment-runtime\\node_modules\\.bin\\\\..\\@deepseek-ai\\dsh\\lib\\bin.js\" --profile recruitment --no-open --port 49303",
+    "tokenFile": "work/d5/logs/product-host.log",
+    "tokenRotatesOnRestart": true,
+    "restartsDuringGate0": [
+      { "pid": 12428, "startedAt": "2026-11-15T05:39:22+08:00" },
+      { "pid": 40572, "startedAt": "2026-11-15T05:58:17+08:00" },
+      { "pid": 42368, "startedAt": "2026-11-15T06:05:05+08:00" }
+    ]
+  },
+  "auth": {
+    "unauthenticatedIndex": { "status": 401, "body": "dsh web authentication required; reopen the URL printed by dsh web." },
+    "tokenIndex": { "status": 303, "location": "./", "setsHttpOnlyCookie": true, "cookieNamePrefix": "dsh-auth-" },
+    "cookieIndex": { "status": 200, "bytes": 41362, "hasBootGlobal": true },
+    "connectTokenExchange": { "status": 302, "location": "./api/remote.mux" },
+    "apiWithoutCookie": 401,
+    "apiWrongContentType": 415
+  },
+  "items": [
+    {
+      "id": 1,
+      "name": "DSH实际安装版本",
+      "status": "PASS",
+      "evidence": ["work/d5/gate0/host-process.json"],
+      "value": "0.2.2-rc.3 @ D:\\12412\\recruitment-runtime\\node_modules\\@deepseek-ai\\dsh"
+    },
+    {
+      "id": 2,
+      "name": "Web Host URL/profile/端口/进程/401/鉴权/200",
+      "status": "PASS",
+      "evidence": ["work/d5/gate0/host-facts.json", "work/d5/gate0/host-process.json"],
+      "value": "http://127.0.0.1:49303/ profile=recruitment pid=42368；无token 401；token 303+cookie；cookie 200"
+    },
+    {
+      "id": 3,
+      "name": "Recruitment Plugin 真实加载（26工具+HTTP路由）",
+      "status": "PASS",
+      "evidence": ["work/d5/gate0/tools-26.json", "work/d5/gate0/host-facts.json", "work/d5/gate0/logs/session-f8e9fb2a.jsonl"],
+      "value": "26 个 recruitment_* 工具出现在真实请求的 request/header；/recruitment/runtime/health、/recruitment/api/overview 返回真 PG 数据（200）"
+    },
+    {
+      "id": 4,
+      "name": "Client Module 加载与生命周期",
+      "status": "PASS",
+      "evidence": ["work/d5/gate0/ui-dom.json", "work/d5/gate0/ui-network2.json", "work/d5/gate0/ui-console2.json", "work/d5/gate0/served-client-bundle.json", "work/d5/gate0/shots/06-conversation.png", "work/d5/gate0/recruitment-panel.png", "work/d5/gate0/shots/02b-panel-current-label.png"],
+      "value": "boot graph 含 @recruitment/dsh-recruitment；bundle 200(40,894B, exports.apply/inject, register main+sidebar.panellist)；DOM 侧栏按钮+main 面板均出现；console 0 error/0 exception；label 在取证期由 待人工决定 → 招聘工作台（其他 lane 重建）"
+    },
+    {
+      "id": 5,
+      "name": "实际可用 Slot",
+      "status": "PASS",
+      "evidence": ["work/d5/gate0/slots.json", "work/d5/gate0/ui-dom.json"],
+      "value": "编译期 slot 目录 116 key；真实 DOM 44 key；main、sidebar.panellist 双向存在"
+    },
+    {
+      "id": 6,
+      "name": "原生 Conversation 调用方式（真实 UI 发消息→Agent 回复）",
+      "status": "PASS",
+      "evidence": ["work/d5/gate0/ui-conversation.json", "work/d5/gate0/conversation-evidence.json", "work/d5/gate0/logs/session-f8e9fb2a.jsonl", "work/d5/gate0/shots/06-conversation.png"],
+      "value": "POST /api/session/prompt（args.request）；WS /api/remote.mux session/follow；事件 turn/start..assistant/message..tool/call..tool/result..turn/end；15s 回复『成功 | DEMO-BE-001 | 后端工程师（演示）』"
+    },
+    {
+      "id": 7,
+      "name": "当前 Agent Session ID 获取方式",
+      "status": "PASS",
+      "evidence": ["work/d5/gate0/session-identity.json", "work/d5/gate0/ui-conversation.json"],
+      "value": "localStorage['dsh.sessions.current'] + POST /api/session/list + 会话日志首行；形态 session-<uuid>；URL 不含；本次验证会话 session-f8e9fb2a-5cdd-42f4-be12-203e23a07938"
+    },
+    {
+      "id": 8,
+      "name": "ToolRunContext 能否取得当前 Session",
+      "status": "PARTIAL",
+      "evidence": ["work/d5/gate0/conversation-evidence.json", "work/d5/gate0/logs/session-f8e9fb2a.jsonl"],
+      "value": "类型契约成立：dsh-tools/src/contracts.ts:188 agent?: Agent；dsh-agent/src/types.ts:18 Agent.id: SessionId。真实工具调用 recruitment_job_get 已发生，但 tool/call 与 tool/result 不持久化 exec/agentId，故运行时 exec.agent.id 值无法从日志取证",
+      "typeVerified": true,
+      "runtimeToolCallVerified": true,
+      "runtimeExecAgentIdCaptured": false,
+      "reason": "DSH 0.2.2-rc.3 不把 exec 写入 session log；只在 Host 进程内 tools/result 监听者可见"
+    },
+    {
+      "id": 9,
+      "name": "Host Remote Action 真实调用机制",
+      "status": "PASS",
+      "evidence": ["work/d5/gate0/host-facts.json", "work/d5/gate0/ui-network2.json", "work/d5/gate0/tools/remote-client.mjs"],
+      "value": "Typert Remote：POST /api/<ns>/<method>（envelope {type:client-request,rpcId,method,payload:{args}}）+ WS /api/remote.mux；/connect 换 cookie 后 session/list 与 session/modelCatalog 均 200 ok（只读）"
+    }
+  ],
+  "slots": {
+    "catalogSource": "D:\\12412\\recruitment-runtime\\node_modules\\@deepseek-ai\\dsh-cordis-client-runner\\src\\client\\slot-catalog.ts",
+    "catalogLineMain": 2667,
+    "catalogLineSidebarPanellist": 4320,
+    "catalogCount": 116,
+    "liveDomCount": 44,
+    "pluginSlots": ["main", "sidebar.panellist"],
+    "pluginSlotIds": { "main.key": "recruitment-workbench", "sidebar.panellist.id": "recruitment-workbench" },
+    "file": "work/d5/gate0/slots.json"
+  },
+  "conversation": {
+    "api": {
+      "unary": "POST /api/session/prompt",
+      "stream": "WS /api/remote.mux endpoint session/follow",
+      "envelope": { "type": "client-request", "rpcId": "<uuid>", "method": "session/prompt", "payload": { "args": { "request": {} } } }
+    },
+    "events": ["turn/start", "step/start", "request/header", "request/context", "assistant/message", "tool/call", "tool/result", "step/end", "turn/end"],
+    "verifiedSessionId": "session-f8e9fb2a-5cdd-42f4-be12-203e23a07938",
+    "modelRoute": "opencode-go-openai-key2/iceman-contributor-free",
+    "agentReplyText": "成功 | DEMO-BE-001 | 后端工程师（演示）",
+    "durationSeconds": 15,
+    "toolCall": { "name": "recruitment_job_get", "callId": "465862df-38bf-4935-8f1a-5a5e3caaf095", "jobId": "11111111-1111-4111-8111-000000000401" },
+    "defaultModelRateLimited": { "provider": "opencode-go-openai-key2", "model": "longcat-2.5-free", "failureCode": "RATE_LIMIT", "retries": 8, "session": "session-fceba596-47fd-41b8-972a-76d166360a34" }
+  },
+  "session": {
+    "idShape": "session-<uuid>",
+    "acquisitionMethods": [
+      { "method": "ui-localStorage", "key": "dsh.sessions.current", "value": "{\"sessionId\":\"session-<uuid>\"}" },
+      { "method": "host-remote", "endpoint": "POST /api/session/list", "argsField": "_request" },
+      { "method": "session-log", "path": "D:\\12412\\dsh-home-recruitment\\sessions\\<workspace>\\session-<uuid>\\session.v4.jsonl.zstd", "firstLine": "{\"type\":\"session\",\"version\":4,\"id\":\"session-<uuid>\"}" },
+      { "method": "url", "carriesSessionId": false }
+    ],
+    "file": "work/d5/gate0/session-identity.json"
+  },
+  "remoteAction": {
+    "name": "DSH Typert Remote over Connection",
+    "hostDispatcher": "D:\\12412\\recruitment-runtime\\node_modules\\@deepseek-ai\\dsh-api-gateway\\src\\index.ts:249 (rpc.intercept '/api')",
+    "streamMuxPath": "/api/remote.mux",
+    "streamMuxPathSource": "dsh-api-gateway/src/stream-protocol.ts:7",
+    "streamMuxRoute": "dsh-api-gateway/src/index.ts:273-309",
+    "unaryRoute": "dsh-client-connection/src/rpc-host.ts:304-349",
+    "envelopeSchema": "dsh-client-connection/src/rpc-schema.ts:35-39",
+    "connectExchange": "dsh-client-connection/src/browser-auth.ts:314-348",
+    "clientApi": "dsh-api-gateway/src/client/index.ts:145 (ClientRemoteService); $stream/$mount/$host :196-219",
+    "serverDecorator": "dsh-typert-protocol/src/index.ts:250,282-300 (@Remote on TypertRemoteService)",
+    "verifiedCalls": [
+      { "endpoint": "session/list", "status": 200, "ok": true, "readOnly": true },
+      { "endpoint": "session/modelCatalog", "status": 200, "ok": true, "readOnly": true }
+    ],
+    "observedStreamEndpoints": ["$events", "remoteAccess/follow", "account/watch", "workspace/follow", "session/control", "session/follow"]
+  },
+  "blocked": [],
+  "postVerificationDrift": {
+    "observedAt": "2026-11-15T06:20:00+08:00",
+    "hostPid": 42368,
+    "trigger": "06:12:20 其他 lane 修改运行时 profile patch（auto_tick:true / 默认 model 改 iceman-contributor-free）触发 live reload",
+    "routes": {
+      "/recruitment/api/overview": 200,
+      "/recruitment/runtime/health": 404,
+      "/recruitment/runtime/tasks": 404,
+      "/recruitment/api/recruiting": 404,
+      "/recruitment/api/actor": 404
+    },
+    "toolsStillRegistered": 26,
+    "toolsCheckAt": "2026-11-15T06:19:08+08:00",
+    "evidence": ["work/d5/gate0/drift-status.json", "work/d5/gate0/drift-tools-check.json"],
+    "actionForGate1": "干净重启/reload 后重验 /recruitment/runtime/*、/recruitment/api/recruiting、/recruitment/api/actor；不要把当前进程当稳定基线",
+    "gate0ConclusionImpact": "不影响 9 项结论（每项已验证时点）：§3 的 200 证据取于 06:10-06:12；tools 26 在 06:19 复验仍在"
+  },
+  "unverified": [
+    { "item": "exec.agent.id runtime value", "status": "not-capturable", "reason": "DSH session log does not persist exec; tools/result listener is process-local" },
+    { "item": "其余 25 个工具逐个真机调用", "reason": "Gate0 scope; only recruitment_job_get end-to-end" },
+    { "item": "Host 日志中的插件加载行", "reason": "product-host.log has no per-plugin load line; judged by live routes + model tool declarations" },
+    { "item": "新 client build 的数据接线", "reason": "W1 正在改 client+src/index.ts，新面板显示『正在读取…』，属 Gate1" }
+  ],
+  "environmentFacts": [
+    "Gate0 期间 Host 被总控重启 2 次（PID 12428→40572→42368），launch token 轮换两次",
+    "默认模型 longcat-2.5-free 在 06:00 前后 429 限流；改用 iceman-contributor-free 完成对话验证",
+    "dsh/dsh-recruitment/lib/client.js 在 Gate0 期间被其他 lane 重建 3 次（44650→40894→53537B），侧栏 label 由 待人工决定→招聘工作台"
+  ],
+  "artifacts": {
+    "report": "work/d5/gate0/GATE0-REPORT.md",
+    "summary": "work/d5/gate0/summary.json",
+    "screenshots": [
+      "work/d5/gate0/shots/01-boot.png",
+      "work/d5/gate0/shots/06-conversation.png",
+      "work/d5/gate0/recruitment-panel.png",
+      "work/d5/gate0/shots/02b-panel-current-label.png"
+    ],
+    "logs": [
+      "work/d5/gate0/logs/session-f8e9fb2a.jsonl",
+      "work/d5/gate0/logs/session-fceba596.jsonl",
+      "work/d5/gate0/logs/session-scan.json"
+    ]
+  }
+}
