@@ -1,7 +1,7 @@
 # 17 · 决策台账（唯一权威源）
 
-**来源**：`work/control/DECISIONS-2026-11-12.md`（工作区 = 代码仓根）
-（旧仓，**冻结只读**）。下面是该文件 **530 行的逐字副本**，未改一字。
+**来源**：旧仓 `work/control/DECISIONS-2026-11-12.md`（**旧仓**，冻结只读；2026-11-14 随旧工作区移到 `D:\12412\dsh工作区\archive\recruitment-os-legacy-work\control\`）。下面是该文件 **530 行的逐字副本**，未改一字。
+> 按 **D-82**：本仓内引用一律指向**本文件 + 编号**，不要再指向 `work/control/`（那个目录在本仓从未存在过）。
 **新增裁定**（2026-11-13 起）在 [附录 A](#附录-a--2026-11-13-起新增的裁定)；**引用路径修正**在 [附录 B](#附录-b--引用路径修正2026-11-13)。
 
 ---
@@ -728,7 +728,7 @@ DSH 自带 `@deepseek-ai/dsh-user-approval`（fail-closed）；headless profile 
 | `work/handoff/15-architecture-hv.md` | 新仓未收录（只在旧仓） | 不再作为阶段码依据，见 D-73 |
 
 **旧仓位置**（只读参考，不要在里面开发）：
-`work/control/DECISIONS-2026-11-12.md`（工作区 = 代码仓根）
+`D:\12412\dsh工作区\archive\recruitment-os-legacy-work\control\DECISIONS-2026-11-12.md`（2026-11-14 随旧工作区迁出）
 
 ### D-84 · 终局决策不接受"缺面评但逐条确认"的旁路
 
