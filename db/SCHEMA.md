@@ -7,14 +7,16 @@
 
 > 计数口径来自 `psql -f db/verify.sql` 第 1 节实测输出（PG 17.11）。
 
-> **本文数字是 `0001_init.sql` 基线，不是当前库。** 迁移已到 **`0014`**（0010 台账 + 0011 任务运行时 +
-> 0012 执行器状态 + 0013 追溯链 + 0014 企业自建配置），当前实测为 **60 张基表 + 3 个视图**
+> **本文数字是 `0001_init.sql` 基线，不是当前库。** 迁移已到 **`0015`**（0010 台账 + 0011 任务运行时 +
+> 0012 执行器状态 + 0013 追溯链 + 0014 企业自建配置 + 0015 runtime cutover 水位），当前实测为 **62 张基表 + 3 个视图**
 > （视图 `v_conversion_ledger` / `v_review_open` / `v_source_gate` 在 `0003_review_queue.sql:538/567/617`）。
-> `verify.sql` 用 `pg_class.relkind='r'` 只数基表，所以"**60**"和"**63**（`information_schema.tables` 含视图）"是两种口径，别混用。
-> 引用表数时必须写明口径与迁移版本，否则会像复审 N11 那样出现"40/44/47"三个数并存（2026-11-14 回抄：实测 60/63）。
-> ⚠️ **并发迁移提醒**：本机 `ra_s6s7` 在同一时刻已有另一 lane **未提交**的 `0015_runtime_cutover.sql`
-> （+`runtime_watermark` / `runtime_watermark_change` → 62 张基表 / 52 个禁删触发器）。本文按 **Git 追踪的
-> 0001–0014 链**写（60）；0015 合入后需再回抄。
+> `verify.sql` 用 `pg_class.relkind='r'` 只数基表，所以"**62**"和"**65**（`information_schema.tables` 含视图）"是两种口径，别混用。
+> 引用表数时必须写明口径与迁移版本，否则会像复审 N11 那样出现"40/44/47"三个数并存（**2026-11-14 21:00 回抄**：实测 62/65）。
+> **取数命令**（`ra_s6s7`，`psql -U postgres -d ra_s6s7`）：
+> `select count(*) from information_schema.tables where table_schema='recruitment' and table_type='BASE TABLE';` → **62**；
+> `psql -v ON_ERROR_STOP=1 -f db/verify.sql` §1 → `tables 62 / triggers 117 / functions 41`，`STRUCT-06 … 52 个`，末行 `VERIFY PASS`（exit 0）。
+> 口径以**当前库（0001–0015 已应用）**为准：`0015_runtime_cutover` 见 `recruitment.schema_migration`
+> （`applied_at = 2026-11-14 20:17:05 +08`），迁移文件已入库（commit `2329d2e`）。
 
 ---
 
@@ -26,11 +28,11 @@
 | 主键 | 单列 `uuid`，`gen_random_uuid()`（PG13+ 内置，**不装扩展**） | 无需 pgcrypto |
 | 例外 | `event_inbox` 主键叫 `event_id`（不是 `id`） | docs/03 §9 字段名逐字 |
 | 多租户 | 除 `organization` 外每表 `tenant_id NOT NULL` 且有外键到 `organization`；关键关系用 **(id, tenant_id) 复合外键**，物理上禁止跨租户引用 | docs/03 §16 不变量 7 |
-| 乐观并发 | **27 张表带 `record_version`**（`information_schema.columns` 实测；所有状态表 + `candidate`/`decision`/`approval`/`business_task`/`task_attempt`/`job`/`interview`/…，0014 起 `role`/`hiring_team`/`hiring_team_member`/`pipeline_template` 也带），`fn_row_guard` / `fn_touch` 在每次 UPDATE 自动 +1；调用方必须 `WHERE record_version = $expected`，0 行即 `VERSION_CONFLICT`。**另 33 张不带**：要么整行不可变（新版本 = 新行，如 `rubric_version` / `job_version` / `resume_version` / `event_inbox` / `business_config` / `candidate_merge`），要么只是维度/挂接表（`organization` / `department` / `acquisition_channel` / `actor_role` / `interviewer` / `intake_asset` / `execution_mandate` / `resume`）或派生索引 / 配置 / 引擎状态表（`transcript_segment`、`stage_catalog`、`engine_*` 等） | docs/03 §18 |
+| 乐观并发 | **28 张表带 `record_version`**（`information_schema.columns` 实测；所有状态表 + `candidate`/`decision`/`approval`/`business_task`/`task_attempt`/`job`/`interview`/…，0014 起 `role`/`hiring_team`/`hiring_team_member`/`pipeline_template` 也带，0015 的 `runtime_watermark` 也带），`fn_row_guard` / `fn_touch` 在每次 UPDATE 自动 +1；调用方必须 `WHERE record_version = $expected`，0 行即 `VERSION_CONFLICT`。**另 34 张不带**：要么整行不可变（新版本 = 新行，如 `rubric_version` / `job_version` / `resume_version` / `event_inbox` / `business_config` / `candidate_merge`），要么只是维度/挂接表（`organization` / `department` / `acquisition_channel` / `actor_role` / `interviewer` / `intake_asset` / `execution_mandate` / `resume`）或派生索引 / 配置 / 引擎状态表（`transcript_segment`、`stage_catalog`、`engine_*` 等） | docs/03 §18 |
 | 状态审计 | 有状态的表都有 `status_changed_at / status_changed_by_actor_id / status_source_event_id`；`application` 另有一组 `stage_changed_*` | docs/03 §4 不变量 8、§19 |
 | actor | 状态迁移必须能确定 actor：`SET LOCAL recruitment.actor_id = '<uuid>'`，或显式写 `status_changed_by_actor_id`；两者都没有 → `ACTOR_REQUIRED` | docs/03 §12（工具每次执行都要重新校验授权） |
 | 内部事件 | 每次状态迁移由触发器自动写一条 `event_inbox`（`provider='internal'`、`trust_level='INTERNAL'`），事件 id 回填到 `status_source_event_id` | docs/03 §9 / §4 不变量 8 |
-| 历史不可删 | **50 张表**装了 `trg_*_no_delete`（`fn_block_delete` 触发器；`verify.sql` STRUCT-06 实测 50），物理 DELETE 直接报 `DELETE_FORBIDDEN`；修正只能追加新版本 / 软关闭。**唯一例外 `transcript_segment`**：它是"可重建的派生索引"（docs/04 §16），允许重建 | docs/03 §4 不变量 2、§6、§11 |
+| 历史不可删 | **52 张表**装了 `trg_*_no_delete`（`fn_block_delete` 触发器；`verify.sql` STRUCT-06 实测 52 个，2026-11-14 21:00 `ra_s6s7` 实测），物理 DELETE 直接报 `DELETE_FORBIDDEN`；修正只能追加新版本 / 软关闭。**唯一例外 `transcript_segment`**：它是"可重建的派生索引"（docs/04 §16），允许重建 | docs/03 §4 不变量 2、§6、§11 |
 | 原文不可改 | `resume_version` / `rubric_version` / `job_version` / `business_config` / `interview_template_version` / `candidate_merge` 整行不可 UPDATE；`decision` / `ai_summary` 只允许改 `superseded_by_*` 指针（+ 状态）；`transcript_artifact` 只允许改状态与抓取元数据（白名单） | docs/03 §4 不变量 6/10、docs/04 §16 |
 | 时间语义 | `occurred_at`（外部发生，没给就留空）/ `received_at` / `recorded_at` / `state_changed_at` / `sent_at` / `confirmed_at` / `last_readback_at` 分列，互不冒充 | docs/03 §19 |
 | 枚举 | 一律 `text + CHECK`（不用 PG enum）：可读、可幂等重建、扩值只改 CHECK | 迁移可重复执行 |
@@ -129,10 +131,10 @@
 
 ---
 
-## 6. 不在 36 行清单内、但确实落表的表（60 − 39 = 21 张）
+## 6. 不在 36 行清单内、但确实落表的表（62 − 39 = 23 张）
 
-> **2026-11-14 回抄**：表总数 60，其中 39 张是 §3 的映射表、**21 张**在 36 行清单之外。
-> 按迁移分组如下（引用表数时请把这 21 张算进"基表 60"，不要重复计入 #7 的 `candidate_merge`）。
+> **2026-11-14 21:00 回抄**：表总数 **62**（`information_schema` BASE TABLE 口径实测，0001–0015），其中 39 张是 §3 的映射表、**23 张**在 36 行清单之外。
+> 按迁移分组如下（引用表数时请把这 23 张算进"基表 62"，不要重复计入 #7 的 `candidate_merge`）。
 
 | 来源 | 表 | 归属 / 理由 |
 |---|---|---|
@@ -144,6 +146,7 @@
 | 0012 | `engine_trigger` / `engine_disposition` / `engine_trigger_thread` / `engine_thread` / `engine_ticket` / `engine_decision` / `engine_outbox` / `engine_effect` / `engine_kv` | 执行引擎状态（vendor 自 dsh-superagent-prototype，MIT；业务真相仍在领域表） |
 | 0013 | `tool_call` | 执行追溯链（Notion 08 §11.3 第 9 步） |
 | 0014 | `hiring_team` / `hiring_team_member` / `pipeline_template_stage_template` | 企业自建配置；`pipeline_template_stage_template` 是 #16 的**部分**覆盖（只到"阶段 → 面试模板版本"） |
+| 0015 | `runtime_watermark` / `runtime_watermark_change` | 历史事件 cutover 水位（每租户一行、只进不退）+ append-only 变更审计；两张都挂 `fn_block_delete`（52 = 50 + 2） |
 
 > 这些表都来自 `docs/03` 正文或已批准的裁决 / 迁移头注释，不是自造。若总控认定其中某些算「额外对象」，
 > 删除会直接削弱不变量 2、§5 的 Intake 模型或运行时能力 —— 这条请在复核时裁决。

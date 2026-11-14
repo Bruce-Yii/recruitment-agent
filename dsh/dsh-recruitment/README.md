@@ -51,8 +51,8 @@ $psql='D:\12412\PostgreSQL\bin\psql.exe'
 $env:PGPASSWORD='123456'; $env:PGCLIENTENCODING='UTF8'
 & $psql -h 127.0.0.1 -U postgres -d postgres -c "create database ra_s6s7;"
 cd D:\12412\dsh工作区\projects\recruitment-agent
-# 0001→0014 全链重放（0010 是迁移台账，跳步会 verify-0010 红；0011–0014 各自带自检）
-foreach ($f in '0001_init','0002_seed','0003_review_queue','0004_stage_catalog','0005_version_binding','0006_integrity_gaps','0007_decision_integrity','0008_decision_uniqueness','0009_application_identity','0010_migration_ledger','0011_task_runtime','0012_engine_state','0013_trace_chain','0014_tenant_config') {
+# 0001→0015 全链重放（0010 是迁移台账，跳步会 verify-0010 红；0011–0015 各自带自检）
+foreach ($f in '0001_init','0002_seed','0003_review_queue','0004_stage_catalog','0005_version_binding','0006_integrity_gaps','0007_decision_integrity','0008_decision_uniqueness','0009_application_identity','0010_migration_ledger','0011_task_runtime','0012_engine_state','0013_trace_chain','0014_tenant_config','0015_runtime_cutover') {
   & $psql -h 127.0.0.1 -U postgres -d ra_s6s7 -v ON_ERROR_STOP=1 -q -f "db\migrations\$f.sql"
   Write-Output "EXIT_$f=$LASTEXITCODE"
 }
