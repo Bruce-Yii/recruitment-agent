@@ -35,19 +35,18 @@ Keep the product surface small and contextual:
 
 The product has internal recruiting users only. Role-specific interfaces are projections of the same domain objects and DSH host, not separate products or duplicate business workflows.
 
-### Role views — keep the product simple
+### Role views — two workbench types, not multiple mini-apps
 
-Use three practical work perspectives, not a matrix of separate mini-apps:
+There are only two product-facing workbench types:
 
-- **Recruiter / HR:** owns the active recruiting work—job context, incoming resumes, Agent-prepared screening, interview coordination, and the hiring history needed to continue the work.
-- **Interviewer:** opens one focused Interview Workspace containing only assigned interviews, the relevant job context, the candidate's submitted resume and authorized materials, this round's focus and questions, meeting details, private notes, and their own independent Scorecard.
-- **Recruiting Lead:** sees the broader hiring work, configures the recruiting framework, reviews authorized evaluations, and makes the formal recruiting decision.
+- **Recruiting side (招聘方):** one unified workbench for hiring goals, job/rubric setup, resume intake, screening, interview coordination, evaluation review, and formal recruiting decisions. Recruiter and recruiting-lead responsibilities are scopes/permissions inside this same workbench, not separate demo identities or separate applications. Which actions are available is determined by job/team assignment and server-side policy.
+- **Interviewer side (面试官):** the same product shell switches to a focused "My Interviews" / Interview Workspace showing only interviews assigned to the current internal user and authorized materials. It provides the round-specific briefing, job context, submitted resume when allowed, focus attributes/questions, meeting details, the interviewer's own notes, and their independent Scorecard.
 
-These are views inside the same Recruitment Agent workspace. The same internal person may act as recruiter and interviewer on different jobs; the active assignment and authorization determine the current view and available actions.
+There is no standalone Approver persona or approval workspace. If a company genuinely needs an extra approval gate, it is an optional workflow condition assigned to an already-authorized internal user; it does not create another product role or top-level workspace.
 
-Do **not** create a standalone "Approver" role or approval workspace for the current product. The Recruiting Lead owns formal recruiting decisions by default. If an enterprise genuinely requires an extra approval step, model it as an optional configurable gate assigned to an existing authorized internal role—not as another mandatory product persona or another top-level workspace.
+There is no standalone Enterprise Administrator persona or configuration application. Enterprise recruiting configuration is a settings area inside the recruiting-side workbench. Configuration permission is an authorization scope, not another daily work persona.
 
-Do **not** create a separate daily "Enterprise Administrator" role or configuration workspace in this product. Enterprise-level configuration is a settings area within the same workspace, normally managed by the Recruiting Lead or another internal user explicitly granted configuration permission. Configuration permission is an authorization, not a fourth daily work persona.
+The same internal person may be assigned as recruiter on one job and interviewer on another. The current single-user demo therefore needs one recruiting-side identity and individual interviewer demo identities (A/B/C) to demonstrate assignment and round context. A/B/C are sample people/assignments, not three distinct product roles. In production, identity comes from DSH authentication; access and actions are enforced by server-side assignment/policy, never by a freely selectable frontend role.
 
 ### Interview-round-specific experience
 
@@ -60,8 +59,8 @@ Do **not** create a separate daily "Enterprise Administrator" role or configurat
 
 ### Demo role switch vs real identity
 
-- The current single-user prototype may expose a clearly labelled **Demo identity / View as** selector to demonstrate Recruiter, Recruiting Lead, and Interviewer A/B/C views without implementing multi-user authentication now.
-- Switching demo identity must change the view, assigned work, actor identity, data visibility and permitted actions—not merely change a label or theme. Demo Scorecards must persist distinct actor IDs and remain independent.
+- The current single-user prototype may expose a clearly labelled **Demo identity / View as** selector with one recruiting-side identity and individual interviewer assignments A/B/C. Recruiter and recruiting-lead responsibilities are not separate demo roles; A/B/C are assigned internal sample interviewers, not separate role types.
+- Switching demo identity must change the view, assigned work, actor identity, data visibility and permitted actions—not merely change a label or theme. Demo Scorecards must persist distinct actor IDs and remain independent. The selector must not contain standalone Approver or Administrator personas.
 - The selector is a prototype simulation only. It must not be described as real authentication, real multi-user collaboration, or a security boundary.
 - In the integrated product, the active identity comes from DSH's authenticated internal user/session and server-side role/scope assignments. Users cannot self-grant roles by changing a UI selector. Domain/tool actions enforce authorization server-side.
 - Candidate identities are never available in this selector and candidates never become system users.
@@ -146,7 +145,7 @@ A lower layer inherits the higher layer by default and only stores explicit over
 - Every write is read back from PostgreSQL. Refresh/session recovery preserves the same business state.
 - The transcript branch and Scorecard branch can proceed independently.
 - No candidate login/account/portal or candidate-facing product surface exists; candidate records and transcript speakers are never treated as system users or action authors.
-- Role-specific internal views exist for HR/Recruiter, Interviewer, Recruiter, Interviewer and Recruiting Lead, reusing the same Interview Workspace and domain contracts; the prototype's Demo identity selector changes data scope/actions but is explicitly not real authentication.
+- The same product shell exposes only two workbench types: recruiting-side and interviewer-side. Recruiting-lead authority is an action/job permission within the recruiting-side workbench, not a separate demo persona. The prototype's Demo identity selector changes assigned work and data scope but is explicitly not real authentication.
 - Interviewer A/B have independent actor identities and see only assigned Interviews and authorized materials; round-specific briefings, focus attributes, questions and Scorecard schemas come from configuration rather than hard-coded first/second/third-round branches.
 - Enterprises can configure and reuse interview plans, stage kits, rubrics, assignments, visibility policies and Agent action gates through built-in templates plus enterprise/team/job/stage overrides; configuration is versioned and in-flight Applications retain their effective snapshot unless explicitly migrated.
 - Human Attention has one canonical entry point; the same task is not duplicated in multiple cards/banners.
