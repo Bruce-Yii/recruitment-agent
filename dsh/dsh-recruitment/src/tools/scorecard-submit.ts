@@ -47,12 +47,17 @@
 //      （TC §1.1 第 6 条"重复元素拒绝"；S- 组里唯一表达"重复"的码；`items` 是对象，维度键不可能重复）。
 //  10. **`DB_CONSTRAINT_VIOLATION` 的 `constraint` 只在库真的给了约束名时出现**（PL/pgSQL `raise`
 //      不带 `constraint` 时 `error.constraint` 为空，编一个名字等于伪造证据）。
-//  11. **D-79 人机闸门**（2026-11-14）：写库前强制 `approval.request`，只有 `allowed-once` 才写；
-//      `unavailable` / `rejected` / `cancelled` → `FORBIDDEN(APPROVAL_UNAVAILABLE|APPROVAL_NOT_GRANTED)`，
-//      **一行都不写**。approval 依赖**缺省即拒绝**（headless fail closed）；闸门位于全部参数/业务校验
-//      之后、第一行写库之前（无效参数不打扰人）；幂等重放不写库，因此在闸门之前返回。
-//      等待人工批准超过 **120 秒** → 按 `cancelled` 判（`detail.approval='timeout'`）并回滚，
-//      不占着连接等一个不在的人；超时后宿主晚到的 Allow 不采纳（D-101 两阶段见闸门段注释）。
+//  11. **D-79 人机闸门 + D-101 两阶段**（2026-11-14 立债，2026-11-15 实现）：写库前强制
+//      `approval.request`，只有 `allowed-once` 才写；`unavailable` / `rejected` / `cancelled` →
+//      `FORBIDDEN(APPROVAL_UNAVAILABLE|APPROVAL_NOT_GRANTED)`，**一行都不写**。approval 依赖
+//      **缺省即拒绝**（headless fail closed）；闸门位于全部参数/业务校验之后、第一行写库之前
+//      （无效参数不打扰人）；幂等重放不写库，因此在闸门之前返回。
+//      等待人工批准超过 **120 秒** → 按 `cancelled` 判（`detail.approval='timeout'`），
+//      不占着连接等一个不在的人；超时后宿主晚到的 Allow 不采纳。
+//      **D-101 两阶段**：`execute()` 先在只读事务里跑 `prepareScorecard`（校验 + 幂等判定），
+//      事务提交、连接归还，然后**在事务外**问人（等人期间连接 `state='idle'`，不是
+//      `idle in transaction`）；放行后再开写事务**重新跑一次 prepare 复校验**，才 `writeScorecard`。
+//      `submitScorecardInTransaction` 保留旧签名/旧行为，是给集成测试的**测试接缝**。
 //
 // 不打印 PII：日志与错误 detail 只放 UUID、计数、键名（R7）。
 
@@ -61,7 +66,14 @@ import { randomUUID } from 'node:crypto'
 import { canonicalJson, digestOf, isUuid } from './contract.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
-import { closePool, createPool, withActor, type DatabaseClient, type ResolvedDatabaseConfig } from '../db/pool.ts'
+import {
+  closePool,
+  createPool,
+  withActor,
+  withReadOnly,
+  type DatabaseClient,
+  type ResolvedDatabaseConfig,
+} from '../db/pool.ts'
 // 事件名只从注册表取（`src/runtime/event-types.ts`）；机检测试会扫发射点。
 import { EVENT_TYPES } from '../runtime/event-types.ts'
 
@@ -258,11 +270,13 @@ export function requireApprovalGranted(outcome: ApprovalDecision): void {
   }))
 }
 
-// ---- D-101 技术债（2026-11-14）----
-// 两阶段「只读校验 → 关连接 → 问人 → 写事务重校验」是"人等待不占连接 + 先判定再问人 +
-// 重放不问人"三者同时成立的正解，但代价是双倍读 + TOCTOU。**现在不做**。
-// 触发条件（写死）：出现"并发写导致人批准后仍被 VERSION_CONFLICT 拒"的实测案例，
-// 或 Web UI 开始高频驱动本工具时，必须改成两阶段。
+// ---- D-101 两阶段（2026-11-15 已实现）----
+// 「只读校验 → 关连接 → 问人 → 写事务重校验 → 写库」把三件事同时做到了：
+//   ① 人等待期间**不占连接**（不再 idle in transaction）；
+//   ② 先判定再问人（无效参数/注定失败不打扰人）；
+//   ③ 重放不问人（幂等重放没有新行可写）。
+// 代价是双倍读 + TOCTOU 窗口——后者由**写事务里的第二次 prepare 复校验**收窄到事务级。
+// 只读阶段的 prepare 由 `withReadOnly`（`begin transaction read only`）从数据库层保证不写库。
 
 // =====================================================================
 //  入参 / 出参的 JSON Schema（只用官方受支持的子集：type/properties/required/
@@ -1839,32 +1853,37 @@ function buildOutput(context: OutputContext): Record<string, unknown> {
 }
 
 // =====================================================================
-//  主流程（事务内）
+//  D-101 两阶段：prepare（只读校验/计划） → write（写库 + 读回）
 // =====================================================================
 
 /**
- * 在一个事务里提交一份面评。单独导出是为了让集成测试在"必回滚事务"里跑，
- * 并且**必须**读事务里的 `recruitment.actor_id` GUC（不是 `cfg.actor_id`），
+ * `prepareScorecard` 的结论（**internal 导出**：生产路径与测试共用，不是契约面）。
+ *
+ * * `result`：本次**不写库**、直接返回（幂等重放）。它排在 D-79 闸门之前，所以不问人。
+ * * `write`：全部参数/业务校验已通过，写库计划已定；调用方**必须**先过闸门再 `writeScorecard`。
+ */
+export type ScorecardPreparation =
+  | { readonly kind: 'result'; readonly value: Record<string, unknown> }
+  | { readonly kind: 'write'; readonly plan: ScorecardWritePlan; readonly context: ResolvedContext }
+
+/**
+ * **阶段 1（只读）**：参数层 / 身份 / 业务校验 + 幂等重放判定 + 写库计划构造，**一行都不写**。
+ *
+ * 生产路径由 `execute()` 放在 `withReadOnly` 的只读事务里跑（`begin transaction read only`
+ * 让"不写库"成为数据库强制的性质：任何写都会 `25006`）；写事务里会**再跑一次**做复校验。
+ * scorecard 的作者必须读事务里的 `recruitment.actor_id` GUC（不是 `cfg.actor_id`），
  * 否则同一个池上无法切换身份（DESIGN §3.5 ①）。
- * @param client - 调用方给的连接（actor 已由调用方 `set_config` 设好）。
+ * @param client - 事务内客户端（只读事务或写事务均可；本函数只发 SELECT）。
  * @param cfg - 已解析配置（租户从这里来，不接受入参覆盖）。
  * @param rawArgs - 模型给的 arguments（未校验）。
- * @param nowMs - 服务端"现在"（毫秒）。本工具不把它写进任何时间列——时间一律用库的 `now()`；
- *   参数保留它是为了与另外两个工具同形（DESIGN §1）。
- * @param approve - D-79 的人工批准通道；**缺省 = `unavailable` = 一律拒绝**（fail closed）。
- *   位置：参数/业务校验全部通过之后、第一行写库之前。返回 `allowed-once` 才写库；
- *   等待超过 `APPROVAL_TIMEOUT_MS`（120s）返回 `'timeout'` → 拒绝。
- * @returns TC §2.2 的规范输出。
- * @throws RecruitmentToolError - 契约错误（TC §5 封闭集）；闸门拒绝是 `FORBIDDEN`。
+ * @returns `result`（直接返回，例如幂等重放）或 `write`（写库计划 + 已解析上下文）。
+ * @throws RecruitmentToolError - 契约错误（TC §5 封闭集；**不含** FORBIDDEN，闸门在调用方）。
  */
-export async function submitScorecardInTransaction(
+export async function prepareScorecard(
   client: DatabaseClient,
   cfg: ResolvedDatabaseConfig,
   rawArgs: unknown,
-  nowMs: number,
-  approve?: () => Promise<ApprovalDecision>,
-): Promise<Record<string, unknown>> {
-  void nowMs
+): Promise<ScorecardPreparation> {
   const tenantId = cfg.tenant_id
 
   // ---- 0) 身份只从执行上下文来（SC-01）----
@@ -1924,18 +1943,21 @@ export async function submitScorecardInTransaction(
       interview.resume_version_id,
     )
     const replayedRejectReasons = safeParseRejectReasons(row.rationale)
-    return buildOutput({
-      row,
-      interview,
-      rubric,
-      dimensionKeys: dimensionKeysOf(rubric),
-      actorId,
-      resolution,
-      provenance,
-      replayed: true,
-      ...(await supersededOf(client, tenantId, row.id)),
-      rejectReasons: replayedRejectReasons,
-    })
+    return {
+      kind: 'result',
+      value: buildOutput({
+        row,
+        interview,
+        rubric,
+        dimensionKeys: dimensionKeysOf(rubric),
+        actorId,
+        resolution,
+        provenance,
+        replayed: true,
+        ...(await supersededOf(client, tenantId, row.id)),
+        rejectReasons: replayedRejectReasons,
+      }),
+    }
   }
 
   // ---- 8) 转写基准 + 语义层（SC-12/13/29…33、TR-E2/E3）----
@@ -2044,24 +2066,44 @@ export async function submitScorecardInTransaction(
     }
   }
 
-  // ---- 9.5) 人机闸门（D-79）----
-  // 位置 = 全部参数校验与业务校验之后、第一行写库之前。缺省 / 拒绝 / 取消 → 拒绝；
-  // `FORBIDDEN(APPROVAL_UNAVAILABLE|APPROVAL_NOT_GRANTED)`，**一行都不写**（fail closed）。
-  // 等待超过 120s 按 `cancelled` 判（`detail.approval='timeout'`），见 `APPROVAL_TIMEOUT_MS`。
-  // 幂等重放不写库：闸门之前返回、不打扰人（D-95：人只决策一次）
-  requireApprovalGranted(approve === undefined ? 'unavailable' : await approve())
+  // ---- 9.5) 计划就绪：**不在这里问人**----
+  // 两阶段后闸门由调用方在**事务外**执行（`execute()`）或由测试接缝在调用方事务里执行
+  // （`submitScorecardInTransaction`）：这样人等待期间没有任何事务/连接被占（D-101）。
+  return { kind: 'write', plan, context }
+}
 
-  // ---- 10) 写入（SC-44 / SC-45 / §5.2 三步舞）----
+/**
+ * **阶段 2（写）**：只做写库 + 读回 + 组装输出；**不再做任何"要不要写"的判定**。
+ *
+ * 调用方必须先让 D-79 闸门放行（`requireApprovalGranted`）；本函数自己不调用 approval。
+ * `prepared` 必须是**当前写事务里**重新跑出来的结果（不能复用上一个事务的读结果：
+ * 两阶段靠这次复校验收窄 TOCTOU）。
+ * @param client - 写事务内客户端（`withActor` 已 `SET LOCAL recruitment.actor_id`）。
+ * @param _cfg - 已解析配置（保留与 `prepareScorecard` 同形；租户取自 `prepared.context`）。
+ * @param prepared - `prepareScorecard` 的 `write` 分支（已完成全部校验）。
+ * @returns TC §2.2 的规范输出。
+ * @throws RecruitmentToolError - 写库约束错误（23505/23503/23514 → `DB_CONSTRAINT_VIOLATION`）。
+ */
+export async function writeScorecard(
+  client: DatabaseClient,
+  _cfg: ResolvedDatabaseConfig,
+  prepared: Extract<ScorecardPreparation, { readonly kind: 'write' }>,
+): Promise<Record<string, unknown>> {
+  const { plan, context } = prepared
+  const tenantId = context.tenantId
+  const idempotencyKey = `scorecard:${context.args.idempotency_key}`
+
+  // ---- 写入（SC-44 / SC-45 / §5.2 三步舞）----
   let scorecardId: string
   let superseded: { scorecard_id: string; revision_no: number } | undefined
   try {
     if (plan.kind === 'insert') {
       scorecardId = plan.scorecardId
       const eventId = await insertInternalEvent(client, tenantId, idempotencyKey, scorecardId, {
-        payload_hash: payloadHash,
+        payload_hash: context.payloadHash,
         scorecard_id: scorecardId,
-        interview_id: interview.id,
-        interviewer_id: interviewer.id,
+        interview_id: context.interview.id,
+        interviewer_id: context.interviewer.id,
       })
       await insertSubmittedScorecard(client, context, scorecardId, eventId, 1, null)
     } else if (plan.kind === 'promote') {
@@ -2075,20 +2117,54 @@ export async function submitScorecardInTransaction(
     mapConstraintError(error)
   }
 
-  // ---- 10) 读回库里真实状态（不硬编码 record_version / 事件 id）----
+  // ---- 读回库里真实状态（不硬编码 record_version / 事件 id）----
   const row = await loadScorecardById(client, tenantId, scorecardId)
   return buildOutput({
     row,
-    interview,
-    rubric,
-    dimensionKeys: dimensionKeysOf(rubric),
-    actorId,
-    resolution,
-    provenance,
+    interview: context.interview,
+    rubric: context.rubric,
+    dimensionKeys: dimensionKeysOf(context.rubric),
+    actorId: context.actorId,
+    resolution: context.rubricResolution,
+    provenance: context.provenance,
     replayed: false,
     ...(superseded === undefined ? {} : { superseded }),
-    rejectReasons: args.reject_reasons ?? [],
+    rejectReasons: context.args.reject_reasons ?? [],
   })
+}
+
+/**
+ * 在调用方事务里提交一份面评（**测试接缝**，保留旧签名与旧行为）。
+ *
+ * 生产运行时入口是 `createScorecardSubmitTool().execute()`，它已经改成 D-101 两阶段
+ * （只读 prepare → 事务外问人 → 写事务复校验）；`src/index.ts` 只注册 `create*Tool`，
+ * **不引用**本函数。集成测试大量在"必回滚事务"里直接调它（actor 由调用方 `set_config` 设好），
+ * 所以这里保留：prepare → 重放直接返回 → `approve()` → write，全部在**同一个调用方事务**里。
+ * @param client - 调用方给的连接（actor 已由调用方 `set_config` 设好）。
+ * @param cfg - 已解析配置（租户从这里来，不接受入参覆盖）。
+ * @param rawArgs - 模型给的 arguments（未校验）。
+ * @param nowMs - 服务端"现在"（毫秒）。本工具不把它写进任何时间列——时间一律用库的 `now()`；
+ *   参数保留它是为了与另外两个工具同形（DESIGN §1）。
+ * @param approve - D-79 的人工批准通道；**缺省 = `unavailable` = 一律拒绝**（fail closed）。
+ *   位置：参数/业务校验全部通过之后、第一行写库之前。返回 `allowed-once` 才写库；
+ *   等待超过 `APPROVAL_TIMEOUT_MS`（120s）返回 `'timeout'` → 拒绝。
+ * @returns TC §2.2 的规范输出。
+ * @throws RecruitmentToolError - 契约错误（TC §5 封闭集）；闸门拒绝是 `FORBIDDEN`。
+ */
+export async function submitScorecardInTransaction(
+  client: DatabaseClient,
+  cfg: ResolvedDatabaseConfig,
+  rawArgs: unknown,
+  nowMs: number,
+  approve?: () => Promise<ApprovalDecision>,
+): Promise<Record<string, unknown>> {
+  void nowMs
+  const prepared = await prepareScorecard(client, cfg, rawArgs)
+  // 幂等重放不写库：闸门之前返回、不打扰人（D-95：人只决策一次）。
+  if (prepared.kind === 'result') return prepared.value
+  // D-79 闸门：全部参数/业务校验之后、第一行写库之前；缺省/拒绝/取消 → 一行都不写。
+  requireApprovalGranted(approve === undefined ? 'unavailable' : await approve())
+  return await writeScorecard(client, cfg, prepared)
 }
 
 /** 重放时从 rationale 解析 reject_reasons（解析不了就当空数组，只影响 warnings）。 */
@@ -2134,9 +2210,11 @@ function readExecContext(exec: unknown): { agent?: unknown; signal?: AbortSignal
 /**
  * 造一个绑定配置的面评提交工具。
  *
- * `execute()` 用 `withActor(pool, cfg.actor_id, …)` 开事务（GUC = 配置里的 actor），
- * 然后调 `submitScorecardInTransaction(…, Date.now(), approve)`；`finally` 关池。
- * `approve` 来自 `deps.approval` + 本次 `exec`（D-79：人放行一次才写一次；没有通道即拒绝）。
+ * `execute()` 是 **D-101 两阶段**：① `withReadOnly` 只读事务里 `prepareScorecard`（校验 + 幂等判定）
+ * → 事务提交、连接归还；② 幂等重放直接返回、不问人；③ 否则 `requireApprovalGranted(await approve())`
+ * 在**事务外**问人（等人期间不占连接）；④ `withActor` 写事务里重跑 `prepareScorecard` 复校验，
+ * 再 `writeScorecard` 写入；`finally` 关池。`approve` 来自 `deps.approval` + 本次 `exec`
+ * （D-79：人放行一次才写一次；没有通道即拒绝）。
  * @param deps - `{ database, approval? }`（已解析的库配置 + 可选批准通道）。
  */
 export function createScorecardSubmitTool(deps: ScorecardSubmitDeps): ReadonlyToolDefinition {
@@ -2204,8 +2282,23 @@ export function createScorecardSubmitTool(deps: ScorecardSubmitDeps): ReadonlyTo
       const approve = makeApprovalRequest(deps.approval, readExecContext(exec))
       const pool = createPool(cfg)
       try {
-        return await withActor(pool, cfg.actor_id, (client) =>
-          submitScorecardInTransaction(client, cfg, rawArgs, Date.now(), approve))
+        // ---- 阶段 1（D-101）：只读事务里做完全部校验 + 幂等判定 → 提交、连接归还 ----
+        // 只读是数据库强制的（`begin transaction read only`）：prepare 里任何写都会 25006。
+        // scorecard 的作者从 GUC 读（SC-01），所以只读事务里先 `set_config(..., is_local=true)`。
+        const prepared = await withReadOnly(pool, async (client) => {
+          await client.query("select set_config('recruitment.actor_id', $1, true)", [cfg.actor_id])
+          return await prepareScorecard(client, cfg, rawArgs)
+        })
+        // ---- 幂等重放不写库：直接返回，**不问人**（approval 调用次数 = 0）----
+        if (prepared.kind === 'result') return prepared.value
+        // ---- 阶段 2（D-79）：事务外问人。此刻没有任何事务/连接被占（不会 idle in transaction）----
+        requireApprovalGranted(await approve())
+        // ---- 阶段 3：写事务里**重跑 prepare 复校验**（TOCTOU 收窄）；被抢先就返回、不写库 ----
+        return await withActor(pool, cfg.actor_id, async (client) => {
+          const fresh = await prepareScorecard(client, cfg, rawArgs)
+          if (fresh.kind === 'result') return fresh.value
+          return await writeScorecard(client, cfg, fresh)
+        })
       } finally {
         await closePool(pool)
       }
