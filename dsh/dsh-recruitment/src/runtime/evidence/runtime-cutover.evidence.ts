@@ -159,6 +159,17 @@ try {
     },
     pending_by_event_type: preview.byEventType,
     would_be_ignored_by_event_type: wouldIgnore,
+    // 健康检查里会出现的字段（GET /recruitment/runtime/health 的 counts）：
+    // "有多少历史事件从未被派发 / 最老的等了多久"必须能一眼看到。
+    legacy_backlog: legacy,
+    health_counts_preview: {
+      events_legacy_undispatched: legacy.undispatchedEvents,
+      events_legacy_undispatched_ignored: legacy.undispatchedIgnored,
+      events_legacy_internal_audit: legacy.internalAuditEvents,
+      events_before_cutover_pending: legacy.pendingBeforeCutover,
+      events_ignored_before_cutover: legacy.alreadyIgnoredByCutover,
+      events_legacy_oldest_wait_seconds: legacy.oldestWaitSeconds ?? 0,
+    },
   }
 
   console.log(JSON.stringify(report, null, 2))
@@ -166,6 +177,10 @@ try {
   console.log(`DRY-RUN READ-ONLY: tick 会把 ${preview.pendingBeforeCutover} 条历史事件标成`
     + ` ${BEFORE_CUTOVER_REASON_PREFIX}（不建 Task、不派发），`
     + `${preview.pendingAfterCutover} 条正常派发；batch=${preview.batchLimit} → 历史积压需 ${roundsToClear} 轮清空。`)
+  console.log(`历史未派发（cutover 之前的派发候选，routed_task_id is null）: ${legacy.undispatchedEvents} 条`
+    + `（${legacy.undispatchedReceived} RECEIVED / ${legacy.undispatchedFailed} FAILED / ${legacy.undispatchedIgnored} IGNORED），`
+    + `最老等了 ${legacy.oldestWaitSeconds ?? 0}s（${legacy.oldestUndispatchedReceivedAt ?? 'n/a'}）；`
+    + `另有 ${legacy.internalAuditEvents} 条库触发器审计事件（schema/0001，本来就不进派发队列）。`)
 } finally {
   await pool.end().catch(() => {})
 }

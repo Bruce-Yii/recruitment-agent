@@ -199,6 +199,45 @@ join recruitment.runtime_watermark w
 单轮工作量上限 = `pendingBatchSize`（默认 20）条扫尾 + `pendingBatchSize` 条派发。
 积压超过 2 × batch 时分多轮处理完；每轮都是可解释的（回执里有具体 eventId）。
 
+### 5.1 健康检查必须显示"历史积压"（不能只显示"已标 IGNORED"）
+
+把历史事件标成 `IGNORED` 只是**不再派发**，不等于积压消失。运维必须能回答
+"有多少历史事件从未被派发、最老等了多久"，否则"扫完了"会被误读成"没积压"。
+
+`GET /recruitment/runtime/health` 的 `counts` 里固定包含（`RuntimeStore.runtimeCounts`）：
+
+| 字段 | 语义 | 会不会因 tick 扫尾而变小 |
+|---|---|---|
+| `events_legacy_undispatched` | 早于水位、未派发、**本来就会进派发队列**的事件（`routed_task_id is null`，排除 `schema/0001` 审计事实） | **不会**（扫尾只改投影） |
+| `events_legacy_undispatched_ignored` | 其中**早已被判定、从未派发**的（`dispatch_state='IGNORED'` 且 `routed_task_id is null`：历史 Gate 拒绝批 + 水位扫尾批） | **不会**（它们本来就没派发） |
+| `events_legacy_internal_audit` | 早于水位、从未派发的库触发器审计事件（本来就不进派发队列，单独透明展示，避免被算成"积压"） | 不会 |
+| `events_before_cutover_pending` | 其中仍在待派发队列、下一轮会被扫尾的条数（`RECEIVED`/`FAILED`） | 会（扫完变 0） |
+| `events_ignored_before_cutover` | 已经因为**水位**标成 `IGNORED` 的条数（`route_error` 以 `BEFORE_RUNTIME_CUTOVER` 开头） | 会随扫尾增长 |
+| `events_legacy_oldest_wait_seconds` | 从未派发的候选事件里最早一条**已经等了多久**（秒） | 不会（持续增长） |
+
+三个口径必须同时展示：
+- `events_legacy_undispatched` 是"历史总量"（问题规模）；
+- `events_legacy_undispatched_ignored` 与 `events_before_cutover_pending` 把历史**拆成两类**：
+  早已被判定但从未派发的（例如 2026-11-14 那 40 条 `SEMANTIC_GATE_REJECTED`），
+  以及还在队列里、下一轮就会被水位扫尾的（例如 25 条 `resume.intake.received` 积压）；
+- `events_legacy_oldest_wait_seconds` 是积压的时间成本（最老一条等了多久）。
+
+只读查询（可直接用于报告；权威实现在 `RuntimeCutoverStore.legacyBacklog`）：
+
+```sql
+select count(*)                                              as legacy_undispatched,
+       count(*) filter (where e.dispatch_state in ('RECEIVED','FAILED')) as still_pending,
+       min(e.received_at)                                     as oldest_received_at,
+       extract(epoch from (now() - min(e.received_at)))::bigint as oldest_wait_seconds
+  from recruitment.event_inbox e
+  join recruitment.runtime_watermark w on w.tenant_id = e.tenant_id
+ where e.tenant_id = '<tenant-uuid>'::uuid
+   and e.received_at < w.cutover_at
+   and e.routed_task_id is null
+   and (e.normalizer_version is distinct from 'schema/0001'
+        or e.event_type like 'semantic.%' or e.event_type like 'router.%');
+```
+
 ---
 
 ## 6. 运维步骤

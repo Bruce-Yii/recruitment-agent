@@ -1235,6 +1235,9 @@ export class RuntimeStore {
     })
     const legacy = await this.cutoverStore.legacyBacklog()
     base.events_legacy_undispatched = legacy.undispatchedEvents
+    // 分开说清两类历史（reviewer 要求）：还在队列里的 vs 早已被判定但从未派发的
+    base.events_legacy_undispatched_ignored = legacy.undispatchedIgnored
+    base.events_legacy_internal_audit = legacy.internalAuditEvents
     base.events_before_cutover_pending = legacy.pendingBeforeCutover
     base.events_ignored_before_cutover = legacy.alreadyIgnoredByCutover
     base.events_legacy_oldest_wait_seconds = legacy.oldestWaitSeconds ?? 0

@@ -323,6 +323,43 @@ describe('runtime cutover watermark: history is never dispatched', () => {
     assert.equal(rows[0]!.dispatch_state, 'RECEIVED', 'audit events are not dispatch candidates at all')
     assert.equal(Number(rows[0]!.route_attempts), 0)
   })
+
+  test('legacy backlog is visible to ops: undispatched history count + oldest wait, not just "IGNORED"', async () => {
+    const legacy = await store.cutover.legacyBacklog()
+    const cut = await cutoverMs()
+    // 目前至少一条**待派发候选**历史事件从未被派发：cutover-history-1（已扫尾 IGNORED）
+    assert.ok(legacy.undispatchedEvents >= 1, `expected >= 1 legacy undispatched event, got ${legacy.undispatchedEvents}`)
+    // 库触发器审计事件单独计数（本来就不进派发队列，不能被算成"积压"）
+    assert.ok(legacy.internalAuditEvents >= 1, 'row-guard audit events must be reported separately')
+    assert.ok(legacy.oldestWaitSeconds !== null && legacy.oldestWaitSeconds > 0)
+    assert.ok(
+      Date.parse(String(legacy.oldestUndispatchedReceivedAt)) < cut,
+      'the oldest undispatched event must be older than the cutover',
+    )
+    // 口径分叉：扫尾后 pending 归零，但"从未派发"的总量不归零 —— 这正是 health 要同时展示两者的原因
+    assert.ok(legacy.pendingBeforeCutover <= legacy.undispatchedEvents)
+    assert.ok(legacy.alreadyIgnoredByCutover >= 1, 'swept history events are still counted as legacy')
+    assert.equal(
+      legacy.undispatchedEvents,
+      legacy.undispatchedReceived + legacy.undispatchedFailed + legacy.undispatchedIgnored,
+      'the per-state breakdown must add up to the undispatched total',
+    )
+
+    // 健康检查读数必须带这几个字段（GET /recruitment/runtime/health 的 counts），
+    // reviewer 明确要求的两个字段：events_legacy_undispatched / events_legacy_oldest_wait_seconds
+    const counts = await store.runtimeCounts()
+    assert.equal(counts.events_legacy_undispatched, legacy.undispatchedEvents)
+    assert.equal(counts.events_legacy_undispatched_ignored, legacy.undispatchedIgnored)
+    assert.equal(counts.events_legacy_internal_audit, legacy.internalAuditEvents)
+    assert.equal(counts.events_before_cutover_pending, legacy.pendingBeforeCutover)
+    assert.equal(counts.events_ignored_before_cutover, legacy.alreadyIgnoredByCutover)
+    assert.equal(counts.events_legacy_oldest_wait_seconds, legacy.oldestWaitSeconds)
+    // 类型/口径自证：历史总量 = 已判定未派发 + 仍在队列，且等待秒数 > 0
+    assert.equal(counts.events_legacy_undispatched,
+      counts.events_legacy_undispatched_ignored + counts.events_before_cutover_pending)
+    assert.ok(counts.events_legacy_oldest_wait_seconds > 0,
+      'health must expose a positive oldest-wait duration (seconds)')
+  })
 })
 
 describe('runtime cutover watermark: "cannot shrink casually" is enforced and audited', () => {
@@ -415,8 +452,9 @@ describe('runtime cutover watermark: "cannot shrink casually" is enforced and au
 
   test('moving the cutover forward is allowed, audited as FORWARD, and cannot be a no-op', async () => {
     const cutover = (await store.cutover.read())!
-    // 上一条用例把水位回退到 2 天前；这里前进到 1 小时前（严格变大且不晚于 now）。
-    const target = new Date(Date.now() - 3_600_000).toISOString()
+    // 上一条用例把水位回退到 2 天前；这里前进到 5 秒前：严格变大、不晚于 now，
+    // 且仍晚于本文件此前插入的所有事件（它们的 received_at 都 <= 测试开始时刻）。
+    const target = new Date(Date.now() - 5_000).toISOString()
     assert.ok(Date.parse(target) > Date.parse(cutover.cutoverAt), 'forward must be strictly later')
     const client = await db.pool.connect()
     try {

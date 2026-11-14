@@ -83,16 +83,24 @@ export interface RuntimeCutover {
 export interface CutoverLegacyBacklog {
   /** 当前水位；`null` = 该租户没有声明过边界（此时分不出"历史"，计数为 0）。 */
   readonly cutover: RuntimeCutover | null
-  /** 早于水位且 `routed_task_id is null`（从未被派发）的事件总数。 */
+  /**
+   * 早于水位、从未被派发（`routed_task_id is null`）的**待派发候选**事件总数。
+   *
+   * 这里排除 `normalizer_version='schema/0001'` 的库触发器审计事实（与派发谓词同一
+   * 口径）：它们本来就不该被派发，把它们算进"积压"会让运维以为有几百条没处理。
+   * 那部分单独用 `internalAuditEvents` 透明展示。
+   */
   readonly undispatchedEvents: number
   readonly undispatchedReceived: number
   readonly undispatchedFailed: number
   readonly undispatchedIgnored: number
+  /** 早于水位、从未派发、且本来就不会进派发队列的库触发器审计事件（仅供对账）。 */
+  readonly internalAuditEvents: number
   /** 其中仍在待派发队列里的（下一次 tick 会被水位扫尾标 IGNORED）。 */
   readonly pendingBeforeCutover: number
   /** 已经因为水位被标 IGNORED 的（`route_error` 前缀）。 */
   readonly alreadyIgnoredByCutover: number
-  /** 从未派发的历史事件里最早的一条入库时间。 */
+  /** 从未派发的候选事件里最早的一条入库时间。 */
   readonly oldestUndispatchedReceivedAt: string | null
   /** 到目前为止最老那条等了多久（秒，整数）。 */
   readonly oldestWaitSeconds: number | null
@@ -384,20 +392,34 @@ export class RuntimeCutoverStore {
            select cutover_at
              from recruitment.runtime_watermark
             where tenant_id = $1::uuid
+         ), legacy as (
+           select e.routed_task_id,
+                  e.dispatch_state,
+                  e.received_at,
+                  e.route_error,
+                  (e.normalizer_version is distinct from 'schema/0001'
+                   or e.event_type like 'semantic.%'
+                   or e.event_type like 'router.%') as is_candidate
+             from recruitment.event_inbox e
+             cross join w
+            where e.tenant_id = $1::uuid
+              and e.received_at < w.cutover_at
          )
-         select count(*) filter (where e.routed_task_id is null)::text                                        as undispatched,
-                count(*) filter (where e.routed_task_id is null and e.dispatch_state = 'RECEIVED')::text      as undispatched_received,
-                count(*) filter (where e.routed_task_id is null and e.dispatch_state = 'FAILED')::text        as undispatched_failed,
-                count(*) filter (where e.routed_task_id is null and e.dispatch_state = 'IGNORED')::text       as undispatched_ignored,
-                count(*) filter (where e.routed_task_id is null
-                                   and e.dispatch_state in ('RECEIVED', 'FAILED'))::text                       as pending,
-                count(*) filter (where e.route_error like '${BEFORE_CUTOVER_REASON_PREFIX}%')::text          as already_ignored,
-                min(e.received_at) filter (where e.routed_task_id is null)                                    as oldest_undispatched,
-                extract(epoch from (now() - min(e.received_at) filter (where e.routed_task_id is null)))      as oldest_wait_seconds
-           from recruitment.event_inbox e
-           cross join w
-          where e.tenant_id = $1::uuid
-            and e.received_at < w.cutover_at`,
+         select count(*) filter (where routed_task_id is null and is_candidate)::text              as undispatched,
+                count(*) filter (where routed_task_id is null and is_candidate
+                                   and dispatch_state = 'RECEIVED')::text                           as undispatched_received,
+                count(*) filter (where routed_task_id is null and is_candidate
+                                   and dispatch_state = 'FAILED')::text                             as undispatched_failed,
+                count(*) filter (where routed_task_id is null and is_candidate
+                                   and dispatch_state = 'IGNORED')::text                            as undispatched_ignored,
+                count(*) filter (where routed_task_id is null and not is_candidate)::text          as internal_audit,
+                count(*) filter (where routed_task_id is null and is_candidate
+                                   and dispatch_state in ('RECEIVED', 'FAILED'))::text             as pending,
+                count(*) filter (where route_error like '${BEFORE_CUTOVER_REASON_PREFIX}%')::text as already_ignored,
+                min(received_at) filter (where routed_task_id is null and is_candidate)            as oldest_undispatched,
+                extract(epoch from (now()
+                  - min(received_at) filter (where routed_task_id is null and is_candidate)))       as oldest_wait_seconds
+           from legacy`,
         [this.tenantId],
       )
       const row = rows[0] ?? {}
@@ -408,6 +430,7 @@ export class RuntimeCutoverStore {
         undispatchedReceived: num(row.undispatched_received),
         undispatchedFailed: num(row.undispatched_failed),
         undispatchedIgnored: num(row.undispatched_ignored),
+        internalAuditEvents: num(row.internal_audit),
         pendingBeforeCutover: num(row.pending),
         alreadyIgnoredByCutover: num(row.already_ignored),
         oldestUndispatchedReceivedAt: iso(row.oldest_undispatched),
