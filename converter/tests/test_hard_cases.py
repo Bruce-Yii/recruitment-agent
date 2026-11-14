@@ -67,7 +67,9 @@ def test_corrupted_pdf(synthetic_rows):
     row = _by_tag(synthetic_rows, "corrupted")[0]
     result = pdf_reader.read_pdf(row["path"])
     codes = [i["code"] for i in result["issues"]]
-    assert "pdf_text_encoding_unread" in codes, codes
+    # D-98：原生文本层坏掉的页只有两种诚实结果——报 pdf_text_encoding_unread（没有可用
+    # 的 OCR 后端），或整页 OCR 兜底重读并报 pdf_text_recovered_by_ocr。不许"静默修好"。
+    assert ("pdf_text_encoding_unread" in codes) or ("pdf_text_recovered_by_ocr" in codes), codes
     assert "pdf_damaged_repaired" in codes, codes
     assert result["completeness"] == "partial"
     # 读到的部分保留（不是伪造），没读到的部分不许断言"没有"

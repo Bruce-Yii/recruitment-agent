@@ -262,8 +262,11 @@ test('证据不成立 → STRUCTURED_REJECTED(rejections 前 10 条)，且一行
 
 test('合法结构化 → 写入；state 按 D-29 升级、converter_state 保留、证据列可读回 block id + 原文', async () => {
   await inRolledBackTx(pool, async (client) => {
+    // 2026-11-14 修正：D-67/IR-F4 只允许 native_text 自动归并；agent_read 必须 weak
+    // （原夹具让 converter 把 phone 判成 unreadable，却靠 structured_json 的 agent_read
+    //  电话自动建候选人 —— 那正是 P0-01 的缺陷入口）。身份现在只能来自转换器的 native 电话。
     const material = applyStructuredJson(
-      makeMaterial(hex64(`structured-ok${uniqueSuffix()}`)),
+      makeMaterial(hex64(`structured-ok${uniqueSuffix()}`), true),
       JSON.stringify(contractShape()),
       DEMO_JOB,
     )
@@ -272,15 +275,24 @@ test('合法结构化 → 写入；state 按 D-29 升级、converter_state 保�
     assert.equal(value.candidate_created, true)
     assert.equal(value.source.parse_status, 'PARSED', 'parse_status 仍由转换器事实决定')
     assert.equal(value.source.completeness, 'complete')
-    assert.deepEqual(value.identity.strong_ids, ['email', 'phone'])
+    // 2026-11-14 修正：D-67/IR-F4 只允许 native_text 自动归并；agent_read 必须 weak
+    // （原断言 strong_ids=['email','phone'] 把 agent 读出的 email 也断言成强标识了。）
+    assert.deepEqual(value.identity.strong_ids, ['phone'])
+    assert.deepEqual(value.identity.identity_merge_eligible, ['phone'], 'eligible 只含 native_text 字段')
+    assert.deepEqual(value.identity.weak_fields, [
+      { field: 'email', provenance: 'agent_read', reason: 'provenance_agent_read' },
+    ])
 
     const { parsed_fields: parsed, evidence } = await readResumeVersion(client, value.resume_version_id)
 
-    // D-29 的升级方向：converter unreadable → final present，且保留 converter_state。
+    // D-29：state 以模型层为准；转换器事实必须同时保留（converter_state）。
     assert.equal(parsed.fields.phone.state, 'present')
     assert.equal(parsed.fields.phone.state_source, 'agent_structured')
     assert.equal(parsed.fields.phone.provenance, 'agent_read')
-    assert.equal(parsed.fields.phone.converter_state, 'unreadable')
+    // 2026-11-14 修正：D-67/IR-F4 只允许 native_text 自动归并；agent_read 必须 weak
+    // （原夹具让 converter 把 phone 判成 unreadable；身份现在由转换器 native 电话提供，
+    //  所以 converter_state 是 present，不再是 unreadable。）
+    assert.equal(parsed.fields.phone.converter_state, 'present')
     assert.equal(parsed.fields.phone.value, PHONE_RAW)
     assert.deepEqual(parsed.fields.phone.block_ids, [2])
     assert.equal(parsed.fields.phone.agent_evidence[0].block_id, 2)
@@ -345,6 +357,23 @@ test('模型说 unreadable → 最终 unreadable（converter present 不得把�
       reason: 'value_masked_or_redacted',
       block_ids: ['2'],
     }
+    // 2026-11-14 修正：D-67/IR-F4 只允许 native_text 自动归并；agent_read 必须 weak。
+    // 身份现在必须由转换器的 native email 提供（原实现靠 structured_json 的 agent_read email
+    // 自动建候选人，那正是被验收窗口点名的缺陷）。
+    output.fields = {
+      ...output.fields,
+      email: {
+        state: 'present',
+        value: EMAIL_RAW,
+        provenance: 'native_text',
+        evidence: [{ page: 1, bbox: [72, 130, 520, 150], block: 2, text: `邮箱：${EMAIL_RAW}` }],
+      },
+    }
+    output.screening = {
+      eligible_fields: ['name', 'email'],
+      blocked_fields: [],
+      identity_merge_eligible: ['name', 'email'],
+    }
     const material = applyStructuredJson(buildMaterial(PDF, output), JSON.stringify(structured), DEMO_JOB)
     const value = await intakeInTransaction(client, cfg, material, DEMO_JOB)
     assert.deepEqual(value.identity.strong_ids, ['email'], '模型说 phone 读不出 → 不得当强标识')
@@ -362,7 +391,9 @@ test('模型说 unreadable → 最终 unreadable（converter present 不得把�
 test('幂等：同一 (sha256, job_id) 带/不带 structured_json 都只有一条 application', async () => {
   await inRolledBackTx(pool, async (client) => {
     const sha = hex64(`idem${uniqueSuffix()}`)
-    const withStructured = applyStructuredJson(makeMaterial(sha), JSON.stringify(contractShape()), DEMO_JOB)
+    // 2026-11-14 修正：agent-only 身份不再可自动（D-67/IR-F4）；首次带结构化的接入
+    // 必须由转换器的 native 电话提供身份，否则会（正确地）被 MATERIAL_ATTRIBUTION_UNKNOWN 拦下。
+    const withStructured = applyStructuredJson(makeMaterial(sha, true), JSON.stringify(contractShape()), DEMO_JOB)
     const first = await intakeInTransaction(client, cfg, withStructured, DEMO_JOB)
     assert.equal(first.created, true)
 

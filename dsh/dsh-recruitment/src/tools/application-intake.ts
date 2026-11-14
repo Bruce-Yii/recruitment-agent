@@ -61,7 +61,9 @@ import {
   strongIdentityKey,
   type CandidateHit,
   type ConverterFieldEntry,
+  type IdEvidence,
   type StrongId,
+  type StrongIdField,
 } from '../db/identity.ts'
 import {
   hardIssueCodes,
@@ -126,6 +128,39 @@ type BusinessField = (typeof BUSINESS_FIELDS)[number]
 /** 只靠 phone / email 做自动身份判定（姓名不参与，D-46/D-52）。 */
 const IDENTITY_FIELDS = ['phone', 'email'] as const
 
+/**
+ * 身份来源闸门（D-67 / IR-G2 / IR-F4 / IR-G1 的 `AUTO_OK`）：
+ * **只有 `native_text` 可以自动归并**（关联旧档或新建档都算"对'这是谁'的自动判定"）。
+ * `ocr` / `ocr_title` / `model_read` / `agent_read` / `docling` / `reader_metadata` /
+ * 缺失（`unknown`）一律只能进弱提示：**只提示，不参与匹配、不驱动归属**。
+ */
+const AUTO_MERGE_PROVENANCE = 'native_text'
+
+/** `structured_json` 的字段是模型从原文读出来的（D-67 的 `agent_read`），永远不是 `native_text`。 */
+const AGENT_READ_PROVENANCE = 'agent_read'
+
+/** 一条弱身份提示：值读出来了，但来源不足以自动归并（D-67 / IR-F4）。 */
+export interface WeakId {
+  readonly field: StrongIdField
+  /** 原件里的原文（只用于提示/审计，不进比较）。 */
+  readonly raw: string
+  /** 规范化后的比较键（`region_ambiguous` 的弱提示不会产生匹配）。 */
+  readonly norm: string
+  /** 该值的来源（`agent_read` / `ocr` / `ocr_title` / `unknown` ...）。 */
+  readonly provenance: string
+  /** 为什么不能自动（`provenance_*` / `not_identity_merge_eligible`）。 */
+  readonly reason: string
+  /** 块级证据坐标（page / bbox / block / quote）。 */
+  readonly evidence: readonly IdEvidence[]
+}
+
+/** 来源 → 能否自动归并 + 拒绝原因（**唯一判据**，不看来源通道）。 */
+function judgeProvenance(provenance: string): { readonly automatable: boolean; readonly reason: string } {
+  const value = provenance === '' ? 'unknown' : provenance
+  if (value === AUTO_MERGE_PROVENANCE) return { automatable: true, reason: '' }
+  return { automatable: false, reason: `provenance_${value}` }
+}
+
 /** `detail.rejections` 默认展示前 N 条。 */
 const MAX_REJECTIONS_SHOWN = 10
 
@@ -182,6 +217,17 @@ interface IntakeValue {
   }
   readonly identity: {
     readonly strong_ids: readonly string[]
+    /**
+     * 可自动归并的字段（**只含** `provenance=native_text`、证据齐全、非 region-ambiguous）。
+     * 这是 D-67 / IR-F4 的机检面：不在这个列表里的字段绝不能驱动关联/新建。
+     */
+    readonly identity_merge_eligible: readonly string[]
+    /** 弱提示：读出来了但来源不可自动（agent_read / ocr / 缺失…）；只提示，不参与匹配。 */
+    readonly weak_fields: readonly {
+      readonly field: string
+      readonly provenance: string
+      readonly reason: string
+    }[]
     readonly blocked_fields: readonly { readonly field: string; readonly reason: string }[]
     readonly evidence: readonly EvidenceRef[]
   }
@@ -247,6 +293,20 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
       type: 'object',
       properties: {
         strong_ids: { type: 'array', items: { type: 'string' } },
+        identity_merge_eligible: { type: 'array', items: { type: 'string' } },
+        weak_fields: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              field: { type: 'string' },
+              provenance: { type: 'string' },
+              reason: { type: 'string' },
+            },
+            required: ['field', 'provenance', 'reason'],
+            additionalProperties: false,
+          },
+        },
         blocked_fields: {
           type: 'array',
           items: {
@@ -330,10 +390,15 @@ type IdentityDecision =
  * **本 lane 只有三档**（见文件头）：无命中 → 新建；恰好一条 → 关联；其余 → 人工。
  * 姓名不参与，所以 IR 的 `WEAK_MATCH` / `MERGE_CONFLICT_ID_NAME` / `NAME_UNVERIFIED`
  * 三档在本实现里**不存在**（这是 D-46/D-52 的简化，不是遗漏）。
- * @param strong - 可自动的强标识。
+ * @param strong - 可自动的强标识（**只可能**来自 `native_text`，D-67）。
  * @param hits - 同租户命中集（已解析到存活档）。
+ * @param weak - 弱身份提示（agent_read / ocr / 缺失…）：只进拒绝明细，不参与判定。
  */
-export function decideIdentity(strong: readonly StrongId[], hits: readonly CandidateHit[]): IdentityDecision {
+export function decideIdentity(
+  strong: readonly StrongId[],
+  hits: readonly CandidateHit[],
+  weak: readonly WeakId[] = [],
+): IdentityDecision {
   const usable = strong.filter((id) => !id.region_ambiguous)
   if (usable.length === 0) {
     const ambiguous = strong.filter((id) => id.region_ambiguous)
@@ -355,11 +420,20 @@ export function decideIdentity(strong: readonly StrongId[], hits: readonly Candi
     return {
       kind: 'REVIEW',
       reason_code: 'MATERIAL_ATTRIBUTION_UNKNOWN',
-      message: '简历里的 phone / email 都没有读出可用值，无法判定这份材料属于谁；不得据此判"新人"或"重复"',
+      message: weak.length > 0
+        ? '简历里的 phone / email 读出来了，但来源不是原生文本（agent_read / ocr / 缺失），按 D-67 只能人工核对；不得据此判"新人"或"重复"'
+        : '简历里的 phone / email 都没有读出可用值，无法判定这份材料属于谁；不得据此判"新人"或"重复"',
       detail: {
         blocking_items: strong.length === 0
           ? [{ code: 'MATERIAL_ATTRIBUTION_UNKNOWN', family: 'MATERIAL', field: 'phone,email' }]
           : [],
+        ...(weak.length === 0 ? {} : {
+          weak_fields: weak.map((id) => ({
+            field: id.field,
+            provenance: id.provenance,
+            reason: id.reason,
+          })),
+        }),
       },
     }
   }
@@ -390,7 +464,13 @@ export interface IntakeMaterial {
   readonly file_name: string
   readonly byte_size: number
   readonly output: ConverterOutput
+  /** 可自动归并的强标识：**只可能**是 `provenance='native_text'` 的 phone/email（D-67）。 */
   readonly strong: readonly StrongId[]
+  /**
+   * 弱身份提示：读出来了但来源不可自动（`agent_read` / `ocr` / 缺失…）。
+   * 只能提示，**绝不**参与 `matchByStrongIds` / `decideIdentity`。
+   */
+  readonly weak?: readonly WeakId[]
   readonly blocked: readonly { readonly field: string; readonly reason: string }[]
   readonly sha256: string
   /**
@@ -440,6 +520,59 @@ export interface StructuredOverlay {
 }
 
 /**
+ * 把 converter 字段里"读出来了但来源不可自动"的条目转成弱提示（D-67）。
+ *
+ * 只从 `observeIdentity()` 已经判掉的 `blocked` 里取两类原因：来源不是 `native_text`、
+ * 或 converter 没把该字段列进 `identity_merge_eligible`（平台噪声等，IR-G6）。
+ * 这两类**允许提示、禁止自动**；其余 blocked（absent/unreadable/格式/证据缺失）
+ * 不是"有值但不能用"，不产生弱提示。
+ * @param fields - converter 的 `fields`。
+ * @param blocked - `observeIdentity()` 的 blocked 列表。
+ * @returns 弱提示（不含 region-ambiguous：那类仍按既有 `REGION_AMBIGUOUS_PHONE` 处理）。
+ */
+function weakFromConverter(
+  fields: Readonly<Record<string, ConverterFieldEntry | undefined>>,
+  blocked: readonly { readonly field: string; readonly reason: string }[],
+): WeakId[] {
+  const out: WeakId[] = []
+  for (const item of blocked) {
+    if (item.field !== 'phone' && item.field !== 'email') continue
+    if (!(item.reason.startsWith('provenance_') || item.reason === 'not_identity_merge_eligible')) continue
+    const entry = fields[item.field]
+    if (entry?.state !== 'present' || typeof entry.value !== 'string' || entry.value === '') continue
+    const field: StrongIdField = item.field
+    const normalized = field === 'phone' ? normPhone(entry.value) : normEmail(entry.value)
+    if (normalized === null) continue
+    const norm = typeof normalized === 'string' ? normalized : normalized.norm
+    out.push({
+      field,
+      raw: entry.value,
+      norm,
+      provenance: typeof entry.provenance === 'string' && entry.provenance !== '' ? entry.provenance : 'unknown',
+      reason: item.reason,
+      evidence: identityEvidenceOf(entry),
+    })
+  }
+  return out
+}
+
+/** converter 字段的块级证据（与 `db/identity.ts` 的 `toEvidence` 同口径：坐标齐全才留）。 */
+function identityEvidenceOf(entry: ConverterFieldEntry | undefined): IdEvidence[] {
+  const out: IdEvidence[] = []
+  for (const item of entry?.evidence ?? []) {
+    const page = typeof item.page === 'number' ? item.page : 0
+    const bbox = (item.bbox ?? []).map((n) => (typeof n === 'number' ? n : Number.NaN))
+    const block = typeof item.block === 'number' ? item.block : -1
+    const quote = typeof item.text === 'string' ? item.text : ''
+    const bboxOk = bbox.length === 4 && bbox.every((n) => Number.isFinite(n))
+    if (page >= 1 && bboxOk && quote !== '') {
+      out.push({ page, bbox, block, quote })
+    }
+  }
+  return out
+}
+
+/**
  * 把 converter 结果整理成待落库的材料（纯函数，除了 `statSync` 的字节数）。
  * @param realPath - 已通过 allowed_roots 校验的真实路径。
  * @param output - converter 输出。
@@ -461,6 +594,7 @@ export function buildMaterial(realPath: string, output: ConverterOutput): Intake
     byte_size: statSync(realPath).size,
     output,
     strong: observation.strong,
+    weak: weakFromConverter(fields, observation.blocked),
     blocked: observation.blocked,
     sha256: sha,
   }
@@ -717,13 +851,24 @@ function toEvidenceRecord(item: AgentEvidence): Record<string, unknown> {
 }
 
 /**
- * 把结构化结果里的 phone / email 变成可自动匹配的强标识（D-29：模型层口径）。
- * 姓名不参与（D-46/D-52）；`unreadable` 与 `absent` 各自保留，绝不合并成一个状态。
+ * 把结构化结果里的 phone / email 变成身份**提示**（D-29：模型层口径）。
+ *
+ * 关键：`structured_json` 的字段是模型读出来的 —— `provenance` 只能是 `agent_read`。
+ * 按 D-67 / IR-G2 / IR-F4，这类来源**不得**进入 `strong`（自动归并），只能进 `weak`
+ * （`reason='provenance_agent_read'`，提示人工核对）。姓名不参与（D-46/D-52）；
+ * `unreadable` 与 `absent` 各自保留，绝不合并成一个状态。
+ * @param fields - `validate()` 通过后按业务字段归一的模型结果。
+ * @returns `strong` 恒为空（agent 字段没有 `native_text` 来源）；`weak` 是可提示的字段。
  */
 function observeAgentIdentity(
   fields: Readonly<Partial<Record<BusinessField, AgentField>>>,
-): { readonly strong: readonly StrongId[]; readonly blocked: readonly { readonly field: string; readonly reason: string }[] } {
+): {
+  readonly strong: readonly StrongId[]
+  readonly weak: readonly WeakId[]
+  readonly blocked: readonly { readonly field: string; readonly reason: string }[]
+} {
   const strong: StrongId[] = []
+  const weak: WeakId[] = []
   const blocked: { field: string; reason: string }[] = []
   for (const field of IDENTITY_FIELDS) {
     const agent = fields[field]
@@ -751,18 +896,33 @@ function observeAgentIdentity(
       blocked.push({ field, reason: 'evidence_missing' })
       continue
     }
+    const provenance = AGENT_READ_PROVENANCE
+    const gate = judgeProvenance(provenance)
     if (field === 'phone') {
       const normalized = normPhone(agent.value)
       if (normalized === null) {
         blocked.push({ field, reason: 'format_not_normalizable' })
         continue
       }
+      if (!gate.automatable) {
+        weak.push({
+          field,
+          raw: agent.value,
+          norm: normalized.norm,
+          provenance,
+          reason: gate.reason,
+          evidence,
+        })
+        continue
+      }
+      // 不可达（`agent_read` 永远不是 native_text）：保留分支结构，防止将来新增
+      // 别的来源时把 D-67 的闸门漏掉；真正的判据只有 judgeProvenance()。
       strong.push({
         field,
         raw: agent.value,
         norm: normalized.norm,
         region_ambiguous: normalized.region_ambiguous,
-        provenance: 'agent_read',
+        provenance,
         evidence,
       })
       continue
@@ -772,9 +932,13 @@ function observeAgentIdentity(
       blocked.push({ field, reason: 'format_not_normalizable' })
       continue
     }
-    strong.push({ field, raw: agent.value, norm: normalized, region_ambiguous: false, provenance: 'agent_read', evidence })
+    if (!gate.automatable) {
+      weak.push({ field, raw: agent.value, norm: normalized, provenance, reason: gate.reason, evidence })
+      continue
+    }
+    strong.push({ field, raw: agent.value, norm: normalized, region_ambiguous: false, provenance, evidence })
   }
-  return { strong, blocked }
+  return { strong, weak, blocked }
 }
 
 /** `structured_json` 不是合法 JSON → INVALID_ARGS（D-51/D-63 的错误格式）。 */
@@ -889,6 +1053,20 @@ export function applyStructuredJson(
     }
   }
   const observation = observeAgentIdentity(fields)
+  // D-67 / IR-F4：**来源闸门只看 provenance**。agent 字段是 `agent_read` ⇒ 只进 weak。
+  // 转换器里已有的原生强标识（`native_text`）不因"本次带了 structured_json"而被清掉，
+  // 但如果模型把某个字段判成非 present（D-29 以模型层为准），该字段的旧强标识必须失效。
+  const strong = material.strong.filter((id) => {
+    const agent = fields[id.field]
+    return agent === undefined || agent.state === 'present'
+  })
+  // 同一字段已经有 native 强标识时，来源闸门已经过了：agent 对它的读出只影响字段 state，
+  // 不构成"来源不可自动"的弱提示（否则输出会同时出现 strong 与 weak，自相矛盾）。
+  const strongFields = new Set(strong.map((id) => id.field))
+  const weak = [
+    ...(material.weak ?? []),
+    ...observation.weak.filter((id) => !strongFields.has(id.field)),
+  ]
   const doc = isPlainObject(parsed) ? parsed : {}
   const overlay: StructuredOverlay = {
     prompt_version: typeof doc.prompt_version === 'string' ? doc.prompt_version : null,
@@ -901,8 +1079,9 @@ export function applyStructuredJson(
   }
   return {
     ...material,
-    strong: observation.strong,
-    blocked: observation.blocked,
+    strong,
+    weak,
+    blocked: [...material.blocked, ...observation.blocked],
     structured: overlay,
   }
 }
@@ -1163,8 +1342,9 @@ export async function intakeInTransaction(
   if (identityKey !== null) await lockTransactionKey(client, `intake:identity:${tenantId}:${identityKey}`)
 
   // 3) 身份结论。命中不到就新建，命中一条就复用，其余一律拒绝（一条行都不写）。
+  //    判定只吃 `material.strong`（D-67：只有 native_text 能自动）；`weak` 只进拒绝明细。
   const hits = await matchByStrongIds(client, tenantId, material.strong)
-  const decision = decideIdentity(material.strong, hits)
+  const decision = decideIdentity(material.strong, hits, material.weak ?? [])
   if (decision.kind === 'REVIEW') {
     throw contractError('BLOCKED_BY_REVIEW', {
       reason_code: decision.reason_code,
@@ -1864,6 +2044,14 @@ function assemble(input: {
     },
     identity: {
       strong_ids: [...new Set(input.material.strong.map((id) => id.field))].sort(),
+      // D-67 / IR-F4 的机检面：只有 native_text 且未被 region-ambiguous 挡住的字段才可自动归并。
+      identity_merge_eligible: [...new Set(input.material.strong
+        .filter((id) => !id.region_ambiguous)
+        .map((id) => id.field))].sort(),
+      weak_fields: [...new Map((input.material.weak ?? []).map((id) => [
+        `${id.field}|${id.provenance}|${id.reason}`,
+        { field: id.field, provenance: id.provenance, reason: id.reason },
+      ])).values()],
       blocked_fields: input.material.blocked.map((b) => ({ field: b.field, reason: b.reason })),
       evidence: input.material.strong.flatMap((id) =>
         id.evidence.map((e) => ({ field: id.field, page: e.page, bbox: e.bbox, block: e.block })),
@@ -1942,6 +2130,8 @@ export function createApplicationIntakeTool(cfg: IntakeToolConfig): ReadonlyTool
           `sha256=${v.source.sha256}`,
           `parse_status=${v.source.parse_status} completeness=${v.source.completeness} hard_issues=${v.source.hard_issue_count}`,
           `identity strong_ids=[${v.identity.strong_ids.join(', ')}] `
+            + `merge_eligible=[${v.identity.identity_merge_eligible.join(', ')}] `
+            + `weak=[${v.identity.weak_fields.map((w) => `${w.field}:${w.provenance}`).join(', ')}] `
             + `evidence=${v.identity.evidence.length} blocked=[${v.identity.blocked_fields.map((b) => `${b.field}:${b.reason}`).join(', ')}]`,
           `labels: provenance=${v.labels.provenance} trigger=${v.labels.trigger} connection=${v.labels.connection}`,
         ]

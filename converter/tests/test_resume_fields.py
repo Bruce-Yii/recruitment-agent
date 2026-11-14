@@ -292,3 +292,91 @@ def test_photo_never_claimed_as_identified():
     photo = analysis["protected_attributes"]["photo"]
     assert photo["state"] == "unverified"
     assert "portrait" in photo["reason"] or "geometry" in photo["reason"]
+
+
+# ------------------------------------------------ item 12（D-67 / IR-F4 来源闸门）
+def _block_with_provenance(text, page, bbox, provenance, kind="paragraph", level=None):
+    """造块：``provenance=None`` 表示块上**没有** provenance 键（fail-closed 用例）。"""
+    block = _block(text, page, bbox, kind=kind, level=level)
+    if provenance is None:
+        block.pop("provenance", None)
+    else:
+        block["provenance"] = provenance
+    return block
+
+
+def _identity_blocks(provenance, *, phone=True, email=True, name=True):
+    """身份字段块（合成文本，无真实个人资料）。"""
+    blocks = []
+    if name:
+        blocks.append(_block_with_provenance("姓名：张某", 1, (40, 40, 200, 60), provenance))
+    parts = []
+    if phone:
+        parts.append("电话：138 0000 1234")
+    if email:
+        parts.append("邮箱：zhang.example@example.test")
+    if parts:
+        blocks.append(_block_with_provenance("  ".join(parts), 1, (40, 80, 520, 100), provenance))
+    return blocks
+
+
+def test_ocr_block_identity_fields_are_ocr_not_native_text():
+    """D-67：整页 OCR 重读的块抽出的身份字段必须标 `ocr`，绝不冒充 `native_text`。
+
+    这条守的是「把 OCR 认出来的号码当原生强标识 → 自动把材料挂错人」的入口。
+    """
+    blocks = _identity_blocks("ocr")
+    analysis = _analyze(blocks, issues_before=[{"code": "pdf_text_recovered_by_ocr"}])
+    fields = analysis["fields"]
+    assert fields["phone"]["state"] == "present"
+    assert fields["email"]["state"] == "present"
+    assert fields["name"]["state"] == "present"
+    assert fields["phone"]["provenance"] == "ocr"
+    assert fields["email"]["provenance"] == "ocr"
+    assert fields["name"]["provenance"] == "ocr"
+    # 身份闸门（doc11 §9.7）：非 native_text 一个都不许进自动归并集合
+    assert analysis["screening"]["identity_merge_eligible"] == []
+    reasons = {item["field"]: item["reason"]
+               for item in analysis["screening"]["identity_manual_review"]}
+    assert reasons["phone"] == "provenance=ocr"
+    assert reasons["email"] == "provenance=ocr"
+
+
+def test_native_block_identity_fields_stay_auto_merge_eligible():
+    """正例：原生文本块的 phone/email 仍然可以自动归并（不得把闸门做成全阻塞）。"""
+    blocks = _identity_blocks("native_text")
+    analysis = _analyze(blocks)
+    fields = analysis["fields"]
+    assert fields["phone"]["provenance"] == "native_text"
+    assert fields["email"]["provenance"] == "native_text"
+    assert set(analysis["screening"]["identity_merge_eligible"]) == {"phone", "email"}
+
+
+def test_block_without_provenance_is_unknown_not_native_text():
+    """缺失 provenance → `unknown`（fail-closed）；不得默认成 native_text 进入自动归并。"""
+    blocks = _identity_blocks(None, email=False)
+    analysis = _analyze(blocks)
+    phone = analysis["fields"]["phone"]
+    assert phone["state"] == "present"
+    assert phone["provenance"] == "unknown"
+    assert analysis["screening"]["identity_merge_eligible"] == []
+    reasons = {item["field"]: item["reason"]
+               for item in analysis["screening"]["identity_manual_review"]}
+    assert reasons["phone"] == "provenance=unknown"
+
+
+def test_mixed_native_and_ocr_sources_keep_only_native_eligible():
+    """同一份简历：电话来自原生块、邮箱来自 OCR 块 → 只有 phone 可自动，email 只能人工。"""
+    blocks = [
+        _block_with_provenance("姓名：张某", 1, (40, 40, 200, 60), "native_text"),
+        _block_with_provenance("电话：138 0000 1234", 1, (40, 80, 400, 100), "native_text"),
+        _block_with_provenance("邮箱：zhang.example@example.test", 1, (40, 120, 520, 140), "ocr"),
+    ]
+    analysis = _analyze(blocks, issues_before=[{"code": "pdf_text_recovered_by_ocr"}])
+    fields = analysis["fields"]
+    assert fields["phone"]["provenance"] == "native_text"
+    assert fields["email"]["provenance"] == "ocr"
+    assert analysis["screening"]["identity_merge_eligible"] == ["phone"]
+    reasons = {item["field"]: item["reason"]
+               for item in analysis["screening"]["identity_manual_review"]}
+    assert reasons["email"] == "provenance=ocr"
