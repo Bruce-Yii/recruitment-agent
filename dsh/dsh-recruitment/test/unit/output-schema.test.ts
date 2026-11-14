@@ -17,11 +17,12 @@ import { createApplicationIntakeTool } from '../../src/tools/application-intake.
 import { createScreeningEvaluateTool } from '../../src/tools/screening-evaluate.ts'
 import { resolveConverterConfig } from '../../src/tools/converter.ts'
 import { resolveDatabaseConfig } from '../../src/db/pool.ts'
+import { CONVERTER_DIR, PYTHON_BIN, SYNTHETIC_DIR, syntheticPath } from '../helpers/paths.ts'
 
 const CONVERTER = resolveConverterConfig({
-  python_bin: 'D:\\Python3.12.9\\python.exe',
-  converter_dir: 'D:\\12412\\dsh工作区\\projects\\recruitment-agent\\converter',
-  allowed_roots: ['D:\\12412\\dsh工作区\\projects\\recruitment-agent\\converter\\corpus\\synthetic'],
+  python_bin: PYTHON_BIN ?? 'python3',
+  converter_dir: CONVERTER_DIR,
+  allowed_roots: [SYNTHETIC_DIR],
 })
 const DATABASE = resolveDatabaseConfig({
   host: '127.0.0.1', port: 5432, user: 'postgres', database: 'ra_s6s7',

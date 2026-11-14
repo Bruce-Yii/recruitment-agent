@@ -21,10 +21,11 @@ import { join, resolve } from 'node:path'
 
 import { createDocumentReadTool, unconfiguredDocumentReadTool } from '../../src/tools/document-read.ts'
 import type { ResolvedConverterConfig } from '../../src/tools/converter.ts'
+import { PYTHON_BIN } from '../helpers/paths.ts'
 
 const HERE = import.meta.dirname
 const CONVERTER_DIR = resolve(HERE, '..', '..', '..', '..', 'converter')
-const PYTHON = 'D:\\Python3.12.9\\python.exe'
+const PYTHON = PYTHON_BIN ?? 'python3'
 const CAN_RUN_PYTHON = existsSync(PYTHON)
   && existsSync(join(CONVERTER_DIR, 'src', 'cli.py'))
 

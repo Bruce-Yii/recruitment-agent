@@ -17,15 +17,16 @@ import {
 } from '../../src/tools/application-intake.ts'
 import { resolveConverterConfig, type ConverterOutput } from '../../src/tools/converter.ts'
 import type { ResolvedDatabaseConfig } from '../../src/db/pool.ts'
+import { CONVERTER_DIR, PYTHON_BIN, SYNTHETIC_DIR, syntheticPath } from '../helpers/paths.ts'
 
 const TOOL_NAME = 'recruitment_application_intake'
 const DEMO_JOB = '11111111-1111-4111-8111-000000000401'
 const SHA = 'a'.repeat(64)
 
 const CONVERTER = resolveConverterConfig({
-  python_bin: 'D:\\Python3.12.9\\python.exe',
-  converter_dir: 'D:\\12412\\dsh工作区\\projects\\recruitment-agent\\converter',
-  allowed_roots: ['D:\\12412\\dsh工作区\\projects\\recruitment-agent\\converter\\corpus\\synthetic'],
+  python_bin: PYTHON_BIN ?? 'python3',
+  converter_dir: CONVERTER_DIR,
+  allowed_roots: [SYNTHETIC_DIR],
 })
 const DATABASE: ResolvedDatabaseConfig = {
   host: '127.0.0.1',
