@@ -86,6 +86,9 @@ import {
   unconfiguredStageAdvanceTool,
 } from './tools/stage-advance.ts'
 import { createTraceGetTool, unconfiguredTraceGetTool } from './tools/trace-get.ts'
+import { createConfigRoleTool, unconfiguredConfigRoleTool } from './tools/config-role.ts'
+import { createConfigTeamTool, unconfiguredConfigTeamTool } from './tools/config-team.ts'
+import { createConfigPipelineTool, unconfiguredConfigPipelineTool } from './tools/config-pipeline.ts'
 // 引擎持久副作用（vendor 自 dsh-superagent-prototype，MIT）：runtime 入队、这里派发。
 import { Store } from './engine/app/store.ts'
 import { Effects } from './engine/app/effects.ts'
@@ -558,6 +561,18 @@ export function apply(
   const traceGet = database.resolved === null
     ? unconfiguredTraceGetTool(database.issues)
     : createTraceGetTool(database.resolved)
+  // 企业自建配置（角色权限范围 / 招聘团队 / 流水线模板）：配置是数据，企业自己建。
+  const configTools = database.resolved === null
+    ? [
+        unconfiguredConfigRoleTool(database.issues),
+        unconfiguredConfigTeamTool(database.issues),
+        unconfiguredConfigPipelineTool(database.issues),
+      ]
+    : [
+        createConfigRoleTool(database.resolved),
+        createConfigTeamTool(database.resolved),
+        createConfigPipelineTool(database.resolved),
+      ]
 
   const tools: readonly ReadonlyToolDefinition[] = [
     resumeRead,
@@ -579,6 +594,7 @@ export function apply(
     evaluationSummarize,
     decisionRecord,
     traceGet,
+    ...configTools,
     pageImage,
     modelTextMerge,
   ].map(withStructuredResultContract)
