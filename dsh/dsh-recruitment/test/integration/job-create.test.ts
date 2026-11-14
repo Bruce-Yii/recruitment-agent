@@ -17,6 +17,12 @@ import {
   updateJobInTransaction,
 } from '../../src/tools/job-create.ts'
 import {
+  JOB_RUBRIC_APPROVE_TOOL,
+  approveRubricInTransaction,
+  createJobRubricApproveTool,
+  makeApprovalRequest,
+} from '../../src/tools/job-rubric-approve.ts'
+import {
   DEMO_DEPARTMENT,
   HR_ACTOR,
   TENANT,
@@ -432,4 +438,466 @@ test('⑦ J-1 库级兜底：直接 UPDATE rubric_version.dimensions 被数据�
     assert.deepEqual(after[0]?.dimensions, before[0]?.dimensions)
     assert.equal(after[0]?.payload_hash, before[0]?.payload_hash)
   })
+})
+
+// ---------------------------------------------------------------------------
+//  ⑧–⑭ rubric 批准入口（`recruitment_job_rubric_approve`，docs/23 N7）
+//      真实库上验证：PENDING→APPROVED、current 指针、D-79 闸门零写入、幂等、错误面。
+// ---------------------------------------------------------------------------
+
+/** `inRolledBackTx` 里的事务客户端类型（避免在辅助函数里重复长类型）。 */
+type TxClient = Parameters<Parameters<typeof inRolledBackTx>[1]>[0]
+
+/** 一次批准调用前后的可比较快照（零写入断言靠它）。 */
+interface ApproveSnapshot {
+  readonly pointer: string | null
+  readonly jobRecordVersion: number
+  readonly approvalStatus: string | undefined
+  readonly approvalDecisionBy: string | null
+  readonly approvalRecordVersion: number | undefined
+  readonly approveEvents: number
+}
+
+/**
+ * 取岗位指针 / record_version / 审批状态 / 本工具的审计事件条数。
+ * @param client - 事务内客户端。
+ * @param jobId - 岗位 id。
+ * @param rubricId - rubric 版本 id（审计事件按 source_object_id 过滤）。
+ */
+async function approveSnapshot(client: TxClient, jobId: string, rubricId: string): Promise<ApproveSnapshot> {
+  const jobRows = await selectRows(client,
+    'select current_rubric_version_id, record_version from recruitment.job where id = $1', [jobId])
+  const job = jobRows[0] as Record<string, unknown>
+  const approvalRows = await selectRows(client,
+    `select a.status, a.decision_by_actor_id, a.record_version
+       from recruitment.approval a
+       join recruitment.rubric_version r on r.id = a.resource_id and r.tenant_id = a.tenant_id
+      where r.job_id = $1 and a.resource_id = $2
+      order by a.created_at, a.id`, [jobId, rubricId])
+  const approval = approvalRows[0] as Record<string, unknown> | undefined
+  const eventRows = await selectRows(client,
+    `select count(*)::int as n from recruitment.event_inbox
+      where tenant_id = $1 and event_type = 'job.rubric_version.approved' and source_object_id = $2`,
+    [TENANT, rubricId])
+  return {
+    pointer: (job.current_rubric_version_id as string | null) ?? null,
+    jobRecordVersion: job.record_version as number,
+    approvalStatus: approval?.status as string | undefined,
+    approvalDecisionBy: (approval?.decision_by_actor_id as string | null) ?? null,
+    approvalRecordVersion: approval?.record_version as number | undefined,
+    approveEvents: eventRows[0]?.n as number,
+  }
+}
+
+/** 计数器版 allow：既返回 `allowed-once`，又能断言"到底有没有打扰人"。 */
+function countingAllow(): { approve: () => Promise<'allowed-once'>; calls: () => number } {
+  let calls = 0
+  return {
+    approve: async () => {
+      calls += 1
+      return 'allowed-once' as const
+    },
+    calls: () => calls,
+  }
+}
+
+/** 断言"零写入"：快照逐字段不变。 */
+function assertApproveNoWrites(before: ApproveSnapshot, after: ApproveSnapshot, label: string): void {
+  assert.deepEqual(after, before, `${label}：批准被拒时不得有任何写入`)
+}
+
+test('⑧ 批准正向：PENDING→APPROVED、责任人=HUMAN actor、current 指针指向该版本、两条审计事件', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const created = await createJobInTransaction(client, cfg, {
+      title: 'S3 集成岗位（rubric 批准正向）',
+      code: jobCode(),
+      department_id: DEMO_DEPARTMENT,
+      criteria: CRITERIA_V1,
+    })
+    const jobId = created.job.id
+    const rubricId = created.rubric?.version_id as string
+    const approvalId = created.rubric?.approval.approval_id as string
+    const before = await approveSnapshot(client, jobId, rubricId)
+    assert.equal(before.pointer, null, '新建岗位的 current 指针必须为空（D-21 的合法初始态）')
+    assert.equal(before.approvalStatus, 'PENDING')
+    assert.equal(before.approveEvents, 0)
+
+    const allow = countingAllow()
+    const value = await approveRubricInTransaction(client, cfg, {
+      job_id: jobId,
+      rubric_version_id: rubricId,
+      reason: 'S3 集成测试：标准已对齐',
+    }, allow.approve)
+
+    assert.equal(allow.calls(), 1, '写库前必须恰好问人一次（D-79）')
+    assert.equal(value.tool, JOB_RUBRIC_APPROVE_TOOL)
+    assert.equal(value.outcome, 'APPROVED')
+    assert.equal(value.replayed, false)
+    assert.deepEqual(value.gate, { requested: true, result: 'allowed-once' })
+    assert.deepEqual(value.labels, { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'NOT_CONNECTED' })
+    assert.equal(value.rubric.version_id, rubricId)
+    assert.equal(value.rubric.is_approved, true)
+    assert.equal(value.rubric.is_current, true)
+    assert.equal(value.approval.approval_id, approvalId)
+    assert.equal(value.approval.status, 'APPROVED')
+    assert.equal(value.approval.decided_by_actor_id, HR_ACTOR)
+    assert.equal(value.approval.canonical_payload_hash, created.rubric?.payload_hash)
+    assert.equal(value.job.current_rubric_version_id, rubricId)
+    // 首次批准时旧指针是 NULL → previous 键必须**省略**（不许 null）。
+    assert.equal(Object.hasOwn(value.job, 'previous_current_rubric_version_id'), false)
+    assert.equal(value.changes.written, true)
+    assert.deepEqual(value.changes.tables, ['approval', 'job', 'event_inbox'])
+    assert.equal(value.changes.event_ids.length, 1)
+    assert.equal(value.next_action.kind, 'READ_BACK')
+
+    const after = await approveSnapshot(client, jobId, rubricId)
+    assert.equal(after.pointer, rubricId, '批准后 current 指针必须指向已批准版本')
+    assert.ok(after.jobRecordVersion > before.jobRecordVersion, '指针变更由 fn_row_guard 自增 record_version')
+    assert.equal(value.job.record_version, after.jobRecordVersion, '输出里的 record_version 必须是 RETURNING 的真实值')
+    assert.equal(after.approvalStatus, 'APPROVED')
+    assert.equal(after.approvalDecisionBy, HR_ACTOR)
+    assert.ok((after.approvalRecordVersion as number) > (before.approvalRecordVersion as number))
+    assert.equal(after.approveEvents, 1, '本工具必须恰好写一条 job.rubric_version.approved 事件')
+
+    // 审计证据 1：批准迁移由 fn_row_guard 写（approval.status_source_event_id 可回查）。
+    const triggerEvents = await selectRows(client,
+      `select event_id, payload from recruitment.event_inbox
+        where tenant_id = $1 and event_type = 'approval.status.changed' and source_object_id = $2`,
+      [TENANT, approvalId])
+    assert.equal(triggerEvents.length, 1)
+    const triggerPayload = triggerEvents[0]?.payload as Record<string, unknown>
+    assert.equal(triggerPayload.from, 'PENDING')
+    assert.equal(triggerPayload.to, 'APPROVED')
+    assert.equal(triggerPayload.actor_id, HR_ACTOR)
+    const approvalRows = await selectRows(client,
+      'select status_source_event_id from recruitment.approval where id = $1', [approvalId])
+    assert.equal(approvalRows[0]?.status_source_event_id, triggerEvents[0]?.event_id)
+
+    // 审计证据 2：本工具写的内部事件（含 previous→current 指针与责任人）。
+    const ourEvents = await selectRows(client,
+      `select event_id, payload from recruitment.event_inbox
+        where tenant_id = $1 and event_type = 'job.rubric_version.approved' and source_object_id = $2`,
+      [TENANT, rubricId])
+    assert.equal(ourEvents.length, 1)
+    assert.equal(ourEvents[0]?.event_id, value.changes.event_ids[0])
+    const payload = ourEvents[0]?.payload as Record<string, unknown>
+    assert.equal(payload.job_id, jobId)
+    assert.equal(payload.rubric_version_id, rubricId)
+    assert.equal(payload.approval_id, approvalId)
+    assert.equal(payload.approved_by_actor_id, HR_ACTOR)
+    assert.equal(payload.previous_current_rubric_version_id, null)
+    assert.equal(payload.current_rubric_version_id, rubricId)
+    assert.equal(payload.pointer_changed, true)
+    assert.equal(payload.outcome, 'APPROVED')
+    assert.equal(payload.source, JOB_RUBRIC_APPROVE_TOOL)
+    assert.equal(payload.reason, 'S3 集成测试：标准已对齐')
+
+    // J-1：rubric_version 行仍不可变/未改（approval 只存在于 approval 行与 hash 绑定）。
+    const rubricRows = await selectRows(client,
+      'select payload_hash, approved_by_approval_id from recruitment.rubric_version where id = $1', [rubricId])
+    assert.equal(rubricRows[0]?.approved_by_approval_id, null, '旧指针列永远留空（J-1 不变量）')
+    assert.equal(rubricRows[0]?.payload_hash, created.rubric?.payload_hash)
+  })
+})
+
+test('⑨ 幂等：同一版本重复批准 → NO_OP、replayed=true、不问人、零额外写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const created = await createJobInTransaction(client, cfg, {
+      title: 'S3 集成岗位（rubric 批准幂等）',
+      code: jobCode(),
+      department_id: DEMO_DEPARTMENT,
+      criteria: CRITERIA_V1,
+    })
+    const jobId = created.job.id
+    const rubricId = created.rubric?.version_id as string
+    const first = await approveRubricInTransaction(
+      client, cfg, { job_id: jobId, rubric_version_id: rubricId }, countingAllow().approve,
+    )
+    assert.equal(first.outcome, 'APPROVED')
+    const before = await approveSnapshot(client, jobId, rubricId)
+
+    const allow = countingAllow()
+    const second = await approveRubricInTransaction(
+      client, cfg, { job_id: jobId, rubric_version_id: rubricId }, allow.approve,
+    )
+    assert.equal(allow.calls(), 0, '纯重放不得打扰人（D-95）')
+    assert.equal(second.outcome, 'NO_OP')
+    assert.equal(second.replayed, true)
+    assert.deepEqual(second.gate, { requested: false, result: 'not-required' })
+    assert.equal(second.changes.written, false)
+    assert.deepEqual(second.changes.tables, [])
+    assert.deepEqual(second.changes.event_ids, [])
+    assert.equal(second.approval.status, 'APPROVED')
+    assert.equal(Object.hasOwn(second.job, 'previous_current_rubric_version_id'), false)
+
+    const after = await approveSnapshot(client, jobId, rubricId)
+    assertApproveNoWrites(before, after, 'NO_OP')
+  })
+})
+
+test('⑩a 闸门拒绝（缺通道）：FORBIDDEN(APPROVAL_UNAVAILABLE)，审批/指针/事件零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const created = await createJobInTransaction(client, cfg, {
+      title: 'S3 集成岗位（无 approval 通道）',
+      code: jobCode(),
+      department_id: DEMO_DEPARTMENT,
+      criteria: CRITERIA_V1,
+    })
+    const jobId = created.job.id
+    const rubricId = created.rubric?.version_id as string
+    const before = await approveSnapshot(client, jobId, rubricId)
+
+    await assert.rejects(
+      () => approveRubricInTransaction(client, cfg, { job_id: jobId, rubric_version_id: rubricId }),
+      (error: unknown) => {
+        const body = errorBody(error)
+        assert.equal(body.code, 'FORBIDDEN')
+        assert.equal(body.reason_code, 'APPROVAL_UNAVAILABLE')
+        assert.deepEqual(body.detail, { approval: 'unavailable', tool: JOB_RUBRIC_APPROVE_TOOL })
+        return true
+      },
+    )
+    assertApproveNoWrites(before, await approveSnapshot(client, jobId, rubricId), '缺 approval 通道')
+  })
+})
+
+test('⑩b 闸门拒绝（rejected / timeout）：FORBIDDEN(APPROVAL_NOT_GRANTED)，零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const created = await createJobInTransaction(client, cfg, {
+      title: 'S3 集成岗位（人工拒绝）',
+      code: jobCode(),
+      department_id: DEMO_DEPARTMENT,
+      criteria: CRITERIA_V1,
+    })
+    const jobId = created.job.id
+    const rubricId = created.rubric?.version_id as string
+    const before = await approveSnapshot(client, jobId, rubricId)
+
+    // 人在宿主里点了 Reject。
+    await assert.rejects(
+      () => approveRubricInTransaction(
+        client, cfg, { job_id: jobId, rubric_version_id: rubricId }, async () => 'rejected',
+      ),
+      (error: unknown) => {
+        const body = errorBody(error)
+        assert.equal(body.code, 'FORBIDDEN')
+        assert.equal(body.reason_code, 'APPROVAL_NOT_GRANTED')
+        assert.deepEqual(body.detail, { approval: 'rejected', tool: JOB_RUBRIC_APPROVE_TOOL })
+        return true
+      },
+    )
+    assertApproveNoWrites(before, await approveSnapshot(client, jobId, rubricId), 'approval=rejected')
+
+    // 宿主永远不回答：注入 25ms 超时（生产 120s）→ 按 cancelled 判，仍然零写入。
+    const approve = makeApprovalRequest(
+      { request: () => new Promise<string>(() => undefined) },
+      undefined,
+      25,
+    )
+    await assert.rejects(
+      () => approveRubricInTransaction(client, cfg, { job_id: jobId, rubric_version_id: rubricId }, approve),
+      (error: unknown) => {
+        const body = errorBody(error)
+        assert.equal(body.code, 'FORBIDDEN')
+        assert.equal(body.reason_code, 'APPROVAL_NOT_GRANTED')
+        assert.deepEqual(body.detail, { approval: 'timeout', tool: JOB_RUBRIC_APPROVE_TOOL })
+        return true
+      },
+    )
+    assertApproveNoWrites(before, await approveSnapshot(client, jobId, rubricId), 'approval=timeout')
+  })
+})
+
+test('⑪ 业务校验失败（版本不存在 / 跨岗位版本 / 岗位不存在）→ 不去问人、零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const created = await createJobInTransaction(client, cfg, {
+      title: 'S3 集成岗位（错误面）',
+      code: jobCode(),
+      department_id: DEMO_DEPARTMENT,
+      criteria: CRITERIA_V1,
+    })
+    const jobId = created.job.id
+    const rubricId = created.rubric?.version_id as string
+    const before = await approveSnapshot(client, jobId, rubricId)
+    const allow = countingAllow()
+
+    // (a) 该岗位下没有这个版本（UUID 合法但库里没有）。
+    await assert.rejects(
+      () => approveRubricInTransaction(client, cfg, {
+        job_id: jobId,
+        rubric_version_id: '00000000-0000-4000-8000-0000000000aa',
+      }, allow.approve),
+      (error: unknown) => {
+        const body = errorBody(error)
+        assert.equal(body.code, 'NOT_FOUND')
+        assert.equal(body.reason_code, 'RUBRIC_VERSION_NOT_FOUND')
+        const detail = body.detail as Record<string, unknown>
+        assert.deepEqual(detail.known_version_nos, [1])
+        return true
+      },
+    )
+
+    // (b) 版本属于**另一个**岗位 → 同一错误码（0005：版本不得跨 job 引用）。
+    const other = await createJobInTransaction(client, cfg, {
+      title: 'S3 集成岗位（另一个岗位的版本）',
+      code: jobCode(),
+      department_id: DEMO_DEPARTMENT,
+      criteria: CRITERIA_V1,
+    })
+    await assert.rejects(
+      () => approveRubricInTransaction(client, cfg, {
+        job_id: jobId,
+        rubric_version_id: other.rubric?.version_id as string,
+      }, allow.approve),
+      (error: unknown) => {
+        const body = errorBody(error)
+        assert.equal(body.code, 'NOT_FOUND')
+        assert.equal(body.reason_code, 'RUBRIC_VERSION_NOT_FOUND')
+        return true
+      },
+    )
+
+    // (c) 岗位不存在。
+    await assert.rejects(
+      () => approveRubricInTransaction(client, cfg, {
+        job_id: '00000000-0000-4000-8000-0000000000bb',
+        rubric_version_id: rubricId,
+      }, allow.approve),
+      (error: unknown) => {
+        const body = errorBody(error)
+        assert.equal(body.code, 'NOT_FOUND')
+        assert.equal(body.reason_code, 'JOB_NOT_FOUND')
+        return true
+      },
+    )
+
+    assert.equal(allow.calls(), 0, '注定失败的调用不得先弹窗打扰人')
+    assertApproveNoWrites(before, await approveSnapshot(client, jobId, rubricId), '业务校验失败')
+  })
+})
+
+test('⑫ 批准已批准版本（CLI 遗留的陈旧指针）：CURRENT_UPDATED 补指针；再调一次 → NO_OP', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const created = await createJobInTransaction(client, cfg, {
+      title: 'S3 集成岗位（CLI 已批准但指针未维护）',
+      code: jobCode(),
+      department_id: DEMO_DEPARTMENT,
+      criteria: CRITERIA_V1,
+    })
+    const jobId = created.job.id
+    const rubricId = created.rubric?.version_id as string
+    const approvalId = created.rubric?.approval.approval_id as string
+
+    // 模拟既有 CLI（`manual/job-line/approve-rubric.mjs`）：只批 approval，**不动指针**。
+    const cli = await decideRubricApprovalInTransaction(client, cfg, {
+      approval_id: approvalId,
+      decision: 'APPROVE',
+    })
+    const before = await approveSnapshot(client, jobId, rubricId)
+    assert.equal(before.pointer, null, 'CLI 批准不维护 current 指针 —— 这正是 N7 的断点')
+    assert.equal(before.approvalStatus, 'APPROVED')
+    assert.equal(before.approveEvents, 0, 'CLI 批准不写本工具的审计事件')
+
+    const allow = countingAllow()
+    const repaired = await approveRubricInTransaction(
+      client, cfg, { job_id: jobId, rubric_version_id: rubricId }, allow.approve,
+    )
+    assert.equal(allow.calls(), 1, '补指针会改业务可见状态，必须过闸门')
+    assert.equal(repaired.outcome, 'CURRENT_UPDATED')
+    assert.equal(repaired.replayed, true)
+    assert.deepEqual(repaired.gate, { requested: true, result: 'allowed-once' })
+    assert.equal(repaired.job.current_rubric_version_id, rubricId)
+    assert.equal(Object.hasOwn(repaired.job, 'previous_current_rubric_version_id'), false)
+    assert.deepEqual(repaired.changes.tables, ['job', 'event_inbox'], '已批准 → 不再写 approval 行')
+    assert.equal(repaired.approval.decided_by_actor_id, HR_ACTOR)
+    assert.equal(repaired.approval.record_version, cli.record_version, '补指针不得改 approval 行')
+
+    const after = await approveSnapshot(client, jobId, rubricId)
+    assert.equal(after.pointer, rubricId)
+    assert.equal(after.approveEvents, 1, '补指针必须留一条审计事件')
+
+    // 再调一次：批准已生效 + 指针已对齐 → 纯 NO_OP。
+    const secondAllow = countingAllow()
+    const noop = await approveRubricInTransaction(
+      client, cfg, { job_id: jobId, rubric_version_id: rubricId }, secondAllow.approve,
+    )
+    assert.equal(secondAllow.calls(), 0)
+    assert.equal(noop.outcome, 'NO_OP')
+    assert.equal(noop.replayed, true)
+    assert.deepEqual(noop.changes, { written: false, tables: [], event_ids: [] })
+    assertApproveNoWrites(after, await approveSnapshot(client, jobId, rubricId), 'CURRENT_UPDATED 后的 NO_OP')
+  })
+})
+
+test('⑬ 批准被拒版本：INVALID_ARGS(APPROVAL_NOT_PENDING)，不打扰人、零写入', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const created = await createJobInTransaction(client, cfg, {
+      title: 'S3 集成岗位（已拒绝的审批）',
+      code: jobCode(),
+      department_id: DEMO_DEPARTMENT,
+      criteria: CRITERIA_V1,
+    })
+    const jobId = created.job.id
+    const rubricId = created.rubric?.version_id as string
+    const approvalId = created.rubric?.approval.approval_id as string
+    await decideRubricApprovalInTransaction(client, cfg, {
+      approval_id: approvalId,
+      decision: 'REJECT',
+      reason: 'S3 集成测试：标准与岗位不符',
+    })
+    const before = await approveSnapshot(client, jobId, rubricId)
+    const allow = countingAllow()
+
+    await assert.rejects(
+      () => approveRubricInTransaction(
+        client, cfg, { job_id: jobId, rubric_version_id: rubricId }, allow.approve,
+      ),
+      (error: unknown) => {
+        const body = errorBody(error)
+        assert.equal(body.code, 'INVALID_ARGS')
+        assert.equal(body.reason_code, 'APPROVAL_NOT_PENDING')
+        assert.equal((body.detail as Record<string, unknown>).status, 'REJECTED')
+        return true
+      },
+    )
+    assert.equal(allow.calls(), 0, '已拒的审批不得再弹窗')
+    assertApproveNoWrites(before, await approveSnapshot(client, jobId, rubricId), '已拒版本')
+  })
+})
+
+test('⑭ 工具对象 execute() 入口（真实配置）：走到事务核心并把契约错误原样抛出（零写入）', async () => {
+  let gateCalls = 0
+  const tool = createJobRubricApproveTool(cfg, {
+    approval: {
+      async request(): Promise<string> {
+        gateCalls += 1
+        return 'rejected'
+      },
+    },
+  })
+  assert.equal(tool.name, JOB_RUBRIC_APPROVE_TOOL)
+  await assert.rejects(
+    () => tool.execute({
+      job_id: '00000000-0000-4000-8000-0000000000cc',
+      rubric_version_id: '00000000-0000-4000-8000-0000000000dd',
+    }, {}),
+    (error: unknown) => {
+      const body = errorBody(error)
+      assert.equal(body.code, 'NOT_FOUND')
+      assert.equal(body.reason_code, 'JOB_NOT_FOUND')
+      return true
+    },
+  )
+  assert.equal(gateCalls, 0, '业务校验就拒了，不得去问人（D-79 之前的所有校验）')
+
+  // 参数层负例也在 execute 入口就拒（不连库）。
+  await assert.rejects(
+    () => tool.execute({ job_id: 'job_0001', rubric_version_id: '00000000-0000-4000-8000-0000000000dd' }, {}),
+    (error: unknown) => {
+      const body = errorBody(error)
+      assert.equal(body.code, 'INVALID_ARGS')
+      assert.equal(body.reason_code, 'ID_NOT_UUID')
+      return true
+    },
+  )
 })
