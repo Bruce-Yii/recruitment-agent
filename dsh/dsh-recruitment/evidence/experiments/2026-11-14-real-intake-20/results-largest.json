@@ -1,0 +1,240 @@
+[
+ {
+  "label": "F52",
+  "sha12": "f8fb0a0455b9",
+  "bytes": 1116788,
+  "ext": ".pdf",
+  "read": {
+   "ok": true,
+   "media_type": "application/pdf",
+   "reader": "pymupdf/1.28.0@1.0.0",
+   "completeness": "partial",
+   "needs_visual": false,
+   "blocking": true,
+   "blocking_codes": [
+    "unverified_pdf_image"
+   ],
+   "soft_codes": [
+    "resume_protected_attribute_present"
+   ],
+   "pages": 1,
+   "chars": 2073,
+   "blocks": 43,
+   "recovery_next": "human",
+   "recovery_steps": [
+    "undefined:planned"
+   ],
+   "execution": {
+    "ran": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "content_updated": false
+   }
+  },
+  "intake": {
+   "ok": true,
+   "status": "OK",
+   "application_action": "REUSED",
+   "candidate_created": false,
+   "matched_by": "email+phone",
+   "candidate_id": "394e93e3-b435-4ca9-81df-887cc3c14b46",
+   "application_id": "d292c60e-5bac-44ec-86cc-6f7257e6d384",
+   "resume_version_id": "51f52f9c-1011-4582-9638-91c329d46379",
+   "resume_version_no": 1,
+   "resume_version_action": "APPENDED",
+   "intake_asset_id": "72e00523-c1f1-438a-bcdb-a25ff66599ba",
+   "structure_saved": false,
+   "provenance": "FIXTURE",
+   "strong_fields": [
+    "email",
+    "phone"
+   ],
+   "merge_eligible": [
+    "email",
+    "phone"
+   ],
+   "weak_fields": [],
+   "blocked_fields": [],
+   "evidence_refs": 2,
+   "parse_status": "PARTIAL",
+   "source_sha12": "f8fb0a0455b9"
+  },
+  "ms": 2165
+ },
+ {
+  "label": "F37",
+  "sha12": "b9155e19e88c",
+  "bytes": 1168623,
+  "ext": ".pdf",
+  "read": {
+   "ok": true,
+   "media_type": "application/pdf",
+   "reader": "pymupdf/1.28.0@1.0.0",
+   "completeness": "partial",
+   "needs_visual": false,
+   "blocking": true,
+   "blocking_codes": [
+    "unverified_pdf_image"
+   ],
+   "soft_codes": [
+    "doc_attribution_resolved"
+   ],
+   "pages": 1,
+   "chars": 2499,
+   "blocks": 42,
+   "recovery_next": "human",
+   "recovery_steps": [
+    "undefined:planned"
+   ],
+   "execution": {
+    "ran": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "content_updated": false
+   }
+  },
+  "intake": {
+   "ok": true,
+   "status": "OK",
+   "application_action": "REUSED",
+   "candidate_created": false,
+   "matched_by": "email+phone",
+   "candidate_id": "9954711f-282b-45ed-b205-9368d9deec3f",
+   "application_id": "1f9ec61f-7c80-454e-bf1e-cf7a6ba90aef",
+   "resume_version_id": "3c1b0c3d-2afd-4087-ae77-aec07380ce04",
+   "resume_version_no": 1,
+   "resume_version_action": "APPENDED",
+   "intake_asset_id": "92f08b43-7bc2-4d9a-98ac-a0b34725cf7d",
+   "structure_saved": false,
+   "provenance": "FIXTURE",
+   "strong_fields": [
+    "email",
+    "phone"
+   ],
+   "merge_eligible": [
+    "email",
+    "phone"
+   ],
+   "weak_fields": [],
+   "blocked_fields": [],
+   "evidence_refs": 2,
+   "parse_status": "PARTIAL",
+   "source_sha12": "b9155e19e88c"
+  },
+  "ms": 1964
+ },
+ {
+  "label": "F06",
+  "sha12": "2aea0b66b28e",
+  "bytes": 1550569,
+  "ext": ".pdf",
+  "read": {
+   "ok": true,
+   "media_type": "application/pdf",
+   "reader": "pymupdf/1.28.0@1.0.0",
+   "completeness": "partial",
+   "needs_visual": true,
+   "blocking": true,
+   "blocking_codes": [
+    "doc_cross_block_attribution",
+    "pdf_reading_order_unverified",
+    "resume_field_unreadable",
+    "unread_visual_page",
+    "unverified_pdf_image"
+   ],
+   "soft_codes": [
+    "doc_attribution_resolved",
+    "resume_protected_attribute_present"
+   ],
+   "pages": 6,
+   "chars": 3095,
+   "blocks": 93,
+   "recovery_next": "human",
+   "recovery_steps": [
+    "undefined:planned",
+    "undefined:planned",
+    "undefined:planned",
+    "undefined:planned"
+   ],
+   "execution": {
+    "ran": 1,
+    "succeeded": 0,
+    "failed": 1,
+    "content_updated": false
+   }
+  },
+  "intake": {
+   "ok": true,
+   "status": "OK",
+   "application_action": "CREATED",
+   "candidate_created": true,
+   "matched_by": "created",
+   "candidate_id": "581e103b-ab21-481f-87c0-e6ac538e713d",
+   "application_id": "8ddd217e-8f6b-4552-b7dc-969c838721ed",
+   "resume_version_id": "a95b72ce-c818-41b5-8211-aa331ffed07e",
+   "resume_version_no": 1,
+   "resume_version_action": "APPENDED",
+   "intake_asset_id": "4fd683f9-59e1-4bc8-b2f6-9fb979697be8",
+   "structure_saved": false,
+   "provenance": "FIXTURE",
+   "strong_fields": [
+    "email",
+    "phone"
+   ],
+   "merge_eligible": [
+    "email",
+    "phone"
+   ],
+   "weak_fields": [],
+   "blocked_fields": [],
+   "evidence_refs": 2,
+   "parse_status": "PARTIAL",
+   "source_sha12": "2aea0b66b28e"
+  },
+  "ms": 4375
+ },
+ {
+  "label": "F47",
+  "sha12": "e6a42b0d920e",
+  "bytes": 1619636,
+  "ext": ".pdf",
+  "read": {
+   "ok": true,
+   "media_type": "application/pdf",
+   "reader": "pymupdf/1.28.0@1.0.0",
+   "completeness": "partial",
+   "needs_visual": false,
+   "blocking": true,
+   "blocking_codes": [
+    "doc_provenance_unverified",
+    "structure_unidentified",
+    "unverified_pdf_image"
+   ],
+   "soft_codes": [
+    "doc_attribution_resolved",
+    "pdf_text_recovered_by_ocr"
+   ],
+   "pages": 1,
+   "chars": 2197,
+   "blocks": 55,
+   "recovery_next": "human",
+   "recovery_steps": [
+    "undefined:planned",
+    "undefined:planned"
+   ],
+   "execution": {
+    "ran": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "content_updated": false
+   }
+  },
+  "intake": {
+   "ok": false,
+   "code": "BLOCKED_BY_REVIEW",
+   "reason_code": "MATERIAL_ATTRIBUTION_UNKNOWN",
+   "blocked": true
+  },
+  "ms": 66919
+ }
+]

@@ -1,0 +1,169 @@
+# Golden Path e2e · 命令原文与真实输出（E1）
+
+本文件是本 lane（golden-path）**实际执行过的命令原文**与关键输出。全部在
+`D:\12412\dsh工作区\projects\recruitment-agent` 下、Windows PowerShell 7 执行。
+没有 gateway、没有自研 API；所有业务写库只经 `tool.execute()`。
+
+## 0. 环境
+
+```text
+Node        : v24.16.0（原生 TS type-stripping，直接 import src/**/*.ts）
+Python      : Python 3.12.9（D:\Python3.12.9\python.exe，PyMuPDF 1.28.0）
+PostgreSQL  : psql 17.11（D:\12412\PostgreSQL\bin\psql.exe）
+仓库        : D:\12412\dsh工作区\projects\recruitment-agent
+分支        : feat/unified-document-intake
+HEAD        : 92bdc41f9fe45e0bde7a3cb0b66e99a100029be2
+              （本 lane 开始时任务书写的是 e8dd864；执行期间其它 lane 合入 294ea2a / 92bdc41 并留下未提交 WIP，
+                完整边界见 evidence/git-state.txt）
+DB          : ra_s6s7 @ 127.0.0.1:5432（postgres/***，密码只从环境变量）
+```
+
+## 1. 生成合成简历（R7：无真实候选人资料）
+
+```powershell
+cd "D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment"
+& 'D:\Python3.12.9\python.exe' manual/golden-path/fixtures/build_synthetic_resume.py manual/golden-path/fixtures
+```
+
+真实输出：
+
+```text
+WROTE manual\golden-path\fixtures\synthetic-resume-golden-path.pdf
+bytes=10920 sha256=9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356
+```
+
+## 2. 转换器自检（合成 PDF 是否可读、是否 native_text）
+
+```powershell
+cd "D:\12412\dsh工作区\projects\recruitment-agent\converter"
+& 'D:\Python3.12.9\python.exe' -m src.cli "D:\...\manual\golden-path\fixtures\synthetic-resume-golden-path.pdf" --no-isolation --summary
+```
+
+真实输出：
+
+```json
+{"path": "...\\synthetic-resume-golden-path.pdf", "completeness": "complete", "needs_visual": false,
+ "pages": 2, "blocks": 42, "chars": 1340, "issue_codes": [], "hard": false, "soft": [],
+ "fields": {"name": "present", "phone": "present", "email": "present",
+            "work_experience": "present", "education": "present"}}
+```
+
+完整 JSON（含 blocks/evidence/order_verified）由 harness 内部的 `recruitment_application_intake`
+经 converter 生成；DB 里 `resume_version.parsed_fields` 是同一份产物。
+
+## 3. 官方 run A（首次：S6 创建 + 全链路写到 S10 面评）
+
+```powershell
+cd "D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment"
+$env:RECRUITMENT_DB_PASSWORD='<本机演示库密码，按约定注入，不落盘>'
+$env:GOLDEN_PATH_HEAD=(git -C "D:\12412\dsh工作区\projects\recruitment-agent" rev-parse HEAD)
+node manual/golden-path/run-golden-path.mjs *> "$env:TEMP\gp-run-A.log"
+```
+
+真实输出（退出码 0；完整 stdout 见 `console-run-A-08-42-17.log`、`run-2026-11-14T08-42-17-972Z/run.log`）：
+
+```text
+EXIT=0
+...
+application.current_stage_code = S6（期望 S10；实际取决于是否有阶段推进工具）
+application.rubric_version_id   = null
+application.resume_version_id   = d3de2b99-b2d5-4de8-8cc6-b7643b924915
+decisions for this application  = 0 条 []
+interviews for this application = 1 场 ["r1/SCHEDULED"]
+transcript artifacts            = [["rev1/canonical=true/FIXTURE"]]
+scorecards                      = [["SUBMITTED/ADVANCE/author=d2b"]]
+行数对比（预检 → 终态，只列变化）：{"application":1,"business_task":1,"candidate":1,"event_inbox":2,
+  "intake_asset":1,"intake_record":1,"interview":1,"interviewer":2,"meeting":1,"meeting_binding":1,
+  "resume":1,"resume_version":1,"scorecard":1,"transcript_artifact":1,"transcript_segment":11}
+
+hop | kind             | id                        | outcome | error/reason                       | row delta
+----+------------------+---------------------------+---------+------------------------------------+----------
+  1 | write            | s6-intake                 | PASS    |                                    | {"application":1,...}
+  2 | read             | s7-screening-evaluate     | PASS    |                                    | {}
+  3 | expected-blocker | s7-decision-screening     | PASS    | NOT_FOUND/RUBRIC_VERSION_NOT_FOUND | {}
+  4 | negative-control | s8-schedule-denied        | PASS    | FORBIDDEN/APPROVAL_NOT_GRANTED     | {}
+  5 | write            | s8-schedule-allow-once    | PASS    |                                    | {"business_task":1,"interview":1,...}
+  6 | read             | s8-interview-get          | PASS    |                                    | {}
+  7 | write            | s9-transcript-import      | PASS    |                                    | {"transcript_artifact":1,"transcript_segment":11}
+  8 | read             | s9-transcript-read        | PASS    |                                    | {}
+  9 | negative-control | s10-scorecard-denied      | PASS    | FORBIDDEN/APPROVAL_NOT_GRANTED     | {}
+ 10 | write            | s10-scorecard-allow-once  | PASS    |                                    | {"event_inbox":1,"scorecard":1}
+ 11 | expected-blocker | s10-evaluation-summarize  | PASS    | NOT_FOUND/RUBRIC_VERSION_NOT_FOUND | {}
+ 12 | expected-blocker | s10-decision-stage        | PASS    | NOT_FOUND/RUBRIC_VERSION_NOT_FOUND | {}
+```
+
+官方申请 id（run A）：`application=9d408044-e30c-42be-9c7a-bd6dda78456c`
+`candidate=96485f3c-0e73-43e8-89c3-7d87bb53f9cd`
+`interview=6efc6919-0d63-4f80-847c-4813c6b5a475`
+
+## 4. 官方 run B（同一 fixture 重复执行：证明幂等 / replay，而不是再写一套）
+
+```powershell
+$env:RECRUITMENT_DB_PASSWORD='<本机演示库密码，按约定注入，不落盘>'
+$env:GOLDEN_PATH_HEAD=(git -C "D:\12412\dsh工作区\projects\recruitment-agent" rev-parse HEAD)
+node manual/golden-path/run-golden-path.mjs *> "$env:TEMP\gp-run-B.log"
+```
+
+真实输出（退出码 0；完整 stdout 见 `console-run-B-08-42-31.log`、`run-2026-11-14T08-42-31-029Z/run.log`）：
+
+```text
+EXIT=0
+...
+行数对比（预检 → 终态，只列变化）：{}          ← 第二次执行**零新增行**
+
+hop | kind             | id                        | outcome | error/reason
+  1 | write            | s6-intake                 | PASS    |            → application_action=REUSED, candidate_created=false,
+                                                                    resume_version_action=UNCHANGED, idempotent_replay=true
+  5 | write            | s8-schedule-allow-once    | PASS    |            → replayed=True, changes.created=[]
+  7 | write            | s9-transcript-import      | PASS    |            → replayed=True（同内容 TR-U8）
+  9 | negative-control | s10-scorecard-denied      | PASS    | ALREADY_SUBMITTED/SCORECARD_ALREADY_SUBMITTED（业务拒绝，零写入）
+ 10 | write            | s10-scorecard-allow-once  | PASS    |            → replayed=True
+  3 | expected-blocker | s7-decision-screening     | PASS    | NOT_FOUND/RUBRIC_VERSION_NOT_FOUND
+ 11 | expected-blocker | s10-evaluation-summarize  | PASS    | NOT_FOUND/RUBRIC_VERSION_NOT_FOUND
+ 12 | expected-blocker | s10-decision-stage        | PASS    | NOT_FOUND/RUBRIC_VERSION_NOT_FOUND
+```
+
+## 5. 终态 DB 读回（psql 直查，只读）
+
+```powershell
+cd "D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\evidence\experiments\2026-11-14-golden-path-e2e"
+$env:PGPASSWORD='<同上>'
+& 'D:\12412\PostgreSQL\bin\psql.exe' -h 127.0.0.1 -U postgres -d ra_s6s7 -v ON_ERROR_STOP=1 -f db-readback-final.sql *> db-readback-final.txt
+```
+
+真实输出：`EXIT=0`，全文见 `db-readback-final.txt`（申请/候选人/材料链/事件/决策/面试/会议/转写/面评/计数/残留）。
+
+## 6. git 状态（证明本 lane 没有改 src / 没有 commit）
+
+```powershell
+cd "D:\12412\dsh工作区\projects\recruitment-agent"
+git rev-parse HEAD; git status --porcelain; git diff --stat
+```
+
+真实输出见 `git-state.txt`（第一快照）与 `git-state-after.txt`（收尾快照）。摘要：本 lane 只新增
+`dsh/dsh-recruitment/manual/golden-path/` 与 `dsh/dsh-recruitment/evidence/experiments/2026-11-14-golden-path-e2e/`；
+未修改任何已跟踪文件，未 commit / push / 切分支。收尾快照里出现的其它改动（docs/18、contracts、src/engine、
+transcript-import 等）全部是并发 lane 的未提交 WIP，不是本 lane 的改动。
+
+## 7. 最终 harness 版本复跑（run C）
+
+官方 run A/B 之后，harness 只改过一行注释（把使用示例里的本机演示密码换成占位符）。
+为消除 `summary.harness.sha256` 与文件不一致，在最终版本上复跑一次：
+
+```powershell
+cd "D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment"
+$env:RECRUITMENT_DB_PASSWORD='<本机演示库密码，按约定注入，不落盘>'
+$env:GOLDEN_PATH_HEAD=(git -C "D:\12412\dsh工作区\projects\recruitment-agent" rev-parse HEAD)
+node manual/golden-path/run-golden-path.mjs *> "$env:TEMP\gp-run-C.log"
+```
+
+真实输出（退出码 0；完整 stdout 见 `console-run-C-08-54-41.log`、`run-2026-11-14T08-54-41-513Z/run.log`）：
+
+```text
+EXIT=0
+行数对比（预检 → 终态，只列变化）：{}
+产品缺陷阻断跳：HOP3/HOP11/HOP12 NOT_FOUND/RUBRIC_VERSION_NOT_FOUND
+闸门负例：HOP4 FORBIDDEN/APPROVAL_NOT_GRANTED delta={} ; HOP9 ALREADY_SUBMITTED/SCORECARD_ALREADY_SUBMITTED delta={}
+意外失败（outcome=FAIL）：0 个
+summary: ...\run-2026-11-14T08-54-41-513Z\summary.json   # harness.sha256=23fcaec…，与当前文件一致
+```

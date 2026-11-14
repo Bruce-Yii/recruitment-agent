@@ -1,0 +1,168 @@
+{
+  "application": {
+    "id": "9d408044-e30c-42be-9c7a-bd6dda78456c",
+    "candidate_id": "96485f3c-0e73-43e8-89c3-7d87bb53f9cd",
+    "job_id": "11111111-1111-4111-8111-000000000401",
+    "job_version_id": "11111111-1111-4111-8111-000000000402",
+    "rubric_version_id": null,
+    "resume_version_id": "d3de2b99-b2d5-4de8-8cc6-b7643b924915",
+    "lifecycle_status": "ACTIVE",
+    "current_stage_code": "S6",
+    "record_version": 1,
+    "created_at": "2026-11-14T08:42:18.581Z"
+  },
+  "candidate": {
+    "id": "96485f3c-0e73-43e8-89c3-7d87bb53f9cd",
+    "identity_status": "ACTIVE",
+    "display_name": "林承宇",
+    "email_masked": "lin***@example.test",
+    "phone_masked": "+86136***33"
+  },
+  "resume_version": {
+    "id": "d3de2b99-b2d5-4de8-8cc6-b7643b924915",
+    "version_no": 1,
+    "parse_status": "PARSED",
+    "content_sha256": "555ba23a42e0aa98e713751b5d7a8f03dd41f8a985f44c1d6c89d1faad121236",
+    "source_asset_sha256": "9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356",
+    "resume_id": "1ae8e83f-9d45-400e-b897-abfd5b35091d",
+    "intake_asset_id": "be358974-14a8-4f74-9a75-b07364100c6d"
+  },
+  "intake_asset": {
+    "id": "be358974-14a8-4f74-9a75-b07364100c6d",
+    "file_name": "synthetic-resume-golden-path.pdf",
+    "byte_size": "10920",
+    "sha256": "9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356",
+    "validation_status": "VALID",
+    "intake_record_id": "99ba46ca-110c-4da4-82d7-c7732cd2b022"
+  },
+  "application_events": [
+    {
+      "event_id": "f35f2ebe-87c4-4c3c-b83b-e2f237e647b3",
+      "provider": "internal",
+      "trust_level": "INTERNAL",
+      "event_type": "resume.intake.received",
+      "idempotency_source": "FALLBACK_KEY",
+      "source_object_id": "9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356",
+      "occurred_at": "2026-11-14T08:42:18.581Z"
+    }
+  ],
+  "decisions": [],
+  "interviews": [
+    {
+      "interview": {
+        "id": "6efc6919-0d63-4f80-847c-4813c6b5a475",
+        "application_id": "9d408044-e30c-42be-9c7a-bd6dda78456c",
+        "round_no": 1,
+        "slot_code": "DEFAULT",
+        "stage_code": "S8",
+        "status": "SCHEDULED",
+        "scheduled_start_at": "2026-12-02T02:00:00.000Z",
+        "scheduled_end_at": "2026-12-02T03:00:00.000Z",
+        "timezone": "Asia/Shanghai",
+        "record_version": 1
+      },
+      "interviewers": [
+        {
+          "actor_id": "11111111-1111-4111-8111-000000000103",
+          "display_name": "演示-HR 专员",
+          "role_in_interview": "INTERVIEWER",
+          "required_scorecard": true,
+          "scorecard_due_at": null
+        },
+        {
+          "actor_id": "11111111-1111-4111-8111-000000000104",
+          "display_name": "演示-面试官",
+          "role_in_interview": "INTERVIEWER",
+          "required_scorecard": true,
+          "scorecard_due_at": null
+        }
+      ],
+      "meeting_bindings": [
+        {
+          "id": "0391ef5d-7508-4df6-9f11-52432d7670ee",
+          "meeting_id": "3f270e4d-8f8e-4875-895b-2d4930f007f7",
+          "provider": "SYNTHETIC_DEMO",
+          "account_scope": "golden-path",
+          "external_meeting_id": "synthetic-meeting-9d408044e30c",
+          "calendar_event_id": "synthetic-calendar-9d408044e30c",
+          "binding_method": "SCHEDULED",
+          "bound_at": "2026-11-14T08:42:18.837Z",
+          "unbound_at": null
+        }
+      ],
+      "transcript_artifacts": [
+        {
+          "id": "74aae1db-c1a7-4031-9869-10710695e933",
+          "source_revision": 1,
+          "is_canonical": true,
+          "provenance": "FIXTURE",
+          "trigger_mode": "MANUAL",
+          "connection_state": "NOT_CONNECTED",
+          "transcript_status": "READY",
+          "content_sha256": "c8198254ebd961b871bc7a22e4a87f88bd667d6f54a4be1c17dc6e9de19290ab",
+          "provider": "LOCAL_DEMO",
+          "provider_artifact_id": "local:demo-sample:3f270e4d-8f8e-4875-895b-2d4930f007f7"
+        }
+      ],
+      "transcript_segment_count": 11,
+      "interview_records": [],
+      "scorecards": [
+        {
+          "id": "5c55f58f-2154-4d81-b476-d2f6d5968898",
+          "interviewer_id": "c45cc4d8-38d4-4737-8b6a-2613a0eb2d2b",
+          "rubric_version_id": "11111111-1111-4111-8111-000000000404",
+          "status": "SUBMITTED",
+          "overall": "ADVANCE",
+          "revision_no": 1,
+          "record_version": 1,
+          "superseded_by_scorecard_id": null
+        }
+      ],
+      "business_tasks": [
+        {
+          "id": "160f8295-3e63-4de5-bb33-f9b6b324340f",
+          "task_type": "INTERVIEW_SCHEDULE",
+          "status": "SUCCEEDED",
+          "business_refs": [
+            {
+              "id": "6efc6919-0d63-4f80-847c-4813c6b5a475",
+              "kind": "INTERVIEW"
+            },
+            {
+              "args_digest": "sha256:bef1bc68ff2fa4b42d02da241646b6c8321032bb7e02d66b0d2567bf594d0468",
+              "result_interview_id": "6efc6919-0d63-4f80-847c-4813c6b5a475"
+            }
+          ]
+        }
+      ],
+      "events": []
+    }
+  ],
+  "counts": {
+    "application": 15,
+    "business_task": 4,
+    "candidate": 14,
+    "decision": 1,
+    "event_inbox": 24,
+    "intake_asset": 14,
+    "intake_record": 14,
+    "interview": 8,
+    "interview_record": 3,
+    "interviewer": 13,
+    "meeting": 7,
+    "meeting_binding": 7,
+    "resume": 14,
+    "resume_version": 15,
+    "scorecard": 4,
+    "transcript_artifact": 6,
+    "transcript_segment": 97
+  },
+  "counts_delta_vs_preflight": {},
+  "decisions_by_scope": [
+    {
+      "decision_scope": "STAGE",
+      "stage_code": "S10",
+      "n": 1
+    }
+  ]
+}

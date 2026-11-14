@@ -1,0 +1,509 @@
+# 真实语料批量 intake · 逐份真实输出
+# 日期：2026-11-14　DB：ra_s6s7　tenant：11111111-1111-4111-8111-000000000001　job：11111111-1111-4111-8111-000000000401
+# 入口：recruitment_document_read → recruitment_application_intake（两个产品工具的 handler 直调；未用 SQL 写业务表）
+# R7 脱敏：本文件不含文件名/姓名/电话/邮箱；只有 F 标签、sha256 前缀、UUID、状态、字段名与 provenance
+
+======== 阶段 A：摸底（只读 DB，改前） ========
+
+=== 各表行数（本租户） ===
+rows=8
+{"t":"application","n":15}
+{"t":"application(ACTIVE)","n":14}
+{"t":"candidate","n":14}
+{"t":"candidate(ACTIVE)","n":14}
+{"t":"intake_asset","n":14}
+{"t":"intake_record","n":14}
+{"t":"resume","n":14}
+{"t":"resume_version","n":15}
+
+=== application 清单（不含 PII：只给 id / 状态 / sha 前缀） ===
+rows=15
+{"application_id":"11111111-1111-4111-8111-000000000701","lifecycle_status":"ACTIVE","candidate_id":"11111111-1111-4111-8111-000000000601","job_id":"11111111-1111-4111-8111-000000000401","resume_version_id":null,"version_no":null,"sha12":null,"parse_status":null,"intake_asset_id":null,"created_at":"2026-11-12T17:36:55.612Z"}
+{"application_id":"00d0f6c0-c7b0-4e62-be62-ae7f0c6ea0bc","lifecycle_status":"ACTIVE","candidate_id":"c110817b-b09b-472f-b6a8-a09c1ceabe2f","job_id":"11111111-1111-4111-8111-000000000401","resume_version_id":"276908da-e912-4dfa-a087-67cd25a594a7","version_no":1,"sha12":"c6ceb2eef64d","parse_status":"PARTIAL","intake_asset_id":"a39cedb4-496c-49c2-855f-96765b2fc15a","created_at":"2026-11-12T17:52:42.747Z"}
+{"application_id":"bc2f582b-6b38-48fa-900e-8ffa568f503c","lifecycle_status":"CLOSED","candidate_id":"c110817b-b09b-472f-b6a8-a09c1ceabe2f","job_id":"11111111-1111-4111-8111-000000000401","resume_version_id":"31ced60b-5fc6-4ae0-8980-0291a6f1db2f","version_no":1,"sha12":"ead23e7999e7","parse_status":"PARTIAL","intake_asset_id":"08596874-f83e-4b29-b91a-0f2ef01c9bdb","created_at":"2026-11-12T18:41:41.328Z"}
+{"application_id":"6b4e5fc0-7280-406c-b03e-0edddce0c61a","lifecycle_status":"ACTIVE","candidate_id":"5b730aa0-136d-4500-bb83-256727e18dab","job_id":"11111111-1111-4111-8111-000000000401","resume_version_id":"85646a45-41f0-4192-8d17-c4d2573f9f02","version_no":1,"sha12":"400cd3498cf1","parse_status":"PARSED","intake_asset_id":"a3bc9d76-d4d0-4c12-aa92-a8fd9eaa201b","created_at":"2026-11-13T09:10:51.997Z"}
+{"application_id":"8bf1d3fe-3c56-4bc0-86a3-1a20d54342bb","lifecycle_status":"ACTIVE","candidate_id":"27b67bae-7c9a-4f6b-a79e-80462d568d31","job_id":"11111111-1111-4111-8111-000000000401","resume_version_id":"c031caff-efa5-4f50-b584-7f80f7680514","version_no":1,"sha12":"45977afd21c4","parse_status":"PARSED","intake_asset_id":"1714f38c-f7e9-47ce-bbe3-6869520b5d73","created_at":"2026-11-13T09:14:36.855Z"}
+{"application_id":"dcd66f3a-7c88-4b51-91ce-b023a20eb7cb","lifecycle_status":"ACTIVE","candidate_id":"a2bd5677-750e-4822-a340-fe408952838d","job_id":"11111111-1111-4111-8111-000000000401","resume_version_id":"9b7301dc-7145-4e8a-a74e-ebe473784210","version_no":2,"sha12":"7243efc4a75e","parse_status":"PARSED","intake_asset_id":"7e80ead8-f046-4d6e-b474-09080bb2c7e2","created_at":"2026-11-13T09:17:01.982Z"}
+{"application_id":"d692bada-c866-46fa-86fe-bdfb1407edbe","lifecycle_status":"ACTIVE","candidate_id":"2e45f14a-539c-49b4-8615-e46e2c089026","job_id":"11111111-1111-4111-8111-000000000401","resume_version_id":"915256f0-ac98-43a5-8eba-f810bbe32131","version_no":1,"sha12":"8b2a6241ccaf","parse_status":"PARSED","intake_asset_id":"652a146d-bf90-44fe-b385-e8cc8303ae86","created_at":"2026-11-13T09:26:11.337Z"}
+{"application_id":"e1a393a5-fd2f-438c-a32a-dc7896e901ad","lifecycle_status":"ACTIVE","candidate_id":"34c0921b-a652-41df-b635-6beb55e58de9","job_id":"11111111-1111-4111-8111-000000000401","resume_version_id":"4d1ff147-f53d-42d4-a96a-db1940641a1f","version_no":1,"sha12":"2b5a73b122cd","parse_status":"PARSED","intake_asset_id":"9fd20bad-48b8-48dc-baa5-68fe5c3a87af","created_at":"2026-11-13T09:35:31.065Z"}
+{"application_id":"e61380dc-13be-4963-879b-2630411f2081","lifecycle_status":"ACTIVE","candidate_id":"a1d92b77-0528-4996-b790-650553933866","job_id":"33e67bec-e724-484a-a20a-bbc962a26fb1","resume_version_id":null,"version_no":null,"sha12":null,"parse_status":null,"intake_asset_id":null,"created_at":"2026-11-13T10:07:40.930Z"}
+{"application_id":"9088069a-105d-4f60-9838-ca99b52b4e86","lifecycle_status":"ACTIVE","candidate_id":"c928afec-32d2-4814-96b1-302632e7e81b","job_id":"11111111-1111-4111-8111-000000000401","resume_version_id":"608f64a1-2005-41d7-b7c5-010d159f6562","version_no":1,"sha12":"a62d6bc4187a","parse_status":"PARSED","intake_asset_id":"bc6c9cf0-0213-437b-926f-fb9c11c26719","created_at":"2026-11-14T08:32:48.290Z"}
+{"application_id":"0c2c0f88-4d92-447f-b775-86aa2bcc9d10","lifecycle_status":"ACTIVE","candidate_id":"bf6c114b-9a81-4fed-927f-93c898875e66","job_id":"11111111-1111-4111-8111-000000000401","resume_version_id":"ad5dc515-1b50-458a-b0ad-23cb23b87173","version_no":1,"sha12":"f92a67f47151","parse_status":"PARSED","intake_asset_id":"16975c06-44b7-49a9-801b-3795814771d1","created_at":"2026-11-14T08:35:09.650Z"}
+{"application_id":"4dfc1184-8be9-467d-84c7-c0f7ecc8c0da","lifecycle_status":"ACTIVE","candidate_id":"07d17c9e-bc8a-41da-91c6-2f1957530265","job_id":"11111111-1111-4111-8111-000000000401","resume_version_id":"683baa76-e154-4b38-a613-e68075c8ef34","version_no":1,"sha12":"19264b227efa","parse_status":"PARSED","intake_asset_id":"c176efc4-2283-400c-8a56-d09863d7c511","created_at":"2026-11-14T08:38:47.029Z"}
+{"application_id":"0067457a-774b-4efa-b9f8-0c114c48e6e4","lifecycle_status":"ACTIVE","candidate_id":"652e5907-97f9-421c-8f77-15ad6a2c68ad","job_id":"11111111-1111-4111-8111-000000000401","resume_version_id":"13ac78bd-c03b-415c-b269-90612052f5d3","version_no":1,"sha12":"9ce4627c1a59","parse_status":"PARSED","intake_asset_id":"0aff09f7-24d3-4d29-a585-e83b284b8e14","created_at":"2026-11-14T08:40:01.534Z"}
+{"application_id":"030c9bb4-a03f-4170-9593-b175fc923b10","lifecycle_status":"ACTIVE","candidate_id":"5511419c-ffba-401c-a594-357b1f5ee06d","job_id":"11111111-1111-4111-8111-000000000401","resume_version_id":"1b981845-eea3-4276-a925-5b6f95395e3b","version_no":1,"sha12":"89abe8cd5035","parse_status":"PARSED","intake_asset_id":"1e020457-c700-4b5e-9844-79a8f83efdb1","created_at":"2026-11-14T08:41:06.637Z"}
+{"application_id":"9d408044-e30c-42be-9c7a-bd6dda78456c","lifecycle_status":"ACTIVE","candidate_id":"96485f3c-0e73-43e8-89c3-7d87bb53f9cd","job_id":"11111111-1111-4111-8111-000000000401","resume_version_id":"d3de2b99-b2d5-4de8-8cc6-b7643b924915","version_no":1,"sha12":"9754a77f11b4","parse_status":"PARSED","intake_asset_id":"be358974-14a8-4f74-9a75-b07364100c6d","created_at":"2026-11-14T08:42:18.581Z"}
+
+=== intake_asset 清单（sha 前缀 / 大小 / 校验状态） ===
+rows=14
+{"intake_asset_id":"a39cedb4-496c-49c2-855f-96765b2fc15a","sha12":"c6ceb2eef64d","mime_type":"application/pdf","byte_size":"256228","validation_status":"VALID","created_at":"2026-11-12T17:52:42.747Z"}
+{"intake_asset_id":"08596874-f83e-4b29-b91a-0f2ef01c9bdb","sha12":"ead23e7999e7","mime_type":"application/pdf","byte_size":"251476","validation_status":"VALID","created_at":"2026-11-12T18:41:41.328Z"}
+{"intake_asset_id":"a3bc9d76-d4d0-4c12-aa92-a8fd9eaa201b","sha12":"400cd3498cf1","mime_type":"application/pdf","byte_size":"2291","validation_status":"VALID","created_at":"2026-11-13T09:10:51.997Z"}
+{"intake_asset_id":"b55ed639-59aa-44bc-9c1e-3652743f9940","sha12":"042942606463","mime_type":"application/pdf","byte_size":"3035","validation_status":"VALID","created_at":"2026-11-13T09:14:36.855Z"}
+{"intake_asset_id":"1714f38c-f7e9-47ce-bbe3-6869520b5d73","sha12":"45977afd21c4","mime_type":"application/pdf","byte_size":"2302","validation_status":"VALID","created_at":"2026-11-13T09:15:48.291Z"}
+{"intake_asset_id":"7e80ead8-f046-4d6e-b474-09080bb2c7e2","sha12":"7243efc4a75e","mime_type":"application/pdf","byte_size":"2310","validation_status":"VALID","created_at":"2026-11-13T09:17:01.982Z"}
+{"intake_asset_id":"652a146d-bf90-44fe-b385-e8cc8303ae86","sha12":"8b2a6241ccaf","mime_type":"application/pdf","byte_size":"2671","validation_status":"VALID","created_at":"2026-11-13T09:26:11.337Z"}
+{"intake_asset_id":"9fd20bad-48b8-48dc-baa5-68fe5c3a87af","sha12":"2b5a73b122cd","mime_type":"application/pdf","byte_size":"2665","validation_status":"VALID","created_at":"2026-11-13T09:35:31.065Z"}
+{"intake_asset_id":"bc6c9cf0-0213-437b-926f-fb9c11c26719","sha12":"a62d6bc4187a","mime_type":"application/pdf","byte_size":"10920","validation_status":"VALID","created_at":"2026-11-14T08:32:48.290Z"}
+{"intake_asset_id":"16975c06-44b7-49a9-801b-3795814771d1","sha12":"f92a67f47151","mime_type":"application/pdf","byte_size":"10921","validation_status":"VALID","created_at":"2026-11-14T08:35:09.650Z"}
+{"intake_asset_id":"c176efc4-2283-400c-8a56-d09863d7c511","sha12":"19264b227efa","mime_type":"application/pdf","byte_size":"10920","validation_status":"VALID","created_at":"2026-11-14T08:38:47.029Z"}
+{"intake_asset_id":"0aff09f7-24d3-4d29-a585-e83b284b8e14","sha12":"9ce4627c1a59","mime_type":"application/pdf","byte_size":"10920","validation_status":"VALID","created_at":"2026-11-14T08:40:01.534Z"}
+{"intake_asset_id":"1e020457-c700-4b5e-9844-79a8f83efdb1","sha12":"89abe8cd5035","mime_type":"application/pdf","byte_size":"10919","validation_status":"VALID","created_at":"2026-11-14T08:41:06.637Z"}
+{"intake_asset_id":"be358974-14a8-4f74-9a75-b07364100c6d","sha12":"9754a77f11b4","mime_type":"application/pdf","byte_size":"10920","validation_status":"VALID","created_at":"2026-11-14T08:42:18.581Z"}
+
+=== job 清单（只读，供 intake 选择目标） ===
+rows=8
+{"job_id":"11111111-1111-4111-8111-000000000401","code":"DEMO-BE-001","title":"后端工程师（演示）","status":"OPEN","created_at":"2026-11-12T17:36:55.612Z"}
+{"job_id":"33e67bec-e724-484a-a20a-bbc962a26fb1","code":"S9-TR-DEMO","title":"S9 转写线演示岗位（合成）","status":"OPEN","created_at":"2026-11-13T10:07:40.930Z"}
+{"job_id":"792a10f9-6dd3-4d80-b141-6345880e2399","code":"JOB-20261113-D0EA8E","title":"后端工程师","status":"DRAFT","created_at":"2026-11-13T11:57:11.697Z"}
+{"job_id":"702364db-3a63-4a19-b304-5768aa6341f9","code":"S3N-MWEXDA2TGAO7-1","title":"负例①-无标准-MWEXDA2TGAO7","status":"DRAFT","created_at":"2026-11-13T12:00:18.284Z"}
+{"job_id":"2ffe6269-4e5a-4d57-a2a8-ff054e0e6d51","code":"S3N-MWEXDA2TGAO7-2","title":"负例②-未批准-MWEXDA2TGAO7","status":"DRAFT","created_at":"2026-11-13T12:00:18.374Z"}
+{"job_id":"ed94b72d-73f9-47f8-a25e-1bae05aba1b0","code":"S3N-MWEXDA2TGAO7-3","title":"负例④-首次-MWEXDA2TGAO7","status":"DRAFT","created_at":"2026-11-13T12:00:18.560Z"}
+{"job_id":"2c01392c-2d23-4f38-b6db-92710035d29e","code":"S3N-MWEXDA2TGAO7-5","title":"负例⑥-重复批准-MWEXDA2TGAO7","status":"DRAFT","created_at":"2026-11-13T12:00:18.647Z"}
+{"job_id":"c49e6c45-d6ba-4bb5-a55e-03da255d2a78","code":"S3N-MWEXDA2TGAO7-6","title":"负例⑦-拒绝缺理由-MWEXDA2TGAO7","status":"DRAFT","created_at":"2026-11-13T12:00:18.881Z"}
+
+
+======== 阶段 A2：开工前「库里真实语料」只读复算 ========
+
+before_intake_asset_rows = 14
+corpus_docs = 52
+matched_real_corpus_docs_before = 1
+  F48 sha=ead23e7999e7 byte_size=251476 validation=VALID
+non_corpus_rows_before = 13（合成/夹具，字节数分布：2291,2302,2310,2665,2671,3035,10919,10920,10921,256228）
+
+======== 阶段 B：单份探针 F20（先建后幂等复跑） ========
+
+# 2026-11-14T09:03:15.696Z mode=intake job=11111111-1111-4111-8111-000000000401
+# 语料根：resume-talent-pool/.snap-cache/research/content（真实语料；日志不含文件名/PII）
+[1] F20 sha=6f6dd3f49d79 .pdf 93831B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=complete needs_visual=false blocking=false pages=1 chars=2645 blocks=18
+    READ blocking_codes=[] recovery_next=structure execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=REUSED candidate_created=false matched_by=email+phone
+    INTAKE ids candidate=3035960e-c5c2-4a4f-846e-aad966b7f3bc application=00fe6fbd-c4c2-45c7-944f-9222579a5e53 resume_version=060862ed-74ea-45d0-a001-8dcfa7dfe538 asset=968d9352-ac3a-4102-9a6d-715f52a9e825
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (926ms, 累计 CREATED=0)
+
+## 汇总 mode=intake 处理=1 读成功=1 intake成功=1 BLOCKED=0 CREATED=0
+
+======== 阶段 C：批量 33 份 PDF（字节升序；CREATED 到 22 即停） ========
+
+# 2026-11-14T08:55:35.339Z mode=intake job=11111111-1111-4111-8111-000000000401
+# 语料根：resume-talent-pool/.snap-cache/research/content（真实语料；日志不含文件名/PII）
+[1] F20 sha=6f6dd3f49d79 .pdf 93831B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=complete needs_visual=false blocking=false pages=1 chars=2645 blocks=18
+    READ blocking_codes=[] recovery_next=structure execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=REUSED candidate_created=false matched_by=email+phone
+    INTAKE ids candidate=3035960e-c5c2-4a4f-846e-aad966b7f3bc application=00fe6fbd-c4c2-45c7-944f-9222579a5e53 resume_version=060862ed-74ea-45d0-a001-8dcfa7dfe538 asset=968d9352-ac3a-4102-9a6d-715f52a9e825
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (1213ms, 累计 CREATED=0)
+
+[2] F42 sha=c8ecbf6a809f .pdf 138200B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=1 chars=2005 blocks=42
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=ccf51de5-e34f-49bd-a085-df9d80d07226 application=c55b968a-2b80-4c79-92c8-b5f60e695c3c resume_version=835ca2e8-ef02-4c56-954e-1ebecce6ae4c asset=52fb83d9-c359-4f2a-9e24-2f05108e3b59
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (935ms, 累计 CREATED=1)
+
+[3] F04 sha=1df94adcec53 .pdf 148913B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=1 chars=4365 blocks=65
+    READ blocking_codes=[doc_identity_from_unverified_source,doc_provenance_unverified] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE BLOCKED code=BLOCKED_BY_REVIEW reason=MATERIAL_ATTRIBUTION_UNKNOWN（闸门拒绝，未写任何行）
+    (59612ms, 累计 CREATED=1)
+
+[4] F41 sha=c46dbda8fa46 .pdf 169738B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=2 chars=6620 blocks=73
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=57a5379d-f8d0-4c15-9ad5-d89d32006bc7 application=20f25e25-0d06-4e82-87f4-3deebec96476 resume_version=a54ba4ac-cbe0-4878-97f6-d34b8ff0aaf1 asset=96b8b550-6d11-42df-b256-dce15c2906f9
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (742ms, 累计 CREATED=2)
+
+[5] F49 sha=edef0f38bd2d .pdf 169814B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=2 chars=6620 blocks=73
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=REUSED candidate_created=false matched_by=email+phone
+    INTAKE ids candidate=57a5379d-f8d0-4c15-9ad5-d89d32006bc7 application=20f25e25-0d06-4e82-87f4-3deebec96476 resume_version=9ae8fb48-b515-46a0-b841-e0fe57fd4096 asset=b804b5fc-14cd-468f-92cc-98183caf2aeb
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (735ms, 累计 CREATED=2)
+
+[6] F17 sha=55209ede4bc7 .pdf 184536B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=3 chars=4215 blocks=103
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=d9d8cfb5-306a-4468-aa86-8213b4b13139 application=3a6c0ed2-6f2d-4e9c-ba18-c66fca9a03d9 resume_version=25f78d29-26f5-44ea-8727-befd9fd7b24d asset=ccef9437-6624-4171-8bf7-a057824cda9e
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (847ms, 累计 CREATED=3)
+
+[7] F23 sha=7bd8089985ea .pdf 188582B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=4 chars=4479 blocks=106
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=c46e916a-ff11-4a60-a064-243029428f03 application=5770b175-7e1e-4b61-92af-2ab61947a78a resume_version=1f622fdc-a13a-4088-b444-5e009a221048 asset=b49857b6-b276-47f9-9078-c312aa85bb38
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (808ms, 累计 CREATED=4)
+
+[8] F45 sha=d3870021bc00 .pdf 211595B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=false pages=3 chars=2409 blocks=22
+    READ blocking_codes=[] recovery_next=structure execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=675684aa-0ffd-47e2-8b55-7f7520edee71 application=5fea1268-ef52-415e-998b-0432468eaef4 resume_version=743f4578-504f-46c8-a480-b24cb16ff1b9 asset=11b79d12-56e1-4857-98ef-ff469f28e41f
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (744ms, 累计 CREATED=5)
+
+[9] F15 sha=51f116f33532 .pdf 222314B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=3 chars=3642 blocks=77
+    READ blocking_codes=[doc_identity_from_unverified_source,doc_provenance_unverified] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE BLOCKED code=BLOCKED_BY_REVIEW reason=MATERIAL_ATTRIBUTION_UNKNOWN（闸门拒绝，未写任何行）
+    (41004ms, 累计 CREATED=5)
+
+[10] F48 sha=ead23e7999e7 .pdf 251476B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=1 chars=2028 blocks=47
+    READ blocking_codes=[doc_cross_block_attribution,unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=REUSED candidate_created=false matched_by=email+phone
+    INTAKE ids candidate=c110817b-b09b-472f-b6a8-a09c1ceabe2f application=00d0f6c0-c7b0-4e62-be62-ae7f0c6ea0bc resume_version=276908da-e912-4dfa-a087-67cd25a594a7 asset=a39cedb4-496c-49c2-855f-96765b2fc15a
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (655ms, 累计 CREATED=5)
+
+[11] F12 sha=49afd21e0669 .pdf 284039B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=1 chars=1912 blocks=47
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=REUSED candidate_created=false matched_by=email+phone
+    INTAKE ids candidate=c110817b-b09b-472f-b6a8-a09c1ceabe2f application=00d0f6c0-c7b0-4e62-be62-ae7f0c6ea0bc resume_version=56de0d0c-d0f7-4ec7-a573-6856e2b4bc6c asset=d08c658e-9994-4da2-95c0-94ffe807163e
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (663ms, 累计 CREATED=5)
+
+[12] F01 sha=06bd93cd77be .pdf 327578B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=2 chars=2526 blocks=65
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=58cce386-f8b7-4dbb-88e6-59e9f032cbfa application=99f81201-9e0f-4f15-91c5-5f6c7fafe459 resume_version=88477ac9-6836-4e40-9586-0ea3914f2509 asset=1cf984f2-ab6d-4235-9b16-a346e6bdc58e
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (792ms, 累计 CREATED=6)
+
+[13] F51 sha=f606e4deb111 .pdf 333485B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=2 chars=1853 blocks=53
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=33d27f0f-bf38-4ae7-93d1-c7b0db0b7c6c application=a24b9103-0e0d-4a78-82b1-b2d97ea9aacc resume_version=224969c3-a26a-472a-a736-66f7b6b488b7 asset=ad49c20f-c913-47ec-a286-06d4435926b0
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (724ms, 累计 CREATED=7)
+
+[14] F26 sha=84b0756c3c68 .pdf 354539B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=2 chars=2596 blocks=43
+    READ blocking_codes=[doc_cross_block_attribution,unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=8e048509-7eb3-4d59-9f95-f45347b9f7ca application=6a314e56-aa48-452c-b147-482ad35d0eb3 resume_version=909806b5-bfba-42c7-9a7e-4ed4516d3e23 asset=23e5ec9b-7a07-49e5-bfb7-8b5c0fcc6187
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (718ms, 累计 CREATED=8)
+
+[15] F35 sha=b34436488bfd .pdf 380993B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=complete needs_visual=false blocking=false pages=2 chars=3297 blocks=109
+    READ blocking_codes=[] recovery_next=structure execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=9b7f6d85-1ea9-47d7-8e90-1a954783020d application=5d6dd8ba-ab6f-4389-abfb-039ada8d731f resume_version=8e55c132-4d69-4982-b08d-1c31d4d56786 asset=db8ce2a9-77fe-4696-8a03-17219bfbbc4d
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (685ms, 累计 CREATED=9)
+
+[16] F16 sha=52200d6ade75 .pdf 382923B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=3 chars=3272 blocks=107
+    READ blocking_codes=[pdf_reading_order_unverified] recovery_next=repair execution={"ran":1,"succeeded":0,"failed":1,"content_updated":false}
+    INTAKE ok status=OK application_action=REUSED candidate_created=false matched_by=email+phone
+    INTAKE ids candidate=9b7f6d85-1ea9-47d7-8e90-1a954783020d application=5d6dd8ba-ab6f-4389-abfb-039ada8d731f resume_version=d8b4883e-f909-49a9-9971-78aa7ae6353d asset=1f831df0-44d0-4a59-882a-cdcceac820ee
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (687ms, 累计 CREATED=9)
+
+[17] F25 sha=81c59495d672 .pdf 384230B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=1 chars=1880 blocks=47
+    READ blocking_codes=[doc_cross_block_attribution,unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=8fbdefe5-5709-4463-a2ef-44e27af35c86 application=31928175-ddd1-40af-b944-101403fd3311 resume_version=0db4d17b-7a76-4036-b2cd-3d75952e77b5 asset=bf25ec7b-d6d4-402b-a96e-e30be5263397
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (643ms, 累计 CREATED=10)
+
+[18] F11 sha=47f52dedddad .pdf 406777B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=11 chars=16334 blocks=133
+    READ blocking_codes=[pdf_reading_order_unverified,unverified_pdf_image] recovery_next=human execution={"ran":1,"succeeded":0,"failed":1,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=eefde76b-db40-4160-92f0-110a2ebc0ff2 application=9afaebef-329d-404b-955e-19eecd5c670f resume_version=dec67b2d-0c2e-4b51-a2d4-aaa3d732bf76 asset=dcafcabb-e25e-4144-a827-b5c47011d062
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (1314ms, 累计 CREATED=11)
+
+[19] F28 sha=8a762ae8b022 .pdf 442529B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=1 chars=2123 blocks=40
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=REUSED candidate_created=false matched_by=email+phone
+    INTAKE ids candidate=3035960e-c5c2-4a4f-846e-aad966b7f3bc application=00fe6fbd-c4c2-45c7-944f-9222579a5e53 resume_version=c0b3cdb1-89b0-40da-903e-5f9f522092d8 asset=951ee918-39ec-45c8-b0e5-cc6b849028fe
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (823ms, 累计 CREATED=11)
+
+[20] F03 sha=15d5350f76f8 .pdf 453256B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=1 chars=1827 blocks=16
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE BLOCKED code=BLOCKED_BY_REVIEW reason=MATERIAL_ATTRIBUTION_UNKNOWN（闸门拒绝，未写任何行）
+    (2161ms, 累计 CREATED=11)
+
+[21] F19 sha=6bc260295320 .pdf 460933B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=false pages=1 chars=748 blocks=24
+    READ blocking_codes=[] recovery_next=structure execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=4841b189-1d1f-4aff-be77-e42b3a790bf2 application=866b5c60-4bf9-4de1-9474-908de299b38d resume_version=407e8df9-56c6-475c-857f-0343eed4802e asset=d415f301-938a-4225-a5fa-94394e380643
+    INTAKE gate strong=[phone] merge_eligible=[phone] weak=[] blocked=[email:field_state_absent] evidence=1
+    (1049ms, 累计 CREATED=12)
+
+[22] F32 sha=96aefe29da77 .pdf 474201B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=1 chars=1691 blocks=13
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=97ba9f5c-e134-4a4d-b5fa-314cba13332b application=a71bb5ed-ccbb-4e5e-8153-8f0651e5ae77 resume_version=fcac56a9-7e13-4b41-a660-26317044fc44 asset=a378718f-4543-4b56-8a4f-62c8cdc7008e
+    INTAKE gate strong=[email] merge_eligible=[email] weak=[] blocked=[phone:field_state_absent] evidence=1
+    (3032ms, 累计 CREATED=13)
+
+[23] F18 sha=65a434f2c103 .pdf 477751B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=complete needs_visual=false blocking=false pages=2 chars=2506 blocks=56
+    READ blocking_codes=[] recovery_next=structure execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=022bd1f7-2bfa-4c3a-a3a1-fe7fce63632e application=dc269f91-986a-4150-8d77-108160b9246e resume_version=33d5ee98-2b9b-4dea-9262-63a308c7729a asset=2147d401-852d-41b5-a757-f282a39b05e6
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (902ms, 累计 CREATED=14)
+
+[24] F08 sha=40c59d65f925 .pdf 481517B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=3 chars=3139 blocks=109
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=0a5ffd62-35b6-4ad9-9031-f32e70ca3ea5 application=9cbea483-22f7-4ae3-929b-3f1df29047c1 resume_version=2d95a097-6d3c-43c9-b4a7-288c1c9c8721 asset=c7ec8451-d428-4f18-97e3-5ef66c79c9e0
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (767ms, 累计 CREATED=15)
+
+[25] F38 sha=bc857cd718af .pdf 513239B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=complete needs_visual=false blocking=false pages=1 chars=3550 blocks=13
+    READ blocking_codes=[] recovery_next=structure execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=0cb2141a-7e49-47ea-a93c-8a6e8aa80eb2 application=8d788e1c-7d68-4449-b41b-2617d4184c26 resume_version=2547c8d1-1272-49f7-aae4-1f5f52416110 asset=6c21d870-c497-4a83-b79f-499adb0737ca
+    INTAKE gate strong=[email] merge_eligible=[email] weak=[] blocked=[phone:field_state_unreadable] evidence=1
+    (769ms, 累计 CREATED=16)
+
+[26] F07 sha=409e6d0f8651 .pdf 513539B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=1 chars=2519 blocks=35
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=9954711f-282b-45ed-b205-9368d9deec3f application=1f9ec61f-7c80-454e-bf1e-cf7a6ba90aef resume_version=177339ad-fa07-4e90-b2a4-a03fbe452602 asset=6e713d6c-af0d-4bbd-ba5d-bcb17a9ed744
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (1111ms, 累计 CREATED=17)
+
+[27] F50 sha=f1171f617020 .pdf 644620B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=false pages=2 chars=1512 blocks=37
+    READ blocking_codes=[] recovery_next=structure execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=ed93ec83-fe56-40c8-ad78-70921c8b724e application=6b2311a4-40e2-4db5-bd5c-c30b727c37e4 resume_version=836b8e46-85f4-46ec-a629-d64d59f73602 asset=8c1f6a05-103b-4d55-abd6-9ef86eaf74c0
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (997ms, 累计 CREATED=18)
+
+[28] F43 sha=cc1e7f16bc24 .pdf 716181B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=12 chars=16697 blocks=349
+    READ blocking_codes=[doc_cross_block_attribution] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=REUSED candidate_created=false matched_by=email+phone
+    INTAKE ids candidate=022bd1f7-2bfa-4c3a-a3a1-fe7fce63632e application=dc269f91-986a-4150-8d77-108160b9246e resume_version=1c769d87-33a7-4f02-93e1-65fd77f88da3 asset=0da268e2-34fb-4111-a63c-62cb2e269c93
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (1989ms, 累计 CREATED=18)
+
+[29] F22 sha=74445c2d7e15 .pdf 733855B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=1 chars=2543 blocks=48
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=766bbb6d-a3f4-43ff-bae8-7241ba3c6c6e application=0e0f5b27-e6c1-4a23-bed3-e1f6173af779 resume_version=3e9d87a2-6ff5-413b-b906-6b48a684e3b3 asset=392f372f-5566-4f91-b52e-25464d801019
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (1173ms, 累计 CREATED=19)
+
+[30] F33 sha=98244bb1eab9 .pdf 819048B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=1 chars=3281 blocks=22
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=394e93e3-b435-4ca9-81df-887cc3c14b46 application=d292c60e-5bac-44ec-86cc-6f7257e6d384 resume_version=7e44a508-6f79-4f3f-bb11-c4b8e8a4e80f asset=3bbfe404-35f4-4ea1-9e00-c27872b49454
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (1613ms, 累计 CREATED=20)
+
+[31] F13 sha=4b253845e5e7 .pdf 822736B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=2 chars=3321 blocks=48
+    READ blocking_codes=[doc_cross_block_attribution,unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=7b11794d-5183-4671-aef1-4324c010253f application=01a5def6-67ad-47ec-8833-09c874a4a763 resume_version=5bf2f56f-5605-44f2-88a7-1b9267f2db73 asset=f8ba1510-4bce-4f0f-a167-1b3622d78b54
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (908ms, 累计 CREATED=21)
+
+[32] F40 sha=c432f2de7a31 .pdf 846871B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=11 chars=7133 blocks=163
+    READ blocking_codes=[doc_cross_block_attribution,pdf_reading_order_unverified,unverified_pdf_image] recovery_next=human execution={"ran":1,"succeeded":0,"failed":1,"content_updated":false}
+    INTAKE ok status=OK application_action=REUSED candidate_created=false matched_by=email+phone
+    INTAKE ids candidate=eefde76b-db40-4160-92f0-110a2ebc0ff2 application=9afaebef-329d-404b-955e-19eecd5c670f resume_version=a784ddee-f6a9-4965-8b2d-1ba7705077f9 asset=8c8a2732-e745-4f55-8ed7-4a65d787789f
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (960ms, 累计 CREATED=21)
+
+[33] F30 sha=92fa1454bc8a .pdf 1101936B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=1 chars=2497 blocks=6
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=f4983b91-9a56-414a-99d5-d9abaf4e7c16 application=169c4257-ebec-4d20-9f3a-33d6c9bb63dd resume_version=b915bf41-aa98-42a4-8b9e-d17646866b20 asset=463bf7dc-9107-4b9d-982b-e35d8a142eaf
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (1707ms, 累计 CREATED=22)
+
+## 汇总 mode=intake 处理=33 读成功=33 intake成功=30 BLOCKED=3 CREATED=22
+
+======== 阶段 D：最大 4 份 PDF（扫描/OCR 兜底路径） ========
+
+# 2026-11-14T08:58:03.008Z mode=intake job=11111111-1111-4111-8111-000000000401
+# 语料根：resume-talent-pool/.snap-cache/research/content（真实语料；日志不含文件名/PII）
+[1] F52 sha=f8fb0a0455b9 .pdf 1116788B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=1 chars=2073 blocks=43
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=REUSED candidate_created=false matched_by=email+phone
+    INTAKE ids candidate=394e93e3-b435-4ca9-81df-887cc3c14b46 application=d292c60e-5bac-44ec-86cc-6f7257e6d384 resume_version=51f52f9c-1011-4582-9638-91c329d46379 asset=72e00523-c1f1-438a-bcdb-a25ff66599ba
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (2165ms, 累计 CREATED=0)
+
+[2] F37 sha=b9155e19e88c .pdf 1168623B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=1 chars=2499 blocks=42
+    READ blocking_codes=[unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE ok status=OK application_action=REUSED candidate_created=false matched_by=email+phone
+    INTAKE ids candidate=9954711f-282b-45ed-b205-9368d9deec3f application=1f9ec61f-7c80-454e-bf1e-cf7a6ba90aef resume_version=3c1b0c3d-2afd-4087-ae77-aec07380ce04 asset=92f08b43-7bc2-4d9a-98ac-a0b34725cf7d
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (1964ms, 累计 CREATED=0)
+
+[3] F06 sha=2aea0b66b28e .pdf 1550569B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=true blocking=true pages=6 chars=3095 blocks=93
+    READ blocking_codes=[doc_cross_block_attribution,pdf_reading_order_unverified,resume_field_unreadable,unread_visual_page,unverified_pdf_image] recovery_next=human execution={"ran":1,"succeeded":0,"failed":1,"content_updated":false}
+    INTAKE ok status=OK application_action=CREATED candidate_created=true matched_by=created
+    INTAKE ids candidate=581e103b-ab21-481f-87c0-e6ac538e713d application=8ddd217e-8f6b-4552-b7dc-969c838721ed resume_version=a95b72ce-c818-41b5-8211-aa331ffed07e asset=4fd683f9-59e1-4bc8-b2f6-9fb979697be8
+    INTAKE gate strong=[email,phone] merge_eligible=[email,phone] weak=[] blocked=[] evidence=2
+    (4375ms, 累计 CREATED=1)
+
+[4] F47 sha=e6a42b0d920e .pdf 1619636B
+    READ ok reader=pymupdf/1.28.0@1.0.0 media=application/pdf completeness=partial needs_visual=false blocking=true pages=1 chars=2197 blocks=55
+    READ blocking_codes=[doc_provenance_unverified,structure_unidentified,unverified_pdf_image] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE BLOCKED code=BLOCKED_BY_REVIEW reason=MATERIAL_ATTRIBUTION_UNKNOWN（闸门拒绝，未写任何行）
+    (66919ms, 累计 CREATED=1)
+
+## 汇总 mode=intake 处理=4 读成功=4 intake成功=3 BLOCKED=1 CREATED=1
+
+======== 阶段 E：DOCX / RTF（格式缺口） ========
+
+# 2026-11-14T08:59:31.403Z mode=intake job=11111111-1111-4111-8111-000000000401
+# 语料根：resume-talent-pool/.snap-cache/research/content（真实语料；日志不含文件名/PII）
+[1] F44 sha=d141e6de1a45 .docx 55543B
+    READ ok reader=python-docx@1.2.0 media=application/vnd.openxmlformats-officedocument.wordprocessingml.document completeness=complete needs_visual=false blocking=false pages=0 chars=4795 blocks=64
+    READ blocking_codes=[] recovery_next=structure execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE FAIL code=INVALID_ARGS reason=PATH_INVALID（闸门拒绝，未写任何行）
+    (485ms, 累计 CREATED=0)
+
+[2] F05 sha=20de5d4cac0b .docx 74875B
+    READ ok reader=python-docx@1.2.0 media=application/vnd.openxmlformats-officedocument.wordprocessingml.document completeness=complete needs_visual=false blocking=false pages=0 chars=4122 blocks=28
+    READ blocking_codes=[] recovery_next=structure execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    INTAKE FAIL code=INVALID_ARGS reason=PATH_INVALID（闸门拒绝，未写任何行）
+    (284ms, 累计 CREATED=0)
+
+[3] F29 sha=918894c484b7 .rtf 639853B
+    READ FAIL code=READER_FAILED reason=UNSUPPORTED_MEDIA
+    INTAKE FAIL code=INVALID_ARGS reason=PATH_INVALID（闸门拒绝，未写任何行）
+    (5ms, 累计 CREATED=0)
+
+## 汇总 mode=intake 处理=3 读成功=2 intake成功=0 BLOCKED=0 CREATED=0
+
+# 2026-11-14T08:59:40.649Z mode=read job=11111111-1111-4111-8111-000000000401
+# 语料根：resume-talent-pool/.snap-cache/research/content（真实语料；日志不含文件名/PII）
+[1] F46 sha=e0a2ab9b1afd .docx 28692B
+    READ ok reader=python-docx@1.2.0 media=application/vnd.openxmlformats-officedocument.wordprocessingml.document completeness=complete needs_visual=false blocking=false pages=0 chars=5630 blocks=105
+    READ blocking_codes=[] recovery_next=structure execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    (291ms, 累计 CREATED=0)
+
+[2] F36 sha=b7fefa208ef3 .docx 28693B
+    READ ok reader=python-docx@1.2.0 media=application/vnd.openxmlformats-officedocument.wordprocessingml.document completeness=complete needs_visual=false blocking=false pages=0 chars=5630 blocks=105
+    READ blocking_codes=[] recovery_next=structure execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    (245ms, 累计 CREATED=0)
+
+[3] F27 sha=84b32e91f41a .docx 122652B
+    READ ok reader=python-docx@1.2.0 media=application/vnd.openxmlformats-officedocument.wordprocessingml.document completeness=complete needs_visual=false blocking=true pages=0 chars=8744 blocks=80
+    READ blocking_codes=[doc_cross_block_attribution] recovery_next=human execution={"ran":0,"succeeded":0,"failed":0,"content_updated":false}
+    (268ms, 累计 CREATED=0)
+
+## 汇总 mode=read 处理=3 读成功=3 intake成功=0 BLOCKED=0 CREATED=0
+
+======== 阶段 F：读回（改后）+ 真实语料命中 ========
+
+=== 计数（本租户） ===
+application = 39
+application(ACTIVE) = 38
+candidate = 38
+candidate(ACTIVE) = 38
+intake_asset = 46
+intake_record = 46
+resume = 46
+resume_version = 47
+
+=== 真实语料申请（source_asset_sha256 命中语料目录 sha256） ===
+matched_applications = 26
+F01 sha=06bd93cd77be application=99f81201-9e0f-4f15-91c5-5f6c7fafe459 candidate=58cce386-f8b7-4dbb-88e6-59e9f032cbfa resume_version=88477ac9-6836-4e40-9586-0ea3914f2509 v1 parse=PARTIAL lifecycle=ACTIVE
+F06 sha=2aea0b66b28e application=8ddd217e-8f6b-4552-b7dc-969c838721ed candidate=581e103b-ab21-481f-87c0-e6ac538e713d resume_version=a95b72ce-c818-41b5-8211-aa331ffed07e v1 parse=PARTIAL lifecycle=ACTIVE
+F08 sha=40c59d65f925 application=9cbea483-22f7-4ae3-929b-3f1df29047c1 candidate=0a5ffd62-35b6-4ad9-9031-f32e70ca3ea5 resume_version=2d95a097-6d3c-43c9-b4a7-288c1c9c8721 v1 parse=PARTIAL lifecycle=ACTIVE
+F12 sha=49afd21e0669 application=00d0f6c0-c7b0-4e62-be62-ae7f0c6ea0bc candidate=c110817b-b09b-472f-b6a8-a09c1ceabe2f resume_version=56de0d0c-d0f7-4ec7-a573-6856e2b4bc6c v1 parse=PARTIAL lifecycle=ACTIVE
+F13 sha=4b253845e5e7 application=01a5def6-67ad-47ec-8833-09c874a4a763 candidate=7b11794d-5183-4671-aef1-4324c010253f resume_version=5bf2f56f-5605-44f2-88a7-1b9267f2db73 v1 parse=PARTIAL lifecycle=ACTIVE
+F16 sha=52200d6ade75 application=5d6dd8ba-ab6f-4389-abfb-039ada8d731f candidate=9b7f6d85-1ea9-47d7-8e90-1a954783020d resume_version=d8b4883e-f909-49a9-9971-78aa7ae6353d v1 parse=PARTIAL lifecycle=ACTIVE
+F17 sha=55209ede4bc7 application=3a6c0ed2-6f2d-4e9c-ba18-c66fca9a03d9 candidate=d9d8cfb5-306a-4468-aa86-8213b4b13139 resume_version=25f78d29-26f5-44ea-8727-befd9fd7b24d v1 parse=PARTIAL lifecycle=ACTIVE
+F19 sha=6bc260295320 application=866b5c60-4bf9-4de1-9474-908de299b38d candidate=4841b189-1d1f-4aff-be77-e42b3a790bf2 resume_version=407e8df9-56c6-475c-857f-0343eed4802e v1 parse=PARTIAL lifecycle=ACTIVE
+F20 sha=6f6dd3f49d79 application=00fe6fbd-c4c2-45c7-944f-9222579a5e53 candidate=3035960e-c5c2-4a4f-846e-aad966b7f3bc resume_version=060862ed-74ea-45d0-a001-8dcfa7dfe538 v1 parse=PARSED lifecycle=ACTIVE
+F22 sha=74445c2d7e15 application=0e0f5b27-e6c1-4a23-bed3-e1f6173af779 candidate=766bbb6d-a3f4-43ff-bae8-7241ba3c6c6e resume_version=3e9d87a2-6ff5-413b-b906-6b48a684e3b3 v1 parse=PARTIAL lifecycle=ACTIVE
+F23 sha=7bd8089985ea application=5770b175-7e1e-4b61-92af-2ab61947a78a candidate=c46e916a-ff11-4a60-a064-243029428f03 resume_version=1f622fdc-a13a-4088-b444-5e009a221048 v1 parse=PARTIAL lifecycle=ACTIVE
+F25 sha=81c59495d672 application=31928175-ddd1-40af-b944-101403fd3311 candidate=8fbdefe5-5709-4463-a2ef-44e27af35c86 resume_version=0db4d17b-7a76-4036-b2cd-3d75952e77b5 v1 parse=PARTIAL lifecycle=ACTIVE
+F26 sha=84b0756c3c68 application=6a314e56-aa48-452c-b147-482ad35d0eb3 candidate=8e048509-7eb3-4d59-9f95-f45347b9f7ca resume_version=909806b5-bfba-42c7-9a7e-4ed4516d3e23 v1 parse=PARTIAL lifecycle=ACTIVE
+F30 sha=92fa1454bc8a application=169c4257-ebec-4d20-9f3a-33d6c9bb63dd candidate=f4983b91-9a56-414a-99d5-d9abaf4e7c16 resume_version=b915bf41-aa98-42a4-8b9e-d17646866b20 v1 parse=PARTIAL lifecycle=ACTIVE
+F32 sha=96aefe29da77 application=a71bb5ed-ccbb-4e5e-8153-8f0651e5ae77 candidate=97ba9f5c-e134-4a4d-b5fa-314cba13332b resume_version=fcac56a9-7e13-4b41-a660-26317044fc44 v1 parse=PARTIAL lifecycle=ACTIVE
+F37 sha=b9155e19e88c application=1f9ec61f-7c80-454e-bf1e-cf7a6ba90aef candidate=9954711f-282b-45ed-b205-9368d9deec3f resume_version=3c1b0c3d-2afd-4087-ae77-aec07380ce04 v1 parse=PARTIAL lifecycle=ACTIVE
+F38 sha=bc857cd718af application=8d788e1c-7d68-4449-b41b-2617d4184c26 candidate=0cb2141a-7e49-47ea-a93c-8a6e8aa80eb2 resume_version=2547c8d1-1272-49f7-aae4-1f5f52416110 v1 parse=PARSED lifecycle=ACTIVE
+F40 sha=c432f2de7a31 application=9afaebef-329d-404b-955e-19eecd5c670f candidate=eefde76b-db40-4160-92f0-110a2ebc0ff2 resume_version=a784ddee-f6a9-4965-8b2d-1ba7705077f9 v1 parse=PARTIAL lifecycle=ACTIVE
+F42 sha=c8ecbf6a809f application=c55b968a-2b80-4c79-92c8-b5f60e695c3c candidate=ccf51de5-e34f-49bd-a085-df9d80d07226 resume_version=835ca2e8-ef02-4c56-954e-1ebecce6ae4c v1 parse=PARTIAL lifecycle=ACTIVE
+F43 sha=cc1e7f16bc24 application=dc269f91-986a-4150-8d77-108160b9246e candidate=022bd1f7-2bfa-4c3a-a3a1-fe7fce63632e resume_version=1c769d87-33a7-4f02-93e1-65fd77f88da3 v1 parse=PARTIAL lifecycle=ACTIVE
+F45 sha=d3870021bc00 application=5fea1268-ef52-415e-998b-0432468eaef4 candidate=675684aa-0ffd-47e2-8b55-7f7520edee71 resume_version=743f4578-504f-46c8-a480-b24cb16ff1b9 v1 parse=PARTIAL lifecycle=ACTIVE
+F48 sha=ead23e7999e7 application=bc2f582b-6b38-48fa-900e-8ffa568f503c candidate=c110817b-b09b-472f-b6a8-a09c1ceabe2f resume_version=31ced60b-5fc6-4ae0-8980-0291a6f1db2f v1 parse=PARTIAL lifecycle=CLOSED
+F49 sha=edef0f38bd2d application=20f25e25-0d06-4e82-87f4-3deebec96476 candidate=57a5379d-f8d0-4c15-9ad5-d89d32006bc7 resume_version=9ae8fb48-b515-46a0-b841-e0fe57fd4096 v1 parse=PARTIAL lifecycle=ACTIVE
+F50 sha=f1171f617020 application=6b2311a4-40e2-4db5-bd5c-c30b727c37e4 candidate=ed93ec83-fe56-40c8-ad78-70921c8b724e resume_version=836b8e46-85f4-46ec-a629-d64d59f73602 v1 parse=PARTIAL lifecycle=ACTIVE
+F51 sha=f606e4deb111 application=a24b9103-0e0d-4a78-82b1-b2d97ea9aacc candidate=33d27f0f-bf38-4ae7-93d1-c7b0db0b7c6c resume_version=224969c3-a26a-472a-a736-66f7b6b488b7 v1 parse=PARTIAL lifecycle=ACTIVE
+F52 sha=f8fb0a0455b9 application=d292c60e-5bac-44ec-86cc-6f7257e6d384 candidate=394e93e3-b435-4ca9-81df-887cc3c14b46 resume_version=51f52f9c-1011-4582-9638-91c329d46379 v1 parse=PARTIAL lifecycle=ACTIVE
+
+distinct_real_labels_in_db = 26
+distinct_real_applications = 26
+corpus_applications_ACTIVE = 25
+
+======== 阶段 G：前后差异归属（哪些行是本次新增） ========
+
+before_applications = 15
+after_applications  = 39
+tool_reported_created = 23
+
+=== after 中不在 before 的行，按归属分类 ===
+MINE_PROBE   00fe6fbd-c4c2-45c7-944f-9222579a5e53 2026-11-14T08:55:00.585Z ACTIVE
+MINE         c55b968a-2b80-4c79-92c8-b5f60e695c3c 2026-11-14T08:55:37.467Z ACTIVE
+MINE         20f25e25-0d06-4e82-87f4-3deebec96476 2026-11-14T08:56:37.810Z ACTIVE
+MINE         3a6c0ed2-6f2d-4e9c-ba18-c66fca9a03d9 2026-11-14T08:56:39.402Z ACTIVE
+MINE         5770b175-7e1e-4b61-92af-2ab61947a78a 2026-11-14T08:56:40.215Z ACTIVE
+MINE         5fea1268-ef52-415e-998b-0432468eaef4 2026-11-14T08:56:40.964Z ACTIVE
+MINE         99f81201-9e0f-4f15-91c5-5f6c7fafe459 2026-11-14T08:57:24.086Z ACTIVE
+MINE         a24b9103-0e0d-4a78-82b1-b2d97ea9aacc 2026-11-14T08:57:24.802Z ACTIVE
+MINE         6a314e56-aa48-452c-b147-482ad35d0eb3 2026-11-14T08:57:25.522Z ACTIVE
+MINE         5d6dd8ba-ab6f-4389-abfb-039ada8d731f 2026-11-14T08:57:26.203Z ACTIVE
+MINE         31928175-ddd1-40af-b944-101403fd3311 2026-11-14T08:57:27.543Z ACTIVE
+MINE         9afaebef-329d-404b-955e-19eecd5c670f 2026-11-14T08:57:28.849Z ACTIVE
+MINE         866b5c60-4bf9-4de1-9474-908de299b38d 2026-11-14T08:57:32.892Z ACTIVE
+MINE         a71bb5ed-ccbb-4e5e-8153-8f0651e5ae77 2026-11-14T08:57:35.930Z ACTIVE
+MINE         dc269f91-986a-4150-8d77-108160b9246e 2026-11-14T08:57:36.830Z ACTIVE
+MINE         9cbea483-22f7-4ae3-929b-3f1df29047c1 2026-11-14T08:57:37.598Z ACTIVE
+MINE         8d788e1c-7d68-4449-b41b-2617d4184c26 2026-11-14T08:57:38.370Z ACTIVE
+MINE         1f9ec61f-7c80-454e-bf1e-cf7a6ba90aef 2026-11-14T08:57:39.479Z ACTIVE
+MINE         6b2311a4-40e2-4db5-bd5c-c30b727c37e4 2026-11-14T08:57:40.476Z ACTIVE
+MINE         0e0f5b27-e6c1-4a23-bed3-e1f6173af779 2026-11-14T08:57:43.644Z ACTIVE
+MINE         d292c60e-5bac-44ec-86cc-6f7257e6d384 2026-11-14T08:57:45.261Z ACTIVE
+MINE         01a5def6-67ad-47ec-8833-09c874a4a763 2026-11-14T08:57:46.170Z ACTIVE
+MINE         169c4257-ebec-4d20-9f3a-33d6c9bb63dd 2026-11-14T08:57:48.838Z ACTIVE
+MINE         8ddd217e-8f6b-4552-b7dc-969c838721ed 2026-11-14T08:58:11.472Z ACTIVE
+
+=== 工具报 CREATED 但不在 after 清单（应为 0） ===
+missing = 0
+

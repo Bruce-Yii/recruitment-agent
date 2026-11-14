@@ -1,0 +1,5 @@
+before_intake_asset_rows = 14
+corpus_docs = 52
+matched_real_corpus_docs_before = 1
+  F48 sha=ead23e7999e7 byte_size=251476 validation=VALID
+non_corpus_rows_before = 13（合成/夹具，字节数分布：2291,2302,2310,2665,2671,3035,10919,10920,10921,256228）

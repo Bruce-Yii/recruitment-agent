@@ -1,0 +1,42 @@
+=== 计数（本租户） ===
+application = 39
+application(ACTIVE) = 38
+candidate = 38
+candidate(ACTIVE) = 38
+intake_asset = 46
+intake_record = 46
+resume = 46
+resume_version = 47
+
+=== 真实语料申请（source_asset_sha256 命中语料目录 sha256） ===
+matched_applications = 26
+F01 sha=06bd93cd77be application=99f81201-9e0f-4f15-91c5-5f6c7fafe459 candidate=58cce386-f8b7-4dbb-88e6-59e9f032cbfa resume_version=88477ac9-6836-4e40-9586-0ea3914f2509 v1 parse=PARTIAL lifecycle=ACTIVE
+F06 sha=2aea0b66b28e application=8ddd217e-8f6b-4552-b7dc-969c838721ed candidate=581e103b-ab21-481f-87c0-e6ac538e713d resume_version=a95b72ce-c818-41b5-8211-aa331ffed07e v1 parse=PARTIAL lifecycle=ACTIVE
+F08 sha=40c59d65f925 application=9cbea483-22f7-4ae3-929b-3f1df29047c1 candidate=0a5ffd62-35b6-4ad9-9031-f32e70ca3ea5 resume_version=2d95a097-6d3c-43c9-b4a7-288c1c9c8721 v1 parse=PARTIAL lifecycle=ACTIVE
+F12 sha=49afd21e0669 application=00d0f6c0-c7b0-4e62-be62-ae7f0c6ea0bc candidate=c110817b-b09b-472f-b6a8-a09c1ceabe2f resume_version=56de0d0c-d0f7-4ec7-a573-6856e2b4bc6c v1 parse=PARTIAL lifecycle=ACTIVE
+F13 sha=4b253845e5e7 application=01a5def6-67ad-47ec-8833-09c874a4a763 candidate=7b11794d-5183-4671-aef1-4324c010253f resume_version=5bf2f56f-5605-44f2-88a7-1b9267f2db73 v1 parse=PARTIAL lifecycle=ACTIVE
+F16 sha=52200d6ade75 application=5d6dd8ba-ab6f-4389-abfb-039ada8d731f candidate=9b7f6d85-1ea9-47d7-8e90-1a954783020d resume_version=d8b4883e-f909-49a9-9971-78aa7ae6353d v1 parse=PARTIAL lifecycle=ACTIVE
+F17 sha=55209ede4bc7 application=3a6c0ed2-6f2d-4e9c-ba18-c66fca9a03d9 candidate=d9d8cfb5-306a-4468-aa86-8213b4b13139 resume_version=25f78d29-26f5-44ea-8727-befd9fd7b24d v1 parse=PARTIAL lifecycle=ACTIVE
+F19 sha=6bc260295320 application=866b5c60-4bf9-4de1-9474-908de299b38d candidate=4841b189-1d1f-4aff-be77-e42b3a790bf2 resume_version=407e8df9-56c6-475c-857f-0343eed4802e v1 parse=PARTIAL lifecycle=ACTIVE
+F20 sha=6f6dd3f49d79 application=00fe6fbd-c4c2-45c7-944f-9222579a5e53 candidate=3035960e-c5c2-4a4f-846e-aad966b7f3bc resume_version=060862ed-74ea-45d0-a001-8dcfa7dfe538 v1 parse=PARSED lifecycle=ACTIVE
+F22 sha=74445c2d7e15 application=0e0f5b27-e6c1-4a23-bed3-e1f6173af779 candidate=766bbb6d-a3f4-43ff-bae8-7241ba3c6c6e resume_version=3e9d87a2-6ff5-413b-b906-6b48a684e3b3 v1 parse=PARTIAL lifecycle=ACTIVE
+F23 sha=7bd8089985ea application=5770b175-7e1e-4b61-92af-2ab61947a78a candidate=c46e916a-ff11-4a60-a064-243029428f03 resume_version=1f622fdc-a13a-4088-b444-5e009a221048 v1 parse=PARTIAL lifecycle=ACTIVE
+F25 sha=81c59495d672 application=31928175-ddd1-40af-b944-101403fd3311 candidate=8fbdefe5-5709-4463-a2ef-44e27af35c86 resume_version=0db4d17b-7a76-4036-b2cd-3d75952e77b5 v1 parse=PARTIAL lifecycle=ACTIVE
+F26 sha=84b0756c3c68 application=6a314e56-aa48-452c-b147-482ad35d0eb3 candidate=8e048509-7eb3-4d59-9f95-f45347b9f7ca resume_version=909806b5-bfba-42c7-9a7e-4ed4516d3e23 v1 parse=PARTIAL lifecycle=ACTIVE
+F30 sha=92fa1454bc8a application=169c4257-ebec-4d20-9f3a-33d6c9bb63dd candidate=f4983b91-9a56-414a-99d5-d9abaf4e7c16 resume_version=b915bf41-aa98-42a4-8b9e-d17646866b20 v1 parse=PARTIAL lifecycle=ACTIVE
+F32 sha=96aefe29da77 application=a71bb5ed-ccbb-4e5e-8153-8f0651e5ae77 candidate=97ba9f5c-e134-4a4d-b5fa-314cba13332b resume_version=fcac56a9-7e13-4b41-a660-26317044fc44 v1 parse=PARTIAL lifecycle=ACTIVE
+F37 sha=b9155e19e88c application=1f9ec61f-7c80-454e-bf1e-cf7a6ba90aef candidate=9954711f-282b-45ed-b205-9368d9deec3f resume_version=3c1b0c3d-2afd-4087-ae77-aec07380ce04 v1 parse=PARTIAL lifecycle=ACTIVE
+F38 sha=bc857cd718af application=8d788e1c-7d68-4449-b41b-2617d4184c26 candidate=0cb2141a-7e49-47ea-a93c-8a6e8aa80eb2 resume_version=2547c8d1-1272-49f7-aae4-1f5f52416110 v1 parse=PARSED lifecycle=ACTIVE
+F40 sha=c432f2de7a31 application=9afaebef-329d-404b-955e-19eecd5c670f candidate=eefde76b-db40-4160-92f0-110a2ebc0ff2 resume_version=a784ddee-f6a9-4965-8b2d-1ba7705077f9 v1 parse=PARTIAL lifecycle=ACTIVE
+F42 sha=c8ecbf6a809f application=c55b968a-2b80-4c79-92c8-b5f60e695c3c candidate=ccf51de5-e34f-49bd-a085-df9d80d07226 resume_version=835ca2e8-ef02-4c56-954e-1ebecce6ae4c v1 parse=PARTIAL lifecycle=ACTIVE
+F43 sha=cc1e7f16bc24 application=dc269f91-986a-4150-8d77-108160b9246e candidate=022bd1f7-2bfa-4c3a-a3a1-fe7fce63632e resume_version=1c769d87-33a7-4f02-93e1-65fd77f88da3 v1 parse=PARTIAL lifecycle=ACTIVE
+F45 sha=d3870021bc00 application=5fea1268-ef52-415e-998b-0432468eaef4 candidate=675684aa-0ffd-47e2-8b55-7f7520edee71 resume_version=743f4578-504f-46c8-a480-b24cb16ff1b9 v1 parse=PARTIAL lifecycle=ACTIVE
+F48 sha=ead23e7999e7 application=bc2f582b-6b38-48fa-900e-8ffa568f503c candidate=c110817b-b09b-472f-b6a8-a09c1ceabe2f resume_version=31ced60b-5fc6-4ae0-8980-0291a6f1db2f v1 parse=PARTIAL lifecycle=CLOSED
+F49 sha=edef0f38bd2d application=20f25e25-0d06-4e82-87f4-3deebec96476 candidate=57a5379d-f8d0-4c15-9ad5-d89d32006bc7 resume_version=9ae8fb48-b515-46a0-b841-e0fe57fd4096 v1 parse=PARTIAL lifecycle=ACTIVE
+F50 sha=f1171f617020 application=6b2311a4-40e2-4db5-bd5c-c30b727c37e4 candidate=ed93ec83-fe56-40c8-ad78-70921c8b724e resume_version=836b8e46-85f4-46ec-a629-d64d59f73602 v1 parse=PARTIAL lifecycle=ACTIVE
+F51 sha=f606e4deb111 application=a24b9103-0e0d-4a78-82b1-b2d97ea9aacc candidate=33d27f0f-bf38-4ae7-93d1-c7b0db0b7c6c resume_version=224969c3-a26a-472a-a736-66f7b6b488b7 v1 parse=PARTIAL lifecycle=ACTIVE
+F52 sha=f8fb0a0455b9 application=d292c60e-5bac-44ec-86cc-6f7257e6d384 candidate=394e93e3-b435-4ca9-81df-887cc3c14b46 resume_version=51f52f9c-1011-4582-9638-91c329d46379 v1 parse=PARTIAL lifecycle=ACTIVE
+
+distinct_real_labels_in_db = 26
+distinct_real_applications = 26
+corpus_applications_ACTIVE = 25

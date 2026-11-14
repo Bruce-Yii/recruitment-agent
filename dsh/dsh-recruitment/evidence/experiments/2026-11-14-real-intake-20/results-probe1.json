@@ -1,0 +1,60 @@
+[
+ {
+  "label": "F20",
+  "sha12": "6f6dd3f49d79",
+  "bytes": 93831,
+  "ext": ".pdf",
+  "read": {
+   "ok": true,
+   "media_type": "application/pdf",
+   "reader": "pymupdf/1.28.0@1.0.0",
+   "completeness": "complete",
+   "needs_visual": false,
+   "blocking": false,
+   "blocking_codes": [],
+   "soft_codes": [
+    "doc_attribution_resolved"
+   ],
+   "pages": 1,
+   "chars": 2645,
+   "blocks": 18,
+   "recovery_next": "structure",
+   "recovery_steps": [],
+   "execution": {
+    "ran": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "content_updated": false
+   }
+  },
+  "intake": {
+   "ok": true,
+   "status": "OK",
+   "application_action": "REUSED",
+   "candidate_created": false,
+   "matched_by": "email+phone",
+   "candidate_id": "3035960e-c5c2-4a4f-846e-aad966b7f3bc",
+   "application_id": "00fe6fbd-c4c2-45c7-944f-9222579a5e53",
+   "resume_version_id": "060862ed-74ea-45d0-a001-8dcfa7dfe538",
+   "resume_version_no": 1,
+   "resume_version_action": "UNCHANGED",
+   "intake_asset_id": "968d9352-ac3a-4102-9a6d-715f52a9e825",
+   "structure_saved": false,
+   "provenance": "FIXTURE",
+   "strong_fields": [
+    "email",
+    "phone"
+   ],
+   "merge_eligible": [
+    "email",
+    "phone"
+   ],
+   "weak_fields": [],
+   "blocked_fields": [],
+   "evidence_refs": 2,
+   "parse_status": "PARSED",
+   "source_sha12": "6f6dd3f49d79"
+  },
+  "ms": 926
+ }
+]
