@@ -20,7 +20,7 @@ v1.0 只证明三件事同时成立：**业务真相归领域**、**长任务跨
 |---|---|---|
 | 产品壳 | DSH Web（profile `recruitment`） | `D:\12412\dsh-home\profiles\recruitment` |
 | 业务入口 | 插件 `@recruitment/dsh-recruitment` 的 `recruitment_*` 工具 | `dsh/dsh-recruitment/` |
-| 业务真相 | PostgreSQL 17，schema `recruitment`，**62 张基表 + 3 个视图**（迁移到 `0015`） | `db/migrations/`（0001–0015） |
+| 业务真相 | PostgreSQL 17，schema `recruitment`，**63 张基表 + 3 个视图**（迁移到 `0016`） | `db/migrations/`（0001–0016） |
 | 文件→文本 | 本地转换器（PyMuPDF），四件套 | `converter/` |
 | 读不出时 | agent 视觉补读（`page_image` → `read_image` → `model_text_merge`，D-81/D-107）+ 人工复核队列（`review/`） | 插件 `src/tools/` + `converter/review/` |
 | 契约 | 每个阶段的领域规则与工具形状 | `dsh/dsh-recruitment/contracts/` |
@@ -29,14 +29,14 @@ v1.0 只证明三件事同时成立：**业务真相归领域**、**长任务跨
 > 0001 建 39 张、0003 建 3 张、0004 建 1 张（`stage_catalog`）、0010 建 1 张（迁移台账 `schema_migration`）、
 > 0011 建 1 张、0012 建 9 张、0013 建 1 张、0014 建 5 张（`hiring_team` / `hiring_team_member` /
 > `pipeline_template` / `pipeline_template_stage` / `pipeline_template_stage_template`）、
-> 0015 建 2 张（`runtime_watermark` / `runtime_watermark_change`），合计 **62**。
+> 0015 建 2 张（`runtime_watermark` / `runtime_watermark_change`）、0016 建 1 张（`event_disposition` + 一致性视图），合计 **63**。
 > 另有 3 个视图（`0003_review_queue.sql:538/567/617`）；`information_schema.tables` 会把视图也算进去 → **65**，**两个数不要混用**。
 > **取数命令**：`select count(*) from information_schema.tables where table_schema='recruitment' and table_type='BASE TABLE';` → **62**；
 > `psql -f db/verify.sql` §1 → `tables 62 / triggers 117 / functions 41`，`STRUCT-06 … 52 个`，末行 `VERIFY PASS`。
-> 本节数字以**当前库（0001–0015 已应用）**为准：`0015_runtime_cutover.sql` 已入库（commit `2329d2e`）
+> 本节数字以**当前库（0001–0016 已应用）**为准：`0015_runtime_cutover.sql` 已入库（commit `2329d2e`）
 > 并已应用到本机 `ra_s6s7`（台账 `applied_at = 2026-11-14 20:17:05 +08`）。
 
-**没有的东西**（不要去找）：没有自研 API 服务、没有自研 Worker、没有自研队列。
+**没有的东西**（不要去找）：没有自研 API 服务、没有自研队列、没有自研 Agent Runtime；Worker Session 用 DSH headless 子进程，周期派发用插件进程内 tick-loop（PG advisory lock，D-109）。
 历史教训：那套 5.2 万行里 40% 该复用却自研，已废弃。
 
 ---
@@ -94,7 +94,7 @@ agent 不得代填面评、不得代做决策（`execution_mandate` 的 CHECK �
 
 | 环节 | 状态 | 证据 / 缺口 |
 |---|---|---|
-| DB 62 张基表（+3 视图）+ 0001–0015 迁移 | ✅ 成立（静态核对；本轮未复跑 CI） | 迁移链 `db/migrations/0001–0015`（迁移台账 15 行，2026-11-14 21:00 实测）；`db/verify.sql` §1 计数口径实测 62、exit 0 / `VERIFY PASS`；CI `db` job 目录驱动覆盖全链 + `db/verify-*.sql` + 迁移台账比对（`.github/workflows/ci.yml:169-265`） |
+| DB 63 张基表（+3 视图）+ 0001–0016 迁移 | ✅ 成立（静态核对；本轮未复跑 CI） | 迁移链 `db/migrations/0001–0016`（迁移台账 16 行，2026-11-14 21:00 实测）；`db/verify.sql` §1 计数口径实测 62、exit 0 / `VERIFY PASS`；CI `db` job 目录驱动覆盖全链 + `db/verify-*.sql` + 迁移台账比对（`.github/workflows/ci.yml:169-265`） |
 | 转换器（S6 读） | ✅ 成立 | `converter/reports/acceptance.md`：13/13，553/553 页身份一致 |
 | 独立校验器 | ✅ 成立 | `converter/verify/`，V1–V8，24 条测试 |
 | 模型兜底 | ⛔ **converter 内车道不接线（设计改道）** | D-81 + D-107：模型调用不进插件；视觉补读由 agent 侧承担 —— `recruitment_page_image` → `read_image` → `recruitment_model_text_merge`（两个工具已注册，`src/index.ts:598-599`）；`converter/fallback/model_reader.py` 仍不接 provider |
@@ -142,9 +142,9 @@ foreach ($v in 'verify-0003','verify-0004','verify-0005','verify-0006','verify-0
 }
 ```
 
-> `0010` 起迁移自带台账（`recruitment.schema_migration`）：新建库必须按 `0001→0015` 全链重放，
+> `0010` 起迁移自带台账（`recruitment.schema_migration`）：新建库必须按 `0001→0016` 全链重放，
 > 否则 `verify-0010` 会报 `LEDGER_INCOMPLETE`；不要只跑前 6 条。**注意**：`db/verify-0003…verify-0010.sql`
-> 只到 0010；0011–0015 的自检写在各自迁移文件里（例如 0014/0015 的"迁移后自检"段），CI 另用
+> 只到 0010；0011–0016 的自检写在各自迁移文件里（例如 0014/0015 的"迁移后自检"段），CI 另用
 > `db/migrations/*.sql` 与台账逐行比对兜底（`.github/workflows/ci.yml:255-265`）。
 
 ### 5.1.1 demo 前置（G5，一条命令）
