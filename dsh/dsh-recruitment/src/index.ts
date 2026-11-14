@@ -82,6 +82,18 @@ import { createScorecardSubmitTool } from './tools/scorecard-submit.ts'
 import { createEvaluationSummarizeTool } from './tools/evaluation-summarize.ts'
 import { createDecisionRecordTool } from './tools/decision-record.ts'
 import { resolveDatabaseConfig, type DatabaseConfig } from './db/pool.ts'
+import {
+  closePool,
+  createPool,
+} from './db/pool.ts'
+import {
+  composeRuntime,
+  registerRuntimeHttp,
+  resolveRuntimeConfig,
+  RuntimeStore,
+  type RuntimeConfig,
+  type RuntimeHostContext,
+} from './runtime/index.ts'
 import { resolveFeishuConnector, type FeishuConnectorConfig } from './connectors/feishu/index.ts'
 import { registerOverviewHttp, type OverviewHostContext } from './http/overview.ts'
 import { RecruitmentToolError } from './tools/errors.ts'
@@ -157,6 +169,12 @@ export interface Config {
    * BLOCKED/TRANSPORT_NOT_CONFIGURED，不拉任何子进程。
    */
   readonly feishu?: FeishuConnectorConfig
+  /**
+   * 任务运行时（Event → Business Task → Attempt → DSH Worker Session）。
+   * **默认关闭**：只有 `enabled: true` 才注册 `/recruitment/runtime/*` 路由；
+   * 缺配置时逐条列 issues，不静默降级成假运行时。见 `src/runtime/config.ts`。
+   */
+  readonly runtime?: RuntimeConfig
 }
 
 /**
@@ -310,6 +328,66 @@ export function apply(
       'recruitment: workbench overview route',
     )
   })
+
+  // 任务运行时（Event → Business Task → Attempt → DSH Worker Session）。
+  //
+  // **默认关闭**：`config.runtime.enabled !== true` 时这一段什么都不做，产品 profile
+  // 启动后不会多出任何 HTTP 口子。只有显式打开且数据库/Worker profile 配置齐全时，
+  // 才注册回环 + 同源的 `/recruitment/runtime/*` 路由（见 src/runtime/http.ts）。
+  //
+  // 为什么仍用可选注入：与 overview 同理，headless/tui 等没有 webServer 的 profile
+  // 不能因为运行时路由而让整个插件不激活（19 个工具必须照常存在）。
+  if (config?.runtime?.enabled === true) {
+    const runtime = resolveRuntimeConfig(config.runtime, env)
+    if (runtime.resolved === null || database.resolved === null) {
+      const issues = [...(runtime.resolved === null ? runtime.issues : []), ...database.issues]
+      const logger = (ctx as unknown as { logger?: { warn(message: string): void } }).logger
+      logger?.warn(`recruitment: 任务运行时未注册（fail closed）：${issues.join('; ')}`)
+    } else {
+      const runtimeDb = database.resolved
+      const runtimeConfig = runtime.resolved
+      ctx.inject(['webServer'], (child) => {
+        child.effect(() => {
+          const pool = createPool({ ...runtimeDb, max: 4 })
+          try {
+            const store = new RuntimeStore({
+              pool,
+              tenantId: runtimeDb.tenant_id,
+              actorId: runtimeDb.actor_id,
+            })
+            const composed = composeRuntime({
+              store,
+              worker: runtimeConfig.worker,
+              pendingBatchSize: runtimeConfig.pendingBatchSize,
+              maxRouteAttempts: runtimeConfig.maxRouteAttempts,
+              leaseMs: runtimeConfig.leaseMs,
+              maxAttempts: runtimeConfig.maxAttempts,
+              resumeSessions: runtimeConfig.resumeSessions,
+              workspaceRoot: runtimeConfig.workspaceRoot,
+              workerType: 'DSH_WORKER',
+              workerId: `router:${process.pid}`,
+            })
+            const disposeHttp = registerRuntimeHttp(
+              child as unknown as RuntimeHostContext,
+              {
+                store: composed.store,
+                router: composed.router,
+                events: composed.events,
+                tasks: composed.tasks,
+              },
+            )
+            return () => {
+              disposeHttp()
+              void closePool(pool)
+            }
+          } catch (error) {
+            void closePool(pool)
+            throw error
+          }
+        }, 'recruitment: task runtime routes')
+      })
+    }
+  }
 
   const resumeRead = converter.resolved === null
     ? unconfiguredResumeReadTool(converter.issues)
