@@ -22,7 +22,7 @@ export interface ConverterConfig {
   readonly converter_dir?: string
   /** 允许读取的根目录；空数组 = 拒绝一切（fail-closed）。 */
   readonly allowed_roots?: readonly string[]
-  /** 单份超时（毫秒），默认 60000。 */
+  /** 单份超时（毫秒），默认 {@link DEFAULT_TIMEOUT_MS}（必须与产品 profile 一致，见下）。 */
   readonly timeout_ms?: number
 }
 
@@ -34,7 +34,19 @@ export interface ResolvedConverterConfig {
   readonly timeout_ms: number
 }
 
-const DEFAULT_TIMEOUT_MS = 60_000
+/**
+ * 单份文档读取的默认超时。
+ *
+ * **这个值必须与产品 profile 的 `recruitment.converter.timeout_ms` 相同**
+ * （`dsh/profile/recruitment/cordis.patch.yml`），由
+ * `test/unit/converter-default-timeout.test.ts` 机检；两者一旦分叉，未读 profile 的调用方
+ * 会用更短的预算把慢文档误判成 `TIMEOUT`——D-99 的假失败就是这么来的（60s 口径下
+ * 真实语料里有单份要 127s）。
+ *
+ * 为什么是 180s 而不是更短：D-98 的整页 OCR 兜底让单份最慢可达 127s（高并发），
+ * 180s 留了约 50s 余量。
+ */
+export const DEFAULT_TIMEOUT_MS = 180_000
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 
 /** 校验并补默认值；配置不完整时返回 issues，由调用方决定 fail-closed。 */
