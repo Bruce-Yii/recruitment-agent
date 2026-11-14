@@ -19,7 +19,12 @@
       在正文"），同时保留 Counter 恒等式：native == blocks + 剔除 + 噪声；
     * 平台噪声整块移出正文并逐条记录（doc 11 §9.5）；
     * 招聘字段三态 / 时间线 / 受保护属性（doc 11 §9.2/9.4/9.6）；
-    * needs_visual 在"有整页图像未读"时也为 True（比参考实现更保守，见 README）。
+    * needs_visual 在"有整页图像未读"时也为 True（比参考实现更保守，见 README）；
+    * 表格抽取（pdf_tables.py）：只对含矢量图形的页调用 PyMuPDF ``find_tables``，
+      检测结果放**顶层 tables**（同一原生文本的结构化视图），不塞进 blocks、
+      不改正文 text、不加新 kind——保真恒等式与 kind 白名单均不变；
+      逐页 fail-closed（异常只进 meta.tables.notes），原生层被 OCR 整页重读的页
+      跳过并记入 meta.tables.skipped_ocr_pages。
 """
 from __future__ import annotations
 
@@ -34,7 +39,7 @@ from pathlib import Path
 
 import fitz
 
-from . import __version__, content, pdf_layout, resume_fields, structure as st
+from . import __version__, content, pdf_layout, pdf_tables, resume_fields, structure as st
 
 BACKEND = f"pymupdf/{fitz.__version__}"
 _OCR_TOOL = Path(__file__).with_name("ocr_titles.py")
@@ -295,11 +300,14 @@ def _failed(path: Path, sha: str | None, code: str, message: str, *,
         meta={"pages": 0, "source_sha256": sha, "source_name": path.name,
               "backend": BACKEND, "reader_version": __version__,
               "page_info": [], "layout_backend": None, "order_verified": False,
-              "repaired": False, "failed": True},
+              "repaired": False, "failed": True,
+              "tables": pdf_tables.summary(
+                  [], ["table extraction not attempted: the document could not be read"], [])},
         extra={"fields": resume_fields.empty_fields(code),
                "noise": [],
                "protected_attributes": resume_fields.empty_protected(code),
                "screening": resume_fields.empty_screening(code),
+               "tables": [],
                "timeline": {}})
 
 
@@ -336,18 +344,27 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
                   "page_info": [{"page": n, "chars": None, "images": None, "drawings": None,
                                  "readable": False, "layout_order_applied": False,
                                  "image_coverage": None, "block_count": 0,
-                                 "encoding_removed": "", "noise_removed": ""}
+                                 "encoding_removed": "", "noise_removed": "",
+                                 "tables": 0}
                                 for n in range(1, doc.page_count + 1)],
                   "layout_backend": None, "order_verified": False,
-                  "repaired": bool(getattr(doc, "is_repaired", False))},
+                  "repaired": bool(getattr(doc, "is_repaired", False)),
+                  "tables": pdf_tables.summary(
+                      [], ["table extraction not attempted: the encrypted PDF was not read"],
+                      [])},
             extra={"fields": resume_fields.empty_fields("encrypted_pdf"),
                    "noise": [],
                    "protected_attributes": resume_fields.empty_protected("encrypted_pdf"),
                    "screening": resume_fields.empty_screening("encrypted_pdf"),
+                   "tables": [],
                    "timeline": {}})
 
     blocks, pages, issues, warnings = [], [], [], []
     order_unverified_pages: list[int] = []
+    # 表格：顶层结构化视图（不进 blocks/正文）。notes 与 OCR 跳过页逐页累积。
+    tables: list[dict] = []
+    table_notes: list[str] = []
+    skipped_table_pages: list[int] = []
     repaired = bool(getattr(doc, "is_repaired", False))
     if repaired:
         issues.append({"code": "pdf_damaged_repaired",
@@ -370,6 +387,9 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
         encoding_removed = []
         layout_applied = False
         page_layout_backend = None
+        # 本页正文是否已被整页 OCR 重读替换（pdf_text_recovered_by_ocr）：
+        # 只为表格 hook 判断"单元格是不是原生文本"，不改 OCR 逻辑本身。
+        ocr_replaced = False
         try:
             type3_fonts = sum(1 for font in (page.get_fonts(full=True) or [])
                               if len(font) > 2 and font[2] == 'Type3')
@@ -400,6 +420,7 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
                 page_blocks = [b for b in page_blocks
                                if (b.get('location') or {}).get('page') != number]
                 page_blocks.extend(ocr_blocks)
+                ocr_replaced = True
                 issues.append({'code': 'pdf_text_recovered_by_ocr',
                                'message': ('native PDF text contained undecoded glyphs or invalid '
                                            'control characters' + cause + '; the whole page was '
@@ -578,16 +599,43 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
                                              item["location"], [item]))
         chars = len(page.get_text("text").strip())
         images = page.get_images(full=True)
+        drawings_error = None
         try:
             drawings = len(page.get_drawings())
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             drawings = 0
+            drawings_error = exc  # 矢量图形数不清：表格扫描必须跳过并如实记录
         coverage = _pdf_image_coverage(page, images)
+        # ---- 表格：同一原生文本的结构化视图，只进顶层 tables，不进 blocks/正文 ----
+        # 完成顺序：正文/链接/版面全部读完之后才探测表格，所以表格探测不可能
+        # 影响既有正文语义。无矢量图形的页不扫（lines 策略需要规则线，且避免
+        # 全语料性能回退）；整页被 OCR 重读的页跳过并如实登记。
+        page_table_records: list[dict] = []
+        if ocr_replaced:
+            # 该页正文已是机器识别的 OCR 文本：单元格若标 native_text 就是撒谎。
+            skipped_table_pages.append(number)
+        elif drawings_error is not None:
+            # 连"有没有矢量图形"都读不出：不猜，也不假装这页没有表。
+            table_notes.append(
+                f"page {number}: vector graphics could not be counted "
+                f"({type(drawings_error).__name__}: {drawings_error}); table scan skipped, "
+                f"no table was emitted for that page")
+        else:
+            try:
+                page_table_records, page_table_notes = pdf_tables.extract_page_tables(
+                    page, number, has_vector_graphics=bool(drawings))
+            except Exception as exc:  # noqa: BLE001 —— 表格抽取绝不能让整份读取失败
+                page_table_records, page_table_notes = [], [
+                    f"page {number}: table extraction failed "
+                    f"({type(exc).__name__}: {exc}); no table was emitted for that page"]
+            tables.extend(page_table_records)
+            table_notes.extend(page_table_notes)
         pages.append({"page": number, "chars": chars, "images": len(images),
                       "drawings": drawings, "layout_order_applied": layout_applied,
                       "layout_backend": page_layout_backend,
                       "image_coverage": coverage,
                       "block_count": len(page_blocks),
+                      "tables": len(page_table_records),
                       "encoding_removed": "".join(encoding_removed)})
         if chars < 80 and (images or drawings):
             issues.append({"code": "unread_visual_page",
@@ -722,11 +770,13 @@ def _read_doc(doc, path: Path, sha: str) -> dict:
               "order_verified": order_verified,
               "repaired": repaired, "ocr": ocr_note,
               "noise_blocks": len(noise),
+              "tables": pdf_tables.summary(tables, table_notes, skipped_table_pages),
               "encoding_removed_chars": "".join(p["encoding_removed"] for p in pages)},
         extra={"fields": analysis["fields"],
                "noise": noise,
                "protected_attributes": analysis["protected_attributes"],
                "screening": analysis["screening"],
+               "tables": tables,
                "timeline": analysis["timeline"]},
     )
 

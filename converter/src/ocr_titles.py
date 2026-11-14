@@ -24,6 +24,19 @@ Copied from ``resume-conversion-build/tools/conversion/ocr_titles.py``
         {"page": 1, "lines": [{"text": "...", "height": 22.0,
                                "bbox_pdf": [x0,y0,x1,y1]}]}]}
 bbox_pdf 已按 dpi→72pt 换算，可直接与 PyMuPDF block bbox 比较。
+
+依赖（fail-closed，2026-11-15 doc1-A）
+------------------------------------
+两个依赖**分开** import、分开报缺：
+  * ``pymupdf``             （导入名 ``fitz``）：把页面渲染成图片；
+  * ``rapidocr_onnxruntime``（导入名同）：离线 OCR 引擎，``converter/requirements.txt``
+    已声明 ``rapidocr_onnxruntime>=1.4.4``。
+
+缺任一依赖时 stdout **只输出一行 JSON** 并 ``return 3``：
+    {"ok": false, "error": "...(含缺哪个包 / 解释器路径 / 安装提示)...",
+     "missing": ["rapidocr_onnxruntime"], "detail": "ImportError: ..."}
+调用方（``pdf_reader._ocr_page_blocks`` / ``_ocr_heading_inserts``）据此区分
+"OCR 后端不可用"和"OCR 跑了但没字"，绝不把缺包静默当成"没有需要补的文字"。
 """
 from __future__ import annotations
 
@@ -35,6 +48,26 @@ import tempfile
 from pathlib import Path
 
 _PDF_UNITS_PER_INCH = 72.0
+
+#: 缺包时的安装提示（与 ``converter/requirements.txt`` 的声明保持一致）。
+_INSTALL_HINTS = {
+    "pymupdf": "pip install pymupdf",
+    "rapidocr_onnxruntime": "pip install 'rapidocr_onnxruntime>=1.4.4'",
+}
+
+
+def _dependency_error(missing: list[tuple[str, str]]) -> dict:
+    """把「缺哪个依赖」写成可诊断的一行 JSON（含解释器路径与安装提示）。"""
+    names = [name for name, _error in missing]
+    hints = " / ".join(_INSTALL_HINTS.get(name, f"pip install {name}") for name in names)
+    return {
+        "ok": False,
+        "error": ("OCR backend unavailable: missing " + ", ".join(names)
+                  + f" for interpreter {sys.executable}; install with {hints} "
+                  "(both are declared in converter/requirements.txt)"),
+        "missing": names,
+        "detail": "; ".join(f"{name}: {error}" for name, error in missing),
+    }
 
 
 def _quad_to_rect(box, scale: float):
@@ -59,11 +92,21 @@ def main() -> int:
         print(json.dumps({"ok": False, "error": "file not found"}, ensure_ascii=False))
         return 2
 
+    # 两个依赖分开 import：缺哪个就报哪个（不要把 rapidocr 缺包伪装成「没有标题」）。
+    missing: list[tuple[str, str]] = []
     try:
-        import fitz
-        from rapidocr_onnxruntime import RapidOCR
+        import fitz  # noqa: F401 - 渲染后端
     except Exception as exc:  # noqa: BLE001
-        print(json.dumps({"ok": False, "error": f"import failed: {exc}"}, ensure_ascii=False))
+        missing.append(("pymupdf", f"{type(exc).__name__}: {exc}"))
+    RapidOCR = None
+    try:
+        from rapidocr_onnxruntime import RapidOCR as _RapidOCR  # noqa: F401 - OCR 引擎
+        RapidOCR = _RapidOCR
+    except Exception as exc:  # noqa: BLE001
+        missing.append(("rapidocr_onnxruntime", f"{type(exc).__name__}: {exc}"))
+    if missing:
+        # stdout 只许有 JSON：缺包是 fail-closed 的可机读结果，不是崩溃。
+        print(json.dumps(_dependency_error(missing), ensure_ascii=False))
         return 3
 
     scale = float(args.dpi) / _PDF_UNITS_PER_INCH
