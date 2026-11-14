@@ -3,8 +3,11 @@
 //   * 模型回包 JSON 提取（允许 fenced code、前后思考文本）；
 //   * 任务书包含 Task/Attempt 身份与"只回一个 JSON"的契约；
 //   * runtime 配置解析：默认关闭、缺配置逐条 issues、lease < timeout 被拒；
+//   * 可移植性：`dsh_bin` 缺省从 `$DSH_INSTALL_DIR` 派生（受管 profile 里不写机器路径），
+//     缺环境变量时 fail closed 并给出明确 issue；显式绝对路径仍然优先（不破坏已有调用方）；
 //   * 未配置 dsh bin 时 launcher 明确抛 WORKER_RUNTIME_NOT_CONFIGURED（不是假执行）。
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { resolveRuntimeConfig } from '../../src/runtime/config.ts'
 import { RuntimeError } from '../../src/runtime/errors.ts'
@@ -105,8 +108,29 @@ describe('runtime config resolution', () => {
     assert.equal(resolved.leaseMs > (resolved.worker.timeoutMs ?? 0), true)
   })
 
-  test('launcher refuses to run without a dsh bin instead of pretending', () => {
-    const launcher = new DshHeadlessWorkerLauncher({
+  test('dsh_bin may be omitted when $DSH_INSTALL_DIR provides the install root (portable profile)', () => {
+    const { dsh_bin: _omitted, ...portable } = valid
+    const { resolved, issues } = resolveRuntimeConfig(portable, { DSH_INSTALL_DIR: 'D:/dsh-install' })
+    assert.deepEqual(issues, [])
+    assert.ok(resolved !== null)
+    assert.equal(resolved.worker.dshBin, join('D:/dsh-install', 'lib', 'bin.js'))
+  })
+
+  test('omitting dsh_bin without $DSH_INSTALL_DIR fails closed with an explicit issue', () => {
+    const { dsh_bin: _omitted, ...portable } = valid
+    const { resolved, issues } = resolveRuntimeConfig(portable, {})
+    assert.equal(resolved, null)
+    assert.ok(issues.some((issue) => issue.includes('dsh_bin') && issue.includes('DSH_INSTALL_DIR')))
+  })
+
+  test('explicit dsh_bin still wins over $DSH_INSTALL_DIR (existing callers unchanged)', () => {
+    const { resolved, issues } = resolveRuntimeConfig(valid, { DSH_INSTALL_DIR: 'D:/dsh-install' })
+    assert.deepEqual(issues, [])
+    assert.ok(resolved !== null)
+    assert.equal(resolved.worker.dshBin, 'D:/runtime/dsh/lib/bin.js')
+  })
+
+  test('launcher refuses to run without a dsh bin instead of pretending', () => {    const launcher = new DshHeadlessWorkerLauncher({
       profile: 'p',
       runtimeVersion: 'v',
       modelRoute: 'm',

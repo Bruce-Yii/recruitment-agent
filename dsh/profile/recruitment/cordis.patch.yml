@@ -205,6 +205,27 @@
           # 演示租户（0002_seed.sql §1）与 HR 专员 actor（§3，kind=HUMAN）。
           tenant_id: '11111111-1111-4111-8111-000000000001'
           actor_id: '11111111-1111-4111-8111-000000000103'
+        # 任务运行时（Event → Business Task → Attempt → DSH Worker Session）。
+        #
+        # **必须写进产品 profile**：插件只在 `if (config?.runtime?.enabled === true)` 时装配
+        # `/recruitment/runtime/*` 路由与 engine Effects 派发者（`engineEffects.start()`）。
+        # 少了这一段，两者在产品入口永远不可达（E4 BLOCKED，2026-11-14 E1–E4 审计 B-1/B-2）。
+        #
+        # 必填键以 `src/runtime/config.ts::resolveRuntimeConfig` 为准：enabled +
+        # worker_profile + runtime_version + model_route + dsh_bin（或用既有 `$DSH_INSTALL_DIR` 回退）。
+        # 其余键走默认（permission_mode=workspace-write、timeout_ms=180000、lease_ms=900000 > timeout）。
+        #
+        # **本文件是可移植的受管定义，禁止出现机器路径**（2026-11-14 合规要求）：
+        # - `dsh_bin` 故意不写：`resolveRuntimeConfig` 的既有契约是缺省从 `$DSH_INSTALL_DIR`
+        #   派生 `<install>/lib/bin.js`；缺该环境变量即 fail closed 并逐条列 issue（不静默降级）。
+        #   启动产品前设置 `$env:DSH_INSTALL_DIR = '<项目自带 DSH 包根>'`，见本目录 README。
+        # - `worker_profile` 指向仓库受管的 `dsh/profile/recruitment-worker`（同步到
+        #   `$DSH_HOME/profiles/recruitment-worker/`），不绑定某台机器上的探针 profile。
+        runtime:
+          enabled: true
+          worker_profile: recruitment-worker
+          runtime_version: '0.2.2-rc.3'
+          model_route: 'opencode-go-openai-key2/longcat-2.5-free'
 
 # ---------------------------------------------------------------------------
 # 把本包自带的 DSH skill 接进技能目录扫描根（复用 @deepseek-ai/dsh-skill-filesystem）。

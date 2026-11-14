@@ -37,14 +37,32 @@ New-Item -ItemType Directory -Force "$home\profiles\recruitment" | Out-Null
 Copy-Item -Force .\package.json,.\cordis.patch.yml "$home\profiles\recruitment\"
 cd "$home\profiles\recruitment"; pnpm install --frozen-lockfile   # 或 pnpm install
 
+# 1b) 一次性：同步产品 worker profile（任务运行时的 DSH Worker Session 用它）
+New-Item -ItemType Directory -Force "$home\profiles\recruitment-worker" | Out-Null
+Copy-Item -Force ..\recruitment-worker\package.json,..\recruitment-worker\cordis.yml,..\recruitment-worker\cordis.patch.yml "$home\profiles\recruitment-worker\"
+
 # 2) 每次启动
 $env:DSH_HOME = $home                       # 进程级，不改用户级环境变量
+$env:DSH_INSTALL_DIR = '<项目自带 DSH 包根>\node_modules\@deepseek-ai\dsh'
 $env:RECRUITMENT_DB_PASSWORD = '<本机 PG 密码>'
-D:\12412\recruitment-runtime\node_modules\.bin\dsh.cmd --profile recruitment --no-open --port 49303
+<项目自带 DSH 包根>\node_modules\.bin\dsh.cmd --profile recruitment --no-open --port 49303
 ```
 
 `DSH_HOME` 必须是**产品自己的**目录（D-91）：桌面端和全局 `dsh` 共用用户级 `DSH_HOME`，
 复用它会连会话库、工作区、凭据一起共用，打开看到的就是桌面端。
+
+`DSH_INSTALL_DIR` 是**任务运行时**的前置条件：`cordis.patch.yml` 的 `runtime` 段**故意不写
+`dsh_bin`**（受管 profile 里不允许出现机器路径），`src/runtime/config.ts` 缺省从
+`$DSH_INSTALL_DIR/lib/bin.js` 派生 Worker 用的 DSH 可执行文件；缺这个环境变量时运行时
+**fail closed**（逐条 issue、不注册 `/recruitment/runtime/*`），不会静默降级。
+它不影响 Web 服务本身启动，只影响 Worker Session。
+
+## 任务运行时的 worker profile
+
+`runtime.worker_profile = recruitment-worker`，定义在 `dsh/profile/recruitment-worker/`
+（headless + 重新启用 managed credentials，模型段与产品 profile 一致）。
+它只被 `dsh --profile recruitment-worker --json` 子进程使用：不需要 Web UI，
+密钥从 `$DSH_HOME/.credentials.yaml` 取（不是环境变量、更不是本文件）。
 
 ## 模型通道（D-93，2026-11-14 实测）
 
