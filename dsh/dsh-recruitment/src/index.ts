@@ -75,12 +75,19 @@ import { createScorecardSubmitTool } from './tools/scorecard-submit.ts'
 import { createEvaluationSummarizeTool } from './tools/evaluation-summarize.ts'
 import { createDecisionRecordTool } from './tools/decision-record.ts'
 import { resolveDatabaseConfig, type DatabaseConfig } from './db/pool.ts'
+import { registerOverviewHttp, type OverviewHostContext } from './http/overview.ts'
 import { RecruitmentToolError } from './tools/errors.ts'
 
 /** 稳定 cordis 插件名（配置行 id 是 `recruitment`，见 cordis.patch.yml）。 */
 export const name = 'recruitment'
 
-/** 所需服务：工具注册表 + 人机批准通道（D-79：正式决策只能由人放行）。 */
+/**
+ * 所需服务：工具注册表 + 人机批准通道（D-79：正式决策只能由人放行）。
+ *
+ * **`webServer` 故意不在这里**：它是可选依赖，用 `ctx.inject(['webServer'], …)` 在 apply 内
+ * 按需注入（工作台面板的只读路由）。放进这里会让 headless/tui 等无 webServer 的 profile
+ * 整个插件不激活——面板不能成为工具存在的前提。
+ */
 export const inject = ['tools', 'approval']
 
 /**
@@ -273,6 +280,18 @@ export function apply(
 ): void {
   const converter = resolveConverterConfig(config?.converter ?? {})
   const database = resolveDatabaseConfig(config?.database ?? {}, env)
+  // 工作台面板（浏览器侧唯一数据入口）：只读、loopback、同源校验；见 src/http/overview.ts。
+  //
+  // **必须用可选注入，不能把 webServer 放进顶层 inject。** 顶层 inject 是硬依赖：
+  // headless / tui 等没有 webServer 的 profile 下，整个插件会因此**不激活**，
+  // 19 个工具一起消失——面板是加分项，不是插件存在的前提。
+  // 有 webServer 才注册路由；没有就静默跳过（面板不可用，工具照常）。
+  ctx.inject(['webServer'], (child) => {
+    child.effect(
+      () => registerOverviewHttp(child as unknown as OverviewHostContext, database.resolved, database.issues),
+      'recruitment: workbench overview route',
+    )
+  })
 
   const resumeRead = converter.resolved === null
     ? unconfiguredResumeReadTool(converter.issues)

@@ -7,6 +7,7 @@
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "engines": {
@@ -15,10 +16,17 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
     }
+  },
+  "scripts": {
+    "build": "tsdown"
   },
   "files": [
     "src/**/*.ts",
+    "lib/client.js",
     "cordis.patch.yml",
     "CONTRACT.md"
   ],
@@ -32,5 +40,10 @@
   "license": "UNLICENSED",
   "dependencies": {
     "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.28",
+    "tsdown": "0.22.14",
+    "typescript": "6.0.3"
   }
 }

@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { apply } from '../../src/index.ts'
+import { apply, inject as pluginInject } from '../../src/index.ts'
 import { resolveConverterConfig } from '../../src/tools/converter.ts'
 import { bridgeFailure } from '../../src/tools/fallback-bridge.ts'
 import {
@@ -301,7 +301,16 @@ test('桥错误码映射：文件/参数/渲染失败各自落到正确的插件
 
 test('未配置：两个工具仍注册，调用报 NOT_CONFIGURED（不静默降级）', async () => {
   const registered: Array<{ name: string, execute: (a: unknown, e: unknown) => Promise<unknown> }> = []
-  apply({ tools: { register: (tool: never) => registered.push(tool) } } as never, {}, {})
+  // 假 ctx 必须覆盖 apply() 真正用到的 API：
+  // - `effect`：Cordis 的标准注册/清理接口，立即执行 fn 并返回 disposer。
+  // - `inject`：可选依赖注入。这个假 ctx **没有 webServer**，所以回调不应被调用——
+  //   正是"headless 下没有 Web 服务、插件照常工作"的真实场景。
+  const ctx = {
+    tools: { register: (tool: never) => registered.push(tool) },
+    effect: (fn: () => unknown) => fn(),
+    inject: (_names: readonly string[], _cb: (child: unknown) => void) => {},
+  }
+  apply(ctx as never, {}, {})
   const names = registered.map((tool) => tool.name)
   assert.ok(names.includes('recruitment_page_image'))
   assert.ok(names.includes('recruitment_model_text_merge'))
@@ -312,6 +321,14 @@ test('未配置：两个工具仍注册，调用报 NOT_CONFIGURED（不静默�
       (error: Error & { code?: string }) => error.code === 'NOT_CONFIGURED',
     )
   }
+})
+
+test('webServer 是可选依赖，不得进顶层 inject（否则 headless 下整个插件不激活）', () => {
+  // 根因守卫：顶层 inject 是硬依赖。曾把 webServer 写进去，后果是 headless/tui 等
+  // 没有 Web 服务的 profile 下插件**完全不激活**，19 个工具一起消失——面板是加分项，
+  // 不能成为工具存在的前提。工作台路由必须走 ctx.inject(['webServer'], …) 可选注入。
+  assert.ok(!pluginInject.includes('webServer'), `顶层 inject 不得含 webServer：${pluginInject.join(', ')}`)
+  assert.deepEqual([...pluginInject].sort(), ['approval', 'tools'])
 })
 
 test('未配置替身：schema 仍是封闭对象（不是 additionalProperties:true 的兜底）', () => {
