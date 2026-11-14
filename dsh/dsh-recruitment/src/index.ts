@@ -81,6 +81,11 @@ import {
 import { createScorecardSubmitTool } from './tools/scorecard-submit.ts'
 import { createEvaluationSummarizeTool } from './tools/evaluation-summarize.ts'
 import { createDecisionRecordTool } from './tools/decision-record.ts'
+import {
+  createStageAdvanceTool,
+  unconfiguredStageAdvanceTool,
+} from './tools/stage-advance.ts'
+import { createTraceGetTool, unconfiguredTraceGetTool } from './tools/trace-get.ts'
 import { resolveDatabaseConfig, type DatabaseConfig } from './db/pool.ts'
 import {
   closePool,
@@ -497,6 +502,15 @@ export function apply(
     )
     : createDecisionRecordTool({ database: database.resolved, approval: resolveApproval(ctx) })
 
+  // 阶段推进（N8，方案 D）：只承认已发生的事实，不新增任何授权。
+  const stageAdvance = database.resolved === null
+    ? unconfiguredStageAdvanceTool(database.issues)
+    : createStageAdvanceTool(database.resolved)
+  // 执行追溯（Notion 08 §11.3 第 9 步）：只读。
+  const traceGet = database.resolved === null
+    ? unconfiguredTraceGetTool(database.issues)
+    : createTraceGetTool(database.resolved)
+
   const tools: readonly ReadonlyToolDefinition[] = [
     resumeRead,
     documentRead,
@@ -508,6 +522,7 @@ export function apply(
     jobRubricApprove,
     intake,
     evaluate,
+    stageAdvance,
     interviewSchedule,
     interviewGet,
     transcriptImport,
@@ -515,6 +530,7 @@ export function apply(
     scorecardSubmit,
     evaluationSummarize,
     decisionRecord,
+    traceGet,
     pageImage,
     modelTextMerge,
   ].map(withStructuredResultContract)
