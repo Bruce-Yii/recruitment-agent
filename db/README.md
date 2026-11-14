@@ -56,7 +56,9 @@ $psql = 'D:\12412\PostgreSQL\bin\psql.exe'
 & $psql -U postgres -h 127.0.0.1 -d ra_schema_check -t -A `
   -c "select 'tables='||count(*) from information_schema.tables where table_schema='recruitment';" `
   -c "select 'triggers='||count(*) from information_schema.triggers where trigger_schema='recruitment';"
-# 期望：tables=39  triggers=72（两遍一致）
+# 期望：tables=39  triggers=72（两遍一致）——**这是 0001_init.sql 基线的期望值**。
+# 当前迁移已到 0010，实测 44 张基表 + 3 视图（口径见 db/SCHEMA.md 顶部说明）。
+# 用 verify.sql 数基表时别把视图算进去，否则会得出 47 这个数。
 ```
 
 输出里会有大量 `注意: 关系 ... 的触发器 ... 不存在，跳过` —— 这是 `DROP TRIGGER IF EXISTS` 的正常提示，不是错误。
