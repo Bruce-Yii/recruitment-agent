@@ -180,7 +180,7 @@ jobs:
 
       - name: Clean-load gate (干净检出必须能 import 插件入口)
         # 为什么要单独设一道门：跑测试要几分钟才暴露"缺模块"，而 import 一秒就能暴露。
-        # `src/index.ts` 是唯一的装配入口（25 个工具、runtime、http 全从它挂上去），
+        # `src/index.ts` 是唯一的装配入口（26 个工具、runtime、http 全从它挂上去），
         # import 它等于把整张依赖图走一遍——任何"引用了没入库的模块"都会在这里当场炸。
         # 不许用 `--check` 之类只看语法的方式代替：语法对、模块缺，正是历史缺陷的形态。
         # 逻辑落在 scripts/clean-load.mjs 而不是内联 `node -e`：多行 JS 在 bash 与

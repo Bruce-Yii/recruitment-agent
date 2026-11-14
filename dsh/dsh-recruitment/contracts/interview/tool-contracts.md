@@ -1,9 +1,17 @@
-# tool-contracts.md · S8/S9 两个工具的形状
+# tool-contracts.md · S8/S9 工具的形状（含 2026-11-14 补的 S9 记录核验工具）
 
-**版本**：`tool-contracts 1.1.0`（与 `scheduling-rules 1.0.0` / `transcript-rules 1.0.0` 同一基线）
-**日期**：2026-11-13（**1.1.0 补注：2026-11-14**，S8 四 intent 落地时回抄口径，见 §3.9）
+**版本**：`tool-contracts 1.2.0`（与 `scheduling-rules 1.0.0` / `transcript-rules 1.0.0` 同一基线）
+**日期**：2026-11-13（**1.1.0 补注：2026-11-14**，S8 四 intent 落地时回抄口径，见 §3.9；
+**1.2.0 补注：2026-11-14**，S9 记录核验入口 `recruitment_interview_record_verify`，见 §8 —— D-B 修复）
 **范围**：**只写契约**——入参、出参、错误码、必守性质。**不含任何实现**（不写 SQL、不写 TS）。
 **规则来源**：`scheduling-rules.md`（S8）、`transcript-rules.md`（S9）。**本文件与那两份冲突时，以那两份为准**——这里只是形状。
+
+> **1.1.0 → 1.2.0 改了什么（只增一个工具，不改前两个的语义）**：
+> ① 新增 §8 `recruitment_interview_record_verify`：`interview_record` 从
+> `NEEDS_REVIEW/UNVERIFIED` 到 `READY/VERIFIED` 的**唯一产品入口**（人类闸门，D-79）；
+> 在此之前全仓没有任何工具能写 `VERIFIED`，DC-23 的"引用面试记录"因此不可达（D-B）。
+> ② §0 的边界表加一行（三个工具），原有两条"永远不做"一条未放宽。
+> 按末段版本规则（出参增删字段 → bump `1.x.0`），故为 `1.2.0`；前两个工具的错误码/`intent` 集合都没变。
 
 > **1.0.0 → 1.1.0 改了什么（只补口径，不改语义）**：
 > ① `schedule` 的允许写表从 5 张扩为 **6 张**（新增 `event_inbox`）：`scheduling-rules.md` §4.3/§4.4/SC-X5
@@ -15,12 +23,13 @@
 
 ---
 
-## 0. 两个工具的边界（先划死，再谈字段）
+## 0. 工具边界（先划死，再谈字段）
 
 | 工具 | 一句话 | 读 | 写 | 会对外发东西吗 | 能产 `decision` / `scorecard` 吗 |
 |---|---|---|---|---|---|
 | `recruitment_interview_get` | 查一场（或一份申请下的若干场）面试：谁面、几点、会议绑没绑、转写有没有 | 库 | **无** | 否 | 否 |
 | `recruitment_interview_schedule` | 排定 / 改期 / 取消一场面试，并在**本地**登记会议绑定 | 库 | **有**（`interview` / `interviewer` / `meeting` / `meeting_binding` / `business_task` / `event_inbox`） | **否**（H-2） | 否 |
+| `recruitment_interview_record_verify`（1.2.0 补，见 §8） | 人工核验一条**当前** `interview_record`，把它从 `NEEDS_REVIEW/UNVERIFIED` 推到 `READY/VERIFIED` | 库 | **有**（`interview_record` 两条状态轴 / `event_inbox`） | **否** | 否 |
 
 **六个"永远不做"**（每个都有对应的库约束或红线）：
 
@@ -641,3 +650,104 @@ DIGEST   = 'sha256:' || hex( sha256( canonical_json( args 去掉 idempotency_key
 **三维标签的唯一口径**：`provenance` 答"数据真不真"、`trigger` 答"谁触发"、`connection` 答"能不能自己读写外部系统"。三者**永不合并**成一个"success"（`R4`）。
 
 **版本变更**：出参增删字段 → bump `1.x.0`；错误码集合、`intent` 集合或 `transcript.state` 取值变化 → bump `2.0.0`（下游会断）。
+
+---
+
+## 8. `recruitment_interview_record_verify`（1.2.0 补：D-B 的核验入口）
+
+**为什么存在**：`interview_record` 由 `recruitment_transcript_import` 建成时是**确定性中性记录**
+（`status='NEEDS_REVIEW'` / `verification_status='UNVERIFIED'`，`transcript-rules TR-C6` / `TR-D2`）。
+而 `contracts/evaluation/decision-rules.md` 的 **DC-23** 规定：决策引用 `INTERVIEW_RECORD` 时，
+该记录必须 `status='READY' ∧ verification_status='VERIFIED'`（库层 `ck_interview_record_ready`，
+`0001:L1228`）。1.2.0 之前**没有任何产品工具**能写 `VERIFIED`，于是
+`evaluation_summarize` 只能回 `record.state='NOT_READY'` + `warning RECORD_NOT_READY`，
+S10 决策永远引不了面试记录（D-B，Golden Path 复跑的 basis 里确实没有它）。
+本工具补的就是"人核验过"这一步。
+
+### 8.1 边界
+
+| 项 | 值 |
+|---|---|
+| 读 | `interview_record` / `interview` / `application`（钉住的 rubric）/ `transcript_artifact`（同 revision）/ `transcript_segment`（计数与序号存在性）/ `meeting_binding` / `actor` |
+| 写 | `interview_record`：**只改** `status` + `verification_status`（审计列由 `fn_row_guard` 补，`record_version + 1`）；`event_inbox`：一条 `interview.record.verified` |
+| 不写 | `transcript_artifact` 的任何列、`sections` 内容、`scorecard`、`decision`、任何业务对象的状态 |
+| 会对外发东西吗 | **否**（不碰飞书/日历/邮件；`connection` 恒 `NOT_CONNECTED`） |
+
+### 8.2 状态机（以库为准，不许改迁移）
+
+| 源态（`status` / `verification_status`） | 目标态 | 结果 |
+|---|---|---|
+| `NEEDS_REVIEW` / `UNVERIFIED`，且 `is_current=true` | `READY` / `VERIFIED` | 允许推进（闸门放行后一次 UPDATE 同时改两列） |
+| `READY` / `VERIFIED`，且 `is_current=true` | 不变 | **幂等**：`outcome=NO_OP`、`replayed=true`、不问人、零写入 |
+| 其它组合（`PENDING`/`PROCESSING`/`PARTIAL`/`FAILED`，或 `READY+UNVERIFIED` 这类库允许但业务矛盾的脏行） | — | `INVALID_ARGS(STATUS_NOT_VERIFIABLE)`，**零写入** |
+| 任意状态但 `is_current=false` | — | `INVALID_ARGS(RECORD_NOT_CURRENT)`，零写入（非当前行没有决策价值） |
+
+`READY/VERIFIED` 是库层唯一自洽组合：`ck_interview_record_ready` 要求
+`status <> 'READY' or verification_status = 'VERIFIED'`，所以**必须**一条语句同时改两列；
+本工具**不得**通过改迁移来放宽它（任务边界：迁移是库的事实）。
+
+### 8.3 合法前置（任一不满足 → 结构化拒绝 + 零写入，且**先拒绝后问人**）
+
+| # | 检查 | 拒绝码（`reason_code`） |
+|---|---|---|
+| P1 | 记录存在且属于本租户（`interview → application` 同租户） | `NOT_FOUND(INTERVIEW_RECORD_NOT_FOUND)` |
+| P2 | 记录引用的 `(transcript_artifact_id, transcript_revision)` 在本租户存在 | `NOT_FOUND(TRANSCRIPT_ARTIFACT_NOT_FOUND)` |
+| P3 | artifact `transcript_status='READY'` | `BLOCKED_BY_REVIEW(TRANSCRIPT_NOT_READY)` |
+| P4 | artifact `is_complete=true` 且 `has_more=false` | `BLOCKED_BY_REVIEW(TRANSCRIPT_INCOMPLETE / TRANSCRIPT_HAS_MORE)` |
+| P5 | artifact 原文非空、**片段数 > 0** | `BLOCKED_BY_REVIEW(TRANSCRIPT_EMPTY / TRANSCRIPT_NO_SEGMENTS)` |
+| P6 | artifact 所属会议确实绑过这场面试（`meeting_binding` 历史任一） | `BLOCKED_BY_REVIEW(TRANSCRIPT_NOT_BOUND)` |
+| P7 | 记录自身 `evidence_ok=true` | `BLOCKED_BY_REVIEW(EVIDENCE_OK_FALSE)` |
+| P8 | `sections.basis` 指向**同一** artifact+revision；`sections.citations` 非空且每条 `kind='SEGMENT'` 的 `sequence` 都真实存在 | `BLOCKED_BY_REVIEW(SECTIONS_INVALID / SECTIONS_NO_CITATIONS / SECTIONS_BASIS_MISMATCH / CITATION_SEGMENT_MISSING)` |
+| P9 | 记录钉的 `rubric_version_id` 仍是申请当前钉住的那一版 | `BLOCKED_BY_REVIEW(RECORD_RUBRIC_STALE)` |
+
+> P9 与 `scorecard-rules SC-11` 同一精神：核过的记录也是"某种标准下的证据"，
+> 标准换了还拿它当决策依据 = 跨版本混用。
+
+### 8.4 人机闸门（D-79，不可绕过）
+
+1. 写库前必须过 `ctx.approval`；只有人的 `allowed-once` 继续。`unavailable` / `rejected` /
+   `cancelled` / 120s 超时 → `FORBIDDEN(APPROVAL_UNAVAILABLE | APPROVAL_NOT_GRANTED)`，**一行不写**。
+2. 决定者必须是本租户 `kind='HUMAN'` 的 actor：否则 `FORBIDDEN(ACTOR_NOT_IN_TENANT | ACTOR_NOT_HUMAN)`。
+3. **Agent 不得自己核**：模型只能在用户明确要求核验时调用；在工具返回 `VERIFIED` / `NO_OP`
+   之前，不得声称记录已就绪（与 `recruitment_job_rubric_approve` 同一条红线）。
+
+### 8.5 审计事件
+
+| 事件 | 谁写 | `normalizer_version` | 说明 |
+|---|---|---|---|
+| `interview_record.status.changed` | 库触发器 `fn_row_guard('status')`（`0001:L1750`） | `schema/0001` | 状态迁移来源；id 回填到行上的 `status_source_event_id` |
+| `interview.record.verified` | 本工具 | `schema/0001` | payload 含 record / interview / application / artifact+revision / 两条状态轴的 from→to / 核验人 / 片段数 / artifact `content_sha256` / 闸门结论 / 可选 reason / `status_source_event_id` |
+
+事件名必须在 `src/runtime/event-types.ts` **登记**（本工具登记为 `IGNORED`：
+记录已由命令事务写库，事件只是审计事实，不需要二次触发）。未登记的事件会落到语义 Gate，
+那是给外部未知信号用的，不是给已知内部事件的。
+
+### 8.6 出参与错误码
+
+- 出参键：`tool` / `contract_version` / `labels` / `outcome∈{VERIFIED,NO_OP}` / `replayed` /
+  `gate{requested,result}` / `record{...两条状态轴 + previous_* + record_version + verified_*}` /
+  `artifact{id,source_revision,transcript_status,segment_count,...}`（NO_OP 读不到 artifact 时省略）/
+  `changes{written,tables,event_ids}` / `next_action{kind:'READ_BACK', verify_with:'recruitment_transcript_read'}`。
+- 输出**没有 null**：可缺的键直接省略（DSH 校验器不接受 `type:'null'`）。
+- 错误码封闭集：`INVALID_ARGS`（`RECORD_NOT_CURRENT` / `STATUS_NOT_VERIFIABLE` / `RECORD_CHANGED` 及参数层
+  `UNKNOWN_PARAM` / `MISSING_REQUIRED` / `ID_NOT_UUID` / `OUT_OF_RANGE` / `TENANT_OR_ACTOR_NOT_ALLOWED`）、
+  `NOT_FOUND`（`INTERVIEW_RECORD_NOT_FOUND` / `TRANSCRIPT_ARTIFACT_NOT_FOUND`）、
+  `BLOCKED_BY_REVIEW`（§8.3 的 P3–P9）、`FORBIDDEN`（§8.4）、`NOT_CONFIGURED`（未配置替身）。
+
+### 8.7 验收用例（可机检）
+
+| # | 输入 | 结论 |
+|---|---|---|
+| V1 | `approval=rejected`，其余合法 | `FORBIDDEN(APPROVAL_NOT_GRANTED)`；记录两条状态轴、`record_version`、审计事件条数**全部不变** |
+| V2 | 没有 approval 通道（headless） | `FORBIDDEN(APPROVAL_UNAVAILABLE)`；零写入 |
+| V3 | `approval=allowed-once`，前置全过 | `READY/VERIFIED`；`record_version+1`；恰好一条 `interview.record.verified` + 一条 `interview_record.status.changed` |
+| V4 | 再调一次（approval 故意给 rejected） | `NO_OP`/`replayed=true`/`gate.requested=false`；approve **未被调用**；事件仍 1 条；`record_version` 不变 |
+| V5 | artifact 不是 READY / 无片段 / `evidence_ok=false` / rubric 过期 / 非当前行 / 状态脏 | §8.3 / §8.2 的结构化拒绝；approve **未被调用**；零写入 |
+| V6 | `transcript_import → summarize`（核验前） | `record.state=NOT_READY` + `RECORD_NOT_READY` 警告；决策引 `INTERVIEW_RECORD` → `BLOCKED_BY_REVIEW(RECORD_NOT_VERIFIED)` |
+| V7 | 上一步 → 本工具 → 再 summarize | `record.state=READY`、`RECORD_NOT_READY` 消失、`summary_digest` 改变（`record.verification_status` 在 DC-20 子集里）；决策落库且 `basis_refs` 含 `INTERVIEW_RECORD` |
+
+### 8.8 本文件不规定的事
+
+正文怎么写、是否加 `FOR UPDATE` 由实现方决定（实现用 `for update` 锁记录行 + 一次 UPDATE）。
+"N 段转写如何被结构化抽取成 `sections`"不属于本工具：本工具**不重算、不修饰**记录内容，
+只核对既有证据索引是否落地；抽取质量由将来独立的抽取入口负责。

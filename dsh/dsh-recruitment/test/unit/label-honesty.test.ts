@@ -235,6 +235,9 @@ const LIVE_EVIDENCE: Record<string, { readonly marker: RegExp; readonly why: str
   'interview-schedule.ts': { marker: /import \{ buildThreeAxisLabels/, why: '同一份租户判定' },
   'job-create.ts': { marker: /import \{ buildThreeAxisLabels/, why: '同一份租户判定' },
   'job-rubric-approve.ts': { marker: /import \{ buildThreeAxisLabels/, why: '同一份租户判定' },
+  // 2026-11-14（D-B lane）：记录核验是写工具，出口 labels 同样由 `buildThreeAxisLabels` 算
+  // （租户被显式声明为非合成才 LIVE）；本工具不读任何外部系统，connection 恒 NOT_CONNECTED。
+  'interview-record-verify.ts': { marker: /import \{ buildThreeAxisLabels/, why: '同一份租户判定' },
   'stage-advance.ts': { marker: /import \{ buildThreeAxisLabels/, why: '同一份租户判定' },
   'job-get.ts': {
     marker: /import \{ resolveTenantProvenance \} from '\.\/candidate-get\.ts'/,

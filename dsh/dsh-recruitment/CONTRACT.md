@@ -3,7 +3,7 @@
 **日期**：2026-11-12
 **任务卡**：`work/handoff/14-parallel-task-cards.md` §C（插件骨架 + 工具契约）
 **上位文档**：`work/handoff/09-dsh-plugin-architecture.md` §2-A（只读/草稿类工具）
-**状态（2026-11-14 回抄）**：可安装、可注册、可调用；当前注册 **25 个工具**（`src/index.ts:577-600`），
+**状态（2026-11-14 回抄）**：可安装、可注册、可调用；当前注册 **26 个工具**（`src/index.ts:589-613`），
 S3–S10 一条链路，既有只读也有**真写 PostgreSQL** 的工具。本文 §2–§9 是 **2026-11-12 的三工具 stub 快照**，
 与现状冲突时以本节 §0.1 + `docs/17-decision-ledger.md` 为准。
 
@@ -13,7 +13,7 @@ S3–S10 一条链路，既有只读也有**真写 PostgreSQL** 的工具。本�
 
 | # | 本文旧口径 | 现状 | 证据 |
 |---|---|---|---|
-| 1 | 三个工具（§0） | **25 个**：`resume_read` / `document_read` / `resume_serialize` / `structure_validate` / `candidate_get` / `job_get` / `job_create` / `job_update` / `job_rubric_approve` / `application_intake` / `screening_evaluate` / `application_stage_advance` / `interview_schedule` / `interview_get` / `transcript_import` / `transcript_read` / `scorecard_submit` / `evaluation_summarize` / `decision_record` / `trace_get` / `config_role` / `config_team` / `config_pipeline` / `page_image` / `model_text_merge` | `src/index.ts:577-600`（20 具名 + `...structureTools` 2 + `...configTools` 3 = 25）；2026-11-14 回抄实测：假 ctx 调 `apply()` 捕获 25 个注册名（配置齐 / 缺两条路径都是 25） |
+| 1 | 三个工具（§0） | **26 个**：`resume_read` / `document_read` / `resume_serialize` / `structure_validate` / `candidate_get` / `job_get` / `job_create` / `job_update` / `job_rubric_approve` / `application_intake` / `screening_evaluate` / `application_stage_advance` / `interview_schedule` / `interview_get` / `transcript_import` / `transcript_read` / `interview_record_verify` / `scorecard_submit` / `evaluation_summarize` / `decision_record` / `trace_get` / `config_role` / `config_team` / `config_pipeline` / `page_image` / `model_text_merge` | `src/index.ts:589-613`（21 具名 + `...structureTools` 2 + `...configTools` 3 = 26）；2026-11-14 回抄实测：假 ctx 调 `apply()` 捕获 **26** 个注册名（配置齐 / 缺两条路径都是 26，见 `test/unit/interview-record-verify.test.ts` 的 apply() 用例）。新增的 `interview_record_verify` 是 D-B 修复：`interview_record` 从 `NEEDS_REVIEW/UNVERIFIED` 到 `READY/VERIFIED` 的唯一产品入口（人类闸门 D-79），契约见 `contracts/interview/tool-contracts.md §8` |
 | 2 | 全部只读、不连库（§0 / §2.3 / §6） | 读走 `withReadOnly`、写走 `withActor`，真连 PG 17；S3/S6/S8/S9/S10 都有写库路径 | `src/db/pool.ts`；`src/index.ts` 的 `create*Tool`；各 `src/tools/*.ts` |
 | 3 | `provenance` 恒 `FIXTURE`（§0 / §2.4） | 按 R4 三维标签计算；**缺省**才是 `FIXTURE`，真实读取为 `LIVE` | `src/tools/screening-evaluate.ts:1692-1693`；`src/tools/decision-record.ts:1686-1693`；D-95 / D-103 |
 | 4 | 依赖服务 `inject = ['tools']`（§1） | `inject = ['tools', 'approval']`（人类闸门，D-79） | `src/index.ts:123` |
@@ -34,7 +34,7 @@ S3–S10 一条链路，既有只读也有**真写 PostgreSQL** 的工具。本�
 
 ## 0. 一句话 + 一条必须先说的实测结论
 
-> **以下这句是 2026-11-12 的历史口径，已被 §0.1 取代（现状 25 个工具、有写库）：**
+> **以下这句是 2026-11-12 的历史口径，已被 §0.1 取代（现状 26 个工具、有写库）：**
 > 三个工具（不多不少），全部只读，全部返回 stub 数据，`provenance` 恒为 `FIXTURE`。
 
 **实测结论（会改变后续所有插件写法，必须上报）**：通过 `dsh plugin add link:` 装进 profile
@@ -100,7 +100,7 @@ dsh plugin --profile <profile> remove @recruitment/dsh-recruitment
 
 ---
 
-## 2. 公共约定（**2026-11-12 的"三个 stub 工具"口径；25 个工具的现状见 §0.1**）
+## 2. 公共约定（**2026-11-12 的"三个 stub 工具"口径；26 个工具的现状见 §0.1**）
 
 ### 2.1 入参校验规则（`src/tools/args.ts`）
 
@@ -298,7 +298,7 @@ recruitment_job_get {"job_id":"job_0001"}
 ## 6. 只读是怎么证明的（不是自我声称）
 
 > **历史快照：本节的静态扫描只覆盖 2026-11-12 的 3 个 stub 工具。**
-> 25 个工具的现状**不是全部只读**：S3/S6/S8/S9/S10 有写库路径（§0.1 第 2 条）；2026-11-14 起另有 `job_rubric_approve` / `application_stage_advance` / `trace_get` / 3 个 `config_*` 写读工具。
+> 26 个工具的现状**不是全部只读**：S3/S6/S8/S9/S10 有写库路径（§0.1 第 2 条）；2026-11-14 起另有 `job_rubric_approve` / `application_stage_advance` / `trace_get` / 3 个 `config_*` 写读工具。
 > 当前只读证明按工具分别做：S7 `screening_evaluate` 用 `withReadOnly` + `test/unit/screening-readonly.test.ts`；
 > 其余只读工具同样在 `begin transaction read only` 里跑（`src/db/pool.ts`）。
 > `test/harness.mjs` 已不存在，本节命令不可复跑。
@@ -438,7 +438,7 @@ exit=1
 
 ### 7.5 三个工具全部只读
 
-> 仅对 2026-11-12 的 3 个 stub 工具成立；25 个工具的现状见 §0.1 第 2 条。
+> 仅对 2026-11-12 的 3 个 stub 工具成立；26 个工具的现状见 §0.1 第 2 条。
 
 见 §6（静态扫描 8/8 项 0 命中 + 结构说明）。
 

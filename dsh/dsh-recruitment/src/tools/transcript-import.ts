@@ -1623,6 +1623,8 @@ const DESCRIPTION =
   + '回读对象自相矛盾（哈希/回执/重读不一致）→ BLOCKED/READBACK_INVALID，一行不写。'
   + '注意：artifact.transcript_status=READY 只代表原文已完整落库，'
   + '不代表 interview_record READY（后者是 status=NEEDS_REVIEW / verification_status=UNVERIFIED，需人工复核）。'
+  + '把记录推进到 READY/VERIFIED 的**唯一产品入口**是 recruitment_interview_record_verify'
+  + '（人机闸门：只有人批准才会写；DC-23 要求 READY+VERIFIED 才能被决策引用）。'
 
 /**
  * 造一个绑定配置的转写导入工具（写路径；`isConcurrencySafe=false`）。

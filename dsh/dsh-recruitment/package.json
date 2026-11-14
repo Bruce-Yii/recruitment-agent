@@ -2,7 +2,7 @@
   "name": "@recruitment/dsh-recruitment",
   "version": "0.1.0",
   "private": true,
-  "description": "DSH 招聘工具包（25 个 recruitment_* 工具，S3–S10 一条 Golden Path）：读写简历/结构化、岗位与 Rubric（含人类批准入口）、S6 接入、S7 初筛、S8 排期（D-62 四 intent）、S9 转写、S10 面评与决策、阶段推进、执行追溯、企业自建配置；读写真连 PostgreSQL 17。",
+  "description": "DSH 招聘工具包（26 个 recruitment_* 工具，S3–S10 一条 Golden Path）：读写简历/结构化、岗位与 Rubric（含人类批准入口）、S6 接入、S7 初筛、S8 排期（D-62 四 intent）、S9 转写、S10 面评与决策、阶段推进、执行追溯、企业自建配置；读写真连 PostgreSQL 17。",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
