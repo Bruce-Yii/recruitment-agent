@@ -242,11 +242,14 @@ test('合法结构化 → state 按模型层（D-29）升级，converter_state �
   assert.equal(fields.education?.state, 'present')
   assert.equal(fields.education?.converter_state, 'absent')
 
-  // 身份强标识来自模型层 phone/email（姓名不参与）
-  assert.deepEqual(material.strong.map((id) => id.field), ['phone', 'email'])
-  assert.equal(material.strong[0]?.norm, '+8613800001234')
-  assert.equal(material.strong[0]?.provenance, 'agent_read')
-  assert.equal(material.strong[1]?.norm, 'zhang.example@example.test')
+  // 2026-11-14 修正：D-67/IR-F4 只允许 native_text 自动归并；agent_read 必须 weak
+  // （原断言把 "agent_read 进 strong" 这个错误行为断言成了正确，见验收报告 §1.2）
+  assert.deepEqual(material.strong, [], 'agent_read 绝不进 strong')
+  assert.deepEqual(material.weak?.map((id) => id.field), ['phone', 'email'])
+  assert.equal(material.weak?.[0]?.norm, '+8613800001234')
+  assert.equal(material.weak?.[0]?.provenance, 'agent_read')
+  assert.equal(material.weak?.[0]?.reason, 'provenance_agent_read')
+  assert.equal(material.weak?.[1]?.norm, 'zhang.example@example.test')
   assert.deepEqual(material.blocked, [])
 
   // parsed_fields.structured：来源标记 + 每个字段引用了哪些 block
@@ -270,7 +273,10 @@ test('模型说 unreadable → 最终 unreadable（converter present 不得把 u
   assert.equal(fields.phone?.converter_state, 'unreadable')
   assert.equal(fields.phone?.reason, 'value_masked_or_redacted')
   assert.equal(Object.hasOwn(fields.phone as object, 'value'), false, 'unreadable 不得携带 present 值')
-  assert.deepEqual(material.strong.map((id) => id.field), ['email'])
+  // 2026-11-14 修正：D-67/IR-F4 只允许 native_text 自动归并；agent_read 必须 weak
+  // （原断言 strong=['email'] 把模型读出的 email 断言成强标识了。）
+  assert.deepEqual(material.strong, [])
+  assert.deepEqual(material.weak?.map((id) => id.field), ['email'])
 
   // 反方向：converter present、模型 unreadable → 最终 unreadable，且不是 absent
   const converterPresent = makeOutput({

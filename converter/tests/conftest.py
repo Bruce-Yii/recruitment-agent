@@ -181,23 +181,73 @@ def _non_space(text: str) -> Counter:
     return Counter(re.sub(r"\s", "", text or ""))
 
 
+def recovered_ocr_pages(result: dict) -> set[int]:
+    """声明"整页已由 OCR 重读"的页号（D-98 的 ``pdf_text_recovered_by_ocr``）。
+
+    这些页的原生文本层本身就是坏的（Type3/坏字形），reader 已经用 issue 显式声明
+    "恢复文本 provenance=ocr，不是原生文本"。所以保真恒等式
+    （native == native blocks + declared removals）只对**未被声明重读**的页成立：
+    对声明页的正确判定是"原生文本不可用"，不能拿坏文本层去和 OCR 文本逐字比。
+    "该声明却没声明"由 ``test_encoding_issue_recorded_when_glyphs_removed`` 守。
+    """
+    pages: set[int] = set()
+    for issue in result.get("issues") or []:
+        if issue.get("code") != "pdf_text_recovered_by_ocr":
+            continue
+        page = (issue.get("location") or {}).get("page")
+        if isinstance(page, int):
+            pages.add(page)
+    return pages
+
+
 def page_identity(result: dict, path) -> list[dict]:
     """Per page: native == native-provenance blocks + declared removals.
 
     ``declared removals`` are exactly the characters the reader says it removed:
     undecodable glyphs (A6) and platform noise (§9.5).  Nothing else may be
     missing or added, otherwise fidelity is broken.
+
+    D-98 的唯一豁免（**显式且窄**）：某页同时满足
+      ① 带 ``pdf_text_recovered_by_ocr`` 声明（声明里 page 指向该页）；
+      ② 该页的**正文块**全部是 ``provenance='ocr'``（没有任何 native_text 正文冒充）；
+      ③ 该页除 ``kind='link'`` 的链接记录块外，没有别的非 ``ocr`` 块
+         （链接记录块本来就不算正文，``page_identity`` 的恒等式也一直排除它）；
+      ④ 该页有 OCR 块、且 OCR 文本非空
+    时，该页原生恒等式不适用（原生文本层本身坏了），返回 ``applicable=False`` 并带
+    自证字段（``declaration`` / ``body_block_provenances`` / ``non_ocr_block_kinds`` /
+    ``ocr_block_count`` / ``ocr_text_chars``）交由调用方**逐条断言**，不是静默放过。
+    缺声明、或该页混有非 link 的非 ocr 块 → 不豁免，仍必须满足恒等式。
     """
     native = pdf_reader.native_page_text(path)
     info = {p["page"]: p for p in (result.get("meta") or {}).get("page_info") or []}
+    recovered = recovered_ocr_pages(result)
     checks = []
     for page_no, native_text in enumerate(native, 1):
+        page_blocks = [b for b in result.get("blocks") or []
+                       if (b.get("location") or {}).get("page") == page_no]
+        non_ocr = [b for b in page_blocks if b.get("provenance") != "ocr"]
+        ocr_blocks = [b for b in page_blocks if b.get("provenance") == "ocr"]
+        body_provenances = {b.get("provenance") for b in page_blocks
+                            if b.get("kind") != "link"}
+        non_ocr_kinds = sorted({b.get("kind") for b in non_ocr})
+        if (page_no in recovered
+                and len(ocr_blocks) > 0
+                and body_provenances == {"ocr"}
+                and all(b.get("kind") == "link" for b in non_ocr)):
+            ocr_text = "".join((b.get("text") or "") for b in ocr_blocks)
+            checks.append({"page": page_no, "applicable": False,
+                           "reason": "declared_ocr_recovery",
+                           "declaration": "pdf_text_recovered_by_ocr",
+                           "body_block_provenances": sorted(body_provenances),
+                           "non_ocr_block_kinds": non_ocr_kinds,
+                           "ocr_block_count": len(ocr_blocks),
+                           "ocr_text_chars": len(ocr_text.strip()),
+                           "block_count": len(page_blocks),
+                           "equal": True, "native_chars": 0, "block_chars": 0})
+            continue
         want = _non_space(native_text)
         got: Counter = Counter()
-        for block in result.get("blocks") or []:
-            location = block.get("location") or {}
-            if location.get("page") != page_no:
-                continue
+        for block in page_blocks:
             if block.get("provenance") != "native_text":
                 continue
             if block.get("kind") == "link":
@@ -206,7 +256,7 @@ def page_identity(result: dict, path) -> list[dict]:
         page = info.get(page_no, {})
         got += _non_space(page.get("encoding_removed") or "")
         got += _non_space(page.get("noise_removed") or "")
-        checks.append({"page": page_no, "equal": want == got,
+        checks.append({"page": page_no, "applicable": True, "equal": want == got,
                        "native_chars": sum(want.values()),
                        "block_chars": sum(got.values())})
     return checks

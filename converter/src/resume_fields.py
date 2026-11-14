@@ -320,6 +320,20 @@ def _evidence(block: dict, block_index: int, sha: str, text: str | None = None) 
             "source_sha256": sha}
 
 
+def _provenance_of(block: dict) -> str:
+    """块 provenance → 字段 provenance（D-67 / doc11 §9.7：来源必须逐块传播）。
+
+    只有原生文本块抽出来的值才允许标 ``native_text``（可自动归并）；整页 OCR 重读的块
+    是 ``ocr``，模型读出的块是 ``agent_read``/``model_read``，OCR 补的标题是
+    ``ocr_title``。块上没有 provenance 时记 ``unknown``——**fail-closed：不猜 native_text**，
+    下游（身份闸门）只认 ``native_text``，``unknown`` 只能进人工。
+    """
+    value = block.get("provenance")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return "unknown"
+
+
 def _field(state: str, *, value=None, evidence=None, reason="", provenance="native_text",
            extra=None) -> dict:
     item = {"state": state, "value": value, "evidence": list(evidence or []),
@@ -384,12 +398,15 @@ def _find_name(blocks: list, sha: str) -> dict:
                 value = match.group(1).strip()
                 return _field(PRESENT, value=value,
                               evidence=[_evidence(block, index, sha, value)],
+                              provenance=_provenance_of(block),
                               extra={"match_rule": "labeled_name"})
-        # 出现"姓名/Name"标签却没读出值 → 读不出，而不是没有
-        if any(_LABELED_NAME.search(b.get("text") or "") or
-               re.search(r"姓\s*名|\bName\b", b.get("text") or "") for b in blocks):
-            return _field(UNREADABLE, reason="name_label_without_readable_value")
-        return _field(ABSENT, reason="no_name_candidate")
+        # 出现"姓名/Name"标签却没读出值 → 读不出，而不是没有（来源跟随标签块）
+        for index, block in enumerate(blocks):
+            text = block.get("text") or ""
+            if _LABELED_NAME.search(text) or re.search(r"姓\s*名|\bName\b", text):
+                return _field(UNREADABLE, reason="name_label_without_readable_value",
+                              provenance=_provenance_of(block))
+        return _field(ABSENT, reason="no_name_candidate", provenance="unknown")
     # 优先结构层认定的 h1；否则取首页字号最大者（且必须唯一最大）
     h1 = [c for c in candidates if c[3].startswith("heading_level_1")]
     if h1:
@@ -399,9 +416,11 @@ def _find_name(blocks: list, sha: str) -> dict:
         best = [c for c in candidates if c[4] == top]
         if len(best) != 1 or top <= 0:
             return _field(UNREADABLE, reason="ambiguous_name_candidates",
+                          provenance=_provenance_of(candidates[0][1]),
                           extra={"candidates": [c[2] for c in candidates[:5]]})
         index, block, text, source, size = best[0]
     return _field(PRESENT, value=text, evidence=[_evidence(block, index, sha, text)],
+                  provenance=_provenance_of(block),
                   extra={"match_rule": source})
 
 
@@ -418,16 +437,19 @@ def _find_pattern_field(blocks: list, patterns, sha: str, *, name: str) -> dict:
                         continue
                     return _field(PRESENT, value=value,
                                   evidence=[_evidence(block, index, sha, value)],
+                                  provenance=_provenance_of(block),
                                   extra={"normalized": digits})
                 return _field(PRESENT, value=value,
-                              evidence=[_evidence(block, index, sha, value)])
+                              evidence=[_evidence(block, index, sha, value)],
+                              provenance=_provenance_of(block))
     # 有标签、无值（脱敏/图片化）→ unreadable；不能记 absent
     label = _PHONE_LABEL if name == "phone" else _EMAIL_LABEL
     for index, block in enumerate(blocks):
         if label.search(block.get("text") or ""):
             return _field(UNREADABLE, reason=f"{name}_label_without_readable_value",
-                          evidence=[_evidence(block, index, sha)])
-    return _field(ABSENT, reason=f"no_{name}_pattern")
+                          evidence=[_evidence(block, index, sha)],
+                          provenance=_provenance_of(block))
+    return _field(ABSENT, reason=f"no_{name}_pattern", provenance="unknown")
 
 
 # ============================ 行聚类 / 章节 / 经历 ============================

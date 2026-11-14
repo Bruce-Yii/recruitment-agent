@@ -15,7 +15,7 @@ import fitz
 import pytest
 
 from conftest import (MANIFEST, ROOT, all_evidence, field_states, hard_codes,
-                      page_identity, sha256)
+                      page_identity, recovered_ocr_pages, sha256)
 from src import content, pdf_reader
 
 BAD_GLYPHS = re.compile(r"\ufffd|\(cid:\d+\)|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -50,7 +50,12 @@ def test_page_coverage(corpus_results):
 
 
 def test_counter_identity(corpus_results):
-    """A2: native == native blocks + declared removals, per page, all 84 files."""
+    """A2: native == native blocks + declared removals, per page, all 84 files.
+
+    D-98：声明整页 OCR 重读的页不适用本恒等式（reader 已把原生文本判为不可用并
+    显式声明；拿坏文本层去比 OCR 文本只会得出假结论）。这些页因此**跳过计数**，
+    不是静默通过 —— "该声明却没声明"由 test_encoding_issue_recorded_when_glyphs_removed 守。
+    """
     problems = []
     checked = 0
     for row, result in corpus_results:
@@ -59,10 +64,53 @@ def test_counter_identity(corpus_results):
         if any(i.get("code") == "encrypted_pdf" for i in result["issues"]):
             continue  # 空密码打不开：没有可比对的原生文本
         for check in page_identity(result, row["path"]):
+            if check.get("applicable") is False:
+                # 豁免必须自证（D-98）：声明在、正文块全是 ocr、非 ocr 仅链接记录、OCR 文本非空。
+                assert check.get("declaration") == "pdf_text_recovered_by_ocr", check
+                assert check.get("body_block_provenances") == ["ocr"], check
+                assert set(check.get("non_ocr_block_kinds") or []) <= {"link"}, check
+                assert check.get("ocr_block_count", 0) > 0, check
+                assert check.get("ocr_text_chars", 0) > 0, check
+                continue
             checked += 1
             if not check["equal"]:
                 problems.append((row["id"], check))
     assert checked > 150, f"only {checked} pages checked"
+    assert not problems, problems[:10]
+
+
+def test_ocr_recovered_page_is_non_empty_and_declared(corpus_results):
+    """D-98 正向断言：被豁免的 OCR 恢复页必须真的"恢复成功"，不是恢复成空页。
+
+    每条被豁免页都要：① 带 ``pdf_text_recovered_by_ocr`` 声明（本测试从 issue 取声明，
+    不信任别处的过滤结果）；② 正文块全部 ``provenance='ocr'``、非 ocr 块只允许
+    ``kind='link'`` 的链接记录；③ OCR 块数 > 0；④ OCR 文本非空。
+    """
+    problems = []
+    exempt_page_count = 0
+    for row, result in corpus_results:
+        for page_no in sorted(recovered_ocr_pages(result)):
+            exempt_page_count += 1
+            page_blocks = [b for b in result.get("blocks") or []
+                           if (b.get("location") or {}).get("page") == page_no]
+            ocr_blocks = [b for b in page_blocks if b.get("provenance") == "ocr"]
+            non_ocr = [b for b in page_blocks if b.get("provenance") != "ocr"]
+            body_provenances = sorted({b.get("provenance") for b in page_blocks
+                                       if b.get("kind") != "link"})
+            non_ocr_kinds = sorted({b.get("kind") for b in non_ocr})
+            ocr_text = "".join((b.get("text") or "") for b in ocr_blocks).strip()
+            if body_provenances != ["ocr"]:
+                problems.append((row["id"], page_no, "non-ocr body block", body_provenances))
+            if not set(non_ocr_kinds) <= {"link"}:
+                problems.append((row["id"], page_no, "unexpected non-ocr block kind",
+                                 non_ocr_kinds))
+            if not ocr_blocks:
+                problems.append((row["id"], page_no, "no blocks after recovery"))
+            if not ocr_text:
+                problems.append((row["id"], page_no, "empty OCR text"))
+    if exempt_page_count == 0:
+        pytest.skip("no page declared pdf_text_recovered_by_ocr in this corpus/environment "
+                    "(OCR fallback unavailable); D-98 path cannot be certified here")
     assert not problems, problems[:10]
 
 
@@ -118,19 +166,26 @@ def test_encoding_issue_recorded_when_glyphs_removed(corpus_results):
     A NUL is format noise (the reference's ``content.normalize`` replaces it with a
     space), so it is removed and declared but does not by itself make a page
     unreadable.  U+FFFD / ``(cid:N)`` / other control characters must raise
-    ``pdf_text_encoding_unread``.
+    ``pdf_text_encoding_unread`` **or** be recovered by the page-level OCR fallback
+    (D-98), in which case the reader must say so with ``pdf_text_recovered_by_ocr``.
     """
     undecodable = re.compile(r"\ufffd|\(cid:\d+\)|[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]")
     problems = []
     for row, result in corpus_results:
         removed = "".join(p.get("encoding_removed") or ""
                           for p in result["meta"].get("page_info") or [])
-        has_issue = any(i.get("code") == "pdf_text_encoding_unread"
-                        for i in result["issues"])
-        if undecodable.search(removed) and not has_issue:
-            problems.append((row["id"], "undecodable removed without issue"))
-        if has_issue and not undecodable.search(removed):
-            problems.append((row["id"], "issue without undecodable removal"))
+        has_unread = any(i.get("code") == "pdf_text_encoding_unread"
+                         for i in result["issues"])
+        has_recovered = any(i.get("code") == "pdf_text_recovered_by_ocr"
+                            for i in result["issues"])
+        removed_bad = bool(undecodable.search(removed))
+        if removed_bad and not (has_unread or has_recovered):
+            problems.append((row["id"], "undecodable removed without declaration"))
+        if has_unread and not removed_bad:
+            problems.append((row["id"], "unread issue without undecodable removal"))
+        if has_recovered and not removed_bad:
+            # D-98：OCR 重读必须有"原生层确实坏了"的依据，不能凭空空转
+            problems.append((row["id"], "ocr recovery declared without undecodable removal"))
     assert not problems, problems[:5]
 
 
@@ -145,7 +200,7 @@ def test_block_shape_and_provenance(corpus_results):
                 continue
             if block["kind"] not in allowed:
                 problems.append((row["id"], index, "kind", block["kind"]))
-            if block["provenance"] not in {"native_text", "ocr_title", "agent_read"}:
+            if block["provenance"] not in {"native_text", "ocr", "ocr_title", "agent_read"}:
                 problems.append((row["id"], index, "provenance", block["provenance"]))
             bbox = block["location"].get("bbox")
             if not (isinstance(bbox, list) and len(bbox) == 4):
@@ -241,16 +296,24 @@ COMPAT = "ﬁﬂ①②㈠㎏ⅣⅧ"
 
 
 def test_no_blanket_nfkc(corpus_results):
-    """A3: no Unicode normalisation — compatibility characters survive as-is."""
+    """A3: no Unicode normalisation — compatibility characters survive as-is.
+
+    D-98：声明整页 OCR 重读的页不参与"原生文本未被归一化"的比对（该页 body 是 OCR 文本，
+    原生层本身坏了）。豁免口径与 `page_identity` 完全一致、且由
+    `test_ocr_recovered_page_is_non_empty_and_declared` 自证；其余页一条不放过。
+    """
     problems = []
     checked = 0
     for row, result in corpus_results:
         if any(i.get("code") == "encrypted_pdf" for i in result["issues"]):
             continue
         try:
-            native = "".join(pdf_reader.native_page_text(row["path"]))
+            native_pages = pdf_reader.native_page_text(row["path"])
         except Exception:  # noqa: BLE001 —— 打不开的原件由 hard_cases 覆盖
             continue
+        exempt = recovered_ocr_pages(result)
+        native = "".join(text for number, text in enumerate(native_pages, 1)
+                         if number not in exempt)
         body = result.get("text") or ""
         for char in COMPAT:
             if char in native:
