@@ -240,7 +240,8 @@ function sampleValue(withRubric = true): Record<string, unknown> {
   return {
     tool: JOB_CREATE_TOOL,
     contract_version: CONTRACT_VERSION,
-    labels: { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' },
+    // R4：provenance 由租户事实算（这里只是 schema 校验样例值），connection 不接外部系统 ⇒ NOT_CONNECTED。
+    labels: { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'NOT_CONNECTED' },
     outcome: 'CREATED',
     department: { id: DEPARTMENT, name: '研发部（演示）' },
     job: {

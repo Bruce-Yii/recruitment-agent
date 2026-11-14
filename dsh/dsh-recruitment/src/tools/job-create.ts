@@ -45,6 +45,9 @@ import { contractError, digestOf } from './contract.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
 import { validateDimensions } from './screening-evaluate.ts'
+// R4 三维标签：`provenance` 按**这次调用**的租户事实算，不许写死 `LIVE`
+// （`contracts/tenant-provenance.md`；判定式与 candidate_get / interview_schedule 共用同一份实现）。
+import { buildThreeAxisLabels } from './candidate-get.ts'
 import {
   closePool,
   createPool,
@@ -330,7 +333,8 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
       properties: {
         provenance: { type: 'string', enum: ['LIVE', 'FIXTURE'] },
         trigger: { type: 'string', enum: ['MANUAL'] },
-        connection: { type: 'string', enum: ['CONNECTED', 'NOT_CONNECTED'] },
+        // 岗位写工具不接任何外部系统（不读外部 ATS / 不读日历）：唯一如实取值是 NOT_CONNECTED。
+        connection: { type: 'string', enum: ['NOT_CONNECTED'] },
       },
       required: ['provenance', 'trigger', 'connection'],
       additionalProperties: false,
@@ -436,10 +440,11 @@ interface JobValue {
 export interface JobWriteValue {
   readonly tool: string
   readonly contract_version: string
+  /** R4 三维标签（`contracts/tenant-provenance.md`）：`provenance` 按租户事实算，不写死。 */
   readonly labels: {
-    readonly provenance: 'LIVE'
+    readonly provenance: 'LIVE' | 'FIXTURE'
     readonly trigger: 'MANUAL'
-    readonly connection: 'CONNECTED'
+    readonly connection: 'NOT_CONNECTED'
   }
   readonly outcome: 'CREATED' | 'UPDATED' | 'UNCHANGED'
   readonly department: { readonly id: string; readonly name: string }
@@ -1020,6 +1025,7 @@ function jobValue(row: JobRow): JobValue {
  * @param jobVersion - job_version 行。
  * @param jdSource - JD 来源标记。
  * @param rubric - rubric 块（可空）。
+ * @param labels - R4 三维标签（调用方用 `buildThreeAxisLabels` 按租户事实算出后传入）。
  */
 function jobWriteValue(
   tool: string,
@@ -1029,11 +1035,12 @@ function jobWriteValue(
   jobVersion: JobVersionRow | undefined,
   jdSource: 'PROVIDED' | 'TITLE_PLACEHOLDER',
   rubric: RubricValue | null,
+  labels: JobWriteValue['labels'],
 ): JobWriteValue {
   return {
     tool,
     contract_version: CONTRACT_VERSION,
-    labels: { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' },
+    labels,
     outcome,
     department: { id: department.id, name: department.name },
     job: jobValue(job),
@@ -1249,7 +1256,9 @@ export async function createJobInTransaction(
       status_changed_at: finalTouch?.status_changed_at ?? job.status_changed_at,
     }
 
-    return jobWriteValue(JOB_CREATE_TOOL, 'CREATED', department, finalJob, jobVersion, jdSource, rubric)
+    // R4 三维标签：按租户事实算（演示租户 ⇒ FIXTURE），不写死 LIVE。
+    const labels = await buildThreeAxisLabels(client, cfg.tenant_id)
+    return jobWriteValue(JOB_CREATE_TOOL, 'CREATED', department, finalJob, jobVersion, jdSource, rubric, labels)
   } catch (error) {
     // 只映射当前错误，不在 catch 里补查询（25P02：事务已被终止）。
     throw mapDatabaseError(error)
@@ -1457,6 +1466,9 @@ export async function updateJobInTransaction(
       ? 'UPDATED'
       : 'UNCHANGED'
 
+    // R4 三维标签：按租户事实算（演示租户 ⇒ FIXTURE），不写死 LIVE。
+    const labels = await buildThreeAxisLabels(client, cfg.tenant_id)
+
     return jobWriteValue(
       JOB_UPDATE_TOOL,
       outcome,
@@ -1465,6 +1477,7 @@ export async function updateJobInTransaction(
       jobVersion,
       jdSourceOf(jobVersion, finalJob.title),
       rubric,
+      labels,
     )
   } catch (error) {
     throw mapDatabaseError(error)
@@ -1747,8 +1760,10 @@ const CRITERIA_HELP = [
 ].join('\n')
 
 const CREATE_DESCRIPTION = [
-  'Create a job (requisition) in the business database and, when criteria are given, its first rubric version '
-    + '(labels: LIVE/MANUAL/CONNECTED).',
+  'Create a job (requisition) in the business database and, when criteria are given, its first rubric version. '
+    + 'Output carries R4 three-axis labels: provenance is computed from the tenant\'s synthetic marker (FIXTURE '
+    + 'unless the tenant is explicitly declared non-synthetic; never hard-coded LIVE), trigger is MANUAL, and '
+    + 'connection is NOT_CONNECTED (no external system is read or written).',
   '',
   'WHAT IT WRITES (one transaction)',
   '- recruitment.job: code is unique per tenant (omit code to auto-generate JOB-<YYYYMMDD>-<6 hex>).',
@@ -1775,7 +1790,10 @@ const CREATE_DESCRIPTION = [
 ].join('\n')
 
 const UPDATE_DESCRIPTION = [
-  'Update a job (requisition) by APPENDING new versions; history is never rewritten (labels: LIVE/MANUAL/CONNECTED).',
+  'Update a job (requisition) by APPENDING new versions; history is never rewritten. '
+    + 'Output carries R4 three-axis labels: provenance is computed from the tenant\'s synthetic marker (FIXTURE '
+    + 'unless the tenant is explicitly declared non-synthetic; never hard-coded LIVE), trigger is MANUAL, and '
+    + 'connection is NOT_CONNECTED (no external system is read or written).',
   '',
   'WHAT IT WRITES (one transaction)',
   '- job_id: UUID of an existing job in the configured tenant (from recruitment_job_create output or '

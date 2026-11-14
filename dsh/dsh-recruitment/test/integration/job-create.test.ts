@@ -72,7 +72,9 @@ test('① 建岗位 + criteria：job/job_version/rubric_version/approval 四行�
     assert.equal(value.outcome, 'CREATED')
     assert.equal(value.contract_version, '1.0.0')
     assert.equal(value.tool, 'recruitment_job_create')
-    assert.deepEqual(value.labels, { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' })
+    // R4（`contracts/tenant-provenance.md`）：ra_s6s7 是 0002_seed 的演示租户（合成数据）⇒ FIXTURE；
+    // 岗位写工具不接任何外部系统 ⇒ connection=NOT_CONNECTED（不许再写死 LIVE/CONNECTED）。
+    assert.deepEqual(value.labels, { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'NOT_CONNECTED' })
     assert.equal(value.department.id, DEMO_DEPARTMENT)
 
     const jobRows = await selectRows(client,

@@ -44,9 +44,19 @@ const INTERVIEWER_B = '11111111-1111-4111-8111-000000000102'
 /** 服务端"现在"（测试注入，固定值让 START_IN_PAST 的判定与真实时钟无关）。 */
 const NOW = Date.parse('2026-11-13T00:00:00Z')
 /** 未来的开始时刻（+08:00）。 */
-const START = '2026-11-20T10:00:00+08:00'
-const START_ISO = '2026-11-20T02:00:00.000Z'
-const END_ISO = '2026-11-20T03:00:00.000Z'
+// 排期时段**不能写死**：本文件连的是共享真库 `ra_s6s7`，其它 lane / 手工操作会往库里
+// 提交真实面试。写死 `2026-11-20T10:00+08:00` 时，并发 lane 恰好在同一时段、同一面试官
+// （`INTERVIEWER_A`）建了一场面试，于是 approval 负例先被 `CONFLICT_SLOT` 拦掉——
+// 测的就不再是闸门，而是"库里那一刻有没有空位"。
+//
+// 改成「远期基准 + 每次进程随机偏移」：2031 年之后库里不会有任何已提交数据，随机偏移
+// 保证并发跑同一个测试文件的两个进程也不会互相撞。派生值一律用 `at()` 算，不许再写死。
+const SLOT_BASE_MS = Date.parse('2031-01-01T10:00:00+08:00') + Math.floor(Math.random() * 300 * 24 * 60) * 60_000
+/** 相对基准偏移 `minutes` 分钟的时刻（UTC ISO，便于与 `iso()` 的结果直接比较）。 */
+const at = (minutes: number): string => new Date(SLOT_BASE_MS + minutes * 60_000).toISOString()
+const START = at(0)
+const START_ISO = at(0)
+const END_ISO = at(60)
 
 /** `seedScenario` 只要求 dimensions 能被 `digestOf` 规范化；判定规则在这里用不到。 */
 const DIMENSIONS = [
@@ -248,7 +258,9 @@ test('CREATE 成功：interview/interviewer/meeting/binding/task 全部落库，
     assert.equal(value.write, true)
     assert.equal(value.replayed, false)
     assert.equal(value.intent, 'CREATE')
-    assert.deepEqual(value.labels, { provenance: 'LIVE', trigger: 'MANUAL', connection: 'NOT_CONNECTED' })
+    // R4（`contracts/tenant-provenance.md`）：ra_s6s7 是 0002_seed 的演示租户（合成数据）⇒ FIXTURE；
+    // 排期工具不接日历/会议平台 ⇒ connection=NOT_CONNECTED。**不许**再写死 LIVE（N10 / docs/23 P2-03）。
+    assert.deepEqual(value.labels, { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'NOT_CONNECTED' })
     assert.deepEqual(value.effects, { meeting_bound: true, external_call_made: false })
     assert.deepEqual(value.warnings, [])
     assert.deepEqual(value.next_actions, [])
@@ -433,7 +445,7 @@ test('同 key 同参 → replayed=true、changes 空、行数不变；时间已�
     assert.deepEqual(await tableCounts(client), before)
 
     // (c) 同 key 不同参 → IDEMPOTENCY_KEY_REUSED（detail 带两个 digest）。
-    const changed = { ...args, scheduled_start_at: '2026-11-20T14:00:00+08:00' }
+    const changed = { ...args, scheduled_start_at: at(240) }
     const body = await expectToolError(
       schedule(client, changed, NOW),
       'INVALID_ARGS',
@@ -495,7 +507,7 @@ test('面试官冲突 → CONFLICT_SLOT(INTERVIEWER_BUSY)，detail.conflicts 逐
     const firstScenario = await seedScenario(client, { dimensions: DIMENSIONS })
     const secondScenario = await seedScenario(client, { dimensions: DIMENSIONS })
     const first = await schedule(
-      client, createArgs(firstScenario.applicationId, { scheduled_start_at: '2026-11-20T10:00:00+08:00' }), NOW,
+      client, createArgs(firstScenario.applicationId, { scheduled_start_at: START }), NOW,
     )
     const firstInterviewId = String((first.interview as Record<string, unknown>).id)
     const before = await tableCounts(client)
@@ -503,7 +515,7 @@ test('面试官冲突 → CONFLICT_SLOT(INTERVIEWER_BUSY)，detail.conflicts 逐
     const body = await expectToolError(
       schedule(
         client,
-        createArgs(secondScenario.applicationId, { scheduled_start_at: '2026-11-20T10:30:00+08:00' }),
+        createArgs(secondScenario.applicationId, { scheduled_start_at: at(30) }),
         NOW,
       ),
       'CONFLICT_SLOT',
@@ -511,8 +523,8 @@ test('面试官冲突 → CONFLICT_SLOT(INTERVIEWER_BUSY)，detail.conflicts 逐
     )
     const detail = body.detail as Record<string, unknown>
     const slot = detail.slot as Record<string, unknown>
-    assert.equal(slot.start, '2026-11-20T02:30:00.000Z')
-    assert.equal(slot.end, '2026-11-20T03:30:00.000Z', 'buffer=0 时 slot.end = start + duration')
+    assert.equal(slot.start, at(30))
+    assert.equal(slot.end, at(90), 'buffer=0 时 slot.end = start + duration')
     const conflicts = detail.conflicts as Record<string, unknown>[]
     assert.ok(conflicts.length >= 1, 'CONFLICT_SLOT 必须逐条回列冲突')
     assert.equal(conflicts[0]?.kind, 'INTERVIEWER')
@@ -541,7 +553,7 @@ test('候选人冲突（跨轮次）→ CONFLICT_SLOT(CANDIDATE_BUSY)，零写�
         client,
         createArgs(scenario.applicationId, {
           round_no: 2,
-          scheduled_start_at: '2026-11-20T10:30:00+08:00',
+          scheduled_start_at: at(30),
           interviewers: [{ actor_id: INTERVIEWER_B }],
         }),
         NOW,
