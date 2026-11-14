@@ -20,7 +20,17 @@ export interface TimelinePlace { at: string; id: string }
 /** Why a message was dropped: its conversation can never receive it (`channelGone`), or its Source no longer listens to it (`channelIgnored`). */
 export type DropReason = 'channelGone' | 'channelIgnored'
 /** Outbound message receipt tracked in the outbox from the moment it is queued (`pending`, `sent`, or `dropped`); delivery attempt counts live on its `reply` effect. */
-export interface Receipt extends OutboundMessage { status: ReplyStatus; dropped?: { at: string; reason: DropReason } }
+export interface Receipt extends OutboundMessage {
+  status: ReplyStatus
+  dropped?: { at: string; reason: DropReason }
+  /**
+   * 当前是否有一个投递尝试「已经离开本进程」：写它发生在调用 `send()` 之前，
+   * 于是崩溃后重试看到它就知道外部可能已经有这条消息，必须先回读再决定是否重发（§9.12-9）。
+   */
+  attempt?: { at: string; state: 'sending' }
+  /** 最近一次回读为什么没能给出结论；只作诊断，不改变 pending 状态。 */
+  reconcile?: { at: string; outcome: 'unavailable' | 'error'; reason: string }
+}
 /** A dropped outbound message receipt, with the timestamp and reason it was dropped. */
 export type Dropped = Receipt & { dropped: { at: string; reason: DropReason } }
 
@@ -120,6 +130,9 @@ export class Store implements Repositories {
   private values<T>(sql: string, ...parameters: unknown[]): T[] {
     return this.valueRows<{ value: unknown }>(sql, parameters).map(row => row.value as T)
   }
+
+  /** 当前是否在 `atomic` 事务内（适配层据此把写回并入同一个事务，而不是另起一个）。 */
+  get inTransaction(): boolean { return this.depth > 0 }
 
   /** Closes the bridge worker and its connection. */
   close(): void { this.pg.close() }
@@ -301,7 +314,7 @@ export class Store implements Repositories {
     settle: (message: OutboundMessage, outcome: 'sent' | DropReason): void => {
       const settled = outcome === 'sent' ? { status: 'sent' } : { status: 'dropped', dropped: { at: new Date().toISOString(), reason: outcome } }
       const { id, channel, text, kind, ticketId } = message
-      const updated = this.db.prepare(`update recruitment.engine_outbox set value = value || ?::jsonb
+      const updated = this.db.prepare(`update recruitment.engine_outbox set value = (value - 'attempt' - 'reconcile') || ?::jsonb
         where message_id = ? and value ->> 'status' = 'pending'`).run(JSON.stringify(settled), id)
       if (!updated.changes) this.db.prepare(`insert into recruitment.engine_outbox (tenant_id, message_id, value) values (?, ?, ?::jsonb)
         on conflict (message_id) do nothing`)
@@ -313,6 +326,23 @@ export class Store implements Repositories {
      */
     withdraw: (id: string): boolean =>
       this.db.prepare("delete from recruitment.engine_outbox where message_id = ? and value ->> 'status' = 'pending'").run(id).changes > 0,
+    /**
+     * 在调用 `send()` **之前**标记「正在发送」。崩溃后重试靠它判断外部可能已收到消息，必须先回读。
+     */
+    markSending: (id: string): void => {
+      this.db.prepare(`update recruitment.engine_outbox set value = value || ?::jsonb
+        where message_id = ? and value ->> 'status' = 'pending'`)
+        .run(JSON.stringify({ attempt: { at: new Date().toISOString(), state: 'sending' } }), id)
+    },
+    /** 确定消息没出去（例如通道未安装）时清掉标记，允许下一次正常发送。 */
+    clearAttempt: (id: string): void => {
+      this.db.prepare(`update recruitment.engine_outbox set value = value - 'attempt' where message_id = ?`).run(id)
+    },
+    /** 记下回读为什么没能给结论；只诊断，不改变 pending。 */
+    recordReconcile: (id: string, info: { at: string; outcome: 'unavailable' | 'error'; reason: string }): void => {
+      this.db.prepare(`update recruitment.engine_outbox set value = value || ?::jsonb where message_id = ?`)
+        .run(JSON.stringify({ reconcile: info }), id)
+    },
   }
 }
 

@@ -40,11 +40,13 @@ export interface RecruitmentTaskHost {
   readonly sessions: DshSessionBoundary
   readonly reports: RecruitmentTaskReports
   /** 持久化副作用队列：启动与投递都经它，进程崩了不会丢。 */
-  readonly effects: Pick<Effects, 'enqueue'>
+  readonly effects: Pick<Effects, 'enqueue' | 'handle'>
   readonly health: HealthEntry
   /** 招聘任务工作目录的根（例如 <stateDir>/tasks）。 */
   readonly workspaceRoot: string
   readonly lifetime: AbortSignal
+  /** 按 ticket 重新读一次任务与最新 assignment（effect 派发时会话可能已经过期）。 */
+  load(ticketId: string): { ticket: Ticket; assignment: Assignment } | undefined
   closing(): boolean
 }
 
@@ -61,6 +63,13 @@ export class RecruitmentTaskExecutor implements Executor {
 
   constructor(host: RecruitmentTaskHost) {
     this.host = host
+    // 队列里的 effect 必须有人接：launch 建会话并投第一条消息，delivery 把新输入交给运行中的 worker。
+    host.effects.handle('launch', async ({ ticketId, assignmentId }) => {
+      const found = host.load(ticketId)
+      if (!found || found.assignment.id !== assignmentId) return
+      await this.launch(found.ticket, found.assignment)
+    })
+    host.effects.handle('delivery', ({ ticketId }) => this.deliverInputs(ticketId))
   }
 
   /** 队列化启动：真正的 Session 创建在 effect 里做，进程重启后仍会补上。 */
@@ -107,6 +116,24 @@ export class RecruitmentTaskExecutor implements Executor {
     }
     if (!await this.host.sessions.postMessage(message)) return
     this.host.reports.assignmentStarted(ticket.id, assignment.id)
+  }
+
+  /** effect `delivery` 的处理体：把尚未投递的 Inputs 交给运行中的 worker，并把「已投递」回写引擎。 */
+  async deliverInputs(ticketId: string): Promise<void> {
+    const found = this.host.load(ticketId)
+    if (!found || this.host.closing() || this.cancelled.has(ticketId)) return
+    const { ticket, assignment } = found
+    if (assignment.state !== 'running' || !ticket.undelivered.length) return
+    const inputs = ticket.inputs.filter(input => ticket.undelivered.includes(input.id) && input.kind === 'trigger')
+    if (!inputs.length) return
+    const delivered = await this.host.sessions.postMessage({
+      sessionId: workerSessionId(ticketId),
+      requestId: `inputs:${ticketId}:${assignment.id}:${ticket.undelivered.join(',')}`,
+      text: inputs.map(input => JSON.stringify({ delivered_input: input })).join('\n'),
+      mode: 'queue',
+      authorize: () => { if (this.cancelled.has(ticketId)) throw new Error('The task is no longer authorized') },
+    })
+    if (delivered) this.host.reports.inputsDelivered(ticketId, assignment.id, ticket.undelivered.slice())
   }
 }
 

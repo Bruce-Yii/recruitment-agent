@@ -380,7 +380,7 @@ test.describe('§11.6 / §9.12 运行时门槛（真 PostgreSQL）', () => {
     }
   })
 
-  test('§9.12-9 外部动作已成功但本地未收到回执：必须对账而不是重复执行（预期红）', async () => {
+  test('§9.12-9 外部动作已成功但本地未收到回执：必须对账而不是重复执行', async () => {
     const { store, board, sidecar } = await rig()
     try {
       await reset(sidecar)

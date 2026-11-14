@@ -33,7 +33,7 @@ Notion `04｜Agent Runtime & Reuse Architecture` §08（2026-11-08 源码级复�
 | 文件 | 行数 | 上游路径 | 改动 |
 |---|---|---|---|
 | `app/effects.ts` | 166 | `src/app/effects.ts` | 参数属性→显式字段；SQL 方言：`IFNULL`→`COALESCE`、表名限定 `recruitment.engine_effect`、`ON CONFLICT` 里的 `generation` 限定、`value::text`、INSERT 增加 `tenant_id` 列 |
-| `app/outbox.ts` | 62 | `src/app/outbox.ts` | 参数属性→显式字段；宿主依赖 `SourceRegistry`+`Commands` 收窄为窄接口 `OutboxChannels` |
+| `app/outbox.ts` | 62 | `src/app/outbox.ts` | 参数属性→显式字段；宿主依赖 `SourceRegistry`+`Commands` 收窄为窄接口 `OutboxChannels`；**对账修复**（§9.12-9）：加 `lookup` 回读端口、发送前落「正在发送」标记、重试前先回读 |
 | `app/passes.ts` | 80 | `src/app/passes.ts` | 参数属性→显式字段；`Engine` 类型改为结构化窄接口 `PassesEngine`（只需 receive/evaluateDue） |
 | `core/intake.ts` | 65 | `src/core/intake.ts` | 参数属性→显式字段 |
 
@@ -120,10 +120,116 @@ interface DshSessionBoundary {
 
 **接线状态（R2 诚实标注）：尚未挂到任何 HTTP 路由或 Worker 入口，也还没接我们的领域表。** 现在它能被 Effects 驱动、被 `Tickets` 的 Executor 端口调用；距"可达"还差：①领域适配（Ticket ↔ Application/Interview 任务）；②插件入口注册（`src/index.ts` 属其他 lane）。未经接线不得当作能力交付。
 
-**自写合计：691 行。**
+### 4.5 招聘领域适配层（`adapters/recruitment-tasks.ts`，约 260 行）
+
+把机制里的任务模型映射到**仓库既有的执行语义表**（不另造一套任务表）：
+
+| 引擎侧 | 招聘既有表 | 映射内容 |
+|---|---|---|
+| `Ticket` | `recruitment.business_task` | 确定性 UUID 主键（`taskIdOf`）、幂等键 `engine:ticket:<id>`、`business_refs` 存 Application/Interview 引用、状态机、`current_attempt_id`、`attempt_count`、`error_code`、`completed_at` |
+| `Assignment` | `recruitment.task_attempt` | `attempt_no`、`worker_type='DSH'`、`worker_id`、状态（CLAIMED/RUNNING/SUCCEEDED/FAILED_FINAL/CANCELLED/ABANDONED）、唯一有效租约、`error_class` |
+| worker 会话 | `recruitment.agent_session` | `task_id`/`attempt_id` 关联、`runtime_kind='DSH'`、`runtime_version`、`model_route`、ACTIVE→ENDED/LOST |
+
+三条与既有护栏的约定（测试逐条覆盖）：
+
+1. **与引擎命令同事务**：`project()` 在调用方 `atomic` 里并入同一事务（`Store.inTransaction`），否则自开一个；
+2. **不绕过 `fn_row_guard`**：状态 UPDATE 前 `set_config('recruitment.actor_id', …, true)`，由触发器写 internal 审计事件与 `status_source_event_id`；测试断言「没有 actor 的迁移被拒绝」；
+3. **不绕过 CHECK**：`RUNNING` 必须有 `current_attempt_id`、`FAILED` 必须有 `error_code`、终态必须落 `completed_at`/`ended_at`、时间戳用数据库时钟兜底（`greatest(…, now())`，避免引擎侧时钟早于 `claimed_at` 被 `ck_task_attempt_started` 拒绝）。
+
+**自写合计：约 950 行**（PG 适配层 291 + 同步桥 237 + DSH 边界 59 + 执行器 104 + 领域适配层 约 260）。
+
+### 4.6 接线要求（交给总控统一注册，本 lane 不改入口）
+
+`src/index.ts` 由总控统一注册（多 lane 共用工作树，避免注册行互相覆盖）。需要加的是一次性装配，不是第二条注册路径。
+
+**位置**：`src/index.ts` 的 `apply(ctx, config)` 内、`resolveDatabaseConfig(...)` 拿到 `resolved` 之后；`resolved === null` 时**整段跳过**（保持现有的 NOT_CONFIGURED 语义，不静默降级）。
+
+**import（5 行）**：
+
+```ts
+import { Store } from './engine/app/store.ts'
+import { Effects } from './engine/app/effects.ts'
+import { HealthBoard } from './engine/infra/health.ts'
+import { RecruitmentTaskAdapter } from './engine/adapters/recruitment-tasks.ts'
+import { RecruitmentTaskExecutor } from './engine/exec/recruitment-task-executor.ts'
+```
+
+**装配（一次）**：
+
+```ts
+const board = new HealthBoard()
+const store = new Store(
+  { ...resolved, tenant_id: resolved.tenant_id, statementTimeoutMs: 5_000 },   // 同步桥：超时必须压到 5s
+  error => ctx.logger.warn('engine store: %s', String(error)),
+  board.claim('store'),
+)
+const effects = new Effects(store, board)
+const adapter = new RecruitmentTaskAdapter(store, {
+  tenantId: resolved.tenant_id,
+  actorId: resolved.actor_id,          // 必须是 recruitment.actor 里本租户的行（状态迁移审计用）
+  runtimeVersion: 'dsh@0.2.2-rc.3',
+  modelRoute: '<配置里的模型路由>',
+})
+const executor = new RecruitmentTaskExecutor({
+  sessions,                            // 实现 DshSessionBoundary 的 DSH 适配（见 §4.3）
+  reports,                             // 引擎回报的窄接口（assignmentStarted / inputsDelivered / report / …）
+  effects,
+  health: board.claim('worker'),
+  workspaceRoot: join(stateDir, 'tasks'),
+  lifetime,                            // AbortSignal
+  load: ticketId => { /* 从引擎仓库取 ticket 与其最新 assignment */ },
+  closing: () => false,
+})
+// 关闭顺序：先排空 effect 队列，再关同步桥（否则 in-flight 语句会被杀在连接上）。
+ctx.effect(() => () => { void effects.drain(); store.close() })
+```
+
+**依赖的已注册服务**：只有 `ctx`（logger）与 `config.database`、环境变量 `RECRUITMENT_DB_PASSWORD`。`Store`/`Effects`/`RecruitmentTaskAdapter` 不依赖任何其他插件服务；`RecruitmentTaskExecutor` 只依赖上面注入的窄接口，**不直接依赖 Cordis Context**。
+
+**注意**：`Store` 构造时若 `recruitment.schema_migration` 里没有 `0012_engine_state`，会直接抛错（不静默退化成空库）。这属于启动期错误，应当让注册失败而不是吞掉。
+
+### 4.7 与 `0011_task_runtime.sql` / `0013_trace_chain.sql` 的关系
+
+同一天另外两条 lane 新增了 `0011_task_runtime.sql`（给 `business_task`/`agent_session`/`event_inbox` 加运行时列与 `task_wakeup` 表）和 `0013_trace_chain.sql`（加 `correlation_id`）。**它们改的正是本适配层写入的表**，因此适配层按库的**实际列**工作，不假设某一边：
+
+| 0011/0013 的列 | 适配层的处理 |
+|---|---|
+| `agent_session.runtime_session_id`（0011） | 构造时探测列是否存在；存在则写入 DSH 真实会话 ID（`SessionProjection.runtimeSessionId`），不存在则只写 0001 的列 |
+| `business_task.wake_count` / `last_wake_event_id`（0011） | 有默认值，适配层不写（唤醒事实属 Router 的职责，不该由执行器伪造） |
+| `agent_session.runtime_worker_role`（0011，NOT NULL default 'WORKER'） | 走默认值 |
+| `correlation_id`（0013） | 适配层留空；链路追踪应由产生事件的入口注入，不应在执行器里编造 |
+
+`0011` 的 `fn_agent_session_identity_guard`（attempt 必须属于同一 task）与适配层的写入顺序天然一致（先 task → attempt → session），已由集成测试覆盖。
+
+**当前状态：以上均未注册**。`RecruitmentTaskExecutor` 与 `RecruitmentTaskAdapter` 已能被直接构造并运行（集成测试为证），但没有从任何运行中的入口可达 —— 按 R2 不得称为可用能力。
+
+**自写合计：约 1,000 行**（PG 适配层 293 + 同步桥 237 + DSH 边界 59 + 执行器 130 + 领域适配层 283）。
+
+### 4.8 对账修复：外部动作成功但回执丢失（§9.12-9 / Notion 08 §9.8 第 5 条）
+
+**原缺陷**（验收红）：`outbox.ts` 先 `sources.send()` 再 `receipts.settle()`，中间崩溃则既无回执也无回读；
+退避到期后 `reply` effect 直接重发，同一 `message_id` 线上出现 2 条。根因是 `OutboxChannels` 只有
+`instance/channelAllowed/send`，**没有回读端口**。
+
+**修复**（三层）：
+
+1. **端口**：`OutboxChannels` 增加可选 `lookup(message, commands): Promise<'present'|'absent'>`。
+2. **发送前落标记**：`Store.receipts.markSending(id)` 在调用 `send()` **之前**把 `attempt:{state:'sending'}` 写进回执。
+   从这一刻起"外部可能已经有这条消息"成为持久事实，跨进程重启也成立。
+3. **重试前先对账**（`outbox.deliver` 的顺序，`receipts.behind` 之后）：
+   - 回读 `present` → `settle('sent')` 补记，**不重发**；
+   - 回读 `absent` → 才允许重发；
+   - 回读不可用（源没实现 `lookup`）/抛错 → 归为未知：保持 `pending`，写 `reconcile:{outcome,reason}`，抛 `Later` 退避，
+     **绝不默认重发**；
+   - `send()` 返回 `waiting`（通道未装好，确定没出去）→ 清标记，允许正常重试；`send()` 抛错 → 保留标记，下次先对账。
+
+**证据**：
+
+- `test/acceptance/engine-gates.test.ts` §9.12-9 **由红转绿**，断言未改（`wire.length === 1` 仍是唯一判据）；
+- 本 lane 补了三条正向/反向证据（`test/integration/engine-mechanisms-pg.test.ts`「回读端口」用例）：
+  `present` → `send` 只被调用 1 次且回执变 `sent`；`absent` → 第 2 次 `send` 发生且线上只有 1 条；回读抛错 → `send` 仍只 1 次、回执 `pending`、原因落库。
 
 ## 5. 按文档判定**没有搬**的东西（逐条理由）
-
 | 上游文件 | 没搬的理由 |
 |---|---|
 | `executor/dsh.ts`(670) / `executor/background.ts`(156) | 强绑 Coding Worktree / Shell / GitHub PR / Coding Prompt；只用其 DSH 边界（§4.3） |
@@ -150,9 +256,16 @@ interface DshSessionBoundary {
 ```powershell
 cd dsh\dsh-recruitment
 $env:RECRUITMENT_DB_PASSWORD='123456'
-node --test test/integration/engine-mechanisms-pg.test.ts   # 四机制 + 桥的失败语义
-npx tsc -p tsconfig.engine.json                             # 类型检查
-node work/engine-probe/probe-sync-store.mjs                 # 同步桥实测（含 0.275ms/call 数字）
+node --test test/integration/engine-mechanisms-pg.test.ts          # 四机制 + 桥的失败语义
+node --test test/integration/recruitment-task-adapter-pg.test.ts   # 领域适配：business_task/task_attempt/agent_session
+npx tsc -p tsconfig.engine.json                                    # 类型检查
+node work/engine-probe/probe-sync-store.mjs                        # 同步桥实测（含 0.275–0.35ms/call 数字）
 ```
+
+实测汇总（2026-11-14，`ra_s6s7`）：
+
+- `node --test` 两个文件：**tests 5 / pass 5 / fail 0 / skipped 0**；
+- `npx tsc -p tsconfig.engine.json`：exit 0；
+- 同步桥往返：**0.275–0.349 ms/call**；`select pg_sleep(6)` 被 statement_timeout 取消且连接仍可用；worker 被杀后下一次调用重建成功。
 
 迁移：`node work/engine-probe/apply-migration.mjs ../../db/migrations/0012_engine_state.sql`（本机无 psql CLI）。
