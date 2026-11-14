@@ -153,9 +153,10 @@ export interface FeishuTranscriptRequestedFlags {
  *   * `CLI_TIMEOUT` —— CLI 调用超时，重试也超时；
  *   * `CLI_FAILED` —— CLI 非零退出且诊断里没有已核对错误码；
  *   * `PROVIDER_NO_PERMISSION` —— 平台 2091005，需要人重新授权；
- *   * `READ_PARSE_FAILED` —— 输出信封/正文形状不认识（fail-closed）；
- *   * `PAGINATION_INCOMPLETE` —— 分页没走完/游标不前进/超页数；
- *   * `READBACK_INVALID` —— 回执、revision、正文自检不过。
+ *   * `READ_PARSE_FAILED` —— 输出信封/落盘文件形状不认识（fail-closed）；
+ *   * `PAGINATION_INCOMPLETE` —— 保留值：`+detail` 是整文件写盘、没有分页；
+ *     未来接 `+search` 分页传输时才可能用到；
+ *   * `READBACK_INVALID` —— 回执、重读校验、落盘正文自检不过（含重读哈希不一致）。
  */
 export type FeishuTranscriptBlockedReason =
   | 'NO_APP_CREDENTIALS'
@@ -297,12 +298,9 @@ function blockedReasonFor(error: FeishuTransportError): FeishuTranscriptBlockedR
       return 'PROVIDER_NO_PERMISSION'
     case 'ENVELOPE_UNRECOGNIZED':
     case 'TRANSCRIPT_UNRECOGNIZED':
+    case 'OUTPUT_FILE_MISSING':
+    case 'OUTPUT_FILE_INVALID':
       return 'READ_PARSE_FAILED'
-    case 'PAGINATION_STALLED':
-    case 'PAGINATION_INCOMPLETE':
-    case 'PAGE_LIMIT_EXCEEDED':
-      return 'PAGINATION_INCOMPLETE'
-    case 'REVISION_REQUIRED':
     case 'TRANSCRIPT_EMPTY':
     case 'READBACK_INVALID':
       return 'READBACK_INVALID'

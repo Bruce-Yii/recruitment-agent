@@ -1,0 +1,135 @@
+{
+  "experiment": "feishu-live-read",
+  "date": "2026-11-14",
+  "decision": "D-1（provenance=LIVE + trigger=MANUAL + 真实 provider artifact ID/revision/hash/readback = demo gate 合格）",
+  "cli": {
+    "path": "D:\\12412\\npm-global\\node_modules\\@larksuite\\cli\\bin\\lark-cli.exe",
+    "basename": "lark-cli.exe",
+    "platform_channel": true,
+    "argument_flags_verified": true,
+    "envelope_verified": true,
+    "contract_checked_at": "2026-11-14T20:21:10.608+08:00",
+    "missing_flags": [],
+    "help_exit_code": 0
+  },
+  "reads": [
+    {
+      "read_status": "READ",
+      "minute_token": "obcnvf38p9qkb3n58tak57jg",
+      "transport": "FEISHU_MINUTES_API",
+      "file_bytes": 6397,
+      "transcript_chars": 2379,
+      "content_sha256": "e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0",
+      "reread_sha256": "e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0",
+      "read_receipt_ref": "lark:minutes+detail:obcnvf38p9qkb3n58tak57jg@sha256:e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0",
+      "fetched_at": "2026-11-14T20:21:08.769+08:00",
+      "revision": null,
+      "is_complete": true,
+      "gate": "LIVE",
+      "labels": {
+        "provenance": "LIVE",
+        "trigger": "MANUAL",
+        "connection": "CONNECTED"
+      },
+      "provenance_basis": "LIVE_READBACK_VERIFIED",
+      "violations": [],
+      "evidence": {
+        "transport": "FEISHU_MINUTES_API",
+        "minute_token": "obcnvf38p9qkb3n58tak57jg",
+        "content_sha256": "e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0",
+        "content_sha256_recomputed": "e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0",
+        "reread_sha256": "e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0",
+        "receipt_digest": "e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0",
+        "fetched_at": "2026-11-14T20:21:08.769+08:00",
+        "is_complete": true,
+        "raw_text_chars": 2379,
+        "trigger": "MANUAL"
+      }
+    },
+    {
+      "read_status": "READ",
+      "minute_token": "obcnuym8vvyv328i1y63u956",
+      "transport": "FEISHU_MINUTES_API",
+      "file_bytes": 4485,
+      "transcript_chars": 1595,
+      "content_sha256": "f3f45d49cca4e478b65a7ce8bf8d0401c2ee7037919d9647cfb25dd9a38c8744",
+      "reread_sha256": "f3f45d49cca4e478b65a7ce8bf8d0401c2ee7037919d9647cfb25dd9a38c8744",
+      "read_receipt_ref": "lark:minutes+detail:obcnuym8vvyv328i1y63u956@sha256:f3f45d49cca4e478b65a7ce8bf8d0401c2ee7037919d9647cfb25dd9a38c8744",
+      "fetched_at": "2026-11-14T20:21:09.959+08:00",
+      "revision": null,
+      "is_complete": true,
+      "gate": "LIVE",
+      "labels": {
+        "provenance": "LIVE",
+        "trigger": "MANUAL",
+        "connection": "CONNECTED"
+      },
+      "provenance_basis": "LIVE_READBACK_VERIFIED",
+      "violations": [],
+      "evidence": {
+        "transport": "FEISHU_MINUTES_API",
+        "minute_token": "obcnuym8vvyv328i1y63u956",
+        "content_sha256": "f3f45d49cca4e478b65a7ce8bf8d0401c2ee7037919d9647cfb25dd9a38c8744",
+        "content_sha256_recomputed": "f3f45d49cca4e478b65a7ce8bf8d0401c2ee7037919d9647cfb25dd9a38c8744",
+        "reread_sha256": "f3f45d49cca4e478b65a7ce8bf8d0401c2ee7037919d9647cfb25dd9a38c8744",
+        "receipt_digest": "f3f45d49cca4e478b65a7ce8bf8d0401c2ee7037919d9647cfb25dd9a38c8744",
+        "fetched_at": "2026-11-14T20:21:09.959+08:00",
+        "is_complete": true,
+        "raw_text_chars": 1595,
+        "trigger": "MANUAL"
+      }
+    }
+  ],
+  "product_path": {
+    "assembled": true,
+    "issues": [],
+    "kind": "READ",
+    "live_gate": "LIVE",
+    "live_eligible": true,
+    "labels": {
+      "provenance": "LIVE",
+      "trigger": "MANUAL",
+      "connection": "CONNECTED"
+    },
+    "provenance_basis": "LIVE_READBACK_VERIFIED",
+    "readback": {
+      "minute_token": "obcnvf38p9qkb3n58tak57jg",
+      "transport": "FEISHU_MINUTES_API",
+      "file_bytes": 6397,
+      "transcript_chars": 2379,
+      "content_sha256": "e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0",
+      "reread_sha256": "e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0",
+      "read_receipt_ref": "lark:minutes+detail:obcnvf38p9qkb3n58tak57jg@sha256:e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0",
+      "fetched_at": "2026-11-14T20:21:11.195+08:00",
+      "revision": null,
+      "is_complete": true,
+      "gate": "LIVE",
+      "labels": {
+        "provenance": "LIVE",
+        "trigger": "MANUAL",
+        "connection": "CONNECTED"
+      },
+      "provenance_basis": "LIVE_READBACK_VERIFIED",
+      "violations": [],
+      "evidence": {
+        "transport": "FEISHU_MINUTES_API",
+        "minute_token": "obcnvf38p9qkb3n58tak57jg",
+        "content_sha256": "e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0",
+        "content_sha256_recomputed": "e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0",
+        "reread_sha256": "e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0",
+        "receipt_digest": "e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0",
+        "fetched_at": "2026-11-14T20:21:11.195+08:00",
+        "is_complete": true,
+        "raw_text_chars": 2379,
+        "trigger": "MANUAL"
+      }
+    }
+  },
+  "r7": {
+    "raw_text_stored_here": false,
+    "raw_text_printed": false,
+    "temp_workdirs_leftover": [],
+    "note": "正文只在读取进程内存里出现过：算完 sha256 后临时目录已删除；本文件只记 token / 字节数 / 哈希 / 回执。"
+  },
+  "generated_at": "2026-11-14T12:21:11.805Z"
+}

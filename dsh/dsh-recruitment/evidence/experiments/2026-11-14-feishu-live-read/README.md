@@ -110,3 +110,37 @@ lark-cli auth status
 lark-cli minutes +search --owner-ids me --page-size 5 --json
 lark-cli minutes +detail --minute-tokens <token> --transcript --json --output-dir ./minutes
 ```
+
+## 5. 产品路径复证（2026-11-14 晚，lane `feishu-live-gate`）
+
+上面 §2 是**手工跑 CLI** 的证据；本节补的是**产品代码路径**能拿到 LIVE 的证据：
+`src/connectors/feishu/transport.ts`（`lark-cli-transport`）已按实测形态校正 argv
+（复数 `--minute-tokens` / `--as user` / `--transcript` / 相对 `--output-dir`），
+并改为**读落盘文件**（stdout 只给 `artifacts.transcript_file`）。
+
+- 复跑脚本：`run-live-read.mjs`（本目录）；输出：`live-read.json`（本目录）。
+- 脚本用产品传输层跑真实 CLI：`--help` 探测 → 两次完整读取（重读校验）→
+  `evaluateLiveGate()`；再走 `resolveFeishuConnector` → `adapter.fetchTranscript()` 产品出口。
+- R7：**本目录不含正文**。脚本里正文只在内存中出现，算完 sha256 后临时工作目录已删除
+  （`live-read.json` 里 `r7.temp_workdirs_leftover` 为空数组）。
+
+复证结果（与 §2.3 的 6397 B / 4485 B 表逐字一致）：
+
+| minute_token | 文件字节 | content_sha256 | 重读哈希 | gate | labels |
+|---|---|---|---|---|---|
+| `obcnvf38p9qkb3n58tak57jg` | 6397 | `e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0` | 一致 | `LIVE` | `LIVE / MANUAL / CONNECTED` |
+| `obcnuym8vvyv328i1y63u956` | 4485 | `f3f45d49cca4e478b65a7ce8bf8d0401c2ee7037919d9647cfb25dd9a38c8744` | 一致 | `LIVE` | `LIVE / MANUAL / CONNECTED` |
+
+- 产品完整出口（`resolveFeishuConnector` → `adapter.fetchTranscript`）对
+  `obcnvf38p9qkb3n58tak57jg` 返回 `kind=READ`、`live_gate=LIVE`、`live_eligible=true`、
+  `provenance_basis=LIVE_READBACK_VERIFIED`。
+- `argument_flags_verified` / `envelope_verified`：`transport.verifyContract()` 真实跑
+  `minutes +detail --help`（exit 0、四个必需 flag 全在）→ `argument=true`；一次成功真实
+  读取 → `envelope=true`。**没有硬编码 true**。
+- CLI：`lark-cli 1.0.81`，本机绝对路径
+  `D:\12412\npm-global\node_modules\@larksuite\cli\bin\lark-cli.exe`（npm shim 背后的原生二进制）。
+
+§3 的「仍未闭环」里，第 1 条（产品 connector 不真的调 CLI）已由本轮修复；
+第 2 条（有真实语音的会议）就是本节的 `audio` / `api_sample` 两条；
+第 3 条（产品自有凭据 / OAuth）仍是 **P1**，按 D-1 不阻塞 demo。
+
