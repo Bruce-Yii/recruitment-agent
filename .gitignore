@@ -17,6 +17,9 @@ converter/corpus/synthetic/*.pdf
 # ---- 过程产物：不入库（决策台账已迁到 docs/17，可入库的那份在 docs/）----
 work/
 
+# ---- 测试运行产物：runtime 测试的临时工作目录（隔离库/中间文件，可重建）----
+.runtime-test-work/
+
 # ---- 凭据 / 环境 ----
 .env
 .env.*
