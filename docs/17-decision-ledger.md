@@ -1082,6 +1082,24 @@ R-1 96.2%、R-2 100%（`blocking_for_structure` 阻断 0 份）、R-3 100%。
 
 **证据**：`test/document/quality.test.ts`（37→50 条）、`src/tools/document-read.ts` 的 `layout_only_blocking` 输出。
 
+**补充（2026-11-14，D-100 续）：DOCX 表格行是精确的行身份，必须判 `same_row`**
+
+真实语料回归暴露的缺口：`doc_cross_block_attribution` 仍有 9 份 / 25 行 HARD，其中 **10 行是 DOCX
+表格行**（`一行三格：公司 | 职位 | 时间`）。DOCX 没有 bbox，旧的 `sameVisualRow` 恒为 false，
+于是这种**最常见的记录表**100% 掉进 `unresolved`——判据在"几何"上正确，在"事实"上错误：
+表格行本身就是精确的行身份，不需要几何证据。
+
+- 新增归属基 `AttributionBasis = 'same_table_row'`（`quality/types.ts`）：同一 `part + table_id + row`
+  即同一行；**行内无组织格时归到唯一标题格**。
+- 三道歧义保护（缺一即保持 `unresolved`）：表必须 ≥2 行（单行排版表不算表格行身份）、
+  同行组织格恰好一个、同行标题格恰好一个。
+- 实测（51 份可读语料）：**32 份 / 156 行 → 8 份 / 15 行**（文档 −75%，行 −90.4%）。
+- 剩余 15 行是设计上保留的 HARD，不是判据漏：2 行 DOCX 段落（无几何信息，按段落顺序猜相邻会违反
+  "不许跨块拼装"）+ 10 行 PDF 只有日期的行（同页组织文本不同排/不相邻）+ 3 行长叙述行。
+
+**风险**：`same_table_row` 依赖转换器给出的 `table_id + row` 坐标；缺坐标即退回 `unresolved`（fail-closed）。
+证据：`test/document/quality.test.ts` 归因 9 / 9b / 9c（1 正 + 3 反 + 标题格）。
+
 ### D-101 · 人机闸门的事务边界：先兜住（超时 + 服务端上限），两阶段记债
 
 **背景（2026-11-14，验收窗口 P0-2 修复中暴露）**：`scorecard_submit` / `interview_schedule` 的 approval 必须在

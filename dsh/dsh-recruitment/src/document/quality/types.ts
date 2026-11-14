@@ -50,6 +50,9 @@ export type AttributionConfidence = 'same_row' | 'adjacent' | 'unresolved'
  * * `self_subject`    —— 该块除时间/职务词外还有实质主体文本（奖项行、项目行、`公司名 时间 职位` 同一块），
  *                        即主体与时间**在同一个块内闭合**，不需要跨块拼装；
  * * `same_row_anchor` —— 同页同一可视行的**另一个**块含组织/职务文本（复用了 `sameVisualRow` 的判据）；
+ * * `same_table_row`  —— DOCX 表格里**同表同行的另一个单元格**含组织/标题文本（表格行就是一行；
+ *                        比 PDF 的「视觉同排」更强，是精确的行身份。行内没有组织格时，
+ *                        若恰有一个标题格，归到该标题格——表格行 = 一条记录）；
  * * `adjacent_anchor` —— 同页紧邻的上一/下一可视行含组织文本。**位置相邻 ≠ 可以拼**，只标待核；
  * * `no_anchor`       —— 同页找不到任何可用作主体的文本（此时不存在「跨块拼装」的风险对象）。
  */
@@ -57,6 +60,7 @@ export type AttributionBasis =
   | 'org_in_row'
   | 'self_subject'
   | 'same_row_anchor'
+  | 'same_table_row'
   | 'adjacent_anchor'
   | 'no_anchor'
 
