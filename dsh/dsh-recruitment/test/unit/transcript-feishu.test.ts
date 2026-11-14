@@ -128,14 +128,15 @@ test('describe()：live_gate=BLOCKED，且明确列出没实现的东西', () =>
   const described = createFeishuMinutesAdapter({ env: EMPTY_ENV }).describe()
   assert.equal(described.connector, 'feishu-minutes')
   assert.equal(described.contract_version, FEISHU_MINUTES_CONTRACT_VERSION)
+  // 传输层已实现，但 LIVE Gate 仍是 BLOCKED：实现传输层 ≠ 拿到 LIVE 授权。
   assert.equal(described.live_gate, 'BLOCKED')
   assert.deepEqual(
     [...described.implemented].sort(),
-    ['auth-check', 'contract', 'error-mapping', 'labels'],
+    ['auth-check', 'contract', 'error-mapping', 'labels', 'lark-cli-transport'],
   )
-  for (const name of ['http-transport', 'lark-cli-transport', 'oauth-flow', 'event-subscription']) {
-    assert.ok(described.not_implemented.includes(name), `not_implemented 必须说明 ${name}`)
-  }
+  // 未实现的仍然必须逐项写明；`lark-cli-transport` 已实现，因此不再出现在这里。
+  assert.deepEqual([...described.not_implemented], ['http-transport', 'oauth-flow', 'event-subscription'])
+  assert.equal(described.not_implemented.includes('lark-cli-transport'), false)
 })
 
 test('无 env：probe() → NOT_CONNECTED + FIXTURE/MANUAL + live_eligible=false', () => {
@@ -189,14 +190,14 @@ test('只有租户令牌、没有用户令牌：仍是 USER_IDENTITY_REQUIRED（
   assert.equal(probed.connection_state, 'AUTH_REQUIRED')
 })
 
-test('机检：所有出口的 labels 永不出现 provenance=LIVE / connection=CONNECTED', () => {
+test('机检：所有出口的 labels 永不出现 provenance=LIVE / connection=CONNECTED', async () => {
   const outputs: Array<readonly [string, unknown]> = []
   for (const [name, env] of [['empty', EMPTY_ENV], ['app', APP_ENV], ['user', USER_ENV]] as const) {
     const adapter = createFeishuMinutesAdapter({ env })
     outputs.push([`${name}.describe`, adapter.describe()])
     outputs.push([`${name}.probe`, adapter.probe()])
-    outputs.push([`${name}.fetch(ok)`, adapter.fetchTranscript({ minute_token: 'mt_1', external_meeting_id: 'm_1' })])
-    outputs.push([`${name}.fetch(no-token)`, adapter.fetchTranscript({ external_meeting_id: 'm_1' })])
+    outputs.push([`${name}.fetch(ok)`, await adapter.fetchTranscript({ minute_token: 'mt_1', external_meeting_id: 'm_1' })])
+    outputs.push([`${name}.fetch(no-token)`, await adapter.fetchTranscript({ external_meeting_id: 'm_1' })])
     outputs.push([`${name}.mapProviderError('2091003')`, adapter.mapProviderError('2091003')])
     outputs.push([`${name}.mapProviderError('2091005')`, adapter.mapProviderError('2091005')])
     outputs.push([`${name}.mapProviderError('424242')`, adapter.mapProviderError('424242')])
@@ -462,28 +463,30 @@ test('isPageComplete：只认 has_more=false 且没有下一页游标（TR-C2）
   assert.equal(isPageComplete(null), false)
 })
 
-test('fetchTranscript：永不取数、永不建 artifact、不回声 minute_token', () => {
+test('fetchTranscript：无传输层时不取数、不建 artifact、不回声 minute_token', async () => {
   const withToken = createFeishuMinutesAdapter({ env: USER_ENV })
-  const blocked = withToken.fetchTranscript({ minute_token: 'mt_1', external_meeting_id: 'm_1' })
+  const blocked = await withToken.fetchTranscript({ minute_token: 'mt_1', external_meeting_id: 'm_1' })
   assert.equal(blocked.kind, 'BLOCKED')
   assert.equal(blocked.creates_artifact, false)
   assert.equal(blocked.error_code, 'AUTH_REQUIRED')
+  assert.equal(blocked.blocked_reason, 'TRANSPORT_NOT_CONFIGURED')
   assert.notEqual(blocked.labels.connection, 'CONNECTED')
   assert.equal(blocked.labels.provenance, 'FIXTURE')
   assert.equal(blocked.labels.trigger, 'MANUAL')
   assert.deepEqual(blocked.requested, { minute_token_present: true, external_meeting_id_present: true })
   assert.equal('raw_text' in blocked, false, '不得返回正文')
   assert.equal('artifact' in blocked, false, '不得返回伪造 artifact')
+  assert.equal('readback' in blocked, false, '没有回读就没有回读对象')
   assert.equal(JSON.stringify(blocked).includes('mt_1'), false, '不得回声 minute_token')
 
-  const invalid = withToken.fetchTranscript({ external_meeting_id: 'm_1' })
+  const invalid = await withToken.fetchTranscript({ external_meeting_id: 'm_1' })
   assert.equal(invalid.kind, 'ERROR')
   assert.equal(invalid.error_code, 'INVALID_ARGS')
-  assert.equal(invalid.reason_code, 'MINUTE_TOKEN_REQUIRED')
+  if (invalid.kind === 'ERROR') assert.equal(invalid.reason_code, 'MINUTE_TOKEN_REQUIRED')
   assert.equal(invalid.creates_artifact, false)
   assert.deepEqual(invalid.requested, { minute_token_present: false, external_meeting_id_present: true })
 
-  const noCreds = createFeishuMinutesAdapter({ env: EMPTY_ENV }).fetchTranscript({ minute_token: 'mt_1' })
+  const noCreds = await createFeishuMinutesAdapter({ env: EMPTY_ENV }).fetchTranscript({ minute_token: 'mt_1' })
   assert.equal(noCreds.kind, 'BLOCKED')
   assert.equal(noCreds.error_code, 'NOT_CONNECTED')
   assert.equal(noCreds.connection_state, 'NOT_CONNECTED')
@@ -525,17 +528,32 @@ test('probe() 输出里不含任何 env 值（只有存在性布尔）', () => {
   assert.equal(JSON.stringify(direct).includes(secret), false, 'probe() 泄露了 config.app_id')
 })
 
-/** 扫描口径：源文件里不许出现真实传输手段（骨架就该是死的）。 */
+/**
+ * 扫描口径（2026-11-14 修订）：
+ *   * **任何**连接器文件都不许自己拼 HTTP / 套接字 / 动态 require —— 传输层只走
+ *     Lark CLI，不走 HTTP（`http-transport` 仍在 `not_implemented` 里）；
+ *   * **只有** `transport.ts` 允许碰子进程（它是唯一的外部出口），其余文件必须
+ *     保持零 I/O：`adapter.ts` 不 import 子进程，传输层靠调用方注入。
+ * 这不是「把扫描放宽」：外部出口从「全禁」变成「唯一一处 + 其余仍全禁」，
+ * 并且新增断言「只有 transport.ts 一个文件命中 child_process」。
+ */
 const FORBIDDEN_SOURCE_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   ['fetch(', /fetch\s*\(/],
   ['node:http', /node:http/],
   ['node:https', /node:https/],
   ['node:net', /node:net/],
   ['undici', /undici/i],
+]
+
+/** 除 `transport.ts` 之外一律禁用的子进程形态。 */
+const FORBIDDEN_SUBPROCESS_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   ['child_process', /child_process/],
   ['spawn', /\bspawn\b/i],
   ['execSync', /\bexecSync\b/],
 ]
+
+/** 唯一允许发起外部调用的文件。 */
+const EXTERNAL_EGRESS_FILE = join(CONNECTOR_DIR, 'transport.ts')
 
 /** 列出 `src/connectors/feishu/` 下所有 .ts 文件。 */
 async function listConnectorSources(): Promise<string[]> {
@@ -546,14 +564,25 @@ async function listConnectorSources(): Promise<string[]> {
     .sort()
 }
 
-test('静态扫描：src/connectors/feishu/** 没有 HTTP / 套接字 / 子进程调用', async () => {
+test('静态扫描：连接器没有 HTTP / 套接字，子进程只在 transport.ts 一处', async () => {
   const files = await listConnectorSources()
-  assert.ok(files.length >= 4, `应至少扫到 4 个 .ts 文件，实际 ${files.length}`)
+  assert.ok(files.includes(EXTERNAL_EGRESS_FILE), '必须扫到 transport.ts')
+  assert.ok(files.length >= 5, `应至少扫到 5 个 .ts 文件（含 transport.ts），实际 ${files.length}`)
+  let subprocessFiles = 0
   for (const file of files) {
     const text = await readFile(file, 'utf8')
     for (const [label, pattern] of FORBIDDEN_SOURCE_PATTERNS) {
       assert.equal(pattern.test(text), false, `${file} 命中禁用形态 ${label}`)
     }
     assert.equal(/\brequire\s*\(/.test(text), false, `${file} 不该用 require()`)
+    if (file === EXTERNAL_EGRESS_FILE) {
+      assert.match(text, /from 'node:child_process'/, 'transport.ts 是唯一允许的子进程出口')
+      subprocessFiles += 1
+      continue
+    }
+    for (const [label, pattern] of FORBIDDEN_SUBPROCESS_PATTERNS) {
+      assert.equal(pattern.test(text), false, `${file} 命中禁用形态 ${label}（外部出口只许在 transport.ts）`)
+    }
   }
+  assert.equal(subprocessFiles, 1, '只允许 transport.ts 一个文件碰子进程')
 })
