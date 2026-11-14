@@ -13,13 +13,15 @@
 // ⚠️ actor 诚实（契约里也明文写死，不许省）：
 //   `application.stage_changed_by_actor_id` 由 `fn_row_guard` 写成 `SET LOCAL recruitment.actor_id`
 //   ——它表示**执行账号**，**不表示决策人**。T1（S6→S7）是**自动推进**：库里的 actor 是配置里的
-//   本地账号（`…0103`，HUMAN 类型），但没有任何人"按过这个按钮"。所以：
+//   本地账号（`…0103`，HUMAN 类型），但没有任何人"按过这个按钮"。T3（S8→S9）/ T4（S9→S10）
+//   同样是**承认已发生的事实**（面试已发生 / 材料已可取），不是"人点了推进"。所以：
 //     * 本工具不写 `decided_by_actor_id`、不写决策、不建任务（那是 decision_record 的事）；
 //     * 输出/契约里都不把 stage 变化表述成"某人推进了它"；
 //     * 想证明"是谁决定的"，唯一凭据是 `decision` 行（`decided_by_actor_id` + 人工确认哈希）。
 //
 // 不做什么（TC §0 六条）：不代决、不改 lifecycle_status、不写 stage_blocked_reason、
-// 不做 rubric pin 的写入（F1 属 intake 线，本工具只判定 pinned/未 pinned）、不改任何决策。
+// 不改任何决策。F1 的 rubric 补钉（申请没钉、岗位已有已批准 current）在**领域层**的 T1 判定里
+// 作为"承认已批准事实"的补写发生（`contracts/stage-advance/tool-contracts.md §2.1.1`）。
 //
 // 配置不完整时**仍然注册同一个工具名**，调用返回 NOT_CONFIGURED 并列出缺什么 ——
 // 模型看到的是"为什么不能用"，而不是一个不存在的工具（沿用 candidate_get 的既有做法）。
@@ -53,8 +55,11 @@ const TOOL_NAME = 'recruitment_application_stage_advance'
 /**
  * 出参契约版本（TC §4 的形状变了就要 +1）。
  * v1.1.0（§11.6-8 复审）：blockers/warnings 每一项升级为**结构化责任 + 下一步**。
+ * v1.2.0（D-A 修复）：梯子从两条边扩到四条（S8→S9 / S9→S10），新增 blocker 码
+ * （`INTERVIEW_NOT_COMPLETED` / `TRANSCRIPT_NOT_READY`）与 next_action_code
+ * （`SCHEDULE_INTERVIEW` / `IMPORT_TRANSCRIPT` / `RESCHEDULE_INTERVIEW` / `REIMPORT_TRANSCRIPT`）。
  */
-const CONTRACT_VERSION = '1.1.0'
+const CONTRACT_VERSION = '1.2.0'
 
 // =====================================================================
 //  入参（**只有一个键**）
@@ -66,7 +71,8 @@ const PARAMS: ParamMap = {
     required: true,
     uuid: true,
     description:
-      '申请 id（UUID）。本工具只接受这一个参数：目标阶段由"已发生的事实"推导（T1 S6→S7 / T2 S7→S8），'
+      '申请 id（UUID）。本工具只接受这一个参数：目标阶段由"已发生的事实"推导'
+      + '（T1 S6→S7 / T2 S7→S8 / T3 S8→S9 / T4 S9→S10，S10 是 v1.0 终态），'
       + 'actor 与 tenant 只能来自执行上下文。',
   },
 }
@@ -175,27 +181,38 @@ const DESCRIPTION = [
   'Advance ONE application\'s stage pointer by acknowledging facts that have ALREADY happened',
   '(a derived command: it adds no new authority). Input is exactly {application_id} —',
   'no target stage, no actor, no tenant.',
-  'Ladder (only these two edges, in order, never skipped):',
+  'Ladder (four edges, in order, never skipped; the chain ends at S10):',
   '  T1 S6->S7: application.resume_version_id is set AND that material\'s parse_status is not FAILED',
   '            AND application.rubric_version_id is set (rubric version pinned);',
   '  T2 S7->S8: the current (superseded_by_decision_id is null) decision with',
-  '            decision_scope=SCREENING has result=ADVANCE.',
+  '            decision_scope=SCREENING has result=ADVANCE;',
+  '  T3 S8->S9: the interview ALREADY happened — some interview of this application has status',
+  '            IN_PROGRESS / POST_INTERVIEW / EVALUATION_READY / DECIDED, OR a transcript artifact',
+  '            for this application already exists (material in hand proves the interview happened);',
+  '  T4 S9->S10: a canonical + READY transcript artifact exists (complete source text acquired =',
+  '            the S9 material work is done). S10 is TERMINAL: stage_catalog.in_v1_scope ends at S10,',
+  '            so the pointer stops at S10 (no invented S11 edge); the S10 decision lives in the',
+  '            decision rows, not in the stage pointer.',
   'Returns status=ADVANCED (transitions[] lists the applied edges; one stage-change event per edge),',
-  'status=NO_OP (nothing to do: the pointer already reflects the facts — ZERO update), or',
+  'status=NO_OP (nothing to do: the pointer already reflects the facts, or the next fact is still',
+  'pending — ZERO update), or',
   'status=BLOCKED (blockers[] names the blocking fact: RUBRIC_NOT_PINNED, MATERIAL_NOT_LINKED,',
-  'MATERIAL_PARSE_FAILED, SCREENING_DECISION_NOT_ADVANCE, APPLICATION_NOT_ACTIVE, STAGE_NOT_ON_LADDER).',
+  'MATERIAL_PARSE_FAILED, SCREENING_DECISION_NOT_ADVANCE, INTERVIEW_NOT_COMPLETED, TRANSCRIPT_NOT_READY,',
+  'APPLICATION_NOT_ACTIVE, STAGE_NOT_ON_LADDER).',
   'Every blocker/warning is STRUCTURED for the workbench: it always carries owner_role',
   '(JOB_HIRING_MANAGER / RECRUITMENT_OWNER / SCREENING_DECIDER / PLATFORM_OPERATOR) and next_action_code',
   '(PIN_RUBRIC_VERSION / LINK_INTAKE_MATERIAL / REPARSE_MATERIAL / RECORD_SCREENING_DECISION /',
-  'SUPERSEDE_SCREENING_DECISION / REOPEN_APPLICATION / START_AT_INTAKE / VERIFY_STAGE_PROGRESSION /',
+  'SUPERSEDE_SCREENING_DECISION / SCHEDULE_INTERVIEW / IMPORT_TRANSCRIPT / RESCHEDULE_INTERVIEW /',
+  'REIMPORT_TRANSCRIPT / REOPEN_APPLICATION / START_AT_INTAKE / VERIFY_STAGE_PROGRESSION /',
   'ADVANCE_STAGE / CONTINUE_DOWNSTREAM), plus owner_actor_id / owner_display_name when the responsible',
   'person is derivable from the database (job department hiring manager, or the human who made the',
-  'SCREENING decision). Never regresses and never skips: if the pointer is already past S8 it returns a',
+  'SCREENING decision). Never regresses and never skips: if the pointer is already past S10 it returns a',
   'STAGE_AHEAD warning in warnings[] (same structured shape) and sends no UPDATE.',
   'Every applied edge also writes stage_entered_at.',
   'It does NOT record decisions, does NOT create tasks, and does NOT change lifecycle_status.',
   'HONESTY: application.stage_changed_by_actor_id means the EXECUTING ACCOUNT (who ran the tool),',
-  'NOT the decision maker. T1 is an automatic advance — a stage change is not evidence a human did it.',
+  'NOT the decision maker. T1 is an automatic advance (so are T3/T4) — a stage change is not evidence',
+  'a human did it.',
   'Errors: NOT_FOUND (unknown application), VERSION_CONFLICT (concurrent change; re-read and retry),',
   'NOT_CONFIGURED, INVALID_ARGS.',
 ].join(' ')
@@ -303,8 +320,8 @@ export function unconfiguredStageAdvanceTool(issues: readonly string[]): Readonl
     name: TOOL_NAME,
     description:
       'Advance one application\'s stage pointer by acknowledging facts that already happened '
-      + '(S6->S7->S8 only; derived command, no new authority). Currently NOT CONFIGURED: '
-      + `${issues.join('; ')}. Calls return NOT_CONFIGURED.`,
+      + '(S6->S7->S8->S9->S10; S10 is the v1.0 terminal stage; derived command, no new authority). '
+      + `Currently NOT CONFIGURED: ${issues.join('; ')}. Calls return NOT_CONFIGURED.`,
     parameters: toParameterSchema(PARAMS),
     output: {
       schema: OUTPUT_SCHEMA,

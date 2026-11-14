@@ -74,10 +74,14 @@ v1.0 只做 6 个阶段：
 | 7 | 面评（S10 上半） | **面试官本人** | `recruitment_scorecard_submit` | `scorecard` | `interviewer_id` + `rubric_version_id` + 四态 assessment |
 | 8 | 汇总与决策（S10 下半） | 招聘负责人 | `recruitment_evaluation_summarize` → `recruitment_decision_record(decision_scope='STAGE'/'FINAL')` | `decision` | `basis_refs` 九种 kind + 人工确认四要素 |
 
-> **阶段码推进**：`recruitment_application_stage_advance`（`src/tools/stage-advance.ts`，注册于
-> `src/index.ts:588`）是 `application.current_stage_code` 的**唯一写入口**（`docs/23` N8 的修复）：
-> 入参只有 `application_id`，只承认"已发生的事实"（下一阶段的可观测条件成立才推进），
+> **阶段码推进**：`recruitment_application_stage_advance`（`src/tools/stage-advance.ts`，注册于 `src/index.ts` 的 `stageAdvance`）是
+> `application.current_stage_code` 的**唯一写入口**（`docs/23` N8 的修复）：
+> 入参只有 `application_id`，只承认"已发生的事实"（下一阶段的可观测事实成立才推进），
 > 不新增任何授权、不写决策（"是谁决定的"只能由 `decision` 行证明）。
+> 梯子是 **S6→S7（材料+rubric）→S8（current SCREENING=ADVANCE）→S9（面试已发生）→S10（canonical READY 转写=材料可用）**，
+> 顺序执行、不跳阶、不倒退；**S10 = v1.0 终态**（`stage_catalog.in_v1_scope` 到 S10 为止，S11/S12=false）：
+> 指针停在 S10 不再前进，S10 的决策由 `decision(decision_scope='STAGE'/'FINAL', stage_code='S10')` 表达。
+> 逐边闸门与拒绝理由见 `contracts/stage-advance/tool-contracts.md §2`（1.2.0）。
 
 **不可绕过的人类闸门**：第 4、5、7、8 步的写入必须带人类 actor；
 agent 不得代填面评、不得代做决策（`execution_mandate` 的 CHECK 已禁止 `submit_scorecard` / `decide`）。
@@ -207,4 +211,4 @@ dsh --profile recruitment
 3. **模型额度 / 结构化第 2 步**：Golden Path 第 2 步（结构化）仍要真实模型；`converter/fallback` 的
    `model_reader` 不接 provider（D-81：模型调用不进插件），视觉补读走 agent 侧（D-107）。
 4. **审批在事务内等待（记债）**：面评/排期的 approval 在业务校验后、写库前，最长 120s 持有事务；
-   `db/pool.ts` 用 `idle_in_transaction_session_timeout=300s` 兜底；两阶段重构按 D-101 的触发条件再做。
+   `dsh/dsh-recruitment/src/db/pool.ts` 用 `idle_in_transaction_session_timeout=300s` 兜底；两阶段重构按 D-101 的触发条件再做。

@@ -8,7 +8,10 @@
 // 断言的"事实"全部来自 `src/domain/stage-advance.ts` 的契约：
 //   T1 S6→S7：material（resume_version_id 非空、parse_status ≠ FAILED）+ rubric_version_id 非空
 //   T2 S7→S8：current（superseded_by_decision_id is null）SCREENING 决策 result=ADVANCE
-//   HOLD/REJECT → BLOCKED（留在 S7）；没有决策 → WAIT/NO_OP；指针超前 → STAGE_AHEAD（零 UPDATE）
+//   T3 S8→S9：面试已真正发生（interview.status ∈ IN_PROGRESS/POST_INTERVIEW/… 或已有转写产物）
+//   T4 S9→S10：canonical + READY 转写（材料可用）
+//   HOLD/REJECT → BLOCKED（留在 S7）；没有决策 → WAIT/NO_OP；面试全被取消 → BLOCKED（留在 S8）；
+//   转写取不回来 → BLOCKED（留在 S9）；指针超前（S11/S12）→ STAGE_AHEAD（零 UPDATE）；S10 = 终态。
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
@@ -18,6 +21,7 @@ import {
   BLOCKER_CODES,
   NEXT_ACTION_CODES,
   OWNER_ROLES,
+  PENDING_FACTS,
   readStageBlockedView,
   type AdvanceApplicationStageInput,
   type StageAdvanceResult,
@@ -33,6 +37,8 @@ const APP_ID = '11111111-1111-4111-8111-000000000701'
 const MATERIAL_ID = '11111111-1111-4111-8111-000000000901'
 const RUBRIC_ID = '11111111-1111-4111-8111-000000000403'
 const DECISION_ID = '11111111-1111-4111-8111-000000000a01'
+const INTERVIEW_ID = '11111111-1111-4111-8111-000000000e01'
+const TRANSCRIPT_ID = '11111111-1111-4111-8111-000000000f01'
 const TENANT = '11111111-1111-4111-8111-000000000001'
 const CREATED_AT = new Date('2026-11-14T00:00:00.000Z')
 /** created_at 的微秒表示（与库里的 `extract(epoch …)*1e6` 同口径；JS Date 只有毫秒）。 */
@@ -81,6 +87,18 @@ const STAGE_ORDERS = [
   { code: 'S11', sort_order: 11, name: 'Offer 与入职交接' }, { code: 'S12', sort_order: 12, name: '人才沉淀与复盘' },
 ]
 
+/** T3 的一条面试（假库返回的行）；默认 SCHEDULED = 已排期、还没发生。 */
+function interviewRow(overrides: Partial<{ id: string; status: string }> = {}): { id: string; status: string } {
+  return { id: INTERVIEW_ID, status: 'SCHEDULED', ...overrides }
+}
+
+/** T3/T4 的一条转写产物（假库返回的行）；默认可用的 canonical READY（材料可用）。 */
+function transcriptRow(
+  overrides: Partial<{ id: string; transcript_status: string; is_canonical: boolean }> = {},
+): { id: string; transcript_status: string; is_canonical: boolean } {
+  return { id: TRANSCRIPT_ID, transcript_status: 'READY', is_canonical: true, ...overrides }
+}
+
 interface QueryCall {
   readonly text: string
   readonly params: readonly unknown[]
@@ -122,6 +140,17 @@ interface FakeInput {
   }[]
   /** 执行账号 GUC（`SET LOCAL recruitment.actor_id`）；`null` = 没有 actor（补钉必须拒绝）。 */
   readonly actorId?: string | null
+  /** T3 的事实源：该申请的面试（`interview.application_id`）；省略 = 还没有面试。 */
+  readonly interviews?: readonly { readonly id: string; readonly status: string }[]
+  /**
+   * T3/T4 的材料事实：该申请可达的转写产物（经有效 meeting_binding 归属）。
+   * 省略 = 没有任何转写产物。
+   */
+  readonly transcripts?: readonly {
+    readonly id: string
+    readonly transcript_status: string
+    readonly is_canonical: boolean
+  }[]
   /** 依次消费；不提供就按 params 自动生成"成功"的 RETURNING。 */
   readonly updateResults?: readonly (FakeUpdatedRow | null)[]
   /** 让某类查询抛错（模拟 40001 等），例如 `{ match: 'for update', error }`。 */
@@ -156,6 +185,14 @@ function fakeClient(input: FakeInput): DatabaseClient & { readonly calls: readon
       }
       if (text.includes('recruitment.stage_catalog')) {
         return { rows: [...(input.stageOrders ?? STAGE_ORDERS)] }
+      }
+      // T3/T4：该申请可达的转写产物（经有效 meeting_binding 归属）；默认空 = 没有材料。
+      if (text.includes('from recruitment.transcript_artifact')) {
+        return { rows: [...(input.transcripts ?? [])] }
+      }
+      // T3：该申请的面试；默认空 = 还没排期。
+      if (text.includes('from recruitment.interview i')) {
+        return { rows: [...(input.interviews ?? [])] }
       }
       if (text.includes('recruitment.resume_version')) {
         if (input.material === undefined) return { rows: [] }
@@ -565,11 +602,224 @@ test('T2 还没有决策 → WAIT → NO_OP（不是错误、零 UPDATE；幂等
 })
 
 // =====================================================================
+//  T3：S8 → S9（面试已真正发生 / 材料已在手）
+// =====================================================================
+
+test('T3 正例：面试状态 IN_PROGRESS（会议已开始）→ ADVANCED S9，一条 UPDATE，条件是 S8 + record_version', async () => {
+  const { result, client } = await advanceWith({
+    application: appRow({ current_stage_code: 'S8', record_version: 5 }),
+    interviews: [interviewRow({ status: 'IN_PROGRESS' })],
+  })
+  assert.equal(result.status, 'ADVANCED')
+  assert.equal(result.stage_code, 'S9')
+  assert.deepEqual(result.transitions, [{ from: 'S8', to: 'S9' }])
+  assert.deepEqual(result.blockers, [], 'T3 通过后 T4 只是 WAIT（还没有材料），不是 blocker')
+  assert.deepEqual(result.warnings, [])
+  assert.equal(result.record_version, 6)
+  assert.equal(updateCalls(client), 1)
+  const update = client.calls.find((call) => call.text.trimStart().startsWith('update recruitment.application'))
+  assert.deepEqual(update?.params, [APP_ID, TENANT, 'S8', 'S9', 5], 'UPDATE 必须带 from + record_version')
+  // 只读事实：面试/转写都是 select；除阶段 UPDATE 外没有任何写语句。
+  assert.equal(client.calls.filter((call) => call.text.trimStart().startsWith('select')).length >= 3, true)
+})
+
+test('T3 正例：面试还是 SCHEDULED，但已有转写产物（材料在手 ⇒ 面试已发生）→ ADVANCED S9', async () => {
+  const { result, client } = await advanceWith({
+    application: appRow({ current_stage_code: 'S8', record_version: 2 }),
+    interviews: [interviewRow({ status: 'SCHEDULED' })],
+    transcripts: [transcriptRow({ transcript_status: 'PARTIAL', is_canonical: false })],
+  })
+  assert.equal(result.status, 'ADVANCED')
+  assert.equal(result.stage_code, 'S9')
+  assert.deepEqual(result.transitions, [{ from: 'S8', to: 'S9' }])
+  assert.equal(updateCalls(client), 1, 'T4 还没成立（材料不可用）→ 只走一跳')
+})
+
+test('T3 负例：面试全部 CANCELLED / NO_SHOW → BLOCKED INTERVIEW_NOT_COMPLETED，零 UPDATE；责任/下一步结构化', async () => {
+  const { result, client } = await advanceWith({
+    application: appRow({ current_stage_code: 'S8', record_version: 4 }),
+    interviews: [interviewRow({ status: 'CANCELLED' }), interviewRow({ id: `${INTERVIEW_ID}-2`, status: 'NO_SHOW' })],
+  })
+  assert.equal(result.status, 'BLOCKED')
+  assert.deepEqual(result.blockers.map((b) => b.code), ['INTERVIEW_NOT_COMPLETED'])
+  const blocker = result.blockers[0] as NonNullable<typeof result.blockers[0]>
+  assertStructuredResponsibility(blocker, 'INTERVIEW_NOT_COMPLETED')
+  assert.equal(blocker.owner_role, 'JOB_HIRING_MANAGER')
+  assert.equal(blocker.next_action_code, 'RESCHEDULE_INTERVIEW')
+  assert.match(blocker.message, /CANCELLED/)
+  assert.equal(blocker.owner_actor_id, OWNER_ACTOR, '能推出招聘负责人就填')
+  assert.deepEqual(result.transitions, [])
+  assert.equal(result.stage_code, 'S8', '阶段留在 S8')
+  assert.equal(result.record_version, 4, 'record_version 不变（零 UPDATE 的硬证据）')
+  assert.equal(updateCalls(client), 0)
+})
+
+test('T3 等待：还没有面试（没排期）→ NO_OP，零 UPDATE；视图下一步 = SCHEDULE_INTERVIEW', async () => {
+  const { result, client } = await advanceWith({
+    application: appRow({ current_stage_code: 'S8', record_version: 3 }),
+  })
+  assert.equal(result.status, 'NO_OP', '事实还没发生 ≠ 被挡住')
+  assert.deepEqual(result.transitions, [])
+  assert.deepEqual(result.blockers, [])
+  assert.equal(result.stage_code, 'S8')
+  assert.equal(result.record_version, 3)
+  assert.equal(updateCalls(client), 0)
+
+  const { view } = await viewWith({ application: appRow({ current_stage_code: 'S8', record_version: 3 }) })
+  assert.equal(view.status, 'NO_OP')
+  assert.deepEqual(view.blockers, [])
+  assert.equal(view.next_action.code, 'SCHEDULE_INTERVIEW')
+})
+
+test('T3 等待：面试已排期但还没发生 → NO_OP（零 UPDATE）；视图下一步 = IMPORT_TRANSCRIPT', async () => {
+  const { result, client } = await advanceWith({
+    application: appRow({ current_stage_code: 'S8', record_version: 2 }),
+    interviews: [interviewRow({ status: 'SCHEDULED' })],
+  })
+  assert.equal(result.status, 'NO_OP')
+  assert.deepEqual(result.blockers, [])
+  assert.equal(result.stage_code, 'S8')
+  assert.equal(updateCalls(client), 0)
+
+  const { view } = await viewWith({
+    application: appRow({ current_stage_code: 'S8', record_version: 2 }),
+    interviews: [interviewRow({ status: 'RESCHEDULED' })],
+  })
+  assert.equal(view.next_action.code, 'IMPORT_TRANSCRIPT')
+})
+
+test('T3 等待：一场取消、另一场仍排期 → 仍等待（不是 BLOCKED，别把"还不能"当"不能"）', async () => {
+  const { result, client } = await advanceWith({
+    application: appRow({ current_stage_code: 'S8', record_version: 2 }),
+    interviews: [interviewRow({ status: 'CANCELLED' }), interviewRow({ id: `${INTERVIEW_ID}-2`, status: 'SCHEDULED' })],
+  })
+  assert.equal(result.status, 'NO_OP')
+  assert.deepEqual(result.blockers, [])
+  assert.equal(updateCalls(client), 0)
+})
+
+// =====================================================================
+//  T4：S9 → S10（canonical + READY 转写 = 材料可用）
+// =====================================================================
+
+test('T4 正例：canonical + READY 转写 → ADVANCED S10（v1.0 终态）', async () => {
+  const { result, client } = await advanceWith({
+    application: appRow({ current_stage_code: 'S9', record_version: 7 }),
+    interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+    transcripts: [transcriptRow()],
+  })
+  assert.equal(result.status, 'ADVANCED')
+  assert.equal(result.stage_code, 'S10')
+  assert.deepEqual(result.transitions, [{ from: 'S9', to: 'S10' }])
+  assert.equal(result.record_version, 8)
+  assert.equal(updateCalls(client), 1)
+  const update = client.calls.find((call) => call.text.trimStart().startsWith('update recruitment.application'))
+  assert.deepEqual(update?.params, [APP_ID, TENANT, 'S9', 'S10', 7])
+})
+
+test('T4 负例：转写取不回来（AUTH_REQUIRED / RETRYABLE_FAILED / NEEDS_LINKING）→ BLOCKED TRANSCRIPT_NOT_READY，零 UPDATE', async () => {
+  for (const status of ['AUTH_REQUIRED', 'RETRYABLE_FAILED', 'NEEDS_LINKING']) {
+    const { result, client } = await advanceWith({
+      application: appRow({ current_stage_code: 'S9', record_version: 6 }),
+      interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+      transcripts: [transcriptRow({ transcript_status: status })],
+    })
+    assert.equal(result.status, 'BLOCKED', `${status} 应 BLOCKED`)
+    assert.deepEqual(result.blockers.map((b) => b.code), ['TRANSCRIPT_NOT_READY'])
+    const blocker = result.blockers[0] as NonNullable<typeof result.blockers[0]>
+    assertStructuredResponsibility(blocker, 'TRANSCRIPT_NOT_READY')
+    assert.equal(blocker.owner_role, 'RECRUITMENT_OWNER')
+    assert.equal(blocker.next_action_code, 'REIMPORT_TRANSCRIPT')
+    assert.match(blocker.message, new RegExp(status))
+    assert.equal(result.stage_code, 'S9', '阶段留在 S9')
+    assert.equal(result.record_version, 6)
+    assert.equal(updateCalls(client), 0)
+  }
+})
+
+test('T4 等待：面试已执行但还没有材料 → NO_OP（停在 S9，零 UPDATE）；视图下一步 = IMPORT_TRANSCRIPT', async () => {
+  const { result, client } = await advanceWith({
+    application: appRow({ current_stage_code: 'S9', record_version: 4 }),
+    interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+  })
+  assert.equal(result.status, 'NO_OP')
+  assert.deepEqual(result.blockers, [])
+  assert.equal(result.stage_code, 'S9')
+  assert.equal(updateCalls(client), 0)
+
+  const { view } = await viewWith({
+    application: appRow({ current_stage_code: 'S9', record_version: 4 }),
+    interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+  })
+  assert.equal(view.next_action.code, 'IMPORT_TRANSCRIPT')
+})
+
+test('T4 等待：材料还在处理中（PARTIAL / FETCHING / WAITING_EXTERNAL）→ NO_OP，不是 BLOCKED', async () => {
+  for (const status of ['PARTIAL', 'FETCHING', 'WAITING_EXTERNAL', 'DISCOVERED']) {
+    const { result, client } = await advanceWith({
+      application: appRow({ current_stage_code: 'S9', record_version: 4 }),
+      transcripts: [transcriptRow({ transcript_status: status, is_canonical: false })],
+    })
+    assert.equal(result.status, 'NO_OP', `${status} 应 NO_OP`)
+    assert.deepEqual(result.blockers, [])
+    assert.equal(updateCalls(client), 0)
+  }
+})
+
+test('T4 负例：有 READY 但不是 canonical（别的版本才是 canonical）→ 仍不推进（canonical READY 才是材料可用）', async () => {
+  const { result, client } = await advanceWith({
+    application: appRow({ current_stage_code: 'S9', record_version: 4 }),
+    transcripts: [transcriptRow({ transcript_status: 'READY', is_canonical: false })],
+  })
+  assert.equal(result.status, 'NO_OP', '非 canonical 的 READY 不算材料可用（transcript.state 仍不是 READY）')
+  assert.equal(updateCalls(client), 0)
+})
+
+// =====================================================================
+//  全链：S6 → S10（四条边、四条 UPDATE、四条事件）
+// =====================================================================
+
+test('全链：T1–T4 同时成立 → 一次调用 S6→S7→S8→S9→S10（四条 UPDATE、四个 transition、版本 +4）', async () => {
+  const { result, client } = await advanceWith({
+    application: appRow({ record_version: 1 }),
+    material: { parse_status: 'PARSED' },
+    decision: { id: DECISION_ID, result: 'ADVANCE', decided_by_actor_id: '11111111-1111-4111-8111-000000000102' },
+    interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+    transcripts: [transcriptRow()],
+  })
+  assert.equal(result.status, 'ADVANCED')
+  assert.equal(result.stage_code, 'S10')
+  assert.deepEqual(result.transitions, [
+    { from: 'S6', to: 'S7' },
+    { from: 'S7', to: 'S8' },
+    { from: 'S8', to: 'S9' },
+    { from: 'S9', to: 'S10' },
+  ])
+  assert.deepEqual(result.blockers, [])
+  assert.deepEqual(result.warnings, [])
+  assert.equal(result.record_version, 5, '四条 UPDATE 各 +1')
+  assert.equal(updateCalls(client), 4)
+  // 每条 UPDATE 的乐观并发条件必须串起来：1→2→3→4。
+  const versions = client.calls
+    .filter((call) => call.text.trimStart().startsWith('update recruitment.application'))
+    .map((call) => Number(call.params[4]))
+  assert.deepEqual(versions, [1, 2, 3, 4])
+  // 再调一次：已在终态 → NO_OP、零 UPDATE（幂等）
+  const again = await advanceWith({
+    application: appRow({ current_stage_code: 'S10', record_version: 5 }),
+    interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+    transcripts: [transcriptRow()],
+  })
+  assert.equal(again.result.status, 'NO_OP')
+  assert.equal(updateCalls(again.client), 0)
+})
+
+// =====================================================================
 //  不倒退 / 不跳阶
 // =====================================================================
 
-test('指针超前（S9/S10，超过本命令能推导的 S8）→ NO_OP + STAGE_AHEAD，一条 UPDATE 都不发；告警带责任人 + 下一步', async () => {
-  for (const stage of ['S9', 'S10', 'S12']) {
+test('指针超前（S11/S12，超过本命令能推导的 S10 终态）→ NO_OP + STAGE_AHEAD，一条 UPDATE 都不发；告警带责任人 + 下一步', async () => {
+  for (const stage of ['S11', 'S12']) {
     const { result, client } = await advanceWith({
       application: appRow({ current_stage_code: stage, record_version: 5 }),
       decision: { id: DECISION_ID, result: 'ADVANCE', decided_by_actor_id: '11111111-1111-4111-8111-000000000102' },
@@ -595,10 +845,11 @@ test('指针在梯子起点之前（S3）→ BLOCKED STAGE_NOT_ON_LADDER，不�
   assert.equal(updateCalls(client), 0)
 })
 
-test('指针正好在 S8（梯子终点）→ NO_OP，且**不是** STAGE_AHEAD', async () => {
+test('指针正好在 S10（v1.0 终态）→ NO_OP，且**不是** STAGE_AHEAD（停在 S10 不再前进）', async () => {
   const { result, client } = await advanceWith({
-    application: appRow({ current_stage_code: 'S8', record_version: 6 }),
+    application: appRow({ current_stage_code: 'S10', record_version: 6 }),
     decision: { id: DECISION_ID, result: 'ADVANCE', decided_by_actor_id: '11111111-1111-4111-8111-000000000102' },
+    transcripts: [transcriptRow()],
   })
   assert.equal(result.status, 'NO_OP')
   assert.deepEqual(result.warnings, [])
@@ -735,7 +986,11 @@ test('§11.6-8 所有阻塞/告警都带结构化 owner_role + next_action_code�
     { application: appRow({ current_stage_code: 'S3' }) },                                            // STAGE_NOT_ON_LADDER
     { application: appRow({ current_stage_code: 'S7' }),
       decision: { id: DECISION_ID, result: 'HOLD', decided_by_actor_id: '11111111-1111-4111-8111-000000000104' } }, // SCREENING_DECISION_NOT_ADVANCE
-    { application: appRow({ current_stage_code: 'S9' }) },                                            // STAGE_AHEAD（warning）
+    { application: appRow({ current_stage_code: 'S8' }),
+      interviews: [interviewRow({ status: 'CANCELLED' })] },                                          // INTERVIEW_NOT_COMPLETED
+    { application: appRow({ current_stage_code: 'S9' }),
+      transcripts: [transcriptRow({ transcript_status: 'AUTH_REQUIRED' })] },                         // TRANSCRIPT_NOT_READY
+    { application: appRow({ current_stage_code: 'S11' }) },                                           // STAGE_AHEAD（warning）
   ]
   for (const input of cases) {
     const { result } = await advanceWith(input)
@@ -789,9 +1044,9 @@ test('§11.6-8 只读阻塞视图（假库）：RUBRIC_NOT_PINNED → stage + bl
 })
 
 test('§11.6-8 只读阻塞视图（假库）：STAGE_AHEAD → kind=WARNING，不是 blocked，但仍有 owner/next_action', async () => {
-  const { view } = await viewWith({ application: appRow({ current_stage_code: 'S9', record_version: 4 }) })
-  assert.equal(view.stage, 'S9')
-  assert.equal(view.stage_name, '面试执行与材料获取')
+  const { view } = await viewWith({ application: appRow({ current_stage_code: 'S11', record_version: 4 }) })
+  assert.equal(view.stage, 'S11')
+  assert.equal(view.stage_name, 'Offer 与入职交接')
   assert.equal(view.status, 'NO_OP')
   assert.equal(view.blocked, false, 'STAGE_AHEAD 是告警不是阻塞')
   const obstruction = view.blockers[0] as NonNullable<typeof view.blockers[0]>
@@ -804,7 +1059,7 @@ test('§11.6-8 只读阻塞视图（假库）：STAGE_AHEAD → kind=WARNING，�
   assert.equal(view.next_action.code, 'VERIFY_STAGE_PROGRESSION')
 })
 
-test('§11.6-8 只读阻塞视图：没有阻塞时给"下一步"（等人 → RECORD_SCREENING_DECISION；S8 → CONTINUE_DOWNSTREAM）', async () => {
+test('§11.6-8 只读阻塞视图：没有阻塞时给"下一步"（等人 → RECORD_SCREENING_DECISION；S8 → SCHEDULE_INTERVIEW；S10 → CONTINUE_DOWNSTREAM）', async () => {
   const waiting = await viewWith({ application: appRow({ current_stage_code: 'S7', record_version: 2 }) })
   assert.equal(waiting.view.status, 'NO_OP')
   assert.deepEqual(waiting.view.blockers, [])
@@ -817,9 +1072,43 @@ test('§11.6-8 只读阻塞视图：没有阻塞时给"下一步"（等人 → R
   assert.deepEqual(ready.view.blockers, [])
   assert.equal(ready.view.next_action.code, 'ADVANCE_STAGE')
 
-  const downstream = await viewWith({ application: appRow({ current_stage_code: 'S8', record_version: 6 }) })
-  assert.equal(downstream.view.status, 'NO_OP')
-  assert.equal(downstream.view.next_action.code, 'CONTINUE_DOWNSTREAM')
+  // S8 还没排期：下一步是"去排期"（不是含糊的 CONTINUE_DOWNSTREAM）。
+  const scheduling = await viewWith({ application: appRow({ current_stage_code: 'S8', record_version: 6 }) })
+  assert.equal(scheduling.view.status, 'NO_OP')
+  assert.equal(scheduling.view.next_action.code, 'SCHEDULE_INTERVIEW')
+
+  // S10 = v1.0 终态：本命令没有剩余动作。
+  const terminal = await viewWith({ application: appRow({ current_stage_code: 'S10', record_version: 9 }) })
+  assert.equal(terminal.view.status, 'NO_OP')
+  assert.deepEqual(terminal.view.blockers, [])
+  assert.equal(terminal.view.next_action.code, 'CONTINUE_DOWNSTREAM')
+})
+
+test('§11.6-8 只读阻塞视图：S9 等材料 → 下一步 IMPORT_TRANSCRIPT（不是 CONTINUE_DOWNSTREAM）', async () => {
+  const { view, client } = await viewWith({
+    application: appRow({ current_stage_code: 'S9', record_version: 3 }),
+    interviews: [interviewRow({ status: 'POST_INTERVIEW' })],
+  })
+  assert.equal(view.status, 'NO_OP')
+  assert.deepEqual(view.blockers, [])
+  assert.equal(view.next_action.code, 'IMPORT_TRANSCRIPT')
+  assert.equal(updateCalls(client), 0)
+})
+
+test('§11.6-8 只读阻塞视图：S8 面试被取消 → 结构化 blocker（不是自由文本），零写入', async () => {
+  const { view, client } = await viewWith({
+    application: appRow({ current_stage_code: 'S8', record_version: 3 }),
+    interviews: [interviewRow({ status: 'NO_SHOW' })],
+  })
+  assert.equal(view.status, 'BLOCKED')
+  assert.equal(view.blocked, true)
+  const obstruction = view.blockers[0] as NonNullable<typeof view.blockers[0]>
+  assert.equal(obstruction.kind, 'BLOCKER')
+  assert.equal(obstruction.code, 'INTERVIEW_NOT_COMPLETED')
+  assert.equal(obstruction.owner_role, 'JOB_HIRING_MANAGER')
+  assert.equal(obstruction.next_action_code, 'RESCHEDULE_INTERVIEW')
+  assert.equal(view.next_action.code, 'RESCHEDULE_INTERVIEW')
+  assert.equal(updateCalls(client), 0)
 })
 
 test('§11.6-8 只读阻塞视图：视图不发出任何写语句（UPDATE 计数 = 0）', async () => {
@@ -827,10 +1116,17 @@ test('§11.6-8 只读阻塞视图：视图不发出任何写语句（UPDATE 计�
     { application: appRow({ rubric_version_id: null }) },
     { application: appRow({ current_stage_code: 'S9' }) },
     { application: appRow(), material: { parse_status: 'PARSED' } },
+    { application: appRow({ current_stage_code: 'S8' }), interviews: [interviewRow({ status: 'IN_PROGRESS' })] },
+    { application: appRow({ current_stage_code: 'S9' }), transcripts: [transcriptRow()] },
   ] as FakeInput[]) {
     const { client } = await viewWith(input)
     assert.equal(updateCalls(client), 0)
     assert.equal(client.calls.length > 0, true, '视图确实查了库（不是空转）')
+    assert.equal(
+      client.calls.filter((call) => !call.text.trimStart().startsWith('select')).length,
+      0,
+      '视图只允许 select（T3/T4 的新查询也一样）',
+    )
   }
 })
 
@@ -906,6 +1202,35 @@ test('描述里明文写死 actor 诚实：stage_changed_by_actor_id = 执行账
   assert.match(TOOL.description, /T1 is an automatic advance/)
 })
 
+test('描述里的梯子 = 四条边（S6→S7→S8→S9→S10），且写明 S10 是终态；不再有 "only these two edges"', () => {
+  assert.match(TOOL.description, /S6->S7/)
+  assert.match(TOOL.description, /S7->S8/)
+  assert.match(TOOL.description, /T3 S8->S9/)
+  assert.match(TOOL.description, /T4 S9->S10/)
+  assert.match(TOOL.description, /S10 is TERMINAL/)
+  assert.doesNotMatch(TOOL.description, /only these two edges/)
+  // 新的拒绝原因 / 下一步必须在模型可见文本里出现，否则模型会自己发明。
+  assert.match(TOOL.description, /INTERVIEW_NOT_COMPLETED/)
+  assert.match(TOOL.description, /TRANSCRIPT_NOT_READY/)
+  assert.match(TOOL.description, /SCHEDULE_INTERVIEW/)
+  assert.match(TOOL.description, /IMPORT_TRANSCRIPT/)
+  assert.match(TOOL.description, /RESCHEDULE_INTERVIEW/)
+  assert.match(TOOL.description, /REIMPORT_TRANSCRIPT/)
+})
+
+test('封闭集：新增 blocker / next_action / pending_fact 都登记在案（防止"只加一个码不写契约"）', () => {
+  for (const code of ['INTERVIEW_NOT_COMPLETED', 'TRANSCRIPT_NOT_READY']) {
+    assert.ok((BLOCKER_CODES as readonly string[]).includes(code), `${code} 不在 BLOCKER_CODES`)
+  }
+  for (const code of ['SCHEDULE_INTERVIEW', 'IMPORT_TRANSCRIPT', 'RESCHEDULE_INTERVIEW', 'REIMPORT_TRANSCRIPT']) {
+    assert.ok((NEXT_ACTION_CODES as readonly string[]).includes(code), `${code} 不在 NEXT_ACTION_CODES`)
+  }
+  assert.deepEqual(
+    [...PENDING_FACTS],
+    ['SCREENING_DECISION', 'INTERVIEW_SCHEDULING', 'INTERVIEW_EXECUTION', 'TRANSCRIPT_MATERIAL'],
+  )
+})
+
 /** DSH 支持的约束关键字（与 test/unit/output-schema.test.ts 同一份子集）。 */
 const SUPPORTED = new Set([
   'type', 'oneOf', 'properties', 'required', 'additionalProperties', 'items', 'enum', 'const',
@@ -963,7 +1288,7 @@ test('output.schema 只用 DSH 子集；没有 type 数组 / type:null', () => {
 test('一个 ADVANCED 样例值满足 output.schema，且深扫无 null', () => {
   const sample = {
     tool: 'recruitment_application_stage_advance',
-    contract_version: '1.1.0',
+    contract_version: '1.2.0',
     application_id: APP_ID,
     stage_code: 'S7',
     record_version: 2,
@@ -984,7 +1309,7 @@ test('一个 ADVANCED 样例值满足 output.schema，且深扫无 null', () => 
 test('BLOCKED 样例值（结构化 blocker/warning）满足 output.schema 且无 null', () => {
   const sample = {
     tool: 'recruitment_application_stage_advance',
-    contract_version: '1.1.0',
+    contract_version: '1.2.0',
     application_id: APP_ID,
     stage_code: 'S6',
     record_version: 1,
@@ -1021,7 +1346,7 @@ test('BLOCKED 样例值（结构化 blocker/warning）满足 output.schema 且�
 test('渲染：blocker/warning 的责任人 + 下一步都出现在模型可见文本里', () => {
   const text = (TOOL.output.render({}, {
     tool: 'recruitment_application_stage_advance',
-    contract_version: '1.1.0',
+    contract_version: '1.2.0',
     application_id: APP_ID,
     stage_code: 'S6',
     record_version: 1,
