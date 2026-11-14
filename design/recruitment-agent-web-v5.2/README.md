@@ -31,6 +31,71 @@ Keep the product surface small and contextual:
 4. Detailed source material and event history are progressive disclosure. Default view shows recruiting conclusions and useful next actions, not internal execution logs.
 5. Keep one Agent conversation entry. Its context must be explicit and stable: job-level requests stay job-scoped; an internal recruiter's questions about a candidate stay scoped to that candidate's Application. Switching context must never silently carry the previous application.
 
+## 3A. Role-specific workspaces (one product, different views)
+
+The product has internal recruiting users only. Role-specific interfaces are projections of the same domain objects and DSH host, not separate products or duplicate business workflows.
+
+### Role views
+
+- **HR / Recruiter:** recruitment work overview, assigned jobs and Applications, intake outcomes, screening decisions, interview coordination, pending follow-ups, and candidate/application history.
+- **Interviewer:** a focused "My Interviews" / Interview Workspace showing only interviews assigned to the current internal user (or explicitly authorized scope). It provides the interview briefing, job context, the candidate's submitted resume and authorized materials, this round's focus attributes and questions, meeting details, the interviewer's own notes, and that interviewer's independent Scorecard. It does not expose the full HR pipeline or unrelated candidate records by default.
+- **Recruiting Lead / HR Owner:** job and rubric configuration, hiring progress, team workload, review of authorized evaluations, and formal decisions within their authority.
+- **Approver:** only the approval context and actions assigned to them, with enough business context to make the approval; no need to navigate the entire recruiting workspace.
+- **Enterprise Administrator:** organization-level templates, roles, policies, integrations and configuration. This is not the default daily workspace.
+
+The same internal user may hold multiple roles, and role scope may differ by enterprise, team, job, or Interview assignment. A role name alone must not grant access to every record.
+
+### Interview-round-specific experience
+
+- Do not hard-code "first / second / third interview" as product logic. A company may use one interview, two rounds, three rounds, a panel, a practical exercise, a founder conversation, or another named stage.
+- Each configured Interview Stage can define its own purpose, focus competencies, interview instructions, suggested/required questions, duration, assigned interviewer(s), Scorecard schema, required submission count, and progression condition.
+- All rounds reuse one Interview Workspace component and the same underlying Interview / Application / Scorecard contracts. The active stage configuration changes the briefing, visible prior context, questions, scorecard fields, and allowed actions.
+- Multiple interviewers assigned to one stage submit independent Scorecards. A shared stage does not mean a shared or jointly authored Scorecard.
+- Later-round interviewers receive a versioned Next Round Brief containing authorized objective context and already-covered areas. Other interviewers' subjective scores and private notes remain hidden by default until the receiving interviewer has submitted their own Scorecard, unless an explicit enterprise policy says otherwise.
+- Agent prepares round-specific questions and briefing from the job rubric, stage configuration, resume and authorized prior Interview Records. It must not invent candidate facts or pre-fill/submit an interviewer's subjective evaluation.
+
+### Demo role switch vs real identity
+
+- The current single-user prototype may expose a clearly labelled **Demo identity / View as** selector to demonstrate HR, Recruiting Lead, Interviewer A, Interviewer B and Approver views without implementing multi-user authentication now.
+- Switching demo identity must change the view, assigned work, actor identity, data visibility and permitted actions—not merely change a label or theme. Demo Scorecards must persist distinct actor IDs and remain independent.
+- The selector is a prototype simulation only. It must not be described as real authentication, real multi-user collaboration, or a security boundary.
+- In the integrated product, the active identity comes from DSH's authenticated internal user/session and server-side role/scope assignments. Users cannot self-grant roles by changing a UI selector. Domain/tool actions enforce authorization server-side.
+- Candidate identities are never available in this selector and candidates never become system users.
+
+## 3B. Enterprise-configurable recruiting framework
+
+The product must ship with useful defaults and reusable templates, while allowing each enterprise to adapt the framework to its actual recruiting practice without code changes. Do not hard-code one company's process into the product.
+
+### Configuration model
+
+Use an inheritance-and-override model:
+
+1. **Built-in starter templates:** opinionated baseline workflows, role presets, rubrics and interview kits; editable and reusable, not mandatory.
+2. **Enterprise defaults:** the organization's role definitions, access policies, standard hiring stages, default rubrics, scorecard rules and Agent action policies.
+3. **Department / team overrides:** optional differences for a function or hiring team.
+4. **Job-specific configuration:** the actual hiring rubric, interview plan and hiring team for a particular Job.
+5. **Interview-stage configuration:** the purpose, focus attributes, instructions, questions, interviewer assignment, scorecard and stage gate for this stage.
+
+A lower layer inherits the higher layer by default and only stores explicit overrides. Provide a clear "inherited / customized" indication and a way to restore the inherited value. Avoid forcing every company to configure every field before it can use the product.
+
+### What enterprises can configure
+
+- Interview plan: stage names, order, optional/required stages, and supported same-stage interviewer panels.
+- Stage kit: purpose, focus competencies, instructions, suggested or required questions, time allocation and preparation material.
+- Evaluation: rubric dimensions, descriptions, rating scale, weights where useful, required/optional fields, and required independent Scorecard count.
+- Team and assignment: internal roles, who owns each stage, interviewer assignments, recruiting owner and approver.
+- Visibility and permissions: which roles can see resume material, objective Interview Records, prior Scorecards, private notes, and decision details.
+- Workflow gates: what conditions allow progression, who may make each formal decision, and which tasks Agent can perform autonomously.
+- Agent behavior: permitted tool actions, actions requiring human approval, notification policy, and stage-specific preparation/summary behavior.
+
+### Versioning and safety
+
+- Publish configuration changes as new versions. Do not silently rewrite a Job, Interview, Scorecard or in-flight Application's historical rubric or stage definition.
+- Each Job and Interview pins the effective configuration version used when it was created/started. A deliberate migration to a new version must be explicit and auditable.
+- Enterprise configuration changes affect future work by default. Existing in-flight Applications retain their effective snapshot unless an authorized user explicitly migrates them.
+- Starter templates are examples and accelerators, not claims that every enterprise should use the same three-round process.
+- The first implementation should provide a small, usable configuration surface for the above contracts; do not build an expansive enterprise administration console or production multi-tenant operations system as a prerequisite for the personal demo.
+
 ## 4. Resume and screening behavior
 
 - The submitted resume is the factual basis for ordinary initial screening. Agent/parser must extract, order, and interpret normal resume content without asking HR to verify routine fields.
@@ -77,6 +142,9 @@ Keep the product surface small and contextual:
 - Every write is read back from PostgreSQL. Refresh/session recovery preserves the same business state.
 - The transcript branch and Scorecard branch can proceed independently.
 - No candidate login/account/portal or candidate-facing product surface exists; candidate records and transcript speakers are never treated as system users or action authors.
+- Role-specific internal views exist for HR/Recruiter, Interviewer, Recruiting Lead/Owner and Approver, reusing the same Interview Workspace and domain contracts; the prototype's Demo identity selector changes data scope/actions but is explicitly not real authentication.
+- Interviewer A/B have independent actor identities and see only assigned Interviews and authorized materials; round-specific briefings, focus attributes, questions and Scorecard schemas come from configuration rather than hard-coded first/second/third-round branches.
+- Enterprises can configure and reuse interview plans, stage kits, rubrics, assignments, visibility policies and Agent action gates through built-in templates plus enterprise/team/job/stage overrides; configuration is versioned and in-flight Applications retain their effective snapshot unless explicitly migrated.
 - Human Attention has one canonical entry point; the same task is not duplicated in multiple cards/banners.
 - Real Agent tool trace demonstrates autonomous routine work; human actions are performed by the user/approved actor, never fabricated by the Agent.
 - Feishu LIVE is reported separately. Manual import does not satisfy the LIVE gate.
