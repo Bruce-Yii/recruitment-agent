@@ -36,7 +36,13 @@ from pathlib import Path
 import fitz
 
 out = Path(sys.argv[1])
-font = r"C:\Windows\Fonts\simhei.ttf"
+# 字体必须跨平台解析：Linux CI 没有 C:\Windows\Fonts，写死会让整段脚本失败
+# （真实 CI 首次运行就是这么红的）。文本层只需要能被抽取，字体缺失时退回内置。
+font = None
+for candidate in (r"C:\Windows\Fonts\simhei.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
+    if Path(candidate).exists():
+        font = candidate
+        break
 lines = [
     ("SYNTHETIC SAMPLE - NOT A REAL RESUME", 11.0),
     ("Candidate Example A", 18.0),

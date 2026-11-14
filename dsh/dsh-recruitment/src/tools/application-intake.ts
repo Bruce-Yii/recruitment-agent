@@ -1854,8 +1854,8 @@ async function upsertIntakeEvent(
        (tenant_id, provider, event_type, schema_version, occurred_at, received_at, recorded_at,
         idempotency_key, idempotency_source, source_object_id, payload, trust_level,
         normalized_event_type, normalizer_version)
-     values ($1, 'internal', '${EVENT_TYPES.RESUME_INTAKE_RECEIVED}', 1, now(), now(), now(),
-             $2, 'FALLBACK_KEY', $3, $4::jsonb, 'INTERNAL', '${EVENT_TYPES.RESUME_INTAKE_RECEIVED}', 'intake/1.0.0')
+     values ($1, 'internal', $5, 1, now(), now(), now(),
+             $2, 'FALLBACK_KEY', $3, $4::jsonb, 'INTERNAL', $5, 'intake/1.0.0')
      on conflict (tenant_id, idempotency_key) do nothing
      returning event_id`,
     [
@@ -1868,6 +1868,7 @@ async function upsertIntakeEvent(
         pages: material.output.meta?.pages ?? 0,
         source_kind: 'LOCAL_FILE',
       }),
+      EVENT_TYPES.RESUME_INTAKE_RECEIVED,
     ],
   )
   const fresh = inserted.rows[0]
