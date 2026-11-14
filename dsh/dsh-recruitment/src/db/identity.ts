@@ -12,6 +12,29 @@
 //      也不得判"重复"——返回结构化拒绝，交人工（IR-G2/G3、`docs/16 §7 坑 2`）。
 //
 // 归一化**只进比较键**，绝不回写原文（IR-N5 / IR-G7；`doc11 §2 A3`）。
+//
+// D-110（2026-11-15 裁决）——证据闸门只管"可复核"，不管"有没有坐标"：
+//   三条件同时成立才可自动通过：① 源文件字节级 sha256 独立重算一致；② 定位器解析到
+//   原文唯一位置（PDF page+bbox / DOCX part+paragraph|table_row / RTF paragraph /
+//   纯文本 line+offset）；③ quote 在定位范围内逐字命中（只允许换行/空白/断连字符
+//   归一化，禁止语义匹配）。多处命中 = 歧义 → 转人工，**禁止取第一条**。
+//   每条证据记录必须带 `locator_kind` + `verification_method`；无坐标格式（RTF）
+//   **不得仅因缺 bbox 拒收**。
+//   真正的三条件实现是 `src/document/evidence/locator.ts::verifyEvidence`；本文件
+//   只做 converter 字段证据 → 证据项的投影与「字段整体 fail-closed」的闸门判定。
+import type {
+  EvidenceContextResult,
+  EvidenceGateContext,
+} from '../document/evidence/converter-adapter.ts'
+import {
+  isEvidenceLocator,
+  verifyEvidence,
+  type EvidenceLocator,
+  type EvidenceRejectionCode,
+  type LocatorKind,
+  type VerificationMethod,
+  type VerifiedEvidence,
+} from '../document/evidence/locator.ts'
 import type { DatabaseClient } from './pool.ts'
 
 /** 比较键来源字段。 */
@@ -38,13 +61,37 @@ export interface IdEvidence {
   readonly bbox: readonly number[]
   readonly block: number
   readonly quote: string
+  /**
+   * D-110 定位器类型。**运行时总是赋值**（本文件产出的每一条证据都由两条路径之一写死）；
+   * 类型上保持 optional 只为兼容其它文件里的旧对象字面量（如 `application-intake.ts` 的
+   * 弱提示投影、既有测试的 `PHONE_ID` 字面量）——这些旧字面量不参与证据闸门，
+   * 不该因为新增字段而被迫改动（改它们超出本 lane 写范围）。
+   */
+  readonly locator_kind?: LocatorKind
+  /**
+   * 验证方式。`LEGACY_BBOX_SHAPE_ONLY` = 旧路径只做 page/bbox 形状校验，
+   * **不等于** D-110 三条件已验证（见 {@link toEvidence} 的兼容分派与 REPORT-A 债务条）。
+   */
+  readonly verification_method?: VerificationMethod | 'LEGACY_BBOX_SHAPE_ONLY'
+  /** D-110 定位器（通过三条件核验时就是唯一位置；旧路径为 page+bbox 反推）。 */
+  readonly locator?: EvidenceLocator
+  /** 已核验的源文件字节 sha256；旧形状路径没有核验，故不填（不冒充已验证）。 */
+  readonly source_sha256?: string
 }
 
 /** 身份观察结果：要么拿到可用强标识，要么带拒绝原因。 */
 export interface IdentityObservation {
   readonly strong: readonly StrongId[]
   /** 不可自动的字段及原因（ordering 与 converter 的 `fields` 一致）。 */
-  readonly blocked: readonly { readonly field: string; readonly reason: string }[]
+  readonly blocked: readonly {
+    readonly field: string
+    readonly reason: string
+    /**
+     * 结构化细节（D-110 证据拒绝时带 `reason_code` / 候选 locator 等；
+     * 旧路径不填）。类型 optional：既有调用方只读 field/reason。
+     */
+    readonly detail?: Readonly<Record<string, unknown>>
+  }[]
 }
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
@@ -106,41 +153,293 @@ export interface ConverterFieldEntry {
     readonly bbox?: readonly number[]
     readonly block?: number
     readonly text?: string
+    /** D-110：证据项自带的定位器（优先于由 page/bbox/block 反推）。 */
+    readonly locator?: EvidenceLocator
+    /** D-110：引用的原文；缺省依次回退 `entry.value` / `item.text`。 */
+    readonly quote?: string
+    /** DOCX 段落 / RTF 段落序号（0-based）。 */
+    readonly paragraph?: number
+    /** DOCX 部件名（如 `word/document.xml`）。 */
+    readonly part?: string
+    /** DOCX 表号 / 行号（0-based）。 */
+    readonly table_id?: number
+    readonly row?: number
+    /** 纯文本行（1-based）与行内偏移（0-based）。 */
+    readonly line?: number
+    readonly offset?: number
   }[]
 }
 
-function toEvidence(entry: ConverterFieldEntry | undefined): IdEvidence[] {
+/** 一个 converter 证据项的别名（避免在签名里重复长类型）。 */
+type ConverterEvidenceItem = NonNullable<ConverterFieldEntry['evidence']>[number]
+
+/** 证据闸门模式：未给上下文（旧行为）/ 上下文可用 / 源不可用（结构化拒绝）。 */
+type EvidenceGate =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'verified'; readonly context: EvidenceGateContext }
+  | { readonly kind: 'unavailable'; readonly reason_code: string; readonly message: string }
+
+/** 一个字段的证据投影结果：要么得到证据，要么整字段被拒（fail-closed）。 */
+interface EvidenceOutcome {
+  readonly evidence: readonly IdEvidence[]
+  readonly rejection?: {
+    readonly reason: string
+    readonly detail: Readonly<Record<string, unknown>>
+  }
+}
+
+/** 证据拒绝码 → 身份闸门的 blocked reason（映射写死，见任务/REPORT-A 的对照表）。 */
+const EVIDENCE_REASON_BY_CODE: Readonly<Record<EvidenceRejectionCode, string>> = {
+  SHA256_MISMATCH: 'evidence_sha256_mismatch',
+  SOURCE_EMPTY: 'evidence_source_unavailable',
+  SOURCE_UNREADABLE: 'evidence_source_unavailable',
+  QUOTE_EMPTY: 'evidence_quote_missing',
+  LOCATOR_NOT_FOUND: 'evidence_locator_not_found',
+  LOCATOR_AMBIGUOUS: 'evidence_locator_ambiguous',
+  QUOTE_NOT_FOUND: 'evidence_quote_not_found',
+  QUOTE_AMBIGUOUS: 'evidence_quote_ambiguous',
+}
+
+/** 由证据项反推定位器的结果。 */
+type DerivedLocator =
+  | { readonly kind: 'locator'; readonly locator: EvidenceLocator }
+  | { readonly kind: 'quote_search' }
+  | { readonly kind: 'invalid' }
+
+/**
+ * 证据项 → 定位器（D-110 分派顺序）：
+ *   1. `item.locator`（显式给出；畸形 → invalid，fail-closed）；
+ *   2. `item.block` 是有效下标且 `context.blocks[block]` 存在 → 用该块的 locator
+ *      （RTF 就是这样：converter 证据只给块号，块号 → rtf_paragraph）；
+ *   3. `item.paragraph` → `rtf_paragraph`（page 数字则带上；RTF 无 bbox 的正路）；
+ *   4. `item.line` + `item.offset` → `text_line_offset`；
+ *   5. 都没有 → `quote_search`（交给 verifyEvidence 按 quote 全文唯一命中反推）。
+ *
+ * 注意：合格 `page>=1 + bbox 四元组` 的证据项在进入本函数前已走旧形状路径，
+ * 所以这里不再生成 `pdf_page_bbox`（见 {@link toEvidence}）。
+ */
+function deriveLocator(item: ConverterEvidenceItem, context: EvidenceGateContext): DerivedLocator {
+  if (item.locator !== undefined) {
+    return isEvidenceLocator(item.locator)
+      ? { kind: 'locator', locator: item.locator }
+      : { kind: 'invalid' }
+  }
+  const block = item.block
+  if (typeof block === 'number' && Number.isInteger(block) && block >= 0 && block < context.blocks.length) {
+    const blockLocator = context.blocks[block]?.locator
+    return blockLocator === undefined
+      ? { kind: 'quote_search' }
+      : { kind: 'locator', locator: blockLocator }
+  }
+  const paragraph = item.paragraph
+  if (typeof paragraph === 'number' && Number.isInteger(paragraph) && paragraph >= 0) {
+    const page = typeof item.page === 'number' && Number.isInteger(item.page) && item.page >= 1
+      ? item.page
+      : undefined
+    return {
+      kind: 'locator',
+      locator: page === undefined
+        ? { kind: 'rtf_paragraph', paragraph }
+        : { kind: 'rtf_paragraph', paragraph, page },
+    }
+  }
+  const line = item.line
+  const offset = item.offset
+  if (
+    typeof line === 'number' && Number.isInteger(line) && line >= 1 &&
+    typeof offset === 'number' && Number.isInteger(offset) && offset >= 0
+  ) {
+    return { kind: 'locator', locator: { kind: 'text_line_offset', line, offset } }
+  }
+  return { kind: 'quote_search' }
+}
+
+/** 取证据项的引用原文：`item.quote ?? entry.value ?? item.text`（顺序固定，空串不跳过）。 */
+function quoteOf(entry: ConverterFieldEntry | undefined, item: ConverterEvidenceItem): string {
+  const quote = item.quote ?? entry?.value ?? item.text
+  return typeof quote === 'string' ? quote : ''
+}
+
+/** 通过三条件核验的证据项 → 落库用 IdEvidence（page/bbox/block 由 locator 反推）。 */
+function verifiedToIdEvidence(
+  verified: VerifiedEvidence,
+  item: ConverterEvidenceItem,
+): IdEvidence {
+  const locator = verified.locator
+  let page = 0
+  let bbox: readonly number[] = []
+  if (locator.kind === 'pdf_page_bbox') {
+    page = locator.page
+    bbox = [...locator.bbox]
+  } else if (locator.kind === 'rtf_paragraph' && typeof locator.page === 'number') {
+    // RTF：page 只在读取器真的给出时存在；无 page → 0（不猜），bbox 恒为空数组。
+    page = locator.page
+  }
+  return {
+    page,
+    bbox,
+    block: typeof item.block === 'number' ? item.block : -1,
+    quote: verified.quote,
+    locator_kind: verified.locator_kind,
+    verification_method: verified.verification_method,
+    locator,
+    source_sha256: verified.source_sha256,
+  }
+}
+
+/**
+ * converter 字段证据 → `IdEvidence[]`（D-110 三条件 + 兼容分派）。
+ *
+ * **兼容分派（owner 2026-11-15 复核指令，写进 REPORT-A 的债务条）**：
+ * 既有集成测试（`intake-identity-gate.test.ts` / `intake.test.ts` 等）会手工构造
+ * converter 输出：`meta.source_sha256` 是随机 64 hex（与构造的"文件"字节不一致），
+ * evidence 是 PDF 形状的 `page+bbox+block+text`。这些测试不在本 lane 写范围、断言不能改。
+ * 因此：
+ *   1. `page>=1` 且 bbox 是 4 个有限数的证据项 → **旧形状路径**（与改动前逐字一致）：
+ *      只做形状校验，`verification_method:'LEGACY_BBOX_SHAPE_ONLY'`，**不做 sha/quote 核验**。
+ *      这是已知债务：S6 路径的 PDF 三条件升级另立任务（locator API 本身已完整，见
+ *      `test/unit/evidence-locator.test.ts` 的 PDF 正负例）。
+ *   2. 非 bbox 证据项（RTF paragraph / 纯文本 / 由 block 索引映射出的 locator）：
+ *      给了 context → 走 `verifyEvidence` 三条件；没给 context → 与旧行为一致，
+ *      该证据项不产生证据（字段最终 `evidence_missing`，fail-closed）。
+ *   3. context 是 `{ok:false}`（源不可读/空/缺 sha）→ 非 bbox 证据字段整字段 blocked
+ *      `evidence_source_unavailable`；bbox 证据字段仍走旧路径（否则会误伤上面那批测试）。
+ *   4. **任一证据项被拒 → 该字段整体 blocked**（fail-closed，不静默丢单条、不保留
+ *      "另一条看起来还行"的证据）。
+ *
+ * @param entry - converter 字段条目。
+ * @param gate - 证据闸门模式。
+ * @returns 证据投影结果（含拒绝原因）。
+ */
+function toEvidence(entry: ConverterFieldEntry | undefined, gate: EvidenceGate): EvidenceOutcome {
   const out: IdEvidence[] = []
   for (const item of entry?.evidence ?? []) {
     const page = typeof item.page === 'number' ? item.page : 0
     const bbox = (item.bbox ?? []).map((n) => (typeof n === 'number' ? n : Number.NaN))
     const block = typeof item.block === 'number' ? item.block : -1
-    const quote = typeof item.text === 'string' ? item.text : ''
     const bboxOk = bbox.length === 4 && bbox.every((n) => Number.isFinite(n))
-    if (page >= 1 && bboxOk && quote !== '') {
-      out.push({ page, bbox, block, quote })
+
+    // (1) 合格 page+bbox：旧形状路径（与改动前逐字一致 + 标注证据种类）。
+    if (page >= 1 && bboxOk) {
+      const quote = typeof item.text === 'string' ? item.text : ''
+      if (quote !== '') {
+        out.push({
+          page,
+          bbox,
+          block,
+          quote,
+          locator_kind: 'pdf_page_bbox',
+          verification_method: 'LEGACY_BBOX_SHAPE_ONLY',
+          locator: {
+            kind: 'pdf_page_bbox',
+            page,
+            bbox: [bbox[0] as number, bbox[1] as number, bbox[2] as number, bbox[3] as number],
+          },
+        })
+      }
+      continue
     }
+
+    // (2) 非 bbox 证据项：没有 context → 保持旧行为（不产生证据）。
+    if (gate.kind === 'none') continue
+    // (3) 源不可用 → 非 bbox 证据字段 fail-closed。
+    if (gate.kind === 'unavailable') {
+      return {
+        evidence: out,
+        rejection: {
+          reason: 'evidence_source_unavailable',
+          detail: { reason_code: gate.reason_code, message: gate.message },
+        },
+      }
+    }
+
+    // (4) 有 context：定位器反推 + 三条件核验。
+    const derived = deriveLocator(item, gate.context)
+    if (derived.kind === 'invalid') {
+      return {
+        evidence: out,
+        rejection: {
+          reason: 'evidence_locator_not_found',
+          detail: {
+            reason_code: 'LOCATOR_NOT_FOUND',
+            message: 'evidence item carries a malformed locator; refusing to guess a position',
+          },
+        },
+      }
+    }
+    const quote = quoteOf(entry, item)
+    const verified = derived.kind === 'locator'
+      ? verifyEvidence(gate.context, { locator: derived.locator, quote })
+      : verifyEvidence(gate.context, { quote })
+    if (verified.ok === false) {
+      return {
+        evidence: out,
+        rejection: {
+          reason: EVIDENCE_REASON_BY_CODE[verified.reason_code],
+          detail: {
+            reason_code: verified.reason_code,
+            requires_human: verified.requires_human,
+            ...verified.detail,
+          },
+        },
+      }
+    }
+    out.push(verifiedToIdEvidence(verified, item))
   }
-  return out
+  return { evidence: out }
+}
+
+/** 把可选的第三参（上下文 / 上下文构造结果 / 未给）规范化成内部闸门模式。 */
+function evidenceGateOf(
+  context: EvidenceGateContext | EvidenceContextResult | undefined,
+): EvidenceGate {
+  if (context === undefined) return { kind: 'none' }
+  if ('ok' in context) {
+    if (context.ok === false) {
+      return {
+        kind: 'unavailable',
+        reason_code: context.reason_code,
+        message: context.message,
+      }
+    }
+    return { kind: 'verified', context: context.context }
+  }
+  return { kind: 'verified', context }
 }
 
 /**
  * 把 converter 的 `fields` + `screening` 投影成「可自动匹配的强标识」集合。
  *
  * `AUTO_OK` 判定（IR-G1，本实现对可机检部分逐条落地）：
- *   `state='present'` ∧ `provenance='native_text'` ∧ 归一化成功 ∧ 证据坐标齐全
+ *   `state='present'` ∧ `provenance='native_text'` ∧ 归一化成功 ∧ **证据通过闸门**
  *   ∧ converter 把该字段列进 `screening.identity_merge_eligible`（平台噪声等已剔除）。
+ *
+ * 证据闸门二选一（D-110）：
+ *   * 传了 `context`（`EvidenceGateContext` 或其构造结果 `EvidenceContextResult`）：
+ *     **非 bbox 证据**（RTF paragraph / 纯文本 / 由块号映射出的 locator）走
+ *     `verifyEvidence` 三条件（sha256 独立重算 + 定位唯一 + quote 逐字命中），
+ *     歧义一律拒绝、不取第一条；源不可读/空/缺 sha → 非 bbox 证据字段 blocked
+ *     `evidence_source_unavailable`。**合格 page+bbox 证据仍走旧形状路径**
+ *     （兼容分派，见 {@link toEvidence}）；任一证据项被拒 → 该字段整体 blocked。
+ *   * 没传 `context`：维持历史行为（只有 page+bbox 齐全的证据才被收下），
+ *     并给这些证据标 `verification_method:'LEGACY_BBOX_SHAPE_ONLY'`——它只做了形状校验，
+ *     **不等于** D-110 三条件已验证，下游可按证据强度区分（这是本 lane 明确记录的债务：
+ *     S6 的 PDF 路径三条件升级另立任务；定位器 API 本身已完整实现）。
  *
  * @param fields - converter 输出的 `fields`。
  * @param identityMergeEligible - converter 输出的 `screening.identity_merge_eligible`。
+ * @param context - 可选证据闸门上下文（由 `evidenceContextFromConverter()` 构造）；
+ *   省略时行为与改动前一致（向后兼容）。
  * @returns 观察结果（强标识 + 不可自动字段）。
  */
 export function observeIdentity(
   fields: Readonly<Record<string, ConverterFieldEntry | undefined>>,
   identityMergeEligible: readonly string[] | undefined,
+  context?: EvidenceGateContext | EvidenceContextResult,
 ): IdentityObservation {
   const strong: StrongId[] = []
-  const blocked: { field: string; reason: string }[] = []
+  const blocked: { field: string; reason: string; detail?: Readonly<Record<string, unknown>> }[] = []
+  const gate = evidenceGateOf(context)
   const eligible = identityMergeEligible === undefined ? null : new Set(identityMergeEligible)
   for (const field of ['phone', 'email'] as const) {
     const entry = fields[field]
@@ -159,7 +458,17 @@ export function observeIdentity(
       blocked.push({ field, reason: 'not_identity_merge_eligible' })
       continue
     }
-    const evidence = toEvidence(entry)
+    const outcome = toEvidence(entry, gate)
+    if (outcome.rejection !== undefined) {
+      // fail-closed：任一证据项被拒 → 该字段整体 blocked（不静默丢单条、不保留半套证据）。
+      blocked.push({
+        field,
+        reason: outcome.rejection.reason,
+        detail: outcome.rejection.detail,
+      })
+      continue
+    }
+    const evidence = outcome.evidence
     if (evidence.length === 0) {
       blocked.push({ field, reason: 'evidence_missing' })
       continue

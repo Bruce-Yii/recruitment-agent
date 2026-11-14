@@ -125,6 +125,12 @@ async function insertArtifact(client: DatabaseClient, input: {
   readonly isCanonical: boolean
   readonly isComplete?: boolean
   readonly revision?: number
+  /**
+   * `raw_text` 正文。**C-4 修复后必须真的给**（D-96/TR-F4）：READY 但正文为空时，
+   * 权威派生函数给 `PARTIAL/ARTIFACT_EMPTY`，不再报 READY。本文件的"READY 用例"
+   * 都靠这个参数表达"确实拿到了原文"（断言本身未变）。
+   */
+  readonly rawText?: string
 }): Promise<string> {
   const suffix = uniqueSuffix()
   const ready = input.status === 'READY'
@@ -132,13 +138,14 @@ async function insertArtifact(client: DatabaseClient, input: {
   return one(client, `insert into recruitment.transcript_artifact
       (tenant_id, meeting_id, provider, provider_artifact_id, source_revision, variant_type, language,
        transcript_status, provenance, trigger_mode, connection_state, fetched_at,
-       content_sha256, is_complete, is_canonical, raw_payload)
+       content_sha256, is_complete, is_canonical, raw_payload, raw_text)
       values ($1, $2, 'FEISHU', $3, $4, 'ORIGINAL', 'zh', $5, 'FIXTURE', 'MANUAL', 'NOT_CONNECTED',
-              now(), $6, $7, $8, $9::jsonb)
+              now(), $6, $7, $8, $9::jsonb, $10)
       returning id`, [
     TENANT, input.meetingId, `artifact_${suffix}`, input.revision ?? 1, input.status,
     ready ? hex64(`sha${suffix}`) : null, isComplete, input.isCanonical,
     JSON.stringify({ segments: ready ? 3 : 1 }),
+    input.rawText ?? null,
   ])
 }
 
@@ -543,6 +550,8 @@ test('TR-D 序 2：canonical READY → READY/CANONICAL_STATUS', async () => {
     })
     const artifactId = await insertArtifact(client, {
       meetingId, status: 'READY', isCanonical: true, revision: 2,
+      // D-96/TR-F4：READY 必须有正文才算"真的读到了"（空正文 → PARTIAL/ARTIFACT_EMPTY）。
+      rawText: '00:00 面试官：canonical 转写正文\n00:10 候选人：好的',
     })
 
     const output = await read(client, { interview_id: interviewId, as_of: AS_OF })
