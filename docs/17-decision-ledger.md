@@ -1387,6 +1387,27 @@ V-15 "无处置事件"告警阈值，三个数未定，实现前必须先定。
    >
    > **这次咬合本身就是"预算不是装饰"的证据**：如果它没拦住，这 20 行会静默进库，
    > 预算就退回成一句形容词。
+   >
+   > **修订 D-109.3（2026-11-15，总控；G1 事件自动驱动的预算追认）**
+   >
+   > 1. **新增多少行**：**+137**。`src/runtime/tick-loop.ts` 120（新文件）+
+   >    `src/runtime/config.ts` 160→177（+17：`auto_tick` / `tick_interval_ms` 解析与边界）。
+   >    合计 3,824 → **3,961**。
+   > 2. **为什么必须加**：G1（P0）——此前 `router.tick()` 只被 `POST /recruitment/runtime/tick`
+   >    与 engine_effect 的 launch/delivery 触发，**没有周期驱动**；没人手工发 HTTP 时
+   >    `event_inbox` 的 RECEIVED 永远不动，事件驱动是假的。tick-loop 用**专用连接 + PG 会话级
+   >    advisory lock**（`recruitment:tick`）做多实例互斥，`setInterval` 防重入，`dispose` 释放锁；
+   >    config 两项是运行开关与周期（默认 2000ms，边界 [100, 600000]，非法值 fail-closed）。
+   >    **不是调度逻辑扩张**：没有优先级队列、没有延迟投递、没有 cron、没有多消费者组、
+   >    没有跨实例调度。
+   > 3. **排除了什么替代做法**：① 用 DSH `schedule_*` 当自动派发——那是用户级/宿主定时入口，
+   >    G1 明确不接线；② 自建 cron / 外部调度器——D-109 禁项；③ 把 tick 塞进 HTTP route 或
+   >    engine_effect kick——仍然是"没人触发就不跑"，不解决事件自动驱动；④ pg-boss/DBOS——第二状态 owner。
+   > 4. **是否触发换实现条件**：**没有**。积压/实例数/tick 吞吐三项阈值本次均未变化；多实例
+   >    正确性由 advisory lock 提供，跨实例调度未启用（单 tick 顺序吞吐仍在单实例假设内）。
+   > 5. **机检**：`node scripts/runtime-budget.mjs` → `PASS（3961 / 3961）`，CEILING 同步
+   >    3,824 → 3,961。**G12 若改口径（非注释/非 import 的代码行），必须另立 D-109.4 重算；
+   >    不得用拆分或排除规则躲预算。**
 4. **文档同步**：`docs/18-golden-path.md §1`（"没有自研队列"那句）与
    `docs/03-domain-and-runtime.md §21.8 V-1` 都已与事实不符，必须同步为本条的口径
    （"用 PG 原生行锁承担任务派发，不引入第二状态 owner"）。
@@ -1445,10 +1466,28 @@ V-15 "无处置事件"告警阈值，三个数未定，实现前必须先定。
 3. 错误信息必须可行动（缺什么、怎么补、改哪一层）；禁止静默回退到系统默认路径。
 4. 这是**管理员的部署配置**，不写进租户业务数据；变更走版本/审计。
 
+**落地备注（2026-11-15，总控）**：两处受管定义（`dsh/profile/recruitment/cordis.patch.yml`
+与插件 bundle `dsh/dsh-recruitment/cordis.patch.yml`）的 converter 已改为 `${RECRUITMENT_*}`
+引用，并新增 `feishu.cli`/`feishu.profile`；`skill-filesystem.customSkillDirs` 用 DSH 原生
+`!!js process.env.RECRUITMENT_SKILL_DIR`（loader 只对 `!!js` 求值，普通字符串不做 `${ENV}` 插值）。
+两份 config 已 `grep '[A-Za-z]:\\'` = **0 行**。缺变量时 fail-closed（converter 逐条列 issue；
+feishu 不装配）。L1（干净 env 启动产品 profile + 一次真实读取）留到 G4/G9 验收动作执行。
+
 **理由**：多人使用时"每人改本机文件"不可运维；产品必须让管理员在界面里配、启动时自检、出错能定位。
 环境变量展开只是其中一层，不是方案全部。
 
 ### 待办（本条未决）
 
-- **WP-3/4/5 是否授权开工**：产品负责人 2026-11-15 未答复 → **仍按未授权处理，不默认开工**。
+- **WP-3/4/5 是否授权开工**：产品负责人 2026-11-15 已答复"全开" → **M1+M2（G1–G12）开工；M3 不做**。
 - D-110/111/112 的合同与代码落地属实现，需对应 WP 授权后派 lane；本裁决只定语义与验收判据。
+- **D-111 与 G3=B 的冲突（2026-11-15 复核指令）**：G3=B 把 T3 定为"材料就绪（canonical READY 转写）"、
+  T4 加"≥1 份 SUBMITTED 面评"，与 D-111 #1/#3 不一致。按时间优先，**阶段梯子以 G3-B 为准**；
+  D-111 #1 的 START/COMPLETE 写入口降级为可选，D-111 #3 限定为"人可带缺口决策、但阶段指针不伪造材料"。
+  该口径须与 G3 合同修订**同一提交**回抄。
+- **D-113（待编）PDF 底座许可证**：PyMuPDF = AGPL-3.0/商业双许可；网络服务化是否接受 AGPL §13、
+  购买商业许可、或换底座，待产品负责人裁决。RapidOCR(Apache) 纳入声明配置不依赖该裁决。
+- **入库机器路径**：`dsh/dsh-recruitment/cordis.patch.yml:18-23,48` 与
+  `dsh/profile/recruitment/cordis.patch.yml:192-197,243` 仍含机器绝对路径；G9 落地 `${ENV}` 后必须清掉（缺陷修复）。
+- **研究结论（2026-11-15）**：DSH 0.2.2-rc.3 是最新官方版（npm `latest` 反而停在 rc.1，禁止"跟 latest 升级"）；
+  Agent Teams 是 rc.2 起的**开发流程**能力（同进程/root 会话、任务真相在 session log、writeScopes 仅建议），
+  产品运行时不用；`dsh-superagent-prototype` 是官方研究原型（private、单提交、SQLite 第二 owner），只借 Attention/面板形状。

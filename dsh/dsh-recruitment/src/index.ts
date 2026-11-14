@@ -111,6 +111,9 @@ import {
   type RuntimeConfig,
   type RuntimeHostContext,
 } from './runtime/index.ts'
+// G1（事件自动驱动）：周期 tick-loop。**故意**从文件直连而不动 `./runtime/index.ts`
+// 的公共出口（出口文件不在本 lane 写范围，且它只是 re-export，不影响装配）。
+import { startTickLoop, type TickLoop } from './runtime/tick-loop.ts'
 import { resolveFeishuConnector, type FeishuConnectorConfig } from './connectors/feishu/index.ts'
 import { registerOverviewHttp, type OverviewHostContext } from './http/overview.ts'
 import { RecruitmentToolError } from './tools/errors.ts'
@@ -367,6 +370,9 @@ export function apply(
       ctx.inject(['webServer'], (child) => {
         child.effect(() => {
           const pool = createPool({ ...runtimeDb, max: 4 })
+          // G1：tick-loop 的启动 promise。**声明在 try 之外**：这样下面的 catch 也能收尸，
+          // 否则 store/effect 装配失败时那条持咨询锁的专用连接会一直挂到进程退出。
+          let tickLoopReady: Promise<TickLoop | null> = Promise.resolve(null)
           try {
             const store = new RuntimeStore({
               pool,
@@ -395,6 +401,28 @@ export function apply(
                 tasks: composed.tasks,
               },
             )
+            // G1（事件自动驱动）：进程内**唯一的周期 tick**。
+            //
+            // 此前 `router.tick()` 只被 `POST /recruitment/runtime/tick` 与 engine_effect 触发；
+            // 没人手工发 HTTP 时，`event_inbox` 里的 RECEIVED 永远不动 —— 事件驱动是假的。
+            // 这里用**专用连接**持有 `recruitment:tick` 咨询锁再开 setInterval：
+            //   * 多实例同时起：只有抢到锁的实例派发，其余实例记一次 warn 后明确放弃（不抢活）；
+            //   * 连接断了锁自动释放，下一个实例能接手（互斥来自 PG，不是进程内标志位）；
+            //   * **不建 cron / 不引队列**（v1.0 不建生产级调度，D-109 复用 PG）；
+            //     用户级定时仍走 DSH 既有 `schedule_*`，G1 不接线、不改它。
+            tickLoopReady = runtimeConfig.autoTick
+              ? startTickLoop({
+                pool,
+                router: composed.router,
+                intervalMs: runtimeConfig.tickIntervalMs,
+                logger: {
+                  warn(message: string): void {
+                    const logger = (ctx as unknown as { logger?: { warn(message: string): void } }).logger
+                    logger?.warn(message)
+                  },
+                },
+              })
+              : Promise.resolve(null)
             // 引擎持久副作用（Effects 队列）的**插件侧派发者**。
             //
             // runtime 在它自己的异步事务里用 `effects-async.ts` 入队（launch/delivery/reply），
@@ -435,15 +463,24 @@ export function apply(
             return () => {
               disposeHttp()
               clearInterval(pump)
-              // 关闭顺序：先停接新活、等运行中 effect 结束，再关同步桥
+              // 关闭顺序（G1 起）：先停周期 tick 并**释放咨询锁**（否则别的实例得等这条连接
+              // 彻底断开才抢得到锁），再停接新活、等运行中 effect 结束，最后关同步桥
               // （否则 in-flight 语句会被杀在连接上）。
-              void engineEffects.drain().finally(() => {
-                engineStore.close()
-                void closePool(pool)
-              })
+              void tickLoopReady
+                .then((loop) => loop?.dispose())
+                .catch(() => undefined)
+                .then(() => engineEffects.drain())
+                .finally(() => {
+                  engineStore.close()
+                  void closePool(pool)
+                })
             }
           } catch (error) {
-            void closePool(pool)
+            // 装配失败也要先把 tick-loop 收掉（可能已经抢到锁），再关池。
+            void tickLoopReady
+              .then((loop) => loop?.dispose())
+              .catch(() => undefined)
+              .finally(() => { void closePool(pool) })
             throw error
           }
         }, 'recruitment: task runtime routes')
