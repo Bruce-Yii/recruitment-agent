@@ -1,0 +1,25 @@
+ M dsh/dsh-recruitment/contracts/job-screening/tool-contracts.md
+ M dsh/dsh-recruitment/src/engine/VENDORED.md
+ M dsh/dsh-recruitment/src/engine/app/store.ts
+ M dsh/dsh-recruitment/src/tools/interview-schedule.ts
+ M dsh/dsh-recruitment/test/integration/interview-schedule.test.ts
+ M dsh/dsh-recruitment/test/integration/job-create.test.ts
+ M dsh/dsh-recruitment/tsconfig.engine.json
+?? db/migrations/0011_task_runtime.sql
+?? db/migrations/0013_trace_chain.sql
+?? dsh/dsh-recruitment/contracts/stage-advance/
+?? dsh/dsh-recruitment/evidence/experiments/2026-11-14-acceptance-gates/
+?? dsh/dsh-recruitment/evidence/experiments/2026-11-14-ci-rehearsal-2/
+?? dsh/dsh-recruitment/evidence/experiments/2026-11-14-ci-rehearsal/
+?? dsh/dsh-recruitment/evidence/experiments/2026-11-14-golden-path-e2e/
+?? dsh/dsh-recruitment/evidence/experiments/2026-11-14-real-intake-20/
+?? dsh/dsh-recruitment/manual/golden-path/
+?? dsh/dsh-recruitment/src/domain/
+?? dsh/dsh-recruitment/src/engine/adapters/
+?? dsh/dsh-recruitment/src/tools/job-rubric-approve.ts
+?? dsh/dsh-recruitment/src/tools/stage-advance.ts
+?? dsh/dsh-recruitment/test/acceptance/
+?? dsh/dsh-recruitment/test/integration/recruitment-task-adapter-pg.test.ts
+?? dsh/dsh-recruitment/test/integration/stage-advance.test.ts
+?? dsh/dsh-recruitment/test/unit/job-create-rubric-approve.test.ts
+?? dsh/dsh-recruitment/test/unit/stage-advance.test.ts

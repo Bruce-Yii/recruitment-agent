@@ -1,0 +1,66 @@
+✔ §9.12-1 完全不接企业会议平台，核心招聘闭环仍能运行 (144.1431ms)
+✔ §9.12-3 同一事件重复到达：不重复建档、不重复登记材料/版本 (30.7072ms)
+✔ §9.12-4 简历里嵌入"要求 Agent 执行操作"的文字：权限不提升 (33.6464ms)
+✔ §9.12-5 并发两写：旧版本命令晚到必须版本冲突，不许静默覆盖 (36.8117ms)
+✔ §9.12-6 候选人多个岗位/撤回一个申请：不误删其他历史 (30.5354ms)
+✔ §9.12-7 转写关联不确定（多个会议）时阻止自动写入；人工指定后正确落库 (31.9279ms)
+✔ §9.12-8 面试官未交/评价冲突：流程正确等待并保留分歧，不伪造成完成 (37.7933ms)
+▶ §11.6 / §9.12 运行时门槛（真 PostgreSQL）
+  ✔ §11.6-1 同一外部事件重复投递，不产生重复 Intake / Task / Effect (373.2974ms)
+  ✔ §11.6-7 进程重启后 Business Task 可恢复，外部副作用不会因盲目重试而重复 (399.24ms)
+  ✔ §9.12-2 模型不可用/超时：业务状态仍正确，任务可恢复 (369.3684ms)
+  ✔ §9.12-10 授权撤销后，待执行的 Ticket 必须重新校验并拒绝 (295.0056ms)
+  ✔ §9.12-11 乱序 / 晚到事件：每个事件只处理一次，不重复建档 (300.6781ms)
+  ✖ §9.12-9 外部动作已成功但本地未收到回执：必须对账而不是重复执行（预期红） (273.2326ms)
+✖ §11.6 / §9.12 运行时门槛（真 PostgreSQL） (2013.8454ms)
+✔ §11.6-2 重复候选人资料不静默覆盖历史，也不把不同 Application 混在一起 (153.4484ms)
+✔ §11.6-3 初筛每条关键结论可回到原始证据；没有证据时明确标为缺失/待核实 (31.3258ms)
+✔ §11.6-4 转写完整获取；片段状态齐全；部分处理不得伪装成完整成功 (37.8808ms)
+✔ §11.6-5 两位面试官评价独立；一人未提交时系统正确等待，不伪造完成 (32.9413ms)
+✔ §11.6-6 未经授权不能执行有业务影响的外部动作（排期/对外通知） (28.3956ms)
+✖ §11.6-8 HR 能从工作台理解状态、阻塞原因、责任人和下一步 (15.8141ms)
+ℹ tests 19
+ℹ suites 1
+ℹ pass 17
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2356.2031
+
+✖ failing tests:
+
+test at test\acceptance\engine-gates.test.ts:383:3
+✖ §9.12-9 外部动作已成功但本地未收到回执：必须对账而不是重复执行（预期红） (273.2326ms)
+  AssertionError [ERR_ASSERTION]: 外部动作被执行了 2 次：本地回执丢失后系统直接重发，没有对账/回读，违反"不重复执行"门槛
+  
+  2 !== 1
+  
+      at TestContext.<anonymous> (file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/test/acceptance/engine-gates.test.ts:419:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1313:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:897:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test\acceptance\golden-path-gates.test.ts:367:1
+✖ §11.6-8 HR 能从工作台理解状态、阻塞原因、责任人和下一步 (15.8141ms)
+  AssertionError [ERR_ASSERTION]: §11.6-8 要求 HR 能看到"责任人"：blockers 只有 code/message，没有 owner/responsible 字段，工作台无法机检责任人
+      at file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/test/acceptance/golden-path-gates.test.ts:392:12
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async inRolledBackTx (file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/test/integration/db.ts:64:12)
+      at async TestContext.<anonymous> (file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/projects/recruitment-agent/dsh/dsh-recruitment/test/acceptance/golden-path-gates.test.ts:368:3)
+      at async Test.run (node:internal/test_runner/test:1313:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:897:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
