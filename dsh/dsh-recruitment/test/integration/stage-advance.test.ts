@@ -782,7 +782,7 @@ test('工具层 execute（真库）：ADVANCED + R4 标签，库里阶段真的�
   const value = await tool.execute({ application_id: fixture.applicationId }, undefined) as Record<string, unknown>
 
   assert.equal(value.tool, 'recruitment_application_stage_advance')
-  assert.equal(value.contract_version, '1.2.0')
+  assert.equal(value.contract_version, '1.3.0')
   assert.equal(value.status, 'ADVANCED')
   assert.equal(value.stage_code, 'S7')
   assert.deepEqual(value.transitions, [{ from: 'S6', to: 'S7' }])
