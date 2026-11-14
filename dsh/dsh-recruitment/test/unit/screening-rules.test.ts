@@ -325,3 +325,68 @@ test('validateDimensions：只禁 protected/身份字段，不禁白名单内字
     { key: 'q1', label: '问句', kind: 'NICE_TO_HAVE', weight: 0.5, question: '是否有带团队经验？' },
   ]), [])
 })
+
+// ---------------------------------------------------------------------------
+//  2026-11-14 P0 回归：判断型准则的 `field` 形状
+//
+//  缺陷现场：`recruitment_job_create` 把判断型准则归一化成 `"field": null`，
+//  而 `evaluateCriterion` 只认 `field === undefined` → `null` 掉进
+//  `resolveFieldFact(ctx, null)` → `TypeError: Cannot read properties of null (reading 'startsWith')`。
+//  下面三条钉住**读侧的两种合法历史形状**（键缺失 / 键值为 null）与"null 不得漏进输出"。
+// ---------------------------------------------------------------------------
+
+/** 历史形状：2026-11-14 之前 `job_create` 写出的判断型准则（field/operator/value 都是 null）。 */
+const JUDGMENT_LEGACY = {
+  key: 'degree', label: '本科及以上', kind: 'MUST_HAVE' as const, weight: 0.5,
+  field: null, operator: null, value: null,
+  question: '候选人是否具备本科及以上学历？', notes: null,
+}
+
+test('P0 回归：判断型准则 field=null（历史 job_create 形状）→ NEEDS_JUDGMENT，不进 resolveFieldFact', () => {
+  const ctx = makeCtx()
+  const result = evaluateCriterion(ctx, JUDGMENT_LEGACY, 0)
+  assert.equal(result.outcome, 'NEEDS_JUDGMENT')
+  assert.equal(result.reason.code, 'MUST_HAVE_NEEDS_JUDGMENT')
+  assert.equal(result.reason.failure_class, 'JUDGMENT')
+  assert.equal(result.uncertain, true)
+  assert.equal(result.reason.question, JUDGMENT_LEGACY.question)
+  // 判断型没有机械三态/字段/期望：一个都不能用 null 占位（输出 schema 不收 null）
+  for (const key of ['field', 'tri_state', 'bounds', 'expected', 'notes']) {
+    assert.equal(Object.hasOwn(result.reason, key), false, `判断型的 reason 不允许有 ${key} 键`)
+  }
+  assert.deepEqual(result.reason.issue_codes, [])
+  assert.deepEqual(result.reason.evidence, [])
+})
+
+test('P0 回归：field 缺失（契约形状/手工 SQL 夹具）与 field=null 得到完全相同的判定与 reason', () => {
+  const ctx = makeCtx()
+  const { field: _field, operator: _operator, value: _value, notes: _notes, ...noFieldKeys } = JUDGMENT_LEGACY
+  const fromNull = evaluateCriterion(ctx, JUDGMENT_LEGACY, 2)
+  const fromMissing = evaluateCriterion(ctx, noFieldKeys, 2)
+  assert.deepEqual(fromNull, fromMissing)
+})
+
+test('P0 回归：机械型准则的历史 null 占位（question:null / notes:null）不得漏进输出', () => {
+  const legacyMechanical = {
+    key: 'work_exists', label: '有工作经历', kind: 'MUST_HAVE' as const, weight: 1,
+    field: 'work_experience', operator: 'EXISTS' as const, value: true,
+    question: null, notes: null,
+  }
+  const result = evaluateCriterion(makeCtx(), legacyMechanical, 0)
+  assert.equal(result.outcome, 'SATISFIED')
+  assert.equal(result.reason.code, 'MUST_HAVE_SATISFIED')
+  assert.equal(Object.hasOwn(result.reason, 'question'), false)
+  assert.equal(Object.hasOwn(result.reason, 'notes'), false)
+  assert.deepEqual(result.reason.expected, { operator: 'EXISTS', value_boolean: true })
+})
+
+test('P0 回归：极端形状（field=null 且 question=null）也不崩，question 省略而不是写 null', () => {
+  const result = evaluateCriterion(makeCtx(), {
+    key: 'weird', label: '怪形状', kind: 'NICE_TO_HAVE', weight: 0, field: null, question: null,
+  }, 0)
+  assert.equal(result.outcome, 'NEEDS_JUDGMENT')
+  assert.equal(result.uncertain, false)
+  assert.equal(Object.hasOwn(result.reason, 'field'), false)
+  assert.equal(Object.hasOwn(result.reason, 'question'), false)
+  assert.equal(Object.hasOwn(result.reason, 'expected'), false)
+})

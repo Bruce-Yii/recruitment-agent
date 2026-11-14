@@ -40,7 +40,7 @@ test.after(async () => {
   await pool.end()
 })
 
-/** 一条 criterion 的输入形（只有 6 个键；写侧负责 normalize 成 9 键）。 */
+/** 一条 criterion 的输入形（只有实际给出的键；写侧负责投影到封闭 9 键子集，缺省键省略）。 */
 const CRITERIA_V1 = [
   { key: 'work_exists', label: '有工作经历', kind: 'MUST_HAVE', weight: 0.5, field: 'work_experience', operator: 'EXISTS', value: true },
   { key: 'months_gte36', label: '至少 36 个月', kind: 'MUST_HAVE', weight: 0.5, field: 'timeline.covered_months_closed', operator: 'GTE', value: 36 },
@@ -137,13 +137,16 @@ test('① 建岗位 + criteria：job/job_version/rubric_version/approval 四行�
     assert.equal(approval.decision_by_actor_id, null)
     assert.equal(approval.decided_at, null)
 
-    // 输出回显的是规范化后的 9 键（逐字回显，不吞键）
+    // 输出回显的是**规范化后的诚实形状**：机械型只有 key/label/kind/weight/field/operator/value，
+    // 没给的 question/notes **不补 null**（判断型则相反：没有 field/operator/value 键）。
     assert.equal(value.rubric?.criteria.length, 2)
     for (const criterion of value.rubric?.criteria ?? []) {
       assert.deepEqual(
         Object.keys(criterion as Record<string, unknown>).sort(),
-        ['field', 'key', 'kind', 'label', 'notes', 'operator', 'question', 'value', 'weight'],
+        ['field', 'key', 'kind', 'label', 'operator', 'value', 'weight'],
       )
+      assert.equal(Object.hasOwn(criterion as Record<string, unknown>, 'question'), false)
+      assert.equal(Object.hasOwn(criterion as Record<string, unknown>, 'notes'), false)
     }
     assert.equal(value.rubric?.is_approved, false)
     assert.equal(value.rubric?.approval.status, 'PENDING')

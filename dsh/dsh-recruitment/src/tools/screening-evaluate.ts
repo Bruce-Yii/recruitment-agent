@@ -487,16 +487,25 @@ interface ApprovalRow {
 }
 
 /** 一条 criterion（JR §6.1 的 9 个键，键封闭）。 */
+/**
+ * `rubric_version.dimensions[]` 的一条（JR §6.1）。
+ *
+ * 可选键**显式允许 `null`**：库里除了"省略键"这种诚实形状，还存在两类历史/手工数据——
+ *   1. 2026-11-14 之前 `job_create` 写出的 `"field": null / "operator": null / "value": null`；
+ *   2. 手工 SQL 插入的夹具（部分键干脆没有）。
+ * 读侧必须把 `null` 与"键缺失"**同义处理**：`field` 判空走判断型分支（否则 `resolveFieldFact`
+ * 会拿到 `null` 直接崩），`operator`/`value` 判空当"没给"，`question`/`notes` 判空当"没有"。
+ */
 interface Criterion {
   readonly key: string
   readonly label: string
   readonly kind: 'MUST_HAVE' | 'NICE_TO_HAVE' | 'DISQUALIFIER'
   readonly weight: number
-  readonly field?: string
-  readonly operator?: 'EXISTS' | 'GTE' | 'LTE'
-  readonly value?: boolean | number
-  readonly question?: string
-  readonly notes?: string
+  readonly field?: string | null
+  readonly operator?: 'EXISTS' | 'GTE' | 'LTE' | null
+  readonly value?: boolean | number | null
+  readonly question?: string | null
+  readonly notes?: string | null
 }
 
 const CRITERION_KEYS: ReadonlySet<string> = new Set([
@@ -880,6 +889,9 @@ export function validateDimensions(dimensions: readonly unknown[]): RuleViolatio
     } else {
       weightSum += weight
     }
+    // **单一裁决**（`job-rubric-rules.md` §6.1）：`null` 与"键缺席"同义——都表示"这个键没给"。
+    // 判断型准则的正确形状是**没有** field/operator/value 键；历史行（旧 job_create 的 9 键归一化）
+    // 写成 `"field": null` 也按"没有"处理。`R-VAL-7` 只判"三者同进同退"，不因 null 的写法不同翻供。
     const hasField = criterion.field !== undefined && criterion.field !== null
     const hasOperator = criterion.operator !== undefined && criterion.operator !== null
     const hasValue = criterion.value !== undefined && criterion.value !== null
@@ -1232,7 +1244,8 @@ function failureClassOf(outcome: string): string {
 /** 一条 `expected`（不出现 null；`boolean` 与 `integer` 分两个键，因为 DSH 不支持 oneOf 混合标量）。 */
 function expectedOf(criterion: Criterion): ScreenReason['expected'] | undefined {
   const operator = criterion.operator
-  if (operator === undefined) return undefined
+  // `null` 与"没给"同义（历史行/judgment 准则）：判断型没有 expected，不得把 operator:null 写进输出。
+  if (operator === undefined || operator === null) return undefined
   const out: { operator?: string; value_integer?: number; value_boolean?: boolean; unit?: string } = { operator }
   if (typeof criterion.value === 'boolean') {
     out.value_boolean = criterion.value
@@ -1246,18 +1259,27 @@ function expectedOf(criterion: Criterion): ScreenReason['expected'] | undefined 
 
 /**
  * 求一条 criterion（SR §4）。判断型永远 `NEEDS_JUDGMENT`，永不导致 FAIL/PASS。
+ *
+ * **"判断型"的判据是 `field == null`（同时覆盖 `undefined` 与 `null`）**：
+ * 这不是"顺手补一处判空"，而是读侧对**两种合法历史形状**的统一收口——
+ *   * 判断型准则**没有 `field` 键**（契约形状、手工 SQL 夹具）；
+ *   * 判断型准则**有 `field` 键但值是 `null`**（2026-11-14 之前 `job_create` 归一化写出的形状）。
+ * 两者都是"没有机械字段"，必须走同一条分支；只认 `undefined` 会让上游数据形状一变就崩
+ * （实测 `TypeError: Cannot read properties of null (reading 'startsWith')`）。
  * @param ctx - 评估上下文。
  * @param criterion - criterion 对象。
  * @param index - 在 `dimensions` 里的下标（只用于 message）。
  */
 export function evaluateCriterion(ctx: EvalContext, criterion: Criterion, index: number): CriterionResult {
   const kind = criterion.kind
+  const field = criterion.field
+  const isJudgment = field === undefined || field === null
   const base = {
     criterion_key: criterion.key,
     kind,
-    ...(criterion.field === undefined ? {} : { field: criterion.field }),
+    ...(isJudgment ? {} : { field }),
   }
-    if (criterion.field === undefined) {
+  if (isJudgment) {
     // 判断型：无机械三态，tri_state 省略（contract 里写 null），由 outcome 一一对应消歧。
     const expected = expectedOf(criterion)
     const reason: ScreenReason = {
@@ -1268,14 +1290,18 @@ export function evaluateCriterion(ctx: EvalContext, criterion: Criterion, index:
       ...(expected === undefined ? {} : { expected }),
       evidence: [],
       issue_codes: [],
-      ...(criterion.question === undefined ? {} : { question: criterion.question }),
-      ...(criterion.notes === undefined ? {} : { notes: criterion.notes }),
+      ...(criterion.question == null ? {} : { question: criterion.question }),
+      ...(criterion.notes == null ? {} : { notes: criterion.notes }),
       message: `这条要求机器判不了（第 ${index + 1} 条），需要人回答 rubric 里的原问句`,
     }
     return { reason, uncertain: kind !== 'NICE_TO_HAVE', unsatisfied: false, satisfied: false, triggered: false, cleared: false, outcome: 'NEEDS_JUDGMENT' }
   }
 
-  const fact = resolveFieldFact(ctx, criterion.field)
+  // 到这里 `field` 一定是 string（isJudgment 分支已返回）。
+  const fact = resolveFieldFact(ctx, field)
+  // `field` 有值却 `operator` 为空 = R-VAL-7 的 `CRITERION_PARTIAL`，在 `evaluateInTransaction`
+  // 进入评估**之前**就已被 `validateDimensions` 拒成 RUBRIC_INVALID。这里**不再补一套猜法**：
+  // 校验层是唯一裁决（否则读侧又会多出一个自造语义的入口）。
   const operator = criterion.operator as 'EXISTS' | 'GTE' | 'LTE'
   const expected = expectedOf(criterion)
   const evidence = fact.tri_state === 'present' ? fact.evidence : []
@@ -1285,7 +1311,7 @@ export function evaluateCriterion(ctx: EvalContext, criterion: Criterion, index:
   const observed: { value?: number; lower_bound?: number } = {}
   if (fact.tri_state === 'absent') {
     outcome = 'MISSING'
-    message = `原文确实没有提到 ${criterion.field}（材料已读完、无 HARD issue）`
+    message = `原文确实没有提到 ${field}（材料已读完、无 HARD issue）`
   } else if (fact.tri_state === 'unreadable') {
     outcome = 'UNREADABLE'
     const codes = fact.issue_codes.join(', ')
@@ -1298,13 +1324,13 @@ export function evaluateCriterion(ctx: EvalContext, criterion: Criterion, index:
       || code.startsWith('field_upgraded_by_agent')
     ))
     message = evidenceGap
-      ? `${criterion.field} 的有效字段状态是 present，但没有可定位的证据（${codes}）；按未确认处理，不得据此判定不满足`
-      : `${criterion.field} 有原文但读不出（issue: ${codes}）；不得据此判定不满足`
+      ? `${field} 的有效字段状态是 present，但没有可定位的证据（${codes}）；按未确认处理，不得据此判定不满足`
+      : `${field} 有原文但读不出（issue: ${codes}）；不得据此判定不满足`
   } else if (operator === 'EXISTS') {
     outcome = 'SATISFIED'
-    message = `${criterion.field} 已读出（state=present）`
+    message = `${field} 已读出（state=present）`
   } else {
-    const isTimeline = criterion.field.startsWith('timeline.')
+    const isTimeline = field.startsWith('timeline.')
     const bounds = fact.bounds ?? (isTimeline ? 'UNAVAILABLE' : 'EXACT')
     const value = typeof fact.value === 'number' ? fact.value : Number.NaN
     const lower = typeof fact.lower_bound === 'number' ? fact.lower_bound : value
@@ -1313,13 +1339,13 @@ export function evaluateCriterion(ctx: EvalContext, criterion: Criterion, index:
         // 读到了 state，但这个量在 parsed_fields 里不存在（例如 entry_count 尚未发布）
         // ⇒ SR §3.4「present 但量不可比」→ INDETERMINATE，**不得**判不满足。
         outcome = 'INDETERMINATE'
-        message = `${criterion.field} 的分量在 parsed_fields 里没有可复算的整数值，无法比较`
+        message = `${field} 的分量在 parsed_fields 里没有可复算的整数值，无法比较`
       } else {
         observed.value = value
         const target = criterion.value as number
         const hit = operator === 'GTE' ? value >= target : value <= target
         outcome = hit ? 'SATISFIED' : 'UNSATISFIED'
-        message = `已复算 ${criterion.field}=${value}，要求 ${operator} ${target}`
+        message = `已复算 ${field}=${value}，要求 ${operator} ${target}`
       }
     } else if (bounds === 'EXACT') {
       observed.value = value
@@ -1345,7 +1371,7 @@ export function evaluateCriterion(ctx: EvalContext, criterion: Criterion, index:
     } else {
       outcome = 'UNREADABLE'
       // 有效字段本身是 present，但这份版本没有可复算的时间线：**未确认**，不是"读不出这个人"。
-      message = `${criterion.field} 的时间线未确认（${fact.issue_codes.join('; ')}）；`
+      message = `${field} 的时间线未确认（${fact.issue_codes.join('; ')}）；`
         + '不据此判定满足或不满足'
     }
   }
@@ -1370,15 +1396,15 @@ export function evaluateCriterion(ctx: EvalContext, criterion: Criterion, index:
           document_sha256: ctx.rv.source_asset_sha256,
           page_count: typeof ctx.parsed.meta?.pages === 'number' ? ctx.parsed.meta.pages : 0,
           completeness: 'complete',
-          searched_scopes: [criterion.field],
-          basis: `parsed_fields.fields.${criterion.field.split('.')[0] as string}.state=absent`,
+          searched_scopes: [field],
+          basis: `parsed_fields.fields.${field.split('.')[0] as string}.state=absent`,
           hard_issue_count: ctx.hardIssueCount,
         },
       }
       : {}),
     issue_codes: fact.tri_state === 'absent' ? [] : fact.issue_codes,
-    ...(criterion.question === undefined ? {} : { question: criterion.question }),
-    ...(criterion.notes === undefined ? {} : { notes: criterion.notes }),
+    ...(criterion.question == null ? {} : { question: criterion.question }),
+    ...(criterion.notes == null ? {} : { notes: criterion.notes }),
     message,
   }
   const uncertain = ['MISSING', 'UNREADABLE', 'INDETERMINATE', 'NEEDS_JUDGMENT'].includes(finalOutcome)

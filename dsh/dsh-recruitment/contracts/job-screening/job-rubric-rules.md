@@ -197,6 +197,8 @@ COMMIT;
 
 ### 6.1 criterion 对象（键封闭，多一个键即非法）
 
+**机械型**（有 `field`，所以**没有 `question` 键**）：
+
 ```json
 {
   "key": "backend_years",
@@ -206,8 +208,20 @@ COMMIT;
   "field": "timeline.covered_months_closed",
   "operator": "GTE",
   "value": 60,
-  "question": null,
   "notes": "按时间线可复算，不接受「约 5 年」这类估算"
+}
+```
+
+**判断型**（**没有 `field` / `operator` / `value` 三个键**）：
+
+```json
+{
+  "key": "bachelor_or_above",
+  "label": "本科及以上学历",
+  "kind": "MUST_HAVE",
+  "weight": 0.4,
+  "question": "候选人是否具备本科及以上学历？",
+  "notes": "学历不在机械字段白名单内，只能人判"
 }
 ```
 
@@ -223,10 +237,28 @@ COMMIT;
 | `question` | string | 条件 | **判断型**（无 `field`）必填，1–500 字符，必须是**可回答的单一问题**（"是否具备 X"，不得是"你怎么看"） |
 | `notes` | string | — | ≤1000，纯说明，不参与判定 |
 
-**两种模式由"有没有 `field`"决定，不新增 `mode` 字段**：
+**"条件"键在不适用的模式里必须缺席，不许写 `null` 占位。**
+
+> 这是本契约的**单一裁决**（2026-11-14 P0 之后写死）：
+> **「键不存在」与「键的值是 `null`」在本契约里同义（都表示"没给 / 不适用"）；落库形状用缺席表达，不用 `null`。**
+>
+> 之所以要写死：`recruitment_job_create` 曾把判断型准则归一化成固定的 9 键、缺省写 `null`，
+> 而 `recruitment_screening_evaluate` 只用 `criterion.field === undefined` 判"判断型"——
+> 同一份 JSON 的两个读者对 `null` 的口径不一致，导致**任何用产品入口建的、含判断型准则的 rubric
+> 在 S7 一律崩**（`TypeError: Cannot read properties of null (reading 'startsWith')`）。旧验收 rubric
+> 是手工 SQL 插的（判断型准则没有 `field` 键），恰好绕开该分支，所以缺陷长期没暴露。
+>
+> 因此两侧都必须遵守同一裁决，缺一不可：
+> * **写侧（序列化层）**：`normalizeCriteria` 省略 `null`/缺失的可选键——落库形状必须说真话，且同一份
+>   标准不能因为"写没写 null"产生两个 `payload_hash`（= 两个 rubric 版本）；
+> * **读侧（校验/求值层）**：把 `field == null`（同时覆盖 `undefined` 与 `null`）判为判断型，
+>   把 `operator == null` 判为"没给"，`question`/`notes == null` 不写进输出。读侧容忍 `null` 是
+>   **向后兼容历史行**，不是允许新写入继续写 `null`。
+>
+> **两种模式由"有没有 `field`"决定，不新增 `mode` 字段**：
 
 - 有 `field`+`operator`+`value` → **机械型**：能做到 `SATISFIED/UNSATISFIED`（§6.4）；
-- 无 → **判断型**：永远只能产 `NEEDS_JUDGMENT`（`screening-rules.md` §4.3），因此**永不导致 PASS 或 FAIL**。
+- 无（键缺席或值为 `null`）→ **判断型**：永远只能产 `NEEDS_JUDGMENT`（`screening-rules.md` §4.3），因此**永不导致 PASS 或 FAIL**。
 
 ### 6.2 校验规则 `R-VAL-1 … R-VAL-14`（任一失败 → `NO_RUBRIC/RUBRIC_INVALID`）
 
@@ -238,12 +270,12 @@ COMMIT;
 | `R-VAL-4` | `label` 去空白后 1–200 | `CRITERION_LABEL` | — |
 | `R-VAL-5` | `kind ∈ {MUST_HAVE, NICE_TO_HAVE, DISQUALIFIER}` | `CRITERION_KIND` | `CONTRACT.md` §5 |
 | `R-VAL-6` | `weight` 为 number ∈ [0,1]，`Σweight` 与 1 差 ≤ `1e-6` | `WEIGHT_SUM` / `WEIGHT_RANGE` | `CONTRACT.md` §5（"同版本内求和为 1"） |
-| `R-VAL-7` | `field` / `operator` / `value` **三者同时存在或同时缺席** | `CRITERION_PARTIAL` | 防止"有 field 没 operator"被当成判断型 |
+| `R-VAL-7` | `field` / `operator` / `value` **三者同时存在或同时缺席**（值为 `null` 视为缺席，§6.1；下游不得把半个机械型当判断型） | `CRITERION_PARTIAL` | 防止"有 field 没 operator"被当成判断型 |
 | `R-VAL-8` | `field` ∈ §6.3 白名单；**禁止** `name` / `phone` / `email` / `protected.*` / 任何未列路径 | `CRITERION_FIELD` / `PROTECTED_ATTRIBUTE_IN_CRITERIA` | `D11 §9.6`、`D11 §9.11` 红线 9 |
 | `R-VAL-9` | `operator` ∈ `{EXISTS, GTE, LTE}` | `CRITERION_OPERATOR` | §6.4 |
 | `R-VAL-10` | `operator` 与 `field` 类型匹配（`EXISTS` ↔ boolean 型字段；`GTE`/`LTE` ↔ integer 型字段） | `CRITERION_TYPE` | §6.3 类型列 |
 | `R-VAL-11` | `value` 类型正确：`EXISTS` → 必须为 `true`；`GTE`/`LTE` → 整数，单位见 §6.3 | `CRITERION_VALUE` | §6.4 |
-| `R-VAL-12` | 判断型（无 `field`）必须有 `question`，1–500 字符 | `CRITERION_QUESTION` | §6.1 |
+| `R-VAL-12` | 判断型（`field` 缺席或为 `null`）必须有 `question`，1–500 字符 | `CRITERION_QUESTION` | §6.1 |
 | `R-VAL-13` | 至少 1 条 `MUST_HAVE` 或 `DISQUALIFIER`（只有加分项的 Rubric 无法产生结论） | `NO_DECIDING_CRITERIA` | 本契约裁决 |
 | `R-VAL-14` | `payload_hash` = `sha256(canonical_json(dimensions))`；且对应 `approval.payload_schema_version = 1` | `RUBRIC_HASH_MISMATCH` / `UNSUPPORTED_PAYLOAD_SCHEMA_VERSION` | §6.6、`ck_approval_hash` |
 
@@ -321,7 +353,10 @@ payload_hash = lowercase_hex( sha256( UTF-8( canonical_json(dimensions) ) ) )
 1. 对象键按 Unicode 码点升序；对象/数组内**不插入任何空白**；分隔符固定 `,` 与 `:`。
 2. 字符串按 RFC 8259 转义，不做 NFKC（`D11 §A3`：不做毯式归一化）。
 3. 数字：整数不带小数点；小数用**最简十进制**（无指数、无前导零、去掉尾随 0、小数位 ≤ 6）。`0.5` 只能序列化成 `0.5`，不得是 `0.50` 或 `5e-1`。
-4. `null` 显式写出（键存在且值为 `null` 与键缺失是**不同**的——`R-VAL-7` 判"field/operator/value 三者同进同退"时必须能分清"没给"与"给了 null"，所以这 9 个键建议都显式写出）。
+4. **可缺省的键在缺失时省略，不写 `null`**（§6.1 的单一裁决）：`null` 只在**入参**里表示"没给"，
+   落库与 `payload_hash` 之前一律省略。因此机械型准则**没有** `question` 键、判断型准则**没有**
+   `field`/`operator`/`value` 键。历史行可能带 `null`（2026-11-14 之前 `job_create` 就会写）：
+   读侧必须按"`null` = 没给"处理（`field == null` → 判断型），这是兼容，**不是**允许新写入继续写 `null`。
 
 不匹配 → `NO_RUBRIC/RUBRIC_HASH_MISMATCH`。理由：审批绑定的是 `canonical_payload_hash`（`ck_approval_hash`），若两者不一致，"被批准的到底是哪份标准"就无从证明（`D11 §9.9` 决策可回溯）。
 
