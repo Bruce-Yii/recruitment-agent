@@ -29,6 +29,7 @@ PyMuPDF 读出来的东西必须被**无损映射**成 `DocumentContent`，映�
 | `blocks[].kind` | `DocumentBlock.kind` | 需枚举映射；未知 kind → `other` + issue |
 | `blocks[].text` | `DocumentBlock.text` | **逐字**，不许改写 |
 | `blocks[].location{page,bbox}` | `{kind:"pdf", page, bbox, block_id}` | 逐字 |
+| `blocks[].location{page?,paragraph}`（RTF） | `{kind:"rtf", paragraph, page?}` | 段落序号定位；**没有 bbox**，page 只在无硬分页符时出现 |
 | `blocks[].links` | `DocumentBlock.links` | href/text 保留 |
 | `completeness` | `completeness` | **只有一套**，U2 不得另造 |
 | `needs_visual` | `needs_visual` | 逐字 |
@@ -45,7 +46,7 @@ PyMuPDF 读出来的东西必须被**无损映射**成 `DocumentContent`，映�
 | 目录 | 包 | 职责 |
 |---|---|---|
 | `contracts/` | U0 | `DocumentContent` 类型 + 运行时校验器 + 合成样本生成器 |
-| `readers/` | U1 | 格式嗅探 + PDF 桥接 + DOCX + PNG/JPG → 同一 `DocumentContent` |
+| `readers/` | U1 | 格式嗅探 + PDF 桥接 + DOCX + RTF + PNG/JPG → 同一 `DocumentContent` |
 | `quality/` | U2 | 消费 converter 的 issue code，产出 `blocking` / `actions`（**不产出第二个 completeness**） |
 | `recovery/` | U2 | 按 issue 生成可执行恢复计划（`vision_read` 只出计划，执行走 DSH `read_image`） |
 
@@ -97,3 +98,20 @@ U0 落地后发现树上有**两个同名 `validateDocumentContent()`、两套�
 再把 `readerFactsFromSourceMeta(source_meta)` 喂给 `assess()`。
 **只消费 `readDocument()` 会丢掉 facts**，症状是每份 PDF 都命中 `doc_page_count_unverified`（HARD）。
 这条要写成 U3 的集成测试断言。
+
+### 6.3 第五种媒体：RTF（2026-11-14）
+
+真实语料里有 1 份 RTF 简历。converter 的 MuPDF 认 PDF 和 OOXML DOCX，但**不认 RTF**，
+所以这份材料此前是 `READER_FAILED(UNSUPPORTED_MEDIA)`，永远进不了 S6。
+
+**裁决**：RTF 成为第五种一等媒体（`MEDIA_TYPES` 增加 `application/rtf`），读取器是
+converter 的 `striprtf`（纯 Python，无外部二进制；`converter/requirements.txt` 已声明依赖）：
+
+* `media_type = application/rtf`，locator = `{kind:"rtf", paragraph, page?}`（**没有 bbox**）；
+* 文本直接从 RTF 控制字 / `\'hh` / `\uN` 解码 → `provenance = native_text`（不是 OCR / 模型）；
+* 不重建版面：`order_verified=false`、`layout_backend=null`；有硬分页符时不逐块挂 page；
+* 内嵌图片（`\pict`）不读但**声明** `unverified_rtf_embedded_image`（与 `unverified_pdf_image` 同口径：
+  converter 判 SOFT，质量层升级成 HARD 版式类阻断）；解不出的字节剔除并声明 `rtf_text_encoding_unread`（HARD）。
+
+> **与 `docs/19` 的差异（未回抄）**：`docs/19 §2.1` 的 `Media` 原文写四种。本目录的契约已扩到五种，
+> 但 `docs/**` 不在本 lane 写范围，差异记在这里而不是悄悄改文档（R5 的欠账，需下一轮回抄）。
