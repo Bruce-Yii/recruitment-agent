@@ -1,6 +1,15 @@
 // 招聘领域适配层（本 lane 自写；**不是** vendor）。
 //
-// 作用：把 vendor 进来的机制（Ticket / Assignment / 订阅的那套结构）映射到**招聘既有的执行语义表**：
+// ⚠️ **已退休，不得接线**（2026-11-14 总控裁决）：
+//   runtime lane 以 `event_inbox → business_task` 为权威：Task ID 由**业务对象幂等键**决定，
+//   并记录真实 DSH `runtime_session_id`。本文件则以引擎 Ticket/Assignment 为权威、用确定性 UUID
+//   把引擎对象投影进 business_task/task_attempt/agent_session —— 两者同时写同一批表就是
+//   **两套 ID 生成器 = 两套权威**，与 `RecruitmentTaskExecutor` 同一个退休理由。
+//   另外本文件的状态映射（failed/blocked 的落点）也不适用于 runtime 的语义。
+//   保留作参考：它记录了「引擎侧任务 → 既有执行表」的字段对应关系与三条护栏的遵守方式。
+//
+// 以下为原始说明（仅参考，不要照此接线）：
+// 把 vendor 进来的机制（Ticket / Assignment / 订阅的那套结构）映射到**招聘既有的执行语义表**：
 //   Ticket      → recruitment.business_task
 //   Assignment  → recruitment.task_attempt
 //   worker 会话 → recruitment.agent_session
