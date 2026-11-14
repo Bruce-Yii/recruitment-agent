@@ -8,7 +8,7 @@ Recruitment Agent is an Agent that performs recruiting work, not an ATS with a c
 
 ### User boundary — hard product constraint
 
-- The product is exclusively for the recruiting organization's internal users: HR / recruiters, recruiting leads / HR owners, interviewers, approvers, and (where needed) enterprise administrators.
+- The product is exclusively for the recruiting organization's internal users: HR / recruiters, recruiting leads / HR owners, interviewers, recruiting-leads, and (where needed) authorized configuration owners.
 - A candidate is a recruiting business entity and external process participant, **never a Recruitment Agent system user**. Candidate IDs may identify records, applications, resumes, interview participants, and transcript speakers; they must never be treated as login identities, permission principals, Agent operators, Scorecard authors, or decision-makers.
 - Do not build candidate login, candidate accounts, a candidate portal, candidate-facing workspace, candidate self-service flows, or candidate-side Agent chat as part of this product.
 - Candidates may receive recruiter-managed invitations or communications and may reply or participate in meetings. Those messages/replies/transcripts are external business events or source materials ingested for the internal recruiting team; they do not make the candidate a product user.
@@ -35,15 +35,19 @@ Keep the product surface small and contextual:
 
 The product has internal recruiting users only. Role-specific interfaces are projections of the same domain objects and DSH host, not separate products or duplicate business workflows.
 
-### Role views
+### Role views — keep the product simple
 
-- **HR / Recruiter:** recruitment work overview, assigned jobs and Applications, intake outcomes, screening decisions, interview coordination, pending follow-ups, and candidate/application history.
-- **Interviewer:** a focused "My Interviews" / Interview Workspace showing only interviews assigned to the current internal user (or explicitly authorized scope). It provides the interview briefing, job context, the candidate's submitted resume and authorized materials, this round's focus attributes and questions, meeting details, the interviewer's own notes, and that interviewer's independent Scorecard. It does not expose the full HR pipeline or unrelated candidate records by default.
-- **Recruiting Lead / HR Owner:** job and rubric configuration, hiring progress, team workload, review of authorized evaluations, and formal decisions within their authority.
-- **Approver:** only the approval context and actions assigned to them, with enough business context to make the approval; no need to navigate the entire recruiting workspace.
-- **Enterprise Administrator:** organization-level templates, roles, policies, integrations and configuration. This is not the default daily workspace.
+Use three practical work perspectives, not a matrix of separate mini-apps:
 
-The same internal user may hold multiple roles, and role scope may differ by enterprise, team, job, or Interview assignment. A role name alone must not grant access to every record.
+- **Recruiter / HR:** owns the active recruiting work—job context, incoming resumes, Agent-prepared screening, interview coordination, and the hiring history needed to continue the work.
+- **Interviewer:** opens one focused Interview Workspace containing only assigned interviews, the relevant job context, the candidate's submitted resume and authorized materials, this round's focus and questions, meeting details, private notes, and their own independent Scorecard.
+- **Recruiting Lead:** sees the broader hiring work, configures the recruiting framework, reviews authorized evaluations, and makes the formal recruiting decision.
+
+These are views inside the same Recruitment Agent workspace. The same internal person may act as recruiter and interviewer on different jobs; the active assignment and authorization determine the current view and available actions.
+
+Do **not** create a standalone "Recruiting Lead" role or approval workspace for the current product. The Recruiting Lead owns formal recruiting decisions by default. If an enterprise genuinely requires an extra approval step, model it as an optional configurable gate assigned to an existing authorized internal role—not as another mandatory product persona or another top-level workspace.
+
+Do **not** create a separate daily "Configuration permission" workspace in this product. Enterprise-level configuration is a settings area within the same workspace, normally managed by the Recruiting Lead or another internal user explicitly granted configuration permission. Configuration permission is an authorization, not a fourth daily work persona.
 
 ### Interview-round-specific experience
 
@@ -56,7 +60,7 @@ The same internal user may hold multiple roles, and role scope may differ by ent
 
 ### Demo role switch vs real identity
 
-- The current single-user prototype may expose a clearly labelled **Demo identity / View as** selector to demonstrate HR, Recruiting Lead, Interviewer A, Interviewer B and Approver views without implementing multi-user authentication now.
+- The current single-user prototype may expose a clearly labelled **Demo identity / View as** selector to demonstrate Recruiter, Recruiting Lead, and Interviewer A/B/C views without implementing multi-user authentication now.
 - Switching demo identity must change the view, assigned work, actor identity, data visibility and permitted actions—not merely change a label or theme. Demo Scorecards must persist distinct actor IDs and remain independent.
 - The selector is a prototype simulation only. It must not be described as real authentication, real multi-user collaboration, or a security boundary.
 - In the integrated product, the active identity comes from DSH's authenticated internal user/session and server-side role/scope assignments. Users cannot self-grant roles by changing a UI selector. Domain/tool actions enforce authorization server-side.
@@ -142,7 +146,7 @@ A lower layer inherits the higher layer by default and only stores explicit over
 - Every write is read back from PostgreSQL. Refresh/session recovery preserves the same business state.
 - The transcript branch and Scorecard branch can proceed independently.
 - No candidate login/account/portal or candidate-facing product surface exists; candidate records and transcript speakers are never treated as system users or action authors.
-- Role-specific internal views exist for HR/Recruiter, Interviewer, Recruiting Lead/Owner and Approver, reusing the same Interview Workspace and domain contracts; the prototype's Demo identity selector changes data scope/actions but is explicitly not real authentication.
+- Role-specific internal views exist for HR/Recruiter, Interviewer, Recruiter, Interviewer and Recruiting Lead, reusing the same Interview Workspace and domain contracts; the prototype's Demo identity selector changes data scope/actions but is explicitly not real authentication.
 - Interviewer A/B have independent actor identities and see only assigned Interviews and authorized materials; round-specific briefings, focus attributes, questions and Scorecard schemas come from configuration rather than hard-coded first/second/third-round branches.
 - Enterprises can configure and reuse interview plans, stage kits, rubrics, assignments, visibility policies and Agent action gates through built-in templates plus enterprise/team/job/stage overrides; configuration is versioned and in-flight Applications retain their effective snapshot unless explicitly migrated.
 - Human Attention has one canonical entry point; the same task is not duplicated in multiple cards/banners.
