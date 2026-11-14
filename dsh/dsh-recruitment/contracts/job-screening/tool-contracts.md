@@ -20,6 +20,8 @@
 
 1. 不落决策：工具输出里没有 `decided_by_actor_id`，也没有 `decision` 的任何一个必填字段（`ck_decision_reason`/`INV-9`）。
 2. 不钉 Rubric 版本：`application.rubric_version_id` 只读（`job-rubric-rules.md` §4.3）。
+   钉版本只有两个合法写入点：`recruitment_application_intake`（建申请时钉）与
+   `recruitment_application_stage_advance` 的 T1 补钉（F1，同事务 + 审计事件）。
 3. 不清人工队列：`business_task.status` / `resume_version.parse_status` 一个都不改（`screening-rules.md` §6.4、`APP-07`）。
 4. 不接受模型传入的 `tenant_id` / `actor_id`：租户与身份**只能**来自执行上下文（`SET LOCAL recruitment.actor_id`，`INV-8`、`XINV-7`）。入参里出现这两个键 → `INVALID_ARGS`（不是静默忽略）。
 
@@ -159,8 +161,8 @@ provenance = 'LIVE'
 | 字段 | 规则 |
 |---|---|
 | `rubric.criteria[]` | **逐字回显 `rubric_version.dimensions` 的元素**，一个键都不许增删改。禁止在这里"顺便归一化"——一旦归一化，工具输出与库里的 `payload_hash` 就对不上，审批绑定失效（`job-rubric-rules.md` §6.6） |
-| `rubric.is_current` | `version_id == current(job_id, as_of)`；没有可用当前版本时**全部** `false` |
-| `rubric.is_approved` | §4.2 的 `approved(v, as_of)` 判定式 |
+| `rubric.is_current` | `version_id == current(job)`，而 **`current(job)` = `job.current_rubric_version_id` 指向的版本（D-21）**，不是 `max(version_no)`；没有可用当前版本（指针为空/指向的版本不在该岗位下）时**全部** `false` |
+| `rubric.is_approved` | §4.2 的 `approved(v, as_of)` 判定式（与"被指针指着"是两条独立事实） |
 | `rubric.resolution` | `EXPLICIT_VERSION_NO` \| `EXPLICIT_VERSION_ID` \| `JOB_CURRENT`（与 `evaluate` 的 `APPLICATION_PINNED` **不是同一套枚举**，刻意区分：查岗位永远不带申请） |
 | `rubric.executable` | `true` ⇔ 通过 `R-VAL-1..13`（纯结构校验，只看 `dimensions`）。`R-VAL-14`（`payload_hash` / 审批一致性）**不在这里判**，它的结果只体现在 `is_approved`。本工具**不因** `executable=false` 报错——那是 `evaluate` 的事 |
 | `rubric` / `rubric_absence` | **恰好一个为 `null`**。两者同时 `null` 或同时非 `null` = 违约 |

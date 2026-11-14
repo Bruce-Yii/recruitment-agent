@@ -366,8 +366,9 @@ test('§11.6-6 未经授权不能执行有业务影响的外部动作（排期/�
 // =====================================================================
 test('§11.6-8 HR 能从工作台理解状态、阻塞原因、责任人和下一步', async () => {
   await inRolledBackTx(pool, async (client) => {
-    // 申请没钉 rubric：阶段推进必须给出**可执行**的阻塞说明，而不是静默不动。
-    const scenario = await seedScenario(client, { dimensions: DIMENSIONS, pinRubric: false })
+    // 申请没钉 rubric，且岗位**没有已批准的当前版本**：阶段推进必须给出**可执行**的阻塞说明。
+    // （"没钉但岗位已批准"不再是阻塞：D-21/D-48 下 stage_advance 的 T1 会补钉后推进。）
+    const scenario = await seedScenario(client, { dimensions: DIMENSIONS, pinRubric: false, approve: false })
     await client.query("update recruitment.application set current_stage_code = 'S6' where id = $1", [scenario.applicationId])
     const before = (await client.query<{ current_stage_code: string; record_version: number }>(
       'select current_stage_code, record_version from recruitment.application where id = $1', [scenario.applicationId],

@@ -360,7 +360,14 @@ test('what_if：显式 rubric_version_id 与钉住版本不同 → what_if=true 
     const value = await evaluate(client, scenario.applicationId, { rubric_version_id: secondId })
     assert.equal(value.rubric.resolution, 'ARGUMENT')
     assert.equal(value.rubric.what_if, true)
-    assert.equal(value.rubric.is_current, true, 'v2 是当前已批准的最高版本')
+    // D-21/D-48：当前版本只由 job.current_rubric_version_id 说话。v2 虽然已批准，但指针仍指 v1
+    // （v2 是测试直接插的，没走 job_rubric_approve）⇒ v2 不是 current，v1 才是。
+    assert.equal(value.rubric.is_current, false, 'v2 已批准但不是 current：current 只看 job.current_rubric_version_id')
+    const pinned = (await client.query<{ current_rubric_version_id: string | null }>(
+      'select current_rubric_version_id from recruitment.job where tenant_id = $1 and id = $2',
+      [TENANT, scenario.jobId],
+    )).rows[0]?.current_rubric_version_id
+    assert.equal(pinned, scenario.rubricId, '夹具的 current 指针仍指 v1')
     assert.ok(value.warnings.some((w) => w.code === 'WHAT_IF_EVALUATION'))
     // v1 仍被钉住 ⇒ v2 的 edu 判定生效，但输出明确标 what_if
     assert.equal(value.verdict, 'NEEDS_REVIEW')

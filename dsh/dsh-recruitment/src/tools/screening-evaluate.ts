@@ -443,6 +443,11 @@ interface ApplicationRow {
   readonly job_title: string
   readonly job_status: string
   readonly job_code: string
+  /**
+   * D-21 的显式"当前 rubric"指针（`job.current_rubric_version_id`）。
+   * `JOB_CURRENT` 解析**只认这个指针**，不按 `max(version_no)` 推导（D-48：指针为空 = 没有当前）。
+   */
+  readonly job_current_rubric_version_id: string | null
 }
 
 interface ResumeVersionRow {
@@ -594,7 +599,8 @@ async function loadApplication(
     `select a.id, a.candidate_id, a.job_id, a.job_version_id, a.rubric_version_id,
             a.resume_version_id, a.lifecycle_status, a.current_stage_code,
             a.stage_blocked_reason, a.record_version,
-            j.title as job_title, j.status as job_status, j.code as job_code
+            j.title as job_title, j.status as job_status, j.code as job_code,
+            j.current_rubric_version_id as job_current_rubric_version_id
        from recruitment.application a
        join recruitment.job j on j.id = a.job_id and j.tenant_id = a.tenant_id
       where a.id = $1 and a.tenant_id = $2`,
@@ -1502,7 +1508,8 @@ export async function evaluateInTransaction(
 
   // ---- Rubric 解析（JR §4.3）----
   const { versions, approvals } = await loadRubricVersions(client, tenantId, app.job_id)
-  const currentVersion = pickCurrent(versions, approvals, asOfIso)
+  // D-21/D-48：current 只由 job.current_rubric_version_id 说话（不是 max(version_no)）。
+  const currentVersion = pickCurrent(versions, app.job_current_rubric_version_id)
   const requestedRubric = typeof args.rubric_version_id === 'string' ? args.rubric_version_id : undefined
   let resolution: 'ARGUMENT' | 'APPLICATION_PINNED' | 'JOB_CURRENT'
   let resolved: RubricRow | undefined
@@ -1539,9 +1546,14 @@ export async function evaluateInTransaction(
     if (resolved === undefined) {
       throw contractError('NO_RUBRIC', {
         reason_code: 'NO_APPROVED_RUBRIC',
-        message: '该岗位有 Rubric 版本，但没有一版在 as_of 时刻处于已批准状态',
+        message: app.job_current_rubric_version_id === null
+          ? '该岗位没有"当前 Rubric 版本"（job.current_rubric_version_id 为空；D-21/D-48 不回退到 max(version_no)）'
+          : '该岗位的 job.current_rubric_version_id 不属于该岗位的任何 Rubric 版本',
         detail: {
           job_id: app.job_id,
+          ...(app.job_current_rubric_version_id === null
+            ? {}
+            : { current_rubric_version_id: app.job_current_rubric_version_id }),
           versions: versions.map((v) => ({
             version_no: v.version_no,
             status: approvalLabel(approvals.get(v.id) ?? [], v, asOfIso),
@@ -1837,18 +1849,26 @@ function gateReason(app: ApplicationRow): string[] | undefined {
   return out.length === 0 ? undefined : out
 }
 
-/** `current(job, as_of)`：已批准版本里 version_no 最大者（JR §4.2）。 */
+/**
+ * `current(job, as_of)`：**只认 `job.current_rubric_version_id` 显式指针**（D-21 / D-48）。
+ *
+ * 不再按"已批准版本里 version_no 最大"推导：
+ *   * 批准 v2 不等于把 v3 顶成当前；回滚到 v1 也只能靠指针表达；
+ *   * 写侧 `recruitment_job_rubric_approve` 维护的就是这个指针 —— 两侧必须同一个"当前"，
+ *     否则 `job_get` 与 `evaluate` 会对同一个岗位说出两个不同的当前版本。
+ *
+ * 指针为空 / 指向的版本不属于该岗位 → `undefined`（没有当前版本，**不回退**）。
+ * "是否已批准"是另一条事实，由 {@link approvedAt} 单独判（`JOB_CURRENT` 两条都要满足）。
+ * @param versions - 该岗位的全部 rubric 版本。
+ * @param currentRubricVersionId - `job.current_rubric_version_id`。
+ * @returns 指针指向的版本；没有则 `undefined`。
+ */
 function pickCurrent(
   versions: readonly RubricRow[],
-  approvals: Map<string, ApprovalRow[]>,
-  asOfIso: string,
+  currentRubricVersionId: string | null,
 ): RubricRow | undefined {
-  let best: RubricRow | undefined
-  for (const version of versions) {
-    if (approvedAt(version, approvals.get(version.id) ?? [], asOfIso) === null) continue
-    if (best === undefined || version.version_no > best.version_no) best = version
-  }
-  return best
+  if (currentRubricVersionId === null) return undefined
+  return versions.find((version) => version.id === currentRubricVersionId)
 }
 
 function applicationBlock(app: ApplicationRow): EvaluateValue['application'] {
