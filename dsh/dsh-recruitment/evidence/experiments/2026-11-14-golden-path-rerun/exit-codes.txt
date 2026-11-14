@@ -1,0 +1,32 @@
+Golden Path 复跑相关命令的退出码（真实值）
+==================================================
+
+[官方 run] node manual/golden-path/run-golden-path-rerun.mjs
+  快照   : 30f501c9d98afc38404288e0a8857ea0f6165a5b
+  开始   : 2026-11-14T21:03:45+08:00（UTC 13:03:45）
+  结束   : 2026-11-14T21:03:58+08:00
+  退出码 : 0
+  依据   : summary.failures = []（0 个）；产品缺陷阻断跳 = 0；16 跳全 PASS
+  证据   : console-run-official.log / run-2026-11-14T13-03-45-994Z/summary.json
+
+[尝试 0] node manual/golden-path/run-golden-path-rerun.mjs   （gp7 身份 + 旧常量 2026-12-02）
+  开始   : 2026-11-14T21:02:03+08:00
+  退出码 : 1
+  原因   : HOP 7 S8 排期被工具拒绝 CONFLICT_SLOT / INTERVIEWER_BUSY
+           （2026-12-02 10:00 已被旧报告 run A 的面试 6efc6919… 占用；同两位面试官）
+  证据   : console-attempt-0-slot-collision.log
+
+[独立 DB 读回] node manual/golden-path/db-readback.mjs 5b16c710-d75c-4a26-ab19-0b9c0591be1e
+  退出码 : 0
+  证据   : db-readback-independent.txt
+
+[干净快照 import 自检] 第一次快照 HEAD=4a5dfd3
+  node manual/golden-path/run-golden-path-rerun.mjs
+  退出码 : 1
+  原因   : SyntaxError: … media.ts does not provide an export named 'MEDIA_RTF'
+           （application-intake.ts:67 引用了尚未提交的导出；后由 30f501c 修复）
+  证据   : commands.txt §[1]
+
+[说明]
+- 退出码由 PowerShell 的 $LASTEXITCODE 读取并记录；官方 run 的 0 与 summary.failures=[] 互相印证。
+- 本 lane 未修改任何业务代码；以上退出码不包含旧版原 harness（run-golden-path.mjs）的复跑结果。

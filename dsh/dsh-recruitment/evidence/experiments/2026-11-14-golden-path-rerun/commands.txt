@@ -1,0 +1,134 @@
+====================================================================
+Golden Path S6 → S10 复跑 · 命令原文与真实输出（E1）
+时间：2026-11-14 21:02–21:06 +08:00
+环境：Windows / PowerShell 7 / Node v24.16.0 / PostgreSQL 17.11 / Python 3.12.9 (PyMuPDF 1.28.0)
+密码：只从环境变量 RECRUITMENT_DB_PASSWORD 注入，不写进任何文件或日志（R7）
+====================================================================
+
+[0] 为什么必须用干净快照
+--------------------------------------------------------------------
+工作树当时有 50 项未提交改动（其它 lane 的 WIP），不是干净快照。
+快照做法：git archive HEAD（只含 committed 代码）→ 解包到工作区 temp；
+node_modules 用 junction 指回工作树的依赖目录；manual/golden-path 是未追踪目录，按文件复制进快照。
+本 lane 没有 commit / push / 切分支 / stash / 直接改库。
+
+[1] 第一次取快照（HEAD=4a5dfd3）→ 干净快照跑不起来（后由 30f501c 修复）
+--------------------------------------------------------------------
+$ git -C <repo> archive --format=tar HEAD -o head.tar
+$ tar -xf head.tar -C <snapshot-4a5dfd3>
+$ cd <snapshot-4a5dfd3>/dsh/dsh-recruitment
+$ node manual/golden-path/run-golden-path-rerun.mjs
+
+真实输出（stderr，EXIT=1）：
+  file:///D:/12412/dsh%E5%B7%A5%E4%BD%9C%E5%8C%BA/temp/2026-11-14-golden-path-rerun-snapshot/dsh/dsh-recruitment/src/tools/application-intake.ts:67
+  import { MEDIA_DOCX, MEDIA_PDF, MEDIA_RTF } from '../document/readers/media.ts'
+                                  ^^^^^^^^^
+  SyntaxError: The requested module '../document/readers/media.ts' does not provide an export named 'MEDIA_RTF'
+      at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+      at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+      at async node:internal/modules/esm/loader:633:26
+
+判定：4a5dfd3 的 `application-intake.ts` 已引用 `MEDIA_RTF`，但 `media.ts` 的同名导出当时还没提交
+（工作树里有、commit 里没有）→ clean checkout 无法 import intake。该提交随后由 30f501c
+（`feat(document): RTF 进格式覆盖…（修 4a5dfd3 的 media.ts 缺导出）`）修复。
+本 lane 因此把官方复跑固定在 30f501c 快照上（见 [2]），没有在坏快照上绕过。
+
+[2] 官方快照（HEAD=30f501c）与依赖接线
+--------------------------------------------------------------------
+$ git -C <repo> rev-parse HEAD
+30f501c9d98afc38404288e0a8857ea0f6165a5b
+
+$ git -C <repo> archive --format=tar HEAD -o head.tar
+$ tar -xf head.tar -C D:\12412\dsh工作区\temp\2026-11-14-golden-path-rerun-snapshot-30f501c
+$ New-Item -ItemType Junction -Path <snap>\dsh\dsh-recruitment\node_modules -Target <repo>\dsh\dsh-recruitment\node_modules
+$ Copy-Item <repo>\dsh\dsh-recruitment\manual\golden-path <snap>\dsh\dsh-recruitment\manual\ -Recurse
+
+[3] 生成合成 fixture（R7：全新合成身份 gp8，避开历史合成数据）
+--------------------------------------------------------------------
+$ python manual/golden-path/fixtures/build_synthetic_resume.py `
+    manual/golden-path/fixtures/gp-rerun-2 "136 0000 0888" "lin.chengyu.gp8@example.test"
+
+真实输出：
+WROTE D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\manual\golden-path\fixtures\gp-rerun-2\synthetic-resume-golden-path.pdf
+bytes=10919 sha256=aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df
+
+[4] 官方复跑（提交式写库：真实 tool.execute()，不是回滚事务）
+--------------------------------------------------------------------
+$ cd <snap>\dsh\dsh-recruitment
+$ $env:RECRUITMENT_DB_PASSWORD='<本机演示库密码，按约定注入，不落盘>'
+$ $env:GOLDEN_PATH_HEAD='30f501c9d98afc38404288e0a8857ea0f6165a5b'
+$ node manual/golden-path/run-golden-path-rerun.mjs
+
+EXIT=0
+应用 id：5b16c710-d75c-4a26-ab19-0b9c0591be1e
+面试 id：cc3403e6-3bd2-48c8-b4f0-db5812054437
+
+真实输出（HOP 汇总表；完整 68,702 bytes 见 run-2026-11-14T13-03-45-994Z/run.log
+与 console-run-official.log）：
+
+hop | kind             | id                        | outcome | error/reason                          | row delta
+----+------------------+---------------------------+---------+---------------------------------------+----------
+  1 | write            | s6-intake                 | PASS    |                                       | {"application":1,"candidate":1,"event_inbox":1,"intake_asset":1,"intake_record":1,"resume":1,"resume_version":1}
+  2 | write            | s6s7-stage-advance        | PASS    |                                       | {"event_inbox":1}
+  3 | read             | s7-screening-evaluate     | PASS    |                                       | {}
+  4 | write            | s7-decision-screening     | PASS    |                                       | {"decision":1,"event_inbox":1}
+  5 | write            | s7s8-stage-advance        | PASS    |                                       | {"event_inbox":1}
+  6 | negative-control | s8-schedule-denied        | PASS    | FORBIDDEN/APPROVAL_NOT_GRANTED        | {}
+  7 | write            | s8-schedule-allow-once    | PASS    |                                       | {"business_task":1,"interview":1,"interviewer":2,"meeting":1,"meeting_binding":1}
+  8 | read             | s8-interview-get          | PASS    |                                       | {}
+  9 | write            | s9-transcript-import      | PASS    |                                       | {"interview_record":1,"transcript_artifact":1,"transcript_segment":11}
+ 10 | read             | s9-transcript-read        | PASS    |                                       | {}
+ 11 | negative-control | s10-scorecard-denied      | PASS    | FORBIDDEN/APPROVAL_NOT_GRANTED        | {}
+ 12 | write            | s10-scorecard-allow-once  | PASS    |                                       | {"event_inbox":1,"scorecard":1}
+ 13 | write            | s10-scorecard-2           | PASS    |                                       | {"event_inbox":1,"scorecard":1}
+ 14 | read             | s10-evaluation-summarize  | PASS    |                                       | {}
+ 15 | write            | s10-decision-stage        | PASS    |                                       | {"decision":1,"event_inbox":1}
+ 16 | read             | s10-stage-advance-after-decision | PASS    |                                       | {}
+
+产品缺陷阻断跳（expected-blocker 且被拒）：无
+闸门负例（期望被拒）：HOP6(s8-schedule-denied) BLOCKED FORBIDDEN/APPROVAL_NOT_GRANTED delta={} ;
+                     HOP11(s10-scorecard-denied) BLOCKED FORBIDDEN/APPROVAL_NOT_GRANTED delta={}
+意外失败（outcome=FAIL）：0 个
+阶段码终值：S8（stage_advance 梯子终值=S8）
+
+行数对比（预检 → 终态，只列变化）：
+{"application":1,"business_task":1,"candidate":1,"decision":2,"event_inbox":7,"intake_asset":1,
+ "intake_record":1,"interview":1,"interview_record":1,"interviewer":2,"meeting":1,"meeting_binding":1,
+ "resume":1,"resume_version":1,"scorecard":2,"transcript_artifact":1,"transcript_segment":11}
+
+[5] 独立 DB 读回（不 import 任何产品代码，只发 SELECT）
+--------------------------------------------------------------------
+$ node manual/golden-path/db-readback.mjs 5b16c710-d75c-4a26-ab19-0b9c0591be1e
+
+EXIT=0
+完整真实输出：db-readback-independent.txt
+
+[6] harness 差异（原版 run-golden-path.mjs 未改，派生版逐条改动可 diff）
+--------------------------------------------------------------------
+$ git diff --no-index manual/golden-path/run-golden-path.mjs manual/golden-path/run-golden-path-rerun.mjs
+输出：harness-diff.txt（604 行；每处改动的原因见 README「harness 变更」）
+
+[7] 非官方尝试 0（暴露"固定面试时间撞共享库旧数据"，非产品缺陷）
+--------------------------------------------------------------------
+第一次官方尝试用同一快照 + gp7 合成身份 + 旧常量 SCHEDULED_START_AT=2026-12-02T10:00:00+08:00：
+$ node manual/golden-path/run-golden-path-rerun.mjs      # EXIT=1
+
+真实失败（HOP 7，工具自己返回的契约错误）：
+  CONFLICT_SLOT / INTERVIEWER_BUSY
+  detail.conflicts[0] = {"actor_id":"…0103","kind":"INTERVIEWER",
+                         "ref_id":"6efc6919-0d63-4f80-847c-4813c6b5a475","ref_kind":"INTERVIEW"}
+  message: 面试官在 2026-12-02T02:00:00.000Z 起的时段已有另一场面试（buffer=0 分钟）
+  row delta: {}
+
+原因：`6efc6919…` 是**旧报告 run A** 在同一个共享库 `ra_s6s7` 里创建的面试（同样两位面试官、
+同样 2026-12-02 10:00+08）。两个不同申请安排同一面试官同一时段 → 工具正确地 fail closed。
+处理：只改 harness 常量 SCHEDULED_START_AT → 2026-12-09T10:00:00+08:00（对 103/104 空闲），
+不放宽任何冲突校验；随后官方 run 在 HOP 7 PASS。完整输出：console-attempt-0-slot-collision.log
+
+[8] 复跑前置（都属"环境"，不是手工造数据）
+--------------------------------------------------------------------
+- 数据库 ra_s6s7：迁移 0001–0014 已应用（本机另有其它 lane 的 0015，见边界说明）；
+- 演示租户 / actor / 岗位 DEMO-BE-001 / 已批准 rubric v2（…0404）来自 0002_seed
+  （与旧报告同一前置；旧报告 S6 之前也依赖它）；
+- 面试官 103 / 104 在 2026-12-09 10:00 无冲突（实测查库确认）；
+- 没有手工 UPDATE 任何业务行、没有手工钉 rubric、没有跳过任何校验。
