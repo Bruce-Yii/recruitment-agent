@@ -79,7 +79,7 @@ JSON 必须**单行、键序稳定（字典序）**，可 `JSON.parse`。
 
 | 维度 | 取值 | `get` 的含义 | `schedule` 的含义 |
 |---|---|---|---|
-| `provenance` | `LIVE` \| `FIXTURE` | `LIVE` = 数据来自真实数据库行；**不**断言面试在业务上真实发生 | 按 `contracts/tenant-provenance.md §2` 的判定式算：`LIVE` 需要该租户**被显式声明为非合成**；缺声明 / 有合成标记 ⇒ `FIXTURE`（**不再**用"这次真的写进了库"当 `LIVE` 证据） |
+| `provenance` | `LIVE` \| `FIXTURE` | 按 `contracts/tenant-provenance.md §2.1` 的判定式算：`LIVE` 需要该租户**被显式声明为非合成**；缺声明 / 有合成标记 ⇒ `FIXTURE`（**2026-11-14 修正**：不再用"读到了业务库行"当 `LIVE` 证据——演示租户的行同样读得到。`get` 原先写死 `LIVE`，属 `docs/23` P2-03 漏网的第 4 处） | 按 `contracts/tenant-provenance.md §2` 的判定式算：`LIVE` 需要该租户**被显式声明为非合成**；缺声明 / 有合成标记 ⇒ `FIXTURE`（**不再**用"这次真的写进了库"当 `LIVE` 证据） |
 | `trigger` | `EVENT` \| `MANUAL` | `MANUAL` = 模型/人在会话里调用 | `MANUAL`（本工具不被事件驱动） |
 | `connection` | `CONNECTED` \| `NOT_CONNECTED` \| `AUTH_REQUIRED` | `CONNECTED` = 直连业务库（**与外部会议平台无关**） | **恒为 `NOT_CONNECTED`** |
 
@@ -123,7 +123,7 @@ JSON 必须**单行、键序稳定（字典序）**，可 `JSON.parse`。
   "contract_version": "1.0.0",
   "status": "OK",
   "read_only": true,
-  "labels": { "provenance": "LIVE", "trigger": "MANUAL", "connection": "CONNECTED" },
+  "labels": { "provenance": "FIXTURE", "trigger": "MANUAL", "connection": "CONNECTED" },
   "as_of": "2026-11-13T00:00:00+08:00",
   "query": { "mode": "BY_INTERVIEW", "interview_id": "…", "application_id": null, "round_no": null },
   "count": 1,
@@ -265,7 +265,7 @@ Error: NO_TRANSCRIPT: {"code":"NO_TRANSCRIPT","reason_code":"NO_MEETING_BOUND","
 ```text
 recruitment_interview_get {"interview_id":"0199c0de-0000-7000-8000-000000000101"}
 → interview 0199…0101  round=1 slot=DEFAULT  [SCHEDULED]  2026-11-20 10:00–11:00 (+08:00)
-  (labels: LIVE/MANUAL/CONNECTED)  as_of=2026-11-13T00:00:00+08:00
+  (labels: FIXTURE/MANUAL/CONNECTED)  as_of=2026-11-13T00:00:00+08:00
   interviewers: 李工(required, SUBMITTED rev1/TRANSCRIPT) · 王工(required, PENDING)
   meeting_binding: BOUND_ACTIVE  FEISHU evt_1 → PRIMARY  (binding_method=SCHEDULED)
   transcript: READY  canonical=…@rev1  segments=412  1/1 artifacts ready
@@ -391,7 +391,7 @@ recruitment_interview_get {"interview_id":"0199c0de-0000-7000-8000-000000000101"
   "status": "OK",
   "write": true,
   "replayed": false,
-  "labels": { "provenance": "LIVE", "trigger": "MANUAL", "connection": "NOT_CONNECTED" },
+  "labels": { "provenance": "FIXTURE", "trigger": "MANUAL", "connection": "NOT_CONNECTED" },
   "intent": "CREATE",
   "command": { "idempotency_key": "hire-42-r1-default-v1", "args_digest": "sha256:9c1e…" },
 

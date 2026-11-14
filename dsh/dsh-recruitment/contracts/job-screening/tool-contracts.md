@@ -75,7 +75,7 @@ Error: <CODE>: <compact-json>
 
 | 维度 | 取值 | `recruitment_job_get` 的含义 | `recruitment_screening_evaluate` 的含义 |
 |---|---|---|---|
-| `provenance` | `LIVE` \| `FIXTURE` | `LIVE` = 数据来自真实数据库行；**不**断言岗位在业务上真实 | `LIVE` = 简历材料可追到 `event_inbox.provider ≠ 'internal'` 的真实链路；否则 `FIXTURE` |
+| `provenance` | `LIVE` \| `FIXTURE` | 按 `contracts/tenant-provenance.md §2.1` 的判定式算：`LIVE` 需要该租户**被显式声明为非合成**；缺声明 / 有合成标记 ⇒ `FIXTURE`（**2026-11-14 修正**：不再用"读到了业务库行"当 `LIVE` 证据——演示租户的行同样读得到） | `LIVE` = 简历材料可追到 `event_inbox.provider ≠ 'internal'` 的真实链路；否则 `FIXTURE` |
 | `trigger` | `MANUAL` | 模型/人在会话里调用 | 同左 |
 | `connection` | `CONNECTED` \| `NOT_CONNECTED` | `CONNECTED` = 直连业务库 | 同左（**与外部连接器无关**） |
 
@@ -89,6 +89,12 @@ provenance = 'LIVE'
 ```
 
 > **不因 `provenance='FIXTURE'` 就降级 `verdict`**：本工具只贴标签，不据此改判。是否允许 fixture 数据产生真实决策，由 D-1（demo gate 需 `provenance=LIVE`）在**写侧**决定。这条边界必须写死，否则会出现"演示数据被判成不合格"或"合成数据冒充真实通过"两种事故。
+
+> **`job_get` 的判定式（2026-11-14 修正，`docs/23` P2-03 漏网的第 3 处）**：`job_get` 原先写死
+> `provenance: 'LIVE'`（因为"读到了业务库行"）。现按 `contracts/tenant-provenance.md §2.1` **每次调用算**：
+> 演示租户 / 缺 `tenant_provenance` 声明 / 有 `stage_catalog.demo=true` ⇒ `FIXTURE`，fail-closed。
+> 机检：`test/unit/label-honesty.test.ts`（源码扫描 + 白名单）、
+> `test/integration/label-honesty-db.test.ts`（真库：演示租户 `FIXTURE`，显式声明非合成 ⇒ `LIVE`）。
 
 ---
 
@@ -111,7 +117,7 @@ provenance = 'LIVE'
 {
   "tool": "recruitment_job_get",
   "contract_version": "1.0.0",
-  "labels": { "provenance": "LIVE", "trigger": "MANUAL", "connection": "CONNECTED" },
+  "labels": { "provenance": "FIXTURE", "trigger": "MANUAL", "connection": "CONNECTED" },
   "as_of": "2026-11-13T00:00:00+08:00",
   "job": {
     "id": "…", "code": "BE-001", "title": "后端工程师",
@@ -199,7 +205,7 @@ Error: NOT_FOUND: {"code":"NOT_FOUND","reason_code":"RUBRIC_VERSION_NOT_FOUND","
 
 ```text
 recruitment_job_get {"job_id":"0199c0de-0000-7000-8000-000000000001"}
-→ job BE-001 后端工程师 [OPEN]  (labels: LIVE/MANUAL/CONNECTED)
+→ job BE-001 后端工程师 [OPEN]  (labels: FIXTURE/MANUAL/CONNECTED)   # ra_s6s7 是演示租户；声明非合成的租户才是 LIVE
   job_version v2  hash=3f2a… approved_by_approval_id=…
   rubric v2 (is_current=true, is_approved=true, resolution=JOB_CURRENT, executable=true)
     backend_years  [MUST_HAVE]      w=0.4  timeline.covered_months_closed GTE 60

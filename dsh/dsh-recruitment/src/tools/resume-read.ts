@@ -5,6 +5,13 @@
 //
 // 字段三态是硬约束：present / absent / unreadable。unreadable 绝不能当 absent，
 // 因为下游会把 absent 当"候选人确实没有这项"（见 doc 11 §9.2）。
+//
+// R4（`contracts/tenant-provenance.md` §2.1）：本工具是**唯一**真的读外部字节的读工具
+// （真起 converter 子进程读磁盘上的 PDF），所以它可能合理地标 `LIVE`。但 `LIVE` 不是常量：
+// 依据是 converter 对实际文件字节算出的 SHA-256（`meta.source_sha256`）。拿不到该 digest
+// ⇒ fail-closed 成 `FIXTURE` + `provenance_evidence_missing` issue，绝不"默认 LIVE"。
+// 边界：`LIVE` 只断言"字节来自真实文件且 digest 可复核"，**不**断言"这是真人简历、
+// 不是演示件"——本工具没有租户/事件链证据去回答后者（那是 S6 intake / S7 证据链的问题）。
 
 import { parseArgs, toParameterSchema } from './args.ts'
 import type { ParamMap } from './args.ts'
@@ -21,6 +28,50 @@ import {
 const RESUME_BLOCK_TYPES = ['paragraph', 'link', 'heading'] as const
 const FIELD_NAMES = ['name', 'phone', 'email', 'work_experience', 'education'] as const
 const FIELD_STATES = ['present', 'absent', 'unreadable'] as const
+
+/**
+ * `provenance` 的依据码（闭集；逐字进输出，不写自由文本）。
+ *
+ * R4：`LIVE` 必须**有证据**。本工具唯一的证据是 converter 对**实际文件字节**算出的
+ * SHA-256（`meta.source_sha256`）——它证明了"这些 block 来自那份真实文件"。
+ * 拿不到这个 digest ⇒ 不许自称 `LIVE`，fail-closed 成 `FIXTURE`。
+ *
+ * 边界（必须写在契约里，不许读者自行放大）：这里 `LIVE` 只断言"字节来自真实文件且可复核"，
+ * **不**断言"这份简历是真人材料、不是演示件"。后者本工具无从判断（没有租户/事件链证据）。
+ */
+const PROVENANCE_BASES = ['FILE_BYTES_SHA256_VERIFIED', 'NO_READ_EVIDENCE'] as const
+type ProvenanceBasis = (typeof PROVENANCE_BASES)[number]
+
+/** 64 位小写 hex（SHA-256 的文本形状）。 */
+const SHA256_HEX = /^[0-9a-f]{64}$/
+
+/** 一次读取的"证据是否成立"：LIVE 的唯一依据。 */
+interface ReadEvidence {
+  /** true = `source.sha256` 是真实文件字节的 digest（且文档有页、有解析后端）。 */
+  readonly verified: boolean
+  /** 依据码（`LIVE` ⇔ `FILE_BYTES_SHA256_VERIFIED`）。 */
+  readonly basis: ProvenanceBasis
+  /** 归一化后的 digest（'' = converter 没给）。 */
+  readonly sha256: string
+}
+
+/**
+ * 从 converter 输出里取"这次读取有没有证据"。
+ * 只认 **converter 自算**的 `meta.source_sha256`；不接受调用方自报的任何值。
+ * @param output - converter 的原始输出（不可信输入）。
+ * @returns 证据结论（`verified=false` 时调用方必须 fail-closed）。
+ */
+function readEvidenceOf(output: ConverterOutput): ReadEvidence {
+  const raw = typeof output.meta?.source_sha256 === 'string' ? output.meta.source_sha256.trim().toLowerCase() : ''
+  const pages = typeof output.meta?.pages === 'number' ? output.meta.pages : 0
+  const backend = typeof output.meta?.backend === 'string' ? output.meta.backend.trim() : ''
+  const verified = SHA256_HEX.test(raw) && pages > 0 && backend !== ''
+  return {
+    verified,
+    basis: verified ? 'FILE_BYTES_SHA256_VERIFIED' : 'NO_READ_EVIDENCE',
+    sha256: raw,
+  }
+}
 
 const PARAMS: ParamMap = {
   path: {
@@ -58,7 +109,13 @@ interface FieldValue {
 }
 
 interface ResumeReadValue {
-  readonly provenance: 'LIVE'
+  /**
+   * R4 数据真假。`LIVE` **当且仅当** {@link readEvidenceOf} 判定读取证据成立
+   * （converter 对实际字节算了 SHA-256）；否则 `FIXTURE`（fail-closed）。
+   */
+  readonly provenance: 'LIVE' | 'FIXTURE'
+  /** `provenance` 的依据码（闭集）：`LIVE` ⇔ `FILE_BYTES_SHA256_VERIFIED`。 */
+  readonly provenance_basis: ProvenanceBasis
   readonly stub: false
   readonly source: {
     readonly file_name: string
@@ -92,7 +149,18 @@ interface ResumeReadValue {
 const OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
-    provenance: { type: 'string', enum: ['LIVE'] },
+    provenance: {
+      type: 'string',
+      enum: ['LIVE', 'FIXTURE'],
+      description: '数据真假（R4）。LIVE 当且仅当 provenance_basis=FILE_BYTES_SHA256_VERIFIED；'
+        + '拿不到文件字节 digest 时 fail-closed 成 FIXTURE。',
+    },
+    provenance_basis: {
+      type: 'string',
+      enum: [...PROVENANCE_BASES],
+      description: 'LIVE 的依据：FILE_BYTES_SHA256_VERIFIED = source.sha256 是 converter 对实际文件字节算的'
+        + ' 64 位 hex（可复核）；NO_READ_EVIDENCE = 没有这个 digest，因此只能是 FIXTURE。',
+    },
     stub: { type: 'boolean', enum: [false] },
     source: {
       type: 'object',
@@ -185,7 +253,7 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
     needs_visual: { type: 'boolean' },
   },
   required: [
-    'provenance', 'stub', 'source', 'blocks', 'block_count', 'truncated',
+    'provenance', 'provenance_basis', 'stub', 'source', 'blocks', 'block_count', 'truncated',
     'fields', 'screening', 'issues', 'needs_visual',
   ],
   additionalProperties: false,
@@ -234,8 +302,23 @@ export function toValue(output: ConverterOutput, maxBlocks: number, wanted?: rea
     FIELD_NAMES.map((name) => [name, toFieldValue(output.fields, name)]),
   ) as Record<string, FieldValue>
   const screening = output.screening ?? {}
+  // R4：provenance 由**这次读取的证据**算，不是常量。证据不成立时补一条 issue，让调用方
+  // 看得到"为什么不是 LIVE"，而不是只看到一个静默降级的标签。
+  const evidence = readEvidenceOf(output)
+  const issues = (output.issues ?? []).map((i) => ({
+    code: i.code ?? 'unknown_issue',
+    message: i.message ?? '',
+  }))
+  if (!evidence.verified) {
+    issues.push({
+      code: 'provenance_evidence_missing',
+      message: 'converter 没有给出可复核的文件字节 SHA-256（或页数/解析后端缺失）：'
+        + '本次读取无法证明"这些 block 来自真实文件字节"，provenance 只能是 FIXTURE',
+    })
+  }
   return {
-    provenance: 'LIVE',
+    provenance: evidence.verified ? 'LIVE' : 'FIXTURE',
+    provenance_basis: evidence.basis,
     stub: false,
     source: {
       file_name: output.meta?.source_name ?? '',
@@ -259,10 +342,7 @@ export function toValue(output: ConverterOutput, maxBlocks: number, wanted?: rea
       identity_merge_eligible: screening.identity_merge_eligible ?? [],
       protected_excluded: screening.protected_excluded ?? [],
     },
-    issues: (output.issues ?? []).map((i) => ({
-      code: i.code ?? 'unknown_issue',
-      message: i.message ?? '',
-    })),
+    issues,
     needs_visual: output.needs_visual === true,
   }
 }
@@ -276,7 +356,11 @@ export function createResumeReadTool(cfg: ResolvedConverterConfig): ReadonlyTool
       + 'plus name/phone/email/work_experience/education in a three-state form '
       + '(present | absent | unreadable). Read-only: no database, no writes. '
       + 'unreadable must never be treated as absent. Returns FORBIDDEN for paths outside '
-      + 'the configured roots and NOT_FOUND for missing files.',
+      + 'the configured roots and NOT_FOUND for missing files. '
+      + 'R4 labels: provenance=LIVE only when the converter reported a verifiable SHA-256 of the actual file '
+      + 'bytes (provenance_basis=FILE_BYTES_SHA256_VERIFIED); otherwise FIXTURE (fail-closed, with a '
+      + 'provenance_evidence_missing issue). LIVE means "these blocks come from those real file bytes", not '
+      + '"this resume belongs to a real person".',
     parameters: toParameterSchema(PARAMS),
     output: {
       schema: OUTPUT_SCHEMA,
@@ -287,6 +371,7 @@ export function createResumeReadTool(cfg: ResolvedConverterConfig): ReadonlyTool
           `pages=${v.source.pages} backend=${v.source.backend} `
             + `completeness=${v.source.completeness} order_verified=${String(v.source.order_verified)}`,
           `sha256=${v.source.sha256}`,
+          `provenance=${v.provenance} (basis=${v.provenance_basis})`,
           `blocks: ${v.blocks.length} of ${v.block_count} (truncated=${String(v.truncated)})`,
           '',
           'fields:',
