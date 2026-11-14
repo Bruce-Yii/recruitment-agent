@@ -135,6 +135,19 @@ jobs:
         working-directory: dsh/dsh-recruitment
         run: pnpm install --frozen-lockfile
 
+      # 插件测试会调真实 converter（Python）并生成合成 fixture，需要
+      # PyMuPDF + python-docx + Pillow。缺了不是 skip 而是**失败**（fixtures.ts 明确
+      # 要求"找不到就 fail，不许静默跳过"），所以 CI 必须装。首次真跑就是死在这里。
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python deps for plugin tests
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet -r converter/requirements.txt
+
       - name: Run plugin tests
         working-directory: dsh/dsh-recruitment
         # R3：必须报 passed / failed / skipped 三个数，`skipped > 0` 不得宣称全绿。
