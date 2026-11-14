@@ -77,6 +77,40 @@ function code(prefix: string): string {
 }
 
 /**
+ * 深扫"DSH 注册表会拒收"的值，返回路径（空数组 = 可以安全输出）。
+ *
+ * 为什么要这条断言（2026-11-14 E1–E4 审计 F-1）：`pg` 把 `timestamptz` 解析成
+ * **`Date` 对象**，`toRoleView` / `toTeamView` / `toPipelineView` 曾经原样把它放进
+ * 出参，于是 `recruitment_config_role` 在真实 DSH 会话里能执行、却被注册表以
+ * `value is not lossless JSON` 整次拒收——模型完全拿不到结果。
+ * 这里只扫本仓出参可能出现的违规形态（非普通对象 / undefined / 非有限数 / 循环引用）。
+ * @param value - 工具出参值。
+ * @param path - 报错路径。
+ * @param ancestors - 当前递归栈（判环）。
+ * @returns 违规路径数组。
+ */
+function nonJsonPaths(value: unknown, path = 'value', ancestors = new Set<object>()): string[] {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') return []
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && !Object.is(value, -0) ? [] : [`${path} 不是有限数`]
+  }
+  if (typeof value !== 'object') return [`${path} 是 ${typeof value}（JSON 里没有）`]
+  if (ancestors.has(value)) return [`${path} 是循环引用`]
+  const prototype = Object.getPrototypeOf(value) as object | null
+  ancestors.add(value)
+  const out = Array.isArray(value)
+    ? (prototype === Array.prototype ? [] : [`${path} 不是普通数组`])
+      .concat(value.flatMap((item, index) => nonJsonPaths(item, `${path}[${index}]`, ancestors)))
+    : (prototype === Object.prototype || prototype === null
+      ? []
+      : [`${path} 不是普通对象（${(prototype as { constructor?: { name?: string } }).constructor?.name ?? '?'} 实例）`])
+      .concat(Object.entries(value as Record<string, unknown>)
+        .flatMap(([key, child]) => nonJsonPaths(child, `${path}.${key}`, ancestors)))
+  ancestors.delete(value)
+  return out
+}
+
+/**
  * 造第二租户（B）+ 它的部门 + 一个 HUMAN actor。**只在本事务里**存在（随 ROLLBACK 消失）。
  * @param client - 测试事务。
  * @returns B 租户的 id 集合。
@@ -923,6 +957,17 @@ test('C19 工具层：三个 create 工具真实执行成功（tenant 来自插�
       name: '工具层流程',
     }) as { status: string; pipeline?: { pipeline_template_id: string; record_version: number } }
     assert.equal(pipelineValue.status, 'CREATED')
+
+    // 回归（2026-11-14 E1–E4 审计 F-1）：list 正是当时被 DSH 注册表拒收的那个动作。
+    // 此刻库里确有刚建的行，`pg` 会把 timestamptz 解析成 Date；领域映射必须已经把它
+    // 变成 ISO 文本，否则列表里每一行都会让整次调用 "value is not lossless JSON"。
+    for (const [label, listed] of [
+      ['config_role', await roleTool.execute({ operation: 'list' })],
+      ['config_team', await teamTool.execute({ operation: 'list' })],
+      ['config_pipeline', await pipelineTool.execute({ operation: 'list' })],
+    ] as const) {
+      assert.deepEqual(nonJsonPaths(listed), [], `${label} list 出参里有 DSH 会拒收的非 JSON 值`)
+    }
 
     // 工具层错误格式：`<CODE>: <compact-json>`（这个用例不写库 = 事务不会 abort，直接断言）
     await assert.rejects(
