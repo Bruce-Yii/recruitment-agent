@@ -1,0 +1,290 @@
+psql:db/verify-0003.sql:313: 注意:  STRUCT-01 PASS 三张表都存在
+psql:db/verify-0003.sql:313: 注意:  STRUCT-02 PASS 三张表都是单列 uuid 主键，列名 = id
+psql:db/verify-0003.sql:313: 注意:  STRUCT-03 PASS 三张表都有 NOT NULL tenant_id + 外键到 organization
+psql:db/verify-0003.sql:313: 注意:  STRUCT-04 PASS 字段齐全且字段数精确（16 / 13 / 9）
+psql:db/verify-0003.sql:313: 注意:  STRUCT-05 PASS 状态 CHECK 覆盖全部取值（4 / 6 / 6）
+psql:db/verify-0003.sql:313: 注意:  STRUCT-06 PASS 外键 1/3/3，run 引用是带 tenant_id 的复合外键
+psql:db/verify-0003.sql:313: 注意:  STRUCT-07 PASS source_sha256 有索引（按文件查历史）
+psql:db/verify-0003.sql:313: 注意:  STRUCT-08 PASS 8 个触发器齐全（审计触发器覆盖 INSERT+UPDATE）
+psql:db/verify-0003.sql:313: 注意:  STRUCT-09 PASS 三个视图都在
+psql:db/verify-0003.sql:313: 注意:  STRUCT-10 PASS 唯一索引齐全（入队一次性 / 迁移一次性）
+psql:db/verify-0003.sql:313: 注意:  STRUCT-11 PASS 约束总数精确（conversion_run 19 / review_queue 18 / review_audit 8）
+psql:db/verify-0003.sql:313: 注意:  STRUCT-12 PASS 约束口径自洽（information_schema CHECK = 真实 CHECK + NOT NULL）
+psql:db/verify-0003.sql:367: 注意:  MATRIX PASS 36 格 / 8 条允许边；QUEUED→APPROVED 等跨级跳全部禁止
+psql:db/verify-0003.sql:479: 注意:  HUM-01 PASS 入队即 QUEUED、有 24h deadline、审计自动写了「∅ → QUEUED」
+psql:db/verify-0003.sql:511: 注意:  HUM-02/03 PASS 未结案时 gate=PENDING_REVIEW 且 blocking=true（下游只能显示「待核」）
+psql:db/verify-0003.sql:550: 注意:  HUM-05 PASS machine_result 原样保留、human_result 另存一份、record_version=3
+psql:db/verify-0003.sql:612: 注意:  AUDIT PASS 4 条审计按序可查（入队/受理/补正/放行），APPROVED 已写 closed_at
+psql:db/verify-0003.sql:635: 注意:  GATE PASS 人工放行后 CLEARED 且不再阻断下游
+psql:db/verify-0003.sql:650: 注意:  CONCURRENCY PASS 旧 record_version=1 更新 0 行（调用方必须重读，不能盲写）
+psql:db/verify-0003.sql:724: 注意:  AUDIT-EDIT PASS deadline 只能延长且内容编辑留痕（QUEUED→QUEUED，record_version=2）
+psql:db/verify-0003.sql:757: 注意:  OBS-02 PASS 同一 sha256 两条记录、id 不同、历史判定未被覆盖
+psql:db/verify-0003.sql:795: 注意:  OBS-04 PASS 四个维度命中同一批记录
+psql:db/verify-0003.sql:813: 注意:  HUM-04 PASS 三天前入队的条目 overdue=true、age_hours=72.00（升级查询：where overdue）
+psql:db/verify-0003.sql:845: 注意:  LEDGER PASS 漏记 1 条（R3）被 gate 标成 UNACCOUNTED 并阻断
+psql:db/verify-0003.sql:991: 注意:  N01 PASS [QUEUED 直接跳到 APPROVED（跳过受理）] => sqlstate=23514 | QUEUE_ILLEGAL_TRANSITION: QUEUED → APPROVED 不在允许的 8 条边内（见 fn_review_transition_allowed）
+psql:db/verify-0003.sql:991: 注意:  N02 PASS [IN_REVIEW 退回 QUEUED（要交接只能改 assignee）] => sqlstate=23514 | QUEUE_ILLEGAL_TRANSITION: IN_REVIEW → QUEUED 不在允许的 8 条边内（见 fn_review_transition_allowed）
+psql:db/verify-0003.sql:991: 注意:  N03 PASS [终态 APPROVED 再迁回 IN_REVIEW] => sqlstate=23514 | QUEUE_ILLEGAL_TRANSITION: APPROVED → IN_REVIEW 不在允许的 8 条边内（见 fn_review_transition_allowed）
+psql:db/verify-0003.sql:991: 注意:  N04 PASS [CORRECTED 缺 human_result] => sqlstate=23514 | QUEUE_CORRECTED_NEEDS_HUMAN_RESULT: CORRECTED 必须同时写入 human_result
+psql:db/verify-0003.sql:991: 注意:  N05 PASS [终态决策沿用上一步理由（没给本次理由）] => sqlstate=23514 | QUEUE_REASON_REQUIRED: APPROVED 必须给出本次决策理由（reason 必须为新值，不得沿用 IN_REVIEW）
+psql:db/verify-0003.sql:991: 注意:  N06 PASS [入队引用不存在的 run] => sqlstate=23503 | QUEUE_RUN_NOT_FOUND: run cccccccc-0000-0000-0000-0000000000ff 不存在或不属于租户 aaaaaaaa-0000-0000-0000-0000000000a1
+psql:db/verify-0003.sql:991: 注意:  N07 PASS [跨租户：乙租户的条目引用甲租户的 run] => sqlstate=23503 | QUEUE_RUN_NOT_FOUND: run cccccccc-0000-0000-0000-000000000004 不存在或不属于租户 aaaaaaaa-0000-0000-0000-0000000000b1
+psql:db/verify-0003.sql:991: 注意:  N08 PASS [状态迁移没有 actor（没有 SET LOCAL）] => sqlstate=23514 | ACTOR_REQUIRED: 缺少 actor —— 调用方必须先 SET LOCAL recruitment.actor_id = '<actor uuid>'（D-18）
+psql:db/verify-0003.sql:991: 注意:  N09 PASS [用别的租户的 actor 操作甲租户的条目] => sqlstate=23503 | ACTOR_TENANT_MISMATCH: actor 22222222-0000-0000-0000-000000000001 不存在或不属于租户 aaaaaaaa-0000-0000-0000-0000000000a1
+psql:db/verify-0003.sql:991: 注意:  N10 PASS [同一个 run 重复入队] => sqlstate=23505 | 重复键违反唯一约束"uq_review_queue_run"
+psql:db/verify-0003.sql:991: 注意:  N11 PASS [ACCEPTED 的 run 入队（兜底队列只收机器判不了的）] => sqlstate=23514 | QUEUE_ACCEPTED_RUN: run cccccccc-0000-0000-0000-000000000002 已 ACCEPTED，不入人工兜底队列（④ 只收机器判不了的）
+psql:db/verify-0003.sql:991: 注意:  N12 PASS [新条目带 human_result（人工结论只能受理后出现）] => sqlstate=23514 | QUEUE_BAD_INITIAL_STATE: 新条目不允许带 human_result（人工结论只在受理之后出现）
+psql:db/verify-0003.sql:991: 注意:  N13 PASS [改写 machine_result（HUM-05：两份都保留）] => sqlstate=23514 | QUEUE_IMMUTABLE: id / run_id / tenant_id / opened_at / machine_result 不可修改（HUM-05：机器结果与人工结果两份都保留）
+psql:db/verify-0003.sql:991: 注意:  N14 PASS [手改 closed_at（只能由触发器写）] => sqlstate=23514 | QUEUE_CLOSED_AT_TRIGGER_ONLY: closed_at 由触发器维护，不接受直接赋值
+psql:db/verify-0003.sql:991: 注意:  N15 PASS [缩短 deadline（只能延长）] => sqlstate=23514 | QUEUE_DEADLINE_NOT_EXTENDED: deadline 只能延长（2026-11-15 20:11:59.543048+08 → 2026-11-15 19:11:59.543048+08）
+psql:db/verify-0003.sql:991: 注意:  N16 PASS [删除队列条目（历史不可物理删）] => sqlstate=23514 | DELETE_FORBIDDEN: recruitment.review_queue 是历史事实，不允许物理删除（只允许追加或软关闭；docs/03 §4 不变量 2 / §6 / §11）
+psql:db/verify-0003.sql:991: 注意:  N17 PASS [改写 conversion_run（历史不可覆盖）] => sqlstate=23514 | IMMUTABLE_COLUMN: recruitment.conversion_run 的列 status 不允许修改（允许修改的列：（无））
+psql:db/verify-0003.sql:991: 注意:  N18 PASS [删除 conversion_run] => sqlstate=23514 | DELETE_FORBIDDEN: recruitment.conversion_run 是历史事实，不允许物理删除（只允许追加或软关闭；docs/03 §4 不变量 2 / §6 / §11）
+psql:db/verify-0003.sql:991: 注意:  N19 PASS [改写审计行（审计被改就不叫审计）] => sqlstate=23514 | IMMUTABLE_COLUMN: recruitment.review_audit 的列 reason 不允许修改（允许修改的列：（无））
+psql:db/verify-0003.sql:991: 注意:  N20 PASS [删除审计行] => sqlstate=23514 | DELETE_FORBIDDEN: recruitment.review_audit 是历史事实，不允许物理删除（只允许追加或软关闭；docs/03 §4 不变量 2 / §6 / §11）
+psql:db/verify-0003.sql:991: 注意:  N21 PASS [重复审计：同一条目同一个目标状态再插一条] => sqlstate=23505 | 重复键违反唯一约束"uq_review_audit_transition"
+psql:db/verify-0003.sql:991: 注意:  N22 PASS [审计引用不存在的条目] => sqlstate=23503 | 插入或更新表 "review_audit" 违反外键约束 "fk_review_audit_item"
+psql:db/verify-0003.sql:991: 注意:  N23 PASS [run.status 写非法枚举值] => sqlstate=23514 | 关系 "conversion_run" 的新列违反了检查约束 "ck_conversion_run_status"
+psql:db/verify-0003.sql:991: 注意:  N24 PASS [ACCEPTED 却带着 issue_codes（判定自洽）] => sqlstate=23514 | 关系 "conversion_run" 的新列违反了检查约束 "ck_conversion_run_accepted_clean"
+psql:db/verify-0003.sql:991: 注意:  N25 PASS [纯图像页标成 complete（INJ-04 红线）] => sqlstate=23514 | 关系 "conversion_run" 的新列违反了检查约束 "ck_conversion_run_complete_no_issue"
+psql:db/verify-0003.sql:991: 注意:  NEGATIVE SUMMARY 25 条负向测试全部按预期被拒绝
+psql:db/verify-0003.sql:1030: 注意:  FINAL PASS 8 runs / 5 条目 / 12 条审计 / 1 条漏记，负向测试零残留
+psql:db/verify-0004.sql:194: 注意:  V4-01 PASS stage_catalog = 12 行 / code S1..S12 / sort_order 1..12
+psql:db/verify-0004.sql:194: 注意:  V4-02 PASS in_v1_scope：true = S3,S6,S7,S8,S9,S10（其余 false）
+psql:db/verify-0004.sql:194: 注意:  V4-03 PASS 目录表与 0002 的配置逐字一致（code/name/order/in_v1_scope）
+psql:db/verify-0004.sql:194: 注意:  V4-04 PASS 两个外键的列组合与目标唯一键都正确
+psql:db/verify-0004.sql:194: 注意:  V4-05 PASS demo job 的当前 rubric 已回填，且属于同一 job（1 行）
+psql:db/verify-0004.sql:194: 注意:  V4-06 PASS 现有 application 的 stage code 全部在 stage_catalog 内
+psql:db/verify-0004.sql:307: 注意:  NV-01 PASS [写一个不存在的 stage code（S99）→ 外键拒绝] => sqlstate=23503 | 插入或更新表 "application" 违反外键约束 "fk_application_stage_catalog"
+psql:db/verify-0004.sql:307: 注意:  NV-02 PASS [current_rubric_version_id 指向**别的 job** 的 rubric → 复合外键拒绝] => sqlstate=23503 | 插入或更新表 "job" 违反外键约束 "fk_job_current_rubric"
+psql:db/verify-0004.sql:307: 注意:  NV-03 PASS [插入重复 stage code（同租户再插一次 SX1）→ 唯一约束拒绝] => sqlstate=23505 | 重复键违反唯一约束"uq_stage_catalog_tenant_code"
+psql:db/verify-0004.sql:307: 注意:  NV-04 PASS [删除被 application 引用的 stage code（S7）→ 外键 RESTRICT 拒绝] => sqlstate=23503 | 在 "stage_catalog" 上的更新或删除操作违反了在 "application" 上的外键约束 "fk_application_stage_catalog"
+psql:db/verify-0004.sql:307: 注意:  NV-05 PASS [同一租户两个阶段占同一 sort_order（=1）→ 唯一约束拒绝（顺序不得歧义）] => sqlstate=23505 | 重复键违反唯一约束"uq_stage_catalog_tenant_order"
+psql:db/verify-0004.sql:307: 注意:  NV-06 PASS [sort_order 越界（13，v1.0 只允许 1..12）→ CHECK 拒绝] => sqlstate=23514 | 关系 "stage_catalog" 的新列违反了检查约束 "ck_stage_catalog_sort_order"
+psql:db/verify-0004.sql:307: 注意:  NV-07 PASS [stage code 格式非法（stage7，小写）→ CHECK 拒绝] => sqlstate=23514 | 关系 "stage_catalog" 的新列违反了检查约束 "ck_stage_catalog_code"
+psql:db/verify-0004.sql:307: 注意:  NV-08 PASS [用别的租户才有的 stage code（SX1）→ 外键拒绝（目录按租户隔离）] => sqlstate=23503 | 插入或更新表 "application" 违反外键约束 "fk_application_stage_catalog"
+psql:db/verify-0004.sql:307: 注意:  NEGATIVE SUMMARY 8 条负向测试全部按预期失败（SQLSTATE 全对）
+psql:db/verify-0004.sql:348: 注意:  POS-01/02 PASS 合法写入与合法回滚都不被外键阻塞
+psql:db/verify-0005.sql:163: 注意:  F-01 PASS fk_application_rubric_job：(tenant_id, rubric_version_id, job_id) → rubric_version(tenant_id, id, job_id)，restrict/validated
+psql:db/verify-0005.sql:163: 注意:  F-01 PASS fk_application_job_version_job：(tenant_id, job_version_id, job_id) → job_version(tenant_id, id, job_id)，restrict/validated
+psql:db/verify-0005.sql:163: 注意:  F-03 PASS 旧外键 fk_application_rubric / fk_application_job_version 已退场
+psql:db/verify-0005.sql:163: 注意:  F-04 PASS 没有"不含 job_id 的版本外键"
+psql:db/verify-0005.sql:163: 注意:  U-01 PASS rubric_version 有 unique (id, job_id)
+psql:db/verify-0005.sql:163: 注意:  U-01 PASS job_version 有 unique (id, job_id)
+psql:db/verify-0005.sql:163: 注意:  U-02 PASS rubric_version 有 unique (tenant_id, id, job_id)
+psql:db/verify-0005.sql:163: 注意:  U-02 PASS job_version 有 unique (tenant_id, id, job_id)
+psql:db/verify-0005.sql:163: 注意:  STRUCT PASS 0005 的结构断言全部通过
+psql:db/verify-0005.sql:205: 注意:  夹具：stage_catalog 已补（0004 存在）
+psql:db/verify-0005.sql:330: 注意:  POS-05-01 PASS 同 job 的 (job_version, rubric) 引用成功落库
+psql:db/verify-0005.sql:330: 注意:  POS-05-02 PASS rubric_version_id 为空时外键不检查（MATCH SIMPLE，可空语义不变）
+psql:db/verify-0005.sql:330: 注意:  POS-05-03 PASS 岗位二自己的版本组合也成功（约束不是"只允许一条"）
+psql:db/verify-0005.sql:416: 注意:  PASS V5-01 申请指向**别的 job** 的 rubric（同租户：job1 的申请钉 job2 的 rubric） → SQLSTATE 23503 | 插入或更新表 "application" 违反外键约束 "fk_application_rubric_job"
+psql:db/verify-0005.sql:416: 注意:  PASS V5-02 申请指向**别的 job** 的 job_version（job1 的申请钉 job2 的 JD 版本） → SQLSTATE 23503 | 插入或更新表 "application" 违反外键约束 "fk_application_job_version_job"
+psql:db/verify-0005.sql:416: 注意:  PASS V5-03 反方向：job2 的申请钉 job1 的 rubric → SQLSTATE 23503 | 插入或更新表 "application" 违反外键约束 "fk_application_rubric_job"
+psql:db/verify-0005.sql:416: 注意:  PASS V5-04 跨租户：甲租户的申请钉乙租户的 rubric（job9 的 rubric） → SQLSTATE 23503 | 插入或更新表 "application" 违反外键约束 "fk_application_rubric_job"
+psql:db/verify-0005.sql:416: 注意:  PASS V5-05 UPDATE 已有申请：把 rubric 改成别的 job 的（钉版本不允许事后换岗） → SQLSTATE 23503 | 插入或更新表 "application" 违反外键约束 "fk_application_rubric_job"
+psql:db/verify-0005.sql:416: 注意:  PASS V5-06 UPDATE 已有申请：把 job_version 改成别的 job 的 → SQLSTATE 23503 | 插入或更新表 "application" 违反外键约束 "fk_application_job_version_job"
+psql:db/verify-0005.sql:416: 注意:  PASS V5-07 UPDATE 已钉版本后改 job_id：旧版本跟着"换岗"必须被拒绝（钉版本的本体） → SQLSTATE 23503 | 插入或更新表 "application" 违反外键约束 "fk_application_rubric_job"
+psql:db/verify-0005.sql:416: 注意:  PASS V5-08 改 rubric_version.job_id 来"洗白"跨岗位引用（版本整行不可改，不变量 10） → SQLSTATE 23514 | IMMUTABLE_COLUMN: recruitment.rubric_version 的列 job_id 不允许修改（允许修改的列：（无））
+psql:db/verify-0005.sql:416: 注意:  PASS V5-09 改 job_version.job_id 来"洗白"跨岗位引用（同上） → SQLSTATE 23514 | IMMUTABLE_COLUMN: recruitment.job_version 的列 job_id 不允许修改（允许修改的列：（无））
+psql:db/verify-0005.sql:494: 注意:  PASS V5-10 删除被引用的 rubric_version → SQLSTATE 23514（禁删触发器）| DELETE_FORBIDDEN: recruitment.rubric_version 是历史事实，不允许物理删除（只允许追加或软关闭；docs/03 §4 不变量 2 / §6 / §11）
+psql:db/verify-0005.sql:494: 注意:  PASS V5-10 关掉禁删触发器后删除 rubric_version → SQLSTATE 23503（外键 RESTRICT）| 在 "rubric_version" 上的更新或删除操作违反了在 "application" 上的外键约束 "fk_application_rubric_job"
+psql:db/verify-0005.sql:494: 注意:  PASS V5-10 禁删触发器 trg_rubric_version_no_delete 已恢复（tgenabled = O）
+psql:db/verify-0005.sql:494: 注意:  PASS V5-11 删除被引用的 job_version → SQLSTATE 23514（禁删触发器）| DELETE_FORBIDDEN: recruitment.job_version 是历史事实，不允许物理删除（只允许追加或软关闭；docs/03 §4 不变量 2 / §6 / §11）
+psql:db/verify-0005.sql:494: 注意:  PASS V5-11 关掉禁删触发器后删除 job_version → SQLSTATE 23503（外键 RESTRICT）| 在 "job_version" 上的更新或删除操作违反了在 "application" 上的外键约束 "fk_application_job_version_job"
+psql:db/verify-0005.sql:494: 注意:  PASS V5-11 禁删触发器 trg_job_version_no_delete 已恢复（tgenabled = O）
+psql:db/verify-0005.sql:527: 注意:  DATA PASS 库内跨岗位/跨租户的版本引用 = 0 条
+psql:db/verify-0006.sql:289: 注意:  S-1 PASS interview.stage_code 默认值 = 'S8'::text（旧值 'INTERVIEW' 已退场）
+psql:db/verify-0006.sql:289: 注意:  S-2 PASS fk_interview_stage_catalog：(tenant_id, stage_code) → stage_catalog(tenant_id, code)，restrict/validated
+psql:db/verify-0006.sql:289: 注意:  S-3 PASS stage_code 上没有"不含 tenant_id"的第二条外键
+psql:db/verify-0006.sql:289: 注意:  S-4 PASS ck_execution_mandate_no_business_approval 含 6 个禁止动作（含 submit_scorecard）
+psql:db/verify-0006.sql:289: 注意:  S-5 PASS fk_interview_record_artifact：(tenant_id, artifact, revision) → transcript_artifact(tenant_id, id, source_revision)
+psql:db/verify-0006.sql:289: 注意:  S-6 PASS transcript_artifact 有 unique (tenant_id, id, source_revision)
+psql:db/verify-0006.sql:289: 注意:  S-7 PASS interview_record 上没有"不含 tenant_id"的转写外键
+psql:db/verify-0006.sql:289: 注意:  S-8 PASS business_task.owner_actor_id = type=uuid notnull=f default=（无）（可空、无默认值）
+psql:db/verify-0006.sql:289: 注意:  S-9 PASS fk_business_task_owner_actor：(owner_actor_id, tenant_id) → actor(id, tenant_id)
+psql:db/verify-0006.sql:289: 注意:  S-10 PASS meeting / meeting_binding 都有 before update → fn_touch
+psql:db/verify-0006.sql:289: 注意:  S-11 PASS 两张表上只有 fn_touch 一个 before update 触发器
+psql:db/verify-0006.sql:289: 注意:  STRUCT-0006 PASS 五个缺口的 11 条结构断言全部通过
+psql:db/verify-0006.sql:539: 注意:  POS-6-01 PASS 不写 stage_code 的面试落库为 S8（默认值 + 外键同时成立）
+psql:db/verify-0006.sql:539: 注意:  POS-6-02 PASS 显式写 S9 成功（约束不是"只允许默认值"）
+psql:db/verify-0006.sql:539: 注意:  POS-6-03 PASS read/fetch/summarize 这类技术动作仍然可以进 mandate
+psql:db/verify-0006.sql:539: 注意:  POS-6-04 PASS 同租户同 revision 的 interview_record 正常落库
+psql:db/verify-0006.sql:539: 注意:  POS-6-05 PASS owner_actor_id 可写同租户 actor（record_version=1）
+psql:db/verify-0006.sql:539: 注意:  POS-6-06 PASS 不写 owner_actor_id 也能落库（可空、无默认值）
+psql:db/verify-0006.sql:539: 注意:  POS-6-07 PASS meeting 一次 UPDATE → record_version 2→3（只加 1，没有双重触发器）
+psql:db/verify-0006.sql:679: 注意:  G1-01 PASS [GAP-1 写入旧默认值 INTERVIEW（不在 S1–S12、不在目录）] => sqlstate=23503 | 插入或更新表 "interview" 违反外键约束 "fk_interview_stage_catalog"
+psql:db/verify-0006.sql:679: 注意:  G1-02 PASS [GAP-1 写入形状合法但目录里没有的阶段 S99] => sqlstate=23503 | 插入或更新表 "interview" 违反外键约束 "fk_interview_stage_catalog"
+psql:db/verify-0006.sql:679: 注意:  G1-03 PASS [GAP-1 把已存在的面试改到作废的五档值 SCREENING] => sqlstate=23503 | 插入或更新表 "interview" 违反外键约束 "fk_interview_stage_catalog"
+psql:db/verify-0006.sql:679: 注意:  G2-01 PASS [GAP-2 mandate 的 allowed_actions 只有 submit_scorecard] => sqlstate=23514 | 关系 "execution_mandate" 的新列违反了检查约束 "ck_execution_mandate_no_business_approval"
+psql:db/verify-0006.sql:679: 注意:  G2-02 PASS [GAP-2 submit_scorecard 混在合法动作里（{read,submit_scorecard}）] => sqlstate=23514 | 关系 "execution_mandate" 的新列违反了检查约束 "ck_execution_mandate_no_business_approval"
+psql:db/verify-0006.sql:679: 注意:  G2-03 PASS [GAP-2 给已签发的 mandate 追加 submit_scorecard（UPDATE 路径）] => sqlstate=23514 | 关系 "execution_mandate" 的新列违反了检查约束 "ck_execution_mandate_no_business_approval"
+psql:db/verify-0006.sql:679: 注意:  G3-01 PASS [GAP-3 甲租户的 interview_record 引用**乙租户**的 transcript_artifact] => sqlstate=23503 | 插入或更新表 "interview_record" 违反外键约束 "fk_interview_record_artifact"
+psql:db/verify-0006.sql:679: 注意:  G3-02 PASS [GAP-3 同租户但 revision 对不上（artifact 只有 revision 1，声称 2）] => sqlstate=23503 | 插入或更新表 "interview_record" 违反外键约束 "fk_interview_record_artifact"
+psql:db/verify-0006.sql:679: 注意:  G3-03 PASS [GAP-3 把已有记录的转写改指向乙租户的 artifact（UPDATE 路径）] => sqlstate=23503 | 插入或更新表 "interview_record" 违反外键约束 "fk_interview_record_artifact"
+psql:db/verify-0006.sql:679: 注意:  G4-01 PASS [GAP-4 owner_actor_id 指向不存在的 actor] => sqlstate=23503 | 插入或更新表 "business_task" 违反外键约束 "fk_business_task_owner_actor"
+psql:db/verify-0006.sql:679: 注意:  G4-02 PASS [GAP-4 owner_actor_id 指向**另一个租户**的 actor（跨租户负责人）] => sqlstate=23503 | 插入或更新表 "business_task" 违反外键约束 "fk_business_task_owner_actor"
+psql:db/verify-0006.sql:679: 注意:  G4-03 PASS [GAP-4 把已有任务的负责人改成不存在的 actor（UPDATE 路径）] => sqlstate=23503 | 插入或更新表 "business_task" 违反外键约束 "fk_business_task_owner_actor"
+psql:db/verify-0006.sql:679: 注意:  G5-01 PASS [GAP-5 meeting.record_version 写 null（计数器不能缺席）] => sqlstate=23502 | null value in column "record_version" of relation "meeting" violates not-null constraint
+psql:db/verify-0006.sql:679: 注意:  G5-02 PASS [GAP-5 meeting_binding.record_version 写 null（计数器不能缺席）] => sqlstate=23502 | null value in column "record_version" of relation "meeting_binding" violates not-null constraint
+psql:db/verify-0006.sql:679: 注意:  NEGATIVE-0006 SUMMARY 14 条负向测试全部按预期失败（GAP-1:3 / GAP-2:3 / GAP-3:3 / GAP-4:3 / GAP-5:2）
+psql:db/verify-0006.sql:763: 注意:  GAP-5-01 PASS meeting 更新：record_version 1 → 2，updated_at 2026-11-14 17:12:00.37706+08 → 2026-11-14 18:12:00.37706+08（事务时钟 2026-11-14 18:12:00.37706+08）
+psql:db/verify-0006.sql:763: 注意:  GAP-5-02 PASS 手写 record_version=99 被覆盖为 3（版本号不可伪造）
+psql:db/verify-0006.sql:763: 注意:  GAP-5-03 PASS 过期 record_version 更新影响 0 行（VERSION_CONFLICT 由调用方处理）
+psql:db/verify-0006.sql:763: 注意:  GAP-5-04 PASS meeting_binding 更新：record_version 2 → 3
+psql:db/verify-0006.sql:830: 注意:  DATA-0006-01 PASS 全部 interview 的 stage_code 都在各自租户目录内
+psql:db/verify-0006.sql:830: 注意:  DATA-0006-02 PASS 全部 interview_record 的 artifact 引用都在同租户
+psql:db/verify-0006.sql:830: 注意:  DATA-0006-03 PASS 没有任何 mandate 允许 submit_scorecard
+psql:db/verify-0006.sql:830: 注意:  DATA-0006-04 PASS 全部 business_task 的 owner 都在同租户（或为空）
+psql:db/verify-0006.sql:830: 注意:  DATA-0006-05 PASS 两张表的 record_version 都已随 UPDATE 递增（不再是死列）
+psql:db/verify-0007.sql:314: 注意:  S-1 PASS fk_decision_stage_catalog：(tenant_id, stage_code) → stage_catalog(tenant_id, code)，restrict/validated
+psql:db/verify-0007.sql:314: 注意:  S-2 PASS decision 的 stage_code 上没有"不含 tenant_id"的第二条外键
+psql:db/verify-0007.sql:314: 注意:  S-3 PASS 当前决策唯一性不变量成立：0 组重复 current（执行层由 §5 B-01..B-03 实测，23505/23P01 均接受）
+psql:db/verify-0007.sql:314: 注意:  S-4 PASS scorecard.job_id = type=uuid notnull=t default=（无）（uuid、NOT NULL、无默认值）
+psql:db/verify-0007.sql:314: 注意:  S-5 PASS fk_scorecard_rubric_job + 被引用键 rubric_version unique (tenant_id, job_id, id)
+psql:db/verify-0007.sql:314: 注意:  S-6 PASS trg_scorecard_job_guard：before insert or update → fn_scorecard_job_guard
+psql:db/verify-0007.sql:314: 注意:  S-7 PASS fn_scorecard_job_guard 存在
+psql:db/verify-0007.sql:314: 注意:  S-8 PASS fk_ai_summary_artifact：(tenant_id, artifact, revision) → transcript_artifact(tenant_id, id, source_revision)
+psql:db/verify-0007.sql:314: 注意:  S-9 PASS ai_summary 上没有"不含 tenant_id"的转写外键
+psql:db/verify-0007.sql:314: 注意:  S-10 PASS ck_scorecard_terminal_actor（validated）= CHECK (((status = 'PENDING'::text) OR (status_changed_by_actor_id IS NOT NULL)))
+psql:db/verify-0007.sql:314: 注意:  S-11 PASS trg_scorecard_terminal_actor_guard：before insert → fn_scorecard_terminal_actor_guard
+psql:db/verify-0007.sql:314: 注意:  STRUCT-0007 PASS 五个缺口的 11 条结构断言全部通过
+psql:db/verify-0007.sql:591: 注意:  POS-7-01 PASS 合法阶段码 S9 可以落库（外键不是"什么都拦"）
+psql:db/verify-0007.sql:591: 注意:  POS-7-02 PASS stage_code IS NULL 可以落库（MATCH SIMPLE：NULL 不参与外键检查）
+psql:db/verify-0007.sql:591: 注意:  POS-7-03 PASS 第一条 current (STAGE, S10) 可以落库
+psql:db/verify-0007.sql:591: 注意:  POS-7-04 PASS 不同 scope 的 current 决策可以并存（唯一键含 decision_scope；0008 后 FINAL 另受"每申请一条"约束，故用 SCREENING）
+psql:db/verify-0007.sql:591: 注意:  POS-7-05 PASS superseded 行可以指向已存在的决策（部分唯一索引只约束 current 行）
+psql:db/verify-0007.sql:591: 注意:  POS-7-06 PASS 不写 job_id → 触发器推导为 application.job_id = 岗位一
+psql:db/verify-0007.sql:591: 注意:  POS-7-07 PASS 显式写正确的 job_id 可以落库
+psql:db/verify-0007.sql:591: 注意:  POS-7-08 PASS 同租户同 revision 的 ai_summary 正常落库
+psql:db/verify-0007.sql:591: 注意:  POS-7-09 PASS 显式带 status_changed_by_actor_id 的 SUBMITTED 可以落库
+psql:db/verify-0007.sql:613: 注意:  POS-7-10 PASS WAIVED + session actor → 列被填为 session actor（CHECK 成立）
+psql:db/verify-0007.sql:623: 注意:  POS-7-11 PASS PENDING 草稿不需要 actor（约束只针对终态）
+psql:db/verify-0007.sql:819: 注意:  A-01 PASS [GAP-A INSERT 形状合法但目录里没有的阶段 BANANA] => sqlstate=23503 | 插入或更新表 "decision" 违反外键约束 "fk_decision_stage_catalog"
+psql:db/verify-0007.sql:819: 注意:  A-02 PASS [GAP-A INSERT 作废的五档值 SCREENING（不在 S1–S12）] => sqlstate=23503 | 插入或更新表 "decision" 违反外键约束 "fk_decision_stage_catalog"
+psql:db/verify-0007.sql:819: 注意:  A-03 PASS [GAP-A INSERT 0006 已退场的旧默认值 INTERVIEW] => sqlstate=23503 | 插入或更新表 "decision" 违反外键约束 "fk_decision_stage_catalog"
+psql:db/verify-0007.sql:819: 注意:  A-04 PASS [GAP-A INSERT 用**别的租户**目录里才有的 SX1（外键按租户隔离）] => sqlstate=23503 | 插入或更新表 "decision" 违反外键约束 "fk_decision_stage_catalog"
+psql:db/verify-0007.sql:819: 注意:  A-05 PASS [GAP-A UPDATE 把已有决策改到 S11（先被 trg_decision_immutable 挡下：decision 的列不可变）] => sqlstate=23514 | IMMUTABLE_COLUMN: recruitment.decision 的列 stage_code 不允许修改（允许修改的列：superseded_by_decision_id）
+psql:db/verify-0007.sql:819: 注意:  A-06 PASS [GAP-A UPDATE 被引用键 stage_catalog.code（S10 被决策引用 → FK ON UPDATE RESTRICT 挡住，证明 FK 在 UPDATE 路径活着）] => sqlstate=23503 | 在 "stage_catalog" 上的更新或删除操作违反了在 "decision" 上的外键约束 "fk_decision_stage_catalog"
+psql:db/verify-0007.sql:819: 注意:  B-01 PASS [GAP-B INSERT 第二条 current FINAL + stage_code IS NULL（两个 NULL 必须按相等处理：0007 靠 NULLS NOT DISTINCT，0008 靠 coalesce(stage_code, 空串)）] => sqlstate=23P01 | 互相冲突的键值违反排他约束"uq_decision_current"
+psql:db/verify-0007.sql:819: 注意:  B-02 PASS [GAP-B INSERT 第二条 current STAGE/S10（同一键的重复 current）] => sqlstate=23P01 | 互相冲突的键值违反排他约束"uq_decision_current"
+psql:db/verify-0007.sql:819: 注意:  B-03 PASS [GAP-B UPDATE 把 superseded 行改回 current（触发当前唯一性：0007 索引 / 0008 排斥约束）] => sqlstate=23P01 | 互相冲突的键值违反排他约束"uq_decision_current"
+psql:db/verify-0007.sql:819: 注意:  C-01 PASS [GAP-C INSERT 用岗位二的 rubric 给岗位一的面试交面评（不写 job_id，由触发器推导）] => sqlstate=23503 | 插入或更新表 "scorecard" 违反外键约束 "fk_scorecard_rubric_job"
+psql:db/verify-0007.sql:819: 注意:  C-02 PASS [GAP-C INSERT 显式写 job_id = 岗位二（触发器：与 interview → application 的岗位不符）] => sqlstate=23514 | SCORECARD_JOB_MISMATCH: scorecard 声称 job_id=dddddddd-dddd-4ddd-8ddd-000000000124 ，但面试 dddddddd-dddd-4ddd-8ddd-000000000161 所属申请的岗位是 dddddddd-dddd-4ddd-8ddd-000000000121（评分标准必须绑定该申请的岗位）
+psql:db/verify-0007.sql:819: 注意:  C-03 PASS [GAP-C UPDATE 把 PENDING 面评的 rubric 换成岗位二的（复合外键挡住）] => sqlstate=23503 | 插入或更新表 "scorecard" 违反外键约束 "fk_scorecard_rubric_job"
+psql:db/verify-0007.sql:819: 注意:  C-04 PASS [GAP-C UPDATE 把 PENDING 面评的 job_id 改成岗位二（触发器挡住）] => sqlstate=23514 | SCORECARD_JOB_MISMATCH: scorecard 声称 job_id=dddddddd-dddd-4ddd-8ddd-000000000124 ，但面试 dddddddd-dddd-4ddd-8ddd-000000000161 所属申请的岗位是 dddddddd-dddd-4ddd-8ddd-000000000121（评分标准必须绑定该申请的岗位）
+psql:db/verify-0007.sql:819: 注意:  D-01 PASS [GAP-D INSERT 甲租户摘要引用**乙租户**的 transcript_artifact] => sqlstate=23503 | 插入或更新表 "ai_summary" 违反外键约束 "fk_ai_summary_artifact"
+psql:db/verify-0007.sql:819: 注意:  D-02 PASS [GAP-D INSERT 同租户但 revision 对不上（artifact 只有 1，声称 2）] => sqlstate=23503 | 插入或更新表 "ai_summary" 违反外键约束 "fk_ai_summary_artifact"
+psql:db/verify-0007.sql:819: 注意:  D-03 PASS [GAP-D UPDATE 把已有摘要改指向乙租户的 artifact（先被 trg_ai_summary_immutable 挡下）] => sqlstate=23514 | IMMUTABLE_COLUMN: recruitment.ai_summary 的列 transcript_artifact_id 不允许修改（允许修改的列：status,superseded_by_ai_summary_id）
+psql:db/verify-0007.sql:819: 注意:  D-04 PASS [GAP-D UPDATE 试图把被引用的转写搬到另一个租户（先被 trg_transcript_artifact_immutable 挡下）] => sqlstate=23514 | IMMUTABLE_COLUMN: recruitment.transcript_artifact 的列 tenant_id 不允许修改（允许修改的列：transcript_status,fetched_at,last_readback_at,page_count,has_more,next_cursor,is_complete,is_canonical,canonical_selected_by_actor_id）
+psql:db/verify-0007.sql:819: 注意:  E-01 PASS [GAP-E INSERT SUBMITTED 不写 actor、也没有 session actor（新 CHECK / 新触发器挡住）] => sqlstate=23514 | ACTOR_REQUIRED: scorecard 直接 INSERT 成终态（SUBMITTED）必须给出 actor（显式写 status_changed_by_actor_id，或 SET LOCAL recruitment.actor_id）
+psql:db/verify-0007.sql:819: 注意:  E-02 PASS [GAP-E INSERT WAIVED 不写 actor、也没有 session actor] => sqlstate=23514 | ACTOR_REQUIRED: scorecard 直接 INSERT 成终态（WAIVED）必须给出 actor（显式写 status_changed_by_actor_id，或 SET LOCAL recruitment.actor_id）
+psql:db/verify-0007.sql:819: 注意:  E-03 PASS [GAP-E UPDATE PENDING → SUBMITTED 不给 actor（这条路径 0007 之前就被 fn_row_guard 关着：ACTOR_REQUIRED）] => sqlstate=23514 | ACTOR_REQUIRED: recruitment.scorecard 的 status 迁移必须给出 actor（SET LOCAL recruitment.actor_id 或显式写 status_changed_by_actor_id）
+psql:db/verify-0007.sql:819: 注意:  E-04 PASS [GAP-E 事实核对：decision 没有 status_changed_by_actor_id 列（写入它 → 字段不存在）] => sqlstate=42703 | 关系 "decision" 的 "status_changed_by_actor_id" 字段不存在
+psql:db/verify-0007.sql:819: 注意:  E-05 PASS [GAP-E 事实核对：decision 的 actor 由 decided_by_actor_id NOT NULL 强制（不写它 → 23502）] => sqlstate=23502 | null value in column "decided_by_actor_id" of relation "decision" violates not-null constraint
+psql:db/verify-0007.sql:819: 注意:  NEGATIVE-0007 SUMMARY 22 条负向测试全部按预期失败（A:6 / B:3 / C:4 / D:4 / E:5）
+psql:db/verify-0007.sql:915: 注意:  DATA-0007-01 PASS 全部 decision 的 stage_code 都在各自租户目录内（NULL 除外）
+psql:db/verify-0007.sql:915: 注意:  DATA-0007-02 PASS 全库没有重复的 current 决策（NULL stage_code 也按相等处理）
+psql:db/verify-0007.sql:915: 注意:  DATA-0007-03 PASS 全部 scorecard 都有 job_id（NOT NULL 生效）
+psql:db/verify-0007.sql:915: 注意:  DATA-0007-04 PASS 全部 scorecard 的 rubric 都属于该申请的岗位
+psql:db/verify-0007.sql:915: 注意:  DATA-0007-05 PASS 全部 ai_summary 的 artifact 引用都在同租户
+psql:db/verify-0007.sql:915: 注意:  DATA-0007-06 PASS 全部终态 scorecard 都有 status_changed_by_actor_id
+psql:db/verify-0007.sql:915: 注意:  DATA-0007-07 PASS 全库多列外键全部含 tenant_id（0 条例外）
+psql:db/verify-0008.sql:252: 注意:  S-1 PASS uq_decision_current：EXCLUDE (tenant_id, application_id, decision_scope, coalesce(stage_code,'')) WHERE 未取代，DEFERRABLE INITIALLY DEFERRED，backing index indisunique=f/indisexclusion=t
+psql:db/verify-0008.sql:252: 注意:  S-2 PASS uq_decision_current_final：EXCLUDE (tenant_id, application_id) WHERE scope='FINAL' 且未取代，DEFERRABLE INITIALLY DEFERRED
+psql:db/verify-0008.sql:252: 注意:  S-3 PASS 0007 的部分唯一索引已不存在；uq_decision_current 只剩 1 个关系（排斥约束的 backing index）
+psql:db/verify-0008.sql:252: 注意:  S-4 PASS interview_record.job_id = type=uuid notnull=t default=（无）（uuid、NOT NULL、无默认值）
+psql:db/verify-0008.sql:252: 注意:  S-5 PASS fk_interview_record_rubric_job：(tenant_id, job_id, rubric_version_id) → rubric_version(tenant_id, job_id, id)
+psql:db/verify-0008.sql:252: 注意:  S-6 PASS trg_interview_record_job_guard（before insert or update）→ fn_interview_record_job_guard
+psql:db/verify-0008.sql:252: 注意:  S-7 PASS decision 上恰好 2 个排斥约束（A 当前唯一 / B current FINAL 唯一）
+psql:db/verify-0008.sql:486: 注意:  POS-8-01 PASS 契约两步重评事务在同一事务内成功：SCREENING 新行 current、旧行 superseded（无 23505 / 无 23503）
+psql:db/verify-0008.sql:486: 注意:  POS-8-02 PASS FINAL 重评（FINAL/NULL → FINAL/S10）也成功：每个申请仍只有一条 current FINAL
+psql:db/verify-0008.sql:530: 注意:  POS-8-03 PASS 不写 job_id → 触发器推导为 application.job_id = 岗位一（401）
+psql:db/verify-0008.sql:530: 注意:  POS-8-04 PASS 显式写正确 job_id = 401 可以落库（触发器不是"只允许 NULL"）
+psql:db/verify-0008.sql:613: 注意:  N-1 PASS [GAP-A INSERT 同一 (SCREENING, NULL) 的第二条 current（此刻已有一条 current）] => sqlstate=23P01 | 互相冲突的键值违反排他约束"uq_decision_current"
+psql:db/verify-0008.sql:613: 注意:  N-2 PASS [GAP-B INSERT 第二条 current FINAL（已有 FINAL/S10 current，本条 FINAL/NULL）] => sqlstate=23P01 | 互相冲突的键值违反排他约束"uq_decision_current_final"
+psql:db/verify-0008.sql:613: 注意:  N-3 PASS [GAP-C INSERT 用岗位二的 rubric 给岗位一的面试交记录（不写 job_id，由触发器推导 job=401）] => sqlstate=23503 | 插入或更新表 "interview_record" 违反外键约束 "fk_interview_record_rubric_job"
+psql:db/verify-0008.sql:613: 注意:  N-4 PASS [GAP-C INSERT 显式写 job_id = 岗位二（触发器：与 interview → application 的岗位不符）] => sqlstate=23514 | INTERVIEW_RECORD_JOB_MISMATCH: interview_record 声称 job_id=88888888-8888-4888-8888-000000000402 ，但面试 88888888-8888-4888-8888-000000000601 所属申请的岗位是 11111111-1111-4111-8111-000000000401（评分标准必须绑定该申请的岗位）
+psql:db/verify-0008.sql:613: 注意:  NEGATIVE-0008 SUMMARY 4 条负向测试全部按预期失败（A:1 / B:1 / C:2）
+psql:db/verify-0008.sql:687: 注意:  DATA-0008-01 PASS 全库没有重复的 current 决策（NULL stage_code 也按相等处理）
+psql:db/verify-0008.sql:687: 注意:  DATA-0008-02 PASS 全库每个申请最多一条 current FINAL
+psql:db/verify-0008.sql:687: 注意:  DATA-0008-03 PASS 全部 interview_record 都有 job_id（NOT NULL 生效）
+psql:db/verify-0008.sql:687: 注意:  DATA-0008-04 PASS 全部 interview_record 的 rubric 都属于该申请的岗位
+psql:db/verify-0008.sql:687: 注意:  DATA-0008-05 PASS 全库多列外键全部含 tenant_id（含本文件新增的 fk_interview_record_rubric_job）
+psql:db/verify-0009.sql:26: 注意:  STRUCT-0009 PASS：3 条结构断言通过
+psql:db/verify-0009.sql:98: 注意:  POS-0009-01 PASS：第一条 ACTIVE 申请可以创建
+psql:db/verify-0009.sql:98: 注意:  POS-0009-02 PASS：同一候选人不同岗位可以有独立 ACTIVE 申请（用例 D）
+psql:db/verify-0009.sql:98: 注意:  NEG-0009-01 PASS：第二条 ACTIVE 被拒 => sqlstate=23505
+psql:db/verify-0009.sql:98: 注意:  NEG-0009-02 PASS：已结束周期不得复活 => sqlstate=23514
+psql:db/verify-0009.sql:98: 注意:  POS-0009-03 PASS：上一周期结束后可再次申请（用例 E）
+psql:db/verify-0009.sql:98: 注意:  NEG-0009-03 PASS：申请所属候选人不可改 => sqlstate=23514
+psql:db/verify-0009.sql:111: 注意:  DATA-0009 PASS：全库无重复 ACTIVE 申请
+psql:db/verify-0010.sql:74: 注意:  VERIFY-0010 PASS：台账存在 + 0001–0010 全登记 + 版本号格式合法
+psql:db/verify.sql:222: 注意:  STRUCT-01 PASS 每张表都是单列 uuid 主键，列名 = id（event_inbox = event_id）
+psql:db/verify.sql:222: 注意:  STRUCT-02 PASS 除 organization 外每张表都有 NOT NULL tenant_id
+psql:db/verify.sql:222: 注意:  STRUCT-03 PASS 所有 tenant_id 都有到 organization 的外键
+psql:db/verify.sql:222: 注意:  STRUCT-04 PASS 所有状态/枚举列都有 CHECK 约束
+psql:db/verify.sql:222: 注意:  STRUCT-05 PASS 状态表都有 fn_row_guard；conversion_run / review_queue 按 D-47 豁免，真实守卫已逐条核对
+psql:db/verify.sql:222: 注意:  STRUCT-06 PASS 历史事实禁删触发器 43 个
+psql:db/verify.sql:222: 注意:  STRUCT-07 PASS 复合外键都带 tenant_id（防跨租户引用）
+psql:db/verify.sql:281: 注意:  SM-01 PASS ck_requisition_status 覆盖 7 个状态值
+psql:db/verify.sql:281: 注意:  SM-01 PASS ck_job_status 覆盖 7 个状态值
+psql:db/verify.sql:281: 注意:  SM-01 PASS ck_interview_status 覆盖 8 个状态值
+psql:db/verify.sql:281: 注意:  SM-01 PASS ck_application_lifecycle_status 覆盖 4 个状态值
+psql:db/verify.sql:281: 注意:  SM-01 PASS ck_business_task_status 覆盖 11 个状态值
+psql:db/verify.sql:281: 注意:  SM-01 PASS ck_task_attempt_status 覆盖 8 个状态值
+psql:db/verify.sql:281: 注意:  SM-01 PASS ck_durable_effect_status 覆盖 9 个状态值
+psql:db/verify.sql:281: 注意:  SM-01 PASS ck_transcript_artifact_status 覆盖 8 个状态值
+psql:db/verify.sql:281: 注意:  SM-01 PASS ck_interview_record_status 覆盖 6 个状态值
+psql:db/verify.sql:281: 注意:  SM-01 PASS ck_scorecard_status 覆盖 3 个状态值
+psql:db/verify.sql:281: 注意:  SM-01 PASS ck_decision_result 覆盖 5 个状态值
+psql:db/verify.sql:281: 注意:  SM-01 PASS ck_intake_record_status 覆盖 9 个状态值
+psql:db/verify.sql:358: 注意:  COV-01 PASS 对象覆盖：有表 28 / 列映射 1 / 缓做 7（合计 36）
+psql:db/verify.sql:698: 注意:  N01 PASS [Application 关联不存在的 Candidate（不变量 1）] => sqlstate=23503 | 插入或更新表 "application" 违反外键约束 "fk_application_candidate"
+psql:db/verify.sql:698: 注意:  N02 PASS [Application 缺 Job（不变量 1：必须关联 Job）] => sqlstate=23502 | null value in column "job_id" of relation "application" violates not-null constraint
+psql:db/verify.sql:698: 注意:  N03 PASS [跨租户引用 Candidate（复合外键防越权）] => sqlstate=23503 | 插入或更新表 "application" 违反外键约束 "fk_application_candidate"
+psql:db/verify.sql:698: 注意:  N04 PASS [Job 状态写非法枚举值（状态机）] => sqlstate=23514 | 关系 "job" 的新列违反了检查约束 "ck_job_status"
+psql:db/verify.sql:698: 注意:  N05 PASS [同一来源事件重复创建 Business Task（不变量 1）] => sqlstate=23505 | 重复键违反唯一约束"uq_business_task_idempotency"
+psql:db/verify.sql:698: 注意:  N06 PASS [同一 provider 事件重复进 Event Inbox] => sqlstate=23505 | 重复键违反唯一约束"uq_event_inbox_idempotency"
+psql:db/verify.sql:698: 注意:  N07 PASS [备用幂等键同时又给了 provider_event_id（禁止双轨去重）] => sqlstate=23514 | 关系 "event_inbox" 的新列违反了检查约束 "ck_event_inbox_fallback_no_event_id"
+psql:db/verify.sql:698: 注意:  N08 PASS [转写 READY 但未取全（完整性 Gate）] => sqlstate=23514 | 关系 "transcript_artifact" 的新列违反了检查约束 "ck_transcript_artifact_ready"
+psql:db/verify.sql:698: 注意:  N09 PASS [LIVE 转写没有连接器读取回执（R4 诚实标注）] => sqlstate=23514 | 关系 "transcript_artifact" 的新列违反了检查约束 "ck_transcript_artifact_live_receipt"
+psql:db/verify.sql:698: 注意:  N10 PASS [Scorecard SUBMITTED 但缺 submitted_at / items] => sqlstate=23514 | 关系 "scorecard" 的新列违反了检查约束 "ck_scorecard_submitted"
+psql:db/verify.sql:698: 注意:  N11 PASS [已提交 Scorecard 被改写（评价不可覆盖）] => sqlstate=23514 | SCORECARD_IMMUTABLE: 已提交/已豁免的 Scorecard 不可修改（修订必须新建 revision_no）
+psql:db/verify.sql:698: 注意:  N12 PASS [Decision 理由为空（不变量 9）] => sqlstate=23514 | 关系 "decision" 的新列违反了检查约束 "ck_decision_reason"
+psql:db/verify.sql:698: 注意:  N13 PASS [Approval 批准但没写审批人/时间（不变量 9）] => sqlstate=23514 | 关系 "approval" 的新列违反了检查约束 "ck_approval_decided_fields"
+psql:db/verify.sql:698: 注意:  N14 PASS [已决 Approval 被改内容（审批绑内容）] => sqlstate=23514 | APPROVAL_FINAL: 已决审批不可改判；内容变化必须新建审批并让原审批 SUPERSEDED
+psql:db/verify.sql:698: 注意:  N15 PASS [状态迁移没有 actor（不变量 8）] => sqlstate=23514 | ACTOR_REQUIRED: recruitment.job 的 status 迁移必须给出 actor（SET LOCAL recruitment.actor_id 或显式写 status_changed_by_actor_id）
+psql:db/verify.sql:698: 注意:  N16 PASS [手改 status_changed_at 伪造迁移时间] => sqlstate=23514 | STATUS_AUDIT_TAMPER: recruitment.job 的 status_changed_at 只能随状态迁移改写
+psql:db/verify.sql:698: 注意:  N17 PASS [同一 Task 两个有效租约（不允许双 Worker）] => sqlstate=23505 | 重复键违反唯一约束"uq_task_attempt_active_lease"
+psql:db/verify.sql:698: 注意:  N18 PASS [可重试失败却不给 retry_after（重试必须有时间）] => sqlstate=23514 | 关系 "task_attempt" 的新列违反了检查约束 "ck_task_attempt_retry"
+psql:db/verify.sql:698: 注意:  N19 PASS [Business Task RUNNING 但没有 current_attempt_id] => sqlstate=23514 | 关系 "business_task" 的新列违反了检查约束 "ck_business_task_running"
+psql:db/verify.sql:698: 注意:  N20 PASS [删除 Candidate（历史事实禁删，不变量 2）] => sqlstate=23514 | DELETE_FORBIDDEN: recruitment.candidate 是历史事实，不允许物理删除（只允许追加或软关闭；docs/03 §4 不变量 2 / §6 / §11）
+psql:db/verify.sql:698: 注意:  N21 PASS [修改 Rubric 版本（配置变更不得静默改历史，不变量 10）] => sqlstate=23514 | IMMUTABLE_COLUMN: recruitment.rubric_version 的列 dimensions 不允许修改（允许修改的列：（无））
+psql:db/verify.sql:698: 注意:  N22 PASS [修改 Resume 版本解析结果（简历版本不可覆盖）] => sqlstate=23514 | IMMUTABLE_COLUMN: recruitment.resume_version 的列 parsed_fields 不允许修改（允许修改的列：（无））
+psql:db/verify.sql:698: 注意:  N23 PASS [改写平台原始转写原文（不变量 6：原文不可被覆盖）] => sqlstate=23514 | IMMUTABLE_COLUMN: recruitment.transcript_artifact 的列 raw_text 不允许修改（允许修改的列：transcript_status,fetched_at,last_readback_at,page_count,has_more,next_cursor,is_complete,is_canonical,canonical_selected_by_actor_id）
+psql:db/verify.sql:698: 注意:  N24 PASS [直接改 Candidate 身份状态（没有 Merge Record）] => sqlstate=23514 | CANDIDATE_IDENTITY_UNTRACKED: candidate aaaaaaaa-0000-0000-0000-000000000061 的 identity_status 只能由 candidate_merge 记录驱动
+psql:db/verify.sql:698: 注意:  N25 PASS [Candidate 合并没有匹配依据（禁止无依据归并）] => sqlstate=23514 | 关系 "candidate_merge" 的新列违反了检查约束 "ck_candidate_merge_basis"
+psql:db/verify.sql:698: 注意:  N26 PASS [同一租户重复创建 ACTIVE 候选人（强标识唯一）] => sqlstate=23505 | 重复键违反唯一约束"uq_candidate_active_email"
+psql:db/verify.sql:698: 注意:  N27 PASS [Execution Mandate 里出现业务审批动作（闸门不可绕过）] => sqlstate=23514 | 关系 "execution_mandate" 的新列违反了检查约束 "ck_execution_mandate_no_business_approval"
+psql:db/verify.sql:698: 注意:  N28 PASS [同一会议被绑定到第二个面试（MEETING_ALREADY_BOUND）] => sqlstate=23505 | 重复键违反唯一约束"uq_meeting_binding_active"
+psql:db/verify.sql:698: 注意:  N29 PASS [Interview Record 标 READY 但证据未校验] => sqlstate=23514 | 关系 "interview_record" 的新列违反了检查约束 "ck_interview_record_ready"
+psql:db/verify.sql:698: 注意:  N30 PASS [处理跑通成功但仍有失败 Chunk（不得把部分当完整）] => sqlstate=23514 | 关系 "transcript_processing_run" 的新列违反了检查约束 "ck_transcript_processing_run_success"
+psql:db/verify.sql:698: 注意:  N31 PASS [Duplicate Effect：同一幂等键再建一条（重试不得新建 Effect）] => sqlstate=23505 | 重复键违反唯一约束"uq_durable_effect_idempotency"
+psql:db/verify.sql:698: 注意:  N32 PASS [Event trust_level 写非法值（外部文本不可信是枚举）] => sqlstate=23514 | 关系 "event_inbox" 的新列违反了检查约束 "ck_event_inbox_trust"
+psql:db/verify.sql:698: 注意:  NEGATIVE SUMMARY 32 条负向测试全部按预期失败
+psql:db/verify.sql:775: 注意:  POS-01/02 PASS 状态迁移 → 内部事件 1 条 + record_version 自增
+psql:db/verify.sql:775: 注意:  POS-03 PASS 过期 record_version 更新影响 0 行（VERSION_CONFLICT 由调用方处理）
+psql:db/verify.sql:775: 注意:  POS-04 PASS PENDING Scorecard 可编辑（提交后才冻结）
+psql:db/verify.sql:775: 注意:  POS-05 PASS 合并保留全部历史 Application，且主档未被改动
+psql:db/verify.sql:775: 注意:  POS-06 PASS candidate.record_version 自动自增（当前 2）
+psql:db/verify.sql:817: 注意:  INV-1 PASS Application 必须关联 Candidate 和 Job → fk_application_candidate / fk_application_job + NOT NULL
+psql:db/verify.sql:817: 注意:  INV-2 PASS Candidate 合并不删除历史 Application → trg_application_no_delete + candidate_merge 不改 application + 复合外键 NO ACTION
+psql:db/verify.sql:817: 注意:  INV-3 PASS Requisition / Job / Job Posting 各自独立身份与状态 → 三张独立表，各自 PK 与 ck_*_status
+psql:db/verify.sql:817: 注意:  INV-4 PASS Interview 必须关联 Application 和面试轮次 → fk_interview_application + ck_interview_round + uq_interview_slot
+psql:db/verify.sql:817: 注意:  INV-5 PASS Meeting 与 Interview 靠平台 ID 绑定，不能靠标题 → meeting 表无标题列 + ck_meeting_identity + uq_meeting_binding_active
+psql:db/verify.sql:817: 注意:  INV-6 PASS Transcript 原文不可被 AI Summary 覆盖 → transcript_artifact 原文列在白名单外（trg_*_immutable）+ ai_summary 独立表引用 revision
+psql:db/verify.sql:817: 注意:  INV-7 PASS Scorecard 必须记录评价者和评分标准版本 → interviewer_id + rubric_version_id 均 NOT NULL 外键
+psql:db/verify.sql:817: 注意:  INV-8 PASS Workflow 状态迁移必须有来源事件/动作、时间和结果 → fn_row_guard：状态变化必须给 actor，自动写 event_inbox 并回填 status_source_event_id
+psql:db/verify.sql:817: 注意:  INV-9 PASS 重要审批与决策保留责任人、时间、结果、理由 → ck_approval_decided_fields / ck_decision_reason / decided_by_actor_id NOT NULL
+psql:db/verify.sql:817: 注意:  INV-10 PASS 配置变更不静默改变历史评价或已结束申请 → rubric_version/business_config 不可变 + scorecard.rubric_version_id 固定引用 + application.job_version_id 固定引用

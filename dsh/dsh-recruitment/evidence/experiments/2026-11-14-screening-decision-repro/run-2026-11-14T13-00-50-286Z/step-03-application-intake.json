@@ -1,0 +1,146 @@
+{
+  "step": 3,
+  "id": "application-intake",
+  "label": "S6 application_intake（合成简历 → candidate + application；F1：新建时钉住 rubric）",
+  "tool": "recruitment_application_intake",
+  "run_mode": "RERUN",
+  "started_at": "2026-11-14T13:00:50.590Z",
+  "request": {
+    "path": "D:\\12412\\dsh工作区\\projects\\recruitment-agent\\dsh\\dsh-recruitment\\manual\\screening-decision\\fixtures\\synthetic-resume-screening-repro.pdf",
+    "job_id": "d83a7d09-d26b-43ac-a3a4-192aea13b1c8"
+  },
+  "ok": true,
+  "result": {
+    "tool": "recruitment_application_intake",
+    "contract_version": "1.0.0",
+    "status": "OK",
+    "created": false,
+    "candidate_created": false,
+    "idempotent_replay": true,
+    "application_action": "REUSED",
+    "structure_saved": false,
+    "resume_version_action": "UNCHANGED",
+    "candidate_id": "86ea316a-3a7f-49fc-9f05-c77f9e4d2797",
+    "application_id": "cdbb3b1f-457e-42ea-ac14-a38edf9260e1",
+    "matched_by": "email+phone",
+    "resume_id": "c88a1c9b-1614-4921-aa43-54a7c8bbc7b3",
+    "resume_version_id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+    "resume_version_no": 1,
+    "intake_record_id": "50c96beb-8446-4fca-b87a-b31dd1a45409",
+    "intake_asset_id": "fbc33c3b-da69-436d-b7a8-8904276a1e14",
+    "event_id": "52115f5c-d9a9-479b-8f03-54de70828647",
+    "provenance": "FIXTURE",
+    "labels": {
+      "provenance": "FIXTURE",
+      "trigger": "MANUAL",
+      "connection": "CONNECTED",
+      "source_kind": "LOCAL_FILE",
+      "event_provider": "internal"
+    },
+    "source": {
+      "file_name": "synthetic-resume-screening-repro.pdf",
+      "sha256": "56f93d3be582a988a4713c1cba22c411e17b20371de73c2147962adde4c24ce5",
+      "pages": 2,
+      "byte_size": 10931,
+      "completeness": "complete",
+      "parse_status": "PARSED",
+      "hard_issue_count": 0
+    },
+    "identity": {
+      "strong_ids": [
+        "email",
+        "phone"
+      ],
+      "identity_merge_eligible": [
+        "email",
+        "phone"
+      ],
+      "weak_fields": [],
+      "blocked_fields": [],
+      "evidence": [
+        {
+          "field": "phone",
+          "page": 1,
+          "bbox": [
+            56,
+            101.5,
+            591.5,
+            114.0999984741211
+          ],
+          "block": 2
+        },
+        {
+          "field": "email",
+          "page": 1,
+          "bbox": [
+            56,
+            101.5,
+            591.5,
+            114.0999984741211
+          ],
+          "block": 2
+        }
+      ]
+    },
+    "job": {
+      "id": "d83a7d09-d26b-43ac-a3a4-192aea13b1c8",
+      "code": "REPRO-S6S7-DECISION",
+      "title": "后端工程师（S6→S7 决策复现演示岗）",
+      "status": "OPEN"
+    },
+    "application": {
+      "job_id": "d83a7d09-d26b-43ac-a3a4-192aea13b1c8",
+      "job_version_id": "53275b99-92f5-468a-8265-0733c261895a",
+      "stage_code": "S6",
+      "lifecycle_status": "ACTIVE",
+      "record_version": 1
+    }
+  },
+  "rendered": "application: REUSED cdbb3b1f-457e-42ea-ac14-a38edf9260e1\nstructure: saved=false (resume_version v1 cec1c064-df8e-4df9-8043-4f2f27a8cfac, UNCHANGED)\ncandidate: 86ea316a-3a7f-49fc-9f05-c77f9e4d2797 (existing, matched_by=email+phone)\njob REPRO-S6S7-DECISION [OPEN] stage=S6 lifecycle=ACTIVE\nsource: synthetic-resume-screening-repro.pdf pages=2 bytes=10931\nsha256=56f93d3be582a988a4713c1cba22c411e17b20371de73c2147962adde4c24ce5\nparse_status=PARSED completeness=complete hard_issues=0\nidentity strong_ids=[email, phone] merge_eligible=[email, phone] weak=[] evidence=2 blocked=[]\nlabels: provenance=FIXTURE trigger=MANUAL connection=CONNECTED",
+  "row_counts_before": {
+    "application": 55,
+    "approval": 20,
+    "business_task": 5,
+    "candidate": 49,
+    "decision": 8,
+    "event_inbox": 146,
+    "intake_asset": 60,
+    "intake_record": 60,
+    "job": 21,
+    "job_version": 24,
+    "resume": 60,
+    "resume_version": 61,
+    "rubric_version": 22
+  },
+  "row_counts_after": {
+    "application": 55,
+    "approval": 20,
+    "business_task": 5,
+    "candidate": 49,
+    "decision": 8,
+    "event_inbox": 146,
+    "intake_asset": 60,
+    "intake_record": 60,
+    "job": 21,
+    "job_version": 24,
+    "resume": 60,
+    "resume_version": 61,
+    "rubric_version": 22
+  },
+  "row_count_delta": {},
+  "readback": {
+    "application": {
+      "id": "cdbb3b1f-457e-42ea-ac14-a38edf9260e1",
+      "job_id": "d83a7d09-d26b-43ac-a3a4-192aea13b1c8",
+      "candidate_id": "86ea316a-3a7f-49fc-9f05-c77f9e4d2797",
+      "job_version_id": "53275b99-92f5-468a-8265-0733c261895a",
+      "rubric_version_id": "29b65a1c-672e-4ab3-8b65-999cfb4d3ace",
+      "resume_version_id": "cec1c064-df8e-4df9-8043-4f2f27a8cfac",
+      "lifecycle_status": "ACTIVE",
+      "current_stage_code": "S6",
+      "record_version": 1,
+      "created_at": "2026-11-14T12:11:50.583Z"
+    }
+  },
+  "outcome": "PASS"
+}

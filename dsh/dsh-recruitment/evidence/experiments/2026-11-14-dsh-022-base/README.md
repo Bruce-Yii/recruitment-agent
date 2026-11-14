@@ -46,8 +46,8 @@ D:\12412\recruitment-runtime\node_modules\.bin\dsh.cmd --version
 ```
 
 原因：**会话里存了当时的模型选择**，改 profile 的 `agent-default-model` 对已有会话无效。
-解决：清空产品 home 的 `sessions/` 与 `workspace.json` 的 `sessionIds`（只动
-`D:\12412\dsh-home-recruitment`，不碰桌面 home），让新会话重新取默认值。
+解决：清空产品 home 的 sessions 目录与 `workspace.json` 的 `sessionIds`（只动产品自己的 DSH home，
+**该 home 按设计不入库**，不碰桌面 home），让新会话重新取默认值。
 
 ### 3.2 0.2.2 的 composer 不吃 `execCommand('insertText')`
 

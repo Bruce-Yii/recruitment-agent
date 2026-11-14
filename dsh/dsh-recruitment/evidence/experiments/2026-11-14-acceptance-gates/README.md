@@ -19,7 +19,7 @@
 
 1. **§9.12-9（与 §11.6-7 同源）**：外部动作已成功但本地回执丢失时，系统**直接重发**，
    没有外部读回/对账 → 实测同一消息线上出现 **2 次**。根因在 vendored 的
-   `src/engine/app/outbox.ts` + `app/effects.ts`：只有本地 receipt，没有 readback/对账端口。
+   `src/engine/app/outbox.ts` + `src/engine/app/effects.ts`：只有本地 receipt，没有 readback/对账端口。
 2. **§11.6-8**：阻塞信息只有 `{code, message}`；**没有结构化的"责任人"字段**，
    工作台无法机检"责任人"（只有自由文本）。这是核对门槛原文后**故意不通过**的断言。
 

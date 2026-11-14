@@ -31,7 +31,7 @@ dsh --profile recruitment --no-open --port 49301
 
 ### 2.1 落地页（`shot-00-landing.png` 未入库，同 `s3-01-typed.png` 可见侧边栏）
 
-- 页面标题 `DeepSeek Harness`，URL 从 `…/?token=…` 变成 `http://127.0.0.1:49301/`（token 已消费）。
+- 页面标题 `DeepSeek Harness`，URL 从带 token 的地址变成 `http://127.0.0.1:49301`（token 已消费）。
 - 侧边栏工作区列表、输入框（`contenteditable`）、模型 `[免费] Beam Free` 都正常。
 - **发现**：`recruitment-agent` 这个工作区**不在**本机 DSH 工作区列表里（列表里有 `recruitment-os` 等）。
   所以本轮会话开在 `recruitment-os` 下。**不影响工具可达性**（插件工具来自 profile，不来自工作区）。
@@ -155,8 +155,7 @@ node refresh.mjs  s3
 
 **根因**：`DSH_HOME` 是**用户级环境变量**（`[Environment]::GetEnvironmentVariable('DSH_HOME','User')` = `D:\12412\dsh-home`）。
 桌面端和 `dsh` CLI **都读它**。我第一次起服务时显式把它设成了同一个值，于是：
-会话库（`sessions/`）、工作区注册表（`storages/workspace.json`）、凭据（`.credentials.yaml`）、
-设置（`settings.yaml`）、附件（`attachments/`）**全部共用** —— 所以打开就是桌面端那个样子。
+会话库、工作区注册表、凭据、设置、附件**全部共用**（这些都在 DSH home 里，**按设计不入库**） —— 所以打开就是桌面端那个样子。
 
 **注意**：运行时本身一直是独立的（`dsh` CLI 在 `D:\12412\npm-global\`，桌面端是 `D:\12412\DeepSeek Harness\` 的 Electron/asar）。
 **共用的只有数据 home**，不是代码。
@@ -189,7 +188,7 @@ profile 的依赖用 `pnpm install --frozen-lockfile` 重建（只有一条 `lin
 | 新实例首屏 | **`工作区 / 暂无会话` + `选择工作区`**（全新 home 的首次体验） | `isolated-01-landing.png` |
 | 新实例工作区列表 | **只有 `recruitment-agent`**，没有 vivic / boss-zhipin-scraper 等用户项目 | `isolated-04-workspace.png` |
 | 新实例里工具能用 | `recruitment_job_get` → `title：后端工程师 / status：DRAFT`，与 DB 一致 | `isolated-05-typed.png`、`isolated-06-result.png` |
-| 新实例会话落在自己家里 | `dsh-home-recruitment\sessions\--D-12412-...recruitment-agent--\` | 目录实测 |
+| 新实例会话落在自己家里 | 产品 home 的 sessions 子目录（**本机，按设计不入库**） | 目录实测 |
 | **桌面 home 没被动过** | 会话文件数 **1291 → 1291**（不变）；`workspace.json` 里**没有** `recruitment-agent` | 前后各查一次 |
 | 用户级 `DSH_HOME` | **未修改**（仍是 `D:\12412\dsh-home`），只在这个进程里覆盖 | `[Environment]::GetEnvironmentVariable` 复查 |
 

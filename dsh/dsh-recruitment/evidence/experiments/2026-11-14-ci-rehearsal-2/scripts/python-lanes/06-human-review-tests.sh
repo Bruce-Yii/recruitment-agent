@@ -1,0 +1,1 @@
+python -m pytest review/tests -q

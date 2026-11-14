@@ -1,0 +1,1 @@
+python -m pytest fallback/tests -q

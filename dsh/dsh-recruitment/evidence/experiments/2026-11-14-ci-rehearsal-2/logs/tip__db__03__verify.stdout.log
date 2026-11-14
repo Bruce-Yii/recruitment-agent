@@ -1,0 +1,719 @@
+== verify-0003
+==================================================================
+ 0. 环境
+==================================================================
+       database       | pg_version | has_0003 | has_review_queue | has_review_audit 
+----------------------+------------+----------+------------------+------------------
+ ra_ci_rehearsal2_tip | 17.11      | t        | t                | t
+(1 行记录)
+
+
+==================================================================
+ 1. 对象清单（0003 建出来的东西）
+    口径：字段数 / NOT NULL 问 information_schema.columns；
+          约束按类型问 pg_constraint（PG17 的 information_schema 把 NOT NULL
+          也记成 CHECK，直接用它的合计数会虚高，见 1.1 的交叉核对）。
+==================================================================
+       表       | 字段数 | NOT NULL | PK | UNIQUE | FK | CHECK | 约束合计 | 索引 | 触发器 
+----------------+--------+----------+----+--------+----+-------+----------+------+--------
+ conversion_run |     16 |       15 |  1 |      1 |  1 |    16 |       19 |    8 |      2
+ review_audit   |      9 |        7 |  1 |      0 |  3 |     4 |        8 |    5 |      2
+ review_queue   |     13 |        9 |  1 |      2 |  3 |    12 |       18 |    6 |      4
+(3 行记录)
+
+
+ 1.1 交叉核对：information_schema 的 CHECK 数 == 真实 CHECK 数 + NOT NULL 列数
+       表       | infoschema CHECK | 真实 CHECK | NOT NULL 
+----------------+------------------+------------+----------
+ conversion_run |               31 |         16 |       15
+ review_audit   |               11 |          4 |        7
+ review_queue   |               21 |         12 |        9
+(3 行记录)
+
+      kind       | n 
+-----------------+---
+ views           | 3
+ functions(0003) | 6
+(2 行记录)
+
+
+==================================================================
+ 2. 结构断言（任何一条不满足即整体失败，exit != 0）
+==================================================================
+
+==================================================================
+ 3. 状态机矩阵：6×6 = 36 格，只允许 8 条边（Y = 允许，- = 拒绝）
+==================================================================
+ from \ to | QUEUED | IN_REVIEW | CORRECTED | APPROVED | REJECTED | REPROCESS 
+-----------+--------+-----------+-----------+----------+----------+-----------
+ QUEUED    | -      | Y         | -         | -        | -        | -
+ IN_REVIEW | -      | -         | Y         | Y        | Y        | Y
+ CORRECTED | -      | -         | -         | Y        | Y        | Y
+ APPROVED  | -      | -         | -         | -        | -        | -
+ REJECTED  | -      | -         | -         | -        | -        | -
+ REPROCESS | -      | -         | -         | -        | -        | -
+(6 行记录)
+
+
+==================================================================
+ 4. 正例：建 run → 入队 → IN_REVIEW → CORRECTED → APPROVED → 审计逐条查回
+==================================================================
+
+ 4.1 夹具：两个租户 / 四个 actor / 七个 run（第八个在 4.9 追加）
+
+ 4.2 入队即留痕：Q1 的 deadline / 状态 / 第一条审计
+                  id                  | status | assignee_null | closed_null | hours_to_deadline | record_version 
+--------------------------------------+--------+---------------+-------------+-------------------+----------------
+ dddddddd-0000-0000-0000-000000000001 | QUEUED | t             | t           |             24.00 |              1
+(1 行记录)
+
+ audit_seq |  from  |   to   |     actor      |                                reason                                
+-----------+--------+--------+----------------+----------------------------------------------------------------------
+         1 | (入队) | QUEUED | 转换器（系统） | 机器判定：pdf_reading_order_unverified（doc 11 A4 HARD，需人工核对）
+(1 行记录)
+
+
+ 4.3 受理：QUEUED → IN_REVIEW（此时下游必须被挡住）
+      gate      | blocking | open_items | latest_run_status | human_verdict 
+----------------+----------+------------+-------------------+---------------
+ PENDING_REVIEW | t        |          1 | QUARANTINED       | 
+(1 行记录)
+
+
+ 4.4 补正：IN_REVIEW → CORRECTED（机器结果与人工结果两份都保留）
+  status   | closed_null | record_version |                 human_note                  | machine_run_status |       machine_issue_codes        
+-----------+-------------+----------------+---------------------------------------------+--------------------+----------------------------------
+ CORRECTED | t           |              3 | 按原件第 1 页重排顺序，补公司名；未改动正文 | QUARANTINED        | ["pdf_reading_order_unverified"]
+(1 行记录)
+
+
+ 4.5 复核放行：CORRECTED → APPROVED（换一个人，理由必须本次给出）
+
+ 4.6 审计逐条查回（同一事务内 at 相同，顺序看 audit_seq）
+ # |   from    |    to     |     actor      |                                reason                                
+---+-----------+-----------+----------------+----------------------------------------------------------------------
+ 1 | (入队)    | QUEUED    | 转换器（系统） | 机器判定：pdf_reading_order_unverified（doc 11 A4 HARD，需人工核对）
+ 2 | QUEUED    | IN_REVIEW | HR 甲          | 机器判定：pdf_reading_order_unverified（doc 11 A4 HARD，需人工核对）
+ 3 | IN_REVIEW | CORRECTED | HR 甲          | 人工补正：按原件重排页内顺序并补公司名
+ 4 | CORRECTED | APPROVED  | 复核 乙        | 复核：与原件逐页对照，补正与原文一致，放行
+(4 行记录)
+
+
+ 4.7 放行后：gate=CLEARED，未结案视图里不再有这条
+  gate   | blocking | open_items | human_verdict 
+---------+----------+------------+---------------
+ CLEARED | f        |          0 | APPROVED
+(1 行记录)
+
+
+ 4.7.1 乐观并发：拿旧 record_version 更新 0 行（不是报错，是重读信号）
+
+ 4.8 其余队列条目：Q4 停在 QUEUED / Q5 停在 IN_REVIEW / Q6 走到 APPROVED / Q7 三天前入队
+
+ 4.8.1 延长 deadline 是允许的，而且内容编辑也留痕（from = to）
+ audit_seq |  from  |   to   |     actor      |                            reason                            
+-----------+--------+--------+----------------+--------------------------------------------------------------
+         5 | (入队) | QUEUED | 转换器（系统） | 机器判定：reader_crashed（读取器崩溃，无结果，必须人工处理）
+        12 | QUEUED | QUEUED | HR 甲          | 机器判定：reader_crashed（读取器崩溃，无结果，必须人工处理）
+(2 行记录)
+
+
+ 4.9 OBS-02：同一文件跑两次 = 两条记录（id 不同、status 各自保留）
+                  id                  |   status    | completeness |          started_at           |          finished_at          
+--------------------------------------+-------------+--------------+-------------------------------+-------------------------------
+ cccccccc-0000-0000-0000-000000000001 | QUARANTINED | partial      | 2026-11-14 17:41:59.543048+08 | 2026-11-14 17:42:59.543048+08
+ cccccccc-0000-0000-0000-000000000008 | ACCEPTED    | complete     | 2026-11-14 18:06:59.543048+08 | 2026-11-14 18:07:59.543048+08
+(2 行记录)
+
+
+ 4.10 OBS-04：code / 来源 / 时间 / 状态 四个维度都能查到同一批记录
+             dimension             | n 
+-----------------------------------+---
+ code=pdf_reading_order_unverified | 2
+ source=sha256(1..)                | 2
+ time=最近 1 小时                  | 7
+ status=QUARANTINED                | 4
+(4 行记录)
+
+
+ 4.11 HUM-04：超 24h 的条目在 v_review_open 里被标成 overdue
+               item_id                | status |           opened_at           |           deadline            | overdue | age_hours 
+--------------------------------------+--------+-------------------------------+-------------------------------+---------+-----------
+ dddddddd-0000-0000-0000-000000000007 | QUEUED | 2026-11-11 18:11:59.543048+08 | 2026-11-12 18:11:59.543048+08 | t       |     72.00
+(1 行记录)
+
+
+ 4.12 漏记必须可见：R3 是 FAILED 但没有人入队 → gate=UNACCOUNTED（fail closed）
+    gate     | blocking | open_items | latest_run_status | human_verdict 
+-------------+----------+------------+-------------------+---------------
+ UNACCOUNTED | t        |          0 | FAILED            | 
+(1 行记录)
+
+     accounting     | n 
+--------------------+---
+ MISSING_QUEUE_ITEM | 1
+ OK_ACCEPTED        | 2
+ OK_QUEUED          | 5
+(3 行记录)
+
+
+==================================================================
+ 5. 负向测试（25 条，每条都必须被数据库拒绝，并断言 SQLSTATE）
+==================================================================
+
+==================================================================
+ 6. 收尾：负向测试没有留下任何数据，账本仍然平
+==================================================================
+ runs | queue_items | audit_rows | enqueue_audits | open_items | unaccounted 
+------+-------------+------------+----------------+------------+-------------
+    8 |           5 |         12 |              5 |          3 |           1
+(1 行记录)
+
+
+ VERIFY-0003 PASS：结构断言 + 状态机矩阵 + 正例 + 25 条负向测试全部通过
+
+== verify-0004
+==================================================================
+ verify-0004 · 0. 环境
+==================================================================
+       database       | pg_version | stage_catalog_exists | job_rubric_column_exists 
+----------------------+------------+----------------------+--------------------------
+ ra_ci_rehearsal2_tip | 17.11      | t                    | t
+(1 行记录)
+
+
+==================================================================
+ verify-0004 · 1. 本迁移新增的对象（约束定义原文）
+==================================================================
+      tbl       |         constraint_name         | kind |                                                                        definition                                                                         
+----------------+---------------------------------+------+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+ application    | fk_application_stage_catalog    | f    | FOREIGN KEY (tenant_id, current_stage_code) REFERENCES recruitment.stage_catalog(tenant_id, code) ON UPDATE RESTRICT ON DELETE RESTRICT
+ job            | fk_job_current_rubric           | f    | FOREIGN KEY (tenant_id, id, current_rubric_version_id) REFERENCES recruitment.rubric_version(tenant_id, job_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT
+ rubric_version | uq_rubric_version_tenant_job_id | u    | UNIQUE (tenant_id, job_id, id)
+ stage_catalog  | ck_stage_catalog_code           | c    | CHECK ((code ~ '^[A-Z][A-Z0-9_]{1,40}$'::text))
+ stage_catalog  | ck_stage_catalog_name           | c    | CHECK (((length(btrim(name)) >= 1) AND (length(btrim(name)) <= 120)))
+ stage_catalog  | ck_stage_catalog_sort_order     | c    | CHECK (((sort_order >= 1) AND (sort_order <= 12)))
+ stage_catalog  | uq_stage_catalog_tenant_code    | u    | UNIQUE (tenant_id, code)
+ stage_catalog  | uq_stage_catalog_tenant_order   | u    | UNIQUE (tenant_id, sort_order)
+(8 行记录)
+
+-- application.current_stage_code 的默认值（D-22 后不应再是 SCREENING）--
+    column_name     | column_default | is_nullable 
+--------------------+----------------+-------------
+ current_stage_code | 'S6'::text     | NO
+(1 行记录)
+
+-- stage_catalog 全量（应当正好 12 行，S1..S12） --
+ code |           name           | sort_order | in_v1_scope 
+------+--------------------------+------------+-------------
+ S1   | 招聘需求发现             |          1 | f
+ S2   | Requisition 创建与审批   |          2 | f
+ S3   | Job / JD / Rubric 设计   |          3 | t
+ S4   | Job Posting 发布         |          4 | f
+ S5   | 人才获取 / Sourcing      |          5 | f
+ S6   | 简历接入与处理（Intake） |          6 | t
+ S7   | 初筛 / Screening         |          7 | t
+ S8   | 面试规划与排期           |          8 | t
+ S9   | 面试执行与材料获取       |          9 | t
+ S10  | 综合评价与招聘决策       |         10 | t
+ S11  | Offer 与入职交接         |         11 | f
+ S12  | 人才沉淀与复盘           |         12 | f
+(12 行记录)
+
+-- job.current_rubric_version_id 回填结果（应与 rubric 的 job_id 相同） --
+                job_id                |    code     | record_version |      current_rubric_version_id       |            rubric_job_id             | version_no 
+--------------------------------------+-------------+----------------+--------------------------------------+--------------------------------------+------------
+ 11111111-1111-4111-8111-000000000401 | DEMO-BE-001 |              4 | 11111111-1111-4111-8111-000000000403 | 11111111-1111-4111-8111-000000000401 |          1
+(1 行记录)
+
+
+==================================================================
+ verify-0004 · 2. 正向断言（任何一条不满足即整体失败）
+==================================================================
+
+==================================================================
+ verify-0004 · 3. 负向测试夹具（本事务结束 ROLLBACK，不留数据）
+==================================================================
+
+==================================================================
+ verify-0004 · 4. 负向测试（每条断言 SQLSTATE，且断言命中的约束名）
+==================================================================
+
+==================================================================
+ verify-0004 · 5. 正向断言：外键没有把合法路径堵死
+==================================================================
+
+=== ROLLBACK：自检不改变数据库 ===
+
+==================================================================
+ VERIFY-0004 PASS：目录 12 行 / 双向逐字一致 / 两个外键 / 8 条负向测试全部按预期失败
+==================================================================
+== verify-0005
+==================================================================
+ 0. 环境
+==================================================================
+       database       | pg_version | application_fks 
+----------------------+------------+-----------------
+ ra_ci_rehearsal2_tip | 17.11      |              12
+(1 行记录)
+
+
+==================================================================
+ 1. 结构断言（任何一条不满足即整体失败）
+==================================================================
+
+==================================================================
+ 2. 夹具（脚本结束 ROLLBACK，不留数据）
+==================================================================
+ 夹具就绪：T1 = job1(021)/job2(022)，T2 = job9(023)；版本各 1 行
+
+-- application 上与版本相关的外键（改造后，真实 pg_get_constraintdef）--
+            conname             | validated | on_delete |                                                                      definition                                                                       
+--------------------------------+-----------+-----------+-------------------------------------------------------------------------------------------------------------------------------------------------------
+ fk_application_job_version_job | t         | r         | FOREIGN KEY (tenant_id, job_version_id, job_id) REFERENCES recruitment.job_version(tenant_id, id, job_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+ fk_application_rubric_job      | t         | r         | FOREIGN KEY (tenant_id, rubric_version_id, job_id) REFERENCES recruitment.rubric_version(tenant_id, id, job_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+(2 行记录)
+
+-- rubric_version / job_version 上的唯一键（被引用键）--
+            tbl             |             conname             |           definition           
+----------------------------+---------------------------------+--------------------------------
+ recruitment.job_version    | uq_job_version_id_job           | UNIQUE (id, job_id)
+ recruitment.job_version    | uq_job_version_tenant_id_job    | UNIQUE (tenant_id, id, job_id)
+ recruitment.rubric_version | uq_rubric_version_id_job        | UNIQUE (id, job_id)
+ recruitment.rubric_version | uq_rubric_version_tenant_job_id | UNIQUE (tenant_id, job_id, id)
+(4 行记录)
+
+-- 旧外键（应回空集）--
+ conname 
+---------
+(0 行记录)
+
+
+==================================================================
+ 4. 正向用例（同岗位引用必须成功）
+==================================================================
+
+==================================================================
+ 5. 负向用例（每条都必须 FAIL，并给出真实 SQLSTATE / 报错）
+==================================================================
+
+==================================================================
+ 6. 删除被引用的版本（触发器路径 23514 / 外键路径 23503）
+==================================================================
+
+==================================================================
+ 7. 数据面复核
+==================================================================
+-- 夹具申请（3 条，全部同岗位同租户）--
+                  id                  |                job_id                |            job_version_id            |          rubric_version_id           |                jv_job                |                rv_job                
+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------
+ dddddddd-dddd-4ddd-8ddd-000000000061 | dddddddd-dddd-4ddd-8ddd-000000000021 | dddddddd-dddd-4ddd-8ddd-000000000031 | dddddddd-dddd-4ddd-8ddd-000000000041 | dddddddd-dddd-4ddd-8ddd-000000000021 | dddddddd-dddd-4ddd-8ddd-000000000021
+ dddddddd-dddd-4ddd-8ddd-000000000062 | dddddddd-dddd-4ddd-8ddd-000000000021 | dddddddd-dddd-4ddd-8ddd-000000000031 |                                      | dddddddd-dddd-4ddd-8ddd-000000000021 | 
+ dddddddd-dddd-4ddd-8ddd-000000000063 | dddddddd-dddd-4ddd-8ddd-000000000022 | dddddddd-dddd-4ddd-8ddd-000000000032 | dddddddd-dddd-4ddd-8ddd-000000000042 | dddddddd-dddd-4ddd-8ddd-000000000022 | dddddddd-dddd-4ddd-8ddd-000000000022
+(3 行记录)
+
+-- 版本 / 申请行数 --
+       t        | count 
+----------------+-------
+ application    |     4
+ job_version    |     4
+ rubric_version |     4
+(3 行记录)
+
+
+=== ROLLBACK：自检不改变数据库 ===
+
+==================================================================
+ V5 PASS：结构断言 + 3 条正向用例 + 9 条负向用例（断言 SQLSTATE）
+          + 2×2 条删除路径（23514 触发器 / 23503 外键 RESTRICT）全部通过
+==================================================================
+== verify-0006
+==================================================================
+ 0. 环境
+==================================================================
+       database       | pg_version | interview_fks | business_task_fks 
+----------------------+------------+---------------+-------------------
+ ra_ci_rehearsal2_tip | 17.11      |             6 |                 9
+(1 行记录)
+
+
+==================================================================
+ 1. 结构断言
+==================================================================
+
+-- 改造后：0006 新增 / 改写的约束（pg_get_constraintdef 原文）--
+  gap  |                  object                   |                                                                                      definition                                                                                       
+-------+-------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ GAP-1 | fk_interview_stage_catalog                | FOREIGN KEY (tenant_id, stage_code) REFERENCES recruitment.stage_catalog(tenant_id, code) ON UPDATE RESTRICT ON DELETE RESTRICT
+ GAP-2 | ck_execution_mandate_no_business_approval | CHECK ((NOT (allowed_actions && ARRAY['approve'::text, 'reject'::text, 'decide'::text, 'merge_candidate'::text, 'waive_scorecard'::text, 'submit_scorecard'::text])))
+ GAP-3 | fk_interview_record_artifact              | FOREIGN KEY (tenant_id, transcript_artifact_id, transcript_revision) REFERENCES recruitment.transcript_artifact(tenant_id, id, source_revision) ON UPDATE RESTRICT ON DELETE RESTRICT
+ GAP-3 | uq_transcript_artifact_tenant_id_revision | UNIQUE (tenant_id, id, source_revision)
+ GAP-4 | fk_business_task_owner_actor              | FOREIGN KEY (owner_actor_id, tenant_id) REFERENCES recruitment.actor(id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+(5 行记录)
+
+-- 改造后：GAP-5 的两个触发器（pg_get_triggerdef 原文）--
+          tgname           |                                                                 definition                                                                 
+---------------------------+--------------------------------------------------------------------------------------------------------------------------------------------
+ trg_meeting_binding_touch | CREATE TRIGGER trg_meeting_binding_touch BEFORE UPDATE ON recruitment.meeting_binding FOR EACH ROW EXECUTE FUNCTION recruitment.fn_touch()
+ trg_meeting_touch         | CREATE TRIGGER trg_meeting_touch BEFORE UPDATE ON recruitment.meeting FOR EACH ROW EXECUTE FUNCTION recruitment.fn_touch()
+(2 行记录)
+
+-- 改造后：interview.stage_code 的默认值 --
+  attname   | default_expr 
+------------+--------------
+ stage_code | 'S8'::text
+(1 行记录)
+
+
+==================================================================
+ 3. 夹具
+==================================================================
+ 夹具就绪：T1 有完整链（面试 2 / 会议 2 / 转写 1 / 记录 0），T2 只有会议 + 转写（无阶段目录）
+
+==================================================================
+ 4. 正向用例（合法路径必须成功）
+==================================================================
+
+==================================================================
+ 5. 负向用例（每条都必须 FAIL，并给出真实 SQLSTATE / 报错）
+==================================================================
+
+==================================================================
+ 6. GAP-5：record_version 是否真的活了（自增 / 不可伪造 / 过期版本 0 行）
+==================================================================
+
+==================================================================
+ 7. 数据面复核
+==================================================================
+
+-- 夹具行数（脚本回滚前；回滚后应为 0）--
+         t         | count 
+-------------------+-------
+ business_task     |     2
+ execution_mandate |     1
+ interview         |     2
+ interview_record  |     1
+ meeting           |     4
+ meeting_binding   |     1
+(6 行记录)
+
+
+=== ROLLBACK：自检不改变数据库 ===
+
+==================================================================
+ VERIFY-0006 PASS：11 条结构断言 + 7 条正向 + 14 条负向 + 4 条 GAP-5 动态 + 5 条数据面全部通过
+==================================================================
+== verify-0007
+==================================================================
+ 0. 环境
+==================================================================
+       database       | pg_version | decision_fks | scorecard_fks 
+----------------------+------------+--------------+---------------
+ ra_ci_rehearsal2_tip | 17.11      |            7 |             8
+(1 行记录)
+
+
+==================================================================
+ 1. 结构断言
+==================================================================
+
+-- 改造后：0007 新增 / 改写的约束（pg_get_constraintdef 原文）--
+ gap |           object            |                                                                                      definition                                                                                       
+-----+-----------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ A   | fk_decision_stage_catalog   | FOREIGN KEY (tenant_id, stage_code) REFERENCES recruitment.stage_catalog(tenant_id, code) ON UPDATE RESTRICT ON DELETE RESTRICT
+ C   | fk_scorecard_rubric_job     | FOREIGN KEY (tenant_id, job_id, rubric_version_id) REFERENCES recruitment.rubric_version(tenant_id, job_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT
+ D   | fk_ai_summary_artifact      | FOREIGN KEY (tenant_id, transcript_artifact_id, transcript_revision) REFERENCES recruitment.transcript_artifact(tenant_id, id, source_revision) ON UPDATE RESTRICT ON DELETE RESTRICT
+ E   | ck_scorecard_terminal_actor | CHECK (((status = 'PENDING'::text) OR (status_changed_by_actor_id IS NOT NULL)))
+(4 行记录)
+
+-- 改造后：uq_decision_current（pg_get_indexdef 原文）--
+                                                                                         definition                                                                                         
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ CREATE INDEX uq_decision_current ON recruitment.decision USING btree (tenant_id, application_id, decision_scope, COALESCE(stage_code, ''::text)) WHERE (superseded_by_decision_id IS NULL)
+(1 行记录)
+
+-- 改造后：0007 的两个新触发器 + scorecard.job_id 缺省值 --
+               tgname               |                                                                               definition                                                                               
+------------------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ trg_scorecard_job_guard            | CREATE TRIGGER trg_scorecard_job_guard BEFORE INSERT OR UPDATE ON recruitment.scorecard FOR EACH ROW EXECUTE FUNCTION recruitment.fn_scorecard_job_guard()
+ trg_scorecard_terminal_actor_guard | CREATE TRIGGER trg_scorecard_terminal_actor_guard BEFORE INSERT ON recruitment.scorecard FOR EACH ROW EXECUTE FUNCTION recruitment.fn_scorecard_terminal_actor_guard()
+(2 行记录)
+
+ attname | not_null | default_expr 
+---------+----------+--------------
+ job_id  | t        | （无默认值）
+(1 行记录)
+
+-- 改造后：decision 的列（证明没有 status / status_changed_by_actor_id）--
+ attnum |          attname          |           type           
+--------+---------------------------+--------------------------
+      1 | id                        | uuid
+      2 | tenant_id                 | uuid
+      3 | application_id            | uuid
+      4 | interview_id              | uuid
+      5 | decision_scope            | text
+      6 | stage_code                | text
+      7 | result                    | text
+      8 | decided_by_actor_id       | uuid
+      9 | decided_at                | timestamp with time zone
+     10 | reason                    | text
+     11 | basis_refs                | jsonb
+     12 | approval_id               | uuid
+     13 | superseded_by_decision_id | uuid
+     14 | record_version            | integer
+     15 | created_at                | timestamp with time zone
+     16 | updated_at                | timestamp with time zone
+(16 行记录)
+
+
+==================================================================
+ 3. 夹具
+==================================================================
+ 夹具就绪：T1 有目录 12 行（S1–S12）/ 岗位 2 / rubric 2 / 面试 1 / 面试官 8；T2 有目录 1 行（SX1）
+
+==================================================================
+ 4. 正向用例（合法路径必须成功）
+==================================================================
+
+==================================================================
+ 5. 负向用例（每条都必须 FAIL，并给出真实 SQLSTATE / 报错）
+==================================================================
+
+==================================================================
+ 6. 数据面复核
+==================================================================
+
+==================================================================
+ 7. GAP-E · decision 侧「本缺口不成立」的实测证据
+==================================================================
+-- decision 是否有 status / status_changed_by_actor_id / status_source_event_id --
+       attname       
+---------------------
+ decided_at
+ decided_by_actor_id
+(2 行记录)
+
+-- decided_by_actor_id 是 NOT NULL + 同租户外键：decision 的 INSERT 上 actor 不可能缺席 --
+           conname            | contype | convalidated |                                        definition                                        
+------------------------------+---------+--------------+------------------------------------------------------------------------------------------
+ fk_decision_actor            | f       | t            | FOREIGN KEY (decided_by_actor_id, tenant_id) REFERENCES recruitment.actor(id, tenant_id)
+ decided_by_actor_id NOT NULL | n       |              | true
+(2 行记录)
+
+-- 结论：E-04 = 42703（列不存在）；E-05 = 23502（actor 缺失被 NOT NULL 拦）--
+--   两条都说明：decision 的"终态行不写 actor"不是可写状态，GAP-E 在 decision 上不成立。--
+
+-- 夹具行数（脚本回滚前）--
+      t      | count 
+-------------+-------
+ ai_summary  |     1
+ decision    |     5
+ interview   |     1
+ interviewer |     8
+ scorecard   |     4
+(5 行记录)
+
+
+=== ROLLBACK：自检不改变数据库 ===
+
+==================================================================
+ VERIFY-0007 PASS：11 条结构断言 + 11 条正向 + 22 条负向 + 7 条数据面全部通过（GAP-E 的 decision 侧已实测判定不成立）
+== verify-0008
+==================================================================
+ 0. 环境
+==================================================================
+          db          | pg_version |              at               
+----------------------+------------+-------------------------------
+ ra_ci_rehearsal2_tip | 17.11      | 2026-11-14 18:12:00.846457+08
+(1 行记录)
+
+
+==================================================================
+ 1. 结构断言
+==================================================================
+
+-- 改造后：0008 的两条可延迟排斥约束（pg_get_constraintdef 原文）--
+          conname          | contype | condeferrable | condeferred | convalidated |                                                                                              definition                                                                                               
+---------------------------+---------+---------------+-------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ uq_decision_current       | x       | t             | t           | t            | EXCLUDE USING btree (tenant_id WITH =, application_id WITH =, decision_scope WITH =, COALESCE(stage_code, ''::text) WITH =) WHERE ((superseded_by_decision_id IS NULL)) DEFERRABLE INITIALLY DEFERRED
+ uq_decision_current_final | x       | t             | t           | t            | EXCLUDE USING btree (tenant_id WITH =, application_id WITH =) WHERE (((decision_scope = 'FINAL'::text) AND (superseded_by_decision_id IS NULL))) DEFERRABLE INITIALLY DEFERRED
+(2 行记录)
+
+
+-- 改造后：backing index（注意 indisunique=f / indisexclusion=t）--
+          relname          | indisunique | indisexclusion |                                                                                          indexdef                                                                                          
+---------------------------+-------------+----------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ uq_decision_current       | f           | t              | CREATE INDEX uq_decision_current ON recruitment.decision USING btree (tenant_id, application_id, decision_scope, COALESCE(stage_code, ''::text)) WHERE (superseded_by_decision_id IS NULL)
+ uq_decision_current_final | f           | t              | CREATE INDEX uq_decision_current_final ON recruitment.decision USING btree (tenant_id, application_id) WHERE ((decision_scope = 'FINAL'::text) AND (superseded_by_decision_id IS NULL))
+(2 行记录)
+
+
+-- 改造后：interview_record.job_id + 复合外键 + 触发器 --
+ attname | type | attnotnull | default_expr 
+---------+------+------------+--------------
+ job_id  | uuid | t          | （无）
+(1 行记录)
+
+            conname             |                                                                      definition                                                                       
+--------------------------------+-------------------------------------------------------------------------------------------------------------------------------------------------------
+ fk_interview_record_rubric_job | FOREIGN KEY (tenant_id, job_id, rubric_version_id) REFERENCES recruitment.rubric_version(tenant_id, job_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT
+(1 行记录)
+
+             tgname             |                                                                                   definition                                                                                    
+--------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ trg_interview_record_job_guard | CREATE TRIGGER trg_interview_record_job_guard BEFORE INSERT OR UPDATE ON recruitment.interview_record FOR EACH ROW EXECUTE FUNCTION recruitment.fn_interview_record_job_guard()
+(1 行记录)
+
+
+==================================================================
+ 3. 夹具
+==================================================================
+ 夹具就绪：演示租户（0002 链）+ 专用申请 7a2（job 401）+ 岗位二 402/rubric 404 + 会议 501/转写 502 + 面试 601 + 两条重评前 current 决策
+
+==================================================================
+ 4. 正向用例（合法路径必须成功）
+==================================================================
+-- P-1 契约 §5.2 步骤 1/2：INSERT 新 current（同一 (SCREENING, NULL) 键，旧行仍 current）--
+   INSERT 成功 —— 0007 会在这里 23505；0008 延迟到 COMMIT 才检查
+-- P-1 契约 §5.2 步骤 2/2：UPDATE 旧行指向新行 --
+   UPDATE 成功（旧行只改 superseded_by_decision_id，没删、没清 result）
+-- P-2 FINAL 重评：INSERT 新 FINAL（S10）→ 旧 FINAL（NULL）指向新行 --
+   FINAL 重评的两步都成功（中间态有两条 current FINAL，但提交前就修好了）
+-- P-1/P-2 收尾：SET CONSTRAINTS ALL IMMEDIATE（等价于 COMMIT 时的检查）--
+   SET CONSTRAINTS ALL IMMEDIATE 成功 —— 最终状态可提交
+
+==================================================================
+ 5. 负向用例（每条都必须 FAIL，并给出真实 SQLSTATE / 报错）
+==================================================================
+
+==================================================================
+ 6. 数据面复核
+==================================================================
+
+-- 夹具行数（脚本回滚前）--
+        t         | n 
+------------------+---
+ decision         | 4
+ interview        | 1
+ interview_record | 2
+ rubric_version   | 2
+(4 行记录)
+
+
+=== ROLLBACK：自检不改变数据库 ===
+
+==================================================================
+ VERIFY-0008 PASS：7 条结构断言 + 4 条正向（含契约两步重评事务在同一事务内成功）+ 4 条负向 + 5 条数据面全部通过（A 可延迟排斥约束 / B current FINAL 唯一 / C interview_record 岗位绑定）
+== verify-0009
+ VERIFY-0009 PASS：3 条结构断言 + 3 条正向（含用例 D/E）+ 3 条负向（23505/23514/23514）+ 1 条数据面全部通过
+== verify-0010
+          version          |          applied_at           
+---------------------------+-------------------------------
+ 0001_init                 | 2026-11-14 18:11:20.069708+08
+ 0002_seed                 | 2026-11-14 18:11:20.069708+08
+ 0003_review_queue         | 2026-11-14 18:11:20.069708+08
+ 0004_stage_catalog        | 2026-11-14 18:11:20.069708+08
+ 0005_version_binding      | 2026-11-14 18:11:20.069708+08
+ 0006_integrity_gaps       | 2026-11-14 18:11:20.069708+08
+ 0007_decision_integrity   | 2026-11-14 18:11:20.069708+08
+ 0008_decision_uniqueness  | 2026-11-14 18:11:20.069708+08
+ 0009_application_identity | 2026-11-14 18:11:20.069708+08
+ 0010_migration_ledger     | 2026-11-14 18:11:20.069708+08
+ 0012_engine_state         | 2026-11-14 18:11:20.207084+08
+(11 行记录)
+
+== verify
+==================================================================
+ 0. 环境
+==================================================================
+       database       | pg_version | schema_exists 
+----------------------+------------+---------------
+ ra_ci_rehearsal2_tip | 17.11      |             1
+(1 行记录)
+
+
+==================================================================
+ 1. 对象清单（迁移建出来的东西）
+==================================================================
+          kind          |  n  
+------------------------+-----
+ tables                 | 53
+ foreign_keys           | 185
+ check_constraints      | 218
+ unique_constraints     | 75
+ partial_unique_indexes | 13
+ triggers               | 88
+ functions              | 19
+(7 行记录)
+
+
+==================================================================
+ 2. 结构断言（任何一条不满足即整体失败）
+==================================================================
+
+==================================================================
+ 3. 状态机取值覆盖（docs/03 §3/§10/§11/§13 + docs/04 §18）
+==================================================================
+
+==================================================================
+ 4. 对象覆盖率（docs/03 §1 三十六行 → 表 / 映射 / 缓做）
+==================================================================
+-- 额外表（不在三十六行清单内，来自 docs/03 §5 Intake 三层模型 / §6 合并记录）--
+   extra_table   
+-----------------
+ candidate_merge
+ intake_asset
+ intake_record
+(3 行记录)
+
+
+==================================================================
+ 5. 夹具（负向测试用，脚本结束会 ROLLBACK）
+==================================================================
+ 夹具就绪
+
+==================================================================
+ 6. 负向测试（每条都必须 FAIL，并给出真实 SQLSTATE / 报错）
+==================================================================
+
+==================================================================
+ 7. 正向断言（约束没有把合法路径堵死）
+==================================================================
+
+==================================================================
+ 8. 不变量 → 约束 台账（逐条打印，全部必须已落地）
+==================================================================
+
+-- 应用层保证的规则（DB 无法声明，理由写在 SCHEMA.md §4）--
+   id   |                                       rule                                        
+--------+-----------------------------------------------------------------------------------
+ APP-01 | 禁止"离职事件直接把 Requisition 设为 Approved"
+ APP-02 | 同一候选人同岗位重复申请的新建/复活/冷却期由企业规则决定
+ APP-03 | 禁止只按文本哈希去重（幂等键来源由接收层决定）
+ APP-04 | 禁止模糊匹配自动写 Meeting↔Interview 关系（只允许人工或事件精确匹配）
+ APP-05 | Evaluation Ready 三条件是跨表聚合（Scorecard 全交 + Record 完成 + 可回溯）
+ APP-06 | 禁止把 PARSING 当成招聘阶段（状态轴分离由写入方保证）
+ APP-07 | Agent 不得写 Scorecard 内容 / 不得代替人做闸门决策（由 Mandate + 服务端授权校验）
+ APP-08 | 跨租户与资源访问授权（不变量 7，依赖可信服务端 + Mandate，不依赖 Prompt）
+(8 行记录)
+
+
+==================================================================
+ 9. 行数核对（脚本回滚前应为夹具行数，回滚后应为 0）
+==================================================================
+          t          | count 
+---------------------+-------
+ application         |     2
+ business_task       |     2
+ candidate           |     4
+ event_inbox         |     6
+ scorecard           |     2
+ transcript_artifact |     1
+(6 行记录)
+
+
+=== ROLLBACK：自检不改变数据库 ===
+
+==================================================================
+ VERIFY PASS：结构断言 + 状态机覆盖 + 对象覆盖 + 32 条负向测试全部通过
+==================================================================

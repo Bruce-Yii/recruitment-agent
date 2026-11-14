@@ -1,0 +1,1735 @@
+{
+  "summary": {
+    "generated_at": "2026-11-14T21:59:28+08:00",
+    "generated_by": "work/review/e1-e4-audit/probes/build-evidence-index.ps1",
+    "scan_rules": "扫描 docs/** + dsh/dsh-recruitment/{evidence,manual,contracts}/** + 两份 README/CONTRACT 的反引号路径；在仓库根/文档同级/包根/contracts/experiments/evidence/manual/converter 等基准下 Test-Path；transcript.txt/dialogue-only.txt 内的引用按\"原始转录不可改写\"豁免，其余缺失必须在同一行显式标注 按设计不入库/未入库/外部包/已删除/历史引用 才允许豁免",
+    "reference_tsv": "work/review/e1-e4-audit/referenced-files.tsv",
+    "experiments_total": 20,
+    "references_checked_total": 160.0,
+    "verdicts": {
+      "FILES_PRESENT": 17,
+      "REFERENCED_MISSING_BY_DESIGN": 3,
+      "REFERENCED_MISSING": 0,
+      "FAIL_NO_README": 0
+    }
+  },
+  "experiments": [
+    {
+      "experiment": "2026-11-13-natural-language-autonomous-run",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T21:39:53+08:00",
+      "artifacts_present": "commands.txt,transcript.txt,dialogue-only.txt,db-readback.txt",
+      "subdirs": "",
+      "references_checked": 18,
+      "referenced_missing": 5,
+      "referenced_missing_by_design": 5,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "README.md",
+          "line": 47,
+          "ref": "contracts/prompt.md",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\contracts\\prompt.md",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 241,
+          "ref": "src/index.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\index.ts",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 269,
+          "ref": "src/index.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\index.ts",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 325,
+          "ref": "contracts/schema.json",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\contracts\\schema.json",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 325,
+          "ref": "contracts/prompt.md",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\contracts\\prompt.md",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 482,
+          "ref": "manual/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\manual\\",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 485,
+          "ref": "test/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\test\\",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 486,
+          "ref": "test/live-read.mjs",
+          "exists": false,
+          "resolved": "",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 486,
+          "ref": "test/negative.mjs",
+          "exists": false,
+          "resolved": "",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 486,
+          "ref": "test/structure-wiring.mjs",
+          "exists": false,
+          "resolved": "",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 487,
+          "ref": "test/structure/run-acceptance.mjs",
+          "exists": false,
+          "resolved": "",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 489,
+          "ref": "%TEMP%\\structure-accept\\",
+          "exists": false,
+          "resolved": "",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 499,
+          "ref": "src/tools/structure-tools.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\tools\\structure-tools.ts",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 500,
+          "ref": "src/index.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\index.ts",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 550,
+          "ref": "contracts/prompt.md",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\contracts\\prompt.md",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 550,
+          "ref": "contracts/schema.json",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\contracts\\schema.json",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 749,
+          "ref": "docs/11-pdf-acceptance-criteria.md",
+          "exists": true,
+          "resolved": "docs\\11-pdf-acceptance-criteria.md",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        },
+        {
+          "doc": "transcript.txt",
+          "line": 749,
+          "ref": "converter/src/resume_fields.py",
+          "exists": true,
+          "resolved": "converter\\src\\resume_fields.py",
+          "by_design": true,
+          "reason": "原始会话转录（EXPERIMENTS 规范禁止改写/节选；历史材料，不是当前证据引用）"
+        }
+      ],
+      "verdict": "REFERENCED_MISSING_BY_DESIGN"
+    },
+    {
+      "experiment": "2026-11-13-web-browser-acceptance",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T21:42:21+08:00",
+      "artifacts_present": "",
+      "subdirs": "",
+      "references_checked": 3,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "README.md",
+          "line": 8,
+          "ref": "src/index.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\index.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 78,
+          "ref": "manual/evaluation-line/evidence/10-decision-advance/decision-args.json",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\manual\\evaluation-line\\evidence\\10-decision-advance\\decision-args.json",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 160,
+          "ref": "D:\\12412\\npm-global\\",
+          "exists": true,
+          "resolved": "",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        }
+      ],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-acceptance-gates",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T21:42:09+08:00",
+      "artifacts_present": "",
+      "subdirs": "",
+      "references_checked": 4,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "README.md",
+          "line": 22,
+          "ref": "src/engine/app/outbox.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\engine\\app\\outbox.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 22,
+          "ref": "src/engine/app/effects.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\engine\\app\\effects.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 111,
+          "ref": "contracts/stage-advance/tool-contracts.md",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\contracts\\stage-advance\\tool-contracts.md",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 151,
+          "ref": "test/integration/transcript-import.test.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\test\\integration\\transcript-import.test.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        }
+      ],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-candidate-get-pg",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T21:40:31+08:00",
+      "artifacts_present": "",
+      "subdirs": "",
+      "references_checked": 4,
+      "referenced_missing": 2,
+      "referenced_missing_by_design": 2,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "README.md",
+          "line": 3,
+          "ref": "src/tools/stubs.ts",
+          "exists": false,
+          "resolved": "",
+          "by_design": true,
+          "reason": "文档已标注：目标文件已删除（历史引用）"
+        },
+        {
+          "doc": "README.md",
+          "line": 23,
+          "ref": "src/tools/stubs.ts",
+          "exists": false,
+          "resolved": "",
+          "by_design": true,
+          "reason": "文档已标注：目标文件已删除（历史引用）"
+        },
+        {
+          "doc": "README.md",
+          "line": 23,
+          "ref": "src/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\",
+          "by_design": true,
+          "reason": "文档已标注：目标文件已删除（历史引用）"
+        },
+        {
+          "doc": "README.md",
+          "line": 23,
+          "ref": "test/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\test\\",
+          "by_design": true,
+          "reason": "文档已标注：目标文件已删除（历史引用）"
+        }
+      ],
+      "verdict": "REFERENCED_MISSING_BY_DESIGN"
+    },
+    {
+      "experiment": "2026-11-14-ci-rehearsal",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T21:42:09+08:00",
+      "artifacts_present": "FILES.sha256",
+      "subdirs": "logs",
+      "references_checked": 21,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "README.md",
+          "line": 4,
+          "ref": "logs/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal\\logs\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 4,
+          "ref": ".github/workflows/ci.yml",
+          "exists": true,
+          "resolved": ".github\\workflows\\ci.yml",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 8,
+          "ref": "logs/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal\\logs\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 9,
+          "ref": "../2026-11-14-ci-rehearsal-2/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 11,
+          "ref": "logs/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal\\logs\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 18,
+          "ref": ".github/workflows/ci.yml",
+          "exists": true,
+          "resolved": ".github\\workflows\\ci.yml",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 26,
+          "ref": ".github/workflows/ci.yml",
+          "exists": true,
+          "resolved": ".github\\workflows\\ci.yml",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 30,
+          "ref": "\\.github/workflows/ci.yml",
+          "exists": true,
+          "resolved": ".github\\workflows\\ci.yml",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 38,
+          "ref": "logs/compile__03__install-converter-dependencies.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal\\logs\\compile__03__install-converter-dependencies.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 39,
+          "ref": "logs/compile__04__compile-converter-src.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal\\logs\\compile__04__compile-converter-src.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 40,
+          "ref": "logs/compile__05__corpus-manifests-must-be-portable.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal\\logs\\compile__05__corpus-manifests-must-be-portable.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 41,
+          "ref": "logs/compile__06__report-acceptance-test-availability.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal\\logs\\compile__06__report-acceptance-test-availability.log",
+          "by_design": true,
+          "reason": "文档已标注：按设计不入库（机器本地/含 PII/仓库外产物）"
+        },
+        {
+          "doc": "README.md",
+          "line": 42,
+          "ref": "logs/db__02__apply-migrations-0001-0006.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal\\logs\\db__02__apply-migrations-0001-0006.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 43,
+          "ref": "logs/db__03__verify-every-migration.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal\\logs\\db__03__verify-every-migration.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 44,
+          "ref": "logs/db__04__migration-lifecycle-fresh-upgrade-re-run.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal\\logs\\db__04__migration-lifecycle-fresh-upgrade-re-run.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 45,
+          "ref": "logs/plugin__06__run-plugin-tests.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal\\logs\\plugin__06__run-plugin-tests.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 46,
+          "ref": "logs/plugin__06__run-plugin-tests.raw.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal\\logs\\plugin__06__run-plugin-tests.raw.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 47,
+          "ref": "logs/python-lanes__04__apply-0001-0003-for-the-review-lane.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal\\logs\\python-lanes__04__apply-0001-0003-for-the-review-lane.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 68,
+          "ref": "work/review/e1-e4-audit/test-run-full-2107.log",
+          "exists": true,
+          "resolved": "work\\review\\e1-e4-audit\\test-run-full-2107.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 70,
+          "ref": "../2026-11-14-ci-rehearsal-2/README.md",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\README.md",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 81,
+          "ref": "dsh/dsh-recruitment/evidence/experiments/2026-11-14-ci-rehearsal-2/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        }
+      ],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-ci-rehearsal-2",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T21:40:15+08:00",
+      "artifacts_present": "",
+      "subdirs": "logs,scripts",
+      "references_checked": 57,
+      "referenced_missing": 3,
+      "referenced_missing_by_design": 3,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "ci-steps.md",
+          "line": 3,
+          "ref": ".github/workflows/ci.yml",
+          "exists": true,
+          "resolved": ".github\\workflows\\ci.yml",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 5,
+          "ref": "logs/env-and-scope.txt",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\env-and-scope.txt",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 19,
+          "ref": "logs/env-and-scope.txt",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\env-and-scope.txt",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 20,
+          "ref": "logs/env-and-scope.txt",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\env-and-scope.txt",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 21,
+          "ref": "logs/compile__03b__install-exact-global.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\compile__03b__install-exact-global.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 21,
+          "ref": "logs/compile__02__upgrade-pip.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\compile__02__upgrade-pip.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 23,
+          "ref": "converter/corpus/batch2-picked.json",
+          "exists": false,
+          "resolved": "",
+          "by_design": true,
+          "reason": "文档已标注：按设计不入库（机器本地/含 PII/仓库外产物）"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 23,
+          "ref": "recruitment-os\\temp\\batch2-picked.json",
+          "exists": false,
+          "resolved": "",
+          "by_design": true,
+          "reason": "文档已标注：按设计不入库（机器本地/含 PII/仓库外产物）"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 23,
+          "ref": "converter/corpus/",
+          "exists": true,
+          "resolved": "converter\\corpus\\",
+          "by_design": true,
+          "reason": "文档已标注：按设计不入库（机器本地/含 PII/仓库外产物）"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 23,
+          "ref": "logs/compile__05__corpus-manifests.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\compile__05__corpus-manifests.stdout.log",
+          "by_design": true,
+          "reason": "文档已标注：按设计不入库（机器本地/含 PII/仓库外产物）"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 24,
+          "ref": "logs/compile__06__report-availability.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\compile__06__report-availability.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 50,
+          "ref": "logs/env-and-scope.txt",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\env-and-scope.txt",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 51,
+          "ref": "logs/env-and-scope.txt",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\env-and-scope.txt",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 52,
+          "ref": "logs/plugin__02__apply-migrations.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\plugin__02__apply-migrations.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 53,
+          "ref": "logs/plugin__05__install-plugin-dependencies.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\plugin__05__install-plugin-dependencies.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 54,
+          "ref": "logs/plugin__06__run-plugin-tests.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\plugin__06__run-plugin-tests.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 54,
+          "ref": "logs/plugin__06__run-plugin-tests.exit.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\plugin__06__run-plugin-tests.exit.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 65,
+          "ref": "logs/db__02__apply-migrations.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\db__02__apply-migrations.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 66,
+          "ref": "logs/db__03__verify-every-migration.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\db__03__verify-every-migration.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 67,
+          "ref": "logs/db__04__migration-lifecycle.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\db__04__migration-lifecycle.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 79,
+          "ref": "logs/env-and-scope.txt",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\env-and-scope.txt",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 80,
+          "ref": "logs/python-lanes__04__apply-0001-0003.stderr.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\python-lanes__04__apply-0001-0003.stderr.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 81,
+          "ref": "logs/python-lanes__05__model-fallback.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\python-lanes__05__model-fallback.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 81,
+          "ref": "logs/python-lanes__05b__fallback-skip-reasons.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\python-lanes__05b__fallback-skip-reasons.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 82,
+          "ref": "logs/python-lanes__06__human-review.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\python-lanes__06__human-review.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 82,
+          "ref": "logs/python-lanes__06b__human-review-ra_review_check.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\python-lanes__06b__human-review-ra_review_check.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 88,
+          "ref": "db/migrations/0012_engine_state.sql",
+          "exists": true,
+          "resolved": "db\\migrations\\0012_engine_state.sql",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 88,
+          "ref": "dsh/dsh-recruitment/package.json",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\package.json",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 88,
+          "ref": "test/integration/engine-mechanisms-pg.test.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\test\\integration\\engine-mechanisms-pg.test.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 90,
+          "ref": "db/migrations/0013_trace_chain.sql",
+          "exists": true,
+          "resolved": "db\\migrations\\0013_trace_chain.sql",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 94,
+          "ref": "logs/wt__db__02__apply-migrations.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\wt__db__02__apply-migrations.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 95,
+          "ref": "logs/wt__db__03__verify.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\wt__db__03__verify.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 96,
+          "ref": "logs/wt__db__04__lifecycle.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\wt__db__04__lifecycle.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 97,
+          "ref": "logs/wt__0012__rerun1.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\wt__0012__rerun1.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 98,
+          "ref": "logs/wt__plugin__05a__frozen-lockfile-check.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\wt__plugin__05a__frozen-lockfile-check.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 128,
+          "ref": "logs/tip__compile__04.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\tip__compile__04.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 129,
+          "ref": "logs/tip__compile__05.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\tip__compile__05.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 130,
+          "ref": "logs/tip__plugin__02__apply.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\tip__plugin__02__apply.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 131,
+          "ref": "logs/tip__plugin__05__install.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\tip__plugin__05__install.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 133,
+          "ref": "logs/tip__plugin__06__node-test.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\tip__plugin__06__node-test.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "ci-steps.md",
+          "line": 134,
+          "ref": "logs/tip__db__03__verify.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\tip__db__03__verify.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 4,
+          "ref": ".github/workflows/ci.yml",
+          "exists": true,
+          "resolved": ".github\\workflows\\ci.yml",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 22,
+          "ref": "db/migrations/0012_engine_state.sql",
+          "exists": true,
+          "resolved": "db\\migrations\\0012_engine_state.sql",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 22,
+          "ref": "test/integration/engine-mechanisms-pg.test.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\test\\integration\\engine-mechanisms-pg.test.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 22,
+          "ref": "dsh/dsh-recruitment/package.json",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\package.json",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 23,
+          "ref": "db/migrations/0013_trace_chain.sql",
+          "exists": true,
+          "resolved": "db\\migrations\\0013_trace_chain.sql",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 23,
+          "ref": "src/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 49,
+          "ref": "converter/corpus/batch2-picked.json",
+          "exists": false,
+          "resolved": "",
+          "by_design": true,
+          "reason": "文档已标注：按设计不入库（机器本地/含 PII/仓库外产物）"
+        },
+        {
+          "doc": "README.md",
+          "line": 52,
+          "ref": "converter/review/tests/conftest.py",
+          "exists": true,
+          "resolved": "converter\\review\\tests\\conftest.py",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 55,
+          "ref": "converter/corpus/synthetic/zero_text.pdf",
+          "exists": true,
+          "resolved": "converter\\corpus\\synthetic\\zero_text.pdf",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 70,
+          "ref": "logs/gh__failed-run-43400997565.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\gh__failed-run-43400997565.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 87,
+          "ref": "logs/env-and-scope.txt",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\env-and-scope.txt",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 88,
+          "ref": "logs/compile__03b__install-exact-global.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\compile__03b__install-exact-global.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 89,
+          "ref": "logs/plugin__06__run-plugin-tests.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\plugin__06__run-plugin-tests.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 91,
+          "ref": "logs/python-lanes__05__model-fallback.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\python-lanes__05__model-fallback.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 92,
+          "ref": "logs/python-lanes__06b__human-review-ra_review_check.stdout.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\python-lanes__06b__human-review-ra_review_check.stdout.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 94,
+          "ref": "logs/gh__failed-run-43400997565.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-ci-rehearsal-2\\logs\\gh__failed-run-43400997565.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        }
+      ],
+      "verdict": "REFERENCED_MISSING_BY_DESIGN"
+    },
+    {
+      "experiment": "2026-11-14-decision-inchat-first-write",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T02:38:25+08:00",
+      "artifacts_present": "",
+      "subdirs": "",
+      "references_checked": 0,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-document-read-u3",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T01:52:23+08:00",
+      "artifacts_present": "",
+      "subdirs": "",
+      "references_checked": 3,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "README.md",
+          "line": 13,
+          "ref": "src/document/README.md",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\document\\README.md",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 33,
+          "ref": "src/index.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\index.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 42,
+          "ref": "converter/",
+          "exists": true,
+          "resolved": "converter\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        }
+      ],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-dsh-022-base",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T21:40:15+08:00",
+      "artifacts_present": "",
+      "subdirs": "",
+      "references_checked": 1,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "README.md",
+          "line": 118,
+          "ref": "dsh/profile/recruitment/README.md",
+          "exists": true,
+          "resolved": "dsh\\profile\\recruitment\\README.md",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        }
+      ],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-dsh-022-rc3-upgrade",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T21:39:53+08:00",
+      "artifacts_present": "",
+      "subdirs": "",
+      "references_checked": 2,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "README.md",
+          "line": 34,
+          "ref": "docs/",
+          "exists": true,
+          "resolved": "docs\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 34,
+          "ref": "src/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        }
+      ],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-feishu-live-read",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T20:32:07+08:00",
+      "artifacts_present": "",
+      "subdirs": "",
+      "references_checked": 2,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "README.md",
+          "line": 102,
+          "ref": "src/connectors/feishu/adapter.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\connectors\\feishu\\adapter.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 117,
+          "ref": "src/connectors/feishu/transport.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\connectors\\feishu\\transport.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        }
+      ],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-feishu-live-readback",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T20:59:01+08:00",
+      "artifacts_present": "commands.txt",
+      "subdirs": "",
+      "references_checked": 0,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-format-coverage",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T21:42:09+08:00",
+      "artifacts_present": "",
+      "subdirs": "",
+      "references_checked": 5,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "README.md",
+          "line": 42,
+          "ref": "converter/src/rtf_reader.py",
+          "exists": true,
+          "resolved": "converter\\src\\rtf_reader.py",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 44,
+          "ref": "converter/src/reader.py",
+          "exists": true,
+          "resolved": "converter\\src\\reader.py",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 48,
+          "ref": "src/document/readers/rtf.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\document\\readers\\rtf.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 67,
+          "ref": "converter/requirements.txt",
+          "exists": true,
+          "resolved": "converter\\requirements.txt",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 163,
+          "ref": "test/integration/application-intake-docx.test.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\test\\integration\\application-intake-docx.test.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        }
+      ],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-golden-path-e2e",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T21:40:15+08:00",
+      "artifacts_present": "commands.txt",
+      "subdirs": "run-2026-11-14T08-42-17-972Z,run-2026-11-14T08-42-31-029Z,run-2026-11-14T08-54-41-513Z",
+      "references_checked": 15,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "commands.txt",
+          "line": 63,
+          "ref": "run-2026-11-14T08-42-17-972Z/run.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-golden-path-e2e\\run-2026-11-14T08-42-17-972Z\\run.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "commands.txt",
+          "line": 107,
+          "ref": "run-2026-11-14T08-42-31-029Z/run.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-golden-path-e2e\\run-2026-11-14T08-42-31-029Z\\run.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "commands.txt",
+          "line": 144,
+          "ref": "dsh/dsh-recruitment/manual/golden-path/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\manual\\golden-path\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "commands.txt",
+          "line": 144,
+          "ref": "dsh/dsh-recruitment/evidence/experiments/2026-11-14-golden-path-e2e/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-golden-path-e2e\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "commands.txt",
+          "line": 160,
+          "ref": "run-2026-11-14T08-54-41-513Z/run.log",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-golden-path-e2e\\run-2026-11-14T08-54-41-513Z\\run.log",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 48,
+          "ref": "converter/src/cli.py",
+          "exists": true,
+          "resolved": "converter\\src\\cli.py",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 54,
+          "ref": "manual/golden-path/run-golden-path.mjs",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\manual\\golden-path\\run-golden-path.mjs",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 58,
+          "ref": "run-2026-11-14T08-42-17-972Z/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-golden-path-e2e\\run-2026-11-14T08-42-17-972Z\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 143,
+          "ref": "manual/transcript-line/seed-demo.mjs",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\manual\\transcript-line\\seed-demo.mjs",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 147,
+          "ref": "src/tools/application-intake.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\tools\\application-intake.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 239,
+          "ref": "manual/golden-path/run-golden-path.mjs",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\manual\\golden-path\\run-golden-path.mjs",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 284,
+          "ref": "src/index.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\index.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 284,
+          "ref": "src/tools/transcript-import.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\tools\\transcript-import.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 289,
+          "ref": "src/engine/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\engine\\",
+          "by_design": true,
+          "reason": "文档已标注：未入库（现场产物）"
+        },
+        {
+          "doc": "README.md",
+          "line": 323,
+          "ref": "manual/golden-path/run-golden-path.mjs",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\manual\\golden-path\\run-golden-path.mjs",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        }
+      ],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-golden-path-rerun",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T21:13:30+08:00",
+      "artifacts_present": "commands.txt",
+      "subdirs": "run-2026-11-14T13-03-45-994Z",
+      "references_checked": 8,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "harness-diff.txt",
+          "line": 17,
+          "ref": "evidence/experiments/2026-11-14-golden-path-e2e/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-golden-path-e2e\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "harness-diff.txt",
+          "line": 18,
+          "ref": "evidence/experiments/2026-11-14-golden-path-rerun/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-golden-path-rerun\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 59,
+          "ref": "converter/",
+          "exists": true,
+          "resolved": "converter\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 68,
+          "ref": "manual/golden-path/fixtures/gp-rerun-2/synthetic-resume-golden-path.pdf",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\manual\\golden-path\\fixtures\\gp-rerun-2\\synthetic-resume-golden-path.pdf",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 70,
+          "ref": "manual/golden-path/run-golden-path-rerun.mjs",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\manual\\golden-path\\run-golden-path-rerun.mjs",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 72,
+          "ref": "manual/golden-path/run-golden-path.mjs",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\manual\\golden-path\\run-golden-path.mjs",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 167,
+          "ref": "evidence/experiments/2026-11-14-golden-path-e2e/README.md",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-golden-path-e2e\\README.md",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 190,
+          "ref": "evidence/experiments/2026-11-14-golden-path-rerun/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-golden-path-rerun\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        }
+      ],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-migrations-0007-0008",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T01:17:10+08:00",
+      "artifacts_present": "",
+      "subdirs": "",
+      "references_checked": 1,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "README.md",
+          "line": 27,
+          "ref": "db/ops/backfill-scorecard-job-id.sql",
+          "exists": true,
+          "resolved": "db\\ops\\backfill-scorecard-job-id.sql",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        }
+      ],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-real-intake-20",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T21:40:15+08:00",
+      "artifacts_present": "",
+      "subdirs": "",
+      "references_checked": 1,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "README.md",
+          "line": 136,
+          "ref": "src/tools/application-intake.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\tools\\application-intake.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        }
+      ],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-real-resume-gate",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T03:08:28+08:00",
+      "artifacts_present": "",
+      "subdirs": "",
+      "references_checked": 0,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-screening-decision-repro",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T21:41:42+08:00",
+      "artifacts_present": "FILES.sha256",
+      "subdirs": "bug-judgment-criterion,run-2026-11-14T12-07-49-638Z,run-2026-11-14T12-09-53-660Z,run-2026-11-14T12-11-47-564Z,run-2026-11-14T12-12-31-537Z,run-2026-11-14T12-12-46-973Z,run-2026-11-14T12-13-46-538Z,run-2026-11-14T12-18-08-527Z,run-2026-11-14T12-19-04-365Z,run-2026-11-14T12-19-18-364Z,run-2026-11-14T13-00-50-286Z",
+      "references_checked": 11,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "README.md",
+          "line": 20,
+          "ref": "manual/screening-decision/run-screening-decision.mjs",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\manual\\screening-decision\\run-screening-decision.mjs",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 40,
+          "ref": "run-2026-11-14T12-19-04-365Z/command.txt",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-screening-decision-repro\\run-2026-11-14T12-19-04-365Z\\command.txt",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 48,
+          "ref": "run-2026-11-14T12-19-04-365Z/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-screening-decision-repro\\run-2026-11-14T12-19-04-365Z\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 49,
+          "ref": "run-2026-11-14T12-12-31-537Z/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-screening-decision-repro\\run-2026-11-14T12-12-31-537Z\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 50,
+          "ref": "run-2026-11-14T12-12-46-973Z/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-screening-decision-repro\\run-2026-11-14T12-12-46-973Z\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 50,
+          "ref": "run-2026-11-14T12-13-46-538Z/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-screening-decision-repro\\run-2026-11-14T12-13-46-538Z\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 50,
+          "ref": "run-2026-11-14T12-19-18-364Z/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-screening-decision-repro\\run-2026-11-14T12-19-18-364Z\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 51,
+          "ref": "run-2026-11-14T13-00-50-286Z/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-screening-decision-repro\\run-2026-11-14T13-00-50-286Z\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 52,
+          "ref": "bug-judgment-criterion/run-2026-11-14T12-14-34-230Z/",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-screening-decision-repro\\bug-judgment-criterion\\run-2026-11-14T12-14-34-230Z\\",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 77,
+          "ref": "manual/screening-decision/run-screening-decision.mjs",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\manual\\screening-decision\\run-screening-decision.mjs",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 89,
+          "ref": "run-2026-11-14T12-19-04-365Z/step-05-decision-record-screening.json",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\evidence\\experiments\\2026-11-14-screening-decision-repro\\run-2026-11-14T12-19-04-365Z\\step-05-decision-record-screening.json",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        }
+      ],
+      "verdict": "FILES_PRESENT"
+    },
+    {
+      "experiment": "2026-11-14-workbench-panel",
+      "readme_exists": true,
+      "readme_mtime": "2026-11-14T21:42:09+08:00",
+      "artifacts_present": "",
+      "subdirs": "",
+      "references_checked": 4,
+      "referenced_missing": 0,
+      "referenced_missing_by_design": 0,
+      "referenced_missing_real": 0,
+      "references": [
+        {
+          "doc": "README.md",
+          "line": 19,
+          "ref": "src/http/overview.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\http\\overview.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 20,
+          "ref": "src/index.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\index.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 21,
+          "ref": "src/client/index.tsx",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\src\\client\\index.tsx",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        },
+        {
+          "doc": "README.md",
+          "line": 24,
+          "ref": "test/unit/vision-fallback.test.ts",
+          "exists": true,
+          "resolved": "dsh\\dsh-recruitment\\test\\unit\\vision-fallback.test.ts",
+          "by_design": false,
+          "reason": "E3 缺陷：引用存在但文件不存在，且文档未标注理由"
+        }
+      ],
+      "verdict": "FILES_PRESENT"
+    }
+  ]
+}

@@ -32,7 +32,7 @@ D:\12412\recruitment-runtime\node_modules\.bin\dsh.cmd --version
 ## 3. 升级指南：读了，且逐条对过我们的面
 
 rc.3 的 npm 包**现在自带 `docs/` 和 `src/`**（rc.2 的发布说明："npm 安装与桌面端随附对应版本的源码和文档"），
-所以 `docs/upgrade-guide/README.md` 可以直接读。
+所以安装包内的升级指南可以直接读（**外部 npm 包内路径，按设计不入库**）。
 
 索引里的版本段：
 

@@ -1,0 +1,439 @@
+== fresh: 0001→latest on a brand-new database
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_organization_no_delete" for relation "recruitment.organization" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_department_no_delete" for relation "recruitment.department" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_actor_no_delete" for relation "recruitment.actor" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_role_no_delete" for relation "recruitment.role" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_actor_role_no_delete" for relation "recruitment.actor_role" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_event_inbox_no_delete" for relation "recruitment.event_inbox" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_approval_no_delete" for relation "recruitment.approval" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_acquisition_channel_no_delete" for relation "recruitment.acquisition_channel" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_requisition_no_delete" for relation "recruitment.requisition" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_job_no_delete" for relation "recruitment.job" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_job_version_no_delete" for relation "recruitment.job_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_business_config_no_delete" for relation "recruitment.business_config" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_rubric_version_no_delete" for relation "recruitment.rubric_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_job_posting_no_delete" for relation "recruitment.job_posting" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_intake_record_no_delete" for relation "recruitment.intake_record" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_intake_asset_no_delete" for relation "recruitment.intake_asset" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_candidate_no_delete" for relation "recruitment.candidate" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_candidate_merge_no_delete" for relation "recruitment.candidate_merge" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_resume_no_delete" for relation "recruitment.resume" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_resume_version_no_delete" for relation "recruitment.resume_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_application_no_delete" for relation "recruitment.application" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_interview_template_version_no_delete" for relation "recruitment.interview_template_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_interview_no_delete" for relation "recruitment.interview" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_interviewer_no_delete" for relation "recruitment.interviewer" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_meeting_no_delete" for relation "recruitment.meeting" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_meeting_binding_no_delete" for relation "recruitment.meeting_binding" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_transcript_artifact_no_delete" for relation "recruitment.transcript_artifact" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_transcript_processing_run_no_delete" for relation "recruitment.transcript_processing_run" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_interview_record_no_delete" for relation "recruitment.interview_record" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_ai_summary_no_delete" for relation "recruitment.ai_summary" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_scorecard_no_delete" for relation "recruitment.scorecard" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_decision_no_delete" for relation "recruitment.decision" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_chat_thread_no_delete" for relation "recruitment.chat_thread" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_business_task_no_delete" for relation "recruitment.business_task" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_task_attempt_no_delete" for relation "recruitment.task_attempt" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_agent_session_no_delete" for relation "recruitment.agent_session" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_durable_effect_no_delete" for relation "recruitment.durable_effect" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_execution_mandate_no_delete" for relation "recruitment.execution_mandate" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_requisition_guard_status" for relation "recruitment.requisition" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_job_guard_status" for relation "recruitment.job" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_job_posting_guard_status" for relation "recruitment.job_posting" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_intake_record_guard_status" for relation "recruitment.intake_record" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_application_guard_lifecycle_status" for relation "recruitment.application" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_application_guard_current_stage_code" for relation "recruitment.application" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_interview_guard_status" for relation "recruitment.interview" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_transcript_artifact_guard_transcript_status" for relation "recruitment.transcript_artifact" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_interview_record_guard_status" for relation "recruitment.interview_record" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_scorecard_guard_status" for relation "recruitment.scorecard" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_approval_guard_status" for relation "recruitment.approval" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_business_task_guard_status" for relation "recruitment.business_task" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_task_attempt_guard_status" for relation "recruitment.task_attempt" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_agent_session_guard_status" for relation "recruitment.agent_session" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_durable_effect_guard_status" for relation "recruitment.durable_effect" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_actor_guard_status" for relation "recruitment.actor" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_chat_thread_guard_status" for relation "recruitment.chat_thread" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_transcript_processing_run_guard_status" for relation "recruitment.transcript_processing_run" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_ai_summary_guard_status" for relation "recruitment.ai_summary" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_transcript_artifact_immutable" for relation "recruitment.transcript_artifact" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_resume_version_immutable" for relation "recruitment.resume_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_rubric_version_immutable" for relation "recruitment.rubric_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_job_version_immutable" for relation "recruitment.job_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_business_config_immutable" for relation "recruitment.business_config" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_interview_template_version_immutable" for relation "recruitment.interview_template_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_candidate_merge_immutable" for relation "recruitment.candidate_merge" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_event_inbox_immutable" for relation "recruitment.event_inbox" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_decision_immutable" for relation "recruitment.decision" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_ai_summary_immutable" for relation "recruitment.ai_summary" does not exist, skipping
+psql:db/migrations/0001_init.sql:1803: NOTICE:  trigger "trg_candidate_identity_guard" for relation "recruitment.candidate" does not exist, skipping
+psql:db/migrations/0001_init.sql:1807: NOTICE:  trigger "trg_candidate_merge_apply" for relation "recruitment.candidate_merge" does not exist, skipping
+psql:db/migrations/0001_init.sql:1811: NOTICE:  trigger "trg_scorecard_submitted_guard" for relation "recruitment.scorecard" does not exist, skipping
+psql:db/migrations/0001_init.sql:1815: NOTICE:  trigger "trg_approval_final_guard" for relation "recruitment.approval" does not exist, skipping
+psql:db/migrations/0001_init.sql:1820: NOTICE:  trigger "trg_candidate_touch" for relation "recruitment.candidate" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:231: NOTICE:  trigger "trg_conversion_run_immutable" for relation "recruitment.conversion_run" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:236: NOTICE:  trigger "trg_conversion_run_no_delete" for relation "recruitment.conversion_run" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:445: NOTICE:  trigger "trg_review_queue_before_insert" for relation "recruitment.review_queue" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:450: NOTICE:  trigger "trg_review_queue_before_update" for relation "recruitment.review_queue" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:455: NOTICE:  trigger "trg_review_queue_audit" for relation "recruitment.review_queue" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:460: NOTICE:  trigger "trg_review_queue_no_delete" for relation "recruitment.review_queue" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:519: NOTICE:  trigger "trg_review_audit_no_update" for relation "recruitment.review_audit" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:524: NOTICE:  trigger "trg_review_audit_no_delete" for relation "recruitment.review_audit" does not exist, skipping
+psql:db/migrations/0004_stage_catalog.sql:203: NOTICE:  0004 PRE-FK PASS 现有 application 的 stage code 全部已在目录内
+psql:db/migrations/0004_stage_catalog.sql:323: NOTICE:  0004 POST-CHECK PASS 目录 12 行 + demo job 已回填当前 rubric
+psql:db/migrations/0005_version_binding.sql:72: NOTICE:  0005 改造前 application 上与版本相关的外键：
+      fk_application_job_version = FOREIGN KEY (job_version_id, tenant_id) REFERENCES recruitment.job_version(id, tenant_id)
+      fk_application_rubric = FOREIGN KEY (rubric_version_id, tenant_id) REFERENCES recruitment.rubric_version(id, tenant_id)
+psql:db/migrations/0005_version_binding.sql:136: NOTICE:  0005 PRE-CHECK PASS 现有 application：1 条（钉了 rubric 的 1 条 / JD 版本对得上 job 的 1 条）全部同 job 同租户，无跨岗位引用
+psql:db/migrations/0005_version_binding.sql:206: NOTICE:  0005 已加 rubric_version unique (id, job_id) [uq_rubric_version_id_job]
+psql:db/migrations/0005_version_binding.sql:206: NOTICE:  0005 已加 job_version unique (id, job_id) [uq_job_version_id_job]
+psql:db/migrations/0005_version_binding.sql:206: NOTICE:  0005 rubric_version 已有等价唯一键 (tenant_id, id, job_id)（如 0004 的 uq_*_tenant_job_id），复用
+psql:db/migrations/0005_version_binding.sql:206: NOTICE:  0005 已加 job_version unique (tenant_id, id, job_id) [uq_job_version_tenant_id_job]
+psql:db/migrations/0005_version_binding.sql:235: NOTICE:  0005 已加 fk_application_rubric_job：申请钉的 rubric 必须属于同一个 job + 租户
+psql:db/migrations/0005_version_binding.sql:251: NOTICE:  0005 已加 fk_application_job_version_job：申请钉的 JD 版本必须属于同一个 job + 租户
+psql:db/migrations/0005_version_binding.sql:336: NOTICE:  0005 闸 1 PASS 新复合外键 2/2 已建立并 convalidated
+psql:db/migrations/0005_version_binding.sql:336: NOTICE:  0005 已删旧外键 fk_application_rubric（原定义：FOREIGN KEY (rubric_version_id, tenant_id) REFERENCES recruitment.rubric_version(id, tenant_id)）
+psql:db/migrations/0005_version_binding.sql:336: NOTICE:  0005 已删旧外键 fk_application_job_version（原定义：FOREIGN KEY (job_version_id, tenant_id) REFERENCES recruitment.job_version(id, tenant_id)）
+psql:db/migrations/0005_version_binding.sql:336: NOTICE:  0005 旧外键清理完成：本次删除 2 条（0 条 = 已迁移过，第二遍就是 0）
+psql:db/migrations/0005_version_binding.sql:434: NOTICE:  0005 改造后 application 上与版本相关的外键：
+      fk_application_job_version_job = FOREIGN KEY (tenant_id, job_version_id, job_id) REFERENCES recruitment.job_version(tenant_id, id, job_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+      fk_application_rubric_job = FOREIGN KEY (tenant_id, rubric_version_id, job_id) REFERENCES recruitment.rubric_version(tenant_id, id, job_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+psql:db/migrations/0005_version_binding.sql:434: NOTICE:  0005 POST-CHECK PASS 复合外键 2 条（含 job_id + tenant_id，restrict/validated）+ 旧外键已退场 + 跨岗位引用 0 条
+psql:db/migrations/0006_integrity_gaps.sql:80: NOTICE:  0006 DEPENDENCY PASS 依赖表齐全（含 0004 的 stage_catalog）
+psql:db/migrations/0006_integrity_gaps.sql:144: NOTICE:  0006 改造前 GAP-1：interview.stage_code 默认值 = 'INTERVIEW'::text；引用 stage_code 的外键 = 0 条
+psql:db/migrations/0006_integrity_gaps.sql:144: NOTICE:  0006 改造前 GAP-2：ck_execution_mandate_no_business_approval = CHECK ((NOT (allowed_actions && ARRAY['approve'::text, 'reject'::text, 'decide'::text, 'merge_candidate'::text, 'waive_scorecard'::text])))
+psql:db/migrations/0006_integrity_gaps.sql:144: NOTICE:  0006 改造前 GAP-3：fk_interview_record_artifact = FOREIGN KEY (transcript_artifact_id, transcript_revision) REFERENCES recruitment.transcript_artifact(id, source_revision)
+psql:db/migrations/0006_integrity_gaps.sql:144: NOTICE:  0006 改造前 GAP-4：business_task 上 owner* 列 = （无）
+psql:db/migrations/0006_integrity_gaps.sql:144: NOTICE:  0006 GAP-5 现场：meeting / meeting_binding 的 before update 触发器 = 0 个（首跑应为 0；重跑时这 0 个是本文件上一轮挂的 fn_touch）
+psql:db/migrations/0006_integrity_gaps.sql:144: NOTICE:  0006 改造前 GAP-5：meeting 中 record_version <> 1 的行 = 0 / meeting_binding 中 = 0（死列证据：从未被任何触发器改变）
+psql:db/migrations/0006_integrity_gaps.sql:182: NOTICE:  0006 GAP-1 PRE-CHECK PASS 现有 interview 的 stage_code 全部已在各自租户的 stage_catalog 内（0 条脏值）
+psql:db/migrations/0006_integrity_gaps.sql:205: NOTICE:  0006 GAP-1 已加 fk_interview_stage_catalog：(tenant_id, stage_code) → stage_catalog(tenant_id, code)
+psql:db/migrations/0006_integrity_gaps.sql:259: NOTICE:  0006 GAP-2 PRE-CHECK PASS 现有 execution_mandate 中没有 submit_scorecard（含大小写变体）
+psql:db/migrations/0006_integrity_gaps.sql:306: NOTICE:  0006 GAP-2 已扩展 ck_execution_mandate_no_business_approval：加入 submit_scorecard（原 5 值全部保留）
+psql:db/migrations/0006_integrity_gaps.sql:371: NOTICE:  0006 GAP-3 PRE-CHECK PASS 现有 interview_record：跨租户引用 0 条 / revision 不符 0 条 / 孤儿引用 0 条
+psql:db/migrations/0006_integrity_gaps.sql:393: NOTICE:  0006 GAP-3 已加 transcript_artifact unique (tenant_id, id, source_revision)（3 列外键的被引用键）
+psql:db/migrations/0006_integrity_gaps.sql:466: NOTICE:  0006 GAP-3 已删旧外键 fk_interview_record_artifact（列集合 transcript_artifact_id,transcript_revision）
+psql:db/migrations/0006_integrity_gaps.sql:466: NOTICE:  0006 GAP-3 已建 fk_interview_record_artifact：(tenant_id, artifact, revision) → transcript_artifact(tenant_id, id, source_revision)
+psql:db/migrations/0006_integrity_gaps.sql:490: NOTICE:  0006 GAP-3 闸 PASS 新 3 列外键已建立并 convalidated；同表不存在第二条无 tenant_id 的转写外键
+psql:db/migrations/0006_integrity_gaps.sql:531: NOTICE:  0006 GAP-4 PRE-CHECK A PASS business_task.owner_actor_id 类型检查通过（尚未创建，将按 uuid 新建 ）
+psql:db/migrations/0006_integrity_gaps.sql:555: NOTICE:  0006 GAP-4 PRE-CHECK B PASS 没有 business_task 用 business_refs.kind 表达责任人（0 条）
+psql:db/migrations/0006_integrity_gaps.sql:576: NOTICE:  0006 GAP-4 已加 fk_business_task_owner_actor：(owner_actor_id, tenant_id) → actor(id, tenant_id)
+psql:db/migrations/0006_integrity_gaps.sql:614: NOTICE:  0006 GAP-5 PRE-CHECK A PASS meeting / meeting_binding 上没有其它 before update 触发器
+psql:db/migrations/0006_integrity_gaps.sql:643: NOTICE:  0006 GAP-5 PRE-CHECK B PASS 两张表的 record_version / updated_at 自洽（0 条坏行）
+psql:db/migrations/0006_integrity_gaps.sql:646: NOTICE:  trigger "trg_meeting_touch" for relation "recruitment.meeting" does not exist, skipping
+psql:db/migrations/0006_integrity_gaps.sql:651: NOTICE:  trigger "trg_meeting_binding_touch" for relation "recruitment.meeting_binding" does not exist, skipping
+psql:db/migrations/0006_integrity_gaps.sql:659: NOTICE:  0006 GAP-5 已挂 trg_meeting_touch / trg_meeting_binding_touch（fn_touch：record_version + 1、updated_at = now()）
+psql:db/migrations/0006_integrity_gaps.sql:837: NOTICE:  0006 POST-CHECK PASS 五个缺口全部落地：GAP-1 默认 S8 + fk_interview_stage_catalog；GAP-2 CHECK 含 submit_scorecard（原 5 值保留）；GAP-3 3 列外键 + 被引用键 + 无后门；GAP-4 owner_actor_id（可空、无默认）+ 同租户外键；GAP-5 两张表的 fn_touch 触发器
+psql:db/migrations/0006_integrity_gaps.sql:862: NOTICE:  0006 改造后的约束定义：
+      recruitment.interview.fk_interview_stage_catalog = FOREIGN KEY (tenant_id, stage_code) REFERENCES recruitment.stage_catalog(tenant_id, code) ON UPDATE RESTRICT ON DELETE RESTRICT
+      recruitment.execution_mandate.ck_execution_mandate_no_business_approval = CHECK ((NOT (allowed_actions && ARRAY['approve'::text, 'reject'::text, 'decide'::text, 'merge_candidate'::text, 'waive_scorecard'::text, 'submit_scorecard'::text])))
+      recruitment.transcript_artifact.uq_transcript_artifact_tenant_id_revision = UNIQUE (tenant_id, id, source_revision)
+      recruitment.interview_record.fk_interview_record_artifact = FOREIGN KEY (tenant_id, transcript_artifact_id, transcript_revision) REFERENCES recruitment.transcript_artifact(tenant_id, id, source_revision) ON UPDATE RESTRICT ON DELETE RESTRICT
+      recruitment.business_task.fk_business_task_owner_actor = FOREIGN KEY (owner_actor_id, tenant_id) REFERENCES recruitment.actor(id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+psql:db/migrations/0006_integrity_gaps.sql:862: NOTICE:  0006 改造后的触发器：
+      trg_meeting_touch: CREATE TRIGGER trg_meeting_touch BEFORE UPDATE ON recruitment.meeting FOR EACH ROW EXECUTE FUNCTION recruitment.fn_touch()
+      trg_meeting_binding_touch: CREATE TRIGGER trg_meeting_binding_touch BEFORE UPDATE ON recruitment.meeting_binding FOR EACH ROW EXECUTE FUNCTION recruitment.fn_touch()
+psql:db/migrations/0006_integrity_gaps.sql:862: NOTICE:  0006 DONE 五个完整性缺口已修复（单事务提交；本次无任何数据改动）
+psql:db/migrations/0007_decision_integrity.sql:83: NOTICE:  0007 DEPENDENCY PASS 依赖表齐全（含 0004 的 stage_catalog）
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 改造前 GAP-A：decision 上引用 stage_code 的外键 = 0 条（应为 0：只有正则，没有取值校验）
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 改造前 GAP-B：decision 上含 (application_id, decision_scope) 的唯一索引 = 0 个（应为 0：当前决策可重复）
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 改造前 GAP-C：scorecard.job_id = （不存在）
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 改造前 GAP-D：fk_ai_summary_artifact = FOREIGN KEY (transcript_artifact_id, transcript_revision) REFERENCES recruitment.transcript_artifact(id, source_revision)
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 改造前 GAP-E：scorecard 的 before insert 触发器 = 0 个（首跑应为 0：直接 INSERT 终态行无人管）
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 GAP-E 事实核对：decision 的列 = id, tenant_id, application_id, interview_id, decision_scope, stage_code, result, decided_by_actor_id, decided_at, reason, basis_refs, approval_id, superseded_by_decision_id, record_version, created_at, updated_at
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 改造前行数：decision=0 / scorecard=0 / ai_summary=0 / rubric_version=1
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 改造前：全库多列外键不含 tenant_id = recruitment.ai_summary(fk_ai_summary_artifact)
+psql:db/migrations/0007_decision_integrity.sql:222: NOTICE:  0007 GAP-A PRE-CHECK PASS 现有 decision 的 stage_code 全部已在各自租户的 stage_catalog 内（NULL 除外，0 条脏值）
+psql:db/migrations/0007_decision_integrity.sql:274: NOTICE:  0007 GAP-A 已加 fk_decision_stage_catalog：(tenant_id, stage_code) → stage_catalog(tenant_id, code)（restrict/restrict，MATCH SIMPLE）
+psql:db/migrations/0007_decision_integrity.sql:336: NOTICE:  0007 GAP-B PRE-CHECK PASS 现有 decision 没有重复的 current 行（NULL stage_code 按相等分组，0 组重复）
+psql:db/migrations/0007_decision_integrity.sql:381: NOTICE:  0007 GAP-B 已建 uq_decision_current：(tenant_id, application_id, decision_scope, stage_code) NULLS NOT DISTINCT WHERE superseded_by_decision_id IS NULL
+psql:db/migrations/0007_decision_integrity.sql:438: NOTICE:  0007 GAP-C PRE-CHECK A PASS scorecard.job_id 类型检查通过（尚未创建，将按 uuid 新建）
+psql:db/migrations/0007_decision_integrity.sql:528: NOTICE:  0007 GAP-C PRE-CHECK B PASS 存量 scorecard：解析链 0 条断 / 已有 job_id 0 条冲突 / rubric 跨岗位 0 条 / 终态缺 job_id 0 条
+psql:db/migrations/0007_decision_integrity.sql:557: NOTICE:  0007 GAP-C scorecard.job_id 无需回填（0 行）
+psql:db/migrations/0007_decision_integrity.sql:596: NOTICE:  0007 GAP-C 复用 rubric_version 已有 unique (tenant_id, job_id, id)（0004 的 uq_rubric_version_tenant_job_id）
+psql:db/migrations/0007_decision_integrity.sql:648: NOTICE:  0007 GAP-C 已加 fk_scorecard_rubric_job：(tenant_id, job_id, rubric_version_id) → rubric_version(tenant_id, job_id, id)
+psql:db/migrations/0007_decision_integrity.sql:713: NOTICE:  0007 GAP-C 已挂 trg_scorecard_job_guard（before insert or update → fn_scorecard_job_guard）
+psql:db/migrations/0007_decision_integrity.sql:774: NOTICE:  0007 GAP-D PRE-CHECK PASS 现有 ai_summary：跨租户引用 0 条 / revision 不符 0 条 / 孤儿引用 0 条
+psql:db/migrations/0007_decision_integrity.sql:795: NOTICE:  0007 GAP-D 复用 transcript_artifact 已有 unique (tenant_id, id, source_revision)（0006 的 uq_transcript_artifact_tenant_id_revision）
+psql:db/migrations/0007_decision_integrity.sql:896: NOTICE:  0007 GAP-D 已替换 fk_ai_summary_artifact：先建 3 列新键（convalidated）→ 删 2 列旧键 → 改名回正式名
+psql:db/migrations/0007_decision_integrity.sql:919: NOTICE:  0007 GAP-D 闸 PASS fk_ai_summary_artifact 已建立并 convalidated（3 列含 tenant_id）
+psql:db/migrations/0007_decision_integrity.sql:960: NOTICE:  0007 GAP-E PRE-CHECK PASS 现有终态 scorecard 全部有 status_changed_by_actor_id（0 条缺 actor）
+psql:db/migrations/0007_decision_integrity.sql:985: NOTICE:  0007 GAP-E 已加 ck_scorecard_terminal_actor：status <> 'PENDING' 时必须有 status_changed_by_actor_id
+psql:db/migrations/0007_decision_integrity.sql:1042: NOTICE:  0007 GAP-E 已挂 trg_scorecard_terminal_actor_guard（before insert → fn_scorecard_terminal_actor_guard）
+psql:db/migrations/0007_decision_integrity.sql:1276: NOTICE:  0007 POST-CHECK PASS 五个缺口全部落地：A decision stage_code 复合外键（含 tenant_id）；B 当前决策唯一（NULLS NOT DISTINCT 部分唯一索引）；C scorecard.job_id NOT NULL + 复合外键 + 触发器；D ai_summary 3 列外键 + 被引用键 + 无后门；E scorecard 终态 CHECK + before insert actor 闸（decision 侧不成立，见 §5 抬头）
+psql:db/migrations/0007_decision_integrity.sql:1306: NOTICE:  0007 改造后的约束定义：
+      uq_rubric_version_tenant_job_id = UNIQUE (tenant_id, job_id, id)
+      fk_decision_stage_catalog = FOREIGN KEY (tenant_id, stage_code) REFERENCES recruitment.stage_catalog(tenant_id, code) ON UPDATE RESTRICT ON DELETE RESTRICT
+      fk_scorecard_rubric_job = FOREIGN KEY (tenant_id, job_id, rubric_version_id) REFERENCES recruitment.rubric_version(tenant_id, job_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT
+      fk_ai_summary_artifact = FOREIGN KEY (tenant_id, transcript_artifact_id, transcript_revision) REFERENCES recruitment.transcript_artifact(tenant_id, id, source_revision) ON UPDATE RESTRICT ON DELETE RESTRICT
+      ck_scorecard_terminal_actor = CHECK (((status = 'PENDING'::text) OR (status_changed_by_actor_id IS NOT NULL)))
+psql:db/migrations/0007_decision_integrity.sql:1306: NOTICE:  0007 改造后的当前决策唯一索引：CREATE UNIQUE INDEX uq_decision_current ON recruitment.decision USING btree (tenant_id, application_id, decision_scope, stage_code) NULLS NOT DISTINCT WHERE (superseded_by_decision_id IS NULL)
+psql:db/migrations/0007_decision_integrity.sql:1306: NOTICE:  0007 改造后的触发器：
+      trg_scorecard_job_guard: CREATE TRIGGER trg_scorecard_job_guard BEFORE INSERT OR UPDATE ON recruitment.scorecard FOR EACH ROW EXECUTE FUNCTION recruitment.fn_scorecard_job_guard()
+      trg_scorecard_terminal_actor_guard: CREATE TRIGGER trg_scorecard_terminal_actor_guard BEFORE INSERT ON recruitment.scorecard FOR EACH ROW EXECUTE FUNCTION recruitment.fn_scorecard_terminal_actor_guard()
+psql:db/migrations/0007_decision_integrity.sql:1306: NOTICE:  0007 DONE 五个完整性缺口已按上述范围修复（单事务提交；无默认值硬填；唯一数据写入是 GAP-C 的派生回填）
+psql:db/migrations/0008_decision_uniqueness.sql:164: NOTICE:  0008 DEPENDENCY PASS 依赖表齐全 + 0007 的 fk_scorecard_rubric_job 在位 + rubric_version unique (tenant_id, job_id, id) 在位
+psql:db/migrations/0008_decision_uniqueness.sql:208: NOTICE:  0008 改造前 decision 的索引：
+      decision_pkey(unique=t nulls_not_distinct=f exclusion=f pred=无)
+      ix_decision_application(unique=f nulls_not_distinct=f exclusion=f pred=无)
+      uq_decision_current(unique=t nulls_not_distinct=t exclusion=f pred=(superseded_by_decision_id IS NULL))
+      uq_decision_id_tenant(unique=t nulls_not_distinct=f exclusion=f pred=无)
+psql:db/migrations/0008_decision_uniqueness.sql:208: NOTICE:  0008 改造前 GAP-A：同 (tenant, application, scope, stage) 的重复 current 组数 = 0（应为 0）
+psql:db/migrations/0008_decision_uniqueness.sql:208: NOTICE:  0008 改造前 GAP-B：每个申请有 >1 条 current FINAL 的组数 = 0（应为 0）
+psql:db/migrations/0008_decision_uniqueness.sql:208: NOTICE:  0008 改造前 GAP-C：interview_record 行数 = 0；job_id 列 = 尚未创建（将按 uuid 新建）
+      interview_record.rubric_version_id 存在、fk_interview_record_rubric 只保证同租户存在，不保证"该申请的岗位"
+psql:db/migrations/0008_decision_uniqueness.sql:240: NOTICE:  0008 GAP-A PRE-CHECK PASS 现有 decision 没有重复的 current 行（stage_code 的 NULL 按相等参与分组，0 组重复）
+psql:db/migrations/0008_decision_uniqueness.sql:266: NOTICE:  0008 GAP-B PRE-CHECK PASS 现有 decision 每个申请最多一条 current FINAL（0 组重复）
+psql:db/migrations/0008_decision_uniqueness.sql:335: NOTICE:  0008 GAP-C PRE-CHECK PASS 存量 interview_record：解析链 0 条断 / 已有 job_id 0 条冲突 / rubric 跨岗位 0 条
+psql:db/migrations/0008_decision_uniqueness.sql:468: NOTICE:  0008 GAP-A 已建临时排斥约束 uq_decision_current_0008：EXCLUDE (tenant_id, application_id, decision_scope, coalesce(stage_code, 空串)) WHERE 未取代 DEFERRABLE INITIALLY DEFERRED
+psql:db/migrations/0008_decision_uniqueness.sql:468: NOTICE:  0008 GAP-A 已删 0007 的部分唯一索引 uq_decision_current（已先验证新约束就绪 + 旧索引形态）
+psql:db/migrations/0008_decision_uniqueness.sql:468: NOTICE:  0008 GAP-A 已将可延迟排斥约束改名为 uq_decision_current（符号名不变，语义从"立即唯一索引"变为"COMMIT 时检查的排斥约束"）
+psql:db/migrations/0008_decision_uniqueness.sql:519: NOTICE:  0008 GAP-B 已建 uq_decision_current_final：EXCLUDE (tenant_id, application_id) WHERE scope=FINAL 且未取代 DEFERRABLE INITIALLY DEFERRED
+psql:db/migrations/0008_decision_uniqueness.sql:552: NOTICE:  0008 GAP-C 已加列 interview_record.job_id uuid（先可空；回填后收紧为 NOT NULL；无默认值）
+psql:db/migrations/0008_decision_uniqueness.sql:552: NOTICE:  0008 GAP-C PRE-CHECK A PASS interview_record.job_id 类型检查通过（尚未创建，已按 uuid 新建）
+psql:db/migrations/0008_decision_uniqueness.sql:577: NOTICE:  0008 GAP-C interview_record.job_id 无需回填（0 行）
+psql:db/migrations/0008_decision_uniqueness.sql:595: NOTICE:  0008 GAP-C 已收紧 interview_record.job_id 为 NOT NULL
+psql:db/migrations/0008_decision_uniqueness.sql:647: NOTICE:  0008 GAP-C 已加 fk_interview_record_rubric_job：(tenant_id, job_id, rubric_version_id) → rubric_version(tenant_id, job_id, id)
+psql:db/migrations/0008_decision_uniqueness.sql:712: NOTICE:  0008 GAP-C 已挂 trg_interview_record_job_guard（before insert or update → fn_interview_record_job_guard）
+psql:db/migrations/0008_decision_uniqueness.sql:830: NOTICE:  0008 POST-CHECK PASS A 可延迟排斥约束（键含 coalesce(stage_code, 空串)）/ B 每个申请最多一条 current FINAL / C interview_record.job_id NOT NULL + 复合外键 + 触发器
+psql:db/migrations/0008_decision_uniqueness.sql:899: NOTICE:  DATA-0008-01 PASS 全库没有重复的 current 决策（NULL stage_code 也按相等处理）
+psql:db/migrations/0008_decision_uniqueness.sql:899: NOTICE:  DATA-0008-02 PASS 全库每个申请最多一条 current FINAL
+psql:db/migrations/0008_decision_uniqueness.sql:899: NOTICE:  DATA-0008-03 PASS 全部 interview_record 都有 job_id（NOT NULL 生效）
+psql:db/migrations/0008_decision_uniqueness.sql:899: NOTICE:  DATA-0008-04 PASS 全部 interview_record 的 rubric 都属于该申请的岗位
+psql:db/migrations/0008_decision_uniqueness.sql:899: NOTICE:  DATA-0008-05 PASS 全库多列外键全部含 tenant_id（含本文件新增的 fk_interview_record_rubric_job）
+psql:db/migrations/0008_decision_uniqueness.sql:940: NOTICE:  0008 改造后的当前决策唯一性约束：
+      uq_decision_current = EXCLUDE USING btree (tenant_id WITH =, application_id WITH =, decision_scope WITH =, COALESCE(stage_code, ''::text) WITH =) WHERE ((superseded_by_decision_id IS NULL)) DEFERRABLE INITIALLY DEFERRED
+      uq_decision_current_final = EXCLUDE USING btree (tenant_id WITH =, application_id WITH =) WHERE (((decision_scope = 'FINAL'::text) AND (superseded_by_decision_id IS NULL))) DEFERRABLE INITIALLY DEFERRED
+psql:db/migrations/0008_decision_uniqueness.sql:940: NOTICE:  0008 改造后 decision 上的排斥索引（backing index，注意 indisunique=f）：
+      CREATE INDEX uq_decision_current ON recruitment.decision USING btree (tenant_id, application_id, decision_scope, COALESCE(stage_code, ''::text)) WHERE (superseded_by_decision_id IS NULL)
+      CREATE INDEX uq_decision_current_final ON recruitment.decision USING btree (tenant_id, application_id) WHERE ((decision_scope = 'FINAL'::text) AND (superseded_by_decision_id IS NULL))
+psql:db/migrations/0008_decision_uniqueness.sql:940: NOTICE:  0008 改造后的 fk_interview_record_rubric_job：FOREIGN KEY (tenant_id, job_id, rubric_version_id) REFERENCES recruitment.rubric_version(tenant_id, job_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT
+psql:db/migrations/0008_decision_uniqueness.sql:940: NOTICE:  0008 改造后的触发器：
+      trg_interview_record_job_guard: CREATE TRIGGER trg_interview_record_job_guard BEFORE INSERT OR UPDATE ON recruitment.interview_record FOR EACH ROW EXECUTE FUNCTION recruitment.fn_interview_record_job_guard()
+psql:db/migrations/0008_decision_uniqueness.sql:940: NOTICE:  0008 DONE 三段全部落地（单事务提交；唯一数据写入是 GAP-C 的派生回填）。interview_record 现存 0 行
+psql:db/migrations/0009_application_identity.sql:89: NOTICE:  0009 §1 OK：无重复 ACTIVE 申请
+psql:db/migrations/0009_application_identity.sql:122: NOTICE:  0009 §2 已创建 uq_application_active_cycle
+psql:db/migrations/0009_application_identity.sql:150: NOTICE:  trigger "trg_application_cycle_guard" for relation "recruitment.application" does not exist, skipping
+psql:db/migrations/0009_application_identity.sql:173: NOTICE:  0009 DONE：Application 身份由 (candidate, job, ACTIVE) 决定（单事务提交；数据改动只可能是 §1 的重复 ACTIVE 非破坏性转 CLOSED）
+== upgrade: 0001→0007, then 0008, then the rest
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_organization_no_delete" for relation "recruitment.organization" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_department_no_delete" for relation "recruitment.department" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_actor_no_delete" for relation "recruitment.actor" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_role_no_delete" for relation "recruitment.role" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_actor_role_no_delete" for relation "recruitment.actor_role" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_event_inbox_no_delete" for relation "recruitment.event_inbox" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_approval_no_delete" for relation "recruitment.approval" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_acquisition_channel_no_delete" for relation "recruitment.acquisition_channel" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_requisition_no_delete" for relation "recruitment.requisition" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_job_no_delete" for relation "recruitment.job" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_job_version_no_delete" for relation "recruitment.job_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_business_config_no_delete" for relation "recruitment.business_config" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_rubric_version_no_delete" for relation "recruitment.rubric_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_job_posting_no_delete" for relation "recruitment.job_posting" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_intake_record_no_delete" for relation "recruitment.intake_record" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_intake_asset_no_delete" for relation "recruitment.intake_asset" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_candidate_no_delete" for relation "recruitment.candidate" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_candidate_merge_no_delete" for relation "recruitment.candidate_merge" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_resume_no_delete" for relation "recruitment.resume" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_resume_version_no_delete" for relation "recruitment.resume_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_application_no_delete" for relation "recruitment.application" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_interview_template_version_no_delete" for relation "recruitment.interview_template_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_interview_no_delete" for relation "recruitment.interview" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_interviewer_no_delete" for relation "recruitment.interviewer" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_meeting_no_delete" for relation "recruitment.meeting" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_meeting_binding_no_delete" for relation "recruitment.meeting_binding" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_transcript_artifact_no_delete" for relation "recruitment.transcript_artifact" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_transcript_processing_run_no_delete" for relation "recruitment.transcript_processing_run" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_interview_record_no_delete" for relation "recruitment.interview_record" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_ai_summary_no_delete" for relation "recruitment.ai_summary" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_scorecard_no_delete" for relation "recruitment.scorecard" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_decision_no_delete" for relation "recruitment.decision" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_chat_thread_no_delete" for relation "recruitment.chat_thread" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_business_task_no_delete" for relation "recruitment.business_task" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_task_attempt_no_delete" for relation "recruitment.task_attempt" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_agent_session_no_delete" for relation "recruitment.agent_session" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_durable_effect_no_delete" for relation "recruitment.durable_effect" does not exist, skipping
+psql:db/migrations/0001_init.sql:1734: NOTICE:  trigger "trg_execution_mandate_no_delete" for relation "recruitment.execution_mandate" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_requisition_guard_status" for relation "recruitment.requisition" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_job_guard_status" for relation "recruitment.job" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_job_posting_guard_status" for relation "recruitment.job_posting" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_intake_record_guard_status" for relation "recruitment.intake_record" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_application_guard_lifecycle_status" for relation "recruitment.application" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_application_guard_current_stage_code" for relation "recruitment.application" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_interview_guard_status" for relation "recruitment.interview" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_transcript_artifact_guard_transcript_status" for relation "recruitment.transcript_artifact" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_interview_record_guard_status" for relation "recruitment.interview_record" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_scorecard_guard_status" for relation "recruitment.scorecard" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_approval_guard_status" for relation "recruitment.approval" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_business_task_guard_status" for relation "recruitment.business_task" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_task_attempt_guard_status" for relation "recruitment.task_attempt" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_agent_session_guard_status" for relation "recruitment.agent_session" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_durable_effect_guard_status" for relation "recruitment.durable_effect" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_actor_guard_status" for relation "recruitment.actor" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_chat_thread_guard_status" for relation "recruitment.chat_thread" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_transcript_processing_run_guard_status" for relation "recruitment.transcript_processing_run" does not exist, skipping
+psql:db/migrations/0001_init.sql:1767: NOTICE:  trigger "trg_ai_summary_guard_status" for relation "recruitment.ai_summary" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_transcript_artifact_immutable" for relation "recruitment.transcript_artifact" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_resume_version_immutable" for relation "recruitment.resume_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_rubric_version_immutable" for relation "recruitment.rubric_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_job_version_immutable" for relation "recruitment.job_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_business_config_immutable" for relation "recruitment.business_config" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_interview_template_version_immutable" for relation "recruitment.interview_template_version" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_candidate_merge_immutable" for relation "recruitment.candidate_merge" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_event_inbox_immutable" for relation "recruitment.event_inbox" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_decision_immutable" for relation "recruitment.decision" does not exist, skipping
+psql:db/migrations/0001_init.sql:1800: NOTICE:  trigger "trg_ai_summary_immutable" for relation "recruitment.ai_summary" does not exist, skipping
+psql:db/migrations/0001_init.sql:1803: NOTICE:  trigger "trg_candidate_identity_guard" for relation "recruitment.candidate" does not exist, skipping
+psql:db/migrations/0001_init.sql:1807: NOTICE:  trigger "trg_candidate_merge_apply" for relation "recruitment.candidate_merge" does not exist, skipping
+psql:db/migrations/0001_init.sql:1811: NOTICE:  trigger "trg_scorecard_submitted_guard" for relation "recruitment.scorecard" does not exist, skipping
+psql:db/migrations/0001_init.sql:1815: NOTICE:  trigger "trg_approval_final_guard" for relation "recruitment.approval" does not exist, skipping
+psql:db/migrations/0001_init.sql:1820: NOTICE:  trigger "trg_candidate_touch" for relation "recruitment.candidate" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:231: NOTICE:  trigger "trg_conversion_run_immutable" for relation "recruitment.conversion_run" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:236: NOTICE:  trigger "trg_conversion_run_no_delete" for relation "recruitment.conversion_run" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:445: NOTICE:  trigger "trg_review_queue_before_insert" for relation "recruitment.review_queue" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:450: NOTICE:  trigger "trg_review_queue_before_update" for relation "recruitment.review_queue" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:455: NOTICE:  trigger "trg_review_queue_audit" for relation "recruitment.review_queue" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:460: NOTICE:  trigger "trg_review_queue_no_delete" for relation "recruitment.review_queue" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:519: NOTICE:  trigger "trg_review_audit_no_update" for relation "recruitment.review_audit" does not exist, skipping
+psql:db/migrations/0003_review_queue.sql:524: NOTICE:  trigger "trg_review_audit_no_delete" for relation "recruitment.review_audit" does not exist, skipping
+psql:db/migrations/0004_stage_catalog.sql:203: NOTICE:  0004 PRE-FK PASS 现有 application 的 stage code 全部已在目录内
+psql:db/migrations/0004_stage_catalog.sql:323: NOTICE:  0004 POST-CHECK PASS 目录 12 行 + demo job 已回填当前 rubric
+psql:db/migrations/0005_version_binding.sql:72: NOTICE:  0005 改造前 application 上与版本相关的外键：
+      fk_application_job_version = FOREIGN KEY (job_version_id, tenant_id) REFERENCES recruitment.job_version(id, tenant_id)
+      fk_application_rubric = FOREIGN KEY (rubric_version_id, tenant_id) REFERENCES recruitment.rubric_version(id, tenant_id)
+psql:db/migrations/0005_version_binding.sql:136: NOTICE:  0005 PRE-CHECK PASS 现有 application：1 条（钉了 rubric 的 1 条 / JD 版本对得上 job 的 1 条）全部同 job 同租户，无跨岗位引用
+psql:db/migrations/0005_version_binding.sql:206: NOTICE:  0005 已加 rubric_version unique (id, job_id) [uq_rubric_version_id_job]
+psql:db/migrations/0005_version_binding.sql:206: NOTICE:  0005 已加 job_version unique (id, job_id) [uq_job_version_id_job]
+psql:db/migrations/0005_version_binding.sql:206: NOTICE:  0005 rubric_version 已有等价唯一键 (tenant_id, id, job_id)（如 0004 的 uq_*_tenant_job_id），复用
+psql:db/migrations/0005_version_binding.sql:206: NOTICE:  0005 已加 job_version unique (tenant_id, id, job_id) [uq_job_version_tenant_id_job]
+psql:db/migrations/0005_version_binding.sql:235: NOTICE:  0005 已加 fk_application_rubric_job：申请钉的 rubric 必须属于同一个 job + 租户
+psql:db/migrations/0005_version_binding.sql:251: NOTICE:  0005 已加 fk_application_job_version_job：申请钉的 JD 版本必须属于同一个 job + 租户
+psql:db/migrations/0005_version_binding.sql:336: NOTICE:  0005 闸 1 PASS 新复合外键 2/2 已建立并 convalidated
+psql:db/migrations/0005_version_binding.sql:336: NOTICE:  0005 已删旧外键 fk_application_rubric（原定义：FOREIGN KEY (rubric_version_id, tenant_id) REFERENCES recruitment.rubric_version(id, tenant_id)）
+psql:db/migrations/0005_version_binding.sql:336: NOTICE:  0005 已删旧外键 fk_application_job_version（原定义：FOREIGN KEY (job_version_id, tenant_id) REFERENCES recruitment.job_version(id, tenant_id)）
+psql:db/migrations/0005_version_binding.sql:336: NOTICE:  0005 旧外键清理完成：本次删除 2 条（0 条 = 已迁移过，第二遍就是 0）
+psql:db/migrations/0005_version_binding.sql:434: NOTICE:  0005 改造后 application 上与版本相关的外键：
+      fk_application_job_version_job = FOREIGN KEY (tenant_id, job_version_id, job_id) REFERENCES recruitment.job_version(tenant_id, id, job_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+      fk_application_rubric_job = FOREIGN KEY (tenant_id, rubric_version_id, job_id) REFERENCES recruitment.rubric_version(tenant_id, id, job_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+psql:db/migrations/0005_version_binding.sql:434: NOTICE:  0005 POST-CHECK PASS 复合外键 2 条（含 job_id + tenant_id，restrict/validated）+ 旧外键已退场 + 跨岗位引用 0 条
+psql:db/migrations/0006_integrity_gaps.sql:80: NOTICE:  0006 DEPENDENCY PASS 依赖表齐全（含 0004 的 stage_catalog）
+psql:db/migrations/0006_integrity_gaps.sql:144: NOTICE:  0006 改造前 GAP-1：interview.stage_code 默认值 = 'INTERVIEW'::text；引用 stage_code 的外键 = 0 条
+psql:db/migrations/0006_integrity_gaps.sql:144: NOTICE:  0006 改造前 GAP-2：ck_execution_mandate_no_business_approval = CHECK ((NOT (allowed_actions && ARRAY['approve'::text, 'reject'::text, 'decide'::text, 'merge_candidate'::text, 'waive_scorecard'::text])))
+psql:db/migrations/0006_integrity_gaps.sql:144: NOTICE:  0006 改造前 GAP-3：fk_interview_record_artifact = FOREIGN KEY (transcript_artifact_id, transcript_revision) REFERENCES recruitment.transcript_artifact(id, source_revision)
+psql:db/migrations/0006_integrity_gaps.sql:144: NOTICE:  0006 改造前 GAP-4：business_task 上 owner* 列 = （无）
+psql:db/migrations/0006_integrity_gaps.sql:144: NOTICE:  0006 GAP-5 现场：meeting / meeting_binding 的 before update 触发器 = 0 个（首跑应为 0；重跑时这 0 个是本文件上一轮挂的 fn_touch）
+psql:db/migrations/0006_integrity_gaps.sql:144: NOTICE:  0006 改造前 GAP-5：meeting 中 record_version <> 1 的行 = 0 / meeting_binding 中 = 0（死列证据：从未被任何触发器改变）
+psql:db/migrations/0006_integrity_gaps.sql:182: NOTICE:  0006 GAP-1 PRE-CHECK PASS 现有 interview 的 stage_code 全部已在各自租户的 stage_catalog 内（0 条脏值）
+psql:db/migrations/0006_integrity_gaps.sql:205: NOTICE:  0006 GAP-1 已加 fk_interview_stage_catalog：(tenant_id, stage_code) → stage_catalog(tenant_id, code)
+psql:db/migrations/0006_integrity_gaps.sql:259: NOTICE:  0006 GAP-2 PRE-CHECK PASS 现有 execution_mandate 中没有 submit_scorecard（含大小写变体）
+psql:db/migrations/0006_integrity_gaps.sql:306: NOTICE:  0006 GAP-2 已扩展 ck_execution_mandate_no_business_approval：加入 submit_scorecard（原 5 值全部保留）
+psql:db/migrations/0006_integrity_gaps.sql:371: NOTICE:  0006 GAP-3 PRE-CHECK PASS 现有 interview_record：跨租户引用 0 条 / revision 不符 0 条 / 孤儿引用 0 条
+psql:db/migrations/0006_integrity_gaps.sql:393: NOTICE:  0006 GAP-3 已加 transcript_artifact unique (tenant_id, id, source_revision)（3 列外键的被引用键）
+psql:db/migrations/0006_integrity_gaps.sql:466: NOTICE:  0006 GAP-3 已删旧外键 fk_interview_record_artifact（列集合 transcript_artifact_id,transcript_revision）
+psql:db/migrations/0006_integrity_gaps.sql:466: NOTICE:  0006 GAP-3 已建 fk_interview_record_artifact：(tenant_id, artifact, revision) → transcript_artifact(tenant_id, id, source_revision)
+psql:db/migrations/0006_integrity_gaps.sql:490: NOTICE:  0006 GAP-3 闸 PASS 新 3 列外键已建立并 convalidated；同表不存在第二条无 tenant_id 的转写外键
+psql:db/migrations/0006_integrity_gaps.sql:531: NOTICE:  0006 GAP-4 PRE-CHECK A PASS business_task.owner_actor_id 类型检查通过（尚未创建，将按 uuid 新建 ）
+psql:db/migrations/0006_integrity_gaps.sql:555: NOTICE:  0006 GAP-4 PRE-CHECK B PASS 没有 business_task 用 business_refs.kind 表达责任人（0 条）
+psql:db/migrations/0006_integrity_gaps.sql:576: NOTICE:  0006 GAP-4 已加 fk_business_task_owner_actor：(owner_actor_id, tenant_id) → actor(id, tenant_id)
+psql:db/migrations/0006_integrity_gaps.sql:614: NOTICE:  0006 GAP-5 PRE-CHECK A PASS meeting / meeting_binding 上没有其它 before update 触发器
+psql:db/migrations/0006_integrity_gaps.sql:643: NOTICE:  0006 GAP-5 PRE-CHECK B PASS 两张表的 record_version / updated_at 自洽（0 条坏行）
+psql:db/migrations/0006_integrity_gaps.sql:646: NOTICE:  trigger "trg_meeting_touch" for relation "recruitment.meeting" does not exist, skipping
+psql:db/migrations/0006_integrity_gaps.sql:651: NOTICE:  trigger "trg_meeting_binding_touch" for relation "recruitment.meeting_binding" does not exist, skipping
+psql:db/migrations/0006_integrity_gaps.sql:659: NOTICE:  0006 GAP-5 已挂 trg_meeting_touch / trg_meeting_binding_touch（fn_touch：record_version + 1、updated_at = now()）
+psql:db/migrations/0006_integrity_gaps.sql:837: NOTICE:  0006 POST-CHECK PASS 五个缺口全部落地：GAP-1 默认 S8 + fk_interview_stage_catalog；GAP-2 CHECK 含 submit_scorecard（原 5 值保留）；GAP-3 3 列外键 + 被引用键 + 无后门；GAP-4 owner_actor_id（可空、无默认）+ 同租户外键；GAP-5 两张表的 fn_touch 触发器
+psql:db/migrations/0006_integrity_gaps.sql:862: NOTICE:  0006 改造后的约束定义：
+      recruitment.interview.fk_interview_stage_catalog = FOREIGN KEY (tenant_id, stage_code) REFERENCES recruitment.stage_catalog(tenant_id, code) ON UPDATE RESTRICT ON DELETE RESTRICT
+      recruitment.execution_mandate.ck_execution_mandate_no_business_approval = CHECK ((NOT (allowed_actions && ARRAY['approve'::text, 'reject'::text, 'decide'::text, 'merge_candidate'::text, 'waive_scorecard'::text, 'submit_scorecard'::text])))
+      recruitment.transcript_artifact.uq_transcript_artifact_tenant_id_revision = UNIQUE (tenant_id, id, source_revision)
+      recruitment.interview_record.fk_interview_record_artifact = FOREIGN KEY (tenant_id, transcript_artifact_id, transcript_revision) REFERENCES recruitment.transcript_artifact(tenant_id, id, source_revision) ON UPDATE RESTRICT ON DELETE RESTRICT
+      recruitment.business_task.fk_business_task_owner_actor = FOREIGN KEY (owner_actor_id, tenant_id) REFERENCES recruitment.actor(id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+psql:db/migrations/0006_integrity_gaps.sql:862: NOTICE:  0006 改造后的触发器：
+      trg_meeting_touch: CREATE TRIGGER trg_meeting_touch BEFORE UPDATE ON recruitment.meeting FOR EACH ROW EXECUTE FUNCTION recruitment.fn_touch()
+      trg_meeting_binding_touch: CREATE TRIGGER trg_meeting_binding_touch BEFORE UPDATE ON recruitment.meeting_binding FOR EACH ROW EXECUTE FUNCTION recruitment.fn_touch()
+psql:db/migrations/0006_integrity_gaps.sql:862: NOTICE:  0006 DONE 五个完整性缺口已修复（单事务提交；本次无任何数据改动）
+psql:db/migrations/0007_decision_integrity.sql:83: NOTICE:  0007 DEPENDENCY PASS 依赖表齐全（含 0004 的 stage_catalog）
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 改造前 GAP-A：decision 上引用 stage_code 的外键 = 0 条（应为 0：只有正则，没有取值校验）
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 改造前 GAP-B：decision 上含 (application_id, decision_scope) 的唯一索引 = 0 个（应为 0：当前决策可重复）
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 改造前 GAP-C：scorecard.job_id = （不存在）
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 改造前 GAP-D：fk_ai_summary_artifact = FOREIGN KEY (transcript_artifact_id, transcript_revision) REFERENCES recruitment.transcript_artifact(id, source_revision)
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 改造前 GAP-E：scorecard 的 before insert 触发器 = 0 个（首跑应为 0：直接 INSERT 终态行无人管）
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 GAP-E 事实核对：decision 的列 = id, tenant_id, application_id, interview_id, decision_scope, stage_code, result, decided_by_actor_id, decided_at, reason, basis_refs, approval_id, superseded_by_decision_id, record_version, created_at, updated_at
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 改造前行数：decision=0 / scorecard=0 / ai_summary=0 / rubric_version=1
+psql:db/migrations/0007_decision_integrity.sql:165: NOTICE:  0007 改造前：全库多列外键不含 tenant_id = recruitment.ai_summary(fk_ai_summary_artifact)
+psql:db/migrations/0007_decision_integrity.sql:222: NOTICE:  0007 GAP-A PRE-CHECK PASS 现有 decision 的 stage_code 全部已在各自租户的 stage_catalog 内（NULL 除外，0 条脏值）
+psql:db/migrations/0007_decision_integrity.sql:274: NOTICE:  0007 GAP-A 已加 fk_decision_stage_catalog：(tenant_id, stage_code) → stage_catalog(tenant_id, code)（restrict/restrict，MATCH SIMPLE）
+psql:db/migrations/0007_decision_integrity.sql:336: NOTICE:  0007 GAP-B PRE-CHECK PASS 现有 decision 没有重复的 current 行（NULL stage_code 按相等分组，0 组重复）
+psql:db/migrations/0007_decision_integrity.sql:381: NOTICE:  0007 GAP-B 已建 uq_decision_current：(tenant_id, application_id, decision_scope, stage_code) NULLS NOT DISTINCT WHERE superseded_by_decision_id IS NULL
+psql:db/migrations/0007_decision_integrity.sql:438: NOTICE:  0007 GAP-C PRE-CHECK A PASS scorecard.job_id 类型检查通过（尚未创建，将按 uuid 新建）
+psql:db/migrations/0007_decision_integrity.sql:528: NOTICE:  0007 GAP-C PRE-CHECK B PASS 存量 scorecard：解析链 0 条断 / 已有 job_id 0 条冲突 / rubric 跨岗位 0 条 / 终态缺 job_id 0 条
+psql:db/migrations/0007_decision_integrity.sql:557: NOTICE:  0007 GAP-C scorecard.job_id 无需回填（0 行）
+psql:db/migrations/0007_decision_integrity.sql:596: NOTICE:  0007 GAP-C 复用 rubric_version 已有 unique (tenant_id, job_id, id)（0004 的 uq_rubric_version_tenant_job_id）
+psql:db/migrations/0007_decision_integrity.sql:648: NOTICE:  0007 GAP-C 已加 fk_scorecard_rubric_job：(tenant_id, job_id, rubric_version_id) → rubric_version(tenant_id, job_id, id)
+psql:db/migrations/0007_decision_integrity.sql:713: NOTICE:  0007 GAP-C 已挂 trg_scorecard_job_guard（before insert or update → fn_scorecard_job_guard）
+psql:db/migrations/0007_decision_integrity.sql:774: NOTICE:  0007 GAP-D PRE-CHECK PASS 现有 ai_summary：跨租户引用 0 条 / revision 不符 0 条 / 孤儿引用 0 条
+psql:db/migrations/0007_decision_integrity.sql:795: NOTICE:  0007 GAP-D 复用 transcript_artifact 已有 unique (tenant_id, id, source_revision)（0006 的 uq_transcript_artifact_tenant_id_revision）
+psql:db/migrations/0007_decision_integrity.sql:896: NOTICE:  0007 GAP-D 已替换 fk_ai_summary_artifact：先建 3 列新键（convalidated）→ 删 2 列旧键 → 改名回正式名
+psql:db/migrations/0007_decision_integrity.sql:919: NOTICE:  0007 GAP-D 闸 PASS fk_ai_summary_artifact 已建立并 convalidated（3 列含 tenant_id）
+psql:db/migrations/0007_decision_integrity.sql:960: NOTICE:  0007 GAP-E PRE-CHECK PASS 现有终态 scorecard 全部有 status_changed_by_actor_id（0 条缺 actor）
+psql:db/migrations/0007_decision_integrity.sql:985: NOTICE:  0007 GAP-E 已加 ck_scorecard_terminal_actor：status <> 'PENDING' 时必须有 status_changed_by_actor_id
+psql:db/migrations/0007_decision_integrity.sql:1042: NOTICE:  0007 GAP-E 已挂 trg_scorecard_terminal_actor_guard（before insert → fn_scorecard_terminal_actor_guard）
+psql:db/migrations/0007_decision_integrity.sql:1276: NOTICE:  0007 POST-CHECK PASS 五个缺口全部落地：A decision stage_code 复合外键（含 tenant_id）；B 当前决策唯一（NULLS NOT DISTINCT 部分唯一索引）；C scorecard.job_id NOT NULL + 复合外键 + 触发器；D ai_summary 3 列外键 + 被引用键 + 无后门；E scorecard 终态 CHECK + before insert actor 闸（decision 侧不成立，见 §5 抬头）
+psql:db/migrations/0007_decision_integrity.sql:1306: NOTICE:  0007 改造后的约束定义：
+      uq_rubric_version_tenant_job_id = UNIQUE (tenant_id, job_id, id)
+      fk_decision_stage_catalog = FOREIGN KEY (tenant_id, stage_code) REFERENCES recruitment.stage_catalog(tenant_id, code) ON UPDATE RESTRICT ON DELETE RESTRICT
+      fk_scorecard_rubric_job = FOREIGN KEY (tenant_id, job_id, rubric_version_id) REFERENCES recruitment.rubric_version(tenant_id, job_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT
+      fk_ai_summary_artifact = FOREIGN KEY (tenant_id, transcript_artifact_id, transcript_revision) REFERENCES recruitment.transcript_artifact(tenant_id, id, source_revision) ON UPDATE RESTRICT ON DELETE RESTRICT
+      ck_scorecard_terminal_actor = CHECK (((status = 'PENDING'::text) OR (status_changed_by_actor_id IS NOT NULL)))
+psql:db/migrations/0007_decision_integrity.sql:1306: NOTICE:  0007 改造后的当前决策唯一索引：CREATE UNIQUE INDEX uq_decision_current ON recruitment.decision USING btree (tenant_id, application_id, decision_scope, stage_code) NULLS NOT DISTINCT WHERE (superseded_by_decision_id IS NULL)
+psql:db/migrations/0007_decision_integrity.sql:1306: NOTICE:  0007 改造后的触发器：
+      trg_scorecard_job_guard: CREATE TRIGGER trg_scorecard_job_guard BEFORE INSERT OR UPDATE ON recruitment.scorecard FOR EACH ROW EXECUTE FUNCTION recruitment.fn_scorecard_job_guard()
+      trg_scorecard_terminal_actor_guard: CREATE TRIGGER trg_scorecard_terminal_actor_guard BEFORE INSERT ON recruitment.scorecard FOR EACH ROW EXECUTE FUNCTION recruitment.fn_scorecard_terminal_actor_guard()
+psql:db/migrations/0007_decision_integrity.sql:1306: NOTICE:  0007 DONE 五个完整性缺口已按上述范围修复（单事务提交；无默认值硬填；唯一数据写入是 GAP-C 的派生回填）
+psql:db/migrations/0008_decision_uniqueness.sql:164: NOTICE:  0008 DEPENDENCY PASS 依赖表齐全 + 0007 的 fk_scorecard_rubric_job 在位 + rubric_version unique (tenant_id, job_id, id) 在位
+psql:db/migrations/0008_decision_uniqueness.sql:208: NOTICE:  0008 改造前 decision 的索引：
+      decision_pkey(unique=t nulls_not_distinct=f exclusion=f pred=无)
+      ix_decision_application(unique=f nulls_not_distinct=f exclusion=f pred=无)
+      uq_decision_current(unique=t nulls_not_distinct=t exclusion=f pred=(superseded_by_decision_id IS NULL))
+      uq_decision_id_tenant(unique=t nulls_not_distinct=f exclusion=f pred=无)
+psql:db/migrations/0008_decision_uniqueness.sql:208: NOTICE:  0008 改造前 GAP-A：同 (tenant, application, scope, stage) 的重复 current 组数 = 0（应为 0）
+psql:db/migrations/0008_decision_uniqueness.sql:208: NOTICE:  0008 改造前 GAP-B：每个申请有 >1 条 current FINAL 的组数 = 0（应为 0）
+psql:db/migrations/0008_decision_uniqueness.sql:208: NOTICE:  0008 改造前 GAP-C：interview_record 行数 = 0；job_id 列 = 尚未创建（将按 uuid 新建）
+      interview_record.rubric_version_id 存在、fk_interview_record_rubric 只保证同租户存在，不保证"该申请的岗位"
+psql:db/migrations/0008_decision_uniqueness.sql:240: NOTICE:  0008 GAP-A PRE-CHECK PASS 现有 decision 没有重复的 current 行（stage_code 的 NULL 按相等参与分组，0 组重复）
+psql:db/migrations/0008_decision_uniqueness.sql:266: NOTICE:  0008 GAP-B PRE-CHECK PASS 现有 decision 每个申请最多一条 current FINAL（0 组重复）
+psql:db/migrations/0008_decision_uniqueness.sql:335: NOTICE:  0008 GAP-C PRE-CHECK PASS 存量 interview_record：解析链 0 条断 / 已有 job_id 0 条冲突 / rubric 跨岗位 0 条
+psql:db/migrations/0008_decision_uniqueness.sql:468: NOTICE:  0008 GAP-A 已建临时排斥约束 uq_decision_current_0008：EXCLUDE (tenant_id, application_id, decision_scope, coalesce(stage_code, 空串)) WHERE 未取代 DEFERRABLE INITIALLY DEFERRED
+psql:db/migrations/0008_decision_uniqueness.sql:468: NOTICE:  0008 GAP-A 已删 0007 的部分唯一索引 uq_decision_current（已先验证新约束就绪 + 旧索引形态）
+psql:db/migrations/0008_decision_uniqueness.sql:468: NOTICE:  0008 GAP-A 已将可延迟排斥约束改名为 uq_decision_current（符号名不变，语义从"立即唯一索引"变为"COMMIT 时检查的排斥约束"）
+psql:db/migrations/0008_decision_uniqueness.sql:519: NOTICE:  0008 GAP-B 已建 uq_decision_current_final：EXCLUDE (tenant_id, application_id) WHERE scope=FINAL 且未取代 DEFERRABLE INITIALLY DEFERRED
+psql:db/migrations/0008_decision_uniqueness.sql:552: NOTICE:  0008 GAP-C 已加列 interview_record.job_id uuid（先可空；回填后收紧为 NOT NULL；无默认值）
+psql:db/migrations/0008_decision_uniqueness.sql:552: NOTICE:  0008 GAP-C PRE-CHECK A PASS interview_record.job_id 类型检查通过（尚未创建，已按 uuid 新建）
+psql:db/migrations/0008_decision_uniqueness.sql:577: NOTICE:  0008 GAP-C interview_record.job_id 无需回填（0 行）
+psql:db/migrations/0008_decision_uniqueness.sql:595: NOTICE:  0008 GAP-C 已收紧 interview_record.job_id 为 NOT NULL
+psql:db/migrations/0008_decision_uniqueness.sql:647: NOTICE:  0008 GAP-C 已加 fk_interview_record_rubric_job：(tenant_id, job_id, rubric_version_id) → rubric_version(tenant_id, job_id, id)
+psql:db/migrations/0008_decision_uniqueness.sql:712: NOTICE:  0008 GAP-C 已挂 trg_interview_record_job_guard（before insert or update → fn_interview_record_job_guard）
+psql:db/migrations/0008_decision_uniqueness.sql:830: NOTICE:  0008 POST-CHECK PASS A 可延迟排斥约束（键含 coalesce(stage_code, 空串)）/ B 每个申请最多一条 current FINAL / C interview_record.job_id NOT NULL + 复合外键 + 触发器
+psql:db/migrations/0008_decision_uniqueness.sql:899: NOTICE:  DATA-0008-01 PASS 全库没有重复的 current 决策（NULL stage_code 也按相等处理）
+psql:db/migrations/0008_decision_uniqueness.sql:899: NOTICE:  DATA-0008-02 PASS 全库每个申请最多一条 current FINAL
+psql:db/migrations/0008_decision_uniqueness.sql:899: NOTICE:  DATA-0008-03 PASS 全部 interview_record 都有 job_id（NOT NULL 生效）
+psql:db/migrations/0008_decision_uniqueness.sql:899: NOTICE:  DATA-0008-04 PASS 全部 interview_record 的 rubric 都属于该申请的岗位
+psql:db/migrations/0008_decision_uniqueness.sql:899: NOTICE:  DATA-0008-05 PASS 全库多列外键全部含 tenant_id（含本文件新增的 fk_interview_record_rubric_job）
+psql:db/migrations/0008_decision_uniqueness.sql:940: NOTICE:  0008 改造后的当前决策唯一性约束：
+      uq_decision_current = EXCLUDE USING btree (tenant_id WITH =, application_id WITH =, decision_scope WITH =, COALESCE(stage_code, ''::text) WITH =) WHERE ((superseded_by_decision_id IS NULL)) DEFERRABLE INITIALLY DEFERRED
+      uq_decision_current_final = EXCLUDE USING btree (tenant_id WITH =, application_id WITH =) WHERE (((decision_scope = 'FINAL'::text) AND (superseded_by_decision_id IS NULL))) DEFERRABLE INITIALLY DEFERRED
+psql:db/migrations/0008_decision_uniqueness.sql:940: NOTICE:  0008 改造后 decision 上的排斥索引（backing index，注意 indisunique=f）：
+      CREATE INDEX uq_decision_current ON recruitment.decision USING btree (tenant_id, application_id, decision_scope, COALESCE(stage_code, ''::text)) WHERE (superseded_by_decision_id IS NULL)
+      CREATE INDEX uq_decision_current_final ON recruitment.decision USING btree (tenant_id, application_id) WHERE ((decision_scope = 'FINAL'::text) AND (superseded_by_decision_id IS NULL))
+psql:db/migrations/0008_decision_uniqueness.sql:940: NOTICE:  0008 改造后的 fk_interview_record_rubric_job：FOREIGN KEY (tenant_id, job_id, rubric_version_id) REFERENCES recruitment.rubric_version(tenant_id, job_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT
+psql:db/migrations/0008_decision_uniqueness.sql:940: NOTICE:  0008 改造后的触发器：
+      trg_interview_record_job_guard: CREATE TRIGGER trg_interview_record_job_guard BEFORE INSERT OR UPDATE ON recruitment.interview_record FOR EACH ROW EXECUTE FUNCTION recruitment.fn_interview_record_job_guard()
+psql:db/migrations/0008_decision_uniqueness.sql:940: NOTICE:  0008 DONE 三段全部落地（单事务提交；唯一数据写入是 GAP-C 的派生回填）。interview_record 现存 0 行
+psql:db/migrations/0009_application_identity.sql:89: NOTICE:  0009 §1 OK：无重复 ACTIVE 申请
+psql:db/migrations/0009_application_identity.sql:122: NOTICE:  0009 §2 已创建 uq_application_active_cycle
+psql:db/migrations/0009_application_identity.sql:150: NOTICE:  trigger "trg_application_cycle_guard" for relation "recruitment.application" does not exist, skipping
+psql:db/migrations/0009_application_identity.sql:173: NOTICE:  0009 DONE：Application 身份由 (candidate, job, ACTIVE) 决定（单事务提交；数据改动只可能是 §1 的重复 ACTIVE 非破坏性转 CLOSED）
+== re-run: latest migration twice on the migrated database
+psql:db/migrations/0010_migration_ledger.sql:30: NOTICE:  relation "schema_migration" already exists, skipping
+== ledger vs files: 台账必须与 db/migrations/*.sql 完全一致（漏跑 / 幽灵迁移都红）
+ledger matches files
+migration lifecycle OK

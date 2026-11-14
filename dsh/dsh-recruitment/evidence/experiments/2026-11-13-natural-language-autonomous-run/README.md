@@ -9,7 +9,7 @@
 | 入口 | `dsh --profile rec-agent-test`（headless） |
 | 模型 | `opencode-go-openai-key2` / `beam-free` |
 | 会话 | `session-84b3fc5d-85b3-4716-9063-0f824f283ac6` |
-| PDF | `...\resume-talent-pool\.snap-cache\...\assets\proofs\resume.pdf`（1 页 47 blocks） |
+| PDF | 本机真实简历原件（路径在本机工作区，**按设计不入库**；1 页 47 blocks） |
 | 岗位 | `DEMO-BE-001` / `11111111-1111-4111-8111-000000000401` |
 | 结果 | 自主完成；结构化 `accepted=true`；`application bc2f582b`；初筛 `NEEDS_REVIEW` |
 

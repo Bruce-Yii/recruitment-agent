@@ -120,7 +120,8 @@ $env:OUTPUT_JSON = (Join-Path (Get-Location) 'work\phase9-live-evidence.json')
 node packages/testing/scripts/phase9-live-e2e.mjs
 ```
 
-**期望**：`EXIT=0`，`work/phase9-live-evidence.json` 里 67 个 check 全 `ok:true`。
+**期望**：`EXIT=0`。⚠️ **证据 JSON 按设计不入库**（`work/` 未追踪）：本仓库没有该证据文件，
+**本 runbook 段当前不可复现**；脚本本身位于旧仓工作树，不在本仓。
 
 ## 6. 验证落库（不看日志，看库）
 
