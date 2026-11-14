@@ -139,21 +139,19 @@ The first implementation should expose only the settings needed to configure the
 
 No main-branch changes, no direct changes to shared plugin entry, no new issue, no Notion write, no independent production frontend, no fake Feishu connection, no fake calendar/email delivery, no production HR organization or multi-tenant administration. No candidate login, account, portal, candidate-facing workspace, self-service product, or candidate-side Agent interaction.
 
-## 3C. Unified V5.2 shell — do not split role workspaces into separate apps
+## 3C. Unified V5.2 shell — frozen product-facing structure
 
-The role-specific experience is integrated into the existing V5.2 Recruitment Agent shell. Do not create a separate role-management prototype, a second application shell, or role-specific top-level navigation trees.
+The role-specific experience is integrated into the existing V5.2 shell. Do not create another prototype, app shell, or role-specific navigation tree.
 
-- Keep exactly two primary navigation spaces in the shared shell. Their labels and contents adapt to the active internal role:
-  - HR / Recruiter: `正在招聘` + `招聘记录`.
-  - Hiring Lead: `招聘总览` + `招聘记录`.
-  - Interviewers: `我的面试` + `我的评价`.
-  - Approver: `审批工作` + `审批记录`.
-  - Enterprise Administrator: `企业配置` + `配置版本`.
-- Candidate / Application is a domain record shown in its Job or Interview context, not a top-level navigation destination and never a system-user workspace.
-- `待我处理` is not a second candidate/application module. For HR/Lead it is one global Human Attention entry for actionable decisions; remove duplicate attention/task cards from the work overview. For Interviewers, the assigned Interview work list itself contains upcoming interviews and pending Scorecards; do not also show a duplicate inbox with the same work. For Approvers, assigned approvals are shown in their work view. The same task must have one canonical actionable entry.
-- Interviewer role views reuse the same Interview Workspace and show only assigned Interview instances. A/B/C demo identities are sample actors for first/second/final round views; the enterprise configuration determines real stage names and assignees. Multiple assignments across rounds are allowed.
-- Enterprise configuration is opened contextually from the same shell (e.g. Hiring Lead / Administrator action), not through a new parallel app. Keep the configuration editor progressive: stage definitions are collapsed by default; templates are editable; add/remove/reorder stages; edit purpose, competencies, questions, interviewer assignment, independent Scorecard count, visibility and Agent rules.
-- The mobile Agent entry belongs in the bottom navigation; do not use a floating button that overlays interview or decision content.
-- The demo identity selector changes the shared work view and sample actor. It is not a candidate identity, real login, or security boundary.
+- Exactly two product-facing workbench views: **Recruiting workspace** and **Interviewer workspace**.
+- One primary navigation entry, labelled for the current work context. Do not add separate top-level destinations for Candidate, Application, Resume, Interview, Scorecard, Decision, My Evaluations, Approval, or Configuration.
+- Candidate / Application is a business record inside its Job / Interview context, never a product user or standalone candidate-facing workspace.
+- `待我处理` is one global Human Attention entry for genuinely required human actions. It must not duplicate the same actionable item already shown in the active work list. Status summaries may show counts, but only one place owns the action.
+- Interviewers see assigned Interview instances in the shared Interview Workspace. A/B/C are sample actors for demonstrating different assignments and independent Scorecards, not different roles. Real stage names and assignees come from configuration.
+- Recruiting settings are reached contextually from the Recruiting workspace. No separate administrator identity or settings app.
+- A company may assign a decision/approval responsibility to an authorized internal person; this is an action-level permission/workflow gate, not a separate product role or mandatory approver workbench.
+- Keep stage configuration progressive: collapsed stages by default; editable templates; add/remove/reorder stages; edit purpose, focus, questions, interviewer assignment, required independent Scorecard count, visibility and Agent action boundaries.
+- Agent conversation stays in DSH's native conversation surface and remains scoped to the active Job or Interview. The Recruitment client panel must not create a second Agent runtime or a parallel chat system.
+- Mobile Agent entry must not obscure interview or decision content.
 
-The local artifact `Recruitment Agent · V5.2 Unified Workspace` is the UX reference for this contract. Its SAMPLE state is not production data and its local configuration is not a substitute for PostgreSQL persistence or server-side authorization.
+The local artifact `Recruitment Agent · V5.2 Unified Workspace` is the UX reference. Its SAMPLE state is not production data; local configuration is not PostgreSQL persistence or server-side authorization.
