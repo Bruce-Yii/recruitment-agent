@@ -131,3 +131,13 @@ export type {
   FeishuTransportStage,
 } from './transport.ts'
 
+// 接线层：**唯一**允许把插件配置翻译成「适配器 + 传输层」的地方。
+// 只有 `feishu.cli`（绝对路径）才会装配传输层；不给 = 默认态（不碰任何进程）。
+export { resolveFeishuConnector } from './wiring.ts'
+
+export type {
+  FeishuConnectorConfig,
+  FeishuConnectorDependency,
+  ResolvedFeishuConnector,
+} from './wiring.ts'
+

@@ -218,6 +218,25 @@ await wired.fetchTranscript({ minute_token, external_meeting_id })
 LIVE_GATE=BLOCKED
 ```
 
+### 8.1 工具接线（E4，2026-11-14）
+
+连接器不再是「库里的死代码」：`src/tools/transcript-import.ts` 已 import 本包唯一出口，
+`recruitment_transcript_import` 多了一条**连接器回读**路径。
+
+| 项 | 取值 / 行为 |
+|---|---|
+| 触发条件 | 调用方**不给** `content`，给 `minute_token`（可加 `external_meeting_id` 按平台会议 id 消歧） |
+| 正文来源 | `createFeishuMinutesAdapter(...).fetchTranscript()`；`READ` 之外全部抛 `BLOCKED`（零 artifact） |
+| 传输层装配 | **只**来自插件配置 `config.feishu.cli`（lark-cli 的**绝对路径**）；`wiring.ts` 不读 PATH / 环境变量取 CLI |
+| 默认态 | 没给 `feishu.cli` → 不装配传输层 → `BLOCKED / TRANSPORT_NOT_CONFIGURED`（不拉子进程、不建库连接、不写任何行） |
+| 落库标签 | `provenance=FIXTURE`、`trigger=MANUAL`、`connection∈{NOT_CONNECTED, AUTH_REQUIRED}`；`provenance_basis=FEISHU_READBACK_NO_LIVE_GATE`；附 `FEISHU_READBACK_NOT_LIVE`；**永不 LIVE / CONNECTED** |
+| 会议约束 | 只接受 `provider=FEISHU` 的会议（否则 `INVALID_ARGS/SOURCE_CONNECTOR_MISMATCH`）；`external_meeting_id` 必须精确匹配 active 绑定 |
+| 装配配置 | `feishu: { cli: '<绝对路径>', timeout_ms?, max_attempts?, retry_base_ms?, page_size?, max_pages? }`（见 `wiring.ts`） |
+
+即使装配了传输层，Gate 仍是 `BLOCKED`：回读对象 `transport=FIXTURE`，工具侧把任何
+`LIVE/CONNECTED` 自报**降级**成 `FIXTURE/AUTH_REQUIRED`（`connectorReadbackLabels()`）。
+要允许 LIVE，必须先按 §7 解锁 Gate 并显式改工具侧代码——不能靠调用方传参。
+
 ## 9. 不做的事
 
 - 不下载 / 不转存音视频，只认 `provider_artifact_id` 与访问引用（TR-S8）；
@@ -232,5 +251,7 @@ LIVE_GATE=BLOCKED
 cd dsh\dsh-recruitment
 node --test "test/unit/transcript-feishu.test.ts"            # 18/18（诚实性机检）
 node --test "test/unit/transcript-feishu-transport.test.ts"  # 27/27（传输层，含真实子进程假 CLI）
+node --test "test/unit/transcript-feishu-wiring.test.ts"     # 14/14（接线：配置→适配器→传输层 / 默认 BLOCKED / 注册入口可达）
+node --test "test/integration/transcript-import.test.ts"     # 连接器回读：blocked 零写入 + fake CLI 成功但只标 FIXTURE
 node manual/transcript-line/feishu-probe.mjs                 # 末尾 LIVE_GATE=BLOCKED，退出码 0
 ```
