@@ -390,10 +390,11 @@ test('A7 落后补推进：T1/T2 同时成立 → 一次调用走两跳 S6→S7�
 //  A8 · 不倒退（STAGE_AHEAD）
 // =====================================================================
 
-test('A8 指针已超前（S9）→ NO_OP + STAGE_AHEAD，一条 UPDATE 都不发', async () => {
+test('A8 指针已超前（S11，超过 S10 终态）→ NO_OP + STAGE_AHEAD，一条 UPDATE 都不发', async () => {
   await inRolledBackTx(pool, async (client) => {
     const scenario = await seedScenario(client, { dimensions: DIMS })
-    await setStage(client, scenario.applicationId, 'S9')
+    // S10 是 v1.0 终态（不再是"超前"）；S11/S12 才是本命令范围之外的阶段（in_v1_scope=false）。
+    await setStage(client, scenario.applicationId, 'S11')
     const before = await readApp(client, scenario.applicationId)
     const eventsBefore = await stageChangeEvents(client, scenario.applicationId)
 
@@ -410,10 +411,10 @@ test('A8 指针已超前（S9）→ NO_OP + STAGE_AHEAD，一条 UPDATE 都不�
     assert.equal(warning.next_action_code, 'VERIFY_STAGE_PROGRESSION')
     assert.equal(warning.owner_actor_id, DEMO_RECRUITMENT_OWNER, '招聘负责人从库里推出来')
     assert.equal(warning.owner_display_name, DEMO_RECRUITMENT_OWNER_NAME)
-    assert.equal(result.stage_code, 'S9', '不倒退')
+    assert.equal(result.stage_code, 'S11', '不倒退')
     assert.equal(result.record_version, before.record_version)
     const after = await readApp(client, scenario.applicationId)
-    assert.equal(after.current_stage_code, 'S9')
+    assert.equal(after.current_stage_code, 'S11')
     assert.equal(after.record_version, before.record_version, '零 UPDATE')
     assert.equal((await stageChangeEvents(client, scenario.applicationId)).length, eventsBefore.length)
   })
@@ -495,7 +496,8 @@ test('A9 §11.6-8 只读阻塞视图（真库）：RUBRIC_NOT_PINNED → 四要�
 test('A9 §11.6-8 只读阻塞视图（真库）：STAGE_AHEAD → kind=WARNING、blocked=false，但仍有 owner + next_action', async () => {
   await inRolledBackTx(pool, async (client) => {
     const scenario = await seedScenario(client, { dimensions: DIMS })
-    await setStage(client, scenario.applicationId, 'S10')
+    // S10 是 v1.0 终态（NO_OP、不告警）；STAGE_AHEAD 要用真正的"超前"阶段（S11）。
+    await setStage(client, scenario.applicationId, 'S11')
     const before = await readApp(client, scenario.applicationId)
     const recorder = recordingClient(client)
 
@@ -504,7 +506,7 @@ test('A9 §11.6-8 只读阻塞视图（真库）：STAGE_AHEAD → kind=WARNING�
       applicationId: scenario.applicationId,
     })
 
-    assert.equal(view.stage, 'S10')
+    assert.equal(view.stage, 'S11')
     assert.equal(view.status, 'NO_OP')
     assert.equal(view.blocked, false, 'STAGE_AHEAD 是告警，不是阻塞')
     const obstruction = view.blockers[0] as NonNullable<(typeof view.blockers)[0]>
@@ -763,7 +765,7 @@ test('工具层 execute（真库）：ADVANCED + R4 标签，库里阶段真的�
   const value = await tool.execute({ application_id: fixture.applicationId }, undefined) as Record<string, unknown>
 
   assert.equal(value.tool, 'recruitment_application_stage_advance')
-  assert.equal(value.contract_version, '1.1.0')
+  assert.equal(value.contract_version, '1.2.0')
   assert.equal(value.status, 'ADVANCED')
   assert.equal(value.stage_code, 'S7')
   assert.deepEqual(value.transitions, [{ from: 'S6', to: 'S7' }])
@@ -798,10 +800,30 @@ test('A6 并发（两连接）：恰好 1 条阶段事件；另一侧 VERSION_CO
     await a.query('begin')
     await a.query("select set_config('recruitment.actor_id', $1, true)", [HR_ACTOR])
     // A 先拿到行锁并完成推进，但**先不提交**：B 会在 select … for update 上等这把锁。
-    const resultA = await advanceApplicationStage(a as unknown as DatabaseClient, {
-      tenantId: TENANT,
-      applicationId: fixture.applicationId,
-    })
+    //
+    // **这一步是夹具准备，不是被测行为**，所以给它一次有界重试：CI（Linux + Docker PG）上
+    // 偶发 `could not serialize access due to concurrent update` —— 上一行 `setCommittedStage`
+    // 刚用**另一个连接**提交过这条申请，A 的行锁请求偶尔会与那条刚结束的事务交错。
+    // 被测断言是"B 必须被拒"，那条**一个字没放宽**；这里重试两次仍失败就照常红，不掩盖任何东西。
+    let resultA: Awaited<ReturnType<typeof advanceApplicationStage>> | undefined
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        resultA = await advanceApplicationStage(a as unknown as DatabaseClient, {
+          tenantId: TENANT,
+          applicationId: fixture.applicationId,
+        })
+        break
+      } catch (error) {
+        const code = (error as { code?: string }).code
+        if (code !== 'VERSION_CONFLICT' || attempt === 2) throw error
+        // 产品在冲突时已整体回滚本次调用；重新开事务并把阶段重置回 S6 再试一次。
+        await a.query('rollback').catch(() => {})
+        await setCommittedStage(fixture.applicationId, 'S6')
+        await a.query('begin')
+        await a.query("select set_config('recruitment.actor_id', $1, true)", [HR_ACTOR])
+      }
+    }
+    assert.ok(resultA !== undefined, 'A 的推进没有产生结果')
     assert.equal(resultA.status, 'ADVANCED')
     assert.equal(resultA.stage_code, 'S7')
 

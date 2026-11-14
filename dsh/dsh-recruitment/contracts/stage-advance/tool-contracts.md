@@ -1,17 +1,26 @@
 # stage-advance/tool-contracts.md · `recruitment_application_stage_advance`
 
-**契约版本**：`stage-advance 1.1.0`（2026-11-14；1.1 起 blocker/warning 带**结构化责任人 + 下一步**，并新增只读阻塞视图）
+**契约版本**：`stage-advance 1.2.0`（2026-11-14；1.1 起 blocker/warning 带**结构化责任人 + 下一步**，并新增只读阻塞视图；
+1.2 起梯子从两条边扩到**四条边**：新增 T3 `S8→S9`（面试已发生）、T4 `S9→S10`（材料可用），并裁决 **S10 = v1.0 终态**；新增
+`INTERVIEW_NOT_COMPLETED` / `TRANSCRIPT_NOT_READY` 两条 blocker 码与四个 next_action_code）
 **状态**：本 lane 交付（**待独立复核**；实现者不验收自己的工作）
 **覆盖范围**：一个工具 —— `recruitment_application_stage_advance`（阶段推进的**唯一写入口**），
 外加一个**只读**的阻塞视图函数 `readStageBlockedView`（供工作台直接用，不是工具、不注册）。
 **实现**：`src/tools/stage-advance.ts`（胶水：入参/事务/标签）+ `src/domain/stage-advance.ts`（判定/责任推导/版本守卫/时间戳/只读视图）。
-**测试**：`test/unit/stage-advance.test.ts`（假库：判定矩阵 + 零 UPDATE + 并发错误映射 + 结构化责任 + 视图）、
-`test/integration/stage-advance.test.ts`（真库：A1–A9 全部读库回验）。
+**测试**：`test/unit/stage-advance.test.ts`（假库：判定矩阵 + 零 UPDATE + 并发错误映射 + 结构化责任 + 视图 + 四条边全链）、
+`test/integration/stage-advance.test.ts`（真库：A1–A9 全部读库回验）、
+`test/integration/stage-advance-s8-s10.test.ts`（真库：**A12–A16** 证明 S8→S9→S10 真的能推进并读回 `current_stage_code=S10`）、
+`test/integration/f1-rubric-pin.test.ts`（A10）、`test/integration/scorecard-rubric-version-gate.test.ts`（A11）。
 **位置在哪个缺口**：`docs/23` N8 / P1-09（阶段推进无入口）、`docs/18` §3.7 第 ① 条；
 `§11.6-8`（HR 能从工作台理解「状态 + 阻塞原因 + 责任人 + 下一步」）。
+**1.2 修复的缺口**：**D-A**（P1 范围缺口，证据见 `evidence/experiments/2026-11-14-golden-path-rerun/README.md §6`）——
+Golden Path 跑完 S10 之后 `application.current_stage_code` 仍停在 S8，因为梯子只到 S8；
+现由 T3/T4 补到 S10（S10 = `stage_catalog.in_v1_scope` 的最后一格，见 §2.5）。
 **阶段码权威**：`recruitment.stage_catalog`（见 `contracts/STAGE-CODES.md`）；本文件不新增、不改名任何阶段码。
 **与其它契约冲突时**：本文件只覆盖这一个工具与这一个视图；`decision` 的写侧以
-`contracts/evaluation/decision-rules.md` §17.1 为准，S7 评估以 `contracts/job-screening/tool-contracts.md` 为准。
+`contracts/evaluation/decision-rules.md` §17.1 为准，S7 评估以 `contracts/job-screening/tool-contracts.md` 为准；
+S8/S9 的事实口径以 `contracts/interview/scheduling-rules.md` §7.5/§8 与
+`contracts/interview/transcript-rules.md` §3/§8 为准。
 
 ---
 
@@ -25,10 +34,11 @@
 | 2 | 不接受 `actor_id` / `tenant_id` / 时间 | 身份只能来自执行上下文（`SET LOCAL recruitment.actor_id`）与插件配置 |
 | 3 | 不写 `decision`、不建 `business_task` | 那是 `recruitment_decision_record` 与任务层的事（D-79/D-95 的人机闸门不能被绕开） |
 | 4 | 不改 `lifecycle_status`、不写 `stage_blocked_reason` | 本命令只动"阶段指针"这一个轴；BLOCKED 也不落库（零写） |
-| 5 | 不做 rubric pin 的写入（F1） | pin 由 intake 线写入；本命令**只判定** pinned / 未 pinned |
+| 5 | **不新造授权**（F1 补钉只是把**已批准**的事实记录到申请上） | rubric 版本必须已由人批准、且是 `job.current_rubric_version_id` 指向的那一版；补钉见 §2.1.1 |
 | 6 | 不重试到成功、不 last-write-wins | 版本冲突 → `VERSION_CONFLICT`，把"重读"交回调用方 |
-| 7 | 不倒退、不跳阶 | 指针已超前 → `STAGE_AHEAD` 警告 + 一条 UPDATE 都不发（见 §6.3） |
+| 7 | 不倒退、不跳阶 | 指针已超前（> S10）→ `STAGE_AHEAD` 警告 + 一条 UPDATE 都不发（见 §7.3）；中间任一前置不成立就停在那一格 |
 | 8 | 阻塞里的"责任人"**不编造** | 能从库里推出就填 `owner_actor_id`，推不出来只给 `owner_role` + `next_action_code`（见 §5） |
+| 9 | **不发明阶段码，也不越过 S10** | 梯子到 S10 为止（`in_v1_scope` 的最后一格）；S10 的决策由 `decision` 行表达，不改阶段指针（见 §2.5） |
 
 ---
 
@@ -48,16 +58,18 @@
 
 ---
 
-## 2. 事实：只承认两条边（T1 / T2）
+## 2. 事实：只承认四条边（T1–T4）
 
-梯子只有两条边，**顺序执行、不许跳**：
+梯子有四条边，**顺序执行、不许跳**：
 
 ```
-S6 ──T1──▶ S7 ──T2──▶ S8
+S6 ──T1──▶ S7 ──T2──▶ S8 ──T3──▶ S9 ──T4──▶ S10（v1.0 终态，停在 S10）
 ```
 
-> S6 = 简历接入与处理（Intake）；S7 = 初筛 / Screening；S8 = 面试规划与排期。
-> 本命令的梯子**到 S8 为止**：再往后（S8→S9→S10）属于面试执行 / 评价线的事实，本轮不做。
+> S6 = 简历接入与处理（Intake）；S7 = 初筛 / Screening；S8 = 面试规划与排期；
+> S9 = 面试执行与材料获取；S10 = 综合评价与招聘决策。
+> 每条边的判据都是**上一格的工作已经完成**（与 T1/T2 同一口径）：T3 = 面试已真正发生；
+> T4 = 材料（转写）已可用。S10 之后没有边（见 §2.5）。
 
 ### 2.1 T1：S6 → S7（材料 + rubric）
 
@@ -135,13 +147,89 @@ select d.id, d.result, d.decided_by_actor_id
   同一申请最多一条 current SCREENING → 上面的查询是**确定**的，不靠"取最新一条覆盖旧条"。
 * **HOLD / REJECT 不推进**：它们是"已经发生的事实"，本命令承认它们（报 BLOCKED + 决策 id + 决策人），但不能越过人。
 
+### 2.3 T3：S8 → S9（面试已经真正发生）
+
+判定式 = "**面试已发生**"这一件事实，两条**等价证据**任一成立：
+
+| # | 证据 | SQL（只读） | 依据 |
+|---|---|---|---|
+| 1 | 该申请的某场面试状态已越过"排期完成"：`interview.status ∈ {IN_PROGRESS, POST_INTERVIEW, EVALUATION_READY, DECIDED}` | `select i.id, i.status from recruitment.interview i where i.tenant_id=$1 and i.application_id=$2` | `contracts/interview/scheduling-rules.md §8`：`SCHEDULED → IN_PROGRESS`（会议开始）与 `IN_PROGRESS → POST_INTERVIEW`（会议结束）明确归 **S9** |
+| 2 | 该申请**已有转写产物**（经未解绑的 `meeting_binding` 可达）：`transcript_artifact` 存在 | `select ta.id, ta.transcript_status, ta.is_canonical from recruitment.transcript_artifact ta where … exists (meeting_binding mb join interview iv …)` | `contracts/interview/transcript-rules.md §7.5` 的跨阶段因果链：**没有 meeting → 没有 transcript_artifact**；材料存在 ⇒ 那场面试已经发生 |
+
+结论表：
+
+| 查到的事实 | 结论 |
+|---|---|
+| 证据 1 或证据 2 成立 | `PASS` → 推进到 S9 |
+| 没有任何面试（还没排期） | `WAIT`（`pending_fact='INTERVIEW_SCHEDULING'`）→ **`NO_OP`**；视图下一步 = `SCHEDULE_INTERVIEW` |
+| 有面试但都还是 `SCHEDULED` / `RESCHEDULED`（还没发生） | `WAIT`（`pending_fact='INTERVIEW_EXECUTION'`）→ **`NO_OP`**；视图下一步 = `IMPORT_TRANSCRIPT` |
+| **所有**面试都是 `CANCELLED` / `NO_SHOW`（且没有材料） | `BLOCKED`（`INTERVIEW_NOT_COMPLETED`，`owner_role=JOB_HIRING_MANAGER`，`next_action_code=RESCHEDULE_INTERVIEW`），阶段**留在 S8** |
+
+* **`SCHEDULED` 不等于"已发生"**：排期是 S8 的工作，会议开始才算 S9（`scheduling-rules.md §8` 的状态机）。
+* **没有产品写入口的诚实说明**：v1.0 的 `interview_schedule` 只有 `CREATE` / `RESCHEDULE` / `CANCEL` / `WITHDRAW_INTERVIEWER`
+  四个 intent（`docs/18 §4`），**没有** START / COMPLETE —— 也就是说 `IN_PROGRESS` / `POST_INTERVIEW`
+  目前不会被产品工具写入。因此证据 2（材料已在手）是 v1.0 里**唯一**可达的执行证据，
+  而且它比状态更硬：`transcript_artifact` 这一行存在，本身证明那场面试发生过。
+  这是 §14 第 8 条的待产品裁决项（是否补 S9 的执行写入口），**不是**对 §8 状态机的改写。
+* 有多场面试时：任一场已发生 ⇒ PASS；部分取消不影响（还有会发生的）；全部取消/未到场才 BLOCKED。
+
+### 2.4 T4：S9 → S10（材料可用 = canonical READY 转写）
+
+判定式只有一条 —— **存在该申请的 `canonical` 且 `READY` 的转写产物**：
+
+```sql
+select ta.id, ta.transcript_status, ta.is_canonical
+  from recruitment.transcript_artifact ta
+ where ta.tenant_id = $1
+   and exists (
+     select 1
+       from recruitment.meeting_binding mb
+       join recruitment.interview iv
+         on iv.id = mb.interview_id and iv.tenant_id = mb.tenant_id
+      where mb.tenant_id = ta.tenant_id
+        and mb.meeting_id = ta.meeting_id
+        and mb.unbound_at is null          -- 有效绑定；解绑后事件无法定位到面试（§7.5）
+        and iv.application_id = $2
+   )
+ order by ta.created_at, ta.id;
+```
+
+| 查到的事实 | 结论 |
+|---|---|
+| 有 `is_canonical=true` ∧ `transcript_status='READY'` 的产物 | `PASS` → 推进到 S10 |
+| 没有材料，或材料还在 `DISCOVERED` / `FETCHING` / `PARTIAL` / `WAITING_EXTERNAL` | `WAIT`（`pending_fact='TRANSCRIPT_MATERIAL'`）→ **`NO_OP`**；视图下一步 = `IMPORT_TRANSCRIPT` |
+| 有材料但取不回来：`transcript_status ∈ {AUTH_REQUIRED, RETRYABLE_FAILED, NEEDS_LINKING}` | `BLOCKED`（`TRANSCRIPT_NOT_READY`，`owner_role=RECRUITMENT_OWNER`，`next_action_code=REIMPORT_TRANSCRIPT`），阶段**留在 S9** |
+
+为什么是"canonical + READY"而不是"有产物就行"（逐条对应 `transcript-rules.md`，不另立判据）：
+
+* `READY` = **完整原文已获取**（§8 TR-C4：`is_complete=true` 且 `content_sha256` 非空，库 CHECK 强制）；
+* `canonical` = 该 meeting 本轮**唯一**被选中的那一版（§3，`uq_transcript_artifact_canonical`；S-2 要求只有 `READY` 才可作 canonical）；
+* `transcript.state='READY'` 的定义就是 **canonical 是 READY**（§4 派生表第 2 行）—— 材料可用的唯一口径。
+
+**明确不作为闸门的**（写进 §14 待产品裁决，不许实现者偷偷加/减）：
+
+* `interview_record.status='READY'` + `verification_status='VERIFIED'`：v1.0 **没有**把记录转 `VERIFIED` 的产品入口
+  （`docs/18` 的 D-B；`transcript_import` 只写 `NEEDS_REVIEW/UNVERIFIED`）。把它当闸门 → Golden Path 永远到不了 S10。
+* `evaluation_summarize` 的 `ready_for_decision` / 面评齐：那是 **S10 的工作**（评价），由 `decision_record` 的闸门把关；
+  用"评价已做"去证明"进入评价阶段"是循环论证。
+
+### 2.5 终态裁决：S10 是 v1.0 的最后一格，**停在 S10，不再前进**
+
+| 问题 | 裁决 | 依据 |
+|---|---|---|
+| S10 之后还有边吗？ | **没有**。本命令的梯子到 S10 为止。 | `db/migrations/0002_seed.sql` 的 `stage_catalog` + `db/STAGE-CATALOG.md §3`：`in_v1_scope` = true 的只有 **S3 / S6 / S7 / S8 / S9 / S10**；S11（Offer 与入职交接）/ S12（人才沉淀与复盘）**不在 v1.0 范围** |
+| 要不要发明一个新码表示"结束"？ | **不发明**。`contracts/STAGE-CODES.md §5`：表里没有的阶段码不许自己编号；12 行之外没有第 13 个码 | 同上 + §5 铁律"两套编号不许并存" |
+| S10 的决策写进阶段指针吗？ | **不写**。S10 的决策由 `decision(decision_scope='STAGE'/'FINAL', stage_code='S10')` 表达（`decision-record.ts` 按 scope 写死 `stage_code='S10'`）；阶段指针在 S10 就不再动 | `contracts/evaluation/decision-rules.md` DC-47（决策不写 `current_stage_code`） |
+| 指针已经在 S11 / S12 怎么办？ | `NO_OP` + `STAGE_AHEAD` 警告，**一条 UPDATE 都不发**（不倒退；这两格**不做**） | §7.3 |
+| 工作台在 S10 显示什么下一步？ | `next_action.code = CONTINUE_DOWNSTREAM`（"本命令已到 v1.0 终态 S10；S11/S12 不在 v1.0 范围（不做）"） | §6.2 |
+
 ---
 
 ## 3. 三态结论（封闭集）
 
 | `status` | 含义 | 发 UPDATE？ | `transitions[]` | `blockers[]` | `warnings[]` |
 |---|---|---|---|---|---|
-| `ADVANCED` | 至少走了一条边 | 是（每条边一条） | 真实发生的边（1–2 条） | 推进到下一跳时遇到反向事实才非空 | 空 |
+| `ADVANCED` | 至少走了一条边 | 是（每条边一条） | 真实发生的边（1–4 条） | 推进到下一跳时遇到反向事实才非空 | 空 |
 | `NO_OP` | 需要做的事已经做完（或还轮不到本命令） | **否** | 空 | 空 | 可能非空（`STAGE_AHEAD`） |
 | `BLOCKED` | 有事实挡住推进 | **否** | 空 | 非空（可多条） | 空 |
 
@@ -156,7 +244,7 @@ select d.id, d.result, d.decided_by_actor_id
 ```json
 {
   "tool": "recruitment_application_stage_advance",
-  "contract_version": "1.1.0",
+  "contract_version": "1.2.0",
   "application_id": "11111111-1111-4111-8111-000000000701",
   "stage_code": "S6",
   "record_version": 2,
@@ -177,7 +265,7 @@ select d.id, d.result, d.decided_by_actor_id
 
 | 键 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `tool` / `contract_version` | string | ✅ | `contract_version` 从 `1.1.0` 起包含结构化责任 |
+| `tool` / `contract_version` | string | ✅ | `contract_version` 从 `1.1.0` 起包含结构化责任；从 `1.2.0` 起梯子到 S10（T3/T4）、新增 2 个 blocker 码与 4 个 next_action_code |
 | `application_id` | string | ✅ | 回显 |
 | `stage_code` | string | ✅ | **调用结束后**的当前阶段码（NO_OP/BLOCKED 时与调用前相同） |
 | `record_version` | integer | ✅ | **调用结束后**的真实版本（没发 UPDATE 就与调用前相同） |
@@ -226,20 +314,27 @@ select d.id, d.result, d.decided_by_actor_id
 | `REPARSE_MATERIAL` | `MATERIAL_PARSE_FAILED` | 修复或重新导入材料（不能是 FAILED） |
 | `RECORD_SCREENING_DECISION` | 视图：S7 在等决策 | 由人完成初筛并落一条 SCREENING 决策 |
 | `SUPERSEDE_SCREENING_DECISION` | `SCREENING_DECISION_NOT_ADVANCE` | 若结论要改，由人做一次新的 SCREENING 决策取代当前这条 |
+| `SCHEDULE_INTERVIEW` | 视图：S8 在等排期（`pending_fact=INTERVIEW_SCHEDULING`） | 用 `recruitment_interview_schedule`（CREATE，人过 approval）排一场面试 |
+| `IMPORT_TRANSCRIPT` | 视图：S8 等面试发生 / S9 等材料（`INTERVIEW_EXECUTION` / `TRANSCRIPT_MATERIAL`） | 面试结束后用 `recruitment_transcript_import` 导入/回读转写（canonical READY） |
+| `RESCHEDULE_INTERVIEW` | `INTERVIEW_NOT_COMPLETED` | 面试全被取消/未到场：由人重新排期（CREATE / RESCHEDULE），面试发生后再重试 |
+| `REIMPORT_TRANSCRIPT` | `TRANSCRIPT_NOT_READY` | 转写取不回来（AUTH_REQUIRED / RETRYABLE_FAILED / NEEDS_LINKING）：先修授权/绑定，再重新导入 |
 | `REOPEN_APPLICATION` | `APPLICATION_NOT_ACTIVE` | 确认是否需要重开/重新建档（不在本命令范围） |
 | `START_AT_INTAKE` | `STAGE_NOT_ON_LADDER` | 先用 intake 把申请带到 S6 |
-| `VERIFY_STAGE_PROGRESSION` | `STAGE_AHEAD` | 核对这次阶段推进是谁做的；本命令不倒退 |
+| `VERIFY_STAGE_PROGRESSION` | `STAGE_AHEAD` | 核对这次阶段推进是谁做的；本命令不倒退（S11/S12 不在 v1.0 范围，不做） |
 | `ADVANCE_STAGE` | 视图：事实已齐 | 调用 `recruitment_application_stage_advance` 推进 |
-| `CONTINUE_DOWNSTREAM` | 视图：S8 及以后 | 本命令已无剩余动作，后续由面试/评价线推进 |
+| `CONTINUE_DOWNSTREAM` | 视图：S10 终态 | 本命令已到 v1.0 终态 S10；S10 的决策由 `decision` 行表达；S11/S12 不在 v1.0 范围（不做） |
 
 ### 5.3 与 actor 诚实的关系（别混）
 
 `owner_actor_id` 回答"**该找谁推进这件事**"；`application.stage_changed_by_actor_id` 回答
 "**这条阶段 UPDATE 是谁执行的**"。两者**不是**同一个概念：
-* T1（S6→S7）是**自动推进**，`stage_changed_by_actor_id` = 执行账号（配置里的 …0103），
+* T1（S6→S7）/ T3（S8→S9）/ T4（S9→S10）都是**自动推进**（承认已发生的事实），
+  `stage_changed_by_actor_id` = 执行账号（配置里的 …0103），
   `owner_actor_id` = 招聘负责人（…0102）——**不是同一个人，也不是"人按了按钮"**；
 * T2 的 `SCREENING_DECIDER` 是**真的做过 SCREENING 决策的人**（`decision.decided_by_actor_id`），
   这才配叫"决策人"；`stage_changed_by_actor_id` 仍然只是执行账号。
+* T3/T4 的事实来自**上游已经被人类闸门约束过的写入口**（`interview_schedule` 走 `ctx.approval`；
+  `transcript_import` 是 MANUAL 的产品入口），本命令**不新增**任何闸门、也不绕过它们（§0 第 9 条）。
 
 ---
 
@@ -292,11 +387,16 @@ select d.id, d.result, d.decided_by_actor_id
 
 ### 6.2 没有阻塞时的"下一步"
 
-| 情况 | `next_action.code` |
-|---|---|
-| 事实已齐、可以推进 | `ADVANCE_STAGE` |
-| 在 S7 等人工初筛决策 | `RECORD_SCREENING_DECISION` |
-| S8 及以后 / 本命令无剩余动作 | `CONTINUE_DOWNSTREAM` |
+`pending_fact` 是闭集（`PENDING_FACTS`），视图用它算 `next_action.code`（`PENDING_ACTIONS` 同一张表；
+写路径与视图共用，不在视图里另写 if/else）：
+
+| 情况 | `pending_fact` | `next_action.code` |
+|---|---|---|
+| 事实已齐、可以推进 | —（`status=ADVANCED`） | `ADVANCE_STAGE` |
+| S7 等人工初筛决策 | `SCREENING_DECISION` | `RECORD_SCREENING_DECISION` |
+| S8 还没排面试 | `INTERVIEW_SCHEDULING` | `SCHEDULE_INTERVIEW` |
+| S8 已排期、面试还没发生（或 S9 等材料） | `INTERVIEW_EXECUTION` / `TRANSCRIPT_MATERIAL` | `IMPORT_TRANSCRIPT` |
+| S10 终态 / 本命令无剩余动作 | — | `CONTINUE_DOWNSTREAM` |
 
 ### 6.3 工作台接线（一行）
 
@@ -412,13 +512,17 @@ values (... 'application.rubric_version.pinned', ...,
 
 | 调用前的指针 | 事实推导出的上限 | 结论 |
 |---|---|---|
-| S6（T1/T2 都成立） | S8 | 两跳推进（§8） |
+| S6（T1–T4 都成立） | S10 | 四跳推进（§8） |
 | S6（只有 T1） | S7 | 一跳推进到 S7 |
-| S7（T2 成立） | S8 | 一跳推进 |
+| S7（T2 成立） | S8（或更远，若 T3/T4 也成立） | 按事实逐边推进 |
 | S7（无决策） | S7 | `NO_OP`（等人） |
 | S7（HOLD/REJECT） | S7 | `BLOCKED` |
-| S8 | S8 | `NO_OP`（已到梯子终点） |
-| **S9 及以后** | 最多 S8 | **`NO_OP` + `STAGE_AHEAD` 警告，一条 UPDATE 都不发** |
+| S8（面试还没发生、没有材料） | S8 | `NO_OP`（等面试） |
+| S8（面试全被取消/未到场） | S8 | `BLOCKED(INTERVIEW_NOT_COMPLETED)` |
+| S9（材料还没可用） | S9 | `NO_OP`（等材料） |
+| S9（转写取不回来） | S9 | `BLOCKED(TRANSCRIPT_NOT_READY)` |
+| **S10（v1.0 终态）** | S10 | `NO_OP`（**停在 S10 不再前进**；S10 的决策由 `decision` 行表达） |
+| **S11 / S12** | 最多 S10 | **`NO_OP` + `STAGE_AHEAD` 警告，一条 UPDATE 都不发**（不做这两格） |
 | S1–S5 | 不许插队 | `BLOCKED(STAGE_NOT_ON_LADDER)` |
 
 "超前"的判定用 `stage_catalog.sort_order`（权威是表，不是写死的数字）。
@@ -429,6 +533,8 @@ values (... 'application.rubric_version.pinned', ...,
 |---|---|---|---|
 | T1（S6→S7），没有 SCREENING 决策 | `ADVANCED` | `NO_OP` | `record_version` 不再变、`stage_entered_at` 不再变、事件仍只有 1 条 |
 | T2（S7→S8） | `ADVANCED` | `NO_OP` | 同上 |
+| T3（S8→S9），还没有材料 | `ADVANCED` | `NO_OP` | 同上（第二次停在 S9 的 WAIT） |
+| T4（S9→S10） | `ADVANCED` | `NO_OP` | 停在 S10 终态；版本/时间戳/事件都不再变 |
 
 **为什么第二次不发 UPDATE**：阶段**没变**的 UPDATE 也会让 `fn_row_guard` 把 `record_version` +1、把
 `updated_at` 改成 now()，却**不写任何事件** —— 那是"幂等重试看起来像改动"的典型污染。本命令用
@@ -436,8 +542,9 @@ values (... 'application.rubric_version.pinned', ...,
 
 ### 7.5 多跳的原子性
 
-一次调用可以走两跳（S6→S7→S8，例如"落后补推进"）；两条 UPDATE 在**同一个事务**里，
+一次调用可以走**最多四跳**（S6→S7→S8→S9→S10，例如"落后补推进"）；每条边一条 UPDATE，全部在**同一个事务**里，
 任一跳失败（版本冲突 / 断言失败）→ 调用方 `withActor` 回滚 → **不会半推进**。
+每条 UPDATE 的乐观并发条件是**上一条 RETURNING 的真实 `record_version`**（F1 补钉会让它先 +1）。
 
 ---
 
@@ -471,8 +578,9 @@ values (... 'application.rubric_version.pinned', ...,
 | 事实 | 说明 |
 |---|---|
 | 谁写这一列 | `fn_row_guard`（0001:157）从 `SET LOCAL recruitment.actor_id` 取 —— 即**配置里的本地执行账号** |
-| 本命令的账号是谁 | `…0103`（`kind=HUMAN`，演示 HR 专员）。**但 T1 是自动推进**：没有任何人"按过这个按钮" |
+| 本命令的账号是谁 | `…0103`（`kind=HUMAN`，演示 HR 专员）。**但 T1 / T3 / T4 都是自动推进**：没有任何人"按过这个按钮" |
 | T2 是谁的意思 | T2 的前置是**人**做的 SCREENING 决策（`decision.decided_by_actor_id` + 人工确认哈希）。库里的 `stage_changed_by_actor_id` 仍然只是**执行账号** |
+| T3 / T4 是谁的意思 | 前置事实来自上游已被人类闸门约束的写入口：排期走 `ctx.approval`（D-79/D-101）、转写是 `MANUAL` 的产品入口；本命令只承认它们已经发生，**不新增也不绕过**闸门（§0 第 9 条） |
 | 想证明"是谁决定的" | 唯一凭据是 `decision` 行；`application` 的审计列**不能**用来回答这个问题 |
 | 阻塞里的 `owner_actor_id` | 回答"该找谁推进"，**不是**"谁执行了这条 UPDATE"（见 §5.3） |
 
@@ -510,7 +618,7 @@ values (... 'application.rubric_version.pinned', ...,
 
 ---
 
-## 11. 验收矩阵（每条都在 `test/integration/stage-advance.test.ts` 里读库回验）
+## 11. 验收矩阵（A1–A9 在 `test/integration/stage-advance.test.ts`；A10/A11 见各自文件；A12–A16 在 `test/integration/stage-advance-s8-s10.test.ts`）
 
 | # | 验收 | 断言要点 |
 |---|---|---|
@@ -521,11 +629,16 @@ values (... 'application.rubric_version.pinned', ...,
 | A4 | T2 负例（HOLD / REJECT） | `BLOCKED`、阶段留在 S7、零 UPDATE、0 事件；`owner_role=SCREENING_DECIDER`、`owner_actor_id` = `decision.decided_by_actor_id` |
 | A5 | 幂等（连调两次） | 第二次 `NO_OP`、`record_version` 不变、`stage_entered_at` 不变、事件仍 1 条 |
 | A6 | 并发（两连接） | 一侧 `ADVANCED`、另一侧 `VERSION_CONFLICT`、**恰好 1 条**阶段事件、第三次调用 `NO_OP` |
-| A7 | 落后补推进（多跳） | 一次调用两跳、`record_version` +2、一条边一条事件、`stage_entered_at` 严格单调 |
-| A8 | 不倒退（S9） | `NO_OP` + `STAGE_AHEAD`、零 UPDATE；**告警带 `owner_actor_id` / `owner_role` / `next_action_code`** |
+| A7 | 落后补推进（多跳） | 一次调用两跳（T1/T2）、`record_version` +2、一条边一条事件、`stage_entered_at` 严格单调 |
+| A8 | 不倒退（S11，超过 S10 终态；S11/S12 不做） | `NO_OP` + `STAGE_AHEAD`、零 UPDATE；**告警带 `owner_actor_id` / `owner_role` / `next_action_code`** |
 | A9 | **§11.6-8 只读阻塞视图**（真库） | RUBRIC 场景：`stage/stage_name/status/blocked/blockers/owner/next_action` 齐；**只发读语句**（逐条 SQL 检查 + 逐表零写）；`withReadOnly`（库层只读）里可跑；STAGE_AHEAD 场景：`kind=WARNING`、`blocked=false`、仍有 owner+next_action |
 | A10 | **F1 补钉**（`test/integration/f1-rubric-pin.test.ts`） | 申请先建（无 rubric）→ 岗位批准 → 本命令：`ADVANCED`、S7、`application.rubric_version_id` = `job.current_rubric_version_id`、`record_version` +2（补钉+迁移）、恰好 1 条 `application.rubric_version.pinned`（`source_object_id`=申请、`actor_id`=执行账号、`from=null`）；第二次 `NO_OP` 且事件不重复；只读视图在同一情形下零写入 |
 | A11 | **SC-11 补钉冲突**（`test/integration/scorecard-rubric-version-gate.test.ts`） | 完整真工具路径：intake（不钉）→ 排期 → 面评显式 V1 → 批准 V2 → `stage_advance` 抛 `INVARIANT_VIOLATION(RUBRIC_PIN_CONFLICT_WITH_SCORECARD)`，`detail` 带 V1/V2 + 冲突面评数；**零写入**（申请/阶段/`record_version` 不变、补钉事件 0、阶段事件 0）；只读视图在同一情形报 `BLOCKED(RUBRIC_PIN_CONFLICT_WITH_SCORECARD)` + `owner_role` + `next_action_code`；强行绕过补钉后 `evaluation_summarize` 报 `SCORECARD_RUBRIC_MISMATCH` 且 `decision_record` 拒绝（同一 reason_code） |
+| **A12** | **T3 正例 + T4 正例（分两次调用）** | 申请 S8 + 面试 `IN_PROGRESS` + 会议绑定 → `ADVANCED`、S9、1 条 S8→S9 事件、`record_version` +1；再调（还没有材料）→ `NO_OP`、零 UPDATE、零事件；插入 canonical READY 转写 + `interview_record` 后再调 → `ADVANCED`、**读回 `application.current_stage_code='S10'`**、`record_version` +2、S8→S9 与 S9→S10 各 1 条事件；S10 终态再调 → `NO_OP`（零写入、`warnings=[]`） |
+| **A13** | **S8→S9→S10 一次两跳（Golden Path 终态形状）** | S8 + 面试 `POST_INTERVIEW` + canonical READY 转写 + `interview_record(NEEDS_REVIEW/UNVERIFIED)` + `decision(STAGE,S10,ADVANCE)` → 一次调用 `transitions=[{S8,S9},{S9,S10}]`、`record_version` +2、终态读回 **S10**、两条边各 1 条事件；`decision` 行不被本命令改动 |
+| **A14** | **T3 负例** | 所有面试 `CANCELLED`/`NO_SHOW` → `BLOCKED['INTERVIEW_NOT_COMPLETED']`、阶段留 S8、`record_version`/`stage_source_event_id`/事件数都不变；`owner_role=JOB_HIRING_MANAGER`、`next_action_code=RESCHEDULE_INTERVIEW`、`owner_actor_id`=库里的招聘负责人 |
+| **A15** | **T4 负例** | 转写 `AUTH_REQUIRED` → `BLOCKED['TRANSCRIPT_NOT_READY']`、阶段留 S9、零写入；`owner_role=RECRUITMENT_OWNER`、`next_action_code=REIMPORT_TRANSCRIPT` |
+| **A16** | **只读视图（真库）三条路径 + 只发读语句** | S8 没面试 → `next_action.code=SCHEDULE_INTERVIEW`；S9 等材料 → `IMPORT_TRANSCRIPT`；S10 终态 → `CONTINUE_DOWNSTREAM`；三条路径的 SQL 逐条检查全是 `select`（无写动词、无 `for update`） |
 
 **门槛对照（§11.6-8）**：HR 看到「当前状态（`stage`/`status`）＋阻塞原因（`blockers[].code/message`）＋
 责任人（`owner_role` + `owner_actor_id`/`owner_display_name`）＋下一步（`next_action_code` + §5.2 的人读说明）」——
@@ -552,13 +665,17 @@ values (... 'application.rubric_version.pinned', ...,
 |---|---|
 | `contracts/evaluation/decision-rules.md` **DC-47 / N-5** | `decision_record` 明确"不改 `current_stage_code`"；本文件就是那个**独立命令**（阶段推进从决策写入里分离） |
 | `contracts/job-screening/tool-contracts.md` §17.1 的写侧 | T2 只读 S7 写侧落的 `decision(SCREENING)`；本命令**不写**它 |
-| `contracts/STAGE-CODES.md` | 阶段码口径；S6/S7/S8（S8 = 面试规划与排期）的语义由 `stage_catalog` 决定，本文件不另立编号 |
-| `docs/23` N8 / P1-09、`docs/18` §3.7 | 本文件闭合"阶段推进无入口"这一缺口（v1.0 只闭合到 S8，即面试规划与排期这一格） |
+| `contracts/interview/scheduling-rules.md` §7.5 / §8 | T3 的事实口径：`SCHEDULED → IN_PROGRESS` 属 S9（面试已发生）；没有 meeting 就没有 `transcript_artifact`（材料事实的因果链） |
+| `contracts/interview/transcript-rules.md` §3 / §8（TR-C）/ §4 派生表 | T4 的事实口径：`READY` = 完整原文已获取；`canonical READY` 才让 `transcript.state='READY'`（材料可用） |
+| `contracts/STAGE-CODES.md` | 阶段码口径；S6–S10 的语义由 `stage_catalog` 决定，本文件不另立编号；**不发明第 13 个码** |
+| `db/STAGE-CATALOG.md §3`（`in_v1_scope`） | §2.5 终态裁决的依据：v1.0 **不做** S11/S12（`in_v1_scope=false`），只做 S3/S6/S7/S8/S9/S10 |
+| `docs/23` N8 / P1-09、`docs/18` §3 | 本文件闭合"阶段推进无入口"这一缺口；**1.2 起覆盖到 S10**（S6→S7→S8→S9→S10），不再停在 S8 |
 | `contracts/tenant-provenance.md` | §12 的 `provenance` 判定式（同一份实现） |
 | `src/http/overview.ts`（工作台面板） | §6.3：只读视图函数已就绪；pending 行换成 `{stage, stage_name, blocked, blockers, owner, next_action}` 只需一行接线 |
 
-**边界（本轮明确不做）**：S8→S9→S10 的推进不在本命令的梯子里。它们是面试执行 / 评价线的
-事实（面试完成、转写、面评、汇总），等那些线有"可承认的事实"后再各自加边，**不在本命令里塞**。
+**边界（本轮明确不做）**：S11（Offer 与入职交接）/ S12（人才沉淀与复盘）的推进**不在**本命令里
+（`in_v1_scope=false`，没有合法阶段码可用，也不许发明）。S10 是 v1.0 终态：S10 的决策由
+`decision` 行表达，不改阶段指针（§2.5）。
 
 ---
 
@@ -573,21 +690,30 @@ values (... 'application.rubric_version.pinned', ...,
 | 5 | **工作台接线**（`src/http/overview.ts`） | 本 lane 没有改它（面板属另一条线）；只读视图函数 + 测试已就绪（§6.3 一行接线） | 由总控决定谁落；落完 `§11.6-8` 在工作台层面才算真正闭合（当前门槛用例断言的是工具输出） |
 | 6 | **工具注册行** | 本 lane **没有改** `src/index.ts`（共享工作树，所有 lane 并发写同一文件） | 由总控在所有 lane 收工后统一加（§15） |
 | 7 | 并发用例需要**已提交**夹具（第二个连接看不见未提交行） | 用例在 after 钩子里用 `SET LOCAL session_replication_role = replica` 删干净自造行（事务内、自动恢复） | 需要 DB 角色是 superuser（本机与 CI 的 `postgres` 都是）；若换成受限角色，这条用例会**失败而不是静默 skip**（R3） |
+| **8** | **S8→S9 的"面试已执行"没有产品写入口** | `interview_schedule` 只有 CREATE/RESCHEDULE/CANCEL/WITHDRAW_INTERVIEWER（`docs/18 §4`），**没有** START/COMPLETE → `IN_PROGRESS`/`POST_INTERVIEW` 目前不会被产品工具写入（`scheduling-rules.md §8` 说它们"属 S9"，但 S9 的写侧未实现）。本实现因此同时接受**转写产物存在**作为等价证据（材料存在 ⇒ 面试已发生）。 | **待产品裁决**：① 是否补 S9 的面试执行写入口（START/COMPLETE）；② 是否把"面试已执行"收紧为只认 `interview.status`。若选 ②，需先补入口，否则 Golden Path 无法从 S8 推进（D-A 会以另一种形式复发）。**本 lane 未猜测，按等价事实实现并在此列明。** |
+| **9** | **S9→S10 是否要求 `interview_record` 就绪** | `interview_record` 在 Golden Path 里是 `NEEDS_REVIEW/UNVERIFIED`（D-B：v1.0 没有把它转 `VERIFIED` 的产品入口）。本实现**不**把 record 当闸门，只要求"canonical READY 转写（材料可用）"。 | **待产品裁决**：若要求 record `READY`+`VERIFIED` 才能进 S10，必须先补"人工复核/校验"入口；否则阶段永远到不了 S10（与 D-A 同类的范围缺口）。 |
+| **10** | **无转写（`NO_TRANSCRIPT`）能否进 S10** | `transcript-rules.md` TR-E6 明写"**Evaluation Ready 不要求转写就绪**"（记录缺失原因即可）；而本命令把"材料可用（canonical READY）"作为 S9→S10 的闸门 —— 比评价闸门更严。 | **待产品裁决**：若允许 `NO_TRANSCRIPT` 也进 S10，T4 需要第二个事实（"记录缺失原因"），属合同变更；当前按更严的"材料可用"实现（`docs/18` Golden Path 的材料链完整，不受影响）。 |
+| **11** | 多跳最多 **4 条**事件（一条边一条） | 事件由 `fn_row_guard` 自动写，无法合并 | 保留（每条边的 `from/to` 都是审计真相）；A12/A13 已断言"一条边一条事件、不多不少" |
 
 ---
 
-## 15. 工具注册（待总控统一落；本 lane 未改 `src/index.ts`）
+## 15. 工具注册（本 lane 未改 `src/index.ts`；当前工作树已由总控 lane 落地）
+
+> **现状（2026-11-14）**：工作树的 `src/index.ts` 已有 `stageAdvance` 的 import / 工厂 / tools 数组三处注册
+> （与 `docs/18 §4`「插件 25 个工具」口径一致）；以 committed HEAD 为准与否由总控复核。
+> 下面的片段仍作为"接入点说明"保留。路径里的行号会随 lane 变化，按**符号名**找，不要按行号。
 
 ```ts
-// ① src/index.ts:79 之后（import 区）
+// ① src/index.ts（import 区）
 import { createStageAdvanceTool, unconfiguredStageAdvanceTool } from './tools/stage-advance.ts'
 
-// ② src/index.ts:412 之后（const decisionRecord = ... 块之后）
-  // ── 阶段推进（N8 / 方案 D）：只要 database。派生式推进，只承认已发生的事实（S6→S7→S8）。
+// ② src/index.ts（const decisionRecord = ... 块之后）
+  // ── 阶段推进（N8 / 方案 D）：只要 database。派生式推进，只承认已发生的事实
+  //    （S6→S7→S8→S9→S10；S10 = v1.0 终态）。
   const stageAdvance = database.resolved === null
     ? unconfiguredStageAdvanceTool(database.issues)
     : createStageAdvanceTool(database.resolved)
 
-// ③ src/index.ts:430 之后（tools 数组里 decisionRecord, 下一行）
+// ③ src/index.ts（tools 数组里 decisionRecord 的下一行）
     stageAdvance,
 ```

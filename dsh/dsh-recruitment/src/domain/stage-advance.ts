@@ -2,13 +2,25 @@
 //
 // 一句话：本命令**不新增任何授权**，只把"已经发生的事实"翻译成一次阶段指针前移。
 //
-//   * 事实 → 指针：
+//   * 事实 → 指针（四条边；顺序执行、不许跳；每条边的闸门都在下面逐条写死）：
 //       T1  S6 → S7：申请已绑定材料（`resume_version_id` 非空）、材料的 `parse_status`
 //           不是 `FAILED`、且已钉住 rubric 版本（`rubric_version_id` 非空）。
 //       T2  S7 → S8：存在 **current**（`superseded_by_decision_id is null`）的
 //           `decision(decision_scope='SCREENING', result='ADVANCE')`。
+//       T3  S8 → S9（面试执行与材料获取）：该申请的面试**已经发生** ——
+//           `interview.status ∈ {IN_PROGRESS, POST_INTERVIEW, EVALUATION_READY, DECIDED}`
+//           （`contracts/interview/scheduling-rules.md §8`：`SCHEDULED → IN_PROGRESS` 属 S9），
+//           **或**已存在该申请的转写产物（`transcript_artifact`：材料已到手 ⇒ 面试已发生；
+//           `transcript-rules.md §7.5` 的 S8→S9 因果链）。全部面试被取消/未到场 → BLOCKED。
+//       T4  S9 → S10（综合评价与招聘决策）：存在该申请的 **canonical + READY** 转写
+//           （`transcript-rules.md §3/§8 TR-C`：canonical READY = 完整原文已获取 = S9 的材料
+//           工作完成）。材料取不回来（AUTH_REQUIRED / RETRYABLE_FAILED / NEEDS_LINKING）→ BLOCKED。
+//   * S10 是**终态**：`stage_catalog.in_v1_scope` 到 S10 为止（S11/S12 = false），v1.0 没有
+//     S10→S11 的合法阶段码可用，**本命令不发明第 13 个码**；指针停在 S10 不再前进。
+//     S10 的决策由 `decision` 行表达（`decision_scope='STAGE'/'FINAL'`），不再改阶段指针。
 //   * 没有事实就没有推进（NO_OP）；有**反向事实**（SCREENING 结果是 HOLD/REJECT、
-//     材料解析失败、rubric 未钉）就是 BLOCKED —— 并给出可执行的下一步。
+//     材料解析失败、rubric 未钉、面试被取消/未到场、转写取不回来）就是 BLOCKED ——
+//     并给出可执行的下一步。
 //   * 不接受目标阶段、不接受 actor、不写 decision、不建任务：那些不是"承认事实"，
 //     而是"下命令"。命令入口一旦存在，模型就能绕过人（D-79 / D-95 的人机闸门形同虚设）。
 //
@@ -96,7 +108,8 @@
 //   * **唯一的例外**是 T1 的 rubric 补钉（`application.rubric_version_id`，见文件头 F1）——
 //     它写的是一个已经由人批准过的事实，不是本命令新造的授权；
 //   * 不倒退（指针已超前于本命令能推导的事实 → `STAGE_AHEAD` 警告 + 一条 UPDATE 都不发）；
-//   * 不跳阶（只走 S6→S7→S8 两条边；中间任一前置不成立就停在那一步）。
+//   * 不跳阶（只走 S6→S7→S8→S9→S10 四条边；中间任一前置不成立就停在那一步 ——
+//     例如 S8 的面试还没发生就停在 S8，S9 的材料还没可用就停在 S9）。
 
 import { randomUUID } from 'node:crypto'
 
@@ -126,6 +139,10 @@ export const BLOCKER_CODES = [
   'STAGE_NOT_ON_LADDER',
   // T2 反向事实（S7 → S8）
   'SCREENING_DECISION_NOT_ADVANCE',
+  // T3 反向事实（S8 → S9）：面试没有真正发生（全部被取消 / 未到场）。
+  'INTERVIEW_NOT_COMPLETED',
+  // T4 反向事实（S9 → S10）：材料存在但取不回来（授权/重试失败/会议未绑定）。
+  'TRANSCRIPT_NOT_READY',
 ] as const
 
 /** 一条 blocker 的稳定码。 */
@@ -160,6 +177,12 @@ export const NEXT_ACTION_CODES = [
   'REPARSE_MATERIAL',
   'RECORD_SCREENING_DECISION',
   'SUPERSEDE_SCREENING_DECISION',
+  // T3（S8 → S9）：面试 / 材料获取这一段的下一步
+  'SCHEDULE_INTERVIEW',
+  'IMPORT_TRANSCRIPT',
+  'RESCHEDULE_INTERVIEW',
+  // T4（S9 → S10）：材料取不回来时的下一步
+  'REIMPORT_TRANSCRIPT',
   'REOPEN_APPLICATION',
   'START_AT_INTAKE',
   'VERIFY_STAGE_PROGRESSION',
@@ -181,11 +204,15 @@ export const NEXT_ACTION_MESSAGES: Readonly<Record<StageNextActionCode, string>>
   REPARSE_MATERIAL: '修复或重新导入材料（parse_status 不能是 FAILED），再重试推进。',
   RECORD_SCREENING_DECISION: '由人完成初筛并落一条 SCREENING 决策（recruitment_decision_record），再重试推进。',
   SUPERSEDE_SCREENING_DECISION: '若结论需要改，由人做一次新的 SCREENING 决策取代当前这条，再重试推进。',
+  SCHEDULE_INTERVIEW: '用 recruitment_interview_schedule（intent=CREATE，人过 approval）为这条申请排一场面试；排期后本命令会把阶段推进到 S9。',
+  IMPORT_TRANSCRIPT: '面试结束后用 recruitment_transcript_import 导入/回读会议转写（canonical READY），材料可用后本命令会把阶段推进到 S10。',
+  RESCHEDULE_INTERVIEW: '该申请的面试全部被取消或未到场（没有真正发生）：由人用 recruitment_interview_schedule 重新排期（CREATE / RESCHEDULE），面试发生后再重试推进。',
+  REIMPORT_TRANSCRIPT: '转写产物取不回来（AUTH_REQUIRED / RETRYABLE_FAILED / NEEDS_LINKING）：先修复连接器授权或会议绑定（meeting_binding），再用 recruitment_transcript_import 重新导入，然后重试推进。',
   REOPEN_APPLICATION: '申请已不在 ACTIVE：确认是否需要重开/重新建档（不在本命令范围）。',
-  START_AT_INTAKE: '先用 intake 把申请带到 S6；本命令只覆盖 S6→S7→S8。',
-  VERIFY_STAGE_PROGRESSION: '核对这次阶段推进是谁做的：本命令不倒退；S9 之后的推进由面试/评价线负责。',
+  START_AT_INTAKE: '先用 intake 把申请带到 S6；本命令只覆盖 S6→S7→S8→S9→S10。',
+  VERIFY_STAGE_PROGRESSION: '核对这次阶段推进是谁做的：本命令不倒退；S11/S12 不在 v1.0 范围（in_v1_scope=false），不由本命令推进。',
   ADVANCE_STAGE: '事实已齐：调用 recruitment_application_stage_advance 推进。',
-  CONTINUE_DOWNSTREAM: '本命令已无剩余动作：后续由面试/评价线推进。',
+  CONTINUE_DOWNSTREAM: '本命令已到 v1.0 终态 S10（in_v1_scope 的最后一格）：S10 的决策由 decision 行表达，不再改阶段指针；S11/S12 不在 v1.0 范围。',
 }
 
 /**
@@ -218,8 +245,8 @@ export const WARNING_CODES = ['STAGE_AHEAD'] as const
 export type StageWarningCode = (typeof WARNING_CODES)[number]
 
 /**
- * 一条警告。`STAGE_AHEAD` = 指针已经超过本命令能推导的事实（最多到 S8）：
- * 本命令**一条 UPDATE 都不发**，把决定权留给真正的上游（面试/评价线）。
+ * 一条警告。`STAGE_AHEAD` = 指针已经超过本命令能推导的事实（最多到 S10）：
+ * 本命令**一条 UPDATE 都不发**，把决定权留给真正的上游（S11/S12 不在 v1.0 范围）。
  */
 export interface StageWarning extends StageResponsibility {
   readonly code: StageWarningCode
@@ -306,25 +333,74 @@ export interface StageBlockedView {
 }
 
 // =====================================================================
-//  迁移梯子（唯一真相：只有这两条边；顺序 = 执行顺序）
+//  迁移梯子（唯一真相：四条边；顺序 = 执行顺序）
 // =====================================================================
+
+/**
+ * 一条梯子边对应的判定规则（`rule` 只用于注释/契约对照，不进输出）：
+ *   * `T1` S6→S7（材料 + rubric）；
+ *   * `T2` S7→S8（current SCREENING=ADVANCE）；
+ *   * `T3` S8→S9（面试已发生 / 材料已在手）；
+ *   * `T4` S9→S10（canonical READY 转写 = 材料可用）。
+ */
+type StageRule = 'T1' | 'T2' | 'T3' | 'T4'
 
 /** 梯子的一条边（S 级阶段码；`rule` 只用于注释/契约对照，不进输出）。 */
 interface StageEdge {
   readonly from: string
   readonly to: string
-  readonly rule: 'T1' | 'T2'
+  readonly rule: StageRule
 }
 
-/** 只承认的两条边（T1 / T2）。**顺序即执行顺序**；遍历的唯一真相是这个数组。 */
+/**
+ * 只承认的四条边（T1–T4）。**顺序即执行顺序**；遍历的唯一真相是这个数组。
+ *
+ * 终点是 **S10**：`stage_catalog.in_v1_scope` 到 S10 为止（`db/STAGE-CATALOG.md §3`：
+ * S3/S6/S7/S8/S9/S10 = true，S11/S12 = false）→ v1.0 没有 S10→S11 的合法阶段码，
+ * 本命令**不发明**第 13 个码，也不越过 S10。S10 的决策由 `decision` 行表达。
+ */
 const LADDER: readonly StageEdge[] = [
   { from: 'S6', to: 'S7', rule: 'T1' },
   { from: 'S7', to: 'S8', rule: 'T2' },
+  { from: 'S8', to: 'S9', rule: 'T3' },
+  { from: 'S9', to: 'S10', rule: 'T4' },
 ]
 
-/** S1–S12 的阶段码里，本命令只覆盖这三格（由梯子本身派生，不另写一份）。 */
+/** 梯子的起点（S6）。 */
 const LADDER_START = LADDER[0]?.from ?? 'S6'
-const LADDER_TERMINAL = LADDER[LADDER.length - 1]?.to ?? 'S8'
+/** 梯子的终点 = v1.0 终态（S10；`in_v1_scope` 的最后一格，停在 S10 不再前进）。 */
+const LADDER_TERMINAL = LADDER[LADDER.length - 1]?.to ?? 'S10'
+/** 梯子涉及的全部阶段码（目录完整性检查用：缺任何一格都不能推进）。 */
+const LADDER_CODES: readonly string[] = [...new Set(LADDER.flatMap((edge) => [edge.from, edge.to]))]
+
+/**
+ * 一条边"还在等的事实"（WAIT 的语义；工作台据此给"下一步做什么"）。
+ *
+ *   * `SCREENING_DECISION`   S7 等人工初筛结论；
+ *   * `INTERVIEW_SCHEDULING` S8 还没排面试（T3 的事实完全没开始）；
+ *   * `INTERVIEW_EXECUTION`  S8 已排期但面试还没发生（T3 等会议开始/结束）；
+ *   * `TRANSCRIPT_MATERIAL`  S9 等材料可用（T4 等 canonical READY 转写）。
+ */
+export const PENDING_FACTS = [
+  'SCREENING_DECISION',
+  'INTERVIEW_SCHEDULING',
+  'INTERVIEW_EXECUTION',
+  'TRANSCRIPT_MATERIAL',
+] as const
+
+/** 还在等的事实的稳定码。 */
+export type StagePendingFact = (typeof PENDING_FACTS)[number]
+
+/**
+ * "还在等某件事"时工作台该显示的下一步（封闭集里的稳定码；人读说明见 {@link NEXT_ACTION_MESSAGES}）。
+ * 视图与写路径共用同一张表 —— 不要在视图里另写一份 if/else。
+ */
+const PENDING_ACTIONS: Readonly<Record<StagePendingFact, StageNextActionCode>> = {
+  SCREENING_DECISION: 'RECORD_SCREENING_DECISION',
+  INTERVIEW_SCHEDULING: 'SCHEDULE_INTERVIEW',
+  INTERVIEW_EXECUTION: 'IMPORT_TRANSCRIPT',
+  TRANSCRIPT_MATERIAL: 'IMPORT_TRANSCRIPT',
+}
 
 // =====================================================================
 //  错误（本文件自己构造；`tools/errors.ts` 的联合里没有 VERSION_CONFLICT，沿用
@@ -905,6 +981,83 @@ async function readCurrentScreeningDecision(
 }
 
 // =====================================================================
+//  T3 / T4 的事实读取（只读；写路径与只读视图共用）
+// =====================================================================
+
+/** 一条面试（T3 的唯一事实源：面试有没有真正发生）。 */
+interface InterviewRow {
+  readonly id: string
+  readonly status: string
+}
+
+/** 一条转写产物（T3 的"材料已在手"证据 + T4 的"材料可用"闸门）。 */
+interface TranscriptArtifactRow {
+  readonly id: string
+  readonly transcript_status: string
+  readonly is_canonical: boolean
+}
+
+/**
+ * 读该申请的全部面试（`interview.application_id`；按轮次/slot/id 排序让读数确定）。
+ * 只取 T3 要用的两列；**不加锁**（写路径已在申请行上拿了行锁，面试行是旁证）。
+ * @param client - 事务内连接。
+ * @param tenantId - 租户。
+ * @param applicationId - 申请 id。
+ * @returns 面试行（没有则空数组）。
+ */
+async function readInterviews(
+  client: DatabaseClient,
+  tenantId: string,
+  applicationId: string,
+): Promise<readonly InterviewRow[]> {
+  const { rows } = await client.query<InterviewRow>(
+    `select i.id, i.status
+       from recruitment.interview i
+      where i.tenant_id = $1 and i.application_id = $2
+      order by i.round_no, i.slot_code, i.id`,
+    [tenantId, applicationId],
+  )
+  return rows
+}
+
+/**
+ * 读该申请的转写产物（T3/T4 的材料事实）。
+ *
+ * 归属口径与 `contracts/interview/transcript-rules.md §7.5` 的因果链一致：
+ * `interview → meeting_binding（未解绑）→ meeting → transcript_artifact`。
+ * **只用有效绑定**：解绑（`unbound_at` 非空）后事件无法再定位到这场面试（§7.5 的 `NEEDS_LINKING`）。
+ * 幂等与确定性：`order by ta.created_at, ta.id`，不做"取最新一条覆盖旧条"。
+ * @param client - 事务内连接。
+ * @param tenantId - 租户。
+ * @param applicationId - 申请 id。
+ * @returns 转写产物行（没有则空数组）。
+ */
+async function readTranscriptArtifacts(
+  client: DatabaseClient,
+  tenantId: string,
+  applicationId: string,
+): Promise<readonly TranscriptArtifactRow[]> {
+  const { rows } = await client.query<TranscriptArtifactRow>(
+    `select ta.id, ta.transcript_status, ta.is_canonical
+       from recruitment.transcript_artifact ta
+      where ta.tenant_id = $1
+        and exists (
+          select 1
+            from recruitment.meeting_binding mb
+            join recruitment.interview iv
+              on iv.id = mb.interview_id and iv.tenant_id = mb.tenant_id
+           where mb.tenant_id = ta.tenant_id
+             and mb.meeting_id = ta.meeting_id
+             and mb.unbound_at is null
+             and iv.application_id = $2
+        )
+      order by ta.created_at, ta.id`,
+    [tenantId, applicationId],
+  )
+  return rows
+}
+
+// =====================================================================
 //  责任与下一步（结构化；v1.1）
 // =====================================================================
 
@@ -989,13 +1142,25 @@ async function enrichObstructions(
  * 一条梯子边的判定结局。
  *   * `PASS` 事实成立，可以走这条边；`pinned` 非空表示这一跳**顺手补钉了 rubric**
  *     （写路径专有；调用方必须用它的 `record_version` 作为后续阶段 UPDATE 的并发条件）；
- *   * `WAIT` 事实还没发生（等人），既不是推进也不是错误；
+ *   * `WAIT` 事实还没发生（等人），既不是推进也不是错误；`pending` 说明还在等哪一件事
+ *     （工作台据此给"下一步做什么"；没有它就只能给一个含糊的"继续"）；
  *   * `BLOCKED` 事实明确反对（带可执行提示）。
  */
 type EdgeOutcome =
   | { readonly kind: 'PASS'; readonly pinned?: RubricPinResult }
-  | { readonly kind: 'WAIT' }
+  | { readonly kind: 'WAIT'; readonly pending?: StagePendingFact }
   | { readonly kind: 'BLOCKED'; readonly blockers: readonly RawBlocker[] }
+
+/** T3：面试"已经真正发生"的状态（`scheduling-rules.md §8`：`SCHEDULED → IN_PROGRESS` 属 S9）。 */
+const EXECUTED_INTERVIEW_STATUSES: readonly string[] = [
+  'IN_PROGRESS', 'POST_INTERVIEW', 'EVALUATION_READY', 'DECIDED',
+]
+
+/** T3 的反向事实：这些状态下这场面试不会发生了（除非重新排期）。 */
+const DEAD_INTERVIEW_STATUSES: readonly string[] = ['CANCELLED', 'NO_SHOW']
+
+/** T4 的反向事实：材料存在但取不回来（`transcript-rules.md` 的平台状态轴）。 */
+const FAILED_TRANSCRIPT_STATUSES: readonly string[] = ['AUTH_REQUIRED', 'RETRYABLE_FAILED', 'NEEDS_LINKING']
 
 /**
  * T1（`from=S6`）的判定：材料 + rubric 齐 → PASS；缺任何一条 → BLOCKED。
@@ -1038,7 +1203,7 @@ async function evaluateT2(
   applicationId: string,
 ): Promise<EdgeOutcome> {
   const decision = await readCurrentScreeningDecision(client, tenantId, applicationId)
-  if (decision === null) return { kind: 'WAIT' }
+  if (decision === null) return { kind: 'WAIT', pending: 'SCREENING_DECISION' }
   if (decision.result === 'ADVANCE') return { kind: 'PASS' }
   // HOLD / REJECT / WITHDRAW 是**已发生的反向事实**：不推进，阶段留在 S7。
   // 责任人 = 真的做过这个决定的人（decision.decided_by_actor_id，库里可查），不是执行账号。
@@ -1059,6 +1224,104 @@ async function evaluateT2(
   }
 }
 
+/**
+ * T3（`from=S8`）的判定：该申请的面试**已经真正发生** → PASS。
+ *
+ * "发生"的判据（两条等价证据，任一成立）：
+ *   1. `interview.status ∈ {IN_PROGRESS, POST_INTERVIEW, EVALUATION_READY, DECIDED}`
+ *      —— `contracts/interview/scheduling-rules.md §8` 把 `SCHEDULED → IN_PROGRESS`
+ *      （会议开始）与 `IN_PROGRESS → POST_INTERVIEW`（会议结束）明确归到 **S9**；
+ *      `SCHEDULED` / `RESCHEDULED` 只是"排期完成"，还没执行，**不算**发生。
+ *   2. 已存在该申请的转写产物（`transcript_artifact`，经有效 `meeting_binding` 可达）
+ *      —— `transcript-rules.md §7.5` 的跨阶段因果链：材料存在 ⇒ 那场面试已经发生。
+ *      这是 v1.0 里**唯一有产品写入口**的执行证据（`interview_schedule` 没有 START/COMPLETE
+ *      intent，见 `docs/18 §4`；`transcript_import` 是 MANUAL 的产品入口）。
+ *
+ * 反向事实：该申请的所有面试都已被取消 / 未到场（且没有任何材料）→ BLOCKED
+ * （`INTERVIEW_NOT_COMPLETED`，下一步=重新排期）。没有任何面试 → WAIT（还没排期）。
+ * 排了但还没发生 → WAIT（等会议开始）。
+ * @param client - 事务内连接。
+ * @param tenantId - 租户。
+ * @param app - 读到的申请。
+ * @returns 三分法结局（PASS / WAIT + pending / BLOCKED）。
+ */
+async function evaluateT3(
+  client: DatabaseClient,
+  tenantId: string,
+  app: ApplicationRow,
+): Promise<EdgeOutcome> {
+  const [interviews, transcripts] = await Promise.all([
+    readInterviews(client, tenantId, app.id),
+    readTranscriptArtifacts(client, tenantId, app.id),
+  ])
+  // 证据 1：面试状态已越过"排期完成"；证据 2：材料已在手（⇒ 面试已发生）。
+  const executed = interviews.some((row) => EXECUTED_INTERVIEW_STATUSES.includes(row.status))
+  if (executed || transcripts.length > 0) return { kind: 'PASS' }
+  if (interviews.length === 0) return { kind: 'WAIT', pending: 'INTERVIEW_SCHEDULING' }
+  // 面试全部取消/未到场 = 已经发生的反向事实（不是"再等等就有了"）：停下并给出重排动作。
+  const allDead = interviews.every((row) => DEAD_INTERVIEW_STATUSES.includes(row.status))
+  if (allDead) {
+    return {
+      kind: 'BLOCKED',
+      blockers: [{
+        code: 'INTERVIEW_NOT_COMPLETED',
+        message: `该申请的 ${interviews.length} 场面试全部处于 ${interviews.map((row) => row.status).join(' / ')}`
+          + '（没有真正发生），也没有可用的会议材料：阶段留在 S8。'
+          + '由人重新排期（recruitment_interview_schedule 的 CREATE / RESCHEDULE），面试发生后再重试。',
+        owner_role: 'JOB_HIRING_MANAGER',
+        next_action_code: 'RESCHEDULE_INTERVIEW',
+      }],
+    }
+  }
+  // 还有 SCHEDULED / RESCHEDULED 的面试：事实还没发生（等人把面试开起来）。
+  return { kind: 'WAIT', pending: 'INTERVIEW_EXECUTION' }
+}
+
+/**
+ * T4（`from=S9`）的判定：存在该申请的 **canonical + READY** 转写 → PASS。
+ *
+ * `contracts/interview/transcript-rules.md` 的口径（逐条对应，不另立判据）：
+ *   * `READY` = 完整原文已获取（`TR-C4`：`is_complete=true` 且 `content_sha256` 非空，库 CHECK 强制）；
+ *   * canonical = 该 meeting 本轮唯一被选中的那版（`uq_transcript_artifact_canonical`）；
+ *   * `canonical READY` 才是 `transcript.state='READY'`（§4 派生表第 2 行）→ 材料可用。
+ * `interview_record` 的状态**不是**本边的闸门：`READY` 记录要求 `verification_status='VERIFIED'`，
+ * 而 v1.0 没有把它转 `VERIFIED` 的产品入口（`docs/18` 的 D-B），把它当闸门会让阶段永远到不了 S10。
+ * 这条产品口径写进合同 §14「待产品裁决」，本边按"材料可用"（更接近 TR-E6 的底线）实现。
+ *
+ * 反向事实：材料在库里但取不回来（AUTH_REQUIRED / RETRYABLE_FAILED / NEEDS_LINKING）→ BLOCKED
+ * （`TRANSCRIPT_NOT_READY`，下一步=修连接器/绑定后重导）。没有材料 / 材料处理中 → WAIT。
+ * @param client - 事务内连接。
+ * @param tenantId - 租户。
+ * @param app - 读到的申请。
+ * @returns 三分法结局（PASS / WAIT + pending / BLOCKED）。
+ */
+async function evaluateT4(
+  client: DatabaseClient,
+  tenantId: string,
+  app: ApplicationRow,
+): Promise<EdgeOutcome> {
+  const transcripts = await readTranscriptArtifacts(client, tenantId, app.id)
+  const usable = transcripts.some((row) => row.is_canonical && row.transcript_status === 'READY')
+  if (usable) return { kind: 'PASS' }
+  const failed = transcripts.filter((row) => FAILED_TRANSCRIPT_STATUSES.includes(row.transcript_status))
+  if (failed.length > 0) {
+    const statuses = [...new Set(failed.map((row) => row.transcript_status))]
+    return {
+      kind: 'BLOCKED',
+      blockers: [{
+        code: 'TRANSCRIPT_NOT_READY',
+        message: `该申请的转写产物取不回来（${statuses.join(' / ')}，共 ${failed.length} 份，`
+          + '没有任何一份可用的 canonical READY）：阶段留在 S9。'
+          + '先修复连接器授权 / 会议绑定，再用 recruitment_transcript_import 重新导入，然后重试。',
+        owner_role: 'RECRUITMENT_OWNER',
+        next_action_code: 'REIMPORT_TRANSCRIPT',
+      }],
+    }
+  }
+  // 没有材料，或材料还在 DISCOVERED / FETCHING / PARTIAL / WAITING_EXTERNAL：等人把材料取齐。
+  return { kind: 'WAIT', pending: 'TRANSCRIPT_MATERIAL' }
+}
+
 // =====================================================================
 //  统一诊断（写路径与只读视图共用同一套判定）
 // =====================================================================
@@ -1072,7 +1335,7 @@ interface StageDiagnosis {
   readonly blockers: readonly StageBlocker[]
   readonly warnings: readonly StageWarning[]
   /** 还在等的事实（工作台据此给"下一步"）。 */
-  readonly pending_fact?: 'SCREENING_DECISION'
+  readonly pending_fact?: StagePendingFact
 }
 
 /**
@@ -1082,9 +1345,9 @@ interface StageDiagnosis {
  * "只差 rubric 这一条"的情况下先补钉（见文件头 F1）。除补钉外本函数不写任何东西。
  *
  * 顺序：
- *   0) 目录完整性（S6/S7/S8 必须在 stage_catalog 里）；
+ *   0) 目录完整性（S6–S10 必须在 stage_catalog 里）；
  *   1) 非 ACTIVE → BLOCKED(APPLICATION_NOT_ACTIVE)；
- *   2) 指针超前（> S8）→ NO_OP + STAGE_AHEAD 警告（一条 UPDATE 都不发）；
+ *   2) 指针超前（> S10）→ NO_OP + STAGE_AHEAD 警告（一条 UPDATE 都不发）；
  *   3) 指针在梯子起点之前（< S6）→ BLOCKED(STAGE_NOT_ON_LADDER)；
  *   4) 从当前阶段往后逐边走：PASS 记一条边，WAIT/BLOCKED 停下。
  * @param client - 事务内连接。
@@ -1106,19 +1369,24 @@ async function diagnose(
   // ---- 顺序：先看"这条申请该不该被本命令碰"，再看梯子 ----
   const catalog = await readStageCatalog(client, tenantId, [
     app.current_stage_code,
-    LADDER_START,
-    LADDER_TERMINAL,
+    ...LADDER_CODES,
   ])
   const current = catalog.get(app.current_stage_code)
   const start = catalog.get(LADDER_START)
   const terminal = catalog.get(LADDER_TERMINAL)
-  if (current === undefined || start === undefined || terminal === undefined) {
-    // FK 保证 current_stage_code 在目录里；梯子两端不齐 = 该租户目录残缺（不是本命令能修的）。
+  const missingLadder = LADDER_CODES.filter((code) => catalog.get(code) === undefined)
+  if (current === undefined || start === undefined || terminal === undefined || missingLadder.length > 0) {
+    // FK 保证 current_stage_code 在目录里；梯子缺格 = 该租户目录残缺（不是本命令能修的）。
     throw stageError(
       'INVARIANT_VIOLATION',
       'STAGE_CATALOG_INCOMPLETE',
-      '该租户的 stage_catalog 缺少本命令需要的阶段码（S6 / S7 / S8），无法判断阶段顺序。',
-      { application_id: applicationId, stage_code: app.current_stage_code },
+      `该租户的 stage_catalog 缺少本命令需要的阶段码（${LADDER_START}–${LADDER_TERMINAL}；`
+        + `缺 ${missingLadder.join(', ') || '目录行'}），无法判断阶段顺序。`,
+      {
+        application_id: applicationId,
+        stage_code: app.current_stage_code,
+        missing_stage_codes: missingLadder,
+      },
     )
   }
 
@@ -1132,23 +1400,23 @@ async function diagnose(
     }], [])
   }
 
-  // 1) 指针已超前于本命令能推导的事实（本命令最多推到 S8）：一条 UPDATE 都不发。
+  // 1) 指针已超前于本命令能推导的事实（本命令最多推到 S10，即 v1.0 终态）：一条 UPDATE 都不发。
   if (current.sort_order > terminal.sort_order) {
     return finishWithObstructions(client, tenantId, applicationId, app, [], [{
       code: 'STAGE_AHEAD',
       message: `当前阶段 ${app.current_stage_code} 已经超过本命令能推导的事实（最多到 ${LADDER_TERMINAL}）：`
-        + '不倒退、不跳阶，一条 UPDATE 都不发。后续阶段由面试 / 评价线自己的事实推进。',
+        + '不倒退、不跳阶，一条 UPDATE 都不发。S11/S12 不在 v1.0 范围（in_v1_scope=false），不由本命令推进。',
       owner_role: 'RECRUITMENT_OWNER',
       next_action_code: 'VERIFY_STAGE_PROGRESSION',
     }])
   }
 
-  // 2) 指针在梯子起点之前：本命令只覆盖 S6→S7→S8，不从别的阶段插队。
+  // 2) 指针在梯子起点之前：本命令只覆盖 S6→S7→S8→S9→S10，不从别的阶段插队。
   if (current.sort_order < start.sort_order) {
     return finishWithObstructions(client, tenantId, applicationId, app, [{
       code: 'STAGE_NOT_ON_LADDER',
       message: `当前阶段 ${app.current_stage_code} 不在本命令的迁移梯子上（只覆盖 `
-        + `${LADDER_START}→S7→${LADDER_TERMINAL}）：请先用上游工具把它带到 ${LADDER_START}。`,
+        + `${LADDER_CODES.join('→')}）：请先用上游工具把它带到 ${LADDER_START}。`,
       owner_role: 'RECRUITMENT_OWNER',
       next_action_code: 'START_AT_INTAKE',
     }], [])
@@ -1158,25 +1426,29 @@ async function diagnose(
   //
   // 每条边有三种结局：
   //   PASS    事实成立 → 记一条边，指针前移一格再试下一条边；
-  //   WAIT    事实还没发生（例如还没有人的 SCREENING 结论）→ 停下，不算错误；
-  //   BLOCKED 事实明确反对（HOLD/REJECT、材料解析失败、rubric 未钉）→ 停下并报 blockers。
+  //   WAIT    事实还没发生（例如还没有人的 SCREENING 结论 / 面试还没发生 / 材料还没齐）→ 停下，不算错误；
+  //   BLOCKED 事实明确反对（HOLD/REJECT、材料解析失败、rubric 未钉、面试全被取消、转写取不回来）→ 停下并报 blockers。
   // 这个三分法是幂等性的来源：第二次调用在"已到的事实位置"上得到 WAIT → NO_OP，零 UPDATE。
   const applied: StageEdge[] = []
   const rawBlockers: RawBlocker[] = []
-  let pendingFact: 'SCREENING_DECISION' | undefined
+  let pendingFact: StagePendingFact | undefined
   let cursor = app.current_stage_code
   while (applied.length <= LADDER.length) {
     const step = LADDER.find((edge) => edge.from === cursor)
     if (step === undefined) break
-    const outcome = step.rule === 'T1'
-      ? await evaluateT1(client, tenantId, app, allowPin)
-      : await evaluateT2(client, tenantId, applicationId)
+    let outcome: EdgeOutcome
+    switch (step.rule) {
+      case 'T1': outcome = await evaluateT1(client, tenantId, app, allowPin); break
+      case 'T2': outcome = await evaluateT2(client, tenantId, applicationId); break
+      case 'T3': outcome = await evaluateT3(client, tenantId, app); break
+      case 'T4': outcome = await evaluateT4(client, tenantId, app); break
+    }
     if (outcome.kind === 'BLOCKED') {
       rawBlockers.push(...outcome.blockers)
       break
     }
     if (outcome.kind === 'WAIT') {
-      if (step.rule === 'T2') pendingFact = 'SCREENING_DECISION'
+      if (outcome.pending !== undefined) pendingFact = outcome.pending
       break
     }
     // F1：这一跳补钉了 rubric —— 把申请对象换成写后的事实，后续阶段 UPDATE 必须用新
@@ -1222,7 +1494,7 @@ async function finishWithObstructions(
   app: ApplicationRow,
   rawBlockers: readonly RawBlocker[],
   rawWarnings: readonly RawWarning[],
-  pendingFact?: 'SCREENING_DECISION',
+  pendingFact?: StagePendingFact,
 ): Promise<StageDiagnosis> {
   const enriched = await enrichObstructions(client, tenantId, applicationId, rawBlockers, rawWarnings)
   return {
@@ -1451,7 +1723,8 @@ async function upgradePinConflictBlocker(
  *
  * 整条申请级别的 `owner` / `next_action` 取"优先级最高的一条"：
  * blockers（按判定顺序）优先，其次 warnings；都没有时给一个通用下一步
- * （事实已齐 → `ADVANCE_STAGE`；在等人 → `RECORD_SCREENING_DECISION`；否则 `CONTINUE_DOWNSTREAM`）。
+ * （事实已齐 → `ADVANCE_STAGE`；在等某件事 → 该件事的下一步（见 {@link PENDING_ACTIONS}）；
+ * 已到 S10 终态 / 没有剩余动作 → `CONTINUE_DOWNSTREAM`）。
  * @param client - 连接（可以来自只读事务）。
  * @param input - `{tenantId, applicationId}`。
  * @returns 工作台视图（`stage`/`blockers`/`owner`/`next_action` 恒有）。
@@ -1507,11 +1780,12 @@ export async function readStageBlockedView(
   } else {
     // 没有阻塞也没有告警：给"下一步"（谁来做仍然由招聘负责人兜底）。
     const resolved = await resolveRecruitmentOwner(client, tenantId, applicationId)
+    const pendingFact = upgradedDiagnosis.pending_fact
     const code: StageNextActionCode = upgradedDiagnosis.status === 'ADVANCED'
       ? 'ADVANCE_STAGE'
-      : upgradedDiagnosis.pending_fact === 'SCREENING_DECISION'
-        ? 'RECORD_SCREENING_DECISION'
-        : 'CONTINUE_DOWNSTREAM'
+      : pendingFact === undefined
+        ? 'CONTINUE_DOWNSTREAM'
+        : PENDING_ACTIONS[pendingFact]
     owner = {
       role: 'RECRUITMENT_OWNER',
       ...(resolved.actor_id === undefined ? {} : { actor_id: resolved.actor_id }),
