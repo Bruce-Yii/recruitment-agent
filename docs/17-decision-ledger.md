@@ -1,6 +1,6 @@
 # 17 · 决策台账（唯一权威源）
 
-**来源**：`D:\12412\dsh工作区\projects\recruitment-os\work\control\DECISIONS-2026-11-12.md`
+**来源**：`work/control/DECISIONS-2026-11-12.md`（工作区 = 代码仓根）
 （旧仓，**冻结只读**）。下面是该文件 **530 行的逐字副本**，未改一字。
 **新增裁定**（2026-11-13 起）在 [附录 A](#附录-a--2026-11-13-起新增的裁定)；**引用路径修正**在 [附录 B](#附录-b--引用路径修正2026-11-13)。
 
@@ -728,7 +728,7 @@ DSH 自带 `@deepseek-ai/dsh-user-approval`（fail-closed）；headless profile 
 | `work/handoff/15-architecture-hv.md` | 新仓未收录（只在旧仓） | 不再作为阶段码依据，见 D-73 |
 
 **旧仓位置**（只读参考，不要在里面开发）：
-`D:\12412\dsh工作区\projects\recruitment-os\work\control\DECISIONS-2026-11-12.md`
+`work/control/DECISIONS-2026-11-12.md`（工作区 = 代码仓根）
 
 ### D-84 · 终局决策不接受"缺面评但逐条确认"的旁路
 
@@ -1216,7 +1216,7 @@ R-3 因无失败样本而 **vacuous**（不冒充通过）。`EMPTY_FILE` 错误
 **可移植性警告（实测）**：该原型是 POSIX-only 写的，`deployment.ts:13` 的绝对路径校验为 `/^\//`，
 Windows 上插件直接不激活。我们自己的 DSH 插件凡校验路径处**必须验 Windows 绝对路径**。
 
-**证据**：`recruitment-os/work/research/2026-11-14-dsh-superagent-assessment.md`（含 B 档受控试装记录与截图）。
+**证据**：`work/research/2026-11-14-dsh-superagent-assessment.md`（含 B 档受控试装记录与截图）。
 
 ### D-106 · 外部事实的机检层：读位点、事件处置、出站重试、三振
 

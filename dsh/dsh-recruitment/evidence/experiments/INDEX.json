@@ -611,7 +611,7 @@
         {
           "doc": "ci-steps.md",
           "line": 23,
-          "ref": "recruitment-os\\temp\\batch2-picked.json",
+          "ref": "work/legacy/batch2-picked.json",
           "exists": false,
           "resolved": "",
           "by_design": true,

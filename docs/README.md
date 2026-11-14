@@ -71,7 +71,7 @@
 ## 物理落位
 
 - 本仓库（新）：`D:\12412\dsh工作区\projects\recruitment-agent`（GitHub `Bruce-Yii/recruitment-agent`，私有）
-- 旧仓库（**冻结，只读参考**）：`D:\12412\dsh工作区\projects\recruitment-os`，`main@6bcfc70`，**不要在里面开发**
+- 旧仓库（**冻结，只读参考**）：`D:\12412\dsh工作区\archive\recruitment-os`（2026-11-14 已移入 `archive/`），`main@6bcfc70`，**不要在里面开发**
 - DSH_HOME：`D:\12412\dsh-home`；产品 profile = `profiles/recruitment`（DSH Web）
 - 过程产物：仓库内 `work/`（已 gitignore，不入库）
 - 总控行为约束：旧仓根 `AGENTS.md`（八条铁律 R1–R8），本项目继续沿用

@@ -42,5 +42,5 @@
 | 2026-11-14-candidate-get-pg | README.md | 3 | `src/tools/stubs.ts` | False | True | 文档已标注：目标文件已删除（历史引用） |
 | 2026-11-14-candidate-get-pg | README.md | 23 | `src/tools/stubs.ts` | False | True | 文档已标注：目标文件已删除（历史引用） |
 | 2026-11-14-ci-rehearsal-2 | ci-steps.md | 23 | `converter/corpus/batch2-picked.json` | False | True | 文档已标注：按设计不入库（机器本地/含 PII/仓库外产物） |
-| 2026-11-14-ci-rehearsal-2 | ci-steps.md | 23 | `recruitment-os\temp\batch2-picked.json` | False | True | 文档已标注：按设计不入库（机器本地/含 PII/仓库外产物） |
+| 2026-11-14-ci-rehearsal-2 | ci-steps.md | 23 | `work/legacy/batch2-picked.json`（2026-11-14 随工作区迁移） | False | True | 文档已标注：按设计不入库（机器本地/含 PII/仓库外产物） |
 | 2026-11-14-ci-rehearsal-2 | README.md | 49 | `converter/corpus/batch2-picked.json` | False | True | 文档已标注：按设计不入库（机器本地/含 PII/仓库外产物） |

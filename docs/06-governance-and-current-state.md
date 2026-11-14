@@ -171,7 +171,7 @@
 
 ## 18. 本工作区落位
 
-- 仓库克隆：`D:\12412\dsh工作区\projects\recruitment-os`（工作树停在旧文档基线）
+- 旧仓克隆：`D:\12412\dsh工作区\archive\recruitment-os`（2026-11-14 已从 `projects/` 移入 `archive/`；工作树停在旧文档基线，**不要在里面开发**）
 - 各 lane worktree：`D:\12412\DshWorktrees\recruitment-os\*`
 - 本地控制面（历史）：`D:\12412\dsh工作区\orchestration\recruitment-os`
 - 过程产物：仓库内 `work/`（未追踪；本地实际为 `work/decisions/`、`work/review/`、`work/scratch/`，**按设计不入库**）；决策备忘/研究底稿属本地工作区产物，不入库
