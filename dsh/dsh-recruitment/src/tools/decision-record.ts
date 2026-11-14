@@ -1999,8 +1999,16 @@ async function checkBasisSemantics(
         scorecard_id: row.id,
       })
     }
-    // SC-11：库里这条面评绑的版本必须就是申请钉住的那一版（不允许拿旧版面评当依据）。
-    if (row.rubric_version_id !== ctx.application.rubric_version_id) {
+    // SC-11：库里这条面评绑的版本必须就是申请钉住的那一版（不允许拿旧版面评当**正式结论**的依据）。
+    //
+    // **例外：HOLD / WITHDRAW（止血动作）**。这两种结果的语义是"暂不决定 / 候选人撤回"，
+    // 不是对候选人的结论；而"因为面评绑错了版本所以先 hold 住"恰恰需要把那份错配面评作为
+    // 依据引用出来，否则记录里看不出止血原因。若连它都挡，产品里就只剩"明知错配也只能让
+    // 申请悬着"的死路（reviewer 验收第 ④ 条：HOLD/WITHDRAW 不被阻断）。
+    // 注意这里只放宽**版本一致性**这一条：下面的"面评必须属于本申请/本场面试""声明面不得与
+    // 事实矛盾""overall 必须与库值一致"**一条都没有放宽**。
+    const stopLossAction = ctx.args.result === 'HOLD' || ctx.args.result === 'WITHDRAW'
+    if (!stopLossAction && row.rubric_version_id !== ctx.application.rubric_version_id) {
       throw evalError(
         'EVIDENCE_INSUFFICIENT',
         'SCORECARD_RUBRIC_MISMATCH',
@@ -2952,7 +2960,14 @@ export async function recordDecisionInTransaction(
     : await loadScopeScorecards(client, tenantId, application.id, args.interview_id)
   // SC-11：面板必须整批绑在申请钉住的那一版 rubric 上；有任何一条不一致就在 STEP 2 拒绝
   // （此时一行都没写：决策行/审批行/事件都还没开始写）。
-  if (!screeningScope) assertPanelRubricVersionsMatch(application, scopeScorecards)
+  //
+  // **只挡正式结论（ADVANCE / REJECT）**：`HOLD` / `WITHDRAW` 是**止血动作**，必须始终可写。
+  // 面评版本错配的处置方式是"先止血、再修数据"，如果连 HOLD 都挡，产品里就只剩一条
+  // "明知错配也只能让申请悬着"的死路。这与 `decision-rules §4.2.1`「HOLD/WITHDRAW 不受
+  // 缺面评影响」同口径，也与本文件 2366 行、2170 行既有的"只对正式结论设门"写法一致。
+  if (!screeningScope && (args.result === 'ADVANCE' || args.result === 'REJECT')) {
+    assertPanelRubricVersionsMatch(application, scopeScorecards)
+  }
 
   // ---- STEP 3 已有 current / 撤回三绑定 ----
   const current = await loadCurrentDecision(client, tenantId, application.id, args.decision_scope, stageCode)

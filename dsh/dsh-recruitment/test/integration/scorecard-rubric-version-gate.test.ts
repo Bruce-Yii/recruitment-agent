@@ -361,6 +361,99 @@ test('对照：同一路径但**没有**面评时，stage_advance 正常补钉 V
 })
 
 // =====================================================================
+//  1a'. 阴性对照（合法路径不误伤）：有面评、但版本与申请最终 pin **一致**
+// =====================================================================
+
+test('阴性对照（合法路径不误伤）：面评绑 V1、岗位批准/申请最终也钉 V1 → stage_advance 正常补钉并推进到 S7', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    // 真实工具链，只把"最终批准哪一版"换成面评实际使用的 V1：
+    //   job_create(V1, PENDING) → intake（无 pin）→ 排期 → 面评显式 V1 → 批准 V1 → stage_advance
+    const jobValue = await createJobInTransaction(client, cfg, {
+      title: 'SC-11 合法路径岗位',
+      code: `SC11-SAME-${uniqueSuffix()}`,
+      department_id: DEMO_DEPARTMENT,
+      description_md: 'SC-11 合法路径 JD',
+      criteria: CRITERIA_V1,
+    })
+    const jobId = jobValue.job.id
+    const v1 = jobValue.rubric?.version_id
+    assert.ok(v1 !== undefined, 'job_create 必须造出 rubric v1')
+    assert.equal(
+      (await client.query<{ current_rubric_version_id: string | null }>(
+        'select current_rubric_version_id from recruitment.job where id = $1 and tenant_id = $2',
+        [jobId, TENANT],
+      )).rows[0]?.current_rubric_version_id,
+      null,
+      '只有 PENDING 审批 → 申请不会被 intake 钉住',
+    )
+
+    const intake = await intakeInTransaction(client, cfg, makeMaterial(freshPhone()), jobId)
+    const appAfterIntake = await appRow(client, intake.application_id)
+    assert.equal(appAfterIntake.rubric_version_id, null, 'intake 阶段申请不钉 rubric')
+
+    const scheduled = await scheduleInTransaction(client, cfg, {
+      intent: 'CREATE',
+      idempotency_key: `sc11-same-schedule-${uniqueSuffix()}`,
+      application_id: intake.application_id,
+      round_no: 1,
+      interviewers: [{ actor_id: HR_ACTOR }],
+      scheduled_start_at: START,
+      duration_minutes: 60,
+    }, NOW, allowOnce)
+    const interviewId = (scheduled.changes as { created: { table: string; id: string }[] }).created
+      .find((change) => change.table === 'interview')?.id
+    assert.ok(interviewId !== undefined, '排期必须创建 interview 行')
+
+    // 面评显式绑 V1（此时申请还没 pin：这是契约允许的 SC-10 路径）。
+    const submitted = await submitScorecardInTransaction(client, cfg, {
+      interview_id: interviewId,
+      rubric_version_id: v1,
+      items: itemsForV1(),
+      overall: 'HOLD',
+      idempotency_key: `sc11-same-scorecard-${uniqueSuffix()}`,
+    }, NOW, allowOnce)
+    const scorecard = submitted.scorecard as Record<string, unknown>
+    assert.equal(scorecard.rubric_version_id, v1, '面评绑 V1')
+
+    // 关键差异：岗位批准的是**同一版 V1**（不是错配用例里的 V2）→ 版本一致，属合法路径。
+    const approved = await approveRubricInTransaction(client, cfg, { job_id: jobId, rubric_version_id: v1 }, allowOnce)
+    assert.equal(approved.outcome, 'APPROVED')
+    assert.equal(approved.job.current_rubric_version_id, v1, '岗位 current 指针 = V1')
+
+    const before = await appRow(client, intake.application_id)
+    assert.equal(before.rubric_version_id, null)
+    // 不得报 RUBRIC_PIN_CONFLICT_WITH_SCORECARD：调用能正常返回（抛错会让本用例直接失败）。
+    const result = await advanceApplicationStage(client, { tenantId: TENANT, applicationId: intake.application_id })
+    console.log(`  [合法路径 V1==V1] status=${result.status} stage=${result.stage_code}`
+      + ` transitions=${JSON.stringify(result.transitions)} record_version=${before.record_version}→${result.record_version}`)
+
+    assert.equal(result.status, 'ADVANCED', '版本一致的面评不得触发冲突闸')
+    assert.equal(result.stage_code, 'S7')
+    assert.deepEqual(result.transitions, [{ from: 'S6', to: 'S7' }])
+
+    const after = await appRow(client, intake.application_id)
+    assert.equal(after.current_stage_code, 'S7', 'current_stage_code 必须真的变了')
+    assert.notEqual(after.current_stage_code, before.current_stage_code)
+    assert.equal(after.rubric_version_id, v1, '补钉写的就是面评实际使用的 V1')
+    assert.equal(after.record_version, before.record_version + 2, '补钉 +1、阶段迁移 +1（fn_row_guard 维护）')
+
+    // 补钉审计：恰好 1 条，值 = V1（合法路径也留痕）。
+    const pinnedEvents = (await client.query<{ payload: Record<string, unknown> }>(
+      `select payload from recruitment.event_inbox
+        where tenant_id = $1 and event_type = 'application.rubric_version.pinned' and source_object_id = $2`,
+      [TENANT, intake.application_id],
+    )).rows
+    assert.equal(pinnedEvents.length, 1)
+    assert.equal(pinnedEvents[0]?.payload.rubric_version_id, v1)
+    // 阶段迁移事件也恰好 1 条（真的推了，不是"返回 ADVANCED 但没写库"）。
+    assert.equal(await count(client,
+      `select count(*)::int as n from recruitment.event_inbox
+        where tenant_id = $1 and event_type = 'application.current_stage_code.changed' and source_object_id = $2`,
+      [TENANT, intake.application_id]), 1)
+  })
+})
+
+// =====================================================================
 //  1b. 只读视图：同一冲突必须被结构化报成 BLOCKED（不是"只是没钉 rubric"）
 // =====================================================================
 
@@ -472,7 +565,7 @@ test('强行绕过补钉后：summarize 剔除 V1 面评并报 SCORECARD_RUBRIC_
       decision_scope: 'STAGE',
       interview_id: path.interviewId,
       as_of: AS_OF,
-      result: 'HOLD',
+      result: 'ADVANCE',
       reason,
       basis_refs: basisRefs,
       summary_digest: String(summary.summary_digest),
@@ -481,7 +574,7 @@ test('强行绕过补钉后：summarize 剔除 V1 面评并报 SCORECARD_RUBRIC_
         confirmed_at: new Date(NOW - 60 * 1000).toISOString(),
         confirmation_method: 'IN_APP_CONFIRM',
         confirmation_text_sha256: confirmationTextSha256({
-          result: 'HOLD',
+          result: 'ADVANCE',
           reason,
           override_rationale: null,
           basis_refs: basisRefs,
@@ -506,6 +599,141 @@ test('强行绕过补钉后：summarize 剔除 V1 面评并报 SCORECARD_RUBRIC_
     assert.equal(await count(client, `select count(*)::int as n from recruitment.event_inbox
        where tenant_id = $1 and event_type = 'decision.record' and payload->>'application_id' = $2`,
     [TENANT, path.applicationId]), 0)
+  })
+})
+
+// =====================================================================
+//  2b. 阴性对照（止血动作不被一刀切）：版本错配时 HOLD / WITHDRAW 必须仍可用
+//
+//     产品语义：SC-11 的错配闸门只挡"拿错配面板做正式结论"（ADVANCE/REJECT），
+//     **不挡止血动作**——候选人可以撤回（WITHDRAW），招聘侧可以"暂不决定"（HOLD）。
+//     这两项在 decision-rules §4.2.1 里本来就不受"缺面评/零面评"影响；版本错配同理。
+// =====================================================================
+
+/** 强行绕过补钉（模拟另一条写路径 / 人工修数据）：只改 `rubric_version_id`，仍走 `fn_row_guard`。 */
+async function forcePinRubric(
+  client: DatabaseClient,
+  applicationId: string,
+  rubricVersionId: string,
+): Promise<void> {
+  const row = (await client.query<{ record_version: number }>(
+    `update recruitment.application
+        set rubric_version_id = $3
+      where tenant_id = $1 and id = $2 and rubric_version_id is null
+      returning record_version`,
+    [TENANT, applicationId, rubricVersionId],
+  )).rows[0]
+  assert.ok(row !== undefined, '绕过 UPDATE 必须命中（申请此前未钉）')
+}
+
+/**
+ * 造一次决策入参（含人工确认 hash）：`basis_refs` 引申请钉住的 V2 + 那条错配的 V1 面评。
+ * @param client - 事务内连接。
+ * @param path - 构造好的缺陷路径。
+ * @param summary - 本次汇总（取 `summary_digest`）。
+ * @param result - `HOLD` / `WITHDRAW`（止血动作）。
+ * @returns 可直接交给 `recordDecisionInTransaction` 的入参。
+ */
+async function decisionArgsFor(
+  client: DatabaseClient,
+  path: ConstructedPath,
+  summary: Record<string, unknown>,
+  result: 'HOLD' | 'WITHDRAW',
+): Promise<Record<string, unknown>> {
+  const reason = `SC-11 复核：本场面评绑的是旧版标准（${path.rubrics.v1}），本轮只做止血动作（${result}）`
+  const pinnedPayloadHash = String((await client.query<{ payload_hash: string }>(
+    'select payload_hash from recruitment.rubric_version where tenant_id = $1 and id = $2',
+    [TENANT, path.rubrics.v2],
+  )).rows[0]?.payload_hash)
+  const basisRefs: Record<string, unknown>[] = [
+    { kind: 'SUMMARY', summary_digest: String(summary.summary_digest) },
+    { kind: 'RUBRIC_VERSION', id: path.rubrics.v2, payload_hash: pinnedPayloadHash },
+    { kind: 'AUTHORITY', actor_id: HR_ACTOR, is_hiring_manager: false },
+    {
+      kind: 'SCORECARD',
+      id: path.scorecardId,
+      overall: 'HOLD',
+      transcript_basis: 'NO_TRANSCRIPT',
+      transcript_state: 'NO_TRANSCRIPT',
+      rubric_version_id: path.rubrics.v1,
+    },
+  ]
+  return {
+    application_id: path.applicationId,
+    decision_scope: 'STAGE',
+    interview_id: path.interviewId,
+    as_of: AS_OF,
+    result,
+    reason,
+    basis_refs: basisRefs,
+    summary_digest: String(summary.summary_digest),
+    human_confirmation: {
+      confirmed_by_actor_id: HR_ACTOR,
+      confirmed_at: new Date(NOW - 60 * 1000).toISOString(),
+      confirmation_method: 'IN_APP_CONFIRM',
+      confirmation_text_sha256: confirmationTextSha256({
+        result,
+        reason,
+        override_rationale: null,
+        basis_refs: basisRefs,
+      }),
+    },
+  }
+}
+
+test('阴性对照（止血动作不被一刀切）：版本错配时 summarize 的 permitted_results 仍含 HOLD 与 WITHDRAW', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const path = await constructMismatchPath(client)
+    await forcePinRubric(client, path.applicationId, path.rubrics.v2)
+    const summary = await computeEvaluationSummaryIn(client, cfg, {
+      application_id: path.applicationId,
+      decision_scope: 'STAGE',
+      interview_id: path.interviewId,
+      as_of: AS_OF,
+    }, NOW) as unknown as Record<string, unknown>
+    const permitted = summary.permitted_results as string[]
+    console.log(`  [permitted under mismatch] ${JSON.stringify(permitted)}`)
+    assert.ok(permitted.includes('HOLD'), `HOLD 必须仍被允许（止血动作）；实际 ${JSON.stringify(permitted)}`)
+    assert.ok(permitted.includes('WITHDRAW'), `WITHDRAW 必须仍被允许（候选人可撤回）；实际 ${JSON.stringify(permitted)}`)
+  })
+})
+
+test('阴性对照（止血动作不被一刀切）：版本错配时用 HOLD 提交决策**必须成功落库**', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const path = await constructMismatchPath(client)
+    await forcePinRubric(client, path.applicationId, path.rubrics.v2)
+    const summary = await computeEvaluationSummaryIn(client, cfg, {
+      application_id: path.applicationId,
+      decision_scope: 'STAGE',
+      interview_id: path.interviewId,
+      as_of: AS_OF,
+    }, NOW) as unknown as Record<string, unknown>
+    const args = await decisionArgsFor(client, path, summary, 'HOLD')
+
+    let outcome: Record<string, unknown> | undefined
+    let failure: Record<string, unknown> | undefined
+    try {
+      outcome = await recordDecisionInTransaction(client, cfg, args, NOW, allowOnce) as unknown as Record<string, unknown>
+    } catch (error) {
+      failure = errorBody(error)
+    }
+    // 产品语义：错配闸门只挡 ADVANCE/REJECT，不挡"暂不决定"；被挡死就是缺口（不得改测试迁就）。
+    assert.equal(
+      failure,
+      undefined,
+      '版本错配时 HOLD 必须能落库（闸门只挡正式结论，不挡止血动作）；实际被挡：'
+        + JSON.stringify(failure),
+    )
+    console.log(`  [HOLD under mismatch] status=${String(outcome?.status)}`
+      + ` result=${String((outcome?.decision as Record<string, unknown> | undefined)?.result)}`)
+    assert.equal(outcome?.status, 'OK')
+    const decision = outcome?.decision as Record<string, unknown> | undefined
+    assert.equal(decision?.result, 'HOLD')
+    assert.equal(await count(client,
+      `select count(*)::int as n from recruitment.decision
+        where tenant_id = $1 and application_id = $2 and decision_scope = 'STAGE'
+          and superseded_by_decision_id is null`,
+      [TENANT, path.applicationId]), 1, 'HOLD 必须真的写入一行 current 决策')
   })
 })
 
