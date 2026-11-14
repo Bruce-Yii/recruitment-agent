@@ -1,10 +1,13 @@
-// recruitment_application_intake —— S6「简历接入」：本地 PDF → 候选人 → 申请。
+// recruitment_application_intake —— S6「简历接入」：本地简历文件 → 候选人 → 申请。
 //
 // **这是本包里唯一会写库的工具。** 写入路径与只读工具刻意分开文件，便于静态扫描
 // （`test/unit/screening-readonly.test.ts` 只对 S7 源码断言"无写语句"）。
 //
 // 一次调用做六件事，全部在**一个** `withActor` 事务里：
-//   1. 读 PDF（复用 `src/tools/converter.ts` 的 `runConverter`，不重复实现）
+//   1. 读材料：**按内容嗅探**判定媒体类型（扩展名不参与），PDF / DOCX 都交给
+//      `src/tools/converter.ts` 的 `runConverter`（读取与字段抽取不重复实现，R1）；
+//      图片 / RTF 等 S6 接不了的内容在**读之前**就明确拒绝，不假装能读
+//      （`assertReadableFile` + `sniffFile` 与 `recruitment_document_read` 同一条路径）
 //   2. 身份观察：只认 phone / email 的规范化精确相等，**姓名不参与判定**
 //      （`docs/16-design-rationale.md` §8「D-46→D-52 身份规则简化到三条」）
 //   3. 候选人：命中就复用，没命中才新建（`identity_status='ACTIVE'`）
@@ -40,12 +43,17 @@ import { parseContractArgs, toParameterSchema, type ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
 import {
-  assertReadablePdf,
-  ConverterPathError,
   runConverter,
   type ConverterOutput,
   type ResolvedConverterConfig,
 } from './converter.ts'
+// 媒体判定复用统一读取层（U1）：`assertReadableFile` 只查**路径**安全（绝对路径 /
+// 存在 / allowed_roots / 非空），`sniffFile` 只按**字节**判格式。两者都不看扩展名，
+// 所以"扩展名是 .pdf 才算简历"这个硬编码不会再出现在 S6 的入口。
+import { assertReadableFile } from '../document/readers/files.ts'
+import { isDocumentReadError } from '../document/readers/errors.ts'
+import { MEDIA_DOCX, MEDIA_PDF } from '../document/readers/media.ts'
+import { sniffFile } from '../document/readers/sniff.ts'
 import {
   closePool,
   createPool,
@@ -97,8 +105,11 @@ const PARAMS: ParamMap = {
     required: true,
     maxLength: 1024,
     description:
-      'Absolute path of a local resume PDF. Must exist and must be inside the configured '
-      + 'allowed_roots (fail-closed: any other path is rejected with FORBIDDEN).',
+      'Absolute path of a local resume file (PDF or DOCX). The media type is sniffed from the file '
+      + 'CONTENT, never from the extension. Must exist and must be inside the configured '
+      + 'allowed_roots (fail-closed: any other path is rejected with FORBIDDEN). Images are rejected '
+      + 'with reason_code=IMAGE_REQUIRES_VISION (S6 has no OCR/vision attribution step); RTF and '
+      + 'other containers are rejected with READER_FAILED(reason_code=UNSUPPORTED_MEDIA).',
   },
   job_id: {
     kind: 'string',
@@ -111,8 +122,8 @@ const PARAMS: ParamMap = {
     kind: 'string',
     maxLength: 400_000,
     description:
-      "Optional: the structuring agent's JSON result for the SAME PDF, as a JSON string (<= 400000 "
-      + 'characters). When present it is validated against the block index of this PDF (the same '
+      "Optional: the structuring agent's JSON result for the SAME material, as a JSON string (<= 400000 "
+      + 'characters). When present it is validated against the block index of this material (the same '
       + 'serialize()/validate() used by recruitment_resume_serialize + recruitment_structure_validate); '
       + 'a rejected result writes nothing. When present the five business fields take their state '
       + 'from this result (converter state is preserved separately). When absent, behavior is unchanged.',
@@ -463,6 +474,14 @@ export interface IntakeMaterial {
   readonly real_path: string
   readonly file_name: string
   readonly byte_size: number
+  /**
+   * **嗅探出来的**媒体类型（`intake_asset.mime_type` 写这个）。
+   *
+   * 为什么必须是嗅探值而不是扩展名：S6 现在收 PDF + DOCX 两种，写死
+   * `'application/pdf'` 会让 DOCX 的材料在库里留下假标签；扩展名本身也不可信
+   * （改个后缀就是"另一种格式"是假的）。
+   */
+  readonly mime_type: string
   readonly output: ConverterOutput
   /** 可自动归并的强标识：**只可能**是 `provenance='native_text'` 的 phone/email（D-67）。 */
   readonly strong: readonly StrongId[]
@@ -576,8 +595,14 @@ function identityEvidenceOf(entry: ConverterFieldEntry | undefined): IdEvidence[
  * 把 converter 结果整理成待落库的材料（纯函数，除了 `statSync` 的字节数）。
  * @param realPath - 已通过 allowed_roots 校验的真实路径。
  * @param output - converter 输出。
+ * @param mimeType - 嗅探到的媒体类型；省略时按历史口径记 PDF
+ *   （只有直接构造 converter 输出的单测走这条默认，真实入口 `execute()` 一定显式传）。
  */
-export function buildMaterial(realPath: string, output: ConverterOutput): IntakeMaterial {
+export function buildMaterial(
+  realPath: string,
+  output: ConverterOutput,
+  mimeType?: string,
+): IntakeMaterial {
   const fields = (output.fields ?? {}) as Readonly<Record<string, ConverterFieldEntry>>
   const observation = observeIdentity(fields, output.screening?.identity_merge_eligible)
   const sha = output.meta?.source_sha256 ?? ''
@@ -592,6 +617,7 @@ export function buildMaterial(realPath: string, output: ConverterOutput): Intake
     real_path: realPath,
     file_name: name,
     byte_size: statSync(realPath).size,
+    mime_type: mimeType ?? MEDIA_PDF,
     output,
     strong: observation.strong,
     weak: weakFromConverter(fields, observation.blocked),
@@ -1794,12 +1820,14 @@ async function insertIntakeAsset(
   const { rows } = await client.query<{ id: string }>(
     `insert into recruitment.intake_asset
        (tenant_id, intake_record_id, file_name, mime_type, byte_size, sha256, storage_ref, validation_status)
-     values ($1, $2, $3, 'application/pdf', $4, $5, $6, 'VALID')
+     values ($1, $2, $3, $4, $5, $6, $7, 'VALID')
      returning id`,
     [
       tenantId,
       intakeRecordId,
       material.file_name,
+      // 媒体类型来自**嗅探**（PDF / DOCX），不写死 application/pdf。
+      material.mime_type,
       material.byte_size,
       material.sha256,
       // 不把本机绝对路径写进库：材料是内容寻址的，原件不复制、不搬动（R7 最小化留存）。
@@ -2073,24 +2101,109 @@ function assemble(input: {
   }
 }
 
-/** 路径/读取层的失败 → 契约错误（消息里不出现手机号/邮箱/正文）。 */
-function toPathError(error: unknown): never {
-  if (error instanceof ConverterPathError) {
+/** 一份通过入口校验的材料来源。 */
+export interface IntakeSource {
+  /** 已 realpath 的绝对路径（子进程只拿这个）。 */
+  readonly real_path: string
+  /** **嗅探出来的**媒体类型（不是扩展名声明的那个）。 */
+  readonly media_type: string
+}
+
+/**
+ * 入口判定：路径安全 + 内容嗅探 + S6 能否接这种媒体。
+ *
+ * 规则只有一条：**按内容判，不按扩展名**。`sniffFile()` 已经把 PDF / DOCX / PNG /
+ * JPEG 分出来了，本函数只决定 S6 接不接：
+ *   * `pdf` / `docx` → 接（两者都走同一个 converter，字段抽取与 provenance 口径一致）；
+ *   * `png` / `jpeg`  → **明确拒绝**：S6 没有 OCR/视觉归属步骤，收下一张图就等于
+ *     拿"读不出的文字"去猜"这是谁"；
+ *   * 其它字节（RTF / 旧 OLE Office / xlsx / pptx / 未知）→ 由 `sniffFile()` 抛
+ *     `UNSUPPORTED_MEDIA`，消息里带真实字节数、前 8 字节 hex 与声明扩展名。
+ *
+ * @param requested - 模型传入的路径（未校验）。
+ * @param cfg - converter 配置（allowed_roots 是唯一的可读边界）。
+ * @returns 可交给 converter 的真实路径 + 嗅探到的媒体类型。
+ */
+export async function resolveIntakeSource(
+  requested: string,
+  cfg: ResolvedConverterConfig,
+): Promise<IntakeSource> {
+  const file = assertReadableFile(requested, cfg)
+  const sniff = await sniffFile(file.real_path)
+  switch (sniff.format) {
+    case 'pdf':
+      // 媒体类型用契约常量而不是 `sniff.media`：S6 落库的 `mime_type` 要与
+      // `src/document/contracts` 的 `MEDIA_TYPES` 逐字一致，避免两处各写一个字符串。
+      return { real_path: file.real_path, media_type: MEDIA_PDF }
+    case 'docx':
+      return { real_path: file.real_path, media_type: MEDIA_DOCX }
+    case 'png':
+    case 'jpeg':
+      throw contractError('READER_FAILED', {
+        reason_code: 'IMAGE_REQUIRES_VISION',
+        message: '这份材料是图片，S6 不能从图片判定身份：本工具没有 OCR / 视觉归属步骤，'
+          + '任何从图片里读出来的 phone/email 都只能是 weak（不得自动归并）。'
+          + '先用能产出 native_text 的原件（PDF / DOCX），或走 vision_read 由人工确认。',
+        detail: { sniffed_media: sniff.media, byte_size: sniff.bytes },
+      })
+    default: {
+      // 类型上不可达：sniff 只返回上面四种。运行时兜底，防止将来新增格式却忘了这里的判定。
+      const unreachable: never = sniff.format
+      throw contractError('READER_FAILED', {
+        reason_code: 'UNSUPPORTED_MEDIA',
+        message: `S6 不接这种媒体：${String(unreachable)}`,
+        detail: { sniffed_media: sniff.media },
+      })
+    }
+  }
+}
+
+/**
+ * 读取层的失败 → 契约错误（消息里不出现手机号/邮箱/正文）。
+ *
+ * 分三类，对应三种"为什么读不了"（`docs/11 §11.3` 失败可归因）：
+ *   * **路径**（不存在 / 越界 / 不是普通文件）：NOT_FOUND / FORBIDDEN / INVALID_ARGS；
+ *   * **媒体**（RTF、旧 .doc、图片、未知字节）：READER_FAILED + 原 `DocumentReadError`
+ *     的 code 作 `reason_code`（`UNSUPPORTED_MEDIA` / `IMAGE_REQUIRES_VISION`），
+ *     不冒充"文件损坏"；
+ *   * **converter 子进程**失败（PDF/DOCX 解不开、超时）：READER_FAILED(CONVERTER_FAILED)。
+ */
+function toIntakeReadError(error: unknown): never {
+  // 已经是契约错误（例如 `resolveIntakeSource()` 对图片的明确拒绝）：
+  // 逐字抛出，**不要**再包一层 —— 否则 `IMAGE_REQUIRES_VISION` 会被改写成
+  // `CONVERTER_FAILED`，把一个"格式我们不收"说成"子进程读崩了"。
+  if (error instanceof RecruitmentToolError) throw error
+  if (isDocumentReadError(error)) {
     const code: ContractErrorCode = error.code === 'FORBIDDEN'
       ? 'FORBIDDEN'
       : error.code === 'NOT_FOUND'
         ? 'NOT_FOUND'
         : 'INVALID_ARGS'
-    throw contractError(code, {
-      reason_code: error.code === 'FORBIDDEN'
-        ? 'PATH_OUTSIDE_ALLOWED_ROOTS'
-        : error.code === 'NOT_FOUND'
-          ? 'FILE_NOT_FOUND'
-          : 'PATH_INVALID',
+    if (error.code === 'FORBIDDEN' || error.code === 'NOT_FOUND' || error.code === 'INVALID_ARGS') {
+      throw contractError(code, {
+        reason_code: error.code === 'FORBIDDEN'
+          ? 'PATH_OUTSIDE_ALLOWED_ROOTS'
+          : error.code === 'NOT_FOUND'
+            ? 'FILE_NOT_FOUND'
+            : 'PATH_INVALID',
+        message: error.message,
+      })
+    }
+    if (error.code === 'EMPTY_FILE') {
+      throw contractError('INVALID_ARGS', { reason_code: 'EMPTY_FILE', message: error.message })
+    }
+    throw contractError('READER_FAILED', {
+      reason_code: error.code,
       message: error.message,
+      detail: { reader_code: error.code },
     })
   }
-  throw error
+  // 只剩 converter 子进程这一条：execFile 失败（非 DocumentReadError）。
+  throw contractError('READER_FAILED', {
+    reason_code: 'CONVERTER_FAILED',
+    message: 'converter 子进程读取失败（文件损坏/加密/超时）',
+    detail: { error: error instanceof Error ? error.message.slice(0, 300) : 'unknown' },
+  })
 }
 
 /**
@@ -2101,7 +2214,9 @@ export function createApplicationIntakeTool(cfg: IntakeToolConfig): ReadonlyTool
   return {
     name: TOOL_NAME,
     description:
-      'S6 resume intake. Reads one local resume PDF, resolves the candidate by exact normalized '
+      'S6 resume intake. Reads one local resume file (PDF or DOCX; the media type is sniffed from the '
+      + 'CONTENT, so the extension never decides whether a file is accepted), resolves the candidate '
+      + 'by exact normalized '
       + 'phone/email only (names are never used for identity), and reports THREE independent states: '
       + '(1) application_action=CREATED|REUSED — the application identity is (candidate, job) while '
       + 'lifecycle_status=ACTIVE, never the file hash, so a new material for the same candidate+job '
@@ -2111,9 +2226,11 @@ export function createApplicationIntakeTool(cfg: IntakeToolConfig): ReadonlyTool
       + 'version now in effect, which application.resume_version_id points at. A byte-identical '
       + 'replay returns REUSED/UNCHANGED and writes nothing. '
       + 'If phone and email are both unreadable it refuses with BLOCKED_BY_REVIEW and writes nothing. '
+      + 'Only a native_text phone/email from the reader may auto-merge; OCR / agent-read values stay '
+      + 'weak (BLOCKED_BY_REVIEW), which is unaffected by the accepted-file-format list. '
       + 'It never merges candidates. Writes only through SET LOCAL recruitment.actor_id. '
-      + 'Optionally accepts structured_json (the structuring agent result for the SAME PDF): it is '
-      + 'validated against this PDF block index, rejected results write nothing (old facts untouched), '
+      + 'Optionally accepts structured_json (the structuring agent result for the SAME material): it is '
+      + 'validated against this material block index, rejected results write nothing (old facts untouched), '
       + 'and accepted results set the five business fields state while preserving converter_state.',
     parameters: toParameterSchema(PARAMS),
     output: {
@@ -2151,23 +2268,23 @@ export function createApplicationIntakeTool(cfg: IntakeToolConfig): ReadonlyTool
           detail: { path: requested },
         })
       }
-      let realPath: string
+      let source: IntakeSource
       try {
-        realPath = assertReadablePdf(requested, cfg.converter)
+        source = await resolveIntakeSource(requested, cfg.converter)
       } catch (error) {
-        toPathError(error)
+        toIntakeReadError(error)
       }
       let output: ConverterOutput
       try {
-        output = await runConverter(cfg.converter, realPath)
+        output = await runConverter(cfg.converter, source.real_path)
       } catch (error) {
         throw contractError('READER_FAILED', {
           reason_code: 'CONVERTER_FAILED',
-          message: 'converter 子进程读取失败（PDF 损坏/加密/超时）',
+          message: 'converter 子进程读取失败（文件损坏/加密/超时）',
           detail: { error: error instanceof Error ? error.message.slice(0, 300) : 'unknown' },
         })
       }
-      let material = buildMaterial(realPath, output)
+      let material = buildMaterial(source.real_path, output, source.media_type)
       // 可选：消费 Agent 的结构化结果。**必须在开事务之前**完成校验，
       // 这样被拒的结构化结果一行都不写（与身份拒绝同一口径）。
       if (args.structured_json !== undefined) {
