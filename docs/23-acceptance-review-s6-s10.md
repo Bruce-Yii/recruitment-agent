@@ -21,6 +21,13 @@
 | 2 | **S8/S10 人机闸门未实现**：`interview_schedule` / `scorecard_submit` 没有 `ctx.approval`，只校验配置 actor 是 `HUMAN` | Agent 可以「以 HR 103 的身份」写面评与排期；本窗口已在回滚事务里实测 **无 approval 写入成功** |
 | 3 | **S7 的 `decision(scope='SCREENING')` 无写入路径**：`recruitment_decision_record` 的 scope 只有 `STAGE/FINAL`，传 `SCREENING` 直接 `DECISION_SCOPE_NOT_S10` | docs/18 Golden Path 第 4 步写的正是 `screening_evaluate → decision_record(SCREENING)`，S7→S8 的「人决定」事实无处落库，链路在 S7 断开 |
 
+> **第二轮复验更新（2026-11-14 07:33 起，修复后；完整证据见 §8）。**
+> 修复 lane 已提交 `a8d3eea`（S8/S10 闸门）、`77c881b`（DB 超时）、`5e4c7c8`（approval 120s 超时）、`6d253f4`（S7 决策 + 23P01 + D-95 v2 + material）。
+> 本窗口独立复跑后：**S7 决策路径、S8/S10 人机闸门、23P01 映射、D-95 v2、material 恢复标记 均转 PASS**；
+> **S6 身份闸门修复仍是「未提交 WIP」（行为已实测修复，但不可签收）**；
+> **S8 四 intent、S3 批准入口、真实简历门槛、阶段推进、端到端 仍未闭合**。
+> 逐项结论与未闭合清单见 **§8**（第一轮的 706 行内容作为历史记录保留，不覆盖）。
+
 ---
 
 ## 1. 审查对象与证据基线
@@ -704,3 +711,254 @@ ca5a24d feat(document): 恢复执行器 + 真实语料回归门槛 + 错误可�
 **这轮不是「功能没写完」，而是「每个工具单看都像真的，连起来有四处不变量是假的」：**
 **身份来源没守住、S7 决策没地方落、S8/S10 的闸门没接、以及全链路没有一条真实申请从 S6 走到 S10。**
 **修的顺序：先闸门（B3/B1），再 S7 决策（B2），再决策正确性（B4/B5），最后才是真实语料与端到端（B7/B8）。**
+
+---
+
+## 8. 第二轮复验（修复后，2026-11-14 07:33 起）
+
+> 触发：本窗口第一轮报告（本文件 §0–§7）提交后，修复 lane 于 2026-11-14 06:xx 提交了 4 个修复 commit。
+> 本轮**不接受修复方自述**，全部用本窗口自己的命令复跑 + 读 diff 得出；未 commit、未 push、未切分支。
+> **第一轮内容作为历史记录保留**；本节是当前状态。
+
+### 8.1 本轮基线（会变，已现场探测）
+
+| 项 | 值 |
+|---|---|
+| 分支 | `feat/unified-document-intake` |
+| **HEAD** | **`6d253f4`**（相对第一轮 `9479f52` 新增 5 个 commit） |
+| 新增修复 commit | `a8d3eea` fix(gates)：S8/S10 人机闸门 / `77c881b` fix(db)：statement_timeout + idle_in_transaction / `5e4c7c8` fix(gates)：approval 120s 超时 / `7f79bf4` docs：第一轮验收报告 + D-102 / `6d253f4` feat(decision)：S7 决策 + 23P01 + D-95 v2 + material |
+| **工作树（未提交，另一 lane 在写，非本窗口）** | `M converter/src/pdf_layout.py`、`M converter/src/pdf_reader.py`、`M converter/src/resume_fields.py`、`M converter/tests/*`、`M docs/11-pdf-acceptance-criteria.md`、**`M dsh/dsh-recruitment/src/tools/application-intake.ts`（S6 身份闸门修复）**、`M test/unit|integration/application-intake-structured.test.ts`、`M test/regression/real-corpus.test.ts`、`?? test/integration/intake-identity-gate.test.ts`（7 条新回归） |
+| 本轮未改 | 本窗口只读；**没有 commit/push/切分支**；未 stash、未建 worktree（避免碰另一 lane 在写的文件） |
+
+**因此本轮有一个关键证据边界**：`HEAD=6d253f4` 是干净可引用的提交，但 **S6 身份闸门修复只存在于未提交的工作树**；并且全量测试跑的是「HEAD + 另一 lane 的未提交改动」的混合树，不是单一 commit 快照。凡依赖工作树的结论，下面都标「WIP」。
+
+### 8.2 复跑证据（命令原文 + 真实输出）
+
+#### A. 测试四数（R3）
+
+```powershell
+cd "D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment"
+$env:RECRUITMENT_DB_PASSWORD='123456'; node --test
+```
+```text
+ℹ tests 820 / ℹ pass 820 / ℹ fail 0 / ℹ cancelled 0 / ℹ skipped 0 / ℹ todo 0
+[status: completed, exit code: 0]
+```
+> 第一轮同命令在 `c2762a2` 是 724/724、在 `9479f52` 是 766/766；本轮 820（含闸门/决策/材料/身份回归）。
+> **注意**：该 820 是「HEAD 6d253f4 + 未提交 WIP」的工作树结果，**不是**单一 commit 快照；复审必须在干净快照复跑。
+
+闸门/决策相关的定点测试：
+
+```powershell
+node --test test/unit/evaluation-scorecard-submit.test.ts test/unit/interview-schedule.test.ts test/unit/evaluation-decision-record.test.ts
+# tests 98 / pass 98 / fail 0 / skipped 0
+
+node --test test/integration/intake-identity-gate.test.ts   # WIP 新增文件
+# tests 7 / pass 7 / fail 0 / skipped 0
+```
+
+#### B. 注册表与未配置替身（R2）
+
+```text
+REGISTERED=19
+UNCONFIGURED=19  NOT_CONFIGURED=19/19
+```
+19 个工具名与第一轮一致（没有新增/删除工具）；`index.ts` 本轮 diff 只有 4 行（把 approval 传给 schedule/scorecard、改 decision 描述）。
+
+#### C. S8/S10 人机闸门（回滚事务内，DB 最终零变化）
+
+```text
+SCORECARD_APPROVAL undefined     {"ok":false,"code":"FORBIDDEN/APPROVAL_UNAVAILABLE","before":2,"after":2}
+SCORECARD_APPROVAL rejected      {"ok":false,"code":"FORBIDDEN/APPROVAL_NOT_GRANTED","before":2,"after":2}
+SCORECARD_APPROVAL timeout       {"ok":false,"code":"FORBIDDEN/APPROVAL_NOT_GRANTED","before":2,"after":2}
+SCORECARD_APPROVAL allowed-once  {"ok":true,"code":"OK","before":2,"after":3}   ← 事务随后 ROLLBACK
+SCHEDULE_APPROVAL  undefined     {"ok":false,"code":"FORBIDDEN/APPROVAL_UNAVAILABLE","before":6,"after":6}
+SCHEDULE_APPROVAL  rejected      {"ok":false,"code":"FORBIDDEN/APPROVAL_NOT_GRANTED","before":6,"after":6}
+SCHEDULE_APPROVAL  allowed-once  {"ok":true,"code":"OK","before":6,"after":7}   ← 事务随后 ROLLBACK
+MAKE_APPROVAL_TIMEOUT timeout timeout
+REQUIRE_APPROVAL_TIMEOUT FORBIDDEN/APPROVAL_NOT_GRANTED
+```
+
+「闸门位置」是否符合 D-79（先校验、后问人、失败不打扰人）：
+
+```text
+GATE_PLACEMENT {"callsAfterFirst":1,
+  "conflictRes":"CONFLICT_SLOT/INTERVIEWER_BUSY","callsAfterConflict":1,
+  "scRes":"INVALID_ARGS/DIMENSION_COVERAGE_INCOMPLETE","scorecardApprovalCalls":0}
+SCHEDULE_REPLAY {"firstReplayed":false,"secondReplayed":true,"callsAfterFirst":1,"approvalCallsTotal":1,
+  "invalid":"INVALID_ARGS/MISSING_REQUIRED","invalidApprovalCalls":0}
+SCORECARD_REPLAY {"firstReplayed":false,"secondReplayed":true,"callsAfterFirst":1,"approvalCallsTotal":1}
+```
+→ 冲突/参数非法/幂等重放**都不会弹人**；只有真正要写库且全部业务校验通过才问。与 D-95「人只决策一次」一致。
+
+**走 `index.ts` 真实注册路径**（`apply()` 的 ctx 无 approval 服务 = headless）：
+
+```text
+recruitment_scorecard_submit    -> FORBIDDEN: {"reason_code":"APPROVAL_UNAVAILABLE","detail":{"approval":"unavailable","tool":"recruitment_scorecard_submit"}}
+recruitment_interview_schedule  -> FORBIDDEN: {"reason_code":"APPROVAL_UNAVAILABLE","detail":{"approval":"unavailable","tool":"recruitment_interview_schedule"}}
+DB_COUNTS before={"scorecard":2,"interview":6} after={"scorecard":2,"interview":6}
+```
+→ 第一轮的 P0-03（无 approval 也能写）**已闭环**。
+
+#### D. S7 决策落库（`decision_scope='SCREENING'`，回滚事务）
+
+```text
+SCREENING ok: stage=S7 scope=SCREENING decided_by=…103 hasGate=false
+             labels={provenance:FIXTURE, trigger:MANUAL, connection:CONNECTED}   ← R4：无 LIVE 证据不冒充
+v1 hash + confirmation_text   -> DECISION_REQUIRES_HUMAN/CONFIRMATION_TEXT_MISMATCH   ← v2 强制生效
+interview_id 给了              -> INVALID_ARGS/SCREENING_SCOPE_NO_INTERVIEW
+summary_digest 给了            -> INVALID_ARGS/SCREENING_SCOPE_NO_SUMMARY
+ADVANCE 缺 SCREENING_EVALUATION-> INVALID_ARGS/BASIS_REF_EMPTY
+同 scope 第二次（无 supersedes）-> ALREADY_DECIDED/SCOPE_ALREADY_DECIDED
+
+SCREENING_REJECT_NO_KEY    -> INVALID_ARGS/DECISION_REASON_NO_DIMENSION   ← DC-18/§17.1 S7-07
+SCREENING_REJECT_WITH_KEY  -> ok S7/SCREENING
+SCREENING_HOLD_NO_EVAL     -> ok S7/SCREENING                            ← 安全方向可 0 条 SCREENING_EVALUATION
+```
+→ 第一轮的 P0-02（S7 人决定无落库路径）**已闭环**。
+
+#### E. 23P01 / 23505 / D-95 兼容
+
+```text
+23P01_MAP ALREADY_DECIDED/SCOPE_ALREADY_DECIDED
+23505_MAP ALREADY_DECIDED/SCOPE_ALREADY_DECIDED
+S10_V1（无原话、四键 v1 hash）-> ALREADY_DECIDED（STEP1 通过，STEP3 拦住；v1 旧口径仍可用）
+```
+
+#### F. D-95 v2 / material / S6 身份闸门
+
+```text
+isHard(pdf_text_recovered_by_ocr)=false
+hardCodes=[]
+mapParseStatus(complete,1000,[recovered])= {"status":"PARSED"}
+isHard(pdf_text_encoding_unread)=true          ← 未恢复的仍 HARD，未被降级
+
+# converter（工作树 WIP）字段 provenance 跟随块：
+ocr blocks      -> phone.provenance=ocr   merge_eligible=[]
+native blocks   -> phone.provenance=native_text merge_eligible=['phone','email']
+missing prov.   -> phone.provenance=unknown merge_eligible=[]
+
+# S6 身份闸门（工作树 WIP）：
+converter native_text -> strong=["phone","email"]  decision=CREATE_CANDIDATE
+converter ocr        -> strong=[] weak=["phone:ocr","email:ocr"]  decision=REVIEW MATERIAL_ATTRIBUTION_UNKNOWN
+converter agent_read -> strong=[] weak=["phone:agent_read","email:agent_read"] decision=REVIEW
+converter unknown    -> strong=[] weak=["phone:unknown","email:unknown"] decision=REVIEW
+structured overlay（agent 读出 phone/email）-> strong=[] weak=["phone:agent_read","email:agent_read"] decision=REVIEW
+```
+→ 第一轮的 P0-01 在 WIP 工作树上**行为已修复**；但 `application-intake.ts` / `resume_fields.py` / 新测试均**未提交**，不能签收。
+
+#### G. DB 实况（本轮复跑）
+
+```text
+decision:  STAGE/S10 = 1；SCREENING = 0；FINAL = 0
+scorecard=2；interview=6（stage S8=4、S9=2）；application=9
+application 同时有材料+rubric = 0 条（with_material=7，with_rubric=2）
+candidate=8；intake_asset=8；schema_migration=10（0001..0010）
+```
+→ **没有真实提交的 SCREENING 决策**、**没有一条申请同时具备材料与 rubric**：S7 决策目前只在回滚事务与测试里被证明，端到端仍未发生。
+
+### 8.3 逐项复验（12 个范围内工具 + connector + 链路）
+
+| # | 项 | 第一轮 | **第二轮判定** | 证据 |
+|---|---|---|---|---|
+| 1 | `recruitment_application_intake`（S6） | BLOCKED | **BLOCKED（WIP 已修，未提交）** | 行为探针全过（8.2-F）；但 `git status` 显示 `M src/tools/application-intake.ts`、`M converter/src/resume_fields.py`、`?? test/integration/intake-identity-gate.test.ts` |
+| 2 | `recruitment_screening_evaluate`（S7） | BLOCKED | **PASS**（工具只读不变；S7 决策路径由 `decision_record` 补齐） | 第一轮真实调用仍有效；本轮 §8.2-D 证明 `decision_record(SCREENING)` 可写；残余见 N1 |
+| 3 | `recruitment_job_create`（S3） | BLOCKED | **BLOCKED**（未变） | `index.ts` 无 rubric approve 工具；`decideRubricApproval` 仍只被 `manual/job-line/approve-rubric.mjs` 调用 |
+| 4 | `recruitment_job_get`（S3） | PASS | **PASS** | 注册表/全量测试；契约字段未变 |
+| 5 | `recruitment_interview_schedule`（S8） | BLOCKED | **FAIL**（CREATE+闸门 PASS；D-62 四 intent 仍只有 `CREATE`） | 闸门证据 8.2-C；`intent` enum 仍 `['CREATE']`（`interview-schedule.ts:97/305`） |
+| 6 | `recruitment_interview_get`（S8） | PASS | **PASS** | 未改动 |
+| 7 | `recruitment_transcript_import`（S9） | PASS/风险 | **PASS（MANUAL/DEMO）**；Feishu LIVE 仍 BLOCKED | 未改动；`src/` 无任何工具 import `connectors/feishu/**` |
+| 8 | `recruitment_transcript_read`（S9） | PASS | **PASS** | 未改动 |
+| 9 | `recruitment_scorecard_submit`（S10） | BLOCKED | **PASS** | 8.2-C：unavailable/rejected/timeout 零写入；allowed-once 才写；重放/非法不弹人；execute 路径 fail closed |
+| 10 | `recruitment_evaluation_summarize`（S10） | PASS | **PASS** | 未改动 |
+| 11 | `recruitment_decision_record`（S10） | BLOCKED | **PASS**（S10 回归 v1 兼容；S7 新增路径；23P01/v2 已验证） | 8.2-D/E；残余 N1/N2 |
+| 12 | `recruitment_candidate_get` | PASS | **PASS**（标签缺口仍在 N5） | 未改动 |
+| — | Feishu connector | BLOCKED | **BLOCKED**（未接线；只被单测引用） | `src/` grep 只命中 `contract.ts:94` 的常量，无工具 import |
+| — | S6→S7 链路 | BLOCKED | **PASS（回滚事务级）** | 8.2-D：同一条申请（seedScenario）在 S6 材料 + rubric + SCREENING 决策内闭环 |
+| — | S6→S10 全链路 | BLOCKED | **BLOCKED** | DB：没有一条申请同时具备材料+rubric；`SCREENING` 决策 0 条；阶段推进无工具（N4/N8） |
+
+**计数（12 个工具）**：**PASS 9 / FAIL 1（schedule 契约四 intent）/ BLOCKED 2（intake 未提交 WIP、job-create 批准入口）**；另 Feishu connector = BLOCKED，S6→S10 端到端 = BLOCKED。
+
+### 8.4 第一轮问题：修复判定
+
+| 编号 | 第一轮问题 | 第二轮判定 | 证据 |
+|---|---|---|---|
+| P0-01 | S6 身份来源闸门被绕过 | **BLOCKED（修复未提交）** | 行为已实测修复（8.2-F）；`git status` 未提交 |
+| P0-02 | S7 的 SCREENING 决策无写入路径 | **PASS** | 8.2-D；`contracts/evaluation/decision-rules.md §17.1` 已回抄；`tool-contracts.md` 的 `decision_scope` 已改 |
+| P0-03 | S8/S10 人机闸门未实现 | **PASS** | 8.2-C；`index.ts:341/361` 已传 approval；两工具 120s 超时、fail closed |
+| P1-04 | 0008 的 23P01 未映射 | **PASS** | `translateWriteError` 23P01→`ALREADY_DECIDED`（8.2-E）；`execute()` 的 catch 再翻一次（`decision-record.ts:3281-3285`） |
+| P1-05 | `pdf_text_recovered_by_ocr` 在 S6/S7 当 HARD | **PASS** | 8.2-F；`material.ts` 加 `RECOVERY_SOFT_CODES` + 单测 |
+| P1-06 | D-95 原话未进哈希 / 契约无 `IN_CHAT` | **PASS** | v2 强制：v1+原话被拒（8.2-D）；`decision-rules.md §17.2` 已回抄；v1 旧口径仍可用（8.2-E） |
+| P1-07 | S8 四 intent 未实现 | **FAIL（未修）** | enum 仍只有 `CREATE` |
+| P1-08 | 真实简历 S6→S7 门槛未达成 | **BLOCKED（未修）** | DB：8 assets、7 S6、0 SCREENING；evidence README 仍写「结构化+入库+初筛 还没做」 |
+| P1-09 | 阶段推进无入口 | **BLOCKED（未修）** | `src/tools/**` 无更新 `application.current_stage_code` 的写路径（grep 0 命中） |
+| P2-01 | docs/18 与事实不符 | **FAIL（仅修了第 60 行）** | `docs/18:23` 40 张表、`:75` DB 40 表、`:81` 18 个工具、`:85` S8 交付、`:87` 决策落库 BLOCKED、`:90` 仍写 18 个工具 |
+| P2-02 | S3 人类批准无产品入口 | **BLOCKED（未修）** | 同上 row 3 |
+| P2-03 | 写工具硬编码 `LIVE` / candidate_get 无三轴标签 | **FAIL（未修）** | `interview-schedule.ts:1071/1671`、`job-create.ts:1036`；`candidate-get.ts` 无 labels |
+| P2-04 | Feishu connector 未接线 / LIVE 依赖自述回执 | **BLOCKED（未修）** | 同上 connector 行；`transcript-import.ts:48/782-788` |
+| P2-05 | CONTRACT.md/README 未回抄 | **FAIL（未修）** | `CONTRACT.md:6/12/77/98` 仍是「三个工具/stub」；`README.md:3` 仍是「七个工具」 |
+| P2-06 | DB 里 2 条 `interview.stage_code='S9'` | **FAIL（未修）** | `select stage_code,count(*) from interview` → S8=4、S9=2 |
+| P2-07 | 未配置替身 schema 开放 | **FAIL（未修，低）** | `index.ts:214/249/252` 仍 `additionalProperties: true` |
+
+### 8.5 仍未闭合的问题清单（按优先级）
+
+| # | 项 | 严重度 | 现场证据 | 最短路径 |
+|---|---|---|---|---|
+| N1 | **S6 身份闸门修复未提交** | **P0 / BLOCKED** | `git status`：`M application-intake.ts`、`M resume_fields.py`、`?? intake-identity-gate.test.ts`；行为探针已过 | 该 lane 提交后，本窗口复跑：`node --test test/integration/intake-identity-gate.test.ts`（7/7）+ 全量 + 8.2-F 探针，再转 PASS |
+| N2 | **S7 决策的 `evaluation_digest` 不可复算** | **P1 / 已知残余** | `decision-record.ts:225-227` 只校验格式与 binding；`§17.1 S7-03` 自述「本工具无法复算」；`screening_evaluate` 不输出 `basis_refs`，`reasons_digest` 需调用方自算 | 让 `screening_evaluate` 直接输出 `basis_refs`（含 `evaluation_digest`/`reasons_digest`）并让 `decision_record` 复算比对；否则 R3/INV-9 的「可回溯」在此层只是自述 |
+| N3 | **`SCREENING_DECISION.basis_refs` 嵌套键被 parser 拒** | P1 / 已知残余 | `BASIS_KEYS.SCREENING_DECISION`（`decision-record.ts:219`）只允许 `id/result/decided_at`；`§17.1` 自述 `hasScreeningRejectionBasis` 成死代码 | 补嵌套 `basis_refs` 的 schema + DC-27 反证路径测试 |
+| N4 | **S6→S10 端到端未发生** | **P0 / BLOCKED** | DB：`both_bound=0`、`SCREENING=0`、7 条 S6 申请全部停在 S6 | 选定 1 条申请，按 `application_id` 跑完 8 步并留 DB 读回；阶段推进用受控命令或明确标注手工 |
+| N5 | **真实简历门槛未达** | **P0 / BLOCKED** | DB 8 assets；`evidence/.../real-resume-gate/README.md:66-69` 自述 intake/screening 未做 | 按 docs/21 §8 跑 ≥20 份，报四数 + ≥5 份可解释抽样 |
+| N6 | **S8 四 intent 未实现** | P1 / FAIL | `intent enum=['CREATE']` | 实现 `RESCHEDULE/CANCEL/WITHDRAW_INTERVIEWER` 或把 v1.0 子集写进契约/台账并改 docs/18 |
+| N7 | **S3 rubric 批准无产品入口** | P1 / BLOCKED | 无注册工具；仅 `manual/job-line/approve-rubric.mjs` | 注册人类通道工具或明确 CLI 运维口并回抄 |
+| N8 | **阶段推进无入口** | P1 / BLOCKED | `src/tools/**` 无 `current_stage_code` 更新 | 补受控推进命令（或明确 v1.0 不做） |
+| N9 | **Feishu connector 未接线** | P1 / BLOCKED | `src/` 无工具 import connector | 真实 provider 回读（独立 LIVE gate）或保持诚实 BLOCKED |
+| N10 | **标签二义性/缺三轴** | P2 / FAIL | schedule/job-create 硬编码 LIVE；candidate_get 无 labels | 契约钉死 fixture 租户口径；candidate_get 补三轴或书面豁免 |
+| N11 | **docs/18 / CONTRACT.md / README 口径漂移** | P1 / FAIL | 8.4 P2-01/P2-05 | 集成时一次性回抄（工具数 19、表 47、S8 子集、决策路径、D-95） |
+| N12 | **approval 在事务内等待**（D-101 记债） | P2 / 债务 | 两个工具的 approval 在业务校验后、写库前，最长 120s 持事务；`pool.ts` 加 `idle_in_transaction_session_timeout=300s` 兜底 | 按 D-101 触发条件做两阶段重构（触发条件已写死） |
+| N13 | **DB 数据卫生**：2 条 `interview.stage_code='S9'` | P2 / FAIL | 8.2-G | 修 seed 脚本；契约明确 `interview.stage_code` 合法集合 |
+| N14 | **未配置替身开放 schema** | P3 / FAIL | `index.ts:214/249/252` | 改 `additionalProperties:false` |
+| N15 | **宿主会话/浏览器验收未复跑** | 证据边界 | 本轮只做到 `apply()` 注册 + 定义执行；没有 Web/headless 会话级工具调用；approval 的真人点击无法在本窗口完成 | 复审按 D-88 起 Web + 浏览器，真人点 Allow，DB 读回 + F5 |
+
+**本轮最严重的 3 个未闭合项**：
+1. **N1 S6 身份闸门修复未提交**（唯一剩余 P0，且它守的是「会不会挂错人」）；
+2. **N4/N5 端到端与真实简历门槛仍未发生**（S7 决策现在能写，但只写在回滚事务/测试里）；
+3. **N2 S7 决策的 evaluation_digest 不可复算**（S7 的「证据」目前是调用方自述 + 绑定核对，不是可复算的投影）。
+
+### 8.6 本轮证据边界（诚实说明）
+
+1. 全量 820 测试跑在「HEAD `6d253f4` + 另一 lane 未提交改动」的工作树上，**不是单一 commit 快照**；数字只能用于本轮判断，复审需在干净快照重跑。
+2. S6 身份闸门的修复、converter 的 provenance 传播、`intake-identity-gate.test.ts` 都在工作树，**未提交**；本轮只证明「行为已修」，不证明「已交付」。
+3. 没有真实提交的 `SCREENING` 决策、没有一条端到端申请；所有 S7/闸门写入均在**回滚事务**内完成（DB 前后行数一致：scorecard 2、interview 6、decision 1）。
+4. 未跑 Web/headless 宿主会话（approval 真人点击本窗口做不到）；R2 严格意义上的「运行中的入口」仍只有 `apply()` 注册 + 定义执行这一层。
+5. 另一 lane 正在改 `converter/**`、`docs/11`、`test/regression`，范围外，本报告不判；若这些改动动了字段 provenance / OCR 兜底，§8.2-F 的结论要重跑。
+
+### 8.7 下一次复审必须重跑
+
+```powershell
+# 0) 记录基线
+git rev-parse HEAD; git status --short
+
+# 1) 全量四数（必须在干净或明确记录的工作树上）
+cd dsh\dsh-recruitment; $env:RECRUITMENT_DB_PASSWORD='123456'; node --test
+
+# 2) 闸门（回滚事务；期望 unavailable/rejected/timeout 零写入、allowed-once 才写）
+#    → 复用本窗口探针逻辑；或跑 test/unit|integration/{evaluation-scorecard-submit,interview-schedule}
+
+# 3) S7 决策（回滚事务）：
+#    SCREENING 成功（S7）+ v1-with-text 拒 + interview/summary 拒 + 缺 SCREENING_EVALUATION 拒 + 重复 ALREADY_DECIDED
+#    → test/integration/evaluation-decision-record.test.ts 已覆盖，仍须本窗口独立探针复核
+
+# 4) 23P01：translateWriteError({code:'23P01',constraint:'uq_decision_current'}) -> ALREADY_DECIDED
+#    + DB 双事务并发插入（后者 COMMIT 应得到 ALREADY_DECIDED，不是裸 23P01）
+
+# 5) D-95 v2：有原话只接受 v2；无原话只接受 v1；改原话/确认人/时间必须 CONFIRMATION_TEXT_MISMATCH
+
+# 6) S6 身份：OCR/agent_read/unknown 只能进 weak，不得进 strong/identity_merge_eligible
+#    （WIP 提交后：node --test test/integration/intake-identity-gate.test.ts）
+
+# 7) material：isHard(pdf_text_recovered_by_ocr)=false；mapParseStatus(complete,N,[recovered])=PARSED
+
+# 8) DB：decision 按 scope（S7 决策提交后应出现 SCREENING/S7 行）；both_bound>0；verify.sql + verify-0006..0010 全 PASS
+```
+
