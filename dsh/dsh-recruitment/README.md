@@ -1,8 +1,19 @@
 # `@recruitment/dsh-recruitment` · 怎么跑、怎么验
 
-七个工具（`recruitment_resume_read` / `_resume_serialize` / `_structure_validate` /
-`_candidate_get` / `_job_get` / **`_application_intake`（S6 写库）** /
-**`_screening_evaluate`（S7 只读）**）。
+**当前注册 19 个工具**（`src/index.ts:414-433`；配置齐/缺两条路径都注册）：
+
+| 阶段 | 工具 |
+|---|---|
+| 简历读 / 解析 | `recruitment_resume_read`、`recruitment_document_read`、`recruitment_resume_serialize`、`recruitment_structure_validate`、`recruitment_page_image`、`recruitment_model_text_merge` |
+| S3 岗位 | `recruitment_job_get`、`recruitment_job_create`、`recruitment_job_update` |
+| S6 接入 | `recruitment_application_intake`、`recruitment_candidate_get` |
+| S7 初筛 | `recruitment_screening_evaluate`（只读；人决定落库走 `recruitment_decision_record`） |
+| S8 面试 | `recruitment_interview_schedule`、`recruitment_interview_get` |
+| S9 转写 | `recruitment_transcript_import`、`recruitment_transcript_read` |
+| S10 评价 / 决策 | `recruitment_scorecard_submit`、`recruitment_evaluation_summarize`、`recruitment_decision_record` |
+
+> 本文 §1–§3 的建库 / 联调步骤与 S6/S7 测试仍是有效口径；S3/S8/S9/S10 的工具契约见
+> `contracts/` 下对应子目录，不在本文件重复。
 
 S6/S7 的规则出处（本包内，不在本文件重复）：
 
@@ -38,9 +49,13 @@ $psql='D:\12412\PostgreSQL\bin\psql.exe'
 $env:PGPASSWORD='123456'; $env:PGCLIENTENCODING='UTF8'
 & $psql -h 127.0.0.1 -U postgres -d postgres -c "create database ra_s6s7;"
 cd D:\12412\dsh工作区\projects\recruitment-agent
-foreach ($f in '0001_init','0002_seed','0003_review_queue','0004_stage_catalog','0005_version_binding','0006_integrity_gaps') {
+# 0001→0010 全链重放（0010 是迁移台账，跳步会 verify-0010 红）
+foreach ($f in '0001_init','0002_seed','0003_review_queue','0004_stage_catalog','0005_version_binding','0006_integrity_gaps','0007_decision_integrity','0008_decision_uniqueness','0009_application_identity','0010_migration_ledger') {
   & $psql -h 127.0.0.1 -U postgres -d ra_s6s7 -v ON_ERROR_STOP=1 -q -f "db\migrations\$f.sql"
   Write-Output "EXIT_$f=$LASTEXITCODE"
+}
+foreach ($v in 'verify-0003','verify-0004','verify-0005','verify-0006','verify-0007','verify-0008','verify-0009','verify-0010','verify') {
+  & $psql -h 127.0.0.1 -U postgres -d ra_s6s7 -v ON_ERROR_STOP=1 -q -f "db\$v.sql"
 }
 ```
 
@@ -69,7 +84,7 @@ node --test "test/unit/*.test.ts"
 $env:RECRUITMENT_DB_PASSWORD='123456'
 node --test "test/integration/*.test.ts"
 
-# 全部（既有 73 条 + 新增）
+# 全部（以本次输出的 tests / pass / fail / skipped 为准；不要引用历史条数）
 node --test
 ```
 
@@ -80,7 +95,11 @@ node --test
 它造的每一条 `candidate` / `application` / `rubric_version` / `approval` / `resume_version`
 都在事务里，跑完即回滚。
 
-### 2.1 单测覆盖什么
+### 2.1 单测覆盖什么（下表是 S6/S7 阶段的代表用例，不是全部）
+
+> 19 个工具的单测还有：`job-create.test.ts`（S3）、`interview-*.test.ts`（S8）、`transcript-*.test.ts`（S9）、
+> `evaluation-*.test.ts` / `evaluation-decision-record.test.ts`（S10）、`application-intake-structured.test.ts`、
+> `vision-fallback.test.ts`（`webServer` 可选注入的守卫）等；以 `test/unit/` 目录实际文件为准。
 
 | 文件 | 守什么 |
 |---|---|
@@ -92,7 +111,10 @@ node --test
 | `screening-readonly.test.ts` | S7 模块图**无** INSERT/UPDATE/DELETE、不 import `withActor` |
 | `output-schema.test.ts` | schema 只用 DSH 支持子集、**没有 `type:null`/type 数组**、输出值**无 null**、required/additionalProperties |
 
-### 2.2 集成覆盖什么
+### 2.2 集成覆盖什么（下表是 S6/S7 阶段的代表用例，不是全部）
+
+> S3/S8/S9/S10 的集成用例在 `test/integration/` 同名文件里（`job-create.test.ts`、
+> `interview-{schedule,get}.test.ts`、`transcript-{import,read}.test.ts`、`evaluation-*.test.ts` 等）。
 
 `intake.test.ts`：幂等（同 `(sha256, job_id)` 不出第二条 application）、IR-N5 写规范形、
 关联≠合并（不写 `candidate_merge`）、`resolve()` 命中 MERGED 档挂到存活档、
@@ -128,12 +150,13 @@ node manual/s6s7-live.mjs [PDF 绝对路径]   # 默认 platform_noise.pdf
 
 ```yaml
 config:
-  converter:            # resume_read / serialize / validate / application_intake 要
+  converter:            # resume_read / document_read / serialize / validate / application_intake / page_image / model_text_merge 要
     python_bin: 'D:\Python3.12.9\python.exe'
     converter_dir: '...\converter'
     allowed_roots: ['...\converter\corpus\synthetic']
     timeout_ms: 60000
-  database:             # application_intake（写）/ screening_evaluate（读）要
+  database:             # 所有查 / 写库工具要：candidate_get / job_* / application_intake / screening_evaluate /
+                        # interview_* / transcript_* / scorecard_submit / evaluation_summarize / decision_record
     host: 127.0.0.1
     port: 5432
     user: postgres
@@ -153,11 +176,12 @@ config:
 
 ## 5. 已知偏差 / 缺口（必须与契约一起读）
 
-1. **错误消息两代并存**（`tool-contracts.md` §4 第 6 条要求显式记录）：
-   stub 三工具仍是 `CONTRACT.md` §2.2 的散文格式；S6/S7 用 `Error: <CODE>: <compact-json>`。
-   理由：改掉旧格式会同时改 3 个已在用的工具与它们的负例断言，且本 lane 无权裁决"统一改"。
-   **接点**：`src/tools/errors.ts` 的 `RecruitmentErrorCode` 已能同时承载两套；真要统一，
-   只需把 `parseArgs` 的抛错换成 `parseContractArgs`。
+1. **错误消息两代并存；D-63 已裁定统一（不是"无权裁决"）**：`docs/17` D-63（`:491-494`）
+   裁定一次性统一为 `Error: <CODE>: <compact-json>`，**不允许两套并存**（R5）。
+   **现状仍未全部切换**：`resume-read` / `candidate-get` / `document-read` / `page-image` /
+   `structure-tools` / `vision-fallback` 仍用 `parseArgs` 的散文格式（`src/tools/args.ts:23-24`），
+   其余工具用 `parseContractArgs`。**接点**：把 `parseArgs` 的抛错换成 `parseContractArgs`，
+   并同步改负例断言（`test/unit/args-contract.test.ts` 当前守着旧格式逐字不变——切换时必须一起改）。
 2. **输出里没有 `null`**（契约里画成 `null` 的字段一律**省略键**）：DSH 校验器不支持
    `type` 数组（`dsh-tools/lib/types/json-schema.js:245`），`null` 会让整次调用
    `INVALID_TOOL_OUTPUT`。判断型的 `tri_state` 因此省略，用 `outcome='NEEDS_JUDGMENT'` 消歧
@@ -177,7 +201,8 @@ config:
    取不到就省略该键。库只校验 `basis_refs` 是 array（`0001_init.sql:1358`）。
 7. **S6 建申请时不钉 `rubric_version_id`**：钉版本是写侧/人工动作（`job-rubric-rules.md` §4.3
    第 3 步），所以新申请的 S7 评估走 `JOB_CURRENT` 并输出 `rubric_pin_required=true` +
-   `warnings: RUBRIC_PIN_REQUIRED`。阶段停在 `S6`（推进到 `S7` 也是一次状态迁移，不由本工具代做）。
+   `warnings: RUBRIC_PIN_REQUIRED`。阶段停在 `S6`（推进到 `S7` 也是一次状态迁移，不由本工具代做；
+   **当前没有任何工具写 `application.current_stage_code`，阶段推进是产品缺口**，见 `docs/23` N8 与 `docs/18 §7`）。
 8. **`manual/harness.manual.mjs` 在本次改动之前就已经跑不绿**（它用旧入参 `resume_id` 调
    `recruitment_resume_read`，且 `apply(ctx)` 不传 config ⇒ 直接 `NOT_CONFIGURED`；A 段还写死
    "恰好 3 个工具"）。本次没有修它（不在本 lane 范围），改用

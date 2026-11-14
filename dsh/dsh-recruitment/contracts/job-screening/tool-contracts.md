@@ -404,14 +404,29 @@ Error: BLOCKED_BY_REVIEW: {"code":"BLOCKED_BY_REVIEW","reason_code":"HUMAN_TASK_
     "verdict": "NEEDS_REVIEW",
     "rubric_version_id": "…", "rubric_payload_hash": "…",
     "resume_version_id": "…", "resume_content_sha256": "…",
+    "provenance": "FIXTURE",
     "reasons_digest": "…",
     "criteria_evaluated": true,
     "counts": { "must_have": 1, "must_have_satisfied": 1, "must_have_unsatisfied": 0,
                 "unreadable": 1, "missing": 0, "indeterminate": 0, "needs_judgment": 0 } },
-  { "kind": "RUBRIC_VERSION", "id": "…" },
-  { "kind": "RESUME_VERSION", "id": "…" }
+  { "kind": "RUBRIC_VERSION", "id": "…", "payload_hash": "…" },
+  { "kind": "RESUME_VERSION", "id": "…" },
+  { "kind": "AUTHORITY", "actor_id": "…", "is_hiring_manager": false }
 ]
 ```
+
+**下面两项不能省**（按旧示例只拼 `SCREENING_EVALUATION + RUBRIC_VERSION + RESUME_VERSION`，
+会被 `recruitment_decision_record` 以 `INVALID_ARGS(BASIS_REF_EMPTY)` 拒绝，`detail.missing_kinds` 缺哪项列哪项；
+`provenance` 缺了不会报错，但会把 LIVE 依据静默记成 `FIXTURE`）：
+
+| 必带项 | 为什么必须带 | 证据 |
+|---|---|---|
+| `AUTHORITY` | `decision_scope='SCREENING'`（S7 写侧）的 `basis_refs` **每次必带** `RUBRIC_VERSION` + `AUTHORITY`；`result ∈ {ADVANCE, REJECT}` 另需 `SCREENING_EVALUATION`，`HOLD`/`WITHDRAW` 可 0 条（安全方向）。`actor_id` 必须是**执行上下文的人**、`is_hiring_manager` 必须是**服务端按 DC-15 计算的值**（DC-14 同口径，入参只是待校验副本，不是真相）；缺这一项 → `BASIS_REF_EMPTY` | `decision-rules.md §17.1 S7-02`；`decision-record.ts:2085-2100`（S7 必带项）、`:220`（`AUTHORITY` 键集）、`:1881-1896`（DC-14 不一致报 `BASIS_AUTHORITY_MISMATCH`） |
+| `SCREENING_EVALUATION.provenance` | 这是 S7 决策 `labels.provenance` 的**唯一来源**；**缺省按 `FIXTURE`**（R4：没有证据不许自称 `LIVE`）。真实读取的评估不带它，会把这次决策的标签降级成 `FIXTURE` 并多一条 `FIXTURE_BASIS` warning —— 数据是 LIVE 的却被记成演练数据 | `decision-rules.md §17.1 S7-06`；`decision-record.ts:3104-3108`（取值 + 缺省）、`:3143-3144`（`FIXTURE_BASIS` warning） |
+
+> 每个 `kind` 的必带键见 `decision-record.ts` 的 `BASIS_KEYS`（`:205-230`）：例如 `RUBRIC_VERSION`
+> 还要 `payload_hash`（`:214`；必须等于库值，DC-17），`RESUME_VERSION.content_sha256` 是可选核对键。
+> 本节只规定 **S7 写侧**的 `basis_refs` 结构；S10 的九种 `kind` 见 `evaluation/decision-rules.md §6.1`。
 
 `reasons_digest = sha256(canonical_json(reasons))`。有了它，`D11 §9.9`（"当时看到的是哪一版、哪一行"）才闭合：`decision` → `basis_refs` → `evaluation_digest` → 评估输出 → `page/bbox/sha256`。
 
@@ -430,10 +445,11 @@ Error: BLOCKED_BY_REVIEW: {"code":"BLOCKED_BY_REVIEW","reason_code":"HUMAN_TASK_
 | 3 | `provenance` | 常量 `FIXTURE` | 计算值（§1.4） | **破坏性**：断言 `provenance=='FIXTURE'` 的地方会挂 |
 | 4 | `stub` | 恒 `true` | **字段删除** | **破坏性** |
 | 5 | `criteria[]` | `key/label/kind/weight` | 追加 `field/operator/value/question/notes`，`weight` 语义收紧为"展示用" | 兼容（新增可选键）；但 `weight` 的含义变了，需在 `labels`/注释里写清 |
-| 6 | 错误消息 | 散文（`job "job_9999" not found; …`） | `Error: <CODE>: <json>` | **破坏性**：解析散文的地方要改。**需上级裁决**：是统一改 5 个工具，还是只让新工具用 json（会造成两套格式） |
+| 6 | 错误消息 | 散文（`job "job_9999" not found; …`） | `Error: <CODE>: <json>` | **破坏性**：解析散文的地方要改。**已裁决（D-63，2026-11-13）**：一次性统一为 JSON，**不允许两套并存**（`docs/17` D-63）；实现仍待收口 —— 6 个工具仍用 `parseArgs` 散文格式（`CONTRACT.md §0.1` 第 6 条） |
 
-> 建议：**一次性统一**（`errors.ts` 改一处），否则 `R5 单一权威` 会在错误格式上再破一次。
-> 若上级决定不统一，则本契约 §1.2 降级为"新工具专用"，并在 `CONTRACT.md` §2.2 加一行"新工具用 json 格式"的例外说明——**必须回抄**，不能两套并存而无记录。
+> **已按 D-63 裁决**：一次性统一（`errors.ts` 改一处），否则 `R5 单一权威` 会在错误格式上再破一次。
+> 原文的"若上级决定不统一"分支**已作废**（D-63 明写不允许两套）；但实现收口尚未完成，
+> 切换时需同步改负例断言（`test/unit/args-contract.test.ts` 当前守着旧散文格式逐字不变）。
 
 ---
 
