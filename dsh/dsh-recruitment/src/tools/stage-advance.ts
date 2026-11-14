@@ -1,0 +1,322 @@
+// recruitment_application_stage_advance —— 阶段推进的**唯一写入口**（复审 N8 / 方案 D）。
+//
+// 形状权威：`contracts/stage-advance/tool-contracts.md`（下称 TC）。
+// 领域实现：`src/domain/stage-advance.ts`（判定 + 版本守卫 + stage_entered_at，全部在那儿）。
+// 本文件只做三件"胶水"：
+//   1. 入参收窄到**一个**：`{application_id}`。目标阶段、actor、tenant 一概不收 ——
+//      本命令不新增授权，只承认已发生的事实（收 `to_stage` 就等于给模型一个"跳阶开关"）。
+//   2. 事务与身份：`withActor`（`BEGIN` + `SET LOCAL recruitment.actor_id`）——
+//      `fn_row_guard` 只认这条路径给出的 actor；缺了它会 ACTOR_REQUIRED 拒绝。
+//   3. 出参：领域结果 + R4 三维标签。**labels 只回答"数据真假/谁触发/有没有外部系统"**，
+//      不回答"谁做的决定"（见下）。
+//
+// ⚠️ actor 诚实（契约里也明文写死，不许省）：
+//   `application.stage_changed_by_actor_id` 由 `fn_row_guard` 写成 `SET LOCAL recruitment.actor_id`
+//   ——它表示**执行账号**，**不表示决策人**。T1（S6→S7）是**自动推进**：库里的 actor 是配置里的
+//   本地账号（`…0103`，HUMAN 类型），但没有任何人"按过这个按钮"。所以：
+//     * 本工具不写 `decided_by_actor_id`、不写决策、不建任务（那是 decision_record 的事）；
+//     * 输出/契约里都不把 stage 变化表述成"某人推进了它"；
+//     * 想证明"是谁决定的"，唯一凭据是 `decision` 行（`decided_by_actor_id` + 人工确认哈希）。
+//
+// 不做什么（TC §0 六条）：不代决、不改 lifecycle_status、不写 stage_blocked_reason、
+// 不做 rubric pin 的写入（F1 属 intake 线，本工具只判定 pinned/未 pinned）、不改任何决策。
+//
+// 配置不完整时**仍然注册同一个工具名**，调用返回 NOT_CONFIGURED 并列出缺什么 ——
+// 模型看到的是"为什么不能用"，而不是一个不存在的工具（沿用 candidate_get 的既有做法）。
+
+import { parseArgs, toParameterSchema } from './args.ts'
+import type { ParamMap } from './args.ts'
+import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
+import { RecruitmentToolError } from './errors.ts'
+import {
+  closePool,
+  createPool,
+  withActor,
+  type ResolvedDatabaseConfig,
+} from '../db/pool.ts'
+import { buildThreeAxisLabels, type ThreeAxisLabels } from './candidate-get.ts'
+import {
+  advanceApplicationStage,
+  BLOCKER_CODES,
+  NEXT_ACTION_CODES,
+  OWNER_ROLES,
+  WARNING_CODES,
+  type StageAdvanceStatus,
+  type StageBlocker,
+  type StageTransition,
+  type StageWarning,
+} from '../domain/stage-advance.ts'
+
+/** 工具名（`test/` 与总控注册时都按这个名字找）。 */
+const TOOL_NAME = 'recruitment_application_stage_advance'
+
+/**
+ * 出参契约版本（TC §4 的形状变了就要 +1）。
+ * v1.1.0（§11.6-8 复审）：blockers/warnings 每一项升级为**结构化责任 + 下一步**。
+ */
+const CONTRACT_VERSION = '1.1.0'
+
+// =====================================================================
+//  入参（**只有一个键**）
+// =====================================================================
+
+const PARAMS: ParamMap = {
+  application_id: {
+    kind: 'string',
+    required: true,
+    uuid: true,
+    description:
+      '申请 id（UUID）。本工具只接受这一个参数：目标阶段由"已发生的事实"推导（T1 S6→S7 / T2 S7→S8），'
+      + 'actor 与 tenant 只能来自执行上下文。',
+  },
+}
+
+// =====================================================================
+//  出参 schema（DSH 子集：type/properties/required/additionalProperties/items/enum；
+//  没有 type 数组、没有 type:'null' —— 缺省一律"省略键"）
+// =====================================================================
+
+const TRANSITION_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    from: { type: 'string', description: '迁移前阶段码（S1–S12）' },
+    to: { type: 'string', description: '迁移后阶段码（S1–S12）' },
+  },
+  required: ['from', 'to'],
+  additionalProperties: false,
+}
+
+const BLOCKER_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    code: { type: 'string', enum: [...BLOCKER_CODES] },
+    message: { type: 'string', description: '为什么挡住（缺什么；不含 PII）' },
+    owner_role: {
+      type: 'string',
+      enum: [...OWNER_ROLES],
+      description: '该找谁（封闭集）：JOB_HIRING_MANAGER / RECRUITMENT_OWNER / SCREENING_DECIDER / PLATFORM_OPERATOR',
+    },
+    next_action_code: {
+      type: 'string',
+      enum: [...NEXT_ACTION_CODES],
+      description: '下一步做什么（封闭集，机检口径；人读说明见契约与 NEXT_ACTION_MESSAGES）',
+    },
+    owner_actor_id: { type: 'string', description: '具体责任人 UUID：能从库里推出来才有（推不出来省略此键）' },
+    owner_display_name: { type: 'string', description: '责任人显示名（来自 recruitment.actor.display_name）' },
+  },
+  required: ['code', 'message', 'owner_role', 'next_action_code'],
+  additionalProperties: false,
+}
+
+const WARNING_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    code: { type: 'string', enum: [...WARNING_CODES] },
+    message: { type: 'string' },
+    owner_role: { type: 'string', enum: [...OWNER_ROLES] },
+    next_action_code: { type: 'string', enum: [...NEXT_ACTION_CODES] },
+    owner_actor_id: { type: 'string', description: '具体责任人 UUID：能从库里推出来才有' },
+    owner_display_name: { type: 'string' },
+  },
+  required: ['code', 'message', 'owner_role', 'next_action_code'],
+  additionalProperties: false,
+}
+
+const OUTPUT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    tool: { type: 'string' },
+    contract_version: { type: 'string' },
+    application_id: { type: 'string' },
+    stage_code: { type: 'string', description: '调用结束后的当前阶段码（NO_OP/BLOCKED 时与调用前相同）' },
+    record_version: { type: 'integer', description: '调用结束后的 record_version（没发 UPDATE 就与调用前相同）' },
+    status: { type: 'string', enum: ['ADVANCED', 'NO_OP', 'BLOCKED'] },
+    transitions: { type: 'array', items: TRANSITION_SCHEMA },
+    blockers: { type: 'array', items: BLOCKER_SCHEMA },
+    warnings: { type: 'array', items: WARNING_SCHEMA },
+    labels: {
+      type: 'object',
+      properties: {
+        provenance: { type: 'string', enum: ['LIVE', 'FIXTURE'] },
+        trigger: { type: 'string', enum: ['MANUAL'] },
+        connection: { type: 'string', enum: ['NOT_CONNECTED'] },
+      },
+      required: ['provenance', 'trigger', 'connection'],
+      additionalProperties: false,
+    },
+  },
+  required: [
+    'tool', 'contract_version', 'application_id', 'stage_code', 'record_version',
+    'status', 'transitions', 'blockers', 'warnings', 'labels',
+  ],
+  additionalProperties: false,
+}
+
+/** 本工具的规范输出值（`output.schema` 的 TS 影子）。 */
+export interface StageAdvanceValue {
+  readonly tool: string
+  readonly contract_version: string
+  readonly application_id: string
+  readonly stage_code: string
+  readonly record_version: number
+  readonly status: StageAdvanceStatus
+  readonly transitions: readonly StageTransition[]
+  readonly blockers: readonly StageBlocker[]
+  readonly warnings: readonly StageWarning[]
+  readonly labels: ThreeAxisLabels
+}
+
+// =====================================================================
+//  工具定义
+// =====================================================================
+
+/** 模型可见说明（**每一条边界都必须在这里出现**，否则模型会自己发明语义）。 */
+const DESCRIPTION = [
+  'Advance ONE application\'s stage pointer by acknowledging facts that have ALREADY happened',
+  '(a derived command: it adds no new authority). Input is exactly {application_id} —',
+  'no target stage, no actor, no tenant.',
+  'Ladder (only these two edges, in order, never skipped):',
+  '  T1 S6->S7: application.resume_version_id is set AND that material\'s parse_status is not FAILED',
+  '            AND application.rubric_version_id is set (rubric version pinned);',
+  '  T2 S7->S8: the current (superseded_by_decision_id is null) decision with',
+  '            decision_scope=SCREENING has result=ADVANCE.',
+  'Returns status=ADVANCED (transitions[] lists the applied edges; one stage-change event per edge),',
+  'status=NO_OP (nothing to do: the pointer already reflects the facts — ZERO update), or',
+  'status=BLOCKED (blockers[] names the blocking fact: RUBRIC_NOT_PINNED, MATERIAL_NOT_LINKED,',
+  'MATERIAL_PARSE_FAILED, SCREENING_DECISION_NOT_ADVANCE, APPLICATION_NOT_ACTIVE, STAGE_NOT_ON_LADDER).',
+  'Every blocker/warning is STRUCTURED for the workbench: it always carries owner_role',
+  '(JOB_HIRING_MANAGER / RECRUITMENT_OWNER / SCREENING_DECIDER / PLATFORM_OPERATOR) and next_action_code',
+  '(PIN_RUBRIC_VERSION / LINK_INTAKE_MATERIAL / REPARSE_MATERIAL / RECORD_SCREENING_DECISION /',
+  'SUPERSEDE_SCREENING_DECISION / REOPEN_APPLICATION / START_AT_INTAKE / VERIFY_STAGE_PROGRESSION /',
+  'ADVANCE_STAGE / CONTINUE_DOWNSTREAM), plus owner_actor_id / owner_display_name when the responsible',
+  'person is derivable from the database (job department hiring manager, or the human who made the',
+  'SCREENING decision). Never regresses and never skips: if the pointer is already past S8 it returns a',
+  'STAGE_AHEAD warning in warnings[] (same structured shape) and sends no UPDATE.',
+  'Every applied edge also writes stage_entered_at.',
+  'It does NOT record decisions, does NOT create tasks, and does NOT change lifecycle_status.',
+  'HONESTY: application.stage_changed_by_actor_id means the EXECUTING ACCOUNT (who ran the tool),',
+  'NOT the decision maker. T1 is an automatic advance — a stage change is not evidence a human did it.',
+  'Errors: NOT_FOUND (unknown application), VERSION_CONFLICT (concurrent change; re-read and retry),',
+  'NOT_CONFIGURED, INVALID_ARGS.',
+].join(' ')
+
+/**
+ * 造一个可执行一次的返回值。
+ * @param config - 已解析的库配置（租户/actor/连接只从这里来）。
+ * @param applicationId - 已校验的申请 id。
+ * @returns 规范输出值。
+ */
+async function runStageAdvance(
+  config: ResolvedDatabaseConfig,
+  applicationId: string,
+): Promise<StageAdvanceValue> {
+  const pool = createPool(config)
+  try {
+    return await withActor(pool, config.actor_id, async (client) => {
+      // 领域层只认"事实"；调用方只提供租户与申请 id。
+      const result = await advanceApplicationStage(client, {
+        tenantId: config.tenant_id,
+        applicationId,
+      })
+      // R4：三维标签走**同一份判定实现**（candidate-get.ts 的 buildThreeAxisLabels），
+      // 不在本文件另写一份（`test/unit/label-honesty.test.ts` 机检"单一实现"）。
+      const labels = await buildThreeAxisLabels(client, config.tenant_id)
+      return {
+        tool: TOOL_NAME,
+        contract_version: CONTRACT_VERSION,
+        application_id: result.application_id,
+        stage_code: result.stage_code,
+        record_version: result.record_version,
+        status: result.status,
+        transitions: result.transitions,
+        blockers: result.blockers,
+        warnings: result.warnings,
+        labels,
+      }
+    })
+  } finally {
+    await closePool(pool)
+  }
+}
+
+/**
+ * 造真实的阶段推进工具。
+ * @param config - 已解析的库配置（模型无法传入租户/actor）。
+ * @returns 工具定义。
+ */
+export function createStageAdvanceTool(config: ResolvedDatabaseConfig): ReadonlyToolDefinition {
+  return {
+    name: TOOL_NAME,
+    description: DESCRIPTION,
+    parameters: toParameterSchema(PARAMS),
+    output: {
+      schema: OUTPUT_SCHEMA,
+      render(_args: unknown, value: unknown): readonly TextBlock[] {
+        const v = value as StageAdvanceValue
+        const lines: string[] = [
+          `${v.tool} ${v.contract_version}: ${v.status} application ${v.application_id} `
+            + `@ ${v.stage_code} (record_version=${v.record_version})`,
+        ]
+        if (v.transitions.length > 0) {
+          lines.push(`  transitions: ${v.transitions.map((t) => `${t.from} -> ${t.to}`).join(', ')}`)
+        }
+        for (const blocker of v.blockers) {
+          lines.push(
+            `  blocker ${blocker.code} [owner=${blocker.owner_role}`
+              + `${blocker.owner_actor_id === undefined ? '' : ` ${blocker.owner_actor_id}`}`
+              + `${blocker.owner_display_name === undefined ? '' : ` ${blocker.owner_display_name}`}]`
+              + ` next=${blocker.next_action_code}: ${blocker.message}`,
+          )
+        }
+        for (const warning of v.warnings) {
+          lines.push(
+            `  warning ${warning.code} [owner=${warning.owner_role}`
+              + `${warning.owner_actor_id === undefined ? '' : ` ${warning.owner_actor_id}`}]`
+              + ` next=${warning.next_action_code}: ${warning.message}`,
+          )
+        }
+        // 每次渲染都写一遍：审计里那一列是"执行账号"，不是"决策人"。
+        lines.push('  stage_changed_by_actor_id = 执行账号（SET LOCAL recruitment.actor_id），不代表决策人；T1 是自动推进。')
+        lines.push(`  labels: provenance=${v.labels.provenance} trigger=${v.labels.trigger} connection=${v.labels.connection}`)
+        return [{ type: 'text', text: lines.join('\n') }]
+      },
+    },
+    // 写路径：与 intake / interview_schedule 一致，不允许与兄弟调用并行。
+    isConcurrencySafe(): boolean {
+      return false
+    },
+    async execute(rawArgs: unknown): Promise<unknown> {
+      const args = parseArgs(PARAMS, rawArgs)
+      const applicationId = args.application_id as string
+      return await runStageAdvance(config, applicationId)
+    },
+  }
+}
+
+/**
+ * 配置不完整时的替身：注册同一个工具名，调用即报 NOT_CONFIGURED（列出缺什么）。
+ * @param issues - 缺失的配置项。
+ * @returns 调用即抛错的工具定义。
+ */
+export function unconfiguredStageAdvanceTool(issues: readonly string[]): ReadonlyToolDefinition {
+  return {
+    name: TOOL_NAME,
+    description:
+      'Advance one application\'s stage pointer by acknowledging facts that already happened '
+      + '(S6->S7->S8 only; derived command, no new authority). Currently NOT CONFIGURED: '
+      + `${issues.join('; ')}. Calls return NOT_CONFIGURED.`,
+    parameters: toParameterSchema(PARAMS),
+    output: {
+      schema: OUTPUT_SCHEMA,
+      render(): readonly TextBlock[] {
+        return [{ type: 'text', text: `${TOOL_NAME} is not configured: ${issues.join('; ')}` }]
+      },
+    },
+    isConcurrencySafe(): boolean {
+      return false
+    },
+    async execute(): Promise<unknown> {
+      throw new RecruitmentToolError('NOT_CONFIGURED', issues.join('; '))
+    },
+  }
+}
