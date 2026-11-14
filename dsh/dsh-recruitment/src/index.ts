@@ -62,6 +62,10 @@ import {
   unconfiguredJobUpdateTool,
 } from './tools/job-create.ts'
 import {
+  createJobRubricApproveTool,
+  unconfiguredJobRubricApproveTool,
+} from './tools/job-rubric-approve.ts'
+import {
   createInterviewScheduleTool,
   unconfiguredInterviewScheduleTool,
 } from './tools/interview-schedule.ts'
@@ -367,6 +371,10 @@ export function apply(
   const jobUpdate = database.resolved === null
     ? unconfiguredJobUpdateTool(database.issues)
     : createJobUpdateTool(database.resolved)
+  // rubric 批准入口（docs/23 N7）：写工具，必须带 approval 闸门（D-79，缺省 = 拒绝）。
+  const jobRubricApprove = database.resolved === null
+    ? unconfiguredJobRubricApproveTool(database.issues)
+    : createJobRubricApproveTool(database.resolved, { approval: resolveApproval(ctx) })
 
   // ── S8 面试线：只要 database。
   const interviewSchedule = database.resolved === null
@@ -419,6 +427,7 @@ export function apply(
     jobGet,
     jobCreate,
     jobUpdate,
+    jobRubricApprove,
     intake,
     evaluate,
     interviewSchedule,

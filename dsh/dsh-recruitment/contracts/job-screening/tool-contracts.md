@@ -1,9 +1,11 @@
-# tool-contracts.md · S3/S7 两个工具的形状
+# tool-contracts.md · S3/S7 两个只读工具 + S3 rubric 批准入口
 
-**版本**：`tool-contracts 1.0.0`（与 `job-rubric 1.0.0` / `screening 1.0.0` 同一基线）
-**日期**：2026-11-13
-**范围**：**只写契约**——入参、出参、错误码、必守性质。**不含任何实现**（不写 SQL、不写 TS）
-**规则来源**：`job-rubric-rules.md`（标准解析）、`screening-rules.md`（判定算法）。**本文件与那两份冲突时，以那两份为准**——这里只是形状。
+**版本**：`tool-contracts 1.1.0`（与 `job-rubric 1.0.0` / `screening 1.0.0` 同一基线；1.1.0 新增 §7）
+**日期**：2026-11-14（1.0.0 为 2026-11-13）
+**范围**：**只写契约**——入参、出参、错误码、必守性质。**不含任何实现**（不写 SQL、不写 TS）。
+**§1–§6 覆盖两个只读工具**（`recruitment_job_get` / `recruitment_screening_evaluate`）；
+**§7 是 1.1.0 新增的写工具** `recruitment_job_rubric_approve`（S3 rubric 批准的产品入口，修 `docs/23` N7）。
+**规则来源**：`job-rubric-rules.md`（标准解析 / 状态机）、`screening-rules.md`（判定算法）、`docs/17`（D-21 当前指针、D-48 不回退推导、D-79 人机闸门、D-101 超时）。**本文件与那些文件冲突时，以那些文件为准**——这里只是形状。
 
 ---
 
@@ -20,6 +22,10 @@
 2. 不钉 Rubric 版本：`application.rubric_version_id` 只读（`job-rubric-rules.md` §4.3）。
 3. 不清人工队列：`business_task.status` / `resume_version.parse_status` 一个都不改（`screening-rules.md` §6.4、`APP-07`）。
 4. 不接受模型传入的 `tenant_id` / `actor_id`：租户与身份**只能**来自执行上下文（`SET LOCAL recruitment.actor_id`，`INV-8`、`XINV-7`）。入参里出现这两个键 → `INVALID_ARGS`（不是静默忽略）。
+
+> **§0 的边界只管上面两个只读工具。** S3 的写工具（`recruitment_job_create` / `recruitment_job_update`）
+> 不属本文件；1.1.0 新增的第三个工具是 **写**工具（rubric 批准入口），其边界见 §7——
+> 它**不能**用"只读"四条来要求，反过来 §7 的"必须过人类闸门"也不适用于上面两个只读工具。
 
 ---
 
@@ -510,5 +516,169 @@ Error: BLOCKED_BY_REVIEW: {"code":"BLOCKED_BY_REVIEW","reason_code":"HUMAN_TASK_
 | `decision` 怎么落、谁来签 | 写侧 + `APP-07` + `ck_execution_mandate_no_business_approval` |
 | 岗位关闭后怎么转岗/归档 | `job-rubric-rules.md` §7.3（人工动作，工具不做） |
 | 队列 UI 长什么样 | 前端；本契约只保证 `required_human_action` 与 `blocking_items[]` 够用 |
+| rubric 批准怎么落库 / 用哪个函数 | §7（1.1.0 新增；实现复用 `decideRubricApprovalInTransaction`） |
 
-**版本变更**：出参增删字段 → bump `tool-contracts 1.x.0`；`verdict` 或错误码集合变化 → bump `2.0.0`（因为下游会断）。
+---
+
+## 7. `recruitment_job_rubric_approve`（1.1.0 新增；S3 批准的产品入口）
+
+### 7.1 为什么需要它（`docs/23` N7 的真实后果）
+
+`recruitment_job_create` / `recruitment_job_update` 只写 `approval(status='PENDING')`——**批准是人的动作**，
+它们不替人批。在此之前的唯一批准路径是 CLI（`manual/job-line/approve-rubric.mjs`），而 CLI
+**不维护 `job.current_rubric_version_id`**。后果是一条真实的断链：
+
+```
+人用 CLI 批了 approval → job.current_rubric_version_id 仍为空
+→ S7/S10 读不到"已批准且当前"的 rubric → F1（rubric pin 缺失）
+```
+
+本工具补的就是"人批准 rubric"这一步的**产品入口**：批准 + 把 current 指针指过去，一次事务完成。
+
+### 7.2 rubric 版本的状态机（**真实规则，逐条给落点**）
+
+| 阶段 | 是什么 | 谁能产生 | 权威落点 |
+|---|---|---|---|
+| **草稿 / 待批** | `rubric_version` 行已落库（不可变），`approval(status='PENDING')` 绑 `payload_hash` | `job_create` / `job_update`（Agent 侧写入，只写 PENDING） | `trg_rubric_version_immutable`（J-1）；`ck_approval_hash`；`0001` |
+| **已批准** | `approval.status='APPROVED'` 且 **hash 相同、未过期、未 supersede**；`decided_by_actor_id` 必须是 `kind='HUMAN'` 的 actor | **本工具**（`PENDING→APPROVED`；复用 CLI 同一个 `decideRubricApprovalInTransaction`；CLI 只是同函数的运维口，见 §7.9） | `fn_approval_guard`（已决审批不可改判）；`ck_approval_decided_fields`（status≠PENDING 必须同时有 `decided_at`+`decided_by`）；J-5 |
+| **当前** | `job.current_rubric_version_id` 指向的版本（D-21 显式指针，**不是** `max(version_no)`）；该列为空 = 没有当前版本（D-48，**不回退**推导） | 本工具在批准成功 / 补陈旧指针时写 | `0004` 的 `fk_job_current_rubric`：`(tenant_id, id, current_rubric_version_id) → rubric_version(tenant_id, job_id, id)`；被引用键是 `(tenant_id, job_id, id)` 唯一键（`0004` 的 `uq_rubric_version_tenant_job_id`；`0005 §2.2` 检测到同列集合的等价唯一键时**复用、不重复建**） |
+| **不可变** | `rubric_version` 一个字节都不能 UPDATE；`rubric_version.approved_by_approval_id` **永远留 null** | 库级禁止（J-1） | `trg_rubric_version_immutable`（`fn_guard_columns` 无白名单 → 23514） |
+
+**由此得到的三条硬结论**（最容易做错的地方）：
+
+1. **"批准"不是一个布尔标记**：它是 `approval` 行 + `canonical_payload_hash` 绑定 + `decided_by_actor_id`/`decided_at`。不要给 `rubric_version` 盖任何章（它根本改不了）。
+2. **"当前"不是"最新"**：只有 `job.current_rubric_version_id` 说话。批准 v2 不会把 v3 自动顶下去，回滚到 v1 也靠这个指针（D-21）。
+3. **批准与"申请钉版本"是两件事**：`application.rubric_version_id` 是申请级 pin（`job-rubric-rules.md` §4.3），本工具**不碰**它。
+
+### 7.3 入参
+
+| 参数 | 类型 | 必填 | 约束 | 含义 |
+|---|---|---|---|---|
+| `job_id` | string | ✅ | UUID | 岗位 id |
+| `rubric_version_id` | string | ✅ | UUID；必须属于 `job_id`（否则 `RUBRIC_VERSION_NOT_FOUND`） | 要批准的 rubric 版本 |
+| `reason` | string | — | 1..500 | 人的备注；写进 `approval.reason` 与审计事件 |
+
+**互斥**：无。**额外键一律拒绝**（`additionalProperties:false`）；`tenant_id` / `actor_id` 出现即
+`INVALID_ARGS(TENANT_OR_ACTOR_NOT_ALLOWED)`（身份只来自执行上下文，`INV-8`）。
+
+### 7.4 出参（**无 null**：可缺的键直接省略）
+
+```json
+{
+  "tool": "recruitment_job_rubric_approve",
+  "contract_version": "1.0.0",
+  "labels": { "provenance": "FIXTURE", "trigger": "MANUAL", "connection": "NOT_CONNECTED" },
+  "outcome": "APPROVED",
+  "replayed": false,
+  "gate": { "requested": true, "result": "allowed-once" },
+  "job": {
+    "id": "…", "code": "BE-001", "title": "后端工程师", "status": "OPEN",
+    "current_rubric_version_id": "…",
+    "previous_current_rubric_version_id": "…",
+    "record_version": 4
+  },
+  "rubric": {
+    "version_id": "…", "version_no": 2, "payload_hash": "…",
+    "is_approved": true, "is_current": true
+  },
+  "approval": {
+    "approval_id": "…", "status": "APPROVED",
+    "decided_at": "2026-11-14T09:00:00.000Z",
+    "decided_by_actor_id": "…",
+    "canonical_payload_hash": "…", "record_version": 2
+  },
+  "changes": {
+    "written": true,
+    "tables": ["approval", "job", "event_inbox"],
+    "event_ids": ["…"]
+  },
+  "next_action": { "kind": "READ_BACK", "job_id": "…", "verify_with": "recruitment_job_get" }
+}
+```
+
+| 字段 | 规则 |
+|---|---|
+| `outcome` | `APPROVED`（本次把 PENDING 批成 APPROVED）/ `CURRENT_UPDATED`（批准已生效、本次只补陈旧指针）/ `NO_OP`（已完全生效，零写入）。**封闭集，CI 只认这三个值** |
+| `replayed` | `outcome!=='APPROVED'` 时为 `true`（本次没有做新的批准决定）；`APPROVED` 时为 `false` |
+| `gate` | `requested=true` ⇔ 真的问了人；`result='allowed-once'`（写入路径）或 `'not-required'`（纯 `NO_OP`）。被拒时**没有出参**（抛 `FORBIDDEN`） |
+| `job.previous_current_rubric_version_id` | **可缺键**：只有指针真的移动过、且移动前非空时出现；首次批准（旧指针为空）时**省略**，禁止用 `null` 占位 |
+| `changes.tables` | 本次真实写过的表：`approval`（做了批准决定）/ `job`（指针移动）/ `event_inbox`（本工具审计事件）；`NO_OP` 时为 `[]` |
+| `changes.event_ids` | 本工具写的 `job.rubric_version.approved` 事件 id；`NO_OP` 时为 `[]`。批准迁移自身的 `approval.status.changed` 事件不在这个数组里（见 §7.7） |
+| `labels` | `provenance` 按租户事实算（演示租户 ⇒ `FIXTURE`），`trigger=MANUAL`，`connection=NOT_CONNECTED`（不接外部系统） |
+| `approval.record_version` | `RETURNING` 的真实值，**绝不**自己 +1（D-18） |
+
+### 7.5 幂等（**重复批准同一版本零额外写入**）
+
+| 调用时状态 | `outcome` | `replayed` | 问人 | 本次写入 |
+|---|---|---|---|---|
+| `pending` + hash 一致 | `APPROVED` | `false` | **是** | `approval` +（指针未对齐时）`job` + `event_inbox` |
+| 已生效 APPROVED + 指针已对齐 | `NO_OP` | `true` | **否** | **无**（`record_version` / 事件数都不变） |
+| 已生效 APPROVED + 指针陈旧（CLI 遗留） | `CURRENT_UPDATED` | `true` | **是**（会改业务可见状态） | `job` + `event_inbox` |
+| 已拒 / 已过期 / 被取代 | — | — | 否 | 抛 `INVALID_ARGS`，零写入 |
+| 无 `approval` 行 | — | — | 否 | 抛 `NOT_FOUND(APPROVAL_NOT_FOUND)` |
+| hash 不一致 | — | — | 否 | 抛 `INVALID_ARGS(PAYLOAD_HASH_MISMATCH)`，零写入 |
+
+**只有 `NO_OP` 不问人**：其他任何会改库的调用都要过闸门（含补陈旧指针 —— 改 current 指针是
+业务可见变化）。指针未变时**不发 UPDATE**，否则 `fn_row_guard` 会把 `record_version` 白白 +1，
+"幂等重试"看起来像改动。
+
+### 7.6 D-79 人机闸门 + D-101 的 120s 上界
+
+1. **位置**：参数校验 + 全部业务校验（actor HUMAN、岗位存在、版本属于该岗位、审批状态、hash）之后，
+   **第一行 INSERT / UPDATE 之前**。注定失败的调用（版本不存在 / 审批已拒）**不得先弹窗**。
+2. **fail closed**：只接受宿主的 `allowed-once`；`unavailable`（headless 无 answerer）/ `rejected` /
+   `cancelled` → `FORBIDDEN(APPROVAL_UNAVAILABLE|APPROVAL_NOT_GRANTED)`，**一行不写**。
+3. **决定者**：必须是本租户 `kind='HUMAN'` 的 actor（D-79 的 v1.0 口径：审批人 → 本地 actor 的映射
+   尚未实现，取配置里的本地 actor；Agent / SYSTEM 一律 `FORBIDDEN(ACTOR_NOT_HUMAN)`）。
+4. **超时**：等待上限 **120 秒**（D-101）；超时按 `cancelled` 判 →
+   `FORBIDDEN(APPROVAL_NOT_GRANTED, detail.approval='timeout')`；超时后原批准才 resolve 的**仍不采纳**。
+5. **事务边界**：业务校验 → 问人 → 写库仍在**同一个事务**（D-101 记债的两阶段重构未做）；
+   等人期间连接 `idle in transaction`，由 `db/pool.ts` 的 `idle_in_transaction_session_timeout=300s` 兜底。
+
+### 7.7 审计：`event_inbox` 两条事件
+
+| 事件 | 谁写 | 关键字段 | 怎么查 |
+|---|---|---|---|
+| `approval.status.changed` | 库触发器 `fn_row_guard`（`PENDING→APPROVED` 自动） | `payload {table,column,record_id,from,to,actor_id}`；`approval.status_source_event_id` 回填 | `event_type='approval.status.changed' and source_object_id=<approval_id>` |
+| `job.rubric_version.approved` | **本工具** | `payload {job_id, rubric_version_id, rubric_version_no, rubric_payload_hash, approval_id, approved_by_actor_id, approved_at, previous_current_rubric_version_id, current_rubric_version_id, pointer_changed, outcome, source, reason?}`（`reason` 仅在入参给了时出现）；`trust_level='INTERNAL'`；`idempotency_source='FALLBACK_KEY'`；`source_object_id=<rubric_version_id>` | `event_type='job.rubric_version.approved' and source_object_id=<rubric_version_id>` |
+
+本工具事件的乐观键每次唯一（内部事实）；**去重靠 §7.5 的 `NO_OP` 分支**，不靠事件键
+（若按"每版本固定键"，"先批准 v1、之后回滚再批准 v1"这类合法序列会被唯一约束挡住）。
+`NO_OP` 分支**不写**第二条事件。
+
+### 7.8 错误码（封闭集）
+
+| `code` | `reason_code` | 何时 |
+|---|---|---|
+| `INVALID_ARGS` | `UNKNOWN_PARAM` \| `TYPE_MISMATCH` \| `MISSING_REQUIRED` \| `OUT_OF_RANGE` \| `ID_NOT_UUID` \| `TENANT_OR_ACTOR_NOT_ALLOWED` | 参数层（§1.1） |
+| `INVALID_ARGS` | `PAYLOAD_HASH_MISMATCH` | `approval.canonical_payload_hash ≠ rubric_version.payload_hash`（R-VAL-14 的读侧一半） |
+| `INVALID_ARGS` | `APPROVAL_NOT_PENDING` \| `APPROVAL_EXPIRED` \| `APPROVAL_SUPERSEDED` \| `UNSUPPORTED_PAYLOAD_SCHEMA_VERSION` | 审批已不可批（`detail.status` / `detail.expires_at` 等给出原因） |
+| `NOT_FOUND` | `JOB_NOT_FOUND` \| `RUBRIC_VERSION_NOT_FOUND` \| `APPROVAL_NOT_FOUND` | 岗位 / 版本（不在该岗位下）/ 审批行不存在；`RUBRIC_VERSION_NOT_FOUND` 带 `detail.known_version_nos` |
+| `FORBIDDEN` | `ACTOR_NOT_IN_TENANT` \| `ACTOR_NOT_HUMAN` \| `APPROVAL_UNAVAILABLE` \| `APPROVAL_NOT_GRANTED` | 身份不是人 / 闸门没放行（`detail.approval` ∈ `unavailable`\|`rejected`\|`cancelled`\|`timeout`） |
+| `READER_FAILED` | `DATABASE_FAILED` | 非契约层的库错误（不伪装成业务错误） |
+
+```text
+Error: FORBIDDEN: {"code":"FORBIDDEN","detail":{"approval":"timeout","tool":"recruitment_job_rubric_approve"},"message":"等待人工批准超时（120 秒）：rubric 批准被拒绝（D-79，fail closed）","reason_code":"APPROVAL_NOT_GRANTED"}
+```
+
+### 7.9 与 CLI 的关系（**不允许两套批准语义**）
+
+`manual/job-line/approve-rubric.mjs` 仍可作**运维口**（同一 `decideRubricApprovalInTransaction`），
+但它不是产品入口：它只批 `approval`、不维护 `job.current_rubric_version_id`。用 CLI 批过的历史数据，
+用本工具的 `CURRENT_UPDATED` 分支补指针（§7.5 第 3 行）。**批准状态机只有一份实现**，
+CLI 与工具不得各写一套（否则 `R5 单一权威` 再破一次）。
+
+### 7.10 验收探针（可机检）
+
+| # | 场景 | 期望 |
+|---|---|---|
+| 1 | PENDING + `allowed-once` | `outcome=APPROVED`；`approval.status='APPROVED'` 且 `decided_by_actor_id` 是 HUMAN；`job.current_rubric_version_id=版本id`；`record_version` 自增；两条事件各 1 条 |
+| 2 | 同一版本再批一次 | `outcome=NO_OP`、`replayed=true`、`gate.requested=false`、闸门调用数 0；`record_version` 与事件数**不变** |
+| 3 | 无 approval 通道 / `rejected` / `cancelled` / 120s 超时 | `FORBIDDEN`；审批仍 `PENDING`、指针不变、`record_version` 不变、本工具事件 0 条 |
+| 4 | 版本不存在 / 版本属于别的岗位 / 岗位不存在 | `NOT_FOUND`（对应 reason）；闸门调用数 0；零写入 |
+| 5 | 已拒绝的审批 | `INVALID_ARGS(APPROVAL_NOT_PENDING)`；闸门调用数 0；零写入 |
+| 6 | CLI 已批、指针为空 | `outcome=CURRENT_UPDATED`、指针补上、`approval.record_version` 不变、本工具事件 1 条 |
+| 7 | `parameters` / `output.schema` | 封闭对象根、`additionalProperties:false`、**无 type 数组、无 `type:'null'`**；输出值里无 null（可缺键省略） |
+| 8 | 全量出参 | 无 `tenant_id` / `actor_id` / 由模型自报的 `decided_by_actor_id` |
+
+**版本变更**：出参增删字段 → bump `tool-contracts 1.x.0`；`verdict` 或错误码集合变化 → bump `2.0.0`（因为下游会断）。新增工具（如 1.1.0 的 §7）→ bump `1.x.0`，并在 §0 显式声明是否改变边界。
