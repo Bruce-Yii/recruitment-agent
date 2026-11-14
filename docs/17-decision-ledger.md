@@ -1172,6 +1172,11 @@ v1 = 旧四键（无原话时逐字节不变，库里旧 hash 不假红）；v2 
 **门槛跑实测**：52/52，read_ok 51 / read_failed 1（`EMPTY_FILE`，2 字节占位文件），
 R-1 98.1% PASS、R-2 100% PASS、R-3 100% PASS。
 
+**更正（同日，总控）**：那份 2 字节的 `排版经历.pdf` 是**空占位文件**，不是读不出来的简历——
+已按"改语料不改判定"移入 `converter/corpus-quarantine/`（记账含原路径/sha256/判定依据），
+语料 52 → 51。隔离后门槛跑：**51/51，read_ok 51 / read_failed 0，R-1 100%、R-2 100%**，
+R-3 因无失败样本而 **vacuous**（不冒充通过）。`EMPTY_FILE` 错误码本身不改。
+
 **证据**：`dsh/dsh-recruitment/test/regression/real-corpus.test.ts`、`docs/11 §11.2–§11.4`。
 
 ### D-105 · 复用 dsh-superagent 原型的四个部件（研究结论，未采纳其代码）
