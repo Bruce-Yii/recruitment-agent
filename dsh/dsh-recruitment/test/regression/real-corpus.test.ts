@@ -38,13 +38,20 @@ import { resolveConverterConfig, type ResolvedConverterConfig } from '../../src/
 import type { DocumentReadErrorCode } from '../../src/document/readers/index.ts'
 import { CONVERTER_DIR, resolvePython } from '../document/fixtures.ts'
 
-/** 本机缺省语料根目录（研究语料，**不入库**）。 */
-const DEFAULT_CORPUS_ROOT = 'D:\\12412\\dsh工作区\\projects\\resume-talent-pool\\.snap-cache\\research\\content'
-
-/** 语料根目录：优先环境变量，其次本机缺省。 */
-const CORPUS_ROOT = (process.env.RECRUITMENT_CORPUS_ROOT ?? '').trim() === ''
-  ? DEFAULT_CORPUS_ROOT
-  : (process.env.RECRUITMENT_CORPUS_ROOT as string).trim()
+/**
+ * 语料根目录：**只从环境变量读**（`RECRUITMENT_CORPUS_ROOT`）。
+ *
+ * 这里原本写死了一个本机绝对路径（`D:\<本机>\...\resume-talent-pool\...`），
+ * 三个问题叠在一起：
+ *   ① **R7**：机器路径不该入库（CI 的"manifest 可移植"守卫只扫 `converter/corpus`，
+ *      扫不到 `test/`，所以这个漏点一直没人发现）；
+ *   ② 本机绿 CI 红的又一来源：Linux runner 上那个路径永远不存在；
+ *   ③ 最糟的是它会**静默 skip** —— 看起来"这条测试过了"，其实一步没跑（R3：skip ≠ pass）。
+ *
+ * 现在：未设置 = 明确 skip，且 skip 理由里不再出现机器路径。
+ * 这是**accepted skip**（真实语料按设计不入库），不是通过；CI 里由显式声明清单兜住。
+ */
+const CORPUS_ROOT = (process.env.RECRUITMENT_CORPUS_ROOT ?? '').trim()
 
 /** 缺省抽样 20 份（docs/11 §11.2 的下限）；`all` = 全量。 */
 const DEFAULT_SAMPLE_SIZE = 20
@@ -268,11 +275,15 @@ const IMAGE_FILE_COUNT = ALL_FILES
   .filter((file) => (IMAGE_EXTENSIONS as readonly string[]).includes(extensionOf(file)))
   .length
 
-const SKIP_REASON: string | false = !CORPUS_EXISTS
-  ? `corpus root not found: ${CORPUS_ROOT} (set RECRUITMENT_CORPUS_ROOT to a directory of real PDF/DOCX files; skipped, NOT passed)`
-  : DOCUMENT_FILES.length === 0
-    ? `corpus root contains no PDF/DOCX documents: ${CORPUS_ROOT} (${ALL_FILES.length} files scanned; skipped, NOT passed)`
-    : false
+const SKIP_REASON: string | false = CORPUS_ROOT === ''
+  ? 'RECRUITMENT_CORPUS_ROOT is not set: real corpus originals are not in the repo by design (R7). '
+    + 'This is an ACCEPTED skip, not a pass — CI declares it explicitly.'
+  : !CORPUS_EXISTS
+    ? `RECRUITMENT_CORPUS_ROOT points to a directory that does not exist: ${CORPUS_ROOT} `
+      + '(skipped, NOT passed)'
+    : DOCUMENT_FILES.length === 0
+      ? `corpus root contains no PDF/DOCX documents: ${CORPUS_ROOT} (${ALL_FILES.length} files scanned; skipped, NOT passed)`
+      : false
 
 test('真实语料回归：全量=门槛判定 / 抽样=开发回路（SAMPLED 不构成门槛）+ 失败逐条可归因（docs/11 §11）', { skip: SKIP_REASON }, async (t) => {
   // Python 探测放在 test 体内：语料不存在时不该在模块加载期起子进程。
