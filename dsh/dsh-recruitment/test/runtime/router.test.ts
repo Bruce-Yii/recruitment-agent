@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { EventRuntime } from '../../src/runtime/event-runtime.ts'
+import { EVENT_TYPES } from '../../src/runtime/event-types.ts'
 import { Router } from '../../src/runtime/router.ts'
 import { RuntimeStore } from '../../src/runtime/store.ts'
 import { TaskRuntime } from '../../src/runtime/task-runtime.ts'
@@ -37,14 +38,20 @@ after(async () => {
   if (db !== undefined) await db.drop()
 })
 
-function resumeEvent(applicationId: string, providerEventId: string): InboundEvent {
+/**
+ * 一条**真实发射的**确定性事件（`scorecard.submit`，INTERNAL）。
+ *
+ * 事件名从注册表取：这里曾经手写 `resume_received`（没有发射方的假名字），
+ * 导致"路由成功"只在测试里成立。
+ */
+function scorecardEvent(interviewId: string, providerEventId: string): InboundEvent {
   return {
     tenantId: RUNTIME_TENANT,
-    provider: 'feishu',
+    provider: 'internal',
     providerEventId,
-    eventType: 'resume_received',
-    payload: { application_id: applicationId },
-    trustLevel: 'UNTRUSTED_EXTERNAL',
+    eventType: EVENT_TYPES.SCORECARD_SUBMIT,
+    payload: { interview_id: interviewId },
+    trustLevel: 'INTERNAL',
   }
 }
 
@@ -68,12 +75,12 @@ async function count(sql: string): Promise<number> {
 
 describe('router: event → task → attempt → worker', () => {
   test('duplicate event + repeated ticks do not duplicate tasks, wakeups, or attempts', async () => {
-    const applicationId = randomUUID()
+    const interviewId = randomUUID()
     const launcher = new ScriptedWorkerLauncher([
       scriptedOutcome('succeeded', { summary: 'handled once', runtimeSessionId: 'session-router-1' }),
     ])
     const router = buildRouter(launcher)
-    const requestedEvent = resumeEvent(applicationId, `evt-${randomUUID()}`)
+    const requestedEvent = scorecardEvent(interviewId, `evt-${randomUUID()}`)
 
     const first = await router.submit(requestedEvent)
     const duplicate = await router.submit(requestedEvent)
@@ -101,8 +108,8 @@ describe('router: event → task → attempt → worker', () => {
   })
 
   test('a stored-but-unrouted event is recovered by the next tick (crash after Event Inbox insert)', async () => {
-    const applicationId = randomUUID()
-    const event = resumeEvent(applicationId, `evt-${randomUUID()}`)
+    const interviewId = randomUUID()
+    const event = scorecardEvent(interviewId, `evt-${randomUUID()}`)
     // 模拟"事件已落库、进程在路由前崩溃"：只 insertEvent，不 route。
     const inserted = await store.insertEvent(event, {
       key: `feishu:${event.providerEventId}`,
@@ -123,7 +130,7 @@ describe('router: event → task → attempt → worker', () => {
   })
 
   test('failed attempt is retried on the same task by a later tick', async () => {
-    const applicationId = randomUUID()
+    const interviewId = randomUUID()
     const launcher = new ScriptedWorkerLauncher([
       scriptedOutcome('failed', {
         summary: 'worker failed transiently',
@@ -136,7 +143,7 @@ describe('router: event → task → attempt → worker', () => {
       scriptedOutcome('succeeded', { summary: 'retry succeeded', runtimeSessionId: 'session-retry-2' }),
     ])
     const router = buildRouter(launcher)
-    const submitted = await router.submit(resumeEvent(applicationId, `evt-${randomUUID()}`))
+    const submitted = await router.submit(scorecardEvent(interviewId, `evt-${randomUUID()}`))
     assert.ok(submitted.taskId !== null)
 
     const tickOne = await router.tick(new AbortController().signal)

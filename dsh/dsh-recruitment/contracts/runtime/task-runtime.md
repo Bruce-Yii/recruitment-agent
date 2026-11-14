@@ -62,12 +62,35 @@ Agent Session（例如续跑同一 DSH Session 的多次执行）；一个 DSH S
 
 ### 2.4 两条路径
 
-**确定性事件**（无需模型判断）：`resume_received`、`transcript_ready`、
-`scorecard_submitted`、`application_stage_entered`、`interview_scheduled`、
-`candidate_reply`（含 `application.*` / `meeting.*` 别名）。按业务对象 + 任务类型
-稳定建 Task；同一对象的后续事件唤醒同一 Task。
+**唯一权威源**：事件类型的登记表是 `src/runtime/event-types.ts` 的 `EVENT_TYPE_REGISTRY`。
+发射方（`src/tools/**`、`src/domain/**`）引用 `EVENT_TYPES` 常量，路由方从注册表**派生**
+确定性路由表与显式忽略表——两侧不存在第二份手抄字符串。
+机检：`test/runtime/event-types.test.ts` 扫描 `src/**` 全部 `event_inbox` 发射点，要求每个
+发射名都已登记（发射未登记的名字 → 测试红），并反向要求每个登记项的生产者文件确实引用注册表。
 
-**语义准入**：其它类型必须先过 `DefaultSemanticGate`：
+**确定性事件**（登记为 `DETERMINISTIC`，无需模型判断，按业务对象 + 任务类型稳定建 Task；
+同一对象的后续事件唤醒同一 Task）：
+
+| 事件名 | 产生者 | 业务对象 | Task 类型 |
+|---|---|---|---|
+| `resume.intake.received` | `recruitment_application_intake` | `INTAKE_RECORD`（按事件行反查 `intake_record.event_id`；payload 只有 sha256，没有对象 UUID） | `RESUME_PARSE` |
+| `scorecard.submit` | `recruitment_scorecard_submit` | `INTERVIEW`（payload `interview_id`） | `EVALUATION_SYNTHESIZE` |
+
+**显式忽略**（登记为 `IGNORED`，不建 Task，`route_error` 写 `REGISTERED_IGNORED: <原因>`）：
+
+| 事件名 | 产生者 | 为什么不触发 |
+|---|---|---|
+| `decision.record` | `recruitment_decision_record` | 人工决策已由工具在同一事务落库；v1.0 没有"决策后自动执行"的任务类型，二次触发会重复推进 |
+| `interview.rescheduled` / `interview.cancelled` / `interviewer.withdrawn` | `recruitment_interview_schedule` | 同一事务已写幂等 STORE Task（`INTERVIEW_SCHEDULE`/`INTERVIEW_MEETING_BIND`）；事件只是审计事实（理由只能落 payload），再触发会执行两遍 |
+| `job.rubric_version.approved` | `recruitment_job_rubric_approve` | 批准已由命令事务写库；`schema/0001` 审计事件不进待路由队列 |
+| `application.rubric_version.pinned` | `src/domain/stage-advance.ts` | 同上 |
+| `<table>.<column>.changed`（19 个挂载点） | `db/migrations/0001_init.sql` 的 `fn_row_guard` | 状态迁移审计事实；`normalizer_version='schema/0001'` 不进待路由队列，后续工作由发出迁移的命令路径负责 |
+
+> **不允许**"表里没有 → 落到语义 Gate"作为已知类型的归宿：那是隐式的、不可审计的。
+> 已知类型必须二选一（`DETERMINISTIC` / `IGNORED`），`IGNORED` 必须写原因。
+> 未登记 = 未接线（语义准入只服务外部未知信号，不服务本项目的发射方）。
+
+**语义准入**：未登记的类型必须先过 `DefaultSemanticGate`（准入规则未放宽）：
 - 只接受 `trustLevel=INTERNAL`；
 - 事件类型显式 `semantic.*` / `router.*`，或 `payload.intent` 非空；
 - 通过后只创建 `ROUTER_TRIAGE` Task，状态 `WAITING_HUMAN`，**不自动派发 Worker**。
@@ -81,6 +104,24 @@ Agent Session（例如续跑同一 DSH Session 的多次执行）；一个 DSH S
 `ROUTED`/`IGNORED`/`FAILED` 必须有 `routed_at`；`FAILED` 必须有 `route_error`；
 `routed_task_id` 只允许出现在 `ROUTED`。列级不可变白名单只放行这些运行时投影列，
 事件主体（provider/payload/幂等键/trust/occurred_at）仍不可改。
+
+### 2.6 启动水位（cutover）：历史事件永不派发
+
+`tick()` 处理待路由事件的**第一步**是读该租户的 `recruitment.runtime_watermark.cutover_at`
+（`db/migrations/0015_runtime_cutover.sql`）：
+
+- `received_at < cutover_at` → **历史**：只把 dispatch 投影标成 `IGNORED`，
+  `route_error = BEFORE_RUNTIME_CUTOVER: ...`；不建 Task、不写 `task_wakeup`、
+  不入队副作用、**不改事件主体任何列**；
+- `received_at >= cutover_at` → 正常派发（与没有水位时语义一致）；
+- 该租户没有水位行 → `CUTOVER_WATERMARK_MISSING`（**fail closed**：不猜一个"现在"，
+  也不静默返回空）。
+
+判定列是**库生成的 `received_at`**（入库时刻），不是事件 payload 里的 `occurred_at`
+—— 后者来自外部、可被伪造，用外部时间做 cutover 等于让外部决定"我要不要被派发"。
+水位只能前进；把它改小必须走 `recruitment.fn_runtime_watermark_rewind`（要求 actor +
+非空理由，并由触发器写 REWIND 审计行）。完整规则、各写入函数与运维步骤见
+`contracts/runtime/runtime-cutover.md`。
 
 ---
 

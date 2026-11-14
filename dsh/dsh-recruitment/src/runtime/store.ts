@@ -29,6 +29,9 @@ import type {
 } from './types.ts'
 import type { RouteDecision } from './types.ts'
 import { taskIdempotencyKey } from './routing.ts'
+// cutover 水位：待派发查询必须**在 SQL 里** join 水位（忘了传参 = 静默漏洞，
+// NULL 参数 = 不过滤），谓词片段与 dry-run 预览共用同一份常量。
+import { EVENT_DISPATCHABLE_SQL, RuntimeCutoverStore } from './cutover.ts'
 // runtime ↔ 引擎 Effects/Outbox 的唯一交界（type-only import，不会拉起同步桥 worker）。
 // 三个函数都接收**调用方事务里的异步 client**：业务写入与副作用入队同事务提交。
 import { enqueueEffect, readReceipt, recordOutbound } from '../engine/app/effects-async.ts'
@@ -239,6 +242,8 @@ export class RuntimeStore {
   private readonly tenantId: string
   private readonly actorId: string
   private readonly notification: NotificationTarget | undefined
+  /** cutover 水位（与 store 共享同一个 pool / tenant / actor）。 */
+  private readonly cutoverStore: RuntimeCutoverStore
 
   /**
    * @param options - 连接池 + 租户 + actor（全部来自插件配置）。
@@ -248,11 +253,27 @@ export class RuntimeStore {
     this.tenantId = options.tenantId
     this.actorId = options.actorId
     this.notification = options.notification
+    this.cutoverStore = new RuntimeCutoverStore({
+      pool: options.pool,
+      tenantId: options.tenantId,
+      actorId: options.actorId,
+    })
   }
 
   /** 当前租户 id（测试/HTTP 回执用）。 */
   get tenant(): string {
     return this.tenantId
+  }
+
+  /**
+   * cutover 水位读写入口（`event-runtime.processPending` 与 dry-run 预览共用）。
+   *
+   * 为什么放在 store 上而不是让 EventRuntime 自己 new：运行时只有一份
+   * pool/tenant/actor 配置，入口分散出去就会出现"某个路径用了别的租户"的
+   * 静默越权。这里保持单一来源。
+   */
+  get cutover(): RuntimeCutoverStore {
+    return this.cutoverStore
   }
 
   /**
@@ -368,24 +389,51 @@ export class RuntimeStore {
     })
   }
 
-  /** 待路由事件（RECEIVED 或 FAILED 且未到重试上限）。 */
+  /**
+   * 按**事件行自身的事实**解析业务对象：材料到达事件 → `intake_record.event_id`。
+   *
+   * 为什么需要它（不是"顺手加个查询"）：
+   * `resume.intake.received` 的 payload 只有 `sha256 / file_name / pages / source_kind`
+   * （`application-intake.ts` 的 `upsertIntakeEvent`），`source_object_id` 是原件 sha256
+   * ——**都不是 UUID**。而 `intake` 是先写事件、后建 application，所以这层里唯一真实
+   * 存在的业务对象是那条 `intake_record`（它的 `event_id` 指回本事件）。
+   *
+   * 纪律：查不到就返回 `null`，由路由层落 `BUSINESS_OBJECT_NOT_FOUND`（不猜 ID）。
+   * @param eventId - 事件 id。
+   * @returns `intake_record.id`；没有（或不止一条的异常情况按最早一条）→ 取最早一条。
+   */
+  async intakeRecordIdForEvent(eventId: string): Promise<string | null> {
+    return withReadOnly(this.pool, async (client) => {
+      const { rows } = await client.query<{ id: string }>(
+        `select id::text
+           from recruitment.intake_record
+          where tenant_id = $1::uuid and event_id = $2::uuid
+          order by created_at, id
+          limit 1`,
+        [this.tenantId, eventId],
+      )
+      return rows[0]?.id ?? null
+    })
+  }
+
+  /**
+   * 待路由事件（RECEIVED 或 FAILED 且未到重试上限，**且已跨过 cutover 水位**）。
+   *
+   * `received_at >= runtime_watermark.cutover_at` 是 SQL 的结构条件（JOIN），不是
+   * 可选参数：没有水位行时这里一行都取不到 —— "取数必须尊重水位"不能依赖调用方
+   * 记得传值。历史事件由 `RuntimeCutoverStore.sweepBefore()` 标 IGNORED，不进本查询。
+   */
   async listPendingEvents(limit: number, maxAttempts: number): Promise<readonly string[]> {
     return withReadOnly(this.pool, async (client) => {
       const { rows } = await client.query<{ event_id: string }>(
-        `select event_id::text
-           from recruitment.event_inbox
-          where tenant_id = $1::uuid
-            and dispatch_state in ('RECEIVED', 'FAILED')
-            and route_attempts < $2
-            -- 0001 的 fn_row_guard 在每次状态迁移时写一条内部审计事件
-            -- （provider='internal', normalizer_version='schema/0001'）。
-            -- 那是**状态审计事实**，不是进站的触发事件；把它们当待路由事件会
-            -- 让每次 tick 都去"路由"业务表的状态变化。语义准入事件（semantic.*）
-            -- 虽然是 internal provider，但确实是触发，保留。
-            and (normalizer_version is distinct from 'schema/0001'
-                 or event_type like 'semantic.%'
-                 or event_type like 'router.%')
-          order by received_at
+        `select e.event_id::text
+           from recruitment.event_inbox e
+           join recruitment.runtime_watermark w
+             on w.tenant_id = e.tenant_id
+            and e.received_at >= w.cutover_at
+          where e.tenant_id = $1::uuid
+            and ${EVENT_DISPATCHABLE_SQL}
+          order by e.received_at
           limit $3`,
         [this.tenantId, maxAttempts, limit],
       )
@@ -1157,9 +1205,17 @@ export class RuntimeStore {
     })
   }
 
-  /** 运行时计数（健康检查/证据用；不参与业务判断）。 */
+  /**
+   * 运行时计数（健康检查/证据用；不参与业务判断）。
+   *
+   * 除了基础计数，还带 **cutover 历史积压** 读数（`events_legacy_undispatched` /
+   * `events_before_cutover_pending` / `events_legacy_oldest_wait_seconds`）：
+   * 把历史事件标成 IGNORED 只是"不再派发"，不等于"没有积压"。运维必须能一眼看到
+   * "有多少历史事件从未被派发、最老等了多久"，否则"扫完了"会被误读成"没积压"。
+   * 两次只读查询顺序执行（不嵌套事务，避免连接池上限被自己占满）。
+   */
   async runtimeCounts(): Promise<Record<string, number>> {
-    return withReadOnly(this.pool, async (client) => {
+    const base = await withReadOnly(this.pool, async (client) => {
       const { rows } = await client.query<Record<string, unknown>>(
         `select
            (select count(*) from recruitment.event_inbox where tenant_id = $1::uuid) as events,
@@ -1177,6 +1233,12 @@ export class RuntimeStore {
       for (const [key, value] of Object.entries(row)) out[key] = num(value)
       return out
     })
+    const legacy = await this.cutoverStore.legacyBacklog()
+    base.events_legacy_undispatched = legacy.undispatchedEvents
+    base.events_before_cutover_pending = legacy.pendingBeforeCutover
+    base.events_ignored_before_cutover = legacy.alreadyIgnoredByCutover
+    base.events_legacy_oldest_wait_seconds = legacy.oldestWaitSeconds ?? 0
+    return base
   }
 }
 

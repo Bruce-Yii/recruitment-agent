@@ -13,6 +13,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { EventRuntime } from '../../src/runtime/event-runtime.ts'
+import { EVENT_TYPES } from '../../src/runtime/event-types.ts'
 import { RuntimeStore } from '../../src/runtime/store.ts'
 import { TaskRuntime } from '../../src/runtime/task-runtime.ts'
 import type { InboundEvent, WorkerLauncher } from '../../src/runtime/types.ts'
@@ -38,16 +39,22 @@ after(async () => {
   if (db !== undefined) await db.drop()
 })
 
-/** 用一条 ResumeReceived 事件建一个业务对象唯一的 Task，返回 taskId。 */
+/**
+ * 用一条**真实发射的**确定性事件（`scorecard.submit`）建一个业务对象唯一的 Task。
+ *
+ * 历史提醒：这里原来用 `resume_received` —— 那是个**没有任何发射方**的名字，
+ * 测起来永远绿，却与工具真正发的 `resume.intake.received` 毫无关系（R2 假接线）。
+ * 现在事件名一律从 `src/runtime/event-types.ts` 的注册表取。
+ */
 async function newTask(): Promise<string> {
-  const applicationId = randomUUID()
+  const interviewId = randomUUID()
   const result = await events.receive({
     tenantId: RUNTIME_TENANT,
-    provider: 'feishu',
+    provider: 'internal',
     providerEventId: `evt-${randomUUID()}`,
-    eventType: 'resume_received',
-    payload: { application_id: applicationId },
-    trustLevel: 'UNTRUSTED_EXTERNAL',
+    eventType: EVENT_TYPES.SCORECARD_SUBMIT,
+    payload: { interview_id: interviewId },
+    trustLevel: 'INTERNAL',
   } satisfies InboundEvent)
   assert.equal(result.dispatchState, 'ROUTED')
   assert.ok(result.taskId !== null)
@@ -164,7 +171,7 @@ describe('task runtime: attempt lifecycle and recovery', () => {
 
   test('a session that has ended does not end the task: a later event wakes and continues the same task', async () => {
     const taskId = await newTask()
-    const applicationId = (await store.readTask(taskId))!.task.businessRefs[0]!.id
+    const interviewId = (await store.readTask(taskId))!.task.businessRefs[0]!.id
     const runtime = taskRuntime(new ScriptedWorkerLauncher([
       scriptedOutcome('succeeded', { summary: 'first execution', runtimeSessionId: 'session-1' }),
       scriptedOutcome('succeeded', { summary: 'second execution after session ended', runtimeSessionId: 'session-2' }),
@@ -178,11 +185,11 @@ describe('task runtime: attempt lifecycle and recovery', () => {
     // Session 已经结束；新事件仍然唤醒同一个 Business Task（身份不随会话消失）。
     const wake = await events.receive({
       tenantId: RUNTIME_TENANT,
-      provider: 'feishu',
+      provider: 'internal',
       providerEventId: `evt-${randomUUID()}`,
-      eventType: 'resume_received',
-      payload: { application_id: applicationId },
-      trustLevel: 'UNTRUSTED_EXTERNAL',
+      eventType: EVENT_TYPES.SCORECARD_SUBMIT,
+      payload: { interview_id: interviewId },
+      trustLevel: 'INTERNAL',
     })
     assert.equal(wake.taskId, taskId)
     assert.equal(wake.taskCreated, false)
@@ -194,7 +201,7 @@ describe('task runtime: attempt lifecycle and recovery', () => {
     assert.equal(second.attemptNo, 2)
     const view = await runtime.read(taskId)
     assert.equal(view!.sessions.length, 2)
-    assert.equal(view!.task.taskType, 'RESUME_PARSE')
+    assert.equal(view!.task.taskType, 'EVALUATION_SYNTHESIZE')
     assert.equal(view!.wakeups.length, 2)
   })
 

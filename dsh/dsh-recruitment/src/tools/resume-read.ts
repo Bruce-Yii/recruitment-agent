@@ -1,7 +1,15 @@
-// recruitment_resume_read —— 读一份本地简历 PDF，返回带坐标证据的结构化结果。
+// recruitment_resume_read —— 读一份本地简历（PDF / DOCX / RTF），返回带证据的结构化结果。
 //
 // 只读：不写文件、不写数据库、不改模块级状态。唯一的副作用是起一个 Python
-// 子进程读取指定 PDF（只读打开），路径受 allowed_roots 约束。
+// 子进程读取指定文档（只读打开），路径受 allowed_roots 约束。
+//
+// 格式判定与 `application_intake` / `document_read` **同一口径**（2026-11-14 修）：
+// 不再用 `assertReadablePdf()` 按扩展名硬判 `.pdf`（那是 DOCX / RTF 被
+// `INVALID_ARGS(PATH_INVALID)` 拒掉的根因），而是
+// `assertReadableFile()`（只查路径安全）→ `sniffFile()`（**按字节**判格式）。
+// 读得进去的格式只有 converter 真能读的三种：PDF、DOCX（MuPDF 的 OOXML 通道）、
+// RTF（converter 的 striprtf reader）。图片字节明确拒绝：本工具没有 OCR/视觉步骤，
+// 返回空 block 会被下游误当成"没有内容"。
 //
 // 字段三态是硬约束：present / absent / unreadable。unreadable 绝不能当 absent，
 // 因为下游会把 absent 当"候选人确实没有这项"（见 doc 11 §9.2）。
@@ -17,13 +25,17 @@ import { parseArgs, toParameterSchema } from './args.ts'
 import type { ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
+import type { RecruitmentErrorCode } from './errors.ts'
 import {
-  assertReadablePdf,
-  ConverterPathError,
   runConverter,
   type ConverterOutput,
   type ResolvedConverterConfig,
 } from './converter.ts'
+// 媒体判定复用统一读取层（U1）：路径安全与内容嗅探各只有一个实现，
+// 与 `application_intake` / `document_read` 走同一条入口（2026-11-14 收口）。
+import { DocumentReadError, isDocumentReadError } from '../document/readers/errors.ts'
+import { assertReadableFile } from '../document/readers/files.ts'
+import { sniffFile, type SniffResult } from '../document/readers/sniff.ts'
 
 const RESUME_BLOCK_TYPES = ['paragraph', 'link', 'heading'] as const
 const FIELD_NAMES = ['name', 'phone', 'email', 'work_experience', 'education'] as const
@@ -73,12 +85,35 @@ function readEvidenceOf(output: ConverterOutput): ReadEvidence {
   }
 }
 
+/**
+ * 本工具能读的格式：converter 真有 reader 的三类。
+ *
+ * 判定依据是**字节嗅探**（`sniffFile`）后的格式，不是扩展名；图片虽然能被
+ * `document_read` 读成"待视觉补读"，但本工具没有视觉/OCR 步骤，收下只会返回空 block，
+ * 让调用方误以为"这份简历没有内容"，所以明确拒绝而不是假装能读。
+ */
+const READABLE_FORMATS: readonly string[] = ['pdf', 'docx', 'rtf']
+
+/** 路径类错误码：原样透传（它们不是"读取失败"，而是"这个路径不能读"）。 */
+function pathOrReadError(error: DocumentReadError): RecruitmentToolError {
+  const passThrough: readonly RecruitmentErrorCode[] = ['INVALID_ARGS', 'NOT_FOUND', 'FORBIDDEN']
+  if (passThrough.includes(error.code as RecruitmentErrorCode)) {
+    return new RecruitmentToolError(error.code as RecruitmentErrorCode, error.message)
+  }
+  // 其余（EMPTY_FILE / UNSUPPORTED_MEDIA / READ_TIMEOUT...）统一走 READER_FAILED，
+  // 并把 reader 的稳定 code 作为 `reason_code` 保留，便于机器复核（与 S6 同形）。
+  return new RecruitmentToolError(
+    error.code === 'EMPTY_FILE' ? 'INVALID_ARGS' : 'READER_FAILED',
+    JSON.stringify({ reason_code: error.code, message: error.message }),
+  )
+}
+
 const PARAMS: ParamMap = {
   path: {
     kind: 'string',
     required: true,
     maxLength: 1024,
-    description: 'Absolute path of a local resume PDF inside an allowed root.',
+    description: 'Absolute path of a local resume (PDF / DOCX / RTF) inside an allowed root.',
   },
   max_blocks: {
     kind: 'integer',
@@ -288,7 +323,12 @@ function toFieldValue(raw: ConverterOutput['fields'], name: string): FieldValue 
 }
 
 /** 导出只为测试：这是「转换结果 → 工具规范输出」的纯映射，没有 I/O。 */
-export function toValue(output: ConverterOutput, maxBlocks: number, wanted?: readonly string[]): ResumeReadValue {
+export function toValue(
+  output: ConverterOutput,
+  maxBlocks: number,
+  wanted?: readonly string[],
+  mediaType: string = 'application/pdf',
+): ResumeReadValue {
   const allBlocks = (output.blocks ?? []).map((block, index) => ({
     index,
     type: typeof block.kind === 'string' ? block.kind : 'paragraph',
@@ -322,7 +362,7 @@ export function toValue(output: ConverterOutput, maxBlocks: number, wanted?: rea
     stub: false,
     source: {
       file_name: output.meta?.source_name ?? '',
-      media_type: 'application/pdf',
+      media_type: mediaType,
       pages: typeof output.meta?.pages === 'number' ? output.meta.pages : 0,
       sha256: output.meta?.source_sha256 ?? '',
       backend: output.meta?.backend ?? '',
@@ -352,11 +392,13 @@ export function createResumeReadTool(cfg: ResolvedConverterConfig): ReadonlyTool
   return {
     name: 'recruitment_resume_read',
     description:
-      'Read one local resume PDF and return its ordered content blocks with page/bbox evidence, '
+      'Read one local resume (PDF / DOCX / RTF — the format is sniffed from the file CONTENT, '
+      + 'so the extension never decides) and return its ordered content blocks with evidence, '
       + 'plus name/phone/email/work_experience/education in a three-state form '
       + '(present | absent | unreadable). Read-only: no database, no writes. '
       + 'unreadable must never be treated as absent. Returns FORBIDDEN for paths outside '
-      + 'the configured roots and NOT_FOUND for missing files. '
+      + 'the configured roots and NOT_FOUND for missing files; image-only bytes are rejected '
+      + 'with READER_FAILED(reason_code=IMAGE_REQUIRES_VISION) because this tool has no OCR step. '
       + 'R4 labels: provenance=LIVE only when the converter reported a verifiable SHA-256 of the actual file '
       + 'bytes (provenance_basis=FILE_BYTES_SHA256_VERIFIED); otherwise FIXTURE (fail-closed, with a '
       + 'provenance_evidence_missing issue). LIVE means "these blocks come from those real file bytes", not '
@@ -404,15 +446,37 @@ export function createResumeReadTool(cfg: ResolvedConverterConfig): ReadonlyTool
       const requested = args.path as string
       const maxBlocks = args.max_blocks === undefined ? DEFAULT_MAX_BLOCKS : (args.max_blocks as number)
       const wanted = args.block_types as readonly string[] | undefined
+
+      // 1) 路径安全（绝对 / 存在 / 普通文件 / allowed_roots / 非空）——只有一份实现。
+      // 2) 内容嗅探（按字节判 PDF / DOCX / RTF / PNG / JPEG）——扩展名不参与。
       let realPath: string
+      let sniff: SniffResult
       try {
-        realPath = assertReadablePdf(requested, cfg)
+        const file = assertReadableFile(requested, cfg)
+        realPath = file.real_path
+        sniff = await sniffFile(realPath)
       } catch (error) {
-        if (error instanceof ConverterPathError) {
-          throw new RecruitmentToolError(error.code, error.message)
-        }
+        if (isDocumentReadError(error)) throw pathOrReadError(error)
         throw error
       }
+
+      if (!READABLE_FORMATS.includes(sniff.format)) {
+        // 图片本工具读不了：不是"内容为空"，而是"这种媒体需要视觉读取"。
+        // 与 S6 的 `IMAGE_REQUIRES_VISION` 同一原因码，调用方可以据此改走 document_read。
+        const reasonCode = sniff.format === 'png' || sniff.format === 'jpeg'
+          ? 'IMAGE_REQUIRES_VISION'
+          : 'UNSUPPORTED_MEDIA'
+        throw new RecruitmentToolError('READER_FAILED', JSON.stringify({
+          reason_code: reasonCode,
+          message: sniff.format === 'png' || sniff.format === 'jpeg'
+            ? '这份材料是图片，本工具没有 OCR / 视觉步骤：从像素猜出来的字段只能算 agent_read，'
+              + '不能当原生文本。请改用 recruitment_document_read（会给出 vision 补读计划），'
+              + '或先用能产出 native_text 的原件（PDF / DOCX / RTF）。'
+            : `本工具不读这种媒体：${String(sniff.format)}`,
+          sniffed_media: sniff.media,
+        }))
+      }
+
       let output: ConverterOutput
       try {
         const signal = (exec as { signal?: AbortSignal } | undefined)?.signal
@@ -421,7 +485,8 @@ export function createResumeReadTool(cfg: ResolvedConverterConfig): ReadonlyTool
         const message = error instanceof Error ? error.message : String(error)
         throw new RecruitmentToolError('READER_FAILED', `converter failed: ${message}`)
       }
-      return toValue(output, maxBlocks, wanted)
+      // media_type 用**嗅探值**，不用扩展名、也不写死 application/pdf（DOCX/RTF 的假标签根因）。
+      return toValue(output, maxBlocks, wanted, sniff.media)
     },
   }
 }

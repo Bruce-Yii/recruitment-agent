@@ -19,6 +19,7 @@ import { Outbox } from '../../src/engine/app/outbox.ts'
 import { HealthBoard } from '../../src/engine/infra/health.ts'
 import type { OutboundMessage } from '../../src/engine/core/index.ts'
 import { EventRuntime } from '../../src/runtime/event-runtime.ts'
+import { EVENT_TYPES } from '../../src/runtime/event-types.ts'
 import { RuntimeStore } from '../../src/runtime/store.ts'
 import { TaskRuntime } from '../../src/runtime/task-runtime.ts'
 import type { InboundEvent, NotificationTarget } from '../../src/runtime/types.ts'
@@ -98,23 +99,23 @@ async function withHarness(notification: NotificationTarget | undefined, fn: (ha
 }
 
 let eventCounter = 0
-function resumeEvent(applicationId: string): InboundEvent {
+function scorecardEvent(interviewId: string): InboundEvent {
   eventCounter += 1
   return {
     tenantId: RUNTIME_TENANT,
-    provider: 'feishu',
+    provider: 'internal',
     providerEventId: `junction-evt-${eventCounter}-${randomUUID()}`,
-    eventType: 'resume_received',
-    payload: { application_id: applicationId },
-    trustLevel: 'UNTRUSTED_EXTERNAL',
+    eventType: EVENT_TYPES.SCORECARD_SUBMIT,
+    payload: { interview_id: interviewId },
+    trustLevel: 'INTERNAL',
   }
 }
 
 describe('runtime ↔ engine effects/outbox junction', () => {
   test('async runtime transaction writes launch + notice/reply; plugin Effects/Outbox dispatch; receipt pending → sent', async () => {
     await withHarness(NOTIFICATION, async (harness) => {
-      const applicationId = randomUUID()
-      const received = await harness.events.receive(resumeEvent(applicationId))
+      const interviewId = randomUUID()
+      const received = await harness.events.receive(scorecardEvent(interviewId))
       const taskId = received.taskId
       assert.ok(taskId !== null)
 
@@ -168,8 +169,8 @@ describe('runtime ↔ engine effects/outbox junction', () => {
 
   test('an event that wakes a RUNNING task enqueues a delivery effect in the same transaction', async () => {
     await withHarness(undefined, async (harness) => {
-      const applicationId = randomUUID()
-      const received = await harness.events.receive(resumeEvent(applicationId))
+      const interviewId = randomUUID()
+      const received = await harness.events.receive(scorecardEvent(interviewId))
       const taskId = received.taskId
       assert.ok(taskId !== null)
 
@@ -181,7 +182,7 @@ describe('runtime ↔ engine effects/outbox junction', () => {
       })
       assert.ok(claim !== null)
 
-      const wake = await harness.events.receive(resumeEvent(applicationId))
+      const wake = await harness.events.receive(scorecardEvent(interviewId))
       assert.equal(wake.taskId, taskId)
       assert.equal(wake.wakeInserted, true)
 

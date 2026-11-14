@@ -17,6 +17,8 @@ export type RuntimeErrorCode =
   | 'WORKER_NO_FINAL'
   | 'WORKER_RESULT_UNPARSEABLE'
   | 'RUNTIME_NOT_ENABLED'
+  // 该租户没有声明 cutover 水位（历史事件边界）：运行时 fail closed，不猜默认值。
+  | 'CUTOVER_WATERMARK_MISSING'
 
 export class RuntimeError extends Error {
   /** 稳定错误码（同时是 message 的前缀）。 */

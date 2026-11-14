@@ -89,6 +89,8 @@ import {
   type ResolvedDatabaseConfig,
 } from '../db/pool.ts'
 import { computeEvaluationSummaryIn, type EvaluationSummary } from './evaluation-summarize.ts'
+// 事件名只从注册表取（`src/runtime/event-types.ts`）；机检测试会扫发射点。
+import { EVENT_TYPES } from '../runtime/event-types.ts'
 
 const TOOL_NAME = 'recruitment_decision_record'
 const CONTRACT_VERSION = '2.0.0'
@@ -2638,10 +2640,10 @@ async function insertDecisionEvent(
         occurred_at, received_at, recorded_at, correlation_id, causation_id,
         idempotency_key, idempotency_source, source_object_id,
         payload_ref, payload, trust_level, normalized_event_type, normalizer_version)
-     values ($1, $2, 'internal', null, 'decision.record', 1,
+     values ($1, $2, 'internal', null, '${EVENT_TYPES.DECISION_RECORD}', 1,
              now(), now(), now(), null, null,
              $3, 'FALLBACK_KEY', $4,
-             null, $5::jsonb, 'INTERNAL', 'decision.record', 'schema/evaluation-2.0.0')`,
+             null, $5::jsonb, 'INTERNAL', '${EVENT_TYPES.DECISION_RECORD}', 'schema/evaluation-2.0.0')`,
     [input.eventId, input.tenantId, `decision:${input.decisionId}`, input.decisionId, JSON.stringify(input.payload)],
   )
 }

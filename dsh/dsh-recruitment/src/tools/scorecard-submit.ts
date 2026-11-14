@@ -62,6 +62,8 @@ import { canonicalJson, digestOf, isUuid } from './contract.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
 import { closePool, createPool, withActor, type DatabaseClient, type ResolvedDatabaseConfig } from '../db/pool.ts'
+// 事件名只从注册表取（`src/runtime/event-types.ts`）；机检测试会扫发射点。
+import { EVENT_TYPES } from '../runtime/event-types.ts'
 
 const TOOL_NAME = 'recruitment_scorecard_submit'
 const CONTRACT_VERSION = '2.0.0'
@@ -1556,7 +1558,7 @@ async function insertInternalEvent(
     `insert into recruitment.event_inbox
        (tenant_id, provider, event_type, idempotency_key, idempotency_source, source_object_id,
         payload, trust_level, occurred_at, normalized_event_type)
-     values ($1, 'internal', 'scorecard.submit', $2, 'FALLBACK_KEY', $3, $4::jsonb, 'INTERNAL', now(), 'scorecard.submit')
+     values ($1, 'internal', '${EVENT_TYPES.SCORECARD_SUBMIT}', $2, 'FALLBACK_KEY', $3, $4::jsonb, 'INTERNAL', now(), '${EVENT_TYPES.SCORECARD_SUBMIT}')
      returning event_id`,
     [tenantId, idempotencyKey, scorecardId, JSON.stringify(payload)],
   )

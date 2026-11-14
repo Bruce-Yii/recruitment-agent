@@ -26,6 +26,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { zstdDecompressSync } from 'node:zlib'
 import { composeRuntime } from '../router.ts'
+import { EVENT_TYPES } from '../event-types.ts'
 import { RuntimeStore } from '../store.ts'
 import type { InboundEvent } from '../types.ts'
 import {
@@ -160,7 +161,7 @@ async function main(): Promise<void> {
     })
 
     // 1) 真实事件 → Business Task（确定性路径）
-    const applicationId = randomUUID()
+    const interviewId = randomUUID()
     const nonce = randomUUID()
     const proofDir = join(process.env.TEMP ?? process.env.TMP ?? '.', 'ra-runtime-tool-proof')
     const proofPath = join(proofDir, `tool-proof-${nonce}.txt`)
@@ -168,12 +169,12 @@ async function main(): Promise<void> {
     mkdirSync(proofDir, { recursive: true })
     const event: InboundEvent = {
       tenantId: RUNTIME_TENANT,
-      provider: 'feishu',
+      provider: 'internal',
       providerEventId: `evidence-${nonce}`,
-      eventType: 'resume_received',
+      eventType: EVENT_TYPES.SCORECARD_SUBMIT,
       occurredAt: new Date().toISOString(),
-      payload: { application_id: applicationId, evidence_nonce: nonce },
-      trustLevel: 'UNTRUSTED_EXTERNAL',
+      payload: { interview_id: interviewId, evidence_nonce: nonce },
+      trustLevel: 'INTERNAL',
     }
     const received = await composed.router.submit(event)
     if (received.taskId === null) throw new Error('event was not routed to a task')

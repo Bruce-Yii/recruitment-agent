@@ -11,6 +11,7 @@
 //   node src/runtime/evidence/task-lifecycle.evidence.ts
 import { randomUUID } from 'node:crypto'
 import { EventRuntime } from '../event-runtime.ts'
+import { EVENT_TYPES } from '../event-types.ts'
 import { RuntimeStore } from '../store.ts'
 import { TaskRuntime } from '../task-runtime.ts'
 import type { InboundEvent } from '../types.ts'
@@ -28,11 +29,11 @@ try {
   const newTask = async (): Promise<string> => {
     const result = await events.receive({
       tenantId: RUNTIME_TENANT,
-      provider: 'feishu',
+      provider: 'internal',
       providerEventId: `lifecycle-${randomUUID()}`,
-      eventType: 'resume_received',
-      payload: { application_id: randomUUID() },
-      trustLevel: 'UNTRUSTED_EXTERNAL',
+      eventType: EVENT_TYPES.SCORECARD_SUBMIT,
+      payload: { interview_id: randomUUID() },
+      trustLevel: 'INTERNAL',
     } satisfies InboundEvent)
     if (result.taskId === null) throw new Error('event did not route to a task')
     return result.taskId
@@ -135,14 +136,14 @@ try {
   })
   const firstRun = await continueRuntime.dispatchTask(continueTask, new AbortController().signal)
   const endedView = await snapshot(continueTask)
-  const applicationId = (await store.readTask(continueTask))!.task.businessRefs[0]!.id
+  const interviewId = (await store.readTask(continueTask))!.task.businessRefs[0]!.id
   const wake = await events.receive({
     tenantId: RUNTIME_TENANT,
-    provider: 'feishu',
+    provider: 'internal',
     providerEventId: `lifecycle-${randomUUID()}`,
-    eventType: 'resume_received',
-    payload: { application_id: applicationId },
-    trustLevel: 'UNTRUSTED_EXTERNAL',
+    eventType: EVENT_TYPES.SCORECARD_SUBMIT,
+    payload: { interview_id: interviewId },
+    trustLevel: 'INTERNAL',
   })
   const secondRun = await continueRuntime.dispatchTask(continueTask, new AbortController().signal)
   const resumedView = await snapshot(continueTask)
