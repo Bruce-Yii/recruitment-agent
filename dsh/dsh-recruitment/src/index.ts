@@ -330,7 +330,7 @@ export function apply(
   config?: Config,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): void {
-  const converter = resolveConverterConfig(config?.converter ?? {})
+  const converter = resolveConverterConfig(config?.converter ?? {}, env)
   const database = resolveDatabaseConfig(config?.database ?? {}, env)
   // 飞书连接器（E4 接线）：**只从插件配置**装配传输层；没配 feishu.cli 时 connector=undefined，
   // 转写导入的连接器回读路径 fail-closed（BLOCKED/TRANSPORT_NOT_CONFIGURED，不拉子进程）。

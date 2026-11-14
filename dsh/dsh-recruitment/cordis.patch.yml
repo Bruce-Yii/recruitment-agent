@@ -15,12 +15,13 @@
       name: '@recruitment/dsh-recruitment'
       config:
         converter:
-          python_bin: 'D:\Python3.12.9\python.exe'
-          converter_dir: 'D:\12412\dsh工作区\projects\recruitment-agent\converter'
+          # D-112/G9：bundle 层同样零机器路径；由部署环境变量提供，缺值 fail-closed。
+          python_bin: '${RECRUITMENT_PYTHON_BIN}'
+          converter_dir: '${RECRUITMENT_CONVERTER_DIR}'
           allowed_roots:
-            - 'D:\12412\dsh工作区\projects\resume-talent-pool'
-            - 'D:\12412\dsh工作区\orchestration'
-            - 'D:\12412\CodexWorkspace'
+            - '${RECRUITMENT_ALLOWED_ROOT_RESUME_POOL}'
+            - '${RECRUITMENT_ALLOWED_ROOT_ORCHESTRATION}'
+            - '${RECRUITMENT_ALLOWED_ROOT_CODEX}'
           timeout_ms: 60000
         database:
           host: 127.0.0.1
@@ -45,4 +46,5 @@
 - id: skill-filesystem
   config:
     customSkillDirs:
-      - 'D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\skill'
+      # D-112/G9：DSH profile patch 支持 `!!js` 表达式；普通字符串不做 `${ENV}` 插值。
+      - !!js process.env.RECRUITMENT_SKILL_DIR
