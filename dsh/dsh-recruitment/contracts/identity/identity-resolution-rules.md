@@ -75,20 +75,44 @@
 STATE(f)   ∈ {present, absent, unreadable}            # 三态，doc11 §9.2
 PROV(f)    ∈ {native_text, ocr_title, agent_read, human_confirmed, unknown}
 FORMAT_OK(f)  = norm(f) 存在 ∧ 匹配 IR-N1/N2 的最终正则
-EVID_OK(f)    = f.evidence 有 page≥1 ∧ bbox 四元组 ∧ source_sha256 为 64 位十六进制
+EVID_OK(f)    = ∃e ∈ f.evidence，三条件同时成立（D-110，按"可复核"而非"有坐标"）：
+                ① SHA_OK(e)     = sha256(原件字节) 独立重算 = e.source_sha256（64 位十六进制）
+                ② LOCATOR_UNIQUE(e) = e.locator 在解析结果里解析到**唯一**位置
+                ③ QUOTE_LITERAL(e)  = e.quote 在该定位范围的原文里**逐字**命中
+                   （只允许契约写死的换行/空白/断连字符归一化；禁止语义匹配、禁止模糊匹配）
+                每条证据必须记录 `locator_kind` + `verification_method`；
+                **歧义（同一 quote 多处命中且定位器不能唯一定位）⇒ 不通过，转人工
+                REVIEW(AMBIGUOUS_EVIDENCE)；禁止取第一条命中**（IR-G8）。
+                无坐标格式（RTF/纯文本）**不得仅因缺 bbox 拒收**，只要 ①②③ 成立即可自动。
 HARD_CLEAN(f) = 承载 f 的块/页没有 HARD issue；未知 issue code 一律按 HARD（doc11 §1）
 AUTO_OK(f)    = STATE=present ∧ PROV=native_text ∧ FORMAT_OK ∧ EVID_OK ∧ HARD_CLEAN
 ```
 
+**定位器联合类型（D-110）**：`EVID_OK` 的唯一性判定按格式分型，不要求坐标形式统一：
+
+| locator_kind | 定位字段 | 适用 |
+|---|---|---|
+| `pdf_page_bbox` | `page` + `bbox` 四元组 | PDF 文本层 |
+| `docx_part_paragraph` | `part` + `paragraph` | DOCX 段落 |
+| `docx_part_table_row` | `part` + `table_id` + `row` | DOCX 表格行 |
+| `rtf_paragraph` | `paragraph`（无硬分页时 `page=1` 可不写；有硬分页时 +`page`） | RTF |
+| `text_line_offset` | `line` + `offset` | 纯文本 |
+
+`verification_method` 至少区分两种来源：`LOCATOR_UNIQUE+SHA256+LITERAL_QUOTE`（由定位器唯一确定位置）
+与 `QUOTE_UNIQUE+SHA256+LITERAL_QUOTE`（无可用坐标时由 quote 全文唯一命中反推位置；多处命中必须转人工）。
+下游可按证据强度区分，但**不得仅因缺 bbox 拒收**。
+
 | # | 规则 | 判定式 | 依据 |
 |---|---|---|---|
-| IR-G1 | 只有 `AUTO_OK` 字段可驱动自动合并 | 自动合并所需**每一侧、每一个**参与匹配的强标识必须 `AUTO_OK` | `doc11 §9.7`、`doc11 §2 D3`、`doc11 §9.11 #10` |
+| IR-G1 | 只有 `AUTO_OK` 字段可驱动自动合并 | 自动合并所需**每一侧、每一个**参与匹配的强标识必须 `AUTO_OK`；`EVID_OK` 按本节**定位器联合类型三条件**判定（D-110） | `doc11 §9.7`、`doc11 §2 D3`、`doc11 §9.11 #10`；D-110（2026-11-15 产品负责人裁决） |
 | IR-G2 | `ocr_title` / `agent_read` 一律人工 | 参与匹配的字段 `PROV ∈ {ocr_title, agent_read}` → 结论只能是 `REVIEW(PROVENANCE_NOT_AUTOMATABLE)`，**即使值完全相等** | 同上 |
 | IR-G3 | `unknown`（含历史迁移数据、手工塞库数据）一律人工 | `PROV` 不可考 ⇒ 视为不可自动。**fail-closed，不是 fail-open** | `doc11 §9.7`；`D-20` 同构（推不出 ≠ 否定） |
 | IR-G4 | `human_confirmed` 可自动 | HR 在复核动作里**确认过**的字段视为已核实（等价于 `native_text` + 人工已读），但必须在 attempt 里留下 `confirmed_by` + `confirmed_at` | `docs03 §6.4`（授权 HR 确认） |
 | IR-G5 | 文档级阻断 | `resume_version.parse_status ∈ {FAILED}` → 无字段可用；`completeness=unverified` 或 `needs_visual=true` → 全部字段降级为不可自动 | `doc11 §2 B3`、`doc11 §1` |
 | IR-G6 | 平台噪声字段不得作标识 | 页眉/水印/二维码里的电话邮箱（`doc11 §9.5`）即便 `native_text` 也不得进 `norm_phone/norm_email`；判定：该块若被标 `platform_noise` → `STATE=absent` | `doc11 §9.5` |
 | IR-G7 | 归一化不改原文 | attempt 必须同时保存 `raw` 与 `norm`；库里 `normalized_*` 只是比较键 | `doc11 §2 A3`、`doc11 §9.9` |
+| IR-G8 | 证据歧义一律人工（禁止取第一条） | 定位器解析到多处，或 `quote` 在全文多处命中且定位器不能唯一定位 → `REVIEW(AMBIGUOUS_EVIDENCE)`；必须先补第二定位（前/后文、相邻块、章节）或转人工。**不得**按"第一条命中"消解 | D-110（"同一句话出现多次时取第一条，比没有坐标更危险"） |
+| IR-G9 | 证据必须可复核且注明种类 | 进入 `AUTO_OK` 的每条证据必须带 `locator_kind` + `verification_method` + `source_sha256`；无坐标格式标注定位器类型，下游可按证据强度区分，但**不得仅因缺 bbox 拒收** | D-110；本节定位器联合类型 |
 
 **来源 × 默认结论**（注意：**通道不决定结论，provenance 决定结论**；下表只是常见组合，判定仍走上面谓词）：
 
@@ -347,6 +371,7 @@ match_basis = {
 | IR-F10 | 把归一化结果**回写**原文或证据 `raw` | `doc11 §2 A3` | `raw ≠ 原件对应块文本` |
 | IR-F11 | 对 `MERGED` 档写入新 Application / Resume / Decision | 本文 `IR-M3` | `application.candidate_id` 指向 `identity_status='MERGED'`（写盘前必须 `resolve()`） |
 | IR-F12 | 无 `match_basis`、无 attempt 的静默合并 | `doc11 §9.7`、`SCHEMA §8 INV-2` | `ck_candidate_merge_basis` 已拦空对象（`N25`）；attempt 缺失要靠审计发现 |
+| IR-F13 | 用"取第一条命中"消解歧义证据 | D-110（`IR-G8`） | 证据 `locator_kind` 为 `text_line_offset`/缺省，而 `verification_method` 声称通过；或实现里出现 `find(...)[0]` 式 quote 取首条 |
 
 ---
 

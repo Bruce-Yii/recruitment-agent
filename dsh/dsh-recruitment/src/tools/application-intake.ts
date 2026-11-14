@@ -66,6 +66,9 @@ import { assertReadableFile } from '../document/readers/files.ts'
 import { isDocumentReadError } from '../document/readers/errors.ts'
 import { MEDIA_DOCX, MEDIA_PDF, MEDIA_RTF } from '../document/readers/media.ts'
 import { sniffFile } from '../document/readers/sniff.ts'
+// D-110：S6 身份证据闸门接入定位器（RTF 无 bbox 不再被拒，但必须过 sha256 一致 /
+// 定位唯一 / quote 逐字命中三条件；歧义与哈希不符 fail-closed）。
+import { evidenceContextFromConverter } from '../document/evidence/index.ts'
 import {
   closePool,
   createPool,
@@ -616,7 +619,14 @@ export function buildMaterial(
   mimeType?: string,
 ): IntakeMaterial {
   const fields = (output.fields ?? {}) as Readonly<Record<string, ConverterFieldEntry>>
-  const observation = observeIdentity(fields, output.screening?.identity_merge_eligible)
+  // D-110：把"这次转换的源文件字节 + converter 声明 sha + 可定位块"交给证据闸门。
+  // 文件不可读/空/缺 sha 时构造结果自带 ok:false；闸门对非 bbox 证据（RTF/纯文本）
+  // fail-closed，对合格 page+bbox 证据仍走既有形状路径（兼容分派，见 identity.ts）。
+  const observation = observeIdentity(
+    fields,
+    output.screening?.identity_merge_eligible,
+    evidenceContextFromConverter(realPath, output),
+  )
   const sha = output.meta?.source_sha256 ?? ''
   if (sha === '') {
     throw contractError('READER_FAILED', {

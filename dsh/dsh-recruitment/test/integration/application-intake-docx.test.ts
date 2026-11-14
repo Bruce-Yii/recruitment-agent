@@ -12,9 +12,10 @@
 //   4. 图片 / 旧 OLE / 未知字节仍然被**明确拒绝**（放宽格式 ≠ 什么都收）；
 //   5. 身份闸门**没有**因为放宽格式而放宽：OCR / agent_read 来源依然只能 weak。
 //
-// 2026-11-14 补（RTF lane）：RTF 也有了 reader —— 它进 S6 的读取路径，但**在身份闸门处
-// 正确 BLOCKED**：RTF 没有 PDF 的 page+bbox 坐标，IR-G1 要求"证据坐标齐全"才可自动归并，
-// 本 lane 不放宽这条闸门（见 `test('RTF 进入 S6 读取路径……')`）。这正是"能读 ≠ 能自动认人"。
+// 2026-11-15 补（D-110）：RTF 也有了 reader，且身份闸门改为「可复核」而非「有坐标」：
+// RTF 证据走 paragraph + quote + 源文件字节 sha256 三条件核验，成立即可自动归并；缺 bbox
+// 不再是拒收理由（见 `test('RTF 进入 S6 读取路径且身份证据按 D-110 定位器核验…')`）。
+// 歧义 / 哈希不符仍然 fail-closed（同一用例的负例逐条钉住）。
 //
 // 全部用**合成假资料**（`example.invalid` / `138 0000 xxxx`），不碰真实候选人（R7）。
 // 依赖本机 python + converter/：缺任一项时 skip 并说明原因（不伪装成通过）。
@@ -295,9 +296,11 @@ test('图片被明确拒绝：READER_FAILED(IMAGE_REQUIRES_VISION)，且一行�
   assert.deepEqual(await rowCounts(), before, '被拒绝的图片不得写入任何一行')
 })
 
-test('RTF 进入 S6 读取路径（不再是 UNSUPPORTED_MEDIA），身份闸门按"缺坐标证据"正确 BLOCKED', { skip: SKIP_PYTHON }, async () => {
-  // 合成 RTF：正文含假 phone/email（R7）。converter 的 striprtf reader 会把它读成
-  // native_text 字段，但 RTF 没有 bbox → IR-G1 的"证据坐标齐全"不成立 → 只能人工。
+test('RTF 进入 S6 读取路径且身份证据按 D-110 定位器核验：paragraph+quote+doc hash 正例通过', { skip: SKIP_PYTHON }, async () => {
+  // 合成 RTF：正文含假 phone/email（R7）。D-110（2026-11-15 裁决）后，RTF **没有 bbox
+  // 不再是拒收理由**：证据只要同时满足 ① 源文件字节 sha256 独立重算一致 ② 定位器解析到
+  // 唯一位置（RTF = paragraph）③ quote 在定位范围逐字命中，就可以进入 strong。
+  // 同一事实下的哈希不符仍然 fail-closed（见本用例第 4 步的负例）。
   const rtf = join(WORK_DIR, 'synthetic-resume.rtf')
   writeFileSync(rtf, [
     '{\\rtf1\\ansi\\ansicpg1252{\\fonttbl{\\f0\\fnil Arial;}}\\f0',
@@ -319,31 +322,65 @@ test('RTF 进入 S6 读取路径（不再是 UNSUPPORTED_MEDIA），身份闸门
   assert.equal(output.fields?.phone?.provenance, 'native_text')
   assert.equal(output.fields?.email?.provenance, 'native_text')
 
-  // 3) 身份闸门：读出来了，但 RTF 没有 bbox 坐标 → evidence_missing → 不得自动并人。
-  //    **这条是有意保留的 fail-closed**，不是格式缺口复发；放宽它需要改 IR-G1（不在本 lane 权限内）。
+  // 3) 身份闸门（D-110）：RTF 没有 bbox，但 paragraph+quote+doc hash 三条件成立 → 进 strong。
   const material = buildMaterial(source.real_path, output, source.media_type)
   assert.equal(material.mime_type, MEDIA_RTF)
-  assert.deepEqual(material.strong, [], '缺坐标证据时 strong 必须为空：不许拿"读出来了"当"可自动认人"')
+  assert.ok(material.strong.some((id) => id.field === 'phone'), 'RTF 的 phone 必须可自动：D-110 不再以 bbox 为门槛')
+  assert.ok(material.strong.some((id) => id.field === 'email'), 'RTF 的 email 必须可自动')
+  for (const id of material.strong) {
+    assert.equal(id.provenance, 'native_text', '只有 native_text 才允许进入 strong')
+    const evidence = id.evidence[0]
+    assert.ok(evidence !== undefined, `${id.field} 必须带证据记录`)
+    assert.equal(evidence.locator_kind, 'rtf_paragraph', '无坐标格式必须标注定位器类型（D-110）')
+    assert.equal(evidence.locator?.kind, 'rtf_paragraph')
+    assert.equal(evidence.verification_method, 'LOCATOR_UNIQUE+SHA256+LITERAL_QUOTE', '必须记录三条件核验方式')
+    assert.equal(evidence.source_sha256, output.meta?.source_sha256, '证据绑定的 sha 必须与原件一致')
+    assert.ok(evidence.quote.length > 0, 'quote 必须是原文片段')
+    assert.equal(evidence.bbox.length, 0, 'RTF 没有 bbox —— 这不是拒收理由')
+  }
   assert.ok(
-    material.blocked.some((item) => item.field === 'phone' && item.reason === 'evidence_missing'),
-    `phone 的拒绝原因必须可机检：${JSON.stringify(material.blocked)}`,
+    !material.blocked.some((item) => item.reason === 'evidence_missing'),
+    `D-110 后不得再以"缺坐标"拒收 RTF：${JSON.stringify(material.blocked)}`,
   )
 
-  // 4) 真实入口：BLOCKED_BY_REVIEW（不是 READER_FAILED / UNSUPPORTED_MEDIA / PATH_INVALID），一行不写。
-  const tool = createApplicationIntakeTool({ converter: cfg, database: dbCfg })
-  const before = await rowCounts()
-  await assert.rejects(
-    () => tool.execute({ path: rtf, job_id: DEMO_JOB }),
-    (error: unknown) => {
-      const body = errorBody(error)
-      assert.equal(body.code, 'BLOCKED_BY_REVIEW', JSON.stringify(body))
-      assert.equal(body.reason_code, 'MATERIAL_ATTRIBUTION_UNKNOWN', JSON.stringify(body))
-      assert.notEqual(body.reason_code, 'UNSUPPORTED_MEDIA')
-      assert.notEqual(body.reason_code, 'PATH_INVALID')
-      return true
-    },
+  // 4) 负例：同一份转换结果，但磁盘上的源文件字节被改过 → sha 不一致必须 fail-closed（零写入）。
+  const tampered = join(WORK_DIR, 'synthetic-resume-tampered.rtf')
+  writeFileSync(tampered, Buffer.concat([readFileSync(rtf), Buffer.from(' ')]))
+  assert.notEqual(material_sha_of(tampered), output.meta?.source_sha256, '负例前提：字节 sha 必须真的不同')
+  const beforeTampered = await rowCounts()
+  const tamperedMaterial = buildMaterial(tampered, output, MEDIA_RTF)
+  assert.deepEqual(tamperedMaterial.strong, [], '哈希不一致时 strong 必须为空（fail-closed）')
+  assert.ok(
+    tamperedMaterial.blocked.some((item) => item.field === 'phone' && item.reason === 'evidence_sha256_mismatch'),
+    `哈希不符的拒绝原因必须可机检：${JSON.stringify(tamperedMaterial.blocked)}`,
   )
-  assert.deepEqual(await rowCounts(), before, '身份闸门拒收的 RTF 不得写入任何一行')
+  assert.deepEqual(await rowCounts(), beforeTampered, '证据闸门拒绝不得写任何一行')
+
+  // 5) 真实写入路径：三条件成立的 RTF → CREATED + 落库（回滚，不污染 ra_s6s7）。
+  await inRolledBackTx(pool, async (client) => {
+    const value = await intakeInTransaction(client, dbCfg, material, DEMO_JOB)
+    assert.equal(value.status, 'OK')
+    assert.equal(value.application_action, 'CREATED')
+    assert.equal(value.resume_version_action, 'APPENDED')
+    assert.match(value.application_id, UUID_RE, 'application_id 必须是真实 uuid')
+    assert.match(value.candidate_id, UUID_RE)
+    assert.equal(value.application.stage_code, 'S6')
+    assert.equal(value.identity.strong_ids.includes('phone'), true)
+    assert.equal(value.identity.identity_merge_eligible.includes('phone'), true)
+    assert.equal(value.identity.weak_fields.length, 0, 'native_text 的 phone/email 不该同时出现在 weak 里')
+
+    const { rows } = await client.query<{ mime_type: string; parser_name: string }>(
+      `select a.mime_type, rv.parser_name
+         from recruitment.intake_asset a
+         join recruitment.resume r on r.intake_asset_id = a.id
+         join recruitment.resume_version rv on rv.resume_id = r.id
+        where a.tenant_id = $1 and a.sha256 = $2`,
+      [dbCfg.tenant_id, material.sha256],
+    )
+    assert.equal(rows.length, 1, 'RTF 材料必须落一条 intake_asset + resume_version')
+    assert.equal(rows[0]?.mime_type, MEDIA_RTF, 'RTF 材料的 mime_type 不能写成 application/pdf')
+    assert.equal(rows[0]?.parser_name, 'striprtf', 'parser_name 记录的是真实读取后端')
+  })
 })
 
 test('旧 OLE（.doc）仍然被明确拒绝：READER_FAILED(UNSUPPORTED_MEDIA)——没有 reader 就不假装有', async () => {

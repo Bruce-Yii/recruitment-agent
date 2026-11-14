@@ -4,7 +4,9 @@
 // 契约：
 //   * `contracts/interview/tool-contracts.md` §1（共同约定）、§2（本工具的形状）。
 //   * `contracts/interview/transcript-rules.md` §4 TR-D —— `transcript.state` 的**唯一**
-//     算法。本文件是它在这一侧的唯一实现，不许在别处再写一套（TR-D1）。
+//     算法。本文件**复用** `transcript-read.ts` 的 `deriveTranscriptState()`（TR-D1 单一实现），
+//     只负责把 DB 行组装成快照；不自写第二套派生（C-4：两套实现曾漂移，本文件缺
+//     D-96/TR-F4 的 ARTIFACT_EMPTY，同一 DB 事实会给出不同 transcript.state）。
 //   * `manual/interview-line/SPEC.md` §2（通用约定）、§3（本刀的范围与形状）。
 //
 // 六个"永远不做"（`tool-contracts.md` §0）：
@@ -31,6 +33,14 @@ import type { ContractErrorCode } from './contract.ts'
 // R4：`provenance` 的唯一判定实现（`contracts/tenant-provenance.md` §2）。
 // 演示租户（0002_seed）的行同样真的在库里 —— "读到了行"不是 `LIVE` 的证据。
 import { resolveTenantProvenance } from './candidate-get.ts'
+// TR-D1 / C-4：`transcript.state` 的**唯一**派生实现（七条规则 + D-96/TR-F4 的
+// ARTIFACT_EMPTY）在 `transcript-read.ts`。本文件只组装快照，不重写算法。
+import {
+  deriveTranscriptState,
+  type TranscriptReasonCode,
+  type TranscriptState,
+  type TranscriptStateSnapshot,
+} from './transcript-read.ts'
 import {
   closePool,
   createPool,
@@ -42,28 +52,14 @@ import {
 const TOOL_NAME = 'recruitment_interview_get'
 const CONTRACT_VERSION = '1.0.0'
 
+/**
+ * 公开 API 的形状不变：`TranscriptState` / `TranscriptReasonCode` 从权威模块
+ * re-export，本文件**不再**保留第二份定义（C-4：两份定义就是两条判定的起点）。
+ */
+export type { TranscriptState, TranscriptReasonCode } from './transcript-read.ts'
+
 /** `transcript-rules.md` §4 的 `WAIT` 缺省值（分钟）。 */
 const DEFAULT_WAIT_MINUTES = 120
-
-/** `transcript.state` 的封闭取值（TR-D 序 1–7 的全部输出）。 */
-export type TranscriptState =
-  | 'MISSING'
-  | 'PENDING'
-  | 'READY'
-  | 'PARTIAL'
-  | 'AUTH_REQUIRED'
-  | 'NEEDS_LINKING'
-  | 'RETRYABLE_FAILED'
-
-/** `transcript.reason_code` 的封闭取值（`transcript-rules.md` §5 命名空间表）。 */
-export type TranscriptReasonCode =
-  | 'NO_MEETING_BOUND'
-  | 'CANONICAL_STATUS'
-  | 'READY_NO_CANONICAL'
-  | 'ONLY_PARTIAL'
-  | 'ONLY_AUTH_REQUIRED'
-  | 'NO_ARTIFACT_AFTER_WAIT'
-  | 'WAITING'
 
 /** `meeting_binding.state`（`scheduling-rules.md` §7.2）。 */
 export type MeetingBindingState = 'BOUND_ACTIVE' | 'UNBOUND' | 'NONE_EXPECTED'
@@ -302,10 +298,10 @@ const TRANSCRIPT_STATES: readonly string[] = [
   'MISSING', 'PENDING', 'READY', 'PARTIAL', 'AUTH_REQUIRED', 'NEEDS_LINKING', 'RETRYABLE_FAILED',
 ]
 
-/** `transcript.reason_code` 的封闭取值（TR-D）。 */
+/** `transcript.reason_code` 的封闭取值（TR-D §5；含 D-96/TR-F4 的 `ARTIFACT_EMPTY`）。 */
 const TRANSCRIPT_REASON_CODES: readonly string[] = [
   'NO_MEETING_BOUND', 'CANONICAL_STATUS', 'READY_NO_CANONICAL', 'ONLY_PARTIAL',
-  'ONLY_AUTH_REQUIRED', 'NO_ARTIFACT_AFTER_WAIT', 'WAITING',
+  'ONLY_AUTH_REQUIRED', 'NO_ARTIFACT_AFTER_WAIT', 'WAITING', 'ARTIFACT_EMPTY',
 ]
 
 const TRANSCRIPT_SCHEMA: Record<string, unknown> = {
@@ -537,6 +533,14 @@ interface ArtifactRow {
   readonly is_canonical: boolean
   readonly source_revision: number
   readonly variant_type: string
+  /**
+   * `length(raw_text)`（PG 字符口径；NULL → 0）。
+   *
+   * 为什么派生需要它：**状态 READY 不等于有内容**（D-96/TR-F4）—— 飞书视频会议录制
+   * 可能没有生成"妙记"AI 转写，产物存在、状态正常、正文却是空的。只按 status 派生
+   * 就会把"没读到"说成"有转写"。权威派生函数据此给 `PARTIAL/ARTIFACT_EMPTY`。
+   */
+  readonly char_count: string | number | null
 }
 
 /** 当前 `interview_record`。 */
@@ -564,12 +568,6 @@ function iso(value: string | Date): string {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : value
 }
 
-/** `max(asOf > x)` 判定用：只在 `value` 真的存在时参与比较。 */
-function isAfter(instantMs: number, boundary: string | Date | null): boolean {
-  const parsed = toMs(boundary)
-  return Number.isFinite(parsed) && instantMs > parsed
-}
-
 /** 面评 `items.transcript_basis`：有则回原值，缺则 `UNKNOWN`（TR-E2）。 */
 function transcriptBasisOf(items: unknown): { basis: string; present: boolean } {
   if (typeof items === 'object' && items !== null && !Array.isArray(items)) {
@@ -579,121 +577,9 @@ function transcriptBasisOf(items: unknown): { basis: string; present: boolean } 
   return { basis: 'UNKNOWN', present: false }
 }
 
-/** 规范模式匹配到的 `transcript_status` → `transcript.state`（TR-D 序 2 的 map）。 */
-function mapCanonicalStatus(status: string): TranscriptState {
-  if (status === 'READY') return 'READY'
-  if (status === 'PARTIAL') return 'PARTIAL'
-  if (status === 'AUTH_REQUIRED') return 'AUTH_REQUIRED'
-  if (status === 'NEEDS_LINKING') return 'NEEDS_LINKING'
-  if (status === 'RETRYABLE_FAILED') return 'RETRYABLE_FAILED'
-  return 'PENDING'
-}
-
 /** 一个会议是不是 TR-D 里的 `M(i)`（`REPLACED`/`CANCELLED` 不进，TR-D4）。 */
 function isTranscriptMeeting(role: string): boolean {
   return role === 'PRIMARY' || role === 'CONTINUATION'
-}
-
-/**
- * TR-D 的派生结果。
- * @property state - `transcript.state`。
- * @property reasonCode - `transcript.reason_code`（与 `NO_TRANSCRIPT` 透传的是同一个值）。
- * @property canonicalMissing - 命中了序 3（有 READY 无 canonical）→ 触发 `CANONICAL_MISSING` 警告。
- * @property meetingsTotal - `M(i)` 的大小（`NO_TRANSCRIPT.detail.meetings_total`）。
- */
-interface TranscriptDerivation {
-  readonly state: TranscriptState
-  readonly reasonCode: TranscriptReasonCode
-  readonly canonicalMissing: boolean
-  readonly meetingsTotal: number
-}
-
-/**
- * `transcript-rules.md` §4 的 TR-D 七条：**先算集合，再按优先级取第一个命中**。
- *
- * 顺序本身是规则的一部分，所以这里写成一条 if 链，不做"更聪明"的合并：
- *   1. `M(i)=∅ ∧ as_of > scheduled_start_at` → `MISSING/NO_MEETING_BOUND`
- *   2. `CANON(i)≠∅` → `map(canonical.transcript_status)` + `CANONICAL_STATUS`
- *   3. `∃a∈ART: READY ∧ is_complete` → `READY/READY_NO_CANONICAL`（+ 警告）
- *   4. `∃a∈ART: PARTIAL` → `PARTIAL/ONLY_PARTIAL`
- *   5. `∃a∈ART: AUTH_REQUIRED` → `AUTH_REQUIRED/ONLY_AUTH_REQUIRED`
- *   6. `ART=∅ ∧ as_of > max(actual_end_at, scheduled_end_at) + WAIT` → `MISSING/NO_ARTIFACT_AFTER_WAIT`
- *   7. 其余 → `PENDING/WAITING`
- *
- * @param input.asOfMs - 基准时刻（入参 `as_of`）。
- * @param input.interview - 面试行（序 1 用 `scheduled_start_at`，序 6 用 `scheduled_end_at`）。
- * @param input.transcriptMeetings - `M(i)`（active binding ∩ `meeting_role ∈ {PRIMARY,CONTINUATION}`）。
- * @param input.artifacts - `ART(i)`（`M(i)` 的会议下的全部产物，含非 canonical）。
- * @param input.waitMinutes - `WAIT`（缺省 120，可被 `transcript_policy.wait_minutes` 覆盖）。
- */
-function deriveTranscript(input: {
-  readonly asOfMs: number
-  readonly interview: InterviewRow
-  readonly transcriptMeetings: readonly BindingRow[]
-  readonly artifacts: readonly ArtifactRow[]
-  readonly waitMinutes: number
-}): TranscriptDerivation {
-  const { asOfMs, interview, transcriptMeetings, artifacts, waitMinutes } = input
-  const meetingsTotal = transcriptMeetings.length
-
-  // 序 1：没有任何可产材料的会议，而面试已经该开始了 → 这是终态缺失，不是"还在等"。
-  if (meetingsTotal === 0 && isAfter(asOfMs, interview.scheduled_start_at)) {
-    return { state: 'MISSING', reasonCode: 'NO_MEETING_BOUND', canonicalMissing: false, meetingsTotal }
-  }
-
-  const canonical = artifacts.filter((artifact) => artifact.is_canonical)
-
-  // 序 2：有 canonical 就完全由它的 status 决定（canonical 是"本轮唯一"的那一版）。
-  if (canonical.length > 0) {
-    // 每 meeting 至多一个 canonical（uq_transcript_artifact_canonical），但 1 面试 : N 会议，
-    // 所以 CANON(i) 可能多于一个。DB 只保证"会议侧唯一"，不替我们排序：
-    // 这里取 (meeting_role 主会优先 → meeting_id → source_revision → variant_type) 的第一条，
-    // 保证同一 (数据快照, as_of) 逐字节相同的输出（契约 §1.3 幂等）。
-    const roleRank = new Map<string, number>()
-    for (const [index, meeting] of transcriptMeetings.entries()) roleRank.set(meeting.meeting_id, index)
-    const preferred = [...canonical].sort((left, right) => {
-      const leftRank = roleRank.get(left.meeting_id) ?? Number.MAX_SAFE_INTEGER
-      const rightRank = roleRank.get(right.meeting_id) ?? Number.MAX_SAFE_INTEGER
-      if (leftRank !== rightRank) return leftRank - rightRank
-      if (left.meeting_id !== right.meeting_id) return left.meeting_id < right.meeting_id ? -1 : 1
-      if (left.source_revision !== right.source_revision) return left.source_revision - right.source_revision
-      return left.variant_type < right.variant_type ? -1 : left.variant_type > right.variant_type ? 1 : 0
-    })[0] as ArtifactRow
-    return {
-      state: mapCanonicalStatus(preferred.transcript_status),
-      reasonCode: 'CANONICAL_STATUS',
-      canonicalMissing: false,
-      meetingsTotal,
-    }
-  }
-
-  // 序 3：有完整原文但没人标 canonical → 能读，但"本轮唯一"缺失，必须可见。
-  if (artifacts.some((artifact) => artifact.transcript_status === 'READY' && artifact.is_complete)) {
-    return { state: 'READY', reasonCode: 'READY_NO_CANONICAL', canonicalMissing: true, meetingsTotal }
-  }
-
-  // 序 4 / 序 5：只拿到一部分，或只拿到"没有权限"。
-  if (artifacts.some((artifact) => artifact.transcript_status === 'PARTIAL')) {
-    return { state: 'PARTIAL', reasonCode: 'ONLY_PARTIAL', canonicalMissing: false, meetingsTotal }
-  }
-  if (artifacts.some((artifact) => artifact.transcript_status === 'AUTH_REQUIRED')) {
-    return { state: 'AUTH_REQUIRED', reasonCode: 'ONLY_AUTH_REQUIRED', canonicalMissing: false, meetingsTotal }
-  }
-
-  // 序 6：会议确实结束了、也等过了 WAIT，却一个产物都没有 → 终态缺失（TR-F3 的入口）。
-  if (artifacts.length === 0) {
-    let latestEndMs = toMs(interview.scheduled_end_at)
-    for (const meeting of transcriptMeetings) {
-      const endMs = toMs(meeting.actual_end_at)
-      if (Number.isFinite(endMs) && (!Number.isFinite(latestEndMs) || endMs > latestEndMs)) latestEndMs = endMs
-    }
-    if (Number.isFinite(latestEndMs) && asOfMs > latestEndMs + waitMinutes * 60_000) {
-      return { state: 'MISSING', reasonCode: 'NO_ARTIFACT_AFTER_WAIT', canonicalMissing: false, meetingsTotal }
-    }
-  }
-
-  // 序 7：会议还没结束，或还在等待窗内 —— 只需等，不是缺失（TR-D3 把两者分开）。
-  return { state: 'PENDING', reasonCode: 'WAITING', canonicalMissing: false, meetingsTotal }
 }
 
 /**
@@ -851,15 +737,42 @@ async function loadInterview(
   if (meetingIds.length > 0) {
     artifacts = (await client.query<ArtifactRow>(
       `select a.id, a.meeting_id, a.transcript_status, a.is_complete, a.is_canonical,
-              a.source_revision, a.variant_type
+              a.source_revision, a.variant_type,
+              coalesce(length(a.raw_text), 0) as char_count
          from recruitment.transcript_artifact a
-        where a.tenant_id = $1 and a.meeting_id = any($2::uuid[])`,
+        where a.tenant_id = $1 and a.meeting_id = any($2::uuid[])
+        order by a.meeting_id, a.source_revision, a.variant_type`,
       [tenantId, meetingIds],
     )).rows
   }
 
   const waitMinutes = await readWaitMinutes(client, tenantId, asOfIso)
-  const derivation = deriveTranscript({ asOfMs, interview, transcriptMeetings, artifacts, waitMinutes })
+  // TR-D1：**同一个**派生函数（`transcript-read.ts`）—— 这里只把 DB 行组装成快照。
+  // `content_chars` 必须传：`transcript_status='READY'` 但 `raw_text` 为空时，权威函数
+  // 会给出 `PARTIAL/ARTIFACT_EMPTY`（D-96/TR-F4），不再把"没读到"报成 READY。
+  // 产物数组的顺序也必须与 transcript_read 的 `loadArtifacts()` 一致（见上面 SQL 的 order by）：
+  // 一个面试可能绑多场会议、每场各有一个 canonical，权威函数用 `find(is_canonical)` 取第一条。
+  const snapshot: TranscriptStateSnapshot = {
+    as_of: asOfIso,
+    ...(interview.scheduled_start_at === null
+      ? {}
+      : { scheduled_start_at: iso(interview.scheduled_start_at) }),
+    ...(interview.scheduled_end_at === null
+      ? {}
+      : { scheduled_end_at: iso(interview.scheduled_end_at) }),
+    meetings: transcriptMeetings.map((meeting) => ({
+      ...(meeting.actual_end_at === null ? {} : { actual_end_at: iso(meeting.actual_end_at) }),
+    })),
+    artifacts: artifacts.map((artifact) => ({
+      transcript_status: artifact.transcript_status,
+      is_complete: artifact.is_complete,
+      is_canonical: artifact.is_canonical,
+      content_chars: Number(artifact.char_count ?? 0),
+    })),
+    wait_minutes: waitMinutes,
+  }
+  const derivation = deriveTranscriptState(snapshot)
+  const meetingsTotal = transcriptMeetings.length
 
   // 当前的面试记录（uq_interview_record_current 保证至多一行）。
   const recordRow = (await client.query<RecordRow>(
@@ -967,7 +880,10 @@ async function loadInterview(
       interview_id: interview.id,
     })
   }
-  if (derivation.canonicalMissing) {
+  // `CANONICAL_MISSING` 保持旧触发条件：只有"有完整 READY 产物但无 canonical"才报
+  // （即权威函数命中了序 3 的 `READY_NO_CANONICAL`）。不能用 `no_canonical` 直接触发 ——
+  // ONLY_PARTIAL / ONLY_AUTH_REQUIRED 时也 `no_canonical=true`，那是误报。
+  if (derivation.reason_code === 'READY_NO_CANONICAL') {
     warnings.push({
       code: 'CANONICAL_MISSING',
       message: '已有完整转写产物，但没有一份被标为 canonical（本轮唯一版本缺失）',
@@ -1004,7 +920,7 @@ async function loadInterview(
     meeting_binding: { state: meetingBindingState, count: bindingsValue.length, bindings: bindingsValue },
     transcript: {
       state: derivation.state,
-      reason_code: derivation.reasonCode,
+      reason_code: derivation.reason_code,
       no_transcript: derivation.state !== 'READY',
     },
     evaluation: {
@@ -1018,7 +934,7 @@ async function loadInterview(
     warnings,
   }
 
-  return { value, meetingsTotal: derivation.meetingsTotal }
+  return { value, meetingsTotal }
 }
 
 /**
