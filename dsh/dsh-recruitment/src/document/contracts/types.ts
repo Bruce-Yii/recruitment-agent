@@ -178,6 +178,23 @@ export interface DocumentIssue {
   readonly suggested_action: SuggestedAction
 }
 
+/** 结构化表格视图（与正文同源：单元格文本来自原生文本层，不重复进 text/blocks）。 */
+export interface DocumentTable {
+  /** 1-based 页码。 */
+  readonly page: number
+  /** 页内坐标（PDF 用户空间）。 */
+  readonly bbox: BBox
+  readonly row_count: number
+  readonly col_count: number
+  /** 表头是否在页外（当前抽取器恒 false，保留字段）。 */
+  readonly header_external: boolean
+  /** 行 × 列；空单元格为 ""，不从邻居补。 */
+  readonly cells: readonly (readonly string[])[]
+  readonly provenance: 'native_text'
+  /** 抽取器标识（如 pymupdf.find_tables）。 */
+  readonly source: string
+}
+
 /** 统一文档内容。 */
 export interface DocumentContent {
   readonly schema_version: string
@@ -195,6 +212,8 @@ export interface DocumentContent {
   /** 还有未被读懂的视觉内容（必须由质量 Gate 处理，不等于失败、更不等于完整）。 */
   readonly needs_visual: boolean
   readonly issues: readonly DocumentIssue[]
+  /** 结构化表格视图；只读、与正文同源，缺省表示读取器没有抽表。 */
+  readonly tables?: readonly DocumentTable[]
   /** 读取耗时；`0` = 读取器没报（运行字段，不参与同一文件两次结果的一致性比较）。 */
   readonly elapsed_ms: number
 }
@@ -212,6 +231,7 @@ export const DOCUMENT_CONTENT_KEYS = [
   'completeness',
   'needs_visual',
   'issues',
+  'tables',
   'elapsed_ms',
 ] as const
 
@@ -223,6 +243,9 @@ export const DOCUMENT_LINK_KEYS = ['text', 'href', 'locator'] as const
 
 /** issue 的键（封闭集合）。 */
 export const DOCUMENT_ISSUE_KEYS = ['code', 'message', 'locator', 'severity', 'retryable', 'suggested_action'] as const
+
+/** 表格的键（封闭集合）。 */
+export const DOCUMENT_TABLE_KEYS = ['page', 'bbox', 'row_count', 'col_count', 'header_external', 'cells', 'provenance', 'source'] as const
 
 /** PDF locator 的键（封闭集合）。 */
 export const PDF_LOCATOR_KEYS = ['kind', 'page', 'bbox', 'block_id'] as const

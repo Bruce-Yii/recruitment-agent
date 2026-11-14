@@ -25,6 +25,7 @@ import {
   DOCUMENT_CONTENT_KEYS,
   DOCUMENT_ISSUE_KEYS,
   DOCUMENT_LINK_KEYS,
+  DOCUMENT_TABLE_KEYS,
   DOCX_LOCATOR_KEYS,
   IMAGE_LOCATOR_KEYS,
   ISSUE_SEVERITIES,
@@ -716,6 +717,47 @@ export function validateDocumentContent(input: unknown): DocumentContentValidati
     pushHard(ctx, 'ISSUES_NOT_ARRAY', `content.issues must be an array, got ${showValue(input.issues)}`, 'issues')
   } else {
     for (let i = 0; i < input.issues.length; i += 1) checkIssue(ctx, `issues[${i}]`, input.issues[i])
+  }
+
+  // tables：可选；出现时逐表校验（与正文同源的结构化视图，不得伪造坐标/单元格）。
+  if (input.tables !== undefined) {
+    if (!Array.isArray(input.tables)) {
+      pushHard(ctx, 'INVALID_FIELD', `content.tables must be an array, got ${showValue(input.tables)}`, 'tables')
+    } else {
+      for (let i = 0; i < input.tables.length; i += 1) {
+        const table: unknown = input.tables[i]
+        const path = `tables[${i}]`
+        if (!isPlainObject(table)) {
+          pushHard(ctx, 'INVALID_FIELD', `${path} must be an object, got ${showValue(table)}`, path)
+          continue
+        }
+        checkAllowedKeys(ctx, path, table, DOCUMENT_TABLE_KEYS, 'table')
+        if (typeof table.page !== 'number' || !Number.isInteger(table.page) || table.page < 1) {
+          pushHard(ctx, 'INVALID_FIELD', `${path}.page must be a 1-based integer, got ${showValue(table.page)}`, `${path}.page`)
+        }
+        const bbox = table.bbox
+        if (!Array.isArray(bbox) || bbox.length !== 4 || bbox.some((value) => !isFiniteNumber(value))) {
+          pushHard(ctx, 'INVALID_FIELD', `${path}.bbox must be four finite numbers, got ${showValue(bbox)}`, `${path}.bbox`)
+        }
+        for (const key of ['row_count', 'col_count'] as const) {
+          if (typeof table[key] !== 'number' || !Number.isInteger(table[key]) || table[key] < 0) {
+            pushHard(ctx, 'INVALID_FIELD', `${path}.${key} must be a non-negative integer, got ${showValue(table[key])}`, `${path}.${key}`)
+          }
+        }
+        if (typeof table.header_external !== 'boolean') {
+          pushHard(ctx, 'INVALID_FIELD', `${path}.header_external must be a boolean, got ${showValue(table.header_external)}`, `${path}.header_external`)
+        }
+        if (!Array.isArray(table.cells) || table.cells.some((row) => !Array.isArray(row) || row.some((cell) => typeof cell !== 'string'))) {
+          pushHard(ctx, 'INVALID_FIELD', `${path}.cells must be a string[][] (empty cell = ""), got ${showValue(table.cells)}`, `${path}.cells`)
+        }
+        if (table.provenance !== 'native_text') {
+          pushHard(ctx, 'INVALID_FIELD', `${path}.provenance must be "native_text", got ${showValue(table.provenance)}`, `${path}.provenance`)
+        }
+        if (!isNonEmptyString(table.source)) {
+          pushHard(ctx, 'INVALID_FIELD', `${path}.source must be a non-empty string, got ${showValue(table.source)}`, `${path}.source`)
+        }
+      }
+    }
   }
 
   // elapsed_ms：非负有限数；0 = 没测（见 types.ts）。

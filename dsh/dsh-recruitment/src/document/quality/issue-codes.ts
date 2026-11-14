@@ -236,6 +236,34 @@ export const CONVERTER_ISSUE_CODES = {
     suggested_action: 'human_review',
     meaning: 'RTF 声明了硬分页符，但读取器不重建逐页归属；块只按段落顺序定位（没有编造页码）',
   },
+  // D-110/doc1：RTF 的可证阅读顺序只覆盖「线性流 + 硬分页」；以下构造不可证 → SOFT 声明。
+  unverified_rtf_table: {
+    code: 'unverified_rtf_table',
+    origin: 'converter',
+    family: 'order',
+    severity: 'SOFT',
+    retryable: false,
+    suggested_action: 'none',
+    meaning: 'RTF 含表格构造（\\trowd），单元格文本仍抽出，但表格阅读顺序不可证；不伪造 cell bbox',
+  },
+  unverified_rtf_multicolumn: {
+    code: 'unverified_rtf_multicolumn',
+    origin: 'converter',
+    family: 'order',
+    severity: 'SOFT',
+    retryable: false,
+    suggested_action: 'none',
+    meaning: 'RTF 声明多栏（\\cols N>1），线性文本流不能证明阅读顺序；正文仍可用',
+  },
+  unverified_rtf_frame: {
+    code: 'unverified_rtf_frame',
+    origin: 'converter',
+    family: 'order',
+    severity: 'SOFT',
+    retryable: false,
+    suggested_action: 'none',
+    meaning: 'RTF 含框架/文本框构造，文本位置不可证；正文段落仍可用',
+  },
   // 2026-11-14：原生文本层坏掉时整页 OCR 重读成功（恢复标记，不是失败）。
   // 由 converter 发出（issues.py::ADDED_CODES 的 soft 条目），所以属于 converter 组。
   pdf_text_recovered_by_ocr: {

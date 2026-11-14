@@ -647,19 +647,26 @@ test('S23 RTF：canonical content 用 rtf 定位（paragraph），不伪造 bbox
   assert.ok(outcome.source_meta.converter_extras !== undefined)
 })
 
-test('S24 RTF：有硬分页符时不编页码，另发 SOFT 声明（不挂 page 定位）', { skip: SKIP_REASON }, async () => {
+test('S24 RTF：有硬分页符时按线性流重建页归属（D-110/RTF order_verified）', { skip: SKIP_REASON }, async () => {
   const cfg = requireConfig()
   const rtf = writeRtf('two-pages.rtf',
     '{\\rtf1\\ansi Page one line\\par\\page Page two line\\par}')
   const outcome = await readDocumentDetailed(rtf, cfg)
+  // D-110/RTF：硬分页可映射时，块必须挂真实页号（1..N 连续），不再笼统声明"不可证"。
+  const pages = outcome.content.blocks.map((block) => (block.locator as { page?: number }).page)
+  assert.deepEqual(pages, [1, 2], '两页 RTF 的块页序必须可重建')
   for (const block of outcome.content.blocks) {
     assert.equal(block.locator.kind, 'rtf')
-    assert.equal((block.locator as { page?: number }).page, undefined, '逐页归属未重建时不挂 page')
     assert.equal(typeof (block.locator as { paragraph?: number }).paragraph, 'number')
+    assert.equal('bbox' in (block.locator as object), false, 'RTF 没有 bbox，不许伪造')
   }
   const meta = outcome.source_meta.converter_meta as Record<string, unknown>
   assert.equal((meta.rtf as Record<string, unknown>).page_breaks, 1)
-  assert.ok(outcome.content.issues.some((issue) => issue.code === 'unverified_rtf_pagination'))
+  assert.equal(
+    outcome.content.issues.some((issue) => issue.code === 'unverified_rtf_pagination'),
+    false,
+    '分页映射可证后不得再发 unverified_rtf_pagination',
+  )
 })
 
 test('S25 RTF：内嵌图片不读但必须声明，文字仍然可用；质量层把"图片未核"升级为 HARD', { skip: SKIP_REASON }, async () => {

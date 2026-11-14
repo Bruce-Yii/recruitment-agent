@@ -25,6 +25,7 @@ import type {
   DocumentContent,
   DocumentIssue,
   DocumentLink,
+  DocumentTable,
   EvidenceLocator,
   MediaType,
   Provenance,
@@ -64,9 +65,21 @@ export interface ConverterLikeIssue {
   }
 }
 
+export interface ConverterLikeTable {
+  readonly page?: number
+  readonly bbox?: readonly number[]
+  readonly row_count?: number
+  readonly col_count?: number
+  readonly header_external?: boolean
+  readonly cells?: ReadonlyArray<ReadonlyArray<string | null>>
+  readonly provenance?: string
+  readonly source?: string
+}
+
 export interface ConverterLikeOutput {
   readonly text?: string
   readonly blocks?: readonly ConverterLikeBlock[]
+  readonly tables?: readonly ConverterLikeTable[]
   readonly completeness?: string
   readonly needs_visual?: boolean
   readonly issues?: readonly ConverterLikeIssue[]
@@ -187,6 +200,10 @@ export const CONVERTER_SOFT_ISSUE_CODES: readonly string[] = [
   'pdf_page_empty',
   'resume_protected_attribute_present',
   'resume_ocr_heading_inserted',
+  // PDF 表格抽取（doc1）新增的 RTF 顺序不可证声明；Python issues.py 按 unverified_ 前缀判 SOFT。
+  'unverified_rtf_table',
+  'unverified_rtf_multicolumn',
+  'unverified_rtf_frame',
 ]
 
 /**
@@ -258,7 +275,7 @@ export function converterIssueAction(code: string | undefined): { readonly retry
 // ---------------------------------------------------------------------------
 
 /** converter 顶层键里「被 carry 进 DocumentContent」的。 */
-export const CONVERTER_KEYS_CARRIED: readonly string[] = ['text', 'blocks', 'completeness', 'needs_visual', 'issues', 'meta']
+export const CONVERTER_KEYS_CARRIED: readonly string[] = ['text', 'blocks', 'tables', 'completeness', 'needs_visual', 'issues', 'meta']
 
 /**
  * converter 顶层键里**刻意不 carry** 的，以及理由。
@@ -296,6 +313,7 @@ export const CONVERTER_META_KEYS_NOT_CARRIED: Readonly<Record<string, string>> =
   encoding_removed_chars: 'reader diagnostic',
   timed_out: 'reader diagnostic (already an issue when it matters)',
   failed: 'reader diagnostic (already an issue when it matters)',
+  tables: 'table view is carried at content.tables; meta copy is diagnostic',
 }
 
 /** 4 个有限数的 bbox，否则 undefined（不裁剪、不排序、不换算）。 */
@@ -412,6 +430,36 @@ function mapLinks(links: ConverterLikeBlock['links']): DocumentLink[] | undefine
  * @param output - `python -m src.cli <pdf> --no-isolation` 的 JSON（或同形状的任何读取器输出）。
  * @param options - 媒体类型 / 读取器身份 / 耗时覆盖。
  */
+/**
+ * converter `tables[]` → 契约 `DocumentTable[]`。
+ *
+ * 只做形状搬运：页码/坐标/行列数不合法时保留成明显非法值（0 / 空 bbox），让校验器报，
+ * 不在这里猜或裁。单元格 `null` → `''`（空单元格就是空，不从邻居补）。
+ */
+function mapTables(raw: readonly ConverterLikeTable[] | undefined): DocumentTable[] | undefined {
+  if (raw === undefined) return undefined
+  return raw.map((table) => {
+    const page =
+      typeof table.page === 'number' && Number.isInteger(table.page) && table.page >= 1 ? table.page : 0
+    const bbox = asBBox(table.bbox) ?? ([0, 0, 0, 0] as BBox)
+    const cells = Array.isArray(table.cells)
+      ? table.cells.map((row) =>
+          Array.isArray(row) ? row.map((cell) => (typeof cell === 'string' ? cell : '')) : [],
+        )
+      : []
+    return {
+      page,
+      bbox,
+      row_count: typeof table.row_count === 'number' ? table.row_count : -1,
+      col_count: typeof table.col_count === 'number' ? table.col_count : -1,
+      header_external: table.header_external === true,
+      cells,
+      provenance: 'native_text' as const,
+      source: typeof table.source === 'string' ? table.source : '',
+    }
+  })
+}
+
 export function mapConverterToDocumentContent(output: ConverterLikeOutput, options: MapOptions = {}): DocumentContent {
   const meta = output.meta ?? {}
   const locatorKind = options.locator_kind ?? 'pdf'
@@ -459,6 +507,7 @@ export function mapConverterToDocumentContent(output: ConverterLikeOutput, optio
   const readerVersion = options.reader_version ?? (typeof meta.reader_version === 'string' ? meta.reader_version : '')
   const profile = options.reader_profile ?? (typeof meta.layout_backend === 'string' ? meta.layout_backend : undefined)
   const assetSha = options.asset_sha256 ?? (typeof meta.source_sha256 === 'string' ? meta.source_sha256 : '')
+  const tables = mapTables(output.tables)
 
   const content: DocumentContent = {
     schema_version: options.schema_version ?? DOCUMENT_CONTENT_SCHEMA_VERSION,
@@ -471,6 +520,7 @@ export function mapConverterToDocumentContent(output: ConverterLikeOutput, optio
     completeness: (typeof output.completeness === 'string' ? output.completeness : 'unverified') as Completeness,
     needs_visual: output.needs_visual === true,
     issues,
+    ...(tables === undefined ? {} : { tables }),
     elapsed_ms: typeof options.elapsed_ms === 'number' ? options.elapsed_ms : 0,
   }
   if (profile === undefined) return content
