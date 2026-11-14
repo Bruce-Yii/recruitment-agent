@@ -187,14 +187,42 @@ jobs:
         # `test/fixtures/feishu/fake-lark-cli.mjs` 是假 CLI），结果是"CI 红，但红的不是被测代码"。
         # 单一权威：测试集合只在 run-all.mjs 里定义一次，本机 `pnpm test` 与 CI 跑同一套。
         run: |
-          set -euo pipefail
-          node test/run-all.mjs 2>&1 | tee /tmp/plugin-tests.log
+          set -uo pipefail
+          # 注意不用 `set -e`：要保证**失败时也把四数打出来**（历史教训：`node --test | tee`
+          # 配 `set -e` 会在第一次非零退出时直接掐断，四数一条都没打印，于是"红得没有信息"）。
+          STATUS=0
+          node test/run-all.mjs 2>&1 | tee /tmp/plugin-tests.log || STATUS=$?
+
+          echo "== 四数（R3/E2：tests / pass / fail / skipped 必须都报）"
           grep -E '^ℹ (tests|pass|fail|skipped) ' /tmp/plugin-tests.log || true
-          SKIPPED=$(grep -E '^ℹ skipped ' /tmp/plugin-tests.log | awk '{print $3}' | tail -1)
-          if [ -n "${SKIPPED:-}" ] && [ "$SKIPPED" -gt 0 ]; then
-            echo "::error title=Tests skipped::插件测试有 $SKIPPED 条被跳过；skip 不等于通过（R3）"
-            exit 1
+
+          # E2：skip 必须**显式声明**，而且声明必须是逐条对上的，不是"我说有一条可跳"。
+          # 出现清单外的 skip 一律失败；清单内的也要打印出来，不许悄悄吞掉。
+          CLEAN=/tmp/plugin-tests-clean.log
+          sed -e 's/\x1b\[[0-9;]*m//g' /tmp/plugin-tests.log > "$CLEAN"
+          SKIPPED=$(grep -E '^ℹ skipped ' "$CLEAN" | awk '{print $3}' | tail -1)
+          SKIPPED=${SKIPPED:-0}
+          if [ "$SKIPPED" -gt 0 ]; then
+            UNDECLARED=0
+            while IFS= read -r line; do
+              [ -z "$line" ] && continue
+              case "$line" in
+                # ① 真实语料回归：语料原件按设计不入库（R7），没设置 RECRUITMENT_CORPUS_ROOT 就 skip
+                *'ACCEPTED skip, not a pass'*) echo "::notice title=Accepted skip::$line" ;;
+                # ② 本机/CI 缺 Python 工具链（PyMuPDF + python-docx + Pillow）
+                *'python with PyMuPDF'*) echo "::notice title=Accepted skip::$line" ;;
+                *'reader config is invalid'*) echo "::notice title=Accepted skip::$line" ;;
+                *) echo "::error title=Undeclared skip::不在声明清单里的 skip：$line"; UNDECLARED=$((UNDECLARED + 1)) ;;
+              esac
+            done < <(grep '^﹣' "$CLEAN" || true)
+            if [ "$UNDECLARED" -gt 0 ]; then
+              echo "::error title=Undeclared skip::有 $UNDECLARED 条 skip 不在声明清单里；skip 不等于通过（R3/E2）"
+              exit 1
+            fi
+            echo "accepted skips: $SKIPPED（全部在声明清单内，逐条见上面的 notice）"
           fi
+
+          exit "$STATUS"
 
   # 数据库：迁移链 + 每个迁移的自检 + 幂等。这一层是"业务真相归领域"的唯一执行点，
   # 之前完全没有 CI 覆盖（全靠本机 psql 手跑）。
