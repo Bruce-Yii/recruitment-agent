@@ -12,6 +12,27 @@
 //   * 不接受目标阶段、不接受 actor、不写 decision、不建任务：那些不是"承认事实"，
 //     而是"下命令"。命令入口一旦存在，模型就能绕过人（D-79 / D-95 的人机闸门形同虚设）。
 //
+// 【F1 · rubric 补钉（本文件唯一的业务写入，T1 前置的一部分）】
+//
+//   `application.rubric_version_id` 有两个写入时机，缺一不可：
+//     1. **intake 建申请时**（`application-intake.ts`）：当时岗位已有已批准的 current ⇒ 直接钉；
+//     2. **本命令的 T1 判定**（补钉）：申请早于 rubric 批准（先接简历、后批标准，这是常态），
+//        `rubric_version_id` 为空而岗位此刻已有**已批准**的 `job.current_rubric_version_id`。
+//
+//   补钉的边界（写死，别扩）：
+//     * **只在 T1 的唯一缺口是这个 rubric 时**才补（还有材料问题 → 一行都不写，BLOCKED）；
+//     * 只认 `job.current_rubric_version_id`（D-21），并**当场复核它已批准**（D-48 不回退推导）；
+//     * 在同一事务里写 `application.rubric_version_id` + 一条内部审计事件
+//       （`application.rubric_version.pinned`，含 actor / 原因 / 新旧指针），
+//       然后才走阶段 UPDATE —— 任一步失败整体回滚；
+//     * UPDATE 必须是条件写（`rubric_version_id is null`）并经过 `fn_row_guard`
+//       （调用方已 `SET LOCAL recruitment.actor_id`，actor 缺失直接拒绝，不做匿名写入）；
+//     * **只读视图不补钉**：`readStageBlockedView` 走 `allowPin=false`，一条写语句都不发，
+//       仍按"当前事实"报 `RUBRIC_NOT_PINNED`。视图与写路径的这点差异是刻意的：
+//       视图回答"库里现在缺什么"，写路径回答"这次调用能不能把事实补齐后推进"。
+//     * 本命令**不**因此获得任何新授权：rubric 版本已经由人批准过，补钉只是把同一个
+//       已批准事实记录到申请上（没有批准就没有可钉的版本）。
+//
 // 【v1.1 · §11.6-8 复审】阻塞不再只是自由文本：
 //   * `blockers[]` / `warnings[]` 的每一项都带**结构化的责任与下一步**：
 //       `owner_role`（封闭集）、`next_action_code`（封闭集）**恒有**；
@@ -67,8 +88,12 @@
 // 不做什么（与方案 D 的边界一致）：
 //   * 不接受 `to_stage` / `actor_id` / `tenant_id` 入参（身份与目标都只能来自事实与配置）；
 //   * 不写 `decision`、不建 `business_task`、不改 `lifecycle_status`、不写 `stage_blocked_reason`；
+//   * **唯一的例外**是 T1 的 rubric 补钉（`application.rubric_version_id`，见文件头 F1）——
+//     它写的是一个已经由人批准过的事实，不是本命令新造的授权；
 //   * 不倒退（指针已超前于本命令能推导的事实 → `STAGE_AHEAD` 警告 + 一条 UPDATE 都不发）；
 //   * 不跳阶（只走 S6→S7→S8 两条边；中间任一前置不成立就停在那一步）。
+
+import { randomUUID } from 'node:crypto'
 
 import { canonicalJson } from '../tools/contract.ts'
 import { RecruitmentToolError } from '../tools/errors.ts'
@@ -140,7 +165,7 @@ export type StageNextActionCode = (typeof NEXT_ACTION_CODES)[number]
  * 表里每一行都必须回答"谁、做什么、做完这一条还差什么"。
  */
 export const NEXT_ACTION_MESSAGES: Readonly<Record<StageNextActionCode, string>> = {
-  PIN_RUBRIC_VERSION: '产出并批准 rubric 版本，再由 intake 把它钉到这条申请上（rubric_version_id 非空）。',
+  PIN_RUBRIC_VERSION: '批准岗位的一个 rubric 版本（recruitment_job_rubric_approve 会同时把 job.current_rubric_version_id 指过去），再调用 recruitment_application_stage_advance：写路径会在同一事务里把该版本钉到申请上。若申请已钉、只是岗位换了当前版本，同样先批准再推进。',
   LINK_INTAKE_MATERIAL: '跑一次 recruitment_application_intake，把候选人的材料绑定到这条申请上。',
   REPARSE_MATERIAL: '修复或重新导入材料（parse_status 不能是 FAILED），再重试推进。',
   RECORD_SCREENING_DECISION: '由人完成初筛并落一条 SCREENING 决策（recruitment_decision_record），再重试推进。',
@@ -295,8 +320,11 @@ const LADDER_TERMINAL = LADDER[LADDER.length - 1]?.to ?? 'S8'
 //  decision-record.ts 的局部构造器做法——message 仍是 `CODE: compact-json`）
 // =====================================================================
 
-/** 本文件允许抛出的错误码（其余一律是库/宿主异常，原样上抛）。 */
-type StageAdvanceErrorCode = 'NOT_FOUND' | 'VERSION_CONFLICT' | 'INVARIANT_VIOLATION'
+/**
+ * 本文件允许抛出的错误码（其余一律是库/宿主异常，原样上抛）。
+ * `INVALID_ARGS` 只用于 F1 补钉前"执行上下文没有 actor"这一类**调用前提**缺失（不写匿名审计）。
+ */
+type StageAdvanceErrorCode = 'NOT_FOUND' | 'VERSION_CONFLICT' | 'INVARIANT_VIOLATION' | 'INVALID_ARGS'
 
 /**
  * 造一个 `Error: <CODE>: <compact-json>` 形态的工具错误。
@@ -483,7 +511,10 @@ async function resolveRecruitmentOwner(
 }
 
 /**
- * T1 的两条前置事实（材料、rubric）。**只判定、不写入**（rubric pin 的写入是 F1，属 intake 线）。
+ * T1 的两条前置事实（材料、rubric）。**只判定、不写入**。
+ *
+ * rubric 的写入（补钉）不在这里：判定必须在只读视图里也能跑，而补钉是写路径的动作。
+ * 调用方（{@link evaluateT1}）在"唯一缺口就是这个 rubric"且 `allowPin=true` 时才补。
  * @param client - 事务内连接。
  * @param tenantId - 租户。
  * @param app - 读到的申请。
@@ -531,13 +562,207 @@ async function checkS6ToS7(
   if (app.rubric_version_id === null) {
     blockers.push({
       code: 'RUBRIC_NOT_PINNED',
-      message: '申请还没有钉住 rubric 版本（rubric_version_id 为空）：先在 recruitment_job_create / '
-        + 'recruitment_job_update 产出 rubric 并完成审批，再由 intake 把版本钉到这条申请上，然后重试。',
+      message: '申请还没有钉住 rubric 版本（rubric_version_id 为空）：先由 recruitment_job_rubric_approve '
+        + '批准岗位的一个 rubric 版本（它会把 job.current_rubric_version_id 指过去），再调用本命令 —— '
+        + '写路径会在同一事务里补钉后推进；只读视图不写库，所以它只报告这个事实。',
       owner_role: 'JOB_HIRING_MANAGER',
       next_action_code: 'PIN_RUBRIC_VERSION',
     })
   }
   return blockers
+}
+
+// =====================================================================
+//  F1 · rubric 补钉（T1 前置的一部分；只由写路径调用）
+// =====================================================================
+
+/** 岗位当前指针 + 它是否"此刻已批准"（补钉的唯一输入）。 */
+interface RubricPinTarget {
+  readonly rubric_version_id: string
+  readonly version_no: number
+  /** 审计事件要记的岗位 id（本函数的申请行不含 `job_id`，从这条 join 里带出来）。 */
+  readonly job_id: string
+}
+
+/** 一次成功补钉的结果（更新后的 `record_version` 是后续阶段 UPDATE 的乐观并发条件）。 */
+interface RubricPinResult {
+  readonly rubric_version_id: string
+  readonly record_version: number
+  readonly event_id: string
+}
+
+/**
+ * 从 GUC 读执行账号（`SET LOCAL recruitment.actor_id` 由调用方的 `withActor` 设置）。
+ *
+ * 为什么要读它：补钉会写业务行 + 审计事件，必须留下"谁做的"。没有 actor 就**拒绝写入**
+ * （与 `fn_row_guard` 的 `ACTOR_REQUIRED` 同一口径），绝不做匿名写入。
+ * @param client - 事务内连接。
+ * @returns actor UUID 文本；没有则 `null`。
+ */
+async function currentActorId(client: DatabaseClient): Promise<string | null> {
+  const { rows } = await client.query<{ actor_id: string | null }>(
+    "select nullif(current_setting('recruitment.actor_id', true), '') as actor_id",
+  )
+  return rows[0]?.actor_id ?? null
+}
+
+/**
+ * 读出"岗位当前指针指向的版本，且该版本此刻已批准"（D-21 / D-48）。
+ *
+ * 判据逐条对应 `job-rubric-rules.md` §4.2 的 `approved(v, as_of)`：
+ * 指针非空 → 版本仍在且属于本岗位 → 有生效的 APPROVED 审批（hash 一致、未被取代、未过期）。
+ * **不回退**到"已批准版本里 version_no 最大"（D-48）：指针为空就是没有当前版本。
+ * @param client - 事务内连接。
+ * @param tenantId - 租户。
+ * @param applicationId - 申请 id（用于取它的岗位指针）。
+ * @returns 可钉的目标；没有则 `null`。
+ */
+async function readPinnableRubric(client: DatabaseClient, tenantId: string, applicationId: string): Promise<RubricPinTarget | null> {
+  const { rows } = await client.query<RubricPinTarget>(
+    `select rv.id as rubric_version_id, rv.version_no, j.id as job_id
+       from recruitment.application a
+       join recruitment.job j
+         on j.id = a.job_id and j.tenant_id = a.tenant_id
+       join recruitment.rubric_version rv
+         on rv.id = j.current_rubric_version_id
+        and rv.tenant_id = j.tenant_id
+        and rv.job_id = j.id
+      where a.tenant_id = $1 and a.id = $2
+        and j.current_rubric_version_id is not null
+        and exists (
+          select 1 from recruitment.approval ap
+           where ap.tenant_id = rv.tenant_id
+             and ap.resource_type = 'RUBRIC_VERSION'
+             and ap.resource_id = rv.id
+             and ap.status = 'APPROVED'
+             and ap.canonical_payload_hash = rv.payload_hash
+             and ap.superseded_by_approval_id is null
+             and (ap.expires_at is null or ap.expires_at > now())
+        )`,
+    [tenantId, applicationId],
+  )
+  return rows[0] ?? null
+}
+
+/**
+ * 把审计事件落到 `event_inbox`（内部事实，`FALLBACK_KEY` 必须绑 `source_object_id`）。
+ * @param client - 事务内连接。
+ * @param input - 事件字段。
+ * @returns 新事件 id。
+ */
+async function insertRubricPinnedEvent(
+  client: DatabaseClient,
+  input: {
+    readonly tenantId: string
+    readonly applicationId: string
+    readonly jobId: string
+    readonly rubricVersionId: string
+    readonly rubricVersionNo: number
+    readonly pinnedBy: string
+    readonly recordVersion: number
+  },
+): Promise<string> {
+  const payload = {
+    table: 'application',
+    column: 'rubric_version_id',
+    record_id: input.applicationId,
+    application_id: input.applicationId,
+    job_id: input.jobId,
+    rubric_version_id: input.rubricVersionId,
+    rubric_version_no: input.rubricVersionNo,
+    from: null,
+    to: input.rubricVersionId,
+    actor_id: input.pinnedBy,
+    application_record_version: input.recordVersion,
+    source: 'recruitment.application.stage_advance',
+    reason: 'T1 前置：岗位当前已批准的 rubric 版本被补钉到申请上（D-21/D-48，F1）',
+  }
+  const { rows } = await client.query<{ event_id: string }>(
+    `insert into recruitment.event_inbox
+       (tenant_id, provider, provider_event_id, event_type, schema_version,
+        occurred_at, received_at, recorded_at, correlation_id, causation_id,
+        idempotency_key, idempotency_source, source_object_id,
+        payload_ref, payload, trust_level, normalized_event_type, normalizer_version)
+     values ($1, 'internal', null, 'application.rubric_version.pinned', 1,
+             now(), now(), now(), null, null,
+             $2, 'FALLBACK_KEY', $3,
+             null, $4::jsonb, 'INTERNAL', 'application.rubric_version.pinned', 'schema/0001')
+     returning event_id`,
+    [
+      input.tenantId,
+      `rubric-pin:${randomUUID()}`,
+      input.applicationId,
+      JSON.stringify(payload),
+    ],
+  )
+  const row = rows[0]
+  if (row === undefined) {
+    throw stageError('INVARIANT_VIOLATION', 'PIN_AUDIT_EVENT_MISSING', '补钉审计事件没有写入成功，整体回滚。', {
+      application_id: input.applicationId,
+    })
+  }
+  return row.event_id
+}
+
+/**
+ * T1 的 rubric 补钉：把岗位**当前已批准**的 rubric 版本钉到申请上（同一事务内）。
+ *
+ * 只在"申请的 rubric_version_id 为空"时被调用（调用方已判）。顺序：
+ *   1. 读岗位当前指针并当场复核它此刻已批准（**只读**；没有目标就返回 `null`，不要求 actor）；
+ *   2. 读 actor（必须已 `SET LOCAL recruitment.actor_id`；没有就拒绝，不做匿名写入）；
+ *   3. 条件 UPDATE（`rubric_version_id is null`，经 `fn_row_guard` 自增 `record_version`）；
+ *      0 行 ⇒ 并发/冲突，抛 `VERSION_CONFLICT`（本事务已 `select … for update`，正常不可达）；
+ *   4. 写审计事件（`application.rubric_version.pinned`）。
+ *
+ * @param client - 事务内连接（调用方已开事务并设 actor）。
+ * @param tenantId - 租户。
+ * @param app - 本次读到的申请（带岗位信息）。
+ * @returns 补钉结果；"没有可钉的目标"返回 `null`（调用方据此仍报 `RUBRIC_NOT_PINNED`）。
+ * @throws RecruitmentToolError - `INVALID_ARGS`（没有 actor）/ `VERSION_CONFLICT`。
+ */
+async function pinCurrentRubric(
+  client: DatabaseClient,
+  tenantId: string,
+  app: ApplicationRow,
+): Promise<RubricPinResult | null> {
+  // 先只读确认"真的有一个已批准的当前版本"：没有就返回 null（不写、也不要求 actor）。
+  const target = await readPinnableRubric(client, tenantId, app.id)
+  if (target === null) return null
+  const pinnedBy = await currentActorId(client)
+  if (pinnedBy === null) {
+    throw stageError(
+      'INVALID_ARGS',
+      'ACTOR_REQUIRED',
+      '执行上下文没有 actor（SET LOCAL recruitment.actor_id），拒绝补钉写入。',
+      { application_id: app.id },
+    )
+  }
+  const updated = await client.query<{ record_version: number }>(
+    `update recruitment.application
+        set rubric_version_id = $3
+      where id = $1 and tenant_id = $2 and rubric_version_id is null
+      returning record_version`,
+    [app.id, tenantId, target.rubric_version_id],
+  )
+  const row = updated.rows[0]
+  if (row === undefined) {
+    throw stageError(
+      'VERSION_CONFLICT',
+      'APPLICATION_RUBRIC_PIN_CONFLICT',
+      '补钉 UPDATE 未命中（申请已被并发钉住/改过）：本调用整体回滚，请重读后再决定。',
+      { application_id: app.id, rubric_version_id: target.rubric_version_id },
+    )
+  }
+  const eventId = await insertRubricPinnedEvent(client, {
+    tenantId,
+    applicationId: app.id,
+    jobId: target.job_id,
+    rubricVersionId: target.rubric_version_id,
+    rubricVersionNo: target.version_no,
+    pinnedBy,
+    recordVersion: row.record_version,
+  })
+  return { rubric_version_id: target.rubric_version_id, record_version: row.record_version, event_id: eventId }
 }
 
 /**
@@ -655,29 +880,41 @@ async function enrichObstructions(
 
 /**
  * 一条梯子边的判定结局。
- *   * `PASS` 事实成立，可以走这条边；
+ *   * `PASS` 事实成立，可以走这条边；`pinned` 非空表示这一跳**顺手补钉了 rubric**
+ *     （写路径专有；调用方必须用它的 `record_version` 作为后续阶段 UPDATE 的并发条件）；
  *   * `WAIT` 事实还没发生（等人），既不是推进也不是错误；
  *   * `BLOCKED` 事实明确反对（带可执行提示）。
  */
 type EdgeOutcome =
-  | { readonly kind: 'PASS' }
+  | { readonly kind: 'PASS'; readonly pinned?: RubricPinResult }
   | { readonly kind: 'WAIT' }
   | { readonly kind: 'BLOCKED'; readonly blockers: readonly RawBlocker[] }
 
 /**
  * T1（`from=S6`）的判定：材料 + rubric 齐 → PASS；缺任何一条 → BLOCKED。
+ *
+ * 唯一的写入可能：**T1 只差 rubric 这一条**、且 `allowPin=true` 时，先补钉再判 PASS
+ * （见文件头 F1）。补钉失败 / 没有可钉的已批准版本 → 仍按原 blocker 返回 BLOCKED（零阶段写入）。
  * @param client - 事务内连接。
  * @param tenantId - 租户。
  * @param app - 读到的申请。
+ * @param allowPin - 写路径 true（可补钉）/ 只读视图 false（一条写语句都不发）。
  * @returns 三分法结局（T1 没有 WAIT 分支）。
  */
 async function evaluateT1(
   client: DatabaseClient,
   tenantId: string,
   app: ApplicationRow,
+  allowPin: boolean,
 ): Promise<EdgeOutcome> {
   const found = await checkS6ToS7(client, tenantId, app)
-  return found.length === 0 ? { kind: 'PASS' } : { kind: 'BLOCKED', blockers: found }
+  if (found.length === 0) return { kind: 'PASS' }
+  // 只在"唯一缺口就是这个 rubric"时补钉：还有材料问题就一行都不写（BLOCKED 必须零写入）。
+  if (allowPin && found.length === 1 && found[0]?.code === 'RUBRIC_NOT_PINNED') {
+    const pinned = await pinCurrentRubric(client, tenantId, app)
+    if (pinned !== null) return { kind: 'PASS', pinned }
+  }
+  return { kind: 'BLOCKED', blockers: found }
 }
 
 /**
@@ -719,7 +956,7 @@ async function evaluateT2(
 //  统一诊断（写路径与只读视图共用同一套判定）
 // =====================================================================
 
-/** 诊断结果（**不含写入**；`transitions` 是"需要走的边"）。 */
+/** 诊断结果（`false` 时**不含写入**；`app` 是补钉之后的真实行）。 */
 interface StageDiagnosis {
   readonly app: ApplicationRow
   readonly status: StageAdvanceStatus
@@ -732,7 +969,10 @@ interface StageDiagnosis {
 }
 
 /**
- * 判定"这条申请现在能走到哪/被什么挡住"——**只读判定，不写任何东西**。
+ * 判定"这条申请现在能走到哪/被什么挡住"。
+ *
+ * `allowPin=false` 时**只读**（工作台视图）；`allowPin=true`（写路径）时，T1 允许在
+ * "只差 rubric 这一条"的情况下先补钉（见文件头 F1）。除补钉外本函数不写任何东西。
  *
  * 顺序：
  *   0) 目录完整性（S6/S7/S8 必须在 stage_catalog 里）；
@@ -744,15 +984,17 @@ interface StageDiagnosis {
  * @param tenantId - 租户。
  * @param applicationId - 申请 id。
  * @param lock - 写路径 true（行锁）/ 只读视图 false。
- * @returns 诊断结果（阻断原因已带责任与下一步）。
+ * @param allowPin - 是否允许 T1 补钉 rubric（写路径 true / 只读视图 false）。
+ * @returns 诊断结果（阻断原因已带责任与下一步；`app` 是补钉之后的真实值）。
  */
 async function diagnose(
   client: DatabaseClient,
   tenantId: string,
   applicationId: string,
   lock: boolean,
+  allowPin: boolean,
 ): Promise<StageDiagnosis> {
-  const app = await readApplication(client, tenantId, applicationId, lock)
+  let app = await readApplication(client, tenantId, applicationId, lock)
 
   // ---- 顺序：先看"这条申请该不该被本命令碰"，再看梯子 ----
   const catalog = await readStageCatalog(client, tenantId, [
@@ -820,7 +1062,7 @@ async function diagnose(
     const step = LADDER.find((edge) => edge.from === cursor)
     if (step === undefined) break
     const outcome = step.rule === 'T1'
-      ? await evaluateT1(client, tenantId, app)
+      ? await evaluateT1(client, tenantId, app, allowPin)
       : await evaluateT2(client, tenantId, applicationId)
     if (outcome.kind === 'BLOCKED') {
       rawBlockers.push(...outcome.blockers)
@@ -829,6 +1071,11 @@ async function diagnose(
     if (outcome.kind === 'WAIT') {
       if (step.rule === 'T2') pendingFact = 'SCREENING_DECISION'
       break
+    }
+    // F1：这一跳补钉了 rubric —— 把申请对象换成写后的事实，后续阶段 UPDATE 必须用新
+    // `record_version`（补钉那条 UPDATE 已经让 `fn_row_guard` 自增过一次）。
+    if (outcome.pinned !== undefined) {
+      app = { ...app, rubric_version_id: outcome.pinned.rubric_version_id, record_version: outcome.pinned.record_version }
     }
     applied.push(step)
     cursor = step.to
@@ -930,10 +1177,15 @@ async function applyEdge(
  *
  * 调用方必须在事务里（`withActor`），本函数**不**自己 begin/commit：
  * 多跳要么全成、要么全不成（任一跳抛错 → 调用方回滚）。
+ *
+ * 本函数可能写两类行，都只在事实已经成立时：① T1 的 rubric 补钉（F1：`application.rubric_version_id`
+ * + 一条内部审计事件）；② 阶段迁移（一条边一条 UPDATE，由 `fn_row_guard` 维护审计列）。
+ * 被 BLOCKED / NO_OP 时不补钉也不迁移（零 UPDATE，幂等的前提）。
  * @param client - 事务内连接（actor 已 `SET LOCAL`）。
  * @param input - `{tenantId, applicationId}`（没有目标阶段、没有 actor）。
  * @returns 三态结论 + 真实发生的迁移。
- * @throws RecruitmentToolError - `NOT_FOUND` / `VERSION_CONFLICT` / `INVARIANT_VIOLATION`。
+ * @throws RecruitmentToolError - `NOT_FOUND` / `VERSION_CONFLICT` / `INVARIANT_VIOLATION`
+ *   / `INVALID_ARGS`（补钉需要 actor 但没有）。
  */
 export async function advanceApplicationStage(
   client: DatabaseClient,
@@ -941,7 +1193,7 @@ export async function advanceApplicationStage(
 ): Promise<StageAdvanceResult> {
   const { tenantId, applicationId } = input
   try {
-    const diagnosis = await diagnose(client, tenantId, applicationId, true)
+    const diagnosis = await diagnose(client, tenantId, applicationId, true, true)
     const app = diagnosis.app
 
     if (diagnosis.transitions.length === 0) {
@@ -1044,7 +1296,7 @@ export async function advanceApplicationStage(
 /**
  * 只读的「阻塞视图」：给工作台渲染「当前状态、阻塞原因、责任人、下一步」。
  *
- * **只读**：判定走 `diagnose(lock=false)`（普通 `select`），因此可以安全地跑在
+ * **只读**：判定走 `diagnose(lock=false, allowPin=false)`（普通 `select`、不补钉），因此可以安全地跑在
  * `withReadOnly` 事务里；本函数**不发任何 UPDATE/INSERT**，也不需要 actor。
  *
  * 整条申请级别的 `owner` / `next_action` 取"优先级最高的一条"：
@@ -1062,7 +1314,7 @@ export async function readStageBlockedView(
   const { tenantId, applicationId } = input
   let diagnosis: StageDiagnosis
   try {
-    diagnosis = await diagnose(client, tenantId, applicationId, false)
+    diagnosis = await diagnose(client, tenantId, applicationId, false, false)
   } catch (error) {
     if (isConcurrentUpdateError(error)) {
       throw stageError(

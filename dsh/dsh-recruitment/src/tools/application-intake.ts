@@ -19,6 +19,15 @@
 //      显式指过去。同一内容+同一结构化结果 ⇒ 不写任何行（`UNCHANGED`）。
 //      校验失败 ⇒ 一行不写，旧事实不动。
 //   6. 落 Intake 三层（event / record / asset）+ `resume`（按 `(candidate, asset)` 唯一口径）
+//   7. **钉 rubric 版本**（F1 / D-21 / D-48）：新建申请时，若岗位的
+//      `job.current_rubric_version_id` 非空、该版本属于本岗位、且**此刻有生效的 APPROVED 审批**
+//      （`status='APPROVED'` + hash 一致 + 未被取代 + 未过期），就把这个版本写进
+//      `application.rubric_version_id`。
+//      * **"当前"只由 `job.current_rubric_version_id` 说话**，不按 `max(version_no)` 推导；
+//      * 没有已批准版本时**留空、不报错、不阻塞接入** —— 接简历不该要求先有 rubric
+//        （后续岗位批准后，`recruitment_application_stage_advance` 的 T1 判定会补钉）；
+//      * 复用已有申请（REUSED）时**不改** `rubric_version_id`：补钉是阶段推进写路径的职责，
+//        本工具只在**建申请**这一刻记录当时已经批准的事实。
 //
 // **输出把三个状态分开表达**（这是本轮修的核心误导：旧实现把它们混成 `created`）：
 //   * `application_action: CREATED | REUSED`
@@ -42,6 +51,9 @@ import { contractError, digestOf, type ContractErrorCode } from './contract.ts'
 import { parseContractArgs, toParameterSchema, type ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
+// 事件名只从 `src/runtime/event-types.ts` 取（唯一权威注册表）：发射方与路由方
+// 引同一份常量，`test/runtime/event-types.test.ts` 扫描本文件的发射点做机检。
+import { EVENT_TYPES } from '../runtime/event-types.ts'
 import {
   runConverter,
   type ConverterOutput,
@@ -1310,6 +1322,56 @@ interface JobRow {
   readonly title: string
   readonly status: string
   readonly current_job_version_id: string | null
+  /**
+   * D-21 的显式"当前 rubric"指针。**这是"当前版本"的唯一权威**（D-48：指针为空 = 没有当前，
+   * 不回退推导）。S7/S10 的决策都以申请钉住的版本为准，所以这里必须把它读出来。
+   */
+  readonly current_rubric_version_id: string | null
+}
+
+/**
+ * 解析"这一刻可以直接钉到新申请上的 rubric 版本"（F1 / D-21 / D-48）。
+ *
+ * 判据全部在 SQL 里，逐条对应 `job-rubric-rules.md` §4.2 的 `approved(v, as_of)`：
+ *   1. 指针非空（D-48：指针为空 = 没有当前版本，**不回退**到 max(version_no)）；
+ *   2. 被指的版本仍在、属于本岗位本租户（`0005` 的复合外键也是这条，这里提前判以免写侧才炸）；
+ *   3. 该版本此刻有生效的 APPROVED 审批：`status='APPROVED'`、`canonical_payload_hash`
+ *      与版本 `payload_hash` 一致、未被取代、未过期。
+ *
+ * **不读** `rubric_version.approved_by_approval_id`：那是可空指针，不保证指向 APPROVED
+ * 也不保证 hash 一致（`job-rubric-rules.md` §4.2 第 3 条）。
+ *
+ * 返回 `null` 不是错误：这表示"现在没有什么可以钉的"，接简历照常成功（只留空）。
+ * @param client - 事务内客户端。
+ * @param tenantId - 租户。
+ * @param jobId - 目标岗位。
+ * @param currentRubricVersionId - `job.current_rubric_version_id`。
+ * @returns 可钉的版本 id；没有则 `null`。
+ */
+async function resolvePinnableRubricVersion(
+  client: DatabaseClient,
+  tenantId: string,
+  jobId: string,
+  currentRubricVersionId: string | null,
+): Promise<string | null> {
+  if (currentRubricVersionId === null) return null
+  const { rows } = await client.query<{ id: string }>(
+    `select rv.id
+       from recruitment.rubric_version rv
+      where rv.tenant_id = $1 and rv.job_id = $2 and rv.id = $3
+        and exists (
+          select 1 from recruitment.approval a
+           where a.tenant_id = rv.tenant_id
+             and a.resource_type = 'RUBRIC_VERSION'
+             and a.resource_id = rv.id
+             and a.status = 'APPROVED'
+             and a.canonical_payload_hash = rv.payload_hash
+             and a.superseded_by_approval_id is null
+             and (a.expires_at is null or a.expires_at > now())
+        )`,
+    [tenantId, jobId, currentRubricVersionId],
+  )
+  return rows[0]?.id ?? null
 }
 
 /**
@@ -1361,6 +1423,15 @@ export async function intakeInTransaction(
       detail: { job_id: jobId },
     })
   }
+
+  // 1b) F1：新建申请时要钉的 rubric 版本 —— 只看 `job.current_rubric_version_id`（D-21），
+  //     并要求它此刻已批准。没有就是 `null`：留空、不报错、不阻塞接入。
+  const pinnableRubricVersionId = await resolvePinnableRubricVersion(
+    client,
+    tenantId,
+    job.id,
+    job.current_rubric_version_id,
+  )
 
   // 2) 串行化"同一个自然人"的并发接入：key 来自**强标识集合**，不是文件 sha。
   //    否则同一个人的两份不同材料会各自"没查到"并各建一个候选人。
@@ -1462,12 +1533,14 @@ export async function intakeInTransaction(
   }
 
   // 7) 申请：复用同 (candidate, job, ACTIVE) 的那条，或新建一条（阶段 S6 = Intake）。
+  //    新建时把上面解析到的、岗位当前已批准的 rubric 版本一并钉上（F1）。
   const application = await ensureActiveApplication(client, {
     tenantId,
     candidateId,
     jobId,
     jobVersionId: job.current_job_version_id,
     resumeVersionId,
+    rubricVersionId: pinnableRubricVersionId,
   })
 
   return assemble({
@@ -1561,8 +1634,11 @@ export async function findActiveApplication(
  *
  * 更新指针会经过 `fn_row_guard`（两个 status 守卫各加一次 `record_version`），
  * 所以**必须**用 `RETURNING` 取回新值，不能自己 +1。
+ *
+ * `rubricVersionId` 只在**新建**时写入（F1）：复用路径不动 `rubric_version_id` ——
+ * 补钉是 `recruitment_application_stage_advance` 的写路径职责，本工具不替它做。
  * @param client - 事务内客户端。
- * @param input - 租户 / 候选人 / 岗位 / 岗位版本 / 本轮生效的版本。
+ * @param input - 租户 / 候选人 / 岗位 / 岗位版本 / 本轮生效的版本 /（可空）要钉的 rubric 版本。
  * @returns 申请行 + 动作。
  */
 export async function ensureActiveApplication(
@@ -1573,6 +1649,11 @@ export async function ensureActiveApplication(
     readonly jobId: string
     readonly jobVersionId: string
     readonly resumeVersionId: string
+    /**
+     * 岗位当前已批准的 rubric 版本；`null` / 省略 = 现在没有可钉的（留空，不阻塞接入）。
+     * 只有**新建**申请时用得上（复用路径不动这个指针）。
+     */
+    readonly rubricVersionId?: string | null
   },
 ): Promise<ActiveApplicationResult> {
   const existing = await findActiveApplication(client, input.tenantId, input.candidateId, input.jobId)
@@ -1589,12 +1670,19 @@ export async function ensureActiveApplication(
       resume_version_id: string | null
     }>(
       `insert into recruitment.application
-         (tenant_id, candidate_id, job_id, job_version_id, resume_version_id,
+         (tenant_id, candidate_id, job_id, job_version_id, resume_version_id, rubric_version_id,
           lifecycle_status, current_stage_code)
-       values ($1, $2, $3, $4, $5, 'ACTIVE', 'S6')
+       values ($1, $2, $3, $4, $5, $6, 'ACTIVE', 'S6')
        returning id, record_version, current_stage_code as stage_code, lifecycle_status,
                  job_version_id, resume_version_id`,
-      [input.tenantId, input.candidateId, input.jobId, input.jobVersionId, input.resumeVersionId],
+      [
+        input.tenantId,
+        input.candidateId,
+        input.jobId,
+        input.jobVersionId,
+        input.resumeVersionId,
+        input.rubricVersionId ?? null,
+      ],
     )
     const row = rows[0]
     if (row === undefined) {
@@ -1739,7 +1827,7 @@ async function loadVersionChain(
 
 async function loadJob(client: DatabaseClient, tenantId: string, jobId: string): Promise<JobRow> {
   const { rows } = await client.query<JobRow>(
-    `select id, tenant_id, code, title, status, current_job_version_id
+    `select id, tenant_id, code, title, status, current_job_version_id, current_rubric_version_id
        from recruitment.job where id = $1 and tenant_id = $2`,
     [jobId, tenantId],
   )
@@ -1766,8 +1854,8 @@ async function upsertIntakeEvent(
        (tenant_id, provider, event_type, schema_version, occurred_at, received_at, recorded_at,
         idempotency_key, idempotency_source, source_object_id, payload, trust_level,
         normalized_event_type, normalizer_version)
-     values ($1, 'internal', 'resume.intake.received', 1, now(), now(), now(),
-             $2, 'FALLBACK_KEY', $3, $4::jsonb, 'INTERNAL', 'resume.intake.received', 'intake/1.0.0')
+     values ($1, 'internal', '${EVENT_TYPES.RESUME_INTAKE_RECEIVED}', 1, now(), now(), now(),
+             $2, 'FALLBACK_KEY', $3, $4::jsonb, 'INTERNAL', '${EVENT_TYPES.RESUME_INTAKE_RECEIVED}', 'intake/1.0.0')
      on conflict (tenant_id, idempotency_key) do nothing
      returning event_id`,
     [
@@ -2231,7 +2319,13 @@ export function createApplicationIntakeTool(cfg: IntakeToolConfig): ReadonlyTool
       + 'It never merges candidates. Writes only through SET LOCAL recruitment.actor_id. '
       + 'Optionally accepts structured_json (the structuring agent result for the SAME material): it is '
       + 'validated against this material block index, rejected results write nothing (old facts untouched), '
-      + 'and accepted results set the five business fields state while preserving converter_state.',
+      + 'and accepted results set the five business fields state while preserving converter_state. '
+      + 'RUBRIC PIN: when the target job\'s current_rubric_version_id points at a version that is APPROVED '
+      + 'at call time, a NEW application is created with application.rubric_version_id pinned to exactly that '
+      + 'version (D-21/D-48: current is the explicit pointer, never max(version_no)). When the job has no '
+      + 'approved current rubric the field stays EMPTY and intake still succeeds — receiving a resume must not '
+      + 'require a rubric first; recruitment_application_stage_advance pins it later once the rubric is approved. '
+      + 'Only the create path pins: an existing (REUSED) application is never re-pinned here.',
     parameters: toParameterSchema(PARAMS),
     output: {
       schema: OUTPUT_SCHEMA,

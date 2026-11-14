@@ -207,6 +207,13 @@ export async function seedScenario(client: DatabaseClient, input: {
         values ($1, 'RUBRIC_VERSION', $2, 1, $3, $4, 'APPROVED', $5, $5, now(), '集成测试批准')`, [
       TENANT, rubricId, input.approvalSchemaVersion ?? 1, payloadHash, HR_ACTOR,
     ])
+    // D-21 / D-48：**"当前"只由 job.current_rubric_version_id 说话**。
+    // 批准了就得把这个指针指过去，否则夹具造出的是"已批准但没有当前版本"这种另一种真实状态
+    // （要测它时用 `approve: false`，或显式再清空指针）。
+    await client.query(
+      'update recruitment.job set current_rubric_version_id = $2 where id = $1',
+      [jobId, rubricId],
+    )
   }
 
   const candidateId = input.candidateId ?? (await one(client, `insert into recruitment.candidate

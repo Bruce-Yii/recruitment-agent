@@ -127,7 +127,7 @@ async function setStage(client: DatabaseClient, applicationId: string, stageCode
  */
 async function seedAtS6(
   client: DatabaseClient,
-  input: { pinRubric?: boolean; bindMaterial?: boolean; parseStatus?: string },
+  input: { pinRubric?: boolean; bindMaterial?: boolean; parseStatus?: string; approve?: boolean },
 ): Promise<Awaited<ReturnType<typeof seedScenario>>> {
   const scenario = await seedScenario(client, { dimensions: DIMS, ...input })
   await setStage(client, scenario.applicationId, 'S6')
@@ -213,7 +213,9 @@ test('A1 T1 正例：材料 + rubric 齐 → S7、transitions=[{S6,S7}]、stage_
 
 test('A2 T1 缺 rubric → BLOCKED[RUBRIC_NOT_PINNED]，阶段不变、零 UPDATE（版本与事件都不动）；责任人/下一步结构化', async () => {
   await inRolledBackTx(pool, async (client) => {
-    const scenario = await seedAtS6(client, { pinRubric: false })
+    // 真正被挡住的是"岗位还没有已批准的当前 rubric"：D-21/D-48 下指针为空就是没有当前版本，
+    // 补钉也没有可钉的目标（申请没钉 + 岗位无可钉 → 仍 BLOCKED、零写入）。
+    const scenario = await seedAtS6(client, { pinRubric: false, approve: false })
     const before = await readApp(client, scenario.applicationId)
     const eventsBefore = await stageChangeEvents(client, scenario.applicationId)
 
@@ -453,7 +455,8 @@ function assertOnlyReadStatements(statements: readonly string[]): void {
 
 test('A9 §11.6-8 只读阻塞视图（真库）：RUBRIC_NOT_PINNED → 四要素齐（状态/原因/责任人/下一步），且只发读语句', async () => {
   await inRolledBackTx(pool, async (client) => {
-    const scenario = await seedAtS6(client, { pinRubric: false })
+    // 只读视图不补钉：这里用"岗位没有已批准的当前版本"造真实的阻塞（approve:false）。
+    const scenario = await seedAtS6(client, { pinRubric: false, approve: false })
     const before = await readApp(client, scenario.applicationId)
     const eventsBefore = await stageChangeEvents(client, scenario.applicationId)
     const recorder = recordingClient(client)

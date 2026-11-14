@@ -22,6 +22,9 @@ import type { ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { checkAsOf, contractError } from './contract.ts'
 import { validateDimensions } from './screening-evaluate.ts'
+// R4：`provenance` 的唯一判定实现（`contracts/tenant-provenance.md` §2）。
+// 本工具**只读本产品业务库**，所以"读到了行"不等于"数据是真的"：演示租户的行同样真的在库里。
+import { resolveTenantProvenance } from './candidate-get.ts'
 import {
   closePool,
   createPool,
@@ -48,7 +51,8 @@ const PARAMS: ParamMap = {
     min: 1,
     max: 1000,
     description: 'Select this rubric version number (1-based). Mutually exclusive with rubric_version_id. '
-      + 'Omit both to get the current approved version.',
+      + 'Omit both to get the CURRENT version — i.e. the one job.current_rubric_version_id points at '
+      + '(D-21/D-48), which is NOT necessarily the highest approved version_no.',
   },
   rubric_version_id: {
     kind: 'string',
@@ -73,6 +77,11 @@ interface JobRow {
   readonly department_id: string
   readonly requisition_id: string | null
   readonly current_job_version_id: string | null
+  /**
+   * D-21 的显式"当前 rubric"指针：**"当前"只由它说话，不是 `max(version_no)`**（D-48：
+   * 指针为空 = 没有当前版本，不回退推导）。
+   */
+  readonly current_rubric_version_id: string | null
   readonly record_version: number
   readonly status_changed_at: string | Date
 }
@@ -325,18 +334,26 @@ function approvedAt(version: RubricRow, approvals: readonly ApprovalRow[], asOfI
   return null
 }
 
-/** `current(job_id, as_of)` = 已批准版本里 `version_no` 最大的那版（唯一由 uq_rubric_version 保证）。 */
+/**
+ * `current(job, as_of)`：**只认 `job.current_rubric_version_id` 这个显式指针**（D-21 / D-48）。
+ *
+ * 为什么不再按 `max(version_no)` 推导：批准 v2 不等于把 v3 顶成当前，回滚到 v1 也只能
+ * 靠指针表达。按最大值取会让"回滚"这个业务动作在只读侧完全看不见，并且和写侧
+ * （`recruitment_job_rubric_approve` 维护指针）说出两个不同的"当前"。
+ *
+ * 指针为空 / 指向的版本不属于该岗位 → `undefined`（= 没有当前版本，**不回退**）。
+ * **注意**：这里只回答"哪一版被指针指着"，不回答"它是否已批准" —— 那是
+ * {@link approvedAt} 的事，两个事实分开报（`is_current` / `is_approved`）。
+ * @param versions - 该岗位的全部 rubric 版本。
+ * @param currentRubricVersionId - `job.current_rubric_version_id`。
+ * @returns 指针指向的版本；没有则 `undefined`。
+ */
 function pickCurrent(
   versions: readonly RubricRow[],
-  approvals: readonly ApprovalRow[],
-  asOfIso: string,
+  currentRubricVersionId: string | null,
 ): RubricRow | undefined {
-  let best: RubricRow | undefined
-  for (const version of versions) {
-    if (approvedAt(version, approvals, asOfIso) === null) continue
-    if (best === undefined || version.version_no > best.version_no) best = version
-  }
-  return best
+  if (currentRubricVersionId === null) return undefined
+  return versions.find((version) => version.id === currentRubricVersionId)
 }
 
 /** 统计 criterion 的 kind 分布；任何结构问题留给 `validateDimensions`。 */
@@ -389,6 +406,23 @@ function knownVersionNos(versions: readonly RubricRow[]): readonly number[] {
 }
 
 /**
+ * 本工具出口的三维标签（R4，`contracts/tenant-provenance.md` §2 / §3）。
+ *
+ * `provenance` **只能**由 {@link resolveTenantProvenance} 按**这次调用**的租户事实算：
+ * 演示租户 / 缺声明 / 有合成标记 ⇒ `FIXTURE`。`trigger` 与 `connection` 与它正交：
+ * 本工具不被事件驱动（`MANUAL`），`connection` 按其工具契约解释为"直连业务库"（`CONNECTED`）。
+ * @param provenance - 本次调用算出的数据真假（`LIVE` 只在有正面证据时出现）。
+ * @returns 三轴标签对象（每次调用新建，不共享可变常量）。
+ */
+function jobGetLabels(provenance: 'LIVE' | 'FIXTURE'): JobGetValue['labels'] {
+  return {
+    provenance,
+    trigger: 'MANUAL',
+    connection: 'CONNECTED',
+  }
+}
+
+/**
  * 在只读事务里跑完整查询 + 解析。
  * @param client - 只读事务内的客户端。
  * @param cfg - 已解析的数据库配置（tenant_id 只从这里来）。
@@ -404,7 +438,7 @@ async function queryJob(
   const jobId = args.job_id as string
   const jobResult = await client.query<JobRow>(
     `select id, code, title, status, department_id, requisition_id, current_job_version_id,
-            record_version, status_changed_at
+            current_rubric_version_id, record_version, status_changed_at
        from recruitment.job
       where id = $1 and tenant_id = $2`,
     [jobId, cfg.tenant_id],
@@ -417,6 +451,10 @@ async function queryJob(
       detail: { job_id: jobId },
     })
   }
+
+  // R4：provenance 反映**这次调用**的数据来源，不写死 `LIVE`。
+  // 只读业务库 ⇒ 数据真假取决于该租户是否被显式声明为非合成（演示租户一律 FIXTURE）。
+  const provenance = await resolveTenantProvenance(client, cfg.tenant_id)
 
   let jobVersion: JobVersionRow | undefined
   if (job.current_job_version_id !== null) {
@@ -451,7 +489,7 @@ async function queryJob(
   )
   const approvals = approvalResult.rows
 
-  const current = pickCurrent(versions, approvals, asOfIso)
+  const current = pickCurrent(versions, job.current_rubric_version_id)
   const currentOrNull = current === undefined ? null : current
   const requestedNo = args.rubric_version_no as number | undefined
   const requestedId = args.rubric_version_id as string | undefined
@@ -484,7 +522,7 @@ async function queryJob(
       return {
         tool: TOOL_NAME,
         contract_version: CONTRACT_VERSION,
-        labels: { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' },
+        labels: jobGetLabels(provenance),
         as_of: asOfIso,
         job: {
           id: job.id,
@@ -520,17 +558,28 @@ async function queryJob(
         })),
       }
     }
-    // current() 只按审批；JOB_CURRENT 还要"可执行"（R-VAL-1..13）。两者分开报。
+    // current() 只认指针；JOB_CURRENT 还要"指针指向的版本在 as_of 已批准" + "可执行"（R-VAL）。
+    // 三个事实分开报，别把"没有指针"说成"没有审批"。
     if (current === undefined) {
-      return absenceValue(job, jobVersion, versions, approvals, asOfIso, {
+      return absenceValue(job, jobVersion, versions, approvals, asOfIso, provenance, {
         code: 'NO_APPROVED_RUBRIC',
-        message: `岗位 ${jobId} 有 ${versions.length} 个 Rubric 版本，但 ${asOfIso} 时刻没有一版处于已批准状态`,
+        message: job.current_rubric_version_id === null
+          ? `岗位 ${jobId} 有 ${versions.length} 个 Rubric 版本，但 job.current_rubric_version_id 为空：`
+            + '没有"当前版本"（D-21/D-48：当前只由该指针表达，不回退到 max(version_no)）'
+          : `岗位 ${jobId} 的 job.current_rubric_version_id=${job.current_rubric_version_id} 不属于该岗位的 Rubric 版本`,
+        violations: [],
+      })
+    }
+    if (approvedAt(current, approvals, asOfIso) === null) {
+      return absenceValue(job, jobVersion, versions, approvals, asOfIso, provenance, {
+        code: 'NO_APPROVED_RUBRIC',
+        message: `岗位当前 Rubric v${current.version_no}（指针指向的版本）在 ${asOfIso} 时刻没有处于已批准状态的审批`,
         violations: [],
       })
     }
     const currentViolations = validateDimensions(current.dimensions)
     if (currentViolations.length > 0) {
-      return absenceValue(job, jobVersion, versions, approvals, asOfIso, {
+      return absenceValue(job, jobVersion, versions, approvals, asOfIso, provenance, {
         code: 'RUBRIC_INVALID',
         message: `当前 Rubric v${current.version_no} 没有通过 R-VAL-1..13，不可执行`,
         violations: currentViolations,
@@ -542,7 +591,7 @@ async function queryJob(
   return {
     tool: TOOL_NAME,
     contract_version: CONTRACT_VERSION,
-    labels: { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' },
+    labels: jobGetLabels(provenance),
     as_of: asOfIso,
     job: {
       id: job.id,
@@ -575,20 +624,45 @@ async function queryJob(
   }
 }
 
-/** 构造 `rubric` 为 null 的返回值（`rubric_absence` 恰有一个非 null，见 §2.3）。 */
+/**
+ * 在**已有事务**里跑完整查询（测试与生产走同一条 `queryJob` 路径，标签也因此同源）。
+ *
+ * 给集成测试一个能落在回滚事务里的入口：`createJobGetTool().execute` 自己开池，
+ * 看不到事务内造的夹具；而 R4 要证明"标签随租户事实变"，必须能在同一事务里
+ * 造一个**被显式声明为非合成**的租户再读一遍。
+ * @param client - 事务内客户端。
+ * @param config - 已解析的数据库配置（`tenant_id` 只从这里来）。
+ * @param args - **已校验**的入参（校验在 `execute` 的入参层，与 `queryJob` 同口径）。
+ * @param asOfIso - 本次判定的基准时刻。
+ * @returns 规范输出值（`labels.provenance` 由 `resolveTenantProvenance` 算出）。
+ */
+export async function readJobValue(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  args: Record<string, unknown>,
+  asOfIso: string,
+): Promise<JobGetValue> {
+  return queryJob(client, config, args, asOfIso)
+}
+
+/**
+ * 构造 `rubric` 为 null 的返回值（`rubric_absence` 恰有一个非 null，见 §2.3）。
+ * @param provenance - 本次调用按租户事实算出的数据真假（R4；不许写死）。
+ */
 function absenceValue(
   job: JobRow,
   jobVersion: JobVersionRow | undefined,
   versions: readonly RubricRow[],
   approvals: readonly ApprovalRow[],
   asOfIso: string,
+  provenance: 'LIVE' | 'FIXTURE',
   absence: JobGetValue['rubric_absence'],
 ): JobGetValue {
-  const current = pickCurrent(versions, approvals, asOfIso)
+  const current = pickCurrent(versions, job.current_rubric_version_id)
   return {
     tool: TOOL_NAME,
     contract_version: CONTRACT_VERSION,
-    labels: { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' },
+    labels: jobGetLabels(provenance),
     as_of: asOfIso,
     job: {
       id: job.id,
@@ -674,7 +748,9 @@ export function createJobGetTool(config: ResolvedDatabaseConfig): ReadonlyToolDe
     name: TOOL_NAME,
     description:
       'Get one job (requisition) and the rubric version that applies at a given time, read straight from the '
-      + 'business database (labels: LIVE/MANUAL/CONNECTED). job_id must be a UUID. Returns the job row, its '
+      + 'business database (labels: provenance is computed from the tenant\'s synthetic marker — FIXTURE for demo/'
+      + 'undeclared tenants, LIVE only when the tenant is explicitly declared non-synthetic; trigger=MANUAL, '
+      + 'connection=CONNECTED means "direct business DB read"). job_id must be a UUID. Returns the job row, its '
       + 'current job_version (JD text), the resolved rubric with every criterion echoed verbatim, all rubric '
       + 'version numbers with is_current/is_approved, and rubric_absence when the job has no approved rubric '
       + '(this tool reports absence instead of failing). Omit rubric_version_no/rubric_version_id to get the '

@@ -39,14 +39,16 @@
 ```
 requisition 1─n job 1─n job_version          （JD 正文版本，不可变）
                      │
-                     ├──n rubric_version    （筛选标准版本，不可变；无 current 指针）
+                     ├──n rubric_version    （筛选标准版本，不可变）
                      │        └──0..1 approval(resource_type='RUBRIC_VERSION')  ← 绑定 payload_hash
                      │
                      └──n application ──0..1 rubric_version_id  ← 申请级"钉住"
                               └──0..n decision(decision_scope='SCREENING')
 ```
 
-**关键**：`job` 表**没有** `current_rubric_version_id` 列（只有 `current_job_version_id`，`0001_init.sql:512`）。"当前 Rubric 版本"因此是**推导量**，不是存量——见 §4。
+**关键（D-21 / D-48，2026-11-13 已裁决并落库）**：`job` 表**有** `current_rubric_version_id`
+（`0004_stage_catalog.sql:243`，复合外键 `fk_job_current_rubric`）。**"当前 Rubric 版本"只由这个指针说话**，
+不是 `max(version_no)`；指针为空 = 没有当前版本（不回退推导）。见 §4.2。
 
 ### 2.2 权威列清单（只列本规则用到的）
 
@@ -54,6 +56,7 @@ requisition 1─n job 1─n job_version          （JD 正文版本，不可变�
 |---|---|---|---|
 | `job` | `status` | `ck_job_status`：`DRAFT·PENDING_REVIEW·APPROVED·OPEN·PAUSED·CLOSED·ARCHIVED` | §7 门禁 |
 | `job` | `current_job_version_id` | 可空，`fk_job_current_version` | 只用于展示，**不参与** Rubric 解析 |
+| `job` | `current_rubric_version_id` | 可空；`fk_job_current_rubric (tenant_id, id, current_rubric_version_id) → rubric_version(tenant_id, job_id, id)`（同岗位约束） | **"当前"的唯一权威**（D-21）；由 `recruitment_job_rubric_approve` 维护 |
 | `job_version` | `version_no` / `payload_hash` / `approved_by_approval_id` | `version_no>=1`；hash 为 64 hex | 与 Rubric 版本号**无关**，两套计数器不得混用 |
 | `rubric_version` | `job_id` + `version_no` | `uq_rubric_version (job_id, version_no)` | 版本唯一 |
 | `rubric_version` | `dimensions` | `jsonb`、必须为非空 array（`ck_rubric_version_dimensions`） | §6 契约的载体 |
@@ -63,7 +66,10 @@ requisition 1─n job 1─n job_version          （JD 正文版本，不可变�
 | `application` | `job_id` / `job_version_id` / `rubric_version_id` / `lifecycle_status` | `job_version_id NOT NULL`；`rubric_version_id` 可空 | 绑定与 §7 门禁 |
 | `decision` | `decision_scope='SCREENING'` / `result` / `basis_refs` / `superseded_by_decision_id` | `ck_decision_scope`、`ck_decision_result`、`ck_decision_basis`(仅 array) | 历史结论载体 |
 
-> `application.rubric_version_id` 可空意味着"尚未钉版本"。**只有人工/写侧可以钉**，筛选工具只读（`tool-contracts.md` §2.4）。
+> `application.rubric_version_id` 可空意味着"尚未钉版本"。**钉有两个合法写入点**：
+> ① `recruitment_application_intake` 新建申请时（岗位已有已批准的 current）；
+> ② `recruitment_application_stage_advance` 的 T1 补钉（申请先建、岗位后批，同事务 + 审计事件）。
+> 筛选工具只读（`tool-contracts.md` §2.4），**不钉版本**。
 
 ---
 
@@ -73,7 +79,7 @@ requisition 1─n job 1─n job_version          （JD 正文版本，不可变�
 |---|---|---|---|
 | **J-1** | **Rubric 版本不可变**：任何已落库的 `rubric_version` 行不可 UPDATE、不可 DELETE | 违反时库直接抛错（`fn_guard_columns` 无白名单 → `IMMUTABLE_COLUMN`，SQLSTATE `23514`；`fn_block_delete` → `DELETE_FORBIDDEN`，同为 `23514`） | `INV-10`、`N21`、`trg_rubric_version_immutable`、`trg_rubric_version_no_delete` |
 | **J-2** | **改标准必须出新版本**：`dimensions` 变一个字符 → 新 `version_no` = 同岗位当前最大 `version_no` + 1 | `version_no` 唯一且递增；不存在"同版本两个 hash" | `uq_rubric_version`、`INV-10` |
-| **J-3** | **当前版本唯一**：`current(job, as_of)` 是**函数**，不是列（见 §4）；同一 `(job, as_of)` 只能有一个结果 | 返回单一 `version_id`，或 `NO_RUBRIC` | 本契约裁决（无 `current_rubric_version_id` 列），§8 S-1 |
+| **J-3** | **当前版本唯一**：`current(job, as_of)` = `job.current_rubric_version_id` 指向的版本（D-21/D-48）；同一 `(job, as_of)` 只能有一个结果 | 返回单一 `version_id`，或 `NO_RUBRIC`（指针为空/指向的版本不在该岗位下） | D-21 显式指针（`0004`），§8 S-1 已落 (b) |
 | **J-4** | **申请钉版本**：`application.rubric_version_id` 一旦非空，**只允许**在同一 `job_id` 下由人工显式改绑，且必须与"新 decision + 旧 decision supersede"同事务 | 库无约束 → 应用层保证（`APP-06` 同类） | `INV-10`、§5、§8 S-3 |
 | **J-5** | **标准必须被人批准过**："已批准版本"= 存在 `approval(status='APPROVED' ∧ resource_type='RUBRIC_VERSION' ∧ resource_id=版本id ∧ canonical_payload_hash=版本payload_hash ∧ 未过期 ∧ 未 supersede)`；**不看** `rubric_version.approved_by_approval_id` 单列 | 见 §4.2 的判定式；缺审批 → `NO_RUBRIC/NO_APPROVED_RUBRIC` | `INV-9`、`ck_approval_decided_fields`、`ck_approval_hash` |
 | **J-6** | **结论不可改**：`decision` 整行不可 UPDATE（仅 `superseded_by_decision_id` 白名单），修正 = 追加新行 | 违反 → `ck_*`/`trg_decision_immutable` 抛错 | `INV-9`、`N12`、`trg_decision_immutable` |
@@ -110,8 +116,20 @@ approved(v, as_of) :=
                  AND a.superseded_by_approval_id IS NULL )
 
 current(job_id, as_of) :=
-    argmax_{v : approved(v, as_of)} v.version_no      -- 唯一，uq_rubric_version 保证
-  ∨ NO_RUBRIC(NO_APPROVED_RUBRIC)                     -- 一个都没有
+    -- D-21 / D-48（2026-11-13 裁决，0004 已落库）：**显式指针，不是 argmax**
+    v := (select rv.* from rubric_version rv
+           join job j on j.id = rv.job_id and j.tenant_id = rv.tenant_id
+          where j.tenant_id = :tenant and j.id = :job_id
+            and rv.id = j.current_rubric_version_id)
+    -- 指针为空 / 指向的版本不属于该岗位 → NO_RUBRIC(NO_APPROVED_RUBRIC)（**不回退**）
+  ∨ NO_RUBRIC(NO_APPROVED_RUBRIC)
+
+-- "已批准"是**另一条**事实，与"被指针指着"分开判：
+approved(v, as_of) := v.job_id = job_id AND v.created_at <= as_of
+  AND EXISTS (approval a WHERE a.resource_type='RUBRIC_VERSION' AND a.resource_id=v.id
+                AND a.status='APPROVED' AND a.canonical_payload_hash=v.payload_hash
+                AND (a.expires_at IS NULL OR a.expires_at > as_of)
+                AND a.superseded_by_approval_id IS NULL)
 ```
 
 四条**必须照做**的细节：
@@ -119,7 +137,9 @@ current(job_id, as_of) :=
 1. **`as_of` 是显式输入**（工具参数，缺省 = 服务端 `now()`，`tool-contracts.md` §2.2）。理由：审批过期是时间相关判定，不把时间当输入就无法复现 `D11 §9.9`（"当时看到的是哪一版"）。
 2. `as_of` **不得晚于服务端 `now()`**（`INVALID_ARGS`）。禁止用未来时间"提前看见"尚未生效的审批。
 3. **不用** `rubric_version.approved_by_approval_id` 单列判批准：它是**可空指针**，不保证指向的 `approval` 是 `APPROVED`，也不保证 hash 一致。用 §4.2 的 `EXISTS` 判定。
-4. 没有 `approved` 版本时**不回退**到"最新未批准版本"，也不回退到 `v1`。直接 `NO_RUBRIC`。
+4. 没有"指针指向且已批准"的版本时**不回退**到"最新已批准版本"、也不回退到 `v1`。直接 `NO_RUBRIC`。
+   —— 这是 D-48 的原话：**指针为空就是没有当前版本**（"批准 v2 不会把 v3 顶成当前；回滚靠改指针"）。
+   只读侧（`job_get` / `screening_evaluate` 的 `JOB_CURRENT`）与写侧（`job_rubric_approve`）因此说同一个"当前"。
 
 ### 4.3 `applicable(application, args, as_of)` —— 解析顺序（前一步命中即停）
 
@@ -350,7 +370,7 @@ payload_hash = lowercase_hex( sha256( UTF-8( canonical_json(dimensions) ) ) )
 
 | # | 缺口 | 现在的库能表达吗 | 影响 | 建议 |
 |---|---|---|---|---|
-| **S-1** | `job` **没有** `current_rubric_version_id`（只有 `current_job_version_id`, L512） | ❌ | "当前版本"只能靠 §4.2 的 `argmax` 推导；无法表达"回滚到 v1 作为当前版本" | 二选一：**(a) 不改库**，本契约 §4.2 生效（默认采用）；**(b)** `0002` 加 `job.current_rubric_version_id uuid` + 复合外键 `(id,tenant_id)`。若选 (b)，§4.2 改为"取该列，空则 `NO_RUBRIC`" |
+| **S-1** | ~~`job` **没有** `current_rubric_version_id`~~ | ✅ **已解决** | `0004_stage_catalog.sql:243-289` 已加 `job.current_rubric_version_id uuid` + 复合外键 `fk_job_current_rubric (tenant_id, id, current_rubric_version_id) → rubric_version (tenant_id, job_id, id)`（方案 b）。**D-21/D-48 裁决**：当前只由该指针说话，§4.2 已改为"取该列，空则 `NO_RUBRIC`，不回退" | 已落地；`recruitment_job_rubric_approve` 是维护它的写入口 |
 | **S-2** | `rubric_version` 无 `schema_version` 列；`dimensions` 只有"非空 array"约束（L609） | ⚠️ 部分 | §6 的结构契约**库里拦不住**；脏 Rubric 只能在读取时发现 | `0002`：加 `rubric_version.schema_version integer not null default 1` + 至少一条 `CHECK`（`kind`/`operator` 枚举、键集） |
 | **S-3** | `application.rubric_version_id` 只做 `(id, tenant_id)` 外键（L866-867）→ **能指向别的 job 的 Rubric**；`application.job_version_id` 同样只校 tenant（L864-865） | ❌ | `RUBRIC_JOB_MISMATCH` 类脏数据可入库，且"钉住"形同虚设 | `0002`：`rubric_version` 加 `unique (id, job_id)`、`job_version` 加 `unique (id, job_id)`；`application` 改成复合外键 `(rubric_version_id, job_id)`、`(job_version_id, job_id)`。**这是本表里最该修的一条** |
 | **S-4** | 没有"人工待办"实体；只有 `business_task.status='WAITING_HUMAN'` + `business_refs jsonb`（L1401、L1441-1443），`business_refs` 只校验"是 array"（L1445） | ⚠️ | `screening-rules.md` §6.2 的阻断查询依赖 `business_refs` 的元素形状，现在**库不保证** | 约定 `business_refs` 元素 = `{"kind":..., "id":"<uuid>"}`，`kind` 封闭集见 `screening-rules.md` §6.2；并在 `0002` 加 `CHECK`（或至少写进 `db/README.md`） |
@@ -359,7 +379,9 @@ payload_hash = lowercase_hex( sha256( UTF-8( canonical_json(dimensions) ) ) )
 | **S-7** | `decision.basis_refs` 只校验"是 array"（L1358）→ `reasons[]` 的证据坐标无结构保证 | ⚠️ | `D11 §9.9`（决策可回溯）只能靠写侧自觉 | 写侧必须存 `tool-contracts.md` §3.7 的 `basis_refs` 结构；`0002` 可加 `CHECK` 或独立证据表（本轮不做） |
 | **S-8** | `rubric_version` 与 `job_version` 之间**没有任何关联列** | ⚠️ 无影响 | 无法回答"这版标准依据哪一版 JD" | v1.0 **不要求**；若审计要，`0002` 加 `rubric_version.basis_job_version_id` |
 
-> **不改表也能跑**：S-1(a) + S-4/S-5/S-7 的应用层约定，足以让 S7 跑通 Golden Path。**S-3 建议优先修**（一条脏数据能让整条结论归错标准）。
+> **S-1 已解决**（`0004` 显式指针 + D-21/D-48）；`S-4`/`S-5`/`S-7` 的应用层约定仍足以让 S7 跑通 Golden Path。
+> **S-3 建议优先修**（一条脏数据能让整条结论归错标准；0005 已补 `fk_application_rubric_job` 的**同岗位**复合外键，
+> 即申请钉的 rubric 必须属于同一 job + 租户——这一条已从"❌ 可入库"降为"库层拦得住"）。
 
 ---
 

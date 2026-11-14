@@ -72,6 +72,32 @@ S6 ──T1──▶ S7 ──T2──▶ S8
 **实现口径（写死）**：材料只用 `resume_version.parse_status` 判定，**只把 `FAILED` 当反向事实**；
 `PARSED` / `PARTIAL` / `NEEDS_REVIEW` / `PENDING` / `PARSING` 都放行（设计如此；见 §13 未决 1）。
 
+#### 2.1.1 rubric 补钉（F1；本命令**唯一的业务写入**）
+
+事实 3 有两个来源，缺一不可：
+
+| # | 写入时机 | 谁写 |
+|---|---|---|
+| 1 | intake **新建申请**时，岗位已有已批准的 current | `application-intake.ts`（`application.rubric_version_id` 随 INSERT 落库） |
+| 2 | 申请先建、岗位**之后**才批准 rubric（常态：先收简历，后定标准） | **本命令的 T1 判定**（补钉） |
+
+补钉的封死边界：
+
+1. 只认 `job.current_rubric_version_id`（**D-21**：当前只由这个指针说话，**不是** `max(version_no)`；
+   **D-48**：指针为空 = 没有当前版本，**不回退**推导）。
+2. 当场复核该版本**此刻已批准**：`approval.status='APPROVED'` + `canonical_payload_hash` 与
+   `rubric_version.payload_hash` 一致 + 未被取代 + 未过期（`job-rubric-rules.md` §4.2 的 `approved(v, as_of)`）。
+   **不读** `rubric_version.approved_by_approval_id`（可空指针，不保证是 APPROVED、不保证 hash 一致）。
+3. **只在 T1 的唯一缺口就是这个 rubric 时**补钉：材料还没绑 / 解析失败时一行都不写（BLOCKED 必须零写入）。
+4. 同一事务内顺序：条件 `UPDATE application … where rubric_version_id is null`（经 `fn_row_guard`，
+   `record_version` 自增）→ 写一条内部审计事件 → 才发阶段 UPDATE。
+   阶段 UPDATE 的乐观并发条件必须用**补钉之后**的 `record_version`。
+5. `UPDATE` 前必须已 `SET LOCAL recruitment.actor_id`（`withActor`）；没有 actor → `INVALID_ARGS(ACTOR_REQUIRED)`，
+   **拒绝匿名写入**。审计事件里记的就是这个执行账号（它不是"决策人"，见 §9）。
+6. **只读视图不补钉**（`allowPin=false`）：它一条写语句都不发，仍按"当前事实"报 `RUBRIC_NOT_PINNED`。
+   这不是两套判据 —— 视图回答"库里现在缺什么"，写路径回答"这次调用能不能把已批准的事实补齐后推进"。
+7. 本命令**不因此获得任何新授权**：rubric 版本已经由人批准过；没有批准就没有可钉的版本。
+
 ### 2.2 T2：S7 → S8（人已经做出的初筛结论）
 
 判定式只有一条 —— **存在 current 的 SCREENING 决策，且结果是 ADVANCE**：
@@ -182,7 +208,7 @@ select d.id, d.result, d.decided_by_actor_id
 
 | 取值 | 用在 | 人读说明（`NEXT_ACTION_MESSAGES`） |
 |---|---|---|
-| `PIN_RUBRIC_VERSION` | `RUBRIC_NOT_PINNED` | 产出并批准 rubric 版本，再由 intake 把它钉到这条申请上 |
+| `PIN_RUBRIC_VERSION` | `RUBRIC_NOT_PINNED` | 先由 `recruitment_job_rubric_approve` 批准一版（它会更新 `job.current_rubric_version_id`），再调用本命令：写路径会在同一事务里把该版本钉到申请上 |
 | `LINK_INTAKE_MATERIAL` | `MATERIAL_NOT_LINKED` | 跑一次 intake，把材料绑定到这条申请 |
 | `REPARSE_MATERIAL` | `MATERIAL_PARSE_FAILED` | 修复或重新导入材料（不能是 FAILED） |
 | `RECORD_SCREENING_DECISION` | 视图：S7 在等决策 | 由人完成初筛并落一条 SCREENING 决策 |
@@ -209,10 +235,14 @@ select d.id, d.result, d.decided_by_actor_id
 **不是工具、不注册、不新表**：一个导出的只读函数（`src/domain/stage-advance.ts`），
 与推进命令**共用同一套判定**（`diagnose`），但：
 
+* **`allowPin=false`：不补钉**（§2.1.1 的唯一写入在这里被关闭）；
 * **不加行锁**（`diagnose(lock=false)` 用普通 `select`），因此可以安全跑在
   `begin transaction read only` 里（工作台的 `withReadOnly` 路由）；任何写都会被 PG `25006` 拒绝；
 * **不写库、不需要 actor**；
 * 工作台一次拿到四要素，不需要再自己拼字符串。
+
+> 视图与写路径在"申请没钉、但岗位已有已批准 current"这一点上刻意不同：视图如实报告
+> `RUBRIC_NOT_PINNED`（库里现在确实没钉），写路径会补钉后推进。视图**不发**任何写语句。
 
 ### 6.1 形状
 
@@ -312,6 +342,43 @@ returning current_stage_code, record_version,
 * `40001`（REPEATABLE READ 下等锁后发现行已被改）与 `40P01`（死锁）→ 同一个
   `VERSION_CONFLICT(APPLICATION_CONCURRENT_UPDATE)`：并发修改的正确反应是**重读**。
 
+### 7.2b rubric 补钉（F1，§2.1.1；只在满足条件时发）
+
+```sql
+-- ① 读"可钉的目标"：指针 + 此刻已批准（两条事实一起判）
+select rv.id as rubric_version_id, rv.version_no
+  from recruitment.application a
+  join recruitment.job j
+    on j.id = a.job_id and j.tenant_id = a.tenant_id
+  join recruitment.rubric_version rv
+    on rv.id = j.current_rubric_version_id and rv.tenant_id = j.tenant_id and rv.job_id = j.id
+ where a.tenant_id = $1 and a.id = $2
+   and j.current_rubric_version_id is not null
+   and exists (select 1 from recruitment.approval ap
+                where ap.tenant_id = rv.tenant_id and ap.resource_type = 'RUBRIC_VERSION'
+                  and ap.resource_id = rv.id and ap.status = 'APPROVED'
+                  and ap.canonical_payload_hash = rv.payload_hash
+                  and ap.superseded_by_approval_id is null
+                  and (ap.expires_at is null or ap.expires_at > now()));
+
+-- ② 条件写：只有"仍然没钉"才写（值相同不发，歧义不覆盖）
+update recruitment.application
+   set rubric_version_id = $3
+ where id = $1 and tenant_id = $2 and rubric_version_id is null
+ returning record_version;          -- 触发器自增后的真实值，后续阶段 UPDATE 用它
+
+-- ③ 审计事件（内部事实；FALLBACK_KEY 必须绑 source_object_id）
+insert into recruitment.event_inbox (...)
+values (... 'application.rubric_version.pinned', ...,
+        'rubric-pin:<uuid>', 'FALLBACK_KEY', <application_id>,
+        payload {table:'application', column:'rubric_version_id', record_id, application_id, job_id,
+                 rubric_version_id, rubric_version_no, from:null, to:<rubric_version_id>,
+                 actor_id, application_record_version, source, reason});
+```
+
+* 0 行（并发/被别的写路径抢动）→ `VERSION_CONFLICT(APPLICATION_RUBRIC_PIN_CONFLICT)`，整体回滚。
+* 审计事件写不进去 → `INVARIANT_VIOLATION(PIN_AUDIT_EVENT_MISSING)`，整体回滚（不写"无审计的补钉"）。
+
 ### 7.3 不倒退 / 不跳阶（`STAGE_AHEAD`）
 
 | 调用前的指针 | 事实推导出的上限 | 结论 |
@@ -401,6 +468,9 @@ returning current_stage_code, record_version,
 | `NOT_FOUND` | `APPLICATION_NOT_FOUND` | 申请不存在 / 不属于当前租户 | 否 |
 | `VERSION_CONFLICT` | `APPLICATION_RECORD_VERSION_MISMATCH` | UPDATE 0 行 | 否（整体回滚） |
 | `VERSION_CONFLICT` | `APPLICATION_CONCURRENT_UPDATE` | `40001` / `40P01` | 否（整体回滚） |
+| `VERSION_CONFLICT` | `APPLICATION_RUBRIC_PIN_CONFLICT` | 补钉 UPDATE 0 行（并发抢动） | 否（整体回滚） |
+| `INVARIANT_VIOLATION` | `PIN_AUDIT_EVENT_MISSING` | 补钉审计事件写不进去 | 否（整体回滚） |
+| `INVALID_ARGS` | `ACTOR_REQUIRED` | 补钉写库前发现没有 `recruitment.actor_id`（拒绝匿名审计） | 否 |
 | `INVARIANT_VIOLATION` | `STAGE_ENTERED_AT_NOT_ADVANCED` / `STAGE_ENTERED_AT_NOT_MONOTONIC` / `STAGE_CODE_MISMATCH` / `STAGE_CATALOG_INCOMPLETE` | 写后断言失败（本仓缺陷回归的兜底） | 否（整体回滚） |
 | `INVALID_ARGS` | `UNKNOWN_PARAM` / `TENANT_OR_ACTOR_NOT_ALLOWED` / `MISSING_REQUIRED` / `ID_NOT_UUID` … | 入参校验（连库前） | 否 |
 | `NOT_CONFIGURED` | — | `database` 段不完整（工具仍注册） | 否 |
@@ -415,7 +485,7 @@ returning current_stage_code, record_version,
 | # | 验收 | 断言要点 |
 |---|---|---|
 | A1 | T1 正例（材料 + rubric 齐） | `ADVANCED`、S7、`transitions=[{S6,S7}]`、`record_version` +1、`stage_entered_at > created_at` 且前进、恰好 1 条 `application.current_stage_code.changed`（`provider=internal`、`actor=执行账号`、`stage_source_event_id` 回填） |
-| A2 | T1 缺 rubric | `BLOCKED['RUBRIC_NOT_PINNED']`、阶段不变、`record_version` 不变、事件 0 条；**`owner_actor_id` = 库里的招聘负责人（…0102）**、`owner_role=JOB_HIRING_MANAGER`、`next_action_code=PIN_RUBRIC_VERSION` |
+| A2 | T1 缺 rubric（岗位**没有已批准的 current**） | `BLOCKED['RUBRIC_NOT_PINNED']`、阶段不变、`record_version` 不变、事件 0 条、**无补钉事件**；**`owner_actor_id` = 库里的招聘负责人（…0102）**、`owner_role=JOB_HIRING_MANAGER`、`next_action_code=PIN_RUBRIC_VERSION` |
 | A2b | T1 材料 `FAILED` | `BLOCKED['MATERIAL_PARSE_FAILED']`、零 UPDATE |
 | A3 | T2 正例 | `ADVANCED`、S8、恰好 1 条 S7→S8 事件 |
 | A4 | T2 负例（HOLD / REJECT） | `BLOCKED`、阶段留在 S7、零 UPDATE、0 事件；`owner_role=SCREENING_DECIDER`、`owner_actor_id` = `decision.decided_by_actor_id` |
@@ -424,6 +494,7 @@ returning current_stage_code, record_version,
 | A7 | 落后补推进（多跳） | 一次调用两跳、`record_version` +2、一条边一条事件、`stage_entered_at` 严格单调 |
 | A8 | 不倒退（S9） | `NO_OP` + `STAGE_AHEAD`、零 UPDATE；**告警带 `owner_actor_id` / `owner_role` / `next_action_code`** |
 | A9 | **§11.6-8 只读阻塞视图**（真库） | RUBRIC 场景：`stage/stage_name/status/blocked/blockers/owner/next_action` 齐；**只发读语句**（逐条 SQL 检查 + 逐表零写）；`withReadOnly`（库层只读）里可跑；STAGE_AHEAD 场景：`kind=WARNING`、`blocked=false`、仍有 owner+next_action |
+| A10 | **F1 补钉**（`test/integration/f1-rubric-pin.test.ts`） | 申请先建（无 rubric）→ 岗位批准 → 本命令：`ADVANCED`、S7、`application.rubric_version_id` = `job.current_rubric_version_id`、`record_version` +2（补钉+迁移）、恰好 1 条 `application.rubric_version.pinned`（`source_object_id`=申请、`actor_id`=执行账号、`from=null`）；第二次 `NO_OP` 且事件不重复；只读视图在同一情形下零写入 |
 
 **门槛对照（§11.6-8）**：HR 看到「当前状态（`stage`/`status`）＋阻塞原因（`blockers[].code/message`）＋
 责任人（`owner_role` + `owner_actor_id`/`owner_display_name`）＋下一步（`next_action_code` + §5.2 的人读说明）」——

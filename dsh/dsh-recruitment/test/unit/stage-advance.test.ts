@@ -40,6 +40,8 @@ const CREATED_US = Date.parse(CREATED_AT.toISOString()) * 1000
 /** 招聘负责人（部门 hiring_manager_actor_id，与 ra_s6s7 的 0002 seed 一致）。 */
 const OWNER_ACTOR = '11111111-1111-4111-8111-000000000102'
 const OWNER_NAME = '演示-招聘负责人'
+/** 执行账号（`SET LOCAL recruitment.actor_id`；与 ra_s6s7 的 0002 seed HR 专员一致）。 */
+const PIN_ACTOR = '11111111-1111-4111-8111-000000000103'
 
 /** 行锁读到的申请（假库返回的行）。 */
 interface FakeAppRow {
@@ -103,6 +105,13 @@ interface FakeInput {
   } | null
   /** 招聘负责人（`application → job → department.hiring_manager_actor_id`）；`null` = 推不出来。 */
   readonly owner?: { actor_id: string; display_name: string } | null
+  /**
+   * 岗位"当前已批准的 rubric 版本"（F1 补钉的唯一输入）。
+   * 省略 = 岗位没有可钉的当前版本（→ 仍报 RUBRIC_NOT_PINNED，零写入）。
+   */
+  readonly pinnable?: { rubric_version_id: string; version_no: number } | null
+  /** 执行账号 GUC（`SET LOCAL recruitment.actor_id`）；`null` = 没有 actor（补钉必须拒绝）。 */
+  readonly actorId?: string | null
   /** 依次消费；不提供就按 params 自动生成"成功"的 RETURNING。 */
   readonly updateResults?: readonly (FakeUpdatedRow | null)[]
   /** 让某类查询抛错（模拟 40001 等），例如 `{ match: 'for update', error }`。 */
@@ -142,9 +151,28 @@ function fakeClient(input: FakeInput): DatabaseClient & { readonly calls: readon
         if (input.material === undefined) return { rows: [] }
         return { rows: input.material === null ? [] : [input.material] }
       }
+      // F1：补钉前读"岗位当前已批准 rubric"（只读；没有就返回空 → 仍 BLOCKED、零写入）。
+      if (text.includes('recruitment.rubric_version') && text.includes('current_rubric_version_id')) {
+        const target = input.pinnable
+        return { rows: target === undefined || target === null ? [] : [target] }
+      }
+      // F1：补钉写审计事件（event_inbox）。
+      if (text.includes('insert into recruitment.event_inbox')) {
+        return { rows: [{ event_id: `evt-pin-${calls.length}` }] }
+      }
+      // F1：补钉前从 GUC 读执行账号（`SET LOCAL recruitment.actor_id`）。
+      if (text.includes("current_setting('recruitment.actor_id'")) {
+        const actor = input.actorId
+        return { rows: [{ actor_id: actor === undefined ? PIN_ACTOR : actor }] }
+      }
       if (text.includes('recruitment.decision')) {
         if (input.decision === undefined) return { rows: [] }
         return { rows: input.decision === null ? [] : [input.decision] }
+      }
+      // F1：补钉 UPDATE（只写 rubric_version_id，不是阶段迁移）。
+      if (text.trimStart().startsWith('update recruitment.application') && text.includes('set rubric_version_id')) {
+        updateCount += 1
+        return { rows: [{ record_version: Number(input.application?.record_version ?? 1) + 1 }] }
       }
       if (text.trimStart().startsWith('update recruitment.application')) {
         const toStage = String(params[3])
@@ -272,10 +300,125 @@ test('T1 缺 rubric → BLOCKED RUBRIC_NOT_PINNED，阶段不变、零 UPDATE；
 test('T1 材料缺失 + rubric 缺失 → 两条 blocker 一次给全（不做"只报第一条"）', async () => {
   const { result, client } = await advanceWith({
     application: appRow({ resume_version_id: null, rubric_version_id: null }),
+    // 即使岗位有可钉的当前版本，也**不补钉**：还有材料问题，BLOCKED 必须零写入。
+    pinnable: { rubric_version_id: RUBRIC_ID, version_no: 1 },
   })
   assert.equal(result.status, 'BLOCKED')
   assert.deepEqual(result.blockers.map((b) => b.code), ['MATERIAL_NOT_LINKED', 'RUBRIC_NOT_PINNED'])
   assert.equal(updateCalls(client), 0)
+  assert.equal(
+    client.calls.filter((call) => call.text.includes('recruitment.rubric_version')).length,
+    0,
+    '不补钉时连"读可钉版本"都不发（零写入的第一层证据）',
+  )
+})
+
+// =====================================================================
+//  F1 · T1 补钉（申请没钉，但岗位当前已有已批准版本）
+// =====================================================================
+
+test('F1 补钉：申请没钉 + 岗位当前已批准 → 同一事务补钉（带审计）后推进 S7，两条 UPDATE', async () => {
+  const { result, client } = await advanceWith({
+    application: appRow({ rubric_version_id: null, record_version: 1 }),
+    material: { parse_status: 'PARSED' },
+    pinnable: { rubric_version_id: RUBRIC_ID, version_no: 2 },
+    actorId: PIN_ACTOR,
+  })
+  assert.equal(result.status, 'ADVANCED')
+  assert.equal(result.stage_code, 'S7')
+  assert.deepEqual(result.transitions, [{ from: 'S6', to: 'S7' }])
+  // record_version：补钉 +1（真库由 fn_row_guard 维护）→ 阶段 +1 ⇒ 3。
+  assert.equal(result.record_version, 3, '补钉与阶段迁移各让 record_version 自增一次')
+
+  const updates = client.calls.filter((call) => call.text.trimStart().startsWith('update recruitment.application'))
+  assert.equal(updates.length, 2, '先补钉、再迁移：恰好两条 UPDATE')
+  const pin = updates[0]
+  assert.ok(pin?.text.includes('set rubric_version_id'), '第一条是补钉')
+  assert.ok(pin?.text.includes('rubric_version_id is null'), '补钉必须是条件写（并发下不覆盖已有值）')
+  assert.deepEqual(pin?.params, [APP_ID, TENANT, RUBRIC_ID], '补钉只写 (application, tenant) 定位的 rubric_version_id')
+  const stage = updates[1]
+  assert.ok(stage?.text.includes('stage_entered_at'), '第二条是阶段迁移')
+  assert.deepEqual(
+    stage?.params,
+    [APP_ID, TENANT, 'S6', 'S7', 2],
+    '阶段 UPDATE 的乐观并发条件必须是**补钉之后**的 record_version（2），不是读到的 1',
+  )
+
+  // 审计：一条内部事件，绑 application + actor + 新旧值（F1 要求"同一事务内、带审计"）。
+  const events = client.calls.filter((call) => call.text.includes('insert into recruitment.event_inbox'))
+  assert.equal(events.length, 1, '补钉必须留一条审计事件')
+  const event = events[0]
+  assert.ok(event?.text.includes("'application.rubric_version.pinned'"), '事件类型固定')
+  assert.ok(event?.text.includes("'FALLBACK_KEY'"), '内部事实用 FALLBACK_KEY（并绑 source_object_id）')
+  assert.equal(event?.params[2], APP_ID, 'source_object_id = 申请 id')
+  const payload = JSON.parse(String(event?.params[3])) as Record<string, unknown>
+  assert.equal(payload.rubric_version_id, RUBRIC_ID)
+  assert.equal(payload.to, RUBRIC_ID)
+  assert.equal(payload.from, null, '补钉前是"没有值"（该事件不是状态列迁移，允许 from=null）')
+  assert.equal(payload.actor_id, PIN_ACTOR, '审计要记"谁钉的"，不是匿名写入')
+  assert.equal(payload.application_id, APP_ID)
+})
+
+test('F1 补钉：岗位 current 指针为空/无已批准版本 → 不补钉，仍 BLOCKED RUBRIC_NOT_PINNED、零 UPDATE', async () => {
+  const { result, client } = await advanceWith({
+    application: appRow({ rubric_version_id: null }),
+    material: { parse_status: 'PARSED' },
+    pinnable: null,
+  })
+  assert.equal(result.status, 'BLOCKED')
+  assert.deepEqual(result.blockers.map((b) => b.code), ['RUBRIC_NOT_PINNED'])
+  assert.equal(updateCalls(client), 0, '没有可钉的已批准版本 ⇒ 一行都不写')
+  assert.equal(
+    client.calls.filter((call) => call.text.includes('insert into recruitment.event_inbox')).length,
+    0,
+    '没写补钉就不许有审计事件（否则是假审计）',
+  )
+})
+
+test('F1 补钉：执行上下文没有 actor → INVALID_ARGS(ACTOR_REQUIRED)，零 UPDATE（不写匿名审计）', async () => {
+  const client = fakeClient(withDefaultOwner({
+    application: appRow({ rubric_version_id: null }),
+    material: { parse_status: 'PARSED' },
+    pinnable: { rubric_version_id: RUBRIC_ID, version_no: 2 },
+    actorId: null,
+  }))
+  await assert.rejects(
+    advanceApplicationStage(client, { tenantId: TENANT, applicationId: APP_ID }),
+    (error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error)
+      assert.match(message, /INVALID_ARGS/)
+      assert.match(message, /ACTOR_REQUIRED/)
+      return true
+    },
+  )
+  assert.equal(updateCalls(client), 0, '没有 actor 就不许写（补钉与阶段 UPDATE 都不发）')
+  assert.equal(
+    client.calls.filter((call) => call.text.includes('insert into recruitment.event_inbox')).length,
+    0,
+    '没有 actor 就不许有审计事件（匿名写入是被禁止的）',
+  )
+})
+
+test('F1 只读视图不补钉：岗位当前已批准 → 视图仍按**当前事实**报 RUBRIC_NOT_PINNED，且一条写语句都不发', async () => {
+  const { view, client } = await viewWith({
+    application: appRow({ rubric_version_id: null }),
+    material: { parse_status: 'PARSED' },
+    pinnable: { rubric_version_id: RUBRIC_ID, version_no: 2 },
+  })
+  assert.equal(view.blocked, true)
+  assert.equal(view.status, 'BLOCKED')
+  assert.equal(view.blockers[0]?.code, 'RUBRIC_NOT_PINNED', '视图回答"库里现在缺什么"，不替写路径补钉')
+  assert.equal(updateCalls(client), 0, '只读视图一条 UPDATE 都不发')
+  assert.equal(
+    client.calls.filter((call) => /\binsert into\b/i.test(call.text)).length,
+    0,
+    '只读视图一条 INSERT 都不发（含审计事件）',
+  )
+  assert.equal(
+    client.calls.filter((call) => call.text.includes('recruitment.rubric_version')).length,
+    0,
+    '只读视图连"读可钉版本"都不做（补钉是写路径的事）',
+  )
 })
 
 test('T1 材料 parse_status=FAILED → BLOCKED MATERIAL_PARSE_FAILED，零 UPDATE', async () => {
