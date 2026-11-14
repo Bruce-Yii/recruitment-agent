@@ -153,9 +153,14 @@ jobs:
         # R3：必须报 passed / failed / skipped 三个数，`skipped > 0` 不得宣称全绿。
         # `node --test` 在 skip 时 exit 0，所以只靠退出码会把"静默跳过"当成通过——
         # 这正是历史上 105/170 静默 skip 而 exit 0 的复发路径。
+        #
+        # 跑 `test/run-all.mjs` 而不是裸 `node --test`：裸发现规则会把 `test/**` 下的
+        # **非测试文件**也当测试执行（`test/runtime/db.ts` 是 helper、
+        # `test/fixtures/feishu/fake-lark-cli.mjs` 是假 CLI），结果是"CI 红，但红的不是被测代码"。
+        # 单一权威：测试集合只在 run-all.mjs 里定义一次，本机 `pnpm test` 与 CI 跑同一套。
         run: |
           set -euo pipefail
-          node --test 2>&1 | tee /tmp/plugin-tests.log
+          node test/run-all.mjs 2>&1 | tee /tmp/plugin-tests.log
           grep -E '^ℹ (tests|pass|fail|skipped) ' /tmp/plugin-tests.log || true
           SKIPPED=$(grep -E '^ℹ skipped ' /tmp/plugin-tests.log | awk '{print $3}' | tail -1)
           if [ -n "${SKIPPED:-}" ] && [ "$SKIPPED" -gt 0 ]; then
