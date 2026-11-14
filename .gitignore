@@ -28,3 +28,6 @@ work/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 语料隔离区：只入库 README，文件本身不入库（见 converter/corpus-quarantine/README.md）
+converter/corpus-quarantine/*.pdf
