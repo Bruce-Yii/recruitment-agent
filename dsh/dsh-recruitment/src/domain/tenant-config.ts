@@ -125,6 +125,14 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 // =====================================================================
 //  出参形状（工具层照抄；**没有 null** —— DSH 校验器不支持 type 数组，缺省即省略键）
+//
+// ⚠️ 时间列（created_at / updated_at / added_at）在**视图**里是 ISO-8601 文本，
+// 不是 `Date`。`pg` 对 `timestamptz` 的默认解析结果是一个 `Date` 对象，它
+// `typeof === 'object'`、不是普通对象——DSH 的工具注册表把这种值判为
+// "value is not lossless JSON" 而**整次调用拒收**（2026-11-14 E1–E4 审计 F-1：
+// `recruitment_config_role` 能跑但模型拿不到结果）。行→视图的转换是全文件唯一的
+// 序列化点（{@link toIsoTimestamp}）；不许把 `Date` 透传到出参，也不许在工具出口
+// 用 `JSON.parse(JSON.stringify())` 兜底（那会连类型信息一起丢掉、掩盖真正的产出点）。
 // =====================================================================
 
 /** 角色的只读视图。 */
@@ -599,6 +607,32 @@ export function requireTeamRole(value: unknown, fallback: TeamRole): TeamRole {
 //  行形状 + 映射
 // =====================================================================
 
+/**
+ * 库里的时间列：`pg` 对 `timestamptz` 的默认解析结果是 `Date`，测试替身可能给字符串。
+ * 行接口必须照着**运行时**的真实类型写（写 `string` 是在说谎，编译器也拦不住）。
+ */
+type TimestampColumn = string | Date
+
+/**
+ * 时间列 → ISO-8601 文本（出参里唯一允许的时间形态）。
+ *
+ * 为什么必须在**行→视图这一步**做：`Date` 不是普通 JSON 对象，DSH 的工具注册表
+ * 直接判 `value is not lossless JSON` 并拒收整次调用（审计 F-1 的真实报错）。
+ * `JSON.stringify` 恰好会调用 `Date#toJSON` 吐出字符串，所以"序列化不报错"的测试
+ * 抓不到它——但值本身已经不是 JSON 数据了，依赖它的下游（schema 校验/会话日志/
+ * 事件流）行为由宿主决定，不能赌。
+ *
+ * 语义与 S7/S8/S10 各工具里既有的 `iso()` 一致（字符串输入先按 ISO 解析再归一，
+ * 解析不了就原样返回），这样三处 config 工具与其它工具输出同一种时间文本。
+ * @param value - 行里的时间列（`Date` 或字符串）。
+ * @returns ISO-8601 文本（`Z` 结尾）。
+ */
+export function toIsoTimestamp(value: TimestampColumn): string {
+  if (value instanceof Date) return value.toISOString()
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : value
+}
+
 interface RoleRow {
   readonly id: string
   readonly code: string
@@ -608,8 +642,8 @@ interface RoleRow {
   readonly is_active: boolean
   readonly record_version: number
   readonly created_by_actor_id: string | null
-  readonly created_at: string
-  readonly updated_at: string
+  readonly created_at: TimestampColumn
+  readonly updated_at: TimestampColumn
 }
 
 interface TeamRow {
@@ -621,8 +655,8 @@ interface TeamRow {
   readonly description: string | null
   readonly is_active: boolean
   readonly record_version: number
-  readonly created_at: string
-  readonly updated_at: string
+  readonly created_at: TimestampColumn
+  readonly updated_at: TimestampColumn
 }
 
 interface TeamMemberRow {
@@ -630,7 +664,7 @@ interface TeamMemberRow {
   readonly display_name: string
   readonly team_role: string
   readonly is_active: boolean
-  readonly added_at: string
+  readonly added_at: TimestampColumn
 }
 
 interface PipelineRow {
@@ -640,8 +674,8 @@ interface PipelineRow {
   readonly description: string | null
   readonly is_active: boolean
   readonly record_version: number
-  readonly created_at: string
-  readonly updated_at: string
+  readonly created_at: TimestampColumn
+  readonly updated_at: TimestampColumn
 }
 
 interface StageRow {
@@ -690,8 +724,8 @@ function toRoleView(row: RoleRow): RoleView {
     is_active: row.is_active,
     record_version: row.record_version,
     ...(row.created_by_actor_id === null ? {} : { created_by_actor_id: row.created_by_actor_id }),
-    created_at: row.created_at,
-    updated_at: row.updated_at,
+    created_at: toIsoTimestamp(row.created_at),
+    updated_at: toIsoTimestamp(row.updated_at),
   }
 }
 
@@ -716,10 +750,10 @@ function toTeamView(row: TeamRow, members: readonly TeamMemberRow[]): TeamView {
       display_name: m.display_name,
       team_role: m.team_role as TeamRole,
       is_active: m.is_active,
-      added_at: m.added_at,
+      added_at: toIsoTimestamp(m.added_at),
     })),
-    created_at: row.created_at,
-    updated_at: row.updated_at,
+    created_at: toIsoTimestamp(row.created_at),
+    updated_at: toIsoTimestamp(row.updated_at),
   }
 }
 
@@ -760,8 +794,8 @@ function toPipelineView(
       sort_order: s.sort_order,
       interview_templates: byStage.get(s.id) ?? [],
     })),
-    created_at: row.created_at,
-    updated_at: row.updated_at,
+    created_at: toIsoTimestamp(row.created_at),
+    updated_at: toIsoTimestamp(row.updated_at),
   }
 }
 
