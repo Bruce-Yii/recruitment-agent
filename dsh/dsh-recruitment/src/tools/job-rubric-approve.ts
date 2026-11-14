@@ -47,9 +47,14 @@
 // 无 `type:'null'`、值里无 null** —— 可缺的键（`job.previous_current_rubric_version_id`）
 // 直接省略。
 //
-// 事务边界：D-101 的既有技术债照旧（业务校验 → 问人 → 写库都在一个事务里，等人期间连接
-// idle in transaction，由 `db/pool.ts` 的 300s 服务端上限兜底）。本工具不把闸门提前到
-// 业务校验之前：注定失败的调用（岗位/版本不存在、审批已拒）不得先弹窗打扰人。
+// 事务边界（D-101，2026-11-15 G11 修复）：产品入口 `execute()` 分两阶段——
+//   ① 只读事务里做全部业务校验并取"写计划"（`prepareRubricApproval`，结束即提交、连接退回池）；
+//   ② **事务之外**等 `ctx.approval.request`（等人期间连接是 idle，不是 idle in transaction，
+//      120s 超时也无需回滚任何东西）；③ 写事务里 `for update` 复校验后仅做写入
+//      （`writeRubricApproval`）。复校验若发现并发已批准且指针已对齐 → 返回 NO_OP、不写库。
+// `approveRubricInTransaction` 保留"业务校验 → 问人 → 写库都在调用方事务里"的旧语义，
+// 只作为事务内测试接缝（`src/index.ts` 只注册 `create*Tool`，不调它）。顺序不变：注定失败的
+// 调用（岗位/版本不存在、审批已拒、哈希不匹配）**不弹窗**、不打扰人。
 
 import { randomUUID } from 'node:crypto'
 
@@ -70,6 +75,7 @@ import {
   closePool,
   createPool,
   withActor,
+  withReadOnly,
   type DatabaseClient,
   type ResolvedDatabaseConfig,
 } from '../db/pool.ts'
@@ -543,38 +549,65 @@ async function insertApprovedEvent(
 }
 
 // ---------------------------------------------------------------------------
+//  两阶段（D-101）：只读准备 → 事务外问人 → 写事务复校验 → 写入
+// ---------------------------------------------------------------------------
+
+/**
+ * 只读阶段产出的**写计划**（此时还没问人、也没写库）。
+ * 只带"写库需要的最小事实"：入参 + 岗位/版本行 + 审批行判定 + 指针是否已对齐。
+ */
+export interface RubricApprovalWritePlan {
+  readonly kind: 'WRITE'
+  /** 已校验的入参（`reason` 会写进审批行与审计事件）。 */
+  readonly args: ApproveArgs
+  /** 读阶段看到的岗位行（指针旧值 + `record_version` 基线）。 */
+  readonly job: JobRow
+  /** 审批的目标版本行。 */
+  readonly rubric: RubricRow
+  /** 待决的 PENDING 审批行（已生效 APPROVED 时为 undefined）。 */
+  readonly pending: ApprovalRow | undefined
+  /** 已生效的 APPROVED 行（需把陈旧指针补过去时；待决 PENDING 时为 undefined）。 */
+  readonly effectiveApproved: ApprovalRow | undefined
+  /** 读阶段看到的指针是否已指向目标版本（写阶段在同一事务里重判，不再跨事务信任）。 */
+  readonly pointerAligned: boolean
+}
+
+/** `prepareRubricApproval()` 的结果：纯重放（直接带输出值）或一份写计划。 */
+export type PreparedRubricApproval =
+  | { readonly kind: 'NO_OP'; readonly value: JobRubricApproveValue }
+  | RubricApprovalWritePlan
+
+// ---------------------------------------------------------------------------
 //  事务核心
 // ---------------------------------------------------------------------------
 
 /**
- * 在**调用方给的事务**里批准一个 rubric 版本并把 `job.current_rubric_version_id` 指过去。
+ * 两阶段批准的**只读准备阶段**（D-101）：做完全部业务校验、判定是否纯重放；需要写时
+ * 返回一份写计划 —— 这一阶段**一行不写**；`forUpdate=false` 时连行锁都不拿。
  *
- * 顺序（全部业务校验 → 人机闸门 → 第一行写入）：
+ * 顺序（与旧事务内实现完全一致，注定失败的调用不会先弹窗打扰人）：
  *   1. 入参形状（纯函数，最早就拒，不连库）；
  *   2. 决定者必须是本租户的 **HUMAN**（D-79：Agent/SYSTEM 不能替人签字）；
- *   3. 锁住 job 行（`for update`，与岗位更新同一把锁）；
+ *   3. 岗位行：`forUpdate=true` 时 `select ... for update`（写事务复校验；与岗位更新同一把锁），
+ *      `forUpdate=false` 时普通 `select`（只读事务里不允许 `for update`）；
  *   4. 版本必须属于该 job（否则 `RUBRIC_VERSION_NOT_FOUND`，detail 带现有版本号）；
  *   5. 审批行：取生效的 APPROVED（须 hash 相同）或最新 PENDING（须 hash/schema 相同）；
  *      都已失效/已拒 → 失败（不打扰人）；没有审批行 → `APPROVAL_NOT_FOUND`；
- *   6. **纯重放**（已生效且指针已对齐）→ `NO_OP`，不问人、不写任何行；
- *   7. 闸门：`allowed-once` 才继续（120s 超时 / 缺通道 / 拒绝 → 抛错，零写入）；
- *   8. PENDING → 复用 `decideRubricApprovalInTransaction()` 落 APPROVED（触发 `fn_row_guard`
- *      写 `approval.status.changed` 事件）；已生效但指针陈旧 → 跳过决定（`CURRENT_UPDATED`）；
- *   9. 指针未对齐才 UPDATE job（`fk_job_current_rubric` 在库层兜底，`fn_row_guard` 自增
- *      `record_version`，所以用 `RETURNING` 真实值，绝不自己 +1）；
- *  10. 写内部审计事件 `job.rubric_version.approved`。
- * @param client - 事务内客户端（`withActor` 已 `SET LOCAL recruitment.actor_id`）。
+ *   6. **纯重放**（已生效且指针已对齐）→ 直接返回 `NO_OP` 输出（不问人、不写任何行）；
+ *   7. 否则返回写计划（`PENDING → 决定` 或 `已批准但指针陈旧 → 只补指针`）。
+ * @param client - 事务内客户端（只读事务或写事务；`withActor` 的写事务已设 actor GUC）。
  * @param cfg - 已解析的库配置（tenant/actor 只从这里来，模型无法传入）。
  * @param rawArgs - 模型给的 arguments（本函数自己再校验一次，保证测试直调也安全）。
- * @param approve - D-79 的人工批准通道；**缺省 = `unavailable` = 一律拒绝**（fail closed）。
- * @returns 契约出参。
+ * @param options.forUpdate - 写阶段 `true`（锁岗位行）；只读阶段 `false`（普通 select）。
+ * @returns NO_OP 的完整输出值；或一份尚未执行的写计划。
+ * @internal 允许测试直调；**产品入口是 `createJobRubricApproveTool().execute()`**。
  */
-export async function approveRubricInTransaction(
+export async function prepareRubricApproval(
   client: DatabaseClient,
   cfg: ResolvedDatabaseConfig,
   rawArgs: unknown,
-  approve?: () => Promise<ApprovalDecision>,
-): Promise<JobRubricApproveValue> {
+  options: { readonly forUpdate: boolean },
+): Promise<PreparedRubricApproval> {
   const args = parseApproveArgs(rawArgs)
   const nowMs = Date.now()
 
@@ -601,12 +634,12 @@ export async function approveRubricInTransaction(
       })
     }
 
-    // 2. 锁住岗位行（同时取指针的旧值）。与岗位更新用同一把行锁，避免并发写指针互相覆盖。
+    // 2. 岗位行（同时取指针的旧值）。写阶段 `for update`（与岗位更新同一把行锁，避免并发写
+    //    指针互相覆盖）；只读阶段普通 select —— `begin transaction read only` 里不允许 `for update`。
     const jobResult = await client.query<JobRow>(
       `select id, code, title, status, current_rubric_version_id, record_version
          from recruitment.job
-        where id = $1 and tenant_id = $2
-        for update`,
+        where id = $1 and tenant_id = $2${options.forUpdate ? '\n        for update' : ''}`,
       [args.job_id, cfg.tenant_id],
     )
     const job = jobResult.rows[0]
@@ -730,29 +763,72 @@ export async function approveRubricInTransaction(
         throw new RecruitmentToolError('READER_FAILED', 'approval row is APPROVED but lacks decided_at / decided_by_actor_id')
       }
       const labels = await buildThreeAxisLabels(client, cfg.tenant_id)
-      return buildValue({
-        labels,
-        outcome: 'NO_OP',
-        replayed: true,
-        gate: { requested: false, result: 'not-required' },
-        job,
-        rubric,
-        approvalHash: effectiveApproved.canonical_payload_hash,
-        approvalRecordVersion: effectiveApproved.record_version,
-        approvalId: effectiveApproved.id,
-        decidedAt,
-        decidedBy,
-        previousCurrentRubricVersionId: null,
-        changes: { written: false, tables: [], event_ids: [] },
-      })
+      return {
+        kind: 'NO_OP',
+        value: buildValue({
+          labels,
+          outcome: 'NO_OP',
+          replayed: true,
+          gate: { requested: false, result: 'not-required' },
+          job,
+          rubric,
+          approvalHash: effectiveApproved.canonical_payload_hash,
+          approvalRecordVersion: effectiveApproved.record_version,
+          approvalId: effectiveApproved.id,
+          decidedAt,
+          decidedBy,
+          previousCurrentRubricVersionId: null,
+          changes: { written: false, tables: [], event_ids: [] },
+        }),
+      }
     }
 
-    // 7. D-79 人机闸门：业务校验全部通过，但仍在第一行写入之前。
-    //    任何会改库的调用（含把陈旧指针修到已批准版本）都要过闸门 —— 改 current 指针
-    //    是业务可见变化；只有完全幂等的 NO_OP 才不问人（D-95：不重复打扰）。
-    const gateOutcome: ApprovalDecision = approve === undefined ? 'unavailable' : await approve()
-    requireApprovalGranted(gateOutcome)
+    // 7. 写计划（还没问人、也没写库）：PENDING → 决定；已生效但指针陈旧 → 只补指针。
+    //    前面的状态判定保证走到这里时 `pending` / `effectiveApproved` 必有其一。
+    if (effectiveApproved === undefined && pending === undefined) {
+      throw new RecruitmentToolError('READER_FAILED', 'no approval row is approvable but no error was raised')
+    }
+    return {
+      kind: 'WRITE',
+      args,
+      job,
+      rubric,
+      pending,
+      effectiveApproved,
+      pointerAligned,
+    }
+  } catch (error) {
+    // 只映射当前错误，不在 catch 里补查询（25P02：事务已被终止）。
+    throw mapDatabaseError(error)
+  }
+}
 
+/**
+ * 两阶段批准的**写入阶段**（D-101）：把只读阶段判定的写计划落库。
+ *
+ * **调用前提**：写事务内 + 已过 D-79 闸门（`allowed-once`）。本函数不再问人、不再做业务
+ * 校验（并发竞态由写事务里 `prepareRubricApproval({forUpdate:true})` 复校验兜住）。
+ *
+ * 顺序：PENDING → 复用 CLI 同一个 `decideRubricApprovalInTransaction()` 落 APPROVED
+ * （触发 `fn_row_guard` 写 `approval.status.changed` 事件）；已生效但指针陈旧 → 跳过决定
+ * （`CURRENT_UPDATED`）；指针未对齐才 UPDATE job（`fk_job_current_rubric` 在库层兜底，
+ * `fn_row_guard` 自增 `record_version`，所以用 `RETURNING` 真实值，绝不自己 +1）；
+ * 最后写内部审计事件 `job.rubric_version.approved`。
+ * @param client - 写事务内客户端（`withActor` 已 `SET LOCAL recruitment.actor_id`）。
+ * @param cfg - 已解析的库配置（tenant/actor 只从这里来，模型无法传入）。
+ * @param plan - `prepareRubricApproval()` 返回的写计划。
+ * @returns 契约出参。
+ * @internal 允许测试直调；**产品入口是 `createJobRubricApproveTool().execute()`**。
+ */
+export async function writeRubricApproval(
+  client: DatabaseClient,
+  cfg: ResolvedDatabaseConfig,
+  plan: RubricApprovalWritePlan,
+): Promise<JobRubricApproveValue> {
+  const { args, job, rubric, pending, effectiveApproved } = plan
+  const pointerAligned = plan.pointerAligned
+
+  try {
     // 8. 落决定：PENDING → APPROVED（复用 CLI 同一个函数）；已批准但指针陈旧 → 只补指针。
     let decidedAt: string
     let decidedBy: string
@@ -789,6 +865,9 @@ export async function approveRubricInTransaction(
     }
 
     // 走到写库分支时必然二者其一：有待批的 PENDING，或已生效但指针陈旧。
+    if (pending === undefined && effectiveApproved === undefined) {
+      throw new RecruitmentToolError('READER_FAILED', 'write plan has neither a pending nor an effective approval')
+    }
     const decisionRow: ApprovalRow = pending ?? (effectiveApproved as ApprovalRow)
 
     // 9. 指针未对齐才 UPDATE（否则 fn_row_guard 会白白 +1 record_version）。
@@ -844,6 +923,50 @@ export async function approveRubricInTransaction(
         : null,
       changes: { written: true, tables, event_ids: eventIds },
     })
+  } catch (error) {
+    // 只映射当前错误，不在 catch 里补查询（25P02：事务已被终止）。
+    throw mapDatabaseError(error)
+  }
+}
+
+/**
+ * 在**调用方给的事务**里批准一个 rubric 版本并把 `job.current_rubric_version_id` 指过去。
+ *
+ * **这是事务内测试接缝**（`test/integration/job-create.test.ts` / `scorecard-rubric-version-gate.test.ts`
+ * 用它验证"批准动作 + 零写入"），`src/index.ts` 只注册 `create*Tool`，不调它。
+ * 产品入口的慢应答路径见 `createJobRubricApproveTool().execute()`（两阶段，问人在事务外）。
+ *
+ * 顺序（与旧实现完全一致：全部业务校验 → 纯重放短路 → 人机闸门 → 写库，全在一个事务里）：
+ *   1. `prepareRubricApproval(forUpdate=true)`：参数/actor/岗位（`for update`）/版本/审批行/NO_OP；
+ *   2. `NO_OP` 直接返回（不问人、零写入）；
+ *   3. `requireApprovalGranted(await approve())`：只有 `allowed-once` 继续（缺省 = 拒绝）；
+ *   4. `writeRubricApproval()`：决定 + 补指针 + 审计事件。
+ * @param client - 事务内客户端（`withActor` 已 `SET LOCAL recruitment.actor_id`）。
+ * @param cfg - 已解析的库配置（tenant/actor 只从这里来，模型无法传入）。
+ * @param rawArgs - 模型给的 arguments（本函数自己再校验一次，保证测试直调也安全）。
+ * @param approve - D-79 的人工批准通道；**缺省 = `unavailable` = 一律拒绝**（fail closed）。
+ * @returns 契约出参。
+ */
+export async function approveRubricInTransaction(
+  client: DatabaseClient,
+  cfg: ResolvedDatabaseConfig,
+  rawArgs: unknown,
+  approve?: () => Promise<ApprovalDecision>,
+): Promise<JobRubricApproveValue> {
+  // 入参形状仍在 try 之外先拒（与旧实现同一位置：不连库、不进事务错误映射）。
+  parseApproveArgs(rawArgs)
+  try {
+    const prepared = await prepareRubricApproval(client, cfg, rawArgs, { forUpdate: true })
+    // 纯重放：批准已生效且指针已对齐 → NO_OP（不问人、零写入，D-95）。
+    if (prepared.kind === 'NO_OP') return prepared.value
+
+    // D-79 人机闸门：业务校验全部通过，但仍在第一行写入之前。
+    // 任何会改库的调用（含把陈旧指针修到已批准版本）都要过闸门 —— 改 current 指针
+    // 是业务可见变化；只有完全幂等的 NO_OP 才不问人（D-95：不重复打扰）。
+    const gateOutcome: ApprovalDecision = approve === undefined ? 'unavailable' : await approve()
+    requireApprovalGranted(gateOutcome)
+
+    return await writeRubricApproval(client, cfg, prepared)
   } catch (error) {
     // 只映射当前错误，不在 catch 里补查询（25P02：事务已被终止）。
     throw mapDatabaseError(error)
@@ -985,17 +1108,28 @@ export function createJobRubricApproveTool(
       return false
     },
     async execute(rawArgs: unknown, exec: unknown): Promise<unknown> {
-      // 先做契约层校验（不连库就失败），再把原始入参交给事务核心（核心会再校验一次，
+      // 先做契约层校验（不连库就失败），再把原始入参交给两阶段核心（核心会再校验一次，
       // 保证集成测试直调 in-transaction 函数时行为一致）。
       parseApproveArgs(rawArgs)
       const approve = makeApprovalRequest(deps.approval, readExecContext(exec))
       const pool = createPool(database)
       try {
-        return await withActor(
-          pool,
-          database.actor_id,
-          async (client) => approveRubricInTransaction(client, database, rawArgs, approve),
-        )
+        // 阶段 1（只读事务）：全部业务校验 + 纯重放短路。结束即提交，连接退回池里。
+        const prepared = await withReadOnly(pool, (client) =>
+          prepareRubricApproval(client, database, rawArgs, { forUpdate: false }))
+        if (prepared.kind === 'NO_OP') return prepared.value
+
+        // 阶段 2（**事务之外**问人）：D-101 的修复点 —— 等人期间没有任何未结束的事务，
+        // 工具连接在池里是 idle（不是 idle in transaction）；120s 超时也只是放弃这次等待。
+        requireApprovalGranted(await approve())
+
+        // 阶段 3（写事务）：`for update` 复校验 —— 并发窗口里别人已批准且指针已对齐
+        // ⇒ 返回该 NO_OP 结果、不写库；否则只做写入（不再重复问人）。
+        return await withActor(pool, database.actor_id, async (client) => {
+          const confirmed = await prepareRubricApproval(client, database, rawArgs, { forUpdate: true })
+          if (confirmed.kind === 'NO_OP') return confirmed.value
+          return writeRubricApproval(client, database, confirmed)
+        })
       } catch (error) {
         throw mapDatabaseError(error)
       } finally {

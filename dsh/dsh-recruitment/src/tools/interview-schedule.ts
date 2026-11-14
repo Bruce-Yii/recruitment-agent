@@ -65,6 +65,7 @@ import {
   closePool,
   createPool,
   withActor,
+  withReadOnly,
   type DatabaseClient,
   type ResolvedDatabaseConfig,
 } from '../db/pool.ts'
@@ -868,11 +869,14 @@ export function requireApprovalGranted(outcome: ApprovalDecision): void {
   }))
 }
 
-// ---- D-101 技术债（2026-11-14）----
-// 两阶段「只读校验 → 关连接 → 问人 → 写事务重校验」是"人等待不占连接 + 先判定再问人 +
-// 重放不问人"三者同时成立的正解，但代价是双倍读 + TOCTOU。**现在不做**。
-// 触发条件（写死）：出现"并发写导致人批准后仍被 VERSION_CONFLICT 拒"的实测案例，
-// 或 Web UI 开始高频驱动本工具时，必须改成两阶段。
+// ---- D-101 两阶段（2026-11-15 已实现）----
+// 「只读校验 → 关连接 → 问人 → 写事务重校验 → 写库」把三件事同时做到了：
+//   ① 人等待期间**不占连接**（不再 idle in transaction）；
+//   ② 先判定再问人（无效参数/注定失败不打扰人）；
+//   ③ 重放与零写入的幂等成功不问人（没有新行可写）。
+// 只读阶段的 `prepareSchedule` 由 `withReadOnly`（`begin transaction read only`）从数据库层保证
+// 不写库；`FOR UPDATE` 只能出现在写事务的复校验里（只读事务里会 25006），所以行锁是参数化的。
+// 代价的双倍读由写事务里的**第二次 prepare 复校验**收窄 TOCTOU。
 
 /** 从 pg 错误里取 `code` / `constraint`（不是对象就返回空）。 */
 function pgInfo(error: unknown): PgErrorInfo {
@@ -1691,18 +1695,28 @@ function sortConflicts(conflicts: readonly Conflict[]): readonly Conflict[] {
 //  四个 intent 共用的读写小件（**只有一份**：D-62 不拆工具的理由）
 // ---------------------------------------------------------------------------
 
-/** 读一场面试并加行锁（`RESCHEDULE` / `CANCEL` / `WITHDRAW_INTERVIEWER` 都要它）。 */
+/**
+ * 读一场面试（`RESCHEDULE` / `CANCEL` / `WITHDRAW_INTERVIEWER` 都要它）。
+ *
+ * `forUpdate` 必须由调用方按事务性质给：**只读准备阶段必须 `false`**（PG 在
+ * `read only` 事务里对 `SELECT ... FOR UPDATE` 直接 25006）；**写事务的复校验必须 `true`**，
+ * 与两阶段之前"校验即加锁"的旧行为一致（并发改期的乐观并发 + 行锁语义不降级）。
+ * @param client - 事务内客户端。
+ * @param tenantId - 租户。
+ * @param interviewId - 面试 id。
+ * @param forUpdate - 是否加 `FOR UPDATE` 行锁（默认 `true`：旧的单一事务语义）。
+ */
 async function loadInterviewForUpdate(
   client: DatabaseClient,
   tenantId: string,
   interviewId: string,
+  forUpdate = true,
 ): Promise<InterviewCommandRow> {
   const { rows } = await client.query<InterviewCommandRow>(
     `select id, application_id, status, record_version, scheduled_start_at, scheduled_end_at,
             round_no, slot_code
        from recruitment.interview
-      where id = $1 and tenant_id = $2
-      for update`,
+      where id = $1 and tenant_id = $2${forUpdate ? ' for update' : ''}`,
     [interviewId, tenantId],
   )
   const row = rows[0]
@@ -2116,17 +2130,160 @@ async function buildCommandResult(
   }
 }
 
+// ---------------------------------------------------------------------------
+//  D-101 两阶段：prepare（只读校验/计划） → write（写库 + 读回）
+// ---------------------------------------------------------------------------
+
 /**
- * 在给定事务里跑**一条**面试排期命令（四个 intent 共用同一条管道）。
+ * `prepareSchedule` 的 `write` 分支：四个 intent 各自的写库计划
+ * （只读阶段已经算好、写阶段直接用的**事实**；写阶段不再重新判定"要不要写"）。
+ */
+export type ScheduleWritePlan =
+  | {
+    readonly intent: 'CREATE'
+    readonly command: CreateCommand
+    readonly asOfIso: string
+  }
+  | {
+    readonly intent: 'RESCHEDULE'
+    readonly command: RescheduleCommand
+    /** 写事务复校验里拿到的行（`FOR UPDATE`；读取前的状态）。 */
+    readonly row: InterviewCommandRow
+    readonly startIso: string
+    readonly endIso: string
+    readonly durationMinutes: number
+    /** 真正要新增的面试官（已在该场的不重复插，只留告警）。 */
+    readonly additions: readonly ScheduleInterviewerArgs[]
+    /** 已累积的告警（`ALREADY_ASSIGNED` 等；写入段还会追加）。 */
+    readonly warnings: { code: string; message: string }[]
+    readonly asOfIso: string
+  }
+  | {
+    readonly intent: 'CANCEL'
+    readonly command: CancelCommand
+    readonly row: InterviewCommandRow
+    readonly asOfIso: string
+  }
+  | {
+    readonly intent: 'WITHDRAW_INTERVIEWER'
+    readonly command: WithdrawInterviewerCommand
+    readonly row: InterviewerCommandRow
+    readonly asOfIso: string
+  }
+
+/**
+ * `prepareSchedule` 的结论（**internal 导出**：生产路径与测试共用，不是契约面）。
+ *
+ * * `result`：本次**不写库**、直接返回（幂等重放 / 已 CANCELLED 的重复取消 /
+ *   已退出的重复 withdraw）。它排在 D-79 闸门之前，所以**不问人**。
+ * * `write`：全部参数/业务校验已通过，写库计划已定；调用方**必须**先过闸门再 `writeSchedule`。
+ */
+export type SchedulePreparation =
+  | { readonly kind: 'result'; readonly value: Record<string, unknown> }
+  | { readonly kind: 'write'; readonly plan: ScheduleWritePlan }
+
+/** 两阶段 prepare 的选项：只有写事务的**复校验**才允许 `FOR UPDATE`（只读事务里是 25006）。 */
+export interface SchedulePrepareOptions {
+  readonly forUpdate: boolean
+}
+
+/**
+ * 在命令开头建保存点，失败时退回保存点后**原样再抛**（`tool-contracts.md` §5.1 W3/W4）。
+ *
+ * 两个用处：① 并发同键撞 `uq_business_task_idempotency` 时退回命令开头再重放（SC-K5）；
+ * ② 任何失败在**调用方事务内**撤销本次已写的行。`scheduleInTransaction` 与 `execute()`
+ * 的写阶段都用它，保证"失败零写入"在两种入口下是同一份实现。
+ * @param client - 事务内客户端。
+ * @param fn - 命令体（可能写库）。
+ * @returns `fn` 的返回值。
+ */
+async function inCommandSavepoint<T>(client: DatabaseClient, fn: () => Promise<T>): Promise<T> {
+  await client.query(`savepoint ${STORE_SAVEPOINT}`)
+  try {
+    return await fn()
+  } catch (error) {
+    try {
+      await client.query(`rollback to savepoint ${STORE_SAVEPOINT}`)
+    } catch {
+      // 回滚失败会随连接回收；不要用第二个错误盖住第一个（与 `withActor` 同一做法）。
+    }
+    throw error
+  }
+}
+
+/**
+ * **阶段 1（只读）**：幂等 STORE 判定 + 全部业务校验 + 写库计划构造，**一行都不写**。
+ *
+ * 形状校验（`parseScheduleShape`，纯函数）由调用方先过。生产路径由 `execute()` 把它放进
+ * `withReadOnly`（`begin transaction read only`：任何写都会 25006）；写事务里会**再跑一次**
+ * （`forUpdate: true`）做复校验。四个 intent 共用这一条管道（D-62 不拆工具的理由）。
+ * @param client - 事务内客户端（只读或写；本函数的读全部是 SELECT，行锁由 `options` 控制）。
+ * @param config - 已解析配置（tenant/actor 只从这里来）。
+ * @param command - 已过形状层的命令。
+ * @param nowMs - 服务端"现在"（毫秒；测试可注入）。
+ * @param options - 是否允许 `FOR UPDATE`（只读准备 `false`；写事务复校验 `true`）。
+ * @returns `result`（直接返回且**不问人**）或 `write`（写库计划）。
+ */
+export async function prepareSchedule(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  command: ScheduleCommand,
+  nowMs: number,
+  options: SchedulePrepareOptions,
+): Promise<SchedulePreparation> {
+  const asOfIso = new Date(nowMs).toISOString()
+  switch (command.intent) {
+    case 'CREATE':
+      return await prepareCreateCommand(client, config, command, nowMs, asOfIso)
+    case 'RESCHEDULE':
+      return await prepareRescheduleCommand(client, config, command, nowMs, asOfIso, options)
+    case 'CANCEL':
+      return await prepareCancelCommand(client, config, command, asOfIso, options)
+    case 'WITHDRAW_INTERVIEWER':
+      return await prepareWithdrawInterviewerCommand(client, config, command, asOfIso, options)
+  }
+}
+
+/**
+ * **阶段 2（写）**：只做写库 + 幂等 STORE 行 + 读回 + 组装出参，不再做"要不要写"的判定。
+ *
+ * 调用方**必须**先让 D-79 闸门放行（`requireApprovalGranted`）；本函数不调用 approval。
+ * @param client - 写事务内客户端（`withActor` 已 `SET LOCAL recruitment.actor_id`）。
+ * @param config - 已解析配置（tenant/actor 只从这里来）。
+ * @param plan - `prepareSchedule` 的 `write` 分支（必须是**当前写事务里**重新跑出来的）。
+ * @returns 契约出参（`tool-contracts.md` §3.5）。
+ */
+export async function writeSchedule(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  plan: ScheduleWritePlan,
+): Promise<Record<string, unknown>> {
+  switch (plan.intent) {
+    case 'CREATE':
+      return await writeCreateCommand(client, config, plan)
+    case 'RESCHEDULE':
+      return await writeRescheduleCommand(client, config, plan)
+    case 'CANCEL':
+      return await writeCancelCommand(client, config, plan)
+    case 'WITHDRAW_INTERVIEWER':
+      return await writeWithdrawInterviewerCommand(client, config, plan)
+  }
+}
+
+/**
+ * 在调用方事务里跑**一条**面试排期命令（**测试接缝**，保留旧签名与旧行为）。
  *
  * 顺序（`SPEC.md` §4.3，重放优先于时点校验）：
  * 形状 → 幂等 STORE（重放 / 键复用）→ 业务校验（时点/申请/模板/语义幂等/面试官/冲突/状态机）→
- * **D-79 闸门** → 写 → 幂等 STORE 行 → 读回。
+ * **D-79 闸门** → 写 → 幂等 STORE 行 → 读回。全部在**同一个调用方事务**里（旧行为不变）。
  *
- * **失败零写入的强口径**（`tool-contracts.md` §5.1 W3/W4）：函数开头建一个保存点，任何抛出都
- * `rollback to savepoint` 后原样再抛。这样即使调用方（集成测试、未来的编排器）把这个函数放进
- * **更大的事务**并吞掉错误，本次已写的 `interview` / `interviewer` / `meeting` / … 也不会残留成脏行。
- * 生产路径 `execute()` 里 `withActor` 还会整笔 ROLLBACK，两层互不冲突。
+ * 生产运行时入口是 `createInterviewScheduleTool().execute()`，它已经改成 D-101 两阶段
+ * （只读 prepare → 事务外问人 → 写事务复校验）；`src/index.ts` 只注册 `create*Tool`，
+ * **不引用**本函数。集成测试大量在"必回滚事务"里直接调它，所以保留。
+ *
+ * **失败零写入的强口径**（`tool-contracts.md` §5.1 W3/W4）：开头建保存点，任何抛出都
+ * `rollback to savepoint` 后原样再抛。这样即使调用方把本函数放进**更大的事务**并吞掉错误，
+ * 本次已写的行也不会残留成脏行。生产路径 `withActor` 还会整笔 ROLLBACK，两层互不冲突。
  * @param client - 已有事务的客户端（`withActor` 已 `SET LOCAL recruitment.actor_id`）。
  * @param config - 已解析的配置（tenant/actor 只从这里来）。
  * @param rawArgs - 模型给的 arguments。
@@ -2143,58 +2300,43 @@ export async function scheduleInTransaction(
   nowMs: number = Date.now(),
   approve?: () => Promise<ApprovalDecision>,
 ): Promise<Record<string, unknown>> {
+  // 形状校验是纯函数：非法入参在**碰库/问人之前**就拒（零 SQL、approval 调用数 = 0）。
   const args = parseScheduleShape(rawArgs)
-  const asOfIso = new Date(nowMs).toISOString()
-
-  // 保存点放在所有读写之前，有两个用处：
-  //   ① 并发同键撞 `uq_business_task_idempotency` 时退回命令开头再重放；
-  //   ② 任何失败在**调用方事务内**撤销本次已写的行（W3/W4，见上面的说明）。
-  await client.query(`savepoint ${STORE_SAVEPOINT}`)
-  try {
-    switch (args.intent) {
-      case 'CREATE':
-        return await runCreateCommand(client, config, args, nowMs, asOfIso, approve)
-      case 'RESCHEDULE':
-        return await runRescheduleCommand(client, config, args, nowMs, asOfIso, approve)
-      case 'CANCEL':
-        return await runCancelCommand(client, config, args, asOfIso, approve)
-      case 'WITHDRAW_INTERVIEWER':
-        return await runWithdrawInterviewerCommand(client, config, args, asOfIso, approve)
-    }
-  } catch (error) {
-    try {
-      await client.query(`rollback to savepoint ${STORE_SAVEPOINT}`)
-    } catch {
-      // 回滚失败会随连接回收；不要用第二个错误盖住第一个（与 `withActor` 同一做法）。
-    }
-    throw error
-  }
+  // 保存点放在所有读写之前（并发同键重放 + W3/W4，见函数说明）。
+  return await inCommandSavepoint(client, async () => {
+    const prepared = await prepareSchedule(client, config, args, nowMs, { forUpdate: true })
+    // 幂等重放 / 零写入的幂等成功不写库：闸门之前返回、不打扰人（D-95：人只决策一次）。
+    if (prepared.kind === 'result') return prepared.value
+    // D-79 闸门：全部参数/业务校验之后、第一行写之前。
+    requireApprovalGranted(approve === undefined ? 'unavailable' : await approve())
+    return await writeSchedule(client, config, prepared.plan)
+  })
 }
 
 /**
- * `intent=CREATE` 的事务体（形状已校验、保存点已建立）。
- * @param client - 事务内客户端。
+ * `intent=CREATE` 的**只读准备段**（形状已校验）：幂等 STORE 判定 + 时点 + 申请 + 模板 +
+ * 语义幂等 + 面试官 + 冲突，全部通过后只返回写库计划，**一行都不写**。
+ * @param client - 事务内客户端（只读事务或写事务；本段只发 SELECT）。
  * @param config - 已解析的配置。
  * @param args - 已校验的 CREATE 命令。
  * @param nowMs - 服务端当前时刻（毫秒）。
- * @param asOfIso - `nowMs` 的 ISO 形式（读回与错误 detail 用）。
- * @param approve - D-79 的人工批准通道（缺省 = 拒绝写入）。
- * @returns 契约出参。
+ * @param asOfIso - `nowMs` 的 ISO 形式（错误 detail 用）。
+ * @returns `result`（幂等重放）或 `write`（写库计划）。
  */
-async function runCreateCommand(
+async function prepareCreateCommand(
   client: DatabaseClient,
   config: ResolvedDatabaseConfig,
   args: CreateCommand,
   nowMs: number,
   asOfIso: string,
-  approve: (() => Promise<ApprovalDecision>) | undefined,
-): Promise<Record<string, unknown>> {
+): Promise<SchedulePreparation> {
   const tenantId = config.tenant_id
-  const actorId = config.actor_id
 
   // 1. 幂等 STORE。
   const store = await loadStore(client, tenantId, args.idempotency_key)
-  if (store !== null) return await replayFromStore(client, config, store, args, asOfIso)
+  if (store !== null) {
+    return { kind: 'result', value: await replayFromStore(client, config, store, args, asOfIso) }
+  }
 
   // 2. 时点（重放不受它影响，所以放在 STORE 之后）。
   if (args.start_ms <= nowMs) {
@@ -2299,11 +2441,28 @@ async function runCreateCommand(
     })
   }
 
-  // 6.5. 人机闸门（D-79）：参数校验与全部业务校验（申请/模板/语义幂等/面试官/冲突）都过了，
-  //      但还在**第一行 INSERT 之前** —— 没有 `allowed-once` 就一行都不写（fail closed）。
-  //      等待超过 120s 按 `cancelled` 判（`detail.approval='timeout'`），见 `APPROVAL_TIMEOUT_MS`。
-  // 幂等重放不写库：闸门之前返回、不打扰人（D-95：人只决策一次）
-  requireApprovalGranted(approve === undefined ? 'unavailable' : await approve())
+  // 6.5. 计划就绪：**不在这里问人**。
+  //      两阶段后闸门由调用方在**事务外**执行（`execute()`）或由测试接缝在调用方事务里执行
+  //      （`scheduleInTransaction`）：这样人等待期间没有任何事务/连接被占（D-101）。
+  return { kind: 'write', plan: { intent: 'CREATE', command: args, asOfIso } }
+}
+
+/**
+ * `intent=CREATE` 的**写入段**（全部校验已过、D-79 闸门已放行）：只写库 + 幂等 STORE + 读回。
+ * @param client - 写事务内客户端。
+ * @param config - 已解析的配置。
+ * @param plan - 只读准备段给出的写库计划。
+ * @returns 契约出参。
+ */
+async function writeCreateCommand(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  plan: Extract<ScheduleWritePlan, { readonly intent: 'CREATE' }>,
+): Promise<Record<string, unknown>> {
+  const args = plan.command
+  const asOfIso = plan.asOfIso
+  const tenantId = config.tenant_id
+  const actorId = config.actor_id
 
   // 7. INSERT interview（显式 stage_code / status / actor：INSERT 不触发 fn_row_guard）。
   const created: ChangeRow[] = []
@@ -2606,26 +2765,30 @@ async function bindMeetingForReschedule(
 }
 
 /**
- * `intent=RESCHEDULE` 的事务体（§4.2 改期三步；**改同一行**，H-1）。
+ * `intent=RESCHEDULE` 的**只读准备段**（§4.2 改期三步；**改同一行**，H-1）。
  * 状态结论按 §4.2 表：给了新时间 → `SCHEDULED`（本工具要求至少给 start/duration，故不会产出 `RESCHEDULED`）。
+ *
+ * 行锁是参数化的：只读准备阶段 `options.forUpdate === false`（只读事务里 `FOR UPDATE` 会 25006），
+ * 写事务复校验 `true`（与两阶段之前同一把行锁语义）。
  */
-async function runRescheduleCommand(
+async function prepareRescheduleCommand(
   client: DatabaseClient,
   config: ResolvedDatabaseConfig,
   args: RescheduleCommand,
   nowMs: number,
   asOfIso: string,
-  approve: (() => Promise<ApprovalDecision>) | undefined,
-): Promise<Record<string, unknown>> {
+  options: SchedulePrepareOptions,
+): Promise<SchedulePreparation> {
   const tenantId = config.tenant_id
-  const actorId = config.actor_id
 
   // 1. 幂等 STORE（重放优先于时点/状态判定：旧时间已过去也要能重放）。
   const store = await loadStore(client, tenantId, args.idempotency_key)
-  if (store !== null) return await replayFromStore(client, config, store, args, asOfIso)
+  if (store !== null) {
+    return { kind: 'result', value: await replayFromStore(client, config, store, args, asOfIso) }
+  }
 
   // 2. 目标行 + 乐观并发 + 状态机（§4.4 / §8）。
-  const row = await loadInterviewForUpdate(client, tenantId, args.interview_id)
+  const row = await loadInterviewForUpdate(client, tenantId, args.interview_id, options.forUpdate)
   assertExpectedVersion(row, args.expected_record_version, args.interview_id)
   assertStatusAllowed(row, RESCHEDULABLE_STATUSES, 'RESCHEDULE')
 
@@ -2697,8 +2860,46 @@ async function runRescheduleCommand(
     throw conflictSlotError(conflicts, interviewerConflicts.length > 0, startIso, bufferedEndIso, bufferMinutes)
   }
 
-  // 6. 人机闸门（D-79）：校验全部通过、第一行写之前。
-  requireApprovalGranted(approve === undefined ? 'unavailable' : await approve())
+  // 6. 计划就绪：**不在这里问人**。闸门由调用方在事务外（`execute()`）或调用方事务里
+  //    （`scheduleInTransaction`）执行；只读准备阶段也不写库。
+  return {
+    kind: 'write',
+    plan: {
+      intent: 'RESCHEDULE',
+      command: args,
+      row,
+      startIso,
+      endIso,
+      durationMinutes,
+      additions: addition.toInsert,
+      warnings,
+      asOfIso,
+    },
+  }
+}
+
+/**
+ * `intent=RESCHEDULE` 的**写入段**（全部校验已过、D-79 闸门已放行）：换会议 / 加面试官 /
+ * 改同一行 / 审计事件 / 幂等 STORE / 读回。任何失败由外层保存点撤销。
+ * @param client - 写事务内客户端。
+ * @param config - 已解析的配置。
+ * @param plan - 只读准备段给出的写库计划（行锁已由复校验持有）。
+ * @returns 契约出参。
+ */
+async function writeRescheduleCommand(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  plan: Extract<ScheduleWritePlan, { readonly intent: 'RESCHEDULE' }>,
+): Promise<Record<string, unknown>> {
+  const args = plan.command
+  const asOfIso = plan.asOfIso
+  const row = plan.row
+  const startIso = plan.startIso
+  const endIso = plan.endIso
+  const durationMinutes = plan.durationMinutes
+  const warnings = plan.warnings
+  const tenantId = config.tenant_id
+  const actorId = config.actor_id
 
   // 7. 写（同一事务；任何失败由外层保存点撤销）。
   const created: ChangeRow[] = []
@@ -2710,7 +2911,7 @@ async function runRescheduleCommand(
   }
 
   // 7b. 新增面试官。
-  for (const interviewer of addition.toInsert) {
+  for (const interviewer of plan.additions) {
     const inserted = await client.query<{ id: string }>(
       `insert into recruitment.interviewer
          (tenant_id, interview_id, actor_id, role_in_interview, required_scorecard, scorecard_due_at)
@@ -2800,37 +3001,62 @@ async function runRescheduleCommand(
 }
 
 /**
- * `intent=CANCEL` 的事务体（§6：行保留、面评保留、`status='CANCELLED'`）。
- * 已 `CANCELLED` 的重复取消 → 幂等成功且**零写入**（§6.1；连 STORE 也不写，见函数内注释）。
+ * `intent=CANCEL` 的**只读准备段**（§6：行保留、面评保留、`status='CANCELLED'`）。
+ * 已 `CANCELLED` 的重复取消 → 幂等成功且**零写入**（§6.1；连 STORE 也不写，见函数内注释）——
+ * 这个分支**不问人**，直接返回 `result`。
  */
-async function runCancelCommand(
+async function prepareCancelCommand(
   client: DatabaseClient,
   config: ResolvedDatabaseConfig,
   args: CancelCommand,
   asOfIso: string,
-  approve: (() => Promise<ApprovalDecision>) | undefined,
-): Promise<Record<string, unknown>> {
+  options: SchedulePrepareOptions,
+): Promise<SchedulePreparation> {
   const tenantId = config.tenant_id
-  const actorId = config.actor_id
 
   const store = await loadStore(client, tenantId, args.idempotency_key)
-  if (store !== null) return await replayFromStore(client, config, store, args, asOfIso)
+  if (store !== null) {
+    return { kind: 'result', value: await replayFromStore(client, config, store, args, asOfIso) }
+  }
 
-  const row = await loadInterviewForUpdate(client, tenantId, args.interview_id)
+  const row = await loadInterviewForUpdate(client, tenantId, args.interview_id, options.forUpdate)
   assertExpectedVersion(row, args.expected_record_version, args.interview_id)
 
   // §6.1：`CANCELLED` 上重复取消是幂等成功，"成功且不写行、不重复写事件"。
   // 这里连幂等 STORE 都不写（§6.1 的"不写行"取强口径）；重试仍安全：状态检查本身就是幂等的，
   // 两次调用返回同一个库内事实（输出只差 `replayed` 标记）。
   if (row.status === 'CANCELLED') {
-    return await buildCommandResult(
-      client, config, args, args.interview_id, asOfIso, { created: [], updated: [] }, [], [],
-    )
+    return {
+      kind: 'result',
+      value: await buildCommandResult(
+        client, config, args, args.interview_id, asOfIso, { created: [], updated: [] }, [], [],
+      ),
+    }
   }
   assertStatusAllowed(row, CANCELLABLE_STATUSES, 'CANCEL')
 
-  // 闸门（D-79）：状态/版本校验通过、第一行写之前。
-  requireApprovalGranted(approve === undefined ? 'unavailable' : await approve())
+  // 计划就绪：闸门由调用方执行（事务外 / 测试接缝）；只读准备段不写库。
+  return { kind: 'write', plan: { intent: 'CANCEL', command: args, row, asOfIso } }
+}
+
+/**
+ * `intent=CANCEL` 的**写入段**（全部校验已过、D-79 闸门已放行）：改状态 / 释放未发生会议 /
+ * 审计事件 / 幂等 STORE / 读回。任何失败由外层保存点撤销。
+ * @param client - 写事务内客户端。
+ * @param config - 已解析的配置。
+ * @param plan - 只读准备段给出的写库计划（行锁已由复校验持有）。
+ * @returns 契约出参。
+ */
+async function writeCancelCommand(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  plan: Extract<ScheduleWritePlan, { readonly intent: 'CANCEL' }>,
+): Promise<Record<string, unknown>> {
+  const args = plan.command
+  const asOfIso = plan.asOfIso
+  const row = plan.row
+  const tenantId = config.tenant_id
+  const actorId = config.actor_id
 
   const created: ChangeRow[] = []
   const updated: ChangeRow[] = []
@@ -2920,22 +3146,26 @@ async function countInterviewerWithdrawEvents(
 }
 
 /**
- * `intent=WITHDRAW_INTERVIEWER` 的事务体（§4.3）：
+ * `intent=WITHDRAW_INTERVIEWER` 的**只读准备段**（§4.3）：
  * **不改 `interview.status`**，`required_scorecard=false` + `interviewer.withdrawn` 事件，
  * 并在同一事务里 touch `interview` 借版本（SC-K7：`interviewer` 没有 `record_version` 列）。
- * 已退出（有事件）→ 幂等成功且零写入。
+ * 已退出（有事件）→ 幂等成功且零写入 → 直接返回 `result`（**不问人**）。
+ *
+ * `for update of i` 同样参数化：只读准备阶段不允许行锁（25006），写事务复校验才加。
  */
-async function runWithdrawInterviewerCommand(
+async function prepareWithdrawInterviewerCommand(
   client: DatabaseClient,
   config: ResolvedDatabaseConfig,
   args: WithdrawInterviewerCommand,
   asOfIso: string,
-  approve: (() => Promise<ApprovalDecision>) | undefined,
-): Promise<Record<string, unknown>> {
+  options: SchedulePrepareOptions,
+): Promise<SchedulePreparation> {
   const tenantId = config.tenant_id
 
   const store = await loadStore(client, tenantId, args.idempotency_key)
-  if (store !== null) return await replayFromStore(client, config, store, args, asOfIso)
+  if (store !== null) {
+    return { kind: 'result', value: await replayFromStore(client, config, store, args, asOfIso) }
+  }
 
   const loaded = await client.query<InterviewerCommandRow>(
     `select r.id, r.interview_id, r.actor_id, r.required_scorecard,
@@ -2943,8 +3173,7 @@ async function runWithdrawInterviewerCommand(
        from recruitment.interviewer r
        join recruitment.interview i
          on i.id = r.interview_id and i.tenant_id = r.tenant_id
-      where r.id = $1 and r.tenant_id = $2
-      for update of i`,
+      where r.id = $1 and r.tenant_id = $2${options.forUpdate ? ' for update of i' : ''}`,
     [args.interviewer_id, tenantId],
   )
   const row = loaded.rows[0]
@@ -2962,13 +3191,35 @@ async function runWithdrawInterviewerCommand(
 
   // 已退出（有 `interviewer.withdrawn` 事件）→ 幂等成功且零写入（不重复写事件、不重复 touch 版本）。
   if (await countInterviewerWithdrawEvents(client, tenantId, row.interview_id, row.id) > 0) {
-    return await buildCommandResult(
-      client, config, args, row.interview_id, asOfIso, { created: [], updated: [] }, [], [],
-    )
+    return {
+      kind: 'result',
+      value: await buildCommandResult(
+        client, config, args, row.interview_id, asOfIso, { created: [], updated: [] }, [], [],
+      ),
+    }
   }
 
-  // 闸门（D-79）：版本/存在性校验通过、第一行写之前。
-  requireApprovalGranted(approve === undefined ? 'unavailable' : await approve())
+  // 计划就绪：闸门由调用方执行（事务外 / 测试接缝）；只读准备段不写库。
+  return { kind: 'write', plan: { intent: 'WITHDRAW_INTERVIEWER', command: args, row, asOfIso } }
+}
+
+/**
+ * `intent=WITHDRAW_INTERVIEWER` 的**写入段**（全部校验已过、D-79 闸门已放行）：
+ * touch `interview` 借版本 → `required_scorecard=false` → 审计事件 → 幂等 STORE → 读回。
+ * @param client - 写事务内客户端。
+ * @param config - 已解析的配置。
+ * @param plan - 只读准备段给出的写库计划（行锁已由复校验持有）。
+ * @returns 契约出参。
+ */
+async function writeWithdrawInterviewerCommand(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  plan: Extract<ScheduleWritePlan, { readonly intent: 'WITHDRAW_INTERVIEWER' }>,
+): Promise<Record<string, unknown>> {
+  const args = plan.command
+  const asOfIso = plan.asOfIso
+  const row = plan.row
+  const tenantId = config.tenant_id
 
   const created: ChangeRow[] = []
   const updated: ChangeRow[] = []
@@ -3074,6 +3325,12 @@ function readExecContext(exec: unknown): { agent?: unknown; signal?: AbortSignal
 
 /**
  * 造真实的排期工具（D-62 四合一 intent：CREATE / RESCHEDULE / CANCEL / WITHDRAW_INTERVIEWER）。
+ *
+ * `execute()` 是 **D-101 两阶段**：① `withReadOnly` 只读事务里 `prepareSchedule`（幂等判定 +
+ * 全部业务校验 + 写库计划，行锁 `forUpdate:false`）→ 事务提交、连接归还；② 重放 /
+ * 零写入的幂等成功直接返回、不问人；③ 否则 `requireApprovalGranted(await approve())` 在
+ * **事务外**问人（等人期间不占连接）；④ `withActor` 写事务里重跑 `prepareSchedule`
+ * （`forUpdate:true`）复校验再 `writeSchedule`；`finally` 关池。
  * @param config - 已解析的数据库配置（tenant/actor 只从这里来，模型无法传入）。
  * @param deps - 可选依赖；`approval` 缺省时写库一律被拒（D-79 fail closed）。
  */
@@ -3159,8 +3416,24 @@ export function createInterviewScheduleTool(
       const approve = makeApprovalRequest(deps.approval, readExecContext(exec))
       const pool = createPool(config)
       try {
+        // 形状校验是纯函数：非法入参在**碰库/问人之前**就拒（零 SQL、approval 调用数 = 0）。
+        const command = parseScheduleShape(rawArgs)
+        // ---- 阶段 1（D-101）：只读事务里做幂等判定 + 全部业务校验 + 写库计划 ----
+        // 只读是数据库强制的（`begin transaction read only`）；行锁参数为 false（`FOR UPDATE` 会 25006）。
+        const prepared = await withReadOnly(pool, async (client) =>
+          prepareSchedule(client, config, command, Date.now(), { forUpdate: false }))
+        // ---- 重放 / 零写入的幂等成功：直接返回，**不问人**（approval 调用次数 = 0）----
+        if (prepared.kind === 'result') return prepared.value
+        // ---- 阶段 2（D-79）：事务外问人。此刻没有任何事务/连接被占（不会 idle in transaction）----
+        requireApprovalGranted(await approve())
+        // ---- 阶段 3：写事务里**重跑 prepare 复校验**（行锁 `FOR UPDATE`，与旧行为一致）+ 写入 ----
         return await withActor(pool, config.actor_id, async (client) =>
-          scheduleInTransaction(client, config, rawArgs, Date.now(), approve))
+          inCommandSavepoint(client, async () => {
+            const fresh = await prepareSchedule(client, config, command, Date.now(), { forUpdate: true })
+            // 并发窗口内别人先提交了同一幂等键/同一状态：直接返回那个结果，不写库（TOCTOU 收窄）。
+            if (fresh.kind === 'result') return fresh.value
+            return await writeSchedule(client, config, fresh.plan)
+          }))
       } finally {
         await closePool(pool)
       }
