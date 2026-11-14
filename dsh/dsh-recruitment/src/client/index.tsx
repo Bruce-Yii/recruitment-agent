@@ -13,7 +13,7 @@
 // `GET /recruitment/api/overview`（`src/http/overview.ts`）。
 
 import type { ComponentType } from 'react'
-import { Workbench } from './Workbench.tsx'
+import { RecruitmentShell } from './shell/RecruitmentShell.tsx'
 
 /** 需要 cordis 客户端服务：槽位注册表（由 browser renderer 提供）。 */
 export const inject = ['slots']
@@ -86,13 +86,13 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('main', () =>
     ctx.slots.register(
       { name: 'main', key: PANEL_ID, inject: () => ({}) },
-      Workbench as ComponentType<never>,
+      RecruitmentShell as ComponentType<never>,
     ),
   )
   // 侧栏条目：list 槽位，id 与 main 的 key 相同；label 决定侧栏文案。
   ctx.slots.inject('sidebar.panellist', () =>
     ctx.slots.register(
-      { name: 'sidebar.panellist', id: PANEL_ID, order: 10, label: '待人工决定' },
+      { name: 'sidebar.panellist', id: PANEL_ID, order: 10, label: '招聘工作台' },
       PanelIcon as unknown as ComponentType<never>,
     ),
   )

@@ -55,6 +55,7 @@ import {
   type DatabaseClient,
   type ResolvedDatabaseConfig,
 } from '../db/pool.ts'
+import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
 
 /** 工具名（模型可见，冻结）。 */
 export const JOB_CREATE_TOOL = 'recruitment_job_create'
@@ -1977,8 +1978,12 @@ function unconfiguredWriteTool(
 /**
  * 造真实的岗位创建工具。
  * @param database - 已解析的库配置（tenant/actor 只从这里来，模型无法传入）。
+ * @param deps - 可选依赖：`identity` 由 `src/index.ts` 装配（产品路径）；缺省 = 测试兼容。
  */
-export function createJobCreateTool(database: ResolvedDatabaseConfig): ReadonlyToolDefinition {
+export function createJobCreateTool(
+  database: ResolvedDatabaseConfig,
+  deps: ToolActorDeps = {},
+): ReadonlyToolDefinition {
   return {
     name: JOB_CREATE_TOOL,
     description: CREATE_DESCRIPTION,
@@ -1987,7 +1992,11 @@ export function createJobCreateTool(database: ResolvedDatabaseConfig): ReadonlyT
     isConcurrencySafe(): boolean {
       return false
     },
-    async execute(rawArgs: unknown): Promise<unknown> {
+    async execute(rawArgs: unknown, exec: unknown): Promise<unknown> {
+      // 写身份先于建连解析：identity 已装配时缺失映射在此 fail-closed（零写入）。
+      const writeActor = resolveWriteActor(exec, deps.identity, database.actor_id)
+      // GUC 与 created_by / requested_by 列共用同一作者（Demo Actor 解析结果）。
+      const writeConfig: ResolvedDatabaseConfig = { ...database, actor_id: writeActor.actor_id }
       // 先做契约层校验（不连库就失败），再把原始入参交给事务核心（核心会再校验一次，
       // 保证集成测试直调 in-transaction 函数时行为一致）。
       prepareCreateArgs(rawArgs)
@@ -1995,8 +2004,8 @@ export function createJobCreateTool(database: ResolvedDatabaseConfig): ReadonlyT
       try {
         return await withActor(
           pool,
-          database.actor_id,
-          async (client) => createJobInTransaction(client, database, rawArgs as Record<string, unknown>),
+          writeActor.actor_id,
+          async (client) => createJobInTransaction(client, writeConfig, rawArgs as Record<string, unknown>),
         )
       } catch (error) {
         throw mapDatabaseError(error)
@@ -2010,8 +2019,12 @@ export function createJobCreateTool(database: ResolvedDatabaseConfig): ReadonlyT
 /**
  * 造真实的岗位更新工具。
  * @param database - 已解析的库配置（tenant/actor 只从这里来，模型无法传入）。
+ * @param deps - 可选依赖：`identity` 由 `src/index.ts` 装配（产品路径）；缺省 = 测试兼容。
  */
-export function createJobUpdateTool(database: ResolvedDatabaseConfig): ReadonlyToolDefinition {
+export function createJobUpdateTool(
+  database: ResolvedDatabaseConfig,
+  deps: ToolActorDeps = {},
+): ReadonlyToolDefinition {
   return {
     name: JOB_UPDATE_TOOL,
     description: UPDATE_DESCRIPTION,
@@ -2020,14 +2033,18 @@ export function createJobUpdateTool(database: ResolvedDatabaseConfig): ReadonlyT
     isConcurrencySafe(): boolean {
       return false
     },
-    async execute(rawArgs: unknown): Promise<unknown> {
+    async execute(rawArgs: unknown, exec: unknown): Promise<unknown> {
+      // 写身份先于建连解析：identity 已装配时缺失映射在此 fail-closed（零写入）。
+      const writeActor = resolveWriteActor(exec, deps.identity, database.actor_id)
+      // GUC 与 created_by / requested_by 列共用同一作者（Demo Actor 解析结果）。
+      const writeConfig: ResolvedDatabaseConfig = { ...database, actor_id: writeActor.actor_id }
       prepareUpdateArgs(rawArgs)
       const pool = createPool(database)
       try {
         return await withActor(
           pool,
-          database.actor_id,
-          async (client) => updateJobInTransaction(client, database, rawArgs as Record<string, unknown>),
+          writeActor.actor_id,
+          async (client) => updateJobInTransaction(client, writeConfig, rawArgs as Record<string, unknown>),
         )
       } catch (error) {
         throw mapDatabaseError(error)

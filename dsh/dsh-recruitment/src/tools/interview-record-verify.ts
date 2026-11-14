@@ -90,6 +90,7 @@ import {
 } from '../db/pool.ts'
 // 事件名只从注册表取（`src/runtime/event-types.ts`）；机检测试会扫发射点。
 import { EVENT_TYPES } from '../runtime/event-types.ts'
+import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
 
 /** 工具名（模型可见，冻结；沿用 `recruitment_*` 命名）。 */
 export const INTERVIEW_RECORD_VERIFY_TOOL = 'recruitment_interview_record_verify'
@@ -177,8 +178,8 @@ export function parseVerifyArgs(raw: unknown): VerifyArgs {
 //  D-79 人机闸门（approval seam；与 job_rubric_approve 同一封闭集与同一超时策略）
 // ---------------------------------------------------------------------------
 
-/** 本文件的依赖：approval 是可选第二组依赖（缺省 = 一律拒绝）。 */
-export interface InterviewRecordVerifyDeps {
+/** 本文件的依赖：approval / identity 都是可选第二组依赖（approval 缺省 = 一律拒绝）。 */
+export interface InterviewRecordVerifyDeps extends ToolActorDeps {
   /** DSH `ctx.approval` 的窄接口。缺省 = 一律拒绝（headless 恒 fail closed）。 */
   readonly approval?: ApprovalRequester
 }
@@ -1312,7 +1313,8 @@ const DESCRIPTION = [
 /**
  * 造真实的面试记录核验工具（写路径；`isConcurrencySafe=false`）。
  * @param database - 已解析的库配置（tenant/actor 只从这里来，模型无法传入）。
- * @param deps - 可选依赖；`approval` 缺省时写库一律被拒（D-79 fail closed）。
+ * @param deps - 可选依赖；`approval` 缺省时写库一律被拒（D-79 fail closed）；
+ *   `identity` 由 `src/index.ts` 装配（产品路径），缺省 = 仅测试兼容的 legacy actor。
  */
 export function createInterviewRecordVerifyTool(
   database: ResolvedDatabaseConfig,
@@ -1327,6 +1329,10 @@ export function createInterviewRecordVerifyTool(
       return false
     },
     async execute(rawArgs: unknown, exec: unknown): Promise<unknown> {
+      // 写身份先于建连解析：identity 已装配时缺失映射在此 fail-closed（零写入）。
+      const writeActor = resolveWriteActor(exec, deps.identity, database.actor_id)
+      // 核验人（`verified_by_actor_id`）与 GUC 共用同一作者（Demo Actor 解析结果）。
+      const writeConfig: ResolvedDatabaseConfig = { ...database, actor_id: writeActor.actor_id }
       // 参数级失败必须在**建连之前**抛（INVALID_ARGS 不该先占一个连接）。
       parseVerifyArgs(rawArgs)
       const approve = makeVerifyApprovalRequest(deps.approval, readExecContext(exec))
@@ -1334,8 +1340,8 @@ export function createInterviewRecordVerifyTool(
       try {
         return await withActor(
           pool,
-          database.actor_id,
-          async (client) => verifyInterviewRecordInTransaction(client, database, rawArgs, approve),
+          writeActor.actor_id,
+          async (client) => verifyInterviewRecordInTransaction(client, writeConfig, rawArgs, approve),
         )
       } catch (error) {
         throw mapDatabaseError(error)

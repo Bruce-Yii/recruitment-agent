@@ -71,6 +71,7 @@ import {
 } from '../db/pool.ts'
 // 事件名常量来自唯一权威注册表（`src/runtime/event-types.ts`），不在本文件写死字面量。
 import { EVENT_TYPES } from '../runtime/event-types.ts'
+import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
 
 const TOOL_NAME = 'recruitment_interview_schedule'
 /**
@@ -3307,8 +3308,8 @@ function interviewersLine(interview: Record<string, unknown>): string {
     .join(' · ')
 }
 
-/** 排期工具的依赖：库配置保持第一个位置参数，approval 是可选的第二组依赖（D-79）。 */
-export interface InterviewScheduleDeps {
+/** 排期工具的依赖：库配置保持第一个位置参数，approval / identity 是可选的第二组依赖。 */
+export interface InterviewScheduleDeps extends ToolActorDeps {
   /** DSH `ctx.approval` 的窄接口。**缺省 = 一律拒绝**，不存在"直接写库"的分支（D-79）。 */
   readonly approval?: ApprovalRequester
 }
@@ -3332,7 +3333,8 @@ function readExecContext(exec: unknown): { agent?: unknown; signal?: AbortSignal
  * **事务外**问人（等人期间不占连接）；④ `withActor` 写事务里重跑 `prepareSchedule`
  * （`forUpdate:true`）复校验再 `writeSchedule`；`finally` 关池。
  * @param config - 已解析的数据库配置（tenant/actor 只从这里来，模型无法传入）。
- * @param deps - 可选依赖；`approval` 缺省时写库一律被拒（D-79 fail closed）。
+ * @param deps - 可选依赖；`approval` 缺省时写库一律被拒（D-79 fail closed）；
+ *   `identity` 由 `src/index.ts` 装配（产品路径），缺省 = 仅测试兼容的 legacy actor。
  */
 export function createInterviewScheduleTool(
   config: ResolvedDatabaseConfig,
@@ -3412,6 +3414,10 @@ export function createInterviewScheduleTool(
       return false
     },
     async execute(rawArgs: unknown, exec: unknown): Promise<unknown> {
+      // 写身份先解析一次、两阶段共用：prepare（只读）与 write（写事务）看到的 actor 必须一致。
+      // identity 已装配时任何缺失映射都在**建池/开事务之前** fail-closed（零写入）。
+      const writeActor = resolveWriteActor(exec, deps.identity, config.actor_id)
+      const writeConfig: ResolvedDatabaseConfig = { ...config, actor_id: writeActor.actor_id }
       // D-79：approval 缺省时 `makeApprovalRequest` 恒返回 `unavailable`（= 拒绝写库）。
       const approve = makeApprovalRequest(deps.approval, readExecContext(exec))
       const pool = createPool(config)
@@ -3421,18 +3427,18 @@ export function createInterviewScheduleTool(
         // ---- 阶段 1（D-101）：只读事务里做幂等判定 + 全部业务校验 + 写库计划 ----
         // 只读是数据库强制的（`begin transaction read only`）；行锁参数为 false（`FOR UPDATE` 会 25006）。
         const prepared = await withReadOnly(pool, async (client) =>
-          prepareSchedule(client, config, command, Date.now(), { forUpdate: false }))
+          prepareSchedule(client, writeConfig, command, Date.now(), { forUpdate: false }))
         // ---- 重放 / 零写入的幂等成功：直接返回，**不问人**（approval 调用次数 = 0）----
         if (prepared.kind === 'result') return prepared.value
         // ---- 阶段 2（D-79）：事务外问人。此刻没有任何事务/连接被占（不会 idle in transaction）----
         requireApprovalGranted(await approve())
         // ---- 阶段 3：写事务里**重跑 prepare 复校验**（行锁 `FOR UPDATE`，与旧行为一致）+ 写入 ----
-        return await withActor(pool, config.actor_id, async (client) =>
+        return await withActor(pool, writeActor.actor_id, async (client) =>
           inCommandSavepoint(client, async () => {
-            const fresh = await prepareSchedule(client, config, command, Date.now(), { forUpdate: true })
+            const fresh = await prepareSchedule(client, writeConfig, command, Date.now(), { forUpdate: true })
             // 并发窗口内别人先提交了同一幂等键/同一状态：直接返回那个结果，不写库（TOCTOU 收窄）。
             if (fresh.kind === 'result') return fresh.value
-            return await writeSchedule(client, config, fresh.plan)
+            return await writeSchedule(client, writeConfig, fresh.plan)
           }))
       } finally {
         await closePool(pool)

@@ -21,6 +21,9 @@ export type RecruitmentErrorCode =
   // S7 契约 §3.4 的另外两个（封闭集）。'INVALID_ARGS' / 'NOT_FOUND' 已在上面。
   | 'BLOCKED_BY_REVIEW'
   | 'NO_RUBRIC'
+  // D5 Demo Actor（`work/d5/ACTOR-CONTRACT.md` §3）：执行上下文里拿不到
+  // session → alias → HUMAN actor 的完整映射时**拒绝写入**（不回退 `config.actor_id`）。
+  | 'DEMO_ACTOR_UNMAPPED'
 
 export class RecruitmentToolError extends Error {
   /** 稳定错误码（同时是 message 的前缀）。 */

@@ -41,6 +41,7 @@ import { parseContractArgs, toParameterSchema, type ParamMap } from './args.ts'
 import { canonicalJson } from './contract.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { closePool, createPool, withActor, type DatabaseClient, type ResolvedDatabaseConfig } from '../db/pool.ts'
+import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
 import {
   FEISHU_MINUTES_CONNECTOR_ID,
   FEISHU_MINUTES_PROVIDER,
@@ -1146,7 +1147,7 @@ function artifactFromRow(row: ArtifactRow, segmentCount: number): Record<string,
 }
 
 /** 一次导入的依赖（连接器由插件配置装配；缺省 = 没有传输层）。 */
-export interface TranscriptImportDeps {
+export interface TranscriptImportDeps extends ToolActorDeps {
   /** 飞书连接器（`feishu.cli` 装配成功时才有）。缺省 ⇒ 回读路径 BLOCKED。 */
   readonly connector?: FeishuConnectorDependency
   /** 连接器配置问题（例如 cli 不是绝对路径）；只进 BLOCKED 的 detail。 */
@@ -1629,7 +1630,8 @@ const DESCRIPTION =
 /**
  * 造一个绑定配置的转写导入工具（写路径；`isConcurrencySafe=false`）。
  * @param database - 已解析的 database 配置（租户 / actor 只从这里来）。
- * @param deps - 连接器依赖（由插件配置装配；缺省 ⇒ 连接器回读路径 BLOCKED）。
+ * @param deps - 连接器依赖（由插件配置装配；缺省 ⇒ 连接器回读路径 BLOCKED）；
+ *   `identity` 由 `src/index.ts` 装配（产品路径），缺省 = 仅测试兼容的 legacy actor。
  */
 export function createTranscriptImportTool(
   database: ResolvedDatabaseConfig,
@@ -1671,7 +1673,11 @@ export function createTranscriptImportTool(
     isConcurrencySafe(): boolean {
       return false
     },
-    async execute(rawArgs: unknown): Promise<unknown> {
+    async execute(rawArgs: unknown, exec: unknown): Promise<unknown> {
+      // 写身份先于回读/建连解析：identity 已装配时缺失映射在此 fail-closed（零写入、零外部读取）。
+      const writeActor = resolveWriteActor(exec, deps.identity, database.actor_id)
+      // GUC 与 created_by 列共用同一作者（Demo Actor 解析结果；legacy 分支 = 配置里的 actor）。
+      const writeConfig: ResolvedDatabaseConfig = { ...database, actor_id: writeActor.actor_id }
       const args = parseContractArgs(PARAMS, rawArgs)
       // 参数级失败必须在**建连之前**抛：INVALID_ARGS 不该先占一个连接。
       validateTranscriptImportArgs(args)
@@ -1679,8 +1685,8 @@ export function createTranscriptImportTool(
       const source = await resolveImportSource(args, deps.connector, deps.connector_issues ?? [])
       const pool = createPool(database)
       try {
-        return await withActor(pool, database.actor_id, async (client) =>
-          importTranscriptInTransaction(client, database, args, undefined, { ...deps, source }))
+        return await withActor(pool, writeConfig.actor_id, async (client) =>
+          importTranscriptInTransaction(client, writeConfig, args, undefined, { ...deps, source }))
       } finally {
         await closePool(pool)
       }

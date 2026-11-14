@@ -76,6 +76,7 @@ import {
 } from '../db/pool.ts'
 // 事件名只从注册表取（`src/runtime/event-types.ts`）；机检测试会扫发射点。
 import { EVENT_TYPES } from '../runtime/event-types.ts'
+import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
 
 const TOOL_NAME = 'recruitment_scorecard_submit'
 const CONTRACT_VERSION = '2.0.0'
@@ -2190,8 +2191,8 @@ async function supersededOf(
 //  工具定义
 // =====================================================================
 
-/** 面评提交工具的依赖：库配置 + （可选但**缺省即拒绝**的）approval 窄接口（D-79）。 */
-export interface ScorecardSubmitDeps {
+/** 面评提交工具的依赖：库配置 + （可选但**缺省即拒绝**的）approval 窄接口（D-79）+ Demo Actor 身份。 */
+export interface ScorecardSubmitDeps extends ToolActorDeps {
   readonly database: ResolvedDatabaseConfig
   /** DSH `ctx.approval` 的窄接口。**缺省 = 一律拒绝**，不存在"直接写库"的分支（D-79）。 */
   readonly approval?: ApprovalRequester
@@ -2215,7 +2216,10 @@ function readExecContext(exec: unknown): { agent?: unknown; signal?: AbortSignal
  * 在**事务外**问人（等人期间不占连接）；④ `withActor` 写事务里重跑 `prepareScorecard` 复校验，
  * 再 `writeScorecard` 写入；`finally` 关池。`approve` 来自 `deps.approval` + 本次 `exec`
  * （D-79：人放行一次才写一次；没有通道即拒绝）。
- * @param deps - `{ database, approval? }`（已解析的库配置 + 可选批准通道）。
+ * 作者身份来自 `deps.identity`（Demo Actor：`exec` 的 session → alias → HUMAN actor）：
+ * 装配了就严格解析（缺失即 `DEMO_ACTOR_UNMAPPED`、零写入），未装配才用 `database.actor_id`
+ * （仅测试兼容，见 `src/demo-actor/tool-actor.ts`）。
+ * @param deps - `{ database, approval?, identity? }`（已解析的库配置 + 可选批准通道 + 可选身份）。
  */
 export function createScorecardSubmitTool(deps: ScorecardSubmitDeps): ReadonlyToolDefinition {
   const cfg = deps.database
@@ -2278,6 +2282,11 @@ export function createScorecardSubmitTool(deps: ScorecardSubmitDeps): ReadonlyTo
       return false
     },
     async execute(rawArgs: unknown, exec: unknown): Promise<unknown> {
+      // 写身份先解析一次、两阶段共用：只读 prepare 事务的 GUC 与写事务的 GUC **必须同一个 actor**，
+      // 否则 prepare 看到的"作者"和真正写库的作者会不一致（两阶段之间身份漂移）。
+      // identity 已装配时任何缺失映射都在**建池/开事务之前** fail-closed（零写入）。
+      const writeActor = resolveWriteActor(exec, deps.identity, cfg.actor_id)
+      const actorId = writeActor.actor_id
       // D-79：approval 缺省时 `makeApprovalRequest` 恒返回 `unavailable`（= 拒绝写库）。
       const approve = makeApprovalRequest(deps.approval, readExecContext(exec))
       const pool = createPool(cfg)
@@ -2286,7 +2295,7 @@ export function createScorecardSubmitTool(deps: ScorecardSubmitDeps): ReadonlyTo
         // 只读是数据库强制的（`begin transaction read only`）：prepare 里任何写都会 25006。
         // scorecard 的作者从 GUC 读（SC-01），所以只读事务里先 `set_config(..., is_local=true)`。
         const prepared = await withReadOnly(pool, async (client) => {
-          await client.query("select set_config('recruitment.actor_id', $1, true)", [cfg.actor_id])
+          await client.query("select set_config('recruitment.actor_id', $1, true)", [actorId])
           return await prepareScorecard(client, cfg, rawArgs)
         })
         // ---- 幂等重放不写库：直接返回，**不问人**（approval 调用次数 = 0）----
@@ -2294,7 +2303,7 @@ export function createScorecardSubmitTool(deps: ScorecardSubmitDeps): ReadonlyTo
         // ---- 阶段 2（D-79）：事务外问人。此刻没有任何事务/连接被占（不会 idle in transaction）----
         requireApprovalGranted(await approve())
         // ---- 阶段 3：写事务里**重跑 prepare 复校验**（TOCTOU 收窄）；被抢先就返回、不写库 ----
-        return await withActor(pool, cfg.actor_id, async (client) => {
+        return await withActor(pool, actorId, async (client) => {
           const fresh = await prepareScorecard(client, cfg, rawArgs)
           if (fresh.kind === 'result') return fresh.value
           return await writeScorecard(client, cfg, fresh)

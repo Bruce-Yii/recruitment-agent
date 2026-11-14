@@ -37,6 +37,7 @@ import {
   type ResolvedDatabaseConfig,
 } from '../db/pool.ts'
 import { buildThreeAxisLabels, type ThreeAxisLabels } from './candidate-get.ts'
+import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
 import {
   advanceApplicationStage,
   BLOCKER_CODES,
@@ -228,17 +229,19 @@ const DESCRIPTION = [
 
 /**
  * 造一个可执行一次的返回值。
- * @param config - 已解析的库配置（租户/actor/连接只从这里来）。
+ * @param config - 已解析的库配置（租户/连接只从这里来）。
  * @param applicationId - 已校验的申请 id。
+ * @param actorId - 本次写库的作者（Demo Actor 解析结果或测试兼容的 `config.actor_id`）。
  * @returns 规范输出值。
  */
 async function runStageAdvance(
   config: ResolvedDatabaseConfig,
   applicationId: string,
+  actorId: string,
 ): Promise<StageAdvanceValue> {
   const pool = createPool(config)
   try {
-    return await withActor(pool, config.actor_id, async (client) => {
+    return await withActor(pool, actorId, async (client) => {
       // 领域层只认"事实"；调用方只提供租户与申请 id。
       const result = await advanceApplicationStage(client, {
         tenantId: config.tenant_id,
@@ -268,9 +271,13 @@ async function runStageAdvance(
 /**
  * 造真实的阶段推进工具。
  * @param config - 已解析的库配置（模型无法传入租户/actor）。
+ * @param deps - 可选依赖：`identity` 由 `src/index.ts` 装配（产品路径）；缺省 = 测试兼容。
  * @returns 工具定义。
  */
-export function createStageAdvanceTool(config: ResolvedDatabaseConfig): ReadonlyToolDefinition {
+export function createStageAdvanceTool(
+  config: ResolvedDatabaseConfig,
+  deps: ToolActorDeps = {},
+): ReadonlyToolDefinition {
   return {
     name: TOOL_NAME,
     description: DESCRIPTION,
@@ -311,10 +318,12 @@ export function createStageAdvanceTool(config: ResolvedDatabaseConfig): Readonly
     isConcurrencySafe(): boolean {
       return false
     },
-    async execute(rawArgs: unknown): Promise<unknown> {
+    async execute(rawArgs: unknown, exec: unknown): Promise<unknown> {
+      // 写身份先于任何 DB 连接解析：identity 已装配时，缺失映射在开事务前 fail-closed（零写入）。
+      const writeActor = resolveWriteActor(exec, deps.identity, config.actor_id)
       const args = parseArgs(PARAMS, rawArgs)
       const applicationId = args.application_id as string
-      return await runStageAdvance(config, applicationId)
+      return await runStageAdvance(config, applicationId, writeActor.actor_id)
     },
   }
 }

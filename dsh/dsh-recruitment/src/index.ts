@@ -119,10 +119,30 @@ import { startTickLoop, type TickLoop } from './runtime/tick-loop.ts'
 import { createPgEventDispositionSink } from './runtime/event-runtime.ts'
 import { resolveFeishuConnector, type FeishuConnectorConfig } from './connectors/feishu/index.ts'
 import { registerOverviewHttp, type OverviewHostContext } from './http/overview.ts'
+import { registerRecruitingHttp, type RecruitingHostContext } from './http/recruiting.ts'
+// D5 W1：Demo Actor（session→alias→HUMAN actor）+ Interviewer Host Remote Action
+//（scorecard form/submit）。路由用 exact path，longest-prefix 优先于 /recruitment/api。
+import { registerActorHttp, type ActorHostContext } from './http/actor.ts'
+import {
+  createDemoActorIdentity,
+  type DemoActorIdentity,
+  type DemoActorMapConfig,
+} from './demo-actor/index.ts'
 import { RecruitmentToolError } from './tools/errors.ts'
+// D5-W3：面试官工作台只读投影（GET /recruitment/api/interviewer/overview）。
+// 身份解析器由 W0 用 W1 的 Demo Actor 单例注入；未注入/未绑定 → 409 fail-closed。
+import { registerInterviewerHttp, type InterviewerHostContext, type InterviewerSessionActorResolver } from './http/interviewer.ts'
+import { resolveSessionActor } from './demo-actor/index.ts'
 
 /** 稳定 cordis 插件名（配置行 id 是 `recruitment`，见 cordis.patch.yml）。 */
 export const name = 'recruitment'
+
+/**
+ * **仅测试用**：记录最近一次 `apply()` 创建的 Demo Actor 身份，便于接线测试先绑定
+ * session→alias 再调用注册表中的工具（产品代码从不读这个对象）。
+ * 不改变 apply 的返回语义（cordis 插件返回值会被当 disposer 处理）。
+ */
+export const __testHooks: { demoActorIdentity: DemoActorIdentity | null } = { demoActorIdentity: null }
 
 /**
  * 所需服务：工具注册表 + 人机批准通道（D-79：正式决策只能由人放行）。
@@ -198,6 +218,13 @@ export interface Config {
    * 缺配置时逐条列 issues，不静默降级成假运行时。见 `src/runtime/config.ts`。
    */
   readonly runtime?: RuntimeConfig
+  /**
+   * Demo Actor 的受控 alias → HUMAN actor UUID 映射（D5 W1；`work/d5/ACTOR-CONTRACT.md` §1）。
+   * 浏览器永远只提交 alias，不提交 UUID。缺省 = 演示种子映射
+   * （recruiter=…0103 / interviewer_a=…0104 / interviewer_b=…0105）；显式值非法时该 alias
+   * fail-closed（写工具报 DEMO_ACTOR_UNMAPPED），不静默回退默认值。
+   */
+  readonly demo_actor_map?: DemoActorMapConfig
 }
 
 /**
@@ -339,6 +366,19 @@ export function apply(
   // 转写导入的连接器回读路径 fail-closed（BLOCKED/TRANSPORT_NOT_CONFIGURED，不拉子进程）。
   // env 只用于适配器判断凭据**存在性**（布尔），绝不用于取 CLI 路径（R7 / AGENTS.md §7.6）。
   const feishu = resolveFeishuConnector(config?.feishu ?? {}, env)
+  // D5 W1：Demo Actor 身份 = alias→UUID 映射 + **进程内** session→alias 注册表。
+  // 必须是单例：写工具（工具路径）与 Host Remote Action（浏览器路径）共享同一个 registry，
+  // 否则“浏览器 PUT 绑定的 session”与“Agent 工具解析的 session”对不上。
+  // 未绑定的 session 在任何写事务之前 fail-closed（DEMO_ACTOR_UNMAPPED），不回退 config.actor_id。
+  const demoActors = createDemoActorIdentity(config?.demo_actor_map)
+  const actorIdentity: DemoActorIdentity = demoActors.identity
+  __testHooks.demoActorIdentity = actorIdentity
+  if (demoActors.issues.length > 0) {
+    const logger = (ctx as unknown as { logger?: { warn(message: string): void } }).logger
+    logger?.warn(
+      `recruitment: demo_actor_map 有非法配置（对应 alias 将 fail-closed）：${demoActors.issues.join('; ')}`,
+    )
+  }
   // 工作台面板（浏览器侧唯一数据入口）：只读、loopback、同源校验；见 src/http/overview.ts。
   //
   // **必须用可选注入，不能把 webServer 放进顶层 inject。** 顶层 inject 是硬依赖：
@@ -350,6 +390,52 @@ export function apply(
     child.effect(
       () => registerOverviewHttp(child as unknown as OverviewHostContext, database.resolved, database.issues),
       'recruitment: workbench overview route',
+    )
+    // D5-W1：Demo Actor 绑定 + Interviewer Host Remote Action（scorecard form/submit）。
+    // 只注册 exact path；回环 host 才注册（非回环 fail-closed 返回空 disposer）。
+    child.effect(
+      () => registerActorHttp(
+        child as unknown as ActorHostContext,
+        {
+          database: database.resolved,
+          databaseIssues: database.issues,
+          identity: actorIdentity,
+        },
+      ),
+      'recruitment: demo actor routes',
+    )
+    // D5-W2：Recruiting Workspace 只读投影（独立前缀 /recruitment/api/recruiting；
+    // W0 独占接线，W2 不碰本文件）。action seam 由 W1 后续提供，未提供时写按钮 disabled。
+    child.effect(
+      () => registerRecruitingHttp(
+        child as unknown as RecruitingHostContext,
+        database.resolved,
+        database.issues,
+        { actionSeams: {} },
+      ),
+      'recruitment: recruiting workspace route',
+    )
+    // D5-W3：面试官工作台（我的面试 / 简报 / Rubric / 授权材料 / 本人面评；只读投影）。
+    // 身份 resolver 用 W1 的**同一个** `actorIdentity` 单例：再 new 一个 registry 会让浏览器
+    // PUT 的 session→alias 绑定分裂（读路径永远 409），所以这里只适配、不另建身份来源。
+    // 未绑定/非法 session → resolve 返回 undefined → 路由 409 DEMO_ACTOR_UNMAPPED（零行、零写入）。
+    const interviewerSessionResolver: InterviewerSessionActorResolver = {
+      resolve: (sessionId: string) => {
+        try {
+          return resolveSessionActor(actorIdentity, sessionId)
+        } catch {
+          return undefined
+        }
+      },
+    }
+    child.effect(
+      () => registerInterviewerHttp(
+        child as unknown as InterviewerHostContext,
+        database.resolved,
+        interviewerSessionResolver,
+        database.issues,
+      ),
+      'recruitment: interviewer workspace route',
     )
   })
 
@@ -519,7 +605,10 @@ export function apply(
 
   // S6 两段配置都要：没有 converter 读不了 PDF，没有 database 落不了库。
   const intake = converter.resolved !== null && database.resolved !== null
-    ? createApplicationIntakeTool({ converter: converter.resolved, database: database.resolved })
+    ? createApplicationIntakeTool(
+      { converter: converter.resolved, database: database.resolved },
+      { identity: actorIdentity },
+    )
     : unconfiguredApplicationIntakeTool([...converter.issues, ...database.issues])
   // S7 只要 database。
   const evaluate = database.resolved === null
@@ -553,19 +642,25 @@ export function apply(
   // 绝不退回 fixture（那会让岗位数据看起来是 LIVE 的假象）。
   const jobCreate = database.resolved === null
     ? unconfiguredJobCreateTool(database.issues)
-    : createJobCreateTool(database.resolved)
+    : createJobCreateTool(database.resolved, { identity: actorIdentity })
   const jobUpdate = database.resolved === null
     ? unconfiguredJobUpdateTool(database.issues)
-    : createJobUpdateTool(database.resolved)
+    : createJobUpdateTool(database.resolved, { identity: actorIdentity })
   // rubric 批准入口（docs/23 N7）：写工具，必须带 approval 闸门（D-79，缺省 = 拒绝）。
   const jobRubricApprove = database.resolved === null
     ? unconfiguredJobRubricApproveTool(database.issues)
-    : createJobRubricApproveTool(database.resolved, { approval: resolveApproval(ctx) })
+    : createJobRubricApproveTool(database.resolved, {
+      approval: resolveApproval(ctx),
+      identity: actorIdentity,
+    })
 
   // ── S8 面试线：只要 database。
   const interviewSchedule = database.resolved === null
     ? unconfiguredInterviewScheduleTool(database.issues)
-    : createInterviewScheduleTool(database.resolved, { approval: resolveApproval(ctx) })
+    : createInterviewScheduleTool(database.resolved, {
+      approval: resolveApproval(ctx),
+      identity: actorIdentity,
+    })
   const interviewGet = database.resolved === null
     ? unconfiguredInterviewGetTool(database.issues)
     : createInterviewGetTool(database.resolved)
@@ -577,6 +672,7 @@ export function apply(
     : createTranscriptImportTool(database.resolved, {
       connector: feishu.connector,
       connector_issues: feishu.issues,
+      identity: actorIdentity,
     })
   const transcriptRead = database.resolved === null
     ? unconfiguredTranscriptReadTool(database.issues)
@@ -586,7 +682,10 @@ export function apply(
   // （DC-23 要求 READY+VERIFIED 才能被决策引用）。
   const interviewRecordVerify = database.resolved === null
     ? unconfiguredInterviewRecordVerifyTool(database.issues)
-    : createInterviewRecordVerifyTool(database.resolved, { approval: resolveApproval(ctx) })
+    : createInterviewRecordVerifyTool(database.resolved, {
+      approval: resolveApproval(ctx),
+      identity: actorIdentity,
+    })
 
   // ── S10 评价线：三个都要 database；decision 还要 approval（D-79，缺省 = 拒绝）。
   const scorecardSubmit = database.resolved === null
@@ -595,7 +694,11 @@ export function apply(
       'S10: one HUMAN interviewer submits their own scorecard for one interview round.',
       database.issues,
     )
-    : createScorecardSubmitTool({ database: database.resolved, approval: resolveApproval(ctx) })
+    : createScorecardSubmitTool({
+      database: database.resolved,
+      approval: resolveApproval(ctx),
+      identity: actorIdentity,
+    })
   const evaluationSummarize = database.resolved === null
     ? notConfiguredTool(
       'recruitment_evaluation_summarize',
@@ -609,12 +712,16 @@ export function apply(
       'Record a decision a HUMAN already made: S10 (STAGE/FINAL) or S7 (SCREENING). IN_CHAT confirmation per D-95: no second click.',
       database.issues,
     )
-    : createDecisionRecordTool({ database: database.resolved, approval: resolveApproval(ctx) })
+    : createDecisionRecordTool({
+      database: database.resolved,
+      approval: resolveApproval(ctx),
+      identity: actorIdentity,
+    })
 
   // 阶段推进（N8，方案 D）：只承认已发生的事实，不新增任何授权。
   const stageAdvance = database.resolved === null
     ? unconfiguredStageAdvanceTool(database.issues)
-    : createStageAdvanceTool(database.resolved)
+    : createStageAdvanceTool(database.resolved, { identity: actorIdentity })
   // 执行追溯（Notion 08 §11.3 第 9 步）：只读。
   const traceGet = database.resolved === null
     ? unconfiguredTraceGetTool(database.issues)
@@ -627,9 +734,9 @@ export function apply(
         unconfiguredConfigPipelineTool(database.issues),
       ]
     : [
-        createConfigRoleTool(database.resolved),
-        createConfigTeamTool(database.resolved),
-        createConfigPipelineTool(database.resolved),
+        createConfigRoleTool(database.resolved, { identity: actorIdentity }),
+        createConfigTeamTool(database.resolved, { identity: actorIdentity }),
+        createConfigPipelineTool(database.resolved, { identity: actorIdentity }),
       ]
 
   const tools: readonly ReadonlyToolDefinition[] = [

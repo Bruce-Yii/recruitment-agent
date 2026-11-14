@@ -96,6 +96,7 @@ import {
 import { computeEvaluationSummaryIn, type EvaluationSummary } from './evaluation-summarize.ts'
 // 事件名只从注册表取（`src/runtime/event-types.ts`）；机检测试会扫发射点。
 import { EVENT_TYPES } from '../runtime/event-types.ts'
+import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
 
 const TOOL_NAME = 'recruitment_decision_record'
 const CONTRACT_VERSION = '2.0.0'
@@ -162,7 +163,7 @@ function evalError(
 export type ApprovalOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
 
 /** 决策工具的依赖（DESIGN §3.5 ④）。 */
-export interface DecisionToolDeps {
+export interface DecisionToolDeps extends ToolActorDeps {
   readonly database: ResolvedDatabaseConfig
   /** DSH `ctx.approval` 的窄接口（D-79）。**缺省 = 一律拒绝**，不存在"直接写库"的分支。 */
   readonly approval?: {
@@ -3344,7 +3345,8 @@ function renderDecision(value: unknown): readonly TextBlock[] {
 
 /**
  * 造一个绑定配置的决策工具（D-79：**approval 缺省即拒绝**，不存在"直接写库"的分支）。
- * @param deps - 数据库配置 + 可选的 approval 窄接口。
+ * @param deps - 数据库配置 + 可选的 approval 窄接口 + 可选的 Demo Actor 身份
+ *   （`identity` 由 `src/index.ts` 装配；缺省 = 仅测试兼容的 legacy actor）。
  */
 export function createDecisionRecordTool(deps: DecisionToolDeps): ReadonlyToolDefinition {
   return {
@@ -3366,12 +3368,15 @@ export function createDecisionRecordTool(deps: DecisionToolDeps): ReadonlyToolDe
       return false
     },
     async execute(rawArgs: unknown, exec: unknown): Promise<unknown> {
+      // 写身份先于建连解析：identity 已装配时缺失映射在此 fail-closed（零写入）。
+      // 决策人（`decided_by_actor_id`）由事务 GUC 决定，GUC 用的就是这里解析出的 actor。
+      const writeActor = resolveWriteActor(exec, deps.identity, deps.database.actor_id)
       const context = readExecContext(exec)
       const approve = makeApprovalRequest(deps.approval, context)
       // 参数在事务内 STEP 0 才校验（判定顺序本身是规则，DC-05）；approval 在 STEP 6.5 才问。
       const pool = createPool(deps.database)
       try {
-        const value = await withActor(pool, deps.database.actor_id, async (client) => (
+        const value = await withActor(pool, writeActor.actor_id, async (client) => (
           recordDecisionInTransaction(client, deps.database, rawArgs, Date.now(), approve)
         ))
         // DSH 的输出校验器不支持 null（见文件头偏差 7）→ 契约里画 null 的键在这里被省略。

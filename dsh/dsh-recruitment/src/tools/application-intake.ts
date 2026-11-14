@@ -76,6 +76,7 @@ import {
   type DatabaseClient,
   type ResolvedDatabaseConfig,
 } from '../db/pool.ts'
+import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
 import {
   matchByStrongIds,
   normEmail,
@@ -2313,8 +2314,12 @@ function toIntakeReadError(error: unknown): never {
 /**
  * 造一个绑定配置的 intake 工具。
  * @param cfg - 已解析的 converter + database 配置。
+ * @param deps - 可选依赖：`identity` 由 `src/index.ts` 装配（产品路径）；缺省 = 测试兼容。
  */
-export function createApplicationIntakeTool(cfg: IntakeToolConfig): ReadonlyToolDefinition {
+export function createApplicationIntakeTool(
+  cfg: IntakeToolConfig,
+  deps: ToolActorDeps = {},
+): ReadonlyToolDefinition {
   return {
     name: TOOL_NAME,
     description:
@@ -2368,7 +2373,11 @@ export function createApplicationIntakeTool(cfg: IntakeToolConfig): ReadonlyTool
     isConcurrencySafe(): boolean {
       return false
     },
-    async execute(rawArgs: unknown): Promise<unknown> {
+    async execute(rawArgs: unknown, exec: unknown): Promise<unknown> {
+      // 写身份先于读文件/开事务解析：identity 已装配时，缺失映射在**任何副作用之前** fail-closed。
+      const writeActor = resolveWriteActor(exec, deps.identity, cfg.database.actor_id)
+      // 事务 GUC 与 created_by 列共用同一作者（Demo Actor 解析结果；legacy 分支 = 配置里的 actor）。
+      const database: ResolvedDatabaseConfig = { ...cfg.database, actor_id: writeActor.actor_id }
       const args = parseContractArgs(PARAMS, rawArgs)
       const requested = args.path as string
       if (isAbsolute(requested) === false) {
@@ -2402,8 +2411,8 @@ export function createApplicationIntakeTool(cfg: IntakeToolConfig): ReadonlyTool
       }
       const pool = createPool(cfg.database)
       try {
-        return await withActor(pool, cfg.database.actor_id, async (client) =>
-          intakeInTransaction(client, cfg.database, material, args.job_id as string))
+        return await withActor(pool, database.actor_id, async (client) =>
+          intakeInTransaction(client, database, material, args.job_id as string))
       } finally {
         await closePool(pool)
       }

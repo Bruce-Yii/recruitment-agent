@@ -44,7 +44,7 @@ import {
   resolveImportSource,
 } from '../../src/tools/transcript-import.ts'
 import { resolveDatabaseConfig } from '../../src/db/pool.ts'
-import { apply } from '../../src/index.ts'
+import { apply, __testHooks } from '../../src/index.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PLUGIN_DIR = resolve(HERE, '..', '..')
@@ -708,8 +708,14 @@ test('apply() 注册入口：feishu.cli（插件配置）→ 注册的 recruitme
   assert.ok(names.includes('recruitment_transcript_import'), `注册点少了转写导入：${names.join(', ')}`)
 
   const tool = registered.find((candidate) => candidate.name === 'recruitment_transcript_import') as RegisteredTool
+  // D5：apply() 已装配 Demo Actor 身份；测试先把当前 session 绑定为 recruiter，
+  // 再调用注册表中的工具（否则会在写事务前 fail-closed DEMO_ACTOR_UNMAPPED）。
+  const identity = __testHooks.demoActorIdentity
+  assert.ok(identity !== null, 'apply() 必须装配 Demo Actor 身份')
+  const sessionId = 'session-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  identity.registry.bind(sessionId, 'recruiter')
   await assert.rejects(
-    () => tool.execute({ interview_id: INTERVIEW, minute_token: 'mt_apply_wiring' }),
+    () => tool.execute({ interview_id: INTERVIEW, minute_token: 'mt_apply_wiring' }, { agent: { id: sessionId } }),
     (error: unknown) => {
       const parsed = errorBody(error)
       // 只有「配置 → 适配器 → 传输层 → 真实调 CLI」这条链是通的，才可能拿到 CLI_UNAVAILABLE。

@@ -6,19 +6,27 @@
 // `contracts/job-screening/job-rubric-rules.md` §4.2，没有生效的 APPROVED = 未批准 =
 // S7 `NO_APPROVED_RUBRIC`，所以干净库跑不了 demo（owner-g4 的 S6→S10 harness 预检同样 BLOCKED）。
 //
-// 本脚本的定位：**用产品工具链补齐 demo 前置**（不改 0002_seed、不加迁移）。它做四件事：
+// 本脚本的定位：**用产品工具链补齐 demo 前置**（不改 0002_seed、不加迁移）。它做五件事：
 //   1. 只读预检：迁移台账版本、租户/actor（HUMAN + HR 角色）、按 code 找演示岗位；
 //   2. 只读判定状态：NO_OP / APPROVE_PENDING / APPEND_RUBRIC / CREATE_JOB；
 //   3. 非 NO_OP 时先过**一次**人机闸门替身（DEMO_APPROVAL_MODE），不是 allowed-once
 //      就在**任何写之前**退出 3（零写入），之后写库只调产品工具 execute()；
 //   4. 写后只读读回并核对：current 指针 == 目标 rubric、approval.status=APPROVED、
 //      approval.canonical_payload_hash == rubric.payload_hash（未 supersede、未过期）。
+//   5. **D5 W1 幂等演示种子**（`seed.demo_actors` / `seed.demo_interviews`）：在闸门之后、
+//      幂等补齐「演示-面试官 B(…0105) + INTERVIEWER 角色」「Interview …0801/…0802 挂
+//      application …0701」「802 上 A=104/B=105 两条 interviewer 行（required_scorecard=true）、
+//      801 补 104」「802 上 103 无 interviewer 行（负例，只查不删）」。重跑零变更。
 //
 // 硬约束（与本文件的设计一一对应）：
-//   * **本文件里没有一条写 SQL**：写库只发生在 `recruitment_job_create` /
-//     `recruitment_job_update` / `recruitment_job_rubric_approve` 的 execute() 里；
+//   * **业务写库只发生在产品工具的 execute() 里**：`recruitment_job_create` /
+//     `recruitment_job_update` / `recruitment_job_rubric_approve`；
 //     本脚本自己的读全部走 `db/pool.ts` 的 `withReadOnly()`（`begin transaction read only`，
 //     库层强制只读，任何写语句会直接 25006）。
+//     唯一例外是 §5 的演示种子：产品工具链里**没有**「建 actor / 授予角色 / 建固定 id 的
+//     Interview / 写 interviewer 分配」的入口（interview-schedule 会自己生成 id 且带业务闸门），
+//     所以种子用固定 id 的 `insert … on conflict do nothing` 直接写；它同样只在
+//     闸门放行之后、单个 `withActor` 事务里执行（失败整体回滚），重跑 0 行变更。
 //   * **密码只从环境变量读**：走产品 `resolveDatabaseConfig(config, env)`，密码既不在配置里，
 //     也不进任何输出/异常（打印前统一 scrub）。
 //   * **审批替身是唯一注入点**：`DEMO_APPROVAL_MODE` 只作为
@@ -51,6 +59,7 @@ import {
   closePool,
   createPool,
   resolveDatabaseConfig,
+  withActor,
   withReadOnly,
 } from '../dsh/dsh-recruitment/src/db/pool.ts'
 
@@ -72,6 +81,40 @@ const REQUIRED_ROLE_CODE = 'HR_SPECIALIST'
 const GATE_REASON = '演示引导：由人放行 demo rubric（bootstrap-demo 的人机闸门替身）'
 /** 批准工具自己的 reason（≤500 字符）。 */
 const APPROVE_REASON = '演示引导：为 demo 岗位放行已绑定 hash 的 rubric 版本'
+
+// ---------------------------------------------------------------------------
+//  D5 W1：固定 id 的演示种子（与 `work/d5/w1/CONTEXT.md` §1 一致；全部幂等）
+// ---------------------------------------------------------------------------
+
+/** 演示种子所在的租户（0002_seed）。 */
+// （DEMO_TENANT_ID 已在上方定义，这里复用。）
+/** 演示部门（0002_seed：研发部（演示））。 */
+const DEMO_DEPARTMENT_ID = '11111111-1111-4111-8111-000000000010'
+/** 演示面试官 B（本步补齐；HUMAN，display_name = 演示-面试官 B）。 */
+const DEMO_INTERVIEWER_B_ID = '11111111-1111-4111-8111-000000000105'
+/** 演示面试官 A（0002_seed 的 …0104）。 */
+const DEMO_INTERVIEWER_A_ID = '11111111-1111-4111-8111-000000000104'
+/** 演示 recruiter / HR 专员（0002_seed 的 …0103）——必须是 802 上的**未分配负例**。 */
+const DEMO_RECRUITER_ID = '11111111-1111-4111-8111-000000000103'
+/** 演示招聘负责人（0002_seed 的 …0102；role 授予的 granted_by）。 */
+const DEMO_HIRING_MANAGER_ID = '11111111-1111-4111-8111-000000000102'
+/** INTERVIEWER 角色（0002_seed 的 …0204）。 */
+const DEMO_ROLE_INTERVIEWER_ID = '11111111-1111-4111-8111-000000000204'
+/** …0105 的 INTERVIEWER 授予行 id（固定 id，幂等）。 */
+const DEMO_ACTOR_ROLE_B_ID = '11111111-1111-4111-8111-000000000305'
+/** 演示申请（0002_seed 的 …0701）。 */
+const DEMO_APPLICATION_ID = '11111111-1111-4111-8111-000000000701'
+/** 演示第 1 轮面试（已发生：POST_INTERVIEW）。 */
+const DEMO_INTERVIEW_ROUND1_ID = '11111111-1111-4111-8111-000000000801'
+/** 演示第 2 轮面试（已排期：SCHEDULED；A/B 各交一份面评的那一场）。 */
+const DEMO_INTERVIEW_ROUND2_ID = '11111111-1111-4111-8111-000000000802'
+/** 固定排期时间（UTC，与演示库 ra_s6s7 的 …0801/…0802 对齐）：重跑不漂移。 */
+const DEMO_ROUND1_START = '2026-11-12T06:00:00.000Z' // 2026-11-12 14:00 +08
+const DEMO_ROUND1_END = '2026-11-12T07:00:00.000Z'
+const DEMO_ROUND2_START = '2026-11-20T06:00:00.000Z' // 2026-11-20 14:00 +08
+const DEMO_ROUND2_END = '2026-11-20T07:00:00.000Z'
+/** 面试所属阶段：`interview.stage_code` 有外键指向 `stage_catalog`，只能用目录里的 S8。 */
+const DEMO_INTERVIEW_STAGE_CODE = 'S8'
 
 /**
  * demo rubric 的三条 criteria（与 `manual/apply-demo-rubric.mjs` 的 DIMENSIONS 同口径）。
@@ -146,6 +189,70 @@ const SQL_ACTOR_ROLES = `select a.id, a.kind, a.tenant_id,
    left join recruitment.role r on r.tenant_id = a.tenant_id and r.id = ar.role_id
   where a.id = $1 and a.tenant_id = $2
   group by a.id, a.kind, a.tenant_id`
+
+// ---- D5 W1 演示种子用到的读写 SQL（读在同一个写事务里；写全部幂等）----------------
+
+/** 演示申请是否存在（种子前置；缺了就是迁移/种子没跑全，属配置前置不满足）。 */
+const SQL_APPLICATION_EXISTS = `select id from recruitment.application
+  where id = $1 and tenant_id = $2`
+
+/** 演示面试官 B（…0105）是否存在。 */
+const SQL_ACTOR_EXISTS = `select id, kind, display_name from recruitment.actor
+  where id = $1 and tenant_id = $2`
+
+/** 105 的 INTERVIEWER 角色是否已生效（授予后复核）。 */
+const SQL_ACTOR_ROLE_ACTIVE = `select count(*)::int as n from recruitment.actor_role
+  where tenant_id = $1 and actor_id = $2 and role_id = $3 and revoked_at is null`
+
+/** 两个演示 Interview 是否存在（按固定 id）。 */
+const SQL_INTERVIEW_BY_ID = `select id, status from recruitment.interview
+  where id = $1 and tenant_id = $2`
+
+/** 802 上 103 的 interviewer 行（负例：只查，绝不删）。 */
+const SQL_INTERVIEWER_NEGATIVE = `select count(*)::int as n from recruitment.interviewer
+  where tenant_id = $1 and interview_id = $2 and actor_id = $3`
+
+/** 一条 interviewer 行是否已存在（用于区分 INSERTED / UPDATED；不看 required_scorecard 值）。 */
+const SQL_INTERVIEWER_EXISTS = `select count(*)::int as n from recruitment.interviewer
+  where tenant_id = $1 and interview_id = $2 and actor_id = $3`
+
+const SQL_INSERT_ACTOR_105 = `insert into recruitment.actor
+  (id, tenant_id, kind, display_name, primary_email, department_id)
+  values ($1, $2, 'HUMAN', '演示-面试官 B', 'demo.interviewer.b@demo-recruitment.test', $3)
+  on conflict do nothing
+  returning id`
+
+const SQL_INSERT_ACTOR_ROLE_105 = `insert into recruitment.actor_role
+  (id, tenant_id, actor_id, role_id, granted_by_actor_id)
+  values ($1, $2, $3, $4, $5)
+  on conflict do nothing
+  returning id`
+
+const SQL_INSERT_INTERVIEW = `insert into recruitment.interview
+  (id, tenant_id, application_id, round_no, slot_code, stage_code, status,
+   scheduled_start_at, scheduled_end_at)
+  values ($1, $2, $3, $4, 'DEFAULT', $5, $6, $7, $8)
+  on conflict (id) do nothing
+  returning id`
+
+/**
+ * 幂等 upsert 一条 interviewer 行：已存在且 `required_scorecard` 已是 true → **0 行变更**
+ * （`where … is distinct from`），这样"重跑零变更"是 0 行 UPDATE 而不是"同样的值再写一遍"。
+ */
+const SQL_UPSERT_INTERVIEWER = `insert into recruitment.interviewer
+  (tenant_id, interview_id, actor_id, role_in_interview, required_scorecard)
+  values ($1, $2, $3, 'INTERVIEWER', true)
+  on conflict (interview_id, actor_id) do update
+     set required_scorecard = excluded.required_scorecard
+   where recruitment.interviewer.required_scorecard is distinct from excluded.required_scorecard
+  returning id`
+
+/** 「补 104 到 801（若不存在）」用：已存在就**一行都不改**（不覆盖他人已有行）。 */
+const SQL_ENSURE_INTERVIEWER = `insert into recruitment.interviewer
+  (tenant_id, interview_id, actor_id, role_in_interview, required_scorecard)
+  values ($1, $2, $3, 'INTERVIEWER', true)
+  on conflict (interview_id, actor_id) do nothing
+  returning id`
 
 /** 当前进程里已知的敏感值（打印前统一替换，绝不落进日志）。 */
 const secrets = []
@@ -470,6 +577,187 @@ async function preflightActor(pool, cfg) {
 }
 
 /**
+ * D5 W1 幂等演示种子（`seed.demo_actors` / `seed.demo_interviews`）。
+ *
+ * 口径（`work/d5/w1/CONTEXT.md` §1、`work/d5/ACTOR-CONTRACT.md` §5）：
+ *   * 105 = HUMAN「演示-面试官 B」+ INTERVIEWER 角色（`…0204` 授予 `…0105`，granted_by `…0102`）；
+ *   * `…0801`（round 1 / POST_INTERVIEW）/ `…0802`（round 2 / SCHEDULED）挂在 application `…0701`；
+ *   * 802 上 A=`…0104`、B=`…0105` 两条 interviewer 行（`required_scorecard=true`，upsert 收敛）；
+ *   * 801 补 `…0104`（若不存在；存在即不动）；
+ *   * 802 上 `…0103` 必须**没有** interviewer 行（未分配负例；只查不删，出现就记 issue）。
+ *
+ * 幂等：全部 `on conflict do nothing` / `do update … where 值真的不同`，重跑 **0 行变更**；
+ * 只有真的 INSERT/UPDATE 时才把步骤名写进 `report.write_steps`。
+ * 调用位置：`run()` 里**闸门放行之后**（deny 路径在此之前已返回 3），单事务执行；
+ * 任何一步失败整体回滚，不会留下半个种子。
+ * @param pool - 连接池。
+ * @param cfg - 已解析配置（tenant / actor 只从这里来）。
+ * @returns `{ demo_actor, demo_interviews, negative, write_steps, issues, written }`。
+ */
+async function seedDemoData(pool, cfg) {
+  const tenantId = cfg.tenant_id
+  const report = {
+    demo_actor: null,
+    demo_interviews: null,
+    negative: null,
+    write_steps: [],
+    issues: [],
+  }
+  await withActor(pool, cfg.actor_id, async (client) => {
+    // ---- 0 前置：演示申请必须存在（0002_seed）----
+    const application = await client.query(SQL_APPLICATION_EXISTS, [DEMO_APPLICATION_ID, tenantId])
+    if (application.rows.length === 0) {
+      throw new PrerequisiteError([
+        `演示申请 ${DEMO_APPLICATION_ID} 不存在：先按名重放 db/migrations（含 0002_seed）`,
+      ])
+    }
+
+    // ---- 1 seed.demo_actors：105（HUMAN）+ INTERVIEWER 角色 ----
+    const existingActor = await client.query(SQL_ACTOR_EXISTS, [DEMO_INTERVIEWER_B_ID, tenantId])
+    const actorInsert = await client.query(SQL_INSERT_ACTOR_105, [
+      DEMO_INTERVIEWER_B_ID, tenantId, DEMO_DEPARTMENT_ID,
+    ])
+    const actorInserted = (actorInsert.rowCount ?? 0) > 0
+    const roleInsert = await client.query(SQL_INSERT_ACTOR_ROLE_105, [
+      DEMO_ACTOR_ROLE_B_ID, tenantId, DEMO_INTERVIEWER_B_ID, DEMO_ROLE_INTERVIEWER_ID, DEMO_HIRING_MANAGER_ID,
+    ])
+    const roleInserted = (roleInsert.rowCount ?? 0) > 0
+    // 授予后复核：INSERT 被"别的唯一键"吞掉时要能被看见，不能静默当成功。
+    const roleActive = await client.query(SQL_ACTOR_ROLE_ACTIVE, [
+      tenantId, DEMO_INTERVIEWER_B_ID, DEMO_ROLE_INTERVIEWER_ID,
+    ])
+    if ((roleActive.rows[0]?.n ?? 0) === 0) {
+      throw new Error('seed.demo_actors: 授予后复核失败（105 仍没有生效的 INTERVIEWER 角色）')
+    }
+    // 105 已存在时**不修改**已有 display_name；输出里记录库里真实值以便对账。
+    const actorRow = existingActor.rows[0] ?? { kind: 'HUMAN', display_name: '演示-面试官 B' }
+    report.demo_actor = {
+      actor_id: DEMO_INTERVIEWER_B_ID,
+      actor: actorInserted ? 'INSERTED' : 'PRESENT',
+      kind: actorRow.kind,
+      display_name: actorRow.display_name,
+      actor_role_id: DEMO_ACTOR_ROLE_B_ID,
+      actor_role: roleInserted ? 'GRANTED' : 'PRESENT',
+      role_code: 'INTERVIEWER',
+      verified: true,
+    }
+    if (actorInserted || roleInserted) report.write_steps.push('seed.demo_actors')
+
+    // ---- 2 seed.demo_interviews：801 / 802 挂 0701（固定 id；已存在不改）----
+    const interviews = []
+    for (const spec of [
+      {
+        id: DEMO_INTERVIEW_ROUND1_ID, round: 1, status: 'POST_INTERVIEW',
+        start: DEMO_ROUND1_START, end: DEMO_ROUND1_END,
+      },
+      {
+        id: DEMO_INTERVIEW_ROUND2_ID, round: 2, status: 'SCHEDULED',
+        start: DEMO_ROUND2_START, end: DEMO_ROUND2_END,
+      },
+    ]) {
+      const existing = await client.query(SQL_INTERVIEW_BY_ID, [spec.id, tenantId])
+      if (existing.rows.length > 0) {
+        // 已存在：保留库里的现状（不把别人的状态/排期改回去）。
+        interviews.push({
+          interview_id: spec.id, round_no: spec.round, state: 'PRESENT', status: existing.rows[0].status,
+        })
+        continue
+      }
+      const inserted = await client.query(SQL_INSERT_INTERVIEW, [
+        spec.id, tenantId, DEMO_APPLICATION_ID, spec.round, DEMO_INTERVIEW_STAGE_CODE, spec.status, spec.start, spec.end,
+      ])
+      interviews.push({
+        interview_id: spec.id,
+        round_no: spec.round,
+        state: (inserted.rowCount ?? 0) > 0 ? 'INSERTED' : 'PRESENT',
+        status: spec.status,
+      })
+      if ((inserted.rowCount ?? 0) > 0) report.write_steps.push('seed.demo_interviews')
+    }
+
+    // ---- 3 802：A/B 两条 interviewer 行（upsert 收敛；已是 true 则 0 行变更）----
+    const interviewers = []
+    for (const actorId of [DEMO_INTERVIEWER_A_ID, DEMO_INTERVIEWER_B_ID]) {
+      const before = await client.query(SQL_INTERVIEWER_EXISTS, [
+        tenantId, DEMO_INTERVIEW_ROUND2_ID, actorId,
+      ])
+      const upserted = await client.query(SQL_UPSERT_INTERVIEWER, [
+        tenantId, DEMO_INTERVIEW_ROUND2_ID, actorId,
+      ])
+      const changed = (upserted.rowCount ?? 0) > 0
+      const state = changed ? ((before.rows[0]?.n ?? 0) > 0 ? 'UPDATED' : 'INSERTED') : 'PRESENT'
+      interviewers.push({
+        interview_id: DEMO_INTERVIEW_ROUND2_ID, actor_id: actorId, required_scorecard: true, state,
+      })
+      if (changed) report.write_steps.push('seed.demo_interviews')
+    }
+    // ---- 4 801 补 104（若不存在；存在即 0 行变更）----
+    const round1Interviewer = await client.query(SQL_ENSURE_INTERVIEWER, [
+      tenantId, DEMO_INTERVIEW_ROUND1_ID, DEMO_INTERVIEWER_A_ID,
+    ])
+    interviewers.push({
+      interview_id: DEMO_INTERVIEW_ROUND1_ID,
+      actor_id: DEMO_INTERVIEWER_A_ID,
+      required_scorecard: true,
+      state: (round1Interviewer.rowCount ?? 0) > 0 ? 'INSERTED' : 'PRESENT',
+    })
+    if ((round1Interviewer.rowCount ?? 0) > 0) report.write_steps.push('seed.demo_interviews')
+
+    // ---- 5 负例：802 上 103 不得有 interviewer 行（只查不删）----
+    const negative = await client.query(SQL_INTERVIEWER_NEGATIVE, [
+      tenantId, DEMO_INTERVIEW_ROUND2_ID, DEMO_RECRUITER_ID,
+    ])
+    const negativeCount = negative.rows[0]?.n ?? 0
+    if (negativeCount > 0) {
+      report.issues.push(
+        `seed.demo_interviews: 802 上存在 ${negativeCount} 行 103 的 interviewer 分配（未分配负例要求 0 行）；`
+          + '按约定不删任何数据，请人工确认演示库',
+      )
+    }
+    report.negative = {
+      interview_id: DEMO_INTERVIEW_ROUND2_ID,
+      actor_id: DEMO_RECRUITER_ID,
+      interviewer_rows: negativeCount,
+      ok: negativeCount === 0,
+    }
+    report.demo_interviews = {
+      application_id: DEMO_APPLICATION_ID,
+      interviews,
+      interviewers,
+    }
+  })
+  report.write_steps = [...new Set(report.write_steps)]
+  report.written = report.write_steps.length > 0
+  return report
+}
+
+/**
+ * 把演示种子的结果写进 steps（重跑时同样输出，用 `state=PRESENT` 证明"零变更"）。
+ * @param addStep - `run()` 里的步骤登记函数。
+ * @param seed - `seedDemoData()` 的返回。
+ */
+function addSeedSteps(addStep, seed) {
+  const actor = seed.demo_actor
+  addStep('seed.demo_actors', null,
+    `actor_105=${actor.actor} kind=${actor.kind} display_name=${actor.display_name}`
+      + ` actor_role_0305=${actor.actor_role} role=${actor.role_code} verified=${actor.verified}`,
+    { ok: actor.verified === true })
+  const interviews = seed.demo_interviews.interviews
+    .map((row) => `${row.round_no}:${row.interview_id}(${row.state},status=${row.status})`)
+    .join(' ')
+  const interviewers = seed.demo_interviews.interviewers
+    .map((row) => `${row.actor_id}@${row.interview_id}(${row.state},required=${row.required_scorecard})`)
+    .join(' ')
+  addStep('seed.demo_interviews', null,
+    `application=${seed.demo_interviews.application_id} interviews=[${interviews}] interviewers=[${interviewers}]`,
+    { ok: true })
+  addStep('seed.demo_interviews.negative', null,
+    `802 上 103 的 interviewer 行=${seed.negative.interviewer_rows}（要求 0，只查不删）ok=${seed.negative.ok}`,
+    { ok: seed.negative.ok })
+  for (const issue of seed.issues) addStep('seed.issue', null, issue, { ok: false })
+}
+
+/**
  * 组装 `BOOTSTRAP_RESULT` 的单行 JSON（所有键始终存在；拿不到的值用 null，不编造）。
  * @param input - 汇总字段。
  */
@@ -477,7 +765,7 @@ function makeResult(input) {
   const {
     cfg, config, tenantId, actorId, mode, outcome, exitCode, state,
     job, rubric, approval, approvalOutcome, pointer, gate, writes, steps,
-    migration, actorInfo, issues, error,
+    migration, actorInfo, issues, error, seed,
   } = input
   const database = cfg === null ? (config.database ?? null) : cfg.database
   return {
@@ -501,6 +789,8 @@ function makeResult(input) {
     gate,
     writes,
     steps,
+    // D5 W1 幂等演示种子快照（steps 里也有明细；配置失败/被拒路径为 null）。
+    seed: seed ?? null,
     migration: migration ?? null,
     actor: actorInfo ?? null,
     ...(issues === undefined ? {} : { issues: [...issues] }),
@@ -561,6 +851,8 @@ async function run(env) {
     approveValue: null,
     migration: null,
     actorInfo: null,
+    seed: null,
+    seedIssues: [],
   }
   const addStep = (step, tool, summary, fields = {}) => {
     const entry = { index: steps.length + 1, step, tool, summary, ...fields }
@@ -650,6 +942,12 @@ async function run(env) {
     } else {
       addStep('gate.pre-write', null, 'skipped (state=NO_OP：不问人、零写入)', { ok: true })
     }
+
+    // ---- 3.6 D5 W1 幂等演示种子（闸门之后；deny 已在上面返回 3，零写入）----
+    ctx.seed = await seedDemoData(pool, cfg)
+    addSeedSteps(addStep, ctx.seed)
+    writes.push(...ctx.seed.write_steps)
+    ctx.seedIssues = [...ctx.seed.issues]
 
     // ---- 3.5 纯重放：NO_OP 到此为止（不调任何工具、零写入、exit 0） ----
     if (ctx.state === 'NO_OP') {
@@ -752,6 +1050,13 @@ async function run(env) {
 
     const outcome = alignment.ok ? 'BOOTSTRAPPED' : 'FAILED'
     const exitCode = alignment.ok ? 0 : 1
+    const resultIssues = [...ctx.seedIssues]
+    if (!alignment.ok) {
+      resultIssues.push(
+        `读回不一致：pointer_ok=${alignment.pointer_ok} approval_effective=${alignment.effective}`
+          + ` hash_match=${alignment.hash_match}`,
+      )
+    }
     return {
       header,
       result: makeResult({
@@ -783,14 +1088,10 @@ async function run(env) {
         gate: gateBlock(ctx),
         writes: { written: writes.length > 0, steps: [...writes] },
         steps,
+        seed: ctx.seed,
         migration: ctx.migration,
         actorInfo: ctx.actorInfo,
-        ...(alignment.ok ? {} : {
-          issues: [
-            `读回不一致：pointer_ok=${alignment.pointer_ok} approval_effective=${alignment.effective}`
-              + ` hash_match=${alignment.hash_match}`,
-          ],
-        }),
+        ...(resultIssues.length === 0 ? {} : { issues: resultIssues }),
       }),
     }
   } catch (error) {
@@ -798,32 +1099,34 @@ async function run(env) {
     // 连接/密码/库不存在等按"配置前置不满足"归 exit 2；其余按 1。
     const prerequisiteCodes = new Set(['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', '28P01', '3D000', '42P01'])
     const isPrerequisite = error instanceof PrerequisiteError || (info.code !== null && prerequisiteCodes.has(info.code))
-    const issues = error instanceof PrerequisiteError ? error.issues : undefined
-    return {
-      header,
-      result: makeResult({
-        cfg,
-        config,
-        tenantId,
-        actorId,
-        mode,
-        outcome: 'FAILED',
-        exitCode: isPrerequisite ? 2 : 1,
-        state: ctx.state ?? null,
-        job: null,
-        rubric: null,
-        approval: null,
-        approvalOutcome: null,
-        pointer: { before: ctx.snapshot?.job?.current_rubric_version_id ?? null, after: null, aligned: false },
-        gate: gateBlock(ctx),
-        writes: { written: writes.length > 0, steps: [...writes] },
-        steps,
-        migration: ctx.migration,
-        actorInfo: ctx.actorInfo,
-        ...(issues === undefined ? {} : { issues }),
-        error: info,
-      }),
-    }
+    const issues = [
+      ...(error instanceof PrerequisiteError ? error.issues : []),
+      ...(ctx.seedIssues ?? []),
+    ]
+    const errorResult = makeResult({
+      cfg,
+      config,
+      tenantId,
+      actorId,
+      mode,
+      outcome: 'FAILED',
+      exitCode: isPrerequisite ? 2 : 1,
+      state: ctx.state ?? null,
+      job: null,
+      rubric: null,
+      approval: null,
+      approvalOutcome: null,
+      pointer: { before: ctx.snapshot?.job?.current_rubric_version_id ?? null, after: null, aligned: false },
+      gate: gateBlock(ctx),
+      writes: { written: writes.length > 0, steps: [...writes] },
+      steps,
+      seed: ctx.seed,
+      migration: ctx.migration,
+      actorInfo: ctx.actorInfo,
+      ...(issues.length === 0 ? {} : { issues }),
+      error: info,
+    })
+    return { header, result: errorResult }
   } finally {
     if (pool !== null) await closePool(pool)
   }
@@ -908,8 +1211,10 @@ async function finishReadOnlyOutcome(input) {
     gate: gateBlock(ctx),
     writes: { written: ctx.writes.length > 0, steps: [...ctx.writes] },
     steps: ctx.steps,
+    seed: ctx.seed ?? null,
     migration: ctx.migration,
     actorInfo: ctx.actorInfo,
+    ...(ctx.seedIssues.length === 0 ? {} : { issues: [...ctx.seedIssues] }),
   })
 }
 

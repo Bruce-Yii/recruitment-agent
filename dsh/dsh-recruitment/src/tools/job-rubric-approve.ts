@@ -81,6 +81,7 @@ import {
 } from '../db/pool.ts'
 // 事件名只从注册表取（`src/runtime/event-types.ts`）；机检测试会扫发射点。
 import { EVENT_TYPES } from '../runtime/event-types.ts'
+import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
 
 /** 工具名（模型可见，冻结；与 `recruitment_job_create` / `_update` 同一命名风格）。 */
 export const JOB_RUBRIC_APPROVE_TOOL = 'recruitment_job_rubric_approve'
@@ -115,8 +116,8 @@ export interface ApprovalRequester {
   }): Promise<string>
 }
 
-/** 本工具的依赖：库配置是第一个位置参数，approval 是可选第二组依赖（D-79）。 */
-export interface JobRubricApproveDeps {
+/** 本工具的依赖：库配置是第一个位置参数，approval / identity 是可选的第二组依赖。 */
+export interface JobRubricApproveDeps extends ToolActorDeps {
   /** DSH `ctx.approval` 的窄接口。缺省 = 一律拒绝（headless 恒 fail closed）。 */
   readonly approval?: ApprovalRequester
 }
@@ -1093,7 +1094,8 @@ const DESCRIPTION = [
 /**
  * 造真实的 rubric 批准工具。
  * @param database - 已解析的库配置（tenant/actor 只从这里来，模型无法传入）。
- * @param deps - 可选依赖；`approval` 缺省时写库一律被拒（D-79 fail closed）。
+ * @param deps - 可选依赖；`approval` 缺省时写库一律被拒（D-79 fail closed）；
+ *   `identity` 由 `src/index.ts` 装配（产品路径），缺省 = 仅测试兼容的 legacy actor。
  */
 export function createJobRubricApproveTool(
   database: ResolvedDatabaseConfig,
@@ -1108,6 +1110,9 @@ export function createJobRubricApproveTool(
       return false
     },
     async execute(rawArgs: unknown, exec: unknown): Promise<unknown> {
+      // 写身份先于建连解析：identity 已装配时缺失映射在此 fail-closed（零写入）。
+      const writeActor = resolveWriteActor(exec, deps.identity, database.actor_id)
+      const writeConfig: ResolvedDatabaseConfig = { ...database, actor_id: writeActor.actor_id }
       // 先做契约层校验（不连库就失败），再把原始入参交给两阶段核心（核心会再校验一次，
       // 保证集成测试直调 in-transaction 函数时行为一致）。
       parseApproveArgs(rawArgs)
@@ -1116,7 +1121,7 @@ export function createJobRubricApproveTool(
       try {
         // 阶段 1（只读事务）：全部业务校验 + 纯重放短路。结束即提交，连接退回池里。
         const prepared = await withReadOnly(pool, (client) =>
-          prepareRubricApproval(client, database, rawArgs, { forUpdate: false }))
+          prepareRubricApproval(client, writeConfig, rawArgs, { forUpdate: false }))
         if (prepared.kind === 'NO_OP') return prepared.value
 
         // 阶段 2（**事务之外**问人）：D-101 的修复点 —— 等人期间没有任何未结束的事务，
@@ -1125,10 +1130,10 @@ export function createJobRubricApproveTool(
 
         // 阶段 3（写事务）：`for update` 复校验 —— 并发窗口里别人已批准且指针已对齐
         // ⇒ 返回该 NO_OP 结果、不写库；否则只做写入（不再重复问人）。
-        return await withActor(pool, database.actor_id, async (client) => {
-          const confirmed = await prepareRubricApproval(client, database, rawArgs, { forUpdate: true })
+        return await withActor(pool, writeActor.actor_id, async (client) => {
+          const confirmed = await prepareRubricApproval(client, writeConfig, rawArgs, { forUpdate: true })
           if (confirmed.kind === 'NO_OP') return confirmed.value
-          return writeRubricApproval(client, database, confirmed)
+          return writeRubricApproval(client, writeConfig, confirmed)
         })
       } catch (error) {
         throw mapDatabaseError(error)

@@ -33,6 +33,7 @@ import {
   type ResolvedDatabaseConfig,
 } from '../db/pool.ts'
 import { buildThreeAxisLabels, type ThreeAxisLabels } from './candidate-get.ts'
+import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
 import {
   TEAM_ROLES,
   addTeamMember,
@@ -208,14 +209,16 @@ function descriptionArg(args: Record<string, unknown>): { description?: string |
 
 /**
  * 按动作执行一次团队配置调用（**唯一**实现；测试直接按动作调它）。
- * @param config - 已解析的库配置（租户/actor 只从这里来）。
+ * @param config - 已解析的库配置（租户只从这里来）。
  * @param args - 已通过 schema + 服务端校验的入参。
+ * @param writeActorId - 写动作的作者 actor（Demo Actor 解析结果；只读动作用不到）。
  * @returns 规范输出值。
  * @throws RecruitmentToolError - 领域层错误与 `NOT_CONFIGURED`。
  */
 async function runTeamOperation(
   config: ResolvedDatabaseConfig,
   args: Record<string, unknown>,
+  writeActorId: string = config.actor_id,
 ): Promise<ConfigTeamValue> {
   const operation = args.operation as TeamOperation
   const pool = createPool(config)
@@ -256,7 +259,7 @@ async function runTeamOperation(
     }
 
     if (operation === 'create') {
-      return await withActor(pool, config.actor_id, async (client) => {
+      return await withActor(pool, writeActorId, async (client) => {
         const created = await createTeam(client, {
           tenantId: config.tenant_id,
           code: requireArg<string>(args, 'code'),
@@ -267,7 +270,7 @@ async function runTeamOperation(
             ? {}
             : { memberActorIds: args.member_actor_ids as readonly string[] }),
           ...(args.member_team_role === undefined ? {} : { memberTeamRole: args.member_team_role as string }),
-          createdByActorId: config.actor_id,
+          createdByActorId: writeActorId,
         })
         const labels = await buildThreeAxisLabels(client, config.tenant_id)
         return {
@@ -282,13 +285,13 @@ async function runTeamOperation(
     }
 
     if (operation === 'add_member') {
-      return await withActor(pool, config.actor_id, async (client) => {
+      return await withActor(pool, writeActorId, async (client) => {
         const added = await addTeamMember(client, {
           tenantId: config.tenant_id,
           teamId: requireArg<string>(args, 'team_id'),
           actorId: requireArg<string>(args, 'member_actor_id'),
           ...(args.team_role === undefined ? {} : { teamRole: args.team_role as string }),
-          addedByActorId: config.actor_id,
+          addedByActorId: writeActorId,
         })
         const labels = await buildThreeAxisLabels(client, config.tenant_id)
         return {
@@ -303,7 +306,7 @@ async function runTeamOperation(
     }
 
     if (operation === 'remove_member') {
-      return await withActor(pool, config.actor_id, async (client) => {
+      return await withActor(pool, writeActorId, async (client) => {
         const removed = await removeTeamMember(client, {
           tenantId: config.tenant_id,
           teamId: requireArg<string>(args, 'team_id'),
@@ -322,7 +325,7 @@ async function runTeamOperation(
     }
 
     // operation === 'update'
-    return await withActor(pool, config.actor_id, async (client) => {
+    return await withActor(pool, writeActorId, async (client) => {
       const updated = await updateTeam(client, {
         tenantId: config.tenant_id,
         teamId: requireArg<string>(args, 'team_id'),
@@ -384,9 +387,13 @@ const DESCRIPTION = [
 /**
  * 造真实的招聘团队配置工具。
  * @param config - 已解析的库配置（模型无法传入租户/actor）。
+ * @param deps - 可选依赖：`identity` 由 `src/index.ts` 装配（产品路径）；缺省 = 测试兼容。
  * @returns 工具定义。
  */
-export function createConfigTeamTool(config: ResolvedDatabaseConfig): ReadonlyToolDefinition {
+export function createConfigTeamTool(
+  config: ResolvedDatabaseConfig,
+  deps: ToolActorDeps = {},
+): ReadonlyToolDefinition {
   return {
     name: CONFIG_TEAM_TOOL_NAME,
     description: DESCRIPTION,
@@ -410,9 +417,13 @@ export function createConfigTeamTool(config: ResolvedDatabaseConfig): ReadonlyTo
     isConcurrencySafe(): boolean {
       return false
     },
-    async execute(rawArgs: unknown): Promise<unknown> {
+    async execute(rawArgs: unknown, exec: unknown): Promise<unknown> {
       const args = parseContractArgs(PARAMS, rawArgs)
-      return await runTeamOperation(config, args)
+      // list/get 是只读动作：不要求 actor；其余动作先把写身份解析出来（失败即零写入）。
+      const operation = args.operation as TeamOperation
+      const isWrite = operation !== 'list' && operation !== 'get'
+      const writeActor = isWrite ? resolveWriteActor(exec, deps.identity, config.actor_id) : undefined
+      return await runTeamOperation(config, args, writeActor?.actor_id)
     },
   }
 }
