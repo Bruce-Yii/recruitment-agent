@@ -1,0 +1,17 @@
+{
+  "//": "引擎 vendor 子集的类型检查配置：宿主代码不打包（DSH 直接按 src/index.ts 源码执行），这个配置只用来给 src/engine 与其集成测试做 noEmit 类型检查。",
+  "//types": "node 22 types 对齐 package.json engines（^22.19.0 || >=24）；运行时是 Node 24。",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023"],
+    "strict": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": ["node"],
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/engine/**/*.ts", "test/integration/engine-mechanisms-pg.test.ts"]
+}
