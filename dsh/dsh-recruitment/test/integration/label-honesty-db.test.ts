@@ -20,12 +20,18 @@ import type { DatabaseClient, ResolvedDatabaseConfig } from '../../src/db/pool.t
 import { readCandidateValue } from '../../src/tools/candidate-get.ts'
 import { scheduleInTransaction } from '../../src/tools/interview-schedule.ts'
 import { createJobInTransaction } from '../../src/tools/job-create.ts'
+// 2026-11-14 第二轮：三个**读库**工具的出口标签（`docs/23` P2-03 漏网的那三处）。
+import { createJobGetTool, readJobValue } from '../../src/tools/job-get.ts'
+import { getInTransaction } from '../../src/tools/interview-get.ts'
+import { readTranscriptInTransaction } from '../../src/tools/transcript-read.ts'
 import {
   DEMO_DEPARTMENT,
+  DEMO_JOB,
   HR_ACTOR,
   TENANT,
   createTestPool,
   inRolledBackTx,
+  one,
   seedScenario,
   testDatabaseConfig,
   uniqueSuffix,
@@ -38,6 +44,8 @@ const pool = createTestPool(cfg)
 const DEMO_CANDIDATE = '11111111-1111-4111-8111-000000000601'
 /** 演示租户的种子面试官。 */
 const INTERVIEWER_A = '11111111-1111-4111-8111-000000000104'
+/** 演示租户里一场有转写产物的面试（`0002_seed`：meeting 0901 → artifact a01，provenance=FIXTURE）。 */
+const DEMO_INTERVIEW = '11111111-1111-4111-8111-000000000801'
 
 /** 服务端"现在"（与集成测试其它文件同一注入口径）。 */
 const NOW = Date.parse('2026-11-13T00:00:00Z')
@@ -218,6 +226,157 @@ test('正面证据存在时 provenance=LIVE：同一 job_create / candidate_get 
       downgraded.labels,
       { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'NOT_CONNECTED' },
       'job_create(合成标记优先)',
+    )
+  })
+})
+
+/**
+ * 在"被显式声明为非合成"的租户里造一条最小可读链：job → job_version → candidate → application → interview。
+ *
+ * 为什么要造链：`provenance=LIVE` 只有在**同一个租户**里真的读到行才算证明；
+ * 只验 FIXTURE 不能排除"把标签写死成 FIXTURE"这种反向的谎。
+ * @param client - 事务连接（结束回滚）。
+ * @returns 该租户的配置 + 岗位 id + 面试 id。
+ */
+async function seedDeclaredRealReadChain(client: DatabaseClient): Promise<{
+  readonly cfg: ResolvedDatabaseConfig
+  readonly jobId: string
+  readonly interviewId: string
+}> {
+  const real = await insertDeclaredRealTenant(client)
+  // 阶段目录是**按租户**的（`fk_application_stage_catalog` = (tenant_id, code)）：新租户必须自己有行，
+  // 否则连"造一个 use case 的申请"都过不了外键。从演示租户复制 12 个阶段（同一事务，结束回滚）。
+  await client.query(
+    `insert into recruitment.stage_catalog (tenant_id, code, name, sort_order, in_v1_scope)
+     select $1, code, name, sort_order, in_v1_scope
+       from recruitment.stage_catalog where tenant_id = $2`,
+    [real.cfg.tenant_id, TENANT],
+  )
+  const suffix = uniqueSuffix()
+  const jobId = await one(client,
+    `insert into recruitment.job (tenant_id, department_id, code, title, status)
+     values ($1, $2, $3, $4, 'OPEN') returning id`,
+    [real.cfg.tenant_id, real.departmentId, `LBL-${suffix}`.slice(0, 40), '非合成租户的岗位'])
+  const jobVersionId = await one(client,
+    `insert into recruitment.job_version
+       (tenant_id, job_id, version_no, description_md, payload_hash, created_by_actor_id)
+     values ($1, $2, 1, 'JD', $3, $4) returning id`,
+    [real.cfg.tenant_id, jobId, digestOf({ md: 'JD' }), real.cfg.actor_id])
+  const candidateId = await one(client,
+    `insert into recruitment.candidate (tenant_id, display_name, identity_status)
+     values ($1, $2, 'ACTIVE') returning id`,
+    [real.cfg.tenant_id, `非合成候选人-${suffix}`])
+  const applicationId = await one(client,
+    `insert into recruitment.application
+       (tenant_id, candidate_id, job_id, job_version_id, lifecycle_status, current_stage_code)
+     values ($1, $2, $3, $4, 'ACTIVE', 'S7') returning id`,
+    [real.cfg.tenant_id, candidateId, jobId, jobVersionId])
+  const interviewId = await one(client,
+    `insert into recruitment.interview
+       (tenant_id, application_id, round_no, slot_code, stage_code, status,
+        scheduled_start_at, scheduled_end_at, timezone)
+     values ($1, $2, 1, 'DEFAULT', 'S8', 'SCHEDULED', $3, $4, 'Asia/Shanghai') returning id`,
+    // ck_interview_scheduled：SCHEDULED 必须有起止（本用例只验标签，取远期时段避免与真人时段撞车）。
+    [real.cfg.tenant_id, applicationId, START, new Date(START_MS + 60 * 60_000).toISOString()])
+  return { cfg: real.cfg, jobId, interviewId }
+}
+
+test('演示租户（ra_s6s7 合成数据）：三个**读库**工具出口都是 FIXTURE，**不出现 LIVE**', async () => {
+  // 1) recruitment_job_get：走生产入口（工具自己开池 + 只读事务）。
+  const jobGet = await createJobGetTool(cfg).execute({ job_id: DEMO_JOB }) as {
+    labels: Record<string, string>
+    rubric: { version_no: number } | null
+  }
+  assertThreeAxis(jobGet.labels, { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'CONNECTED' }, 'job_get')
+
+  await inRolledBackTx(pool, async (client) => {
+    // 2) recruitment_interview_get：真读演示租户的一场面试。
+    const interviewGet = await getInTransaction(client, cfg, { interview_id: DEMO_INTERVIEW }, NOW)
+    assertThreeAxis(
+      interviewGet.labels as Record<string, string>,
+      { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'CONNECTED' },
+      'interview_get',
+    )
+
+    // 3) recruitment_transcript_read：顶层的 provenance 与逐条产物的 provenance 不许互相矛盾。
+    const transcriptRead = await readTranscriptInTransaction(
+      client, cfg, { interview_id: DEMO_INTERVIEW, include_text: false }, NOW,
+    )
+    assertThreeAxis(
+      transcriptRead.labels as Record<string, string>,
+      { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'CONNECTED' },
+      'transcript_read',
+    )
+    const artifacts = (transcriptRead.transcript as { artifacts: Record<string, unknown>[] }).artifacts
+    assert.ok(artifacts.length > 0, '演示租户这场面试应当有产物（否则本轮不构成"读到了行"的证据）')
+    for (const artifact of artifacts) {
+      // 旧实现在这里会输出顶层 LIVE 而每条产物 FIXTURE —— 同一个响应自相矛盾。
+      assert.notEqual(artifact.provenance, 'LIVE', '演示租户的转写产物不许标 LIVE')
+    }
+
+    // 三处一起再断言一次：合成数据里没有任何一个读工具能靠"读到了库里的行"拿到 LIVE。
+    for (const [label, labels] of [
+      ['job_get', jobGet.labels],
+      ['interview_get', interviewGet.labels],
+      ['transcript_read', transcriptRead.labels],
+    ] as const) {
+      assert.notEqual((labels as Record<string, unknown>).provenance, 'LIVE', `${label}: 合成数据不许标 LIVE`)
+    }
+  })
+})
+
+test('正面证据存在时三个读库工具回 LIVE：被显式声明为非合成的租户里，标签随租户事实变', async () => {
+  await inRolledBackTx(pool, async (client) => {
+    const real = await seedDeclaredRealReadChain(client)
+    const asOfIso = new Date(NOW).toISOString()
+
+    // 1) job_get（同一事务内的入口：与 execute 共用 queryJob + resolveTenantProvenance）。
+    const jobGet = await readJobValue(client, real.cfg, { job_id: real.jobId }, asOfIso)
+    assertThreeAxis(jobGet.labels, { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' }, 'job_get(LIVE)')
+
+    // 2) interview_get。
+    const interviewGet = await getInTransaction(client, real.cfg, { interview_id: real.interviewId }, NOW)
+    assertThreeAxis(
+      interviewGet.labels as Record<string, string>,
+      { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' },
+      'interview_get(LIVE)',
+    )
+
+    // 3) transcript_read（该面试还没有产物：一条都没标 FIXTURE，租户声明是唯一变量）。
+    const transcriptRead = await readTranscriptInTransaction(
+      client, real.cfg, { interview_id: real.interviewId, include_text: false }, NOW,
+    )
+    assertThreeAxis(
+      transcriptRead.labels as Record<string, string>,
+      { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' },
+      'transcript_read(LIVE)',
+    )
+
+    // 合成标记优先：同一租户加一条 stage_catalog(demo=true)，三个读工具都必须退回 FIXTURE。
+    await insertBusinessConfig(client, real.cfg.tenant_id, real.cfg.actor_id, 'stage_catalog', {
+      catalog_version: 1,
+      demo: true,
+      stages: [],
+    })
+    const downgradedJob = await readJobValue(client, real.cfg, { job_id: real.jobId }, asOfIso)
+    assertThreeAxis(
+      downgradedJob.labels,
+      { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'CONNECTED' },
+      'job_get(合成标记优先)',
+    )
+    const downgradedInterview = await getInTransaction(client, real.cfg, { interview_id: real.interviewId }, NOW)
+    assertThreeAxis(
+      downgradedInterview.labels as Record<string, string>,
+      { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'CONNECTED' },
+      'interview_get(合成标记优先)',
+    )
+    const downgradedTranscript = await readTranscriptInTransaction(
+      client, real.cfg, { interview_id: real.interviewId, include_text: false }, NOW,
+    )
+    assertThreeAxis(
+      downgradedTranscript.labels as Record<string, string>,
+      { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'CONNECTED' },
+      'transcript_read(合成标记优先)',
     )
   })
 })

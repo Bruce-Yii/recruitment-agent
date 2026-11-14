@@ -28,6 +28,9 @@ import type { ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { checkAsOf, contractError } from './contract.ts'
 import type { ContractErrorCode } from './contract.ts'
+// R4：`provenance` 的唯一判定实现（`contracts/tenant-provenance.md` §2）。
+// 演示租户（0002_seed）的行同样真的在库里 —— "读到了行"不是 `LIVE` 的证据。
+import { resolveTenantProvenance } from './candidate-get.ts'
 import {
   closePool,
   createPool,
@@ -1171,12 +1174,17 @@ export async function getInTransaction(
     }
   }
 
+  // R4：provenance 反映**这次调用**的数据来源（`contracts/tenant-provenance.md` §2），
+  // 不写死 `LIVE`：演示租户 / 缺声明 / 有合成标记 ⇒ `FIXTURE`（fail-closed）。
+  // trigger/connection 与它正交：会话内调用恒 MANUAL；connection 按其工具契约解释为"直连业务库"。
+  const provenance = await resolveTenantProvenance(client, tenantId)
+
   return {
     tool: TOOL_NAME,
     contract_version: CONTRACT_VERSION,
     status: 'OK',
     read_only: true,
-    labels: { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' },
+    labels: { provenance, trigger: 'MANUAL', connection: 'CONNECTED' },
     as_of: asOfIso,
     query,
     count: interviews.length,
@@ -1278,7 +1286,9 @@ export function createInterviewGetTool(config: ResolvedDatabaseConfig): Readonly
   return {
     name: TOOL_NAME,
     description:
-      'Get interviews read straight from the business database (labels: LIVE/MANUAL/CONNECTED, read-only). '
+      'Get interviews read straight from the business database (labels: provenance is computed from the '
+      + 'tenant\'s synthetic marker — FIXTURE for demo/undeclared tenants, LIVE only when the tenant is explicitly '
+      + 'declared non-synthetic; trigger=MANUAL, connection=CONNECTED means "direct business DB read"; read-only). '
       + 'Pass exactly one of interview_id (one interview) or application_id (every interview under that '
       + 'application, ordered by round_no then slot_code; round_no narrows it to one round and is rejected '
       + 'with interview_id). Both ids must be UUIDs. For each interview it returns the interview row '

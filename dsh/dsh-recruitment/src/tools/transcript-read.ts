@@ -22,6 +22,9 @@
 import { parseContractArgs, toParameterSchema, type ParamMap } from './args.ts'
 import { checkAsOf } from './contract.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
+// R4：`provenance` 的唯一判定实现（`contracts/tenant-provenance.md` §2）。
+// 演示租户（0002_seed）的转写行同样真的在库里 —— "读到了行"不是 `LIVE` 的证据。
+import { resolveTenantProvenance } from './candidate-get.ts'
 import { closePool, createPool, withReadOnly, type DatabaseClient, type ResolvedDatabaseConfig } from '../db/pool.ts'
 
 const TOOL_NAME = 'recruitment_transcript_read'
@@ -449,7 +452,12 @@ const OUTPUT_SCHEMA = {
       additionalProperties: false,
       required: ['provenance', 'trigger', 'connection'],
       properties: {
-        provenance: { type: 'string', enum: ['LIVE'], description: '数据来自真实业务库行（不声明外部平台已接通）。' },
+        provenance: {
+          type: 'string',
+          enum: ['LIVE', 'FIXTURE'],
+          description: '按本次调用的租户事实算（contracts/tenant-provenance.md §2）：演示租户/缺声明 ⇒ FIXTURE。'
+            + '**不**汇总 artifacts 的 provenance（逐条在 transcript.artifacts[] 里）。',
+        },
         trigger: { type: 'string', enum: ['MANUAL'], description: '人/模型在会话里调用，恒 MANUAL。' },
         connection: { type: 'string', enum: ['CONNECTED'], description: '直连业务库（与会议平台无关）。' },
       },
@@ -1026,13 +1034,19 @@ export async function readTranscriptInTransaction(
   put(interviewValue, 'scheduled_start_at', iso(interview.scheduled_start_at))
   put(interviewValue, 'scheduled_end_at', iso(interview.scheduled_end_at))
 
+  // R4：顶层 `labels.provenance` 反映**这次调用**的数据来源（`contracts/tenant-provenance.md` §2），
+  // 不写死 `LIVE`。演示租户 / 缺声明 / 有合成标记 ⇒ `FIXTURE`（fail-closed）。
+  // 注意：逐条产物自己的三维在 `transcript.artifacts[]` 里回显，**不汇总**进 `labels`
+  // （`contracts/interview/tool-contracts.md` §1.4）；`trigger`/`connection` 与 provenance 正交。
+  const provenance = await resolveTenantProvenance(client, tenantId)
+
   return {
     tool: TOOL_NAME,
     contract_version: CONTRACT_VERSION,
     status: 'OK',
     read_only: true,
     as_of: asOf,
-    labels: { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' },
+    labels: { provenance, trigger: 'MANUAL', connection: 'CONNECTED' },
     interview: interviewValue,
     transcript,
     warnings,
@@ -1054,7 +1068,9 @@ const DESCRIPTION =
   + 'wait_minutes 可被 business_config(transcript_policy) 覆盖。'
   + '错误码：INVALID_ARGS（reason_code 见 detail，含 AS_OF_FORMAT / AS_OF_IN_FUTURE）/ '
   + 'NOT_FOUND(INTERVIEW_NOT_FOUND|ARTIFACT_NOT_FOUND) / NOT_CONFIGURED。'
-  + '三维标签：顶层 labels 固定 LIVE/MANUAL/CONNECTED（= 直连业务库，与会议平台无关）；'
+  + '三维标签：顶层 labels.provenance 按本次调用的租户事实算（contracts/tenant-provenance.md §2：'
+  + '演示租户/缺声明/有合成标记 ⇒ FIXTURE，只有显式声明非合成的租户才可能是 LIVE），'
+  + 'trigger 恒 MANUAL，connection=CONNECTED 只表示"直连业务库"（与会议平台无关）；'
   + '每条产物的 provenance/trigger_mode/connection_state 在 transcript.artifacts[] 里**逐条**回显，不汇总。'
   + '警告封闭集：TRANSCRIPT_NOT_READY / NO_CANONICAL / RECORD_MISSING / RECORD_NOT_READY / '
   + 'ARTIFACT_FILTER_NOT_CANONICAL。'

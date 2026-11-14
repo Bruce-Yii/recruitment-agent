@@ -117,7 +117,9 @@ test('READY / CANONICAL_STATUS：正文逐字节相等、分页能拼回原文�
     const imported = await importContent(client, fixture.interviewId, content)
 
     const value = await readTranscriptInTransaction(client, cfg, { interview_id: fixture.interviewId }, Date.now())
-    assert.deepEqual(value.labels, { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' })
+    // R4（`contracts/tenant-provenance.md` §2）：夹具在演示租户里 ⇒ 顶层 provenance=FIXTURE。
+    // 旧断言写 LIVE，和下面"每条产物都是 FIXTURE"自相矛盾（同一个响应两套真假）。
+    assert.deepEqual(value.labels, { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'CONNECTED' })
     const transcript = value.transcript as Record<string, unknown> & {
       state: string
       reason_code: string
@@ -142,7 +144,7 @@ test('READY / CANONICAL_STATUS：正文逐字节相等、分页能拼回原文�
     assert.equal(transcript.text.has_more, false)
     assert.equal(transcript.text.offset, 0)
 
-    // 每条产物回显**自己的**三维标签（顶层 labels 是 LIVE/MANUAL/CONNECTED，两者不许混）
+    // 每条产物回显**自己的**三维标签（顶层 labels 是租户口径的 FIXTURE/MANUAL/CONNECTED，两者不许混）
     const artifact = transcript.artifacts[0] as Record<string, unknown>
     assert.equal(artifact.provenance, 'FIXTURE')
     assert.equal(artifact.trigger_mode, 'MANUAL')

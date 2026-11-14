@@ -47,6 +47,9 @@ const PLUGIN_DIR = new URL('../../', import.meta.url)
 /** 读工具的模块图（手工列全：漏一个就等于没扫）。 */
 const READ_MODULE_GRAPH = [
   'src/tools/transcript-read.ts',
+  // R4（2026-11-14）：顶层 labels.provenance 改由 `resolveTenantProvenance` 算 ⇒ 多一个依赖。
+  // 把它一起纳入"零 DML"扫描（而不是只放宽 import 白名单）：新依赖必须同样只读。
+  'src/tools/candidate-get.ts',
   'src/tools/args.ts',
   'src/tools/contract.ts',
   'src/tools/errors.ts',
@@ -87,7 +90,9 @@ test('读工具只依赖允许的本地模块，并声明 read_only: true', asyn
   assert.match(text, /const TOOL_NAME = 'recruitment_transcript_read'/)
   assert.match(text, /isConcurrencySafe\(\):\s*boolean\s*\{\s*return true/)
   const localImports = [...text.matchAll(/from\s+'([^']+)'/g)].map((match) => match[1] ?? '')
-  const allowed = new Set(['./args.ts', './contract.ts', './definition.ts', '../db/pool.ts'])
+  // `./candidate-get.ts` 只提供 `resolveTenantProvenance`（一条 SELECT `business_config`/`organization`），
+  // 且已纳入上面 `READ_MODULE_GRAPH` 的零 DML 扫描 —— 不是把只读约束放宽，而是让新依赖同样受检。
+  const allowed = new Set(['./args.ts', './contract.ts', './definition.ts', '../db/pool.ts', './candidate-get.ts'])
   for (const specifier of localImports) {
     assert.ok(allowed.has(specifier), `读工具多了一个依赖：${specifier}`)
   }

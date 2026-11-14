@@ -130,7 +130,7 @@ test('O4 render 不打印 undefined / null 字面量', () => {
 test('O5 输出 schema 声明的每个字段都真的存在于规范值里', () => {
   const value = toValue({ ...BASE_OUTPUT, fields: {} }, 40) as unknown as Record<string, unknown>
   for (const key of [
-    'provenance', 'stub', 'source', 'blocks', 'block_count', 'truncated',
+    'provenance', 'provenance_basis', 'stub', 'source', 'blocks', 'block_count', 'truncated',
     'fields', 'screening', 'issues', 'needs_visual',
   ]) {
     assert.equal(key in value, true, `输出缺少 schema 要求的键 ${key}`)

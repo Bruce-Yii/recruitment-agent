@@ -237,7 +237,10 @@ async function read(client: DatabaseClient, args: unknown): Promise<LooseOutput>
   assert.equal(output.contract_version, '1.0.0')
   assert.equal(output.status, 'OK', '警告不改变 status')
   assert.equal(output.read_only, true)
-  assert.deepEqual(output.labels, { provenance: 'LIVE', trigger: 'MANUAL', connection: 'CONNECTED' })
+  // R4（`contracts/tenant-provenance.md` §2）：本文件的夹具都在演示租户 `ra_s6s7`
+  // （0002_seed 的合成数据、`stage_catalog.demo=true`）里 ⇒ provenance 必须是 FIXTURE。
+  // 旧断言写 `LIVE` 是"读到了库里的行 = 数据是真的"那条口径，正是 P2-03 要拆掉的。
+  assert.deepEqual(output.labels, { provenance: 'FIXTURE', trigger: 'MANUAL', connection: 'CONNECTED' })
   assert.equal(output.count, output.interviews.length, 'count 必须恒等于 interviews.length')
   return output
 }
