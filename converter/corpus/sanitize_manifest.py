@@ -9,10 +9,17 @@ import json, os, sys
 from pathlib import Path
 
 ROOTS = {
-    "talent_pool": r"D:\12412\dsh工作区\projects\resume-talent-pool\.snap-cache\research\content",
-    "odoo_samples": r"D:\12412\dsh工作区\orchestration\recruitment-os\work\r2\proof\A\src\odoo-20.0\addons\hr_recruitment\static\applicant_cvs",
-    "codex_converted": r"D:\12412\CodexWorkspace\10-projects\resume-md-results\work\urgent-zh-20261028\docx-src",
-    "synthetic": r"D:\12412\dsh工作区\projects\recruitment-os\converter\corpus\synthetic",
+    # 一次性迁移工具的输入根：**不在仓库里写死盘符**（R7：机器路径不入库）。
+    # 换机器时用环境变量声明，例如
+    #   $env:CORPUS_ROOT_TALENT_POOL='D:\...\content'
+    #   $env:CORPUS_ROOT_ODOO_SAMPLES='D:\...\applicant_cvs'
+    #   $env:CORPUS_ROOT_CODEX_CONVERTED='D:\...\docx-src'
+    #   $env:CORPUS_ROOT_SYNTHETIC='<repo>\converter\corpus\synthetic'
+    # 未声明的根不会静默兜底：该行的 path 原样保留，由调用方发现并补配置。
+    "talent_pool": os.environ.get("CORPUS_ROOT_TALENT_POOL", ""),
+    "odoo_samples": os.environ.get("CORPUS_ROOT_ODOO_SAMPLES", ""),
+    "codex_converted": os.environ.get("CORPUS_ROOT_CODEX_CONVERTED", ""),
+    "synthetic": os.environ.get("CORPUS_ROOT_SYNTHETIC", ""),
 }
 
 def portable(row):
