@@ -1,11 +1,17 @@
 // 集成测试的公共底座（**不是**测试文件，文件名不含 .test）。
 //
-// 三条纪律：
+// 四条纪律：
 //   1. 每个用例都在自己的事务里跑，**结束时一律 ROLLBACK** —— 测试不污染 ra_s6s7。
 //   2. 连不上库就**失败**（不静默 skip）：R3 要求 `skipped === 0` 才算绿，
 //      所以缺环境变量时这里直接抛，让红变红，而不是让绿变成"没跑"。
 //   3. 只用 `ra_s6s7`（任务指定的自建库），不碰其它库。
+//   4. **并发跑（`node --test` 默认并行）是常态**，所以：共享库里的断言只能在
+//      REPEATABLE READ 的同一快照里比较；需要真提交的用例必须用 `createIsolatedTestDatabase()`
+//      拿一个一次性空库，不许留在共享库里靠"加锁串行"糊过去。
 import pg from 'pg'
+import { readFileSync, readdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { resolveDatabaseConfig, type DatabaseClient, type ResolvedDatabaseConfig } from '../../src/db/pool.ts'
 import { digestOf } from '../../src/tools/contract.ts'
@@ -47,8 +53,160 @@ export function createTestPool(cfg: ResolvedDatabaseConfig): pg.Pool {
   })
 }
 
+// ---------------------------------------------------------------------------
+//  一次性空库：需要"真提交 + 跨事务可见"的测试只能独占数据库
+// ---------------------------------------------------------------------------
+
+/** 一次性测试库的句柄。 */
+export interface IsolatedTestDatabase {
+  /** 库名（`ra_<label>_<pid>_<rand>`，并发跑的每个文件都不同）。 */
+  readonly name: string
+  /** 只指向这个库的连接池。 */
+  readonly pool: pg.Pool
+  /** 已应用的迁移版本（按顺序）。 */
+  readonly migrations: readonly string[]
+  /** 关闭连接池并删库（`WITH (FORCE)`，幂等）。 */
+  drop(): Promise<void>
+}
+
+const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', 'db', 'migrations')
+
+/**
+ * 按 0001→N 顺序重放全部迁移（空库顺序重放本身就是一条验收：迁移链可在空库跑通）。
+ * @returns 迁移文件名（有序）。
+ */
+export function migrationFiles(): readonly string[] {
+  const all = readdirSync(MIGRATIONS_DIR)
+    .filter((name) => /^\d{4}_[a-z0-9_]+\.sql$/.test(name))
+    .sort()
+  if (all.length < 12) {
+    throw new Error(`expected at least 12 migrations (0001..0012), found ${all.length}: ${all.join(', ')}`)
+  }
+  return all
+}
+
+/**
+ * 生成一个并发安全的一次性库名（含 pid + 随机串，重跑也不会撞）。
+ * @param label - 可读后缀（≤20 个 `[a-z0-9_]`）。
+ * @returns 合法的库名。
+ */
+export function nextIsolatedDatabaseName(label: string): string {
+  const suffix = `${process.pid.toString(36)}_${Math.floor(Math.random() * 1e9).toString(36)}`
+  const safeLabel = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 20)
+  const name = `ra_${safeLabel}_${suffix}`.slice(0, 60)
+  if (!/^[a-z0-9_]+$/.test(name)) throw new Error(`unsafe database name: ${name}`)
+  return name
+}
+
+/**
+ * 建一个一次性空库并把 0001→N 全部应用。
+ *
+ * 为什么需要它（而不是往 `ra_s6s7` 里写）：有些验收点恰恰是**跨事务、跨连接**的事实
+ * （引擎的 effect 队列是**全局按 kind 消费**的 —— `src/engine/app/effects.ts:110-119`
+ * 没有 tenant 过滤；Outbox 的 `message_id` 全局唯一；`event_inbox` / `business_task`
+ * 有 no-delete 触发器不许清理）。这类测试如果共用 `ra_s6s7`，两个进程会互相偷行
+ * （实测：effect 行凭空消失、`count(*)` 断言 1 !== 0），加锁串行只是掩盖症状。
+ * 每个文件一个库，才是根因隔离。
+ * @param label - 库名后缀（便于并发运行时定位）。
+ * @returns 可用的连接池 + `drop()`。
+ */
+export async function createIsolatedTestDatabase(label: string): Promise<IsolatedTestDatabase> {
+  const cfg = testDatabaseConfig()
+  const name = nextIsolatedDatabaseName(label)
+
+  await withAdminClient(cfg, async (admin) => {
+    await admin.query(`drop database if exists ${name} with (force)`)
+    await admin.query(`create database ${name}`)
+  })
+
+  const pool = createTestPool({ ...cfg, database: name, max: 4 })
+  const migrations = migrationFiles()
+  const client = await pool.connect()
+  try {
+    for (const file of migrations) {
+      const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8')
+      await client.query(sql)
+    }
+    // runtime ↔ 引擎 Effects/Outbox 交界的表必须真的存在（否则测试会绿成"没接线"）。
+    const engine = await client.query<{ effect: string | null; outbox: string | null }>(
+      "select to_regclass('recruitment.engine_effect')::text as effect, to_regclass('recruitment.engine_outbox')::text as outbox",
+    )
+    if (engine.rows[0]?.effect === null || engine.rows[0]?.outbox === null) {
+      throw new Error('engine_effect/engine_outbox tables are missing: apply 0012_engine_state.sql')
+    }
+  } catch (error) {
+    client.release()
+    await pool.end().catch(() => {})
+    await dropIsolatedDatabase(name, cfg).catch(() => {})
+    throw error
+  }
+  client.release()
+
+  let dropped = false
+  return {
+    name,
+    pool,
+    migrations,
+    async drop(): Promise<void> {
+      if (dropped) return
+      dropped = true
+      await pool.end().catch(() => {})
+      await dropIsolatedDatabase(name, cfg)
+    },
+  }
+}
+
+/**
+ * 守卫：这个库必须**不是**共享的 `ra_s6s7`。
+ * 真提交的用例（引擎队列 / Outbox / 禁删表）用共享库就会与并行跑的别的文件互相偷数据。
+ * @param name - 用例实际连接的库名。
+ */
+export function assertPrivateDatabase(name: string): void {
+  const shared = process.env.RECRUITMENT_TEST_DB ?? 'ra_s6s7'
+  if (name === shared) {
+    throw new Error(
+      `并行跑会互相偷数据：这个用例必须用 createIsolatedTestDatabase() 独占一个空库，`
+      + `不许直接写共享库 ${shared}（见 test/isolation.test.ts）`,
+    )
+  }
+}
+
+/** 用一条 postgres 管理连接执行 `fn`（建库 / 删库）。 */
+async function withAdminClient(
+  cfg: ResolvedDatabaseConfig,
+  fn: (admin: pg.Client) => Promise<void>,
+): Promise<void> {
+  const admin = new pg.Client({
+    host: cfg.host,
+    port: cfg.port,
+    user: cfg.user,
+    password: cfg.password,
+    database: 'postgres',
+    application_name: 'recruitment-test-admin',
+  })
+  await admin.connect()
+  try {
+    await fn(admin)
+  } finally {
+    await admin.end()
+  }
+}
+
+/** 删掉一次性测试库（`WITH (FORCE)`，幂等）。 */
+async function dropIsolatedDatabase(name: string, cfg: ResolvedDatabaseConfig): Promise<void> {
+  await withAdminClient(cfg, async (admin) => {
+    await admin.query(`drop database if exists ${name} with (force)`)
+  })
+}
+
 /**
  * 在**必然回滚**的事务里执行 `fn`。
+ *
+ * `REPEATABLE READ` 是并发跑的硬前提：并行跑的另一个测试文件会往共享库提交行，
+ * READ COMMITTED 下每条语句取新快照，"写之前 count / 写之后 count"这类零写入断言
+ * 会被别人的提交污染（实测：全局 `count(*) from event_inbox` 在同一用例里 138 → 139）。
+ * REPEATABLE READ 让整笔事务只看同一个快照 + 自己的写，别人的提交既不会偷走行、
+ * 也不会让行数漂移。
  * @param pool - 测试连接池。
  * @param fn - 事务体（可以做 INSERT 造夹具）。
  * @returns `fn` 的返回值（ROLLBACK 之后）。
@@ -59,7 +217,7 @@ export async function inRolledBackTx<T>(
 ): Promise<T> {
   const client = await pool.connect()
   try {
-    await client.query('begin')
+    await client.query('begin isolation level repeatable read')
     await client.query("select set_config('recruitment.actor_id', $1, true)", [HR_ACTOR])
     return await fn(client)
   } finally {
@@ -68,6 +226,46 @@ export async function inRolledBackTx<T>(
     } finally {
       client.release()
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+//  命名空间：每个测试文件（= 每个 node --test 子进程）独占一套键
+// ---------------------------------------------------------------------------
+
+/**
+ * 本测试**文件**的命名空间。
+ *
+ * `node --test` 每个测试文件一个子进程 ⇒ `pid` 就是文件身份；再叠 4 位随机串，
+ * 保证「同一个文件被并行跑两份」（或 pid 被复用）也不会共用键空间。
+ * 需要真提交的夹具一律用 `namespacedKey()` 加这个前缀。
+ */
+export const FILE_NAMESPACE = `${process.pid.toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+
+/**
+ * 把业务键加上本文件的命名空间前缀。
+ * @param key - 业务键（如 `notice-1`）。
+ * @returns `<FILE_NAMESPACE>:<key>`。
+ */
+export function namespacedKey(key: string): string {
+  const full = `${FILE_NAMESPACE}:${key}`
+  assertOwnNamespace(full)
+  return full
+}
+
+/**
+ * 守卫：这个键必须属于本文件的命名空间。
+ *
+ * 用来**发现**"测试用了共享的可变全局状态"：如果某个键是写死的全局键，
+ * 并行跑的另一个测试文件会消费/覆盖它（引擎租约、唯一键、审计事件）。
+ * @param key - 要检查的键。
+ */
+export function assertOwnNamespace(key: string): void {
+  if (!key.startsWith(`${FILE_NAMESPACE}:`)) {
+    throw new Error(
+      `键 ${JSON.stringify(key)} 不在本测试文件的命名空间 ${FILE_NAMESPACE} 里：`
+      + '共享库的全局键会被并行跑的另一份/另一个测试文件偷走（见 test/isolation.test.ts）',
+    )
   }
 }
 
