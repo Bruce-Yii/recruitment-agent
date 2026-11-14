@@ -49,6 +49,10 @@ ADDED_CODES = {
     'resume_protected_attribute_present': ('soft', '识别到受保护属性并隔离，未进入筛选特征'),
     'resume_ocr_heading_inserted': ('soft', '标题来自 OCR 区域补读（正文仍为原生文本）'),
     'pdf_text_recovered_by_ocr': ('soft', '原生文本层含未解码字形，整页已由 OCR 重读；恢复文本 provenance=ocr，身份字段需交叉核对'),
+    # RTF reader（rtf_reader.py，2026-11-14）。RTF 是文本容器不是扫描件，所以没有
+    # OCR 类恢复码；这里只登记"读取本身失败/不可信"的两条 HARD 事实。
+    'rtf_no_text': ('hard', 'RTF 正文没有可解码的段落文本（空文档或整篇不可解）'),
+    'rtf_text_encoding_unread': ('hard', 'RTF 正文含按声明字符集无法解码的字节，已从正文剔除并声明；身份字段需核对原件'),
 }
 
 # doc 11 A4 覆盖 batch.py 的 soft 前缀：

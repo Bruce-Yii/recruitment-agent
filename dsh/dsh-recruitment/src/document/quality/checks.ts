@@ -114,9 +114,10 @@ function sameVisualRow(a: EvidenceLocator | null, b: EvidenceLocator | null): bo
   return minHeight > 0 && overlap >= 0.5 * minHeight
 }
 
-function mediaKind(mediaType: string): 'pdf' | 'docx' | 'image' | 'unknown' {
+function mediaKind(mediaType: string): 'pdf' | 'docx' | 'rtf' | 'image' | 'unknown' {
   if (mediaType === 'application/pdf' || mediaType.endsWith('/pdf')) return 'pdf'
   if (mediaType.includes('wordprocessingml')) return 'docx'
+  if (mediaType === 'application/rtf' || mediaType.endsWith('/rtf')) return 'rtf'
   if (mediaType.startsWith('image/')) return 'image'
   return 'unknown'
 }

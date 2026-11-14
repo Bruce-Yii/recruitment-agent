@@ -18,12 +18,20 @@ export const DOCUMENT_CONTENT_SCHEMA_VERSION = '1.0.0'
 /** 校验器接受的版本集合（新版本必须显式登记，不猜）。 */
 export const SUPPORTED_SCHEMA_VERSIONS = ['1.0.0'] as const
 
-/** 允许的媒体类型（封闭集合；与 docs/19 §2.1 的 `Media` 逐字一致）。 */
+/**
+ * 允许的媒体类型（封闭集合；与 docs/19 §2.1 的 `Media` 逐字一致）。
+ *
+ * 2026-11-14 增补：`application/rtf`。真实语料里有 RTF 简历，converter 的
+ * MuPDF 既认 PDF 也认 OOXML DOCX，但**不认 RTF**；为了让这份材料能被读，
+ * RTF 成了第五种一等媒体（reader = striprtf，纯 Python）。docs/19 原文仍写四种，
+ * 该文档不在本 lane 写范围，差异已记在 `src/document/README.md`。
+ */
 export const MEDIA_TYPES = [
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'image/png',
   'image/jpeg',
+  'application/rtf',
 ] as const
 
 /** 媒体类型。 */
@@ -109,8 +117,30 @@ export interface ImageLocator {
   readonly bbox?: BBox
 }
 
+/**
+ * RTF 定位：**段落序号**，不是页码 + 坐标。
+ *
+ * RTF 是流式文本容器，读取器不重建版面（列 / 文本框 / 表格几何都未核），所以：
+ *   * `paragraph` = **读取器输出块流里的 0-based 序号**（= 原文段落顺序），
+ *     可据此指回读取器的第 N 个 block，而不是编造一个"第几段"的字符偏移；
+ *     块定位必填（块必须可定位）。
+ *   * `page` = 逻辑页号（1-based）：只在 RTF **没有 `\\page` 硬分页符**时出现——
+ *     那时每个段落确实在第 1 页，这是格式等价事实；有分页符时读取器不重建逐页归属，
+ *     page 必须省略（不猜）。issue 的定位可以只有 page（问题指向"某页"，不指向具体段）。
+ *   * `bbox` 不存在：RTF 没有 PDF 用户空间坐标，不许伪造。
+ *
+ * 不变量：`paragraph` 与 `page` **至少有一个**（都不给 = 没有定位，不是"定位没问题"）。
+ */
+export interface RtfLocator {
+  readonly kind: 'rtf'
+  /** 读取器块流里的 0-based 段落序号（= 原文段落顺序）。 */
+  readonly paragraph?: number
+  /** 逻辑页号（1-based；仅当 RTF 没有硬分页符、或读取器能确定时出现）。 */
+  readonly page?: number
+}
+
 /** 证据定位（可指回原件的最小信息）。 */
-export type EvidenceLocator = PdfLocator | DocxLocator | ImageLocator
+export type EvidenceLocator = PdfLocator | DocxLocator | ImageLocator | RtfLocator
 
 /** 定位方式。 */
 export type LocatorKind = EvidenceLocator['kind']
@@ -202,3 +232,6 @@ export const DOCX_LOCATOR_KEYS = ['kind', 'part', 'paragraph_id', 'table_id', 'r
 
 /** 图片 locator 的键（封闭集合）。 */
 export const IMAGE_LOCATOR_KEYS = ['kind', 'frame', 'bbox'] as const
+
+/** RTF locator 的键（封闭集合；没有 bbox，见 RtfLocator）。 */
+export const RTF_LOCATOR_KEYS = ['kind', 'paragraph', 'page'] as const

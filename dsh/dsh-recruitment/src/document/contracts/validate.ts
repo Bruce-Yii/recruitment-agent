@@ -31,6 +31,7 @@ import {
   MEDIA_TYPES,
   PDF_LOCATOR_KEYS,
   PROVENANCES,
+  RTF_LOCATOR_KEYS,
   SUGGESTED_ACTIONS,
   SUPPORTED_SCHEMA_VERSIONS,
 } from './types.ts'
@@ -238,6 +239,7 @@ function checkBBox(ctx: Context, raw: unknown, path: string): BBox | null {
 function allowedLocatorKinds(mediaType: string | null): readonly string[] {
   if (mediaType === 'application/pdf') return ['pdf']
   if (mediaType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return ['docx']
+  if (mediaType === 'application/rtf') return ['rtf']
   if (mediaType === 'image/png' || mediaType === 'image/jpeg') return ['image']
   return []
 }
@@ -261,8 +263,8 @@ function checkLocator(
     return null
   }
   const kind = raw.kind
-  if (kind !== 'pdf' && kind !== 'docx' && kind !== 'image') {
-    pushHard(ctx, code, `${path} kind must be one of pdf / docx / image, got ${showValue(kind)}`, `${path}.kind`)
+  if (kind !== 'pdf' && kind !== 'docx' && kind !== 'image' && kind !== 'rtf') {
+    pushHard(ctx, code, `${path} kind must be one of pdf / docx / image / rtf, got ${showValue(kind)}`, `${path}.kind`)
     return null
   }
 
@@ -327,6 +329,47 @@ function checkLocator(
       if (raw[key] !== undefined) out[key] = raw[key]
     }
     return out as unknown as EvidenceLocator
+  }
+
+  if (kind === 'rtf') {
+    checkAllowedKeys(ctx, path, raw, RTF_LOCATOR_KEYS, 'locator')
+    if (raw.paragraph === undefined && raw.page === undefined) {
+      pushHard(
+        ctx,
+        code,
+        `${path} RTF locator needs at least one of paragraph / page; neither given means no evidence at all`,
+        path,
+      )
+      return null
+    }
+    if (raw.paragraph !== undefined && !isNonNegativeInteger(raw.paragraph)) {
+      pushHard(
+        ctx,
+        code,
+        `${path} paragraph must be a non-negative integer (0-based reader block index), got ${showValue(raw.paragraph)}`,
+        `${path}.paragraph`,
+      )
+      return null
+    }
+    const out: { kind: 'rtf', paragraph?: number, page?: number } = { kind: 'rtf' }
+    if (raw.paragraph !== undefined) out.paragraph = raw.paragraph
+    if (raw.page === undefined) return out
+    if (!isNonNegativeInteger(raw.page)) {
+      pushHard(ctx, code, `${path} page must be a non-negative integer, got ${showValue(raw.page)}`, `${path}.page`)
+      return null
+    }
+    if (raw.page < 1) {
+      // 同 PDF 口径：0 = 读取器没报页码的哨兵，宁可判非法也不编一个真实页码。
+      pushHard(
+        ctx,
+        code,
+        `${path} page must be >= 1 (1-based); 0 means the reader did not report a page, which is not valid evidence`,
+        `${path}.page`,
+      )
+      return null
+    }
+    out.page = raw.page
+    return out
   }
 
   // kind === 'image'

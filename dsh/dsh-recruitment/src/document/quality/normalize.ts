@@ -63,7 +63,8 @@ function bboxTuple(value: unknown): [number, number, number, number] | undefined
 /**
  * 定位归一化。
  * 接受：`{kind:'pdf',page,bbox}` / 转换器 `{page,bbox}` / `{kind:'docx',part,...}` /
- * `{kind:'image',frame}`。都不像就返回 null（= 没有定位，不是「定位没问题」）。
+ * `{kind:'rtf',paragraph,page?}` / `{kind:'image',frame}`。都不像就返回 null
+ * （= 没有定位，不是「定位没问题」）。
  */
 export function normalizeLocator(raw: unknown): EvidenceLocator | null {
   if (!isRecord(raw)) return null
@@ -71,6 +72,16 @@ export function normalizeLocator(raw: unknown): EvidenceLocator | null {
   const page = asPage(raw.page)
   const bbox = bboxTuple(raw.bbox)
   const blockId = asString(raw.block_id)
+  if (kind === 'rtf' || raw.paragraph !== undefined) {
+    const paragraph = asNumber(raw.paragraph)
+    if (paragraph !== null && (!Number.isInteger(paragraph) || paragraph < 0)) return null
+    const loc: { kind: 'rtf', paragraph?: number, page?: number } = { kind: 'rtf' }
+    if (paragraph !== null) loc.paragraph = paragraph
+    if (page !== null) loc.page = page
+    // 与契约同一不变量：paragraph / page 至少一个，否则等于没有定位。
+    if (loc.paragraph === undefined && loc.page === undefined) return null
+    return loc
+  }
   if (kind === 'docx' || raw.part !== undefined) {
     const part = asString(raw.part)
     if (part === null) return null
@@ -123,13 +134,18 @@ export function locatorKey(locator: EvidenceLocator | null): string {
   if (locator.kind === 'docx') {
     return `docx:${locator.part}:${locator.paragraph_id ?? ''}:${locator.table_id ?? ''}`
   }
+  if (locator.kind === 'rtf') {
+    return `rtf:p${locator.page ?? ''}#${locator.paragraph ?? ''}`
+  }
   return `image:f${locator.frame ?? ''}`
 }
 
-/** 块定位的页号（只有 pdf 定位有页；图像帧不算页）。 */
+/** 块定位的页号（pdf 与「有逻辑页号的 rtf」有页；docx / 图像帧 / 无页 RTF 不算页）。 */
 export function locatorPage(locator: EvidenceLocator | null): number | null {
   if (locator === null) return null
-  return locator.kind === 'pdf' ? locator.page : null
+  if (locator.kind === 'pdf') return locator.page
+  if (locator.kind === 'rtf' && locator.page !== undefined) return locator.page
+  return null
 }
 
 function normalizeLinks(raw: unknown): Array<{ text: string, href: string }> {

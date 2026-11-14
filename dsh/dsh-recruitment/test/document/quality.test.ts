@@ -166,6 +166,21 @@ test('converter 映射：本层 severity 与 converter/src/issues.py 完全一�
   assert.deepEqual(divergent, [], '出现改级（本层不允许改转换器 issue 的严重度）')
 })
 
+/**
+ * 有意**不登记**的转换器 code（登记表之外的 fail-closed 强化项）。
+ *
+ * 机制：未登记 → `lookupIssueCode()` 返回 UNREGISTERED（HARD + human_review）。
+ * 这正是质量层要的：转换器把"图片未核"判 SOFT（它不是读崩），而**质量层**把它升级成
+ * HARD（图片里可能有身份信息，没核过就不能进可信结构化）。
+ *
+ * `unverified_pdf_image` 走 tuple 形式发出，本扫描器扫不到；这里显式写上它，
+ * 是为了让"为什么这些 code 不在登记表里"有一个可读的单一答案，而不是靠扫描器的偶然性。
+ */
+const DELIBERATELY_UNREGISTERED_CODES = new Set([
+  'unverified_pdf_image',
+  'unverified_rtf_embedded_image',
+])
+
 test('converter 映射：转换器真实发出的 code 全部已登记（新 code 会被这条测试提醒）', () => {
   const emitted = new Set<string>()
   for (const name of readdirSync(CONVERTER_SRC)) {
@@ -175,8 +190,16 @@ test('converter 映射：转换器真实发出的 code 全部已登记（新 cod
     for (const match of source.matchAll(/'code':\s*'([a-z0-9_]+)'/gu)) emitted.add(match[1])
   }
   assert.ok(emitted.size >= 20, `只扫到 ${emitted.size} 个 code，扫描逻辑可能失效`)
-  const missing = [...emitted].filter((code) => !knownIssueCodes().includes(code)).sort()
+  const missing = [...emitted]
+    .filter((code) => !knownIssueCodes().includes(code))
+    .filter((code) => !DELIBERATELY_UNREGISTERED_CODES.has(code))
+    .sort()
   assert.deepEqual(missing, [], '转换器发出的 code 没有映射（映射表必须保持完整）')
+  // 例外不能被滥用：未登记项必须真的在登记表外（否则这条 allowlist 该删掉）。
+  for (const code of DELIBERATELY_UNREGISTERED_CODES) {
+    assert.equal(knownIssueCodes().includes(code), false, `${code} 已经登记，请从 allowlist 移除`)
+    assert.equal(lookupIssueCode(code).spec.severity, 'HARD', `${code} 未登记时必须是 HARD（fail-closed）`)
+  }
 })
 
 test('查表：已登记返回登记值，未登记返回 fail-closed 兜底且保留原 code', () => {

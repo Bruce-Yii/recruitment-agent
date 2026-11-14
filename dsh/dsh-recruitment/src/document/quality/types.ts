@@ -9,12 +9,14 @@
 //   * 上游说 SOFT、表里写 HARD 时取 HARD（不得降级），反过来可以升级。
 //   * 任何「不知道」都按未核实处理，不得默认 complete。
 
-/** docs/19 §2.1 的 Media 闭集；另接受字符串，未知媒体由判定器报错而不是崩。 */
+/** docs/19 §2.1 的 Media 闭集（2026-11-14 增补 application/rtf，见 contracts/types.ts）；
+ * 另接受字符串，未知媒体由判定器报错而不是崩。 */
 export type MediaType =
   | 'application/pdf'
   | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   | 'image/png'
   | 'image/jpeg'
+  | 'application/rtf'
 
 /** docs/19 §2.1 的 provenance 闭集。 */
 export type Provenance = 'native_text' | 'docling' | 'ocr' | 'agent_read' | 'human_confirmed'
@@ -39,6 +41,8 @@ export type EvidenceLocator =
     cell?: number
   }
   | { kind: 'image', frame?: number, bbox?: [number, number, number, number] }
+  // RTF：段落序号定位（0-based），没有 bbox；page 只在没有硬分页符时出现（见 contracts/types.ts）。
+  | { kind: 'rtf', paragraph?: number, page?: number }
 
 /** 归属置信度。**只有 `same_row` 允许下游把「主体/公司」与「时间」当成同一行的事实**。 */
 export type AttributionConfidence = 'same_row' | 'adjacent' | 'unresolved'

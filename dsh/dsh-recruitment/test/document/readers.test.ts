@@ -26,6 +26,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
@@ -43,6 +44,7 @@ import {
   MEDIA_JPEG,
   MEDIA_PDF,
   MEDIA_PNG,
+  MEDIA_RTF,
   readDocument,
   readDocumentDetailed,
   resolveDocumentReaderConfig,
@@ -51,6 +53,7 @@ import {
   type DocxLocator,
   type PdfLocator,
 } from '../../src/document/readers/index.ts'
+import { assess, readerFactsFromSourceMeta } from '../../src/document/quality/index.ts'
 import {
   CONVERTER_DIR,
   ensureFixtures,
@@ -575,4 +578,120 @@ test('S21 纯映射红线：未知 code 按 HARD；fatal 抛错；SHA 不一致�
     () => mapPdfOutput(base, 'b'.repeat(64), 1),
     (error: unknown) => error instanceof DocumentReadError && error.code === 'SOURCE_CHANGED_DURING_READ',
   )
+})
+
+// ---------------------------------------------------------------------------
+// RTF（2026-11-14 新增的第五种媒体）：按内容嗅探 + canonical 映射 + 不伪造版面
+// ---------------------------------------------------------------------------
+
+/** 写一份合成 RTF（全假资料，R7）并返回路径。 */
+function writeRtf(name: string, rtf: string): string {
+  const path = derived(name)
+  writeFileSync(path, rtf, 'utf8')
+  return path
+}
+
+/** 一份单页合成 RTF：段落、tab 表格行、假 phone/email。 */
+function sampleRtf(): string {
+  return [
+    '{\\rtf1\\ansi\\ansicpg1252{\\fonttbl{\\f0\\fnil Arial;}}\\f0',
+    '\\pard SYNTHETIC SAMPLE - NOT A REAL RESUME\\par',
+    '\\pard Phone: 138 0000 0000   Email: demo.candidate@example.invalid\\par',
+    '\\pard Work experience\\par',
+    '\\pard 2021.07 - 2024.06\\tab Example Technology Ltd\\tab Backend Engineer\\par',
+    '\\pard Education\\par',
+    '\\pard 2015.09 - 2019.06\\tab Example University\\tab Computer Science\\par}',
+  ].join('')
+}
+
+test('S22 RTF：嗅探只看字节——扩展名 .rtf 与内容一致；改名 .pdf 仍按 RTF 读', { skip: SKIP_REASON }, async () => {
+  const rtf = writeRtf('synthetic-resume.rtf', sampleRtf())
+  const sniff = await sniffFile(rtf)
+  assert.equal(sniff.format, 'rtf')
+  assert.equal(sniff.media, MEDIA_RTF)
+  assert.equal(sniff.matches_extension, true)
+
+  // 扩展名不改内容：改成 .pdf 后仍然嗅探为 RTF，只是 matches_extension=false。
+  const renamed = derived('actually-rtf.pdf')
+  copyFileSync(rtf, renamed)
+  const renamedSniff = await sniffFile(renamed)
+  assert.equal(renamedSniff.format, 'rtf', '扩展名不参与选 reader')
+  assert.equal(renamedSniff.matches_extension, false)
+})
+
+test('S23 RTF：canonical content 用 rtf 定位（paragraph），不伪造 bbox / 页码', { skip: SKIP_REASON }, async () => {
+  const cfg = requireConfig()
+  const rtf = writeRtf('canonical.rtf', sampleRtf())
+  const outcome = await readDocumentDetailed(rtf, cfg)
+  const content = outcome.content
+
+  assert.equal(content.media_type, MEDIA_RTF)
+  assert.equal(content.reader_id.startsWith('striprtf/'), true, `reader_id=${content.reader_id}`)
+  assert.ok(content.blocks.length >= 5)
+  content.blocks.forEach((block, index) => {
+    assert.equal(block.order, index)
+    assert.equal(block.locator.kind, 'rtf')
+    const locator = block.locator as { kind: 'rtf', paragraph?: number, page?: number, bbox?: unknown }
+    assert.equal(locator.paragraph, index, '段落序号 = 读取器块流顺序')
+    assert.equal(locator.page, 1, '单页 RTF 的第 1 页是格式等价事实')
+    assert.equal('bbox' in locator, false, 'RTF 没有 bbox，不许伪造')
+    assert.equal(block.provenance, 'native_text', 'RTF 文本是原生文本（不是 OCR/模型）')
+  })
+  const joined = content.blocks.map((block) => block.text).join('\n')
+  assert.ok(joined.includes('demo.candidate@example.invalid'))
+  // source_meta 旁路：converter 的 rtf 统计/字段证据不能丢。
+  const meta = outcome.source_meta.converter_meta as Record<string, unknown>
+  const rtfStats = meta.rtf as Record<string, unknown>
+  assert.equal(rtfStats.page_breaks, 0)
+  assert.equal(rtfStats.table_rows, 0, '样本没有 \\trowd（tab 分隔行不是 RTF 表格）')
+  assert.ok(outcome.source_meta.converter_extras !== undefined)
+})
+
+test('S24 RTF：有硬分页符时不编页码，另发 SOFT 声明（不挂 page 定位）', { skip: SKIP_REASON }, async () => {
+  const cfg = requireConfig()
+  const rtf = writeRtf('two-pages.rtf',
+    '{\\rtf1\\ansi Page one line\\par\\page Page two line\\par}')
+  const outcome = await readDocumentDetailed(rtf, cfg)
+  for (const block of outcome.content.blocks) {
+    assert.equal(block.locator.kind, 'rtf')
+    assert.equal((block.locator as { page?: number }).page, undefined, '逐页归属未重建时不挂 page')
+    assert.equal(typeof (block.locator as { paragraph?: number }).paragraph, 'number')
+  }
+  const meta = outcome.source_meta.converter_meta as Record<string, unknown>
+  assert.equal((meta.rtf as Record<string, unknown>).page_breaks, 1)
+  assert.ok(outcome.content.issues.some((issue) => issue.code === 'unverified_rtf_pagination'))
+})
+
+test('S25 RTF：内嵌图片不读但必须声明，文字仍然可用；质量层把"图片未核"升级为 HARD', { skip: SKIP_REASON }, async () => {
+  const cfg = requireConfig()
+  const rtf = writeRtf('with-image.rtf',
+    '{\\rtf1\\ansi Text before image\\par'
+    + '{\\pict\\pngblip\\picw1\\pich1 89504e470d0a1a0a}\\par Text after image\\par}')
+  const outcome = await readDocumentDetailed(rtf, cfg)
+  const content = outcome.content
+  const imageIssue = content.issues.find((issue) => issue.code === 'unverified_rtf_embedded_image')
+  assert.ok(imageIssue !== undefined, '未核图片必须声明，不能静默丢弃')
+  // canonical 层：与 converter 的 issues.py 一致（unverified_* → SOFT，映射不改级）。
+  assert.equal(imageIssue.severity, 'SOFT', '映射层不改转换器的严重度')
+  // 质量层：未核图片 = 版式类阻断（与 unverified_pdf_image 同口径：未登记 → HARD）。
+  const assessment = assess(content, readerFactsFromSourceMeta(outcome.source_meta))
+  assert.equal(assessment.blocking, true)
+  assert.ok(assessment.blocking_codes.includes('unverified_rtf_embedded_image'),
+    `blocking_codes=${assessment.blocking_codes.join(',')}`)
+  assert.equal(assessment.layout_only_blocking, true, '图片未核属于"仅版式阻断"（文字本身可用）')
+  assert.ok(content.issues.some((issue) => issue.code === 'unverified_rtf_embedded_image'))
+  assert.notEqual(content.completeness, 'complete')
+  const joined = content.blocks.map((block) => block.text).join('\n')
+  assert.ok(joined.includes('Text before image'))
+  assert.ok(joined.includes('Text after image'))
+  assert.equal(joined.includes('89504e47'), false, '图片字节不得混进正文')
+})
+
+test('S26 RTF 空正文：不冒充 complete（0 块 + HARD rtf_no_text）', { skip: SKIP_REASON }, async () => {
+  const cfg = requireConfig()
+  const rtf = writeRtf('empty.rtf', '{\\rtf1\\ansi \\par \\par}')
+  const content = await readDocument(rtf, cfg)
+  assert.equal(content.blocks.length, 0)
+  assert.notEqual(content.completeness, 'complete')
+  assert.ok(content.issues.some((issue) => issue.code === 'rtf_no_text' && issue.severity === 'HARD'))
 })

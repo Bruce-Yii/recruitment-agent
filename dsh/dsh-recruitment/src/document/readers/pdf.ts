@@ -55,7 +55,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** 把 converter 的其它顶层结果原样收进 source_meta（不丢证据，也不进封闭契约）。 */
-function buildSourceMeta(raw: RawPdfOutput): Record<string, unknown> {
+export function buildSourceMeta(raw: RawPdfOutput): Record<string, unknown> {
   return {
     converter_meta: isRecord(raw.meta) ? raw.meta : null,
     converter_extras: {

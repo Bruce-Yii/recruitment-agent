@@ -10,14 +10,15 @@ import {
   type MediaType,
 } from '../contracts/index.ts'
 
-/** docs/19 §2.1 的四种媒体，顺序与 `MEDIA_TYPES` 一致。 */
+/** docs/19 §2.1 的四种媒体 + 2026-11-14 增补的 RTF，顺序与 `MEDIA_TYPES` 一致。 */
 export const MEDIA_PDF: MediaType = MEDIA_TYPES[0]
 export const MEDIA_DOCX: MediaType = MEDIA_TYPES[1]
 export const MEDIA_PNG: MediaType = MEDIA_TYPES[2]
 export const MEDIA_JPEG: MediaType = MEDIA_TYPES[3]
+export const MEDIA_RTF: MediaType = MEDIA_TYPES[4]
 
 /** 嗅探/日志用的短格式名。 */
-export type MediaFormat = 'pdf' | 'docx' | 'png' | 'jpeg'
+export type MediaFormat = 'pdf' | 'docx' | 'png' | 'jpeg' | 'rtf'
 
 /** U1 自己定义的 issue code（不是 converter 的 code）。 */
 export const ISSUE_MEDIA_MISMATCH = 'MEDIA_MISMATCH'
@@ -37,12 +38,15 @@ export function formatOfMedia(media: MediaType): MediaFormat {
       return 'png'
     case MEDIA_JPEG:
       return 'jpeg'
+    case MEDIA_RTF:
+      return 'rtf'
   }
 }
 
-/** 每份内容只允许一种 locator（PDF/DOCX/图片各用各的定位）。 */
+/** 每份内容只允许一种 locator（PDF/DOCX/RTF/图片各用各的定位）。 */
 export function locatorKindForMedia(media: MediaType): LocatorKind {
   if (media === MEDIA_PDF) return 'pdf'
   if (media === MEDIA_DOCX) return 'docx'
+  if (media === MEDIA_RTF) return 'rtf'
   return 'image'
 }

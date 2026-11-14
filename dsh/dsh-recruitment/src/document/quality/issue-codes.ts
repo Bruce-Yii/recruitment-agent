@@ -197,6 +197,45 @@ export type DocumentIssueCode = keyof typeof DOCUMENT_ISSUE_CODES
  * 新增 code 属于转换器所有者的权限，本层遇到就按未登记 HARD 兜住。
  */
 export const CONVERTER_ISSUE_CODES = {
+  // 2026-11-14：RTF reader（converter/src/rtf_reader.py）的稳定 code。
+  // rtf_no_text / rtf_text_encoding_unread 在 issues.py 里登记为 HARD（ADDED_CODES）。
+  rtf_no_text: {
+    code: 'rtf_no_text',
+    origin: 'converter',
+    family: 'coverage',
+    severity: 'HARD',
+    retryable: false,
+    suggested_action: 'human_review',
+    meaning: 'RTF 正文没有可解码的段落文本（空文档或整篇不可解）；空读不是"原文没有"的证据',
+  },
+  rtf_text_encoding_unread: {
+    code: 'rtf_text_encoding_unread',
+    origin: 'converter',
+    family: 'fidelity',
+    severity: 'HARD',
+    retryable: false,
+    suggested_action: 'human_review',
+    meaning: 'RTF 正文含按声明字符集无法解码的字节，已从正文剔除并声明；身份字段需核对原件',
+  },
+  // 以下两条由 issues.py 的 `unverified_` 前缀规则定为 SOFT（与 PDF 的 unverified_* 同口径）。
+  unverified_rtf_visual_content: {
+    code: 'unverified_rtf_visual_content',
+    origin: 'converter',
+    family: 'coverage',
+    severity: 'SOFT',
+    retryable: false,
+    suggested_action: 'none',
+    meaning: 'RTF 里存在正文流之外的内容（内嵌对象 / 页眉页脚域），未读取；正文段落本身仍可用',
+  },
+  unverified_rtf_pagination: {
+    code: 'unverified_rtf_pagination',
+    origin: 'converter',
+    family: 'order',
+    severity: 'SOFT',
+    retryable: false,
+    suggested_action: 'human_review',
+    meaning: 'RTF 声明了硬分页符，但读取器不重建逐页归属；块只按段落顺序定位（没有编造页码）',
+  },
   // 2026-11-14：原生文本层坏掉时整页 OCR 重读成功（恢复标记，不是失败）。
   // 由 converter 发出（issues.py::ADDED_CODES 的 soft 条目），所以属于 converter 组。
   pdf_text_recovered_by_ocr: {
@@ -576,6 +615,9 @@ export const LAYOUT_ONLY_ISSUE_CODES: ReadonlySet<string> = new Set<string>([
   'structure_unidentified',
   // 未核图片（见上面的特殊说明）
   'unverified_pdf_image',
+  // RTF 内嵌图片同样"文字没核过"，只是文字在正文流里用不了（图片未读）；
+  // 与 unverified_pdf_image 同一处理：未登记 HARD，但参与"仅版式阻断"的区分。
+  'unverified_rtf_embedded_image',
 ])
 
 const REGISTRY: Readonly<Record<string, IssueCodeSpec>> = (() => {
