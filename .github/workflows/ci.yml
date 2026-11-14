@@ -45,6 +45,35 @@ jobs:
           fi
           echo "corpus manifests contain no machine-absolute paths"
 
+      - name: Converter tests (corpus-independent; 四数 + 声明式 skip)
+        # E2：converter 这一侧原来只有"compileall 通过"和一条"acceptance 没跑"的 notice，
+        # **一个数都没有**。而 `--no-corpus` 能把"不依赖语料原件"的那部分真跑起来（本机实测
+        # 94 passed / 27 skipped / 4.95s，不需要数据库也不需要语料），所以没理由不跑。
+        # 27 条 skip 必须逐条对上声明理由，否则 exit 1 —— 声明式 skip，不是"有跳过就算了"。
+        run: |
+          set -uo pipefail
+          STATUS=0
+          python -m pytest converter/tests -q -rs --no-corpus 2>&1 | tee /tmp/converter-tests.log || STATUS=$?
+
+          echo "== 四数（R3/E2：tests / pass / fail / skipped 必须都报）"
+          tail -1 /tmp/converter-tests.log
+
+          UNDECLARED=0
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            case "$line" in
+              # 唯一允许的 skip 来源：--no-corpus（D-56）把依赖语料原件的用例逐条跳过
+              *'--no-corpus：依赖语料原件的用例未运行'*) ;;
+              *) echo "::error title=Undeclared skip::不在声明清单里的 skip：$line"; UNDECLARED=$((UNDECLARED + 1)) ;;
+            esac
+          done < <(grep '^SKIPPED' /tmp/converter-tests.log || true)
+          if [ "$UNDECLARED" -gt 0 ]; then
+            echo "::error title=Undeclared skip::有 $UNDECLARED 条 skip 不在声明清单里（skip 不等于通过）"
+            exit 1
+          fi
+
+          exit "$STATUS"
+
       - name: Report acceptance-test availability
         run: |
           if [ "${{ vars.CORPUS_AVAILABLE }}" = "true" ]; then
