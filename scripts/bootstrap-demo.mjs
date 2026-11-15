@@ -6,7 +6,7 @@
 // `contracts/job-screening/job-rubric-rules.md` §4.2，没有生效的 APPROVED = 未批准 =
 // S7 `NO_APPROVED_RUBRIC`，所以干净库跑不了 demo（owner-g4 的 S6→S10 harness 预检同样 BLOCKED）。
 //
-// 本脚本的定位：**用产品工具链补齐 demo 前置**（不改 0002_seed、不加迁移）。它做五件事：
+// 本脚本的定位：**用产品工具链补齐 demo 前置**（不改 0002_seed、不加迁移）。它做六件事：
 //   1. 只读预检：迁移台账版本、租户/actor（HUMAN + HR 角色）、按 code 找演示岗位；
 //   2. 只读判定状态：NO_OP / APPROVE_PENDING / APPEND_RUBRIC / CREATE_JOB；
 //   3. 非 NO_OP 时先过**一次**人机闸门替身（DEMO_APPROVAL_MODE），不是 allowed-once
@@ -17,6 +17,19 @@
 //      幂等补齐「演示-面试官 B(…0105) + INTERVIEWER 角色」「Interview …0801/…0802 挂
 //      application …0701」「802 上 A=104/B=105 两条 interviewer 行（required_scorecard=true）、
 //      801 补 104」「802 上 103 无 interviewer 行（负例，只查不删）」。重跑零变更。
+//   6. **D5 W1 材料链演示种子**（`seed.demo_material`，P1 #5）：干净库按 0002_seed 落下的申请
+//      …0701 只有"空壳"（没有任何 resume/intake/material），却挂了 …0801/…0802 两场面试 ——
+//      "无材料却有已排期面试"是**业务事实矛盾**。本步用**产品自己的 S6 intake 工具**
+//      （`recruitment_application_intake`）把一份**运行时生成的合成 RTF 简历**（DEMO ONLY；
+//      email/phone 与 0002_seed 的演示候选人 …0601 一致）接入岗位 DEMO-BE-001：
+//      * 身份只按 native_text 的 email+phone 命中 …0601 → **复用** ACTIVE 申请 …0701；
+//      * 追加 `resume_version` 并把 `application.resume_version_id` 指向它；
+//      * 链路 application→resume_version→resume→intake_asset→intake_record→event 全是产品真实写出的行；
+//      * 写完**只读读回**整条链 + 全租户「有面试却无材料」计数；材料已存在（重跑）时只做只读核对。
+//      口径：材料由 converter 真实解析（RTF 走 striprtf），sha256 是**真实字节**的 sha256，不写假哈希；
+//      解析失败/身份闸门拒绝 → 本次 bootstrap 失败（exit 1/2），不静默跳过、不手工伪造材料行。
+//      因此**首跑**需要 Python + converter 依赖（`RECRUITMENT_PYTHON_BIN` 或 PATH 上的 python；
+//      与 golden path harness 同一套 converter/ 目录）；材料已在库的重跑不需要 Python。
 //
 // 硬约束（与本文件的设计一一对应）：
 //   * **业务写库只发生在产品工具的 execute() 里**：`recruitment_job_create` /
@@ -45,6 +58,12 @@
 //         3 审批被拒/不可用。
 //
 // 输出：逐步骤人读摘要 + 最后**一行** `BOOTSTRAP_RESULT: <单行 JSON>`（no-op/deny/失败同样输出）。
+import { createHash } from 'node:crypto'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import {
   JOB_CREATE_TOOL,
   JOB_UPDATE_TOOL,
@@ -55,6 +74,8 @@ import {
   JOB_RUBRIC_APPROVE_TOOL,
   createJobRubricApproveTool,
 } from '../dsh/dsh-recruitment/src/tools/job-rubric-approve.ts'
+import { createApplicationIntakeTool } from '../dsh/dsh-recruitment/src/tools/application-intake.ts'
+import { resolveConverterConfig } from '../dsh/dsh-recruitment/src/tools/converter.ts'
 import {
   closePool,
   createPool,
@@ -115,6 +136,49 @@ const DEMO_ROUND2_START = '2026-11-20T06:00:00.000Z' // 2026-11-20 14:00 +08
 const DEMO_ROUND2_END = '2026-11-20T07:00:00.000Z'
 /** 面试所属阶段：`interview.stage_code` 有外键指向 `stage_catalog`，只能用目录里的 S8。 */
 const DEMO_INTERVIEW_STAGE_CODE = 'S8'
+
+// ---- P1 #5：材料链演示种子（`seed.demo_material`） --------------------------
+
+/** 演示岗位（0002_seed 的 job 401）；材料接入的 job_id。 */
+const DEMO_JOB_ID = '11111111-1111-4111-8111-000000000401'
+/** 演示候选人（0002_seed 的 …0601，display_name = 演示候选人-张样例）。 */
+const DEMO_CANDIDATE_ID = '11111111-1111-4111-8111-000000000601'
+/** 候选人强标识（0002_seed 落库值；材料里的 email/phone 必须归一化到这两个值才能命中同一人）。 */
+const DEMO_CANDIDATE_EMAIL = 'zhang.sample@demo-recruitment.test'
+const DEMO_CANDIDATE_PHONE = '+8613800000000'
+/** 材料在 `intake_asset.file_name` 里的名字（重跑必须逐字节相同，sha256 才稳定）。 */
+const DEMO_MATERIAL_FILE_NAME = 'demo-candidate-0701.rtf'
+/**
+ * 运行时生成的**合成** RTF 简历正文（DEMO ONLY；不含任何真实候选人资料，R7）。
+ *
+ * 为什么是 RTF：converter 支持 PDF/DOCX/RTF，RTF 是纯文本容器、行为可复现（striprtf），
+ * 不需要在仓库里新增二进制 fixture，也不需要把机器路径写进入库文件；生成内容只依赖
+ * `DEMO_CANDIDATE_EMAIL` / `DEMO_CANDIDATE_PHONE`，因此**每次运行字节完全相同**，
+ * rerun 时 intake 认作同一版本（UNCHANGED），不会重复追加 resume_version。
+ *
+ * 内容刻意同时覆盖：强标识（phone/email 单独成段，converter 标 native_text）、
+ * 工作经历（2 条，S7 的 work_exists MUST_HAVE 可判 present）、教育经历（1 条）。
+ */
+function buildDemoResumeRtf() {
+  const lines = [
+    // \rtf1 + 字体表：最小合法 RTF 头；ansicpg1252 只影响非 ASCII，本正文是纯 ASCII。
+    '{\\rtf1\\ansi\\ansicpg1252\\deff0{\\fonttbl{\\f0 Calibri;}}',
+    '\\f0\\fs22 Zhang Sample\\par',
+    `Phone: ${DEMO_CANDIDATE_PHONE.replace(/^\+86/, '+86 ').replace(/(\d{3})(\d{4})(\d{4})$/, '$1 $2 $3')}\\par`,
+    `Email: ${DEMO_CANDIDATE_EMAIL}\\par`,
+    '\\par',
+    'Work Experience\\par',
+    '2021-2024 Backend Engineer, Demo Commerce Co. Payment callback idempotency and reconciliation.\\par',
+    '2019-2021 Backend Engineer, Demo Data Co. Incremental sync pipeline and dead-letter replay.\\par',
+    '\\par',
+    'Education\\par',
+    '2015-2019 B.Sc. Computer Science, Demo University\\par',
+    '\\par',
+    'Synthetic demo resume (DEMO ONLY; not a real candidate).\\par',
+    '}',
+  ]
+  return lines.join('\n') + '\n'
+}
 
 /**
  * demo rubric 的三条 criteria（与 `manual/apply-demo-rubric.mjs` 的 DIMENSIONS 同口径）。
@@ -253,6 +317,53 @@ const SQL_ENSURE_INTERVIEWER = `insert into recruitment.interviewer
   values ($1, $2, $3, 'INTERVIEWER', true)
   on conflict (interview_id, actor_id) do nothing
   returning id`
+
+// ---- P1 #5 材料链种子用到的只读 SQL -----------------------------------------
+
+/**
+ * 材料锚点预检：申请 …0701 的 candidate/job 与候选人强标识必须与 0002_seed / 本脚本常量**逐字一致**。
+ * 先做这条只读检查，再调 intake —— 否则身份若命中别人，材料会挂到错误的申请上（写出去就收不回）。
+ */
+const SQL_DEMO_MATERIAL_ANCHOR = `select a.id as application_id, a.candidate_id, a.job_id, a.resume_version_id,
+         c.normalized_email, c.normalized_phone
+    from recruitment.application a
+    join recruitment.candidate c on c.id = a.candidate_id and c.tenant_id = a.tenant_id
+   where a.id = $1 and a.tenant_id = $2`
+
+/**
+ * 整条材料链读回（**独立于 intake 工具返回值**）：application → resume_version → resume →
+ * intake_asset → intake_record → event_inbox，一次 join 全部取回。
+ */
+const SQL_DEMO_MATERIAL_CHAIN = `select a.id as application_id, a.resume_version_id,
+         rv.id as resume_version_row_id, rv.version_no, rv.parse_status, rv.content_sha256,
+         rv.parsed_fields,
+         r.id as resume_id, r.candidate_id,
+         ia.id as intake_asset_row_id, ia.file_name, ia.sha256 as asset_sha256, ia.byte_size,
+         ia.storage_ref, ia.intake_record_id,
+         ir.id as intake_record_row_id, ir.status as intake_status, ir.event_id,
+         e.event_id as event_row_id, e.event_type
+    from recruitment.application a
+    join recruitment.resume_version rv
+      on rv.id = a.resume_version_id and rv.tenant_id = a.tenant_id
+    join recruitment.resume r
+      on r.id = rv.resume_id and r.tenant_id = rv.tenant_id
+    join recruitment.intake_asset ia
+      on ia.id = r.intake_asset_id and ia.tenant_id = r.tenant_id
+    join recruitment.intake_record ir
+      on ir.id = ia.intake_record_id and ir.tenant_id = ia.tenant_id
+    left join recruitment.event_inbox e
+      on e.event_id = ir.event_id and e.tenant_id = ir.tenant_id
+   where a.tenant_id = $1 and a.id = $2`
+
+/**
+ * 业务自洽不变量：本租户**任何**面试，其所属申请都必须有材料指针
+ * （"无材料却有已排期/已发生面试"= 0 行才算自洽）。
+ */
+const SQL_INTERVIEWS_WITHOUT_MATERIAL = `select i.id as interview_id, i.application_id, i.round_no, i.status
+    from recruitment.interview i
+    join recruitment.application a on a.id = i.application_id and a.tenant_id = i.tenant_id
+   where i.tenant_id = $1 and a.resume_version_id is null
+   order by i.round_no, i.id`
 
 /** 当前进程里已知的敏感值（打印前统一替换，绝不落进日志）。 */
 const secrets = []
@@ -731,6 +842,316 @@ async function seedDemoData(pool, cfg) {
   return report
 }
 
+// ---------------------------------------------------------------------------
+//  P1 #5：材料链演示种子（`seed.demo_material`）
+//
+//  问题（业务事实矛盾）：0002_seed 只落"岗位/候选人/申请"空壳，申请 …0701 没有
+//  resume_version；而 D5 演示种子把 …0801/…0802 两场面试挂在 …0701 上 —— 干净库上出现
+//  "无材料却有已排期面试"（UI 显示"未关联材料"）。
+//
+//  修法（不假造）：用**产品自己的 S6 intake 工具**把一份**运行时生成的合成 RTF** 接入
+//  DEMO-BE-001；身份只按 native_text 的 email+phone 命中 0002_seed 的演示候选人 …0601，
+//  于是复用 …0701 并由产品写路径补齐 resume/intake/asset 链与 application.resume_version_id。
+//  bootstrap 只做两件事：喂文件、**只读读回核对**；它不自己 insert 任何材料行。
+// ---------------------------------------------------------------------------
+
+/**
+ * 在 PATH 上找 `python` / `python3` 的绝对路径（供 converter 配置）。
+ *
+ * 为什么不把解释器路径写成常量：R7 禁止把机器绝对路径写进入库文件；CI 里由
+ * `actions/setup-python` 提供 PATH，本机由用户 PATH 提供。`RECRUITMENT_PYTHON_BIN`
+ * 显式设置时优先（与 golden path harness / 产品 profile 同一变量名）。
+ * @param env - 环境变量表。
+ * @returns 绝对路径，找不到返回 null。
+ */
+function findPythonOnPath(env) {
+  const pathValue = env.PATH ?? env.Path ?? ''
+  const isWindows = process.platform === 'win32'
+  const sep = isWindows ? ';' : ':'
+  const exts = isWindows ? String(env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';').filter((x) => x !== '') : ['']
+  const names = isWindows ? ['python.exe', 'python3.exe'] : ['python3', 'python']
+  for (const dir of pathValue.split(sep)) {
+    if (dir.trim() === '') continue
+    for (const name of names) {
+      for (const ext of exts) {
+        const candidate = join(dir.trim(), name.endsWith('.exe') && isWindows ? name : `${name}${ext}`)
+        if (existsSync(candidate)) return candidate
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * 解析材料种子要用的 converter 配置（python_bin 绝对路径 + converter/ 目录 + 本次材料目录）。
+ *
+ * `allowed_roots` 只放开本次 `mkdtemp` 出来的材料目录（最小权限），不放开仓库/家目录。
+ * 配置不完整 → `PrerequisiteError`（exit 2，**在写任何材料之前** fail closed）。
+ * @param env - 环境变量表。
+ * @param materialDir - 本次运行生成 RTF 的临时目录（绝对路径）。
+ * @returns `ResolvedConverterConfig`。
+ */
+function resolveDemoConverter(env, materialDir) {
+  const explicit = envText(env, 'RECRUITMENT_PYTHON_BIN', '')
+  const pythonBin = explicit !== '' ? explicit : findPythonOnPath(env)
+  const issues = []
+  if (pythonBin === null || pythonBin === '') {
+    issues.push(
+      'converter.python_bin 不可用：把 python 放进 PATH，或设置 RECRUITMENT_PYTHON_BIN 为解释器绝对路径'
+        + '（材料首跑需要产品 converter；材料已在库时不需要）',
+    )
+  }
+  const converterDir = fileURLToPath(new URL('../converter/', import.meta.url))
+  const resolved = resolveConverterConfig({
+    python_bin: pythonBin ?? '',
+    converter_dir: converterDir,
+    allowed_roots: [materialDir],
+  }, env)
+  if (resolved.resolved === null) {
+    throw new PrerequisiteError([...issues, ...resolved.issues.map((issue) => `converter 配置：${issue}`)])
+  }
+  return resolved.resolved
+}
+
+/**
+ * 只读读回申请 …0701 的整条材料链（application→resume_version→resume→intake_asset→intake_record→event）。
+ * @param pool - 连接池。
+ * @param cfg - 已解析配置。
+ * @returns 链行；没有材料时返回 null。
+ */
+async function readDemoMaterialChain(pool, cfg) {
+  return withReadOnly(pool, async (client) => {
+    const rows = (await client.query(SQL_DEMO_MATERIAL_CHAIN, [cfg.tenant_id, DEMO_APPLICATION_ID])).rows
+    return rows[0] ?? null
+  })
+}
+
+/**
+ * 核对材料链（**只看库**，不看 intake 工具返回值）：
+ *   * 六个 id 都非空（链不断）且 candidate_id 是演示候选人；
+ *   * `intake_asset.sha256` == 本地 RTF 字节的 sha256（哈希不是编的）、byte_size 一致、
+ *     storage_ref 是内容寻址（不放机器路径）；
+ *   * `parse_status='PARSED'` 且 `parsed_fields.fields` 的 phone/email/work/education 都 present，
+ *     版本元数据 schema 正确（材料是**真解析**出来的，不是空壳）。
+ * @param chain - `readDemoMaterialChain()` 的返回。
+ * @param expectedSha - 本地生成的 RTF 的 sha256。
+ * @param expectedBytes - 本地生成的 RTF 的字节数。
+ * @param intakeValue - intake 工具返回值（只在首跑核对时给；只读路径可省）。
+ * @returns 归一化材料报告；任何不一致抛错（fail closed，绝不"看起来像成功"）。
+ */
+function verifyDemoMaterialChain(chain, expectedSha, expectedBytes, intakeValue) {
+  if (chain === null) {
+    throw new Error('seed.demo_material: 应用 …0701 读回没有材料链（intake 报告成功但库中无行）')
+  }
+  const missing = [
+    ['application_id', chain.application_id],
+    ['resume_version_id', chain.resume_version_id],
+    ['resume_version_row_id', chain.resume_version_row_id],
+    ['resume_id', chain.resume_id],
+    ['intake_asset_row_id', chain.intake_asset_row_id],
+    ['intake_record_row_id', chain.intake_record_row_id],
+    ['event_row_id', chain.event_row_id],
+  ].filter(([, value]) => value === null || value === undefined || value === '')
+  if (missing.length > 0) {
+    throw new Error(
+      'seed.demo_material: 材料链不完整（断点：' + missing.map(([name]) => name).join(', ') + '）',
+    )
+  }
+  const problems = []
+  if (chain.application_id !== DEMO_APPLICATION_ID) problems.push(`application_id=${chain.application_id}`)
+  if (chain.candidate_id !== DEMO_CANDIDATE_ID) problems.push(`candidate_id=${chain.candidate_id}`)
+  if (chain.asset_sha256 !== expectedSha) {
+    problems.push(`intake_asset.sha256=${chain.asset_sha256} 与本地 RTF sha256=${expectedSha} 不一致`)
+  }
+  if (Number(chain.byte_size) !== expectedBytes) {
+    problems.push(`intake_asset.byte_size=${chain.byte_size} 与本地 RTF 字节数=${expectedBytes} 不一致`)
+  }
+  if (chain.storage_ref !== `content-addressed:sha256:${chain.asset_sha256}`) {
+    problems.push(`storage_ref=${chain.storage_ref} 不是内容寻址（不允许机器路径）`)
+  }
+  if (chain.parse_status !== 'PARSED') problems.push(`parse_status=${chain.parse_status}`)
+  const fields = readPath(chain, ['parsed_fields', 'fields']) ?? {}
+  for (const key of ['phone', 'email', 'work_experience', 'education']) {
+    if (readPath(fields, [key, 'state']) !== 'present') {
+      problems.push(`parsed_fields.fields.${key}.state=${readPath(fields, [key, 'state']) ?? 'missing'}`)
+    }
+  }
+  if ((readPath(fields, ['work_experience', 'entry_count']) ?? 0) < 1) {
+    problems.push('parsed_fields.fields.work_experience.entry_count < 1')
+  }
+  if (readPath(chain, ['parsed_fields', 'version_meta', 'digest_schema']) !== 'intake-resume-version/1') {
+    problems.push(
+      `parsed_fields.version_meta.digest_schema=${readPath(chain, ['parsed_fields', 'version_meta', 'digest_schema']) ?? 'missing'}`,
+    )
+  }
+  if (intakeValue !== null) {
+    if (intakeValue.application_id !== DEMO_APPLICATION_ID) problems.push(`intake.application_id=${intakeValue.application_id}`)
+    if (intakeValue.candidate_created === true) problems.push('intake 新建了候选人（应为命中演示候选人）')
+    if (intakeValue.resume_version_id !== chain.resume_version_row_id) {
+      problems.push(`intake.resume_version_id=${intakeValue.resume_version_id} 与读回不一致`)
+    }
+    if (intakeValue.intake_record_id !== chain.intake_record_row_id) problems.push('intake.intake_record_id 与读回不一致')
+    if (intakeValue.intake_asset_id !== chain.intake_asset_row_id) problems.push('intake.intake_asset_id 与读回不一致')
+  }
+  if (problems.length > 0) {
+    throw new Error('seed.demo_material: 读回不一致 → ' + problems.join('; '))
+  }
+  return {
+    application_id: DEMO_APPLICATION_ID,
+    candidate_id: DEMO_CANDIDATE_ID,
+    job_id: DEMO_JOB_ID,
+    file_name: chain.file_name,
+    sha256: chain.asset_sha256,
+    byte_size: Number(chain.byte_size),
+    resume_version_no: chain.version_no,
+    parse_status: chain.parse_status,
+    content_sha256: chain.content_sha256,
+    resume_id: chain.resume_id,
+    resume_version_id: chain.resume_version_row_id,
+    intake_record_id: chain.intake_record_row_id,
+    intake_asset_id: chain.intake_asset_row_id,
+    event_id: chain.event_row_id,
+    matched_by: intakeValue === null ? null : (intakeValue.matched_by ?? null),
+    labels: intakeValue === null ? null : (intakeValue.labels ?? null),
+    chain_ok: true,
+    hash_match: true,
+    parse_ok: true,
+  }
+}
+
+/**
+ * P1 #5 材料链幂等种子：让申请 …0701 真正拥有 resume/intake/material。
+ *
+ * 顺序（fail closed）：只读锚点预检 → 材料已在库则**只读核对**（rerun 不写、不需要 Python）
+ * → 否则生成合成 RTF、用产品 intake 工具接入 → 写后只读读回整条链 + 全租户
+ * 「有面试却无材料」不变量。任何一步不符 → 抛错（exit 1/2），不静默跳过、不手工补行。
+ * @param pool - 连接池。
+ * @param cfg - 已解析配置。
+ * @param env - 环境变量表（converter 的 python_bin 从这里来）。
+ * @returns `{ demo_material, invariant, write_steps, issues }`。
+ */
+async function seedDemoMaterial(pool, cfg, env) {
+  const tenantId = cfg.tenant_id
+  const report = { demo_material: null, invariant: null, write_steps: [], issues: [] }
+
+  // 0) 只读锚点预检：申请/候选人/岗位/强标识必须与 0002_seed 一致（防止材料挂错人/错岗）
+  const anchor = await withReadOnly(pool, async (client) => {
+    const rows = (await client.query(SQL_DEMO_MATERIAL_ANCHOR, [DEMO_APPLICATION_ID, tenantId])).rows
+    return rows[0] ?? null
+  })
+  if (anchor === null) {
+    throw new PrerequisiteError([
+      `演示申请 ${DEMO_APPLICATION_ID}（或候选人 ${DEMO_CANDIDATE_ID}）不存在：先按名重放 db/migrations（含 0002_seed）`,
+    ])
+  }
+  const anchorIssues = []
+  if (anchor.candidate_id !== DEMO_CANDIDATE_ID) {
+    anchorIssues.push(`申请 …0701 的 candidate_id=${anchor.candidate_id}，期望 ${DEMO_CANDIDATE_ID}`)
+  }
+  if (anchor.job_id !== DEMO_JOB_ID) {
+    anchorIssues.push(`申请 …0701 的 job_id=${anchor.job_id}，期望 ${DEMO_JOB_ID}`)
+  }
+  if (anchor.normalized_email !== DEMO_CANDIDATE_EMAIL) {
+    anchorIssues.push(`演示候选人 email=${anchor.normalized_email}，期望 ${DEMO_CANDIDATE_EMAIL}`)
+  }
+  if (anchor.normalized_phone !== DEMO_CANDIDATE_PHONE) {
+    anchorIssues.push(`演示候选人 phone=${anchor.normalized_phone}，期望 ${DEMO_CANDIDATE_PHONE}`)
+  }
+  if (anchorIssues.length > 0) throw new PrerequisiteError(anchorIssues)
+
+  // 合成 RTF 的内容只依赖两个常量；因此每次运行字节相同、sha256 稳定（重跑不会追加新版本）。
+  const rtf = buildDemoResumeRtf()
+  const rtfBytes = Buffer.from(rtf, 'utf8')
+  const expectedSha = createHash('sha256').update(rtfBytes).digest('hex')
+
+  let material
+  let written = false
+  if (anchor.resume_version_id !== null) {
+    // 材料已在库：只读核对（重跑路径不需要 Python/converter；也不允许"看起来有材料"就放过）
+    const chain = await readDemoMaterialChain(pool, cfg)
+    material = verifyDemoMaterialChain(chain, expectedSha, rtfBytes.length, null)
+    material.state = 'PRESENT'
+    material.application_action = 'REUSED'
+    material.resume_version_action = 'UNCHANGED'
+    material.write = false
+  } else {
+    // 1) 生成材料文件（临时目录），用**产品 intake 工具**接入；目录用完即删（库内只留内容寻址引用）
+    const materialDir = mkdtempSync(join(tmpdir(), 'recruitment-bootstrap-material-'))
+    let intakeValue = null
+    try {
+      const materialPath = join(materialDir, DEMO_MATERIAL_FILE_NAME)
+      writeFileSync(materialPath, rtfBytes)
+      const converter = resolveDemoConverter(env, materialDir)
+      const intakeTool = createApplicationIntakeTool({ converter, database: cfg })
+      intakeValue = await intakeTool.execute(
+        { path: materialPath, job_id: DEMO_JOB_ID },
+        { callId: 'bootstrap-demo-seed-material' },
+      )
+      if (intakeValue?.status !== 'OK') {
+        throw new Error(`seed.demo_material: intake 未成功（status=${intakeValue?.status ?? 'null'}）`)
+      }
+      if (intakeValue.resume_version_action !== 'APPENDED') {
+        throw new Error(
+          'seed.demo_material: intake 未追加 resume_version'
+            + `（resume_version_action=${intakeValue.resume_version_action}）；材料指针与材料链不一致，拒绝继续`,
+        )
+      }
+    } finally {
+      rmSync(materialDir, { recursive: true, force: true })
+    }
+    // 2) 写后只读读回：链完整 + hash/字节数/解析结果一致（不看工具返回值）
+    const chain = await readDemoMaterialChain(pool, cfg)
+    material = verifyDemoMaterialChain(chain, expectedSha, rtfBytes.length, intakeValue)
+    material.state = 'APPENDED'
+    material.application_action = intakeValue.application_action
+    material.resume_version_action = intakeValue.resume_version_action
+    material.write = true
+    written = true
+    report.write_steps.push('seed.demo_material')
+  }
+  report.demo_material = material
+
+  // 3) 业务自洽不变量：本租户**任何**面试的申请都必须有材料（>0 行 = 仍是"无材料却有面试"）
+  const withoutMaterial = await withReadOnly(pool, async (client) =>
+    (await client.query(SQL_INTERVIEWS_WITHOUT_MATERIAL, [tenantId])).rows)
+  report.invariant = {
+    interviews_without_material: withoutMaterial.length,
+    rows: withoutMaterial.map((row) => ({
+      interview_id: row.interview_id, application_id: row.application_id, round_no: row.round_no, status: row.status,
+    })),
+    ok: withoutMaterial.length === 0,
+  }
+  if (withoutMaterial.length > 0) {
+    throw new Error(
+      'seed.demo_material: 仍存在「有面试却无材料」的申请：'
+        + withoutMaterial.map((row) => `${row.application_id}(面试 ${row.round_no}/${row.status})`).join(', '),
+    )
+  }
+
+  report.write_steps = [...new Set(report.write_steps)]
+  report.written = written
+  return report
+}
+
+/**
+ * 把材料链种子的结果写进 steps（重跑时同样输出，用 `state=PRESENT` 证明"零变更"）。
+ * @param addStep - `run()` 里的步骤登记函数。
+ * @param material - `seedDemoMaterial()` 的返回。
+ */
+function addMaterialSeedSteps(addStep, material) {
+  const row = material.demo_material
+  addStep('seed.demo_material', 'recruitment_application_intake',
+    `application=${row.application_id} state=${row.state} resume_version=v${row.resume_version_no}`
+      + ` parse=${row.parse_status} sha256=${row.sha256} bytes=${row.byte_size}`
+      + ` chain_ok=${row.chain_ok} hash_match=${row.hash_match} parse_ok=${row.parse_ok}`,
+    { ok: row.chain_ok === true && row.hash_match === true && row.parse_ok === true })
+  const invariant = material.invariant
+  addStep('seed.demo_interviews.material', null,
+    `全租户「有面试却无材料」的申请数=${invariant.interviews_without_material}（要求 0）ok=${invariant.ok}`,
+    { ok: invariant.ok })
+  for (const issue of material.issues) addStep('seed.issue', null, issue, { ok: false })
+}
+
 /**
  * 把演示种子的结果写进 steps（重跑时同样输出，用 `state=PRESENT` 证明"零变更"）。
  * @param addStep - `run()` 里的步骤登记函数。
@@ -947,6 +1368,20 @@ async function run(env) {
     ctx.seed = await seedDemoData(pool, cfg)
     addSeedSteps(addStep, ctx.seed)
     writes.push(...ctx.seed.write_steps)
+    ctx.seedIssues = [...ctx.seed.issues]
+
+    // ---- 3.7 P1 #5 材料链种子（申请 …0701 必须有真实 resume/intake/material，再谈 801/802 面试）----
+    const materialSeed = await seedDemoMaterial(pool, cfg, env)
+    addMaterialSeedSteps(addStep, materialSeed)
+    ctx.seed = {
+      ...ctx.seed,
+      demo_material: materialSeed.demo_material,
+      invariant: materialSeed.invariant,
+      write_steps: [...new Set([...ctx.seed.write_steps, ...materialSeed.write_steps])],
+      issues: [...ctx.seed.issues, ...materialSeed.issues],
+      written: ctx.seed.write_steps.length > 0 || materialSeed.write_steps.length > 0,
+    }
+    writes.push(...materialSeed.write_steps)
     ctx.seedIssues = [...ctx.seed.issues]
 
     // ---- 3.5 纯重放：NO_OP 到此为止（不调任何工具、零写入、exit 0） ----
