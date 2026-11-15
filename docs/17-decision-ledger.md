@@ -1536,6 +1536,8 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
 
 - **D-123（2026-11-15 裁决；决策阶段闸门）**：`decision-record` 的 `STAGE/FINAL` 除 DC-07 写死 `decision.stage_code='S10'` 外，**还必须校验 `application.current_stage_code='S10'`**；否则 `INVALID_ARGS(STAGE_NOT_S10)` 零写入。`SCREENING` 保持 S7 写侧语义。Host facade 提前同一判据 fail-fast，工具侧权威闸门保留。独立验收发现的 `45ddd9fc`(S7)+`c645baba`(FINAL/S10) 为存量脏行，新闸门只挡新写，数据处置待验收后裁决。见合同 DC-07b。
 - **D-124（2026-11-15 裁决；角色 alias 扩展）**：Demo Actor alias 从 3 个扩到 5 个：`recruiter`(0103 HR)、`interviewer_a`(0104)、`interviewer_b`(0105)、`hiring_manager`(0102 HIRING_MANAGER)、`approver`(0101 ORG_ADMIN)。角色只决定**默认视图与可见性**；Host Action 的写授权仍只有 `recruiter`（`ACTION_ALLOWED_ALIASES` 不扩），approver/hiring_manager 写入返回 403 零写入，UI 提供显式“切换为 Recruiter 执行”并保留 403 负例。生产应改为按角色授权，届时另立裁决。
+- **D-109.11（2026-11-15，总控；P0-3 材料落地预算追认）**：代码行口径 **4,056 → 4,584（+528）**。理由：RESUME_PARSE/Worker 任务书必须把材料从 `intake_asset` 的 content-addressed 引用变成 worker workspace 可读的受控路径，才能避免全盘搜索与 180s 超时；涉及 task-context（+328：MATERIAL/UNKNOWNS/版本钉）、worker（+134：spawn cwd/材料落地）、store/readback（+60）、store/index（+6）。排除替代：只在 prompt 里写“自己找文件”（本次失败根因）、复制真实材料到仓库（R7 禁止）、让模型猜路径（违反 R3）。未触发 D-109 换实现条件。CEILING 同步 4584。
+- **D-125（2026-11-15 裁决；RESUME_PARSE 只读口径）**：`RESUME_PARSE` 是**只读解析任务**：intake 事件落地时已写 `resume_version/application`，worker 再写会重复。任务书仅对该 task_type 显式标注 read-only、禁止写工具，并给 `recruitment_resume_read {path}` 提示；其它任务类型不渲染。worker（独立 DSH 进程）**不授予人类写身份**；写工具仍按 session→actor 硬拒（`DEMO_ACTOR_UNMAPPED` 零写入），这不是绕过闸门。若未来需要 worker 可写，另立“受控服务身份”能力与裁决，不在本任务扩范围。
 ### D-122 · v1.0 验收基准与运行底座口径收口（C1–C3）
 
 **裁定（2026-11-16，总控；回答 Notion 14 与 `work/review/2026-11-16-notion-acceptance/03-CONFLICTS.md` 的 C1–C3）**：

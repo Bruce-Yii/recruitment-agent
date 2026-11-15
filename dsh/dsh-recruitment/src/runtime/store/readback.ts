@@ -496,3 +496,102 @@ export async function listTasks(
     return rows.map(mapTask)
   })
 }
+
+// ---------------------------------------------------------------------------
+//  P0-3：任务书要的**材料事实**（受控只读；路径不进 DB，只有内容寻址引用）
+//
+//  为什么需要它们：worker 的任务书只给 sha256/file_name/byte_size，而
+//  `intake_asset.storage_ref` 只有 `content-addressed:sha256:<sha>`（**没有文件路径**），
+//  agent 于是全盘搜索材料 → WORKER_TIMEOUT。这里给任务书一份可核对的材料清单
+//  （文件名/mime/大小/sha/内容寻址引用）。**不含正文**，也不做"该解析哪份材料"的
+//  业务判断：选哪份由调用方按 business_ref 决定。
+// ---------------------------------------------------------------------------
+
+/** P0-3：一条材料的受控事实（不含文件正文；路径不进 DB，只有内容寻址引用）。 */
+export interface MaterialRow {
+  readonly intakeRecordId: string
+  readonly assetId: string
+  readonly fileName: string
+  readonly mimeType: string | null
+  readonly byteSize: number
+  readonly sha256: string
+  readonly storageRef: string
+}
+
+/** 材料行的列清单（两条查询共用：别名/列序只有一处，避免它们悄悄漂移）。 */
+const MATERIAL_COLUMNS = `ir.id::text as intake_record_id, ia.id::text as asset_id,
+        ia.file_name, ia.mime_type, ia.byte_size, ia.sha256, ia.storage_ref`
+
+/** 行映射：uuid 列 SQL 侧已 `::text`；可空 `mime_type` 用 `iso()`，bigint 用 `num()`。 */
+function mapMaterial(row: Record<string, unknown>): MaterialRow {
+  return {
+    intakeRecordId: String(row.intake_record_id),
+    assetId: String(row.asset_id),
+    fileName: String(row.file_name),
+    mimeType: iso(row.mime_type),
+    byteSize: num(row.byte_size),
+    sha256: String(row.sha256),
+    storageRef: String(row.storage_ref),
+  }
+}
+
+/**
+ * P0-3：一份收件（`intake_record`）下的**全部**材料事实，按 `created_at, id` 稳定排序。
+ *
+ * 一封转发邮件三份资料 → 同一 `intake_record` 多条 `intake_asset`（0001 表注释），
+ * 所以这里不去重、不挑"最像简历"的一份：那是业务判断，不是读层的事。
+ * @param pool - 连接池。
+ * @param tenantId - 租户 id（判等，防跨租户读别人的材料）。
+ * @param intakeRecordId - 收件 id。
+ * @returns 材料事实数组；收件不存在（或不属于该租户）→ 空数组。
+ */
+export async function materialsForIntakeRecord(
+  pool: DatabasePool, tenantId: string, intakeRecordId: string,
+): Promise<readonly MaterialRow[]> {
+  return withReadOnly(pool, async (client) => {
+    const { rows } = await client.query<Record<string, unknown>>(
+      `select ${MATERIAL_COLUMNS}
+         from recruitment.intake_record ir
+         join recruitment.intake_asset ia
+           on ia.intake_record_id = ir.id and ia.tenant_id = ir.tenant_id
+        where ir.tenant_id = $1::uuid and ir.id = $2::uuid
+        order by ia.created_at, ia.id`,
+      [tenantId, intakeRecordId],
+    )
+    return rows.map(mapMaterial)
+  })
+}
+
+/**
+ * P0-3：一条申请的材料事实：
+ * `application a → resume_version rv → resume r → intake_asset ia → intake_record ir`。
+ *
+ * 全链逐级判 `tenant_id`：跨租户的中间行**不参与**（链断就读不到，不猜）。
+ * 材料是"申请钉住的 `resume_version` 引用的那一份"，所以同一收件里的其它材料不会混进来。
+ * @param pool - 连接池。
+ * @param tenantId - 租户 id（判等）。
+ * @param applicationId - 申请 id。
+ * @returns 材料事实数组；申请不存在 / 没钉 resume_version / 链断 → 空数组。
+ */
+export async function materialsForApplication(
+  pool: DatabasePool, tenantId: string, applicationId: string,
+): Promise<readonly MaterialRow[]> {
+  return withReadOnly(pool, async (client) => {
+    const { rows } = await client.query<Record<string, unknown>>(
+      `select ${MATERIAL_COLUMNS}
+         from recruitment.application a
+         join recruitment.resume_version rv
+           on rv.id = a.resume_version_id and rv.tenant_id = a.tenant_id
+         join recruitment.resume r
+           on r.id = rv.resume_id and r.tenant_id = rv.tenant_id
+         join recruitment.intake_asset ia
+           on ia.id = r.intake_asset_id and ia.tenant_id = r.tenant_id
+         join recruitment.intake_record ir
+           on ir.id = ia.intake_record_id and ir.tenant_id = ia.tenant_id
+        where a.tenant_id = $1::uuid and a.id = $2::uuid
+        order by ia.created_at, ia.id`,
+      [tenantId, applicationId],
+    )
+    return rows.map(mapMaterial)
+  })
+}

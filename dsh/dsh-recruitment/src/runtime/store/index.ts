@@ -42,6 +42,7 @@ export type {
   IntakeApplicationLinkRow,
   InterviewVersionPinRow,
   JobVersionPointerRow,
+  MaterialRow,
 } from './readback.ts'
 export type { InsertEventResult } from './events.ts'
 export type { TaskClaim } from './claim.ts'
@@ -259,6 +260,16 @@ export class RuntimeStore {
   /** D-120：interview 行 + 当前 interview_record 的版本钉（行不存在 → null）。 */
   interviewVersionPins(interviewId: string): Promise<readback.InterviewVersionPinRow | null> {
     return readback.interviewVersionPins(this.pool, this.tenantId, interviewId)
+  }
+
+  /** P0-3：INTAKE_RECORD 的材料事实（只读；收件不存在/无材料 → 空数组）。 */
+  materialsForIntakeRecord(intakeRecordId: string): Promise<readonly readback.MaterialRow[]> {
+    return readback.materialsForIntakeRecord(this.pool, this.tenantId, intakeRecordId)
+  }
+
+  /** P0-3：APPLICATION 沿简历版本链的材料事实（只读；链断 → 空数组）。 */
+  materialsForApplication(applicationId: string): Promise<readonly readback.MaterialRow[]> {
+    return readback.materialsForApplication(this.pool, this.tenantId, applicationId)
   }
 
   /** 运行时计数（健康检查/证据用；不参与业务判断）。 */

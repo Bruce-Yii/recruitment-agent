@@ -9,10 +9,14 @@
 //   * 工具段：真实工具名 + 精确参数（recruitment_trace_get BUSINESS_TASK / EVENT / APPLICATION）；
 //   * 事实源端口：createStoreTaskContextSource 用假 reader 覆盖正例 / 查不到 / 抛错 / 事件类型不符 /
 //     intake_record 不一致 / 材料正文绝不进 prompt；
-//   * launcher 降级接缝：loadTaskContextFacts 未配置 → (null, null)；抛错 → context_source_unavailable；
-//   * 子进程退出分类：被 kill → WORKER_LOST/WORKER_LOST/retryable（store 据此把 session 标 LOST）；
-//     exit 0 无 final 保持 WORKER_NO_FINAL；有 final 不算退出失败。
+//   * P0-3 MATERIAL：材料 + 可解析路径 → material_path / workspace_ref / sha / size；roots 不含
+//     → MATERIAL UNKNOWN（不猜路径）；无材料引用 → 明说没有；resolveMaterialPath /
+//     materialRootsFromEnv / workspaceRefForMaterial 纯函数（含预算与 `../` 逃逸）。
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { describe, test } from 'node:test'
 import {
   buildTaskContext,
@@ -20,15 +24,19 @@ import {
   createStoreTaskContextSource,
   extractRequestFacts,
   loadTaskContextFacts,
+  materialRootsFromEnv,
   parseTriggerEvent,
   renderTaskContextPrompt,
+  resolveMaterialPath,
   TASK_CONTEXT_SECTIONS,
+  workspaceRefForMaterial,
 } from '../../src/runtime/task-context.ts'
 import type {
   ApplicationVersionPinRow,
   InterviewVersionPinRow,
   JobVersionPointerRow,
   TaskContextFacts,
+  TaskContextMaterialRow,
   TaskContextReader,
   TaskContextSource,
 } from '../../src/runtime/task-context.ts'
@@ -82,7 +90,7 @@ function makeFacts(overrides: Partial<TaskContextFacts> = {}): TaskContextFacts 
   }
 }
 
-describe('task prompt structure (seven sections + TOOLS)', () => {
+describe('task prompt structure (eight sections + TOOLS)', () => {
   test('every declared section heading is rendered and ordered', () => {
     const prompt = buildWorkerPrompt(makeRequest())
     const positions = Object.values(TASK_CONTEXT_SECTIONS).map((label) => {
@@ -92,8 +100,10 @@ describe('task prompt structure (seven sections + TOOLS)', () => {
     })
     const sorted = [...positions].sort((a, b) => a - b)
     assert.deepEqual(positions, sorted, 'sections must appear in the declared order')
-    // 七段 + TOOLS = 8 个标题。
-    assert.equal(Object.keys(TASK_CONTEXT_SECTIONS).length, 8)
+    // P0-3 契约扩展：原"七段 + TOOLS = 8 个标题"→ 新增 MATERIAL 段 = 8 段 + TOOLS = 9 个标题。
+    // 这是**新增段**，不是放宽旧断言：旧 7 个标题/编号仍逐字断言（见下方 legacy 用例）。
+    assert.equal(Object.keys(TASK_CONTEXT_SECTIONS).length, 9)
+    assert.equal(TASK_CONTEXT_SECTIONS.material, 'MATERIAL (read exactly these files)')
   })
 
   test('identity JSON carries stable task/attempt identity and no material body', () => {
@@ -368,6 +378,12 @@ interface PinCalls {
   interviews: string[]
 }
 
+/** P0-3 的材料查询调用（单独记，避免改动旧 `pinCalls` 的 deepEqual 断言）。 */
+interface MaterialCalls {
+  intake: string[]
+  application: string[]
+}
+
 function makeReader(input: {
   event?: Awaited<ReturnType<TaskContextReader['getEvent']>>
   intakeId?: string | null
@@ -377,9 +393,18 @@ function makeReader(input: {
   applicationLink?: Awaited<ReturnType<TaskContextReader['applicationLinkForIntakeRecord']>>
   interviewPins?: InterviewVersionPinRow | null
   onApplicationPins?: () => Promise<never>
-}): { reader: TaskContextReader; calls: ReaderCalls; pinCalls: PinCalls } {
+  intakeMaterials?: readonly TaskContextMaterialRow[]
+  applicationMaterials?: readonly TaskContextMaterialRow[]
+  onMaterials?: () => Promise<never>
+}): {
+  reader: TaskContextReader
+  calls: ReaderCalls
+  pinCalls: PinCalls
+  materialCalls: MaterialCalls
+} {
   const calls: ReaderCalls = { events: [], intakes: [] }
   const pinCalls: PinCalls = { applications: [], jobs: [], intakeLinks: [], interviews: [] }
+  const materialCalls: MaterialCalls = { intake: [], application: [] }
   const reader: TaskContextReader = {
     async getEvent(eventId) {
       calls.events.push(eventId)
@@ -407,8 +432,18 @@ function makeReader(input: {
       pinCalls.interviews.push(interviewId)
       return input.interviewPins ?? null
     },
+    async materialsForIntakeRecord(intakeRecordId) {
+      materialCalls.intake.push(intakeRecordId)
+      if (input.onMaterials !== undefined) return input.onMaterials()
+      return input.intakeMaterials ?? []
+    },
+    async materialsForApplication(applicationId) {
+      materialCalls.application.push(applicationId)
+      if (input.onMaterials !== undefined) return input.onMaterials()
+      return input.applicationMaterials ?? []
+    },
   }
-  return { reader, calls, pinCalls }
+  return { reader, calls, pinCalls, materialCalls }
 }
 
 function makeEvent(overrides: Partial<NonNullable<Awaited<ReturnType<TaskContextReader['getEvent']>>>> = {}) {
@@ -465,8 +500,9 @@ function makeInterviewPins(overrides: Partial<InterviewVersionPinRow> = {}): Int
 async function loadFacts(
   reader: TaskContextReader,
   request: WorkerTaskRequest = makeRequest(),
+  options?: Parameters<typeof createStoreTaskContextSource>[1],
 ): Promise<TaskContextFacts> {
-  const facts = await createStoreTaskContextSource(reader).load(request)
+  const facts = await createStoreTaskContextSource(reader, options).load(request)
   assert.ok(facts !== null, 'store-backed source must return facts (or reject)')
   return facts
 }
@@ -896,5 +932,431 @@ describe('D-120 version pins from business facts', () => {
     assert.equal(prompt.includes('CONFIDENTIAL'), false)
     assert.equal(JSON.stringify(facts).includes('CONFIDENTIAL'), false, 'facts must not carry material body text')
     assert.ok(prompt.includes(RESUME_SHA), 'the hash locator must still be present')
+  })
+})
+
+// ---------------------------------------------------------------------------
+//  P0-3 MATERIAL（契约 §2.1/§2.2）：渲染、路径解析纯函数、材料事实源。
+//  现场根因：intake_asset 只有 content-addressed sha（无路径），任务书只给 sha/file_name，
+//  Agent 只能全盘搜索 → attempt2/3 180s WORKER_TIMEOUT。这里守住"有路径就给真路径，
+//  没路径就明说 UNKNOWN"。
+// ---------------------------------------------------------------------------
+
+/** 取任务书的 MATERIAL 段（标题 → 下一个段标题 VERSION PINS）。 */
+function materialSection(prompt: string): string {
+  const start = prompt.indexOf(TASK_CONTEXT_SECTIONS.material)
+  assert.ok(start >= 0, 'prompt is missing the MATERIAL section')
+  const end = prompt.indexOf(TASK_CONTEXT_SECTIONS.versionPins, start + TASK_CONTEXT_SECTIONS.material.length)
+  assert.ok(end > start, 'MATERIAL section must end before VERSION PINS')
+  return prompt.slice(start, end)
+}
+
+/** 字节的 sha256。 */
+function sha256Of(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex')
+}
+
+/** 临时目录夹具。 */
+function makeTempDir(label: string): { dir: string; cleanup: () => void } {
+  const dir = mkdtempSync(join(tmpdir(), `p03-${label}-`))
+  return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) }
+}
+
+/** 一条 store 材料行（字段与 A lane `store/readback.ts` 的 MaterialRow 一致）。 */
+function makeMaterialRow(overrides: Partial<TaskContextMaterialRow> = {}): TaskContextMaterialRow {
+  return {
+    intakeRecordId: INTAKE_ID,
+    assetId: OTHER_ID,
+    fileName: 'candidate.pdf',
+    mimeType: 'application/pdf',
+    byteSize: 1024,
+    sha256: RESUME_SHA,
+    storageRef: `content-addressed:sha256:${RESUME_SHA}`,
+    ...overrides,
+  }
+}
+
+describe('P0-3 MATERIAL section', () => {
+  test('a resolvable material renders material_path / workspace_ref / sha / byte_size', async () => {
+    const temp = makeTempDir('material-hit')
+    try {
+      const bytes = Buffer.from('synthetic resume bytes (P0-3 material hit)', 'utf8')
+      const sha = sha256Of(bytes)
+      const filePath = join(temp.dir, 'candidate.pdf')
+      writeFileSync(filePath, bytes)
+      const { reader, materialCalls } = makeReader({
+        event: makeEvent({ payload: { sha256: sha, file_name: 'candidate.pdf' } }),
+        intakeId: INTAKE_ID,
+        intakeMaterials: [
+          makeMaterialRow({ byteSize: bytes.length, sha256: sha, storageRef: `content-addressed:sha256:${sha}` }),
+        ],
+      })
+      const facts = await createStoreTaskContextSource(reader, { material: { roots: [temp.dir] } }).load(makeRequest())
+      assert.ok(facts !== null)
+      assert.deepEqual(materialCalls.intake, [INTAKE_ID], 'INTAKE_RECORD ref must read intake materials')
+
+      assert.equal(facts.materials?.length, 1)
+      const material = facts.materials?.[0]
+      assert.ok(material !== undefined)
+      assert.equal(material.material_path, filePath)
+      assert.equal(existsSync(material.material_path ?? ''), true, 'material_path must point at a real file')
+      assert.equal(material.sha256, sha)
+      assert.equal(material.byte_size, bytes.length)
+      assert.equal(material.mime_type, 'application/pdf')
+      assert.equal(material.workspace_ref, 'materials/candidate.pdf')
+      assert.equal(material.source, 'allowed_roots_lookup:sha256+file_name+byte_size')
+
+      // 证据 locator：kind=material / ref=sha（路径不进 locator 的 ref）。
+      const locator = facts.evidence_locators.find((candidate) => candidate.kind === 'material')
+      assert.ok(locator !== undefined, 'a resolved material must add a material locator')
+      assert.equal(locator.ref, sha)
+      assert.match(locator.note ?? '', /file_name=candidate\.pdf/)
+      assert.match(locator.note ?? '', /source=allowed_roots_lookup/)
+
+      // 渲染：段内四要素齐全，且该材料不进 UNKNOWNS。
+      const prompt = buildWorkerPrompt(makeRequest(), facts)
+      const section = materialSection(prompt)
+      for (const expected of [
+        `- candidate.pdf sha256=${sha} byte_size=${bytes.length} mime_type=application/pdf`,
+        `material_path: ${filePath}  (verified: allowed_roots + file bytes sha256)`,
+        'material_workspace_ref: materials/candidate.pdf  (copied into the session workspace by the launcher)',
+        'Read the material only from the exact material_path / material_workspace_ref above',
+      ]) {
+        assert.ok(section.includes(expected), `MATERIAL section is missing: ${expected}\n---\n${section}`)
+      }
+      assert.equal(section.includes('MATERIAL UNKNOWN'), false)
+      assert.equal(facts.unknowns.join('\n').includes('materials: UNKNOWN'), false)
+    } finally {
+      temp.cleanup()
+    }
+  })
+
+  test('a resolvable material on RESUME_PARSE adds the read-only scope and the resume_read hint', async () => {
+    const temp = makeTempDir('material-readonly-scope')
+    try {
+      const bytes = Buffer.from('synthetic resume bytes (P0-3 read-only scope)', 'utf8')
+      const sha = sha256Of(bytes)
+      const filePath = join(temp.dir, 'candidate.pdf')
+      writeFileSync(filePath, bytes)
+      const { reader } = makeReader({
+        event: makeEvent({ payload: { sha256: sha, file_name: 'candidate.pdf' } }),
+        intakeId: INTAKE_ID,
+        intakeMaterials: [makeMaterialRow({ byteSize: bytes.length, sha256: sha })],
+      })
+      const facts = await createStoreTaskContextSource(reader, { material: { roots: [temp.dir] } }).load(makeRequest())
+      assert.ok(facts !== null)
+      // P0-3：写工具在 worker 会话里必然 DEMO_ACTOR_UNMAPPED（现场 attempt1/2），任务书必须显式禁止。
+      const prompt = buildWorkerPrompt(makeRequest(), facts)
+      assert.ok(prompt.includes('RESUME_PARSE scope: this task is READ-ONLY'))
+      assert.ok(prompt.includes('Do NOT call write tools'))
+      assert.ok(prompt.includes('DEMO_ACTOR_UNMAPPED'))
+      assert.ok(prompt.includes(`recruitment_resume_read {"path":${JSON.stringify(filePath)}}`), 'resume_read hint with the exact material_path must be rendered')
+      // 非只读材料任务不渲染这条 scope（避免误伤其它任务类型）。
+      const other = buildWorkerPrompt(makeRequest({ taskType: 'EVALUATION_SYNTHESIZE' }), facts)
+      assert.equal(other.includes('RESUME_PARSE scope'), false)
+    } finally {
+      temp.cleanup()
+    }
+  })
+
+  test('a material outside every allowed root renders MATERIAL UNKNOWN and invents no path', async () => {
+    const roots = makeTempDir('material-miss-roots')
+    const source = makeTempDir('material-miss-source')
+    try {
+      const bytes = Buffer.from('synthetic resume bytes (P0-3 material miss)', 'utf8')
+      const sha = sha256Of(bytes)
+      writeFileSync(join(source.dir, 'candidate.pdf'), bytes)
+      const { reader } = makeReader({
+        event: makeEvent({ payload: { sha256: sha, file_name: 'candidate.pdf' } }),
+        intakeId: INTAKE_ID,
+        intakeMaterials: [makeMaterialRow({ byteSize: bytes.length, sha256: sha })],
+      })
+      const facts = await createStoreTaskContextSource(reader, { material: { roots: [roots.dir] } }).load(makeRequest())
+      assert.ok(facts !== null)
+      const material = facts.materials?.[0]
+      assert.ok(material !== undefined)
+      assert.equal(material.material_path, undefined, 'must not invent a material path')
+      assert.equal(material.workspace_ref, undefined, 'workspace_ref only exists when material_path exists')
+      assert.match(
+        material.source ?? '',
+        /^allowed_roots_lookup:NOT_FOUND_IN_ALLOWED_ROOTS;checked_roots=1$/,
+      )
+
+      const prompt = buildWorkerPrompt(makeRequest(), facts)
+      const section = materialSection(prompt)
+      assert.ok(
+        section.includes(
+          `- MATERIAL UNKNOWN: candidate.pdf sha256=${sha} — NOT_FOUND_IN_ALLOWED_ROOTS (checked 1 allowed roots; do not invent a path)`,
+        ),
+        `MATERIAL UNKNOWN line is missing\n---\n${section}`,
+      )
+      assert.equal(section.includes('material_path:'), false)
+      assert.equal(section.includes('material_workspace_ref:'), false)
+    } finally {
+      roots.cleanup()
+      source.cleanup()
+    }
+  })
+
+  test('a task whose business objects reference no material says so explicitly', () => {
+    const section = materialSection(buildWorkerPrompt(makeRequest()))
+    assert.ok(section.includes("- (no material is referenced by this task's business objects)"))
+    assert.equal(section.includes('MATERIAL UNKNOWN'), false)
+    assert.equal(section.includes('material_path:'), false)
+  })
+
+  test('MATERIAL is inserted between BUSINESS OBJECTS and VERSION PINS without renumbering the 7 old sections', () => {
+    const prompt = buildWorkerPrompt(makeRequest())
+    const businessAt = prompt.indexOf(TASK_CONTEXT_SECTIONS.businessObjects)
+    const materialAt = prompt.indexOf(TASK_CONTEXT_SECTIONS.material)
+    const pinsAt = prompt.indexOf(TASK_CONTEXT_SECTIONS.versionPins)
+    assert.ok(businessAt >= 0 && materialAt > businessAt, 'MATERIAL must come after BUSINESS OBJECTS')
+    assert.ok(pinsAt > materialAt, 'MATERIAL must come before VERSION PINS')
+    // 旧编号/旧文案逐字不变（P0-3 不许借新增段偷偷改旧契约）。
+    for (const heading of [
+      '1) BUSINESS TASK',
+      '2) BUSINESS OBJECTS',
+      '3) VERSION PINS',
+      '4) EVIDENCE LOCATORS',
+      '5) UNKNOWNS',
+      'TOOLS (use a real tool before you conclude)',
+      '6) OUTPUT JSON SCHEMA',
+      '7) FORBIDDEN ITEMS',
+    ]) {
+      assert.ok(prompt.includes(heading), `old section heading changed or missing: ${heading}`)
+    }
+    assert.match(prompt, /EXACTLY ONE JSON object/)
+    assert.match(prompt, /untrusted data/)
+  })
+
+  test('material source follows business refs: APPLICATION/INTERVIEW → application, INTAKE_RECORD → intake, JOB → none', async () => {
+    const applicationReader = makeReader({
+      applicationPins: makeApplicationPins(),
+      applicationMaterials: [makeMaterialRow({ sha256: 'b'.repeat(64) })],
+    })
+    const applicationFacts = await loadFacts(
+      applicationReader.reader,
+      makeRequest({ businessRefs: [{ type: 'APPLICATION', id: APPLICATION_ID }] }),
+      { material: { roots: [] } },
+    )
+    assert.deepEqual(applicationReader.materialCalls.application, [APPLICATION_ID])
+    assert.deepEqual(applicationReader.materialCalls.intake, [])
+    assert.equal(applicationFacts.materials?.length, 1)
+
+    const interviewReader = makeReader({
+      interviewPins: makeInterviewPins(),
+      applicationPins: makeApplicationPins(),
+      applicationMaterials: [makeMaterialRow({ sha256: 'b'.repeat(64) })],
+    })
+    const interviewFacts = await loadFacts(
+      interviewReader.reader,
+      makeRequest({ businessRefs: [{ type: 'INTERVIEW', id: INTERVIEW_ID }] }),
+      { material: { roots: [] } },
+    )
+    assert.deepEqual(interviewReader.materialCalls.application, [APPLICATION_ID])
+    assert.equal(interviewFacts.materials?.length, 1)
+
+    const intakeReader = makeReader({
+      event: makeEvent(),
+      intakeId: INTAKE_ID,
+      intakeMaterials: [makeMaterialRow({ sha256: 'b'.repeat(64) })],
+    })
+    const intakeFacts = await loadFacts(intakeReader.reader, makeRequest(), { material: { roots: [] } })
+    assert.deepEqual(intakeReader.materialCalls.intake, [INTAKE_ID])
+    assert.deepEqual(intakeReader.materialCalls.application, [])
+    assert.equal(intakeFacts.materials?.length, 1)
+
+    const jobReader = makeReader({ event: null })
+    const jobFacts = await loadFacts(
+      jobReader.reader,
+      makeRequest({ businessRefs: [{ type: 'JOB', id: JOB_ID }] }),
+      { material: { roots: [] } },
+    )
+    assert.deepEqual(jobReader.materialCalls, { intake: [], application: [] }, 'JOB tasks reference no material')
+    assert.equal(jobFacts.materials?.length, 0)
+  })
+
+  test('a store without material queries reports UNKNOWN instead of pretending there is no material', async () => {
+    const legacyReader: TaskContextReader = {
+      async getEvent() { return null },
+      async intakeRecordIdForEvent() { return null },
+      async applicationVersionPins() { return null },
+      async jobVersionPointers() { return null },
+      async applicationLinkForIntakeRecord() { return { applicationId: null, candidates: 0 } },
+      async interviewVersionPins() { return null },
+    }
+    const facts = await loadFacts(legacyReader)
+    assert.match(facts.unknowns.join('\n'), /has no materialsForIntakeRecord query installed/)
+    assert.equal(facts.materials?.length, 0)
+  })
+
+  test('material facts never carry raw_text / transcript bodies into the prompt', async () => {
+    const temp = makeTempDir('material-body')
+    try {
+      const bytes = Buffer.from('synthetic resume body bytes', 'utf8')
+      const sha = sha256Of(bytes)
+      writeFileSync(join(temp.dir, 'candidate.pdf'), bytes)
+      const rowWithBody = {
+        ...makeMaterialRow({ byteSize: bytes.length, sha256: sha }),
+        raw_text: 'CONFIDENTIAL CANDIDATE BODY should never reach the prompt',
+        transcript: 'CONFIDENTIAL TRANSCRIPT BODY',
+      } as unknown as TaskContextMaterialRow
+      const { reader } = makeReader({
+        event: makeEvent({
+          payload: {
+            sha256: sha,
+            file_name: 'candidate.pdf',
+            raw_text: 'CONFIDENTIAL CANDIDATE BODY should never reach the prompt',
+            transcript: 'CONFIDENTIAL TRANSCRIPT BODY',
+          },
+        }),
+        intakeId: INTAKE_ID,
+        intakeMaterials: [rowWithBody],
+      })
+      const facts = await createStoreTaskContextSource(reader, { material: { roots: [temp.dir] } }).load(makeRequest())
+      assert.ok(facts !== null)
+      const prompt = buildWorkerPrompt(makeRequest(), facts)
+      const section = materialSection(prompt)
+      assert.equal(prompt.includes('CONFIDENTIAL'), false)
+      assert.equal(section.includes('CONFIDENTIAL'), false)
+      assert.equal(JSON.stringify(facts).includes('CONFIDENTIAL'), false)
+      assert.ok(section.includes(sha), 'the hash must still be rendered')
+    } finally {
+      temp.cleanup()
+    }
+  })
+})
+
+describe('resolveMaterialPath / materialRootsFromEnv / workspaceRefForMaterial (pure)', () => {
+  test('finds a real file under an injected root by file_name + byte_size + sha256', () => {
+    const temp = makeTempDir('resolve-hit')
+    try {
+      const bytes = Buffer.from('synthetic material for resolveMaterialPath', 'utf8')
+      const filePath = join(temp.dir, 'resume.pdf')
+      writeFileSync(filePath, bytes)
+      assert.deepEqual(
+        resolveMaterialPath(
+          { fileName: 'resume.pdf', byteSize: bytes.length, sha256: sha256Of(bytes) },
+          { roots: [temp.dir] },
+        ),
+        { path: filePath, reason: 'FOUND' },
+      )
+      // 大小写不敏感的文件名预筛（不是路径猜测）。
+      writeFileSync(join(temp.dir, 'UPPER.PDF'), bytes)
+      assert.equal(
+        resolveMaterialPath(
+          { fileName: 'upper.pdf', byteSize: bytes.length, sha256: sha256Of(bytes) },
+          { roots: [temp.dir] },
+        ).reason,
+        'FOUND',
+      )
+    } finally {
+      temp.cleanup()
+    }
+  })
+
+  test('a wrong sha256 or a different byte_size never matches (no guessing)', () => {
+    const temp = makeTempDir('resolve-miss')
+    try {
+      const bytes = Buffer.from('synthetic material for negative resolve', 'utf8')
+      writeFileSync(join(temp.dir, 'resume.pdf'), bytes)
+      assert.deepEqual(
+        resolveMaterialPath(
+          { fileName: 'resume.pdf', byteSize: bytes.length, sha256: 'c'.repeat(64) },
+          { roots: [temp.dir] },
+        ),
+        { path: null, reason: 'NOT_FOUND_IN_ALLOWED_ROOTS' },
+      )
+      assert.deepEqual(
+        resolveMaterialPath(
+          { fileName: 'resume.pdf', byteSize: bytes.length + 1, sha256: sha256Of(bytes) },
+          { roots: [temp.dir] },
+        ),
+        { path: null, reason: 'NOT_FOUND_IN_ALLOWED_ROOTS' },
+      )
+    } finally {
+      temp.cleanup()
+    }
+  })
+
+  test('roots that do not contain the file yield NOT_FOUND, never a cwd fallback', () => {
+    const temp = makeTempDir('resolve-other-root')
+    try {
+      const bytes = Buffer.from('synthetic material outside roots', 'utf8')
+      writeFileSync(join(temp.dir, 'resume.pdf'), bytes)
+      assert.deepEqual(
+        resolveMaterialPath(
+          { fileName: 'resume.pdf', byteSize: bytes.length, sha256: sha256Of(bytes) },
+          { roots: [join(temp.dir, 'nested-that-does-not-exist')] },
+        ),
+        { path: null, reason: 'NO_ALLOWED_ROOTS' },
+      )
+      const emptyRoot = join(temp.dir, 'empty')
+      mkdirSync(emptyRoot)
+      assert.deepEqual(
+        resolveMaterialPath(
+          { fileName: 'resume.pdf', byteSize: bytes.length, sha256: sha256Of(bytes) },
+          { roots: [emptyRoot] },
+        ),
+        { path: null, reason: 'NOT_FOUND_IN_ALLOWED_ROOTS' },
+      )
+    } finally {
+      temp.cleanup()
+    }
+  })
+
+  test('the entry budget is reported as SEARCH_BUDGET_EXCEEDED instead of NOT_FOUND', () => {
+    const temp = makeTempDir('resolve-budget')
+    try {
+      for (const name of ['a.pdf', 'b.pdf', 'c.pdf']) {
+        writeFileSync(join(temp.dir, name), Buffer.from(`budget-${name}`, 'utf8'))
+      }
+      assert.deepEqual(
+        resolveMaterialPath(
+          { fileName: 'missing.pdf', byteSize: 1, sha256: 'd'.repeat(64) },
+          { roots: [temp.dir], maxEntries: 1 },
+        ),
+        { path: null, reason: 'SEARCH_BUDGET_EXCEEDED' },
+      )
+    } finally {
+      temp.cleanup()
+    }
+  })
+
+  test('materialRootsFromEnv reads only RECRUITMENT_ALLOWED_ROOT_* absolute existing dirs, sorted and deduped', () => {
+    const first = makeTempDir('roots-first')
+    const second = makeTempDir('roots-second')
+    try {
+      const roots = materialRootsFromEnv({
+        // 同一目录出现两次（trim 后）→ 去重。
+        RECRUITMENT_ALLOWED_ROOT_B: ` ${second.dir} `,
+        RECRUITMENT_ALLOWED_ROOT_A: first.dir,
+        RECRUITMENT_ALLOWED_ROOT_DUP: first.dir,
+        // 相对路径 / 不存在的绝对路径 / 非目录 → 一律忽略（不猜）。
+        RECRUITMENT_ALLOWED_ROOT_RELATIVE: 'relative/path',
+        RECRUITMENT_ALLOWED_ROOT_MISSING: join(first.dir, 'does-not-exist'),
+        RECRUITMENT_NOT_ALLOWED_ROOT: second.dir,
+        PATH: first.dir,
+      })
+      assert.deepEqual(roots, [resolve(second.dir), resolve(first.dir)].sort())
+      assert.deepEqual(materialRootsFromEnv({}), [])
+    } finally {
+      first.cleanup()
+      second.cleanup()
+    }
+  })
+
+  test('workspaceRefForMaterial sanitizes names, forbids "..", bounds length and never escapes materials/', () => {
+    assert.equal(workspaceRefForMaterial('../x.pdf'), 'materials/x.pdf')
+    assert.equal(workspaceRefForMaterial('..\\..\\evil.pdf'), 'materials/evil.pdf')
+    assert.equal(workspaceRefForMaterial('/etc/passwd'), 'materials/passwd')
+    for (const risky of ['../../x.pdf', '..\\evil.pdf', '..', '.', '', 'a'.repeat(300), 'bad name with spaces?.pdf']) {
+      const ref = workspaceRefForMaterial(risky, RESUME_SHA)
+      assert.match(ref, /^materials\/[A-Za-z0-9._-]{1,120}$/)
+      assert.equal(ref.includes('..'), false, `ref must not contain "..": ${ref}`)
+      assert.equal(ref.replace('materials/', '').includes('/'), false, `ref must be flat: ${ref}`)
+    }
+    assert.equal(workspaceRefForMaterial('', RESUME_SHA), `materials/material-${RESUME_SHA.slice(0, 8)}`)
+    assert.equal(workspaceRefForMaterial('   ', RESUME_SHA), `materials/material-${RESUME_SHA.slice(0, 8)}`)
   })
 })

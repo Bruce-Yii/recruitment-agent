@@ -21,13 +21,24 @@
 //
 // ⚠️ 输出捕获不用管道（stdio: 'pipe'）：在受限 Windows 环境里命名管道可能被
 //    拒绝；这里把 stdout/stderr 直接写到临时文件 fd，读文件解析 NDJSON。
+import { createHash } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { closeSync, mkdtempSync, openSync, readFileSync } from 'node:fs'
+import {
+  closeSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, isAbsolute, join, resolve, sep } from 'node:path'
 import { RuntimeError } from './errors.ts'
-import { buildWorkerPrompt, loadTaskContextFacts } from './task-context.ts'
-import type { TaskContextSource } from './task-context.ts'
+import { buildWorkerPrompt, loadTaskContextFacts, workspaceRefForMaterial } from './task-context.ts'
+import type { TaskContextMaterial, TaskContextSource } from './task-context.ts'
 import type { TaskErrorClass, WorkerLauncher, WorkerOutcome, WorkerTaskRequest } from './types.ts'
 
 // 任务书渲染已下沉到 task-context.ts（G2：业务上下文 / 版本钉 / 证据 locator / UNKNOWNS）。
@@ -41,14 +52,18 @@ export {
   parseTriggerEvent,
   renderTaskContextPrompt,
   TASK_CONTEXT_SECTIONS,
+  workspaceRefForMaterial,
 } from './task-context.ts'
 export type {
   LoadedTaskContext,
+  MaterialResolveOptions,
   TaskContext,
   TaskContextBusinessObject,
   TaskContextEventFacts,
   TaskContextEvidenceLocator,
   TaskContextFacts,
+  TaskContextMaterial,
+  TaskContextMaterialRow,
   TaskContextReader,
   TaskContextSource,
   TaskContextToolHint,
@@ -182,6 +197,148 @@ export function classifyWorkerExit(exit: WorkerExitFacts): WorkerExitClassificat
   return { errorCode: 'WORKER_NO_FINAL', errorClass: 'TRANSIENT', retryable: true }
 }
 
+/** 一条已落地 workspace 的材料（复制后 sha256 已复算一致）。 */
+export interface LandedMaterial {
+  readonly sha256: string
+  readonly path: string
+  readonly workspace_ref: string
+}
+
+/**
+ * `landMaterials` 的结果：失败不是异常，而是 issues。
+ *
+ * 为什么不是抛错：材料落地失败不代表任务不能做——任务书里的 `material_path` 仍可读，
+ * 让 Worker 继续执行并把问题如实写进 UNKNOWNS，比把整个 attempt 打挂更诚实。
+ */
+export interface MaterialLandingResult {
+  readonly landed: readonly LandedMaterial[]
+  readonly issues: readonly string[]
+}
+
+/** 单行错误摘要（不把堆栈塞进任务书）。 */
+function errorText(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.replace(/\s+/g, ' ').trim()
+}
+
+/** 目标路径必须落在 `root` 目录之内（防 `../` 逃逸；resolve 后再比较）。 */
+function isInsideDirectory(root: string, target: string): boolean {
+  const rootPath = resolve(root)
+  const targetPath = resolve(target)
+  return targetPath === rootPath || targetPath.startsWith(`${rootPath}${sep}`)
+}
+
+/** 复制后读回目标文件字节复算 sha256（读不到返回 null）。 */
+function sha256OfFile(filePath: string): string | null {
+  try {
+    return createHash('sha256').update(readFileSync(filePath)).digest('hex')
+  } catch {
+    return null
+  }
+}
+
+/** 删除失败文件（best-effort；删不掉也要如实报 issue，不冒充已清理）。 */
+function removeQuietly(filePath: string): boolean {
+  try {
+    unlinkSync(filePath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** 任务书里的 issue 单行截断（默认 200 字符，CONTRACT §2.3）。 */
+function truncateIssue(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length <= max ? flat : `${flat.slice(0, max)}…`
+}
+
+/**
+ * P0-3：把任务书里**已校验**的材料从 `material_path` 复制进 session workspace 的 `materials/`。
+ *
+ * 为什么必须复制：真 Agent 在空 workspace + 空 cwd 里只能全盘搜索（现场 attempt2/3 各 3 次
+ * `Get-ChildItem -Recurse` → 180s WORKER_TIMEOUT）。落地后 `material_workspace_ref` 直接可读。
+ *
+ * 纪律（CONTRACT §2.3）：
+ *   * `mkdirSync(<ws>/materials, {recursive:true})`；目标名 = `workspaceRefForMaterial` 的 basename
+ *     （文件名已 sanitize，`../` 逃不掉，目标还必须经 `isInsideDirectory` 复核）；
+ *   * `copyFileSync` 后**读回复算 sha256**；不一致 → 删除目标 + issue（绝不冒充成功）；
+ *   * source 不存在 / 不是普通文件 → issue；没有 material_path 的材料跳过（任务书里已写 UNKNOWN）。
+ * @param workspaceDir - Router 为本 attempt 创建的 workspace。
+ * @param materials - 任务书事实里的材料（只有带 material_path 的才会被复制）。
+ * @returns 落地成功清单 + issue 清单（issue 由 execute 合并进 contextError）。
+ */
+export function landMaterials(
+  workspaceDir: string,
+  materials: readonly TaskContextMaterial[],
+): MaterialLandingResult {
+  const issues: string[] = []
+  const landed: LandedMaterial[] = []
+  const pending = materials.filter((material) => material.material_path !== undefined)
+  if (pending.length === 0) return { landed, issues }
+
+  // 防御：workspaceDir 为空/相对时 join 出来的是"进程 cwd/materials"——绝不往 cwd 写材料。
+  const workspaceRoot = typeof workspaceDir === 'string' ? workspaceDir.trim() : ''
+  if (workspaceRoot === '' || !isAbsolute(workspaceRoot)) {
+    return {
+      landed,
+      issues: [
+        `material_workspace_landing_failed: workspaceDir is empty or not absolute `
+        + `(${workspaceRoot === '' ? '<empty>' : workspaceRoot}); refusing to land materials`,
+      ],
+    }
+  }
+
+  const materialsDir = resolve(join(workspaceRoot, 'materials'))
+  try {
+    mkdirSync(materialsDir, { recursive: true })
+  } catch (error) {
+    return {
+      landed,
+      issues: [`material_workspace_landing_failed: cannot create ${materialsDir}: ${errorText(error)}`],
+    }
+  }
+
+  for (const material of pending) {
+    const source = material.material_path as string
+    const label = material.file_name
+    let sourceIsFile = false
+    try {
+      sourceIsFile = existsSync(source) && statSync(source).isFile()
+    } catch {
+      sourceIsFile = false
+    }
+    if (!sourceIsFile) {
+      issues.push(`material_workspace_landing_failed:${label}: material_path is missing or not a regular file`)
+      continue
+    }
+    const workspaceRef = workspaceRefForMaterial(material.file_name, material.sha256)
+    const target = resolve(materialsDir, basename(workspaceRef))
+    if (!isInsideDirectory(materialsDir, target)) {
+      issues.push(`material_workspace_landing_failed:${label}: sanitized target escapes the materials directory`)
+      continue
+    }
+    try {
+      copyFileSync(source, target)
+    } catch (error) {
+      issues.push(`material_workspace_landing_failed:${label}: copy failed: ${errorText(error)}`)
+      continue
+    }
+    const copiedSha = sha256OfFile(target)
+    if (copiedSha === null || copiedSha !== material.sha256.trim().toLowerCase()) {
+      const removed = removeQuietly(target)
+      issues.push(
+        `material_workspace_landing_failed:${label}: sha256 mismatch after copy `
+        + `(expected ${material.sha256}, got ${copiedSha ?? 'unreadable'})`
+        + (removed ? '' : '; the mismatching copy could NOT be removed'),
+      )
+      continue
+    }
+    landed.push({ sha256: copiedSha, path: target, workspace_ref: workspaceRef })
+  }
+  return { landed, issues }
+}
+
 /**
  * 通过 `dsh --profile <worker> --json` 创建并驱动一个独立 Worker Session。
  *
@@ -225,6 +382,36 @@ export class DshHeadlessWorkerLauncher implements WorkerLauncher {
   }
 
   /**
+   * P0-3：决定 Worker 子进程的 cwd——**本 attempt 的 workspace**（不是插件进程 cwd）。
+   *
+   * 为什么必须改：真 Agent 在"空 cwd + 空 workspace"里只能全盘搜索材料；把 cwd 指到
+   * workspace，`materials/`、相对路径都与任务书一致（CONTRACT §2.3）。
+   * workspaceDir 为空 / 非绝对 / 创建失败才回退 `config.cwd ?? process.cwd()` 并记 issue；
+   * 回退不阻断派发（issue 会进任务书 UNKNOWNS）。
+   * @param workspaceDir - Router 投影里的 per-task workspace。
+   * @returns 实际 cwd + 回退原因（正常时为 null）。
+   */
+  resolveSpawnCwd(workspaceDir: string): { cwd: string; issue: string | null } {
+    const fallback = this.config.cwd ?? process.cwd()
+    const candidate = typeof workspaceDir === 'string' ? workspaceDir.trim() : ''
+    if (candidate === '' || !isAbsolute(candidate)) {
+      return {
+        cwd: fallback,
+        issue: `worker_cwd_fallback: request.workspaceDir is empty or not absolute (${candidate === '' ? '<empty>' : candidate}); using ${fallback}`,
+      }
+    }
+    try {
+      mkdirSync(candidate, { recursive: true })
+      return { cwd: candidate, issue: null }
+    } catch (error) {
+      return {
+        cwd: fallback,
+        issue: `worker_cwd_fallback: cannot create ${candidate}: ${errorText(error)}; using ${fallback}`,
+      }
+    }
+  }
+
+  /**
    * 在一个独立 DSH Session 里执行任务。
    * @param request - Router 给出的任务书。
    * @param signal - 取消信号。
@@ -239,7 +426,23 @@ export class DshHeadlessWorkerLauncher implements WorkerLauncher {
     // 业务事实可选：读不到就降级（facts=null + context_source_unavailable 进 UNKNOWNS），
     // 绝不阻断派发，也绝不假装读到了事实。
     const { facts, contextError } = await loadTaskContextFacts(this.config.taskContext, request)
-    const prompt = buildWorkerPrompt(request, facts, contextError)
+    // P0-3：先把材料落进 workspace（复制 + sha 复算）；失败只记 issue，仍继续派发
+    // （任务书里的 material_path 仍然可读，Worker 可以自己读原件）。
+    const landing = landMaterials(request.workspaceDir, facts?.materials ?? [])
+    // P0-3：spawn cwd = 本 attempt 的 workspace；建不出来/非绝对才回退并记 issue。
+    const spawnTarget = this.resolveSpawnCwd(request.workspaceDir)
+    const contextIssues: string[] = []
+    if (contextError !== null && contextError.trim() !== '') contextIssues.push(contextError.trim())
+    if (landing.issues.length > 0) {
+      // 每条 issue 已自带 `material_workspace_landing_failed:` 前缀；合并后按契约截断 200。
+      contextIssues.push(truncateIssue(landing.issues.join('; '), 200))
+    }
+    if (spawnTarget.issue !== null) contextIssues.push(truncateIssue(spawnTarget.issue, 200))
+    const prompt = buildWorkerPrompt(
+      request,
+      facts,
+      contextIssues.length === 0 ? null : contextIssues.join('; '),
+    )
     const permission = this.config.permissionMode ?? 'workspace-write'
     const args = [
       dshBin,
@@ -256,7 +459,8 @@ export class DshHeadlessWorkerLauncher implements WorkerLauncher {
     let child: ChildProcess
     try {
       child = spawn(nodeBin, args, {
-        cwd: this.config.cwd ?? process.cwd(),
+        // P0-3：cwd 是 per-attempt workspace（resolveSpawnCwd 已 mkdir；失败才回退）。
+        cwd: spawnTarget.cwd,
         env,
         // 不用管道：stdout/stderr 直接写同一个文件描述符，受限环境也能捕获。
         stdio: ['ignore', outFd, outFd],

@@ -11,9 +11,20 @@
 //     `createStoreTaskContextSource`）。本文件是纯函数 + 端口：不做 SQL、不起进程
 //     （SQL 在 store.ts；Session/子进程在 worker.ts）。
 //
-// 任务书结构：七段 + 一个 TOOLS 段
-//   1) BUSINESS TASK   2) BUSINESS OBJECTS   3) VERSION PINS   4) EVIDENCE LOCATORS
-//   5) UNKNOWNS        TOOLS                 6) OUTPUT JSON SCHEMA  7) FORBIDDEN ITEMS
+// 任务书结构：八段 + 一个 TOOLS 段
+//   1) BUSINESS TASK   2) BUSINESS OBJECTS   3) MATERIAL   4) VERSION PINS
+//   5) EVIDENCE LOCATORS   6) UNKNOWNS        TOOLS       7) OUTPUT JSON SCHEMA
+//   8) FORBIDDEN ITEMS
+//
+// P0-3 为什么新增 MATERIAL 段（真 Agent 全盘搜索 → 180s WORKER_TIMEOUT 的现场根因）：
+//   `intake_asset.storage_ref` 只有 `content-addressed:sha256:<sha>`，**没有路径**；
+//   Worker workspace 是空目录、spawn cwd 当时也不是 workspace。任务书只给 sha/file_name
+//   时，模型只能 `Get-ChildItem -Recurse` 全盘找 `gate1-probe-resume.pdf`，把执行预算耗光。
+//   修法不是"再教模型找文件"，而是把 **已校验过的 material_path / workspace_ref** 直接写进
+//   任务书，并在 worker 启动前把材料落进 workspace（见 worker.ts 的 landMaterials）。
+import { createHash } from 'node:crypto'
+import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from 'node:fs'
+import { basename, isAbsolute, join, resolve, sep } from 'node:path'
 import type { BusinessObjectRef, WorkerTaskRequest } from './types.ts'
 
 /** 任务书里的业务对象：只有身份（Router 不附正文）。 */
@@ -54,6 +65,32 @@ export interface TaskContextEvidenceLocator {
   readonly note?: string
 }
 
+/**
+ * 一条业务材料的**受控事实**（P0-3 / CONTRACT §2.1）：只有文件名 / 哈希 / 大小 / 已校验
+ * 的绝对路径 / workspace 落地位置，**绝不含材料正文**（raw_text / transcript 不进 prompt）。
+ *
+ * `material_path` / `workspace_ref` 只在"真实存在且通过 allowed_roots + sha256 校验"时才给；
+ * 解析不到就不给（绝不猜路径）。解析失败原因编码在 `source` 里（闭集见
+ * {@link resolveMaterialPath} 的 reason），供渲染 `MATERIAL UNKNOWN` 行使用。
+ */
+export interface TaskContextMaterial {
+  readonly sha256: string
+  readonly file_name: string
+  readonly byte_size: number
+  readonly mime_type?: string
+  /** 真实存在且通过 allowed_roots + sha256 校验的绝对路径；取不到 = undefined（不猜）。 */
+  readonly material_path?: string
+  /** 相对 workspace 的落地位置（形如 `materials/<safe-name>`）；只有 material_path 存在时才给。 */
+  readonly workspace_ref?: string
+  readonly storage_ref: string
+  /**
+   * 事实来源。解析成功：`allowed_roots_lookup:sha256+file_name+byte_size`；
+   * 解析失败：`allowed_roots_lookup:<REASON>;checked_roots=<n>`（REASON 是
+   * {@link MaterialPathReason} 闭集，渲染 MATERIAL UNKNOWN 行时原样使用）。
+   */
+  readonly source?: string
+}
+
 /** 工具提示：建议先调用的真实工具 + 理由 + 精确参数。 */
 export interface TaskContextToolHint {
   readonly name: string
@@ -70,6 +107,8 @@ export interface TaskContextFacts {
   readonly tool_hints?: readonly TaskContextToolHint[]
   /** WorkerTaskRequest 投影里没有 priority；只有事实源真的带来时才渲染（不猜）。 */
   readonly priority?: number
+  /** P0-3：本任务业务对象引用的材料（受控事实；缺省 = 事实源没给/该任务无材料）。 */
+  readonly materials?: readonly TaskContextMaterial[]
 }
 
 /**
@@ -103,14 +142,22 @@ export interface TaskContext {
   readonly evidence_locators: readonly TaskContextEvidenceLocator[]
   readonly unknowns: readonly string[]
   readonly tool_hints: readonly TaskContextToolHint[]
+  /** P0-3：MATERIAL 段的数据源；空数组 = 本任务业务对象没有引用任何材料。 */
+  readonly materials: readonly TaskContextMaterial[]
   readonly additional_instructions: string
   readonly context_source: { readonly loaded: boolean; readonly error: string | null }
 }
 
-/** 七段 + TOOLS 的标题。渲染与测试共用同一份文案，避免两套标题漂移。 */
+/**
+ * 八段 + TOOLS 的标题。渲染与测试共用同一份文案，避免两套标题漂移。
+ *
+ * P0-3：`material` 插在 businessObjects 之后；**其余段标题/编号一字不改**（`3) VERSION PINS`
+ * 仍是 3，只是渲染时它前面多了一段 MATERIAL）。
+ */
 export const TASK_CONTEXT_SECTIONS = {
   identity: '1) BUSINESS TASK',
   businessObjects: '2) BUSINESS OBJECTS',
+  material: 'MATERIAL (read exactly these files)',
   versionPins: '3) VERSION PINS',
   evidenceLocators: '4) EVIDENCE LOCATORS',
   unknowns: '5) UNKNOWNS',
@@ -118,6 +165,260 @@ export const TASK_CONTEXT_SECTIONS = {
   output: '6) OUTPUT JSON SCHEMA',
   forbidden: '7) FORBIDDEN ITEMS',
 } as const
+
+// ---------------------------------------------------------------------------
+//  P0-3 材料路径解析（CONTRACT §2.2）：纯函数 + 可注入根，绝不读 cwd 兜底。
+// ---------------------------------------------------------------------------
+
+/** 允许的材料根 env 前缀（D-112：零机器路径；部署 env 注入）。 */
+const MATERIAL_ROOT_ENV_PREFIX = 'RECRUITMENT_ALLOWED_ROOT_'
+
+/** 材料路径解析的 reason 闭集（渲染 MATERIAL UNKNOWN 行只用这四个值）。 */
+export type MaterialPathReason =
+  | 'FOUND'
+  | 'NO_ALLOWED_ROOTS'
+  | 'NOT_FOUND_IN_ALLOWED_ROOTS'
+  | 'SEARCH_BUDGET_EXCEEDED'
+
+/**
+ * 材料解析参数（可注入以便测试；缺省全部保守）。
+ *
+ * `roots` 显式给出时**只**用这些根（空数组 = 没有允许根，不得回落 env）；未给出才读 env。
+ */
+export interface MaterialResolveOptions {
+  readonly roots?: readonly string[]
+  readonly maxDepth?: number
+  readonly maxEntries?: number
+  readonly maxHashChecks?: number
+  readonly env?: Readonly<Record<string, string | undefined>>
+}
+
+/** 材料解析的默认预算（CONTRACT §2.2：深度≤6、条目≤100k、sha 候选≤8）。 */
+const MATERIAL_MAX_DEPTH = 6
+const MATERIAL_MAX_ENTRIES = 100_000
+const MATERIAL_MAX_HASH_CHECKS = 8
+
+/**
+ * P0-3：**只读材料任务**的类型集合（任务书显式禁止写工具）。
+ *
+ * 为什么只列 RESUME_PARSE：它的业务写在"触发事件落地"时已完成（intake 工具先写
+ * resume_version/application，再发 resume.intake.received）；Worker 的正确职责是
+ * 用只读工具核对材料并回报，而不是重跑 S6 写库。worker 会话没有人类身份绑定，
+ * 写工具必然 DEMO_ACTOR_UNMAPPED（现场 attempt1/2 的真实失败原因）。
+ */
+const MATERIAL_READ_ONLY_TASK_TYPES: ReadonlySet<string> = new Set(['RESUME_PARSE'])
+/** 进程内 sha256→path 缓存容量上限。 */
+const MATERIAL_CACHE_CAPACITY = 64
+
+/** `sha256 → 已校验绝对路径` 缓存（命中后仍要 exists+size+仍在允许根内，失效则重扫）。 */
+const materialPathCache = new Map<string, string>()
+
+/** 只保留"绝对路径 + 真实存在目录"的根，resolve 归一化，排序去重。 */
+function normalizeMaterialRoots(candidates: readonly string[]): string[] {
+  const roots = new Set<string>()
+  for (const candidate of candidates) {
+    const trimmed = candidate.trim()
+    if (trimmed === '' || !isAbsolute(trimmed)) continue
+    try {
+      if (!statSync(trimmed).isDirectory()) continue
+    } catch {
+      continue
+    }
+    roots.add(resolve(trimmed))
+  }
+  return [...roots].sort()
+}
+
+/**
+ * 从部署 env 读允许根：只认 `RECRUITMENT_ALLOWED_ROOT_*`，每项必须 trim 后是绝对路径且
+ * 目录真实存在；排序去重。**不猜任何默认目录、不读 cwd。**
+ * @param env - 环境变量表（缺省 `process.env`；测试可注入）。
+ * @returns 归一化后的允许根（可能为空）。
+ */
+export function materialRootsFromEnv(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string[] {
+  const candidates: string[] = []
+  for (const [key, value] of Object.entries(env)) {
+    if (!key.startsWith(MATERIAL_ROOT_ENV_PREFIX)) continue
+    candidates.push(value ?? '')
+  }
+  return normalizeMaterialRoots(candidates)
+}
+
+/** 本次解析实际使用的允许根：显式 roots 优先（空数组也是显式），否则读 env。 */
+function materialSearchRoots(options: MaterialResolveOptions | undefined): string[] {
+  if (options?.roots !== undefined) return normalizeMaterialRoots(options.roots)
+  return materialRootsFromEnv(options?.env)
+}
+
+/** 文件字节的 sha256（只读文件字节，不读正文语义）。 */
+function sha256File(filePath: string): string {
+  return createHash('sha256').update(readFileSync(filePath)).digest('hex')
+}
+
+/** 路径是否位于某个允许根之内（用于缓存命中校验，防止根切换后越界复用）。 */
+function isInsideAnyRoot(filePath: string, roots: readonly string[]): boolean {
+  const candidate = resolve(filePath)
+  return roots.some((root) => {
+    const normalized = resolve(root)
+    return candidate === normalized || candidate.startsWith(normalized.endsWith(sep) ? normalized : `${normalized}${sep}`)
+  })
+}
+
+/** 目标文件的 basename（兼容 `/` 与 `\`，跨平台一致）。 */
+function materialBaseName(fileName: string): string {
+  const flat = fileName.replace(/\\/g, '/')
+  return flat.slice(flat.lastIndexOf('/') + 1)
+}
+
+/** 记住一次成功解析（容量 ≤64；超出丢最早的一条）。 */
+function rememberMaterialPath(sha256: string, filePath: string): void {
+  if (materialPathCache.size >= MATERIAL_CACHE_CAPACITY) {
+    const oldest = materialPathCache.keys().next().value
+    if (oldest !== undefined) materialPathCache.delete(oldest)
+  }
+  materialPathCache.delete(sha256)
+  materialPathCache.set(sha256, filePath)
+}
+
+/**
+ * 在允许根里按 `basename + byteSize` 预筛，再用 sha256 确认材料的真实绝对路径。
+ *
+ * 纪律（CONTRACT §2.2）：
+ *   * 只接受绝对路径、真实存在的目录根；不猜默认目录、**绝不读进程 cwd**；
+ *   * 广度优先遍历，目录深度 ≤ maxDepth、总条目 ≤ maxEntries，跳过符号链接；
+ *   * 候选最多 maxHashChecks 个；超出 = SEARCH_BUDGET_EXCEEDED（不冒充 NOT_FOUND）；
+ *   * 进程内缓存 sha256→path，命中后仍校验 exists + size + 仍在允许根内。
+ * @param input - 材料事实（文件名 / 字节数 / 期望 sha256）。
+ * @param options - 允许根与预算（测试可注入）。
+ * @returns `{ path, reason }`；reason 是 {@link MaterialPathReason} 闭集。
+ */
+export function resolveMaterialPath(
+  input: { readonly fileName: string; readonly byteSize: number; readonly sha256: string },
+  options: MaterialResolveOptions = {},
+): { path: string | null; reason: MaterialPathReason } {
+  const roots = materialSearchRoots(options)
+  if (roots.length === 0) return { path: null, reason: 'NO_ALLOWED_ROOTS' }
+
+  const expectedSha = input.sha256.trim().toLowerCase()
+  const cached = materialPathCache.get(expectedSha)
+  if (cached !== undefined) {
+    try {
+      if (
+        existsSync(cached)
+        && statSync(cached).isFile()
+        && statSync(cached).size === input.byteSize
+        && isInsideAnyRoot(cached, roots)
+      ) {
+        return { path: cached, reason: 'FOUND' }
+      }
+    } catch {
+      // 缓存脏了：删掉重扫。
+    }
+    materialPathCache.delete(expectedSha)
+  }
+
+  const targetName = materialBaseName(input.fileName).toLowerCase()
+  if (targetName === '' || !Number.isFinite(input.byteSize) || !/^[0-9a-f]{64}$/.test(expectedSha)) {
+    return { path: null, reason: 'NOT_FOUND_IN_ALLOWED_ROOTS' }
+  }
+
+  const maxDepth = options.maxDepth ?? MATERIAL_MAX_DEPTH
+  const maxEntries = options.maxEntries ?? MATERIAL_MAX_ENTRIES
+  const maxHashChecks = options.maxHashChecks ?? MATERIAL_MAX_HASH_CHECKS
+
+  const queue: { readonly dir: string; readonly depth: number }[] = roots.map((root) => ({ dir: root, depth: 0 }))
+  const candidates: string[] = []
+  let scanned = 0
+  let budgetExceeded = false
+  while (queue.length > 0 && !budgetExceeded) {
+    const current = queue.shift()
+    if (current === undefined) break
+    let entries: Dirent[]
+    try {
+      entries = readdirSync(current.dir, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      scanned += 1
+      if (scanned > maxEntries) {
+        budgetExceeded = true
+        break
+      }
+      // 跳过符号链接（不跟随、不解析目标，避免越出允许根）。
+      if (entry.isSymbolicLink()) continue
+      const fullPath = join(current.dir, entry.name)
+      if (entry.isDirectory()) {
+        if (current.depth + 1 <= maxDepth) queue.push({ dir: fullPath, depth: current.depth + 1 })
+        continue
+      }
+      if (!entry.isFile()) continue
+      if (entry.name.toLowerCase() !== targetName) continue
+      try {
+        if (statSync(fullPath).size !== input.byteSize) continue
+      } catch {
+        continue
+      }
+      candidates.push(fullPath)
+    }
+  }
+  if (budgetExceeded) return { path: null, reason: 'SEARCH_BUDGET_EXCEEDED' }
+  if (candidates.length === 0) return { path: null, reason: 'NOT_FOUND_IN_ALLOWED_ROOTS' }
+
+  for (const candidate of candidates.slice(0, maxHashChecks)) {
+    let sha256: string
+    try {
+      sha256 = sha256File(candidate)
+    } catch {
+      continue
+    }
+    if (sha256 !== expectedSha) continue
+    rememberMaterialPath(expectedSha, candidate)
+    return { path: candidate, reason: 'FOUND' }
+  }
+  // 候选超出 sha 预算且没命中：诚实报预算，不冒充"不存在"。
+  if (candidates.length > maxHashChecks) return { path: null, reason: 'SEARCH_BUDGET_EXCEEDED' }
+  return { path: null, reason: 'NOT_FOUND_IN_ALLOWED_ROOTS' }
+}
+
+/** 文件名 sanitize：只留 `[A-Za-z0-9._-]`、禁止 `..`、≤120 字符；空则返回 ''。 */
+function sanitizeMaterialFileName(fileName: string): string {
+  const leaf = materialBaseName(fileName)
+  const cleaned = leaf
+    .replace(/[^A-Za-z0-9._-]/g, '_')
+    .replace(/\.{2,}/g, '.')
+    .replace(/^\.+/, '')
+    .slice(0, 120)
+  if (cleaned === '' || cleaned === '.' || /^[_-]+$/.test(cleaned)) return ''
+  return cleaned
+}
+
+/**
+ * 材料在 session workspace 内的落地位置：`materials/<sanitize(fileName)>`。
+ *
+ * worker 落地与任务书渲染**复用同一函数**（避免两处命名漂移）。文件名 sanitize 后为空时
+ * 用 `material-<sha前缀>`（没有 sha 时退化为 `material-unknown`）。
+ * @param fileName - 材料文件名（可能含路径片段/非法字符）。
+ * @param sha256 - 可选材料哈希（只用于空名兜底）。
+ */
+export function workspaceRefForMaterial(fileName: string, sha256?: string): string {
+  const safe = sanitizeMaterialFileName(fileName)
+  if (safe !== '') return `materials/${safe.slice(0, 120)}`
+  const prefix = (sha256 ?? '').toLowerCase().replace(/[^0-9a-f]/g, '').slice(0, 8)
+  return `materials/material-${prefix === '' ? 'unknown' : prefix}`
+}
+
+/**
+ * 读任务书 `source` 里的解析失败原因（`allowed_roots_lookup:<REASON>;checked_roots=<n>`）。
+ * 解析不出时保守返回"找不到 + 0 个根"，绝不编造路径。
+ */
+function unresolvedMaterialSource(source: string | undefined): { reason: string; checkedRoots: number } {
+  const match = /^allowed_roots_lookup:([A-Z_]+)(?:;checked_roots=(\d+))?$/.exec(source ?? '')
+  if (match === null) return { reason: 'NOT_FOUND_IN_ALLOWED_ROOTS', checkedRoots: 0 }
+  return { reason: match[1], checkedRoots: match[2] === undefined ? 0 : Number(match[2]) }
+}
 
 const UUID_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 const EVENT_ID_IN_DESCRIPTION = new RegExp(`\\(event\\s+(${UUID_PATTERN})\\)`, 'i')
@@ -239,6 +540,12 @@ function mergeFacts(base: TaskContextFacts, extra: TaskContextFacts | null): Tas
   for (const hint of [...(base.tool_hints ?? []), ...(extra.tool_hints ?? [])]) {
     hints.set(`${hint.name}:${JSON.stringify(hint.args ?? {})}`, hint)
   }
+  // P0-3：材料按 `file_name + sha256` 去重（同一材料不许出现两条矛盾的路径）。
+  const materials = new Map<string, TaskContextMaterial>()
+  for (const material of [...(base.materials ?? []), ...(extra.materials ?? [])]) {
+    const key = `${material.file_name}:${material.sha256}`
+    materials.set(key, { ...materials.get(key), ...material })
+  }
   return {
     business_objects: [...objects.values()],
     version_pins: { ...base.version_pins, ...extra.version_pins },
@@ -246,6 +553,7 @@ function mergeFacts(base: TaskContextFacts, extra: TaskContextFacts | null): Tas
     unknowns: dedupeStrings([...base.unknowns, ...extra.unknowns]),
     tool_hints: [...hints.values()],
     priority: extra.priority ?? base.priority,
+    materials: [...materials.values()],
   }
 }
 
@@ -296,6 +604,7 @@ export function buildTaskContext(
     evidence_locators: merged.evidence_locators,
     unknowns: dedupeStrings(unknowns),
     tool_hints: merged.tool_hints ?? [],
+    materials: merged.materials ?? [],
     additional_instructions: request.prompt.trim(),
     context_source: {
       loaded: facts !== null,
@@ -325,7 +634,46 @@ function renderResumePin(pin: TaskContextVersionPins['resume']): string {
 }
 
 /**
- * 把结构化上下文渲染成 Worker 任务书（七段 + TOOLS）。
+ * MATERIAL 段渲染（P0-3）：**永远渲染**（没有材料引用时写一句明确的无引用说明）。
+ *
+ * 材料正文（raw_text / transcript）绝不进这里——这里只有文件名 / 哈希 / 大小 / 已校验路径。
+ * @param materials - 事实源给出的受控材料事实。
+ * @returns 段内行（不含段标题）。
+ */
+function renderMaterialSection(materials: readonly TaskContextMaterial[], taskType: string): string[] {
+  const lines: string[] = []
+  if (materials.length === 0) {
+    lines.push("- (no material is referenced by this task's business objects)")
+  } else {
+    for (const material of materials) {
+      if (material.material_path === undefined) {
+        const unresolved = unresolvedMaterialSource(material.source)
+        lines.push(
+          `- MATERIAL UNKNOWN: ${material.file_name} sha256=${material.sha256} — `
+          + `${unresolved.reason} (checked ${unresolved.checkedRoots} allowed roots; do not invent a path)`,
+        )
+        continue
+      }
+      const mime = material.mime_type === undefined ? 'UNKNOWN' : material.mime_type
+      lines.push(`- ${material.file_name} sha256=${material.sha256} byte_size=${material.byte_size} mime_type=${mime}`)
+      lines.push(`  material_path: ${material.material_path}  (verified: allowed_roots + file bytes sha256)`)
+      if (material.workspace_ref !== undefined) {
+        lines.push(`  material_workspace_ref: ${material.workspace_ref}  (copied into the session workspace by the launcher)`)
+      }
+    }
+  }
+  lines.push('- Read the material only from the exact material_path / material_workspace_ref above; do not search the filesystem for it, and never copy candidate material text into business fields.', '- After a real tool has read the material, cite its result in summary and put the material sha256 (or the durable parsed row id) into result_ref; never invent a path or a hash.')
+  // P0-3：RESUME_PARSE 是**只读解析任务**（intake 事件落地时已写 resume_version/application）。
+  // worker 会话没有人类身份绑定，写工具必然被 DEMO_ACTOR_UNMAPPED 拒绝——在任务书里显式禁止，
+  // 避免 Agent 按 skill 惯性去做 S6 写库（现场 attempt1/2 就是这样从"解析"跑偏成"写库失败"）。
+  if (MATERIAL_READ_ONLY_TASK_TYPES.has(taskType)) {
+    lines.push(`- ${taskType} scope: this task is READ-ONLY. The intake/parse row already exists when this task was created (the dispatching event wrote it). Do NOT call write tools (recruitment_application_intake, recruitment_scorecard_submit, recruitment_decision_record, recruitment_application_stage_advance, recruitment_interview_schedule, recruitment_transcript_import, recruitment_job_*): worker sessions have no human identity and every write tool will be refused with DEMO_ACTOR_UNMAPPED.`, '- Use read-only tools to prove the material (e.g. recruitment_resume_read / recruitment_resume_serialize / recruitment_structure_validate with material_path), then report state="succeeded" with result_ref = the material sha256 (or the validated structure digest) and cite the tool result in summary.')
+  }
+  return lines
+}
+
+/**
+ * 把结构化上下文渲染成 Worker 任务书（八段 + TOOLS）。
  * @param context - {@link buildTaskContext} 的产物。
  * @returns 纯文本 prompt（不含凭据、不含材料正文）。
  */
@@ -352,6 +700,8 @@ export function renderTaskContextPrompt(context: TaskContext): string {
       lines.push(`- ${object.type} ${object.id}${extra.length === 0 ? '' : ` — ${extra.join('; ')}`}`)
     }
   }
+  // P0-3：MATERIAL 段插在 BUSINESS OBJECTS 之后、VERSION PINS 之前；其余段标题/编号不变。
+  lines.push('', TASK_CONTEXT_SECTIONS.material, ...renderMaterialSection(context.materials, identity.task_type))
   // interview_template 只在事实源真的钉住时才多渲染一行；缺失由 UNKNOWNS 说明（不占位 UNKNOWN 行）。
   const pinLines = [
     `- job: ${renderPin(pins.job)}`,
@@ -519,8 +869,25 @@ export interface InterviewVersionPinRow {
 }
 
 /**
+ * P0-3：一条材料的受控事实（与 A lane `store/readback.ts` 的 `MaterialRow` 字段逐个一致）。
+ * 就地定义（不 import store 实现），`RuntimeStore` 结构上自动满足。
+ */
+export interface TaskContextMaterialRow {
+  readonly intakeRecordId: string
+  readonly assetId: string
+  readonly fileName: string
+  readonly mimeType: string | null
+  readonly byteSize: number
+  readonly sha256: string
+  readonly storageRef: string
+}
+
+/**
  * TaskContextSource 需要的最小只读端口。
  * `RuntimeStore` 结构上已满足（`getEvent` / `intakeRecordIdForEvent` + D-120 的 4 个查询）。
+ *
+ * P0-3 的 2 个材料查询**可选**：A lane（store/readback.ts）落地后 RuntimeStore 结构满足；
+ * 缺省时材料段照常渲染，但会如实记 UNKNOWN（不假装"没有材料"）。
  */
 export interface TaskContextReader {
   getEvent(eventId: string): Promise<TaskContextEventFacts | null>
@@ -529,6 +896,16 @@ export interface TaskContextReader {
   jobVersionPointers(jobId: string): Promise<JobVersionPointerRow | null>
   applicationLinkForIntakeRecord(intakeRecordId: string): Promise<IntakeApplicationLinkRow>
   interviewVersionPins(interviewId: string): Promise<InterviewVersionPinRow | null>
+  /** P0-3：application 链上的材料（同一申请可能多份；只读）。 */
+  materialsForApplication?(applicationId: string): Promise<readonly TaskContextMaterialRow[]>
+  /** P0-3：intake_record 上的材料（同一收件可能多份；只读）。 */
+  materialsForIntakeRecord?(intakeRecordId: string): Promise<readonly TaskContextMaterialRow[]>
+}
+
+/** `createStoreTaskContextSource` 的可选装配参数（第二参可选：router.ts 的现有调用不改）。 */
+export interface StoreTaskContextSourceOptions {
+  /** 材料路径解析参数（允许根 / 预算 / env；测试可注入根）。缺省从 process.env 读。 */
+  readonly material?: MaterialResolveOptions
 }
 
 /** 取第一个指定类型的业务引用（同类型多条取首个，保持确定性；不合并、不猜）。 */
@@ -548,6 +925,106 @@ function payloadSha256(value: unknown): string | null {
   return typeof value === 'string' && SHA256_TEXT.test(value) ? value.toLowerCase() : null
 }
 
+/** 材料来源判定（CONTRACT §2.2）：APPLICATION/INTERVIEW → application 链；否则 INTAKE_RECORD；JOB 无材料。 */
+type MaterialSourceKind = 'application' | 'intake' | null
+
+/** 同类型业务引用取首个（确定性）；JOB 不提供材料。 */
+function materialSourceKind(
+  applicationRef: BusinessObjectRef | undefined,
+  interviewRef: BusinessObjectRef | undefined,
+  intakeRef: BusinessObjectRef | undefined,
+): MaterialSourceKind {
+  if (applicationRef !== undefined || interviewRef !== undefined) return 'application'
+  if (intakeRef !== undefined) return 'intake'
+  return null
+}
+
+/**
+ * P0-3：读材料事实并对每份材料做 allowed_roots + sha256 解析。
+ *
+ * 纪律：
+ *   * 材料查询失败**不抛**（记 UNKNOWN 继续）——材料查询坏掉不该把版本钉等其它事实一起弄丢；
+ *   * 每份材料要么给出**已校验的绝对路径**，要么明文 UNKNOWN；绝不编造路径；
+ *   * 只带 file_name / sha256 / byte_size / mime / storage_ref，**不带材料正文**。
+ * @param reader - 只读端口（材料查询可选，缺省记 UNKNOWN）。
+ * @param input - 材料来源与定位到的 id。
+ * @param options - 材料解析参数（允许根 / 预算 / env）。
+ * @param unknowns - 收集 UNKNOWNS 的数组（就地追加）。
+ * @param locators - 收集证据 locator 的数组（就地追加）。
+ * @returns 受控材料事实（可能有 material_path，也可能只有 UNKNOWN 原因）。
+ */
+async function loadMaterialFacts(
+  reader: TaskContextReader,
+  input: {
+    readonly source: MaterialSourceKind
+    readonly applicationId: string | null
+    readonly intakeRecordId: string | null
+  },
+  options: MaterialResolveOptions | undefined,
+  unknowns: string[],
+  locators: TaskContextEvidenceLocator[],
+): Promise<TaskContextMaterial[]> {
+  if (input.source === null) return []
+  const roots = materialSearchRoots(options)
+  let rows: readonly TaskContextMaterialRow[] = []
+  try {
+    if (input.source === 'application') {
+      if (input.applicationId === null) {
+        unknowns.push('materials: UNKNOWN — the task references an application/interview but no application row was located; no material can be listed')
+        return []
+      }
+      if (reader.materialsForApplication === undefined) {
+        unknowns.push('materials: UNKNOWN — this store has no materialsForApplication query installed; material paths cannot be confirmed')
+        return []
+      }
+      rows = await reader.materialsForApplication(input.applicationId)
+    } else {
+      if (input.intakeRecordId === null) return []
+      if (reader.materialsForIntakeRecord === undefined) {
+        unknowns.push('materials: UNKNOWN — this store has no materialsForIntakeRecord query installed; material paths cannot be confirmed')
+        return []
+      }
+      rows = await reader.materialsForIntakeRecord(input.intakeRecordId)
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    unknowns.push(`materials: UNKNOWN — material query failed: ${truncate(message, 200)}`)
+    return []
+  }
+
+  const materials: TaskContextMaterial[] = []
+  for (const row of rows) {
+    const material: TaskContextMaterial = {
+      sha256: row.sha256,
+      file_name: row.fileName,
+      byte_size: row.byteSize,
+      ...(row.mimeType === null || row.mimeType.trim() === '' ? {} : { mime_type: row.mimeType }),
+      storage_ref: row.storageRef,
+    }
+    const resolution = resolveMaterialPath(
+      { fileName: row.fileName, byteSize: row.byteSize, sha256: row.sha256 },
+      { ...options, roots },
+    )
+    if (resolution.path === null) {
+      // 解析不到：把 reason 闭集编码进 source，渲染 MATERIAL UNKNOWN 行时原样使用。
+      materials.push({ ...material, source: `allowed_roots_lookup:${resolution.reason};checked_roots=${roots.length}` })
+      continue
+    }
+    materials.push({
+      ...material,
+      material_path: resolution.path,
+      workspace_ref: workspaceRefForMaterial(row.fileName, row.sha256),
+      source: 'allowed_roots_lookup:sha256+file_name+byte_size',
+    })
+    locators.push({
+      kind: 'material',
+      ref: row.sha256,
+      note: `file_name=${row.fileName}; source=allowed_roots_lookup`,
+    })
+  }
+  return materials
+}
+
 /**
  * 基于 store 只读查询的事实源：D-120 版本钉（application / job / interview 行）+
  * trigger event 的只读事实（哈希 / 文件名 / 页数）+ INTAKE_RECORD 反查。
@@ -561,7 +1038,10 @@ function payloadSha256(value: unknown): string | null {
  *   * 只放 locator / note 字段，**绝不**把 payload 里的材料正文（raw_text / transcript）带进 prompt。
  * @param reader - 只读端口（生产传 `RuntimeStore`）。
  */
-export function createStoreTaskContextSource(reader: TaskContextReader): TaskContextSource {
+export function createStoreTaskContextSource(
+  reader: TaskContextReader,
+  options?: StoreTaskContextSourceOptions,
+): TaskContextSource {
   return {
     async load(request: WorkerTaskRequest): Promise<TaskContextFacts> {
       const base = extractRequestFacts(request)
@@ -733,11 +1213,26 @@ export function createStoreTaskContextSource(reader: TaskContextReader): TaskCon
           return { ...object, note }
         })
       }
+      // ---- P0-3 材料事实：APPLICATION/INTERVIEW → application 链；否则 INTAKE_RECORD；JOB 无材料 ----
+      const materials = await loadMaterialFacts(
+        reader,
+        {
+          source: materialSourceKind(applicationRef, interviewRef, intakeRef),
+          applicationId,
+          intakeRecordId: intakeRef?.id ?? null,
+        },
+        options?.material,
+        unknowns,
+        locators,
+      )
       const facts: TaskContextFacts = {
         business_objects: businessObjects,
         version_pins: pins,
         evidence_locators: locators,
         unknowns,
+        materials,
+        // P0-3：把"用哪份材料、走哪个只读工具"写成可直接执行的工具提示（比让模型自己找工具可靠）。
+        ...(materials.some((material) => material.material_path !== undefined) ? { tool_hints: materials.filter((material) => material.material_path !== undefined).map((material) => ({ name: 'recruitment_resume_read', reason: 'read the verified material bytes with the exact material_path (read-only) before concluding', args: { path: material.material_path } })) } : {}),
       }
       return mergeFacts(base, facts)
     },
