@@ -129,6 +129,10 @@ import { registerRecruitingHttp, type RecruitingHostContext } from './http/recru
 import { registerActorHttp, type ActorHostContext } from './http/actor.ts'
 import { registerJobActionHttp, type JobActionHostContext } from './http/actions-job.ts'
 import { registerActionsHttp, type ActionHostContext } from './http/actions.ts'
+import { registerFeishuImportHttp, type FeishuImportHostContext } from './http/feishu-import.ts'
+// D5 decision（task-56）：决策 facts 只读投影 + screening/evaluate（只读 domain）+
+// decision/record facade（服务端组装 basis_refs）。独立前缀 /recruitment/api/decision。
+import { registerDecisionHttp, type DecisionHostContext } from './http/decision-read.ts'
 import {
   createDemoActorIdentity,
   type DemoActorIdentity,
@@ -439,6 +443,40 @@ export function apply(
         },
       ),
       'recruitment: write action routes',
+    )
+    // P0-7：真实飞书转写导入（真实 minute 只读回读 → 创建/复用 Meeting 绑定 → 复用
+    // recruitment_transcript_import 域路径写 artifact/segment/record）。独立前缀
+    // /recruitment/api/feishu；非回环 host 不注册（fail-closed）。feishuConfig 原样交给
+    // resolveFeishuConnector（只从插件配置装配 cli+profile，绝不读 PATH/环境变量猜路径）。
+    child.effect(
+      () => registerFeishuImportHttp(
+        child as unknown as FeishuImportHostContext,
+        {
+          database: database.resolved,
+          databaseIssues: database.issues,
+          identity: actorIdentity,
+          feishuConfig: config?.feishu ?? {},
+          env,
+        },
+      ),
+      'recruitment: feishu import route',
+    )
+    // D5 decision（task-56）：W2b 的决策事实与写入口。
+    //   * GET  /recruitment/api/decision/facts                 申请钉住的 job/rubric（含 payload_hash）+
+    //                                                         screening evaluation / S10 summary / AUTHORITY 事实；
+    //   * POST /recruitment/api/decision/screening/evaluate    只读 domain 评估（人类动作入口）；
+    //   * POST /recruitment/api/decision/record                facade：服务端组装 basis_refs（前端不传 hash）。
+    // 与上面动作路由共享**同一个** `actorIdentity`（同一 session→alias registry）。
+    child.effect(
+      () => registerDecisionHttp(
+        child as unknown as DecisionHostContext,
+        {
+          database: database.resolved,
+          databaseIssues: database.issues,
+          identity: actorIdentity,
+        },
+      ),
+      'recruitment: decision facts/evaluate/record routes',
     )
     // D5-W2：Recruiting Workspace 只读投影（独立前缀 /recruitment/api/recruiting；
     // W0 独占接线，W2 不碰本文件）。action seam 由 W1 后续提供，未提供时写按钮 disabled。

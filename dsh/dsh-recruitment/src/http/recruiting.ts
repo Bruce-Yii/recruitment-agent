@@ -246,6 +246,11 @@ export interface ApplicationCard {
   readonly application_id: string
   readonly candidate: { readonly candidate_id: string; readonly display_name: string }
   readonly job: { readonly job_id: string; readonly code: string; readonly title: string }
+  /**
+   * W2b 只读追加：申请**钉住**的 rubric 版本 id（`application.rubric_version_id`）。
+   * 不是 job.current 指针；null = 该申请没有钉住 rubric（不猜一个"看起来对"的版本）。
+   */
+  readonly rubric_version_id: string | null
   readonly lifecycle_status: string
   readonly current_stage_code: string
   readonly stage_entered_at: string | null
@@ -365,6 +370,8 @@ export interface ScreeningEvidenceDetail {
   readonly rubric: {
     readonly rubric_version_id: string
     readonly version_no: number
+    /** W2b 只读追加：与 `rubric_version.payload_hash` 逐字一致（决策依据 RUBRIC_VERSION 需要）。 */
+    readonly payload_hash: string
     readonly dimensions: ReadonlyArray<{
       readonly key: string
       readonly kind: string
@@ -1437,9 +1444,10 @@ const TRANSCRIPT_RUNS_SQL = `
 
 /** rubric 版本维度（初筛证据段 / 岗位详情的 rubric 快照）。$2 = rubric version id。 */
 const RUBRIC_DIMENSIONS_SQL = `
-  select rv.id::text     as rubric_version_id,
-         rv.version_no   as version_no,
-         rv.dimensions   as dimensions
+  select rv.id::text       as rubric_version_id,
+         rv.version_no     as version_no,
+         rv.payload_hash   as payload_hash,
+         rv.dimensions     as dimensions
     from recruitment.rubric_version rv
    where rv.id = $1::uuid and rv.tenant_id = $2::uuid
 `
@@ -1843,6 +1851,8 @@ interface TranscriptRunRow {
 interface RubricDimensionRow {
   rubric_version_id: string
   version_no: number
+  /** W2b：决策 facts 需要与库值逐字一致的 rubric payload_hash（只读追加）。 */
+  payload_hash: string
   dimensions: unknown
 }
 
@@ -2205,6 +2215,7 @@ async function loadApplicationCards(
       },
       lifecycle_status: row.lifecycle_status,
       current_stage_code: row.current_stage_code,
+      rubric_version_id: row.application_rubric_version_id,
       stage_entered_at: asIsoOrNull(row.stage_entered_at),
       applied_at: asIsoOrNull(row.applied_at),
       stage_blocked_reason: asNonEmptyString(row.stage_blocked_reason),
@@ -2562,6 +2573,7 @@ async function loadRubric(ctx: ReadContext, rubricVersionId: string | null): Pro
   return {
     rubric_version_id: row.rubric_version_id,
     version_no: asIntOrNull(row.version_no) ?? 0,
+    payload_hash: row.payload_hash,
     dimensions: rubricDimensionSpecsFrom(row.dimensions),
   }
 }
