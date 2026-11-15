@@ -1,19 +1,52 @@
-// 招聘工作区（W2）主视图：岗位侧栏 / 选择器 + 岗位头卡（业务结论 + 下一步）+ 申请列表 +
-// 招聘设置入口（只读）。申请详情在 `application-detail.tsx`（点击行进入，返回总览）。
+// 招聘工作区（W2）主视图：岗位侧栏 / 选择器 + 岗位头卡（业务结论 + 下一步 + 人类闸门动作）+ 申请列表 +
+// 招聘设置写入口 + 岗位草案（task-57）。申请详情在 `application-detail.tsx`（点击行进入，返回总览）。
 //
-// 契约（`work/d5/CLIENT-CONTRACT.md` §2 / `work/d5/w2/CONTRACT.md` §3）：
+// 契约（`work/d5/w2b/INTERFACE.md` §2.3/§2.7、`work/d5/w2b/INTERFACE2.md` §5、
+// `work/d5/joblife/CONTRACT.md` §3、`work/d5/joblife/CONTRACT-ACTIONS.md` §1-§3）：
 //   · props 严格 `{ sessionId, alias }`，视图**不读 localStorage**、不从 URL 取业务参数；
-//   · 每个视图挂载即 GET；刷新 / 动作成功后重新 GET 服务端（`reload()`），不用本地状态伪造业务事实；
-//   · 写按钮只读 `overview.actions` 的可用性；不可用 → disabled +「待后端接入（pending: <code>）」，
-//     点击不发请求；可用 → POST `actions[key].seam`，失败显示服务端 `{error:{code,reason_code,message}}` 原文；
+//   · 每个视图挂载即 GET；写动作成功后重新 GET 服务端（`reload()`），不用本地状态伪造业务事实；
+//   · 写按钮可用性只读服务端 `actions` / 路由探测；不可用 → disabled + 原因（含机器码），点击不发请求；
+//   · 岗位关闭是**人类闸门**：弹窗取消 = 零请求；确认才 `postJobClose`，成功后显示信封 `terminated` 计数；
+//   · 岗位草案：draft/create 路由用 GET 同路径探测（405=已注册 / 404=未接线），未接线 → disabled + 原因；
 //   · `alias !== 'recruiter'` 时显示只读提示并禁用写动作（不伪造权限），只读浏览不崩、不空白。
 //
 // DOM 证据钩子：根 `data-testid="recruiting-workspace" data-view="recruiting"`；
 // 岗位行 `job-row-<id>`；申请行 `application-row-<id>`；结论区 `next-step`；
-// 写按钮 `action-<key>`（带 `data-available` / `data-pending`）。
+// `rubric-approve` / `rubric-approve-pending`；`close-job` / `close-job` 弹窗 / `close-job-result` /
+// `close-job-terminated`；`settings-role-form` / `settings-team-form` / `settings-pipeline-form`；
+// `job-draft`（含 request/generate/pending/reasons/missing/rounds/criteria/edit/confirm/result）。
 
-import { useState } from 'react'
-import { useApplicationDetail, useJobDetail, useWorkspaceOverview, postActionSeam, type RecruitingErrorInfo } from './use-recruiting.ts'
+import { useEffect, useState } from 'react'
+import {
+  useApplicationDetail,
+  useDecisionFacts,
+  useJobDetail,
+  useRouteProbe,
+  useWorkspaceOverview,
+  postActionSeam,
+  postDecisionRecordFacade,
+  postJobClose,
+  postJobCreate,
+  postJobDraft,
+  postScreeningEvaluate,
+  useJobCloseSeam,
+  type RecruitingErrorInfo,
+} from './use-recruiting.ts'
+import {
+  JOB_CREATE_PATH,
+  JOB_DRAFT_PATH,
+  buildJobCreateBody,
+  buildJobDraftBody,
+  buildRubricApproveBody,
+  buildSettingsWriteBody,
+  normalizeJobDraftResponse,
+  parseJobCloseEnvelope,
+  readbackLines,
+  terminatedLines,
+  type ActionOutcome,
+  type JobDraftView,
+  type JobCloseEnvelope,
+} from './actions.ts'
 import type {
   ActionView,
   ApplicationRowView,
@@ -24,8 +57,8 @@ import type {
   SettingsView,
 } from './view-model.ts'
 import { splitSidebarJobs } from './view-model.ts'
+import { count, items, numberOrNull, record, stringList, text } from './format.ts'
 import {
-  ActionButton,
   Card,
   Chip,
   EmptyState,
@@ -38,6 +71,7 @@ import {
   ThreeDimBadges,
 } from './parts.tsx'
 import { ApplicationDetail } from './application-detail.tsx'
+import { CloseJobDialog } from './close-job-dialog.tsx'
 import { RECRUITING_CSS, ROOT_STYLE, STYLE_ELEMENT_KEY, chipClass } from './styles.ts'
 
 /** 工作区 props（**必须与 `CLIENT-CONTRACT.md` 完全一致**）。 */
@@ -65,6 +99,662 @@ interface ActionFeedback {
   readonly title: string
   readonly message: string
   readonly rawBody: string
+}
+
+/** 读回行的标签：`label（key）`（label 与 key 相同时只显示一次）。 */
+function readbackRowLabel(row: { readonly key: string; readonly label: string }): string {
+  return row.label === '' || row.label === row.key ? row.key : `${row.label}（${row.key}）`
+}
+
+/** 最近一次写动作结果卡：2xx 不等于业务成功；只显示信封 `readback` 与服务端原文。 */
+function OutcomeReadbackCard({
+  outcome,
+  title,
+  testid,
+}: {
+  readonly outcome: ActionOutcome | undefined
+  readonly title: string
+  readonly testid: string
+}) {
+  if (outcome === undefined) return null
+  const rows = outcome.envelope !== null ? readbackLines(outcome.envelope) : []
+  return (
+    <Card className="rcw-detailmain" style={{ marginTop: 14 }} testid={testid}>
+      <div className="rcw-sectionhead" style={{ marginTop: 0 }}>
+        <h2>{title}</h2>
+        <Chip tone={outcome.accepted ? 'blue' : 'red'} testid={`${testid}-status`}>
+          {outcome.accepted
+            ? `HTTP ${String(outcome.status)} 已受理（业务事实看 readback）`
+            : `失败（HTTP ${String(outcome.status)}）`}
+        </Chip>
+      </div>
+      {rows.length > 0 ? (
+        <div data-testid={`${testid}-lines`}>
+          {rows.map((row) => (
+            <KeyValue key={row.key} label={readbackRowLabel(row)} value={row.value} mono />
+          ))}
+        </div>
+      ) : (
+        <p className="rcw-muted rcw-tiny" data-testid={`${testid}-empty`}>
+          服务端没有返回 readback（界面不把 2xx 当成功）。
+        </p>
+      )}
+      {outcome.error !== null ? (
+        <SourceBox testid={`${testid}-error`}>
+          {outcome.error.message}
+          {outcome.error.rawBody !== '' ? `\n\n${outcome.error.rawBody}` : ''}
+        </SourceBox>
+      ) : null}
+      {outcome.envelope !== null ? (
+        <p className="rcw-dim rcw-tiny" data-testid={`${testid}-actor`}>
+          动作 {outcome.envelope.action} · alias{' '}
+          {outcome.envelope.actor.alias !== '' ? outcome.envelope.actor.alias : '—'} · approval{' '}
+          {outcome.envelope.approval.result !== '' ? outcome.envelope.approval.result : '—'}
+        </p>
+      ) : null}
+    </Card>
+  )
+}
+
+/** 服务端响应体 → JSON 对象（解析失败 → null；不猜业务值）。 */
+function parseJsonObject(bodyText: string): Record<string, unknown> | null {
+  const trimmed = bodyText.trim()
+  if (trimmed === '') return null
+  try {
+    const parsed: unknown = JSON.parse(trimmed)
+    return record(parsed)
+  } catch {
+    return null
+  }
+}
+
+/** 岗位关闭结果卡：信封 `terminated` 逐条 + `job.status/record_version/actor` + `replayed`。 */
+function CloseJobResultCard({
+  envelope,
+  jobId,
+  error,
+  errorRaw,
+  bodyText,
+}: {
+  readonly envelope: JobCloseEnvelope | undefined
+  readonly jobId: string
+  readonly error: string
+  readonly errorRaw: string
+  readonly bodyText: string
+}) {
+  if (envelope === undefined && error === '') return null
+  return (
+    <Card className="rcw-detailmain" style={{ marginTop: 14 }} testid="close-job-result">
+      <div className="rcw-sectionhead" style={{ marginTop: 0 }}>
+        <h2>岗位关闭结果（服务端信封 + 重新 GET）</h2>
+        {envelope !== undefined ? (
+          <Chip tone={envelope.replayed ? 'amber' : 'green'} testid="close-job-replayed">
+            {envelope.replayed ? 'replayed（重复确认）' : '首次关闭'}
+          </Chip>
+        ) : (
+          <Chip tone="red">没有可用信封</Chip>
+        )}
+      </div>
+      {error !== '' ? (
+        <ErrorAlert
+          title="岗位关闭失败（服务端原文，界面不推断结果）"
+          message={error}
+          rawBody={errorRaw !== '' ? errorRaw : bodyText}
+        />
+      ) : null}
+      {envelope !== undefined ? (
+        <>
+          <div className="rcw-kv">
+            <KeyValue label="job.status" value={envelope.job.status} />
+            <KeyValue label="record_version" value={String(envelope.job.recordVersion)} />
+            <KeyValue label="status_changed_at" value={envelope.job.statusChangedAt} />
+            <KeyValue label="status_changed_by_actor_id" value={envelope.job.statusChangedByActorId} mono />
+            <KeyValue
+              label="actor"
+              value={`${envelope.actor.alias} · ${envelope.actor.displayName} · ${envelope.actor.actorId}`}
+              mono
+            />
+            <KeyValue label="replayed" value={envelope.replayed ? 'true' : 'false'} />
+            {/* job_id 必须来自信封（被关闭的那个 job）；不能用“当前选中岗位”——reload 后选中会漂移。 */}
+            <KeyValue label="job_id" value={envelope.job.jobId !== '' ? envelope.job.jobId : jobId} mono />
+          </div>
+          <div className="rcw-subhead">
+            <h3>本次终止计数（信封 terminated 逐条）</h3>
+          </div>
+          <ul className="rcw-roundfocus-list" data-testid="close-job-terminated">
+            {terminatedLines(envelope.terminated).map((line) => (
+              <li className="rcw-quote" key={line}>
+                {line}
+              </li>
+            ))}
+          </ul>
+          <p className="rcw-muted rcw-tiny">
+            已重新 GET overview 与岗位详情；界面没有先把本地岗位状态改成已关闭。
+          </p>
+        </>
+      ) : null}
+    </Card>
+  )
+}
+
+/** 草案字段容错读取：先试 camelCase 键，再试 snake_case（A 的归一化命名以 INTERFACE2 为准）。 */
+function draftTextNode(source: unknown, keys: readonly string[]): string {
+  const raw = record(source)
+  for (const key of keys) {
+    const value = text(raw[key])
+    if (value !== '') return value
+  }
+  return ''
+}
+
+/** 草案数组容错读取：缺失/坏类型 → `[]`。 */
+function draftArrayNode(source: unknown, keys: readonly string[]): unknown[] {
+  const raw = record(source)
+  for (const key of keys) {
+    const value = items(raw[key])
+    if (value.length > 0) return value
+  }
+  return []
+}
+
+/** 草案展示事实（缺字段 → 空，不编造；`null` = 还没有草案）。 */
+interface JobDraftFacts {
+  readonly recruitingReason: string
+  readonly responsibilities: readonly string[]
+  readonly successProfile: readonly string[]
+  readonly mustHave: readonly string[]
+  readonly niceToHave: readonly string[]
+  readonly rounds: ReadonlyArray<{
+    readonly roundNo: number
+    readonly title: string
+    readonly focus: readonly string[]
+    readonly questions: readonly string[]
+  }>
+  readonly rubricDimensions: ReadonlyArray<{
+    readonly key: string
+    readonly label: string
+    readonly kind: string
+    readonly weight: number | null
+    readonly notes: string
+  }>
+  readonly reasons: ReadonlyArray<{ readonly path: string; readonly reason: string; readonly source: string }>
+  readonly missingItems: ReadonlyArray<{ readonly key: string; readonly question: string }>
+  readonly confirmation: { readonly required: boolean; readonly status: string; readonly note: string; readonly next: readonly string[] }
+  readonly draftTitle: string
+  readonly draftCode: string
+}
+
+/** 把 A 的 `JobDraftView` 拆成可渲染事实（两种键名都接受，缺字段不补默认文案）。 */
+function jobDraftFactsOf(draft: JobDraftView | null): JobDraftFacts | null {
+  if (draft === null) return null
+  const raw = record(draft)
+  const jobDraft = record(raw.job_draft ?? raw.jobDraft)
+  const rubricDraft = record(raw.rubric_draft ?? raw.rubricDraft)
+  const rounds: JobDraftFacts['rounds'][number][] = []
+  for (const item of draftArrayNode(jobDraft, ['rounds'])) {
+    const entry = record(item)
+    rounds.push({
+      roundNo: count(entry.round_no ?? entry.roundNo),
+      title: text(entry.title),
+      focus: stringList(entry.focus),
+      questions: stringList(entry.questions),
+    })
+  }
+  const rubricDimensions: JobDraftFacts['rubricDimensions'][number][] = []
+  for (const item of draftArrayNode(rubricDraft, ['dimensions'])) {
+    const entry = record(item)
+    const key = text(entry.key)
+    if (key === '') continue
+    rubricDimensions.push({
+      key,
+      label: text(entry.label) !== '' ? text(entry.label) : key,
+      kind: text(entry.kind),
+      weight: numberOrNull(entry.weight),
+      notes: text(entry.reason) !== '' ? text(entry.reason) : text(entry.notes),
+    })
+  }
+  const reasons: JobDraftFacts['reasons'][number][] = []
+  for (const item of draftArrayNode(raw, ['reasons'])) {
+    const entry = record(item)
+    const reasonLine = text(entry.reason)
+    if (reasonLine === '') continue
+    reasons.push({ path: text(entry.path), reason: reasonLine, source: text(entry.source) })
+  }
+  const missingItems: JobDraftFacts['missingItems'][number][] = []
+  for (const item of draftArrayNode(raw, ['missing_items', 'missingItems'])) {
+    const entry = record(item)
+    const key = text(entry.key)
+    const question = text(entry.question)
+    if (key === '' && question === '') continue
+    missingItems.push({ key, question })
+  }
+  const confirmationRaw = record(raw.confirmation)
+  return {
+    recruitingReason: draftTextNode(jobDraft, ['recruiting_reason', 'recruitingReason']),
+    responsibilities: stringList(jobDraft.responsibilities),
+    successProfile: stringList(jobDraft.success_profile ?? jobDraft.successProfile),
+    mustHave: stringList(jobDraft.must_have ?? jobDraft.mustHave),
+    niceToHave: stringList(jobDraft.nice_to_have ?? jobDraft.niceToHave),
+    rounds,
+    rubricDimensions,
+    reasons,
+    missingItems,
+    confirmation: {
+      required: confirmationRaw.required === true,
+      status: text(confirmationRaw.status),
+      note: text(confirmationRaw.note),
+      next: stringList(confirmationRaw.next),
+    },
+    draftTitle: draftTextNode(jobDraft, ['title']),
+    draftCode: draftTextNode(jobDraft, ['code']),
+  }
+}
+
+/** 生成/人改/确认创建草案所需的入参（父组件负责 build* + post*）。 */
+interface JobCreateInput {
+  readonly code: string
+  readonly title: string
+  readonly departmentId: string
+  readonly descriptionMd: string
+  readonly requirementsMd: string
+  readonly criteria: ReadonlyArray<Readonly<Record<string, unknown>>>
+}
+
+/** 岗位草案卡（task-57）：生成 → 展示服务端草案/理由/缺项/轮次/评分标准 → 人改 → 确认创建 → 读回。 */
+function JobDraftCard({
+  draftProbeReason,
+  createProbeReason,
+  draft,
+  draftBusy,
+  createBusy,
+  draftError,
+  draftRaw,
+  createError,
+  createRaw,
+  createOutcome,
+  departments,
+  onGenerate,
+  onCreate,
+}: {
+  readonly draftProbeReason: string
+  readonly createProbeReason: string
+  readonly draft: JobDraftView | null
+  readonly draftBusy: boolean
+  readonly createBusy: boolean
+  readonly draftError: string
+  readonly draftRaw: string
+  readonly createError: string
+  readonly createRaw: string
+  readonly createOutcome: ActionOutcome | undefined
+  readonly departments: SettingsView['departments']
+  readonly onGenerate: (requestText: string) => void
+  readonly onCreate: (input: JobCreateInput) => void
+}) {
+  const [requestText, setRequestText] = useState('')
+  const [titleText, setTitleText] = useState('')
+  const [codeText, setCodeText] = useState('')
+  const [departmentId, setDepartmentId] = useState('')
+  const [descriptionMd, setDescriptionMd] = useState('')
+  const [requirementsMd, setRequirementsMd] = useState('')
+  const facts = jobDraftFactsOf(draft)
+
+  // 草案到达后**预填**人改表单（只填空字段，不覆盖用户已输入的内容；预填值全部来自服务端草案）。
+  useEffect(() => {
+    const next = jobDraftFactsOf(draft)
+    if (next === null) return
+    setTitleText((current) => (current !== '' ? current : next.draftTitle))
+    setCodeText((current) => (current !== '' ? current : next.draftCode))
+    setDescriptionMd((current) => (current !== '' ? current : next.responsibilities.join('\n')))
+    setRequirementsMd((current) =>
+      current !== ''
+        ? current
+        : [...next.mustHave.map((line) => `必备：${line}`), ...next.niceToHave.map((line) => `加分：${line}`)].join('\n'),
+    )
+  }, [draft])
+
+  const criteria = (facts?.rubricDimensions ?? []).map((dimension) => ({
+    key: dimension.key,
+    label: dimension.label,
+    kind: dimension.kind,
+    ...(dimension.weight !== null ? { weight: dimension.weight } : {}),
+    ...(dimension.notes !== '' ? { notes: dimension.notes } : {}),
+  }))
+  const createBlockedReason =
+    createProbeReason !== ''
+      ? createProbeReason
+      : facts === null
+        ? 'NO_JOB_DRAFT：还没有草案，确认创建不可用'
+        : createBusy
+          ? ''
+          : ''
+  const createDisabled = createBlockedReason !== '' || createBusy
+
+  return (
+    <Card className="rcw-detailmain" style={{ marginTop: 14 }} testid="job-draft">
+      <div className="rcw-sectionhead" style={{ marginTop: 0 }}>
+        <h2>岗位草案生成（task-57）</h2>
+        <Chip tone={draftProbeReason === '' ? 'blue' : 'amber'} testid="job-draft-route">
+          {draftProbeReason === '' ? 'draft 路由已注册' : 'draft 路由未接线'}
+        </Chip>
+      </div>
+      <p className="rcw-muted rcw-tiny">
+        POST /recruitment/api/job-action/job/draft（只读草案，不写库）→ 人改确认 → POST
+        /recruitment/api/job-action/job/create。草案内容全部来自服务端返回；本卡不编造企业事实，也不自动批准 rubric。
+      </p>
+      {draftProbeReason !== '' ? (
+        <p className="rcw-pending" data-testid="job-draft-pending">
+          {draftProbeReason}
+        </p>
+      ) : null}
+
+      <label className="rcw-modalfield" style={{ marginTop: 10 }}>
+        <span>招聘需求原文（1..2000 字）</span>
+        <textarea
+          className="rcw-textarea"
+          data-testid="job-draft-request-text"
+          rows={3}
+          value={requestText}
+          disabled={draftProbeReason !== '' || draftBusy}
+          placeholder="例如：我们要招一名后端工程师，做支付系统，最好有大厂经验"
+          onChange={(event) => setRequestText(event.target.value)}
+        />
+      </label>
+      <div className="rcw-inlineactions">
+        <button
+          type="button"
+          className="rcw-btn rcw-btn-blue"
+          data-testid="job-draft-generate"
+          disabled={draftProbeReason !== '' || draftBusy}
+          title={draftProbeReason !== '' ? draftProbeReason : 'POST /recruitment/api/job-action/job/draft'}
+          onClick={() => onGenerate(requestText)}
+        >
+          {draftBusy ? '生成中…' : '生成草案'}
+        </button>
+      </div>
+
+      {draftError !== '' ? (
+        <ErrorAlert title="岗位草案生成失败（服务端原文）" message={draftError} rawBody={draftRaw} />
+      ) : null}
+
+      {facts === null ? (
+        <p className="rcw-muted rcw-tiny" data-testid="job-draft-empty">
+          还没有草案：点「生成草案」后由服务端返回；当前无数据、不编造。
+        </p>
+      ) : (
+        <>
+          <div className="rcw-subhead">
+            <h3>服务端草案（只展示，不编造）</h3>
+          </div>
+          {facts.recruitingReason !== '' ? (
+            <KeyValue label="招聘原因（recruiting_reason）" value={facts.recruitingReason} />
+          ) : null}
+          {facts.responsibilities.length > 0 ? (
+            <div data-testid="job-draft-responsibilities">
+              <div className="rcw-cap">职责</div>
+              {facts.responsibilities.map((line) => (
+                <div className="rcw-quote" key={`responsibility-${line}`}>
+                  {line}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {facts.successProfile.length > 0 ? (
+            <div data-testid="job-draft-success-profile">
+              <div className="rcw-cap">成功画像</div>
+              {facts.successProfile.map((line) => (
+                <div className="rcw-quote" key={`success-${line}`}>
+                  {line}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {facts.mustHave.length > 0 ? (
+            <div data-testid="job-draft-must-have">
+              <div className="rcw-cap">必备条件</div>
+              {facts.mustHave.map((line) => (
+                <div className="rcw-quote" key={`must-${line}`}>
+                  {line}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {facts.niceToHave.length > 0 ? (
+            <div data-testid="job-draft-nice-to-have">
+              <div className="rcw-cap">加分项</div>
+              {facts.niceToHave.map((line) => (
+                <div className="rcw-quote" key={`nice-${line}`}>
+                  {line}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {facts.reasons.length > 0 ? (
+            <div data-testid="job-draft-reasons">
+              <div className="rcw-cap">生成理由（reasons）</div>
+              {facts.reasons.map((entry, index) => (
+                <div className="rcw-fieldrow" key={`reason-${String(index)}-${entry.path}`}>
+                  <span className="rcw-fieldkey rcw-mono">{entry.path !== '' ? entry.path : '（未提供 path）'}</span>
+                  <span className="rcw-fieldval">
+                    {entry.reason}
+                    {entry.source !== '' ? ` · 来源 ${entry.source}` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {facts.missingItems.length > 0 ? (
+            <div data-testid="job-draft-missing">
+              <div className="rcw-cap">缺失项（服务端要求人补，不编造）</div>
+              {facts.missingItems.map((entry, index) => (
+                <div className="rcw-fieldrow" key={`missing-${String(index)}-${entry.key}`}>
+                  <span className="rcw-fieldkey rcw-mono">{entry.key !== '' ? entry.key : '（未提供 key）'}</span>
+                  <span className="rcw-fieldval">{entry.question !== '' ? entry.question : '（服务端未提供追问）'}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {facts.rounds.length > 0 ? (
+            <div data-testid="job-draft-rounds">
+              <div className="rcw-cap">轮次与每轮重点</div>
+              {facts.rounds.map((round, index) => (
+                <div className="rcw-smallcard" style={{ marginTop: 8 }} key={`round-${String(round.roundNo)}-${String(index)}`}>
+                  <strong>
+                    第 {round.roundNo} 轮{round.title !== '' ? ` · ${round.title}` : ''}
+                  </strong>
+                  {round.focus.length > 0 ? <p>重点：{round.focus.join('、')}</p> : null}
+                  {round.questions.length > 0 ? <p>问题：{round.questions.join(' / ')}</p> : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {facts.rubricDimensions.length > 0 ? (
+            <div data-testid="job-draft-criteria">
+              <div className="rcw-cap">评分标准（rubric_draft.dimensions）</div>
+              <div className="rcw-tablewrap">
+                <table className="rcw-table">
+                  <thead>
+                    <tr>
+                      <th>key</th>
+                      <th>维度</th>
+                      <th>kind</th>
+                      <th>权重</th>
+                      <th>理由</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {facts.rubricDimensions.map((dimension) => (
+                      <tr key={dimension.key}>
+                        <td className="rcw-mono">{dimension.key}</td>
+                        <td>{dimension.label}</td>
+                        <td>{dimension.kind !== '' ? dimension.kind : '—'}</td>
+                        <td>{dimension.weight !== null ? String(dimension.weight) : '—'}</td>
+                        <td>{dimension.notes !== '' ? dimension.notes : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+
+          {facts.confirmation.status !== '' || facts.confirmation.note !== '' ? (
+            <p className="rcw-muted rcw-tiny" data-testid="job-draft-confirmation">
+              确认闸门：{facts.confirmation.required ? '需要人工确认' : '无需确认'} ·{' '}
+              {facts.confirmation.status !== '' ? facts.confirmation.status : '状态未提供'}
+              {facts.confirmation.note !== '' ? ` · ${facts.confirmation.note}` : ''}
+              {facts.confirmation.next.length > 0 ? ` · 下一步 ${facts.confirmation.next.join('、')}` : ''}
+            </p>
+          ) : null}
+
+          <div className="rcw-subhead">
+            <h3>人改后确认创建（job/create）</h3>
+          </div>
+          <div className="rcw-fields-grid">
+            <label className="rcw-modalfield">
+              <span>岗位名称</span>
+              <input
+                className="rcw-input"
+                data-testid="job-draft-title"
+                value={titleText}
+                disabled={createDisabled}
+                onChange={(event) => setTitleText(event.target.value)}
+              />
+            </label>
+            <label className="rcw-modalfield">
+              <span>岗位编码（2..41 大写）</span>
+              <input
+                className="rcw-input"
+                data-testid="job-draft-code"
+                value={codeText}
+                disabled={createDisabled}
+                onChange={(event) => setCodeText(event.target.value)}
+              />
+            </label>
+            <label className="rcw-modalfield">
+              <span>部门</span>
+              <select
+                className="rcw-select"
+                data-testid="job-draft-department"
+                value={departmentId}
+                disabled={createDisabled}
+                onChange={(event) => setDepartmentId(event.target.value)}
+              >
+                <option value="">（请选择部门 —— 服务端 settings.departments）</option>
+                {departments.map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.name !== '' ? department.name : department.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <label className="rcw-modalfield">
+            <span>岗位描述（markdown）</span>
+            <textarea
+              className="rcw-textarea"
+              data-testid="job-draft-description"
+              rows={3}
+              value={descriptionMd}
+              disabled={createDisabled}
+              onChange={(event) => setDescriptionMd(event.target.value)}
+            />
+          </label>
+          <label className="rcw-modalfield">
+            <span>岗位要求（markdown）</span>
+            <textarea
+              className="rcw-textarea"
+              data-testid="job-draft-requirements"
+              rows={3}
+              value={requirementsMd}
+              disabled={createDisabled}
+              onChange={(event) => setRequirementsMd(event.target.value)}
+            />
+          </label>
+          {createBlockedReason !== '' ? (
+            <p className="rcw-pending" data-testid="job-draft-create-pending">
+              {createBlockedReason}
+            </p>
+          ) : null}
+          <div className="rcw-inlineactions">
+            <button
+              type="button"
+              className="rcw-btn rcw-btn-blue"
+              data-testid="job-draft-confirm"
+              disabled={createDisabled}
+              onClick={() =>
+                onCreate({
+                  code: codeText.trim(),
+                  title: titleText.trim(),
+                  departmentId,
+                  descriptionMd,
+                  requirementsMd,
+                  criteria,
+                })
+              }
+            >
+              {createBusy ? '创建中…' : '确认创建岗位'}
+            </button>
+            <span className="rcw-dim rcw-tiny">
+              创建后 rubric 仍为待批准（不自动 approve）；成功事实看下方 readback + 重新 GET。
+            </span>
+          </div>
+          {createError !== '' ? (
+            <ErrorAlert title="岗位创建失败（服务端原文）" message={createError} rawBody={createRaw} />
+          ) : null}
+          {createOutcome !== undefined ? <DraftCreateResult outcome={createOutcome} /> : null}
+        </>
+      )}
+    </Card>
+  )
+}
+
+/** 岗位创建响应卡（`job` / `versions` / `readback` 键值行；2xx 不独立当成功，靠 readback）。 */
+function DraftCreateResult({ outcome }: { readonly outcome: ActionOutcome }) {
+  const parsed = parseJsonObject(outcome.bodyText)
+  const job = record(parsed?.job)
+  const versions = record(parsed?.versions)
+  const readback = record(parsed?.readback)
+  const rows: { key: string; label: string; value: string }[] = []
+  for (const pair of [
+    ['job.job_id', job.job_id],
+    ['job.code', job.code],
+    ['job.status', job.status],
+    ['job.record_version', job.record_version],
+    ['versions.job_version_id', versions.job_version_id],
+    ['versions.version_no', versions.version_no],
+    ['versions.rubric_version_id', versions.rubric_version_id],
+    ['versions.approval_status', versions.approval_status],
+    ['readback.table', readback.table],
+    ['replayed', parsed?.replayed],
+  ] as ReadonlyArray<readonly [string, unknown]>) {
+    const value = typeof pair[1] === 'number' ? String(pair[1]) : text(pair[1])
+    if (value !== '') rows.push({ key: pair[0], label: pair[0], value })
+  }
+  return (
+    <div className="rcw-insight" style={{ marginTop: 12 }} data-testid="job-draft-result">
+      <h3>岗位创建结果（服务端响应）</h3>
+      <div className="rcw-chiprow" style={{ marginTop: 6 }}>
+        <Chip tone={outcome.accepted ? 'blue' : 'red'}>
+          {outcome.accepted ? `HTTP ${String(outcome.status)} 已受理` : `失败（HTTP ${String(outcome.status)}）`}
+        </Chip>
+      </div>
+      {rows.length > 0 ? (
+        <div style={{ marginTop: 8 }}>
+          {rows.map((row) => (
+            <KeyValue key={row.key} label={row.label} value={row.value} mono />
+          ))}
+        </div>
+      ) : (
+        <p className="rcw-muted rcw-tiny">服务端没有返回可解析的创建结果（原文见下）。</p>
+      )}
+      {rows.length === 0 || !outcome.accepted ? <SourceBox testid="job-draft-result-raw">{outcome.bodyText}</SourceBox> : null}
+      {outcome.error !== null ? <SourceBox testid="job-draft-result-error">{outcome.error.message}</SourceBox> : null}
+    </div>
+  )
 }
 
 /** 申请列表行。 */
@@ -122,11 +812,12 @@ function JobHero({
   onSelectJob,
   onToggleJobDetail,
   jobDetailOpen,
-  actions,
-  pendingActionKey,
-  onRunAction,
-  aliasBlocked,
-  aliasNote,
+  rubricPendingText,
+  rubricBusy,
+  onApproveRubric,
+  closePendingText,
+  closeBusy,
+  onOpenClose,
   onOpenSettings,
 }: {
   readonly job: JobView | undefined
@@ -135,11 +826,14 @@ function JobHero({
   readonly onSelectJob: (jobId: string) => void
   readonly onToggleJobDetail: () => void
   readonly jobDetailOpen: boolean
-  readonly actions: Readonly<Record<string, ActionView>>
-  readonly pendingActionKey: string
-  readonly onRunAction: (action: ActionView) => void
-  readonly aliasBlocked: boolean
-  readonly aliasNote: string
+  /** 空串 = rubric 批准可用；非空 = disabled 原因（含机器码）。 */
+  readonly rubricPendingText: string
+  readonly rubricBusy: boolean
+  readonly onApproveRubric: () => void
+  /** 空串 = 岗位关闭可用；非空 = disabled 原因（含机器码，如 JOB_CLOSE_ROUTE_MISSING）。 */
+  readonly closePendingText: string
+  readonly closeBusy: boolean
+  readonly onOpenClose: () => void
   readonly onOpenSettings: () => void
 }) {
   if (job === undefined) {
@@ -152,7 +846,6 @@ function JobHero({
       </Card>
     )
   }
-  const rubricAction = actions.rubric_approve
   const currentStageRow =
     job.applicationCounts.byStage.find((row) => row.code === overview.applications[0]?.stageCode) ?? undefined
   return (
@@ -228,15 +921,54 @@ function JobHero({
       <NextStepPanel step={job.nextStep} scope="job" fallback="服务端未给该岗位下一步" />
 
       <div className="rcw-inlineactions" data-testid="job-actions">
-        {rubricAction !== undefined ? (
-          <ActionButton
-            action={rubricAction}
-            pending={pendingActionKey === rubricAction.key}
-            aliasBlocked={aliasBlocked}
-            aliasNote={aliasNote}
-            onRun={onRunAction}
-          />
-        ) : null}
+        <span className="rcw-actionwrap">
+          <button
+            type="button"
+            className={`rcw-btn ${rubricPendingText === '' ? 'rcw-btn-blue' : ''}`.trim()}
+            data-testid="rubric-approve"
+            data-available={rubricPendingText === '' ? 'true' : 'false'}
+            data-pending-reason={rubricPendingText !== '' ? rubricPendingText : undefined}
+            disabled={rubricPendingText !== '' || rubricBusy}
+            title={
+              rubricPendingText !== ''
+                ? rubricPendingText
+                : 'POST /recruitment/api/action/job/rubric-approve（body: job_id + rubric_version_id；人类点击即授权）'
+            }
+            onClick={() => {
+              if (rubricPendingText !== '') return
+              onApproveRubric()
+            }}
+          >
+            {rubricBusy ? '提交中…' : '批准 Rubric'}
+          </button>
+          {rubricPendingText !== '' ? (
+            <span className="rcw-pending" data-testid="rubric-approve-pending">
+              {rubricPendingText}
+            </span>
+          ) : null}
+        </span>
+        <span className="rcw-actionwrap">
+          <button
+            type="button"
+            className="rcw-btn rcw-btn-negative"
+            data-testid="close-job"
+            data-available={closePendingText === '' ? 'true' : 'false'}
+            data-pending-reason={closePendingText !== '' ? closePendingText : undefined}
+            disabled={closePendingText !== '' || closeBusy}
+            title={closePendingText !== '' ? closePendingText : '打开确认弹窗（取消 = 零请求）'}
+            onClick={() => {
+              if (closePendingText !== '') return
+              onOpenClose()
+            }}
+          >
+            关闭岗位
+          </button>
+          {closePendingText !== '' ? (
+            <span className="rcw-pending" data-testid="close-job-pending">
+              {closePendingText}
+            </span>
+          ) : null}
+        </span>
         <button type="button" className="rcw-btn" data-testid="toggle-job-detail" onClick={onToggleJobDetail}>
           {jobDetailOpen ? '收起岗位版本与 rubric' : '查看岗位版本与 rubric'}
         </button>
@@ -515,23 +1247,15 @@ function CountsCard({ overview }: { readonly overview: RecruitingOverviewView })
   )
 }
 
-/** 招聘设置入口（只读数据；写动作不可用 → 禁用按钮 + pending 文案）。 */
+/** 招聘设置入口卡（只读数据；写入口可用性以服务端 settings.entry + action 为准）。 */
 function SettingsEntryCard({
   overview,
-  writeAction,
+  writeStateText,
   onOpenSettings,
-  pendingActionKey,
-  onRunAction,
-  aliasBlocked,
-  aliasNote,
 }: {
   readonly overview: RecruitingOverviewView
-  readonly writeAction: ActionView | undefined
+  readonly writeStateText: string
   readonly onOpenSettings: () => void
-  readonly pendingActionKey: string
-  readonly onRunAction: (action: ActionView) => void
-  readonly aliasBlocked: boolean
-  readonly aliasNote: string
 }) {
   const { settings } = overview
   return (
@@ -551,17 +1275,11 @@ function SettingsEntryCard({
       </div>
       <div className="rcw-inlineactions">
         <button type="button" className="rcw-btn rcw-btn-soft" data-testid="open-settings-from-card" onClick={onOpenSettings}>
-          查看只读设置
+          打开招聘设置（create 表单）
         </button>
-        {writeAction !== undefined ? (
-          <ActionButton
-            action={writeAction}
-            pending={pendingActionKey === writeAction.key}
-            aliasBlocked={aliasBlocked}
-            aliasNote={aliasNote}
-            onRun={onRunAction}
-          />
-        ) : null}
+        <span className="rcw-pending" data-testid="settings-entry-write-state">
+          {writeStateText !== '' ? writeStateText : '设置写入口可用（role / team / pipeline 最小 create 表单）'}
+        </span>
       </div>
       {settings.entry.available && settings.entry.href !== '' ? (
         <p className="rcw-tiny" style={{ marginTop: 8 }}>
@@ -572,24 +1290,37 @@ function SettingsEntryCard({
   )
 }
 
-/** 只读设置视图（stage catalog / configs / departments / hiring teams）。 */
+/** 设置视图：只读配置 + role / team / pipeline **最小 create 表单**（写操作只走服务端 action seam）。 */
 function SettingsPanel({
   overview,
   onBack,
-  pendingActionKey,
-  onRunAction,
-  aliasBlocked,
-  aliasNote,
+  writeDisabledReason,
+  settingsBusy,
+  onCreateSettings,
+  actionOutcome,
+  feedback,
 }: {
   readonly overview: RecruitingOverviewView
   readonly onBack: () => void
-  readonly pendingActionKey: string
-  readonly onRunAction: (action: ActionView) => void
-  readonly aliasBlocked: boolean
-  readonly aliasNote: string
+  /** 空串 = 设置写入口可用；非空 = disabled 原因（含机器码）。 */
+  readonly writeDisabledReason: string
+  readonly settingsBusy: boolean
+  readonly onCreateSettings: (entity: 'role' | 'team' | 'pipeline', fields: Readonly<Record<string, unknown>>) => void
+  readonly actionOutcome: ActionOutcome | undefined
+  readonly feedback: ActionFeedback | undefined
 }) {
   const settings: SettingsView = overview.settings
-  const writeAction = overview.actions.recruiting_settings_write
+  // 三个最小 create 表单的受控字段（只做 create；update / add_member 等不在本页，不假装覆盖）。
+  const [roleCode, setRoleCode] = useState('')
+  const [roleName, setRoleName] = useState('')
+  const [roleScopes, setRoleScopes] = useState('')
+  const [teamCode, setTeamCode] = useState('')
+  const [teamName, setTeamName] = useState('')
+  const [teamDepartmentId, setTeamDepartmentId] = useState('')
+  const [pipelineCode, setPipelineCode] = useState('')
+  const [pipelineName, setPipelineName] = useState('')
+  const settingsDisabled = writeDisabledReason !== '' || settingsBusy
+  const settingsAction = overview.actions.recruiting_settings_write
   return (
     <>
       <div className="rcw-headline">
@@ -618,23 +1349,208 @@ function SettingsPanel({
       <div className="rcw-grid">
         <div className="rcw-main">
           <Card className="rcw-detailmain" testid="settings-write-card">
-            <h2>设置写入口</h2>
+            <h2>设置写入口（role / team / pipeline 最小 create）</h2>
             <p className="rcw-muted rcw-tiny" style={{ marginTop: 6 }}>
-              设置数据只读展示；保存动作的可用性以服务端 `/overview` 的 `actions.recruiting_settings_write` 为准。
+              字段按 `work/d5/actions/CONTRACT.md` §4.2：role=code/name/permission_scopes、team=code/name/department_id、
+              pipeline=code/name。请求经 `buildSettingsWriteBody` + `POST
+              /recruitment/api/action/config`；可用性以服务端 `settings.entry.available` 与
+              `actions.recruiting_settings_write.available` 为准。本页只做 create，update / add_member / add_stage
+              等写操作没有表单（不假装覆盖）。
             </p>
-            <div className="rcw-inlineactions">
-              {writeAction !== undefined ? (
-                <ActionButton
-                  action={writeAction}
-                  pending={pendingActionKey === writeAction.key}
-                  aliasBlocked={aliasBlocked}
-                  aliasNote={aliasNote}
-                  onRun={onRunAction}
+            {writeDisabledReason !== '' ? (
+              <p className="rcw-pending" data-testid="settings-write-pending">
+                {writeDisabledReason}
+              </p>
+            ) : (
+              <p className="rcw-pending" data-testid="settings-write-pending-ok">
+                设置写入口可用（pending: ''）；保存后重新 GET overview 并显示 readback。
+              </p>
+            )}
+            {feedback !== undefined ? (
+              <div
+                className={feedback.tone === 'error' ? 'rcw-alert' : 'rcw-notice'}
+                role={feedback.tone === 'error' ? 'alert' : 'status'}
+                data-testid="settings-feedback"
+                data-tone={feedback.tone}
+              >
+                <strong>{feedback.title}</strong>
+                <div style={{ marginTop: 6 }}>{feedback.message}</div>
+                {feedback.rawBody !== '' ? <pre data-testid="settings-feedback-raw">{feedback.rawBody}</pre> : null}
+              </div>
+            ) : null}
+
+            <form
+              className="rcw-writeform"
+              data-testid="settings-role-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                onCreateSettings('role', {
+                  code: roleCode.trim(),
+                  name: roleName.trim(),
+                  permission_scopes: roleScopes
+                    .split(/[\s,，;；]+/)
+                    .map((scope) => scope.trim())
+                    .filter((scope) => scope !== ''),
+                })
+              }}
+            >
+              <strong>新建角色（role create）</strong>
+              <div className="rcw-fields-grid">
+                <label className="rcw-modalfield">
+                  <span>code（2..41 大写）</span>
+                  <input
+                    className="rcw-input"
+                    data-testid="settings-role-code"
+                    value={roleCode}
+                    disabled={settingsDisabled}
+                    onChange={(event) => setRoleCode(event.target.value)}
+                  />
+                </label>
+                <label className="rcw-modalfield">
+                  <span>name（1..200）</span>
+                  <input
+                    className="rcw-input"
+                    data-testid="settings-role-name"
+                    value={roleName}
+                    disabled={settingsDisabled}
+                    onChange={(event) => setRoleName(event.target.value)}
+                  />
+                </label>
+              </div>
+              <label className="rcw-modalfield">
+                <span>permission_scopes（逗号分隔；服务端校验封闭枚举）</span>
+                <input
+                  className="rcw-input"
+                  data-testid="settings-role-scopes"
+                  value={roleScopes}
+                  disabled={settingsDisabled}
+                  placeholder="例如 JOB_READ,JOB_WRITE"
+                  onChange={(event) => setRoleScopes(event.target.value)}
                 />
-              ) : (
-                <span className="rcw-pending">服务端没有返回 recruiting_settings_write 动作</span>
-              )}
-            </div>
+              </label>
+              <button
+                type="submit"
+                className="rcw-btn rcw-btn-blue"
+                data-testid="settings-role-submit"
+                disabled={settingsDisabled}
+                title={writeDisabledReason !== '' ? writeDisabledReason : settingsAction?.seam}
+              >
+                {settingsBusy ? '提交中…' : '创建角色'}
+              </button>
+            </form>
+
+            <form
+              className="rcw-writeform"
+              data-testid="settings-team-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                onCreateSettings('team', {
+                  code: teamCode.trim(),
+                  name: teamName.trim(),
+                  department_id: teamDepartmentId,
+                })
+              }}
+            >
+              <strong>新建招聘团队（team create）</strong>
+              <div className="rcw-fields-grid">
+                <label className="rcw-modalfield">
+                  <span>code</span>
+                  <input
+                    className="rcw-input"
+                    data-testid="settings-team-code"
+                    value={teamCode}
+                    disabled={settingsDisabled}
+                    onChange={(event) => setTeamCode(event.target.value)}
+                  />
+                </label>
+                <label className="rcw-modalfield">
+                  <span>name</span>
+                  <input
+                    className="rcw-input"
+                    data-testid="settings-team-name"
+                    value={teamName}
+                    disabled={settingsDisabled}
+                    onChange={(event) => setTeamName(event.target.value)}
+                  />
+                </label>
+              </div>
+              <label className="rcw-modalfield">
+                <span>department_id（来自服务端 settings.departments）</span>
+                <select
+                  className="rcw-select"
+                  data-testid="settings-team-department"
+                  value={teamDepartmentId}
+                  disabled={settingsDisabled}
+                  onChange={(event) => setTeamDepartmentId(event.target.value)}
+                >
+                  <option value="">（请选择部门）</option>
+                  {settings.departments.map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.name !== '' ? department.name : department.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="submit"
+                className="rcw-btn rcw-btn-blue"
+                data-testid="settings-team-submit"
+                disabled={settingsDisabled}
+                title={writeDisabledReason !== '' ? writeDisabledReason : settingsAction?.seam}
+              >
+                {settingsBusy ? '提交中…' : '创建团队'}
+              </button>
+            </form>
+
+            <form
+              className="rcw-writeform"
+              data-testid="settings-pipeline-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                onCreateSettings('pipeline', { code: pipelineCode.trim(), name: pipelineName.trim() })
+              }}
+            >
+              <strong>新建招聘流程模板（pipeline create）</strong>
+              <div className="rcw-fields-grid">
+                <label className="rcw-modalfield">
+                  <span>code</span>
+                  <input
+                    className="rcw-input"
+                    data-testid="settings-pipeline-code"
+                    value={pipelineCode}
+                    disabled={settingsDisabled}
+                    onChange={(event) => setPipelineCode(event.target.value)}
+                  />
+                </label>
+                <label className="rcw-modalfield">
+                  <span>name</span>
+                  <input
+                    className="rcw-input"
+                    data-testid="settings-pipeline-name"
+                    value={pipelineName}
+                    disabled={settingsDisabled}
+                    onChange={(event) => setPipelineName(event.target.value)}
+                  />
+                </label>
+              </div>
+              <button
+                type="submit"
+                className="rcw-btn rcw-btn-blue"
+                data-testid="settings-pipeline-submit"
+                disabled={settingsDisabled}
+                title={writeDisabledReason !== '' ? writeDisabledReason : settingsAction?.seam}
+              >
+                {settingsBusy ? '提交中…' : '创建流程模板'}
+              </button>
+            </form>
+
+            {actionOutcome !== undefined && actionOutcome.key === 'recruiting_settings_write' ? (
+              <OutcomeReadbackCard
+                outcome={actionOutcome}
+                title="设置写入读回（信封 readback；键名/值原样）"
+                testid="settings-write-readback"
+              />
+            ) : null}
           </Card>
 
           <Card className="rcw-detailmain" style={{ marginTop: 14 }} testid="settings-stage-catalog">
@@ -800,6 +1716,24 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
   const [filter, setFilter] = useState<ApplicationFilter>('all')
   const [pendingActionKey, setPendingActionKey] = useState('')
   const [feedback, setFeedback] = useState<ActionFeedback | undefined>(undefined)
+  // 最近一次写动作结果（成功只信信封 readback + reload；失败保留服务端原文）。
+  const [actionOutcome, setActionOutcome] = useState<ActionOutcome | undefined>(undefined)
+  // 岗位关闭（人类闸门）：弹窗 / 提交中 / 服务端原文 / 成功后信封。
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false)
+  const [closeBusy, setCloseBusy] = useState(false)
+  const [closeError, setCloseError] = useState('')
+  const [closeRaw, setCloseRaw] = useState('')
+  const [closeEnvelope, setCloseEnvelope] = useState<JobCloseEnvelope | undefined>(undefined)
+  const [closeBodyText, setCloseBodyText] = useState('')
+  // 岗位草案（task-57）：生成 / 人改 / 确认创建。
+  const [jobDraft, setJobDraft] = useState<JobDraftView | null>(null)
+  const [draftBusy, setDraftBusy] = useState(false)
+  const [draftError, setDraftError] = useState('')
+  const [draftRaw, setDraftRaw] = useState('')
+  const [draftCreateBusy, setDraftCreateBusy] = useState(false)
+  const [draftCreateError, setDraftCreateError] = useState('')
+  const [draftCreateRaw, setDraftCreateRaw] = useState('')
+  const [draftOutcome, setDraftOutcome] = useState<ActionOutcome | undefined>(undefined)
 
   // 默认选中 = 服务端排序后的第一个岗位（OPEN 且申请最多；见 view-model.sortJobViews）。
   // 选中的岗位在 reload 后消失时回退到新的默认岗位，避免出现"行全被过滤掉"的空页。
@@ -810,11 +1744,18 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
   const selectedJob = jobs.find((job) => job.id === effectiveJobId) ?? fallbackJob
   const applicationDetail = useApplicationDetail(selectedApplicationId)
   const jobDetail = useJobDetail(jobDetailOpen ? effectiveJobId : '')
+  // 决策事实只读投影（A 的 `GET /recruitment/api/decision/facts`；404 → probe=MISSING，详情表单据此 disabled）。
+  const decisionFacts = useDecisionFacts(selectedApplicationId, selectedApplicationId !== '', props.sessionId)
 
   const isRecruiter = props.alias === 'recruiter'
   const aliasNote =
     '当前 alias 为面试官视图，请切换到招聘方身份（Recruiter）；本视图只做只读浏览，写操作不可用。'
   const aliasBlocked = !isRecruiter
+
+  // 路由能力探测：GET 同路径（405=已注册 POST 路由；404=未接线；403=同源/session 问题）。零写入、不打写日志。
+  const closeSeam = useJobCloseSeam(props.sessionId, isRecruiter)
+  const draftProbe = useRouteProbe(JOB_DRAFT_PATH, props.sessionId, isRecruiter)
+  const createProbe = useRouteProbe(JOB_CREATE_PATH, props.sessionId, isRecruiter)
 
   const overviewActions = overview.data?.actions ?? {}
   const detailActions =
@@ -822,30 +1763,312 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
       ? applicationDetail.data.actions
       : overviewActions
 
-  const runAction = async (action: ActionView): Promise<void> => {
+  /** 岗位关闭按钮的 disabled 原因（'' = 可用；404 → JOB_CLOSE_ROUTE_MISSING）。 */
+  const closePendingText = ((): string => {
+    if (!isRecruiter) return aliasNote
+    if (closeSeam.loading) {
+      return 'JOB_CLOSE_PROBE_PENDING：正在探测岗位关闭端点（GET /recruitment/api/job-action/job/close）…'
+    }
+    const probe = closeSeam.probe
+    if (probe === undefined) return 'JOB_CLOSE_PROBE_PENDING：尚未探测岗位关闭端点'
+    if (probe.state === 'AVAILABLE') return ''
+    if (probe.state === 'MISSING') {
+      return `JOB_CLOSE_ROUTE_MISSING：宿主尚未注册 POST /recruitment/api/job-action/job/close（GET 探测 HTTP ${String(probe.status)}），等待 W0 接线并重启 Host 后自动可用。`
+    }
+    if (probe.state === 'FORBIDDEN') {
+      return `JOB_CLOSE_SAME_ORIGIN_REQUIRED：探测被拒绝（HTTP ${String(probe.status)}）${probe.reasonText !== '' ? ` · ${probe.reasonText}` : ''}`
+    }
+    return `JOB_CLOSE_PROBE_UNKNOWN：无法判定 close 路由注册状态（HTTP ${String(probe.status)}${probe.reasonText !== '' ? ` · ${probe.reasonText}` : ''}）`
+  })()
+
+  /** 岗位草案生成按钮的 disabled 原因（'' = 可用；404 → JOB_DRAFT_ROUTE_MISSING）。 */
+  const draftPendingText = ((): string => {
+    if (!isRecruiter) return aliasNote
+    if (draftProbe.loading) return 'JOB_DRAFT_PROBE_PENDING：正在探测 job/draft 路由…'
+    if (draftProbe.state === 'AVAILABLE') return ''
+    if (draftProbe.state === 'MISSING') {
+      return `JOB_DRAFT_ROUTE_MISSING：宿主尚未注册 POST /recruitment/api/job-action/job/draft（GET 同路径探测 404），等待接线并重启 Host。`
+    }
+    return `JOB_DRAFT_PROBE_UNKNOWN：无法判定 job/draft 路由注册状态（${draftProbe.state}）`
+  })()
+
+  /** 岗位确认创建按钮的 disabled 原因（'' = 可用；404 → JOB_CREATE_ROUTE_MISSING）。 */
+  const createPendingText = ((): string => {
+    if (!isRecruiter) return aliasNote
+    if (createProbe.loading) return 'JOB_CREATE_PROBE_PENDING：正在探测 job/create 路由…'
+    if (createProbe.state === 'AVAILABLE') return ''
+    if (createProbe.state === 'MISSING') {
+      return `JOB_CREATE_ROUTE_MISSING：宿主尚未注册 POST /recruitment/api/job-action/job/create（GET 同路径探测 404），等待接线并重启 Host。`
+    }
+    return `JOB_CREATE_PROBE_UNKNOWN：无法判定 job/create 路由注册状态（${createProbe.state}）`
+  })()
+
+  /** Rubric 批准 disabled 原因（'' = 可用；版本 id 空或已批准 → disabled，不编造版本）。 */
+  const rubricAction = overviewActions.rubric_approve
+  const rubricJob = jobDetailOpen && jobDetail.data !== undefined ? jobDetail.data.job : selectedJob
+  const rubricJobId = rubricJob?.id ?? selectedJob?.id ?? ''
+  const rubricVersionId = rubricJob?.rubric?.rubricVersionId ?? ''
+  const rubricApproved =
+    rubricJob?.rubric?.approved === true || (jobDetailOpen && jobDetail.data?.rubric?.approved === true)
+  const rubricPendingText = ((): string => {
+    if (!isRecruiter) return aliasNote
+    if (rubricAction === undefined) return 'MISSING_ACTION：服务端 overview 没有返回 rubric_approve 动作'
+    if (!rubricAction.available) {
+      return `${rubricAction.pending}：${rubricAction.reasonText}${rubricAction.pendingText !== '' ? `（${rubricAction.pendingText}）` : ''}`
+    }
+    if (rubricJobId === '') return 'MISSING_JOB_ID：没有选中岗位，无法构造 rubric 批准请求'
+    if (rubricVersionId === '') {
+      return 'MISSING_RUBRIC_VERSION_ID：job.rubric.rubric_version_id 为空（服务端未返回），无法构造批准请求（不编造版本 id）'
+    }
+    if (rubricApproved) return 'RUBRIC_ALREADY_APPROVED：当前 rubric 已批准，无需重复批准'
+    return ''
+  })()
+
+  /** 设置写入口 disabled 原因（以服务端 settings.entry.available 与 action 可用性为准）。 */
+  const settingsAction = overviewActions.recruiting_settings_write
+  const settingsWriteDisabledReason = ((): string => {
+    if (!isRecruiter) return aliasNote
+    if (overview.data === undefined) return 'SETTINGS_SNAPSHOT_MISSING：招聘设置需要先成功读取 overview'
+    if (!overview.data.settings.entry.available) {
+      return `SETTINGS_ENTRY_UNAVAILABLE：服务端 settings.entry.available=false${overview.data.settings.entry.note !== '' ? `（${overview.data.settings.entry.note}）` : ''}`
+    }
+    if (settingsAction === undefined) return 'MISSING_ACTION：服务端没有返回 recruiting_settings_write'
+    if (!settingsAction.available) return `${settingsAction.pending}：${settingsAction.reasonText}`
+    return ''
+  })()
+
+  /** 写动作统一入口：仅在表单 build* 通过后才调用；成功只设 outcome + reload，不用本地状态当成功。 */
+  const runAction = async (action: ActionView, request: Readonly<Record<string, unknown>>): Promise<void> => {
     setPendingActionKey(action.key)
     setFeedback(undefined)
-    const result = await postActionSeam(action)
-    if (!result.accepted) {
+    const outcome = await postActionSeam(action, request, props.sessionId)
+    setActionOutcome(outcome)
+    if (!outcome.accepted) {
       setFeedback({
         tone: 'error',
-        title: `写动作「${action.label}」未被服务端受理`,
-        message: result.error !== null ? result.error.message : `HTTP ${String(result.status)}`,
-        rawBody: result.error?.rawBody !== undefined && result.error.rawBody !== '' ? result.error.rawBody : result.bodyText,
+        title: `写动作「${action.label}」未被服务端受理（HTTP ${String(outcome.status)}）`,
+        message: outcome.error !== null ? outcome.error.message : '服务端没有返回错误详情',
+        rawBody:
+          outcome.error !== null && outcome.error.rawBody !== '' ? outcome.error.rawBody : outcome.bodyText,
       })
       setPendingActionKey('')
       return
     }
     setFeedback({
       tone: 'ok',
-      title: `服务端已受理「${action.label}」（HTTP ${String(result.status)}）`,
-      message: '正在重新 GET 服务端数据（reload）；界面只显示重新读取后的服务端事实，不会用本地状态当成功。',
-      rawBody: result.bodyText,
+      title: `服务端已受理「${action.label}」（HTTP ${String(outcome.status)}）`,
+      message: '成功事实只信响应信封 readback + 重新 GET 的服务端投影；界面不用本地状态当成功。',
+      rawBody: '',
     })
     overview.reload()
-    if (selectedApplicationId !== '') applicationDetail.reload()
-    if (jobDetailOpen) jobDetail.reload()
+    applicationDetail.reload()
+    jobDetail.reload()
     setPendingActionKey('')
+  }
+
+  /** Rubric 批准：body 由 `buildRubricApproveBody` 产出（预检失败不发请求）。 */
+  const approveRubric = (): void => {
+    if (rubricAction === undefined) return
+    const built = buildRubricApproveBody({ jobId: rubricJobId, rubricVersionId })
+    if (!built.ok) {
+      setFeedback({
+        tone: 'error',
+        title: 'Rubric 批准未发送：表单预检未通过',
+        message: `${built.reasonCode}：${built.reasonText}${built.missing.length > 0 ? `；缺少：${built.missing.join('、')}` : ''}`,
+        rawBody: '',
+      })
+      return
+    }
+    void runAction(rubricAction, built.body)
+  }
+
+  /** 打开岗位关闭弹窗（零请求；真正 POST 只在 onConfirm 后）。 */
+  const openCloseDialog = (): void => {
+    setCloseError('')
+    setCloseRaw('')
+    setCloseDialogOpen(true)
+  }
+
+  /** 取消关闭：只关弹窗，**零请求**、零写入。 */
+  const cancelCloseDialog = (): void => {
+    setCloseDialogOpen(false)
+    setCloseError('')
+    setCloseRaw('')
+    setCloseBusy(false)
+  }
+
+  /** 人类确认关闭 → POST job/close → 显示信封 terminated 计数 + 重新 GET（不先改本地状态）。 */
+  const confirmCloseJob = async (reason: string): Promise<void> => {
+    const jobId = selectedJob?.id ?? ''
+    if (jobId === '') {
+      setCloseError('MISSING_JOB_ID：没有选中岗位，未发送关闭请求')
+      return
+    }
+    setCloseBusy(true)
+    setCloseError('')
+    setCloseRaw('')
+    setCloseEnvelope(undefined)
+    setCloseBodyText('')
+    const outcome = await postJobClose(jobId, reason, props.sessionId)
+    setCloseBusy(false)
+    if (!outcome.accepted) {
+      setCloseError(
+        outcome.error !== null ? outcome.error.message : `服务端返回 HTTP ${String(outcome.status)}（没有错误详情）`,
+      )
+      setCloseRaw(outcome.error !== null && outcome.error.rawBody !== '' ? outcome.error.rawBody : outcome.bodyText)
+      return
+    }
+    const envelope = parseJobCloseEnvelope(outcome.bodyText)
+    setCloseBodyText(outcome.bodyText)
+    setCloseEnvelope(envelope === null ? undefined : envelope)
+    setCloseDialogOpen(false)
+    if (envelope === null) {
+      setCloseError('服务端返回 2xx，但响应不是 job/close 信封（见原文）；界面不推断关闭结果。')
+    }
+    overview.reload()
+    jobDetail.reload()
+    setFeedback({
+      tone: 'ok',
+      title: '岗位关闭已被服务端受理（请读信封 terminated 计数）',
+      message: '已重新 GET overview 与岗位详情；本地没有先把岗位状态改成已关闭。',
+      rawBody: '',
+    })
+  }
+
+  /** 设置 create（role/team/pipeline）：封闭字段由 `buildSettingsWriteBody` 校验，预检失败不发请求。 */
+  const runSettingsCreate = (
+    entity: 'role' | 'team' | 'pipeline',
+    fields: Readonly<Record<string, unknown>>,
+  ): void => {
+    if (settingsAction === undefined) {
+      setFeedback({
+        tone: 'error',
+        title: '设置写入未发送',
+        message: 'MISSING_ACTION：服务端没有返回 recruiting_settings_write',
+        rawBody: '',
+      })
+      return
+    }
+    const built = buildSettingsWriteBody({ entity, operation: 'create', fields })
+    if (!built.ok) {
+      setFeedback({
+        tone: 'error',
+        title: `设置 create（${entity}）未发送：表单预检未通过`,
+        message: `${built.reasonCode}：${built.reasonText}${built.missing.length > 0 ? `；缺少：${built.missing.join('、')}` : ''}`,
+        rawBody: '',
+      })
+      return
+    }
+    void runAction(settingsAction, built.body)
+  }
+
+  /** 生成岗位草案（POST job/draft，只读）：成功渲染服务端草案；不编造内容。 */
+  const generateJobDraft = async (requestText: string): Promise<void> => {
+    setDraftBusy(true)
+    setDraftError('')
+    setDraftRaw('')
+    setDraftOutcome(undefined)
+    setDraftCreateError('')
+    setDraftCreateRaw('')
+    setJobDraft(null)
+    const built = buildJobDraftBody({ requestText })
+    if (!built.ok) {
+      setDraftError(`${built.reasonCode}：${built.reasonText}`)
+      setDraftBusy(false)
+      return
+    }
+    const outcome = await postJobDraft(built.body, props.sessionId)
+    setDraftBusy(false)
+    if (!outcome.accepted) {
+      setDraftError(outcome.error !== null ? outcome.error.message : `HTTP ${String(outcome.status)}`)
+      setDraftRaw(outcome.error !== null && outcome.error.rawBody !== '' ? outcome.error.rawBody : outcome.bodyText)
+      return
+    }
+    const parsed = parseJsonObject(outcome.bodyText)
+    const view = parsed === null ? null : normalizeJobDraftResponse(parsed)
+    if (view === null) {
+      setDraftError('服务端返回 2xx，但草案响应无法归一化（见原文）；不编造草案内容。')
+      setDraftRaw(outcome.bodyText)
+      return
+    }
+    setJobDraft(view)
+  }
+
+  /** 人改后确认创建（POST job/create）：criteria 来自草案 rubric 维度；服务端校验失败原样展示。 */
+  const createJobFromDraft = async (input: JobCreateInput): Promise<void> => {
+    setDraftCreateBusy(true)
+    setDraftCreateError('')
+    setDraftCreateRaw('')
+    setDraftOutcome(undefined)
+    const built = buildJobCreateBody(input)
+    if (!built.ok) {
+      setDraftCreateError(
+        `${built.reasonCode}：${built.reasonText}${built.missing.length > 0 ? `；缺少：${built.missing.join('、')}` : ''}`,
+      )
+      setDraftCreateBusy(false)
+      return
+    }
+    const outcome = await postJobCreate(built.body, props.sessionId)
+    setDraftOutcome(outcome)
+    setDraftCreateBusy(false)
+    if (!outcome.accepted) {
+      setDraftCreateError(outcome.error !== null ? outcome.error.message : `HTTP ${String(outcome.status)}`)
+      setDraftCreateRaw(outcome.error !== null && outcome.error.rawBody !== '' ? outcome.error.rawBody : outcome.bodyText)
+      return
+    }
+    overview.reload()
+  }
+
+  /** 执行初筛评估（A 的 `POST /decision/screening/evaluate`）：成功 reload facts + overview + 详情。 */
+  const runScreeningEvaluate = async (): Promise<void> => {
+    const applicationId = selectedApplicationId
+    if (applicationId === '') return
+    setFeedback(undefined)
+    const outcome = await postScreeningEvaluate(applicationId, props.sessionId)
+    setActionOutcome(outcome)
+    if (!outcome.accepted) {
+      setFeedback({
+        tone: 'error',
+        title: `执行初筛评估未被服务端受理（HTTP ${String(outcome.status)}）`,
+        message: outcome.error !== null ? outcome.error.message : '服务端没有返回错误详情',
+        rawBody: outcome.error !== null && outcome.error.rawBody !== '' ? outcome.error.rawBody : outcome.bodyText,
+      })
+    } else {
+      setFeedback({
+        tone: 'ok',
+        title: `初筛评估已受理（HTTP ${String(outcome.status)}）`,
+        message: '已重新 GET decision facts / overview / 申请详情；成功事实以 readback + 重新 GET 为准。',
+        rawBody: '',
+      })
+    }
+    decisionFacts.reload()
+    overview.reload()
+    applicationDetail.reload()
+  }
+
+  /** 记录正式决策（A 的 facade：body 由详情页 `buildDecisionRecordBody` 产出，不由 UI 发明 hash）。 */
+  const runDecisionRecord = async (request: Readonly<Record<string, unknown>>): Promise<void> => {
+    setFeedback(undefined)
+    const outcome = await postDecisionRecordFacade(request, props.sessionId)
+    setActionOutcome(outcome)
+    if (!outcome.accepted) {
+      setFeedback({
+        tone: 'error',
+        title: `记录决策未被服务端受理（HTTP ${String(outcome.status)}）`,
+        message: outcome.error !== null ? outcome.error.message : '服务端没有返回错误详情',
+        rawBody: outcome.error !== null && outcome.error.rawBody !== '' ? outcome.error.rawBody : outcome.bodyText,
+      })
+    } else {
+      setFeedback({
+        tone: 'ok',
+        title: `决策记录已受理（HTTP ${String(outcome.status)}）`,
+        message: '已重新 GET decision facts / overview / 申请详情；成功事实以 readback + 重新 GET 为准。',
+        rawBody: '',
+      })
+    }
+    decisionFacts.reload()
+    overview.reload()
+    applicationDetail.reload()
   }
 
   const openApplication = (applicationId: string): void => {
@@ -899,10 +2122,11 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
             <SettingsPanel
               overview={overviewData}
               onBack={() => setSettingsOpen(false)}
-              pendingActionKey={pendingActionKey}
-              onRunAction={(action) => void runAction(action)}
-              aliasBlocked={aliasBlocked}
-              aliasNote={aliasNote}
+              writeDisabledReason={settingsWriteDisabledReason}
+              settingsBusy={pendingActionKey === 'recruiting_settings_write'}
+              onCreateSettings={runSettingsCreate}
+              actionOutcome={actionOutcome}
+              feedback={feedback}
             />
           ) : (
             <Card className="rcw-detailmain">
@@ -921,9 +2145,15 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
             onBack={backToOverview}
             actions={detailActions}
             pendingActionKey={pendingActionKey}
-            onRunAction={(action) => void runAction(action)}
+            onRunAction={runAction}
             aliasBlocked={aliasBlocked}
             aliasNote={aliasNote}
+            settings={overviewData?.settings}
+            actionOutcome={actionOutcome}
+            decisionFacts={decisionFacts.facts}
+            decisionFactsProbe={decisionFacts.probe}
+            onScreeningEvaluate={() => void runScreeningEvaluate()}
+            onDecisionRecord={(request) => void runDecisionRecord(request)}
             siblings={siblingRows}
             onOpenApplication={openApplication}
             onOpenJob={openJobFromDetail}
@@ -1015,12 +2245,45 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
                     }}
                     onToggleJobDetail={() => setJobDetailOpen((value) => !value)}
                     jobDetailOpen={jobDetailOpen}
-                    actions={overviewActions}
-                    pendingActionKey={pendingActionKey}
-                    onRunAction={(action) => void runAction(action)}
-                    aliasBlocked={aliasBlocked}
-                    aliasNote={aliasNote}
+                    rubricPendingText={rubricPendingText}
+                    rubricBusy={pendingActionKey === 'rubric_approve'}
+                    onApproveRubric={approveRubric}
+                    closePendingText={closePendingText}
+                    closeBusy={closeBusy}
+                    onOpenClose={openCloseDialog}
                     onOpenSettings={() => setSettingsOpen(true)}
+                  />
+
+                  {actionOutcome !== undefined && actionOutcome.key === 'rubric_approve' ? (
+                    <OutcomeReadbackCard
+                      outcome={actionOutcome}
+                      title="Rubric 批准读回（信封 readback：approval / rubric / job）"
+                      testid="rubric-approve-readback"
+                    />
+                  ) : null}
+
+                  <CloseJobResultCard
+                    envelope={closeEnvelope}
+                    jobId={selectedJob?.id ?? ''}
+                    error={closeError}
+                    errorRaw={closeRaw}
+                    bodyText={closeBodyText}
+                  />
+
+                  <JobDraftCard
+                    draftProbeReason={draftPendingText}
+                    createProbeReason={createPendingText}
+                    draft={jobDraft}
+                    draftBusy={draftBusy}
+                    createBusy={draftCreateBusy}
+                    draftError={draftError}
+                    draftRaw={draftRaw}
+                    createError={draftCreateError}
+                    createRaw={draftCreateRaw}
+                    createOutcome={draftOutcome}
+                    departments={overviewData.settings.departments}
+                    onGenerate={(requestText) => void generateJobDraft(requestText)}
+                    onCreate={(input) => void createJobFromDraft(input)}
                   />
 
                   {jobDetailOpen ? (
@@ -1080,12 +2343,8 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
                   <CountsCard overview={overviewData} />
                   <SettingsEntryCard
                     overview={overviewData}
-                    writeAction={overviewActions.recruiting_settings_write}
+                    writeStateText={settingsWriteDisabledReason}
                     onOpenSettings={() => setSettingsOpen(true)}
-                    pendingActionKey={pendingActionKey}
-                    onRunAction={(action) => void runAction(action)}
-                    aliasBlocked={aliasBlocked}
-                    aliasNote={aliasNote}
                   />
                 </aside>
               </div>
@@ -1093,6 +2352,16 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
           </>
         )}
       </div>
+      {/* 人类闸门：岗位关闭弹窗（取消 = 零请求；确认才 POST job/close） */}
+      {closeDialogOpen ? (
+        <CloseJobDialog
+          jobTitle={selectedJob?.title ?? ''}
+          busy={closeBusy}
+          error={closeError !== '' && closeRaw !== '' ? `${closeError}\n\n服务端原文：\n${closeRaw}` : closeError}
+          onConfirm={(reason) => void confirmCloseJob(reason)}
+          onCancel={cancelCloseDialog}
+        />
+      ) : null}
     </div>
   )
 }

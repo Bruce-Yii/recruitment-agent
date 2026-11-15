@@ -547,6 +547,69 @@ export interface TranscriptView {
   } | null
 }
 
+/** 轮次重点里的一个考察维度（`round_focus.focus_dimensions[]`，字段名逐字取 task-50 REPORT §2）。 */
+export interface RoundFocusDimensionView {
+  /** 维度 key（= rubric 维度 key；`inRubric=false` 时表示不在面评提交键集）。 */
+  readonly key: string
+  /** 展示名（服务端没给时用 key 兜底，不编造标签）。 */
+  readonly label: string
+  /** 本轮显示权重（服务端覆盖值；缺失为 null，不当 0）。 */
+  readonly weight: number | null
+  /** 本轮必覆盖（`focus_attributes.required|must_cover===true`）。 */
+  readonly required: boolean
+  /** 是否存在于申请钉住的岗位 rubric（false = 不进面评提交键集，只作展示）。 */
+  readonly inRubric: boolean
+}
+
+/** 一条建议问题（`round_focus.questions[]`）。 */
+export interface RoundFocusQuestionView {
+  /** 模板元素自带 key；服务端给 null 时归一化为 ''（不编造 key）。 */
+  readonly key: string
+  /** 问题原文。 */
+  readonly text: string
+}
+
+/** 评分表字段（`round_focus.scorecard_fields[]`，与 `effective_rubric.scorecard.fields[]` 同形）。 */
+export interface RoundFocusScorecardFieldView {
+  readonly key: string
+  readonly label: string
+  readonly kind: string
+  readonly required: boolean
+}
+
+/**
+ * 本轮考察重点（`application.interviews[].round_focus`，task-50 冻结投影）。
+ *
+ * 契约出处：`work/d5/round/REPORT.md` §2（字段逐字）；`available=false` 时只有
+ * `source/roundNo/reason` 是服务端事实，各内容数组为空——客户端**不**用岗位 Rubric 猜本轮重点。
+ */
+export interface RoundFocusView {
+  /** 服务端是否声明本轮有可用轮次配置（只认严格 true）。 */
+  readonly available: boolean
+  /** `ROUND_CONFIG` / `JOB_BASE`（未知值原样保留，不翻译成合法值）。 */
+  readonly source: string
+  /** `= interview.round_no`（面试事实；缺失为 0）。 */
+  readonly roundNo: number
+  /** 绑定模板版本 id；不可用/未绑定为 ''。 */
+  readonly templateVersionId: string
+  /** 模板版本号；缺失为 0。 */
+  readonly templateVersionNo: number
+  /** 模板 payload hash（64 hex）；缺失为 ''。 */
+  readonly templatePayloadHash: string
+  /** 本轮重点标题（`template.objective`）；不可用为 ''。 */
+  readonly title: string
+  /** 本轮重点说明（`template.briefing.summary`）；不可用为 ''。 */
+  readonly description: string
+  /** 本轮重点维度（数据驱动：不同轮不同内容，客户端不按轮次硬编码）。 */
+  readonly focusDimensions: ReadonlyArray<RoundFocusDimensionView>
+  /** 建议问题清单。 */
+  readonly questions: ReadonlyArray<RoundFocusQuestionView>
+  /** 评分表字段。 */
+  readonly scorecardFields: ReadonlyArray<RoundFocusScorecardFieldView>
+  /** 降级/不可用原因（JOB_BASE 必须显示原因，不空口降级）。 */
+  readonly reason: string
+}
+
 /** 一轮面试（排期 / 面试官 / 面评 / 转写四个独立分支各给各的）。 */
 export interface InterviewView {
   readonly id: string
@@ -572,6 +635,8 @@ export interface InterviewView {
     readonly tone: ChipTone
   }
   readonly transcript: TranscriptView
+  /** 本轮考察重点（task-50 `round_focus`；缺字段 → available:false 的空视图，不编造）。 */
+  readonly roundFocus: RoundFocusView
 }
 
 /** 决策卡（含历史与是否当前有效）。 */
@@ -728,6 +793,8 @@ export interface JobView {
   readonly versionNo: number | null
   readonly versionText: string
   readonly rubric: {
+    /** 当前 rubric 版本 id（wire `job.rubric.rubric_version_id`；批准动作必需，缺失为 ''）。 */
+    readonly rubricVersionId: string
     readonly versionNo: number
     readonly approved: boolean
     readonly dimensionCount: number
@@ -857,6 +924,8 @@ export interface JobDetailView {
     readonly approved: boolean
   }>
   readonly rubric: {
+    /** 当前 rubric 版本 id（wire `rubric.rubric_version_id`；缺失为 ''，批准动作据此构造请求）。 */
+    readonly rubricVersionId: string
     readonly versionNo: number
     readonly approved: boolean
     readonly dimensions: ReadonlyArray<{
@@ -1180,6 +1249,109 @@ export function normalizeTranscript(value: unknown): TranscriptView {
   }
 }
 
+/** 轮次重点的空视图（缺字段 / 坏类型 / `available=false` 降级时用它，**不编造**本轮内容）。 */
+export function emptyRoundFocus(): RoundFocusView {
+  return {
+    available: false,
+    source: '',
+    roundNo: 0,
+    templateVersionId: '',
+    templateVersionNo: 0,
+    templatePayloadHash: '',
+    title: '',
+    description: '',
+    focusDimensions: [],
+    questions: [],
+    scorecardFields: [],
+    reason: '',
+  }
+}
+
+/** 归一化重点维度：只保留有 key 的元素；weight 只认非负有限数（缺失 → null）。 */
+function normalizeRoundFocusDimensions(value: unknown): RoundFocusDimensionView[] {
+  const out: RoundFocusDimensionView[] = []
+  for (const item of items(value)) {
+    const entry = record(item)
+    const key = text(entry.key)
+    if (key === '') continue
+    out.push({
+      key,
+      label: text(entry.label) !== '' ? text(entry.label) : key,
+      weight: numberOrNull(entry.weight),
+      required: bool(entry.required),
+      inRubric: bool(entry.in_rubric),
+    })
+  }
+  return out
+}
+
+/** 归一化建议问题：只保留有原文的元素（key 可以是 ''，不编造）。 */
+function normalizeRoundFocusQuestions(value: unknown): RoundFocusQuestionView[] {
+  const out: RoundFocusQuestionView[] = []
+  for (const item of items(value)) {
+    const entry = record(item)
+    const questionText = text(entry.text)
+    if (questionText === '') continue
+    out.push({ key: text(entry.key), text: questionText })
+  }
+  return out
+}
+
+/** 归一化评分表字段：只保留有 key 的元素（label 缺失回退 key）。 */
+function normalizeRoundFocusScorecardFields(value: unknown): RoundFocusScorecardFieldView[] {
+  const out: RoundFocusScorecardFieldView[] = []
+  for (const item of items(value)) {
+    const entry = record(item)
+    const key = text(entry.key)
+    if (key === '') continue
+    out.push({
+      key,
+      label: text(entry.label) !== '' ? text(entry.label) : key,
+      kind: text(entry.kind),
+      required: bool(entry.required),
+    })
+  }
+  return out
+}
+
+/**
+ * 归一化 `application.interviews[].round_focus`（task-50 冻结字段，严格容错）。
+ *
+ * 规则（`work/d5/round/REPORT.md` §2 + INTERFACE §2.4）：
+ *   1. 非对象 / 缺键 / 坏类型 → `emptyRoundFocus()`（available:false、source:''、数组空），**不编造**；
+ *   2. `available` 只认严格 true；`available=false` 时只保留服务端事实 `source/roundNo/reason`，
+ *      内容数组一律清空——降级卡靠 `reason` 说明，绝不用岗位 Rubric 冒充本轮重点；
+ *   3. `available=true` 时逐字段原样映射；缺字段的数组项直接丢弃（不补默认文案）。
+ * @param value - 服务端原始 `round_focus`。
+ * @returns 可渲染的轮次重点视图（绝不抛错）。
+ */
+export function normalizeRoundFocus(value: unknown): RoundFocusView {
+  if (value === null || value === undefined) return emptyRoundFocus()
+  const raw = record(value)
+  if (Object.keys(raw).length === 0) return emptyRoundFocus()
+  const available = bool(raw.available)
+  const source = text(raw.source)
+  const roundNo = count(raw.round_no)
+  const reason = text(raw.reason)
+  if (!available) {
+    return { ...emptyRoundFocus(), available: false, source, roundNo, reason }
+  }
+  return {
+    available: true,
+    source,
+    roundNo,
+    templateVersionId: text(raw.template_version_id),
+    templateVersionNo: count(raw.template_version_no),
+    templatePayloadHash: text(raw.template_payload_hash),
+    title: text(raw.title),
+    description: text(raw.description),
+    focusDimensions: normalizeRoundFocusDimensions(raw.focus_dimensions),
+    questions: normalizeRoundFocusQuestions(raw.questions),
+    scorecardFields: normalizeRoundFocusScorecardFields(raw.scorecard_fields),
+    reason,
+  }
+}
+
 /** 归一化一轮面试（四个独立分支各归各的，不用排期状态推断面评/转写）。 */
 export function normalizeInterview(value: unknown, context?: StageContext): InterviewView | null {
   const raw = record(value)
@@ -1233,6 +1405,7 @@ export function normalizeInterview(value: unknown, context?: StageContext): Inte
       tone: required === 0 ? 'gray' : complete ? 'green' : overdue > 0 ? 'red' : 'amber',
     },
     transcript: normalizeTranscript(raw.transcript),
+    roundFocus: normalizeRoundFocus(raw.round_focus),
   }
 }
 
@@ -1435,6 +1608,7 @@ export function buildJob(value: unknown, context?: StageContext): JobView {
     rubricVersionId === '' && count(rubricRaw.version_no) === 0 && count(rubricRaw.dimension_count) === 0
       ? null
       : {
+          rubricVersionId,
           versionNo: count(rubricRaw.version_no),
           approved: bool(rubricRaw.approved),
           dimensionCount: count(rubricRaw.dimension_count),
@@ -1741,8 +1915,9 @@ function normalizeResumeDetail(value: unknown): ResumeView | null {
   return { material, fields, workEntries, educationEntries, evidenceSamples }
 }
 
-/** 归一化 rubric 维度（详情用）。 */
+/** 归一化 rubric 维度（详情用；`rubricVersionId` 供批准动作构造请求，缺失为 ''）。 */
 function normalizeRubricDimensions(value: unknown): {
+  rubricVersionId: string
   versionNo: number
   approved: boolean
   dimensions: {
@@ -1757,6 +1932,7 @@ function normalizeRubricDimensions(value: unknown): {
 } | null {
   if (value === null || value === undefined) return null
   const raw = record(value)
+  const rubricVersionId = text(raw.rubric_version_id)
   const versionNo = count(raw.version_no)
   const approved = bool(raw.approved)
   const dimensions: {
@@ -1782,8 +1958,8 @@ function normalizeRubricDimensions(value: unknown): {
       question: text(entry.question),
     })
   }
-  if (versionNo === 0 && dimensions.length === 0) return null
-  return { versionNo, approved, dimensions }
+  if (versionNo === 0 && dimensions.length === 0 && rubricVersionId === '') return null
+  return { rubricVersionId, versionNo, approved, dimensions }
 }
 
 /** 归一化申请详情（`GET .../applications/:id`）。 */

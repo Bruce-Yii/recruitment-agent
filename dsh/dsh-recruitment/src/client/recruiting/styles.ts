@@ -211,6 +211,32 @@ export const RECRUITING_CSS = `
 .rcw-stagepill{border-radius:6px;padding:2px 7px;background:#f2f4f7;color:#7b899d}
 .rcw-stagepill-now{background:var(--rcw-bluebg);color:var(--rcw-blue2);font-weight:700}
 .rcw-stagepill-done{background:var(--rcw-greenbg);color:var(--rcw-green)}
+/* ---- W2b 新增（只新增 class，不改既有 token 值）：轮次重点卡 / 人类闸门弹窗 / 写表单 ---- */
+.rcw-roundfocus{margin-top:16px;padding:16px 18px;border-radius:12px;background:#f7fafd;border:1px solid #e6eef8}
+.rcw-roundfocus-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.rcw-roundfocus-title{margin-top:10px;font-size:15px;font-weight:680;color:#394e6b}
+.rcw-roundfocus-desc{margin-top:7px;font-size:12px;color:#516177;line-height:1.85}
+.rcw-roundfocus-block{margin-top:10px}
+.rcw-roundfocus-list{list-style:decimal inside;margin:0;padding:0}
+.rcw-roundfocus-list .rcw-quote{list-style:none;margin-top:6px}
+.rcw-roundfocus-note{margin-top:10px;font-size:11px;color:var(--rcw-amber);background:var(--rcw-amberbg);border-radius:8px;padding:8px 10px}
+.rcw-roundfocus-degrade{margin-top:10px;font-size:12px;color:#516177;line-height:1.85}
+.rcw-roundfocus-degrade p{margin-top:6px}
+.rcw-modalscrim{position:fixed;inset:0;background:rgba(41,56,77,.38);display:flex;align-items:flex-start;justify-content:center;padding:48px 18px;z-index:60;overflow-y:auto}
+.rcw-modal{width:min(620px,100%);background:var(--rcw-surface);border:1px solid var(--rcw-border2);border-radius:var(--rcw-radius);box-shadow:0 18px 60px rgba(30,45,70,.18);padding:24px 26px}
+.rcw-modal h2{font-size:18px;font-weight:720}
+.rcw-modal-job{margin-top:6px;font-size:12px;font-weight:650;color:#394e6b}
+.rcw-modal-body{margin-top:12px;font-size:12px;color:#516177;line-height:1.9}
+.rcw-modal-body p{margin-top:3px}
+.rcw-modalfield{display:flex;flex-direction:column;gap:5px;margin-top:12px;font-size:12px;color:#516177;font-weight:600}
+.rcw-modalerror{margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--rcw-redbg);border:1px solid #f0d5d2;color:#8c4642;font-family:ui-monospace,Consolas,monospace;font-size:11px;white-space:pre-wrap;word-break:break-all}
+.rcw-textarea,.rcw-input{width:100%;border:1px solid var(--rcw-border2);border-radius:9px;padding:8px 10px;font:inherit;font-size:12px;color:var(--rcw-text);background:#fff}
+.rcw-textarea{resize:vertical;min-height:64px;line-height:1.7}
+.rcw-textarea:disabled,.rcw-input:disabled{background:#f5f7fa;color:#8b97a8}
+.rcw-writeform{margin-top:16px;padding:14px 15px;border:1px solid var(--rcw-border);border-radius:11px}
+.rcw-writeform strong{display:block;font-size:12px;margin-bottom:4px}
+.rcw-writeform .rcw-btn{margin-top:10px}
+/* ---- W2b 新增结束 ---- */
 @media (max-width:1100px){
   .rcw-root{padding:24px 24px 88px}
   .rcw-grid{grid-template-columns:minmax(0,1.4fr) minmax(255px,.78fr);gap:16px}
@@ -230,6 +256,9 @@ export const RECRUITING_CSS = `
 }
 @media (max-width:570px){
   .rcw-root{padding:16px 13px 56px}
+  .rcw-modalscrim{padding:16px 10px}
+  .rcw-modal{width:100%;padding:18px 15px}
+  .rcw-modal-body{font-size:12px}
   .rcw-headline{margin-bottom:15px}
   .rcw-hero{padding:18px 16px}
   .rcw-hero h2{font-size:20px}

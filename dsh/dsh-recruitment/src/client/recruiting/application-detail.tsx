@@ -1,17 +1,46 @@
-// 招聘工作区（W2）申请详情视图：**默认显示业务结论 + 下一步**，其余事实渐进展开。
+// 招聘工作区（W2b）申请详情视图：**默认显示业务结论 + 下一步**，其余事实渐进展开。
+//
+// W2b 改动（INTERFACE.md §2.3 / INTERFACE2.md §4）：
+//   · P0/P1 写入口从"一个泛按钮"改成**契约表单**（stage/advance、screening/decide、decision/record facade、
+//     interview/schedule CREATE、transcript/import）；body 一律由 `actions.ts` 的 `build*` 产出，
+//     契约事实缺失 → disabled + 精确 reasonCode，**不发请求**；
+//   · `action-result` 读回区展示 `actionResultLines()`（键/值原样，不做业务推断）；
+//   · 面试卡渲染 `RoundFocusCard`（task-50 的 `round_focus` 投影）。
 //
 // 渐进展开清单（全部默认收起，用 `<details>`，不加依赖）：
-//   简历材料与解析摘要 · 初筛证据（rubric 维度 + SCREENING_EVALUATION + basis kinds）·
-//   面试排期与状态 · Transcript 状态 · 已提交面评汇总 · 决策状态 · 时间线。
+//   简历材料与解析摘要 · 初筛证据 · 面试排期与状态（含本轮重点）· Transcript 状态 ·
+//   已提交面评汇总 · 决策状态 · 时间线。
 //
 // "同一事项只出现一次"：申请级下一步**只**在顶部结论区出现（`data-testid="next-step"`），
-// 各展开区只写事实（材料/证据/排期/转写/面评/决策），不再复述下一步结论。
+// 各展开区只写事实，不再复述下一步结论。
 //
 // 错误口径：服务端 404 / 500 / 网络错都在详情卡里显示 `{error:{code,reason_code,message}}` 原文，
 // 同时保留头部（来自 overview 行）与禁用态按钮，不白屏、不伪造数据。
+//
+// 组件**纯展示**：不 fetch、不读 localStorage；facts 由 workspace 取数后经 `decisionFacts` 传入，
+// 写动作一律经 `onRunAction` / `onScreeningEvaluate` / `onDecisionRecord` 回调交给数据层。
 
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { RecruitingErrorInfo } from './use-recruiting.ts'
+import {
+  actionResultLines,
+  buildDecisionRecordBody,
+  buildInterviewScheduleBody,
+  buildScreeningDecisionBody,
+  buildStageAdvanceBody,
+  buildTranscriptImportBody,
+  decisionRecordBlockers,
+  describeActionError,
+  interviewerCandidates,
+  interviewChoices,
+  newIdempotencyKey,
+  screeningDecisionBlockers,
+  toOffsetIso,
+  type ActionOutcome,
+  type BodyBuildResult,
+  type DecisionFacts,
+} from './actions.ts'
 import type {
   ActionView,
   ApplicationDetailView,
@@ -20,9 +49,9 @@ import type {
   InterviewView,
   MaterialView,
   ResumeView,
+  SettingsView,
 } from './view-model.ts'
 import {
-  ActionButton,
   Card,
   Chip,
   Disclosure,
@@ -33,6 +62,7 @@ import {
   SourceBox,
   ThreeDimBadges,
 } from './parts.tsx'
+import { RoundFocusCard } from './round-focus.tsx'
 import { chipClass } from './styles.ts'
 
 /** 申请详情里可用的写动作（顺序即渲染顺序；可用性仍来自服务端 `actions`）。 */
@@ -43,6 +73,18 @@ const APPLICATION_ACTION_KEYS = [
   'stage_advance',
   'decision_record',
 ] as const
+
+/** 表单控件的内联样式（styles.ts 属 B 的写范围，本组件不写 CSS）。 */
+const FIELD_STYLE = {
+  background: '#fff',
+  border: '1px solid var(--rcw-border2, #d6dde8)',
+  borderRadius: 8,
+  padding: '7px 9px',
+  color: '#33465e',
+  fontSize: 12,
+  width: '100%',
+  boxSizing: 'border-box',
+} as const
 
 /** 详情页入参。 */
 export interface ApplicationDetailProps {
@@ -60,13 +102,26 @@ export interface ApplicationDetailProps {
   /** 写动作表（详情响应优先，回退 overview）。 */
   readonly actions: Readonly<Record<string, ActionView>>
   readonly pendingActionKey: string
-  readonly onRunAction: (action: ActionView) => void
+  /** 执行一次写动作：body 必须由 `build*` 产出（组件从不发 `{}`）。 */
+  readonly onRunAction: (action: ActionView, request: Readonly<Record<string, unknown>>) => void
   readonly aliasBlocked: boolean
   readonly aliasNote: string
   /** 同一候选人的其他申请（来自 overview；只显示身份与阶段，不复述结论）。 */
   readonly siblings: ReadonlyArray<ApplicationRowView>
   readonly onOpenApplication: (applicationId: string) => void
   readonly onOpenJob: () => void
+  /** 最近一次写动作结果（显示服务端 readback；undefined = 尚未执行写动作）。 */
+  readonly actionOutcome: ActionOutcome | undefined
+  /** 招聘设置（overview.settings；schedule 面试官候选来自 hiringTeams[].members[]）。 */
+  readonly settings: SettingsView | undefined
+  /** 决策事实只读投影（workspace 用 `useDecisionFacts` 取数后传入；undefined = 未接线/未读取）。 */
+  readonly decisionFacts: DecisionFacts | undefined
+  /** facts 取数状态（区分"路由 404 未接线"与"读取中/失败"；缺省按未接线处理）。 */
+  readonly decisionFactsProbe?: 'READY' | 'MISSING' | 'ERROR' | 'LOADING'
+  /** 执行初筛评估（`POST /recruitment/api/decision/screening/evaluate`；由 workspace 注入数据层调用）。 */
+  readonly onScreeningEvaluate?: () => void
+  /** 记录正式决策（`POST /recruitment/api/decision/record` facade；body 由本组件用 `buildDecisionRecordBody` 产出）。 */
+  readonly onDecisionRecord?: (request: Readonly<Record<string, unknown>>) => void
 }
 
 /** 顶部头部（详情优先，回退 overview 行）。 */
@@ -282,14 +337,16 @@ function ScreeningSection({
       ) : (
         <>
           <div className="rcw-chiprow">
-            <Chip tone={decision.resultTone} testid="screening-result">
+            <Chip tone={decision.resultTone} testid="screening-decision-result">
               初筛结论 · {decision.resultLabel}
             </Chip>
             {decision.stageLabel !== '' ? <Chip tone="gray">{decision.stageLabel}</Chip> : null}
             {decision.decidedBy !== '' ? <Chip tone="blue">由 {decision.decidedBy} 决定</Chip> : null}
             <span className="rcw-dim rcw-tiny">{decision.decidedAtText !== '' ? decision.decidedAtText : '时间未提供'}</span>
           </div>
-          <SourceBox testid="screening-reason">{decision.reason !== '' ? decision.reason : '（服务端未提供理由）'}</SourceBox>
+          <SourceBox testid="screening-reason-readback">
+            {decision.reason !== '' ? decision.reason : '（服务端未提供理由）'}
+          </SourceBox>
           <div style={{ marginTop: 10 }}>
             <KeyValue label="决定 id" value={decision.decisionId} mono />
             <KeyValue label="rubric 版本 id" value={decision.rubricVersionId} mono />
@@ -378,7 +435,7 @@ function ScreeningSection({
   )
 }
 
-/** 面试排期与状态（展开区 3）。 */
+/** 面试排期与状态（展开区 3）：每轮附 task-50 的「本轮重点」卡。 */
 function InterviewSection({ interviews }: { readonly interviews: ReadonlyArray<InterviewView> }) {
   if (interviews.length === 0) return <EmptyState>该申请还没有面试记录（没有排期就是没有排期，不推断）。</EmptyState>
   return (
@@ -436,6 +493,7 @@ function InterviewSection({ interviews }: { readonly interviews: ReadonlyArray<I
               ))}
             </div>
           ) : null}
+          <RoundFocusCard focus={interview.roundFocus} />
         </div>
       ))}
     </>
@@ -653,10 +711,735 @@ function LazySection({
   )
 }
 
+// =====================================================================
+//  写动作表单（P0/P1）：body 由 actions.ts 的 build* 产出；事实缺失 → disabled 不发请求
+// =====================================================================
+
+/** 表单里的一个字段（label + 控件）。 */
+function FormField({ label, hint, children }: { readonly label: string; readonly hint?: string; readonly children: ReactNode }) {
+  return (
+    <label style={{ display: 'block', marginTop: 8 }}>
+      <span className="rcw-cap" style={{ display: 'block', marginBottom: 4 }}>
+        {label}
+      </span>
+      {children}
+      {hint !== undefined && hint !== '' ? (
+        <span className="rcw-dim rcw-tiny" style={{ display: 'block', marginTop: 3 }}>
+          {hint}
+        </span>
+      ) : null}
+    </label>
+  )
+}
+
+/** 一个写动作卡片的外壳（`data-testid="action-<key>"` 是浏览器证据钩子）。 */
+function ActionCard({
+  actionKey,
+  title,
+  available,
+  blockedReason,
+  children,
+}: {
+  readonly actionKey: string
+  readonly title: string
+  readonly available: boolean
+  readonly blockedReason: string
+  readonly children: ReactNode
+}) {
+  return (
+    <div
+      className="rcw-smallcard"
+      style={{ marginTop: 14 }}
+      data-testid={`action-${actionKey}`}
+      data-available={available ? 'true' : 'false'}
+      data-blocked-reason={blockedReason}
+    >
+      <div className="rcw-chiprow">
+        <strong>{title}</strong>
+        <Chip tone={available ? 'green' : 'gray'}>{available ? '事实齐备，可提交' : '禁用（缺事实/越权）'}</Chip>
+      </div>
+      {children}
+      {blockedReason !== '' ? (
+        <p className="rcw-pending" data-testid={`pending-${actionKey}`} style={{ marginTop: 8 }}>
+          {blockedReason}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+/** 结构性禁用原因（服务端不可用 / alias 越权 / 提交中）；空串 = 结构上可提交。 */
+function structuralReason(
+  action: ActionView | undefined,
+  binding: { readonly aliasBlocked: boolean; readonly aliasNote: string; readonly pending: boolean },
+): string {
+  if (action === undefined) return 'ACTION_SEAM_NOT_WIRED：服务端 actions 里没有该动作键'
+  if (!action.available) {
+    return `${action.pending !== '' ? action.pending : 'ACTION_SEAM_NOT_WIRED'}：${action.reasonText !== '' ? action.reasonText : action.pendingText}`
+  }
+  if (binding.aliasBlocked) return `ALIAS_BLOCKED：${binding.aliasNote !== '' ? binding.aliasNote : '当前 alias 不可执行写操作'}`
+  if (binding.pending) return '提交中…'
+  return ''
+}
+
+/** build 失败 → 人读禁用原因（reasonCode 在前，浏览器证据可直接读）。 */
+function buildReasonOf(built: BodyBuildResult): string {
+  if (built.ok) return ''
+  const missing = built.missing.length > 0 ? `（missing: ${built.missing.join(', ')}）` : ''
+  return `${built.reasonCode}：${built.reasonText}${missing}`
+}
+
+/** P0 `stage/advance`：点击即提交 `{application_id}`（服务端按已发生事实推导目标阶段）。 */
+function StageAdvanceForm({
+  action,
+  applicationId,
+  aliasBlocked,
+  aliasNote,
+  pending,
+  onRunAction,
+}: {
+  readonly action: ActionView | undefined
+  readonly applicationId: string
+  readonly aliasBlocked: boolean
+  readonly aliasNote: string
+  readonly pending: boolean
+  readonly onRunAction: (action: ActionView, request: Readonly<Record<string, unknown>>) => void
+}) {
+  const [localError, setLocalError] = useState('')
+  const built = buildStageAdvanceBody({ applicationId })
+  const structural = structuralReason(action, { aliasBlocked, aliasNote, pending })
+  const blockedReason = structural !== '' ? structural : buildReasonOf(built)
+  const disabled = blockedReason !== ''
+  return (
+    <ActionCard actionKey="stage_advance" title="推进阶段（stage/advance）" available={!disabled} blockedReason={blockedReason}>
+      <p className="rcw-dim rcw-tiny">
+        服务端按已发生事实推导目标阶段（本表单只提交 application_id，不指定 to_stage；ADVANCED / NO_OP / BLOCKED 都是服务端业务结论）。
+      </p>
+      <button
+        type="button"
+        className="rcw-btn rcw-btn-blue"
+        data-testid="stage-advance-submit"
+        disabled={disabled}
+        onClick={() => {
+          if (!built.ok) {
+            setLocalError(buildReasonOf(built))
+            return
+          }
+          if (action === undefined) return
+          setLocalError('')
+          onRunAction(action, built.body)
+        }}
+      >
+        {pending ? '提交中…' : '推进阶段'}
+      </button>
+      {localError !== '' ? (
+        <p className="rcw-alert" data-testid="stage-advance-error" style={{ marginTop: 8 }}>
+          {localError}
+        </p>
+      ) : null}
+    </ActionCard>
+  )
+}
+
+/** P0 `screening/decide`：结论 + 理由；facts 缺 → disabled + 精确原因（不发请求）。 */
+function ScreeningForm({
+  action,
+  detail,
+  decisionFacts,
+  decisionFactsProbe,
+  aliasBlocked,
+  aliasNote,
+  pending,
+  factsBlockedReason,
+  onRunAction,
+  onScreeningEvaluate,
+  evaluateDisabledReason,
+  evaluatePending,
+}: {
+  readonly action: ActionView | undefined
+  readonly detail: ApplicationDetailView | undefined
+  readonly decisionFacts: DecisionFacts | undefined
+  readonly decisionFactsProbe: 'READY' | 'MISSING' | 'ERROR' | 'LOADING' | undefined
+  readonly aliasBlocked: boolean
+  readonly aliasNote: string
+  readonly pending: boolean
+  readonly factsBlockedReason: string
+  readonly onRunAction: (action: ActionView, request: Readonly<Record<string, unknown>>) => void
+  readonly onScreeningEvaluate: (() => void) | undefined
+  readonly evaluateDisabledReason: string
+  readonly evaluatePending: boolean
+}) {
+  const [result, setResult] = useState<'ADVANCE' | 'HOLD' | 'WITHDRAW' | 'REJECT'>('HOLD')
+  const [reason, setReason] = useState('')
+  const [localError, setLocalError] = useState('')
+  const applicationId = detail?.header.id ?? ''
+  const needsEvaluation = result === 'ADVANCE' || result === 'REJECT'
+  const blockers = screeningDecisionBlockers(decisionFacts ?? null, needsEvaluation)
+  const structural = structuralReason(action, { aliasBlocked, aliasNote, pending })
+  const blockedReasonParts = [
+    structural,
+    factsBlockedReason,
+    blockers.length > 0 ? blockers.join('、') : '',
+  ].filter((part) => part !== '')
+  const blockedReason = blockedReasonParts.join('；')
+  const disabled = blockedReason !== ''
+  const evaluateBlocked = evaluateDisabledReason !== ''
+  return (
+    <ActionCard
+      actionKey="screening_decide"
+      title="记录初筛结论（screening/decide）"
+      available={!disabled}
+      blockedReason={blockedReason}
+    >
+      {factsBlockedReason !== '' || blockers.length > 0 ? (
+        <p className="rcw-alert" data-testid="screening-disabled-reason" style={{ marginTop: 6 }}>
+          {[factsBlockedReason, blockers.join('、')].filter((part) => part !== '').join('；')}
+        </p>
+      ) : null}
+      <FormField label="结论（result）">
+        <select
+          className="rcw-select"
+          data-testid="screening-result"
+          value={result}
+          onChange={(event) => setResult(event.target.value as 'ADVANCE' | 'HOLD' | 'WITHDRAW' | 'REJECT')}
+        >
+          <option value="ADVANCE">通过（ADVANCE）</option>
+          <option value="HOLD">暂缓（HOLD）</option>
+          <option value="WITHDRAW">撤回（WITHDRAW）</option>
+          <option value="REJECT">不通过（REJECT）</option>
+        </select>
+      </FormField>
+      <FormField label="理由（1..4000 字；REJECT 必须引到 rubric 维度 key）">
+        <textarea
+          data-testid="screening-reason"
+          rows={3}
+          style={FIELD_STYLE}
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+        />
+      </FormField>
+      <div className="rcw-chiprow" style={{ marginTop: 10 }}>
+        <button
+          type="button"
+          className="rcw-btn rcw-btn-blue"
+          data-testid="screening-submit"
+          disabled={disabled}
+          onClick={() => {
+            const built = buildScreeningDecisionBody({
+              facts: decisionFacts ?? null,
+              result,
+              reason,
+              applicationId,
+            })
+            if (!built.ok) {
+              setLocalError(buildReasonOf(built))
+              return
+            }
+            if (action === undefined) return
+            setLocalError('')
+            onRunAction(action, built.body)
+          }}
+        >
+          {pending ? '提交中…' : '记录初筛结论'}
+        </button>
+        <button
+          type="button"
+          className="rcw-btn rcw-btn-soft"
+          data-testid="screening-evaluate"
+          disabled={evaluateBlocked || evaluatePending || onScreeningEvaluate === undefined}
+          onClick={() => {
+            if (evaluateBlocked || onScreeningEvaluate === undefined) return
+            onScreeningEvaluate()
+          }}
+        >
+          {evaluatePending ? '评估执行中…' : '执行初筛评估'}
+        </button>
+      </div>
+      <p className="rcw-dim rcw-tiny" style={{ marginTop: 6 }} data-testid="screening-evaluate-pending">
+        {evaluateBlocked ? evaluateDisabledReason : '执行初筛评估会真的写 screening_evaluation；成功后再 GET facts。'}
+      </p>
+      {localError !== '' ? (
+        <p className="rcw-alert" data-testid="screening-error" style={{ marginTop: 8 }}>
+          {localError}
+        </p>
+      ) : null}
+    </ActionCard>
+  )
+}
+
+/** P1 `interview/schedule` CREATE：轮次/开始/时长/面试官（候选来自 settings.hiringTeams）/幂等键。 */
+function InterviewScheduleForm({
+  action,
+  detail,
+  settings,
+  aliasBlocked,
+  aliasNote,
+  pending,
+  onRunAction,
+}: {
+  readonly action: ActionView | undefined
+  readonly detail: ApplicationDetailView | undefined
+  readonly settings: SettingsView | undefined
+  readonly aliasBlocked: boolean
+  readonly aliasNote: string
+  readonly pending: boolean
+  readonly onRunAction: (action: ActionView, request: Readonly<Record<string, unknown>>) => void
+}) {
+  const candidates = interviewerCandidates(settings)
+  const existingRounds = detail?.interviews.map((interview) => interview.roundNo) ?? []
+  const defaultRound = Math.min(20, Math.max(1, existingRounds.length === 0 ? 1 : Math.max(...existingRounds) + 1))
+  const [roundNo, setRoundNo] = useState(String(defaultRound))
+  const [start, setStart] = useState('')
+  const [duration, setDuration] = useState('60')
+  const [interviewerActorId, setInterviewerActorId] = useState(candidates[0]?.actorId ?? '')
+  const [idempotencyKey] = useState(() => newIdempotencyKey())
+  const [localError, setLocalError] = useState('')
+  const structural = structuralReason(action, { aliasBlocked, aliasNote, pending })
+  const candidateMissing = candidates.length === 0 ? 'MISSING_INTERVIEWER_CANDIDATES：settings.hiringTeams 里没有可用人员' : ''
+  const blockedReason = [structural, candidateMissing].filter((part) => part !== '').join('；')
+  const disabled = blockedReason !== ''
+  return (
+    <ActionCard
+      actionKey="interview_schedule"
+      title="安排面试（interview/schedule · CREATE）"
+      available={!disabled}
+      blockedReason={blockedReason}
+    >
+      <FormField label="轮次（1..20）">
+        <input
+          type="number"
+          min={1}
+          max={20}
+          data-testid="schedule-round"
+          style={FIELD_STYLE}
+          value={roundNo}
+          onChange={(event) => setRoundNo(event.target.value)}
+        />
+      </FormField>
+      <FormField label="开始时间（datetime-local → 带偏移 ISO）">
+        <input
+          type="datetime-local"
+          data-testid="schedule-start"
+          style={FIELD_STYLE}
+          value={start}
+          onChange={(event) => setStart(event.target.value)}
+        />
+      </FormField>
+      <FormField label="时长（15..480 分钟）">
+        <input
+          type="number"
+          min={15}
+          max={480}
+          data-testid="schedule-duration"
+          style={FIELD_STYLE}
+          value={duration}
+          onChange={(event) => setDuration(event.target.value)}
+        />
+      </FormField>
+      <FormField label="面试官（来自招聘团队；值是 actorId）">
+        <select
+          className="rcw-select"
+          data-testid="schedule-interviewer"
+          value={interviewerActorId}
+          onChange={(event) => setInterviewerActorId(event.target.value)}
+        >
+          {candidates.length === 0 ? <option value="">（没有可用候选人）</option> : null}
+          {candidates.map((candidate) => (
+            <option key={candidate.actorId} value={candidate.actorId}>
+              {candidate.displayName}
+              {candidate.teamName !== '' ? ` · ${candidate.teamName}` : ''}
+              {candidate.teamRole !== '' ? ` · ${candidate.teamRole}` : ''}
+            </option>
+          ))}
+        </select>
+      </FormField>
+      <FormField label="幂等键（前端生成并保留；重试复用同一 key）">
+        <input type="text" data-testid="schedule-idempotency" style={FIELD_STYLE} value={idempotencyKey} readOnly />
+      </FormField>
+      <button
+        type="button"
+        className="rcw-btn rcw-btn-blue"
+        data-testid="schedule-submit"
+        disabled={disabled}
+        onClick={() => {
+          const built = buildInterviewScheduleBody({
+            applicationId: detail?.header.id ?? '',
+            roundNo: Number(roundNo),
+            scheduledStartAt: toOffsetIso(start),
+            durationMinutes: Number(duration),
+            interviewers: interviewerActorId !== '' ? [{ actorId: interviewerActorId, requiredScorecard: true }] : [],
+            idempotencyKey,
+            timezone: 'Asia/Shanghai',
+          })
+          if (!built.ok) {
+            setLocalError(buildReasonOf(built))
+            return
+          }
+          if (action === undefined) return
+          setLocalError('')
+          onRunAction(action, built.body)
+        }}
+      >
+        {pending ? '提交中…' : '安排面试'}
+      </button>
+      {localError !== '' ? (
+        <p className="rcw-alert" data-testid="schedule-error" style={{ marginTop: 8 }}>
+          {localError}
+        </p>
+      ) : null}
+    </ActionCard>
+  )
+}
+
+/** P1 `transcript/import`：人工粘贴正文；DEMO_SAMPLE = FIXTURE 演示文本（不得冒充 LIVE）。 */
+function TranscriptImportForm({
+  action,
+  detail,
+  aliasBlocked,
+  aliasNote,
+  pending,
+  onRunAction,
+}: {
+  readonly action: ActionView | undefined
+  readonly detail: ApplicationDetailView | undefined
+  readonly aliasBlocked: boolean
+  readonly aliasNote: string
+  readonly pending: boolean
+  readonly onRunAction: (action: ActionView, request: Readonly<Record<string, unknown>>) => void
+}) {
+  const choices = interviewChoices(detail)
+  const [interviewId, setInterviewId] = useState(choices[0]?.interviewId ?? '')
+  const [content, setContent] = useState('')
+  const [sourceKind, setSourceKind] = useState<'PLATFORM_EXPORT' | 'DEMO_SAMPLE'>('DEMO_SAMPLE')
+  const [fileName, setFileName] = useState('')
+  const [language, setLanguage] = useState('zh')
+  const [note, setNote] = useState('')
+  const [localError, setLocalError] = useState('')
+  const structural = structuralReason(action, { aliasBlocked, aliasNote, pending })
+  const targetMissing = choices.length === 0 ? 'MISSING_TARGET_INTERVIEW：该申请没有可关联的面试' : ''
+  const blockedReason = [structural, targetMissing].filter((part) => part !== '').join('；')
+  const disabled = blockedReason !== ''
+  return (
+    <ActionCard
+      actionKey="transcript_import"
+      title="导入 / 关联 Transcript（transcript/import）"
+      available={!disabled}
+      blockedReason={blockedReason}
+    >
+      <FormField label="面试（转写只能挂到已绑定的面试）">
+        <select
+          className="rcw-select"
+          data-testid="transcript-interview"
+          value={interviewId}
+          onChange={(event) => setInterviewId(event.target.value)}
+        >
+          {choices.length === 0 ? <option value="">（该申请没有面试）</option> : null}
+          {choices.map((choice) => (
+            <option key={choice.interviewId} value={choice.interviewId}>
+              {choice.label}
+            </option>
+          ))}
+        </select>
+      </FormField>
+      <FormField
+        label="来源（source_kind）"
+        hint={
+          sourceKind === 'DEMO_SAMPLE'
+            ? 'DEMO_SAMPLE = 演示文本（provenance=FIXTURE，附 FIXTURE_CONTENT_NOT_LIVE 警告；不是真实平台导出件）'
+            : 'PLATFORM_EXPORT = 平台导出件（provenance=LIVE，必须填导出文件名）'
+        }
+      >
+        <select
+          className="rcw-select"
+          data-testid="transcript-source-kind"
+          value={sourceKind}
+          onChange={(event) => setSourceKind(event.target.value as 'PLATFORM_EXPORT' | 'DEMO_SAMPLE')}
+        >
+          <option value="DEMO_SAMPLE">DEMO_SAMPLE（FIXTURE 演示文本）</option>
+          <option value="PLATFORM_EXPORT">PLATFORM_EXPORT（真实平台导出）</option>
+        </select>
+      </FormField>
+      <FormField label="导出文件名（exported_file_name；PLATFORM_EXPORT 必填）">
+        <input
+          type="text"
+          data-testid="transcript-file-name"
+          style={FIELD_STYLE}
+          value={fileName}
+          onChange={(event) => setFileName(event.target.value)}
+        />
+      </FormField>
+      <FormField label="正文（content，逐字节保存，1..400000 字符）">
+        <textarea
+          data-testid="transcript-content"
+          rows={4}
+          style={FIELD_STYLE}
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+        />
+      </FormField>
+      <FormField label="语言（language，默认 zh）">
+        <input
+          type="text"
+          data-testid="transcript-language"
+          style={FIELD_STYLE}
+          value={language}
+          onChange={(event) => setLanguage(event.target.value)}
+        />
+      </FormField>
+      <FormField label="备注（note，≤500，人工追溯）">
+        <input
+          type="text"
+          data-testid="transcript-note"
+          style={FIELD_STYLE}
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+        />
+      </FormField>
+      <button
+        type="button"
+        className="rcw-btn rcw-btn-blue"
+        data-testid="transcript-submit"
+        disabled={disabled}
+        onClick={() => {
+          const built = buildTranscriptImportBody({
+            interviewId,
+            content,
+            sourceKind,
+            exportedFileName: fileName,
+            language,
+            note,
+          })
+          if (!built.ok) {
+            setLocalError(buildReasonOf(built))
+            return
+          }
+          if (action === undefined) return
+          setLocalError('')
+          onRunAction(action, built.body)
+        }}
+      >
+        {pending ? '提交中…' : '导入 Transcript'}
+      </button>
+      {localError !== '' ? (
+        <p className="rcw-alert" data-testid="transcript-error" style={{ marginTop: 8 }}>
+          {localError}
+        </p>
+      ) : null}
+    </ActionCard>
+  )
+}
+
+/** P0 `decision/record`（facade）：scope/result/理由；summary 缺 → SUMMARY_MISSING disabled。 */
+function DecisionRecordForm({
+  decisionFacts,
+  decisionFactsProbe,
+  applicationId,
+  aliasBlocked,
+  aliasNote,
+  pending,
+  onDecisionRecord,
+}: {
+  readonly decisionFacts: DecisionFacts | undefined
+  readonly decisionFactsProbe: 'READY' | 'MISSING' | 'ERROR' | 'LOADING' | undefined
+  readonly applicationId: string
+  readonly aliasBlocked: boolean
+  readonly aliasNote: string
+  readonly pending: boolean
+  readonly onDecisionRecord: ((request: Readonly<Record<string, unknown>>) => void) | undefined
+}) {
+  const [scope, setScope] = useState<'STAGE' | 'FINAL'>('STAGE')
+  const [result, setResult] = useState<'ADVANCE' | 'HOLD' | 'REJECT'>('ADVANCE')
+  const [reason, setReason] = useState('')
+  const [localError, setLocalError] = useState('')
+  const factsProbeReason =
+    decisionFactsProbe === 'MISSING'
+      ? 'DECISION_FACTS_ROUTE_MISSING：决策事实路由未接线（GET /recruitment/api/decision/facts 404）；客户端不发请求'
+      : decisionFactsProbe === 'ERROR'
+        ? 'DECISION_FACTS_ERROR：决策事实读取失败（看服务端原文）'
+        : decisionFactsProbe === 'LOADING'
+          ? 'DECISION_FACTS_LOADING：正在读取决策事实投影'
+          : decisionFacts === undefined
+            ? 'DECISION_FACTS_ROUTE_MISSING：决策事实投影未提供（workspace 未传入 decisionFacts）'
+            : ''
+  const blockers = decisionRecordBlockers(decisionFacts ?? null)
+  const structural = [
+    aliasBlocked ? `ALIAS_BLOCKED：${aliasNote !== '' ? aliasNote : '当前 alias 不可执行写操作'}` : '',
+    pending ? '提交中…' : '',
+    onDecisionRecord === undefined ? 'WORKSPACE_CALLBACK_MISSING：workspace 未注入 onDecisionRecord（facade 未接线）' : '',
+  ].filter((part) => part !== '')
+  const blockedReasonParts = [
+    ...structural,
+    factsProbeReason,
+    blockers.length > 0 ? blockers.join('、') : '',
+  ].filter((part) => part !== '')
+  const blockedReason = blockedReasonParts.join('；')
+  const disabled = blockedReason !== ''
+  return (
+    <ActionCard
+      actionKey="decision_record"
+      title="记录正式决策（decision/record · facade）"
+      available={!disabled}
+      blockedReason={blockedReason}
+    >
+      {blockedReason !== '' ? (
+        <p className="rcw-alert" data-testid="decision-disabled-reason" style={{ marginTop: 6 }}>
+          {blockedReason}
+        </p>
+      ) : null}
+      <FormField label="决策范围（decision_scope）">
+        <select
+          className="rcw-select"
+          data-testid="decision-scope"
+          value={scope}
+          onChange={(event) => setScope(event.target.value as 'STAGE' | 'FINAL')}
+        >
+          <option value="STAGE">阶段决策（STAGE）</option>
+          <option value="FINAL">最终决策（FINAL）</option>
+        </select>
+      </FormField>
+      <FormField label="结论（result；WITHDRAW/HIRED 不在 facade 封闭集）">
+        <select
+          className="rcw-select"
+          data-testid="decision-result"
+          value={result}
+          onChange={(event) => setResult(event.target.value as 'ADVANCE' | 'HOLD' | 'REJECT')}
+        >
+          <option value="ADVANCE">通过（ADVANCE）</option>
+          <option value="HOLD">暂缓（HOLD）</option>
+          <option value="REJECT">不通过（REJECT）</option>
+        </select>
+      </FormField>
+      <FormField label="理由（1..4000 字）">
+        <textarea
+          data-testid="decision-reason"
+          rows={3}
+          style={FIELD_STYLE}
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+        />
+      </FormField>
+      <button
+        type="button"
+        className="rcw-btn rcw-btn-blue"
+        data-testid="decision-submit"
+        disabled={disabled}
+        onClick={() => {
+          const built = buildDecisionRecordBody({
+            facts: decisionFacts ?? null,
+            applicationId,
+            scope,
+            result,
+            reason,
+          })
+          if (!built.ok) {
+            setLocalError(buildReasonOf(built))
+            return
+          }
+          if (onDecisionRecord === undefined) return
+          setLocalError('')
+          onDecisionRecord(built.body)
+        }}
+      >
+        {pending ? '提交中…' : '记录决策'}
+      </button>
+      {localError !== '' ? (
+        <p className="rcw-alert" data-testid="decision-error" style={{ marginTop: 8 }}>
+          {localError}
+        </p>
+      ) : null}
+    </ActionCard>
+  )
+}
+
+/** `action-result` 读回区：只显示服务端 readback/决策/评估的键值行（键/值原样，不做业务推断）。 */
+function ActionResultPanel({ outcomes }: { readonly outcomes: ReadonlyArray<ActionOutcome> }) {
+  return (
+    <div className="rcw-smallcard" style={{ marginTop: 14 }} data-testid="action-result" data-has-outcome={outcomes.length > 0 ? 'true' : 'false'}>
+      <div className="rcw-chiprow">
+        <strong>写动作结果 · 服务端读回</strong>
+        <Chip tone="gray">成功事实只认 readback + 重新 GET</Chip>
+      </div>
+      {outcomes.length === 0 ? (
+        <p className="rcw-dim rcw-tiny" style={{ marginTop: 6 }}>
+          尚未执行写动作。
+        </p>
+      ) : (
+        outcomes.map((outcome, index) => {
+          const lines = actionResultLines(outcome)
+          const readbackShown = outcome.envelope !== null && outcome.envelope.readback !== null
+          const advice = outcome.error !== null ? describeActionError(outcome.error.code, outcome.error.reasonCode) : ''
+          return (
+            <div
+              key={`${outcome.key}-${String(index)}`}
+              data-testid="action-result-item"
+              data-action-key={outcome.key}
+              data-accepted={outcome.accepted ? 'true' : 'false'}
+              data-has-readback={readbackShown ? 'true' : 'false'}
+              style={{ marginTop: 10, borderTop: index === 0 ? 'none' : '1px dashed #e6ebf2', paddingTop: index === 0 ? 0 : 10 }}
+            >
+              <div className="rcw-chiprow">
+                <Chip tone="blue">动作 · {outcome.key}</Chip>
+                <Chip tone={outcome.accepted ? 'blue' : 'red'}>HTTP {outcome.status}</Chip>
+                {readbackShown ? (
+                  <Chip tone="green">readback 已读回</Chip>
+                ) : outcome.accepted ? (
+                  <Chip tone="amber">2xx 但无 readback（不当作成功）</Chip>
+                ) : (
+                  <Chip tone="red">服务端拒绝</Chip>
+                )}
+              </div>
+              {outcome.error !== null ? (
+                <div style={{ marginTop: 6 }}>
+                  <p className="rcw-alert" data-testid="action-result-error">
+                    {outcome.error.code !== '' ? `${outcome.error.code}/` : ''}
+                    {outcome.error.reasonCode !== '' ? outcome.error.reasonCode : ''}：{outcome.error.message}
+                  </p>
+                  {advice !== '' ? (
+                    <p className="rcw-dim rcw-tiny" data-testid="action-result-advice">
+                      补救：{advice}
+                    </p>
+                  ) : null}
+                  {outcome.error.rawBody !== '' ? (
+                    <pre className="rcw-mono rcw-tiny" data-testid="action-result-raw">
+                      {outcome.error.rawBody}
+                    </pre>
+                  ) : null}
+                </div>
+              ) : null}
+              {lines.length > 0 ? (
+                <div style={{ marginTop: 6 }}>
+                  {lines.map((line) => (
+                    <div className="rcw-fieldrow" key={line.key} data-readback-key={line.key}>
+                      <span className="rcw-fieldkey">
+                        {line.label}
+                        {line.label !== line.key ? <span className="rcw-mono rcw-tiny"> · {line.key}</span> : null}
+                      </span>
+                      <span className="rcw-fieldval rcw-mono">{line.value}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : outcome.accepted ? (
+                <p className="rcw-dim rcw-tiny" style={{ marginTop: 6 }}>
+                  服务端 HTTP 2xx，但信封里没有可展示的 readback —— 不当作成功（界面不会用本地状态代替读回）。
+                </p>
+              ) : null}
+              {outcome.bodyText !== '' && outcome.error === null ? (
+                <pre className="rcw-mono rcw-tiny" data-testid="action-result-body">
+                  {outcome.bodyText}
+                </pre>
+              ) : null}
+            </div>
+          )
+        })
+      )}
+    </div>
+  )
+}
+
 /**
  * 申请详情视图。
  * @param props - 见 {@link ApplicationDetailProps}。
- * @returns 详情页 JSX（结论 + 渐进展开 + aside）。
+ * @returns 详情页 JSX（结论 + 写动作表单 + 渐进展开 + aside）。
  */
 export function ApplicationDetail(props: ApplicationDetailProps) {
   const header = props.detail?.header ?? props.row
@@ -672,6 +1455,32 @@ export function ApplicationDetail(props: ApplicationDetailProps) {
   const actionList = APPLICATION_ACTION_KEYS.map((key) => props.actions[key]).filter(
     (action): action is ActionView => action !== undefined,
   )
+  const applicationId = header?.id ?? ''
+  const pendingKey = props.pendingActionKey
+  // 本地写结果（evaluate / facade 由 workspace 回调注入；readback 只来自服务端响应）。
+  const [localOutcome, setLocalOutcome] = useState<ActionOutcome | undefined>(undefined)
+  const outcomes: ActionOutcome[] = []
+  if (props.actionOutcome !== undefined) outcomes.push(props.actionOutcome)
+  if (localOutcome !== undefined) outcomes.push(localOutcome)
+
+  const factsProbeReason =
+    props.decisionFactsProbe === 'MISSING'
+      ? 'DECISION_FACTS_ROUTE_MISSING：决策事实只读路由未接线（GET /recruitment/api/decision/facts 404），表单 disabled，不发请求'
+      : props.decisionFactsProbe === 'ERROR'
+        ? 'DECISION_FACTS_ERROR：决策事实读取失败（看服务端原文）'
+        : props.decisionFactsProbe === 'LOADING'
+          ? 'DECISION_FACTS_LOADING：正在读取决策事实投影'
+          : props.decisionFacts === undefined
+            ? 'DECISION_FACTS_ROUTE_MISSING：决策事实投影未提供（未接线 facts 路由 / workspace 未传入）'
+            : ''
+  const evaluationPresent = (props.decisionFacts?.screeningEvaluation ?? null) !== null
+  const evaluateDisabledReason = [
+    props.aliasBlocked ? 'ALIAS_BLOCKED：当前 alias 不可执行写操作' : '',
+    props.onScreeningEvaluate === undefined ? 'WORKSPACE_CALLBACK_MISSING：workspace 未注入 onScreeningEvaluate' : '',
+    factsProbeReason,
+    evaluationPresent ? 'SCREENING_EVALUATION_PRESENT：facts 已有初筛评估，无需重复执行' : '',
+    pendingKey === 'screening_evaluate' ? '提交中…' : '',
+  ].filter((part) => part !== '')
 
   return (
     <>
@@ -701,17 +1510,72 @@ export function ApplicationDetail(props: ApplicationDetailProps) {
             )}
 
             <div className="rcw-inlineactions" data-testid="detail-actions">
-              {actionList.map((action) => (
-                <ActionButton
-                  key={action.key}
-                  action={action}
-                  pending={props.pendingActionKey === action.key}
-                  aliasBlocked={props.aliasBlocked}
-                  aliasNote={props.aliasNote}
-                  onRun={props.onRunAction}
-                />
-              ))}
+              {actionList.length === 0 ? (
+                <span className="rcw-dim rcw-tiny">服务端 actions 里没有可用的申请级写动作。</span>
+              ) : (
+                actionList.map((action) => (
+                  <Chip
+                    key={action.key}
+                    tone={action.available ? 'blue' : 'gray'}
+                    testid={`detail-action-${action.key}`}
+                    title={action.available ? action.seam : action.pendingText}
+                  >
+                    {action.label} · {action.available ? 'seam 已接线' : (action.pending !== '' ? action.pending : '不可用')}
+                  </Chip>
+                ))
+              )}
             </div>
+
+            <StageAdvanceForm
+              action={props.actions['stage_advance']}
+              applicationId={applicationId}
+              aliasBlocked={props.aliasBlocked}
+              aliasNote={props.aliasNote}
+              pending={pendingKey === 'stage_advance'}
+              onRunAction={props.onRunAction}
+            />
+            <ScreeningForm
+              action={props.actions['screening_decide']}
+              detail={detail}
+              decisionFacts={props.decisionFacts}
+              decisionFactsProbe={props.decisionFactsProbe}
+              aliasBlocked={props.aliasBlocked}
+              aliasNote={props.aliasNote}
+              pending={pendingKey === 'screening_decide'}
+              factsBlockedReason={factsProbeReason}
+              onRunAction={props.onRunAction}
+              onScreeningEvaluate={props.onScreeningEvaluate}
+              evaluateDisabledReason={evaluateDisabledReason.join('；')}
+              evaluatePending={pendingKey === 'screening_evaluate'}
+            />
+            <DecisionRecordForm
+              decisionFacts={props.decisionFacts}
+              decisionFactsProbe={props.decisionFactsProbe}
+              applicationId={applicationId}
+              aliasBlocked={props.aliasBlocked}
+              aliasNote={props.aliasNote}
+              pending={pendingKey === 'decision_record_facade'}
+              onDecisionRecord={props.onDecisionRecord}
+            />
+            <InterviewScheduleForm
+              action={props.actions['interview_schedule']}
+              detail={detail}
+              settings={props.settings}
+              aliasBlocked={props.aliasBlocked}
+              aliasNote={props.aliasNote}
+              pending={pendingKey === 'interview_schedule'}
+              onRunAction={props.onRunAction}
+            />
+            <TranscriptImportForm
+              action={props.actions['transcript_import']}
+              detail={detail}
+              aliasBlocked={props.aliasBlocked}
+              aliasNote={props.aliasNote}
+              pending={pendingKey === 'transcript_import'}
+              onRunAction={props.onRunAction}
+            />
+
+            <ActionResultPanel outcomes={outcomes} />
 
             <div className="rcw-divider" />
 
@@ -756,7 +1620,7 @@ export function ApplicationDetail(props: ApplicationDetailProps) {
                 evidence={detail?.screeningEvidence ?? { decision: null, rubric: null, basis: [] }}
               />
             </LazySection>
-            <LazySection title="面试排期与状态" testid="section-interviews" available={detail !== undefined}>
+            <LazySection title="面试排期与状态（含本轮重点）" testid="section-interviews" available={detail !== undefined}>
               <InterviewSection interviews={detail?.interviews ?? []} />
             </LazySection>
             <LazySection title="Transcript 状态" testid="section-transcript" available={detail !== undefined}>
