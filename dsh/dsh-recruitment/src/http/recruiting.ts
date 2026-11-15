@@ -26,6 +26,10 @@ import {
   type DatabaseClient,
   type ResolvedDatabaseConfig,
 } from '../db/pool.ts'
+// W3b：轮次重点的判定**只有一份实现**（interviewer.ts 的 `buildRoundFocus`）。招聘方视角
+// 只展示 `round_focus`（不展示 effective_rubric），但降级/守卫语义必须与面试官视角逐字一致，
+// 否则同一场面试在两个视图里会给出不同的"本轮重点"（C-4）。
+import { buildRoundFocus, type RoundFocus, type RoundRubricFacts } from './interviewer.ts'
 
 // =====================================================================
 //  冻结出参类型（recruiting-overview 1.0.0）
@@ -214,6 +218,11 @@ export interface InterviewSummary {
     readonly missing_total: number
     readonly overdue: number
   }
+  /**
+   * W3b：本轮重点（与面试官视角**同名同形**，复用 `interviewer.ts::buildRoundFocus`）。
+   * 无可用轮次配置时 `source='JOB_BASE', available=false` + `reason`（不猜本轮重点）。
+   */
+  readonly round_focus: RoundFocus
   readonly transcript: TranscriptSummary
 }
 
@@ -1253,7 +1262,16 @@ const DECISIONS_SQL = `
    order by d.decided_at desc, d.id asc
 `
 
-/** 面试（每申请全量；按排期时间升序）。 */
+/**
+ * 面试（每申请全量；按排期时间升序）。
+ *
+ * W3b：除了面试本身，还取**轮次重点**需要的三组事实（别名逐字对应
+ * `interviewer.ts::RoundRubricFacts`，于是可以直接复用同一个 `buildRoundFocus`）：
+ *   · `interview_template_version`：模板身份/轮次/内容/声明的 rubric 版本；
+ *   · `application`：申请岗位（跨岗位守卫）与钉住的 rubric 版本；
+ *   · `rubric_version`：钉住的岗位 rubric（带 `rv.job_id = a.job_id` 守卫，越界即不 join，
+ *     与 interviewer.ts 的 §1.5 扩展 SQL 同一条纪律 —— 不猜一个"看起来对"的版本）。
+ */
 const INTERVIEWS_SQL = `
   select i.id::text                       as interview_id,
          i.application_id::text           as application_id,
@@ -1264,8 +1282,31 @@ const INTERVIEWS_SQL = `
          i.scheduled_start_at             as scheduled_start_at,
          i.scheduled_end_at               as scheduled_end_at,
          i.timezone                       as timezone,
-         i.created_at                     as created_at
+         i.created_at                     as created_at,
+         a.job_id::text                   as application_job_id,
+         itv.id::text                     as template_version_id,
+         itv.version_no                   as template_version_no,
+         itv.round_no                     as template_round_no,
+         itv.job_id::text                 as template_job_id,
+         itv.objective                    as template_objective,
+         itv.briefing ->> 'summary'       as template_briefing_summary,
+         itv.focus_attributes             as template_focus,
+         itv.question_templates           as template_questions,
+         itv.feedback_form                as template_feedback_form,
+         itv.payload_hash                 as template_payload_hash,
+         itv.rubric_version_id::text      as template_declared_rubric_version_id,
+         a.rubric_version_id::text         as pinned_rubric_version_id,
+         rv.id::text                      as rubric_version_id,
+         rv.version_no                    as rubric_version_no,
+         rv.payload_hash                  as rubric_payload_hash,
+         rv.dimensions                    as rubric_dimensions
     from recruitment.interview i
+    left join recruitment.application a
+      on a.id = i.application_id and a.tenant_id = i.tenant_id
+    left join recruitment.interview_template_version itv
+      on itv.id = i.interview_template_version_id and itv.tenant_id = i.tenant_id
+    left join recruitment.rubric_version rv
+      on rv.id = a.rubric_version_id and rv.tenant_id = a.tenant_id and rv.job_id = a.job_id
    where i.tenant_id = $1
      and i.application_id = any($2::uuid[])
    order by i.scheduled_start_at asc nulls last, i.id asc
@@ -1728,10 +1769,15 @@ interface DecisionRow {
   basis_refs: unknown
 }
 
-interface InterviewRow {
+/**
+ * `INTERVIEWS_SQL` 的一行。
+ *
+ * W3b：继承 `RoundRubricFacts`（`round_no` 与模板/rubric 列都来自这条 SQL），这样
+ * `mapInterviewSummary` 可以直接把行交给 `buildRoundFocus`，两侧判定不可能漂移。
+ */
+interface InterviewRow extends RoundRubricFacts {
   interview_id: string
   application_id: string
-  round_no: number
   slot_code: string
   stage_code: string
   status: string
@@ -2026,6 +2072,8 @@ function mapInterviewSummary(
       missing_total: Math.max(0, required.length - submitted.length),
       overdue: overdue.length,
     },
+    // W3b：与面试官视角**同一份判定**（跨岗位/轮次不符/模板空 → JOB_BASE + reason，不猜）。
+    round_focus: buildRoundFocus(interview),
     transcript: mapTranscriptSummary(transcriptRows),
   }
 }

@@ -27,14 +27,28 @@
 //      "看起来对"的版本）；没有模板但有 rubric 维度 → `source='JOB_RUBRIC'`（标注来源，绝不
 //      把 rubric 维度冒充面试简报原文）；库读失败 → 抛错由 HTTP 层映射 5xx（**不得**伪装成空列表）。
 //
-// 出参类型是本文件冻结的契约（§1.4，字段名逐字一致，不增删）。客户端 `src/client/interviewer/**`
+// 出参类型是本文件冻结的契约（§1.4）：**既有字段名逐字一致、不增删**；task-50 只做加法——
+// `interviews[]` 每个元素新增 `round_focus` / `effective_rubric`（W3b 消费），其余块不变。
+// 客户端 `src/client/interviewer/**`
 // 只用 `import type` 引用它们，不会把服务端代码打进浏览器产物。
+//
+// W3b（轮次重点）：`interviews[]` 的元素在既有 `brief`/`rubric` 之外**新增两个键**
+// （`brief`/`rubric` 形状不动，向后兼容）：
+//   · `round_focus`      —— 本轮重点（模板 objective/briefing.summary/focus/questions/feedback_form）；
+//     没有可套用的轮次配置时**如实降级** `source='JOB_BASE', available=false` + 中文 `reason`，
+//     绝不把岗位 rubric 维度或岗位名冒充成"本轮重点"。
+//   · `effective_rubric` —— 面评真正可提交的 rubric 投影：维度宇宙**恒为申请钉住的岗位 rubric**
+//     （D-89/SC-13 的提交键集不变），轮次配置只能标记 focus/must_cover 与覆盖显示权重；
+//     模板声明的 rubric 版本与申请钉住版本冲突时**不混用**（回显 + reason + issue）。
+//   三条守卫（跨岗位 / 轮次不符 / 模板无内容）降级到 JOB_BASE 并写清原因，绝不"猜一个看起来对"。
 //
 // 单测所需的**纯**辅助函数（不碰 DB，故单独导出；见 `test/unit/interviewer-overview.test.ts`）：
 //   · `parseInterviewerQuery(url)` —— §1.1 的 query 形状（未知参数 / 缺 alias / 非 UUID）
 //   · `requireSessionId(req)`      —— §1.1 的 `X-DSH-Session` 形状（缺失 / 超长 / 重复）
 //   · `toInterviewRow({value, extension, actorId})` —— 一个面试元素的行映射（含自己的面评提取、
-//     brief/materials/rubric 的降级路径、rubric 越界的 issue）
+//     brief/materials/rubric 的降级路径、rubric 越界的 issue、round_focus/effective_rubric 的组装）
+//   · `buildRoundFocus(facts)` / `buildEffectiveRubric(facts)` / `collectRoundIssues(facts)` ——
+//     W3b 的两个块与轮次侧 issue 的唯一构造函数（recruiting.ts 复用同一份，不写第二套）
 //   · `deriveCounts(rows)`         —— §1.4 的六个计数（服务端算，客户端不重算）
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
@@ -133,7 +147,7 @@ export interface InterviewerSessionActorResolver {
 }
 
 // =====================================================================
-//  §1.4 响应形状（冻结；字段名逐字一致，不增删）
+//  §1.4 响应形状（冻结；**既有字段**逐字一致；task-50 加法扩展 `round_focus`/`effective_rubric`）
 // =====================================================================
 
 /** 工作台身份（`actor` 块）。 */
@@ -231,6 +245,115 @@ export interface InterviewerRubric {
   readonly dimensions: readonly InterviewerRubricDimension[]
 }
 
+/**
+ * 轮次重点的一个考察维度（§1.4 `round_focus.focus_dimensions` 元素）。
+ *
+ * `in_rubric=false` 表示模板声明了一个岗位 rubric 里没有的维度：**只展示，不进面评提交键集**
+ * （`effective_rubric.dimensions` 的宇宙恒为岗位 rubric，见 `buildEffectiveRubric`）。
+ */
+export interface RoundFocusDimension {
+  readonly key: string
+  readonly label: string
+  /** 模板给了数值 weight 就用模板；缺省回退到岗位 rubric 同名维度，再缺省 0。 */
+  readonly weight: number
+  /** `focus_attributes` 元素 `required===true` 或 `must_cover===true`。 */
+  readonly required: boolean
+  readonly in_rubric: boolean
+}
+
+/** 一条建议问题（§1.4 `round_focus.questions` 元素）；`key` 只在模板元素自带非空 key 时非 null。 */
+export interface RoundFocusQuestion {
+  readonly key: string | null
+  readonly text: string
+}
+
+/** 评分表字段（`round_focus.scorecard_fields` 与 `effective_rubric.scorecard.fields` 同形）。 */
+export interface RoundFocusScorecardField {
+  readonly key: string
+  readonly label: string
+  readonly kind: string
+  readonly required: boolean
+}
+
+/**
+ * `round_focus` 块（§1.4，W3b）：本场面试**这一轮**的重点。
+ *
+ * `source` 是诚实标注：只有从 `interview_template_version` 真正套用出轮次内容时才是
+ * `ROUND_CONFIG`；否则 `JOB_BASE`（`available=false` + `reason` 说明为什么不能声称本轮重点）。
+ * 已绑定但不可套用的模板身份（id/version/hash）仍如实回显 —— 那是"绑过哪个模板"的事实。
+ */
+export interface RoundFocus {
+  readonly available: boolean
+  readonly source: 'ROUND_CONFIG' | 'JOB_BASE'
+  readonly round_no: number
+  readonly template_version_id: string | null
+  readonly template_version_no: number | null
+  readonly template_payload_hash: string | null
+  readonly title: string | null
+  readonly description: string | null
+  readonly focus_dimensions: readonly RoundFocusDimension[]
+  readonly questions: readonly RoundFocusQuestion[]
+  readonly scorecard_fields: readonly RoundFocusScorecardField[]
+  readonly reason: string | null
+}
+
+/** `effective_rubric.dimensions` 的一个维度（**宇宙恒为申请钉住的岗位 rubric**）。 */
+export interface EffectiveRubricDimension {
+  readonly key: string
+  readonly label: string
+  readonly kind: string
+  readonly weight: number
+  /** D-89/SC-13：面评必答，恒 true。 */
+  readonly required: boolean
+  /** 本轮重点（focus_attributes 命中同名 key；JOB_BASE 时恒 false）。 */
+  readonly focus: boolean
+  /** 本轮必覆盖（focus_attributes 元素 required/must_cover===true）。 */
+  readonly must_cover: boolean
+  /** 该维度是否被轮次配置标记过（标记过 = ROUND_OVERRIDE）。 */
+  readonly origin: 'JOB_BASE' | 'ROUND_OVERRIDE'
+  readonly question: string | null
+}
+
+/** `effective_rubric.scorecard`：评分表口径（scale 来自 feedback_form，fields 恒 = 维度映射）。 */
+export interface EffectiveRubricScorecard {
+  readonly scale: { readonly min: number; readonly max: number } | null
+  readonly fields: readonly RoundFocusScorecardField[]
+}
+
+/** `effective_rubric.submission`：面评提交真正绑定的版本与键集（D-89/SC-13）。 */
+export interface EffectiveRubricSubmission {
+  readonly rubric_version_id: string
+  readonly dimension_keys: readonly string[]
+}
+
+/**
+ * `effective_rubric` 块（§1.4，W3b）：面评真正可提交的 rubric 投影。
+ *
+ * 三条不变量：
+ *   · 维度宇宙恒 = **申请钉住的岗位 rubric**（顺序不变）——轮次配置只能标记 focus/must_cover
+ *     与覆盖显示权重，**不换维度集合**（D-89/SC-13 的提交键集不变）；
+ *   · 模板声明的 rubric 版本与申请钉住版本不一致时**不混用**：如实回显 + `reason` 说明；
+ *   · 申请钉住的 rubric 越界/缺失时 `available=false` + `reason`，不猜版本（不抛错）。
+ */
+export interface EffectiveRubric {
+  readonly available: boolean
+  readonly source: 'JOB_BASE' | 'ROUND_OVERRIDE'
+  readonly round_no: number
+  readonly job_id: string
+  readonly rubric_version_id: string
+  readonly rubric_version_no: number
+  readonly rubric_payload_hash: string
+  readonly base_rubric_version_id: string | null
+  readonly template_version_id: string | null
+  readonly template_version_no: number | null
+  readonly template_payload_hash: string | null
+  readonly declared_round_rubric_version_id: string | null
+  readonly dimensions: readonly EffectiveRubricDimension[]
+  readonly scorecard: EffectiveRubricScorecard
+  readonly submission: EffectiveRubricSubmission
+  readonly reason: string | null
+}
+
 /** 授权材料里的一份简历版本（`fields` 是 `parsed_fields` **原样**，不裁剪、不编造）。 */
 export interface InterviewerResumeMaterial {
   readonly resume_version_id: string
@@ -303,6 +426,10 @@ export interface InterviewerRow {
   readonly scorecard_due_at: string | null
   readonly brief: InterviewerBrief
   readonly rubric: InterviewerRubric | null
+  /** W3b（§1.4）：本轮重点；无可用轮次配置时 `JOB_BASE` 降级 + `reason`（不猜）。 */
+  readonly round_focus: RoundFocus
+  /** W3b（§1.4）：面评真正可提交的 rubric 投影（维度宇宙恒 = 申请钉住的岗位 rubric）。 */
+  readonly effective_rubric: EffectiveRubric
   readonly materials: InterviewerMaterials
   readonly transcript: InterviewerTranscript
   readonly scorecard: InterviewerScorecard
@@ -385,6 +512,10 @@ const MY_INTERVIEW_IDS_SQL = `
  * rubric 的 join 条件带 `rv.job_id = a.job_id`：只要钉住的版本不属于该申请的岗位就不 join
  * （于是 `rubric_version_id` 为 null），由 `toInterviewRow` 判定"钉住但不可用"并写 issue ——
  * **不猜**一个看起来对的版本（SC-11/SC-47 的同一条语义）。
+ *
+ * 模板侧除了展示用的 objective/focus/questions，还取 `job_id`/`round_no`/`rubric_version_id`
+ * 三个**守卫列**：轮次配置只有在"岗位一致 + 轮次一致 + 至少贡献一项内容"时才可套用，否则由
+ * `buildRoundFocus`/`buildEffectiveRubric` 降级到 JOB_BASE 并写清原因（不猜、不硬套）。
  */
 const INTERVIEW_EXTENSION_SQL = `
   select iv.id::text                       as interview_id,
@@ -393,13 +524,19 @@ const INTERVIEW_EXTENSION_SQL = `
          j.code                            as job_code,
          j.title                           as job_title,
          itv.id::text                      as template_version_id,
+         itv.version_no                    as template_version_no,
+         itv.round_no                      as template_round_no,
+         itv.job_id::text                  as template_job_id,
          itv.objective                     as template_objective,
          itv.briefing ->> 'summary'         as template_briefing_summary,
          itv.focus_attributes              as template_focus,
          itv.question_templates            as template_questions,
+         itv.feedback_form                 as template_feedback_form,
          itv.payload_hash                  as template_payload_hash,
+         itv.rubric_version_id::text       as template_declared_rubric_version_id,
          a.rubric_version_id::text         as pinned_rubric_version_id,
          rv.id::text                       as rubric_version_id,
+         rv.version_no                     as rubric_version_no,
          rv.payload_hash                   as rubric_payload_hash,
          rv.dimensions                     as rubric_dimensions,
          a.resume_version_id::text         as resume_version_id,
@@ -460,13 +597,23 @@ export interface InterviewExtensionRow {
   readonly job_code: string
   readonly job_title: string
   readonly template_version_id: string | null
+  /**
+   * W3b 新增的模板守卫/评分表列。**全部可选**：旧的单测假行不含这些键，
+   * `buildRoundFocus`/`buildEffectiveRubric` 必须容错 `undefined`（job/round 未知 → 不阻断）。
+   */
+  readonly template_version_no?: number | null
+  readonly template_round_no?: number | null
+  readonly template_job_id?: string | null
   readonly template_objective: string | null
   readonly template_briefing_summary: string | null
   readonly template_focus: unknown
   readonly template_questions: unknown
+  readonly template_feedback_form?: unknown
   readonly template_payload_hash: string | null
+  readonly template_declared_rubric_version_id?: string | null
   readonly pinned_rubric_version_id: string | null
   readonly rubric_version_id: string | null
+  readonly rubric_version_no?: number | null
   readonly rubric_payload_hash: string | null
   readonly rubric_dimensions: unknown
   readonly resume_version_id: string | null
@@ -502,6 +649,16 @@ function numberOr(value: unknown, fallback: number): number {
 /** 整数列 → number；pg 的 `integer` 已是 number，这里只挡住 undefined。 */
 function integerOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : fallback
+}
+
+/** 整数列 → number；缺失/脏值 → null（`template_round_no` 未知时不能当成 0 去比较）。 */
+function integerOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null
+}
+
+/** 有限数字 → number；否则 null（weight / scale 用：jsonb 可能是字符串）。 */
+function finiteNumberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 /** `timestamptz`（pg 给 Date，测试可能给字符串）→ ISO 文本；无效 → null。 */
@@ -577,6 +734,527 @@ function questionTextsOf(value: unknown): string[] {
 //  §1.4 各块的构造（纯函数；`toInterviewRow` 是它们唯一的组合点）
 // =====================================================================
 
+// ---------------------------------------------------------------------
+//  W3b：round_focus / effective_rubric（轮次重点 + 面评 Rubric 投影）
+// ---------------------------------------------------------------------
+
+/**
+ * `buildRoundFocus` / `buildEffectiveRubric` / `collectRoundIssues` 的共同输入。
+ *
+ * 为什么归一：interviewer（面试官视角）与 recruiting（招聘方视角）的 SQL 各自起别名，但
+ * "模板能不能套用"必须**只有一套判定**；归一后两侧共用 `evaluateRoundConfig`，永远不会
+ * 各写一套守卫（C-4：两份实现迟早会漂移）。
+ */
+export interface RoundRubricFacts {
+  /** `interview.round_no`（本场面试的轮次）。 */
+  readonly round_no: number
+  /** `application.job_id`（申请岗位；已知时才参与跨岗位守卫）。 */
+  readonly application_job_id: string | null
+  readonly template_version_id: string | null
+  readonly template_version_no: number | null
+  readonly template_round_no: number | null
+  readonly template_job_id: string | null
+  readonly template_objective: string | null
+  readonly template_briefing_summary: string | null
+  readonly template_focus: unknown
+  readonly template_questions: unknown
+  readonly template_feedback_form: unknown
+  readonly template_payload_hash: string | null
+  readonly template_declared_rubric_version_id: string | null
+  readonly pinned_rubric_version_id: string | null
+  readonly rubric_version_id: string | null
+  readonly rubric_version_no: number | null
+  readonly rubric_payload_hash: string | null
+  readonly rubric_dimensions: unknown
+}
+
+/** `focus_attributes` 的一个可用元素（解析后；只保留有 `key` 的）。 */
+interface ParsedFocusAttribute {
+  readonly key: string
+  readonly label: string | null
+  readonly weight: number | null
+  readonly required: boolean
+}
+
+/**
+ * `focus_attributes` 容错解析：元素可为 `{key,label,weight,required?/must_cover?}`，也可只给
+ * `{key}`/`{label}`；**没有 key 的跳过**（不能渲染/不能命中 rubric 的不硬造），同 key 只保留首个。
+ */
+function focusAttributesOf(value: unknown): ParsedFocusAttribute[] {
+  const out: ParsedFocusAttribute[] = []
+  const seen = new Set<string>()
+  for (const raw of asArray(value)) {
+    if (!isPlainObject(raw)) continue
+    const key = text(raw.key)
+    if (key === null || seen.has(key)) continue
+    seen.add(key)
+    out.push({
+      key,
+      label: text(raw.label),
+      weight: finiteNumberOrNull(raw.weight),
+      // 契约原文：`required` 只认 boolean `required===true` 或 `must_cover===true`（两者是 OR）。
+      required: raw.required === true || raw.must_cover === true,
+    })
+  }
+  return out
+}
+
+/** `question_templates` 容错解析：字符串 / `{question|text|template}` / 带 key 的对象。 */
+function roundQuestionsOf(value: unknown): RoundFocusQuestion[] {
+  const out: RoundFocusQuestion[] = []
+  for (const raw of asArray(value)) {
+    if (typeof raw === 'string') {
+      const direct = text(raw)
+      if (direct !== null) out.push({ key: null, text: direct })
+      continue
+    }
+    if (!isPlainObject(raw)) continue
+    const candidate = text(raw.question) ?? text(raw.text) ?? text(raw.template)
+    if (candidate === null) continue
+    out.push({ key: text(raw.key), text: candidate })
+  }
+  return out
+}
+
+/** `feedback_form.fields`（数组）→ 评分表字段；`key` 缺失/非字符串的元素跳过。 */
+function scorecardFieldsOf(value: unknown): RoundFocusScorecardField[] {
+  const out: RoundFocusScorecardField[] = []
+  for (const raw of asArray(value)) {
+    if (!isPlainObject(raw)) continue
+    const key = text(raw.key)
+    if (key === null) continue
+    out.push({ key, label: text(raw.label) ?? key, kind: text(raw.kind) ?? '', required: raw.required === true })
+  }
+  return out
+}
+
+/** `feedback_form.dimensions`（对象/数组）→ 评分表字段的容错投影（只在没有 fields 数组时兜底）。 */
+function scorecardFieldsFromDimensions(value: unknown): RoundFocusScorecardField[] {
+  const out: RoundFocusScorecardField[] = []
+  if (isPlainObject(value)) {
+    for (const [key, raw] of Object.entries(value)) {
+      const label = isPlainObject(raw) ? text(raw.label) ?? key : key
+      const kind = isPlainObject(raw) ? text(raw.kind) ?? '' : ''
+      out.push({ key, label, kind, required: isPlainObject(raw) && raw.required === true })
+    }
+    return out
+  }
+  for (const raw of asArray(value)) {
+    if (!isPlainObject(raw)) continue
+    const key = text(raw.key) ?? text(raw.name) ?? text(raw.id)
+    if (key === null) continue
+    out.push({ key, label: text(raw.label) ?? key, kind: text(raw.kind) ?? '', required: raw.required === true })
+  }
+  return out
+}
+
+/** `round_focus.scorecard_fields`：优先 fields 数组，其次 dimensions 投影，都没有 → `[]`（不造）。 */
+function roundScorecardFieldsOf(form: Readonly<Record<string, unknown>> | null): RoundFocusScorecardField[] {
+  if (form === null) return []
+  if (Array.isArray(form.fields)) return scorecardFieldsOf(form.fields)
+  return scorecardFieldsFromDimensions(form.dimensions)
+}
+
+/** `feedback_form.scale` / `{min_score,max_score}` → `{min,max}`（两者都是有限数字才给）。 */
+function scaleOf(
+  form: Readonly<Record<string, unknown>> | null,
+): { readonly min: number; readonly max: number } | null {
+  if (form === null) return null
+  const rawScale = form.scale
+  if (isPlainObject(rawScale)) {
+    const min = finiteNumberOrNull(rawScale.min)
+    const max = finiteNumberOrNull(rawScale.max)
+    if (min !== null && max !== null) return { min, max }
+  }
+  if (Array.isArray(rawScale) && rawScale.length >= 2) {
+    const min = finiteNumberOrNull(rawScale[0])
+    const max = finiteNumberOrNull(rawScale[1])
+    if (min !== null && max !== null) return { min, max }
+  }
+  const min = finiteNumberOrNull(form.min_score)
+  const max = finiteNumberOrNull(form.max_score)
+  if (min !== null && max !== null) return { min, max }
+  return null
+}
+
+/** `feedback_form.fields` 里同名 key 的 kind/required 覆盖（只有显式给了才覆盖）。 */
+interface ScorecardFieldOverride {
+  readonly kind: string | null
+  readonly required: boolean | null
+}
+
+function scorecardFieldOverridesOf(
+  form: Readonly<Record<string, unknown>> | null,
+): ReadonlyMap<string, ScorecardFieldOverride> {
+  const out = new Map<string, ScorecardFieldOverride>()
+  if (form === null || !Array.isArray(form.fields)) return out
+  for (const raw of form.fields) {
+    if (!isPlainObject(raw)) continue
+    const key = text(raw.key)
+    if (key === null) continue
+    out.set(key, {
+      kind: text(raw.kind),
+      required: typeof raw.required === 'boolean' ? raw.required : null,
+    })
+  }
+  return out
+}
+
+/** `evaluateRoundConfig` 的唯一判定结果（两个 builder 与 issues 的唯一判定点）。 */
+interface RoundConfigEvaluation {
+  /** 绑定了模板行（扩展 SQL 的 `template_version_id` 非空 = join 成功）。 */
+  readonly bound: boolean
+  /** job/round 守卫通过（不匹配 → 不可套用；未知 → 不阻断，见下）。 */
+  readonly compatible: boolean
+  /** 模板至少贡献一项轮次内容（objective/briefing.summary/focus/questions/feedback_form）。 */
+  readonly hasContent: boolean
+  /** 真正可套用：`bound ∧ compatible ∧ hasContent`。 */
+  readonly available: boolean
+  readonly roundNo: number
+  readonly templateVersionId: string | null
+  readonly templateVersionNo: number | null
+  readonly templatePayloadHash: string | null
+  readonly objective: string | null
+  readonly description: string | null
+  readonly focusAttributes: readonly ParsedFocusAttribute[]
+  readonly questions: readonly RoundFocusQuestion[]
+  readonly scorecardFields: readonly RoundFocusScorecardField[]
+  readonly feedbackForm: Readonly<Record<string, unknown>> | null
+  /** 不可套用的原因（可套用时 null）。 */
+  readonly reason: string | null
+  /** job/round 不匹配的 issue（已写明事实；interview id 前缀由 `toInterviewRow` 加）。 */
+  readonly mismatchIssues: readonly string[]
+}
+
+/**
+ * 「轮次模板能否套用」的唯一判定（requirement 2 + 6 的单点实现）。
+ *
+ * 可套用 = 绑定到模板行 ∧ 岗位一致 ∧ 轮次一致 ∧ 至少贡献一项轮次内容。
+ * **未知不阻断**：`template_job_id`/`template_round_no` 为 null（旧数据/旧假行没有这两列）时按
+ * "未知"处理，不能因此把模板拒掉 —— 否则旧行为会变（新增列不得改变缺列路径的语义）。
+ */
+function evaluateRoundConfig(facts: RoundRubricFacts): RoundConfigEvaluation {
+  const roundNo = integerOrNull(facts.round_no) ?? 0
+  const templateVersionId = text(facts.template_version_id)
+  const bound = templateVersionId !== null
+  const templateJobId = text(facts.template_job_id)
+  const applicationJobId = text(facts.application_job_id)
+  const jobMismatch = templateJobId !== null && applicationJobId !== null && templateJobId !== applicationJobId
+  const templateRoundNo = integerOrNull(facts.template_round_no)
+  const roundMismatch = bound && templateRoundNo !== null && templateRoundNo !== roundNo
+  const compatible = bound && !jobMismatch && !roundMismatch
+
+  const objective = text(facts.template_objective)
+  const description = text(facts.template_briefing_summary)
+  const focusAttributes = focusAttributesOf(facts.template_focus)
+  const questions = roundQuestionsOf(facts.template_questions)
+  const feedbackForm = isPlainObject(facts.template_feedback_form)
+    && Object.keys(facts.template_feedback_form).length > 0
+    ? facts.template_feedback_form
+    : null
+  const scorecardFields = roundScorecardFieldsOf(feedbackForm)
+  const hasContent = objective !== null || description !== null
+    || focusAttributes.length > 0 || questions.length > 0 || feedbackForm !== null
+  const available = bound && compatible && hasContent
+
+  const mismatchIssues: string[] = []
+  if (bound && jobMismatch) {
+    mismatchIssues.push(
+      `轮次模板 ${templateVersionId} 的 job_id ${templateJobId} 与申请岗位 ${applicationJobId} 不一致，`
+      + '不套用该轮次配置（降级到岗位 Rubric 底座 JOB_BASE）',
+    )
+  }
+  if (bound && roundMismatch) {
+    mismatchIssues.push(
+      `轮次模板 ${templateVersionId} 的 round_no=${templateRoundNo} 与本场面试轮次 ${roundNo} 不一致，`
+      + '不套用该轮次配置（降级到岗位 Rubric 底座 JOB_BASE）',
+    )
+  }
+
+  let reason: string | null = null
+  if (!bound) {
+    reason = '本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE）'
+  } else if (jobMismatch || roundMismatch) {
+    const parts: string[] = []
+    if (jobMismatch) parts.push(`job_id ${templateJobId} 与申请岗位 ${applicationJobId} 不一致`)
+    if (roundMismatch) parts.push(`round_no=${templateRoundNo} 与本场面试轮次 ${roundNo} 不一致`)
+    reason = `轮次模板 ${templateVersionId} 的 ${parts.join('、')}，`
+      + '不套用该轮次配置；已如实降级到岗位 Rubric 底座（JOB_BASE）'
+  } else if (!hasContent) {
+    reason = `本场面试已绑定轮次模板 ${templateVersionId}，但该模板未配置任何轮次重点`
+      + '（objective / briefing.summary / focus_attributes / question_templates / feedback_form 全空），'
+      + '无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE）'
+  }
+
+  return {
+    bound,
+    compatible,
+    hasContent,
+    available,
+    roundNo,
+    templateVersionId,
+    templateVersionNo: integerOrNull(facts.template_version_no),
+    templatePayloadHash: text(facts.template_payload_hash),
+    objective,
+    description,
+    focusAttributes,
+    questions,
+    scorecardFields,
+    feedbackForm,
+    reason,
+    mismatchIssues,
+  }
+}
+
+/**
+ * 构造 §1.4 的 `round_focus` 块（纯函数；不碰 DB）。
+ *
+ * 三态：
+ *   · 可套用 → `available:true, source:'ROUND_CONFIG'`，title/description/focus/questions/
+ *     scorecard_fields 全部来自模板；
+ *   · 绑定但不可套用 / 未绑定 → `available:false, source:'JOB_BASE'`，内容数组全空、
+ *     title/description 为 null、`reason` 写明为什么不能声称本轮重点；
+ *   · 已绑定的模板身份（id/version/hash）无论可套用与否都**如实回显**（那是"绑过哪个模板"的事实）。
+ *
+ * @param facts - 归一后的轮次/模板/rubric 事实。
+ * @returns §1.4 的 `round_focus` 块。
+ */
+export function buildRoundFocus(facts: RoundRubricFacts): RoundFocus {
+  const evaluation = evaluateRoundConfig(facts)
+  const baseDimensions = rubricDimensionsOf(facts.rubric_dimensions)
+  const baseByKey = new Map(baseDimensions.map((dimension) => [dimension.key, dimension]))
+  const identity = {
+    template_version_id: evaluation.templateVersionId,
+    template_version_no: evaluation.templateVersionNo,
+    template_payload_hash: evaluation.templatePayloadHash,
+  } as const
+  if (!evaluation.available) {
+    return {
+      available: false,
+      source: 'JOB_BASE',
+      round_no: evaluation.roundNo,
+      ...identity,
+      title: null,
+      description: null,
+      focus_dimensions: [],
+      questions: [],
+      scorecard_fields: [],
+      reason: evaluation.reason,
+    }
+  }
+  return {
+    available: true,
+    source: 'ROUND_CONFIG',
+    round_no: evaluation.roundNo,
+    ...identity,
+    title: evaluation.objective,
+    description: evaluation.description,
+    focus_dimensions: evaluation.focusAttributes.map((attribute) => {
+      const base = baseByKey.get(attribute.key)
+      return {
+        key: attribute.key,
+        label: attribute.label ?? base?.label ?? attribute.key,
+        weight: attribute.weight ?? base?.weight ?? 0,
+        required: attribute.required,
+        in_rubric: base !== undefined,
+      }
+    }),
+    questions: evaluation.questions,
+    scorecard_fields: evaluation.scorecardFields,
+    reason: null,
+  }
+}
+
+/** 申请钉住的岗位 rubric 不可用时的中文原因（不猜版本；写清是哪一种缺失）。 */
+function baseRubricUnavailableReason(pinnedId: string | null, joinedId: string | null): string {
+  if (pinnedId !== null && joinedId === null) {
+    return `申请钉住的 rubric 版本 ${pinnedId} 不可用（不属于该申请的岗位或已不存在），`
+      + '服务端不猜版本，无法给出面评提交的维度键集'
+  }
+  if (joinedId !== null) {
+    return `申请钉住的 rubric 版本 ${joinedId} 没有任何可用维度，无法给出面评提交的维度键集`
+  }
+  return '这场面试的申请没有钉住可用的岗位 rubric 版本，无法给出面评提交的维度键集（不猜版本）'
+}
+
+/**
+ * 构造 §1.4 的 `effective_rubric` 块（纯函数；不碰 DB）。
+ *
+ * 三条不变量：
+ *   1. **维度宇宙恒 = 申请钉住的岗位 rubric**（顺序 = rubric 顺序），轮次配置只能标记
+ *      focus/must_cover、覆盖显示权重；**不换维度集合**（D-89/SC-13 的提交键集不变）；
+ *   2. `source` 只按"轮次配置是否真正可套用"判定：可套用 = `ROUND_OVERRIDE`，否则 `JOB_BASE`；
+ *   3. 模板声明的 rubric 版本与申请钉住版本不一致 → **不混用**：维度仍取岗位底座，
+ *      `reason`（以及 `collectRoundIssues` 的 issue）写明冲突；钉住 rubric 不可用时
+ *      `available:false` + `reason`（不抛错、不猜版本）。
+ *
+ * @param facts - 归一后的轮次/模板/rubric 事实。
+ * @returns §1.4 的 `effective_rubric` 块。
+ */
+export function buildEffectiveRubric(facts: RoundRubricFacts): EffectiveRubric {
+  const evaluation = evaluateRoundConfig(facts)
+  const pinnedId = text(facts.pinned_rubric_version_id)
+  const joinedId = text(facts.rubric_version_id)
+  const baseDimensions = joinedId === null ? [] : rubricDimensionsOf(facts.rubric_dimensions)
+  const declaredId = text(facts.template_declared_rubric_version_id)
+  const jobId = text(facts.application_job_id) ?? ''
+  const identity = {
+    template_version_id: evaluation.templateVersionId,
+    template_version_no: evaluation.templateVersionNo,
+    template_payload_hash: evaluation.templatePayloadHash,
+  } as const
+
+  if (joinedId === null || baseDimensions.length === 0) {
+    return {
+      available: false,
+      source: 'JOB_BASE',
+      round_no: evaluation.roundNo,
+      job_id: jobId,
+      rubric_version_id: '',
+      rubric_version_no: 0,
+      rubric_payload_hash: '',
+      base_rubric_version_id: null,
+      ...identity,
+      declared_round_rubric_version_id: declaredId,
+      dimensions: [],
+      scorecard: { scale: null, fields: [] },
+      submission: { rubric_version_id: '', dimension_keys: [] },
+      reason: baseRubricUnavailableReason(pinnedId, joinedId),
+    }
+  }
+
+  // 只有轮次配置**真正可套用**时，focus/must_cover 标记才成立；不可套用（跨岗位/轮次不符/
+  // 模板空）时整份 schema 是 JOB_BASE：不能让"不套用的模板"仍然把维度标成本轮重点。
+  const focusByKey = evaluation.available
+    ? new Map(evaluation.focusAttributes.map((attribute) => [attribute.key, attribute]))
+    : new Map<string, ParsedFocusAttribute>()
+  const noOverrides = new Map<string, ScorecardFieldOverride>()
+  const overrides = evaluation.available ? scorecardFieldOverridesOf(evaluation.feedbackForm) : noOverrides
+  const dimensions: EffectiveRubricDimension[] = baseDimensions.map((dimension) => {
+    const focus = focusByKey.get(dimension.key)
+    return {
+      key: dimension.key,
+      label: dimension.label,
+      kind: dimension.kind,
+      // 轮次配置只允许覆盖**显示权重**（focus_attributes 同名 key 有数值 weight 时）。
+      weight: focus?.weight ?? dimension.weight,
+      required: true,
+      focus: focus !== undefined,
+      must_cover: focus?.required === true,
+      origin: focus !== undefined ? 'ROUND_OVERRIDE' : 'JOB_BASE',
+      question: dimension.question,
+    }
+  })
+  const fields: RoundFocusScorecardField[] = dimensions.map((dimension) => {
+    const override = overrides.get(dimension.key)
+    return {
+      key: dimension.key,
+      label: dimension.label,
+      // 评分表字段的 kind 是"字段类型"（DIMENSION），不是 rubric 维度的 MUST_HAVE/NICE_TO_HAVE。
+      kind: override?.kind ?? 'DIMENSION',
+      required: override?.required ?? true,
+    }
+  })
+  const conflictReason = evaluation.available && declaredId !== null && pinnedId !== null && declaredId !== pinnedId
+    ? `轮次模板 ${evaluation.templateVersionId ?? ''} 声明的 rubric 版本 ${declaredId} `
+      + `与申请钉住的岗位 rubric 版本 ${pinnedId} 不一致，服务端不混用两者，维度仍取岗位底座 ${pinnedId}`
+    : null
+
+  return {
+    available: true,
+    source: evaluation.available ? 'ROUND_OVERRIDE' : 'JOB_BASE',
+    round_no: evaluation.roundNo,
+    job_id: jobId,
+    rubric_version_id: joinedId,
+    rubric_version_no: integerOr(facts.rubric_version_no, 0),
+    rubric_payload_hash: text(facts.rubric_payload_hash) ?? '',
+    base_rubric_version_id: joinedId,
+    ...identity,
+    declared_round_rubric_version_id: declaredId,
+    dimensions,
+    scorecard: { scale: evaluation.available ? scaleOf(evaluation.feedbackForm) : null, fields },
+    submission: { rubric_version_id: joinedId, dimension_keys: baseDimensions.map((dimension) => dimension.key) },
+    reason: conflictReason,
+  }
+}
+
+/**
+ * 轮次/模板侧必须写进 overview `issues` 的四类事实（正常路径 0 条）：
+ *
+ *   · 模板 job 与申请岗位不一致（不套用）；
+ *   · 模板 round_no 与本场轮次不一致（不套用）；
+ *   · 本轮重点维度不在申请钉住的岗位 rubric 中（只展示，不进面评提交键集）；
+ *   · 模板声明的 rubric 版本与申请钉住版本冲突（不混用，维度仍取岗位底座）。
+ *
+ * 只在**岗位 rubric 可用**时判定"维度越界"：rubric 本身不可用时根因已由 rubric 侧 issue/reason
+ * 说明，再逐条报"不在 rubric 中"只是噪声（且那句断言本身就依赖 rubric 可用）。
+ *
+ * @param facts - 归一后的轮次/模板/rubric 事实。
+ * @returns 该行应追加的 issue（中文；interview id 前缀由调用方加）。
+ */
+export function collectRoundIssues(facts: RoundRubricFacts): readonly string[] {
+  const evaluation = evaluateRoundConfig(facts)
+  const issues: string[] = []
+  if (evaluation.bound && !evaluation.compatible) issues.push(...evaluation.mismatchIssues)
+  if (!evaluation.available) return issues
+
+  const baseDimensions = rubricDimensionsOf(facts.rubric_dimensions)
+  if (baseDimensions.length > 0) {
+    const baseKeys = new Set(baseDimensions.map((dimension) => dimension.key))
+    const outside = evaluation.focusAttributes
+      .filter((attribute) => !baseKeys.has(attribute.key))
+      .map((attribute) => attribute.key)
+    if (outside.length > 0) {
+      issues.push(
+        `本轮重点维度 ${outside.join('、')} 不在申请钉住的岗位 rubric 中，`
+        + '面评提交键集不含这些维度（只展示，不写入 effective_rubric.dimensions）',
+      )
+    }
+  }
+  const declaredId = text(facts.template_declared_rubric_version_id)
+  const pinnedId = text(facts.pinned_rubric_version_id)
+  if (declaredId !== null && pinnedId !== null && declaredId !== pinnedId) {
+    issues.push(
+      `轮次模板 ${evaluation.templateVersionId ?? ''} 声明的 rubric 版本 ${declaredId} `
+      + `与申请钉住的岗位 rubric 版本 ${pinnedId} 不一致，服务端不混用两者，维度仍取岗位底座 ${pinnedId}`,
+    )
+  }
+  return issues
+}
+
+/**
+ * 把扩展行归一成 `RoundRubricFacts`（两个 builder 的共同输入）。
+ *
+ * `roundNo` 必须单独传：轮次在 `readInterviewValue()`（`interview.round_no`）里，
+ * 不在 §1.5 扩展行里。
+ *
+ * @param extension - §1.5 的扩展行（新列为可选，旧假行缺列也不崩）。
+ * @param roundNo - 本场面试的轮次。
+ * @returns 归一后的 facts。
+ */
+export function roundFactsOf(extension: InterviewExtensionRow, roundNo: number): RoundRubricFacts {
+  return {
+    round_no: roundNo,
+    application_job_id: text(extension.application_job_id),
+    template_version_id: text(extension.template_version_id),
+    template_version_no: integerOrNull(extension.template_version_no),
+    template_round_no: integerOrNull(extension.template_round_no),
+    template_job_id: text(extension.template_job_id),
+    template_objective: text(extension.template_objective),
+    template_briefing_summary: text(extension.template_briefing_summary),
+    template_focus: extension.template_focus,
+    template_questions: extension.template_questions,
+    template_feedback_form: extension.template_feedback_form,
+    template_payload_hash: text(extension.template_payload_hash),
+    template_declared_rubric_version_id: text(extension.template_declared_rubric_version_id),
+    pinned_rubric_version_id: text(extension.pinned_rubric_version_id),
+    rubric_version_id: text(extension.rubric_version_id),
+    rubric_version_no: integerOrNull(extension.rubric_version_no),
+    rubric_payload_hash: text(extension.rubric_payload_hash),
+    rubric_dimensions: extension.rubric_dimensions,
+  }
+}
+
 /**
  * brief（§1.5）：三态**只看两个事实**——有没有模板行、有没有可用的 rubric 维度。
  *
@@ -591,10 +1269,13 @@ function questionTextsOf(value: unknown): string[] {
 function buildBrief(input: {
   readonly extension: InterviewExtensionRow
   readonly rubric: InterviewerRubric | null
+  /** 本场面试的轮次（`readInterviewValue()` 的 `round_no`）；用于模板轮次守卫。 */
+  readonly roundNo: number
 }): InterviewerBrief {
-  const { extension, rubric } = input
+  const { extension, rubric, roundNo } = input
   const templateVersionId = text(extension.template_version_id)
-  if (templateVersionId !== null) {
+  const evaluation = evaluateRoundConfig(roundFactsOf(extension, roundNo))
+  if (templateVersionId !== null && evaluation.compatible) {
     return {
       available: true,
       source: 'TEMPLATE',
@@ -606,6 +1287,42 @@ function buildBrief(input: {
       template_version_id: templateVersionId,
       template_payload_hash: text(extension.template_payload_hash),
       reason: null,
+    }
+  }
+
+  // 绑定了模板但**不可套用**（跨岗位 / 轮次不符）：模板原文一律不展示 ——
+  // 否则"别的岗位/别的轮次"的 focus/问题会从 brief 泄露（与 round_focus/effective_rubric 同一条纪律）。
+  // 简报降级到岗位 rubric 维度（有）或 NONE（没有），reason 写明模板为什么被拒。
+  if (templateVersionId !== null && !evaluation.compatible) {
+    const rejected = evaluation.reason
+      ?? `绑定的轮次模板 ${templateVersionId} 不可套用，简报已降级`
+    if (rubric !== null && rubric.dimensions.length > 0) {
+      return {
+        available: true,
+        source: 'JOB_RUBRIC',
+        objective: text(extension.job_title),
+        briefing: null,
+        focus: rubric.dimensions.map((dimension) => ({
+          key: dimension.key,
+          label: dimension.label,
+          weight: dimension.weight,
+        })),
+        questions: [],
+        template_version_id: null,
+        template_payload_hash: null,
+        reason: rejected,
+      }
+    }
+    return {
+      available: false,
+      source: 'NONE',
+      objective: null,
+      briefing: null,
+      focus: [],
+      questions: [],
+      template_version_id: null,
+      template_payload_hash: null,
+      reason: rejected,
     }
   }
 
@@ -754,6 +1471,8 @@ export interface ToInterviewRowResult {
  *      但**只有 scorecard_id 相同**时才补（两次读取若看到不同的当前面评，宁可回 null，
  *      也不把 A 行的 record_version 挂到 B 行上）。
  *   3. rubric 越界（钉住了版本但不属于该申请岗位）→ rubric 置空 + 一条 issue（不猜版本）。
+ *   4. 轮次侧（W3b）：`round_focus` / `effective_rubric` 由同目录的纯函数组装；跨岗位/轮次不符/
+ *      本轮重点维度越界/模板声明 rubric 冲突各自写成一条 issue（正常路径 0 条）。
  *
  * @param input - `readInterviewValue()` 的值 + 扩展行 + 我的 actor id。
  * @returns 行 + issues。
@@ -779,6 +1498,15 @@ export function toInterviewRow(input: ToInterviewRowInput): ToInterviewRowResult
       `面试 ${value.id}：申请钉住的 rubric 版本 ${pinned} 不属于该申请的岗位`
       + ` ${text(extension.application_job_id) ?? '?'}（或已不存在），rubric 已置空，不猜版本`,
     )
+  }
+
+  // W3b：轮次重点 + 面评 Rubric 投影（模板不可套用 → JOB_BASE + reason；不猜、不硬套）。
+  const roundFacts = roundFactsOf(extension, value.round_no)
+  const roundFocus = buildRoundFocus(roundFacts)
+  const effectiveRubric = buildEffectiveRubric(roundFacts)
+  // issue 必须指明是哪一场（overview 是多行聚合，没有 id 的 issue 无法定位）。
+  for (const roundIssue of collectRoundIssues(roundFacts)) {
+    issues.push(`面试 ${value.id}：${roundIssue}`)
   }
 
   const current = mine.scorecard
@@ -810,8 +1538,10 @@ export function toInterviewRow(input: ToInterviewRowInput): ToInterviewRowResult
       role_in_interview: mine.role_in_interview,
       required_scorecard: mine.required_scorecard,
       scorecard_due_at: mine.scorecard_due_at ?? null,
-      brief: buildBrief({ extension, rubric }),
+      brief: buildBrief({ extension, rubric, roundNo: value.round_no }),
       rubric,
+      round_focus: roundFocus,
+      effective_rubric: effectiveRubric,
       materials: buildMaterials(extension),
       transcript: {
         // §1.5：直接取 readInterviewValue() 的 transcript 与 meeting_binding（禁止另写 TR-D）。
@@ -899,6 +1629,14 @@ function normalizeSectionLimit(raw: number | undefined): number {
  *   3. "我的面试"（只按 `interviewer.actor_id` 过滤）→ 每行 1 条 §1.5 扩展 SQL +
  *      `readInterviewValue()`（TR-D 单一实现）；
  *   4. `labels.provenance` 走 `resolveTenantProvenance()`（R4 单一判定）。
+ *
+ * W3b 的降级语义（每一行独立判定，**不猜**）：
+ *   · `round_focus` 只有在"模板 job 一致 + round_no 一致 + 至少贡献一项内容"时才是
+ *     `ROUND_CONFIG`；跨岗位/轮次不符/模板空 → `JOB_BASE`（`available=false` + 中文 reason）；
+ *   · `effective_rubric` 的维度宇宙恒 = 申请钉住的岗位 rubric（轮次配置只标记 focus/must_cover
+ *     与覆盖显示权重）；模板声明别的 rubric 版本 → 不混用（回显 + reason + issue）；
+ *   · 钉住的 rubric 越界（join 不上）→ `rubric=null` + `effective_rubric.available=false` + issue，
+ *     **不抛错**（与既有行为一致）。
  *
  * 给了 `options.interviewId` 但那一场不在我的分配里 → `FORBIDDEN(ACTOR_NOT_INTERVIEWER)`，
  * **零行返回**（不确认那场面试是否存在于别人的名下）。
