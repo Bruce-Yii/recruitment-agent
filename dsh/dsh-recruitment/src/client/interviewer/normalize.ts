@@ -13,6 +13,11 @@
 //      缺维度 / 维度不在 spec / 未知枚举一律拒绝，绝不把前端的自由键发给服务端。
 //   3. counts 由服务端算：`deriveWorkspaceStats` 只透传，不用列表行数改写。
 
+import { normalizeRoundEffective, type RoundEffectiveView } from './round.ts'
+
+// 轮次有效评分标准（task-50 的 round_focus / effective_rubric）在 `round.ts` 里归一化；
+// 这里只把投影挂到每行（W3B 契约 §2：InterviewRow 加法式新增 `round`，既有字段语义不变）。
+
 /** 转写派生状态（TR-D 七条；客户端只做文本映射，不做二次推导）。 */
 export const TRANSCRIPT_STATES = [
   'READY',
@@ -112,11 +117,13 @@ export interface WorkspaceLabels {
   readonly connection: string
 }
 
-/** 本轮考察重点的一条（来自 template.focus 或 rubric 维度回退）。 */
+/** 本轮考察重点的一条（旧 brief：template.focus 或 rubric 维度回退）。 */
 export interface BriefFocus {
   readonly key: string
   readonly label: string
   readonly weight: number
+  /** 旧 brief 没有 required；轮次配置聚合时补 true（重点维度默认必答）。 */
+  readonly required?: boolean
 }
 
 /** 本轮面试简报（`brief`）。 */
@@ -208,6 +215,8 @@ export interface InterviewRow {
   readonly required_scorecard: boolean
   readonly scorecard_due_at: string
   readonly brief: InterviewBrief
+  /** 轮次级考察重点 + 本轮生效评分表（task-50 `round_focus`/`effective_rubric` 投影；缺字段时如实降级）。 */
+  readonly round: RoundEffectiveView
   readonly rubric: InterviewRubric | null
   readonly materials: InterviewMaterials
   readonly transcript: TranscriptInfo
@@ -337,6 +346,12 @@ export interface RoundFocusGroup {
   readonly round_no: number
   readonly objective: string
   readonly focus: readonly BriefFocus[]
+  /** `'ROUND_CONFIG' | 'JOB_BASE' | 'LEGACY_BRIEF'`（旧端点无 round_focus 时用旧 brief 聚合）。 */
+  readonly source: string
+  /** 轮次配置标题（`round_focus.title`；降级/旧端点为空串）。 */
+  readonly title: string
+  /** 服务端是否明确提供该轮配置（false = JOB_BASE 降级，不展示伪造的重点）。 */
+  readonly available: boolean
 }
 
 /** 授权材料里的一条可展示字段（拍平后的安全文本）。 */
@@ -577,6 +592,9 @@ export function normalizeInterviewRow(value: unknown): InterviewRow {
   const raw = asRecord(value)
   const candidate = asRecord(raw.candidate)
   const job = asRecord(raw.job)
+  const roundNo = asCount(raw.round_no)
+  const brief = normalizeBrief(raw.brief)
+  const rubric = normalizeRubric(raw.rubric)
   return {
     interview_id: asText(raw.interview_id),
     application_id: asText(raw.application_id),
@@ -589,7 +607,7 @@ export function normalizeInterviewRow(value: unknown): InterviewRow {
       code: asText(job.code),
       title: asText(job.title),
     },
-    round_no: asCount(raw.round_no),
+    round_no: roundNo,
     slot_code: asText(raw.slot_code),
     status: asText(raw.status),
     stage_code: asText(raw.stage_code),
@@ -600,8 +618,9 @@ export function normalizeInterviewRow(value: unknown): InterviewRow {
     role_in_interview: asText(raw.role_in_interview),
     required_scorecard: asBool(raw.required_scorecard),
     scorecard_due_at: asText(raw.scorecard_due_at),
-    brief: normalizeBrief(raw.brief),
-    rubric: normalizeRubric(raw.rubric),
+    brief,
+    round: normalizeRoundEffective(raw, { roundNo, brief, rubric }),
+    rubric,
     materials: normalizeMaterials(raw.materials),
     transcript: normalizeTranscript(raw.transcript),
     scorecard: normalizeScorecard(raw.scorecard),
@@ -1143,28 +1162,84 @@ export function materialFieldEntries(fields: Readonly<Record<string, unknown>>):
 }
 
 /**
- * 按轮次汇总考察重点（列表页右栏用）；同一轮 focuse 去重。
+ * 按轮次汇总考察重点（列表页右栏用）；同一轮 focus 去重。
+ *
+ * 两种口径（不混用）：
+ *   * 服务端有轮次字段（task-50）→ 只用 `round_focus.focus_dimensions`；`available=false`
+ *     （JOB_BASE 降级）时**不展示**任何"本轮重点"（不编译器把岗位维度冒充轮次重点）。
+ *   * 旧端点（`serverFieldsMissing`）→ 保持 W3 旧行为：用 `brief.focus`/`brief.objective` 聚合
+ *     （既有测试与旧 Host 兼容），来源标 `LEGACY_BRIEF`。
  * @param rows - 面试行。
- * @returns 按轮次升序的分组（无 focus 的轮次也保留 objective）。
+ * @returns 按轮次升序的分组（无 focus 的轮次也保留 objective/来源）。
  */
 export function groupRounds(rows: readonly InterviewRow[]): RoundFocusGroup[] {
-  const groups = new Map<number, { round_no: number; objective: string; focus: BriefFocus[]; seen: Set<string> }>()
+  const groups = new Map<
+    number,
+    {
+      round_no: number
+      objective: string
+      focus: BriefFocus[]
+      seen: Set<string>
+      source: string
+      title: string
+      available: boolean
+      /** true = 本轮已至少有一行带服务端轮次字段（此后不再混入旧 brief focus）。 */
+      serverProjection: boolean
+    }
+  >()
   for (const row of rows) {
     const round = row.round_no
+    const legacy = row.round.serverFieldsMissing
     let group = groups.get(round)
     if (group === undefined) {
-      group = { round_no: round, objective: row.brief.objective, focus: [], seen: new Set<string>() }
+      group = {
+        round_no: round,
+        objective: row.brief.objective,
+        focus: [],
+        seen: new Set<string>(),
+        source: legacy ? 'LEGACY_BRIEF' : row.round.focus.source,
+        title: legacy ? '' : row.round.focus.title,
+        available: legacy ? false : row.round.focus.available,
+        serverProjection: !legacy,
+      }
       groups.set(round, group)
     }
     if (group.objective === '') group.objective = row.brief.objective
-    for (const item of row.brief.focus) {
+    if (legacy) {
+      // 同一轮里只要有一行来自新端点，就不把旧 brief focus 混进"轮次配置"展示。
+      if (group.serverProjection) continue
+      for (const item of row.brief.focus) {
+        const key = item.key !== '' ? item.key : item.label
+        if (key === '' || group.seen.has(key)) continue
+        group.seen.add(key)
+        group.focus.push(item)
+      }
+      continue
+    }
+    group.serverProjection = true
+    // 服务端轮次字段存在：JOB_BASE 降级时绝不回退到 brief.focus（避免"岗位维度冒充本轮重点"）。
+    if (!group.available && row.round.focus.available) {
+      group.available = true
+      group.source = row.round.focus.source
+      group.title = row.round.focus.title
+    }
+    if (!row.round.focus.available) continue
+    if (group.title === '') group.title = row.round.focus.title
+    for (const item of row.round.focus.focusDimensions) {
       const key = item.key !== '' ? item.key : item.label
       if (key === '' || group.seen.has(key)) continue
       group.seen.add(key)
-      group.focus.push(item)
+      group.focus.push({ key: item.key, label: item.label, weight: item.weight, required: item.required })
     }
   }
   return [...groups.values()]
     .sort((left, right) => left.round_no - right.round_no)
-    .map((group) => ({ round_no: group.round_no, objective: group.objective, focus: group.focus }))
+    .map((group) => ({
+      round_no: group.round_no,
+      objective: group.objective,
+      focus: group.focus,
+      source: group.source,
+      title: group.title,
+      available: group.available,
+    }))
 }

@@ -4400,6 +4400,423 @@ window.__ModuleLoader__.load({
 				})]
 			});
 		}
+		// src/client/interviewer/round.ts
+		/** 旧端点（两键都缺）的固定文案：明确"不伪造本轮重点"。 */
+		const ROUND_SERVER_FIELDS_MISSING_TEXT = "服务端未提供轮次配置（task-50 端点未就绪）→ JOB_BASE 降级，不伪造本轮重点";
+		/** fail-closed 的固定文案（W3B-CONTRACT §4.2 逐字）。 */
+		const ROUND_SCHEMA_MISMATCH_TEXT = "本轮评分表与面评表单 spec 不一致，已 fail-closed（不写库）";
+		/** 来源文案表（W3B-CONTRACT §3 逐字）。 */
+		const ROUND_SOURCE_TEXT = {
+			ROUND_CONFIG: "轮次配置（本场有专属考察重点与评分表覆盖）",
+			ROUND_OVERRIDE: "轮次覆盖（本轮评分表在岗位底座上有覆盖）",
+			JOB_BASE: "岗位基础（JOB_BASE 降级：服务端未提供该轮配置）",
+			TEMPLATE: "面试模板（旧 brief，非轮次配置）"
+		};
+		/** 旧端点降级的来源文案（两键都缺；与普通 JOB_BASE 区分，说明 task-50 未就绪）。 */
+		const ROUND_OLD_ENDPOINT_SOURCE_TEXT = "岗位基础（JOB_BASE 降级：服务端未提供轮次配置，task-50 端点未就绪）";
+		/** 取一个对象；null / 数组 / 非对象一律降级为空对象。 */
+		function asRecord$1(value) {
+			return value !== null && typeof value === "object" && !Array.isArray(value) ? value : {};
+		}
+		/** 是否是一个"可用对象"（null/数组/标量都不算服务端给了配置）。 */
+		function isRecord(value) {
+			return value !== null && typeof value === "object" && !Array.isArray(value);
+		}
+		/** 取一个字符串；非字符串降级为 ''（坏类型不伪装成业务值）。 */
+		function asText$1(value) {
+			return typeof value === "string" ? value.trim() : "";
+		}
+		/** 取一个有限数字；否则 0（杜绝 NaN / Infinity / 字符串数字）。 */
+		function asFiniteNumber$1(value) {
+			return typeof value === "number" && Number.isFinite(value) ? value : 0;
+		}
+		/** 取一个非负整数；否则 0。 */
+		function asCount$1(value) {
+			const number = asFiniteNumber$1(value);
+			return number >= 0 ? Math.trunc(number) : 0;
+		}
+		/** 只认严格 true。 */
+		function asBool$1(value) {
+			return value === true;
+		}
+		/** 字符串数组归一化（丢弃非字符串/空串；上限 100 项）。 */
+		function asStringArray$1(value, limit = 100) {
+			if (!Array.isArray(value)) return [];
+			const out = [];
+			for (const item of value) {
+				if (out.length >= limit) break;
+				const text = asText$1(item);
+				if (text !== "") out.push(text);
+			}
+			return out;
+		}
+		/** 归一化一条 `focus_dimensions[]`。 */
+		function normalizeFocusDimensions(value) {
+			const out = [];
+			if (!Array.isArray(value)) return out;
+			for (const item of value.slice(0, 100)) {
+				const raw = asRecord$1(item);
+				const key = asText$1(raw.key);
+				const label = asText$1(raw.label) || key;
+				if (key === "" && label === "") continue;
+				out.push({
+					key,
+					label: label !== "" ? label : key,
+					weight: asFiniteNumber$1(raw.weight),
+					required: asBool$1(raw.required),
+					inRubric: asBool$1(raw.in_rubric)
+				});
+			}
+			return out;
+		}
+		/** 归一化一条 `questions[]`（text 必填；key 可为 null → ''）。 */
+		function normalizeQuestions(value) {
+			const out = [];
+			if (!Array.isArray(value)) return out;
+			for (const item of value.slice(0, 100)) {
+				const text = typeof item === "string" ? asText$1(item) : asText$1(asRecord$1(item).text);
+				if (text === "") continue;
+				out.push({
+					key: typeof item === "string" ? "" : asText$1(asRecord$1(item).key),
+					text
+				});
+			}
+			return out;
+		}
+		/** 归一化 `scorecard_fields[]` / `scorecard.fields[]`（同形）。 */
+		function normalizeScorecardFields(value) {
+			const out = [];
+			if (!Array.isArray(value)) return out;
+			for (const item of value.slice(0, 100)) {
+				const raw = asRecord$1(item);
+				const key = asText$1(raw.key);
+				const label = asText$1(raw.label) || key;
+				if (key === "" && label === "") continue;
+				out.push({
+					key,
+					label: label !== "" ? label : key,
+					kind: asText$1(raw.kind),
+					required: asBool$1(raw.required)
+				});
+			}
+			return out;
+		}
+		/** 归一化 `effective_rubric.dimensions[]`（key 为空的行丢弃：没有键就无法对齐面评）。 */
+		function normalizeEffectiveDimensions(value) {
+			const out = [];
+			if (!Array.isArray(value)) return out;
+			for (const item of value.slice(0, 100)) {
+				const raw = asRecord$1(item);
+				const key = asText$1(raw.key);
+				if (key === "") continue;
+				out.push({
+					key,
+					label: asText$1(raw.label) || key,
+					kind: asText$1(raw.kind),
+					weight: asFiniteNumber$1(raw.weight),
+					required: asBool$1(raw.required),
+					focus: asBool$1(raw.focus),
+					mustCover: asBool$1(raw.must_cover),
+					origin: asText$1(raw.origin),
+					question: asText$1(raw.question)
+				});
+			}
+			return out;
+		}
+		/** 空轮次重点（`round_no` 用面试行的轮次；source='' 表示服务端没给）。 */
+		function emptyRoundFocus(roundNo = 0) {
+			return {
+				available: false,
+				source: "",
+				round_no: asCount$1(roundNo),
+				title: "",
+				description: "",
+				reason: "",
+				templateVersionId: "",
+				templateVersionNo: 0,
+				templatePayloadHash: "",
+				focusDimensions: [],
+				questions: [],
+				scorecardFields: []
+			};
+		}
+		/** 空生效评分表（0/0 scale = 服务端没给；不显示 `0–0`）。 */
+		function emptyEffectiveRubric(roundNo = 0) {
+			return {
+				available: false,
+				source: "",
+				round_no: asCount$1(roundNo),
+				jobId: "",
+				rubricVersionId: "",
+				rubricVersionNo: 0,
+				rubricPayloadHash: "",
+				baseRubricVersionId: "",
+				templateVersionId: "",
+				templateVersionNo: 0,
+				declaredRoundRubricVersionId: "",
+				dimensions: [],
+				scaleMin: 0,
+				scaleMax: 0,
+				scorecardFields: [],
+				submissionRubricVersionId: "",
+				submissionDimensionKeys: [],
+				reason: ""
+			};
+		}
+		/**
+		* 归一化 `round_focus`（服务端字段名逐字来自 task-50 冻结口径）。
+		* @param value - 服务端原始 `round_focus`。
+		* @returns 安全投影；未知字段值原样保留（''/0/[]，不猜、不补默认文案）。
+		*/
+		function normalizeRoundFocus(value) {
+			const raw = asRecord$1(value);
+			return {
+				available: asBool$1(raw.available),
+				source: asText$1(raw.source),
+				round_no: asCount$1(raw.round_no),
+				title: asText$1(raw.title),
+				description: asText$1(raw.description),
+				reason: asText$1(raw.reason),
+				templateVersionId: asText$1(raw.template_version_id),
+				templateVersionNo: asCount$1(raw.template_version_no),
+				templatePayloadHash: asText$1(raw.template_payload_hash),
+				focusDimensions: normalizeFocusDimensions(raw.focus_dimensions),
+				questions: normalizeQuestions(raw.questions),
+				scorecardFields: normalizeScorecardFields(raw.scorecard_fields)
+			};
+		}
+		/**
+		* 归一化 `effective_rubric`（服务端字段名逐字来自 task-50 冻结口径）。
+		* @param value - 服务端原始 `effective_rubric`。
+		* @returns 安全投影（scale 缺失时 0/0；submission 只供展示/核对，提交仍走 W1）。
+		*/
+		function normalizeEffectiveRubric(value) {
+			const raw = asRecord$1(value);
+			const scorecard = asRecord$1(raw.scorecard);
+			const scale = asRecord$1(scorecard.scale);
+			const submission = asRecord$1(raw.submission);
+			return {
+				available: asBool$1(raw.available),
+				source: asText$1(raw.source),
+				round_no: asCount$1(raw.round_no),
+				jobId: asText$1(raw.job_id),
+				rubricVersionId: asText$1(raw.rubric_version_id),
+				rubricVersionNo: asCount$1(raw.rubric_version_no),
+				rubricPayloadHash: asText$1(raw.rubric_payload_hash),
+				baseRubricVersionId: asText$1(raw.base_rubric_version_id),
+				templateVersionId: asText$1(raw.template_version_id),
+				templateVersionNo: asCount$1(raw.template_version_no),
+				declaredRoundRubricVersionId: asText$1(raw.declared_round_rubric_version_id),
+				dimensions: normalizeEffectiveDimensions(raw.dimensions),
+				scaleMin: asCount$1(scale.min),
+				scaleMax: asCount$1(scale.max),
+				scorecardFields: normalizeScorecardFields(scorecard.fields),
+				submissionRubricVersionId: asText$1(submission.rubric_version_id),
+				submissionDimensionKeys: asStringArray$1(submission.dimension_keys, 100),
+				reason: asText$1(raw.reason)
+			};
+		}
+		/** 旧 `row.rubric.dimensions` → effective 维度宇宙（JOB_BASE 底座；不伪造 focus/must_cover）。 */
+		function legacyRubricDimensions(legacy) {
+			if (legacy === null) return [];
+			return legacy.dimensions.map((dimension) => ({
+				key: dimension.key,
+				label: dimension.label,
+				kind: dimension.kind,
+				weight: dimension.weight,
+				required: true,
+				focus: false,
+				mustCover: false,
+				origin: "JOB_BASE",
+				question: dimension.question
+			}));
+		}
+		/** 用旧 `row.rubric` 合成 JOB_BASE 评分表（服务端没给 effective schema 时的唯一诚实来源）。 */
+		function legacyRubricFallback(legacy, roundNo, reason) {
+			const dimensions = legacyRubricDimensions(legacy);
+			return {
+				...emptyEffectiveRubric(roundNo),
+				available: dimensions.length > 0,
+				source: "JOB_BASE",
+				jobId: legacy !== null ? legacy.job_id : "",
+				rubricVersionId: legacy !== null ? legacy.rubric_version_id : "",
+				rubricPayloadHash: legacy !== null ? legacy.payload_hash : "",
+				dimensions,
+				reason: reason !== "" ? reason : dimensions.length === 0 ? "服务端未提供评分维度（不伪造）" : ""
+			};
+		}
+		/** 取 options 里的旧 rubric（两种键名都接受，避免并行写入方的键名差异导致构建失败）。 */
+		function optionsLegacyRubric(options) {
+			if (options.legacyRubric !== void 0) return options.legacyRubric;
+			return options.rubric !== void 0 ? options.rubric : null;
+		}
+		/**
+		* 归一化并投影一场面试的轮次有效评分标准（`InterviewRow.round`）。
+		*
+		* 优先级（W3B-CONTRACT §3）：
+		*   1. 两键都在 → 逐字段归一化；
+		*   2. `round_focus.available=false` → focus 降级（保留服务端 reason/source），维度用 effective_rubric；
+		*   3. 只有 effective_rubric → focus 降级，source 以 effective_rubric.source 为准；
+		*   4. 两键都缺（旧端点）→ `serverFieldsMissing=true` + focus.source='JOB_BASE'，维度回退旧 row.rubric；
+		*   5. declared rubric 与 base 冲突 → `conflict=true`，**维度宇宙不变**（不自行换版本）；
+		*   6. `round_focus.round_no` ≠ 面试 `round_no` → 不套用轮次重点（`conflict=true`），只显示降级卡。
+		* @param value - 服务端原始面试行（用来判断两个键是否存在）。
+		* @param options - 面试行 round_no + 旧 rubric。
+		* @returns 轮次有效投影（绝不抛错）。
+		*/
+		function normalizeRoundEffective(value, options) {
+			const raw = asRecord$1(value);
+			const roundNo = asCount$1(options.roundNo);
+			const legacyRubric = optionsLegacyRubric(options);
+			const hasFocus = isRecord(raw.round_focus);
+			const hasRubric = isRecord(raw.effective_rubric);
+			const conflictReasons = [];
+			if (!hasFocus && !hasRubric) return {
+				focus: {
+					...emptyRoundFocus(roundNo),
+					source: "JOB_BASE",
+					reason: ROUND_SERVER_FIELDS_MISSING_TEXT
+				},
+				rubric: legacyRubricFallback(legacyRubric, roundNo, ROUND_SERVER_FIELDS_MISSING_TEXT),
+				serverFieldsMissing: true,
+				conflict: false,
+				conflictReason: ""
+			};
+			let rubric = hasRubric ? normalizeEffectiveRubric(raw.effective_rubric) : emptyEffectiveRubric(roundNo);
+			let focus = hasFocus ? normalizeRoundFocus(raw.round_focus) : emptyRoundFocus(roundNo);
+			if (!hasFocus) {
+				const source = rubric.source;
+				focus = {
+					...emptyRoundFocus(roundNo),
+					available: false,
+					source,
+					reason: "服务端未提供 round_focus（仅有 effective_rubric）→ 本轮重点如实降级；评分维度取自 effective_rubric（不伪造轮次重点）"
+				};
+			}
+			if (!hasRubric) rubric = legacyRubricFallback(legacyRubric, roundNo, "服务端未提供 effective_rubric（仅有 round_focus）→ 评分维度回退到旧 row.rubric（不伪造轮次覆盖）");
+			if (hasFocus && focus.round_no > 0 && roundNo > 0 && focus.round_no !== roundNo) {
+				conflictReasons.push(`round_focus.round_no=${focus.round_no} 与面试 round_no=${roundNo} 不一致；不套用轮次考察重点，只显示 JOB_BASE 降级`);
+				focus = {
+					...focus,
+					available: false,
+					title: "",
+					description: "",
+					focusDimensions: [],
+					questions: [],
+					scorecardFields: [],
+					reason: focus.reason !== "" ? `${focus.reason}；${ROUND_SERVER_FIELDS_MISSING_TEXT}` : `round_focus.round_no=${focus.round_no} 与面试 round_no=${roundNo} 不一致，不套用轮次考察重点`
+				};
+			}
+			if (rubric.declaredRoundRubricVersionId !== "" && rubric.declaredRoundRubricVersionId !== rubric.baseRubricVersionId) conflictReasons.push(`轮次模板声明的 rubric 版本（${rubric.declaredRoundRubricVersionId}）与申请钉住的 base（${rubric.baseRubricVersionId !== "" ? rubric.baseRubricVersionId : "服务端未提供"}）不一致；按 base/JOB_BASE 维度渲染，UI 不自行换版本`);
+			return {
+				focus,
+				rubric,
+				serverFieldsMissing: false,
+				conflict: conflictReasons.length > 0,
+				conflictReason: conflictReasons.join("；")
+			};
+		}
+		/**
+		* 来源文案（W3B-CONTRACT §3 表；未知 source 原样显示，不猜）。
+		* @param source - 服务端 source（可为空/未知）。
+		* @param serverFieldsMissing - true = 旧端点（两键都缺）降级。
+		* @returns 可展示文案。
+		*/
+		function roundSourceText(source, serverFieldsMissing = false) {
+			if (serverFieldsMissing) return ROUND_OLD_ENDPOINT_SOURCE_TEXT;
+			const value = asText$1(source);
+			if (value === "") return "未知来源（服务端未提供 source）";
+			return ROUND_SOURCE_TEXT[value] ?? `未知来源（${value}，原样显示）`;
+		}
+		/**
+		* 降级卡文案：优先原样使用服务端 `reason`；没有 reason 时给"没有配置"的事实说明。
+		* @param view - 轮次有效投影。
+		* @returns 可展示文案（绝不出现伪造的本轮重点）。
+		*/
+		function roundFocusDegradedText(view) {
+			if (view.serverFieldsMissing) return ROUND_SERVER_FIELDS_MISSING_TEXT;
+			if (view.focus.reason !== "") return view.focus.reason;
+			if (view.conflict && view.conflictReason !== "") return view.conflictReason;
+			return "服务端未提供本轮轮次配置（JOB_BASE 降级，不伪造本轮重点；评分维度见下方 effective schema）";
+		}
+		/**
+		* 面评表单的 effective schema 派生（W3B-CONTRACT §4.2）。
+		*
+		* 规则：
+		*   - 控件仍只来自 W1 spec（枚举/分数区间/note 必填）；effective schema 只覆盖顺序/标签/权重/重点标记；
+		*   - effective key ∈ spec key 才覆盖；spec 其余维度按原样追加在末尾；
+		*   - `submission.dimension_keys` 非空且 ≠ spec key 集合 → mismatch；effective 含 spec 外 key → mismatch；
+		*   - effective 子集 → 允许提交（spec 全集仍必填）；
+		*   - `serverFieldsMissing`（旧端点）→ 不产生 mismatch，按现行为提交。
+		* @param spec - 归一化后的 W1 form spec（可为空，表示还没取到）。
+		* @param round - 父组件传入的轮次投影（可为空以兼容旧调用）。
+		* @returns 字段顺序 + fail-closed 判定。
+		*/
+		function deriveScorecardFields(spec, round) {
+			const specDimensions = spec !== null && spec !== void 0 ? spec.dimensions : [];
+			const roundView = round !== null && round !== void 0 ? round : null;
+			const effectiveDimensions = roundView !== null && !roundView.serverFieldsMissing && roundView.rubric.available ? roundView.rubric.dimensions : [];
+			const specByKey = /* @__PURE__ */ new Map();
+			const specKeys = [];
+			for (const dimension of specDimensions) {
+				if (specByKey.has(dimension.key)) continue;
+				specByKey.set(dimension.key, dimension);
+				specKeys.push(dimension.key);
+			}
+			const specKeySet = new Set(specKeys);
+			const fields = [];
+			const rendered = /* @__PURE__ */ new Set();
+			for (const dimension of effectiveDimensions) {
+				const specDimension = specByKey.get(dimension.key);
+				if (specDimension === void 0 || rendered.has(dimension.key)) continue;
+				rendered.add(dimension.key);
+				fields.push({
+					key: dimension.key,
+					label: dimension.label !== "" ? dimension.label : specDimension.label,
+					kind: dimension.kind !== "" ? dimension.kind : specDimension.kind,
+					weight: dimension.weight !== 0 ? dimension.weight : specDimension.weight,
+					focus: dimension.focus,
+					mustCover: dimension.mustCover,
+					origin: dimension.origin,
+					overridden: true,
+					spec: specDimension
+				});
+			}
+			for (const specDimension of specDimensions) {
+				if (rendered.has(specDimension.key)) continue;
+				rendered.add(specDimension.key);
+				fields.push({
+					key: specDimension.key,
+					label: specDimension.label,
+					kind: specDimension.kind,
+					weight: specDimension.weight,
+					focus: false,
+					mustCover: false,
+					origin: "",
+					overridden: false,
+					spec: specDimension
+				});
+			}
+			const submissionKeys = roundView !== null ? roundView.rubric.submissionDimensionKeys : [];
+			const extraInSubmission = submissionKeys.filter((key) => !specKeySet.has(key));
+			const missingFromSubmission = specKeys.filter((key) => !submissionKeys.includes(key));
+			const extraEffective = effectiveDimensions.filter((dimension) => !specKeySet.has(dimension.key)).map((dimension) => dimension.key);
+			const mismatchKeys = [];
+			for (const key of [
+				...extraInSubmission,
+				...missingFromSubmission,
+				...extraEffective
+			]) if (key !== "" && !mismatchKeys.includes(key)) mismatchKeys.push(key);
+			const submissionMismatch = submissionKeys.length > 0 && (extraInSubmission.length > 0 || missingFromSubmission.length > 0);
+			const mismatch = roundView !== null && !roundView.serverFieldsMissing && (submissionMismatch || extraEffective.length > 0);
+			return {
+				fields,
+				usable: fields.length > 0 && !mismatch,
+				mismatch,
+				mismatchKeys,
+				mismatchText: mismatchKeys.length > 0 ? `${ROUND_SCHEMA_MISMATCH_TEXT}（差异 key：${mismatchKeys.join("、")}）` : ROUND_SCHEMA_MISMATCH_TEXT
+			};
+		}
 		// src/client/interviewer/normalize.ts
 		/** 面评维度的 assessment 封闭枚举（scorecard-rules / D-89）。 */
 		const ASSESSMENT_VALUES = [
@@ -4677,6 +5094,9 @@ window.__ModuleLoader__.load({
 			const raw = asRecord(value);
 			const candidate = asRecord(raw.candidate);
 			const job = asRecord(raw.job);
+			const roundNo = asCount(raw.round_no);
+			const brief = normalizeBrief(raw.brief);
+			const rubric = normalizeRubric(raw.rubric);
 			return {
 				interview_id: asText(raw.interview_id),
 				application_id: asText(raw.application_id),
@@ -4689,7 +5109,7 @@ window.__ModuleLoader__.load({
 					code: asText(job.code),
 					title: asText(job.title)
 				},
-				round_no: asCount(raw.round_no),
+				round_no: roundNo,
 				slot_code: asText(raw.slot_code),
 				status: asText(raw.status),
 				stage_code: asText(raw.stage_code),
@@ -4700,8 +5120,13 @@ window.__ModuleLoader__.load({
 				role_in_interview: asText(raw.role_in_interview),
 				required_scorecard: asBool(raw.required_scorecard),
 				scorecard_due_at: asText(raw.scorecard_due_at),
-				brief: normalizeBrief(raw.brief),
-				rubric: normalizeRubric(raw.rubric),
+				brief,
+				round: normalizeRoundEffective(raw, {
+					roundNo,
+					brief,
+					rubric
+				}),
+				rubric,
 				materials: normalizeMaterials(raw.materials),
 				transcript: normalizeTranscript(raw.transcript),
 				scorecard: normalizeScorecard(raw.scorecard),
@@ -5163,36 +5588,73 @@ window.__ModuleLoader__.load({
 			return flattenFields(fields);
 		}
 		/**
-		* 按轮次汇总考察重点（列表页右栏用）；同一轮 focuse 去重。
+		* 按轮次汇总考察重点（列表页右栏用）；同一轮 focus 去重。
+		*
+		* 两种口径（不混用）：
+		*   * 服务端有轮次字段（task-50）→ 只用 `round_focus.focus_dimensions`；`available=false`
+		*     （JOB_BASE 降级）时**不展示**任何"本轮重点"（不编译器把岗位维度冒充轮次重点）。
+		*   * 旧端点（`serverFieldsMissing`）→ 保持 W3 旧行为：用 `brief.focus`/`brief.objective` 聚合
+		*     （既有测试与旧 Host 兼容），来源标 `LEGACY_BRIEF`。
 		* @param rows - 面试行。
-		* @returns 按轮次升序的分组（无 focus 的轮次也保留 objective）。
+		* @returns 按轮次升序的分组（无 focus 的轮次也保留 objective/来源）。
 		*/
 		function groupRounds(rows) {
 			const groups = /* @__PURE__ */ new Map();
 			for (const row of rows) {
 				const round = row.round_no;
+				const legacy = row.round.serverFieldsMissing;
 				let group = groups.get(round);
 				if (group === void 0) {
 					group = {
 						round_no: round,
 						objective: row.brief.objective,
 						focus: [],
-						seen: /* @__PURE__ */ new Set()
+						seen: /* @__PURE__ */ new Set(),
+						source: legacy ? "LEGACY_BRIEF" : row.round.focus.source,
+						title: legacy ? "" : row.round.focus.title,
+						available: legacy ? false : row.round.focus.available,
+						serverProjection: !legacy
 					};
 					groups.set(round, group);
 				}
 				if (group.objective === "") group.objective = row.brief.objective;
-				for (const item of row.brief.focus) {
+				if (legacy) {
+					if (group.serverProjection) continue;
+					for (const item of row.brief.focus) {
+						const key = item.key !== "" ? item.key : item.label;
+						if (key === "" || group.seen.has(key)) continue;
+						group.seen.add(key);
+						group.focus.push(item);
+					}
+					continue;
+				}
+				group.serverProjection = true;
+				if (!group.available && row.round.focus.available) {
+					group.available = true;
+					group.source = row.round.focus.source;
+					group.title = row.round.focus.title;
+				}
+				if (!row.round.focus.available) continue;
+				if (group.title === "") group.title = row.round.focus.title;
+				for (const item of row.round.focus.focusDimensions) {
 					const key = item.key !== "" ? item.key : item.label;
 					if (key === "" || group.seen.has(key)) continue;
 					group.seen.add(key);
-					group.focus.push(item);
+					group.focus.push({
+						key: item.key,
+						label: item.label,
+						weight: item.weight,
+						required: item.required
+					});
 				}
 			}
 			return [...groups.values()].sort((left, right) => left.round_no - right.round_no).map((group) => ({
 				round_no: group.round_no,
 				objective: group.objective,
-				focus: group.focus
+				focus: group.focus,
+				source: group.source,
+				title: group.title,
+				available: group.available
 			}));
 		}
 		// src/client/interviewer/http.ts
@@ -5415,6 +5877,11 @@ window.__ModuleLoader__.load({
 				const currentSpec = spec;
 				const form = formRef.current;
 				if (currentSpec === void 0) return;
+				if (deriveScorecardFields(currentSpec, props.round).mismatch) {
+					setValidationError(ROUND_SCHEMA_MISMATCH_TEXT);
+					setSubmitFailure(void 0);
+					return;
+				}
 				if (form === null) {
 					setValidationError("表单尚未渲染，无法提交。");
 					return;
@@ -5537,13 +6004,55 @@ window.__ModuleLoader__.load({
 			}));
 			const readonly = spec.mode !== "CREATE";
 			const nonceProblem = submitFailure !== void 0 && NONCE_PROBLEM_CODES.includes(submitFailure.code);
-			const submitDisabled = submitting || readonly || spec.dimensions.length === 0 || spec.overall_options.length === 0 || spec.transcript_basis.value === "" || spec.nonce === "";
+			const plan = deriveScorecardFields(spec, props.round);
+			const plannedFields = plan.fields;
+			const submitDisabled = submitting || readonly || spec.dimensions.length === 0 || spec.overall_options.length === 0 || spec.transcript_basis.value === "" || spec.nonce === "" || plan.mismatch || plannedFields.length === 0;
 			const scoreEnabled = (key) => assessments[key] === "MET" || assessments[key] === "NOT_MET";
 			return shell(spec.mode, spec.interview.id !== "" ? spec.interview.id : props.interviewId, /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 					className: "iw-modaldesc",
 					children: "按本轮 rubric 记录你的独立观察。Agent 不代替面试官提交；提交走 W1 Host Remote Action，写库后回显服务端 DB 读回。"
 				}),
+				props.round !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "iw-roundctx",
+					"data-testid": "scorecard-round-context",
+					"data-round-source": props.round.serverFieldsMissing || !props.round.focus.available ? "JOB_BASE" : props.round.focus.source !== "" ? props.round.focus.source : "JOB_BASE",
+					"data-round-no": props.round.focus.round_no > 0 ? props.round.focus.round_no : spec.interview.round_no,
+					"data-round-available": props.round.focus.available ? "1" : "0",
+					"data-round-schema-source": props.round.rubric.source,
+					"data-round-dimension-count": props.round.rubric.dimensions.length,
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "本轮考察重点（只读）" }),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "iw-tiny iw-muted",
+							children: props.round.serverFieldsMissing || !props.round.focus.available ? "岗位基础（JOB_BASE 降级：服务端未提供该轮配置）" : roundSourceText(props.round.focus.source)
+						}),
+						props.round.focus.available ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: props.round.focus.title }),
+							props.round.focus.description !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: "iw-tiny",
+								children: props.round.focus.description
+							}) : null,
+							props.round.rubric.dimensions.some((dimension) => dimension.mustCover) ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+								className: "iw-tiny",
+								"data-testid": "scorecard-round-must-cover",
+								children: ["本轮必覆盖：", props.round.rubric.dimensions.filter((dimension) => dimension.mustCover).map((dimension) => dimension.label).join(" / ")]
+							}) : null,
+							props.round.rubric.scaleMin !== 0 || props.round.rubric.scaleMax !== 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+								className: "iw-tiny iw-muted",
+								children: [
+									"本轮评分区间：",
+									props.round.rubric.scaleMin,
+									"–",
+									props.round.rubric.scaleMax
+								]
+							}) : null
+						] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "iw-tiny iw-muted",
+							children: "服务端未提供该轮配置（JOB_BASE 降级）；提交仍按服务端 form spec 的维度键，界面不伪造本轮重点。"
+						})
+					]
+				}) : null,
 				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
 					className: "iw-tiny iw-muted",
 					children: [
@@ -5569,6 +6078,22 @@ window.__ModuleLoader__.load({
 						"），本版表单只读。"
 					] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "修订提交需要服务端 revision 闭环（supersedes_scorecard_id / expected_record_version），本版不开放，避免本地伪造修订。" })]
 				}) : null,
+				plan.mismatch ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "iw-notice iw-notice-warn",
+					role: "alert",
+					"data-testid": "round-schema-mismatch",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: ROUND_SCHEMA_MISMATCH_TEXT }),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "iw-tiny",
+							children: plan.mismatchText
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "iw-tiny",
+							children: "已禁用提交：不写库，避免脏面评。请服务端修正本轮评分表与 form spec 后重试。"
+						})
+					]
+				}) : null,
 				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("form", {
 					className: "iw-form",
 					ref: formRef,
@@ -5591,89 +6116,98 @@ window.__ModuleLoader__.load({
 							role: "alert",
 							children: "服务端没有返回可填写的 rubric 维度，无法提交（fail-closed）。"
 						}) : null,
-						spec.dimensions.map((dimension) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("fieldset", {
-							className: "iw-fieldset",
-							"data-dim-key": dimension.key,
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("legend", { children: [
-									dimension.label,
-									"（",
-									dimension.key,
-									"）"
-								] }),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
-									className: "iw-fieldhelp",
-									children: [
-										"类型：",
-										dimension.kind !== "" ? dimension.kind : "未提供",
-										" · 权重：",
-										dimension.weight
-									]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "iw-field",
-									children: [
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "assessment：" }),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-											"data-role": "assessment",
+						plannedFields.map((field) => {
+							const dimension = field.spec;
+							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("fieldset", {
+								className: "iw-fieldset",
+								"data-dim-key": dimension.key,
+								"data-field-source": field.overridden ? "ROUND" : "SPEC",
+								"data-focus": field.focus ? "1" : "0",
+								"data-must-cover": field.mustCover ? "1" : "0",
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("legend", { children: [
+										field.label,
+										"（",
+										dimension.key,
+										"）",
+										field.focus ? " · 本轮重点" : "",
+										field.mustCover ? " · 本轮必覆盖" : ""
+									] }),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+										className: "iw-fieldhelp",
+										children: [
+											"类型：",
+											dimension.kind !== "" ? dimension.kind : "未提供",
+											" · 权重：",
+											field.weight,
+											field.overridden ? ` · 本轮 effective schema（origin=${field.origin !== "" ? field.origin : "未提供"}）` : ""
+										]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "iw-field",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "assessment：" }),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+												"data-role": "assessment",
+												"data-dim-key": dimension.key,
+												"aria-label": `维度 ${dimension.label} 的 assessment`,
+												defaultValue: "",
+												disabled: readonly,
+												onChange: (event) => setAssessments((previous) => ({
+													...previous,
+													[dimension.key]: event.target.value
+												})),
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+													value: "",
+													children: "请选择"
+												}), dimension.assessmentOptions.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+													value: option,
+													children: assessmentText(option)
+												}, option))]
+											}),
+											dimension.assessmentOptions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+												className: "iw-fieldhelp",
+												children: "服务端未给该维度的 assessment 枚举（不可提交，fail-closed）。"
+											}) : null
+										]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "iw-field",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
+											"score（仅 MET / NOT_MET，",
+											dimension.scoreMin,
+											"–",
+											dimension.scoreMax,
+											" 的整数）："
+										] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											type: "number",
+											"data-role": "score",
 											"data-dim-key": dimension.key,
-											"aria-label": `维度 ${dimension.label} 的 assessment`,
-											defaultValue: "",
-											disabled: readonly,
-											onChange: (event) => setAssessments((previous) => ({
-												...previous,
-												[dimension.key]: event.target.value
-											})),
-											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-												value: "",
-												children: "请选择"
-											}), dimension.assessmentOptions.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-												value: option,
-												children: assessmentText(option)
-											}, option))]
-										}),
-										dimension.assessmentOptions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-											className: "iw-fieldhelp",
-											children: "服务端未给该维度的 assessment 枚举（不可提交，fail-closed）。"
-										}) : null
-									]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "iw-field",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
-										"score（仅 MET / NOT_MET，",
-										dimension.scoreMin,
-										"–",
-										dimension.scoreMax,
-										" 的整数）："
-									] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										type: "number",
-										"data-role": "score",
-										"data-dim-key": dimension.key,
-										"aria-label": `维度 ${dimension.label} 的 score`,
-										min: dimension.scoreMin,
-										max: dimension.scoreMax,
-										step: 1,
-										disabled: readonly || !scoreEnabled(dimension.key)
-									})]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "iw-field",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
-										"note（",
-										dimension.noteRequired ? "必填" : "可选",
-										"，≤2000 字）："
-									] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
-										"data-role": "note",
-										"data-dim-key": dimension.key,
-										"aria-label": `维度 ${dimension.label} 的 note`,
-										rows: 2,
-										maxLength: 2e3,
-										disabled: readonly
-									})]
-								})
-							]
-						}, dimension.key)),
+											"aria-label": `维度 ${dimension.label} 的 score`,
+											min: dimension.scoreMin,
+											max: dimension.scoreMax,
+											step: 1,
+											disabled: readonly || !scoreEnabled(dimension.key)
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "iw-field",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
+											"note（",
+											dimension.noteRequired ? "必填" : "可选",
+											"，≤2000 字）："
+										] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+											"data-role": "note",
+											"data-dim-key": dimension.key,
+											"aria-label": `维度 ${dimension.label} 的 note`,
+											rows: 2,
+											maxLength: 2e3,
+											disabled: readonly
+										})]
+									})
+								]
+							}, dimension.key);
+						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("fieldset", {
 							className: "iw-fieldset",
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("legend", { children: "综合结论（overall）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -5986,6 +6520,30 @@ window.__ModuleLoader__.load({
   .iw-modalend .iw-btn{flex:1 1 auto}
   .iw-chip{white-space:normal;text-align:left}
 }
+
+/* ---------- 轮次级考察重点 / 本轮评分表（W3b，task-50） ---------- */
+.iw-roundcard,.iw-schema{margin-top:15px;padding:17px 19px}
+.iw-roundtitle{font-size:15px;font-weight:650;color:var(--iw-text);margin:2px 0 6px;overflow-wrap:anywhere}
+.iw-roundcard .iw-subhead,.iw-schema .iw-subhead{margin-top:0}
+.iw-roundcard .iw-criteria{margin-top:8px}
+.iw-roundcard .iw-criteriarow{align-items:flex-start;gap:8px;flex-wrap:wrap}
+.iw-roundcard .iw-chip,.iw-schema .iw-chip{margin-left:6px}
+.iw-roundcard .iw-notice,.iw-schema .iw-notice{margin-top:10px}
+.iw-schemalist{margin-top:10px;display:flex;flex-direction:column;gap:9px;min-width:0}
+.iw-schemarow{border:1px solid var(--iw-border);border-radius:10px;padding:10px 12px;min-width:0;
+  display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere;word-break:break-word}
+.iw-schemarow-main{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;min-width:0}
+.iw-schemarow-main strong{overflow-wrap:anywhere}
+.iw-schemarow-chips{display:flex;flex-wrap:wrap;gap:5px}
+.iw-roundctx{margin:10px 0 2px;padding:11px 13px;border:1px solid var(--iw-border);border-radius:10px;
+  background:var(--iw-bluebg);min-width:0;overflow-wrap:anywhere}
+.iw-roundctx strong{display:block;font-size:12px;margin-bottom:3px}
+.iw-roundctx p{margin:2px 0}
+@media (max-width:570px){
+  .iw-roundcard,.iw-schema{padding:14px 13px}
+  .iw-schemarow{padding:9px 10px}
+  .iw-roundcard .iw-criteriarow,.iw-schemarow-main,.iw-schemarow-chips{min-width:0}
+}
 `;
 		// src/client/interviewer/InterviewerWorkspace.tsx
 		/**
@@ -6102,6 +6660,250 @@ window.__ModuleLoader__.load({
 				]
 			}) });
 		}
+		/**
+		* 本轮考察重点卡（task-50 `round_focus`）。
+		*
+		* 两条硬规则：
+		*   * `available=true` 才渲染标题/描述/重点维度/问题；`available=false`（JOB_BASE 降级）只显示
+		*     降级说明 + 服务端 reason，**绝不**把岗位 Rubric 维度冒充"本轮重点"。
+		*   * 旧的 `brief.focus` 不再重复渲染成"本轮考察重点"（由本卡承担）；旧端点降级（
+		*     `serverFieldsMissing`）时才回退显示 brief focus，并明确标注"旧 brief 来源"。
+		*/
+		function RoundFocusCard({ row }) {
+			const round = row.round;
+			const focus = round.focus;
+			const legacy = round.serverFieldsMissing;
+			const displaySource = legacy || !focus.available ? "JOB_BASE" : focus.source;
+			const sourceText = !focus.available ? round.conflict ? "轮次配置不适用（冲突，详见下方）：按 JOB_BASE 降级，不伪造本轮重点" : roundSourceText("JOB_BASE", legacy) : roundSourceText(focus.source, legacy);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				className: "iw-paper iw-roundcard",
+				"data-testid": "round-focus-card",
+				"data-source": displaySource,
+				"data-round-no": row.round_no,
+				"data-available": focus.available ? "1" : "0",
+				"data-dimension-count": round.rubric.dimensions.length,
+				"data-rubric-version-id": round.rubric.rubricVersionId,
+				"data-server-fields-missing": legacy ? "1" : "0",
+				"data-conflict": round.conflict ? "1" : "0",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "iw-subhead",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "本轮考察重点" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("small", { children: [
+							"第 ",
+							row.round_no > 0 ? row.round_no : "?",
+							" 轮 · 只读 · 服务端权威"
+						] })]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+						className: "iw-tiny iw-muted",
+						"data-testid": "round-focus-source",
+						"data-source": displaySource,
+						children: ["来源：", sourceText]
+					}),
+					focus.available ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "iw-roundtitle",
+							"data-testid": "round-focus-title",
+							children: focus.title !== "" ? focus.title : "（服务端未提供本轮标题）"
+						}),
+						focus.description !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "iw-tiny",
+							"data-testid": "round-focus-description",
+							children: focus.description
+						}) : null,
+						focus.focusDimensions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "iw-muted iw-tiny",
+							children: "服务端未提供本轮重点维度（不伪造）。"
+						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "iw-criteria",
+							"data-testid": "round-focus-dimensions",
+							children: focus.focusDimensions.map((item, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "iw-criteriarow",
+								"data-focus-key": item.key,
+								"data-must-cover-key": item.key,
+								"data-required": item.required ? "1" : "0",
+								"data-in-rubric": item.inRubric ? "1" : "0",
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "iw-dot iw-dot-blue",
+										"aria-hidden": true
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("strong", { children: [
+											index + 1,
+											". ",
+											item.label
+										] }),
+										item.required ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "iw-chip iw-chip-blue",
+											children: "模板必覆盖"
+										}) : null,
+										!item.inRubric ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "iw-chip iw-chip-amber",
+											children: "不在评分维度"
+										}) : null
+									] }),
+									item.weight !== 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "iw-criteriaweight",
+										children: ["权重 ", item.weight]
+									}) : null
+								]
+							}, item.key !== "" ? item.key : `${item.label}-${index}`))
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("details", {
+							className: "iw-paper iw-collapse",
+							"data-testid": "round-questions",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("summary", { children: [
+								"本轮建议问题（",
+								focus.questions.length,
+								"）"
+							] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: focus.questions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: "iw-muted iw-tiny",
+								children: "服务端未提供本轮建议问题（不伪造）。"
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "iw-sourcebox",
+								children: focus.questions.map((question) => `• ${question.text}`).join("\n")
+							}) })]
+						})
+					] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "iw-notice iw-notice-warn",
+						"data-testid": "round-focus-degraded",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "JOB_BASE 降级（服务端未提供该轮配置）" }),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: roundFocusDegradedText(round) }),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "评分维度见下方「本轮评分表 · effective schema」（岗位底座）。" })
+						]
+					}),
+					legacy && row.brief.focus.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("details", {
+						className: "iw-paper iw-collapse",
+						"data-testid": "legacy-brief-focus",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("summary", { children: [
+							"旧 brief 考察重点（",
+							row.brief.focus.length,
+							"，非轮次配置 · 来源：",
+							briefSourceText(row.brief.source),
+							"）"
+						] }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "iw-tiny iw-muted",
+							children: "旧端点没有 round_focus；以下为 brief 来源，不能当作轮次配置。"
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "iw-criteria",
+							children: row.brief.focus.map((item, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "iw-criteriarow",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "iw-dot iw-dot-blue",
+									"aria-hidden": true
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: item.label })]
+							}, item.key !== "" ? item.key : `${item.label}-${index}`))
+						})] })]
+					}) : null,
+					round.conflict && round.conflictReason !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "iw-notice iw-notice-warn",
+						"data-testid": "round-conflict",
+						children: round.conflictReason
+					}) : null
+				]
+			});
+		}
+		/**
+		* 本轮评分表（`effective_rubric`）只读表：维度 key/kind/weight/重点/必覆盖/来源。
+		*
+		* `available=false` → 显示"服务端明确无可用评分标准"（不渲染空占位维度）。
+		*/
+		function RoundRubricTable({ row }) {
+			const round = row.round;
+			const rubric = round.rubric;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				className: "iw-paper iw-schema",
+				"data-testid": "round-scorecard-schema",
+				"data-source": rubric.source !== "" ? rubric.source : "JOB_BASE",
+				"data-rubric-version-id": rubric.rubricVersionId,
+				"data-scale-min": rubric.scaleMin,
+				"data-scale-max": rubric.scaleMax,
+				"data-field-count": rubric.dimensions.length,
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "iw-subhead",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "本轮评分表 · effective schema" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("small", { children: ["只读 · ", roundSourceText(rubric.source, round.serverFieldsMissing)] })]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+						className: "iw-tiny iw-muted",
+						children: [
+							"分数区间：",
+							rubric.scaleMin === 0 && rubric.scaleMax === 0 ? "服务端未提供分数区间" : `${rubric.scaleMin}–${rubric.scaleMax}`,
+							" · submission rubric：",
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "iw-mono",
+								children: rubric.submissionRubricVersionId !== "" ? rubric.submissionRubricVersionId : "（未提供）"
+							})
+						]
+					}),
+					!rubric.available ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "iw-notice iw-notice-warn",
+						"data-testid": "round-schema-unavailable",
+						children: rubric.reason !== "" ? rubric.reason : "服务端明确未提供本轮可用评分标准（不伪造维度）。"
+					}) : null,
+					rubric.available && rubric.dimensions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "iw-muted iw-tiny",
+						children: "服务端未提供评分维度（不伪造）。"
+					}) : null,
+					rubric.dimensions.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "iw-schemalist",
+						children: rubric.dimensions.map((dimension) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "iw-schemarow",
+							"data-field-key": dimension.key,
+							"data-origin": dimension.origin,
+							"data-required": dimension.required ? "1" : "0",
+							"data-focus": dimension.focus ? "1" : "0",
+							"data-must-cover": dimension.mustCover ? "1" : "0",
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: "iw-schemarow-main",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: dimension.label }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "iw-mono iw-tiny",
+										children: dimension.key
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: "iw-tiny iw-muted",
+									children: [
+										"kind=",
+										dimension.kind !== "" ? dimension.kind : "未提供",
+										" · weight=",
+										dimension.weight
+									]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: "iw-schemarow-chips",
+									children: [
+										dimension.focus ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "iw-chip iw-chip-blue",
+											children: "本轮重点"
+										}) : null,
+										dimension.mustCover ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "iw-chip iw-chip-green",
+											children: "本轮必覆盖"
+										}) : null,
+										dimension.origin !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "iw-chip",
+											children: dimension.origin
+										}) : null,
+										!dimension.required ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "iw-chip iw-chip-amber",
+											children: "服务端标非必答"
+										}) : null
+									]
+								}),
+								dimension.question !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+									className: "iw-tiny iw-muted",
+									children: dimension.question
+								}) : null
+							]
+						}, dimension.key))
+					}) : null
+				]
+			});
+		}
 		/** 列表页（V-I1）。 */
 		function ListView({ overview, stats, rounds, onSelect }) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("header", {
@@ -6178,24 +6980,44 @@ window.__ModuleLoader__.load({
 							children: "打开分配给你的面试后查看对应轮次的考察标准。"
 						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: rounds.map((group) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: "iw-roundgroup",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("strong", { children: [
-								"第 ",
-								group.round_no,
-								" 轮",
-								group.objective !== "" ? ` · ${group.objective}` : ""
-							] }), group.focus.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								className: "iw-muted iw-tiny",
-								children: "服务端未提供考察重点。"
-							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: "iw-criteria",
-								children: group.focus.map((item) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "iw-criteriarow",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "iw-dot iw-dot-blue",
-										"aria-hidden": true
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: item.label })]
-								}, `${group.round_no}-${item.key}-${item.label}`))
-							})]
+							"data-testid": "round-focus-group",
+							"data-round-no": group.round_no,
+							"data-source": group.source,
+							"data-available": group.available ? "1" : "0",
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("strong", { children: [
+									"第 ",
+									group.round_no,
+									" 轮",
+									group.title !== "" ? ` · ${group.title}` : group.objective !== "" ? ` · ${group.objective}` : ""
+								] }),
+								!group.available ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+									className: "iw-muted iw-tiny",
+									"data-testid": "round-focus-group-degraded",
+									children: group.source === "LEGACY_BRIEF" ? "旧 brief 来源（服务端未提供轮次配置），按 brief 展示，不代表本轮专属重点。" : "JOB_BASE 降级（服务端未提供该轮配置）；不展示伪造的考察重点。"
+								}) : null,
+								group.available && group.focus.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+									className: "iw-muted iw-tiny",
+									children: "服务端未提供考察重点。"
+								}) : null,
+								group.focus.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "iw-criteria",
+									children: group.focus.map((item) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "iw-criteriarow",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "iw-dot iw-dot-blue",
+												"aria-hidden": true
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: item.label }),
+											item.required ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "iw-chip iw-chip-blue",
+												children: "必覆盖"
+											}) : null
+										]
+									}, `${group.round_no}-${item.key}-${item.label}`))
+								}) : null
+							]
 						}, `round-${group.round_no}`)) })]
 					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 						className: "iw-paper iw-asidecard",
@@ -6281,40 +7103,15 @@ window.__ModuleLoader__.load({
 										})
 									]
 								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "iw-subhead",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "本轮考察重点" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("small", { children: "只读 · 来自服务端 brief.focus" })]
-								}),
-								row.brief.focus.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-									className: "iw-muted iw-tiny",
-									children: "服务端未提供本轮考察重点（不展示占位维度）。"
-								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-									className: "iw-criteria",
-									children: row.brief.focus.map((item, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-										className: "iw-criteriarow",
-										children: [
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												className: "iw-dot iw-dot-blue",
-												"aria-hidden": true
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("strong", { children: [
-												index + 1,
-												". ",
-												item.label
-											] }) }),
-											item.weight !== 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-												className: "iw-criteriaweight",
-												children: ["权重 ", item.weight]
-											}) : null
-										]
-									}, item.key !== "" ? item.key : `${item.label}-${index}`))
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("details", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(RoundFocusCard, { row }),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(RoundRubricTable, { row }),
+								row.round.serverFieldsMissing ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("details", {
 									className: "iw-paper iw-collapse",
+									"data-testid": "legacy-brief-questions",
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("summary", { children: [
-										"建议问题（",
+										"旧 brief 建议问题（",
 										row.brief.questions.length,
-										"）"
+										"，非轮次配置）"
 									] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: row.brief.questions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 										className: "iw-muted iw-tiny",
 										children: "服务端未提供建议问题。"
@@ -6322,7 +7119,7 @@ window.__ModuleLoader__.load({
 										className: "iw-sourcebox",
 										children: row.brief.questions.map((question) => `• ${question}`).join("\n")
 									}) })]
-								}),
+								}) : null,
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("details", {
 									className: "iw-paper iw-collapse",
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("summary", { children: "查看招聘方接收的简历材料" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: row.materials.available && row.materials.resume !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
@@ -6800,6 +7597,7 @@ window.__ModuleLoader__.load({
 							interviewId: formTarget.interview_id,
 							applicationId: formTarget.application_id,
 							rubricVersionId: formTarget.rubric !== null ? formTarget.rubric.rubric_version_id : "",
+							round: formTarget.round,
 							onClose: closeScorecard,
 							onSubmitted: handleSubmitted,
 							onUnavailable: handleUnavailable

@@ -22,6 +22,7 @@ import {
   type ScorecardFormSpec,
   type ScorecardSubmitResult,
 } from './normalize.ts'
+import { deriveScorecardFields, roundSourceText, ROUND_SCHEMA_MISMATCH_TEXT, type RoundEffectiveView } from './round.ts'
 import { fetchScorecardFormSpec, isScorecardEndpointUnavailable, submitScorecard } from './http.ts'
 
 /** 表单组件的入参（数据只来自父组件 props 与 W1 HTTP，不读 localStorage）。 */
@@ -32,6 +33,8 @@ export interface ScorecardFormProps {
   readonly applicationId: string
   /** 申请钉住的 rubric 版本（可为空：不猜版本）。 */
   readonly rubricVersionId: string
+  /** 本场轮次投影（task-50）：只用于展示本轮重点/顺序/标注与一致性核对，提交键集仍只认 W1 spec。 */
+  readonly round?: RoundEffectiveView
   readonly onClose: () => void
   /** 提交成功后通知父组件重新 GET overview（服务端事实，不许只改本地 state）。 */
   readonly onSubmitted: () => void
@@ -150,6 +153,12 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
     const currentSpec = spec
     const form = formRef.current
     if (currentSpec === undefined) return
+    // 二次 fail-closed：即使按钮 disabled 被绕过（DOM 注入/键盘），也绝不把矛盾 schema 提交写库。
+    if (deriveScorecardFields(currentSpec, props.round).mismatch) {
+      setValidationError(ROUND_SCHEMA_MISMATCH_TEXT)
+      setSubmitFailure(undefined)
+      return
+    }
     if (form === null) {
       setValidationError('表单尚未渲染，无法提交。')
       return
@@ -268,13 +277,20 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
   const readonly = spec.mode !== 'CREATE'
   const nonceProblem =
     submitFailure !== undefined && (NONCE_PROBLEM_CODES as readonly string[]).includes(submitFailure.code)
+  // 本轮 effective schema → 表单计划：顺序/标签/权重/重点标记用它覆盖；**提交键集仍只认 spec**。
+  // 服务端两套事实不一致（submission.dimension_keys ≠ spec keys / effective 含 spec 外 key）→ mismatch，
+  // 界面必须 fail-closed（禁用提交，不写脏面评），见契约 §4.2。
+  const plan = deriveScorecardFields(spec, props.round)
+  const plannedFields = plan.fields
   const submitDisabled =
     submitting ||
     readonly ||
     spec.dimensions.length === 0 ||
     spec.overall_options.length === 0 ||
     spec.transcript_basis.value === '' ||
-    spec.nonce === ''
+    spec.nonce === '' ||
+    plan.mismatch ||
+    plannedFields.length === 0
   const scoreEnabled = (key: string): boolean => assessments[key] === 'MET' || assessments[key] === 'NOT_MET'
 
   return shell(
@@ -284,6 +300,57 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
       <p className="iw-modaldesc">
         按本轮 rubric 记录你的独立观察。Agent 不代替面试官提交；提交走 W1 Host Remote Action，写库后回显服务端 DB 读回。
       </p>
+
+      {/* 本轮考察重点（只读上下文）：轮次配置存在时展示；JOB_BASE 降级时只说事实，不伪造重点。 */}
+      {props.round !== undefined ? (
+        <div
+          className="iw-roundctx"
+          data-testid="scorecard-round-context"
+          data-round-source={
+            props.round.serverFieldsMissing || !props.round.focus.available
+              ? 'JOB_BASE'
+              : props.round.focus.source !== ''
+                ? props.round.focus.source
+                : 'JOB_BASE'
+          }
+          data-round-no={props.round.focus.round_no > 0 ? props.round.focus.round_no : spec.interview.round_no}
+          data-round-available={props.round.focus.available ? '1' : '0'}
+          data-round-schema-source={props.round.rubric.source}
+          data-round-dimension-count={props.round.rubric.dimensions.length}
+        >
+          <strong>本轮考察重点（只读）</strong>
+          <p className="iw-tiny iw-muted">
+            {props.round.serverFieldsMissing || !props.round.focus.available
+              ? '岗位基础（JOB_BASE 降级：服务端未提供该轮配置）'
+              : roundSourceText(props.round.focus.source)}
+          </p>
+          {props.round.focus.available ? (
+            <>
+              <p>{props.round.focus.title}</p>
+              {props.round.focus.description !== '' ? <p className="iw-tiny">{props.round.focus.description}</p> : null}
+              {props.round.rubric.dimensions.some((dimension) => dimension.mustCover) ? (
+                <p className="iw-tiny" data-testid="scorecard-round-must-cover">
+                  {/* “本轮必覆盖”只认 effective_rubric.dimensions.must_cover（不是 round_focus.required，后者是模板 required）。 */}
+                  本轮必覆盖：
+                  {props.round.rubric.dimensions
+                    .filter((dimension) => dimension.mustCover)
+                    .map((dimension) => dimension.label)
+                    .join(' / ')}
+                </p>
+              ) : null}
+              {props.round.rubric.scaleMin !== 0 || props.round.rubric.scaleMax !== 0 ? (
+                <p className="iw-tiny iw-muted">
+                  本轮评分区间：{props.round.rubric.scaleMin}–{props.round.rubric.scaleMax}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="iw-tiny iw-muted">
+              服务端未提供该轮配置（JOB_BASE 降级）；提交仍按服务端 form spec 的维度键，界面不伪造本轮重点。
+            </p>
+          )}
+        </div>
+      ) : null}
       <p className="iw-tiny iw-muted">
         面试：第 {spec.interview.round_no} 轮 · {spec.interview.slot_code !== '' ? spec.interview.slot_code : '（未提供 slot）'} ·
         状态：{spec.interview.status !== '' ? spec.interview.status : '（未提供）'} · rubric：
@@ -294,6 +361,14 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
         <div className="iw-notice iw-notice-warn" data-testid="form-readonly">
           <strong>该面试已有当前面评（服务端 mode={spec.mode}），本版表单只读。</strong>
           <p>修订提交需要服务端 revision 闭环（supersedes_scorecard_id / expected_record_version），本版不开放，避免本地伪造修订。</p>
+        </div>
+      ) : null}
+
+      {plan.mismatch ? (
+        <div className="iw-notice iw-notice-warn" role="alert" data-testid="round-schema-mismatch">
+          <strong>{ROUND_SCHEMA_MISMATCH_TEXT}</strong>
+          <p className="iw-tiny">{plan.mismatchText}</p>
+          <p className="iw-tiny">已禁用提交：不写库，避免脏面评。请服务端修正本轮评分表与 form spec 后重试。</p>
         </div>
       ) : null}
 
@@ -317,65 +392,81 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
           </p>
         ) : null}
 
-        {spec.dimensions.map((dimension) => (
-          <fieldset className="iw-fieldset" data-dim-key={dimension.key} key={dimension.key}>
-            <legend>
-              {dimension.label}（{dimension.key}）
-            </legend>
-            <p className="iw-fieldhelp">
-              类型：{dimension.kind !== '' ? dimension.kind : '未提供'} · 权重：{dimension.weight}
-            </p>
-            <div className="iw-field">
-              <span>assessment：</span>
-              <select
-                data-role="assessment"
-                data-dim-key={dimension.key}
-                aria-label={`维度 ${dimension.label} 的 assessment`}
-                defaultValue=""
-                disabled={readonly}
-                onChange={(event) =>
-                  setAssessments((previous) => ({ ...previous, [dimension.key]: event.target.value }))
-                }
-              >
-                <option value="">请选择</option>
-                {dimension.assessmentOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {assessmentText(option)}
-                  </option>
-                ))}
-              </select>
-              {dimension.assessmentOptions.length === 0 ? (
-                <p className="iw-fieldhelp">服务端未给该维度的 assessment 枚举（不可提交，fail-closed）。</p>
-              ) : null}
-            </div>
-            <div className="iw-field">
-              <span>
-                score（仅 MET / NOT_MET，{dimension.scoreMin}–{dimension.scoreMax} 的整数）：
-              </span>
-              <input
-                type="number"
-                data-role="score"
-                data-dim-key={dimension.key}
-                aria-label={`维度 ${dimension.label} 的 score`}
-                min={dimension.scoreMin}
-                max={dimension.scoreMax}
-                step={1}
-                disabled={readonly || !scoreEnabled(dimension.key)}
-              />
-            </div>
-            <div className="iw-field">
-              <span>note（{dimension.noteRequired ? '必填' : '可选'}，≤2000 字）：</span>
-              <textarea
-                data-role="note"
-                data-dim-key={dimension.key}
-                aria-label={`维度 ${dimension.label} 的 note`}
-                rows={2}
-                maxLength={2000}
-                disabled={readonly}
-              />
-            </div>
-          </fieldset>
-        ))}
+        {plannedFields.map((field) => {
+          // 控件（assessment 枚举 / 分数区间 / note 必填）**只**来自 W1 form spec；展示信息可被本轮 schema 覆盖。
+          const dimension = field.spec
+          return (
+            <fieldset
+              className="iw-fieldset"
+              data-dim-key={dimension.key}
+              data-field-source={field.overridden ? 'ROUND' : 'SPEC'}
+              data-focus={field.focus ? '1' : '0'}
+              data-must-cover={field.mustCover ? '1' : '0'}
+              key={dimension.key}
+            >
+              <legend>
+                {field.label}（{dimension.key}）
+                {field.focus ? ' · 本轮重点' : ''}
+                {field.mustCover ? ' · 本轮必覆盖' : ''}
+              </legend>
+              <p className="iw-fieldhelp">
+                类型：{dimension.kind !== '' ? dimension.kind : '未提供'} · 权重：{field.weight}
+                {field.overridden
+                  ? ` · 本轮 effective schema（origin=${field.origin !== '' ? field.origin : '未提供'}）`
+                  : ''}
+              </p>
+              <div className="iw-field">
+                <span>assessment：</span>
+                <select
+                  data-role="assessment"
+                  data-dim-key={dimension.key}
+                  aria-label={`维度 ${dimension.label} 的 assessment`}
+                  defaultValue=""
+                  disabled={readonly}
+                  onChange={(event) =>
+                    setAssessments((previous) => ({ ...previous, [dimension.key]: event.target.value }))
+                  }
+                >
+                  <option value="">请选择</option>
+                  {dimension.assessmentOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {assessmentText(option)}
+                    </option>
+                  ))}
+                </select>
+                {dimension.assessmentOptions.length === 0 ? (
+                  <p className="iw-fieldhelp">服务端未给该维度的 assessment 枚举（不可提交，fail-closed）。</p>
+                ) : null}
+              </div>
+              <div className="iw-field">
+                <span>
+                  score（仅 MET / NOT_MET，{dimension.scoreMin}–{dimension.scoreMax} 的整数）：
+                </span>
+                <input
+                  type="number"
+                  data-role="score"
+                  data-dim-key={dimension.key}
+                  aria-label={`维度 ${dimension.label} 的 score`}
+                  min={dimension.scoreMin}
+                  max={dimension.scoreMax}
+                  step={1}
+                  disabled={readonly || !scoreEnabled(dimension.key)}
+                />
+              </div>
+              <div className="iw-field">
+                <span>note（{dimension.noteRequired ? '必填' : '可选'}，≤2000 字）：</span>
+                <textarea
+                  data-role="note"
+                  data-dim-key={dimension.key}
+                  aria-label={`维度 ${dimension.label} 的 note`}
+                  rows={2}
+                  maxLength={2000}
+                  disabled={readonly}
+                />
+              </div>
+            </fieldset>
+          )
+        })}
 
         <fieldset className="iw-fieldset">
           <legend>综合结论（overall）</legend>

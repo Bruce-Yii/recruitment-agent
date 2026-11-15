@@ -41,6 +41,7 @@ import {
   type WorkspaceStats,
 } from './normalize.ts'
 import { ScorecardForm } from './ScorecardForm.tsx'
+import { roundFocusDegradedText, roundSourceText } from './round.ts'
 import { INTERVIEWER_CSS } from './styles.ts'
 
 /** 视图 props（与 `CLIENT-CONTRACT.md` §2 / `W3-CONTRACT.md` §2.1 一致）。 */
@@ -176,6 +177,197 @@ function InterviewListItem({
   )
 }
 
+/**
+ * 本轮考察重点卡（task-50 `round_focus`）。
+ *
+ * 两条硬规则：
+ *   * `available=true` 才渲染标题/描述/重点维度/问题；`available=false`（JOB_BASE 降级）只显示
+ *     降级说明 + 服务端 reason，**绝不**把岗位 Rubric 维度冒充"本轮重点"。
+ *   * 旧的 `brief.focus` 不再重复渲染成"本轮考察重点"（由本卡承担）；旧端点降级（
+ *     `serverFieldsMissing`）时才回退显示 brief focus，并明确标注"旧 brief 来源"。
+ */
+function RoundFocusCard({ row }: { readonly row: InterviewRow }): JSX.Element {
+  const round = row.round
+  const focus = round.focus
+  const legacy = round.serverFieldsMissing
+  // 契约 §4.1：available=false（JOB_BASE 降级，含 round_no 冲突导致不套用）时来源必须按 JOB_BASE 渲染。
+  const displaySource = legacy || !focus.available ? 'JOB_BASE' : focus.source
+  const sourceText =
+    !focus.available
+      ? round.conflict
+        ? '轮次配置不适用（冲突，详见下方）：按 JOB_BASE 降级，不伪造本轮重点'
+        : roundSourceText('JOB_BASE', legacy)
+      : roundSourceText(focus.source, legacy)
+  return (
+    <section
+      className="iw-paper iw-roundcard"
+      data-testid="round-focus-card"
+      data-source={displaySource}
+      data-round-no={row.round_no}
+      data-available={focus.available ? '1' : '0'}
+      data-dimension-count={round.rubric.dimensions.length}
+      data-rubric-version-id={round.rubric.rubricVersionId}
+      data-server-fields-missing={legacy ? '1' : '0'}
+      data-conflict={round.conflict ? '1' : '0'}
+    >
+      <div className="iw-subhead">
+        <h2>本轮考察重点</h2>
+        <small>第 {row.round_no > 0 ? row.round_no : '?'} 轮 · 只读 · 服务端权威</small>
+      </div>
+      <p className="iw-tiny iw-muted" data-testid="round-focus-source" data-source={displaySource}>
+        来源：{sourceText}
+      </p>
+
+      {focus.available ? (
+        <>
+          <p className="iw-roundtitle" data-testid="round-focus-title">
+            {focus.title !== '' ? focus.title : '（服务端未提供本轮标题）'}
+          </p>
+          {focus.description !== '' ? (
+            <p className="iw-tiny" data-testid="round-focus-description">
+              {focus.description}
+            </p>
+          ) : null}
+          {focus.focusDimensions.length === 0 ? (
+            <p className="iw-muted iw-tiny">服务端未提供本轮重点维度（不伪造）。</p>
+          ) : (
+            <div className="iw-criteria" data-testid="round-focus-dimensions">
+              {focus.focusDimensions.map((item, index) => (
+                <div
+                  className="iw-criteriarow"
+                  key={item.key !== '' ? item.key : `${item.label}-${index}`}
+                  data-focus-key={item.key}
+                  data-must-cover-key={item.key}
+                  data-required={item.required ? '1' : '0'}
+                  data-in-rubric={item.inRubric ? '1' : '0'}
+                >
+                  <span className="iw-dot iw-dot-blue" aria-hidden />
+                  <span>
+                    <strong>
+                      {index + 1}. {item.label}
+                    </strong>
+                    {/* 服务端字段名是 required（模板要求覆盖）；"本轮必覆盖"以 effective_rubric.dimensions.must_cover 为准（见下方评分表）。 */}
+                    {item.required ? <span className="iw-chip iw-chip-blue">模板必覆盖</span> : null}
+                    {!item.inRubric ? <span className="iw-chip iw-chip-amber">不在评分维度</span> : null}
+                  </span>
+                  {item.weight !== 0 ? <span className="iw-criteriaweight">权重 {item.weight}</span> : null}
+                </div>
+              ))}
+            </div>
+          )}
+          <details className="iw-paper iw-collapse" data-testid="round-questions">
+            <summary>本轮建议问题（{focus.questions.length}）</summary>
+            <div>
+              {focus.questions.length === 0 ? (
+                <p className="iw-muted iw-tiny">服务端未提供本轮建议问题（不伪造）。</p>
+              ) : (
+                <div className="iw-sourcebox">{focus.questions.map((question) => `• ${question.text}`).join('\n')}</div>
+              )}
+            </div>
+          </details>
+        </>
+      ) : (
+        <div className="iw-notice iw-notice-warn" data-testid="round-focus-degraded">
+          <strong>JOB_BASE 降级（服务端未提供该轮配置）</strong>
+          <p>{roundFocusDegradedText(round)}</p>
+          <p>评分维度见下方「本轮评分表 · effective schema」（岗位底座）。</p>
+        </div>
+      )}
+
+      {legacy && row.brief.focus.length > 0 ? (
+        <details className="iw-paper iw-collapse" data-testid="legacy-brief-focus">
+          <summary>旧 brief 考察重点（{row.brief.focus.length}，非轮次配置 · 来源：{briefSourceText(row.brief.source)}）</summary>
+          <div>
+            <p className="iw-tiny iw-muted">旧端点没有 round_focus；以下为 brief 来源，不能当作轮次配置。</p>
+            <div className="iw-criteria">
+              {row.brief.focus.map((item, index) => (
+                <div className="iw-criteriarow" key={item.key !== '' ? item.key : `${item.label}-${index}`}>
+                  <span className="iw-dot iw-dot-blue" aria-hidden />
+                  <span>{item.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </details>
+      ) : null}
+
+      {round.conflict && round.conflictReason !== '' ? (
+        <p className="iw-notice iw-notice-warn" data-testid="round-conflict">
+          {round.conflictReason}
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
+/**
+ * 本轮评分表（`effective_rubric`）只读表：维度 key/kind/weight/重点/必覆盖/来源。
+ *
+ * `available=false` → 显示"服务端明确无可用评分标准"（不渲染空占位维度）。
+ */
+function RoundRubricTable({ row }: { readonly row: InterviewRow }): JSX.Element {
+  const round = row.round
+  const rubric = round.rubric
+  return (
+    <section
+      className="iw-paper iw-schema"
+      data-testid="round-scorecard-schema"
+      data-source={rubric.source !== '' ? rubric.source : 'JOB_BASE'}
+      data-rubric-version-id={rubric.rubricVersionId}
+      data-scale-min={rubric.scaleMin}
+      data-scale-max={rubric.scaleMax}
+      data-field-count={rubric.dimensions.length}
+    >
+      <div className="iw-subhead">
+        <h2>本轮评分表 · effective schema</h2>
+        <small>只读 · {roundSourceText(rubric.source, round.serverFieldsMissing)}</small>
+      </div>
+      <p className="iw-tiny iw-muted">
+        分数区间：{rubric.scaleMin === 0 && rubric.scaleMax === 0 ? '服务端未提供分数区间' : `${rubric.scaleMin}–${rubric.scaleMax}`} · submission rubric：
+        <span className="iw-mono">{rubric.submissionRubricVersionId !== '' ? rubric.submissionRubricVersionId : '（未提供）'}</span>
+      </p>
+      {!rubric.available ? (
+        <p className="iw-notice iw-notice-warn" data-testid="round-schema-unavailable">
+          {rubric.reason !== '' ? rubric.reason : '服务端明确未提供本轮可用评分标准（不伪造维度）。'}
+        </p>
+      ) : null}
+      {rubric.available && rubric.dimensions.length === 0 ? (
+        <p className="iw-muted iw-tiny">服务端未提供评分维度（不伪造）。</p>
+      ) : null}
+      {rubric.dimensions.length > 0 ? (
+        <div className="iw-schemalist">
+          {rubric.dimensions.map((dimension) => (
+            <div
+              className="iw-schemarow"
+              key={dimension.key}
+              data-field-key={dimension.key}
+              data-origin={dimension.origin}
+              data-required={dimension.required ? '1' : '0'}
+              data-focus={dimension.focus ? '1' : '0'}
+              data-must-cover={dimension.mustCover ? '1' : '0'}
+            >
+              <span className="iw-schemarow-main">
+                <strong>{dimension.label}</strong>
+                <span className="iw-mono iw-tiny">{dimension.key}</span>
+              </span>
+              <span className="iw-tiny iw-muted">
+                kind={dimension.kind !== '' ? dimension.kind : '未提供'} · weight={dimension.weight}
+              </span>
+              <span className="iw-schemarow-chips">
+                {dimension.focus ? <span className="iw-chip iw-chip-blue">本轮重点</span> : null}
+                {dimension.mustCover ? <span className="iw-chip iw-chip-green">本轮必覆盖</span> : null}
+                {dimension.origin !== '' ? <span className="iw-chip">{dimension.origin}</span> : null}
+                {!dimension.required ? <span className="iw-chip iw-chip-amber">服务端标非必答</span> : null}
+              </span>
+              {dimension.question !== '' ? <p className="iw-tiny iw-muted">{dimension.question}</p> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 /** 列表页（V-I1）。 */
 function ListView({
   overview,
@@ -247,23 +439,39 @@ function ListView({
             ) : (
               <div>
                 {rounds.map((group) => (
-                  <div className="iw-roundgroup" key={`round-${group.round_no}`}>
+                  <div
+                    className="iw-roundgroup"
+                    key={`round-${group.round_no}`}
+                    data-testid="round-focus-group"
+                    data-round-no={group.round_no}
+                    data-source={group.source}
+                    data-available={group.available ? '1' : '0'}
+                  >
                     <strong>
                       第 {group.round_no} 轮
-                      {group.objective !== '' ? ` · ${group.objective}` : ''}
+                      {group.title !== '' ? ` · ${group.title}` : group.objective !== '' ? ` · ${group.objective}` : ''}
                     </strong>
-                    {group.focus.length === 0 ? (
+                    {!group.available ? (
+                      <p className="iw-muted iw-tiny" data-testid="round-focus-group-degraded">
+                        {group.source === 'LEGACY_BRIEF'
+                          ? '旧 brief 来源（服务端未提供轮次配置），按 brief 展示，不代表本轮专属重点。'
+                          : 'JOB_BASE 降级（服务端未提供该轮配置）；不展示伪造的考察重点。'}
+                      </p>
+                    ) : null}
+                    {group.available && group.focus.length === 0 ? (
                       <p className="iw-muted iw-tiny">服务端未提供考察重点。</p>
-                    ) : (
+                    ) : null}
+                    {group.focus.length > 0 ? (
                       <div className="iw-criteria">
                         {group.focus.map((item) => (
                           <div className="iw-criteriarow" key={`${group.round_no}-${item.key}-${item.label}`}>
                             <span className="iw-dot iw-dot-blue" aria-hidden />
                             <span>{item.label}</span>
+                            {item.required ? <span className="iw-chip iw-chip-blue">必覆盖</span> : null}
                           </div>
                         ))}
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -343,38 +551,24 @@ function DetailView({
               </p>
             </div>
 
-            <div className="iw-subhead">
-              <h2>本轮考察重点</h2>
-              <small>只读 · 来自服务端 brief.focus</small>
-            </div>
-            {row.brief.focus.length === 0 ? (
-              <p className="iw-muted iw-tiny">服务端未提供本轮考察重点（不展示占位维度）。</p>
-            ) : (
-              <div className="iw-criteria">
-                {row.brief.focus.map((item, index) => (
-                  <div className="iw-criteriarow" key={item.key !== '' ? item.key : `${item.label}-${index}`}>
-                    <span className="iw-dot iw-dot-blue" aria-hidden />
-                    <span>
-                      <strong>
-                        {index + 1}. {item.label}
-                      </strong>
-                    </span>
-                    {item.weight !== 0 ? <span className="iw-criteriaweight">权重 {item.weight}</span> : null}
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* 本轮考察重点：task-50 轮次配置；缺配置时如实降级 JOB_BASE（不伪造）。 */}
+            <RoundFocusCard row={row} />
 
-            <details className="iw-paper iw-collapse">
-              <summary>建议问题（{row.brief.questions.length}）</summary>
-              <div>
-                {row.brief.questions.length === 0 ? (
-                  <p className="iw-muted iw-tiny">服务端未提供建议问题。</p>
-                ) : (
-                  <div className="iw-sourcebox">{row.brief.questions.map((question) => `• ${question}`).join('\n')}</div>
-                )}
-              </div>
-            </details>
+            {/* 本轮评分表（effective_rubric）：维度/权重/重点/必覆盖/来源。 */}
+            <RoundRubricTable row={row} />
+
+            {row.round.serverFieldsMissing ? (
+              <details className="iw-paper iw-collapse" data-testid="legacy-brief-questions">
+                <summary>旧 brief 建议问题（{row.brief.questions.length}，非轮次配置）</summary>
+                <div>
+                  {row.brief.questions.length === 0 ? (
+                    <p className="iw-muted iw-tiny">服务端未提供建议问题。</p>
+                  ) : (
+                    <div className="iw-sourcebox">{row.brief.questions.map((question) => `• ${question}`).join('\n')}</div>
+                  )}
+                </div>
+              </details>
+            ) : null}
 
             <details className="iw-paper iw-collapse">
               <summary>查看招聘方接收的简历材料</summary>
@@ -823,6 +1017,7 @@ export function InterviewerWorkspace(props: WorkspaceProps): JSX.Element {
             interviewId={formTarget.interview_id}
             applicationId={formTarget.application_id}
             rubricVersionId={formTarget.rubric !== null ? formTarget.rubric.rubric_version_id : ''}
+            round={formTarget.round}
             onClose={closeScorecard}
             onSubmitted={handleSubmitted}
             onUnavailable={handleUnavailable}

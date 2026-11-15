@@ -216,4 +216,28 @@ export const INTERVIEWER_CSS = `
   .iw-modalend .iw-btn{flex:1 1 auto}
   .iw-chip{white-space:normal;text-align:left}
 }
+
+/* ---------- 轮次级考察重点 / 本轮评分表（W3b，task-50） ---------- */
+.iw-roundcard,.iw-schema{margin-top:15px;padding:17px 19px}
+.iw-roundtitle{font-size:15px;font-weight:650;color:var(--iw-text);margin:2px 0 6px;overflow-wrap:anywhere}
+.iw-roundcard .iw-subhead,.iw-schema .iw-subhead{margin-top:0}
+.iw-roundcard .iw-criteria{margin-top:8px}
+.iw-roundcard .iw-criteriarow{align-items:flex-start;gap:8px;flex-wrap:wrap}
+.iw-roundcard .iw-chip,.iw-schema .iw-chip{margin-left:6px}
+.iw-roundcard .iw-notice,.iw-schema .iw-notice{margin-top:10px}
+.iw-schemalist{margin-top:10px;display:flex;flex-direction:column;gap:9px;min-width:0}
+.iw-schemarow{border:1px solid var(--iw-border);border-radius:10px;padding:10px 12px;min-width:0;
+  display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere;word-break:break-word}
+.iw-schemarow-main{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;min-width:0}
+.iw-schemarow-main strong{overflow-wrap:anywhere}
+.iw-schemarow-chips{display:flex;flex-wrap:wrap;gap:5px}
+.iw-roundctx{margin:10px 0 2px;padding:11px 13px;border:1px solid var(--iw-border);border-radius:10px;
+  background:var(--iw-bluebg);min-width:0;overflow-wrap:anywhere}
+.iw-roundctx strong{display:block;font-size:12px;margin-bottom:3px}
+.iw-roundctx p{margin:2px 0}
+@media (max-width:570px){
+  .iw-roundcard,.iw-schema{padding:14px 13px}
+  .iw-schemarow{padding:9px 10px}
+  .iw-roundcard .iw-criteriarow,.iw-schemarow-main,.iw-schemarow-chips{min-width:0}
+}
 `
