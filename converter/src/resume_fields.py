@@ -347,9 +347,32 @@ def _field(state: str, *, value=None, evidence=None, reason="", provenance="nati
 _CJK_NAME_RE = re.compile(r"^[\u4e00-\u9fa5]{2,4}$")
 _EN_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z.\-]{1,24}(?:\s+[A-Za-z][A-Za-z.\-]{0,24}){0,2}$")
 _NAME_STOP = re.compile(r"[\d@:：/／]|简历|resume|curriculum", re.I)
-# 「姓名：崔兴」这类带标签写法：字段在原文里被明确标注，属于已读出
+# 「姓名：崔兴」这类带标签写法：字段在原文里被明确标注，属于已读出（最高优先级）。
+# 标签必须出现在**行首**（允许前导空白），正文句子里的「姓名」不算字段标签；
+# 大小写不敏感（Name / name / NAME）。值：2-20 个汉字，或 1-4 个英文单词。
+# 英文 token 允许内部数字：合成简历的合法英文名是「P03 Synthetic Candidate D」，
+# 只认纯字母 token 会把这类名字读丢（task-77 报告 deviation 有说明）。
 _LABELED_NAME = re.compile(
-    r"(?:姓\s*名|Name)\s*[:：]\s*([\u4e00-\u9fa5]{2,4}|[A-Za-z][A-Za-z.\-]{1,20}(?:\s+[A-Za-z][A-Za-z.\-]{0,20}){0,2})")
+    r"^[ \t]*(?:姓\s*名|name)\s*[:：]\s*(?P<cjk>[\u4e00-\u9fa5]{2,20})"
+    r"|^[ \t]*(?:姓\s*名|name)\s*[:：]\s*"
+    r"(?P<en>[A-Za-z][A-Za-z0-9.\-]{0,24}(?:\s+[A-Za-z][A-Za-z0-9.\-]{0,24}){0,3})",
+    re.IGNORECASE | re.MULTILINE)
+# 行首出现姓名标签（即使没读出值）→ 该字段不能记 absent，只能 unreadable（红线）
+_NAME_LABEL = re.compile(r"^[ \t]*(?:姓\s*名|name)(?=\s*[:：]|\s*$)",
+                         re.IGNORECASE | re.MULTILINE)
+# 「姓名：张三  性别：男」写在同一 block 时汉字串会吞掉相邻字段词，按字段词截断
+_LABELED_VALUE_STOP = re.compile(
+    r"性别|年龄|电话|手机|邮箱|民族|籍贯|学历|婚姻|出生|身高|体重|城市|地址|住址|"
+    r"政治面貌|求职|微信|联系方式|姓名|简历")
+# 带标签但值本身就是文档/章节词时不是姓名（例如「姓名：个人简介」）
+_LABELED_NAME_VETO = re.compile(
+    r"^(?:姓名|声明|简历|个人简历|联系方式|基本信息|个人信息|个人简介|自我介绍|"
+    r"求职意向|工作经历|教育经历|技能|项目经历|resume|curriculum vitae|"
+    r"profile|summary|about|contact|personal (?:profile|information)?)$", re.I)
+# 值以文档词开头（如「个人简历张三」）同样不可信：不截断、不猜，交给 unreadable
+_LABELED_NAME_VETO_PREFIX = re.compile(
+    r"^(?:声明|简历|个人简历|联系方式|基本信息|个人信息|个人简介|自我介绍|求职意向|"
+    r"工作经历|教育经历|项目经历)")
 # 出现标签但没读出值 → unreadable，不是 absent（红线：unreadable 不能当 absent）
 _PHONE_LABEL = re.compile(r"电\s*话|手\s*机|联系电话|联系方式|\btel\b|\bmobile\b|\bphone\b", re.I)
 _EMAIL_LABEL = re.compile(r"邮\s*箱|电子邮箱|电子邮件|\bemail\b|\be-mail\b", re.I)
@@ -370,58 +393,77 @@ def _name_shaped(text: str) -> bool:
     return bool(_CJK_NAME_RE.match(t) or _EN_NAME_RE.match(t))
 
 
+def _labeled_name_value(match: re.Match) -> str:
+    """带标签匹配 → 可信姓名；读不出或不可信时返回空串（交给 unreadable 兜底）。
+
+    注意：这里**不**用 ``structure.classify_heading`` 判姓名——它是章节词表，
+    会把「测试候选人丁」判成 ROLE_DEV（词表里有「测试」），把合法姓名误杀。
+    带标签路径只排除"值本身就是文档词"的情况（``_LABELED_NAME_VETO``）。
+    """
+    cjk = (match.group("cjk") or "").strip()
+    if cjk:
+        # 先判"值本身就是文档词/以文档词开头"，再截断相邻字段——否则「个人简历」
+        # 会被 `_LABELED_VALUE_STOP` 截成「个人」这种更糟的假姓名。
+        if _LABELED_NAME_VETO.match(cjk) or _LABELED_NAME_VETO_PREFIX.match(cjk):
+            return ""
+        stop = _LABELED_VALUE_STOP.search(cjk)
+        if stop:
+            cjk = cjk[:stop.start()].strip()
+        if len(cjk) < 2 or _LABELED_NAME_VETO.match(cjk):
+            return ""
+        return cjk
+    en = (match.group("en") or "").strip()
+    if not en or re.search(r"简历|resume|curriculum|[@:：/／]", en, re.I):
+        return ""
+    if _LABELED_NAME_VETO.match(en):
+        return ""
+    return en
+
+
 def _find_name(blocks: list, sha: str) -> dict:
-    """姓名只从"首页 + 最大字号 + 姓名形态"取，两条独立信号都要成立。"""
-    candidates = []
+    """姓名只从两类可信来源取，优先级：① 带标签字段 ② 结构层 h1。
+
+    绝不按"字号最大的姓名形态块"猜测：实测合成简历 V4 里首页正文小标题「声明」
+    （12pt、姓名形态、无 level）就是被旧的 ``font_size_max`` fallback 当成姓名的。
+    结构层 h1 已经同时含「首页 + 最大字号 + 姓名形态」三条信号，不再需要该 fallback。
+    取不到可信姓名时如实 ``absent`` / ``unreadable``，绝不编造。
+    """
+    # ① 带标签字段（最高优先级）：原文明确标注了这是姓名
     for index, block in enumerate(blocks):
-        location = block.get("location") or {}
-        if location.get("page") != 1:
-            continue
-        text = (block.get("text") or "").strip()
-        level = block.get("level") or 0
-        size = float((block.get("evidence") or {}).get("font_size") or 0)
-        if _name_shaped(text):
-            candidates.append((index, block, text,
-                               "heading_level_1" if level == 1 else "font_size_max", size))
-            continue
-        # 结构层认定 h1、但同一行还带职位（"张馨方  AI Product Manager"）：
-        # 取开头的中文姓名段。规则与 structure._classify_title 的姓名判定一致。
-        if level == 1:
-            head = re.match(r"^([\u4e00-\u9fa5]{2,4})(?=[\s\uff08(]|$)", text)
-            if head and st.classify_heading(head.group(1)) == st.ROLE_OTHER:
-                candidates.append((index, block, head.group(1),
-                                   "heading_level_1_prefix", size))
-    if not candidates:
-        for index, block in enumerate(blocks):
-            match = _LABELED_NAME.search(block.get("text") or "")
-            if match:
-                value = match.group(1).strip()
+        text = block.get("text") or ""
+        for match in _LABELED_NAME.finditer(text):
+            value = _labeled_name_value(match)
+            if value:
                 return _field(PRESENT, value=value,
                               evidence=[_evidence(block, index, sha, value)],
                               provenance=_provenance_of(block),
                               extra={"match_rule": "labeled_name"})
-        # 出现"姓名/Name"标签却没读出值 → 读不出，而不是没有（来源跟随标签块）
-        for index, block in enumerate(blocks):
-            text = block.get("text") or ""
-            if _LABELED_NAME.search(text) or re.search(r"姓\s*名|\bName\b", text):
-                return _field(UNREADABLE, reason="name_label_without_readable_value",
-                              provenance=_provenance_of(block))
-        return _field(ABSENT, reason="no_name_candidate", provenance="unknown")
-    # 优先结构层认定的 h1；否则取首页字号最大者（且必须唯一最大）
-    h1 = [c for c in candidates if c[3].startswith("heading_level_1")]
-    if h1:
-        index, block, text, source, size = h1[0]
-    else:
-        top = max(c[4] for c in candidates)
-        best = [c for c in candidates if c[4] == top]
-        if len(best) != 1 or top <= 0:
-            return _field(UNREADABLE, reason="ambiguous_name_candidates",
-                          provenance=_provenance_of(candidates[0][1]),
-                          extra={"candidates": [c[2] for c in candidates[:5]]})
-        index, block, text, source, size = best[0]
-    return _field(PRESENT, value=text, evidence=[_evidence(block, index, sha, text)],
-                  provenance=_provenance_of(block),
-                  extra={"match_rule": source})
+    # ② 结构层 h1（只可能出现在首页；level=1 来自 structure 的「首页+最大字号+姓名形态」）
+    for index, block in enumerate(blocks):
+        location = block.get("location") or {}
+        if location.get("page") != 1 or (block.get("level") or 0) != 1:
+            continue
+        text = (block.get("text") or "").strip()
+        if _name_shaped(text):
+            return _field(PRESENT, value=text,
+                          evidence=[_evidence(block, index, sha, text)],
+                          provenance=_provenance_of(block),
+                          extra={"match_rule": "heading_level_1"})
+        # 同一行还带职位（"张馨方  AI Product Manager"）：取开头的中文姓名段。
+        # 规则与 structure._classify_title 的姓名判定一致。
+        head = re.match(r"^([\u4e00-\u9fa5]{2,4})(?=[\s\uff08(]|$)", text)
+        if head and st.classify_heading(head.group(1)) == st.ROLE_OTHER:
+            value = head.group(1)
+            return _field(PRESENT, value=value,
+                          evidence=[_evidence(block, index, sha, value)],
+                          provenance=_provenance_of(block),
+                          extra={"match_rule": "heading_level_1_prefix"})
+    # ③ 出现姓名标签但整篇都没读出可信值 → 读不出，而不是没有（红线）
+    for index, block in enumerate(blocks):
+        if _NAME_LABEL.search(block.get("text") or ""):
+            return _field(UNREADABLE, reason="name_label_without_readable_value",
+                          provenance=_provenance_of(block))
+    return _field(ABSENT, reason="no_name_candidate", provenance="unknown")
 
 
 def _find_pattern_field(blocks: list, patterns, sha: str, *, name: str) -> dict:

@@ -371,6 +371,16 @@ export async function seedScenario(client: DatabaseClient, input: {
   readonly jobId?: string
   readonly candidateId?: string
   readonly departmentId?: string
+  /**
+   * 可选：`job_version.description_md`（默认 `'测试 JD'` = 既有行为）。
+   * 质量门槛（`rubric_quality`）在 `requirements_md` 为空时回退读它。
+   */
+  readonly descriptionMd?: string
+  /**
+   * 可选：`job_version.requirements_md`（默认 `null` = 既有行为，那时 `requirements_md` 列就是空）。
+   * 质量门槛**优先**读这一列：它是岗位 JD 的"要求"部分。
+   */
+  readonly requirementsMd?: string
 }): Promise<Scenario> {
   const suffix = uniqueSuffix()
   const jobId = input.jobId ?? (await one(client, `insert into recruitment.job
@@ -380,9 +390,10 @@ export async function seedScenario(client: DatabaseClient, input: {
   ]))
 
   const jobVersionId = await one(client, `insert into recruitment.job_version
-      (tenant_id, job_id, version_no, description_md, payload_hash, created_by_actor_id)
-      values ($1, $2, 1, '测试 JD', $3, $4) returning id`, [
-    TENANT, jobId, hex64(`jv${suffix}`), HR_ACTOR,
+      (tenant_id, job_id, version_no, description_md, requirements_md, payload_hash, created_by_actor_id)
+      values ($1, $2, 1, $3, $4, $5, $6) returning id`, [
+    TENANT, jobId, input.descriptionMd ?? '测试 JD', input.requirementsMd ?? null,
+    hex64(`jv${suffix}`), HR_ACTOR,
   ])
   await client.query(
     'update recruitment.job set current_job_version_id = $2 where id = $1',

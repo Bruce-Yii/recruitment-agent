@@ -89,7 +89,69 @@ const HUMAN_ACTIONS = [
 const WARNING_CODES = [
   'APPLICATION_ON_HOLD', 'JOB_PAUSED', 'FIELD_STATE_UNDECLARED', 'ABSENT_DOWNGRADED',
   'SCREENING_INDEX_INCONSISTENT', 'EVIDENCE_SHA_MISMATCH', 'RUBRIC_PIN_REQUIRED', 'WHAT_IF_EVALUATION',
+  // 质量门槛（2026-11-15，task-77）：rubric 只由两条 EXISTS 机械条件组成、JD 要求一条都没被覆盖，
+  // 而 verdict=PASS。Agent/HTTP 必须**显式看到**这条 warning，否则裸 PASS 会被当成业务通过。
+  'QUALITY_WARNING',
 ] as const
+
+/** 质量结论的封闭 code（task-77 新增的**提示**码；不参与 verdict 判定）。 */
+const RUBRIC_QUALITY_CODES = [
+  'ALL_CRITERIA_MECHANICAL',
+  'EXISTENCE_ONLY',
+  'JD_REQUIREMENTS_UNCOVERED',
+] as const
+
+/**
+ * 质量门槛结论（`rubric_quality`，输出里的**可选键**）。
+ *
+ * 为什么要有它（真实事故，2026-11-15）：岗位「后端工程师」的 JD 要求是
+ * 「后端开发经验；能读懂并落实接口契约。」，rubric 却只有两条机械条件
+ * （`work_experience`/`education` 的 `EXISTS`），于是 `verdict=PASS`。
+ * 那条 PASS 只证明"材料里读到了这两个字段"，不证明"这个人满足业务要求"。
+ * 本结构就是把这个差别**显式说出来**：Agent/HTTP 看到 `QUALITY_WARNING` + warning
+ * 才知道"机械条件通过 ≠ 业务通过"。
+ *
+ * 它是**启发式**（词面覆盖，无 LLM、无新依赖）：可能误报，只提示、不改标准、不写库。
+ */
+export interface RubricQuality {
+  readonly status: 'OK' | 'QUALITY_WARNING'
+  readonly reasons: readonly RubricQualityReason[]
+  readonly mechanical_dimension_count: number
+  readonly judgment_dimension_count: number
+  readonly deciding_criteria_count: number
+  readonly existence_only: boolean
+  readonly jd_requirements_checked: boolean
+  readonly jd_requirement_count: number
+  readonly uncovered_requirements: readonly RubricUncoveredRequirement[]
+  readonly human_judgment_required: boolean
+  readonly advisory: true
+  readonly note: string
+}
+
+/** 一条质量原因（封闭 code + 中文 message）。 */
+export interface RubricQualityReason {
+  readonly code: typeof RUBRIC_QUALITY_CODES[number]
+  readonly message: string
+}
+
+/** 一条没被 rubric 覆盖的 JD 要求 + 它对应的建议维度草案。 */
+export interface RubricUncoveredRequirement {
+  readonly requirement: string
+  readonly source: 'REQUIREMENTS_MD' | 'DESCRIPTION_MD'
+  readonly suggested_dimension: RubricSuggestedDimension
+}
+
+/**
+ * 建议维度草案。**只建议**：不写库、不自动改标准。
+ * 没有 `weight` 字段是故意的——rubric 维度与 Σweight=1 只能由人批准。
+ */
+export interface RubricSuggestedDimension {
+  readonly key: string
+  readonly label: string
+  readonly kind: 'MUST_HAVE'
+  readonly question: string
+  readonly weight_hint: string
+}
 
 /** 一条证据（SR §8.2：present 时 page≥1 + bbox 四元组 + source_asset_sha256 齐全）。 */
 interface ScreenEvidence {
@@ -198,6 +260,13 @@ interface EvaluateValue {
   readonly reasons: readonly ScreenReason[]
   readonly bonus_signals: readonly ScreenReason[]
   readonly warnings: readonly ScreenWarning[]
+  /**
+   * 质量门槛结论（task-77：事故「机械 PASS = 业务 PASS」）。
+   * **可选键**（不进 `required`）：老消费者不受影响；`additionalProperties:false` 要求 schema 同步声明。
+   * 它是**提示**，不是 verdict：不改变 `verdict` / `required_human_action` 的既有语义，也不进
+   * `evaluation_digest`（digest 的输入保持既有形状，避免同一评估因新增提示而漂移）。
+   */
+  readonly rubric_quality?: RubricQuality
   readonly snapshot: {
     readonly application_record_version: number
     readonly resume_version_id: string
@@ -297,6 +366,67 @@ const WARNING_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
 }
 
+/** 质量结论的一条 reason（封闭 code + 中文 message）。 */
+const RUBRIC_QUALITY_REASON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    code: { type: 'string', enum: [...RUBRIC_QUALITY_CODES] },
+    message: { type: 'string' },
+  },
+  required: ['code', 'message'],
+  additionalProperties: false,
+}
+
+/** 建议维度草案（**只建议**：不写库、不自动改标准；weight 必须由人定，所以没有 weight 字段）。 */
+const SUGGESTED_DIMENSION_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    key: { type: 'string' },
+    label: { type: 'string' },
+    kind: { type: 'string', enum: ['MUST_HAVE'] },
+    question: { type: 'string' },
+    weight_hint: { type: 'string' },
+  },
+  required: ['key', 'label', 'kind', 'question', 'weight_hint'],
+  additionalProperties: false,
+}
+
+/** 一条没被 rubric 覆盖的 JD 要求 + 它对应的建议维度草案。 */
+const UNCOVERED_REQUIREMENT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    requirement: { type: 'string' },
+    source: { type: 'string', enum: ['REQUIREMENTS_MD', 'DESCRIPTION_MD'] },
+    suggested_dimension: SUGGESTED_DIMENSION_SCHEMA,
+  },
+  required: ['requirement', 'source', 'suggested_dimension'],
+  additionalProperties: false,
+}
+
+const RUBRIC_QUALITY_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    status: { type: 'string', enum: ['OK', 'QUALITY_WARNING'] },
+    reasons: { type: 'array', items: RUBRIC_QUALITY_REASON_SCHEMA },
+    mechanical_dimension_count: { type: 'integer' },
+    judgment_dimension_count: { type: 'integer' },
+    deciding_criteria_count: { type: 'integer' },
+    existence_only: { type: 'boolean' },
+    jd_requirements_checked: { type: 'boolean' },
+    jd_requirement_count: { type: 'integer' },
+    uncovered_requirements: { type: 'array', items: UNCOVERED_REQUIREMENT_SCHEMA },
+    human_judgment_required: { type: 'boolean' },
+    advisory: { type: 'boolean', enum: [true] },
+    note: { type: 'string' },
+  },
+  required: [
+    'status', 'reasons', 'mechanical_dimension_count', 'judgment_dimension_count',
+    'deciding_criteria_count', 'existence_only', 'jd_requirements_checked', 'jd_requirement_count',
+    'uncovered_requirements', 'human_judgment_required', 'advisory', 'note',
+  ],
+  additionalProperties: false,
+}
+
 const OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
@@ -392,6 +522,8 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
     reasons: { type: 'array', items: REASON_SCHEMA },
     bonus_signals: { type: 'array', items: REASON_SCHEMA },
     warnings: { type: 'array', items: WARNING_SCHEMA },
+    // 可选键（不进 required）：向后兼容。质量门槛是**提示**，不是 verdict。
+    rubric_quality: RUBRIC_QUALITY_SCHEMA,
     snapshot: {
       type: 'object',
       properties: {
@@ -689,6 +821,32 @@ async function loadRubricVersions(
   return { versions: versions.rows, approvals: byRubric }
 }
 
+/**
+ * 读申请钉住的 `job_version` 的 JD 文本（只读；`requirements_md` 优先、`description_md` 回退）。
+ *
+ * 读不到就返回 `undefined` —— 调用方据此把 `jd_requirements_checked` 置 `false`，
+ * **不猜**（不拿岗位标题、不拿其它版本、不拿别的岗位的 JD 顶上）。
+ * tenant 过滤与 `loadApplication` 同口径（跨租户读不到同一个 id）。
+ * @param client - 只读事务内客户端。
+ * @param tenantId - 租户（来自已解析配置，不接受入参覆盖）。
+ * @param jobVersionId - `application.job_version_id`。
+ */
+async function loadJobVersionText(
+  client: DatabaseClient,
+  tenantId: string,
+  jobVersionId: string,
+): Promise<{ requirementsMd: string | null; descriptionMd: string | null } | undefined> {
+  const { rows } = await client.query<{ requirements_md: string | null; description_md: string | null }>(
+    `select jv.requirements_md, jv.description_md
+       from recruitment.job_version jv
+      where jv.id = $1 and jv.tenant_id = $2`,
+    [jobVersionId, tenantId],
+  )
+  const row = rows[0]
+  if (row === undefined) return undefined
+  return { requirementsMd: row.requirements_md, descriptionMd: row.description_md }
+}
+
 /** `timestamptz` 可能是 pg 给的 `Date`，也可能是测试造的字符串：统一取毫秒。 */
 function toMs(value: string | Date | null | undefined): number {
   if (value === null || value === undefined) return Number.NaN
@@ -946,6 +1104,295 @@ export function validateDimensions(dimensions: readonly unknown[]): RuleViolatio
     violations.push({ rule: 'R-VAL-13', reason_code: 'NO_DECIDING_CRITERIA', path: 'dimensions' })
   }
   return violations
+}
+
+// =====================================================================
+//  Rubric 质量门槛（**启发式**、只提示、不写库、不改标准）
+// =====================================================================
+//
+// 事故（2026-11-15，task-77，已验收 FAIL）：岗位「后端工程师」的 JD 要求 =
+// 「后端开发经验；能读懂并落实接口契约。」，rubric 只有两条机械条件
+// （`work_exists` = work_experience EXISTS、`edu_exists` = education EXISTS，weight 各 0.5）。
+// `recruitment_screening_evaluate` 因此返回 `verdict=PASS`，Agent 只能说
+// "机械 PASS、业务 HOLD" —— 业务不可用。
+//
+// 这不是判定错误（PASS 的既有语义没错：两条 MUST_HAVE 都满足了），而是**表达缺失**：
+// 输出里没有任何地方说"这条 PASS 只覆盖了存在性，没有覆盖 JD 的业务要求"。
+// 本节的职责就是把这件事显式化，**不动 verdict**：
+//   * 纯函数 `assessRubricQuality()`（export，供单测；不连库、无时钟、无随机）；
+//   * 接线在 `evaluateInTransaction()`：读申请钉住的 `job_version` 的 JD 文本，
+//     结论进 `rubric_quality`（可选键）+ 一条 `QUALITY_WARNING` warning。
+//
+// 边界（诚实声明，详见 `work/d5/product-quality/rubric/REPORT.md`）：
+//   1. **词面覆盖**不是语义覆盖：靠 2-gram/英文词命中 rubric 文本，会误报（同义改写）、
+//      也会漏报（rubric 用了泛化的 label 却其实覆盖了要求）。所以 `note` 里写明"只提示"。
+//   2. 停用词表是**小启发式**（不是分词词典）：只滤掉"要求/经验/熟悉"这类无论怎么覆盖
+//      都会撞上的通用词，避免 rubric 里一个"要求"就骗过覆盖判定。
+//   3. 建议维度**不写库**：维度与 Σweight=1 只能由人批准（`rubric_version` 的审批语义）。
+
+/**
+ * **启发式**停用词表（不是中文分词词典，也不追求语言学正确性）。
+ *
+ * 目的只有一个：阻止"通用词假覆盖"。例如 JD 写「相关工作经验」，若 rubric label 是
+ * 「工作经历要求」，`经验/工作/经历/要求/相关` 这些 2-gram 全都会命中——那不是覆盖，
+ * 只是两个人都在说套话。被滤掉后，只剩真正的业务内容词（如「后端」「接口」「契约」）。
+ * 表小是刻意的：多滤一个字就多一分"漏报"风险。
+ */
+const JD_STOPWORDS: ReadonlySet<string> = new Set([
+  // 中文通用词（2-gram；单字不在表里也没意义——2-gram 才有意义）
+  '经验', '能力', '要求', '相关', '优先', '熟悉', '掌握', '了解', '具备', '负责',
+  '能够', '可以', '工作', '经历', '教育', '学历', '本科', '以上', '以及', '或者',
+  '岗位', '职责', '加分', '至少', '具有', '良好',
+  // 英文功能词（同样是启发式；只滤纯功能词，不滤业务词）
+  'the', 'and', 'for', 'are', 'with', 'you', 'your', 'our', 'will', 'have',
+  'has', 'this', 'that', 'from', 'they', 'not', 'but', 'can', 'job',
+])
+
+/** JD 条款切分符：换行 / `；` `;` / `。`（`，` 不切——一句话里常有多个并列要求）。 */
+const JD_CLAUSE_SPLIT = /[\r\n；;。]+/
+/** 项目符号前缀（`- ` / `* ` / `• ` / `1. ` / `1、` / `1) `），切完再剥。 */
+const JD_BULLET_PREFIX = /^\s*(?:[-*•·]+|\d{1,2}[.)、])\s*/
+/** 汉字连续段（2-gram 的来源）。 */
+const HAN_RUN = /\p{Script=Han}+/gu
+/** 英文单词（长度 ≥3 才当内容词）。 */
+const LATIN_WORD = /[A-Za-z][A-Za-z0-9]*/g
+/** JD 条款上限（与 `suggested_dimensions` 的 5 条上限一起，保证输出有界）。 */
+const JD_MAX_CLAUSES = 20
+/** 建议维度上限：多了人也不会看，而且失控的输出会撑爆 Agent 上下文。 */
+const JD_MAX_SUGGESTIONS = 5
+/** `weight` 只能由人定：建议维度里没有 weight，只有这句话。 */
+const SUGGESTED_WEIGHT_HINT = '需人工确定（rubric 维度和 Σweight=1 只能由人批准）'
+/** 质量门槛的固定声明（输出里的 `note`，逐字要求）。 */
+export const RUBRIC_QUALITY_NOTE = '质量门槛只提示，不自动修改 rubric 标准；建议维度需人批准后才能写入'
+
+/**
+ * 把一段 JD 文本切成条款（确定性，无 LLM、无新依赖）。
+ *
+ * 规则：按 换行 / `；` `;` / `。` 切分 → 剥项目符号 → trim → 去空 → 按原顺序去重 → 最多 20 条。
+ * 不按 `，` 切：一句话里常有多个并列要求，切碎了反而读不懂。
+ * @param text - `requirements_md` / `description_md` 原文（可为空）。
+ * @returns 条款数组（顺序 = 原文顺序，确定性）。
+ */
+export function splitJdClauses(text: string | null | undefined): string[] {
+  if (typeof text !== 'string' || text.trim() === '') return []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const piece of text.split(JD_CLAUSE_SPLIT)) {
+    const clause = piece.replace(JD_BULLET_PREFIX, '').trim()
+    if (clause === '') continue
+    if (seen.has(clause)) continue
+    seen.add(clause)
+    out.push(clause)
+    if (out.length >= JD_MAX_CLAUSES) break
+  }
+  return out
+}
+
+/**
+ * 抽一条 JD 要求的"内容 token"（启发式，确定性）。
+ *
+ * 口径：
+ *   * 汉字连续段取 **2-gram**（`后端开发经验` → 后端/端开/开发/发经/经验）；
+ *   * 英文单词取**长度 ≥3 的小写形式**（`PostgreSQL` → `postgresql`）；
+ *   * 去掉 {@link JD_STOPWORDS} 里的通用词（避免"要求/经验"这种套话造成假覆盖）。
+ *
+ * 为什么用 2-gram 而不是分词：仓库里**没有**中文分词器，也不许为此加依赖（R1）；
+ * 2-gram 是确定性的、可复核的近似，代价是会误报/漏报（在 REPORT.md 里写明）。
+ * @param clause - 一条 JD 要求。
+ * @returns 去重后的内容 token（顺序 = 出现顺序，确定性）；可能为空（整条都是套话）。
+ */
+export function jdContentTokens(clause: string): string[] {
+  const tokens: string[] = []
+  const push = (token: string): void => {
+    if (!JD_STOPWORDS.has(token)) tokens.push(token)
+  }
+  for (const run of clause.match(HAN_RUN) ?? []) {
+    const chars = [...run]
+    for (let i = 0; i + 1 < chars.length; i += 1) push(`${chars[i]}${chars[i + 1]}`)
+  }
+  for (const word of clause.match(LATIN_WORD) ?? []) {
+    const lower = word.toLowerCase()
+    if (lower.length >= 3) push(lower)
+  }
+  return [...new Set(tokens)]
+}
+
+/** rubric 侧文本：每个维度 `key + label + question + notes` 拼接并小写（null/缺省跳过）。 */
+function rubricTextOf(dimensions: readonly unknown[]): string {
+  const parts: string[] = []
+  for (const raw of dimensions) {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue
+    const criterion = raw as Record<string, unknown>
+    for (const key of ['key', 'label', 'question', 'notes'] as const) {
+      const value = criterion[key]
+      if (typeof value === 'string' && value.trim() !== '') parts.push(value.trim())
+    }
+  }
+  return parts.join('\n').toLowerCase()
+}
+
+/**
+ * 一条 uncovered 要求 → 建议维度草案（`key` = `jd_core_<i>`，`i` 从 1 起 = JD 条款顺序）。
+ *
+ * `label` 按 R-VAL-4 截断到 ≤200；`question` 用同一个 label（R-VAL-12 要求 ≤500）——
+ * 都不写 weight：**rubric 维度与 Σweight=1 只能由人批准**，这里只给草案。
+ * @param index - 在 uncovered 列表里的下标（0 起）。
+ * @param requirement - 那条 JD 要求原文。
+ */
+function suggestedDimensionOf(index: number, requirement: string): RubricSuggestedDimension {
+  const label = requirement.slice(0, 200)
+  return {
+    key: `jd_core_${index + 1}`,
+    label,
+    kind: 'MUST_HAVE',
+    question: `候选人是否满足 JD 要求「${label}」？请结合材料给出判断与证据。`,
+    weight_hint: SUGGESTED_WEIGHT_HINT,
+  }
+}
+
+/**
+ * 判定 rubric 质量（纯函数：不连库、无时钟、无随机；同一输入必得同一输出）。
+ *
+ * 判定口径（与 task-77 需求逐条对应）：
+ *   * 机械/判断维度按**现有 R-VAL 口径**数：`field != null`（`null` 与缺失同义）= 机械；
+ *     其余（`field` 缺失或 `null`）= 判断型；
+ *   * `existence_only` = 所有 MUST_HAVE/DISQUALIFIER **决定性维度**都满足
+ *     `operator==='EXISTS'` 且 `field` ∈ 布尔字段（`work_experience` / `education`）；
+ *     没有决定性维度时**不**算 existence_only（R-VAL-13 本来就拒绝这种 rubric）；
+ *   * `QUALITY_WARNING` ⟺ ① `judgment_dimension_count===0 && mechanical_dimension_count>0`
+ *     （纯机械、没有任何需人判断维度）或 ② JD 文本读到了且存在 uncovered 要求；
+ *   * `jd_requirements_checked`：`requirements_md` 优先、`description_md` 回退；
+ *     两者都切不出条款 = **没检查**（`false`，不猜）。
+ *
+ * @param input - `dimensions` + 申请钉住的 job_version 的两段 JD 文本。
+ * @returns 质量结论（完整、封闭；不含 null）。
+ */
+export function assessRubricQuality(input: {
+  readonly dimensions: readonly unknown[]
+  readonly requirementsMd?: string | null
+  readonly descriptionMd?: string | null
+}): RubricQuality {
+  const dimensions = Array.isArray(input.dimensions) ? input.dimensions : []
+  let mechanical = 0
+  let judgment = 0
+  let deciding = 0
+  const decidingShapes: { field: string | null; operator: string | null }[] = []
+  for (const raw of dimensions) {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue
+    const criterion = raw as Record<string, unknown>
+    const kind = criterion.kind
+    const isDeciding = kind === 'MUST_HAVE' || kind === 'DISQUALIFIER'
+    // R-VAL 口径：`null` 与"键缺失"同义 —— 都表示"这条没有机械字段"（判断型）。
+    const hasField = criterion.field !== undefined && criterion.field !== null
+    if (hasField) mechanical += 1
+    else judgment += 1
+    if (!isDeciding) continue
+    deciding += 1
+    decidingShapes.push({
+      field: hasField ? String(criterion.field) : null,
+      operator: criterion.operator === undefined || criterion.operator === null ? null : String(criterion.operator),
+    })
+  }
+  const existenceOnly = deciding > 0 && decidingShapes.every((shape) => (
+    shape.field !== null && BOOLEAN_FIELDS.has(shape.field) && shape.operator === 'EXISTS'
+  ))
+
+  // JD：requirements_md 优先；它切不出条款时才回退 description_md；都空 = 没检查（不猜）。
+  const requirementClauses = splitJdClauses(input.requirementsMd)
+  const fromRequirements = requirementClauses.length > 0
+  const jdClauses = fromRequirements ? requirementClauses : splitJdClauses(input.descriptionMd)
+  const jdChecked = jdClauses.length > 0
+  const source: 'REQUIREMENTS_MD' | 'DESCRIPTION_MD' = fromRequirements ? 'REQUIREMENTS_MD' : 'DESCRIPTION_MD'
+  const rubricText = rubricTextOf(dimensions)
+  const uncovered = jdChecked
+    ? jdClauses.filter((clause) => !jdContentTokens(clause).some((token) => rubricText.includes(token)))
+    : []
+
+  const allMechanical = judgment === 0 && mechanical > 0
+  const warning = allMechanical || uncovered.length > 0
+  const reasons: RubricQualityReason[] = []
+  if (allMechanical) {
+    reasons.push({
+      code: 'ALL_CRITERIA_MECHANICAL',
+      message: `rubric 的 ${mechanical} 条维度全部是机械字段判定（field 非空），没有任何需要人判断的维度；`
+        + '机械条件通过只证明"材料里读到了这些字段"，不证明"这个人满足业务要求"',
+    })
+  }
+  if (warning && existenceOnly) {
+    reasons.push({
+      code: 'EXISTENCE_ONLY',
+      message: `决定性维度只判"存在性"：${deciding} 条 MUST_HAVE/DISQUALIFIER 全是 operator=EXISTS 且 field ∈ `
+        + `{work_experience, education}；这些条件证明的是"材料里读到了"，不是"这个人满足业务要求"`,
+    })
+  }
+  if (uncovered.length > 0) {
+    const labels = uncovered.slice(0, JD_MAX_SUGGESTIONS).map((clause) => `「${clause}」`).join('、')
+    reasons.push({
+      code: 'JD_REQUIREMENTS_UNCOVERED',
+      message: `JD 有 ${uncovered.length} 条要求没有出现在 rubric 的任何 key/label/question/notes 里`
+        + `（启发式词面覆盖，不是语义判断）：${labels}`,
+    })
+  }
+
+  return {
+    status: warning ? 'QUALITY_WARNING' : 'OK',
+    reasons,
+    mechanical_dimension_count: mechanical,
+    judgment_dimension_count: judgment,
+    deciding_criteria_count: deciding,
+    existence_only: existenceOnly,
+    jd_requirements_checked: jdChecked,
+    jd_requirement_count: jdClauses.length,
+    // 上限与建议维度一致（每条 uncovered 都带一条草案）：真实总数写在 reason.message 里。
+    uncovered_requirements: uncovered.slice(0, JD_MAX_SUGGESTIONS).map((requirement, index) => ({
+      requirement,
+      source,
+      suggested_dimension: suggestedDimensionOf(index, requirement),
+    })),
+    human_judgment_required: warning,
+    advisory: true,
+    note: RUBRIC_QUALITY_NOTE,
+  }
+}
+
+/** `QUALITY_WARNING` 这条 warning 的 ref（固定值：质量门槛的说明对象是 rubric 维度）。 */
+const RUBRIC_QUALITY_REF = { field: 'rubric.dimensions', source: 'rubric_quality' } as const
+
+/**
+ * 质量结论 → 一条**必须被 Agent/HTTP 看到**的 warning（`QUALITY_WARNING`）。
+ * message 里带 reasons 与建议维度 label：模型只看 summary 不够，warning 是结构化出口。
+ * @param quality - 质量结论。
+ */
+function qualityWarningOf(quality: RubricQuality): ScreenWarning {
+  const reasonText = quality.reasons.map((reason) => `${reason.code}: ${reason.message}`).join('；')
+  const labels = quality.uncovered_requirements.map((item) => `「${item.suggested_dimension.label}」`)
+  const suggestText = labels.length === 0 ? '' : `；建议维度（需人批准）：${labels.join('、')}`
+  return {
+    code: 'QUALITY_WARNING',
+    message: `rubric 质量门槛告警（只提示，不自动改 rubric 标准）：${reasonText}${suggestText}`,
+    ref: RUBRIC_QUALITY_REF,
+  }
+}
+
+/**
+ * `verdict_summary` 的质量前缀/后缀（确定性；无时钟、无随机）。
+ *
+ * * `verdict=PASS` + 质量告警 → 前缀 `[机械条件通过·非业务通过]`，**不许裸 PASS**；
+ * * 其它 verdict → 只在尾部附质量提示（可选，但保持确定性）。
+ * @param verdict - 本次 verdict。
+ * @param quality - 质量结论。
+ * @returns `{ prefix, suffix }`。
+ */
+function qualitySummaryAffixes(
+  verdict: string,
+  quality: RubricQuality,
+): { prefix: string; suffix: string } {
+  if (quality.status !== 'QUALITY_WARNING') return { prefix: '', suffix: '' }
+  const codes = quality.reasons.map((reason) => reason.code).join('/')
+  const uncovered = quality.uncovered_requirements.length
+  const suffix = `；质量门槛：${codes}，需人判断`
+    + (uncovered === 0 ? '' : `（${uncovered} 条 JD 要求未被 rubric 覆盖，已给出建议维度草案，未写库）`)
+  return { prefix: verdict === 'PASS' ? '[机械条件通过·非业务通过] ' : '', suffix }
 }
 
 // =====================================================================
@@ -1647,6 +2094,20 @@ export async function evaluateInTransaction(
   }
 
   const rubric = resolved
+
+  // ---- 质量门槛（启发式，只提示；不改 verdict、不写库、不进 evaluation_digest）----
+  // 读申请**钉住的** job_version（不是岗位当前版本）：评估的是这个申请当时对应的 JD。
+  // 读不到就不猜：jd_requirements_checked=false，只用"纯机械"这一条判据。
+  const jobVersionText = await loadJobVersionText(client, tenantId, app.job_version_id)
+  const rubricQuality = assessRubricQuality({
+    dimensions: rubric.dimensions,
+    requirementsMd: jobVersionText?.requirementsMd ?? null,
+    descriptionMd: jobVersionText?.descriptionMd ?? null,
+  })
+  if (rubricQuality.status === 'QUALITY_WARNING') {
+    addWarning(warnings, qualityWarningOf(rubricQuality))
+  }
+
   const whatIf = resolution === 'ARGUMENT' && rubric.id !== app.rubric_version_id
   const rubricPinRequired = resolution === 'JOB_CURRENT'
   if (rubricPinRequired) {
@@ -1718,7 +2179,8 @@ export async function evaluateInTransaction(
       issue_codes: [] as readonly string[],
       message: GATE_MESSAGES[code] ?? '岗位/申请状态不允许产生自动结论',
     }))
-    const summary = `门禁命中 ${reasons.map((r) => r.code).join(', ')}：本次不评估任何 criterion`
+    const affixes = qualitySummaryAffixes('NEEDS_REVIEW', rubricQuality)
+    const summary = `${affixes.prefix}门禁命中 ${reasons.map((r) => r.code).join(', ')}：本次不评估任何 criterion${affixes.suffix}`
     return finish({
       prior: prior.rows[0],
       value: {
@@ -1751,6 +2213,7 @@ export async function evaluateInTransaction(
         reasons,
         bonus_signals: [],
         warnings,
+        rubric_quality: rubricQuality,
         snapshot,
         evaluation_digest: digestOf({
           args, resolved_ids: { application_id: app.id, resume_version_id: rv.id, rubric_version_id: rubric.id },
@@ -1802,7 +2265,9 @@ export async function evaluateInTransaction(
   else if (mustUncertain || disqUncertain) verdict = 'NEEDS_REVIEW'
   else verdict = 'PASS'
 
-  const summary = buildSummary(verdict, tally, reasons)
+  // 质量门槛只改**摘要措辞**：不得让裸 PASS 被当成业务通过；verdict 本身不动。
+  const affixes = qualitySummaryAffixes(verdict, rubricQuality)
+  const summary = `${affixes.prefix}${buildSummary(verdict, tally, reasons)}${affixes.suffix}`
   const humanAction = pickHumanAction(verdict, reasons)
 
   return finish({
@@ -1837,6 +2302,7 @@ export async function evaluateInTransaction(
       reasons,
       bonus_signals: bonus,
       warnings,
+      rubric_quality: rubricQuality,
       snapshot,
       evaluation_digest: digestOf({
         args, resolved_ids: { application_id: app.id, resume_version_id: rv.id, rubric_version_id: rubric.id },
@@ -2049,6 +2515,20 @@ export function createScreeningEvaluateTool(cfg: ResolvedDatabaseConfig): Readon
           lines.push(`  bonus [${signal.code}] ${signal.criterion_key ?? '-'} — ${signal.message}`)
         }
         for (const warning of v.warnings) lines.push(`  warning ${warning.code}: ${warning.message}`)
+        // 质量门槛也给一行可读摘要：模型不该只靠 summary 里的一句前缀来判断。
+        if (v.rubric_quality !== undefined) {
+          const quality = v.rubric_quality
+          lines.push(`rubric_quality: status=${quality.status} `
+            + `mechanical=${quality.mechanical_dimension_count} judgment=${quality.judgment_dimension_count} `
+            + `existence_only=${String(quality.existence_only)} jd_checked=${String(quality.jd_requirements_checked)} `
+            + `jd_requirements=${quality.jd_requirement_count} uncovered=${quality.uncovered_requirements.length} `
+            + `human_judgment_required=${String(quality.human_judgment_required)}`)
+          for (const reason of quality.reasons) lines.push(`  quality [${reason.code}] ${reason.message}`)
+          for (const item of quality.uncovered_requirements) {
+            lines.push(`  suggested ${item.suggested_dimension.key} (${item.source}) `
+              + `${item.suggested_dimension.label} — ${item.suggested_dimension.weight_hint}`)
+          }
+        }
         lines.push(`snapshot: app_rv=${v.snapshot.application_record_version} `
           + `resume_version_id=${v.snapshot.resume_version_id} `
           + `rubric_version_id=${v.snapshot.rubric_version_id}`)

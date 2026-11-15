@@ -3196,6 +3196,17 @@ export async function recordDecisionInTransaction(
           ? humanConfirmation.confirmation_text_sha256
           : null,
         human_confirmation_preimage_version: confirmationPreimageVersion,
+        // 产品/业务 FAIL 修复 2（task-76）：确认元数据在事件里也要能**独立复算**（审计字段）。
+        // 既有 human_confirmation_* 键保持不变（旧读侧/测试不动）；这里补上审计要求的字面键。
+        // payload 是 jsonb：**不需要迁移**（不新增列/不新增表）。
+        confirmed_at: typeof humanConfirmation?.confirmed_at === 'string' ? humanConfirmation.confirmed_at : null,
+        confirmed_by_actor_id: typeof humanConfirmation?.confirmed_by_actor_id === 'string'
+          ? humanConfirmation.confirmed_by_actor_id
+          : null,
+        confirmation_method: confirmationMethod ?? null,
+        confirmation_text_sha256: typeof humanConfirmation?.confirmation_text_sha256 === 'string'
+          ? humanConfirmation.confirmation_text_sha256
+          : null,
       },
     })
     written = await insertDecisionRow(client, {

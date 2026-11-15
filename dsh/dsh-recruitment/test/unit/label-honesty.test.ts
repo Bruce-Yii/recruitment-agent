@@ -270,6 +270,21 @@ const LIVE_EVIDENCE: Record<string, { readonly marker: RegExp; readonly why: str
     marker: /provenance: 'FIXTURE',/,
     why: '写侧工具：当前实现恒 FIXTURE（fail-closed；schema 声明 LIVE 属另一处待收口，不在本 lane）',
   },
+  // 2026-11-16（task-75）：申请/材料两个一等读工具。provenance 由**同一份**租户判定算
+  // （`buildThreeAxisLabels`），数据来自被读的那一行所属租户；connection 取读库工具既有解释
+  // CONNECTED（`contracts/tenant-provenance.md` §1 的 job_get/interview_get 同一口径）。
+  'business-read.ts': {
+    marker: /import \{ buildThreeAxisLabels \} from '\.\/candidate-get\.ts'/,
+    why: '同一份租户判定（读侧：数据来自被读的那一行所属租户）',
+  },
+  // 2026-11-16（task-76）：高层"记录人已做的决定"。本工具**不自己算 provenance**，
+  // 只在 SCREENING_EVALUATION 依据里透传上游 screening_evaluate 的 labels（那里由
+  // 材料链 event_provider 非 internal 判定，见本表 screening-evaluate.ts 条）。
+  // 本工具自己不读任何外部系统、不写标签常量，所以 marker 绑的是"透传"这个事实。
+  'record-human-decision.ts': {
+    marker: /isPlainObject\(evaluation\.labels\)/,
+    why: 'provenance 透传上游 screening_evaluate 的证据判定（本工具不自称 LIVE）',
+  },
 }
 
 test('源码扫描：`provenance: \'LIVE\'` 字面量只允许出现在"证据闸门之后"', () => {

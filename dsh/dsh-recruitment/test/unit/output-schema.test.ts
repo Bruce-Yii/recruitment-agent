@@ -255,7 +255,43 @@ function sampleEvaluateValue(): Record<string, unknown> {
         message: '判断型',
       },
     ],
-    warnings: [{ code: 'RUBRIC_PIN_REQUIRED', message: '写侧落 decision 前必须先钉版本' }],
+    warnings: [
+      { code: 'RUBRIC_PIN_REQUIRED', message: '写侧落 decision 前必须先钉版本' },
+      // 质量门槛（task-77）：枚举里新增的 QUALITY_WARNING 必须能通过封闭 enum 的校验。
+      {
+        code: 'QUALITY_WARNING',
+        message: 'rubric 质量门槛告警（只提示，不自动改 rubric 标准）：JD_REQUIREMENTS_UNCOVERED: …；建议维度（需人批准）：「能读懂并落实接口契约」',
+        ref: { field: 'rubric.dimensions', source: 'rubric_quality' },
+      },
+    ],
+    // 可选键（不进 required）：事故「机械 PASS = 业务 PASS」的显式说明。
+    rubric_quality: {
+      status: 'QUALITY_WARNING',
+      reasons: [{
+        code: 'JD_REQUIREMENTS_UNCOVERED',
+        message: 'JD 有 1 条要求没有出现在 rubric 的任何 key/label/question/notes 里（启发式词面覆盖，不是语义判断）：「能读懂并落实接口契约」',
+      }],
+      mechanical_dimension_count: 2,
+      judgment_dimension_count: 1,
+      deciding_criteria_count: 2,
+      existence_only: false,
+      jd_requirements_checked: true,
+      jd_requirement_count: 1,
+      uncovered_requirements: [{
+        requirement: '能读懂并落实接口契约',
+        source: 'REQUIREMENTS_MD',
+        suggested_dimension: {
+          key: 'jd_core_1',
+          label: '能读懂并落实接口契约',
+          kind: 'MUST_HAVE',
+          question: '候选人是否满足 JD 要求「能读懂并落实接口契约」？请结合材料给出判断与证据。',
+          weight_hint: '需人工确定（rubric 维度和 Σweight=1 只能由人批准）',
+        },
+      }],
+      human_judgment_required: true,
+      advisory: true,
+      note: '质量门槛只提示，不自动修改 rubric 标准；建议维度需人批准后才能写入',
+    },
     snapshot: {
       application_record_version: 3,
       resume_version_id: '11111111-1111-4111-8111-000000000901',
@@ -286,6 +322,37 @@ test('S7 的 prior_screening 是可省略键（decision 表没有 rubric_version
     },
   }
   assert.deepEqual(valueViolations(evaluate.output.schema, withPrior), [])
+})
+
+test('rubric_quality 是可选键（不进 required）：带/不带都通过；嵌套形状与 warning 枚举不能放宽', () => {
+  const withQuality = sampleEvaluateValue()
+  // 带：完整嵌套形状必须通过（含 uncovered_requirements → suggested_dimension）。
+  assert.deepEqual(valueViolations(evaluate.output.schema, withQuality), [])
+  // 不带：老消费者/老输出兼容（向后兼容的关键断言）。
+  const withoutQuality = { ...withQuality } as Record<string, unknown>
+  delete withoutQuality.rubric_quality
+  assert.deepEqual(valueViolations(evaluate.output.schema, withoutQuality), [])
+
+  // 负例：未声明的 warning code 必须被拒（证明 QUALITY_WARNING 是"加进封闭枚举"，不是把 enum 打开）。
+  const badWarningCode = {
+    ...withQuality,
+    warnings: [{ code: 'NOT_A_REAL_WARNING', message: 'x' }],
+  }
+  assert.notDeepEqual(valueViolations(evaluate.output.schema, badWarningCode), [])
+
+  // 负例：建议维度缺 required 键必须被拒（证明嵌套形状没有放松）。
+  const brokenSuggestion = {
+    ...withQuality,
+    rubric_quality: {
+      ...(withQuality.rubric_quality as Record<string, unknown>),
+      uncovered_requirements: [{
+        requirement: '能读懂并落实接口契约',
+        source: 'REQUIREMENTS_MD',
+        suggested_dimension: { key: 'jd_core_1', label: 'x', kind: 'MUST_HAVE' },
+      }],
+    },
+  }
+  assert.notDeepEqual(valueViolations(evaluate.output.schema, brokenSuggestion), [])
 })
 
 test('contract 里画成 null 的字段：实现一律省略键（absence / observed / expected / tri_state）', () => {

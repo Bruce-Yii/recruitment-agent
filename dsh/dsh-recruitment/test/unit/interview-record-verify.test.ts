@@ -663,7 +663,7 @@ test('未配置替身：注册同一个工具名、schema 仍封闭、调用报 
 //  9. 注册点（R2：不只存在于包内，必须从运行入口 apply() 可达）
 // ---------------------------------------------------------------------------
 
-test('apply() 注册 27 个工具，且包含 recruitment_interview_record_verify（25 → 26）', () => {
+test('apply() 注册 30 个工具，且包含 recruitment_interview_record_verify（25 → 26）', () => {
   const registered: { name: string }[] = []
   const ctx = {
     tools: { register: (tool: { name: string }) => registered.push(tool) },
@@ -683,7 +683,7 @@ test('apply() 注册 27 个工具，且包含 recruitment_interview_record_verif
   }, { RECRUITMENT_DB_PASSWORD: 'unused-in-this-test' })
 
   const names = registered.map((tool) => tool.name)
-  assert.equal(names.length, 27, `注册数必须是 27，实际 ${names.length}：${names.join(', ')}`)
-  assert.equal(new Set(names).size, 27, '工具名不得重复')
+  assert.equal(names.length, 30, `注册数必须是 30，实际 ${names.length}：${names.join(', ')}`)
+  assert.equal(new Set(names).size, 30, '工具名不得重复')
   assert.ok(names.includes(INTERVIEW_RECORD_VERIFY_TOOL), `注册点少了记录核验工具：${names.join(', ')}`)
 })

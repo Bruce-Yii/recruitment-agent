@@ -8,6 +8,8 @@
 //   recruitment_resume_serialize       结构化的有序文本投影
 //   recruitment_structure_validate     校验模型给出的结构化结果
 //   recruitment_candidate_get          查候选人（stub，等 PG 接线）
+//   recruitment_application_get        **只读**：申请全貌（阶段/材料/面试/转写/决策），Agent 一等读能力
+//   recruitment_material_read          **只读**：受控读材料（哈希/结构摘要/可选正文），不再靠 shell 翻文件
 //   recruitment_job_get                查岗位 / Rubric（**真查 PG**，契约 tool-contracts.md §2）
 //   recruitment_job_create             **S3 写库**：岗位 + rubric（rubric 落 PENDING，人类批准）
 //   recruitment_job_update             **S3 写库**：改岗位 / 出新 rubric 版本
@@ -34,6 +36,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ReadonlyToolDefinition } from './tools/definition.ts'
 import { createCandidateGetTool, unconfiguredCandidateGetTool } from './tools/candidate-get.ts'
+// task-75：Agent 一等业务读工具（申请/材料）。只读；DB 缺配置时注册 NOT_CONFIGURED 替身。
+import {
+  createBusinessReadTools,
+  unconfiguredBusinessReadTools,
+} from './tools/business-read.ts'
 import { createJobGetTool, unconfiguredJobGetTool } from './tools/job-get.ts'
 import { createResumeReadTool } from './tools/resume-read.ts'
 import { createDocumentReadTool, unconfiguredDocumentReadTool } from './tools/document-read.ts'
@@ -90,6 +97,9 @@ import {
 import { createScorecardSubmitTool } from './tools/scorecard-submit.ts'
 import { createEvaluationSummarizeTool } from './tools/evaluation-summarize.ts'
 import { createDecisionRecordTool } from './tools/decision-record.ts'
+// 产品/业务 FAIL 修复 2（task-76）：高层「记录人类决策」Agent 动作。
+// 服务端组装 basis_refs / AUTHORITY / SUMMARY / RUBRIC_VERSION / confirmation hash。
+import { createRecordHumanDecisionTool } from './tools/record-human-decision.ts'
 import {
   createStageAdvanceTool,
   unconfiguredStageAdvanceTool,
@@ -706,6 +716,17 @@ export function apply(
   const candidateGet = database.resolved === null
     ? unconfiguredCandidateGetTool(database.issues)
     : createCandidateGetTool(database.resolved)
+  // task-75（产品/业务 FAIL 修复 1）：申请/材料两个一等只读工具。
+  // 为什么 material_read 还要 converter：TEXT 模式要读受控原件（allowed_roots + sha256），
+  // 缺 converter 时工具仍注册，TEXT 模式如实返回 CONVERTER_NOT_CONFIGURED（结构摘要/哈希照常可用）。
+  const businessReadTools = database.resolved === null
+    ? unconfiguredBusinessReadTools(database.issues, converter.issues)
+    : createBusinessReadTools({
+      database: database.resolved,
+      ...(converter.resolved === null
+        ? { converterIssues: converter.issues }
+        : { converter: converter.resolved }),
+    })
   // 岗位 / Rubric 是**真查库**（tool-contracts.md §2）：没配置就报 NOT_CONFIGURED，
   // 绝不退回 fixture——那样会让岗位数据看起来是 LIVE 的假象。
   const jobGet = database.resolved === null
@@ -808,6 +829,20 @@ export function apply(
       identity: actorIdentity,
     })
 
+  // 产品/业务 FAIL 修复 2（task-76）：与 UI facade 同级的高层动作。
+  // Agent 只传业务语义 + 人的原话；basis/hash/阶段码/审批全部由服务端组装。
+  const recordHumanDecision = database.resolved === null
+    ? notConfiguredTool(
+      'record_human_decision',
+      'High-level human-decision recording (the human already decided): the server assembles every derived field.',
+      database.issues,
+    )
+    : createRecordHumanDecisionTool({
+      database: database.resolved,
+      approval: resolveApproval(ctx),
+      identity: actorIdentity,
+    })
+
   // 阶段推进（N8，方案 D）：只承认已发生的事实，不新增任何授权。
   const stageAdvance = database.resolved === null
     ? unconfiguredStageAdvanceTool(database.issues)
@@ -834,6 +869,7 @@ export function apply(
     documentRead,
     ...structureTools,
     candidateGet,
+    ...businessReadTools,
     jobGet,
     jobCreate,
     jobUpdate,
@@ -850,6 +886,7 @@ export function apply(
     scorecardSubmit,
     evaluationSummarize,
     decisionRecord,
+    recordHumanDecision,
     traceGet,
     ...configTools,
     pageImage,
