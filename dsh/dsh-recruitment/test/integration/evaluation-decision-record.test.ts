@@ -100,6 +100,11 @@ async function seedPanel(
     readonly hiringManager?: 'other' | 'none'
     /** false = 申请不绑材料（S7 写侧"材料版本不存在"的负例要用）。 */
     readonly bindMaterial?: boolean
+    /**
+     * 申请**当前阶段**（task-71 / DC-07 阶段闸门后）：
+     * STAGE/FINAL 用例默认 `'S10'`；SCREENING（S7 人决定）用例必须显式传 `'S7'`。
+     */
+    readonly stageCode?: 'S7' | 'S10'
   } = {},
 ): Promise<Panel> {
   const suffix = uniqueSuffix()
@@ -117,6 +122,12 @@ async function seedPanel(
     departmentId,
     ...(options.bindMaterial === undefined ? {} : { bindMaterial: options.bindMaterial }),
   })
+  // DC-07 阶段闸门（task-71，2026-11-15）：STAGE/FINAL 决策要求 application.current_stage_code='S10'；
+  // seedScenario 默认建在 S7，因此这里按用例显式置阶段（SCREENING 用例传 'S7' 保持 S7 语义）。
+  await client.query(
+    'update recruitment.application set current_stage_code = $2 where id = $1 and tenant_id = $3',
+    [scenario.applicationId, options.stageCode ?? 'S10', TENANT],
+  )
   const rubricRow = (await client.query<{ payload_hash: string }>(
     'select payload_hash from recruitment.rubric_version where id = $1',
     [scenario.rubricId],
@@ -444,12 +455,12 @@ test('HOLD 在缺 2 份必交面评时成功：不写任何状态、事件与行
     assert.equal(await currentCount(client, panel.applicationId, 'STAGE'), 1)
     assert.equal(await decisionEventCount(client, panel.applicationId), 1)
 
-    // DC-47 / N-5：不改任何状态
+    // DC-47 / N-5：决策不改申请状态（阶段闸门要求它本来就是 S10）
     const app = (await client.query<{ current_stage_code: string; lifecycle_status: string; record_version: number }>(
       'select current_stage_code, lifecycle_status, record_version from recruitment.application where id = $1',
       [panel.applicationId],
     )).rows[0]
-    assert.equal(app?.current_stage_code, 'S7')
+    assert.equal(app?.current_stage_code, 'S10')
     assert.equal(app?.lifecycle_status, 'ACTIVE')
     const interview = (await client.query<{ status: string }>(
       'select status from recruitment.interview where id = $1',
@@ -1241,7 +1252,7 @@ async function currentCountOf(
 test('SCREENING：S7 人决定落库（scope=SCREENING / stage=S7 / 无 interview / 无 gate / 事件含 evaluation_digest）', async () => {
   await inRolledBackTx(pool, async (client) => {
     // 注意：**不需要任何面试与面评**（S7 还没有面试）
-    const panel = await seedPanel(client, { requiredCount: 1 })
+    const panel = await seedPanel(client, { requiredCount: 1, stageCode: 'S7' })
     const resume = await resumeOf(client, panel.applicationId)
     const evaluation = screeningEvaluation(panel, resume, 'PASS')
     const args = screeningArgs({
@@ -1298,7 +1309,7 @@ test('SCREENING：S7 人决定落库（scope=SCREENING / stage=S7 / 无 intervie
 
 test('SCREENING：ADVANCE/REJECT 缺 SCREENING_EVALUATION → BASIS_REF_EMPTY；HOLD/WITHDRAW 可 0 条（安全方向）', async () => {
   await inRolledBackTx(pool, async (client) => {
-    const panel = await seedPanel(client, { requiredCount: 1 })
+    const panel = await seedPanel(client, { requiredCount: 1, stageCode: 'S7' })
     const base = screeningBaseBasis(panel)
 
     for (const [result, reason] of [
@@ -1317,7 +1328,7 @@ test('SCREENING：ADVANCE/REJECT 缺 SCREENING_EVALUATION → BASIS_REF_EMPTY；
 
     for (const result of ['HOLD', 'WITHDRAW'] as const) {
       // 每个 result 用一份独立申请：同一 (scope, stage) 只能有一条 current
-      const safePanel = await seedPanel(client, { requiredCount: 1 })
+      const safePanel = await seedPanel(client, { requiredCount: 1, stageCode: 'S7' })
       const value = await recordDecisionInTransaction(
         client,
         cfg,
@@ -1333,7 +1344,7 @@ test('SCREENING：ADVANCE/REJECT 缺 SCREENING_EVALUATION → BASIS_REF_EMPTY；
 
 test('SCREENING：评估绑定必须与申请钉住的 rubric / 材料一致（不对就是 EVIDENCE_INSUFFICIENT）', async () => {
   await inRolledBackTx(pool, async (client) => {
-    const panel = await seedPanel(client, { requiredCount: 1 })
+    const panel = await seedPanel(client, { requiredCount: 1, stageCode: 'S7' })
     const resume = await resumeOf(client, panel.applicationId)
     const base = screeningBaseBasis(panel)
     const good = screeningEvaluation(panel, resume, 'PASS')
@@ -1373,7 +1384,7 @@ test('SCREENING：评估绑定必须与申请钉住的 rubric / 材料一致（�
     )
 
     // 材料版本不存在：申请没钉材料时才会走到"库里查不到这份材料"（钉了材料会先报不匹配）
-    const unboundPanel = await seedPanel(client, { requiredCount: 1, bindMaterial: false })
+    const unboundPanel = await seedPanel(client, { requiredCount: 1, bindMaterial: false, stageCode: 'S7' })
     await rejectsWith(
       recordDecisionInTransaction(client, cfg, screeningArgs({
         panel: unboundPanel,
@@ -1392,7 +1403,7 @@ test('SCREENING：评估绑定必须与申请钉住的 rubric / 材料一致（�
 
 test('SCREENING：第二次不同结论必须走 supersedes（三步舞）；不走 → ALREADY_DECIDED', async () => {
   await inRolledBackTx(pool, async (client) => {
-    const panel = await seedPanel(client, { requiredCount: 1 })
+    const panel = await seedPanel(client, { requiredCount: 1, stageCode: 'S7' })
     const resume = await resumeOf(client, panel.applicationId)
     const evaluation = screeningEvaluation(panel, resume, 'NEEDS_REVIEW')
     const first = await recordDecisionInTransaction(client, cfg, screeningArgs({
@@ -1441,7 +1452,7 @@ test('SCREENING：第二次不同结论必须走 supersedes（三步舞）；不
 
 test('SCREENING：approval 未批（非 IN_CHAT）→ 一行不写；IN_CHAT + v2 hash → 不弹 approval 直接落库', async () => {
   await inRolledBackTx(pool, async (client) => {
-    const panel = await seedPanel(client, { requiredCount: 1 })
+    const panel = await seedPanel(client, { requiredCount: 1, stageCode: 'S7' })
     const resume = await resumeOf(client, panel.applicationId)
     const evaluation = screeningEvaluation(panel, resume, 'PASS')
     const basis = [evaluation, ...screeningBaseBasis(panel)]

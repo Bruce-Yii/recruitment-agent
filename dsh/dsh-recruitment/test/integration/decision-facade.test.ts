@@ -33,6 +33,8 @@ import {
   assertPrivateDatabase,
   createIsolatedTestDatabase,
   criterion,
+  hex64,
+  one,
   parsedFields,
   seedScenario,
   TENANT,
@@ -66,6 +68,10 @@ let cfg: ResolvedDatabaseConfig
 let identity: DemoActorIdentity
 let harness: Harness
 let scenario: Scenario
+/** S10 夹具（正式决策正例 + 已提交面评 → facts 走 transcript_state 查询的回归用例）。 */
+let s10Scenario: Scenario
+let s10InterviewId = ''
+let s10ScorecardId = ''
 let pinnedRubricHash = ''
 let jobPayloadHash = ''
 
@@ -90,7 +96,10 @@ test.before(async () => {
   const boot = await runBootstrap(db.name)
   assert.equal(boot.code, 0, `bootstrap 必须 exit 0；实际 code=${String(boot.code)}\n${boot.stdout.slice(-2000)}\n${boot.stderr.slice(-2000)}`)
 
-  // 提交事务里造一份"材料已绑定 + rubric 已批准 + 已钉住"的完整夹具（真提交，供跨连接 HTTP 读）。
+  // 提交事务里造两份夹具（真提交，供跨连接 HTTP 读）：
+  //   * S7 申请：负例（S7 录 FINAL/STAGE 必须被 STAGE_NOT_S10 拦住）；
+  //   * S10 申请 + 一场面试 + 1 条已提交面评：正式决策正例，并让 facts 走
+  //     `loadRecordScorecardRefs → transcript_state` 查询（2026-11-15 真 Host 500 的回归面）。
   const client = await db.pool.connect()
   try {
     await client.query('begin')
@@ -101,6 +110,42 @@ test.before(async () => {
       pinRubric: true,
       bindMaterial: true,
     })
+    s10Scenario = await seedScenario(client, {
+      dimensions: [WORK_EXISTS, MONTHS_LTE60].map(criterion),
+      fields: parsedFields({ entryCount: 1 }),
+      approve: true,
+      pinRubric: true,
+      bindMaterial: true,
+    })
+    // 阶段迁移有过期护栏：DB 触发器要求事务里能确定 actor（SET LOCAL recruitment.actor_id）。
+    await client.query("select set_config('recruitment.actor_id', $1, true)", [HR_ACTOR])
+    await client.query(
+      "update recruitment.application set current_stage_code = 'S10' where id = $1::uuid and tenant_id = $2::uuid",
+      [s10Scenario.applicationId, TENANT],
+    )
+    s10InterviewId = await one(client, `insert into recruitment.interview
+        (tenant_id, application_id, round_no, slot_code, stage_code, status, scheduled_start_at, scheduled_end_at)
+        values ($1, $2, 1, 'DEFAULT', 'S9', 'POST_INTERVIEW', now() - interval '2 hours', now() - interval '1 hour')
+        returning id`, [TENANT, s10Scenario.applicationId])
+    const interviewerId = await one(client, `insert into recruitment.interviewer
+        (tenant_id, interview_id, actor_id, role_in_interview, required_scorecard, scorecard_due_at)
+        values ($1, $2, $3, 'INTERVIEWER', true, now() - interval '1 hour')
+        returning id`, [TENANT, s10InterviewId, '11111111-1111-4111-8111-000000000104'])
+    const scorecardItems = {
+      transcript_basis: 'NO_TRANSCRIPT',
+      work_exists: { assessment: 'MET', evidence: [] },
+      too_short: { assessment: 'MET', evidence: [] },
+    }
+    s10ScorecardId = await one(client, `insert into recruitment.scorecard
+        (tenant_id, interview_id, interviewer_id, rubric_version_id, revision_no, status,
+         submitted_at, items, overall, rationale, payload_hash, status_changed_by_actor_id)
+        values ($1, $2, $3, $4, 1, 'SUBMITTED', now(), $5::jsonb, 'HOLD', '回归夹具：S10 已提交面评',
+                $6, $7)
+        returning id`, [
+      TENANT, s10InterviewId, interviewerId, s10Scenario.rubricId,
+      JSON.stringify(scorecardItems), hex64(`d5decision:${s10Scenario.applicationId}`),
+      '11111111-1111-4111-8111-000000000104',
+    ])
     await client.query('commit')
   } finally {
     client.release()
@@ -184,6 +229,24 @@ test('facts：无材料申请 → screening_evaluation=null 且 missing 区分�
   assert.equal(body.basis?.screening_decide?.screening_evaluation, null)
 })
 
+test('facts：S10 申请 + 已提交面评 → 200（transcript_state 查询回归：真 Host 42703 修复）', async () => {
+  const result = await httpCall('GET', `${DECISION_PATHS.facts}?application_id=${s10Scenario.applicationId}`, { session: SESSION_R })
+  assert.equal(result.status, 200, `facts 期望 200（曾因 ta.interview_id 不存在报 42703）：${result.text.slice(0, 1200)}`)
+  const body = result.body
+  assert.equal(body.stage_code, 'S10')
+  assert.equal(body.evaluation_summary_state, 'COMPUTED')
+  const scorecards = (body.basis?.decision_record as Record<string, unknown> | null)?.scorecards as
+    | Array<Record<string, unknown>>
+    | undefined
+  assert.ok(Array.isArray(scorecards), 'basis.decision_record.scorecards 必须是数组')
+  assert.equal(scorecards?.length, 1, 'S10 夹具应有 1 条可用面评依据')
+  assert.equal(scorecards?.[0]?.id, s10ScorecardId)
+  // 真 Host 500 的根因是 transcript_artifact 没有 interview_id 列；修复后按真实关系取状态，
+  // 该场面试没有 artifact → 如实 MISSING（不编造 READY）。
+  assert.equal(scorecards?.[0]?.transcript_state, 'MISSING')
+  assert.equal(scorecards?.[0]?.transcript_basis, 'NO_TRANSCRIPT')
+})
+
 test('evaluate：200 + evaluation 事实 + 独立 DB 读回（零写入）', async () => {
   const before = await countRows('decision')
   const result = await httpCall('POST', DECISION_PATHS.screeningEvaluate, {
@@ -212,10 +275,10 @@ test('evaluate：200 + evaluation 事实 + 独立 DB 读回（零写入）', asy
   assert.equal(await countRows('decision'), before, 'evaluate 必须零写入')
 })
 
-test('record facade：FINAL HOLD 200 + 独立 SQL 读回 basis_refs；重复 409 零写入', async () => {
+test('record facade：S10 FINAL HOLD 200 + 独立 SQL 读回 basis_refs；重复 409 零写入', async () => {
   const before = await countRows('decision')
   const payload = {
-    application_id: scenario.applicationId,
+    application_id: s10Scenario.applicationId,
     decision_scope: 'FINAL',
     result: 'HOLD',
     reason: '集成测试：汇总不足以推进，人工决定暂缓（契约 §3 业务选择）',
@@ -241,7 +304,7 @@ test('record facade：FINAL HOLD 200 + 独立 SQL 读回 basis_refs；重复 409
             d.decided_by_actor_id::text as actor_id, d.record_version, d.basis_refs
        from recruitment.decision d
       where d.application_id = $1::uuid and d.tenant_id = $2::uuid and d.decision_scope = 'FINAL'`,
-    [scenario.applicationId, TENANT],
+    [s10Scenario.applicationId, TENANT],
   )
   assert.equal(rows.length, 1, '必须恰好有 1 条 FINAL 决策')
   const row = rows[0]
@@ -348,13 +411,42 @@ test('负例族：拒绝且零写入（session/alias/客户端 hash/同源/方�
   assert.equal(missingScope.status, 400)
   assert.equal((missingScope.body.error as Record<string, unknown>)?.reason_code, 'MISSING_REQUIRED')
 
-  // 零面评时 ADVANCE 必须被领域门禁拦住（EVIDENCE_INSUFFICIENT 或 409），且零写入
-  const advance = await httpCall('POST', DECISION_PATHS.record, {
+  // task-71 阶段闸门：S7 申请录 FINAL/STAGE → 400 INVALID_ARGS/STAGE_NOT_S10，零写入。
+  // 根因：decision.stage_code 按 scope 写死 S10，但此前不校验 application.current_stage_code
+  // （独立窗口抓到 S7/ACTIVE 申请却有 FINAL/S10 决策）。
+  const appBefore = await appState(scenario.applicationId)
+  const applicationCountBefore = await countRows('application')
+  const s7Final = await httpCall('POST', DECISION_PATHS.record, {
     session: SESSION_R,
-    body: { application_id: scenario.applicationId, decision_scope: 'FINAL', result: 'ADVANCE', reason: '没有面评硬推进' },
+    body: { application_id: scenario.applicationId, decision_scope: 'FINAL', result: 'HOLD', reason: 'S7 不能落 FINAL' },
   })
-  assert.ok(advance.status >= 400 && advance.status < 500, `ADVANCE 无面评期望 4xx：${advance.status} ${advance.text.slice(0, 600)}`)
+  assert.equal(s7Final.status, 400, `S7 录 FINAL 期望 400：${s7Final.text.slice(0, 1000)}`)
+  assert.equal((s7Final.body.error as Record<string, unknown>)?.code, 'INVALID_ARGS')
+  assert.equal((s7Final.body.error as Record<string, unknown>)?.reason_code, 'STAGE_NOT_S10')
+  const s7FinalDetail = (s7Final.body.error as Record<string, unknown>)?.detail as Record<string, unknown>
+  assert.equal(s7FinalDetail?.current_stage_code, 'S7')
+  assert.equal(s7FinalDetail?.required_stage_code, 'S10')
+
+  // STAGE 也要带 interview_id（DC-06）；闸门在 loadInterview 之前，用任意合法 UUID 即可证明确实是阶段闸门。
+  const s7Stage = await httpCall('POST', DECISION_PATHS.record, {
+    session: SESSION_R,
+    body: {
+      application_id: scenario.applicationId,
+      decision_scope: 'STAGE',
+      interview_id: '11111111-1111-4111-8111-0000000009f1',
+      result: 'HOLD',
+      reason: 'S7 不能落 STAGE',
+    },
+  })
+  assert.equal(s7Stage.status, 400, `S7 录 STAGE 期望 400：${s7Stage.text.slice(0, 1000)}`)
+  assert.equal((s7Stage.body.error as Record<string, unknown>)?.reason_code, 'STAGE_NOT_S10')
+
+  const appAfter = await appState(scenario.applicationId)
+  assert.equal(appAfter.current_stage_code, 'S7', '被拦的决策不得移动申请阶段')
+  assert.equal(appAfter.lifecycle_status, appBefore.lifecycle_status)
+  assert.equal(appAfter.record_version, appBefore.record_version, '被拦的决策不得改 application.record_version')
   assert.equal(await countRows('decision'), before, '负例族必须零写入')
+  assert.equal(await countRows('application'), applicationCountBefore, '被拦的决策不得新增申请')
 })
 
 // ===========================================================================
@@ -371,6 +463,24 @@ async function query<T extends Record<string, unknown>>(sql: string, params: rea
 async function countRows(table: 'decision' | 'application'): Promise<number> {
   const rows = await query<{ n: number }>(`select count(*)::int as n from recruitment.${table}`)
   return rows[0]?.n ?? 0
+}
+
+/** 申请状态事实（独立 SQL；用于断言被拦的决策不移动阶段/版本）。 */
+interface AppState {
+  readonly current_stage_code: string
+  readonly lifecycle_status: string
+  readonly record_version: number
+}
+
+async function appState(applicationId: string): Promise<AppState> {
+  const rows = await query<AppState>(
+    `select current_stage_code, lifecycle_status, record_version
+       from recruitment.application where id = $1::uuid and tenant_id = $2::uuid`,
+    [applicationId, TENANT],
+  )
+  const row = rows[0]
+  assert.ok(row !== undefined, `申请 ${applicationId} 必须存在`)
+  return row
 }
 
 /** 跑 `scripts/bootstrap-demo.mjs`（cwd = 仓库根；env 只指向本用例的一次性库）。 */

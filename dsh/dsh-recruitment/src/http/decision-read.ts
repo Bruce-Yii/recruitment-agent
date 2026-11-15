@@ -1157,14 +1157,47 @@ const FINAL_SCORECARDS_SQL = `
    order by s.interviewer_id asc, s.id asc
 `
 
-/** 面试的转写状态（SCORECARD 依据的 `transcript_state` 只想如实取状态，不猜）。 */
+/**
+ * 面试的转写状态（SCORECARD 依据的 `transcript_state` 只想如实取状态，不猜）。
+ *
+ * 2026-11-15 真 Host 500 修复：`transcript_artifact` **没有** `interview_id` 列
+ * （`字段 ta.interview_id 不存在`，SQLSTATE 42703）。它与 interview 的正确关系有两条：
+ *   * `interview_record.interview_id` → `interview_record.transcript_artifact_id`；
+ *   * `meeting_binding.interview_id`（`unbound_at is null`）→ `meeting_binding.meeting_id`
+ *     → `transcript_artifact.meeting_id`。
+ * 这里按这两条真实关系取「面试 → artifact 状态」，一条都没有则该面试视为 `MISSING`（不编造 READY）。
+ * 选取顺序：canonical 优先 → 最近 fetch/created 优先（与 `recruiting.ts::TRANSCRIPT_CANDIDATES_SQL` 同口径）。
+ */
 const TRANSCRIPT_STATE_SQL = `
-  select ta.interview_id::text as interview_id,
-         ta.status              as status
-    from recruitment.transcript_artifact ta
-   where ta.tenant_id = $1::uuid
-     and ta.interview_id = any($2::uuid[])
-   order by ta.created_at desc, ta.id desc
+  with artifact_links as (
+    select ir.interview_id                                  as interview_id,
+           ta.id                                            as artifact_id,
+           ta.transcript_status                             as transcript_status,
+           ta.is_canonical                                  as is_canonical,
+           coalesce(ta.fetched_at, ta.created_at)           as linked_at
+      from recruitment.interview_record ir
+      join recruitment.transcript_artifact ta
+        on ta.id = ir.transcript_artifact_id and ta.tenant_id = ir.tenant_id
+     where ir.tenant_id = $1::uuid
+       and ir.interview_id = any($2::uuid[])
+    union all
+    select mb.interview_id,
+           ta.id,
+           ta.transcript_status,
+           ta.is_canonical,
+           coalesce(ta.fetched_at, ta.created_at)
+      from recruitment.meeting_binding mb
+      join recruitment.transcript_artifact ta
+        on ta.meeting_id = mb.meeting_id and ta.tenant_id = mb.tenant_id
+     where mb.tenant_id = $1::uuid
+       and mb.interview_id = any($2::uuid[])
+       and mb.unbound_at is null
+  )
+  select distinct on (interview_id)
+         interview_id::text   as interview_id,
+         transcript_status    as status
+    from artifact_links
+   order by interview_id asc, is_canonical desc, linked_at desc, artifact_id asc
 `
 
 /** 写后独立读回（decision 没有 status 列：用 result + is_current 表达状态）。 */
@@ -2026,6 +2059,24 @@ async function handleRecord(
     await loadAuthorityActor(client, database.tenant_id, resolved)
     const isHiringManager = app.hiring_manager_actor_id !== null
       && app.hiring_manager_actor_id.toLowerCase() === resolved.actor_id.toLowerCase()
+    // DC-07 阶段闸门（与 `decision-record.ts` 同一判据）：facade 先如实拒绝，避免把
+    // "S7 不能落 S10 决策" 误报成 MISSING_SUMMARY（summary 在 STAGE 还依赖 interview_id）。
+    // 工具侧仍会再校验一次（权威闸门，边界在领域里）。
+    if (app.current_stage_code !== 'S10') {
+      throw decisionHttpError(
+        400,
+        'INVALID_ARGS',
+        'STAGE_NOT_S10',
+        '申请当前阶段不是 S10，不能落 STAGE/FINAL 决策（先推进阶段，DC-07）',
+        {
+          application_id: app.application_id,
+          current_stage_code: app.current_stage_code,
+          required_stage_code: 'S10',
+          decision_scope: command.scope,
+          lifecycle_status: app.lifecycle_status,
+        },
+      )
+    }
     if (app.application_rubric_version_id === null || !isHex64(app.rubric_payload_hash)) {
       throw decisionHttpError(400, 'INVALID_ARGS', 'NO_RUBRIC', '申请没有钉住可用的 Rubric 版本', {
         application_id: command.applicationId,

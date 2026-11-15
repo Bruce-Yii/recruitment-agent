@@ -235,6 +235,7 @@ STEP 7  写入（decision 行 + 旧行指针 + 内部事件），带版本条件
 | **DC-05** | 上述顺序**必须**照做：先判"该不该决"再判"决得对不对"。反过来的实现（先算门禁再查身份）会把"Agent 试图代决"报成"面评缺失"，掩盖真正的违规 | 与 `screening-rules.md §5 STEP 0` 同构 |
 | **DC-06** | `decision_scope='STAGE'` ⇒ `interview_id` 必填，否则 `INVALID_ARGS(STAGE_REQUIRES_INTERVIEW)`；`='FINAL'` ⇒ `interview_id` 必须为空，否则 `INVALID_ARGS(FINAL_SCOPE_NO_INTERVIEW)`；其它值 ⇒ `INVALID_ARGS(DECISION_SCOPE_NOT_S10)` | 禁止"自动取最后一轮"——那是 `D11 §9.8`"不得静默择一"的同构错误 |
 | **DC-07** | `stage_code` **不由调用方提供**，工具写 `'S10'`；调用方传了非 `'S10'` 的值 → `INVALID_ARGS(STAGE_CODE_NOT_S10)` | `0001:L1355` 只有正则无外键；`D-22` 唯一口径；`D-24` 同构（脏 code 是静默错误） |
+| **DC-07b** | **STAGE/FINAL 写库前还必须校验 `application.current_stage_code='S10'`**；否则 `INVALID_ARGS(STAGE_NOT_S10)`、零写入。SCREENING 不走此闸门（仍按 S7 写侧语义） | 2026-11-15 独立验收发现：只写死 `decision.stage_code='S10'` 会让 S7 申请直接落 FINAL，阶段与决策事实不一致。工具侧为权威闸门，Host facade 提前同一判据 fail-fast |
 
 > **2026-11-14 增补（P0-3）**：上面两条只覆盖 **S10**（`STAGE`/`FINAL`）。
 > `decision_scope='SCREENING'`（S7 的人决定）此前**没有写侧**：`decision_record` 明确拒收它，

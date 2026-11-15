@@ -500,6 +500,12 @@ test('强行绕过补钉后：summarize 剔除 V1 面评并报 SCORECARD_RUBRIC_
       [TENANT, path.applicationId, path.rubrics.v2],
     )).rows[0]
     assert.ok(bypassed !== undefined, '绕过 UPDATE 必须命中（申请此前未钉）')
+    // DC-07 阶段闸门（task-71）：STAGE/FINAL 决策要求申请当前阶段 S10；本用例要测的是
+    // SC-11 的错配闸门，所以先把申请推进到 S10（事务内 GUC actor 已由 inRolledBackTx 设好）。
+    await client.query(
+      "update recruitment.application set current_stage_code = 'S10' where tenant_id = $1 and id = $2",
+      [TENANT, path.applicationId],
+    )
 
     // ---- ②-a 汇总：该条不进汇总，且必须能被调用方看见 ----
     const summary = await computeEvaluationSummaryIn(client, cfg, {
@@ -702,6 +708,12 @@ test('阴性对照（止血动作不被一刀切）：版本错配时用 HOLD �
   await inRolledBackTx(pool, async (client) => {
     const path = await constructMismatchPath(client)
     await forcePinRubric(client, path.applicationId, path.rubrics.v2)
+    // DC-07 阶段闸门（task-71）：止血动作用例也必须先到 S10（否则拿到的是 STAGE_NOT_S10，
+    // 测不到"错配只挡正式结论、不挡 HOLD"这条产品语义）。
+    await client.query(
+      "update recruitment.application set current_stage_code = 'S10' where tenant_id = $1 and id = $2",
+      [TENANT, path.applicationId],
+    )
     const summary = await computeEvaluationSummaryIn(client, cfg, {
       application_id: path.applicationId,
       decision_scope: 'STAGE',

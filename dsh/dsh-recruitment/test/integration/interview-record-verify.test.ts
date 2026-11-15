@@ -82,6 +82,12 @@ async function seedPanel(
     dimensions: DIMENSIONS,
     ...(options.pinRubric === false ? { pinRubric: false } : {}),
   })
+  // DC-07 阶段闸门（task-71，2026-11-15）：本文件的决策用例全部是 S10 STAGE 决策，
+  // 申请必须先处于 S10（seedScenario 默认 S7）。
+  await client.query(
+    "update recruitment.application set current_stage_code = 'S10' where id = $1::uuid and tenant_id = $2::uuid",
+    [scenario.applicationId, TENANT],
+  )
   const interviewResult = await client.query<{ id: string }>(
     `insert into recruitment.interview
        (tenant_id, application_id, round_no, slot_code, stage_code, status,

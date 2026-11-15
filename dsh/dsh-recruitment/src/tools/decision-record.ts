@@ -2940,6 +2940,25 @@ export async function recordDecisionInTransaction(
   // `stage_code` 由 scope 写死（S7→'S7'，S10→'S10'）；查 current / 写行 / 写事件都用同一值。
   const stageCode = stageCodeOf(args.decision_scope)
   const application = await loadApplication(client, tenantId, args.application_id)
+  // DC-07 补（2026-11-15 独立窗口发现的真实不一致）：STAGE/FINAL 的 decision.stage_code 按 scope
+  // **写死 'S10'**，但此前不校验申请**当前**阶段，导致 "S7/ACTIVE 申请却有 FINAL/S10 决策" 的
+  // 假事实（application 45ddd9fc / decision c645baba）。写库前先要求申请确实已推进到 S10；
+  // 否则 INVALID_ARGS/STAGE_NOT_S10，**零写入**（本检查在 STEP 7 所有 INSERT 之前）。
+  // SCREENING 不走这里（S7 人决定仍写 stage_code='S7'，保持既有语义）。
+  if (!screeningScope && application.current_stage_code !== STAGE_CODE) {
+    throw evalError(
+      'INVALID_ARGS',
+      'STAGE_NOT_S10',
+      '申请当前阶段不是 S10，不能落 STAGE/FINAL 决策（先推进阶段，DC-07）',
+      {
+        application_id: application.id,
+        current_stage_code: application.current_stage_code,
+        required_stage_code: STAGE_CODE,
+        decision_scope: args.decision_scope,
+        lifecycle_status: application.lifecycle_status,
+      },
+    )
+  }
   const authority = await loadAuthority(client, tenantId, application.job_id)
   const isHiringManager = computeIsHiringManager(authority, actor.id)
   if (application.rubric_version_id === null) {
