@@ -46,7 +46,7 @@
 | **L1 官方 API / CLI / MCP** | 企业授权且能力稳定的平台 |
 | **L2 邮件、表单、文件导入** | 接口不足或账号暂无法授权 |
 | **L3 人工确认和补录** | BOSS、普通微信等暂未确认自动化能力 |
-| **L4 模拟 Connector / Fixture** | **仅用于 Demo 与自动化测试，必须明确标记，不能伪装成真实线上接入** |
+| **L4 模拟 Connector / Fixture** | **仅用于自动化测试或明确标识的临时兜底，不得作为 v1.0 验收证据（D-122）；必须明确标记，不能伪装成真实线上接入** |
 
 > **"系统应保留同一业务流程，不因渠道能力不同而重写招聘核心。"**
 
@@ -251,7 +251,7 @@ Recruitment OS 直接处理的是**平台已经生成的正式 Transcript Artifa
 
 ## 22. 一天 Demo 的实际实现顺序
 
-**P0 必须跑通（10 步）**：建 Interview + Meeting Binding → 用**真实 Connector 或明确标记的 Fixture** 产生 Transcript Ready 事件 → Event Intake 去重并准确定位 Interview → 获取完整转写（有分页必须拉完）→ 持久化原文与标准化 Segment → 生成 Chunk Manifest、分块提取、汇总、证据引用校验 → 展示 Interview Record 与原文时间戳引用 → 为两位面试官建独立 Scorecard（允许一人先交、一人待交）→ 评价齐备后展示分歧与证据，由 HR 作阶段决策 → 进下一轮时生成并展示 Next Round Brief。
+**P0 必须跑通（10 步）**：建 Interview + Meeting Binding → 用**真实飞书会议转写的产品链路**产生 Transcript Ready 事件（真实会议 → Interview → 产品工具导入 → READY；**Fixture 只用于自动化测试/临时兜底，不得作为验收证据**，见 D-122）→ Event Intake 去重并准确定位 Interview → 获取完整转写（有分页必须拉完）→ 持久化原文与标准化 Segment → 生成 Chunk Manifest、分块提取、汇总、证据引用校验 → 展示 Interview Record 与原文时间戳引用 → 为两位面试官建独立 Scorecard（允许一人先交、一人待交）→ 评价齐备后展示分歧与证据，由 HR 作阶段决策 → 进下一轮时生成并展示 Next Round Brief。
 
 **P1**：真实会议事件订阅与自动回调 / 多平台并行接入 / 失败自动重试与授权恢复 / 更细的 Brief 可见字段配置 / 音视频播放器与时间轴联动。
 
@@ -261,7 +261,7 @@ Recruitment OS 直接处理的是**平台已经生成的正式 Transcript Artifa
 
 > **本节补什么**：§13 说"事件是触发信号，回读才是数据"，§15 说"链路怎么走"，§19 说"出错了怎么办"，§21 说"平台没有的不许补"。但**没有一条**规定：① 读过的外部事件还能不能重放；② 每条外部事件最后去了哪里；③ 发出去的消息失败了退多久、什么时候算丢。本节补这三件事——它们是"外部事实诚实"的**机检层**：不靠人标注，靠记录。
 > **来源**：`参考 dsh-superagent docs/001-domain.md §Concepts / §Glossary（Source:"Holds its read position … A restart must not replay events"；Disposition:"The record of a Trigger being filtered, evaluated or fanned out"）`、`docs/003-execution.md §Source failure / §Channel failure / §Stored work`、`docs/006-deployment.md §Stored work / §Channel failure`、`src/app/outbox.ts`、`src/app/effects.ts`。
-> **原型是研究代码，只借规则不借实现**：不 vendor 其代码，不采用其单机 SQLite（D-5：PG + pg-boss）。本节只写规则；**实现状态见 §23.6**。
+> **原型是研究代码，只借规则不借实现**：不 vendor 其代码，不采用其单机 SQLite（D-5/D-109：PG 权威 + 无自建队列；v1.0 不引入 pg-boss，见 D-122）。本节只写规则；**实现状态见 §23.6**。
 
 ### 23.0 四个术语（与既有字段不撞车）
 

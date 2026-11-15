@@ -221,8 +221,8 @@
 | NFR-7 | **数据治理与个人信息处理** | Demo 默认合成数据；真实简历/转写仅在明确获准且必要时进入；原文放受控存储，**普通日志只保留 ID/引用/摘要，不复制整份简历或转写**；不记录密钥/Token；不默认用于模型训练；明确处理目的、访问范围、保留期限与删除/更正路径；**不设统一保留天数**（按企业政策与适用辖区确定） |
 | NFR-8 | **公平性** | 不以受保护特征或其明显代理变量筛选；无证据结论须标未知/待核实；**不以单一 AI 分数作为自动淘汰唯一依据**；偏差监测须有合法用途与数据隔离，**不把受保护特征写进普通候选人画像** |
 | NFR-9 | **可观测** | 以 `correlation_id` 串起 Event→Task→Attempt→Session→ToolCall→Effect→Receipt→业务状态；**不做全量点击埋点** |
-| NFR-10 | **本地可运行** | 本地 Web/API/Worker + PostgreSQL + pg-boss；clean checkout 可安装、迁移、seed、跑通 Golden Path，**无需手工改库** |
-| NFR-11 | **可移植** | Agent Runtime 通过产品自有 Adapter 抽象；不绑定单一 Runtime 的实现细节 |
+| NFR-10 | **本地可运行** | 本地 Web/API/Worker + PostgreSQL + **DSH Web 宿主**（D-6/D-109/D-122）；clean checkout 可安装、迁移、seed、跑通 Golden Path，**无需手工改库** |
+| NFR-11 | **可移植** | 复用 DSH Session/Tool；产品自有 Task/Attempt/Effect 持久化，不绑定 DSH 内部实现细节（D-6/D-109/D-122；旧「产品自有 Runtime Adapter」口径已归档） |
 | NFR-12 | **数据生命周期** | 明确处理目的、访问范围、保留期限、删除/更正路径；删除时考虑原文文件、派生摘要、索引、缓存；**不设统一保留天数** |
 
 ---
@@ -230,7 +230,7 @@
 ## 6. 范围与版本
 
 ### 6.1 v1.0 冻结边界
-预置企业/部门/团队/Job/版本化 Rubric · 文件·Fixture Intake + 原始材料 + Intake Record·Asset + Resume Version · Candidate 识别/重复处理/Application 分离 · 证据化初筛 · Interview + 两位面试官 + Meeting Binding · **真实飞书转写接入为 P0（仅 Fixture 不能通过验收）** · 完整转写 + 结构化 Interview Record + 证据回链 · 两位面试官独立 Scorecard 且与转写并行 · Evaluation 汇总 + 正式人工 Decision + Next Round Brief · 持久化任务进度/执行记录/角色视图/最小 Inbox/基础 Agent Chat · 本地工作台与 Worker。
+预置企业/部门/团队/Job/版本化 Rubric · 文件·Fixture Intake + 原始材料 + Intake Record·Asset + Resume Version · Candidate 识别/重复处理/Application 分离 · 证据化初筛 · Interview + 两位面试官 + Meeting Binding · **真实飞书转写接入为 P0：必须有一条真实飞书会议转写的产品链路；Fixture 只作测试/临时兜底，不作验收证据**（Notion 06 P0 #7；D-122） · 完整转写 + 结构化 Interview Record + 证据回链 · 两位面试官独立 Scorecard 且与转写并行 · Evaluation 汇总 + 正式人工 Decision + Next Round Brief · 持久化任务进度/执行记录/角色视图/最小 Inbox/基础 Agent Chat · 本地工作台与 Worker。
 
 ### 6.2 后续版本（Proposal，未授权）
 `1.0 Frozen` → 2.0 需求与岗位规划 → 3.0 岗位定义与发布 → 4.0 寻访与人才激活 → 5.0 多源接入与流程运营 → 7.0 Offer 与入职 → 8.0 人才智能与流程优化 → 10.0 企业运营与集成上下文。
@@ -254,7 +254,7 @@
 ### 7.3 Demo Gate（v1.0）
 - 本地从 clean checkout 可复现安装/迁移/seed/启动
 - 全 Golden Path **无需手工改库**
-- **转写段使用真实飞书产物，标 `LIVE` + provider `FEISHU`**（或明确标注的 `MANUAL` 真实拉取）
+- **转写段必须有一条真实飞书会议转写的产品链路**（真实会议 → Interview → 产品工具导入 → READY），标 `LIVE` + provider `FEISHU`（或明确标注的 `MANUAL` 真实拉取，D-1）；**Fixture 只能用于自动化测试/临时兜底，不得作为验收证据**（Notion 06 P0 #7；D-122）
 - 测试覆盖域不变量、运行时契约、关键恢复路径
 - 无遗留 P0 授权/数据完整性/重复副作用问题
 - demo 脚本标明 live / fixture / manual 路径
@@ -284,12 +284,12 @@
 
 | # | 问题 | 影响 |
 |---|---|---|
-| O-1 | **D-6：短期基于 DSH Web 版开发**与 ADR-0005/0006 措辞冲突 | 未回抄则以哪份为准不明；需显式标注取代关系 |
+| O-1 | ~~**D-6：短期基于 DSH Web 版开发**与 ADR-0005/0006 措辞冲突~~ | **已解决（2026-11-16，D-122）**：D-6 已落实为现行底座（Notion 13），取代关系已标注 |
 | O-2 | Candidate 自动归并新方向与 `docs/03`/`docs/10` 旧契约不一致 | 实现口径必须先同步 |
 | O-3 | 真实 model provider 与飞书 F2 授权缺失 | Phase 1 LIVE 项与 F2 长期 BLOCKED |
 | O-4 | `docs/11/13/14/15` 是 11-09 快照且已被推翻 | 引用时必须用白名单，否则引到过期结论 |
 | O-5 | Notion 与 Git 进度差约 119 个 PR | 读任一单侧都会误判现状 |
-| O-6 | 53 个 P0 与 108 项验收的历史计数口径未统一 | 验收基准易漂移，须以 `docs/10` 为唯一口径 |
+| O-6 | 53 个 P0 与 108 项验收的历史计数口径未统一 | **已收口（2026-11-16，D-122）**：v1.0 验收对象 = Notion 06 P0 15 项 + PRD §15 + 06 §08 + 07 §11 + 10 §10（均为 Notion 页节号）；唯一指针 `docs/17` D-122 |
 
 ---
 
@@ -307,3 +307,5 @@
 
 **冲突裁决**：时间优先于层级——较晚批准的决策取代较早的任何文档；同一时点内 `docs/10` > ADR > `docs/00–09` > QA 清单。
 **Notion 与 Git 冲突**：先判断是否有更新的用户批准决策；未批准的 Proposed 不能覆盖已确认结论；实现与文档冲突时以可复现代码/测试为实现事实。
+
+**v1.0 验收基准（唯一指针）**：见 `docs/17-decision-ledger.md` **D-122**（C1–C3 收口）。「验收对象是什么 / 运行底座是什么 / Fixture 能否过 v1.0」一律以 D-122 为准；本节只登记文档职责。

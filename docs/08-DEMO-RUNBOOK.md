@@ -4,6 +4,7 @@
 > （`integration/v1.0-flow` 分支、pg-boss、`packages/db`、1106 条测试、5 条 lane 合并）。
 > 那套底座已整体废弃，**不要照这份文档跑任何东西**。
 > 当前底座的运行手册见 **`docs/18-golden-path.md`**。本文仅作历史记录保留。
+> **归档状态（2026-11-16，D-122）**：本文所述的 pg-boss 底座、9 步 Golden Path 与测试计数均为旧仓历史，**已归档**，不得作为 v1.0 验收依据。
 
 **目标**：一条命令级别的步骤，把 v1.0 Golden Path 在本机跑起来并留下凭据。
 **分支**：`integration/v1.0-flow`（已推送）
@@ -19,7 +20,7 @@
 | 全量测试 | ✅ **167 files / 1106 tests，0 failed，0 skipped** |
 | 类型检查 | ✅ exit 0 |
 | 真实飞书 MANUAL 读取 | ✅ **67/67 checks PASS，exit 0** |
-| 事件 → Task → pg-boss → Worker 投递 | ✅ 已接通（约 2–4 秒送达） |
+| 事件 → Task → pg-boss → Worker 投递（**已归档，旧仓底座**） | ✅ 已接通（约 2–4 秒送达） |
 | Worker 注入 Feishu port | ✅ 组合根已接；未配置时 fail-closed 并列出缺失项 |
 | 自动（无人值守）真实飞书读取（F2） | ⛔ **BLOCKED**——见 §7 |
 

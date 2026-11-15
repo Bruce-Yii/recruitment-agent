@@ -111,10 +111,10 @@ Context Assembly · Tool Registry · Execution Policy（权限/审批/超时/重
 | Web Workspace | UI 状态、交互、角色视图 | 业务真相、授权执行 |
 | Recruitment Router | 意图、规划、路由、结果综合 | 任意直接写库 |
 | Context Assembly | 有范围的检索 | 无限制访问全租户 |
-| **Agent Runtime Adapter** | 执行会话生命周期、工具调用、受控 Subagent | **产品 Chat 历史、任务身份、业务真相** |
+| **DSH 宿主 / Session 运行时**（D-6；旧「Agent Runtime Adapter」口径已归档，见 D-122） | 执行会话生命周期、工具调用、受控 Subagent | **产品 Chat 历史、任务身份、业务真相** |
 | Domain Services | 业务命令、事务、授权、状态不变量 | 模型推理、provider 字段 |
 | Workflow Coordinator | 阶段、DAG、定时器、人工闸门 | 重复队列、重复领域记录 |
-| pg-boss Workers | 持久执行、重试、并发 | 业务状态归属 |
+| 任务运行时（PG 原生租约 + DSH Worker Session；D-109/D-122） | 持久执行、重试、并发 | 业务状态归属 |
 | Connector Adapters | provider 认证、事件映射、API、回读 | 招聘领域语义 |
 | Effect Dispatcher / Reconciliation | 外部副作用、回执、幂等、未知结果恢复 | 未批准的业务决策 |
 | PostgreSQL | 权威持久化与事务一致性 | 把模型会话上下文当唯一记录 |
@@ -128,7 +128,7 @@ Context Assembly · Tool Registry · Execution Policy（权限/审批/超时/重
 apps/
   api/        Fastify API（路由装配、认证、授权上下文）
   web/        React/Vite 工作台
-  worker/     pg-boss Worker 与任务执行器
+  worker/     任务运行时（DSH Worker Session）与任务执行器
 packages/
   contracts/  共享 ID / 枚举 / 错误码 / Event Envelope / DTO / Authorization Context
   domain/     W2：Candidate / Resume / Intake / Asset / Application / Screening / Merge
@@ -221,7 +221,7 @@ apps/worker ──► runtime ──► connectors（通过 port 抽象）
 | **活动章程** | `docs/17` + `ADR-0006`，在 PR #109（**Draft，不得合并**）的 `review/reuse-first-architecture-reset-2026-11-10-v3` |
 | **已废弃** | `docs/16` = historical；`docs/05` 的 "Scheme B confirmed" 已被 ADR-0006 标为历史 |
 | **ADR-0006 核心** | 成熟模块是默认；**无自动 KEEP**；禁止 regex/规则式 NL 解释器；禁止无 LLM 的确定性**兜底**（但**保留**确定性事件路由与准入 Gate） |
-| **产品纠正 2026-11-11（binding）** | ① Agent Execution System 先行 ② Durable Orchestration 次之 ③ 招聘域切片第三；Recruitment OS 拥有 Chat Thread；**Odoo 只是组件来源候选、非宿主**；**Strands / DSH / Pi 均未采纳** |
-| **基础执行底座** | PostgreSQL + pg-boss + 多实例 Worker + provider-neutral Runtime Adapter。**已由 D-5 批准继续沿用**。Notion 里叫「基础执行底座」，**没有「方案 B」这个词** |
-| ⚠️ **D-6 新方向** | **2026-11-12 产品负责人决定：短期直接基于 DSH Web 版开发**（界面好改、扩展能力完整）。**与 ADR-0005「DSH Desktop/GUI 不是产品运行时依赖」、ADR-0006「DSH 未采纳」直接冲突**，必须在文档里显式标注取代关系，否则又是两套权威并存 |
+| **产品纠正 2026-11-11（binding）** | ① Agent Execution System 先行 ② Durable Orchestration 次之 ③ 招聘域切片第三；Recruitment OS 拥有 Chat Thread；**Odoo 只是组件来源候选、非宿主**；**Strands / DSH / Pi 均未采纳**（其中「DSH 未采纳」已被 **D-6** 取代，见下一行与 **D-122**；本行其余内容仅作历史） |
+| **基础执行底座** | PostgreSQL + **DSH Web 宿主** + 受限 Worker + 产品自有 Task/Attempt/Effect 持久化（D-6/D-109/D-122）。D-5 的「PG + pg-boss + provider-neutral Runtime Adapter」是 2026-11-10 旧仓口径，**已归档，不再作为 v1.0 底座**。Notion 里叫「基础执行底座」，**没有「方案 B」这个词** |
+| ⚠️ **D-6 新方向** | **2026-11-12 产品负责人决定：短期直接基于 DSH Web 版开发**（界面好改、扩展能力完整）。**与 ADR-0005「DSH Desktop/GUI 不是产品运行时依赖」、ADR-0006「DSH 未采纳」直接冲突**，必须在文档里显式标注取代关系，否则又是两套权威并存。**该方向已由 Notion 13 落实为现行底座（D-6/D-109/D-122），冲突注记仅作历史** |
 | ⚠️ **章程不在 main** | `main` 仍写 "Scheme B confirmed"；ADR-0006/docs/17 只在 PR #109。**基于 main 开发会南辕北辙。** |

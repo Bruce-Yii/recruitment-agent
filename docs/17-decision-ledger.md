@@ -869,7 +869,7 @@ Owner 回传必须九项齐全（见 `docs/21` §3.5），缺一项算没回传�
 | DeepSeek 官方账号路由 | ⛔ `QUOTA` |
 | DeepSeek API key | ⛔ `Insufficient Balance` |
 
-**落地**：产品默认模型 = `opencode-go-openai-key2` / `longcat-2.5-free`。
+**落地**：产品默认模型 = `longcat-2.5-free`（**模型口径以 D-117.1 为准**：只允许 LongCat，经 OpenCode Go 套餐端点 `opencode-go-openai`，凭据 `OPENCODE_GO_API_KEY`；当时写的 `opencode-go-openai-key2` key 名已归档，不再作为验收口径）。
 换模型只改 `cordis.patch.yml` 的 `agent-default-model.model`，且**只对新会话生效**
 （旧会话钉住模型选择，症状是 `no adapter registered for provider …`）。
 
@@ -1248,7 +1248,7 @@ Outbox，`src/connectors/feishu` 的 `fetchTranscript()` 恒 `BLOCKED`。
 
 **未定项（不编数）**：V-4 暂停是否顺延 30 分钟上限、V-8 真人排队超时阈值、
 V-15 "无处置事件"告警阈值，三个数未定，实现前必须先定。
-**V-5 风险**：pg-boss 能否表达"`maxWorkers` + 1 个人工超额槽且不挤掉在跑任务"未验证；
+**V-5 风险**（历史记录，2026-11-16 按 D-109/D-122 归档；v1.0 已定为 PG 原生租约、不引入 pg-boss）：pg-boss 能否表达"`maxWorkers` + 1 个人工超额槽且不挤掉在跑任务"未验证；
 做不到要按 R1 先证候选池不足，**不得在业务层自研调度**。
 
 ### D-107 · 视觉补读的执行边界在 agent 侧：`visionRead` 永不注入，`remaining` 即交接
@@ -1307,7 +1307,7 @@ V-15 "无处置事件"告警阈值，三个数未定，实现前必须先定。
    （pg-boss 的 job 状态 vs 我们的 task/attempt 状态），两者需要两套对账与两套恢复语义——
    这正是 D-106 里"先存后做 + 对账"要极力避免的分裂。**"派发 vs 队列"这个论证不够硬，
    不要再用它当主要理由。**
-2. **与 D-5 的关系**：D-5 说 v1.0 以 PG + pg-boss 为底座。**本条不推翻 D-5**：pg-boss 仍是
+2. **与 D-5 的关系**（历史表述；2026-11-16 按 D-109.10/D-122 归档，现行口径见那两条）：D-5 说 v1.0 以 PG + pg-boss 为底座。**本条不推翻 D-5**：pg-boss 仍是
    v1.0 的持久任务队列候选，用于「跨天、需要延迟/重试/优先级」的业务任务；runtime 的认领/租约是
    **任务派发语义**（谁在跑、租约何时过期），不是队列语义。两者职责不同，可以并存。
 3. **何时必须换成 pg-boss 或等价实现**（触发条件写死，避免"以后再说"）：
@@ -1412,6 +1412,14 @@ V-15 "无处置事件"告警阈值，三个数未定，实现前必须先定。
    `docs/03-domain-and-runtime.md §21.8 V-1` 都已与事实不符，必须同步为本条的口径
    （"用 PG 原生行锁承担任务派发，不引入第二状态 owner"）。
 
+   > **修订 D-109.10（2026-11-16，总控；C1 口径收口）**
+   >
+   > 上文第 2 点「pg-boss 仍是 v1.0 的持久任务队列候选」与所引 D-5 的旧表述，自本条起**归档**：
+   > v1.0 的底座是 **DSH Web 宿主 + PG 原生锁/租约**，**不引入 pg-boss**。
+   > 第 3 点的「换实现触发条件」仍然有效：一旦触发，按 R1 重开决策、换成等价成熟实现
+   > （pg-boss 只是候选之一），**不得在 `src/runtime/**` 自研队列**。
+   > 本条其余内容（不引入第二状态 owner、可测阈值、预算）不变。唯一验收口径见 **D-122**。
+
 ---
 
 ## 附录 D · 2026-11-15 产品负责人裁决（证伪复核后）
@@ -1511,6 +1519,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
 - **D-115（2026-11-15 裁决；D5 Web 工作台身份）**：Demo Actor 只允许 `recruiter / interviewer_a / interviewer_b` 三个 alias；浏览器只提交 alias，**不得提交 actor UUID**。服务端按受控 `x-dsh-session` 维护**进程内** session→alias 绑定；所有写工具（intake/schedule/transcript-import/scorecard/decision/stage-advance/job-rubric/config 写）从 `exec.agent.id` 解析 alias→HUMAN actor；未绑定/非法 alias → `DEMO_ACTOR_UNMAPPED` **零写入**，不回退配置 actor。Scorecard 正式提交只走 Host Remote Action（一次性 nonce 绑定 session+interview），Agent 工具路径仍走 D-79 approval；A/B 两份面评作者必须不同，未分配者 403。种子在 bootstrap 幂等补第二个 HUMAN INTERVIEWER（105，A=104/B=105）。
 - **D-116（2026-11-15 裁决；D5 Web 工作台范围）**：产品面只保留 **Recruiting workspace / Interviewer workspace 两个工作视图 + 唯一 Human Attention 全局入口**；Human Attention 只聚合既有业务记录，不新建任务事实表、同一事项不重复主入口；候选人不是系统用户；页面状态必须从真实 DB 恢复，禁止 localStorage 业务状态/模拟 Agent/假外部事件。写入只经现有 Domain Tool 或 Host Remote Action，前端 toast 不算成功。
 - **D-117（2026-11-15 产品负责人裁决）**：产品默认模型改用 **DeepSeek V4.1 Flash**（`opencode-go-openai-key2` / `deepseek-v4.1-flash`），产品 profile 与 worker profile 同步；LongCat 2.5 Free 连续 429，仅保留为可选回退。`runtime.model_route` 标签同步，避免审计标签与实际模型不一致。
+- **D-117.1（2026-11-15 产品负责人裁决，取代 D-117 的模型选择）**：只允许使用 **LongCat**，经 **OpenCode Go 套餐端点**（`opencode-go-openai` / `longcat-2.5-free`，凭据 `OPENCODE_GO_API_KEY`；**密钥值只从环境变量读，不写入任何文件**）。产品 profile 与 worker profile 同步；**不再使用 DeepSeek V4.1 / deepseek-official / iceman / key2**。历史 D-117 的“DeepSeek V4.1”仅作归档，不得作为验收口径。
 - **D-118（2026-11-15 产品负责人裁决）**：**不设单独的“审批人/决策人工作台”**。真实招聘业务里，招聘决策由**正在操作工作台的授权内部用户**在职责范围内完成；Demo Actor 只是本地演示身份、不是认证。仍由领域工具校验角色/分配（未授权/越权 fail-closed），但不再要求“另一个人/另一个角色”来点决策；S10 正式决策由当前 Recruiter 身份执行并记录 actor。
 - **D-119（2026-11-15 产品负责人裁决）**：D5 的写操作**全部要接**（不是只读 demo），按优先级实施：P0 初筛决定 → 阶段推进 → 正式决策；P1 面试排期 → Transcript 导入；P2 招聘设置（rubric 批准/角色/团队/流水线）。所有写仍走 Host Remote Action + 现有领域校验/事务 + DB 读回；无 seam 时按钮保持 disabled（禁止假写）。
 - **D-120（2026-11-15，D-8 版本钉来源口径）**：RESUME_PARSE 等任务的 job/rubric 版本钉优先取 **application 行上的钉住值**（`application.job_id` / `job_version_id` / `rubric_version_id` / `resume_version_id`），其次取 `job.current_job_version_id` / `job.current_rubric_version_id`；interview 侧取 `interview.interview_template_version_id`、`interview_record.rubric_version_id`；task 的 `business_refs` 与触发事件只提供关联 id，不替代版本钉。取不到的项必须进 UNKNOWNS，禁止猜。
@@ -1520,3 +1529,62 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
 - **研究结论（2026-11-15）**：DSH 0.2.2-rc.3 是最新官方版（npm `latest` 反而停在 rc.1，禁止"跟 latest 升级"）；
   Agent Teams 是 rc.2 起的**开发流程**能力（同进程/root 会话、任务真相在 session log、writeScopes 仅建议），
   产品运行时不用；`dsh-superagent-prototype` 是官方研究原型（private、单提交、SQLite 第二 owner），只借 Attention/面板形状。
+
+---
+
+# 决策台账 · 2026-11-16（验收口径收口）
+
+### D-122 · v1.0 验收基准与运行底座口径收口（C1–C3）
+
+**裁定（2026-11-16，总控；回答 Notion 14 与 `work/review/2026-11-16-notion-acceptance/03-CONFLICTS.md` 的 C1–C3）**：
+本项目的**验收基准从此只认本条**（唯一指针）；仓库其余文档、Notion 14 与验收窗口只引用本条，不再各自表述
+（R5：不写进台账 = 视为未决定）。
+
+1. **C1 · 运行底座 = DSH Web 宿主 + PostgreSQL。** 产品以 **DSH plugin/profile** 扩展
+   （D-6；`dsh/profile/recruitment/`、`dsh/dsh-recruitment/`），任务派发/认领用 **PG 原生行锁 + 租约**
+   （D-109；五事实 Task/Attempt/Effect 等持久化在 PG，无第二状态 owner），
+   **不引入 pg-boss、不自研队列、不自建 Agent Runtime、不做 provider-neutral Runtime Adapter**。
+   - **旧口径已归档**（不再是验收依据）：`docs/02` 的「Agent Runtime Adapter / pg-boss Workers」、
+     `docs/03`、`docs/06` D-5 行、`docs/07` NFR-10/11、`docs/08`、以及 Notion 06 §02 P0 #15 / 10 §11 / 09 页尾。
+     它们描述的是 2026-11-10 旧仓 monorepo 底座。
+   - **PostgreSQL 仍是唯一业务真相库**（PG 17.x，schema `recruitment`，迁移 0001→0016）。
+     「不用 pg-boss」≠「不用 PostgreSQL」；也不改变「PG 权威、无第二状态 owner」（D-109）。
+   - 本条只做口径回抄，**不声明新能力**：实现事实以 `package.json`（无 `pg-boss` 依赖）、
+     `src/runtime/**`（`FOR UPDATE SKIP LOCKED` + `lease_expires_at`）与独立验收证据为准。
+
+2. **C2 · 真实飞书是 v1.0 的 P0 验收项（Notion 06 §02 P0 #7，更严口径）。**
+   v1.0 必须有**一条真实飞书会议转写的产品链路**通过验收：真实会议 → Interview → 产品工具
+   `recruitment_transcript_import` 导入 → READY → 可独立读回。
+   - **Fixture 只能用于自动化测试或明确标识的临时兜底，不得作为验收证据**；只跑 Fixture 的转写段
+     一律记 `NOT_RUN`/`BLOCKED`，不记 PASS。
+   - 真实读取的判据仍按 **D-1**：`provenance=LIVE` + `trigger=MANUAL` + 真实 provider artifact
+     ID/revision/hash/readback 即合格；F2（产品自有 OAuth + 事件订阅）为 **P1**，不阻塞 v1.0。
+   - 本条覆盖 Notion 07 §10「真实 Connector 或明确标记的 Fixture」的旧表述。
+
+3. **C3 · v1.0 验收对象 = 五份来源的并集（缺一不算全集，多列不算扩容；以下 § 号均为 Notion 页节号）：**
+   1. **Notion 06 §02 v1.0 P0 15 项**（第 7 项按 C2、第 15 项按 C1 收口后适用）；
+   2. **Notion PRD §15** 产品验收原则（8 条）；
+   3. **Notion 06 §08** Demo 验收标准（10 条）；
+   4. **Notion 07 §11** 转写验收（11 条）；
+   5. **Notion 10 §10** 契约测试最低集合（10 条）。
+   - 仓库侧的 E1–E4（`docs/06 §7`）、`docs/18` 的 8 步执行步骤、`docs/10`/`docs/11`/`docs/12` 的分层判据
+     是**取证与执行方式**，不新增验收对象。
+   - 任何 PASS 仍需冻结 SHA + 命令原文 + 真实输出 + 独立读回（`docs/21 §4`、`docs/06 §7` E1–E4）；
+     L6 机检只是门槛，不是验收。
+
+4. **归档（不作验收全集）：**
+   - Notion 08/09 的 **Golden Path 9 步**：旧底座的历史执行方案，**已归档**；现行执行手册是
+     `docs/18-golden-path.md`（DSH 版 8 步，**执行主线，不是验收清单**）。
+   - Notion 06 §06 的 **13 个端到端场景**：其中 Requisition / JD Kickoff / Offer 属 2.0/3.0/7.0，
+     **不在 v1.0 冻结范围**；该清单只作场景参考，**不逐条计入 v1.0 验收**。
+   - 旧仓 `docs/08-DEMO-RUNBOOK.md`：HISTORICAL，仅历史记录（`docs/README.md` 已标）。
+
+5. **验收前置不变**：冻结 SHA + 干净树 + 该 SHA CI 绿；干净库 + 隔离 `DSH_HOME` + 独立端口；
+   L1–L5 可执行（真会话 / 干净库 S6→S10 / 真实飞书 / 真人浏览器闸门 / 反证）。前置不满足就不开始验收。
+
+**为什么单独立一条**：C1–C3 不收口时，「按 06 P0 #15 验收」会要求一套不存在的 pg-boss/自有 Runtime，
+「Fixture 能否过 v1.0」与「P0 15 项 / 9 步 / 13 场景哪个是全集」会得出互相矛盾的结论，验收基准自相矛盾。
+收口写在这里、其它文档只引用，避免第二次口径漂移。
+
+**回抄落点**：`docs/02`、`03`、`04`、`04-scenario`、`06`、`07`、`08`、`18`、`README` 的旧口径行；
+逐项原文→新文与机检证据见 `work/review/2026-11-16-notion-acceptance/08-C1C3-RECONCILE.md`。

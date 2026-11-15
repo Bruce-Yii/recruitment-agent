@@ -1,8 +1,10 @@
 # 18 · v1.0 Golden Path（DSH 版运行手册）
 
-**取代**：`docs/08-DEMO-RUNBOOK.md`。那份是**老仓 monorepo** 的运行手册（`integration/v1.0-flow` 分支、
-pg-boss、`packages/db`、1106 条测试），那套底座已废弃，不要照它跑。
+**取代**：`docs/08-DEMO-RUNBOOK.md`（**HISTORICAL，已归档**）。那份是**老仓 monorepo** 的运行手册（`integration/v1.0-flow` 分支、
+旧队列底座、`packages/db`、1106 条测试），那套底座已废弃，不要照它跑。
 **本文档管的是当前底座**：DSH Web profile + 招聘插件 + PostgreSQL + 本地转换器。
+**本文的定位（2026-11-16，D-122）**：8 步 Golden Path 是**执行主线**，**不是验收全集**；v1.0 验收对象见
+`docs/17` **D-122**（Notion 06 P0 15 项 + PRD §15 + 06 §08 + 07 §11 + 10 §10；§ 号为 Notion 页节号）。旧仓 9 步 Golden Path 已归档。
 
 ---
 
