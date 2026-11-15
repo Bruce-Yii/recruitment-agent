@@ -40,3 +40,9 @@ converter/corpus-quarantine/*.pdf
 
 # 机器本地语料清单：含本机绝对路径（R7），不入库。需要时从工作区 temp/ 取回。
 converter/corpus/batch2-picked.json
+
+# ---- R7 PII 红线（2026-11-15 历史清理）----
+# 真实候选人 / 真实会议内容一律不入库；实验报告只允许 id/bytes/sha256/脱敏摘要。
+converter/reports/_d55/
+dsh/dsh-recruitment/evidence/experiments/*/transcript.txt
+dsh/dsh-recruitment/evidence/experiments/*/dialogue-only.txt
