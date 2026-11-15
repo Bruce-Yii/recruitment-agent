@@ -217,6 +217,191 @@ export async function intakeRecordIdForEvent(
   })
 }
 
+// ---------------------------------------------------------------------------
+//  D-120：任务书版本钉的**业务事实来源**（application / job / interview 行）
+//
+//  为什么不能从事件 payload 补版本钉：钉住值是"这条申请/这场面试当时钉住哪个
+//  job_version / rubric_version / resume_version"，只有这些业务行保存它；事件
+//  payload 里根本没有这些 id（`resume.intake.received` 只有 sha256）。从 payload
+//  或当前配置反推 = 把"现在是什么"冒充"当时钉了什么"，是 D-120 明确禁止的猜。
+//  四个查询全部只读、全参数绑定、uuid 列 `::text` 读出、可空列 `iso()`。
+// ---------------------------------------------------------------------------
+
+/** D-120：application 行上的版本钉（申请钉住优先）。 */
+export interface ApplicationVersionPinRow {
+  readonly applicationId: string
+  readonly jobId: string
+  readonly jobVersionId: string
+  readonly rubricVersionId: string | null
+  readonly resumeVersionId: string | null
+  /** resume_version.source_asset_sha256（原件哈希）；无 resume_version_id 时为 null。 */
+  readonly resumeSha256: string | null
+}
+
+/** job 的 current_* 指针（D-120 的次级来源；不是申请钉住值）。 */
+export interface JobVersionPointerRow {
+  readonly jobId: string
+  readonly currentJobVersionId: string | null
+  readonly currentRubricVersionId: string | null
+}
+
+/** INTAKE_RECORD → application 的链接结果；candidates>1 时 applicationId=null（歧义不猜）。 */
+export interface IntakeApplicationLinkRow {
+  readonly applicationId: string | null
+  readonly candidates: number
+}
+
+/** interview 侧：interview 行 + 当前 interview_record（is_current）的钉子。 */
+export interface InterviewVersionPinRow {
+  readonly interviewId: string
+  readonly applicationId: string
+  readonly interviewTemplateVersionId: string | null
+  readonly interviewRecordRubricVersionId: string | null
+  readonly interviewRecordJobId: string | null
+}
+
+/**
+ * D-120：读一条 application 上的四个版本钉。
+ *
+ * `resume_version` 用 left join 且同时判 `tenant_id`：钉了 resume_version 但行被
+ * 删/跨租户时 **sha 为 null**（如实"取不到"），不能退回 `a.resume_version_id` 里
+ * 那串 id 假装哈希存在。application 不存在 → `null`。
+ * @param pool - 连接池。
+ * @param tenantId - 租户 id（判等，防跨租户读到别人的申请）。
+ * @param applicationId - 申请 id。
+ * @returns 钉住行；不存在（或不属于该租户）→ `null`。
+ */
+export async function applicationVersionPins(
+  pool: DatabasePool, tenantId: string, applicationId: string,
+): Promise<ApplicationVersionPinRow | null> {
+  return withReadOnly(pool, async (client) => {
+    const { rows } = await client.query<Record<string, unknown>>(
+      `select a.id::text as application_id, a.job_id::text as job_id,
+              a.job_version_id::text as job_version_id,
+              a.rubric_version_id::text as rubric_version_id,
+              a.resume_version_id::text as resume_version_id,
+              rv.source_asset_sha256 as resume_sha256
+         from recruitment.application a
+         left join recruitment.resume_version rv
+           on rv.id = a.resume_version_id and rv.tenant_id = a.tenant_id
+        where a.tenant_id = $1::uuid and a.id = $2::uuid`,
+      [tenantId, applicationId],
+    )
+    const row = rows[0]
+    if (row === undefined) return null
+    return {
+      applicationId: String(row.application_id),
+      jobId: String(row.job_id),
+      jobVersionId: String(row.job_version_id),
+      rubricVersionId: iso(row.rubric_version_id),
+      resumeVersionId: iso(row.resume_version_id),
+      resumeSha256: iso(row.resume_sha256),
+    }
+  })
+}
+
+/**
+ * D-120：读 job 行上的 `current_job_version_id / current_rubric_version_id`。
+ *
+ * 这两个指针是**当前配置**，不是"某条申请钉住的版本"：只在申请行取不到钉时
+ * 作为**降级**来源，调用方必须记 DEGRADED，禁止拿它冒充申请钉住值（D-120）。
+ * @returns 指针行；job 不存在（或不属于该租户）→ `null`。
+ */
+export async function jobVersionPointers(
+  pool: DatabasePool, tenantId: string, jobId: string,
+): Promise<JobVersionPointerRow | null> {
+  return withReadOnly(pool, async (client) => {
+    const { rows } = await client.query<Record<string, unknown>>(
+      `select j.id::text as job_id,
+              j.current_job_version_id::text as current_job_version_id,
+              j.current_rubric_version_id::text as current_rubric_version_id
+         from recruitment.job j
+        where j.tenant_id = $1::uuid and j.id = $2::uuid`,
+      [tenantId, jobId],
+    )
+    const row = rows[0]
+    if (row === undefined) return null
+    return {
+      jobId: String(row.job_id),
+      currentJobVersionId: iso(row.current_job_version_id),
+      currentRubricVersionId: iso(row.current_rubric_version_id),
+    }
+  })
+}
+
+/**
+ * D-120：从一条 INTAKE_RECORD 沿物理链反查 application：
+ * `intake_record → intake_asset → resume → resume_version → application`。
+ *
+ * 为什么要 `count(*) over ()` + 歧义不猜：同一份 resume_version 可以被多条申请
+ * 共用（同一份简历投多个岗位），这时库层**没有**"用户指哪条"的答案，任选一条
+ * 就是把歧义伪装成事实。恰 1 个候选才返回 applicationId；0 个返回
+ * `{null, 0}`；>1 个返回 `{null, candidates}`（调用方转 UNKNOWN / 人工）。
+ * @returns 链接结果（永不抛错）。
+ */
+export async function applicationLinkForIntakeRecord(
+  pool: DatabasePool, tenantId: string, intakeRecordId: string,
+): Promise<IntakeApplicationLinkRow> {
+  return withReadOnly(pool, async (client) => {
+    const { rows } = await client.query<Record<string, unknown>>(
+      `select a.id::text as application_id, count(*) over () as candidates
+         from recruitment.intake_record ir
+         join recruitment.intake_asset ia
+           on ia.intake_record_id = ir.id and ia.tenant_id = ir.tenant_id
+         join recruitment.resume r
+           on r.intake_asset_id = ia.id and r.tenant_id = ia.tenant_id
+         join recruitment.resume_version rv
+           on rv.resume_id = r.id and rv.tenant_id = r.tenant_id
+         join recruitment.application a
+           on a.resume_version_id = rv.id and a.tenant_id = rv.tenant_id
+        where ir.tenant_id = $1::uuid and ir.id = $2::uuid
+        order by a.applied_at, a.id`,
+      [tenantId, intakeRecordId],
+    )
+    const first = rows[0]
+    if (first === undefined) return { applicationId: null, candidates: 0 }
+    const candidates = num(first.candidates)
+    if (candidates !== 1) return { applicationId: null, candidates }
+    return { applicationId: String(first.application_id), candidates }
+  })
+}
+
+/**
+ * D-120：读 interview 行 + **当前** interview_record（`is_current`）上的钉子。
+ *
+ * 同场面试重评会并存多条记录（0001 的 `uq_interview_record_current` 保证
+ * is_current ≤ 1 行），版本钉必须取当前生效那份；没有当前记录 → 两个 record
+ * 字段为 null（调用方判 UNKNOWN），**不拿旧记录冒充**。`job_id` 是 0008 的派生
+ * 列（触发器保证等于 interview→application.job_id），这里如实读出、不重算。
+ * @returns 钉子行；interview 不存在（或不属于该租户）→ `null`。
+ */
+export async function interviewVersionPins(
+  pool: DatabasePool, tenantId: string, interviewId: string,
+): Promise<InterviewVersionPinRow | null> {
+  return withReadOnly(pool, async (client) => {
+    const { rows } = await client.query<Record<string, unknown>>(
+      `select i.id::text as interview_id, i.application_id::text as application_id,
+              i.interview_template_version_id::text as interview_template_version_id,
+              r.rubric_version_id::text as interview_record_rubric_version_id,
+              r.job_id::text as interview_record_job_id
+         from recruitment.interview i
+         left join recruitment.interview_record r
+           on r.interview_id = i.id and r.tenant_id = i.tenant_id and r.is_current
+        where i.tenant_id = $1::uuid and i.id = $2::uuid`,
+      [tenantId, interviewId],
+    )
+    const row = rows[0]
+    if (row === undefined) return null
+    return {
+      interviewId: String(row.interview_id),
+      applicationId: String(row.application_id),
+      interviewTemplateVersionId: iso(row.interview_template_version_id),
+      interviewRecordRubricVersionId: iso(row.interview_record_rubric_version_id),
+      interviewRecordJobId: iso(row.interview_record_job_id),
+    }
+  })
+}
+
 /**
  * 待路由事件（RECEIVED 或 FAILED 且未到重试上限，**且已跨过 cutover 水位**）。
  *

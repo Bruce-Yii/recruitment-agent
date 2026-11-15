@@ -37,6 +37,12 @@ import * as readback from './readback.ts'
 import * as recovery from './recovery.ts'
 
 export type { EventRow } from './readback.ts'
+export type {
+  ApplicationVersionPinRow,
+  IntakeApplicationLinkRow,
+  InterviewVersionPinRow,
+  JobVersionPointerRow,
+} from './readback.ts'
 export type { InsertEventResult } from './events.ts'
 export type { TaskClaim } from './claim.ts'
 export type { FinishAttemptInput, FinishAttemptResult } from './lease.ts'
@@ -233,6 +239,26 @@ export class RuntimeStore {
   /** 列出最近变更的 Task（工作台/HTTP 读回用）。 */
   listTasks(limit: number): Promise<readonly BusinessTaskRecord[]> {
     return readback.listTasks(this.pool, this.tenantId, limit)
+  }
+
+  /** D-120：application 行上的版本钉（申请钉住优先；行不存在 → null）。 */
+  applicationVersionPins(applicationId: string): Promise<readback.ApplicationVersionPinRow | null> {
+    return readback.applicationVersionPins(this.pool, this.tenantId, applicationId)
+  }
+
+  /** D-120：job 的 current_* 指针（次级来源，不是申请钉住值；行不存在 → null）。 */
+  jobVersionPointers(jobId: string): Promise<readback.JobVersionPointerRow | null> {
+    return readback.jobVersionPointers(this.pool, this.tenantId, jobId)
+  }
+
+  /** D-120：INTAKE_RECORD → application 反查（歧义 candidates>1 时不猜）。 */
+  applicationLinkForIntakeRecord(intakeRecordId: string): Promise<readback.IntakeApplicationLinkRow> {
+    return readback.applicationLinkForIntakeRecord(this.pool, this.tenantId, intakeRecordId)
+  }
+
+  /** D-120：interview 行 + 当前 interview_record 的版本钉（行不存在 → null）。 */
+  interviewVersionPins(interviewId: string): Promise<readback.InterviewVersionPinRow | null> {
+    return readback.interviewVersionPins(this.pool, this.tenantId, interviewId)
   }
 
   /** 运行时计数（健康检查/证据用；不参与业务判断）。 */

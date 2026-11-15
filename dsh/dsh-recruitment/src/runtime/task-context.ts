@@ -14,7 +14,7 @@
 // 任务书结构：七段 + 一个 TOOLS 段
 //   1) BUSINESS TASK   2) BUSINESS OBJECTS   3) VERSION PINS   4) EVIDENCE LOCATORS
 //   5) UNKNOWNS        TOOLS                 6) OUTPUT JSON SCHEMA  7) FORBIDDEN ITEMS
-import type { WorkerTaskRequest } from './types.ts'
+import type { BusinessObjectRef, WorkerTaskRequest } from './types.ts'
 
 /** 任务书里的业务对象：只有身份（Router 不附正文）。 */
 export interface TaskContextBusinessObject {
@@ -26,12 +26,25 @@ export interface TaskContextBusinessObject {
   readonly note?: string
 }
 
-/** 版本钉：job / rubric / resume 各钉住哪一行；缺的项由 UNKNOWNS 说明。 */
+/**
+ * 版本钉：job / rubric / resume / interview_template 各钉住哪一行；缺的项由 UNKNOWNS 说明。
+ *
+ * D-120：`job.version` / `rubric.version` 是**钉住的版本行 id**（application 行或降级指针
+ * 指向的那一行），不是版本号；`resume.version_id` 是钉住的 `resume_version_id`。
+ * 只追加字段，既有渲染前缀（`id @ version` / `artifact_id=..., sha256=...`）不变。
+ */
 export interface TaskContextVersionPins {
   readonly job?: { readonly id: string; readonly version: number | string }
   readonly rubric?: { readonly id: string; readonly version: number | string }
-  /** resume 钉在原件哈希上；artifact_id 只有事实源真的给出时才有值（不猜）。 */
-  readonly resume?: { readonly artifact_id?: string; readonly sha256: string }
+  /** resume 钉在原件哈希上；artifact_id / version_id 只有事实源真的给出时才有值（不猜）。 */
+  readonly resume?: { readonly artifact_id?: string; readonly sha256: string; readonly version_id?: string }
+  /** 面试模板版本行 id；只有 INTERVIEW 事实源真的给出时才渲染（缺 → UNKNOWNS）。 */
+  readonly interview_template?: { readonly id: string }
+  /**
+   * 钉住的 application 行 id（= job / rubric / resume_version 三钉的来源行）。
+   * 只用于让 Worker 能引用"这些钉属于哪条申请"；不是版本号，也不在缺钉 UNKNOWNS 里。
+   */
+  readonly application?: { readonly id: string }
 }
 
 /** 证据 locator：指向可复核的事实定位，不是材料正文。 */
@@ -255,6 +268,10 @@ export function buildTaskContext(
   } else if (merged.version_pins.resume.artifact_id === undefined) {
     unknowns.push('resume artifact_id: UNKNOWN — only the original-file sha256 is available; do not invent an artifact id')
   }
+  const interviewRef = request.businessRefs.find((ref) => ref.type === 'INTERVIEW')
+  if (interviewRef !== undefined && merged.version_pins.interview_template === undefined) {
+    unknowns.push(`interview_template pin: UNKNOWN — INTERVIEW ${interviewRef.id} has no interview_template version pin in the facts; do not invent one`)
+  }
   if (merged.business_objects.length === 0) {
     unknowns.push('business objects: UNKNOWN — the Router supplied no business_refs for this task')
   }
@@ -298,12 +315,13 @@ function renderPin(pin: { readonly id: string; readonly version: number | string
   return pin === undefined ? 'UNKNOWN' : `${pin.id} @ version ${String(pin.version)}`
 }
 
-/** resume 钉渲染：原件哈希（+ 事实源真的给出的 artifact id）。 */
+/** resume 钉渲染：原件哈希（+ 事实源真的给出的 artifact id / 钉住的 resume_version_id）。 */
 function renderResumePin(pin: TaskContextVersionPins['resume']): string {
   if (pin === undefined) return 'UNKNOWN'
-  return pin.artifact_id === undefined
+  const base = pin.artifact_id === undefined
     ? `sha256=${pin.sha256}`
     : `artifact_id=${pin.artifact_id}, sha256=${pin.sha256}`
+  return pin.version_id === undefined ? base : `${base}, resume_version_id=${pin.version_id}`
 }
 
 /**
@@ -334,12 +352,20 @@ export function renderTaskContextPrompt(context: TaskContext): string {
       lines.push(`- ${object.type} ${object.id}${extra.length === 0 ? '' : ` — ${extra.join('; ')}`}`)
     }
   }
-  lines.push(
-    '',
-    TASK_CONTEXT_SECTIONS.versionPins,
+  // interview_template 只在事实源真的钉住时才多渲染一行；缺失由 UNKNOWNS 说明（不占位 UNKNOWN 行）。
+  const pinLines = [
     `- job: ${renderPin(pins.job)}`,
     `- rubric: ${renderPin(pins.rubric)}`,
     `- resume: ${renderResumePin(pins.resume)}`,
+    ...(pins.interview_template === undefined ? [] : [`- interview_template: ${pins.interview_template.id}`]),
+    ...(pins.application === undefined
+      ? []
+      : [`- application: ${pins.application.id} (D-120 pin source: the job / rubric / resume_version pins above come from this application row)`]),
+  ]
+  lines.push(
+    '',
+    TASK_CONTEXT_SECTIONS.versionPins,
+    ...pinLines,
     '- A pin is an exact row identity (id + version/hash). UNKNOWN is not a value: resolve it with a tool before writing anything that depends on it, and never copy a version from another task.',
     '',
     TASK_CONTEXT_SECTIONS.evidenceLocators,
@@ -454,21 +480,85 @@ export interface TaskContextEventFacts {
   readonly sourceObjectId: string | null
 }
 
+// ---------------------------------------------------------------------------
+//  D-120 版本钉端口：4 个只读查询的结构行（字段名与 store/readback.ts 逐个一致）。
+//  就地定义（不 import store 实现），`RuntimeStore` 结构上自动满足。
+// ---------------------------------------------------------------------------
+
+/** D-120：application 行上的版本钉（申请钉住优先）。 */
+export interface ApplicationVersionPinRow {
+  readonly applicationId: string
+  readonly jobId: string
+  readonly jobVersionId: string
+  readonly rubricVersionId: string | null
+  readonly resumeVersionId: string | null
+  /** resume_version.source_asset_sha256（原件哈希）；无 resume_version_id 时为 null。 */
+  readonly resumeSha256: string | null
+}
+
+/** job 的 current_* 指针（D-120 的次级来源；不是申请钉住值）。 */
+export interface JobVersionPointerRow {
+  readonly jobId: string
+  readonly currentJobVersionId: string | null
+  readonly currentRubricVersionId: string | null
+}
+
+/** INTAKE_RECORD → application 的链接结果；candidates>1 时 applicationId=null（歧义不猜）。 */
+export interface IntakeApplicationLinkRow {
+  readonly applicationId: string | null
+  readonly candidates: number
+}
+
+/** interview 侧：interview 行 + 当前 interview_record（is_current）的钉子。 */
+export interface InterviewVersionPinRow {
+  readonly interviewId: string
+  readonly applicationId: string
+  readonly interviewTemplateVersionId: string | null
+  readonly interviewRecordRubricVersionId: string | null
+  readonly interviewRecordJobId: string | null
+}
+
 /**
  * TaskContextSource 需要的最小只读端口。
- * `RuntimeStore` 结构上已满足（`getEvent` / `intakeRecordIdForEvent` 均已存在）。
+ * `RuntimeStore` 结构上已满足（`getEvent` / `intakeRecordIdForEvent` + D-120 的 4 个查询）。
  */
 export interface TaskContextReader {
   getEvent(eventId: string): Promise<TaskContextEventFacts | null>
   intakeRecordIdForEvent(eventId: string): Promise<string | null>
+  applicationVersionPins(applicationId: string): Promise<ApplicationVersionPinRow | null>
+  jobVersionPointers(jobId: string): Promise<JobVersionPointerRow | null>
+  applicationLinkForIntakeRecord(intakeRecordId: string): Promise<IntakeApplicationLinkRow>
+  interviewVersionPins(interviewId: string): Promise<InterviewVersionPinRow | null>
+}
+
+/** 取第一个指定类型的业务引用（同类型多条取首个，保持确定性；不合并、不猜）。 */
+function firstBusinessRef(
+  refs: readonly BusinessObjectRef[],
+  type: BusinessObjectRef['type'],
+): BusinessObjectRef | undefined {
+  return refs.find((ref) => ref.type === type)
 }
 
 /**
- * 基于 store 只读查询的事实源：trigger event + payload 里的哈希/文件名/页数 +
- * INTAKE_RECORD 反查。**只放 locator 字段，不放材料正文**；任何查不到的项进 UNKNOWNS。
+ * 校验事件 payload 里的 sha256（只认 64 位 hex；不合法 = 没有）。
+ * @param value - `payload.sha256` 原值。
+ * @returns 小写 sha256 或 null。
+ */
+function payloadSha256(value: unknown): string | null {
+  return typeof value === 'string' && SHA256_TEXT.test(value) ? value.toLowerCase() : null
+}
+
+/**
+ * 基于 store 只读查询的事实源：D-120 版本钉（application / job / interview 行）+
+ * trigger event 的只读事实（哈希 / 文件名 / 页数）+ INTAKE_RECORD 反查。
  *
- * job / rubric 版本钉无法从事件行回答（没有对应 store 方法），由 buildTaskContext
- * 在渲染时统一记 UNKNOWN —— 这里不猜、也不补默认值。
+ * 纪律：
+ *   * **没给外部数据不等于不做能力**：没有 trigger event 也要解析版本钉——
+ *     事件事实缺失只影响事件段与事件衍生的事实，不阻断业务事实查询；
+ *   * 顺序固定（CONTRACT §2.3）：application 定位 → application 钉优先 → 面试侧直接事实 →
+ *     job.current_* 降级（记 DEGRADED，绝不假装"申请钉住"）；
+ *   * 歧义不猜：INTAKE 链 0/多候选、application 行查不到、resume 双来源 sha 不一致 → UNKNOWN；
+ *   * 只放 locator / note 字段，**绝不**把 payload 里的材料正文（raw_text / transcript）带进 prompt。
  * @param reader - 只读端口（生产传 `RuntimeStore`）。
  */
 export function createStoreTaskContextSource(reader: TaskContextReader): TaskContextSource {
@@ -476,50 +566,156 @@ export function createStoreTaskContextSource(reader: TaskContextReader): TaskCon
     async load(request: WorkerTaskRequest): Promise<TaskContextFacts> {
       const base = extractRequestFacts(request)
       const trigger = parseTriggerEvent(request.description)
-      if (trigger === null) {
-        return {
-          ...base,
-          unknowns: [...base.unknowns, 'trigger event: UNKNOWN — business_task.description has no "(event <uuid>)" pattern, so no event fact can be read'],
-        }
-      }
-      const event = await reader.getEvent(trigger.eventId)
-      if (event === null) {
-        return {
-          ...base,
-          unknowns: [...base.unknowns, `trigger event: ${trigger.eventId} was not found in event_inbox; treat every fact that depends on it as UNKNOWN`],
-        }
-      }
-      const payload = event.payload
       const unknowns: string[] = []
-      if (trigger.eventType !== null && trigger.eventType !== event.eventType) {
-        unknowns.push(`trigger event type mismatch: description says ${trigger.eventType} but event_inbox says ${event.eventType} — report the mismatch, do not silently pick one`)
-      }
-      const locators: TaskContextEvidenceLocator[] = [{
-        kind: 'event',
-        ref: event.eventId,
-        note: `event_type=${event.eventType}; trust_level=${event.trustLevel}; source_object_id=${event.sourceObjectId ?? 'none'}`,
-      }]
-      let resumePin: TaskContextVersionPins['resume']
-      const sha256 = typeof payload.sha256 === 'string' && SHA256_TEXT.test(payload.sha256) ? payload.sha256.toLowerCase() : null
-      if (sha256 === null) {
-        unknowns.push('resume sha256: UNKNOWN — the trigger event payload carries no valid sha256 field; do not invent one')
+      const locators: TaskContextEvidenceLocator[] = []
+
+      // ---- 事件事实（可选）：读不到只影响事件段与事件衍生的事实，不阻断业务事实查询 ----
+      let event: TaskContextEventFacts | null = null
+      if (trigger === null) {
+        unknowns.push('trigger event: UNKNOWN — business_task.description has no "(event <uuid>)" pattern, so no event fact can be read')
       } else {
-        const artifactId = typeof payload.artifact_id === 'string' && payload.artifact_id.trim() !== ''
-          ? payload.artifact_id.trim()
-          : undefined
-        resumePin = artifactId === undefined ? { sha256 } : { artifact_id: artifactId, sha256 }
-        if (artifactId === undefined) {
-          unknowns.push('resume artifact_id: UNKNOWN — the trigger event payload carries only the original-file sha256; do not invent an artifact id')
+        event = await reader.getEvent(trigger.eventId)
+        if (event === null) {
+          unknowns.push(`trigger event: ${trigger.eventId} was not found in event_inbox; treat every fact that depends on it as UNKNOWN`)
+        } else {
+          if (trigger.eventType !== null && trigger.eventType !== event.eventType) {
+            unknowns.push(`trigger event type mismatch: description says ${trigger.eventType} but event_inbox says ${event.eventType} — report the mismatch, do not silently pick one`)
+          }
+          locators.push({
+            kind: 'event',
+            ref: event.eventId,
+            note: `event_type=${event.eventType}; trust_level=${event.trustLevel}; source_object_id=${event.sourceObjectId ?? 'none'}`,
+          })
         }
-        const noteParts = ['original-file hash from the trigger event payload']
-        if (typeof payload.file_name === 'string' && payload.file_name.trim() !== '') noteParts.push(`file_name=${payload.file_name.trim()}`)
-        if (typeof payload.pages === 'number' && Number.isFinite(payload.pages)) noteParts.push(`pages=${String(payload.pages)}`)
-        if (typeof payload.source_kind === 'string' && payload.source_kind.trim() !== '') noteParts.push(`source_kind=${payload.source_kind.trim()}`)
-        locators.push({ kind: 'resume_artifact', ref: sha256, note: noteParts.join('; ') })
       }
-      const pins: TaskContextVersionPins = resumePin === undefined ? {} : { resume: resumePin }
+
+      // ---- D-120 版本钉：从业务事实根源（application / job / interview 行）解析 ----
+      const applicationRef = firstBusinessRef(request.businessRefs, 'APPLICATION')
+      const intakeRef = firstBusinessRef(request.businessRefs, 'INTAKE_RECORD')
+      const interviewRef = firstBusinessRef(request.businessRefs, 'INTERVIEW')
+      const jobRef = firstBusinessRef(request.businessRefs, 'JOB')
+
+      // 2) interview 侧事实（同时可能用来定位 application）。查不到 → UNKNOWN，不猜。
+      let interview: InterviewVersionPinRow | null = null
+      if (interviewRef !== undefined) {
+        interview = await reader.interviewVersionPins(interviewRef.id)
+        if (interview === null) {
+          unknowns.push(`INTERVIEW ${interviewRef.id} was not found; interview-side pins are UNKNOWN`)
+        }
+      }
+
+      // 1) application 定位：APPLICATION ref → INTAKE_RECORD 链 → INTERVIEW.application_id。
+      let applicationId: string | null = null
+      if (applicationRef !== undefined) {
+        applicationId = applicationRef.id
+      } else if (intakeRef !== undefined) {
+        const link = await reader.applicationLinkForIntakeRecord(intakeRef.id)
+        if (link.candidates > 1) {
+          unknowns.push(`intake_record ${intakeRef.id} links to ${link.candidates} applications — ambiguous; refusing to pick one`)
+        } else if (link.candidates === 0) {
+          unknowns.push(`no application is linked to intake_record ${intakeRef.id} (resume chain empty)`)
+        } else if (link.applicationId === null) {
+          unknowns.push(`intake_record ${intakeRef.id} links to ${link.candidates} application(s) but the link row carries no application id — refusing to guess`)
+        } else {
+          applicationId = link.applicationId
+        }
+      } else if (interview !== null) {
+        applicationId = interview.applicationId
+      }
+
+      // 3) application 钉子（申请钉住优先）。行查不到 → UNKNOWN，并允许下面的 current_* 降级。
+      let application: ApplicationVersionPinRow | null = null
+      if (applicationId !== null) {
+        application = await reader.applicationVersionPins(applicationId)
+        if (application === null) {
+          unknowns.push(`APPLICATION ${applicationId} was not found; application pins are UNKNOWN (any job.current_* value below is a DEGRADED fallback)`)
+        } else {
+          locators.push({
+            kind: 'version_pin_source',
+            ref: application.applicationId,
+            note: `D-120 application pins: job=${application.jobId} job_version=${application.jobVersionId} rubric=${application.rubricVersionId ?? 'none'} resume_version=${application.resumeVersionId ?? 'none'}`,
+          })
+        }
+      }
+
+      // 4) job 钉 / 5) rubric 钉：application 行 → 面试侧 record → job.current_*（降级，记 DEGRADED）。
+      const pinJobId: string | null = application?.jobId ?? jobRef?.id ?? interview?.interviewRecordJobId ?? null
+      const needsPointers = pinJobId !== null && (
+        application === null
+        || (application.rubricVersionId === null && interview?.interviewRecordRubricVersionId == null)
+      )
+      let pointers: JobVersionPointerRow | null = null
+      if (needsPointers && pinJobId !== null) pointers = await reader.jobVersionPointers(pinJobId)
+
+      let jobPin: TaskContextVersionPins['job']
+      if (application !== null) {
+        jobPin = { id: application.jobId, version: application.jobVersionId }
+      } else if (pointers !== null && pointers.currentJobVersionId !== null) {
+        jobPin = { id: pointers.jobId, version: pointers.currentJobVersionId }
+        unknowns.push(`job pin: DEGRADED — resolved from job.current_job_version_id for job ${pointers.jobId}; that is the current pointer, not the application pin`)
+        locators.push({ kind: 'version_pin_source', ref: pointers.jobId, note: 'D-120 fallback to job.current_* (not an application pin)' })
+      }
+
+      let rubricPin: TaskContextVersionPins['rubric']
+      if (application !== null && application.rubricVersionId !== null) {
+        rubricPin = { id: application.rubricVersionId, version: application.rubricVersionId }
+      } else if (interview !== null && interview.interviewRecordRubricVersionId !== null) {
+        rubricPin = { id: interview.interviewRecordRubricVersionId, version: interview.interviewRecordRubricVersionId }
+        unknowns.push(`rubric pin: DEGRADED — resolved from the current interview_record.rubric_version_id for interview ${interview.interviewId}; it is not an application pin`)
+      } else if (pointers !== null && pointers.currentRubricVersionId !== null) {
+        rubricPin = { id: pointers.currentRubricVersionId, version: pointers.currentRubricVersionId }
+        unknowns.push(`rubric pin: DEGRADED — resolved from job.current_rubric_version_id for job ${pointers.jobId}; that is the current pointer, not the application pin`)
+      }
+
+      // 6) resume 钉：application 行优先（带 resume_version_id）；无申请钉时沿用事件 payload 的哈希。
+      const eventSha = event === null ? null : payloadSha256(event.payload.sha256)
+      if (event !== null && eventSha !== null) {
+        const noteParts = ['original-file hash from the trigger event payload']
+        if (typeof event.payload.file_name === 'string' && event.payload.file_name.trim() !== '') noteParts.push(`file_name=${event.payload.file_name.trim()}`)
+        if (typeof event.payload.pages === 'number' && Number.isFinite(event.payload.pages)) noteParts.push(`pages=${String(event.payload.pages)}`)
+        if (typeof event.payload.source_kind === 'string' && event.payload.source_kind.trim() !== '') noteParts.push(`source_kind=${event.payload.source_kind.trim()}`)
+        locators.push({ kind: 'resume_artifact', ref: eventSha, note: noteParts.join('; ') })
+      }
+      let resumePin: TaskContextVersionPins['resume']
+      if (application !== null && application.resumeVersionId !== null) {
+        if (application.resumeSha256 === null) {
+          unknowns.push(`resume sha256: UNKNOWN — APPLICATION ${application.applicationId} pins resume_version ${application.resumeVersionId} but no source_asset_sha256 was read; do not invent one`)
+        } else {
+          resumePin = { sha256: application.resumeSha256, version_id: application.resumeVersionId }
+          if (eventSha !== null && eventSha !== application.resumeSha256) {
+            unknowns.push(`resume sha256 mismatch: trigger event payload ${eventSha} vs APPLICATION ${application.applicationId} resume_version ${application.resumeVersionId} ${application.resumeSha256} — keeping the application pin; do not silently pick one`)
+          }
+        }
+      } else if (event !== null) {
+        if (eventSha === null) {
+          unknowns.push('resume sha256: UNKNOWN — the trigger event payload carries no valid sha256 field; do not invent one')
+        } else {
+          const artifactId = typeof event.payload.artifact_id === 'string' && event.payload.artifact_id.trim() !== ''
+            ? event.payload.artifact_id.trim()
+            : undefined
+          resumePin = artifactId === undefined ? { sha256: eventSha } : { artifact_id: artifactId, sha256: eventSha }
+          if (artifactId === undefined) {
+            unknowns.push('resume artifact_id: UNKNOWN — the trigger event payload carries only the original-file sha256; do not invent an artifact id')
+          }
+        }
+      }
+
+      // 7) interview_template 钉：只有 INTERVIEW ref 存在时才取；为空由 buildTaskContext 记 UNKNOWN。
+      let interviewTemplatePin: TaskContextVersionPins['interview_template']
+      if (interviewRef !== undefined && interview !== null && interview.interviewTemplateVersionId !== null) {
+        interviewTemplatePin = { id: interview.interviewTemplateVersionId }
+      }
+
+      const pins: TaskContextVersionPins = {
+        ...(jobPin === undefined ? {} : { job: jobPin }),
+        ...(rubricPin === undefined ? {} : { rubric: rubricPin }),
+        ...(resumePin === undefined ? {} : { resume: resumePin }),
+        ...(interviewTemplatePin === undefined ? {} : { interview_template: interviewTemplatePin }),
+        ...(application === null ? {} : { application: { id: application.applicationId } }),
+      }
+
       let businessObjects = base.business_objects
-      if (businessObjects.some((object) => object.type === 'INTAKE_RECORD')) {
+      if (event !== null && businessObjects.some((object) => object.type === 'INTAKE_RECORD')) {
         const intakeId = await reader.intakeRecordIdForEvent(event.eventId)
         if (intakeId === null) {
           unknowns.push(`business object INTAKE_RECORD: event-row lookup found no intake_record for trigger event ${event.eventId}`)
