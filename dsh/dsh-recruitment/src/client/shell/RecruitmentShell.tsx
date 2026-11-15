@@ -1,12 +1,8 @@
-// D5 产品外壳：按 Demo Actor 角色显示默认工作视图 + Human Attention 唯一入口。
+// D5 产品外壳：两个工作视图（Recruiting / Interviewer）+ 顶部 Demo Actor 选择 + Human Attention 唯一入口。
 //
-// 口径（2026-11-15 P0-4，`work/d5/roles/CONTRACT.md` §1/§4.3、Notion 02 §04）：
-//   * 5 个受控 Demo Actor alias（recruiter / hiring_manager / approver / interviewer_a / interviewer_b）；
-//   * **默认视图由角色决定**：HR → recruiting；招聘负责人 → hiring；审批人 → approvals；
-//     面试官 → interviewer；顶部只渲染该角色被授权看到的视图 tab（未授权视图不渲染）；
-//   * 视图矩阵是**展示口径**，真实授权在服务端 Host Action（`src/http/actions.ts` 只授权 recruiter）；
-//     非授权 alias 的写入口展示精确原因，由人**显式**切换为 Recruiter 身份，不静默换身份；
-//   * Recruiter / Interviewer 的既有视图组件与 props 保持不变（现有行为不回归）。
+// W0 独占本文件与 `index.tsx` 注册；W2/W3 只提供各自 workspace 组件（后续在此 import）。
+// 当前 schema 冻结前，Recruiting 先复用已验证的真实数据面板 `Workbench`（读 /recruitment/api/overview），
+// Interviewer 先给只读占位；W2/W3 落地后由 W0 替换为 `RecruitingWorkspace` / `InterviewerWorkspace`。
 //
 // 约束：客户端不直连数据库；alias 只传受控枚举，不传 actor UUID；session id 只来自 DSH 的 localStorage，
 // 缺失/未绑定一律显示 fail-closed 提示，不静默退回 HR 身份。
@@ -14,20 +10,8 @@
 import { useEffect, useState } from 'react'
 import { RecruitingWorkspace } from '../recruiting/RecruitingWorkspace.tsx'
 import { InterviewerWorkspace } from '../interviewer/InterviewerWorkspace.tsx'
-import { ApproverView } from './ApproverView.tsx'
-import { HiringManagerView } from './HiringManagerView.tsx'
-import {
-  DEMO_ACTOR_OPTIONS,
-  allowedViewsFor,
-  defaultViewFor,
-  isDemoActorAliasValue,
-  profileForAlias,
-  resolveViewForAlias,
-  viewLabel,
-  writeBlockedReasonFor,
-  type DemoActorAlias,
-  type WorkViewKey,
-} from './role-views.ts'
+
+export type DemoActorAlias = 'recruiter' | 'interviewer_a' | 'interviewer_b'
 
 interface AttentionItem {
   readonly id?: string
@@ -52,11 +36,16 @@ interface AttentionOverview {
 
 interface ActorBinding {
   readonly session_id: string
-  readonly alias: string
+  readonly alias: DemoActorAlias
   readonly actor_id: string
   readonly display_name?: string
-  readonly roles?: readonly string[]
 }
+
+const ALIAS_OPTIONS: ReadonlyArray<{ value: DemoActorAlias; label: string }> = [
+  { value: 'recruiter', label: 'Recruiter' },
+  { value: 'interviewer_a', label: 'Interviewer A' },
+  { value: 'interviewer_b', label: 'Interviewer B' },
+]
 
 /** 从 DSH 的 localStorage 取当前 session id（Gate 0 实测键/形状）。 */
 function readSessionId(): string | null {
@@ -100,16 +89,13 @@ const COLORS = {
   sub: '#64748b',
   blue: '#2f6feb',
   blueBg: '#eef4ff',
-  amber: '#92400e',
-  amberBg: '#fff7e6',
 } as const
 
 /** 顶部按钮（视图切换 / Human Attention）。 */
-function TabButton(props: { active: boolean; label: string; testid: string; onClick: () => void }): JSX.Element {
+function TabButton(props: { active: boolean; label: string; onClick: () => void }): JSX.Element {
   return (
     <button
       type="button"
-      data-testid={props.testid}
       onClick={props.onClick}
       style={{
         border: `1px solid ${props.active ? '#c7d8f2' : COLORS.border}`,
@@ -127,41 +113,33 @@ function TabButton(props: { active: boolean; label: string; testid: string; onCl
   )
 }
 
-/** 视图渲染（只渲染当前 alias 被授权看到的视图；未授权视图不进入 DOM）。 */
-function renderView(props: {
-  view: WorkViewKey
-  sessionId: string | null
-  alias: string | null
-  onSwitchAlias: (alias: 'recruiter') => void
-}): JSX.Element {
-  if (props.view === 'recruiting') {
-    return <RecruitingWorkspace sessionId={props.sessionId ?? ''} alias={'recruiter'} />
-  }
-  if (props.view === 'interviewer') {
-    return <InterviewerWorkspace sessionId={props.sessionId} alias={props.alias} />
-  }
-  if (props.view === 'hiring') {
-    return <HiringManagerView sessionId={props.sessionId} alias={props.alias} onSwitchAlias={props.onSwitchAlias} />
-  }
-  return <ApproverView sessionId={props.sessionId} alias={props.alias} onSwitchAlias={props.onSwitchAlias} />
+/** Interviewer 视图占位：W3 落地后由 W0 替换为 InterviewerWorkspace（只读占位不伪造业务数据）。 */
+function InterviewerPlaceholder(props: { alias: DemoActorAlias | null; sessionId: string | null }): JSX.Element {
+  return (
+    <div style={{ padding: 28, color: COLORS.sub, fontSize: 13, lineHeight: 1.8 }}>
+      <div style={{ fontSize: 18, fontWeight: 700, color: COLORS.text, marginBottom: 8 }}>Interviewer Workspace</div>
+      <p>该视图由 W3 实现（我的面试 / 简报 / Rubric / 授权材料 / 本人 Scorecard）。</p>
+      <p>
+        当前 Demo Actor：<b>{props.alias ?? '未绑定'}</b>
+        <br />
+        DSH Session：<code>{props.sessionId ?? '未取得'}</code>
+      </p>
+    </div>
+  )
 }
 
 /**
  * 产品外壳。没有渠道注入 props：session id 从 DSH localStorage 取，alias 由人选择后 PUT 到服务端。
- * @returns 角色默认视图 + 视图切换（仅授权视图）+ Human Attention。
+ * @returns 两个工作视图 + 顶部身份/注意力入口。
  */
 export function RecruitmentShell(): JSX.Element {
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [alias, setAlias] = useState<string | null>(null)
+  const [alias, setAlias] = useState<DemoActorAlias | null>(null)
   const [binding, setBinding] = useState<ActorBinding | null>(null)
   const [notice, setNotice] = useState('')
-  const [view, setView] = useState<WorkViewKey | null>(null)
+  const [view, setView] = useState<'recruiting' | 'interviewer'>('recruiting')
   const [attentionOpen, setAttentionOpen] = useState(false)
   const [attention, setAttention] = useState<null | { error?: string; data?: AttentionOverview }>(null)
-
-  const profile = profileForAlias(alias)
-  const allowedViews = allowedViewsFor(alias)
-  const canWrite = profile?.canExecuteWriteActions === true
 
   const openAttention = (): void => {
     setAttentionOpen(true)
@@ -192,13 +170,11 @@ export function RecruitmentShell(): JSX.Element {
       }
       setBinding(found)
       setAlias(found.alias)
-      setView(defaultViewFor(found.alias))
     })
   }, [])
 
   const onSelectAlias = (next: DemoActorAlias): void => {
     setAlias(next)
-    setView((current) => resolveViewForAlias(current, next))
     if (sessionId === null) {
       setNotice('未取得 DSH Session，无法绑定 Demo Actor。')
       return
@@ -210,27 +186,13 @@ export function RecruitmentShell(): JSX.Element {
         return
       }
       setNotice('')
-      void getBinding(sessionId).then((found) => {
-        setBinding(found)
-        if (found !== null) {
-          setAlias(found.alias)
-          setView((current) => resolveViewForAlias(current, found.alias))
-        }
-      })
+      void getBinding(sessionId).then((found) => setBinding(found))
     })
-  }
-
-  const onSwitchAlias = (next: 'recruiter'): void => {
-    onSelectAlias(next)
   }
 
   return (
     <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', background: COLORS.bg, color: COLORS.text }}>
       <div
-        data-testid="shell-role"
-        data-alias={alias ?? ''}
-        data-role={profile?.role ?? ''}
-        data-default-view={view ?? ''}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -244,15 +206,8 @@ export function RecruitmentShell(): JSX.Element {
         <strong style={{ fontSize: 14, marginRight: 4 }}>Recruitment</strong>
         <span style={{ color: COLORS.sub, fontSize: 11 }}>AGENT WORKSPACE</span>
         <span style={{ flex: 1 }} />
-        {allowedViews.map((key) => (
-          <TabButton
-            key={key}
-            testid={`view-tab-${key}`}
-            active={view === key}
-            label={viewLabel(key)}
-            onClick={() => setView(key)}
-          />
-        ))}
+        <TabButton active={view === 'recruiting'} label="招聘工作台" onClick={() => setView('recruiting')} />
+        <TabButton active={view === 'interviewer'} label="面试官工作台" onClick={() => setView('interviewer')} />
         <button
           type="button"
           onClick={openAttention}
@@ -271,30 +226,22 @@ export function RecruitmentShell(): JSX.Element {
             <option value="" disabled>
               未绑定
             </option>
-            {DEMO_ACTOR_OPTIONS.map((option) => (
+            {ALIAS_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
           </select>
         </label>
-        {profile !== null ? (
-          <span style={{ fontSize: 10, color: COLORS.sub }} data-testid="shell-role-label">
-            {profile.roleLabel}
-            {binding !== null ? ` · actor ${binding.actor_id.slice(-8)}` : ''}
+        {binding !== null ? (
+          <span style={{ fontSize: 10, color: COLORS.sub }}>
+            actor {binding.actor_id.slice(-8)} · {binding.display_name ?? ''}
           </span>
         ) : null}
-        <span
-          data-testid="shell-write-auth"
-          data-can-write={canWrite ? 'true' : 'false'}
-          style={{ fontSize: 10, color: canWrite ? '#15803d' : COLORS.amber, maxWidth: 460 }}
-        >
-          {canWrite ? 'Host Action 写授权：可执行（recruiter）' : writeBlockedReasonFor(alias, '写动作').slice(0, 180)}
-        </span>
       </div>
 
       {notice !== '' ? (
-        <div style={{ padding: '7px 16px', fontSize: 11, color: COLORS.amber, background: COLORS.amberBg, borderBottom: '1px solid #f3d9a4' }}>{notice}</div>
+        <div style={{ padding: '7px 16px', fontSize: 11, color: '#92400e', background: '#fff7e6', borderBottom: '1px solid #f3d9a4' }}>{notice}</div>
       ) : null}
 
       {attentionOpen ? (
@@ -386,20 +333,11 @@ export function RecruitmentShell(): JSX.Element {
         </div>
       ) : null}
 
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }} data-testid="shell-view-container" data-view={view ?? ''}>
-        {view === null ? (
-          <div data-testid="shell-unbound" style={{ padding: 28, color: COLORS.sub, fontSize: 13, lineHeight: 1.8 }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: COLORS.text, marginBottom: 8 }}>未绑定 Demo Actor</div>
-            <p>请先在顶部选择受控 Demo Actor（Recruiter / 招聘负责人 / 审批人 / Interviewer A / Interviewer B）。</p>
-            <p>未绑定前所有写操作 fail-closed，界面不静默退回任何默认身份。</p>
-          </div>
-        ) : (
-          renderView({ view, sessionId, alias, onSwitchAlias })
-        )}
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+        {view === 'recruiting'
+          ? <RecruitingWorkspace sessionId={sessionId ?? ''} alias={alias ?? 'recruiter'} />
+          : <InterviewerWorkspace sessionId={sessionId} alias={alias} />}
       </div>
     </div>
   )
 }
-
-/** 顶层别名（供测试/文档检索；避免误用未导出的内部类型）。 */
-export type { DemoActorAlias }

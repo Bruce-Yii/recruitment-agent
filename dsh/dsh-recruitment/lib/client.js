@@ -8,7 +8,7 @@ window.__ModuleLoader__.load({
 		let react_jsx_runtime = require("react/jsx-runtime");
 		// src/client/recruiting/format.ts
 		/** 取非空字符串；数字/布尔/对象不算字符串（避免把坏类型伪装成文本）。 */
-		function text$1(value, fallback = "") {
+		function text(value, fallback = "") {
 			if (typeof value === "string") {
 				const trimmed = value.trim();
 				return trimmed === "" ? fallback : trimmed;
@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
 			return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 		}
 		/** 取布尔；只认严格 true（字符串 'true' 不算）。 */
-		function bool$1(value) {
+		function bool(value) {
 			return value === true;
 		}
 		/** 取普通对象；null / 数组 / 标量一律降级成空对象。 */
@@ -43,7 +43,7 @@ window.__ModuleLoader__.load({
 		}
 		/** 只保留白名单里的枚举值；未知值降级成 `''`（不把未知枚举渲染成合法选项）。 */
 		function oneOf(value, allowed) {
-			const candidate = text$1(value);
+			const candidate = text(value);
 			return allowed.includes(candidate) ? candidate : "";
 		}
 		/** 把若干文本拼成一句（跳过空串），默认分隔符 ` · `。 */
@@ -52,7 +52,7 @@ window.__ModuleLoader__.load({
 		}
 		/** 本地时区 `YYYY-MM-DD HH:mm`；null / 空串 / 非法日期 → `''`。 */
 		function formatDateTime(value) {
-			const raw = text$1(value);
+			const raw = text(value);
 			if (raw === "") return "";
 			const parsed = new Date(raw);
 			const time = parsed.valueOf();
@@ -80,18 +80,18 @@ window.__ModuleLoader__.load({
 		}
 		/** sha256 截断展示：64 位十六进制 → 前 10 位 + `…`；短文本原样返回；空 → `''`。 */
 		function shortSha(value) {
-			const raw = text$1(value);
+			const raw = text(value);
 			if (raw === "") return "";
 			if (/^[0-9a-fA-F]{16,}$/.test(raw)) return `${raw.slice(0, 10)}…`;
 			return raw.length > 24 ? `${raw.slice(0, 24)}…` : raw;
 		}
 		/** 头像里的首字（中文取第一个字符；空 → `·`）。 */
 		function initial(value) {
-			const raw = text$1(value);
+			const raw = text(value);
 			return raw === "" ? "·" : Array.from(raw)[0] ?? "·";
 		}
 		/** 任意未知值的一行预览（用于 rubric 的 `value` 这类无契约字段；不渲染 `[object Object]`）。 */
-		function preview$1(value, maxLength = 108) {
+		function preview(value, maxLength = 108) {
 			if (value === null || value === void 0) return "";
 			if (typeof value === "string") {
 				const trimmed = value.trim();
@@ -102,7 +102,7 @@ window.__ModuleLoader__.load({
 			if (Array.isArray(value)) {
 				const parts = [];
 				for (const item of value.slice(0, 8)) {
-					const rendered = preview$1(item, 32);
+					const rendered = preview(item, 32);
 					if (rendered !== "") parts.push(rendered);
 				}
 				return parts.join("、");
@@ -125,11 +125,11 @@ window.__ModuleLoader__.load({
 		}
 		// src/client/recruiting/actions.ts
 		/** 决策事实只读投影（GET；`?application_id=<uuid>`）。 */
-		const DECISION_FACTS_PATH$1 = "/recruitment/api/decision/facts";
+		const DECISION_FACTS_PATH = "/recruitment/api/decision/facts";
 		/** 执行初筛评估（POST，Human Host Action）。 */
 		const DECISION_EVALUATE_PATH = "/recruitment/api/decision/screening/evaluate";
 		/** 正式决策 facade（POST，body 由服务端从 facts 组装 basis）。 */
-		const DECISION_RECORD_PATH$1 = "/recruitment/api/decision/record";
+		const DECISION_RECORD_PATH = "/recruitment/api/decision/record";
 		/** 岗位草案生成（POST，只读不写库）。 */
 		const JOB_DRAFT_PATH = "/recruitment/api/job-action/job/draft";
 		/** 人确认后的岗位创建（POST）。 */
@@ -208,15 +208,15 @@ window.__ModuleLoader__.load({
 			"DISQUALIFIER"
 		];
 		/** UUID 文本形态（服务端 `isUuid` 同口径；不做版本位归一）。 */
-		const UUID_RE$1 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+		const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 		/** 带时区偏移的 ISO-8601（`Z` 或 `±HH:MM`；裸本地时间会被服务端拒绝）。 */
-		const OFFSET_ISO_RE$1 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
+		const OFFSET_ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 		/** `idempotency_key` 字符集（`work/d5/actions/CONTRACT.md` §3.1）。 */
 		const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9_.:-]{1,200}$/;
 		/** 岗位 code（`src/tools/job-create.ts`：`^[A-Za-z0-9][A-Za-z0-9._-]{1,40}$`）。 */
 		const JOB_CODE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{1,40}$/;
 		/** 造一个失败预检；reasonText 写给运维/验收看（含契约出处）。 */
-		function fail$1(reasonCode, reasonText, missing = []) {
+		function fail(reasonCode, reasonText, missing = []) {
 			return {
 				ok: false,
 				reasonCode,
@@ -238,16 +238,16 @@ window.__ModuleLoader__.load({
 		/** 组包末尾统一做保留键自检（所有 build* 共用，避免某条漏掉）。 */
 		function finish(body) {
 			const reserved = reservedKeysOf(body);
-			if (reserved.length > 0) return fail$1("CLIENT_RESERVED_KEY", `body 含客户端禁止上送的身份/服务端派生键：${reserved.join(", ")}（服务端会 400 ACTOR_OVERRIDE_REJECTED，客户端不发送）`, reserved);
+			if (reserved.length > 0) return fail("CLIENT_RESERVED_KEY", `body 含客户端禁止上送的身份/服务端派生键：${reserved.join(", ")}（服务端会 400 ACTOR_OVERRIDE_REJECTED，客户端不发送）`, reserved);
 			return ok(body);
 		}
 		/** 字符串是否 UUID 形态。 */
-		function isUuid$1(value) {
-			return UUID_RE$1.test(value);
+		function isUuid(value) {
+			return UUID_RE.test(value);
 		}
 		/** 字符串是否带时区偏移的 ISO-8601。 */
-		function isOffsetIso$1(value) {
-			return value !== "" && OFFSET_ISO_RE$1.test(value) && Number.isFinite(Date.parse(value));
+		function isOffsetIso(value) {
+			return value !== "" && OFFSET_ISO_RE.test(value) && Number.isFinite(Date.parse(value));
 		}
 		/** 校验一个必填 UUID 字段；不合法时把 missing 键追加进去。 */
 		function requireUuid(value, field, missing) {
@@ -255,7 +255,7 @@ window.__ModuleLoader__.load({
 				missing.push(field);
 				return false;
 			}
-			if (!isUuid$1(value)) {
+			if (!isUuid(value)) {
 				missing.push(`${field}:ID_NOT_UUID`);
 				return false;
 			}
@@ -266,7 +266,7 @@ window.__ModuleLoader__.load({
 			return Array.from(value).length;
 		}
 		/** 取人话标题（读回行的 label：已知键给中文，未知键原样）。 */
-		const READBACK_LABELS$1 = {
+		const READBACK_LABELS = {
 			application_id: "申请 id",
 			job_id: "岗位 id",
 			interview_id: "面试 id",
@@ -314,7 +314,7 @@ window.__ModuleLoader__.load({
 			if (typeof value === "string") return value;
 			if (typeof value === "number" || typeof value === "boolean") return String(value);
 			if (value === void 0) return "";
-			const serialized = preview$1(value, maxLength);
+			const serialized = preview(value, maxLength);
 			return serialized !== "" ? serialized : "";
 		}
 		/** 把 2xx 响应体解析成普通对象；空体 / 非 JSON / 数组 → null（不编造）。 */
@@ -331,10 +331,10 @@ window.__ModuleLoader__.load({
 			return parsed;
 		}
 		/** 解析标准写动作信封（`{action,actor,approval,result,readback}`）；不合法 → null。 */
-		function parseActionEnvelope$1(bodyText) {
+		function parseActionEnvelope(bodyText) {
 			const payload = parseActionPayload(bodyText);
 			if (payload === null) return null;
-			const action = text$1(payload.action);
+			const action = text(payload.action);
 			if (action === "") return null;
 			const actorRaw = record(payload.actor);
 			const approvalRaw = record(payload.approval);
@@ -346,13 +346,13 @@ window.__ModuleLoader__.load({
 			return {
 				action,
 				actor: {
-					sessionId: text$1(actorRaw.session_id),
-					alias: text$1(actorRaw.alias),
-					actorId: text$1(actorRaw.actor_id)
+					sessionId: text(actorRaw.session_id),
+					alias: text(actorRaw.alias),
+					actorId: text(actorRaw.actor_id)
 				},
 				approval: {
 					requested: count(approvalRaw.requested),
-					result: text$1(approvalRaw.result),
+					result: text(approvalRaw.result),
 					toolNames: stringList(approvalRaw.tool_names)
 				},
 				result: toRecordOrNull(payload.result),
@@ -380,13 +380,13 @@ window.__ModuleLoader__.load({
 		function parseJobCloseEnvelope(bodyText) {
 			const payload = parseActionPayload(bodyText);
 			if (payload === null) return null;
-			const contractVersion = text$1(payload.contract_version);
+			const contractVersion = text(payload.contract_version);
 			if (contractVersion === "") return null;
 			const job = record(payload.job);
 			const actor = record(payload.actor);
 			const terminatedRaw = record(payload.terminated);
-			const jobId = text$1(job.job_id);
-			const status = text$1(job.status);
+			const jobId = text(job.job_id);
+			const status = text(job.status);
 			const recordVersion = job.record_version;
 			if (jobId === "" || status === "") return null;
 			if (typeof recordVersion !== "number" || !Number.isFinite(recordVersion) || recordVersion < 0) return null;
@@ -403,8 +403,8 @@ window.__ModuleLoader__.load({
 					jobId,
 					status,
 					recordVersion,
-					statusChangedAt: text$1(job.status_changed_at),
-					statusChangedByActorId: text$1(job.status_changed_by_actor_id)
+					statusChangedAt: text(job.status_changed_at),
+					statusChangedByActorId: text(job.status_changed_by_actor_id)
 				},
 				terminated: {
 					applicationsTotal: counts[0],
@@ -417,9 +417,9 @@ window.__ModuleLoader__.load({
 					taskAttemptsCancelled: counts[7]
 				},
 				actor: {
-					actorId: text$1(actor.actor_id),
-					alias: text$1(actor.alias),
-					displayName: text$1(actor.display_name)
+					actorId: text(actor.actor_id),
+					alias: text(actor.alias),
+					displayName: text(actor.display_name)
 				},
 				replayed: payload.replayed
 			};
@@ -438,7 +438,7 @@ window.__ModuleLoader__.load({
 			];
 		}
 		/** 已知 `code` / `code/reason_code` → 人话补救说明（未知码返回 ''，界面仍显示服务端原文）。 */
-		const ERROR_ADVICE$1 = {
+		const ERROR_ADVICE = {
 			"FORBIDDEN/SAME_ORIGIN_REQUIRED": "写动作只接受本机同源请求（127.0.0.1/localhost 且带 x-recruitment-request: 1）；不要跨源调用",
 			"FORBIDDEN/ACTOR_NOT_AUTHORIZED": "当前身份无权执行招聘写动作；请切换到 Recruiter 身份（面试官只能提交本人面评）",
 			"FORBIDDEN/APPROVAL_UNAVAILABLE": "宿主的 approval 通道不可用（D-79 闸门未装配），本次没有写库",
@@ -510,12 +510,12 @@ window.__ModuleLoader__.load({
 			"INTERNAL": "服务端内部错误（不是业务结论）"
 		};
 		/** 服务端错误码 → 人话补救（未知返回 ''；不吞服务端 message）。 */
-		function describeActionError$1(code, reasonCode) {
-			const byPair = ERROR_ADVICE$1[`${code}/${reasonCode}`];
+		function describeActionError(code, reasonCode) {
+			const byPair = ERROR_ADVICE[`${code}/${reasonCode}`];
 			if (byPair !== void 0) return byPair;
-			const byCode = ERROR_ADVICE$1[code];
+			const byCode = ERROR_ADVICE[code];
 			if (byCode !== void 0) return byCode;
-			const byReason = ERROR_ADVICE$1[reasonCode];
+			const byReason = ERROR_ADVICE[reasonCode];
 			if (byReason !== void 0) return byReason;
 			return "";
 		}
@@ -561,11 +561,11 @@ window.__ModuleLoader__.load({
 			const out = [];
 			for (const item of items(value)) {
 				const entry = record(item);
-				const key = text$1(entry.key);
+				const key = text(entry.key);
 				if (key === "") continue;
 				out.push({
 					key,
-					reason: text$1(entry.reason)
+					reason: text(entry.reason)
 				});
 			}
 			return out;
@@ -573,8 +573,8 @@ window.__ModuleLoader__.load({
 		/** 归一化 `rubric_version` 子对象（缺 id/payload_hash → null）。 */
 		function normalizeRubricBinding(value) {
 			const raw = record(value);
-			const id = text$1(raw.id);
-			const payloadHash = text$1(raw.payload_hash);
+			const id = text(raw.id);
+			const payloadHash = text(raw.payload_hash);
 			if (id === "" || payloadHash === "") return null;
 			return {
 				id,
@@ -584,7 +584,7 @@ window.__ModuleLoader__.load({
 		/** 归一化 `authority` 子对象（缺 actor_id 或 is_hiring_manager 非布尔 → null，不猜 false）。 */
 		function normalizeAuthority(value) {
 			const raw = record(value);
-			const actorId = text$1(raw.actor_id);
+			const actorId = text(raw.actor_id);
 			const isHiringManager = raw.is_hiring_manager;
 			if (actorId === "" || typeof isHiringManager !== "boolean") return null;
 			return {
@@ -596,18 +596,18 @@ window.__ModuleLoader__.load({
 		function normalizeFactsEvaluation(value) {
 			if (value === null || value === void 0) return null;
 			const raw = record(value);
-			const evaluationId = text$1(raw.evaluation_id);
-			const evaluationDigest = text$1(raw.evaluation_digest);
+			const evaluationId = text(raw.evaluation_id);
+			const evaluationDigest = text(raw.evaluation_digest);
 			if (evaluationId === "" && evaluationDigest === "") return null;
 			return {
 				evaluationId,
 				evaluationDigest,
-				verdict: text$1(raw.verdict),
-				rubricVersionId: text$1(raw.rubric_version_id),
-				rubricPayloadHash: text$1(raw.rubric_payload_hash),
-				resumeVersionId: text$1(raw.resume_version_id),
-				resumeContentSha256: text$1(raw.resume_content_sha256),
-				asOf: text$1(raw.as_of),
+				verdict: text(raw.verdict),
+				rubricVersionId: text(raw.rubric_version_id),
+				rubricPayloadHash: text(raw.rubric_payload_hash),
+				resumeVersionId: text(raw.resume_version_id),
+				resumeContentSha256: text(raw.resume_content_sha256),
+				asOf: text(raw.as_of),
 				criteriaEvaluated: items(raw.criteria_evaluated),
 				counts: record(raw.counts)
 			};
@@ -619,10 +619,10 @@ window.__ModuleLoader__.load({
 			if (Object.keys(raw).length === 0) return null;
 			return {
 				available: raw.available === true,
-				asOf: text$1(raw.as_of),
-				summaryDigest: text$1(raw.summary_digest),
+				asOf: text(raw.as_of),
+				summaryDigest: text(raw.summary_digest),
 				warningCount: count(raw.warning_count),
-				source: text$1(raw.source)
+				source: text(raw.source)
 			};
 		}
 		/** 归一化 `basis.screening_decide`（空对象 → null）。 */
@@ -630,15 +630,15 @@ window.__ModuleLoader__.load({
 			const raw = record(value);
 			if (Object.keys(raw).length === 0) return null;
 			const evaluationRaw = record(raw.screening_evaluation);
-			const evaluationId = text$1(evaluationRaw.evaluation_id);
-			const evaluationDigest = text$1(evaluationRaw.evaluation_digest);
+			const evaluationId = text(evaluationRaw.evaluation_id);
+			const evaluationDigest = text(evaluationRaw.evaluation_digest);
 			return {
 				rubricVersion: normalizeRubricBinding(raw.rubric_version),
 				authority: normalizeAuthority(raw.authority),
 				screeningEvaluation: evaluationId === "" && evaluationDigest === "" ? null : {
 					evaluationId,
 					evaluationDigest,
-					verdict: text$1(evaluationRaw.verdict)
+					verdict: text(evaluationRaw.verdict)
 				}
 			};
 		}
@@ -647,8 +647,8 @@ window.__ModuleLoader__.load({
 			const raw = record(value);
 			if (Object.keys(raw).length === 0) return null;
 			return {
-				asOf: text$1(raw.as_of),
-				summaryDigest: text$1(raw.summary_digest),
+				asOf: text(raw.as_of),
+				summaryDigest: text(raw.summary_digest),
 				rubricVersion: normalizeRubricBinding(raw.rubric_version),
 				authority: normalizeAuthority(raw.authority)
 			};
@@ -658,15 +658,15 @@ window.__ModuleLoader__.load({
 		* @param value - 原始 JSON。
 		* @returns 缺少 `application_id`（无法归属申请）时返回 null。
 		*/
-		function normalizeDecisionFacts$1(value) {
+		function normalizeDecisionFacts(value) {
 			const raw = record(value);
-			const applicationId = text$1(raw.application_id);
+			const applicationId = text(raw.application_id);
 			if (applicationId === "") return null;
 			const basisRaw = record(raw.basis);
 			return {
-				contractVersion: text$1(raw.contract_version),
+				contractVersion: text(raw.contract_version),
 				applicationId,
-				stageCode: text$1(raw.stage_code),
+				stageCode: text(raw.stage_code),
 				missing: normalizeMissing(raw.missing),
 				screeningEvaluation: normalizeFactsEvaluation(raw.screening_evaluation),
 				evaluationSummary: normalizeFactsSummary(raw.evaluation_summary),
@@ -683,9 +683,9 @@ window.__ModuleLoader__.load({
 		* 出处：`work/d5/actions/CONTRACT.md` §2.2。
 		*/
 		function buildStageAdvanceBody(input) {
-			const applicationId = text$1(input.applicationId);
+			const applicationId = text(input.applicationId);
 			const missing = [];
-			if (!requireUuid(applicationId, "application_id", missing)) return fail$1(missing.some((entry) => entry.endsWith(":ID_NOT_UUID")) ? "ID_NOT_UUID" : "MISSING_APPLICATION_ID", "申请 id 缺失或不是 UUID；阶段推进只提交 application_id，服务端按已发生事实推导目标阶段", missing);
+			if (!requireUuid(applicationId, "application_id", missing)) return fail(missing.some((entry) => entry.endsWith(":ID_NOT_UUID")) ? "ID_NOT_UUID" : "MISSING_APPLICATION_ID", "申请 id 缺失或不是 UUID；阶段推进只提交 application_id，服务端按已发生事实推导目标阶段", missing);
 			return finish({ application_id: applicationId });
 		}
 		/** SCREENING 决策可用的 as_of（服务端原样值：优先初筛评估，其次汇总/记录 basis；都没有 → ''）。 */
@@ -708,7 +708,7 @@ window.__ModuleLoader__.load({
 			if (basis === null || basis.authority === null) out.push("MISSING_AUTHORITY_FACTS");
 			const asOf = screeningDecisionAsOf(facts);
 			if (asOf === "") out.push("MISSING_AS_OF");
-			else if (!isOffsetIso$1(asOf)) out.push("AS_OF_WITHOUT_OFFSET");
+			else if (!isOffsetIso(asOf)) out.push("AS_OF_WITHOUT_OFFSET");
 			if (needsEvaluation) {
 				const evaluation = facts.screeningEvaluation;
 				if (!(evaluation !== null && evaluation.evaluationDigest !== "" && evaluation.verdict !== "" && evaluation.rubricVersionId !== "" && evaluation.rubricPayloadHash !== "" && evaluation.resumeVersionId !== "" && evaluation.resumeContentSha256 !== "")) out.push("MISSING_SCREENING_EVALUATION");
@@ -725,7 +725,7 @@ window.__ModuleLoader__.load({
 			const summary = facts.evaluationSummary;
 			const out = [];
 			if (summary === null || !summary.available || summary.summaryDigest === "" || summary.asOf === "") out.push("SUMMARY_MISSING");
-			else if (!isOffsetIso$1(summary.asOf)) out.push("MISSING_AS_OF");
+			else if (!isOffsetIso(summary.asOf)) out.push("MISSING_AS_OF");
 			if (facts.basisDecisionRecord === null) out.push("MISSING_DECISION_BASIS");
 			return out;
 		}
@@ -740,24 +740,24 @@ window.__ModuleLoader__.load({
 		*/
 		function buildScreeningDecisionBody(input) {
 			const facts = input.facts;
-			if (facts === null) return fail$1("DECISION_FACTS_MISSING", "决策事实投影（GET /recruitment/api/decision/facts）不可用；客户端不编造 as_of / basis_refs，不发送请求", ["facts"]);
-			const applicationId = text$1(input.applicationId) || facts.applicationId;
+			if (facts === null) return fail("DECISION_FACTS_MISSING", "决策事实投影（GET /recruitment/api/decision/facts）不可用；客户端不编造 as_of / basis_refs，不发送请求", ["facts"]);
+			const applicationId = text(input.applicationId) || facts.applicationId;
 			const missing = [];
-			if (!requireUuid(applicationId, "application_id", missing)) return fail$1("ID_NOT_UUID", "申请 id 缺失或不是 UUID", missing);
-			if (applicationId !== facts.applicationId) return fail$1("APPLICATION_MISMATCH", `facts 属于申请 ${facts.applicationId}，与当前申请 ${applicationId} 不一致；请刷新后重试`, ["facts.application_id"]);
-			const result = text$1(input.result);
-			if (!SCREENING_RESULTS.includes(result)) return fail$1("ENUM_INVALID", `result 只能是 ${SCREENING_RESULTS.join(" / ")}（HIRED 在 v1.0 禁用）`, ["result"]);
+			if (!requireUuid(applicationId, "application_id", missing)) return fail("ID_NOT_UUID", "申请 id 缺失或不是 UUID", missing);
+			if (applicationId !== facts.applicationId) return fail("APPLICATION_MISMATCH", `facts 属于申请 ${facts.applicationId}，与当前申请 ${applicationId} 不一致；请刷新后重试`, ["facts.application_id"]);
+			const result = text(input.result);
+			if (!SCREENING_RESULTS.includes(result)) return fail("ENUM_INVALID", `result 只能是 ${SCREENING_RESULTS.join(" / ")}（HIRED 在 v1.0 禁用）`, ["result"]);
 			const reason = typeof input.reason === "string" ? input.reason.trim() : "";
-			if (reason === "") return fail$1("MISSING_REASON", "初筛结论必须填写理由（1..4000 字）", ["reason"]);
-			if (charLength(reason) > 4e3) return fail$1("REASON_OUT_OF_RANGE", "理由不得超过 4000 字", ["reason"]);
+			if (reason === "") return fail("MISSING_REASON", "初筛结论必须填写理由（1..4000 字）", ["reason"]);
+			if (charLength(reason) > 4e3) return fail("REASON_OUT_OF_RANGE", "理由不得超过 4000 字", ["reason"]);
 			const asOf = screeningDecisionAsOf(facts);
-			if (asOf === "") return fail$1("MISSING_AS_OF", "facts 没有 as_of（screening_evaluation / evaluation_summary 均缺失）；SCREENING 决策必须原样回传服务端 as_of", ["as_of"]);
-			if (!isOffsetIso$1(asOf)) return fail$1("AS_OF_WITHOUT_OFFSET", `facts 的 as_of 不是带时区偏移的 ISO-8601：${asOf}`, ["as_of"]);
+			if (asOf === "") return fail("MISSING_AS_OF", "facts 没有 as_of（screening_evaluation / evaluation_summary 均缺失）；SCREENING 决策必须原样回传服务端 as_of", ["as_of"]);
+			if (!isOffsetIso(asOf)) return fail("AS_OF_WITHOUT_OFFSET", `facts 的 as_of 不是带时区偏移的 ISO-8601：${asOf}`, ["as_of"]);
 			const basisScreening = facts.basisScreeningDecide;
 			const rubric = basisScreening?.rubricVersion ?? null;
-			if (rubric === null) return fail$1("MISSING_RUBRIC_PAYLOAD_HASH", "facts.basis.screening_decide.rubric_version 缺 id/payload_hash；客户端不编造 rubric 哈希", ["rubric_version.payload_hash"]);
+			if (rubric === null) return fail("MISSING_RUBRIC_PAYLOAD_HASH", "facts.basis.screening_decide.rubric_version 缺 id/payload_hash；客户端不编造 rubric 哈希", ["rubric_version.payload_hash"]);
 			const authority = basisScreening?.authority ?? null;
-			if (authority === null) return fail$1("MISSING_AUTHORITY_FACTS", "facts.basis.screening_decide.authority 缺失（actor_id / is_hiring_manager）；客户端不编造权威事实", ["authority"]);
+			if (authority === null) return fail("MISSING_AUTHORITY_FACTS", "facts.basis.screening_decide.authority 缺失（actor_id / is_hiring_manager）；客户端不编造权威事实", ["authority"]);
 			const basisRefs = [{
 				kind: "RUBRIC_VERSION",
 				id: rubric.id,
@@ -778,7 +778,7 @@ window.__ModuleLoader__.load({
 				resume_version_id: evaluation.resumeVersionId,
 				resume_content_sha256: evaluation.resumeContentSha256
 			});
-			else if (needsEvaluation) return fail$1("MISSING_SCREENING_EVALUATION", "ADVANCE / REJECT 必须带 SCREENING_EVALUATION 六个字段；facts 尚未执行初筛评估或字段不全", evaluation === null ? ["screening_evaluation"] : [
+			else if (needsEvaluation) return fail("MISSING_SCREENING_EVALUATION", "ADVANCE / REJECT 必须带 SCREENING_EVALUATION 六个字段；facts 尚未执行初筛评估或字段不全", evaluation === null ? ["screening_evaluation"] : [
 				evaluation.evaluationDigest === "" ? "evaluation_digest" : "",
 				evaluation.verdict === "" ? "verdict" : "",
 				evaluation.rubricVersionId === "" ? "rubric_version_id" : "",
@@ -800,30 +800,30 @@ window.__ModuleLoader__.load({
 		* 前端**不得**传 `summary_digest` / `basis_refs`（facade 自己从 facts 组装）；summary 不可用 → `SUMMARY_MISSING`。
 		* 出处：`work/d5/decision/CONTRACT.md` §3 + `work/d5/w2b/INTERFACE2.md` §2。
 		*/
-		function buildDecisionRecordBody$1(input) {
+		function buildDecisionRecordBody(input) {
 			const facts = input.facts;
-			if (facts === null) return fail$1("DECISION_FACTS_MISSING", "决策事实投影（GET /recruitment/api/decision/facts）不可用；facade 无法被调用（不发送请求）", ["facts"]);
-			const applicationId = text$1(input.applicationId) || facts.applicationId;
+			if (facts === null) return fail("DECISION_FACTS_MISSING", "决策事实投影（GET /recruitment/api/decision/facts）不可用；facade 无法被调用（不发送请求）", ["facts"]);
+			const applicationId = text(input.applicationId) || facts.applicationId;
 			const missing = [];
-			if (!requireUuid(applicationId, "application_id", missing)) return fail$1("ID_NOT_UUID", "申请 id 缺失或不是 UUID", missing);
-			if (applicationId !== facts.applicationId) return fail$1("APPLICATION_MISMATCH", `facts 属于申请 ${facts.applicationId}，与当前申请 ${applicationId} 不一致；请刷新后重试`, ["facts.application_id"]);
-			const scope = text$1(input.scope);
-			if (!DECISION_SCOPES.includes(scope)) return fail$1("ENUM_INVALID", "decision_scope 只能是 STAGE / FINAL", ["decision_scope"]);
-			const result = text$1(input.result);
-			if (!RECORD_RESULTS.includes(result)) return fail$1("ENUM_INVALID", `result 只能是 ${RECORD_RESULTS.join(" / ")}（facade 不接受 WITHDRAW/HIRED）`, ["result"]);
+			if (!requireUuid(applicationId, "application_id", missing)) return fail("ID_NOT_UUID", "申请 id 缺失或不是 UUID", missing);
+			if (applicationId !== facts.applicationId) return fail("APPLICATION_MISMATCH", `facts 属于申请 ${facts.applicationId}，与当前申请 ${applicationId} 不一致；请刷新后重试`, ["facts.application_id"]);
+			const scope = text(input.scope);
+			if (!DECISION_SCOPES.includes(scope)) return fail("ENUM_INVALID", "decision_scope 只能是 STAGE / FINAL", ["decision_scope"]);
+			const result = text(input.result);
+			if (!RECORD_RESULTS.includes(result)) return fail("ENUM_INVALID", `result 只能是 ${RECORD_RESULTS.join(" / ")}（facade 不接受 WITHDRAW/HIRED）`, ["result"]);
 			const reason = typeof input.reason === "string" ? input.reason.trim() : "";
-			if (reason === "") return fail$1("MISSING_REASON", "正式决策必须填写理由（1..4000 字）", ["reason"]);
-			if (charLength(reason) > 4e3) return fail$1("REASON_OUT_OF_RANGE", "理由不得超过 4000 字", ["reason"]);
+			if (reason === "") return fail("MISSING_REASON", "正式决策必须填写理由（1..4000 字）", ["reason"]);
+			if (charLength(reason) > 4e3) return fail("REASON_OUT_OF_RANGE", "理由不得超过 4000 字", ["reason"]);
 			const summary = facts.evaluationSummary;
 			const summaryMissingInFacts = factsMissingKeys(facts).includes("summary");
-			if (summary === null || !summary.available || summary.summaryDigest === "" || summary.asOf === "") return fail$1("SUMMARY_MISSING", "facts.evaluation_summary 不可用（available=false / 缺 as_of / 缺 summary_digest）；正式决策必须先有服务端汇总", [
+			if (summary === null || !summary.available || summary.summaryDigest === "" || summary.asOf === "") return fail("SUMMARY_MISSING", "facts.evaluation_summary 不可用（available=false / 缺 as_of / 缺 summary_digest）；正式决策必须先有服务端汇总", [
 				summary === null ? "evaluation_summary" : "",
 				summary !== null && !summary.available ? "evaluation_summary.available" : "",
 				summary !== null && summary.asOf === "" ? "evaluation_summary.as_of" : "",
 				summary !== null && summary.summaryDigest === "" ? "evaluation_summary.summary_digest" : "",
 				summaryMissingInFacts ? "missing.summary" : ""
 			].filter((entry) => entry !== ""));
-			if (!isOffsetIso$1(summary.asOf)) return fail$1("MISSING_AS_OF", `facts.evaluation_summary.as_of 不是带时区偏移的 ISO-8601：${summary.asOf}`, ["as_of"]);
+			if (!isOffsetIso(summary.asOf)) return fail("MISSING_AS_OF", `facts.evaluation_summary.as_of 不是带时区偏移的 ISO-8601：${summary.asOf}`, ["as_of"]);
 			return finish({
 				application_id: applicationId,
 				decision_scope: scope,
@@ -877,34 +877,34 @@ window.__ModuleLoader__.load({
 		*/
 		function buildInterviewScheduleBody(input) {
 			const missing = [];
-			const applicationId = text$1(input.applicationId);
-			if (!requireUuid(applicationId, "application_id", missing)) return fail$1("ID_NOT_UUID", "申请 id 缺失或不是 UUID", missing);
+			const applicationId = text(input.applicationId);
+			if (!requireUuid(applicationId, "application_id", missing)) return fail("ID_NOT_UUID", "申请 id 缺失或不是 UUID", missing);
 			const roundNo = input.roundNo;
-			if (typeof roundNo !== "number" || !Number.isInteger(roundNo) || roundNo < 1 || roundNo > 20) return fail$1("ROUND_OUT_OF_RANGE", "轮次必须是 1..20 的整数（服务端 INV-4）", ["round_no"]);
-			const scheduledStartAt = text$1(input.scheduledStartAt);
-			if (scheduledStartAt === "") return fail$1("MISSING_START", "排期必须给开始时间", ["scheduled_start_at"]);
-			if (!isOffsetIso$1(scheduledStartAt)) return fail$1("TIMESTAMP_WITHOUT_OFFSET", "scheduled_start_at 必须是带时区偏移的 ISO-8601（datetime-local 需经 toOffsetIso 转换）", ["scheduled_start_at"]);
+			if (typeof roundNo !== "number" || !Number.isInteger(roundNo) || roundNo < 1 || roundNo > 20) return fail("ROUND_OUT_OF_RANGE", "轮次必须是 1..20 的整数（服务端 INV-4）", ["round_no"]);
+			const scheduledStartAt = text(input.scheduledStartAt);
+			if (scheduledStartAt === "") return fail("MISSING_START", "排期必须给开始时间", ["scheduled_start_at"]);
+			if (!isOffsetIso(scheduledStartAt)) return fail("TIMESTAMP_WITHOUT_OFFSET", "scheduled_start_at 必须是带时区偏移的 ISO-8601（datetime-local 需经 toOffsetIso 转换）", ["scheduled_start_at"]);
 			const durationMinutes = input.durationMinutes;
-			if (typeof durationMinutes !== "number" || !Number.isInteger(durationMinutes) || durationMinutes < 15 || durationMinutes > 480) return fail$1("DURATION_OUT_OF_RANGE", "面试时长必须是 15..480 分钟的整数", ["duration_minutes"]);
-			if (input.interviewers.length === 0) return fail$1("INTERVIEWER_REQUIRED", "至少需要一名面试官（来自招聘团队人员）", ["interviewers"]);
+			if (typeof durationMinutes !== "number" || !Number.isInteger(durationMinutes) || durationMinutes < 15 || durationMinutes > 480) return fail("DURATION_OUT_OF_RANGE", "面试时长必须是 15..480 分钟的整数", ["duration_minutes"]);
+			if (input.interviewers.length === 0) return fail("INTERVIEWER_REQUIRED", "至少需要一名面试官（来自招聘团队人员）", ["interviewers"]);
 			const interviewers = [];
 			const seen = /* @__PURE__ */ new Set();
 			for (const interviewer of input.interviewers) {
-				const actorId = text$1(interviewer.actorId);
-				if (actorId === "") return fail$1("MISSING_INTERVIEWER_ACTOR", "面试官候选缺 actorId", ["interviewers[].actor_id"]);
-				if (!isUuid$1(actorId)) return fail$1("ID_NOT_UUID", `面试官 actorId 不是 UUID：${actorId}`, ["interviewers[].actor_id"]);
-				if (seen.has(actorId)) return fail$1("DUPLICATE_INTERVIEWER", `面试官重复：${actorId} 只能出现一次`, ["interviewers"]);
+				const actorId = text(interviewer.actorId);
+				if (actorId === "") return fail("MISSING_INTERVIEWER_ACTOR", "面试官候选缺 actorId", ["interviewers[].actor_id"]);
+				if (!isUuid(actorId)) return fail("ID_NOT_UUID", `面试官 actorId 不是 UUID：${actorId}`, ["interviewers[].actor_id"]);
+				if (seen.has(actorId)) return fail("DUPLICATE_INTERVIEWER", `面试官重复：${actorId} 只能出现一次`, ["interviewers"]);
 				seen.add(actorId);
 				const element = { actor_id: actorId };
-				const roleInInterview = text$1(interviewer.roleInInterview);
+				const roleInInterview = text(interviewer.roleInInterview);
 				if (roleInInterview !== "") element.role_in_interview = roleInInterview;
 				if (typeof interviewer.requiredScorecard === "boolean") element.required_scorecard = interviewer.requiredScorecard;
 				interviewers.push(element);
 			}
-			const idempotencyKey = text$1(input.idempotencyKey);
-			if (idempotencyKey === "") return fail$1("MISSING_IDEMPOTENCY_KEY", "排期必须带 idempotency_key（前端生成并保留，重试复用同一 key）", ["idempotency_key"]);
-			if (!IDEMPOTENCY_KEY_RE.test(idempotencyKey)) return fail$1("IDEMPOTENCY_KEY_INVALID", "idempotency_key 只能是 1..200 个 [A-Za-z0-9_.:-] 字符", ["idempotency_key"]);
-			const timezone = text$1(input.timezone);
+			const idempotencyKey = text(input.idempotencyKey);
+			if (idempotencyKey === "") return fail("MISSING_IDEMPOTENCY_KEY", "排期必须带 idempotency_key（前端生成并保留，重试复用同一 key）", ["idempotency_key"]);
+			if (!IDEMPOTENCY_KEY_RE.test(idempotencyKey)) return fail("IDEMPOTENCY_KEY_INVALID", "idempotency_key 只能是 1..200 个 [A-Za-z0-9_.:-] 字符", ["idempotency_key"]);
+			const timezone = text(input.timezone);
 			return finish({
 				intent: "CREATE",
 				application_id: applicationId,
@@ -922,22 +922,22 @@ window.__ModuleLoader__.load({
 		*/
 		function buildTranscriptImportBody(input) {
 			const missing = [];
-			const interviewId = text$1(input.interviewId);
-			if (!requireUuid(interviewId, "interview_id", missing)) return fail$1("ID_NOT_UUID", "面试 id 缺失或不是 UUID（转写只能挂到已绑定的面试）", missing);
+			const interviewId = text(input.interviewId);
+			if (!requireUuid(interviewId, "interview_id", missing)) return fail("ID_NOT_UUID", "面试 id 缺失或不是 UUID（转写只能挂到已绑定的面试）", missing);
 			const content = typeof input.content === "string" ? input.content : "";
-			if (content.trim() === "") return fail$1("MISSING_CONTENT", "转写正文不能为空（1..400000 字符）", ["content"]);
-			if (charLength(content) > 4e5) return fail$1("CONTENT_OUT_OF_RANGE", "转写正文不得超过 400000 字符", ["content"]);
-			const sourceKind = text$1(input.sourceKind);
-			if (!TRANSCRIPT_SOURCE_KINDS.includes(sourceKind)) return fail$1("ENUM_INVALID", "source_kind 只能是 PLATFORM_EXPORT / DEMO_SAMPLE", ["source_kind"]);
-			const exportedFileName = text$1(input.exportedFileName);
+			if (content.trim() === "") return fail("MISSING_CONTENT", "转写正文不能为空（1..400000 字符）", ["content"]);
+			if (charLength(content) > 4e5) return fail("CONTENT_OUT_OF_RANGE", "转写正文不得超过 400000 字符", ["content"]);
+			const sourceKind = text(input.sourceKind);
+			if (!TRANSCRIPT_SOURCE_KINDS.includes(sourceKind)) return fail("ENUM_INVALID", "source_kind 只能是 PLATFORM_EXPORT / DEMO_SAMPLE", ["source_kind"]);
+			const exportedFileName = text(input.exportedFileName);
 			if (sourceKind === "PLATFORM_EXPORT") {
-				if (exportedFileName === "") return fail$1("EXPORT_FILE_NAME_REQUIRED", "PLATFORM_EXPORT 必须填写平台导出的文件名", ["exported_file_name"]);
-				if (charLength(exportedFileName) > 255 || exportedFileName.includes(";") || /[\r\n]/.test(exportedFileName)) return fail$1("EXPORT_FILE_NAME_INVALID", "导出文件名不得超过 255 字，且不得含 \";\" 或换行", ["exported_file_name"]);
+				if (exportedFileName === "") return fail("EXPORT_FILE_NAME_REQUIRED", "PLATFORM_EXPORT 必须填写平台导出的文件名", ["exported_file_name"]);
+				if (charLength(exportedFileName) > 255 || exportedFileName.includes(";") || /[\r\n]/.test(exportedFileName)) return fail("EXPORT_FILE_NAME_INVALID", "导出文件名不得超过 255 字，且不得含 \";\" 或换行", ["exported_file_name"]);
 			}
-			const language = text$1(input.language);
-			if (language !== "" && charLength(language) > 16) return fail$1("LANGUAGE_INVALID", "语言标签不得超过 16 字符", ["language"]);
+			const language = text(input.language);
+			if (language !== "" && charLength(language) > 16) return fail("LANGUAGE_INVALID", "语言标签不得超过 16 字符", ["language"]);
 			const note = typeof input.note === "string" ? input.note.trim() : "";
-			if (charLength(note) > 500) return fail$1("NOTE_TOO_LONG", "备注不得超过 500 字", ["note"]);
+			if (charLength(note) > 500) return fail("NOTE_TOO_LONG", "备注不得超过 500 字", ["note"]);
 			const body = {
 				interview_id: interviewId,
 				content,
@@ -949,14 +949,14 @@ window.__ModuleLoader__.load({
 			return finish(body);
 		}
 		/** `job/rubric-approve` body：`{job_id, rubric_version_id, reason?}`（reason ≤500）。 */
-		function buildRubricApproveBody$1(input) {
+		function buildRubricApproveBody(input) {
 			const missing = [];
-			const jobId = text$1(input.jobId);
-			const rubricVersionId = text$1(input.rubricVersionId);
-			if (!requireUuid(jobId, "job_id", missing)) return fail$1("ID_NOT_UUID", "岗位 id 缺失或不是 UUID", missing);
-			if (!requireUuid(rubricVersionId, "rubric_version_id", missing)) return fail$1("ID_NOT_UUID", "rubric 版本 id 缺失或不是 UUID", missing);
+			const jobId = text(input.jobId);
+			const rubricVersionId = text(input.rubricVersionId);
+			if (!requireUuid(jobId, "job_id", missing)) return fail("ID_NOT_UUID", "岗位 id 缺失或不是 UUID", missing);
+			if (!requireUuid(rubricVersionId, "rubric_version_id", missing)) return fail("ID_NOT_UUID", "rubric 版本 id 缺失或不是 UUID", missing);
 			const reason = typeof input.reason === "string" ? input.reason.trim() : "";
-			if (charLength(reason) > 500) return fail$1("REASON_OUT_OF_RANGE", "批准理由不得超过 500 字", ["reason"]);
+			if (charLength(reason) > 500) return fail("REASON_OUT_OF_RANGE", "批准理由不得超过 500 字", ["reason"]);
 			return finish({
 				job_id: jobId,
 				rubric_version_id: rubricVersionId,
@@ -982,11 +982,11 @@ window.__ModuleLoader__.load({
 		* 出处：`work/d5/actions/CONTRACT.md` §4.2 + INTERFACE §1 表（`recruiting_settings_write` → `/config`）。
 		*/
 		function buildSettingsWriteBody(input) {
-			const entity = text$1(input.entity);
-			if (!CONFIG_ENTITIES.includes(entity)) return fail$1("UNKNOWN_ENTITY", "entity 只能是 role / team / pipeline", ["entity"]);
-			const operation = text$1(input.operation);
+			const entity = text(input.entity);
+			if (!CONFIG_ENTITIES.includes(entity)) return fail("UNKNOWN_ENTITY", "entity 只能是 role / team / pipeline", ["entity"]);
+			const operation = text(input.operation);
 			const allowed = CONFIG_WRITE_OPERATIONS[entity] ?? [];
-			if (operation === "") return fail$1("MISSING_OPERATION", "缺必填字段 operation", ["operation"]);
+			if (operation === "") return fail("MISSING_OPERATION", "缺必填字段 operation", ["operation"]);
 			if (!allowed.includes(operation)) {
 				const isReadOperation = [
 					"list",
@@ -994,7 +994,7 @@ window.__ModuleLoader__.load({
 					"read",
 					"search"
 				].includes(operation);
-				return fail$1(isReadOperation ? "READ_OPERATION_NOT_EXPOSED" : "OPERATION_INVALID", isReadOperation ? "写入口只接受写 operation；读/list/get 走既有只读投影" : `operation 只能是 ${allowed.join(" / ")}`, ["operation"]);
+				return fail(isReadOperation ? "READ_OPERATION_NOT_EXPOSED" : "OPERATION_INVALID", isReadOperation ? "写入口只接受写 operation；读/list/get 走既有只读投影" : `operation 只能是 ${allowed.join(" / ")}`, ["operation"]);
 			}
 			const fields = record(input.fields);
 			if (operation === "create") {
@@ -1003,7 +1003,7 @@ window.__ModuleLoader__.load({
 					if (key === "permission_scopes") return !Array.isArray(value) || value.length === 0;
 					return typeof value !== "string" || value.trim() === "";
 				});
-				if (missingInline.length > 0) return fail$1("MISSING_REQUIRED", `create 缺必填字段：${missingInline.join(", ")}`, missingInline);
+				if (missingInline.length > 0) return fail("MISSING_REQUIRED", `create 缺必填字段：${missingInline.join(", ")}`, missingInline);
 			}
 			return finish({
 				entity,
@@ -1024,10 +1024,10 @@ window.__ModuleLoader__.load({
 				"statement",
 				"focus"
 			]) {
-				const candidate = text$1(raw[key]);
+				const candidate = text(raw[key]);
 				if (candidate !== "") return candidate;
 			}
-			return preview$1(value, 200);
+			return preview(value, 200);
 		}
 		/** 文本数组归一化（丢弃空项）。 */
 		function draftTextList(value) {
@@ -1050,7 +1050,7 @@ window.__ModuleLoader__.load({
 				const entry = record(item);
 				rounds.push({
 					roundNo: count(entry.round_no),
-					title: text$1(entry.title),
+					title: text(entry.title),
 					focus: draftTextList(entry.focus),
 					questions: draftTextList(entry.questions)
 				});
@@ -1058,41 +1058,41 @@ window.__ModuleLoader__.load({
 			const rubricDimensions = [];
 			for (const item of items(rubricDraft.dimensions)) {
 				const entry = record(item);
-				const key = text$1(entry.key);
+				const key = text(entry.key);
 				if (key === "") continue;
 				rubricDimensions.push({
 					key,
-					label: text$1(entry.label) !== "" ? text$1(entry.label) : key,
-					kind: text$1(entry.kind),
+					label: text(entry.label) !== "" ? text(entry.label) : key,
+					kind: text(entry.kind),
 					weight: numberOrNull(entry.weight),
-					reason: text$1(entry.reason)
+					reason: text(entry.reason)
 				});
 			}
 			const reasons = [];
 			for (const item of items(draft.reasons)) {
 				const entry = record(item);
-				const path = text$1(entry.path);
+				const path = text(entry.path);
 				if (path === "") continue;
 				reasons.push({
 					path,
-					reason: text$1(entry.reason),
-					source: text$1(entry.source)
+					reason: text(entry.reason),
+					source: text(entry.source)
 				});
 			}
 			const missingItems = [];
 			for (const item of items(draft.missing_items)) {
 				const entry = record(item);
-				const key = text$1(entry.key);
+				const key = text(entry.key);
 				if (key === "") continue;
 				missingItems.push({
 					key,
-					question: text$1(entry.question)
+					question: text(entry.question)
 				});
 			}
 			const confirmationRaw = record(raw.confirmation);
 			return {
-				contractVersion: text$1(raw.contract_version),
-				recruitingReason: text$1(jobDraft.recruiting_reason),
+				contractVersion: text(raw.contract_version),
+				recruitingReason: text(jobDraft.recruiting_reason),
 				responsibilities: draftTextList(jobDraft.responsibilities),
 				successProfile: draftTextList(jobDraft.success_profile),
 				mustHave: draftTextList(jobDraft.must_have),
@@ -1103,23 +1103,23 @@ window.__ModuleLoader__.load({
 				missingItems,
 				confirmation: {
 					required: confirmationRaw.required === true,
-					status: text$1(confirmationRaw.status),
+					status: text(confirmationRaw.status),
 					next: stringList(confirmationRaw.next),
-					note: text$1(confirmationRaw.note)
+					note: text(confirmationRaw.note)
 				}
 			};
 		}
 		/** `POST job/draft` body（`request_text` 1..2000；其余可选键给了才带）。 */
 		function buildJobDraftBody(input) {
 			const requestText = typeof input.requestText === "string" ? input.requestText.trim() : "";
-			if (requestText === "") return fail$1("MISSING_REQUEST_TEXT", "岗位需求原文不能为空（1..2000 字）", ["request_text"]);
-			if (charLength(requestText) > 2e3) return fail$1("REQUEST_TEXT_TOO_LONG", "岗位需求原文不得超过 2000 字", ["request_text"]);
+			if (requestText === "") return fail("MISSING_REQUEST_TEXT", "岗位需求原文不能为空（1..2000 字）", ["request_text"]);
+			if (charLength(requestText) > 2e3) return fail("REQUEST_TEXT_TOO_LONG", "岗位需求原文不得超过 2000 字", ["request_text"]);
 			const body = { request_text: requestText };
 			const supplement = typeof input.recruiterSupplement === "string" ? input.recruiterSupplement.trim() : "";
 			if (supplement !== "") body.recruiter_supplement = supplement;
 			const departmentContext = typeof input.departmentContext === "string" ? input.departmentContext.trim() : "";
 			if (departmentContext !== "") body.department_context = departmentContext;
-			const templateId = text$1(input.templateId);
+			const templateId = text(input.templateId);
 			if (templateId !== "") body.template_id = templateId;
 			return finish(body);
 		}
@@ -1132,35 +1132,35 @@ window.__ModuleLoader__.load({
 		*/
 		function buildJobCreateBody(input) {
 			const missing = [];
-			const code = text$1(input.code);
-			const title = text$1(input.title);
-			const departmentId = text$1(input.departmentId);
+			const code = text(input.code);
+			const title = text(input.title);
+			const departmentId = text(input.departmentId);
 			if (code === "") missing.push("code");
-			else if (!JOB_CODE_RE.test(code)) return fail$1("CODE_INVALID", "岗位 code 必须匹配 ^[A-Za-z0-9][A-Za-z0-9._-]{1,40}$", ["code"]);
+			else if (!JOB_CODE_RE.test(code)) return fail("CODE_INVALID", "岗位 code 必须匹配 ^[A-Za-z0-9][A-Za-z0-9._-]{1,40}$", ["code"]);
 			if (title === "") missing.push("title");
-			if (charLength(title) > 200) return fail$1("TITLE_OUT_OF_RANGE", "岗位名称不得超过 200 字", ["title"]);
+			if (charLength(title) > 200) return fail("TITLE_OUT_OF_RANGE", "岗位名称不得超过 200 字", ["title"]);
 			if (!requireUuid(departmentId, "department_id", missing)) {
-				if (missing.includes("department_id:ID_NOT_UUID")) return fail$1("ID_NOT_UUID", "部门 id 不是 UUID（必须来自 settings.departments）", ["department_id"]);
+				if (missing.includes("department_id:ID_NOT_UUID")) return fail("ID_NOT_UUID", "部门 id 不是 UUID（必须来自 settings.departments）", ["department_id"]);
 			}
 			const descriptionMd = typeof input.descriptionMd === "string" ? input.descriptionMd : "";
 			const requirementsMd = typeof input.requirementsMd === "string" ? input.requirementsMd : "";
-			if (charLength(descriptionMd) > 2e4) return fail$1("DESCRIPTION_OUT_OF_RANGE", "description_md 不得超过 20000 字", ["description_md"]);
-			if (charLength(requirementsMd) > 2e4) return fail$1("REQUIREMENTS_OUT_OF_RANGE", "requirements_md 不得超过 20000 字", ["requirements_md"]);
-			if (missing.length > 0) return fail$1("MISSING_REQUIRED", `岗位创建缺必填字段：${missing.join(", ")}`, missing);
-			if (input.criteria.length === 0) return fail$1("CRITERIA_REQUIRED", "岗位创建至少需要 1 条 rubric 维度（1..50）", ["criteria"]);
-			if (input.criteria.length > 50) return fail$1("CRITERIA_OUT_OF_RANGE", "criteria 最多 50 条", ["criteria"]);
+			if (charLength(descriptionMd) > 2e4) return fail("DESCRIPTION_OUT_OF_RANGE", "description_md 不得超过 20000 字", ["description_md"]);
+			if (charLength(requirementsMd) > 2e4) return fail("REQUIREMENTS_OUT_OF_RANGE", "requirements_md 不得超过 20000 字", ["requirements_md"]);
+			if (missing.length > 0) return fail("MISSING_REQUIRED", `岗位创建缺必填字段：${missing.join(", ")}`, missing);
+			if (input.criteria.length === 0) return fail("CRITERIA_REQUIRED", "岗位创建至少需要 1 条 rubric 维度（1..50）", ["criteria"]);
+			if (input.criteria.length > 50) return fail("CRITERIA_OUT_OF_RANGE", "criteria 最多 50 条", ["criteria"]);
 			const criteria = [];
 			let weightSum = 0;
 			let hasGate = false;
 			for (const dimension of input.criteria) {
 				const entry = record(dimension);
-				const key = text$1(entry.key);
-				const label = text$1(entry.label);
-				const kind = text$1(entry.kind);
+				const key = text(entry.key);
+				const label = text(entry.label);
+				const kind = text(entry.kind);
 				const weight = entry.weight;
-				if (key === "" || label === "") return fail$1("CRITERIA_INCOMPLETE", "每条 criteria 必须有 key/label", ["criteria[].key"]);
-				if (!CRITERION_KINDS.includes(kind)) return fail$1("CRITERIA_KIND_INVALID", `criteria[].kind 只能是 ${CRITERION_KINDS.join(" / ")}`, ["criteria[].kind"]);
-				if (typeof weight !== "number" || !Number.isFinite(weight) || weight < 0 || weight > 1) return fail$1("CRITERIA_WEIGHT_INVALID", "criteria[].weight 必须是 0..1 的数字", ["criteria[].weight"]);
+				if (key === "" || label === "") return fail("CRITERIA_INCOMPLETE", "每条 criteria 必须有 key/label", ["criteria[].key"]);
+				if (!CRITERION_KINDS.includes(kind)) return fail("CRITERIA_KIND_INVALID", `criteria[].kind 只能是 ${CRITERION_KINDS.join(" / ")}`, ["criteria[].kind"]);
+				if (typeof weight !== "number" || !Number.isFinite(weight) || weight < 0 || weight > 1) return fail("CRITERIA_WEIGHT_INVALID", "criteria[].weight 必须是 0..1 的数字", ["criteria[].weight"]);
 				weightSum += weight;
 				if (kind === "MUST_HAVE" || kind === "DISQUALIFIER") hasGate = true;
 				const shaped = {
@@ -1181,10 +1181,10 @@ window.__ModuleLoader__.load({
 				}
 				criteria.push(shaped);
 			}
-			if (Math.abs(weightSum - 1) > CRITERIA_WEIGHT_TOLERANCE) return fail$1("CRITERIA_WEIGHT_SUM", `criteria 的 weight 之和必须为 1（当前 ${weightSum.toFixed(6)}；服务端容差 1e-6）`, ["criteria[].weight"]);
-			if (!hasGate) return fail$1("CRITERIA_KIND_REQUIRED", "criteria 至少要有一条 MUST_HAVE 或 DISQUALIFIER", ["criteria[].kind"]);
-			const status = text$1(input.status);
-			if (status !== "" && !JOB_CREATE_STATUSES.includes(status)) return fail$1("STATUS_INVALID", "初始状态只能是 DRAFT / OPEN", ["status"]);
+			if (Math.abs(weightSum - 1) > CRITERIA_WEIGHT_TOLERANCE) return fail("CRITERIA_WEIGHT_SUM", `criteria 的 weight 之和必须为 1（当前 ${weightSum.toFixed(6)}；服务端容差 1e-6）`, ["criteria[].weight"]);
+			if (!hasGate) return fail("CRITERIA_KIND_REQUIRED", "criteria 至少要有一条 MUST_HAVE 或 DISQUALIFIER", ["criteria[].kind"]);
+			const status = text(input.status);
+			if (status !== "" && !JOB_CREATE_STATUSES.includes(status)) return fail("STATUS_INVALID", "初始状态只能是 DRAFT / OPEN", ["status"]);
 			return finish({ job_create_args: {
 				code,
 				title,
@@ -1213,7 +1213,7 @@ window.__ModuleLoader__.load({
 		* @param sessionId - 宿主传入的 session id（**只从形参来，不读 localStorage**）。
 		*/
 		function checkWriteRequest(path, body, sessionId) {
-			if (text$1(sessionId) === "") return refuse("SESSION_MISSING", "缺少当前 DSH session id（由宿主 props 传入），客户端不发送写请求", ["sessionId"]);
+			if (text(sessionId) === "") return refuse("SESSION_MISSING", "缺少当前 DSH session id（由宿主 props 传入），客户端不发送写请求", ["sessionId"]);
 			if (path === "" || !path.startsWith("/recruitment/") || path.startsWith("//")) return refuse("UNSAFE_SEAM", `写动作路径必须是同源相对 /recruitment/ 路径（当前：${path}）`, ["path"]);
 			if (Object.keys(body).length === 0) return refuse("EMPTY_BODY", "写请求 body 为空（固定发 {} 会被服务端 400 MISSING_REQUIRED）", ["body"]);
 			const reserved = reservedKeysOf(body);
@@ -1227,11 +1227,11 @@ window.__ModuleLoader__.load({
 		}
 		/** 读回行的 label：已知键给中文，未知键原样（记录里没有业务结论）。 */
 		function labelOf(key) {
-			const direct = READBACK_LABELS$1[key];
+			const direct = READBACK_LABELS[key];
 			if (direct !== void 0) return direct;
 			const segments = key.split(".");
 			const last = segments[segments.length - 1] ?? key;
-			return READBACK_LABELS$1[last] ?? key;
+			return READBACK_LABELS[last] ?? key;
 		}
 		/** 造一行读回显示。 */
 		function lineOf(key, value) {
@@ -1251,7 +1251,7 @@ window.__ModuleLoader__.load({
 		* 标准信封 `readback` → 显示行（键/值原样，顺序 = 服务端 JSON 键序）。
 		* @param envelope - `parseActionEnvelope` 的结果；null → 空数组。
 		*/
-		function readbackLines$1(envelope) {
+		function readbackLines(envelope) {
 			if (envelope === null || envelope.readback === null) return [];
 			return objectLines("", envelope.readback);
 		}
@@ -1262,7 +1262,7 @@ window.__ModuleLoader__.load({
 		*/
 		function actionResultLines(outcome) {
 			if (outcome === void 0 || outcome === null) return [];
-			const envelopeLines = readbackLines$1(outcome.envelope);
+			const envelopeLines = readbackLines(outcome.envelope);
 			if (envelopeLines.length > 0) return envelopeLines;
 			const payload = outcome.payload;
 			if (payload === null) return [];
@@ -1291,7 +1291,7 @@ window.__ModuleLoader__.load({
 		* @returns 带偏移 ISO-8601；无法解析 → ''（调用方按 MISSING_START 处理）。
 		*/
 		function toOffsetIso(localValue) {
-			const raw = text$1(localValue);
+			const raw = text(localValue);
 			const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(raw);
 			if (match === null) return "";
 			const year = match[1];
@@ -1615,8 +1615,8 @@ window.__ModuleLoader__.load({
 		/** 归一化 `next_step`；缺字段/坏类型降级为空（`hasStep=false`）。 */
 		function normalizeNextStep(value) {
 			const raw = record(value);
-			const code = text$1(raw.code);
-			const label = text$1(raw.label);
+			const code = text(raw.code);
+			const label = text(raw.label);
 			const kind = oneOf(raw.kind, [
 				"INFO",
 				"HUMAN_ACTION",
@@ -1634,9 +1634,9 @@ window.__ModuleLoader__.load({
 		/** 三维标签的展示口径（`LIVE`/`FIXTURE` 等原值直接带出，不翻译、不合并）。 */
 		function normalizeThreeDimLabels(value) {
 			const raw = record(value);
-			const provenance = text$1(raw.provenance);
-			const trigger = text$1(raw.trigger);
-			const connection = text$1(raw.connection);
+			const provenance = text(raw.provenance);
+			const trigger = text(raw.trigger);
+			const connection = text(raw.connection);
 			const provenanceTone = provenance === "LIVE" ? "green" : provenance === "FIXTURE" ? "amber" : "gray";
 			const triggerTone = trigger === "EVENT" ? "blue" : trigger === "MANUAL" ? "amber" : "gray";
 			const connectionTone = connection === "CONNECTED" ? "green" : connection === "AUTH_REQUIRED" ? "red" : connection === "NOT_CONNECTED" ? "gray" : "gray";
@@ -1672,9 +1672,9 @@ window.__ModuleLoader__.load({
 		/** 归一化一个写动作：`available` 只在服务端明确 true **且** 给了 seam 时才为 true（fail-closed）。 */
 		function normalizeAction(key, value) {
 			const raw = record(value);
-			const seam = text$1(raw.seam);
-			const declaredAvailable = bool$1(raw.available);
-			const pending = text$1(raw.pending);
+			const seam = text(raw.seam);
+			const declaredAvailable = bool(raw.available);
+			const pending = text(raw.pending);
 			const available = declaredAvailable && seam !== "";
 			const reasonCode = available ? "" : pending !== "" ? pending : declaredAvailable ? "ACTION_SEAM_MISSING" : "ACTION_SEAM_NOT_WIRED";
 			return {
@@ -1705,9 +1705,9 @@ window.__ModuleLoader__.load({
 		function normalizeMaterial(value) {
 			if (value === null || value === void 0) return null;
 			const raw = record(value);
-			const fileName = text$1(raw.file_name);
-			const resumeVersionId = text$1(raw.resume_version_id);
-			const sha256 = text$1(raw.sha256);
+			const fileName = text(raw.file_name);
+			const resumeVersionId = text(raw.resume_version_id);
+			const sha256 = text(raw.sha256);
 			if (fileName === "" && resumeVersionId === "" && sha256 === "") return null;
 			const parseStatus = oneOf(raw.parse_status, [
 				"PENDING",
@@ -1716,17 +1716,17 @@ window.__ModuleLoader__.load({
 				"PARTIAL",
 				"FAILED",
 				"NEEDS_REVIEW"
-			]) || text$1(raw.parse_status);
+			]) || text(raw.parse_status);
 			const validationStatus = oneOf(raw.validation_status, [
 				"PENDING",
 				"VALID",
 				"INVALID"
-			]) || text$1(raw.validation_status);
+			]) || text(raw.validation_status);
 			const pageCount = numberOrNull(raw.page_count);
 			const fieldStatesRaw = record(raw.field_states);
 			const fieldStates = [];
 			for (const key of Object.keys(fieldStatesRaw)) {
-				const state = text$1(fieldStatesRaw[key]);
+				const state = text(fieldStatesRaw[key]);
 				if (state !== "") fieldStates.push({
 					key,
 					state
@@ -1735,24 +1735,24 @@ window.__ModuleLoader__.load({
 			const entryCountsRaw = record(raw.entry_counts);
 			return {
 				resumeVersionId,
-				resumeId: text$1(raw.resume_id),
-				assetId: text$1(raw.asset_id),
+				resumeId: text(raw.resume_id),
+				assetId: text(raw.asset_id),
 				fileName,
-				mimeType: text$1(raw.mime_type),
+				mimeType: text(raw.mime_type),
 				byteSize: count(raw.byte_size),
 				byteSizeText: formatBytes(raw.byte_size),
 				sha256,
 				sha256Text: shortSha(sha256),
 				sourceSha256Text: shortSha(raw.source_asset_sha256),
-				hashAligned: bool$1(raw.source_hash_aligned),
+				hashAligned: bool(raw.source_hash_aligned),
 				validationStatus,
 				validationLabel: VALIDATION_LABELS[validationStatus] ?? (validationStatus !== "" ? validationStatus : "校验状态未知"),
 				validationTone: VALIDATION_TONES[validationStatus] ?? "gray",
 				parseStatus,
 				parseLabel: PARSE_LABELS[parseStatus] ?? (parseStatus !== "" ? parseStatus : "解析状态未知"),
 				parseTone: PARSE_TONES[parseStatus] ?? "gray",
-				parser: text$1(raw.parser_name),
-				parserVersion: text$1(raw.parser_version),
+				parser: text(raw.parser_name),
+				parserVersion: text(raw.parser_version),
 				pageCount,
 				pageCountText: pageCount === null ? "" : `${String(pageCount)} 页`,
 				fieldStates,
@@ -1778,12 +1778,12 @@ window.__ModuleLoader__.load({
 		function normalizeScreeningEvaluation(value) {
 			if (value === null || value === void 0) return null;
 			const raw = record(value);
-			const verdict = text$1(raw.verdict);
-			const provenance = text$1(raw.provenance);
-			const digest = text$1(raw.evaluation_digest);
+			const verdict = text(raw.verdict);
+			const provenance = text(raw.provenance);
+			const digest = text(raw.evaluation_digest);
 			const criteriaEvaluated = typeof raw.criteria_evaluated === "boolean" ? raw.criteria_evaluated : null;
-			const resumeVersionId = text$1(raw.resume_version_id);
-			const rubricVersionId = text$1(raw.rubric_version_id);
+			const resumeVersionId = text(raw.resume_version_id);
+			const rubricVersionId = text(raw.rubric_version_id);
 			if (verdict === "" && provenance === "" && digest === "" && resumeVersionId === "" && rubricVersionId === "") return null;
 			return {
 				verdict,
@@ -1800,11 +1800,11 @@ window.__ModuleLoader__.load({
 		function normalizeScreening(value, context) {
 			if (value === null || value === void 0) return null;
 			const raw = record(value);
-			const decisionId = text$1(raw.decision_id);
-			const result = text$1(raw.result);
-			const reason = text$1(raw.reason);
+			const decisionId = text(raw.decision_id);
+			const result = text(raw.result);
+			const reason = text(raw.reason);
 			if (decisionId === "" && result === "" && reason === "") return null;
-			const stageCode = text$1(raw.stage_code);
+			const stageCode = text(raw.stage_code);
 			return {
 				decisionId,
 				result,
@@ -1813,10 +1813,10 @@ window.__ModuleLoader__.load({
 				stageCode,
 				stageLabel: stageCode === "" ? "" : stageLabelOf(stageCode, context),
 				reason,
-				decidedAt: text$1(raw.decided_at),
+				decidedAt: text(raw.decided_at),
 				decidedAtText: formatDateTime(raw.decided_at),
-				decidedBy: text$1(raw.decided_by_display_name),
-				rubricVersionId: text$1(raw.rubric_version_id),
+				decidedBy: text(raw.decided_by_display_name),
+				rubricVersionId: text(raw.rubric_version_id),
 				basisKinds: stringList(raw.basis_kinds),
 				evaluation: normalizeScreeningEvaluation(raw.evaluation)
 			};
@@ -1836,15 +1836,15 @@ window.__ModuleLoader__.load({
 		function normalizeScorecard$1(value) {
 			if (value === null || value === void 0) return null;
 			const raw = record(value);
-			const id = text$1(raw.scorecard_id);
-			const status = text$1(raw.status);
+			const id = text(raw.scorecard_id);
+			const status = text(raw.status);
 			if (id === "" && status === "") return null;
-			const overall = text$1(raw.overall);
+			const overall = text(raw.overall);
 			return {
 				id,
-				interviewId: text$1(raw.interview_id),
-				interviewerId: text$1(raw.interviewer_id),
-				interviewerName: text$1(raw.interviewer_display_name),
+				interviewId: text(raw.interview_id),
+				interviewerId: text(raw.interviewer_id),
+				interviewerName: text(raw.interviewer_display_name),
 				status,
 				statusLabel: SCORECARD_STATUS_LABELS[status] ?? (status !== "" ? status : "状态未知"),
 				statusTone: SCORECARD_STATUS_TONES[status] ?? "gray",
@@ -1852,24 +1852,24 @@ window.__ModuleLoader__.load({
 				overallLabel: OVERALL_LABELS[overall] ?? (overall !== "" ? overall : ""),
 				overallTone: OVERALL_TONES[overall] ?? "gray",
 				revisionNo: count(raw.revision_no),
-				submittedAt: text$1(raw.submitted_at),
+				submittedAt: text(raw.submitted_at),
 				submittedAtText: formatDateTime(raw.submitted_at)
 			};
 		}
 		/** 归一化面试官分配。 */
 		function normalizeInterviewer(value) {
 			const raw = record(value);
-			const id = text$1(raw.interviewer_row_id);
-			const actorId = text$1(raw.actor_id);
-			const displayName = text$1(raw.display_name);
+			const id = text(raw.interviewer_row_id);
+			const actorId = text(raw.actor_id);
+			const displayName = text(raw.display_name);
 			if (id === "" && actorId === "" && displayName === "") return null;
 			return {
 				id,
 				actorId,
 				displayName,
-				roleInInterview: text$1(raw.role_in_interview),
-				required: bool$1(raw.required_scorecard),
-				dueAt: text$1(raw.scorecard_due_at),
+				roleInInterview: text(raw.role_in_interview),
+				required: bool(raw.required_scorecard),
+				dueAt: text(raw.scorecard_due_at),
 				dueAtText: formatDateTime(raw.scorecard_due_at),
 				scorecard: normalizeScorecard$1(raw.scorecard)
 			};
@@ -1884,19 +1884,19 @@ window.__ModuleLoader__.load({
 				"FAILED",
 				"MISSING"
 			]);
-			const transcriptStatus = text$1(raw.transcript_status);
+			const transcriptStatus = text(raw.transcript_status);
 			const recordRaw = raw.interview_record;
 			const interviewRecord = recordRaw === null || recordRaw === void 0 ? null : (() => {
 				const entry = record(recordRaw);
-				const id = text$1(entry.interview_record_id);
-				if (id === "" && text$1(entry.status) === "") return null;
+				const id = text(entry.interview_record_id);
+				if (id === "" && text(entry.status) === "") return null;
 				const chunkCoverage = numberOrNull(entry.chunk_coverage);
 				return {
 					id,
-					status: text$1(entry.status),
-					verificationStatus: text$1(entry.verification_status),
-					evidenceOk: bool$1(entry.evidence_ok),
-					isCurrent: bool$1(entry.is_current),
+					status: text(entry.status),
+					verificationStatus: text(entry.verification_status),
+					evidenceOk: bool(entry.evidence_ok),
+					isCurrent: bool(entry.is_current),
 					chunkCoverage,
 					chunkCoverageText: chunkCoverage === null ? "" : `${String(Math.round(chunkCoverage * 100))}%`
 				};
@@ -1905,21 +1905,21 @@ window.__ModuleLoader__.load({
 				state,
 				stateLabel: TRANSCRIPT_STATE_LABELS[state] ?? "未提供",
 				stateTone: TRANSCRIPT_STATE_TONES[state] ?? "gray",
-				artifactId: text$1(raw.artifact_id),
+				artifactId: text(raw.artifact_id),
 				artifactIdText: shortSha(raw.artifact_id),
 				transcriptStatus,
 				transcriptStatusLabel: TRANSCRIPT_STATUS_LABELS[transcriptStatus] ?? (transcriptStatus !== "" ? transcriptStatus : ""),
 				transcriptStatusTone: TRANSCRIPT_STATUS_TONES[transcriptStatus] ?? "gray",
-				provenance: text$1(raw.provenance),
-				triggerMode: text$1(raw.trigger_mode),
-				connectionState: text$1(raw.connection_state),
+				provenance: text(raw.provenance),
+				triggerMode: text(raw.trigger_mode),
+				connectionState: text(raw.connection_state),
 				labels: normalizeThreeDimLabels({
 					provenance: raw.provenance,
 					trigger: raw.trigger_mode,
 					connection: raw.connection_state
 				}),
-				isComplete: bool$1(raw.is_complete),
-				isCanonical: bool$1(raw.is_canonical),
+				isComplete: bool(raw.is_complete),
+				isCanonical: bool(raw.is_canonical),
 				segmentCount: count(raw.segment_count),
 				record: interviewRecord
 			};
@@ -1946,14 +1946,14 @@ window.__ModuleLoader__.load({
 			const out = [];
 			for (const item of items(value)) {
 				const entry = record(item);
-				const key = text$1(entry.key);
+				const key = text(entry.key);
 				if (key === "") continue;
 				out.push({
 					key,
-					label: text$1(entry.label) !== "" ? text$1(entry.label) : key,
+					label: text(entry.label) !== "" ? text(entry.label) : key,
 					weight: numberOrNull(entry.weight),
-					required: bool$1(entry.required),
-					inRubric: bool$1(entry.in_rubric)
+					required: bool(entry.required),
+					inRubric: bool(entry.in_rubric)
 				});
 			}
 			return out;
@@ -1963,10 +1963,10 @@ window.__ModuleLoader__.load({
 			const out = [];
 			for (const item of items(value)) {
 				const entry = record(item);
-				const questionText = text$1(entry.text);
+				const questionText = text(entry.text);
 				if (questionText === "") continue;
 				out.push({
-					key: text$1(entry.key),
+					key: text(entry.key),
 					text: questionText
 				});
 			}
@@ -1977,13 +1977,13 @@ window.__ModuleLoader__.load({
 			const out = [];
 			for (const item of items(value)) {
 				const entry = record(item);
-				const key = text$1(entry.key);
+				const key = text(entry.key);
 				if (key === "") continue;
 				out.push({
 					key,
-					label: text$1(entry.label) !== "" ? text$1(entry.label) : key,
-					kind: text$1(entry.kind),
-					required: bool$1(entry.required)
+					label: text(entry.label) !== "" ? text(entry.label) : key,
+					kind: text(entry.kind),
+					required: bool(entry.required)
 				});
 			}
 			return out;
@@ -2003,10 +2003,10 @@ window.__ModuleLoader__.load({
 			if (value === null || value === void 0) return emptyRoundFocus$1();
 			const raw = record(value);
 			if (Object.keys(raw).length === 0) return emptyRoundFocus$1();
-			const available = bool$1(raw.available);
-			const source = text$1(raw.source);
+			const available = bool(raw.available);
+			const source = text(raw.source);
 			const roundNo = count(raw.round_no);
-			const reason = text$1(raw.reason);
+			const reason = text(raw.reason);
 			if (!available) return {
 				...emptyRoundFocus$1(),
 				available: false,
@@ -2018,11 +2018,11 @@ window.__ModuleLoader__.load({
 				available: true,
 				source,
 				roundNo,
-				templateVersionId: text$1(raw.template_version_id),
+				templateVersionId: text(raw.template_version_id),
 				templateVersionNo: count(raw.template_version_no),
-				templatePayloadHash: text$1(raw.template_payload_hash),
-				title: text$1(raw.title),
-				description: text$1(raw.description),
+				templatePayloadHash: text(raw.template_payload_hash),
+				title: text(raw.title),
+				description: text(raw.description),
 				focusDimensions: normalizeRoundFocusDimensions(raw.focus_dimensions),
 				questions: normalizeRoundFocusQuestions(raw.questions),
 				scorecardFields: normalizeRoundFocusScorecardFields(raw.scorecard_fields),
@@ -2032,9 +2032,9 @@ window.__ModuleLoader__.load({
 		/** 归一化一轮面试（四个独立分支各归各的，不用排期状态推断面评/转写）。 */
 		function normalizeInterview(value, context) {
 			const raw = record(value);
-			const id = text$1(raw.interview_id);
+			const id = text(raw.interview_id);
 			const roundNo = count(raw.round_no);
-			const slotCode = text$1(raw.slot_code);
+			const slotCode = text(raw.slot_code);
 			if (id === "" && roundNo === 0 && slotCode === "") return null;
 			const status = oneOf(raw.status, [
 				"SCHEDULED",
@@ -2045,7 +2045,7 @@ window.__ModuleLoader__.load({
 				"RESCHEDULED",
 				"CANCELLED",
 				"NO_SHOW"
-			]) || text$1(raw.status);
+			]) || text(raw.status);
 			const interviewersRaw = items(raw.interviewers);
 			const interviewers = [];
 			for (const item of interviewersRaw) {
@@ -2062,16 +2062,16 @@ window.__ModuleLoader__.load({
 				id,
 				roundNo,
 				slotCode,
-				stageCode: text$1(raw.stage_code),
-				stageLabel: text$1(raw.stage_code) === "" ? "" : stageLabelOf(text$1(raw.stage_code), context),
+				stageCode: text(raw.stage_code),
+				stageLabel: text(raw.stage_code) === "" ? "" : stageLabelOf(text(raw.stage_code), context),
 				status,
 				statusLabel: INTERVIEW_STATUS_LABELS[status] ?? (status !== "" ? status : "状态未知"),
 				statusTone: INTERVIEW_STATUS_TONES[status] ?? "gray",
-				scheduledStartAt: text$1(raw.scheduled_start_at),
+				scheduledStartAt: text(raw.scheduled_start_at),
 				scheduledStartText: formatDateTime(raw.scheduled_start_at),
-				scheduledEndAt: text$1(raw.scheduled_end_at),
+				scheduledEndAt: text(raw.scheduled_end_at),
 				scheduledEndText: formatDateTime(raw.scheduled_end_at),
-				timezone: text$1(raw.timezone),
+				timezone: text(raw.timezone),
 				interviewers,
 				scorecards: {
 					required,
@@ -2146,12 +2146,12 @@ window.__ModuleLoader__.load({
 		/** 归一化决策。 */
 		function normalizeDecision(value, context) {
 			const raw = record(value);
-			const id = text$1(raw.decision_id);
-			const result = text$1(raw.result);
-			const reason = text$1(raw.reason);
+			const id = text(raw.decision_id);
+			const result = text(raw.result);
+			const reason = text(raw.reason);
 			if (id === "" && result === "" && reason === "") return null;
-			const scope = text$1(raw.decision_scope);
-			const stageCode = text$1(raw.stage_code);
+			const scope = text(raw.decision_scope);
+			const stageCode = text(raw.stage_code);
 			return {
 				id,
 				scope,
@@ -2162,20 +2162,20 @@ window.__ModuleLoader__.load({
 				resultLabel: DECISION_RESULT_LABELS[result] ?? (result !== "" ? result : "结论未知"),
 				resultTone: DECISION_RESULT_TONES[result] ?? "gray",
 				reason,
-				decidedAt: text$1(raw.decided_at),
+				decidedAt: text(raw.decided_at),
 				decidedAtText: formatDateTime(raw.decided_at),
-				decidedBy: text$1(raw.decided_by_display_name),
-				isCurrent: bool$1(raw.is_current),
-				supersededBy: text$1(raw.superseded_by_decision_id),
+				decidedBy: text(raw.decided_by_display_name),
+				isCurrent: bool(raw.is_current),
+				supersededBy: text(raw.superseded_by_decision_id),
 				basisKinds: stringList(raw.basis_kinds)
 			};
 		}
 		/** 归一化时间线一条。 */
 		function normalizeTimelineEntry(value) {
 			const raw = record(value);
-			const at = text$1(raw.at);
-			const kind = text$1(raw.kind);
-			const label = text$1(raw.label);
+			const at = text(raw.at);
+			const kind = text(raw.kind);
+			const label = text(raw.label);
 			if (at === "" && kind === "" && label === "") return null;
 			return {
 				at,
@@ -2183,7 +2183,7 @@ window.__ModuleLoader__.load({
 				kind,
 				kindLabel: TIMELINE_KIND_LABELS[kind] ?? (kind !== "" ? kind : ""),
 				label,
-				refId: text$1(raw.ref_id)
+				refId: text(raw.ref_id)
 			};
 		}
 		/** 申请头部（行 / 详情共用；**不含下一步**）。 */
@@ -2191,35 +2191,35 @@ window.__ModuleLoader__.load({
 			const raw = record(value);
 			const candidate = record(raw.candidate);
 			const job = record(raw.job);
-			const id = text$1(raw.application_id);
+			const id = text(raw.application_id);
 			const lifecycleStatus = oneOf(raw.lifecycle_status, [
 				"ACTIVE",
 				"ON_HOLD",
 				"WITHDRAWN",
 				"CLOSED"
-			]) || text$1(raw.lifecycle_status);
-			const stageCode = text$1(raw.current_stage_code);
-			const candidateName = text$1(candidate.display_name);
+			]) || text(raw.lifecycle_status);
+			const stageCode = text(raw.current_stage_code);
+			const candidateName = text(candidate.display_name);
 			return {
 				id,
-				rowKey: id !== "" ? id : `application-${text$1(job.job_id)}-${String(count(raw.record_version))}`,
-				candidateId: text$1(candidate.candidate_id),
+				rowKey: id !== "" ? id : `application-${text(job.job_id)}-${String(count(raw.record_version))}`,
+				candidateId: text(candidate.candidate_id),
 				candidateName: candidateName !== "" ? candidateName : "（服务端未提供候选人姓名）",
 				candidateInitial: initial(candidateName),
-				jobId: text$1(job.job_id),
-				jobCode: text$1(job.code),
-				jobTitle: text$1(job.title) !== "" ? text$1(job.title) : "（服务端未提供岗位名称）",
+				jobId: text(job.job_id),
+				jobCode: text(job.code),
+				jobTitle: text(job.title) !== "" ? text(job.title) : "（服务端未提供岗位名称）",
 				lifecycleStatus,
 				lifecycleLabel: LIFECYCLE_LABELS[lifecycleStatus] ?? (lifecycleStatus !== "" ? lifecycleStatus : "状态未知"),
 				lifecycleTone: LIFECYCLE_TONES[lifecycleStatus] ?? "gray",
 				stageCode,
 				stageLabel: stageLabelOf(stageCode, context),
 				stageTone: STAGE_TONES[stageCode] ?? "gray",
-				stageEnteredAt: text$1(raw.stage_entered_at),
+				stageEnteredAt: text(raw.stage_entered_at),
 				stageEnteredAtText: formatDateTime(raw.stage_entered_at),
-				appliedAt: text$1(raw.applied_at),
+				appliedAt: text(raw.applied_at),
 				appliedAtText: formatDateTime(raw.applied_at),
-				stageBlockedReason: text$1(raw.stage_blocked_reason),
+				stageBlockedReason: text(raw.stage_blocked_reason),
 				recordVersion: count(raw.record_version)
 			};
 		}
@@ -2279,31 +2279,31 @@ window.__ModuleLoader__.load({
 		function buildJob(value, context) {
 			const raw = record(value);
 			const rubricRaw = record(raw.rubric);
-			const rubricVersionId = text$1(rubricRaw.rubric_version_id);
+			const rubricVersionId = text(rubricRaw.rubric_version_id);
 			const rubric = rubricVersionId === "" && count(rubricRaw.version_no) === 0 && count(rubricRaw.dimension_count) === 0 ? null : {
 				rubricVersionId,
 				versionNo: count(rubricRaw.version_no),
-				approved: bool$1(rubricRaw.approved),
+				approved: bool(rubricRaw.approved),
 				dimensionCount: count(rubricRaw.dimension_count),
 				summaryText: joinTexts([
 					`Rubric r${String(count(rubricRaw.version_no))}`,
 					`${String(count(rubricRaw.dimension_count))} 个维度`,
-					bool$1(rubricRaw.approved) ? "已批准" : "未批准"
+					bool(rubricRaw.approved) ? "已批准" : "未批准"
 				]),
-				tone: bool$1(rubricRaw.approved) ? "green" : "amber"
+				tone: bool(rubricRaw.approved) ? "green" : "amber"
 			};
 			const postingsRaw = items(raw.postings);
 			const postings = [];
 			for (const item of postingsRaw) {
 				const entry = record(item);
-				const status = text$1(entry.status);
+				const status = text(entry.status);
 				postings.push({
-					id: text$1(entry.posting_id),
-					channelName: text$1(entry.channel_name),
+					id: text(entry.posting_id),
+					channelName: text(entry.channel_name),
 					status,
 					statusLabel: status !== "" ? status : "状态未知",
 					tone: status === "PUBLISHED" || status === "ACTIVE" ? "green" : status === "CLOSED" ? "gray" : "gray",
-					externalUrl: text$1(entry.external_url)
+					externalUrl: text(entry.external_url)
 				});
 			}
 			const countsRaw = record(raw.application_counts);
@@ -2321,11 +2321,11 @@ window.__ModuleLoader__.load({
 				"PAUSED",
 				"CLOSED",
 				"ARCHIVED"
-			]) || text$1(raw.status);
+			]) || text(raw.status);
 			const versionNo = numberOrNull(raw.version_no);
-			const title = text$1(raw.title);
-			const code = text$1(raw.code);
-			const id = text$1(raw.job_id);
+			const title = text(raw.title);
+			const code = text(raw.code);
+			const id = text(raw.job_id);
 			return {
 				id,
 				rowKey: id !== "" ? id : `job-${code}`,
@@ -2334,10 +2334,10 @@ window.__ModuleLoader__.load({
 				status,
 				statusLabel: JOB_STATUS_LABELS[status] ?? (status !== "" ? status : "状态未知"),
 				statusTone: JOB_STATUS_TONES[status] ?? "gray",
-				departmentName: text$1(raw.department_name),
-				createdAt: text$1(raw.created_at),
+				departmentName: text(raw.department_name),
+				createdAt: text(raw.created_at),
 				createdAtText: formatDateTime(raw.created_at),
-				statusChangedAt: text$1(raw.status_changed_at),
+				statusChangedAt: text(raw.status_changed_at),
 				statusChangedAtText: formatDateTime(raw.status_changed_at),
 				versionNo,
 				versionText: versionNo === null ? "" : `r${String(versionNo)}`,
@@ -2362,19 +2362,19 @@ window.__ModuleLoader__.load({
 				const stages = [];
 				for (const item of stagesRaw) {
 					const stage = record(item);
-					const code = text$1(stage.code);
+					const code = text(stage.code);
 					if (code === "") continue;
 					stages.push({
 						code,
-						label: text$1(stage.label) !== "" ? text$1(stage.label) : stageLabelOf(code, context),
-						kind: text$1(stage.kind),
+						label: text(stage.label) !== "" ? text(stage.label) : stageLabelOf(code, context),
+						kind: text(stage.kind),
 						order: count(stage.order),
-						inV1Scope: bool$1(stage.in_v1_scope)
+						inV1Scope: bool(stage.in_v1_scope)
 					});
 				}
 				stageCatalog = {
 					versionNo: count(entry.version_no),
-					effectiveFrom: text$1(entry.effective_from),
+					effectiveFrom: text(entry.effective_from),
 					effectiveFromText: formatDateTime(entry.effective_from),
 					stages
 				};
@@ -2385,13 +2385,13 @@ window.__ModuleLoader__.load({
 				const entry = record(item);
 				const payloadKeys = stringList(entry.payload_keys);
 				configs.push({
-					configKey: text$1(entry.config_key),
-					scope: text$1(entry.scope),
-					scopeId: text$1(entry.scope_id),
+					configKey: text(entry.config_key),
+					scope: text(entry.scope),
+					scopeId: text(entry.scope_id),
 					versionNo: count(entry.version_no),
-					effectiveFrom: text$1(entry.effective_from),
+					effectiveFrom: text(entry.effective_from),
 					effectiveFromText: formatDateTime(entry.effective_from),
-					effectiveTo: text$1(entry.effective_to),
+					effectiveTo: text(entry.effective_to),
 					effectiveToText: formatDateTime(entry.effective_to),
 					payloadKeys,
 					payloadKeyCount: payloadKeys.length
@@ -2400,8 +2400,8 @@ window.__ModuleLoader__.load({
 			const departments = [];
 			for (const item of items(raw.departments)) {
 				const entry = record(item);
-				const id = text$1(entry.department_id);
-				const name = text$1(entry.name);
+				const id = text(entry.department_id);
+				const name = text(entry.name);
 				if (id === "" && name === "") continue;
 				departments.push({
 					id,
@@ -2411,26 +2411,26 @@ window.__ModuleLoader__.load({
 			const hiringTeams = [];
 			for (const item of items(raw.hiring_teams)) {
 				const entry = record(item);
-				const teamId = text$1(entry.team_id);
+				const teamId = text(entry.team_id);
 				const membersRaw = items(entry.members);
 				const members = [];
 				for (const memberItem of membersRaw) {
 					const member = record(memberItem);
-					const actorId = text$1(member.actor_id);
-					const displayName = text$1(member.display_name);
+					const actorId = text(member.actor_id);
+					const displayName = text(member.display_name);
 					if (actorId === "" && displayName === "") continue;
 					members.push({
 						actorId,
 						displayName: displayName !== "" ? displayName : "（未提供姓名）",
-						teamRole: text$1(member.team_role),
-						actorKind: text$1(member.actor_kind)
+						teamRole: text(member.team_role),
+						actorKind: text(member.actor_kind)
 					});
 				}
 				hiringTeams.push({
 					id: teamId,
-					code: text$1(entry.code),
-					name: text$1(entry.name),
-					departmentName: text$1(entry.department_name),
+					code: text(entry.code),
+					name: text(entry.name),
+					departmentName: text(entry.department_name),
 					members
 				});
 			}
@@ -2441,9 +2441,9 @@ window.__ModuleLoader__.load({
 				departments,
 				hiringTeams,
 				entry: {
-					available: bool$1(entryRaw.available),
-					href: text$1(entryRaw.href),
-					note: text$1(entryRaw.note)
+					available: bool(entryRaw.available),
+					href: text(entryRaw.href),
+					note: text(entryRaw.note)
 				}
 			};
 		}
@@ -2454,9 +2454,9 @@ window.__ModuleLoader__.load({
 			const order = {};
 			for (const item of items(catalog.stages)) {
 				const stage = record(item);
-				const code = text$1(stage.code);
+				const code = text(stage.code);
 				if (code === "") continue;
-				const label = text$1(stage.label);
+				const label = text(stage.label);
 				if (label !== "") labels[code] = label;
 				const sortOrder = count(stage.order);
 				if (sortOrder > 0) order[code] = sortOrder;
@@ -2509,14 +2509,14 @@ window.__ModuleLoader__.load({
 			}
 			const sortedJobs = sortJobViews(jobs);
 			return {
-				contractVersion: text$1(raw.contract_version),
-				configured: bool$1(raw.configured),
+				contractVersion: text(raw.contract_version),
+				configured: bool(raw.configured),
 				issues: stringList(raw.issues),
-				evaluatedAt: text$1(raw.evaluated_at),
+				evaluatedAt: text(raw.evaluated_at),
 				evaluatedAtText: formatDateTime(raw.evaluated_at),
 				actor: {
-					actorId: text$1(actorRaw.actor_id),
-					displayName: text$1(actorRaw.display_name),
+					actorId: text(actorRaw.actor_id),
+					displayName: text(actorRaw.display_name),
 					roles: stringList(actorRaw.roles)
 				},
 				labels: normalizeThreeDimLabels(raw.labels),
@@ -2552,42 +2552,42 @@ window.__ModuleLoader__.load({
 			const fields = [];
 			for (const item of items(raw.fields)) {
 				const entry = record(item);
-				const key = text$1(entry.key) !== "" ? text$1(entry.key) : text$1(entry.field);
+				const key = text(entry.key) !== "" ? text(entry.key) : text(entry.field);
 				if (key === "") continue;
 				fields.push({
 					key,
-					state: text$1(entry.state),
-					provenance: text$1(entry.provenance),
+					state: text(entry.state),
+					provenance: text(entry.provenance),
 					entryCount: numberOrNull(entry.entry_count),
-					valuePreview: text$1(entry.value_preview)
+					valuePreview: text(entry.value_preview)
 				});
 			}
 			const workEntries = [];
 			for (const item of items(raw.work_entries)) {
 				const entry = record(item);
 				workEntries.push({
-					company: text$1(entry.company),
-					title: text$1(entry.title),
-					start: text$1(entry.start),
-					end: text$1(entry.end)
+					company: text(entry.company),
+					title: text(entry.title),
+					start: text(entry.start),
+					end: text(entry.end)
 				});
 			}
 			const educationEntries = [];
 			for (const item of items(raw.education_entries)) {
 				const entry = record(item);
 				educationEntries.push({
-					text: text$1(entry.text),
-					start: text$1(entry.start),
-					end: text$1(entry.end)
+					text: text(entry.text),
+					start: text(entry.start),
+					end: text(entry.end)
 				});
 			}
 			const evidenceSamples = [];
 			for (const item of items(raw.evidence_samples)) {
 				const entry = record(item);
-				const quote = text$1(entry.quote);
+				const quote = text(entry.quote);
 				if (quote === "") continue;
 				evidenceSamples.push({
-					field: text$1(entry.field),
+					field: text(entry.field),
 					page: numberOrNull(entry.page),
 					quote,
 					block: numberOrNull(entry.block)
@@ -2605,22 +2605,22 @@ window.__ModuleLoader__.load({
 		function normalizeRubricDimensions$1(value) {
 			if (value === null || value === void 0) return null;
 			const raw = record(value);
-			const rubricVersionId = text$1(raw.rubric_version_id);
+			const rubricVersionId = text(raw.rubric_version_id);
 			const versionNo = count(raw.version_no);
-			const approved = bool$1(raw.approved);
+			const approved = bool(raw.approved);
 			const dimensions = [];
 			for (const item of items(raw.dimensions)) {
 				const entry = record(item);
-				const key = text$1(entry.key);
+				const key = text(entry.key);
 				if (key === "") continue;
 				dimensions.push({
 					key,
-					kind: text$1(entry.kind),
-					label: text$1(entry.label) !== "" ? text$1(entry.label) : key,
+					kind: text(entry.kind),
+					label: text(entry.label) !== "" ? text(entry.label) : key,
 					weight: numberOrNull(entry.weight),
-					operator: text$1(entry.operator),
-					valuePreview: preview$1(entry.value),
-					question: text$1(entry.question)
+					operator: text(entry.operator),
+					valuePreview: preview(entry.value),
+					question: text(entry.question)
 				});
 			}
 			if (versionNo === 0 && dimensions.length === 0 && rubricVersionId === "") return null;
@@ -2646,28 +2646,28 @@ window.__ModuleLoader__.load({
 			const basis = [];
 			for (const item of items(screeningEvidenceRaw.basis)) {
 				const entry = record(item);
-				const kind = text$1(entry.kind);
+				const kind = text(entry.kind);
 				if (kind === "") continue;
 				basis.push({
 					kind,
-					detailText: preview$1(entry.detail)
+					detailText: preview(entry.detail)
 				});
 			}
 			const transcriptRuns = [];
 			for (const item of items(raw.transcript_runs)) {
 				const entry = record(item);
-				const runId = text$1(entry.run_id);
-				const artifactId = text$1(entry.artifact_id);
+				const runId = text(entry.run_id);
+				const artifactId = text(entry.artifact_id);
 				if (runId === "" && artifactId === "") continue;
 				transcriptRuns.push({
 					runId,
 					artifactId,
 					artifactIdText: shortSha(artifactId),
-					status: text$1(entry.status),
+					status: text(entry.status),
 					chunkTotal: count(entry.chunk_total),
 					chunkSucceeded: count(entry.chunk_succeeded),
 					chunkFailed: count(entry.chunk_failed),
-					modelId: text$1(entry.model_id)
+					modelId: text(entry.model_id)
 				});
 			}
 			const decisions = [];
@@ -2682,12 +2682,12 @@ window.__ModuleLoader__.load({
 			}
 			const actorRaw = record(raw.actor);
 			return {
-				contractVersion: text$1(raw.contract_version),
-				evaluatedAt: text$1(raw.evaluated_at),
+				contractVersion: text(raw.contract_version),
+				evaluatedAt: text(raw.evaluated_at),
 				evaluatedAtText: formatDateTime(raw.evaluated_at),
 				actor: {
-					actorId: text$1(actorRaw.actor_id),
-					displayName: text$1(actorRaw.display_name),
+					actorId: text(actorRaw.actor_id),
+					displayName: text(actorRaw.display_name),
 					roles: stringList(actorRaw.roles)
 				},
 				labels: normalizeThreeDimLabels(raw.labels),
@@ -2718,18 +2718,18 @@ window.__ModuleLoader__.load({
 			const versions = [];
 			for (const item of items(raw.versions)) {
 				const entry = record(item);
-				const id = text$1(entry.job_version_id);
+				const id = text(entry.job_version_id);
 				const versionNo = count(entry.version_no);
 				if (id === "" && versionNo === 0) continue;
-				const payloadHash = text$1(entry.payload_hash);
+				const payloadHash = text(entry.payload_hash);
 				versions.push({
 					id,
 					versionNo,
 					payloadHash,
 					payloadHashText: shortSha(payloadHash),
-					createdAt: text$1(entry.created_at),
+					createdAt: text(entry.created_at),
 					createdAtText: formatDateTime(entry.created_at),
-					approved: bool$1(entry.approved)
+					approved: bool(entry.approved)
 				});
 			}
 			const rubricRaw = normalizeRubricDimensions$1(raw.rubric);
@@ -2740,13 +2740,13 @@ window.__ModuleLoader__.load({
 			const applications = buildApplicationRows(raw.applications);
 			const actions = normalizeActions(raw.actions);
 			return {
-				contractVersion: text$1(raw.contract_version),
-				evaluatedAt: text$1(raw.evaluated_at),
+				contractVersion: text(raw.contract_version),
+				evaluatedAt: text(raw.evaluated_at),
 				evaluatedAtText: formatDateTime(raw.evaluated_at),
 				labels: normalizeThreeDimLabels(raw.labels),
 				job,
-				descriptionMd: text$1(raw.description_md),
-				requirementsMd: text$1(raw.requirements_md),
+				descriptionMd: text(raw.description_md),
+				requirementsMd: text(raw.requirements_md),
 				versions,
 				rubric,
 				applications,
@@ -2858,7 +2858,7 @@ window.__ModuleLoader__.load({
 		* @param signal - 取消信号。
 		* @returns 解析后的原始 JSON（空体/非 JSON 抛 `BAD_RESPONSE`）。
 		*/
-		async function requestJson$2(url, signal) {
+		async function requestJson$1(url, signal) {
 			const raw = await requestRaw(url, { method: "GET" }, signal);
 			const body = raw.bodyText.trim();
 			if (body === "") throw new RecruitingRequestError({
@@ -2882,7 +2882,7 @@ window.__ModuleLoader__.load({
 		}
 		/** 读取 `GET /recruitment/api/recruiting/overview` 并归一化成视图模型。 */
 		async function fetchOverviewView(signal) {
-			return normalizeOverviewView(await requestJson$2(`${RECRUITING_API_PREFIX}/overview`, signal));
+			return normalizeOverviewView(await requestJson$1(`${RECRUITING_API_PREFIX}/overview`, signal));
 		}
 		/** 读取 `GET /recruitment/api/recruiting/applications/:id` 并归一化成视图模型。 */
 		async function fetchApplicationDetail(applicationId, signal) {
@@ -2894,7 +2894,7 @@ window.__ModuleLoader__.load({
 				message: "申请 id 为空，拒绝请求",
 				rawBody: ""
 			});
-			return normalizeApplicationDetail(await requestJson$2(`${RECRUITING_API_PREFIX}/applications/${encodeURIComponent(id)}`, signal));
+			return normalizeApplicationDetail(await requestJson$1(`${RECRUITING_API_PREFIX}/applications/${encodeURIComponent(id)}`, signal));
 		}
 		/** 读取 `GET /recruitment/api/recruiting/jobs/:id` 并归一化成视图模型。 */
 		async function fetchJobDetail(jobId, signal) {
@@ -2906,7 +2906,7 @@ window.__ModuleLoader__.load({
 				message: "岗位 id 为空，拒绝请求",
 				rawBody: ""
 			});
-			return normalizeJobDetail(await requestJson$2(`${RECRUITING_API_PREFIX}/jobs/${encodeURIComponent(id)}`, signal));
+			return normalizeJobDetail(await requestJson$1(`${RECRUITING_API_PREFIX}/jobs/${encodeURIComponent(id)}`, signal));
 		}
 		/**
 		* 通用取数 hook：KEY 变化或 `reload()` 时重新 GET；卸载 / KEY 变化时取消在途请求。
@@ -3009,7 +3009,7 @@ window.__ModuleLoader__.load({
 					key,
 					accepted: true,
 					status: raw.status,
-					envelope: parseActionEnvelope$1(raw.bodyText),
+					envelope: parseActionEnvelope(raw.bodyText),
 					error: null,
 					bodyText: raw.bodyText.slice(0, 2e3),
 					payload: parseActionPayload(raw.bodyText)
@@ -3168,7 +3168,7 @@ window.__ModuleLoader__.load({
 		* @param sessionId - 当前 DSH session id（只来自形参）。
 		*/
 		async function postDecisionRecordFacade(body, sessionId) {
-			return postWrite(DECISION_RECORD_PATH$1, body, sessionId, "decision_record_facade");
+			return postWrite(DECISION_RECORD_PATH, body, sessionId, "decision_record_facade");
 		}
 		/**
 		* 岗位草案 `POST /recruitment/api/job-action/job/draft`（body 由 `buildJobDraftBody` 产出；只读不写库）。
@@ -3275,7 +3275,7 @@ window.__ModuleLoader__.load({
 			};
 			const headers = { [RECRUITING_REQUEST_HEADER]: "1" };
 			if (sessionId.trim() !== "") headers[RECRUITING_SESSION_HEADER] = sessionId.trim();
-			const url = `${DECISION_FACTS_PATH$1}?application_id=${encodeURIComponent(id)}`;
+			const url = `${DECISION_FACTS_PATH}?application_id=${encodeURIComponent(id)}`;
 			let status = 0;
 			let bodyText = "";
 			try {
@@ -3312,7 +3312,7 @@ window.__ModuleLoader__.load({
 				status,
 				error: parseRecruitingError(status, bodyText)
 			};
-			const facts = normalizeDecisionFacts$1(parseActionPayload(bodyText));
+			const facts = normalizeDecisionFacts(parseActionPayload(bodyText));
 			if (facts === null) return {
 				facts: void 0,
 				probe: "ERROR",
@@ -3695,7 +3695,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** 状态 chip。 */
-		function Chip$1({ tone = "gray", children, title, testid }) {
+		function Chip({ tone = "gray", children, title, testid }) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 				className: chipClass(tone),
 				...title !== void 0 ? { title } : {},
@@ -3768,10 +3768,10 @@ window.__ModuleLoader__.load({
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "rcw-nextstep-main",
-						children: [step.kindLabel !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+						children: [step.kindLabel !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 							tone: step.tone,
 							children: step.kindLabel
-						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 							tone: step.tone,
 							children: "未分类"
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
@@ -3895,7 +3895,7 @@ window.__ModuleLoader__.load({
 					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						className: "rcw-chiprow",
 						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 								tone: sourceTone,
 								testid: "round-focus-source",
 								children: sourceLabelOf(focus.source)
@@ -4041,7 +4041,7 @@ window.__ModuleLoader__.load({
 					className: "rcw-roundfocus-degrade",
 					"data-testid": "round-focus-reason",
 					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 							tone: "amber",
 							children: "本轮重点不可用（降级）"
 						}),
@@ -4152,12 +4152,12 @@ window.__ModuleLoader__.load({
 				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "rcw-headline-right",
 					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 							tone: header.stageTone,
 							testid: "detail-stage",
 							children: ["当前阶段 · ", header.stageLabel]
 						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 							tone: header.lifecycleTone,
 							testid: "detail-lifecycle",
 							children: ["申请状态 · ", header.lifecycleLabel]
@@ -4174,16 +4174,16 @@ window.__ModuleLoader__.load({
 				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "rcw-chiprow",
 					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 							tone: material.parseTone,
 							testid: "material-parse",
 							children: ["解析 · ", material.parseLabel]
 						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 							tone: material.validationTone,
 							children: ["校验 · ", material.validationLabel]
 						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 							tone: material.hashAligned ? "green" : "red",
 							testid: "material-hash-aligned",
 							children: ["来源哈希 · ", material.hashAligned ? "一致" : "不一致"]
@@ -4349,16 +4349,16 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "rcw-chiprow",
 						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 								tone: decision.resultTone,
 								testid: "screening-decision-result",
 								children: ["初筛结论 · ", decision.resultLabel]
 							}),
-							decision.stageLabel !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+							decision.stageLabel !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 								tone: "gray",
 								children: decision.stageLabel
 							}) : null,
-							decision.decidedBy !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+							decision.decidedBy !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 								tone: "blue",
 								children: [
 									"由 ",
@@ -4405,15 +4405,15 @@ window.__ModuleLoader__.load({
 								className: "rcw-chiprow",
 								style: { marginTop: 6 },
 								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 										tone: decision.evaluation.verdict !== "" ? "blue" : "gray",
 										children: ["verdict · ", decision.evaluation.verdict !== "" ? decision.evaluation.verdict : "未提供"]
 									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 										tone: decision.evaluation.provenanceTone,
 										children: ["provenance · ", decision.evaluation.provenance !== "" ? decision.evaluation.provenance : "未提供"]
 									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 										tone: decision.evaluation.criteriaEvaluated === true ? "green" : "gray",
 										children: [
 											"criteria_evaluated ·",
@@ -4518,15 +4518,15 @@ window.__ModuleLoader__.load({
 								" 轮 · ",
 								interview.slotCode !== "" ? interview.slotCode : "（未提供 slot）"
 							] }),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 								tone: interview.statusTone,
 								children: ["排期状态 · ", interview.statusLabel]
 							}),
-							interview.stageLabel !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+							interview.stageLabel !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 								tone: "gray",
 								children: interview.stageLabel
 							}) : null,
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 								tone: interview.scorecards.tone,
 								testid: `interview-${interview.id}-scorecard`,
 								children: ["面评 · ", interview.scorecards.summaryText]
@@ -4607,20 +4607,20 @@ window.__ModuleLoader__.load({
 									" 轮 · ",
 									interview.slotCode !== "" ? interview.slotCode : "（未提供 slot）"
 								] }),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 									tone: transcript.stateTone,
 									testid: `transcript-${interview.id}-state`,
 									children: ["Transcript · ", transcript.stateLabel]
 								}),
-								transcript.transcriptStatus !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+								transcript.transcriptStatus !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 									tone: transcript.transcriptStatusTone,
 									children: transcript.transcriptStatusLabel
 								}) : null,
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 									tone: transcript.isCanonical ? "green" : "gray",
 									children: ["canonical · ", transcript.isCanonical ? "是" : "否"]
 								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 									tone: transcript.isComplete ? "green" : "gray",
 									children: ["complete · ", transcript.isComplete ? "是" : "否"]
 								})
@@ -4765,7 +4765,7 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "rcw-chiprow",
 						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 								tone: decision.resultTone,
 								children: [
 									decision.scopeLabel !== "" ? decision.scopeLabel : "决策",
@@ -4773,11 +4773,11 @@ window.__ModuleLoader__.load({
 									decision.resultLabel
 								]
 							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 								tone: decision.isCurrent ? "green" : "gray",
 								children: decision.isCurrent ? "当前有效" : "已被取代"
 							}),
-							decision.stageLabel !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+							decision.stageLabel !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 								tone: "gray",
 								children: decision.stageLabel
 							}) : null,
@@ -4876,7 +4876,7 @@ window.__ModuleLoader__.load({
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "rcw-chiprow",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: title }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: title }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 							tone: available ? "green" : "gray",
 							children: available ? "事实齐备，可提交" : "禁用（缺事实/越权）"
 						})]
@@ -5406,7 +5406,7 @@ window.__ModuleLoader__.load({
 						"data-testid": "decision-submit",
 						disabled,
 						onClick: () => {
-							const built = buildDecisionRecordBody$1({
+							const built = buildDecisionRecordBody({
 								facts: decisionFacts ?? null,
 								applicationId,
 								scope,
@@ -5441,7 +5441,7 @@ window.__ModuleLoader__.load({
 				"data-has-outcome": outcomes.length > 0 ? "true" : "false",
 				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "rcw-chiprow",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "写动作结果 · 服务端读回" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "写动作结果 · 服务端读回" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 						tone: "gray",
 						children: "成功事实只认 readback + 重新 GET"
 					})]
@@ -5452,7 +5452,7 @@ window.__ModuleLoader__.load({
 				}) : outcomes.map((outcome, index) => {
 					const lines = actionResultLines(outcome);
 					const readbackShown = outcome.envelope !== null && outcome.envelope.readback !== null;
-					const advice = outcome.error !== null ? describeActionError$1(outcome.error.code, outcome.error.reasonCode) : "";
+					const advice = outcome.error !== null ? describeActionError(outcome.error.code, outcome.error.reasonCode) : "";
 					return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						"data-testid": "action-result-item",
 						"data-action-key": outcome.key,
@@ -5467,21 +5467,21 @@ window.__ModuleLoader__.load({
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "rcw-chiprow",
 								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 										tone: "blue",
 										children: ["动作 · ", outcome.key]
 									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 										tone: outcome.accepted ? "blue" : "red",
 										children: ["HTTP ", outcome.status]
 									}),
-									readbackShown ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+									readbackShown ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 										tone: "green",
 										children: "readback 已读回"
-									}) : outcome.accepted ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+									}) : outcome.accepted ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 										tone: "amber",
 										children: "2xx 但无 readback（不当作成功）"
-									}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+									}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 										tone: "red",
 										children: "服务端拒绝"
 									})
@@ -5618,7 +5618,7 @@ window.__ModuleLoader__.load({
 									children: actionList.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										className: "rcw-dim rcw-tiny",
 										children: "服务端 actions 里没有可用的申请级写动作。"
-									}) : actionList.map((action) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+									}) : actionList.map((action) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 										tone: action.available ? "blue" : "gray",
 										testid: `detail-action-${action.key}`,
 										title: action.available ? action.seam : action.pendingText,
@@ -5785,10 +5785,10 @@ window.__ModuleLoader__.load({
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										className: "rcw-chiprow",
 										style: { marginTop: 8 },
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 											tone: header.stageTone,
 											children: header.stageLabel
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 											tone: header.lifecycleTone,
 											children: header.lifecycleLabel
 										})]
@@ -5847,7 +5847,7 @@ window.__ModuleLoader__.load({
 													sibling.lifecycleLabel
 												] })]
 											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 												tone: sibling.stageTone,
 												children: sibling.stageLabel
 											}),
@@ -6048,7 +6048,7 @@ window.__ModuleLoader__.load({
 		/** 最近一次写动作结果卡：2xx 不等于业务成功；只显示信封 `readback` 与服务端原文。 */
 		function OutcomeReadbackCard({ outcome, title, testid }) {
 			if (outcome === void 0) return null;
-			const rows = outcome.envelope !== null ? readbackLines$1(outcome.envelope) : [];
+			const rows = outcome.envelope !== null ? readbackLines(outcome.envelope) : [];
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Card, {
 				className: "rcw-detailmain",
 				style: { marginTop: 14 },
@@ -6057,7 +6057,7 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "rcw-sectionhead",
 						style: { marginTop: 0 },
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: title }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: title }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 							tone: outcome.accepted ? "blue" : "red",
 							testid: `${testid}-status`,
 							children: outcome.accepted ? `HTTP ${String(outcome.status)} 已受理（业务事实看 readback）` : `失败（HTTP ${String(outcome.status)}）`
@@ -6117,11 +6117,11 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "rcw-sectionhead",
 						style: { marginTop: 0 },
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "岗位关闭结果（服务端信封 + 重新 GET）" }), envelope !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "岗位关闭结果（服务端信封 + 重新 GET）" }), envelope !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 							tone: envelope.replayed ? "amber" : "green",
 							testid: "close-job-replayed",
 							children: envelope.replayed ? "replayed（重复确认）" : "首次关闭"
-						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 							tone: "red",
 							children: "没有可用信封"
 						})]
@@ -6192,7 +6192,7 @@ window.__ModuleLoader__.load({
 		function draftTextNode(source, keys) {
 			const raw = record(source);
 			for (const key of keys) {
-				const value = text$1(raw[key]);
+				const value = text(raw[key]);
 				if (value !== "") return value;
 			}
 			return "";
@@ -6217,7 +6217,7 @@ window.__ModuleLoader__.load({
 				const entry = record(item);
 				rounds.push({
 					roundNo: count(entry.round_no ?? entry.roundNo),
-					title: text$1(entry.title),
+					title: text(entry.title),
 					focus: stringList(entry.focus),
 					questions: stringList(entry.questions)
 				});
@@ -6225,32 +6225,32 @@ window.__ModuleLoader__.load({
 			const rubricDimensions = [];
 			for (const item of draftArrayNode(rubricDraft, ["dimensions"])) {
 				const entry = record(item);
-				const key = text$1(entry.key);
+				const key = text(entry.key);
 				if (key === "") continue;
 				rubricDimensions.push({
 					key,
-					label: text$1(entry.label) !== "" ? text$1(entry.label) : key,
-					kind: text$1(entry.kind),
+					label: text(entry.label) !== "" ? text(entry.label) : key,
+					kind: text(entry.kind),
 					weight: numberOrNull(entry.weight),
-					notes: text$1(entry.reason) !== "" ? text$1(entry.reason) : text$1(entry.notes)
+					notes: text(entry.reason) !== "" ? text(entry.reason) : text(entry.notes)
 				});
 			}
 			const reasons = [];
 			for (const item of draftArrayNode(raw, ["reasons"])) {
 				const entry = record(item);
-				const reasonLine = text$1(entry.reason);
+				const reasonLine = text(entry.reason);
 				if (reasonLine === "") continue;
 				reasons.push({
-					path: text$1(entry.path),
+					path: text(entry.path),
 					reason: reasonLine,
-					source: text$1(entry.source)
+					source: text(entry.source)
 				});
 			}
 			const missingItems = [];
 			for (const item of draftArrayNode(raw, ["missing_items", "missingItems"])) {
 				const entry = record(item);
-				const key = text$1(entry.key);
-				const question = text$1(entry.question);
+				const key = text(entry.key);
+				const question = text(entry.question);
 				if (key === "" && question === "") continue;
 				missingItems.push({
 					key,
@@ -6270,8 +6270,8 @@ window.__ModuleLoader__.load({
 				missingItems,
 				confirmation: {
 					required: confirmationRaw.required === true,
-					status: text$1(confirmationRaw.status),
-					note: text$1(confirmationRaw.note),
+					status: text(confirmationRaw.status),
+					note: text(confirmationRaw.note),
 					next: stringList(confirmationRaw.next)
 				},
 				draftTitle: draftTextNode(jobDraft, ["title"]),
@@ -6312,7 +6312,7 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "rcw-sectionhead",
 						style: { marginTop: 0 },
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "岗位草案生成（task-57）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "岗位草案生成（task-57）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 							tone: draftProbeReason === "" ? "blue" : "amber",
 							testid: "job-draft-route",
 							children: draftProbeReason === "" ? "draft 路由已注册" : "draft 路由未接线"
@@ -6626,7 +6626,7 @@ window.__ModuleLoader__.load({
 				["readback.table", readback.table],
 				["replayed", parsed?.replayed]
 			]) {
-				const value = typeof pair[1] === "number" ? String(pair[1]) : text$1(pair[1]);
+				const value = typeof pair[1] === "number" ? String(pair[1]) : text(pair[1]);
 				if (value !== "") rows.push({
 					key: pair[0],
 					label: pair[0],
@@ -6642,7 +6642,7 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "rcw-chiprow",
 						style: { marginTop: 6 },
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 							tone: outcome.accepted ? "blue" : "red",
 							children: outcome.accepted ? `HTTP ${String(outcome.status)} 已受理` : `失败（HTTP ${String(outcome.status)}）`
 						})
@@ -6697,7 +6697,7 @@ window.__ModuleLoader__.load({
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 							className: "rcw-rowmeta",
 							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 									tone: row.stageTone,
 									testid: `application-row-${row.id}-stage`,
 									children: ["阶段 · ", row.stageLabel]
@@ -6727,7 +6727,7 @@ window.__ModuleLoader__.load({
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						className: "rcw-rowend",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 							tone: row.nextStep.tone,
 							testid: `application-row-${row.id}-next-step`,
 							children: row.nextStep.hasStep ? row.nextStep.label !== "" ? row.nextStep.label : row.nextStep.code : "无下一步"
@@ -6804,21 +6804,21 @@ window.__ModuleLoader__.load({
 						className: "rcw-chiprow",
 						style: { marginTop: 12 },
 						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 								tone: job.statusTone,
 								testid: "job-status",
 								children: ["岗位状态 · ", job.statusLabel]
 							}),
-							job.rubric !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+							job.rubric !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 								tone: job.rubric.tone,
 								testid: "job-rubric",
 								children: job.rubric.summaryText
-							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 								tone: "gray",
 								testid: "job-rubric",
 								children: "未关联 rubric"
 							}),
-							job.postings.map((posting) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+							job.postings.map((posting) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 								tone: posting.tone,
 								title: posting.externalUrl !== "" ? posting.externalUrl : void 0,
 								children: [
@@ -6858,7 +6858,7 @@ window.__ModuleLoader__.load({
 					job.applicationCounts.byStage.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "rcw-stagebar",
 						"data-testid": "job-stage-counts",
-						children: job.applicationCounts.byStage.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+						children: job.applicationCounts.byStage.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 							tone: row.code === currentStageRow?.code ? "blue" : "gray",
 							children: [
 								row.label,
@@ -6981,11 +6981,11 @@ window.__ModuleLoader__.load({
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: "rcw-chiprow",
 							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 									tone: jobDetail.job.statusTone,
 									children: ["岗位状态 · ", jobDetail.job.statusLabel]
 								}),
-								jobDetail.rubric !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+								jobDetail.rubric !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 									tone: jobDetail.rubric.approved ? "green" : "amber",
 									children: [
 										"rubric r",
@@ -6996,7 +6996,7 @@ window.__ModuleLoader__.load({
 										" ",
 										jobDetail.rubric.approved ? "已批准" : "未批准"
 									]
-								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 									tone: "gray",
 									children: "未关联 rubric"
 								}),
@@ -7131,7 +7131,7 @@ window.__ModuleLoader__.load({
 							" 份推进中"
 						] })]
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 						tone: job.statusTone,
 						children: job.statusLabel
 					})
@@ -7182,7 +7182,7 @@ window.__ModuleLoader__.load({
 							children: "需要人工处理"
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: "rcw-v",
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 								tone: totals.human > 0 ? "amber" : "gray",
 								testid: "attention-human",
 								children: [totals.human, " 条"]
@@ -7196,7 +7196,7 @@ window.__ModuleLoader__.load({
 							children: "等待中"
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: "rcw-v",
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 								tone: "gray",
 								testid: "attention-wait",
 								children: [totals.wait, " 条"]
@@ -7210,7 +7210,7 @@ window.__ModuleLoader__.load({
 							children: "进行中"
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: "rcw-v",
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 								tone: "blue",
 								testid: "attention-info",
 								children: [totals.info, " 条"]
@@ -7277,7 +7277,7 @@ window.__ModuleLoader__.load({
 					counts.byStage.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "rcw-chiprow",
 						style: { marginTop: 10 },
-						children: counts.byStage.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+						children: counts.byStage.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 							tone: "gray",
 							children: [
 								row.label,
@@ -7385,7 +7385,7 @@ window.__ModuleLoader__.load({
 					]
 				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 					className: "rcw-headline-right",
-					children: settings.stageCatalog !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+					children: settings.stageCatalog !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 						tone: "blue",
 						testid: "settings-catalog-version",
 						children: [
@@ -7393,7 +7393,7 @@ window.__ModuleLoader__.load({
 							String(settings.stageCatalog.versionNo),
 							settings.stageCatalog.effectiveFromText !== "" ? ` · ${settings.stageCatalog.effectiveFromText} 生效` : ""
 						]
-					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 						tone: "gray",
 						children: "无阶段目录"
 					})
@@ -7692,7 +7692,7 @@ window.__ModuleLoader__.load({
 								}),
 								settings.departments.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptyState, { children: "服务端没有返回部门。" }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 									className: "rcw-chiprow",
-									children: settings.departments.map((department) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip$1, {
+									children: settings.departments.map((department) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 										tone: "gray",
 										children: department.name !== "" ? department.name : department.id
 									}, department.id !== "" ? department.id : department.name))
@@ -7896,7 +7896,7 @@ window.__ModuleLoader__.load({
 			/** Rubric 批准：body 由 `buildRubricApproveBody` 产出（预检失败不发请求）。 */
 			const approveRubric = () => {
 				if (rubricAction === void 0) return;
-				const built = buildRubricApproveBody$1({
+				const built = buildRubricApproveBody({
 					jobId: rubricJobId,
 					rubricVersionId
 				});
@@ -8191,7 +8191,7 @@ window.__ModuleLoader__.load({
 											onClick: () => setSettingsOpen(true),
 											children: "招聘设置"
 										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip$1, {
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 											tone: isRecruiter ? "blue" : "amber",
 											testid: "alias-chip",
 											children: ["当前身份 · ", isRecruiter ? "招聘方 Recruiter" : props.alias === "interviewer_a" ? "面试官 A（只读）" : "面试官 B（只读）"]
@@ -9638,7 +9638,7 @@ window.__ModuleLoader__.load({
 		* @returns 解析后的 JSON（空体为 undefined）。
 		* @throws {RecruitmentHttpError} 网络失败（status 0）或非 2xx（保留契约字段）。
 		*/
-		async function requestJson$1(url, sessionId, init) {
+		async function requestJson(url, sessionId, init) {
 			const headers = {
 				[REQUEST_HEADER]: "1",
 				[SESSION_HEADER]: sessionId
@@ -9685,7 +9685,7 @@ window.__ModuleLoader__.load({
 			const query = new URLSearchParams({ alias });
 			const interviewId = (options.interviewId ?? "").trim();
 			if (interviewId !== "") query.set("interview_id", interviewId);
-			return normalizeInterviewerOverview(await requestJson$1(`${OVERVIEW_ENDPOINT}?${query.toString()}`, sessionId, {
+			return normalizeInterviewerOverview(await requestJson(`${OVERVIEW_ENDPOINT}?${query.toString()}`, sessionId, {
 				method: "GET",
 				...options.signal !== void 0 ? { signal: options.signal } : {}
 			}));
@@ -9706,7 +9706,7 @@ window.__ModuleLoader__.load({
 			if (applicationId !== "") query.set("application_id", applicationId);
 			const rubricVersionId = (options.rubricVersionId ?? "").trim();
 			if (rubricVersionId !== "") query.set("rubric_version_id", rubricVersionId);
-			return normalizeScorecardFormSpec(await requestJson$1(`${SCORECARD_FORM_ENDPOINT}?${query.toString()}`, sessionId, {
+			return normalizeScorecardFormSpec(await requestJson(`${SCORECARD_FORM_ENDPOINT}?${query.toString()}`, sessionId, {
 				method: "GET",
 				...options.signal !== void 0 ? { signal: options.signal } : {}
 			}));
@@ -9723,7 +9723,7 @@ window.__ModuleLoader__.load({
 		async function submitScorecard(options) {
 			const sessionId = options.sessionId.trim();
 			if (sessionId === "") throw new RecruitmentHttpError(0, "DEMO_ACTOR_UNMAPPED", "SESSION_NOT_BOUND", "当前 Session 尚未绑定演示身份（fail-closed）：请先在顶部选择身份", void 0);
-			return normalizeSubmitResult(await requestJson$1(SCORECARD_SUBMIT_ENDPOINT, sessionId, {
+			return normalizeSubmitResult(await requestJson(SCORECARD_SUBMIT_ENDPOINT, sessionId, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify(options.body)
@@ -11569,1906 +11569,21 @@ window.__ModuleLoader__.load({
 				})]
 			});
 		}
-		// src/client/shell/role-api.ts
-		/** 招聘工作区只读投影（W2）。 */
-		const RECRUITING_OVERVIEW_PATH = "/recruitment/api/recruiting/overview";
-		/** 决策事实只读投影（task-56，`work/d5/decision/CONTRACT.md` §1）。 */
-		const DECISION_FACTS_PATH = "/recruitment/api/decision/facts";
-		/** 正式决策 facade（§3；服务端从 facts 组装 basis_refs，前端不传 hash/digest）。 */
-		const DECISION_RECORD_PATH = "/recruitment/api/decision/record";
-		/** Rubric 人类批准 Host Action（`work/d5/actions/CONTRACT.md` §4.1）。 */
-		const RUBRIC_APPROVE_PATH = "/recruitment/api/action/job/rubric-approve";
-		/** 招聘设置统一写入口（§4.2；body.entity 分派 role/team/pipeline）。 */
-		const CONFIG_PATH = "/recruitment/api/action/config";
-		function rec(value) {
-			return typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
-		}
-		function arr(value) {
-			return Array.isArray(value) ? value : [];
-		}
-		function text(value) {
-			return typeof value === "string" ? value : "";
-		}
-		function num(value) {
-			return typeof value === "number" && Number.isFinite(value) ? value : 0;
-		}
-		function bool(value) {
-			return value === true;
-		}
-		/** UUID 文本形态（服务端同一口径）。 */
-		const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-		function isUuid(value) {
-			return UUID_RE.test(value);
-		}
-		/** 带时区偏移的 ISO-8601（`Z` 或 `±HH:MM`）。 */
-		const OFFSET_ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
-		function isOffsetIso(value) {
-			return value !== "" && OFFSET_ISO_RE.test(value) && Number.isFinite(Date.parse(value));
-		}
-		function preview(value, max) {
-			try {
-				const serialized = JSON.stringify(value);
-				if (serialized === void 0) return "";
-				return serialized.length <= max ? serialized : `${serialized.slice(0, max)}…`;
-			} catch {
-				return "";
-			}
-		}
-		function fail(reasonCode, reasonText, missing) {
-			return {
-				ok: false,
-				reasonCode,
-				reasonText,
-				missing
-			};
-		}
-		/**
-		* 发一次同源产品请求。
-		* @param path - `/recruitment/...` 相对路径。
-		* @param options - `{sessionId, method, body}`；sessionId 走受控 header，永不出现在 body。
-		* @returns 状态码 + 原文 + 可解析 JSON（非对象/坏 JSON → null）。
-		*/
-		async function requestJson(path, options) {
-			const headers = { "x-recruitment-request": "1" };
-			if (options.sessionId !== null && options.sessionId !== "") headers["x-dsh-session"] = options.sessionId;
-			const init = {
-				method: options.method ?? "GET",
-				credentials: "same-origin",
-				headers,
-				cache: "no-store"
-			};
-			if (options.body !== void 0) {
-				headers["content-type"] = "application/json";
-				init.body = JSON.stringify(options.body);
-			}
-			const res = await fetch(path, init);
-			const textValue = await res.text();
-			let json = null;
-			try {
-				const parsed = JSON.parse(textValue);
-				if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) json = parsed;
-			} catch {
-				json = null;
-			}
-			return {
-				ok: res.ok,
-				status: res.status,
-				text: textValue,
-				json
-			};
-		}
-		/**
-		* 严格解析标准写动作信封；坏形状 → null（不猜）。
-		* @param bodyText - 服务端响应原文。
-		* @returns 信封或 null。
-		*/
-		function parseActionEnvelope(bodyText) {
-			let parsed;
-			try {
-				parsed = JSON.parse(bodyText);
-			} catch {
-				return null;
-			}
-			const raw = rec(parsed);
-			const action = text(raw.action);
-			if (action === "") return null;
-			const actor = rec(raw.actor);
-			const approval = rec(raw.approval);
-			const readbackValue = raw.readback;
-			return {
-				action,
-				actor: {
-					alias: text(actor.alias),
-					actorId: text(actor.actor_id),
-					sessionId: text(actor.session_id)
-				},
-				approval: {
-					requested: num(approval.requested),
-					result: text(approval.result),
-					toolNames: arr(approval.tool_names).map((item) => text(item)).filter((item) => item !== "")
-				},
-				result: typeof raw.result === "object" && raw.result !== null && !Array.isArray(raw.result) ? raw.result : null,
-				readback: typeof readbackValue === "object" && readbackValue !== null && !Array.isArray(readbackValue) ? readbackValue : null
-			};
-		}
-		/**
-		* 从 recruiting overview 派生待批准 Rubric 列表。
-		*
-		* 来源口径（如实，不冒充 approval 表）：`jobs[].rubric.rubric_version_id` 非空且
-		* `jobs[].rubric.approved !== true`。approval 表本身没有只读投影（`work/d5/roles/CONTRACT.md` §6）。
-		* @param overview - overview JSON。
-		* @returns 行数组（顺序 = 服务端 jobs 顺序）。
-		*/
-		function derivePendingRubricApprovals(overview) {
-			const jobs = arr(rec(overview).jobs);
-			const out = [];
-			for (const item of jobs) {
-				const job = rec(item);
-				const jobId = text(job.job_id);
-				const rubric = rec(job.rubric);
-				const rubricVersionId = text(rubric.rubric_version_id);
-				if (jobId === "" || rubricVersionId === "") continue;
-				if (bool(rubric.approved)) continue;
-				out.push({
-					jobId,
-					jobTitle: text(job.title) !== "" ? text(job.title) : text(job.code),
-					jobStatus: text(job.status),
-					rubricVersionId,
-					versionNo: num(rubric.version_no)
-				});
-			}
-			return out;
-		}
-		/**
-		* 归一化 hiring manager 视图（坏类型 → ''/0/[]；不编造业务结论）。
-		* @param overview - recruiting overview JSON。
-		* @returns 视图投影。
-		*/
-		function deriveHiringView(overview) {
-			const raw = rec(overview);
-			const jobs = arr(raw.jobs).map((item) => {
-				const job = rec(item);
-				const rubric = rec(job.rubric);
-				const counts = rec(job.application_counts);
-				const nextStep = rec(job.next_step);
-				return {
-					jobId: text(job.job_id),
-					title: text(job.title) !== "" ? text(job.title) : text(job.code),
-					code: text(job.code),
-					status: text(job.status),
-					departmentName: text(job.department_name),
-					rubricVersionId: text(rubric.rubric_version_id),
-					rubricApproved: bool(rubric.approved),
-					totalApplications: num(counts.total),
-					activeApplications: num(counts.active),
-					nextStepLabel: text(nextStep.label)
-				};
-			});
-			const applications = arr(raw.applications).map((item) => {
-				const app = rec(item);
-				const candidate = rec(app.candidate);
-				const job = rec(app.job);
-				const progress = rec(app.progress);
-				const nextStep = rec(progress.next_step);
-				const stageCode = text(app.current_stage_code);
-				const nextStepCode = text(nextStep.code);
-				const awaitingDecision = stageCode === "S10" || nextStepCode === "PROVIDE_DECISION" || nextStepCode === "PROVIDE_FINAL_DECISION";
-				return {
-					id: text(app.application_id),
-					candidateName: text(candidate.display_name),
-					jobTitle: text(job.title),
-					stageCode,
-					lifecycleStatus: text(app.lifecycle_status),
-					nextStepCode,
-					nextStepLabel: text(nextStep.label),
-					interviewCount: arr(app.interviews).length,
-					transcriptState: text(progress.transcript_state),
-					scorecardsSubmitted: num(progress.scorecards_submitted),
-					scorecardsRequired: num(progress.scorecards_required),
-					awaitingDecision
-				};
-			}).filter((row) => row.id !== "");
-			const counts = rec(raw.counts);
-			const settings = rec(raw.settings);
-			const departments = arr(settings.departments).map((item) => {
-				const dept = rec(item);
-				return {
-					id: text(dept.department_id),
-					name: text(dept.name)
-				};
-			}).filter((dept) => dept.id !== "");
-			const hiringTeams = arr(settings.hiring_teams).map((item) => {
-				const team = rec(item);
-				return {
-					id: text(team.team_id),
-					code: text(team.code),
-					name: text(team.name),
-					memberCount: arr(team.members).length
-				};
-			}).filter((team) => team.id !== "");
-			const pendingApplications = applications.filter((row) => row.awaitingDecision);
-			return {
-				configured: bool(raw.configured),
-				issues: arr(raw.issues).map((item) => text(item)).filter((item) => item !== ""),
-				jobs,
-				applications,
-				pendingApplications,
-				interviewsScheduled: num(counts.interviews_scheduled),
-				awaitingDecision: num(counts.awaiting_decision),
-				departments,
-				hiringTeams
-			};
-		}
-		/**
-		* 归一化 decision facts；缺 `application_id` → null。
-		* @param value - 响应 JSON。
-		* @returns 视图或 null。
-		*/
-		function normalizeDecisionFacts(value) {
-			const raw = rec(value);
-			const applicationId = text(raw.application_id);
-			if (applicationId === "") return null;
-			const summary = rec(raw.evaluation_summary);
-			const evaluation = rec(raw.screening_evaluation);
-			const asOf = text(summary.as_of) !== "" ? text(summary.as_of) : text(evaluation.as_of);
-			return {
-				applicationId,
-				stageCode: text(raw.stage_code),
-				summaryAvailable: bool(summary.available),
-				asOf,
-				summaryDigest: text(summary.summary_digest),
-				missing: arr(raw.missing).map((item) => {
-					const entry = rec(item);
-					return {
-						key: text(entry.key),
-						reason: text(entry.reason)
-					};
-				}).filter((entry) => entry.key !== "")
-			};
-		}
-		/** facts 路由缺失（404）——`work/d5/decision/CONTRACT.md` §4 的消费规则。 */
-		function isDecisionFactsMissing(status) {
-			return status === 404;
-		}
-		/**
-		* `job/rubric-approve` body：`{job_id, rubric_version_id, reason?}`（reason ≤500）。
-		* 出处：`work/d5/actions/CONTRACT.md` §4.1。
-		*/
-		function buildRubricApproveBody(input) {
-			const jobId = text(input.jobId);
-			const rubricVersionId = text(input.rubricVersionId);
-			const missing = [];
-			if (!isUuid(jobId)) missing.push("job_id");
-			if (!isUuid(rubricVersionId)) missing.push("rubric_version_id");
-			if (missing.length > 0) return fail("MISSING_OR_INVALID_ID", "批准 rubric 需要服务端投影里的 job_id 与 rubric_version_id（UUID）；客户端不编造 id", missing);
-			const body = {
-				job_id: jobId,
-				rubric_version_id: rubricVersionId
-			};
-			const reason = text(input.reason).trim();
-			if (reason !== "") {
-				if (Array.from(reason).length > 500) return fail("REASON_OUT_OF_RANGE", "批准理由不得超过 500 字", ["reason"]);
-				body.reason = reason;
-			}
-			return {
-				ok: true,
-				body
-			};
-		}
-		/**
-		* 设置统一入口 body（team create）：`{entity:'team', operation:'create', code, name, department_id}`。
-		* 出处：`work/d5/actions/CONTRACT.md` §4.2（`config/team` create）。
-		*/
-		function buildSettingsTeamCreateBody(input) {
-			const code = text(input.code).trim();
-			const name = text(input.name).trim();
-			const departmentId = text(input.departmentId).trim();
-			const missing = [];
-			if (!/^[A-Z][A-Z0-9_]{1,40}$/.test(code)) missing.push("code");
-			if (name === "" || Array.from(name).length > 200) missing.push("name");
-			if (!isUuid(departmentId)) missing.push("department_id");
-			if (missing.length > 0) return fail("INVALID_SETTINGS_BODY", "招聘团队 create 需要 code（2–41 位大写，字母开头）、name（1–200 字）、department_id（UUID，来自服务端部门投影）", missing);
-			return {
-				ok: true,
-				body: {
-					entity: "team",
-					operation: "create",
-					code,
-					name,
-					department_id: departmentId
-				}
-			};
-		}
-		/**
-		* 正式决策 facade body：`{application_id, decision_scope:'FINAL', result, reason, as_of?}`。
-		* `as_of` 只能原样抄 facts（服务端汇总时用的那个），不允许用浏览器本地时间造。
-		* 出处：`work/d5/decision/CONTRACT.md` §3。
-		*/
-		function buildDecisionRecordBody(input) {
-			const applicationId = text(input.applicationId);
-			if (!isUuid(applicationId)) return fail("ID_NOT_UUID", "申请 id 必须是 UUID", ["application_id"]);
-			const result = text(input.result).trim();
-			if (![
-				"ADVANCE",
-				"HOLD",
-				"REJECT"
-			].includes(result)) return fail("ENUM_INVALID", "正式决策结果只能是 ADVANCE / HOLD / REJECT（HIRED 在 v1.0 禁用）", ["result"]);
-			const reason = text(input.reason).trim();
-			if (reason === "") return fail("MISSING_REASON", "正式决策必须填写理由（1..4000 字）", ["reason"]);
-			if (Array.from(reason).length > 4e3) return fail("REASON_OUT_OF_RANGE", "理由不得超过 4000 字", ["reason"]);
-			const facts = input.facts;
-			if (facts === null) return fail("DECISION_FACTS_MISSING", "决策 facts 不可用：不要发送请求（不编造 as_of/summary）", ["facts"]);
-			if (!facts.summaryAvailable) return fail("SUMMARY_MISSING", "facts 的 evaluation_summary 不可用（available=false）：正式决策需要服务端汇总", ["summary"]);
-			if (!isOffsetIso(facts.asOf)) return fail("MISSING_AS_OF", `facts 的 as_of 不是带偏移 ISO-8601：${facts.asOf}`, ["as_of"]);
-			return {
-				ok: true,
-				body: {
-					application_id: applicationId,
-					decision_scope: "FINAL",
-					result,
-					reason,
-					as_of: facts.asOf
-				}
-			};
-		}
-		const ERROR_ADVICE = {
-			"FORBIDDEN/ACTOR_NOT_AUTHORIZED": "当前 Demo Actor 没有 Host Action 写授权（服务端只授权 recruiter）；这是 fail-closed、零写入。请显式切换为 Recruiter 身份后再执行。",
-			"DEMO_ACTOR_UNMAPPED/SESSION_NOT_BOUND": "当前 session 未绑定 Demo Actor（刷新/宿主重启会丢失）；请重新选择身份。",
-			"DEMO_ACTOR_UNMAPPED": "未绑定 Demo Actor：写动作 fail-closed，不发送身份猜测。",
-			"INVALID_ARGS/SESSION_REQUIRED": "缺 x-dsh-session：先在工作台选择 Demo Actor。",
-			"INVALID_ARGS/UNKNOWN_ACTOR_ALIAS": "alias 不在受控集合内（服务端 5 个受控 alias）。",
-			"INVALID_ARGS/ACTOR_OVERRIDE_REJECTED": "请求里出现了身份/服务端派生键，服务端一律拒绝（客户端不应发送）。",
-			"INVALID_ARGS/MISSING_REQUIRED": "必填字段缺失（服务端原文见下）。",
-			"INVALID_ARGS/PAYLOAD_HASH_MISMATCH": "审批行绑定的 payload hash 与 rubric 版本不一致：拒绝批准（不猜）。",
-			"INVALID_ARGS/APPROVAL_NOT_PENDING": "该审批行已经不是 PENDING（已决/过期/被取代）：不可改判，需新建审批。",
-			"NOT_FOUND/APPROVAL_NOT_FOUND": "该 rubric 版本没有审批行（先经岗位创建/更新产生 PENDING 审批）。",
-			"NOT_FOUND": "对象不存在（服务端原文见下）。",
-			"SUMMARY_MISSING": "正式决策需要服务端 evaluation summary：缺失时 disabled，不发送请求。",
-			"DECISION_FACTS_ROUTE_MISSING": "决策 facts 只读投影未接线（GET 404）：决策入口 disabled，不编造 as_of/basis。",
-			"DECISION_FACTS_UNAVAILABLE": "决策 facts 读取失败（服务端错误原文见下）：决策入口 disabled。",
-			"VERSION_CONFLICT": "并发冲突：记录版本已被更新；刷新后重试。",
-			"ALREADY_EXISTS": "同 code 的对象已存在（换一个 code）。",
-			"INVALID_ARGS/INVALID_REFERENCE": "引用的部门/actor/阶段/模板不存在。",
-			"NETWORK": "网络请求失败：宿主可能未运行。",
-			"BAD_RESPONSE": "宿主响应不是可解析 JSON：不当作成功。",
-			"READBACK_MISSING": "服务端写后读回不到行：数据异常，不当作成功。"
-		};
-		/**
-		* 服务端错误码 → 人话补救（未知返回 ''，不吞服务端 message）。
-		* @param code - `error.code`。
-		* @param reasonCode - `error.reason_code`（可缺省）。
-		* @returns 人话或 ''。
-		*/
-		function describeActionError(code, reasonCode) {
-			return ERROR_ADVICE[`${code}/${reasonCode}`] ?? ERROR_ADVICE[code] ?? ERROR_ADVICE[reasonCode] ?? "";
-		}
-		const READBACK_LABELS = {
-			approval_id: "审批行 id",
-			status: "状态",
-			record_version: "记录版本",
-			actor_id: "执行账号 actor",
-			decided_at: "决定时间",
-			resource_type: "审批对象类型",
-			resource_id: "审批对象 id",
-			canonical_payload_hash: "审批 payload hash",
-			rubric_version_id: "Rubric 版本 id",
-			version_no: "版本号",
-			created_by_actor_id: "创建人 actor",
-			payload_hash: "payload hash",
-			job_id: "岗位 id",
-			current_rubric_version_id: "当前 rubric 指针",
-			team_id: "团队 id",
-			code: "code",
-			name: "名称",
-			decision_id: "决策 id",
-			decision_scope: "决策范围",
-			result: "结论",
-			table: "读回表",
-			row: "读回行"
-		};
-		/**
-		* 把信封 `readback` 摊成展示行（值原样；对象/数组 JSON 序列化并截断）。
-		* @param readback - 信封 readback（可 null）。
-		* @returns 行数组（键顺序 = 对象顺序）。
-		*/
-		function readbackLines(readback) {
-			if (readback === null) return [];
-			const out = [];
-			for (const [key, value] of Object.entries(readback)) {
-				const rendered = typeof value === "string" ? value : typeof value === "number" || typeof value === "boolean" ? String(value) : value === null ? "null" : preview(value, 400);
-				out.push({
-					key,
-					label: READBACK_LABELS[key] ?? key,
-					value: rendered
-				});
-			}
-			return out;
-		}
-		// src/client/shell/ApproverView.tsx
-		const COLORS$2 = {
-			text: "#16233a",
-			sub: "#64748b",
-			border: "#e3e8ef",
-			card: "#ffffff",
-			blue: "#2f6feb",
-			blueBg: "#eef4ff",
-			amber: "#92400e",
-			amberBg: "#fff7e6",
-			red: "#b91c1c",
-			green: "#15803d"
-		};
-		function Section$1(props) {
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-				style: {
-					background: COLORS$2.card,
-					border: `1px solid ${COLORS$2.border}`,
-					borderRadius: 12,
-					padding: 16,
-					marginTop: 14
-				},
-				"data-testid": props.testid,
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
-						style: {
-							margin: "0 0 8px",
-							fontSize: 14
-						},
-						children: props.title
-					}),
-					props.sub !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						style: {
-							margin: "0 0 10px",
-							color: COLORS$2.sub,
-							fontSize: 12
-						},
-						children: props.sub
-					}) : null,
-					props.children
-				]
-			});
-		}
-		function ReadbackBlock(props) {
-			const lines = readbackLines(props.outcome.readback);
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				"data-testid": props.testid,
-				"data-ok": props.outcome.ok ? "true" : "false",
-				"data-status": String(props.outcome.status),
-				"data-approval-id": props.outcome.readback !== null ? String(props.outcome.readback.approval !== void 0 ? props.outcome.readback.approval?.approval_id ?? "" : "") : "",
-				style: {
-					marginTop: 8,
-					fontSize: 12
-				},
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("b", { children: props.outcome.ok ? `服务端已受理（HTTP ${String(props.outcome.status)}；事实以 readback 为准）` : `失败（HTTP ${String(props.outcome.status)}）` }),
-					props.outcome.approval !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
-						style: { margin: "4px 0" },
-						children: ["approval.result = ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", { children: props.outcome.approval.result })]
-					}) : null,
-					props.outcome.ok && lines.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
-						style: {
-							margin: "6px 0 0",
-							paddingLeft: 18
-						},
-						children: lines.map((line) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", { children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", { children: line.key }),
-							"：",
-							line.value
-						] }, line.key))
-					}) : null,
-					!props.outcome.ok ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [props.outcome.errorCode !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
-						style: {
-							color: COLORS$2.red,
-							margin: "4px 0"
-						},
-						children: [
-							props.outcome.errorCode,
-							"/",
-							props.outcome.errorReason,
-							"：",
-							describeActionError(props.outcome.errorCode, props.outcome.errorReason) || props.outcome.errorMessage
-						]
-					}) : null, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
-						style: {
-							whiteSpace: "pre-wrap",
-							background: "#f8fafc",
-							padding: 8,
-							borderRadius: 8,
-							fontSize: 11,
-							maxHeight: 240,
-							overflow: "auto"
-						},
-						children: props.outcome.bodyText.slice(0, 4e3)
-					})] }) : null
-				]
-			});
-		}
-		/**
-		* 审批人默认视图：待批准 Rubric + 招聘设置（team create）。
-		* @param props - shell 传入的 session / alias / 显式切换身份回调。
-		* @returns 审批工作台。
-		*/
-		function ApproverView(props) {
-			const [loading, setLoading] = (0, react.useState)(true);
-			const [loadError, setLoadError] = (0, react.useState)("");
-			const [rows, setRows] = (0, react.useState)([]);
-			const [departments, setDepartments] = (0, react.useState)([]);
-			const [busyKey, setBusyKey] = (0, react.useState)("");
-			const [outcome, setOutcome] = (0, react.useState)(null);
-			const [settingsOutcome, setSettingsOutcome] = (0, react.useState)(null);
-			const [teamCode, setTeamCode] = (0, react.useState)("");
-			const [teamName, setTeamName] = (0, react.useState)("");
-			const [teamDepartmentId, setTeamDepartmentId] = (0, react.useState)("");
-			const [settingsBusy, setSettingsBusy] = (0, react.useState)(false);
-			const [settingsNote, setSettingsNote] = (0, react.useState)("");
-			const [manualJobId, setManualJobId] = (0, react.useState)("");
-			const [manualRubricId, setManualRubricId] = (0, react.useState)("");
-			const [manualBusy, setManualBusy] = (0, react.useState)(false);
-			const [manualOutcome, setManualOutcome] = (0, react.useState)(null);
-			const [manualNote, setManualNote] = (0, react.useState)("");
-			const canWrite = props.alias === "recruiter";
-			const loadOverview = async () => {
-				setLoading(true);
-				try {
-					const res = await requestJson(RECRUITING_OVERVIEW_PATH, { sessionId: props.sessionId });
-					if (!res.ok) {
-						setLoadError(`GET ${RECRUITING_OVERVIEW_PATH} → HTTP ${String(res.status)}：${res.text.slice(0, 300)}`);
-						setRows([]);
-						return;
-					}
-					const raw = res.json ?? {};
-					setRows(derivePendingRubricApprovals(raw));
-					const settings = typeof raw.settings === "object" && raw.settings !== null ? raw.settings : {};
-					const rawDepartments = Array.isArray(settings.departments) ? settings.departments : [];
-					const nextDepartments = [];
-					for (const item of rawDepartments) {
-						const department = typeof item === "object" && item !== null ? item : {};
-						const id = typeof department.department_id === "string" ? department.department_id : "";
-						if (id === "") continue;
-						nextDepartments.push({
-							id,
-							name: typeof department.name === "string" ? department.name : id
-						});
-					}
-					setDepartments(nextDepartments);
-					setTeamDepartmentId((current) => current !== "" ? current : nextDepartments[0]?.id ?? "");
-					setLoadError("");
-				} catch (error) {
-					setLoadError(error instanceof Error ? `网络失败：${error.message}` : String(error));
-				} finally {
-					setLoading(false);
-				}
-			};
-			(0, react.useEffect)(() => {
-				loadOverview();
-			}, [props.sessionId]);
-			const pickError = (res) => {
-				const error = res.json === null ? null : res.json.error;
-				return {
-					code: error !== void 0 && error !== null && typeof error.code === "string" ? error.code : "",
-					reason: error !== void 0 && error !== null && typeof error.reason_code === "string" ? error.reason_code : "",
-					message: error !== void 0 && error !== null && typeof error.message === "string" ? error.message : res.text.slice(0, 400)
-				};
-			};
-			const approveRubric = async (row) => {
-				const built = buildRubricApproveBody({
-					jobId: row.jobId,
-					rubricVersionId: row.rubricVersionId
-				});
-				if (!built.ok) {
-					setOutcome({
-						key: row.jobId,
-						ok: false,
-						status: 0,
-						bodyText: `${built.reasonCode}：${built.reasonText}`,
-						readback: null,
-						approval: null,
-						errorCode: built.reasonCode,
-						errorReason: "",
-						errorMessage: built.reasonText
-					});
-					return;
-				}
-				setBusyKey(row.jobId);
-				try {
-					const res = await requestJson(RUBRIC_APPROVE_PATH, {
-						sessionId: props.sessionId,
-						method: "POST",
-						body: built.body
-					});
-					const envelope = parseActionEnvelope(res.text);
-					const error = pickError(res);
-					setOutcome({
-						key: row.jobId,
-						ok: res.ok,
-						status: res.status,
-						bodyText: res.text,
-						readback: envelope?.readback ?? null,
-						approval: envelope === null ? null : { result: envelope.approval.result },
-						errorCode: error.code,
-						errorReason: error.reason,
-						errorMessage: error.message
-					});
-					if (res.ok) await loadOverview();
-				} catch (error) {
-					setOutcome({
-						key: row.jobId,
-						ok: false,
-						status: 0,
-						bodyText: error instanceof Error ? error.message : String(error),
-						readback: null,
-						approval: null,
-						errorCode: "NETWORK",
-						errorReason: "",
-						errorMessage: ""
-					});
-				} finally {
-					setBusyKey("");
-				}
-			};
-			const createTeam = async () => {
-				const built = buildSettingsTeamCreateBody({
-					code: teamCode,
-					name: teamName,
-					departmentId: teamDepartmentId
-				});
-				if (!built.ok) {
-					setSettingsNote(`${built.reasonCode}：${built.reasonText}`);
-					return;
-				}
-				setSettingsBusy(true);
-				setSettingsNote("");
-				try {
-					const res = await requestJson(CONFIG_PATH, {
-						sessionId: props.sessionId,
-						method: "POST",
-						body: built.body
-					});
-					const envelope = parseActionEnvelope(res.text);
-					const error = pickError(res);
-					setSettingsOutcome({
-						key: "recruiting_settings_write",
-						ok: res.ok,
-						status: res.status,
-						bodyText: res.text,
-						readback: envelope?.readback ?? null,
-						approval: envelope === null ? null : { result: envelope.approval.result },
-						errorCode: error.code,
-						errorReason: error.reason,
-						errorMessage: error.message
-					});
-					if (res.ok) await loadOverview();
-				} catch (error) {
-					setSettingsOutcome({
-						key: "recruiting_settings_write",
-						ok: false,
-						status: 0,
-						bodyText: error instanceof Error ? error.message : String(error),
-						readback: null,
-						approval: null,
-						errorCode: "NETWORK",
-						errorReason: "",
-						errorMessage: ""
-					});
-				} finally {
-					setSettingsBusy(false);
-				}
-			};
-			/**
-			* 按「岗位创建回执」批准一个 rubric 版本。
-			*
-			* 为什么需要这条入口（精确缺口，不假写）：approval 表在本 lane 没有只读投影，UI 无法列出
-			* 真实 PENDING approval 行（见 §pending-approvals-source）；但批准动作本身是真实 Host Action。
-			* 因此审批人可从 HR 的岗位创建 readback 里拿到 `job_id` + `versions.rubric_version_id`，
-			* 在这里核对后交给服务端校验（hash/状态/归属全由服务端判），成功写 approval 行 + 移动指针。
-			*/
-			const approveManualRubric = async () => {
-				const built = buildRubricApproveBody({
-					jobId: manualJobId.trim(),
-					rubricVersionId: manualRubricId.trim()
-				});
-				if (!built.ok) {
-					setManualNote(`${built.reasonCode}：${built.reasonText}`);
-					return;
-				}
-				setManualBusy(true);
-				setManualNote("");
-				try {
-					const res = await requestJson(RUBRIC_APPROVE_PATH, {
-						sessionId: props.sessionId,
-						method: "POST",
-						body: built.body
-					});
-					const envelope = parseActionEnvelope(res.text);
-					const error = pickError(res);
-					setManualOutcome({
-						key: "manual",
-						ok: res.ok,
-						status: res.status,
-						bodyText: res.text,
-						readback: envelope?.readback ?? null,
-						approval: envelope === null ? null : { result: envelope.approval.result },
-						errorCode: error.code,
-						errorReason: error.reason,
-						errorMessage: error.message
-					});
-					if (res.ok) await loadOverview();
-				} catch (error) {
-					setManualOutcome({
-						key: "manual",
-						ok: false,
-						status: 0,
-						bodyText: error instanceof Error ? error.message : String(error),
-						readback: null,
-						approval: null,
-						errorCode: "NETWORK",
-						errorReason: "",
-						errorMessage: ""
-					});
-				} finally {
-					setManualBusy(false);
-				}
-			};
-			const unauthorized = outcome !== null && !outcome.ok && outcome.errorCode === "FORBIDDEN" && outcome.errorReason === "ACTOR_NOT_AUTHORIZED";
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				"data-testid": "role-view-approvals",
-				"data-alias": props.alias ?? "",
-				style: {
-					padding: 20,
-					color: COLORS$2.text,
-					fontSize: 13
-				},
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-						style: { marginBottom: 12 },
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
-							style: {
-								margin: 0,
-								fontSize: 18
-							},
-							children: "审批工作台 · 待审批事项与招聘设置"
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
-							style: {
-								margin: "6px 0 0",
-								color: COLORS$2.sub
-							},
-							children: [
-								"当前身份：",
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("b", { children: props.alias ?? "未绑定" }),
-								"。批准 = 人对 rubric 版本的批准（Host Action allow-once）， 成功只认服务端信封 readback（写事务后独立读回）+ 重新 GET。"
-							]
-						})]
-					}),
-					!canWrite ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						"data-testid": "approval-write-blocked",
-						style: {
-							background: COLORS$2.amberBg,
-							border: "1px solid #f3d9a4",
-							color: COLORS$2.amber,
-							borderRadius: 10,
-							padding: "8px 12px",
-							marginBottom: 10
-						},
-						children: ["当前 alias 不在 Host Action 写授权集合（服务端只授权 recruiter）：点击批准/保存会被 403 ACTOR_NOT_AUTHORIZED 拒绝且零写入。", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							"data-testid": "switch-to-recruiter",
-							onClick: () => props.onSwitchAlias("recruiter"),
-							style: {
-								marginLeft: 8,
-								border: `1px solid ${COLORS$2.border}`,
-								background: "#fff",
-								borderRadius: 8,
-								padding: "4px 10px",
-								cursor: "pointer",
-								fontSize: 12
-							},
-							children: "切换为 Recruiter 身份执行（写库作者 = 0103）"
-						})]
-					}) : null,
-					loadError !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
-						"data-testid": "approval-load-error",
-						style: { color: COLORS$2.red },
-						children: ["读取失败：", loadError]
-					}) : null,
-					loading ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						style: { color: COLORS$2.sub },
-						children: "读取服务端投影…"
-					}) : null,
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Section$1, {
-						title: "待审批事项（Rubric 批准）",
-						testid: "pending-approvals",
-						sub: `共 ${String(rows.length)} 项`,
-						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
-								"data-testid": "pending-approvals-source",
-								style: {
-									margin: "0 0 8px",
-									color: COLORS$2.sub,
-									fontSize: 12
-								},
-								children: [
-									"来源：GET ",
-									RECRUITING_OVERVIEW_PATH,
-									" 的岗位投影（jobs[].rubric：rubric_version_id 非空且 approved!==true）。",
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("b", { children: "approval 表在本 lane 没有只读投影" }),
-									"（src/http/** 禁改），因此列表不是直读 approval 表；approval 行的确认事实以 Host Action readback + 独立 psql 读回为准。"
-								]
-							}),
-							rows.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								style: { color: COLORS$2.sub },
-								children: "没有待批准 Rubric（服务端投影未给出）。"
-							}) : rows.slice(0, 20).map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								"data-testid": `pending-approval-${row.jobId}`,
-								style: {
-									borderTop: `1px solid ${COLORS$2.border}`,
-									padding: "8px 0"
-								},
-								children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									style: {
-										display: "flex",
-										gap: 8,
-										flexWrap: "wrap",
-										alignItems: "center"
-									},
-									children: [
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("b", { children: row.jobTitle }),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											style: { color: COLORS$2.sub },
-											children: row.jobStatus
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("code", {
-											style: {
-												fontSize: 11,
-												color: COLORS$2.sub
-											},
-											children: ["job ", row.jobId]
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("code", {
-											style: {
-												fontSize: 11,
-												color: COLORS$2.sub
-											},
-											children: [
-												"rubric v",
-												String(row.versionNo),
-												" · ",
-												row.rubricVersionId
-											]
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											"data-testid": `approve-${row.jobId}`,
-											disabled: busyKey === row.jobId,
-											onClick: () => void approveRubric(row),
-											style: {
-												border: `1px solid ${COLORS$2.border}`,
-												background: COLORS$2.blue,
-												color: "#fff",
-												borderRadius: 8,
-												padding: "4px 10px",
-												cursor: "pointer",
-												fontSize: 12
-											},
-											children: busyKey === row.jobId ? "提交中…" : "批准 Rubric"
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											"data-testid": `reject-${row.jobId}`,
-											disabled: true,
-											title: "Host Action 没有 rubric 拒绝端点；拒绝路径零写入",
-											style: {
-												border: `1px solid ${COLORS$2.border}`,
-												background: "#f1f5f9",
-												color: COLORS$2.sub,
-												borderRadius: 8,
-												padding: "4px 10px",
-												cursor: "not-allowed",
-												fontSize: 12
-											},
-											children: "拒绝"
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											"data-testid": `reject-${row.jobId}-reason`,
-											style: {
-												color: COLORS$2.sub,
-												fontSize: 11
-											},
-											children: "拒绝入口 disabled：Host Action 契约只有 job/rubric-approve（批准），没有拒绝端点（work/d5/actions/CONTRACT.md §4.1）；拒绝路径零写入。"
-										})
-									]
-								})
-							}, row.jobId)),
-							outcome !== null && outcome.key !== "" && outcome.key !== "recruiting_settings_write" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ReadbackBlock, {
-								outcome,
-								testid: "approval-readback"
-							}) : null,
-							unauthorized ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								"data-testid": "approval-action-error",
-								style: {
-									color: COLORS$2.amber,
-									fontSize: 12
-								},
-								children: "服务端已 fail-closed 拒绝（无写库）。如需执行，请点上方「切换为 Recruiter 身份执行」。"
-							}) : null
-						]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Section$1, {
-						title: "待批准 Rubric（岗位创建回执核对）",
-						testid: "approval-manual-card",
-						sub: "精确缺口兜底：approval 表无只读投影，真实 PENDING approval 行无法被列出；审批人从 HR 的岗位创建 readback 拿到 job_id + versions.rubric_version_id，核对后批准（服务端校验归属/hash/状态，成功写 approval 行 + 移动 job.current_rubric_version_id）。",
-						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								style: {
-									display: "flex",
-									gap: 10,
-									flexWrap: "wrap",
-									alignItems: "center"
-								},
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										"data-testid": "approval-manual-job-id",
-										"aria-label": "岗位 id",
-										placeholder: "job_id（UUID，来自创建回执）",
-										value: manualJobId,
-										onChange: (event) => setManualJobId(event.target.value),
-										disabled: manualBusy,
-										style: {
-											fontSize: 12,
-											padding: "5px 8px",
-											width: 330
-										}
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										"data-testid": "approval-manual-rubric-id",
-										"aria-label": "Rubric 版本 id",
-										placeholder: "rubric_version_id（UUID，来自创建回执）",
-										value: manualRubricId,
-										onChange: (event) => setManualRubricId(event.target.value),
-										disabled: manualBusy,
-										style: {
-											fontSize: 12,
-											padding: "5px 8px",
-											width: 330
-										}
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										"data-testid": "approval-manual-approve",
-										disabled: manualBusy,
-										onClick: () => void approveManualRubric(),
-										style: {
-											border: `1px solid ${COLORS$2.border}`,
-											background: COLORS$2.blue,
-											color: "#fff",
-											borderRadius: 8,
-											padding: "5px 12px",
-											cursor: "pointer",
-											fontSize: 12
-										},
-										children: manualBusy ? "提交中…" : "批准该 Rubric 版本"
-									})
-								]
-							}),
-							manualNote !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								"data-testid": "approval-manual-note",
-								style: {
-									color: COLORS$2.amber,
-									fontSize: 12
-								},
-								children: manualNote
-							}) : null,
-							manualOutcome !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ReadbackBlock, {
-								outcome: manualOutcome,
-								testid: "approval-manual-readback"
-							}) : null,
-							manualOutcome !== null && !manualOutcome.ok && manualOutcome.errorCode === "FORBIDDEN" && manualOutcome.errorReason === "ACTOR_NOT_AUTHORIZED" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								"data-testid": "approval-manual-error",
-								style: {
-									color: COLORS$2.amber,
-									fontSize: 12
-								},
-								children: "当前 alias 无写授权（服务端 fail-closed、零写入）：请先点上方「切换为 Recruiter 身份执行」再重试。"
-							}) : null
-						]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Section$1, {
-						title: "招聘设置（企业管理员职责 · 新建招聘团队）",
-						testid: "settings-write-card",
-						sub: "写入口 = POST /recruitment/api/action/config（body.entity=team, operation=create）；成功只认 readback + 重新 GET。",
-						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								style: {
-									display: "flex",
-									gap: 10,
-									flexWrap: "wrap",
-									alignItems: "center"
-								},
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										"data-testid": "settings-team-code",
-										"aria-label": "团队 code",
-										placeholder: "code（如 D5ROLES_T1）",
-										value: teamCode,
-										onChange: (event) => setTeamCode(event.target.value),
-										disabled: settingsBusy,
-										style: {
-											fontSize: 12,
-											padding: "5px 8px",
-											width: 190
-										}
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										"data-testid": "settings-team-name",
-										"aria-label": "团队名称",
-										placeholder: "名称（1..200 字）",
-										value: teamName,
-										onChange: (event) => setTeamName(event.target.value),
-										disabled: settingsBusy,
-										style: {
-											fontSize: 12,
-											padding: "5px 8px",
-											width: 240
-										}
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-										"data-testid": "settings-team-department",
-										"aria-label": "所属部门",
-										value: teamDepartmentId,
-										onChange: (event) => setTeamDepartmentId(event.target.value),
-										disabled: settingsBusy,
-										style: {
-											fontSize: 12,
-											padding: "5px 8px"
-										},
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-											value: "",
-											children: "（请选择部门）"
-										}), departments.map((department) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
-											value: department.id,
-											children: [
-												department.name,
-												"（",
-												department.id.slice(-8),
-												"）"
-											]
-										}, department.id))]
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										"data-testid": "settings-team-submit",
-										disabled: settingsBusy,
-										onClick: () => void createTeam(),
-										style: {
-											border: `1px solid ${COLORS$2.border}`,
-											background: COLORS$2.blue,
-											color: "#fff",
-											borderRadius: 8,
-											padding: "5px 12px",
-											cursor: "pointer",
-											fontSize: 12
-										},
-										children: settingsBusy ? "保存中…" : "保存招聘设置（新建团队）"
-									})
-								]
-							}),
-							settingsNote !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								style: {
-									color: COLORS$2.amber,
-									fontSize: 12
-								},
-								children: settingsNote
-							}) : null,
-							settingsOutcome !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ReadbackBlock, {
-								outcome: settingsOutcome,
-								testid: "settings-readback"
-							}) : null
-						]
-					})
-				]
-			});
-		}
-		// src/client/shell/HiringManagerView.tsx
-		const COLORS$1 = {
-			text: "#16233a",
-			sub: "#64748b",
-			border: "#e3e8ef",
-			card: "#ffffff",
-			blue: "#2f6feb",
-			blueBg: "#eef4ff",
-			amber: "#92400e",
-			amberBg: "#fff7e6",
-			red: "#b91c1c",
-			green: "#15803d"
-		};
-		function Section(props) {
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-				style: {
-					background: COLORS$1.card,
-					border: `1px solid ${COLORS$1.border}`,
-					borderRadius: 12,
-					padding: 16,
-					marginTop: 14
-				},
-				"data-testid": props.testid,
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
-						style: {
-							margin: "0 0 8px",
-							fontSize: 14
-						},
-						children: props.title
-					}),
-					props.sub !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						style: {
-							margin: "0 0 10px",
-							color: COLORS$1.sub,
-							fontSize: 12
-						},
-						children: props.sub
-					}) : null,
-					props.children
-				]
-			});
-		}
-		function Chip(props) {
-			const tone = props.tone ?? "gray";
-			const palette = {
-				gray: {
-					bg: "#f1f5f9",
-					fg: COLORS$1.sub
-				},
-				blue: {
-					bg: COLORS$1.blueBg,
-					fg: COLORS$1.blue
-				},
-				amber: {
-					bg: COLORS$1.amberBg,
-					fg: COLORS$1.amber
-				},
-				green: {
-					bg: "#ecfdf5",
-					fg: COLORS$1.green
-				}
-			}[tone];
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-				style: {
-					display: "inline-block",
-					background: palette.bg,
-					color: palette.fg,
-					borderRadius: 999,
-					padding: "2px 9px",
-					fontSize: 11,
-					marginRight: 6
-				},
-				children: props.children
-			});
-		}
-		/**
-		* 招聘负责人默认视图。
-		* @param props - shell 传入的 session / alias / 显式切换身份回调。
-		* @returns 只读总览 + 决策入口。
-		*/
-		function HiringManagerView(props) {
-			const [loading, setLoading] = (0, react.useState)(true);
-			const [loadError, setLoadError] = (0, react.useState)("");
-			const [view, setView] = (0, react.useState)(null);
-			const [selectedAppId, setSelectedAppId] = (0, react.useState)("");
-			const [factsState, setFactsState] = (0, react.useState)({ kind: "idle" });
-			const [decisionResult, setDecisionResult] = (0, react.useState)("HOLD");
-			const [decisionReason, setDecisionReason] = (0, react.useState)("");
-			const [busy, setBusy] = (0, react.useState)(false);
-			const [outcome, setOutcome] = (0, react.useState)(null);
-			const [outcomeNote, setOutcomeNote] = (0, react.useState)("");
-			const canWrite = props.alias === "recruiter";
-			const loadOverview = async () => {
-				setLoading(true);
-				try {
-					const res = await requestJson(RECRUITING_OVERVIEW_PATH, { sessionId: props.sessionId });
-					if (!res.ok) {
-						setLoadError(`GET ${RECRUITING_OVERVIEW_PATH} → HTTP ${String(res.status)}：${res.text.slice(0, 300)}`);
-						setView(null);
-						return;
-					}
-					const next = deriveHiringView(res.json);
-					setView(next);
-					setLoadError("");
-					setSelectedAppId((current) => {
-						if (current !== "" && next.applications.some((row) => row.id === current)) return current;
-						const firstPending = next.pendingApplications[0];
-						if (firstPending !== void 0) return firstPending.id;
-						return next.applications[0]?.id ?? "";
-					});
-				} catch (error) {
-					setLoadError(error instanceof Error ? `网络失败：${error.message}` : String(error));
-					setView(null);
-				} finally {
-					setLoading(false);
-				}
-			};
-			(0, react.useEffect)(() => {
-				loadOverview();
-			}, [props.sessionId]);
-			(0, react.useEffect)(() => {
-				if (selectedAppId === "") {
-					setFactsState({ kind: "idle" });
-					return;
-				}
-				let cancelled = false;
-				setFactsState({ kind: "loading" });
-				(async () => {
-					try {
-						const res = await requestJson(`${DECISION_FACTS_PATH}?application_id=${encodeURIComponent(selectedAppId)}`, { sessionId: props.sessionId });
-						if (cancelled) return;
-						if (isDecisionFactsMissing(res.status)) {
-							setFactsState({
-								kind: "missing",
-								status: res.status
-							});
-							return;
-						}
-						if (!res.ok || res.json === null) {
-							const error = res.json === null ? null : res.json.error;
-							const message = error !== void 0 && error !== null ? String(error.message ?? "") : res.text.slice(0, 400);
-							setFactsState({
-								kind: "error",
-								status: res.status,
-								message
-							});
-							return;
-						}
-						const facts = normalizeDecisionFacts(res.json);
-						if (facts === null) {
-							setFactsState({
-								kind: "error",
-								status: res.status,
-								message: "facts 响应缺 application_id（不可归属申请）"
-							});
-							return;
-						}
-						setFactsState({
-							kind: "ready",
-							facts
-						});
-					} catch (error) {
-						if (cancelled) return;
-						setFactsState({
-							kind: "error",
-							status: 0,
-							message: error instanceof Error ? error.message : String(error)
-						});
-					}
-				})();
-				return () => {
-					cancelled = true;
-				};
-			}, [props.sessionId, selectedAppId]);
-			const disabledReason = (() => {
-				if (selectedAppId === "") return {
-					code: "NO_PENDING_DECISION",
-					text: "没有可决策的申请（服务端投影为空）：入口 disabled，不编造申请。"
-				};
-				if (factsState.kind === "missing") return {
-					code: "DECISION_FACTS_ROUTE_MISSING",
-					text: `决策 facts 只读投影未接线（GET ${DECISION_FACTS_PATH} → 404）：无法诚实组装 as_of/summary_digest/basis_refs，入口 disabled、零写入。`
-				};
-				if (factsState.kind === "error") return {
-					code: "DECISION_FACTS_UNAVAILABLE",
-					text: `决策 facts 读取失败（HTTP ${String(factsState.status)}）：${factsState.message}。入口 disabled，不用浏览器本地时间/编造 basis 顶替。`
-				};
-				if (factsState.kind !== "ready") return {
-					code: "DECISION_FACTS_LOADING",
-					text: "决策 facts 读取中…"
-				};
-				if (!factsState.facts.summaryAvailable) return {
-					code: "SUMMARY_MISSING",
-					text: "facts.evaluation_summary 不可用（available=false）：正式决策需要服务端汇总（summary_digest），入口 disabled、零写入。"
-				};
-				return {
-					code: "",
-					text: ""
-				};
-			})();
-			const submitDecision = async () => {
-				if (factsState.kind !== "ready") return;
-				const built = buildDecisionRecordBody({
-					applicationId: selectedAppId,
-					result: decisionResult,
-					reason: decisionReason,
-					facts: factsState.facts
-				});
-				if (!built.ok) {
-					setOutcomeNote(`${built.reasonCode}：${built.reasonText}`);
-					setOutcome(null);
-					return;
-				}
-				setBusy(true);
-				setOutcomeNote("");
-				try {
-					const res = await requestJson(DECISION_RECORD_PATH, {
-						sessionId: props.sessionId,
-						method: "POST",
-						body: built.body
-					});
-					const raw = res.json;
-					const readback = raw === null ? null : raw.readback ?? null;
-					setOutcome({
-						ok: res.ok,
-						status: res.status,
-						text: res.text.slice(0, 4e3),
-						readback: readback !== null && typeof readback === "object" ? readback : null
-					});
-					if (!res.ok) {
-						const error = raw === null ? null : raw.error;
-						if (error !== void 0 && error !== null) setOutcomeNote(`${String(error.code ?? "")}/${String(error.reason_code ?? "")}：${describeActionError(String(error.code ?? ""), String(error.reason_code ?? "")) || String(error.message ?? "")}`);
-					} else await loadOverview();
-				} catch (error) {
-					setOutcome({
-						ok: false,
-						status: 0,
-						text: error instanceof Error ? error.message : String(error),
-						readback: null
-					});
-				} finally {
-					setBusy(false);
-				}
-			};
-			const selectedApp = view?.applications.find((row) => row.id === selectedAppId);
-			const disabled = disabledReason.code !== "" || busy;
-			const factsReady = factsState.kind === "ready" ? factsState.facts : null;
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				"data-testid": "role-view-hiring",
-				"data-alias": props.alias ?? "",
-				style: {
-					padding: 20,
-					color: COLORS$1.text,
-					fontSize: 13
-				},
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-						style: { marginBottom: 12 },
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
-							style: {
-								margin: 0,
-								fontSize: 18
-							},
-							children: "招聘负责人工作台 · 部门招聘与决策"
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
-							style: {
-								margin: "6px 0 0",
-								color: COLORS$1.sub
-							},
-							children: [
-								"只读：部门岗位 / 申请 / 待决策 / 面试结果（来源 GET ",
-								RECRUITING_OVERVIEW_PATH,
-								"）；决策入口接 Host Action （facts + record facade）。当前身份：",
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("b", { children: props.alias ?? "未绑定" })
-							]
-						})]
-					}),
-					!canWrite ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						"data-testid": "hiring-write-blocked",
-						style: {
-							background: COLORS$1.amberBg,
-							border: "1px solid #f3d9a4",
-							color: COLORS$1.amber,
-							borderRadius: 10,
-							padding: "8px 12px",
-							marginBottom: 10
-						},
-						children: ["当前 alias 不在 Host Action 写授权集合（服务端只授权 recruiter，将 403 ACTOR_NOT_AUTHORIZED、零写入）。", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							"data-testid": "hiring-switch-recruiter",
-							onClick: () => props.onSwitchAlias("recruiter"),
-							style: {
-								marginLeft: 8,
-								border: `1px solid ${COLORS$1.border}`,
-								background: "#fff",
-								borderRadius: 8,
-								padding: "4px 10px",
-								cursor: "pointer",
-								fontSize: 12
-							},
-							children: "切换为 Recruiter 身份执行"
-						})]
-					}) : null,
-					loadError !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
-						style: { color: COLORS$1.red },
-						"data-testid": "hiring-load-error",
-						children: ["读取失败：", loadError]
-					}) : null,
-					loading ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						style: { color: COLORS$1.sub },
-						children: "读取服务端投影…"
-					}) : null,
-					view !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							style: {
-								display: "flex",
-								gap: 8,
-								flexWrap: "wrap",
-								margin: "10px 0"
-							},
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
-									tone: "blue",
-									children: ["部门岗位 · ", String(view.jobs.length)]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
-									tone: "blue",
-									children: ["申请 · ", String(view.applications.length)]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
-									tone: view.pendingApplications.length > 0 ? "amber" : "gray",
-									children: ["待决策 · ", String(view.pendingApplications.length)]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
-									tone: "gray",
-									children: ["已排期面试 · ", String(view.interviewsScheduled)]
-								})
-							]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Section, {
-							title: "部门岗位",
-							testid: "hiring-jobs",
-							sub: "只读投影；rubric 是否批准来自服务端 jobs[].rubric.approved。",
-							children: view.jobs.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								style: { color: COLORS$1.sub },
-								children: "服务端没有返回岗位。"
-							}) : view.jobs.slice(0, 30).map((job) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								"data-testid": `hiring-job-${job.jobId}`,
-								style: {
-									borderTop: `1px solid ${COLORS$1.border}`,
-									padding: "6px 0",
-									display: "flex",
-									gap: 8,
-									flexWrap: "wrap"
-								},
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("b", { children: job.title }),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										style: { color: COLORS$1.sub },
-										children: job.code
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
-										tone: "gray",
-										children: job.status
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
-										tone: job.rubricApproved ? "green" : "amber",
-										children: job.rubricVersionId === "" ? "未关联 rubric" : job.rubricApproved ? "rubric 已批准" : "rubric 未批准"
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										style: { color: COLORS$1.sub },
-										children: [
-											"申请 ",
-											String(job.totalApplications),
-											"（推进中 ",
-											String(job.activeApplications),
-											"）"
-										]
-									})
-								]
-							}, job.jobId))
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Section, {
-							title: "待决策申请",
-							testid: "hiring-pending-decisions",
-							sub: "判据 = 服务端 fact：current_stage_code=S10 或 progress.next_step 明确要求决策（不猜）。",
-							children: view.pendingApplications.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								style: { color: COLORS$1.sub },
-								children: "当前没有待决策申请（服务端未给出）。"
-							}) : view.pendingApplications.slice(0, 20).map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-								type: "button",
-								"data-testid": `hiring-pending-${row.id}`,
-								onClick: () => setSelectedAppId(row.id),
-								style: {
-									display: "block",
-									width: "100%",
-									textAlign: "left",
-									border: `1px solid ${selectedAppId === row.id ? COLORS$1.blue : COLORS$1.border}`,
-									background: selectedAppId === row.id ? COLORS$1.blueBg : "#fff",
-									borderRadius: 8,
-									padding: "6px 8px",
-									marginTop: 6,
-									cursor: "pointer",
-									fontSize: 12
-								},
-								children: [
-									row.candidateName,
-									" · ",
-									row.jobTitle,
-									" · 阶段 ",
-									row.stageCode,
-									" · ",
-									row.nextStepLabel
-								]
-							}, row.id))
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Section, {
-							title: "申请（全量只读）",
-							testid: "hiring-applications",
-							sub: `共 ${String(view.applications.length)} 条；点选查看并作为决策对象。`,
-							children: view.applications.slice(0, 40).map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-								type: "button",
-								"data-testid": `hiring-app-${row.id}`,
-								onClick: () => setSelectedAppId(row.id),
-								style: {
-									display: "block",
-									width: "100%",
-									textAlign: "left",
-									border: 0,
-									borderTop: `1px solid ${COLORS$1.border}`,
-									background: "transparent",
-									padding: "5px 0",
-									cursor: "pointer",
-									fontSize: 12,
-									color: COLORS$1.text
-								},
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("b", { children: row.candidateName }),
-									" · ",
-									row.jobTitle,
-									" · ",
-									row.stageCode,
-									" · ",
-									row.lifecycleStatus,
-									" · 下一步 ",
-									row.nextStepCode,
-									row.awaitingDecision ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
-										tone: "amber",
-										children: "待决策"
-									}) : null
-								]
-							}, row.id))
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Section, {
-							title: "面试结果（只读事实）",
-							testid: "hiring-interview-results",
-							sub: "来自 applications[].interviews / progress（服务端只读投影；无则如实为空）。",
-							children: view.applications.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								style: { color: COLORS$1.sub },
-								children: "没有申请，因此没有面试结果。"
-							}) : view.applications.filter((row) => row.interviewCount > 0 || row.scorecardsSubmitted > 0).slice(0, 20).map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								style: {
-									borderTop: `1px solid ${COLORS$1.border}`,
-									padding: "5px 0",
-									fontSize: 12
-								},
-								children: [
-									row.candidateName,
-									" · ",
-									row.jobTitle,
-									" · 面试 ",
-									String(row.interviewCount),
-									" 场 · 面评 ",
-									String(row.scorecardsSubmitted),
-									"/",
-									String(row.scorecardsRequired),
-									" · 转写 ",
-									row.transcriptState
-								]
-							}, `ir-${row.id}`))
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Section, {
-							title: "决策入口（正式决策 FINAL）",
-							testid: "hiring-decision-panel",
-							sub: `对象：${selectedApp === void 0 ? "未选择申请" : `${selectedApp.candidateName} · ${selectedApp.jobTitle}（${selectedApp.id}）`}；facts 来自 GET ${DECISION_FACTS_PATH}，body 不含 hash/digest。`,
-							children: [
-								disabledReason.code !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
-									"data-testid": "hiring-decision-reason",
-									"data-reason-code": disabledReason.code,
-									style: {
-										color: COLORS$1.amber,
-										fontSize: 12
-									},
-									children: [
-										"[",
-										disabledReason.code,
-										"] ",
-										disabledReason.text
-									]
-								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
-									"data-testid": "hiring-decision-reason",
-									style: {
-										color: COLORS$1.green,
-										fontSize: 12
-									},
-									children: [
-										"facts 可用（summary available，as_of=",
-										factsReady?.asOf ?? "",
-										"）；勾选结论并填写理由后提交。"
-									]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									style: {
-										display: "flex",
-										gap: 10,
-										alignItems: "center",
-										marginTop: 8,
-										flexWrap: "wrap"
-									},
-									children: [
-										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-											"aria-label": "决策结论",
-											"data-testid": "hiring-decision-result",
-											value: decisionResult,
-											onChange: (event) => setDecisionResult(event.target.value),
-											disabled,
-											style: {
-												fontSize: 12,
-												padding: "5px 8px"
-											},
-											children: [
-												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-													value: "HOLD",
-													children: "HOLD（暂缓）"
-												}),
-												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-													value: "ADVANCE",
-													children: "ADVANCE（推进）"
-												}),
-												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-													value: "REJECT",
-													children: "REJECT（拒绝）"
-												})
-											]
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-											"data-testid": "hiring-decision-reason-input",
-											"aria-label": "决策理由",
-											placeholder: "决策理由（必填，人写的理由）",
-											value: decisionReason,
-											onChange: (event) => setDecisionReason(event.target.value),
-											disabled,
-											style: {
-												fontSize: 12,
-												padding: "5px 8px",
-												width: 360
-											}
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											"data-testid": "hiring-decision-entry",
-											"data-state": disabledReason.code === "" ? "enabled" : "disabled",
-											"data-reason-code": disabledReason.code,
-											disabled,
-											onClick: () => void submitDecision(),
-											style: {
-												border: `1px solid ${COLORS$1.border}`,
-												background: disabled ? "#f1f5f9" : COLORS$1.blue,
-												color: disabled ? COLORS$1.sub : "#fff",
-												borderRadius: 8,
-												padding: "6px 12px",
-												cursor: disabled ? "not-allowed" : "pointer",
-												fontSize: 12
-											},
-											children: busy ? "提交中…" : "记录正式决策"
-										})
-									]
-								}),
-								outcomeNote !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-									"data-testid": "hiring-action-note",
-									style: {
-										color: COLORS$1.amber,
-										fontSize: 12
-									},
-									children: outcomeNote
-								}) : null,
-								outcome !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									"data-testid": "hiring-decision-readback",
-									"data-ok": outcome.ok ? "true" : "false",
-									"data-status": String(outcome.status),
-									style: {
-										marginTop: 8,
-										fontSize: 12
-									},
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("b", { children: outcome.ok ? "服务端已受理（事实以 readback 为准）" : `失败 HTTP ${String(outcome.status)}` }), outcome.readback !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
-										style: {
-											margin: "6px 0 0",
-											paddingLeft: 18
-										},
-										children: readbackLines(outcome.readback).map((line) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", { children: [
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", { children: line.key }),
-											"：",
-											line.value
-										] }, line.key))
-									}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
-										"data-testid": "hiring-action-error",
-										style: {
-											whiteSpace: "pre-wrap",
-											background: "#f8fafc",
-											padding: 8,
-											borderRadius: 8,
-											fontSize: 11
-										},
-										children: outcome.text
-									})]
-								}) : null
-							]
-						})
-					] }) : null
-				]
-			});
-		}
-		// src/client/shell/role-views.ts
-		/** 受控 Demo Actor alias 封闭集；顺序 = 顶部选择器的展示顺序。 */
-		const DEMO_ACTOR_ALIASES = [
-			"recruiter",
-			"hiring_manager",
-			"approver",
-			"interviewer_a",
-			"interviewer_b"
-		];
-		/** 招聘负责人 / 审批人的通用阻断原因：Host Action 写授权只给 recruiter（服务端事实）。 */
-		const HOST_ACTION_RECRUITER_ONLY = "Host Action 写授权仅限 recruiter（服务端将以 403 ACTOR_NOT_AUTHORIZED 拒绝，零写入）；如需执行，请显式切换为 Recruiter 身份（不会静默换身份）。";
-		/** 面试官的阻断原因：本人面评走 W1 scorecard submit，招聘类写动作仍会被 403。 */
-		const INTERVIEWER_WRITE_BLOCKED_REASON = "面试官写动作仅本人 Scorecard（W1 scorecard submit）；招聘类写动作会被服务端以 403 ACTOR_NOT_AUTHORIZED 拒绝、零写入；如需执行招聘写动作，请显式切换为 Recruiter 身份（不会静默换身份）。";
-		/** 未知 alias 的视图集合（复用同一个冻结空数组，避免每次分配）。 */
-		const EMPTY_VIEWS = Object.freeze([]);
-		/** 视图键 → 界面文案（与既有 shell 的 tab 文案一致）。 */
-		const VIEW_LABELS = Object.freeze({
-			recruiting: "招聘工作台",
-			interviewer: "面试官工作台",
-			hiring: "招聘负责人工作台",
-			approvals: "审批工作台"
-		});
-		/**
-		* 5 个 Demo Actor 的展示档案 = `work/d5/roles/CONTRACT.md` §1 矩阵的唯一实现。
-		*
-		* 冻结：外层、每个档案、以及 `allowedViews` 都 `Object.freeze`，防止界面层误改写矩阵。
-		*/
-		const DEMO_ACTOR_PROFILES = Object.freeze({
-			recruiter: Object.freeze({
-				alias: "recruiter",
-				label: "Recruiter（HR 专员）",
-				role: "HR_SPECIALIST",
-				roleLabel: "HR_SPECIALIST · HR 专员",
-				defaultView: "recruiting",
-				allowedViews: Object.freeze([
-					"recruiting",
-					"interviewer",
-					"hiring",
-					"approvals"
-				]),
-				canExecuteWriteActions: true,
-				writeBlockedReason: ""
-			}),
-			hiring_manager: Object.freeze({
-				alias: "hiring_manager",
-				label: "招聘负责人（Hiring Manager）",
-				role: "HIRING_MANAGER",
-				roleLabel: "HIRING_MANAGER · 招聘负责人",
-				defaultView: "hiring",
-				allowedViews: Object.freeze(["hiring", "approvals"]),
-				canExecuteWriteActions: false,
-				writeBlockedReason: HOST_ACTION_RECRUITER_ONLY
-			}),
-			approver: Object.freeze({
-				alias: "approver",
-				label: "审批人（企业管理员）",
-				role: "ORG_ADMIN",
-				roleLabel: "ORG_ADMIN · 企业管理员",
-				defaultView: "approvals",
-				allowedViews: Object.freeze(["approvals", "hiring"]),
-				canExecuteWriteActions: false,
-				writeBlockedReason: HOST_ACTION_RECRUITER_ONLY
-			}),
-			interviewer_a: Object.freeze({
-				alias: "interviewer_a",
-				label: "Interviewer A",
-				role: "INTERVIEWER",
-				roleLabel: "INTERVIEWER · 面试官",
-				defaultView: "interviewer",
-				allowedViews: Object.freeze(["interviewer"]),
-				canExecuteWriteActions: false,
-				writeBlockedReason: INTERVIEWER_WRITE_BLOCKED_REASON
-			}),
-			interviewer_b: Object.freeze({
-				alias: "interviewer_b",
-				label: "Interviewer B",
-				role: "INTERVIEWER",
-				roleLabel: "INTERVIEWER · 面试官",
-				defaultView: "interviewer",
-				allowedViews: Object.freeze(["interviewer"]),
-				canExecuteWriteActions: false,
-				writeBlockedReason: INTERVIEWER_WRITE_BLOCKED_REASON
-			})
-		});
-		/**
-		* 顶部 Demo Actor 选择器的选项（顺序 = `DEMO_ACTOR_ALIASES` 的顺序）。
-		*
-		* 与 `DEMO_ACTOR_PROFILES` 同源取 `label`，避免两处文案漂移。
-		*/
-		const DEMO_ACTOR_OPTIONS = Object.freeze(DEMO_ACTOR_ALIASES.map((alias) => Object.freeze({
-			value: alias,
-			label: DEMO_ACTOR_PROFILES[alias].label
-		})));
-		/**
-		* 是不是 5 个受控 alias 之一（**区分大小写、不裁剪空白**：alias 是封闭集，不做归一）。
-		* @param value - 任意值（来自 HTTP / 存储 / 测试）。
-		* @returns 是受控 alias 时为 `true`。
-		*/
-		function isDemoActorAliasValue(value) {
-			return typeof value === "string" && Object.hasOwn(DEMO_ACTOR_PROFILES, value);
-		}
-		/**
-		* 解析一个 alias 的展示档案。
-		* @param alias - 任意字符串 / `null` / `undefined`（未知 alias 是正常输入，不抛错）。
-		* @returns 档案；未知 / 缺省 → `null`（**不猜、不回退 recruiter**）。
-		*/
-		function profileForAlias(alias) {
-			if (alias === null || alias === void 0) return null;
-			if (!isDemoActorAliasValue(alias)) return null;
-			return DEMO_ACTOR_PROFILES[alias];
-		}
-		/**
-		* 该 alias 被授权看到的视图（顺序即 tab 顺序）。
-		* @param alias - 任意 alias。
-		* @returns 视图数组；未知 / 缺省 → `[]`（空 = 看不到任何视图，fail-closed）。
-		*/
-		function allowedViewsFor(alias) {
-			return profileForAlias(alias)?.allowedViews ?? EMPTY_VIEWS;
-		}
-		/**
-		* 该 alias 的默认视图。
-		* @param alias - 任意 alias。
-		* @returns 默认视图；未知 / 缺省 → `null`。
-		*/
-		function defaultViewFor(alias) {
-			return profileForAlias(alias)?.defaultView ?? null;
-		}
-		/**
-		* 视图的界面文案。
-		* @param view - 视图键。
-		* @returns 文案；未知视图键（运行期越界）→ `''`（不编造文案）。
-		*/
-		function viewLabel(view) {
-			return VIEW_LABELS[view] ?? "";
-		}
-		/**
-		* alias 切换后该落到哪个视图。
-		*
-		* 规则（冻结）：
-		*   * 当前视图仍在该 alias 的授权集合内 → 保持（避免切换身份把人的上下文打断）；
-		*   * 当前视图不被允许（含 `null`）→ 回落 `defaultView`；
-		*   * alias 未知 → `null`（界面应显示「未绑定」，而不是猜一个视图）。
-		* @param current - 切换前的视图（`null` = 还没有选择）。
-		* @param alias - 新 alias。
-		* @returns 目标视图或 `null`。
-		*/
-		function resolveViewForAlias(current, alias) {
-			const profile = profileForAlias(alias);
-			if (profile === null) return null;
-			if (current !== null && profile.allowedViews.includes(current)) return current;
-			return profile.defaultView;
-		}
-		/**
-		* 写动作被阻断的精确原因（供界面直接展示，不静默失败）。
-		*
-		* 三种情况（冻结）：
-		*   1. 有写授权的 alias（仅 `recruiter`）→ `''`（可以执行）；
-		*   2. 未知 / 缺省 alias → 「未绑定 Demo Actor，写动作 fail-closed」+ 服务端错误码 + 动作名；
-		*   3. 已知但非授权 alias → 含 alias、动作名、`ACTOR_NOT_AUTHORIZED` 与「切换为 Recruiter 身份」。
-		* @param alias - 当前 alias。
-		* @param actionLabel - 人读的动作名（如 `'批准 Rubric'`）；空串按 `'写动作'` 展示。
-		* @returns 阻断原因；空串 = 有授权。
-		*/
-		function writeBlockedReasonFor(alias, actionLabel) {
-			const profile = profileForAlias(alias);
-			const action = actionName(actionLabel);
-			if (profile === null) return `未绑定 Demo Actor，写动作 fail-closed：「${action}」不会发送到服务端（未绑定 = 403 ACTOR_NOT_AUTHORIZED / DEMO_ACTOR_UNMAPPED、零写入）；请先在顶部选择受控 Demo Actor。`;
-			if (profile.canExecuteWriteActions) return "";
-			return `「${action}」被阻断：当前 Demo Actor 为 ${profile.alias}（${profile.label}），Host Action 写授权只给 recruiter——服务端将以 403 ACTOR_NOT_AUTHORIZED 拒绝且零写入；如需执行该动作，请显式切换为 Recruiter 身份（不会静默换身份）。`;
-		}
-		/**
-		* 把动作名压成可展示文本（空 / 非字符串 → `'写动作'`：界面不能出现「被阻断：」这种半句话）。
-		* @param actionLabel - 任意动作名。
-		* @returns 非空动作名。
-		*/
-		function actionName(actionLabel) {
-			const text = typeof actionLabel === "string" ? actionLabel.trim() : "";
-			return text.length > 0 ? text : "写动作";
-		}
 		// src/client/shell/RecruitmentShell.tsx
+		const ALIAS_OPTIONS = [
+			{
+				value: "recruiter",
+				label: "Recruiter"
+			},
+			{
+				value: "interviewer_a",
+				label: "Interviewer A"
+			},
+			{
+				value: "interviewer_b",
+				label: "Interviewer B"
+			}
+		];
 		/** 从 DSH 的 localStorage 取当前 session id（Gate 0 实测键/形状）。 */
 		function readSessionId() {
 			try {
@@ -13517,15 +11632,12 @@ window.__ModuleLoader__.load({
 			text: "#16233a",
 			sub: "#64748b",
 			blue: "#2f6feb",
-			blueBg: "#eef4ff",
-			amber: "#92400e",
-			amberBg: "#fff7e6"
+			blueBg: "#eef4ff"
 		};
 		/** 顶部按钮（视图切换 / Human Attention）。 */
 		function TabButton(props) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 				type: "button",
-				"data-testid": props.testid,
 				onClick: props.onClick,
 				style: {
 					border: `1px solid ${props.active ? "#c7d8f2" : COLORS.border}`,
@@ -13540,42 +11652,18 @@ window.__ModuleLoader__.load({
 				children: props.label
 			});
 		}
-		/** 视图渲染（只渲染当前 alias 被授权看到的视图；未授权视图不进入 DOM）。 */
-		function renderView(props) {
-			if (props.view === "recruiting") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(RecruitingWorkspace, {
-				sessionId: props.sessionId ?? "",
-				alias: "recruiter"
-			});
-			if (props.view === "interviewer") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(InterviewerWorkspace, {
-				sessionId: props.sessionId,
-				alias: props.alias
-			});
-			if (props.view === "hiring") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(HiringManagerView, {
-				sessionId: props.sessionId,
-				alias: props.alias,
-				onSwitchAlias: props.onSwitchAlias
-			});
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApproverView, {
-				sessionId: props.sessionId,
-				alias: props.alias,
-				onSwitchAlias: props.onSwitchAlias
-			});
-		}
 		/**
 		* 产品外壳。没有渠道注入 props：session id 从 DSH localStorage 取，alias 由人选择后 PUT 到服务端。
-		* @returns 角色默认视图 + 视图切换（仅授权视图）+ Human Attention。
+		* @returns 两个工作视图 + 顶部身份/注意力入口。
 		*/
 		function RecruitmentShell() {
 			const [sessionId, setSessionId] = (0, react.useState)(null);
 			const [alias, setAlias] = (0, react.useState)(null);
 			const [binding, setBinding] = (0, react.useState)(null);
 			const [notice, setNotice] = (0, react.useState)("");
-			const [view, setView] = (0, react.useState)(null);
+			const [view, setView] = (0, react.useState)("recruiting");
 			const [attentionOpen, setAttentionOpen] = (0, react.useState)(false);
 			const [attention, setAttention] = (0, react.useState)(null);
-			const profile = profileForAlias(alias);
-			const allowedViews = allowedViewsFor(alias);
-			const canWrite = profile?.canExecuteWriteActions === true;
 			const openAttention = () => {
 				setAttentionOpen(true);
 				setAttention({
@@ -13604,12 +11692,10 @@ window.__ModuleLoader__.load({
 					}
 					setBinding(found);
 					setAlias(found.alias);
-					setView(defaultViewFor(found.alias));
 				});
 			}, []);
 			const onSelectAlias = (next) => {
 				setAlias(next);
-				setView((current) => resolveViewForAlias(current, next));
 				if (sessionId === null) {
 					setNotice("未取得 DSH Session，无法绑定 Demo Actor。");
 					return;
@@ -13621,17 +11707,8 @@ window.__ModuleLoader__.load({
 						return;
 					}
 					setNotice("");
-					getBinding(sessionId).then((found) => {
-						setBinding(found);
-						if (found !== null) {
-							setAlias(found.alias);
-							setView((current) => resolveViewForAlias(current, found.alias));
-						}
-					});
+					getBinding(sessionId).then((found) => setBinding(found));
 				});
-			};
-			const onSwitchAlias = (next) => {
-				onSelectAlias(next);
 			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
@@ -13644,10 +11721,6 @@ window.__ModuleLoader__.load({
 				},
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						"data-testid": "shell-role",
-						"data-alias": alias ?? "",
-						"data-role": profile?.role ?? "",
-						"data-default-view": view ?? "",
 						style: {
 							display: "flex",
 							alignItems: "center",
@@ -13673,12 +11746,16 @@ window.__ModuleLoader__.load({
 								children: "AGENT WORKSPACE"
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { style: { flex: 1 } }),
-							allowedViews.map((key) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
-								testid: `view-tab-${key}`,
-								active: view === key,
-								label: viewLabel(key),
-								onClick: () => setView(key)
-							}, key)),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
+								active: view === "recruiting",
+								label: "招聘工作台",
+								onClick: () => setView("recruiting")
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
+								active: view === "interviewer",
+								label: "面试官工作台",
+								onClick: () => setView("interviewer")
+							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
 								onClick: openAttention,
@@ -13716,38 +11793,32 @@ window.__ModuleLoader__.load({
 										value: "",
 										disabled: true,
 										children: "未绑定"
-									}), DEMO_ACTOR_OPTIONS.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									}), ALIAS_OPTIONS.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
 										value: option.value,
 										children: option.label
 									}, option.value))]
 								})]
 							}),
-							profile !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							binding !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 								style: {
 									fontSize: 10,
 									color: COLORS.sub
 								},
-								"data-testid": "shell-role-label",
-								children: [profile.roleLabel, binding !== null ? ` · actor ${binding.actor_id.slice(-8)}` : ""]
-							}) : null,
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								"data-testid": "shell-write-auth",
-								"data-can-write": canWrite ? "true" : "false",
-								style: {
-									fontSize: 10,
-									color: canWrite ? "#15803d" : COLORS.amber,
-									maxWidth: 460
-								},
-								children: canWrite ? "Host Action 写授权：可执行（recruiter）" : writeBlockedReasonFor(alias, "写动作").slice(0, 180)
-							})
+								children: [
+									"actor ",
+									binding.actor_id.slice(-8),
+									" · ",
+									binding.display_name ?? ""
+								]
+							}) : null
 						]
 					}),
 					notice !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						style: {
 							padding: "7px 16px",
 							fontSize: 11,
-							color: COLORS.amber,
-							background: COLORS.amberBg,
+							color: "#92400e",
+							background: "#fff7e6",
 							borderBottom: "1px solid #f3d9a4"
 						},
 						children: notice
@@ -13936,34 +12007,12 @@ window.__ModuleLoader__.load({
 							minHeight: 0,
 							overflow: "auto"
 						},
-						"data-testid": "shell-view-container",
-						"data-view": view ?? "",
-						children: view === null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							"data-testid": "shell-unbound",
-							style: {
-								padding: 28,
-								color: COLORS.sub,
-								fontSize: 13,
-								lineHeight: 1.8
-							},
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-									style: {
-										fontSize: 18,
-										fontWeight: 700,
-										color: COLORS.text,
-										marginBottom: 8
-									},
-									children: "未绑定 Demo Actor"
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "请先在顶部选择受控 Demo Actor（Recruiter / 招聘负责人 / 审批人 / Interviewer A / Interviewer B）。" }),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "未绑定前所有写操作 fail-closed，界面不静默退回任何默认身份。" })
-							]
-						}) : renderView({
-							view,
+						children: view === "recruiting" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(RecruitingWorkspace, {
+							sessionId: sessionId ?? "",
+							alias: alias ?? "recruiter"
+						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(InterviewerWorkspace, {
 							sessionId,
-							alias,
-							onSwitchAlias
+							alias
 						})
 					})
 				]
