@@ -338,6 +338,23 @@ test('③ 每个登记项都有真实生产者：TOOL 引用注册表常量、DO
       }
       continue
     }
+    if (definition.producer.kind === 'HTTP_ACTION') {
+      if (!definition.producer.file.startsWith('src/http/')) {
+        problems.push(`${definition.type}: HTTP_ACTION 只允许登记 src/http/** 的文件`)
+      }
+      if (!code.includes("from '../runtime/event-types.ts'")) {
+        problems.push(`${definition.type}: ${definition.producer.file} 没有 import ../runtime/event-types.ts`)
+      }
+      if (definition.constKey !== null && !code.includes(`EVENT_TYPES.${definition.constKey}`)) {
+        problems.push(`${definition.type}: ${definition.producer.file} 里找不到 EVENT_TYPES.${definition.constKey}`)
+      }
+      for (const window of eventInboxInsertWindows(code)) {
+        if (window.includes(`'${definition.type}'`)) {
+          problems.push(`${definition.type}: ${definition.producer.file} 的 event_inbox 语句里仍写着裸字面量`)
+        }
+      }
+      continue
+    }
     // DB_TRIGGER 的可达性由 ④ 的迁移比对负责。
     if (!definition.type.endsWith('.changed')) {
       problems.push(`${definition.type}: DB_TRIGGER 事件名必须是 <table>.<column>.changed`)

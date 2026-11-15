@@ -1,6 +1,6 @@
 # `@recruitment/dsh-recruitment` · 怎么跑、怎么验
 
-**当前注册 26 个工具**（`src/index.ts:589-613`；配置齐/缺两条路径都注册）：
+**当前注册 27 个工具**（`src/index.ts:589-613`；配置齐/缺两条路径都注册）：
 
 | 阶段 | 工具 |
 |---|---|
@@ -122,7 +122,7 @@ node --test "test/runtime/*.test.ts"       # 运行时（每个文件一个一�
 
 ### 2.1 单测覆盖什么（下表是 S6/S7 阶段的代表用例，不是全部）
 
-> 26 个工具的单测还有：`job-create.test.ts`（S3）、`interview-*.test.ts`（S8）、`transcript-*.test.ts`（S9）、
+> 27 个工具的单测还有：`job-create.test.ts`（S3）、`interview-*.test.ts`（S8）、`transcript-*.test.ts`（S9）、
 > `evaluation-*.test.ts` / `evaluation-decision-record.test.ts`（S10）、`application-intake-structured.test.ts`、
 > `vision-fallback.test.ts`（`webServer` 可选注入的守卫）等；另有 `stage-advance.test.ts`（N8）、
 > `job-create-rubric-approve.test.ts`（N7）、`trace-integrity.test.ts`、`tenant-config-validate.test.ts`；

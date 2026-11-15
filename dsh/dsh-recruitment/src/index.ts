@@ -66,6 +66,10 @@ import {
   unconfiguredJobRubricApproveTool,
 } from './tools/job-rubric-approve.ts'
 import {
+  JOB_DRAFT_TOOL,
+  createJobDraftTool,
+} from './tools/job-draft.ts'
+import {
   createInterviewScheduleTool,
   unconfiguredInterviewScheduleTool,
 } from './tools/interview-schedule.ts'
@@ -123,6 +127,8 @@ import { registerRecruitingHttp, type RecruitingHostContext } from './http/recru
 // D5 W1：Demo Actor（session→alias→HUMAN actor）+ Interviewer Host Remote Action
 //（scorecard form/submit）。路由用 exact path，longest-prefix 优先于 /recruitment/api。
 import { registerActorHttp, type ActorHostContext } from './http/actor.ts'
+import { registerJobActionHttp, type JobActionHostContext } from './http/actions-job.ts'
+import { registerActionsHttp, type ActionHostContext } from './http/actions.ts'
 import {
   createDemoActorIdentity,
   type DemoActorIdentity,
@@ -384,7 +390,7 @@ export function apply(
   // **必须用可选注入，不能把 webServer 放进顶层 inject。** 顶层 inject 是硬依赖：
   // headless / tui 等没有 webServer 的 profile 下，整个插件会因此**不激活**，
   // 19 个工具一起消失——面板是加分项，不是插件存在的前提。
-  // （2026-11-14：现注册 26 个工具；这里的历史数字只说明"整插件会被一起拖下水"。）
+  // （2026-11-14：现注册 27 个工具；这里的历史数字只说明"整插件会被一起拖下水"。）
   // 有 webServer 才注册路由；没有就静默跳过（面板不可用，工具照常）。
   ctx.inject(['webServer'], (child) => {
     child.effect(
@@ -404,6 +410,36 @@ export function apply(
       ),
       'recruitment: demo actor routes',
     )
+    // D5 joblife：岗位关闭 Host Remote Action（独立前缀 /recruitment/api/job-action；
+    // 不与 W1 `/recruitment/api/action` 前缀冲突）。loopback + 同源 + X-DSH-Session 绑定 HUMAN actor，
+    // 单事务终止本岗位在途申请/未开始面试/未完成任务；`confirm:true` 是人的裁决，缺确认 400 零写入。
+    child.effect(
+      () => registerJobActionHttp(
+        child as unknown as JobActionHostContext,
+        {
+          database: database.resolved,
+          databaseIssues: database.issues,
+          identity: actorIdentity,
+        },
+      ),
+      'recruitment: job action route',
+    )
+    // D-119：全部写操作 Host Remote Action（P0 初筛/阶段/决策、P1 排期/转写、P2 设置）。
+    // 与上面 actor 路由共享**同一个** `actorIdentity`（同一 session→alias registry），
+    // 且 write 工具已经在用同一个 identity：浏览器 PUT 的绑定对 HTTP 写动作与 Agent 工具同时可见。
+    child.effect(
+      () => registerActionsHttp(
+        child as unknown as ActionHostContext,
+        {
+          database: database.resolved,
+          databaseIssues: database.issues,
+          identity: actorIdentity,
+          connector: feishu.connector,
+          connectorIssues: feishu.issues,
+        },
+      ),
+      'recruitment: write action routes',
+    )
     // D5-W2：Recruiting Workspace 只读投影（独立前缀 /recruitment/api/recruiting；
     // W0 独占接线，W2 不碰本文件）。action seam 由 W1 后续提供，未提供时写按钮 disabled。
     child.effect(
@@ -411,7 +447,20 @@ export function apply(
         child as unknown as RecruitingHostContext,
         database.resolved,
         database.issues,
-        { actionSeams: {} },
+        {
+          // D-119：写按钮的 seam 指向本 lane 的动作端点（UI 只 GET overview 拿可用性，
+          // 点击 POST 到 seam；每个 seam 的 body 契约见 work/d5/actions/CONTRACT.md）。
+          actionSeams: {
+            screening_decide: '/recruitment/api/action/screening/decide',
+            stage_advance: '/recruitment/api/action/stage/advance',
+            decision_record: '/recruitment/api/action/decision/record',
+            interview_schedule: '/recruitment/api/action/interview/schedule',
+            transcript_import: '/recruitment/api/action/transcript/import',
+            rubric_approve: '/recruitment/api/action/job/rubric-approve',
+            // 设置页只有一个 seam：统一入口按 body.entity 分派 role/team/pipeline。
+            recruiting_settings_write: '/recruitment/api/action/config',
+          },
+        },
       ),
       'recruitment: recruiting workspace route',
     )
@@ -446,7 +495,7 @@ export function apply(
   // 才注册回环 + 同源的 `/recruitment/runtime/*` 路由（见 src/runtime/http.ts）。
   //
   // 为什么仍用可选注入：与 overview 同理，headless/tui 等没有 webServer 的 profile
-  // 不能因为运行时路由而让整个插件不激活（26 个工具必须照常存在）。
+  // 不能因为运行时路由而让整个插件不激活（27 个工具必须照常存在）。
   if (config?.runtime?.enabled === true) {
     const runtime = resolveRuntimeConfig(config.runtime, env)
     if (runtime.resolved === null || database.resolved === null) {
@@ -653,6 +702,9 @@ export function apply(
       approval: resolveApproval(ctx),
       identity: actorIdentity,
     })
+  // 岗位/Rubric 草案生成（D5 joblife）：**纯函数、不连库、不写库**。
+  // 无外部输入也可用；输出只是草案 + 理由 + 缺失项，人改+确认后走 jobCreate/jobRubricApprove 版本化。
+  const jobDraft = createJobDraftTool()
 
   // ── S8 面试线：只要 database。
   const interviewSchedule = database.resolved === null
@@ -748,6 +800,7 @@ export function apply(
     jobCreate,
     jobUpdate,
     jobRubricApprove,
+    jobDraft,
     intake,
     evaluate,
     stageAdvance,

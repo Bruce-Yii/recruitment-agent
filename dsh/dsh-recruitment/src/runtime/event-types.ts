@@ -42,6 +42,8 @@ export type EventProducerKind =
   | 'TOOL'
   /** 领域写路径（`src/domain/**`）：当前 lane 不改它，但名字必须登记并被机检。 */
   | 'DOMAIN_WRITER'
+  /** HTTP Host Remote Action（`src/http/**`）：人在浏览器触发的写入口，事件名必须登记。 */
+  | 'HTTP_ACTION'
   /** 库触发器（`db/migrations/0001_init.sql` 的 `fn_row_guard`）：名字由表名+列名派生。 */
   | 'DB_TRIGGER'
 
@@ -133,6 +135,8 @@ export const EVENT_TYPES = {
   INTERVIEW_RECORD_VERIFIED: 'interview.record.verified',
   /** 阶段推进时把 rubric 版本钉到申请上：`src/domain/stage-advance.ts` 的审计事件。 */
   APPLICATION_RUBRIC_VERSION_PINNED: 'application.rubric_version.pinned',
+  /** 岗位关闭：`src/http/actions-job.ts` 在终止事务里写的审计事件。 */
+  JOB_CLOSED: 'job.closed',
 } as const
 
 /** `EVENT_TYPES` 的取值联合（发射方签名用）。 */
@@ -346,6 +350,22 @@ const WRITER_EVENTS: readonly EventTypeDefinition[] = [
       reason:
         'pin rubric 已由阶段推进的命令事务完成；事件是 schema/0001 口径的审计事实，'
         + '不进待路由队列，也没有需要自动执行的后续工作。',
+    },
+  },
+  {
+    type: EVENT_TYPES.JOB_CLOSED,
+    constKey: 'JOB_CLOSED',
+    producer: {
+      kind: 'HTTP_ACTION',
+      file: 'src/http/actions-job.ts',
+      detail: 'closeJobInTransaction()（岗位关闭 Host Remote Action）',
+    },
+    normalizerVersion: 'schema/job-close',
+    routing: {
+      kind: 'IGNORED',
+      reason:
+        '岗位关闭已在同一事务里终止在途申请/未开始面试/未完成任务，并由 fn_row_guard 写各状态迁移审计；'
+        + '本事件是聚合审计事实，不建任务、不再自动执行，否则会重复终止。',
     },
   },
 ]
