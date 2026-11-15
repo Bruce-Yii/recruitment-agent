@@ -3,7 +3,9 @@
 **日期**：2026-11-12
 **任务卡**：`work/handoff/14-parallel-task-cards.md` §C（插件骨架 + 工具契约）
 **上位文档**：`work/handoff/09-dsh-plugin-architecture.md` §2-A（只读/草稿类工具）
-**状态（2026-11-14 回抄）**：可安装、可注册、可调用；当前注册 **27 个工具**（`src/index.ts:589-613`），
+**状态（2026-11-16 回抄）**：可安装、可注册、可调用；当前注册 **30 个工具**（29 个 `recruitment_*` +
+1 个高层 `record_human_decision`；机检 = `test/unit/interview-record-verify.test.ts` 的 `apply()` 用例，
+现场输出 `work/d5/integration/registered-tools.json`），
 S3–S10 一条链路，既有只读也有**真写 PostgreSQL** 的工具。本文 §2–§9 是 **2026-11-12 的三工具 stub 快照**，
 与现状冲突时以本节 §0.1 + `docs/17-decision-ledger.md` 为准。
 
@@ -13,7 +15,7 @@ S3–S10 一条链路，既有只读也有**真写 PostgreSQL** 的工具。本�
 
 | # | 本文旧口径 | 现状 | 证据 |
 |---|---|---|---|
-| 1 | 三个工具（§0） | **26 个**：`resume_read` / `document_read` / `resume_serialize` / `structure_validate` / `candidate_get` / `job_get` / `job_create` / `job_update` / `job_rubric_approve` / `application_intake` / `screening_evaluate` / `application_stage_advance` / `interview_schedule` / `interview_get` / `transcript_import` / `transcript_read` / `interview_record_verify` / `scorecard_submit` / `evaluation_summarize` / `decision_record` / `trace_get` / `config_role` / `config_team` / `config_pipeline` / `page_image` / `model_text_merge` | `src/index.ts:589-613`（21 具名 + `...structureTools` 2 + `...configTools` 3 = 26）；2026-11-14 回抄实测：假 ctx 调 `apply()` 捕获 **26** 个注册名（配置齐 / 缺两条路径都是 26，见 `test/unit/interview-record-verify.test.ts` 的 apply() 用例）。新增的 `interview_record_verify` 是 D-B 修复：`interview_record` 从 `NEEDS_REVIEW/UNVERIFIED` 到 `READY/VERIFIED` 的唯一产品入口（人类闸门 D-79），契约见 `contracts/interview/tool-contracts.md §8` |
+| 1 | 三个工具（§0） | **30 个**（29 个 `recruitment_*` + 1 个 `record_human_decision`）：`resume_read` / `document_read` / `resume_serialize` / `structure_validate` / `candidate_get` / `application_get` / `material_read` / `job_get` / `job_create` / `job_update` / `job_rubric_approve` / `job_draft` / `application_intake` / `screening_evaluate` / `application_stage_advance` / `interview_schedule` / `interview_get` / `transcript_import` / `transcript_read` / `interview_record_verify` / `scorecard_submit` / `evaluation_summarize` / `decision_record` / `record_human_decision` / `trace_get` / `config_role` / `config_team` / `config_pipeline` / `page_image` / `model_text_merge` | 假 ctx 调 `apply()` 捕获 **30** 个注册名（配置齐 / 缺两条路径都是 30，见 `test/unit/interview-record-verify.test.ts` 的 apply() 用例；现场输出 `work/d5/integration/registered-tools.json`）。2026-11-16 新增三个：`application_get` / `material_read`（task-75 一等只读业务读能力，收掉"用 shell/psql/源码读业务事实"的绕路）、`record_human_decision`（task-76 高层"记录人已做的决定"：basis/AUTHORITY/SUMMARY/hash 全部服务端组装，Agent 只传业务语义）。**命名不一致如实记录**：`record_human_decision` 不带 `recruitment_` 前缀（实现与已采集的真会话 `tool/call` 证据都是这个名字，改名会作废证据，v1.0 保持），其余 29 个都带前缀。`interview_record_verify` 是 D-B 修复：`interview_record` 从 `NEEDS_REVIEW/UNVERIFIED` 到 `READY/VERIFIED` 的唯一产品入口（人类闸门 D-79），契约见 `contracts/interview/tool-contracts.md §8` |
 | 2 | 全部只读、不连库（§0 / §2.3 / §6） | 读走 `withReadOnly`、写走 `withActor`，真连 PG 17；S3/S6/S8/S9/S10 都有写库路径 | `src/db/pool.ts`；`src/index.ts` 的 `create*Tool`；各 `src/tools/*.ts` |
 | 3 | `provenance` 恒 `FIXTURE`（§0 / §2.4） | 按 R4 三维标签计算；**缺省**才是 `FIXTURE`，真实读取为 `LIVE` | `src/tools/screening-evaluate.ts:1692-1693`；`src/tools/decision-record.ts:1686-1693`；D-95 / D-103 |
 | 4 | 依赖服务 `inject = ['tools']`（§1） | `inject = ['tools', 'approval']`（人类闸门，D-79） | `src/index.ts:123` |
