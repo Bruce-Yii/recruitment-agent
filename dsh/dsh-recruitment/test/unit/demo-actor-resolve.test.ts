@@ -21,6 +21,9 @@ const SESSION_A = `session-${UUID_A}`
 const SESSION_B = `session-${UUID_B}`
 
 const RECRUITER = '11111111-1111-4111-8111-000000000103'
+// 2026-11-15 P0-4 扩展的两个 alias（`work/d5/roles/CONTRACT.md` §1）：0002_seed 既有 HUMAN 账号。
+const HIRING_MANAGER = '11111111-1111-4111-8111-000000000102'
+const APPROVER = '11111111-1111-4111-8111-000000000101'
 const INTERVIEWER_A = '11111111-1111-4111-8111-000000000104'
 const INTERVIEWER_B = '11111111-1111-4111-8111-000000000105'
 
@@ -120,15 +123,22 @@ test('resolveExecutionActor：注册表里的 display_name 原样带出（owner 
   assert.equal(actor.actor_id, INTERVIEWER_B)
 })
 
-test('三个 alias 映射到 103/104/105（A/B 是两个不同 HUMAN，recruiter 是 103）', () => {
+test('五个 alias 映射到 103/102/101/104/105（A/B 是两个不同 HUMAN；hiring_manager/approver 是 102/101）', () => {
   const { identity } = createDemoActorIdentity()
   identity.registry.bind(SESSION_A, 'recruiter')
   identity.registry.bind(SESSION_B, 'interviewer_a')
   const third = 'session-cccccccc-cccc-4ccc-8ccc-cccccccccccc'
   identity.registry.bind(third, 'interviewer_b')
+  // P0-4 新增的两个 alias 走同一条解析链（不特例、不回退 config.actor_id）。
+  const fourth = 'session-dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+  identity.registry.bind(fourth, 'hiring_manager')
+  const fifth = 'session-eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+  identity.registry.bind(fifth, 'approver')
   assert.equal(resolveExecutionActor({ agent: { id: SESSION_A } }, identity).actor_id, RECRUITER)
   assert.equal(resolveExecutionActor({ agent: { id: SESSION_B } }, identity).actor_id, INTERVIEWER_A)
   assert.equal(resolveExecutionActor({ agent: { id: third } }, identity).actor_id, INTERVIEWER_B)
+  assert.equal(resolveExecutionActor({ agent: { id: fourth } }, identity).actor_id, HIRING_MANAGER)
+  assert.equal(resolveExecutionActor({ agent: { id: fifth } }, identity).actor_id, APPROVER)
 })
 
 test('resolveExecutionActor：exec 里没有任何 session ⇒ DEMO_ACTOR_UNMAPPED(SESSION_SOURCE_MISSING)', () => {

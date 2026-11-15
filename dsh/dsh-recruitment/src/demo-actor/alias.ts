@@ -1,11 +1,18 @@
 // Demo Actor 的受控 alias 集合与 alias → HUMAN actor UUID 的映射解析。
 //
-// 设计口径（`work/d5/ACTOR-CONTRACT.md` §1、`work/d5/w1/CONTEXT.md` §1）：
-//   * 浏览器**永远不提交 UUID**，只提交三个受控 alias 之一；
+// 设计口径（现行：`work/d5/roles/CONTRACT.md` §1）：
+//   * 2026-11-15 P0-4 产品要求（六角色默认首页，Notion 02 §04）把受控 alias 从**三个扩到五个**：
+//     `recruiter` / `hiring_manager` / `approver` / `interviewer_a` / `interviewer_b`。
+//     原 `work/d5/ACTOR-CONTRACT.md` §1 写的"只有三个"是 W0/W1 冻结口径，已被本条扩展取代
+//     （A/B 与 recruiter 的语义不变，新增两个只加 alias + 缺省映射，不改任何解析规则）。
+//   * 浏览器**永远不提交 UUID**，只提交五个受控 alias 之一；
 //   * alias → UUID 的映射只存在于**服务端受管配置**（插件配置 / 种子），
 //     这里只负责"配置是否合法"，不负责"DB 里这个 actor 存不存在/是不是 HUMAN"
 //     （那是 Host Remote Action 的 PUT /actor 与各写工具的职责）。
-//   * A/B 是同一 INTERVIEWER 角色下的两个本地演示身份，不是认证系统、不是 RBAC。
+//   * `interviewer_a` / `interviewer_b` 仍是同一 INTERVIEWER 角色下的两个本地演示身份；
+//     `hiring_manager` / `approver` 也只是**视图/展示口径**（招聘负责人 / 企业管理员），
+//     同样**不是认证系统、不是 RBAC** —— 真实写授权仍在服务端 Host Action 白名单
+//     （`src/http/actions.ts` 的 `ACTION_ALLOWED_ALIASES`，本文件不参与授权判定）。
 //
 // 本文件是**纯函数层**：不读环境变量、不落库、不落文件、不抛除
 // `RecruitmentToolError('INVALID_ARGS')` 以外的错误。
@@ -13,8 +20,18 @@
 import { RecruitmentToolError } from '../tools/errors.ts'
 import { isUuidText } from '../db/pool.ts'
 
-/** 受控 alias 封闭集（顺序即对外展示顺序，顺序本身不是契约，值是）。 */
-export const DEMO_ACTOR_ALIASES = ['recruiter', 'interviewer_a', 'interviewer_b'] as const
+/**
+ * 受控 alias 封闭集（**顺序即对外展示顺序，且本 lane 起顺序也被断言锁定**）。
+ *
+ * 2026-11-15 P0-4 起为五个：`recruiter` → `hiring_manager` → `approver` → `interviewer_a` → `interviewer_b`。
+ */
+export const DEMO_ACTOR_ALIASES = [
+  'recruiter',
+  'hiring_manager',
+  'approver',
+  'interviewer_a',
+  'interviewer_b',
+] as const
 
 /** 一个受控 alias。 */
 export type DemoActorAlias = (typeof DEMO_ACTOR_ALIASES)[number]
@@ -29,6 +46,8 @@ export type DemoActorMapConfig = Readonly<Partial<Record<DemoActorAlias, string>
  * 缺省映射：与 `db/migrations/0002_seed.sql` 的演示账号一致。
  *
  *   * `recruiter`      = `…0103`（HR 专员 / 演示 recruiter）
+ *   * `hiring_manager` = `…0102`（招聘负责人 / HIRING_MANAGER；0002_seed 既有账号）
+ *   * `approver`       = `…0101`（企业管理员 / ORG_ADMIN；0002_seed 既有账号，审批人）
  *   * `interviewer_a`  = `…0104`（演示-面试官 A）
  *   * `interviewer_b`  = `…0105`（演示-面试官 B；由 `scripts/bootstrap-demo.mjs` 幂等补齐）
  *
@@ -36,6 +55,8 @@ export type DemoActorMapConfig = Readonly<Partial<Record<DemoActorAlias, string>
  */
 export const DEFAULT_DEMO_ACTOR_MAP: DemoActorMap = Object.freeze({
   recruiter: '11111111-1111-4111-8111-000000000103',
+  hiring_manager: '11111111-1111-4111-8111-000000000102',
+  approver: '11111111-1111-4111-8111-000000000101',
   interviewer_a: '11111111-1111-4111-8111-000000000104',
   interviewer_b: '11111111-1111-4111-8111-000000000105',
 })
@@ -44,7 +65,7 @@ export const DEFAULT_DEMO_ACTOR_MAP: DemoActorMap = Object.freeze({
 const MAX_CONFIG_VALUE_LENGTH = 128
 
 /**
- * 是不是三个受控 alias 之一（**区分大小写**：alias 是服务端封闭集，不做归一）。
+ * 是不是五个受控 alias 之一（**区分大小写**：alias 是服务端封闭集，不做归一）。
  * @param value - 任意值（来自 HTTP body / 配置 / 测试）。
  * @returns 是受控 alias 时为 `true`。
  */

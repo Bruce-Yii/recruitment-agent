@@ -1535,6 +1535,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
 # 决策台账 · 2026-11-16（验收口径收口）
 
 - **D-123（2026-11-15 裁决；决策阶段闸门）**：`decision-record` 的 `STAGE/FINAL` 除 DC-07 写死 `decision.stage_code='S10'` 外，**还必须校验 `application.current_stage_code='S10'`**；否则 `INVALID_ARGS(STAGE_NOT_S10)` 零写入。`SCREENING` 保持 S7 写侧语义。Host facade 提前同一判据 fail-fast，工具侧权威闸门保留。独立验收发现的 `45ddd9fc`(S7)+`c645baba`(FINAL/S10) 为存量脏行，新闸门只挡新写，数据处置待验收后裁决。见合同 DC-07b。
+- **D-124（2026-11-15 裁决；角色 alias 扩展）**：Demo Actor alias 从 3 个扩到 5 个：`recruiter`(0103 HR)、`interviewer_a`(0104)、`interviewer_b`(0105)、`hiring_manager`(0102 HIRING_MANAGER)、`approver`(0101 ORG_ADMIN)。角色只决定**默认视图与可见性**；Host Action 的写授权仍只有 `recruiter`（`ACTION_ALLOWED_ALIASES` 不扩），approver/hiring_manager 写入返回 403 零写入，UI 提供显式“切换为 Recruiter 执行”并保留 403 负例。生产应改为按角色授权，届时另立裁决。
 ### D-122 · v1.0 验收基准与运行底座口径收口（C1–C3）
 
 **裁定（2026-11-16，总控；回答 Notion 14 与 `work/review/2026-11-16-notion-acceptance/03-CONFLICTS.md` 的 C1–C3）**：
