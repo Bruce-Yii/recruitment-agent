@@ -361,7 +361,7 @@ const HOP_KIND = {
   's10-scorecard-2': 'write',
   's10-evaluation-summarize': 'read',
   's10-decision-stage': 'write',
-  's10-stage-advance-after-decision': 'read',
+  's10-stage-advance-after-decision': 'write',
 }
 
 /**
@@ -1470,17 +1470,48 @@ const stageDecisionArgs = {
     }),
   },
 }
+// ---- 15 阶段推进终跳（**终值 S10**）：先推进 S8→S9→S10，再做 S10 决策 ----
+// 顺序修正（2026-11-15）：DC-07b 要求 STAGE/FINAL 写决策时 application 已在 S10；
+// 旧版先做 S10 决策（实际在 S8）再推进，是错误业务顺序，会把 S7/S8 决策写进库。
+const advanceAfterDecision = await runHop({
+  id: 's10-stage-advance-after-decision',
+  hop: 15,
+  label: RUN_MODE === 'FIRST_RUN'
+    ? '阶段推进终跳：S8→S9（canonical READY 转写）→ S9→S10（材料可用 + ≥1 SUBMITTED 面评），一次调用走完'
+    : '阶段推进终跳幂等调用（RERUN）：申请已在 S10（v1.0 终态），必须 NO_OP 且零迁移',
+  tool: stageAdvanceTool,
+  args: { application_id: applicationId },
+  readback: async () => ({ application: await readApplication(applicationId) }),
+  expect_note: RUN_MODE === 'FIRST_RUN'
+    ? 'ADVANCED + transitions 逐字 [{S8→S9},{S9→S10}] + stage_code=S10'
+    : 'NO_OP + stage_code=S10 + transitions=[]（S10 是终态，不再前进、不发明 S11）',
+  expect: (record) => {
+    if (record.ok !== true) return false
+    if (RUN_MODE === 'FIRST_RUN') {
+      return record.result?.status === 'ADVANCED'
+        && JSON.stringify(record.result?.transitions ?? [])
+          === JSON.stringify([{ from: 'S8', to: 'S9' }, { from: 'S9', to: 'S10' }])
+        && record.result?.stage_code === 'S10'
+    }
+    return record.result?.status === 'NO_OP'
+      && record.result?.stage_code === 'S10'
+      && (record.result?.transitions ?? []).length === 0
+  },
+})
+log(`stage before S10 decision = ${advanceAfterDecision.result?.stage_code} status=${advanceAfterDecision.result?.status}`)
+
+// ---- 16 S10 decision_record(STAGE)（**必须在 S10 之后**） ----
 if (interviewId === undefined || summaryValue === undefined) {
   // 上游没有面试 / 汇总没成功时，不存在合法的 summary_digest 与面评依据；
   // 此时硬调 decision 只会得到一个 harness 自造的 INVALID_ARGS（旧版就踩过），如实标 SKIPPED。
   skippedHops += 1
-  log('HOP 15 SKIPPED：HOP 7 没有面试 或 HOP 14 汇总未成功，无法构造合法 basis_refs。')
+  log('HOP 16 SKIPPED：HOP 7 没有面试 或 HOP 14 汇总未成功，无法构造合法 basis_refs。')
 } else {
   const stageApproval = makeApproval('unavailable')
   const stageDecisionTool = createDecisionRecordTool({ database: DB, approval: stageApproval })
   const stageDecision = await runHop({
     id: 's10-decision-stage',
-    hop: 15,
+    hop: 16,
     label: RUN_MODE === 'FIRST_RUN'
       ? 'S10 decision_record(STAGE)（真实 summary_digest + 真实面评依据 + IN_CHAT v2）'
       : 'S10 decision_record(STAGE) 重复提交（RERUN）：STAGE@S10 决策已存在，必须 ALREADY_DECIDED 且零写入',
@@ -1505,39 +1536,6 @@ if (interviewId === undefined || summaryValue === undefined) {
   })
   log(`STAGE 决策：${stageDecision.ok ? 'WROTE' : `FAILED(${stageDecision.error?.code}/${stageDecision.error_body?.reason_code ?? '?'})`}`)
 }
-
-// ---- 16 阶段推进终跳（**终值 S10**）：contract v1.3.0 的四条边，一次调用走完 S8→S9→S10 ----
-// FIRST_RUN：到这里 canonical READY 转写（HOP9/10）与 ≥1 份 SUBMITTED 面评（HOP12/13）都已成立，
-//             一次调用必须**逐字**给出两条迁移 [{S8→S9},{S9→S10}]，阶段码落到 S10（v1.0 终态）。
-// RERUN    ：指针已在 S10（终态）→ 必须 NO_OP@S10、transitions=[]（零 UPDATE）。
-// 旧版把"梯子只到 S8、期望 NO_OP@S8"当成功 —— 那是 G3 之前的实现事实，本版已删除该断言。
-const advanceAfterDecision = await runHop({
-  id: 's10-stage-advance-after-decision',
-  hop: 16,
-  label: RUN_MODE === 'FIRST_RUN'
-    ? '阶段推进终跳：S8→S9（canonical READY 转写）→ S9→S10（材料可用 + ≥1 SUBMITTED 面评），一次调用走完'
-    : '阶段推进终跳幂等调用（RERUN）：申请已在 S10（v1.0 终态），必须 NO_OP 且零迁移',
-  tool: stageAdvanceTool,
-  args: { application_id: applicationId },
-  readback: async () => ({ application: await readApplication(applicationId) }),
-  expect_note: RUN_MODE === 'FIRST_RUN'
-    ? 'ADVANCED + transitions 逐字 [{S8→S9},{S9→S10}] + stage_code=S10'
-    : 'NO_OP + stage_code=S10 + transitions=[]（S10 是终态，不再前进、不发明 S11）',
-  expect: (record) => {
-    if (record.ok !== true) return false
-    if (RUN_MODE === 'FIRST_RUN') {
-      return record.result?.status === 'ADVANCED'
-        && JSON.stringify(record.result?.transitions ?? [])
-          === JSON.stringify([{ from: 'S8', to: 'S9' }, { from: 'S9', to: 'S10' }])
-        && record.result?.stage_code === 'S10'
-    }
-    return record.result?.status === 'NO_OP'
-      && record.result?.stage_code === 'S10'
-      && (record.result?.transitions ?? []).length === 0
-  },
-})
-log(`stage after decision advance call = ${advanceAfterDecision.result?.stage_code} status=${advanceAfterDecision.result?.status}`)
-
 // ---- 17 终态读回 ----
 log('')
 log('════════ HOP 17 · 终态读回（同一条申请 S6→S10 的全部事实；纯 SQL，不 import 产品代码） ════════')
