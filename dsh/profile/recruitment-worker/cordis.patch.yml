@@ -11,7 +11,7 @@
   name: "@deepseek-ai/dsh-agent-default-model"
   config:
     provider: opencode-go-openai
-    model: longcat-2.5-free
+    model: deepseek-v4.1-flash
 - id: llm-pi-ai
   name: "@deepseek-ai/dsh-llm-pi-ai"
   config:
@@ -223,3 +223,33 @@
         - '${RECRUITMENT_ALLOWED_ROOT_ORCHESTRATION}'
         - '${RECRUITMENT_ALLOWED_ROOT_CODEX}'
       timeout_ms: 180000
+
+# ---------------------------------------------------------------------------
+# task-75（同一批）：worker 会话的工程工具面收口（W0 应用，2026-11-16）。
+# P0-3 事故根因之一：worker 拿不到材料路径就全盘 `Get-ChildItem` → 180s WORKER_TIMEOUT。
+# 材料路径由 task-context 的 `material_path` 直接给（task-72），worker 不需要文件系统工具"自己找"。
+# ---------------------------------------------------------------------------
+- id: tool-pwsh
+  disabled: true
+- id: tool-bash
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-working-directory
+  disabled: true
+- id: tool-web
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-agent-team
+  disabled: true
+- id: agent-instructions
+  disabled: true
