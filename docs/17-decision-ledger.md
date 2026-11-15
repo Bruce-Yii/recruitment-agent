@@ -1552,6 +1552,14 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   3. **姓名解析只认可信来源，禁止猜测**。优先级 = ① 行首标签 `姓名：/Name:`（中文 2–20 字 / 英文 1–4 词）② 结构层 `level=1`（h1 及其"姓名+职位"前缀）③ 有标签但读不出 = `unreadable` ④ 都没有 = `absent`。**删除"字号最大且唯一"的 fallback**（事故根因：正文小标题「声明」12pt 被当姓名）。值本身是文档词（`声明/简历/个人简介/...`）→ 不走标签路径。
   4. **rubric 质量门槛是 advisory，不是判定**。它可以：新增可选输出键 `rubric_quality`、在 `warnings[]` 里加封闭枚举 `QUALITY_WARNING`、在 `verdict=PASS` 时给 summary 加 `[机械条件通过·非业务通过]` 前缀。它**不可以**：改 `verdict` / `required_human_action`、写库、自动修改 rubric 标准、把建议维度直接落成正式维度（建议维度必须由人批准）。**覆盖判定是词面匹配（启发式），同义改写会漏报** —— 这是已知边界，不许当成"语义判断"宣称。
 - **D-129（2026-11-16 总控裁决；task-78 的 lane 连续中断后的接管方式）**：`owner-product-budget` 两次在无收尾消息的情况下中断（01:11 写完全部设计后断、02:06 唤醒后立刻再断），三个子代理零产出。处置：**保留其 `DESIGN.md`（255 行，已由总控逐条通读接受，作为该能力的冻结内部契约）**，由总控直接唤醒三个子代理（`budget-core` / `budget-verify` / `budget-session`）并下发新基线（HEAD `5adab02`、注册面 30、D-128），不重派重做已完成的父级设计工作。附带两条约束：`budget.status_tool` 默认必须 `false`（否则注册数变 31 违反 D-128.2）；`installBudgetGuard` 的 `src/index.ts` 接线由总控（W0）落，lane 只交可 `git apply --check` 的 patch。
+- **D-131（2026-11-16 总控裁决；task-78 的额度阻断与 key2 取证授权）**：
+  1. **产品层 D 项判 BLOCKED，不判 FAIL**。事实：真实 DSH headless 会话已起、临时 profile 里闸门**真的装上**（verbose `guard_registrations=1`、源码 sha 与仓库一致），但模型第一步即被 provider 拒绝：`429 GoUsageLimitError`（OpenCode Go 周额度，`wrk_01KZ…`，约 2026-11-16 08:01 本地恢复）。该 run 的 `usage=[]`、0 次工具调用、DB 逐表 delta=0，**不作为证据**。
+  2. **授权过一次 key2 取证，结果为也 429（monthly，另一 org，≈2026-11-30）**。裁决口径（无论成败都成立）：`opencode-go-openai-key2` 是**验收取证用凭据**，不是产品生产凭据；模型仍必须是 `deepseek-v4.1-flash`；**若成功也只证明"闸门 + usage 观测链路可用"，不等于"产品凭据可用"**。产品默认仍是 `opencode-go-openai` + `OPENCODE_GO_API_KEY`（D-127）。**不换模型、不伪造 usage、不再试第三个 key**。
+  3. 恢复路径已固化为一条命令：`pwsh -NoProfile -File work/d5/product-budget/evidence/session/scripts/run-formal.ps1`（两会话 + 全表 delta 自动落盘；一次性库 `ra_budget_sess_20261116_0232` 已就绪）。**独立窗口不得把"工程层零写已验证"当成"真实会话预算验收通过"** —— 两者必须分开陈述。
+- **D-132（2026-11-16 总控裁决；预算的三个口径决定）**：
+  1. **`budget.status_tool` 默认 `false`**：开启会注册 `recruitment_budget_status` 成为第 31 个工具，违反 D-128.2 的权威注册面 30。需要在验证环境证明 status 工具可用时，只在验证 profile 显式开。
+  2. **`budget.enabled` 总开关 = `false` 的语义是"显式关闭"，不是错误**。本插件被产品 profile 与 worker profile **共用**，而 worker 的 `RESUME_PARSE` 是 180s 预算的长任务，用 HR 交互预算（SCREENING 100k/15 步）卡它会直接回归 P0 #3。故：产品 profile 显式 `enabled: true`；**worker profile 显式 `enabled: false`**。**禁止用"把阈值调大"代替关闭** —— 那会让预算对 worker 变成假配置（看起来有闸门、实际永不触发）。worker 侧成本口径另立（不在 v1.0/task-78 范围）。
+  3. **`src/budget/**`（1,378 行）不计入 `scripts/runtime-budget.mjs` 的 4,584 棘轮** —— 该棘轮的口径是 `src/runtime/**`（调度运行时），budget 是插件层的业务保护，不改调度。**这里如实登记行数，避免"绕开棘轮"的嫌疑**：若未来把预算逻辑搬进 `src/runtime/**`，必须重新申报棘轮（D-109 口径）。当前 `runtime-budget: PASS（4584/4584）`。
 ### D-122 · v1.0 验收基准与运行底座口径收口（C1–C3）
 
 **裁定（2026-11-16，总控；回答 Notion 14 与 `work/review/2026-11-16-notion-acceptance/03-CONFLICTS.md` 的 C1–C3）**：
