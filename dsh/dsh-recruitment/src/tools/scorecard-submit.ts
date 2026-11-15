@@ -1244,6 +1244,8 @@ interface ScorecardRow {
   readonly payload_hash: string | null
   readonly items: Record<string, unknown> | null
   readonly overall: string | null
+  /** 修订原因/拒绝原因落在这列（见文件头 G-1/G-2）；幂等重放要读回 reject_reasons。 */
+  readonly rationale: string | null
   readonly status_changed_by_actor_id: string | null
   readonly status_source_event_id: string | null
   readonly record_version: number
@@ -1507,7 +1509,7 @@ async function loadScorecardById(
 ): Promise<ScorecardRow> {
   const { rows } = await client.query<ScorecardRow>(
     `select id, revision_no, status, interview_id, interviewer_id, rubric_version_id, submitted_at,
-            payload_hash, items, overall, status_changed_by_actor_id, status_source_event_id, record_version
+            payload_hash, items, overall, rationale, status_changed_by_actor_id, status_source_event_id, record_version
        from recruitment.scorecard
       where id = $1 and tenant_id = $2`,
     [scorecardId, tenantId],
