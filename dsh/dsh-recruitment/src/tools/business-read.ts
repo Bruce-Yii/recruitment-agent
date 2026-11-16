@@ -3023,8 +3023,13 @@ function renderMaterialRead(_args: unknown, value: unknown): readonly TextBlock[
       const where: string[] = []
       if (citation.page !== undefined) where.push(`page ${citation.page}`)
       if (citation.paragraph !== undefined) where.push(`paragraph ${citation.paragraph}`)
-      if (citation.paragraph_id !== undefined) where.push(`paragraph_id ${citation.paragraph_id}`)
-      if (citation.table_id !== undefined) where.push(`table ${citation.table_id} row ${citation.row ?? '?'} cell ${citation.cell ?? '?'}`)
+      // O1：paragraph_id / table_id 是读取器块的内部 id（新实现里是完整 UUID），人读正文只给短号；
+      // 完整值仍在结构化 `text.citations[]` 里（下游按 D-110 定位要用）。人类可读的
+      // `paragraph` 数值（0-based）与 row/cell/line/offset 照旧给全。
+      if (citation.paragraph_id !== undefined) where.push(`paragraph_id ${shortRef(citation.paragraph_id)}`)
+      if (citation.table_id !== undefined) {
+        where.push(`table ${shortRef(citation.table_id)} row ${citation.row ?? '?'} cell ${citation.cell ?? '?'}`)
+      }
       if (citation.line !== undefined) where.push(`line ${citation.line}`)
       if (citation.offset !== undefined) where.push(`offset ${citation.offset}`)
       const flags = [

@@ -447,6 +447,12 @@ const NON_TOOL_MODULES: Readonly<Record<string, string>> = {
   'config-shared.ts': '配置读视图的公共 render helper（由 config-* 工具调用），无工具定义',
   'render-ref.ts': 'render 短号 / 机器参数区 helper（本机检的白名单口径），无工具定义',
   'scorecard-progress.ts': '必交面评进度的纯函数派生实现（被 interview-get / application-get 复用），无工具定义',
+  // trace 留痕接线（D-141 §4）：这是**工具定义的包装器**（`withToolCallTrace(tool, deps)` 浅拷贝
+  // 原工具、只替换 `execute`），文件里没有任何 `create*Tool` / `unconfigured*Tool` 工厂、没有自己的
+  // `output.render`，所以没有"模型可见文本"可执行；它返回的仍是别的文件里已登记的工具定义，
+  // 那些工具已由本机检逐条执行。排除它是**有理由的具体项**，不是"忽略所有未知文件"——
+  // 真正新增一个工具文件（含 create* 工厂）仍然会在这里报红。
+  'traced.ts': '工具定义包装器（withToolCallTrace：浅拷贝 + 只替换 execute），无工具定义/无 render',
 }
 
 /**
