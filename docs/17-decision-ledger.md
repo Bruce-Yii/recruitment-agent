@@ -1627,6 +1627,11 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
 - **D-142（2026-11-16 总控裁决；两条会影响"人看到什么"的产品语义）**：
   1. **SCREENING + REJECT = 这条申请结束**。实现口径（收窄版）：同一事务内 = 决策落库（`result=REJECT`、`stage_code=S7`）+ 阶段派生 `S6→S7` + **`lifecycle_status` `ACTIVE→CLOSED`**。用**既有** `CLOSED` 取值与**既有** `application.lifecycle_status.changed` 事件，**不新增取值、不加迁移、不发新事件类型**；`WITHDRAWN` 不用（语义是候选人撤回）。理由：初筛没过仍挂 ACTIVE 会让工作台把被拒的人算进"推进中"、并提示"去安排面试"——那是**事实错**，不是显示问题；回退到 S6 又与 `decision.stage_code=S7` 自相矛盾（正是 D-141③ 要消灭的假事实）。ADVANCE 保持 `S7 + ACTIVE`。**同步修** `deriveApplicationNextStep`：`current SCREENING=REJECT` → `CLOSED`（兜历史数据行）。
   2. **允许"夹具纠正"，但不许"放宽规则"**。演示库 `0002_seed` 的 rubric v1 criteria **缺 `question`**，R-VAL-12 判定不可执行 → 演示申请钉 v1 时初筛必然 `NO_RUBRIC/RUBRIC_INVALID`。处置：`bootstrap-demo.mjs` 幂等步骤 `seed.demo_rubric_repair`，把演示申请**重绑到"已批准且可执行"的版本**（输出 `pinned_before/after` + `executable_before/after` + `state=REBOUND|NO_OP`），**不改迁移、不放宽 R-VAL-12、不伪造初筛结果**。同时：因此改动而失效的测试必须**跟随真值更新且不得放宽强度**（能读库真值的改成读真值 = 收紧；"无材料"类用例改用自造无材料申请，不得把断言改反）。
+- **D-143（2026-11-16 产品负责人裁决；当前阶段模型口径 = HY4）**：
+  1. **现状定性**：现在处于**本地开发 / 验证阶段**，一切跑的是我们自己用的东西，**尚未进入产品交付**。因此"D-127 = 产品默认 v4.1"这条**不适用于本阶段的开发/验证用模型选择**（我此前拿"HR 体验质量"去反对在开发环境用免费模型，是把阶段搞错了，撤回该顾虑）。
+  2. **模型口径**：本阶段**开发与验证统一用 HY4**（`hy4-flash-free`，`[免费] Hy4 Flash Free`，contextWindow 1,048,576、maxTokens 65,536、支持 text+image）。落地：`dsh/profile/recruitment` 与 `dsh/profile/recruitment-worker` 的默认模型与 worker `model_route` 均改为 `opencode-go-openai / hy4-flash-free`（产品业务 Host 与 worker 一并改）。`--dump-config` 已核：两 profile 的 `model` = `hy4-flash-free`、`model_route` = `opencode-go-openai/hy4-flash-free`。
+  3. **正式交付前**：若要把模型口径写回"交付用模型"，另立裁决（届时才考虑质量/成本）。**不等同于本阶段口径。**
+  4. **已知限制**：`subagent` 的可选模型路由是**会话级白名单**（会话创建时固化）。当前这个会话只允许 `opencode-go/deepseek-v4.1-flash` 与 `opencode-go-openai/beam-free`，实测 `hy4-flash-free` 三个 provider id 全被拒（`child LLM route … not allowed for this Session`）。**新开会话后**按新配置计算，子代理即可用 HY4。
 ### D-122 · v1.0 验收基准与运行底座口径收口（C1–C3）
 
 **裁定（2026-11-16，总控；回答 Notion 14 与 `work/review/2026-11-16-notion-acceptance/03-CONFLICTS.md` 的 C1–C3）**：
