@@ -1624,6 +1624,9 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   8. **取不到材料逐字原文**：**同意是缺口，且不是刻意限制**。业务复核需要逐字证据（D-110 要求原文哈希 + 定位唯一 + 原句逐字命中）。先查真 Host 下 `material_read` 的 `TEXT` 模式是否可用（历史上演示脚本删文件导致不可用，已修），再补齐"带 page/offset 的引文"。
   9. **回答偏长**：**部分同意**。业务要"先结论、可展开"，不是长报告；做法是 skill 定"默认简短 + 依据列点 + 需要时展开"，**不做硬 token 预算**（D-140：不存在预算）。
   > **优先级（总控排）**：④ 的工具调用留痕接线 ＞ ⑧ 原文证据 ＞ ③ 决策派生阶段 ＞ ⑥ job 按 code 查 ＞ ① rubric 摘要；②先查证；⑤⑦⑨ 归措辞/不主动提。
+- **D-142（2026-11-16 总控裁决；两条会影响"人看到什么"的产品语义）**：
+  1. **SCREENING + REJECT = 这条申请结束**。实现口径（收窄版）：同一事务内 = 决策落库（`result=REJECT`、`stage_code=S7`）+ 阶段派生 `S6→S7` + **`lifecycle_status` `ACTIVE→CLOSED`**。用**既有** `CLOSED` 取值与**既有** `application.lifecycle_status.changed` 事件，**不新增取值、不加迁移、不发新事件类型**；`WITHDRAWN` 不用（语义是候选人撤回）。理由：初筛没过仍挂 ACTIVE 会让工作台把被拒的人算进"推进中"、并提示"去安排面试"——那是**事实错**，不是显示问题；回退到 S6 又与 `decision.stage_code=S7` 自相矛盾（正是 D-141③ 要消灭的假事实）。ADVANCE 保持 `S7 + ACTIVE`。**同步修** `deriveApplicationNextStep`：`current SCREENING=REJECT` → `CLOSED`（兜历史数据行）。
+  2. **允许"夹具纠正"，但不许"放宽规则"**。演示库 `0002_seed` 的 rubric v1 criteria **缺 `question`**，R-VAL-12 判定不可执行 → 演示申请钉 v1 时初筛必然 `NO_RUBRIC/RUBRIC_INVALID`。处置：`bootstrap-demo.mjs` 幂等步骤 `seed.demo_rubric_repair`，把演示申请**重绑到"已批准且可执行"的版本**（输出 `pinned_before/after` + `executable_before/after` + `state=REBOUND|NO_OP`），**不改迁移、不放宽 R-VAL-12、不伪造初筛结果**。同时：因此改动而失效的测试必须**跟随真值更新且不得放宽强度**（能读库真值的改成读真值 = 收紧；"无材料"类用例改用自造无材料申请，不得把断言改反）。
 ### D-122 · v1.0 验收基准与运行底座口径收口（C1–C3）
 
 **裁定（2026-11-16，总控；回答 Notion 14 与 `work/review/2026-11-16-notion-acceptance/03-CONFLICTS.md` 的 C1–C3）**：
