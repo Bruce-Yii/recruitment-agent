@@ -3,7 +3,9 @@
 // 覆盖 `work/d5/decision/CONTRACT.md`（W2b 逐字消费口径）与 task-56 验收：
 //   a. GET  /recruitment/api/decision/facts             → 200；job/rubric payload_hash 与独立 SQL 逐字一致；
 //      authority / stage_code / missing / basis / screening_evaluation / evaluation_summary 结构；
-//      无材料种子（0701）→ screening_evaluation=null 且 missing 区分 UNAVAILABLE。
+//      真无材料申请（本文件自造 `bindMaterial:false` 的场景）→ screening_evaluation=null 且
+//      missing 区分 UNAVAILABLE（**不**再用 …0701：P1 #5 已给它种了材料，之前只因旧 rubric
+//      不可执行才"恰好"为 null；夹具纠偏后它会正常算出评估）。
 //   b. POST /recruitment/api/decision/screening/evaluate → 200；evaluation digest 64hex、rubric hash 与 SQL 一致；
 //      readback.persisted=false 如实（domain 只读）；前后 decision 行数不变。
 //   c. POST /recruitment/api/decision/record            → FINAL HOLD 200；独立 SQL 读回 decision 行
@@ -52,7 +54,6 @@ const BASE = testDatabaseConfig()
 const SESSION_R = 'session-d5dec000-0000-4000-8000-00000000c001'
 const SESSION_A = 'session-d5dec000-0000-4000-8000-00000000a001'
 const SESSION_UNBOUND = 'session-d5dec000-0000-4000-8000-00000000ff01'
-const DEMO_APPLICATION_0701 = '11111111-1111-4111-8111-000000000701'
 
 const WORK_EXISTS = {
   key: 'work_exists', label: '有工作经历', kind: 'MUST_HAVE', weight: 0.6,
@@ -70,6 +71,12 @@ let harness: Harness
 let scenario: Scenario
 /** S10 夹具（正式决策正例 + 已提交面评 → facts 走 transcript_state 查询的回归用例）。 */
 let s10Scenario: Scenario
+/**
+ * **真无材料**申请夹具（`bindMaterial:false` = application.resume_version_id 为空）：
+ * 用于「screening_evaluation=null / UNAVAILABLE」用例 —— 现在名副其实（不再借 …0701：
+ * 它经 P1 #5 种子已有材料，且 rubric 纠偏后可正常初筛）。
+ */
+let noMaterialScenario: Scenario
 let s10InterviewId = ''
 let s10ScorecardId = ''
 let pinnedRubricHash = ''
@@ -96,10 +103,11 @@ test.before(async () => {
   const boot = await runBootstrap(db.name)
   assert.equal(boot.code, 0, `bootstrap 必须 exit 0；实际 code=${String(boot.code)}\n${boot.stdout.slice(-2000)}\n${boot.stderr.slice(-2000)}`)
 
-  // 提交事务里造两份夹具（真提交，供跨连接 HTTP 读）：
+  // 提交事务里造三份夹具（真提交，供跨连接 HTTP 读）：
   //   * S7 申请：负例（S7 录 FINAL/STAGE 必须被 STAGE_NOT_S10 拦住）；
   //   * S10 申请 + 一场面试 + 1 条已提交面评：正式决策正例，并让 facts 走
   //     `loadRecordScorecardRefs → transcript_state` 查询（2026-11-15 真 Host 500 的回归面）。
+  //   * 无材料申请（bindMaterial:false）：facts 的 screening_evaluation 必须 null/UNAVAILABLE。
   const client = await db.pool.connect()
   try {
     await client.query('begin')
@@ -116,6 +124,15 @@ test.before(async () => {
       approve: true,
       pinRubric: true,
       bindMaterial: true,
+    })
+    // 真无材料：application.resume_version_id 留空（初筛会 BLOCKED_BY_REVIEW/MATERIAL_NOT_BOUND
+    // ⇒ facts 侧如实记为 SCREENING_EVALUATION_UNAVAILABLE，不编造评估）。
+    noMaterialScenario = await seedScenario(client, {
+      dimensions: [WORK_EXISTS, MONTHS_LTE60].map(criterion),
+      fields: parsedFields({ entryCount: 1 }),
+      approve: true,
+      pinRubric: true,
+      bindMaterial: false,
     })
     // 阶段迁移有过期护栏：DB 触发器要求事务里能确定 actor（SET LOCAL recruitment.actor_id）。
     await client.query("select set_config('recruitment.actor_id', $1, true)", [HR_ACTOR])
@@ -216,15 +233,26 @@ test('facts：钉住的 job/rubric payload_hash 与独立 SQL 逐字一致，且
 })
 
 test('facts：无材料申请 → screening_evaluation=null 且 missing 区分「不可计算」', async () => {
-  const result = await httpCall('GET', `${DECISION_PATHS.facts}?application_id=${DEMO_APPLICATION_0701}`, { session: SESSION_R })
+  // 用本文件自造的**真无材料**申请（application.resume_version_id 为空）：这样"不可计算"
+  // 是材料事实本身导致的，而不是借 …0701（它经 P1 #5 已有材料、rubric 纠偏后还能正常初筛）。
+  const result = await httpCall('GET', `${DECISION_PATHS.facts}?application_id=${noMaterialScenario.applicationId}`, { session: SESSION_R })
   assert.equal(result.status, 200, `facts 期望 200：${result.text.slice(0, 1200)}`)
   const body = result.body
+  assert.equal(body.application_id, noMaterialScenario.applicationId)
+  // 夹具前提（独立 SQL 读回）：这条申请必须真的没有材料指针，否则本用例名不副实。
+  const materialRows = await query<{ resume_version_id: string | null }>(
+    'select resume_version_id from recruitment.application where tenant_id = $1 and id = $2',
+    [TENANT, noMaterialScenario.applicationId],
+  )
+  assert.equal(materialRows[0]?.resume_version_id, null, '夹具前提：无材料申请的 resume_version_id 必须为空')
   assert.equal(body.screening_evaluation, null)
   assert.equal(body.screening_evaluation_state, 'UNAVAILABLE')
   const missing = (body.missing as Array<{ key: string; reason: string }>)
   const evaluationMissing = missing.find((entry) => entry.key === 'screening_evaluation')
   assert.ok(evaluationMissing !== undefined, 'missing 必须含 screening_evaluation')
   assert.match(evaluationMissing.reason, /^SCREENING_EVALUATION_UNAVAILABLE:/, 'missing 原因必须能区分「不可计算」')
+  // 缺失原因必须指向材料本身（MATERIAL_NOT_BOUND），证明"无材料"真的被识别，而不是别的错误碰巧 null。
+  assert.match(evaluationMissing.reason, /MATERIAL_NOT_BOUND/, `缺失原因应指向 MATERIAL_NOT_BOUND：${evaluationMissing.reason}`)
   // 不能给假 basis：评估缺失时 screening_decide.screening_evaluation 必须为 null
   assert.equal(body.basis?.screening_decide?.screening_evaluation, null)
 })

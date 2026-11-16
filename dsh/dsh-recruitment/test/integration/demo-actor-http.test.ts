@@ -60,8 +60,26 @@ const SESSION_C = 'session-cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 const SESSION_D = 'session-dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 const SESSION_E = 'session-eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
 
-/** 802 的 rubric 维度（0002_seed rubric v1/v2 同键）。 */
-const DIMENSION_KEYS = ['backend_depth', 'async_pipeline', 'frontend_basics'] as const
+/**
+ * 802 的 rubric 维度 —— **从库里读真值**（application pin → `rubric_version.dimensions`），
+ * 不硬编码：`0002_seed` 的 v1 键（backend_depth/async_pipeline/frontend_basics）与 bootstrap
+ * 创建的 v2 键（work_exists/edu_exists/team_lead）**不同**；本文件跟随库内真值。
+ * 由 `test.before()` 用独立 SQL 填入（`jsonb_array_elements … with ordinality` 保序）。
+ */
+let pinnedDimensionKeys: string[] = []
+
+/** 每个维度给一份合法的 HOLD 评分（`MET` + score 4 + note；符合 scorecard 的 assessment 枚举约束）。 */
+function assessmentItems(): Record<string, unknown> {
+  const items: Record<string, unknown> = {}
+  for (const key of pinnedDimensionKeys) {
+    items[key] = {
+      assessment: 'MET',
+      score: 4,
+      note: '夹具：按库内钉住 rubric 的维度逐项评分（MET + 依据）',
+    }
+  }
+  return items
+}
 
 /** 工具路径的参数（Review 提交；HOLD 不触发 ADVANCE/REJECT 的额外语义门槛）。 */
 function toolArgs(interviewId: string, idempotencyKey: string): Record<string, unknown> {
@@ -69,9 +87,7 @@ function toolArgs(interviewId: string, idempotencyKey: string): Record<string, u
     interview_id: interviewId,
     items: {
       transcript_basis: 'NO_TRANSCRIPT',
-      backend_depth: { assessment: 'MET', score: 4, note: '讲清了分片键的选择' },
-      async_pipeline: { assessment: 'NOT_MET', score: 2, note: '队列重放答不上来' },
-      frontend_basics: { assessment: 'NOT_OBSERVED' },
+      ...assessmentItems(),
     },
     overall: 'HOLD',
     idempotency_key: idempotencyKey,
@@ -87,11 +103,7 @@ function submissionBody(
   return {
     interview_id: interviewId,
     application_id: DEMO_APPLICATION,
-    dimensions: {
-      backend_depth: { assessment: 'MET', score: 4, note: '讲清了分片键的选择' },
-      async_pipeline: { assessment: 'NOT_MET', score: 2, note: '队列重放答不上来' },
-      frontend_basics: { assessment: 'NOT_OBSERVED' },
-    },
+    dimensions: assessmentItems(),
     transcript_basis: 'NO_TRANSCRIPT',
     overall: 'HOLD',
     nonce,
@@ -145,6 +157,25 @@ test.before(async () => {
     [INTERVIEW_802, ACTOR_103, TENANT],
   )
   assert.equal(negative[0]?.n, 0, '802 上 103 必须未分配（负例）')
+
+  // ---- 从库里读真值：…0701 钉住的 rubric 的 dimensions 键（顺序 = jsonb 数组顺序）----
+  // 不硬编码 v1/v2 键：bootstrap 现在把申请钉在**可执行且已批准**的版本上（v2），
+  // 键集与 0002_seed 的 v1 不同；form 断言与 items/dimensions 构造都跟随这里读到的真值。
+  const dimensionRows = await query<{ key: string }>(
+    `select d->>'key' as key
+       from recruitment.application a
+       join recruitment.rubric_version rv
+         on rv.id = a.rubric_version_id and rv.tenant_id = a.tenant_id
+       cross join lateral jsonb_array_elements(rv.dimensions) with ordinality as t(d, ordinality)
+      where a.tenant_id = $1 and a.id = $2
+      order by t.ordinality`,
+    [TENANT, DEMO_APPLICATION],
+  )
+  pinnedDimensionKeys = dimensionRows
+    .map((row) => row.key)
+    .filter((key) => typeof key === 'string' && key !== '')
+  assert.ok(pinnedDimensionKeys.length >= 1,
+    `…0701 必须钉住一个带 dimensions 的 rubric 版本（读到 ${pinnedDimensionKeys.length} 个键）`)
 
   // 真 HTTP server + 真实 webServer.register 契约。
   const created = createDemoActorIdentity()
@@ -547,11 +578,13 @@ test('验收2：A/B 各 GET nonce + POST submit → 库里两行面评，intervi
   assert.equal((formA.body.interview as Record<string, unknown>).application_id, DEMO_APPLICATION)
   assert.deepEqual(
     (formA.body.rubric as { dimensions: { key: string }[] }).dimensions.map((dimension) => dimension.key),
-    [...DIMENSION_KEYS],
+    pinnedDimensionKeys,
+    'form 下发的 rubric 维度键必须等于库里 …0701 钉住版本的 dimensions 键（顺序按 jsonb 数组）',
   )
   assert.deepEqual(
     (formA.body.dimensions as { key: string }[]).map((dimension) => dimension.key),
-    [...DIMENSION_KEYS],
+    pinnedDimensionKeys,
+    'form 下发的评分维度键必须等于库里 …0701 钉住版本的 dimensions 键',
   )
   assert.deepEqual(formA.body.overall_options, ['ADVANCE', 'HOLD', 'REJECT'])
   assert.equal((formA.body.transcript_basis as Record<string, unknown>).value, 'NO_TRANSCRIPT')

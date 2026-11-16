@@ -6,7 +6,7 @@
 // `contracts/job-screening/job-rubric-rules.md` §4.2，没有生效的 APPROVED = 未批准 =
 // S7 `NO_APPROVED_RUBRIC`，所以干净库跑不了 demo（owner-g4 的 S6→S10 harness 预检同样 BLOCKED）。
 //
-// 本脚本的定位：**用产品工具链补齐 demo 前置**（不改 0002_seed、不加迁移）。它做六件事：
+// 本脚本的定位：**用产品工具链补齐 demo 前置**（不改 0002_seed、不加迁移）。它做七件事：
 //   1. 只读预检：迁移台账版本、租户/actor（HUMAN + HR 角色）、按 code 找演示岗位；
 //   2. 只读判定状态：NO_OP / APPROVE_PENDING / APPEND_RUBRIC / CREATE_JOB；
 //   3. 非 NO_OP 时先过**一次**人机闸门替身（DEMO_APPROVAL_MODE），不是 allowed-once
@@ -30,16 +30,30 @@
 //      解析失败/身份闸门拒绝 → 本次 bootstrap 失败（exit 1/2），不静默跳过、不手工伪造材料行。
 //      因此**首跑**需要 Python + converter 依赖（`RECRUITMENT_PYTHON_BIN` 或 PATH 上的 python；
 //      与 golden path harness 同一套 converter/ 目录）；材料已在库的重跑不需要 Python。
+//   7. **O3 夹具 `seed.demo_rubric_repair`：钉住的 rubric 版本必须可执行**。`0002_seed` §5 的
+//      rubric v1（`…0403`）三条 criteria 只有 key/label/kind/weight（既无 field 也无 question），
+//      按 `contracts/job-screening/job-rubric-rules.md` §6.2 `R-VAL-12` 全部非法；而申请 `…0701`
+//      在 §7 被钉在 v1 上 → `screening_evaluate` 必抛 `NO_RUBRIC/RUBRIC_INVALID`，HR/Agent
+//      在干净库上的第一次初筛永远做不下去。本步用**产品纯函数** `validateDimensions()`（不另写
+//      规则）判定"钉住的版本是否可执行"；不可执行时只把 `application …0701` 的 `rubric_version_id`
+//      重绑到同一岗位下「**已生效批准**（JR §4.2）且 `validateDimensions()===[]`」的版本
+//      （优先 `job.current_rubric_version_id`，否则 `version_no` 最大者；干净库上 = 本次 bootstrap
+//      自己创建并批准的 v2），写后只读读回复核。**不** UPDATE 不可变的 `rubric_version`、**不**新增
+//      approval、**不**放宽 R-VAL-12；没有候选时明确抛错（exit 1）。幂等：钉住的版本已可执行 ⇒
+//      零写入。升级场景（老演示库已有 v2、pin 仍在 v1）在 NO_OP 分支里执行本步，若真写入则
+//      outcome 升级为 BOOTSTRAPPED（不允许 "NO_OP 却写入" 自相矛盾）。
 //
 // 硬约束（与本文件的设计一一对应）：
 //   * **业务写库只发生在产品工具的 execute() 里**：`recruitment_job_create` /
 //     `recruitment_job_update` / `recruitment_job_rubric_approve`；
 //     本脚本自己的读全部走 `db/pool.ts` 的 `withReadOnly()`（`begin transaction read only`，
 //     库层强制只读，任何写语句会直接 25006）。
-//     唯一例外是 §5 的演示种子：产品工具链里**没有**「建 actor / 授予角色 / 建固定 id 的
-//     Interview / 写 interviewer 分配」的入口（interview-schedule 会自己生成 id 且带业务闸门），
-//     所以种子用固定 id 的 `insert … on conflict do nothing` 直接写；它同样只在
-//     闸门放行之后、单个 `withActor` 事务里执行（失败整体回滚），重跑 0 行变更。
+//     唯一例外是 §5 的演示种子与 §7 的 O3 夹具（`seed.demo_rubric_repair`）：产品工具链里
+//     **没有**「建 actor / 授予角色 / 建固定 id 的 Interview / 写 interviewer 分配」的入口
+//     （interview-schedule 会自己生成 id 且带业务闸门），也**没有**「把已开始的申请从不可执行的
+//     历史 rubric 版本重绑到可执行版本」的入口；所以种子用固定 id 的 `insert … on conflict do nothing`
+//     直接写，O3 用带乐观条件的单行 `update` 直接写。它们同样只在闸门放行之后（或 NO_OP 的
+//     只读重放路径里）、单个 `withActor` 事务里执行（失败整体回滚），写后只读读回，重跑 0 行变更。
 //   * **密码只从环境变量读**：走产品 `resolveDatabaseConfig(config, env)`，密码既不在配置里，
 //     也不进任何输出/异常（打印前统一 scrub）。
 //   * **审批替身是唯一注入点**：`DEMO_APPROVAL_MODE` 只作为
@@ -76,6 +90,9 @@ import {
 } from '../dsh/dsh-recruitment/src/tools/job-rubric-approve.ts'
 import { createApplicationIntakeTool } from '../dsh/dsh-recruitment/src/tools/application-intake.ts'
 import { resolveConverterConfig } from '../dsh/dsh-recruitment/src/tools/converter.ts'
+// O3：rubric 可执行性判定**只复用产品纯函数**（`validateDimensions` 实现 JR §6.2 R-VAL-1..13），
+// 本脚本不复制任何校验规则、也不改 `screening-evaluate.ts`（纯函数，无副作用）。
+import { validateDimensions } from '../dsh/dsh-recruitment/src/tools/screening-evaluate.ts'
 import {
   closePool,
   createPool,
@@ -294,7 +311,8 @@ const DEMO_JD = {
   requirements_md: '- 3 年以上后端开发经验（演示样例）\n- 熟悉 PostgreSQL 与消息队列（演示样例）',
 }
 
-// 只读 SQL：本脚本只会执行这三类 select（全部在 read only 事务里）。
+// 只读 SQL：本脚本的读取全部在 `withReadOnly()`（begin transaction read only）里执行，
+// 任何写语句会被库层直接 25006；下面只是其中最早用到的一组。
 const SQL_JOB_BY_CODE = `select id, code, title, status, current_rubric_version_id, record_version
    from recruitment.job
   where tenant_id = $1 and code = $2
@@ -407,6 +425,78 @@ const SQL_PINNED_RUBRIC_APPROVAL_READBACK = `
     join recruitment.rubric_version rv
       on rv.id = a.rubric_version_id and rv.tenant_id = a.tenant_id
    where a.id = $1::uuid and a.tenant_id = $2::uuid`
+
+
+// ---- O3 夹具：申请钉住的 rubric 版本必须**可执行**（R-VAL-12，幂等）---------------
+//
+// 根因（产品视角复核 O3，与 O2 同一处种子缺陷的两个面）：
+//   * `0002_seed` §5 的 rubric **v1**（`…0403`）三条 criteria 只有 key/label/kind/weight
+//     —— 既没有 field/operator/value（机械型），也没有 question（判断型）；
+//   * `contracts/job-screening/job-rubric-rules.md` §6.2 `R-VAL-12`：判断型（field 缺席或 null）
+//     必须有 1–500 字的 `question`，否则 `CRITERION_QUESTION` = 该版本不可执行；
+//   * `…0701` 在 §7 被**钉**在 v1 上 → `screening_evaluate` 按 pinned 解析后必定
+//     `NO_RUBRIC/RUBRIC_INVALID`（violations = `dimensions[0..2].question / CRITERION_QUESTION`）。
+//   O2 只补了"审批"，但**钉住的版本本身不可执行**，初筛仍然做不下去。
+//
+// 本步做什么 / 不做什么（与"放闸门"划清界限）：
+//   * 判定"可执行"= **直接复用产品纯函数** `validateDimensions(dimensions)`，
+//     `violations.length === 0` 才算可执行；不复制规则、不放宽 R-VAL-12。
+//   * **不** UPDATE `rubric_version`：`0001_init.sql` §9.3 给 `rubric_version` 挂了
+//     `trg_rubric_version_immutable`（`fn_guard_columns()` 允许列为空），任何 UPDATE 直接
+//     23514；历史 v1 原样保留（它是历史事实，不是"抄错的值"）。
+//   * **不**新增 approval、**不**伪造批准人：目标版本必须在库里**已经**有一条按 JR §4.2
+//     生效的 APPROVED（status=APPROVED、未 superseded、未过期、hash 对齐、schema=1）。
+//   * 只把**演示申请** `…0701` 的 `rubric_version_id` 重绑到目标版本（单行、单事务、
+//     带乐观条件 `rubric_version_id = 观察到的旧 pin`，0 行即 fail-closed）。这是**演示夹具纠偏**：
+//     种子把申请钉到了一个不可执行的版本，而不是业务上"必须用 v1"。
+//   * 幂等：钉住的版本已经可执行 ⇒ state=NO_OP、零 UPDATE（重跑不再写）。
+//   * 负例：同岗位找不到"已批准且可执行"的候选 ⇒ **明确抛错**（exit 1），不静默通过。
+
+/** 读申请 …0701 的 pin + 所属岗位的 current 指针（O3 的只读入口）。 */
+const SQL_DEMO_RUBRIC_REPAIR_APPLICATION = `select a.id::text                as application_id,
+         a.rubric_version_id::text as rubric_version_id,
+         a.record_version          as application_record_version,
+         a.job_id::text            as job_id,
+         j.current_rubric_version_id::text as job_current_rubric_version_id,
+         j.record_version          as job_record_version
+    from recruitment.application a
+    join recruitment.job j
+      on j.id = a.job_id and j.tenant_id = a.tenant_id
+   where a.tenant_id = $1::uuid and a.id = $2::uuid`
+
+/** 读该岗位的**全部** rubric 版本（候选池；dimensions 是纯函数判定的输入）。 */
+const SQL_DEMO_RUBRIC_REPAIR_VERSIONS = `select id::text as id, version_no, payload_hash, dimensions, created_at
+    from recruitment.rubric_version
+   where tenant_id = $1::uuid and job_id = $2::uuid
+   order by version_no, id`
+
+/** 读候选版本的审批行（JR §4.2 生效判据 + schema=1 都从这里来）。 */
+const SQL_DEMO_RUBRIC_REPAIR_APPROVALS = `select id::text                    as approval_id,
+         resource_id::text          as resource_id,
+         status,
+         payload_schema_version,
+         canonical_payload_hash,
+         expires_at,
+         superseded_by_approval_id::text as superseded_by_approval_id
+    from recruitment.approval
+   where tenant_id = $1::uuid
+     and resource_type = 'RUBRIC_VERSION'
+     and resource_id = any($2::uuid[])
+   order by created_at desc, id desc`
+
+/**
+ * 单行重绑（O3 唯一的写）：只碰 `application …0701` 这一行。
+ *
+ * 乐观条件 `rubric_version_id is not distinct from $4`：非空 pin 时等价于 `= $4`；
+ * pin 为 NULL 时也能命中（`= NULL` 永远不命中，会把"pin 为空但已有可执行候选"误判成 0 行失败）。
+ * 返回 0 行 ⇒ 申请已被别人改过/不存在，调用方必须 fail-closed 抛错。
+ */
+const SQL_REBIND_DEMO_APPLICATION_RUBRIC = `update recruitment.application
+   set rubric_version_id = $3::uuid
+ where tenant_id = $1::uuid
+   and id = $2::uuid
+   and rubric_version_id is not distinct from $4::uuid
+ returning rubric_version_id::text as rubric_version_id, record_version`
 
 
 // ---- D5 W1 演示种子用到的读写 SQL（读在同一个写事务里；写全部幂等）----------------
@@ -1369,6 +1459,344 @@ function addPinnedRubricApprovalStep(addStep, report) {
   for (const issue of report.issues) addStep('seed.issue', null, issue, { ok: false })
 }
 
+// ---------------------------------------------------------------------------
+//  O3 夹具：申请钉住的 rubric 版本必须可执行（`seed.demo_rubric_repair`）
+// ---------------------------------------------------------------------------
+
+/** 归一化一条候选审批行（只留 O3 判定需要的列；时间统一转 ISO）。 */
+function toRubricRepairApprovalRow(row) {
+  return {
+    approval_id: row.approval_id,
+    resource_id: row.resource_id,
+    status: row.status,
+    payload_schema_version: row.payload_schema_version,
+    canonical_payload_hash: row.canonical_payload_hash,
+    expires_at: isoOf(row.expires_at),
+    superseded_by_approval_id: row.superseded_by_approval_id ?? null,
+  }
+}
+
+/**
+ * 只读读一次 O3 需要的全部事实（申请 pin / 所属岗位 current / 该岗位全部 rubric 版本 / 这些版本的审批）。
+ *
+ * 典型用法：写前判定 + 写后复核各调用一次（两次都是**独立的只读事务**，不复用写事务里的读取结果）。
+ * @param pool - 连接池。
+ * @param cfg - 已解析配置。
+ * @returns `{ application, versions, approvals }`；申请不存在时 `application=null`。
+ */
+async function loadDemoRubricRepairFacts(pool, cfg) {
+  return withReadOnly(pool, async (client) => {
+    const application = (await client.query(SQL_DEMO_RUBRIC_REPAIR_APPLICATION, [
+      cfg.tenant_id, DEMO_APPLICATION_ID,
+    ])).rows[0] ?? null
+    if (application === null) return { application: null, versions: [], approvals: [] }
+    const versions = (await client.query(SQL_DEMO_RUBRIC_REPAIR_VERSIONS, [
+      cfg.tenant_id, application.job_id,
+    ])).rows
+    const approvals = versions.length === 0
+      ? []
+      : (await client.query(SQL_DEMO_RUBRIC_REPAIR_APPROVALS, [
+        cfg.tenant_id, versions.map((version) => version.id),
+      ])).rows.map(toRubricRepairApprovalRow)
+    return { application, versions, approvals }
+  })
+}
+
+/**
+ * "是否可执行"的唯一判据：产品纯函数 `validateDimensions()`（JR §6.2 R-VAL-1..13）。
+ * @param dimensions - `rubric_version.dimensions`。
+ * @returns `{ executable, violations }`。
+ */
+function inspectRubricDimensions(dimensions) {
+  if (!Array.isArray(dimensions)) return { executable: false, violations: [] }
+  const violations = validateDimensions(dimensions)
+  return { executable: violations.length === 0, violations }
+}
+
+/** 违规项 → 可机检摘要（只留 rule/reason_code/path，`got` 不进输出）。 */
+function summarizeRuleViolations(violations) {
+  return violations.map((violation) => ({
+    rule: violation.rule,
+    reason_code: violation.reason_code,
+    path: violation.path,
+  }))
+}
+
+/** 违规项 → 一行文本（错误消息用）。 */
+function formatRuleViolations(violations) {
+  if (violations.length === 0) return 'none'
+  return violations.map((violation) => `${violation.rule}/${violation.reason_code}@${violation.path}`).join(', ')
+}
+
+/**
+ * 报告里的版本引用（`id` 与 `rubric_version_id` 是同一值的两个键：前者给机器读，
+ * 后者与 `application.rubric_version_id` 同名，测试/审计可以直接对账）。
+ */
+function rubricRepairVersionRef(version, executable) {
+  const violations = version === null ? [] : inspectRubricDimensions(version.dimensions).violations
+  return {
+    id: version === null ? null : version.id,
+    rubric_version_id: version === null ? null : version.id,
+    version_no: version === null ? null : version.version_no,
+    payload_hash: version === null ? null : version.payload_hash,
+    executable: executable === true,
+    violation_count: violations.length,
+  }
+}
+
+/** 版本引用 → 摘要文本 `<uuid>(v<no>)`；没有版本时 `none(v-)`。 */
+function formatRubricRef(ref) {
+  const id = ref.rubric_version_id === null ? 'none' : ref.rubric_version_id
+  const versionNo = ref.version_no === null ? '-' : String(ref.version_no)
+  return `${id}(v${versionNo})`
+}
+
+/**
+ * 在候选池里找"生效 APPROVED 且可执行"的版本：
+ *   * `validateDimensions(dimensions).length === 0`（产品纯函数，R-VAL-1..13）；
+ *   * `approval.payload_schema_version === 1` 且 `isEffectiveApproved()`（JR §4.2：
+ *     status=APPROVED、未 superseded、未过期、`canonical_payload_hash === rubric.payload_hash`）。
+ * @param versions - 该岗位全部 rubric 版本行。
+ * @param approvals - 这些版本的审批行（已归一化）。
+ * @param nowMs - 当前时刻（毫秒）。
+ * @returns 候选数组（每项 `{ version, approval, violations }`）。
+ */
+function findExecutableApprovedRubricVersions(versions, approvals, nowMs) {
+  const byResource = new Map()
+  for (const row of approvals) {
+    const rows = byResource.get(row.resource_id) ?? []
+    rows.push(row)
+    byResource.set(row.resource_id, rows)
+  }
+  const candidates = []
+  for (const version of versions) {
+    const { executable, violations } = inspectRubricDimensions(version.dimensions)
+    if (!executable) continue
+    const approval = (byResource.get(version.id) ?? [])
+      .find((row) => row.payload_schema_version === 1 && isEffectiveApproved(row, version, nowMs)) ?? null
+    if (approval === null) continue
+    candidates.push({ version, approval, violations })
+  }
+  return candidates
+}
+
+/**
+ * O3 夹具：让演示申请 `…0701` 钉在一个**可执行且已生效批准**的 rubric 版本上（幂等）。
+ *
+ * 流程（fail-closed）：
+ *   1. 只读读当前事实；申请不存在 → `PrerequisiteError`（exit 2，与其它种子一致）；
+ *   2. `validateDimensions(pinned.dimensions).length === 0` ⇒ 已可执行 ⇒ `NO_OP`、**零写入**；
+ *   3. 否则在**同岗位**里找候选（优先 `job.current_rubric_version_id`，否则 `version_no` 最大者）；
+ *      没有候选 ⇒ 抛明确错误（消息含 `seed.demo_rubric_repair` / `no approved executable rubric version`
+ *      / pinned 版本号与违规摘要）—— 不静默通过、不改规则；
+ *   4. 候选 ≠ 当前 pin ⇒ 单个 `withActor` 事务里带乐观条件 UPDATE **application 这一行**，0 行即抛错；
+ *   5. **重新用 `withReadOnly` 独立读回**：pin 指向目标、目标 `validateDimensions()===[]`、
+ *      目标审批仍生效（APPROVED/hash 对齐/未 superseded/未过期/schema=1）；任一不符 ⇒ 抛错。
+ * @param pool - 连接池。
+ * @param cfg - 已解析配置。
+ * @returns 报告（`state ∈ NO_OP|REBOUND`；`write` 表示本次是否真写入）。
+ */
+async function repairDemoPinnedRubric(pool, cfg) {
+  const nowMs = Date.now()
+  const before = await loadDemoRubricRepairFacts(pool, cfg)
+  if (before.application === null) {
+    throw new PrerequisiteError([
+      `演示申请 ${DEMO_APPLICATION_ID} 不存在：先按名重放 db/migrations（含 0002_seed）`,
+    ])
+  }
+  const application = before.application
+  const pinnedVersion = application.rubric_version_id === null
+    ? null
+    : (before.versions.find((version) => version.id === application.rubric_version_id) ?? null)
+  const pinnedInspect = pinnedVersion === null
+    ? { executable: false, violations: [] }
+    : inspectRubricDimensions(pinnedVersion.dimensions)
+
+  const report = {
+    application_id: DEMO_APPLICATION_ID,
+    job_id: application.job_id,
+    state: 'SKIPPED',
+    write: false,
+    pinned_before: rubricRepairVersionRef(pinnedVersion, pinnedInspect.executable),
+    pinned_after: rubricRepairVersionRef(pinnedVersion, pinnedInspect.executable),
+    executable_before: pinnedInspect.executable,
+    executable_after: pinnedInspect.executable,
+    record_version_before: application.application_record_version,
+    record_version_after: application.application_record_version,
+    reason: null,
+    target: null,
+    violations_before: summarizeRuleViolations(pinnedInspect.violations),
+    issues: [],
+  }
+
+  // 已可执行：这是重跑的正常路径 —— 只读、零写入、step 仍输出全部对账字段。
+  if (pinnedVersion !== null && pinnedInspect.executable) {
+    report.state = 'NO_OP'
+    report.reason = 'NO_OP_PINNED_RUBRIC_EXECUTABLE'
+    return report
+  }
+
+  // 候选池：同岗位、已验证可执行、且审批按 JR §4.2 生效（schema=1）。
+  const candidates = findExecutableApprovedRubricVersions(before.versions, before.approvals, nowMs)
+  let target = null
+  let targetSource = null
+  const currentCandidate = candidates.find((candidate) => candidate.version.id === application.job_current_rubric_version_id)
+  if (currentCandidate !== undefined) {
+    target = currentCandidate
+    targetSource = 'JOB_CURRENT'
+  } else if (candidates.length > 0) {
+    target = candidates.reduce((best, candidate) => (
+      candidate.version.version_no > best.version.version_no ? candidate : best
+    ))
+    targetSource = 'MAX_VERSION_NO'
+  }
+
+  if (target === null) {
+    // 负例：**明确**失败，不静默通过、不改规则、不动不可变的 rubric_version 行。
+    throw new Error(
+      'seed.demo_rubric_repair: no approved executable rubric version for job '
+        + `${application.job_id} (application ${DEMO_APPLICATION_ID} pinned `
+        + `${pinnedVersion === null ? 'none' : `v${pinnedVersion.version_no}(${pinnedVersion.id})`}; `
+        + `pinned violations=${formatRuleViolations(pinnedInspect.violations)}; `
+        + `versions=${before.versions.map((version) => `v${version.version_no}`).join(',') || 'none'})`,
+    )
+  }
+
+  report.target = {
+    id: target.version.id,
+    rubric_version_id: target.version.id,
+    version_no: target.version.version_no,
+    payload_hash: target.version.payload_hash,
+    source: targetSource,
+    approval: {
+      approval_id: target.approval.approval_id,
+      status: target.approval.status,
+      payload_schema_version: target.approval.payload_schema_version,
+      canonical_payload_hash: target.approval.canonical_payload_hash,
+      expires_at: target.approval.expires_at,
+      superseded_by_approval_id: target.approval.superseded_by_approval_id,
+    },
+  }
+
+  // 写：只碰 application …0701 这一行；乐观条件保证"读到的 pin 没被别人改过"。
+  const updated = await withActor(pool, cfg.actor_id, async (client) => {
+    const result = await client.query(SQL_REBIND_DEMO_APPLICATION_RUBRIC, [
+      cfg.tenant_id, DEMO_APPLICATION_ID, target.version.id, application.rubric_version_id,
+    ])
+    if ((result.rowCount ?? 0) === 0) {
+      throw new Error(
+        'seed.demo_rubric_repair: 重绑写入 0 行（乐观条件未命中）——'
+          + `application ${DEMO_APPLICATION_ID} 的 rubric_version_id 已不是 `
+          + `${String(application.rubric_version_id)}（fail-closed）`,
+      )
+    }
+    const row = result.rows[0]
+    if (row === undefined || row.rubric_version_id !== target.version.id) {
+      throw new Error(
+        `seed.demo_rubric_repair: UPDATE 读回的 rubric_version_id=${String(row?.rubric_version_id)}`
+          + ` 与目标 ${target.version.id} 不一致（fail-closed）`,
+      )
+    }
+    return row
+  })
+
+  // 写后只读读回复核（**独立事务**，不看 UPDATE 返回值）。
+  const after = await loadDemoRubricRepairFacts(pool, cfg)
+  if (after.application === null) {
+    throw new Error(`seed.demo_rubric_repair: 写后读回找不到申请 ${DEMO_APPLICATION_ID}（fail-closed）`)
+  }
+  if (after.application.job_id !== application.job_id) {
+    throw new Error(
+      `seed.demo_rubric_repair: 写后读回 job_id=${after.application.job_id}`
+        + ` 与写前 ${application.job_id} 不一致（fail-closed）`,
+    )
+  }
+  if (after.application.rubric_version_id !== target.version.id) {
+    throw new Error(
+      `seed.demo_rubric_repair: 写后读回 pin=${String(after.application.rubric_version_id)}`
+        + ` 与目标 ${target.version.id} 不一致（fail-closed）`,
+    )
+  }
+  const afterPinned = after.versions.find((version) => version.id === after.application.rubric_version_id) ?? null
+  if (afterPinned === null) {
+    throw new Error(
+      `seed.demo_rubric_repair: 写后读回 pin ${String(after.application.rubric_version_id)}`
+        + ' 不在该岗位的 rubric 版本里（fail-closed）',
+    )
+  }
+  const afterInspect = inspectRubricDimensions(afterPinned.dimensions)
+  if (!afterInspect.executable) {
+    throw new Error(
+      'seed.demo_rubric_repair: 写后读回的目标版本仍不可执行：'
+        + formatRuleViolations(afterInspect.violations),
+    )
+  }
+  const afterApproval = (after.approvals)
+    .find((row) => row.resource_id === afterPinned.id
+      && row.payload_schema_version === 1
+      && isEffectiveApproved(row, afterPinned, Date.now())) ?? null
+  if (afterApproval === null) {
+    throw new Error(
+      'seed.demo_rubric_repair: 写后读回的目标版本没有生效 APPROVED 审批'
+        + `（status=APPROVED / hash 对齐 / 未 superseded / 未过期 / payload_schema_version=1）：${afterPinned.id}`,
+    )
+  }
+
+  report.state = 'REBOUND'
+  report.write = true
+  report.pinned_after = rubricRepairVersionRef(afterPinned, afterInspect.executable)
+  report.executable_after = afterInspect.executable
+  report.record_version_after = after.application.application_record_version
+  report.record_version_written = updated.record_version
+  report.reason = 'REBOUND_TO_APPROVED_EXECUTABLE_RUBRIC'
+  return report
+}
+
+/**
+ * 把 O3 结果写进 steps（NO_OP 与 REBOUND 都输出，单行含机检键）。
+ *
+ * 机检键（**逐字**出现在 summary 里）：
+ * `application=` / `pinned_before=<uuid>(v<no>)` / `pinned_after=<uuid>(v<no>)` /
+ * `executable_before=<true|false>` / `executable_after=<true|false>` / `reason=<字符串>`。
+ * @param addStep - `run()` 里的步骤登记函数。
+ * @param report - `repairDemoPinnedRubric()` 的返回。
+ */
+function addDemoRubricRepairStep(addStep, report) {
+  addStep('seed.demo_rubric_repair', null,
+    `application=${report.application_id}`
+      + ` pinned_before=${formatRubricRef(report.pinned_before)}`
+      + ` pinned_after=${formatRubricRef(report.pinned_after)}`
+      + ` executable_before=${String(report.executable_before)}`
+      + ` executable_after=${String(report.executable_after)}`
+      + ` reason=${String(report.reason)}`
+      + ` state=${report.state} write=${String(report.write)}`,
+    { ok: report.executable_after === true })
+  for (const issue of report.issues) addStep('seed.issue', null, issue, { ok: false })
+}
+
+/**
+ * 把 O3 结果并入 `ctx.seed` 与 `writes`（steps 由 `addDemoRubricRepairStep` 单独登记）。
+ *
+ * 真写入时才把 `seed.demo_rubric_repair` 加进 `write_steps` / `writes` / `written`；
+ * NO_OP 时只挂报告、不污染"零写入"口径。
+ * @param ctx - `run()` 的上下文（会原地更新 `ctx.seed` / `ctx.seedIssues`）。
+ * @param writes - `run()` 的写步骤数组（会被原地 push）。
+ * @param report - `repairDemoPinnedRubric()` 的返回。
+ */
+function mergeDemoRubricRepair(ctx, writes, report) {
+  const previousSteps = ctx.seed?.write_steps ?? []
+  const writeSteps = report.write ? ['seed.demo_rubric_repair'] : []
+  if (report.write) writes.push('seed.demo_rubric_repair')
+  ctx.seed = {
+    ...(ctx.seed ?? {}),
+    demo_rubric_repair: report,
+    write_steps: [...new Set([...previousSteps, ...writeSteps])],
+    issues: [...(ctx.seed?.issues ?? []), ...report.issues],
+    written: ctx.seed?.written === true || report.write === true,
+  }
+  ctx.seedIssues = [...ctx.seed.issues]
+}
+
 /**
  * 演示材料文件的**稳定落点**（O11：原件必须留下来，产品才读得回来）。
  *
@@ -1805,13 +2233,24 @@ async function run(env) {
     }
     ctx.seedIssues = [...ctx.seed.issues]
 
+    // ---- 3.95 O3 夹具：申请钉住的 rubric 版本必须可执行（R-VAL-12，产品视角复核 O3）----
+    // 升级场景：老演示库已经有"可执行且已批准"的 v2（job.current 指向它 ⇒ 状态判定是 NO_OP），
+    // 但申请仍钉在不可执行的 v1 上 —— 这种情况下必须在本分支纠偏。repair 可能真写，
+    // 所以下面的 outcome 不能继续写 NO_OP（"NO_OP 却写入"自相矛盾）；exit_code 仍为 0。
+    let rubricRepair = null
+    if (ctx.state === 'NO_OP') {
+      rubricRepair = await repairDemoPinnedRubric(pool, cfg)
+      addDemoRubricRepairStep(addStep, rubricRepair)
+      mergeDemoRubricRepair(ctx, writes, rubricRepair)
+    }
+
     // ---- 3.5 纯重放：NO_OP 到此为止（不调任何工具、零写入、exit 0） ----
     if (ctx.state === 'NO_OP') {
       return {
         header,
         result: await finishReadOnlyOutcome({
           pool, cfg, tenantId, actorId, mode, ctx, before,
-          outcome: 'NO_OP', exitCode: 0,
+          outcome: rubricRepair?.write === true ? 'BOOTSTRAPPED' : 'NO_OP', exitCode: 0,
         }),
       }
     }
@@ -1903,6 +2342,19 @@ async function run(env) {
         + ` hash_match=${alignment.hash_match} effective=${alignment.effective}`
         + ` ok=${alignment.ok}`,
       { ok: alignment.ok })
+
+    // ---- 6.5 O3 夹具：把演示申请钉到"已批准且可执行"的 rubric 版本（写后只读读回复核）----
+    // 到这里 v2 已经由产品工具创建并批准（APPEND_RUBRIC / APPROVE_PENDING）或岗位刚被创建
+    // （CREATE_JOB）；repair 再做"申请 pin 是否可执行"的纠偏。读回不一致时先不重绑：
+    // 那说明更前置的指针/审批问题没解决，重绑只会掩盖它。
+    if (alignment.ok) {
+      const writePathRepair = await repairDemoPinnedRubric(pool, cfg)
+      addDemoRubricRepairStep(addStep, writePathRepair)
+      mergeDemoRubricRepair(ctx, writes, writePathRepair)
+    } else {
+      addStep('seed.demo_rubric_repair', null,
+        'skipped (读回不一致：先修 rubric 指针/审批，不重绑申请 pin)', { ok: false })
+    }
 
     const outcome = alignment.ok ? 'BOOTSTRAPPED' : 'FAILED'
     const exitCode = alignment.ok ? 0 : 1

@@ -14,6 +14,12 @@
 //   (e) 第 2 遍（**故意给一个不存在的 python**）exit 0、outcome=NO_OP、`seed.demo_material.state=PRESENT`，
 //       且业务表逐表行数与第 1 遍之后**完全相同**（重跑零写入；材料已在库时不需要 Python）。
 //
+// O3（钉住的 rubric 必须可执行）也在本文件守：首跑必须把 …0701 从不可执行的 seed v1（…0403）
+// 重绑到 bootstrap 自己创建并批准的 v2 ⇒ `seed.demo_rubric_repair.state=REBOUND`、`pinned_after`
+// 等于 `job.current_rubric_version_id`；独立 SQL 读回"钉住版本里没有既无 field 又无 question 的
+// criteria（R-VAL-12）+ 有生效 APPROVED"；重跑 `state=NO_OP` 且 application 的 pin/record_version
+// 不变；最后用产品 `createScreeningEvaluateTool` 对 …0701 真 execute，证明初筛真的能出结论。
+//
 // 为什么必须独占一次性库：bootstrap 会真提交（审批 / actor / 面试 / 材料 / rubric 版本），
 // 共享库 ra_s6s7 不允许被测试写；且"逐表行数不变"只有在没有别人并发的库上才可复现。
 import test from 'node:test'
@@ -23,7 +29,9 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { assertPrivateDatabase, createIsolatedTestDatabase, type IsolatedTestDatabase } from './db.ts'
+// O3：真工具调用用产品自己的 S7 工具（createScreeningEvaluateTool），证明"修复后初筛真的可执行"。
+import { createScreeningEvaluateTool } from '../../src/tools/screening-evaluate.ts'
+import { assertPrivateDatabase, createIsolatedTestDatabase, testDatabaseConfig, type IsolatedTestDatabase } from './db.ts'
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..')
 const BOOTSTRAP_SCRIPT = join(REPO_ROOT, 'scripts', 'bootstrap-demo.mjs')
@@ -160,6 +168,79 @@ async function rowCounts(): Promise<Record<string, number>> {
   return out
 }
 
+// ---------------------------------------------------------------------------
+//  O3：申请钉住的 rubric 版本必须可执行（`seed.demo_rubric_repair`）
+// ---------------------------------------------------------------------------
+
+/** O3 的独立 SQL 读回形状（不 import 产品代码：直接看 application / rubric_version / approval）。 */
+interface PinnedRubricFacts {
+  readonly pinnedRubricVersionId: string | null
+  readonly jobCurrentRubricVersionId: string | null
+  readonly pinnedVersionNo: number | null
+  readonly pinnedPayloadHash: string | null
+  readonly criteriaCount: number | null
+  /** dimensions 里"既没有 field 也没有 question"的 criteria 数（R-VAL-12 会判非法，要求 0）。 */
+  readonly judgmentWithoutQuestion: number
+  /** 生效 APPROVED 审批（status/hash/未 supersede/未过期/schema=1）的行数。 */
+  readonly effectiveApprovalCount: number
+}
+
+/**
+ * 独立 SQL 读回「申请 …0701 钉住哪个 rubric 版本 + 该版本是否可执行 + 审批是否生效」。
+ * 口径：判断型（field 为空）必须有非空 `question`；审批按 JR §4.2 的 EXISTS 判据。
+ */
+async function readPinnedRubricFacts(): Promise<PinnedRubricFacts> {
+  const { rows } = await db.pool.query(
+    `select a.rubric_version_id::text          as pinned_rubric_version_id,
+            j.current_rubric_version_id::text  as job_current_rubric_version_id,
+            rv.version_no,
+            rv.payload_hash,
+            jsonb_array_length(rv.dimensions)  as criteria_count,
+            (select count(*)::int
+               from jsonb_array_elements(rv.dimensions) c
+              where coalesce(c->>'field', '') = ''
+                and coalesce(c->>'question', '') = '') as judgment_without_question,
+            (select count(*)::int
+               from recruitment.approval ap
+              where ap.tenant_id = a.tenant_id
+                and ap.resource_type = 'RUBRIC_VERSION'
+                and ap.resource_id = rv.id
+                and ap.status = 'APPROVED'
+                and ap.payload_schema_version = 1
+                and ap.canonical_payload_hash = rv.payload_hash
+                and ap.superseded_by_approval_id is null
+                and (ap.expires_at is null or ap.expires_at > now())) as effective_approval_count
+       from recruitment.application a
+       join recruitment.job j on j.id = a.job_id and j.tenant_id = a.tenant_id
+       join recruitment.rubric_version rv on rv.id = a.rubric_version_id and rv.tenant_id = a.tenant_id
+      where a.tenant_id = $1 and a.id = $2`,
+    [TENANT, APP_0701],
+  )
+  const row = rows[0]
+  assert.ok(row !== undefined, `申请 ${APP_0701} 必须存在且钉住一个 rubric 版本（独立 SQL 读回为空）`)
+  return {
+    pinnedRubricVersionId: row.pinned_rubric_version_id ?? null,
+    jobCurrentRubricVersionId: row.job_current_rubric_version_id ?? null,
+    pinnedVersionNo: row.version_no === null ? null : Number(row.version_no),
+    pinnedPayloadHash: row.payload_hash ?? null,
+    criteriaCount: row.criteria_count === null ? null : Number(row.criteria_count),
+    judgmentWithoutQuestion: Number(row.judgment_without_question ?? -1),
+    effectiveApprovalCount: Number(row.effective_approval_count ?? -1),
+  }
+}
+
+/** 申请 …0701 的 pin + record_version（"重跑零写入"的对账口径）。 */
+async function readApplicationPin(): Promise<{ rubric_version_id: string | null; record_version: number }> {
+  const { rows } = await db.pool.query(
+    `select rubric_version_id::text as rubric_version_id, record_version
+       from recruitment.application where tenant_id = $1 and id = $2`,
+    [TENANT, APP_0701],
+  )
+  const row = rows[0]
+  assert.ok(row !== undefined, `申请 ${APP_0701} 必须存在`)
+  return { rubric_version_id: row.rubric_version_id ?? null, record_version: Number(row.record_version) }
+}
+
 test('P1 #5：干净库首跑给 …0701 补齐真实材料链，重跑零写入且「有面试必有材料」', async () => {
   // ---- 第 1 遍：干净库 + 当前 bootstrap（真子进程，exit 0 才算过）----
   const first = runBootstrap()
@@ -181,6 +262,53 @@ test('P1 #5：干净库首跑给 …0701 补齐真实材料链，重跑零写入
   assert.equal(material.parse_ok, true)
   assert.equal(first.result.seed?.invariant?.ok, true)
   assert.equal(first.result.seed?.invariant?.interviews_without_material, 0)
+
+  // ---- (a2) O3：首跑必须把 …0701 从**不可执行**的 v1 重绑到已批准且可执行的 v2 ----
+  // 根因：0002_seed 的 rubric v1（…0403）三条判断型 criteria 都没有 question → R-VAL-12 全非法；
+  // 申请钉死在 v1 ⇒ screening_evaluate 必 NO_RUBRIC/RUBRIC_INVALID。
+  const repair = first.result.seed?.demo_rubric_repair
+  assert.ok(repair !== null && typeof repair === 'object', 'BOOTSTRAP_RESULT.seed.demo_rubric_repair 缺失')
+  assert.equal(repair.application_id, APP_0701)
+  assert.equal(repair.state, 'REBOUND', `首跑 repair.state=${String(repair.state)}（应 REBOUND）`)
+  assert.equal(repair.write, true, '首跑 repair 必须真写入')
+  assert.equal(repair.executable_before, false, '首跑 pinned（v1）必须被判定为不可执行')
+  assert.equal(repair.executable_after, true, '首跑重绑后的版本必须可执行')
+  assert.equal(repair.pinned_before?.version_no, 1, '首跑 pinned_before 必须是 seed 的 v1')
+  assert.equal(repair.pinned_after?.version_no, 2, '首跑 pinned_after 必须是 bootstrap 创建的 v2')
+  assert.equal(repair.pinned_after?.rubric_version_id, first.result.job?.current_rubric_version_id,
+    '首跑 pinned_after 必须等于 job.current_rubric_version_id')
+  assert.ok(
+    Array.isArray(repair.violations_before)
+      && repair.violations_before.length === 3
+      && repair.violations_before.every((row: Record<string, unknown>) => row.rule === 'R-VAL-12' && row.reason_code === 'CRITERION_QUESTION'),
+    `首跑 violations_before 必须是 3 条 R-VAL-12/CRITERION_QUESTION，实际 ${JSON.stringify(repair.violations_before)}`,
+  )
+  assert.ok(
+    Array.isArray(first.result.writes?.steps) && first.result.writes.steps.includes('seed.demo_rubric_repair'),
+    `writes.steps 里应含 seed.demo_rubric_repair，实际 ${JSON.stringify(first.result.writes)}`,
+  )
+  // 人读 stdout 里也必须有一行可机检的 O3 步骤（不只看 JSON）。
+  const repairStepLine = first.stdout.split(/\r?\n/).find((line) =>
+    line.includes('seed.demo_rubric_repair') && line.includes('pinned_before='))
+  assert.ok(repairStepLine !== undefined, `stdout 缺 seed.demo_rubric_repair 步骤行。\nstdout:\n${first.stdout}`)
+  assert.match(repairStepLine, /executable_before=false/, `步骤行缺 executable_before=false：${repairStepLine}`)
+  assert.match(repairStepLine, /executable_after=true/, `步骤行缺 executable_after=true：${repairStepLine}`)
+  assert.match(repairStepLine, /reason=REBOUND_TO_APPROVED_EXECUTABLE_RUBRIC/,
+    `步骤行缺 reason：${repairStepLine}`)
+
+  // ---- (a3) 独立 SQL 读回（不 import 产品代码）：pin 指向 job.current；可执行；审批生效 ----
+  const pinnedFacts = await readPinnedRubricFacts()
+  assert.equal(pinnedFacts.pinnedRubricVersionId, pinnedFacts.jobCurrentRubricVersionId,
+    '独立 SQL：申请钉住的版本必须等于 job.current_rubric_version_id')
+  assert.equal(pinnedFacts.pinnedRubricVersionId, repair.pinned_after?.rubric_version_id,
+    '独立 SQL：申请钉住的版本必须等于 repair.pinned_after')
+  assert.equal(pinnedFacts.pinnedVersionNo, 2, '独立 SQL：钉住的版本应是 v2（bootstrap 创建并批准）')
+  assert.match(String(pinnedFacts.pinnedPayloadHash), /^[0-9a-f]{64}$/, '独立 SQL：payload_hash 必须是 64 位 hex')
+  assert.ok(Number(pinnedFacts.criteriaCount ?? 0) >= 1, '独立 SQL：钉住的版本必须至少 1 条 criteria')
+  assert.equal(pinnedFacts.judgmentWithoutQuestion, 0,
+    '独立 SQL：钉住版本里不允许出现「既没有 field 也没有 question」的 criteria（R-VAL-12）')
+  assert.equal(pinnedFacts.effectiveApprovalCount, 1,
+    '独立 SQL：钉住版本必须恰有 1 条生效 APPROVED（status/hash/未 superseded/未过期/schema=1）')
 
   // ---- (b) 独立 SQL 读回整链（不看脚本自述，sha/字节数/解析结论逐条对账）----
   const chain = await readChain(APP_0701)
@@ -223,6 +351,7 @@ test('P1 #5：干净库首跑给 …0701 补齐真实材料链，重跑零写入
   assert.deepEqual(await interviewsWithoutMaterial(), [])
 
   // ---- (e) 第 2 遍：给一个**不存在的 python**，证明材料已在库时重跑不需要 Python 且零写入 ----
+  const beforePin = await readApplicationPin()
   const before = await rowCounts()
   const absentPython = process.platform === 'win32' ? 'Z:\\no-such-python\\python.exe' : '/nonexistent/python'
   const second = runBootstrap(absentPython)
@@ -231,8 +360,22 @@ test('P1 #5：干净库首跑给 …0701 补齐真实材料链，重跑零写入
   assert.equal(second.result.writes?.written, false, `重跑不应写库：${JSON.stringify(second.result.writes)}`)
   assert.equal(second.result.seed?.demo_material?.state, 'PRESENT')
   assert.equal(second.result.seed?.demo_material?.sha256, material.sha256, '重跑读回的材料 sha256 必须与首跑一致')
+  // O3：重跑时 pin 已可执行 → NO_OP、零写入、application 的 pin/record_version 都不变。
+  const secondRepair = second.result.seed?.demo_rubric_repair
+  assert.equal(secondRepair?.state, 'NO_OP', `重跑 repair.state=${String(secondRepair?.state)}（应 NO_OP）`)
+  assert.equal(secondRepair?.write, false, '重跑 repair 不得写入')
+  assert.equal(secondRepair?.executable_before, true, '重跑 executable_before 必须是 true')
+  assert.equal(secondRepair?.executable_after, true, '重跑 executable_after 必须是 true')
+  assert.equal(secondRepair?.pinned_after?.rubric_version_id, beforePin.rubric_version_id,
+    '重跑 repair.pinned_after 必须等于重跑前的 pin')
+  assert.equal(secondRepair?.reason, 'NO_OP_PINNED_RUBRIC_EXECUTABLE')
   const after = await rowCounts()
   assert.deepEqual(after, before, `重跑后行数必须逐表不变（before=${JSON.stringify(before)} after=${JSON.stringify(after)}）`)
+  const afterPin = await readApplicationPin()
+  assert.equal(afterPin.rubric_version_id, beforePin.rubric_version_id,
+    '重跑绝不能改 application.rubric_version_id（幂等硬要求）')
+  assert.equal(afterPin.record_version, beforePin.record_version,
+    '重跑绝不能改 application.record_version（幂等硬要求）')
 
   // ---- (f) 反证：把 …0701 的材料指针临时清空 → 不变量查询必须报出 1 行（证明 (d) 不是恒 0）----
   const client = await db.pool.connect()
@@ -254,4 +397,25 @@ test('P1 #5：干净库首跑给 …0701 补齐真实材料链，重跑零写入
   }
   // 回滚后事实恢复：整链仍在。
   assert.equal((await readChain(APP_0701))?.resume_version_id, chain.resume_version_id)
+
+  // ---- (g) O3 的可执行性证明：用**产品自己的** S7 工具真 execute（不再 NO_RUBRIC/RUBRIC_INVALID）----
+  // 这条是最关键的一条：夹具修复的验收标准不是"JSON 里写了 REBOUND"，而是"初筛真的能出结论"。
+  const screeningTool = createScreeningEvaluateTool({ ...testDatabaseConfig(), database: db.name })
+  const evaluation = await screeningTool.execute(
+    { application_id: APP_0701 },
+    { callId: 'seed-test-screening' },
+  ) as Record<string, any>
+  assert.equal(evaluation.criteria_evaluated, true,
+    `criteria_evaluated 必须 true（否则初筛仍不可执行）：${JSON.stringify(evaluation).slice(0, 2000)}`)
+  assert.ok(['PASS', 'FAIL', 'NEEDS_REVIEW'].includes(String(evaluation.verdict)),
+    `verdict 必须是三态之一，实际 ${String(evaluation.verdict)}`)
+  assert.equal(evaluation.rubric?.version_no, 2,
+    `初筛用的 rubric 版本必须是 v2，实际 ${JSON.stringify(evaluation.rubric)}`)
+  assert.equal(evaluation.rubric?.version_id, afterPin.rubric_version_id,
+    '初筛用的 rubric 版本必须等于申请钉住的版本')
+  assert.equal(evaluation.rubric?.resolution, 'APPLICATION_PINNED',
+    `初筛必须按申请钉住的版本解析，实际 ${String(evaluation.rubric?.resolution)}`)
+  // `rubric_quality` 在当前产品实现里是输出键（可选键）；断言存在，并把实际值打进失败消息便于诊断。
+  assert.ok('rubric_quality' in evaluation,
+    `rubric_quality 实际值：${JSON.stringify(evaluation.rubric_quality)}`)
 })
