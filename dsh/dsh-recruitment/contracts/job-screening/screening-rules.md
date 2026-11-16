@@ -28,7 +28,7 @@
 |---|---|---|
 | **R-1** | **`unreadable` 绝不当 `absent`，更绝不当"不满足"。** 读不出来 → 只能产 `NEEDS_REVIEW`，永远不能进 `FAIL` | `verdict=FAIL` 时，**不存在** `tri_state='unreadable'` 的 reason 充当拒绝依据（§7.2 断言 A2） |
 | **R-2** | **有未处理的人工队列项时，必须拒绝出结论**（`BLOCKED_BY_REVIEW`），**不得静默跳过该项**继续算 | §6 的 5 条查询任一命中 → 必抛错，且 `blocking_items[]` 非空 |
-| **R-3** | **每一条机械型结论都要能回到"哪一页、哪个框、哪份原件"**：`field` + `tri_state` + `evidence(page/bbox/sha256)` 三者缺一不可（判断型没有这三样，它的凭据是 `question`，见 §4.3） | §8 的证据完整性检查 |
+| **R-3** | **每一条机械型结论都要能回到"原文的哪一处、哪份原件"**：`field` + `tri_state` + `evidence` 三者缺一不可（判断型没有这三样，它的凭据是 `question`，见 §4.3）。**证据按 D-110 的"可复核"判定，而不是强制坐标**：`page+bbox`（PDF）/ `part+paragraph`（DOCX）/ `paragraph`（RTF）/ `line` 或 `offset`（纯文本）任一成立即可，但必须同时满足 ① 源文件 `sha256` 一致 ② 定位唯一（多处命中 → 判歧义转人工，**不得取第一条**）③ quote 与定位处原文**逐字命中**；`bbox` 缺失**不构成拒绝理由**（`locator_kind` / `verification_method` 必须随证据给出） | §8 的证据完整性检查 + D-110 |
 | **R-4** | **受保护属性不得进特征**：不读、不算、不输出值 | 输出中不存在 `protected.*` 字段（枚举扫描，`D11 §9.6`） |
 | **R-5** | **不得由模型估算替代可复算字段**（尤其是工作年限） | `timeline.*` 的 `bounds` 必须与 `parsed_fields.timeline` 一致（§4.2），不一致即 `INDETERMINATE` |
 
