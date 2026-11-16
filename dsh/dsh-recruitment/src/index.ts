@@ -105,6 +105,12 @@ import {
   unconfiguredStageAdvanceTool,
 } from './tools/stage-advance.ts'
 import { createTraceGetTool, unconfiguredTraceGetTool } from './tools/trace-get.ts'
+// D-141 §4（最高优先项）：工具调用留痕接线。
+// `src/domain/trace.ts` 的记录适配器实现完整，但产品执行路径从未调用它 →
+// `recruitment.tool_call` 永远没有写入，`recruitment_trace_get` 的 TOOL_CALL 环永远是 gap。
+// 修复方式：**不改 30 个工具本体**（它们不该认识追溯层），在注册处用包装器把每次真实调用
+// 落成一行 `tool_call`。包装器见 `src/tools/traced.ts`。
+import { withToolCallTrace } from './tools/traced.ts'
 import { createConfigRoleTool, unconfiguredConfigRoleTool } from './tools/config-role.ts'
 import { createConfigTeamTool, unconfiguredConfigTeamTool } from './tools/config-team.ts'
 import { createConfigPipelineTool, unconfiguredConfigPipelineTool } from './tools/config-pipeline.ts'
@@ -911,6 +917,20 @@ export function apply(
     pageImage,
     modelTextMerge,
   ].map(withStructuredResultContract)
+    // D-141 §4：**最后**再套一层工具调用留痕（trace 必须是离注册表最近的执行边界）。
+    //
+    // 顺序为什么是"契约层在内、追溯层在外"：
+    //   * `withStructuredResultContract` 是**纯展示层**（只给 3 个工具的 description 追加形状说明，
+    //     浅拷贝、不改 execute / args / 返回值），所以两种顺序今天对"记录什么"没有语义差别；
+    //   * 但追溯层记录的必须是**注册表真正收到并执行的那一次调用**（最终参数、最终返回值）。
+    //     把 trace 放在最后 = 它包住最终注册形态；以后若有人加一个会改结果的包装，按
+    //     `map(contract).map(<结果变换>).map(trace)` 的顺序它落在 trace**内侧**、照样被留痕；
+    //     反之把 trace 写在里面，将来任何加在它后面的包装都会**逃过留痕**且没人会注意到。
+    //   * `database.resolved === null`（数据库未配置）时包装器是恒等函数：没有 trace 存储就
+    //     不记，绝不让"本来不依赖 DB 的只读工具"因为留痕而失败。
+    //   * `identity` 与写工具用的是**同一个** Demo Actor 单例：留痕的 actor 与真正写库的 actor
+    //     同源；解析不到时包装器回退 `database.actor_id`（不伪造会话身份）。
+    .map(withToolCallTrace({ database: database.resolved, identity: actorIdentity }))
   for (const tool of tools) {
     // register() 返回的 disposer 由所在 fiber 接管：插件卸载即注销。
     ctx.tools.register(tool)
