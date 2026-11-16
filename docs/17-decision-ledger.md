@@ -1595,6 +1595,12 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   1. **处置分布（以 `work/d5/product-review/REPORT.md` v1.0 为准）**：O1–O20 共 20 条 `OURS`（另有 5 条 `UI_DESIGN_PENDING` 按 D-135 不修）。已修并提交：**O2/O3/O4/O6/O7/O8/O9/O11/O12/O13/O14/O15/O16/O19**；由总控直接修：**O5/O10/O19**（profile）；**O11 拆分**为"演示脚本删文件（脚本 bug，已修）"与"原件必须产品自存（D-133.2，v1.1）"两件事。**O1/O17/O18/O20 待处理**（O1 = Agent 结论含 UUID 且要求 HR 做系统动作；O17 = Agent 把"回退 v2→v1"的两难抛回 HR、产品无重绑入口；O18 = `面试 · 2 轮 · 已排期` 而 R1 已 `POST_INTERVIEW`；O20 = HR 用姓名查不到申请，Agent 退化为文件搜索 + 请求 danger-full-access）。
   2. **【新增纪律】"干净库"与"产品验证库"必须分开**。实测教训：某 lane 用同一个 `ra_fix_srv` 既跑全量测试又做真 Host 产品验证，产品写入污染种子后 6 条依赖种子的用例假红（同两文件在干净库 `ra_w0_full` 上 7/7 通过）。**测试库只能被测试写；产品验证另建 `*_live` 库**。D-128.3 的"只认干净库"由此细化为"只认同轮未被产品写过的库"。
   3. **产品 preset 的已知边界**：`preset-recruitment` 未挂 `planning` 组（plan-mode / `exit_plan_mode` 不在会话工具面），这是有意的（HR 不需要编码式计划模式）；但 `ask_user_question` / `todo_write` / `create_goal` / `get_goal` / `update_goal` / `skill` **6/6 均在**（人类交互闸门未丢）。O19 运行时取证：**61 → 36 工具（−25 工程工具、+0）**，工程工具在 `request/header` 声明里就没有（不是被拒），preset 选择器只剩「招聘助手」。
+- **D-138（2026-11-16 总控裁决；产品/业务 FAIL 修复轮收口与二次交验基线）**：
+  1. **修复轮范围与结果**：产品视角复核 v1.0 的 **20 条 `OURS` 全部处置完毕**（14 条代码修复 + 3 条 profile 修复 + O1 的 render 根因修复；O11 拆成"演示脚本 bug 已修"+"原件产品自存属 v1.1"）。5 条 `UI_DESIGN_PENDING` 按 D-135 不修。
+  2. **O1 的最终口径**：工具只读投影的 **render 文本**（模型真正读到的那段）不得出现**完整 UUID / 完整 64hex**；一律改业务标识或短号（`…0701` / 前 8 位 hash）。理由：persona 说"never show internal identifiers"没有用 —— 模型会把上下文里看到的东西原样转述，**根因在 render 而不是在 prompt**。`next_tools` 的机器参数区保留完整 id（否则模型无法调用工具），但 header 必须明示"machine arguments，不给用户看"。
+  3. **O17 的最终判定 = 可接受残留（不再修）**：中立问法下 Agent 正确遵循服务端 `rubric_remediation=CONTINUE_WITH_PINNED`（"按钉住版本继续，不需要处理其它版本"）；只有**用户主动诱导问"批准 v1 会不会回退"**时才会复述版本差异。理由：如实回答"两个版本不同"是事实陈述，不是缺陷；**产品不需要阻止用户问假设性问题**。剩余可改进项（把"回退/升级给系统团队"的措辞收敛为"当前无重绑工具，按钉住版本继续"）记为 v1.1 行为打磨，不阻塞 v1.0。
+  4. **二次交验基线**：`78b12ae`（详见 `work/d5/acceptance/BRIEF-FROZEN-*.md`）。**上一次内置复验（产品视角 lane）不能替代独立窗口**；独立窗口仍按 D-122 与我给的 BRIEF 逐项判定，我不自验、不预判 PASS。
+  5. **未处理但已知**（如实登记，供 v1.1）：`job_get` / `interview_get` / `screening_evaluate` 的 render 仍打印完整 UUID（本轮模型未转述，故未触发问题）；O17 的诱导式残留；原件产品自存（D-133.2）；UI 设计 5 条（D-135）。
 ### D-122 · v1.0 验收基准与运行底座口径收口（C1–C3）
 
 **裁定（2026-11-16，总控；回答 Notion 14 与 `work/review/2026-11-16-notion-acceptance/03-CONFLICTS.md` 的 C1–C3）**：
