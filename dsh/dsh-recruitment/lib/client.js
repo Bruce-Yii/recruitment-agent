@@ -2148,6 +2148,19 @@ window.__ModuleLoader__.load({
 				tone: required === 0 ? "gray" : complete ? "green" : "amber"
 			};
 		}
+		/**
+		* 轮内状态 → **面试摘要专用**的 HR 语言（O18）。
+		*
+		* 为什么不复用全局 `INTERVIEW_STATUS_LABELS`：那张表是**状态机口径**
+		* （`POST_INTERVIEW` = `面试后`、`IN_PROGRESS` = `进行中`），详情页的状态 chip / 轮次卡
+		* 用它是正确的；但工作台申请行是"哪一轮已经做完"的一行摘要，需要完成态的人话——
+		* `第 1 轮面试后` 会被读成"第 1 轮之后"，`第 1 轮已面完` 才是 HR 要的事实。
+		* 该映射**只服务 `interviewSummaryOf`**（不导出、不改全局表），其余展示点口径不变。
+		*/
+		const INTERVIEW_SUMMARY_STATUS_LABELS = {
+			POST_INTERVIEW: "已面完",
+			IN_PROGRESS: "面试中"
+		};
 		/** 面试轮次与状态的一行文案。 */
 		function interviewSummaryOf(interviews) {
 			const rounds = interviews.length;
@@ -2168,10 +2181,22 @@ window.__ModuleLoader__.load({
 				};
 				if (rank[candidate] > rank[tone]) tone = candidate;
 			}
-			const last = interviews[interviews.length - 1];
+			if (rounds === 1) {
+				const only = interviews[0];
+				return {
+					rounds,
+					summary: `${String(rounds)} 轮${only !== void 0 ? ` · ${only.statusLabel}` : ""}`,
+					tone
+				};
+			}
+			const perRound = interviews.map((interview, index) => {
+				const roundNo = interview.roundNo > 0 ? interview.roundNo : index + 1;
+				const label = INTERVIEW_SUMMARY_STATUS_LABELS[interview.status] ?? interview.statusLabel;
+				return `第 ${String(roundNo)} 轮${label}`;
+			});
 			return {
 				rounds,
-				summary: `${String(rounds)} 轮${last !== void 0 ? ` · ${last.statusLabel}` : ""}`,
+				summary: `${String(rounds)} 轮 · ${perRound.join(" / ")}`,
 				tone
 			};
 		}
@@ -8897,15 +8922,20 @@ window.__ModuleLoader__.load({
 			HOLD: "暂缓",
 			REJECT: "不通过"
 		};
-		/** 转写状态的中文含义（TR-D 七条）。 */
+		/**
+		* 转写状态的中文含义（TR-D 七条）。
+		*
+		* D-133 口径：只给**事实时态**——已收到 / 还没收到 / 读不出来（处理失败如实写「处理失败」）；
+		* 禁止「缺失 / 缺件 / 未就绪」叙事。枚举键与类型不变，这里只改给人看的文案。
+		*/
 		const TRANSCRIPT_STATE_TEXT = {
-			READY: "已取得（完整）",
-			PARTIAL: "部分取得（不完整）",
-			PENDING: "等待转写中",
-			MISSING: "缺失（无原文）",
-			AUTH_REQUIRED: "需要重新授权",
-			NEEDS_LINKING: "待人工关联会议",
-			RETRYABLE_FAILED: "可重试的失败"
+			READY: "已收到（完整）",
+			PARTIAL: "已收到（部分）",
+			PENDING: "还没收到",
+			MISSING: "还没收到",
+			AUTH_REQUIRED: "读不出来（需要重新授权）",
+			NEEDS_LINKING: "读不出来（还没关联会议）",
+			RETRYABLE_FAILED: "处理失败（可重试）"
 		};
 		/** 面评状态的中文含义（NONE/PENDING/SUBMITTED/WAIVED）。 */
 		const SCORECARD_STATE_TEXT = {
@@ -9507,7 +9537,7 @@ window.__ModuleLoader__.load({
 		* 规则（fail-closed）：
 		*   - 必须是本场面试已登记的面试官（role_in_interview === INTERVIEWER）且行有 interview_id；
 		*   - 面评状态 NONE / PENDING → true；SUBMITTED / WAIVED → false；未知状态 → false。
-		* 注意：这里**不**判断转写是否 READY（转写缺失不影响提交，服务端记 NO_TRANSCRIPT，D-111）。
+		* 注意：这里**不**判断转写是否 READY（转写还没收到不影响提交；面评仍可提交，后续由 HR 决定如何处理）。
 		* @param row - 一条面试行。
 		* @returns 是否可提交。
 		*/
@@ -11231,11 +11261,11 @@ window.__ModuleLoader__.load({
 										}),
 										row.transcript.state !== "READY" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 											className: "iw-note",
-											children: "转写缺失不影响你提交面评；服务端会以 NO_TRANSCRIPT 记录并进入人工决策（D-111 / 服务端契约负责）。"
+											children: "这一轮的转写还没到，不影响你提交面评（面评仍可提交）；后续由 HR 决定如何处理。"
 										}) : null,
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 											className: "iw-tiny iw-muted",
-											children: "本卡片只展示转写事实；前端不判断 S8→S9 / S9→S10 能否推进（G3-B 由服务端阶段闸门负责）。"
+											children: "这张卡片只反映转写本身的状态；阶段能否推进由后续流程决定。"
 										})
 									]
 								}),

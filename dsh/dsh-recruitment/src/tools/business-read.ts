@@ -196,6 +196,22 @@ const RESUME_PARSE_STATUSES: readonly string[] = ['PENDING', 'PARSING', 'PARSED'
 /** 申请生命周期闭集（`ck_application_lifecycle_status`）。 */
 const LIFECYCLE_STATUSES: readonly string[] = ['ACTIVE', 'ON_HOLD', 'WITHDRAWN', 'CLOSED']
 
+/**
+ * 候选人姓名的**唯一归一化口径**（O20）。
+ *
+ * 为什么必须只有一份：模型可能用"候选人张样例"这种真实说法来找申请，而库里的
+ * `candidate.display_name` 会有大小写与多余空白的差异。入参校验、SQL 参数、输出回显、
+ * NOT_FOUND 文案若各写一套规则，迟早出现"回显说 A、查的是 B、报错说 C"。
+ *
+ * 规则：连续空白折叠为一个空格 + 去首尾空白 + 转小写（SQL 侧对 `lower(display_name)`
+ * 做同样的空白折叠后 `strpos` 包含匹配）。
+ * @param value - 模型/调用方给的姓名（可为多段空白）。
+ * @returns 归一化后的姓名；全空白时返回空串（调用方负责拒绝）。
+ */
+export function normalizeCandidateName(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
 /** `recruitment_application_get` 入参。 */
 const APPLICATION_GET_PARAMS: ParamMap = {
   application_id: {
@@ -203,7 +219,16 @@ const APPLICATION_GET_PARAMS: ParamMap = {
     uuid: true,
     maxLength: 36,
     description: 'Application id, UUID text form. Returns that one application. '
-      + 'Mutually exclusive with job_id / stage_code / lifecycle_status.',
+      + 'Mutually exclusive with candidate_name / job_id / stage_code / lifecycle_status.',
+  },
+  candidate_name: {
+    kind: 'string',
+    maxLength: 60,
+    description: 'Only for a list: keep applications whose candidate display name contains this text. '
+      + 'Containment match; case-insensitive and whitespace-insensitive (runs of whitespace collapse to one '
+      + 'space; surrounding spaces are ignored). Use this when the human names a candidate without a UUID. '
+      + 'Mutually exclusive with application_id. Multiple matches set needs_human_choice=true: ask the human '
+      + 'which application to use, never pick one yourself.',
   },
   job_id: {
     kind: 'string',
@@ -533,6 +558,8 @@ interface ApplicationQueryValue {
   readonly matched: number
   readonly limit: number
   readonly application_id?: string
+  /** O20：归一化后的姓名过滤（回显口径与 SQL/NOT_FOUND 共用 `normalizeCandidateName`）。 */
+  readonly candidate_name?: string
   readonly job_id?: string
   readonly stage_code?: string
   readonly lifecycle_status?: string
@@ -552,6 +579,11 @@ interface ApplicationGetValue {
   readonly tool_kind: 'READ_ONLY'
   readonly labels: ReadToolLabels
   readonly query: ApplicationQueryValue
+  /**
+   * O20：姓名查询命中多于一条时为 true —— 这是"必须问人"的闸门，Agent 不得自己挑一条。
+   * 未给 candidate_name（或恰好命中一条）时为 false。
+   */
+  readonly needs_human_choice: boolean
   readonly applications: readonly ApplicationValue[]
   readonly next_tools: readonly NextToolValue[]
 }
@@ -788,6 +820,7 @@ const APPLICATION_GET_OUTPUT_SCHEMA: Record<string, unknown> = {
         matched: { type: 'number' },
         limit: { type: 'number' },
         application_id: { type: 'string' },
+        candidate_name: { type: 'string' },
         job_id: { type: 'string' },
         stage_code: { type: 'string' },
         lifecycle_status: { type: 'string' },
@@ -795,6 +828,8 @@ const APPLICATION_GET_OUTPUT_SCHEMA: Record<string, unknown> = {
       required: ['mode', 'matched', 'limit'],
       additionalProperties: false,
     },
+    // O20：姓名查询多命中 ⇒ 必须问人（不得自己挑一条）。恒给出，不允许缺键。
+    needs_human_choice: { type: 'boolean' },
     applications: { type: 'array', items: APPLICATION_VALUE_SCHEMA },
     next_tools: {
       type: 'array',
@@ -810,7 +845,9 @@ const APPLICATION_GET_OUTPUT_SCHEMA: Record<string, unknown> = {
       },
     },
   },
-  required: ['tool', 'contract_version', 'tool_kind', 'labels', 'query', 'applications', 'next_tools'],
+  required: [
+    'tool', 'contract_version', 'tool_kind', 'labels', 'query', 'needs_human_choice', 'applications', 'next_tools',
+  ],
   additionalProperties: false,
 }
 
@@ -831,7 +868,7 @@ function materialPages(parsed: Record<string, unknown> | null): number {
 }
 
 /**
- * 一次申请查询：单条（application_id）或列表（job_id/stage/lifecycle 至少一个）。
+ * 一次申请查询：单条（application_id）或列表（candidate_name/job_id/stage/lifecycle 至少一个）。
  * @param client - 只读事务内客户端。
  * @param cfg - 已解析的库配置（tenant_id 只从这里来）。
  * @param args - 已校验的入参。
@@ -863,6 +900,16 @@ async function queryApplicationRows(
 
   const conditions: string[] = []
   const params: unknown[] = [cfg.tenant_id]
+  // O20：按候选人姓名包含匹配。`$n` 与 SQL 两侧都先做空白折叠：SQL 侧对 display_name
+  // 做 `\s+ -> ' '`（TS 模板字符串里要写 `\\s`），入参侧由 `normalizeCandidateName` 折好，
+  // 再统一 lower 比较 —— 大小写与多余空白都不影响命中。
+  const candidateName = typeof args.candidate_name === 'string'
+    ? normalizeCandidateName(args.candidate_name)
+    : undefined
+  if (candidateName !== undefined && candidateName !== '') {
+    params.push(candidateName)
+    conditions.push(`strpos(regexp_replace(lower(c.display_name), '\\s+', ' ', 'g'), $${params.length}) > 0`)
+  }
   for (const [key, column] of [
     ['job_id', 'a.job_id'],
     ['stage_code', 'a.current_stage_code'],
@@ -1050,11 +1097,27 @@ export async function readApplicationValue(
   args: Record<string, unknown>,
 ): Promise<ApplicationGetValue> {
   const single = args.application_id as string | undefined
+  // O20：姓名过滤的归一化值只算一次（SQL 参数、输出回显、NOT_FOUND 文案共用）。
+  const candidateName = typeof args.candidate_name === 'string'
+    ? normalizeCandidateName(args.candidate_name)
+    : undefined
   const rows = await queryApplicationRows(client, cfg, args)
   if (single !== undefined && rows.length === 0) {
     throw new RecruitmentToolError(
       'NOT_FOUND',
       JSON.stringify({ reason_code: 'APPLICATION_NOT_FOUND', application_id: single }),
+    )
+  }
+  // O20：按姓名查但一条都没有 —— 明确告诉人"没找到这个名字的申请"，不给 shell/文件降级建议，
+  // 也绝不返回样例数据。这里只影响"姓名过滤"的列表查询；job/stage/lifecycle 的空列表语义不变。
+  if (single === undefined && candidateName !== undefined && rows.length === 0) {
+    throw new RecruitmentToolError(
+      'NOT_FOUND',
+      JSON.stringify({
+        reason_code: 'CANDIDATE_NAME_NOT_FOUND',
+        candidate_name: candidateName,
+        message: `没有找到姓名包含“${candidateName}”的申请。`,
+      }),
     )
   }
 
@@ -1098,14 +1161,19 @@ export async function readApplicationValue(
     visible,
   ))
 
+  // O20：姓名查询命中多条 = 人必须选（不能替人挑"第一条"）。此时 next_tools 必须为空：
+  // 任何"拿第一条去读材料/看岗位"的建议都是在暗示可以自作主张。
+  const needsHumanChoice = candidateName !== undefined && applications.length > 1
+
   return {
     tool: APPLICATION_GET_TOOL,
     contract_version: CONTRACT_VERSION,
     tool_kind: 'READ_ONLY',
     labels,
     query: buildApplicationQueryValue(args, applications.length),
+    needs_human_choice: needsHumanChoice,
     applications,
-    next_tools: buildNextTools(rows, applications),
+    next_tools: needsHumanChoice ? [] : buildNextTools(rows, applications),
   }
 }
 
@@ -1415,11 +1483,15 @@ function buildApplicationQueryValue(
   matched: number,
 ): ApplicationQueryValue {
   const single = args.application_id as string | undefined
+  const candidateName = typeof args.candidate_name === 'string'
+    ? normalizeCandidateName(args.candidate_name)
+    : undefined
   return {
     mode: single === undefined ? 'LIST' : 'ONE',
     matched,
     limit: single === undefined ? (typeof args.limit === 'number' ? args.limit : 10) : 1,
     ...optional('application_id', single),
+    ...optional('candidate_name', candidateName),
     ...optional('job_id', args.job_id as string | undefined),
     ...optional('stage_code', args.stage_code as string | undefined),
     ...optional('lifecycle_status', args.lifecycle_status as string | undefined),
@@ -1481,20 +1553,41 @@ function buildNextTools(
 
 /**
  * 校验 `/` 归一化 `recruitment_application_get` 的入参（纯函数；execute 与测试同口径）。
+ *
+ * O20：`candidate_name` 在这里就归一化（trim + 空白折叠 + 小写），并把"归一化后为空"当成
+ * 明确的 `CANDIDATE_NAME_EMPTY` 拒掉 —— 否则一个全空白姓名会被误报成 `MISSING_FILTER`，
+ * 或（更糟）在 SQL 里退化成"匹配所有候选人"。
  * @param raw - 模型给的 arguments。
- * @returns 只含已声明键的入参。
+ * @returns 只含已声明键的入参（`candidate_name` 为归一化值）。
  */
 export function parseApplicationGetArgs(raw: unknown): Record<string, unknown> {
+  // 空串 `''` 会被 parseArgs 的通用非空校验先拒（仍是 INVALID_ARGS），这里让
+  // `'' / '   ' / ' \t '` 三种都得到同一个 CANDIDATE_NAME_EMPTY 口径。
+  const rawRecord = asRecord(raw)
+  const rawCandidateName = rawRecord?.candidate_name
+  if (typeof rawCandidateName === 'string' && normalizeCandidateName(rawCandidateName) === '') {
+    throw new RecruitmentToolError(
+      'INVALID_ARGS',
+      JSON.stringify({
+        reason_code: 'CANDIDATE_NAME_EMPTY',
+        message: 'candidate_name has no visible characters after trimming whitespace; '
+          + 'pass the candidate name as the human said it (for example "张三").',
+      }),
+    )
+  }
   const args = parseArgs(APPLICATION_GET_PARAMS, raw)
+  if (typeof args.candidate_name === 'string') {
+    args.candidate_name = normalizeCandidateName(args.candidate_name)
+  }
   const single = args.application_id as string | undefined
-  const filters = (['job_id', 'stage_code', 'lifecycle_status'] as const)
+  const filters = (['candidate_name', 'job_id', 'stage_code', 'lifecycle_status'] as const)
     .filter((key) => args[key] !== undefined)
   if (single === undefined && filters.length === 0) {
     throw new RecruitmentToolError(
       'INVALID_ARGS',
       JSON.stringify({
         reason_code: 'MISSING_FILTER',
-        message: 'pass application_id, or at least one of job_id / stage_code / lifecycle_status',
+        message: 'pass application_id, or at least one of candidate_name / job_id / stage_code / lifecycle_status',
       }),
     )
   }
@@ -1503,7 +1596,7 @@ export function parseApplicationGetArgs(raw: unknown): Record<string, unknown> {
       'INVALID_ARGS',
       JSON.stringify({
         reason_code: 'MUTUALLY_EXCLUSIVE',
-        message: 'application_id cannot be combined with job_id / stage_code / lifecycle_status',
+        message: 'application_id cannot be combined with candidate_name / job_id / stage_code / lifecycle_status',
         detail: { unexpected: filters },
       }),
     )
@@ -1514,10 +1607,20 @@ export function parseApplicationGetArgs(raw: unknown): Record<string, unknown> {
 /** `recruitment_application_get` 的模型可见 render。 */
 function renderApplicationGet(_args: unknown, value: unknown): readonly TextBlock[] {
   const v = value as ApplicationGetValue
+  const candidateNamePart = v.query.candidate_name === undefined
+    ? ''
+    : ` candidate_name=${v.query.candidate_name}`
   const lines: string[] = [
     `${v.tool} read-only (${v.contract_version}) labels=${v.labels.provenance}/${v.labels.trigger}/${v.labels.connection}`,
-    `query: ${v.query.mode} matched=${v.query.matched}${v.query.application_id === undefined ? '' : ` application_id=${v.query.application_id}`}`,
+    `query: ${v.query.mode} matched=${v.query.matched}${v.query.application_id === undefined ? '' : ` application_id=${v.query.application_id}`}${candidateNamePart}`,
   ]
+  // O20：多命中必须问人。这行是给模型看的最后一道明示（结构上 next_tools 也已清空）。
+  if (v.needs_human_choice) {
+    lines.push(
+      `needs human choice: ${v.query.matched} applications match candidate `
+        + `"${v.query.candidate_name ?? ''}"; ask the human which one — do not pick one automatically`,
+    )
+  }
   for (const application of v.applications) {
     lines.push(
       `application ${application.application_id} @ ${application.stage_code} `
@@ -2511,6 +2614,13 @@ export function createApplicationGetTool(deps: BusinessReadDeps): ReadonlyToolDe
       + 'material summary (resume_version, parse_status, pages, hard issue codes, source file sha256), '
       + 'interviews, transcript counts, scorecard counts and the latest decision. Every block carries its '
       + 'source id; missing facts are omitted, never invented; an unknown application_id returns NOT_FOUND. '
+      // O20：可发现性靠这段 —— HR 说"候选人张样例这次申请"时模型必须想到用 candidate_name，而不是去搜文件。
+      + 'When the human names a candidate instead of giving a UUID, pass candidate_name to find applications by '
+      + 'display name: containment match, case-insensitive and whitespace-insensitive, list mode only. '
+      + 'Multiple matches return needs_human_choice=true with an empty next_tools — you MUST ask the human which '
+      + 'application to use and never pick one automatically. Zero matches return NOT_FOUND / '
+      + 'CANDIDATE_NAME_NOT_FOUND; in that case do not fall back to shell, file or database searches — ask the '
+      + 'human to confirm the name or give the application id directly. '
       + 'This tool only projects the pinned rubric pointer — call recruitment_job_get for the full criteria/JD, '
       + 'recruitment_material_read for the material itself, and recruitment_interview_get for per-interview '
       + 'facts. Never use shell, psql or source-code reads to obtain recruitment facts. '

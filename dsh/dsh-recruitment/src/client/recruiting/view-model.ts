@@ -1481,6 +1481,20 @@ export function buildScorecardProgress(
   }
 }
 
+/**
+ * 轮内状态 → **面试摘要专用**的 HR 语言（O18）。
+ *
+ * 为什么不复用全局 `INTERVIEW_STATUS_LABELS`：那张表是**状态机口径**
+ * （`POST_INTERVIEW` = `面试后`、`IN_PROGRESS` = `进行中`），详情页的状态 chip / 轮次卡
+ * 用它是正确的；但工作台申请行是"哪一轮已经做完"的一行摘要，需要完成态的人话——
+ * `第 1 轮面试后` 会被读成"第 1 轮之后"，`第 1 轮已面完` 才是 HR 要的事实。
+ * 该映射**只服务 `interviewSummaryOf`**（不导出、不改全局表），其余展示点口径不变。
+ */
+const INTERVIEW_SUMMARY_STATUS_LABELS: Readonly<Record<string, string>> = {
+  POST_INTERVIEW: '已面完',
+  IN_PROGRESS: '面试中',
+}
+
 /** 面试轮次与状态的一行文案。 */
 export function interviewSummaryOf(interviews: readonly InterviewView[]): {
   readonly rounds: number
@@ -1505,8 +1519,22 @@ export function interviewSummaryOf(interviews: readonly InterviewView[]): {
     const rank: Record<ChipTone, number> = { red: 4, amber: 3, blue: 2, green: 1, gray: 0 }
     if (rank[candidate] > rank[tone]) tone = candidate
   }
-  const last = interviews[interviews.length - 1]
-  return { rounds, summary: `${String(rounds)} 轮${last !== undefined ? ` · ${last.statusLabel}` : ''}`, tone }
+  // O18 口径（产品复核 O18）：多轮时**按轮**给状态，不能用一个状态词概括全部轮次。
+  // 病根：R1 已面完（POST_INTERVIEW）+ R2 已排期（SCHEDULED）时，旧文案取最后一轮 =
+  // `2 轮 · 已排期`，HR 看不出第 1 轮已经面完。现改为 `2 轮 · 第 1 轮已面完 / 第 2 轮已排期`。
+  // 单轮保持原状（`1 轮 · 面试后`）：单轮不存在"被某一轮状态覆盖"的歧义，且不扩大改动面。
+  if (rounds === 1) {
+    const only = interviews[0]
+    return { rounds, summary: `${String(rounds)} 轮${only !== undefined ? ` · ${only.statusLabel}` : ''}`, tone }
+  }
+  // 轮次按 `interviews` 数组顺序（服务端按 `round_no` 升序投影）；序号取服务端事实
+  // `roundNo`，缺失（0）时才退化成本轮在数组中的显示位置，绝不写"第 0 轮"。
+  const perRound = interviews.map((interview, index) => {
+    const roundNo = interview.roundNo > 0 ? interview.roundNo : index + 1
+    const label = INTERVIEW_SUMMARY_STATUS_LABELS[interview.status] ?? interview.statusLabel
+    return `第 ${String(roundNo)} 轮${label}`
+  })
+  return { rounds, summary: `${String(rounds)} 轮 · ${perRound.join(' / ')}`, tone }
 }
 
 /** 转写状态一行文案（来自服务端 `progress.transcript_state`）。 */
