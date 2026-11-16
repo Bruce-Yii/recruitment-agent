@@ -568,7 +568,7 @@ test('canSubmitScorecard：未分配（不是本场面试官 / 空 interview_id�
   assert.equal(canSubmitScorecard(rowFixture({ role_in_interview: '' })), false)
   assert.equal(canSubmitScorecard(rowFixture({ role_in_interview: 'OBSERVER' })), false)
   assert.equal(canSubmitScorecard(rowFixture({ interview_id: '' })), false)
-  // 转写未 READY 不影响可提交（服务端记 NO_TRANSCRIPT，D-111）。
+  // 转写还没收到不影响可提交（面评仍可提交；后续由 HR 决定如何处理）。
   assert.equal(canSubmitScorecard(rowFixture({ transcript: { state: 'MISSING' }, scorecard: { state: 'NONE' } })), true)
 })
 
@@ -641,13 +641,15 @@ test('formatSlotRange：同日折叠结束日期；跨日保留两侧；空开�
 })
 
 test('transcriptStateText / scorecardStateText：七条转写 + 四面评状态；未知值如实说明，不沉默', () => {
-  assert.equal(transcriptStateText('READY'), '已取得（完整）')
-  assert.equal(transcriptStateText('PARTIAL'), '部分取得（不完整）')
-  assert.equal(transcriptStateText('PENDING'), '等待转写中')
-  assert.equal(transcriptStateText('MISSING'), '缺失（无原文）')
-  assert.equal(transcriptStateText('AUTH_REQUIRED'), '需要重新授权')
-  assert.equal(transcriptStateText('NEEDS_LINKING'), '待人工关联会议')
-  assert.equal(transcriptStateText('RETRYABLE_FAILED'), '可重试的失败')
+  // D-133：转写状态只用事实时态（已收到 / 还没收到 / 读不出来；处理失败如实写「处理失败」），
+  // 不再出现「缺失 / 缺件 / 未就绪」叙事。仍是 assert.equal 精确断言（口径修正，不是放宽）。
+  assert.equal(transcriptStateText('READY'), '已收到（完整）')
+  assert.equal(transcriptStateText('PARTIAL'), '已收到（部分）')
+  assert.equal(transcriptStateText('PENDING'), '还没收到')
+  assert.equal(transcriptStateText('MISSING'), '还没收到')
+  assert.equal(transcriptStateText('AUTH_REQUIRED'), '读不出来（需要重新授权）')
+  assert.equal(transcriptStateText('NEEDS_LINKING'), '读不出来（还没关联会议）')
+  assert.equal(transcriptStateText('RETRYABLE_FAILED'), '处理失败（可重试）')
   assert.equal(transcriptStateText('WEIRD'), '未知状态（WEIRD）')
   assert.equal(transcriptStateText(''), '状态未提供')
 
@@ -685,7 +687,7 @@ test('buildScorecardSubmitBody：提交体键只来自 spec（dimensions 全集�
   assert.deepEqual(built.body.dimensions.data_eval, { assessment: 'NOT_MET', score: 2, note: '缺少评测设计' })
   assert.equal(built.body.interview_id, INT_1)
   assert.equal(built.body.rubric_version_id, RUBRIC_1)
-  assert.equal(built.body.transcript_basis, 'NO_TRANSCRIPT', '转写缺失不是错误：用服务端锁定的值')
+  assert.equal(built.body.transcript_basis, 'NO_TRANSCRIPT', '转写还没收到不是错误：用服务端锁定的值')
   assert.equal(built.body.overall, 'HOLD')
   assert.equal(built.body.nonce, 'nonce-from-server')
   assertClean(built.body)

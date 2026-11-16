@@ -11,7 +11,7 @@
 //
 // 语义红线：
 //   1. `interview.status` 只表排期；`transcript` 与 `scorecard` 是两条独立分支，互不推导。
-//   2. Transcript 未 READY **不影响**提交面评（服务端记 NO_TRANSCRIPT，D-111）；
+//   2. 转写还没收到 **不影响**提交面评（面评仍可提交，后续由 HR 决定如何处理）；
 //      前端**不判断** S8→S9 / S9→S10 能否推进（G3-B 由服务端阶段闸门负责）。
 //   3. 未绑定身份（409 DEMO_ACTOR_UNMAPPED）→ 只显示 fail-closed 提示，不显示任何面试；
 //      其它读取失败 → overview-error + code/reason_code，绝不把故障说成"0 条"。
@@ -618,11 +618,11 @@ function DetailView({
               </p>
               {row.transcript.state !== 'READY' ? (
                 <p className="iw-note">
-                  转写缺失不影响你提交面评；服务端会以 NO_TRANSCRIPT 记录并进入人工决策（D-111 / 服务端契约负责）。
+                  这一轮的转写还没到，不影响你提交面评（面评仍可提交）；后续由 HR 决定如何处理。
                 </p>
               ) : null}
               <p className="iw-tiny iw-muted">
-                本卡片只展示转写事实；前端不判断 S8→S9 / S9→S10 能否推进（G3-B 由服务端阶段闸门负责）。
+                这张卡片只反映转写本身的状态；阶段能否推进由后续流程决定。
               </p>
             </section>
 

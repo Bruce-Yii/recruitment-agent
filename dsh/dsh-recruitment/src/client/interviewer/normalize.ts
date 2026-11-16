@@ -56,15 +56,20 @@ const OVERALL_TEXT: Readonly<Record<string, string>> = {
   REJECT: '不通过',
 }
 
-/** 转写状态的中文含义（TR-D 七条）。 */
+/**
+ * 转写状态的中文含义（TR-D 七条）。
+ *
+ * D-133 口径：只给**事实时态**——已收到 / 还没收到 / 读不出来（处理失败如实写「处理失败」）；
+ * 禁止「缺失 / 缺件 / 未就绪」叙事。枚举键与类型不变，这里只改给人看的文案。
+ */
 const TRANSCRIPT_STATE_TEXT: Readonly<Record<string, string>> = {
-  READY: '已取得（完整）',
-  PARTIAL: '部分取得（不完整）',
-  PENDING: '等待转写中',
-  MISSING: '缺失（无原文）',
-  AUTH_REQUIRED: '需要重新授权',
-  NEEDS_LINKING: '待人工关联会议',
-  RETRYABLE_FAILED: '可重试的失败',
+  READY: '已收到（完整）',
+  PARTIAL: '已收到（部分）',
+  PENDING: '还没收到',
+  MISSING: '还没收到',
+  AUTH_REQUIRED: '读不出来（需要重新授权）',
+  NEEDS_LINKING: '读不出来（还没关联会议）',
+  RETRYABLE_FAILED: '处理失败（可重试）',
 }
 
 /** 面评状态的中文含义（NONE/PENDING/SUBMITTED/WAIVED）。 */
@@ -1001,7 +1006,7 @@ export function deriveWorkspaceStats(overview: InterviewerOverview): WorkspaceSt
  * 规则（fail-closed）：
  *   - 必须是本场面试已登记的面试官（role_in_interview === INTERVIEWER）且行有 interview_id；
  *   - 面评状态 NONE / PENDING → true；SUBMITTED / WAIVED → false；未知状态 → false。
- * 注意：这里**不**判断转写是否 READY（转写缺失不影响提交，服务端记 NO_TRANSCRIPT，D-111）。
+ * 注意：这里**不**判断转写是否 READY（转写还没收到不影响提交；面评仍可提交，后续由 HR 决定如何处理）。
  * @param row - 一条面试行。
  * @returns 是否可提交。
  */
