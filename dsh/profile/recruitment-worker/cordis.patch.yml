@@ -258,3 +258,6 @@
   disabled: true
 - id: agent-instructions
   disabled: true
+# 同产品 profile：worker 也不需要 agent 编排面（list_agents / send_message / wait_agent）。
+- id: tool-subagent-control
+  disabled: true

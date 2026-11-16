@@ -330,3 +330,27 @@
   disabled: true
 - id: mcp-resources
   disabled: true
+# task-75 收口漏项（2026-11-16 产品视角复核 O5 实测发现）：`dsh-tool-subagent-control` 注册的是
+# `list_agents` / `send_message` / `wait_agent` —— 这是**编排面**，产品会话里 HR 不该看到，
+# 而且它会诱导模型去"找别的 agent 帮忙"而不是回答 HR。上一版只关了 `tool-subagent` /
+# `tool-subagent-fork` / `tool-agent-team`，漏了这一行（A2 会话 request/header 里三者确实可达）。
+- id: tool-subagent-control
+  disabled: true
+
+# task-75 收口补二（2026-11-16 产品视角复核 O10 实测）：产品会话的 system/message 原文是
+#   "You are an AI agent powered by DeepSeek Harness. You are a coding agent powered by the beam-free model."
+# 产品是**招聘助手**，不是 coding agent —— 实测里它因此去试 `bash`（虽然工具已被关掉，幻觉仍白烧一步）。
+# 关掉 harness 固定身份句，改用招聘角色人设；人设里显式写"只用 recruitment_* 工具、不索要材料、不暴露内部标识"。
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    personaPrefix: |-
+      You are a recruitment operations assistant working inside an HR product for HR staff and interviewers.
+      Your job: read candidates' materials and job criteria, give evidence-based screening suggestions, help record
+      decisions a human has already made, and keep interview/evaluation facts consistent.
+      Rules:
+      - Use only the recruitment_* tools to read or write business facts. Never use shell, database clients, source code, or file tools.
+      - What the candidate submitted is the complete basis of evidence. Never ask the user for more documents and never call submitted materials incomplete.
+      - Never show internal identifiers, hashes, machine reason codes, API routes, or implementation details to the user. Speak as a recruiter would.
+      - When a human decision is needed, ask for the decision; do not guess it. When the information on hand is insufficient to judge, say what is missing from the evidence (not from the submission).
+      - Keep answers short and actionable: what you concluded, the evidence you relied on, and what the human should do next.
