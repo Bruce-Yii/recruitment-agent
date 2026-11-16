@@ -5,7 +5,11 @@
 //   Agent 只能下沉到 shell / psql / 读源码 / 直接找文件 —— 在真实招聘环境里这是权限/租户/合规红线，
 //   而且 2 轮 42 步 3.3M tokens 只是为了"看一眼业务事实"。这两个工具把这条链路收回到产品面：
 //     * 一次调用拿全一条申请的**业务事实**（申请人 / 岗位 / 阶段 / 材料摘要 / 面试与评估摘要 / 决策摘要）；
-//     * 一次调用拿一份**受控材料**（结构摘要 + 定位器 + 哈希；业务必需时给受控文本片段）；
+//       D-141 ① 起 rubric 块额外给 criteria 摘要（key/label/kind/weight，≤8 条）—— 判断
+//       "这条路能不能跑"不必再调 `recruitment_job_get`（question/notes 全文仍归它）；
+//     * 一次调用拿一份**受控材料**（结构摘要 + 定位器 + 哈希；TEXT 模式给**可定位的逐字引文**：
+//       D-110 的 locator_kind + page/paragraph/line/offset + 逐字 quote + 原件 sha256 校验结论，
+//       不是"整篇原文倾倒"）；
 //     * 只读（`begin transaction read only`，写语句直接 25006）、结构化、每个事实带来源 id。
 //
 // R1 复用（不新造轮子）：
@@ -51,6 +55,9 @@ import {
 } from '../db/pool.ts'
 import type { ResolvedConverterConfig } from './converter.ts'
 import { readDocumentDetailed, isDocumentReadError } from '../document/readers/index.ts'
+// D-141 ⑧：引文定位器按 D-110 的联合类型标注（`pdf_page_bbox` / `rtf_paragraph` /
+// `docx_part_paragraph` / `text_line_offset`），类型直接取文档契约的唯一来源，不另立一套。
+import type { DocumentBlock, DocumentContent } from '../document/contracts/index.ts'
 // O14：必交面评进度的**唯一**派生实现（与 interview_get 共用同一份；不许两处各写一套）。
 import { deriveRequiredScorecardProgress } from './scorecard-progress.ts'
 import {
@@ -393,6 +400,16 @@ interface JobSummaryValue {
   readonly version_id_pinned?: string
 }
 
+/** 输出：Rubric 一条 criterion 的**摘要**（D-141 ①：只给判断"这条路能不能跑"所需的键，不给全文）。 */
+interface CriteriaSummaryItemValue {
+  readonly key: string
+  /** 人话标签（dimensions 里没有就不给，不编造）。 */
+  readonly label?: string
+  /** 封闭集合由 rubric 契约说话（MUST_HAVE / NICE_TO_HAVE / DISQUALIFIER）；这里只回显。 */
+  readonly kind?: string
+  readonly weight?: number
+}
+
 /** 输出：Rubric 钉住版本的**指针 + 摘要**（完整 criteria/可执行性归 job_get，见 next_tools）。 */
 interface RubricSummaryValue {
   readonly rubric_version_id: string
@@ -400,6 +417,14 @@ interface RubricSummaryValue {
   readonly source: 'APPLICATION_PIN' | 'JOB_CURRENT'
   readonly approved: boolean
   readonly criteria_count: number
+  /**
+   * D-141 ①：前 8 条 criterion 的 key/label/kind/weight。
+   *
+   * 目的：Agent 判断"这条路能不能跑"（版本是否批准、有几条、哪几条、什么 kind）时
+   * **不必再调一次 `recruitment_job_get`**；需要 question/notes 全文或 R-VAL 可执行性时仍调 job_get。
+   * 这是**投影不是替代**：投影只读 `rubric_version.dimensions` 已有的四个键，不重算规则。
+   */
+  readonly criteria_summary: readonly CriteriaSummaryItemValue[]
   readonly payload_hash?: string
 }
 
@@ -653,6 +678,21 @@ const APPLICATION_VALUE_SCHEMA: Record<string, unknown> = {
         source: { type: 'string', enum: ['APPLICATION_PIN', 'JOB_CURRENT'] },
         approved: { type: 'boolean' },
         criteria_count: { type: 'number' },
+        // D-141 ①：判断"这条路能不能跑"所需的 criteria 摘要（最多 8 条；全文仍归 job_get）。
+        criteria_summary: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              key: { type: 'string' },
+              label: { type: 'string' },
+              kind: { type: 'string' },
+              weight: { type: 'number' },
+            },
+            required: ['key'],
+            additionalProperties: false,
+          },
+        },
         payload_hash: { type: 'string' },
       },
       required: ['rubric_version_id', 'version_no', 'source', 'approved', 'criteria_count'],
@@ -1263,11 +1303,49 @@ function toApplicationValue(
           source: row.pinned_rubric_version_id !== null ? 'APPLICATION_PIN' : 'JOB_CURRENT',
           approved: rubric.approved,
           criteria_count: asArray(rubric.dimensions).length,
+          criteria_summary: summarizeRubricCriteria(rubric.dimensions).criteria_summary,
           ...optional('payload_hash', rubric.payload_hash ?? undefined),
         } as const,
       }),
     ...(material === undefined ? {} : { material: toMaterialSummary(material) }),
   }
+}
+
+/**
+ * rubric `dimensions` → Agent 判断所需的 criteria 摘要（D-141 ①；纯函数，可单测）。
+ *
+ * 三条纪律：
+ *   1. **只投影已存在的四个键**（key/label/kind/weight），绝不带 question/notes 全文，
+ *      也不重算 R-VAL 可执行性 —— 那是 `recruitment_job_get` 的职责（读工具按事实来源分权）；
+ *   2. 最多 8 条，但 `criteria_count` 永远是**真实总数**（截断不是隐瞒，缺的键不编造）；
+ *   3. 结构不合法（不是对象 / key 不是字符串）的条目**跳过**，不占摘要位、不伪造 key。
+ * @param dimensions - `rubric_version.dimensions`（jsonb，不能假设形状）。
+ * @param maxItems - 摘要最多几条（默认 8）。
+ * @returns `{ criteria_summary, criteria_count }`。
+ */
+export function summarizeRubricCriteria(
+  dimensions: unknown,
+  maxItems = 8,
+): { criteria_summary: readonly CriteriaSummaryItemValue[]; criteria_count: number } {
+  const list = asArray(dimensions)
+  const summary: CriteriaSummaryItemValue[] = []
+  for (const raw of list) {
+    if (summary.length >= maxItems) break
+    const record = asRecord(raw)
+    if (record === null) continue
+    const key = asString(record.key)
+    if (key === undefined) continue
+    const label = asString(record.label)
+    const kind = asString(record.kind)
+    const weight = asNumber(record.weight)
+    summary.push({
+      key,
+      ...(label === undefined ? {} : { label }),
+      ...(kind === undefined ? {} : { kind }),
+      ...(weight === undefined ? {} : { weight }),
+    })
+  }
+  return { criteria_summary: summary, criteria_count: list.length }
 }
 
 /**
@@ -1521,8 +1599,8 @@ function buildNextTools(
   }
   hints.push({
     name: 'recruitment_job_get',
-    reason: 'Full job description + every rubric criterion with R-VAL executability and absence reasons '
-      + '(this tool only projects the pinned rubric pointer).',
+    reason: 'Only when you need the full criterion text (question/notes), the JD body, or R-VAL executability / '
+      + 'absence reasons: application_get already gives each pinned criterion\'s key/label/kind/weight.',
     args_json: JSON.stringify({ job_id: first.job.job_id }),
   })
   if (first.interviews.count > 0) {
@@ -1680,6 +1758,21 @@ function renderApplicationGet(_args: unknown, value: unknown): readonly TextBloc
           + `approved=${String(application.rubric.approved)}, criteria=${application.rubric.criteria_count}, `
           + `版本号 ${shortRef(application.rubric.rubric_version_id)})`,
       )
+      // D-141 ①：criteria 摘要（key/kind/weight，最多 8 条）—— 判断"这条路能不能跑"不必再调 job_get；
+      // question/notes 全文仍归 recruitment_job_get。
+      const summary = application.rubric.criteria_summary ?? []
+      if (summary.length > 0) {
+        const parts = summary.map((item) => {
+          const kind = item.kind === undefined ? '' : ` [${item.kind}]`
+          const weight = item.weight === undefined ? '' : ` w=${item.weight}`
+          const label = item.label === undefined ? '' : ` ${item.label}`
+          return `${item.key}${kind}${weight}${label}`
+        })
+        const truncated = application.rubric.criteria_count > summary.length
+          ? ` …(+${application.rubric.criteria_count - summary.length} more)`
+          : ''
+        lines.push(`    criteria: ${parts.join('; ')}${truncated}`)
+      }
     } else {
       lines.push('  rubric: (none pinned; call recruitment_job_get to see why)')
     }
@@ -1752,14 +1845,16 @@ const MATERIAL_READ_PARAMS: ParamMap = {
     kind: 'string',
     values: MATERIAL_MODES,
     description: 'SUMMARY (default): structure summary + locators + hashes, no source text. '
-      + 'TEXT: additionally return a bounded, contact-redacted excerpt of the source document '
-      + '(only when a review truly needs the wording).',
+      + 'TEXT: additionally return bounded, contact-redacted, LOCATABLE verbatim citations of the source '
+      + 'document (each with locator_kind + page/paragraph/line/offset + the verbatim quote + the verified '
+      + 'pinned source sha256). If the original bytes are readable but no locatable quote can be produced, '
+      + 'text.reason_code is MATERIAL_ORIGINAL_NOT_LOCATED instead of pretending success.',
   },
   max_chars: {
     kind: 'integer',
     min: 200,
     max: 8000,
-    description: 'TEXT mode only: maximum excerpt characters (200..8000, default 2000).',
+    description: 'TEXT mode only: maximum total characters of the returned citations (200..8000, default 2000).',
   },
   include_contacts: {
     kind: 'boolean',
@@ -1860,12 +1955,76 @@ type TextReasonCode =
   | 'ASSET_INVALID'
   | 'READER_FAILED'
   | 'HASH_MISMATCH'
+  /**
+   * 原文读到了，但**做不出可定位的逐字引文**（读取器没给可用的块/定位器，或全部可引用块都因
+   * 联系方式脱敏被剔除）。语义 = "没拿到可复核的原文证据"，**绝不**把它标成 `OK` 假成功。
+   */
+  | 'MATERIAL_ORIGINAL_NOT_LOCATED'
 
 const TEXT_REASON_CODES: readonly TextReasonCode[] = [
   'OK', 'NOT_REQUESTED', 'CONVERTER_NOT_CONFIGURED', 'NO_ALLOWED_ROOTS',
   'NOT_FOUND_IN_ALLOWED_ROOTS', 'SEARCH_BUDGET_EXCEEDED', 'ASSET_MISSING', 'ASSET_INVALID',
-  'READER_FAILED', 'HASH_MISMATCH',
+  'READER_FAILED', 'HASH_MISMATCH', 'MATERIAL_ORIGINAL_NOT_LOCATED',
 ]
+
+/**
+ * 引文定位器种类（**D-110 的联合类型**，逐字取 `contracts/identity/identity-resolution-rules.md` §定位器联合类型）：
+ *   * `pdf_page_bbox`         PDF：page（+ bbox）
+ *   * `docx_part_paragraph`   DOCX 段落：part + paragraph_id（paragraph 数值从 `pN` 解析，0-based）
+ *   * `docx_part_table_row`   DOCX 表格单元格：part + table_id + row（+ cell）
+ *   * `rtf_paragraph`         RTF：paragraph（0-based 读取器块序号；读取器给了 page 才带）
+ *   * `text_line_offset`      无结构定位器时的纯文本兜底：line（1-based 全文行号）+ offset（0-based 字符偏移）
+ */
+type CitationLocatorKind =
+  | 'pdf_page_bbox'
+  | 'docx_part_paragraph'
+  | 'docx_part_table_row'
+  | 'rtf_paragraph'
+  | 'text_line_offset'
+
+/**
+ * 输出：一条**可定位的逐字引文**（D-141 ⑧ + D-110）。
+ *
+ * 三条件都成立才会产出（否则整条不产出，绝不假成功）：
+ *   1. 原文可核：`source_sha256` = 本次实际读到的原件字节 sha256，且与库里钉住的期望值一致
+ *      （调用方在 `buildMaterialTextValue` 里先比对，不一致直接 `HASH_MISMATCH`）；
+ *   2. 定位唯一：`locator_kind` + 对应字段由**读取器自己的块定位器**原样投影（不重算、不猜）；
+ *      需要 `text_line_offset` 兜底时，只接受 quote 在全文**唯一命中**（多处命中 → 不产出，禁止取第一条）；
+ *   3. 原句逐字命中：`quote` 就是读取器该块的**原文文本**（未做任何改写/归一化）；
+ *      含联系方式的块**整块跳过**（脱敏会破坏逐字性，所以宁可不给引文）。
+ */
+interface TextCitationValue {
+  /** 1-based，按阅读顺序（读取器块的 `order`）编号。 */
+  readonly seq: number
+  readonly locator_kind: CitationLocatorKind
+  /** `LOCATOR_UNIQUE+…` = 由读取器定位器唯一确定；`QUOTE_UNIQUE+…` = 无结构定位器时由 quote 唯一命中反推。 */
+  readonly verification_method:
+    | 'LOCATOR_UNIQUE+SHA256+LITERAL_QUOTE'
+    | 'QUOTE_UNIQUE+SHA256+LITERAL_QUOTE'
+  readonly source_sha256: string
+  readonly quote: string
+  readonly quote_chars: number
+  /** quote 因 `max_chars` 预算被截断（是原文前缀，仍是逐字子串）。 */
+  readonly quote_truncated: boolean
+  /**
+   * 同一句在**全文**里出现多处（>1）。此时结构定位器仍唯一（page/paragraph/block_id），
+   * 但 quote 本身不足以唯一定位 → 不输出 line/offset，交由下游按 D-110 判歧义强度。
+   */
+  readonly quote_multi_hit: boolean
+  readonly block_id?: string
+  readonly page?: number
+  readonly bbox?: number[]
+  readonly part?: string
+  readonly paragraph?: number
+  readonly paragraph_id?: string
+  readonly table_id?: string
+  readonly row?: number
+  readonly cell?: number
+  /** 1-based 全文行号（仅在 quote 全文唯一命中时给出）。 */
+  readonly line?: number
+  /** 0-based 全文字符偏移（仅在 quote 全文唯一命中时给出）。 */
+  readonly offset?: number
+}
 
 /** 输出：受控文本片段事实。 */
 interface TextValue {
@@ -1877,10 +2036,25 @@ interface TextValue {
   /** 实际返回的片段字符数（未返回片段 = 0）。 */
   readonly excerpt_chars: number
   readonly truncated: boolean
+  /**
+   * TEXT 模式下的有界正文 = 各条引文的 quote 以换行拼接（总长 ≤ max_chars）；
+   * 引文为空时不返回（不拿"整篇原文"冒充可定位证据）。
+   */
   readonly excerpt?: string
   readonly media_type?: string
   readonly reader_id?: string
   readonly asset_sha256_verified?: boolean
+  /** 可定位逐字引文（按阅读顺序，最多受 max_chars 预算约束）。 */
+  readonly citations?: readonly TextCitationValue[]
+  readonly citation_count?: number
+  /** 有结构定位器但 quote 全文多处命中的引文条数（D-110：下游按歧义强度处理）。 */
+  readonly multi_hit_citation_count?: number
+  /** 因为没有可用定位器、且 quote 不能唯一命中而被**整条丢弃**的候选块数（禁止取第一条）。 */
+  readonly ambiguous_citation_count?: number
+  /** 因为含联系方式（脱敏会破坏逐字性）而被整块跳过的块数。 */
+  readonly omitted_contact_blocks?: number
+  /** 是否因 `max_chars` 预算而少给了引文（原文比这次返回的长）。 */
+  readonly citations_truncated?: boolean
 }
 
 /** `recruitment_material_read` 的规范输出。 */
@@ -2054,6 +2228,53 @@ const MATERIAL_READ_OUTPUT_SCHEMA: Record<string, unknown> = {
         media_type: { type: 'string' },
         reader_id: { type: 'string' },
         asset_sha256_verified: { type: 'boolean' },
+        // D-141 ⑧：可定位逐字引文（每条带 D-110 的 locator_kind + 定位值 + 逐字 quote + 原件 sha256）。
+        citations: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              seq: { type: 'number' },
+              locator_kind: {
+                type: 'string',
+                enum: [
+                  'pdf_page_bbox', 'docx_part_paragraph', 'docx_part_table_row',
+                  'rtf_paragraph', 'text_line_offset',
+                ],
+              },
+              verification_method: {
+                type: 'string',
+                enum: ['LOCATOR_UNIQUE+SHA256+LITERAL_QUOTE', 'QUOTE_UNIQUE+SHA256+LITERAL_QUOTE'],
+              },
+              source_sha256: { type: 'string' },
+              quote: { type: 'string' },
+              quote_chars: { type: 'number' },
+              quote_truncated: { type: 'boolean' },
+              quote_multi_hit: { type: 'boolean' },
+              block_id: { type: 'string' },
+              page: { type: 'number' },
+              bbox: { type: 'array', items: { type: 'number' } },
+              part: { type: 'string' },
+              paragraph: { type: 'number' },
+              paragraph_id: { type: 'string' },
+              table_id: { type: 'string' },
+              row: { type: 'number' },
+              cell: { type: 'number' },
+              line: { type: 'number' },
+              offset: { type: 'number' },
+            },
+            required: [
+              'seq', 'locator_kind', 'verification_method', 'source_sha256',
+              'quote', 'quote_chars', 'quote_truncated', 'quote_multi_hit',
+            ],
+            additionalProperties: false,
+          },
+        },
+        citation_count: { type: 'number' },
+        multi_hit_citation_count: { type: 'number' },
+        ambiguous_citation_count: { type: 'number' },
+        omitted_contact_blocks: { type: 'number' },
+        citations_truncated: { type: 'boolean' },
       },
       required: ['mode', 'available', 'reason_code', 'source_chars', 'excerpt_chars', 'truncated'],
       additionalProperties: false,
@@ -2304,18 +2525,249 @@ function toMaterialReadValue(
   }
 }
 
-/** 时长/预算：TEXT 摘录上限之外不再往模型塞正文。 */
+/** 时长/预算：TEXT 引文总字符上限（`max_chars` 的默认值）。 */
 const DEFAULT_MAX_CHARS = 2_000
 
+/** 把 DOCX 的 paragraph_id（`p12`）解析成数值（0-based；解析不了就不给 `paragraph`，不猜）。 */
+function docxParagraphIndex(paragraphId: string | undefined): number | undefined {
+  if (paragraphId === undefined) return undefined
+  const match = /^p(\d+)$/.exec(paragraphId)
+  if (match === null) return undefined
+  const value = Number(match[1])
+  return Number.isInteger(value) && value >= 0 ? value : undefined
+}
+
+/** 一个块在输出里可用的定位器（不可用 = 没有可复核定位，返回 null）。 */
+function citationLocatorOf(block: DocumentBlock): {
+  readonly locator_kind: CitationLocatorKind
+  readonly page?: number
+  readonly bbox?: number[]
+  readonly part?: string
+  readonly paragraph?: number
+  readonly paragraph_id?: string
+  readonly table_id?: string
+  readonly row?: number
+  readonly cell?: number
+} | null {
+  const locator = block.locator
+  switch (locator.kind) {
+    case 'pdf': {
+      // 契约要求 PDF 定位 page ≥ 1；哨兵 0（读取器没给页码）不能拿来当引文定位。
+      if (!Number.isInteger(locator.page) || locator.page < 1) return null
+      return {
+        locator_kind: 'pdf_page_bbox',
+        page: locator.page,
+        ...(locator.bbox === undefined ? {} : { bbox: [...locator.bbox] }),
+      }
+    }
+    case 'rtf': {
+      if (locator.paragraph === undefined) return null
+      return {
+        locator_kind: 'rtf_paragraph',
+        paragraph: locator.paragraph,
+        ...(locator.page === undefined ? {} : { page: locator.page }),
+      }
+    }
+    case 'docx': {
+      if (locator.table_id !== undefined) {
+        return {
+          locator_kind: 'docx_part_table_row',
+          part: locator.part,
+          table_id: locator.table_id,
+          ...(locator.row === undefined ? {} : { row: locator.row }),
+          ...(locator.cell === undefined ? {} : { cell: locator.cell }),
+        }
+      }
+      if (locator.paragraph_id === undefined) return null
+      const paragraph = docxParagraphIndex(locator.paragraph_id)
+      return {
+        locator_kind: 'docx_part_paragraph',
+        part: locator.part,
+        paragraph_id: locator.paragraph_id,
+        ...(paragraph === undefined ? {} : { paragraph }),
+      }
+    }
+    case 'image':
+      // 图片块没有可逐字复核的文本层；不伪造引文（OCR 文字也不得标成 native_text）。
+      return null
+    default:
+      return null
+  }
+}
+
+/** 统计 needle 在 haystack 里出现的次数（逐字、非语义；用于 D-110 的"唯一命中"判定）。 */
+function countLiteralOccurrences(haystack: string, needle: string): number {
+  if (needle === '' || haystack === '') return 0
+  let count = 0
+  let from = 0
+  for (;;) {
+    const at = haystack.indexOf(needle, from)
+    if (at < 0) return count
+    count += 1
+    from = at + 1
+  }
+}
+
+/** 1-based 全文行号（按 `\n` 计；offset 之前的换行数 + 1）。 */
+function lineAt(text: string, offset: number): number {
+  let line = 1
+  const end = Math.min(offset, text.length)
+  for (let index = 0; index < end; index += 1) {
+    if (text.charCodeAt(index) === 10) line += 1
+  }
+  return line
+}
+
 /**
- * TEXT 模式：定位原件（allowed_roots + sha256）→ 受控读取 → 有界摘录。
+ * `DocumentContent` → TEXT 模式的**可定位逐字引文**（纯函数；单测直接喂内容，不碰文件/库）。
+ *
+ * 为什么这样切（D-141 ⑧ + D-110）：
+ *   * 业务复核要的是"第 N 页/第 N 行：'原句…'"，不是"整篇原文"——所以按读取器**块**产出引文，
+ *     每块一条，带它自己的定位器；`max_chars` 是**引文总字符上限**（含分隔符），绝不整篇灌给模型；
+ *   * 原句逐字：`quote` 就是块的原文文本；含联系方式的块整块跳过（脱敏会破坏逐字性，宁可不给）；
+ *   * 定位唯一：结构定位器由读取器给（pdf page / rtf paragraph / docx part+paragraph），
+ *     没有结构定位器时只接受 quote **全文唯一命中**的兜底；多处命中且无结构定位器 → 整条丢弃
+ *     （D-110：命中多处 = 歧义，禁止取第一条）；
+ *   * 拿不到就如实报：一条引文都产不出 → `available=false` + `MATERIAL_ORIGINAL_NOT_LOCATED`，
+ *     不拿 excerpt 冒充成功。
+ * @param content - 读取器产物（blocks 带定位器；text 是读取器全文）。
+ * @param expectedSha - 库里钉住的原件 sha256（与 `content.asset_sha256` 不一致 = 读到的不是这份材料）。
+ * @param maxChars - 引文总字符上限（含引文之间的换行分隔符）。
+ * @returns `TextValue`（TEXT 模式）。
+ */
+export function buildMaterialTextValue(
+  content: Pick<DocumentContent, 'text' | 'blocks' | 'asset_sha256' | 'media_type' | 'reader_id'>,
+  expectedSha: string,
+  maxChars: number,
+): TextValue {
+  const empty: TextValue = {
+    mode: 'TEXT',
+    available: false,
+    reason_code: 'MATERIAL_ORIGINAL_NOT_LOCATED',
+    source_chars: content.text.length,
+    excerpt_chars: 0,
+    truncated: false,
+  }
+  // 原件哈希必须与库里钉住的值一致：不一致说明"读到的不是这份材料"，绝不返回正文。
+  if (content.asset_sha256 !== expectedSha) {
+    return { ...empty, reason_code: 'HASH_MISMATCH' }
+  }
+
+  const budget = Math.max(1, maxChars)
+  const blocks = [...content.blocks].sort((left, right) => left.order - right.order)
+  const citations: TextCitationValue[] = []
+  const excerptParts: string[] = []
+  let used = 0
+  let omittedContactBlocks = 0
+  let ambiguousCitations = 0
+  let citationsTruncated = false
+
+  for (const block of blocks) {
+    const quoteSource = block.text
+    if (quoteSource.trim() === '') continue
+    // 联系方式块整块跳过：引文必须逐字，脱敏后的字符串就不再是原文。
+    if (redactContactPatterns(quoteSource) !== quoteSource) {
+      omittedContactBlocks += 1
+      continue
+    }
+    const locator = citationLocatorOf(block)
+    const occurrences = countLiteralOccurrences(content.text, quoteSource)
+    const uniqueOffset = occurrences === 1 ? content.text.indexOf(quoteSource) : undefined
+    // 没有结构定位器时必须靠 quote 唯一命中；多处命中 = 歧义 → 整条丢弃（禁止取第一条）。
+    if (locator === null && uniqueOffset === undefined) {
+      ambiguousCitations += 1
+      continue
+    }
+    let quote = quoteSource
+    let quoteTruncated = false
+    const separator = citations.length === 0 ? 0 : 1
+    if (used + separator + quote.length > budget) {
+      if (citations.length === 0) {
+        // 第一条就超预算：按预结算截断（仍是原文前缀，仍是逐字子串），并如实标 truncated。
+        const room = budget - used - separator
+        if (room <= 0) {
+          citationsTruncated = true
+          break
+        }
+        quote = quote.slice(0, room)
+        quoteTruncated = true
+      } else {
+        citationsTruncated = true
+        break
+      }
+    }
+    used += separator + quote.length
+    excerptParts.push(quote)
+    const resolvedLocator = locator === null
+      ? { locator_kind: 'text_line_offset' as const }
+      : locator
+    citations.push({
+      seq: citations.length + 1,
+      locator_kind: resolvedLocator.locator_kind,
+      verification_method: locator === null
+        ? 'QUOTE_UNIQUE+SHA256+LITERAL_QUOTE'
+        : 'LOCATOR_UNIQUE+SHA256+LITERAL_QUOTE',
+      source_sha256: content.asset_sha256,
+      quote,
+      quote_chars: quote.length,
+      quote_truncated: quoteTruncated,
+      quote_multi_hit: occurrences > 1,
+      ...(block.block_id === undefined ? {} : { block_id: block.block_id }),
+      ...(resolvedLocator.page === undefined ? {} : { page: resolvedLocator.page }),
+      ...(resolvedLocator.bbox === undefined ? {} : { bbox: resolvedLocator.bbox }),
+      ...(resolvedLocator.part === undefined ? {} : { part: resolvedLocator.part }),
+      ...(resolvedLocator.paragraph === undefined ? {} : { paragraph: resolvedLocator.paragraph }),
+      ...(resolvedLocator.paragraph_id === undefined ? {} : { paragraph_id: resolvedLocator.paragraph_id }),
+      ...(resolvedLocator.table_id === undefined ? {} : { table_id: resolvedLocator.table_id }),
+      ...(resolvedLocator.row === undefined ? {} : { row: resolvedLocator.row }),
+      ...(resolvedLocator.cell === undefined ? {} : { cell: resolvedLocator.cell }),
+      // line/offset 只在 quote 全文唯一命中时给：多处命中时它们会变成"指向第一条"的假定位。
+      ...(uniqueOffset === undefined ? {} : { offset: uniqueOffset, line: lineAt(content.text, uniqueOffset) }),
+    })
+  }
+
+  if (citations.length === 0) {
+    return {
+      ...empty,
+      // 读到了原文（块/全文都可能非空），但没有一条能定位 → 按"没拿到可复核原文"如实报。
+      ...(omittedContactBlocks === 0 ? {} : { omitted_contact_blocks: omittedContactBlocks }),
+      ...(ambiguousCitations === 0 ? {} : { ambiguous_citation_count: ambiguousCitations }),
+    }
+  }
+
+  const excerpt = excerptParts.join('\n')
+  const multiHit = citations.filter((citation) => citation.quote_multi_hit).length
+  return {
+    mode: 'TEXT',
+    available: true,
+    reason_code: 'OK',
+    source_chars: content.text.length,
+    excerpt_chars: excerpt.length,
+    truncated: citationsTruncated || citations.some((citation) => citation.quote_truncated),
+    excerpt,
+    media_type: content.media_type,
+    reader_id: content.reader_id,
+    asset_sha256_verified: true,
+    citations,
+    citation_count: citations.length,
+    ...(multiHit === 0 ? {} : { multi_hit_citation_count: multiHit }),
+    ...(ambiguousCitations === 0 ? {} : { ambiguous_citation_count: ambiguousCitations }),
+    ...(omittedContactBlocks === 0 ? {} : { omitted_contact_blocks: omittedContactBlocks }),
+    ...(citationsTruncated ? { citations_truncated: true } : {}),
+  }
+}
+
+/**
+ * TEXT 模式：定位原件（allowed_roots + sha256）→ 受控读取 → 有界**可定位引文**。
  *
  * 纪律：定位只用 `resolveMaterialPath`（预算 + 缓存 + 根内校验）；读取只用
  * `readDocumentDetailed`（内部再验 allowed_roots，并给出原件 `asset_sha256`）；
  * 两者任一不成立就 `available=false` + 闭集 reason_code，**绝不**返回"看起来正常"的片段。
+ * 判据一律在 `buildMaterialTextValue()`（纯函数，可单测）：哈希不符 → HASH_MISMATCH；
+ * 读取成功但产不出可定位引文 → MATERIAL_ORIGINAL_NOT_LOCATED（不拿 excerpt 冒充成功）。
  * @param row - 材料行（含原件事实）。
  * @param converter - converter 配置（未配置时 TEXT 不可用，如实报 CONVERTER_NOT_CONFIGURED）。
- * @param maxChars - 摘录上限。
+ * @param maxChars - 引文总字符上限。
  * @returns `text` 输出块。
  */
 async function readMaterialText(
@@ -2350,28 +2802,7 @@ async function readMaterialText(
 
   try {
     const outcome = await readDocumentDetailed(resolved.path, converter)
-    const content = outcome.content
-    // 原件哈希必须与库里钉住的值一致：不一致说明"读到的不是这份材料"，绝不返回正文。
-    if (content.asset_sha256 !== expectedSha) {
-      return { ...base, reason_code: 'HASH_MISMATCH' }
-    }
-    const fullText = content.text
-    // 先按上限切片再脱敏：`truncated` 只回答"原文是否比给我的片段长"，
-    // 不能被脱敏导致的长度变化污染（否则一份短材料也会被说成"被截断"）。
-    const rawExcerpt = fullText.slice(0, maxChars)
-    const excerpt = redactContactPatterns(rawExcerpt)
-    return {
-      mode: 'TEXT',
-      available: true,
-      reason_code: 'OK',
-      source_chars: fullText.length,
-      excerpt_chars: excerpt.length,
-      truncated: fullText.length > rawExcerpt.length,
-      excerpt,
-      media_type: content.media_type,
-      reader_id: content.reader_id,
-      asset_sha256_verified: true,
-    }
+    return buildMaterialTextValue(outcome.content, expectedSha, maxChars)
   } catch (error) {
     const reason = isDocumentReadError(error) && error.code === 'FORBIDDEN'
       ? 'NOT_FOUND_IN_ALLOWED_ROOTS'
@@ -2581,9 +3012,41 @@ function renderMaterialRead(_args: unknown, value: unknown): readonly TextBlock[
     lines.push(`  timeline: ${t.intervals} intervals, ${t.covered_months_closed} covered months (closed)`)
   }
   lines.push(`text (${v.text.mode}): available=${String(v.text.available)} reason=${v.text.reason_code} `
-    + `source_chars=${v.text.source_chars} excerpt_chars=${v.text.excerpt_chars} truncated=${String(v.text.truncated)}`)
-  if (v.text.excerpt !== undefined) {
+    + `source_chars=${v.text.source_chars} excerpt_chars=${v.text.excerpt_chars} truncated=${String(v.text.truncated)}`
+    + (v.text.citation_count === undefined ? '' : ` citations=${v.text.citation_count}`)
+    + (v.text.asset_sha256_verified === true ? ' sha256_verified=true' : ''))
+  const citations = v.text.citations ?? []
+  if (citations.length > 0) {
+    // D-141 ⑧：模型可见的**可定位逐字引文**；render 不给完整 sha/id（O1），结构化值里才有。
+    lines.push('--- source citations (verbatim, contact-redacted; verified against the pinned source sha256) ---')
+    for (const citation of citations) {
+      const where: string[] = []
+      if (citation.page !== undefined) where.push(`page ${citation.page}`)
+      if (citation.paragraph !== undefined) where.push(`paragraph ${citation.paragraph}`)
+      if (citation.paragraph_id !== undefined) where.push(`paragraph_id ${citation.paragraph_id}`)
+      if (citation.table_id !== undefined) where.push(`table ${citation.table_id} row ${citation.row ?? '?'} cell ${citation.cell ?? '?'}`)
+      if (citation.line !== undefined) where.push(`line ${citation.line}`)
+      if (citation.offset !== undefined) where.push(`offset ${citation.offset}`)
+      const flags = [
+        ...(citation.quote_truncated ? ['TRUNCATED'] : []),
+        ...(citation.quote_multi_hit ? ['MULTI_HIT(quote appears more than once)'] : []),
+      ].join(', ')
+      lines.push(
+        `  [${citation.seq}] ${citation.locator_kind} ${where.join(' · ')} — 「${citation.quote}」`
+          + (flags === '' ? '' : ` (${flags})`),
+      )
+    }
+    lines.push('--- end citations ---')
+  } else if (v.text.excerpt !== undefined) {
+    // 兼容：没有引文但有正文（旧形状）时仍给单段正文；新实现只在有引文时给 excerpt。
     lines.push('--- source excerpt (contact-redacted, verified sha256) ---', v.text.excerpt, '--- end excerpt ---')
+  }
+  if (v.text.available === false && v.text.reason_code === 'MATERIAL_ORIGINAL_NOT_LOCATED') {
+    lines.push(
+      'note: the original bytes were readable, but no locatable verbatim quote could be produced '
+        + '(no usable reader block locator, or all quotable blocks contain contact details). '
+        + 'Report this as MATERIAL_ORIGINAL_NOT_LOCATED — do not claim a page/line you do not have.',
+    )
   }
   if (v.next_tools.length > 0) {
     // 机器参数区：模型要原样复制 args 才能调下游工具；但 id/hash 只给工具看，不给 HR 看。
@@ -2663,7 +3126,8 @@ export function createApplicationGetTool(deps: BusinessReadDeps): ReadonlyToolDe
     description:
       'READ-ONLY. Get one recruitment application (or a filtered list) with everything a recruiter needs to '
       + 'reason about it without touching the database: candidate (contacts masked unless include_contacts), '
-      + 'job code/title/status, pinned rubric version pointer (approved flag, criteria count, payload hash), '
+      + 'job code/title/status, pinned rubric version pointer (approved flag, criteria count, '
+      + 'criteria key/label/kind/weight summary — enough to judge whether screening can proceed, payload hash), '
       + 'material summary (resume_version, parse_status, pages, hard issue codes, source file sha256), '
       + 'interviews, transcript counts, scorecard counts and the latest decision. Every block carries its '
       + 'source id; missing facts are omitted, never invented; an unknown application_id returns NOT_FOUND. '
@@ -2713,10 +3177,14 @@ export function createMaterialReadTool(deps: BusinessReadDeps): ReadonlyToolDefi
       + 'parsed projection), the linked intake asset (file name/size/sha256/validation), field states with '
       + 'page/bbox locators, work/education header lines, issues (hard codes), timeline and screening '
       + 'eligibility. Contacts are masked unless include_contacts is true; protected attributes are never read. '
-      + 'mode=SUMMARY (default) returns no source text; mode=TEXT additionally returns a bounded '
-      + '(max_chars, default 2000), contact-redacted excerpt, but only when the original bytes are found inside '
-      + 'the configured allowed_roots AND their sha256 matches the pinned value — otherwise text.available is '
-      + 'false with a closed reason_code. Never search the filesystem or read the resume with shell/file tools.'
+      + 'mode=SUMMARY (default) returns no source text; mode=TEXT additionally returns bounded '
+      + '(max_chars total, default 2000), contact-redacted, LOCATABLE verbatim citations: every citation carries '
+      + 'a D-110 locator_kind (pdf_page_bbox / docx_part_paragraph / docx_part_table_row / rtf_paragraph / '
+      + 'text_line_offset), its page/paragraph/line/offset values, the verbatim quote, and the pinned source '
+      + 'sha256 it was verified against. That is what a business review quotes as "page N / line N: the exact '
+      + 'sentence". If the original bytes are found and hash-verified but no locatable quote can be produced, '
+      + 'text.available is false with reason_code MATERIAL_ORIGINAL_NOT_LOCATED (never a fake success). '
+      + 'Never search the filesystem or read the resume with shell/file tools.'
       + converterNote,
     parameters: toParameterSchema(MATERIAL_READ_PARAMS),
     output: { schema: MATERIAL_READ_OUTPUT_SCHEMA, render: renderMaterialRead },
