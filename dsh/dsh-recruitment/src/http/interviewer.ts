@@ -407,6 +407,84 @@ export interface InterviewerScorecard {
 /** `required_action` 封闭集。 */
 export type InterviewerRequiredAction = 'SUBMIT_SCORECARD' | 'REVIEW_SCORECARD' | 'NONE'
 
+// ---------------------------------------------------------------------
+//  task-51：前置轮次摘要 + 本轮参考（冻结于 `work/d5/interviewer-brief/DESIGN.md` §1）
+//
+//  产品口径：当前这一轮的面试官只看**紧邻上一轮**的结构化事实（聊过哪些主题 / 上一轮怎么评的 /
+//  哪些维度没覆盖），外加 2–4 条"可以重点了解什么 + 为什么值得问"。**参考不是指令**：不写
+//  "必须问/应该问"，不排顺序；渲染文本遵守 D-141（无 UUID / 哈希 / snake_case 字段名 / 路径 /
+//  枚举机器码）。形状是冻结契约，**既有字段一个都不动**，这里只做加法。
+// ---------------------------------------------------------------------
+
+/**
+ * 前置轮次里一位面试官的面评结论（**不抄** `items[*].note` / `rationale` 原文）。
+ */
+export interface PriorRoundInterviewer {
+  /** `actor.display_name` 原文；库里没有显示名 → `''`（不编造）。 */
+  readonly display_name: string
+  /** 该面试官**当前**面评（`superseded_by_scorecard_id is null`）的状态封闭集。 */
+  readonly scorecard_state: 'NONE' | 'PENDING' | 'SUBMITTED' | 'WAIVED'
+  readonly scorecard_submitted: boolean
+  /** `scorecard.overall` 原值（ADVANCE/HOLD/REJECT）；未提交/无面评 → null。 */
+  readonly conclusion: string | null
+}
+
+/** 前置轮次维度（岗位标准维度；`key` 只用于对齐/复核，客户端不渲染）。 */
+export interface PriorRoundDimension {
+  readonly key: string
+  readonly label: string
+  readonly weight: number
+}
+
+/** 未覆盖维度的原因码（可由 SQL + 面评 items 复核）。 */
+export type PriorRoundUncoveredReason =
+  | 'NO_SCORECARD'
+  | 'NO_ITEMS'
+  | 'NOT_RATED'
+  | 'NOT_OBSERVED'
+  | 'UNREADABLE'
+
+/** 未被覆盖的维度 + 可复核的原因码。 */
+export interface PriorRoundUncoveredDimension extends PriorRoundDimension {
+  readonly reason: PriorRoundUncoveredReason
+}
+
+/** 已被覆盖的维度 + 该轮面评里的判定原值。 */
+export interface PriorRoundCoveredDimension extends PriorRoundDimension {
+  /** 只能是 MET / NOT_MET（只有这两种是"给了实质评分/判定"）。 */
+  readonly assessment: 'MET' | 'NOT_MET'
+  /** 1..5 的整数；面评没给（违反契约的脏数据）→ null。 */
+  readonly score: number | null
+}
+
+/** 一场前置轮次的面试（一场面试一个元素；同一轮多场就多个元素）。 */
+export interface PriorRound {
+  readonly round_no: number
+  readonly interview_id: string
+  readonly status: string
+  readonly slot_code: string
+  readonly scheduled_start_at: string | null
+  readonly interviewers: readonly PriorRoundInterviewer[]
+  /** 该轮维度宇宙是否可用（= 申请钉住的岗位 rubric 可用）；false 时两个维度数组都是空。 */
+  readonly dimensions_available: boolean
+  readonly covered_dimensions: readonly PriorRoundCoveredDimension[]
+  readonly uncovered_dimensions: readonly PriorRoundUncoveredDimension[]
+}
+
+/** 参考点的依据（结构化，可复核；不会被渲染成机器码以外的文本）。 */
+export interface InterviewerReferencePointBasis {
+  readonly kind: 'RUBRIC_DIMENSION' | 'PRIOR_GAP' | 'RESUME_HIGHLIGHT'
+  /** RUBRIC_DIMENSION / PRIOR_GAP → 该维度 key；RESUME_HIGHLIGHT → `work_experience[<index>]`。 */
+  readonly ref: string
+}
+
+/** 本轮的一条参考（面向面试官的两句中文；D-141：不含 UUID/哈希/字段名/路径/机器码）。 */
+export interface InterviewerReferencePoint {
+  readonly point: string
+  readonly why: string
+  readonly basis: InterviewerReferencePointBasis
+}
+
 /** `interviews[]` 的一个元素（§1.4）。 */
 export interface InterviewerRow {
   readonly interview_id: string
@@ -434,6 +512,16 @@ export interface InterviewerRow {
   readonly transcript: InterviewerTranscript
   readonly scorecard: InterviewerScorecard
   readonly required_action: InterviewerRequiredAction
+  /**
+   * task-51：同一申请下**紧邻上一轮**（`round_no = 本行 round_no - 1`）的面试事实；
+   * 当前轮是 1 / 上一轮不存在 → `[]`（每行恒为数组，不是 `undefined`）。
+   */
+  readonly prior_rounds: readonly PriorRound[]
+  /**
+   * task-51：本轮 2–4 条「可以重点了解什么 + 为什么值得问」；可用池不足 2 条时如实少给，
+   * 不编造（没有前置轮次时**不会**出现 PRIOR_GAP）。
+   */
+  readonly reference_points: readonly InterviewerReferencePoint[]
 }
 
 /** 工作台投影响应（§1.4）。 */
@@ -585,6 +673,61 @@ const ACTOR_ROLES_SQL = `
    order by r.code asc
 `
 
+/**
+ * task-51：**紧邻上一轮**的批量读取（一条 SELECT，只读）。
+ *
+ * 入参是三个同长数组（当前面试 id / 申请 id / 当前轮次）：`$1` 只用于把结果映射回当前行，
+ * 真正的过滤是 `(application_id, round_no = 当前轮 - 1)`。`round_no > 1` 在 CTE 里先挡掉
+ * （第 1 轮没有"上一轮"）。
+ *
+ * 一次取回三样事实（面试行 + interviewer 行 + **当前**面评）：
+ *   · 面试行：`status` / `slot_code` / `scheduled_start_at`（按 `slot_code asc, id asc` 排序）；
+ *   · interviewer 行 + `actor.display_name`（没有显示名时是 null，由 builder 落成 `''`）；
+ *   · 每人当前面评（`superseded_by_scorecard_id is null`）的 `status` / `overall` / `items`。
+ *
+ * **只取判定需要的东西**：`items` 用来逐维读 `assessment`/`score`；`note`/`rationale` 在 SQL 层
+ * 就不进结果（不抄主观评语），builder 也只读 `assessment`/`score` 两个键。
+ *
+ * 注意 join 顺序：interviewer 用 `left join`（一场面试可能还没有登记面试官行），
+ * scorecard 再 `left join` 到 interviewer 上 —— 没有面评时 `sc.*` 全是 null（→ state NONE）。
+ */
+const PRIOR_ROUND_SQL = `
+  with current_rows as (
+    select cur.interview_id, cur.application_id, cur.round_no
+      from unnest($1::uuid[], $2::uuid[], $3::int[])
+        as cur(interview_id, application_id, round_no)
+     where cur.round_no > 1
+  )
+  select cur.interview_id::text            as current_interview_id,
+         iv.id::text                       as prior_interview_id,
+         iv.round_no                       as prior_round_no,
+         iv.status                         as prior_status,
+         iv.slot_code                      as prior_slot_code,
+         iv.scheduled_start_at             as prior_scheduled_start_at,
+         ivr.id::text                      as interviewer_row_id,
+         ivr.actor_id::text                as interviewer_actor_id,
+         ac.display_name                   as interviewer_display_name,
+         sc.id::text                       as scorecard_id,
+         sc.status                         as scorecard_status,
+         sc.overall                        as scorecard_overall,
+         sc.items                          as scorecard_items
+    from current_rows cur
+    join recruitment.interview iv
+      on iv.tenant_id = $4::uuid
+     and iv.application_id = cur.application_id
+     and iv.round_no = cur.round_no - 1
+    left join recruitment.interviewer ivr
+      on ivr.interview_id = iv.id and ivr.tenant_id = iv.tenant_id
+    left join recruitment.actor ac
+      on ac.id = ivr.actor_id and ac.tenant_id = ivr.tenant_id
+    left join recruitment.scorecard sc
+      on sc.interview_id = iv.id
+     and sc.tenant_id = iv.tenant_id
+     and sc.interviewer_id = ivr.id
+     and sc.superseded_by_scorecard_id is null
+   order by cur.interview_id asc, iv.slot_code asc, iv.id asc, ivr.actor_id asc, ivr.id asc
+`
+
 // =====================================================================
 //  §1.5 扩展行的类型（SQL 别名逐字对应；单测直接喂假行）
 // =====================================================================
@@ -625,6 +768,30 @@ export interface InterviewExtensionRow {
   readonly scorecard_id: string | null
   readonly scorecard_record_version: number | null
   readonly scorecard_overall: string | null
+}
+
+/**
+ * `PRIOR_ROUND_SQL` 的一行（SQL 别名逐字对应；jsonb 已由 pg 解析成 JS 值）。
+ *
+ * 一场前置轮次 × 一位面试官 = 一行；同一人最多一条**当前**面评（库上有
+ * `uq_scorecard_current` 部分唯一索引），所以这里不会出现两条当前面评。
+ * `interviewer_*` / `scorecard_*` 为 null = 这一场还没有面试官行 / 该面试官还没有面评。
+ */
+export interface PriorRoundRow {
+  /** 当前行（= 我正在看的那一场）的面试 id；用来把批量结果映射回 `toInterviewRow`。 */
+  readonly current_interview_id: string
+  readonly prior_interview_id: string
+  readonly prior_round_no: number
+  readonly prior_status: string
+  readonly prior_slot_code: string
+  readonly prior_scheduled_start_at: Date | string | null
+  readonly interviewer_row_id: string | null
+  readonly interviewer_actor_id: string | null
+  readonly interviewer_display_name: string | null
+  readonly scorecard_id: string | null
+  readonly scorecard_status: string | null
+  readonly scorecard_overall: string | null
+  readonly scorecard_items: unknown
 }
 
 // =====================================================================
@@ -1255,6 +1422,470 @@ export function roundFactsOf(extension: InterviewExtensionRow, roundNo: number):
   }
 }
 
+// ---------------------------------------------------------------------
+//  task-51：prior_rounds / reference_points（纯函数；`toInterviewRow` 是唯一组合点）
+// ---------------------------------------------------------------------
+
+/** `buildPriorRounds` 的输入（归一后的本行事实 + 紧邻上一轮的 SQL 行）。 */
+export interface PriorRoundFacts {
+  /** 本行的 `interview.round_no`（来自 `readInterviewValue()`）。 */
+  readonly round_no: number
+  /** 维度宇宙是否可用：= 本行 `effective_rubric.available`。 */
+  readonly dimensions_available: boolean
+  /** 维度宇宙 = 本行 `effective_rubric.dimensions` 的 `key/label/weight`（顺序不变）。 */
+  readonly dimensions: readonly PriorRoundDimension[]
+  /** `PRIOR_ROUND_SQL` 的行（SQL 已按 `slot_code asc, id asc` 排好；这里按出现顺序分组）。 */
+  readonly rows: readonly PriorRoundRow[]
+}
+
+/** 逐维覆盖判定的 covered 结果（内部用；只有它进 `covered_dimensions`）。 */
+interface DimensionCoverage {
+  readonly kind: 'COVERED'
+  readonly assessment: 'MET' | 'NOT_MET'
+  readonly score: number | null
+}
+
+/** 逐维覆盖判定的 uncovered 结果（内部用；进 `uncovered_dimensions`）。 */
+interface DimensionGap {
+  readonly kind: 'UNCOVERED'
+  readonly reason: PriorRoundUncoveredReason
+}
+
+/**
+ * 面评分值：只有 1..5 的**整数**才是分值（面评契约允许的范围）；字符串/小数/越界/缺失
+ * → null（"面评没给分"，不四舍五入、不猜）。
+ * @param value - `items[dimension_key].score` 原值。
+ * @returns 1..5 整数或 null。
+ */
+function rubricScoreOf(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5 ? value : null
+}
+
+/**
+ * 该维度在**所有 SUBMITTED 面评**里被怎么评的（DESIGN §1.1 第 4 条的唯一实现）。
+ *
+ * 判定顺序（全部可由 `scorecard.items` 复核）：
+ *   1. 没有 SUBMITTED 面评 → `NO_SCORECARD`（PENDING 草稿**不算**证据）；
+ *   2. 所有 SUBMITTED 面评的 `items` 都不是对象 → `NO_ITEMS`（脏数据，读不到分项）；
+ *   3. 所有 SUBMITTED 面评里都缺该维度键 → `NOT_RATED`；
+ *   4. 有该键：任一面评 `MET`/`NOT_MET` → covered（union；按面评顺序取**第一条**，
+ *      **不调和**多人分歧）；`score` 只在 1..5 整数时给出；
+ *   5. 否则：任一面评 `NOT_OBSERVED` → `NOT_OBSERVED`；其余（`UNREADABLE` / 键值不是对象 /
+ *      `assessment` 是契约外的脏值）→ `UNREADABLE`（读不到就当没覆盖，不推测）。
+ *
+ * @param dimensionKey - 岗位标准维度 key。
+ * @param submittedItems - 该场面试**所有** `status='SUBMITTED'` 面评的 `items` 原值。
+ * @returns covered（含 assessment/score）或 uncovered（含原因码）。
+ */
+function assessDimension(
+  dimensionKey: string,
+  submittedItems: readonly unknown[],
+): DimensionCoverage | DimensionGap {
+  if (submittedItems.length === 0) return { kind: 'UNCOVERED', reason: 'NO_SCORECARD' }
+  const readable = submittedItems.filter(isPlainObject)
+  if (readable.length === 0) return { kind: 'UNCOVERED', reason: 'NO_ITEMS' }
+  const entries = readable
+    .filter((items) => Object.hasOwn(items, dimensionKey))
+    .map((items) => items[dimensionKey])
+  if (entries.length === 0) return { kind: 'UNCOVERED', reason: 'NOT_RATED' }
+  let sawNotObserved = false
+  for (const entry of entries) {
+    // 键在但值不是对象（脏数据）：读不到 assessment，按 UNREADABLE 兜住（见函数尾）。
+    if (!isPlainObject(entry)) continue
+    const assessment = entry.assessment
+    if (assessment === 'MET' || assessment === 'NOT_MET') {
+      return { kind: 'COVERED', assessment, score: rubricScoreOf(entry.score) }
+    }
+    if (assessment === 'NOT_OBSERVED') sawNotObserved = true
+  }
+  return { kind: 'UNCOVERED', reason: sawNotObserved ? 'NOT_OBSERVED' : 'UNREADABLE' }
+}
+
+/**
+ * 构造 §1 的 `prior_rounds`（纯函数；不碰 DB）。
+ *
+ * 三条硬规则（DESIGN §1.1）：
+ *   1. 只看**紧邻上一轮**（`round_no = 当前轮 - 1`）、同一申请；当前轮 1 → `[]`；
+ *   2. 维度宇宙 = 本行 `effective_rubric.dimensions`；`dimensions_available=false` 时
+ *      **两个数组都空、不判定覆盖**（不推测）；
+ *   3. 覆盖证据只认 `status='SUBMITTED'` 的面评；草稿不算；多位面试官按 union。
+ *
+ * 一场面试 = 一个元素（同一轮多场就是多个元素，按 SQL 的 `slot_code asc, id asc` 顺序）。
+ *
+ * @param facts - 本行轮次/维度宇宙 + 上一轮的 SQL 行。
+ * @returns `prior_rounds`（每行都是数组；没有前置轮次时 `[]`）。
+ */
+export function buildPriorRounds(facts: PriorRoundFacts): readonly PriorRound[] {
+  const currentRound = integerOrNull(facts.round_no)
+  // 第 1 轮没有"上一轮"：一条 prior_round 都不返回（DESIGN §1.1 第 1 条 / 负例①）。
+  if (currentRound === null || currentRound <= 1) return []
+  const expectedRound = currentRound - 1
+  // 维度宇宙不可用 → 两个数组都空（不判定覆盖）；只在可用时把宇宙映射成投影形状。
+  const universe: PriorRoundDimension[] = facts.dimensions_available
+    ? facts.dimensions.map((dimension) => ({
+      key: dimension.key,
+      label: dimension.label,
+      weight: dimension.weight,
+    }))
+    : []
+
+  // 按"前置面试"分组，保持 SQL 给出的顺序（同一场的行相邻；多场按 slot_code/id）。
+  const groups = new Map<string, PriorRoundRow[]>()
+  const order: string[] = []
+  for (const row of facts.rows) {
+    const priorId = text(row.prior_interview_id)
+    if (priorId === null) continue
+    // SQL 已按 `application_id + round_no = 当前轮 - 1` 过滤；这里再挡一次误传的行，
+    // 免得把"更早的轮次"当成紧邻上一轮（DESIGN：只看紧邻上一轮）。
+    if (integerOrNull(row.prior_round_no) !== expectedRound) continue
+    const group = groups.get(priorId)
+    if (group === undefined) {
+      groups.set(priorId, [row])
+      order.push(priorId)
+    } else {
+      group.push(row)
+    }
+  }
+
+  const rounds: PriorRound[] = []
+  for (const priorId of order) {
+    const rows = groups.get(priorId)
+    if (rows === undefined || rows.length === 0) continue
+    const header = rows[0]
+    const interviewers: PriorRoundInterviewer[] = []
+    /** 该场面试**所有** SUBMITTED 面评的 items（草稿/豁免/无面评都不进来）。 */
+    const submittedItems: unknown[] = []
+    for (const row of rows) {
+      // `left join` 产生的空行：这一场还没有登记面试官行（没有"人"，也没有面评事实）。
+      if (text(row.interviewer_row_id) === null) continue
+      const state = scorecardStateOf(text(row.scorecard_status) ?? undefined)
+      interviewers.push({
+        display_name: text(row.interviewer_display_name) ?? '',
+        scorecard_state: state,
+        scorecard_submitted: state === 'SUBMITTED',
+        // 未提交/无面评不显示结论（DESIGN §1.1 第 3 条）。
+        conclusion: state === 'SUBMITTED' ? text(row.scorecard_overall) : null,
+      })
+      if (state === 'SUBMITTED') submittedItems.push(row.scorecard_items)
+    }
+
+    const covered: PriorRoundCoveredDimension[] = []
+    const uncovered: PriorRoundUncoveredDimension[] = []
+    for (const dimension of universe) {
+      const verdict = assessDimension(dimension.key, submittedItems)
+      if (verdict.kind === 'COVERED') {
+        covered.push({
+          key: dimension.key,
+          label: dimension.label,
+          weight: dimension.weight,
+          assessment: verdict.assessment,
+          score: verdict.score,
+        })
+      } else {
+        uncovered.push({
+          key: dimension.key,
+          label: dimension.label,
+          weight: dimension.weight,
+          reason: verdict.reason,
+        })
+      }
+    }
+
+    rounds.push({
+      round_no: integerOr(header.prior_round_no, expectedRound),
+      interview_id: priorId,
+      status: text(header.prior_status) ?? '',
+      slot_code: text(header.prior_slot_code) ?? '',
+      scheduled_start_at: isoOrNull(header.prior_scheduled_start_at),
+      interviewers,
+      dimensions_available: facts.dimensions_available,
+      covered_dimensions: covered,
+      uncovered_dimensions: uncovered,
+    })
+  }
+  return rounds
+}
+
+/** `buildReferencePoints` 需要的本行维度事实（`effective_rubric.dimensions` 的结构子集）。 */
+export interface ReferencePointDimension {
+  readonly key: string
+  readonly label: string
+  readonly weight: number
+  readonly focus: boolean
+  readonly must_cover: boolean
+}
+
+/** `buildReferencePoints` 的输入。 */
+export interface ReferencePointFacts {
+  /** `buildPriorRounds()` 的结果（只含紧邻上一轮）。 */
+  readonly prior_rounds: readonly PriorRound[]
+  /** 本轮维度宇宙（顺序 = `effective_rubric.dimensions` 顺序）；不可用时是空数组。 */
+  readonly dimensions: readonly ReferencePointDimension[]
+  /** `materials.resume?.fields`（解析失败/未解析时调用方给 null：不读半成品）。 */
+  readonly resume_fields: unknown
+}
+
+/** 参考点上限（DESIGN §1.2：目标 2–4 条，超过 4 条一律截断）。 */
+const REFERENCE_POINT_LIMIT = 4
+/** `PRIOR_GAP` 上限（DESIGN §1.2 第 1 条：最多 2 条）。 */
+const PRIOR_GAP_LIMIT = 2
+/** `RESUME_HIGHLIGHT` 上限（DESIGN §1.2 第 3 条：最多 1 条）。 */
+const RESUME_HIGHLIGHT_LIMIT = 1
+
+/**
+ * 原因码 → 中文（`PRIOR_GAP.why` 的 `<原因中文>`，DESIGN §1.2）。
+ * 只陈述"上一轮为什么没给出这一维的评价"，不推测原因、不含机器码。
+ */
+const UNCOVERED_REASON_TEXT: Readonly<Record<PriorRoundUncoveredReason, string>> = {
+  NO_SCORECARD: '上一轮没有提交的面评',
+  NO_ITEMS: '上一轮面评的分项读不到',
+  NOT_RATED: '上一轮的面评里没有这一维',
+  NOT_OBSERVED: '上一轮没有观察到这一维',
+  UNREADABLE: '上一轮读不出这一维的依据',
+}
+
+/**
+ * D-141 的**渲染文本**禁令（`point`/`why` 只允许面向面试官的中文；**结构化字段**才放机器码）。
+ *
+ * 每条禁令一个正则，命中多项时返回所有命中码（去重、顺序固定）：
+ *   · `UUID` / `64HEX` / `LONG_HEX`：标识符与哈希不外露；
+ *   · `SNAKE_CASE`：字段名（如 `backend_depth`）不给人看；
+ *   · `PATH`：`src/http/x.ts` 这类 ASCII 路径；中文标签里的「异步/队列」不算（`/` 两侧
+ *     必须都是 ASCII token）；
+ *   · `MACHINE_CODE`：`ADVANCE`/`MET`/`NOT_OBSERVED` 这类枚举码只活在结构化字段里；
+ *   · `INSTRUCTIONAL_WORDING`：参考不是指令（「必须/应该/务必/一定要/按顺序/先问…再问」）。
+ */
+const FORBIDDEN_RENDER_TEXT: readonly { readonly code: string; readonly pattern: RegExp }[] = [
+  { code: 'UUID', pattern: /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/iu },
+  { code: '64HEX', pattern: /(?:^|[^0-9a-f])[0-9a-f]{64}(?![0-9a-f])/iu },
+  { code: 'LONG_HEX', pattern: /(?:^|[^0-9a-f])[0-9a-f]{32,}(?![0-9a-f])/iu },
+  { code: 'SNAKE_CASE', pattern: /(?:^|[^A-Za-z0-9_])[a-z][a-z0-9]*(?:_[a-z0-9]+)+(?![A-Za-z0-9_])/u },
+  { code: 'PATH', pattern: /(?:^|[^A-Za-z0-9_.-])[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?![A-Za-z0-9_.-])/u },
+  {
+    code: 'MACHINE_CODE',
+    pattern: /(?:^|[^A-Za-z0-9_])(?:ADVANCE|HOLD|REJECT|MET|NOT_MET|NOT_OBSERVED|UNREADABLE|PENDING|SUBMITTED|WAIVED|NO_SCORECARD|NO_ITEMS|NOT_RATED|ROUND_CONFIG|ROUND_OVERRIDE|JOB_BASE|PRIOR_GAP|RUBRIC_DIMENSION|RESUME_HIGHLIGHT)(?![A-Za-z0-9_])/u,
+  },
+  { code: 'INSTRUCTIONAL_WORDING', pattern: /必须|应该|务必|一定要|按顺序|先问[^。]*再问/u },
+]
+
+/**
+ * 一段**渲染文本**命中的 D-141 禁令（空数组 = 合规）。纯函数，单测直接穷举。
+ * @param value - 准备写进 `point`/`why` 的文本。
+ * @returns 命中的禁令码（去重、固定顺序；空数组 = 可以渲染）。
+ */
+export function renderTextViolations(value: string): readonly string[] {
+  const hits: string[] = []
+  for (const rule of FORBIDDEN_RENDER_TEXT) {
+    if (rule.pattern.test(value) && !hits.includes(rule.code)) hits.push(rule.code)
+  }
+  return hits
+}
+
+/**
+ * 紧邻上一轮里**真正没覆盖**的维度（round 级 union，按维度顺序）。
+ *
+ * 为什么按"轮"而不是按"场"聚合：DESIGN §1 的前置轮次是"轮"（同一轮可能有多场面试），
+ * 某一维只要在**任一场**的 SUBMITTED 面评里被评过，就算这一轮覆盖了（与多位面试官 union 的
+ * 同一条语义）；否则才算 gap。多个元素都判"未覆盖"时，原因取**第一个**元素的（确定性）。
+ *
+ * @param priorRounds - `buildPriorRounds()` 的结果。
+ * @param universe - 本轮维度宇宙（顺序 = 覆盖判定/渲染顺序）。
+ * @returns gap 维度（最多由调用方截断；没有可用轮次时 `[]`）。
+ */
+function priorRoundGaps(
+  priorRounds: readonly PriorRound[],
+  universe: readonly PriorRoundDimension[],
+): PriorRoundUncoveredDimension[] {
+  if (!priorRounds.some((round) => round.dimensions_available)) return []
+  const coveredKeys = new Set<string>()
+  const reasonByKey = new Map<string, PriorRoundUncoveredReason>()
+  for (const round of priorRounds) {
+    for (const dimension of round.covered_dimensions) coveredKeys.add(dimension.key)
+    for (const dimension of round.uncovered_dimensions) {
+      if (!reasonByKey.has(dimension.key)) reasonByKey.set(dimension.key, dimension.reason)
+    }
+  }
+  const gaps: PriorRoundUncoveredDimension[] = []
+  for (const dimension of universe) {
+    if (coveredKeys.has(dimension.key)) continue
+    const reason = reasonByKey.get(dimension.key)
+    // available 的轮次里每个维度必在 covered 或 uncovered 之一；缺了就是数据不自洽，不当 gap。
+    if (reason === undefined) continue
+    gaps.push({ key: dimension.key, label: dimension.label, weight: dimension.weight, reason })
+  }
+  return gaps
+}
+
+/** 一条"没展开"的简历经历（`header_text` 只有一行，公司/职位都没拆出来）。 */
+interface UnexpandedExperience {
+  readonly ref: string
+  readonly header_text: string
+}
+
+/**
+ * 简历里**没有展开**的经历（DESIGN §1.2 第 3 条）：
+ * `parsed_fields.fields.work_experience.entries[]` 里 `header_text` 非空、且 `title`、`company`
+ * 都为空（结构化没拆开 = 只有一行摘要）。`ref` 用 `entries[]` 的**数组下标**（0 起）。
+ * 脏 jsonb 一律容错：不是对象/不是数组 → 空数组（不抛错、不编造）。
+ *
+ * @param resumeFields - `materials.resume?.fields`（原始 `parsed_fields`，注意还要进一层 `.fields`）。
+ * @returns 未展开经历（顺序 = `entries[]` 顺序；调用方截断到 1 条）。
+ */
+function unexpandedExperienceEntries(resumeFields: unknown): UnexpandedExperience[] {
+  const out: UnexpandedExperience[] = []
+  if (!isPlainObject(resumeFields)) return out
+  const parsedFields = resumeFields.fields
+  if (!isPlainObject(parsedFields)) return out
+  const workExperience = parsedFields.work_experience
+  if (!isPlainObject(workExperience)) return out
+  const entries = asArray(workExperience.entries)
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]
+    if (!isPlainObject(entry)) continue
+    const headerText = text(entry.header_text)
+    if (headerText === null) continue
+    // `title`/`company` 只要有一个非空，就说明这段经历已经拆开过（不是"只有一行摘要"）。
+    if (text(entry.title) !== null || text(entry.company) !== null) continue
+    out.push({ ref: `work_experience[${index}]`, header_text: headerText })
+  }
+  return out
+}
+
+/** 权重降序、同权重保持原顺序（显式稳定排序，不依赖引擎对 `sort` 稳定性的保证）。 */
+function sortByWeightDescending(
+  dimensions: readonly ReferencePointDimension[],
+): ReferencePointDimension[] {
+  return dimensions
+    .map((dimension, index) => ({ dimension, index }))
+    .sort((left, right) => right.dimension.weight - left.dimension.weight || left.index - right.index)
+    .map((entry) => entry.dimension)
+}
+
+/** `RESUME_HIGHLIGHT.why`（DESIGN §1.2 逐字口径；唯一一份，写死在这里不让拼写漂移）。 */
+const RESUME_HIGHLIGHT_WHY = '材料里这段经历只有一行摘要，没有写具体做法；可以参考它了解真实的技术选择。'
+
+/** `PRIOR_GAP.point`（DESIGN §1.2 逐字口径）。 */
+function priorGapPointOf(gap: PriorRoundUncoveredDimension): string {
+  return `上一轮没有覆盖到「${gap.label}」`
+}
+
+/** `PRIOR_GAP.why`（DESIGN §1.2 逐字口径；`<原因中文>` 来自 `UNCOVERED_REASON_TEXT`）。 */
+function priorGapWhyOf(gap: PriorRoundUncoveredDimension): string {
+  return `岗位标准里有这一条（权重 ${gap.weight}），但上一轮的面评没有给出这一维的评价`
+    + `（${UNCOVERED_REASON_TEXT[gap.reason]}）。这一轮可以自己确认一下。`
+}
+
+/** `RESUME_HIGHLIGHT.point`（DESIGN §1.2 逐字口径）。 */
+function resumeHighlightPointOf(experience: UnexpandedExperience): string {
+  return `简历里有一段没有展开的经历：${experience.header_text}`
+}
+
+/** `RUBRIC_DIMENSION.point`（DESIGN §1.2 逐字口径）。 */
+function rubricDimensionPointOf(dimension: ReferencePointDimension): string {
+  return `可以重点了解「${dimension.label}」`
+}
+
+/**
+ * `RUBRIC_DIMENSION.why`（DESIGN §1.2 的两个逐字分支）：
+ * 本轮重点 → "轮次配置把它标为重点"；否则（无重点按权重回退）→ "权重较高，前面还没有证据"。
+ */
+function rubricDimensionWhyOf(dimension: ReferencePointDimension, isFocused: boolean): string {
+  return isFocused
+    ? `岗位标准里有这一条（权重 ${dimension.weight}），本轮轮次配置把它标为重点。`
+    : `岗位标准里这一条权重较高（${dimension.weight}），前面的信息里还没有它的实际证据。`
+}
+
+/**
+ * 构造 §1 的 `reference_points`（纯函数、确定性、2–4 条；DESIGN §1.2 **v2** 逐字口径）。
+ *
+ * 池子顺序固定（展示顺序不变）：`PRIOR_GAP`（≤2）→ `RUBRIC_DIMENSION`（focus/must_cover；
+ * 一个都没有时按 `weight desc`，同权重保持原顺序）→ `RESUME_HIGHLIGHT`（≤1），总上限 4 条。
+ *
+ * 两条 v2 规则（2026-11-16 Owner 冻结）：
+ *   1. **维度 key 是跨 kind 的去重命名空间**：同一维度已经作为 PRIOR_GAP 出现，就不再出
+ *      RUBRIC_DIMENSION —— 否则面试官会看到「上一轮没覆盖到「X」」+「可以重点了解「X」」两条
+ *      重复内容。`RESUME_HIGHLIGHT` 不在维度命名空间里，用自己的 `ref` 去重。
+ *   2. **给简历留一个名额**：若简历里存在**可用**的未展开经历（文案也过 D-141），维度类
+ *      （PRIOR_GAP + RUBRIC_DIMENSION）最多 3 条，第 4 条留给 RESUME_HIGHLIGHT；没有可用简历
+ *      条目时维度类可以填满 4 条（简历不存在/不可用时不让名额空转）。
+ *
+ * 其余不变量：可用池不足 2 条时**如实少给**（不编造）；无前置轮次时一条 `PRIOR_GAP` 都没有；
+ * 任何一条的 `point`/`why` 命中 D-141 禁令（例如 rubric 标签里写了 snake_case 字段名）→
+ * **跳过该条**（宁缺不脏），不影响其它条与其它字段。
+ *
+ * @param facts - 前置轮次 + 本轮维度宇宙 + 简历字段。
+ * @returns 参考点（顺序 = 池子顺序；最多 4 条）。
+ */
+export function buildReferencePoints(facts: ReferencePointFacts): readonly InterviewerReferencePoint[] {
+  const points: InterviewerReferencePoint[] = []
+  const renderable = (point: string, why: string): boolean =>
+    renderTextViolations(point).length === 0 && renderTextViolations(why).length === 0
+
+  // 简历候选先算（它决定维度类要不要让出第 4 个名额）；"可用"= 文案也过 D-141，
+  // 否则留出来的名额会空转（宁可让维度类填满 4 条）。
+  const resumeHighlights = unexpandedExperienceEntries(facts.resume_fields)
+    .slice(0, RESUME_HIGHLIGHT_LIMIT)
+    .filter((experience) => renderable(resumeHighlightPointOf(experience), RESUME_HIGHLIGHT_WHY))
+  // DESIGN §1.2 v2：有可用简历条目 → 维度类最多 3 条（第 4 条留给简历）；没有 → 维度类填满 4。
+  const dimensionBudget = resumeHighlights.length > 0
+    ? REFERENCE_POINT_LIMIT - RESUME_HIGHLIGHT_LIMIT
+    : REFERENCE_POINT_LIMIT
+
+  // 维度命名空间：PRIOR_GAP 与 RUBRIC_DIMENSION 共用（同一维度只出一条）。
+  const dimensionKeys = new Set<string>()
+  const pushDimension = (
+    point: string,
+    why: string,
+    basis: InterviewerReferencePointBasis,
+    dimensionKey: string,
+  ): void => {
+    if (points.length >= dimensionBudget) return
+    if (dimensionKeys.has(dimensionKey)) return
+    if (!renderable(point, why)) return
+    dimensionKeys.add(dimensionKey)
+    points.push({ point, why, basis })
+  }
+
+  const universe: PriorRoundDimension[] = facts.dimensions.map((dimension) => ({
+    key: dimension.key,
+    label: dimension.label,
+    weight: dimension.weight,
+  }))
+
+  // ---- 1) PRIOR_GAP：紧邻上一轮没覆盖到的维度（按维度顺序，最多 2 条）----
+  for (const gap of priorRoundGaps(facts.prior_rounds, universe).slice(0, PRIOR_GAP_LIMIT)) {
+    pushDimension(priorGapPointOf(gap), priorGapWhyOf(gap), { kind: 'PRIOR_GAP', ref: gap.key }, gap.key)
+  }
+
+  // ---- 2) RUBRIC_DIMENSION：本轮重点；没有重点时按权重（已出过 PRIOR_GAP 的维度跳过）----
+  const focused = facts.dimensions.filter((dimension) => dimension.focus || dimension.must_cover)
+  const pool = focused.length > 0 ? [...focused] : sortByWeightDescending(facts.dimensions)
+  const focusedKeys = new Set(focused.map((dimension) => dimension.key))
+  for (const dimension of pool) {
+    pushDimension(
+      rubricDimensionPointOf(dimension),
+      rubricDimensionWhyOf(dimension, focusedKeys.has(dimension.key)),
+      { kind: 'RUBRIC_DIMENSION', ref: dimension.key },
+      dimension.key,
+    )
+  }
+
+  // ---- 3) RESUME_HIGHLIGHT：简历里未展开的经历（最多 1 条；用自己的 ref 去重）----
+  const resumeRefs = new Set<string>()
+  for (const experience of resumeHighlights) {
+    if (points.length >= REFERENCE_POINT_LIMIT) break
+    if (resumeRefs.has(experience.ref)) continue
+    resumeRefs.add(experience.ref)
+    points.push({
+      point: resumeHighlightPointOf(experience),
+      why: RESUME_HIGHLIGHT_WHY,
+      basis: { kind: 'RESUME_HIGHLIGHT', ref: experience.ref },
+    })
+  }
+
+  return points
+}
+
 /**
  * brief（§1.5）：三态**只看两个事实**——有没有模板行、有没有可用的 rubric 维度。
  *
@@ -1451,6 +2082,12 @@ export interface ToInterviewRowInput {
   readonly extension: InterviewExtensionRow
   /** 我的 actor id（从绑定来；只用于在 `interviewers[]` 里定位自己）。 */
   readonly actorId: string
+  /**
+   * task-51：**紧邻上一轮**的 SQL 行（本行子集；`readInterviewerWorkspace()` 用一条批量
+   * SELECT 取回后按 `current_interview_id` 分组）。缺省 `[]` = 没有前置轮次事实，
+   * 此时 `prior_rounds: []`、`reference_points` 里不会出现 `PRIOR_GAP`（旧调用方行为不变）。
+   */
+  readonly priorRoundRows?: readonly PriorRoundRow[]
 }
 
 /** `toInterviewRow` 的输出：一行 + 该行本身带出的 issue（rubric 越界）。 */
@@ -1514,6 +2151,26 @@ export function toInterviewRow(input: ToInterviewRowInput): ToInterviewRowResult
   // 只有两次读取指向同一条面评时才补 record_version/overall（否则回 null，不混行）。
   const sameScorecard = current !== undefined && text(extension.scorecard_id) === current.scorecard_id
 
+  // task-51：两块加法（`materials` 先构造一次，简历参考点只读**同一份**已暴露字段，
+  // 未解析/解析失败时 fields 是 {} → 不会从半成品里编造"未展开经历"）。
+  const materials = buildMaterials(extension)
+  const priorRounds = buildPriorRounds({
+    round_no: value.round_no,
+    dimensions_available: effectiveRubric.available,
+    // 维度宇宙恒 = 本行 `effective_rubric.dimensions`（同一申请各轮一致；不可用时为空）。
+    dimensions: effectiveRubric.dimensions.map((dimension) => ({
+      key: dimension.key,
+      label: dimension.label,
+      weight: dimension.weight,
+    })),
+    rows: input.priorRoundRows ?? [],
+  })
+  const referencePoints = buildReferencePoints({
+    prior_rounds: priorRounds,
+    dimensions: effectiveRubric.dimensions,
+    resume_fields: materials.resume?.fields ?? null,
+  })
+
   return {
     row: {
       interview_id: value.id,
@@ -1542,7 +2199,7 @@ export function toInterviewRow(input: ToInterviewRowInput): ToInterviewRowResult
       rubric,
       round_focus: roundFocus,
       effective_rubric: effectiveRubric,
-      materials: buildMaterials(extension),
+      materials,
       transcript: {
         // §1.5：直接取 readInterviewValue() 的 transcript 与 meeting_binding（禁止另写 TR-D）。
         state: value.transcript.state,
@@ -1562,6 +2219,8 @@ export function toInterviewRow(input: ToInterviewRowInput): ToInterviewRowResult
         overall: sameScorecard ? text(extension.scorecard_overall) : null,
       },
       required_action: requiredActionOf(state, mine.required_scorecard),
+      prior_rounds: priorRounds,
+      reference_points: referencePoints,
     },
     issues,
   }
@@ -1620,6 +2279,48 @@ function normalizeSectionLimit(raw: number | undefined): number {
   return Math.max(1, Math.min(value, DEFAULT_SECTION_LIMIT))
 }
 
+/** 一条"我的面试"已读到的事实（扩展行 + `readInterviewValue()` 的值），批量前置轮次查询的输入。 */
+interface InterviewerFact {
+  readonly interviewId: string
+  readonly value: InterviewValue
+  readonly extension: InterviewExtensionRow
+}
+
+/**
+ * 一条 SELECT 取回**所有**当前行的紧邻上一轮事实，并按当前面试 id 分组。
+ *
+ * 只有 `round_no > 1` 的行参与（第 1 轮没有上一轮；也不必为它发查询）。返回的 Map 缺省即
+ * "没有前置轮次"，`toInterviewRow` 会把它落成 `prior_rounds: []`（不是 `undefined`）。
+ *
+ * @param client - 只读事务内的连接（本函数只发 SELECT）。
+ * @param tenantId - 租户（只从配置来）。
+ * @param facts - 当前行（扩展行 + 规范值）。
+ * @returns 当前面试 id → 上一轮的 SQL 行（顺序 = SQL 的 `slot_code asc, id asc`）。
+ */
+async function loadPriorRoundRows(
+  client: DatabaseClient,
+  tenantId: string,
+  facts: readonly InterviewerFact[],
+): Promise<ReadonlyMap<string, readonly PriorRoundRow[]>> {
+  const grouped = new Map<string, PriorRoundRow[]>()
+  const candidates = facts.filter((fact) => fact.value.round_no > 1)
+  if (candidates.length === 0) return grouped
+  const result = await client.query<PriorRoundRow>(PRIOR_ROUND_SQL, [
+    candidates.map((fact) => fact.interviewId),
+    candidates.map((fact) => fact.value.application_id),
+    candidates.map((fact) => fact.value.round_no),
+    tenantId,
+  ])
+  for (const row of result.rows) {
+    const currentId = text(row.current_interview_id)
+    if (currentId === null) continue
+    const rows = grouped.get(currentId)
+    if (rows === undefined) grouped.set(currentId, [row])
+    else rows.push(row)
+  }
+  return grouped
+}
+
 /**
  * 读取当前 actor 的面试官工作台投影（**只读**；接收事务内 client，不自己建池/开事务）。
  *
@@ -1629,6 +2330,11 @@ function normalizeSectionLimit(raw: number | undefined): number {
  *   3. "我的面试"（只按 `interviewer.actor_id` 过滤）→ 每行 1 条 §1.5 扩展 SQL +
  *      `readInterviewValue()`（TR-D 单一实现）；
  *   4. `labels.provenance` 走 `resolveTenantProvenance()`（R4 单一判定）。
+ *
+ * task-51（加法）：紧邻上一轮的事实用**一条**批量 SELECT（`PRIOR_ROUND_SQL`）取回，投影成
+ * 每行的 `prior_rounds` + `reference_points`（纯函数 `buildPriorRounds`/`buildReferencePoints`）。
+ * 前置轮次的授权依据是"我是**当前这一轮**的面试官"（`MY_INTERVIEW_IDS_SQL` 不变），
+ * 未分配仍是既有 403 且零行；全部 SELECT，没有新增写路径。
  *
  * W3b 的降级语义（每一行独立判定，**不猜**）：
  *   · `round_focus` 只有在"模板 job 一致 + round_no 一致 + 至少贡献一项内容"时才是
@@ -1693,6 +2399,9 @@ export async function readInterviewerWorkspace(
 
   const interviews: InterviewerRow[] = []
   const issues: string[] = []
+  // 先取每场的扩展行 + 规范值（顺序与 idRows 一致）；上一轮的事实需要"申请 + 轮次"才能批量查，
+  // 所以先收集、再发**一条** `PRIOR_ROUND_SQL`（只读），最后逐行映射（行为不变）。
+  const found: InterviewerFact[] = []
   for (const idRow of idRows.rows) {
     const extension = (await client.query<InterviewExtensionRow>(INTERVIEW_EXTENSION_SQL, [
       idRow.interview_id,
@@ -1708,7 +2417,19 @@ export async function readInterviewerWorkspace(
       })
     }
     const value = await readInterviewValue(client, tenantId, idRow.interview_id, evaluatedAt)
-    const mapped = toInterviewRow({ value, extension, actorId: actor.actor_id })
+    found.push({ interviewId: idRow.interview_id, value, extension })
+  }
+
+  // task-51：紧邻上一轮（同一申请、round_no = 当前轮 - 1），一条批量 SELECT 取回后按当前面试分组。
+  const priorRowsByInterview = await loadPriorRoundRows(client, tenantId, found)
+
+  for (const fact of found) {
+    const mapped = toInterviewRow({
+      value: fact.value,
+      extension: fact.extension,
+      actorId: actor.actor_id,
+      priorRoundRows: priorRowsByInterview.get(fact.interviewId) ?? [],
+    })
     interviews.push(mapped.row)
     issues.push(...mapped.issues)
   }

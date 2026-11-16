@@ -202,6 +202,70 @@ export interface ScorecardInfo {
   readonly overall: string
 }
 
+/**
+ * 前置轮次里一位面试官的面评结论（客户端视图；**不抄** note / rationale 原文）。
+ *
+ * 服务端字段名是 `display_name` / `scorecard_state` / `scorecard_submitted` / `conclusion`，
+ * 客户端归一化成 camelCase；坏类型一律降级（'' / false / null），界面不编造结论。
+ */
+export interface PriorRoundInterviewerView {
+  /** `actor.display_name` 原文；库里没有显示名 → ''（不编造）。 */
+  readonly displayName: string
+  /** 面评当前状态：`NONE` / `PENDING` / `SUBMITTED` / `WAIVED`（未知值保留原文，展示时降级）。 */
+  readonly scorecardState: string
+  readonly scorecardSubmitted: boolean
+  /** `scorecard.overall` 原值（ADVANCE / HOLD / REJECT）；未提交/无面评/坏类型 → null。 */
+  readonly conclusion: 'ADVANCE' | 'HOLD' | 'REJECT' | null
+}
+
+/** 前置轮次的一个岗位标准维度（`key` 只用于对齐/复核，客户端**不渲染**它）。 */
+export interface PriorRoundDimensionView {
+  readonly key: string
+  readonly label: string
+  readonly weight: number
+}
+
+/** 已被覆盖的维度 + 该轮面评里的判定原值（只有 MET / NOT_MET 算"给了实质判定"）。 */
+export interface PriorRoundCoveredDimensionView extends PriorRoundDimensionView {
+  readonly assessment: 'MET' | 'NOT_MET'
+  /** 1..5 的整数；面评没给（违反契约的脏数据）→ null。 */
+  readonly score: number | null
+}
+
+/** 未被覆盖的维度 + 可复核的原因码（原因码只在归一化层，渲染时映射成中文）。 */
+export interface PriorRoundUncoveredDimensionView extends PriorRoundDimensionView {
+  readonly reason: string
+}
+
+/**
+ * 一场前置轮次的面试（紧邻上一轮；同一轮多场就是多个元素）。
+ *
+ * 只看结构化事实：面试官面评状态/结论、岗位标准维度覆盖情况。
+ * 不渲染 `interviewId` / `key` / `reason` 机器码（D-141）。
+ */
+export interface PriorRoundView {
+  readonly roundNo: number
+  readonly interviewId: string
+  readonly status: string
+  readonly slotCode: string
+  readonly scheduledStartAt: string
+  readonly interviewers: readonly PriorRoundInterviewerView[]
+  /** 该轮维度宇宙是否可用；false 时两个维度数组都是空（不判定覆盖、不推测）。 */
+  readonly dimensionsAvailable: boolean
+  readonly coveredDimensions: readonly PriorRoundCoveredDimensionView[]
+  readonly uncoveredDimensions: readonly PriorRoundUncoveredDimensionView[]
+}
+
+/** 本轮的一条参考（面向面试官的两句中文；`basis*` 只用于复核，**不渲染**）。 */
+export interface ReferencePointView {
+  readonly point: string
+  readonly why: string
+  /** `RUBRIC_DIMENSION` / `PRIOR_GAP` / `RESUME_HIGHLIGHT`（原值保留，不渲染）。 */
+  readonly basisKind: string
+  /** 维度 key 或 `work_experience[<index>]`（原值保留，不渲染）。 */
+  readonly basisRef: string
+}
+
 /** 一条"分配给我的面试"（§1.4 的 interviews[] 元素）。 */
 export interface InterviewRow {
   readonly interview_id: string
@@ -227,6 +291,10 @@ export interface InterviewRow {
   readonly transcript: TranscriptInfo
   readonly scorecard: ScorecardInfo
   readonly required_action: string
+  /** 前置轮次摘要（服务端 `prior_rounds`；缺字段/坏类型 → 空数组，不抛）。 */
+  readonly priorRounds: readonly PriorRoundView[]
+  /** 本轮参考点（服务端 `reference_points`；缺字段/坏类型 → 空数组，不抛）。 */
+  readonly referencePoints: readonly ReferencePointView[]
 }
 
 /** 面试官工作台读模型（`GET /recruitment/api/interviewer/overview`）。 */
@@ -588,6 +656,137 @@ function normalizeScorecard(value: unknown): ScorecardInfo {
   }
 }
 
+/** 取一个 1..5 的整数分；其它（小数/越界/非数字/字符串数字）→ null（不猜分数）。 */
+function asScore1to5(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5 ? value : null
+}
+
+/** 取一个封闭枚举内的字符串；不在集合内 → ''（避免把机器码带进渲染）。 */
+function asEnumText(value: unknown, allowed: readonly string[]): string {
+  const text = asText(value)
+  return (allowed as readonly string[]).includes(text) ? text : ''
+}
+
+/** 归一化前置轮次的一位面试官（坏类型降级，不抛）。 */
+function normalizePriorRoundInterviewer(value: unknown): PriorRoundInterviewerView | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
+  const raw = value as Record<string, unknown>
+  const state = asEnumText(raw.scorecard_state, SCORECARD_STATES)
+  const conclusion = asEnumText(raw.conclusion, OVERALL_VALUES)
+  return {
+    displayName: asText(raw.display_name),
+    scorecardState: state,
+    scorecardSubmitted: asBool(raw.scorecard_submitted),
+    conclusion:
+      conclusion === 'ADVANCE' || conclusion === 'HOLD' || conclusion === 'REJECT' ? conclusion : null,
+  }
+}
+
+/** 归一化一位前置轮次面试官数组（非数组 → 空；非对象元素丢弃；上限 20）。 */
+function normalizePriorRoundInterviewers(value: unknown): PriorRoundInterviewerView[] {
+  const out: PriorRoundInterviewerView[] = []
+  if (!Array.isArray(value)) return out
+  for (const item of value.slice(0, 20)) {
+    const entry = normalizePriorRoundInterviewer(item)
+    if (entry !== null) out.push(entry)
+  }
+  return out
+}
+
+/** 取维度公共部分（key / label / weight）；key 与 label 都空 → null（无法展示）。 */
+function priorDimensionBase(raw: Record<string, unknown>): PriorRoundDimensionView | null {
+  const key = asText(raw.key)
+  const label = asText(raw.label)
+  if (key === '' && label === '') return null
+  return { key, label: label !== '' ? label : key, weight: asFiniteNumber(raw.weight) }
+}
+
+/** 归一化"已覆盖的维度"（只有 MET / NOT_MET 算覆盖；其它 assessment 一律丢弃）。 */
+function normalizePriorRoundCoveredDimensions(value: unknown): PriorRoundCoveredDimensionView[] {
+  const out: PriorRoundCoveredDimensionView[] = []
+  if (!Array.isArray(value)) return out
+  for (const item of value.slice(0, 100)) {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) continue
+    const raw = item as Record<string, unknown>
+    const base = priorDimensionBase(raw)
+    if (base === null) continue
+    const assessment = asEnumText(raw.assessment, ASSESSMENT_VALUES)
+    if (assessment !== 'MET' && assessment !== 'NOT_MET') continue
+    out.push({ ...base, assessment, score: asScore1to5(raw.score) })
+  }
+  return out
+}
+
+/** 归一化"未覆盖的维度"（原因码原样保留在归一化层；渲染时映射成中文）。 */
+function normalizePriorRoundUncoveredDimensions(value: unknown): PriorRoundUncoveredDimensionView[] {
+  const out: PriorRoundUncoveredDimensionView[] = []
+  if (!Array.isArray(value)) return out
+  for (const item of value.slice(0, 100)) {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) continue
+    const raw = item as Record<string, unknown>
+    const base = priorDimensionBase(raw)
+    if (base === null) continue
+    out.push({ ...base, reason: asText(raw.reason) })
+  }
+  return out
+}
+
+/**
+ * 归一化服务端 `prior_rounds`（前置轮次摘要）。
+ *
+ * 契约：每行恒存在；缺字段 / 坏类型 / 半个字段一律降级为空数组或空字段，**绝不抛**。
+ * 只保留可展示的结构化事实，不带 `items[*].note` / `rationale` 之类的原文。
+ * @param value - 服务端原始值。
+ * @returns 前置轮次数组（顺序按服务端；上限 10 场）。
+ */
+export function normalizePriorRounds(value: unknown): PriorRoundView[] {
+  const out: PriorRoundView[] = []
+  if (!Array.isArray(value)) return out
+  for (const item of value.slice(0, 10)) {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) continue
+    const raw = item as Record<string, unknown>
+    out.push({
+      roundNo: asCount(raw.round_no),
+      interviewId: asText(raw.interview_id),
+      status: asText(raw.status),
+      slotCode: asText(raw.slot_code),
+      scheduledStartAt: asText(raw.scheduled_start_at),
+      interviewers: normalizePriorRoundInterviewers(raw.interviewers),
+      dimensionsAvailable: asBool(raw.dimensions_available),
+      coveredDimensions: normalizePriorRoundCoveredDimensions(raw.covered_dimensions),
+      uncoveredDimensions: normalizePriorRoundUncoveredDimensions(raw.uncovered_dimensions),
+    })
+  }
+  return out
+}
+
+/**
+ * 归一化服务端 `reference_points`（本轮参考）。
+ *
+ * 只保留 `point` / `why` 两句面向面试官的中文 + `basis` 复核字段；
+ * `point` 为空的条目丢弃（没有要点就没有可渲染的内容）。
+ * @param value - 服务端原始值。
+ * @returns 参考点数组（上限 8 条）。
+ */
+export function normalizeReferencePoints(value: unknown): ReferencePointView[] {
+  const out: ReferencePointView[] = []
+  if (!Array.isArray(value)) return out
+  for (const item of value.slice(0, 8)) {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) continue
+    const raw = item as Record<string, unknown>
+    const point = asText(raw.point)
+    if (point === '') continue
+    const basis = asRecord(raw.basis)
+    out.push({
+      point,
+      why: asText(raw.why),
+      basisKind: asText(basis.kind),
+      basisRef: asText(basis.ref),
+    })
+  }
+  return out
+}
+
 /**
  * 归一化一条面试行。
  * @param value - 服务端原始行。
@@ -630,6 +829,8 @@ export function normalizeInterviewRow(value: unknown): InterviewRow {
     transcript: normalizeTranscript(raw.transcript),
     scorecard: normalizeScorecard(raw.scorecard),
     required_action: asText(raw.required_action),
+    priorRounds: normalizePriorRounds(raw.prior_rounds),
+    referencePoints: normalizeReferencePoints(raw.reference_points),
   }
 }
 
@@ -1089,6 +1290,191 @@ export function overallText(value: string): string {
   if (text === '') return ''
   const label = OVERALL_TEXT[text]
   return label === undefined ? text : `${text}（${label}）`
+}
+
+// ---------------------------------------------------------------------------
+//  前置轮次 / 本轮参考：**面向面试官的中文纯文本**（渲染层只用这些函数，不拼 key / id / 枚举码）
+//
+//  为什么单独一层：这两块卡的文案口径（DESIGN §2）是"只渲染人话"。把映射写成纯函数后
+//  `node --test` 可以直接断言"任何输入都不产出 UUID / 64hex / snake_case 字段名 / 枚举码"，
+//  不依赖 React、不依赖 DOM。
+// ---------------------------------------------------------------------------
+
+/** 前置轮次面评状态的中文（未提交不显示结论）。 */
+const PRIOR_SCORECARD_STATE_TEXT: Readonly<Record<string, string>> = {
+  SUBMITTED: '已提交',
+  PENDING: '草稿未提交',
+  NONE: '未填',
+  WAIVED: '已豁免',
+}
+
+/**
+ * 前置轮次结论的中文。
+ *
+ * 口径与既有面评分支的 `overallText()` 对齐（Owner 2026-11-16 裁决，DESIGN §2 已回抄）：
+ * `ADVANCE=推进 / HOLD=暂缓 / REJECT=不通过`。**不要**在这里另造一套措辞——
+ * 同一个 `scorecard.overall` 在两个卡片上必须是同一个中文词。
+ */
+const PRIOR_CONCLUSION_TEXT: Readonly<Record<string, string>> = {
+  ADVANCE: '推进',
+  HOLD: '暂缓',
+  REJECT: '不通过',
+}
+
+/** 面试状态的中文（只表排期，不推断转写/面评；与 HR 侧 `INTERVIEW_STATUS_LABELS` 同口径）。 */
+const INTERVIEW_STATUS_TEXT: Readonly<Record<string, string>> = {
+  SCHEDULED: '已排期',
+  IN_PROGRESS: '进行中',
+  POST_INTERVIEW: '面试后',
+  EVALUATION_READY: '评价就绪',
+  DECIDED: '已决策',
+  RESCHEDULED: '已改期',
+  CANCELLED: '已取消',
+  NO_SHOW: '未出席',
+}
+
+/** 未覆盖维度的原因码 → 中文（码本身只在归一化层，渲染时替换）。 */
+const UNCOVERED_REASON_TEXT: Readonly<Record<string, string>> = {
+  NO_SCORECARD: '没有已提交的面评',
+  NO_ITEMS: '面评里没有维度明细',
+  NOT_RATED: '面评没有评到这一维',
+  NOT_OBSERVED: '上一轮标记为未观察到',
+  UNREADABLE: '上一轮面评无法判读',
+}
+
+/** 维度覆盖读不到时的固定说法（DESIGN §2：不推测）。 */
+const PRIOR_COVERAGE_UNREADABLE_TEXT = '这一轮的评分维度读不到，无法判断覆盖情况（不推测）。'
+
+/** 无前置轮次时的空态文案（第 1 轮的面试官不该看到"上一轮"的伪内容）。 */
+export const PRIOR_ROUNDS_EMPTY_TEXT = '这是第一轮，没有前置轮次可参考。'
+
+/** 没有参考点时的空态文案（不伪造要点）。 */
+export const REFERENCE_POINTS_EMPTY_TEXT = '暂时没有可参考的要点。'
+
+/** 前置轮次面评状态的中文文本（未知状态 → 「状态未提供」，不渲染机器码）。 */
+export function priorScorecardStateText(state: string): string {
+  const value = asText(state)
+  if (value === '') return '状态未提供'
+  return PRIOR_SCORECARD_STATE_TEXT[value] ?? '状态未提供'
+}
+
+/** 前置轮次结论的中文文本（null / 未知 → ''，调用方据此**不显示结论**）。 */
+export function priorConclusionText(conclusion: string | null): string {
+  if (conclusion === null) return ''
+  const value = asText(conclusion)
+  if (value === '') return ''
+  return PRIOR_CONCLUSION_TEXT[value] ?? ''
+}
+
+/** 面试状态的中文文本（未知 → 「状态未提供」）。 */
+export function priorRoundStatusText(status: string): string {
+  const value = asText(status)
+  if (value === '') return '状态未提供'
+  return INTERVIEW_STATUS_TEXT[value] ?? '状态未提供'
+}
+
+/** 未覆盖维度的原因中文（未知原因码 → 「原因未提供」，不渲染码）。 */
+export function uncoveredReasonText(reason: string): string {
+  const value = asText(reason)
+  if (value === '') return '原因未提供'
+  return UNCOVERED_REASON_TEXT[value] ?? '原因未提供'
+}
+
+/** 一场前置轮次的面试官显示名串（空显示名如实写「显示名未提供」；不编造人名）。 */
+export function priorRoundInterviewerNames(round: PriorRoundView): string {
+  if (round.interviewers.length === 0) return '未提供'
+  return round.interviewers
+    .map((interviewer) => (interviewer.displayName !== '' ? interviewer.displayName : '（显示名未提供）'))
+    .join('、')
+}
+
+/**
+ * 一场前置轮次的首行：`第 N 轮 · <状态中文> · 面试官：<显示名、…>`。
+ * @param round - 归一化后的前置轮次。
+ * @returns 可展示文本（不含 id / 枚举码）。
+ */
+export function priorRoundHeadlineText(round: PriorRoundView): string {
+  const roundText = round.roundNo > 0 ? `第 ${round.roundNo} 轮` : '轮次未提供'
+  return `${roundText} · ${priorRoundStatusText(round.status)} · 面试官：${priorRoundInterviewerNames(round)}`
+}
+
+/**
+ * 一场前置轮次的面评行：`面评：<已提交/草稿未提交/未填/已豁免>[ · 结论：<推进/暂缓/不通过>]`。
+ *
+ * **未提交就不显示结论**（DESIGN §2；草稿里的分数不是证据）。
+ * 多位面试官时逐位给状态（每人单独一句，不合并成可能误导的"已提交"）。
+ * @param round - 归一化后的前置轮次。
+ * @returns 可展示文本。
+ */
+export function priorRoundScorecardLine(round: PriorRoundView): string {
+  if (round.interviewers.length === 0) return '面评：未提供'
+  if (round.interviewers.length === 1) {
+    const only = round.interviewers[0]
+    if (only === undefined) return '面评：未提供'
+    return `面评：${priorScorecardStateText(only.scorecardState)}${priorConclusionSuffix(only)}`
+  }
+  const parts = round.interviewers.map((interviewer) => {
+    const name = interviewer.displayName !== '' ? interviewer.displayName : '（显示名未提供）'
+    return `${name} ${priorScorecardStateText(interviewer.scorecardState)}${priorConclusionSuffix(interviewer)}`
+  })
+  return `面评：${parts.join('；')}`
+}
+
+/** 结论后缀（只有"已提交"才带结论；缺结论就不写，不编造）。 */
+function priorConclusionSuffix(interviewer: PriorRoundInterviewerView): string {
+  const submitted = interviewer.scorecardSubmitted || interviewer.scorecardState === 'SUBMITTED'
+  if (!submitted) return ''
+  const text = priorConclusionText(interviewer.conclusion)
+  return text !== '' ? ` · 结论：${text}` : ''
+}
+
+/**
+ * 一场前置轮次的维度覆盖行（1–2 行）。
+ *
+ * 口径（DESIGN §2）：
+ *   * 维度宇宙读不到、或两个数组都空 → 一句「读不到，无法判断（不推测）」；
+ *   * 否则分别给「覆盖到的维度」与「没有覆盖到的维度（原因中文）」。
+ * @param round - 归一化后的前置轮次。
+ * @returns 可展示文本行。
+ */
+export function priorRoundCoverageLines(round: PriorRoundView): string[] {
+  const covered = round.coveredDimensions
+  const uncovered = round.uncoveredDimensions
+  if (!round.dimensionsAvailable || (covered.length === 0 && uncovered.length === 0)) {
+    return [PRIOR_COVERAGE_UNREADABLE_TEXT]
+  }
+  const coveredText = covered.length === 0 ? '无' : covered.map((item) => item.label).join('、')
+  const uncoveredText =
+    uncovered.length === 0
+      ? '无'
+      : uncovered.map((item) => `${item.label}（${uncoveredReasonText(item.reason)}）`).join('、')
+  return [`覆盖到的维度：${coveredText}`, `没有覆盖到的维度：${uncoveredText}`]
+}
+
+/**
+ * 一场前置轮次的完整文本块（首行 + 面评行 + 覆盖行）。
+ * @param round - 归一化后的前置轮次。
+ * @returns 按渲染顺序的文本行（全部是给人看的中文）。
+ */
+export function priorRoundLines(round: PriorRoundView): string[] {
+  return [priorRoundHeadlineText(round), priorRoundScorecardLine(round), ...priorRoundCoverageLines(round)]
+}
+
+/**
+ * 本轮参考的文本行：每条 `• <point>` + `值得问的原因：<why>`。
+ *
+ * 措辞纪律（DESIGN §0/§1.2）：不改写成命令句，不排顺序、不定深度。
+ * @param points - 归一化后的参考点。
+ * @returns 可展示文本行；空数组 → 一句空态说明。
+ */
+export function referencePointLines(points: readonly ReferencePointView[]): string[] {
+  if (points.length === 0) return [REFERENCE_POINTS_EMPTY_TEXT]
+  const lines: string[] = []
+  for (const point of points) {
+    lines.push(`• ${point.point}`)
+    lines.push(`值得问的原因：${point.why !== '' ? point.why : '服务端未提供理由。'}`)
+  }
+  return lines
 }
 
 /**

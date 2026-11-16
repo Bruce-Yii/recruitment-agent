@@ -28,6 +28,9 @@ import {
   isBindingPendingError,
   materialFieldEntries,
   meetingBindingStateText,
+  priorRoundLines,
+  PRIOR_ROUNDS_EMPTY_TEXT,
+  referencePointLines,
   RecruitmentHttpError,
   requiredActionText,
   scorecardStateText,
@@ -36,6 +39,8 @@ import {
   type InterviewRow,
   type InterviewerOverview,
   type MaterialFieldEntry,
+  type PriorRoundView,
+  type ReferencePointView,
   type RoundFocusGroup,
   type WorkspaceLabels,
   type WorkspaceStats,
@@ -368,6 +373,96 @@ function RoundRubricTable({ row }: { readonly row: InterviewRow }): JSX.Element 
   )
 }
 
+/**
+ * 前置轮次卡（DESIGN §2，D-135：**只加文本节点，不改布局**）。
+ *
+ * 口径：
+ *   * 无前置轮次 → 一句空态（第 1 轮的面试官不该看到"上一轮"的伪内容）；
+ *   * 有 → 每场一段：`第 N 轮 · 状态 · 面试官：…` / `面评：…[ · 结论：…]` / 覆盖与未覆盖维度；
+ *   * 维度宇宙读不到 / 两数组都空 → 一句「读不到，无法判断（不推测）」。
+ * 渲染纪律（D-141）：只渲染 `priorRoundLines()` 产出的中文；不渲染 key / interview_id / 原因码 / 机器码。
+ */
+function PriorRoundsCard({ rounds }: { readonly rounds: readonly PriorRoundView[] }): JSX.Element {
+  return (
+    <section
+      className="iw-paper iw-roundcard"
+      data-testid="interviewer-prior-rounds"
+      data-round-count={rounds.length}
+    >
+      <div className="iw-subhead">
+        <h2>前面几轮发生了什么</h2>
+        <small>只读 · 紧邻上一轮 · 服务端事实</small>
+      </div>
+      {rounds.length === 0 ? (
+        <p className="iw-muted iw-tiny">{PRIOR_ROUNDS_EMPTY_TEXT}</p>
+      ) : (
+        rounds.map((round, index) => {
+          const lines = priorRoundLines(round)
+          return (
+            <div className="iw-roundgroup" key={`prior-${round.roundNo}-${index}`} data-prior-round-no={round.roundNo}>
+              <p>
+                <strong>{lines[0]}</strong>
+              </p>
+              {lines.slice(1).map((line, lineIndex) => (
+                <p
+                  className={lineIndex === 0 ? 'iw-tiny' : 'iw-tiny iw-muted'}
+                  key={`prior-${round.roundNo}-${index}-${lineIndex}`}
+                >
+                  {line}
+                </p>
+              ))}
+            </div>
+          )
+        })
+      )}
+    </section>
+  )
+}
+
+/**
+ * 本轮参考卡（DESIGN §2）：每条 `• <point>` + `值得问的原因：<why>`。
+ *
+ * **参考不是指令**：不改写成命令句、不排顺序、不定深度（文案由服务端生成，这里只渲染）。
+ * 空 → 一句空态说明；不伪造要点。
+ */
+function ReferencePointsCard({ points }: { readonly points: readonly ReferencePointView[] }): JSX.Element {
+  return (
+    <section
+      className="iw-paper iw-roundcard"
+      data-testid="interviewer-reference-points"
+      data-point-count={points.length}
+    >
+      <div className="iw-subhead">
+        <h2>这一轮可以参考</h2>
+        <small>只读 · 参考不是指令 · 服务端事实</small>
+      </div>
+      {points.length === 0 ? (
+        <p className="iw-muted iw-tiny">{referencePointLines(points)[0]}</p>
+      ) : (
+        <div className="iw-criteria">
+          {points.map((point, index) => {
+            const lines = referencePointLines([point])
+            return (
+              <div className="iw-criteriarow" key={`reference-${index}`}>
+                <span className="iw-dot iw-dot-blue" aria-hidden />
+                {/* 要点与"值得问的原因"各占一行：都用块级 `<p>`（既有 reset 已去掉 margin，不新增 CSS）。
+                    之前用行内 `<span>` 会让两句话连写成一行（Owner 2026-11-16 实测指出）。 */}
+                <div>
+                  {lines.map((line, lineIndex) => (
+                    <p className={lineIndex === 0 ? '' : 'iw-tiny iw-muted'} key={`reference-${index}-${lineIndex}`}>
+                      {line}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
+}
+
 /** 列表页（V-I1）。 */
 function ListView({
   overview,
@@ -556,6 +651,12 @@ function DetailView({
 
             {/* 本轮评分表（effective_rubric）：维度/权重/重点/必覆盖/来源。 */}
             <RoundRubricTable row={row} />
+
+            {/* 前面几轮发生了什么：紧邻上一轮的结构化事实（覆盖/未覆盖维度、面评状态/结论）。 */}
+            <PriorRoundsCard rounds={row.priorRounds} />
+
+            {/* 这一轮可以参考：2–4 条「可以重点了解什么 + 为什么值得问」；参考不是指令。 */}
+            <ReferencePointsCard points={row.referencePoints} />
 
             {row.round.serverFieldsMissing ? (
               <details className="iw-paper iw-collapse" data-testid="legacy-brief-questions">
