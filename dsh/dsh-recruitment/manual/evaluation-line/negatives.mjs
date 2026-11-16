@@ -15,6 +15,10 @@ import { fileURLToPath } from 'node:url'
 import { resolveDatabaseConfig } from '../../src/db/pool.ts'
 import { createScorecardSubmitTool } from '../../src/tools/scorecard-submit.ts'
 import { createDecisionRecordTool } from '../../src/tools/decision-record.ts'
+import {
+  describeExpectedItemKeys, readPinnedRubric, scorecardItemsFromDimensions,
+  scorecardItemsWithInvalidEvidenceKind,
+} from './pinned-rubric.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const argv = process.argv.slice(2)
@@ -24,12 +28,17 @@ const out = at >= 0 && argv[at + 1] !== undefined ? argv[at + 1] : 'negatives'
 const TENANT = '11111111-1111-4111-8111-000000000001'
 const X = '11111111-1111-4111-8111-000000000105'
 const INTERVIEW = '11111111-1111-4111-8111-000000000801'
-const ARTIFACT = '11111111-1111-4111-8111-000000000a01'
-const SEGMENT = 'a9aa1ed9-4e8e-4d7b-a113-a4e349afd87b'
 
+/**
+ * 数据库配置：库名跟随 `RECRUITMENT_DB_NAME`（默认演示库 ra_s6s7）。
+ * 维度真值不在这里硬编码——下面用 `readPinnedRubric()` 从库里读申请钉住的 rubric。
+ */
 function config(actorId) {
   const { resolved, issues } = resolveDatabaseConfig({
-    host: '127.0.0.1', port: 5432, user: 'postgres', database: 'ra_s6s7',
+    host: process.env.RECRUITMENT_DB_HOST ?? '127.0.0.1',
+    port: Number(process.env.RECRUITMENT_DB_PORT ?? 5432),
+    user: process.env.RECRUITMENT_DB_USER ?? 'postgres',
+    database: process.env.RECRUITMENT_DB_NAME ?? 'ra_s6s7',
     tenant_id: TENANT, actor_id: actorId,
   }, process.env)
   if (resolved === null) {
@@ -39,12 +48,6 @@ function config(actorId) {
   return resolved
 }
 
-const validItems = {
-  transcript_basis: 'TRANSCRIPT',
-  backend_depth: { assessment: 'MET', score: 4, note: '示例' },
-  async_pipeline: { assessment: 'MET', score: 3, note: '示例' },
-  frontend_basics: { assessment: 'MET', score: 2, note: '示例' },
-}
 
 /** 跑一个用例，返回 {name, expect, got, message}。 */
 async function run(name, expect, tool, args) {
@@ -63,23 +66,26 @@ const xConfig = config(X)
 const scorecard = createScorecardSubmitTool({ database: xConfig })
 const decisionNoApproval = createDecisionRecordTool({ database: xConfig })
 
+// 维度真值：运行时从**库里**读申请钉住的 rubric 的真实 dimensions（不硬编码任何版本键）。
+// 演示夹具已换 pin v2（work_exists/edu_exists/team_lead），写死 v1 会让这些负例先撞
+// DIMENSION_NOT_IN_RUBRIC（错误的原因），掩盖了要证的负例。
+const pinned = await readPinnedRubric()
+const validItems = scorecardItemsFromDimensions(pinned.dimensions)
+const firstDimensionKey = pinned.dimensions[0]?.key ?? 'missing_dimension'
+const expectedKeys = describeExpectedItemKeys(pinned.dimensions)
+console.log(`[negatives] pinned ${pinned.rubric_version_id} v${pinned.version_no}；items 键：${expectedKeys.text}`)
+
 const cases = []
 cases.push(await run('items 传数组', 'INVALID_ARGS', scorecard, {
   interview_id: INTERVIEW,
   idempotency_key: 'direct:neg:items-array',
-  items: [{ dimension_key: 'backend_depth', assessment: 'MET' }],
+  items: [{ dimension_key: firstDimensionKey, assessment: 'MET' }],
   overall: 'HOLD',
 }))
 cases.push(await run('证据 kind=TRANSCRIPT_SEGMENT（已作废）', 'INVALID_ARGS', scorecard, {
   interview_id: INTERVIEW,
   idempotency_key: 'direct:neg:evidence-kind',
-  items: {
-    ...validItems,
-    backend_depth: {
-      assessment: 'MET', score: 4, note: '示例',
-      evidence: [{ kind: 'TRANSCRIPT_SEGMENT', transcript_artifact_id: ARTIFACT, transcript_revision: 1, segment_id: SEGMENT, quote: '订单表按用户 ID 分成 64 片' }],
-    },
-  },
+  items: scorecardItemsWithInvalidEvidenceKind(pinned.dimensions),
   overall: 'HOLD',
 }))
 cases.push(await run('保留键 actor_id', 'INVALID_ARGS', scorecard, {
@@ -114,6 +120,8 @@ cases.push(await run('decision result=HIRED（v1.0 不做的）', 'INVALID_ARGS'
 }))
 
 const lines = []
+lines.push(`rubric: pinned ${pinned.rubric_version_id} v${pinned.version_no}（items 键：${expectedKeys.text}）`)
+lines.push('')
 for (const item of cases) {
   lines.push(`--- ${item.name} ---`)
   lines.push(`expect=${item.expect}  got=${item.got}  ${item.ok ? 'PASS' : 'FAIL'}`)

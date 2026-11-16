@@ -26,6 +26,13 @@ const DEMO = {
   candidateName: 'S9 演示候选人（合成）',
   departmentId: '11111111-1111-4111-8111-000000000010',
   provider: 'FEISHU',
+  /**
+   * 维度真值的来源申请（S6→S7 演示申请 …0701）。**不硬编码任何维度键**：
+   * 演示夹具的 rubric pin 已由 `scripts/bootstrap-demo.mjs` 的 O3 纠偏（干净库 = v2
+   * `work_exists/edu_exists/team_lead`）；本脚本从库里读这条申请钉住的 rubric 的 dimensions，
+   * 再复制到 S9 演示岗位自己的 rubric（面试记录要求 rubric 属于申请的岗位）。
+   */
+  rubricSourceApplicationId: '11111111-1111-4111-8111-000000000701',
   // `--round N` 可造第二轮（用于“干净的一次导入”证据，同时不影响第 1 轮的 revision 证据）。
   roundNo: (() => {
     const index = process.argv.indexOf('--round')
@@ -116,19 +123,47 @@ async function main() {
       jobId, jobVersionId, cfg.tenant_id,
     ])
 
-    // 3. rubric_version v1（3 条演示维度；payload_hash 与 dimensions 同规则）
-    const dimensions = [
-      { key: 'backend_depth', label: '后端工程深度', kind: 'MUST_HAVE', weight: 0.4,
-        expected: { operator: 'GTE', value_integer: 5, unit: 'YEAR' } },
-      { key: 'system_design', label: '系统设计', kind: 'MUST_HAVE', weight: 0.4,
-        expected: { operator: 'EXISTS', value_boolean: true } },
-      { key: 'communication', label: '沟通与澄清', kind: 'NICE_TO_HAVE', weight: 0.2,
-        expected: { operator: 'JUDGMENT', value_boolean: true } },
-    ]
-    let rubricId = (await client.query(
-      'select id from recruitment.rubric_version where tenant_id = $1 and job_id = $2 and version_no = 1',
+    // 3. rubric_version v1（维度键**从库里读真值**，不硬编码）
+    //    S9 演示岗位自己需要一条 rubric（interview_record → rubric 的 job 一致性检查），
+    //    所以把演示申请钉住的 rubric 的 dimensions **原样复制**成该岗位的 v1，
+    //    而不是在 manual 脚本里另编一套会过期的 v1 键（旧做法：backend_depth/system_design/communication）。
+    const pinned = (await client.query(
+      `select a.rubric_version_id::text as rubric_version_id, rv.version_no, rv.dimensions
+         from recruitment.application a
+         join recruitment.rubric_version rv
+           on rv.id = a.rubric_version_id and rv.tenant_id = a.tenant_id
+        where a.id = $1 and a.tenant_id = $2`,
+      [DEMO.rubricSourceApplicationId, cfg.tenant_id],
+    )).rows[0]
+    if (pinned === undefined) {
+      throw new Error(
+        `[seed] 演示申请 ${DEMO.rubricSourceApplicationId} 没有钉住 rubric：先跑 scripts/bootstrap-demo.mjs，`
+        + '本脚本不硬编码维度键（D-110 演示夹具已换 pin）。',
+      )
+    }
+    const dimensions = pinned.dimensions
+    if (!Array.isArray(dimensions) || dimensions.length === 0) {
+      throw new Error(`[seed] 演示申请钉住的 rubric ${pinned.rubric_version_id} 没有 dimensions`)
+    }
+    const expectedDimensionKeys = dimensions.map((dimension) => dimension.key)
+    const existingRubric = (await client.query(
+      'select id, dimensions from recruitment.rubric_version where tenant_id = $1 and job_id = $2 and version_no = 1',
       [cfg.tenant_id, jobId],
-    )).rows[0]?.id
+    )).rows[0]
+    let rubricId = existingRubric?.id
+    if (existingRubric !== undefined) {
+      const existingKeys = Array.isArray(existingRubric.dimensions)
+        ? existingRubric.dimensions.map((dimension) => dimension.key)
+        : []
+      if (JSON.stringify(existingKeys) !== JSON.stringify(expectedDimensionKeys)) {
+        throw new Error(
+          `[seed] 已存在的 S9 演示 rubric 维度键（${existingKeys.join(',') || '空'}）`
+          + ` 与演示申请钉住 rubric 的真值（${expectedDimensionKeys.join(',')}）不一致；`
+          + '一次性演示库请先清理该岗位/rubric，拒绝静默复用过期夹具（rubric_version 不可 UPDATE）。',
+        )
+      }
+      rubricId = existingRubric.id
+    }
     if (rubricId === undefined) {
       rubricId = await one(client, `insert into recruitment.rubric_version
           (tenant_id, job_id, version_no, dimensions, payload_hash, created_by_actor_id)
@@ -244,6 +279,13 @@ async function main() {
       job_id: jobId,
       job_version_id: jobVersionId,
       rubric_version_id: rubricId,
+      rubric_source: {
+        application_id: DEMO.rubricSourceApplicationId,
+        rubric_version_id: pinned.rubric_version_id,
+        version_no: pinned.version_no,
+        dimension_keys: expectedDimensionKeys,
+        note: '维度从库里读（不硬编码版本键）；S9 演示岗位需要自己的 rubric 以满足 interview_record 的 job 一致性',
+      },
       candidate_id: candidateId,
       application_id: applicationId,
       interview_id: interviewId,

@@ -49,6 +49,17 @@ node manual/evaluation-line/run-headless.mjs --profile rec-eval-decider --overla
 node manual/evaluation-line/readback.mjs --label readback
 ```
 
+> **维度真值不写死（2026-11-16 补）**：goal 文件里 `items` 与维度键说明改用 `{{scorecard_items}}` /
+> `{{dimension_keys_expected}}` / `{{rubric_ref}}` 模板，`run-headless.mjs` 在**发送前**用
+> `readPinnedRubric()`（`manual/evaluation-line/pinned-rubric.mjs`）从库里读申请 `…0701`
+> 钉住的 rubric 的真实 dimensions 展开；读不到 → fail-closed（exit 2，不发送半成品目标）。
+> `seed-demo.mjs` 也不再要求/写入固定 rubric id（只读申请实际 pin 并做存在性检查）。
+> 为什么：演示夹具的 pin 已随 `scripts/bootstrap-demo.mjs` O3 纠偏（干净库 = v2
+> `work_exists/edu_exists/team_lead`），manual 若继续硬编码 v1 键，会被正确拒成
+> `DIMENSION_NOT_IN_RUBRIC`，那是夹具过期而不是产品缺陷。
+> `goals/13|14|15-decision-*.txt` 的 `basis_refs` 是历史快照，重跑前用 `prepare-decision.mjs`
+> 重新生成（文件头已注明）。
+
 ### 演示身份（`seed-demo.mjs` 造，全部 `kind='HUMAN'`，除标注外）
 
 | 身份 | actor_id | 角色 |

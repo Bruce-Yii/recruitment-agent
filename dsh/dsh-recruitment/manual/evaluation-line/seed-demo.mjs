@@ -20,7 +20,9 @@ const ACTOR_X = '11111111-1111-4111-8111-000000000105'
 const ACTOR_Y = '11111111-1111-4111-8111-000000000106'
 const ACTOR_AGENT = '11111111-1111-4111-8111-0000000001a0'
 const APPLICATION = '11111111-1111-4111-8111-000000000701'
-const RUBRIC_V1 = '11111111-1111-4111-8111-000000000403'
+// 注意：**不再**硬编码 rubric 版本 id / 维度键。演示夹具已由 `scripts/bootstrap-demo.mjs` 的 O3
+// 把申请 pin 纠偏到"同岗位、已批准、可执行"的版本（干净库上 = v2 work_exists/edu_exists/team_lead）。
+// 本脚本在运行时读申请**实际钉住**的 rubric，只做"存在性"检查，不覆盖已有业务事实。
 const INTERVIEW = '11111111-1111-4111-8111-000000000801'
 const INTERVIEW_R2 = '11111111-1111-4111-8111-000000000802'
 const ACTOR_R2 = '11111111-1111-4111-8111-000000000104'
@@ -79,16 +81,28 @@ try {
     ])
   }
 
-  // 2) 申请必须钉住 rubric v1（面评分项来源），否则面评会 RUBRIC_UNRESOLVED
+  // 2) 申请必须钉住 rubric（面评分项来源），否则面评会 RUBRIC_UNRESOLVED。
+  //    版本 id 从库里读——**不硬编码 v1**：演示夹具的 pin 已随 bootstrap O3 变成真值
+  //    （干净库 = v2），写死旧 id 会把"夹具过期"伪装成产品拒绝。
   const { rows: appRows } = await client.query(
-    'select rubric_version_id, job_id from recruitment.application where id = $1 and tenant_id = $2',
+    `select a.rubric_version_id, rv.version_no, rv.dimensions
+       from recruitment.application a
+       left join recruitment.rubric_version rv
+         on rv.id = a.rubric_version_id and rv.tenant_id = a.tenant_id
+      where a.id = $1 and a.tenant_id = $2`,
     [APPLICATION, TENANT],
   )
-  if (appRows.length === 0) throw new Error(`application ${APPLICATION} 不存在`)
+  if (appRows.length === 0) throw new Error(`application ${APPLICATION} 不存在（先跑 scripts/bootstrap-demo.mjs）`)
   if (appRows[0].rubric_version_id === null) {
-    await client.query('update recruitment.application set rubric_version_id = $2 where id = $1', [APPLICATION, RUBRIC_V1])
-  } else if (appRows[0].rubric_version_id !== RUBRIC_V1) {
-    throw new Error(`application 钉住的 rubric 不是 v1（${appRows[0].rubric_version_id}），本演示脚本不覆盖已有钉版`)
+    throw new Error(
+      `application ${APPLICATION} 没有钉住 rubric：面评会 RUBRIC_UNRESOLVED（SC-10 不做 fallback）。`
+      + ' 先跑 scripts/bootstrap-demo.mjs（O3 会纠偏 pin）。',
+    )
+  }
+  const pinnedRubric = appRows[0]
+  const pinnedDimensions = Array.isArray(pinnedRubric.dimensions) ? pinnedRubric.dimensions : []
+  if (pinnedDimensions.length === 0) {
+    throw new Error(`申请钉住的 rubric ${pinnedRubric.rubric_version_id} 没有 dimensions：面评无法生成 items`)
   }
 
   // 3) 面试（S8 语义：一轮一场，POST_INTERVIEW）
@@ -188,7 +202,9 @@ try {
     interview_id: INTERVIEW,
     meeting_id: MEETING,
     transcript_artifact_id: ARTIFACT,
-    rubric_version_id: RUBRIC_V1,
+    rubric_version_id: pinnedRubric.rubric_version_id,
+    rubric_version_no: pinnedRubric.version_no,
+    rubric_dimension_keys: pinnedDimensions.map((dimension) => dimension.key),
     actors: { hr: ACTOR_HR, interviewer_x: ACTOR_X, interviewer_y: ACTOR_Y, agent: ACTOR_AGENT },
     transcript_state: 'READY',
     note: 'S8/S9 侧夹具：人工导入转写 + 人工绑定会议；provenance=FIXTURE / connection=NOT_CONNECTED / trigger=MANUAL',

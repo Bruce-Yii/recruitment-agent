@@ -15,6 +15,8 @@ import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync, readFileSy
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { expandGoalTemplates, hasGoalTemplates, readPinnedRubric } from './pinned-rubric.mjs'
+
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PLUGIN_DIR = resolve(HERE, '..', '..')
 const REPO = resolve(PLUGIN_DIR, '..', '..')
@@ -42,16 +44,32 @@ if (profile === undefined || overlay === undefined || goal === undefined) {
   process.exit(2)
 }
 
+// goal 里的 `{{...}}` 模板（例如 scorecard items 的维度键）在**运行时**从库里读申请钉住的
+// rubric 真实 dimensions 展开——goal 文件不再硬编码任何版本键（D-110 时代的演示夹具已换 pin v2）。
+// 展开失败 = fail-closed：绝不把带 `{{...}}` 的半成品目标发给模型。
+let resolvedGoal = goal
+if (hasGoalTemplates(goal)) {
+  try {
+    const rubric = await readPinnedRubric()
+    resolvedGoal = expandGoalTemplates(goal, rubric)
+    console.log(`[run] goal templates expanded from DB: rubric v${rubric.version_no} `
+      + `(${rubric.rubric_version_id}) keys=${['transcript_basis', ...rubric.dimensions.map((d) => d.key)].join(',')}`)
+  } catch (error) {
+    console.error(`[run] goal 模板展开失败（fail-closed，不发送未展开的 {{...}}）：${error?.message ?? String(error)}`)
+    process.exit(2)
+  }
+}
+
 const evidenceDir = join(HERE, 'evidence', label)
 mkdirSync(evidenceDir, { recursive: true })
 
 const startedAt = Date.now()
 console.log(`[run] profile=${profile} overlay=${overlay} label=${label}`)
-console.log(`[run] goal=${goal}`)
+console.log(`[run] goal=${resolvedGoal}`)
 
 const started = spawnSync(
   'dsh',
-  ['--profile', profile, '--patch', overlay, goal],
+  ['--profile', profile, '--patch', overlay, resolvedGoal],
   { cwd: REPO, env: process.env, encoding: 'utf8', timeout: 900_000, shell: true },
 )
 
@@ -105,8 +123,9 @@ if (logs.length === 0) {
   console.log(trace)
 }
 
-// 目标文件也留一份，证据自解释
-writeFileSync(join(evidenceDir, 'goal.txt'), `${goal}\n`, 'utf8')
+// 目标文件也留一份，证据自解释（展开后的版本；原始模板另存 goal-template.txt）。
+writeFileSync(join(evidenceDir, 'goal.txt'), `${resolvedGoal}\n`, 'utf8')
+if (resolvedGoal !== goal) writeFileSync(join(evidenceDir, 'goal-template.txt'), `${goal}\n`, 'utf8')
 if (existsSync(join(evidenceDir, 'tool-trace.txt'))) {
   const trace = readFileSync(join(evidenceDir, 'tool-trace.txt'), 'utf8')
   const summary = {

@@ -28,6 +28,13 @@ import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { machineArgumentLines, shortHash, shortRef } from './render-ref.ts'
 import { closePool, createPool, withReadOnly, type DatabaseClient, type ResolvedDatabaseConfig } from '../db/pool.ts'
 import { hardIssueCodes, type MaterialIssue } from '../db/material.ts'
+import type { EvidenceLocator } from '../document/evidence/locator.ts'
+import {
+  verifyPersistedEvidence,
+  type PersistedEvidenceDocument,
+  type PersistedEvidenceRecord,
+  type PersistedFormat,
+} from '../document/evidence/persisted.ts'
 
 const TOOL_NAME = 'recruitment_screening_evaluate'
 const CONTRACT_VERSION = '1.0.0'
@@ -154,7 +161,16 @@ export interface RubricSuggestedDimension {
   readonly weight_hint: string
 }
 
-/** 一条证据（SR §8.2：present 时 page≥1 + bbox 四元组 + source_asset_sha256 齐全）。 */
+/**
+ * 一条证据（SR §8.2 的旧口径 + D-110 定位器联合类型）。
+ *
+ * PDF 路径维持现状：`page>=1 + bbox 四元组 + source_asset_sha256`（缺坐标格式才走 D-110 分支）。
+ * 无坐标格式（RTF/纯文本/DOCX 段落）通过 `verifyPersistedEvidence` 核验后带：
+ *   * `locator_kind` —— D-110 定位器类型（`rtf_paragraph` / `text_line_offset` / …）；
+ *   * `verification_method` —— `PERSISTED_SHA_CHAIN+LOCATOR_UNIQUE+LITERAL_QUOTE` 等；
+ *   * `locator` —— 定位值本身（RTF `paragraph=N` 等），任何复核者可据此回原文核对；
+ *   * `page/bbox` —— 保持旧字段形状：RTF 的 `page` 来自 converter（没有就 0），`bbox` 诚实给空数组（不伪造坐标）。
+ */
 interface ScreenEvidence {
   readonly resume_version_id: string
   readonly source_asset_sha256: string
@@ -163,6 +179,12 @@ interface ScreenEvidence {
   readonly block: number
   readonly quote: string
   readonly provenance: string
+  /** D-110 定位器类型；只有非 bbox 格式（RTF/纯文本/DOCX 段落）会出现。 */
+  readonly locator_kind?: string
+  /** D-110 核验方式（写入侧字节级 / 读取侧持久化 sha 链）。 */
+  readonly verification_method?: string
+  /** 定位值（可序列化；复核者按它回原文核对）。 */
+  readonly locator?: Readonly<Record<string, unknown>>
 }
 
 /** 一条 reason / bonus_signal（共用同一形状，SR §8.1）。 */
@@ -285,6 +307,17 @@ interface EvaluateValue {
   readonly evaluation_digest: string
 }
 
+/** D-110 定位器类型（封闭集，与 `src/document/evidence/locator.ts::LocatorKind` 一致）。 */
+const LOCATOR_KINDS = [
+  'pdf_page_bbox', 'docx_part_paragraph', 'docx_part_table_row', 'rtf_paragraph', 'text_line_offset',
+] as const
+
+/** D-110 核验方式（读取侧持久化 sha 链；写入侧两条在证据定位器里定义）。 */
+const PERSISTED_VERIFICATION_METHODS = [
+  'PERSISTED_SHA_CHAIN+LOCATOR_UNIQUE+LITERAL_QUOTE',
+  'PERSISTED_SHA_CHAIN+QUOTE_UNIQUE+LITERAL_QUOTE',
+] as const
+
 const EVIDENCE_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
@@ -295,6 +328,25 @@ const EVIDENCE_SCHEMA: Record<string, unknown> = {
     block: { type: 'integer' },
     quote: { type: 'string' },
     provenance: { type: 'string' },
+    // D-110：无坐标格式必须标注定位器类型与核验方式（有坐标的 PDF 路径维持现状，不填这两键）。
+    locator_kind: { type: 'string', enum: [...LOCATOR_KINDS] },
+    verification_method: { type: 'string', enum: [...PERSISTED_VERIFICATION_METHODS] },
+    locator: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: [...LOCATOR_KINDS] },
+        page: { type: 'integer' },
+        bbox: { type: 'array', items: { type: 'number' } },
+        paragraph: { type: 'integer' },
+        part: { type: 'string' },
+        table_id: { type: 'integer' },
+        row: { type: 'integer' },
+        line: { type: 'integer' },
+        offset: { type: 'integer' },
+      },
+      required: ['kind'],
+      additionalProperties: false,
+    },
   },
   required: ['resume_version_id', 'source_asset_sha256', 'page', 'bbox', 'block', 'quote', 'provenance'],
   additionalProperties: false,
@@ -599,6 +651,12 @@ interface ResumeVersionRow {
   readonly intake_record_id: string | null
   readonly intake_record_status: string | null
   readonly event_provider: string | null
+  /**
+   * `intake_asset.sha256`：接入时对**真实字节**算出的 sha256（D-110 ① 的持久化锚点之一）。
+   * 与 `source_asset_sha256` / `parsed_fields.meta.source_sha256` / 每条证据声明必须一致。
+   * 可选：旧测试夹具构造 `ResumeVersionRow` 字面量时不必补它（缺 = 不参与一致性比较）。
+   */
+  readonly intake_asset_sha256?: string | null
 }
 
 interface RubricRow {
@@ -688,7 +746,13 @@ export interface EvalContext {
     readonly timeline?: Record<string, unknown>
     readonly issues: readonly MaterialIssue[]
     readonly screening?: { eligible_fields?: readonly string[]; blocked_fields?: readonly { field?: string; reason?: string }[] }
-    readonly meta?: { pages?: number }
+    readonly meta?: {
+      readonly pages?: number
+      /** converter 自报的源文件 sha256（`parsed_fields.meta.source_sha256`，D-110 ① 声明之一）。 */
+      readonly source_sha256?: string
+      /** converter 后端（如 `striprtf/0.0.35` / `pymupdf/1.28.0`），用于判定材料格式。 */
+      readonly backend?: string
+    }
   }
   readonly hardIssueCount: number
   readonly absentTrustworthy: boolean
@@ -715,8 +779,22 @@ export interface ConverterStateEntry {
     /** agent 块 id（converter 证据没有这个键）。 */
     readonly block_id?: number
     readonly text?: string
+    /** D-110：agent/历史证据可直接带 quote（缺省回退 text）。 */
+    readonly quote?: string
     readonly source?: string
+    readonly source_sha256?: string
     readonly source_asset_sha256?: string
+    /** DOCX 段落 / RTF 段落序号（0-based）与部件名。 */
+    readonly paragraph?: number
+    readonly part?: string
+    /** DOCX 表号 / 行号（0-based）。 */
+    readonly table_id?: number
+    readonly row?: number
+    /** 纯文本行（1-based）与行内偏移（0-based）。 */
+    readonly line?: number
+    readonly offset?: number
+    /** D-110：证据项自带的显式定位器（优先于按字段反推）。 */
+    readonly locator?: unknown
   }[]
   /** agent 的全部证据（含缺坐标的）；只在说明"为什么降级"时读。 */
   readonly agent_evidence?: readonly {
@@ -767,6 +845,7 @@ async function loadResumeVersion(
   const { rows } = await client.query<ResumeVersionRow>(
     `select rv.id, rv.version_no, rv.parse_status, rv.source_asset_sha256, rv.content_sha256,
             rv.parser_name, rv.parser_version, rv.parsed_fields, rv.evidence,
+            ia.sha256 as intake_asset_sha256,
             r.candidate_id as resume_candidate_id,
             ia.id as intake_asset_id, ia.validation_status as asset_validation_status,
             ir.id as intake_record_id, ir.status as intake_record_status,
@@ -1613,12 +1692,98 @@ interface EvidenceScan {
 }
 
 /**
- * 取字段的证据条目（SR §8.2 / TC §5.3 第 4 条）。
+ * 材料格式提示（决定持久化证据定位器怎么分派；只有 RTF 的 `block` 才能当段落号）。
  *
- * 三道闸门，全部**显式记录原因**：
- *   1. agent 证据引用的 `block_id` 必须落在该字段自己的 `block_ids` 里；
- *   2. `page ≥ 1` 且 `bbox` 是 4 个有限数（缺一个就不算可定位）；
- *   3. `source_asset_sha256` 必须与当前材料一致。
+ * 来源：`resume_version.parser_name`（接入时写入的 converter backend 名字部分，
+ * 如 `striprtf` / `pymupdf`）+ `parsed_fields.meta.backend`（如 `striprtf/0.0.35`）。
+ * 未知 → `undefined`（不启用 RTF block→paragraph 分支，落 quote 唯一命中路径，fail-closed）。
+ * @param ctx - 评估上下文。
+ */
+function persistedFormatOf(ctx: EvalContext): PersistedFormat | undefined {
+  const backend = typeof ctx.parsed.meta?.backend === 'string' ? ctx.parsed.meta.backend.toLowerCase() : ''
+  const parser = typeof ctx.rv.parser_name === 'string' ? ctx.rv.parser_name.toLowerCase() : ''
+  if (parser === 'striprtf' || backend.startsWith('striprtf')) return 'rtf'
+  if (parser === 'pymupdf' || backend.startsWith('pymupdf')) return 'pdf'
+  if (parser.includes('docx') || backend.startsWith('python-docx') || backend.startsWith('docx')) return 'docx'
+  if (parser === 'text' || parser === 'plain_text' || backend.startsWith('text')) return 'text'
+  return undefined
+}
+
+/**
+ * 持久化证据核验上下文（D-110 读取侧口径）：材料锚点 + converter/intake 的 sha256 声明 +
+ * 文档级证据索引（`resume_version.evidence`）。
+ *
+ * **容量边界**：S7 只读工具拿不到源文件字节与原文全文（`parsed_fields` 白名单不落 blocks/text），
+ * 所以这里提供的是"已落库事实"而非字节；字节级 sha256 重算在 S6 接入与 `material_read(TEXT)`
+ * 复核时完成（见 `work/d5/evidence-gate/REPORT.md` §1.1）。
+ * @param ctx - 评估上下文。
+ */
+function persistedDocumentOf(ctx: EvalContext): PersistedEvidenceDocument {
+  const converterSha = typeof ctx.parsed.meta?.source_sha256 === 'string' && ctx.parsed.meta.source_sha256.trim() !== ''
+    ? ctx.parsed.meta.source_sha256
+    : undefined
+  const intakeSha = typeof ctx.rv.intake_asset_sha256 === 'string' && ctx.rv.intake_asset_sha256.trim() !== ''
+    ? ctx.rv.intake_asset_sha256
+    : undefined
+  const format = persistedFormatOf(ctx)
+  return {
+    source_asset_sha256: ctx.rv.source_asset_sha256,
+    ...(converterSha === undefined ? {} : { converter_source_sha256: converterSha }),
+    ...(intakeSha === undefined ? {} : { intake_asset_sha256: intakeSha }),
+    ...(format === undefined ? {} : { format }),
+    index: (Array.isArray(ctx.rv.evidence) ? ctx.rv.evidence : []) as readonly PersistedEvidenceRecord[],
+  }
+}
+
+/** 定位器 → 可序列化的定位值（写进证据记录，任何复核者可按它回原文核对）。 */
+function locatorJson(locator: EvidenceLocator): Readonly<Record<string, unknown>> {
+  switch (locator.kind) {
+    case 'pdf_page_bbox':
+      return { kind: locator.kind, page: locator.page, bbox: [...locator.bbox] }
+    case 'docx_part_paragraph':
+      return { kind: locator.kind, part: locator.part, paragraph: locator.paragraph }
+    case 'docx_part_table_row':
+      return { kind: locator.kind, part: locator.part, table_id: locator.table_id, row: locator.row }
+    case 'rtf_paragraph':
+      return {
+        kind: locator.kind,
+        paragraph: locator.paragraph,
+        ...(typeof locator.page === 'number' ? { page: locator.page } : {}),
+      }
+    case 'text_line_offset':
+      return { kind: locator.kind, line: locator.line, offset: locator.offset }
+  }
+}
+
+/** 定位器 → 旧输出字段 `page`（PDF 页 / RTF 逻辑页；没有就 0，不猜）。 */
+function pageOfLocator(locator: EvidenceLocator): number {
+  if (locator.kind === 'pdf_page_bbox') return locator.page
+  if (locator.kind === 'rtf_paragraph' && typeof locator.page === 'number') return locator.page
+  return 0
+}
+
+/** 定位器 → 旧输出字段 `bbox`（只有 PDF 有坐标；无坐标格式诚实给空数组，不伪造）。 */
+function bboxOfLocator(locator: EvidenceLocator): readonly number[] {
+  return locator.kind === 'pdf_page_bbox' ? [...locator.bbox] : []
+}
+
+/**
+ * 取字段的证据条目（SR §8.2 / TC §5.3 第 4 条 + D-110）。
+ *
+ * 分两条路径（**PDF 现状保留**，不回归）：
+ *   1. **有坐标的 PDF 证据**（`page>=1` 且 `bbox` 是 4 个有限数）：沿用旧口径——形状校验 +
+ *      （若声明了）`source_asset_sha256` 与当前材料一致，通过则原样输出 page/bbox。
+ *      这条路径**没有**做 D-110 的定位唯一/逐字命中（已知债务，另立任务；本 lane 不扩）。
+ *   2. **无坐标格式**（RTF / 纯文本 / DOCX 段落 / 显式 locator）：交给
+ *      `src/document/evidence/persisted.ts::verifyPersistedEvidence` 做 D-110 读取侧三条件：
+ *      ① sha256 链一致（材料锚点 = `intake_asset.sha256` = converter 声明 = 每条证据声明）；
+ *      ② 定位器在文档级证据索引（`resume_version.evidence`）里唯一对应**一种原文**；
+ *      ③ quote 在该定位原文里逐字命中（归一化只允许换行/空白/行断连字符）。
+ *      歧义（`LOCATOR_AMBIGUOUS` / `QUOTE_AMBIGUOUS`）一律拒绝并标 `requires_human`，
+ *      **禁止取第一条**；没有定位器时只接受 quote 全文唯一命中。
+ *
+ * 任一证据项被拒 → 该条不进 `evidence`，拒绝码写进 `issue_codes`（`evidence_rejected:<CODE>`）；
+ * 字段一条证据都不剩时 `resolveFieldFact` 会把它降为 unreadable（fail-closed，不静默通过）。
  * @param ctx - 评估上下文。
  * @param entry - 有效版本的字段条目。
  */
@@ -1626,7 +1791,12 @@ function evidenceFor(ctx: EvalContext, entry: ConverterStateEntry | undefined): 
   const out: ScreenEvidence[] = []
   const codes: string[] = []
   const fieldBlockIds = Array.isArray(entry?.block_ids) ? entry.block_ids : []
-  let agentWithoutCoords = 0
+  let rejected = 0
+  let document: PersistedEvidenceDocument | undefined
+  const documentOf = (): PersistedEvidenceDocument => {
+    if (document === undefined) document = persistedDocumentOf(ctx)
+    return document
+  }
   for (const item of entry?.evidence ?? []) {
     const agentSourced = item.source === 'agent_structured' || typeof item.block_id === 'number'
     if (agentSourced && typeof item.block_id === 'number' && fieldBlockIds.length > 0
@@ -1636,30 +1806,77 @@ function evidenceFor(ctx: EvalContext, entry: ConverterStateEntry | undefined): 
     }
     const page = typeof item.page === 'number' ? item.page : 0
     const bbox = (item.bbox ?? []).map((n) => (typeof n === 'number' ? n : Number.NaN))
-    if (page < 1 || bbox.length !== 4 || !bbox.every((n) => Number.isFinite(n))) {
-      if (agentSourced) agentWithoutCoords += 1
+    // ---- 路径 1：PDF 坐标（现状保留）------------------------------------------------
+    if (page >= 1 && bbox.length === 4 && bbox.every((n) => Number.isFinite(n))) {
+      const declared = item.source_asset_sha256
+      if (typeof declared === 'string' && declared !== '' && declared !== ctx.rv.source_asset_sha256) {
+        addWarning(ctx.warnings, {
+          code: 'EVIDENCE_SHA_MISMATCH',
+          message: '证据里的 source_asset_sha256 与材料不一致，该证据不可信',
+          ref: { field: 'evidence' },
+        })
+        continue
+      }
+      out.push({
+        resume_version_id: ctx.rv.id,
+        source_asset_sha256: ctx.rv.source_asset_sha256,
+        page,
+        bbox,
+        block: typeof item.block === 'number' ? item.block : -1,
+        quote: typeof item.text === 'string' ? item.text : '',
+        provenance: typeof entry?.provenance === 'string' ? entry.provenance : 'unknown',
+      })
       continue
     }
-    const declared = item.source_asset_sha256
-    if (typeof declared === 'string' && declared !== '' && declared !== ctx.rv.source_asset_sha256) {
-      addWarning(ctx.warnings, {
-        code: 'EVIDENCE_SHA_MISMATCH',
-        message: '证据里的 source_asset_sha256 与材料不一致，该证据不可信',
-        ref: { field: 'evidence' },
-      })
+    // ---- 路径 2：D-110 无坐标格式（RTF paragraph / 纯文本 line-offset / DOCX part-paragraph）----
+    const verified = verifyPersistedEvidence(documentOf(), {
+      item: {
+        page: item.page,
+        bbox: item.bbox,
+        block: item.block,
+        block_id: item.block_id,
+        text: item.text,
+        quote: item.quote,
+        source: item.source,
+        source_sha256: item.source_sha256,
+        source_asset_sha256: item.source_asset_sha256,
+        paragraph: item.paragraph,
+        part: item.part,
+        table_id: item.table_id,
+        row: item.row,
+        line: item.line,
+        offset: item.offset,
+        ...(item.locator === undefined ? {} : { locator: item.locator }),
+      },
+    })
+    if (verified.ok === false) {
+      rejected += 1
+      // 拒绝码必须可行动：reason_code 直接来自证据定位器的封闭集（PERSISTED 侧不新增码）。
+      codes.push(`evidence_rejected:${verified.reason_code}`)
+      if (verified.requires_human) codes.push(`evidence_requires_human:${verified.reason_code}`)
+      if (verified.reason_code === 'SHA256_MISMATCH') {
+        addWarning(ctx.warnings, {
+          code: 'EVIDENCE_SHA_MISMATCH',
+          message: '证据声明的 sha256 与材料锚点不一致（D-110 ①），该证据不可信',
+          ref: { field: 'evidence' },
+        })
+      }
       continue
     }
     out.push({
       resume_version_id: ctx.rv.id,
       source_asset_sha256: ctx.rv.source_asset_sha256,
-      page,
-      bbox,
+      page: pageOfLocator(verified.locator),
+      bbox: bboxOfLocator(verified.locator),
       block: typeof item.block === 'number' ? item.block : -1,
-      quote: typeof item.text === 'string' ? item.text : '',
+      quote: verified.quote,
       provenance: typeof entry?.provenance === 'string' ? entry.provenance : 'unknown',
+      locator_kind: verified.locator_kind,
+      verification_method: verified.verification_method,
+      locator: locatorJson(verified.locator),
     })
   }
-  if (agentWithoutCoords > 0) codes.push(`agent_evidence_without_page_or_bbox:${agentWithoutCoords}`)
+  if (rejected > 0) codes.push(`evidence_rejected_count:${rejected}`)
   return { evidence: out, issue_codes: [...new Set(codes)] }
 }
 
@@ -1887,7 +2104,9 @@ function readParsedFields(raw: Record<string, unknown>): EvalContext['parsed'] {
   const screening = typeof raw.screening === 'object' && raw.screening !== null
     ? (raw.screening as { eligible_fields?: readonly string[]; blocked_fields?: readonly { field?: string; reason?: string }[] })
     : undefined
-  const meta = typeof raw.meta === 'object' && raw.meta !== null ? (raw.meta as { pages?: number }) : undefined
+  const meta = typeof raw.meta === 'object' && raw.meta !== null
+    ? (raw.meta as { pages?: number; source_sha256?: string; backend?: string })
+    : undefined
   return { fields, issues, ...(timeline === undefined ? {} : { timeline }), ...(screening === undefined ? {} : { screening }), ...(meta === undefined ? {} : { meta }) }
 }
 
