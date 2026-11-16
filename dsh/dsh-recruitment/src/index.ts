@@ -134,6 +134,9 @@ import { createPgEventDispositionSink } from './runtime/event-runtime.ts'
 import { resolveFeishuConnector, type FeishuConnectorConfig } from './connectors/feishu/index.ts'
 import { registerOverviewHttp, type OverviewHostContext } from './http/overview.ts'
 import { registerRecruitingHttp, type RecruitingHostContext } from './http/recruiting.ts'
+// owner-api-display（V5 看得见）：原文受控获取 + DSH 会话计量 + 任务状态（三个只读端点，
+// loopback + sameOrigin + fail-closed）。注册器在 src/http/api-display.ts，返回 disposer。
+import { registerApiDisplayHttp, type ApiDisplayHostContext } from './http/api-display.ts'
 // D5 W1：Demo Actor（session→alias→HUMAN actor）+ Interviewer Host Remote Action
 //（scorecard form/submit）。路由用 exact path，longest-prefix 优先于 /recruitment/api。
 import { registerActorHttp, type ActorHostContext } from './http/actor.ts'
@@ -537,6 +540,18 @@ export function apply(
         database.issues,
       ),
       'recruitment: interviewer workspace route',
+    )
+    // owner-api-display（V5 看得见）：三个只读端点 ——
+    //   GET|HEAD /recruitment/api/material/<material_id>/content（原件受控获取）
+    //   GET      /recruitment/api/usage?session_id=…（DSH 会话计量，原样透出）
+    //   GET      /recruitment/api/tasks/status（业务任务 / 卡住事件）
+    // 必须返回 disposer：`child.effect` 把返回值当注销函数（返回 undefined 会在卸载时报错）。
+    child.effect(
+      () => registerApiDisplayHttp(child as unknown as ApiDisplayHostContext, {
+        database: database.resolved,
+        databaseIssues: database.issues,
+      }),
+      'recruitment: api display routes',
     )
   })
 
