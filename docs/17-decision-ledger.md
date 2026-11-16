@@ -1585,6 +1585,12 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
      ⑥ **能力不可达**（该做的动作在真 Host 上做不到）。
   3. **判定口径**：产品视角复核的每条缺陷必须标 `class = OURS | UI_DESIGN_PENDING`；只有 `OURS` 进修复队列。**不允许用"UI 还没设计"来掩盖 ②③④⑤⑥**，也不允许把设计问题混进"必须修"来占用工期。
   4. **验收出的 `OURS` 问题 → 总控直接派修（不再等产品负责人逐条确认）**：修完按原场景复验，复验证据落 `work/`，修不了的（外部阻断）如实 BLOCKED。
+- **D-136（2026-11-16 总控裁决；产品 Web 会话的 agent preset 收口 —— O19 安全红线）**：
+  1. **事实**：产品 Web 聊天（HR 的真实入口）会话实测有 **61 个工具**，含 `pwsh`/`read`/`write`/`edit`/`glob`/`grep`/`web_search`/`web_fetch`/`plugin_manager`/`subagent`/`workflow`/`list_agents`/`send_message`/`wait_agent`，并出现过 `danger-full-access` 审批；同 profile 的 headless 会话只有 **38 个**、0 工程工具。
+  2. **根因（composed config 实证）**：Web 会话跑的是 DSH **自带 agent preset `standard`**，preset 自带一整棵 plugin 子树（persona / agent-instructions / tool-bash / tool-pwsh / tool-fs / tool-fs-search / tool-jobs / tool-schedule / delegation / tool-web / tool-office / tool-plugin-manager …）。**profile 顶层的 `disabled: true` 只作用于顶层树，对 preset 子树无效**。同一根因也解释了 O10（preset 的 persona 是 "You are a coding agent…"，遮蔽顶层 `system-prompt` 人设）——即"工具面收口"此前**只在 headless 生效**。
+  3. **裁决**：v1.0 的产品 Web 会话必须跑**产品自有 agent preset**（`recruitment`，只挂 persona/time-context/skill/goal/todo/ask-user/compaction），`agent-preset-registry.default = recruitment`，并**禁用** DSH 自带 `standard`/`ptc`/`cordis`/`minimal`（HR 不得切回全工具 preset）。**禁止**用 prompt 约束代替 preset 收口（R9 反证口径：工具必须不在注册表里）。
+  4. **实现口径**：profile patch **不能新增 row**（`patch: entry not found`），必须用 loader 的 `insert` 语法（`- insert:` 无 id = 追加到顶层）。此为本项目 profile 表达能力的已知边界，后续新增插件行同样走 `insert`。
+  5. **验证责任**：运行时工具面（61 → ≈35、工程工具不存在、人设已换、preset 选择器只剩"招聘助手"）由独立 lane 用**真 Host + 真浏览器**取证；`--dump-config` 通过**不等于**运行时收口（历史教训：dump 显示 disabled 而实际会话仍有工具）。
 ### D-122 · v1.0 验收基准与运行底座口径收口（C1–C3）
 
 **裁定（2026-11-16，总控；回答 Notion 14 与 `work/review/2026-11-16-notion-acceptance/03-CONFLICTS.md` 的 C1–C3）**：
