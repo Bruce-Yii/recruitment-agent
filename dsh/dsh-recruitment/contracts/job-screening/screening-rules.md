@@ -408,7 +408,9 @@ STEP 5  PASS（其余全部）
 
 | `tri_state` | 必带 | 形式 | 依据 |
 |---|---|---|---|
-| `present` | ≥1 条 `evidence[]`，每条含 `page`(≥1) + `bbox`(4 个数) + `source_asset_sha256` | 精确到框 | `D11 §9.9`、`D11 §2 D1`（结构化字段必须回指 `page + bbox`） |
+| `present` | ≥1 条 `evidence[]`，每条含 `locator_kind` + 该形态的定位值 + `source_asset_sha256` + 逐字 `quote`（**不再强制 `page+bbox`**，见 D-110 与 §8.2 注） | 定位唯一 + 原句逐字命中 | `D11 §9.9`、**D-110**（可复核优先于坐标） |
+
+> **§8.2 注（D-110 回抄）**：证据形态按材料格式取其一即可——PDF `page+bbox`、DOCX `part+paragraph`、RTF `paragraph`、纯文本 `line` 或 `offset`；`bbox` 缺失**不是**拒绝理由。无论哪种形态，都必须同时满足：① `source_asset_sha256` 与原件一致；② 定位唯一（同一句多处命中 → 判歧义、转人工，**不得取第一条**）；③ `quote` 与定位处原文逐字命中（允许换行/空白归一化）。`verification_method` 必须写明用哪种方式验证（例：`PERSISTED_SHA_CHAIN+LOCATOR_UNIQUE+LITERAL_QUOTE`）。
 | `absent` | `absence` 对象（**没有 bbox 是正常的**） | `{document_sha256, page_count, completeness:"complete", searched_scopes:[...], basis:"parsed_fields.fields.<x>.state=absent", hard_issue_count:0}` | `D11 §9.2`、`§9.3` |
 | `unreadable` | ≥1 个 `issue_codes[]`（来自 `parsed_fields.issues[].code` 或 `fields[x].reason`） | 代码而非散文 | `D11 §1 B3`（不可静默）、`§9.3` |
 | 无 `tri_state`（判断型） | `question` 非空 | 原问句 | `job-rubric-rules.md` §6.1（判断型省略 `tri_state`，不写 `null`） |
@@ -502,7 +504,7 @@ STEP 5  PASS（其余全部）
 |---|---|---|
 | 1 | 用 `parse_status='PARTIAL'` 且上游给了 `absent` 的材料评估 | 结果 `UNREADABLE` + `warnings: ABSENT_DOWNGRADED`，`verdict` 不是 `FAIL` |
 | 2 | 造一条 `MUST_HAVE` 只有 `absent` 的简历 | `verdict=NEEDS_REVIEW`（**不是** `FAIL`） |
-| 3 | 造一条 `MUST_HAVE` 有原文反证的简历 | `verdict=FAIL` + 该 reason 的 `tri_state='present'` + `page/bbox/sha256` 齐全 |
+| 3 | 造一条 `MUST_HAVE` 有原文反证的简历 | `verdict=FAIL` + 该 reason 的 `tri_state='present'` + 证据齐全（`locator_kind` + 定位值 + `source_asset_sha256` + 逐字 `quote`；PDF 为 `page/bbox`，RTF 为 `paragraph`，见 D-110） |
 | 4 | 让 `business_task` 进入 `WAITING_HUMAN` 且 ref 指向该 candidate | 调用必抛 `BLOCKED_BY_REVIEW`，`blocking_items[0].code='HUMAN_TASK_WAITING'` |
 | 5 | 手工删掉阻断检查（模拟"静默跳过"） | 机检应能发现：输出缺 `preconditions.human_queue_clear` |
 | 6 | 把一份 `FAIL` 输出里**唯一**的 `HARD_FAIL` 条目改成 `UNREADABLE`（保留其余条目） | 删掉全部 `unreadable` 后 `verdict` **不再是** `FAIL` → 断言 A2 失败 → 判定违约（这才是"拿读取失败当拒绝依据"的真实形态；仅**存在** `unreadable` 条目不算违约，见 §7.3 注 1） |
