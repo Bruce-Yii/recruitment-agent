@@ -246,23 +246,6 @@
           # attempts 耗尽后任务 FAILED、简历解析永不完成。G2 验收同批才翻回 true。
           auto_tick: true
           tick_interval_ms: 2000
-        # task-78：Agent 业务成本预算（硬闸门 = DSH tools.guard()；超限零写 + 交接文本）。
-        # 单一来源：本段是唯一受管定义；env 只作部署注入覆盖（RECRUITMENT_BUDGET_<KEY>），
-        # 解析结果逐键带 sources（profile|env|default）；非法值 fail-closed 回退默认并列 issue。
-        # status_tool 默认 false：显式开启会让权威工具数 30→31（D-128.2），只在验证 profile 开。
-        # 缺省键自动回退内置默认（src/budget/config.ts DEFAULT_LIMITS），本段显式写出便于审计。
-        budget:
-          enabled: true   # lead 裁决：产品 profile 显式开；worker profile 显式 false（见 profile-worker-budget.patch）
-          DECISION_MAX_TOKENS: 200000
-          DECISION_MAX_STEPS: 25
-          SCREENING_MAX_TOKENS: 100000
-          SCREENING_MAX_STEPS: 15
-          task_class: AUTO
-          default_class: SCREENING
-          status_tool: false
-          # tool_class_map: {}   # 覆盖默认工具→类映射（可选）
-          # handoff:
-          #   owner: '招聘负责人 / approver（正式决策与审批）'
 
 # ---------------------------------------------------------------------------
 # 把本包自带的 DSH skill 接进技能目录扫描根（复用 @deepseek-ai/dsh-skill-filesystem）。

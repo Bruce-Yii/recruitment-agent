@@ -223,12 +223,6 @@
         - '${RECRUITMENT_ALLOWED_ROOT_ORCHESTRATION}'
         - '${RECRUITMENT_ALLOWED_ROOT_CODEX}'
       timeout_ms: 180000
-    # task-78（lead 裁决，2026-11-16）：worker 是长任务执行体（RESUME_PARSE 等），不适用 HR 交互预算；
-    # 本条为 v1.0 **显式关闭**（不是错误，issues 为空），worker 侧成本口径另立（不在 task-78 范围）。
-    # **不要**用"把阈值调大"来糊弄：那会让预算语义对 worker 变成假配置。
-    budget:
-      enabled: false
-
 # ---------------------------------------------------------------------------
 # task-75（同一批）：worker 会话的工程工具面收口（W0 应用，2026-11-16）。
 # P0-3 事故根因之一：worker 拿不到材料路径就全盘 `Get-ChildItem` → 180s WORKER_TIMEOUT。

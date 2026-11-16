@@ -153,9 +153,6 @@ import { RecruitmentToolError } from './tools/errors.ts'
 // 身份解析器由 W0 用 W1 的 Demo Actor 单例注入；未注入/未绑定 → 409 fail-closed。
 import { registerInterviewerHttp, type InterviewerHostContext, type InterviewerSessionActorResolver } from './http/interviewer.ts'
 import { resolveSessionActor } from './demo-actor/index.ts'
-// task-78：Agent 业务成本预算硬闸门（DSH tools.guard()；超限零写 + 交接文本）。
-// 设计与验收口径：work/d5/product-budget/DESIGN.md（§3.7 闸门 / §4 接线）。
-import { installBudgetGuard } from './budget/index.ts'
 
 /** 稳定 cordis 插件名（配置行 id 是 `recruitment`，见 cordis.patch.yml）。 */
 export const name = 'recruitment'
@@ -248,13 +245,6 @@ export interface Config {
    * fail-closed（写工具报 DEMO_ACTOR_UNMAPPED），不静默回退默认值。
    */
   readonly demo_actor_map?: DemoActorMapConfig
-
-  /**
-   * task-78：Agent 业务成本预算（冻结设计 work/d5/product-budget/DESIGN.md §2/§3.2）。
-   * 缺省 = 内置默认阈值（DECISION 200000/25、SCREENING 100000/15）；逐键来源见解析结果的 sources。
-   * 本字段 schema 由 src/budget/config.ts::resolveBudgetConfig 解释，不在此重复校验。
-   */
-  readonly budget?: unknown
 }
 
 /**
@@ -409,16 +399,9 @@ export function apply(
       `recruitment: demo_actor_map 有非法配置（对应 alias 将 fail-closed）：${demoActors.issues.join('; ')}`,
     )
   }
-  // task-78：Agent 业务成本预算硬闸门。DSH tools.guard() 在 pre-execute 之后、工具 body 之前
-  // 同步求值，拒绝不可被后续 listener 翻回（DESIGN.md §1 现场取证）；超限 → 拒绝工具调用 + 交接文本。
-  // * 缺省配置 = 内置默认阈值；status_tool 默认 false（D-128.2：权威工具数 30，开启会变 31）。
-  // * 非 Agent 调用（Host Remote Action / 人类在 UI 上点击的动作）没有 exec.agent.session，
-  //   闸门直接放行——预算约束的是 Agent 会话，不是人的操作（报告如实记为残余风险）。
-  // * dispose 由 ctx.effect 接管：插件卸载即注销 guard，不留全局残留。
-  const budget = installBudgetGuard(ctx, config?.budget, env)
-  // cordis 语义：ctx.effect(execute) 会**立刻调用** execute()，把返回值当清理函数登记；
-  // 因此必须传「返回 dispose 的函数」，不能直接传 budget.dispose（那会装完即卸）。
-  ctx.effect(() => budget.dispose, 'recruitment: agent budget guard')
+  // 注：**不存在"预算"能力**（D-140）。DSH 本身不计费/不限流，产品不自造预算闸门；
+  // 成本相关只做"展示 DSH 已有计量"（`/recruitment/api/usage`，见 src/http/），不拦截。
+  // `src/budget/**` 保留为未启用模块（历史实现，从未安装），不要在此处重新接线。
 
   // 工作台面板（浏览器侧唯一数据入口）：只读、loopback、同源校验；见 src/http/overview.ts。
   //
