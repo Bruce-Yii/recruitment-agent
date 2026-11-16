@@ -11,6 +11,16 @@
 //     该契约 §4 第 6 条要求"统一 or 明确记录例外"——本轮只让新工具用 JSON，
 //     理由与回抄位置见 `README.md` §"错误格式"。
 
+/**
+ * 「未绑定身份」的人话引导（O4）。
+ *
+ * 为什么放在这里：Demo Actor 解析（`src/demo-actor/**`）与 HTTP 各 `errorResponse` 都要说
+ * 同一句话 —— 两处各写一份，措辞迟早漂移。**只补面向人的 message**；
+ * `code` / `reason_code` / `session_id` 等机检字段一个都不动（排障仍按原字段）。
+ */
+export const ACTOR_UNBOUND_HUMAN_HINT =
+  '请先在招聘工作台顶部选择身份（Recruiter / Interviewer A / B），再操作。'
+
 /** 本插件允许抛出的稳定错误码。 */
 export type RecruitmentErrorCode =
   | 'INVALID_ARGS'

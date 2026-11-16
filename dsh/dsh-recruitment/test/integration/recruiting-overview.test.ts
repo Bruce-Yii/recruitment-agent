@@ -806,7 +806,10 @@ test('overview：counts 与独立 SQL 逐项一致；自造申请的 next_step/�
     const cardB = byId.get(appB.applicationId)
     const cardC = byId.get(appC.applicationId)
     assert.ok(cardA && cardB && cardC, '自造申请必须出现在 overview.applications 里')
-    assert.equal(cardA.progress.next_step.code, 'PROVIDE_SCREENING_DECISION')
+    // O12：`seedJob(withRubric:true)` 造的 rubric **没有 approval 行** → 申请钉住的版本未批准，
+    // 人点"记录初筛结论"也会被 NO_APPROVED_RUBRIC 拒；所以真实下一步是"先处理评分标准"。
+    // （旧断言期望 PROVIDE_SCREENING_DECISION，那会让人去点一个做不了的动作 —— 结论由真值派生，收紧。）
+    assert.equal(cardA.progress.next_step.code, 'RESOLVE_RUBRIC_STANDARD')
     assert.equal(cardB.progress.next_step.code, 'WAIT_MATERIAL_INTAKE')
     assert.equal(cardC.progress.next_step.code, 'ADVANCE_STAGE')
     for (const card of [cardA, cardB, cardC]) {
@@ -825,7 +828,8 @@ test('overview：counts 与独立 SQL 逐项一致；自造申请的 next_step/�
     assert.equal(jobCard.code, job.code)
     assert.equal(jobCard.title, job.title)
     assert.equal(jobCard.status, 'OPEN')
-    assert.equal(jobCard.next_step.code, 'PROVIDE_SCREENING_DECISION')
+    // O12：岗位级 next_step 由申请聚合 → 与 cardA 同一真值（钉住 rubric 未批准）。
+    assert.equal(jobCard.next_step.code, 'RESOLVE_RUBRIC_STANDARD')
     const jobAggregate = await rows<{ stage_code: string; n: number; active_n: number }>(client, `
       select current_stage_code as stage_code, count(*)::int as n,
              count(*) filter (where lifecycle_status = 'ACTIVE')::int as active_n
@@ -1373,10 +1377,11 @@ test('job detail：多版本 desc、JD 正文取当前版本、rubric 维度、�
         .sort((left, right) => (left < right ? 1 : left > right ? -1 : 0)))
     const withMaterialCard = detail.applications.find((application) => application.application_id === withMaterial.applicationId)
     const withoutMaterialCard = detail.applications.find((application) => application.application_id === withoutMaterial.applicationId)
-    assert.equal(withMaterialCard?.progress.next_step.code, 'PROVIDE_SCREENING_DECISION')
+    // O12：夹具岗位的 rubric 没有 approval 行 → 钉住版本未批准，真实下一步是"先处理评分标准"。
+    assert.equal(withMaterialCard?.progress.next_step.code, 'RESOLVE_RUBRIC_STANDARD')
     assert.equal(withoutMaterialCard?.progress.next_step.code, 'WAIT_MATERIAL_INTAKE')
-    // 岗位级 next_step：HUMAN_ACTION（初筛决定）优先于 WAIT（缺材料）。
-    assert.equal(detail.job.next_step.code, 'PROVIDE_SCREENING_DECISION')
+    // 岗位级 next_step：同一真值（HUMAN_ACTION 的评分标准处理优先于 WAIT 的缺材料）。
+    assert.equal(detail.job.next_step.code, 'RESOLVE_RUBRIC_STANDARD')
     assert.ok(detail.job.next_step.label.length > 0)
     for (const capability of Object.values(detail.actions)) assert.equal(capability.available, false)
   })

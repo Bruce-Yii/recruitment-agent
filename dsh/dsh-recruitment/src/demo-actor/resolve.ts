@@ -16,7 +16,7 @@
 //   4. `exec.headers['x-dsh-session']` —— 受控 header 兜底（`DEMO_SESSION_HEADER`）
 // 任一来源取不到**合法** session 就继续往下找；四个都取不到 → `DEMO_ACTOR_UNMAPPED`。
 
-import { RecruitmentToolError } from '../tools/errors.ts'
+import { ACTOR_UNBOUND_HUMAN_HINT, RecruitmentToolError } from '../tools/errors.ts'
 import {
   resolveDemoActorMap,
   type DemoActorAlias,
@@ -212,13 +212,24 @@ function readHeader(headers: unknown, name: string): unknown {
 }
 
 /**
- * 造一条 `DEMO_ACTOR_UNMAPPED` 错误（detail 是紧凑 JSON：reason_code + 上下文）。
+ * 造一条 `DEMO_ACTOR_UNMAPPED` 错误（detail 是紧凑 JSON：reason_code + 上下文 + 人话引导）。
+ *
+ * O4：机检字段（reason_code / session_id / alias …）原样保留；额外带 `message` 一句人话
+ * （HTTP 各 `errorResponse` 会把 `parsed.message` 抬到响应 `body.message`，模型/HR 看到的就是这句）。
  * @param reasonCode - 机器可判的原因码。
  * @param detail - 附加上下文（不含任何 secret）。
  * @returns 可抛的错误实例。
  */
 function unmapped(reasonCode: string, detail: Record<string, unknown>): RecruitmentToolError {
-  return new RecruitmentToolError('DEMO_ACTOR_UNMAPPED', JSON.stringify({ reason_code: reasonCode, ...detail }))
+  return new RecruitmentToolError('DEMO_ACTOR_UNMAPPED', JSON.stringify({
+    reason_code: reasonCode,
+    // tool 侧向后兼容：session_id / alias / sources 仍在顶层（既有断言与排障脚本按原路径读）。
+    ...detail,
+    message: ACTOR_UNBOUND_HUMAN_HINT,
+    // HTTP 各 `errorResponse` 只把 code / reason_code / message / detail 抬进响应体；
+    // 同一份机检上下文再放进 detail，浏览器与排障侧仍能读到 session_id（不丢证据）。
+    detail: { ...detail },
+  }))
 }
 
 /**

@@ -90,6 +90,8 @@ const REASON = {
   TYPE_MISMATCH: 'TYPE_MISMATCH',
   ENUM_INVALID: 'ENUM_INVALID',
   ID_NOT_UUID: 'ID_NOT_UUID',
+  /** O3：形状合法但语义伪造的凭据（全零 UUID / 全零 hash）—— 显式拒绝，零写入。 */
+  PLACEHOLDER_CONFIRMATION: 'PLACEHOLDER_CONFIRMATION',
   OUT_OF_RANGE: 'OUT_OF_RANGE',
   RESULT_NOT_IN_V1_SCOPE: 'RESULT_NOT_IN_V1_SCOPE',
   CONFIRMATION_SUBJECT_MISMATCH: 'CONFIRMATION_SUBJECT_MISMATCH',
@@ -130,6 +132,10 @@ const SERVER_DERIVED_KEYS = [
 const IDENTITY_KEYS = ['tenant_id', 'actor_id', 'decided_by_actor_id', 'decided_at', 'stage_code', 'status'] as const
 /** 事实元组：申请 + 岗位 + 部门负责人 + rubric（一次读全）。 */
 const HEX64_RE = /^[0-9a-f]{64}$/
+/** 全零 UUID：形状合法但不是真实身份（O3 的伪造凭据场景）。 */
+const PLACEHOLDER_UUID_RE = /^0{8}-0{4}-0{4}-0{4}-0{12}$/
+/** 占位凭据的人话拒绝语（O3：message 直接给人/模型看）。 */
+const PLACEHOLDER_CONFIRMATION_MESSAGE = '确认人必须是真实身份，不能用占位值'
 /** 确认时间与服务端 now 的允许偏移（只挡明显未来值；领域还会按 decided_at 再校验一次）。 */
 const CONFIRMATION_FUTURE_SKEW_MS = 60_000
 /** 确认原话长度上限（与低层查询同一口径）。 */
@@ -369,10 +375,22 @@ function parseInput(raw: unknown): ParsedInput {
     })
   }
   const confirmedBy = confirmation.confirmed_by_actor_id
-  if (confirmedBy !== undefined && !isUuid(confirmedBy)) {
-    throw toolError('INVALID_ARGS', REASON.ID_NOT_UUID, 'human_confirmation.confirmed_by_actor_id 必须是 UUID', {
-      path: 'human_confirmation.confirmed_by_actor_id',
-    })
+  if (confirmedBy !== undefined) {
+    if (!isUuid(confirmedBy)) {
+      throw toolError('INVALID_ARGS', REASON.ID_NOT_UUID, 'human_confirmation.confirmed_by_actor_id 必须是 UUID', {
+        path: 'human_confirmation.confirmed_by_actor_id',
+      })
+    }
+    // O3：全零 UUID 能通过形状校验，但它不是真实身份 —— 入参层显式拒绝（零写入，
+    // 不能滑到后面"替别人确认"那种难懂的错）。
+    if (PLACEHOLDER_UUID_RE.test(confirmedBy.toLowerCase())) {
+      throw toolError(
+        'INVALID_ARGS',
+        REASON.PLACEHOLDER_CONFIRMATION,
+        `${PLACEHOLDER_CONFIRMATION_MESSAGE}（human_confirmation.confirmed_by_actor_id 是全零 UUID）`,
+        { path: 'human_confirmation.confirmed_by_actor_id' },
+      )
+    }
   }
   return {
     application_id: raw.application_id,

@@ -41,6 +41,8 @@ import {
   type TranscriptState,
   type TranscriptStateSnapshot,
 } from './transcript-read.ts'
+// O14：必交面评进度的**唯一**派生实现（`application_get` 的跨轮合计复用同一个函数）。
+import { deriveRequiredScorecardProgress } from './scorecard-progress.ts'
 import {
   closePool,
   createPool,
@@ -806,26 +808,23 @@ async function loadInterview(
     })
 
   // ---- evaluation（只回显，不写状态）-------------------------------------
+  // O14：required/submitted/waived/pending 的唯一派生在 `scorecard-progress.ts`；
+  // `application_get` 的跨轮合计 import 同一个函数（两处口径不可能再漂移）。
+  const progress = deriveRequiredScorecardProgress(
+    interviewers.map((row) => ({
+      interviewer_id: row.interviewer_id,
+      required_scorecard: row.required_scorecard,
+    })),
+    scorecardRows.map((row) => ({ interviewer_id: row.interviewer_id, status: row.status })),
+  )
+  const { required, submitted, waived, pending } = progress
   const requiredInterviewers = interviewers.filter((row) => row.required_scorecard)
-  const required = requiredInterviewers.length
-  const requiredInterviewerIds = new Set(requiredInterviewers.map((row) => row.interviewer_id))
-  let submitted = 0
-  let waived = 0
   let missingBasis = false
   for (const row of scorecardRows) {
-    // 计数只数 `required_scorecard=true` 的面试官 —— 与下面的 blockers 用**同一个集合**。
-    // 否则"非 required 的面试官交了评、required 的没交"会出现 pending=0 却仍有
-    // SCORECARD_PENDING blocker 的自相矛盾（实现自检时发现的真实缺口）。
-    if (requiredInterviewerIds.has(row.interviewer_id)) {
-      if (row.status === 'SUBMITTED') submitted += 1
-      else if (row.status === 'WAIVED') waived += 1
-    }
     // TR-E2 只约束"已提交"的面评：WAIVED 那一份本来就没有 items（它有 waive_reason），
     // 给它报 MISSING_TRANSCRIPT_BASIS 就是假警报。
     if (row.status === 'SUBMITTED' && !transcriptBasisOf(row.items).present) missingBasis = true
   }
-  // pending 与 submitted/waived 同集合，三者恒满足 `required = submitted + waived + pending`。
-  const pending = Math.max(0, required - submitted - waived)
 
   const blockers: EvaluationBlockerValue[] = []
   for (const row of requiredInterviewers) {

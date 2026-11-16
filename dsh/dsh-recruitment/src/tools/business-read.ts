@@ -51,6 +51,8 @@ import {
 } from '../db/pool.ts'
 import type { ResolvedConverterConfig } from './converter.ts'
 import { readDocumentDetailed, isDocumentReadError } from '../document/readers/index.ts'
+// O14：必交面评进度的**唯一**派生实现（与 interview_get 共用同一份；不许两处各写一套）。
+import { deriveRequiredScorecardProgress } from './scorecard-progress.ts'
 import {
   resolveMaterialPath,
   type MaterialPathReason,
@@ -313,9 +315,18 @@ interface TranscriptRow {
 interface ScorecardRow {
   readonly application_id: string
   readonly id: string
+  /** 面评所属面试官（O14：与 `interviewer.required_scorecard` 同集合计数）。 */
+  readonly interviewer_id: string
   readonly status: string
   readonly overall: string | null
   readonly submitted_at: Date | null
+}
+
+/** 面试官分配行（O14：必交面评的 required 只认这一张表，不认面评行数）。 */
+interface InterviewerRow {
+  readonly application_id: string
+  readonly interviewer_id: string
+  readonly required_scorecard: boolean
 }
 
 /** 决策行（摘要）。 */
@@ -365,6 +376,43 @@ interface RubricSummaryValue {
   readonly approved: boolean
   readonly criteria_count: number
   readonly payload_hash?: string
+}
+
+/**
+ * 输出：评分标准（rubric）修复建议 —— **服务端按 approval 真值生成**（O12）。
+ *
+ * 为什么必须由服务端生成：A1 会话里 Agent 给 HR 的下一步写了「审批岗位的评分标准（v2）」，
+ * 而 v2 当时早已 `APPROVED`；真正卡住的是申请钉住的 v1 未批准。Agent 只应转述这份真值，
+ * 不应自己编"去审批谁"。
+ */
+interface RubricRemediationValue {
+  /**
+   * 封闭码：
+   *   * `CONTINUE_WITH_PINNED`      —— 钉住版本已批准：按钉住版本继续；
+   *   * `PINNED_VERSION_NOT_APPROVED` —— 钉住版本未批准（岗位当前版本可能已批准）：不得建议
+   *        去审批已批准的版本；要按钉住版本继续，先批准钉住版本；
+   *   * `APPROVE_PINNED_VERSION`   —— 钉住版本未批准且岗位没有已批准版本：先批准钉住版本；
+   *   * `NO_RUBRIC_PINNED`         —— 申请没钉住、岗位当前版本已批准：推进阶段时补钉即可；
+   *   * `NO_APPROVED_RUBRIC`       —— 申请没钉住且岗位没有已批准版本：先批准岗位的版本。
+   */
+  readonly code:
+    | 'CONTINUE_WITH_PINNED'
+    | 'PINNED_VERSION_NOT_APPROVED'
+    | 'APPROVE_PINNED_VERSION'
+    | 'NO_RUBRIC_PINNED'
+    | 'NO_APPROVED_RUBRIC'
+  /** 一句人话（Agent 直接转述；**不出现**"去审批已批准的版本"）。 */
+  readonly message: string
+  /** 申请钉住的版本（缺键 = 没钉住）。 */
+  readonly pinned_rubric_version_id?: string
+  readonly pinned_version_no?: number
+  readonly pinned_approved?: boolean
+  /** 岗位当前版本（`job.current_rubric_version_id`）。 */
+  readonly job_current_rubric_version_id?: string
+  readonly job_current_version_no?: number
+  readonly job_current_approved?: boolean
+  /** 是否存在"把申请重绑到已批准版本"的产品入口（当前服务端没有；如实报 false）。 */
+  readonly rebind_action_available: boolean
 }
 
 /** 输出：材料摘要（明细文本归 `recruitment_material_read`）。 */
@@ -419,10 +467,26 @@ interface TranscriptsSummaryValue {
   }
 }
 
-/** 输出：评估摘要。 */
+/**
+ * 输出：评估（面评）摘要。
+ *
+ * O14：`scorecard_count` / `submitted_count` 是**旧键，保留**；数值改为与
+ * `recruitment_interview_get` 同一口径（跨轮 required 汇总 / submitted 汇总）。
+ * 新增 `scorecards_*_total` 让"这是跨轮合计、不是面评行数"这件事显式可读。
+ */
 interface EvaluationsSummaryValue {
+  /** 旧键（保留，数值已改正）：必交面评的面试官总数（= `scorecards_required_total`）。 */
   readonly scorecard_count: number
+  /** 旧键（保留，数值已改正）：其中已提交的份数（= `scorecards_submitted_total`）。 */
   readonly submitted_count: number
+  /** 跨轮必交面评总数（`interviewer.required_scorecard=true` 的面试官数）。 */
+  readonly scorecards_required_total: number
+  /** 跨轮已提交份数（上述面试官当前面评 status=SUBMITTED）。 */
+  readonly scorecards_submitted_total: number
+  /** 跨轮已豁免份数（status=WAIVED）。 */
+  readonly scorecards_waived_total: number
+  /** 跨轮还差几份（required - submitted - waived）。 */
+  readonly scorecards_pending_total: number
   readonly latest_overall?: string
 }
 
@@ -458,6 +522,8 @@ interface ApplicationValue {
   readonly interviews: InterviewsSummaryValue
   readonly transcripts: TranscriptsSummaryValue
   readonly evaluations: EvaluationsSummaryValue
+  /** O12：服务端按 approval 真值生成的 rubric 修复建议（Agent 转述，不自行编造）。 */
+  readonly rubric_remediation: RubricRemediationValue
   readonly decisions: DecisionsSummaryValue
 }
 
@@ -638,11 +704,44 @@ const APPLICATION_VALUE_SCHEMA: Record<string, unknown> = {
     evaluations: {
       type: 'object',
       properties: {
+        // 旧键（保留；O14 起数值 = 跨轮 required / submitted 汇总，不再是"面评行数"）。
         scorecard_count: { type: 'number' },
         submitted_count: { type: 'number' },
+        // O14 新增：让"跨轮合计"显式可读（与 interview_get 的 required_scorecards 同口径）。
+        scorecards_required_total: { type: 'number' },
+        scorecards_submitted_total: { type: 'number' },
+        scorecards_waived_total: { type: 'number' },
+        scorecards_pending_total: { type: 'number' },
         latest_overall: { type: 'string' },
       },
-      required: ['scorecard_count', 'submitted_count'],
+      required: [
+        'scorecard_count', 'submitted_count',
+        'scorecards_required_total', 'scorecards_submitted_total',
+        'scorecards_waived_total', 'scorecards_pending_total',
+      ],
+      additionalProperties: false,
+    },
+    // O12：服务端按 approval 真值生成的 rubric 修复建议（封闭 code + 人话）。
+    rubric_remediation: {
+      type: 'object',
+      properties: {
+        code: {
+          type: 'string',
+          enum: [
+            'CONTINUE_WITH_PINNED', 'PINNED_VERSION_NOT_APPROVED', 'APPROVE_PINNED_VERSION',
+            'NO_RUBRIC_PINNED', 'NO_APPROVED_RUBRIC',
+          ],
+        },
+        message: { type: 'string' },
+        pinned_rubric_version_id: { type: 'string' },
+        pinned_version_no: { type: 'number' },
+        pinned_approved: { type: 'boolean' },
+        job_current_rubric_version_id: { type: 'string' },
+        job_current_version_no: { type: 'number' },
+        job_current_approved: { type: 'boolean' },
+        rebind_action_available: { type: 'boolean' },
+      },
+      required: ['code', 'message', 'rebind_action_available'],
       additionalProperties: false,
     },
     decisions: {
@@ -670,7 +769,7 @@ const APPLICATION_VALUE_SCHEMA: Record<string, unknown> = {
   },
   required: [
     'application_id', 'stage_code', 'lifecycle_status', 'record_version',
-    'candidate', 'job', 'interviews', 'transcripts', 'evaluations', 'decisions',
+    'candidate', 'job', 'interviews', 'transcripts', 'evaluations', 'rubric_remediation', 'decisions',
   ],
   additionalProperties: false,
 }
@@ -883,13 +982,38 @@ async function queryScorecardRows(
 ): Promise<ScorecardRow[]> {
   if (applicationIds.length === 0) return []
   const { rows } = await client.query<ScorecardRow>(
-    `select i.application_id, s.id, s.status, s.overall, s.submitted_at
+    `select i.application_id, s.id, s.interviewer_id, s.status, s.overall, s.submitted_at
        from recruitment.scorecard s
        join recruitment.interview i
          on i.id = s.interview_id and i.tenant_id = s.tenant_id
       where s.tenant_id = $1 and i.application_id = any($2::uuid[])
         and s.superseded_by_scorecard_id is null
       order by i.application_id, s.submitted_at desc nulls last, s.id`,
+    [cfg.tenant_id, [...applicationIds]],
+  )
+  return rows
+}
+
+/**
+ * 面试官分配行（跨轮一起取；O14）。
+ *
+ * 为什么要这张表：`evaluations` 的分母是"必交面评的面试官数"，它由
+ * `interviewer.required_scorecard` 说话 —— 不是"已存在的 scorecard 行数"。
+ * 分母/分子都与 `interview_get` 共用 `deriveRequiredScorecardProgress()`。
+ */
+async function queryInterviewerRows(
+  client: DatabaseClient,
+  cfg: ResolvedDatabaseConfig,
+  applicationIds: readonly string[],
+): Promise<InterviewerRow[]> {
+  if (applicationIds.length === 0) return []
+  const { rows } = await client.query<InterviewerRow>(
+    `select i.application_id, iv.id as interviewer_id, iv.required_scorecard
+       from recruitment.interviewer iv
+       join recruitment.interview i
+         on i.id = iv.interview_id and i.tenant_id = iv.tenant_id
+      where iv.tenant_id = $1 and i.application_id = any($2::uuid[])
+      order by i.application_id, i.round_no, iv.id`,
     [cfg.tenant_id, [...applicationIds]],
   )
   return rows
@@ -938,16 +1062,17 @@ export async function readApplicationValue(
   const resumeVersionIds = rows
     .map((row) => row.resume_version_id)
     .filter((value): value is string => value !== null)
-  const rubricIds = rows
-    .map((row) => row.pinned_rubric_version_id ?? row.current_rubric_version_id)
-    .filter((value): value is string => value !== null)
+  // 钉住版本 + 岗位当前版本都取：O12 的 remediation 要同时看两个版本的批准真值。
+  const rubricIds = [...new Set(rows.flatMap((row) => [row.pinned_rubric_version_id, row.current_rubric_version_id])
+    .filter((value): value is string => value !== null))]
 
-  const [materials, rubrics, interviews, transcripts, scorecards, decisions] = await Promise.all([
+  const [materials, rubrics, interviews, transcripts, scorecards, interviewers, decisions] = await Promise.all([
     queryMaterialRows(client, cfg, resumeVersionIds),
     queryRubricRows(client, cfg, rubricIds),
     queryInterviewRows(client, cfg, applicationIds),
     queryTranscriptRows(client, cfg, applicationIds),
     queryScorecardRows(client, cfg, applicationIds),
+    queryInterviewerRows(client, cfg, applicationIds),
     queryDecisionRows(client, cfg, applicationIds),
   ])
   const materialById = new Map(materials.map((row) => [row.id, row]))
@@ -955,6 +1080,7 @@ export async function readApplicationValue(
   const interviewsByApplication = groupBy(interviews, (row) => row.application_id)
   const transcriptsByApplication = groupBy(transcripts, (row) => row.application_id)
   const scorecardsByApplication = groupBy(scorecards, (row) => row.application_id)
+  const interviewersByApplication = groupBy(interviewers, (row) => row.application_id)
   const decisionsByApplication = groupBy(decisions, (row) => row.application_id)
 
   const visible = args.include_contacts === true
@@ -967,6 +1093,7 @@ export async function readApplicationValue(
     interviewsByApplication.get(row.id) ?? [],
     transcriptsByApplication.get(row.id) ?? [],
     scorecardsByApplication.get(row.id) ?? [],
+    interviewersByApplication.get(row.id) ?? [],
     decisionsByApplication.get(row.id) ?? [],
     visible,
   ))
@@ -1002,6 +1129,7 @@ function toApplicationValue(
   interviews: readonly InterviewRow[],
   transcripts: readonly TranscriptRow[],
   scorecards: readonly ScorecardRow[],
+  interviewers: readonly InterviewerRow[],
   decisions: readonly DecisionRow[],
   contactsVisible: boolean,
 ): ApplicationValue {
@@ -1045,7 +1173,11 @@ function toApplicationValue(
       })),
     },
     transcripts: toTranscriptsSummary(transcripts),
-    evaluations: toEvaluationsSummary(scorecards),
+    evaluations: toEvaluationsSummary(scorecards, interviewers),
+    rubric_remediation: deriveRubricRemediation({
+      pinned: row.pinned_rubric_version_id === null ? undefined : rubricById.get(row.pinned_rubric_version_id),
+      current: row.current_rubric_version_id === null ? undefined : rubricById.get(row.current_rubric_version_id),
+    }),
     decisions: toDecisionsSummary(decisions),
   }
 
@@ -1067,6 +1199,95 @@ function toApplicationValue(
         } as const,
       }),
     ...(material === undefined ? {} : { material: toMaterialSummary(material) }),
+  }
+}
+
+/**
+ * 派生 rubric 修复建议所需的最小真值（完整 `RubricRow` 结构上满足它）。
+ * 单独抽出来是为了让单测能直接构造事实、不必造一整行 rubric。
+ */
+export interface RubricRemediationFacts {
+  readonly id: string
+  readonly version_no: number
+  readonly approved: boolean
+}
+
+/**
+ * 按 approval 真值生成 rubric 修复建议（O12；纯函数，可单测）。
+ *
+ * 三条硬规则（对应 A1 会话里 Agent 编错的那一条）：
+ *   1. **已批准的版本不得出现在"去审批"建议里**（v2 已批准就不再提它要审批）；
+ *   2. 已钉住 v1（未批准）而岗位当前 v2 已批准时：如实说"没有重绑入口"，建议按钉住版本继续，
+ *      且按钉住版本继续前需要先批准 **v1**；
+ *   3. 没有任何已批准版本时才建议"先批准"，并且指向**钉住版本**（钉住优先）而不是岗位当前版本。
+ * @param input.pinned - 申请钉住的 rubric 事实（`undefined` = 未钉住/行缺失）。
+ * @param input.current - 岗位当前 rubric 事实（`job.current_rubric_version_id`）。
+ * @returns 建议（封闭 code + 人话 + 真值字段）。
+ */
+export function deriveRubricRemediation(input: {
+  readonly pinned: RubricRemediationFacts | undefined
+  readonly current: RubricRemediationFacts | undefined
+}): RubricRemediationValue {
+  const { pinned, current } = input
+  const rebind_action_available = false
+  const facts = {
+    rebind_action_available,
+    ...(pinned === undefined
+      ? {}
+      : {
+        pinned_rubric_version_id: pinned.id,
+        pinned_version_no: pinned.version_no,
+        pinned_approved: pinned.approved,
+      }),
+    ...(current === undefined
+      ? {}
+      : {
+        job_current_rubric_version_id: current.id,
+        job_current_version_no: current.version_no,
+        job_current_approved: current.approved,
+      }),
+  } as const
+  if (pinned !== undefined && pinned.approved) {
+    return {
+      ...facts,
+      code: 'CONTINUE_WITH_PINNED',
+      message: `申请钉住的评分标准 v${pinned.version_no} 已批准：按钉住版本继续，不需要再处理其它版本。`,
+    }
+  }
+  if (pinned !== undefined) {
+    if (current !== undefined && current.approved && current.id !== pinned.id) {
+      return {
+        ...facts,
+        code: 'PINNED_VERSION_NOT_APPROVED',
+        message:
+          `申请钉住版本 v${pinned.version_no} 未批准；岗位当前版本 v${current.version_no} 已有生效批准。`
+          + '当前没有"把申请重绑到已批准版本"的产品入口：按钉住版本继续，需要先由人批准 '
+          + `v${pinned.version_no}（不要再处理已批准的 v${current.version_no}）。`,
+      }
+    }
+    return {
+      ...facts,
+      code: 'APPROVE_PINNED_VERSION',
+      message:
+        `申请钉住版本 v${pinned.version_no} 未批准，岗位也没有已批准的版本：`
+        + `先由人批准 v${pinned.version_no}，再按钉住版本继续。`,
+    }
+  }
+  if (current !== undefined && current.approved) {
+    return {
+      ...facts,
+      code: 'NO_RUBRIC_PINNED',
+      message:
+        `申请还没有钉住评分标准；岗位当前版本 v${current.version_no} 已批准。`
+        + '推进阶段时会按当前版本补钉，不需要另行审批。',
+    }
+  }
+  return {
+    ...facts,
+    code: 'NO_APPROVED_RUBRIC',
+    message: current === undefined
+      ? '申请还没有钉住评分标准，岗位也没有当前评分标准：先由人批准岗位的一个评分标准版本，再推进。'
+      : `申请还没有钉住评分标准，岗位当前版本 v${current.version_no} 也未批准：先由人批准岗位的评分标准，再推进。`,
   }
 }
 
@@ -1132,13 +1353,36 @@ function toTranscriptsSummary(rows: readonly TranscriptRow[]): TranscriptsSummar
   }
 }
 
-/** 面评摘要：份数 + 已交数 + 最近一份 overall。 */
-function toEvaluationsSummary(rows: readonly ScorecardRow[]): EvaluationsSummaryValue {
+/**
+ * 面评摘要（O14）：跨轮 required / submitted 汇总 + 最近一份 overall。
+ *
+ * 分母/分子都由 `deriveRequiredScorecardProgress()` 说话（与 `recruitment_interview_get`
+ * 的 `evaluation.required_scorecards / submitted` 是同一份实现、同一集合）：
+ *   * `scorecard_count` / `submitted_count` 是**旧键，保留但数值已改正**（曾是 `0/0`）；
+ *   * `scorecards_*_total` 是显式的跨轮合计键，读的人不用再猜"这是面评行数还是必交份数"。
+ * @param rows - 当前面评行（已过滤 superseded；只用来算 latest_overall）。
+ * @param interviewers - 面试官分配行（跨轮；required 的唯一来源）。
+ */
+function toEvaluationsSummary(
+  rows: readonly ScorecardRow[],
+  interviewers: readonly InterviewerRow[],
+): EvaluationsSummaryValue {
+  const progress = deriveRequiredScorecardProgress(
+    interviewers.map((row) => ({
+      interviewer_id: row.interviewer_id,
+      required_scorecard: row.required_scorecard,
+    })),
+    rows.map((row) => ({ interviewer_id: row.interviewer_id, status: row.status })),
+  )
   const submitted = rows.filter((row) => row.status === 'SUBMITTED')
   const withOverall = submitted.find((row) => row.overall !== null)
   return {
-    scorecard_count: rows.length,
-    submitted_count: submitted.length,
+    scorecard_count: progress.required,
+    submitted_count: progress.submitted,
+    scorecards_required_total: progress.required,
+    scorecards_submitted_total: progress.submitted,
+    scorecards_waived_total: progress.waived,
+    scorecards_pending_total: progress.pending,
     ...(withOverall === undefined ? {} : { latest_overall: withOverall.overall as string }),
   }
 }
@@ -1311,7 +1555,15 @@ function renderApplicationGet(_args: unknown, value: unknown): readonly TextBloc
       `  interviews: ${application.interviews.count} `
         + `[${application.interviews.items.map((item) => `R${item.round_no}/${item.status}`).join(', ')}]`,
       `  transcripts: ${application.transcripts.count} (READY ${application.transcripts.ready_count})`,
-      `  evaluations: ${application.evaluations.submitted_count}/${application.evaluations.scorecard_count} submitted`,
+      // O14：合计口径显式可读（不再只给一个会被读成"面评行数"的 0/0）。
+      `  evaluations: ${application.evaluations.scorecards_submitted_total}/`
+        + `${application.evaluations.scorecards_required_total} submitted `
+        + `(across rounds: required=${application.evaluations.scorecards_required_total}, `
+        + `submitted=${application.evaluations.scorecards_submitted_total}, `
+        + `waived=${application.evaluations.scorecards_waived_total}, `
+        + `pending=${application.evaluations.scorecards_pending_total})`,
+      // O12：服务端算好的修复建议（Agent 只转述，不自己编"去审批谁"）。
+      `  rubric remediation: ${application.rubric_remediation.code} — ${application.rubric_remediation.message}`,
       `  decisions: ${application.decisions.count}`
         + (application.decisions.latest === undefined
           ? ''

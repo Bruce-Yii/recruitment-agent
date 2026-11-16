@@ -11,7 +11,7 @@
 // 注意：服务端重启后注册表为空 = **未绑定 = fail-closed**（`GET /actor` 返 409，
 // 工具写路径抛 `DEMO_ACTOR_UNMAPPED`）；浏览器刷新时客户端重新 PUT 一次即可恢复。
 
-import { RecruitmentToolError } from '../tools/errors.ts'
+import { ACTOR_UNBOUND_HUMAN_HINT, RecruitmentToolError } from '../tools/errors.ts'
 import { isUuidText } from '../db/pool.ts'
 import { parseDemoActorAlias, type DemoActorAlias } from './alias.ts'
 
@@ -206,13 +206,23 @@ function requireSessionKey(value: unknown): string {
 }
 
 /**
- * 造一条 `DEMO_ACTOR_UNMAPPED` 错误（detail 是紧凑 JSON：reason_code + 上下文）。
+ * 造一条 `DEMO_ACTOR_UNMAPPED` 错误（detail 是紧凑 JSON：reason_code + 上下文 + 人话引导）。
+ *
+ * O4：机检字段原样保留；`message` 是给 HR/模型看的一句引导（HTTP `errorResponse` 会抬到 body.message）。
  * @param reasonCode - 机器可判的原因码。
  * @param detail - 附加上下文（不含任何 secret）。
  * @returns 可抛的错误实例。
  */
 function unmapped(reasonCode: string, detail: Record<string, unknown>): RecruitmentToolError {
-  return new RecruitmentToolError('DEMO_ACTOR_UNMAPPED', JSON.stringify({ reason_code: reasonCode, ...detail }))
+  return new RecruitmentToolError('DEMO_ACTOR_UNMAPPED', JSON.stringify({
+    reason_code: reasonCode,
+    // tool 侧向后兼容：session_id / alias 仍在顶层；message 是给人/模型看的一句引导。
+    ...detail,
+    message: ACTOR_UNBOUND_HUMAN_HINT,
+    // HTTP 各 `errorResponse` 只抬 code / reason_code / message / detail；同一份机检上下文再放进
+    // detail，浏览器/排障侧仍能按原字段定位是哪个 session（不丢证据）。
+    detail: { ...detail },
+  }))
 }
 
 /**

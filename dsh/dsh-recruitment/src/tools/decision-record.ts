@@ -596,6 +596,32 @@ function pushViolation(list: Violation[], reason_code: string, path: string, mes
 const HEX64_RE = /^[0-9a-f]{64}$/
 const HEX64_ANY_CASE_RE = /^[0-9a-fA-F]{64}$/
 const ISO_WITH_OFFSET_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/
+/** 全零 UUID（形状合法但是占位值，不是真实身份）。 */
+const PLACEHOLDER_UUID_RE = /^0{8}-0{4}-0{4}-0{4}-0{12}$/
+/** 全零 hex（形状合法但是占位 hash，不是任何真实内容的摘要）。 */
+const PLACEHOLDER_HEX64_RE = /^0{64}$/
+
+/**
+ * 是不是"形状合法的占位凭据"（O3）。
+ *
+ * 背景：A2 会话在 `record_human_decision` 失败后回落到低层 `recruitment_decision_record`，
+ * 参数里带 `confirmed_by_actor_id=00000000-…`、`confirmation_text_sha256=0000…`。
+ * 这两个值都能通过"形状校验"，但语义上是伪造凭据 —— 必须在**入参层**显式拒绝
+ * （`PLACEHOLDER_CONFIRMATION`，人话 message，零写入），而不是等到 hash/身份比对才报难懂的错。
+ * @param value - 已通过形状校验的 UUID / hex 文本。
+ * @returns 是否全零占位值。
+ */
+function isPlaceholderUuid(value: string): boolean {
+  return PLACEHOLDER_UUID_RE.test(value.toLowerCase())
+}
+
+/** 同上：全零 hex 占位 hash。 */
+function isPlaceholderHex64(value: string): boolean {
+  return PLACEHOLDER_HEX64_RE.test(value.toLowerCase())
+}
+
+/** 占位凭据的人话拒绝语（错误 message 直接用它；`PLACEHOLDER_CONFIRMATION` 专用）。 */
+export const PLACEHOLDER_CONFIRMATION_MESSAGE = '确认人必须是真实身份，不能用占位值'
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
@@ -896,8 +922,18 @@ export function parseDecisionArgs(raw: unknown, nowMs: number): DecisionArgs {
         }
       }
       const confirmedBy = humanConfirmation.confirmed_by_actor_id
-      if (confirmedBy !== undefined && !isUuid(confirmedBy)) {
-        pushViolation(violations, 'ID_NOT_UUID', 'human_confirmation.confirmed_by_actor_id', 'confirmed_by_actor_id 必须是 UUID')
+      if (confirmedBy !== undefined) {
+        if (typeof confirmedBy !== 'string' || !isUuid(confirmedBy)) {
+          pushViolation(violations, 'ID_NOT_UUID', 'human_confirmation.confirmed_by_actor_id', 'confirmed_by_actor_id 必须是 UUID')
+        } else if (isPlaceholderUuid(confirmedBy)) {
+          // O3：全零 UUID 形状合法但不是真实身份 —— 明确拒绝（不能滑到后面的"替别人确认"错误）。
+          pushViolation(
+            violations,
+            'PLACEHOLDER_CONFIRMATION',
+            'human_confirmation.confirmed_by_actor_id',
+            `${PLACEHOLDER_CONFIRMATION_MESSAGE}（confirmed_by_actor_id 是全零 UUID）`,
+          )
+        }
       }
       const confirmedAt = humanConfirmation.confirmed_at
       if (confirmedAt !== undefined && (typeof confirmedAt !== 'string' || !ISO_WITH_OFFSET_RE.test(confirmedAt))) {
@@ -944,13 +980,23 @@ export function parseDecisionArgs(raw: unknown, nowMs: number): DecisionArgs {
         )
       }
       const textHash = humanConfirmation.confirmation_text_sha256
-      if (textHash !== undefined && (typeof textHash !== 'string' || !HEX64_ANY_CASE_RE.test(textHash))) {
-        pushViolation(
-          violations,
-          'TYPE_MISMATCH',
-          'human_confirmation.confirmation_text_sha256',
-          'confirmation_text_sha256 必须是 64 位 hex',
-        )
+      if (textHash !== undefined) {
+        if (typeof textHash !== 'string' || !HEX64_ANY_CASE_RE.test(textHash)) {
+          pushViolation(
+            violations,
+            'TYPE_MISMATCH',
+            'human_confirmation.confirmation_text_sha256',
+            'confirmation_text_sha256 必须是 64 位 hex',
+          )
+        } else if (isPlaceholderHex64(textHash)) {
+          // O3：全零是占位值（不是任何真实确认内容的摘要）—— 明确拒绝，零写入。
+          pushViolation(
+            violations,
+            'PLACEHOLDER_CONFIRMATION',
+            'human_confirmation.confirmation_text_sha256',
+            '确认内容的 hash 不能是占位值（confirmation_text_sha256 不得为全零 hex）',
+          )
+        }
       }
     }
   }
@@ -1088,7 +1134,12 @@ export function parseDecisionArgs(raw: unknown, nowMs: number): DecisionArgs {
 
   if (violations.length > 0) {
     const first = violations[0] as Violation
-    throw evalError('INVALID_ARGS', first.reason_code, '参数不合法，逐条见 detail.violations', {
+    // O3：占位凭据给一句面向人/模型的原话（"确认人必须是真实身份，不能用占位值"），
+    // 其它参数错误保持既有通用 message（契约既有断言依赖它）。
+    const message = first.reason_code === 'PLACEHOLDER_CONFIRMATION'
+      ? first.message
+      : '参数不合法，逐条见 detail.violations'
+    throw evalError('INVALID_ARGS', first.reason_code, message, {
       allowed: Object.keys(PARAMETERS.properties as Record<string, unknown>),
       violations,
     })

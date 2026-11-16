@@ -616,6 +616,8 @@ const RECRUITING_LABELS: ThreeDimLabels = { provenance: 'LIVE', trigger: 'MANUAL
 const APPLICATION_NEXT_STEP_LABELS: Readonly<Record<string, string>> = {
   WAIT_MATERIAL_INTAKE: '等待材料接入：该申请还没有可读的简历材料',
   MATERIAL_PARSE_FAILED: '材料解析失败：需要人工补齐或重新上传简历',
+  // O12：申请钉住的评分标准未批准时，真实下一步是先处理标准（人点了"记录初筛结论"也做不了）。
+  RESOLVE_RUBRIC_STANDARD: '先处理评分标准：申请钉住的评分标准版本尚未批准，批准前无法记录初筛结论',
   PROVIDE_SCREENING_DECISION: '等待初筛决定：材料已就绪，还没有人工作出筛选结论',
   SCHEDULE_INTERVIEW: '安排面试：初筛已有结论，还没有排期面试',
   ADVANCE_STAGE: '推进阶段：初筛结论已记录，等待推进到下一阶段',
@@ -630,6 +632,7 @@ const APPLICATION_NEXT_STEP_LABELS: Readonly<Record<string, string>> = {
 const JOB_NEXT_STEP_LABELS: Readonly<Record<string, string>> = {
   WAIT_MATERIAL_INTAKE: '岗位下有申请等待材料接入',
   MATERIAL_PARSE_FAILED: '岗位下有申请材料解析失败，需要人工处理',
+  RESOLVE_RUBRIC_STANDARD: '岗位下有申请的评分标准版本尚未批准，需要先处理评分标准',
   PROVIDE_SCREENING_DECISION: '岗位下有申请等待初筛决定',
   SCHEDULE_INTERVIEW: '岗位下有申请等待安排面试',
   ADVANCE_STAGE: '岗位下申请等待阶段推进',
@@ -645,7 +648,7 @@ const JOB_NEXT_STEP_LABELS: Readonly<Record<string, string>> = {
 
 /** 下一步 code 的稳定优先级（只用于岗位聚合：先 HUMAN_ACTION，再 WAIT，再 INFO）。 */
 const NEXT_STEP_PRIORITY: readonly string[] = [
-  'MATERIAL_PARSE_FAILED', 'PROVIDE_SCREENING_DECISION', 'PROVIDE_DECISION',
+  'MATERIAL_PARSE_FAILED', 'RESOLVE_RUBRIC_STANDARD', 'PROVIDE_SCREENING_DECISION', 'PROVIDE_DECISION',
   'SCHEDULE_INTERVIEW', 'ADVANCE_STAGE',
   'WAIT_MATERIAL_INTAKE', 'WAIT_SCORECARDS',
   'PREPARE_INTERVIEW', 'IN_PROGRESS', 'CLOSED',
@@ -1004,6 +1007,13 @@ export interface ApplicationGateFacts {
   readonly has_scheduled_interview: boolean
   readonly has_post_interview_scorecard_gap: boolean
   readonly has_current_stage_decision: boolean
+  /**
+   * O12：申请钉住的 rubric 版本是否已批准（`true`/`false`；`null`/缺省 = 没钉住或未知）。
+   * 只用来把"等待初筛决定"这种点不动的结论换成真值：未批准的标准下，初筛决定做不了。
+   */
+  readonly pinned_rubric_approved?: boolean | null
+  /** 申请钉住的 rubric 版本号（仅用于文案与排障；判定只认 `pinned_rubric_approved`）。 */
+  readonly pinned_rubric_version_no?: number | null
 }
 
 /**
@@ -1037,6 +1047,15 @@ export function deriveApplicationNextStep(facts: ApplicationGateFacts): Recruiti
   if (facts.lifecycle_status !== 'ACTIVE') return nextStep('CLOSED', 'INFO')
   if (!facts.has_material) return nextStep('WAIT_MATERIAL_INTAKE', 'WAIT')
   if (facts.parse_status === 'FAILED') return nextStep('MATERIAL_PARSE_FAILED', 'HUMAN_ACTION')
+  // O12：申请钉住的评分标准未批准时，"等待初筛决定"是误导（人点了也做不了）。
+  // 只有明确知道未批准（=== false）才切换；未知/缺省保持原判定，不猜。
+  if (
+    (facts.current_stage_code === 'S6' || facts.current_stage_code === 'S7')
+    && !facts.has_current_screening_decision
+    && facts.pinned_rubric_approved === false
+  ) {
+    return nextStep('RESOLVE_RUBRIC_STANDARD', 'HUMAN_ACTION')
+  }
   if (facts.current_stage_code === 'S7' && !facts.has_current_screening_decision) {
     return nextStep('PROVIDE_SCREENING_DECISION', 'HUMAN_ACTION')
   }
@@ -2236,6 +2255,11 @@ async function loadApplicationCards(
         (item) => item.is_current && item.stage_code === 'S10'
           && (item.decision_scope === 'STAGE' || item.decision_scope === 'FINAL'),
       ),
+      // O12：钉住版本的批准真值（没钉住 → null；不把"没钉住"当成"未批准"）。
+      pinned_rubric_approved: row.application_rubric_version_id === null
+        ? null
+        : row.application_rubric_approved === true,
+      pinned_rubric_version_no: row.application_rubric_version_no,
     })
     cards.push({
       application_id: row.application_id,

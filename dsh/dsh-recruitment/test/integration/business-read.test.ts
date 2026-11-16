@@ -147,9 +147,18 @@ test('application_get：真库读回一条申请（申请人/岗位/阶段/rubri
     assert.notEqual(application.material.source_asset_sha256, application.material.content_sha256)
 
     // 家族事实：没有面试/转写/面评/决策时如实计数 0（不编造）。
+    // O14：`evaluations` 的口径改为「跨轮必交面评汇总」（与 interview_get 同一派生函数），
+    // 旧键保留、数值改为同一真值；新键显式说明这是跨轮合计（本断言随之改为新形状 —— 收紧，不是放宽）。
     assert.deepEqual(application.interviews, { count: 0, items: [] })
     assert.deepEqual(application.transcripts, { count: 0, ready_count: 0 })
-    assert.deepEqual(application.evaluations, { scorecard_count: 0, submitted_count: 0 })
+    assert.deepEqual(application.evaluations, {
+      scorecard_count: 0,
+      submitted_count: 0,
+      scorecards_required_total: 0,
+      scorecards_submitted_total: 0,
+      scorecards_waived_total: 0,
+      scorecards_pending_total: 0,
+    })
     assert.deepEqual(application.decisions, { count: 0 })
 
     // 下一步建议只指向产品工具（避免下沉到 shell/psql）。
