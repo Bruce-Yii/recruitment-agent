@@ -730,6 +730,23 @@ window.__ModuleLoader__.load({
 			return out;
 		}
 		/**
+		* 结构性阻塞码 → HR 人话（O6：机器码不进可见文案；未知码给中性兜底，原文仍在数据层）。
+		* @param code - `screeningDecisionBlockers` / `decisionRecordBlockers` 产出的封闭码。
+		* @returns 可读的缺什么说明。
+		*/
+		function blockerTextOf(code) {
+			return {
+				DECISION_FACTS_MISSING: "决策依据还没有读取",
+				MISSING_RUBRIC_PAYLOAD_HASH: "评分标准快照还没有准备好",
+				MISSING_AUTHORITY_FACTS: "审批 / 授权依据还没有准备好",
+				MISSING_AS_OF: "决策时点还没有生成",
+				AS_OF_WITHOUT_OFFSET: "决策时点缺少时区（请刷新后重试）",
+				MISSING_SCREENING_EVALUATION: "还没有初筛评估",
+				SUMMARY_MISSING: "决策汇总还没有生成",
+				MISSING_DECISION_BASIS: "决策依据还没有准备好"
+			}[code] ?? "还有一项前置事实没有准备好";
+		}
+		/**
 		* `screening/decide` body：`{application_id, as_of, result, reason, basis_refs[]}`。
 		*
 		* basis_refs **只能**从 facts 组装（`RUBRIC_VERSION` / `AUTHORITY` / `SCREENING_EVALUATION`）：
@@ -1334,9 +1351,9 @@ window.__ModuleLoader__.load({
 		};
 		/** 后端 pending 机器码 → 给人看的原因（未知码原样显示，不吞掉）。 */
 		const PENDING_REASON_TEXT = {
-			ACTION_SEAM_NOT_WIRED: "后端 action seam 尚未接线（宿主接线点未提供）",
-			ACTION_SEAM_MISSING: "服务端声明可用但没有给出 seam 路径（fail-closed）",
-			NOT_IMPLEMENTED: "后端写路径尚未实现"
+			ACTION_SEAM_NOT_WIRED: "这个操作在当前版本尚未接线（页面没有提供入口）",
+			ACTION_SEAM_MISSING: "服务端声明可用，但没有给出可执行入口（按不可用处理）",
+			NOT_IMPLEMENTED: "这个操作还没有实现"
 		};
 		/** 阶段码 → 默认中文名（`stage_catalog` 缺失时的展示兜底；权威标签仍以服务端 catalog 为准）。 */
 		const DEFAULT_STAGE_LABELS = {
@@ -1575,13 +1592,20 @@ window.__ModuleLoader__.load({
 			AUTH_REQUIRED: "red",
 			NEEDS_LINKING: "amber"
 		};
-		/** `TranscriptSummary.state` → 中文 + 色档（客户端消费的稳定枚举）。 */
+		/**
+		* `TranscriptSummary.state` → 中文 + 色档（客户端消费的稳定枚举）。
+		*
+		* O7 / D-133：转写是"收到什么就是什么"的**输入事实**，不是给 HR 的缺件清单
+		* （禁止"缺失 / 缺件"叙事）；只允许三种口径：
+		*   已收到（READY / PROCESSING）· 还没有转写（NOT_READY / MISSING）· 处理失败（FAILED）。
+		* 枚举键与色档映射保持不变（色档只表达"要不要注意"）。
+		*/
 		const TRANSCRIPT_STATE_LABELS = {
-			READY: "已就绪",
+			READY: "已收到",
 			PROCESSING: "处理中",
-			NOT_READY: "未就绪",
-			FAILED: "失败",
-			MISSING: "缺失"
+			NOT_READY: "还没有转写",
+			FAILED: "处理失败",
+			MISSING: "还没有转写"
 		};
 		const TRANSCRIPT_STATE_TONES = {
 			READY: "green",
@@ -2078,23 +2102,49 @@ window.__ModuleLoader__.load({
 					submitted,
 					missing,
 					overdue,
-					summaryText: required === 0 ? "无需面评" : `已提交 ${String(submitted)}/${String(required)}`,
+					summaryText: required === 0 ? "无需面评" : roundNo > 0 ? `已提交 ${String(submitted)}/${String(required)}（第 ${String(roundNo)} 轮）` : `已提交 ${String(submitted)}/${String(required)}`,
 					tone: required === 0 ? "gray" : complete ? "green" : overdue > 0 ? "red" : "amber"
 				},
 				transcript: normalizeTranscript$1(raw.transcript),
 				roundFocus: normalizeRoundFocus$1(raw.round_focus)
 			};
 		}
-		/** 从服务端进度聚合出"面评进度"（不重算业务数）。 */
-		function buildScorecardProgress(value) {
+		/**
+		* 从服务端进度聚合出"面评进度"（不重算业务数）。
+		*
+		* O9：`scorecards_required` 是**跨轮应提交份数合计**（例：第 1 轮 1 份 + 第 2 轮 2 份 = 3），
+		* 不是"3 个面试官"。所以这里只用**同一份数据**里的 `interviews[]`（每轮 `round_no` +
+		* `scorecards.required_total/submitted`）把轮次口径说出来，不新增服务端字段、不改数字。
+		*
+		* 口径不编造规则（两条同时满足才写逐轮明细）：① 至少 2 轮——单轮时 `x/y` 不会读成"面试官人数"，
+		* 不必加括注；② 逐轮 required 之和必须等于服务端聚合 required。对不上 / 只有一轮时只给总数，
+		* 绝不凭空造轮次。
+		* @param value - `progress` 段（`scorecards_required` / `scorecards_submitted`）。
+		* @param interviews - 同一份申请数据里的面试轮次（缺省 = 没有逐轮口径）。
+		*/
+		function buildScorecardProgress(value, interviews = []) {
 			const raw = record(value);
 			const required = count(raw.scorecards_required);
 			const submitted = count(raw.scorecards_submitted);
 			const complete = required > 0 && submitted >= required;
+			const rounds = [];
+			for (const interview of interviews) {
+				if (interview.roundNo <= 0 || interview.scorecards.required <= 0) continue;
+				rounds.push({
+					roundNo: interview.roundNo,
+					required: interview.scorecards.required,
+					submitted: interview.scorecards.submitted
+				});
+			}
+			const sumRequired = rounds.reduce((total, round) => total + round.required, 0);
+			const perRound = rounds.length >= 2 && sumRequired === required;
+			const breakdown = perRound ? rounds.map((round) => `第 ${String(round.roundNo)} 轮 ${String(round.required)} 份`).join(" / ") : `跨 ${String(rounds.length)} 轮合计`;
+			const suffix = rounds.length >= 2 ? `（${breakdown}）` : "";
 			return {
 				required,
 				submitted,
-				summaryText: required === 0 ? "无需面评" : `已提交 ${String(submitted)}/${String(required)}`,
+				rounds: perRound ? rounds : [],
+				summaryText: required === 0 ? "无需面评" : `已提交 ${String(submitted)}/${String(required)}${suffix}`,
 				tone: required === 0 ? "gray" : complete ? "green" : "amber"
 			};
 		}
@@ -2200,6 +2250,12 @@ window.__ModuleLoader__.load({
 			]) || text(raw.lifecycle_status);
 			const stageCode = text(raw.current_stage_code);
 			const candidateName = text(candidate.display_name);
+			const applicationRubricRaw = record(raw.rubric);
+			const applicationRubricVersionNo = count(applicationRubricRaw.version_no);
+			const applicationRubric = applicationRubricVersionNo > 0 ? {
+				versionNo: applicationRubricVersionNo,
+				approved: bool(applicationRubricRaw.approved)
+			} : null;
 			return {
 				id,
 				rowKey: id !== "" ? id : `application-${text(job.job_id)}-${String(count(raw.record_version))}`,
@@ -2220,8 +2276,24 @@ window.__ModuleLoader__.load({
 				appliedAt: text(raw.applied_at),
 				appliedAtText: formatDateTime(raw.applied_at),
 				stageBlockedReason: text(raw.stage_blocked_reason),
-				recordVersion: count(raw.record_version)
+				recordVersion: count(raw.record_version),
+				applicationRubric
 			};
+		}
+		/**
+		* 申请钉住的评分标准一行文案（O13：与"岗位当前评分标准"分开出现，绝不并成一句）。
+		* `null` = 该申请没有钉住版本（服务端 `application.rubric = null`），如实写"未钉住"。
+		*/
+		function applicationRubricTextOf(value) {
+			if (value === null) return "未钉住";
+			return `v${String(value.versionNo)} · ${value.approved ? "已批准" : "未批准"}`;
+		}
+		/**
+		* 设置入口说明的 HR 文案（O6：服务端 `settings.entry.note` 原文里可能带 `seam` / href / 机器码，
+		* 主文案不展示原文；原文保留在 `settings.entry.note` 数据层，供证据/排障读取）。
+		*/
+		function settingsEntryNoteText(entry) {
+			return entry.available ? "设置页已可用" : "设置页暂不可用（当前只读）";
 		}
 		/** 面试列表（详情与行共用同一套归一化）。 */
 		function buildInterviews(value, context) {
@@ -2243,7 +2315,7 @@ window.__ModuleLoader__.load({
 			const interviews = buildInterviews(raw.interviews, context);
 			const interviewSummary = interviewSummaryOf(interviews);
 			const progress = record(raw.progress);
-			const scorecardProgress = buildScorecardProgress(progress);
+			const scorecardProgress = buildScorecardProgress(progress, interviews);
 			const transcriptSummary = transcriptSummaryOf(progress.transcript_state);
 			const nextStep = normalizeNextStep(progress.next_step);
 			const filterKind = nextStep.code === "PROVIDE_SCREENING_DECISION" || header.stageCode === "S7" ? "screening" : nextStep.code === "PREPARE_INTERVIEW" || nextStep.code === "WAIT_SCORECARDS" || header.stageCode === "S8" || header.stageCode === "S9" ? "interviewing" : "other";
@@ -2286,7 +2358,7 @@ window.__ModuleLoader__.load({
 				approved: bool(rubricRaw.approved),
 				dimensionCount: count(rubricRaw.dimension_count),
 				summaryText: joinTexts([
-					`Rubric r${String(count(rubricRaw.version_no))}`,
+					`岗位当前 Rubric v${String(count(rubricRaw.version_no))}`,
 					`${String(count(rubricRaw.dimension_count))} 个维度`,
 					bool(rubricRaw.approved) ? "已批准" : "未批准"
 				]),
@@ -2701,7 +2773,7 @@ window.__ModuleLoader__.load({
 					basis
 				},
 				interviews,
-				scorecardProgress: buildScorecardProgress(progress),
+				scorecardProgress: buildScorecardProgress(progress, interviews),
 				transcriptSummary: transcriptSummary.summary,
 				transcriptTone: transcriptSummary.tone,
 				transcriptRuns,
@@ -3753,7 +3825,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** 业务结论 + 下一步（**每视图唯一一份**；`data-testid="next-step"` 供浏览器证据读）。 */
-		function NextStepPanel({ step, scope, fallback = "服务端未提供下一步", testid = "next-step" }) {
+		function NextStepPanel({ step, scope, fallback = "暂无下一步", testid = "next-step" }) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "rcw-nextstep",
 				"data-testid": testid,
@@ -3771,21 +3843,19 @@ window.__ModuleLoader__.load({
 						children: [step.kindLabel !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 							tone: step.tone,
 							children: step.kindLabel
-						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
-							tone: step.tone,
-							children: "未分类"
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
+						}) : null, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
 							"data-testid": "next-step-label",
-							children: step.label !== "" ? step.label : step.code !== "" ? step.code : fallback
+							children: step.label !== "" ? step.label : fallback
 						})]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "rcw-nextstep-meta",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: ["机器码：", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: "rcw-code",
 							"data-testid": "next-step-code",
-							children: step.code !== "" ? step.code : "—"
-						})] }), !step.hasStep ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "服务端没有给出这一步，界面不推断" }) : null]
+							"data-code": step.code,
+							hidden: true
+						}), !step.hasStep ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "还没有下一步信息" }) : null]
 					})
 				]
 			});
@@ -4139,13 +4209,14 @@ window.__ModuleLoader__.load({
 						})] }),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: "rcw-sub",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "rcw-mono",
-								children: header.id !== "" ? header.id : "（服务端未提供申请 id）"
+							"data-application-id": header.id !== "" ? header.id : void 0,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "rcw-dim",
+								children: ["岗位编号 ", header.jobCode !== "" ? header.jobCode : "（未提供）"]
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 								className: "rcw-dim",
 								style: { marginLeft: 8 },
-								children: ["岗位申请 · 版本 ", header.recordVersion]
+								children: ["申请记录版本 ", header.recordVersion]
 							})]
 						})
 					]
@@ -4161,6 +4232,11 @@ window.__ModuleLoader__.load({
 							tone: header.lifecycleTone,
 							testid: "detail-lifecycle",
 							children: ["申请状态 · ", header.lifecycleLabel]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
+							tone: header.applicationRubric === null ? "gray" : header.applicationRubric.approved ? "green" : "amber",
+							testid: "detail-application-rubric",
+							children: ["本申请钉住 Rubric · ", applicationRubricTextOf(header.applicationRubric)]
 						}),
 						refreshButton
 					]
@@ -4455,7 +4531,7 @@ window.__ModuleLoader__.load({
 					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", { children: "Rubric 维度快照" }), rubric !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						className: "rcw-dim rcw-tiny",
 						children: [
-							"rubric r",
+							"初筛结论所用 Rubric 快照 · v",
 							String(rubric.versionNo),
 							" · ",
 							rubric.dimensions.length,
@@ -4550,7 +4626,7 @@ window.__ModuleLoader__.load({
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(KeyValue, {
 								label: "面评进度",
-								value: interview.scorecards.required === 0 ? "该轮不需要面评" : `已提交 ${String(interview.scorecards.submitted)} / 必需 ${String(interview.scorecards.required)} · 缺失 ${String(interview.scorecards.missing)} · 逾期 ${String(interview.scorecards.overdue)}`
+								value: interview.scorecards.required === 0 ? "该轮不需要面评" : `已提交 ${String(interview.scorecards.submitted)} / 必需 ${String(interview.scorecards.required)} · 未提交 ${String(interview.scorecards.missing)} · 逾期 ${String(interview.scorecards.overdue)}`
 							})
 						]
 					}),
@@ -4893,17 +4969,16 @@ window.__ModuleLoader__.load({
 		}
 		/** 结构性禁用原因（服务端不可用 / alias 越权 / 提交中）；空串 = 结构上可提交。 */
 		function structuralReason(action, binding) {
-			if (action === void 0) return "ACTION_SEAM_NOT_WIRED：服务端 actions 里没有该动作键";
-			if (!action.available) return `${action.pending !== "" ? action.pending : "ACTION_SEAM_NOT_WIRED"}：${action.reasonText !== "" ? action.reasonText : action.pendingText}`;
-			if (binding.aliasBlocked) return `ALIAS_BLOCKED：${binding.aliasNote !== "" ? binding.aliasNote : "当前 alias 不可执行写操作"}`;
+			if (action === void 0) return "当前页面版本没有提供这个操作";
+			if (!action.available) return action.reasonText !== "" ? action.reasonText : "这个操作暂时不可用";
+			if (binding.aliasBlocked) return `${binding.aliasNote !== "" ? binding.aliasNote : "当前身份不能执行写操作，请切换到招聘方身份"}`;
 			if (binding.pending) return "提交中…";
 			return "";
 		}
-		/** build 失败 → 人读禁用原因（reasonCode 在前，浏览器证据可直接读）。 */
+		/** build 失败 → 人读禁用原因（机器码留在数据层，文案只给 HR 能执行的下一步）。 */
 		function buildReasonOf(built) {
 			if (built.ok) return "";
-			const missing = built.missing.length > 0 ? `（missing: ${built.missing.join(", ")}）` : "";
-			return `${built.reasonCode}：${built.reasonText}${missing}`;
+			return built.reasonText !== "" ? built.reasonText : "表单还没有填完整，请检查必填项";
 		}
 		/** P0 `stage/advance`：点击即提交 `{application_id}`（服务端按已发生事实推导目标阶段）。 */
 		function StageAdvanceForm({ action, applicationId, aliasBlocked, aliasNote, pending, onRunAction }) {
@@ -4965,7 +5040,7 @@ window.__ModuleLoader__.load({
 					pending
 				}),
 				factsBlockedReason,
-				blockers.length > 0 ? blockers.join("、") : ""
+				blockers.length > 0 ? blockers.map(blockerTextOf).join("、") : ""
 			].filter((part) => part !== "").join("；");
 			const disabled = blockedReason !== "";
 			const evaluateBlocked = evaluateDisabledReason !== "";
@@ -4979,7 +5054,7 @@ window.__ModuleLoader__.load({
 						className: "rcw-alert",
 						"data-testid": "screening-disabled-reason",
 						style: { marginTop: 6 },
-						children: [factsBlockedReason, blockers.join("、")].filter((part) => part !== "").join("；")
+						children: [factsBlockedReason, blockers.map(blockerTextOf).join("、")].filter((part) => part !== "").join("；")
 					}) : null,
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FormField, {
 						label: "结论（result）",
@@ -5084,7 +5159,7 @@ window.__ModuleLoader__.load({
 				aliasBlocked,
 				aliasNote,
 				pending
-			}), candidates.length === 0 ? "MISSING_INTERVIEWER_CANDIDATES：settings.hiringTeams 里没有可用人员" : ""].filter((part) => part !== "").join("；");
+			}), candidates.length === 0 ? "还没有可选的面试官：招聘团队里没有可用人员，请先在招聘设置里补上" : ""].filter((part) => part !== "").join("；");
 			const disabled = blockedReason !== "";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(ActionCard, {
 				actionKey: "interview_schedule",
@@ -5207,7 +5282,7 @@ window.__ModuleLoader__.load({
 				aliasBlocked,
 				aliasNote,
 				pending
-			}), choices.length === 0 ? "MISSING_TARGET_INTERVIEW：该申请没有可关联的面试" : ""].filter((part) => part !== "").join("；");
+			}), choices.length === 0 ? "这个申请还没有可关联的面试，请先安排面试" : ""].filter((part) => part !== "").join("；");
 			const disabled = blockedReason !== "";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(ActionCard, {
 				actionKey: "transcript_import",
@@ -5327,16 +5402,16 @@ window.__ModuleLoader__.load({
 			const [result, setResult] = (0, react.useState)("ADVANCE");
 			const [reason, setReason] = (0, react.useState)("");
 			const [localError, setLocalError] = (0, react.useState)("");
-			const factsProbeReason = decisionFactsProbe === "MISSING" ? "DECISION_FACTS_ROUTE_MISSING：决策事实路由未接线（GET /recruitment/api/decision/facts 404）；客户端不发请求" : decisionFactsProbe === "ERROR" ? "DECISION_FACTS_ERROR：决策事实读取失败（看服务端原文）" : decisionFactsProbe === "LOADING" ? "DECISION_FACTS_LOADING：正在读取决策事实投影" : decisionFacts === void 0 ? "DECISION_FACTS_ROUTE_MISSING：决策事实投影未提供（workspace 未传入 decisionFacts）" : "";
+			const factsProbeReason = decisionFactsProbe === "MISSING" ? "还不能记录决策：决策依据暂时读不到，请稍后重试" : decisionFactsProbe === "ERROR" ? "决策依据读取失败，请稍后重试；如果一直失败请联系管理员" : decisionFactsProbe === "LOADING" ? "正在读取决策依据…" : decisionFacts === void 0 ? "还不能记录决策：决策依据还没有读取" : "";
 			const blockers = decisionRecordBlockers(decisionFacts ?? null);
 			const blockedReason = [
 				...[
-					aliasBlocked ? `ALIAS_BLOCKED：${aliasNote !== "" ? aliasNote : "当前 alias 不可执行写操作"}` : "",
+					aliasBlocked ? `${aliasNote !== "" ? aliasNote : "当前身份不能执行写操作，请切换到招聘方身份"}` : "",
 					pending ? "提交中…" : "",
-					onDecisionRecord === void 0 ? "WORKSPACE_CALLBACK_MISSING：workspace 未注入 onDecisionRecord（facade 未接线）" : ""
+					onDecisionRecord === void 0 ? "当前页面版本没有提供「记录正式决策」操作" : ""
 				].filter((part) => part !== ""),
 				factsProbeReason,
-				blockers.length > 0 ? blockers.join("、") : ""
+				blockers.length > 0 ? blockers.map(blockerTextOf).join("、") : ""
 			].filter((part) => part !== "").join("；");
 			const disabled = blockedReason !== "";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(ActionCard, {
@@ -5565,13 +5640,13 @@ window.__ModuleLoader__.load({
 			const outcomes = [];
 			if (props.actionOutcome !== void 0) outcomes.push(props.actionOutcome);
 			if (localOutcome !== void 0) outcomes.push(localOutcome);
-			const factsProbeReason = props.decisionFactsProbe === "MISSING" ? "DECISION_FACTS_ROUTE_MISSING：决策事实只读路由未接线（GET /recruitment/api/decision/facts 404），表单 disabled，不发请求" : props.decisionFactsProbe === "ERROR" ? "DECISION_FACTS_ERROR：决策事实读取失败（看服务端原文）" : props.decisionFactsProbe === "LOADING" ? "DECISION_FACTS_LOADING：正在读取决策事实投影" : props.decisionFacts === void 0 ? "DECISION_FACTS_ROUTE_MISSING：决策事实投影未提供（未接线 facts 路由 / workspace 未传入）" : "";
+			const factsProbeReason = props.decisionFactsProbe === "MISSING" ? "还不能执行初筛评估：决策依据暂时读不到，请稍后重试" : props.decisionFactsProbe === "ERROR" ? "决策依据读取失败，请稍后重试；如果一直失败请联系管理员" : props.decisionFactsProbe === "LOADING" ? "正在读取决策依据…" : props.decisionFacts === void 0 ? "还不能执行初筛评估：决策依据还没有读取" : "";
 			const evaluationPresent = (props.decisionFacts?.screeningEvaluation ?? null) !== null;
 			const evaluateDisabledReason = [
-				props.aliasBlocked ? "ALIAS_BLOCKED：当前 alias 不可执行写操作" : "",
-				props.onScreeningEvaluate === void 0 ? "WORKSPACE_CALLBACK_MISSING：workspace 未注入 onScreeningEvaluate" : "",
+				props.aliasBlocked ? "当前身份不能执行写操作，请切换到招聘方身份" : "",
+				props.onScreeningEvaluate === void 0 ? "当前页面版本没有提供「执行初筛评估」操作" : "",
 				factsProbeReason,
-				evaluationPresent ? "SCREENING_EVALUATION_PRESENT：facts 已有初筛评估，无需重复执行" : "",
+				evaluationPresent ? "已经有初筛评估，不需要重复执行" : "",
 				pendingKey === "screening_evaluate" ? "提交中…" : ""
 			].filter((part) => part !== "");
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
@@ -5617,15 +5692,15 @@ window.__ModuleLoader__.load({
 									"data-testid": "detail-actions",
 									children: actionList.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										className: "rcw-dim rcw-tiny",
-										children: "服务端 actions 里没有可用的申请级写动作。"
+										children: "当前申请没有可用的写操作。"
 									}) : actionList.map((action) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 										tone: action.available ? "blue" : "gray",
 										testid: `detail-action-${action.key}`,
-										title: action.available ? action.seam : action.pendingText,
+										title: action.available ? "可执行；点击后由你确认并提交" : action.reasonText !== "" ? action.reasonText : "暂不可用",
 										children: [
 											action.label,
 											" · ",
-											action.available ? "seam 已接线" : action.pending !== "" ? action.pending : "不可用"
+											action.available ? "可执行" : "暂不可用"
 										]
 									}, action.key))
 								}),
@@ -5701,7 +5776,7 @@ window.__ModuleLoader__.load({
 											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
 												style: { fontSize: 15 },
 												children: scorecardProgress !== void 0 ? scorecardProgress.summaryText : "—"
-											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("small", { children: "面评进度（服务端聚合）" })]
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("small", { children: "面评进度（跨轮合计）" })]
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											className: "rcw-metric",
@@ -6024,7 +6099,7 @@ window.__ModuleLoader__.load({
 								CLOSE_JOB_DIALOG_TEXT.cancelLabel,
 								"」不发任何请求、零写入； 点「",
 								CLOSE_JOB_DIALOG_TEXT.confirmLabel,
-								"」才 POST `/recruitment/api/job-action/job/close`（body 含 `job_id` / `confirm:true` / 可选 `reason`）。"
+								"」才会真正提交一次关闭请求（需要你确认，会留下记录）。"
 							]
 						})
 					]
@@ -6302,7 +6377,7 @@ window.__ModuleLoader__.load({
 				...dimension.weight !== null ? { weight: dimension.weight } : {},
 				...dimension.notes !== "" ? { notes: dimension.notes } : {}
 			}));
-			const createBlockedReason = createProbeReason !== "" ? createProbeReason : facts === null ? "NO_JOB_DRAFT：还没有草案，确认创建不可用" : createBusy ? "" : "";
+			const createBlockedReason = createProbeReason !== "" ? createProbeReason : facts === null ? "还没有草案，先点「生成草案」；确认创建暂不可用" : createBusy ? "" : "";
 			const createDisabled = createBlockedReason !== "" || createBusy;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Card, {
 				className: "rcw-detailmain",
@@ -6312,15 +6387,15 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "rcw-sectionhead",
 						style: { marginTop: 0 },
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "岗位草案生成（task-57）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "岗位草案生成" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 							tone: draftProbeReason === "" ? "blue" : "amber",
 							testid: "job-draft-route",
-							children: draftProbeReason === "" ? "draft 路由已注册" : "draft 路由未接线"
+							children: draftProbeReason === "" ? "草案生成可用" : "草案生成暂不可用"
 						})]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: "rcw-muted rcw-tiny",
-						children: "POST /recruitment/api/job-action/job/draft（只读草案，不写库）→ 人改确认 → POST /recruitment/api/job-action/job/create。草案内容全部来自服务端返回；本卡不编造企业事实，也不自动批准 rubric。"
+						children: "先让服务端按你的招聘需求生成一份草案，你改完确认后才创建岗位。草案只读、不写库，内容全部来自服务端返回； 本卡不编造企业事实，也不会自动批准评分标准。"
 					}),
 					draftProbeReason !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: "rcw-pending",
@@ -6347,7 +6422,7 @@ window.__ModuleLoader__.load({
 							className: "rcw-btn rcw-btn-blue",
 							"data-testid": "job-draft-generate",
 							disabled: draftProbeReason !== "" || draftBusy,
-							title: draftProbeReason !== "" ? draftProbeReason : "POST /recruitment/api/job-action/job/draft",
+							title: draftProbeReason !== "" ? draftProbeReason : "点击生成草案（只读，不写库）",
 							onClick: () => onGenerate(requestText),
 							children: draftBusy ? "生成中…" : "生成草案"
 						})
@@ -6430,7 +6505,7 @@ window.__ModuleLoader__.load({
 							"data-testid": "job-draft-missing",
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: "rcw-cap",
-								children: "缺失项（服务端要求人补，不编造）"
+								children: "待补充项（需要你补充的企业事实）"
 							}), facts.missingItems.map((entry, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "rcw-fieldrow",
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
@@ -6670,7 +6745,9 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** 申请列表行。 */
-		function ApplicationRow({ row, onOpen }) {
+		function ApplicationRow({ row, jobRubric, onOpen }) {
+			const pinnedRubric = row.applicationRubric;
+			const rubricConsistency = pinnedRubric !== null && jobRubric !== null && jobRubric !== void 0 ? pinnedRubric.versionNo === jobRubric.versionNo && pinnedRubric.approved === jobRubric.approved ? "（与岗位当前一致）" : `（与岗位当前 v${String(jobRubric.versionNo)} 不一致）` : "";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 				type: "button",
 				className: "rcw-appitem",
@@ -6721,6 +6798,14 @@ window.__ModuleLoader__.load({
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									"data-testid": `application-row-${row.id}-transcript`,
 									children: ["转写 · ", row.transcriptSummary]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									"data-testid": `application-row-${row.id}-rubric`,
+									children: [
+										"本申请钉住 Rubric · ",
+										applicationRubricTextOf(row.applicationRubric),
+										rubricConsistency
+									]
 								})
 							]
 						})]
@@ -6730,7 +6815,7 @@ window.__ModuleLoader__.load({
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 							tone: row.nextStep.tone,
 							testid: `application-row-${row.id}-next-step`,
-							children: row.nextStep.hasStep ? row.nextStep.label !== "" ? row.nextStep.label : row.nextStep.code : "无下一步"
+							children: row.nextStep.hasStep ? row.nextStep.label !== "" ? row.nextStep.label : "待处理" : "无下一步"
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: "rcw-chev",
 							children: "›"
@@ -6760,7 +6845,7 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(NextStepPanel, {
 						step: EMPTY_STEP,
 						scope: "job",
-						fallback: "服务端未返回岗位"
+						fallback: "还没有岗位"
 					})
 				]
 			});
@@ -6870,7 +6955,7 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(NextStepPanel, {
 						step: job.nextStep,
 						scope: "job",
-						fallback: "服务端未给该岗位下一步"
+						fallback: "暂无下一步"
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "rcw-inlineactions",
@@ -6885,7 +6970,7 @@ window.__ModuleLoader__.load({
 									"data-available": rubricPendingText === "" ? "true" : "false",
 									"data-pending-reason": rubricPendingText !== "" ? rubricPendingText : void 0,
 									disabled: rubricPendingText !== "" || rubricBusy,
-									title: rubricPendingText !== "" ? rubricPendingText : "POST /recruitment/api/action/job/rubric-approve（body: job_id + rubric_version_id；人类点击即授权）",
+									title: rubricPendingText !== "" ? rubricPendingText : "点击即由你确认批准当前岗位的评分标准（会留下审批记录）",
 									onClick: () => {
 										if (rubricPendingText !== "") return;
 										onApproveRubric();
@@ -6940,9 +7025,12 @@ window.__ModuleLoader__.load({
 						children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: ["岗位创建：", job.createdAtText !== "" ? job.createdAtText : "—"] }),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: ["状态变更：", job.statusChangedAtText !== "" ? job.statusChangedAtText : "—"] }),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: ["岗位 id：", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								"data-job-id": job.id !== "" ? job.id : void 0,
+								children: "岗位编号："
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 								className: "rcw-code",
-								children: job.id !== "" ? job.id : "—"
+								children: job.code !== "" ? job.code : "—"
 							})] })
 						]
 					})
@@ -6988,11 +7076,11 @@ window.__ModuleLoader__.load({
 								jobDetail.rubric !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 									tone: jobDetail.rubric.approved ? "green" : "amber",
 									children: [
-										"rubric r",
+										"岗位当前评分标准 · r",
 										String(jobDetail.rubric.versionNo),
 										" · ",
 										jobDetail.rubric.dimensions.length,
-										" 维度 ·",
+										" 个维度 ·",
 										" ",
 										jobDetail.rubric.approved ? "已批准" : "未批准"
 									]
@@ -7267,7 +7355,7 @@ window.__ModuleLoader__.load({
 						value: String(counts.interviewsScheduled)
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(KeyValue, {
-						label: "面评（已提交 / 必需）",
+						label: "面评份数（跨轮合计）",
 						value: `${String(counts.scorecardsSubmittedTotal)} / ${String(counts.scorecardsRequiredTotal)}`
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(KeyValue, {
@@ -7300,7 +7388,8 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: "rcw-muted rcw-tiny",
 						"data-testid": "settings-entry-note",
-						children: settings.entry.note !== "" ? settings.entry.note : "设置入口没有附加说明。"
+						"data-note": settings.entry.note !== "" ? settings.entry.note : void 0,
+						children: settingsEntryNoteText(settings.entry)
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: { marginTop: 8 },
@@ -7337,13 +7426,11 @@ window.__ModuleLoader__.load({
 							children: writeStateText !== "" ? writeStateText : "设置写入口可用（role / team / pipeline 最小 create 表单）"
 						})]
 					}),
-					settings.entry.available && settings.entry.href !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+					settings.entry.available ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: "rcw-tiny",
 						style: { marginTop: 8 },
-						children: ["服务端声明设置页已接线：", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "rcw-mono",
-							children: settings.entry.href
-						})]
+						"data-testid": "settings-entry-available",
+						children: "设置页已可用。"
 					}) : null
 				]
 			});
@@ -7407,11 +7494,11 @@ window.__ModuleLoader__.load({
 							className: "rcw-detailmain",
 							testid: "settings-write-card",
 							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "设置写入口（role / team / pipeline 最小 create）" }),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "设置写入口（新增角色 / 团队 / 流程模板）" }),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 									className: "rcw-muted rcw-tiny",
 									style: { marginTop: 6 },
-									children: "字段按 `work/d5/actions/CONTRACT.md` §4.2：role=code/name/permission_scopes、team=code/name/department_id、 pipeline=code/name。请求经 `buildSettingsWriteBody` + `POST /recruitment/api/action/config`；可用性以服务端 `settings.entry.available` 与 `actions.recruiting_settings_write.available` 为准。本页只做 create，update / add_member / add_stage 等写操作没有表单（不假装覆盖）。"
+									children: "角色填 code / name / permission_scopes；团队填 code / name / department_id；流程模板填 code / name。 保存是否可用以服务端声明为准；不可用时按钮禁用并说明原因。本页只做新增， 修改 / 加成员 / 加阶段等操作没有表单（不假装覆盖）。"
 								}),
 								writeDisabledReason !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 									className: "rcw-pending",
@@ -7420,7 +7507,7 @@ window.__ModuleLoader__.load({
 								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 									className: "rcw-pending",
 									"data-testid": "settings-write-pending-ok",
-									children: "设置写入口可用（pending: ''）；保存后重新 GET overview 并显示 readback。"
+									children: "设置写入口可用；保存后页面会重新读取并显示服务端读回结果。"
 								}),
 								feedback !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: feedback.tone === "error" ? "rcw-alert" : "rcw-notice",
@@ -7761,7 +7848,7 @@ window.__ModuleLoader__.load({
 						className: "rcw-asidecard",
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "只读说明" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "rcw-muted rcw-tiny",
-							children: "本页只展示服务端返回的当前生效配置。保存动作必须走服务端 action seam；不可用时按钮禁用并显示 pending 原因，不会写 localStorage、不会用 Toast 假装成功。"
+							children: "本页只展示服务端返回的当前生效配置。保存动作由服务端执行；不可用时按钮禁用并说明原因， 不会只改本地显示、也不会用弹窗假装保存成功。"
 						})]
 					})]
 				})]
@@ -7807,39 +7894,39 @@ window.__ModuleLoader__.load({
 			const jobDetail = useJobDetail(jobDetailOpen ? effectiveJobId : "");
 			const decisionFacts = useDecisionFacts(selectedApplicationId, selectedApplicationId !== "", props.sessionId);
 			const isRecruiter = props.alias === "recruiter";
-			const aliasNote = "当前 alias 为面试官视图，请切换到招聘方身份（Recruiter）；本视图只做只读浏览，写操作不可用。";
+			const aliasNote = "当前是面试官视图：只读浏览；写操作请切换到「招聘方 Recruiter」身份后再进行。";
 			const aliasBlocked = !isRecruiter;
 			const closeSeam = useJobCloseSeam(props.sessionId, isRecruiter);
 			const draftProbe = useRouteProbe(JOB_DRAFT_PATH, props.sessionId, isRecruiter);
 			const createProbe = useRouteProbe(JOB_CREATE_PATH, props.sessionId, isRecruiter);
 			const overviewActions = overview.data?.actions ?? {};
 			const detailActions = applicationDetail.data !== void 0 && Object.keys(applicationDetail.data.actions).length > 0 ? applicationDetail.data.actions : overviewActions;
-			/** 岗位关闭按钮的 disabled 原因（'' = 可用；404 → JOB_CLOSE_ROUTE_MISSING）。 */
+			/** 岗位关闭按钮的 disabled 原因（'' = 可用）。O6：只给 HR 人话，探针状态码留在代码/结构化状态里。 */
 			const closePendingText = (() => {
 				if (!isRecruiter) return aliasNote;
-				if (closeSeam.loading) return "JOB_CLOSE_PROBE_PENDING：正在探测岗位关闭端点（GET /recruitment/api/job-action/job/close）…";
+				if (closeSeam.loading) return "正在确认「关闭岗位」是否可用…";
 				const probe = closeSeam.probe;
-				if (probe === void 0) return "JOB_CLOSE_PROBE_PENDING：尚未探测岗位关闭端点";
+				if (probe === void 0) return "还在确认「关闭岗位」是否可用…";
 				if (probe.state === "AVAILABLE") return "";
-				if (probe.state === "MISSING") return `JOB_CLOSE_ROUTE_MISSING：宿主尚未注册 POST /recruitment/api/job-action/job/close（GET 探测 HTTP ${String(probe.status)}），等待 W0 接线并重启 Host 后自动可用。`;
-				if (probe.state === "FORBIDDEN") return `JOB_CLOSE_SAME_ORIGIN_REQUIRED：探测被拒绝（HTTP ${String(probe.status)}）${probe.reasonText !== "" ? ` · ${probe.reasonText}` : ""}`;
-				return `JOB_CLOSE_PROBE_UNKNOWN：无法判定 close 路由注册状态（HTTP ${String(probe.status)}${probe.reasonText !== "" ? ` · ${probe.reasonText}` : ""}）`;
+				if (probe.state === "MISSING") return "「关闭岗位」暂不可用：当前页面版本没有提供这个操作（不需要你再做什么）。";
+				if (probe.state === "FORBIDDEN") return "「关闭岗位」未获授权：当前页面不能执行该操作，请联系管理员。";
+				return "暂时确认不了「关闭岗位」是否可用，请稍后重试。";
 			})();
-			/** 岗位草案生成按钮的 disabled 原因（'' = 可用；404 → JOB_DRAFT_ROUTE_MISSING）。 */
+			/** 岗位草案生成按钮的 disabled 原因（'' = 可用）。 */
 			const draftPendingText = (() => {
 				if (!isRecruiter) return aliasNote;
-				if (draftProbe.loading) return "JOB_DRAFT_PROBE_PENDING：正在探测 job/draft 路由…";
+				if (draftProbe.loading) return "正在确认「生成草案」是否可用…";
 				if (draftProbe.state === "AVAILABLE") return "";
-				if (draftProbe.state === "MISSING") return `JOB_DRAFT_ROUTE_MISSING：宿主尚未注册 POST /recruitment/api/job-action/job/draft（GET 同路径探测 404），等待接线并重启 Host。`;
-				return `JOB_DRAFT_PROBE_UNKNOWN：无法判定 job/draft 路由注册状态（${draftProbe.state}）`;
+				if (draftProbe.state === "MISSING") return "「生成草案」暂不可用：当前页面版本没有提供这个操作（不需要你再做什么）。";
+				return "暂时确认不了「生成草案」是否可用，请稍后重试。";
 			})();
-			/** 岗位确认创建按钮的 disabled 原因（'' = 可用；404 → JOB_CREATE_ROUTE_MISSING）。 */
+			/** 岗位确认创建按钮的 disabled 原因（'' = 可用）。 */
 			const createPendingText = (() => {
 				if (!isRecruiter) return aliasNote;
-				if (createProbe.loading) return "JOB_CREATE_PROBE_PENDING：正在探测 job/create 路由…";
+				if (createProbe.loading) return "正在确认「确认创建岗位」是否可用…";
 				if (createProbe.state === "AVAILABLE") return "";
-				if (createProbe.state === "MISSING") return `JOB_CREATE_ROUTE_MISSING：宿主尚未注册 POST /recruitment/api/job-action/job/create（GET 同路径探测 404），等待接线并重启 Host。`;
-				return `JOB_CREATE_PROBE_UNKNOWN：无法判定 job/create 路由注册状态（${createProbe.state}）`;
+				if (createProbe.state === "MISSING") return "「确认创建岗位」暂不可用：当前页面版本没有提供这个操作（不需要你再做什么）。";
+				return "暂时确认不了「确认创建岗位」是否可用，请稍后重试。";
 			})();
 			/** Rubric 批准 disabled 原因（'' = 可用；版本 id 空或已批准 → disabled，不编造版本）。 */
 			const rubricAction = overviewActions.rubric_approve;
@@ -7849,21 +7936,21 @@ window.__ModuleLoader__.load({
 			const rubricApproved = rubricJob?.rubric?.approved === true || jobDetailOpen && jobDetail.data?.rubric?.approved === true;
 			const rubricPendingText = (() => {
 				if (!isRecruiter) return aliasNote;
-				if (rubricAction === void 0) return "MISSING_ACTION：服务端 overview 没有返回 rubric_approve 动作";
-				if (!rubricAction.available) return `${rubricAction.pending}：${rubricAction.reasonText}${rubricAction.pendingText !== "" ? `（${rubricAction.pendingText}）` : ""}`;
-				if (rubricJobId === "") return "MISSING_JOB_ID：没有选中岗位，无法构造 rubric 批准请求";
-				if (rubricVersionId === "") return "MISSING_RUBRIC_VERSION_ID：job.rubric.rubric_version_id 为空（服务端未返回），无法构造批准请求（不编造版本 id）";
-				if (rubricApproved) return "RUBRIC_ALREADY_APPROVED：当前 rubric 已批准，无需重复批准";
+				if (rubricAction === void 0) return "当前页面版本没有提供「批准 Rubric」操作。";
+				if (!rubricAction.available) return rubricAction.reasonText !== "" ? rubricAction.reasonText : "暂时不能批准评分标准。";
+				if (rubricJobId === "") return "还没有选中岗位，暂时不能批准评分标准。";
+				if (rubricVersionId === "") return "服务端没有返回当前评分标准的版本，无法批准（界面不会猜一个版本）。";
+				if (rubricApproved) return "当前评分标准已批准，无需重复批准。";
 				return "";
 			})();
 			/** 设置写入口 disabled 原因（以服务端 settings.entry.available 与 action 可用性为准）。 */
 			const settingsAction = overviewActions.recruiting_settings_write;
 			const settingsWriteDisabledReason = (() => {
 				if (!isRecruiter) return aliasNote;
-				if (overview.data === void 0) return "SETTINGS_SNAPSHOT_MISSING：招聘设置需要先成功读取 overview";
-				if (!overview.data.settings.entry.available) return `SETTINGS_ENTRY_UNAVAILABLE：服务端 settings.entry.available=false${overview.data.settings.entry.note !== "" ? `（${overview.data.settings.entry.note}）` : ""}`;
-				if (settingsAction === void 0) return "MISSING_ACTION：服务端没有返回 recruiting_settings_write";
-				if (!settingsAction.available) return `${settingsAction.pending}：${settingsAction.reasonText}`;
+				if (overview.data === void 0) return "招聘设置需要先成功读取工作区数据。";
+				if (!overview.data.settings.entry.available) return "服务端声明设置页暂不可用（当前只读）；页面不会假装保存成功。";
+				if (settingsAction === void 0) return "当前页面版本没有提供「保存设置」操作。";
+				if (!settingsAction.available) return settingsAction.reasonText !== "" ? settingsAction.reasonText : "暂时不能保存设置。";
 				return "";
 			})();
 			/** 写动作统一入口：仅在表单 build* 通过后才调用；成功只设 outcome + reload，不用本地状态当成功。 */
@@ -7928,7 +8015,7 @@ window.__ModuleLoader__.load({
 			const confirmCloseJob = async (reason) => {
 				const jobId = selectedJob?.id ?? "";
 				if (jobId === "") {
-					setCloseError("MISSING_JOB_ID：没有选中岗位，未发送关闭请求");
+					setCloseError("还没有选中岗位，未发送关闭请求");
 					return;
 				}
 				setCloseBusy(true);
@@ -7963,7 +8050,7 @@ window.__ModuleLoader__.load({
 					setFeedback({
 						tone: "error",
 						title: "设置写入未发送",
-						message: "MISSING_ACTION：服务端没有返回 recruiting_settings_write",
+						message: "当前页面版本没有提供「保存招聘设置」操作",
 						rawBody: ""
 					});
 					return;
@@ -8170,7 +8257,7 @@ window.__ModuleLoader__.load({
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h1", { children: "招聘总览" }),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 											className: "rcw-sub",
-											children: "岗位、申请、材料、初筛、面试、Transcript、面评与决策的服务端只读投影；写动作走 action seam。"
+											children: "招聘全流程的只读视图；写操作会先让你确认再执行。"
 										})
 									]
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -8208,7 +8295,7 @@ window.__ModuleLoader__.load({
 							overview.loading && overviewData === void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 								className: "rcw-loading",
 								"data-testid": "overview-loading",
-								children: "正在读取招聘工作区（GET /recruitment/api/recruiting/overview）…"
+								children: "正在读取招聘工作区…"
 							}) : null,
 							overviewData !== void 0 && !overviewData.configured ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "rcw-notice",
@@ -8329,6 +8416,7 @@ window.__ModuleLoader__.load({
 											testid: "application-list",
 											children: rowsForFilter.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptyState, { children: rowsForJob.length === 0 ? "该岗位还没有申请。" : "当前筛选下没有申请。" }) : rowsForFilter.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApplicationRow, {
 												row,
+												jobRubric: selectedJob?.rubric ?? null,
 												onOpen: openApplication
 											}, row.rowKey))
 										})

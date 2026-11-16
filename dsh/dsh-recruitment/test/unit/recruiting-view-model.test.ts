@@ -11,11 +11,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  applicationRubricTextOf,
+  buildApplicationHeader,
+  buildInterviews,
+  buildScorecardProgress,
   collectNextSteps,
   normalizeApplicationDetail,
   normalizeJobDetail,
   normalizeOverviewView,
   splitSidebarJobs,
+  transcriptSummaryOf,
 } from '../../src/client/recruiting/view-model.ts'
 import { count, formatBytes, formatDateTime, shortSha, text } from '../../src/client/recruiting/format.ts'
 
@@ -372,8 +377,8 @@ test('阶段与状态映射：job / lifecycle / parse / interview / scorecard / 
   assert.equal(job.statusTone, 'green')
   assert.equal(view.jobs[1]?.statusLabel, '草案')
   assert.equal(view.jobs[1]?.statusTone, 'gray')
-  // rubric 摘要
-  assert.equal(job.rubric?.summaryText, 'Rubric r2 · 3 个维度 · 已批准')
+  // rubric 摘要（O13：岗位**当前**评分标准自带标签，与「本申请钉住」分列）
+  assert.equal(job.rubric?.summaryText, '岗位当前 Rubric v2 · 3 个维度 · 已批准')
   assert.equal(job.rubric?.tone, 'green')
   // 阶段：stage_catalog 的标签优先于内置默认
   assert.equal(row.stageCode, 'S7')
@@ -399,7 +404,7 @@ test('阶段与状态映射：job / lifecycle / parse / interview / scorecard / 
   assert.equal(row.interviewSummary, '未排期')
   assert.equal(row.interviewTone, 'gray')
   assert.equal(row.scorecardProgress.summaryText, '无需面评')
-  assert.equal(row.transcriptSummary, '未就绪')
+  assert.equal(row.transcriptSummary, '还没有转写')
   assert.equal(row.transcriptTone, 'amber')
   // 计数与设置
   assert.equal(view.counts.applicationsTotal, 4)
@@ -829,11 +834,11 @@ test('详情：下一步只出现一次；头部没有 nextStep；材料/面试/
   assert.equal(interview.interviewers[0]?.scorecard?.statusLabel, '已提交')
   assert.equal(interview.interviewers[0]?.scorecard?.overallLabel, '建议推进')
   assert.equal(interview.interviewers[1]?.scorecard, null)
-  assert.equal(interview.scorecards.summaryText, '已提交 1/2')
+  assert.equal(interview.scorecards.summaryText, '已提交 1/2（第 1 轮）')
   assert.equal(interview.scorecards.tone, 'red', '有逾期未提交的面评 → 红色')
   // 转写（独立分支，不由排期推断）
   const transcript = interview.transcript
-  assert.equal(transcript.stateLabel, '已就绪')
+  assert.equal(transcript.stateLabel, '已收到')
   assert.equal(transcript.stateTone, 'green')
   assert.equal(transcript.artifactIdText, 'dddddddddd…')
   assert.equal(transcript.isCanonical, true)
@@ -842,7 +847,7 @@ test('详情：下一步只出现一次；头部没有 nextStep；材料/面试/
   assert.equal(transcript.labels.rows[0]?.value, 'LIVE')
   // 面评进度 / 转写摘要
   assert.equal(detail.scorecardProgress.summaryText, '已提交 1/2')
-  assert.equal(detail.transcriptSummary, '已就绪')
+  assert.equal(detail.transcriptSummary, '已收到')
   assert.equal(detail.transcriptRuns[0]?.chunkTotal, 12)
   // 决策（含历史）
   assert.equal(detail.decisions.length, 2)
@@ -970,4 +975,43 @@ test('岗位详情：空响应降级；rubric 的 approved 从岗位卡合并，
   assert.equal(detail.job.nextStep.code, 'JOB_NEXT')
   assert.equal(occurrences(JSON.stringify(detail), '岗位待补充 rubric'), 1)
   assert.equal(detail.actionList.length, 7)
+})
+
+test('O9/O13/O7 口径：面评跨轮份数读出轮次；申请钉住 Rubric 与岗位当前分开；转写只给事实时态', () => {
+  // O9：0/3 的 3 是「跨轮应提交份数」（第 1 轮 1 份 + 第 2 轮 2 份），不是 3 个面试官。
+  const interviews = buildInterviews([
+    { interview_id: 'iv-1', round_no: 1, scorecards: { required_total: 1, submitted: 0, missing_total: 1, overdue: 0 } },
+    { interview_id: 'iv-2', round_no: 2, scorecards: { required_total: 2, submitted: 0, missing_total: 2, overdue: 0 } },
+  ])
+  const progress = buildScorecardProgress({ scorecards_required: 3, scorecards_submitted: 0 }, interviews)
+  assert.equal(progress.summaryText, '已提交 0/3（第 1 轮 1 份 / 第 2 轮 2 份）')
+  assert.deepEqual(
+    progress.rounds.map((round) => [round.roundNo, round.required]),
+    [
+      [1, 1],
+      [2, 2],
+    ],
+  )
+  // 逐轮之和 ≠ 聚合 required 时只给总数（不编造轮次口径）。
+  const mismatch = buildScorecardProgress({ scorecards_required: 9, scorecards_submitted: 0 }, interviews)
+  assert.equal(mismatch.summaryText, '已提交 0/9（跨 2 轮合计）')
+  assert.deepEqual(mismatch.rounds, [])
+
+  // O13：申请钉住的版本（wire `application.rubric`）与岗位当前版本是两个事实，各自带标签。
+  const pinned = buildApplicationHeader({
+    application_id: 'app-9',
+    job: { job_id: 'job-1' },
+    rubric: { version_no: 1, approved: false },
+  })
+  assert.deepEqual(pinned.applicationRubric, { versionNo: 1, approved: false })
+  assert.equal(applicationRubricTextOf(pinned.applicationRubric), 'v1 · 未批准')
+  assert.equal(applicationRubricTextOf(null), '未钉住')
+  const noPin = buildApplicationHeader({ application_id: 'app-9', job: { job_id: 'job-1' } })
+  assert.equal(noPin.applicationRubric, null, '没有钉住就是 null，不猜一个看起来对的版本')
+
+  // O7：转写只允许事实时态（D-133：禁止「缺失」缺件叙事）。
+  assert.equal(transcriptSummaryOf('MISSING').summary, '还没有转写')
+  assert.equal(transcriptSummaryOf('NOT_READY').summary, '还没有转写')
+  assert.equal(transcriptSummaryOf('FAILED').summary, '处理失败')
+  assert.equal(transcriptSummaryOf('READY').summary, '已收到')
 })

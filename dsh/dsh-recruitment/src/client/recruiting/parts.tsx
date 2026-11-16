@@ -113,7 +113,7 @@ export function KeyValue({ label, value, mono = false }: { readonly label: strin
 export function NextStepPanel({
   step,
   scope,
-  fallback = '服务端未提供下一步',
+  fallback = '暂无下一步',
   testid = 'next-step',
 }: {
   readonly step: NextStepView
@@ -132,14 +132,16 @@ export function NextStepPanel({
     >
       <span className="rcw-cap">业务结论 · 下一步</span>
       <div className="rcw-nextstep-main">
-        {step.kindLabel !== '' ? <Chip tone={step.tone}>{step.kindLabel}</Chip> : <Chip tone={step.tone}>未分类</Chip>}
-        <strong data-testid="next-step-label">{step.label !== '' ? step.label : step.code !== '' ? step.code : fallback}</strong>
+        {step.kindLabel !== '' ? <Chip tone={step.tone}>{step.kindLabel}</Chip> : null}
+        {/*
+          O6：机器码是开发内部信息，不能作为 HR 主文案（D-135 ①）。
+          `code` 只留在 `data-code`（根节点 + 隐藏钩子）与数据层；可见文案只用人话 label / fallback。
+        */}
+        <strong data-testid="next-step-label">{step.label !== '' ? step.label : fallback}</strong>
       </div>
       <div className="rcw-nextstep-meta">
-        <span>
-          机器码：<span className="rcw-code" data-testid="next-step-code">{step.code !== '' ? step.code : '—'}</span>
-        </span>
-        {!step.hasStep ? <span>服务端没有给出这一步，界面不推断</span> : null}
+        <span className="rcw-code" data-testid="next-step-code" data-code={step.code} hidden />
+        {!step.hasStep ? <span>还没有下一步信息</span> : null}
       </div>
     </div>
   )
@@ -161,12 +163,13 @@ export function ActionButton({
 }) {
   const blockedByAlias = aliasBlocked && action.available
   const usable = action.available && !blockedByAlias
-  const note = blockedByAlias ? (aliasNote ?? '当前 alias 不可执行写操作') : action.pendingText
-  const title = usable
-    ? `POST ${action.seam}（同源 JSON；成功后重新 GET 服务端）`
-    : blockedByAlias
-      ? note
-      : `${action.reasonText}${action.seam === '' ? '' : ` · seam: ${action.seam}`}`
+  // O6：disabled 原因只给 HR 能执行的人话；机器码留在 `data-pending`（结构化字段）与数据层。
+  const note = blockedByAlias
+    ? (aliasNote ?? '当前身份不能执行写操作，请切换到招聘方身份后再试')
+    : action.reasonText !== ''
+      ? action.reasonText
+      : '这个操作暂时不可用'
+  const title = usable ? '点击提交；成功后页面会重新读取服务端' : note
   return (
     <span className="rcw-actionwrap">
       <button

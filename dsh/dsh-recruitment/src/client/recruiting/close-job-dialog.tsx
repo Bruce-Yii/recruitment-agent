@@ -137,8 +137,7 @@ export function CloseJobDialog({ jobTitle, busy, error, onConfirm, onCancel }: C
 
         <p className="rcw-muted rcw-tiny" style={{ marginTop: 10 }}>
           点「{CLOSE_JOB_DIALOG_TEXT.cancelLabel}」不发任何请求、零写入；
-          点「{CLOSE_JOB_DIALOG_TEXT.confirmLabel}」才 POST `/recruitment/api/job-action/job/close`（body 含
-          `job_id` / `confirm:true` / 可选 `reason`）。
+          点「{CLOSE_JOB_DIALOG_TEXT.confirmLabel}」才会真正提交一次关闭请求（需要你确认，会留下记录）。
         </p>
       </div>
     </div>

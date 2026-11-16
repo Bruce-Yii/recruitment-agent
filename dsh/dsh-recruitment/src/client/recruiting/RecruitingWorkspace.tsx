@@ -56,7 +56,7 @@ import type {
   RecruitingOverviewView,
   SettingsView,
 } from './view-model.ts'
-import { splitSidebarJobs } from './view-model.ts'
+import { splitSidebarJobs, settingsEntryNoteText, applicationRubricTextOf } from './view-model.ts'
 import { count, items, numberOrNull, record, stringList, text } from './format.ts'
 import {
   Card,
@@ -423,7 +423,7 @@ function JobDraftCard({
     createProbeReason !== ''
       ? createProbeReason
       : facts === null
-        ? 'NO_JOB_DRAFT：还没有草案，确认创建不可用'
+        ? '还没有草案，先点「生成草案」；确认创建暂不可用'
         : createBusy
           ? ''
           : ''
@@ -432,14 +432,14 @@ function JobDraftCard({
   return (
     <Card className="rcw-detailmain" style={{ marginTop: 14 }} testid="job-draft">
       <div className="rcw-sectionhead" style={{ marginTop: 0 }}>
-        <h2>岗位草案生成（task-57）</h2>
+        <h2>岗位草案生成</h2>
         <Chip tone={draftProbeReason === '' ? 'blue' : 'amber'} testid="job-draft-route">
-          {draftProbeReason === '' ? 'draft 路由已注册' : 'draft 路由未接线'}
+          {draftProbeReason === '' ? '草案生成可用' : '草案生成暂不可用'}
         </Chip>
       </div>
       <p className="rcw-muted rcw-tiny">
-        POST /recruitment/api/job-action/job/draft（只读草案，不写库）→ 人改确认 → POST
-        /recruitment/api/job-action/job/create。草案内容全部来自服务端返回；本卡不编造企业事实，也不自动批准 rubric。
+        先让服务端按你的招聘需求生成一份草案，你改完确认后才创建岗位。草案只读、不写库，内容全部来自服务端返回；
+        本卡不编造企业事实，也不会自动批准评分标准。
       </p>
       {draftProbeReason !== '' ? (
         <p className="rcw-pending" data-testid="job-draft-pending">
@@ -465,7 +465,7 @@ function JobDraftCard({
           className="rcw-btn rcw-btn-blue"
           data-testid="job-draft-generate"
           disabled={draftProbeReason !== '' || draftBusy}
-          title={draftProbeReason !== '' ? draftProbeReason : 'POST /recruitment/api/job-action/job/draft'}
+          title={draftProbeReason !== '' ? draftProbeReason : '点击生成草案（只读，不写库）'}
           onClick={() => onGenerate(requestText)}
         >
           {draftBusy ? '生成中…' : '生成草案'}
@@ -546,7 +546,7 @@ function JobDraftCard({
 
           {facts.missingItems.length > 0 ? (
             <div data-testid="job-draft-missing">
-              <div className="rcw-cap">缺失项（服务端要求人补，不编造）</div>
+              <div className="rcw-cap">待补充项（需要你补充的企业事实）</div>
               {facts.missingItems.map((entry, index) => (
                 <div className="rcw-fieldrow" key={`missing-${String(index)}-${entry.key}`}>
                   <span className="rcw-fieldkey rcw-mono">{entry.key !== '' ? entry.key : '（未提供 key）'}</span>
@@ -760,11 +760,21 @@ function DraftCreateResult({ outcome }: { readonly outcome: ActionOutcome }) {
 /** 申请列表行。 */
 function ApplicationRow({
   row,
+  jobRubric,
   onOpen,
 }: {
   readonly row: ApplicationRowView
+  readonly jobRubric: JobView['rubric'] | null | undefined
   readonly onOpen: (applicationId: string) => void
 }) {
+  // O13：把"本申请钉住的评分标准"与"岗位当前的评分标准"分成两个标签，并标出一致性。
+  const pinnedRubric = row.applicationRubric
+  const rubricConsistency =
+    pinnedRubric !== null && jobRubric !== null && jobRubric !== undefined
+      ? pinnedRubric.versionNo === jobRubric.versionNo && pinnedRubric.approved === jobRubric.approved
+        ? '（与岗位当前一致）'
+        : `（与岗位当前 v${String(jobRubric.versionNo)} 不一致）`
+      : ''
   return (
     <button
       type="button"
@@ -792,11 +802,16 @@ function ApplicationRow({
           <span data-testid={`application-row-${row.id}-interviews`}>面试 · {row.interviewSummary}</span>
           <span data-testid={`application-row-${row.id}-scorecards`}>面评 · {row.scorecardProgress.summaryText}</span>
           <span data-testid={`application-row-${row.id}-transcript`}>转写 · {row.transcriptSummary}</span>
+          <span data-testid={`application-row-${row.id}-rubric`}>
+            本申请钉住 Rubric · {applicationRubricTextOf(row.applicationRubric)}
+            {rubricConsistency}
+          </span>
         </span>
       </span>
       <span className="rcw-rowend">
         <Chip tone={row.nextStep.tone} testid={`application-row-${row.id}-next-step`}>
-          {row.nextStep.hasStep ? (row.nextStep.label !== '' ? row.nextStep.label : row.nextStep.code) : '无下一步'}
+          {/* O6：label 为空时给人话兜底，绝不把机器码（如 PROVIDE_SCREENING_DECISION）当文案。 */}
+          {row.nextStep.hasStep ? (row.nextStep.label !== '' ? row.nextStep.label : '待处理') : '无下一步'}
         </Chip>
         <span className="rcw-chev">›</span>
       </span>
@@ -842,7 +857,7 @@ function JobHero({
         <span className="rcw-cap">当前招聘岗位</span>
         <h2 style={{ marginTop: 6 }}>没有可展示的岗位</h2>
         <p className="rcw-sub">服务端 overview 的 jobs 为空：招聘数据可能尚未接入，界面不编造岗位。</p>
-        <NextStepPanel step={EMPTY_STEP} scope="job" fallback="服务端未返回岗位" />
+        <NextStepPanel step={EMPTY_STEP} scope="job" fallback="还没有岗位" />
       </Card>
     )
   }
@@ -918,7 +933,7 @@ function JobHero({
       ) : null}
 
       {/* 岗位级业务结论 + 下一步：本视图唯一一份（aside / 列表都不复述） */}
-      <NextStepPanel step={job.nextStep} scope="job" fallback="服务端未给该岗位下一步" />
+      <NextStepPanel step={job.nextStep} scope="job" fallback="暂无下一步" />
 
       <div className="rcw-inlineactions" data-testid="job-actions">
         <span className="rcw-actionwrap">
@@ -932,7 +947,7 @@ function JobHero({
             title={
               rubricPendingText !== ''
                 ? rubricPendingText
-                : 'POST /recruitment/api/action/job/rubric-approve（body: job_id + rubric_version_id；人类点击即授权）'
+                : '点击即由你确认批准当前岗位的评分标准（会留下审批记录）'
             }
             onClick={() => {
               if (rubricPendingText !== '') return
@@ -980,7 +995,11 @@ function JobHero({
       <div className="rcw-nextstep-meta" style={{ marginTop: 10 }}>
         <span>岗位创建：{job.createdAtText !== '' ? job.createdAtText : '—'}</span>
         <span>状态变更：{job.statusChangedAtText !== '' ? job.statusChangedAtText : '—'}</span>
-        <span>岗位 id：<span className="rcw-code">{job.id !== '' ? job.id : '—'}</span></span>
+        <span>
+          {/* O6：UUID 是内部 id，HR 主文案不展示；改显示业务岗位编号（为空则不给假编号）。 */}
+          <span data-job-id={job.id !== '' ? job.id : undefined}>岗位编号：</span>
+          <span className="rcw-code">{job.code !== '' ? job.code : '—'}</span>
+        </span>
       </div>
     </Card>
   )
@@ -1018,7 +1037,7 @@ function JobDetailCard({
             <Chip tone={jobDetail.job.statusTone}>岗位状态 · {jobDetail.job.statusLabel}</Chip>
             {jobDetail.rubric !== null ? (
               <Chip tone={jobDetail.rubric.approved ? 'green' : 'amber'}>
-                rubric r{String(jobDetail.rubric.versionNo)} · {jobDetail.rubric.dimensions.length} 维度 ·{' '}
+                岗位当前评分标准 · r{String(jobDetail.rubric.versionNo)} · {jobDetail.rubric.dimensions.length} 个维度 ·{' '}
                 {jobDetail.rubric.approved ? '已批准' : '未批准'}
               </Chip>
             ) : (
@@ -1227,7 +1246,7 @@ function CountsCard({ overview }: { readonly overview: RecruitingOverviewView })
       <KeyValue label="待决策" value={String(counts.awaitingDecision)} />
       <KeyValue label="已排期面试" value={String(counts.interviewsScheduled)} />
       <KeyValue
-        label="面评（已提交 / 必需）"
+        label="面评份数（跨轮合计）"
         value={`${String(counts.scorecardsSubmittedTotal)} / ${String(counts.scorecardsRequiredTotal)}`}
       />
       <KeyValue
@@ -1261,8 +1280,8 @@ function SettingsEntryCard({
   return (
     <Card className="rcw-asidecard" testid="settings-entry">
       <h2>招聘设置</h2>
-      <p className="rcw-muted rcw-tiny" data-testid="settings-entry-note">
-        {settings.entry.note !== '' ? settings.entry.note : '设置入口没有附加说明。'}
+      <p className="rcw-muted rcw-tiny" data-testid="settings-entry-note" data-note={settings.entry.note !== '' ? settings.entry.note : undefined}>
+        {settingsEntryNoteText(settings.entry)}
       </p>
       <div style={{ marginTop: 8 }}>
         <KeyValue
@@ -1281,9 +1300,9 @@ function SettingsEntryCard({
           {writeStateText !== '' ? writeStateText : '设置写入口可用（role / team / pipeline 最小 create 表单）'}
         </span>
       </div>
-      {settings.entry.available && settings.entry.href !== '' ? (
-        <p className="rcw-tiny" style={{ marginTop: 8 }}>
-          服务端声明设置页已接线：<span className="rcw-mono">{settings.entry.href}</span>
+      {settings.entry.available ? (
+        <p className="rcw-tiny" style={{ marginTop: 8 }} data-testid="settings-entry-available">
+          设置页已可用。
         </p>
       ) : null}
     </Card>
@@ -1349,13 +1368,11 @@ function SettingsPanel({
       <div className="rcw-grid">
         <div className="rcw-main">
           <Card className="rcw-detailmain" testid="settings-write-card">
-            <h2>设置写入口（role / team / pipeline 最小 create）</h2>
+            <h2>设置写入口（新增角色 / 团队 / 流程模板）</h2>
             <p className="rcw-muted rcw-tiny" style={{ marginTop: 6 }}>
-              字段按 `work/d5/actions/CONTRACT.md` §4.2：role=code/name/permission_scopes、team=code/name/department_id、
-              pipeline=code/name。请求经 `buildSettingsWriteBody` + `POST
-              /recruitment/api/action/config`；可用性以服务端 `settings.entry.available` 与
-              `actions.recruiting_settings_write.available` 为准。本页只做 create，update / add_member / add_stage
-              等写操作没有表单（不假装覆盖）。
+              角色填 code / name / permission_scopes；团队填 code / name / department_id；流程模板填 code / name。
+              保存是否可用以服务端声明为准；不可用时按钮禁用并说明原因。本页只做新增，
+              修改 / 加成员 / 加阶段等操作没有表单（不假装覆盖）。
             </p>
             {writeDisabledReason !== '' ? (
               <p className="rcw-pending" data-testid="settings-write-pending">
@@ -1363,7 +1380,7 @@ function SettingsPanel({
               </p>
             ) : (
               <p className="rcw-pending" data-testid="settings-write-pending-ok">
-                设置写入口可用（pending: ''）；保存后重新 GET overview 并显示 readback。
+                设置写入口可用；保存后页面会重新读取并显示服务端读回结果。
               </p>
             )}
             {feedback !== undefined ? (
@@ -1689,8 +1706,8 @@ function SettingsPanel({
           <Card className="rcw-asidecard">
             <h2>只读说明</h2>
             <p className="rcw-muted rcw-tiny">
-              本页只展示服务端返回的当前生效配置。保存动作必须走服务端 action seam；不可用时按钮禁用并显示 pending
-              原因，不会写 localStorage、不会用 Toast 假装成功。
+              本页只展示服务端返回的当前生效配置。保存动作由服务端执行；不可用时按钮禁用并说明原因，
+              不会只改本地显示、也不会用弹窗假装保存成功。
             </p>
           </Card>
         </aside>
@@ -1748,8 +1765,8 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
   const decisionFacts = useDecisionFacts(selectedApplicationId, selectedApplicationId !== '', props.sessionId)
 
   const isRecruiter = props.alias === 'recruiter'
-  const aliasNote =
-    '当前 alias 为面试官视图，请切换到招聘方身份（Recruiter）；本视图只做只读浏览，写操作不可用。'
+  // O6：不给 HR 看 `alias` 这类内部词；按"视图身份"说人话（同一份文案也用于写按钮的 disabled 原因）。
+  const aliasNote = '当前是面试官视图：只读浏览；写操作请切换到「招聘方 Recruiter」身份后再进行。'
   const aliasBlocked = !isRecruiter
 
   // 路由能力探测：GET 同路径（405=已注册 POST 路由；404=未接线；403=同源/session 问题）。零写入、不打写日志。
@@ -1763,44 +1780,42 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
       ? applicationDetail.data.actions
       : overviewActions
 
-  /** 岗位关闭按钮的 disabled 原因（'' = 可用；404 → JOB_CLOSE_ROUTE_MISSING）。 */
+  /** 岗位关闭按钮的 disabled 原因（'' = 可用）。O6：只给 HR 人话，探针状态码留在代码/结构化状态里。 */
   const closePendingText = ((): string => {
     if (!isRecruiter) return aliasNote
-    if (closeSeam.loading) {
-      return 'JOB_CLOSE_PROBE_PENDING：正在探测岗位关闭端点（GET /recruitment/api/job-action/job/close）…'
-    }
+    if (closeSeam.loading) return '正在确认「关闭岗位」是否可用…'
     const probe = closeSeam.probe
-    if (probe === undefined) return 'JOB_CLOSE_PROBE_PENDING：尚未探测岗位关闭端点'
+    if (probe === undefined) return '还在确认「关闭岗位」是否可用…'
     if (probe.state === 'AVAILABLE') return ''
     if (probe.state === 'MISSING') {
-      return `JOB_CLOSE_ROUTE_MISSING：宿主尚未注册 POST /recruitment/api/job-action/job/close（GET 探测 HTTP ${String(probe.status)}），等待 W0 接线并重启 Host 后自动可用。`
+      return '「关闭岗位」暂不可用：当前页面版本没有提供这个操作（不需要你再做什么）。'
     }
     if (probe.state === 'FORBIDDEN') {
-      return `JOB_CLOSE_SAME_ORIGIN_REQUIRED：探测被拒绝（HTTP ${String(probe.status)}）${probe.reasonText !== '' ? ` · ${probe.reasonText}` : ''}`
+      return '「关闭岗位」未获授权：当前页面不能执行该操作，请联系管理员。'
     }
-    return `JOB_CLOSE_PROBE_UNKNOWN：无法判定 close 路由注册状态（HTTP ${String(probe.status)}${probe.reasonText !== '' ? ` · ${probe.reasonText}` : ''}）`
+    return '暂时确认不了「关闭岗位」是否可用，请稍后重试。'
   })()
 
-  /** 岗位草案生成按钮的 disabled 原因（'' = 可用；404 → JOB_DRAFT_ROUTE_MISSING）。 */
+  /** 岗位草案生成按钮的 disabled 原因（'' = 可用）。 */
   const draftPendingText = ((): string => {
     if (!isRecruiter) return aliasNote
-    if (draftProbe.loading) return 'JOB_DRAFT_PROBE_PENDING：正在探测 job/draft 路由…'
+    if (draftProbe.loading) return '正在确认「生成草案」是否可用…'
     if (draftProbe.state === 'AVAILABLE') return ''
     if (draftProbe.state === 'MISSING') {
-      return `JOB_DRAFT_ROUTE_MISSING：宿主尚未注册 POST /recruitment/api/job-action/job/draft（GET 同路径探测 404），等待接线并重启 Host。`
+      return '「生成草案」暂不可用：当前页面版本没有提供这个操作（不需要你再做什么）。'
     }
-    return `JOB_DRAFT_PROBE_UNKNOWN：无法判定 job/draft 路由注册状态（${draftProbe.state}）`
+    return '暂时确认不了「生成草案」是否可用，请稍后重试。'
   })()
 
-  /** 岗位确认创建按钮的 disabled 原因（'' = 可用；404 → JOB_CREATE_ROUTE_MISSING）。 */
+  /** 岗位确认创建按钮的 disabled 原因（'' = 可用）。 */
   const createPendingText = ((): string => {
     if (!isRecruiter) return aliasNote
-    if (createProbe.loading) return 'JOB_CREATE_PROBE_PENDING：正在探测 job/create 路由…'
+    if (createProbe.loading) return '正在确认「确认创建岗位」是否可用…'
     if (createProbe.state === 'AVAILABLE') return ''
     if (createProbe.state === 'MISSING') {
-      return `JOB_CREATE_ROUTE_MISSING：宿主尚未注册 POST /recruitment/api/job-action/job/create（GET 同路径探测 404），等待接线并重启 Host。`
+      return '「确认创建岗位」暂不可用：当前页面版本没有提供这个操作（不需要你再做什么）。'
     }
-    return `JOB_CREATE_PROBE_UNKNOWN：无法判定 job/create 路由注册状态（${createProbe.state}）`
+    return '暂时确认不了「确认创建岗位」是否可用，请稍后重试。'
   })()
 
   /** Rubric 批准 disabled 原因（'' = 可用；版本 id 空或已批准 → disabled，不编造版本）。 */
@@ -1812,15 +1827,15 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
     rubricJob?.rubric?.approved === true || (jobDetailOpen && jobDetail.data?.rubric?.approved === true)
   const rubricPendingText = ((): string => {
     if (!isRecruiter) return aliasNote
-    if (rubricAction === undefined) return 'MISSING_ACTION：服务端 overview 没有返回 rubric_approve 动作'
+    if (rubricAction === undefined) return '当前页面版本没有提供「批准 Rubric」操作。'
     if (!rubricAction.available) {
-      return `${rubricAction.pending}：${rubricAction.reasonText}${rubricAction.pendingText !== '' ? `（${rubricAction.pendingText}）` : ''}`
+      return rubricAction.reasonText !== '' ? rubricAction.reasonText : '暂时不能批准评分标准。'
     }
-    if (rubricJobId === '') return 'MISSING_JOB_ID：没有选中岗位，无法构造 rubric 批准请求'
+    if (rubricJobId === '') return '还没有选中岗位，暂时不能批准评分标准。'
     if (rubricVersionId === '') {
-      return 'MISSING_RUBRIC_VERSION_ID：job.rubric.rubric_version_id 为空（服务端未返回），无法构造批准请求（不编造版本 id）'
+      return '服务端没有返回当前评分标准的版本，无法批准（界面不会猜一个版本）。'
     }
-    if (rubricApproved) return 'RUBRIC_ALREADY_APPROVED：当前 rubric 已批准，无需重复批准'
+    if (rubricApproved) return '当前评分标准已批准，无需重复批准。'
     return ''
   })()
 
@@ -1828,12 +1843,14 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
   const settingsAction = overviewActions.recruiting_settings_write
   const settingsWriteDisabledReason = ((): string => {
     if (!isRecruiter) return aliasNote
-    if (overview.data === undefined) return 'SETTINGS_SNAPSHOT_MISSING：招聘设置需要先成功读取 overview'
+    if (overview.data === undefined) return '招聘设置需要先成功读取工作区数据。'
     if (!overview.data.settings.entry.available) {
-      return `SETTINGS_ENTRY_UNAVAILABLE：服务端 settings.entry.available=false${overview.data.settings.entry.note !== '' ? `（${overview.data.settings.entry.note}）` : ''}`
+      return '服务端声明设置页暂不可用（当前只读）；页面不会假装保存成功。'
     }
-    if (settingsAction === undefined) return 'MISSING_ACTION：服务端没有返回 recruiting_settings_write'
-    if (!settingsAction.available) return `${settingsAction.pending}：${settingsAction.reasonText}`
+    if (settingsAction === undefined) return '当前页面版本没有提供「保存设置」操作。'
+    if (!settingsAction.available) {
+      return settingsAction.reasonText !== '' ? settingsAction.reasonText : '暂时不能保存设置。'
+    }
     return ''
   })()
 
@@ -1901,7 +1918,7 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
   const confirmCloseJob = async (reason: string): Promise<void> => {
     const jobId = selectedJob?.id ?? ''
     if (jobId === '') {
-      setCloseError('MISSING_JOB_ID：没有选中岗位，未发送关闭请求')
+      setCloseError('还没有选中岗位，未发送关闭请求')
       return
     }
     setCloseBusy(true)
@@ -1944,7 +1961,7 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
       setFeedback({
         tone: 'error',
         title: '设置写入未发送',
-        message: 'MISSING_ACTION：服务端没有返回 recruiting_settings_write',
+        message: '当前页面版本没有提供「保存招聘设置」操作',
         rawBody: '',
       })
       return
@@ -2165,7 +2182,7 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
                 <span className="rcw-cap">AGENT-NATIVE RECRUITMENT</span>
                 <h1>招聘总览</h1>
                 <div className="rcw-sub">
-                  岗位、申请、材料、初筛、面试、Transcript、面评与决策的服务端只读投影；写动作走 action seam。
+                  招聘全流程的只读视图；写操作会先让你确认再执行。
                 </div>
               </div>
               <div className="rcw-headline-right">
@@ -2203,7 +2220,7 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
 
             {overview.loading && overviewData === undefined ? (
               <p className="rcw-loading" data-testid="overview-loading">
-                正在读取招聘工作区（GET /recruitment/api/recruiting/overview）…
+                正在读取招聘工作区…
               </p>
             ) : null}
 
@@ -2331,7 +2348,12 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
                       </EmptyState>
                     ) : (
                       rowsForFilter.map((row) => (
-                        <ApplicationRow key={row.rowKey} row={row} onOpen={openApplication} />
+                        <ApplicationRow
+                          key={row.rowKey}
+                          row={row}
+                          jobRubric={selectedJob?.rubric ?? null}
+                          onOpen={openApplication}
+                        />
                       ))
                     )}
                   </Card>

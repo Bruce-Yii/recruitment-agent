@@ -25,6 +25,7 @@ import type { ReactNode } from 'react'
 import type { RecruitingErrorInfo } from './use-recruiting.ts'
 import {
   actionResultLines,
+  blockerTextOf,
   buildDecisionRecordBody,
   buildInterviewScheduleBody,
   buildScreeningDecisionBody,
@@ -51,6 +52,7 @@ import type {
   ResumeView,
   SettingsView,
 } from './view-model.ts'
+import { applicationRubricTextOf } from './view-model.ts'
 import {
   Card,
   Chip,
@@ -174,10 +176,13 @@ function DetailHeadline({
             {header.jobTitle}
           </span>
         </h1>
-        <div className="rcw-sub">
-          <span className="rcw-mono">{header.id !== '' ? header.id : '（服务端未提供申请 id）'}</span>
+        <div className="rcw-sub" data-application-id={header.id !== '' ? header.id : undefined}>
+          {/* O6：申请 UUID 是内部 id，不作 HR 主文案；显示业务岗位编号（没有就如实写未提供）。 */}
+          <span className="rcw-dim">
+            岗位编号 {header.jobCode !== '' ? header.jobCode : '（未提供）'}
+          </span>
           <span className="rcw-dim" style={{ marginLeft: 8 }}>
-            岗位申请 · 版本 {header.recordVersion}
+            申请记录版本 {header.recordVersion}
           </span>
         </div>
       </div>
@@ -187,6 +192,13 @@ function DetailHeadline({
         </Chip>
         <Chip tone={header.lifecycleTone} testid="detail-lifecycle">
           申请状态 · {header.lifecycleLabel}
+        </Chip>
+        {/* O13：本申请钉住的评分标准（与「岗位当前 Rubric」是两个事实，分开标注）。 */}
+        <Chip
+          tone={header.applicationRubric === null ? 'gray' : header.applicationRubric.approved ? 'green' : 'amber'}
+          testid="detail-application-rubric"
+        >
+          本申请钉住 Rubric · {applicationRubricTextOf(header.applicationRubric)}
         </Chip>
         {refreshButton}
       </div>
@@ -392,7 +404,7 @@ function ScreeningSection({
         <h3>Rubric 维度快照</h3>
         {rubric !== null ? (
           <span className="rcw-dim rcw-tiny">
-            rubric r{String(rubric.versionNo)} · {rubric.dimensions.length} 个维度
+            初筛结论所用 Rubric 快照 · v{String(rubric.versionNo)} · {rubric.dimensions.length} 个维度
           </span>
         ) : null}
       </div>
@@ -464,7 +476,7 @@ function InterviewSection({ interviews }: { readonly interviews: ReadonlyArray<I
               value={
                 interview.scorecards.required === 0
                   ? '该轮不需要面评'
-                  : `已提交 ${String(interview.scorecards.submitted)} / 必需 ${String(interview.scorecards.required)} · 缺失 ${String(interview.scorecards.missing)} · 逾期 ${String(interview.scorecards.overdue)}`
+                  : `已提交 ${String(interview.scorecards.submitted)} / 必需 ${String(interview.scorecards.required)} · 未提交 ${String(interview.scorecards.missing)} · 逾期 ${String(interview.scorecards.overdue)}`
               }
             />
           </div>
@@ -773,20 +785,19 @@ function structuralReason(
   action: ActionView | undefined,
   binding: { readonly aliasBlocked: boolean; readonly aliasNote: string; readonly pending: boolean },
 ): string {
-  if (action === undefined) return 'ACTION_SEAM_NOT_WIRED：服务端 actions 里没有该动作键'
+  if (action === undefined) return '当前页面版本没有提供这个操作'
   if (!action.available) {
-    return `${action.pending !== '' ? action.pending : 'ACTION_SEAM_NOT_WIRED'}：${action.reasonText !== '' ? action.reasonText : action.pendingText}`
+    return action.reasonText !== '' ? action.reasonText : '这个操作暂时不可用'
   }
-  if (binding.aliasBlocked) return `ALIAS_BLOCKED：${binding.aliasNote !== '' ? binding.aliasNote : '当前 alias 不可执行写操作'}`
+  if (binding.aliasBlocked) return `${binding.aliasNote !== '' ? binding.aliasNote : '当前身份不能执行写操作，请切换到招聘方身份'}`
   if (binding.pending) return '提交中…'
   return ''
 }
 
-/** build 失败 → 人读禁用原因（reasonCode 在前，浏览器证据可直接读）。 */
+/** build 失败 → 人读禁用原因（机器码留在数据层，文案只给 HR 能执行的下一步）。 */
 function buildReasonOf(built: BodyBuildResult): string {
   if (built.ok) return ''
-  const missing = built.missing.length > 0 ? `（missing: ${built.missing.join(', ')}）` : ''
-  return `${built.reasonCode}：${built.reasonText}${missing}`
+  return built.reasonText !== '' ? built.reasonText : '表单还没有填完整，请检查必填项'
 }
 
 /** P0 `stage/advance`：点击即提交 `{application_id}`（服务端按已发生事实推导目标阶段）。 */
@@ -879,7 +890,7 @@ function ScreeningForm({
   const blockedReasonParts = [
     structural,
     factsBlockedReason,
-    blockers.length > 0 ? blockers.join('、') : '',
+    blockers.length > 0 ? blockers.map(blockerTextOf).join('、') : '',
   ].filter((part) => part !== '')
   const blockedReason = blockedReasonParts.join('；')
   const disabled = blockedReason !== ''
@@ -893,7 +904,7 @@ function ScreeningForm({
     >
       {factsBlockedReason !== '' || blockers.length > 0 ? (
         <p className="rcw-alert" data-testid="screening-disabled-reason" style={{ marginTop: 6 }}>
-          {[factsBlockedReason, blockers.join('、')].filter((part) => part !== '').join('；')}
+          {[factsBlockedReason, blockers.map(blockerTextOf).join('、')].filter((part) => part !== '').join('；')}
         </p>
       ) : null}
       <FormField label="结论（result）">
@@ -995,7 +1006,7 @@ function InterviewScheduleForm({
   const [idempotencyKey] = useState(() => newIdempotencyKey())
   const [localError, setLocalError] = useState('')
   const structural = structuralReason(action, { aliasBlocked, aliasNote, pending })
-  const candidateMissing = candidates.length === 0 ? 'MISSING_INTERVIEWER_CANDIDATES：settings.hiringTeams 里没有可用人员' : ''
+  const candidateMissing = candidates.length === 0 ? '还没有可选的面试官：招聘团队里没有可用人员，请先在招聘设置里补上' : ''
   const blockedReason = [structural, candidateMissing].filter((part) => part !== '').join('；')
   const disabled = blockedReason !== ''
   return (
@@ -1116,7 +1127,7 @@ function TranscriptImportForm({
   const [note, setNote] = useState('')
   const [localError, setLocalError] = useState('')
   const structural = structuralReason(action, { aliasBlocked, aliasNote, pending })
-  const targetMissing = choices.length === 0 ? 'MISSING_TARGET_INTERVIEW：该申请没有可关联的面试' : ''
+  const targetMissing = choices.length === 0 ? '这个申请还没有可关联的面试，请先安排面试' : ''
   const blockedReason = [structural, targetMissing].filter((part) => part !== '').join('；')
   const disabled = blockedReason !== ''
   return (
@@ -1253,24 +1264,24 @@ function DecisionRecordForm({
   const [localError, setLocalError] = useState('')
   const factsProbeReason =
     decisionFactsProbe === 'MISSING'
-      ? 'DECISION_FACTS_ROUTE_MISSING：决策事实路由未接线（GET /recruitment/api/decision/facts 404）；客户端不发请求'
+      ? '还不能记录决策：决策依据暂时读不到，请稍后重试'
       : decisionFactsProbe === 'ERROR'
-        ? 'DECISION_FACTS_ERROR：决策事实读取失败（看服务端原文）'
+        ? '决策依据读取失败，请稍后重试；如果一直失败请联系管理员'
         : decisionFactsProbe === 'LOADING'
-          ? 'DECISION_FACTS_LOADING：正在读取决策事实投影'
+          ? '正在读取决策依据…'
           : decisionFacts === undefined
-            ? 'DECISION_FACTS_ROUTE_MISSING：决策事实投影未提供（workspace 未传入 decisionFacts）'
+            ? '还不能记录决策：决策依据还没有读取'
             : ''
   const blockers = decisionRecordBlockers(decisionFacts ?? null)
   const structural = [
-    aliasBlocked ? `ALIAS_BLOCKED：${aliasNote !== '' ? aliasNote : '当前 alias 不可执行写操作'}` : '',
+    aliasBlocked ? `${aliasNote !== '' ? aliasNote : '当前身份不能执行写操作，请切换到招聘方身份'}` : '',
     pending ? '提交中…' : '',
-    onDecisionRecord === undefined ? 'WORKSPACE_CALLBACK_MISSING：workspace 未注入 onDecisionRecord（facade 未接线）' : '',
+    onDecisionRecord === undefined ? '当前页面版本没有提供「记录正式决策」操作' : '',
   ].filter((part) => part !== '')
   const blockedReasonParts = [
     ...structural,
     factsProbeReason,
-    blockers.length > 0 ? blockers.join('、') : '',
+    blockers.length > 0 ? blockers.map(blockerTextOf).join('、') : '',
   ].filter((part) => part !== '')
   const blockedReason = blockedReasonParts.join('；')
   const disabled = blockedReason !== ''
@@ -1465,20 +1476,20 @@ export function ApplicationDetail(props: ApplicationDetailProps) {
 
   const factsProbeReason =
     props.decisionFactsProbe === 'MISSING'
-      ? 'DECISION_FACTS_ROUTE_MISSING：决策事实只读路由未接线（GET /recruitment/api/decision/facts 404），表单 disabled，不发请求'
+      ? '还不能执行初筛评估：决策依据暂时读不到，请稍后重试'
       : props.decisionFactsProbe === 'ERROR'
-        ? 'DECISION_FACTS_ERROR：决策事实读取失败（看服务端原文）'
+        ? '决策依据读取失败，请稍后重试；如果一直失败请联系管理员'
         : props.decisionFactsProbe === 'LOADING'
-          ? 'DECISION_FACTS_LOADING：正在读取决策事实投影'
+          ? '正在读取决策依据…'
           : props.decisionFacts === undefined
-            ? 'DECISION_FACTS_ROUTE_MISSING：决策事实投影未提供（未接线 facts 路由 / workspace 未传入）'
+            ? '还不能执行初筛评估：决策依据还没有读取'
             : ''
   const evaluationPresent = (props.decisionFacts?.screeningEvaluation ?? null) !== null
   const evaluateDisabledReason = [
-    props.aliasBlocked ? 'ALIAS_BLOCKED：当前 alias 不可执行写操作' : '',
-    props.onScreeningEvaluate === undefined ? 'WORKSPACE_CALLBACK_MISSING：workspace 未注入 onScreeningEvaluate' : '',
+    props.aliasBlocked ? '当前身份不能执行写操作，请切换到招聘方身份' : '',
+    props.onScreeningEvaluate === undefined ? '当前页面版本没有提供「执行初筛评估」操作' : '',
     factsProbeReason,
-    evaluationPresent ? 'SCREENING_EVALUATION_PRESENT：facts 已有初筛评估，无需重复执行' : '',
+    evaluationPresent ? '已经有初筛评估，不需要重复执行' : '',
     pendingKey === 'screening_evaluate' ? '提交中…' : '',
   ].filter((part) => part !== '')
 
@@ -1511,16 +1522,17 @@ export function ApplicationDetail(props: ApplicationDetailProps) {
 
             <div className="rcw-inlineactions" data-testid="detail-actions">
               {actionList.length === 0 ? (
-                <span className="rcw-dim rcw-tiny">服务端 actions 里没有可用的申请级写动作。</span>
+                <span className="rcw-dim rcw-tiny">当前申请没有可用的写操作。</span>
               ) : (
                 actionList.map((action) => (
                   <Chip
                     key={action.key}
                     tone={action.available ? 'blue' : 'gray'}
                     testid={`detail-action-${action.key}`}
-                    title={action.available ? action.seam : action.pendingText}
+                    title={action.available ? '可执行；点击后由你确认并提交' : action.reasonText !== '' ? action.reasonText : '暂不可用'}
                   >
-                    {action.label} · {action.available ? 'seam 已接线' : (action.pending !== '' ? action.pending : '不可用')}
+                    {/* O6：只给 HR 可执行的结论，不展示 seam / 机器码（结构化字段仍在 action 数据层）。 */}
+                    {action.label} · {action.available ? '可执行' : '暂不可用'}
                   </Chip>
                 ))
               )}
@@ -1592,7 +1604,7 @@ export function ApplicationDetail(props: ApplicationDetailProps) {
                 <strong style={{ fontSize: 15 }}>
                   {scorecardProgress !== undefined ? scorecardProgress.summaryText : '—'}
                 </strong>
-                <small>面评进度（服务端聚合）</small>
+                <small>面评进度（跨轮合计）</small>
               </div>
               <div className="rcw-metric" data-testid="detail-metric-transcript">
                 <strong style={{ fontSize: 15 }}>

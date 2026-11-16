@@ -57,9 +57,9 @@ export const ACTION_LABELS: Readonly<Record<string, string>> = {
 
 /** 后端 pending 机器码 → 给人看的原因（未知码原样显示，不吞掉）。 */
 const PENDING_REASON_TEXT: Readonly<Record<string, string>> = {
-  ACTION_SEAM_NOT_WIRED: '后端 action seam 尚未接线（宿主接线点未提供）',
-  ACTION_SEAM_MISSING: '服务端声明可用但没有给出 seam 路径（fail-closed）',
-  NOT_IMPLEMENTED: '后端写路径尚未实现',
+  ACTION_SEAM_NOT_WIRED: '这个操作在当前版本尚未接线（页面没有提供入口）',
+  ACTION_SEAM_MISSING: '服务端声明可用，但没有给出可执行入口（按不可用处理）',
+  NOT_IMPLEMENTED: '这个操作还没有实现',
 }
 
 /** 阶段码 → 默认中文名（`stage_catalog` 缺失时的展示兜底；权威标签仍以服务端 catalog 为准）。 */
@@ -319,13 +319,20 @@ const TRANSCRIPT_STATUS_TONES: Readonly<Record<string, ChipTone>> = {
   NEEDS_LINKING: 'amber',
 }
 
-/** `TranscriptSummary.state` → 中文 + 色档（客户端消费的稳定枚举）。 */
+/**
+ * `TranscriptSummary.state` → 中文 + 色档（客户端消费的稳定枚举）。
+ *
+ * O7 / D-133：转写是"收到什么就是什么"的**输入事实**，不是给 HR 的缺件清单
+ * （禁止"缺失 / 缺件"叙事）；只允许三种口径：
+ *   已收到（READY / PROCESSING）· 还没有转写（NOT_READY / MISSING）· 处理失败（FAILED）。
+ * 枚举键与色档映射保持不变（色档只表达"要不要注意"）。
+ */
 const TRANSCRIPT_STATE_LABELS: Readonly<Record<string, string>> = {
-  READY: '已就绪',
+  READY: '已收到',
   PROCESSING: '处理中',
-  NOT_READY: '未就绪',
-  FAILED: '失败',
-  MISSING: '缺失',
+  NOT_READY: '还没有转写',
+  FAILED: '处理失败',
+  MISSING: '还没有转写',
 }
 const TRANSCRIPT_STATE_TONES: Readonly<Record<string, ChipTone>> = {
   READY: 'green',
@@ -702,12 +709,26 @@ export interface ApplicationHeaderView {
   readonly appliedAtText: string
   readonly stageBlockedReason: string
   readonly recordVersion: number
+  /**
+   * 申请**钉住**的评分标准版本（wire `application.rubric = {version_no, approved} | null`；O13）。
+   * 与 `JobView.rubric`（岗位**当前**指针）是两个不同事实，界面必须分成两个标签，不并成一句。
+   */
+  readonly applicationRubric: { readonly versionNo: number; readonly approved: boolean } | null
+}
+
+/** 面评进度的一轮口径（只来自服务端 `interviews[]` 的 `round_no` + `scorecards.required_total/submitted`）。 */
+export interface ScorecardRoundView {
+  readonly roundNo: number
+  readonly required: number
+  readonly submitted: number
 }
 
 /** 面评进度（服务端聚合，客户端不重算业务数）。 */
 export interface ScorecardProgressView {
   readonly required: number
   readonly submitted: number
+  /** O9：`required/submitted` 是**跨轮份数合计**，不是面试官人数；逐轮明细用于把口径说出来。 */
+  readonly rounds: ReadonlyArray<ScorecardRoundView>
   readonly summaryText: string
   readonly tone: ChipTone
 }
@@ -1401,7 +1422,13 @@ export function normalizeInterview(value: unknown, context?: StageContext): Inte
       submitted,
       missing,
       overdue,
-      summaryText: required === 0 ? '无需面评' : `已提交 ${String(submitted)}/${String(required)}`,
+      // O9：这行只在"第 N 轮"卡里出现，补上轮次避免被读成"面试官人数"；roundNo 缺失时不编轮次。
+      summaryText:
+        required === 0
+          ? '无需面评'
+          : roundNo > 0
+            ? `已提交 ${String(submitted)}/${String(required)}（第 ${String(roundNo)} 轮）`
+            : `已提交 ${String(submitted)}/${String(required)}`,
       tone: required === 0 ? 'gray' : complete ? 'green' : overdue > 0 ? 'red' : 'amber',
     },
     transcript: normalizeTranscript(raw.transcript),
@@ -1409,16 +1436,47 @@ export function normalizeInterview(value: unknown, context?: StageContext): Inte
   }
 }
 
-/** 从服务端进度聚合出"面评进度"（不重算业务数）。 */
-export function buildScorecardProgress(value: unknown): ScorecardProgressView {
+/**
+ * 从服务端进度聚合出"面评进度"（不重算业务数）。
+ *
+ * O9：`scorecards_required` 是**跨轮应提交份数合计**（例：第 1 轮 1 份 + 第 2 轮 2 份 = 3），
+ * 不是"3 个面试官"。所以这里只用**同一份数据**里的 `interviews[]`（每轮 `round_no` +
+ * `scorecards.required_total/submitted`）把轮次口径说出来，不新增服务端字段、不改数字。
+ *
+ * 口径不编造规则（两条同时满足才写逐轮明细）：① 至少 2 轮——单轮时 `x/y` 不会读成"面试官人数"，
+ * 不必加括注；② 逐轮 required 之和必须等于服务端聚合 required。对不上 / 只有一轮时只给总数，
+ * 绝不凭空造轮次。
+ * @param value - `progress` 段（`scorecards_required` / `scorecards_submitted`）。
+ * @param interviews - 同一份申请数据里的面试轮次（缺省 = 没有逐轮口径）。
+ */
+export function buildScorecardProgress(
+  value: unknown,
+  interviews: readonly InterviewView[] = [],
+): ScorecardProgressView {
   const raw = record(value)
   const required = count(raw.scorecards_required)
   const submitted = count(raw.scorecards_submitted)
   const complete = required > 0 && submitted >= required
+  const rounds: ScorecardRoundView[] = []
+  for (const interview of interviews) {
+    if (interview.roundNo <= 0 || interview.scorecards.required <= 0) continue
+    rounds.push({
+      roundNo: interview.roundNo,
+      required: interview.scorecards.required,
+      submitted: interview.scorecards.submitted,
+    })
+  }
+  const sumRequired = rounds.reduce((total, round) => total + round.required, 0)
+  const perRound = rounds.length >= 2 && sumRequired === required
+  const breakdown = perRound
+    ? rounds.map((round) => `第 ${String(round.roundNo)} 轮 ${String(round.required)} 份`).join(' / ')
+    : `跨 ${String(rounds.length)} 轮合计`
+  const suffix = rounds.length >= 2 ? `（${breakdown}）` : ''
   return {
     required,
     submitted,
-    summaryText: required === 0 ? '无需面评' : `已提交 ${String(submitted)}/${String(required)}`,
+    rounds: perRound ? rounds : [],
+    summaryText: required === 0 ? '无需面评' : `已提交 ${String(submitted)}/${String(required)}${suffix}`,
     tone: required === 0 ? 'gray' : complete ? 'green' : 'amber',
   }
 }
@@ -1512,6 +1570,13 @@ export function buildApplicationHeader(value: unknown, context?: StageContext): 
   const lifecycleStatus = oneOf(raw.lifecycle_status, ['ACTIVE', 'ON_HOLD', 'WITHDRAWN', 'CLOSED']) || text(raw.lifecycle_status)
   const stageCode = text(raw.current_stage_code)
   const candidateName = text(candidate.display_name)
+  // O13：申请钉住的评分标准（null = 没钉住）。version_no 取不到时按"没钉住"处理，不显示 r0。
+  const applicationRubricRaw = record(raw.rubric)
+  const applicationRubricVersionNo = count(applicationRubricRaw.version_no)
+  const applicationRubric: ApplicationHeaderView['applicationRubric'] =
+    applicationRubricVersionNo > 0
+      ? { versionNo: applicationRubricVersionNo, approved: bool(applicationRubricRaw.approved) }
+      : null
   return {
     id,
     rowKey: id !== '' ? id : `application-${text(job.job_id)}-${String(count(raw.record_version))}`,
@@ -1533,7 +1598,25 @@ export function buildApplicationHeader(value: unknown, context?: StageContext): 
     appliedAtText: formatDateTime(raw.applied_at),
     stageBlockedReason: text(raw.stage_blocked_reason),
     recordVersion: count(raw.record_version),
+    applicationRubric,
   }
+}
+
+/**
+ * 申请钉住的评分标准一行文案（O13：与"岗位当前评分标准"分开出现，绝不并成一句）。
+ * `null` = 该申请没有钉住版本（服务端 `application.rubric = null`），如实写"未钉住"。
+ */
+export function applicationRubricTextOf(value: ApplicationHeaderView['applicationRubric']): string {
+  if (value === null) return '未钉住'
+  return `v${String(value.versionNo)} · ${value.approved ? '已批准' : '未批准'}`
+}
+
+/**
+ * 设置入口说明的 HR 文案（O6：服务端 `settings.entry.note` 原文里可能带 `seam` / href / 机器码，
+ * 主文案不展示原文；原文保留在 `settings.entry.note` 数据层，供证据/排障读取）。
+ */
+export function settingsEntryNoteText(entry: { readonly available: boolean; readonly note: string }): string {
+  return entry.available ? '设置页已可用' : '设置页暂不可用（当前只读）'
 }
 
 /** 面试列表（详情与行共用同一套归一化）。 */
@@ -1557,7 +1640,7 @@ export function buildApplicationRow(value: unknown, context?: StageContext): App
   const interviews = buildInterviews(raw.interviews, context)
   const interviewSummary = interviewSummaryOf(interviews)
   const progress = record(raw.progress)
-  const scorecardProgress = buildScorecardProgress(progress)
+  const scorecardProgress = buildScorecardProgress(progress, interviews)
   const transcriptSummary = transcriptSummaryOf(progress.transcript_state)
   const nextStep = normalizeNextStep(progress.next_step)
   const filterKind: ApplicationRowView['filterKind'] =
@@ -1612,8 +1695,9 @@ export function buildJob(value: unknown, context?: StageContext): JobView {
           versionNo: count(rubricRaw.version_no),
           approved: bool(rubricRaw.approved),
           dimensionCount: count(rubricRaw.dimension_count),
+          // O13：这里只是"岗位**当前**的评分标准"，必须自带标签，不能与"本申请沿用的版本"并成一句。
           summaryText: joinTexts([
-            `Rubric r${String(count(rubricRaw.version_no))}`,
+            `岗位当前 Rubric v${String(count(rubricRaw.version_no))}`,
             `${String(count(rubricRaw.dimension_count))} 个维度`,
             bool(rubricRaw.approved) ? '已批准' : '未批准',
           ]),
@@ -2025,7 +2109,7 @@ export function normalizeApplicationDetail(value: unknown): ApplicationDetailVie
     resume: normalizeResumeDetail(raw.resume),
     screeningEvidence: { decision, rubric, basis },
     interviews,
-    scorecardProgress: buildScorecardProgress(progress),
+    scorecardProgress: buildScorecardProgress(progress, interviews),
     transcriptSummary: transcriptSummary.summary,
     transcriptTone: transcriptSummary.tone,
     transcriptRuns,

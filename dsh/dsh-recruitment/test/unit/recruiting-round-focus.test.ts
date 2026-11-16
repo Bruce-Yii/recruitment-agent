@@ -283,7 +283,7 @@ test('JobView.rubric.rubricVersionId：wire rubric_version_id 归一化（批准
   assert.equal(withRubric.rubric.rubricVersionId, 'rv-9')
   assert.equal(withRubric.rubric.versionNo, 2)
   assert.equal(withRubric.rubric.approved, false)
-  assert.equal(withRubric.rubric.summaryText, 'Rubric r2 · 4 个维度 · 未批准')
+  assert.equal(withRubric.rubric.summaryText, '岗位当前 Rubric v2 · 4 个维度 · 未批准')
 
   const noRubric = view.jobs.find((job) => job.id === 'job-2')
   assert.equal(noRubric?.rubric, null, '没有 rubric 时保持 null（不造空对象）')

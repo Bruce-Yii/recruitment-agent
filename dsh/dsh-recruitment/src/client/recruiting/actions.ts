@@ -852,6 +852,25 @@ export function screeningDecisionAsOfOf(facts: DecisionFacts | null): string {
 }
 
 /**
+ * 结构性阻塞码 → HR 人话（O6：机器码不进可见文案；未知码给中性兜底，原文仍在数据层）。
+ * @param code - `screeningDecisionBlockers` / `decisionRecordBlockers` 产出的封闭码。
+ * @returns 可读的缺什么说明。
+ */
+export function blockerTextOf(code: string): string {
+  const table: Readonly<Record<string, string>> = {
+    DECISION_FACTS_MISSING: '决策依据还没有读取',
+    MISSING_RUBRIC_PAYLOAD_HASH: '评分标准快照还没有准备好',
+    MISSING_AUTHORITY_FACTS: '审批 / 授权依据还没有准备好',
+    MISSING_AS_OF: '决策时点还没有生成',
+    AS_OF_WITHOUT_OFFSET: '决策时点缺少时区（请刷新后重试）',
+    MISSING_SCREENING_EVALUATION: '还没有初筛评估',
+    SUMMARY_MISSING: '决策汇总还没有生成',
+    MISSING_DECISION_BASIS: '决策依据还没有准备好',
+  }
+  return table[code] ?? '还有一项前置事实没有准备好'
+}
+
+/**
  * `screening/decide` body：`{application_id, as_of, result, reason, basis_refs[]}`。
  *
  * basis_refs **只能**从 facts 组装（`RUBRIC_VERSION` / `AUTHORITY` / `SCREENING_EVALUATION`）：
