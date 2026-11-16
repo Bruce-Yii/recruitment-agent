@@ -81,6 +81,7 @@ import {
   type ApprovalDecision,
   type ApprovalRequester,
 } from './job-rubric-approve.ts'
+import { machineArgumentLines, shortHash, shortRef } from './render-ref.ts'
 import {
   closePool,
   createPool,
@@ -1394,24 +1395,36 @@ function renderVerifyValue(_args: unknown, value: unknown): readonly TextBlock[]
     : `${v.labels.provenance}/${v.labels.trigger}/${v.labels.connection}`
   const artifact = v.artifact === undefined
     ? 'artifact=unavailable'
-    : `artifact=${v.artifact.id.slice(0, 8)}… rev=${v.artifact.source_revision}`
+    : `artifact ${shortRef(v.artifact.id)} rev=${v.artifact.source_revision}`
       + ` segments=${v.artifact.segment_count} sha=${v.artifact.content_sha256 === undefined
         ? 'n/a'
-        : `${v.artifact.content_sha256.slice(0, 8)}…`}`
-  const verifiedBy = v.record.verified_by_actor_id === undefined ? 'unknown' : v.record.verified_by_actor_id
+        : shortHash(v.artifact.content_sha256)}`
+  // 核验人写"角色 + 短号"：完整 actor id 对人没有信息量，只会被原样念出来。
+  const verifiedBy = v.record.verified_by_actor_id === undefined
+    ? 'unknown'
+    : `${v.record.verified_by_actor_kind ?? 'actor'} ${shortRef(v.record.verified_by_actor_id)}`
   const verifiedAt = v.record.verified_at === undefined ? 'unknown' : v.record.verified_at
+  // O1 残留：人读正文只给业务标识（状态 / 轮次 / 条数）与短号；完整 UUID 只进末尾的
+  // machine arguments 区（模型要复制才能调 transcript_read 读回本场转写）。
   const lines: string[] = [
-    `${v.outcome.toLowerCase()} interview record ${v.record.id} (labels: ${labels})`,
+    `${v.outcome.toLowerCase()} interview record ${shortRef(v.record.id)} (labels: ${labels})`,
     `  record: ${v.record.previous_status}/${v.record.previous_verification_status}`
       + ` -> ${v.record.status}/${v.record.verification_status}`
       + `  record_version=${v.record.record_version}  transcript_revision=${v.record.transcript_revision}`,
-    `  interview_id=${v.record.interview_id}  application_id=${v.record.application_id}`,
+    `  面试 ${shortRef(v.record.interview_id)}  申请 ${shortRef(v.record.application_id)}`,
     `  ${artifact}`,
-    `  verified_by=${verifiedBy}  verified_at=${verifiedAt}`,
+    `  核验人 ${verifiedBy}  核验时间 ${verifiedAt}`,
     `  replayed=${String(v.replayed)}  gate: requested=${String(v.gate.requested)} result=${v.gate.result}`,
     `  changes: written=${String(v.changes.written)} tables=[${v.changes.tables.join(', ')}] `
-      + `events=[${v.changes.event_ids.join(', ')}]`,
-    `next: recruitment_transcript_read(interview_id=${v.record.interview_id})`,
+      + `事件=[${v.changes.event_ids.map((eventId) => shortRef(eventId)).join(', ')}]`,
+    `next: ${v.next_action.verify_with}(interview_id=${shortRef(v.record.interview_id)}) `
+      + `读回本场转写（完整入参见下）`,
   ]
+  // machine arguments：`interview_id` 是 recruitment_transcript_read 的必填入参（读回本场转写），
+  // `artifact_id` 用它钉住"人核验过的那一版"（transcript_read 的可选入参）；完整值只允许放这里。
+  lines.push(...machineArgumentLines([
+    { key: 'interview_id', value: v.record.interview_id },
+    ...(v.artifact === undefined ? [] : [{ key: 'artifact_id', value: v.artifact.id }]),
+  ]))
   return [{ type: 'text', text: lines.join('\n') }]
 }

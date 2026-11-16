@@ -71,6 +71,7 @@ import {
   decideRubricApprovalInTransaction,
   mapDatabaseError,
 } from './job-create.ts'
+import { machineArgumentLines, shortHash, shortRef } from './render-ref.ts'
 import {
   closePool,
   createPool,
@@ -1197,20 +1198,30 @@ function renderApproveValue(_args: unknown, value: unknown): readonly TextBlock[
     : `${v.labels.provenance}/${v.labels.trigger}/${v.labels.connection}`
   const previous = v.job.previous_current_rubric_version_id === undefined
     ? 'none'
-    : v.job.previous_current_rubric_version_id
+    : shortRef(v.job.previous_current_rubric_version_id)
+  // O1 残留：人读正文只给业务标识（岗位 code+标题 / 版本号 / 状态）与短号；完整 UUID 只进
+  // 末尾的 machine arguments 区（模型要复制才能调 job_get、下一份面评定版）。
   const lines: string[] = [
     `${v.outcome.toLowerCase()} rubric v${v.rubric.version_no} approval for job ${v.job.code} `
       + `${v.job.title} [${v.job.status}]  (labels: ${labels})`,
-    `  job_id=${v.job.id}  record_version=${v.job.record_version}`,
-    `  rubric version_id=${v.rubric.version_id}  payload_hash=${v.rubric.payload_hash.slice(0, 8)}…  `
+    `  岗位 ${shortRef(v.job.id)}  record_version=${v.job.record_version}`,
+    `  rubric v${v.rubric.version_no} 摘要 ${shortHash(v.rubric.payload_hash)}  `
       + `is_approved=${String(v.rubric.is_approved)}  is_current=${String(v.rubric.is_current)}`,
-    `  approval ${v.approval.approval_id} ${v.approval.status} by ${v.approval.decided_by_actor_id} `
-      + `at ${v.approval.decided_at}`,
-    `  current_rubric_version_id: ${previous} -> ${v.job.current_rubric_version_id}`,
+    `  approval ${shortRef(v.approval.approval_id)} ${v.approval.status} `
+      + `决策人 ${shortRef(v.approval.decided_by_actor_id)} 决定时间 ${v.approval.decided_at}`,
+    `  当前 rubric 版本指针 current_rubric_version_id: ${previous} -> ${shortRef(v.job.current_rubric_version_id)}`,
     `  replayed=${String(v.replayed)}  gate: requested=${String(v.gate.requested)} result=${v.gate.result}`,
     `  changes: written=${String(v.changes.written)} tables=[${v.changes.tables.join(', ')}] `
-      + `events=[${v.changes.event_ids.join(', ')}]`,
-    `next: recruitment_job_get(job_id=${v.job.id})`,
+      + `事件=[${v.changes.event_ids.map((eventId) => shortRef(eventId)).join(', ')}]`,
+    `next: ${v.next_action.verify_with}(job_id=${shortRef(v.job.id)}) 读回岗位与 rubric（完整入参见下）`,
   ]
+  // machine arguments：`job_id` / `rubric_version_id` 是 recruitment_job_get 与
+  // recruitment_scorecard_submit（定版，同轮必须同版）的入参；`approval_id` 是
+  // recruitment_decision_record 的可选入参（DC-19，把本次批准挂成决策依据）。完整值只放这里。
+  lines.push(...machineArgumentLines([
+    { key: 'job_id', value: v.job.id },
+    { key: 'rubric_version_id', value: v.rubric.version_id },
+    { key: 'approval_id', value: v.approval.approval_id },
+  ]))
   return [{ type: 'text', text: lines.join('\n') }]
 }

@@ -44,6 +44,9 @@ import {
 import { contractError, digestOf } from './contract.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
+// O1：render 的人读正文只放业务标识；完整 job_id / rubric_version_id 只进文末机器参数区
+// （模型必须原样复制它们才能调 recruitment_job_get / _rubric_approve / _update）。
+import { machineArgumentLines, shortHash } from './render-ref.ts'
 import { validateDimensions } from './screening-evaluate.ts'
 // R4 三维标签：`provenance` 按**这次调用**的租户事实算，不许写死 `LIVE`
 // （`contracts/tenant-provenance.md`；判定式与 candidate_get / interview_schedule 共用同一份实现）。
@@ -1866,10 +1869,17 @@ function criterionLine(raw: unknown): string {
 }
 
 /**
- * 渲染模型可见文本（SPEC §6：至少含 code/title/status、job_id、版本号、rubric 概览、
- * `approval PENDING → 需人类批准`、`next: recruitment_job_get(job_id=…)`）。
+ * 渲染模型可见文本（SPEC §6：至少含 code/title/status、版本号、rubric 概览、
+ * `approval PENDING → 需人类批准`、指向 `recruitment_job_get` 的读回提示）。
  * 签名必须是 `(args, value)`：DSH 运行时按两参调用 `output.render`，只写一个参数会把
  * `args` 当规范值渲染（真实事故：单测 `render()` 读到 `v.outcome === undefined` 直接抛）。
+ *
+ * O1（2026-11-16）：人读正文只放**业务标识** —— 岗位 code + 标题、部门名、版本号、
+ * rubric 概览、审批状态；完整的 `job.id` / `rubric.version_id` 只出现在文末
+ * machine arguments 区（键 = 下游工具真实入参名）。为什么不全删：create/update 每次
+ * 都追加新版本，模型必须拿到**可解析的完整 UUID** 才能调
+ * `recruitment_job_get` / `recruitment_job_rubric_approve`（严格 UUID 校验，
+ * 短号解析不了，R2 会断）；为什么不全留：完整 UUID 一旦进正文，模型就会念给 HR。
  * @param _args - 本次调用的入口（本工具渲染不依赖它）。
  * @param value - 本工具的规范输出值。
  */
@@ -1880,14 +1890,13 @@ function renderJobWrite(_args: unknown, value: unknown): readonly TextBlock[] {
     : `${v.labels.provenance}/${v.labels.trigger}/${v.labels.connection}`
   const lines: string[] = [
     `${v.outcome.toLowerCase()} job ${v.job.code} ${v.job.title} [${v.job.status}]  (labels: ${labels})`,
-    `  job_id=${v.job.id}  record_version=${v.job.record_version}  `
-      + `department=${v.department.name} (${v.department.id})`,
+    `  department: ${v.department.name}  record_version=${v.job.record_version}`,
   ]
   if (v.job_version === null) {
     lines.push('  job_version: none')
   } else {
     lines.push(
-      `  job_version v${v.job_version.version_no}  hash=${v.job_version.payload_hash.slice(0, 8)}…  `
+      `  job_version v${v.job_version.version_no}  hash=${shortHash(v.job_version.payload_hash)}  `
       + `jd_source=${v.job_version.jd_source}  `
       + `description_md=${v.job_version.description_md === null ? 'null' : `${v.job_version.description_md.length} chars`}  `
       + `requirements_md=${v.job_version.requirements_md === null ? 'null' : `${v.job_version.requirements_md.length} chars`}`,
@@ -1897,7 +1906,7 @@ function renderJobWrite(_args: unknown, value: unknown): readonly TextBlock[] {
     lines.push('  rubric: none (this call did not write a rubric)')
   } else {
     lines.push(
-      `  rubric v${v.rubric.version_no}  version_id=${v.rubric.version_id}  `
+      `  rubric v${v.rubric.version_no}  `
       + `(${v.rubric.criteria_count} criteria: ${v.rubric.must_have_count} must / `
       + `${v.rubric.nice_to_have_count} nice / ${v.rubric.disqualifier_count} disqualifier, `
       + `is_approved=${String(v.rubric.is_approved)})`,
@@ -1907,13 +1916,21 @@ function renderJobWrite(_args: unknown, value: unknown): readonly TextBlock[] {
     if (approval === null) {
       lines.push('  approval: none (this rubric version has no approval row; treat it as NOT approved)')
     } else {
+      // 审批行只报**状态**：approval_id 不是任何下游工具的入参，念给 HR 没有业务含义。
       lines.push(
-        `  approval ${approval.approval_id} ${approval.status}`
+        `  approval: ${approval.status}`
         + (approval.status === 'PENDING' ? ' → 需人类批准（PENDING；批准不是模型的动作）' : ''),
       )
     }
   }
-  lines.push(`next: recruitment_job_get(job_id=${v.job.id})`)
+  // 读回提示不夹完整 UUID：id 在下面的机器参数区，HR 看到的是"下一步做什么"。
+  lines.push('next: 用 recruitment_job_get 读回该岗位（job_id 见文末机器参数区）')
+  lines.push(...machineArgumentLines([
+    { key: 'job_id', value: v.job.id },
+    // rubric 版本 id 是 `recruitment_job_rubric_approve` 的必填入参（`recruitment_job_get`
+    // 也接受它），而它只在 write 的返回里出现一次 —— 模型只能从这里发现它。
+    ...(v.rubric === null ? [] : [{ key: 'rubric_version_id', value: v.rubric.version_id }]),
+  ]))
   return [{ type: 'text', text: lines.join('\n') }]
 }
 

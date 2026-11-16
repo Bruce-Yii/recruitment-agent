@@ -22,6 +22,7 @@
 import { parseContractArgs, toParameterSchema, type ParamMap } from './args.ts'
 import { checkAsOf } from './contract.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
+import { machineArgumentLines, shortRef } from './render-ref.ts'
 // R4：`provenance` 的唯一判定实现（`contracts/tenant-provenance.md` §2）。
 // 演示租户（0002_seed）的转写行同样真的在库里 —— "读到了行"不是 `LIVE` 的证据。
 import { resolveTenantProvenance } from './candidate-get.ts'
@@ -1102,23 +1103,25 @@ export function createTranscriptReadTool(database: ResolvedDatabaseConfig): Read
         }
         const lines = [
           `${v.tool} ${v.contract_version} status=${v.status} read_only=${String(v.read_only)} as_of=${v.as_of}`,
-          `interview ${String(v.interview.id)} stage=${String(v.interview.stage_code)}`
-            + ` status=${String(v.interview.status)} round=${String(v.interview.round_no)}`,
+          // O1 残留：人读正文只给业务标识（第几轮 / 阶段 / 状态）与短号；完整 UUID 只进
+          // 末尾的 machine arguments 区（模型要复制才能调下游工具）。
+          `interview 第 ${String(v.interview.round_no)} 轮 stage=${String(v.interview.stage_code)}`
+            + ` status=${String(v.interview.status)} (面试 ${shortRef(String(v.interview.id))})`,
           `transcript state=${transcript.state} reason=${transcript.reason_code}`
             + ` wait_minutes=${transcript.wait_minutes} artifacts=${transcript.artifact_count}`,
           `labels: provenance=${v.labels.provenance} trigger=${v.labels.trigger} connection=${v.labels.connection}`,
         ]
         for (const meeting of transcript.meetings) {
-          lines.push(`  meeting ${String(meeting.id)} ${String(meeting.provider)}`
+          lines.push(`  meeting ${shortRef(String(meeting.id))} ${String(meeting.provider)}`
             + ` role=${String(meeting.meeting_role)} in_set=${String(meeting.in_transcript_set)}`)
         }
         if (transcript.canonical_artifact_id !== undefined) {
-          lines.push(`  canonical ${transcript.canonical_artifact_id} rev=${String(transcript.canonical_revision)}`)
+          lines.push(`  canonical 产物 ${shortRef(transcript.canonical_artifact_id)} rev=${String(transcript.canonical_revision)}`)
         } else {
           lines.push('  canonical (none)')
         }
         for (const artifact of transcript.artifacts) {
-          lines.push(`  artifact ${String(artifact.id)} rev=${String(artifact.source_revision)}`
+          lines.push(`  artifact ${shortRef(String(artifact.id))} rev=${String(artifact.source_revision)}`
             + ` status=${String(artifact.transcript_status)}`
             + ` provenance=${String(artifact.provenance)} trigger=${String(artifact.trigger_mode)}`
             + ` connection=${String(artifact.connection_state)}`
@@ -1134,9 +1137,19 @@ export function createTranscriptReadTool(database: ResolvedDatabaseConfig): Read
         }
         lines.push(`  record ${transcript.record === undefined
           ? '(missing)'
-          : `${String(transcript.record.id)} status=${String(transcript.record.status)}`
+          : `${shortRef(String(transcript.record.id))} status=${String(transcript.record.status)}`
             + ` verification=${String(transcript.record.verification_status)}`}`)
         for (const warning of v.warnings) lines.push(`  warning ${warning.code}: ${warning.message}`)
+        // 机器参数区：interview_id / artifact_id / interview_record_id 都是下游工具的入参
+        // （transcript_read 的 artifact 过滤、interview_record_verify），模型只能从本工具发现。
+        lines.push(...machineArgumentLines([
+          { key: 'interview_id', value: String(v.interview.id) },
+          ...transcript.artifacts.map((artifact) => ({
+            key: `artifact_id(rev=${String(artifact.source_revision)})`,
+            value: String(artifact.id),
+          })),
+          ...(transcript.record === undefined ? [] : [{ key: 'interview_record_id', value: transcript.record.id }]),
+        ]))
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },

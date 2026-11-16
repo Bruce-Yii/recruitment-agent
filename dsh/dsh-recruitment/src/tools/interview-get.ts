@@ -30,6 +30,7 @@ import type { ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { checkAsOf, contractError } from './contract.ts'
 import type { ContractErrorCode } from './contract.ts'
+import { MACHINE_ARGS_HEADER, shortRef } from './render-ref.ts'
 // R4：`provenance` 的唯一判定实现（`contracts/tenant-provenance.md` §2）。
 // 演示租户（0002_seed）的行同样真的在库里 —— "读到了行"不是 `LIVE` 的证据。
 import { resolveTenantProvenance } from './candidate-get.ts'
@@ -1116,13 +1117,14 @@ function interviewerLine(row: InterviewerValue): string {
     + `${row.scorecard.transcript_basis}${submitted})`
 }
 
-/** 一个元素 → 模型可见文本（§2.6 的正例格式）。 */
+/** 一个元素 → 模型可见文本（§2.6 的正例格式；人读正文只给业务标识 + 短号）。 */
 function interviewBlock(value: InterviewValue): string[] {
   const window = `${value.scheduled_start_at ?? '?'} – ${value.scheduled_end_at ?? '?'}`
   const lines: string[] = [
-    `interview ${value.id}  round=${value.round_no} slot=${value.slot_code} stage=${value.stage_code} `
+    `interview 第 ${value.round_no} 轮 round=${value.round_no} slot=${value.slot_code} stage=${value.stage_code} `
       + `[${value.status}]  ${window}`,
-    `  application_id=${value.application_id}  candidate_id=${value.candidate_id}  job_id=${value.job_id}`,
+    `  申请 ${shortRef(value.application_id)} · 候选人 ${shortRef(value.candidate_id)} · 岗位 ${shortRef(value.job_id)}`
+      + ` · 面试 ${shortRef(value.id)}`,
   ]
   if (value.interviewers.length === 0) {
     lines.push('  interviewers: none')
@@ -1138,7 +1140,7 @@ function interviewBlock(value: InterviewValue): string[] {
       lines.push(
         `  meeting_binding: ${binding.state}  ${item.provider} `
         + `${item.external_meeting_id ?? item.calendar_event_id ?? '?'} → ${item.meeting_role} `
-        + `(binding_method=${item.binding_method}, meeting_id=${item.meeting_id})`,
+        + `(binding_method=${item.binding_method}, meeting ${shortRef(item.meeting_id)})`,
       )
     }
   }
@@ -1152,8 +1154,8 @@ function interviewBlock(value: InterviewValue): string[] {
   )
   if (evaluation.blockers.length > 0) {
     lines.push(`    blockers: ${evaluation.blockers
-      .map((blocker) => `${blocker.code}(${blocker.actor_id ?? blocker.interviewer_id
-        ?? blocker.interview_record_id ?? '-'})`)
+      .map((blocker) => `${blocker.code}(${shortRef(blocker.actor_id ?? blocker.interviewer_id
+        ?? blocker.interview_record_id ?? '-')})`)
       .join(', ')}`)
   }
   lines.push(`  warnings: ${value.warnings.map((warning) => warning.code).join(', ') || '—'}`)
@@ -1222,13 +1224,32 @@ export function createInterviewGetTool(config: ResolvedDatabaseConfig): Readonly
         const v = value as Record<string, unknown>
         const interviews = (v.interviews ?? []) as readonly InterviewValue[]
         const labels = v.labels as { provenance: string; trigger: string; connection: string }
+        const query = (v.query ?? {}) as Record<string, unknown>
+        // O1 残留：query 不再 `JSON.stringify`（那会把 application_id/interview_id 完整 UUID
+        // 原样交给模型）；只给人能理解的查询条件 + 短号。
+        const queryParts: string[] = [String(query.mode ?? '?')]
+        if (typeof query.application_id === 'string') queryParts.push(`申请 ${shortRef(query.application_id)}`)
+        if (typeof query.interview_id === 'string') queryParts.push(`面试 ${shortRef(query.interview_id)}`)
+        if (typeof query.round_no === 'number') queryParts.push(`第 ${query.round_no} 轮`)
         const lines: string[] = [
           `${String(v.tool)} ${String(v.contract_version)}  (labels: `
           + `${labels.provenance}/${labels.trigger}/${labels.connection})  as_of=${String(v.as_of)}`,
-          `query: ${JSON.stringify(v.query)}  count=${String(v.count)}`,
+          `query: ${queryParts.join(' · ')}  count=${String(v.count)}`,
         ]
         for (const interview of interviews) lines.push(...interviewBlock(interview))
         if (interviews.length === 0) lines.push('interviews: none')
+        // 机器参数区：按申请查询时 interview_id / meeting_id / interview_record_id 是**本工具
+        // 才能发现**的值，模型要拿它们调 scorecard_submit / transcript_import /
+        // interview_record_verify。完整值只允许出现在这里（机器区），不要给人看。
+        const machineArguments: string[] = []
+        for (const interview of interviews) {
+          machineArguments.push(`  interview_id(round=${interview.round_no}) ${interview.id}`)
+          machineArguments.push(`  application_id(round=${interview.round_no}) ${interview.application_id}`)
+          for (const binding of interview.meeting_binding.bindings) {
+            machineArguments.push(`  meeting_id(round=${interview.round_no}) ${binding.meeting_id}`)
+          }
+        }
+        if (machineArguments.length > 0) lines.push(MACHINE_ARGS_HEADER, ...machineArguments)
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },

@@ -21,6 +21,7 @@ import { parseContractArgs, toParameterSchema } from './args.ts'
 import type { ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { checkAsOf, contractError } from './contract.ts'
+import { machineArgumentLines, shortHash, shortRef } from './render-ref.ts'
 import { validateDimensions } from './screening-evaluate.ts'
 // R4：`provenance` 的唯一判定实现（`contracts/tenant-provenance.md` §2）。
 // 本工具**只读本产品业务库**，所以"读到了行"不等于"数据是真的"：演示租户的行同样真的在库里。
@@ -762,17 +763,17 @@ export function createJobGetTool(config: ResolvedDatabaseConfig): ReadonlyToolDe
       render(_args: unknown, value: unknown): readonly TextBlock[] {
         const v = value as JobGetValue
         const labels = `${v.labels.provenance}/${v.labels.trigger}/${v.labels.connection}`
+        // O1 残留：人读正文只给业务标识（岗位 code+标题）与短号；完整 UUID 只在机检/结构化
+        // 字段和末尾的 machine arguments 区（模型要复制才能调下游工具）。
         const lines: string[] = [
           `job ${v.job.code} ${v.job.title} [${v.job.status}]  (labels: ${labels})`,
-          `  job_id=${v.job.id}  record_version=${v.job.record_version}  `
-            + `department_id=${v.job.department_id}  requisition_id=${v.job.requisition_id ?? 'null'}`,
+          `  岗位 ${shortRef(v.job.id)}  record_version=${v.job.record_version}`,
         ]
         if (v.job_version === null) {
           lines.push('job_version: none (job.current_job_version_id is null)')
         } else {
           lines.push(
-            `job_version v${v.job_version.version_no}  hash=${v.job_version.payload_hash.slice(0, 8)}…  `
-            + `approved_by_approval_id=${v.job_version.approved_by_approval_id ?? 'null'}`,
+            `job_version v${v.job_version.version_no}  hash=${shortHash(v.job_version.payload_hash)}`,
           )
           if (v.job_version.description_md !== null) {
             lines.push(`  description_md: ${v.job_version.description_md}`)
@@ -792,7 +793,7 @@ export function createJobGetTool(config: ResolvedDatabaseConfig): ReadonlyToolDe
           lines.push(
             `rubric v${v.rubric.version_no} (is_current=${String(v.rubric.is_current)}, `
             + `is_approved=${String(v.rubric.is_approved)}, resolution=${v.rubric.resolution}, `
-            + `executable=${String(v.rubric.executable)}, version_id=${v.rubric.version_id})`,
+            + `executable=${String(v.rubric.executable)}, 版本 ${shortRef(v.rubric.version_id)})`,
           )
           for (const criterion of v.rubric.criteria) lines.push(criterionLine(criterion))
         }
@@ -803,6 +804,13 @@ export function createJobGetTool(config: ResolvedDatabaseConfig): ReadonlyToolDe
             .join(', ') || 'none'}`,
         )
         lines.push(`as_of ${v.as_of}`)
+        // 机器参数区：rubric 版本 id 是**本工具才能发现**的值，模型要拿它调
+        // `recruitment_job_rubric_approve` / `recruitment_screening_evaluate`（pin 版本），
+        // 所以完整值只允许出现在这里，且 header 明示不要给用户看。
+        lines.push(...machineArgumentLines([
+          { key: 'job_id', value: v.job.id },
+          ...(v.rubric === null ? [] : [{ key: 'rubric_version_id', value: v.rubric.version_id }]),
+        ]))
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },

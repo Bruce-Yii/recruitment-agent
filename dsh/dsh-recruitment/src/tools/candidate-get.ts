@@ -29,6 +29,7 @@
 import { parseArgs, toParameterSchema } from './args.ts'
 import type { ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
+import { machineArgumentLines, shortRef } from './render-ref.ts'
 import { RecruitmentToolError } from './errors.ts'
 import {
   closePool,
@@ -395,13 +396,16 @@ export function createCandidateGetTool(config: ResolvedDatabaseConfig): Readonly
       schema: OUTPUT_SCHEMA,
       render(_args: unknown, value: unknown): readonly TextBlock[] {
         const v = value as CandidateGetValue
+        // O1 残留：人读正文只给业务标识（显示名 / 岗位 code+标题 / 阶段）与短号；
+        // 完整 UUID 只出现在末尾的 machine arguments 区（模型要复制才能调下游工具）。
         const lines: string[] = [
-          `candidate ${v.candidate_id} / ${v.display_name} `
-            + `(identity_status=${v.identity_status}, record_version=${v.record_version}, source=${v.source})`,
+          `候选人 ${v.display_name} `
+            + `(identity_status=${v.identity_status}, record_version=${v.record_version}, source=${v.source}, `
+            + `候选人 ${shortRef(v.candidate_id)})`,
           `  labels: ${v.labels.provenance}/${v.labels.trigger}/${v.labels.connection}`,
         ]
         if (v.merged_into_candidate_id !== undefined) {
-          lines.push(`  merged_into_candidate_id=${v.merged_into_candidate_id}`)
+          lines.push(`  已合并到候选人 ${shortRef(v.merged_into_candidate_id)}`)
         }
         lines.push(
           `  contacts: ${v.contacts.email} / ${v.contacts.phone} (visible=${String(v.contacts.visible)})`,
@@ -409,10 +413,17 @@ export function createCandidateGetTool(config: ResolvedDatabaseConfig): Readonly
         lines.push(`  applications: ${v.applications.length}`)
         for (const application of v.applications) {
           lines.push(
-            `    ${application.application_id} -> ${application.job_code} ${application.job_title} `
-              + `@ ${application.stage_code} (${application.lifecycle_status})`,
+            `    申请 ${shortRef(application.application_id)} · ${application.job_code} ${application.job_title} `
+              + `· 阶段 ${application.stage_code} (${application.lifecycle_status})`,
           )
         }
+        lines.push(...machineArgumentLines([
+          { key: 'candidate_id', value: v.candidate_id },
+          ...v.applications.map((application) => ({
+            key: `application_id(${application.job_code}@${application.stage_code})`,
+            value: application.application_id,
+          })),
+        ]))
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },

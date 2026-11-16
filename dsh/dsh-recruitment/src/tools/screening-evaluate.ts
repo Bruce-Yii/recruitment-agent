@@ -25,6 +25,7 @@ import {
   type ContractErrorCode,
 } from './contract.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
+import { machineArgumentLines, shortHash, shortRef } from './render-ref.ts'
 import { closePool, createPool, withReadOnly, type DatabaseClient, type ResolvedDatabaseConfig } from '../db/pool.ts'
 import { hardIssueCodes, type MaterialIssue } from '../db/material.ts'
 
@@ -2492,7 +2493,7 @@ export function createScreeningEvaluateTool(cfg: ResolvedDatabaseConfig): Readon
         const lines = [
           `${v.tool} ${v.contract_version} status=${v.status} advisory=${String(v.advisory)} read_only=${String(v.read_only)}`,
           `labels: provenance=${v.labels.provenance} trigger=${v.labels.trigger} connection=${v.labels.connection}`,
-          `application ${v.application.id} stage=${v.application.current_stage_code} `
+          `application 申请 ${shortRef(v.application.id)} stage=${v.application.current_stage_code} `
             + `lifecycle=${v.application.lifecycle_status} rv=${v.application.record_version}`,
           `job ${v.job.title} [${v.job.status}]`,
           `resume_version v${v.resume_version.version_no} parse_status=${v.resume_version.parse_status} `
@@ -2530,9 +2531,15 @@ export function createScreeningEvaluateTool(cfg: ResolvedDatabaseConfig): Readon
           }
         }
         lines.push(`snapshot: app_rv=${v.snapshot.application_record_version} `
-          + `resume_version_id=${v.snapshot.resume_version_id} `
-          + `rubric_version_id=${v.snapshot.rubric_version_id}`)
-        lines.push(`evaluation_digest=${v.evaluation_digest}`)
+          + `resume_version=${shortRef(v.snapshot.resume_version_id)} `
+          + `rubric_version=${shortRef(v.snapshot.rubric_version_id)}`)
+        lines.push(`evaluation_digest=${shortHash(v.evaluation_digest)}`)
+        // 机器参数区：rubric_version_id / resume_version_id 是下游工具
+        // （job_rubric_approve、material_read）的入参，模型只能从本工具发现它们。
+        lines.push(...machineArgumentLines([
+          { key: 'resume_version_id', value: v.snapshot.resume_version_id },
+          { key: 'rubric_version_id', value: v.snapshot.rubric_version_id },
+        ]))
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },

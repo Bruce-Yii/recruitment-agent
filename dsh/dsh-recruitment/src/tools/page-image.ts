@@ -17,9 +17,11 @@
 import { parseArgs, toParameterSchema } from './args.ts'
 import type { ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
-import { RecruitmentToolError } from './errors.ts'
+import { RecruitmentToolError, type RecruitmentErrorCode } from './errors.ts'
 import { assertReadablePdf, ConverterPathError, type ResolvedConverterConfig } from './converter.ts'
 import { bridgeFailure, runFallbackBridge } from './fallback-bridge.ts'
+// O1：render 的**人读正文**只放业务事实，不放内部编号（完整 64hex 不给 HR 念）。
+import { shortHash } from './render-ref.ts'
 
 const PARAMS: ParamMap = {
   path: {
@@ -129,7 +131,9 @@ export function createPageImageTool(cfg: ResolvedConverterConfig): ReadonlyToolD
           `page image: ${v.image_path}`,
           `page=${v.page} dpi=${v.dpi} pixels=${v.pixel_size[0]}x${v.pixel_size[1]} `
             + `page_size_pt=${v.page_size_pt[0]}x${v.page_size_pt[1]}`,
-          `source_sha256=${v.source_sha256}`,
+          // O1：sha256 只给短 hash（前 8 位）。它的作用是"这份图对应哪份原件"的锚点，
+          // HR 不需要、也不该看到完整 64hex；完整值仍在结构化 value 里供机机使用。
+          `source_sha256=${shortHash(v.source_sha256)}`,
         ]
         if (v.oversampled) {
           lines.push('oversampled=true (the source page has less detail than this render; more pixels, not more detail)')
@@ -150,7 +154,10 @@ export function createPageImageTool(cfg: ResolvedConverterConfig): ReadonlyToolD
         realPath = assertReadablePdf(requested, cfg)
       } catch (error) {
         if (error instanceof ConverterPathError) {
-          throw new RecruitmentToolError(error.code, error.message)
+          // 类型口径修正（2026-11-16，render-lint lane 的定向 tsc 收口）：`ConverterPathError.code`
+          // 是 string，而 `RecruitmentToolError` 收封闭错误码；运行时两者本来就一一对应
+          // （converter 侧只抛这几个码），这里只补断言，不改行为。
+          throw new RecruitmentToolError(error.code as RecruitmentErrorCode, error.message)
         }
         throw error
       }

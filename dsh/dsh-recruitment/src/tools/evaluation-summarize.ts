@@ -61,6 +61,7 @@ import { collectArgViolations, toParameterSchema, type ParamMap, type ParamSpec 
 import { canonicalJson, checkAsOf, digestOf } from './contract.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
+import { machineArgumentLines, shortHash, shortRef } from './render-ref.ts'
 import {
   closePool,
   createPool,
@@ -819,6 +820,16 @@ interface ApplicationRow {
   readonly job_id: string
   readonly job_version_id: string
   readonly rubric_version_id: string | null
+  /**
+   * 申请钉住的简历版本（`application.resume_version_id`）。
+   *
+   * 类型口径修正（2026-11-16，render-lint lane 的定向 tsc 收口）：`computeProvenance()` 一直
+   * 读这个键，但接口里没声明（HEAD 即有的类型债，`tsc` 报 TS2339）。这里只补**类型声明**，
+   * 不改 SQL、不改运行行为 —— 当前 SELECT 并没有取这一列，运行时它仍是 `undefined`
+   * （即 provenance 的 resume 链判定不会因此变 LIVE）。该逻辑缺口本身超出本 lane 范围，
+   * 已写进 `work/d5/render-lint/REPORT.md` 的残留项，供决策。
+   */
+  readonly resume_version_id?: string | null
   readonly lifecycle_status: string
   readonly current_stage_code: string
   readonly record_version: number
@@ -1942,6 +1953,10 @@ export function createEvaluationSummarizeTool(
         const blockers = summary.blockers as readonly Record<string, unknown>[]
         const permitted = summary.permitted_results as readonly string[]
         const warnings = summary.warnings as readonly Record<string, unknown>[]
+        const applicationId = String(summary.application_id)
+        const interviewId = summary.interview_id === undefined ? undefined : String(summary.interview_id)
+        // O1 残留：人读正文只给业务标识（scope / 阶段 / 版本号 / 结论）与短号；完整 id 与
+        // 64hex 摘要只进末尾的 machine arguments 区（模型要复制才能调 decision_record）。
         const lines: string[] = [
           'S10 汇总投影（只读，不代决）',
           `${String(summary.tool)} ${String(summary.contract_version)} `
@@ -1950,6 +1965,8 @@ export function createEvaluationSummarizeTool(
           `scope=${String(summary.decision_scope)} stage=${String(summary.stage_code)} `
             + `rubric=v${String((summary.rubric as Record<string, unknown>).version_no)} `
             + `source=${String((summary.rubric as Record<string, unknown>).source)}`,
+          `对象：申请 ${shortRef(applicationId)}`
+            + `${interviewId === undefined ? '' : ` 面试 ${shortRef(interviewId)}`}`,
           `coverage: required=${coverage.required_total} submitted=${coverage.submitted} `
             + `waived=${coverage.waived} missing=${coverage.missing} unusable=${coverage.unusable} `
             + `not_required=${coverage.not_required} overdue=${coverage.overdue} `
@@ -1976,7 +1993,16 @@ export function createEvaluationSummarizeTool(
         lines.push(`required_human_action: ${String(summary.required_human_action)}`)
         lines.push(`warnings: ${warnings.length}`)
         for (const warning of warnings) lines.push(`  - ${String(warning.code)}`)
-        lines.push(`summary_digest=${String(summary.summary_digest)}`)
+        // 摘要给人看只需短号；完整 64hex 只在末尾 machine arguments 区（决策绑定时逐字复制）。
+        lines.push(`摘要哈希 ${shortHash(String(summary.summary_digest))}`)
+        // machine arguments：`summary_digest` 是 recruitment_decision_record 的必填入参
+        // （STAGE/FINAL 必须逐字 = 本次重算值，DC-16/DC-20），`application_id` / `interview_id`
+        // 是决策对象与单场决策的入参；完整值只允许出现在这里。
+        lines.push(...machineArgumentLines([
+          { key: 'summary_digest', value: String(summary.summary_digest) },
+          { key: 'application_id', value: applicationId },
+          ...(interviewId === undefined ? [] : [{ key: 'interview_id', value: interviewId }]),
+        ]))
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },

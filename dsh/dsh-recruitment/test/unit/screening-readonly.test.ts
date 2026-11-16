@@ -26,6 +26,8 @@ const S7_MODULE_GRAPH = [
   'src/tools/args.ts',
   'src/tools/errors.ts',
   'src/tools/definition.ts',
+  // O1 残留修复（2026-11-16）：render 短号 helper（纯字符串函数、无 DB），纳入零 DML 扫描。
+  'src/tools/render-ref.ts',
   'src/db/pool.ts',
   'src/db/material.ts',
 ]

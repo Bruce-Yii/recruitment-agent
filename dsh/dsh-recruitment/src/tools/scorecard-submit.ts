@@ -66,6 +66,7 @@ import { randomUUID } from 'node:crypto'
 import { canonicalJson, digestOf, isUuid } from './contract.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
+import { machineArgumentLines, shortHash, shortRef } from './render-ref.ts'
 import {
   closePool,
   createPool,
@@ -2257,26 +2258,38 @@ export function createScorecardSubmitTool(deps: ScorecardSubmitDeps): ReadonlyTo
           superseded?: { scorecard_id: string; revision_no: number }
         }
         const coverage = v.coverage.by_assessment
+        // O1 残留：人读正文只给业务标识（轮次 / 状态 / 定版方式）与短号；完整 UUID 只进末尾的
+        // machine arguments 区（模型要复制才能调 transcript_read、下一份面评定版）。
         const lines = [
-          `面评已提交（面评工具 ${CONTRACT_VERSION}）：scorecard ${String(v.scorecard.id)} `
+          `面评已提交（面评工具 ${CONTRACT_VERSION}）：scorecard ${shortRef(String(v.scorecard.id))} `
             + `revision_no=${String(v.scorecard.revision_no)} status=SUBMITTED${v.replayed ? '（幂等重放，未新增行）' : ''}`,
           `面试：round_no=${String(v.interview.round_no)} slot_code=${String(v.interview.slot_code)} `
             + `status=${String(v.interview.status)}`,
-          `rubric ${String(v.scorecard.rubric_version_id)}（${String(v.scorecard.rubric_resolution)}）`
+          `rubric 版本 ${shortRef(String(v.scorecard.rubric_version_id))}（${String(v.scorecard.rubric_resolution)}）`
+            + ` 摘要 ${shortHash(String(v.scorecard.rubric_payload_hash))}`
             + ` transcript_basis=${String(v.scorecard.transcript_basis)}`,
           `维度覆盖 ${v.coverage.dimensions_assessed}/${v.coverage.dimensions_total}：`
             + `met=${coverage.met} not_met=${coverage.not_met} not_observed=${coverage.not_observed} unreadable=${coverage.unreadable}`,
           `标签：provenance=${v.labels.provenance} trigger=${v.labels.trigger} connection=${v.labels.connection}`,
-          `审计：status_changed_by_actor_id=${String(v.scorecard.status_changed_by_actor_id)} `
-            + `status_source_event_id=${String(v.scorecard.status_source_event_id)} `
+          `审计：变更人 ${shortRef(String(v.scorecard.status_changed_by_actor_id))} `
+            + `来源事件 ${shortRef(String(v.scorecard.status_source_event_id))} `
             + `record_version=${String(v.scorecard.record_version)}`,
         ]
         if (v.superseded !== undefined) {
-          lines.push(`修订：被替换的旧行 ${v.superseded.scorecard_id}（revision_no=${v.superseded.revision_no}）`)
+          lines.push(`修订：被替换的旧行 ${shortRef(v.superseded.scorecard_id)}（revision_no=${v.superseded.revision_no}）`)
         }
         if (v.warnings.length > 0) {
           lines.push(`提示：${v.warnings.map((warning) => warning.code).join(', ')}`)
         }
+        // machine arguments：`interview_id` 是 recruitment_transcript_read / recruitment_interview_get
+        // 的必填入参；`rubric_version_id` 是本条面评绑定的那一版（同一轮多位面试官必须同版，
+        // 且它可能是申请钉住的旧版本，只有本工具的输出能拿到完整值）；`scorecard_id` 是决策依据
+        // recruitment_decision_record.basis_refs[SCORECARD].id / 修订入参 supersedes_scorecard_id 的值。
+        lines.push(...machineArgumentLines([
+          { key: 'interview_id', value: String(v.scorecard.interview_id) },
+          { key: 'rubric_version_id', value: String(v.scorecard.rubric_version_id) },
+          { key: 'scorecard_id', value: String(v.scorecard.id) },
+        ]))
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },

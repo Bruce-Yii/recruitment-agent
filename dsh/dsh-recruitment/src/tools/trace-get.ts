@@ -24,6 +24,8 @@ import {
 import { loadTrace, TraceQueryError, type TraceObjectType, type TraceResult } from '../domain/trace.ts'
 import { RecruitmentToolError } from './errors.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
+// render 口径 helper（O1 残留修复轮）：人读正文只放业务标识 / 短号，内部编号不下发（见 render-ref.ts 文件头）。
+import { shortHash, shortRef } from './render-ref.ts'
 
 const TOOL_NAME = 'recruitment_trace_get'
 
@@ -184,6 +186,53 @@ function parseArgs(rawArgs: unknown): { objectType: TraceObjectType; objectId: s
   return { objectType: objectType as TraceObjectType, objectId }
 }
 
+/** 环类型 → 人读业务名（render 的人读正文讲业务，不讲内部编号）。 */
+const RING_LABELS: Readonly<Record<string, string>> = {
+  APPLICATION: '申请',
+  INTERVIEW: '面试',
+  EVENT: '事件',
+  BUSINESS_TASK: '业务任务',
+  TASK_ATTEMPT: '任务尝试',
+  AGENT_SESSION: 'Agent 会话',
+  TOOL_CALL: '工具调用',
+  DURABLE_EFFECT: '外部副作用',
+  RECEIPT: '外部回执',
+  DECISION: '人工决策',
+}
+
+/** 追溯入口类型 → 人读业务名（`object_type` 也是模型能从入参回读的业务说法）。 */
+const OBJECT_TYPE_LABELS: Readonly<Record<string, string>> = {
+  ...RING_LABELS,
+  CORRELATION: '执行链',
+}
+
+/** `counts` 的固定展示顺序（与 `src/domain/trace.ts` 的环顺序一致）。 */
+const TRACE_RING_ORDER: readonly string[] = [
+  'APPLICATION', 'INTERVIEW', 'EVENT', 'BUSINESS_TASK', 'TASK_ATTEMPT',
+  'AGENT_SESSION', 'TOOL_CALL', 'DURABLE_EFFECT', 'RECEIPT', 'DECISION',
+]
+
+/**
+ * 把文本里残留的完整内部编号换成短号。
+ *
+ * 为什么需要它：断链 `detail` 是 `src/domain/trace.ts` 拼的，里面**直接带完整 UUID**
+ * （`LINKED_ROW_OFF_CHAIN` 的 `decision.application_id=<UUID>`、`TOOL_CALL_DANGLING_REF`
+ * 的引用 id），原样打印就等于把内部编号念给 HR。这里只改呈现，事实一句不少。
+ * @param text - 可能是 detail / message 的自由文本。
+ * @returns 完整 UUID → `…末4位`；32+ 连续 hex → `前8位…`。
+ */
+function shortIdsInText(text: string): string {
+  return text.replace(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32,}/gi,
+    (match) => (match.includes('-') ? shortRef(match) : shortHash(match)),
+  )
+}
+
+/** `unknown` 值 → 可打印文本（缺省给 `—`，不用 null 占位，与出参 schema 的口径一致）。 */
+function textOf(value: unknown, missing = '—'): string {
+  return typeof value === 'string' && value !== '' ? value : missing
+}
+
 function renderTrace(value: unknown): readonly TextBlock[] {
   const v = value as Record<string, unknown>
   const object = (v.object ?? {}) as Record<string, unknown>
@@ -192,25 +241,51 @@ function renderTrace(value: unknown): readonly TextBlock[] {
   const breakpoints = Array.isArray(integrity.breakpoints) ? (integrity.breakpoints as Record<string, unknown>[]) : []
   const gaps = Array.isArray(integrity.gaps) ? (integrity.gaps as Record<string, unknown>[]) : []
   const counts = (v.counts ?? {}) as Record<string, unknown>
+  // O1 残留修复：人读正文只给**业务标识**（环类型 / 阶段状态 / 事件类型）与**短号**。
+  // 完整 UUID 与 64hex 一个都不出现；本工具是只读诊断，环上的编号也不是任何已注册工具的入参
+  // （event / business_task / task_attempt / agent_session / tool_call / durable_effect 都没有下游工具），
+  // 因此**不设** machine arguments 区 —— 下游要的 application_id / interview_id 走
+  // `business_read` 的 next tools 区 / `interview_get` 的 machine arguments 区，不从追溯链里发现。
+  const entryType = String(object.type ?? '?')
+  const entryLabel = OBJECT_TYPE_LABELS[entryType] ?? entryType
+  const chainRef = typeof v.correlation_id === 'string' && v.correlation_id !== ''
+    ? shortRef(v.correlation_id)
+    : '（缺失：历史行没有链 ID，不伪造）'
+  const countParts = TRACE_RING_ORDER
+    .filter((ring) => typeof counts[ring] === 'number' && (counts[ring] as number) > 0)
+    .map((ring) => `${RING_LABELS[ring] ?? ring} ${String(counts[ring])}`)
   const lines = [
-    `${String(v.tool)} ${String(v.contract_version)} status=${String(v.status)} reason=chain:${String(object.type)}:${String(object.id)}`,
-    `correlation_id=${String(v.correlation_id ?? '（缺失）')} rings=${rings.length} integrity=${integrity.ok === true ? 'OK' : 'BROKEN'}`,
-    `counts=${JSON.stringify(counts)}`,
+    `${String(v.tool)} ${String(v.contract_version)} status=${String(v.status)} read_only=${String(v.read_only)}`,
+    `追溯入口：${entryLabel}(${entryType}) ${shortRef(textOf(object.id))}`
+      + ` · 链 ${chainRef}`
+      + ` · 环 ${rings.length} 条`
+      + ` · 完整性 ${integrity.ok === true ? 'OK（无断链）' : `BROKEN（断点 ${breakpoints.length} 处）`}`,
+    `计数：${countParts.length === 0 ? '各环都没有行' : countParts.join(' · ')}`,
   ]
   for (const ring of rings) {
-    lines.push(`  ${String(ring.at ?? '(无时间)')}  ${String(ring.ring)}  ${String(ring.id)}`
-      + `${ring.on_chain === false ? '  [OFF-CHAIN]' : ''}  state=${String(ring.state ?? '-')}`
-      + `${ring.actor_id === undefined ? '' : `  actor=${String(ring.actor_id)}`}`)
+    const ringCode = String(ring.ring ?? '?')
+    lines.push(`  ${textOf(ring.at, '(无时间)')}  ${RING_LABELS[ringCode] ?? ringCode}(${ringCode})`
+      + ` ${shortRef(textOf(ring.id))}`
+      + `${ring.on_chain === false ? '  [OFF-CHAIN：挂在本对象上但不在同一链]' : ''}`
+      + `  state=${textOf(ring.state, '-')}`
+      + `${typeof ring.actor_id === 'string' && ring.actor_id !== '' ? `  actor=${shortRef(ring.actor_id)}` : ''}`)
   }
   if (breakpoints.length > 0) {
-    lines.push(`breakpoints(${breakpoints.length})`)
-    for (const item of breakpoints) lines.push(`  ${String(item.at)} ${String(item.code)}: ${String(item.detail)}`)
+    lines.push(`断点(${breakpoints.length})：有证据但接不上（完整性 BROKEN）`)
+    for (const item of breakpoints) {
+      lines.push(`  ${textOf(item.at, '?')} ${textOf(item.code, '?')}: ${shortIdsInText(textOf(item.detail, ''))}`
+        + `${typeof item.ring_id === 'string' && item.ring_id !== '' ? `  （相关环 ${shortRef(item.ring_id)}）` : ''}`)
+    }
   }
   if (gaps.length > 0) {
-    lines.push(`gaps(${gaps.length})`)
-    for (const item of gaps) lines.push(`  ${String(item.ring)} RING_NOT_PRODUCED: ${String(item.detail)}`)
+    lines.push(`缺环(${gaps.length})：该环在本次路径上没有产生行（不是断链）`)
+    for (const item of gaps) {
+      const ringCode = String(item.ring ?? '?')
+      lines.push(`  ${RING_LABELS[ringCode] ?? ringCode}(${ringCode}) ${textOf(item.code, 'RING_NOT_PRODUCED')}: `
+        + shortIdsInText(textOf(item.detail, '')))
+    }
   }
-  lines.push('redaction: 只含 id / 类型 / 时间 / actor / 状态；不含候选人正文、payload、决策理由原文（R7）')
+  lines.push('redaction: 只含类型 / 时间 / actor / 状态；不含候选人正文、payload、决策理由原文（R7）')
   return [{ type: 'text', text: lines.join('\n') }]
 }
 

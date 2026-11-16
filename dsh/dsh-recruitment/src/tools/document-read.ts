@@ -37,6 +37,8 @@ import type { ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
 import type { ResolvedConverterConfig } from './converter.ts'
+// O1：render 的**人读正文**只放业务标识/短号，内部编号与完整 64hex 一律不给 HR 念。
+import { shortHash, shortRef } from './render-ref.ts'
 
 /**
  * 真正阻断**结构化**的 code（D-97 第一批）。
@@ -634,6 +636,22 @@ export interface DocumentReadDeps {
   readonly read?: typeof readDocumentDetailed
 }
 
+/** UUID 文本形状：仅用于 render 里"业务字段被塞进内部编号"的降级判断，不做入参校验。 */
+const UUID_TEXT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * 读取器名的人读展示（O1 口径）。
+ *
+ * `reader_id` 在生产里是读取器名（`pymupdf` / `docx` / `striprtf`），必须原样显示 ——
+ * "谁读的这份材料"是业务事实。但万一它拿到的是 UUID 形状（契约漂移 / 合成值），
+ * 人读正文绝不能出现完整内部编号，此时降级成末 4 位短号。
+ * @param raw - 规范值里的 `reader_id` 原值。
+ * @returns 读取器名（正常）或短号（UUID 形状）。
+ */
+function readerLabel(raw: string): string {
+  return UUID_TEXT_RE.test(raw) ? shortRef(raw) : raw
+}
+
 /**
  * 造真实的多格式文档读取工具。
  * @param cfg - 已解析的 converter 配置。
@@ -666,11 +684,15 @@ export function createDocumentReadTool(
       schema: OUTPUT_SCHEMA,
       render(_args: unknown, value: unknown): readonly TextBlock[] {
         const v = value as DocumentReadValue
+        // O1：人读正文只放业务事实（媒体类型 / 读取器名 / 页数字数 / 判定 / 动作 / 状态）。
+        // 完整 reader_id / step_id 不进这里：模型只应该把"读了什么、还差什么"讲给 HR，
+        // 内部编号念出来既无业务含义，又违反 persona 的"never show internal identifiers"。
         const lines: string[] = [
-          `document ${v.media_type} via ${v.reader_id}@${v.reader_version} `
+          `document ${v.media_type} via ${readerLabel(v.reader_id)}@${v.reader_version} `
             + `(completeness=${v.completeness}, needs_visual=${String(v.needs_visual)}, `
             + `pages=${v.page_count}, chars=${v.source_chars}, blocks=${v.blocks.length})`,
-          `  sha256=${v.asset_sha256.slice(0, 16)}…`,
+          // digest 只给短 hash：它是"这份内容对应哪个原件字节"的锚点，完整 64hex 不进人读正文。
+          `  sha256=${shortHash(v.asset_sha256)}`,
           `assessment: blocking=${String(v.assessment.blocking)} completeness=${v.assessment.completeness}`,
         ]
         if (v.assessment.blocking_codes.length > 0) {
@@ -698,13 +720,16 @@ export function createDocumentReadTool(
         if (e.content_updated) {
           lines.push('  content was REPLACED by an adopted recovery re-read — the content above is the new one')
         }
+        // 恢复步骤：人读正文用「动作 / 角色 / 状态 / 问题」表达，不打印内部 step_id
+        // （`step-retry-<hash>` 这类编号对 HR 没有业务含义，也没有下游工具把它当入参）。
+        // 序号只用于区分同一步骤的多条记录。
         for (const step of e.steps) {
           const blocked = step.blocked_reason === '' ? '' : ` [${step.blocked_reason}]`
-          lines.push(`  RAN ${step.step_id} ${step.action} -> ${step.status}${blocked}: ${step.reason}`)
+          lines.push(`  RAN ${step.action} -> ${step.status}${blocked}: ${step.reason}`)
         }
-        for (const step of v.recovery.steps) {
-          lines.push(`  STEP ${step.step_id} ${step.action}/${step.role} (${step.status}) ${step.problem}`)
-        }
+        v.recovery.steps.forEach((step, index) => {
+          lines.push(`  STEP #${index + 1} ${step.action}/${step.role} (${step.status}) ${step.problem}`)
+        })
         if (v.recovery.steps.some((step) => step.action === 'human_review')) {
           lines.push(
             'human_review steps are NOT executed by this tool: a real person must decide at the human '

@@ -29,6 +29,7 @@
 import { parseArgs, toParameterSchema } from './args.ts'
 import type { ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
+import { machineArgumentLines, shortRef } from './render-ref.ts'
 import { RecruitmentToolError } from './errors.ts'
 import {
   closePool,
@@ -286,8 +287,10 @@ export function createStageAdvanceTool(
       schema: OUTPUT_SCHEMA,
       render(_args: unknown, value: unknown): readonly TextBlock[] {
         const v = value as StageAdvanceValue
+        // O1 残留：人读正文只给业务标识（阶段码）与短号；完整 application_id 只进末尾的
+        // machine arguments 区（模型要复制才能调下游工具）。
         const lines: string[] = [
-          `${v.tool} ${v.contract_version}: ${v.status} application ${v.application_id} `
+          `${v.tool} ${v.contract_version}: ${v.status} 申请 ${shortRef(v.application_id)} `
             + `@ ${v.stage_code} (record_version=${v.record_version})`,
         ]
         if (v.transitions.length > 0) {
@@ -296,7 +299,7 @@ export function createStageAdvanceTool(
         for (const blocker of v.blockers) {
           lines.push(
             `  blocker ${blocker.code} [owner=${blocker.owner_role}`
-              + `${blocker.owner_actor_id === undefined ? '' : ` ${blocker.owner_actor_id}`}`
+              + `${blocker.owner_actor_id === undefined ? '' : ` ${shortRef(blocker.owner_actor_id)}`}`
               + `${blocker.owner_display_name === undefined ? '' : ` ${blocker.owner_display_name}`}]`
               + ` next=${blocker.next_action_code}: ${blocker.message}`,
           )
@@ -304,13 +307,14 @@ export function createStageAdvanceTool(
         for (const warning of v.warnings) {
           lines.push(
             `  warning ${warning.code} [owner=${warning.owner_role}`
-              + `${warning.owner_actor_id === undefined ? '' : ` ${warning.owner_actor_id}`}]`
+              + `${warning.owner_actor_id === undefined ? '' : ` ${shortRef(warning.owner_actor_id)}`}]`
               + ` next=${warning.next_action_code}: ${warning.message}`,
           )
         }
         // 每次渲染都写一遍：审计里那一列是"执行账号"，不是"决策人"。
         lines.push('  stage_changed_by_actor_id = 执行账号（SET LOCAL recruitment.actor_id），不代表决策人；T1 是自动推进。')
         lines.push(`  labels: provenance=${v.labels.provenance} trigger=${v.labels.trigger} connection=${v.labels.connection}`)
+        lines.push(...machineArgumentLines([{ key: 'application_id', value: v.application_id }]))
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },

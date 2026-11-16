@@ -110,8 +110,10 @@ export const ROLE_SCHEMA: Record<string, unknown> = {
  * @returns 文本行。
  */
 export function renderRole(role: RoleView): string[] {
+  // O1 残留：人读正文只给业务标识（code / name）；role_id 完整值由 tools 的
+  // machine arguments 区承载（模型要拿它调 update/get）。
   return [
-    `  role ${role.role_id} code=${role.code} name=${role.name}`
+    `  role code=${role.code} name=${role.name}`
       + ` record_version=${role.record_version}${role.is_active ? '' : ' (inactive)'}`,
     `    permission_scopes: ${role.permission_scopes.length === 0 ? '(none)' : role.permission_scopes.join(', ')}`
       + `${role.description === undefined ? '' : ` · ${role.description}`}`,
@@ -165,9 +167,11 @@ export const TEAM_SCHEMA: Record<string, unknown> = {
  * @returns 文本行。
  */
 export function renderTeam(team: TeamView): string[] {
+  // O1 残留：只给业务标识（code / name / 部门名 / 成员显示名）；完整 id 由 config 工具的
+  // machine arguments 区承载。
   const lines = [
-    `  team ${team.team_id} code=${team.code} name=${team.name}`
-      + ` department=${team.department_name}(${team.department_id})`
+    `  team code=${team.code} name=${team.name}`
+      + ` department=${team.department_name}`
       + ` record_version=${team.record_version}${team.is_active ? '' : ' (inactive)'}`,
   ]
   if (team.members.length === 0) lines.push('    members: (none)')
@@ -181,7 +185,7 @@ export function renderTeam(team: TeamView): string[] {
  * @returns 一行文本。
  */
 function memberLine(member: TeamMemberView): string {
-  return `    member ${member.actor_id} ${member.display_name} team_role=${member.team_role}`
+  return `    member ${member.display_name} team_role=${member.team_role}`
     + `${member.is_active ? '' : ' (removed)'}`
 }
 
@@ -243,13 +247,15 @@ export const PIPELINE_SCHEMA: Record<string, unknown> = {
  * @returns 文本行。
  */
 export function renderPipeline(pipeline: PipelineTemplateView): string[] {
+  // O1 残留：只给业务标识（code / name / 阶段码+名 / 模板码+版本）；完整 id 由 config 工具的
+  // machine arguments 区承载。
   const lines = [
-    `  pipeline ${pipeline.pipeline_template_id} code=${pipeline.code} name=${pipeline.name}`
+    `  pipeline code=${pipeline.code} name=${pipeline.name}`
       + ` record_version=${pipeline.record_version}${pipeline.is_active ? '' : ' (inactive)'}`,
   ]
   if (pipeline.stages.length === 0) lines.push('    stages: (none)')
   for (const stage of pipeline.stages) {
-    lines.push(`    stage ${stage.sort_order}. ${stage.stage_code} (${stage.stage_name}) id=${stage.stage_id}`)
+    lines.push(`    stage ${stage.sort_order}. ${stage.stage_code} (${stage.stage_name})`)
     if (stage.interview_templates.length === 0) {
       lines.push('      interview_templates: (none)')
     } else {
@@ -266,7 +272,7 @@ export function renderPipeline(pipeline: PipelineTemplateView): string[] {
  */
 function refLine(ref: InterviewTemplateRefView): string {
   return `      interview_template ${ref.template_code} v${ref.version_no}`
-    + ` id=${ref.interview_template_version_id}${ref.is_required ? ' (required)' : ' (optional)'}`
+    + `${ref.is_required ? ' (required)' : ' (optional)'}`
 }
 
 /**
@@ -275,5 +281,5 @@ function refLine(ref: InterviewTemplateRefView): string {
  * @returns 一行文本。
  */
 export function renderStage(stage: PipelineStageView): string {
-  return `  stage ${stage.sort_order}. ${stage.stage_code} (${stage.stage_name}) id=${stage.stage_id}`
+  return `  stage ${stage.sort_order}. ${stage.stage_code} (${stage.stage_name})`
 }

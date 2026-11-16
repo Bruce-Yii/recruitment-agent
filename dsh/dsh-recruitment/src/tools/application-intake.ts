@@ -113,6 +113,9 @@ import {
   validate,
   type FieldState,
 } from '../structure/validate.ts'
+// render 口径 helper（O1 残留修复轮）：人读正文只放业务标识 / 短号；完整编号只允许出现在
+// 末尾 machine arguments 区（模型要原样复制才能调下游工具），见 render-ref.ts 文件头。
+import { machineArgumentLines, shortHash, shortRef } from './render-ref.ts'
 
 const TOOL_NAME = 'recruitment_application_intake'
 const CONTRACT_VERSION = '1.0.0'
@@ -2349,21 +2352,46 @@ export function createApplicationIntakeTool(
       schema: OUTPUT_SCHEMA,
       render(_args: unknown, value: unknown): readonly TextBlock[] {
         const v = value as IntakeValue
-        const lines = [
-          `application: ${v.application_action} ${v.application_id}`,
-          `structure: saved=${v.structure_saved} (resume_version v${v.resume_version_no} `
-            + `${v.resume_version_id}, ${v.resume_version_action})`,
-          `candidate: ${v.candidate_id} (${v.candidate_created ? 'new' : 'existing'}, matched_by=${v.matched_by})`,
-          `job ${v.job.code} [${v.job.status}] stage=${v.application.stage_code} lifecycle=${v.application.lifecycle_status}`,
-          `source: ${v.source.file_name} pages=${v.source.pages} bytes=${v.source.byte_size}`,
-          `sha256=${v.source.sha256}`,
-          `parse_status=${v.source.parse_status} completeness=${v.source.completeness} hard_issues=${v.source.hard_issue_count}`,
-          `identity strong_ids=[${v.identity.strong_ids.join(', ')}] `
-            + `merge_eligible=[${v.identity.identity_merge_eligible.join(', ')}] `
-            + `weak=[${v.identity.weak_fields.map((w) => `${w.field}:${w.provenance}`).join(', ')}] `
-            + `evidence=${v.identity.evidence.length} blocked=[${v.identity.blocked_fields.map((b) => `${b.field}:${b.reason}`).join(', ')}]`,
+        // O1 残留修复：模型只读到 render 文本（结构化 value 不进模型上下文）。人读正文一律用
+        // **业务标识**（岗位 code+标题 / 阶段 / 生命周期 / 状态）和**短号**（UUID 末 4 位、
+        // sha256 前 8 位）；完整 id 只允许出现在末尾 machine arguments 区 —— 下游工具的参数
+        // 校验是严格 UUID（短号解析不了），而新建出来的申请 / 候选人 / 简历版本 id 模型
+        // 只能从本工具发现（S6 是这条链的入口）。
+        const applicationAction = v.application_action === 'CREATED'
+          ? '新建'
+          : v.application_action === 'REUSED' ? '复用已有' : '状态未知'
+        const versionAction = v.resume_version_action === 'APPENDED'
+          ? '本次新增'
+          : v.resume_version_action === 'UNCHANGED' ? '沿用已有' : '状态未知'
+        const versionNo = typeof v.resume_version_no === 'number' ? ` v${v.resume_version_no}` : ''
+        const lines: string[] = [
+          `申请：${applicationAction}（${shortRef(v.application_id)}）`
+            + ` · 候选人：${v.candidate_created ? '新建档' : '复用档'}`
+            + `（${shortRef(v.candidate_id)}，matched_by=${v.matched_by}）`,
+          `简历版本：${versionAction}${versionNo}`
+            + `（结构化${v.structure_saved ? '已保存' : '未新增版本'}，版本 ${shortRef(v.resume_version_id)}）`,
+          `岗位：${v.job.code} ${v.job.title} [${v.job.status}]`
+            + ` · 阶段 ${v.application.stage_code} · 生命周期 ${v.application.lifecycle_status}`,
+          `来源：${v.source.file_name} pages=${v.source.pages} bytes=${v.source.byte_size} `
+            + `sha256=${shortHash(v.source.sha256)}`,
+          `解析：parse_status=${v.source.parse_status} completeness=${v.source.completeness} `
+            + `hard_issues=${v.source.hard_issue_count}`,
+          `身份：强标识=[${v.identity.strong_ids.join(', ')}] `
+            + `可自动归并=[${v.identity.identity_merge_eligible.join(', ')}] `
+            + `弱提示=[${v.identity.weak_fields.map((w) => `${w.field}:${w.provenance}`).join(', ')}] `
+            + `证据=${v.identity.evidence.length} `
+            + `待人工=[${v.identity.blocked_fields.map((b) => `${b.field}:${b.reason}`).join(', ')}]`,
           `labels: provenance=${v.labels.provenance} trigger=${v.labels.trigger} connection=${v.labels.connection}`,
         ]
+        // 机器参数区：application_id / candidate_id / resume_version_id 都是**已注册下游工具**
+        // 的入参 —— application_get、material_read、stage_advance、screening_evaluate、
+        // candidate_get、interview_schedule、record_human_decision —— 且这些 id 模型只能从本
+        // 工具发现。完整值只允许出现在这里，header 逐字带上"不要给用户看"的告诫。
+        lines.push(...machineArgumentLines([
+          { key: 'application_id', value: v.application_id },
+          { key: 'candidate_id', value: v.candidate_id },
+          { key: 'resume_version_id', value: v.resume_version_id },
+        ]))
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },

@@ -28,6 +28,7 @@
 //   * 不发 DELETE / 不重排已有阶段（顺序改动会静默改写"第几步"，留给后续显式的 op）。
 
 import { parseContractArgs, toParameterSchema } from './args.ts'
+import { machineArgumentLines, type MachineArgument } from './render-ref.ts'
 import type { ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
@@ -424,6 +425,23 @@ export function createConfigPipelineTool(
           for (const pipeline of v.pipelines) lines.push(...renderPipeline(pipeline))
         }
         lines.push(labelsLine(v.labels))
+        // 机器参数区：pipeline_template_id / stage_id / interview_template_version_id 是
+        // update / add_stage / 挂模板的入参，模型只能从本工具发现它们。
+        const pipelines = [...(v.pipeline === undefined ? [] : [v.pipeline]), ...(v.pipelines ?? [])]
+        const machineArguments: MachineArgument[] = []
+        for (const pipeline of pipelines) {
+          machineArguments.push({ key: `pipeline_template_id(code=${pipeline.code})`, value: pipeline.pipeline_template_id })
+          for (const stage of pipeline.stages) {
+            machineArguments.push({ key: `stage_id(pipeline=${pipeline.code},${stage.stage_code})`, value: stage.stage_id })
+            for (const ref of stage.interview_templates) {
+              machineArguments.push({
+                key: `interview_template_version_id(${stage.stage_code},${ref.template_code},v${ref.version_no})`,
+                value: ref.interview_template_version_id,
+              })
+            }
+          }
+        }
+        lines.push(...machineArgumentLines(machineArguments))
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },

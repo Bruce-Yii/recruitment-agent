@@ -17,6 +17,7 @@
 
 import { contractError } from './contract.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
+import { shortRef } from './render-ref.ts'
 import {
   CRITERION_KIND_VALUES,
   CRITERION_OPERATOR_VALUES,
@@ -378,7 +379,7 @@ function renderJobDraft(_args: unknown, value: unknown): readonly TextBlock[] {
   }).length
   const lines: string[] = []
   lines.push('recruitment_job_draft · 岗位/Rubric 草案（read_only · zero_write · 零写入）')
-  lines.push(`模板：${asText(template.template_id)}（${asText(template.family)} / ${asText(template.label)}，来源：${asText(template.source)}）`)
+  lines.push(`模板：${asText(template.family)} / ${asText(template.label)}（来源：${asText(template.source)}；模板 ${shortRef(asText(template.template_id))}）`)
   lines.push(`岗位名称：${asText(job.title)}（来源：${asText(job.title_source)}）`)
   lines.push('')
   const listSection = (title: string, key: string): void => {

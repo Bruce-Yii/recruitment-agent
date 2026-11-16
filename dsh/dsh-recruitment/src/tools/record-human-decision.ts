@@ -75,6 +75,9 @@ import {
 } from './decision-record.ts'
 import { resolveWriteActor } from '../demo-actor/tool-actor.ts'
 import type { ToolActorDeps } from '../demo-actor/tool-actor.ts'
+// render 口径 helper（O1 残留修复轮）：人读正文只放业务标识 / 短号；完整编号只允许出现在
+// 末尾 machine arguments 区（模型要原样复制才能调下游工具），见 render-ref.ts 文件头。
+import { machineArgumentLines, shortHash, shortRef } from './render-ref.ts'
 import { EVENT_TYPES } from '../runtime/event-types.ts'
 
 /** 工具名（DSH 全局唯一）。**不用 `recruitment_` 前缀**：这是产品级动作名（verdict §4.1）。 */
@@ -876,18 +879,44 @@ function renderRecordHumanDecision(value: unknown): readonly TextBlock[] {
   const confirmation = (v.human_confirmation ?? {}) as Record<string, unknown>
   const basis = (v.basis ?? {}) as Record<string, unknown>
   const warnings = Array.isArray(v.warnings) ? (v.warnings as Record<string, unknown>[]) : []
+  // O1 残留修复：人读正文只给**业务事实**（范围 / 结果 / 阶段 / 记录版本 / 时间 / 确认方式）
+  // 与**短号**（决策 / 决策人 / 评分标准版本），摘要类 hash 只给前 8 位。`basis_refs` 是内部
+  // 字段名 → 正文改说「依据」；event id 是内部编号、也不是任何工具的入参 → 正文完全不提。
+  // 只有 decision id 是下游入参（`recruitment_decision_record` 的 `supersedes.decision_id`，
+  // 撤回/重开时用），且模型只能从本工具发现 → 完整值只放在末尾 machine arguments 区。
+  const text = (input: unknown): string => (typeof input === 'string' ? input : '')
+  const decisionId = text(decision.id)
+  const textSha = text(confirmation.text_sha256)
+  const rubricHash = shortHash(text(basis.rubric_payload_hash))
+  const kinds = isPlainObject(basis.kinds) ? basis.kinds : {}
+  // `kinds` 是「依据种类 → 条数」的计数表；只念数字计数，别的值一概不回显 ——
+  // 这个键在 schema 里是自由对象（`type: object`），逐字回显等于把未知内部值念给 HR。
+  const kindText = Object.entries(kinds)
+    .filter(([, count]) => typeof count === 'number')
+    .map(([kind, count]) => `${kind}×${String(count)}`)
+    .join(' · ')
   const lines = [
-    `${String(v.tool)} ${String(v.contract_version)} status=${String(v.status)} (决策已落库，写后独立读回一致)`,
-    `decision: ${String(decision.decision_scope)} ${String(decision.result)} stage=${String(decision.stage_code)} `
-      + `id=${String(decision.id)} record_version=${String(decision.record_version)} actor=${String(decision.decided_by_actor_id)}`,
-    `confirmed_by: ${String(confirmation.confirmed_by_actor_id)} at=${String(confirmation.confirmed_at)} `
-      + `method=${String(confirmation.method)} text_sha256=${String(confirmation.text_sha256)}`,
-    `basis: kinds=${JSON.stringify(basis.kinds ?? {})} rubric=${String(basis.rubric_version_id)} `
-      + `is_hiring_manager=${String(basis.is_hiring_manager)}`,
+    `${String(v.tool)} ${String(v.contract_version)} status=${String(v.status)}（决策已落库，写后独立读回一致）`,
+    `决策：${String(decision.decision_scope)} ${String(decision.result)} `
+      + `· 阶段 ${String(decision.stage_code)} · 记录版本 ${String(decision.record_version)} `
+      + `· 决策 ${shortRef(decisionId)} · 决策人 ${shortRef(text(decision.decided_by_actor_id))} `
+      + `· 决策时间 ${String(decision.decided_at)}`,
+    `人已确认：${shortRef(text(confirmation.confirmed_by_actor_id))} `
+      + `于 ${String(confirmation.confirmed_at)} 以 ${String(confirmation.method)} 方式确认 `
+      + `· 确认原话摘要=${textSha === '' ? '（缺失）' : shortHash(textSha)} `
+      + `（pre-image v${String(confirmation.preimage_version)}）`,
+    `依据：${kindText === '' ? '（无）' : kindText} `
+      + `· 评分标准版本 ${shortRef(text(basis.rubric_version_id))}`
+      + `${rubricHash === '' ? '' : `（摘要 ${rubricHash}）`} `
+      + `· 是招聘负责人=${String(basis.is_hiring_manager)}`,
   ]
   for (const warning of warnings) {
     lines.push(`warning ${String(warning.code)}: ${String(warning.message)}`)
   }
+  // 机器参数区：撤回/重开同一申请的下一条决策时，`recruitment_decision_record` 的
+  // `supersedes.decision_id` 必须是**这一行**的完整 id，而模型只能从本工具发现它
+  // （business_read 只给决策条数 / 最新结论，不给 id）。完整值只允许出现在这里。
+  lines.push(...machineArgumentLines([{ key: 'supersedes.decision_id', value: decisionId }]))
   return [{ type: 'text', text: lines.join('\n') }]
 }
 

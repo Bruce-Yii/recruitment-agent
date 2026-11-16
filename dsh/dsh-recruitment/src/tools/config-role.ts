@@ -25,6 +25,7 @@
 //   * 不 last-write-wins（版本不一致 → VERSION_CONFLICT，把"重读"交回调用方）。
 
 import { parseContractArgs, toParameterSchema } from './args.ts'
+import { machineArgumentLines, type MachineArgument } from './render-ref.ts'
 import type { ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
@@ -329,6 +330,11 @@ export function createConfigRoleTool(
           for (const role of v.roles) lines.push(...renderRole(role))
         }
         lines.push(labelsLine(v.labels))
+        // 机器参数区：role_id 是更新/get 的入参，模型只能从本工具发现它。
+        const roles = [...(v.role === undefined ? [] : [v.role]), ...(v.roles ?? [])]
+        lines.push(...machineArgumentLines(
+          roles.map((role) => ({ key: `role_id(code=${role.code})`, value: role.role_id })),
+        ))
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },

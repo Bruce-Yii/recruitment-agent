@@ -72,6 +72,9 @@ import {
 // 事件名常量来自唯一权威注册表（`src/runtime/event-types.ts`），不在本文件写死字面量。
 import { EVENT_TYPES } from '../runtime/event-types.ts'
 import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
+// render 口径 helper（O1 残留修复轮）：人读正文只放业务标识 / 短号；完整编号只允许出现在
+// 末尾 machine arguments 区（模型要原样复制才能调下游工具），见 render-ref.ts 文件头。
+import { machineArgumentLines, shortHash, shortRef } from './render-ref.ts'
 
 const TOOL_NAME = 'recruitment_interview_schedule'
 /**
@@ -3300,12 +3303,50 @@ function interviewersLine(interview: Record<string, unknown>): string {
   return rows
     .filter(isPlainObject)
     .map((row) => {
-      const name = typeof row.display_name === 'string' ? row.display_name : String(row.actor_id)
+      // 显示名缺失时**不能**退回完整 actor_id（内部编号不进人读正文）→ 用短号。
+      const name = typeof row.display_name === 'string' && row.display_name !== ''
+        ? row.display_name
+        : shortRef(typeof row.actor_id === 'string' ? row.actor_id : undefined)
       const role = typeof row.role_in_interview === 'string' ? row.role_in_interview : '?'
       const required = row.required_scorecard === true ? 'required' : 'optional'
       return `${name}(${role}, ${required})`
     })
     .join(' · ')
+}
+
+/** `changes.*[].table` → 人读业务说法（表名是实现细节，不念给 HR；未知表名原样保留）。 */
+const CHANGE_TABLE_LABELS: Record<string, string> = {
+  interview: '面试场次',
+  interviewer: '面试官',
+  meeting: '会议',
+  meeting_binding: '会议绑定',
+  business_task: '待办任务',
+  event_inbox: '审计事件',
+}
+
+/** 取结构化值里的字符串（缺失 = 空串；`machineArgumentLines` 会过滤空值）。 */
+function textOf(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+/** 告警文案里可能夹带的完整 UUID（8-4-4-4-12）。 */
+const UUID_TEXT_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
+/** 告警文案里可能夹带的 32+ 连续 hex（去连字符 UUID / sha256）。 */
+const LONG_HEX_TEXT_RE = /\b[0-9a-f]{32,}\b/gi
+
+/**
+ * 把告警文案里的内部编号收成短号。
+ *
+ * 为什么在 render 里做而不是改来源：`warnings[].message` 是**结构化值**（业务层拼好的句子，
+ * 例如 ALREADY_ASSIGNED 带上完整 actor_id、BINDING_REUSED 带上完整 meeting id），结构化字段
+ * 一个都不许改；而模型只读 render 文本，所以在这里收口，正文不再出现完整编号。
+ * @param message - 业务层给的告警原文。
+ * @returns 编号换成短号后的文案。
+ */
+function scrubInternalRefs(message: string): string {
+  return message
+    .replace(UUID_TEXT_RE, (match) => shortRef(match))
+    .replace(LONG_HEX_TEXT_RE, (match) => shortHash(match))
 }
 
 /** 排期工具的依赖：库配置保持第一个位置参数，approval / identity 是可选的第二组依赖。 */
@@ -3384,12 +3425,18 @@ export function createInterviewScheduleTool(
         const warnings = Array.isArray(v.warnings) ? v.warnings : []
         const nextActions = Array.isArray(v.next_actions) ? v.next_actions : []
         const binding = meetingBindingOf(interview)
+        // O1 残留修复：人读正文只给业务标识（第几轮 / slot / 阶段 / 状态 / 面试官）与短号。
+        // 完整 interview id 只出现在末尾 machine arguments 区 —— S9/S10 的下游工具
+        // （interview_get / transcript_import / scorecard_submit / evaluation_summarize）的参数
+        // 校验是严格 UUID（短号解析不了），而新建出来的 interview id 模型只能从本工具发现。
+        const interviewId = textOf(interview.id)
+        const applicationId = textOf(interview.application_id)
         const lines: string[] = [
-          `interview ${String(interview.id)} round=${String(interview.round_no)} `
-            + `slot=${String(interview.slot_code)} [${String(interview.status)}] `
-            + `stage=${String(interview.stage_code)}  ${windowLine(interview)}`,
-          `  application=${String(interview.application_id)} candidate=${String(interview.candidate_id)} `
-            + `job=${String(interview.job_id)} timezone=${String(interview.timezone)}`,
+          `面试 第${String(interview.round_no)}轮 slot=${String(interview.slot_code)} `
+            + `[${String(interview.status)}] 阶段=${String(interview.stage_code)} `
+            + `· 本场 ${shortRef(interviewId)}  ${windowLine(interview)}`,
+          `  申请 ${shortRef(applicationId)} · 候选人 ${shortRef(textOf(interview.candidate_id))} `
+            + `· 岗位 ${shortRef(textOf(interview.job_id))} · timezone=${String(interview.timezone)}`,
           `  interviewers: ${interviewersLine(interview)}`,
           `  meeting_binding: ${binding === null ? 'unknown' : String(binding.state)} `
             + `(${binding === null ? 0 : String(binding.count)} active)`,
@@ -3397,16 +3444,32 @@ export function createInterviewScheduleTool(
             + `labels: ${String(labels.provenance)}/${String(labels.trigger)}/${String(labels.connection)}`,
         ]
         for (const change of created) {
-          if (isPlainObject(change)) lines.push(`    + ${String(change.table)} ${String(change.id)}`)
+          if (isPlainObject(change)) {
+            const table = textOf(change.table)
+            lines.push(`    + 新建 ${CHANGE_TABLE_LABELS[table] ?? (table === '' ? '记录' : table)} `
+              + `${shortRef(textOf(change.id))}`)
+          }
         }
         for (const warning of warnings) {
-          if (isPlainObject(warning)) lines.push(`  warning ${String(warning.code)}: ${String(warning.message)}`)
+          if (isPlainObject(warning)) {
+            lines.push(`  warning ${String(warning.code)}: ${scrubInternalRefs(String(warning.message))}`)
+          }
         }
         for (const action of nextActions) {
           if (isPlainObject(action)) {
-            lines.push(`  next: ${String(action.code)} task=${String(action.task_id)} due=${String(action.due_at)}`)
+            // 待办 task id 不是任何已注册工具的入参 → 只给短号（保留可追溯性，不念内部编号）。
+            lines.push(`  next: 已建绑定会议待办（${String(action.code)}）${shortRef(textOf(action.task_id))} `
+              + `· 截止 ${String(action.due_at)}`)
           }
         }
+        // 机器参数区：interview_id 是 S9/S10 下游工具的必填入参；application_id 是
+        // evaluation_summarize / record_human_decision 的必填入参，而 RESCHEDULE / CANCEL /
+        // WITHDRAW_INTERVIEWER 路径下模型此前只拿到 interview_id、从没拿过 application_id。
+        // 完整值只允许出现在这里（header 逐字带"不要给用户看"的告诫）。
+        lines.push(...machineArgumentLines([
+          { key: 'interview_id', value: interviewId },
+          { key: 'application_id', value: applicationId },
+        ]))
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },

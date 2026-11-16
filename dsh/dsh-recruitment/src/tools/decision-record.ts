@@ -97,6 +97,9 @@ import { computeEvaluationSummaryIn, type EvaluationSummary } from './evaluation
 // 事件名只从注册表取（`src/runtime/event-types.ts`）；机检测试会扫发射点。
 import { EVENT_TYPES } from '../runtime/event-types.ts'
 import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
+// render 口径 helper（O1 残留修复轮）：人读正文只放业务标识 / 短号；完整编号只允许出现在
+// 末尾 machine arguments 区（模型要原样复制才能调下游工具），见 render-ref.ts 文件头。
+import { machineArgumentLines, shortHash, shortRef } from './render-ref.ts'
 
 const TOOL_NAME = 'recruitment_decision_record'
 const CONTRACT_VERSION = '2.0.0'
@@ -3396,12 +3399,17 @@ function renderDecision(value: unknown): readonly TextBlock[] {
   const labels = (v.labels ?? {}) as Record<string, unknown>
   const event = (v.event ?? {}) as Record<string, unknown>
   const superseded = isPlainObject(v.superseded) ? v.superseded : undefined
+  // O1 残留修复：人读正文只给**业务事实**（范围 / 阶段 / 结论 / 记录版本 / 时间 / 决策人短号 /
+  // 摘要哈希短号）。决策 id、旧决策 id、事件 id 全部不再出现在正文里 —— 其中只有决策 id 是
+  // 下游工具的入参（`recruitment_decision_record` 的 `supersedes.decision_id`，撤回/重开时用），
+  // 且模型只能从本工具拿到它，所以完整值只放在末尾 machine arguments 区。
+  const decisionId = typeof decision.id === 'string' ? decision.id : ''
   const lines = [
     `${String(v.tool)} ${String(v.contract_version)} status=${String(v.status)}`,
     `labels: provenance=${String(labels.provenance)} trigger=${String(labels.trigger)} connection=${String(labels.connection)}`,
-    `decision ${String(decision.id)} scope=${String(decision.decision_scope)} stage=${String(decision.stage_code)} `
+    `decision ${shortRef(decisionId)} scope=${String(decision.decision_scope)} stage=${String(decision.stage_code)} `
       + `result=${String(decision.result)} record_version=${String(decision.record_version)}`,
-    `decided_at=${String(decision.decided_at)} decided_by=${String(decision.decided_by_actor_id)}`,
+    `decided_at=${String(decision.decided_at)} decided_by=${shortRef(decision.decided_by_actor_id as string | undefined)}`,
   ]
   if (gate === undefined) {
     // SCREENING：没有 S10 汇总门禁（§17.1）。
@@ -3411,16 +3419,23 @@ function renderDecision(value: unknown): readonly TextBlock[] {
       `gate: as_of=${String(gate.as_of)} ready_for_decision=${String(gate.ready_for_decision)} `
       + `permitted=[${(Array.isArray(gate.permitted_results_echo) ? gate.permitted_results_echo : []).join(',')}]`,
     )
-    lines.push(`summary_digest=${String(gate.summary_digest)}`)
+    // 摘要哈希只用于对账：模型不该把它当成本工具入参里的 `summary_digest`（那是重算后的完整值，
+    // 由 evaluation_summarize 给出）。短号把这一点也表达出来。
+    lines.push(`摘要哈希 ${shortHash(gate.summary_digest as string | undefined)}（本次校验过的 S10 汇总，仅供对账）`)
   }
   lines.push(
     superseded === undefined
       ? 'superseded: —（本次不是撤回）'
-      : `superseded: ${String(superseded.decision_id)} → record_version=${String(superseded.record_version)}`,
-    `event ${String(event.event_id)} ${String(event.provider)}/${String(event.trust_level)}`,
+      : `superseded: 旧决策 ${shortRef(superseded.decision_id as string | undefined)} → record_version=${String(superseded.record_version)}`,
+    // 事件 id 是内部编号、也不是任何工具的入参 → 正文只留"写了内部事件"这个业务事实。
+    `event: 已写内部事件（provider=${String(event.provider)} trust_level=${String(event.trust_level)}）`,
     `warnings(${warnings.length})`,
   )
   for (const warning of warnings) lines.push(`  ${String(warning.code)}: ${String(warning.message)}`)
+  // 机器参数区：撤回/重开同一申请的下一条决策时，`recruitment_decision_record` 的
+  // `supersedes.decision_id` 必须是**当前这一行**的完整 id，而模型只能从本工具发现它
+  // （business_read 只给决策条数/最新结论，不给 id）。完整值只允许出现在这里。
+  lines.push(...machineArgumentLines([{ key: 'supersedes.decision_id', value: decisionId }]))
   return [{ type: 'text', text: lines.join('\n') }]
 }
 

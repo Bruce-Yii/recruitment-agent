@@ -40,6 +40,7 @@ import { createHash } from 'node:crypto'
 import { parseContractArgs, toParameterSchema, type ParamMap } from './args.ts'
 import { canonicalJson } from './contract.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
+import { MACHINE_ARGS_HEADER, shortRef } from './render-ref.ts'
 import { closePool, createPool, withActor, type DatabaseClient, type ResolvedDatabaseConfig } from '../db/pool.ts'
 import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
 import {
@@ -1649,25 +1650,38 @@ export function createTranscriptImportTool(
         const artifact = v.artifact
         const record = v.record
         // **一行**摘要（RD §3.1）：只回身份/状态/计数，不回显转写正文。
+        // O1 残留：人读正文只给业务标识（第几轮 / 阶段 / 状态）与短号；完整 UUID 只进
+        // 末尾的 machine arguments 区（模型要复制才能调 transcript_read / verify）。
         const summary = [
           `${v.tool} ${v.contract_version} status=${v.status} write=${String(v.write)} replayed=${String(v.replayed)}`,
-          `interview=${String(v.interview.id)} stage=${String(v.interview.stage_code)}`
-            + ` interview_status=${String(v.interview.status)} round=${String(v.interview.round_no)}`,
-          `meeting=${String(meeting.id)} provider=${String(meeting.provider)}`
+          `interview 第 ${String(v.interview.round_no)} 轮 stage=${String(v.interview.stage_code)}`
+            + ` interview_status=${String(v.interview.status)}`,
+          `meeting ${shortRef(String(meeting.id))} provider=${String(meeting.provider)}`
             + ` role=${String(meeting.meeting_role)} binding=${String(meeting.binding_method)}`,
-          `artifact=${String(artifact.id)} rev=${String(artifact.source_revision)}`
+          `artifact ${shortRef(String(artifact.id))} rev=${String(artifact.source_revision)}`
             + ` status=${String(artifact.transcript_status)} provenance=${v.labels.provenance}`
             + ` trigger=${v.labels.trigger} connection=${v.labels.connection}`
             + ` canonical=${String(artifact.is_canonical)} chars=${String(artifact.char_count)}`
             + ` segments=${String(artifact.segment_count)}`,
           `record=${record === undefined
             ? 'none(no rubric)'
-            : `${String(record.id)} status=${String(record.status)}`
+            : `${shortRef(String(record.id))} status=${String(record.status)}`
               + ` verification=${String(record.verification_status)} rev=${String(record.transcript_revision)}`}`,
           `changes: created=${v.changes.created.length} updated=${v.changes.updated.length}`,
           ...[...v.warnings].map((warning) => `warning ${warning.code}`),
         ]
-        return [{ type: 'text', text: summary.join(' | ') }]
+        const machineArguments = [
+          { key: 'interview_id', value: String(v.interview.id) },
+          { key: 'meeting_id', value: String(meeting.id) },
+          { key: 'artifact_id', value: String(artifact.id) },
+          ...(record === undefined ? [] : [{ key: 'interview_record_id', value: String(record.id) }]),
+        ]
+        // 既有契约：导入摘要是**单行**（`test/unit/transcript-import.test.ts` 断言不含换行，
+        // 不放宽），所以机器参数区只能内联在行尾；header 逐字带"不要给人看"的告诫。
+        const machineInline = machineArguments.length === 0
+          ? []
+          : [`${MACHINE_ARGS_HEADER} ${machineArguments.map((entry) => `${entry.key}=${entry.value}`).join(' ')}`]
+        return [{ type: 'text', text: [...summary, ...machineInline].join(' | ') }]
       },
     },
     isConcurrencySafe(): boolean {

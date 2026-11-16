@@ -54,6 +54,9 @@ const READ_MODULE_GRAPH = [
   'src/tools/contract.ts',
   'src/tools/errors.ts',
   'src/tools/definition.ts',
+  // O1 残留修复（2026-11-16）：render 短号 / 机器参数区 helper（纯函数、无 DB），
+  // 同样纳入"零 DML"扫描，而不是只把 import 白名单放宽。
+  'src/tools/render-ref.ts',
   'src/db/pool.ts',
 ]
 
@@ -92,7 +95,10 @@ test('读工具只依赖允许的本地模块，并声明 read_only: true', asyn
   const localImports = [...text.matchAll(/from\s+'([^']+)'/g)].map((match) => match[1] ?? '')
   // `./candidate-get.ts` 只提供 `resolveTenantProvenance`（一条 SELECT `business_config`/`organization`），
   // 且已纳入上面 `READ_MODULE_GRAPH` 的零 DML 扫描 —— 不是把只读约束放宽，而是让新依赖同样受检。
-  const allowed = new Set(['./args.ts', './contract.ts', './definition.ts', '../db/pool.ts', './candidate-get.ts'])
+  // `./render-ref.ts` 是 render 短号 helper（纯字符串函数，不碰 DB），同样已纳入零 DML 扫描。
+  const allowed = new Set([
+    './args.ts', './contract.ts', './definition.ts', '../db/pool.ts', './candidate-get.ts', './render-ref.ts',
+  ])
   for (const specifier of localImports) {
     assert.ok(allowed.has(specifier), `读工具多了一个依赖：${specifier}`)
   }

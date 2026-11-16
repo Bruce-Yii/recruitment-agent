@@ -22,6 +22,7 @@
 //   * 不做权限判定（team_role 只是"在这个小组里干什么"的标签）。
 
 import { parseContractArgs, toParameterSchema } from './args.ts'
+import { machineArgumentLines, type MachineArgument } from './render-ref.ts'
 import type { ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
@@ -411,6 +412,18 @@ export function createConfigTeamTool(
           for (const team of v.teams) lines.push(...renderTeam(team))
         }
         lines.push(labelsLine(v.labels))
+        // 机器参数区：team_id / department_id / member_actor_id 是 update 与成员增删的入参，
+        // 模型只能从本工具发现它们。
+        const teams = [...(v.team === undefined ? [] : [v.team]), ...(v.teams ?? [])]
+        const machineArguments: MachineArgument[] = []
+        for (const team of teams) {
+          machineArguments.push({ key: `team_id(code=${team.code})`, value: team.team_id })
+          machineArguments.push({ key: `department_id(team=${team.code})`, value: team.department_id })
+          for (const member of team.members) {
+            machineArguments.push({ key: `member_actor_id(team=${team.code},${member.display_name})`, value: member.actor_id })
+          }
+        }
+        lines.push(...machineArgumentLines(machineArguments))
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },

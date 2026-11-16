@@ -685,13 +685,14 @@ test('FINAL scope 的出参不带 interview_id（null 键被省略后仍合法�
   assert.deepEqual(valueViolations(TOOL.output.schema, value), [])
 })
 
-test('render()：中文摘要含决策 id/result/scope/gate/warnings 计数，且不打印候选人信息', () => {
+test('render()：中文摘要含决策短号/result/scope/gate/warnings 计数，且不打印候选人信息', () => {
   const value = stripNulls(sampleDecisionValue()) as Record<string, unknown>
   const blocks = TOOL.output.render({}, value)
   assert.equal(blocks.length, 1)
   const text = blocks[0]?.text ?? ''
   assert.match(text, /recruitment_decision_record 2\.0\.0/)
-  assert.match(text, /decision 11111111-1111-4111-8111-000000000d01 scope=STAGE stage=S10 result=HOLD/)
+  // O1 残留修复（2026-11-16）：render 人读正文不再打印完整 UUID，只给末 4 位短号 `…0d01`。
+  assert.match(text, /decision …0d01 scope=STAGE stage=S10 result=HOLD/)
   assert.match(text, /gate: as_of=/)
   assert.match(text, /warnings\(1\)/)
   assert.match(text, /FIXTURE_BASIS/)

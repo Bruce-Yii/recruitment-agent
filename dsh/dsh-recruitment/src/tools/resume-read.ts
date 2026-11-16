@@ -36,6 +36,8 @@ import {
 import { DocumentReadError, isDocumentReadError } from '../document/readers/errors.ts'
 import { assertReadableFile } from '../document/readers/files.ts'
 import { sniffFile, type SniffResult } from '../document/readers/sniff.ts'
+// O1：render 的**人读正文**只放业务事实，不放内部编号（完整 64hex 不给 HR 念）。
+import { shortHash } from './render-ref.ts'
 
 const RESUME_BLOCK_TYPES = ['paragraph', 'link', 'heading'] as const
 const FIELD_NAMES = ['name', 'phone', 'email', 'work_experience', 'education'] as const
@@ -412,7 +414,9 @@ export function createResumeReadTool(cfg: ResolvedConverterConfig): ReadonlyTool
           `resume: ${v.source.file_name}`,
           `pages=${v.source.pages} backend=${v.source.backend} `
             + `completeness=${v.source.completeness} order_verified=${String(v.source.order_verified)}`,
-          `sha256=${v.source.sha256}`,
+          // O1：文件字节 digest 只给短 hash（前 8 位）——它是"这些 block 来自哪份文件"的
+          // 锚点，完整 64hex 对 HR 没有意义、还会被原样念出来。完整值仍在结构化 value 里。
+          `sha256=${shortHash(v.source.sha256)}`,
           `provenance=${v.provenance} (basis=${v.provenance_basis})`,
           `blocks: ${v.blocks.length} of ${v.block_count} (truncated=${String(v.truncated)})`,
           '',
