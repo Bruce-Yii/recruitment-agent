@@ -29,6 +29,7 @@ import assert from 'node:assert/strict'
 import { createRecordHumanDecisionTool } from '../../src/tools/record-human-decision.ts'
 import { confirmationTextSha256, createDecisionRecordTool } from '../../src/tools/decision-record.ts'
 import { deriveScreeningDecisionStage } from '../../src/domain/stage-advance.ts'
+import { deriveApplicationNextStep, type ApplicationGateFacts } from '../../src/http/recruiting.ts'
 import type { DatabaseClient, ResolvedDatabaseConfig } from '../../src/db/pool.ts'
 import {
   assertPrivateDatabase,
@@ -129,14 +130,17 @@ test('A1 SCREENING ADVANCE(S6) → 申请 S7 + decision + 阶段事件（独立 
   assert.equal(appAfter.current_stage_code, 'S7', 'D-141③：SCREENING 决策必须同事务把 S6→S7')
   assert.equal(appAfter.record_version, appBefore.record_version + 1, '只派生 T1 一条边 ⇒ record_version 恰好 +1')
 
-  // 出参 stage 必须与库一致（不是回显自述）
+  // 出参 stage 必须与库一致（不是回显自述）；ADVANCE 不动生命周期。
   const stage = output.stage as Record<string, unknown>
   assert.deepEqual(stage, {
     before: 'S6',
     after: 'S7',
     advanced: true,
     record_version: appAfter.record_version,
+    lifecycle_before: 'ACTIVE',
+    lifecycle_after: 'ACTIVE',
   })
+  assert.equal(appAfter.lifecycle_status, 'ACTIVE', 'ADVANCE 不改生命周期')
 
   // ---- 独立 SQL 读回：decision 行 ----
   const decisions = await decisionsFor(s6Advance.applicationId, 'SCREENING')
@@ -229,12 +233,16 @@ test('A2 同参数再调一次 → ALREADY_DECIDED；行数/版本/阶段完全�
 })
 
 // ===========================================================================
-//  A3 · REJECT：决策落库；申请到 S7 后停住（T2–T4 不派生）
+//  A3 · REJECT：决策 + 阶段派生 S7 + lifecycle ACTIVE→CLOSED（同一事务；2026-11-16 lead 收窄裁定）
 // ===========================================================================
 
-test('A3 SCREENING REJECT(S6) → decision(REJECT, stage_code=S7) + 申请 S7；无 S7→S8 事件、lifecycle 不变', async (t) => {
+test('A3 SCREENING REJECT(S6) → decision(REJECT,S7) + 申请 S7 + lifecycle CLOSED；无 S7→S8；再调一次不变', async (t) => {
+  const before = await counts()
   const appBefore = await appFacts(s6Reject.applicationId)
   assert.equal(appBefore.current_stage_code, 'S6')
+  assert.equal(appBefore.lifecycle_status, 'ACTIVE')
+  const stageEventsBefore = await stageEventsOf(s6Reject.applicationId)
+  const lifecycleEventsBefore = await lifecycleEventsOf(s6Reject.applicationId)
 
   const output = await high.execute({
     application_id: s6Reject.applicationId,
@@ -249,17 +257,32 @@ test('A3 SCREENING REJECT(S6) → decision(REJECT, stage_code=S7) + 申请 S7；
   }, {}) as Record<string, unknown>
 
   assert.equal(output.status, 'OK')
-  const decision = (await decisionsFor(s6Reject.applicationId, 'SCREENING'))[0]
-  assert.ok(decision !== undefined, 'REJECT 也必须落 decision 行')
+
+  // ---- 决策行（REJECT / stage_code=S7 / 真实人）----
+  const decisions = await decisionsFor(s6Reject.applicationId, 'SCREENING')
+  assert.equal(decisions.length, 1, 'REJECT 也必须落 decision 行')
+  const decision = decisions[0]!
   assert.equal(decision.result, 'REJECT')
   assert.equal(decision.stage_code, 'S7', 'decision 行的 stage_code 由 scope 写死 S7（既有语义）')
   assert.equal(decision.actor_id, HR_ACTOR)
 
+  // ---- 硬断言（2026-11-16 lead 收窄裁定）：阶段 S7 + lifecycle CLOSED ----
   const appAfter = await appFacts(s6Reject.applicationId)
-  assert.equal(appAfter.current_stage_code, 'S7', 'D-141③：REJECT 也派生 S6→S7（裁决原文覆盖 ADVANCE/REJECT）')
-  assert.equal(appAfter.lifecycle_status, 'ACTIVE', 'v1.0 没有"拒绝即关闭申请"的领域动作：lifecycle_status 不变')
+  assert.equal(appAfter.current_stage_code, 'S7', 'D-141③：REJECT 同事务派生 S6→S7')
+  assert.equal(appAfter.lifecycle_status, 'CLOSED', 'REJECT = 这条申请结束：lifecycle ACTIVE→CLOSED（既有 CLOSED）')
+  assert.equal(appAfter.record_version, appBefore.record_version + 2, '阶段 +1、生命周期 +1 ⇒ record_version 恰好 +2')
 
-  // T2–T4 一条都不许被顺带推掉：不出现 S7→S8 / S8→S9 / S9→S10 的阶段事件。
+  const stage = output.stage as Record<string, unknown>
+  assert.deepEqual(stage, {
+    before: 'S6',
+    after: 'S7',
+    advanced: true,
+    record_version: appAfter.record_version,
+    lifecycle_before: 'ACTIVE',
+    lifecycle_after: 'CLOSED',
+  })
+
+  // ---- 阶段事件：恰好一条 S6→S7，且没有被顺带推到 S8/S9/S10 ----
   // （夹具把申请从 seed 的 S7 拖回 S6，本身产生一条 S7→S6 的夹具事件，必须按 from/to 精确过滤。）
   const stageEvents = await stageEventsOf(s6Reject.applicationId)
   const s6ToS7 = stageEvents.filter((event) => event.payload.from === 'S6' && event.payload.to === 'S7')
@@ -269,7 +292,63 @@ test('A3 SCREENING REJECT(S6) → decision(REJECT, stage_code=S7) + 申请 S7；
   assert.deepEqual(s7ToS8, [], 'REJECT 不得把申请从 S7 再推到 S8（T2 的既有闸门：result≠ADVANCE → BLOCKED）')
   assert.deepEqual(beyondS7, [], 'REJECT 不得产生任何 S8/S9/S10 的迁移')
 
-  t.diagnostic(`A3 REJECT decision=${decision.decision_id} stage=S7 lifecycle=${appAfter.lifecycle_status}`)
+  // ---- 生命周期事件：恰好一条 ACTIVE→CLOSED，actor=真实人（既有事件类型，不新发类型）----
+  const lifecycleEvents = await lifecycleEventsOf(s6Reject.applicationId)
+  const newLifecycleEvents = lifecycleEvents.slice(lifecycleEventsBefore.length)
+  assert.equal(newLifecycleEvents.length, 1, '生命周期收口恰好写 1 条 application.lifecycle_status.changed')
+  assert.equal(newLifecycleEvents[0]!.payload.from, 'ACTIVE')
+  assert.equal(newLifecycleEvents[0]!.payload.to, 'CLOSED')
+  assert.equal(newLifecycleEvents[0]!.payload.actor_id, HR_ACTOR)
+  const lifecycleAudit = await query<{
+    status_changed_by_actor_id: string | null
+    status_source_event_id: string | null
+  }>(
+    `select status_changed_by_actor_id::text as status_changed_by_actor_id,
+            status_source_event_id::text   as status_source_event_id
+       from recruitment.application
+      where tenant_id = $1::uuid and id = $2::uuid`,
+    [TENANT, s6Reject.applicationId],
+  )
+  assert.equal(lifecycleAudit[0]?.status_changed_by_actor_id, HR_ACTOR)
+  assert.equal(lifecycleAudit[0]?.status_source_event_id, newLifecycleEvents[0]!.event_id)
+
+  // ---- 行数账：+1 decision、+3 event（decision.record + 阶段 + 生命周期）----
+  const after = await counts()
+  assert.equal(after.decisions, before.decisions + 1)
+  assert.equal(after.events, before.events + 3)
+  assert.equal(stageEvents.length, stageEventsBefore.length + 1)
+
+  // ---- 幂等：再调一次 → ALREADY_DECIDED；lifecycle/阶段/行数完全不变 ----
+  const appAfterFirst = await appFacts(s6Reject.applicationId)
+  const countsAfterFirst = await counts()
+  await assert.rejects(
+    high.execute({
+      application_id: s6Reject.applicationId,
+      decision_scope: 'SCREENING',
+      result: 'REJECT',
+      reason: 'too_short 不满足：工作年限证据不足（集成测试 decision-stage REJECT · 重复调用）',
+      human_confirmation: {
+        confirmed_at: recentIso(),
+        method: 'IN_CHAT',
+        text: '我确认：这位候选人初筛不通过，流程到此为止。',
+      },
+    }, {}),
+    (error: unknown) => {
+      const body = errorBody(error)
+      assert.equal(body.code, 'ALREADY_DECIDED')
+      assert.equal(body.reason_code, 'SCOPE_ALREADY_DECIDED')
+      return true
+    },
+  )
+  assert.deepEqual(await appFacts(s6Reject.applicationId), appAfterFirst, '重复调用不得再改 stage/lifecycle/版本')
+  assert.deepEqual(await counts(), countsAfterFirst, '重复调用不得新增 decision/event 行')
+  assert.equal((await lifecycleEventsOf(s6Reject.applicationId)).length, lifecycleEventsBefore.length + 1,
+    '生命周期事件仍然只有本次 1 条')
+
+  t.diagnostic(
+    `A3 REJECT decision=${decision.decision_id} stage=${appAfter.current_stage_code} `
+    + `lifecycle=${appAfter.lifecycle_status} record_version=${appAfter.record_version}`,
+  )
 })
 
 // ===========================================================================
@@ -299,6 +378,8 @@ test('A4 SCREENING ADVANCE 已在 S7 → decision 落库、stage.advanced=false�
     after: 'S7',
     advanced: false,
     record_version: appBefore.record_version,
+    lifecycle_before: 'ACTIVE',
+    lifecycle_after: 'ACTIVE',
   })
   assert.deepEqual(await appFacts(s7Already.applicationId), appBefore, '已在 S7 时派生是 NO_OP：阶段/版本不动')
   assert.equal((await stageEventsOf(s7Already.applicationId)).length, 0, '已有 S7 的申请这次调用不产生阶段事件')
@@ -440,6 +521,77 @@ test('A6 rubric 未批准 → 既有闸门仍先失败（MISSING_SCREENING_EVALU
   assert.equal(stageEventsAfter.length, stageEventsBefore.length, '不得新增任何阶段事件')
 
   t.diagnostic('A6 既有闸门未放宽：rubric 未批准 → MISSING_SCREENING_EVALUATION、零写入')
+})
+
+// ===========================================================================
+//  A7 · 负例：REJECT 被闸门拒绝时生命周期不得被改（整体回滚）
+// ===========================================================================
+
+test('A7 REJECT 被既有闸门拒绝（rubric 未批准）→ lifecycle 不得从 ACTIVE 被改，零写入', async (t) => {
+  const before = await counts()
+  const appBefore = await appFacts(s6Unapproved.applicationId)
+  assert.equal(appBefore.lifecycle_status, 'ACTIVE')
+  const lifecycleEventsBefore = await lifecycleEventsOf(s6Unapproved.applicationId)
+
+  await assert.rejects(
+    high.execute({
+      application_id: s6Unapproved.applicationId,
+      decision_scope: 'SCREENING',
+      result: 'REJECT',
+      reason: 'work_exists 不满足（集成测试：REJECT 被闸门拒绝的负例）',
+      human_confirmation: {
+        confirmed_at: recentIso(),
+        method: 'IN_CHAT',
+        text: '我确认：这位候选人初筛不通过。',
+      },
+    }, {}),
+    (error: unknown) => {
+      const body = errorBody(error)
+      assert.equal(body.code, 'INVALID_ARGS', `既有闸门必须先失败：${JSON.stringify(body)}`)
+      assert.equal(body.reason_code, 'MISSING_SCREENING_EVALUATION')
+      return true
+    },
+  )
+
+  assert.deepEqual(await counts(), before, '闸门拒绝必须零写入（decision/event 行数不变）')
+  assert.deepEqual(await appFacts(s6Unapproved.applicationId), appBefore, 'lifecycle 不得被改（仍 ACTIVE）、阶段/版本不变')
+  assert.equal((await decisionsFor(s6Unapproved.applicationId, 'SCREENING')).length, 0)
+  assert.equal(
+    (await lifecycleEventsOf(s6Unapproved.applicationId)).length,
+    lifecycleEventsBefore.length,
+    '不得写生命周期迁移事件',
+  )
+
+  t.diagnostic('A7 REJECT 被闸门拒绝：lifecycle 仍 ACTIVE、decision=0、事件=0')
+})
+
+// ===========================================================================
+//  A8 · 工作台 next_step：REJECT 的申请不得再显示"安排面试"（2026-11-16 修）
+// ===========================================================================
+
+test('A8 deriveApplicationNextStep：current SCREENING=REJECT → CLOSED（不再 SCHEDULE_INTERVIEW）；ADVANCE 行为不变', () => {
+  const base: ApplicationGateFacts = {
+    lifecycle_status: 'ACTIVE',
+    current_stage_code: 'S7',
+    has_material: true,
+    parse_status: 'PARSED',
+    has_current_screening_decision: true,
+    has_scheduled_interview: false,
+    has_post_interview_scorecard_gap: false,
+    has_current_stage_decision: false,
+  }
+  const rejected = deriveApplicationNextStep({ ...base, screening_decision_result: 'REJECT' })
+  assert.equal(rejected.code, 'CLOSED', 'REJECT 的申请已结束：下一步不得是 SCHEDULE_INTERVIEW')
+  assert.equal(rejected.kind, 'INFO')
+  const advanced = deriveApplicationNextStep({ ...base, screening_decision_result: 'ADVANCE' })
+  assert.equal(advanced.code, 'SCHEDULE_INTERVIEW', 'ADVANCE 的既有行为不变')
+  // 历史数据兜底：decision 已 REJECT 但 lifecycle 仍 ACTIVE 的旧行同样归为 CLOSED。
+  const legacy = deriveApplicationNextStep({
+    ...base,
+    lifecycle_status: 'ACTIVE',
+    screening_decision_result: 'REJECT',
+  })
+  assert.equal(legacy.code, 'CLOSED')
 })
 
 // ===========================================================================
@@ -603,6 +755,11 @@ async function eventsOfType(eventType: string, sourceObjectId: string): Promise<
 /** 该申请的全部阶段迁移事件（`application.current_stage_code.changed`）。 */
 async function stageEventsOf(applicationId: string): Promise<EventRow[]> {
   return await eventsOfType('application.current_stage_code.changed', applicationId)
+}
+
+/** 该申请的全部生命周期迁移事件（`application.lifecycle_status.changed`；既有事件类型）。 */
+async function lifecycleEventsOf(applicationId: string): Promise<EventRow[]> {
+  return await eventsOfType('application.lifecycle_status.changed', applicationId)
 }
 
 /** 最近且不晚于服务端 now 的确认时间（IN_CHAT 的 confirmed_at 不能在未来）。 */

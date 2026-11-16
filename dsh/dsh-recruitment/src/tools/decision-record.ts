@@ -77,6 +77,10 @@
 //      owner_role / next_action_code），整个事务回滚 → 既不留"决策落了、阶段没动"的半状态，
 //      也不放宽任何既有决策闸门（STEP 0→6.5 未动）。`HOLD` / `WITHDRAW` 不派生（D-141 原文只
 //      覆盖 ADVANCE/REJECT；它们仍走原来的"先记决策、再显式推进"路径）。
+//   14. **2026-11-16 lead 收窄裁定（D-141③ 的 REJECT 收口）**：`SCREENING` + `REJECT` 时，
+//      同事务把 `application.lifecycle_status` 从 `ACTIVE` 收口到 `CLOSED`（复用既有 CLOSED
+//      取值与既有 `application.lifecycle_status.changed` 事件；**不新增取值/事件类型/迁移**）。
+//      只在派生后阶段 = `S7` 时执行；负例/派生 BLOCKED 时整体回滚 → lifecycle 不得被改。
 //
 // 2026-11-14 增补（`decision-rules.md` §17；与既有 DC 条目冲突时以 §17 为准）：
 //   * P0-3：`decision_scope='SCREENING'` 是 S7 人决定的落库路径（`stage_code='S7'`，
@@ -102,7 +106,12 @@ import {
 } from '../db/pool.ts'
 import { computeEvaluationSummaryIn, type EvaluationSummary } from './evaluation-summarize.ts'
 // D-141③：SCREENING 决策在**同一事务**里派生 S6→S7（只派生 T1；复用阶段域的唯一写路径）。
-import { deriveScreeningDecisionStage } from '../domain/stage-advance.ts'
+// 2026-11-16 lead 收窄裁定：REJECT 另把生命周期 ACTIVE→CLOSED（既有 CLOSED/既有事件类型）。
+import {
+  closeApplicationOnScreeningReject,
+  deriveScreeningDecisionStage,
+  type ScreeningDecisionStageDerivation,
+} from '../domain/stage-advance.ts'
 // 事件名只从注册表取（`src/runtime/event-types.ts`）；机检测试会扫发射点。
 import { EVENT_TYPES } from '../runtime/event-types.ts'
 import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
@@ -2942,6 +2951,7 @@ async function assertSingleCurrent(
  * @param client - 事务内连接（actor 已 `SET LOCAL`；阶段事件由触发器用该 actor 写）。
  * @param tenantId - 租户（来自配置）。
  * @param applicationId - 申请 id。
+ * @returns 派生结果（调用方据此决定 REJECT 时是否还要收口生命周期）。
  * @throws RecruitmentToolError - `EVIDENCE_INSUFFICIENT(SCREENING_STAGE_NOT_ADVANCEABLE)`
  *   / `NOT_FOUND` / `VERSION_CONFLICT` / `INVARIANT_VIOLATION`（阶段域原样上抛）。
  */
@@ -2949,9 +2959,9 @@ async function assertScreeningStageDerived(
   client: DatabaseClient,
   tenantId: string,
   applicationId: string,
-): Promise<void> {
+): Promise<ScreeningDecisionStageDerivation> {
   const derived = await deriveScreeningDecisionStage(client, { tenantId, applicationId })
-  if (derived.status !== 'BLOCKED') return
+  if (derived.status !== 'BLOCKED') return derived
   throw evalError(
     'EVIDENCE_INSUFFICIENT',
     'SCREENING_STAGE_NOT_ADVANCEABLE',
@@ -3341,7 +3351,13 @@ export async function recordDecisionInTransaction(
     // 在**同一事务**里派生阶段迁移（只派生 T1；幂等）；失败 → 抛错 → 整个事务回滚，
     // 不会留下"决策落了、阶段没动"的半状态。T2–T4 的闸门不在这里、也不放宽。
     if (screeningScope && (args.result === 'ADVANCE' || args.result === 'REJECT')) {
-      await assertScreeningStageDerived(client, tenantId, application.id)
+      const derived = await assertScreeningStageDerived(client, tenantId, application.id)
+      // 2026-11-16 lead 收窄裁定：SCREENING REJECT = 申请结束（lifecycle ACTIVE→CLOSED，同一事务）。
+      // 只在阶段确实落在 S7 时收口：SCREENING 决策被写到别的阶段（脏数据）时不动生命周期，
+      // 保持改前行为（不在本裁决范围内扩语义）。
+      if (args.result === 'REJECT' && derived.stage_code === 'S7') {
+        await closeApplicationOnScreeningReject(client, { tenantId, applicationId: application.id })
+      }
     }
   } catch (error) {
     translateWriteError(error)

@@ -1004,6 +1004,13 @@ export interface ApplicationGateFacts {
   readonly has_material: boolean
   readonly parse_status: string | null
   readonly has_current_screening_decision: boolean
+  /**
+   * 当前有效 SCREENING 决策的 `result`（`ADVANCE` / `HOLD` / `REJECT` / `WITHDRAW`；没有决策 → `null`）。
+   *
+   * 2026-11-16（D-141③ 后续裁决）：旧逻辑只看"有没有 SCREENING 决策"、不看 result，会把
+   * **已被拒绝**的申请显示成"安排面试"。`REJECT` = 这条申请已结束 → 下一步必须是"无（已结束）"。
+   */
+  readonly screening_decision_result?: string | null
   readonly has_scheduled_interview: boolean
   readonly has_post_interview_scorecard_gap: boolean
   readonly has_current_stage_decision: boolean
@@ -1022,19 +1029,21 @@ export interface ApplicationGateFacts {
  *
  * 判定顺序（越靠前越优先，保证同一申请只给出一条结论）：
  *   1. `lifecycle_status` 非 ACTIVE → `CLOSED`
- *   2. 无 material（`resume_version_id` 为空 / 资产行缺失）→ `WAIT_MATERIAL_INTAKE`
- *   3. `parse_status='FAILED'` → `MATERIAL_PARSE_FAILED`
- *   4. `current_stage_code='S7'` 且无 SCREENING 当前决定 → `PROVIDE_SCREENING_DECISION`
- *   5. 有 `status='SCHEDULED'` 的面试 → `PREPARE_INTERVIEW`
- *   6. 面试 `POST_INTERVIEW` 且 required 面评未齐 → `WAIT_SCORECARDS`
- *   7. `current_stage_code='S10'` 且无当前 STAGE/FINAL 决定 → `PROVIDE_DECISION`
- *   8. 已有 SCREENING 当前决定、但还没有 SCHEDULED 面试，且停在 S7/S8/S9 → `SCHEDULE_INTERVIEW`
+ *   2. current SCREENING 决定 `result='REJECT'` → `CLOSED`（2026-11-16：初筛未通过 = 这条申请已结束；
+ *      旧逻辑不看 result，会把 REJECT 的申请显示成"安排面试"）
+ *   3. 无 material（`resume_version_id` 为空 / 资产行缺失）→ `WAIT_MATERIAL_INTAKE`
+ *   4. `parse_status='FAILED'` → `MATERIAL_PARSE_FAILED`
+ *   5. `current_stage_code='S7'` 且无 SCREENING 当前决定 → `PROVIDE_SCREENING_DECISION`
+ *   6. 有 `status='SCHEDULED'` 的面试 → `PREPARE_INTERVIEW`
+ *   7. 面试 `POST_INTERVIEW` 且 required 面评未齐 → `WAIT_SCORECARDS`
+ *   8. `current_stage_code='S10'` 且无当前 STAGE/FINAL 决定 → `PROVIDE_DECISION`
+ *   9. 已有 SCREENING 当前决定、但还没有 SCHEDULED 面试，且停在 S7/S8/S9 → `SCHEDULE_INTERVIEW`
  *      （Owner 口径：这类申请的下一步是"安排面试"，不能被"进行中"藏起来）
- *   9. 已有 SCREENING 当前决定、但还没有 SCHEDULED 面试、且**仍停在 S6** → `ADVANCE_STAGE`
+ *  10. 已有 SCREENING 当前决定、但还没有 SCHEDULED 面试、且**仍停在 S6** → `ADVANCE_STAGE`
  *      （Owner 2026-11-15 拍板：库事实是"初筛结论已记录但阶段指针没推进"，唯一可执行的下一步是推进阶段）
- *  10. 契约未列出的库事实（S6 材料已就绪但初筛未做 / S8 无面试）复用同语义 code：
+ *  11. 契约未列出的库事实（S6 材料已就绪但初筛未做 / S8 无面试）复用同语义 code：
  *      S6 → `PROVIDE_SCREENING_DECISION`；S8 → `PREPARE_INTERVIEW`
- *  11. 其余在办申请 → `IN_PROGRESS`（**最终兜底**；只用于没有任何可执行下一步的中间态）
+ *  12. 其余在办申请 → `IN_PROGRESS`（**最终兜底**；只用于没有任何可执行下一步的中间态）
  * @param facts - 库事实。
  * @returns 下一步结论（code/label/kind）。
  */
@@ -1045,6 +1054,12 @@ export function deriveApplicationNextStep(facts: ApplicationGateFacts): Recruiti
     kind,
   })
   if (facts.lifecycle_status !== 'ACTIVE') return nextStep('CLOSED', 'INFO')
+  // 2026-11-16（D-141③ 后续裁决）：current SCREENING 决定 = REJECT ⇒ 这条申请已结束（不再安排面试）。
+  // 新数据里 lifecycle 已由决策同事务收口为 CLOSED（上面那条就命中）；这里兜住历史数据
+  // （决策已 REJECT 但 lifecycle 仍是 ACTIVE 的旧行），不让工作台把它当在办。
+  if (facts.has_current_screening_decision && facts.screening_decision_result === 'REJECT') {
+    return nextStep('CLOSED', 'INFO')
+  }
   if (!facts.has_material) return nextStep('WAIT_MATERIAL_INTAKE', 'WAIT')
   if (facts.parse_status === 'FAILED') return nextStep('MATERIAL_PARSE_FAILED', 'HUMAN_ACTION')
   // O12：申请钉住的评分标准未批准时，"等待初筛决定"是误导（人点了也做不了）。
@@ -2247,6 +2262,7 @@ async function loadApplicationCards(
       has_material: material !== null,
       parse_status: material === null ? null : material.parse_status,
       has_current_screening_decision: screening !== null,
+      screening_decision_result: screening === null ? null : screening.result,
       has_scheduled_interview: interviews.some((item) => item.status === 'SCHEDULED'),
       has_post_interview_scorecard_gap: interviews.some(
         (item) => item.status === 'POST_INTERVIEW' && item.scorecards.missing_total > 0,

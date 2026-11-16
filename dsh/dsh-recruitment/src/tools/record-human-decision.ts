@@ -51,9 +51,11 @@
 //      警告（不假装持久化成功）。
 //   5. 本工具不写任何状态（application/interview/scorecard），与低层工具同口径。
 //      例外（D-141③，`docs/17`）：SCREENING 的 `ADVANCE` / `REJECT` 由**领域**在同一个事务里
-//      派生 S6→S7（只派生 T1；幂等；材料/rubric 不满足则整体回滚）。本工具不自己写阶段、
-//      也不检查/放宽任何阶段闸门 —— 它只把写后独立读回的 `stage` 一并回显，让模型不需要
-//      再补一次 `stage_advance`（那正是 D-141 要消灭的多余失败点）。
+//      派生 S6→S7（只派生 T1；幂等；材料/rubric 不满足则整体回滚）；`REJECT` 另把生命周期
+//      `ACTIVE → CLOSED`（2026-11-16 lead 收窄裁定：用既有 CLOSED 取值/既有事件类型）。
+//      本工具不自己写阶段/生命周期、也不检查/放宽任何阶段闸门 —— 它只把写后独立读回的
+//      `stage`（含 lifecycle_before/after）一并回显，让模型不需要再补一次 `stage_advance`
+//      （那正是 D-141 要消灭的多余失败点）。
 import { isUuid } from './contract.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { RecruitmentToolError } from './errors.ts'
@@ -703,15 +705,17 @@ interface DecisionEventRow {
   payload: unknown
 }
 
-/** 申请行（写后独立读回：阶段派生到底有没有真的落库）。 */
+/** 申请行（写后独立读回：阶段派生 + REJECT 收口到底有没有真的落库）。 */
 interface ApplicationStageRow {
   current_stage_code: string
+  lifecycle_status: string
   record_version: number
 }
 
 const APPLICATION_STAGE_SQL = `
   select a.current_stage_code::text as current_stage_code,
-         a.record_version           as record_version
+         a.lifecycle_status::text    as lifecycle_status,
+         a.record_version            as record_version
     from recruitment.application a
    where a.tenant_id = $1::uuid
      and a.id = $2::uuid
@@ -825,8 +829,13 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
         after: { type: 'string', description: '写事务提交后独立读回的申请阶段码' },
         advanced: { type: 'boolean', description: '本次决策是否同事务推进了阶段（D-141③：SCREENING ADVANCE/REJECT 派生 S6→S7）' },
         record_version: { type: 'integer', description: '写后读回的 application.record_version' },
+        lifecycle_before: { type: 'string', description: '决策写库前的申请生命周期' },
+        lifecycle_after: {
+          type: 'string',
+          description: '写后读回的生命周期；SCREENING REJECT 会把 ACTIVE 收口为 CLOSED（2026-11-16 lead 裁定）',
+        },
       },
-      required: ['before', 'after', 'advanced', 'record_version'],
+      required: ['before', 'after', 'advanced', 'record_version', 'lifecycle_before', 'lifecycle_after'],
       additionalProperties: false,
     },
     basis: {
@@ -927,6 +936,13 @@ function renderRecordHumanDecision(value: unknown): readonly TextBlock[] {
     : `阶段：${text(stage.before)} → ${text(stage.after)}`
       + `${stage.advanced === true ? '（本次决策同事务推进）' : '（无变化）'}`
       + ` · 申请记录版本 ${String(stage.record_version)}`
+  // 2026-11-16 lead 收窄裁定：REJECT 把 ACTIVE 收口为 CLOSED —— 必须让模型读到"这条申请已结束"，
+  // 否则它会把已拒绝的申请继续当在办（例如接着安排面试）。
+  const lifecycleBefore = stage === undefined ? '' : text(stage.lifecycle_before)
+  const lifecycleAfter = stage === undefined ? '' : text(stage.lifecycle_after)
+  const lifecycleLine = stage === undefined || lifecycleBefore === lifecycleAfter
+    ? undefined
+    : `生命周期：${lifecycleBefore} → ${lifecycleAfter}（初筛拒绝：这条申请已结束，不再推进）`
   // `kinds` 是「依据种类 → 条数」的计数表；只念数字计数，别的值一概不回显 ——
   // 这个键在 schema 里是自由对象（`type: object`），逐字回显等于把未知内部值念给 HR。
   const kindText = Object.entries(kinds)
@@ -940,6 +956,7 @@ function renderRecordHumanDecision(value: unknown): readonly TextBlock[] {
       + `· 决策 ${shortRef(decisionId)} · 决策人 ${shortRef(text(decision.decided_by_actor_id))} `
       + `· 决策时间 ${String(decision.decided_at)}`,
     ...(stageLine === undefined ? [] : [stageLine]),
+    ...(lifecycleLine === undefined ? [] : [lifecycleLine]),
     `人已确认：${shortRef(text(confirmation.confirmed_by_actor_id))} `
       + `于 ${String(confirmation.confirmed_at)} 以 ${String(confirmation.method)} 方式确认 `
       + `· 确认原话摘要=${textSha === '' ? '（缺失）' : shortHash(textSha)} `
@@ -971,6 +988,8 @@ interface AssembledArgs {
   readonly as_of: string
   /** 写之前的申请阶段码（D-141③ 的 stage 回显："决策前 → 决策后"）。 */
   readonly current_stage_code: string
+  /** 写之前的生命周期（D-141③ REJECT 收口："ACTIVE → CLOSED" 的回显）。 */
+  readonly lifecycle_status: string
   readonly rubric_version_id: string
   readonly rubric_payload_hash: string
   readonly authority_actor_id: string
@@ -1242,6 +1261,7 @@ async function assembleDecisionArgs(
     ...(evaluationDigest === undefined ? {} : { screening_evaluation_digest: evaluationDigest }),
     as_of: decisionAsOf,
     current_stage_code: app.current_stage_code,
+    lifecycle_status: app.lifecycle_status,
     rubric_version_id: rubricVersionId,
     rubric_payload_hash: rubricPayloadHash,
     authority_actor_id: actorId,
@@ -1370,7 +1390,10 @@ export function createRecordHumanDecisionTool(deps: RecordHumanDecisionDeps): Re
       + 'authoritative decision-record domain (same STEP 0→7 gates: S10 stage gate, SC-11 rubric binding, DC-08..11 '
       + 'human confirmation, D-79 approval for non-IN_CHAT methods). For decision_scope=SCREENING the domain ALSO derives '
       + 'the S6→S7 stage move in the SAME transaction (D-141; only T1 — material linked, not FAILED, rubric pinned — is '
-      + 'derived, so T2–T4 gates stay untouched; idempotent when already S7). Do NOT call stage_advance afterwards for a '
+      + 'derived, so T2–T4 gates stay untouched; idempotent when already S7). A SCREENING REJECT additionally closes the '
+      + 'application lifecycle ACTIVE→CLOSED in the same transaction (existing CLOSED value / existing lifecycle event; '
+      + 'no new value, no new event type) — the output `stage.lifecycle_before/after` is read back independently after '
+      + 'COMMIT. Do NOT call stage_advance afterwards for a '
       + 'screening decision: the output `stage` block is read back independently after COMMIT and already reflects it. '
       + 'After COMMIT the tool re-reads the decision row '
       + 'and its decision.record event on a separate connection and returns only what the DB says. Fail-closed: any '
@@ -1534,6 +1557,8 @@ export function createRecordHumanDecisionTool(deps: RecordHumanDecisionDeps): Re
             after: readback.stage.current_stage_code,
             advanced: assembled.current_stage_code !== readback.stage.current_stage_code,
             record_version: readback.stage.record_version,
+            lifecycle_before: assembled.lifecycle_status,
+            lifecycle_after: readback.stage.lifecycle_status,
           },
           event: {
             event_id: typeof readback.event?.event_id === 'string' ? readback.event.event_id : '',

@@ -106,9 +106,13 @@
 //
 // 不做什么（与方案 D 的边界一致）：
 //   * 不接受 `to_stage` / `actor_id` / `tenant_id` 入参（身份与目标都只能来自事实与配置）；
-//   * 不写 `decision`、不建 `business_task`、不改 `lifecycle_status`、不写 `stage_blocked_reason`；
-//   * **唯一的例外**是 T1 的 rubric 补钉（`application.rubric_version_id`，见文件头 F1）——
+//   * 不写 `decision`、不建 `business_task`、不写 `stage_blocked_reason`；
+//   * **例外 1**：T1 的 rubric 补钉（`application.rubric_version_id`，见文件头 F1）——
 //     它写的是一个已经由人批准过的事实，不是本命令新造的授权；
+//   * **例外 2**（2026-11-16 lead 对 D-141③ 的收窄裁定）：SCREENING 结论为 `REJECT` 时，
+//     由 {@link closeApplicationOnScreeningReject} 把申请生命周期 `ACTIVE → CLOSED`
+//     （用既有 CLOSED 取值、既有 `application.lifecycle_status.changed` 事件，不新增取值/事件类型）；
+//     阶段本身仍由 {@link deriveScreeningDecisionStage} 负责；
 //   * 不倒退（指针已超前于本命令能推导的事实 → `STAGE_AHEAD` 警告 + 一条 UPDATE 都不发）；
 //   * 不跳阶（只走 S6→S7→S8→S9→S10 四条边；中间任一前置不成立就停在那一步 ——
 //     例如 S8 的材料还没就绪就停在 S8，S9 的材料不可用 / 没有已提交面评就停在 S9）。
@@ -128,6 +132,12 @@
 //     不会留下"决策落了、阶段没动"的半状态）；
 //   * actor 仍只来自 `SET LOCAL recruitment.actor_id`（真实人）：阶段事件由既有
 //     `fn_row_guard` 触发链写出，本文件不另写事件。
+//
+//   【2026-11-16 lead 收窄裁定 · REJECT 的生命周期收口】
+//   裁决原文：SCREENING + REJECT = 决策落库 + 阶段派生到 S7 + `lifecycle_status ACTIVE→CLOSED`
+//   （同一事务）；用既有 CLOSED、不新增取值、不发新事件类型。实现 = {@link closeApplicationOnScreeningReject}：
+//   只做 `ACTIVE → CLOSED`（其它生命周期状态不碰，零 UPDATE），事件由既有 `fn_row_guard` 写
+//   `application.lifecycle_status.changed`（from/to/actor），`status_changed_by_actor_id` = 真实人。
 
 import { randomUUID } from 'node:crypto'
 
@@ -1927,6 +1937,105 @@ export async function deriveScreeningDecisionStage(
       )
     }
     throw error
+  }
+}
+
+// =====================================================================
+//  SCREENING REJECT 的生命周期收口（2026-11-16 lead 对 D-141③ 的收窄裁定）
+// =====================================================================
+
+/** SCREENING REJECT 收口的结果（`changed=false` = 申请本来就不是 ACTIVE，未动一行）。 */
+export interface ScreeningRejectCloseResult {
+  /** 申请 id（回显）。 */
+  readonly application_id: string
+  /** 收口后的 `lifecycle_status`（`changed=false` 时 = 调用前值）。 */
+  readonly lifecycle_status: string
+  /** 收口后的 `record_version`（没发 UPDATE 时与调用前相同）。 */
+  readonly record_version: number
+  /** 本次是否真的发生了 `ACTIVE → CLOSED`。 */
+  readonly changed: boolean
+}
+
+/**
+ * SCREENING 结论为 `REJECT` 时，把申请的生命周期从 `ACTIVE` 收口到 `CLOSED`（同一事务、既有守卫路径）。
+ *
+ * 裁决（2026-11-16 lead 对 D-141③ 的收窄裁定，原文见 `work/d5/decision-stage/REPORT.md`）：
+ *   * 真实业务里"初筛没通过"的申请不该再算"在办" → `lifecycle_status: ACTIVE → CLOSED`；
+ *   * **用既有 CLOSED，不新增取值、不加迁移**（`ck_application_lifecycle_status` 只有
+ *     ACTIVE/ON_HOLD/WITHDRAWN/CLOSED；CLOSED = "这条申请结束了"，与 job close 同义）；
+ *   * `WITHDRAWN` 不用：那是候选人撤回，语义不同；
+ *   * 事件沿用既有 `application.lifecycle_status.changed`（由 `fn_row_guard` 自动写
+ *     from/to/actor），**不发新事件类型**；`status_changed_by_actor_id` = 真实人（GUC actor）。
+ *
+ * 边界（写死，别扩）：
+ *   * **只处理 `ACTIVE → CLOSED`**；申请已是 CLOSED/WITHDRAWN/ON_HOLD → `changed=false`
+ *     （零 UPDATE、零事件；不把既有状态机改宽，也不复活/降级已结束的申请）；
+ *   * 不做匿名写：读不到 actor 就拒绝（与 `fn_row_guard` 的 `ACTOR_REQUIRED` 同一口径）；
+ *   * 不写 decision / 不建任务 / **不碰阶段**（阶段由 {@link deriveScreeningDecisionStage} 负责）。
+ * @param client - 事务内连接（actor 已 `SET LOCAL`）。
+ * @param input - `{tenantId, applicationId}`。
+ * @returns 收口结果（`changed` 表示真的发生了 ACTIVE→CLOSED）。
+ * @throws RecruitmentToolError - `NOT_FOUND` / `VERSION_CONFLICT` / `INVALID_ARGS(ACTOR_REQUIRED)`。
+ */
+export async function closeApplicationOnScreeningReject(
+  client: DatabaseClient,
+  input: AdvanceApplicationStageInput,
+): Promise<ScreeningRejectCloseResult> {
+  const { tenantId, applicationId } = input
+  const { rows } = await client.query<{ lifecycle_status: string; record_version: number }>(
+    `select lifecycle_status, record_version
+       from recruitment.application
+      where id = $1 and tenant_id = $2
+      for update`,
+    [applicationId, tenantId],
+  )
+  const current = rows[0]
+  if (current === undefined) {
+    throw stageError(
+      'NOT_FOUND',
+      'APPLICATION_NOT_FOUND',
+      '申请不存在，或不属于当前租户。',
+      { application_id: applicationId },
+    )
+  }
+  if (current.lifecycle_status !== 'ACTIVE') {
+    return {
+      application_id: applicationId,
+      lifecycle_status: current.lifecycle_status,
+      record_version: current.record_version,
+      changed: false,
+    }
+  }
+  const actorId = await currentActorId(client)
+  if (actorId === null) {
+    throw stageError(
+      'INVALID_ARGS',
+      'ACTOR_REQUIRED',
+      '执行上下文没有 actor（SET LOCAL recruitment.actor_id），拒绝收口写入。',
+      { application_id: applicationId },
+    )
+  }
+  const updated = await client.query<{ lifecycle_status: string; record_version: number }>(
+    `update recruitment.application
+        set lifecycle_status = 'CLOSED'
+      where id = $1 and tenant_id = $2 and lifecycle_status = 'ACTIVE'
+      returning lifecycle_status, record_version`,
+    [applicationId, tenantId],
+  )
+  const row = updated.rows[0]
+  if (row === undefined) {
+    throw stageError(
+      'VERSION_CONFLICT',
+      'APPLICATION_LIFECYCLE_CONFLICT',
+      '收口 UPDATE 未命中（申请生命周期已被并发改过）：本调用整体回滚，请重读后再决定。',
+      { application_id: applicationId, expected_lifecycle_status: current.lifecycle_status },
+    )
+  }
+  return {
+    application_id: applicationId,
+    lifecycle_status: row.lifecycle_status,
+    record_version: row.record_version,
+    changed: true,
   }
 }
 
