@@ -32,7 +32,8 @@
     "src/**/*.ts",
     "lib/client.js",
     "cordis.patch.yml",
-    "CONTRACT.md"
+    "CONTRACT.md",
+    "skill/**"
   ],
   "keywords": [
     "deepseek-harness",
