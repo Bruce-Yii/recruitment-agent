@@ -1604,15 +1604,51 @@ export function parseApplicationGetArgs(raw: unknown): Record<string, unknown> {
   return args
 }
 
+/**
+ * render 用短号：只取 id 末 4 位（`…0701`）。完整 id 仍在结构化值里；
+ * render 正文不给完整 UUID —— O1：模型会把 render 里的 UUID 原样写给 HR。
+ */
+function shortRef(id: string): string {
+  return id.length <= 4 ? id : `…${id.slice(-4)}`
+}
+
+/** render 用短 hash：前 8 位 + `…`（与 `job_get` render 的 `hash=aba19e40…` 同口径）。 */
+function shortHash(hash: string): string {
+  return hash.length <= 8 ? hash : `${hash.slice(0, 8)}…`
+}
+
+/** 材料字段名 → 人话（只用于 render；结构化键仍是 name/phone/...）。 */
+const MATERIAL_FIELD_LABELS: Readonly<Record<string, string>> = {
+  name: '姓名',
+  phone: '电话',
+  email: '邮箱',
+  work_experience: '工作经历',
+  education: '教育经历',
+}
+
+/**
+ * 字段三态 → 事实陈述（O1：`name=absent` 不能被写成"请 HR 补录/更新结构化结果"）。
+ * absent/unreadable 都只陈述材料事实，不给任何"下一步"指令。
+ */
+function materialFieldFact(state: string): string {
+  if (state === 'present') return '已从这份材料里读到'
+  if (state === 'absent') return '未能从这份材料里读出来（材料事实）'
+  return '这份材料里写了，但这次没读出来（材料事实）'
+}
+
 /** `recruitment_application_get` 的模型可见 render。 */
 function renderApplicationGet(_args: unknown, value: unknown): readonly TextBlock[] {
   const v = value as ApplicationGetValue
   const candidateNamePart = v.query.candidate_name === undefined
     ? ''
     : ` candidate_name=${v.query.candidate_name}`
+  // O1：query 行不回显完整 UUID（结构化 query.application_id 仍是完整值）。
+  const applicationIdPart = v.query.application_id === undefined
+    ? ''
+    : ` 申请=${shortRef(v.query.application_id)}`
   const lines: string[] = [
     `${v.tool} read-only (${v.contract_version}) labels=${v.labels.provenance}/${v.labels.trigger}/${v.labels.connection}`,
-    `query: ${v.query.mode} matched=${v.query.matched}${v.query.application_id === undefined ? '' : ` application_id=${v.query.application_id}`}${candidateNamePart}`,
+    `query: ${v.query.mode} matched=${v.query.matched}${applicationIdPart}${candidateNamePart}`,
   ]
   // O20：多命中必须问人。这行是给模型看的最后一道明示（结构上 next_tools 也已清空）。
   if (v.needs_human_choice) {
@@ -1622,20 +1658,27 @@ function renderApplicationGet(_args: unknown, value: unknown): readonly TextBloc
     )
   }
   for (const application of v.applications) {
+    // O1：申请行给业务标识（候选人显示名 + 岗位 + 阶段）；只有显示名为空才退回短号。
+    const displayName = application.candidate.display_name.trim()
+    const applicationLine = displayName === ''
+      ? `申请 ${shortRef(application.application_id)} · ${application.job.code} ${application.job.title} `
+        + `· 阶段 ${application.stage_code}（${application.lifecycle_status}, record_version=${application.record_version}）`
+      : `申请：${displayName} · ${application.job.code} ${application.job.title} `
+        + `· 阶段 ${application.stage_code}（${application.lifecycle_status}, record_version=${application.record_version}）`
     lines.push(
-      `application ${application.application_id} @ ${application.stage_code} `
-        + `(${application.lifecycle_status}, record_version=${application.record_version})`,
-      `  candidate: ${application.candidate.candidate_id} / ${application.candidate.display_name} `
-        + `(${application.candidate.identity_status}) contacts=${application.candidate.contacts.email} `
+      applicationLine,
+      // O1：候选人行不给 candidate_id（UUID）；结构化 application.candidate 仍保留完整值。
+      `  候选人：${displayName === '' ? '（显示名未录入）' : displayName} `
+        + `identity_status=${application.candidate.identity_status} contacts=${application.candidate.contacts.email} `
         + `${application.candidate.contacts.phone} (visible=${String(application.candidate.contacts.visible)})`,
-      `  job: ${application.job.job_id} ${application.job.code} ${application.job.title} `
-        + `status=${application.job.status}`,
+      `  岗位：${application.job.code} ${application.job.title} status=${application.job.status}`,
     )
     if (application.rubric !== undefined) {
+      // O1：版本号给人话，UUID 只留短号（结构化 rubric.rubric_version_id 仍是完整值）。
       lines.push(
-        `  rubric: ${application.rubric.rubric_version_id} v${application.rubric.version_no} `
-          + `(source=${application.rubric.source}, approved=${String(application.rubric.approved)}, `
-          + `criteria=${application.rubric.criteria_count})`,
+        `  rubric: v${application.rubric.version_no} (source=${application.rubric.source}, `
+          + `approved=${String(application.rubric.approved)}, criteria=${application.rubric.criteria_count}, `
+          + `版本号 ${shortRef(application.rubric.rubric_version_id)})`,
       )
     } else {
       lines.push('  rubric: (none pinned; call recruitment_job_get to see why)')
@@ -1643,13 +1686,13 @@ function renderApplicationGet(_args: unknown, value: unknown): readonly TextBloc
     if (application.material !== undefined) {
       const asset = application.material.asset
       lines.push(
-        `  material: resume_version=${application.material.resume_version_id} `
+        `  material: resume_version=${shortRef(application.material.resume_version_id)} `
           + `parse_status=${application.material.parse_status} pages=${application.material.pages} `
           + `hard_issues=${application.material.hard_issue_codes.length}`,
         asset === undefined
           ? '    asset: (none linked)'
-          : `    asset: ${asset.intake_asset_id} ${asset.file_name} ${asset.byte_size}B `
-            + `sha256=${asset.sha256} (${asset.validation_status})`,
+          : `    asset: ${shortRef(asset.intake_asset_id)} ${asset.file_name} ${asset.byte_size}B `
+            + `sha256=${shortHash(asset.sha256)} (${asset.validation_status})`,
       )
     } else {
       lines.push('  material: (none bound to this application)')
@@ -1675,7 +1718,8 @@ function renderApplicationGet(_args: unknown, value: unknown): readonly TextBloc
     )
   }
   if (v.next_tools.length > 0) {
-    lines.push('next tools (use these, not shell/psql):')
+    // 机器参数区：模型要原样复制 args 才能调下游工具；但 id/hash 只给工具看，不给 HR 看。
+    lines.push('next tools (machine arguments — copy verbatim into tool calls; never show ids or hashes to the human):')
     for (const hint of v.next_tools) lines.push(`  ${hint.name} ${hint.args_json} — ${hint.reason}`)
   }
   return [{ type: 'text', text: lines.join('\n') }]
@@ -2506,23 +2550,28 @@ function renderMaterialRead(_args: unknown, value: unknown): readonly TextBlock[
   const meta = v.material.meta
   const lines: string[] = [
     `${v.tool} read-only (${v.contract_version}) labels=${v.labels.provenance}/${v.labels.trigger}/${v.labels.connection}`,
-    `query: ${v.query.mode} from ${v.query.source} resume_version=${meta.resume_version_id}`,
+    // O1：resume_version 只留短号（结构化 query.resume_version_id 仍是完整值）。
+    `query: ${v.query.mode} from ${v.query.source} resume_version=${shortRef(meta.resume_version_id)}`,
     `material: parse_status=${meta.parse_status} pages=${meta.pages} reader=${meta.reader_backend}@${meta.reader_version}`,
   ]
   if (v.material.asset !== undefined) {
     const asset = v.material.asset
     lines.push(
-      `  asset: ${asset.intake_asset_id} ${asset.file_name} ${asset.byte_size}B sha256=${asset.sha256} `
-        + `(${asset.validation_status}, ref=${asset.storage_ref_kind})`,
+      `  asset: ${shortRef(asset.intake_asset_id)} ${asset.file_name} ${asset.byte_size}B `
+        + `sha256=${shortHash(asset.sha256)} (${asset.validation_status}, ref=${asset.storage_ref_kind})`,
     )
   } else {
     lines.push('  asset: (none linked: the material row has no intake_asset)')
   }
   lines.push(
-    `  hashes: source_asset_sha256=${meta.source_asset_sha256 ?? ''} content_sha256=${meta.content_sha256 ?? ''}`,
+    `  hashes: source_asset_sha256=${shortHash(meta.source_asset_sha256 ?? '')} `
+      + `content_sha256=${shortHash(meta.content_sha256 ?? '')}`,
     `  contacts: email=${v.material.contacts.email} phone=${v.material.contacts.phone} `
       + `(visible=${String(v.material.contacts.visible)})`,
-    `  field_locators: ${v.material.structure.field_locators.map((item) => `${item.field}=${item.state}`).join(', ')}`,
+    // O1：字段三态改成"材料事实"陈述（不写成"请 HR 补录/更新结构化结果"）；结构化 field_locators 不变。
+    `  材料字段：${v.material.structure.field_locators
+      .map((item) => `${MATERIAL_FIELD_LABELS[item.field] ?? item.field}：${materialFieldFact(item.state)}`)
+      .join('；')}`,
     `  entries: ${v.material.structure.entries.length} (work/education header lines with locators)`,
     `  issues: ${v.material.structure.issues.count} (hard ${v.material.structure.issues.hard_count}: `
       + `${v.material.structure.issues.hard_codes.join(',') || 'none'})`,
@@ -2536,7 +2585,11 @@ function renderMaterialRead(_args: unknown, value: unknown): readonly TextBlock[
   if (v.text.excerpt !== undefined) {
     lines.push('--- source excerpt (contact-redacted, verified sha256) ---', v.text.excerpt, '--- end excerpt ---')
   }
-  for (const hint of v.next_tools) lines.push(`next: ${hint.name} ${hint.args_json} — ${hint.reason}`)
+  if (v.next_tools.length > 0) {
+    // 机器参数区：模型要原样复制 args 才能调下游工具；但 id/hash 只给工具看，不给 HR 看。
+    lines.push('next (machine arguments — copy verbatim into tool calls; never show ids or hashes to the human):')
+    for (const hint of v.next_tools) lines.push(`  ${hint.name} ${hint.args_json} — ${hint.reason}`)
+  }
   return [{ type: 'text', text: lines.join('\n') }]
 }
 
