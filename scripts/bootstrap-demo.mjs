@@ -59,9 +59,9 @@
 //
 // 输出：逐步骤人读摘要 + 最后**一行** `BOOTSTRAP_RESULT: <单行 JSON>`（no-op/deny/失败同样输出）。
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
@@ -125,6 +125,77 @@ const DEMO_ROLE_INTERVIEWER_ID = '11111111-1111-4111-8111-000000000204'
 const DEMO_ACTOR_ROLE_B_ID = '11111111-1111-4111-8111-000000000305'
 /** 演示申请（0002_seed 的 …0701）。 */
 const DEMO_APPLICATION_ID = '11111111-1111-4111-8111-000000000701'
+/**
+ * 演示申请**钉住**的 rubric 版本（0002_seed 的 …0403 = v1）。
+ *
+ * O2 根因（产品视角复核）：`0002_seed` 只种了 rubric v1、一条 approval 行都没有；
+ * 本脚本只给"新造的 v2"补了审批，**没有给被申请钉住的 v1 补**。于是申请一进初筛
+ * 就必然 `NO_RUBRIC / NO_APPROVED_RUBRIC` —— HR 与 Agent 都做不下去。
+ * 修法：为 v1 幂等回填一条"申请创建之前就已批准"的历史审批（不是放宽闸门、也不是改 pin）。
+ */
+const DEMO_PINNED_RUBRIC_ID = '11111111-1111-4111-8111-000000000403'
+/** 历史审批行的固定 id（幂等；不与面试 …0801/…0802 的 id 冲突）。 */
+const DEMO_PINNED_RUBRIC_APPROVAL_ID = '11111111-1111-4111-8111-000000000811'
+
+// ---- O15：演示招聘团队（排期面试官候选的**唯一**人员来源）--------------------
+//
+// 产品视角复核 O15：Recruiter 切身份后 `schedule-submit` 仍 disabled，原因
+// `MISSING_INTERVIEWER_CANDIDATES：settings.hiringTeams 里没有可用人员`。
+// 根因不是查询（`HIRING_TEAMS_SQL` 本身正确），而是**演示库 `hiring_team` /
+// `hiring_team_member` 两表 0 行**：客户端 `interviewerCandidates()` 只从
+// `settings.hiringTeams[].members[]` 取人，没有团队就没有候选 → 排期能力不可达。
+// 这里幂等补一个演示招聘组（成员 = 招聘负责人 / HR 专员 / 两名面试官）。
+
+/** 演示招聘团队的固定 id / 业务键（`uq_hiring_team_code` 让 code 可作幂等键）。 */
+const DEMO_HIRING_TEAM_ID = '11111111-1111-4111-8111-000000000901'
+const DEMO_HIRING_TEAM_CODE = 'DEMO_HIRING_TEAM'
+const DEMO_HIRING_TEAM_NAME = '演示招聘组'
+/** 团队部门（0002_seed 的研发部；`hiring_team.department_id` 必填）。 */
+const DEMO_HIRING_TEAM_DEPARTMENT_ID = '11111111-1111-4111-8111-000000000010'
+/**
+ * 团队成员（固定 id + 固定 actor；`team_role` ∈ HIRING_MANAGER|RECRUITER|COORDINATOR|INTERVIEWER|APPROVER）。
+ * 两名 INTERVIEWER 是排期表单真正需要的候选（104 / 105）。
+ */
+const DEMO_HIRING_TEAM_MEMBERS = [
+  { id: '11111111-1111-4111-8111-000000000911', actor_id: '11111111-1111-4111-8111-000000000102', team_role: 'HIRING_MANAGER' },
+  { id: '11111111-1111-4111-8111-000000000912', actor_id: '11111111-1111-4111-8111-000000000103', team_role: 'RECRUITER' },
+  { id: '11111111-1111-4111-8111-000000000913', actor_id: '11111111-1111-4111-8111-000000000104', team_role: 'INTERVIEWER' },
+  { id: '11111111-1111-4111-8111-000000000914', actor_id: '11111111-1111-4111-8111-000000000105', team_role: 'INTERVIEWER' },
+]
+
+/** 插演示招聘团队（幂等：`on conflict do nothing`；team 的幂等键是 (tenant_id, code)）。 */
+const SQL_INSERT_HIRING_TEAM = `
+  insert into recruitment.hiring_team
+    (id, tenant_id, code, name, department_id, description, created_by_actor_id)
+  values ($1::uuid, $2::uuid, $3, $4, $5::uuid, $6, $7::uuid)
+  on conflict do nothing
+  returning id::text as team_id`
+
+/** 按业务键读团队（既有团队复用，不猜 id）。 */
+const SQL_HIRING_TEAM_BY_CODE = `
+  select id::text as team_id, code, name
+    from recruitment.hiring_team
+   where tenant_id = $1::uuid and code = $2`
+
+/** 插团队成员（幂等：`on conflict do nothing` 覆盖 id 冲突与"同团队同人是活跃成员"的部分唯一索引）。 */
+const SQL_INSERT_HIRING_TEAM_MEMBER = `
+  insert into recruitment.hiring_team_member
+    (id, tenant_id, team_id, actor_id, actor_kind, team_role, added_by_actor_id)
+  values ($1::uuid, $2::uuid, $3::uuid, $4::uuid, 'HUMAN', $5, $6::uuid)
+  on conflict do nothing
+  returning id::text as member_id`
+
+/** 读团队成员（含 display_name；排期下拉展示的就是这个）。 */
+const SQL_HIRING_TEAM_MEMBERS = `
+  select m.id::text as member_id,
+         m.actor_id::text as actor_id,
+         coalesce(a.display_name, '') as display_name,
+         m.team_role as team_role
+    from recruitment.hiring_team_member m
+    left join recruitment.actor a
+      on a.id = m.actor_id and a.tenant_id = m.tenant_id
+   where m.tenant_id = $1::uuid and m.team_id = $2::uuid and m.is_active
+   order by m.created_at asc, m.id asc`
 /** 演示第 1 轮面试（已发生：POST_INTERVIEW）。 */
 const DEMO_INTERVIEW_ROUND1_ID = '11111111-1111-4111-8111-000000000801'
 /** 演示第 2 轮面试（已排期：SCHEDULED；A/B 各交一份面评的那一场）。 */
@@ -253,6 +324,90 @@ const SQL_ACTOR_ROLES = `select a.id, a.kind, a.tenant_id,
    left join recruitment.role r on r.tenant_id = a.tenant_id and r.id = ar.role_id
   where a.id = $1 and a.tenant_id = $2
   group by a.id, a.kind, a.tenant_id`
+
+// ---- O2 夹具：申请钉住的 rubric 版本的**历史审批**回填（幂等）------------------
+//
+// 为什么需要它（产品视角复核 O2）：`0002_seed` 种了 rubric v1 + 把申请钉到 v1，但
+// **没有任何 approval 行**；本脚本只给新造的 v2 补审批。于是 `screening_evaluate`
+// 读"申请钉住的版本"时永远 `NO_APPROVED_RUBRIC` —— HR 第一次初筛就卡死。
+// 这里补的是"事实"：v1 在申请被创建/钉住之前就已经被人批准过（decided_at 早于 applied_at）。
+// 不是放宽闸门（闸门仍要求 pin 的版本有生效 APPROVED），也不是把 pin 改指 v2（改业务事实）。
+
+/** 申请钉住版本的历史审批回填 SQL（固定 id + `not exists` 双保险 → 幂等）。 */
+const SQL_BACKFILL_PINNED_RUBRIC_APPROVAL = `
+  with target as (
+    select a.id            as application_id,
+           a.applied_at    as applied_at,
+           rv.tenant_id    as tenant_id,
+           rv.id           as rubric_version_id,
+           rv.version_no   as version_no,
+           rv.payload_hash as payload_hash
+      from recruitment.application a
+      join recruitment.rubric_version rv
+        on rv.id = a.rubric_version_id and rv.tenant_id = a.tenant_id
+     where a.id = $1::uuid and a.tenant_id = $2::uuid
+  )
+  insert into recruitment.approval (
+    id, tenant_id, resource_type, resource_id, resource_record_version,
+    payload_schema_version, canonical_payload_hash, status,
+    requested_by_actor_id, decision_by_actor_id, decided_at, reason,
+    status_changed_at, status_changed_by_actor_id, created_at
+  )
+  select $3::uuid, t.tenant_id, 'RUBRIC_VERSION', t.rubric_version_id, t.version_no,
+         1, t.payload_hash, 'APPROVED',
+         $4::uuid, $4::uuid, coalesce(t.applied_at, now()) - interval '1 hour',
+         '演示夹具：申请钉住的版本在其被钉住之前已被人工批准（O2 历史审批回填）',
+         coalesce(t.applied_at, now()) - interval '1 hour', $4::uuid,
+         coalesce(t.applied_at, now()) - interval '1 hour'
+    from target t
+   where not exists (
+     select 1 from recruitment.approval ap
+      where ap.tenant_id = t.tenant_id
+        and ap.resource_type = 'RUBRIC_VERSION'
+        and ap.resource_id = t.rubric_version_id
+        and ap.status = 'APPROVED'
+        and ap.canonical_payload_hash = t.payload_hash
+        and ap.superseded_by_approval_id is null
+        and (ap.expires_at is null or ap.expires_at > now())
+   )
+  on conflict (id) do nothing
+  returning id::text as approval_id, decided_at, resource_id::text as rubric_version_id`
+
+/** 只读读回：申请钉住版本的审批事实（**不看 insert 返回值**）。 */
+const SQL_PINNED_RUBRIC_APPROVAL_READBACK = `
+  select a.id::text                as application_id,
+         a.rubric_version_id::text as rubric_version_id,
+         rv.version_no             as version_no,
+         rv.payload_hash           as payload_hash,
+         a.applied_at              as applied_at,
+         (
+           select count(*)::int from recruitment.approval ap
+            where ap.tenant_id = rv.tenant_id
+              and ap.resource_type = 'RUBRIC_VERSION'
+              and ap.resource_id = rv.id
+         ) as approval_rows,
+         exists (
+           select 1 from recruitment.approval ap
+            where ap.tenant_id = rv.tenant_id
+              and ap.resource_type = 'RUBRIC_VERSION'
+              and ap.resource_id = rv.id
+              and ap.status = 'APPROVED'
+              and ap.canonical_payload_hash = rv.payload_hash
+              and ap.superseded_by_approval_id is null
+              and (ap.expires_at is null or ap.expires_at > now())
+         ) as approved,
+         (
+           select min(ap.decided_at) from recruitment.approval ap
+            where ap.tenant_id = rv.tenant_id
+              and ap.resource_type = 'RUBRIC_VERSION'
+              and ap.resource_id = rv.id
+              and ap.status = 'APPROVED'
+         ) as first_approved_at
+    from recruitment.application a
+    join recruitment.rubric_version rv
+      on rv.id = a.rubric_version_id and rv.tenant_id = a.tenant_id
+   where a.id = $1::uuid and a.tenant_id = $2::uuid`
+
 
 // ---- D5 W1 演示种子用到的读写 SQL（读在同一个写事务里；写全部幂等）----------------
 
@@ -1030,6 +1185,233 @@ function verifyDemoMaterialChain(chain, expectedSha, expectedBytes, intakeValue)
  * @param env - 环境变量表（converter 的 python_bin 从这里来）。
  * @returns `{ demo_material, invariant, write_steps, issues }`。
  */
+/**
+ * O15 夹具：幂等补一个**演示招聘团队**（含 4 名成员）。
+ *
+ * 为什么这是"必修"而不是装饰：客户端排期表单的面试官候选**只**来自
+ * `settings.hiringTeams[].members[]`（`interviewerCandidates()`）。两表 0 行时，
+ * HR 切身份后 `schedule-submit` 永远 disabled（`MISSING_INTERVIEWER_CANDIDATES`）
+ * —— 这是"能力不可达"，必须给出结论（这里 = 数据没种，补数据；不是查询漏了）。
+ *
+ * @param pool - 连接池。
+ * @param cfg - 已解析配置。
+ * @returns 报告（读回后的团队与成员；`write_steps` 表示本次真写入的步骤）。
+ */
+async function seedDemoHiringTeam(pool, cfg) {
+  const report = {
+    team_id: null,
+    code: DEMO_HIRING_TEAM_CODE,
+    name: DEMO_HIRING_TEAM_NAME,
+    team_inserted: false,
+    members_inserted: 0,
+    members: [],
+    write_steps: [],
+    issues: [],
+  }
+  const inserted = await withActor(pool, cfg.actor_id, async (client) => {
+    const teamInsert = await client.query(SQL_INSERT_HIRING_TEAM, [
+      DEMO_HIRING_TEAM_ID, cfg.tenant_id, DEMO_HIRING_TEAM_CODE, DEMO_HIRING_TEAM_NAME,
+      DEMO_HIRING_TEAM_DEPARTMENT_ID, '演示用招聘组（合成数据，非真实组织）', cfg.actor_id,
+    ])
+    const teamRows = teamInsert.rows.length > 0
+      ? teamInsert.rows
+      : (await client.query(SQL_HIRING_TEAM_BY_CODE, [cfg.tenant_id, DEMO_HIRING_TEAM_CODE])).rows
+    const teamId = teamRows[0]?.team_id
+    if (typeof teamId !== 'string') throw new Error('seed.demo_hiring_team: 插入团队后读不到 team_id（fail-closed）')
+    const insertedMemberIds = []
+    for (const member of DEMO_HIRING_TEAM_MEMBERS) {
+      const { rows } = await client.query(SQL_INSERT_HIRING_TEAM_MEMBER, [
+        member.id, cfg.tenant_id, teamId, member.actor_id, member.team_role, cfg.actor_id,
+      ])
+      if (rows.length > 0) insertedMemberIds.push(rows[0].member_id)
+    }
+    return { teamId, teamInserted: teamInsert.rows.length > 0, insertedMemberIds }
+  })
+
+  const readback = await withReadOnly(pool, async (client) => {
+    const team = (await client.query(SQL_HIRING_TEAM_BY_CODE, [cfg.tenant_id, DEMO_HIRING_TEAM_CODE])).rows[0] ?? null
+    const members = team === null
+      ? []
+      : (await client.query(SQL_HIRING_TEAM_MEMBERS, [cfg.tenant_id, team.team_id])).rows
+    return { team, members }
+  })
+  if (readback.team === null) {
+    throw new Error(`seed.demo_hiring_team: 插入后按 code=${DEMO_HIRING_TEAM_CODE} 读不回团队（fail-closed）`)
+  }
+  if (readback.members.length === 0) {
+    throw new Error(`seed.demo_hiring_team: 团队 ${readback.team.team_id} 读回 0 名活跃成员（排期仍会不可达）`)
+  }
+  report.team_id = readback.team.team_id
+  report.members = readback.members
+  report.team_inserted = inserted.teamInserted
+  report.members_inserted = inserted.insertedMemberIds.length
+  if (inserted.teamInserted) report.write_steps.push('seed.demo_hiring_team')
+  if (inserted.insertedMemberIds.length > 0) report.write_steps.push('seed.demo_hiring_team.members')
+  return report
+}
+
+/**
+ * 把招聘团队种子结果写进 steps（重跑时同样输出，用 state=PRESENT 证明零变更）。
+ * @param addStep - `run()` 里的步骤登记函数。
+ * @param report - `seedDemoHiringTeam()` 的返回。
+ */
+function addHiringTeamSteps(addStep, report) {
+  const memberText = report.members
+    .map((member) => `${member.team_role}:${member.display_name !== '' ? member.display_name : member.actor_id}`)
+    .join(' / ')
+  addStep('seed.demo_hiring_team', null,
+    `team=${report.code} id=${report.team_id} state=${report.team_inserted ? 'INSERTED' : 'PRESENT'}`
+      + ` members=${String(report.members.length)} [${memberText}]`,
+    { ok: report.members.length > 0 })
+  for (const issue of report.issues) addStep('seed.issue', null, issue, { ok: false })
+}
+
+/**
+ * 只读：申请钉住 rubric 的审批事实（O2 回填的读回口径）。
+ * @param pool - 连接池。
+ * @param cfg - 已解析配置。
+ * @returns 读回行；申请不存在/没钉住 rubric 时 null。
+ */
+async function readPinnedRubricApproval(pool, cfg) {
+  return withReadOnly(pool, async (client) => {
+    const { rows } = await client.query(SQL_PINNED_RUBRIC_APPROVAL_READBACK, [DEMO_APPLICATION_ID, cfg.tenant_id])
+    return rows[0] ?? null
+  })
+}
+
+/**
+ * O2 夹具：给"申请钉住的 rubric 版本"幂等回填一条**申请创建之前已生效**的历史审批。
+ *
+ * 三条纪律：
+ *   1. 只在"该版本此刻没有生效 APPROVED 审批"时写（`not exists` + 固定 id）；
+ *   2. `decided_at` 必须**早于** `application.applied_at` —— 事实语义是"当时已批准，后来申请钉住它"；
+ *   3. 写后只读读回核对（批准生效 + hash 对齐 + 时间序）；读回不符就抛错，不静默成功。
+ *
+ * @param pool - 连接池。
+ * @param cfg - 已解析配置。
+ * @returns 报告（state ∈ PRESENT|BACKFILLED|NO_APPLICATION；write 表示本次是否真写入）。
+ */
+async function backfillPinnedRubricApproval(pool, cfg) {
+  const report = {
+    application_id: DEMO_APPLICATION_ID,
+    state: 'SKIPPED',
+    write: false,
+    rubric_version_id: null,
+    version_no: null,
+    approved: false,
+    approval_rows: 0,
+    approval_id: null,
+    decided_at: null,
+    applied_at: null,
+    issues: [],
+  }
+  const before = await readPinnedRubricApproval(pool, cfg)
+  if (before === null) {
+    report.state = 'NO_APPLICATION'
+    report.issues.push(
+      `演示申请 ${DEMO_APPLICATION_ID} 不存在或没有钉住 rubric：跳过 O2 历史审批回填（先按名重放 db/migrations 0001..0016）`,
+    )
+    return report
+  }
+  report.rubric_version_id = before.rubric_version_id
+  report.version_no = before.version_no
+  report.approval_rows = before.approval_rows
+  report.applied_at = before.applied_at
+  if (before.approved === true) {
+    report.state = 'PRESENT'
+    report.approved = true
+    report.decided_at = before.first_approved_at ?? null
+    return report
+  }
+
+  const inserted = await withActor(pool, cfg.actor_id, async (client) => {
+    const { rows } = await client.query(SQL_BACKFILL_PINNED_RUBRIC_APPROVAL, [
+      DEMO_APPLICATION_ID, cfg.tenant_id, DEMO_PINNED_RUBRIC_APPROVAL_ID, cfg.actor_id,
+    ])
+    return rows
+  })
+
+  const after = await readPinnedRubricApproval(pool, cfg)
+  if (after === null || after.approved !== true) {
+    throw new Error(
+      'O2 历史审批回填后读回不成立（申请钉住的 rubric 仍没有生效 APPROVED 审批）：'
+        + JSON.stringify({ before, after }),
+    )
+  }
+  if (after.first_approved_at !== null && after.applied_at !== null
+    && !(new Date(after.first_approved_at).getTime() < new Date(after.applied_at).getTime())) {
+    throw new Error(
+      'O2 历史审批回填的时间序不成立：decided_at 必须早于 application.applied_at（'
+        + `decided_at=${String(after.first_approved_at)} applied_at=${String(after.applied_at)}）`,
+    )
+  }
+  report.state = inserted.length > 0 ? 'BACKFILLED' : 'PRESENT'
+  report.write = inserted.length > 0
+  report.approved = true
+  report.approval_rows = after.approval_rows
+  report.approval_id = inserted[0]?.approval_id ?? DEMO_PINNED_RUBRIC_APPROVAL_ID
+  report.decided_at = after.first_approved_at ?? null
+  return report
+}
+
+/**
+ * 把 O2 历史审批回填结果写进 steps（重跑时同样输出，用 state=PRESENT 证明零变更）。
+ * @param addStep - `run()` 里的步骤登记函数。
+ * @param report - `backfillPinnedRubricApproval()` 的返回。
+ */
+function addPinnedRubricApprovalStep(addStep, report) {
+  addStep('seed.pinned_rubric_approval', null,
+    `application=${report.application_id} pinned_rubric=v${String(report.version_no)}`
+      + ` state=${report.state} approved=${String(report.approved)}`
+      + ` approval_rows=${String(report.approval_rows)}`
+      + ` decided_at=${String(report.decided_at)} applied_at=${String(report.applied_at)}`,
+    { ok: report.approved === true || report.state === 'NO_APPLICATION' })
+  for (const issue of report.issues) addStep('seed.issue', null, issue, { ok: false })
+}
+
+/**
+ * 演示材料文件的**稳定落点**（O11：原件必须留下来，产品才读得回来）。
+ *
+ * 为什么不能再放 `mkdtemp` 临时目录并 `rmSync`（旧行为）：`intake_asset` 只存
+ * `content-addressed:sha256:<hex>`，原件不在库里；材料读工具按 sha256 在 **allowed_roots**
+ * 内找原件。旧脚本 intake 完就删 → `material_read` 永远 `NOT_FOUND_IN_ALLOWED_ROOTS`
+ * （产品视角复核 O11 的真根因，**不是**存储缺口本身）。
+ *
+ * 选点顺序（确定性、可解释）：
+ *   1. `RECRUITMENT_DEMO_MATERIAL_DIR`（显式覆盖，测试/特殊机器用）；
+ *   2. 产品 profile 的三个 allowed root（`RECRUITMENT_ALLOWED_ROOT_RESUME_POOL` /
+ *      `_ORCHESTRATION` / `_CODEX`）里的第一个 → 写进 `<root>/demo-material/`，产品读得到；
+ *   3. 都没有时退回系统临时目录下的**固定子目录**（跨运行稳定、不删），并在输出里
+ *      如实标注"不在 allowed_roots 内"。
+ *
+ * @param env - 环境变量表。
+ * @returns `{ dir, inAllowedRoot, envName }`（`inAllowedRoot=false` 时产品读不回原件）。
+ */
+function resolveDemoMaterialDir(env) {
+  const explicit = envText(env, 'RECRUITMENT_DEMO_MATERIAL_DIR', '')
+  if (explicit !== '') return { dir: explicit, inAllowedRoot: true, envName: 'RECRUITMENT_DEMO_MATERIAL_DIR' }
+  const roots = [
+    ['RECRUITMENT_ALLOWED_ROOT_RESUME_POOL', envText(env, 'RECRUITMENT_ALLOWED_ROOT_RESUME_POOL', '')],
+    ['RECRUITMENT_ALLOWED_ROOT_ORCHESTRATION', envText(env, 'RECRUITMENT_ALLOWED_ROOT_ORCHESTRATION', '')],
+    ['RECRUITMENT_ALLOWED_ROOT_CODEX', envText(env, 'RECRUITMENT_ALLOWED_ROOT_CODEX', '')],
+  ]
+  for (const [envName, root] of roots) {
+    if (root !== '') return { dir: join(root, 'demo-material'), inAllowedRoot: true, envName }
+  }
+  return {
+    dir: join(tmpdir(), 'recruitment-demo-material'),
+    inAllowedRoot: false,
+    envName: null,
+  }
+}
+
+/**
+ * 演示材料链种子：把**确定性合成** RTF 落到稳定目录，用产品 intake 工具接入，再只读读回核对。
+ * @param pool - 连接池。
+ * @param cfg - 已解析配置。
+ * @param env - 环境变量表。
+ * @returns 报告（`demo_material` / `invariant` / `write_steps` / `issues`）。
+ */
 async function seedDemoMaterial(pool, cfg, env) {
   const tenantId = cfg.tenant_id
   const report = { demo_material: null, invariant: null, write_steps: [], issues: [] }
@@ -1066,6 +1448,10 @@ async function seedDemoMaterial(pool, cfg, env) {
 
   let material
   let written = false
+  // O11：演示材料落到**稳定目录**（不删）。优先级见 `resolveDemoMaterialDir()`。
+  const materialTarget = resolveDemoMaterialDir(env)
+  const materialDir = materialTarget.dir
+  const materialPath = join(materialDir, DEMO_MATERIAL_FILE_NAME)
   if (anchor.resume_version_id !== null) {
     // 材料已在库：只读核对（重跑路径不需要 Python/converter；也不允许"看起来有材料"就放过）
     const chain = await readDemoMaterialChain(pool, cfg)
@@ -1074,30 +1460,34 @@ async function seedDemoMaterial(pool, cfg, env) {
     material.application_action = 'REUSED'
     material.resume_version_action = 'UNCHANGED'
     material.write = false
-  } else {
-    // 1) 生成材料文件（临时目录），用**产品 intake 工具**接入；目录用完即删（库内只留内容寻址引用）
-    const materialDir = mkdtempSync(join(tmpdir(), 'recruitment-bootstrap-material-'))
-    let intakeValue = null
-    try {
-      const materialPath = join(materialDir, DEMO_MATERIAL_FILE_NAME)
+    // O11：旧版脚本 intake 后把原文件删了；重跑时把**同一确定性字节**补回去，
+    // 否则 `material_read` 仍读不到原件（库内只有内容寻址引用）。
+    if (!existsSync(materialPath)) {
+      mkdirSync(dirname(materialPath), { recursive: true })
       writeFileSync(materialPath, rtfBytes)
-      const converter = resolveDemoConverter(env, materialDir)
-      const intakeTool = createApplicationIntakeTool({ converter, database: cfg })
-      intakeValue = await intakeTool.execute(
-        { path: materialPath, job_id: DEMO_JOB_ID },
-        { callId: 'bootstrap-demo-seed-material' },
+      material.file_restored = true
+    }
+    material.file_path = materialPath
+    material.file_in_allowed_root = materialTarget.inAllowedRoot
+  } else {
+    // 1) 生成材料文件（稳定目录，**不删**），用**产品 intake 工具**接入
+    mkdirSync(dirname(materialPath), { recursive: true })
+    writeFileSync(materialPath, rtfBytes)
+    let intakeValue = null
+    const converter = resolveDemoConverter(env, materialDir)
+    const intakeTool = createApplicationIntakeTool({ converter, database: cfg })
+    intakeValue = await intakeTool.execute(
+      { path: materialPath, job_id: DEMO_JOB_ID },
+      { callId: 'bootstrap-demo-seed-material' },
+    )
+    if (intakeValue?.status !== 'OK') {
+      throw new Error(`seed.demo_material: intake 未成功（status=${intakeValue?.status ?? 'null'}）`)
+    }
+    if (intakeValue.resume_version_action !== 'APPENDED') {
+      throw new Error(
+        'seed.demo_material: intake 未追加 resume_version'
+          + `（resume_version_action=${intakeValue.resume_version_action}）；材料指针与材料链不一致，拒绝继续`,
       )
-      if (intakeValue?.status !== 'OK') {
-        throw new Error(`seed.demo_material: intake 未成功（status=${intakeValue?.status ?? 'null'}）`)
-      }
-      if (intakeValue.resume_version_action !== 'APPENDED') {
-        throw new Error(
-          'seed.demo_material: intake 未追加 resume_version'
-            + `（resume_version_action=${intakeValue.resume_version_action}）；材料指针与材料链不一致，拒绝继续`,
-        )
-      }
-    } finally {
-      rmSync(materialDir, { recursive: true, force: true })
     }
     // 2) 写后只读读回：链完整 + hash/字节数/解析结果一致（不看工具返回值）
     const chain = await readDemoMaterialChain(pool, cfg)
@@ -1106,6 +1496,9 @@ async function seedDemoMaterial(pool, cfg, env) {
     material.application_action = intakeValue.application_action
     material.resume_version_action = intakeValue.resume_version_action
     material.write = true
+    material.file_path = materialPath
+    material.file_in_allowed_root = materialTarget.inAllowedRoot
+    material.file_env = materialTarget.envName
     written = true
     report.write_steps.push('seed.demo_material')
   }
@@ -1143,7 +1536,9 @@ function addMaterialSeedSteps(addStep, material) {
   addStep('seed.demo_material', 'recruitment_application_intake',
     `application=${row.application_id} state=${row.state} resume_version=v${row.resume_version_no}`
       + ` parse=${row.parse_status} sha256=${row.sha256} bytes=${row.byte_size}`
-      + ` chain_ok=${row.chain_ok} hash_match=${row.hash_match} parse_ok=${row.parse_ok}`,
+      + ` chain_ok=${row.chain_ok} hash_match=${row.hash_match} parse_ok=${row.parse_ok}`
+      + ` file_in_allowed_root=${String(row.file_in_allowed_root)}`
+      + ` file=${String(row.file_path ?? '')}`,
     { ok: row.chain_ok === true && row.hash_match === true && row.parse_ok === true })
   const invariant = material.invariant
   addStep('seed.demo_interviews.material', null,
@@ -1382,6 +1777,32 @@ async function run(env) {
       written: ctx.seed.write_steps.length > 0 || materialSeed.write_steps.length > 0,
     }
     writes.push(...materialSeed.write_steps)
+    ctx.seedIssues = [...ctx.seed.issues]
+
+    // ---- 3.8 O15 夹具：演示招聘团队（排期面试官候选的唯一人员来源）----
+    const hiringTeam = await seedDemoHiringTeam(pool, cfg)
+    addHiringTeamSteps(addStep, hiringTeam)
+    writes.push(...hiringTeam.write_steps)
+    ctx.seed = {
+      ...ctx.seed,
+      demo_hiring_team: hiringTeam,
+      write_steps: [...new Set([...ctx.seed.write_steps, ...hiringTeam.write_steps])],
+      issues: [...ctx.seed.issues, ...hiringTeam.issues],
+      written: ctx.seed.written || hiringTeam.write_steps.length > 0,
+    }
+    ctx.seedIssues = [...ctx.seed.issues]
+
+    // ---- 3.9 O2 夹具：申请钉住的 rubric 版本必须有"申请之前已批准"的历史审批 ----    // 若缺，S7 初筛必然 NO_RUBRIC/NO_APPROVED_RUBRIC（产品视角复核 O2）。幂等；NO_OP 重跑也会补。
+    const pinnedApproval = await backfillPinnedRubricApproval(pool, cfg)
+    addPinnedRubricApprovalStep(addStep, pinnedApproval)
+    if (pinnedApproval.write) writes.push('seed.demo_pinned_rubric_approval')
+    ctx.seed = {
+      ...ctx.seed,
+      pinned_rubric_approval: pinnedApproval,
+      write_steps: [...new Set([...ctx.seed.write_steps, ...(pinnedApproval.write ? ['seed.demo_pinned_rubric_approval'] : [])])],
+      issues: [...ctx.seed.issues, ...pinnedApproval.issues],
+      written: ctx.seed.written || pinnedApproval.write,
+    }
     ctx.seedIssues = [...ctx.seed.issues]
 
     // ---- 3.5 纯重放：NO_OP 到此为止（不调任何工具、零写入、exit 0） ----

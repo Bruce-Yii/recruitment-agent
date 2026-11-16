@@ -26,6 +26,9 @@ import {
   type DatabaseClient,
   type ResolvedDatabaseConfig,
 } from '../db/pool.ts'
+// O8（产品视角复核）：批准状态只能由 `approval` 行判（`approved_by_approval_id` 恒 null）。
+// 判据只在 `db/approval.ts` 里实现一份，本文件两处 SQL 复用同一片段，禁止再各写一遍。
+import { effectiveApprovalExistsSql } from '../db/approval.ts'
 // W3b：轮次重点的判定**只有一份实现**（interviewer.ts 的 `buildRoundFocus`）。招聘方视角
 // 只展示 `round_focus`（不展示 effective_rubric），但降级/守卫语义必须与面试官视角逐字一致，
 // 否则同一场面试在两个视图里会给出不同的"本轮重点"（C-4）。
@@ -251,6 +254,14 @@ export interface ApplicationCard {
    * 不是 job.current 指针；null = 该申请没有钉住 rubric（不猜一个"看起来对"的版本）。
    */
   readonly rubric_version_id: string | null
+  /**
+   * 申请钉住的 rubric 版本摘要（只读派生；null = 没有钉住）。
+   * 与 `JobCard.rubric`（岗位**当前**指针）是两个不同事实，客户端必须分开标注（O8/O13）。
+   */
+  readonly rubric: {
+    readonly version_no: number
+    readonly approved: boolean
+  } | null
   readonly lifecycle_status: string
   readonly current_stage_code: string
   readonly stage_entered_at: string | null
@@ -1129,7 +1140,12 @@ const JOB_ROWS_SQL = `
          jv.requirements_md               as requirements_md,
          rv.id::text                      as rubric_version_id,
          rv.version_no                    as rubric_version_no,
-         (rv.approved_by_approval_id is not null) as rubric_approved,
+         -- 批准 = 该版本有生效的 APPROVED 审批（不是 approved_by_approval_id；见 db/approval.ts）。
+         (${effectiveApprovalExistsSql({
+           resourceType: 'RUBRIC_VERSION',
+           resourceAlias: 'rv',
+           approvalAlias: 'ap_rubric',
+         })}) as rubric_approved,
          case when jsonb_typeof(rv.dimensions) = 'array' then jsonb_array_length(rv.dimensions) else 0 end
            as rubric_dimension_count
     from recruitment.job j
@@ -1186,6 +1202,13 @@ const APPLICATION_ROWS_SQL = `
          a.stage_blocked_reason           as stage_blocked_reason,
          a.record_version                 as record_version,
          a.rubric_version_id::text        as application_rubric_version_id,
+         -- 申请钉住版本的**版本号与批准真值**（O8/O13：与"岗位当前 rubric"分开两个标签）。
+         arv.version_no                   as application_rubric_version_no,
+         (${effectiveApprovalExistsSql({
+           resourceType: 'RUBRIC_VERSION',
+           resourceAlias: 'arv',
+           approvalAlias: 'ap_arv',
+         })}) as application_rubric_approved,
          c.id::text                       as candidate_id,
          c.display_name                   as candidate_display_name,
          j.id::text                       as job_id,
@@ -1211,6 +1234,9 @@ const APPLICATION_ROWS_SQL = `
       on c.id = a.candidate_id and c.tenant_id = a.tenant_id
     join recruitment.job j
       on j.id = a.job_id and j.tenant_id = a.tenant_id
+    -- 申请钉住的 rubric 版本（只读派生：版本号 + 批准真值；不新建事实）。
+    left join recruitment.rubric_version arv
+      on arv.id = a.rubric_version_id and arv.tenant_id = a.tenant_id
     left join recruitment.resume_version rv
       on rv.id = a.resume_version_id and rv.tenant_id = a.tenant_id
     left join recruitment.resume r
@@ -1458,7 +1484,12 @@ const JOB_VERSIONS_SQL = `
          jv.version_no   as version_no,
          jv.payload_hash as payload_hash,
          jv.created_at    as created_at,
-         (jv.approved_by_approval_id is not null) as approved
+         -- 与 rubric 同口径：JOB_VERSION 的批准也只能由生效 APPROVED 审批判（O8）。
+         (${effectiveApprovalExistsSql({
+           resourceType: 'JOB_VERSION',
+           resourceAlias: 'jv',
+           approvalAlias: 'ap_jv',
+         })}) as approved
     from recruitment.job_version jv
    where jv.tenant_id = $1 and jv.job_id = $2::uuid
    order by jv.version_no desc, jv.id asc
@@ -1728,6 +1759,10 @@ interface ApplicationRow {
   stage_blocked_reason: string | null
   record_version: number
   application_rubric_version_id: string | null
+  /** 申请钉住 rubric 的版本号（O13：与"岗位当前 rubric"分开标注；null = 没钉住）。 */
+  application_rubric_version_no: number | null
+  /** 申请钉住 rubric 此刻是否已批准（O8：approval 行真值）。 */
+  application_rubric_approved: boolean
   candidate_id: string
   candidate_display_name: string
   job_id: string
@@ -2216,6 +2251,12 @@ async function loadApplicationCards(
       lifecycle_status: row.lifecycle_status,
       current_stage_code: row.current_stage_code,
       rubric_version_id: row.application_rubric_version_id,
+      rubric: row.application_rubric_version_id === null || row.application_rubric_version_no === null
+        ? null
+        : {
+            version_no: row.application_rubric_version_no,
+            approved: row.application_rubric_approved === true,
+          },
       stage_entered_at: asIsoOrNull(row.stage_entered_at),
       applied_at: asIsoOrNull(row.applied_at),
       stage_blocked_reason: asNonEmptyString(row.stage_blocked_reason),

@@ -76,6 +76,8 @@ import {
   type DatabaseClient,
   type ResolvedDatabaseConfig,
 } from '../db/pool.ts'
+// 可钉版本 = 有生效 APPROVED 审批的版本；判据只在 `db/approval.ts` 一份（O8 口径统一）。
+import { effectiveApprovalExistsSql } from '../db/approval.ts'
 import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
 import {
   matchByStrongIds,
@@ -1370,16 +1372,11 @@ async function resolvePinnableRubricVersion(
     `select rv.id
        from recruitment.rubric_version rv
       where rv.tenant_id = $1 and rv.job_id = $2 and rv.id = $3
-        and exists (
-          select 1 from recruitment.approval a
-           where a.tenant_id = rv.tenant_id
-             and a.resource_type = 'RUBRIC_VERSION'
-             and a.resource_id = rv.id
-             and a.status = 'APPROVED'
-             and a.canonical_payload_hash = rv.payload_hash
-             and a.superseded_by_approval_id is null
-             and (a.expires_at is null or a.expires_at > now())
-        )`,
+        and ${effectiveApprovalExistsSql({
+          resourceType: 'RUBRIC_VERSION',
+          resourceAlias: 'rv',
+          approvalAlias: 'a',
+        })}`,
     [tenantId, jobId, currentRubricVersionId],
   )
   return rows[0]?.id ?? null

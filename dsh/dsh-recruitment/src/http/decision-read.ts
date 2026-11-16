@@ -46,6 +46,8 @@ import {
   type DatabasePool,
   type ResolvedDatabaseConfig,
 } from '../db/pool.ts'
+// 批准真值只有一份判据（approval 行；`approved_by_approval_id` 恒 null，O8）。
+import { isRubricVersionApproved } from '../db/approval.ts'
 import { checkAsOf, isUuid } from '../tools/contract.ts'
 import {
   DEMO_SESSION_HEADER,
@@ -1688,19 +1690,8 @@ async function isRubricApproved(
   tenantId: string,
   rubricVersionId: string,
 ): Promise<boolean> {
-  const { rows } = await client.query<{ approved: boolean }>(
-    `select exists (
-       select 1
-         from recruitment.approval ap
-        where ap.tenant_id = $1::uuid
-          and ap.resource_type = 'RUBRIC_VERSION'
-          and ap.resource_id = $2::uuid
-          and ap.status = 'APPROVED'
-          and ap.superseded_by_approval_id is null
-     ) as approved`,
-    [tenantId, rubricVersionId],
-  )
-  return rows[0]?.approved === true
+  // 口径统一到 `db/approval.ts`（O8）：含 payload_hash 对齐、未 supersede、未过期。
+  return isRubricVersionApproved(client, tenantId, rubricVersionId)
 }
 
 /** `GET /recruitment/api/decision/facts` 的实现（路由层已做同源/方法校验）。 */
