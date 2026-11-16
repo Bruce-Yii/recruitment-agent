@@ -1,1 +1,1 @@
-dsh web: http://127.0.0.1:49303/?token=Y7clVAS00Y5o8ktPAty6i_zWEcbb3jHzoYR3RCXxWp4
+dsh web: http://127.0.0.1:49303/?token=<REDACTED>

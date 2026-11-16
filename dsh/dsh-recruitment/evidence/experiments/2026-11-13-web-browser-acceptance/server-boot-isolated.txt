@@ -1,2 +1,2 @@
-dsh web: http://127.0.0.1:49302/?token=RCvhZRyITxms3TnmzB_qcQKhqhimiutrj2B2A29pYZ4
+dsh web: http://127.0.0.1:49302/?token=<REDACTED>
 
