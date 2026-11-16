@@ -112,6 +112,22 @@
 //   * 不倒退（指针已超前于本命令能推导的事实 → `STAGE_AHEAD` 警告 + 一条 UPDATE 都不发）；
 //   * 不跳阶（只走 S6→S7→S8→S9→S10 四条边；中间任一前置不成立就停在那一步 ——
 //     例如 S8 的材料还没就绪就停在 S8，S9 的材料不可用 / 没有已提交面评就停在 S9）。
+//
+// 【D-141③ · SCREENING 决策派生 S6→S7（本文件第二个公开写入口）】
+//
+//   裁决原文（`docs/17` D-141 第 3 条）："人决定通过初筛"语义上已包含 S6→S7 迁移，
+//   让 Agent 先 `stage_advance` 再记决策顺序是反的 → 改为在 `record_human_decision`
+//   （与低层 `decision_record`）的 **SCREENING ADVANCE/REJECT** 路径上**同事务**派生阶段迁移，
+//   并保持既有闸门不放宽。
+//
+//   * 实现是 {@link deriveScreeningDecisionStage}：**复用**同一套 diagnose/evaluateT1/applyEdge/
+//     F1 补钉/写后断言，只把允许的边收窄成 `['T1']` —— 不新写状态机、不复制判定；
+//   * **只派生 T1**：T2（SCREENING=ADVANCE）、T3（材料就绪）、T4（材料+已提交面评）仍是**独立**
+//     的业务动作/事实，一次人决策不得顺带推掉（D-123 / D-111 的闸门一条都不放宽）；
+//   * 幂等：已在 S7 → NO_OP、零 UPDATE、零事件；S6 且 T1 事实缺口 → BLOCKED（调用方据此整体回滚，
+//     不会留下"决策落了、阶段没动"的半状态）；
+//   * actor 仍只来自 `SET LOCAL recruitment.actor_id`（真实人）：阶段事件由既有
+//     `fn_row_guard` 触发链写出，本文件不另写事件。
 
 import { randomUUID } from 'node:crypto'
 
@@ -1440,6 +1456,9 @@ interface StageDiagnosis {
  * @param applicationId - 申请 id。
  * @param lock - 写路径 true（行锁）/ 只读视图 false。
  * @param allowPin - 是否允许 T1 补钉 rubric（写路径 true / 只读视图 false）。
+ * @param allowedRules - 只允许走这几条边（缺省 = 全部 T1–T4）。
+ *   **SCREENING 决策派生**只允许 `['T1']`：S6→S7 是"人已决定初筛"的同事务结果，
+ *   T2–T4 各有独立的前置事实与业务动作（排期 / 材料 / 面评），不能被一次决策顺带推掉。
  * @returns 诊断结果（阻断原因已带责任与下一步；`app` 是补钉之后的真实值）。
  */
 async function diagnose(
@@ -1448,6 +1467,7 @@ async function diagnose(
   applicationId: string,
   lock: boolean,
   allowPin: boolean,
+  allowedRules?: readonly StageRule[],
 ): Promise<StageDiagnosis> {
   let app = await readApplication(client, tenantId, applicationId, lock)
 
@@ -1522,6 +1542,8 @@ async function diagnose(
   while (applied.length <= LADDER.length) {
     const step = LADDER.find((edge) => edge.from === cursor)
     if (step === undefined) break
+    // 受限派生：当前游标上那条边若不在允许集合里，就地停下（不跳阶、不继续找下一条）。
+    if (allowedRules !== undefined && !allowedRules.includes(step.rule)) break
     let outcome: EdgeOutcome
     switch (step.rule) {
       case 'T1': outcome = await evaluateT1(client, tenantId, app, allowPin); break
@@ -1637,6 +1659,99 @@ async function applyEdge(
   return rows[0] ?? null
 }
 
+/** 已应用的迁移（`applyTransitions` 的返回值；`record_version` 是最后一跳之后的值）。 */
+interface AppliedTransitions {
+  readonly stage_code: string
+  readonly record_version: number
+  readonly transitions: readonly StageTransition[]
+}
+
+/**
+ * 把诊断出来的边**真实落到库**（一条边一条 UPDATE，每条都带上一跳的 `record_version`）。
+ *
+ * 这是**唯一**的阶段写路径：`advanceApplicationStage`（T1–T4 全梯子）与
+ * {@link deriveScreeningDecisionStage}（只走 T1）共用它 —— 三条写后断言、版本条件、
+ * 微秒单调性校验不允许出现第二份实现（否则一侧修了、另一侧悄悄退回旧行为）。
+ *
+ * 调用方必须已 `select … for update` 锁住申请行（`diagnose(lock=true)` 做过），
+ * 否则 `applyEdge` 的 0 行分支会抛 `VERSION_CONFLICT`（重读，不 last-write-wins）。
+ * @param client - 事务内连接（actor 已 `SET LOCAL`）。
+ * @param tenantId - 租户。
+ * @param applicationId - 申请 id。
+ * @param app - 诊断开始时的申请行（`record_version` / `stage_entered_at_us` / `created_at_us`）。
+ * @param edges - 本次要走的边（按顺序；空数组则什么都不写）。
+ * @returns 最后一跳之后的阶段/版本 + 真实迁移列表。
+ * @throws RecruitmentToolError - `VERSION_CONFLICT`（0 行 / 并发）/ `INVARIANT_VIOLATION`（写后断言失败）。
+ */
+async function applyTransitions(
+  client: DatabaseClient,
+  tenantId: string,
+  applicationId: string,
+  app: ApplicationRow,
+  edges: readonly StageEdge[],
+): Promise<AppliedTransitions> {
+  let expectedRecordVersion = app.record_version
+  let previousStageEnteredAtUs = app.stage_entered_at_us
+  let lastStageCode = app.current_stage_code
+  let lastRecordVersion = app.record_version
+
+  for (const edge of edges) {
+    const updated = await applyEdge(client, tenantId, applicationId, edge, expectedRecordVersion)
+    if (updated === null) {
+      // 0 行：行锁之外还有别人改过（或这里被别的写路径绕过锁）→ 版本冲突，整体回滚。
+      throw stageError(
+        'VERSION_CONFLICT',
+        'APPLICATION_RECORD_VERSION_MISMATCH',
+        '更新 0 行：申请的 current_stage_code / record_version 与本次读到的值不一致（并发修改）。',
+        {
+          application_id: applicationId,
+          expected_stage_code: edge.from,
+          target_stage_code: edge.to,
+          expected_record_version: expectedRecordVersion,
+        },
+      )
+    }
+    // 写后断言 1：`stage_entered_at` 真的前进了（本仓既有缺陷的兜底，见文件头第 2 条）。
+    // 用**微秒**比较，不用 JS Date（Date 只有毫秒精度，两跳差 1µs 时会被判成相等）。
+    if (!(updated.stage_entered_at_us > app.created_at_us)) {
+      throw stageError(
+        'INVARIANT_VIOLATION',
+        'STAGE_ENTERED_AT_NOT_ADVANCED',
+        'stage_entered_at 没有前进到 created_at 之后：stage_entered_at 写入失败（本仓既有缺陷回归）。',
+        { application_id: applicationId, stage_code: updated.current_stage_code },
+      )
+    }
+    // 写后断言 2：相对**上一跳**也必须前进（多跳时两跳不能落到同一时刻）。
+    if (!(updated.stage_entered_at_us > previousStageEnteredAtUs)) {
+      throw stageError(
+        'INVARIANT_VIOLATION',
+        'STAGE_ENTERED_AT_NOT_MONOTONIC',
+        'stage_entered_at 没有相对上一跳前进（多跳的时间戳必须单调递增）。',
+        { application_id: applicationId, stage_code: updated.current_stage_code },
+      )
+    }
+    // 写后断言 3：库里的阶段码必须就是我们要求的那一格（触发器/并发都不会改它）。
+    if (updated.current_stage_code !== edge.to) {
+      throw stageError(
+        'INVARIANT_VIOLATION',
+        'STAGE_CODE_MISMATCH',
+        'UPDATE 之后读回的阶段码与目标不一致。',
+        { application_id: applicationId, expected_stage_code: edge.to, actual_stage_code: updated.current_stage_code },
+      )
+    }
+    expectedRecordVersion = updated.record_version
+    previousStageEnteredAtUs = updated.stage_entered_at_us
+    lastStageCode = updated.current_stage_code
+    lastRecordVersion = updated.record_version
+  }
+
+  return {
+    stage_code: lastStageCode,
+    record_version: lastRecordVersion,
+    transitions: edges.map((edge) => ({ from: edge.from, to: edge.to })),
+  }
+}
+
 /**
  * 派生式推进：把"已经发生的事实"翻译成阶段指针前移。
  *
@@ -1674,70 +1789,131 @@ export async function advanceApplicationStage(
       }
     }
 
-    // ---- 落库：一条边一条 UPDATE，每条都带 record_version ----
-    let expectedRecordVersion = app.record_version
-    let previousStageEnteredAtUs = app.stage_entered_at_us
-    let lastStageCode = app.current_stage_code
-    let lastRecordVersion = app.record_version
-
-    for (const edge of diagnosis.transitions) {
-      const updated = await applyEdge(client, tenantId, applicationId, edge, expectedRecordVersion)
-      if (updated === null) {
-        // 0 行：行锁之外还有别人改过（或这里被别的写路径绕过锁）→ 版本冲突，整体回滚。
-        throw stageError(
-          'VERSION_CONFLICT',
-          'APPLICATION_RECORD_VERSION_MISMATCH',
-          '更新 0 行：申请的 current_stage_code / record_version 与本次读到的值不一致（并发修改）。',
-          {
-            application_id: applicationId,
-            expected_stage_code: edge.from,
-            target_stage_code: edge.to,
-            expected_record_version: expectedRecordVersion,
-          },
-        )
-      }
-      // 写后断言 1：`stage_entered_at` 真的前进了（本仓既有缺陷的兜底，见文件头第 2 条）。
-      // 用**微秒**比较，不用 JS Date（Date 只有毫秒精度，两跳差 1µs 时会被判成相等）。
-      if (!(updated.stage_entered_at_us > app.created_at_us)) {
-        throw stageError(
-          'INVARIANT_VIOLATION',
-          'STAGE_ENTERED_AT_NOT_ADVANCED',
-          'stage_entered_at 没有前进到 created_at 之后：stage_entered_at 写入失败（本仓既有缺陷回归）。',
-          { application_id: applicationId, stage_code: updated.current_stage_code },
-        )
-      }
-      // 写后断言 2：相对**上一跳**也必须前进（多跳时两跳不能落到同一时刻）。
-      if (!(updated.stage_entered_at_us > previousStageEnteredAtUs)) {
-        throw stageError(
-          'INVARIANT_VIOLATION',
-          'STAGE_ENTERED_AT_NOT_MONOTONIC',
-          'stage_entered_at 没有相对上一跳前进（多跳的时间戳必须单调递增）。',
-          { application_id: applicationId, stage_code: updated.current_stage_code },
-        )
-      }
-      // 写后断言 3：库里的阶段码必须就是我们要求的那一格（触发器/并发都不会改它）。
-      if (updated.current_stage_code !== edge.to) {
-        throw stageError(
-          'INVARIANT_VIOLATION',
-          'STAGE_CODE_MISMATCH',
-          'UPDATE 之后读回的阶段码与目标不一致。',
-          { application_id: applicationId, expected_stage_code: edge.to, actual_stage_code: updated.current_stage_code },
-        )
-      }
-      expectedRecordVersion = updated.record_version
-      previousStageEnteredAtUs = updated.stage_entered_at_us
-      lastStageCode = updated.current_stage_code
-      lastRecordVersion = updated.record_version
-    }
+    // ---- 落库：一条边一条 UPDATE，每条都带 record_version（多跳要么全成、要么全不成）----
+    const applied = await applyTransitions(client, tenantId, applicationId, app, diagnosis.transitions)
 
     // 已经推进了至少一跳 → ADVANCED。`blockers` 仅在"推进到下一跳时遇到反向事实"时非空
     // （例如 S6 满足 T1、但 current SCREENING=HOLD：先如实推到 S7，再停在 S7）。
     return {
       application_id: applicationId,
-      stage_code: lastStageCode,
-      record_version: lastRecordVersion,
+      stage_code: applied.stage_code,
+      record_version: applied.record_version,
       status: 'ADVANCED',
-      transitions: diagnosis.transitions.map((edge) => ({ from: edge.from, to: edge.to })),
+      transitions: applied.transitions,
+      blockers: diagnosis.blockers,
+      warnings: diagnosis.warnings,
+    }
+  } catch (error) {
+    if (isConcurrentUpdateError(error)) {
+      throw stageError(
+        'VERSION_CONFLICT',
+        'APPLICATION_CONCURRENT_UPDATE',
+        '并发修改：另一个事务先改了这条申请。本调用已整体回滚，请重读后再决定。',
+        { application_id: applicationId },
+      )
+    }
+    throw error
+  }
+}
+
+// =====================================================================
+//  SCREENING 决策派生阶段（D-141③：决策与 S6→S7 合并、同事务、幂等）
+// =====================================================================
+
+/**
+ * SCREENING 决策允许派生的边：**只有 T1（S6→S7）**。
+ *
+ * 为什么不是整条梯子：T2–T4 各自有独立的前置事实与业务动作（排期、材料就绪、已提交面评），
+ * 它们的推进**不是**"人决定初筛通过"这件事的同义反复；把它们顺带推掉等于让一次决策
+ * 越过材料/面评闸门（D-123 的 S10 要求、D-111 的 S8→S9 规则——一条都不许放宽）。
+ */
+const SCREENING_DECISION_RULES: readonly StageRule[] = ['T1']
+
+/** T1 的"事实缺口"错误码（只这些代表"申请还进不了 S7"，要阻止决策落库成半状态）。 */
+const T1_BLOCKER_CODES: readonly StageBlockerCode[] = [
+  'MATERIAL_NOT_LINKED',
+  'MATERIAL_PARSE_FAILED',
+  'RUBRIC_NOT_PINNED',
+  'RUBRIC_PIN_CONFLICT_WITH_SCORECARD',
+]
+
+/**
+ * SCREENING 决策的**派生阶段迁移**结果（调用方据此决定"整体提交"还是"整体回滚"）。
+ *
+ * 与 `StageAdvanceResult` 的区别：**只有 T1 一条边**、且 `BLOCKED` 只表示
+ * "申请停在 S6 且 T1 的事实缺口挡住了 S6→S7"（其它 NO_OP 情形——例如申请已不在 ACTIVE、
+ * 或指针不在梯子上——保持"决策可记、阶段不动"的既有行为，不新增闸门）。
+ */
+export interface ScreeningDecisionStageDerivation {
+  /** 申请 id（回显）。 */
+  readonly application_id: string
+  /** 本次调用后的阶段码（ADVANCED 时 = 'S7'；其它 = 调用前值）。 */
+  readonly stage_code: string
+  /** 本次调用后的 `record_version`（没有 UPDATE 就与调用前相同）。 */
+  readonly record_version: number
+  /** 三态结论：ADVANCED（真的推了 S6→S7）/ NO_OP（已在 S7 或不在派生范围）/ BLOCKED（T1 缺口）。 */
+  readonly status: 'ADVANCED' | 'NO_OP' | 'BLOCKED'
+  /** 真实发生的迁移（最多一条：`[{from:'S6',to:'S7'}]`）。 */
+  readonly transitions: readonly StageTransition[]
+  /** 挡住派生的 T1 事实缺口（只有 status=BLOCKED 时非空；每条带 owner_role / next_action_code）。 */
+  readonly blockers: readonly StageBlocker[]
+  /** 告警（目前只有 `STAGE_AHEAD`；派生路径下为空）。 */
+  readonly warnings: readonly StageWarning[]
+}
+
+/**
+ * 在**调用方的事务里**派生 SCREENING 决策对应的阶段迁移（D-141③）。
+ *
+ * 语义（与裁决原文逐条对应）：
+ *   * "人决定通过/拒绝初筛"本身就包含 S6→S7 —— 调用方（`decision-record.ts`）在**同一个事务**里
+ *     先写 decision，再调用本函数；任一失败 → 整个事务回滚（不会留下"决策落了、阶段没动"）；
+ *   * **只派生 T1**（材料已绑定、解析未失败、rubric 已钉住；需要补钉时复用 F1 的
+ *     `pinCurrentRubric`，在同一事务里写补钉审计事件）—— T2–T4 一条都不碰；
+ *   * **幂等**：申请已在 S7（或更后）→ `NO_OP`、零 UPDATE、零事件；重复的决策写会被
+ *     STEP 3 的 `ALREADY_DECIDED` 挡在写库之前，根本到不了这里；
+ *   * 不新增授权：本函数不写 decision、不建任务、不推进 lifecycle_status；actor 只来自
+ *     调用方已设好的 `SET LOCAL recruitment.actor_id`（真实人），触发器据此写
+ *     `application.current_stage_code.changed` 事件（既有事件路径，不另写）。
+ *
+ * 调用前提：`client` 在事务里且已 `SET LOCAL recruitment.actor_id`（`withActor` 做的）。
+ * @param client - 事务内连接（actor 已设）。
+ * @param input - `{tenantId, applicationId}`。
+ * @returns 派生结果（`ADVANCED` / `NO_OP` / `BLOCKED`）。
+ * @throws RecruitmentToolError - `NOT_FOUND` / `VERSION_CONFLICT` / `INVARIANT_VIOLATION`
+ *   / `INVALID_ARGS`（补钉需要 actor 但没有；正常调用不会发生）。
+ */
+export async function deriveScreeningDecisionStage(
+  client: DatabaseClient,
+  input: AdvanceApplicationStageInput,
+): Promise<ScreeningDecisionStageDerivation> {
+  const { tenantId, applicationId } = input
+  try {
+    const diagnosis = await diagnose(client, tenantId, applicationId, true, true, SCREENING_DECISION_RULES)
+    const app = diagnosis.app
+
+    if (diagnosis.transitions.length === 0) {
+      // S6 且被 T1 事实缺口挡住 → 让调用方整体回滚（决策也不留）；其它情形=既有的"决策可记、阶段不动"。
+      const t1Blocked = app.current_stage_code === 'S6'
+        && diagnosis.status === 'BLOCKED'
+        && diagnosis.blockers.some((blocker) => T1_BLOCKER_CODES.includes(blocker.code))
+      return {
+        application_id: app.id,
+        stage_code: app.current_stage_code,
+        record_version: app.record_version,
+        status: t1Blocked ? 'BLOCKED' : 'NO_OP',
+        transitions: [],
+        blockers: t1Blocked ? diagnosis.blockers : [],
+        warnings: diagnosis.warnings,
+      }
+    }
+
+    const applied = await applyTransitions(client, tenantId, applicationId, app, diagnosis.transitions)
+    return {
+      application_id: applicationId,
+      stage_code: applied.stage_code,
+      record_version: applied.record_version,
+      status: 'ADVANCED',
+      transitions: applied.transitions,
       blockers: diagnosis.blockers,
       warnings: diagnosis.warnings,
     }

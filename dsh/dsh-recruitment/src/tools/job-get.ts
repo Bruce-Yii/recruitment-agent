@@ -16,6 +16,10 @@
 //
 // 缺标准不报错：`job_get` 是**描述世界**的工具。"这个岗位还没有 Rubric" 是一条
 // 可被查出来的事实（`rubric_absence`），不是异常。拒绝执行是 `evaluate` 的职责。
+//
+// D-141 第 6 条（2026-11-16 裁决）：除了 `job_id` 精确定位，还可以按 `code` / `title`
+// 做**包含匹配**找岗位（`mode:'LOOKUP'` 的命中列表）。三个选择器必须**恰好给一个**；
+// 多命中不替人挑（`needs_human_choice=true` + `next_tools=[]`）。只读不变。
 
 import { parseContractArgs, toParameterSchema } from './args.ts'
 import type { ParamMap } from './args.ts'
@@ -37,21 +41,40 @@ import {
 const TOOL_NAME = 'recruitment_job_get'
 const CONTRACT_VERSION = '1.0.0'
 
-/** 入参（`tool-contracts.md` §2.1）。 */
+/** 三个查询选择器（D-141 第 6 条）：恰好给一个。 */
+const SELECTOR_KEYS = ['job_id', 'code', 'title'] as const
+
+/** 入参（`tool-contracts.md` §2.1；D-141 第 6 条加 code/title 包含匹配）。 */
 const PARAMS: ParamMap = {
   job_id: {
     kind: 'string',
-    required: true,
     uuid: true,
     maxLength: 36,
     description: 'Job (requisition) id, UUID text form (e.g. 11111111-1111-4111-8111-000000000401). '
-      + 'Stub ids such as "job_0001" are rejected with INVALID_ARGS(ID_NOT_UUID).',
+      + 'Exactly ONE of job_id / code / title must be given. Stub ids such as "job_0001" are rejected '
+      + 'with INVALID_ARGS(ID_NOT_UUID).',
+  },
+  code: {
+    kind: 'string',
+    maxLength: 40,
+    description: 'Job code, CONTAINS match (case-insensitive; leading/trailing whitespace and full-width spaces are '
+      + 'normalized before both sides are compared). Exactly ONE of job_id / code / title must be given. '
+      + 'Use it when you only know the code; the result is mode=LOOKUP with every match, and multiple matches '
+      + 'set needs_human_choice=true (ask the human which job, do not guess).',
+  },
+  title: {
+    kind: 'string',
+    maxLength: 120,
+    description: 'Job title, CONTAINS match (case-insensitive; whitespace/full-width spaces normalized). '
+      + 'Exactly ONE of job_id / code / title must be given. Multiple matches set needs_human_choice=true '
+      + '(ask the human which job, do not guess).',
   },
   rubric_version_no: {
     kind: 'integer',
     min: 1,
     max: 1000,
-    description: 'Select this rubric version number (1-based). Mutually exclusive with rubric_version_id. '
+    description: 'Select this rubric version number (1-based). Mutually exclusive with rubric_version_id, and only '
+      + 'accepted together with job_id (single-job mode) — it is rejected when code/title is used. '
       + 'Omit both to get the CURRENT version — i.e. the one job.current_rubric_version_id points at '
       + '(D-21/D-48), which is NOT necessarily the highest approved version_no.',
   },
@@ -59,13 +82,15 @@ const PARAMS: ParamMap = {
     kind: 'string',
     uuid: true,
     maxLength: 36,
-    description: 'Select this rubric version by id. Mutually exclusive with rubric_version_no.',
+    description: 'Select this rubric version by id. Mutually exclusive with rubric_version_no, and only accepted '
+      + 'together with job_id (single-job mode).',
   },
   as_of: {
     kind: 'string',
     maxLength: 40,
     description: 'ISO-8601 timestamp WITH an offset (e.g. 2026-11-13T00:00:00+08:00), not in the future. '
-      + 'Decides which rubric version counts as current/approved. Defaults to the server clock.',
+      + 'Decides which rubric version counts as current/approved. Defaults to the server clock. '
+      + 'Accepted in all three selector modes (job_id / code / title).',
   },
 }
 
@@ -180,8 +205,60 @@ interface JobGetValue {
   }[]
 }
 
+/** LOOKUP 模式的一行命中（D-141 第 6 条）。 */
+interface JobLookupMatch {
+  readonly job_id: string
+  readonly code: string
+  readonly title: string
+  readonly status: string
+  /**
+   * `job.current_rubric_version_id` → `rubric_version.version_no`。
+   * 指针为空 / 查不到该版本 ⇒ 照实给 `null`（不是省略键：schema 用可空 oneOf 表达）。
+   */
+  readonly current_rubric_version_no: number | null
+}
+
+/** `next_tools[]`：与 `business-read.ts` 的 NextToolValue 同口径（`args_json` 是 JSON **字符串**）。 */
+interface NextToolValue {
+  readonly name: string
+  readonly reason: string
+  readonly args_json: string
+}
+
+/**
+ * 本工具的统一出口（D-141 第 6 条）：**一个封闭根对象**，靠 `mode` 区分两种模式。
+ *
+ * `DETAIL`（job_id 单查）：`job` / `job_version` / `rubric` / `rubric_absence` /
+ * `rubric_versions` 与改前**逐字段相同**；`matched=1`、`matches` 给本岗位一行摘要、
+ * `needs_human_choice=false`、`next_tools=[]`。
+ *
+ * `LOOKUP`（code/title 包含匹配）：`job` / `job_version` / `rubric` / `rubric_absence`
+ * 一律 `null`、`rubric_versions=[]`，命中明细全部在 `matches[]`；`matched` 是命中条数；
+ * 多命中 `needs_human_choice=true` 且 `next_tools=[]`（不替人挑）。
+ */
+interface JobGetOutputValue {
+  readonly tool: string
+  readonly contract_version: string
+  readonly labels: JobGetValue['labels']
+  readonly as_of: string
+  readonly mode: 'DETAIL' | 'LOOKUP'
+  /** 命中条数（= `matches.length`）。DETAIL 路径恒为 1。 */
+  readonly matched: number
+  /** 命中多于一条 ⇒ true：必须问人（Agent 不得自己挑一条）。 */
+  readonly needs_human_choice: boolean
+  /** 单命中的下一跳（按 job_id 单查完整 JD/rubric）；DETAIL / 多命中为空数组。 */
+  readonly next_tools: readonly NextToolValue[]
+  readonly matches: readonly JobLookupMatch[]
+  readonly job: JobGetValue['job'] | null
+  readonly job_version: JobGetValue['job_version']
+  readonly rubric: JobGetValue['rubric']
+  readonly rubric_absence: JobGetValue['rubric_absence']
+  readonly rubric_versions: JobGetValue['rubric_versions']
+}
+
 /** 规范输出 schema（只用官方强制子集：type/oneOf/properties/required/additionalProperties/items/enum/const）。 */
 /** 可空对象的 schema 片段（官方子集没有 type 数组，用 oneOf 表达 null）。 */
+
 const NULLABLE_OBJECT = (properties: Record<string, unknown>, required: readonly string[]): Record<string, unknown> => ({
   oneOf: [
     { type: 'object', properties, required: [...required], additionalProperties: false },
@@ -206,6 +283,51 @@ const VIOLATION_SCHEMA: Record<string, unknown> = {
   description: 'One R-VAL structural violation from the rubric contract.',
 }
 
+/** 可空整数（`current_rubric_version_no`：指针为空/查不到照实给 null）。 */
+const NULLABLE_INTEGER: Record<string, unknown> = {
+  oneOf: [{ type: 'integer' }, { type: 'null' }],
+}
+
+/** `next_tools[]` 的一项（与 `business-read.ts` 的 next_tools 同形）。 */
+const NEXT_TOOL_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    reason: { type: 'string' },
+    args_json: { type: 'string' },
+  },
+  required: ['name', 'reason', 'args_json'],
+  additionalProperties: false,
+}
+
+/** 一行命中摘要（LOOKUP 的 `matches[]`；DETAIL 路径给本岗位一行）。 */
+const LOOKUP_MATCH_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    job_id: { type: 'string' },
+    code: { type: 'string' },
+    title: { type: 'string' },
+    status: { type: 'string' },
+    current_rubric_version_no: NULLABLE_INTEGER,
+  },
+  required: ['job_id', 'code', 'title', 'status', 'current_rubric_version_no'],
+  additionalProperties: false,
+}
+
+/**
+ * 规范输出 schema：**一个封闭根对象**（`type:'object'` + `additionalProperties:false`），
+ * DETAIL / LOOKUP 两种模式靠 `mode` 区分。
+ *
+ * 为什么不是根 `oneOf`（2026-11-16 父 lane 纠正）：既有断言
+ * `test/unit/label-honesty.test.ts` 直接消费 `output.schema.properties.labels` 与根 `required`
+ * 里的 `'labels'`，根 `oneOf` 会把这条消费面打断（既有断言不许改）。统一根对象的额外好处：
+ * DETAIL 值只是"既有字段 + 5 个恒有键"，消费者按老字段读永远不会 miss。
+ *
+ * 两种模式都恒给这 5 个键：`mode` / `matched` / `needs_human_choice` / `next_tools` / `matches`。
+ * LOOKUP 模式下 `job` / `job_version` / `rubric` / `rubric_absence` 一律 `null`、
+ * `rubric_versions` 为 `[]`（"这次没有读单个岗位"是显式事实，不是省键）。
+ * `job` 从必填对象改成可空 oneOf（对象分支与改前**逐字相同**），仍在 required 里。
+ */
 const OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
@@ -222,25 +344,26 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
       additionalProperties: false,
     },
     as_of: { type: 'string' },
-    job: {
-      type: 'object',
-      properties: {
-        id: { type: 'string' },
-        code: { type: 'string' },
-        title: { type: 'string' },
-        status: { type: 'string' },
-        department_id: { type: 'string' },
-        requisition_id: NULLABLE_STRING,
-        current_job_version_id: NULLABLE_STRING,
-        record_version: { type: 'integer' },
-        status_changed_at: { type: 'string' },
-      },
-      required: [
-        'id', 'code', 'title', 'status', 'department_id', 'requisition_id',
-        'current_job_version_id', 'record_version', 'status_changed_at',
-      ],
-      additionalProperties: false,
-    },
+    /** `DETAIL` = 按 job_id 单查（下面 job/job_version/rubric/… 是完整内容）；`LOOKUP` = 按 code/title 的命中列表。 */
+    mode: { type: 'string', enum: ['DETAIL', 'LOOKUP'] },
+    matched: { type: 'integer' },
+    needs_human_choice: { type: 'boolean' },
+    next_tools: { type: 'array', items: NEXT_TOOL_SCHEMA },
+    matches: { type: 'array', items: LOOKUP_MATCH_SCHEMA },
+    job: NULLABLE_OBJECT({
+      id: { type: 'string' },
+      code: { type: 'string' },
+      title: { type: 'string' },
+      status: { type: 'string' },
+      department_id: { type: 'string' },
+      requisition_id: NULLABLE_STRING,
+      current_job_version_id: NULLABLE_STRING,
+      record_version: { type: 'integer' },
+      status_changed_at: { type: 'string' },
+    }, [
+      'id', 'code', 'title', 'status', 'department_id', 'requisition_id',
+      'current_job_version_id', 'record_version', 'status_changed_at',
+    ]),
     job_version: NULLABLE_OBJECT({
       id: { type: 'string' },
       version_no: { type: 'integer' },
@@ -292,9 +415,13 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
       },
     },
   },
-  required: ['tool', 'contract_version', 'labels', 'as_of', 'job', 'job_version', 'rubric', 'rubric_absence', 'rubric_versions'],
+  required: [
+    'tool', 'contract_version', 'labels', 'as_of', 'mode', 'matched', 'needs_human_choice',
+    'next_tools', 'matches', 'job', 'job_version', 'rubric', 'rubric_absence', 'rubric_versions',
+  ],
   additionalProperties: false,
 }
+
 
 /** `timestamptz` 可能是 pg 给的 `Date`，也可能是测试造的字符串。 */
 function toMs(value: string | Date | null | undefined): number {
@@ -626,6 +753,144 @@ async function queryJob(
 }
 
 /**
+ * 查询串侧的归一化（D-141 第 6 条）：全角空格 → 半角空格、去首尾空白、转小写。
+ *
+ * 与 SQL 侧**同一口径**：`lower(btrim(replace(col, chr(12288), ' ')))`。
+ * 库里值由 SQL 归一化（不把整列拉进内存），查询串由这里归一化 —— 两边各做一次，
+ * 不互相替代。返回值可能是空串，调用方负责拒绝（不静默当"没给"）。
+ * @param value - 模型给的原始查询串。
+ * @returns 归一化后的查询串。
+ */
+function normalizeSearchText(value: string): string {
+  return value.replace(/\u3000/g, ' ').trim().toLowerCase()
+}
+
+/** LOOKUP 模式的一行原始查询结果。 */
+interface JobLookupRow {
+  readonly id: string
+  readonly code: string
+  readonly title: string
+  readonly status: string
+  readonly current_rubric_version_no: number | null
+}
+
+/** 包含匹配的两列（`job_id` 单查不走这里）。 */
+type LookupMode = 'code' | 'title'
+
+/**
+ * 按 `code` / `title` 的**包含匹配**找岗位（D-141 第 6 条；只读）。
+ *
+ * 三条硬口径：
+ *   1. 归一化在 **SQL 侧**做（`REPLACE(chr(12288)) → BTRIM → LOWER`），查询串在 JS 侧做；
+ *   2. 包含判定用 `position($q in normalized_col) > 0`，**不用 LIKE** —— 否则查询串里的
+ *      `%` / `_` 会变成通配符，`code='%'` 就会命中全表；
+ *   3. `code` 只匹配 `job.code`，`title` 只匹配 `job.title`，不互相串。
+ *
+ * 0 命中是**错误**（`NOT_FOUND / JOB_NOT_FOUND`），不是空列表：调用方→模型→人需要知道
+ * "这个片段不存在"，而不是以为"查询成功但没有岗位"。
+ * @param client - 只读事务内的客户端。
+ * @param cfg - 已解析的数据库配置（`tenant_id` 只从这里来）。
+ * @param by - 匹配哪一列（封闭枚举，不是模型自由文本）。
+ * @param rawValue - 模型给的原始查询串（未归一化；非空已由入参层保证）。
+ * @param asOfIso - 本次调用的基准时刻（LOOKUP 只回显，不参与筛选）。
+ * @returns LOOKUP 规范输出（命中 ≥ 1）。
+ * @throws RecruitmentToolError - 0 命中时 `NOT_FOUND / JOB_NOT_FOUND`。
+ */
+async function queryJobLookup(
+  client: DatabaseClient,
+  cfg: ResolvedDatabaseConfig,
+  by: LookupMode,
+  rawValue: string,
+  asOfIso: string,
+): Promise<JobGetOutputValue> {
+  const normalized = normalizeSearchText(rawValue)
+  // `by` 是封闭枚举，列名只可能是这两列之一（不是字符串拼接模型输入）。
+  const column = by === 'code' ? 'j.code' : 'j.title'
+  const result = await client.query<JobLookupRow>(
+    `select j.id, j.code, j.title, j.status, rv.version_no as current_rubric_version_no
+       from recruitment.job j
+       left join recruitment.rubric_version rv
+         on rv.id = j.current_rubric_version_id and rv.tenant_id = j.tenant_id
+      where j.tenant_id = $1
+        and position($2 in lower(btrim(replace(${column}, chr(12288), ' ')))) > 0
+      order by j.code asc, j.title asc, j.id asc`,
+    [cfg.tenant_id, normalized],
+  )
+  const rows = result.rows
+  if (rows.length === 0) {
+    const shown = rawValue.replace(/\u3000/g, ' ').trim()
+    throw contractError('NOT_FOUND', {
+      reason_code: 'JOB_NOT_FOUND',
+      message: by === 'code'
+        ? `没有找到岗位：编码里包含「${shown}」的岗位不存在。请确认岗位编码，或改用完整岗位标题查询。`
+        : `没有找到岗位：标题里包含「${shown}」的岗位不存在。请确认岗位标题，或改用岗位编码查询。`,
+      detail: { query: { by, value: rawValue, normalized } },
+    })
+  }
+
+  // R4：provenance 反映**这次调用**的数据来源（与单查同一份实现，不写死 LIVE）。
+  const provenance = await resolveTenantProvenance(client, cfg.tenant_id)
+  const matches: readonly JobLookupMatch[] = rows.map((row) => ({
+    job_id: row.id,
+    code: row.code,
+    title: row.title,
+    status: row.status,
+    current_rubric_version_no: row.current_rubric_version_no,
+  }))
+  const only = matches.length === 1 ? matches[0] : undefined
+  return {
+    tool: TOOL_NAME,
+    contract_version: CONTRACT_VERSION,
+    labels: jobGetLabels(provenance),
+    as_of: asOfIso,
+    mode: 'LOOKUP',
+    matched: matches.length,
+    // 多命中 = 必须问人（O20 同口径）：不替人挑"第一条"，也不给 next_tools 暗示。
+    needs_human_choice: matches.length > 1,
+    next_tools: only === undefined ? [] : [{
+      name: TOOL_NAME,
+      reason: '按 job_id 读取该岗位的完整 JD / rubric / 版本列表',
+      args_json: JSON.stringify({ job_id: only.job_id }),
+    }],
+    matches,
+    // LOOKUP 没有读"某一个岗位的完整内容"：这几个键是显式 null / 空数组（不是省键）。
+    job: null,
+    job_version: null,
+    rubric: null,
+    rubric_absence: null,
+    rubric_versions: [],
+  }
+}
+
+/**
+ * 把单查结果包装成统一出口（D-141 第 6 条）：**既有字段逐字段不变**，只补 5 个恒有键。
+ *
+ * `matches` 的一行摘要是本岗位的 `{job_id, code, title, status, current_rubric_version_no}`；
+ * `current_rubric_version_no` 取 `rubric_versions` 里 `is_current=true` 的那一版
+ * （= `job.current_rubric_version_id` 指向的版本，D-21/D-48；没有指针 ⇒ null）。
+ * @param value - `queryJob()` 的单查规范值（改前形状）。
+ * @returns 统一出口值（`mode:'DETAIL'`）。
+ */
+function detailOutput(value: JobGetValue): JobGetOutputValue {
+  const current = value.rubric_versions.find((version) => version.is_current)
+  return {
+    ...value,
+    mode: 'DETAIL',
+    matched: 1,
+    needs_human_choice: false,
+    next_tools: [],
+    matches: [{
+      job_id: value.job.id,
+      code: value.job.code,
+      title: value.job.title,
+      status: value.job.status,
+      current_rubric_version_no: current === undefined ? null : current.version_no,
+    }],
+  }
+}
+
+
+/**
  * 在**已有事务**里跑完整查询（测试与生产走同一条 `queryJob` 路径，标签也因此同源）。
  *
  * 给集成测试一个能落在回滚事务里的入口：`createJobGetTool().execute` 自己开池，
@@ -713,6 +978,35 @@ function criterionLine(raw: unknown): string {
 }
 
 /**
+ * LOOKUP 模式的 render（O1 口径，见 `render-ref.ts`）：人读正文只给
+ * `code` / 标题 / 状态 / rubric vN / **短号**（`shortRef`）；完整 `job_id` 只出现在末尾
+ * 的 `machine arguments` 区（模型要原样复制才能按 `job_id` 单查完整 JD / rubric）。
+ *
+ * 多命中时明示"要问人"（与 `needs_human_choice` 同一句结论），不在这里替人挑一条。
+ * @param v - LOOKUP 模式出口值（命中 ≥ 1；`job` 等单查字段为 null）。
+ * @returns 一个 text 块。
+ */
+function renderJobLookup(v: JobGetOutputValue): readonly TextBlock[] {
+  const labels = `${v.labels.provenance}/${v.labels.trigger}/${v.labels.connection}`
+  const lines: string[] = [
+    `岗位查询：命中 ${v.matched} 个岗位  (labels: ${labels})`,
+  ]
+  for (const match of v.matches) {
+    const rubric = match.current_rubric_version_no === null
+      ? 'rubric —'
+      : `rubric v${match.current_rubric_version_no}`
+    lines.push(`  ${match.code} ${match.title} [${match.status}]  ${rubric}  ${shortRef(match.job_id)}`)
+  }
+  if (v.needs_human_choice) {
+    lines.push('  命中多个岗位：必须让 HR 选定一个，不要替人挑（选定后再用 job_id 单查完整 JD / rubric）')
+  }
+  lines.push(`as_of ${v.as_of}`)
+  // 机器参数区：job_id 是调用方回收窄查询 / 下游工具的唯一句柄，完整值只允许出现在这里。
+  lines.push(...machineArgumentLines(v.matches.map((match) => ({ key: 'job_id', value: match.job_id }))))
+  return [{ type: 'text', text: lines.join('\n') }]
+}
+
+/**
  * 造一个"数据库没配置"的替身：工具照常注册，调用时报 NOT_CONFIGURED 并列出缺什么。
  * 这比让工具消失更好——模型能看到"为什么查不了"，而不是以为工具不存在。
  */
@@ -751,17 +1045,31 @@ export function createJobGetTool(config: ResolvedDatabaseConfig): ReadonlyToolDe
       'Get one job (requisition) and the rubric version that applies at a given time, read straight from the '
       + 'business database (labels: provenance is computed from the tenant\'s synthetic marker — FIXTURE for demo/'
       + 'undeclared tenants, LIVE only when the tenant is explicitly declared non-synthetic; trigger=MANUAL, '
-      + 'connection=CONNECTED means "direct business DB read"). job_id must be a UUID. Returns the job row, its '
-      + 'current job_version (JD text), the resolved rubric with every criterion echoed verbatim, all rubric '
-      + 'version numbers with is_current/is_approved, and rubric_absence when the job has no approved rubric '
-      + '(this tool reports absence instead of failing). Omit rubric_version_no/rubric_version_id to get the '
-      + 'current approved version; pin a version by passing one of them (they are mutually exclusive). '
-      + 'Use rubric.version_id when a downstream step must reference the exact rubric. Read-only.',
+      + 'connection=CONNECTED means "direct business DB read"). Query selectors: give EXACTLY ONE of '
+      + 'job_id (UUID) / code / title. job_id returns one job in full: the job row, its current job_version (JD '
+      + 'text), the resolved rubric with every criterion echoed verbatim, all rubric version numbers with '
+      + 'is_current/is_approved, and rubric_absence when the job has no approved rubric (this tool reports absence '
+      + 'instead of failing); the value is mode=DETAIL, matched=1 and matches[] holds that job\'s summary. '
+      + 'code/title are CONTAINS matches (case-insensitive, leading/trailing whitespace and '
+      + 'full-width spaces normalized) and return mode=LOOKUP with a matches[] list of '
+      + '{job_id, code, title, status, current_rubric_version_no}; when more than one job matches, '
+      + 'needs_human_choice=true and next_tools is empty — you MUST ask the human which job they mean instead of '
+      + 'picking one yourself. A lookup with zero matches fails with NOT_FOUND/JOB_NOT_FOUND. Omit '
+      + 'rubric_version_no/rubric_version_id to get the current approved version; pin a version by passing one of '
+      + 'them (mutually exclusive, job_id mode only). Use rubric.version_id when a downstream step must reference '
+      + 'the exact rubric. Read-only.',
     parameters: toParameterSchema(PARAMS),
     output: {
       schema: OUTPUT_SCHEMA,
       render(_args: unknown, value: unknown): readonly TextBlock[] {
-        const v = value as JobGetValue
+        const output = value as JobGetOutputValue
+        // DETAIL / LOOKUP 共用一个封闭根对象；渲染按 `mode` 分派。
+        // `job === null` 只可能来自 LOOKUP（或 schema 合成值的 sparse 变体）——
+        // 两种都走列表 render，避免在"没有岗位内容"时访问 v.job.*。
+        if (output.mode === 'LOOKUP' || output.job === null) {
+          return renderJobLookup(output)
+        }
+        const v = output as unknown as JobGetValue
         const labels = `${v.labels.provenance}/${v.labels.trigger}/${v.labels.connection}`
         // O1 残留：人读正文只给业务标识（岗位 code+标题）与短号；完整 UUID 只在机检/结构化
         // 字段和末尾的 machine arguments 区（模型要复制才能调下游工具）。
@@ -819,12 +1127,72 @@ export function createJobGetTool(config: ResolvedDatabaseConfig): ReadonlyToolDe
     },
     async execute(rawArgs: unknown): Promise<unknown> {
       const args = parseContractArgs(PARAMS, rawArgs)
-      if (args.rubric_version_no !== undefined && args.rubric_version_id !== undefined) {
+
+      // D-141 第 6 条：三个选择器（job_id / code / title）必须**恰好给一个**。
+      // 顺序：先"一个都没给/给多了"，再"归一化后为空"，最后"rubric 参数只配 job_id 模式"。
+      const given: Record<string, string> = {}
+      for (const key of SELECTOR_KEYS) {
+        const value = args[key]
+        if (value !== undefined) given[key] = value as string
+      }
+      const selectorKeys = Object.keys(given)
+      if (selectorKeys.length === 0) {
+        throw contractError('INVALID_ARGS', {
+          reason_code: 'MISSING_REQUIRED',
+          message: '缺少查询条件：job_id / code / title 必须恰好给一个（当前一个都没给）。'
+            + '要精确定位某个岗位用 job_id；只记得编码或标题片段时用 code / title 做包含匹配。',
+          detail: { allowed: [...SELECTOR_KEYS], given },
+        })
+      }
+      if (selectorKeys.length > 1) {
+        throw contractError('INVALID_ARGS', {
+          reason_code: 'MUTUALLY_EXCLUSIVE',
+          message: `job_id / code / title 只能给一个（当前给了 ${selectorKeys.join(', ')}）`,
+          detail: { allowed: [...SELECTOR_KEYS], given },
+        })
+      }
+      const by: LookupMode | null = given.code !== undefined
+        ? 'code'
+        : given.title !== undefined
+          ? 'title'
+          : null
+      if (by !== null) {
+        const rawValue = given[by] as string
+        // `'   '` / `'\u3000'` 能通过"非空字符串"校验，但归一化后没有可搜索内容：
+        // 明确拒绝（TYPE_MISMATCH，D-141 §6），**不**静默当成"没给"或"全表匹配"。
+        if (normalizeSearchText(rawValue) === '') {
+          throw contractError('INVALID_ARGS', {
+            reason_code: 'TYPE_MISMATCH',
+            message: `${by} 归一化（去首尾空白 / 全角空格、转小写）后为空，无法做包含匹配；`
+              + `请给出岗位${by === 'code' ? '编码' : '标题'}的一部分`,
+            detail: { param: by, value: rawValue, normalized: '' },
+          })
+        }
+      }
+      const requestedNo = args.rubric_version_no
+      const requestedId = args.rubric_version_id
+      if (by !== null && (requestedNo !== undefined || requestedId !== undefined)) {
+        // 这两个参数只在 job_id 单查模式有意义；按 code/title 查询时**不静默忽略**。
+        throw contractError('INVALID_ARGS', {
+          reason_code: 'MUTUALLY_EXCLUSIVE',
+          message: 'rubric_version_no / rubric_version_id 只与 job_id 单查模式一起用；'
+            + '按 code / title 查询时不接受它们',
+          detail: {
+            allowed: [...SELECTOR_KEYS],
+            given: {
+              ...given,
+              ...(requestedNo === undefined ? {} : { rubric_version_no: requestedNo }),
+              ...(requestedId === undefined ? {} : { rubric_version_id: requestedId }),
+            },
+          },
+        })
+      }
+      if (requestedNo !== undefined && requestedId !== undefined) {
         throw contractError('INVALID_ARGS', {
           reason_code: 'MUTUALLY_EXCLUSIVE',
           message: 'rubric_version_no 与 rubric_version_id 只能给一个',
           detail: {
-            given: { rubric_version_no: args.rubric_version_no, rubric_version_id: args.rubric_version_id },
+            given: { rubric_version_no: requestedNo, rubric_version_id: requestedId },
           },
         })
       }
@@ -844,7 +1212,10 @@ export function createJobGetTool(config: ResolvedDatabaseConfig): ReadonlyToolDe
 
       const pool = createPool(config)
       try {
-        return await withReadOnly(pool, async (client) => queryJob(client, config, args, asOfIso))
+        return await withReadOnly(pool, async (client) => (by === null
+          // job_id 单查：既有字段逐字段不变，只补 mode/matched/matches/needs_human_choice/next_tools。
+          ? detailOutput(await queryJob(client, config, args, asOfIso))
+          : queryJobLookup(client, config, by, given[by] as string, asOfIso)))
       } finally {
         await closePool(pool)
       }

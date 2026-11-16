@@ -70,6 +70,13 @@
 //   12. `confirmation_text_sha256` 的 pre-image **版本化**（D-95 + P1-2）：传了
 //      `confirmation_text`（IN_CHAT）→ v2，旧记录/旧调用（无原话）→ v1。**v1 的四个键
 //      一字节都不能动**，否则库里已有的旧 sha256 全部验不过（`decision-rules.md` §17.2）。
+//   13. **D-141③（2026-11-16）**：`decision_scope='SCREENING'` 且 `result ∈ {ADVANCE, REJECT}` 时，
+//      本文件在**同一事务**里派生 S6→S7（复用阶段域 `deriveScreeningDecisionStage`，只派生 T1；
+//      幂等；T2–T4 一条都不碰）。派生 BLOCKED 时抛**新增** reason_code
+//      `EVIDENCE_INSUFFICIENT(SCREENING_STAGE_NOT_ADVANCEABLE)`（detail.blockers 带结构化
+//      owner_role / next_action_code），整个事务回滚 → 既不留"决策落了、阶段没动"的半状态，
+//      也不放宽任何既有决策闸门（STEP 0→6.5 未动）。`HOLD` / `WITHDRAW` 不派生（D-141 原文只
+//      覆盖 ADVANCE/REJECT；它们仍走原来的"先记决策、再显式推进"路径）。
 //
 // 2026-11-14 增补（`decision-rules.md` §17；与既有 DC 条目冲突时以 §17 为准）：
 //   * P0-3：`decision_scope='SCREENING'` 是 S7 人决定的落库路径（`stage_code='S7'`，
@@ -94,6 +101,8 @@ import {
   type ResolvedDatabaseConfig,
 } from '../db/pool.ts'
 import { computeEvaluationSummaryIn, type EvaluationSummary } from './evaluation-summarize.ts'
+// D-141③：SCREENING 决策在**同一事务**里派生 S6→S7（只派生 T1；复用阶段域的唯一写路径）。
+import { deriveScreeningDecisionStage } from '../domain/stage-advance.ts'
 // 事件名只从注册表取（`src/runtime/event-types.ts`）；机检测试会扫发射点。
 import { EVENT_TYPES } from '../runtime/event-types.ts'
 import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
@@ -2914,6 +2923,54 @@ async function assertSingleCurrent(
   })
 }
 
+/**
+ * D-141③：SCREENING 的 `ADVANCE` / `REJECT` 决策写库后，在**同一事务**里派生 S6→S7。
+ *
+ * 为什么必须在这里（而不是让 Agent 再调一次 `stage_advance`）："人决定通过初筛"语义上
+ * 已包含阶段迁移，拆成两个失败点会留下"决策落了、阶段没动"的半状态；同事务派生保证
+ * 任一失败整体回滚。
+ *
+ * 边界（一条都不许放宽）：
+ *   * 只派生 **T1**（`deriveScreeningDecisionStage` 内部限制 allowedRules=['T1']）；
+ *     T2–T4 仍各自要求独立事实（SCREENING=ADVANCE / 材料就绪 / 已提交面评），**不**由本函数推进；
+ *   * 申请已在 S7（或更后）→ `NO_OP`（幂等：零 UPDATE、零事件）；
+ *   * 申请还在 S6 且 T1 事实缺口（材料未绑定/解析失败/rubric 未钉）→ 抛
+ *     `EVIDENCE_INSUFFICIENT(SCREENING_STAGE_NOT_ADVANCEABLE)`：调用方事务回滚，
+ *     决策与阶段都不留半状态（既有决策闸门在 STEP 0–6.5 已全部通过，这里只挡阶段事实）；
+ *   * 其它 NO_OP（申请非 ACTIVE、指针不在梯子上）保持"决策可记、阶段不动"的既有行为 ——
+ *     不新增闸门。
+ * @param client - 事务内连接（actor 已 `SET LOCAL`；阶段事件由触发器用该 actor 写）。
+ * @param tenantId - 租户（来自配置）。
+ * @param applicationId - 申请 id。
+ * @throws RecruitmentToolError - `EVIDENCE_INSUFFICIENT(SCREENING_STAGE_NOT_ADVANCEABLE)`
+ *   / `NOT_FOUND` / `VERSION_CONFLICT` / `INVARIANT_VIOLATION`（阶段域原样上抛）。
+ */
+async function assertScreeningStageDerived(
+  client: DatabaseClient,
+  tenantId: string,
+  applicationId: string,
+): Promise<void> {
+  const derived = await deriveScreeningDecisionStage(client, { tenantId, applicationId })
+  if (derived.status !== 'BLOCKED') return
+  throw evalError(
+    'EVIDENCE_INSUFFICIENT',
+    'SCREENING_STAGE_NOT_ADVANCEABLE',
+    '初筛结论已通过全部决策闸门，但申请还不满足 S6→S7 的派生前置（材料 / rubric 事实缺口）：'
+      + '本工具整体回滚，决策与阶段都不留半状态。先按 detail.blockers 修好，再重试。',
+    {
+      application_id: applicationId,
+      current_stage_code: derived.stage_code,
+      blockers: derived.blockers.map((blocker) => ({
+        code: blocker.code,
+        message: blocker.message,
+        owner_role: blocker.owner_role,
+        next_action_code: blocker.next_action_code,
+        ...(blocker.owner_actor_id === undefined ? {} : { owner_actor_id: blocker.owner_actor_id }),
+      })),
+    },
+  )
+}
+
 // =====================================================================
 //  出参
 // =====================================================================
@@ -3280,6 +3337,12 @@ export async function recordDecisionInTransaction(
       })
     }
     await assertSingleCurrent(client, tenantId, application.id, args.decision_scope, stageCode)
+    // D-141③（`docs/17`）：SCREENING 的 ADVANCE/REJECT = "人已决定初筛"，语义上包含 S6→S7。
+    // 在**同一事务**里派生阶段迁移（只派生 T1；幂等）；失败 → 抛错 → 整个事务回滚，
+    // 不会留下"决策落了、阶段没动"的半状态。T2–T4 的闸门不在这里、也不放宽。
+    if (screeningScope && (args.result === 'ADVANCE' || args.result === 'REJECT')) {
+      await assertScreeningStageDerived(client, tenantId, application.id)
+    }
   } catch (error) {
     translateWriteError(error)
   }
@@ -3456,8 +3519,11 @@ export function createDecisionRecordTool(deps: DecisionToolDeps): ReadonlyToolDe
       + 'sha256 covers {result, reason, override_rationale, basis_refs} (plus the human\'s verbatim words for '
       + 'IN_CHAT, D-95), asks the human for approval when the confirmation is not IN_CHAT (no answerer => '
       + 'unavailable => nothing is written), then writes one decision row plus its internal event in the same '
-      + 'transaction (supersede = reverse-insert, rewire, clear). It never writes application/interview status and '
-      + 'accepts no tenant/actor/stage_code input.',
+      + 'transaction (supersede = reverse-insert, rewire, clear). It never writes application/interview status, '
+      + 'EXCEPT the D-141 SCREENING derivation: when decision_scope=SCREENING and result is ADVANCE/REJECT the same '
+      + 'transaction also derives S6→S7 (T1 only: material linked, parse not FAILED, rubric pinned; idempotent when '
+      + 'already S7; blocked facts roll the whole transaction back) — T2–T4 gates are not touched. '
+      + 'It accepts no tenant/actor/stage_code input.',
     parameters: PARAMETERS,
     output: { schema: OUTPUT_SCHEMA, render: (_args: unknown, value: unknown) => renderDecision(value) },
     isConcurrencySafe(): boolean {
