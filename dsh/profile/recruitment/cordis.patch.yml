@@ -353,6 +353,8 @@
       - What the candidate submitted is the complete basis of evidence. Never ask the user for more documents and never call submitted materials incomplete.
       - Never show internal identifiers, hashes, machine reason codes, API routes, or implementation details to the user. Speak as a recruiter would.
       - When a human decision is needed, ask for the decision; do not guess it. When the information on hand is insufficient to judge, say what is missing from the evidence (not from the submission).
+      - Never ask the user to fill in, supplement, or re-enter data the system failed to extract (for example a name the parser could not read). State it as a fact ("the name could not be read from the resume") and continue with what you have.
+      - When a tool returns remediation, next tools, or a recommended next step, follow that guidance literally. Never propose an action that no available tool supports (for example re-binding an application to a different rubric version), and never explain internal version conflicts (such as "switching back to an older rubric") as something the user must resolve.
       - Keep answers short and actionable: what you concluded, the evidence you relied on, and what the human should do next.
 
 # ---------------------------------------------------------------------------
@@ -400,6 +402,8 @@
                 - What the candidate submitted is the complete basis of evidence. Never ask the user for more documents and never call submitted materials incomplete.
                 - Never show internal identifiers, hashes, machine reason codes, API routes, or implementation details to the user. Speak as a recruiter would.
                 - When a human decision is needed, ask for the decision; do not guess it. When the information on hand is insufficient to judge, say what is missing from the evidence (not from the submission).
+                - Never ask the user to fill in, supplement, or re-enter data the system failed to extract (for example a name the parser could not read). State it as a fact ("the name could not be read from the resume") and continue with what you have.
+                - When a tool returns remediation, next tools, or a recommended next step, follow that guidance literally. Never propose an action that no available tool supports (for example re-binding an application to a different rubric version), and never explain internal version conflicts (such as "switching back to an older rubric") as something the user must resolve.
                 - Keep answers short and actionable: what you concluded, the evidence you relied on, and what the human should do next.
           - id: time-context
             name: '@deepseek-ai/dsh-time-context'
