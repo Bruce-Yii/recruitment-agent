@@ -84,9 +84,19 @@ test('写库能力集中在 S6：只有 application-intake 出现 INSERT，且�
 
 test('S6 的 SELECT 都是参数绑定的：没有模板字符串拼进 SQL', async () => {
   const intake = await scan('src/tools/application-intake.ts')
-  // 允许的唯一字符串拼接是列名（phone/email 二选一），且来自封闭集
+  // 允许的字符串拼接只有两类，且都**不含用户输入**：
+  //   1) `column`：phone/email 二选一，来自封闭集；
+  //   2) `effectiveApprovalExistsSql({...})`：`src/db/approval.ts` 里的**常量 SQL 片段**
+  //      （参数全部来自调用点字面量：resourceType / 别名），用于"批准状态只能由 approval 行判"
+  //      的单一实现（O8）。若不允此类片段，就只能把同一段 EXISTS 在每个调用点各抄一份 →
+  //      口径漂移风险更高。
+  // 口径变化说明（收紧，不是放宽）：原来只要出现 `${...}` 就算可疑；现在**只允许这两种**，
+  // 其余任何插值仍然失败。
+  const SAFE_INTERPOLATION = /^\$\{(?:column|effectiveApprovalExistsSql\()/
   const suspicious = intake.match(/client\.query<[^>]*>\(\s*`[^`]*\$\{(?!column\})[^}]*\}/g) ?? []
   for (const hit of suspicious) {
-    assert.equal(/\$\{(?!column\})/.test(hit), false, `可疑的 SQL 模板拼接: ${hit.slice(0, 80)}`)
+    const interpolations = [...hit.matchAll(/\$\{[^}]*\}?/g)].map((match) => match[0])
+    const unsafe = interpolations.filter((fragment) => !SAFE_INTERPOLATION.test(fragment))
+    assert.deepEqual(unsafe, [], `可疑的 SQL 模板拼接: ${hit.slice(0, 80)}`)
   }
 })

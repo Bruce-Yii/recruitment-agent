@@ -354,3 +354,99 @@
       - Never show internal identifiers, hashes, machine reason codes, API routes, or implementation details to the user. Speak as a recruiter would.
       - When a human decision is needed, ask for the decision; do not guess it. When the information on hand is insufficient to judge, say what is missing from the evidence (not from the submission).
       - Keep answers short and actionable: what you concluded, the evidence you relied on, and what the human should do next.
+
+# ---------------------------------------------------------------------------
+# O19（2026-11-16 产品视角复核，**安全红线**）：Web 聊天（HR 真正的入口）实测有 61 个工具，
+# 含 `pwsh` / `read` / `write` / `edit` / `glob` / `grep` / `web_search` / `web_fetch` /
+# `plugin_manager` / `subagent` / `workflow` / `list_agents` / `send_message` / `wait_agent`。
+# 根因（总控从 composed config 实证）：Web 会话跑的是 DSH 自带的 **agent preset `standard`**，
+# 它自带一棵 plugin 子树（persona / agent-instructions / tool-bash / tool-pwsh / tool-fs /
+# tool-fs-search / tool-jobs / tool-schedule / delegation / tool-web / tool-office /
+# tool-plugin-manager …）。本文件顶部那些 `disabled: true` 只作用于**顶层 profile 树**，
+# 对 preset 子树无效 —— 所以"工具面收口"在 headless 生效、在真实 Web 聊天不生效。
+# 同一根因还解释了 O10：preset 自带 persona 是
+#   "You are a coding agent powered by the {{model}} model."
+# （顶层 system-prompt 的人设被 preset 的 persona 遮蔽）。
+#
+# 修法（复用 DSH 原生能力，不自研）：用 patch 的 `insert` 语法新增**产品自有 preset**，
+# 只挂招聘需要的插件（人设 / 时间上下文 / skill / goal / todo / 提问 / 压缩）；
+# 把 preset-registry 的 default 指向它；并禁用 DSH 自带的 standard/ptc/cordis/minimal，
+# 让 HR 无法切回全工具 preset。这样 Web 会话的工具面 = 全局注册的 30 个招聘工具
+# + skill/goal/todo/ask（≈35），工程工具**不在注册表里**（不是靠 prompt 忍）。
+# ---------------------------------------------------------------------------
+- id: agent-preset-registry
+  config:
+    default: recruitment
+- insert:
+    - id: preset-recruitment
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: recruitment
+        name: 招聘助手
+        description: 招聘业务专用：只有招聘工具（读写业务事实）+ 提问/计划/技能；无 shell、文件、插件管理、子代理、工作流。
+        order: 1
+        plugins:
+          # 人设：招聘助手（不是 coding agent）。DSH 的 preset persona 会遮蔽顶层 system-prompt，
+          # 所以产品人设必须写在 preset 里（顶层那份作为兜底保留，两者措辞一致）。
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |-
+                You are a recruitment operations assistant working inside an HR product for HR staff and interviewers.
+                Your job: read candidates' materials and job criteria, give evidence-based screening suggestions, help record
+                decisions a human has already made, and keep interview/evaluation facts consistent.
+                Rules:
+                - Use only the recruitment_* tools to read or write business facts. Never use shell, database clients, source code, or file tools.
+                - What the candidate submitted is the complete basis of evidence. Never ask the user for more documents and never call submitted materials incomplete.
+                - Never show internal identifiers, hashes, machine reason codes, API routes, or implementation details to the user. Speak as a recruiter would.
+                - When a human decision is needed, ask for the decision; do not guess it. When the information on hand is insufficient to judge, say what is missing from the evidence (not from the submission).
+                - Keep answers short and actionable: what you concluded, the evidence you relied on, and what the human should do next.
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          # 产品 skill（S6→S7 等操作手册）：目录由部署环境给出，缺变量加载期 fail-closed。
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              customSkillDirs:
+                - !!js process.env.RECRUITMENT_SKILL_DIR
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          # 会话内的计划能力（不是业务事实）：goal / todo。
+          - id: command-goal
+            name: '@deepseek-ai/dsh-command-goal'
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          # 人类交互（问人 / 等人回答）：产品需要，保留。
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          # 长会话上下文压缩：保留（去掉会让长对话直接爆窗）。
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+# 禁用 DSH 自带的全工具 preset：HR 不能切回 standard/ptc/cordis/minimal。
+- id: preset-standard
+  disabled: true
+- id: preset-ptc
+  disabled: true
+- id: preset-cordis
+  disabled: true
+- id: preset-minimal
+  disabled: true
