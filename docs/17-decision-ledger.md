@@ -1725,3 +1725,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
      ① `decision` 表没有 `confirmed_at` 属**设计如此** —— D-130 要求持久化在 `decision.record` 事件 payload；实测 `confirmed_at / confirmed_by_actor_id / confirmation_method / confirmation_text_sha256 / human_confirmation_preimage_version` 五键齐全。
      ② 决策后 `current_stage_code` 仍是 S7 **符合** D-141③ / D-142（S6→S7 就是"进面试阶段"；演示种子本来就在 S7，派生为 NO_OP）。
   4. **如实记录、本轮不改（进下一轮）**：① 面评未齐时决策卡片仍显示"事实齐备，可提交"（服务端会拒，但文案误导）；② 原文出处是行内静态文本，**不能逐条点开**（阅读器属 `docs/24 §7` 待设计）；③ 错误文案与顶栏仍露 `actor 00000103` 这类内部短号（D-148 已登记）。
+- **D-150（2026-11-18 总控裁决；全量测试会泄漏一次性库，属测试卫生缺陷）**：
+  1. **事实**：每跑一次全量，`test/integration/budget-guard.test.ts` 用 `createIsolatedTestDatabase('budget_it')` 建 `ra_budget_it_*` 库；正常应在收尾 drop，但本机两次全量后残留 2 个（`ra_budget_it_4i4_4ggve2` / `ra_budget_it_awo_1ze6im`），已手工 drop。
+  2. **影响**：本机"只剩几个库"的判断会被污染（本轮交接要求"本机只留 2 个库"，实际一度 7 个）。属**测试卫生**，不是产品缺陷。
+  3. **要求（下一轮）**：该测试必须无论成败都 drop 自己建的库（`try/finally` 或进程退出钩子）；机检口径里加一条"跑完全量后 `ra_*` 只多出预期库"。**本轮不判 FAIL**，但记入交验单的已知项。
