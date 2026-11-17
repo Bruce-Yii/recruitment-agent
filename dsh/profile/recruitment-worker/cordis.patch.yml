@@ -132,6 +132,16 @@
             input:
               - text
               - image
+          - id: hy4-flash-free
+            name: "[免费] Hy4 Flash Free"
+            contextWindow: 1048576
+            maxTokens: 65536
+            reasoningEfforts:
+              off: none
+              high: high
+            input:
+              - text
+              - image
       opencode-go-openai-key2:
         retryPolicy:
           mode: normal

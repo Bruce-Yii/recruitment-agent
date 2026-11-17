@@ -1713,3 +1713,15 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   2. **已知残留（未清，如实列出，不在本轮宣称"已清干净"）**：面试官面评表单里的英文枚举与内部 id（`MET / NOT_MET`、`scorecard_id / actor_id / interview_id`、`mode`、`code / reason_code`）、申请详情与工作台中少量英文枚举原值、三维标签原值渲染。**位置清单**见 `work/d5/shell-copy/REPORT.md` ③（只列未改）。判定：**由独立窗口按 D-135 判**，总控不预先认定"不判 FAIL"。
   3. **机检边界（必须写进交验单，避免"机检绿 = 文案全清"的误解）**：`scripts/term-lint.mjs` 只查「证据」二字；扫描面 = `src/client` 引号字面量 + `src/http` 字符串 + `skill/**/*.md` + `.tsx` 非注释行（兜 JSX 文本节点）。**它不管英文枚举、字段名与裁决编号**——那类靠人工复核与 D-135 判定。
   4. **产物**：界面文案改动必须重建 `dsh/dsh-recruitment/lib/client.js`（10 个 client 源文件是构建输入），产物与源码**同一提交**；"源码改了但产物没重建"= 界面仍显示旧文案，属集成缺陷。
+- **D-149（2026-11-18 总控裁决；首轮"真人用完整场景"的结论与处置）**：
+  1. **已跑通**：真 Host（49347）+ 真 Chrome（CDP）+ HY4，`docs/26 §4` 的步骤 1–7 与步骤 9 由真实角色完成；步骤 8 因面评只到 1/3 **如实停**（不伪造）。证据：`work/d5/e2e-live/`（56 张 1440/390 截图 + body 文本 + 独立 psql 读回）。
+     - 初筛 **D-144 四条判据实测全过**：先摆三态 → 一句倾向建议 → 逐字"这是建议，不是决定，决定由你来做" → 无禁用话术 / 无 UUID / 无内部编号。
+     - HR 真点"通过"：`decision` **0 → 1 行**（SCREENING/ADVANCE/S7、actor 为真人、basis 带 rubric hash + evaluation digest + resume sha）。
+     - 面试官独立提交面评成功（首次被 `ADVANCE_WITH_UNASSESSED_DIMENSION` 拒、零写入，第二次成功）。
+     - 负例：未绑定身份写操作 → HTTP 409，**10 张表行数前后完全一致**（零写入）。
+  2. **真缺陷（已修）**：worker profile 顶部把模型写成 `hy4-flash-free`，但其 `opencode-go-openai.models` **未登记该模型** → 两条长任务 `RESUME_PARSE` / `EVALUATION_SYNTHESIZE` 均 `FAILED_FINAL(UNKNOWN_MODEL)`。处置：**只**在 worker profile 的模型清单补 `hy4-flash-free`（+10 行，产品 profile 未动、key2 与默认模型未动），运行时副本同步。
+     证据：worker profile 直跑会话 `exit 0` 并返回 HY4 回复（`session-0a55c3ca-…`）；**任务级待下一次真实事件复验，不得记 PASS**。
+  3. **复核后否定的两条误报**（记下来，防止被当成缺陷重复报）：
+     ① `decision` 表没有 `confirmed_at` 属**设计如此** —— D-130 要求持久化在 `decision.record` 事件 payload；实测 `confirmed_at / confirmed_by_actor_id / confirmation_method / confirmation_text_sha256 / human_confirmation_preimage_version` 五键齐全。
+     ② 决策后 `current_stage_code` 仍是 S7 **符合** D-141③ / D-142（S6→S7 就是"进面试阶段"；演示种子本来就在 S7，派生为 NO_OP）。
+  4. **如实记录、本轮不改（进下一轮）**：① 面评未齐时决策卡片仍显示"事实齐备，可提交"（服务端会拒，但文案误导）；② 原文出处是行内静态文本，**不能逐条点开**（阅读器属 `docs/24 §7` 待设计）；③ 错误文案与顶栏仍露 `actor 00000103` 这类内部短号（D-148 已登记）。
