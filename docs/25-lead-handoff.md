@@ -86,6 +86,11 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 
 > **基线**：`main` = `feat/unified-document-intake` = `75db8e1`（**2026-11-17 已把现行线并入主干，两者树完全一致**），tag `v1.0-dev-2026-11-17`；工作树干净。日常开发在 `feat/unified-document-intake`，里程碑合 `main`。
 > **模型**：本阶段（本地开发/验证）统一 HY4（`hy4-flash-free`）；交付口径另议（D-143）。
+> **子代理也必须用 HY4**：派 `subagent` 时显式传 `provider: opencode-go-openai` + `model: hy4-flash-free`。
+> 机制提醒：子代理可用模型是**会话级白名单**（会话创建时固化，事件 `subagent/model-selection-policy`），
+> 旧会话里换不了（实测 `child LLM route … not allowed for this Session`）；**新会话**的白名单来自桌面 profile 的
+> `subagent-model-selection-settings.allowedModels`，已含 `hy4-flash-free`。开工先用 `list_subagent_models` 确认看得到 HY4。
+> 另：`beam-free` 等第三方免费模型已被地域封锁（`403 RegionError`），别当备选。
 > 自己核一遍再动手，**不许引用这段记忆**。
 
 **已经能用（HR/面试官能感觉到）**
@@ -197,7 +202,7 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 
 | # | 事 | 不做会怎样 | 谁做 |
 |---|---|---|---|
-| 1 | **更新独立验收交接说明** `work/d5/acceptance/BRIEF-FROZEN-*.md` + `PRECHECK.md`：当前仍写旧 SHA `0272733`，主干已是 `ce47894`，且这轮新增了决策派生/夹具修复/面试官前置摘要/证据闸门/HY4 等 | 独立窗口按旧 SHA 拉代码 → 验的是两周前状态，白跑一轮 | 新 lead（半天内） |
+| 1 | **更新独立验收交接说明** `work/d5/acceptance/BRIEF-FROZEN-*.md` + `PRECHECK.md`：当前仍写旧 SHA `0272733`，主干已远超它（以 `git rev-parse` 现场值为准），且这轮新增了决策派生/夹具修复/面试官前置摘要/证据闸门/HY4 等 | 独立窗口按旧 SHA 拉代码 → 验的是两周前状态，白跑一轮 | 新 lead（半天内） |
 | 2 | **冻结前跑一次干净库全量 + 两道机检**（`runtime-budget` / `clean-load`）。上一次全量停在 `6eaf16a`，之后改动**含夹具变更**（演示 rubric 重绑 v2） | 交出去的树里可能躺着"看起来绿其实红"的测试 | 新 lead（1 小时） |
 | 3 | **一次"真人用完整场景"的真 Host 端到端**（真浏览器 + HY4）。现有证据都是分段的（库层/单工具/等价依赖采集），没有一次"HR 从简历点到二面" | 验收第一条就会被问"你哪次真的用过"；HY4 刚切上去还没跑过真会话，模型行为可能退化 | 新 lead 派一条 lane |
 | 4 | **产品负责人待拍**：初筛默认行为 A（只给证据）/ B（给结论标"建议"）；以及"追责留痕"要不要做成可见界面 | 第一屏展示口径不定，前端无法开工 | 产品负责人 |
