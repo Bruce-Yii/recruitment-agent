@@ -153,9 +153,17 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 - `docs/02/03/04/05/06/07` 里"pg-boss / 自建 Runtime"是旧仓口径 → 现行是 DSH + PG 原生行锁（D-109/D-122）
 
 **本机数据库（都在这台机 `D:\12412\PostgreSQL`，用户 postgres）**
-- **`ra_s6s7` = 演示库，已脏（被真实会话改过），永远不当权威**
-- 其余 `ra_*` 是各 lane 的一次性或验证库（`ra_evgate_*`、`ra_rubfix_*`、`ra_dec_stage_*`、`ra_evread_*`…）——**要复验就自己建新库**，别信旧库状态
-- 建干净库：`psql -c "create database ra_x"` → 按名重放 `0001→0016` → `psql -f db/verify.sql` 末行 VERIFY PASS
+- **现在只留 2 个库**：`ra_s6s7`（演示库，**已脏**，永远不当权威）、`ra_freeze_final`（冻结基线，0001→0016 + VERIFY PASS）。
+- 其余 **130 个 `ra_*` 已 drop**，全部有 `pg_dump -Fc` 归档（见下面"归档位置"）；需要时 `pg_restore` 回来。
+- 建干净库：`psql -c "create database ra_x"` → 按名重放 `0001→0016` → `psql -f db/verify.sql` 末行 VERIFY PASS。
+
+**归档位置（2026-11-17 清场）**
+`D:\12412\dsh工作区\archive\recruitment-agent\2026-11-17-pre-handoff\`
+- `work/control/`（147 MB 历史干净快照）、`work/d5/chrome-profile/`（98 MB 可重建）、`work/dsh-recovery/`（9 MB）
+- `worktrees/`（5 个旧 SHA 的临时 worktree 目录）
+- `backup-pre-pii-rewrite.bundle`（19.3 MB，**PII 重写前的历史分支已从仓库删除引用、只留这个 bundle**；`git bundle verify` ok）
+- `db-dumps/`（132 个 `ra_*.dump`，51.3 MB）
+- **`work/INDEX.md`**：哪个证据可信、哪个是历史、哪个已归档 —— **接手先读它**，别在 200 个目录里迷路。
 
 **端口**：49303 = V5.6.1 静态工作台（UI 冻结，**非验收对象**）；49344 = 产品 Host；lane 的 Host 只用 49347–49352。
 
