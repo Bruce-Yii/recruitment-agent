@@ -3,6 +3,10 @@
 招聘 Agent。**底座重置在 DSH（DeepSeek Harness）Web 版上**，招聘语义与验收标准原样继承。
 本仓库只装"已经证明过的资产"，不装旧自研栈、不装 git 历史。
 
+> **基线（2026-11-17）**：`main` = `feat/unified-document-intake` = `75db8e1`（tag `v1.0-dev-2026-11-17`）。
+> 主干已与现行线合并、树完全一致；日常开发在 `feat/unified-document-intake`，里程碑合 `main`。
+> 主干合并前的那条旧线保存在 tag `archive/main-pre-merge-2026-11-17`（历史可查，文件树以现行为准）。
+
 ---
 
 ## 1. 底座与核心

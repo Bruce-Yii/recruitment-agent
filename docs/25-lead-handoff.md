@@ -84,7 +84,7 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 
 ## 4. 现在到哪（2026-11-17）
 
-> **基线**：分支 `feat/unified-document-intake`，HEAD = 远端 = `20972f0`（或更新），工作树干净，`main` 未动。
+> **基线**：`main` = `feat/unified-document-intake` = `75db8e1`（**2026-11-17 已把现行线并入主干，两者树完全一致**），tag `v1.0-dev-2026-11-17`；工作树干净。日常开发在 `feat/unified-document-intake`，里程碑合 `main`。
 > **模型**：本阶段（本地开发/验证）统一 HY4（`hy4-flash-free`）；交付口径另议（D-143）。
 > 自己核一遍再动手，**不许引用这段记忆**。
 
