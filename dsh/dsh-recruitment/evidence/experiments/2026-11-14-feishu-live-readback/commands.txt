@@ -43,9 +43,9 @@ SHA256=f3f45d49cca4e478b65a7ce8bf8d0401c2ee7037919d9647cfb25dd9a38c8744
 ## 2. 现场复核 pass 2（独立目录，带起止时间）
 $ START=2026-11-14T20:17:42+08:00
 $ lark-cli minutes +detail --as user --minute-tokens obcnvf38p9qkb3n58tak57jg --transcript --output-dir ./minutes
-TOKEN=obcnvf38p9qkb3n58tak57jg EXIT=0 START=2026-11-14T20:17:42+08:00 END=2026-11-14T20:17:43+08:00 BYTES=6397 SHA256=e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0
+TOKEN=<REDACTED> EXIT=0 START=2026-11-14T20:17:42+08:00 END=2026-11-14T20:17:43+08:00 BYTES=6397 SHA256=e17ffd5d95326d8f461ee87a5bdff023e9b5c0cf826df528ce68b55baf2a63a0
 $ lark-cli minutes +detail --as user --minute-tokens obcnuym8vvyv328i1y63u956 --transcript --output-dir ./minutes
-TOKEN=obcnuym8vvyv328i1y63u956 EXIT=0 START=2026-11-14T20:17:43+08:00 END=2026-11-14T20:17:43+08:00 BYTES=4485 SHA256=f3f45d49cca4e478b65a7ce8bf8d0401c2ee7037919d9647cfb25dd9a38c8744
+TOKEN=<REDACTED> EXIT=0 START=2026-11-14T20:17:43+08:00 END=2026-11-14T20:17:43+08:00 BYTES=4485 SHA256=f3f45d49cca4e478b65a7ce8bf8d0401c2ee7037919d9647cfb25dd9a38c8744
 BASE=C:\Users\12412\AppData\Local\Temp\ra-feishu-readback-pass2-81d9594b
 # 补充度量：token2 LINES=17 CHARS=1595
 
