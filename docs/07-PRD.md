@@ -1,5 +1,7 @@
 # 07 · PRD — Recruitment OS 产品需求文档
 
+> **⚠️ 这是 10.0 完整生命周期的 PRD（Draft，远景需求池）。** 它描述的是目标产品的全貌，**不是 v1.0 已交付范围**；v1.0 现状看 [`26`](26-product-introduction.md)（产品说明）与 [`24`](24-product-framework-v2.md)（验收口径）。本文件里的 P0/P1/D/X 分级只对当时有效。
+
 **文档状态**：Draft（对齐版，供本地执行与验收使用）
 **产品目标**：Recruitment OS 10.0 完整招聘生命周期（方向已确认）
 **当前交付**：v1.0 Core Recruitment Execution（**只有 v1.0 的 P0 已冻结**，以 `docs/10` 为准）

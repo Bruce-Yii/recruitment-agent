@@ -1,9 +1,21 @@
 # recruitment-agent
 
+**把散落在简历、面试官脑子里、聊天记录里的招聘上下文，按「人」串起来；用 Agent 把它变成人一眼能看懂的东西；判断权永远在人手里。**
+
+它不是招聘平台、不是人事系统、不是沟通工具、不是流程引擎。
+
+- **产品说明（这是什么 / 给谁用 / 现在能做什么 / 不做什么）** → [`docs/26`](docs/26-product-introduction.md)
+- **产品认知与验收口径（唯一权威）** → [`docs/24`](docs/24-product-framework-v2.md)
+- **接手交接（场景 / 判断框架 / 踩坑 / 地图）** → [`docs/25`](docs/25-lead-handoff.md)
+
+---
+
+## 0. 工程底座（看代码的人从这里开始）
+
 招聘 Agent。**底座重置在 DSH（DeepSeek Harness）Web 版上**，招聘语义与验收标准原样继承。
 本仓库只装"已经证明过的资产"，不装旧自研栈、不装 git 历史。
 
-> **基线（2026-11-17）**：`main` = `feat/unified-document-intake` = `75db8e1`（tag `v1.0-dev-2026-11-17`）。
+> **基线（2026-11-17）**：`main` = `feat/unified-document-intake` = `8cade0d`（tag `v1.0-dev-2026-11-17`）。
 > 主干已与现行线合并、树完全一致；日常开发在 `feat/unified-document-intake`，里程碑合 `main`。
 > 主干合并前的那条旧线保存在 tag `archive/main-pre-merge-2026-11-17`（历史可查，文件树以现行为准）。
 
