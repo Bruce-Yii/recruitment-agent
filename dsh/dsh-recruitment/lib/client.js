@@ -291,7 +291,7 @@ window.__ModuleLoader__.load({
 			timezone: "时区",
 			interviewers: "面试官分配",
 			job: "岗位",
-			rubric: "Rubric",
+			rubric: "评分标准",
 			approval: "审批",
 			members: "团队成员",
 			stages: "流水线阶段",
@@ -302,7 +302,7 @@ window.__ModuleLoader__.load({
 			content_sha256: "正文 sha256",
 			segment_count: "分段数",
 			replayed: "是否幂等重放",
-			contract_version: "契约版本",
+			contract_version: "版本",
 			"readback.table": "读回表",
 			decision: "决策行",
 			evaluation: "初筛评估",
@@ -439,20 +439,20 @@ window.__ModuleLoader__.load({
 		}
 		/** 已知 `code` / `code/reason_code` → 人话补救说明（未知码返回 ''，界面仍显示服务端原文）。 */
 		const ERROR_ADVICE = {
-			"FORBIDDEN/SAME_ORIGIN_REQUIRED": "写动作只接受本机同源请求（127.0.0.1/localhost 且带 x-recruitment-request: 1）；不要跨源调用",
+			"FORBIDDEN/SAME_ORIGIN_REQUIRED": "这个操作只能在招聘工作台里执行，请从工作台页面重试",
 			"FORBIDDEN/ACTOR_NOT_AUTHORIZED": "当前身份无权执行招聘写动作；请切换到 Recruiter 身份（面试官只能提交本人面评）",
-			"FORBIDDEN/APPROVAL_UNAVAILABLE": "宿主的 approval 通道不可用（D-79 闸门未装配），本次没有写库",
-			"FORBIDDEN/APPROVAL_NOT_GRANTED": "人类确认闸门未放行（本次请求的 allow-once 已用过或未授权）",
+			"FORBIDDEN/APPROVAL_UNAVAILABLE": "审批通道尚未就绪，本次没有写库",
+			"FORBIDDEN/APPROVAL_NOT_GRANTED": "本次确认未获放行（可能已用过，或未获得授权）",
 			"DECISION_REQUIRES_HUMAN/NO_HUMAN_CONFIRMATION": "缺少人工确认：服务端本应派生 IN_APP_CONFIRM，出现此码说明实现异常",
-			"INVALID_ARGS/SESSION_REQUIRED": "缺 x-dsh-session：先在工作台完成身份选择（PUT /recruitment/api/actor）再重试",
-			"INVALID_ARGS/SESSION_ID_INVALID": "x-dsh-session 形态非法（必须是 session-<uuid> 或裸 UUID）",
-			"DEMO_ACTOR_UNMAPPED/SESSION_NOT_BOUND": "当前 session 未绑定 alias（刷新或宿主重启会丢失）；重新选择身份后重试",
+			"INVALID_ARGS/SESSION_REQUIRED": "尚未选择身份：请先在工作台顶部选择身份，再重试",
+			"INVALID_ARGS/SESSION_ID_INVALID": "身份信息格式不正确，请重新选择身份后重试",
+			"DEMO_ACTOR_UNMAPPED/SESSION_NOT_BOUND": "当前身份没有绑定账号（刷新或重启工作台后会丢失）；请重新选择身份后重试",
 			"INVALID_ARGS/ACTOR_OVERRIDE_REJECTED": "请求里出现了身份或服务端派生键，服务端一律拒绝；这是客户端实现缺陷（本 UI 已在发送前自检）",
 			"INVALID_ARGS/MISSING_REQUIRED": "必填字段缺失：按表单提示补齐后重试",
-			"INVALID_ARGS/ID_NOT_UUID": "id 不是 UUID 形态：请从服务端投影里选择，不要手工输入",
-			"INVALID_ARGS/ENUM_INVALID": "枚举值不在契约封闭集内",
-			"INVALID_ARGS/OUT_OF_RANGE": "字段超出契约范围",
-			"INVALID_ARGS/UNKNOWN_PARAM": "出现了契约不允许的字段",
+			"INVALID_ARGS/ID_NOT_UUID": "编号格式不正确：请从列表里选择，不要手工输入",
+			"INVALID_ARGS/ENUM_INVALID": "选项不在允许范围内",
+			"INVALID_ARGS/OUT_OF_RANGE": "填写内容超出允许范围",
+			"INVALID_ARGS/UNKNOWN_PARAM": "出现了不认识的字段",
 			"INVALID_ARGS/SCOPE_MISMATCH": "决策范围与端点不符：初筛用 screening/decide，正式决策用 decision/record",
 			"INVALID_ARGS/STAGE_REQUIRES_INTERVIEW": "STAGE 决策必须带面试 id",
 			"INVALID_ARGS/FINAL_SCOPE_NO_INTERVIEW": "FINAL 决策不能带面试 id",
@@ -471,39 +471,39 @@ window.__ModuleLoader__.load({
 			"INVALID_ARGS/CONFIRM_REQUIRED": "关闭岗位必须显式确认（confirm: true）",
 			"INVALID_ARGS/UNKNOWN_BODY_KEY": "请求体出现封闭键集之外的键",
 			"INVALID_ARGS/UNKNOWN_ENTITY": "设置实体只能是 role / team / pipeline",
-			"INVALID_ARGS/READ_OPERATION_NOT_EXPOSED": "写入口只接受写 operation（create/update/…）；读操作走只读投影",
-			"CLIENT_REFUSED": "客户端拒绝发送：动作不可用 / seam 非同源 / 缺必要事实（见 reason_code）",
+			"INVALID_ARGS/READ_OPERATION_NOT_EXPOSED": "这里只能提交新增或修改；查看请到对应的列表页",
+			"CLIENT_REFUSED": "客户端没有发送请求：动作不可用、入口不正确或缺少必要信息",
 			"CLIENT_REFUSED/CLIENT_RESERVED_KEY": "body 含身份/服务端派生键，客户端拒绝发送（服务端也会 400）",
 			"CLIENT_REFUSED/EMPTY_BODY": "写请求 body 为空：必须由 build* 产出（固定发 {} 会被 400）",
-			"CLIENT_REFUSED/SESSION_MISSING": "缺少当前 DSH session id（只能由宿主 props 传入，不读 localStorage）",
-			"CLIENT_REFUSED/UNSAFE_SEAM": "动作 seam 不是同源 /recruitment/ 相对路径，客户端拒绝发送",
+			"CLIENT_REFUSED/SESSION_MISSING": "还没有识别到当前身份：请先在工作台顶部选择身份",
+			"CLIENT_REFUSED/UNSAFE_SEAM": "动作入口不正确，客户端没有发送请求",
 			"CLIENT_REFUSED/ACTION_NOT_AVAILABLE": "服务端声明该动作不可用（available=false）；客户端不发送请求",
 			"CLIENT_RESERVED_KEY": "body 含身份/服务端派生键，客户端拒绝发送（服务端也会 400）",
-			"NOT_FOUND": "对象不存在（申请/面试/rubric/岗位/会议）；先刷新服务端投影再重试",
+			"NOT_FOUND": "对象不存在（申请/面试/评分标准/岗位/会议）；先刷新页面再重试",
 			"VERSION_CONFLICT": "并发冲突：记录版本已被他人更新；重新读取后用最新版本重试",
-			"ALREADY_DECIDED": "该申请已有当前有效决策（uq_decision_current）；如需改判走 supersedes",
+			"ALREADY_DECIDED": "这条申请已经有过决定；要改判请走重新决策，不要重复提交",
 			"ALREADY_SCHEDULED": "该轮已排期；改时间要走 RESCHEDULE",
 			"ALREADY_EXISTS": "同 code 的对象已存在；换一个 code",
 			"CONFLICT_SLOT": "时段冲突：该面试官/时段已被占用",
 			"BLOCKED_BY_REVIEW": "有评审未完成，动作被前置事实阻塞",
-			"NO_RUBRIC": "岗位没有可用 rubric；先批准 rubric",
-			"NO_TRANSCRIPT": "该面试没有可用 transcript",
-			"EVIDENCE_INSUFFICIENT": "证据不足（决策汇总门禁）：先补面评/汇总",
+			"NO_RUBRIC": "岗位没有可用的评分标准；先批准评分标准",
+			"NO_TRANSCRIPT": "该面试还没有可用的转写记录",
+			"EVIDENCE_INSUFFICIENT": "决策汇总所需信息不足：先补面评/汇总",
 			"NOT_CONFIGURED": "数据库/连接器未配置，写动作不可用（不是\"没有数据\"）",
 			"INVALID_REFERENCE": "引用的部门 / actor / 阶段 / 面试模板不存在",
 			"SUMMARY_MISSING": "正式决策需要 evaluation summary：facts 里 summary 不可用，不允许记录决策",
-			"MISSING_SUMMARY": "服务端 facade 拿不到汇总（MISSING_SUMMARY），零写入",
-			"DECISION_FACTS_MISSING": "决策事实投影缺失：无法组装 as_of/basis_refs，客户端不发请求",
-			"DECISION_FACTS_ROUTE_MISSING": "决策事实只读路由未接线（GET /recruitment/api/decision/facts 404）",
+			"MISSING_SUMMARY": "服务端拿不到汇总，本次没有写库",
+			"DECISION_FACTS_MISSING": "决策所需信息还没有读到：请先刷新页面，客户端暂不发送请求",
+			"DECISION_FACTS_ROUTE_MISSING": "决策所需信息暂时读不到，请刷新页面后重试；本次没有提交",
 			"DECISION_FACTS_ERROR": "决策事实读取失败（看服务端原文）；先修好 facts 路由/身份再重试",
-			"DECISION_FACTS_LOADING": "正在读取决策事实投影：读完后表单才可提交",
-			"MISSING_RUBRIC_PAYLOAD_HASH": "facts 缺 rubric 的 payload_hash：客户端不编造 rubric 哈希，SCREENING 决策 disabled",
+			"DECISION_FACTS_LOADING": "正在读取决策所需信息：读完后表单才可提交",
+			"MISSING_RUBRIC_PAYLOAD_HASH": "评分标准快照信息不全：客户端不会自行编造，初筛决策暂不可提交",
 			"MISSING_AUTHORITY_FACTS": "facts 缺 AUTHORITY（actor_id / is_hiring_manager）：客户端不编造权威事实",
 			"MISSING_SCREENING_EVALUATION": "ADVANCE/REJECT 必须先执行初筛评估（facts.screening_evaluation 六个字段齐全）",
 			"MISSING_AS_OF": "facts 没有 as_of：客户端不用本地时间造 as_of（会 SUMMARY_STALE），不发送",
 			"APPLICATION_MISMATCH": "facts 与当前申请不一致（页面数据过期）：刷新后重试",
 			"SCREENING_EVALUATION_PRESENT": "facts 已有初筛评估：无需重复执行（如需重评走服务端方法）",
-			"SUMMARY_DIGEST_MISSING": "facts 缺 summary_digest：正式决策 disabled",
+			"SUMMARY_DIGEST_MISSING": "决策汇总信息不全，正式决策暂不可提交",
 			"NETWORK": "网络请求失败：检查宿主是否还在运行",
 			"BAD_RESPONSE": "宿主响应不是可解析 JSON / 信封不可用：不当作成功",
 			"READBACK_MISSING": "服务端写事务已提交但读回不到行：数据异常，不要当作成功",
@@ -538,22 +538,22 @@ window.__ModuleLoader__.load({
 			if (state === "AVAILABLE") return {
 				state,
 				status,
-				reasonText: "路由已注册（GET 返回 405，只接受 POST）；确认关闭会真的写库"
+				reasonText: "可以关闭岗位；确认后会真正保存修改"
 			};
 			if (state === "MISSING") return {
 				state,
 				status,
-				reasonText: "路由未接线（GET 返回 404）；关闭岗位不可用，客户端不发请求"
+				reasonText: "关闭岗位当前不可用，客户端不发请求"
 			};
 			if (state === "FORBIDDEN") return {
 				state,
 				status,
-				reasonText: "同源/身份校验失败（GET 返回 403）；先完成身份选择并用同源页面操作"
+				reasonText: "身份校验未通过；请先在工作台顶部选择身份，再从本页面操作"
 			};
 			return {
 				state,
 				status,
-				reasonText: status === 0 ? "探测请求网络失败（宿主可能未运行）" : `探测返回未知状态 HTTP ${String(status)}`
+				reasonText: status === 0 ? "网络请求失败（工作台可能未运行）" : `请求返回了未预期的结果（${String(status)}）`
 			};
 		}
 		/** 归一化 facts 里的 `missing[]`（只保留有 key 的条目）。 */
@@ -685,7 +685,7 @@ window.__ModuleLoader__.load({
 		function buildStageAdvanceBody(input) {
 			const applicationId = text(input.applicationId);
 			const missing = [];
-			if (!requireUuid(applicationId, "application_id", missing)) return fail(missing.some((entry) => entry.endsWith(":ID_NOT_UUID")) ? "ID_NOT_UUID" : "MISSING_APPLICATION_ID", "申请 id 缺失或不是 UUID；阶段推进只提交 application_id，服务端按已发生事实推导目标阶段", missing);
+			if (!requireUuid(applicationId, "application_id", missing)) return fail(missing.some((entry) => entry.endsWith(":ID_NOT_UUID")) ? "ID_NOT_UUID" : "MISSING_APPLICATION_ID", "申请编号缺失或格式不正确；阶段推进只提交申请编号，服务端按已发生事实推导目标阶段", missing);
 			return finish({ application_id: applicationId });
 		}
 		/** SCREENING 决策可用的 as_of（服务端原样值：优先初筛评估，其次汇总/记录 basis；都没有 → ''）。 */
@@ -757,10 +757,10 @@ window.__ModuleLoader__.load({
 		*/
 		function buildScreeningDecisionBody(input) {
 			const facts = input.facts;
-			if (facts === null) return fail("DECISION_FACTS_MISSING", "决策事实投影（GET /recruitment/api/decision/facts）不可用；客户端不编造 as_of / basis_refs，不发送请求", ["facts"]);
+			if (facts === null) return fail("DECISION_FACTS_MISSING", "决策所需信息还没有读到；客户端不会自行编造决策时点和依据，暂不发送请求", ["facts"]);
 			const applicationId = text(input.applicationId) || facts.applicationId;
 			const missing = [];
-			if (!requireUuid(applicationId, "application_id", missing)) return fail("ID_NOT_UUID", "申请 id 缺失或不是 UUID", missing);
+			if (!requireUuid(applicationId, "application_id", missing)) return fail("ID_NOT_UUID", "申请编号缺失或格式不正确", missing);
 			if (applicationId !== facts.applicationId) return fail("APPLICATION_MISMATCH", `facts 属于申请 ${facts.applicationId}，与当前申请 ${applicationId} 不一致；请刷新后重试`, ["facts.application_id"]);
 			const result = text(input.result);
 			if (!SCREENING_RESULTS.includes(result)) return fail("ENUM_INVALID", `result 只能是 ${SCREENING_RESULTS.join(" / ")}（HIRED 在 v1.0 禁用）`, ["result"]);
@@ -772,7 +772,7 @@ window.__ModuleLoader__.load({
 			if (!isOffsetIso(asOf)) return fail("AS_OF_WITHOUT_OFFSET", `facts 的 as_of 不是带时区偏移的 ISO-8601：${asOf}`, ["as_of"]);
 			const basisScreening = facts.basisScreeningDecide;
 			const rubric = basisScreening?.rubricVersion ?? null;
-			if (rubric === null) return fail("MISSING_RUBRIC_PAYLOAD_HASH", "facts.basis.screening_decide.rubric_version 缺 id/payload_hash；客户端不编造 rubric 哈希", ["rubric_version.payload_hash"]);
+			if (rubric === null) return fail("MISSING_RUBRIC_PAYLOAD_HASH", "评分标准快照信息不全：缺少编号或校验值；客户端不会自行编造", ["rubric_version.payload_hash"]);
 			const authority = basisScreening?.authority ?? null;
 			if (authority === null) return fail("MISSING_AUTHORITY_FACTS", "facts.basis.screening_decide.authority 缺失（actor_id / is_hiring_manager）；客户端不编造权威事实", ["authority"]);
 			const basisRefs = [{
@@ -819,15 +819,15 @@ window.__ModuleLoader__.load({
 		*/
 		function buildDecisionRecordBody(input) {
 			const facts = input.facts;
-			if (facts === null) return fail("DECISION_FACTS_MISSING", "决策事实投影（GET /recruitment/api/decision/facts）不可用；facade 无法被调用（不发送请求）", ["facts"]);
+			if (facts === null) return fail("DECISION_FACTS_MISSING", "决策所需信息还没有读到；暂不发送请求", ["facts"]);
 			const applicationId = text(input.applicationId) || facts.applicationId;
 			const missing = [];
-			if (!requireUuid(applicationId, "application_id", missing)) return fail("ID_NOT_UUID", "申请 id 缺失或不是 UUID", missing);
+			if (!requireUuid(applicationId, "application_id", missing)) return fail("ID_NOT_UUID", "申请编号缺失或格式不正确", missing);
 			if (applicationId !== facts.applicationId) return fail("APPLICATION_MISMATCH", `facts 属于申请 ${facts.applicationId}，与当前申请 ${applicationId} 不一致；请刷新后重试`, ["facts.application_id"]);
 			const scope = text(input.scope);
 			if (!DECISION_SCOPES.includes(scope)) return fail("ENUM_INVALID", "decision_scope 只能是 STAGE / FINAL", ["decision_scope"]);
 			const result = text(input.result);
-			if (!RECORD_RESULTS.includes(result)) return fail("ENUM_INVALID", `result 只能是 ${RECORD_RESULTS.join(" / ")}（facade 不接受 WITHDRAW/HIRED）`, ["result"]);
+			if (!RECORD_RESULTS.includes(result)) return fail("ENUM_INVALID", `结论只能是 ${RECORD_RESULTS.join(" / ")}（不支持撤回/录用）`, ["result"]);
 			const reason = typeof input.reason === "string" ? input.reason.trim() : "";
 			if (reason === "") return fail("MISSING_REASON", "正式决策必须填写理由（1..4000 字）", ["reason"]);
 			if (charLength(reason) > 4e3) return fail("REASON_OUT_OF_RANGE", "理由不得超过 4000 字", ["reason"]);
@@ -895,7 +895,7 @@ window.__ModuleLoader__.load({
 		function buildInterviewScheduleBody(input) {
 			const missing = [];
 			const applicationId = text(input.applicationId);
-			if (!requireUuid(applicationId, "application_id", missing)) return fail("ID_NOT_UUID", "申请 id 缺失或不是 UUID", missing);
+			if (!requireUuid(applicationId, "application_id", missing)) return fail("ID_NOT_UUID", "申请编号缺失或格式不正确", missing);
 			const roundNo = input.roundNo;
 			if (typeof roundNo !== "number" || !Number.isInteger(roundNo) || roundNo < 1 || roundNo > 20) return fail("ROUND_OUT_OF_RANGE", "轮次必须是 1..20 的整数（服务端 INV-4）", ["round_no"]);
 			const scheduledStartAt = text(input.scheduledStartAt);
@@ -909,7 +909,7 @@ window.__ModuleLoader__.load({
 			for (const interviewer of input.interviewers) {
 				const actorId = text(interviewer.actorId);
 				if (actorId === "") return fail("MISSING_INTERVIEWER_ACTOR", "面试官候选缺 actorId", ["interviewers[].actor_id"]);
-				if (!isUuid(actorId)) return fail("ID_NOT_UUID", `面试官 actorId 不是 UUID：${actorId}`, ["interviewers[].actor_id"]);
+				if (!isUuid(actorId)) return fail("ID_NOT_UUID", `面试官编号格式不正确：${actorId}`, ["interviewers[].actor_id"]);
 				if (seen.has(actorId)) return fail("DUPLICATE_INTERVIEWER", `面试官重复：${actorId} 只能出现一次`, ["interviewers"]);
 				seen.add(actorId);
 				const element = { actor_id: actorId };
@@ -940,12 +940,12 @@ window.__ModuleLoader__.load({
 		function buildTranscriptImportBody(input) {
 			const missing = [];
 			const interviewId = text(input.interviewId);
-			if (!requireUuid(interviewId, "interview_id", missing)) return fail("ID_NOT_UUID", "面试 id 缺失或不是 UUID（转写只能挂到已绑定的面试）", missing);
+			if (!requireUuid(interviewId, "interview_id", missing)) return fail("ID_NOT_UUID", "面试编号缺失或格式不正确（转写只能挂到已绑定的面试）", missing);
 			const content = typeof input.content === "string" ? input.content : "";
 			if (content.trim() === "") return fail("MISSING_CONTENT", "转写正文不能为空（1..400000 字符）", ["content"]);
 			if (charLength(content) > 4e5) return fail("CONTENT_OUT_OF_RANGE", "转写正文不得超过 400000 字符", ["content"]);
 			const sourceKind = text(input.sourceKind);
-			if (!TRANSCRIPT_SOURCE_KINDS.includes(sourceKind)) return fail("ENUM_INVALID", "source_kind 只能是 PLATFORM_EXPORT / DEMO_SAMPLE", ["source_kind"]);
+			if (!TRANSCRIPT_SOURCE_KINDS.includes(sourceKind)) return fail("ENUM_INVALID", "来源只能是「平台导出」或「演示样本」", ["source_kind"]);
 			const exportedFileName = text(input.exportedFileName);
 			if (sourceKind === "PLATFORM_EXPORT") {
 				if (exportedFileName === "") return fail("EXPORT_FILE_NAME_REQUIRED", "PLATFORM_EXPORT 必须填写平台导出的文件名", ["exported_file_name"]);
@@ -970,8 +970,8 @@ window.__ModuleLoader__.load({
 			const missing = [];
 			const jobId = text(input.jobId);
 			const rubricVersionId = text(input.rubricVersionId);
-			if (!requireUuid(jobId, "job_id", missing)) return fail("ID_NOT_UUID", "岗位 id 缺失或不是 UUID", missing);
-			if (!requireUuid(rubricVersionId, "rubric_version_id", missing)) return fail("ID_NOT_UUID", "rubric 版本 id 缺失或不是 UUID", missing);
+			if (!requireUuid(jobId, "job_id", missing)) return fail("ID_NOT_UUID", "岗位编号缺失或格式不正确", missing);
+			if (!requireUuid(rubricVersionId, "rubric_version_id", missing)) return fail("ID_NOT_UUID", "评分标准版本编号缺失或格式不正确", missing);
 			const reason = typeof input.reason === "string" ? input.reason.trim() : "";
 			if (charLength(reason) > 500) return fail("REASON_OUT_OF_RANGE", "批准理由不得超过 500 字", ["reason"]);
 			return finish({
@@ -1003,7 +1003,7 @@ window.__ModuleLoader__.load({
 			if (!CONFIG_ENTITIES.includes(entity)) return fail("UNKNOWN_ENTITY", "entity 只能是 role / team / pipeline", ["entity"]);
 			const operation = text(input.operation);
 			const allowed = CONFIG_WRITE_OPERATIONS[entity] ?? [];
-			if (operation === "") return fail("MISSING_OPERATION", "缺必填字段 operation", ["operation"]);
+			if (operation === "") return fail("MISSING_OPERATION", "请选择要执行的操作（新增或修改）", ["operation"]);
 			if (!allowed.includes(operation)) {
 				const isReadOperation = [
 					"list",
@@ -1011,7 +1011,7 @@ window.__ModuleLoader__.load({
 					"read",
 					"search"
 				].includes(operation);
-				return fail(isReadOperation ? "READ_OPERATION_NOT_EXPOSED" : "OPERATION_INVALID", isReadOperation ? "写入口只接受写 operation；读/list/get 走既有只读投影" : `operation 只能是 ${allowed.join(" / ")}`, ["operation"]);
+				return fail(isReadOperation ? "READ_OPERATION_NOT_EXPOSED" : "OPERATION_INVALID", isReadOperation ? "这里只能提交新增或修改；查看请到对应的列表页" : `只能执行 ${allowed.join(" / ")} 操作`, ["operation"]);
 			}
 			const fields = record(input.fields);
 			if (operation === "create") {
@@ -1157,14 +1157,14 @@ window.__ModuleLoader__.load({
 			if (title === "") missing.push("title");
 			if (charLength(title) > 200) return fail("TITLE_OUT_OF_RANGE", "岗位名称不得超过 200 字", ["title"]);
 			if (!requireUuid(departmentId, "department_id", missing)) {
-				if (missing.includes("department_id:ID_NOT_UUID")) return fail("ID_NOT_UUID", "部门 id 不是 UUID（必须来自 settings.departments）", ["department_id"]);
+				if (missing.includes("department_id:ID_NOT_UUID")) return fail("ID_NOT_UUID", "部门编号格式不正确（必须从部门列表中选择）", ["department_id"]);
 			}
 			const descriptionMd = typeof input.descriptionMd === "string" ? input.descriptionMd : "";
 			const requirementsMd = typeof input.requirementsMd === "string" ? input.requirementsMd : "";
 			if (charLength(descriptionMd) > 2e4) return fail("DESCRIPTION_OUT_OF_RANGE", "description_md 不得超过 20000 字", ["description_md"]);
 			if (charLength(requirementsMd) > 2e4) return fail("REQUIREMENTS_OUT_OF_RANGE", "requirements_md 不得超过 20000 字", ["requirements_md"]);
 			if (missing.length > 0) return fail("MISSING_REQUIRED", `岗位创建缺必填字段：${missing.join(", ")}`, missing);
-			if (input.criteria.length === 0) return fail("CRITERIA_REQUIRED", "岗位创建至少需要 1 条 rubric 维度（1..50）", ["criteria"]);
+			if (input.criteria.length === 0) return fail("CRITERIA_REQUIRED", "岗位创建至少需要 1 条评分维度（1..50）", ["criteria"]);
 			if (input.criteria.length > 50) return fail("CRITERIA_OUT_OF_RANGE", "criteria 最多 50 条", ["criteria"]);
 			const criteria = [];
 			let weightSum = 0;
@@ -1230,8 +1230,8 @@ window.__ModuleLoader__.load({
 		* @param sessionId - 宿主传入的 session id（**只从形参来，不读 localStorage**）。
 		*/
 		function checkWriteRequest(path, body, sessionId) {
-			if (text(sessionId) === "") return refuse("SESSION_MISSING", "缺少当前 DSH session id（由宿主 props 传入），客户端不发送写请求", ["sessionId"]);
-			if (path === "" || !path.startsWith("/recruitment/") || path.startsWith("//")) return refuse("UNSAFE_SEAM", `写动作路径必须是同源相对 /recruitment/ 路径（当前：${path}）`, ["path"]);
+			if (text(sessionId) === "") return refuse("SESSION_MISSING", "还没有识别到当前身份：请先在工作台顶部选择身份", ["sessionId"]);
+			if (path === "" || !path.startsWith("/recruitment/") || path.startsWith("//")) return refuse("UNSAFE_SEAM", `写动作必须通过本页面发起（当前路径：${path}），客户端不发送请求`, ["path"]);
 			if (Object.keys(body).length === 0) return refuse("EMPTY_BODY", "写请求 body 为空（固定发 {} 会被服务端 400 MISSING_REQUIRED）", ["body"]);
 			const reserved = reservedKeysOf(body);
 			if (reserved.length > 0) return refuse("CLIENT_RESERVED_KEY", `body 含客户端禁止上送的身份/服务端派生键：${reserved.join(", ")}；客户端不发送`, reserved);
@@ -1239,7 +1239,7 @@ window.__ModuleLoader__.load({
 		}
 		/** 动作写请求的自检：在 {@link checkWriteRequest} 之前先看服务端可用性。 */
 		function checkActionRequest(action, body, sessionId) {
-			if (!action.available) return refuse("ACTION_NOT_AVAILABLE", `动作 ${action.key} 服务端声明不可用（pending: ${action.pending !== "" ? action.pending : "ACTION_SEAM_NOT_WIRED"}）；客户端不发送`, ["action.available"]);
+			if (!action.available) return refuse("ACTION_NOT_AVAILABLE", `动作 ${action.key} 当前不可用（${action.pending !== "" ? action.pending : "尚未提供入口"}）；客户端不发送`, ["action.available"]);
 			return checkWriteRequest(action.seam, body, sessionId);
 		}
 		/** 读回行的 label：已知键给中文，未知键原样（记录里没有业务结论）。 */
@@ -3466,7 +3466,7 @@ window.__ModuleLoader__.load({
 							status: 0,
 							code: "CLIENT_REFUSED",
 							reasonCode: "SESSION_MISSING",
-							message: "缺少当前 DSH session id（由宿主 props 传入），客户端不读取决策事实",
+							message: "还没有识别到当前身份，客户端不会读取决策所需信息",
 							rawBody: ""
 						}
 					});
@@ -3954,7 +3954,7 @@ window.__ModuleLoader__.load({
 		/** 轮次重点来源 → 展示文案（未知来源原样显示，不冒充已知枚举）。 */
 		const SOURCE_LABELS = {
 			ROUND_CONFIG: "轮次配置（本轮专属）",
-			JOB_BASE: "岗位 Rubric 底座（JOB_BASE 降级）"
+			JOB_BASE: "岗位标准（本轮没有单独配置）"
 		};
 		/** 轮次重点来源 → chip 色档（ROUND_CONFIG 绿 / JOB_BASE 琥珀 / 未知灰）。 */
 		const SOURCE_TONES = {
@@ -4146,7 +4146,7 @@ window.__ModuleLoader__.load({
 							children: [
 								"当前来源：",
 								sourceLabelOf(focus.source),
-								"；降级内容由服务端 reason 决定，客户端不用岗位 Rubric 冒充本轮重点。"
+								"；降级内容由服务端 reason 决定，客户端不会把岗位标准当作本轮重点。"
 							]
 						})
 					]
@@ -4261,7 +4261,7 @@ window.__ModuleLoader__.load({
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 							tone: header.applicationRubric === null ? "gray" : header.applicationRubric.approved ? "green" : "amber",
 							testid: "detail-application-rubric",
-							children: ["本申请钉住 Rubric · ", applicationRubricTextOf(header.applicationRubric)]
+							children: ["本申请钉住岗位标准 · ", applicationRubricTextOf(header.applicationRubric)]
 						}),
 						refreshButton
 					]
@@ -4324,7 +4324,7 @@ window.__ModuleLoader__.load({
 								material.entryCounts.work,
 								" 条 · 教育经历 ",
 								material.entryCounts.education,
-								" 条 · 证据",
+								" 条 · 原文出处",
 								" ",
 								material.evidenceCount,
 								" 条"
@@ -4424,7 +4424,7 @@ window.__ModuleLoader__.load({
 					style: { marginTop: 14 },
 					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "rcw-cap",
-						children: "简历证据（页码 + 短引文；不含 PII）"
+						children: "简历原文出处（页码 + 短引文；不含 PII）"
 					}), resume.evidenceSamples.map((sample, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "rcw-quote",
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -4486,12 +4486,12 @@ window.__ModuleLoader__.load({
 								mono: true
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(KeyValue, {
-								label: "rubric 版本 id",
+								label: "岗位标准 版本 id",
 								value: decision.rubricVersionId,
 								mono: true
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(KeyValue, {
-								label: "basis kinds",
+								label: "决策依据来源",
 								value: decision.basisKinds.length > 0 ? decision.basisKinds.join("、") : ""
 							})
 						]
@@ -4501,23 +4501,31 @@ window.__ModuleLoader__.load({
 						style: { marginTop: 12 },
 						"data-testid": "screening-evaluation",
 						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", { children: "SCREENING_EVALUATION 机器证据" }),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", { children: "初筛结论 · 逐条对照" }),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "rcw-chiprow",
 								style: { marginTop: 6 },
 								children: [
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 										tone: decision.evaluation.verdict !== "" ? "blue" : "gray",
-										children: ["verdict · ", decision.evaluation.verdict !== "" ? decision.evaluation.verdict : "未提供"]
+										children: [
+											"初筛结果 ·",
+											" ",
+											decision.evaluation.verdict === "" ? "还没有结论" : decision.evaluation.verdict === "PASS" ? "通过（PASS）" : decision.evaluation.verdict === "FAIL" ? "未通过（FAIL）" : decision.evaluation.verdict === "NEEDS_REVIEW" ? "需要人工再看（NEEDS_REVIEW）" : decision.evaluation.verdict
+										]
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 										tone: decision.evaluation.provenanceTone,
-										children: ["provenance · ", decision.evaluation.provenance !== "" ? decision.evaluation.provenance : "未提供"]
+										children: [
+											"材料来源 ·",
+											" ",
+											decision.evaluation.provenance === "" ? "未标注" : decision.evaluation.provenance === "LIVE" ? "真实读取（LIVE）" : decision.evaluation.provenance === "FIXTURE" ? "演示数据（FIXTURE）" : decision.evaluation.provenance
+										]
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 										tone: decision.evaluation.criteriaEvaluated === true ? "green" : "gray",
 										children: [
-											"criteria_evaluated ·",
+											"逐条对照 ·",
 											" ",
 											decision.evaluation.criteriaEvaluated === null ? "未提供" : decision.evaluation.criteriaEvaluated ? "是" : "否"
 										]
@@ -4528,17 +4536,17 @@ window.__ModuleLoader__.load({
 								style: { marginTop: 8 },
 								children: [
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(KeyValue, {
-										label: "evaluation digest",
+										label: "初筛记录标识",
 										value: decision.evaluation.evaluationDigestText,
 										mono: true
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(KeyValue, {
-										label: "凭据 resume_version",
+										label: "依据的材料版本",
 										value: decision.evaluation.resumeVersionId,
 										mono: true
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(KeyValue, {
-										label: "凭据 rubric_version",
+										label: "依据的岗位标准版本",
 										value: decision.evaluation.rubricVersionId,
 										mono: true
 									})
@@ -4548,23 +4556,23 @@ window.__ModuleLoader__.load({
 					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: "rcw-muted rcw-tiny",
 						style: { marginTop: 10 },
-						children: "该初筛结论没有携带 SCREENING_EVALUATION 分片（basis_refs 里没有机器证据）。"
+						children: "这次初筛没有留下逐条对照的记录。"
 					})
 				] }),
 				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "rcw-subhead",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", { children: "Rubric 维度快照" }), rubric !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", { children: "岗位标准维度快照" }), rubric !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						className: "rcw-dim rcw-tiny",
 						children: [
-							"初筛结论所用 Rubric 快照 · v",
+							"本次初筛使用的岗位标准 · 第 ",
 							String(rubric.versionNo),
-							" · ",
+							" 版 · ",
 							rubric.dimensions.length,
-							" 个维度"
+							" 条"
 						]
 					}) : null]
 				}),
-				rubric === null || rubric.dimensions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptyState, { children: "没有可用的 rubric 维度快照。" }) : rubric.dimensions.map((dimension) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				rubric === null || rubric.dimensions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptyState, { children: "没有可用的岗位标准维度快照。" }) : rubric.dimensions.map((dimension) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "rcw-criteria",
 					"data-dim-key": dimension.key,
 					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "rcw-dot rcw-dot-blue" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -4761,7 +4769,7 @@ window.__ModuleLoader__.load({
 									value: transcript.record.verificationStatus
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(KeyValue, {
-									label: "证据齐备",
+									label: "含原文引用",
 									value: transcript.record.evidenceOk ? "是" : "否"
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(KeyValue, {
@@ -4769,7 +4777,7 @@ window.__ModuleLoader__.load({
 									value: transcript.record.isCurrent ? "是" : "否"
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(KeyValue, {
-									label: "chunk coverage",
+									label: "转写覆盖",
 									value: transcript.record.chunkCoverageText !== "" ? transcript.record.chunkCoverageText : ""
 								})
 							]
@@ -4902,7 +4910,7 @@ window.__ModuleLoader__.load({
 								value: decision.scope
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(KeyValue, {
-								label: "basis kinds",
+								label: "决策依据来源",
 								value: decision.basisKinds.join("、")
 							}),
 							decision.supersededBy !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(KeyValue, {
@@ -5109,7 +5117,7 @@ window.__ModuleLoader__.load({
 						})
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FormField, {
-						label: "理由（1..4000 字；REJECT 必须引到 rubric 维度 key）",
+						label: "理由（1..4000 字；REJECT 必须引到岗位标准维度 key）",
 						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
 							"data-testid": "screening-reason",
 							rows: 3,
@@ -5332,7 +5340,7 @@ window.__ModuleLoader__.load({
 						})
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FormField, {
-						label: "来源（source_kind）",
+						label: "来源",
 						hint: sourceKind === "DEMO_SAMPLE" ? "DEMO_SAMPLE = 演示文本（provenance=FIXTURE，附 FIXTURE_CONTENT_NOT_LIVE 警告；不是真实平台导出件）" : "PLATFORM_EXPORT = 平台导出件（provenance=LIVE，必须填导出文件名）",
 						children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
 							className: "rcw-select",
@@ -5831,7 +5839,7 @@ window.__ModuleLoader__.load({
 									})
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LazySection, {
-									title: "初筛证据 · rubric 维度 / SCREENING_EVALUATION / basis kinds",
+									title: "初筛依据 · 岗位标准逐条对应 / 初筛结论 / 依据来源",
 									testid: "section-screening",
 									available: detail !== void 0,
 									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ScreeningSection, { evidence: detail?.screeningEvidence ?? {
@@ -5989,7 +5997,7 @@ window.__ModuleLoader__.load({
 										className: "rcw-textbtn",
 										"data-testid": "open-job-from-detail",
 										onClick: props.onOpenJob,
-										children: "查看该岗位版本与 rubric →"
+										children: "查看该岗位版本与岗位标准 →"
 									})
 								]
 							})
@@ -6566,7 +6574,7 @@ window.__ModuleLoader__.load({
 							"data-testid": "job-draft-criteria",
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: "rcw-cap",
-								children: "评分标准（rubric_draft.dimensions）"
+								children: "评分标准（未保存的草稿维度）"
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: "rcw-tablewrap",
 								children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("table", {
@@ -6827,7 +6835,7 @@ window.__ModuleLoader__.load({
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									"data-testid": `application-row-${row.id}-rubric`,
 									children: [
-										"本申请钉住 Rubric · ",
+										"本申请钉住岗位标准 · ",
 										applicationRubricTextOf(row.applicationRubric),
 										rubricConsistency
 									]
@@ -6926,7 +6934,7 @@ window.__ModuleLoader__.load({
 							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 								tone: "gray",
 								testid: "job-rubric",
-								children: "未关联 rubric"
+								children: "未关联岗位标准"
 							}),
 							job.postings.map((posting) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 								tone: posting.tone,
@@ -7000,7 +7008,7 @@ window.__ModuleLoader__.load({
 										if (rubricPendingText !== "") return;
 										onApproveRubric();
 									},
-									children: rubricBusy ? "提交中…" : "批准 Rubric"
+									children: rubricBusy ? "提交中…" : "批准岗位标准"
 								}), rubricPendingText !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									className: "rcw-pending",
 									"data-testid": "rubric-approve-pending",
@@ -7033,7 +7041,7 @@ window.__ModuleLoader__.load({
 								className: "rcw-btn",
 								"data-testid": "toggle-job-detail",
 								onClick: onToggleJobDetail,
-								children: jobDetailOpen ? "收起岗位版本与 rubric" : "查看岗位版本与 rubric"
+								children: jobDetailOpen ? "收起岗位版本与岗位标准" : "查看岗位版本与岗位标准"
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
@@ -7072,7 +7080,7 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "rcw-sectionhead",
 						style: { marginTop: 0 },
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "岗位详情 · 版本与 rubric" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "岗位详情 · 版本与岗位标准" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
 							className: "rcw-btn rcw-btn-sm",
 							"data-testid": "close-job-detail",
@@ -7111,7 +7119,7 @@ window.__ModuleLoader__.load({
 									]
 								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 									tone: "gray",
-									children: "未关联 rubric"
+									children: "未关联岗位标准"
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreeDimBadges, {
 									labels: jobDetail.labels,
@@ -7152,9 +7160,9 @@ window.__ModuleLoader__.load({
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: "rcw-subhead",
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", { children: "Rubric 维度" })
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", { children: "岗位标准维度" })
 						}),
-						jobDetail.rubric === null || jobDetail.rubric.dimensions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptyState, { children: "该岗位没有可用的 rubric 维度。" }) : jobDetail.rubric.dimensions.map((dimension) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						jobDetail.rubric === null || jobDetail.rubric.dimensions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptyState, { children: "该岗位没有可用的岗位标准维度。" }) : jobDetail.rubric.dimensions.map((dimension) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: "rcw-criteria",
 							"data-dim-key": dimension.key,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "rcw-dot rcw-dot-blue" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -7961,7 +7969,7 @@ window.__ModuleLoader__.load({
 			const rubricApproved = rubricJob?.rubric?.approved === true || jobDetailOpen && jobDetail.data?.rubric?.approved === true;
 			const rubricPendingText = (() => {
 				if (!isRecruiter) return aliasNote;
-				if (rubricAction === void 0) return "当前页面版本没有提供「批准 Rubric」操作。";
+				if (rubricAction === void 0) return "当前页面版本没有提供「批准岗位标准」操作。";
 				if (!rubricAction.available) return rubricAction.reasonText !== "" ? rubricAction.reasonText : "暂时不能批准评分标准。";
 				if (rubricJobId === "") return "还没有选中岗位，暂时不能批准评分标准。";
 				if (rubricVersionId === "") return "服务端没有返回当前评分标准的版本，无法批准（界面不会猜一个版本）。";
@@ -8015,7 +8023,7 @@ window.__ModuleLoader__.load({
 				if (!built.ok) {
 					setFeedback({
 						tone: "error",
-						title: "Rubric 批准未发送：表单预检未通过",
+						title: "岗位标准批准未发送：表单预检未通过",
 						message: `${built.reasonCode}：${built.reasonText}${built.missing.length > 0 ? `；缺少：${built.missing.join("、")}` : ""}`,
 						rawBody: ""
 					});
@@ -8374,7 +8382,7 @@ window.__ModuleLoader__.load({
 										}),
 										actionOutcome !== void 0 && actionOutcome.key === "rubric_approve" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OutcomeReadbackCard, {
 											outcome: actionOutcome,
-											title: "Rubric 批准读回（信封 readback：approval / rubric / job）",
+											title: "岗位标准批准读回（信封 readback：approval / rubric / job）",
 											testid: "rubric-approve-readback"
 										}) : null,
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CloseJobResultCard, {
@@ -8411,7 +8419,7 @@ window.__ModuleLoader__.load({
 											note: `共 ${String(rowsForJob.length)} 条申请 · 显示 ${String(rowsForFilter.length)} 条`,
 											right: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 												className: "rcw-dim rcw-tiny",
-												children: "点击行查看申请详情（结论 + 渐进展开证据）"
+												children: "点击行查看申请详情（结论 + 逐条展开的对应情况与原文出处）"
 											})
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
@@ -8478,18 +8486,18 @@ window.__ModuleLoader__.load({
 		}
 		// src/client/interviewer/round.ts
 		/** 旧端点（两键都缺）的固定文案：明确"不伪造本轮重点"。 */
-		const ROUND_SERVER_FIELDS_MISSING_TEXT = "服务端未提供轮次配置（task-50 端点未就绪）→ JOB_BASE 降级，不伪造本轮重点";
+		const ROUND_SERVER_FIELDS_MISSING_TEXT = "服务端这一次没有提供本轮配置，界面没有本轮单独的考察重点，请按岗位标准查看";
 		/** fail-closed 的固定文案（W3B-CONTRACT §4.2 逐字）。 */
-		const ROUND_SCHEMA_MISMATCH_TEXT = "本轮评分表与面评表单 spec 不一致，已 fail-closed（不写库）";
+		const ROUND_SCHEMA_MISMATCH_TEXT = "本轮评分表与面评表单不一致，已停止，未写库";
 		/** 来源文案表（W3B-CONTRACT §3 逐字）。 */
 		const ROUND_SOURCE_TEXT = {
 			ROUND_CONFIG: "轮次配置（本场有专属考察重点与评分表覆盖）",
 			ROUND_OVERRIDE: "轮次覆盖（本轮评分表在岗位底座上有覆盖）",
-			JOB_BASE: "岗位基础（JOB_BASE 降级：服务端未提供该轮配置）",
-			TEMPLATE: "面试模板（旧 brief，非轮次配置）"
+			JOB_BASE: "岗位通用标准（服务端未提供本轮专属配置）",
+			TEMPLATE: "面试模板（旧的面试说明，不是本轮配置）"
 		};
 		/** 旧端点降级的来源文案（两键都缺；与普通 JOB_BASE 区分，说明 task-50 未就绪）。 */
-		const ROUND_OLD_ENDPOINT_SOURCE_TEXT = "岗位基础（JOB_BASE 降级：服务端未提供轮次配置，task-50 端点未就绪）";
+		const ROUND_OLD_ENDPOINT_SOURCE_TEXT = "岗位通用标准（服务端未提供本轮配置，暂时无法给出本轮专属重点）";
 		/** 取一个对象；null / 数组 / 非对象一律降级为空对象。 */
 		function asRecord$1(value) {
 			return value !== null && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -8771,7 +8779,7 @@ window.__ModuleLoader__.load({
 			}
 			if (!hasRubric) rubric = legacyRubricFallback(legacyRubric, roundNo, "服务端未提供 effective_rubric（仅有 round_focus）→ 评分维度回退到旧 row.rubric（不伪造轮次覆盖）");
 			if (hasFocus && focus.round_no > 0 && roundNo > 0 && focus.round_no !== roundNo) {
-				conflictReasons.push(`round_focus.round_no=${focus.round_no} 与面试 round_no=${roundNo} 不一致；不套用轮次考察重点，只显示 JOB_BASE 降级`);
+				conflictReasons.push(`round_focus.round_no=${focus.round_no} 与面试 round_no=${roundNo} 不一致；不套用轮次考察重点，只显示岗位标准`);
 				focus = {
 					...focus,
 					available: false,
@@ -8783,7 +8791,7 @@ window.__ModuleLoader__.load({
 					reason: focus.reason !== "" ? `${focus.reason}；${ROUND_SERVER_FIELDS_MISSING_TEXT}` : `round_focus.round_no=${focus.round_no} 与面试 round_no=${roundNo} 不一致，不套用轮次考察重点`
 				};
 			}
-			if (rubric.declaredRoundRubricVersionId !== "" && rubric.declaredRoundRubricVersionId !== rubric.baseRubricVersionId) conflictReasons.push(`轮次模板声明的 rubric 版本（${rubric.declaredRoundRubricVersionId}）与申请钉住的 base（${rubric.baseRubricVersionId !== "" ? rubric.baseRubricVersionId : "服务端未提供"}）不一致；按 base/JOB_BASE 维度渲染，UI 不自行换版本`);
+			if (rubric.declaredRoundRubricVersionId !== "" && rubric.declaredRoundRubricVersionId !== rubric.baseRubricVersionId) conflictReasons.push(`轮次模板声明的 rubric 版本（${rubric.declaredRoundRubricVersionId}）与申请钉住的 base（${rubric.baseRubricVersionId !== "" ? rubric.baseRubricVersionId : "服务端未提供"}）不一致；按岗位基础维度渲染，界面不自行换版本`);
 			return {
 				focus,
 				rubric,
@@ -8801,7 +8809,7 @@ window.__ModuleLoader__.load({
 		function roundSourceText(source, serverFieldsMissing = false) {
 			if (serverFieldsMissing) return ROUND_OLD_ENDPOINT_SOURCE_TEXT;
 			const value = asText$1(source);
-			if (value === "") return "未知来源（服务端未提供 source）";
+			if (value === "") return "未知来源（服务端没有说明来源）";
 			return ROUND_SOURCE_TEXT[value] ?? `未知来源（${value}，原样显示）`;
 		}
 		/**
@@ -8813,7 +8821,7 @@ window.__ModuleLoader__.load({
 			if (view.serverFieldsMissing) return ROUND_SERVER_FIELDS_MISSING_TEXT;
 			if (view.focus.reason !== "") return view.focus.reason;
 			if (view.conflict && view.conflictReason !== "") return view.conflictReason;
-			return "服务端未提供本轮轮次配置（JOB_BASE 降级，不伪造本轮重点；评分维度见下方 effective schema）";
+			return "服务端未提供本轮专属配置（按岗位通用标准展示，评分维度见下方「本轮评分表 · 岗位标准」）";
 		}
 		/**
 		* 面评表单的 effective schema 派生（W3B-CONTRACT §4.2）。
@@ -8890,7 +8898,7 @@ window.__ModuleLoader__.load({
 				usable: fields.length > 0 && !mismatch,
 				mismatch,
 				mismatchKeys,
-				mismatchText: mismatchKeys.length > 0 ? `${ROUND_SCHEMA_MISMATCH_TEXT}（差异 key：${mismatchKeys.join("、")}）` : ROUND_SCHEMA_MISMATCH_TEXT
+				mismatchText: mismatchKeys.length > 0 ? `${ROUND_SCHEMA_MISMATCH_TEXT}（不一致项：${mismatchKeys.join("、")}）` : ROUND_SCHEMA_MISMATCH_TEXT
 			};
 		}
 		// src/client/interviewer/normalize.ts
@@ -8960,7 +8968,7 @@ window.__ModuleLoader__.load({
 		/** 简报来源的中文含义（服务端标注，客户端不冒充"原简报"）。 */
 		const BRIEF_SOURCE_TEXT = {
 			TEMPLATE: "面试模板",
-			JOB_RUBRIC: "岗位 Rubric 维度",
+			JOB_RUBRIC: "岗位标准维度",
 			NONE: "无简报"
 		};
 		/** 一条面试行里"我"的身份只可能是已登记的面试官（契约 §1.4）。 */
@@ -9517,7 +9525,7 @@ window.__ModuleLoader__.load({
 		function buildScorecardSubmitBody(spec, answers) {
 			if (spec.interview.id === "") return {
 				ok: false,
-				message: "服务端未返回面试 id（fail-closed，未提交）。"
+				message: "服务端未返回面试 id，无法提交（未提交）。"
 			};
 			if (spec.mode !== "CREATE") return {
 				ok: false,
@@ -9525,20 +9533,20 @@ window.__ModuleLoader__.load({
 			};
 			if (spec.nonce === "") return {
 				ok: false,
-				message: "服务端未返回一次性 nonce（W1），无法提交（fail-closed）。"
+				message: "服务端未返回一次性校验信息（nonce），无法提交（未提交）。"
 			};
 			if (spec.transcript_basis.value === "") return {
 				ok: false,
-				message: "服务端未返回转写依据（transcript_basis），无法提交（fail-closed）。"
+				message: "服务端未返回转写依据（transcript_basis），无法提交（未提交）。"
 			};
 			if (spec.dimensions.length === 0) return {
 				ok: false,
-				message: "服务端没有返回可填写的 rubric 维度，无法提交（fail-closed）。"
+				message: "服务端没有返回可填写的评分维度，无法提交（未提交）。"
 			};
 			const overall = asText(answers.overall);
 			if (!spec.overall_options.includes(overall)) return {
 				ok: false,
-				message: spec.overall_options.length === 0 ? "服务端没有返回 overall 选项，无法提交（fail-closed）。" : `overall 必须是服务端给出的选项之一（${spec.overall_options.join(" / ")}）。`
+				message: spec.overall_options.length === 0 ? "服务端没有返回综合结论（overall）选项，无法提交（未提交）。" : `overall 必须是服务端给出的选项之一（${spec.overall_options.join(" / ")}）。`
 			};
 			const dimensions = {};
 			for (const dimension of spec.dimensions) {
@@ -9554,7 +9562,7 @@ window.__ModuleLoader__.load({
 				};
 				if (!dimension.assessmentOptions.includes(assessment)) return {
 					ok: false,
-					message: dimension.assessmentOptions.length === 0 ? `维度 ${dimension.label}（${dimension.key}）没有服务端枚举选项，不能提交（fail-closed）。` : `维度 ${dimension.label}（${dimension.key}）的 assessment 不在服务端选项内。`
+					message: dimension.assessmentOptions.length === 0 ? `维度 ${dimension.label}（${dimension.key}）没有服务端给出的可选项，不能提交（未提交）。` : `维度 ${dimension.label}（${dimension.key}）的 assessment 不在服务端选项内。`
 				};
 				const scored = assessment === "MET" || assessment === "NOT_MET";
 				let score;
@@ -10092,7 +10100,7 @@ window.__ModuleLoader__.load({
 		async function fetchInterviewerOverview(options) {
 			const sessionId = options.sessionId.trim();
 			const alias = options.alias.trim();
-			if (sessionId === "" || alias === "") throw new RecruitmentHttpError(0, "DEMO_ACTOR_UNMAPPED", "SESSION_NOT_BOUND", "当前 Session 尚未绑定演示身份（fail-closed）：请先在顶部选择身份", void 0);
+			if (sessionId === "" || alias === "") throw new RecruitmentHttpError(0, "DEMO_ACTOR_UNMAPPED", "SESSION_NOT_BOUND", "尚未绑定演示身份，未读取任何数据：请先在顶部选择身份", void 0);
 			const query = new URLSearchParams({ alias });
 			const interviewId = (options.interviewId ?? "").trim();
 			if (interviewId !== "") query.set("interview_id", interviewId);
@@ -10110,7 +10118,7 @@ window.__ModuleLoader__.load({
 		async function fetchScorecardFormSpec(options) {
 			const sessionId = options.sessionId.trim();
 			const interviewId = options.interviewId.trim();
-			if (sessionId === "") throw new RecruitmentHttpError(0, "DEMO_ACTOR_UNMAPPED", "SESSION_NOT_BOUND", "当前 Session 尚未绑定演示身份（fail-closed）：请先在顶部选择身份", void 0);
+			if (sessionId === "") throw new RecruitmentHttpError(0, "DEMO_ACTOR_UNMAPPED", "SESSION_NOT_BOUND", "尚未绑定演示身份，未读取任何数据：请先在顶部选择身份", void 0);
 			if (interviewId === "") throw new RecruitmentHttpError(0, "INVALID_ARGS", "INTERVIEW_ID_REQUIRED", "缺少面试 id，无法读取面评表单", void 0);
 			const query = new URLSearchParams({ interview_id: interviewId });
 			const applicationId = (options.applicationId ?? "").trim();
@@ -10133,7 +10141,7 @@ window.__ModuleLoader__.load({
 		*/
 		async function submitScorecard(options) {
 			const sessionId = options.sessionId.trim();
-			if (sessionId === "") throw new RecruitmentHttpError(0, "DEMO_ACTOR_UNMAPPED", "SESSION_NOT_BOUND", "当前 Session 尚未绑定演示身份（fail-closed）：请先在顶部选择身份", void 0);
+			if (sessionId === "") throw new RecruitmentHttpError(0, "DEMO_ACTOR_UNMAPPED", "SESSION_NOT_BOUND", "尚未绑定演示身份，未读取任何数据：请先在顶部选择身份", void 0);
 			return normalizeSubmitResult(await requestJson(SCORECARD_SUBMIT_ENDPOINT, sessionId, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
@@ -10335,10 +10343,10 @@ window.__ModuleLoader__.load({
 					className: "iw-notice iw-notice-warn",
 					role: "alert",
 					"data-testid": "scorecard-unavailable",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "服务端面评提交入口未就绪（W1）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", { children: [
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "服务端面评提交入口未就绪" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", { children: [
 						"读取面评表单失败（HTTP ",
 						described.status,
-						"）。本表单不会本地假写，也不会显示假成功；W1 端点就绪后重新打开即可。"
+						"）。本表单不会本地假写，也不会显示假成功；服务端就绪后重新打开即可。"
 					] })]
 				}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "iw-errorbox",
@@ -10374,7 +10382,7 @@ window.__ModuleLoader__.load({
 			}
 			if (spec === void 0) return shell("ERROR", props.interviewId, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 				className: "iw-formloading",
-				children: "服务端没有返回面评表单（fail-closed）。"
+				children: "服务端没有返回面评表单，表单未提交。"
 			}));
 			const readonly = spec.mode !== "CREATE";
 			const nonceProblem = submitFailure !== void 0 && NONCE_PROBLEM_CODES.includes(submitFailure.code);
@@ -10385,7 +10393,7 @@ window.__ModuleLoader__.load({
 			return shell(spec.mode, spec.interview.id !== "" ? spec.interview.id : props.interviewId, /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 					className: "iw-modaldesc",
-					children: "按本轮 rubric 记录你的独立观察。Agent 不代替面试官提交；提交走 W1 Host Remote Action，写库后回显服务端 DB 读回。"
+					children: "按本轮评分标准记录你的独立观察。Agent 不代替面试官提交；提交后会回显服务端保存结果。"
 				}),
 				props.round !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "iw-roundctx",
@@ -10399,7 +10407,7 @@ window.__ModuleLoader__.load({
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "本轮考察重点（只读）" }),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "iw-tiny iw-muted",
-							children: props.round.serverFieldsMissing || !props.round.focus.available ? "岗位基础（JOB_BASE 降级：服务端未提供该轮配置）" : roundSourceText(props.round.focus.source)
+							children: props.round.serverFieldsMissing || !props.round.focus.available ? "岗位通用标准（服务端未提供该轮专属配置）" : roundSourceText(props.round.focus.source)
 						}),
 						props.round.focus.available ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: props.round.focus.title }),
@@ -10423,7 +10431,7 @@ window.__ModuleLoader__.load({
 							}) : null
 						] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "iw-tiny iw-muted",
-							children: "服务端未提供该轮配置（JOB_BASE 降级）；提交仍按服务端 form spec 的维度键，界面不伪造本轮重点。"
+							children: "服务端未提供该轮专属配置（按岗位通用标准展示）；提交仍按服务端下发的评分维度，界面不编造本轮重点。"
 						})
 					]
 				}) : null,
@@ -10464,7 +10472,7 @@ window.__ModuleLoader__.load({
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "iw-tiny",
-							children: "已禁用提交：不写库，避免脏面评。请服务端修正本轮评分表与 form spec 后重试。"
+							children: "已禁用提交：未写库，避免产生错误面评。请修正本轮评分表与面评表单后重试。"
 						})
 					]
 				}) : null,
@@ -10488,7 +10496,7 @@ window.__ModuleLoader__.load({
 						spec.dimensions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "iw-validation",
 							role: "alert",
-							children: "服务端没有返回可填写的 rubric 维度，无法提交（fail-closed）。"
+							children: "服务端没有返回可填写的评分维度，无法提交（未提交）。"
 						}) : null,
 						plannedFields.map((field) => {
 							const dimension = field.spec;
@@ -10514,7 +10522,7 @@ window.__ModuleLoader__.load({
 											dimension.kind !== "" ? dimension.kind : "未提供",
 											" · 权重：",
 											field.weight,
-											field.overridden ? ` · 本轮 effective schema（origin=${field.origin !== "" ? field.origin : "未提供"}）` : ""
+											field.overridden ? ` · 按本轮标准调整（来源：${field.origin !== "" ? field.origin : "未提供"}）` : ""
 										]
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -10541,7 +10549,7 @@ window.__ModuleLoader__.load({
 											}),
 											dimension.assessmentOptions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 												className: "iw-fieldhelp",
-												children: "服务端未给该维度的 assessment 枚举（不可提交，fail-closed）。"
+												children: "服务端未给该维度的可选项（不可提交，未提交）。"
 											}) : null
 										]
 									}),
@@ -10595,7 +10603,7 @@ window.__ModuleLoader__.load({
 										disabled: readonly || spec.overall_options.length === 0,
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
 											value: "",
-											children: spec.overall_options.length === 0 ? "服务端未提供 overall 选项（fail-closed）" : "请选择"
+											children: spec.overall_options.length === 0 ? "服务端未提供综合结论选项（未提交）" : "请选择"
 										}), spec.overall_options.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
 											value: option,
 											children: overallText(option)
@@ -10654,7 +10662,7 @@ window.__ModuleLoader__.load({
 								setSpec(void 0);
 								setGeneration((value) => value + 1);
 							},
-							children: "重新获取表单（新 nonce）"
+							children: "重新获取表单"
 						}) }) : null
 					]
 				}) : null,
@@ -11048,7 +11056,7 @@ window.__ModuleLoader__.load({
 			const focus = round.focus;
 			const legacy = round.serverFieldsMissing;
 			const displaySource = legacy || !focus.available ? "JOB_BASE" : focus.source;
-			const sourceText = !focus.available ? round.conflict ? "轮次配置不适用（冲突，详见下方）：按 JOB_BASE 降级，不伪造本轮重点" : roundSourceText("JOB_BASE", legacy) : roundSourceText(focus.source, legacy);
+			const sourceText = !focus.available ? round.conflict ? "轮次配置不适用（冲突，详见下方）：按岗位标准展示，不编造本轮重点" : roundSourceText("JOB_BASE", legacy) : roundSourceText(focus.source, legacy);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 				className: "iw-paper iw-roundcard",
 				"data-testid": "round-focus-card",
@@ -11143,23 +11151,23 @@ window.__ModuleLoader__.load({
 						className: "iw-notice iw-notice-warn",
 						"data-testid": "round-focus-degraded",
 						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "JOB_BASE 降级（服务端未提供该轮配置）" }),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "岗位通用标准（服务端未提供该轮专属配置）" }),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: roundFocusDegradedText(round) }),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "评分维度见下方「本轮评分表 · effective schema」（岗位底座）。" })
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "评分维度见下方「本轮评分表 · 岗位标准」（岗位通用标准）。" })
 						]
 					}),
 					legacy && row.brief.focus.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("details", {
 						className: "iw-paper iw-collapse",
 						"data-testid": "legacy-brief-focus",
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("summary", { children: [
-							"旧 brief 考察重点（",
+							"旧的面试说明里的考察重点（",
 							row.brief.focus.length,
 							"，非轮次配置 · 来源：",
 							briefSourceText(row.brief.source),
 							"）"
 						] }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "iw-tiny iw-muted",
-							children: "旧端点没有 round_focus；以下为 brief 来源，不能当作轮次配置。"
+							children: "服务端没有给本轮的考察重点；以下内容来自旧的面试说明。"
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: "iw-criteria",
 							children: row.brief.focus.map((item, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -11198,7 +11206,7 @@ window.__ModuleLoader__.load({
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "iw-subhead",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "本轮评分表 · effective schema" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("small", { children: ["只读 · ", roundSourceText(rubric.source, round.serverFieldsMissing)] })]
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "本轮评分表 · 岗位标准" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("small", { children: ["只读 · ", roundSourceText(rubric.source, round.serverFieldsMissing)] })]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
 						className: "iw-tiny iw-muted",
@@ -11436,7 +11444,7 @@ window.__ModuleLoader__.load({
 								!group.available ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 									className: "iw-muted iw-tiny",
 									"data-testid": "round-focus-group-degraded",
-									children: group.source === "LEGACY_BRIEF" ? "旧 brief 来源（服务端未提供轮次配置），按 brief 展示，不代表本轮专属重点。" : "JOB_BASE 降级（服务端未提供该轮配置）；不展示伪造的考察重点。"
+									children: group.source === "LEGACY_BRIEF" ? "来自旧的面试说明（服务端未提供轮次配置），按该说明展示，不代表本轮专属重点。" : "按岗位标准（服务端未提供该轮配置）；不展示伪造的考察重点。"
 								}) : null,
 								group.available && group.focus.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 									className: "iw-muted iw-tiny",
@@ -11553,7 +11561,7 @@ window.__ModuleLoader__.load({
 									className: "iw-paper iw-collapse",
 									"data-testid": "legacy-brief-questions",
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("summary", { children: [
-										"旧 brief 建议问题（",
+										"旧的面试说明里的建议问题（",
 										row.brief.questions.length,
 										"，非轮次配置）"
 									] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: row.brief.questions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
@@ -11703,7 +11711,7 @@ window.__ModuleLoader__.load({
 										endpointUnavailable ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 											className: "iw-tiny iw-muted",
 											"data-testid": "scorecard-unavailable-note",
-											children: "服务端面评提交入口未就绪（W1）"
+											children: "服务端面评提交入口未就绪"
 										}) : null,
 										!canSubmit && !endpointUnavailable ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 											className: "iw-tiny iw-muted",
@@ -11795,8 +11803,8 @@ window.__ModuleLoader__.load({
 						className: "iw-cap",
 						children: "INTERVIEW WORKSPACE"
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "当前 Session 尚未绑定演示身份（fail-closed）：请先在顶部选择身份" }),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: missingSession ? "未取得 DSH Session（localStorage 无 dsh.sessions.current），本视图不会用默认身份读数据。" : missingAlias ? "尚未选择 Demo 身份（alias 为空），本视图不会用默认身份读数据。" : "服务端返回 409 DEMO_ACTOR_UNMAPPED；本视图不显示任何面试。" }),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "尚未绑定演示身份，未读取任何面试数据：请先在顶部选择身份" }),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: missingSession ? "尚未登录（未检测到当前登录会话），本视图不会用默认身份读数据。" : missingAlias ? "尚未选择 Demo 身份（alias 为空），本视图不会用默认身份读数据。" : "服务端返回 409 DEMO_ACTOR_UNMAPPED；本视图不显示任何面试。" }),
 					parts !== void 0 && parts.message !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", { children: ["服务端说明：", parts.message] }) : null
 				]
 			});
@@ -12163,12 +12171,12 @@ window.__ModuleLoader__.load({
 				const sid = readSessionId();
 				setSessionId(sid);
 				if (sid === null) {
-					setNotice("未取得 DSH Session（localStorage 无 dsh.sessions.current）；写入将 fail-closed。");
+					setNotice("还没有识别到你的登录身份；在此之前写操作都不会提交。");
 					return;
 				}
 				getBinding(sid).then((found) => {
 					if (found === null) {
-						setNotice("Demo Actor 未绑定：请选择身份；未绑定前所有写操作 fail-closed。");
+						setNotice("还没有选择身份：请先选择身份；在此之前写操作都不会提交。");
 						return;
 					}
 					setBinding(found);
@@ -12178,13 +12186,13 @@ window.__ModuleLoader__.load({
 			const onSelectAlias = (next) => {
 				setAlias(next);
 				if (sessionId === null) {
-					setNotice("未取得 DSH Session，无法绑定 Demo Actor。");
+					setNotice("还没有识别到当前会话，无法绑定演示身份。");
 					return;
 				}
 				putBinding(sessionId, next).then((result) => {
 					if (!result.ok) {
 						setBinding(null);
-						setNotice(`Demo Actor 绑定失败（${result.body.slice(0, 160)}）；未绑定前写入 fail-closed。`);
+						setNotice(`身份绑定失败（${result.body.slice(0, 160)}）；绑定成功之前写操作不会提交。`);
 						return;
 					}
 					setNotice("");
@@ -12259,8 +12267,8 @@ window.__ModuleLoader__.load({
 									alignItems: "center",
 									gap: 6
 								},
-								children: ["Demo Actor", /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-									"aria-label": "选择 Demo Actor",
+								children: ["演示身份", /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+									"aria-label": "选择演示身份",
 									value: alias ?? "",
 									onChange: (event) => onSelectAlias(event.target.value),
 									style: {

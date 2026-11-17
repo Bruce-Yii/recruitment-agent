@@ -126,7 +126,7 @@ export async function fetchInterviewerOverview(options: FetchOverviewOptions): P
       0,
       'DEMO_ACTOR_UNMAPPED',
       'SESSION_NOT_BOUND',
-      '当前 Session 尚未绑定演示身份（fail-closed）：请先在顶部选择身份',
+      '尚未绑定演示身份，未读取任何数据：请先在顶部选择身份',
       undefined,
     )
   }
@@ -154,7 +154,7 @@ export async function fetchScorecardFormSpec(options: FetchFormSpecOptions): Pro
       0,
       'DEMO_ACTOR_UNMAPPED',
       'SESSION_NOT_BOUND',
-      '当前 Session 尚未绑定演示身份（fail-closed）：请先在顶部选择身份',
+      '尚未绑定演示身份，未读取任何数据：请先在顶部选择身份',
       undefined,
     )
   }
@@ -189,7 +189,7 @@ export async function submitScorecard(options: SubmitScorecardOptions): Promise<
       0,
       'DEMO_ACTOR_UNMAPPED',
       'SESSION_NOT_BOUND',
-      '当前 Session 尚未绑定演示身份（fail-closed）：请先在顶部选择身份',
+      '尚未绑定演示身份，未读取任何数据：请先在顶部选择身份',
       undefined,
     )
   }

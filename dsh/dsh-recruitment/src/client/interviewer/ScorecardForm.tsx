@@ -236,9 +236,9 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
       <>
         {unavailable ? (
           <div className="iw-notice iw-notice-warn" role="alert" data-testid="scorecard-unavailable">
-            <strong>服务端面评提交入口未就绪（W1）</strong>
+            <strong>服务端面评提交入口未就绪</strong>
             <p>
-              读取面评表单失败（HTTP {described.status}）。本表单不会本地假写，也不会显示假成功；W1 端点就绪后重新打开即可。
+              读取面评表单失败（HTTP {described.status}）。本表单不会本地假写，也不会显示假成功；服务端就绪后重新打开即可。
             </p>
           </div>
         ) : (
@@ -271,7 +271,7 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
 
   if (spec === undefined) {
     // 理论上走不到（loading 结束且无 loadFailure 时 spec 必有值）；兜底 fail-closed。
-    return shell('ERROR', props.interviewId, <p className="iw-formloading">服务端没有返回面评表单（fail-closed）。</p>)
+    return shell('ERROR', props.interviewId, <p className="iw-formloading">服务端没有返回面评表单，表单未提交。</p>)
   }
 
   const readonly = spec.mode !== 'CREATE'
@@ -298,7 +298,7 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
     spec.interview.id !== '' ? spec.interview.id : props.interviewId,
     <>
       <p className="iw-modaldesc">
-        按本轮 rubric 记录你的独立观察。Agent 不代替面试官提交；提交走 W1 Host Remote Action，写库后回显服务端 DB 读回。
+        按本轮评分标准记录你的独立观察。Agent 不代替面试官提交；提交后会回显服务端保存结果。
       </p>
 
       {/* 本轮考察重点（只读上下文）：轮次配置存在时展示；JOB_BASE 降级时只说事实，不伪造重点。 */}
@@ -321,7 +321,7 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
           <strong>本轮考察重点（只读）</strong>
           <p className="iw-tiny iw-muted">
             {props.round.serverFieldsMissing || !props.round.focus.available
-              ? '岗位基础（JOB_BASE 降级：服务端未提供该轮配置）'
+              ? '岗位通用标准（服务端未提供该轮专属配置）'
               : roundSourceText(props.round.focus.source)}
           </p>
           {props.round.focus.available ? (
@@ -346,7 +346,7 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
             </>
           ) : (
             <p className="iw-tiny iw-muted">
-              服务端未提供该轮配置（JOB_BASE 降级）；提交仍按服务端 form spec 的维度键，界面不伪造本轮重点。
+              服务端未提供该轮专属配置（按岗位通用标准展示）；提交仍按服务端下发的评分维度，界面不编造本轮重点。
             </p>
           )}
         </div>
@@ -368,7 +368,7 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
         <div className="iw-notice iw-notice-warn" role="alert" data-testid="round-schema-mismatch">
           <strong>{ROUND_SCHEMA_MISMATCH_TEXT}</strong>
           <p className="iw-tiny">{plan.mismatchText}</p>
-          <p className="iw-tiny">已禁用提交：不写库，避免脏面评。请服务端修正本轮评分表与 form spec 后重试。</p>
+          <p className="iw-tiny">已禁用提交：未写库，避免产生错误面评。请修正本轮评分表与面评表单后重试。</p>
         </div>
       ) : null}
 
@@ -388,7 +388,7 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
 
         {spec.dimensions.length === 0 ? (
           <p className="iw-validation" role="alert">
-            服务端没有返回可填写的 rubric 维度，无法提交（fail-closed）。
+            服务端没有返回可填写的评分维度，无法提交（未提交）。
           </p>
         ) : null}
 
@@ -412,7 +412,7 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
               <p className="iw-fieldhelp">
                 类型：{dimension.kind !== '' ? dimension.kind : '未提供'} · 权重：{field.weight}
                 {field.overridden
-                  ? ` · 本轮 effective schema（origin=${field.origin !== '' ? field.origin : '未提供'}）`
+                  ? ` · 按本轮标准调整（来源：${field.origin !== '' ? field.origin : '未提供'}）`
                   : ''}
               </p>
               <div className="iw-field">
@@ -435,7 +435,7 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
                   ))}
                 </select>
                 {dimension.assessmentOptions.length === 0 ? (
-                  <p className="iw-fieldhelp">服务端未给该维度的 assessment 枚举（不可提交，fail-closed）。</p>
+                  <p className="iw-fieldhelp">服务端未给该维度的可选项（不可提交，未提交）。</p>
                 ) : null}
               </div>
               <div className="iw-field">
@@ -479,7 +479,7 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
               disabled={readonly || spec.overall_options.length === 0}
             >
               <option value="">
-                {spec.overall_options.length === 0 ? '服务端未提供 overall 选项（fail-closed）' : '请选择'}
+                {spec.overall_options.length === 0 ? '服务端未提供综合结论选项（未提交）' : '请选择'}
               </option>
               {spec.overall_options.map((option) => (
                 <option key={option} value={option}>
@@ -534,7 +534,7 @@ export function ScorecardForm(props: ScorecardFormProps): JSX.Element {
                   setGeneration((value) => value + 1)
                 }}
               >
-                重新获取表单（新 nonce）
+                重新获取表单
               </button>
             </p>
           ) : null}

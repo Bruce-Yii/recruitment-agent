@@ -530,8 +530,8 @@ test('两键都缺（旧端点）：serverFieldsMissing=true、source=JOB_BASE�
   assert.deepEqual(view.focus.questions, [])
   assert.deepEqual(view.focus.scorecardFields, [])
   assert.equal(view.focus.reason, ROUND_SERVER_FIELDS_MISSING_TEXT)
-  assert.ok(roundFocusDegradedText(view).includes('task-50 端点未就绪'), '降级卡必须说明 task-50 未就绪')
-  assert.ok(roundFocusDegradedText(view).includes('不伪造本轮重点'))
+  assert.equal(roundFocusDegradedText(view), '服务端这一次没有提供本轮配置，界面没有本轮单独的考察重点，请按岗位标准查看')
+  assert.equal(roundFocusDegradedText(view), ROUND_SERVER_FIELDS_MISSING_TEXT)
 
   // 维度来自旧 row.rubric（3 维；不伪造 focus/must_cover/submission）。
   assert.equal(view.rubric.available, true)
@@ -663,24 +663,23 @@ test('只有 effective_rubric（round_focus 缺）：focus 按 JOB_BASE 降级�
 //  6. roundSourceText 全分支
 // ===========================================================================
 
-test('roundSourceText：契约 §3 全部来源分支 + 未知 source 原样 + 旧端点 task-50 文案', () => {
+test('roundSourceText：契约 §3 全部来源分支 + 未知 source 原样 + 旧端点降级人话文案', () => {
   assert.equal(roundSourceText('ROUND_CONFIG'), '轮次配置（本场有专属考察重点与评分表覆盖）')
   assert.equal(roundSourceText('ROUND_OVERRIDE'), '轮次覆盖（本轮评分表在岗位底座上有覆盖）')
-  assert.equal(roundSourceText('JOB_BASE'), '岗位基础（JOB_BASE 降级：服务端未提供该轮配置）')
-  assert.equal(roundSourceText('TEMPLATE'), '面试模板（旧 brief，非轮次配置）')
-  assert.equal(roundSourceText(''), '未知来源（服务端未提供 source）')
-  assert.equal(roundSourceText('   '), '未知来源（服务端未提供 source）')
+  assert.equal(roundSourceText('JOB_BASE'), '岗位通用标准（服务端未提供本轮专属配置）')
+  assert.equal(roundSourceText('TEMPLATE'), '面试模板（旧的面试说明，不是本轮配置）')
+  assert.equal(roundSourceText(''), '未知来源（服务端没有说明来源）')
+  assert.equal(roundSourceText('   '), '未知来源（服务端没有说明来源）')
 
   const unknown = roundSourceText('MYSTERY_SOURCE')
   assert.ok(unknown.includes('MYSTERY_SOURCE'), '未知 source 原样显示')
   assert.ok(unknown.includes('未知来源'))
 
   const legacy = roundSourceText('JOB_BASE', true)
-  assert.ok(legacy.includes('JOB_BASE'))
-  assert.ok(legacy.includes('task-50 端点未就绪'), '旧端点降级文案要说明 task-50 未就绪')
+  assert.equal(legacy, '岗位通用标准（服务端未提供本轮配置，暂时无法给出本轮专属重点）', '旧端点降级文案必须逐字等于人话文案')
 
   // 非字符串按"未提供 source"处理（不把数字/布尔伪装成来源）。
-  assert.equal(roundSourceText(42 as unknown as string), '未知来源（服务端未提供 source）')
+  assert.equal(roundSourceText(42 as unknown as string), '未知来源（服务端没有说明来源）')
   assert.equal(roundSourceText(' ROUND_CONFIG '), '轮次配置（本场有专属考察重点与评分表覆盖）')
 })
 

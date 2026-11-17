@@ -272,7 +272,7 @@ const READBACK_LABELS: Readonly<Record<string, string>> = {
   timezone: '时区',
   interviewers: '面试官分配',
   job: '岗位',
-  rubric: 'Rubric',
+  rubric: '评分标准',
   approval: '审批',
   members: '团队成员',
   stages: '流水线阶段',
@@ -283,7 +283,7 @@ const READBACK_LABELS: Readonly<Record<string, string>> = {
   content_sha256: '正文 sha256',
   segment_count: '分段数',
   replayed: '是否幂等重放',
-  contract_version: '契约版本',
+  contract_version: '版本',
   'readback.table': '读回表',
   decision: '决策行',
   evaluation: '初筛评估',
@@ -436,23 +436,22 @@ export function terminatedLines(terminated: JobCloseEnvelope['terminated']): rea
 
 /** 已知 `code` / `code/reason_code` → 人话补救说明（未知码返回 ''，界面仍显示服务端原文）。 */
 const ERROR_ADVICE: Readonly<Record<string, string>> = {
-  'FORBIDDEN/SAME_ORIGIN_REQUIRED':
-    '写动作只接受本机同源请求（127.0.0.1/localhost 且带 x-recruitment-request: 1）；不要跨源调用',
+  'FORBIDDEN/SAME_ORIGIN_REQUIRED': '这个操作只能在招聘工作台里执行，请从工作台页面重试',
   'FORBIDDEN/ACTOR_NOT_AUTHORIZED': '当前身份无权执行招聘写动作；请切换到 Recruiter 身份（面试官只能提交本人面评）',
-  'FORBIDDEN/APPROVAL_UNAVAILABLE': '宿主的 approval 通道不可用（D-79 闸门未装配），本次没有写库',
-  'FORBIDDEN/APPROVAL_NOT_GRANTED': '人类确认闸门未放行（本次请求的 allow-once 已用过或未授权）',
+  'FORBIDDEN/APPROVAL_UNAVAILABLE': '审批通道尚未就绪，本次没有写库',
+  'FORBIDDEN/APPROVAL_NOT_GRANTED': '本次确认未获放行（可能已用过，或未获得授权）',
   'DECISION_REQUIRES_HUMAN/NO_HUMAN_CONFIRMATION':
     '缺少人工确认：服务端本应派生 IN_APP_CONFIRM，出现此码说明实现异常',
-  'INVALID_ARGS/SESSION_REQUIRED': '缺 x-dsh-session：先在工作台完成身份选择（PUT /recruitment/api/actor）再重试',
-  'INVALID_ARGS/SESSION_ID_INVALID': 'x-dsh-session 形态非法（必须是 session-<uuid> 或裸 UUID）',
-  'DEMO_ACTOR_UNMAPPED/SESSION_NOT_BOUND': '当前 session 未绑定 alias（刷新或宿主重启会丢失）；重新选择身份后重试',
+  'INVALID_ARGS/SESSION_REQUIRED': '尚未选择身份：请先在工作台顶部选择身份，再重试',
+  'INVALID_ARGS/SESSION_ID_INVALID': '身份信息格式不正确，请重新选择身份后重试',
+  'DEMO_ACTOR_UNMAPPED/SESSION_NOT_BOUND': '当前身份没有绑定账号（刷新或重启工作台后会丢失）；请重新选择身份后重试',
   'INVALID_ARGS/ACTOR_OVERRIDE_REJECTED':
     '请求里出现了身份或服务端派生键，服务端一律拒绝；这是客户端实现缺陷（本 UI 已在发送前自检）',
   'INVALID_ARGS/MISSING_REQUIRED': '必填字段缺失：按表单提示补齐后重试',
-  'INVALID_ARGS/ID_NOT_UUID': 'id 不是 UUID 形态：请从服务端投影里选择，不要手工输入',
-  'INVALID_ARGS/ENUM_INVALID': '枚举值不在契约封闭集内',
-  'INVALID_ARGS/OUT_OF_RANGE': '字段超出契约范围',
-  'INVALID_ARGS/UNKNOWN_PARAM': '出现了契约不允许的字段',
+  'INVALID_ARGS/ID_NOT_UUID': '编号格式不正确：请从列表里选择，不要手工输入',
+  'INVALID_ARGS/ENUM_INVALID': '选项不在允许范围内',
+  'INVALID_ARGS/OUT_OF_RANGE': '填写内容超出允许范围',
+  'INVALID_ARGS/UNKNOWN_PARAM': '出现了不认识的字段',
   'INVALID_ARGS/SCOPE_MISMATCH': '决策范围与端点不符：初筛用 screening/decide，正式决策用 decision/record',
   'INVALID_ARGS/STAGE_REQUIRES_INTERVIEW': 'STAGE 决策必须带面试 id',
   'INVALID_ARGS/FINAL_SCOPE_NO_INTERVIEW': 'FINAL 决策不能带面试 id',
@@ -471,39 +470,39 @@ const ERROR_ADVICE: Readonly<Record<string, string>> = {
   'INVALID_ARGS/CONFIRM_REQUIRED': '关闭岗位必须显式确认（confirm: true）',
   'INVALID_ARGS/UNKNOWN_BODY_KEY': '请求体出现封闭键集之外的键',
   'INVALID_ARGS/UNKNOWN_ENTITY': '设置实体只能是 role / team / pipeline',
-  'INVALID_ARGS/READ_OPERATION_NOT_EXPOSED': '写入口只接受写 operation（create/update/…）；读操作走只读投影',
-  'CLIENT_REFUSED': '客户端拒绝发送：动作不可用 / seam 非同源 / 缺必要事实（见 reason_code）',
+  'INVALID_ARGS/READ_OPERATION_NOT_EXPOSED': '这里只能提交新增或修改；查看请到对应的列表页',
+  'CLIENT_REFUSED': '客户端没有发送请求：动作不可用、入口不正确或缺少必要信息',
   'CLIENT_REFUSED/CLIENT_RESERVED_KEY': 'body 含身份/服务端派生键，客户端拒绝发送（服务端也会 400）',
   'CLIENT_REFUSED/EMPTY_BODY': '写请求 body 为空：必须由 build* 产出（固定发 {} 会被 400）',
-  'CLIENT_REFUSED/SESSION_MISSING': '缺少当前 DSH session id（只能由宿主 props 传入，不读 localStorage）',
-  'CLIENT_REFUSED/UNSAFE_SEAM': '动作 seam 不是同源 /recruitment/ 相对路径，客户端拒绝发送',
+  'CLIENT_REFUSED/SESSION_MISSING': '还没有识别到当前身份：请先在工作台顶部选择身份',
+  'CLIENT_REFUSED/UNSAFE_SEAM': '动作入口不正确，客户端没有发送请求',
   'CLIENT_REFUSED/ACTION_NOT_AVAILABLE': '服务端声明该动作不可用（available=false）；客户端不发送请求',
   'CLIENT_RESERVED_KEY': 'body 含身份/服务端派生键，客户端拒绝发送（服务端也会 400）',
-  'NOT_FOUND': '对象不存在（申请/面试/rubric/岗位/会议）；先刷新服务端投影再重试',
+  'NOT_FOUND': '对象不存在（申请/面试/评分标准/岗位/会议）；先刷新页面再重试',
   'VERSION_CONFLICT': '并发冲突：记录版本已被他人更新；重新读取后用最新版本重试',
-  'ALREADY_DECIDED': '该申请已有当前有效决策（uq_decision_current）；如需改判走 supersedes',
+  'ALREADY_DECIDED': '这条申请已经有过决定；要改判请走重新决策，不要重复提交',
   'ALREADY_SCHEDULED': '该轮已排期；改时间要走 RESCHEDULE',
   'ALREADY_EXISTS': '同 code 的对象已存在；换一个 code',
   'CONFLICT_SLOT': '时段冲突：该面试官/时段已被占用',
   'BLOCKED_BY_REVIEW': '有评审未完成，动作被前置事实阻塞',
-  'NO_RUBRIC': '岗位没有可用 rubric；先批准 rubric',
-  'NO_TRANSCRIPT': '该面试没有可用 transcript',
-  'EVIDENCE_INSUFFICIENT': '证据不足（决策汇总门禁）：先补面评/汇总',
+  'NO_RUBRIC': '岗位没有可用的评分标准；先批准评分标准',
+  'NO_TRANSCRIPT': '该面试还没有可用的转写记录',
+  'EVIDENCE_INSUFFICIENT': '决策汇总所需信息不足：先补面评/汇总',
   'NOT_CONFIGURED': '数据库/连接器未配置，写动作不可用（不是"没有数据"）',
   'INVALID_REFERENCE': '引用的部门 / actor / 阶段 / 面试模板不存在',
   'SUMMARY_MISSING': '正式决策需要 evaluation summary：facts 里 summary 不可用，不允许记录决策',
-  'MISSING_SUMMARY': '服务端 facade 拿不到汇总（MISSING_SUMMARY），零写入',
-  'DECISION_FACTS_MISSING': '决策事实投影缺失：无法组装 as_of/basis_refs，客户端不发请求',
-  'DECISION_FACTS_ROUTE_MISSING': '决策事实只读路由未接线（GET /recruitment/api/decision/facts 404）',
+  'MISSING_SUMMARY': '服务端拿不到汇总，本次没有写库',
+  'DECISION_FACTS_MISSING': '决策所需信息还没有读到：请先刷新页面，客户端暂不发送请求',
+  'DECISION_FACTS_ROUTE_MISSING': '决策所需信息暂时读不到，请刷新页面后重试；本次没有提交',
   'DECISION_FACTS_ERROR': '决策事实读取失败（看服务端原文）；先修好 facts 路由/身份再重试',
-  'DECISION_FACTS_LOADING': '正在读取决策事实投影：读完后表单才可提交',
-  'MISSING_RUBRIC_PAYLOAD_HASH': 'facts 缺 rubric 的 payload_hash：客户端不编造 rubric 哈希，SCREENING 决策 disabled',
+  'DECISION_FACTS_LOADING': '正在读取决策所需信息：读完后表单才可提交',
+  'MISSING_RUBRIC_PAYLOAD_HASH': '评分标准快照信息不全：客户端不会自行编造，初筛决策暂不可提交',
   'MISSING_AUTHORITY_FACTS': 'facts 缺 AUTHORITY（actor_id / is_hiring_manager）：客户端不编造权威事实',
   'MISSING_SCREENING_EVALUATION': 'ADVANCE/REJECT 必须先执行初筛评估（facts.screening_evaluation 六个字段齐全）',
   'MISSING_AS_OF': 'facts 没有 as_of：客户端不用本地时间造 as_of（会 SUMMARY_STALE），不发送',
   'APPLICATION_MISMATCH': 'facts 与当前申请不一致（页面数据过期）：刷新后重试',
   'SCREENING_EVALUATION_PRESENT': 'facts 已有初筛评估：无需重复执行（如需重评走服务端方法）',
-  'SUMMARY_DIGEST_MISSING': 'facts 缺 summary_digest：正式决策 disabled',
+  'SUMMARY_DIGEST_MISSING': '决策汇总信息不全，正式决策暂不可提交',
   'NETWORK': '网络请求失败：检查宿主是否还在运行',
   'BAD_RESPONSE': '宿主响应不是可解析 JSON / 信封不可用：不当作成功',
   'READBACK_MISSING': '服务端写事务已提交但读回不到行：数据异常，不要当作成功',
@@ -556,18 +555,18 @@ export interface CloseSeamProbe {
 export function interpretCloseProbe(status: number): CloseSeamProbe {
   const state = interpretRouteProbe(status)
   if (state === 'AVAILABLE') {
-    return { state, status, reasonText: '路由已注册（GET 返回 405，只接受 POST）；确认关闭会真的写库' }
+    return { state, status, reasonText: '可以关闭岗位；确认后会真正保存修改' }
   }
   if (state === 'MISSING') {
-    return { state, status, reasonText: '路由未接线（GET 返回 404）；关闭岗位不可用，客户端不发请求' }
+    return { state, status, reasonText: '关闭岗位当前不可用，客户端不发请求' }
   }
   if (state === 'FORBIDDEN') {
-    return { state, status, reasonText: '同源/身份校验失败（GET 返回 403）；先完成身份选择并用同源页面操作' }
+    return { state, status, reasonText: '身份校验未通过；请先在工作台顶部选择身份，再从本页面操作' }
   }
   return {
     state,
     status,
-    reasonText: status === 0 ? '探测请求网络失败（宿主可能未运行）' : `探测返回未知状态 HTTP ${String(status)}`,
+    reasonText: status === 0 ? '网络请求失败（工作台可能未运行）' : `请求返回了未预期的结果（${String(status)}）`,
   }
 }
 
@@ -764,7 +763,7 @@ export function buildStageAdvanceBody(input: { readonly applicationId: string })
   if (!requireUuid(applicationId, 'application_id', missing)) {
     return fail(
       missing.some((entry) => entry.endsWith(':ID_NOT_UUID')) ? 'ID_NOT_UUID' : 'MISSING_APPLICATION_ID',
-      '申请 id 缺失或不是 UUID；阶段推进只提交 application_id，服务端按已发生事实推导目标阶段',
+      '申请编号缺失或格式不正确；阶段推进只提交申请编号，服务端按已发生事实推导目标阶段',
       missing,
     )
   }
@@ -781,7 +780,7 @@ export function buildScreeningEvaluateBody(input: { readonly applicationId: stri
   if (!requireUuid(applicationId, 'application_id', missing)) {
     return fail(
       missing.some((entry) => entry.endsWith(':ID_NOT_UUID')) ? 'ID_NOT_UUID' : 'MISSING_APPLICATION_ID',
-      '申请 id 缺失或不是 UUID；初筛评估必须指定申请',
+      '申请编号缺失或格式不正确；初筛评估必须指定申请',
       missing,
     )
   }
@@ -889,14 +888,14 @@ export function buildScreeningDecisionBody(input: {
   if (facts === null) {
     return fail(
       'DECISION_FACTS_MISSING',
-      '决策事实投影（GET /recruitment/api/decision/facts）不可用；客户端不编造 as_of / basis_refs，不发送请求',
+      '决策所需信息还没有读到；客户端不会自行编造决策时点和依据，暂不发送请求',
       ['facts'],
     )
   }
   const applicationId = text(input.applicationId) || facts.applicationId
   const missing: string[] = []
   if (!requireUuid(applicationId, 'application_id', missing)) {
-    return fail('ID_NOT_UUID', '申请 id 缺失或不是 UUID', missing)
+    return fail('ID_NOT_UUID', '申请编号缺失或格式不正确', missing)
   }
   if (applicationId !== facts.applicationId) {
     return fail(
@@ -930,7 +929,7 @@ export function buildScreeningDecisionBody(input: {
   if (rubric === null) {
     return fail(
       'MISSING_RUBRIC_PAYLOAD_HASH',
-      'facts.basis.screening_decide.rubric_version 缺 id/payload_hash；客户端不编造 rubric 哈希',
+      '评分标准快照信息不全：缺少编号或校验值；客户端不会自行编造',
       ['rubric_version.payload_hash'],
     )
   }
@@ -1007,14 +1006,14 @@ export function buildDecisionRecordBody(input: {
   if (facts === null) {
     return fail(
       'DECISION_FACTS_MISSING',
-      '决策事实投影（GET /recruitment/api/decision/facts）不可用；facade 无法被调用（不发送请求）',
+      '决策所需信息还没有读到；暂不发送请求',
       ['facts'],
     )
   }
   const applicationId = text(input.applicationId) || facts.applicationId
   const missing: string[] = []
   if (!requireUuid(applicationId, 'application_id', missing)) {
-    return fail('ID_NOT_UUID', '申请 id 缺失或不是 UUID', missing)
+    return fail('ID_NOT_UUID', '申请编号缺失或格式不正确', missing)
   }
   if (applicationId !== facts.applicationId) {
     return fail(
@@ -1029,7 +1028,7 @@ export function buildDecisionRecordBody(input: {
   }
   const result = text(input.result)
   if (!(RECORD_RESULTS as readonly string[]).includes(result)) {
-    return fail('ENUM_INVALID', `result 只能是 ${RECORD_RESULTS.join(' / ')}（facade 不接受 WITHDRAW/HIRED）`, ['result'])
+    return fail('ENUM_INVALID', `结论只能是 ${RECORD_RESULTS.join(' / ')}（不支持撤回/录用）`, ['result'])
   }
   const reason = typeof input.reason === 'string' ? input.reason.trim() : ''
   if (reason === '') return fail('MISSING_REASON', '正式决策必须填写理由（1..4000 字）', ['reason'])
@@ -1142,7 +1141,7 @@ export function buildInterviewScheduleBody(input: {
   const missing: string[] = []
   const applicationId = text(input.applicationId)
   if (!requireUuid(applicationId, 'application_id', missing)) {
-    return fail('ID_NOT_UUID', '申请 id 缺失或不是 UUID', missing)
+    return fail('ID_NOT_UUID', '申请编号缺失或格式不正确', missing)
   }
   const roundNo = input.roundNo
   if (typeof roundNo !== 'number' || !Number.isInteger(roundNo) || roundNo < 1 || roundNo > 20) {
@@ -1175,7 +1174,7 @@ export function buildInterviewScheduleBody(input: {
     const actorId = text(interviewer.actorId)
     if (actorId === '') return fail('MISSING_INTERVIEWER_ACTOR', '面试官候选缺 actorId', ['interviewers[].actor_id'])
     if (!isUuid(actorId)) {
-      return fail('ID_NOT_UUID', `面试官 actorId 不是 UUID：${actorId}`, ['interviewers[].actor_id'])
+      return fail('ID_NOT_UUID', `面试官编号格式不正确：${actorId}`, ['interviewers[].actor_id'])
     }
     if (seen.has(actorId)) {
       return fail('DUPLICATE_INTERVIEWER', `面试官重复：${actorId} 只能出现一次`, ['interviewers'])
@@ -1228,7 +1227,7 @@ export function buildTranscriptImportBody(input: {
   const missing: string[] = []
   const interviewId = text(input.interviewId)
   if (!requireUuid(interviewId, 'interview_id', missing)) {
-    return fail('ID_NOT_UUID', '面试 id 缺失或不是 UUID（转写只能挂到已绑定的面试）', missing)
+    return fail('ID_NOT_UUID', '面试编号缺失或格式不正确（转写只能挂到已绑定的面试）', missing)
   }
   const content = typeof input.content === 'string' ? input.content : ''
   if (content.trim() === '') return fail('MISSING_CONTENT', '转写正文不能为空（1..400000 字符）', ['content'])
@@ -1237,7 +1236,7 @@ export function buildTranscriptImportBody(input: {
   }
   const sourceKind = text(input.sourceKind)
   if (!(TRANSCRIPT_SOURCE_KINDS as readonly string[]).includes(sourceKind)) {
-    return fail('ENUM_INVALID', 'source_kind 只能是 PLATFORM_EXPORT / DEMO_SAMPLE', ['source_kind'])
+    return fail('ENUM_INVALID', '来源只能是「平台导出」或「演示样本」', ['source_kind'])
   }
   const exportedFileName = text(input.exportedFileName)
   if (sourceKind === 'PLATFORM_EXPORT') {
@@ -1280,10 +1279,10 @@ export function buildRubricApproveBody(input: {
   const jobId = text(input.jobId)
   const rubricVersionId = text(input.rubricVersionId)
   if (!requireUuid(jobId, 'job_id', missing)) {
-    return fail('ID_NOT_UUID', '岗位 id 缺失或不是 UUID', missing)
+    return fail('ID_NOT_UUID', '岗位编号缺失或格式不正确', missing)
   }
   if (!requireUuid(rubricVersionId, 'rubric_version_id', missing)) {
-    return fail('ID_NOT_UUID', 'rubric 版本 id 缺失或不是 UUID', missing)
+    return fail('ID_NOT_UUID', '评分标准版本编号缺失或格式不正确', missing)
   }
   const reason = typeof input.reason === 'string' ? input.reason.trim() : ''
   if (charLength(reason) > 500) return fail('REASON_OUT_OF_RANGE', '批准理由不得超过 500 字', ['reason'])
@@ -1316,14 +1315,14 @@ export function buildSettingsWriteBody(input: {
   }
   const operation = text(input.operation)
   const allowed = CONFIG_WRITE_OPERATIONS[entity] ?? []
-  if (operation === '') return fail('MISSING_OPERATION', '缺必填字段 operation', ['operation'])
+  if (operation === '') return fail('MISSING_OPERATION', '请选择要执行的操作（新增或修改）', ['operation'])
   if (!allowed.includes(operation)) {
     const isReadOperation = ['list', 'get', 'read', 'search'].includes(operation)
     return fail(
       isReadOperation ? 'READ_OPERATION_NOT_EXPOSED' : 'OPERATION_INVALID',
       isReadOperation
-        ? '写入口只接受写 operation；读/list/get 走既有只读投影'
-        : `operation 只能是 ${allowed.join(' / ')}`,
+        ? '这里只能提交新增或修改；查看请到对应的列表页'
+        : `只能执行 ${allowed.join(' / ')} 操作`,
       ['operation'],
     )
   }
@@ -1514,7 +1513,7 @@ export function buildJobCloseBody(input: { readonly jobId: string; readonly reas
   const jobId = text(input.jobId)
   const missing: string[] = []
   if (!requireUuid(jobId, 'job_id', missing)) {
-    return fail('JOB_ID_INVALID', '岗位 id 缺失或不是 UUID（关闭岗位只按 id 操作）', missing)
+    return fail('JOB_ID_INVALID', '岗位编号缺失或格式不正确（关闭岗位只按编号操作）', missing)
   }
   const reason = typeof input.reason === 'string' ? input.reason.trim() : ''
   if (charLength(reason) > 500) return fail('REASON_INVALID', '关闭原因不得超过 500 字', ['reason'])
@@ -1548,7 +1547,7 @@ export function buildJobCreateBody(input: {
   if (charLength(title) > 200) return fail('TITLE_OUT_OF_RANGE', '岗位名称不得超过 200 字', ['title'])
   if (!requireUuid(departmentId, 'department_id', missing)) {
     if (missing.includes('department_id:ID_NOT_UUID')) {
-      return fail('ID_NOT_UUID', '部门 id 不是 UUID（必须来自 settings.departments）', ['department_id'])
+      return fail('ID_NOT_UUID', '部门编号格式不正确（必须从部门列表中选择）', ['department_id'])
     }
   }
   const descriptionMd = typeof input.descriptionMd === 'string' ? input.descriptionMd : ''
@@ -1557,7 +1556,7 @@ export function buildJobCreateBody(input: {
   if (charLength(requirementsMd) > 20_000) return fail('REQUIREMENTS_OUT_OF_RANGE', 'requirements_md 不得超过 20000 字', ['requirements_md'])
   if (missing.length > 0) return fail('MISSING_REQUIRED', `岗位创建缺必填字段：${missing.join(', ')}`, missing)
   if (input.criteria.length === 0) {
-    return fail('CRITERIA_REQUIRED', '岗位创建至少需要 1 条 rubric 维度（1..50）', ['criteria'])
+    return fail('CRITERIA_REQUIRED', '岗位创建至少需要 1 条评分维度（1..50）', ['criteria'])
   }
   if (input.criteria.length > 50) {
     return fail('CRITERIA_OUT_OF_RANGE', 'criteria 最多 50 条', ['criteria'])
@@ -1636,10 +1635,10 @@ export function checkWriteRequest(
   sessionId: string,
 ): WriteRequestCheck {
   if (text(sessionId) === '') {
-    return refuse('SESSION_MISSING', '缺少当前 DSH session id（由宿主 props 传入），客户端不发送写请求', ['sessionId'])
+    return refuse('SESSION_MISSING', '还没有识别到当前身份：请先在工作台顶部选择身份', ['sessionId'])
   }
   if (path === '' || !path.startsWith('/recruitment/') || path.startsWith('//')) {
-    return refuse('UNSAFE_SEAM', `写动作路径必须是同源相对 /recruitment/ 路径（当前：${path}）`, ['path'])
+    return refuse('UNSAFE_SEAM', `写动作必须通过本页面发起（当前路径：${path}），客户端不发送请求`, ['path'])
   }
   const keys = Object.keys(body)
   if (keys.length === 0) {
@@ -1665,7 +1664,7 @@ export function checkActionRequest(
   if (!action.available) {
     return refuse(
       'ACTION_NOT_AVAILABLE',
-      `动作 ${action.key} 服务端声明不可用（pending: ${action.pending !== '' ? action.pending : 'ACTION_SEAM_NOT_WIRED'}）；客户端不发送`,
+      `动作 ${action.key} 当前不可用（${action.pending !== '' ? action.pending : '尚未提供入口'}）；客户端不发送`,
       ['action.available'],
     )
   }

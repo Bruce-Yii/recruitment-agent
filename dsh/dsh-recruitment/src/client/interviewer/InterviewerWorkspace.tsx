@@ -200,7 +200,7 @@ function RoundFocusCard({ row }: { readonly row: InterviewRow }): JSX.Element {
   const sourceText =
     !focus.available
       ? round.conflict
-        ? '轮次配置不适用（冲突，详见下方）：按 JOB_BASE 降级，不伪造本轮重点'
+        ? '轮次配置不适用（冲突，详见下方）：按岗位标准展示，不编造本轮重点'
         : roundSourceText('JOB_BASE', legacy)
       : roundSourceText(focus.source, legacy)
   return (
@@ -273,17 +273,17 @@ function RoundFocusCard({ row }: { readonly row: InterviewRow }): JSX.Element {
         </>
       ) : (
         <div className="iw-notice iw-notice-warn" data-testid="round-focus-degraded">
-          <strong>JOB_BASE 降级（服务端未提供该轮配置）</strong>
+          <strong>岗位通用标准（服务端未提供该轮专属配置）</strong>
           <p>{roundFocusDegradedText(round)}</p>
-          <p>评分维度见下方「本轮评分表 · effective schema」（岗位底座）。</p>
+          <p>评分维度见下方「本轮评分表 · 岗位标准」（岗位通用标准）。</p>
         </div>
       )}
 
       {legacy && row.brief.focus.length > 0 ? (
         <details className="iw-paper iw-collapse" data-testid="legacy-brief-focus">
-          <summary>旧 brief 考察重点（{row.brief.focus.length}，非轮次配置 · 来源：{briefSourceText(row.brief.source)}）</summary>
+          <summary>旧的面试说明里的考察重点（{row.brief.focus.length}，非轮次配置 · 来源：{briefSourceText(row.brief.source)}）</summary>
           <div>
-            <p className="iw-tiny iw-muted">旧端点没有 round_focus；以下为 brief 来源，不能当作轮次配置。</p>
+            <p className="iw-tiny iw-muted">服务端没有给本轮的考察重点；以下内容来自旧的面试说明。</p>
             <div className="iw-criteria">
               {row.brief.focus.map((item, index) => (
                 <div className="iw-criteriarow" key={item.key !== '' ? item.key : `${item.label}-${index}`}>
@@ -324,7 +324,7 @@ function RoundRubricTable({ row }: { readonly row: InterviewRow }): JSX.Element 
       data-field-count={rubric.dimensions.length}
     >
       <div className="iw-subhead">
-        <h2>本轮评分表 · effective schema</h2>
+        <h2>本轮评分表 · 岗位标准</h2>
         <small>只读 · {roundSourceText(rubric.source, round.serverFieldsMissing)}</small>
       </div>
       <p className="iw-tiny iw-muted">
@@ -549,8 +549,8 @@ function ListView({
                     {!group.available ? (
                       <p className="iw-muted iw-tiny" data-testid="round-focus-group-degraded">
                         {group.source === 'LEGACY_BRIEF'
-                          ? '旧 brief 来源（服务端未提供轮次配置），按 brief 展示，不代表本轮专属重点。'
-                          : 'JOB_BASE 降级（服务端未提供该轮配置）；不展示伪造的考察重点。'}
+                          ? '来自旧的面试说明（服务端未提供轮次配置），按该说明展示，不代表本轮专属重点。'
+                          : '按岗位标准（服务端未提供该轮配置）；不展示伪造的考察重点。'}
                       </p>
                     ) : null}
                     {group.available && group.focus.length === 0 ? (
@@ -660,7 +660,7 @@ function DetailView({
 
             {row.round.serverFieldsMissing ? (
               <details className="iw-paper iw-collapse" data-testid="legacy-brief-questions">
-                <summary>旧 brief 建议问题（{row.brief.questions.length}，非轮次配置）</summary>
+                <summary>旧的面试说明里的建议问题（{row.brief.questions.length}，非轮次配置）</summary>
                 <div>
                   {row.brief.questions.length === 0 ? (
                     <p className="iw-muted iw-tiny">服务端未提供建议问题。</p>
@@ -773,7 +773,7 @@ function DetailView({
               </button>
               {endpointUnavailable ? (
                 <span className="iw-tiny iw-muted" data-testid="scorecard-unavailable-note">
-                  服务端面评提交入口未就绪（W1）
+                  服务端面评提交入口未就绪
                 </span>
               ) : null}
               {!canSubmit && !endpointUnavailable ? (
@@ -832,10 +832,10 @@ function UnboundBlock({
       data-reason-code={parts !== undefined ? parts.reasonCode : ''}
     >
       <div className="iw-cap">INTERVIEW WORKSPACE</div>
-      <strong>当前 Session 尚未绑定演示身份（fail-closed）：请先在顶部选择身份</strong>
+      <strong>尚未绑定演示身份，未读取任何面试数据：请先在顶部选择身份</strong>
       <p>
         {missingSession
-          ? '未取得 DSH Session（localStorage 无 dsh.sessions.current），本视图不会用默认身份读数据。'
+          ? '尚未登录（未检测到当前登录会话），本视图不会用默认身份读数据。'
           : missingAlias
             ? '尚未选择 Demo 身份（alias 为空），本视图不会用默认身份读数据。'
             : '服务端返回 409 DEMO_ACTOR_UNMAPPED；本视图不显示任何面试。'}

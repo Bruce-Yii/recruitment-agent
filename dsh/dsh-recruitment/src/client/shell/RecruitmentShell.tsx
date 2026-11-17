@@ -120,9 +120,9 @@ function InterviewerPlaceholder(props: { alias: DemoActorAlias | null; sessionId
       <div style={{ fontSize: 18, fontWeight: 700, color: COLORS.text, marginBottom: 8 }}>Interviewer Workspace</div>
       <p>该视图由 W3 实现（我的面试 / 简报 / Rubric / 授权材料 / 本人 Scorecard）。</p>
       <p>
-        当前 Demo Actor：<b>{props.alias ?? '未绑定'}</b>
+        当前身份：<b>{props.alias ?? '未绑定'}</b>
         <br />
-        DSH Session：<code>{props.sessionId ?? '未取得'}</code>
+        会话：<code>{props.sessionId ? `${props.sessionId.slice(0, 8)}…` : '未取得'}</code>
       </p>
     </div>
   )
@@ -160,12 +160,12 @@ export function RecruitmentShell(): JSX.Element {
     const sid = readSessionId()
     setSessionId(sid)
     if (sid === null) {
-      setNotice('未取得 DSH Session（localStorage 无 dsh.sessions.current）；写入将 fail-closed。')
+      setNotice('还没有识别到你的登录身份；在此之前写操作都不会提交。')
       return
     }
     void getBinding(sid).then((found) => {
       if (found === null) {
-        setNotice('Demo Actor 未绑定：请选择身份；未绑定前所有写操作 fail-closed。')
+        setNotice('还没有选择身份：请先选择身份；在此之前写操作都不会提交。')
         return
       }
       setBinding(found)
@@ -176,13 +176,13 @@ export function RecruitmentShell(): JSX.Element {
   const onSelectAlias = (next: DemoActorAlias): void => {
     setAlias(next)
     if (sessionId === null) {
-      setNotice('未取得 DSH Session，无法绑定 Demo Actor。')
+      setNotice('还没有识别到当前会话，无法绑定演示身份。')
       return
     }
     void putBinding(sessionId, next).then((result) => {
       if (!result.ok) {
         setBinding(null)
-        setNotice(`Demo Actor 绑定失败（${result.body.slice(0, 160)}）；未绑定前写入 fail-closed。`)
+        setNotice(`身份绑定失败（${result.body.slice(0, 160)}）；绑定成功之前写操作不会提交。`)
         return
       }
       setNotice('')
@@ -216,9 +216,9 @@ export function RecruitmentShell(): JSX.Element {
           Human Attention
         </button>
         <label style={{ fontSize: 11, color: COLORS.sub, display: 'flex', alignItems: 'center', gap: 6 }}>
-          Demo Actor
+          演示身份
           <select
-            aria-label="选择 Demo Actor"
+            aria-label="选择演示身份"
             value={alias ?? ''}
             onChange={(event) => onSelectAlias(event.target.value as DemoActorAlias)}
             style={{ fontSize: 12, padding: '5px 8px', border: `1px solid ${COLORS.border}`, borderRadius: 8, background: '#fff' }}

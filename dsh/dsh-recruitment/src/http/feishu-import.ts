@@ -686,8 +686,8 @@ async function readLiveSource(
         403,
         'FORBIDDEN',
         'AUTH_REQUIRED',
-        '飞书连接器读到字节，但证据不足以构成 LIVE 回读（连接态=AUTH_REQUIRED）：'
-          + `缺 ${violations.join('；')}。本入口只接受证据齐全的真实转写，未写任何行。`,
+        '飞书连接器读到字节，但可核对的信息不足以构成一次真实回读（连接态=AUTH_REQUIRED）：'
+          + `缺 ${violations.join('；')}。本入口只接受信息齐全的真实转写，未写任何行。`,
         detail,
       )
     }
@@ -695,7 +695,7 @@ async function readLiveSource(
       409,
       'BLOCKED',
       'READBACK_INVALID',
-      '飞书回读未通过 LIVE 证据闸门（缺项见 detail.violations）：本入口只接受证据齐全的真实转写，'
+      '飞书回读时信息不完整（缺哪几项在返回明细里）：本入口只接受信息齐全的真实转写，'
         + 'Fixture/不完整回读不能算通过，未写任何行。',
       detail,
     )

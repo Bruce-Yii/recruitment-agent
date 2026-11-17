@@ -1792,7 +1792,7 @@ function rubricDimensionPointOf(dimension: ReferencePointDimension): string {
 function rubricDimensionWhyOf(dimension: ReferencePointDimension, isFocused: boolean): string {
   return isFocused
     ? `岗位标准里有这一条（权重 ${dimension.weight}），本轮轮次配置把它标为重点。`
-    : `岗位标准里这一条权重较高（${dimension.weight}），前面的信息里还没有它的实际证据。`
+    : `岗位标准里这一条权重较高（${dimension.weight}），前面的轮次还没有聊到这一条，材料里也没有对应的原文。`
 }
 
 /**

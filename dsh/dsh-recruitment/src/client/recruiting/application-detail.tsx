@@ -198,7 +198,7 @@ function DetailHeadline({
           tone={header.applicationRubric === null ? 'gray' : header.applicationRubric.approved ? 'green' : 'amber'}
           testid="detail-application-rubric"
         >
-          本申请钉住 Rubric · {applicationRubricTextOf(header.applicationRubric)}
+          本申请钉住岗位标准 · {applicationRubricTextOf(header.applicationRubric)}
         </Chip>
         {refreshButton}
       </div>
@@ -243,7 +243,7 @@ function MaterialSection({ material, resume }: { readonly material: MaterialView
             {material.parserVersion !== '' ? ` · ${material.parserVersion}` : ''}
           </p>
           <p>
-            工作经历 {material.entryCounts.work} 条 · 教育经历 {material.entryCounts.education} 条 · 证据{' '}
+            工作经历 {material.entryCounts.work} 条 · 教育经历 {material.entryCounts.education} 条 · 原文出处{' '}
             {material.evidenceCount} 条
           </p>
         </div>
@@ -319,7 +319,7 @@ function MaterialSection({ material, resume }: { readonly material: MaterialView
       ) : null}
       {resume !== null && resume.evidenceSamples.length > 0 ? (
         <div style={{ marginTop: 14 }}>
-          <div className="rcw-cap">简历证据（页码 + 短引文；不含 PII）</div>
+          <div className="rcw-cap">简历原文出处（页码 + 短引文；不含 PII）</div>
           {resume.evidenceSamples.map((sample, index) => (
             <div className="rcw-quote" key={`evidence-${String(index)}`}>
               <div className="rcw-dim rcw-tiny">
@@ -361,24 +361,40 @@ function ScreeningSection({
           </SourceBox>
           <div style={{ marginTop: 10 }}>
             <KeyValue label="决定 id" value={decision.decisionId} mono />
-            <KeyValue label="rubric 版本 id" value={decision.rubricVersionId} mono />
+            <KeyValue label="岗位标准 版本 id" value={decision.rubricVersionId} mono />
             <KeyValue
-              label="basis kinds"
+              label="决策依据来源"
               value={decision.basisKinds.length > 0 ? decision.basisKinds.join('、') : ''}
             />
           </div>
           {decision.evaluation !== null ? (
             <div className="rcw-insight" style={{ marginTop: 12 }} data-testid="screening-evaluation">
-              <h3>SCREENING_EVALUATION 机器证据</h3>
+              <h3>初筛结论 · 逐条对照</h3>
               <div className="rcw-chiprow" style={{ marginTop: 6 }}>
                 <Chip tone={decision.evaluation.verdict !== '' ? 'blue' : 'gray'}>
-                  verdict · {decision.evaluation.verdict !== '' ? decision.evaluation.verdict : '未提供'}
+                  初筛结果 ·{' '}
+                  {decision.evaluation.verdict === ''
+                    ? '还没有结论'
+                    : decision.evaluation.verdict === 'PASS'
+                      ? '通过（PASS）'
+                      : decision.evaluation.verdict === 'FAIL'
+                        ? '未通过（FAIL）'
+                        : decision.evaluation.verdict === 'NEEDS_REVIEW'
+                          ? '需要人工再看（NEEDS_REVIEW）'
+                          : decision.evaluation.verdict}
                 </Chip>
                 <Chip tone={decision.evaluation.provenanceTone}>
-                  provenance · {decision.evaluation.provenance !== '' ? decision.evaluation.provenance : '未提供'}
+                  材料来源 ·{' '}
+                  {decision.evaluation.provenance === ''
+                    ? '未标注'
+                    : decision.evaluation.provenance === 'LIVE'
+                      ? '真实读取（LIVE）'
+                      : decision.evaluation.provenance === 'FIXTURE'
+                        ? '演示数据（FIXTURE）'
+                        : decision.evaluation.provenance}
                 </Chip>
                 <Chip tone={decision.evaluation.criteriaEvaluated === true ? 'green' : 'gray'}>
-                  criteria_evaluated ·{' '}
+                  逐条对照 ·{' '}
                   {decision.evaluation.criteriaEvaluated === null
                     ? '未提供'
                     : decision.evaluation.criteriaEvaluated
@@ -387,29 +403,29 @@ function ScreeningSection({
                 </Chip>
               </div>
               <div style={{ marginTop: 8 }}>
-                <KeyValue label="evaluation digest" value={decision.evaluation.evaluationDigestText} mono />
-                <KeyValue label="凭据 resume_version" value={decision.evaluation.resumeVersionId} mono />
-                <KeyValue label="凭据 rubric_version" value={decision.evaluation.rubricVersionId} mono />
+                <KeyValue label="初筛记录标识" value={decision.evaluation.evaluationDigestText} mono />
+                <KeyValue label="依据的材料版本" value={decision.evaluation.resumeVersionId} mono />
+                <KeyValue label="依据的岗位标准版本" value={decision.evaluation.rubricVersionId} mono />
               </div>
             </div>
           ) : (
             <p className="rcw-muted rcw-tiny" style={{ marginTop: 10 }}>
-              该初筛结论没有携带 SCREENING_EVALUATION 分片（basis_refs 里没有机器证据）。
+              这次初筛没有留下逐条对照的记录。
             </p>
           )}
         </>
       )}
 
       <div className="rcw-subhead">
-        <h3>Rubric 维度快照</h3>
+        <h3>岗位标准维度快照</h3>
         {rubric !== null ? (
           <span className="rcw-dim rcw-tiny">
-            初筛结论所用 Rubric 快照 · v{String(rubric.versionNo)} · {rubric.dimensions.length} 个维度
+            本次初筛使用的岗位标准 · 第 {String(rubric.versionNo)} 版 · {rubric.dimensions.length} 条
           </span>
         ) : null}
       </div>
       {rubric === null || rubric.dimensions.length === 0 ? (
-        <EmptyState>没有可用的 rubric 维度快照。</EmptyState>
+        <EmptyState>没有可用的岗位标准维度快照。</EmptyState>
       ) : (
         rubric.dimensions.map((dimension) => (
           <div className="rcw-criteria" key={dimension.key} data-dim-key={dimension.key}>
@@ -559,10 +575,10 @@ function TranscriptSection({
                   <div className="rcw-cap">面试记录（独立分支）</div>
                   <KeyValue label="状态" value={transcript.record.status} />
                   <KeyValue label="校验" value={transcript.record.verificationStatus} />
-                  <KeyValue label="证据齐备" value={transcript.record.evidenceOk ? '是' : '否'} />
+                  <KeyValue label="含原文引用" value={transcript.record.evidenceOk ? '是' : '否'} />
                   <KeyValue label="当前有效" value={transcript.record.isCurrent ? '是' : '否'} />
                   <KeyValue
-                    label="chunk coverage"
+                    label="转写覆盖"
                     value={transcript.record.chunkCoverageText !== '' ? transcript.record.chunkCoverageText : ''}
                   />
                 </div>
@@ -676,7 +692,7 @@ function DecisionSection({ decisions }: { readonly decisions: ReadonlyArray<Appl
           <div style={{ marginTop: 6 }}>
             <KeyValue label="decision id" value={decision.id} mono />
             <KeyValue label="scope" value={decision.scope} />
-            <KeyValue label="basis kinds" value={decision.basisKinds.join('、')} />
+            <KeyValue label="决策依据来源" value={decision.basisKinds.join('、')} />
             {decision.supersededBy !== '' ? <KeyValue label="superseded_by" value={decision.supersededBy} mono /> : null}
           </div>
         </div>
@@ -920,7 +936,7 @@ function ScreeningForm({
           <option value="REJECT">不通过（REJECT）</option>
         </select>
       </FormField>
-      <FormField label="理由（1..4000 字；REJECT 必须引到 rubric 维度 key）">
+      <FormField label="理由（1..4000 字；REJECT 必须引到岗位标准维度 key）">
         <textarea
           data-testid="screening-reason"
           rows={3}
@@ -1153,7 +1169,7 @@ function TranscriptImportForm({
         </select>
       </FormField>
       <FormField
-        label="来源（source_kind）"
+        label="来源"
         hint={
           sourceKind === 'DEMO_SAMPLE'
             ? 'DEMO_SAMPLE = 演示文本（provenance=FIXTURE，附 FIXTURE_CONTENT_NOT_LIVE 警告；不是真实平台导出件）'
@@ -1624,7 +1640,7 @@ export function ApplicationDetail(props: ApplicationDetailProps) {
               <MaterialSection material={detail?.material ?? null} resume={detail?.resume ?? null} />
             </LazySection>
             <LazySection
-              title="初筛证据 · rubric 维度 / SCREENING_EVALUATION / basis kinds"
+              title="初筛依据 · 岗位标准逐条对应 / 初筛结论 / 依据来源"
               testid="section-screening"
               available={detail !== undefined}
             >
@@ -1718,7 +1734,7 @@ export function ApplicationDetail(props: ApplicationDetailProps) {
               <EmptyState>详情读取成功后显示三维标签与契约版本。</EmptyState>
             )}
             <button type="button" className="rcw-textbtn" data-testid="open-job-from-detail" onClick={props.onOpenJob}>
-              查看该岗位版本与 rubric →
+              查看该岗位版本与岗位标准 →
             </button>
           </Card>
         </aside>

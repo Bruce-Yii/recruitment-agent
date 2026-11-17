@@ -20,7 +20,7 @@ import type { RoundFocusView } from './view-model.ts'
 /** 轮次重点来源 → 展示文案（未知来源原样显示，不冒充已知枚举）。 */
 const SOURCE_LABELS: Readonly<Record<string, string>> = {
   ROUND_CONFIG: '轮次配置（本轮专属）',
-  JOB_BASE: '岗位 Rubric 底座（JOB_BASE 降级）',
+  JOB_BASE: '岗位标准（本轮没有单独配置）',
 }
 
 /** 轮次重点来源 → chip 色档（ROUND_CONFIG 绿 / JOB_BASE 琥珀 / 未知灰）。 */
@@ -192,7 +192,7 @@ export function RoundFocusCard({ focus }: { readonly focus: RoundFocusView }) {
               : '服务端没有提供轮次重点配置（round_focus.available=false），界面不编造本轮重点。'}
           </p>
           <p className="rcw-muted rcw-tiny">
-            当前来源：{sourceLabelOf(focus.source)}；降级内容由服务端 reason 决定，客户端不用岗位 Rubric 冒充本轮重点。
+            当前来源：{sourceLabelOf(focus.source)}；降级内容由服务端 reason 决定，客户端不会把岗位标准当作本轮重点。
           </p>
         </div>
       )}

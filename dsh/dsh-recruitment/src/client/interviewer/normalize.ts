@@ -90,7 +90,7 @@ const MEETING_BINDING_TEXT: Readonly<Record<string, string>> = {
 /** 简报来源的中文含义（服务端标注，客户端不冒充"原简报"）。 */
 const BRIEF_SOURCE_TEXT: Readonly<Record<string, string>> = {
   TEMPLATE: '面试模板',
-  JOB_RUBRIC: '岗位 Rubric 维度',
+  JOB_RUBRIC: '岗位标准维度',
   NONE: '无简报',
 }
 
@@ -1022,19 +1022,19 @@ export function buildScorecardSubmitBody(
   answers: ScorecardAnswers,
 ): BuildSubmitBodyResult {
   if (spec.interview.id === '') {
-    return { ok: false, message: '服务端未返回面试 id（fail-closed，未提交）。' }
+    return { ok: false, message: '服务端未返回面试 id，无法提交（未提交）。' }
   }
   if (spec.mode !== 'CREATE') {
     return { ok: false, message: `服务端表单模式为 ${spec.mode}，本版只提交新建面评（未提交）。` }
   }
   if (spec.nonce === '') {
-    return { ok: false, message: '服务端未返回一次性 nonce（W1），无法提交（fail-closed）。' }
+    return { ok: false, message: '服务端未返回一次性校验信息（nonce），无法提交（未提交）。' }
   }
   if (spec.transcript_basis.value === '') {
-    return { ok: false, message: '服务端未返回转写依据（transcript_basis），无法提交（fail-closed）。' }
+    return { ok: false, message: '服务端未返回转写依据（transcript_basis），无法提交（未提交）。' }
   }
   if (spec.dimensions.length === 0) {
-    return { ok: false, message: '服务端没有返回可填写的 rubric 维度，无法提交（fail-closed）。' }
+    return { ok: false, message: '服务端没有返回可填写的评分维度，无法提交（未提交）。' }
   }
   const overall = asText(answers.overall)
   if (!(spec.overall_options as readonly string[]).includes(overall)) {
@@ -1042,7 +1042,7 @@ export function buildScorecardSubmitBody(
       ok: false,
       message:
         spec.overall_options.length === 0
-          ? '服务端没有返回 overall 选项，无法提交（fail-closed）。'
+          ? '服务端没有返回综合结论（overall）选项，无法提交（未提交）。'
           : `overall 必须是服务端给出的选项之一（${spec.overall_options.join(' / ')}）。`,
     }
   }
@@ -1062,7 +1062,7 @@ export function buildScorecardSubmitBody(
         ok: false,
         message:
           dimension.assessmentOptions.length === 0
-            ? `维度 ${dimension.label}（${dimension.key}）没有服务端枚举选项，不能提交（fail-closed）。`
+            ? `维度 ${dimension.label}（${dimension.key}）没有服务端给出的可选项，不能提交（未提交）。`
             : `维度 ${dimension.label}（${dimension.key}）的 assessment 不在服务端选项内。`,
       }
     }
