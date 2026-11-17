@@ -84,13 +84,8 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 
 ## 4. 现在到哪（2026-11-17）
 
-> **基线**：`main` = `feat/unified-document-intake` = `75db8e1`（**2026-11-17 已把现行线并入主干，两者树完全一致**），tag `v1.0-dev-2026-11-17`；工作树干净。日常开发在 `feat/unified-document-intake`，里程碑合 `main`。
+> **基线**：`main` = `feat/unified-document-intake`（**2026-11-17 已把现行线并入主干，两者树完全一致**，SHA 以 `git rev-parse` 现场值为准），tag `v1.0-dev-2026-11-17`；工作树干净。日常开发在 `feat/unified-document-intake`，里程碑合 `main`。
 > **模型**：本阶段（本地开发/验证）统一 HY4（`hy4-flash-free`）；交付口径另议（D-143）。
-> **子代理也必须用 HY4**：派 `subagent` 时显式传 `provider: opencode-go-openai` + `model: hy4-flash-free`。
-> 机制提醒：子代理可用模型是**会话级白名单**（会话创建时固化，事件 `subagent/model-selection-policy`），
-> 旧会话里换不了（实测 `child LLM route … not allowed for this Session`）；**新会话**的白名单来自桌面 profile 的
-> `subagent-model-selection-settings.allowedModels`，已含 `hy4-flash-free`。开工先用 `list_subagent_models` 确认看得到 HY4。
-> 另：`beam-free` 等第三方免费模型已被地域封锁（`403 RegionError`），别当备选。
 > 自己核一遍再动手，**不许引用这段记忆**。
 
 **已经能用（HR/面试官能感觉到）**
