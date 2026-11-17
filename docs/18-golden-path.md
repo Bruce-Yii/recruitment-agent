@@ -101,8 +101,8 @@ agent 不得代填面评、不得代做决策（`execution_mandate` 的 CHECK �
 | 独立校验器 | ✅ 成立 | `converter/verify/`，V1–V8，24 条测试 |
 | 模型兜底 | ⛔ **converter 内车道不接线（设计改道）** | D-81 + D-107：模型调用不进插件；视觉补读由 agent 侧承担 —— `recruitment_page_image` → `read_image` → `recruitment_model_text_merge`（两个工具已注册，`src/index.ts:598-599`）；`converter/fallback/model_reader.py` 仍不接 provider |
 | 人工复核队列 | ✅ 成立 | `converter/review/`，51 条测试；CI `python-lanes` job 绿 |
-| 插件 26 个工具从 `apply()` 注册 | ✅ 成立 | `src/index.ts:577-600`（20 个具名 + `...structureTools` 2 个 + `...configTools` 3 个 = 25）；2026-11-14 回抄实测：假 ctx 调 `apply()` 捕获 **25** 个注册名，未配置路径同样 25 个 |
-| **插件 26 个工具注册 + Web 入口可达** | ⚠️ **注册数成立；宿主会话证据待复跑**（浏览器证据产生于 19 工具时代） | 2026-11-14 回抄实测注册 25（假 ctx `apply()`）；浏览器实测 `recruitment_job_get` 返回值与 DB 一致、硬刷新后会话保持 —— `evidence/experiments/2026-11-13-web-browser-acceptance/`；2026-11-14 工作台面板三层同时刻对齐 —— `evidence/experiments/2026-11-14-workbench-panel/` |
+| 插件 30 个工具从 `apply()` 注册 | ✅ 成立（2026-11-17 回抄） | `src/index.ts:892-933`（20 个具名 + `...structureTools` 2 个 + `...configTools` 3 个 = 25）；2026-11-14 回抄实测：假 ctx 调 `apply()` 捕获 **25** 个注册名，未配置路径同样 25 个 |
+| **插件 30 个工具注册 + Web 入口可达** | ⚠️ **注册数成立；宿主会话证据待复跑**（浏览器证据产生于 19 工具时代） | 2026-11-14 回抄实测注册 25（假 ctx `apply()`）；浏览器实测 `recruitment_job_get` 返回值与 DB 一致、硬刷新后会话保持 —— `evidence/experiments/2026-11-13-web-browser-acceptance/`；2026-11-14 工作台面板三层同时刻对齐 —— `evidence/experiments/2026-11-14-workbench-panel/` |
 | S3 岗位 / Rubric 工具 | ✅ 交付；**rubric 批准已有产品入口** | `src/tools/job-create.ts`（rubric 落 PENDING，人类批准）；批准入口 = `recruitment_job_rubric_approve`（`src/tools/job-rubric-approve.ts`，注册于 `src/index.ts:585`，写库前过 `ctx.approval`，fail-closed；工厂在 `src/index.ts:509-511`） |
 | S6 接入工具 | ✅ 交付 | `src/tools/application-intake.ts`；F1 补钉：新建申请时按 `job.current_rubric_version_id` 钉 `application.rubric_version_id`（`application-intake.ts:1427-1434`、INSERT 见 `:1672-1685`） |
 | S7 初筛工具 | ✅ 交付；**决策写侧已补齐** | `src/tools/screening-evaluate.ts`（只读）；人决定落 `decision(decision_scope='SCREENING', stage_code='S7')` —— D-103 / `decision-rules.md §17.1` |
@@ -111,7 +111,7 @@ agent 不得代填面评、不得代做决策（`execution_mandate` 的 CHECK �
 | S10 评价/决策工具 | ✅ 交付；**决策可落库** | `src/tools/{scorecard-submit,evaluation-summarize,decision-record}.ts`；`decision_record` 接受 `decision_scope ∈ {SCREENING, STAGE, FINAL}`（D-103），STAGE/FINAL 走 S10；D-95 后决策不再点第二次 approval（`IN_CHAT` + 原话），面评/排期仍走 `ctx.approval`（D-79）+ 120s 超时（D-101） |
 | 产品 profile（DSH Web） | ✅ 能起服务 + 能在里面调招聘工具 | `dsh --profile recruitment --no-open --port 49301`；浏览器实测见上 |
 
-**结论（2026-11-14 回抄更新）**：**接线层已通**（26 个工具注册、Web 会话真调到、刷新保持），
+**结论（2026-11-14 回抄更新）**：**接线层已通**（30 个工具注册、Web 会话真调到、刷新保持），
 决策写侧也已补齐：S10 的 `STAGE/FINAL` 走 `decision_record`，S7 的 `SCREENING` 同工具写侧由 D-103 落地；
 人只决策一次（D-95 `IN_CHAT` + 原话），不再需要"Web 里再点一次 approval"。
 但 Golden Path **仍未端到端跑通过一次**：最近一次独立尝试 = `evidence/experiments/2026-11-14-golden-path-e2e/README.md`
