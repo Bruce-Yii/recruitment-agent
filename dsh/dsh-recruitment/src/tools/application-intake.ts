@@ -1425,7 +1425,7 @@ interface JobRow {
  * @param currentRubricVersionId - `job.current_rubric_version_id`。
  * @returns 可钉的版本 id；没有则 `null`。
  */
-async function resolvePinnableRubricVersion(
+export async function resolvePinnableRubricVersion(
   client: DatabaseClient,
   tenantId: string,
   jobId: string,
@@ -1910,7 +1910,7 @@ async function loadVersionChain(
   return row
 }
 
-async function loadJob(client: DatabaseClient, tenantId: string, jobId: string): Promise<JobRow> {
+export async function loadJob(client: DatabaseClient, tenantId: string, jobId: string): Promise<JobRow> {
   const { rows } = await client.query<JobRow>(
     `select id, tenant_id, code, title, status, current_job_version_id, current_rubric_version_id
        from recruitment.job where id = $1 and tenant_id = $2`,

@@ -42,6 +42,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   closePool,
   createPool,
+  withActor,
   withReadOnly,
   type DatabaseClient,
   type DatabasePool,
@@ -66,6 +67,19 @@ import { createJobRubricApproveTool } from '../tools/job-rubric-approve.ts'
 import { createConfigRoleTool } from '../tools/config-role.ts'
 import { createConfigTeamTool } from '../tools/config-team.ts'
 import { createConfigPipelineTool } from '../tools/config-pipeline.ts'
+import { sha256Text } from '../domain/criterion-override.ts'
+import {
+  ensureActiveApplication,
+  loadJob,
+  resolvePinnableRubricVersion,
+} from '../tools/application-intake.ts'
+import {
+  insertCarryOverRefs,
+  parseCarryOverRefs,
+  validateCarryOverRefs,
+} from '../db/carry-over.ts'
+import { createCandidateConstraintTool } from '../tools/candidate-constraint.ts'
+import { createJobCreateTool } from '../tools/job-create.ts'
 
 // =====================================================================
 //  契约常量
@@ -86,6 +100,9 @@ const ACTION_PATHS = {
   configTeam: `${ACTION_PREFIX}/config/team`,
   configPipeline: `${ACTION_PREFIX}/config/pipeline`,
   config: `${ACTION_PREFIX}/config`,
+  applicationTransfer: `${ACTION_PREFIX}/application/transfer`,
+  candidateConstraint: `${ACTION_PREFIX}/candidate/constraint`,
+  jobCreate: `${ACTION_PREFIX}/job/create`,
 } as const
 
 /** action 名称（响应 `action` 字段 + 错误 detail，机检口径）。 */
@@ -99,6 +116,9 @@ type ActionName =
   | 'config/role'
   | 'config/team'
   | 'config/pipeline'
+  | 'application/transfer'
+  | 'candidate/constraint'
+  | 'job/create'
 
 /** 允许调用写动作的受控 alias（D-119 + D-118：招聘/决策/配置是 Recruiter 职责范围内的人工动作；
  *  interviewer_a/b 的工作台动作只有 W1 的 scorecard submit，不走本文件）。 */
@@ -125,6 +145,8 @@ const ACTOR_OVERRIDE_BODY_KEYS = [
   'created_by_actor_id',
   'approved_by_actor_id',
   'submitted_by_actor_id',
+  // confirmation_text 的 sha256 由服务端计算；客户端不得传入派生值（三条新写动作共用）。
+  'confirmation_text_sha256',
 ] as const
 /** 决策动作额外禁止的 body 键：人工确认四要素与 decision 行字段由服务端生成（D-95 / DC-08）。 */
 const DECISION_DERIVED_BODY_KEYS = [
@@ -182,6 +204,9 @@ const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   DB_CONSTRAINT_VIOLATION: 500,
   INVARIANT_VIOLATION: 500,
   READER_FAILED: 500,
+  // 三条新写动作（transfer/constraint/job-create）的领域拒绝码全部复用既有码：
+  //   CANDIDATE_MISMATCH / CARRY_OVER_* / INTERVIEW_* / JOB_NOT_FOUND 等只作为
+  //   reason_code 出现在 INVALID_ARGS(400) / NOT_FOUND(404) 的 detail 里，不另立顶层码。
 }
 
 // =====================================================================
@@ -1523,6 +1548,345 @@ async function handleConfigUnified(
 }
 
 // =====================================================================
+//  三条新写动作的独立 DB 读回（transfer / constraint / job-create）
+// =====================================================================
+
+/** transfer 读回：目标申请行（含新申请 id / 候选人 / 岗位 / 生命周期 / 阶段 / 版本）。 */
+interface TransferApplicationReadbackRow {
+  application_id: string
+  candidate_id: string
+  job_id: string
+  lifecycle_status: string
+  current_stage_code: string
+  record_version: number
+}
+
+const TRANSFER_APPLICATION_READBACK_SQL = `
+  select a.id::text                    as application_id,
+         a.candidate_id::text           as candidate_id,
+         a.job_id::text                 as job_id,
+         a.lifecycle_status,
+         a.current_stage_code,
+         a.record_version
+    from recruitment.application a
+   where a.id = $1::uuid and a.tenant_id = $2::uuid
+`
+
+/** constraint 读回：candidate_constraint 行（append-only 事实）。 */
+interface ConstraintReadbackRow {
+  constraint_id: string
+  kind: string
+  text: string
+  source: string
+  application_id: string | null
+  interview_id: string | null
+  created_by_actor_id: string
+  record_version: number
+}
+
+const CONSTRAINT_READBACK_SQL = `
+  select c.id::text                       as constraint_id,
+         c.kind,
+         c.text,
+         c.source,
+         c.application_id::text           as application_id,
+         c.interview_id::text             as interview_id,
+         c.created_by_actor_id::text      as created_by_actor_id,
+         c.record_version
+    from recruitment.candidate_constraint c
+   where c.id = $1::uuid and c.tenant_id = $2::uuid
+`
+
+/** job/create 读回：job 行 + 当前 job_version 行。 */
+interface JobCreateJobReadbackRow {
+  job_id: string
+  code: string
+  title: string
+  status: string
+  current_job_version_id: string | null
+  record_version: number
+}
+
+interface JobCreateVersionReadbackRow {
+  version_id: string
+  version_no: number
+  payload_hash: string
+}
+
+const JOB_CREATE_READBACK_SQL = `
+  select j.id::text                       as job_id,
+         j.code,
+         j.title,
+         j.status,
+         j.current_job_version_id::text   as current_job_version_id,
+         j.record_version
+    from recruitment.job j
+   where j.id = $1::uuid and j.tenant_id = $2::uuid
+`
+
+const JOB_CREATE_VERSION_READBACK_SQL = `
+  select v.id::text        as version_id,
+         v.version_no,
+         v.payload_hash
+    from recruitment.job_version v
+   where v.id = $1::uuid and v.tenant_id = $2::uuid
+`
+
+/**
+ * 读回 transfer 的目标申请 + 携带历史行数（行数按 application_id + tenant_id）。
+ */
+async function readbackTransfer(
+  client: DatabaseClient,
+  tenantId: string,
+  applicationId: string,
+): Promise<Record<string, unknown>> {
+  const app = await client.query<TransferApplicationReadbackRow>(TRANSFER_APPLICATION_READBACK_SQL, [applicationId, tenantId])
+  const refs = await client.query<{ carry_over_count: number }>(
+    `select count(*)::int as carry_over_count
+       from recruitment.application_carry_over
+      where application_id = $1::uuid and tenant_id = $2::uuid`,
+    [applicationId, tenantId],
+  )
+  return {
+    ...requireRow(app.rows, 'application', { application_id: applicationId }),
+    carry_over_count: refs.rows[0]?.carry_over_count ?? 0,
+  }
+}
+
+/** 读回一条 candidate_constraint 行。 */
+async function readbackConstraint(
+  client: DatabaseClient,
+  tenantId: string,
+  constraintId: string,
+): Promise<ConstraintReadbackRow> {
+  const { rows } = await client.query<ConstraintReadbackRow>(CONSTRAINT_READBACK_SQL, [constraintId, tenantId])
+  return requireRow(rows, 'candidate_constraint', { constraint_id: constraintId })
+}
+
+/** 读回新建岗位 + 当前版本行。 */
+async function readbackJobCreate(
+  client: DatabaseClient,
+  tenantId: string,
+  jobId: string,
+  versionId: string,
+): Promise<Record<string, unknown>> {
+  const job = await client.query<JobCreateJobReadbackRow>(JOB_CREATE_READBACK_SQL, [jobId, tenantId])
+  const version = await client.query<JobCreateVersionReadbackRow>(JOB_CREATE_VERSION_READBACK_SQL, [versionId, tenantId])
+  return {
+    job: requireRow(job.rows, 'job', { job_id: jobId }),
+    job_version: requireRow(version.rows, 'job_version', { version_id: versionId }),
+  }
+}
+
+// =====================================================================
+//  动作 10：POST application/transfer（跨岗调剂）
+//    复用 `ensureActiveApplication`（建/复用目标申请）+ `db/carry-over.ts` 三件套（历史携带）。
+//    源申请只读；actor 来自 session 绑定；全部在一个 withActor 事务里。
+// =====================================================================
+
+/** 从 body 取必填 UUID（缺失/非字符串/非 UUID → 400 MISSING_REQUIRED / INVALID_ARGS）。 */
+function requireBodyUuid(body: Record<string, unknown>, key: string): string {
+  const value = body[key]
+  if (typeof value !== 'string' || value === '') {
+    throw actionHttpError(400, 'INVALID_ARGS', 'MISSING_REQUIRED', `缺必填字段 "${key}"`, { missing: [key] })
+  }
+  if (!isUuid(value)) {
+    throw actionHttpError(400, 'INVALID_ARGS', 'INVALID_UUID', `字段 "${key}" 必须是 UUID`, { path: key })
+  }
+  return value
+}
+
+/**
+ * 校验并取 confirmation_text（必填、非空字符串），返回服务端计算的 sha256。
+ * 派生键 `confirmation_text_sha256` 已在 rejectBodyOverrides 里全局禁掉。
+ */
+function requireConfirmationSha256(body: Record<string, unknown>): string {
+  const text = body.confirmation_text
+  if (typeof text !== 'string' || text.trim() === '') {
+    throw actionHttpError(400, 'INVALID_ARGS', 'MISSING_REQUIRED', '缺必填字段 "confirmation_text"（人点原话）', {
+      missing: ['confirmation_text'],
+    })
+  }
+  return sha256Text(text)
+}
+
+/**
+ * `POST /recruitment/api/action/application/transfer` 的实现。
+ * @param deps - 路由依赖。
+ * @param req - node 请求。
+ * @param res - node 响应。
+ */
+async function handleApplicationTransfer(
+  deps: ActionHttpDeps,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const action: ActionName = 'application/transfer'
+  const { resolved, body } = await readActionRequest(deps, req, action)
+  const database = requireDatabase(deps)
+  const confirmationSha256 = requireConfirmationSha256(body)
+  const applicationId = requireBodyUuid(body, 'application_id')
+  const targetJobId = requireBodyUuid(body, 'target_job_id')
+  const refs = parseCarryOverRefs(body.carry_over_refs)
+
+  // 写配置：`actor_id` 只来自 session → alias 解析（不读 body/query/header）。
+  const writeConfig: ResolvedDatabaseConfig = { ...database, actor_id: resolved.actor_id }
+  const result = await withPool(database, async (pool) => withActor(pool, writeConfig.actor_id, async (client) => {
+    // 1) 源申请只读：candidate_id + resume_version_id（租户隔离，缺失 → 404）。
+    const source = await client.query<{ candidate_id: string; resume_version_id: string | null }>(
+      `select candidate_id::text as candidate_id, resume_version_id::text as resume_version_id
+         from recruitment.application
+        where id = $1::uuid and tenant_id = $2::uuid`,
+      [applicationId, writeConfig.tenant_id],
+    )
+    const sourceRow = source.rows[0]
+    if (sourceRow === undefined) {
+      throw actionHttpError(404, 'NOT_FOUND', 'SOURCE_APPLICATION_NOT_FOUND', '源申请不在本租户下或不存在', {
+        application_id: applicationId,
+      })
+    }
+    if (sourceRow.resume_version_id === null) {
+      throw actionHttpError(404, 'NOT_FOUND', 'SOURCE_RESUME_VERSION_NOT_FOUND', '源申请没有 resume_version_id，无法跨岗调剂', {
+        application_id: applicationId,
+      })
+    }
+
+    // 2) 目标岗位只读 + 已批准 rubric 钉法（与 intake 一致，不复制 SQL / 判定）。
+    const job = await loadJob(client, writeConfig.tenant_id, targetJobId)
+    if (job.current_job_version_id === null) {
+      throw actionHttpError(404, 'NOT_FOUND', 'JOB_VERSION_NOT_FOUND', '目标岗位还没有 job_version', { job_id: targetJobId })
+    }
+    const pinnableRubricVersionId = await resolvePinnableRubricVersion(
+      client, writeConfig.tenant_id, job.id, job.current_rubric_version_id,
+    )
+
+    // 3) 建/复用目标申请（同候选人、同 resume 版本，actor 来自 session 绑定）。
+    const application = await ensureActiveApplication(client, {
+      tenantId: writeConfig.tenant_id,
+      candidateId: sourceRow.candidate_id,
+      jobId: targetJobId,
+      jobVersionId: job.current_job_version_id,
+      resumeVersionId: sourceRow.resume_version_id,
+      rubricVersionId: pinnableRubricVersionId,
+    })
+
+    // 4) 历史引用（可选）：形状/归属校验 + 幂等插入，全在同一事务。
+    let inserted = 0
+    if (refs !== undefined && refs.length > 0) {
+      await validateCarryOverRefs(client, writeConfig.tenant_id, application.id, refs)
+      inserted = await insertCarryOverRefs(client, writeConfig.tenant_id, application.id, refs, writeConfig.actor_id)
+    }
+
+    return {
+      application_id: application.id,
+      candidate_id: sourceRow.candidate_id,
+      application_action: application.action,
+      confirmation_text_sha256: confirmationSha256,
+      carry_over: { requested: refs?.length ?? 0, inserted },
+    }
+  }))
+
+  const readback = await withPool(database, async (pool) => withReadOnly(pool, async (client) => (
+    await readbackTransfer(client, database.tenant_id, result.application_id)
+  )))
+  writeActionResult(res, action, resolved, noApprovalSummary(), result, readback)
+}
+
+// =====================================================================
+//  动作 11：POST candidate/constraint（候选人约束 PIN/UNPIN/HANDOFF）
+//    直接复用 `createCandidateConstraintTool(...).execute`，不复制约束写入逻辑。
+// =====================================================================
+
+/**
+ * `POST /recruitment/api/action/candidate/constraint` 的实现。
+ * @param deps - 路由依赖。
+ * @param req - node 请求。
+ * @param res - node 响应。
+ */
+async function handleCandidateConstraint(
+  deps: ActionHttpDeps,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const action: ActionName = 'candidate/constraint'
+  const { resolved, body } = await readActionRequest(deps, req, action)
+  const database = requireDatabase(deps)
+  requireConfirmationSha256(body)
+
+  // 剥离 confirmation_text；args 不含任何身份键（rejectBodyOverrides 已保证）。
+  const { confirmation_text: _confirmationText, ...args } = body
+  const tool = createCandidateConstraintTool({ database, identity: deps.identity })
+  const output = await tool.execute(args, execOf(resolved))
+  const constraintId = requireOutputString(asRecord(output), 'constraint_id')
+  const readback = await withPool(database, async (pool) => withReadOnly(pool, async (client) => (
+    { ...(await readbackConstraint(client, database.tenant_id, constraintId)) }
+  )))
+  writeActionResult(res, action, resolved, noApprovalSummary(), output, readback)
+}
+
+// =====================================================================
+//  动作 12：POST job/create（新建岗位）
+//    直接复用 `createJobCreateTool(...).execute`；rubric 保持 PENDING，不调用 approve。
+// =====================================================================
+
+/**
+ * `POST /recruitment/api/action/job/create` 的实现。
+ * @param deps - 路由依赖。
+ * @param req - node 请求。
+ * @param res - node 响应。
+ */
+async function handleJobCreate(
+  deps: ActionHttpDeps,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const action: ActionName = 'job/create'
+  const { resolved, body } = await readActionRequest(deps, req, action)
+  const database = requireDatabase(deps)
+  requireConfirmationSha256(body)
+
+  // 标题必填（域层也有校验，这里先给明确的缺失错误）。
+  const title = body.title
+  if (typeof title !== 'string' || title.trim() === '') {
+    throw actionHttpError(400, 'INVALID_ARGS', 'MISSING_REQUIRED', '缺必填字段 "title"', { missing: ['title'] })
+  }
+  // headcount 在 recruitment.requisition 表，不在 job 表；job_create 域路径只接受可选
+  // requisition_id（链接已有需求单），本接口不创建需求单。若静默接受 headcount 会返回
+  // 200 但 HC 没落库、界面却显示已填 —— 那是假报（R4 / docs/29 ASYNC-2 同类）。
+  // 因此明确拒绝，人话告知人去需求单维护 HC（零写入）。
+  if (Object.hasOwn(body, 'headcount')) {
+    throw actionHttpError(
+      400,
+      'INVALID_ARGS',
+      'UNSUPPORTED_FIELD',
+      'headcount 由岗位需求单（requisition）维护，建岗接口不接收；请先建需求单再关联（零写入）',
+      { field: 'headcount' },
+    )
+  }
+
+  // 剥离 confirmation_text；dept → department_id / department_name（UUID → id，否则 → name）。
+  const { confirmation_text: _confirmationText, dept, ...rest } = body
+  const args: Record<string, unknown> = { ...rest }
+  if (dept !== undefined) {
+    if (typeof dept !== 'string' || dept.trim() === '') {
+      throw actionHttpError(400, 'INVALID_ARGS', 'INVALID_ARGS', 'dept 必须是非空字符串', { path: 'dept' })
+    }
+    if (isUuid(dept)) args.department_id = dept
+    else args.department_name = dept
+  }
+
+  const tool = createJobCreateTool(database, { identity: deps.identity })
+  const output = await tool.execute(args, execOf(resolved))
+  const outputRecord = asRecord(output)
+  const jobId = requireOutputString(outputRecord, 'job', 'id')
+  const versionId = requireOutputString(outputRecord, 'job_version', 'id')
+  const readback = await withPool(database, async (pool) => withReadOnly(pool, async (client) => (
+    await readbackJobCreate(client, database.tenant_id, jobId, versionId)
+  )))
+  writeActionResult(res, action, resolved, noApprovalSummary(), output, readback)
+}
+
+// =====================================================================
 //  注册入口
 // =====================================================================
 
@@ -1556,7 +1920,8 @@ function postRoute(
  * 注册 D5 全部写操作 Host Remote Action；返回 disposer（插件卸载即注销）。
  *
  * 非回环监听时**不注册**并告警（fail-closed：写动作绝不挂到网络可达地址）。
- * 10 条 exact 路由（9 个动作端点 + 1 个设置统一入口；见文件头与 CONTRACT.md）。
+ * 13 条 exact 路由（9 个既有动作端点 + 1 个设置统一入口 + 3 条新写动作
+ * transfer / constraint / job-create；见文件头与 CONTRACT.md）。
  * @param ctx - 宿主上下文（含 webServer 服务）。
  * @param deps - 库配置 + Demo Actor 身份（与工具共享的同一个实例）+ 可选连接器。
  * @returns 注销函数。
@@ -1579,6 +1944,9 @@ export function registerActionsHttp(ctx: ActionHostContext, deps: ActionHttpDeps
     [ACTION_PATHS.configTeam, postRoute(port, (req, res) => handleConfigAction(deps, 'team', req, res))],
     [ACTION_PATHS.configPipeline, postRoute(port, (req, res) => handleConfigAction(deps, 'pipeline', req, res))],
     [ACTION_PATHS.config, postRoute(port, (req, res) => handleConfigUnified(deps, req, res))],
+    [ACTION_PATHS.applicationTransfer, postRoute(port, (req, res) => handleApplicationTransfer(deps, req, res))],
+    [ACTION_PATHS.candidateConstraint, postRoute(port, (req, res) => handleCandidateConstraint(deps, req, res))],
+    [ACTION_PATHS.jobCreate, postRoute(port, (req, res) => handleJobCreate(deps, req, res))],
   ]
   const disposers = routes.map(([path, handler]) => webServer.register({ kind: 'exact', path, handler }))
   return () => {

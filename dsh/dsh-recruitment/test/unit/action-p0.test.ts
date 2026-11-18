@@ -1,7 +1,7 @@
 // D5 写操作 P0 · `src/http/actions.ts` 的**无真库**单元测试（子代理 A 交付物）。
 //
 // 覆盖 owner-d5-actions 指定的必测项（a–i 中的 P0 子集）：
-//   a. 回环 host 恰好注册 10 条 exact 路由；非回环 host 零注册 + 一条 warn；
+//   a. 回环 host 恰好注册 13 条 exact 路由（9 动作 + 统一 config + 三条新写入口）；非回环 host 零注册 + 一条 warn；
 //   b. 未绑定 session → 409 DEMO_ACTOR_UNMAPPED/SESSION_NOT_BOUND（在碰 body / DB 之前）；
 //   c. 缺 / 非法 `x-dsh-session` → 400 SESSION_REQUIRED / SESSION_ID_INVALID；
 //   d. interviewer_a 调写动作 → 403 FORBIDDEN/ACTOR_NOT_AUTHORIZED（零写入，未建连）；
@@ -47,7 +47,7 @@ const SESSION_INTERVIEWER = 'session-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 /** 形态合法但**未绑定** alias 的 session。 */
 const SESSION_UNBOUND = 'session-ffffffff-ffff-4fff-8fff-ffffffffffff'
 
-/** 10 条 exact 路由（顺序 = `ACTION_PATHS` 的声明顺序；`actions.ts:78-89`）。 */
+/** 13 条 exact 路由（顺序 = `ACTION_PATHS` 的声明顺序；`actions.ts:101-107`）。 */
 const EXPECTED_ROUTES: readonly string[] = [
   'exact /recruitment/api/action/screening/decide',
   'exact /recruitment/api/action/decision/record',
@@ -59,6 +59,9 @@ const EXPECTED_ROUTES: readonly string[] = [
   'exact /recruitment/api/action/config/team',
   'exact /recruitment/api/action/config/pipeline',
   'exact /recruitment/api/action/config',
+  'exact /recruitment/api/action/application/transfer',
+  'exact /recruitment/api/action/candidate/constraint',
+  'exact /recruitment/api/action/job/create',
 ]
 
 /**
@@ -293,16 +296,16 @@ after(async () => {
 // ---------------------------------------------------------------------------
 
 describe('a. 路由注册', () => {
-  test('回环 host：恰好注册 10 条 exact 路由（9 动作 + 统一 config），路径逐字一致', () => {
+  test('回环 host：恰好注册 13 条 exact 路由（9 动作 + 统一 config + 三条新写入口），路径逐字一致', () => {
     assert.deepEqual(
       server.registered.map((route) => `${route.kind} ${route.path}`),
       EXPECTED_ROUTES,
-      '只允许这 10 条 exact 路由（不放大暴露面）',
+      '只允许这 13 条 exact 路由（不放大暴露面）',
     )
     // kind 必须全是 exact（prefix 会把 /recruitment/api/action/** 全吃掉，违反最小暴露面）。
     assert.deepEqual([...new Set(server.registered.map((route) => route.kind))], ['exact'])
     // 路径唯一（宿主对重复 (kind,path) 会抛错）。
-    assert.equal(new Set(server.registered.map((route) => route.path)).size, 10)
+    assert.equal(new Set(server.registered.map((route) => route.path)).size, 13)
   })
 
   test('非回环 host（0.0.0.0）：零注册 + 一条 warn（fail-closed）', async () => {
