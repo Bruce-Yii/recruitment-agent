@@ -20,3 +20,8 @@
 ## 修改规则
 
 改这个文件 = 改设计稿：**先由产品负责人/设计确认**，再更新本 README 的 sha256。
+
+## 附：接入指导书
+
+design/v4/integration-guide.md —— 前端接入指导书（UI 冻结、只拔 Mock），产品负责人 2026-11-19 提供，原样保存；
+sha256 相同口径见文件头。它假设的后端能力已逐条对账在 docs/35-v4-integration-backend-checklist.md。
