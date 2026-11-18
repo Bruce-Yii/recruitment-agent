@@ -89,10 +89,12 @@ export type {
 export {
   enqueueEmailSend,
   claimPendingEffects,
+  listSentForReadback,
   advanceEffect,
   resolveEmailAuthorization,
   emailEffectIdempotencyKey,
   mailBodySummary,
+  buildEmailEffectPayload,
 } from './durable-effect.ts'
 export type {
   EffectStatus,

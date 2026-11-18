@@ -8,7 +8,9 @@
 //   4. 完全找不到且预算耗尽 → NOT_FOUND（只写回执列，状态保持 SENT，不 CONFIRMED）；
 //   5. readback 抛异常 → UNREADABLE（不是 CONFIRMED）；
 //   6. 时间窗/主题/收件人严格校验（组合键不是摆设）；
-//   7. 常量 EMAIL_PUMP_INTERVAL_MS === 2000、READBACK_TIME_WINDOW_MS === 10 分钟。
+//   7. 常量 EMAIL_PUMP_INTERVAL_MS === 2000、READBACK_TIME_WINDOW_MS === 10 分钟；
+//   8. 组合默认防线：不注入 io.claim、只注入 io.withWrite → 默认 claimFn 必须收到
+//      withWrite 给的 client（不是 undefined），tick 不抛（真链发信卡死根因）。
 //
 // 纪律：所有 IO 走 io seam 注入；不连真 PG、不连真 SMTP/IMAP。
 import test from 'node:test'
@@ -60,7 +62,7 @@ interface ClaimRow {
 function sentRow(overrides: Partial<ClaimRow> = {}): ClaimRow {
   return {
     id: EFFECT_ID, status: 'SENT',
-    payload: { to: 'candidate@example.invalid', subject: '面试邀请', body_summary: '正文' },
+    payload: { to: 'candidate@example.invalid', subject: '面试邀请', text: '正文', body_summary: '正文' },
     attempt_count: 0, max_attempts: 5,
     external_id: SMTP_MESSAGE_ID, sent_at: NOW,
     ...overrides,
@@ -92,6 +94,7 @@ function makeHarness(opts: {
   const rows = opts.rows ?? [sentRow()]
   const io: PumpIo = {
     claim: opts.sharedClaim ?? (async () => { claimCalls += 1; return rows as never }),
+    listForReadback: async () => [],
     withWrite: async (fn) => fn(undefined),
     advance: async (_client, id, patch) => {
       patches.push({ ...patch })
@@ -227,6 +230,7 @@ test('完全找不到且预算耗尽 → NOT_FOUND，状态保持 SENT，不 CON
     readbackMaxAttempts: 3,
     io: {
       claim: async () => [sentRow()] as never,
+      listForReadback: async () => [],
       withWrite: async (fn) => fn(undefined),
       advance: async (_client, id, patch) => {
         patches.push({ ...patch })
@@ -239,18 +243,23 @@ test('完全找不到且预算耗尽 → NOT_FOUND，状态保持 SENT，不 CON
   const r1 = await pump.tick()
   assert.equal(r1.readback_checked, 1)
   assert.equal(r1.not_found, 0, '第 1 次读不到还不报 NOT_FOUND')
-  assert.equal(marks.length, 0, '预算未耗尽不写回执列')
+  // 新语义：未命中也写 NOT_READ + next_attempt_at（排重试），不是"不写回执列"。
+  assert.equal(marks.length, 1)
+  assert.equal(marks[0]!.mark.readback_state, 'NOT_READ')
+  assert.equal(typeof marks[0]!.mark.next_attempt_at, 'string')
   const r2 = await pump.tick()
   assert.equal(r2.not_found, 0)
   const r3 = await pump.tick()
   assert.equal(r3.not_found, 1, '第 3 次（预算上限）报 NOT_FOUND')
   assert.equal(reads, 3)
-  assert.equal(marks.length, 1)
-  assert.equal(marks[0]?.mark.readback_state, 'NOT_FOUND')
-  assert.equal((marks[0]?.mark.receipt_payload as Record<string, unknown>).outcome, 'NOT_FOUND')
-  assert.equal((marks[0]?.mark.receipt_payload as Record<string, unknown>).attempts, 3)
+  assert.equal(marks.at(-1)!.mark.readback_state, 'NOT_FOUND')
+  assert.equal(marks.at(-1)!.mark.next_attempt_at, null)
+  const terminal = marks.at(-1)!.mark
+  assert.equal(terminal.readback_state, 'NOT_FOUND')
+  assert.equal((terminal.receipt_payload as Record<string, unknown>).outcome, 'NOT_FOUND')
+  assert.equal((terminal.receipt_payload as Record<string, unknown>).attempts, 3)
   assert.equal(patches.some((p) => p.status === 'CONFIRMED'), false, '绝不 CONFIRMED')
-  assert.ok(!('status' in (marks[0]?.mark ?? {})), 'markReadback 不含 status 字段（状态保持 SENT）')
+  assert.ok(!('status' in terminal), 'markReadback 不含 status 字段（状态保持 SENT）')
 })
 
 test('readback 抛异常 → UNREADABLE（立即报，不是 CONFIRMED）', async () => {
@@ -310,4 +319,38 @@ test('makeHarness smoke：默认 transport 发送并回执计数独立', async (
   assert.equal(r.readback_checked, 1)
   assert.equal(r.not_found, 1)
   assert.equal(h.patches.some((p) => p.status === 'CONFIRMED'), false)
+})
+
+test('默认 claimFn 必须收到 withWrite 给的 client（不注入 io.claim），tick 不抛错', async () => {
+  // 真链发信卡死根因：默认 claimFn 曾写 `() => claimPendingEffects(undefined, …)`，
+  // 丢掉事务 client → client.query 抛 "Cannot read properties of undefined" → 被 catch 吞掉 → 永远 PENDING。
+  let clientQueryCalls = 0
+  const fakeClient = {
+    query: async (): Promise<{ rows: unknown[] }> => {
+      clientQueryCalls += 1
+      return { rows: [] } // 无可认领行；关键是证明 client 被传到了 claimPendingEffects
+    },
+  }
+  const io: PumpIo = {
+    // 故意**不**提供 claim：走默认实现。
+    withWrite: async (fn) => fn(fakeClient),
+    advance: async (_client, id, patch) => ({ id, status: patch.status, record_version: 1 }),
+  }
+  const pump = createEmailPump({
+    database: FAKE_DB, mail: FAKE_MAIL,
+    transport: async () => ({ messageId: 'unused' }),
+    io,
+  })
+  let thrown: unknown
+  let counts: PumpTickResult | undefined
+  try {
+    counts = await pump.tick()
+  } catch (error) {
+    thrown = error
+  }
+  assert.equal(thrown, undefined, `默认 claimFn 不得抛错：${String(thrown)}`)
+  assert.ok(counts !== undefined)
+  assert.equal(counts.claimed, 0)
+  assert.equal(clientQueryCalls, 1, '默认 claimFn 必须在 withWrite 给的 client 上执行 query（不是 undefined）')
+  pump.dispose()
 })

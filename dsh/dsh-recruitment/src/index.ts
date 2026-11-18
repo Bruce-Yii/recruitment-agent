@@ -127,7 +127,12 @@ import {
 } from './db/pool.ts'
 // email pump（durable_effect 派发器）：runtime.enabled 时与 G1 tick-loop 同源启停。
 // 同源 = 同一个 pool / 同一个 withActor 语义 / 同一个 disposer（先 pump、再 tick-loop、再关池）。
-import { createEmailPump, EMAIL_PUMP_INTERVAL_MS, type ReadbackFunction } from './runtime/email-pump.ts'
+import {
+  createEmailPump,
+  createImapReadback,
+  EMAIL_PUMP_INTERVAL_MS,
+  type ReadbackFunction,
+} from './runtime/email-pump.ts'
 import { createSmtpTransport } from './connectors/mail/smtp.ts'
 import {
   composeRuntime,
@@ -702,37 +707,13 @@ export function apply(
                 const smtp = createSmtpTransport(mail.resolved)
                 // 回执：用组合键（收件人 + 主题完全一致 + 发送时间 ± 窗口）查收件箱。
                 // 真机事实：服务端会改写 Message-ID，按 external_id 匹配必然落空。
-                // 若 IMAP transport 不可用则由 pump 记 UNREADABLE / NOT_FOUND，绝不假报 CONFIRMED。
-                const readback: ReadbackFunction = async (query) => {
-                  const factory = emailFetchRuntime.createTransport
-                  if (factory === null) return null
-                  const transport = factory(mail.resolved as never) as {
-                    listNew(input: { since_uid?: number; limit?: number }): Promise<readonly { uid: number; subject: string; from: string; message_id: string; date: string }[]>
-                    fetchMessage(uid: number): Promise<{ message_id: string; subject: string; headers: Readonly<Record<string, string>>; text: string }>
-                    disconnect(): Promise<void>
-                  }
-                  try {
-                    const envelopes = await transport.listNew({ limit: 100 })
-                    const center = Date.parse(query.sent_at)
-                    for (const env of envelopes) {
-                      if (env.subject !== query.subject) continue
-                      const at = Date.parse(env.date)
-                      if (!Number.isFinite(at) || !Number.isFinite(center)) continue
-                      if (Math.abs(at - center) > query.time_window_ms) continue
-                      const message = await transport.fetchMessage(env.uid)
-                      const headersTo = message.headers.to ?? ''
-                      if (headersTo !== '' && !headersTo.includes(query.to)) continue
-                      return {
-                        matched: true,
-                        matched_message_id: message.message_id || env.message_id,
-                        method: 'subject+recipient+time_window',
-                      }
-                    }
-                    return null
-                  } finally {
-                    await transport.disconnect().catch(() => undefined)
-                  }
-                }
+                // 真链回执卡死根因：旧闭包直接 listNew() 而从未 connect() → guardConnected
+                // 抛 NOT_CONNECTED → 被当 UNREADABLE。现在统一走 createImapReadback
+                // （每次自己 connect / finally disconnect，异常脱敏进 receipt_payload.error）。
+                const transportFactory = emailFetchRuntime.createTransport
+                const readback: ReadbackFunction = transportFactory === null
+                  ? async () => null
+                  : createImapReadback(transportFactory as never, mail.resolved)
                 const pump = createEmailPump({
                   database: runtimeDb,
                   mail: mail.resolved,
@@ -750,14 +731,22 @@ export function apply(
                     // 与 G1 完全同源：同一个 pool + 同一个 actor 语义（set_config is_local）。
                     withWrite: (fn) => withActor(pool, runtimeDb.actor_id, fn),
                     markReadback: async (client, effectId, mark) => {
-                      // 只写回执列；带 tenant 隔离 + status='SENT' 守卫，不碰 status/record_version。
+                      // 只写回执列 + 下次复查时间；带 tenant 隔离 + status='SENT' 守卫，
+                      // 不碰 status/record_version。next_attempt_at 为 null = 清掉重试（终态/命中）。
                       await (client as { query(text: string, values: readonly unknown[]): Promise<unknown> }).query(
                         `update recruitment.durable_effect
                             set receipt_payload = $2::jsonb,
                                 readback_state = $3,
-                                last_readback_at = now()
+                                last_readback_at = now(),
+                                next_attempt_at = $5::timestamptz
                           where id = $1 and tenant_id = $4 and status = 'SENT'`,
-                        [effectId, JSON.stringify(mark.receipt_payload), mark.readback_state, runtimeDb.tenant_id],
+                        [
+                          effectId,
+                          JSON.stringify(mark.receipt_payload),
+                          mark.readback_state,
+                          runtimeDb.tenant_id,
+                          mark.next_attempt_at ?? null,
+                        ],
                       )
                     },
                   },

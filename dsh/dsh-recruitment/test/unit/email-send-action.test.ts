@@ -393,12 +393,13 @@ function makePump(opts: {
   const patches: EffectAdvancePatch[] = []
   const row = {
     id: 'eeeeeeee-1111-4111-8111-000000000001', status: 'CLAIMED', // claim 已把 PENDING → CLAIMED
-    payload: { to: 'candidate@example.invalid', subject: '标题', body_summary: '正文' },
+    payload: { to: 'candidate@example.invalid', subject: '标题', text: '正文', body_summary: '正文' },
     attempt_count: 0, max_attempts: 3, external_id: null,
     ...opts.row,
   }
   const io: PumpIo = {
     claim: async () => [row as never],
+    listForReadback: async () => [],
     withWrite: async (fn) => fn(undefined),
     advance: async (_client, _id, patch) => {
       // 模拟 A 的"状态倒退被拒"：若前驱不匹配则抛错。
@@ -500,7 +501,7 @@ describe('email-pump 状态机', () => {
   test('状态倒退被拒：advance 抛错时 tick 不崩溃（patch 仍被记录，跳过计数）', async () => {
     const pump = makePump({
       transport: async () => ({ messageId: 'm-4' }),
-      row: { status: 'FAILED_FINAL', payload: { to: 'x@y.invalid', body_summary: '正文' } },
+      row: { status: 'FAILED_FINAL', payload: { to: 'x@y.invalid', subject: '标题', text: '正文' } },
     })
     const counts = await pump.tick()
     // SENT 的前驱不允许 FAILED_FINAL → advance 抛错 → sent 不计数。

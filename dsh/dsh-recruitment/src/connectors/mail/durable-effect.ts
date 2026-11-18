@@ -53,7 +53,17 @@ export interface EnqueueEmailSendInput {
   readonly template_key: string
   readonly template_version: string
   readonly subject: string
-  /** 正文摘要（≤500 字符，不落全文）。 */
+  /**
+   * 服务端解析出的收件地址（**最终要发的东西**，人预览看到的就是这一份）。
+   * 派发器直接用它，不再二次解析收件人（避免预览与实际发送漂移）。
+   */
+  readonly to: string
+  /**
+   * 完整正文（**最终要发的东西**）。人预览看到的 body_preview 必须与它逐字一致。
+   * 保留 body_summary 作审计摘要，但派发一律用 text。
+   */
+  readonly text: string
+  /** 正文摘要（≤500 字符，审计用；派发不读它）。 */
   readonly body_summary: string
   /** 幂等键；缺省 `${application_id}:${template_key}:${template_version}`。 */
   readonly idempotency_key?: string
@@ -92,6 +102,32 @@ export function mailBodySummary(value: string, maxChars: number = 500): string {
 }
 
 /**
+ * 纯函数：构造 durable_effect.payload（跨模块契约的唯一实现）。
+ * 供 enqueue 落库与"动作→派发器 round-trip"测试共用，防止两边各写一套形状再次漂移。
+ */
+export function buildEmailEffectPayload(input: EnqueueEmailSendInput): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    tenant_id: input.tenant_id,
+    application_id: input.application_id,
+    recipient_ref: input.recipient_ref,
+    template_key: input.template_key,
+    template_version: input.template_version,
+    subject: input.subject,
+    // 最终要发的东西：人预览看到的就是这两份，派发器直接消费，不许二次组装。
+    to: input.to,
+    text: input.text,
+    body_summary: mailBodySummary(input.body_summary),
+    authorization_ref: input.authorization_ref ?? null,
+    authorized_by_actor_id: input.authorized_by_actor_id ?? null,
+  }
+  if (input.confirmation_text_sha256 !== undefined) {
+    payload.confirmation_text_sha256 = input.confirmation_text_sha256
+  }
+  if (input.email_class !== undefined) payload.email_class = input.email_class
+  return payload
+}
+
+/**
  * 幂等入队。同键已存在 → 不新增行、created:false（用 ON CONFLICT DO NOTHING +
  * RETURNING，靠 uq_durable_effect_idempotency 唯一约束兜底）。
  * **必须在 withActor(pool, actorId, ...) 事务内调用**（触发器要求 actor GUC）。
@@ -103,22 +139,7 @@ export async function enqueueEmailSend(
   const idempotencyKey = input.idempotency_key?.trim() !== ''
     ? (input.idempotency_key as string)
     : emailEffectIdempotencyKey(input)
-  // payload 只放摘要，不放入参之外的内容；确认原话 sha / 授权引用原样落库。
-  const payload: Record<string, unknown> = {
-    tenant_id: input.tenant_id,
-    application_id: input.application_id,
-    recipient_ref: input.recipient_ref,
-    template_key: input.template_key,
-    template_version: input.template_version,
-    subject: input.subject,
-    body_summary: mailBodySummary(input.body_summary),
-    authorization_ref: input.authorization_ref ?? null,
-    authorized_by_actor_id: input.authorized_by_actor_id ?? null,
-  }
-  if (input.confirmation_text_sha256 !== undefined) {
-    payload.confirmation_text_sha256 = input.confirmation_text_sha256
-  }
-  if (input.email_class !== undefined) payload.email_class = input.email_class
+  const payload = buildEmailEffectPayload(input)
   const payloadHash = digestOf(payload)
   const businessRefs = [
     { type: 'APPLICATION', id: input.application_id },
@@ -170,6 +191,7 @@ export interface ClaimedEffect {
   readonly error_code: string | null
   readonly next_attempt_at: string | null
   readonly readback_state: EffectReadbackState | null
+  readonly receipt_payload?: Record<string, unknown> | null
   readonly sent_at: string | null
   readonly recipient_ref: string
   readonly subject: string
@@ -189,6 +211,7 @@ interface ClaimRow {
   error_code: string | null
   next_attempt_at: string | null
   readback_state: string | null
+  receipt_payload: Record<string, unknown> | null
   sent_at: string | null
 }
 
@@ -207,11 +230,46 @@ function asClaimed(row: ClaimRow): ClaimedEffect {
     error_code: row.error_code,
     next_attempt_at: row.next_attempt_at,
     readback_state: (row.readback_state as EffectReadbackState | null) ?? null,
+    receipt_payload: row.receipt_payload ?? null,
     sent_at: row.sent_at,
     recipient_ref: typeof payload.recipient_ref === 'string' ? payload.recipient_ref : '',
     subject: typeof payload.subject === 'string' ? payload.subject : '',
     body_summary: typeof payload.body_summary === 'string' ? payload.body_summary : '',
   }
+}
+
+/**
+ * 扫"已 SENT 但回执未完"的行供 pump 复查（**不改状态**，SENT 保持 SENT）。
+ *
+ * 真链回执卡死根因：旧实现只在本 tick 刚 SENT 的行上查一次回执，刚发完的瞬间
+ * 邮件还没进 INBOX → null 被当终态 → 之后再也不查。现在每 tick 都扫：
+ *   status='SENT' and readback_state in ('NOT_READ','UNREADABLE')
+ *   and (next_attempt_at is null or next_attempt_at <= now())
+ * 已 CONFIRMED / NOT_FOUND 的行不在扫描范围（终态不重复扫）。
+ * 用 FOR UPDATE SKIP LOCKED 保证多实例不重复复查。
+ */
+export async function listSentForReadback(
+  client: DatabaseClient,
+  input: { limit?: number },
+): Promise<readonly ClaimedEffect[]> {
+  const requested = typeof input.limit === 'number' && Number.isFinite(input.limit)
+    ? Math.max(1, Math.floor(input.limit))
+    : 20
+  const limit = Math.min(100, requested)
+  const { rows } = await client.query<ClaimRow>(
+    `select id, tenant_id, status, idempotency_key, payload, payload_hash,
+            attempt_count, max_attempts, external_id, error_code,
+            next_attempt_at, readback_state, receipt_payload, sent_at
+       from recruitment.durable_effect
+      where status = 'SENT'
+        and (readback_state is null or readback_state in ('NOT_READ', 'UNREADABLE'))
+        and (next_attempt_at is null or next_attempt_at <= now())
+      order by sent_at
+      limit $1
+        for update skip locked`,
+    [limit],
+  )
+  return rows.map(asClaimed)
 }
 
 /**
@@ -240,7 +298,7 @@ export async function claimPendingEffects(
       )
       returning id, tenant_id, status, idempotency_key, payload, payload_hash,
                 attempt_count, max_attempts, external_id, error_code,
-                next_attempt_at, readback_state, sent_at`,
+                next_attempt_at, readback_state, receipt_payload, sent_at`,
     [limit],
   )
   return rows.map(asClaimed)

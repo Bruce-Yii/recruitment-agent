@@ -637,6 +637,9 @@ async function handleEmailSend(deps: EmailSendHttpDeps, req: IncomingMessage, re
       template_key: command.template_key,
       template_version: String(command.template_version),
       subject: rendered.subject,
+      // 人预览看到的 to / body_preview 就是最终发送内容（同一份，不二次解析）。
+      to: recipient.to,
+      text: rendered.body,
       body_summary: rendered.body.slice(0, 500),
       idempotency_key: command.idempotency_key,
       authorization_ref: 'HUMAN_CLICK',
@@ -815,6 +818,9 @@ async function handleAuthorizedSend(deps: EmailSendHttpDeps, req: IncomingMessag
       template_key: command.template_key,
       template_version: String(command.template_version),
       subject: rendered.subject,
+      // 自动入口同理：预览/授权范围判定的就是这份 to/text，派发直接消费。
+      to: recipient.to,
+      text: rendered.body,
       body_summary: rendered.body.slice(0, 500),
       idempotency_key: command.idempotency_key,
       email_class: command.email_class,
