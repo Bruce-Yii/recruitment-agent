@@ -1118,7 +1118,12 @@ test.after(async () => {
   writeEvidence()
   if (readback !== undefined) await readback.end().catch(() => {})
   if (db !== undefined) {
-    // ⚠️ 故意**不调用 db.drop()**：库里保留放行/反证提交的行 + 拒绝前快照，供总控 psql 独立复核。
-    await db.pool.end().catch(() => {})
+    // 默认**跑完即 drop**：历史上"故意不 drop"导致每跑一次全量就多一个 ra_budget_it_*（D-150 复发）。
+    // 需要人工 psql 复核时设 RECRUITMENT_KEEP_BUDGET_DB=1 再跑，库会保留。
+    if (process.env.RECRUITMENT_KEEP_BUDGET_DB === '1') {
+      await db.pool.end().catch(() => {})
+    } else {
+      await db.drop().catch(() => {})
+    }
   }
 })
