@@ -190,6 +190,7 @@ import { registerActorHttp, type ActorHostContext } from './http/actor.ts'
 import { registerJobActionHttp, type JobActionHostContext } from './http/actions-job.ts'
 import { registerActionsHttp, type ActionHostContext } from './http/actions.ts'
 import { registerBatchUndoHttp, type BatchUndoHostContext } from './http/batch-undo.ts'
+import { registerScorecardDraftHttp, type ScorecardDraftHostContext } from './http/scorecard-draft.ts'
 import { registerStarHttp, type StarHostContext } from './http/star.ts'
 import { registerFeishuImportHttp, type FeishuImportHostContext } from './http/feishu-import.ts'
 import { registerSettingsHttp, type SettingsHostContext } from './http/settings.ts'
@@ -548,6 +549,14 @@ export function apply(
         { database: database.resolved, databaseIssues: database.issues, identity: actorIdentity },
       ),
       'recruitment: application star route',
+    )
+    // 面评草稿（自动保存，不是最终提交）：GET/POST /recruitment/api/action/scorecard/draft。
+    child.effect(
+      () => registerScorecardDraftHttp(
+        child as unknown as ScorecardDraftHostContext,
+        { database: database.resolved, databaseIssues: database.issues, identity: actorIdentity },
+      ),
+      'recruitment: scorecard draft routes',
     )
     // 工作空间设置：GET /recruitment/api/settings（只读投影）+ POST /recruitment/api/action/settings/write
     // （Host Action，人点 + confirmation_text）。配置解析所需全部注入，不读进程环境。
