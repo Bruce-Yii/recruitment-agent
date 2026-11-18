@@ -15,10 +15,10 @@
 /** 工作台样式（字符串，由组件用 `<style>` 注入一次）。 */
 export const INTERVIEWER_CSS = `
 .iw-root{
-  --iw-bg:#f8f9fb;--iw-surface:#fff;--iw-text:#29384d;--iw-sub:#64738a;--iw-dim:#8b97a8;
-  --iw-border:#e7ebf1;--iw-border2:#d6dfeb;--iw-blue:#496cad;--iw-blue2:#365891;--iw-bluebg:#edf3fc;
-  --iw-green:#347b65;--iw-greenbg:#eaf6f0;--iw-amber:#97743b;--iw-amberbg:#fcf6e9;
-  --iw-red:#a45450;--iw-redbg:#fff0ef;--iw-shadow:0 4px 22px rgba(40,55,80,.027);--iw-radius:14px;
+  --iw-bg:#F9F8F5;--iw-surface:#FFFFFF;--iw-text:#191918;--iw-sub:#787772;--iw-dim:#A6A59E;
+  --iw-border:rgba(25,25,24,.08);--iw-border2:rgba(25,25,24,.12);--iw-blue:#5B5BD6;--iw-blue2:#4747B8;--iw-bluebg:rgba(91,91,214,.09);
+  --iw-green:#18794E;--iw-greenbg:rgba(24,121,78,.09);--iw-amber:#AD5700;--iw-amberbg:rgba(173,87,0,.09);
+  --iw-red:#CD2B31;--iw-redbg:rgba(205,43,49,.08);--iw-shadow:0 4px 22px rgba(40,55,80,.027);--iw-radius:14px;
   box-sizing:border-box;min-height:100%;padding:26px 30px 44px;background:var(--iw-bg);color:var(--iw-text);
   font-family:Inter,"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;font-size:14px;line-height:1.65;
   -webkit-font-smoothing:antialiased;
@@ -240,4 +240,13 @@ export const INTERVIEWER_CSS = `
   .iw-schemarow{padding:9px 10px}
   .iw-roundcard .iw-criteriarow,.iw-schemarow-main,.iw-schemarow-chips{min-width:0}
 }
+
+/* Task 06: Constraints, Quick Notes & Local Checklist (v4 design-tokens.md) */
+.iw-pin-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.iw-pin-tag{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;background:rgba(205,43,49,.08);color:#CD2B31;font-size:12px;font-weight:550}
+.iw-pin-tag.handoff{background:rgba(91,91,214,.09);color:#5B5BD6}
+.iw-handoff-badge{font-size:11px;font-weight:650;padding:1px 6px;border-radius:99px;background:#5B5BD6;color:#FFFFFF}
+.iw-quicknotes{width:100%;min-height:112px;margin-top:8px;padding:12px 14px;border-radius:12px;border:1px solid rgba(25,25,24,.08);background:#F9F8F5;color:#191918;font:inherit;font-size:13.5px;line-height:1.7;resize:vertical}
+.iw-iq-row{display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-bottom:1px solid rgba(25,25,24,.05);font-size:13.5px;cursor:pointer}
+.iw-iq-row.done{opacity:.5;text-decoration:line-through}
 `

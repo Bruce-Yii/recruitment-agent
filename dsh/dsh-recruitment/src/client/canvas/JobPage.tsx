@@ -13,10 +13,12 @@ import {
   StatusLabel,
 } from './bits/index.ts';
 import type { CanvasFetcher } from './CandidatePage.tsx';
-import type { ActiveUploadTask } from './CanvasRoute.tsx';
+import type { ActiveUploadTask, UndoToastPayload } from './CanvasRoute.tsx';
 import {
+  postBatchReject,
   postJobCreate,
   uploadResumeRaw,
+  type BatchRejectItemResult,
   type CanvasActionError,
 } from './canvas-actions.ts';
 
@@ -26,7 +28,7 @@ export interface JobPageProps {
   onSelectApplication?: (applicationId: string) => void;
   onSelectJob?: (jobId: string) => void;
   onUploadStarted?: (task: ActiveUploadTask) => void;
-  /** Incrementing key triggered when an async upload completes to refresh the list. */
+  onActionCompleted?: (notice: UndoToastPayload) => void;
   refreshNonce?: number;
   fetcher: CanvasFetcher;
 }
@@ -42,6 +44,7 @@ export function JobPage({
   onSelectApplication,
   onSelectJob,
   onUploadStarted,
+  onActionCompleted,
   refreshNonce = 0,
   fetcher,
 }: JobPageProps) {
@@ -50,6 +53,15 @@ export function JobPage({
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<JobTab>('pipeline');
   const [stageFilter, setStageFilter] = useState<StageFilter>('全部');
+
+  // T5-1: Multi-select + real batch reject (never deletes locally; refreshes from server)
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [batchOpen, setBatchOpen] = useState<boolean>(false);
+  const [batchDimKey, setBatchDimKey] = useState<string>('');
+  const [batchReasonDetail, setBatchReasonDetail] = useState<string>('核心项目深度不足');
+  const [batchConfirm, setBatchConfirm] = useState<string>('');
+  const [batchSubmitting, setBatchSubmitting] = useState<boolean>(false);
+  const [batchResults, setBatchResults] = useState<BatchRejectItemResult[] | null>(null);
 
   // T4-2: Upload resume + Create job (no headcount!)
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -68,7 +80,9 @@ export function JobPage({
       try {
         const raw = await fetcher(`/recruitment/api/recruiting/jobs/${encodeURIComponent(jobId)}`);
         if (cancelledRef?.current) return;
-        setVm(normalizeJobDetail(raw));
+        const next = normalizeJobDetail(raw);
+        setVm(next);
+        setBatchDimKey((prev) => prev || next.rubricDimensions[0]?.key || '');
       } catch {
         if (cancelledRef?.current) return;
         setError('暂时没能读取到该岗位的详细资料，请稍后重试。');
@@ -86,6 +100,60 @@ export function JobPage({
       cancelledRef.current = true;
     };
   }, [load, refreshNonce]);
+
+  const toggleSelect = (appId: string) => {
+    setSelectedIds((prev) => (prev.includes(appId) ? prev.filter((x) => x !== appId) : [...prev, appId]));
+  };
+
+  const openBatchRejectModal = () => {
+    if (!vm || selectedIds.length === 0) return;
+    setFeedback(null);
+    setBatchResults(null);
+    setBatchDimKey(vm.rubricDimensions[0]?.key || '');
+    setBatchConfirm(`确认批量关闭已选 ${selectedIds.length} 位候选人的申请`);
+    setBatchOpen(true);
+  };
+
+  const handleBatchRejectSubmit = async () => {
+    if (!vm || batchSubmitting || selectedIds.length === 0) return;
+    const confirmationText = batchConfirm.trim();
+    if (!confirmationText) {
+      setFeedback({ tone: 'red', text: '请先填写确认原话后再提交。' });
+      return;
+    }
+    const reasonStr = batchDimKey
+      ? `${batchDimKey}：${batchReasonDetail.trim() || '未满足岗位要求'}`
+      : batchReasonDetail.trim() || '未满足岗位要求';
+
+    setBatchSubmitting(true);
+    setFeedback(null);
+    try {
+      const res = await postBatchReject({
+        applicationIds: selectedIds,
+        reason: reasonStr,
+        confirmationText,
+      });
+      setBatchOpen(false);
+      setSelectedIds([]);
+      setBatchResults(res.results);
+      // Always refresh from server — never locally delete rows
+      await load();
+      if (res.failedCount === 0) {
+        const msg = `已批量关闭 ${res.succeededCount} 位候选人申请`;
+        setFeedback({ tone: 'green', text: msg });
+        onActionCompleted?.({ message: msg, actionId: res.actionId });
+      } else {
+        const msg = `已完成 ${res.succeededCount} 位，另有 ${res.failedCount} 位未能关闭（请看下方逐条原因）`;
+        setFeedback({ tone: 'red', text: msg });
+        if (res.actionId) onActionCompleted?.({ message: msg, actionId: res.actionId });
+      }
+    } catch (err) {
+      const msg = (err as CanvasActionError)?.userMessage || '批量不通过未能完成，请稍后重试。';
+      setFeedback({ tone: 'red', text: msg });
+    } finally {
+      setBatchSubmitting(false);
+    }
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -119,7 +187,6 @@ export function JobPage({
     setCreating(true);
     setFeedback(null);
     try {
-      // Strictly NO headcount field per available-actions.md (HC belongs to requisition)
       const res = await postJobCreate({
         title,
         dept: newJobDept.trim() || undefined,
@@ -129,10 +196,9 @@ export function JobPage({
       setNewJobTitle('');
       setNewJobDept('');
       setNewJobConfirm('');
-      setFeedback({
-        tone: 'green',
-        text: `已创建岗位「${title}」（标准待审批），可继续完善岗位标准。`,
-      });
+      const msg = `已创建岗位「${title}」（标准待审批），可继续完善岗位标准。`;
+      setFeedback({ tone: 'green', text: msg });
+      onActionCompleted?.({ message: msg, actionId: res.action_id });
       if (res.job_id && onSelectJob) {
         onSelectJob(res.job_id);
       }
@@ -191,6 +257,7 @@ export function JobPage({
   const filteredApps = vm.applications.filter(
     (app) => stageFilter === '全部' || app.filterBucket === stageFilter,
   );
+  const nameById = new Map(vm.applications.map((a) => [a.applicationId, a.candidateName]));
 
   return (
     <>
@@ -245,6 +312,30 @@ export function JobPage({
             </div>
           ) : null}
 
+          {batchResults && batchResults.length > 0 ? (
+            <div className="ros-doc-block" data-testid="batch-reject-results">
+              <div className="ros-sec-head" style={{ marginBottom: 4 }}>
+                <span className="ros-sec-meta">本次批量处理逐条结果</span>
+                <button type="button" className="ros-text-link" onClick={() => setBatchResults(null)}>
+                  收起
+                </button>
+              </div>
+              <div className="ros-clean-list">
+                {batchResults.map((item) => (
+                  <div key={item.applicationId} className="ros-clean-row static" style={{ padding: '9px 4px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 500 }}>
+                      {nameById.get(item.applicationId) || '候选人'}
+                    </span>
+                    <StatusLabel
+                      text={item.ok ? item.message || '已关闭' : `未关闭：${item.message}`}
+                      tone={item.ok ? 'green' : 'red'}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           {/* 岗位头与 6 阶段进度 */}
           <div className="ros-doc-head">
             <div>
@@ -280,7 +371,10 @@ export function JobPage({
                       key={f}
                       type="button"
                       className={`ros-text-link ${stageFilter === f ? 'active' : ''}`}
-                      onClick={() => setStageFilter(f)}
+                      onClick={() => {
+                        setStageFilter(f);
+                        setSelectedIds([]);
+                      }}
                     >
                       {f}
                     </button>
@@ -321,34 +415,64 @@ export function JobPage({
 
               {filteredApps.length > 0 ? (
                 <div className="ros-clean-list">
-                  {filteredApps.map((app) => (
-                    <div
-                      key={app.applicationId}
-                      className="ros-clean-row"
-                      onClick={() => onSelectApplication?.(app.applicationId)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          onSelectApplication?.(app.applicationId);
-                        }
-                      }}
-                    >
-                      <div className="ros-cr-left">
-                        <span className="ros-mono">{app.candidateName.slice(0, 1)}</span>
-                        <span className="ros-cr-name">
-                          {app.candidateName}
-                          <span className="ros-cr-role">{app.metaText}</span>
-                        </span>
+                  {filteredApps.map((app) => {
+                    const checked = selectedIds.includes(app.applicationId);
+                    return (
+                      <div
+                        key={app.applicationId}
+                        className="ros-clean-row"
+                        onClick={() => onSelectApplication?.(app.applicationId)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onSelectApplication?.(app.applicationId);
+                          }
+                        }}
+                      >
+                        <div className="ros-cr-left">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            aria-label={`选择 ${app.candidateName}`}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => toggleSelect(app.applicationId)}
+                            style={{ cursor: 'pointer' }}
+                          />
+                          <span className="ros-mono">{app.candidateName.slice(0, 1)}</span>
+                          <span className="ros-cr-name">
+                            {app.candidateName}
+                            <span className="ros-cr-role">{app.metaText}</span>
+                          </span>
+                        </div>
+                        <StatusLabel text={app.stageLabel} tone={app.statusTone} />
                       </div>
-                      <StatusLabel text={app.stageLabel} tone={app.statusTone} />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <CanvasEmptyState title="当前阶段暂无候选人" description="切换上方筛选条件可查看其他阶段候选人。" />
               )}
+
+              {selectedIds.length > 0 ? (
+                <div className="ros-batch-float" data-testid="canvas-batch-float">
+                  <span className="num">已选 {selectedIds.length} 人</span>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      data-testid="canvas-batch-reject-open"
+                      style={{ background: 'var(--red)', color: '#fff' }}
+                      onClick={openBatchRejectModal}
+                    >
+                      批量不通过
+                    </button>
+                    <button type="button" onClick={() => setSelectedIds([])}>
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : (
             <>
@@ -413,6 +537,84 @@ export function JobPage({
           )}
         </div>
       </div>
+
+      {/* Centered Batch-Reject Confirmation Modal (T5-1) */}
+      {batchOpen ? (
+        <div
+          className="ros-modal-bg"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !batchSubmitting) setBatchOpen(false);
+          }}
+        >
+          <div className="ros-modal">
+            <div style={{ fontSize: '17px', fontWeight: 650 }}>
+              批量关闭 {selectedIds.length} 位申请
+            </div>
+            <div className="ros-jd-box" style={{ padding: '12px 14px' }}>
+              关闭后不再触发后续排期提醒；如有部分候选人已不在可决策状态，将逐条如实提示原因，5 分钟内支持撤销。
+            </div>
+            {vm.rubricDimensions.length > 0 ? (
+              <label className="ros-m-field">
+                <span>关联考核维度（必填）</span>
+                <select
+                  value={batchDimKey}
+                  onChange={(e) => setBatchDimKey(e.target.value)}
+                  style={{
+                    padding: '9px 11px',
+                    borderRadius: 8,
+                    border: '1px solid var(--line)',
+                    background: 'var(--surface)',
+                    color: 'var(--ink)',
+                  }}
+                >
+                  {vm.rubricDimensions.map((d) => (
+                    <option key={d.key} value={d.key}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <label className="ros-m-field">
+              <span>不通过原因说明</span>
+              <input
+                value={batchReasonDetail}
+                onChange={(e) => setBatchReasonDetail(e.target.value)}
+                placeholder="例如：核心项目深度不足"
+              />
+            </label>
+            <label className="ros-m-field">
+              <span>确认原话（留痕必填）</span>
+              <input
+                value={batchConfirm}
+                onChange={(e) => setBatchConfirm(e.target.value)}
+                placeholder="输入一句确认原话"
+              />
+            </label>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                className="ros-btn"
+                disabled={batchSubmitting}
+                onClick={() => setBatchOpen(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="ros-btn dark"
+                disabled={batchSubmitting}
+                data-testid="canvas-batch-reject-submit"
+                onClick={() => void handleBatchRejectSubmit()}
+              >
+                {batchSubmitting ? '处理中…' : '确认关闭'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Centered Create-Job Confirmation Modal (no headcount field) */}
       {createOpen ? (

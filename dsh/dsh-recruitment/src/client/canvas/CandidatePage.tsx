@@ -11,6 +11,7 @@ import {
   SequentialRoundRail,
   StatusLabel,
 } from './bits/index.ts';
+import type { UndoToastPayload } from './CanvasRoute.tsx';
 import {
   postApplicationTransfer,
   postCandidateConstraint,
@@ -23,6 +24,8 @@ export interface CandidatePageProps {
   applicationId: string;
   onBack?: () => void;
   onOpenJob?: (jobId: string) => void;
+  onActionCompleted?: (notice: UndoToastPayload) => void;
+  refreshNonce?: number;
   fetcher: CanvasFetcher;
 }
 
@@ -33,6 +36,8 @@ export function CandidatePage({
   applicationId,
   onBack,
   onOpenJob,
+  onActionCompleted,
+  refreshNonce = 0,
   fetcher,
 }: CandidatePageProps) {
   const [vm, setVm] = useState<CandidateCanvasVM | null>(null);
@@ -82,7 +87,7 @@ export function CandidatePage({
     return () => {
       cancelledRef.current = true;
     };
-  }, [load]);
+  }, [load, refreshNonce]);
 
   const openActionModal = (kind: Exclude<CandidateModalKind, null>) => {
     setActionFeedback(null);
@@ -128,7 +133,7 @@ export function CandidatePage({
     setActionFeedback(null);
     try {
       if (modalKind === 'pin') {
-        await postCandidateConstraint({
+        const pinRes = await postCandidateConstraint({
           action: 'PIN',
           applicationId: vm.applicationId,
           text: inputText.trim(),
@@ -137,10 +142,12 @@ export function CandidatePage({
         });
         setModalKind(null);
         await load();
-        setActionFeedback({ tone: 'green', text: '已置顶候选人约束，并同步至档案与面试简报。' });
+        const msg = '已置顶候选人约束，并同步至档案与面试简报。';
+        setActionFeedback({ tone: 'green', text: msg });
+        onActionCompleted?.({ message: msg, actionId: pinRes.action_id });
       } else if (modalKind === 'handoff') {
         const latestRound = vm.rounds[vm.rounds.length - 1];
-        await postCandidateConstraint({
+        const hoRes = await postCandidateConstraint({
           action: 'HANDOFF',
           applicationId: vm.applicationId,
           interviewId: latestRound?.interviewId || undefined,
@@ -150,16 +157,20 @@ export function CandidatePage({
         });
         setModalKind(null);
         await load();
-        setActionFeedback({ tone: 'green', text: '已写入下一轮交接追问，面试官可第一眼看到。' });
+        const msg = '已写入下一轮交接追问，面试官可第一眼看到。';
+        setActionFeedback({ tone: 'green', text: msg });
+        onActionCompleted?.({ message: msg, actionId: hoRes.action_id });
       } else if (modalKind === 'transfer') {
-        await postApplicationTransfer({
+        const trRes = await postApplicationTransfer({
           applicationId: vm.applicationId,
           targetJobId: targetJobId.trim(),
           confirmationText,
         });
         setModalKind(null);
         await load();
-        setActionFeedback({ tone: 'green', text: '已完成跨岗调剂，原岗位档案完整保留。' });
+        const msg = '已完成跨岗调剂，原岗位档案完整保留。';
+        setActionFeedback({ tone: 'green', text: msg });
+        onActionCompleted?.({ message: msg, actionId: trRes.action_id });
       }
     } catch (err) {
       const msg = (err as CanvasActionError)?.userMessage || '这项操作暂时未能完成，请稍后重试。';

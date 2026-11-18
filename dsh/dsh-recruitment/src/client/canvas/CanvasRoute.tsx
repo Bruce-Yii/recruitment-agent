@@ -2,8 +2,13 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { CandidatePage, type CanvasFetcher } from './CandidatePage.tsx';
 import { JobPage } from './JobPage.tsx';
 import { CanvasEmptyState } from './bits/index.ts';
-import { fetchTaskStatus, type UploadTaskStatusResult } from './canvas-actions.ts';
-import { CANVAS_CSS } from './canvas-styles.ts';
+import {
+  fetchTaskStatus,
+  postActionUndo,
+  type CanvasActionError,
+  type UploadTaskStatusResult,
+} from './canvas-actions.ts';
+import './canvas.css';
 
 export type CanvasRouteTarget =
   | { kind: 'empty' }
@@ -15,6 +20,11 @@ export interface ActiveUploadTask {
   fileName: string;
 }
 
+export interface UndoToastPayload {
+  message: string;
+  actionId?: string;
+}
+
 export interface CanvasRouteProps {
   route: CanvasRouteTarget;
   onBack?: () => void;
@@ -24,6 +34,7 @@ export interface CanvasRouteProps {
   onUploadStarted?: (task: ActiveUploadTask) => void;
   onDismissUploadTask?: () => void;
   onUploadCompleted?: (result: UploadTaskStatusResult) => void;
+  onActionCompleted?: (notice: UndoToastPayload) => void;
   refreshNonce?: number;
   fetcher?: CanvasFetcher;
 }
@@ -191,12 +202,12 @@ export function CanvasRoute({
   onUploadStarted,
   onDismissUploadTask,
   onUploadCompleted,
+  onActionCompleted,
   refreshNonce = 0,
   fetcher = fetchCanvasJson,
 }: CanvasRouteProps) {
   return (
     <section className="ros-canvas" aria-label="招聘详情画布" data-testid="v4-canvas-route">
-      <style>{CANVAS_CSS}</style>
       {uploadTask ? (
         <UploadProgressBanner
           task={uploadTask}
@@ -210,6 +221,8 @@ export function CanvasRoute({
           applicationId={route.applicationId}
           onBack={onBack}
           onOpenJob={onSelectJob}
+          onActionCompleted={onActionCompleted}
+          refreshNonce={refreshNonce}
           fetcher={fetcher}
         />
       ) : route.kind === 'job' ? (
@@ -219,6 +232,7 @@ export function CanvasRoute({
           onSelectApplication={onSelectApplication}
           onSelectJob={onSelectJob}
           onUploadStarted={onUploadStarted}
+          onActionCompleted={onActionCompleted}
           refreshNonce={refreshNonce}
           fetcher={fetcher}
         />
@@ -248,14 +262,24 @@ export interface CanvasPanelHostProps {
 }
 
 /**
- * Pure React-state canvas host (ZERO location.hash mutations).
- * Wired into RecruitingWorkspace so clicking any candidate row opens v4 Canvas directly.
+ * Pure React-state canvas host (ZERO location.hash mutations) with real 5-second Undo Toast (T5-2).
  */
 export function CanvasPanelHost({ children, onRefreshOverview, fetcher }: CanvasPanelHostProps) {
   const [route, setRoute] = useState<CanvasRouteTarget>({ kind: 'empty' });
   const [prevJobId, setPrevJobId] = useState<string | null>(null);
   const [uploadTask, setUploadTask] = useState<ActiveUploadTask | null>(null);
   const [refreshNonce, setRefreshNonce] = useState<number>(0);
+
+  // T5-2: Real 5-second Undo Toast
+  const [toast, setToast] = useState<UndoToastPayload | null>(null);
+  const [undoBusy, setUndoBusy] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!toast) return;
+    const ms = toast.actionId ? 5000 : 2800;
+    const timer = setTimeout(() => setToast(null), ms);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   const openCandidate = useCallback((applicationId: string) => {
     setRoute({ kind: 'candidate', applicationId });
@@ -280,24 +304,71 @@ export function CanvasPanelHost({ children, onRefreshOverview, fetcher }: Canvas
     onRefreshOverview?.();
   }, [onRefreshOverview]);
 
-  if (route.kind !== 'empty') {
-    return (
-      <CanvasRoute
-        route={route}
-        onBack={handleBack}
-        onSelectApplication={openCandidate}
-        onSelectJob={openJob}
-        uploadTask={uploadTask}
-        onUploadStarted={setUploadTask}
-        onDismissUploadTask={() => setUploadTask(null)}
-        onUploadCompleted={handleUploadCompleted}
-        refreshNonce={refreshNonce}
-        fetcher={fetcher}
-      />
-    );
-  }
+  const handleActionCompleted = useCallback((notice: UndoToastPayload) => {
+    setToast(notice);
+    onRefreshOverview?.();
+  }, [onRefreshOverview]);
 
-  return <>{children({ openCandidate, openJob, closeCanvas: handleBack, activeRoute: route })}</>;
+  const handleUndoClick = async () => {
+    if (!toast?.actionId || undoBusy) return;
+    setUndoBusy(true);
+    try {
+      const res = await postActionUndo({
+        actionId: toast.actionId,
+        confirmationText: `确认撤销刚刚执行的操作：${toast.message}`,
+      });
+      setToast({ message: res.message });
+      if (res.undone) {
+        // Refresh from server; never physically delete local state
+        setRefreshNonce((n) => n + 1);
+        onRefreshOverview?.();
+      }
+    } catch (err) {
+      const msg = (err as CanvasActionError)?.userMessage || '暂时无法撤销，请稍后刷新核对';
+      setToast({ message: msg });
+    } finally {
+      setUndoBusy(false);
+    }
+  };
+
+  return (
+    <>
+      {route.kind !== 'empty' ? (
+        <CanvasRoute
+          route={route}
+          onBack={handleBack}
+          onSelectApplication={openCandidate}
+          onSelectJob={openJob}
+          uploadTask={uploadTask}
+          onUploadStarted={setUploadTask}
+          onDismissUploadTask={() => setUploadTask(null)}
+          onUploadCompleted={handleUploadCompleted}
+          onActionCompleted={handleActionCompleted}
+          refreshNonce={refreshNonce}
+          fetcher={fetcher}
+        />
+      ) : (
+        children({ openCandidate, openJob, closeCanvas: handleBack, activeRoute: route })
+      )}
+
+      {toast ? (
+        <div className="ros-toast show" role="status" data-testid="canvas-undo-toast">
+          <span>{toast.message}</span>
+          {toast.actionId ? (
+            <button
+              type="button"
+              disabled={undoBusy}
+              data-testid="canvas-undo-btn"
+              style={{ color: '#A5B4FC', fontWeight: 600 }}
+              onClick={() => void handleUndoClick()}
+            >
+              {undoBusy ? '撤销中…' : '撤销'}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 export default CanvasRoute;

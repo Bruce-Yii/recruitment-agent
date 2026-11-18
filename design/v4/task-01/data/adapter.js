@@ -1030,15 +1030,63 @@
           case 'set_actor':
             // Per client-plugin-contract.md §2: identity comes from host cookie, frontend does not send actor.
             return { ok: true };
-          // T3-4: Unimplemented actions throw NOT_AVAILABLE -> human-readable toast
-          case 'batch_reject':
+          case 'batch_reject': {
+            const raw = await httpRequest('/recruitment/api/action/decision/batch-reject', {
+              method: 'POST',
+              body: JSON.stringify({
+                application_ids: Array.isArray(p.ids) ? p.ids : [],
+                reason: p.reason || '',
+                confirmation_text: confirmationText
+              })
+            });
+            const results = (Array.isArray(raw.results) ? raw.results : []).map((r) => ({
+              applicationId: String(r.application_id || ''),
+              ok: r.ok === true || r.status === 'ok' || r.status === 'succeeded' || r.status === 'rejected',
+              message: r.message || (r.ok ? '已关闭申请' : '当前状态无法关闭'),
+              actionId: r.action_id || undefined
+            }));
+            return {
+              ok: true,
+              actionId: raw.action_id || (results.find((x) => x.ok && x.actionId) || {}).actionId,
+              results
+            };
+          }
+          case 'restore_snapshot':
+          case 'undo': {
+            const actionId = p.actionId || p.action_id || '';
+            const res = await fetch(`${baseUrl}/recruitment/api/action/undo`, {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json', 'x-recruitment-request': '1' },
+              body: JSON.stringify({ action_id: actionId, confirmation_text: confirmationText })
+            });
+            const body = await res.json().catch(() => ({}));
+            if (res.status === 409) {
+              const code = String(body.code || body.reason_code || (body.error && body.error.code) || '').toUpperCase();
+              const msg = code.includes('ALREADY_UNDONE')
+                ? '这条已经撤销过了'
+                : code.includes('WINDOW_EXPIRED')
+                  ? '超过 5 分钟，不能再撤销'
+                  : code.includes('SUPERSEDED')
+                    ? '这条已经被后续操作覆盖，不能撤销'
+                    : '当前状态已变化，无法撤销';
+              return { ok: false, undone: false, message: msg };
+            }
+            if (!res.ok) {
+              const err = new Error('暂时无法撤销，请稍后刷新核对');
+              err.code = 'HTTP_ERROR';
+              err.userMessage = '暂时无法撤销，请稍后刷新核对';
+              throw err;
+            }
+            return { ok: true, undone: body.status === 'undone' || res.ok, message: '已撤销' };
+          }
+          // Remaining unimplemented actions -> NOT_AVAILABLE human copy
           case 'nudge':
           case 'compound':
           case 'star':
           case 'save_notes':
           case 'toggle_iq':
           case 'undo_auto_done':
-          case 'restore_snapshot':
           case 'toggle_connector':
           default:
             throw createNotAvailableError(actionName);

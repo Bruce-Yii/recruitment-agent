@@ -1,12 +1,13 @@
 /**
- * Typed HTTP action clients for Recruitment OS DSH Plugin Canvas (Task 03).
+ * Typed HTTP action clients for Recruitment OS DSH Plugin Canvas (Task 05).
  *
- * Contract rules (design/v4/contracts/available-actions.md & client-plugin-contract.md):
+ * Contract rules (design/v4/contracts/available-actions.md & frontend-task-05-batch-undo.md):
  * - Same-origin cookie determines identity (frontend NEVER sends `actor`).
  * - Always carries `x-recruitment-request: 1`.
  * - Every write action requires `confirmation_text` (human verbatim confirmation).
  * - `job/create` NEVER sends `headcount` (HC is maintained on requisitions).
- * - Unimplemented actions throw `NOT_AVAILABLE` with human copy '这项还差最后一步，稍后开放'.
+ * - `batch-reject` handles 200 partial failure per item using `message` (never `reason_code`).
+ * - `undo` maps 409 conflict states to human copy (never exposes error codes).
  */
 
 export const UNAVAILABLE_ACTION_MESSAGE = '这项还差最后一步，稍后开放';
@@ -42,7 +43,9 @@ async function postJsonAction<T>(path: string, body: Record<string, unknown>): P
     const summary =
       typeof data.error_summary === 'string' && data.error_summary.trim()
         ? data.error_summary
-        : '操作未能完成，请检查输入或稍后重试';
+        : typeof data.message === 'string' && data.message.trim()
+          ? data.message
+          : '操作未能完成，请检查输入或稍后重试';
     throw makeError('ACTION_FAILED', summary);
   }
   return data as T;
@@ -61,6 +64,7 @@ export interface TransferPayload {
 
 export async function postApplicationTransfer(payload: TransferPayload): Promise<{
   application_id: string;
+  action_id?: string;
   carry_over_count?: number;
 }> {
   const body: Record<string, unknown> = {
@@ -86,6 +90,7 @@ export interface ConstraintPayload {
 
 export async function postCandidateConstraint(payload: ConstraintPayload): Promise<{
   constraint_id: string;
+  action_id?: string;
 }> {
   const body: Record<string, unknown> = {
     action: payload.action,
@@ -114,6 +119,7 @@ export async function postJobCreate(payload: JobCreatePayload): Promise<{
   job_id: string;
   code: string;
   rubric_status: string;
+  action_id?: string;
 }> {
   const body: Record<string, unknown> = {
     title: payload.title.trim(),
@@ -122,6 +128,131 @@ export async function postJobCreate(payload: JobCreatePayload): Promise<{
   if (payload.dept) body.dept = payload.dept;
   if (payload.requisitionId) body.requisition_id = payload.requisitionId;
   return postJsonAction('/recruitment/api/action/job/create', body);
+}
+
+export interface BatchRejectItemResult {
+  applicationId: string;
+  ok: boolean;
+  message: string;
+  actionId?: string;
+}
+
+export interface BatchRejectResponse {
+  actionId?: string;
+  succeededCount: number;
+  failedCount: number;
+  results: BatchRejectItemResult[];
+}
+
+/**
+ * T5-1: Real batch reject endpoint.
+ * POST /recruitment/api/action/decision/batch-reject
+ * Partial failures still return HTTP 200 with per-item `results[]`;
+ * UI displays human `message` only (never `reason_code`).
+ */
+export async function postBatchReject(payload: {
+  applicationIds: string[];
+  reason: string;
+  confirmationText: string;
+}): Promise<BatchRejectResponse> {
+  const raw = await postJsonAction<Record<string, unknown>>(
+    '/recruitment/api/action/decision/batch-reject',
+    {
+      application_ids: payload.applicationIds,
+      reason: payload.reason,
+      confirmation_text: payload.confirmationText,
+    },
+  );
+
+  const rawResults = Array.isArray(raw.results) ? raw.results : [];
+  const results: BatchRejectItemResult[] = rawResults.map((item) => {
+    const r = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
+    const ok = r.ok === true || r.status === 'ok' || r.status === 'succeeded' || r.status === 'rejected';
+    return {
+      applicationId: String(r.application_id || r.applicationId || ''),
+      ok,
+      message:
+        typeof r.message === 'string' && r.message.trim()
+          ? r.message
+          : ok
+            ? '已关闭申请'
+            : '当前状态无法执行不通过',
+      actionId: typeof r.action_id === 'string' ? r.action_id : undefined,
+    };
+  });
+
+  const succeededCount = results.filter((x) => x.ok).length;
+  const failedCount = results.length - succeededCount;
+  const topActionId =
+    typeof raw.action_id === 'string'
+      ? raw.action_id
+      : results.find((x) => x.ok && x.actionId)?.actionId;
+
+  return {
+    actionId: topActionId,
+    succeededCount,
+    failedCount,
+    results,
+  };
+}
+
+export interface UndoResponse {
+  undone: boolean;
+  message: string;
+}
+
+/**
+ * T5-2: Real 5-second undo endpoint.
+ * POST /recruitment/api/action/undo
+ * Maps 409 conflicts strictly to human copy without exposing error codes.
+ */
+export async function postActionUndo(payload: {
+  actionId: string;
+  confirmationText: string;
+}): Promise<UndoResponse> {
+  const res = await fetch('/recruitment/api/action/undo', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-recruitment-request': '1',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      action_id: payload.actionId,
+      confirmation_text: payload.confirmationText,
+    }),
+  });
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+
+  if (res.status === 409) {
+    const code = String(
+      data.code || data.reason_code || (data.error && typeof data.error === 'object' ? (data.error as Record<string, unknown>).code : '') || '',
+    ).toUpperCase();
+    if (code.includes('ALREADY_UNDONE')) {
+      return { undone: false, message: '这条已经撤销过了' };
+    }
+    if (code.includes('WINDOW_EXPIRED')) {
+      return { undone: false, message: '超过 5 分钟，不能再撤销' };
+    }
+    if (code.includes('SUPERSEDED')) {
+      return { undone: false, message: '这条已经被后续操作覆盖，不能撤销' };
+    }
+    return { undone: false, message: '当前状态已变化，无法撤销这条操作' };
+  }
+
+  if (res.status === 404 || res.status === 501) {
+    throw makeError('NOT_AVAILABLE', UNAVAILABLE_ACTION_MESSAGE);
+  }
+
+  if (!res.ok) {
+    throw makeError('ACTION_FAILED', '暂时无法撤销，请刷新页面核对最新状态');
+  }
+
+  return {
+    undone: data.status === 'undone' || res.ok,
+    message: '已撤销',
+  };
 }
 
 export interface UploadTaskStartResult {
@@ -138,10 +269,6 @@ export interface UploadTaskStatusResult {
   errorSummary?: string;
 }
 
-/**
- * Raw-byte upload returning task_id immediately (T3-2 & T3-3).
- * POST /recruitment/api/intake/upload?job_id=<uuid>
- */
 export async function uploadResumeRaw(file: File, jobId: string): Promise<UploadTaskStartResult> {
   const qs = jobId ? `?job_id=${encodeURIComponent(jobId)}` : '';
   const res = await fetch(`/recruitment/api/intake/upload${qs}`, {
@@ -168,10 +295,6 @@ export async function uploadResumeRaw(file: File, jobId: string): Promise<Upload
   };
 }
 
-/**
- * Polls GET /recruitment/api/tasks/status?task_id=<uuid>.
- * Never exposes raw error_code; maps failures to human-readable errorSummary.
- */
 export async function fetchTaskStatus(taskId: string): Promise<UploadTaskStatusResult> {
   const res = await fetch(`/recruitment/api/tasks/status?task_id=${encodeURIComponent(taskId)}`, {
     method: 'GET',
@@ -212,7 +335,6 @@ export async function fetchTaskStatus(taskId: string): Promise<UploadTaskStatusR
   return { taskId, status: 'RUNNING' };
 }
 
-/** Helper for T3-4 unimplemented actions (batch_reject, nudge, compound, star, draft, undo). */
 export function triggerUnavailableAction(): never {
   throw makeError('NOT_AVAILABLE', UNAVAILABLE_ACTION_MESSAGE);
 }

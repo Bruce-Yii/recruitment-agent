@@ -17,7 +17,13 @@
 //      其它读取失败 → overview-error + code/reason_code，绝不把故障说成"0 条"。
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchInterviewerOverview } from './http.ts'
+import {
+  fetchInterviewerOverview,
+  fetchScorecardDraft,
+  readLocalScorecardDraft,
+  saveScorecardDraft,
+  writeLocalScorecardDraft,
+} from './http.ts'
 import {
   briefSourceText,
   canSubmitScorecard,
@@ -200,7 +206,7 @@ function RoundFocusCard({ row }: { readonly row: InterviewRow }): JSX.Element {
   const sourceText =
     !focus.available
       ? round.conflict
-        ? '轮次配置不适用（冲突，详见下方）：按岗位标准展示，不编造本轮重点'
+        ? '轮次配置不适用（冲突，详见下方）：按 JOB_BASE 降级，不伪造本轮重点'
         : roundSourceText('JOB_BASE', legacy)
       : roundSourceText(focus.source, legacy)
   return (
@@ -273,17 +279,17 @@ function RoundFocusCard({ row }: { readonly row: InterviewRow }): JSX.Element {
         </>
       ) : (
         <div className="iw-notice iw-notice-warn" data-testid="round-focus-degraded">
-          <strong>岗位通用标准（服务端未提供该轮专属配置）</strong>
+          <strong>JOB_BASE 降级（服务端未提供该轮配置）</strong>
           <p>{roundFocusDegradedText(round)}</p>
-          <p>评分维度见下方「本轮评分表 · 岗位标准」（岗位通用标准）。</p>
+          <p>评分维度见下方「本轮评分表 · effective schema」（岗位底座）。</p>
         </div>
       )}
 
       {legacy && row.brief.focus.length > 0 ? (
         <details className="iw-paper iw-collapse" data-testid="legacy-brief-focus">
-          <summary>旧的面试说明里的考察重点（{row.brief.focus.length}，非轮次配置 · 来源：{briefSourceText(row.brief.source)}）</summary>
+          <summary>旧 brief 考察重点（{row.brief.focus.length}，非轮次配置 · 来源：{briefSourceText(row.brief.source)}）</summary>
           <div>
-            <p className="iw-tiny iw-muted">服务端没有给本轮的考察重点；以下内容来自旧的面试说明。</p>
+            <p className="iw-tiny iw-muted">旧端点没有 round_focus；以下为 brief 来源，不能当作轮次配置。</p>
             <div className="iw-criteria">
               {row.brief.focus.map((item, index) => (
                 <div className="iw-criteriarow" key={item.key !== '' ? item.key : `${item.label}-${index}`}>
@@ -324,7 +330,7 @@ function RoundRubricTable({ row }: { readonly row: InterviewRow }): JSX.Element 
       data-field-count={rubric.dimensions.length}
     >
       <div className="iw-subhead">
-        <h2>本轮评分表 · 岗位标准</h2>
+        <h2>本轮评分表 · effective schema</h2>
         <small>只读 · {roundSourceText(rubric.source, round.serverFieldsMissing)}</small>
       </div>
       <p className="iw-tiny iw-muted">
@@ -470,6 +476,7 @@ function ListView({
   rounds,
   onSelect,
 }: {
+  readonly sessionId: string
   readonly overview: InterviewerOverview
   readonly stats: WorkspaceStats
   readonly rounds: readonly RoundFocusGroup[]
@@ -549,8 +556,8 @@ function ListView({
                     {!group.available ? (
                       <p className="iw-muted iw-tiny" data-testid="round-focus-group-degraded">
                         {group.source === 'LEGACY_BRIEF'
-                          ? '来自旧的面试说明（服务端未提供轮次配置），按该说明展示，不代表本轮专属重点。'
-                          : '按岗位标准（服务端未提供该轮配置）；不展示伪造的考察重点。'}
+                          ? '旧 brief 来源（服务端未提供轮次配置），按 brief 展示，不代表本轮专属重点。'
+                          : 'JOB_BASE 降级（服务端未提供该轮配置）；不展示伪造的考察重点。'}
                       </p>
                     ) : null}
                     {group.available && group.focus.length === 0 ? (
@@ -584,8 +591,110 @@ function ListView({
   )
 }
 
+
+/** T6-2 面后速记（2 秒防抖自动存服务端 + localStorage 断网兜底）+ T6-4 本地追问清单。 */
+function QuickNotesAndChecklist({
+  sessionId,
+  interviewId,
+  iqs,
+}: {
+  readonly sessionId: string
+  readonly interviewId: string
+  readonly iqs: readonly string[]
+}): JSX.Element {
+  const [note, setNote] = useState('')
+  const [saveHint, setSaveHint] = useState('')
+  const [checkedIqs, setCheckedIqs] = useState<Record<number, boolean>>({})
+  const hydratedRef = useState<{ done: boolean }>({ done: false })[0]
+
+  useEffect(() => {
+    let active = true
+    hydratedRef.done = false
+    setSaveHint('')
+    void fetchScorecardDraft({ sessionId, interviewId }).then((serverDraft) => {
+      if (!active) return
+      if (serverDraft !== null) {
+        setNote(serverDraft.note)
+        setSaveHint('已从服务端恢复草稿')
+      } else {
+        const localDraft = readLocalScorecardDraft(interviewId)
+        if (localDraft !== null) {
+          setNote(localDraft.note)
+          setSaveHint('已从本地缓存恢复（断网兜底）')
+        } else {
+          setNote('')
+        }
+      }
+      hydratedRef.done = true
+    })
+    return () => {
+      active = false
+    }
+  }, [sessionId, interviewId, hydratedRef])
+
+  useEffect(() => {
+    if (!hydratedRef.done) return
+    const prev = readLocalScorecardDraft(interviewId)
+    const payload = { assessments: prev?.assessments ?? {}, note }
+    writeLocalScorecardDraft(interviewId, payload)
+    setSaveHint('正在自动保存…')
+    const timer = setTimeout(() => {
+      void saveScorecardDraft({ sessionId, interviewId, payload })
+        .then(() => setSaveHint('已自动保存草稿'))
+        .catch(() => setSaveHint('已暂存本地（离线兜底）'))
+    }, 2000)
+    return () => clearTimeout(timer)
+  }, [note, sessionId, interviewId, hydratedRef])
+
+  return (
+    <>
+      {iqs.length > 0 ? (
+        <div className="iw-insight" style={{ marginTop: 14 }} data-testid="interviewer-iqs">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+            <h3>追问清单</h3>
+            <span className="iw-tiny iw-muted">本次勾选仅留在本页</span>
+          </div>
+          <div style={{ marginTop: 6 }}>
+            {iqs.map((q, idx) => (
+              <label
+                key={`iq-${idx}`}
+                className={`iw-iq-row ${checkedIqs[idx] ? 'done' : ''}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={Boolean(checkedIqs[idx])}
+                  onChange={(e) => setCheckedIqs((prev) => ({ ...prev, [idx]: e.target.checked }))}
+                  style={{ marginTop: 4 }}
+                />
+                <span>{q}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="iw-insight" style={{ marginTop: 14 }} data-testid="interviewer-quick-notes">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+          <h3>面后速记</h3>
+          <span className="iw-tiny" style={{ color: 'var(--iw-green)' }} data-testid="draft-save-hint">
+            {saveHint}
+          </span>
+        </div>
+        <textarea
+          className="iw-quicknotes"
+          data-testid="quick-notes-textarea"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="边面边记，停顿 2 秒自动保存到服务端（断网自动暂存本地，提交面评后清空）…"
+        />
+      </div>
+    </>
+  )
+}
+
 /** 详情页（V-I2），含两个独立分支卡片。 */
 function DetailView({
+  sessionId,
   overview,
   row,
   labels,
@@ -593,6 +702,7 @@ function DetailView({
   onBack,
   onOpenScorecard,
 }: {
+  readonly sessionId: string
   readonly overview: InterviewerOverview
   readonly row: InterviewRow
   readonly labels: WorkspaceLabels
@@ -637,14 +747,30 @@ function DetailView({
               {briefText !== '' ? (
                 <p>{briefText}</p>
               ) : (
-                <p>服务端未提供本轮简报{row.brief.reason !== '' ? `（${row.brief.reason}）` : ''}。</p>
+                <p>还没有本轮简报说明。</p>
               )}
-              <p className="iw-tiny iw-muted">
-                来源：{briefSourceText(row.brief.source)}
-                {row.brief.template_version_id !== '' ? ` · template_version：${row.brief.template_version_id}` : ''}
-                {row.brief.reason !== '' ? ` · reason：${row.brief.reason}` : ''}
-              </p>
+              {row.constraints.length > 0 ? (
+                <div className="iw-pin-row" data-testid="interviewer-constraints">
+                  {row.constraints.map((c, idx) => (
+                    <span
+                      key={`con-${idx}`}
+                      className={`iw-pin-tag ${c.kind === 'HANDOFF' || c.from_previous_round ? 'handoff' : ''}`}
+                    >
+                      {c.kind === 'HANDOFF' || c.from_previous_round ? (
+                        <span className="iw-handoff-badge">上一轮留的</span>
+                      ) : null}
+                      <span>{c.text}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
+
+            <QuickNotesAndChecklist
+              sessionId={sessionId}
+              interviewId={row.interview_id}
+              iqs={row.iqs}
+            />
 
             {/* 本轮考察重点：task-50 轮次配置；缺配置时如实降级 JOB_BASE（不伪造）。 */}
             <RoundFocusCard row={row} />
@@ -660,7 +786,7 @@ function DetailView({
 
             {row.round.serverFieldsMissing ? (
               <details className="iw-paper iw-collapse" data-testid="legacy-brief-questions">
-                <summary>旧的面试说明里的建议问题（{row.brief.questions.length}，非轮次配置）</summary>
+                <summary>旧 brief 建议问题（{row.brief.questions.length}，非轮次配置）</summary>
                 <div>
                   {row.brief.questions.length === 0 ? (
                     <p className="iw-muted iw-tiny">服务端未提供建议问题。</p>
@@ -773,7 +899,7 @@ function DetailView({
               </button>
               {endpointUnavailable ? (
                 <span className="iw-tiny iw-muted" data-testid="scorecard-unavailable-note">
-                  服务端面评提交入口未就绪
+                  服务端面评提交入口未就绪（W1）
                 </span>
               ) : null}
               {!canSubmit && !endpointUnavailable ? (
@@ -832,10 +958,10 @@ function UnboundBlock({
       data-reason-code={parts !== undefined ? parts.reasonCode : ''}
     >
       <div className="iw-cap">INTERVIEW WORKSPACE</div>
-      <strong>尚未绑定演示身份，未读取任何面试数据：请先在顶部选择身份</strong>
+      <strong>当前 Session 尚未绑定演示身份（fail-closed）：请先在顶部选择身份</strong>
       <p>
         {missingSession
-          ? '尚未登录（未检测到当前登录会话），本视图不会用默认身份读数据。'
+          ? '未取得 DSH Session（localStorage 无 dsh.sessions.current），本视图不会用默认身份读数据。'
           : missingAlias
             ? '尚未选择 Demo 身份（alias 为空），本视图不会用默认身份读数据。'
             : '服务端返回 409 DEMO_ACTOR_UNMAPPED；本视图不显示任何面试。'}
@@ -1089,6 +1215,7 @@ export function InterviewerWorkspace(props: WorkspaceProps): JSX.Element {
           ? selectedRow !== null
             ? (
                 <DetailView
+                  sessionId={sessionId}
                   overview={overview}
                   row={selectedRow}
                   labels={overview.labels}
@@ -1099,6 +1226,7 @@ export function InterviewerWorkspace(props: WorkspaceProps): JSX.Element {
               )
             : (
                 <ListView
+                  sessionId={sessionId}
                   overview={overview}
                   stats={stats}
                   rounds={rounds}

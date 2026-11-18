@@ -821,3 +821,57 @@
 .ros-m-field textarea:focus {
   border-color: var(--muted);
 }
+
+/* v4 Batch Float & 5-Second Undo Toast (verbatim design-tokens.md) */
+.ros-batch-float {
+  position: sticky;
+  bottom: 0;
+  margin-top: 12px;
+  background: var(--ink);
+  color: var(--surface);
+  padding: 10px 16px;
+  border-radius: 99px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 12.5px;
+  box-shadow: var(--shadow-modal);
+}
+
+.ros-batch-float button {
+  color: var(--surface);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 99px;
+  background: rgba(128, 128, 128, .24);
+}
+
+.ros-batch-float button:hover {
+  background: rgba(128, 128, 128, .38);
+}
+
+.ros-toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  background: var(--ink);
+  color: var(--surface);
+  padding: 9px 16px;
+  border-radius: 99px;
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition: all .16s;
+  z-index: 120;
+}
+
+.ros-toast.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}

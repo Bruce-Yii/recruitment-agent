@@ -13,10 +13,12 @@
 import {
   normalizeInterviewerOverview,
   normalizeScorecardFormSpec,
+  normalizeScorecardDraft,
   normalizeSubmitResult,
   parseHttpError,
   RecruitmentHttpError,
   type InterviewerOverview,
+  type ScorecardDraftPayload,
   type ScorecardFormSpec,
   type ScorecardSubmitBody,
   type ScorecardSubmitResult,
@@ -27,6 +29,7 @@ const OVERVIEW_ENDPOINT = '/recruitment/api/interviewer/overview'
 /** W1 表单 spec / 提交路由。 */
 const SCORECARD_FORM_ENDPOINT = '/recruitment/api/action/scorecard/form'
 const SCORECARD_SUBMIT_ENDPOINT = '/recruitment/api/action/scorecard/submit'
+const SCORECARD_DRAFT_ENDPOINT = '/recruitment/api/action/scorecard/draft'
 /** 同源标记头（宿主侧 `x-recruitment-request: 1` 才放行）。 */
 const REQUEST_HEADER = 'x-recruitment-request'
 /** 服务端唯一接受的 session 身份头（值只来自 props，不读 localStorage）。 */
@@ -126,7 +129,7 @@ export async function fetchInterviewerOverview(options: FetchOverviewOptions): P
       0,
       'DEMO_ACTOR_UNMAPPED',
       'SESSION_NOT_BOUND',
-      '尚未绑定演示身份，未读取任何数据：请先在顶部选择身份',
+      '当前 Session 尚未绑定演示身份（fail-closed）：请先在顶部选择身份',
       undefined,
     )
   }
@@ -154,7 +157,7 @@ export async function fetchScorecardFormSpec(options: FetchFormSpecOptions): Pro
       0,
       'DEMO_ACTOR_UNMAPPED',
       'SESSION_NOT_BOUND',
-      '尚未绑定演示身份，未读取任何数据：请先在顶部选择身份',
+      '当前 Session 尚未绑定演示身份（fail-closed）：请先在顶部选择身份',
       undefined,
     )
   }
@@ -189,7 +192,7 @@ export async function submitScorecard(options: SubmitScorecardOptions): Promise<
       0,
       'DEMO_ACTOR_UNMAPPED',
       'SESSION_NOT_BOUND',
-      '尚未绑定演示身份，未读取任何数据：请先在顶部选择身份',
+      '当前 Session 尚未绑定演示身份（fail-closed）：请先在顶部选择身份',
       undefined,
     )
   }
@@ -212,4 +215,110 @@ export async function submitScorecard(options: SubmitScorecardOptions): Promise<
 export function isScorecardEndpointUnavailable(failure: unknown): boolean {
   if (!(failure instanceof RecruitmentHttpError)) return false
   return failure.status === 0 || failure.status === 404 || failure.status === 405 || failure.status === 501
+}
+
+export const SCORECARD_DRAFT_STORAGE_PREFIX = 'ros-iw-draft-'
+
+export function readLocalScorecardDraft(interviewId: string): ScorecardDraftPayload | null {
+  try {
+    const raw = window.localStorage.getItem(SCORECARD_DRAFT_STORAGE_PREFIX + interviewId)
+    if (!raw) return null
+    return normalizeScorecardDraft(JSON.parse(raw))
+  } catch {
+    return null
+  }
+}
+
+export function writeLocalScorecardDraft(interviewId: string, payload: ScorecardDraftPayload): void {
+  try {
+    window.localStorage.setItem(SCORECARD_DRAFT_STORAGE_PREFIX + interviewId, JSON.stringify(payload))
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function clearLocalScorecardDraft(interviewId: string): void {
+  try {
+    window.localStorage.removeItem(SCORECARD_DRAFT_STORAGE_PREFIX + interviewId)
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * 读取服务端面评草稿（GET /recruitment/api/action/scorecard/draft?interview_id=...）。
+ * 404/未就绪返回 null，不崩页面；调用方据此决定是否回退 localStorage 断网兜底。
+ */
+export async function fetchScorecardDraft(options: {
+  readonly sessionId: string
+  readonly interviewId: string
+  readonly signal?: AbortSignal
+}): Promise<ScorecardDraftPayload | null> {
+  const sessionId = options.sessionId.trim()
+  if (sessionId === '' || options.interviewId.trim() === '') return null
+  try {
+    const url = `${SCORECARD_DRAFT_ENDPOINT}?interview_id=${encodeURIComponent(options.interviewId)}`
+    const value = await requestJson(url, sessionId, {
+      method: 'GET',
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    })
+    return normalizeScorecardDraft(value)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 自动保存面评草稿（POST /recruitment/api/action/scorecard/draft）。
+ * 严禁携带 confirmation_text（草稿不是最终判断，见 Task 06 T6-2）。
+ */
+export async function saveScorecardDraft(options: {
+  readonly sessionId: string
+  readonly interviewId: string
+  readonly payload: ScorecardDraftPayload
+}): Promise<boolean> {
+  const sessionId = options.sessionId.trim()
+  if (sessionId === '' || options.interviewId.trim() === '') return false
+  await requestJson(SCORECARD_DRAFT_ENDPOINT, sessionId, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      interview_id: options.interviewId,
+      payload: {
+        assessments: options.payload.assessments,
+        note: options.payload.note,
+      },
+    }),
+  })
+  return true
+}
+
+/** 提交面评成功后清理服务端与本地草稿。 */
+export async function clearScorecardDraft(options: {
+  readonly sessionId: string
+  readonly interviewId: string
+}): Promise<void> {
+  clearLocalScorecardDraft(options.interviewId)
+  const sessionId = options.sessionId.trim()
+  if (sessionId === '' || options.interviewId.trim() === '') return
+  try {
+    await requestJson(
+      `${SCORECARD_DRAFT_ENDPOINT}?interview_id=${encodeURIComponent(options.interviewId)}`,
+      sessionId,
+      { method: 'DELETE' },
+    )
+  } catch {
+    try {
+      await requestJson(SCORECARD_DRAFT_ENDPOINT, sessionId, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          interview_id: options.interviewId,
+          payload: { assessments: {}, note: '' },
+        }),
+      })
+    } catch {
+      // best-effort cleanup
+    }
+  }
 }
