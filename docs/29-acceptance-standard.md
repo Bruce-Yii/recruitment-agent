@@ -212,9 +212,9 @@
 
 | ID | 差距 | 现状证据 | 处置 |
 |---|---|---|---|
-| **V6-2** | 终态失败不产生"需要人处理"的事实（只有一行 `FAILED`） | `WAITING_HUMAN` 只被语义 triage 写（`store/events.ts:201`）；真 Host 整链后两条任务 `FAILED` 躺在库里没人看见 | **待做**（`docs/17` D-149 P1-b，产品已点头"可以"） |
-| **E6-1** | "人的即时操作"与"后台批量"没有优先级区分 | `router.tick()` 认领按 `priority, next_run_at, created_at`，无"人在等"这一档 | **待做**（`docs/28 §3-2`） |
-| V2-1（部分） | 面试官面评表单里仍有英文枚举与内部 id（`MET / NOT_MET`、`scorecard_id / actor_id`） | `work/d5/shell-copy/REPORT.md §③` 清单 | **待做**（`docs/17` D-148；属前端实现，出清单给前端） |
+| **V6-2** | 后端已补；**前端还不会显示原因** | 后端：`src/runtime` 终态失败按 `error_class` 闭集判"需要人处理"、`overview` 的待办清单已纳入并给出人话 `reason`（新库 `ra_w0_full4` 上 `workbench-overview` 8/8 通过）。**前端**：`normalize` 保留字段但不读 `reason`，界面暂不显示人话原因、动作标签仍是"待决定" | **后端已做**；前端按 `docs/30 §1.1` 补显示 |
+| **E6-1** | **已做** | 优先级档位落到登记表（人=1 / 常规=3）；真库证明：先建 priority=3、后建 priority=1 → **后建的先被认领**（`intake-routing` 6/6；`claim.ts` 排序未改） | 完成，复跑即验 |
+| V2-1（部分） | 面试官面评表单里仍有英文枚举与内部 id（`MET / NOT_MET`、`scorecard_id / actor_id`） | `work/d5/shell-copy/REPORT.md §③` 清单 | **待前端**（口径见 `docs/30` §1） |
 | —（非门） | `engine/**` 装了、`engine_*` 表恒 0 行，且它的 `drive()` 绕过 advisory lock | `docs/27 §7`、`docs/28 §3-1` | **待拍**（D-151：保留薄桥 or 退役） |
 
 **其余各门在 2026-11-18 的冻结基线上已有实测证据**（真 Host 整链：`work/d5/e2e-live/`）：
