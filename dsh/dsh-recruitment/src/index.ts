@@ -114,10 +114,7 @@ import { withToolCallTrace } from './tools/traced.ts'
 import { createConfigRoleTool, unconfiguredConfigRoleTool } from './tools/config-role.ts'
 import { createConfigTeamTool, unconfiguredConfigTeamTool } from './tools/config-team.ts'
 import { createConfigPipelineTool, unconfiguredConfigPipelineTool } from './tools/config-pipeline.ts'
-// 引擎持久副作用（vendor 自 dsh-superagent-prototype，MIT）：runtime 入队、这里派发。
-import { Store } from './engine/app/store.ts'
-import { Effects } from './engine/app/effects.ts'
-import { HealthBoard } from './engine/infra/health.ts'
+// engine 层已退役（D-154），不再从 src/index.ts 引入；见 src/engine/VENDORED.md。
 import { resolveDatabaseConfig, type DatabaseConfig } from './db/pool.ts'
 import {
   closePool,
@@ -620,7 +617,7 @@ export function apply(
             )
             // G1（事件自动驱动）：进程内**唯一的周期 tick**。
             //
-            // 此前 `router.tick()` 只被 `POST /recruitment/runtime/tick` 与 engine_effect 触发；
+            // 此前（engine 层未退役时）`router.tick()` 只被 `POST /recruitment/runtime/tick` 与 engine_effect 触发；
             // 没人手工发 HTTP 时，`event_inbox` 里的 RECEIVED 永远不动 —— 事件驱动是假的。
             // 这里用**专用连接**持有 `recruitment:tick` 咨询锁再开 setInterval：
             //   * 多实例同时起：只有抢到锁的实例派发，其余实例记一次 warn 后明确放弃（不抢活）；
@@ -640,57 +637,15 @@ export function apply(
                 },
               })
               : Promise.resolve(null)
-            // 引擎持久副作用（Effects 队列）的**插件侧派发者**。
-            //
-            // runtime 在它自己的异步事务里用 `effects-async.ts` 入队（launch/delivery/reply），
-            // 那些行落在 `recruitment.engine_effect`；没有这个派发者，副作用会**安全地排队但永不执行**
-            // （不丢、不假报 sent，但也没人干活）。这里把消费端接上。
-            //
-            // 同步桥的 statement_timeout 必须压到 5s：它阻塞事件循环，长查询会冻结宿主 turn。
-            const board = new HealthBoard()
-            const engineStore = new Store(
-              { ...runtimeDb, tenant_id: runtimeDb.tenant_id, statementTimeoutMs: 5_000 },
-              (error: unknown) => {
-                const logger = (ctx as unknown as { logger?: { warn(message: string): void } }).logger
-                logger?.warn(`recruitment: engine store error: ${String(error)}`)
-              },
-              board.claim('store'),
-            )
-            const engineEffects = new Effects(engineStore, board)
-            // launch / delivery 的消费者就是 runtime 自己的 tick —— 派发是幂等的（库里 SKIP LOCKED），
-            // 所以崩溃后重放安全。quiet：失败已经记在 effect 行上，不重复升级健康。
-            const drive = (): void => {
-              const controller = new AbortController()
-              void composed.router.tick(controller.signal).catch(() => undefined)
-            }
-            engineEffects.handle('launch', drive, { quiet: true })
-            engineEffects.handle('delivery', drive, { quiet: true })
-            // reply/notice 需要外部发送通道；v1.0 没有配置通道时**如实失败**，不许假装发出去。
-            engineEffects.handle('reply', () => {
-              throw new Error('no outbound channel configured (v1.0: 外发通道未配置)')
-            }, { quiet: true })
-            // 必须 start()：`Effects.dispatch()` 第一行是 `if (!this.started || this.stopped) return`，
-            // 不 start 就永远不派发（此前这里误写成 `void engineEffects.drain()`，而 drain 会置
-            // stopped=true —— 等于接了个空转的派发者，队列只进不出）。
-            engineEffects.start()
-            // runtime 走 `effects-async.ts` 在**自己的异步事务**里入队，不经过这个实例，
-            // 所以不会触发 kick；而 Effects 自己没有定时器（原型靠 Passes 的 2s interval，
-            // v1.0 未装配 Passes）。这里补一个同频 pump。
-            const pump = setInterval(() => { engineEffects.kick() }, 2_000)
+            // engine 层（vendor 自 dsh-superagent）已于 2026-11-18 退役：无人写入、且绕过 tick 的 advisory lock；见 docs/17 D-154。真要做外发时按 src/engine/VENDORED.md 再接。
             return () => {
               disposeHttp()
-              clearInterval(pump)
-              // 关闭顺序（G1 起）：先停周期 tick 并**释放咨询锁**（否则别的实例得等这条连接
-              // 彻底断开才抢得到锁），再停接新活、等运行中 effect 结束，最后关同步桥
-              // （否则 in-flight 语句会被杀在连接上）。
+              // 关闭顺序：先停周期 tick 并**释放咨询锁**（否则别的实例得等这条连接
+              // 彻底断开才抢得到锁），再关池。
               void tickLoopReady
                 .then((loop) => loop?.dispose())
                 .catch(() => undefined)
-                .then(() => engineEffects.drain())
-                .finally(() => {
-                  engineStore.close()
-                  void closePool(pool)
-                })
+                .finally(() => { void closePool(pool) })
             }
           } catch (error) {
             // 装配失败也要先把 tick-loop 收掉（可能已经抢到锁），再关池。

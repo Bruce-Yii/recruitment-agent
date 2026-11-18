@@ -8,8 +8,6 @@
 import type { DatabaseClient, DatabasePool } from '../../db/pool.ts'
 import { withActor } from '../../db/pool.ts'
 import type { BusinessObjectRef } from '../types.ts'
-// runtime ↔ 引擎 Effects/Outbox 的唯一交界（type-only import，不会拉起同步桥 worker）。
-import { enqueueEffect } from '../../engine/app/effects-async.ts'
 import { iso, isoRequired, mapBusinessRefs, num } from './readback.ts'
 
 /** 一次被 Router 认领的执行。 */
@@ -162,15 +160,8 @@ async function insertAttemptAndMarkRunning(
         where tenant_id = $1::uuid and id = $4::uuid`,
     [tenantId, attemptId, attemptNo, input.taskId],
   )
-  // 调用点 1a：派发任务前把 `launch` 副作用原子入队（与 Attempt/Task 写入同事务）。
-  // payload 用引擎的 launch 形状；runtime 的 task/attempt 映射到 ticket/assignment 两个字段，
-  // 插件侧的 Effects 处理器据 key（= attemptId）决定要做什么，不反写任务身份。
-  await enqueueEffect(client, {
-    tenantId: tenantId,
-    kind: 'launch',
-    key: attemptId,
-    payload: { ticketId: input.taskId, assignmentId: attemptId },
-  })
+  // engine 层已退役（D-154）：此处原先入队 `launch` effect 供插件侧派发者触发 tick；
+  // 现在 tick-loop 周期驱动 router.tick()，不再有写入方，故删除该顺带写入（不碰认领 SQL）。
   const lastSession = await client.query<{ runtime_session_id: string | null }>(
     `select s.runtime_session_id
          from recruitment.agent_session s

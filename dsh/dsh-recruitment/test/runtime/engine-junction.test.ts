@@ -1,23 +1,16 @@
-// runtime ↔ 引擎 Effects/Outbox 交界验收（真实 PostgreSQL + 真实同步桥）。
+// D-154 退役守则：engine 层（Effects/Outbox/写半边）已于 2026-11-18 退役。
 //
-// 证明四件事：
-//   1. `src/runtime/**` 的**异步事务**（同一 DatabaseClient）把副作用写进
-//      `engine_effect` / `engine_outbox` —— 与业务写入同一提交点；
-//   2. 插件侧（持有同步桥的进程）用 vendor 的 `Effects` / `Outbox` 从**同一批表**
-//      派发这些行；
-//   3. 回执从 `pending` 变成 `sent`，runtime 侧用 `readMessageReceipt` 读回；
-//   4. 同一 message id 重复登记幂等（只有一条回执、只有一条 reply effect）。
+// 本文件原先验收"runtime 异步事务写 engine_effect/engine_outbox → 插件侧 Effects/Outbox
+// 派发 → 回执 pending→sent"的交界。交界已不存在，因此真值反过来了：
+// **退役之后，任何产品路径都不该再往 engine_* 表写入**。本文件现在逐路径证明这一点，
+// 同时保留与 engine 无关的业务断言（认领/唤醒/收尾）。
 //
-// 本文件只在测试里 **import** `src/engine/**`（不修改它）；runtime 侧的依赖方向见
-// `src/engine/app/effects-async.ts` 的抬头。
+// ⚠️ 重新接线时本测试**必须一起改**：若有人再从 src/index.ts 或 runtime 入口装配 engine，
+// 这里的"行数恒为 0"断言会正确地变红 —— 这正是它作为回归守卫的目的。
+// 启用前须先在 docs/17 立裁决并复核 advisory-lock 不变量（见 src/engine/VENDORED.md 顶部）。
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { describe, test } from 'node:test'
-import { Store } from '../../src/engine/app/store.ts'
-import { Effects } from '../../src/engine/app/effects.ts'
-import { Outbox } from '../../src/engine/app/outbox.ts'
-import { HealthBoard } from '../../src/engine/infra/health.ts'
-import type { OutboundMessage } from '../../src/engine/core/index.ts'
 import { EventRuntime } from '../../src/runtime/event-runtime.ts'
 import { EVENT_TYPES } from '../../src/runtime/event-types.ts'
 import { RuntimeStore } from '../../src/runtime/store.ts'
@@ -29,7 +22,6 @@ import {
   RUNTIME_TENANT,
   type RuntimeTestDatabase,
 } from './db.ts'
-import { testDatabaseConfig } from '../integration/db.ts'
 import { scriptedOutcome, ScriptedWorkerLauncher } from './scripted-worker.ts'
 
 const NOTIFICATION: NotificationTarget = {
@@ -43,45 +35,10 @@ interface Harness {
   readonly db: RuntimeTestDatabase
   readonly runtimeStore: RuntimeStore
   readonly events: EventRuntime
-  readonly engineStore: Store
-  readonly effects: Effects
-  readonly outbox: Outbox
-  readonly launched: string[]
-  readonly delivered: string[]
-  readonly sent: string[]
 }
 
 async function withHarness(notification: NotificationTarget | undefined, fn: (harness: Harness) => Promise<void>): Promise<void> {
   const db = await createRuntimeTestDatabase('junction')
-  const cfg = testDatabaseConfig()
-  const board = new HealthBoard()
-  const engineStore = new Store({
-    host: cfg.host,
-    port: cfg.port,
-    user: cfg.user,
-    database: db.name,
-    password: cfg.password,
-    tenant_id: RUNTIME_TENANT,
-    statementTimeoutMs: 5_000,
-    applicationName: 'runtime-engine-junction-test',
-  }, undefined, board.claim('store'))
-  const effects = new Effects(engineStore, board)
-  const launched: string[] = []
-  const delivered: string[] = []
-  effects.handle('launch', async (_payload, key) => { launched.push(key) })
-  effects.handle('delivery', async (_payload, key) => { delivered.push(key) })
-  const sent: string[] = []
-  const outbox = new Outbox({
-    store: engineStore,
-    effects,
-    sources: {
-      instance: (source) => source === 'probe' ? { enabled: true } : undefined,
-      channelAllowed: () => true,
-      send: async (message: OutboundMessage) => { sent.push(message.id); return 'sent' as const },
-    },
-    commands: undefined,
-    paused: () => false,
-  })
   const runtimeStore = new RuntimeStore({
     pool: db.pool,
     tenantId: RUNTIME_TENANT,
@@ -90,12 +47,25 @@ async function withHarness(notification: NotificationTarget | undefined, fn: (ha
   })
   const events = new EventRuntime({ store: runtimeStore })
   try {
-    await fn({ db, runtimeStore, events, engineStore, effects, outbox, launched, delivered, sent })
+    await fn({ db, runtimeStore, events })
   } finally {
-    await effects.drain()
-    engineStore.close()
     await db.drop()
   }
+}
+
+/** 退役守则的统一读回：两张 engine 表必须保持零行。 */
+async function assertEngineTablesEmpty(
+  db: RuntimeTestDatabase,
+  context: string,
+): Promise<void> {
+  const effect = await db.pool.query<{ n: string }>(
+    'select count(*)::text as n from recruitment.engine_effect',
+  )
+  const outbox = await db.pool.query<{ n: string }>(
+    'select count(*)::text as n from recruitment.engine_outbox',
+  )
+  assert.equal(Number(effect.rows[0]!.n), 0, `${context}: engine_effect 必须保持 0 行（D-154：无写入方）`)
+  assert.equal(Number(outbox.rows[0]!.n), 0, `${context}: engine_outbox 必须保持 0 行（D-154：无写入方）`)
 }
 
 let eventCounter = 0
@@ -111,8 +81,8 @@ function scorecardEvent(interviewId: string): InboundEvent {
   }
 }
 
-describe('runtime ↔ engine effects/outbox junction', () => {
-  test('async runtime transaction writes launch + notice/reply; plugin Effects/Outbox dispatch; receipt pending → sent', async () => {
+describe('D-154 退役守则：产品路径不得向 engine_* 写入', () => {
+  test('认领任务 + WAITING_EXTERNAL 收尾后 engine_effect / engine_outbox 仍为 0 行', async () => {
     await withHarness(NOTIFICATION, async (harness) => {
       const interviewId = randomUUID()
       const received = await harness.events.receive(scorecardEvent(interviewId))
@@ -133,41 +103,25 @@ describe('runtime ↔ engine effects/outbox junction', () => {
         maxAttempts: 2,
       })
       const dispatched = await tasks.dispatchTask(taskId, new AbortController().signal)
+
+      // 非 engine 断言（保留）：WAITING_EXTERNAL 的收尾仍然产生通知标记。
       assert.ok(dispatched !== null)
-      assert.ok(dispatched.notification !== null, 'WAITING_EXTERNAL must record an outbound notification')
-      assert.equal(dispatched.notification.status, 'pending', 'same-transaction read must see pending, never fake sent')
-      const messageId = dispatched.notification.messageId
+      assert.ok(dispatched.notification !== null, 'WAITING_EXTERNAL must still produce a notification marker')
+      assert.equal(dispatched.notification.status, 'NOT_CONFIGURED', 'engine 退役后不得假报 pending/sent')
+      assert.equal(dispatched.notification.inserted, false, 'engine 退役后不再有出站登记方')
+      assert.match(dispatched.notification.messageId, /^task:/)
 
-      // 提交后、插件派发前：副作用已经在同一批引擎表里。
-      const queued = await harness.db.pool.query<{ kind: string; key: string }>(
-        "select kind, key from recruitment.engine_effect where kind in ('launch','reply') order by seq",
+      // 退役守则（原"launch + reply 必须入队"的反向断言 + 加强）：两条 engine 表恒 0。
+      await assertEngineTablesEmpty(harness.db, 'dispatch/waiting')
+      assert.equal(
+        await harness.runtimeStore.readMessageReceipt(dispatched.notification.messageId),
+        null,
+        '没有回执写入方时 readMessageReceipt 必须返回 null，不造假',
       )
-      assert.deepEqual(
-        queued.rows.map((row) => row.kind),
-        ['launch', 'reply'],
-        'launch (dispatch) and reply (outbound delivery) must both be queued by the runtime transaction',
-      )
-      assert.equal(queued.rows[0]!.key, dispatched.attemptId, 'launch key is the attempt id')
-      assert.equal(queued.rows[1]!.key, messageId, 'reply key is the outbound message id')
-
-      const pending = await harness.runtimeStore.readMessageReceipt(messageId)
-      assert.equal(pending?.status, 'pending', 'receipt is durable and pending before the plugin dispatches')
-
-      // 插件侧派发（同一个 PG，但独立同步桥进程/连接）。
-      harness.effects.start()
-      await harness.effects.idle('launch')
-      assert.deepEqual(harness.launched, [dispatched.attemptId], 'plugin Effects must dispatch the runtime launch effect')
-
-      await harness.outbox.sent()
-      assert.deepEqual(harness.sent, [messageId], 'plugin Outbox must deliver the runtime-registered message')
-
-      const settled = await harness.runtimeStore.readMessageReceipt(messageId)
-      assert.equal(settled?.status, 'sent', 'runtime reads the same receipt as sent after plugin delivery')
-      assert.equal(settled?.ticketId, taskId, 'receipt keeps the task content, not just the status')
     })
   })
 
-  test('an event that wakes a RUNNING task enqueues a delivery effect in the same transaction', async () => {
+  test('事件唤醒 RUNNING 任务后 engine_effect / engine_outbox 仍为 0 行', async () => {
     await withHarness(undefined, async (harness) => {
       const interviewId = randomUUID()
       const received = await harness.events.receive(scorecardEvent(interviewId))
@@ -183,22 +137,16 @@ describe('runtime ↔ engine effects/outbox junction', () => {
       assert.ok(claim !== null)
 
       const wake = await harness.events.receive(scorecardEvent(interviewId))
+      // 非 engine 断言（保留）：唤醒事实与任务回写照旧。
       assert.equal(wake.taskId, taskId)
       assert.equal(wake.wakeInserted, true)
 
-      const queued = await harness.db.pool.query<{ kind: string; key: string }>(
-        "select kind, key from recruitment.engine_effect where kind = 'delivery'",
-      )
-      assert.equal(queued.rows.length, 1, 'a wake on a RUNNING task must queue exactly one delivery effect')
-      assert.equal(queued.rows[0]!.key, taskId)
-
-      harness.effects.start()
-      await harness.effects.idle('delivery')
-      assert.deepEqual(harness.delivered, [taskId], 'plugin Effects must dispatch the delivery effect')
+      // 退役守则（原"必须入队一条 delivery"的反向断言）：无 delivery 行、两张表恒 0。
+      await assertEngineTablesEmpty(harness.db, 'wake-on-RUNNING')
     })
   })
 
-  test('duplicate outbound registration is idempotent (one receipt, one reply effect) and settles to sent', async () => {
+  test('重复通知登记后 engine_effect / engine_outbox 仍为 0 行，回执读回为 null', async () => {
     await withHarness(NOTIFICATION, async (harness) => {
       const taskId = randomUUID()
       const first = await harness.runtimeStore.publishNotification({
@@ -213,28 +161,23 @@ describe('runtime ↔ engine effects/outbox junction', () => {
         taskStatus: 'WAITING_HUMAN',
         summary: 'needs human review (duplicate call)',
       })
+
+      // 非 engine 断言（保留形状，真值跟随退役）：两次调用都返回标记，messageId 同形。
       assert.ok(first !== null)
       assert.ok(duplicate !== null)
-      assert.equal(first.inserted, true)
-      assert.equal(duplicate.inserted, false, 'same message id must be ignored idempotently')
+      assert.equal(first.inserted, false, 'engine 退役后不再有出站登记方')
+      assert.equal(duplicate.inserted, false, 'engine 退役后不再有出站登记方')
       assert.equal(first.messageId, duplicate.messageId)
+      assert.equal(first.status, 'NOT_CONFIGURED')
+      assert.equal(duplicate.status, 'NOT_CONFIGURED')
 
-      const receipts = await harness.db.pool.query<{ n: string }>(
-        'select count(*)::text as n from recruitment.engine_outbox where message_id = $1',
-        [first.messageId],
+      // 退役守则（原"一条回执 + 一条 reply effect + pending→sent"的反向断言 + 加强）。
+      await assertEngineTablesEmpty(harness.db, 'duplicate-notification')
+      assert.equal(
+        await harness.runtimeStore.readMessageReceipt(first.messageId),
+        null,
+        '没有回执写入方时 readMessageReceipt 必须返回 null',
       )
-      assert.equal(Number(receipts.rows[0]!.n), 1, 'only one outbox receipt may exist')
-      const replies = await harness.db.pool.query<{ n: string }>(
-        "select count(*)::text as n from recruitment.engine_effect where kind = 'reply' and key = $1",
-        [first.messageId],
-      )
-      assert.equal(Number(replies.rows[0]!.n), 1, 'only one reply effect may exist')
-
-      harness.effects.start()
-      await harness.outbox.sent()
-      assert.deepEqual(harness.sent, [first.messageId])
-      const settled = await harness.runtimeStore.readMessageReceipt(first.messageId)
-      assert.equal(settled?.status, 'sent')
     })
   })
 })
