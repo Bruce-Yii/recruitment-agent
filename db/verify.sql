@@ -409,6 +409,74 @@ begin
 end $$;
 
 
+-- [0019 碎片约束置顶 + 下一轮交接提醒] candidate_constraint 的专项断言。
+-- 只新增本块，既有断言与计数零改动；表不存在时跳过（保持 verify.sql 在旧库可跑）。
+do $$
+declare
+  v_missing text := '';
+  v_col text;
+begin
+  if to_regclass('recruitment.candidate_constraint') is not null then
+    -- PIN-STRUCT-01 必需列（含本轮约定的全部业务列）
+    for v_col in select unnest(array[
+      'id','tenant_id','candidate_id','kind','text','source','application_id','interview_id',
+      'created_by_actor_id','created_at','superseded_by_constraint_id','record_version'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.candidate_constraint'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        v_missing := v_missing || v_col || ' ';
+      end if;
+    end loop;
+    if v_missing <> '' then
+      raise exception 'PIN-STRUCT-01 candidate_constraint 缺列：%', v_missing;
+    end if;
+
+    -- PIN-STRUCT-02 闭集 / 形状 / HANDOFF 必带 interview_id / 不可自取代 CHECK
+    v_missing := '';
+    select string_agg(t.name, ' ') into v_missing
+      from unnest(array[
+        'ck_candidate_constraint_kind','ck_candidate_constraint_source',
+        'ck_candidate_constraint_text','ck_candidate_constraint_handoff_interview',
+        'ck_candidate_constraint_record_version','ck_candidate_constraint_no_self_supersede'
+      ]) as t(name)
+     where not exists (select 1 from pg_constraint p
+                        where p.conrelid = 'recruitment.candidate_constraint'::regclass
+                          and p.contype = 'c' and p.conname = t.name);
+    if coalesce(v_missing, '') <> '' then
+      raise exception 'PIN-STRUCT-02 candidate_constraint 缺 CHECK 约束：%', v_missing;
+    end if;
+
+    -- PIN-STRUCT-03 append-only：禁删 + 全列不可变（只允许 superseded_by_constraint_id）护栏
+    for v_col in
+      select unnest(array[
+        'trg_candidate_constraint_no_delete','trg_candidate_constraint_immutable'
+      ])
+    loop
+      if not exists (select 1 from pg_trigger g
+                      where g.tgrelid = 'recruitment.candidate_constraint'::regclass
+                        and not g.tgisinternal and g.tgname = v_col) then
+        raise exception 'PIN-STRUCT-03 candidate_constraint 缺触发器：%', v_col;
+      end if;
+    end loop;
+
+    -- PIN-STRUCT-04 置顶 PIN 与交接 HANDOFF 两个查询索引必须存在
+    v_missing := '';
+    select string_agg(t.name, ' ') into v_missing
+      from unnest(array['ix_candidate_constraint_pin','ix_candidate_constraint_handoff']) as t(name)
+     where not exists (select 1 from pg_index i
+                        where i.indrelid = 'recruitment.candidate_constraint'::regclass
+                          and i.indexrelid = ('recruitment.' || t.name)::regclass);
+    if coalesce(v_missing, '') <> '' then
+      raise exception 'PIN-STRUCT-04 candidate_constraint 缺索引：%', v_missing;
+    end if;
+    raise notice 'PIN-STRUCT PASS candidate_constraint 列/CHECK/禁删/不可变/置顶与交接索引齐全';
+  else
+    raise notice 'PIN-STRUCT SKIP candidate_constraint 表不存在（0019 尚未应用）';
+  end if;
+end $$;
+
+
 \echo ''
 \echo '=================================================================='
 \echo ' 3. 状态机取值覆盖（docs/03 §3/§10/§11/§13 + docs/04 §18）'

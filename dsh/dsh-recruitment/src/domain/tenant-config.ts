@@ -2035,3 +2035,144 @@ export async function getPipeline(
   }
   return view
 }
+
+// =====================================================================
+//  工作空间设置（docs/34 §二.2-5；docs/24 配置产品化 D-112）
+//
+//  三组设置全部落在既有 `recruitment.business_config`（追加版本表，config_key
+//  自由正则），**不新建表、不加迁移、不新增工具**。本节只放**纯校验函数**，
+//  供 HTTP 写入口（Host Action）与读取投影共用同一份规则（服务端真相，不靠前端）。
+//
+//  口径：
+//   * 外部连接状态（邮箱 / 飞书日历 / 飞书妙记）——**只读展示**，值来自现有
+//     配置解析（resolveMailConfig / resolveFeishuConnector），缺配置 = NOT_CONFIGURED；
+//     它**没有可写的 config_key**，本文件不为它提供校验函数（不能假装已连接）。
+//   * agent_silent_delegation —— 布尔开关，严格 boolean。
+//   * sla_thresholds —— 对象：screening_hours / scorecard_hours，整数 1..720（含）。
+// =====================================================================
+
+/** 可写设置的 config_key 封闭集（外部连接状态只读，不在此列）。 */
+export const WORKSPACE_SETTING_KEYS = ['agent_silent_delegation', 'sla_thresholds'] as const
+/** 一个可写设置键。 */
+export type WorkspaceSettingKey = (typeof WORKSPACE_SETTING_KEYS)[number]
+
+/** SLA 阈值字段名封闭集。 */
+export const SLA_THRESHOLD_FIELDS = ['screening_hours', 'scorecard_hours'] as const
+/** SLA 阈值（校验后的形状）。 */
+export interface SlaThresholds {
+  readonly screening_hours: number
+  readonly scorecard_hours: number
+}
+
+/** SLA 小时数闭区间（含端点）：1 小时 .. 720 小时（30 天）。 */
+export const SLA_HOURS_MIN = 1
+export const SLA_HOURS_MAX = 720
+
+/** 人工确认原话长度上限（与 `http/email-send.ts` 的 confirmation_text 同口径）。 */
+export const SETTINGS_CONFIRMATION_TEXT_MAX = 2000
+
+/**
+ * 判断一个字符串是不是可写设置键。
+ * @param value - 任意值。
+ */
+export function isWorkspaceSettingKey(value: unknown): value is WorkspaceSettingKey {
+  return typeof value === 'string' && (WORKSPACE_SETTING_KEYS as readonly string[]).includes(value)
+}
+
+/**
+ * 校验 `agent_silent_delegation`（严格布尔；`true`/`false` 之外的任何值都拒）。
+ * @param value - 调用方给的值。
+ * @returns 布尔值。
+ * @throws RecruitmentToolError - `INVALID_ARGS`。
+ */
+export function validateSilentDelegation(value: unknown): boolean {
+  if (typeof value !== 'boolean') {
+    throw configError('INVALID_ARGS', 'SILENT_DELEGATION_NOT_BOOLEAN',
+      'agent_silent_delegation 必须是布尔值（true / false）。',
+      { got: typeof value === 'string' ? value.slice(0, 40) : typeof value })
+  }
+  return value
+}
+
+/**
+ * 校验 SLA 小时数（整数，闭区间 [1, 720]）。
+ * @param value - 调用方给的值。
+ * @param field - 字段名（拼进 reason_code / 错误）。
+ * @returns 整数小时数。
+ * @throws RecruitmentToolError - `INVALID_ARGS`。
+ */
+function validateSlaHours(value: unknown, field: 'screening_hours' | 'scorecard_hours'): number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw configError('INVALID_ARGS', `${field.toUpperCase()}_NOT_INTEGER`,
+      `${field} 必须是整数小时数。`, { field, got: typeof value })
+  }
+  if (value < SLA_HOURS_MIN || value > SLA_HOURS_MAX) {
+    throw configError('INVALID_ARGS', `${field.toUpperCase()}_OUT_OF_RANGE`,
+      `${field} 必须在 ${SLA_HOURS_MIN}..${SLA_HOURS_MAX} 之间（含）。`,
+      { field, min: SLA_HOURS_MIN, max: SLA_HOURS_MAX, got: value })
+  }
+  return value
+}
+
+/**
+ * 校验并归一化 `sla_thresholds`：顶层必须是对象；两个字段**都必须给**、都是整数且在范围内；
+ * 拒绝未知键（防止悄悄塞进别的阈值）。
+ * @param value - 调用方给的值。
+ * @returns 归一化后的 `{screening_hours, scorecard_hours}`。
+ * @throws RecruitmentToolError - `INVALID_ARGS`。
+ */
+export function validateSlaThresholds(value: unknown): SlaThresholds {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw configError('INVALID_ARGS', 'SLA_THRESHOLDS_NOT_OBJECT', 'sla_thresholds 必须是对象。')
+  }
+  const raw = value as Record<string, unknown>
+  const unknown = Object.keys(raw).filter((key) => !(SLA_THRESHOLD_FIELDS as readonly string[]).includes(key)).sort()
+  if (unknown.length > 0) {
+    throw configError('INVALID_ARGS', 'SLA_THRESHOLDS_UNKNOWN_FIELD',
+      `sla_thresholds 不接受未知字段：${unknown.join(', ')}。`, { unknown })
+  }
+  const missing = SLA_THRESHOLD_FIELDS.filter((key) => !Object.hasOwn(raw, key))
+  if (missing.length > 0) {
+    throw configError('INVALID_ARGS', 'SLA_THRESHOLDS_MISSING_FIELD',
+      `sla_thresholds 缺必填字段：${missing.join(', ')}。`, { missing: [...missing] })
+  }
+  return {
+    screening_hours: validateSlaHours(raw.screening_hours, 'screening_hours'),
+    scorecard_hours: validateSlaHours(raw.scorecard_hours, 'scorecard_hours'),
+  }
+}
+
+/**
+ * 按 key 校验一条设置值（写入口的唯一校验入口）。
+ * @param key - 可写设置键。
+ * @param value - 调用方给的值。
+ * @returns 归一化后的 payload 值（可直接塞进 business_config.payload 的 `value` 字段）。
+ * @throws RecruitmentToolError - `INVALID_ARGS`（含未知 key）。
+ */
+export function validateWorkspaceSettingValue(key: unknown, value: unknown): boolean | SlaThresholds {
+  if (!isWorkspaceSettingKey(key)) {
+    throw configError('INVALID_ARGS', 'SETTING_KEY_UNKNOWN',
+      `未知或只读的设置键：${typeof key === 'string' ? key : typeof key}（可写：${WORKSPACE_SETTING_KEYS.join(', ')}）。`,
+      { allowed: [...WORKSPACE_SETTING_KEYS] })
+  }
+  return key === 'agent_silent_delegation' ? validateSilentDelegation(value) : validateSlaThresholds(value)
+}
+
+/**
+ * 校验人工确认原话（`confirmation_text`）：1..2000 非空字符串。
+ * 哈希由服务端算（调用方只给原话，不许传哈希）。
+ * @param value - 调用方给的值。
+ * @returns 去首尾空白后的原话。
+ * @throws RecruitmentToolError - `INVALID_ARGS`。
+ */
+export function validateConfirmationText(value: unknown): string {
+  if (typeof value !== 'string') {
+    throw configError('INVALID_ARGS', 'CONFIRMATION_TEXT_NOT_STRING', 'confirmation_text 必须是字符串（人的确认原话）。')
+  }
+  const trimmed = value.trim()
+  if (trimmed.length < 1 || value.length > SETTINGS_CONFIRMATION_TEXT_MAX) {
+    throw configError('INVALID_ARGS', 'CONFIRMATION_TEXT_LENGTH',
+      `confirmation_text 必须是去空白后非空、且不超过 ${SETTINGS_CONFIRMATION_TEXT_MAX} 字符。`)
+  }
+  return trimmed
+}

@@ -175,6 +175,11 @@ export const EVENT_TYPES = {
    * from_stage / to_stage（谁、何时、什么原话、跳过了哪一步）。
    */
   APPLICATION_STAGE_OVERRIDE_RECORDED: 'application.stage.override.recorded',
+  /**
+   * 碎片约束置顶 / 下一轮交接提醒落库：`src/tools/candidate-constraint.ts` 写的审计事件。
+   * payload 带 candidate_id / kind / text / source / actor_id / action / inserted / constraint_id。
+   */
+  CANDIDATE_CONSTRAINT_RECORDED: 'candidate.constraint.recorded',
 } as const
 
 /** `EVENT_TYPES` 的取值联合（发射方签名用）。 */
@@ -444,6 +449,25 @@ const WRITER_EVENTS: readonly EventTypeDefinition[] = [
         '跳轮 / 豁免面评已由 stage_advance 的 override 分支在同一事务里完成阶段 UPDATE；'
         + '事件是 schema/0001 口径的审计事实（人工原话哈希 + 确认人 + 时间 + from/to 可回查），'
         + '再建任务不会重复推进，只会重复执行同一跳。',
+    },
+  },
+  {
+    type: EVENT_TYPES.CANDIDATE_CONSTRAINT_RECORDED,
+    constKey: 'CANDIDATE_CONSTRAINT_RECORDED',
+    producer: {
+      kind: 'TOOL',
+      file: 'src/tools/candidate-constraint.ts',
+      detail: 'insertConstraintRecordedEvent()（工具 recruitment_candidate_constraint：碎片约束置顶 / 下一轮交接提醒落库）',
+    },
+    // 与 criterion.override.recorded 同一口径：纯审计工具事件用 schema/0001，
+    // RuntimeStore.listPendingEvents 不把它当待路由触发事件。
+    normalizerVersion: 'schema/0001',
+    routing: {
+      kind: 'IGNORED',
+      reason:
+        '置顶约束 / 交接提醒已由工具在同一事务写进 candidate_constraint 表（幂等 no-op 不写第二条事件）；'
+        + '事件只是审计事实（candidate_id / kind / text / source / actor / action / inserted 可回查），'
+        + 'v1.0 没有自动后续任务，再建任务会重复沉淀同一句原话。',
     },
   },
 ]

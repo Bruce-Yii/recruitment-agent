@@ -460,6 +460,7 @@ interface FakeTranscriptDb {
   readonly artifacts: readonly Record<string, unknown>[]
   readonly textRows: readonly Record<string, unknown>[]
   readonly segments: readonly Record<string, unknown>[]
+  readonly nearRows: readonly Record<string, unknown>[]
   readonly segmentTotal: number
   readonly record: Record<string, unknown> | undefined
   readonly waitMinutes: string | null
@@ -481,6 +482,7 @@ function fakeTranscriptClient(scenario: Partial<FakeTranscriptDb> = {}): Databas
     artifacts: [artifactRow()],
     textRows: [],
     segments: [],
+    nearRows: [],
     segmentTotal: 0,
     record: recordRow(),
     waitMinutes: '120',
@@ -499,6 +501,11 @@ function fakeTranscriptClient(scenario: Partial<FakeTranscriptDb> = {}): Databas
       if (text.includes('substring(raw_text from')) return { rows: [...db.textRows] as T[] }
       if (text.includes('count(*) as total from recruitment.transcript_segment')) {
         return { rows: [{ total: db.segmentTotal }] as T[] }
+      }
+      if (text.includes('speaker_label, start_ms, end_ms')) {
+        // 模拟 SQL 的 `order by sequence`：实现只负责消费已排好序的行。
+        const sorted = [...db.nearRows].sort((a, b) => Number(a.sequence) - Number(b.sequence))
+        return { rows: sorted as T[] }
       }
       if (text.includes('from recruitment.transcript_segment')) return { rows: [...db.segments] as T[] }
       if (text.includes('tenant_exists')) return { rows: [db.tenant] as T[] }
@@ -658,4 +665,192 @@ test('最小真值（无产物/无正文/无片段/无 record）也严格通过 
     assert.equal(Object.hasOwn(transcript, optional), false, `${optional} 缺省必须省略键（不写 null）`)
   }
   assert.ok((value.warnings as readonly { code: string }[]).some((warning) => warning.code === 'RECORD_MISSING'))
+})
+
+// =====================================================================
+//  at_seconds / window_seconds：妙记时间点上下文片段（D-157 / docs/34 §二.2-4）
+// =====================================================================
+
+/** 造一条带时序的 near 行（毫秒 / 说话人 / 原文）。 */
+function nearRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    sequence: 0,
+    content_text: '原文照抄',
+    speaker_ref: null,
+    speaker_label: null,
+    start_ms: 0,
+    end_ms: 1000,
+    ...overrides,
+  }
+}
+
+test('T1 schema 声明：at_seconds/window_seconds 进 PARAMETERS_SCHEMA，required 仍只有 interview_id', () => {
+  const tool = createTranscriptReadTool(DATABASE!)
+  const parameters = tool.parameters as {
+    additionalProperties: boolean
+    required: string[]
+    properties: Record<string, Record<string, unknown>>
+  }
+  assert.equal(parameters.additionalProperties, false)
+  assert.deepEqual(parameters.required, ['interview_id'], 'required 数组不变')
+
+  const at = parameters.properties.at_seconds as Record<string, unknown>
+  const window = parameters.properties.window_seconds as Record<string, unknown>
+  assert.ok(at !== undefined, 'PARAMETERS_SCHEMA 必须有 at_seconds')
+  assert.ok(window !== undefined, 'PARAMETERS_SCHEMA 必须有 window_seconds')
+  assert.equal(at.type, 'integer')
+  assert.equal(window.type, 'integer')
+  const atDesc = String(at.description)
+  const windowDesc = String(window.description)
+  assert.ok(atDesc.includes('>= 0') || atDesc.includes('>=0'), `at_seconds 描述须含 >=0：${atDesc}`)
+  assert.ok(atDesc.includes('上限') === false || atDesc.includes('>= 0'), 'at_seconds 无上限，但下界须清楚')
+  assert.ok(windowDesc.includes('默认 60'), `window_seconds 描述须含默认 60：${windowDesc}`)
+  assert.ok(windowDesc.includes('上限 300'), `window_seconds 描述须含上限 300：${windowDesc}`)
+  // 整套 schema 仍无 type:null / type 数组（含新增的 NEAR_SEGMENT_SCHEMA）。
+  assert.deepEqual(schemaViolations(tool.parameters), [])
+  assert.deepEqual(schemaViolations(tool.output.schema), [])
+  const near = ((tool.output.schema as { properties: Record<string, { properties: Record<string, unknown> }> })
+    .properties.transcript.properties.segments_near) as Record<string, unknown>
+  assert.ok(near !== undefined, 'OUTPUT_SCHEMA.transcript.properties 必须有 segments_near')
+  assert.equal(near.type, 'array')
+  const nearItem = near.items as Record<string, unknown>
+  assert.equal(nearItem.additionalProperties, false)
+  assert.deepEqual(nearItem.required, ['start_seconds', 'end_seconds', 'text'])
+  const nearProps = nearItem.properties as Record<string, Record<string, unknown>>
+  assert.deepEqual(Object.keys(nearProps).sort(), ['end_seconds', 'speaker', 'start_seconds', 'text'])
+  assert.equal(nearProps.speaker.type, 'string')
+  assert.equal((tool.output.schema as { properties: Record<string, { required: string[] }> })
+    .properties.transcript.required.includes('segments_near'), false, 'segments_near 不在 transcript.required')
+})
+
+test('T2 参数负例：at_seconds<0 / window_seconds 越界 / 非整数各自 reason_code 正确', () => {
+  const now = Date.parse('2026-11-13T00:00:00+08:00')
+  const cases: readonly [Record<string, unknown>, string][] = [
+    [{ interview_id: INTERVIEW, at_seconds: -1 }, 'OUT_OF_RANGE'],
+    [{ interview_id: INTERVIEW, at_seconds: 10, window_seconds: 0 }, 'OUT_OF_RANGE'],
+    [{ interview_id: INTERVIEW, at_seconds: 10, window_seconds: 301 }, 'OUT_OF_RANGE'],
+    [{ interview_id: INTERVIEW, at_seconds: 10, window_seconds: 1.5 }, 'TYPE_MISMATCH'],
+  ]
+  for (const [args, reason] of cases) {
+    assert.throws(() => parseReadArgs(args, now), (error: unknown) => {
+      const parsed = body(error)
+      assert.equal(parsed.code, 'INVALID_ARGS')
+      assert.equal(parsed.reason_code, reason, JSON.stringify(args))
+      return true
+    })
+  }
+  assert.doesNotThrow(() => parseReadArgs({ interview_id: INTERVIEW, at_seconds: 10, window_seconds: 300 }, now))
+})
+
+test('T3 不给 at_seconds：输出无 segments_near，include_segments 分页路径一字不变', async () => {
+  const value = await readRealValue({
+    textRows: [{ content: '00:00 这', total_chars: '376', slice_len: '8' }],
+    segments: [{ sequence: 0, content_text: '00:00 这', speaker_ref: null }],
+    segmentTotal: 3,
+    nearRows: [nearRow()],
+  }, { interview_id: REAL_INTERVIEW, artifact_id: REAL_ARTIFACT, include_segments: true, segment_limit: 1 })
+  const transcript = value.transcript as Record<string, unknown>
+  assert.equal(Object.hasOwn(transcript, 'segments_near'), false, '不给 at_seconds 时不得出现 segments_near')
+  assert.deepEqual(transcript.segments, [{ sequence: 0, content_text: '00:00 这' }])
+  assert.deepEqual(transcript.segment_page, { offset: 0, limit: 1, total: 3, has_more: true })
+  assert.deepEqual(valueViolations(READ_TOOL.output.schema, value), [])
+})
+
+test('T4 命中：只含交集段、四键投影、speaker 优先、顺序按 sequence、秒数 floor、原文不变', async () => {
+  // at=10, window=5 → 窗口 [5000, 15000]ms；fake 已按 SQL 语义预先过滤，这里返回三行命中。
+  const value = await readRealValue({
+    nearRows: [
+      nearRow({ sequence: 2, start_ms: 9000, end_ms: 12000, speaker_label: '面试官', speaker_ref: 'ref-x', content_text: '三段原文  ' }),
+      nearRow({ sequence: 0, start_ms: 5000, end_ms: 8000, speaker_label: null, speaker_ref: 'ref-a', content_text: '第一段原文' }),
+      nearRow({ sequence: 5, start_ms: 11000, end_ms: 14999, speaker_label: '候选人', speaker_ref: null, content_text: '第五段原文' }),
+      // 窗口外/无时序的行不应由 SQL 返回；若 fake 误带进来，下面键集/文本断言会暴露。
+    ],
+  }, { interview_id: REAL_INTERVIEW, artifact_id: REAL_ARTIFACT, at_seconds: 10, window_seconds: 5 })
+  const transcript = value.transcript as Record<string, unknown>
+  const near = transcript.segments_near as Record<string, unknown>[]
+  assert.ok(Array.isArray(near))
+  assert.equal(near.length, 3)
+  assert.deepEqual(near.map((item) => item.text), ['第一段原文', '三段原文  ', '第五段原文'], '顺序按 sequence 且原文不改')
+  assert.deepEqual(near[0], {
+    start_seconds: 5, end_seconds: 8, speaker: 'ref-a', text: '第一段原文',
+  }, 'speaker_label 缺失时回退 speaker_ref')
+  assert.deepEqual(Object.keys(near[1]).sort(), ['end_seconds', 'speaker', 'start_seconds', 'text'])
+  assert.equal(near[1].speaker, '面试官', 'speaker_label 优先于 speaker_ref')
+  assert.equal(near[1].start_seconds, 9)
+  assert.equal(near[1].end_seconds, 12)
+  assert.equal(near[2].start_seconds, 11)
+  assert.equal(near[2].end_seconds, 14, '14999ms floor = 14')
+  for (const item of near) {
+    for (const forbidden of ['id', 'sequence', 'artifact_id', 'content_sha256', 'provider_id', 'start_ms', 'end_ms']) {
+      assert.equal(Object.hasOwn(item, forbidden), false, `近邻段不得含内部键 ${forbidden}`)
+    }
+  }
+  assert.deepEqual(valueViolations(READ_TOOL.output.schema, value), [])
+})
+
+test('T5 空结果：窗口内无段 → segments_near=[] 且 SEGMENTS_NEAR_EMPTY 警告', async () => {
+  const value = await readRealValue({
+    nearRows: [],
+  }, { interview_id: REAL_INTERVIEW, artifact_id: REAL_ARTIFACT, at_seconds: 10, window_seconds: 5 })
+  const transcript = value.transcript as Record<string, unknown>
+  assert.deepEqual(transcript.segments_near, [])
+  const warnings = value.warnings as readonly { code: string; message: string }[]
+  const nearWarning = warnings.filter((warning) => warning.code === 'SEGMENTS_NEAR_EMPTY')
+  assert.equal(nearWarning.length, 1)
+  assert.ok(nearWarning[0]?.message.length > 0, 'message 是一句事实')
+  assert.ok(nearWarning[0]?.message.includes('带时序'), `message 是一句中文事实：${nearWarning[0]?.message}`)
+  assert.deepEqual(valueViolations(READ_TOOL.output.schema, value), [])
+})
+
+test('T6 不吐内部 id：render 文本与 JSON.stringify(value) 均不含 artifact id / provider id / content_sha256', async () => {
+  const value = await readRealValue({
+    nearRows: [nearRow({ sequence: 1, start_ms: 9000, end_ms: 11000, speaker_label: '面试官', content_text: '敏感原文片段' })],
+  }, { interview_id: REAL_INTERVIEW, artifact_id: REAL_ARTIFACT, at_seconds: 10 })
+  const near = ((value.transcript as Record<string, unknown>).segments_near) as Record<string, unknown>[]
+  assert.equal(near.length, 1, '命中一段')
+  const artifact = ((value.transcript as Record<string, unknown>).artifacts as Record<string, unknown>[])[0] as Record<string, unknown>
+  const secrets = [
+    String(artifact.id),
+    String(artifact.provider_artifact_id),
+    String(artifact.content_sha256),
+  ]
+  const rendered = READ_TOOL.output.render({}, value).map((block) => block.text).join('\n')
+  const serialized = JSON.stringify(value)
+  const nearText = JSON.stringify(near)
+  for (const secret of secrets) {
+    assert.equal(nearText.includes(secret), false, `segments_near 不得含内部标识 ${secret}`)
+  }
+  // render 的机器参数区按既有设计会带完整 UUID（下游工具入参），但新投影绝不能带内部 id
+  // ——上面的 nearText 断言已覆盖；render 文本里也不回显近邻段正文。
+  assert.equal(rendered.includes('敏感原文片段'), false, 'render 不回显近邻段正文')
+  for (const forbidden of ['id', 'sequence', 'artifact_id', 'content_sha256', 'provider_id', 'start_ms', 'end_ms']) {
+    assert.equal(Object.hasOwn(near[0] as object, forbidden), false, `近邻段不得含内部键 ${forbidden}`)
+  }
+  assert.deepEqual(valueViolations(READ_TOOL.output.schema, value), [])
+})
+
+test('T7 speaker 缺省：speaker_label/speaker_ref 都无时省略 speaker 键（不写 null）', async () => {
+  const value = await readRealValue({
+    nearRows: [nearRow({ sequence: 0, start_ms: 9000, end_ms: 10000, speaker_label: null, speaker_ref: null, content_text: '无说话人' })],
+  }, { interview_id: REAL_INTERVIEW, artifact_id: REAL_ARTIFACT, at_seconds: 10 })
+  const near = ((value.transcript as Record<string, unknown>).segments_near) as Record<string, unknown>[]
+  assert.equal(near.length, 1)
+  assert.equal(Object.hasOwn(near[0] as object, 'speaker'), false, '两者都无则省略 speaker 键')
+  assert.deepEqual(Object.keys(near[0] as object).sort(), ['end_seconds', 'start_seconds', 'text'])
+  assert.deepEqual(nullPaths(value), [], '输出值不得有 null')
+  assert.deepEqual(valueViolations(READ_TOOL.output.schema, value), [])
+})
+
+test('T8 选中产物没有带时序分段：segments_near=[] + SEGMENTS_NEAR_EMPTY（无产物同理）', async () => {
+  const value = await readRealValue({
+    meetings: [],
+    artifacts: [],
+    record: undefined,
+    nearRows: [],
+  }, { interview_id: REAL_INTERVIEW, at_seconds: 10 })
+  const transcript = value.transcript as Record<string, unknown>
+  assert.deepEqual(transcript.segments_near, [])
+  const warnings = value.warnings as readonly { code: string }[]
+  assert.ok(warnings.some((warning) => warning.code === 'SEGMENTS_NEAR_EMPTY'))
+  assert.deepEqual(valueViolations(READ_TOOL.output.schema, value), [])
 })

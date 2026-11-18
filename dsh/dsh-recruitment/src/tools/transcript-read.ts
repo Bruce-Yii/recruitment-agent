@@ -37,6 +37,11 @@ const DEFAULT_WAIT_MINUTES = 120
 const DEFAULT_MAX_CHARS = 20_000
 const MAX_CHARS_LIMIT = 200_000
 const DEFAULT_SEGMENT_LIMIT = 200
+/** `at_seconds` 未给时前后跨度默认 60 秒，上限 300 秒。 */
+const DEFAULT_WINDOW_SECONDS = 60
+const MAX_WINDOW_SECONDS = 300
+/** `segments_near` 一次最多返回的命中分段数（防超长）。 */
+const MAX_NEAR_SEGMENTS = 20
 /** `M(i)` 认的会议角色（TR-D4：REPLACED / CANCELLED 不进）。 */
 const TRANSCRIPT_MEETING_ROLES: ReadonlySet<string> = new Set(['PRIMARY', 'CONTINUATION'])
 
@@ -155,6 +160,21 @@ const PARAMS: ParamMap = {
     min: 1,
     max: 1000,
     description: `一次最多返回多少条片段（默认 ${DEFAULT_SEGMENT_LIMIT}，上限 1000）。`,
+  },
+  at_seconds: {
+    kind: 'integer',
+    min: 0,
+    description:
+      '可选：取妙记该时间点（秒，整数，>= 0）附近的上下文片段；给定时 transcript.segments_near 会出现。'
+      + 'DB 里 start_ms/end_ms 是毫秒，查询时 ×1000 比较。不给则行为与现状完全一致（不新增输出键）。',
+  },
+  window_seconds: {
+    kind: 'integer',
+    min: 1,
+    max: MAX_WINDOW_SECONDS,
+    description:
+      `可选：at_seconds 前后跨度秒数（整数，>= 1，上限 ${MAX_WINDOW_SECONDS}，默认 ${DEFAULT_WINDOW_SECONDS}）。`
+      + '只有给了 at_seconds 才有意义。',
   },
   as_of: {
     kind: 'string',
@@ -422,6 +442,23 @@ const SEGMENT_SCHEMA = {
   },
 }
 
+/**
+ * `segments_near` 的单段投影：只有四个业务键，**绝不**带内部 id / 哈希 / provider id /
+ * sequence / artifact_id（都是内部坐标，不该出现在给人的输出里）。
+ * 秒数 = start_ms/end_ms ÷ 1000 向下取整；speaker 两者都无时省略该键（不写 null）。
+ */
+const NEAR_SEGMENT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['start_seconds', 'end_seconds', 'text'],
+  properties: {
+    start_seconds: { type: 'integer', description: 'start_ms ÷ 1000 向下取整。' },
+    end_seconds: { type: 'integer', description: 'end_ms ÷ 1000 向下取整。' },
+    speaker: { type: 'string', description: 'speaker_label 优先，否则 speaker_ref；两者都无则省略这个键。' },
+    text: { type: 'string', description: 'content_text 原文，逐字节照抄。' },
+  },
+}
+
 const RECORD_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -508,6 +545,12 @@ const OUTPUT_SCHEMA = {
         artifacts: { type: 'array', items: ARTIFACT_SCHEMA, description: 'ART(i)：M(i) 下全部产物，按 (meeting, revision, variant) 排序。' },
         text: TEXT_SCHEMA,
         segments: { type: 'array', items: SEGMENT_SCHEMA },
+        segments_near: {
+          type: 'array',
+          items: NEAR_SEGMENT_SCHEMA,
+          description: '仅当给了 at_seconds 时出现：命中分段及前后若干段，按 sequence 升序最多 20 段。'
+            + '没有命中时段空数组并附 SEGMENTS_NEAR_EMPTY 警告。',
+        },
         segment_page: {
           type: 'object',
           additionalProperties: false,
@@ -794,6 +837,52 @@ async function loadSegments(
   return { items: rows, total: toCount(total.rows[0]?.total) }
 }
 
+/** `segments_near` 的查询行（比 `loadSegments` 多取时序/说话人/文本列）。 */
+interface NearSegmentRow {
+  sequence: number
+  content_text: string
+  speaker_ref: string | null
+  speaker_label: string | null
+  start_ms: string | number | null
+  end_ms: string | number | null
+}
+
+/**
+ * 取与窗口 [windowStartMs, windowEndMs] 有交集的带时序分段（**只读**，最多 20 段）。
+ *
+ * 交集判定：start_ms <= window_end AND end_ms >= window_start（闭区间）。
+ * start_ms/end_ms 非 null（没时序就不编），按 sequence 升序，limit 防超长。
+ * @param client - 只读事务内客户端。
+ * @param tenantId - 租户 id（多租户隔离）。
+ * @param artifactId - 已选中产物的 id。
+ * @param windowStartMs - 窗口左界（毫秒）。
+ * @param windowEndMs - 窗口右界（毫秒）。
+ */
+async function loadSegmentsNear(
+  client: DatabaseClient,
+  tenantId: string,
+  artifactId: string,
+  windowStartMs: number,
+  windowEndMs: number,
+): Promise<NearSegmentRow[]> {
+  const { rows } = await client.query<NearSegmentRow>(
+    `select sequence, content_text, speaker_ref, speaker_label, start_ms, end_ms
+       from recruitment.transcript_segment
+      where tenant_id = $1 and artifact_id = $2
+        and start_ms is not null and end_ms is not null
+        and start_ms <= $3 and end_ms >= $4
+      order by sequence
+      limit $5`,
+    [tenantId, artifactId, windowEndMs, windowStartMs, MAX_NEAR_SEGMENTS],
+  )
+  return rows
+}
+
+/** pg 的 int8/bigint 以字符串返回；毫秒 ÷ 1000 向下取整成秒。 */
+function toSeconds(value: string | number): number {
+  return Math.floor((typeof value === 'number' ? value : Number(value)) / 1000)
+}
+
 /**
  * 从 `ART(i)` 里挑本次正文/片段来源（RD §3.2 的顺序，不"自动挑最新"越过 canonical）：
  * 给了 `artifact_id` → 必须**逐字**命中它；否则 canonical → 否则最新完整（READY+is_complete）→
@@ -863,6 +952,8 @@ export async function readTranscriptInTransaction(
   const includeSegments = parsed.include_segments === true
   const segmentOffset = typeof parsed.segment_offset === 'number' ? parsed.segment_offset : 0
   const segmentLimit = typeof parsed.segment_limit === 'number' ? parsed.segment_limit : DEFAULT_SEGMENT_LIMIT
+  const atSeconds = typeof parsed.at_seconds === 'number' ? parsed.at_seconds : undefined
+  const windowSeconds = typeof parsed.window_seconds === 'number' ? parsed.window_seconds : DEFAULT_WINDOW_SECONDS
   const asOf = typeof parsed.as_of === 'string' ? parsed.as_of : new Date(nowMs).toISOString()
 
   const interview = await loadInterview(client, tenantId, interviewId)
@@ -994,6 +1085,38 @@ export async function readTranscriptInTransaction(
         has_more: segmentOffset + page.items.length < page.total,
       }
     }
+    // 给了 at_seconds 才查：取时间点附近的上下文片段（毫秒 × 1000 比较）。
+    // 与 include_segments 的分页路径互不干扰；segments_near 不在 transcript.required 里。
+    if (atSeconds !== undefined) {
+      const windowStartMs = (atSeconds - windowSeconds) * 1000
+      const windowEndMs = (atSeconds + windowSeconds) * 1000
+      const nearRows = await loadSegmentsNear(client, tenantId, selected.id, windowStartMs, windowEndMs)
+      const near = nearRows.map((row) => {
+        const item: Record<string, unknown> = {
+          start_seconds: toSeconds(row.start_ms as string | number),
+          end_seconds: toSeconds(row.end_ms as string | number),
+          text: row.content_text,
+        }
+        const speaker = row.speaker_label ?? row.speaker_ref ?? undefined
+        put(item, 'speaker', speaker)
+        return item
+      })
+      transcript.segments_near = near
+      if (near.length === 0) {
+        warnings.push({
+          code: 'SEGMENTS_NEAR_EMPTY',
+          message: '该时间点附近没有可用的带时序转写分段',
+        })
+      }
+    }
+  }
+  // 给了 at_seconds 但没有选中产物（artifact_id 选中的产物不存在时序来源）→ 空数组 + 警告。
+  if (atSeconds !== undefined && selected === undefined) {
+    transcript.segments_near = []
+    warnings.push({
+      code: 'SEGMENTS_NEAR_EMPTY',
+      message: '该时间点附近没有可用的带时序转写分段',
+    })
   }
 
   const record = await loadRecord(client, tenantId, interviewId)
@@ -1059,7 +1182,11 @@ const DESCRIPTION =
   + '入参：interview_id(UUID, 必填)、artifact_id（可选过滤，必须属于该面试）、'
   + 'include_text（默认 true）、text_offset（默认 0）、max_chars（默认 20000，上限 200000）、'
   + 'include_segments（默认 false）、segment_offset（默认 0）、segment_limit（默认 200，上限 1000）、'
+  + 'at_seconds（可选，妙记时间点，秒，整数 >= 0；给定时 transcript.segments_near 出现，取该时间点附近的上下文片段）、'
+  + `window_seconds（可选，at_seconds 前后跨度秒数，整数 >= 1，默认 ${DEFAULT_WINDOW_SECONDS}，上限 ${MAX_WINDOW_SECONDS}）、`
   + 'as_of（ISO-8601 带偏移、不得晚于 now）。'
+  + '不给 at_seconds 时输出与旧版完全一致；给定时 segments_near 每段只含 start_seconds/end_seconds/speaker/text'
+  + '（speaker 缺省则省略该键），无命中时空数组并附 SEGMENTS_NEAR_EMPTY 警告。'
   + 'tenant_id/actor_id 不接受模型传入（出现即 INVALID_ARGS(TENANT_OR_ACTOR_NOT_ALLOWED)）。'
   + 'transcript.state 严格按 TR-D 七条派生（顺序即规则）：'
   + 'MISSING(NO_MEETING_BOUND) → 有 canonical 则 map(状态)(CANONICAL_STATUS) → '
@@ -1073,7 +1200,7 @@ const DESCRIPTION =
   + 'trigger 恒 MANUAL，connection=CONNECTED 只表示"直连业务库"（与会议平台无关）；'
   + '每条产物的 provenance/trigger_mode/connection_state 在 transcript.artifacts[] 里**逐条**回显，不汇总。'
   + '警告封闭集：TRANSCRIPT_NOT_READY / NO_CANONICAL / RECORD_MISSING / RECORD_NOT_READY / '
-  + 'ARTIFACT_FILTER_NOT_CANONICAL。'
+  + 'ARTIFACT_FILTER_NOT_CANONICAL / SEGMENTS_NEAR_EMPTY。'
   + '关键：transcript.state=READY 只代表原文已完整拿到，**不代表** interview_record 就绪（两条状态轴）。'
 
 /**

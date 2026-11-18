@@ -364,6 +364,11 @@ const TOOL_FACTORIES: Readonly<Record<string, readonly FactoryEntry[]>> = {
     { factory: 'createCriterionOverrideTool', args: [{ database: FAKE_DATABASE, identity: FAKE_DEPS.identity }] },
     { factory: 'unconfiguredCriterionOverrideTool', args: [FAKE_ISSUES] },
   ],
+  // 2026-11-19（碎片约束置顶 + 下一轮交接提醒）：写工具工厂 render 同口径入检；假 deps，不连库。
+  'candidate-constraint.ts': [
+    { factory: 'createCandidateConstraintTool', args: [{ database: FAKE_DATABASE, identity: FAKE_DEPS.identity }] },
+    { factory: 'unconfiguredCandidateConstraintTool', args: [FAKE_ISSUES] },
+  ],
   'config-pipeline.ts': [
     { factory: 'createConfigPipelineTool', args: [FAKE_DATABASE, FAKE_DEPS] },
     { factory: 'unconfiguredConfigPipelineTool', args: [FAKE_ISSUES] },

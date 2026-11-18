@@ -71,6 +71,19 @@ import {
 // 同源校验只许有一份实现（overview 路由与本路由必须同口径）；overview 未导出错误映射，
 // 那部分在本文件下半部分按同一张表重写（见 `STATUS_BY_CODE` 的说明）。
 import { sameOrigin } from './overview.ts'
+// 候选人约束读投影（碎片约束置顶 + 下一轮交接提醒）：复用 db/domain 单一实现。
+import {
+  readPinsForCandidates,
+  readHandoffsForInterviews,
+  UNPIN_TOMBSTONE_TEXT,
+  type CandidateConstraintRow,
+} from '../db/candidate-constraint.ts'
+import {
+  toPinProjection,
+  toHandoffProjection,
+  type PinProjection,
+  type HandoffProjection,
+} from '../domain/candidate-constraint.ts'
 
 // =====================================================================
 //  契约常量
@@ -226,6 +239,17 @@ export interface InterviewerBrief {
   readonly template_payload_hash: string | null
   /** 只在 `source='NONE'` 时非空：为什么没有简报（不猜业务原因）。 */
   readonly reason: string | null
+}
+
+/**
+ * 面试官简报里的候选人约束（docs/34 §2「碎片约束置顶 + 下一轮交接提醒」）。
+ *
+ * 加法键：既有 `brief`/`rubric`/`round_focus` 等形状不动。只投影文本/来源/作者/时间，
+ * 不吐任何内部 id；`handoff` 是本轮 interview 对应的**上一轮留的**提醒（最多一条）。
+ */
+export interface InterviewerCandidateConstraints {
+  readonly pins: readonly PinProjection[]
+  readonly handoff: HandoffProjection | null
 }
 
 /** rubric 的一个维度（`question` 恒定存在，没有时是 null —— 形状冻结）。 */
@@ -522,6 +546,8 @@ export interface InterviewerRow {
    * 不编造（没有前置轮次时**不会**出现 PRIOR_GAP）。
    */
   readonly reference_points: readonly InterviewerReferencePoint[]
+  /** docs/34 §2：候选人的置顶 PIN + 本轮 HANDOFF（上一轮留的追问）；恒给出，不改旧键形状。 */
+  readonly candidate_constraints: InterviewerCandidateConstraints
 }
 
 /** 工作台投影响应（§1.4）。 */
@@ -607,6 +633,8 @@ const MY_INTERVIEW_IDS_SQL = `
  */
 const INTERVIEW_EXTENSION_SQL = `
   select iv.id::text                       as interview_id,
+         a.id::text                        as application_id,
+         a.candidate_id::text              as candidate_id,
          a.job_id::text                    as application_job_id,
          c.display_name                    as candidate_display_name,
          j.code                            as job_code,
@@ -735,6 +763,9 @@ const PRIOR_ROUND_SQL = `
 /** `INTERVIEW_EXTENSION_SQL` 的一行（jsonb 已由 pg 解析成 JS 值）。 */
 export interface InterviewExtensionRow {
   readonly interview_id: string
+  /** docs/34 §2：申请 id / 候选人 id（用来批量取候选约束）；旧单测假行可缺，故可选。 */
+  readonly application_id?: string | null
+  readonly candidate_id?: string | null
   readonly application_job_id: string
   readonly candidate_display_name: string
   readonly job_code: string
@@ -2088,6 +2119,11 @@ export interface ToInterviewRowInput {
    * 此时 `prior_rounds: []`、`reference_points` 里不会出现 `PRIOR_GAP`（旧调用方行为不变）。
    */
   readonly priorRoundRows?: readonly PriorRoundRow[]
+  /**
+   * docs/34 §2：本行的候选约束（批量读后按 interview/candidate 分组）。缺省 = 没有约束，
+   * `candidate_constraints` 落成 `{pins:[], handoff:null}`（旧调用方行为不变）。
+   */
+  readonly candidateConstraints?: InterviewerCandidateConstraints
 }
 
 /** `toInterviewRow` 的输出：一行 + 该行本身带出的 issue（rubric 越界）。 */
@@ -2171,6 +2207,21 @@ export function toInterviewRow(input: ToInterviewRowInput): ToInterviewRowResult
     resume_fields: materials.resume?.fields ?? null,
   })
 
+  // docs/34 §2：候选约束（纯投影，缺行 → pins:[]/handoff:null）。有人在上一轮留了交接提醒时，
+  // 把"上一轮留给本轮的追问：{text}"追加进 brief.questions（形状不变；只在有 handoff 时加，
+  // 旧调用方/旧断言的 questions 内容不变）。不吐完整 UUID。
+  const candidateConstraints: InterviewerCandidateConstraints = input.candidateConstraints ?? {
+    pins: [],
+    handoff: null,
+  }
+  const baseBrief = buildBrief({ extension, rubric, roundNo: value.round_no })
+  const brief: InterviewerBrief = candidateConstraints.handoff === null
+    ? baseBrief
+    : {
+      ...baseBrief,
+      questions: [...baseBrief.questions, `上一轮留给本轮的追问：${candidateConstraints.handoff.text}`],
+    }
+
   return {
     row: {
       interview_id: value.id,
@@ -2195,7 +2246,7 @@ export function toInterviewRow(input: ToInterviewRowInput): ToInterviewRowResult
       role_in_interview: mine.role_in_interview,
       required_scorecard: mine.required_scorecard,
       scorecard_due_at: mine.scorecard_due_at ?? null,
-      brief: buildBrief({ extension, rubric, roundNo: value.round_no }),
+      brief,
       rubric,
       round_focus: roundFocus,
       effective_rubric: effectiveRubric,
@@ -2221,6 +2272,7 @@ export function toInterviewRow(input: ToInterviewRowInput): ToInterviewRowResult
       required_action: requiredActionOf(state, mine.required_scorecard),
       prior_rounds: priorRounds,
       reference_points: referencePoints,
+      candidate_constraints: candidateConstraints,
     },
     issues,
   }
@@ -2319,6 +2371,74 @@ async function loadPriorRoundRows(
     else rows.push(row)
   }
   return grouped
+}
+
+/**
+ * docs/34 §2：批量读取候选约束（两条 SELECT，均 tenant 过滤），按 interview id 分组投影。
+ *
+ *   * PIN 按候选人 id 取（同一候选人可能被多场面试共享 → 每场都挂同一份投影）；
+ *   * HANDOFF 按本批 interview id 取，只取本轮 interview 自己那一条（最多一条）。
+ *
+ * 墓碑行由领域投影 `toPinProjection` 过滤；这里再 `filter(text !== UNPIN_TOMBSTONE_TEXT)` 双保险。
+ * @param client - 只读事务内连接。
+ * @param tenantId - 租户（只从配置来）。
+ * @param facts - 当前行（扩展行 + 规范值）。
+ * @returns interview id → 候选约束投影。
+ */
+async function loadCandidateConstraints(
+  client: DatabaseClient,
+  tenantId: string,
+  facts: readonly InterviewerFact[],
+): Promise<ReadonlyMap<string, InterviewerCandidateConstraints>> {
+  const result = new Map<string, InterviewerCandidateConstraints>()
+  if (facts.length === 0) return result
+
+  const candidateIds = [...new Set(
+    facts.map((fact) => fact.extension.candidate_id).filter((id): id is string => typeof id === 'string' && id !== ''),
+  )]
+  const interviewIds = facts.map((fact) => fact.interviewId)
+
+  const [pinRows, handoffRows] = await Promise.all([
+    readPinsForCandidates(client, tenantId, candidateIds),
+    readHandoffsForInterviews(client, tenantId, interviewIds),
+  ])
+
+  const pinsByCandidate = groupCandidateConstraintRows(pinRows, (row) => row.candidate_id)
+  const handoffsByInterview = groupCandidateConstraintRows(handoffRows, (row) => row.interview_id ?? '')
+  const candidateIdByInterview = new Map(
+    facts.map((fact) => [fact.interviewId, text(fact.extension.candidate_id)]),
+  )
+
+  for (const fact of facts) {
+    const candidateId = candidateIdByInterview.get(fact.interviewId)
+    const pinRowsForCandidate = candidateId === null || candidateId === undefined
+      ? []
+      : pinsByCandidate.get(candidateId) ?? []
+    const pins = toPinProjection(pinRowsForCandidate.filter((row) => row.text !== UNPIN_TOMBSTONE_TEXT))
+    const handoffRowsForInterview = handoffsByInterview.get(fact.interviewId) ?? []
+    const handoffProjections = toHandoffProjection(handoffRowsForInterview)
+    result.set(fact.interviewId, {
+      pins,
+      // 本轮 interview 对应的上一轮提醒最多一条（取时间最早的一条，稳定）。
+      handoff: handoffProjections[0] ?? null,
+    })
+  }
+  return result
+}
+
+/** 按 key 把候选约束行分组（保序）。 */
+function groupCandidateConstraintRows(
+  rows: readonly CandidateConstraintRow[],
+  keyOf: (row: CandidateConstraintRow) => string,
+): Map<string, CandidateConstraintRow[]> {
+  const map = new Map<string, CandidateConstraintRow[]>()
+  for (const row of rows) {
+    const key = keyOf(row)
+    const bucket = map.get(key)
+    if (bucket === undefined) map.set(key, [row])
+    else bucket.push(row)
+  }
+  return map
 }
 
 /**
@@ -2422,6 +2542,8 @@ export async function readInterviewerWorkspace(
 
   // task-51：紧邻上一轮（同一申请、round_no = 当前轮 - 1），一条批量 SELECT 取回后按当前面试分组。
   const priorRowsByInterview = await loadPriorRoundRows(client, tenantId, found)
+  // docs/34 §2：候选约束（置顶 PIN + 本轮 HANDOFF），两条批量 SELECT 后按面试分组。
+  const constraintsByInterview = await loadCandidateConstraints(client, tenantId, found)
 
   for (const fact of found) {
     const mapped = toInterviewRow({
@@ -2429,6 +2551,7 @@ export async function readInterviewerWorkspace(
       extension: fact.extension,
       actorId: actor.actor_id,
       priorRoundRows: priorRowsByInterview.get(fact.interviewId) ?? [],
+      candidateConstraints: constraintsByInterview.get(fact.interviewId),
     })
     interviews.push(mapped.row)
     issues.push(...mapped.issues)

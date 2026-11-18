@@ -1,6 +1,6 @@
 # `@recruitment/dsh-recruitment` · 怎么跑、怎么验
 
-**当前注册 32 个工具（30 + email_fetch + criterion_override）**（`src/index.ts` 工具数组；配置齐/缺两条路径都注册；外层再套 `withToolCallTrace` 逐次留痕）：
+**当前注册 33 个工具（30 + email_fetch + criterion_override + candidate_constraint）**（`src/index.ts` 工具数组；配置齐/缺两条路径都注册；外层再套 `withToolCallTrace` 逐次留痕）：
 
 | 阶段 | 工具 |
 |---|---|
@@ -14,6 +14,7 @@
 | S10 评价 / 决策 | `recruitment_scorecard_submit`、`recruitment_evaluation_summarize`、`recruitment_decision_record` |
 | 追溯 / 配置 | `recruitment_trace_get`、`recruitment_config_role`、`recruitment_config_team`、`recruitment_config_pipeline` |
 | 人工纠偏 | `recruitment_criterion_override`（逐条改 AI 的 rubric 判定；append-only，不覆盖 AI 原判） |
+| 候选约束 | `recruitment_candidate_constraint`（碎片约束置顶 PIN / 取消置顶 UNPIN / 下一轮交接提醒 HANDOFF；append-only，带写身份、不接 approval） |
 
 > 本文 §1–§3 的建库 / 联调步骤与 S6/S7 测试仍是有效口径；S3/S8/S9/S10 的工具契约见
 > `contracts/` 下对应子目录，不在本文件重复。
@@ -123,7 +124,7 @@ node --test "test/runtime/*.test.ts"       # 运行时（每个文件一个一�
 
 ### 2.1 单测覆盖什么（下表是 S6/S7 阶段的代表用例，不是全部）
 
-> 32 个工具的单测还有：`job-create.test.ts`（S3）、`interview-*.test.ts`（S8）、`transcript-*.test.ts`（S9）、
+> 33 个工具的单测还有：`job-create.test.ts`（S3）、`interview-*.test.ts`（S8）、`transcript-*.test.ts`（S9）、
 > `evaluation-*.test.ts` / `evaluation-decision-record.test.ts`（S10）、`application-intake-structured.test.ts`、
 > `vision-fallback.test.ts`（`webServer` 可选注入的守卫）等；另有 `stage-advance.test.ts`（N8）、
 > `job-create-rubric-approve.test.ts`（N7）、`trace-integrity.test.ts`、`tenant-config-validate.test.ts`；

@@ -299,6 +299,13 @@ const LIVE_EVIDENCE: Record<string, { readonly marker: RegExp; readonly why: str
     marker: /await buildThreeAxisLabels\(client, tenantId\)/,
     why: '同一份租户判定（本工具不自称 LIVE，按本次调用的租户事实算）',
   },
+  // 2026-11-19（碎片约束置顶 + 下一轮交接提醒）：labels 由同一份租户判定 buildThreeAxisLabels 算，
+  // 租户被显式声明为非合成才 LIVE；本工具只写业务库、不读外部系统、不写标签常量，
+  // trigger=MANUAL、connection=NOT_CONNECTED。与 criterion-override / business-read 同口径。
+  'candidate-constraint.ts': {
+    marker: /await buildThreeAxisLabels\(client, tenantId\)/,
+    why: '同一份租户判定（本工具不自称 LIVE，按本次调用的租户事实算）',
+  },
 }
 
 test('源码扫描：`provenance: \'LIVE\'` 字面量只允许出现在"证据闸门之后"', () => {

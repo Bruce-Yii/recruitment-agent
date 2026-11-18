@@ -24,6 +24,7 @@
 //   recruitment_decision_record        **S10 写库**：记录人已做出的决定（必须过 ctx.approval）
 //   recruitment_email_fetch            邮箱收件（30 → 31，EVENT 触发、LIVE）：IMAP → intake
 //   recruitment_criterion_override     逐条 rubric 标准人工纠偏（31 → 32，append-only）：原话凭据 → 当前行 + 审计事件
+//   recruitment_candidate_constraint   碎片约束置顶 + 下一轮交接提醒（32 → 33，append-only）：PIN/UNPIN/HANDOFF → 约束表 + 审计事件
 //
 // 配置来自 cordis.patch.yml 的 config 段，共四段：
 //   converter: python_bin / converter_dir / allowed_roots   （resume_read + intake 要）
@@ -35,7 +36,8 @@
 //   mail:      host / user / password_env / port / tls / folder（IMAP 收件）+ smtp_*（发信 Host Action）
 //              `${ENV}` 引用自行展开；未定义即 NOT_CONFIGURED（工具仍注册同名替身）。
 //              发信走 /recruitment/api/action/email/send，不新增工具（本段工具数只 +1；
-//              人工纠偏工具另有 recruitment_criterion_override，合计工具数 30 → 31 → 32）。
+//              人工纠偏工具另有 recruitment_criterion_override，候选约束工具另有
+//              recruitment_candidate_constraint，合计工具数 30 → 31 → 32 → 33）。
 //
 // 缺任何一段时**工具仍然注册**，但调用返回 NOT_CONFIGURED 并列出缺什么——
 // 不静默降级、不假装能读、不返回假数据（沿用 unconfiguredResumeReadTool 的既有做法）。
@@ -111,6 +113,11 @@ import {
   createCriterionOverrideTool,
   unconfiguredCriterionOverrideTool,
 } from './tools/criterion-override.ts'
+// 碎片约束置顶 + 下一轮交接提醒（32 → 33）：写身份装配 + 缺配置同名替身。
+import {
+  createCandidateConstraintTool,
+  unconfiguredCandidateConstraintTool,
+} from './tools/candidate-constraint.ts'
 import {
   createStageAdvanceTool,
   unconfiguredStageAdvanceTool,
@@ -182,6 +189,7 @@ import { registerActorHttp, type ActorHostContext } from './http/actor.ts'
 import { registerJobActionHttp, type JobActionHostContext } from './http/actions-job.ts'
 import { registerActionsHttp, type ActionHostContext } from './http/actions.ts'
 import { registerFeishuImportHttp, type FeishuImportHostContext } from './http/feishu-import.ts'
+import { registerSettingsHttp, type SettingsHostContext } from './http/settings.ts'
 // D5 decision（task-56）：决策 facts 只读投影 + screening/evaluate（只读 domain）+
 // decision/record facade（服务端组装 basis_refs）。独立前缀 /recruitment/api/decision。
 import { registerDecisionHttp, type DecisionHostContext } from './http/decision-read.ts'
@@ -288,7 +296,7 @@ export interface Config {
    */
   readonly demo_actor_map?: DemoActorMapConfig
   /**
-   * 邮箱收件连接器（`recruitment_email_fetch`，工具数 30 → 31；人工纠偏再 +1 → 32）+ 发信 Host Action。
+   * 邮箱收件连接器（`recruitment_email_fetch`，工具数 30 → 31；人工纠偏再 +1 → 32；候选约束再 +1 → 33）+ 发信 Host Action。
    * 同一账号：host/user/password_env/port/tls/folder（IMAP）+ smtp_*（SMTP 发信，不新增工具）。
    * password_env 只写变量名，口令只从环境变量读；`${ENV}` 引用由 resolveMailConfig 展开，
    * 未定义/未展开一律 fail-closed（工具仍注册替身，调用报 NOT_CONFIGURED）。
@@ -514,6 +522,23 @@ export function apply(
       ),
       'recruitment: write action routes',
     )
+    // 工作空间设置：GET /recruitment/api/settings（只读投影）+ POST /recruitment/api/action/settings/write
+    // （Host Action，人点 + confirmation_text）。配置解析所需全部注入，不读进程环境。
+    child.effect(
+      () => registerSettingsHttp(
+        child as unknown as SettingsHostContext,
+        {
+          database: database.resolved,
+          databaseIssues: database.issues,
+          identity: actorIdentity,
+          mailConfig: (config?.mail ?? {}) as never,
+          mailEnv: env as never,
+          feishuConfig: (config?.feishu ?? {}) as never,
+          feishuEnv: env,
+        },
+      ),
+      'recruitment: workspace settings routes',
+    )
     // P0-7：真实飞书转写导入（真实 minute 只读回读 → 创建/复用 Meeting 绑定 → 复用
     // recruitment_transcript_import 域路径写 artifact/segment/record）。独立前缀
     // /recruitment/api/feishu；非回环 host 不注册（fail-closed）。feishuConfig 原样交给
@@ -647,7 +672,7 @@ export function apply(
           // 否则 store/effect 装配失败时那条持咨询锁的专用连接会一直挂到进程退出。
           let tickLoopReady: Promise<TickLoop | null> = Promise.resolve(null)
           // email pump disposer 同样**声明在 try 之外**：装配中途出错也要收掉定时器。
-          let disposeEmailPump: (() => void) | null = null
+          let disposeEmailPump: () => void = () => { /* 未启动时 noop */ }
           try {
             const store = new RuntimeStore({
               pool,
@@ -969,6 +994,14 @@ export function apply(
   const stageAdvance = database.resolved === null
     ? unconfiguredStageAdvanceTool(database.issues)
     : createStageAdvanceTool(database.resolved, { identity: actorIdentity })
+  // 碎片约束置顶 + 下一轮交接提醒（32 → 33）：写的是人在对话里说的原话，不需要 approval；
+  // 但必须带写身份（created_by_actor_id）。数据库缺配置时注册同名 NOT_CONFIGURED 替身。
+  const candidateConstraint = database.resolved === null
+    ? unconfiguredCandidateConstraintTool(database.issues)
+    : createCandidateConstraintTool({
+      database: database.resolved,
+      identity: actorIdentity,
+    })
   // 执行追溯（Notion 08 §11.3 第 9 步）：只读。
   const traceGet = database.resolved === null
     ? unconfiguredTraceGetTool(database.issues)
@@ -1000,6 +1033,8 @@ export function apply(
     intake,
     evaluate,
     stageAdvance,
+    // 碎片约束置顶 + 下一轮交接提醒（32 → 33）：人原话写入，带写身份、不接 approval。
+    candidateConstraint,
     interviewSchedule,
     interviewGet,
     transcriptImport,

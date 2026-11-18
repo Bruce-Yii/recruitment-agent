@@ -70,6 +70,20 @@ import {
   readOverridesForApplications,
   type CriterionOverrideRow,
 } from '../db/criterion-override.ts'
+// 候选人约束读投影（碎片约束置顶 + 下一轮交接提醒）：复用 db/domain 的单一实现。
+import {
+  readPinsForCandidates,
+  readHandoffsForInterviews,
+  UNPIN_TOMBSTONE_TEXT,
+  type CandidateConstraintRow,
+} from '../db/candidate-constraint.ts'
+import {
+  CONSTRAINT_SOURCES,
+  toPinProjection,
+  toHandoffProjection,
+  type PinProjection,
+  type HandoffProjection,
+} from '../domain/candidate-constraint.ts'
 
 /** 两个工具名（index.ts 与测试都按名字找）。 */
 export const APPLICATION_GET_TOOL = 'recruitment_application_get'
@@ -628,6 +642,20 @@ export interface CarryOverValue {
   readonly items: readonly CarryOverItemValue[]
 }
 
+/**
+ * 输出：一条 HANDOFF 交接提醒。复用领域投影的四字段 + `from_previous_round:true`，
+ * 额外带一个**短号** `interview_ref`（不是 UUID —— 与其它读投影一致，结构化输出不吐内部 id）。
+ */
+export interface CandidateConstraintHandoffValue extends HandoffProjection {
+  readonly interview_ref: string
+}
+
+/** 输出：候选人级约束读投影（置顶 PIN + 相关 HANDOFF；恒给出，空时数组为空）。 */
+export interface CandidateConstraintsValue {
+  readonly pins: readonly PinProjection[]
+  readonly handoffs: readonly CandidateConstraintHandoffValue[]
+}
+
 /** 输出：一条申请的完整摘要。 */
 interface ApplicationValue {
   readonly application_id: string
@@ -648,6 +676,8 @@ interface ApplicationValue {
   readonly decisions: DecisionsSummaryValue
   /** AT-1/2/3：跨岗携带历史（恒给出；空时 count=0 / items=[]，不省略块）。 */
   readonly carry_over: CarryOverValue
+  /** 候选人级约束（碎片约束置顶 + 交接提醒；恒给出，空时 pins/handoffs 均为 []）。 */
+  readonly constraints: CandidateConstraintsValue
 }
 
 /** 输出：一次查询的入参回显。 */
@@ -730,6 +760,45 @@ const CARRY_OVER_SCHEMA: Record<string, unknown> = {
     },
   },
   required: ['count', 'items'],
+  additionalProperties: false,
+}
+
+/** 候选人约束读投影的紧凑 schema（只有文本/来源/作者/时间 + 短号，没有任何内部 id）。 */
+const CANDIDATE_CONSTRAINTS_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    pins: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          source: { type: 'string', enum: [...CONSTRAINT_SOURCES] },
+          created_by: { type: 'string' },
+          created_at: { type: 'string' },
+        },
+        required: ['text', 'source', 'created_by', 'created_at'],
+        additionalProperties: false,
+      },
+    },
+    handoffs: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          source: { type: 'string', enum: [...CONSTRAINT_SOURCES] },
+          created_by: { type: 'string' },
+          created_at: { type: 'string' },
+          from_previous_round: { type: 'boolean' },
+          interview_ref: { type: 'string' },
+        },
+        required: ['text', 'source', 'created_by', 'created_at', 'from_previous_round', 'interview_ref'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['pins', 'handoffs'],
   additionalProperties: false,
 }
 
@@ -946,12 +1015,15 @@ const APPLICATION_VALUE_SCHEMA: Record<string, unknown> = {
       additionalProperties: false,
     },
     carry_over: CARRY_OVER_SCHEMA,
+    constraints: CANDIDATE_CONSTRAINTS_SCHEMA,
   },
   required: [
     'application_id', 'stage_code', 'lifecycle_status', 'record_version',
     'candidate', 'job', 'interviews', 'transcripts', 'evaluations', 'rubric_remediation', 'decisions',
     // 恒给出（空时 0/[]）：safe required —— 投影每次都写这个块，旧键一个不动。
     'carry_over',
+    // 恒给出（空时 pins/handoffs=[]）：同上，safe required。
+    'constraints',
   ],
   additionalProperties: false,
 }
@@ -1255,6 +1327,51 @@ async function queryCarryOverRows(
   return rows
 }
 
+/** 本批申请下的面试 id（只读；tenant 过滤 + any($2::uuid[])，与 queryInterviewRows 同口径）。 */
+async function queryInterviewIdsForApplications(
+  client: DatabaseClient,
+  cfg: ResolvedDatabaseConfig,
+  applicationIds: readonly string[],
+): Promise<string[]> {
+  if (applicationIds.length === 0) return []
+  const { rows } = await client.query<{ id: string }>(
+    `select id from recruitment.interview
+      where tenant_id = $1 and application_id = any($2::uuid[])
+      order by application_id, id`,
+    [cfg.tenant_id, [...applicationIds]],
+  )
+  return rows.map((row) => row.id)
+}
+
+/**
+ * 候选约束行 → 读投影（纯函数，可单测）。
+ *
+ * 复用领域层 `toPinProjection` / `toHandoffProjection`（单一实现：过滤 superseded / 墓碑、
+ * 排序、只投影四字段）。这里只额外给每条 HANDOFF 挂一个 interview 短号 `interview_ref`
+ * ——结构化输出不吐 UUID。墓碑行双保险再过滤一次（领域投影已过滤）。
+ * 注意：HANDOFF 排序由领域投影按 created_at 升序给出，这里按同一顺序逐条附上原行的
+ * interview_id 短号（同刻多行也稳定：领域投影用 id 做次级排序，但 id 不进输出）。
+ * @param pinRows - 该候选人的 PIN 行（含墓碑，投影层过滤）。
+ * @param handoffRows - 该申请各 interview 的 HANDOFF 行。
+ */
+export function toCandidateConstraintsValue(
+  pinRows: readonly CandidateConstraintRow[],
+  handoffRows: readonly CandidateConstraintRow[],
+): CandidateConstraintsValue {
+  const pins = toPinProjection(pinRows.filter((row) => row.text !== UNPIN_TOMBSTONE_TEXT))
+  // 与 toHandoffProjection 同口径（created_at 升序、同刻按 id）排序后，逐条取 interview 短号。
+  const orderedHandoffRows = handoffRows.slice().sort((a, b) => {
+    const ta = a.created_at instanceof Date ? a.created_at.getTime() : new Date(a.created_at).getTime()
+    const tb = b.created_at instanceof Date ? b.created_at.getTime() : new Date(b.created_at).getTime()
+    return ta - tb || String(a.id).localeCompare(String(b.id))
+  })
+  const handoffs = toHandoffProjection(orderedHandoffRows).map((item, index) => ({
+    ...item,
+    interview_ref: shortRef(orderedHandoffRows[index]?.interview_id ?? null),
+  }))
+  return { pins, handoffs }
+}
+
 /**
  * 携带历史行 → 输出摘要（纯函数，可单测）。空数组 ⇒ `{count:0, items:[]}`（块不省略）。
  */
@@ -1317,7 +1434,10 @@ export async function readApplicationValue(
   const rubricIds = [...new Set(rows.flatMap((row) => [row.pinned_rubric_version_id, row.current_rubric_version_id])
     .filter((value): value is string => value !== null))]
 
-  const [materials, rubrics, interviews, transcripts, scorecards, interviewers, decisions, overrides, carryOver] = await Promise.all([
+  // 候选人约束读投影：按候选 id 批量取 PIN，按本批申请下的 interview id 批量取 HANDOFF。
+  // 只发一次查询（与其余家族事实同口径），墓碑行由领域投影函数过滤。
+  const candidateIds = [...new Set(rows.map((row) => row.candidate_id))]
+  const [materials, rubrics, interviews, transcripts, scorecards, interviewers, decisions, overrides, carryOver, pins, handoffs] = await Promise.all([
     queryMaterialRows(client, cfg, resumeVersionIds),
     queryRubricRows(client, cfg, rubricIds),
     queryInterviewRows(client, cfg, applicationIds),
@@ -1329,6 +1449,10 @@ export async function readApplicationValue(
     readOverridesForApplications(client, cfg.tenant_id, applicationIds),
     // AT-1/2/3：跨岗携带历史（一次查询取全部申请，按 application_id 分组后挂回去）。
     queryCarryOverRows(client, cfg, applicationIds),
+    readPinsForCandidates(client, cfg.tenant_id, candidateIds),
+    // 本批申请下的面试 id（一次查询；与 queryInterviewRows 的 tenant 过滤一致）。
+    queryInterviewIdsForApplications(client, cfg, applicationIds)
+      .then((ids) => readHandoffsForInterviews(client, cfg.tenant_id, ids)),
   ])
   const materialById = new Map(materials.map((row) => [row.id, row]))
   const rubricById = new Map(rubrics.map((row) => [row.id, row]))
@@ -1339,6 +1463,18 @@ export async function readApplicationValue(
   const decisionsByApplication = groupBy(decisions, (row) => row.application_id)
   const currentOverridesByApplication = buildCurrentOverrides(overrides)
   const carryOverByApplication = groupBy(carryOver, (row) => row.application_id)
+
+  // 候选人约束：pins 按 candidate_id、handoffs 按 interview_id→application_id 分组。
+  const pinsByCandidate = groupBy(pins, (row) => row.candidate_id)
+  const applicationIdByInterview = new Map(interviews.map((row) => [row.id, row.application_id]))
+  const handoffsByApplication = new Map<string, CandidateConstraintRow[]>()
+  for (const row of handoffs) {
+    const applicationId = row.interview_id === null ? undefined : applicationIdByInterview.get(row.interview_id)
+    if (applicationId === undefined) continue
+    const bucket = handoffsByApplication.get(applicationId)
+    if (bucket === undefined) handoffsByApplication.set(applicationId, [row])
+    else bucket.push(row)
+  }
 
   const visible = args.include_contacts === true
   const labels = await buildReadToolLabels(client, cfg.tenant_id)
@@ -1354,6 +1490,10 @@ export async function readApplicationValue(
     decisionsByApplication.get(row.id) ?? [],
     currentOverridesByApplication.get(row.id) ?? new Map<string, CurrentOverride>(),
     carryOverByApplication.get(row.id) ?? [],
+    toCandidateConstraintsValue(
+      pinsByCandidate.get(row.candidate_id) ?? [],
+      handoffsByApplication.get(row.id) ?? [],
+    ),
     visible,
   ))
 
@@ -1421,7 +1561,7 @@ export function buildCurrentOverrides(
 }
 
 /** 一次申请 → 输出形状（所有可缺键一律省略，不用 null）。 */
-function toApplicationValue(
+export function toApplicationValue(
   row: ApplicationRow,
   materialById: ReadonlyMap<string, MaterialRow>,
   rubricById: ReadonlyMap<string, RubricRow>,
@@ -1432,6 +1572,7 @@ function toApplicationValue(
   decisions: readonly DecisionRow[],
   currentOverrides: ReadonlyMap<string, CurrentOverride>,
   carryOver: readonly CarryOverRow[],
+  constraints: CandidateConstraintsValue,
   contactsVisible: boolean,
 ): ApplicationValue {
   const email = row.normalized_email ?? ''
@@ -1481,6 +1622,7 @@ function toApplicationValue(
     }),
     decisions: toDecisionsSummary(decisions),
     carry_over: toCarryOverSummary(carryOver),
+    constraints,
   }
 
   const rubricId = row.pinned_rubric_version_id ?? row.current_rubric_version_id
@@ -2034,6 +2176,9 @@ function renderApplicationGet(_args: unknown, value: unknown): readonly TextBloc
       // AT-1/2/3：从哪些申请带了什么（短号，不给完整 UUID；完整值仍在结构化 carry_over.items）。
       `  carry_over: ${application.carry_over?.count ?? 0} [${(application.carry_over?.items ?? [])
         .map((item) => `R${item.ref_kind} from ${shortRef(item.source_application_id)}`).join(', ')}]`,
+      // 候选人约束：只给计数短摘要（不吐完整 id / 文本全文；全文在结构化 constraints.*）。
+      `  constraints: ${application.constraints?.pins.length ?? 0} 条置顶 / `
+        + `${application.constraints?.handoffs.length ?? 0} 条交接`,
     )
   }
   if (v.next_tools.length > 0) {
