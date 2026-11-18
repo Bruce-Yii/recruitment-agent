@@ -1100,6 +1100,121 @@ union all select 'business_task', count(*) from recruitment.business_task
 order by 1;
 
 \echo ''
+\echo '=================================================================='
+\echo ' 10. [0020 追加] 批量不通过与撤销的审计表结构断言'
+\echo '=================================================================='
+
+do $$
+declare
+  v_missing text := '';
+  v_col text;
+begin
+  -- 10.1 batch_operation：列 / 幂等唯一键 / 枚举 CHECK / 禁删 / 不可变护栏
+  if to_regclass('recruitment.batch_operation') is not null then
+    for v_col in select unnest(array[
+      'id','tenant_id','action_id','operation_type','actor_id','occurred_at',
+      'target_count','succeeded_count','failed_count','reason',
+      'confirmation_text_sha256','target_summary','superseded_by_action_id'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.batch_operation'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        v_missing := v_missing || v_col || ' ';
+      end if;
+    end loop;
+    if v_missing <> '' then
+      raise exception 'BATCH-STRUCT-01 batch_operation 缺列：%', v_missing;
+    end if;
+    if not exists (select 1 from pg_constraint p
+                    where p.conrelid = 'recruitment.batch_operation'::regclass
+                      and p.contype = 'u' and p.conname = 'uq_batch_operation_action_id') then
+      raise exception 'BATCH-STRUCT-02 batch_operation 缺 (tenant_id, action_id) 幂等唯一键';
+    end if;
+    if not exists (select 1 from pg_constraint p
+                    where p.conrelid = 'recruitment.batch_operation'::regclass
+                      and p.contype = 'c' and p.conname = 'ck_batch_operation_type') then
+      raise exception 'BATCH-STRUCT-03 batch_operation 缺 operation_type 枚举 CHECK';
+    end if;
+    if not exists (select 1 from pg_trigger g
+                    where g.tgrelid = 'recruitment.batch_operation'::regclass
+                      and not g.tgisinternal and g.tgname = 'trg_batch_operation_no_delete') then
+      raise exception 'BATCH-STRUCT-04 batch_operation 缺 fn_block_delete 禁删触发器';
+    end if;
+    if not exists (select 1 from pg_trigger g
+                    where g.tgrelid = 'recruitment.batch_operation'::regclass
+                      and not g.tgisinternal and g.tgname = 'trg_batch_operation_immutable') then
+      raise exception 'BATCH-STRUCT-05 batch_operation 缺不可变护栏触发器';
+    end if;
+    raise notice 'BATCH-STRUCT PASS batch_operation 列/幂等键/CHECK/禁删/不可变护栏齐全';
+  else
+    raise notice 'BATCH-STRUCT SKIP batch_operation 表不存在（0020 尚未应用）';
+  end if;
+
+  -- 10.2 undo_log：列 / 幂等唯一键 / 枚举 CHECK / 禁删 / 墓碑式收口护栏 / 索引
+  if to_regclass('recruitment.undo_log') is not null then
+    v_missing := '';
+    for v_col in select unnest(array[
+      'id','tenant_id','action_id','kind','operation_type',
+      'target_application_id','target_decision_id','target_interview_id','action_type',
+      'actor_id','occurred_at','reason','confirmation_text_sha256',
+      'before_summary','after_summary','compensation_action_id','superseded_by_action_id'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.undo_log'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        v_missing := v_missing || v_col || ' ';
+      end if;
+    end loop;
+    if v_missing <> '' then
+      raise exception 'UNDO-STRUCT-01 undo_log 缺列：%', v_missing;
+    end if;
+    if not exists (select 1 from pg_constraint p
+                    where p.conrelid = 'recruitment.undo_log'::regclass
+                      and p.contype = 'u' and p.conname = 'uq_undo_log_action_kind') then
+      raise exception 'UNDO-STRUCT-02 undo_log 缺 (tenant_id, action_id, kind) 幂等唯一键';
+    end if;
+    select string_agg(t.name, ' ') into v_missing
+      from unnest(array[
+        'ck_undo_log_kind','ck_undo_log_operation_type','ck_undo_log_action_type',
+        'ck_undo_log_original_action_type','ck_undo_log_reason','ck_undo_log_sha256',
+        'ck_undo_log_no_self_link'
+      ]) as t(name)
+     where not exists (select 1 from pg_constraint p
+                        where p.conrelid = 'recruitment.undo_log'::regclass
+                          and p.contype = 'c' and p.conname = t.name);
+    if coalesce(v_missing, '') <> '' then
+      raise exception 'UNDO-STRUCT-03 undo_log 缺 CHECK 约束：%', v_missing;
+    end if;
+    if not exists (select 1 from pg_trigger g
+                    where g.tgrelid = 'recruitment.undo_log'::regclass
+                      and not g.tgisinternal and g.tgname = 'trg_undo_log_no_delete') then
+      raise exception 'UNDO-STRUCT-04 undo_log 缺 fn_block_delete 禁删触发器';
+    end if;
+    if not exists (select 1 from pg_trigger g
+                    where g.tgrelid = 'recruitment.undo_log'::regclass
+                      and not g.tgisinternal and g.tgname = 'trg_undo_log_immutable'
+                      and pg_get_triggerdef(g.oid) like '%compensation_action_id%'
+                      and pg_get_triggerdef(g.oid) like '%superseded_by_action_id%') then
+      raise exception 'UNDO-STRUCT-05 undo_log 缺墓碑式收口护栏（两列白名单）';
+    end if;
+    if not exists (select 1 from pg_index i
+                    where i.indrelid = 'recruitment.undo_log'::regclass
+                      and i.indpred is not null) then
+      raise exception 'UNDO-STRUCT-06 undo_log 缺原记录时间线部分索引';
+    end if;
+    raise notice 'UNDO-STRUCT PASS undo_log 列/幂等键/CHECK/禁删/墓碑护栏/索引齐全';
+  else
+    raise notice 'UNDO-STRUCT SKIP undo_log 表不存在（0020 尚未应用）';
+  end if;
+
+  -- 10.3 迁移台账必须自登记（结构存在时）
+  if to_regclass('recruitment.batch_operation') is not null
+     and not exists (select 1 from recruitment.schema_migration where version = '0020_undo_log') then
+    raise exception 'MIGRATION-0020 batch_operation/undo_log 已存在但 schema_migration 未自登记 0020_undo_log';
+  end if;
+end $$;
+
+\echo ''
 \echo '=== ROLLBACK：自检不改变数据库 ==='
 rollback;
 

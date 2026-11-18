@@ -299,8 +299,7 @@ function rowFields(row: ClaimedEffect): {
   attemptCount: number
   maxAttempts: number
   externalId: string
-  sentAt: string
-  receipt_payload: unknown
+  sentAt: string; receipt_payload: unknown
 } {
   const record = row as unknown as Record<string, unknown>
   const attempt = typeof record.attempt_count === 'number' ? record.attempt_count : 0

@@ -2320,7 +2320,7 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
                   <SectionHead
                     title="此岗位下的候选人"
                     note={`共 ${String(rowsForJob.length)} 条申请 · 显示 ${String(rowsForFilter.length)} 条`}
-                    right={<span className="rcw-dim rcw-tiny">点击行查看申请详情（结论 + 渐进展开证据）</span>}
+                    right={<span className="rcw-dim rcw-tiny">点击行查看申请详情（结论 + 逐条依据）</span>}
                   />
 
                   <div className="rcw-filterbar" data-testid="application-filters">

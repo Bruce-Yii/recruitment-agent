@@ -189,6 +189,7 @@ import { registerIntakeUploadHttp, type IntakeUploadHostContext } from './http/i
 import { registerActorHttp, type ActorHostContext } from './http/actor.ts'
 import { registerJobActionHttp, type JobActionHostContext } from './http/actions-job.ts'
 import { registerActionsHttp, type ActionHostContext } from './http/actions.ts'
+import { registerBatchUndoHttp, type BatchUndoHostContext } from './http/batch-undo.ts'
 import { registerFeishuImportHttp, type FeishuImportHostContext } from './http/feishu-import.ts'
 import { registerSettingsHttp, type SettingsHostContext } from './http/settings.ts'
 // D5 decision（task-56）：决策 facts 只读投影 + screening/evaluate（只读 domain）+
@@ -428,13 +429,21 @@ function notConfiguredTool(
 }
 
 /**
+ * cordis 的 `Context` 声明未覆盖宿主注入的 tools 服务；这里只补类型交集，
+ * 运行时的 `ctx.tools.register(tool)` 调用路径一字未改（同文件 logger 的既有口径）。
+ */
+type ContextWithTools = Context & {
+  readonly tools: { register(definition: ReadonlyToolDefinition): unknown }
+}
+
+/**
  * 挂载只读招聘工具 + S6/S7 工具。
  * @param ctx - cordis 上下文，携带 tools 服务。
  * @param config - 插件配置（来自 cordis.patch.yml）。
  * @param env - 环境变量表（默认 process.env；测试可注入）。
  */
 export function apply(
-  ctx: Context,
+  ctx: ContextWithTools,
   config?: Config,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): void {
@@ -522,6 +531,14 @@ export function apply(
         },
       ),
       'recruitment: write action routes',
+    )
+    // 批量不通过 / 撤销（5 秒 Toast）：两条新 exact POST 路由，与写动作共享同一身份单例。
+    child.effect(
+      () => registerBatchUndoHttp(
+        child as unknown as BatchUndoHostContext,
+        { database: database.resolved, databaseIssues: database.issues, identity: actorIdentity },
+      ),
+      'recruitment: batch reject / undo routes',
     )
     // 工作空间设置：GET /recruitment/api/settings（只读投影）+ POST /recruitment/api/action/settings/write
     // （Host Action，人点 + confirmation_text）。配置解析所需全部注入，不读进程环境。
@@ -1077,7 +1094,7 @@ export function apply(
         database: database.resolved,
         converter: converter.resolved,
         mail: mail.resolved,
-        identity: actorIdentity,
+        identity: { identity: actorIdentity },
       }),
   ].map(withStructuredResultContract)
     // D-141 §4：**最后**再套一层工具调用留痕（trace 必须是离注册表最近的执行边界）。
