@@ -467,7 +467,7 @@ const nowHM=()=>{const d=new Date();return `${String(d.getHours()).padStart(2,'0
 
 function handleApiError(err){
   if(err&&err.code==='NOT_AVAILABLE'){
-    showToast('这项暂时还没接通');
+    showToast(err.userMessage||'这项还差最后一步，稍后开放');
     return;
   }
   showToast((err&&err.userMessage)||'暂时无法完成该操作，请稍后再试');
@@ -553,20 +553,65 @@ function advanceNextIfEnabled(prevCand){
   if(next){activeCandId=next.id;activeCrit='c1';docTab='resume';}
 }
 
-function ingestDemoResume(fileInput){
+async function ingestDemoResume(fileInput){
   const fileName=typeof fileInput==='string'?fileInput:(fileInput&&fileInput.name)||uiOptions.defaultDemoPdf;
   const baseName=fileName.split('_')[0].replace(/\.(pdf|docx?|txt)$/i,'')||fileName;
-  asyncTask={status:'running',fileName,name:baseName,candId:null};
+  const targetJobId=activeJobId||(roles[0]&&roles[0].id)||'';
+  asyncTask={status:'running',fileName,name:baseName,candId:null,errorSummary:null};
   renderCanvas();
   showToast(`已加入后台解析队列：「${fileName}」（不阻塞当前审阅）`);
+
+  if(api.mode==='http'){
+    try{
+      const started=await api.uploadResume(fileInput,targetJobId);
+      const taskId=started&&started.taskId;
+      if(!taskId){
+        asyncTask={status:'failed',fileName,name:baseName,candId:null,errorSummary:'上传已提交但未拿到解析任务编号，请稍后刷新查看'};
+        renderCanvas();
+        return;
+      }
+      const poll=async()=>{
+        try{
+          const st=await api.getTaskStatus(taskId);
+          if(st.status==='RUNNING'){setTimeout(poll,1500);return;}
+          if(st.status==='FAILED'){
+            asyncTask={status:'failed',fileName,name:baseName,candId:null,errorSummary:st.errorSummary||'简历解析未能完成，请检查文件后重试'};
+            renderCanvas();
+            showToast('简历解析未完成，请查看顶部原因');
+            return;
+          }
+          // COMPLETED: refresh from real backend before showing success
+          if(st.applicationId){
+            try{const fresh=await api.getApplication(st.applicationId);if(fresh)syncCandidateFromApi(fresh);}catch(e){}
+          }else if(targetJobId){
+            try{const jr=await api.getJob(targetJobId);if(jr&&Array.isArray(jr.candidates))jr.candidates.forEach(syncCandidateFromApi);}catch(e){}
+          }
+          const finalName=st.candidateName||baseName;
+          asyncTask={status:'done',fileName,name:finalName,candId:st.applicationId||null,errorSummary:null};
+          render();
+          showToast(`解析完成：${finalName} 已入库`);
+        }catch(err){
+          asyncTask={status:'failed',fileName,name:baseName,candId:null,errorSummary:(err&&err.userMessage)||'暂时无法获取解析进度，请稍后刷新'};
+          renderCanvas();
+        }
+      };
+      setTimeout(poll,1200);
+    }catch(err){
+      asyncTask={status:'failed',fileName,name:baseName,candId:null,errorSummary:(err&&err.userMessage)||'简历上传失败，请重试'};
+      renderCanvas();
+      showToast(asyncTask.errorSummary);
+    }
+    return;
+  }
+
   setTimeout(async()=>{
     try{
       snap();
-      const res=await api.uploadResume(fileInput||fileName,activeJobId||(roles[0]&&roles[0].id)||'pm');
+      const res=await api.uploadResume(fileInput||fileName,targetJobId||'pm');
       if(res&&res.candidate){
         syncCandidateFromApi(res.candidate);
         if(res.autoEntry)autoDone.unshift(res.autoEntry);
-        asyncTask={status:'done',fileName:res.fileName||fileName,name:res.candidate.name,candId:res.candidate.id};
+        asyncTask={status:'done',fileName:res.fileName||fileName,name:res.candidate.name,candId:res.candidate.id,errorSummary:null};
         messages.push({role:'ai',text:`后台已完成「${fileName}」解析并建档：${res.candidate.name} 4/4 核心标准全部命中，可随时点右侧提示查看。`,tag:'后台解析完成'});
         render();
         showToast(`后台解析完成：${res.candidate.name} 已入库`,true);
@@ -1340,9 +1385,12 @@ ${nudgePending?`- ${nudgeItem.roleLabel}${nudgeItem.overdueLabel}（${nudgeItem.
   if(asyncTask){
     const bar=document.createElement('div');
     bar.className='async-bar'+(asyncTask.status==='done'?' done':'');
+    if(asyncTask.status==='failed'){bar.style.background='var(--red-soft)';bar.style.borderColor='rgba(205,43,49,.25)';bar.style.color='var(--red)';}
     bar.innerHTML=asyncTask.status==='running'
-      ?`<span class="thinking-row"><i class="thinking-dot"></i><span>后台异步解析中：正在解析「${asyncTask.fileName}」并对齐岗位标准（你可继续浏览当前页面）…</span></span>`
-      :`<span>✓ 后台解析完成：<b>${asyncTask.name}</b> 已入库（4/4 标准命中）</span><div style="display:flex;gap:10px"><button class="text-link" id="async-open-c" style="color:var(--green);font-weight:600">查看档案</button><button class="text-link" id="async-dismiss">关闭</button></div>`;
+      ?`<span class="thinking-row"><i class="thinking-dot"></i><span>正在解析「${asyncTask.fileName}」并对齐岗位标准（你可继续浏览当前页面）…</span></span>`
+      :asyncTask.status==='failed'
+      ?`<span>解析未完成（${asyncTask.fileName}）：${asyncTask.errorSummary||'请检查文件后重试'}</span><button class="text-link" id="async-dismiss" style="color:var(--red)">关闭</button>`
+      :`<span>✓ 后台解析完成：<b>${asyncTask.name}</b> 已入库</span><div style="display:flex;gap:10px">${asyncTask.candId?'<button class="text-link" id="async-open-c" style="color:var(--green);font-weight:600">查看档案</button>':''}<button class="text-link" id="async-dismiss">关闭</button></div>`;
     inner.prepend(bar);
     $('async-open-c')?.addEventListener('click',()=>{const cid=asyncTask.candId;asyncTask=null;openCandidate(cid);});
     $('async-dismiss')?.addEventListener('click',()=>{asyncTask=null;renderCanvas();});
@@ -1486,8 +1534,9 @@ function renderModal(){
   $('m-ok')?.addEventListener('click',async()=>{
     const okBtn=$('m-ok');
     if(okBtn.disabled)return;
-    okBtn.disabled=true;okBtn.style.opacity='.65';
-    const resetBtn=()=>{okBtn.disabled=false;okBtn.style.opacity='1';};
+    const origOkText=okBtn.textContent;
+    okBtn.disabled=true;okBtn.style.opacity='.65';okBtn.textContent='提交中…';
+    const resetBtn=()=>{okBtn.disabled=false;okBtn.style.opacity='1';okBtn.textContent=origOkText;};
 
     if(m.type==='skip'){
       const reason=($('ef-skip')?.value||m.reason||'').trim();
@@ -1552,7 +1601,7 @@ function renderModal(){
     }else if(m.type==='transfer'){
       snap();
       const targetId=$('ef-role')?.value||m.targetId;
-      const res=await safeSubmit('transfer',{candId:m.candId,targetId});
+      const res=await safeSubmit('transfer',{candId:m.candId,targetId,confirmationText:`确认将 ${getCand(m.candId)?.name||'候选人'} 跨岗调剂至 ${getRole(targetId)?.name||'目标岗位'}`});
       if(!res){resetBtn();return;}
       const c=getCand(m.candId),t=getRole(targetId);
       if(res.clonedCandidate){syncCandidateFromApi(res.clonedCandidate);openCandidate(res.clonedCandidate.id);}
@@ -1611,7 +1660,7 @@ function renderModal(){
       snap();
       const nm=($('ef-jn')?.value||m.name||'前端架构师').trim();
       const hc=Math.max(1,Number($('ef-jh')?.value||m.hc||1));
-      const res=await safeSubmit('new_job',{name:nm,hc});
+      const res=await safeSubmit('new_job',{name:nm,hc,confirmationText:`确认新建岗位：${nm}`});
       if(!res){resetBtn();return;}
       if(res.role){syncRoleFromApi(res.role);space='jobs';activeJobId=res.role.id;activeCandId=null;jobTab='pipeline';}
       messages.push({role:'ai',text:`已创建「${nm}」（${hc} HC）并启动简历监听。`,tag:`新建岗位 · ${nm}`});

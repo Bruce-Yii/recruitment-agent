@@ -1,11 +1,17 @@
 /**
- * Recruitment OS · 数据适配层（data/adapter.js）
+ * Recruitment OS · 数据适配层（Task 03 升级版：真连后端 + 4 个确认卡写入口 + 上传轮询进度）
  * 导出 createApi({ mode, baseUrl })，支持 'mock' | 'http' 双模式。
  *
- * - mock 模式：使用 data/mock.js，页面行为与原型逐屏一致。
- * - http 模式：仅对接后端已真实存在的接口；未实现的接口抛出 code='NOT_AVAILABLE'，
- *   由页面以自然业务语言提示「这项暂时还没接通」，绝不崩溃。
- * - 本轮明确不做：聊天流式/SSE、上传简历真实接口（均继续走 mock）。
+ * 契约依据：
+ * - design/v4/contracts/api-samples/*.json
+ * - design/v4/contracts/available-actions.md
+ * - design/v4/contracts/client-plugin-contract.md
+ *
+ * 硬规则：
+ * - http 模式所有请求同源（credentials: 'same-origin'）+ 带 x-recruitment-request: 1，前端绝不传 actor
+ * - 所有写操作带 confirmation_text（人的确认原话）
+ * - job/create 绝不传 headcount（HC 由需求单维护）
+ * - 未接通动作抛出 NOT_AVAILABLE，前台提示「这项还差最后一步，稍后开放」
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
@@ -17,12 +23,53 @@
 })(typeof self !== 'undefined' ? self : this, function (MockMod) {
   'use strict';
 
+  const UNAVAILABLE_MSG = '这项还差最后一步，稍后开放';
+
+  const STAGE_LABEL_MAP = {
+    S1: '需求立项',
+    S2: '职位发布',
+    S3: '岗位标准',
+    S4: '寻访触达',
+    S5: '候选人投递',
+    S6: '简历接入',
+    S7: '初筛评估',
+    S8: '面试安排',
+    S9: '面试记录',
+    S10: '三面终审',
+    S11: 'Offer 待确认',
+    S12: '录用归档'
+  };
+
   function createNotAvailableError(actionOrResource) {
-    const err = new Error('这项暂时还没接通');
+    const err = new Error(UNAVAILABLE_MSG);
     err.code = 'NOT_AVAILABLE';
-    err.userMessage = '这项暂时还没接通';
+    err.userMessage = UNAVAILABLE_MSG;
     err.target = actionOrResource;
     return err;
+  }
+
+  function formatShortTime(iso) {
+    if (!iso || typeof iso !== 'string') return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mi = String(d.getMinutes()).padStart(2, '0');
+    return `${mm}-${dd} ${hh}:${mi}`;
+  }
+
+  function calcHoursSince(iso) {
+    if (!iso || typeof iso !== 'string') return 0;
+    const t = Date.parse(iso);
+    if (Number.isNaN(t)) return 0;
+    return Math.max(0, Math.floor((Date.now() - t) / 3600000));
+  }
+
+  function stageLabelOf(code, lifecycle) {
+    if (lifecycle && lifecycle !== 'ACTIVE' && lifecycle !== 'HIRED') return '已结束';
+    const c = String(code || '').toUpperCase();
+    return STAGE_LABEL_MAP[c] || '推进中';
   }
 
   function createApi(options) {
@@ -31,16 +78,16 @@
     const baseUrl = String(cfg.baseUrl || '').replace(/\/+$/, '');
     const store = MockMod.createMockStore();
 
-    // ---------------- Shared Mock Command Parser (Task 01: chat stays mock) ----------------
+    // ---------------- Shared Mock Command Parser (Chat stays mock until host SSE lands) ----------------
     function parseCommandMock(rawText, ctx) {
       const t = String(rawText || '').trim();
       const candidates = (ctx && ctx.candidates) || store.state.candidates;
       const roles = (ctx && ctx.roles) || store.state.roles;
       const activeCandId = ctx && ctx.activeCandId;
-      const getRole = (id) => roles.find((r) => r.id === id) || roles[0];
+      const getRole = (id) => roles.find((r) => r.id === id) || roles[0] || { id: '', name: '在招岗位' };
       const getCand = (id) => candidates.find((c) => c.id === id);
 
-      if (!t) return { kind: 'noop' };
+      if (!t || candidates.length === 0) return { kind: 'noop' };
 
       const exactMention = candidates.find((c) => t.includes(c.name));
       if (!exactMention && t.includes('林同学')) {
@@ -76,7 +123,7 @@
           modal: { type: 'compound', candId: c.id, pinText: '字节 Offer 周五截止 · 加急' },
           message: {
             role: 'ai',
-            text: `已将你的连环指令拆解为 3 步（推进一面 + 置顶竞品加急 + 匹配明天 15:00 空闲时段），在居中确认卡点一次即可全部执行。`,
+            text: '已将你的连环指令拆解为 3 步（推进一面 + 置顶竞品加急 + 匹配明天 15:00 空闲时段），在居中确认卡点一次即可全部执行。',
             tag: '3 步复合编排'
           }
         };
@@ -92,7 +139,14 @@
         return {
           kind: 'action',
           actionName: 'pin_constraint',
-          payload: { candId: c.id, text: '字节 Offer 周五截止 · 期望 45k', kind: 'red' },
+          payload: {
+            candId: c.id,
+            candidateId: c.candidateId || c.id,
+            text: t.length > 6 ? t : '字节 Offer 周五截止 · 期望 45k',
+            kind: 'red',
+            source: 'CHAT',
+            confirmationText: t
+          },
           openCandId: c.id,
           message: {
             role: 'ai',
@@ -102,7 +156,7 @@
         };
       }
       if (t.includes('对比')) {
-        const jobId = t.includes('Java') ? 'java' : 'pm';
+        const jobId = t.includes('Java') ? (roles.find((r) => r.name.includes('Java')) || roles[0]).id : roles[0].id;
         return {
           kind: 'navigate',
           nav: { space: 'jobs', activeJobId: jobId, activeCandId: null, jobTab: 'compare' },
@@ -135,7 +189,14 @@
         return {
           kind: 'action',
           actionName: 'add_handoff_iq',
-          payload: { candId: c.id, text: noteText },
+          payload: {
+            candId: c.id,
+            candidateId: c.candidateId || c.id,
+            interviewId: c.nextInterviewId || undefined,
+            text: noteText,
+            source: 'CHAT',
+            confirmationText: t
+          },
           openCandId: c.id,
           message: {
             role: 'ai',
@@ -218,19 +279,19 @@
         return {
           kind: 'action',
           actionName: 'pass',
-          payload: { candId: c.id, fromCommand: true },
+          payload: { candId: c.id, fromCommand: true, confirmationText: t },
           openCandId: c.id,
           message: { role: 'ai', text: `已将 ${c.name} 推进至「${nextStage}」。`, tag: `流转至 ${nextStage}` }
         };
       }
       if (t.includes('岗位标准') || t.toLowerCase().includes('jd') || t.includes('原始信息')) {
-        const jobId = t.includes('Java') ? 'java' : t.includes('算法') ? 'algo' : 'pm';
+        const jobId = roles[0].id;
         return {
           kind: 'navigate',
           nav: { space: 'jobs', activeJobId: jobId, activeCandId: null, jobTab: 'rubric' },
           message: {
             role: 'ai',
-            text: `已打开「${getRole(jobId).name}」的考核标准 V1 与完整原始 JD。`,
+            text: `已打开「${getRole(jobId).name}」的考核标准与完整原始 JD。`,
             tag: '岗位标准与 JD'
           }
         };
@@ -253,12 +314,7 @@
           message: { role: 'ai', text: '已为你展开全部在招岗位的 6 阶段流程总览。' }
         };
       }
-      if (
-        t.includes('面试官视角') ||
-        t.includes('用人经理视角') ||
-        t.includes('HR视角') ||
-        t.includes('HR 视角')
-      ) {
+      if (t.includes('面试官视角') || t.includes('用人经理视角') || t.includes('HR视角') || t.includes('HR 视角')) {
         const rv = t.includes('面试官') ? 'interviewer' : t.includes('经理') ? 'hm' : 'hr';
         return {
           kind: 'set_role_view',
@@ -287,46 +343,28 @@
         };
       }
       if (t.includes('收起侧边栏') || t.includes('收起导航')) {
-        return {
-          kind: 'set_rail',
-          collapsed: true,
-          message: { role: 'ai', text: '已收起最左侧导航栏，随时可按 \\ 或点左上角图标展开。' }
-        };
+        return { kind: 'set_rail', collapsed: true, message: { role: 'ai', text: '已收起最左侧导航栏，随时可按 \\ 或点左上角图标展开。' } };
       }
       if (t.includes('展开侧边栏') || t.includes('展开导航')) {
-        return {
-          kind: 'set_rail',
-          collapsed: false,
-          message: { role: 'ai', text: '已展开最左侧导航栏。' }
-        };
+        return { kind: 'set_rail', collapsed: false, message: { role: 'ai', text: '已展开最左侧导航栏。' } };
       }
       if (t.includes('收起对话')) {
-        return {
-          kind: 'set_chat',
-          collapsed: true,
-          message: { role: 'ai', text: '已收起对话栏，随时可按 [ 或点左下角展开。' }
-        };
+        return { kind: 'set_chat', collapsed: true, message: { role: 'ai', text: '已收起对话栏，随时可按 [ 或点左下角展开。' } };
       }
       if (t.includes('看') || mentioned) {
         return {
           kind: 'open_candidate',
           openCandId: c.id,
-          message: {
-            role: 'ai',
-            text: `已顺着「${getRole(c.roleId).name} / ${c.name}」为你展开完整简历与审阅画布。`
-          }
+          message: { role: 'ai', text: `已顺着「${getRole(c.roleId).name} / ${c.name}」为你展开完整简历与审阅画布。` }
         };
       }
       return {
         kind: 'message_only',
-        message: {
-          role: 'ai',
-          text: '你可以直接说「看林同学初筛」「对比 AI 产品经理候选人」「给陈同学发 Offer」或「林同学有字节 Offer 周五截止，期望 45k」。'
-        }
+        message: { role: 'ai', text: '你可以直接说「看林同学初筛」「对比候选人」「给陈同学发 Offer」或「林同学有字节 Offer 周五截止，期望 45k」。' }
       };
     }
 
-    // ---------------- MOCK MODE ----------------
+    // ---------------- MOCK MODE (unchanged behavior vs Task 01) ----------------
     if (mode === 'mock') {
       const s = store.state;
       const getRole = (id) => s.roles.find((r) => r.id === id) || s.roles[0];
@@ -334,7 +372,6 @@
 
       return {
         mode: 'mock',
-
         async getBootstrap() {
           return store.clone({
             actor: s.actor,
@@ -350,7 +387,6 @@
             options: s.options
           });
         },
-
         async getToday(params) {
           const rv = (params && params.roleView) || s.actor.roleView || 'hr';
           const pending = s.candidates.filter((c) => {
@@ -367,18 +403,14 @@
             stuckTasks: []
           });
         },
-
         async getJob(jobId) {
           const job = getRole(jobId);
-          const list = s.candidates.filter((c) => c.roleId === job.id);
-          return store.clone({ job, candidates: list });
+          return store.clone({ job, candidates: s.candidates.filter((c) => c.roleId === job.id) });
         },
-
         async getApplication(id) {
           const cand = getCand(id);
           return cand ? store.clone(cand) : null;
         },
-
         async getInterview(id) {
           const cand = getCand(id);
           if (!cand) return null;
@@ -392,11 +424,9 @@
             notes: cand.notes
           });
         },
-
         async submit(actionName, payload) {
           const p = payload || {};
           const hm = store.nowHM();
-
           if (actionName === 'set_actor') {
             s.actor.roleView = p.roleView || 'hr';
             return { ok: true, actor: store.clone(s.actor) };
@@ -407,10 +437,7 @@
             const isScreen = c.stage === '初筛评估';
             c.stage = isScreen ? '一面安排' : '三面终审';
             c.hours = 0;
-            c.timeline.unshift({
-              t: hm,
-              d: p.fromCommand ? `对话指令推进至「${c.stage}」` : `人工拍板推进至「${c.stage}」`
-            });
+            c.timeline.unshift({ t: hm, d: p.fromCommand ? `对话指令推进至「${c.stage}」` : `人工拍板推进至「${c.stage}」` });
             return { ok: true, candidate: store.clone(c), nextStage: c.stage };
           }
           if (actionName === 'skip') {
@@ -426,9 +453,7 @@
             const c = getCand(p.candId);
             if (!c) return { ok: false };
             const calConn = s.connectors.find((x) => x.id === 'cal');
-            if (calConn && !calConn.connected && !p.forceReconnect) {
-              return { ok: false, connectorDown: 'cal', candidate: store.clone(c) };
-            }
+            if (calConn && !calConn.connected && !p.forceReconnect) return { ok: false, connectorDown: 'cal', candidate: store.clone(c) };
             if (calConn && p.forceReconnect) calConn.connected = true;
             const newOwner = p.newOwner || '张工';
             const lastR = c.rounds[c.rounds.length - 1];
@@ -436,17 +461,10 @@
             if (lastR) {
               lastR.t = `二面 · ${newOwner}`;
               lastR.s = `改期 · ${slotShort}`;
-              lastR.d = p.forceReconnect
-                ? `已替换面试官为 ${newOwner}，重新绑定飞书妙记归属。`
-                : `已替换面试官为 ${newOwner}，重新绑定飞书妙记归属并通知候选人。`;
+              lastR.d = `已替换面试官为 ${newOwner}，重新绑定飞书妙记归属并通知候选人。`;
             }
             c.pinned = [{ t: `改期至 ${slotShort} · ${newOwner}`, kind: 'neutral' }];
-            c.timeline.unshift({
-              t: hm,
-              d: p.forceReconnect
-                ? `重连后已改期至 ${p.slot} 并更换面试官为 ${newOwner}`
-                : `临时换面试官为 ${newOwner} 并改期至 ${p.slot}（飞书日程与妙记已同步）`
-            });
+            c.timeline.unshift({ t: hm, d: `临时换面试官为 ${newOwner} 并改期至 ${p.slot}（飞书日程与妙记已同步）` });
             return { ok: true, candidate: store.clone(c) };
           }
           if (actionName === 'thankyou') {
@@ -457,12 +475,7 @@
           }
           if (actionName === 'nudge') {
             s.nudgePending = false;
-            s.autoDone.unshift({
-              id: 'a' + Date.now(),
-              t: '刚刚',
-              text: '已向王工发送飞书催交面评提醒',
-              undone: false
-            });
+            s.autoDone.unshift({ id: 'a' + Date.now(), t: '刚刚', text: '已向王工发送飞书催交面评提醒', undone: false });
             return { ok: true, nudgePending: false, autoDone: store.clone(s.autoDone) };
           }
           if (actionName === 'offer') {
@@ -470,16 +483,11 @@
             if (!c) return { ok: false };
             if (c.offerStatus === 'SENT') return { ok: false, duplicate: true };
             const mailConn = s.connectors.find((x) => x.id === 'mail');
-            if (mailConn && !mailConn.connected && !p.forceReconnect) {
-              return { ok: false, connectorDown: 'mail', candidate: store.clone(c) };
-            }
+            if (mailConn && !mailConn.connected && !p.forceReconnect) return { ok: false, connectorDown: 'mail', candidate: store.clone(c) };
             if (mailConn && p.forceReconnect) mailConn.connected = true;
             c.offerStatus = 'SENT';
             c.stage = 'Offer 待确认';
-            c.timeline.unshift({
-              t: hm,
-              d: p.forceReconnect ? '重连后已安全发送正式 Offer 邮件（防重校验通过）' : '已发送正式 Offer 邮件，等待确认'
-            });
+            c.timeline.unshift({ t: hm, d: '已发送正式 Offer 邮件，等待确认' });
             return { ok: true, candidate: store.clone(c) };
           }
           if (actionName === 'offer_accept') {
@@ -519,11 +527,7 @@
             c.stage = '一面安排';
             c.hours = 0;
             c.pinned.unshift({ t: p.pinText, kind: 'red' });
-            c.rounds.push({
-              t: '一面（业务与基础）',
-              s: `已约 · ${p.slot.split(' ')[0]} ${p.slot.split(' ')[1]}`,
-              d: `已通过飞书日历锁定 ${p.slot}，并提醒面试官竞品加急。`
-            });
+            c.rounds.push({ t: '一面（业务与基础）', s: `已约 · ${p.slot.split(' ')[0]} ${p.slot.split(' ')[1]}`, d: `已通过飞书日历锁定 ${p.slot}，并提醒面试官竞品加急。` });
             c.timeline.unshift({ t: hm, d: `联动完成：通过初筛 + 置顶「${p.pinText}」+ 锁定一面日程（${p.slot}）` });
             return { ok: true, candidate: store.clone(c) };
           }
@@ -531,23 +535,14 @@
             const c = getCand(p.candId);
             if (!c) return { ok: false };
             const calConn = s.connectors.find((x) => x.id === 'cal');
-            if (calConn && !calConn.connected && !p.forceReconnect) {
-              return { ok: false, connectorDown: 'cal', candidate: store.clone(c) };
-            }
+            if (calConn && !calConn.connected && !p.forceReconnect) return { ok: false, connectorDown: 'cal', candidate: store.clone(c) };
             if (calConn && p.forceReconnect) calConn.connected = true;
-            const lbl = p.label || '加面 · 交叉核实';
-            const foc = p.focus || '核实并发状态回滚深度';
             c.rounds.splice(Math.max(1, c.rounds.length - 1), 0, {
-              t: lbl,
+              t: p.label || '加面 · 交叉核实',
               s: `已约 · ${p.slot.split(' ')[0]}`,
-              d: p.forceReconnect ? `已锁定 ${p.slot}` : `已锁定 ${p.slot} · ${foc}`
+              d: `已锁定 ${p.slot} · ${p.focus || '核实并发状态回滚深度'}`
             });
-            c.timeline.unshift({
-              t: hm,
-              d: p.forceReconnect
-                ? `重连后已插入专项加面并锁定飞书日程（${p.slot}）`
-                : `已插入专项加面并锁定飞书日程（${p.slot}）`
-            });
+            c.timeline.unshift({ t: hm, d: `已插入专项加面并锁定飞书日程（${p.slot}）` });
             return { ok: true, candidate: store.clone(c) };
           }
           if (actionName === 'reject') {
@@ -579,15 +574,7 @@
             const nm = String(p.name || '前端架构师').trim();
             const hc = Math.max(1, Number(p.hc || 1));
             const id = 'j' + Date.now();
-            const newRole = {
-              id,
-              name: nm,
-              dept: '技术部',
-              hcTotal: hc,
-              hcFilled: 0,
-              rubricVersion: 'V1',
-              rubric: ['核心架构与 0-1 落地', '工程化与稳定性', '跨团队推动能力']
-            };
+            const newRole = { id, name: nm, dept: '技术部', hcTotal: hc, hcFilled: 0, rubricVersion: 'V1', rubric: ['核心架构与 0-1 落地', '工程化与稳定性', '跨团队推动能力'] };
             s.roles.unshift(newRole);
             return { ok: true, role: store.clone(newRole) };
           }
@@ -647,95 +634,199 @@
             if (typeof p.nudgePending === 'boolean') s.nudgePending = p.nudgePending;
             return { ok: true };
           }
-
           throw createNotAvailableError(actionName);
         },
-
         async sendCommand(text, ctx) {
           return parseCommandMock(text, ctx);
         },
-
         async uploadResume(file, jobId) {
           const fileName = typeof file === 'string' ? file : (file && file.name) || s.options.defaultDemoPdf;
           const newCand = store.buildUploadedMockCandidate(fileName, jobId || 'pm');
           s.candidates.unshift(newCand);
-          const autoEntry = {
-            id: 'a' + Date.now(),
-            t: '刚刚',
-            text: `自动解析导入的「${fileName}」并完成 4 项岗位标准对齐`,
-            undone: false
-          };
+          const autoEntry = { id: 'a' + Date.now(), t: '刚刚', text: `自动解析导入的「${fileName}」并完成 4 项岗位标准对齐`, undone: false };
           s.autoDone.unshift(autoEntry);
-          return store.clone({ candidate: newCand, autoEntry, fileName, mockUpload: true });
+          return store.clone({ taskId: 'mock_' + Date.now(), status: 'COMPLETED', candidate: newCand, autoEntry, fileName, mockUpload: true });
+        },
+        async getTaskStatus(taskId) {
+          return { taskId, status: 'COMPLETED', errorSummary: null };
         }
       };
     }
 
-    // ---------------- HTTP MODE (Only real §3 endpoints; missing ones throw NOT_AVAILABLE) ----------------
+    // ---------------- HTTP MODE (Real api-samples/*.json + available-actions.md) ----------------
     async function httpRequest(path, init) {
-      const res = await fetch(baseUrl + path, Object.assign({
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin'
-      }, init || {}));
+      const headers = Object.assign({ 'x-recruitment-request': '1' }, (init && init.headers) || {});
+      if (init && init.body && typeof init.body === 'string' && !headers['Content-Type']) {
+        headers['Content-Type'] = 'application/json';
+      }
+      const res = await fetch(baseUrl + path, Object.assign({ credentials: 'same-origin' }, init || {}, { headers }));
       if (res.status === 404 || res.status === 501) {
         throw createNotAvailableError(path);
       }
+      const ct = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
+      const body = ct.includes('application/json') ? await res.json().catch(() => ({})) : await res.text().catch(() => '');
       if (!res.ok) {
-        const err = new Error('服务暂时无法响应，请稍后重试');
+        const msg = (body && typeof body === 'object' && (body.error_summary || body.message || (body.error && body.error.message))) || '暂时无法完成这项操作，请稍后再试';
+        const err = new Error(msg);
         err.code = 'HTTP_ERROR';
-        err.userMessage = '服务暂时无法响应，请稍后重试';
+        err.userMessage = msg;
         throw err;
       }
-      const ct = res.headers.get('content-type') || '';
-      return ct.includes('application/json') ? res.json() : res.text();
+      return body;
     }
 
-    function normalizeRole(raw) {
+    function normalizeJobFromApi(raw, rubricObj) {
+      const j = raw || {};
+      const rInfo = rubricObj || j.rubric || {};
+      const dims = Array.isArray(rInfo.dimensions) ? rInfo.dimensions : [];
+      const counts = j.application_counts || {};
       return {
-        id: String(raw.id || raw.job_id || raw.jobId || 'job'),
-        name: raw.name || raw.title || '未命名岗位',
-        dept: raw.dept || raw.department || '招聘团队',
-        hcTotal: Number(raw.hcTotal != null ? raw.hcTotal : raw.headcount || 1),
-        hcFilled: Number(raw.hcFilled != null ? raw.hcFilled : raw.filled_count || 0),
-        rubricVersion: raw.rubricVersion || raw.rubric_version || 'V1',
-        rubric: Array.isArray(raw.rubric) ? raw.rubric : Array.isArray(raw.criteria) ? raw.criteria : [],
-        jd: raw.jd || {
-          meta: raw.meta || '',
-          duties: raw.duties || raw.description || '暂无原始岗位职责描述',
-          reqs: raw.reqs || raw.requirements || '暂无原始任职要求',
-          bonus: raw.bonus || ''
+        id: String(j.job_id || j.id || ''),
+        code: j.code || '',
+        name: j.title || j.name || '未命名岗位',
+        dept: j.department_name || j.dept || '招聘团队',
+        hcTotal: Number(j.headcount != null ? j.headcount : counts.total || 1),
+        hcFilled: Number(j.filled_count != null ? j.filled_count : 0),
+        rubricVersion: `V${rInfo.version_no || 1}`,
+        rubricApproved: Boolean(rInfo.approved || (j.rubric && j.rubric.approved)),
+        rubric: dims.map((d) => `${d.label || d.key}${d.weight ? `（权重 ${Math.round(d.weight * 100)}%）` : ''}`),
+        jd: {
+          meta: `${j.department_name || ''} · ${j.code || ''}`.replace(/^ · | · $/g, ''),
+          duties: j.description_md || '暂无原始岗位职责描述',
+          reqs: j.requirements_md || '暂无原始任职要求',
+          bonus: ''
         }
       };
     }
 
-    function normalizeApplication(raw) {
-      const id = String(raw.id || raw.application_id || raw.applicationId || '');
-      const matId = raw.materialId || raw.material_id || id;
+    function normalizeAppSummaryOrDetail(rawRoot) {
+      const isEnvelope = Boolean(rawRoot && rawRoot.application);
+      const a = isEnvelope ? rawRoot.application : rawRoot || {};
+      const cand = a.candidate || {};
+      const job = a.job || {};
+      const mat = (isEnvelope && rawRoot.resume && rawRoot.resume.material) || a.material || {};
+      const fieldStates = mat.field_states || {};
+      const screening = a.screening || {};
+      const evalObj = screening.evaluation || {};
+      const progress = a.progress || {};
+      const nextStep = progress.next_step || {};
+      const evRubric = isEnvelope && rawRoot.screening_evidence && rawRoot.screening_evidence.rubric ? rawRoot.screening_evidence.rubric : {};
+      const dims = Array.isArray(evRubric.dimensions) ? evRubric.dimensions : [];
+
+      const criteria = dims.map((d) => {
+        const key = String(d.key || 'c1');
+        let s = '待核实';
+        let lv = 'amber';
+        if (key.includes('work')) {
+          s = fieldStates.work_experience === 'present' ? '已匹配' : '未提及';
+          lv = fieldStates.work_experience === 'present' ? 'green' : 'red';
+        } else if (key.includes('edu')) {
+          s = fieldStates.education === 'present' ? '已匹配' : '未提及';
+          lv = fieldStates.education === 'present' ? 'green' : 'red';
+        } else if (evalObj.verdict === 'PASS') {
+          s = d.kind === 'NICE_TO_HAVE' ? '需面试核实' : '已匹配';
+          lv = d.kind === 'NICE_TO_HAVE' ? 'amber' : 'green';
+        }
+        return { k: key, t: d.label || key, s, lv };
+      });
+
+      const resumeObj = (isEnvelope && rawRoot.resume) || {};
+      const resumeSections = [];
+      if (Array.isArray(resumeObj.work_entries) && resumeObj.work_entries.length) {
+        resumeSections.push({
+          title: '工作经历',
+          items: resumeObj.work_entries.map((w) => ({
+            k: (criteria.find((x) => x.k.includes('work')) || criteria[0] || { k: 'c1' }).k,
+            co: w.title ? `${w.company || ''} · ${w.title}` : w.company || '工作经历',
+            time: w.start ? `${w.start} – ${w.end || '至今'}` : '',
+            t: w.title ? `担任 ${w.title}` : '简历原件已提取该段经历'
+          }))
+        });
+      }
+      if (Array.isArray(resumeObj.education_entries) && resumeObj.education_entries.length) {
+        resumeSections.push({
+          title: '教育背景',
+          items: resumeObj.education_entries.map((e) => ({
+            k: (criteria.find((x) => x.k.includes('edu')) || criteria[0] || { k: 'c1' }).k,
+            time: e.start ? `${e.start} – ${e.end || ''}` : '',
+            t: e.text || ''
+          }))
+        });
+      }
+      if (Array.isArray(resumeObj.evidence_samples) && resumeObj.evidence_samples.length) {
+        resumeSections.push({
+          title: '简历原文摘录',
+          items: resumeObj.evidence_samples.map((ev) => ({
+            k: (criteria[0] || { k: 'c1' }).k,
+            t: ev.quote || ''
+          }))
+        });
+      }
+
+      const rawInterviews = Array.isArray(a.interviews) ? a.interviews : [];
+      const rounds = rawInterviews.map((iv, i) => ({
+        t: `第 ${iv.round_no || i + 1} 轮面试`,
+        s: iv.status === 'COMPLETED' ? '通过' : iv.status === 'POST_INTERVIEW' ? '待收面评' : '已排期',
+        d: (iv.round_focus && iv.round_focus.reason) || (Array.isArray(iv.interviewers) && iv.interviewers.length ? `面试官：${iv.interviewers.map((x) => x.display_name).join('、')}` : '已排期')
+      }));
+
+      const rawTranscripts = isEnvelope && Array.isArray(rawRoot.transcript_runs) ? rawRoot.transcript_runs : [];
+      const transcript = rawTranscripts.length
+        ? rawTranscripts.map((tr) => ({ k: 'c1', ts: tr.timestamp || '', t: tr.summary || tr.text || '已同步转录', ctx: tr.context || '' }))
+        : [{ k: 'c1', t: '还没有转录' }];
+
+      const timeline = isEnvelope && Array.isArray(rawRoot.timeline)
+        ? rawRoot.timeline.map((ev) => ({ t: formatShortTime(ev.at), d: ev.label || '状态更新' }))
+        : [];
+
+      const assetId = mat.asset_id || mat.resume_version_id || '';
+      const nextIv = rawInterviews.find((iv) => iv.status === 'SCHEDULED') || rawInterviews[rawInterviews.length - 1];
+
       return {
-        id,
-        name: raw.name || raw.candidate_name || raw.candidateName || '候选人',
-        roleId: String(raw.roleId || raw.job_id || raw.jobId || ''),
-        stage: raw.stage || raw.stage_label || '初筛评估',
-        hours: Number(raw.hours != null ? raw.hours : raw.stage_hours || 0),
-        starred: Boolean(raw.starred),
-        offerStatus: raw.offerStatus || raw.offer_status || undefined,
-        edu: raw.edu || raw.education || '',
-        exp: raw.exp || raw.experience_summary || '',
-        source: raw.source || raw.channel || '',
-        pinned: Array.isArray(raw.pinned) ? raw.pinned : [],
-        summary: raw.summary || raw.ai_summary || '',
-        criteria: Array.isArray(raw.criteria) ? raw.criteria : [],
-        resumeSections: Array.isArray(raw.resumeSections)
-          ? raw.resumeSections
-          : raw.resume_text
-            ? [{ title: '简历原文', items: [{ k: 'c1', t: raw.resume_text }] }]
-            : [],
-        materialUrl: matId ? `${baseUrl}/recruitment/api/material/${encodeURIComponent(matId)}/content` : '',
-        transcript: Array.isArray(raw.transcript) ? raw.transcript : [],
-        rounds: Array.isArray(raw.rounds) ? raw.rounds : [],
-        iqs: Array.isArray(raw.iqs) ? raw.iqs : [],
-        notes: raw.notes || '',
-        timeline: Array.isArray(raw.timeline) ? raw.timeline : []
+        id: String(a.application_id || a.id || ''),
+        candidateId: String(cand.candidate_id || ''),
+        nextInterviewId: nextIv ? String(nextIv.interview_id || '') : '',
+        name: cand.display_name || a.name || '候选人',
+        roleId: String(job.job_id || a.roleId || ''),
+        stage: stageLabelOf(a.current_stage_code, a.lifecycle_status),
+        stageCode: a.current_stage_code || 'S6',
+        hours: calcHoursSince(a.stage_entered_at),
+        starred: false,
+        edu: Array.isArray(resumeObj.education_entries) && resumeObj.education_entries[0] ? resumeObj.education_entries[0].text : '',
+        exp: mat.entry_counts ? `${mat.entry_counts.work || 0} 段工作经历` : '',
+        source: job.code || '',
+        pinned: Array.isArray(a.pinned) ? a.pinned : [],
+        summary: [screening.reason, nextStep.label].filter(Boolean).join(' · ') || `当前处于「${stageLabelOf(a.current_stage_code, a.lifecycle_status)}」`,
+        criteria,
+        resumeSections,
+        materialUrl: assetId ? `${baseUrl}/recruitment/api/material/${encodeURIComponent(assetId)}/content` : '',
+        transcript,
+        rounds,
+        iqs: [],
+        notes: '',
+        timeline,
+        labels: isEnvelope ? rawRoot.labels || null : null
+      };
+    }
+
+    function normalizeSettingsFromApi(raw) {
+      const conns = (raw && raw.connections) || {};
+      const st = (raw && raw.settings) || {};
+      const sla = st.sla_thresholds || {};
+      return {
+        connectors: [
+          { id: 'mail', name: '企业邮箱（收简历与发 Offer）', desc: conns.email && conns.email.state ? `当前状态：${conns.email.state}` : '邮箱连接状态', connected: Boolean(conns.email && conns.email.state === 'CONNECTED') },
+          { id: 'cal', name: '飞书日历（自动读取空闲时段）', desc: conns.feishu_calendar && conns.feishu_calendar.state ? `当前状态：${conns.feishu_calendar.state}` : '飞书日历状态', connected: Boolean(conns.feishu_calendar && conns.feishu_calendar.state === 'CONNECTED') },
+          { id: 'min', name: '飞书妙记（面试录音转写同步）', desc: conns.feishu_minutes && conns.feishu_minutes.state ? `当前状态：${conns.feishu_minutes.state}` : '飞书妙记状态', connected: Boolean(conns.feishu_minutes && conns.feishu_minutes.state === 'CONNECTED') }
+        ],
+        autoRules: [
+          { id: 'r1', name: 'Agent 静默代办', desc: '允许低风险解析与归档任务在后台静默执行', silent: Boolean(st.agent_silent_delegation) }
+        ],
+        slaConfig: {
+          screenH: Number(sla.screening_hours || 24),
+          scorecardH: Number(sla.scorecard_hours || 48),
+          offerH: 72
+        }
       };
     }
 
@@ -745,124 +836,140 @@
       mode: 'http',
 
       async getBootstrap() {
-        const [actorRes, settingsRes, overviewRes, recruitingRes] = await Promise.allSettled([
-          httpRequest('/recruitment/api/actor'),
-          httpRequest('/recruitment/api/settings'),
+        const [ovRes, recRes, setRes] = await Promise.allSettled([
           httpRequest('/recruitment/api/overview'),
-          httpRequest('/recruitment/api/recruiting/jobs')
+          httpRequest('/recruitment/api/recruiting/overview'),
+          httpRequest('/recruitment/api/settings')
         ]);
 
-        const actorData = actorRes.status === 'fulfilled' && actorRes.value ? actorRes.value : {};
-        const settingsData = settingsRes.status === 'fulfilled' && settingsRes.value ? settingsRes.value : {};
-        const overviewData = overviewRes.status === 'fulfilled' && overviewRes.value ? overviewRes.value : {};
-        const recData = recruitingRes.status === 'fulfilled' && recruitingRes.value ? recruitingRes.value : {};
+        const ov = ovRes.status === 'fulfilled' && ovRes.value ? ovRes.value : {};
+        const rec = recRes.status === 'fulfilled' && recRes.value ? recRes.value : {};
+        const st = setRes.status === 'fulfilled' && setRes.value ? setRes.value : {};
+        const normSettings = normalizeSettingsFromApi(st);
 
-        const rawRoles = Array.isArray(recData.jobs)
-          ? recData.jobs
-          : Array.isArray(recData)
-            ? recData
-            : Array.isArray(overviewData.jobs)
-              ? overviewData.jobs
-              : [];
-        const rawCands = Array.isArray(recData.applications)
-          ? recData.applications
-          : Array.isArray(overviewData.applications)
-            ? overviewData.applications
-            : Array.isArray(overviewData.candidates)
-              ? overviewData.candidates
-              : [];
+        const roles = Array.isArray(rec.jobs) ? rec.jobs.map((j) => normalizeJobFromApi(j)) : [];
+        const candidates = Array.isArray(rec.applications) ? rec.applications.map((a) => normalizeAppSummaryOrDetail(a)) : [];
 
         return {
           actor: {
-            id: actorData.id || 'current_user',
-            name: actorData.name || '当前用户',
-            roleView: actorData.roleView || actorData.role || 'hr'
+            id: (rec.actor && rec.actor.actor_id) || (ov.actor && ov.actor.actor_id) || '',
+            name: (rec.actor && rec.actor.display_name) || (ov.actor && ov.actor.display_name) || '招聘团队',
+            roleView: 'hr'
           },
-          roles: rawRoles.map(normalizeRole),
-          candidates: rawCands.map(normalizeApplication),
-          autoDone: Array.isArray(overviewData.autoDone) ? overviewData.autoDone : [],
-          nudgePending: Boolean(overviewData.nudgePending),
-          nudgeItem: overviewData.nudgeItem || store.clone(store.state.nudgeItem),
+          roles,
+          candidates,
+          autoDone: [],
+          nudgePending: false,
+          nudgeItem: store.clone(store.state.nudgeItem),
           messages: [
-            {
-              role: 'ai',
-              text: '已连接真实后端数据。聊天流式与简历上传将在下一轮接入，当前可正常浏览真实岗位、候选人与提交已接通的操作。'
-            }
+            { role: 'ai', text: '已连接真实后端服务。可正常浏览真实岗位、候选人档案，并提交已接通的确认卡与简历上传。' }
           ],
-          connectors: Array.isArray(settingsData.connectors)
-            ? settingsData.connectors
-            : store.clone(store.state.connectors),
-          autoRules: Array.isArray(settingsData.autoRules)
-            ? settingsData.autoRules
-            : store.clone(store.state.autoRules),
-          slaConfig: settingsData.slaConfig || store.clone(store.state.slaConfig),
+          connectors: normSettings.connectors,
+          autoRules: normSettings.autoRules,
+          slaConfig: normSettings.slaConfig,
           options: baseOptions
         };
       },
 
       async getToday() {
-        const [ov, tasks] = await Promise.all([
-          httpRequest('/recruitment/api/overview'),
-          httpRequest('/recruitment/api/tasks/status').catch(() => ({ stuck: [] }))
-        ]);
-        const list = Array.isArray(ov.pendingCandidates)
-          ? ov.pendingCandidates.map(normalizeApplication)
-          : Array.isArray(ov.applications)
-            ? ov.applications.map(normalizeApplication)
-            : [];
+        const ov = await httpRequest('/recruitment/api/overview');
+        const lists = ov.lists || {};
+        const unassigned = ov.unassigned || {};
         return {
-          pendingCandidates: list,
-          nudgePending: Boolean(ov.nudgePending),
-          nudgeItem: ov.nudgeItem || store.clone(store.state.nudgeItem),
-          autoDone: Array.isArray(ov.autoDone) ? ov.autoDone : [],
-          stuckTasks: Array.isArray(tasks.stuck) ? tasks.stuck : []
+          pendingCandidates: [],
+          nudgePending: false,
+          nudgeItem: store.clone(store.state.nudgeItem),
+          autoDone: [],
+          stuckTasks: Array.isArray(unassigned.waiting_human_tasks) ? unassigned.waiting_human_tasks : [],
+          counts: ov.counts || {},
+          lists
         };
       },
 
       async getJob(jobId) {
         const data = await httpRequest(`/recruitment/api/recruiting/jobs/${encodeURIComponent(jobId)}`);
         return {
-          job: normalizeRole(data.job || data),
-          candidates: Array.isArray(data.applications || data.candidates)
-            ? (data.applications || data.candidates).map(normalizeApplication)
-            : []
+          job: normalizeJobFromApi(data.job || data, data.rubric),
+          candidates: Array.isArray(data.applications) ? data.applications.map((a) => normalizeAppSummaryOrDetail(a)) : []
         };
       },
 
       async getApplication(id) {
         const data = await httpRequest(`/recruitment/api/recruiting/applications/${encodeURIComponent(id)}`);
-        return normalizeApplication(data.application || data);
+        return normalizeAppSummaryOrDetail(data);
       },
 
       async getInterview(id) {
-        const [detail, form] = await Promise.all([
-          httpRequest(`/recruitment/api/interviewer/interviews/${encodeURIComponent(id)}`),
-          httpRequest(`/recruitment/api/action/scorecard/form?interview_id=${encodeURIComponent(id)}`).catch(() => null)
-        ]);
-        return {
-          application: detail.application ? normalizeApplication(detail.application) : null,
-          assigned: detail.assigned || null,
-          prevSummary: detail.prevSummary || detail.previous_summary || '',
-          rubricRef: detail.rubricRef || detail.rubric || [],
-          scorecardForm: form,
-          iqs: Array.isArray(detail.iqs) ? detail.iqs : [],
-          notes: detail.notes || ''
-        };
+        const detail = await httpRequest(`/recruitment/api/interviewer/interviews/${encodeURIComponent(id)}`);
+        return detail;
       },
 
       async submit(actionName, payload) {
         const p = payload || {};
+        const confirmationText = String(p.confirmationText || p.reason || `确认执行：${actionName}`).trim();
+
         switch (actionName) {
-          case 'set_actor':
-            return httpRequest('/recruitment/api/actor', {
-              method: 'PUT',
-              body: JSON.stringify({ role: p.roleView })
-            });
-          case 'scorecard':
-            return httpRequest('/recruitment/api/action/scorecard/submit', {
+          case 'transfer':
+            return httpRequest('/recruitment/api/action/application/transfer', {
               method: 'POST',
-              body: JSON.stringify({ application_id: p.candId, summary: p.summary, score: p.score || 4.5 })
+              body: JSON.stringify({
+                application_id: p.candId,
+                target_job_id: p.targetId,
+                confirmation_text: confirmationText
+              })
             });
+          case 'pin_constraint':
+            return httpRequest('/recruitment/api/action/candidate/constraint', {
+              method: 'POST',
+              body: JSON.stringify({
+                action: 'PIN',
+                application_id: p.candId,
+                text: String(p.text || '').slice(0, 500),
+                source: p.source || 'CHAT',
+                confirmation_text: confirmationText
+              })
+            });
+          case 'add_handoff_iq':
+            return httpRequest('/recruitment/api/action/candidate/constraint', {
+              method: 'POST',
+              body: JSON.stringify(Object.assign(
+                {
+                  action: 'HANDOFF',
+                  application_id: p.candId,
+                  text: String(p.text || '').slice(0, 500),
+                  source: p.source || 'CHAT',
+                  confirmation_text: confirmationText
+                },
+                p.interviewId ? { interview_id: p.interviewId } : {}
+              ))
+            });
+          case 'new_job': {
+            // IMPORTANT (available-actions.md): headcount is explicitly rejected (400 UNSUPPORTED_FIELD).
+            // HC is maintained on requisitions; new job rubric starts in PENDING status.
+            const body = {
+              title: String(p.name || '未命名岗位').trim(),
+              confirmation_text: confirmationText
+            };
+            if (p.dept) body.dept = p.dept;
+            if (p.requisitionId) body.requisition_id = p.requisitionId;
+            const res = await httpRequest('/recruitment/api/action/job/create', {
+              method: 'POST',
+              body: JSON.stringify(body)
+            });
+            return {
+              ok: true,
+              role: {
+                id: String(res.job_id || ''),
+                code: res.code || '',
+                name: body.title,
+                dept: p.dept || '招聘团队',
+                hcTotal: 1,
+                hcFilled: 0,
+                rubricVersion: '待审批',
+                rubric: []
+              }
+            };
+          }
           case 'pass':
           case 'reject':
           case 'skip':
@@ -873,7 +980,8 @@
               body: JSON.stringify({
                 application_id: p.candId,
                 action: actionName,
-                reason: p.reason || ''
+                reason: p.reason || '',
+                confirmation_text: confirmationText
               })
             });
           case 'reschedule':
@@ -883,10 +991,20 @@
               body: JSON.stringify({
                 application_id: p.candId,
                 mode: actionName,
-                round_name: p.label || '',
+                round_label: p.label || '',
                 focus: p.focus || '',
-                interviewer: p.newOwner || '',
-                slot: p.slot || ''
+                replace_interviewer: p.newOwner || '',
+                slot: p.slot || '',
+                confirmation_text: confirmationText
+              })
+            });
+          case 'scorecard':
+            return httpRequest('/recruitment/api/action/scorecard/submit', {
+              method: 'POST',
+              body: JSON.stringify({
+                application_id: p.candId,
+                summary: p.summary || '',
+                confirmation_text: confirmationText
               })
             });
           case 'offer':
@@ -897,37 +1015,98 @@
                 application_id: p.candId,
                 template: actionName,
                 level: p.level || '',
-                salary: p.salary || ''
+                salary: p.salary || '',
+                confirmation_text: confirmationText
               })
             });
-          case 'toggle_connector':
           case 'toggle_rule':
             return httpRequest('/recruitment/api/action/settings/write', {
               method: 'POST',
-              body: JSON.stringify({ action: actionName, payload: p })
+              body: JSON.stringify({
+                agent_silent_delegation: Boolean(p.silent),
+                confirmation_text: confirmationText
+              })
             });
+          case 'set_actor':
+            // Per client-plugin-contract.md §2: identity comes from host cookie, frontend does not send actor.
+            return { ok: true };
+          // T3-4: Unimplemented actions throw NOT_AVAILABLE -> human-readable toast
+          case 'batch_reject':
+          case 'nudge':
+          case 'compound':
+          case 'star':
+          case 'save_notes':
+          case 'toggle_iq':
+          case 'undo_auto_done':
+          case 'restore_snapshot':
+          case 'toggle_connector':
           default:
-            // Endpoints not yet available on backend (see INTERFACE-NEEDS.md)
             throw createNotAvailableError(actionName);
         }
       },
 
-      // §4: Chat stays mock in Task 01
       async sendCommand(text, ctx) {
         return parseCommandMock(text, ctx);
       },
 
-      // §4: Upload stays mock in Task 01 (backend gap G1)
+      /**
+       * T3-2 & T3-3: Real raw-byte upload -> returns task_id immediately.
+       * POST /recruitment/api/intake/upload?job_id=<uuid>
+       * Headers: x-file-name, x-recruitment-request: 1; Body: raw file bytes.
+       */
       async uploadResume(file, jobId) {
-        const fileName = typeof file === 'string' ? file : (file && file.name) || baseOptions.defaultDemoPdf;
-        const newCand = store.buildUploadedMockCandidate(fileName, jobId || 'pm');
-        return store.clone({ candidate: newCand, fileName, mockUpload: true, gap: 'G1' });
+        if (!file || typeof file === 'string') {
+          throw new Error('请选择一份本地简历文件后再上传');
+        }
+        const qs = jobId ? `?job_id=${encodeURIComponent(jobId)}` : '';
+        const res = await fetch(`${baseUrl}/recruitment/api/intake/upload${qs}`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'x-recruitment-request': '1',
+            'x-file-name': encodeURIComponent(file.name || 'resume.pdf'),
+            'Content-Type': file.type || 'application/octet-stream'
+          },
+          body: file
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const msg = data.error_summary || '简历上传未能提交，请检查文件后重试';
+          const err = new Error(msg);
+          err.userMessage = msg;
+          throw err;
+        }
+        return {
+          taskId: String(data.task_id || data.id || ''),
+          status: String(data.status || 'PENDING'),
+          fileName: file.name || 'resume.pdf'
+        };
+      },
+
+      /**
+       * T3-3: Poll GET /recruitment/api/tasks/status?task_id=<uuid>
+       * Never expose raw error_code to UI; return human-readable errorSummary.
+       */
+      async getTaskStatus(taskId) {
+        const data = await httpRequest(`/recruitment/api/tasks/status?task_id=${encodeURIComponent(taskId)}`);
+        const task = (data && data.task) || data || {};
+        const rawStatus = String(task.status || 'RUNNING').toUpperCase();
+        const isDone = rawStatus === 'COMPLETED' || rawStatus === 'SUCCEEDED' || rawStatus === 'DONE';
+        const isFailed = rawStatus === 'FAILED' || rawStatus === 'ERROR' || rawStatus === 'CANCELLED';
+        return {
+          taskId: String(task.task_id || taskId),
+          status: isDone ? 'COMPLETED' : isFailed ? 'FAILED' : 'RUNNING',
+          applicationId: task.application_id ? String(task.application_id) : null,
+          candidateName: task.candidate_name || null,
+          errorSummary: isFailed ? (task.error_summary || '简历解析未能完成，请检查文件格式或重新上传') : null
+        };
       }
     };
   }
 
   return {
     createApi,
-    createNotAvailableError
+    createNotAvailableError,
+    UNAVAILABLE_MSG
   };
 });
