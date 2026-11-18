@@ -180,6 +180,70 @@ async function addWaitingTask(
 }
 
 /**
+ * V6-2：造一条终态失败任务（business_task.status='FAILED' + 最后一次 attempt='FAILED_FINAL'）。
+ *
+ * @param options.endedAtOffset - 失败时间相对 now() 的分钟偏移（负数=更早），用来验证倒序。
+ * @param options.errorClass - 最后一次 attempt 的 error_class（决定是否需要人处理）。
+ * @param options.errorCode - 最后一次 attempt 的 error_code（决定人话文案）。
+ */
+async function addFailedTask(
+  client: DatabaseClient,
+  options: {
+    createdBy?: string | null
+    refs?: readonly { kind: string; id: string }[]
+    title: string
+    errorClass: string
+    errorCode: string
+    endedAtOffsetMinutes?: number
+    /** 可选：更早的 FAILED_RETRYABLE attempt（验证「只认最后一次 attempt」）。 */
+    withRetry?: boolean
+  },
+): Promise<string> {
+  const taskId = await one(
+    client,
+    `insert into recruitment.business_task
+       (tenant_id, task_type, business_refs, title, idempotency_key, status, created_by_actor_id,
+        error_code, error_summary, completed_at, status_changed_at)
+     values ($1, 'HUMAN_REVIEW', $2::jsonb, $3, $4, 'FAILED', $5, $6, $7,
+             now() + ($8::int * interval '1 minute'), now() + ($8::int * interval '1 minute'))
+     returning id`,
+    [
+      TENANT,
+      JSON.stringify(options.refs ?? []),
+      options.title,
+      `test:workbench:v62:${uniqueSuffix()}`,
+      options.createdBy ?? null,
+      options.errorCode,
+      `fixture error ${options.errorCode}`,
+      options.endedAtOffsetMinutes ?? 0,
+    ],
+  )
+  const endedAt = `now() + (${options.endedAtOffsetMinutes ?? 0} * interval '1 minute')`
+  if (options.withRetry === true) {
+    // 更早的一次 attempt：可重试失败（TRANSIENT），不该被当成最终判定。
+    // claimed_at 显式给更早的时间，满足 ck_task_attempt_started/ended（ended_at >= claimed_at）。
+    await client.query(
+      `insert into recruitment.task_attempt
+         (tenant_id, task_id, attempt_no, worker_type, worker_id, status, claimed_at, lease_expires_at,
+          ended_at, error_class, error_code, retry_after)
+       values ($1, $2, 1, 'DSH_JOB', 'w-retry', 'FAILED_RETRYABLE', now() - interval '3 hours',
+               now() - interval '2 hours', now() - interval '2 hours', 'TRANSIENT', 'TEMP', now() + interval '1 hour')`,
+      [TENANT, taskId],
+    )
+  }
+  // 最后一次 attempt：claimed_at 设为 ended_at 前 1 分钟，lease_expires_at 必须 > claimed_at。
+  await client.query(
+    `insert into recruitment.task_attempt
+       (tenant_id, task_id, attempt_no, worker_type, worker_id, status, claimed_at, lease_expires_at,
+        ended_at, error_class, error_code)
+     values ($1, $2, ${options.withRetry === true ? 2 : 1}, 'DSH_JOB', 'w-final', 'FAILED_FINAL',
+             ${endedAt} - interval '1 minute', ${endedAt} + interval '1 minute', ${endedAt}, $3, $4)`,
+    [TENANT, taskId, options.errorClass, options.errorCode],
+  )
+  return taskId
+}
+
+/**
  * 一次性造齐夹具（在调用方事务里；结束时随事务回滚）。
  * @param client - 回滚事务内的连接。
  * @returns 夹具 id 集合。
@@ -593,5 +657,106 @@ test('负例（fail-closed、零写入）：未知维度键 / 缺维度 / 保留
 
     // 零写入：所有负例都发生在写库之前。
     assert.equal(await countScorecards(), before, '负例不得写任何 scorecard 行')
+  })
+})
+
+// =====================================================================
+//  7. V6-2：终态失败任务进入「需要人处理」清单（真库）
+// =====================================================================
+
+test('V6-2：终态失败且 error_class 在人工闭集 → 进 lists/unassigned，带人话 reason，按失败时间倒序', async () => {
+  await inRolledBackTx(POOL, async (client) => {
+    // 103 名下三条失败任务：两条需要人处理（不同失败时间），一条不需要（WORKER_LOST）。
+    // 第三条带更早的 FAILED_RETRYABLE attempt → 验证「只认最后一次 attempt」。
+    const failedNewer = await addFailedTask(client, {
+      createdBy: ACTOR_103, title: 'V62 最新失败（UNKNOWN_MODEL）', errorClass: 'PERMANENT',
+      errorCode: 'UNKNOWN_MODEL', endedAtOffsetMinutes: -2,
+    })
+    const failedOlder = await addFailedTask(client, {
+      createdBy: ACTOR_103, title: 'V62 较早失败（INVALID_INPUT）', errorClass: 'INVALID_INPUT',
+      errorCode: 'INVALID_INPUT', endedAtOffsetMinutes: -60, withRetry: true,
+    })
+    const failedNoHuman = await addFailedTask(client, {
+      createdBy: ACTOR_103, title: 'V62 worker 失联（不算）', errorClass: 'WORKER_LOST',
+      errorCode: 'WORKER_LOST', endedAtOffsetMinutes: -1,
+    })
+    // 无主的失败任务：AUTH_REQUIRED → 进 unassigned（不双算到 owned）。
+    const failedUnassigned = await addFailedTask(client, {
+      createdBy: null, title: 'V62 无主失败（AUTH_REQUIRED）', errorClass: 'AUTH_REQUIRED',
+      errorCode: 'AUTH_REQUIRED', endedAtOffsetMinutes: -30,
+    })
+
+    const p103 = await readWorkbenchProjection(client, CFG, ACTOR_103)
+
+    // 1) 人工闭集内的失败任务必须出现；非人工类必须缺席。
+    const owned = p103.lists.waiting_human_tasks
+    assert.equal(hasId(owned, 'task_id', failedNewer), true, 'PERMANENT 失败应进 owned')
+    assert.equal(hasId(owned, 'task_id', failedOlder), true, 'INVALID_INPUT 失败应进 owned')
+    assert.equal(hasId(owned, 'task_id', failedNoHuman), false, 'WORKER_LOST 失败不得进人工队列')
+    assert.equal(hasId(p103.unassigned.waiting_human_tasks, 'task_id', failedUnassigned), true,
+      '无主 AUTH_REQUIRED 失败应进 unassigned')
+
+    // 2) 人话原因：不给 HR 看机器码。
+    const newer = owned.find((row) => row.task_id === failedNewer)
+    const older = owned.find((row) => row.task_id === failedOlder)
+    assert.equal(newer?.status, 'FAILED', 'FAILED 是真相，状态机未改')
+    assert.equal(newer?.reason, '模型配置不正确，这次没能读出来')
+    assert.equal(older?.reason, '这个文件没法处理')
+    const unassignedFailed = p103.unassigned.waiting_human_tasks.find((row) => row.task_id === failedUnassigned)
+    assert.equal(unassignedFailed?.reason, '外部账号未就绪')
+    for (const row of [newer, older, unassignedFailed]) {
+      assert.equal(row?.required_action, 'PROVIDE_DECISION')
+    }
+
+    // 3) 顺序：失败任务在最前、按失败时间倒序（最新失败在最上）。
+    const failedIds = owned.filter((row) => row.status === 'FAILED').map((row) => row.task_id)
+    assert.deepEqual(failedIds, [failedNewer, failedOlder], '失败任务必须按 ended_at 倒序')
+
+    // 4) 计数与列表同步；unassigned 不双算（只在 unassigned_total 里算一次）。
+    assert.equal(p103.counts.waiting_human_total, p103.lists.waiting_human_tasks.length)
+    assert.equal(
+      p103.counts.unassigned_total,
+      p103.unassigned.pending_decisions.length + p103.unassigned.pending_reviews.length
+        + p103.unassigned.waiting_human_tasks.length + p103.unassigned.connector_incidents.length,
+    )
+
+    // 5) unassigned 全租户共享：101/102/104 看到的与 103 完全相同。
+    for (const actor of [ACTOR_102, ACTOR_104]) {
+      const other = await readWorkbenchProjection(client, CFG, actor)
+      assert.deepEqual(other.unassigned, p103.unassigned)
+      assert.equal(hasId(other.lists.waiting_human_tasks, 'task_id', failedNewer), false,
+        '103 的失败任务不得出现在别人的 owned')
+    }
+  })
+})
+
+test('V6-2 负例：BUSINESS_CONFLICT 进人工队列；WORKER_LOST/TRANSIENT/SUCCEEDED 不进（不改状态机）', async () => {
+  await inRolledBackTx(POOL, async (client) => {
+    const conflict = await addFailedTask(client, {
+      createdBy: ACTOR_102, title: 'V62 业务冲突', errorClass: 'BUSINESS_CONFLICT',
+      errorCode: 'BUSINESS_CONFLICT', endedAtOffsetMinutes: -5,
+    })
+    const transient = await addFailedTask(client, {
+      createdBy: ACTOR_102, title: 'V62 瞬时失败重试耗尽（不算）', errorClass: 'TRANSIENT',
+      errorCode: 'TEMP_ERROR', endedAtOffsetMinutes: -4,
+    })
+    const p102 = await readWorkbenchProjection(client, CFG, ACTOR_102)
+    const row = p102.lists.waiting_human_tasks.find((r) => r.task_id === conflict)
+    assert.ok(row, 'BUSINESS_CONFLICT 失败应进人工队列')
+    assert.equal(row.status, 'FAILED')
+    assert.equal(row.reason, '和已有事实冲突，需要你确认')
+    assert.equal(hasId(p102.lists.waiting_human_tasks, 'task_id', transient), false,
+      'TRANSIENT（重试耗尽）不得进人工队列')
+
+    // 一个 SUCCEEDED 的任务、一个 TIMED_OUT 的 attempt 都不该进人工队列。
+    const succeeded = await one(
+      client,
+      `insert into recruitment.business_task
+         (tenant_id, task_type, title, idempotency_key, status, created_by_actor_id, completed_at)
+       values ($1, 'HUMAN_REVIEW', 'V62 成功任务', $2, 'SUCCEEDED', $3, now()) returning id`,
+      [TENANT, `test:workbench:v62:ok:${uniqueSuffix()}`, ACTOR_102],
+    )
+    const p102b = await readWorkbenchProjection(client, CFG, ACTOR_102)
+    assert.equal(hasId(p102b.lists.waiting_human_tasks, 'task_id', succeeded), false)
   })
 })

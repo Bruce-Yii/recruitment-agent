@@ -75,6 +75,36 @@ export interface DeterministicObject {
   readonly byEventRow: 'INTAKE_RECORD' | null
 }
 
+/**
+ * 任务优先级档位（1..5，数字越小越先被认领；认领排序见 `store/claim.ts`：
+ * `order by priority, next_run_at nulls first, created_at`）。
+ *
+ * E6-1「人的即时操作与后台批量有优先级区分」的口径：
+ *   * **1 = 人在等**：由人在页面上触发的动作所派生的任务，必须能被先认领。
+ *     例：`scorecard.submit → EVALUATION_SYNTHESIZE`（面试官提交面评后人在等汇总）。
+ *   * **2 = 保留档**（本版未用，留给人正在盯但可稍等的派生任务）。
+ *   * **3 = 常规后台**：后台摄取/批处理派生的任务，没人当场等结果。
+ *     例：`resume.intake.received → RESUME_PARSE`（材料到达后解析）。
+ *   * **4 = 批量**：同一来源短时间大量到达时可降级（含语义准入的 ROUTER_TRIAGE）。
+ *     v1.0 只留档位定义，不实现"批量判定"——那是后续版本的范围。
+ *   * **5 = 最低档**（本版未用）。
+ *
+ * 这个常量只作**档位定义/档位说明**，不改变任何行为；行为由各登记项的
+ * `routing.priority` 决定。改这里不改登记项的 priority 不会改变认领顺序。
+ */
+export const PRIORITY_BANDS = {
+  /** 人在等：页面动作派生，先认领。 */
+  HUMAN_WAITING: 1,
+  /** 保留档。 */
+  RESERVED: 2,
+  /** 常规后台：没人当场等。 */
+  BACKGROUND: 3,
+  /** 批量：短时间大量到达时降级（v1.0 只定义，不判定）。 */
+  BATCH: 4,
+  /** 最低档。 */
+  LOWEST: 5,
+} as const
+
 /** 路由结论 + （确定性时）任务模板。 */
 export type EventRouting =
   | {
@@ -202,7 +232,8 @@ const WRITER_EVENTS: readonly EventTypeDefinition[] = [
       kind: 'DETERMINISTIC',
       taskType: 'RESUME_PARSE',
       title: '解析新收到的简历',
-      priority: 2,
+      // 常规后台（3 = BACKGROUND）：材料到达由后台工具摄取，没有人在页面上等解析结果。
+      priority: PRIORITY_BANDS.BACKGROUND,
       object: {
         // 为什么是 INTAKE_RECORD 而不是 APPLICATION：intake 在**写事件之后**才建
         // application（application-intake.ts step 6 写事件 → step 7 ensureActiveApplication），
@@ -228,7 +259,8 @@ const WRITER_EVENTS: readonly EventTypeDefinition[] = [
       kind: 'DETERMINISTIC',
       taskType: 'EVALUATION_SYNTHESIZE',
       title: '汇总面试评价',
-      priority: 3,
+      // 人在等（1 = HUMAN_WAITING）：面试官在页面提交面评后等汇总，必须能被先认领。
+      priority: PRIORITY_BANDS.HUMAN_WAITING,
       object: {
         type: 'INTERVIEW',
         fields: ['interview_id'],

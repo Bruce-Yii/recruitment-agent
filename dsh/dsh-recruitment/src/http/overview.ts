@@ -46,6 +46,8 @@ import {
 } from '../db/pool.ts'
 import { digestOf, isUuid } from '../tools/contract.ts'
 import { evalError, prepareScorecard, writeScorecard } from '../tools/scorecard-submit.ts'
+// V6-2：终态失败任务的「需要人处理」判定与人话原因（纯函数，不改 Task 状态机）。
+import { needsHuman, humanizeFailureReason } from './error-reasons.ts'
 
 // =====================================================================
 //  契约常量（见 contracts/workbench/tool-contracts.md §1.7；实现不另设更小的值）
@@ -189,7 +191,7 @@ export interface ConnectorIncidentRow {
   readonly required_action: RequiredAction
 }
 
-/** 「等待人工的任务」一行（business_task WAITING_HUMAN）。 */
+/** 「等待人工的任务」一行（business_task WAITING_HUMAN，或终态失败且需要人处理）。 */
 export interface WaitingHumanTaskRow {
   readonly task_id: string
   readonly task_type: string
@@ -198,6 +200,11 @@ export interface WaitingHumanTaskRow {
   readonly due_at: string | null
   readonly relation: Relation
   readonly required_action: RequiredAction
+  /**
+   * V6-2：人话原因（仅终态失败任务带；WAITING_HUMAN 行不带此字段）。
+   * 可选且向后兼容——前端 normalize 保留额外字段，无需改动即可显示。
+   */
+  readonly reason?: string
 }
 
 /** 投影里的 actor（只来自插件配置）。 */
@@ -584,97 +591,109 @@ const CONNECTOR_INCIDENTS_SQL = `
  * `business_refs.id` 先用正则过滤再 `::uuid`：脏 ref 不许让整个查询 22P02。
  * relation 优先级按 §3.6：OWNER > HIRING_MANAGER > INTERVIEWER。
  */
-const WAITING_TASKS_OWNED_SQL = `
-  with refs as (
-    select bt.id as task_id, bt.tenant_id, r.value as r
+const WAITING_TASKS_OWNED_SQL = humanFailureTasksSql('$2', '$3')
+/**
+ * V6-2「需要人处理」的任务集合（owned / unassigned 共用的 SQL 主体）。
+ *
+ * 纳入两类（按**最终状态**判定，天然互斥、无需 union 去重）：
+ *   1) `bt.status='WAITING_HUMAN'`（既有语义）；
+ *   2) `bt.status='FAILED'` 且**最后一次** attempt `status='FAILED_FINAL'`
+ *      且 `error_class ∈ 人工闭集`（PERMANENT/INVALID_INPUT/AUTH_REQUIRED/BUSINESS_CONFLICT）。
+ *      WORKER_LOST / TIMEOUT(TIMED_OUT) / TRANSIENT / WAIT_EXTERNAL / UNKNOWN_OUTCOME 一律排除。
+ *
+ * 最后一条 attempt 用 `order by attempt_no desc limit 1` 的 lateral 取（重试历史保留但只认最后一次）。
+ * `failed_at` 取 attempt.ended_at（失败时间）：失败任务按它倒序排在最前；
+ * WAITING_HUMAN 行的 failed_at/error_code 为 null（排序自然落到 due_at asc）。
+ *
+ * error_class 闭集在 SQL 里写死，与 `src/http/error-reasons.ts::HUMAN_ERROR_CLASSES`
+ * 保持一致（两处都有测试守住）。
+ *
+ * @param actorParam - 归属 actor 的占位符（owned 传 `$2`，unassigned 传字面 `null::uuid`）
+ * @param regexParam - 正则 guard 的占位符（owned 传 `$3`，unassigned 传 `$2`）
+ */
+function humanFailureTasksSql(actorParam: string, regexParam: string): string {
+  const isUnassigned = actorParam === 'null::uuid'
+  const ownedPredicate = isUnassigned
+    ? 'e.created_by_actor_id is null\n     and not exists (select 1 from ref_owner o where o.task_id = e.id)'
+    : `(e.created_by_actor_id = ${actorParam}::uuid
+          or exists (select 1 from ref_owner o
+                      where o.task_id = e.id and o.owner_actor_id = ${actorParam}::uuid))`
+  const relationCase = isUnassigned
+    ? `'UNCLAIMED'::text as relation`
+    : `case
+           when e.created_by_actor_id = ${actorParam}::uuid then 'OWNER'
+           when exists (select 1 from ref_owner o
+                         where o.task_id = e.id and o.owner_actor_id = ${actorParam}::uuid
+                           and o.relation = 'HIRING_MANAGER') then 'HIRING_MANAGER'
+           else 'INTERVIEWER'
+         end as relation`
+  return `
+  with eligible as (
+    select bt.id, bt.tenant_id, bt.business_refs, bt.created_by_actor_id,
+           bt.task_type, bt.title, bt.status, bt.due_at,
+           last_attempt.ended_at as last_ended_at,
+           last_attempt.error_class as last_error_class,
+           last_attempt.error_code as last_error_code
       from recruitment.business_task bt
-      cross join lateral jsonb_array_elements(bt.business_refs) as r(value)
-     where bt.tenant_id = $1::uuid and bt.status = 'WAITING_HUMAN'
+      left join lateral (
+        select ta.ended_at, ta.error_class, ta.error_code
+          from recruitment.task_attempt ta
+         where ta.tenant_id = bt.tenant_id and ta.task_id = bt.id
+         order by ta.attempt_no desc
+         limit 1
+      ) last_attempt on true
+     where bt.tenant_id = $1::uuid
+       and (
+         bt.status = 'WAITING_HUMAN'
+         or (bt.status = 'FAILED'
+             and last_attempt.error_class in ('PERMANENT', 'INVALID_INPUT', 'AUTH_REQUIRED', 'BUSINESS_CONFLICT'))
+       )
+  ), refs as (
+    select e.id as task_id, e.tenant_id, r.value as r
+      from eligible e
+      cross join lateral jsonb_array_elements(e.business_refs) as r(value)
   ), ref_owner as (
     select distinct rf.task_id, 'INTERVIEWER'::text as relation, ivr.actor_id as owner_actor_id
       from refs rf
       join recruitment.interviewer ivr
         on rf.r->>'kind' = 'INTERVIEW'
-       and (rf.r->>'id') ~ $3
+       and (rf.r->>'id') ~ ${regexParam}
        and ivr.interview_id = (rf.r->>'id')::uuid
        and ivr.tenant_id = rf.tenant_id
-    union
+     union
     select distinct rf.task_id, 'HIRING_MANAGER'::text, d.hiring_manager_actor_id
       from refs rf
       join recruitment.application a
         on rf.r->>'kind' = 'APPLICATION'
-       and (rf.r->>'id') ~ $3
+       and (rf.r->>'id') ~ ${regexParam}
        and a.id = (rf.r->>'id')::uuid
        and a.tenant_id = rf.tenant_id
       join recruitment.job j        on j.id = a.job_id        and j.tenant_id = a.tenant_id
       join recruitment.department d on d.id = j.department_id and d.tenant_id = j.tenant_id
      where d.hiring_manager_actor_id is not null
   )
-  select bt.id::text  as task_id,
-         bt.task_type as task_type,
-         bt.title     as title,
-         bt.status    as status,
-         bt.due_at    as due_at,
-         case
-           when bt.created_by_actor_id = $2::uuid then 'OWNER'
-           when exists (select 1 from ref_owner o
-                         where o.task_id = bt.id and o.owner_actor_id = $2::uuid
-                           and o.relation = 'HIRING_MANAGER') then 'HIRING_MANAGER'
-           else 'INTERVIEWER'
-         end as relation
-    from recruitment.business_task bt
-   where bt.tenant_id = $1::uuid
-     and bt.status = 'WAITING_HUMAN'
-     and (bt.created_by_actor_id = $2::uuid
-          or exists (select 1 from ref_owner o
-                      where o.task_id = bt.id and o.owner_actor_id = $2::uuid))
-   order by bt.due_at asc nulls last, bt.id asc
+  select e.id::text   as task_id,
+         e.task_type  as task_type,
+         e.title      as title,
+         e.status     as status,
+         e.due_at     as due_at,
+         case when e.status = 'FAILED' then e.last_ended_at end as failed_at,
+         case when e.status = 'FAILED' then e.last_error_code end as error_code,
+         case when e.status = 'FAILED' then e.last_error_class end as error_class,
+         ${relationCase}
+    from eligible e
+   where ${ownedPredicate}
+   order by failed_at desc nulls last, e.due_at asc nulls last, e.id asc
    limit ${SECTION_LIMIT}
 `
+}
+
 
 /**
  * unassigned WAITING_HUMAN：`created_by_actor_id IS NULL` 且 `ref_owner` 里没有任何人。
  * `PENDING` 之类「不需要人」的任务不进 unassigned（否则无主区每天刷出几百条不需要处理的）。
  */
-const WAITING_TASKS_UNASSIGNED_SQL = `
-  with refs as (
-    select bt.id as task_id, bt.tenant_id, r.value as r
-      from recruitment.business_task bt
-      cross join lateral jsonb_array_elements(bt.business_refs) as r(value)
-     where bt.tenant_id = $1::uuid and bt.status = 'WAITING_HUMAN'
-  ), ref_owner as (
-    select distinct rf.task_id, 'INTERVIEWER'::text as relation, ivr.actor_id as owner_actor_id
-      from refs rf
-      join recruitment.interviewer ivr
-        on rf.r->>'kind' = 'INTERVIEW'
-       and (rf.r->>'id') ~ $2
-       and ivr.interview_id = (rf.r->>'id')::uuid
-       and ivr.tenant_id = rf.tenant_id
-    union
-    select distinct rf.task_id, 'HIRING_MANAGER'::text, d.hiring_manager_actor_id
-      from refs rf
-      join recruitment.application a
-        on rf.r->>'kind' = 'APPLICATION'
-       and (rf.r->>'id') ~ $2
-       and a.id = (rf.r->>'id')::uuid
-       and a.tenant_id = rf.tenant_id
-      join recruitment.job j        on j.id = a.job_id        and j.tenant_id = a.tenant_id
-      join recruitment.department d on d.id = j.department_id and d.tenant_id = j.tenant_id
-     where d.hiring_manager_actor_id is not null
-  )
-  select bt.id::text  as task_id,
-         bt.task_type as task_type,
-         bt.title     as title,
-         bt.status    as status,
-         bt.due_at    as due_at
-    from recruitment.business_task bt
-   where bt.tenant_id = $1::uuid
-     and bt.status = 'WAITING_HUMAN'
-     and bt.created_by_actor_id is null
-     and not exists (select 1 from ref_owner o where o.task_id = bt.id)
-   order by bt.due_at asc nulls last, bt.id asc
-   limit ${SECTION_LIMIT}
-`
+const WAITING_TASKS_UNASSIGNED_SQL = humanFailureTasksSql('null::uuid', '$2')
 
 // =====================================================================
 //  D-89 表单的读路径 SQL（面试归属 / rubric 三绑定 / current 面评 / 转写基准）
@@ -884,6 +903,12 @@ interface TaskDbRow {
   status: string
   due_at: Date | string | null
   relation?: Relation
+  /** V6-2：终态失败 attempt 的失败时间（ended_at）；WAITING_HUMAN 行为 null。 */
+  failed_at?: Date | string | null
+  /** V6-2：终态失败 attempt 的 error_code（只用来翻人话，绝不回显机器码）。 */
+  error_code?: string | null
+  /** V6-2：终态失败 attempt 的 error_class（JS 侧二次守门，防 SQL 漏筛）。 */
+  error_class?: string | null
 }
 
 /**
@@ -1020,7 +1045,11 @@ export async function readWorkbenchProjection(
     required_action: 'INVESTIGATE_CONNECTOR',
   }))
 
-  // ---- 等待人工的任务 ----
+  // ---- 等待人工的任务（V6-2：含终态失败且需要人处理的任务）----
+  // SQL 已按 error_class 闭集筛过；这里再用 needsHuman 守一次门：
+  // 任何「FAILED 但不属于人工闭集」的行都不许混进人工队列（防御性收紧，不放宽）。
+  const isHumanTask = (row: TaskDbRow): boolean =>
+    row.status !== 'FAILED' || needsHuman(row.error_class)
   const toTaskRow = (row: TaskDbRow, relation: Relation): WaitingHumanTaskRow => ({
     task_id: row.task_id,
     task_type: row.task_type,
@@ -1029,9 +1058,10 @@ export async function readWorkbenchProjection(
     due_at: isoOrNull(row.due_at),
     relation,
     required_action: 'PROVIDE_DECISION',
+    ...(row.status === 'FAILED' ? { reason: humanizeFailureReason(row.error_code) } : {}),
   })
-  const waitingHumanOwned = tasksOwnedResult.rows.map((row) => toTaskRow(row, row.relation ?? 'OWNER'))
-  const waitingHumanUnassigned = tasksUnassignedResult.rows.map((row) => toTaskRow(row, 'UNCLAIMED'))
+  const waitingHumanOwned = tasksOwnedResult.rows.filter(isHumanTask).map((row) => toTaskRow(row, row.relation ?? 'OWNER'))
+  const waitingHumanUnassigned = tasksUnassignedResult.rows.filter(isHumanTask).map((row) => toTaskRow(row, 'UNCLAIMED'))
 
   const unassignedTotal =
     pendingUnassigned.length + pendingReviewsUnassigned.length

@@ -235,6 +235,97 @@ describe('事件自动触发：工具真实事件名 → 确定性路由 → Bus
     assert.equal(await countTasks(), beforeTasks)
   })
 
+  test('E6-1 真库优先认领：先建 priority=3 批量任务，后建 priority=1 人在等任务 → 先认领后者', async () => {
+    // 这是 E6-1 的真 DB 证据（不是内存模拟）：两行都 due（next_run_at <= now()），
+    // 3 号行先建且 created_at 更早；claimNextTask 认领的必须是后建的 1 号行。
+    // 排序逻辑在 src/runtime/store/claim.ts:59，本测试一个字都不改它。
+    const batchEvent = await insertIntakeEvent('e61_batch')
+    const humanEvent = await insertIntakeEvent('e61_human')
+
+    async function insertTask(input: {
+      idempotencyKey: string
+      title: string
+      taskType: string
+      priority: number
+      triggerEventId: string
+      createdAt: string
+    }): Promise<string> {
+      const { rows } = await db.pool.query<{ id: string }>(
+        `insert into recruitment.business_task
+           (tenant_id, task_type, title, priority, trigger_event_id, created_by_actor_id,
+            idempotency_key, status, next_run_at, created_at, updated_at)
+         values ($1, $2, $3, $4, $5, $6, $7, 'PENDING', now() - interval '1 minute', $8, $8)
+         returning id::text as id`,
+        [RUNTIME_TENANT, input.taskType, input.title, input.priority, input.triggerEventId,
+          RUNTIME_ACTOR, input.idempotencyKey, input.createdAt],
+      )
+      const id = rows[0]?.id
+      assert.ok(id !== undefined, 'business_task insert returned no row')
+      return id
+    }
+
+    const batchTaskId = await insertTask({
+      idempotencyKey: `e61:batch:${randomUUID()}`,
+      title: '批量导入的简历解析（常规后台）',
+      taskType: 'RESUME_PARSE',
+      priority: 3,
+      triggerEventId: batchEvent,
+      createdAt: '2026-01-01T00:00:00Z',
+    })
+    const humanTaskId = await insertTask({
+      idempotencyKey: `e61:human:${randomUUID()}`,
+      title: '面试官刚提交面评，等汇总（人在等）',
+      taskType: 'EVALUATION_SYNTHESIZE',
+      priority: 1,
+      triggerEventId: humanEvent,
+      createdAt: '2026-01-01T00:01:00Z',
+    })
+
+    // 库里读回两行 priority，确认夹具本身写对了（不是靠自述）。
+    const priorities = await db.pool.query<{ id: string; priority: number }>(
+      `select id::text as id, priority from recruitment.business_task
+        where tenant_id = $1 and id = any($2::uuid[]) order by priority`,
+      [RUNTIME_TENANT, [batchTaskId, humanTaskId]],
+    )
+    assert.deepEqual(priorities.rows.map((row) => row.priority), [1, 3])
+
+    // 测试隔离：本文件前面的用例（"事件自动触发…"）在同一个 tenant 里留下了 PENDING 任务，
+    // 它们也 due、也会进入 claimNextTask 的候选集，会让第二次认领拿到非本用例的任务。
+    // 这里只在此测试的夹具里把它们置为 CANCELLED（测试库，允许），保证两次 claim 的对象确定；
+    // 不断言放宽成"认领到任意一条都行"——两次认领仍必须精确是 priority=1 与 priority=3 这两条。
+    await db.pool.query(
+      `update recruitment.business_task
+          set status = 'CANCELLED',
+              status_changed_by_actor_id = $3::uuid
+        where tenant_id = $1
+          and status in ('PENDING', 'READY', 'RETRY_WAIT')
+          and id <> all($2::uuid[])`,
+      [RUNTIME_TENANT, [batchTaskId, humanTaskId], RUNTIME_ACTOR],
+    )
+
+    const claim = await store.claimNextTask({
+      workerType: 'TEST_ROUTER',
+      workerId: 'e61-priority-claim',
+      leaseMs: 60_000,
+      excludedTaskTypes: [],
+    })
+    assert.ok(claim !== null, '有两个 due 任务却认领不到')
+    assert.equal(claim.taskId, humanTaskId, '后建的 priority=1「人在等」任务必须先被认领')
+    assert.equal(claim.priority, 1)
+    assert.notEqual(claim.taskId, batchTaskId, '先建的 priority=3 批量任务不能抢先')
+
+    // 第二次认领才轮到批量任务（证明不是把 3 号行漏了）。
+    const secondClaim = await store.claimNextTask({
+      workerType: 'TEST_ROUTER',
+      workerId: 'e61-priority-claim',
+      leaseMs: 60_000,
+      excludedTaskTypes: [],
+    })
+    assert.ok(secondClaim !== null)
+    assert.equal(secondClaim.taskId, batchTaskId)
+    assert.equal(secondClaim.priority, 3)
+  })
+
   test('库触发器的 schema/0001 审计事件不进待路由队列（不是"被 Gate 拒"）', async () => {
     const { rows } = await db.pool.query<{ event_id: string }>(
       `insert into recruitment.event_inbox
