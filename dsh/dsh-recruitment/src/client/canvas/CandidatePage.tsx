@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   normalizeApplicationDetail,
   type CandidateCanvasVM,
-} from '../normalize-canvas';
+} from '../normalize-canvas.ts';
 import {
   CanvasEmptyState,
   CanvasErrorState,
@@ -10,7 +10,12 @@ import {
   FactLabelsBar,
   SequentialRoundRail,
   StatusLabel,
-} from './bits';
+} from './bits/index.ts';
+import {
+  postApplicationTransfer,
+  postCandidateConstraint,
+  type CanvasActionError,
+} from './canvas-actions.ts';
 
 export type CanvasFetcher = (path: string) => Promise<unknown>;
 
@@ -22,6 +27,7 @@ export interface CandidatePageProps {
 }
 
 type DocTab = 'resume' | 'transcript' | 'original';
+type CandidateModalKind = 'pin' | 'handoff' | 'transfer' | null;
 
 export function CandidatePage({
   applicationId,
@@ -36,6 +42,14 @@ export function CandidatePage({
   const [docTab, setDocTab] = useState<DocTab>('resume');
   const [expandedTs, setExpandedTs] = useState<number | null>(null);
   const [timelineOpen, setTimelineOpen] = useState<boolean>(false);
+
+  // T4-2: Confirmation modal state for PIN / HANDOFF / TRANSFER
+  const [modalKind, setModalKind] = useState<CandidateModalKind>(null);
+  const [inputText, setInputText] = useState<string>('');
+  const [targetJobId, setTargetJobId] = useState<string>('');
+  const [confirmText, setConfirmText] = useState<string>('');
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [actionFeedback, setActionFeedback] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
 
   const load = useCallback(
     async (cancelledRef?: { current: boolean }) => {
@@ -69,6 +83,91 @@ export function CandidatePage({
       cancelledRef.current = true;
     };
   }, [load]);
+
+  const openActionModal = (kind: Exclude<CandidateModalKind, null>) => {
+    setActionFeedback(null);
+    setInputText('');
+    setTargetJobId('');
+    setConfirmText(
+      kind === 'pin'
+        ? `确认置顶 ${vm?.candidateName || '候选人'} 的关键约束`
+        : kind === 'handoff'
+          ? `确认为 ${vm?.candidateName || '候选人'} 留下下一轮面试交接追问`
+          : `确认将 ${vm?.candidateName || '候选人'} 跨岗调剂`,
+    );
+    setModalKind(kind);
+  };
+
+  const closeActionModal = () => {
+    if (submitting) return;
+    setModalKind(null);
+  };
+
+  const handleModalSubmit = async () => {
+    if (!vm || !modalKind || submitting) return;
+    const confirmationText = confirmText.trim();
+    if (!confirmationText) {
+      setActionFeedback({ tone: 'red', text: '请先填写确认原话后再提交。' });
+      return;
+    }
+
+    if ((modalKind === 'pin' || modalKind === 'handoff') && !inputText.trim()) {
+      setActionFeedback({
+        tone: 'red',
+        text: modalKind === 'pin' ? '请填写需要置顶的约束内容。' : '请填写给下一轮面试官的交接追问。',
+      });
+      return;
+    }
+
+    if (modalKind === 'transfer' && !targetJobId.trim()) {
+      setActionFeedback({ tone: 'red', text: '请填写目标岗位编号。' });
+      return;
+    }
+
+    setSubmitting(true);
+    setActionFeedback(null);
+    try {
+      if (modalKind === 'pin') {
+        await postCandidateConstraint({
+          action: 'PIN',
+          applicationId: vm.applicationId,
+          text: inputText.trim(),
+          source: 'CHAT',
+          confirmationText,
+        });
+        setModalKind(null);
+        await load();
+        setActionFeedback({ tone: 'green', text: '已置顶候选人约束，并同步至档案与面试简报。' });
+      } else if (modalKind === 'handoff') {
+        const latestRound = vm.rounds[vm.rounds.length - 1];
+        await postCandidateConstraint({
+          action: 'HANDOFF',
+          applicationId: vm.applicationId,
+          interviewId: latestRound?.interviewId || undefined,
+          text: inputText.trim(),
+          source: 'CHAT',
+          confirmationText,
+        });
+        setModalKind(null);
+        await load();
+        setActionFeedback({ tone: 'green', text: '已写入下一轮交接追问，面试官可第一眼看到。' });
+      } else if (modalKind === 'transfer') {
+        await postApplicationTransfer({
+          applicationId: vm.applicationId,
+          targetJobId: targetJobId.trim(),
+          confirmationText,
+        });
+        setModalKind(null);
+        await load();
+        setActionFeedback({ tone: 'green', text: '已完成跨岗调剂，原岗位档案完整保留。' });
+      }
+    } catch (err) {
+      const msg = (err as CanvasActionError)?.userMessage || '这项操作暂时未能完成，请稍后重试。';
+      setActionFeedback({ tone: 'red', text: msg });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -153,6 +252,20 @@ export function CandidatePage({
 
       <div className="ros-canvas-body">
         <div className="ros-canvas-inner">
+          {actionFeedback ? (
+            <div
+              className="ros-risk-note"
+              role="status"
+              style={{
+                borderLeftColor: actionFeedback.tone === 'green' ? 'var(--green)' : 'var(--red)',
+                color: actionFeedback.tone === 'green' ? 'var(--green)' : 'var(--red)',
+                background: actionFeedback.tone === 'green' ? 'var(--green-soft)' : 'var(--red-soft)',
+              }}
+            >
+              {actionFeedback.text}
+            </div>
+          ) : null}
+
           {/* 1. 档案头 */}
           <div className="ros-doc-head">
             <div>
@@ -377,7 +490,7 @@ export function CandidatePage({
             </div>
           ) : null}
 
-          {/* 7. 不可执行动作原因透明提示（不新增按钮，仅按契约说明原因） */}
+          {/* 7. 不可执行动作原因透明提示 */}
           {vm.unavailableActions.length > 0 ? (
             <div className="ros-risk-note">
               {vm.unavailableActions.map((act) => (
@@ -420,8 +533,117 @@ export function CandidatePage({
               )
             ) : null}
           </div>
+
+          {/* 9. v4 底部轻量确认入口（置顶约束 / 下一轮交接 / 跨岗调剂，均走居中确认卡） */}
+          <div className="ros-doc-foot">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="ros-text-link"
+                data-testid="canvas-action-pin"
+                onClick={() => openActionModal('pin')}
+              >
+                置顶约束
+              </button>
+              <button
+                type="button"
+                className="ros-text-link"
+                data-testid="canvas-action-handoff"
+                onClick={() => openActionModal('handoff')}
+              >
+                下一轮交接
+              </button>
+              <button
+                type="button"
+                className="ros-text-link"
+                data-testid="canvas-action-transfer"
+                onClick={() => openActionModal('transfer')}
+              >
+                跨岗调剂
+              </button>
+            </div>
+            <span className="ros-sec-meta">高风险写操作均需人工原话确认</span>
+          </div>
         </div>
       </div>
+
+      {/* Centered Confirmation Modal (v4 tokens) */}
+      {modalKind ? (
+        <div
+          className="ros-modal-bg"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeActionModal();
+          }}
+        >
+          <div className="ros-modal">
+            <div style={{ fontSize: '17px', fontWeight: 650 }}>
+              {modalKind === 'pin'
+                ? `为 ${vm.candidateName} 置顶约束`
+                : modalKind === 'handoff'
+                  ? `为 ${vm.candidateName} 留下一轮交接追问`
+                  : `跨岗调剂 · ${vm.candidateName}`}
+            </div>
+
+            {modalKind === 'transfer' ? (
+              <label className="ros-m-field">
+                <span>目标岗位 ID</span>
+                <input
+                  value={targetJobId}
+                  onChange={(e) => setTargetJobId(e.target.value)}
+                  placeholder="输入目标岗位 ID（原岗位档案将完整保留）"
+                />
+              </label>
+            ) : (
+              <label className="ros-m-field">
+                <span>{modalKind === 'pin' ? '约束内容（≤500 字）' : '给下一轮面试官的追问（≤500 字）'}</span>
+                <textarea
+                  rows={3}
+                  maxLength={500}
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  placeholder={
+                    modalKind === 'pin'
+                      ? '例如：字节 Offer 周五截止 · 期望 45k'
+                      : '例如：重点追问多 Agent 并发状态回滚与幂等处理深度'
+                  }
+                />
+              </label>
+            )}
+
+            <label className="ros-m-field">
+              <span>确认原话（留痕必填）</span>
+              <input
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="输入一句确认原话"
+              />
+            </label>
+
+            {actionFeedback && actionFeedback.tone === 'red' ? (
+              <div className="ros-risk-note" style={{ borderLeftColor: 'var(--red)', color: 'var(--red)' }}>
+                {actionFeedback.text}
+              </div>
+            ) : null}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" className="ros-btn" disabled={submitting} onClick={closeActionModal}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="ros-btn dark"
+                disabled={submitting}
+                data-testid="canvas-modal-submit"
+                onClick={() => void handleModalSubmit()}
+              >
+                {submitting ? '处理中…' : '确认提交'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

@@ -334,6 +334,7 @@ window.__ModuleLoader__.load({
 				const detailText = asStr(asObj(iv.round_focus).reason) || (interviewers.length > 0 ? `面试官：${interviewers.map((x) => x.displayName).join("、")}` : "面试安排已创建");
 				return {
 					id: shortId(iv.interview_id) || `r-${roundNo}`,
+					interviewId: asStr(iv.interview_id) || void 0,
 					roundLabel: `第 ${roundNo} 轮面试`,
 					statusText: stInfo.text,
 					statusTone: stInfo.tone,
@@ -637,6 +638,134 @@ window.__ModuleLoader__.load({
 				]
 			});
 		}
+		// src/client/canvas/canvas-actions.ts
+		/**
+		* Typed HTTP action clients for Recruitment OS DSH Plugin Canvas (Task 03).
+		*
+		* Contract rules (design/v4/contracts/available-actions.md & client-plugin-contract.md):
+		* - Same-origin cookie determines identity (frontend NEVER sends `actor`).
+		* - Always carries `x-recruitment-request: 1`.
+		* - Every write action requires `confirmation_text` (human verbatim confirmation).
+		* - `job/create` NEVER sends `headcount` (HC is maintained on requisitions).
+		* - Unimplemented actions throw `NOT_AVAILABLE` with human copy '这项还差最后一步，稍后开放'.
+		*/
+		const UNAVAILABLE_ACTION_MESSAGE = "这项还差最后一步，稍后开放";
+		function makeError(code, userMessage) {
+			const err = new Error(userMessage);
+			err.code = code;
+			err.userMessage = userMessage;
+			return err;
+		}
+		async function postJsonAction(path, body) {
+			const res = await fetch(path, {
+				method: "POST",
+				credentials: "same-origin",
+				headers: {
+					"Content-Type": "application/json",
+					"x-recruitment-request": "1",
+					Accept: "application/json"
+				},
+				body: JSON.stringify(body)
+			});
+			if (res.status === 404 || res.status === 501) throw makeError("NOT_AVAILABLE", UNAVAILABLE_ACTION_MESSAGE);
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) throw makeError("ACTION_FAILED", typeof data.error_summary === "string" && data.error_summary.trim() ? data.error_summary : "操作未能完成，请检查输入或稍后重试");
+			return data;
+		}
+		async function postApplicationTransfer(payload) {
+			const body = {
+				application_id: payload.applicationId,
+				target_job_id: payload.targetJobId,
+				confirmation_text: payload.confirmationText
+			};
+			if (payload.carryOverRefs && payload.carryOverRefs.length > 0) body.carry_over_refs = payload.carryOverRefs;
+			return postJsonAction("/recruitment/api/action/application/transfer", body);
+		}
+		async function postCandidateConstraint(payload) {
+			const body = {
+				action: payload.action,
+				text: payload.text.slice(0, 500),
+				source: payload.source,
+				confirmation_text: payload.confirmationText
+			};
+			if (payload.applicationId) body.application_id = payload.applicationId;
+			else if (payload.candidateId) body.candidate_id = payload.candidateId;
+			if (payload.interviewId) body.interview_id = payload.interviewId;
+			return postJsonAction("/recruitment/api/action/candidate/constraint", body);
+		}
+		/**
+		* NOTE: `headcount` is intentionally omitted because the backend rejects it
+		* (`400 UNSUPPORTED_FIELD`). HC belongs to the requisition.
+		*/
+		async function postJobCreate$1(payload) {
+			const body = {
+				title: payload.title.trim(),
+				confirmation_text: payload.confirmationText
+			};
+			if (payload.dept) body.dept = payload.dept;
+			if (payload.requisitionId) body.requisition_id = payload.requisitionId;
+			return postJsonAction("/recruitment/api/action/job/create", body);
+		}
+		/**
+		* Raw-byte upload returning task_id immediately (T3-2 & T3-3).
+		* POST /recruitment/api/intake/upload?job_id=<uuid>
+		*/
+		async function uploadResumeRaw(file, jobId) {
+			const qs = jobId ? `?job_id=${encodeURIComponent(jobId)}` : "";
+			const res = await fetch(`/recruitment/api/intake/upload${qs}`, {
+				method: "POST",
+				credentials: "same-origin",
+				headers: {
+					"x-recruitment-request": "1",
+					"x-file-name": encodeURIComponent(file.name),
+					"Content-Type": file.type || "application/octet-stream"
+				},
+				body: file
+			});
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) throw makeError("ACTION_FAILED", typeof data.error_summary === "string" && data.error_summary.trim() ? data.error_summary : "简历上传未能提交，请稍后重试");
+			return {
+				taskId: String(data.task_id || data.id || ""),
+				fileName: file.name
+			};
+		}
+		/**
+		* Polls GET /recruitment/api/tasks/status?task_id=<uuid>.
+		* Never exposes raw error_code; maps failures to human-readable errorSummary.
+		*/
+		async function fetchTaskStatus(taskId) {
+			const res = await fetch(`/recruitment/api/tasks/status?task_id=${encodeURIComponent(taskId)}`, {
+				method: "GET",
+				credentials: "same-origin",
+				headers: {
+					"x-recruitment-request": "1",
+					Accept: "application/json"
+				}
+			});
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) return {
+				taskId,
+				status: "FAILED",
+				errorSummary: "暂时无法查询解析进度，请稍后刷新查看"
+			};
+			const task = data.task && typeof data.task === "object" ? data.task : data;
+			const st = String(task.status || "RUNNING").toUpperCase();
+			if (st === "COMPLETED" || st === "SUCCEEDED" || st === "DONE") return {
+				taskId,
+				status: "COMPLETED",
+				applicationId: typeof task.application_id === "string" ? task.application_id : void 0,
+				candidateName: typeof task.candidate_name === "string" ? task.candidate_name : void 0
+			};
+			if (st === "FAILED" || st === "ERROR" || st === "CANCELLED") return {
+				taskId,
+				status: "FAILED",
+				errorSummary: typeof task.error_summary === "string" && task.error_summary.trim() ? task.error_summary : "这份简历未能成功解析，请检查文件是否损坏或重新上传"
+			};
+			return {
+				taskId,
+				status: "RUNNING"
+			};
+		}
 		// src/client/canvas/CandidatePage.tsx
 		function CandidatePage({ applicationId, onBack, onOpenJob, fetcher }) {
 			const [vm, setVm] = (0, react.useState)(null);
@@ -646,6 +775,12 @@ window.__ModuleLoader__.load({
 			const [docTab, setDocTab] = (0, react.useState)("resume");
 			const [expandedTs, setExpandedTs] = (0, react.useState)(null);
 			const [timelineOpen, setTimelineOpen] = (0, react.useState)(false);
+			const [modalKind, setModalKind] = (0, react.useState)(null);
+			const [inputText, setInputText] = (0, react.useState)("");
+			const [targetJobId, setTargetJobId] = (0, react.useState)("");
+			const [confirmText, setConfirmText] = (0, react.useState)("");
+			const [submitting, setSubmitting] = (0, react.useState)(false);
+			const [actionFeedback, setActionFeedback] = (0, react.useState)(null);
 			const load = (0, react.useCallback)(async (cancelledRef) => {
 				setLoading(true);
 				setError(null);
@@ -672,6 +807,97 @@ window.__ModuleLoader__.load({
 					cancelledRef.current = true;
 				};
 			}, [load]);
+			const openActionModal = (kind) => {
+				setActionFeedback(null);
+				setInputText("");
+				setTargetJobId("");
+				setConfirmText(kind === "pin" ? `确认置顶 ${vm?.candidateName || "候选人"} 的关键约束` : kind === "handoff" ? `确认为 ${vm?.candidateName || "候选人"} 留下下一轮面试交接追问` : `确认将 ${vm?.candidateName || "候选人"} 跨岗调剂`);
+				setModalKind(kind);
+			};
+			const closeActionModal = () => {
+				if (submitting) return;
+				setModalKind(null);
+			};
+			const handleModalSubmit = async () => {
+				if (!vm || !modalKind || submitting) return;
+				const confirmationText = confirmText.trim();
+				if (!confirmationText) {
+					setActionFeedback({
+						tone: "red",
+						text: "请先填写确认原话后再提交。"
+					});
+					return;
+				}
+				if ((modalKind === "pin" || modalKind === "handoff") && !inputText.trim()) {
+					setActionFeedback({
+						tone: "red",
+						text: modalKind === "pin" ? "请填写需要置顶的约束内容。" : "请填写给下一轮面试官的交接追问。"
+					});
+					return;
+				}
+				if (modalKind === "transfer" && !targetJobId.trim()) {
+					setActionFeedback({
+						tone: "red",
+						text: "请填写目标岗位编号。"
+					});
+					return;
+				}
+				setSubmitting(true);
+				setActionFeedback(null);
+				try {
+					if (modalKind === "pin") {
+						await postCandidateConstraint({
+							action: "PIN",
+							applicationId: vm.applicationId,
+							text: inputText.trim(),
+							source: "CHAT",
+							confirmationText
+						});
+						setModalKind(null);
+						await load();
+						setActionFeedback({
+							tone: "green",
+							text: "已置顶候选人约束，并同步至档案与面试简报。"
+						});
+					} else if (modalKind === "handoff") {
+						const latestRound = vm.rounds[vm.rounds.length - 1];
+						await postCandidateConstraint({
+							action: "HANDOFF",
+							applicationId: vm.applicationId,
+							interviewId: latestRound?.interviewId || void 0,
+							text: inputText.trim(),
+							source: "CHAT",
+							confirmationText
+						});
+						setModalKind(null);
+						await load();
+						setActionFeedback({
+							tone: "green",
+							text: "已写入下一轮交接追问，面试官可第一眼看到。"
+						});
+					} else if (modalKind === "transfer") {
+						await postApplicationTransfer({
+							applicationId: vm.applicationId,
+							targetJobId: targetJobId.trim(),
+							confirmationText
+						});
+						setModalKind(null);
+						await load();
+						setActionFeedback({
+							tone: "green",
+							text: "已完成跨岗调剂，原岗位档案完整保留。"
+						});
+					}
+				} catch (err) {
+					const msg = err?.userMessage || "这项操作暂时未能完成，请稍后重试。";
+					setActionFeedback({
+						tone: "red",
+						text: msg
+					});
+				} finally {
+					setSubmitting(false);
+				}
+			};
 			if (loading) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("header", {
 				className: "ros-canvas-head",
 				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -718,357 +944,481 @@ window.__ModuleLoader__.load({
 				})
 			})] });
 			let lineNo = 0;
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-				className: "ros-canvas-head",
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-					className: "ros-head-left",
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+					className: "ros-canvas-head",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "ros-head-left",
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "ros-crumb-bar",
+							children: [
+								onBack ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "ros-crumb-link",
+									onClick: onBack,
+									children: "← 返回"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "/" })] }) : null,
+								onOpenJob && vm.jobId ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "ros-crumb-link",
+									onClick: () => onOpenJob(vm.jobId),
+									children: vm.jobTitle
+								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: vm.jobTitle }),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "/" }),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: vm.stageLabel }),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "/" }),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "ros-crumb-cur",
+									children: vm.candidateName
+								})
+							]
+						})
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "ros-head-right",
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FactLabelsBar, { labels: vm.factLabels })
+					})]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: "ros-canvas-body",
 					children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: "ros-crumb-bar",
+						className: "ros-canvas-inner",
 						children: [
-							onBack ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: "ros-crumb-link",
-								onClick: onBack,
-								children: "← 返回"
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "/" })] }) : null,
-							onOpenJob && vm.jobId ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: "ros-crumb-link",
-								onClick: () => onOpenJob(vm.jobId),
-								children: vm.jobTitle
-							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: vm.jobTitle }),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "/" }),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: vm.stageLabel }),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "/" }),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "ros-crumb-cur",
-								children: vm.candidateName
-							})
-						]
-					})
-				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-					className: "ros-head-right",
-					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FactLabelsBar, { labels: vm.factLabels })
-				})]
-			}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: "ros-canvas-body",
-				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "ros-canvas-inner",
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "ros-doc-head",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: "ros-doc-name",
-								children: vm.candidateName
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "ros-doc-meta",
-								children: [
-									vm.jobTitle,
-									"（",
-									vm.jobCode,
-									"）· 档案号 ",
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "num",
-										children: vm.shortRef
-									}),
-									" · 标准",
-									" ",
-									vm.rubricVersionLabel
-								]
-							})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							actionFeedback ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-risk-note",
+								role: "status",
 								style: {
-									display: "flex",
-									flexDirection: "column",
-									alignItems: "flex-end",
-									gap: 6
+									borderLeftColor: actionFeedback.tone === "green" ? "var(--green)" : "var(--red)",
+									color: actionFeedback.tone === "green" ? "var(--green)" : "var(--red)",
+									background: actionFeedback.tone === "green" ? "var(--green-soft)" : "var(--red-soft)"
 								},
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(StatusLabel, {
-									text: vm.stageLabel,
-									tone: vm.isArchived ? "" : "iris"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "ros-sec-meta",
-									children: vm.lifecycleLabel
+								children: actionFeedback.text
+							}) : null,
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "ros-doc-head",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-doc-name",
+									children: vm.candidateName
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "ros-doc-meta",
+									children: [
+										vm.jobTitle,
+										"（",
+										vm.jobCode,
+										"）· 档案号 ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "num",
+											children: vm.shortRef
+										}),
+										" · 标准",
+										" ",
+										vm.rubricVersionLabel
+									]
+								})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: {
+										display: "flex",
+										flexDirection: "column",
+										alignItems: "flex-end",
+										gap: 6
+									},
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(StatusLabel, {
+										text: vm.stageLabel,
+										tone: vm.isArchived ? "" : "iris"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "ros-sec-meta",
+										children: vm.lifecycleLabel
+									})]
 								})]
-							})]
-						}),
-						vm.stageBlockedReason ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: "ros-risk-note",
-							children: vm.stageBlockedReason
-						}) : null,
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "ros-doc-block",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: "ros-sec-meta",
-								children: "当前状态与提炼"
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								style: {
-									fontSize: "14.5px",
-									lineHeight: 1.78,
-									color: "var(--ink)"
-								},
-								children: vm.summaryText
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "ros-doc-block",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "ros-sec-meta",
-								children: [
-									"岗位标准对照 · ",
-									vm.rubricVersionLabel,
-									"（点击联动原文）"
-								]
-							}), vm.criteria.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: vm.criteria.map((cr, idx) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: `ros-crit-item ${cr.key === activeCrit ? "active" : ""}`,
-								onClick: () => setActiveCrit(cr.key),
+							}),
+							vm.stageBlockedReason ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-risk-note",
+								children: vm.stageBlockedReason
+							}) : null,
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "ros-doc-block",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-sec-meta",
+									children: "当前状态与提炼"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									style: {
+										fontSize: "14.5px",
+										lineHeight: 1.78,
+										color: "var(--ink)"
+									},
+									children: vm.summaryText
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "ros-doc-block",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "ros-sec-meta",
+									children: [
+										"岗位标准对照 · ",
+										vm.rubricVersionLabel,
+										"（点击联动原文）"
+									]
+								}), vm.criteria.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: vm.criteria.map((cr, idx) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: `ros-crit-item ${cr.key === activeCrit ? "active" : ""}`,
+									onClick: () => setActiveCrit(cr.key),
+									role: "button",
+									tabIndex: 0,
+									onKeyDown: (e) => {
+										if (e.key === "Enter" || e.key === " ") {
+											e.preventDefault();
+											setActiveCrit(cr.key);
+										}
+									},
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										style: {
+											fontSize: "13.5px",
+											fontWeight: 500
+										},
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+												className: "num",
+												style: {
+													color: "var(--soft)",
+													marginRight: 8
+												},
+												children: ["0", idx + 1]
+											}),
+											cr.label,
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+												className: "ros-sec-meta",
+												style: { marginLeft: 8 },
+												children: [cr.kindLabel, cr.weightText ? ` · ${cr.weightText}` : ""]
+											})
+										]
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StatusLabel, {
+										text: cr.statusText,
+										tone: cr.level
+									})]
+								}, cr.key)) }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, {
+									title: "暂无岗位标准维度",
+									description: "该岗位尚未配置或锁定考核标准。"
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "ros-doc-block",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-sec-meta",
+									children: "逐轮面试进展（不求平均分）"
+								}), vm.rounds.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SequentialRoundRail, { rounds: vm.rounds }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-clean-list",
+									style: { borderTop: 0 },
+									children: vm.rounds.map((rd) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "ros-clean-row static",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: {
+												fontSize: "13.5px",
+												fontWeight: 600
+											},
+											children: [rd.roundLabel, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "ros-sec-meta num",
+												style: { marginLeft: 8 },
+												children: rd.scheduleText
+											})]
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: {
+												fontSize: "12.5px",
+												color: "var(--muted)",
+												marginTop: 2
+											},
+											children: [
+												rd.detailText,
+												" · ",
+												rd.scorecardsSummary,
+												" · ",
+												rd.transcriptStateLabel,
+												rd.overdueCount > 0 ? ` · ${rd.overdueCount} 份面评已超时` : ""
+											]
+										})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StatusLabel, {
+											text: rd.statusText,
+											tone: rd.statusTone === "done" ? "green" : rd.statusTone === "caution" ? "amber" : "iris"
+										})]
+									}, rd.id))
+								})] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, {
+									title: "尚未安排面试",
+									description: "当前还没有进入面试轮次。"
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "ros-doc-block",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: {
+										display: "flex",
+										gap: 16
+									},
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: `ros-text-link ${docTab === "resume" ? "active" : ""}`,
+											onClick: () => setDocTab("resume"),
+											children: "简历原文"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: `ros-text-link ${docTab === "transcript" ? "active" : ""}`,
+											onClick: () => setDocTab("transcript"),
+											children: "飞书妙记"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: `ros-text-link ${docTab === "original" ? "active" : ""}`,
+											onClick: () => setDocTab("original"),
+											children: "原件预览"
+										})
+									]
+								}), docTab === "resume" ? vm.hasResumeMaterial && vm.resumeSections.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: vm.resumeSections.map((sec) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-resume-group",
+									children: sec.title
+								}), sec.items.map((it) => {
+									lineNo += 1;
+									const noStr = lineNo < 10 ? `0${lineNo}` : String(lineNo);
+									return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: `ros-doc-line ${it.matchKey === activeCrit ? "active" : ""}`,
+										onClick: () => setActiveCrit(it.matchKey),
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "ros-doc-no num",
+											children: noStr
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [it.heading || it.period || it.pageLabel ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											className: "ros-exp-meta",
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "ros-exp-co",
+												children: it.heading || ""
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "ros-exp-time num",
+												children: it.period || it.pageLabel || ""
+											})]
+										}) : null, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: it.body })] })]
+									}, it.id);
+								})] }, sec.title)) }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, {
+									title: "还没有简历原件",
+									description: "当前申请尚未上传或解析出简历内容。"
+								}) : docTab === "transcript" ? vm.hasTranscript ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: vm.transcriptItems.map((tr, idx) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: `ros-doc-line ${tr.matchKey === activeCrit ? "active" : ""}`,
+									onClick: () => setExpandedTs(expandedTs === idx ? null : idx),
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "ros-doc-no num",
+										children: ["0", idx + 1]
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [tr.timestamp ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "ros-ts-badge num",
+										children: tr.timestamp
+									}) : null, tr.summary] }), tr.context && expandedTs === idx ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: "ros-jd-box",
+										style: {
+											marginTop: 8,
+											padding: "10px 12px"
+										},
+										children: tr.context
+									}) : null] })]
+								}, tr.id)) }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, {
+									title: "还没有转录",
+									description: "面试完成后将自动同步飞书妙记录音转写。"
+								}) : vm.hasResumeMaterial && vm.materialContentUrl ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-jd-box",
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											justifyContent: "space-between",
+											alignItems: "center",
+											gap: 12
+										},
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: vm.materialFileName || "简历原件" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("a", {
+											href: vm.materialContentUrl,
+											target: "_blank",
+											rel: "noreferrer",
+											className: "ros-text-link active",
+											children: "在新标签页查看原件 ↗"
+										})]
+									})
+								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, {
+									title: "还没有简历原件",
+									description: "当前申请尚未关联可预览的二进制原件。"
+								})]
+							}),
+							vm.screeningBasis.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "ros-doc-block",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-sec-meta",
+									children: "初筛依据"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-clean-list",
+									children: vm.screeningBasis.map((b, idx) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "ros-clean-row static",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: {
+												fontSize: "13px",
+												fontWeight: 500,
+												color: "var(--ink)"
+											},
+											children: b.label
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: {
+												fontSize: "12.5px",
+												color: "var(--muted)"
+											},
+											children: b.detail
+										})]
+									}, `${b.label}-${idx}`))
+								})]
+							}) : null,
+							vm.unavailableActions.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-risk-note",
+								children: vm.unavailableActions.map((act) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [
+									"「",
+									act.label,
+									"」暂不可执行：",
+									act.reason || "当前阶段或条件尚未满足"
+								] }, act.key))
+							}) : null,
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "ros-auto-toggle",
+								onClick: () => setTimelineOpen((v) => !v),
 								role: "button",
 								tabIndex: 0,
 								onKeyDown: (e) => {
 									if (e.key === "Enter" || e.key === " ") {
 										e.preventDefault();
-										setActiveCrit(cr.key);
+										setTimelineOpen((v) => !v);
 									}
 								},
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-									style: {
-										fontSize: "13.5px",
-										fontWeight: 500
-									},
-									children: [
-										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-											className: "num",
-											style: {
-												color: "var(--soft)",
-												marginRight: 8
-											},
-											children: ["0", idx + 1]
-										}),
-										cr.label,
-										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-											className: "ros-sec-meta",
-											style: { marginLeft: 8 },
-											children: [cr.kindLabel, cr.weightText ? ` · ${cr.weightText}` : ""]
-										})
-									]
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StatusLabel, {
-									text: cr.statusText,
-									tone: cr.level
-								})]
-							}, cr.key)) }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, {
-								title: "暂无岗位标准维度",
-								description: "该岗位尚未配置或锁定考核标准。"
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "ros-doc-block",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: "ros-sec-meta",
-								children: "逐轮面试进展（不求平均分）"
-							}), vm.rounds.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SequentialRoundRail, { rounds: vm.rounds }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
+									"全链路动态留痕（",
+									vm.timeline.length,
+									"）"
+								] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: timelineOpen ? "收起 ▴" : "展开 ▾" })]
+							}), timelineOpen ? vm.timeline.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: "ros-clean-list",
-								style: { borderTop: 0 },
-								children: vm.rounds.map((rd) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								children: vm.timeline.map((ev) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: "ros-clean-row static",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-										style: {
-											fontSize: "13.5px",
-											fontWeight: 600
-										},
-										children: [rd.roundLabel, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "ros-sec-meta num",
-											style: { marginLeft: 8 },
-											children: rd.scheduleText
-										})]
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: { padding: "9px 4px" },
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										style: {
 											fontSize: "12.5px",
-											color: "var(--muted)",
-											marginTop: 2
+											color: "var(--text)"
 										},
-										children: [
-											rd.detailText,
-											" · ",
-											rd.scorecardsSummary,
-											" · ",
-											rd.transcriptStateLabel,
-											rd.overdueCount > 0 ? ` · ${rd.overdueCount} 份面评已超时` : ""
-										]
-									})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StatusLabel, {
-										text: rd.statusText,
-										tone: rd.statusTone === "done" ? "green" : rd.statusTone === "caution" ? "amber" : "iris"
+										children: ev.label
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "ros-sec-meta num",
+										children: ev.timeText
 									})]
-								}, rd.id))
-							})] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, {
-								title: "尚未安排面试",
-								description: "当前还没有进入面试轮次。"
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "ros-doc-block",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								style: {
-									display: "flex",
-									gap: 16
-								},
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: `ros-text-link ${docTab === "resume" ? "active" : ""}`,
-										onClick: () => setDocTab("resume"),
-										children: "简历原文"
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: `ros-text-link ${docTab === "transcript" ? "active" : ""}`,
-										onClick: () => setDocTab("transcript"),
-										children: "飞书妙记"
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: `ros-text-link ${docTab === "original" ? "active" : ""}`,
-										onClick: () => setDocTab("original"),
-										children: "原件预览"
-									})
-								]
-							}), docTab === "resume" ? vm.hasResumeMaterial && vm.resumeSections.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: vm.resumeSections.map((sec) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: "ros-resume-group",
-								children: sec.title
-							}), sec.items.map((it) => {
-								lineNo += 1;
-								const noStr = lineNo < 10 ? `0${lineNo}` : String(lineNo);
-								return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: `ros-doc-line ${it.matchKey === activeCrit ? "active" : ""}`,
-									onClick: () => setActiveCrit(it.matchKey),
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "ros-doc-no num",
-										children: noStr
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [it.heading || it.period || it.pageLabel ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-										className: "ros-exp-meta",
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "ros-exp-co",
-											children: it.heading || ""
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "ros-exp-time num",
-											children: it.period || it.pageLabel || ""
-										})]
-									}) : null, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: it.body })] })]
-								}, it.id);
-							})] }, sec.title)) }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, {
-								title: "还没有简历原件",
-								description: "当前申请尚未上传或解析出简历内容。"
-							}) : docTab === "transcript" ? vm.hasTranscript ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: vm.transcriptItems.map((tr, idx) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: `ros-doc-line ${tr.matchKey === activeCrit ? "active" : ""}`,
-								onClick: () => setExpandedTs(expandedTs === idx ? null : idx),
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-									className: "ros-doc-no num",
-									children: ["0", idx + 1]
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [tr.timestamp ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "ros-ts-badge num",
-									children: tr.timestamp
-								}) : null, tr.summary] }), tr.context && expandedTs === idx ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-									className: "ros-jd-box",
-									style: {
-										marginTop: 8,
-										padding: "10px 12px"
-									},
-									children: tr.context
-								}) : null] })]
-							}, tr.id)) }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, {
-								title: "还没有转录",
-								description: "面试完成后将自动同步飞书妙记录音转写。"
-							}) : vm.hasResumeMaterial && vm.materialContentUrl ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: "ros-jd-box",
-								children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								}, ev.id))
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, { title: "暂无动态留痕" }) : null] }),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "ros-doc-foot",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									style: {
 										display: "flex",
-										justifyContent: "space-between",
 										alignItems: "center",
-										gap: 12
+										gap: 16,
+										flexWrap: "wrap"
 									},
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: vm.materialFileName || "简历原件" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("a", {
-										href: vm.materialContentUrl,
-										target: "_blank",
-										rel: "noreferrer",
-										className: "ros-text-link active",
-										children: "在新标签页查看原件 ↗"
-									})]
-								})
-							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, {
-								title: "还没有简历原件",
-								description: "当前申请尚未关联可预览的二进制原件。"
-							})]
-						}),
-						vm.screeningBasis.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "ros-doc-block",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: "ros-sec-meta",
-								children: "初筛依据"
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: "ros-clean-list",
-								children: vm.screeningBasis.map((b, idx) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "ros-clean-row static",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										style: {
-											fontSize: "13px",
-											fontWeight: 500,
-											color: "var(--ink)"
-										},
-										children: b.label
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										style: {
-											fontSize: "12.5px",
-											color: "var(--muted)"
-										},
-										children: b.detail
-									})]
-								}, `${b.label}-${idx}`))
-							})]
-						}) : null,
-						vm.unavailableActions.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: "ros-risk-note",
-							children: vm.unavailableActions.map((act) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [
-								"「",
-								act.label,
-								"」暂不可执行：",
-								act.reason || "当前阶段或条件尚未满足"
-							] }, act.key))
-						}) : null,
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "ros-auto-toggle",
-							onClick: () => setTimelineOpen((v) => !v),
-							role: "button",
-							tabIndex: 0,
-							onKeyDown: (e) => {
-								if (e.key === "Enter" || e.key === " ") {
-									e.preventDefault();
-									setTimelineOpen((v) => !v);
-								}
-							},
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
-								"全链路动态留痕（",
-								vm.timeline.length,
-								"）"
-							] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: timelineOpen ? "收起 ▴" : "展开 ▾" })]
-						}), timelineOpen ? vm.timeline.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: "ros-clean-list",
-							children: vm.timeline.map((ev) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "ros-clean-row static",
-								style: { padding: "9px 4px" },
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									style: {
-										fontSize: "12.5px",
-										color: "var(--text)"
-									},
-									children: ev.label
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "ros-text-link",
+											"data-testid": "canvas-action-pin",
+											onClick: () => openActionModal("pin"),
+											children: "置顶约束"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "ros-text-link",
+											"data-testid": "canvas-action-handoff",
+											onClick: () => openActionModal("handoff"),
+											children: "下一轮交接"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "ros-text-link",
+											"data-testid": "canvas-action-transfer",
+											onClick: () => openActionModal("transfer"),
+											children: "跨岗调剂"
+										})
+									]
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "ros-sec-meta num",
-									children: ev.timeText
+									className: "ros-sec-meta",
+									children: "高风险写操作均需人工原话确认"
 								})]
-							}, ev.id))
-						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, { title: "暂无动态留痕" }) : null] })
-					]
-				})
-			})] });
+							})
+						]
+					})
+				}),
+				modalKind ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: "ros-modal-bg",
+					role: "dialog",
+					"aria-modal": "true",
+					onClick: (e) => {
+						if (e.target === e.currentTarget) closeActionModal();
+					},
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "ros-modal",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								style: {
+									fontSize: "17px",
+									fontWeight: 650
+								},
+								children: modalKind === "pin" ? `为 ${vm.candidateName} 置顶约束` : modalKind === "handoff" ? `为 ${vm.candidateName} 留下一轮交接追问` : `跨岗调剂 · ${vm.candidateName}`
+							}),
+							modalKind === "transfer" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: "ros-m-field",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "目标岗位 ID" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									value: targetJobId,
+									onChange: (e) => setTargetJobId(e.target.value),
+									placeholder: "输入目标岗位 ID（原岗位档案将完整保留）"
+								})]
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: "ros-m-field",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: modalKind === "pin" ? "约束内容（≤500 字）" : "给下一轮面试官的追问（≤500 字）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+									rows: 3,
+									maxLength: 500,
+									value: inputText,
+									onChange: (e) => setInputText(e.target.value),
+									placeholder: modalKind === "pin" ? "例如：字节 Offer 周五截止 · 期望 45k" : "例如：重点追问多 Agent 并发状态回滚与幂等处理深度"
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: "ros-m-field",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "确认原话（留痕必填）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									value: confirmText,
+									onChange: (e) => setConfirmText(e.target.value),
+									placeholder: "输入一句确认原话"
+								})]
+							}),
+							actionFeedback && actionFeedback.tone === "red" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-risk-note",
+								style: {
+									borderLeftColor: "var(--red)",
+									color: "var(--red)"
+								},
+								children: actionFeedback.text
+							}) : null,
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: {
+									display: "flex",
+									justifyContent: "flex-end",
+									gap: 10
+								},
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "ros-btn",
+									disabled: submitting,
+									onClick: closeActionModal,
+									children: "取消"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "ros-btn dark",
+									disabled: submitting,
+									"data-testid": "canvas-modal-submit",
+									onClick: () => void handleModalSubmit(),
+									children: submitting ? "处理中…" : "确认提交"
+								})]
+							})
+						]
+					})
+				}) : null
+			] });
 		}
 		// src/client/canvas/JobPage.tsx
 		const STAGE_FILTERS = [
@@ -1079,12 +1429,20 @@ window.__ModuleLoader__.load({
 			"终审与 Offer",
 			"已结束"
 		];
-		function JobPage({ jobId, onBack, onSelectApplication, fetcher }) {
+		function JobPage({ jobId, onBack, onSelectApplication, onSelectJob, onUploadStarted, refreshNonce = 0, fetcher }) {
 			const [vm, setVm] = (0, react.useState)(null);
 			const [loading, setLoading] = (0, react.useState)(true);
 			const [error, setError] = (0, react.useState)(null);
 			const [tab, setTab] = (0, react.useState)("pipeline");
 			const [stageFilter, setStageFilter] = (0, react.useState)("全部");
+			const fileInputRef = (0, react.useRef)(null);
+			const [uploading, setUploading] = (0, react.useState)(false);
+			const [createOpen, setCreateOpen] = (0, react.useState)(false);
+			const [newJobTitle, setNewJobTitle] = (0, react.useState)("");
+			const [newJobDept, setNewJobDept] = (0, react.useState)("");
+			const [newJobConfirm, setNewJobConfirm] = (0, react.useState)("");
+			const [creating, setCreating] = (0, react.useState)(false);
+			const [feedback, setFeedback] = (0, react.useState)(null);
 			const load = (0, react.useCallback)(async (cancelledRef) => {
 				setLoading(true);
 				setError(null);
@@ -1092,8 +1450,6 @@ window.__ModuleLoader__.load({
 					const raw = await fetcher(`/recruitment/api/recruiting/jobs/${encodeURIComponent(jobId)}`);
 					if (cancelledRef?.current) return;
 					setVm(normalizeJobDetail$1(raw));
-					setTab("pipeline");
-					setStageFilter("全部");
 				} catch {
 					if (cancelledRef?.current) return;
 					setError("暂时没能读取到该岗位的详细资料，请稍后重试。");
@@ -1107,7 +1463,71 @@ window.__ModuleLoader__.load({
 				return () => {
 					cancelledRef.current = true;
 				};
-			}, [load]);
+			}, [load, refreshNonce]);
+			const handleFileChange = async (e) => {
+				const file = e.target.files?.[0];
+				e.target.value = "";
+				if (!file || !vm || uploading) return;
+				setUploading(true);
+				setFeedback(null);
+				try {
+					const started = await uploadResumeRaw(file, vm.jobId);
+					onUploadStarted?.(started);
+				} catch (err) {
+					const msg = err?.userMessage || "简历上传未能提交，请稍后重试。";
+					setFeedback({
+						tone: "red",
+						text: msg
+					});
+				} finally {
+					setUploading(false);
+				}
+			};
+			const handleCreateJob = async () => {
+				if (creating) return;
+				const title = newJobTitle.trim();
+				const confirmationText = newJobConfirm.trim();
+				if (!title) {
+					setFeedback({
+						tone: "red",
+						text: "请先填写岗位名称。"
+					});
+					return;
+				}
+				if (!confirmationText) {
+					setFeedback({
+						tone: "red",
+						text: "请填写确认原话后再创建岗位。"
+					});
+					return;
+				}
+				setCreating(true);
+				setFeedback(null);
+				try {
+					const res = await postJobCreate$1({
+						title,
+						dept: newJobDept.trim() || void 0,
+						confirmationText
+					});
+					setCreateOpen(false);
+					setNewJobTitle("");
+					setNewJobDept("");
+					setNewJobConfirm("");
+					setFeedback({
+						tone: "green",
+						text: `已创建岗位「${title}」（标准待审批），可继续完善岗位标准。`
+					});
+					if (res.job_id && onSelectJob) onSelectJob(res.job_id);
+				} catch (err) {
+					const msg = err?.userMessage || "新建岗位未能完成，请稍后重试。";
+					setFeedback({
+						tone: "red",
+						text: msg
+					});
+				} finally {
+					setCreating(false);
+				}
+			};
 			if (loading) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("header", {
 				className: "ros-canvas-head",
 				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -1154,259 +1574,334 @@ window.__ModuleLoader__.load({
 				})
 			})] });
 			const filteredApps = vm.applications.filter((app) => stageFilter === "全部" || app.filterBucket === stageFilter);
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-				className: "ros-canvas-head",
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "ros-head-left",
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+					className: "ros-canvas-head",
 					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: "ros-crumb-bar",
-						children: [onBack ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "ros-crumb-link",
-							onClick: onBack,
-							children: "← 返回"
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "/" })] }) : null, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "ros-crumb-cur",
-							children: vm.title
-						})]
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: "ros-tabs",
-						style: { marginLeft: 8 },
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: `ros-tab ${tab === "pipeline" ? "active" : ""}`,
-							onClick: () => setTab("pipeline"),
-							children: "候选人漏斗"
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-							type: "button",
-							className: `ros-tab ${tab === "rubric" ? "active" : ""}`,
-							onClick: () => setTab("rubric"),
-							children: ["岗位标准 ", vm.rubricVersionLabel]
-						})]
-					})]
-				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-					className: "ros-head-right",
-					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FactLabelsBar, { labels: vm.factLabels })
-				})]
-			}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: "ros-canvas-body",
-				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "ros-canvas-inner",
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "ros-doc-head",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: "ros-doc-name",
+						className: "ros-head-left",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "ros-crumb-bar",
+							children: [onBack ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "ros-crumb-link",
+								onClick: onBack,
+								children: "← 返回"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "/" })] }) : null, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "ros-crumb-cur",
 								children: vm.title
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "ros-doc-meta",
-								children: [
-									vm.departmentName,
-									" · 岗位编号 ",
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "num",
-										children: vm.jobCode
-									}),
-									" · 在途",
-									" ",
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "num",
-										children: vm.activeApplications
-									}),
-									" / 总计",
-									" ",
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "num",
-										children: vm.totalApplications
-									}),
-									" 人"
-								]
-							})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StatusLabel, {
-								text: vm.statusLabel,
-								tone: vm.statusLabel === "招聘中" ? "green" : ""
 							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(StageTrack, { nodes: vm.stageTrack }),
-						vm.nextStepLabel ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: "ros-risk-note",
-							children: vm.nextStepLabel
-						}) : null,
-						tab === "pipeline" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							style: {
-								display: "flex",
-								alignItems: "center",
-								justifyContent: "space-between",
-								marginBottom: 16,
-								flexWrap: "wrap",
-								gap: 12
-							},
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "ros-tabs",
+							style: { marginLeft: 8 },
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: `ros-tab ${tab === "pipeline" ? "active" : ""}`,
+								onClick: () => setTab("pipeline"),
+								children: "候选人漏斗"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+								type: "button",
+								className: `ros-tab ${tab === "rubric" ? "active" : ""}`,
+								onClick: () => setTab("rubric"),
+								children: ["岗位标准 ", vm.rubricVersionLabel]
+							})]
+						})]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "ros-head-right",
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FactLabelsBar, { labels: vm.factLabels })
+					})]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: "ros-canvas-body",
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "ros-canvas-inner",
+						children: [
+							feedback ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-risk-note",
+								role: "status",
 								style: {
-									display: "flex",
-									gap: 16,
-									flexWrap: "wrap"
+									borderLeftColor: feedback.tone === "green" ? "var(--green)" : "var(--red)",
+									color: feedback.tone === "green" ? "var(--green)" : "var(--red)",
+									background: feedback.tone === "green" ? "var(--green-soft)" : "var(--red-soft)"
 								},
-								children: STAGE_FILTERS.map((f) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									className: `ros-text-link ${stageFilter === f ? "active" : ""}`,
-									onClick: () => setStageFilter(f),
-									children: f
-								}, f))
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-								className: "ros-sec-meta num",
-								children: [filteredApps.length, " 人"]
-							})]
-						}), filteredApps.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: "ros-clean-list",
-							children: filteredApps.map((app) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "ros-clean-row",
-								onClick: () => onSelectApplication?.(app.applicationId),
-								role: "button",
-								tabIndex: 0,
-								onKeyDown: (e) => {
-									if (e.key === "Enter" || e.key === " ") {
-										e.preventDefault();
-										onSelectApplication?.(app.applicationId);
-									}
-								},
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "ros-cr-left",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "ros-mono",
-										children: app.candidateName.slice(0, 1)
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										className: "ros-cr-name",
-										children: [app.candidateName, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "ros-cr-role",
-											children: app.metaText
-										})]
-									})]
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StatusLabel, {
-									text: app.stageLabel,
-									tone: app.statusTone
-								})]
-							}, app.applicationId))
-						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, {
-							title: "当前阶段暂无候选人",
-							description: "切换上方筛选条件可查看其他阶段候选人。"
-						})] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "ros-sec-head",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-								className: "ros-sec-title",
-								children: [
-									"考核维度与标准 ",
-									vm.rubricVersionLabel,
-									"（",
-									vm.rubricApproved ? "已锁定" : "待确认",
-									"）"
-								]
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "ros-sec-meta",
-								children: vm.departmentName
-							})]
-						}), vm.rubricDimensions.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: "ros-clean-list",
-							children: vm.rubricDimensions.map((dim, idx) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "ros-clean-row static",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-									style: {
-										fontSize: "14px",
-										color: "var(--ink)"
-									},
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										className: "num",
-										style: {
-											color: "var(--soft)",
-											marginRight: 10
-										},
-										children: ["0", idx + 1]
-									}), dim.label]
+								children: feedback.text
+							}) : null,
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "ros-doc-head",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-doc-name",
+									children: vm.title
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									style: {
-										fontSize: "12px",
-										color: "var(--muted)",
-										marginTop: 2,
-										marginLeft: 26
-									},
+									className: "ros-doc-meta",
 									children: [
-										dim.kindLabel,
-										dim.weightText ? ` · ${dim.weightText}` : "",
-										dim.question ? ` · 建议核实：${dim.question}` : ""
+										vm.departmentName,
+										" · 岗位编号 ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "num",
+											children: vm.jobCode
+										}),
+										" · 在途",
+										" ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "num",
+											children: vm.activeApplications
+										}),
+										" / 总计",
+										" ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "num",
+											children: vm.totalApplications
+										}),
+										" 人"
 									]
 								})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StatusLabel, {
-									text: vm.rubricApproved ? "生效中" : "草稿",
-									tone: vm.rubricApproved ? "green" : "amber"
+									text: vm.statusLabel,
+									tone: vm.statusLabel === "招聘中" ? "green" : ""
 								})]
-							}, dim.key))
-						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, { title: "尚未配置考核维度" })] }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "ros-sec-head",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "ros-sec-title",
-								children: "岗位原始信息（完整 JD）"
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "ros-sec-meta num",
-								children: vm.jobCode
-							})]
-						}), vm.descriptionMd || vm.requirementsMd ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "ros-jd-box",
-							children: [vm.descriptionMd ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: "ros-jd-sec-t",
-								children: "岗位职责"
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: vm.descriptionMd })] }) : null, vm.requirementsMd ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: "ros-jd-sec-t",
-								children: "任职要求"
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: vm.requirementsMd })] }) : null]
-						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, { title: "暂无岗位原始描述" })] })] })
-					]
-				})
-			})] });
-		}
-		// src/client/canvas/canvas-actions.ts
-		/**
-		* Polls GET /recruitment/api/tasks/status?task_id=<uuid>.
-		* Never exposes raw error_code; maps failures to human-readable errorSummary.
-		*/
-		async function fetchTaskStatus(taskId) {
-			const res = await fetch(`/recruitment/api/tasks/status?task_id=${encodeURIComponent(taskId)}`, {
-				method: "GET",
-				credentials: "same-origin",
-				headers: {
-					"x-recruitment-request": "1",
-					Accept: "application/json"
-				}
-			});
-			const data = await res.json().catch(() => ({}));
-			if (!res.ok) return {
-				taskId,
-				status: "FAILED",
-				errorSummary: "暂时无法查询解析进度，请稍后刷新查看"
-			};
-			const task = data.task && typeof data.task === "object" ? data.task : data;
-			const st = String(task.status || "RUNNING").toUpperCase();
-			if (st === "COMPLETED" || st === "SUCCEEDED" || st === "DONE") return {
-				taskId,
-				status: "COMPLETED",
-				applicationId: typeof task.application_id === "string" ? task.application_id : void 0,
-				candidateName: typeof task.candidate_name === "string" ? task.candidate_name : void 0
-			};
-			if (st === "FAILED" || st === "ERROR" || st === "CANCELLED") return {
-				taskId,
-				status: "FAILED",
-				errorSummary: typeof task.error_summary === "string" && task.error_summary.trim() ? task.error_summary : "这份简历未能成功解析，请检查文件是否损坏或重新上传"
-			};
-			return {
-				taskId,
-				status: "RUNNING"
-			};
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(StageTrack, { nodes: vm.stageTrack }),
+							vm.nextStepLabel ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-risk-note",
+								children: vm.nextStepLabel
+							}) : null,
+							tab === "pipeline" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: {
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "space-between",
+									marginBottom: 16,
+									flexWrap: "wrap",
+									gap: 12
+								},
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									style: {
+										display: "flex",
+										gap: 16,
+										flexWrap: "wrap"
+									},
+									children: STAGE_FILTERS.map((f) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: `ros-text-link ${stageFilter === f ? "active" : ""}`,
+										onClick: () => setStageFilter(f),
+										children: f
+									}, f))
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: {
+										display: "flex",
+										alignItems: "center",
+										gap: 14
+									},
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											ref: fileInputRef,
+											type: "file",
+											accept: ".pdf,.doc,.docx,.rtf,.txt",
+											style: { display: "none" },
+											onChange: (e) => void handleFileChange(e)
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "ros-text-link",
+											disabled: uploading,
+											"data-testid": "canvas-action-upload",
+											onClick: () => fileInputRef.current?.click(),
+											children: uploading ? "上传中…" : "导入简历"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "ros-text-link",
+											"data-testid": "canvas-action-new-job",
+											onClick: () => {
+												setFeedback(null);
+												setNewJobConfirm("确认新建招聘岗位");
+												setCreateOpen(true);
+											},
+											children: "新建岗位"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+											className: "ros-sec-meta num",
+											children: [filteredApps.length, " 人"]
+										})
+									]
+								})]
+							}), filteredApps.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-clean-list",
+								children: filteredApps.map((app) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "ros-clean-row",
+									onClick: () => onSelectApplication?.(app.applicationId),
+									role: "button",
+									tabIndex: 0,
+									onKeyDown: (e) => {
+										if (e.key === "Enter" || e.key === " ") {
+											e.preventDefault();
+											onSelectApplication?.(app.applicationId);
+										}
+									},
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "ros-cr-left",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "ros-mono",
+											children: app.candidateName.slice(0, 1)
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+											className: "ros-cr-name",
+											children: [app.candidateName, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "ros-cr-role",
+												children: app.metaText
+											})]
+										})]
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StatusLabel, {
+										text: app.stageLabel,
+										tone: app.statusTone
+									})]
+								}, app.applicationId))
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, {
+								title: "当前阶段暂无候选人",
+								description: "切换上方筛选条件可查看其他阶段候选人。"
+							})] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "ros-sec-head",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: "ros-sec-title",
+									children: [
+										"考核维度与标准 ",
+										vm.rubricVersionLabel,
+										"（",
+										vm.rubricApproved ? "已锁定" : "待确认",
+										"）"
+									]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "ros-sec-meta",
+									children: vm.departmentName
+								})]
+							}), vm.rubricDimensions.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-clean-list",
+								children: vm.rubricDimensions.map((dim, idx) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "ros-clean-row static",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										style: {
+											fontSize: "14px",
+											color: "var(--ink)"
+										},
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+											className: "num",
+											style: {
+												color: "var(--soft)",
+												marginRight: 10
+											},
+											children: ["0", idx + 1]
+										}), dim.label]
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											fontSize: "12px",
+											color: "var(--muted)",
+											marginTop: 2,
+											marginLeft: 26
+										},
+										children: [
+											dim.kindLabel,
+											dim.weightText ? ` · ${dim.weightText}` : "",
+											dim.question ? ` · 建议核实：${dim.question}` : ""
+										]
+									})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StatusLabel, {
+										text: vm.rubricApproved ? "生效中" : "草稿",
+										tone: vm.rubricApproved ? "green" : "amber"
+									})]
+								}, dim.key))
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, { title: "尚未配置考核维度" })] }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "ros-sec-head",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "ros-sec-title",
+									children: "岗位原始信息（完整 JD）"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "ros-sec-meta num",
+									children: vm.jobCode
+								})]
+							}), vm.descriptionMd || vm.requirementsMd ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "ros-jd-box",
+								children: [vm.descriptionMd ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-jd-sec-t",
+									children: "岗位职责"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: vm.descriptionMd })] }) : null, vm.requirementsMd ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-jd-sec-t",
+									children: "任职要求"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: vm.requirementsMd })] }) : null]
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, { title: "暂无岗位原始描述" })] })] })
+						]
+					})
+				}),
+				createOpen ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: "ros-modal-bg",
+					role: "dialog",
+					"aria-modal": "true",
+					onClick: (e) => {
+						if (e.target === e.currentTarget && !creating) setCreateOpen(false);
+					},
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "ros-modal",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								style: {
+									fontSize: "17px",
+									fontWeight: 650
+								},
+								children: "新建招聘岗位"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-jd-box",
+								style: { padding: "12px 14px" },
+								children: "新建后岗位标准将处于待审批状态；HC 配额由岗位需求单维护。"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: "ros-m-field",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "岗位名称" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									value: newJobTitle,
+									onChange: (e) => setNewJobTitle(e.target.value),
+									placeholder: "例如：资深后端工程师"
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: "ros-m-field",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "所属部门（选填）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									value: newJobDept,
+									onChange: (e) => setNewJobDept(e.target.value),
+									placeholder: "例如：研发中心"
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: "ros-m-field",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "确认原话（留痕必填）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									value: newJobConfirm,
+									onChange: (e) => setNewJobConfirm(e.target.value),
+									placeholder: "输入一句确认原话"
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: {
+									display: "flex",
+									justifyContent: "flex-end",
+									gap: 10
+								},
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "ros-btn",
+									disabled: creating,
+									onClick: () => setCreateOpen(false),
+									children: "取消"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "ros-btn dark",
+									disabled: creating,
+									"data-testid": "canvas-create-job-submit",
+									onClick: () => void handleCreateJob(),
+									children: creating ? "处理中…" : "确认创建"
+								})]
+							})
+						]
+					})
+				}) : null
+			] });
 		}
 		// src/client/canvas/canvas-styles.ts
-		const CANVAS_CSS = "/*\n * Recruitment OS v4 · Right-Hand Canvas Styles\n * Design tokens copied verbatim from design/v4/contracts/design-tokens.md.\n * Scoped under .ros-canvas to avoid colliding with DSH host styles.\n */\n\n.ros-canvas {\n  --rail: #F3F2EE;\n  --paper: #F9F8F5;\n  --surface: #FFFFFF;\n  --subtle: #F3F2EE;\n  --hover: #EAE8E2;\n  --ink: #191918;\n  --text: #42423F;\n  --muted: #787772;\n  --soft: #A6A59E;\n  --line: rgba(25, 25, 24, .08);\n  --line-soft: rgba(25, 25, 24, .05);\n  --iris: #5B5BD6;\n  --iris-soft: rgba(91, 91, 214, .09);\n  --green: #18794E;\n  --green-soft: rgba(24, 121, 78, .09);\n  --amber: #AD5700;\n  --amber-soft: rgba(173, 87, 0, .09);\n  --red: #CD2B31;\n  --red-soft: rgba(205, 43, 49, .08);\n  --shadow-card: 0 1px 2px rgba(25, 25, 24, .03), 0 10px 30px -14px rgba(25, 25, 24, .07);\n  --shadow-modal: 0 28px 72px -18px rgba(25, 25, 24, .24);\n\n  display: flex;\n  flex-direction: column;\n  height: 100%;\n  min-height: 0;\n  overflow: hidden;\n  background: var(--surface);\n  color: var(--ink);\n  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif;\n  font-size: 14px;\n  line-height: 1.55;\n  -webkit-font-smoothing: antialiased;\n}\n\n[data-theme=\"dark\"] .ros-canvas,\n.ros-canvas[data-theme=\"dark\"] {\n  --rail: #10100F;\n  --paper: #141413;\n  --surface: #1A1A19;\n  --subtle: #232321;\n  --hover: #2B2B28;\n  --ink: #F3F2EE;\n  --text: #D5D4CE;\n  --muted: #9A9992;\n  --soft: #6F6E68;\n  --line: rgba(243, 242, 238, .09);\n  --line-soft: rgba(243, 242, 238, .055);\n  --iris: #8484F5;\n  --iris-soft: rgba(132, 132, 245, .15);\n  --green: #3DD68C;\n  --green-soft: rgba(61, 214, 140, .13);\n  --amber: #F5A524;\n  --amber-soft: rgba(245, 165, 36, .14);\n  --red: #F87171;\n  --red-soft: rgba(248, 113, 113, .14);\n  --shadow-card: 0 2px 10px rgba(0, 0, 0, .35);\n  --shadow-modal: 0 28px 72px -18px rgba(0, 0, 0, .65);\n}\n\n.ros-canvas *,\n.ros-canvas *::before,\n.ros-canvas *::after {\n  box-sizing: border-box;\n}\n\n.ros-canvas button {\n  font: inherit;\n  color: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n}\n\n.ros-canvas .num {\n  font-variant-numeric: tabular-nums;\n}\n\n@keyframes rosFadeIn {\n  from { opacity: 0; transform: translateY(4px); }\n  to { opacity: 1; transform: none; }\n}\n\n@keyframes rosOrbit {\n  to { transform: rotate(360deg); }\n}\n\n@keyframes rosPulseDot {\n  0%, 100% { opacity: .3; transform: scale(.85); }\n  50% { opacity: 1; transform: scale(1.1); }\n}\n\n/* Contextual Top Bar (56px visual horizon) */\n.ros-canvas-head {\n  height: 56px;\n  padding: 0 36px;\n  border-bottom: 1px solid var(--line-soft);\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 14px;\n  flex: none;\n}\n\n.ros-head-left {\n  display: flex;\n  align-items: center;\n  gap: 16px;\n  min-width: 0;\n}\n\n.ros-head-right {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  font-size: 12px;\n  color: var(--muted);\n  flex: none;\n}\n\n.ros-crumb-bar {\n  display: flex;\n  align-items: center;\n  gap: 7px;\n  font-size: 13px;\n  color: var(--muted);\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.ros-crumb-link {\n  color: var(--muted);\n  font-size: 13px;\n  transition: color .12s;\n}\n\n.ros-crumb-link:hover {\n  color: var(--ink);\n}\n\n.ros-crumb-cur {\n  color: var(--ink);\n  font-weight: 600;\n}\n\n.ros-tabs {\n  display: inline-flex;\n  gap: 22px;\n}\n\n.ros-tab {\n  font-size: 13px;\n  font-weight: 500;\n  color: var(--muted);\n  padding: 17px 0;\n  position: relative;\n  transition: color .14s;\n  white-space: nowrap;\n}\n\n.ros-tab:hover {\n  color: var(--ink);\n}\n\n.ros-tab.active {\n  color: var(--ink);\n  font-weight: 600;\n}\n\n.ros-tab.active::after {\n  content: '';\n  position: absolute;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  height: 2px;\n  background: var(--ink);\n  border-radius: 2px;\n}\n\n/* Scrollable Reading Body */\n.ros-canvas-body {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  padding: 34px 48px 72px;\n}\n\n.ros-canvas-inner {\n  max-width: 820px;\n  margin: 0 auto;\n  display: flex;\n  flex-direction: column;\n  gap: 32px;\n  animation: rosFadeIn .2s ease-out;\n}\n\n/* Shared Editorial Typography */\n.ros-sec-head {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 12px;\n  margin-bottom: 14px;\n  flex-wrap: wrap;\n}\n\n.ros-sec-title {\n  font-size: 15px;\n  font-weight: 650;\n  letter-spacing: -.015em;\n  color: var(--ink);\n}\n\n.ros-sec-meta {\n  font-size: 12px;\n  color: var(--soft);\n}\n\n.ros-text-link {\n  font-size: 12.5px;\n  color: var(--muted);\n  transition: color .12s;\n}\n\n.ros-text-link:hover {\n  color: var(--ink);\n}\n\n.ros-text-link.active {\n  color: var(--ink);\n  font-weight: 600;\n}\n\n/* External Fact Labels (LIVE/FIXTURE, EVENT/MANUAL, CONNECTED/...) */\n.ros-fact-bar {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  flex-wrap: wrap;\n}\n\n.ros-fact-chip {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  padding: 2px 8px;\n  border-radius: 99px;\n  font-size: 11px;\n  font-weight: 500;\n  background: var(--subtle);\n  color: var(--muted);\n}\n\n.ros-fact-chip.green { background: var(--green-soft); color: var(--green); }\n.ros-fact-chip.amber { background: var(--amber-soft); color: var(--amber); }\n.ros-fact-chip.red { background: var(--red-soft); color: var(--red); }\n\n/* Status Text */\n.ros-status {\n  font-size: 12.5px;\n  font-weight: 500;\n  color: var(--muted);\n  white-space: nowrap;\n}\n.ros-status.red { color: var(--red); }\n.ros-status.amber { color: var(--amber); }\n.ros-status.iris { color: var(--iris); }\n.ros-status.green { color: var(--green); }\n\n/* 6-Stage Horizontal Breathing Progress Track */\n.ros-stage-track {\n  display: grid;\n  grid-template-columns: repeat(6, 1fr);\n  align-items: center;\n  padding: 8px 0;\n}\n\n.ros-st-node {\n  position: relative;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 6px;\n}\n\n.ros-st-node:not(:last-child)::after {\n  content: '';\n  position: absolute;\n  top: 9px;\n  left: calc(50% + 10px);\n  right: calc(-50% + 10px);\n  height: 1.5px;\n  background: var(--line);\n}\n\n.ros-st-node.done:not(:last-child)::after {\n  background: var(--green);\n}\n\n.ros-st-dot {\n  position: relative;\n  z-index: 1;\n  width: 19px;\n  height: 19px;\n  border-radius: 99px;\n  display: grid;\n  place-items: center;\n  background: var(--surface);\n  border: 1.5px solid var(--line);\n  font-size: 10px;\n  font-weight: 700;\n  color: var(--soft);\n}\n\n.ros-st-node.done .ros-st-dot {\n  border-color: var(--green);\n  background: var(--green-soft);\n  color: var(--green);\n}\n\n.ros-st-node.now .ros-st-dot {\n  border-color: var(--iris);\n  background: var(--iris-soft);\n  color: var(--iris);\n}\n\n.ros-st-node.now .ros-st-dot::after {\n  content: '';\n  position: absolute;\n  inset: -2.5px;\n  border: 1.5px solid transparent;\n  border-top-color: var(--iris);\n  border-radius: 99px;\n  animation: rosOrbit 1s linear infinite;\n}\n\n.ros-st-node.wait .ros-st-dot {\n  border-color: var(--amber);\n  background: var(--amber-soft);\n  color: var(--amber);\n}\n\n.ros-st-lbl {\n  font-size: 11.5px;\n  color: var(--muted);\n}\n\n.ros-st-node.now .ros-st-lbl,\n.ros-st-node.wait .ros-st-lbl {\n  color: var(--ink);\n  font-weight: 550;\n}\n\n/* Signature Gliding Hover List (Preserved Verbatim from v4) */\n.ros-clean-list {\n  display: flex;\n  flex-direction: column;\n  border-top: 1px solid var(--line-soft);\n}\n\n.ros-clean-row {\n  padding: 13px 4px;\n  border-bottom: 1px solid var(--line-soft);\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 14px;\n  cursor: pointer;\n  transition: background .12s, padding .12s;\n  border-radius: 8px;\n}\n\n.ros-clean-row:hover {\n  background: var(--paper);\n  padding-inline: 12px;\n  margin-inline: -8px;\n}\n\n.ros-clean-row.static {\n  cursor: default;\n}\n\n.ros-clean-row.static:hover {\n  background: transparent;\n  padding-inline: 4px;\n  margin-inline: 0;\n}\n\n.ros-cr-left {\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  min-width: 0;\n}\n\n.ros-mono {\n  width: 30px;\n  height: 30px;\n  border-radius: 99px;\n  background: var(--subtle);\n  color: var(--ink);\n  display: grid;\n  place-items: center;\n  font-size: 12px;\n  font-weight: 600;\n  flex: none;\n}\n\n.ros-cr-name {\n  font-size: 14px;\n  font-weight: 600;\n  color: var(--ink);\n  white-space: nowrap;\n}\n\n.ros-cr-role {\n  font-size: 12.5px;\n  color: var(--muted);\n  margin-left: 8px;\n  font-weight: 400;\n}\n\n/* Candidate Artifact View */\n.ros-doc-head {\n  display: flex;\n  align-items: flex-start;\n  justify-content: space-between;\n  gap: 16px;\n  padding-bottom: 20px;\n  border-bottom: 1px solid var(--line-soft);\n}\n\n.ros-doc-name {\n  font-size: 23px;\n  font-weight: 700;\n  letter-spacing: -.03em;\n  color: var(--ink);\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  flex-wrap: wrap;\n}\n\n.ros-doc-meta {\n  font-size: 13px;\n  color: var(--muted);\n  margin-top: 4px;\n}\n\n.ros-doc-block {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n}\n\n.ros-doc-line {\n  display: grid;\n  grid-template-columns: 28px 1fr;\n  gap: 12px;\n  font-size: 13.5px;\n  line-height: 1.78;\n  color: var(--text);\n  padding: 7px 10px;\n  margin: 0 -10px;\n  border-radius: 8px;\n  cursor: pointer;\n  transition: background .12s;\n  overflow-wrap: anywhere;\n}\n\n.ros-doc-line:hover {\n  background: var(--paper);\n}\n\n.ros-doc-line.active {\n  background: var(--iris-soft);\n}\n\n.ros-doc-no {\n  color: var(--soft);\n  font-size: 12px;\n  padding-top: 2px;\n}\n\n.ros-resume-group {\n  font-size: 11.5px;\n  font-weight: 600;\n  color: var(--soft);\n  letter-spacing: .03em;\n  margin: 16px 0 6px;\n  padding-top: 12px;\n  border-top: 1px solid var(--line-soft);\n}\n\n.ros-resume-group:first-child {\n  margin-top: 4px;\n  padding-top: 0;\n  border-top: 0;\n}\n\n.ros-exp-meta {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 12px;\n  margin-bottom: 4px;\n}\n\n.ros-exp-co {\n  font-size: 13.5px;\n  font-weight: 600;\n  color: var(--ink);\n}\n\n.ros-exp-time {\n  font-size: 12px;\n  color: var(--soft);\n  flex: none;\n}\n\n.ros-crit-item {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 9px 10px;\n  margin: 0 -10px;\n  border-radius: 8px;\n  cursor: pointer;\n  transition: background .12s;\n}\n\n.ros-crit-item:hover {\n  background: var(--paper);\n}\n\n.ros-crit-item.active {\n  background: var(--iris-soft);\n}\n\n/* Sequential Round Rail */\n.ros-seq-rail {\n  display: flex;\n  align-items: center;\n  padding: 16px 0;\n  border-bottom: 1px solid var(--line-soft);\n  overflow-x: auto;\n}\n\n.ros-seq-n {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex: none;\n}\n\n.ros-seq-d {\n  width: 20px;\n  height: 20px;\n  border-radius: 99px;\n  display: grid;\n  place-items: center;\n  font-size: 10.5px;\n  font-weight: 700;\n  border: 1.5px solid var(--line);\n  color: var(--soft);\n}\n\n.ros-seq-d.done { border-color: var(--green); background: var(--green-soft); color: var(--green); }\n.ros-seq-d.caution { border-color: var(--amber); background: var(--amber-soft); color: var(--amber); }\n.ros-seq-d.now { border-color: var(--iris); background: var(--iris-soft); color: var(--iris); }\n\n.ros-seq-l {\n  flex: 1;\n  min-width: 20px;\n  height: 1.5px;\n  background: var(--line);\n  margin: 0 10px;\n}\n\n.ros-seq-l.done {\n  background: var(--green);\n}\n\n/* Notes, JD Box, Transcript, Collapsible Toggle */\n.ros-risk-note {\n  padding: 12px 16px;\n  border-radius: 10px;\n  background: var(--paper);\n  border-left: 3px solid var(--amber);\n  font-size: 13px;\n  line-height: 1.68;\n  color: var(--text);\n}\n\n.ros-jd-box {\n  padding: 20px 22px;\n  border-radius: 12px;\n  background: var(--paper);\n  display: flex;\n  flex-direction: column;\n  gap: 14px;\n  font-size: 13px;\n  line-height: 1.75;\n  color: var(--text);\n  white-space: pre-line;\n}\n\n.ros-jd-sec-t {\n  font-size: 12px;\n  font-weight: 650;\n  color: var(--ink);\n  margin-bottom: 4px;\n}\n\n.ros-ts-badge {\n  font-size: 11px;\n  font-weight: 600;\n  color: var(--iris);\n  background: var(--iris-soft);\n  padding: 1px 6px;\n  border-radius: 5px;\n  margin-right: 8px;\n}\n\n.ros-auto-toggle {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 12px 0;\n  border-top: 1px solid var(--line-soft);\n  font-size: 12.5px;\n  color: var(--muted);\n  cursor: pointer;\n}\n\n.ros-auto-toggle:hover {\n  color: var(--ink);\n}\n\n.ros-btn {\n  height: 34px;\n  padding: 0 16px;\n  border-radius: 99px;\n  border: 1px solid var(--line);\n  background: var(--surface);\n  color: var(--ink);\n  font-size: 13px;\n  font-weight: 500;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  transition: all .14s;\n}\n\n.ros-btn:hover {\n  background: var(--subtle);\n}\n\n/* Empty / Loading / Error States */\n.ros-state-box {\n  padding: 40px 24px;\n  border-radius: 12px;\n  background: var(--paper);\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  text-align: center;\n  gap: 10px;\n}\n\n.ros-state-title {\n  font-size: 14.5px;\n  font-weight: 600;\n  color: var(--ink);\n}\n\n.ros-state-desc {\n  font-size: 13px;\n  color: var(--muted);\n  max-width: 380px;\n  line-height: 1.65;\n}\n\n.ros-thinking-row {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n  font-size: 13px;\n  color: var(--muted);\n}\n\n.ros-thinking-dot {\n  width: 6px;\n  height: 6px;\n  border-radius: 99px;\n  background: var(--iris);\n  animation: rosPulseDot .9s ease-in-out infinite;\n}\n\n/* Responsive (Half-screen <= 1080px & Mobile 390px) */\n@media (max-width: 1080px) {\n  .ros-canvas-head {\n    padding: 0 24px;\n  }\n  .ros-canvas-body {\n    padding: 24px 24px 64px;\n  }\n}\n\n@media (max-width: 520px) {\n  .ros-canvas-head {\n    padding: 0 16px;\n    height: auto;\n    min-height: 52px;\n    flex-wrap: wrap;\n    padding-top: 8px;\n    padding-bottom: 8px;\n  }\n  .ros-canvas-body {\n    padding: 18px 16px 48px;\n  }\n  .ros-doc-head {\n    flex-direction: column;\n  }\n  .ros-doc-name {\n    font-size: 20px;\n  }\n  .ros-cr-role {\n    display: block;\n    margin-left: 0;\n    margin-top: 2px;\n  }\n}\n";
+		const CANVAS_CSS = "/*\n * Recruitment OS v4 · Right-Hand Canvas Styles\n * Design tokens copied verbatim from design/v4/contracts/design-tokens.md.\n * Scoped under .ros-canvas to avoid colliding with DSH host styles.\n */\n\n.ros-canvas {\n  --rail: #F3F2EE;\n  --paper: #F9F8F5;\n  --surface: #FFFFFF;\n  --subtle: #F3F2EE;\n  --hover: #EAE8E2;\n  --ink: #191918;\n  --text: #42423F;\n  --muted: #787772;\n  --soft: #A6A59E;\n  --line: rgba(25, 25, 24, .08);\n  --line-soft: rgba(25, 25, 24, .05);\n  --iris: #5B5BD6;\n  --iris-soft: rgba(91, 91, 214, .09);\n  --green: #18794E;\n  --green-soft: rgba(24, 121, 78, .09);\n  --amber: #AD5700;\n  --amber-soft: rgba(173, 87, 0, .09);\n  --red: #CD2B31;\n  --red-soft: rgba(205, 43, 49, .08);\n  --shadow-card: 0 1px 2px rgba(25, 25, 24, .03), 0 10px 30px -14px rgba(25, 25, 24, .07);\n  --shadow-modal: 0 28px 72px -18px rgba(25, 25, 24, .24);\n\n  display: flex;\n  flex-direction: column;\n  height: 100%;\n  min-height: 0;\n  overflow: hidden;\n  background: var(--surface);\n  color: var(--ink);\n  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif;\n  font-size: 14px;\n  line-height: 1.55;\n  -webkit-font-smoothing: antialiased;\n}\n\n[data-theme=\"dark\"] .ros-canvas,\n.ros-canvas[data-theme=\"dark\"] {\n  --rail: #10100F;\n  --paper: #141413;\n  --surface: #1A1A19;\n  --subtle: #232321;\n  --hover: #2B2B28;\n  --ink: #F3F2EE;\n  --text: #D5D4CE;\n  --muted: #9A9992;\n  --soft: #6F6E68;\n  --line: rgba(243, 242, 238, .09);\n  --line-soft: rgba(243, 242, 238, .055);\n  --iris: #8484F5;\n  --iris-soft: rgba(132, 132, 245, .15);\n  --green: #3DD68C;\n  --green-soft: rgba(61, 214, 140, .13);\n  --amber: #F5A524;\n  --amber-soft: rgba(245, 165, 36, .14);\n  --red: #F87171;\n  --red-soft: rgba(248, 113, 113, .14);\n  --shadow-card: 0 2px 10px rgba(0, 0, 0, .35);\n  --shadow-modal: 0 28px 72px -18px rgba(0, 0, 0, .65);\n}\n\n.ros-canvas *,\n.ros-canvas *::before,\n.ros-canvas *::after {\n  box-sizing: border-box;\n}\n\n.ros-canvas button {\n  font: inherit;\n  color: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n}\n\n.ros-canvas .num {\n  font-variant-numeric: tabular-nums;\n}\n\n@keyframes rosFadeIn {\n  from { opacity: 0; transform: translateY(4px); }\n  to { opacity: 1; transform: none; }\n}\n\n@keyframes rosOrbit {\n  to { transform: rotate(360deg); }\n}\n\n@keyframes rosPulseDot {\n  0%, 100% { opacity: .3; transform: scale(.85); }\n  50% { opacity: 1; transform: scale(1.1); }\n}\n\n/* Contextual Top Bar (56px visual horizon) */\n.ros-canvas-head {\n  height: 56px;\n  padding: 0 36px;\n  border-bottom: 1px solid var(--line-soft);\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 14px;\n  flex: none;\n}\n\n.ros-head-left {\n  display: flex;\n  align-items: center;\n  gap: 16px;\n  min-width: 0;\n}\n\n.ros-head-right {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  font-size: 12px;\n  color: var(--muted);\n  flex: none;\n}\n\n.ros-crumb-bar {\n  display: flex;\n  align-items: center;\n  gap: 7px;\n  font-size: 13px;\n  color: var(--muted);\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.ros-crumb-link {\n  color: var(--muted);\n  font-size: 13px;\n  transition: color .12s;\n}\n\n.ros-crumb-link:hover {\n  color: var(--ink);\n}\n\n.ros-crumb-cur {\n  color: var(--ink);\n  font-weight: 600;\n}\n\n.ros-tabs {\n  display: inline-flex;\n  gap: 22px;\n}\n\n.ros-tab {\n  font-size: 13px;\n  font-weight: 500;\n  color: var(--muted);\n  padding: 17px 0;\n  position: relative;\n  transition: color .14s;\n  white-space: nowrap;\n}\n\n.ros-tab:hover {\n  color: var(--ink);\n}\n\n.ros-tab.active {\n  color: var(--ink);\n  font-weight: 600;\n}\n\n.ros-tab.active::after {\n  content: '';\n  position: absolute;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  height: 2px;\n  background: var(--ink);\n  border-radius: 2px;\n}\n\n/* Scrollable Reading Body */\n.ros-canvas-body {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  padding: 34px 48px 72px;\n}\n\n.ros-canvas-inner {\n  max-width: 820px;\n  margin: 0 auto;\n  display: flex;\n  flex-direction: column;\n  gap: 32px;\n  animation: rosFadeIn .2s ease-out;\n}\n\n/* Shared Editorial Typography */\n.ros-sec-head {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 12px;\n  margin-bottom: 14px;\n  flex-wrap: wrap;\n}\n\n.ros-sec-title {\n  font-size: 15px;\n  font-weight: 650;\n  letter-spacing: -.015em;\n  color: var(--ink);\n}\n\n.ros-sec-meta {\n  font-size: 12px;\n  color: var(--soft);\n}\n\n.ros-text-link {\n  font-size: 12.5px;\n  color: var(--muted);\n  transition: color .12s;\n}\n\n.ros-text-link:hover {\n  color: var(--ink);\n}\n\n.ros-text-link.active {\n  color: var(--ink);\n  font-weight: 600;\n}\n\n/* External Fact Labels (LIVE/FIXTURE, EVENT/MANUAL, CONNECTED/...) */\n.ros-fact-bar {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  flex-wrap: wrap;\n}\n\n.ros-fact-chip {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  padding: 2px 8px;\n  border-radius: 99px;\n  font-size: 11px;\n  font-weight: 500;\n  background: var(--subtle);\n  color: var(--muted);\n}\n\n.ros-fact-chip.green { background: var(--green-soft); color: var(--green); }\n.ros-fact-chip.amber { background: var(--amber-soft); color: var(--amber); }\n.ros-fact-chip.red { background: var(--red-soft); color: var(--red); }\n\n/* Status Text */\n.ros-status {\n  font-size: 12.5px;\n  font-weight: 500;\n  color: var(--muted);\n  white-space: nowrap;\n}\n.ros-status.red { color: var(--red); }\n.ros-status.amber { color: var(--amber); }\n.ros-status.iris { color: var(--iris); }\n.ros-status.green { color: var(--green); }\n\n/* 6-Stage Horizontal Breathing Progress Track */\n.ros-stage-track {\n  display: grid;\n  grid-template-columns: repeat(6, 1fr);\n  align-items: center;\n  padding: 8px 0;\n}\n\n.ros-st-node {\n  position: relative;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 6px;\n}\n\n.ros-st-node:not(:last-child)::after {\n  content: '';\n  position: absolute;\n  top: 9px;\n  left: calc(50% + 10px);\n  right: calc(-50% + 10px);\n  height: 1.5px;\n  background: var(--line);\n}\n\n.ros-st-node.done:not(:last-child)::after {\n  background: var(--green);\n}\n\n.ros-st-dot {\n  position: relative;\n  z-index: 1;\n  width: 19px;\n  height: 19px;\n  border-radius: 99px;\n  display: grid;\n  place-items: center;\n  background: var(--surface);\n  border: 1.5px solid var(--line);\n  font-size: 10px;\n  font-weight: 700;\n  color: var(--soft);\n}\n\n.ros-st-node.done .ros-st-dot {\n  border-color: var(--green);\n  background: var(--green-soft);\n  color: var(--green);\n}\n\n.ros-st-node.now .ros-st-dot {\n  border-color: var(--iris);\n  background: var(--iris-soft);\n  color: var(--iris);\n}\n\n.ros-st-node.now .ros-st-dot::after {\n  content: '';\n  position: absolute;\n  inset: -2.5px;\n  border: 1.5px solid transparent;\n  border-top-color: var(--iris);\n  border-radius: 99px;\n  animation: rosOrbit 1s linear infinite;\n}\n\n.ros-st-node.wait .ros-st-dot {\n  border-color: var(--amber);\n  background: var(--amber-soft);\n  color: var(--amber);\n}\n\n.ros-st-lbl {\n  font-size: 11.5px;\n  color: var(--muted);\n}\n\n.ros-st-node.now .ros-st-lbl,\n.ros-st-node.wait .ros-st-lbl {\n  color: var(--ink);\n  font-weight: 550;\n}\n\n/* Signature Gliding Hover List (Preserved Verbatim from v4) */\n.ros-clean-list {\n  display: flex;\n  flex-direction: column;\n  border-top: 1px solid var(--line-soft);\n}\n\n.ros-clean-row {\n  padding: 13px 4px;\n  border-bottom: 1px solid var(--line-soft);\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 14px;\n  cursor: pointer;\n  transition: background .12s, padding .12s;\n  border-radius: 8px;\n}\n\n.ros-clean-row:hover {\n  background: var(--paper);\n  padding-inline: 12px;\n  margin-inline: -8px;\n}\n\n.ros-clean-row.static {\n  cursor: default;\n}\n\n.ros-clean-row.static:hover {\n  background: transparent;\n  padding-inline: 4px;\n  margin-inline: 0;\n}\n\n.ros-cr-left {\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  min-width: 0;\n}\n\n.ros-mono {\n  width: 30px;\n  height: 30px;\n  border-radius: 99px;\n  background: var(--subtle);\n  color: var(--ink);\n  display: grid;\n  place-items: center;\n  font-size: 12px;\n  font-weight: 600;\n  flex: none;\n}\n\n.ros-cr-name {\n  font-size: 14px;\n  font-weight: 600;\n  color: var(--ink);\n  white-space: nowrap;\n}\n\n.ros-cr-role {\n  font-size: 12.5px;\n  color: var(--muted);\n  margin-left: 8px;\n  font-weight: 400;\n}\n\n/* Candidate Artifact View */\n.ros-doc-head {\n  display: flex;\n  align-items: flex-start;\n  justify-content: space-between;\n  gap: 16px;\n  padding-bottom: 20px;\n  border-bottom: 1px solid var(--line-soft);\n}\n\n.ros-doc-name {\n  font-size: 23px;\n  font-weight: 700;\n  letter-spacing: -.03em;\n  color: var(--ink);\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  flex-wrap: wrap;\n}\n\n.ros-doc-meta {\n  font-size: 13px;\n  color: var(--muted);\n  margin-top: 4px;\n}\n\n.ros-doc-block {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n}\n\n.ros-doc-line {\n  display: grid;\n  grid-template-columns: 28px 1fr;\n  gap: 12px;\n  font-size: 13.5px;\n  line-height: 1.78;\n  color: var(--text);\n  padding: 7px 10px;\n  margin: 0 -10px;\n  border-radius: 8px;\n  cursor: pointer;\n  transition: background .12s;\n  overflow-wrap: anywhere;\n}\n\n.ros-doc-line:hover {\n  background: var(--paper);\n}\n\n.ros-doc-line.active {\n  background: var(--iris-soft);\n}\n\n.ros-doc-no {\n  color: var(--soft);\n  font-size: 12px;\n  padding-top: 2px;\n}\n\n.ros-resume-group {\n  font-size: 11.5px;\n  font-weight: 600;\n  color: var(--soft);\n  letter-spacing: .03em;\n  margin: 16px 0 6px;\n  padding-top: 12px;\n  border-top: 1px solid var(--line-soft);\n}\n\n.ros-resume-group:first-child {\n  margin-top: 4px;\n  padding-top: 0;\n  border-top: 0;\n}\n\n.ros-exp-meta {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 12px;\n  margin-bottom: 4px;\n}\n\n.ros-exp-co {\n  font-size: 13.5px;\n  font-weight: 600;\n  color: var(--ink);\n}\n\n.ros-exp-time {\n  font-size: 12px;\n  color: var(--soft);\n  flex: none;\n}\n\n.ros-crit-item {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 9px 10px;\n  margin: 0 -10px;\n  border-radius: 8px;\n  cursor: pointer;\n  transition: background .12s;\n}\n\n.ros-crit-item:hover {\n  background: var(--paper);\n}\n\n.ros-crit-item.active {\n  background: var(--iris-soft);\n}\n\n/* Sequential Round Rail */\n.ros-seq-rail {\n  display: flex;\n  align-items: center;\n  padding: 16px 0;\n  border-bottom: 1px solid var(--line-soft);\n  overflow-x: auto;\n}\n\n.ros-seq-n {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex: none;\n}\n\n.ros-seq-d {\n  width: 20px;\n  height: 20px;\n  border-radius: 99px;\n  display: grid;\n  place-items: center;\n  font-size: 10.5px;\n  font-weight: 700;\n  border: 1.5px solid var(--line);\n  color: var(--soft);\n}\n\n.ros-seq-d.done { border-color: var(--green); background: var(--green-soft); color: var(--green); }\n.ros-seq-d.caution { border-color: var(--amber); background: var(--amber-soft); color: var(--amber); }\n.ros-seq-d.now { border-color: var(--iris); background: var(--iris-soft); color: var(--iris); }\n\n.ros-seq-l {\n  flex: 1;\n  min-width: 20px;\n  height: 1.5px;\n  background: var(--line);\n  margin: 0 10px;\n}\n\n.ros-seq-l.done {\n  background: var(--green);\n}\n\n/* Notes, JD Box, Transcript, Collapsible Toggle */\n.ros-risk-note {\n  padding: 12px 16px;\n  border-radius: 10px;\n  background: var(--paper);\n  border-left: 3px solid var(--amber);\n  font-size: 13px;\n  line-height: 1.68;\n  color: var(--text);\n}\n\n.ros-jd-box {\n  padding: 20px 22px;\n  border-radius: 12px;\n  background: var(--paper);\n  display: flex;\n  flex-direction: column;\n  gap: 14px;\n  font-size: 13px;\n  line-height: 1.75;\n  color: var(--text);\n  white-space: pre-line;\n}\n\n.ros-jd-sec-t {\n  font-size: 12px;\n  font-weight: 650;\n  color: var(--ink);\n  margin-bottom: 4px;\n}\n\n.ros-ts-badge {\n  font-size: 11px;\n  font-weight: 600;\n  color: var(--iris);\n  background: var(--iris-soft);\n  padding: 1px 6px;\n  border-radius: 5px;\n  margin-right: 8px;\n}\n\n.ros-auto-toggle {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 12px 0;\n  border-top: 1px solid var(--line-soft);\n  font-size: 12.5px;\n  color: var(--muted);\n  cursor: pointer;\n}\n\n.ros-auto-toggle:hover {\n  color: var(--ink);\n}\n\n.ros-btn {\n  height: 34px;\n  padding: 0 16px;\n  border-radius: 99px;\n  border: 1px solid var(--line);\n  background: var(--surface);\n  color: var(--ink);\n  font-size: 13px;\n  font-weight: 500;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  transition: all .14s;\n}\n\n.ros-btn:hover {\n  background: var(--subtle);\n}\n\n/* Empty / Loading / Error States */\n.ros-state-box {\n  padding: 40px 24px;\n  border-radius: 12px;\n  background: var(--paper);\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  text-align: center;\n  gap: 10px;\n}\n\n.ros-state-title {\n  font-size: 14.5px;\n  font-weight: 600;\n  color: var(--ink);\n}\n\n.ros-state-desc {\n  font-size: 13px;\n  color: var(--muted);\n  max-width: 380px;\n  line-height: 1.65;\n}\n\n.ros-thinking-row {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n  font-size: 13px;\n  color: var(--muted);\n}\n\n.ros-thinking-dot {\n  width: 6px;\n  height: 6px;\n  border-radius: 99px;\n  background: var(--iris);\n  animation: rosPulseDot .9s ease-in-out infinite;\n}\n\n/* Responsive (Half-screen <= 1080px & Mobile 390px) */\n@media (max-width: 1080px) {\n  .ros-canvas-head {\n    padding: 0 24px;\n  }\n  .ros-canvas-body {\n    padding: 24px 24px 64px;\n  }\n}\n\n@media (max-width: 520px) {\n  .ros-canvas-head {\n    padding: 0 16px;\n    height: auto;\n    min-height: 52px;\n    flex-wrap: wrap;\n    padding-top: 8px;\n    padding-bottom: 8px;\n  }\n  .ros-canvas-body {\n    padding: 18px 16px 48px;\n  }\n  .ros-doc-head {\n    flex-direction: column;\n  }\n  .ros-doc-name {\n    font-size: 20px;\n  }\n  .ros-cr-role {\n    display: block;\n    margin-left: 0;\n    margin-top: 2px;\n  }\n}\n\n/* v4 Footer & Centered Confirmation Modal (verbatim design-tokens.md) */\n.ros-doc-foot {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding-top: 20px;\n  border-top: 1px solid var(--line-soft);\n  flex-wrap: wrap;\n}\n\n.ros-btn.dark {\n  background: var(--ink);\n  border-color: var(--ink);\n  color: var(--surface);\n}\n\n.ros-btn.dark:hover {\n  opacity: .88;\n}\n\n.ros-btn:disabled {\n  opacity: .6;\n  cursor: not-allowed;\n}\n\n.ros-modal-bg {\n  position: fixed;\n  inset: 0;\n  z-index: 100;\n  background: rgba(25, 25, 24, .32);\n  backdrop-filter: blur(6px);\n  -webkit-backdrop-filter: blur(6px);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 24px;\n}\n\n.ros-modal {\n  width: 100%;\n  max-width: 520px;\n  background: var(--surface);\n  border-radius: 20px;\n  border: 1px solid var(--line);\n  box-shadow: var(--shadow-modal);\n  padding: 26px 28px;\n  display: flex;\n  flex-direction: column;\n  gap: 16px;\n  animation: rosFadeIn .16s ease-out;\n}\n\n.ros-m-field {\n  display: flex;\n  flex-direction: column;\n  gap: 5px;\n  font-size: 12px;\n  color: var(--muted);\n}\n\n.ros-m-field input,\n.ros-m-field textarea {\n  padding: 9px 11px;\n  border-radius: 8px;\n  border: 1px solid var(--line);\n  background: var(--surface);\n  color: var(--ink);\n  font: inherit;\n  font-size: 13px;\n  outline: none;\n}\n\n.ros-m-field input:focus,\n.ros-m-field textarea:focus {\n  border-color: var(--muted);\n}\n";
 		// src/client/canvas/CanvasRoute.tsx
-		/**
-		* Default host HTTP fetcher per client-plugin-contract.md §2:
-		* - Same-origin cookie determines actor (frontend never sends actor)
-		* - Always carries `x-recruitment-request: 1`
-		*/
 		async function fetchCanvasJson(path) {
 			const res = await fetch(path, {
 				method: "GET",
@@ -1419,11 +1914,6 @@ window.__ModuleLoader__.load({
 			if (!res.ok) throw new Error("CANVAS_FETCH_FAILED");
 			return res.json();
 		}
-		/**
-		* T3-3: Non-blocking upload progress & failure banner.
-		* Polls GET /recruitment/api/tasks/status?task_id=... until terminal state.
-		* Never claims "已入库" before COMPLETED; displays human errorSummary on FAILED.
-		*/
 		function UploadProgressBanner({ task, onOpenApplication, onDismiss, onCompleted }) {
 			const [state, setState] = (0, react.useState)({
 				taskId: task.taskId,
@@ -1541,10 +2031,11 @@ window.__ModuleLoader__.load({
 				})]
 			});
 		}
-		function CanvasRoute({ route, onBack, onSelectApplication, onSelectJob, uploadTask, onDismissUploadTask, onUploadCompleted, fetcher = fetchCanvasJson }) {
+		function CanvasRoute({ route, onBack, onSelectApplication, onSelectJob, uploadTask, onUploadStarted, onDismissUploadTask, onUploadCompleted, refreshNonce = 0, fetcher = fetchCanvasJson }) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 				className: "ros-canvas",
 				"aria-label": "招聘详情画布",
+				"data-testid": "v4-canvas-route",
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("style", { children: CANVAS_CSS }),
 					uploadTask ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(UploadProgressBanner, {
@@ -1562,6 +2053,9 @@ window.__ModuleLoader__.load({
 						jobId: route.jobId,
 						onBack,
 						onSelectApplication,
+						onSelectJob,
+						onUploadStarted,
+						refreshNonce,
 						fetcher
 					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "ros-canvas-body",
@@ -1575,6 +2069,62 @@ window.__ModuleLoader__.load({
 					})
 				]
 			});
+		}
+		/**
+		* Pure React-state canvas host (ZERO location.hash mutations).
+		* Wired into RecruitingWorkspace so clicking any candidate row opens v4 Canvas directly.
+		*/
+		function CanvasPanelHost({ children, onRefreshOverview, fetcher }) {
+			const [route, setRoute] = (0, react.useState)({ kind: "empty" });
+			const [prevJobId, setPrevJobId] = (0, react.useState)(null);
+			const [uploadTask, setUploadTask] = (0, react.useState)(null);
+			const [refreshNonce, setRefreshNonce] = (0, react.useState)(0);
+			const openCandidate = (0, react.useCallback)((applicationId) => {
+				setRoute({
+					kind: "candidate",
+					applicationId
+				});
+			}, []);
+			const openJob = (0, react.useCallback)((jobId) => {
+				setPrevJobId(jobId);
+				setRoute({
+					kind: "job",
+					jobId
+				});
+			}, []);
+			const handleBack = (0, react.useCallback)(() => {
+				if (route.kind === "candidate" && prevJobId) {
+					setRoute({
+						kind: "job",
+						jobId: prevJobId
+					});
+					return;
+				}
+				setPrevJobId(null);
+				setRoute({ kind: "empty" });
+			}, [route.kind, prevJobId]);
+			const handleUploadCompleted = (0, react.useCallback)(() => {
+				setRefreshNonce((n) => n + 1);
+				onRefreshOverview?.();
+			}, [onRefreshOverview]);
+			if (route.kind !== "empty") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasRoute, {
+				route,
+				onBack: handleBack,
+				onSelectApplication: openCandidate,
+				onSelectJob: openJob,
+				uploadTask,
+				onUploadStarted: setUploadTask,
+				onDismissUploadTask: () => setUploadTask(null),
+				onUploadCompleted: handleUploadCompleted,
+				refreshNonce,
+				fetcher
+			});
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(react_jsx_runtime.Fragment, { children: children({
+				openCandidate,
+				openJob,
+				closeCanvas: handleBack,
+				activeRoute: route
+			}) });
 		}
 		// src/client/recruiting/format.ts
 		/** 取非空字符串；数字/布尔/对象不算字符串（避免把坏类型伪装成文本）。 */
@@ -8144,7 +8694,7 @@ window.__ModuleLoader__.load({
 							"data-testid": "job-draft-criteria",
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: "rcw-cap",
-								children: "评分标准（未保存的草稿维度）"
+								children: "评分标准（rubric_draft.dimensions）"
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: "rcw-tablewrap",
 								children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("table", {
@@ -8405,7 +8955,7 @@ window.__ModuleLoader__.load({
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									"data-testid": `application-row-${row.id}-rubric`,
 									children: [
-										"本申请钉住岗位标准 · ",
+										"本申请钉住 Rubric · ",
 										applicationRubricTextOf(row.applicationRubric),
 										rubricConsistency
 									]
@@ -8504,7 +9054,7 @@ window.__ModuleLoader__.load({
 							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 								tone: "gray",
 								testid: "job-rubric",
-								children: "未关联岗位标准"
+								children: "未关联 rubric"
 							}),
 							job.postings.map((posting) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
 								tone: posting.tone,
@@ -8578,7 +9128,7 @@ window.__ModuleLoader__.load({
 										if (rubricPendingText !== "") return;
 										onApproveRubric();
 									},
-									children: rubricBusy ? "提交中…" : "批准岗位标准"
+									children: rubricBusy ? "提交中…" : "批准 Rubric"
 								}), rubricPendingText !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									className: "rcw-pending",
 									"data-testid": "rubric-approve-pending",
@@ -8611,7 +9161,7 @@ window.__ModuleLoader__.load({
 								className: "rcw-btn",
 								"data-testid": "toggle-job-detail",
 								onClick: onToggleJobDetail,
-								children: jobDetailOpen ? "收起岗位版本与岗位标准" : "查看岗位版本与岗位标准"
+								children: jobDetailOpen ? "收起岗位版本与 rubric" : "查看岗位版本与 rubric"
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
@@ -8650,7 +9200,7 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "rcw-sectionhead",
 						style: { marginTop: 0 },
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "岗位详情 · 版本与岗位标准" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "岗位详情 · 版本与 rubric" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
 							className: "rcw-btn rcw-btn-sm",
 							"data-testid": "close-job-detail",
@@ -8689,7 +9239,7 @@ window.__ModuleLoader__.load({
 									]
 								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Chip, {
 									tone: "gray",
-									children: "未关联岗位标准"
+									children: "未关联 rubric"
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreeDimBadges, {
 									labels: jobDetail.labels,
@@ -8730,9 +9280,9 @@ window.__ModuleLoader__.load({
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: "rcw-subhead",
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", { children: "岗位标准维度" })
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", { children: "Rubric 维度" })
 						}),
-						jobDetail.rubric === null || jobDetail.rubric.dimensions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptyState, { children: "该岗位没有可用的岗位标准维度。" }) : jobDetail.rubric.dimensions.map((dimension) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						jobDetail.rubric === null || jobDetail.rubric.dimensions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptyState, { children: "该岗位没有可用的 rubric 维度。" }) : jobDetail.rubric.dimensions.map((dimension) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: "rcw-criteria",
 							"data-dim-key": dimension.key,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "rcw-dot rcw-dot-blue" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -9539,7 +10089,7 @@ window.__ModuleLoader__.load({
 			const rubricApproved = rubricJob?.rubric?.approved === true || jobDetailOpen && jobDetail.data?.rubric?.approved === true;
 			const rubricPendingText = (() => {
 				if (!isRecruiter) return aliasNote;
-				if (rubricAction === void 0) return "当前页面版本没有提供「批准岗位标准」操作。";
+				if (rubricAction === void 0) return "当前页面版本没有提供「批准 Rubric」操作。";
 				if (!rubricAction.available) return rubricAction.reasonText !== "" ? rubricAction.reasonText : "暂时不能批准评分标准。";
 				if (rubricJobId === "") return "还没有选中岗位，暂时不能批准评分标准。";
 				if (rubricVersionId === "") return "服务端没有返回当前评分标准的版本，无法批准（界面不会猜一个版本）。";
@@ -9593,7 +10143,7 @@ window.__ModuleLoader__.load({
 				if (!built.ok) {
 					setFeedback({
 						tone: "error",
-						title: "岗位标准批准未发送：表单预检未通过",
+						title: "Rubric 批准未发送：表单预检未通过",
 						message: `${built.reasonCode}：${built.reasonText}${built.missing.length > 0 ? `；缺少：${built.missing.join("、")}` : ""}`,
 						rawBody: ""
 					});
@@ -9805,244 +10355,247 @@ window.__ModuleLoader__.load({
 				style: ROOT_STYLE,
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("style", { children: RECRUITING_CSS }, STYLE_ELEMENT_KEY),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "rcw-content",
-						children: [aliasBlocked ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: "rcw-notice",
-							"data-testid": "alias-notice",
-							role: "status",
-							children: aliasNote
-						}) : null, selectedApplicationId === "" && settingsOpen ? overviewData !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SettingsPanel, {
-							overview: overviewData,
-							onBack: () => setSettingsOpen(false),
-							writeDisabledReason: settingsWriteDisabledReason,
-							settingsBusy: pendingActionKey === "recruiting_settings_write",
-							onCreateSettings: runSettingsCreate,
-							actionOutcome,
-							feedback
-						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Card, {
-							className: "rcw-detailmain",
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptyState, { children: "招聘设置需要先成功读取工作区投影（overview）。" })
-						}) : selectedApplicationId !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApplicationDetail, {
-							row: rows.find((row) => row.id === selectedApplicationId),
-							detail: applicationDetail.data,
-							loading: applicationDetail.loading,
-							error: applicationDetail.error,
-							onRetry: applicationDetail.reload,
-							onRefresh: applicationDetail.reload,
-							refreshing: applicationDetail.loading,
-							onBack: backToOverview,
-							actions: detailActions,
-							pendingActionKey,
-							onRunAction: runAction,
-							aliasBlocked,
-							aliasNote,
-							settings: overviewData?.settings,
-							actionOutcome,
-							decisionFacts: decisionFacts.facts,
-							decisionFactsProbe: decisionFacts.probe,
-							onScreeningEvaluate: () => void runScreeningEvaluate(),
-							onDecisionRecord: (request) => void runDecisionRecord(request),
-							siblings: siblingRows,
-							onOpenApplication: openApplication,
-							onOpenJob: openJobFromDetail
-						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "rcw-headline",
-								"data-testid": "overview-headline",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "rcw-headline-left",
-									children: [
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "rcw-cap",
-											children: "AGENT-NATIVE RECRUITMENT"
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h1", { children: "招聘总览" }),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-											className: "rcw-sub",
-											children: "招聘全流程的只读视图；写操作会先让你确认再执行。"
-										})
-									]
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "rcw-headline-right",
-									children: [
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: "rcw-btn",
-											"data-testid": "refresh-overview",
-											disabled: overview.loading,
-											onClick: overview.reload,
-											children: overview.loading ? "正在读取…" : "刷新"
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: "rcw-btn rcw-btn-soft",
-											"data-testid": "open-settings",
-											onClick: () => setSettingsOpen(true),
-											children: "招聘设置"
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
-											tone: isRecruiter ? "blue" : "amber",
-											testid: "alias-chip",
-											children: ["当前身份 · ", isRecruiter ? "招聘方 Recruiter" : props.alias === "interviewer_a" ? "面试官 A（只读）" : "面试官 B（只读）"]
-										})
-									]
-								})]
-							}),
-							overview.error !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ErrorAlert, {
-								title: "招聘工作区读取失败",
-								message: overview.error.message,
-								rawBody: overview.error.rawBody,
-								onRetry: overview.reload
-							}) : null,
-							overview.loading && overviewData === void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								className: "rcw-loading",
-								"data-testid": "overview-loading",
-								children: "正在读取招聘工作区…"
-							}) : null,
-							overviewData !== void 0 && !overviewData.configured ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasPanelHost, {
+							onRefreshOverview: overview.reload,
+							children: ({ openCandidate }) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [aliasBlocked ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: "rcw-notice",
-								"data-testid": "overview-unconfigured",
-								children: ["数据库未配置，读不到真实招聘数据", overviewData.issues.length > 0 ? `（缺少：${overviewData.issues.join("；")}）` : ""]
-							}) : null,
-							overviewData !== void 0 && overviewData.configured && overviewData.issues.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "rcw-notice",
-								"data-testid": "overview-issues",
-								children: ["配置问题：", overviewData.issues.join("；")]
-							}) : null,
-							feedback !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: feedback.tone === "error" ? "rcw-alert" : "rcw-notice",
-								role: feedback.tone === "error" ? "alert" : "status",
-								"data-testid": "action-feedback",
-								"data-tone": feedback.tone,
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: feedback.title }),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-										style: { marginTop: 6 },
-										children: feedback.message
-									}),
-									feedback.rawBody !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
-										"data-testid": "action-feedback-raw",
-										children: feedback.rawBody
-									}) : null
-								]
-							}) : null,
-							overviewData !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "rcw-grid",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "rcw-main",
-									children: [
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(JobHero, {
-											job: selectedJob,
-											jobs: overviewData.jobs,
-											overview: overviewData,
-											onSelectJob: (jobId) => {
-												setSelectedJobId(jobId);
-												setJobDetailOpen(false);
-											},
-											onToggleJobDetail: () => setJobDetailOpen((value) => !value),
-											jobDetailOpen,
-											rubricPendingText,
-											rubricBusy: pendingActionKey === "rubric_approve",
-											onApproveRubric: approveRubric,
-											closePendingText,
-											closeBusy,
-											onOpenClose: openCloseDialog,
-											onOpenSettings: () => setSettingsOpen(true)
-										}),
-										actionOutcome !== void 0 && actionOutcome.key === "rubric_approve" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OutcomeReadbackCard, {
-											outcome: actionOutcome,
-											title: "岗位标准批准读回（信封 readback：approval / rubric / job）",
-											testid: "rubric-approve-readback"
-										}) : null,
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CloseJobResultCard, {
-											envelope: closeEnvelope,
-											jobId: selectedJob?.id ?? "",
-											error: closeError,
-											errorRaw: closeRaw,
-											bodyText: closeBodyText
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(JobDraftCard, {
-											draftProbeReason: draftPendingText,
-											createProbeReason: createPendingText,
-											draft: jobDraft,
-											draftBusy,
-											createBusy: draftCreateBusy,
-											draftError,
-											draftRaw,
-											createError: draftCreateError,
-											createRaw: draftCreateRaw,
-											createOutcome: draftOutcome,
-											departments: overviewData.settings.departments,
-											onGenerate: (requestText) => void generateJobDraft(requestText),
-											onCreate: (input) => void createJobFromDraft(input)
-										}),
-										jobDetailOpen ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(JobDetailCard, {
-											jobDetail: jobDetail.data,
-											loading: jobDetail.loading,
-											error: jobDetail.error,
-											onRetry: jobDetail.reload,
-											onClose: () => setJobDetailOpen(false)
-										}) : null,
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SectionHead, {
-											title: "此岗位下的候选人",
-											note: `共 ${String(rowsForJob.length)} 条申请 · 显示 ${String(rowsForFilter.length)} 条`,
-											right: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												className: "rcw-dim rcw-tiny",
-												children: "点击行查看申请详情（结论 + 逐条展开的对应情况与原文出处）"
+								"data-testid": "alias-notice",
+								role: "status",
+								children: aliasNote
+							}) : null, selectedApplicationId === "" && settingsOpen ? overviewData !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SettingsPanel, {
+								overview: overviewData,
+								onBack: () => setSettingsOpen(false),
+								writeDisabledReason: settingsWriteDisabledReason,
+								settingsBusy: pendingActionKey === "recruiting_settings_write",
+								onCreateSettings: runSettingsCreate,
+								actionOutcome,
+								feedback
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Card, {
+								className: "rcw-detailmain",
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptyState, { children: "招聘设置需要先成功读取工作区投影（overview）。" })
+							}) : selectedApplicationId !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApplicationDetail, {
+								row: rows.find((row) => row.id === selectedApplicationId),
+								detail: applicationDetail.data,
+								loading: applicationDetail.loading,
+								error: applicationDetail.error,
+								onRetry: applicationDetail.reload,
+								onRefresh: applicationDetail.reload,
+								refreshing: applicationDetail.loading,
+								onBack: backToOverview,
+								actions: detailActions,
+								pendingActionKey,
+								onRunAction: runAction,
+								aliasBlocked,
+								aliasNote,
+								settings: overviewData?.settings,
+								actionOutcome,
+								decisionFacts: decisionFacts.facts,
+								decisionFactsProbe: decisionFacts.probe,
+								onScreeningEvaluate: () => void runScreeningEvaluate(),
+								onDecisionRecord: (request) => void runDecisionRecord(request),
+								siblings: siblingRows,
+								onOpenApplication: openApplication,
+								onOpenJob: openJobFromDetail
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "rcw-headline",
+									"data-testid": "overview-headline",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "rcw-headline-left",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "rcw-cap",
+												children: "AGENT-NATIVE RECRUITMENT"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h1", { children: "招聘总览" }),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+												className: "rcw-sub",
+												children: "招聘全流程的只读视图；写操作会先让你确认再执行。"
 											})
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-											className: "rcw-filterbar",
-											"data-testid": "application-filters",
-											children: [
-												["all", "全部"],
-												["screening", "待初筛"],
-												["interviewing", "面试中"],
-												["other", "其他"]
-											].map(([value, label]) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+										]
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "rcw-headline-right",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 												type: "button",
-												className: `rcw-filter ${filter === value ? "rcw-filter-active" : ""}`.trim(),
-												"data-testid": `filter-${value}`,
-												"data-active": filter === value ? "true" : "false",
-												onClick: () => setFilter(value),
-												children: [
-													label,
-													"（",
-													filterCounts[value],
-													"）"
-												]
-											}, value))
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Card, {
-											className: "rcw-list",
-											testid: "application-list",
-											children: rowsForFilter.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptyState, { children: rowsForJob.length === 0 ? "该岗位还没有申请。" : "当前筛选下没有申请。" }) : rowsForFilter.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApplicationRow, {
-												row,
-												jobRubric: selectedJob?.rubric ?? null,
-												onOpen: openApplication
-											}, row.rowKey))
-										})
-									]
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("aside", {
-									className: "rcw-aside",
+												className: "rcw-btn",
+												"data-testid": "refresh-overview",
+												disabled: overview.loading,
+												onClick: overview.reload,
+												children: overview.loading ? "正在读取…" : "刷新"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "rcw-btn rcw-btn-soft",
+												"data-testid": "open-settings",
+												onClick: () => setSettingsOpen(true),
+												children: "招聘设置"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Chip, {
+												tone: isRecruiter ? "blue" : "amber",
+												testid: "alias-chip",
+												children: ["当前身份 · ", isRecruiter ? "招聘方 Recruiter" : props.alias === "interviewer_a" ? "面试官 A（只读）" : "面试官 B（只读）"]
+											})
+										]
+									})]
+								}),
+								overview.error !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ErrorAlert, {
+									title: "招聘工作区读取失败",
+									message: overview.error.message,
+									rawBody: overview.error.rawBody,
+									onRetry: overview.reload
+								}) : null,
+								overview.loading && overviewData === void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+									className: "rcw-loading",
+									"data-testid": "overview-loading",
+									children: "正在读取招聘工作区…"
+								}) : null,
+								overviewData !== void 0 && !overviewData.configured ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "rcw-notice",
+									"data-testid": "overview-unconfigured",
+									children: ["数据库未配置，读不到真实招聘数据", overviewData.issues.length > 0 ? `（缺少：${overviewData.issues.join("；")}）` : ""]
+								}) : null,
+								overviewData !== void 0 && overviewData.configured && overviewData.issues.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "rcw-notice",
+									"data-testid": "overview-issues",
+									children: ["配置问题：", overviewData.issues.join("；")]
+								}) : null,
+								feedback !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: feedback.tone === "error" ? "rcw-alert" : "rcw-notice",
+									role: feedback.tone === "error" ? "alert" : "status",
+									"data-testid": "action-feedback",
+									"data-tone": feedback.tone,
 									children: [
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(JobSidebar, {
-											jobs: overviewData.jobs,
-											selectedJobId: effectiveJobId,
-											onSelectJob: setSelectedJobId
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: feedback.title }),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+											style: { marginTop: 6 },
+											children: feedback.message
 										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(AttentionCard, { overview: overviewData }),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CountsCard, { overview: overviewData }),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SettingsEntryCard, {
-											overview: overviewData,
-											writeStateText: settingsWriteDisabledReason,
-											onOpenSettings: () => setSettingsOpen(true)
-										})
+										feedback.rawBody !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
+											"data-testid": "action-feedback-raw",
+											children: feedback.rawBody
+										}) : null
 									]
-								})]
-							}) : null
-						] })]
+								}) : null,
+								overviewData !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "rcw-grid",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "rcw-main",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)(JobHero, {
+												job: selectedJob,
+												jobs: overviewData.jobs,
+												overview: overviewData,
+												onSelectJob: (jobId) => {
+													setSelectedJobId(jobId);
+													setJobDetailOpen(false);
+												},
+												onToggleJobDetail: () => setJobDetailOpen((value) => !value),
+												jobDetailOpen,
+												rubricPendingText,
+												rubricBusy: pendingActionKey === "rubric_approve",
+												onApproveRubric: approveRubric,
+												closePendingText,
+												closeBusy,
+												onOpenClose: openCloseDialog,
+												onOpenSettings: () => setSettingsOpen(true)
+											}),
+											actionOutcome !== void 0 && actionOutcome.key === "rubric_approve" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OutcomeReadbackCard, {
+												outcome: actionOutcome,
+												title: "Rubric 批准读回（信封 readback：approval / rubric / job）",
+												testid: "rubric-approve-readback"
+											}) : null,
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CloseJobResultCard, {
+												envelope: closeEnvelope,
+												jobId: selectedJob?.id ?? "",
+												error: closeError,
+												errorRaw: closeRaw,
+												bodyText: closeBodyText
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)(JobDraftCard, {
+												draftProbeReason: draftPendingText,
+												createProbeReason: createPendingText,
+												draft: jobDraft,
+												draftBusy,
+												createBusy: draftCreateBusy,
+												draftError,
+												draftRaw,
+												createError: draftCreateError,
+												createRaw: draftCreateRaw,
+												createOutcome: draftOutcome,
+												departments: overviewData.settings.departments,
+												onGenerate: (requestText) => void generateJobDraft(requestText),
+												onCreate: (input) => void createJobFromDraft(input)
+											}),
+											jobDetailOpen ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(JobDetailCard, {
+												jobDetail: jobDetail.data,
+												loading: jobDetail.loading,
+												error: jobDetail.error,
+												onRetry: jobDetail.reload,
+												onClose: () => setJobDetailOpen(false)
+											}) : null,
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SectionHead, {
+												title: "此岗位下的候选人",
+												note: `共 ${String(rowsForJob.length)} 条申请 · 显示 ${String(rowsForFilter.length)} 条`,
+												right: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													className: "rcw-dim rcw-tiny",
+													children: "点击行查看申请详情（结论 + 渐进展开证据）"
+												})
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+												className: "rcw-filterbar",
+												"data-testid": "application-filters",
+												children: [
+													["all", "全部"],
+													["screening", "待初筛"],
+													["interviewing", "面试中"],
+													["other", "其他"]
+												].map(([value, label]) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+													type: "button",
+													className: `rcw-filter ${filter === value ? "rcw-filter-active" : ""}`.trim(),
+													"data-testid": `filter-${value}`,
+													"data-active": filter === value ? "true" : "false",
+													onClick: () => setFilter(value),
+													children: [
+														label,
+														"（",
+														filterCounts[value],
+														"）"
+													]
+												}, value))
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Card, {
+												className: "rcw-list",
+												testid: "application-list",
+												children: rowsForFilter.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptyState, { children: rowsForJob.length === 0 ? "该岗位还没有申请。" : "当前筛选下没有申请。" }) : rowsForFilter.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApplicationRow, {
+													row,
+													jobRubric: selectedJob?.rubric ?? null,
+													onOpen: (applicationId) => openCandidate(applicationId)
+												}, row.rowKey))
+											})
+										]
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("aside", {
+										className: "rcw-aside",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)(JobSidebar, {
+												jobs: overviewData.jobs,
+												selectedJobId: effectiveJobId,
+												onSelectJob: setSelectedJobId
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)(AttentionCard, { overview: overviewData }),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CountsCard, { overview: overviewData }),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SettingsEntryCard, {
+												overview: overviewData,
+												writeStateText: settingsWriteDisabledReason,
+												onOpenSettings: () => setSettingsOpen(true)
+											})
+										]
+									})]
+								}) : null
+							] })] })
+						})
 					}),
 					closeDialogOpen ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CloseJobDialog, {
 						jobTitle: selectedJob?.title ?? "",

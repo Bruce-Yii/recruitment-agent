@@ -54,6 +54,7 @@ export interface InterviewerVM {
 
 export interface InterviewRoundVM {
   id: string;
+  interviewId?: string;
   roundLabel: string;
   statusText: string;
   statusTone: 'done' | 'caution' | 'now';
@@ -515,6 +516,7 @@ export function normalizeApplicationDetail(raw: unknown): CandidateCanvasVM {
 
     return {
       id: shortId(iv.interview_id) || `r-${roundNo}`,
+      interviewId: asStr(iv.interview_id) || undefined,
       roundLabel: `第 ${roundNo} 轮面试`,
       statusText: stInfo.text,
       statusTone: stInfo.tone,

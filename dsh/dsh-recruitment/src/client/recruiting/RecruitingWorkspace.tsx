@@ -17,6 +17,7 @@
 // `job-draft`（含 request/generate/pending/reasons/missing/rounds/criteria/edit/confirm/result）。
 
 import { useEffect, useState } from 'react'
+import { CanvasPanelHost } from '../canvas/CanvasRoute.tsx'
 import {
   useApplicationDetail,
   useDecisionFacts,
@@ -573,7 +574,7 @@ function JobDraftCard({
 
           {facts.rubricDimensions.length > 0 ? (
             <div data-testid="job-draft-criteria">
-              <div className="rcw-cap">评分标准（未保存的草稿维度）</div>
+              <div className="rcw-cap">评分标准（rubric_draft.dimensions）</div>
               <div className="rcw-tablewrap">
                 <table className="rcw-table">
                   <thead>
@@ -803,7 +804,7 @@ function ApplicationRow({
           <span data-testid={`application-row-${row.id}-scorecards`}>面评 · {row.scorecardProgress.summaryText}</span>
           <span data-testid={`application-row-${row.id}-transcript`}>转写 · {row.transcriptSummary}</span>
           <span data-testid={`application-row-${row.id}-rubric`}>
-            本申请钉住岗位标准 · {applicationRubricTextOf(row.applicationRubric)}
+            本申请钉住 Rubric · {applicationRubricTextOf(row.applicationRubric)}
             {rubricConsistency}
           </span>
         </span>
@@ -901,7 +902,7 @@ function JobHero({
           </Chip>
         ) : (
           <Chip tone="gray" testid="job-rubric">
-            未关联岗位标准
+            未关联 rubric
           </Chip>
         )}
         {job.postings.map((posting) => (
@@ -954,7 +955,7 @@ function JobHero({
               onApproveRubric()
             }}
           >
-            {rubricBusy ? '提交中…' : '批准岗位标准'}
+            {rubricBusy ? '提交中…' : '批准 Rubric'}
           </button>
           {rubricPendingText !== '' ? (
             <span className="rcw-pending" data-testid="rubric-approve-pending">
@@ -985,7 +986,7 @@ function JobHero({
           ) : null}
         </span>
         <button type="button" className="rcw-btn" data-testid="toggle-job-detail" onClick={onToggleJobDetail}>
-          {jobDetailOpen ? '收起岗位版本与岗位标准' : '查看岗位版本与岗位标准'}
+          {jobDetailOpen ? '收起岗位版本与 rubric' : '查看岗位版本与 rubric'}
         </button>
         <button type="button" className="rcw-btn rcw-btn-soft" data-testid="open-settings" onClick={onOpenSettings}>
           招聘设置（只读）
@@ -1022,7 +1023,7 @@ function JobDetailCard({
   return (
     <Card className="rcw-detailmain" style={{ marginTop: 14 }} testid="job-detail">
       <div className="rcw-sectionhead" style={{ marginTop: 0 }}>
-        <h2>岗位详情 · 版本与岗位标准</h2>
+        <h2>岗位详情 · 版本与 rubric</h2>
         <button type="button" className="rcw-btn rcw-btn-sm" data-testid="close-job-detail" onClick={onClose}>
           收起
         </button>
@@ -1041,7 +1042,7 @@ function JobDetailCard({
                 {jobDetail.rubric.approved ? '已批准' : '未批准'}
               </Chip>
             ) : (
-              <Chip tone="gray">未关联岗位标准</Chip>
+              <Chip tone="gray">未关联 rubric</Chip>
             )}
             <ThreeDimBadges labels={jobDetail.labels} testid="job-detail-labels" />
           </div>
@@ -1076,10 +1077,10 @@ function JobDetailCard({
             </div>
           )}
           <div className="rcw-subhead">
-            <h3>岗位标准维度</h3>
+            <h3>Rubric 维度</h3>
           </div>
           {jobDetail.rubric === null || jobDetail.rubric.dimensions.length === 0 ? (
-            <EmptyState>该岗位没有可用的岗位标准维度。</EmptyState>
+            <EmptyState>该岗位没有可用的 rubric 维度。</EmptyState>
           ) : (
             jobDetail.rubric.dimensions.map((dimension) => (
               <div className="rcw-criteria" key={dimension.key} data-dim-key={dimension.key}>
@@ -1827,7 +1828,7 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
     rubricJob?.rubric?.approved === true || (jobDetailOpen && jobDetail.data?.rubric?.approved === true)
   const rubricPendingText = ((): string => {
     if (!isRecruiter) return aliasNote
-    if (rubricAction === undefined) return '当前页面版本没有提供「批准岗位标准」操作。'
+    if (rubricAction === undefined) return '当前页面版本没有提供「批准 Rubric」操作。'
     if (!rubricAction.available) {
       return rubricAction.reasonText !== '' ? rubricAction.reasonText : '暂时不能批准评分标准。'
     }
@@ -1890,7 +1891,7 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
     if (!built.ok) {
       setFeedback({
         tone: 'error',
-        title: '岗位标准批准未发送：表单预检未通过',
+        title: 'Rubric 批准未发送：表单预检未通过',
         message: `${built.reasonCode}：${built.reasonText}${built.missing.length > 0 ? `；缺少：${built.missing.join('、')}` : ''}`,
         rawBody: '',
       })
@@ -2128,6 +2129,9 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
     >
       <style key={STYLE_ELEMENT_KEY}>{RECRUITING_CSS}</style>
       <div className="rcw-content">
+        <CanvasPanelHost onRefreshOverview={overview.reload}>
+          {({ openCandidate }) => (
+            <>
         {aliasBlocked ? (
           <div className="rcw-notice" data-testid="alias-notice" role="status">
             {aliasNote}
@@ -2274,7 +2278,7 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
                   {actionOutcome !== undefined && actionOutcome.key === 'rubric_approve' ? (
                     <OutcomeReadbackCard
                       outcome={actionOutcome}
-                      title="岗位标准批准读回（信封 readback：approval / rubric / job）"
+                      title="Rubric 批准读回（信封 readback：approval / rubric / job）"
                       testid="rubric-approve-readback"
                     />
                   ) : null}
@@ -2316,7 +2320,7 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
                   <SectionHead
                     title="此岗位下的候选人"
                     note={`共 ${String(rowsForJob.length)} 条申请 · 显示 ${String(rowsForFilter.length)} 条`}
-                    right={<span className="rcw-dim rcw-tiny">点击行查看申请详情（结论 + 逐条展开的对应情况与原文出处）</span>}
+                    right={<span className="rcw-dim rcw-tiny">点击行查看申请详情（结论 + 渐进展开证据）</span>}
                   />
 
                   <div className="rcw-filterbar" data-testid="application-filters">
@@ -2352,7 +2356,7 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
                           key={row.rowKey}
                           row={row}
                           jobRubric={selectedJob?.rubric ?? null}
-                          onOpen={openApplication}
+                          onOpen={(applicationId) => openCandidate(applicationId)}
                         />
                       ))
                     )}
@@ -2373,6 +2377,9 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
             ) : null}
           </>
         )}
+            </>
+          )}
+        </CanvasPanelHost>
       </div>
       {/* 人类闸门：岗位关闭弹窗（取消 = 零请求；确认才 POST job/close） */}
       {closeDialogOpen ? (

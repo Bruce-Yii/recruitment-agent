@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CandidatePage, type CanvasFetcher } from './CandidatePage';
-import { JobPage } from './JobPage';
-import { CanvasEmptyState } from './bits';
-import { fetchTaskStatus, type UploadTaskStatusResult } from './canvas-actions';
+import { CandidatePage, type CanvasFetcher } from './CandidatePage.tsx';
+import { JobPage } from './JobPage.tsx';
+import { CanvasEmptyState } from './bits/index.ts';
+import { fetchTaskStatus, type UploadTaskStatusResult } from './canvas-actions.ts';
 import { CANVAS_CSS } from './canvas-styles.ts';
 
 export type CanvasRouteTarget =
@@ -20,19 +20,14 @@ export interface CanvasRouteProps {
   onBack?: () => void;
   onSelectApplication?: (applicationId: string) => void;
   onSelectJob?: (jobId: string) => void;
-  /** Active async resume upload task to poll in top non-blocking banner (T3-3). */
   uploadTask?: ActiveUploadTask | null;
+  onUploadStarted?: (task: ActiveUploadTask) => void;
   onDismissUploadTask?: () => void;
   onUploadCompleted?: (result: UploadTaskStatusResult) => void;
-  /** Optional custom fetcher for tests; defaults to host same-origin HTTP fetch. */
+  refreshNonce?: number;
   fetcher?: CanvasFetcher;
 }
 
-/**
- * Default host HTTP fetcher per client-plugin-contract.md §2:
- * - Same-origin cookie determines actor (frontend never sends actor)
- * - Always carries `x-recruitment-request: 1`
- */
 export async function fetchCanvasJson(path: string): Promise<unknown> {
   const res = await fetch(path, {
     method: 'GET',
@@ -48,11 +43,6 @@ export async function fetchCanvasJson(path: string): Promise<unknown> {
   return res.json();
 }
 
-/**
- * T3-3: Non-blocking upload progress & failure banner.
- * Polls GET /recruitment/api/tasks/status?task_id=... until terminal state.
- * Never claims "已入库" before COMPLETED; displays human errorSummary on FAILED.
- */
 function UploadProgressBanner({
   task,
   onOpenApplication,
@@ -198,12 +188,14 @@ export function CanvasRoute({
   onSelectApplication,
   onSelectJob,
   uploadTask,
+  onUploadStarted,
   onDismissUploadTask,
   onUploadCompleted,
+  refreshNonce = 0,
   fetcher = fetchCanvasJson,
 }: CanvasRouteProps) {
   return (
-    <section className="ros-canvas" aria-label="招聘详情画布">
+    <section className="ros-canvas" aria-label="招聘详情画布" data-testid="v4-canvas-route">
       <style>{CANVAS_CSS}</style>
       {uploadTask ? (
         <UploadProgressBanner
@@ -225,6 +217,9 @@ export function CanvasRoute({
           jobId={route.jobId}
           onBack={onBack}
           onSelectApplication={onSelectApplication}
+          onSelectJob={onSelectJob}
+          onUploadStarted={onUploadStarted}
+          refreshNonce={refreshNonce}
           fetcher={fetcher}
         />
       ) : (
@@ -241,12 +236,6 @@ export function CanvasRoute({
   );
 }
 
-/**
- * §4 Non-hash state-driven host wrapper:
- * DSH shell owns `location.hash`; NEVER mutate `location.hash` to open the canvas.
- * Use this state-only controller inside RecruitingWorkspace / Workbench:
- * when a row is clicked, switch React state to open CanvasRoute; clicking Back returns to list.
- */
 export interface CanvasPanelHostProps {
   children: (controls: {
     openCandidate: (applicationId: string) => void;
@@ -254,12 +243,19 @@ export interface CanvasPanelHostProps {
     closeCanvas: () => void;
     activeRoute: CanvasRouteTarget;
   }) => React.ReactNode;
+  onRefreshOverview?: () => void;
   fetcher?: CanvasFetcher;
 }
 
-export function CanvasPanelHost({ children, fetcher }: CanvasPanelHostProps) {
+/**
+ * Pure React-state canvas host (ZERO location.hash mutations).
+ * Wired into RecruitingWorkspace so clicking any candidate row opens v4 Canvas directly.
+ */
+export function CanvasPanelHost({ children, onRefreshOverview, fetcher }: CanvasPanelHostProps) {
   const [route, setRoute] = useState<CanvasRouteTarget>({ kind: 'empty' });
   const [prevJobId, setPrevJobId] = useState<string | null>(null);
+  const [uploadTask, setUploadTask] = useState<ActiveUploadTask | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState<number>(0);
 
   const openCandidate = useCallback((applicationId: string) => {
     setRoute({ kind: 'candidate', applicationId });
@@ -279,6 +275,11 @@ export function CanvasPanelHost({ children, fetcher }: CanvasPanelHostProps) {
     setRoute({ kind: 'empty' });
   }, [route.kind, prevJobId]);
 
+  const handleUploadCompleted = useCallback(() => {
+    setRefreshNonce((n) => n + 1);
+    onRefreshOverview?.();
+  }, [onRefreshOverview]);
+
   if (route.kind !== 'empty') {
     return (
       <CanvasRoute
@@ -286,6 +287,11 @@ export function CanvasPanelHost({ children, fetcher }: CanvasPanelHostProps) {
         onBack={handleBack}
         onSelectApplication={openCandidate}
         onSelectJob={openJob}
+        uploadTask={uploadTask}
+        onUploadStarted={setUploadTask}
+        onDismissUploadTask={() => setUploadTask(null)}
+        onUploadCompleted={handleUploadCompleted}
+        refreshNonce={refreshNonce}
         fetcher={fetcher}
       />
     );
