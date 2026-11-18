@@ -223,5 +223,7 @@
 | V2-1（部分） | 面试官面评表单里仍有英文枚举与内部 id（`MET / NOT_MET`、`scorecard_id / actor_id`） | `work/d5/shell-copy/REPORT.md §③` 清单 | **待前端**（口径见 `docs/30` §1） |
 | —（非门） | `engine/**` 装了、`engine_*` 表恒 0 行，且它的 `drive()` 绕过 advisory lock | `docs/27 §7`、`docs/28 §3-1` | **待拍**（D-151：保留薄桥 or 退役） |
 
+**邮箱入口（EM-1~EM-6）的当前状态**：**EM-1~EM-5 已通过真链**（真 QQ 邮箱 + 真库，证据 `work/d5/email-inbox/REAL-CHAIN.md`：外部邮件带 PDF 进来 → `ingested=1`、附件 sha256 与源一致、申请 CREATED、简历版本 +1；第二次 `duplicates=9` 版本不增；错授权码 `AUTH_REQUIRED` 且逐表零写入）。**EM-6 发信**代码已交付（`durable_effect` + 人点/授权 + 回执），**真链未跑**（待一次真实发送与回执匹配）。
+
 **其余各门在 2026-11-18 的冻结基线上已有实测证据**（真 Host 整链：`work/d5/e2e-live/`）：
 D-144 四条判据全过、决策真点真落库、面评独立提交、未绑定身份 409 且 10 张表零写入。
