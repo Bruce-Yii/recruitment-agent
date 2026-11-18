@@ -1331,7 +1331,7 @@ test('工具名固定为 recruitment_application_stage_advance', () => {
 test('入参只有 application_id（不接受目标阶段 / actor / tenant）', () => {
   const parameters = TOOL.parameters as Record<string, unknown>
   const properties = parameters.properties as Record<string, unknown>
-  assert.deepEqual(Object.keys(properties), ['application_id'])
+  assert.deepEqual(Object.keys(properties), ['application_id', 'override'])
   assert.deepEqual(parameters.required, ['application_id'])
   assert.equal(parameters.additionalProperties, false)
   for (const forbidden of ['to_stage', 'stage_code', 'actor_id', 'tenant_id', 'target_stage']) {

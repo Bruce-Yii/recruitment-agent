@@ -169,6 +169,12 @@ export const EVENT_TYPES = {
   JOB_CLOSED: 'job.closed',
   /** 逐条 rubric 标准人工纠偏落库：`src/tools/criterion-override.ts` 写的审计事件。 */
   CRITERION_OVERRIDE_RECORDED: 'criterion.override.recorded',
+  /**
+   * AT-6/7 带人工原话跳轮 / 豁免面评：`src/domain/stage-advance.ts` 的 override 分支写的审计事件。
+   * payload 必含 reason / confirmed_by_actor_id / confirmed_at / confirmation_text_sha256 /
+   * from_stage / to_stage（谁、何时、什么原话、跳过了哪一步）。
+   */
+  APPLICATION_STAGE_OVERRIDE_RECORDED: 'application.stage.override.recorded',
 } as const
 
 /** `EVENT_TYPES` 的取值联合（发射方签名用）。 */
@@ -419,6 +425,25 @@ const WRITER_EVENTS: readonly EventTypeDefinition[] = [
         '人工逐条纠偏已由工具在同一事务写进 criterion_override 表并把旧 current 收口；'
         + '事件只是审计事实（时间线可读），v1.0 没有自动后续任务，再建任务会重复处理。'
         + '（payload 带 application_id，是**明确不触发**，不是对象 id 解析失败。）',
+    },
+  },
+  {
+    type: EVENT_TYPES.APPLICATION_STAGE_OVERRIDE_RECORDED,
+    constKey: 'APPLICATION_STAGE_OVERRIDE_RECORDED',
+    producer: {
+      kind: 'DOMAIN_WRITER',
+      file: 'src/domain/stage-advance.ts',
+      detail: 'insertStageOverrideEvent()（AT-6/7：带人工原话跳轮 / 豁免面评的审计事件）',
+    },
+    // 与 application.rubric_version.pinned 同一口径：纯审计领域事件用 schema/0001，
+    // RuntimeStore.listPendingEvents 不把它当待路由触发事件。
+    normalizerVersion: 'schema/0001',
+    routing: {
+      kind: 'IGNORED',
+      reason:
+        '跳轮 / 豁免面评已由 stage_advance 的 override 分支在同一事务里完成阶段 UPDATE；'
+        + '事件是 schema/0001 口径的审计事实（人工原话哈希 + 确认人 + 时间 + from/to 可回查），'
+        + '再建任务不会重复推进，只会重复执行同一跳。',
     },
   },
 ]

@@ -379,6 +379,16 @@ interface DecisionRow {
   readonly superseded_by_decision_id: string | null
 }
 
+/** AT-1/2/3：跨岗携带历史行（append-only，源申请只读；一行 = 一次"从哪带到哪"的事实）。 */
+export interface CarryOverRow {
+  readonly application_id: string
+  readonly source_application_id: string
+  readonly ref_kind: string
+  readonly ref_id: string
+  readonly carried_by_actor_id: string
+  readonly created_at: Date | string
+}
+
 /** 输出：联系方式（永远带 visible，避免"看着像原文其实是脱敏"的误读）。 */
 interface ContactsValue {
   readonly visible: boolean
@@ -603,6 +613,21 @@ interface DecisionsSummaryValue {
   readonly latest?: DecisionItemValue
 }
 
+/** 输出：一条携带历史（从哪个源申请、带了什么、谁带的、什么时候带的）。 */
+export interface CarryOverItemValue {
+  readonly source_application_id: string
+  readonly ref_kind: string
+  readonly ref_id: string
+  readonly carried_by_actor_id: string
+  readonly created_at: string
+}
+
+/** 输出：跨岗携带历史摘要（`count` 与 `items` 恒在；空时 count=0 / items=[]）。 */
+export interface CarryOverValue {
+  readonly count: number
+  readonly items: readonly CarryOverItemValue[]
+}
+
 /** 输出：一条申请的完整摘要。 */
 interface ApplicationValue {
   readonly application_id: string
@@ -621,6 +646,8 @@ interface ApplicationValue {
   /** O12：服务端按 approval 真值生成的 rubric 修复建议（Agent 转述，不自行编造）。 */
   readonly rubric_remediation: RubricRemediationValue
   readonly decisions: DecisionsSummaryValue
+  /** AT-1/2/3：跨岗携带历史（恒给出；空时 count=0 / items=[]，不省略块）。 */
+  readonly carry_over: CarryOverValue
 }
 
 /** 输出：一次查询的入参回显。 */
@@ -678,6 +705,31 @@ const LABELS_SCHEMA: Record<string, unknown> = {
     connection: { type: 'string', enum: ['CONNECTED'] },
   },
   required: ['provenance', 'trigger', 'connection'],
+  additionalProperties: false,
+}
+
+/** AT-1/2/3：跨岗携带历史的紧凑输出 schema（恒在且形状封闭；空时用 0/[]，不用 null）。 */
+const CARRY_OVER_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    count: { type: 'number' },
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          source_application_id: { type: 'string' },
+          ref_kind: { type: 'string', enum: ['SCORECARD', 'TRANSCRIPT', 'DECISION'] },
+          ref_id: { type: 'string' },
+          carried_by_actor_id: { type: 'string' },
+          created_at: { type: 'string' },
+        },
+        required: ['source_application_id', 'ref_kind', 'ref_id', 'carried_by_actor_id', 'created_at'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['count', 'items'],
   additionalProperties: false,
 }
 
@@ -893,10 +945,13 @@ const APPLICATION_VALUE_SCHEMA: Record<string, unknown> = {
       required: ['count'],
       additionalProperties: false,
     },
+    carry_over: CARRY_OVER_SCHEMA,
   },
   required: [
     'application_id', 'stage_code', 'lifecycle_status', 'record_version',
     'candidate', 'job', 'interviews', 'transcripts', 'evaluations', 'rubric_remediation', 'decisions',
+    // 恒给出（空时 0/[]）：safe required —— 投影每次都写这个块，旧键一个不动。
+    'carry_over',
   ],
   additionalProperties: false,
 }
@@ -1180,6 +1235,44 @@ async function queryDecisionRows(
 }
 
 /**
+ * AT-1/2/3：跨岗携带历史行（**一次查询取全部申请**，与其它家族事实同一口径）。
+ *
+ * 只读 `application_carry_over`（append-only 表），租户过滤 + `any($2::uuid[])` 与 queryInterviewRows 同形。
+ */
+async function queryCarryOverRows(
+  client: DatabaseClient,
+  cfg: ResolvedDatabaseConfig,
+  applicationIds: readonly string[],
+): Promise<CarryOverRow[]> {
+  if (applicationIds.length === 0) return []
+  const { rows } = await client.query<CarryOverRow>(
+    `select application_id, source_application_id, ref_kind, ref_id, carried_by_actor_id, created_at
+       from recruitment.application_carry_over
+      where tenant_id = $1 and application_id = any($2::uuid[])
+      order by application_id, created_at, source_application_id, ref_kind, ref_id`,
+    [cfg.tenant_id, [...applicationIds]],
+  )
+  return rows
+}
+
+/**
+ * 携带历史行 → 输出摘要（纯函数，可单测）。空数组 ⇒ `{count:0, items:[]}`（块不省略）。
+ */
+export function toCarryOverSummary(rows: readonly CarryOverRow[]): CarryOverValue {
+  return {
+    count: rows.length,
+    items: rows.map((row) => ({
+      source_application_id: row.source_application_id,
+      ref_kind: row.ref_kind,
+      ref_id: row.ref_id,
+      carried_by_actor_id: row.carried_by_actor_id,
+      // created_at 是 NOT NULL；iso() 万一给 undefined 时用空串，保证输出没有 null（DSH 校验器不支持）。
+      created_at: iso(row.created_at) ?? '',
+    })),
+  }
+}
+
+/**
  * 在**已有只读事务**里跑完整申请查询（`execute()` 与集成测试走同一条路径）。
  * @param client - 只读事务内客户端。
  * @param cfg - 已解析的库配置。
@@ -1224,7 +1317,7 @@ export async function readApplicationValue(
   const rubricIds = [...new Set(rows.flatMap((row) => [row.pinned_rubric_version_id, row.current_rubric_version_id])
     .filter((value): value is string => value !== null))]
 
-  const [materials, rubrics, interviews, transcripts, scorecards, interviewers, decisions, overrides] = await Promise.all([
+  const [materials, rubrics, interviews, transcripts, scorecards, interviewers, decisions, overrides, carryOver] = await Promise.all([
     queryMaterialRows(client, cfg, resumeVersionIds),
     queryRubricRows(client, cfg, rubricIds),
     queryInterviewRows(client, cfg, applicationIds),
@@ -1234,6 +1327,8 @@ export async function readApplicationValue(
     queryDecisionRows(client, cfg, applicationIds),
     // 人工纠偏读投影（SELECT-only；full history，调用方只取 current 行）。
     readOverridesForApplications(client, cfg.tenant_id, applicationIds),
+    // AT-1/2/3：跨岗携带历史（一次查询取全部申请，按 application_id 分组后挂回去）。
+    queryCarryOverRows(client, cfg, applicationIds),
   ])
   const materialById = new Map(materials.map((row) => [row.id, row]))
   const rubricById = new Map(rubrics.map((row) => [row.id, row]))
@@ -1243,6 +1338,7 @@ export async function readApplicationValue(
   const interviewersByApplication = groupBy(interviewers, (row) => row.application_id)
   const decisionsByApplication = groupBy(decisions, (row) => row.application_id)
   const currentOverridesByApplication = buildCurrentOverrides(overrides)
+  const carryOverByApplication = groupBy(carryOver, (row) => row.application_id)
 
   const visible = args.include_contacts === true
   const labels = await buildReadToolLabels(client, cfg.tenant_id)
@@ -1257,6 +1353,7 @@ export async function readApplicationValue(
     interviewersByApplication.get(row.id) ?? [],
     decisionsByApplication.get(row.id) ?? [],
     currentOverridesByApplication.get(row.id) ?? new Map<string, CurrentOverride>(),
+    carryOverByApplication.get(row.id) ?? [],
     visible,
   ))
 
@@ -1334,6 +1431,7 @@ function toApplicationValue(
   interviewers: readonly InterviewerRow[],
   decisions: readonly DecisionRow[],
   currentOverrides: ReadonlyMap<string, CurrentOverride>,
+  carryOver: readonly CarryOverRow[],
   contactsVisible: boolean,
 ): ApplicationValue {
   const email = row.normalized_email ?? ''
@@ -1382,6 +1480,7 @@ function toApplicationValue(
       current: row.current_rubric_version_id === null ? undefined : rubricById.get(row.current_rubric_version_id),
     }),
     decisions: toDecisionsSummary(decisions),
+    carry_over: toCarryOverSummary(carryOver),
   }
 
   const rubricId = row.pinned_rubric_version_id ?? row.current_rubric_version_id
@@ -1932,6 +2031,9 @@ function renderApplicationGet(_args: unknown, value: unknown): readonly TextBloc
           ? ''
           : ` (latest ${application.decisions.latest.scope}/${application.decisions.latest.result} `
             + `@ ${application.decisions.latest.stage_code})`),
+      // AT-1/2/3：从哪些申请带了什么（短号，不给完整 UUID；完整值仍在结构化 carry_over.items）。
+      `  carry_over: ${application.carry_over?.count ?? 0} [${(application.carry_over?.items ?? [])
+        .map((item) => `R${item.ref_kind} from ${shortRef(item.source_application_id)}`).join(', ')}]`,
     )
   }
   if (v.next_tools.length > 0) {

@@ -1,19 +1,24 @@
-// recruitment_interview_schedule —— S8 面试排期（D-62 的**四合一** intent）。
+// recruitment_interview_schedule —— S8 面试排期（D-62 的**四合一** intent + AT-5 追加第五个 intent）。
 //
 // 合同（**不得修改**）：
 //   * `contracts/interview/scheduling-rules.md`（§2 A1–A10 判定式、§3 冲突、§4 改期、§6 取消、
 //     §8 状态机、§9 幂等）——`SC-*`。
 //   * `contracts/interview/tool-contracts.md`（§1 通用、§3 schedule、§4 幂等、§5.1 写工具证明口径）。
 //
-// 四个 intent（`docs/17` D-62；`tool-contracts.md` §3.1）：
+// 五个 intent（原四个见 `docs/17` D-62 / `tool-contracts.md` §3.1；第五个见 docs/29 §3.7 AT-5）：
 //   * `CREATE`               ∅ → SCHEDULED（新建一场 + 必要时登记会议绑定）；
 //   * `RESCHEDULE`           SCHEDULED/RESCHEDULED/CANCELLED → SCHEDULED（**改同一行**，H-1）；
 //   * `CANCEL`               SCHEDULED/RESCHEDULED → CANCELLED（已 CANCELLED → 幂等成功、零写入）；
-//   * `WITHDRAW_INTERVIEWER` 不改 `interview.status`：`required_scorecard=false` + 内部事件（§4.3）。
+//   * `WITHDRAW_INTERVIEWER` 不改 `interview.status`：`required_scorecard=false` + 内部事件（§4.3）；
+//   * `REPLACE_INTERVIEWER`  AT-5：追加新面试官行 + 旧行标记 replaced_*（**旧行不删**），
+//                            只写 `SCHEDULED/RESCHEDULED`，复用 `interviewer.withdrawn` 审计事件。
 //   **没有 `COMPLETE`**：`IN_PROGRESS → POST_INTERVIEW` 等边属 S9（`scheduling-rules.md` §8 末段），
 //   本工具不实现、也不接受该取值（enum 之外 → `INVALID_ARGS(OUT_OF_RANGE)`）。
 //
-// 四个 intent **共用同一条管道**（这正是 D-62 不拆工具的理由，代码里也必须只有一份）：
+// AT-4：`round_label`（可选，CREATE/RESCHEDULE）只是显示层附加事实；`round_no` / `uq_interview_slot`
+// 语义与唯一键**一律不变**（0018 / db/verify.sql AT-STRUCT-09）。
+//
+// 五个 intent **共用同一条管道**（这正是 D-62 不拆工具的理由，代码里也必须只有一份）：
 //   1. 幂等 STORE（`business_task.idempotency_key = 'interview_schedule:' || K`）→ 重放 / 键复用；
 //   2. 业务校验（申请 / 面试官 / 状态机 / 乐观并发 / 冲突 / 会议）；
 //   3. **人机闸门（D-79）**：全部校验通过后、第一行写之前请求人工批准；approval 缺省 /
@@ -93,8 +98,8 @@ const DEFAULT_SLOT_CODE = 'DEFAULT'
 const DEFAULT_TIMEZONE = 'Asia/Shanghai'
 const ONLY_DELIVERY_MODE = 'VIDEO'
 
-/** 四个 intent（D-62 / `tool-contracts.md` §3.1）。**没有** `COMPLETE`：面试结束属 S9。 */
-const INTENTS = ['CREATE', 'RESCHEDULE', 'CANCEL', 'WITHDRAW_INTERVIEWER'] as const
+/** 五个 intent（D-62 四个 + AT-5 的 `REPLACE_INTERVIEWER`）。**没有** `COMPLETE`：面试结束属 S9。 */
+const INTENTS = ['CREATE', 'RESCHEDULE', 'CANCEL', 'WITHDRAW_INTERVIEWER', 'REPLACE_INTERVIEWER'] as const
 /** 本工具接受的 `intent` 取值。 */
 export type ScheduleIntent = (typeof INTENTS)[number]
 
@@ -118,6 +123,10 @@ const EVENT_TRUST_LEVEL = 'INTERNAL'
 const RESCHEDULE_EVENT_TYPE = EVENT_TYPES.INTERVIEW_RESCHEDULED
 const CANCEL_EVENT_TYPE = EVENT_TYPES.INTERVIEW_CANCELLED
 const WITHDRAW_EVENT_TYPE = EVENT_TYPES.INTERVIEWER_WITHDRAWN
+// AT-5 复用同一个**已登记**事件类型（producer 文件就是本文件，normalizer_version 同为
+// 'schema/interview-schedule'），不新增事件类型、不改 src/runtime/event-types.ts。
+// 必须逐字引用 EVENT_TYPES.X：test/runtime/event-types.test.ts 会追 eventType: 右值的本地常量定义。
+const REPLACE_EVENT_TYPE = EVENT_TYPES.INTERVIEWER_WITHDRAWN
 /** `meeting_binding.unbound_reason` 必须非空（`ck_meeting_binding_unbound`，0001 L1039）。 */
 const UNBOUND_REASON_RESCHEDULED = 'INTERVIEW_RESCHEDULED'
 const UNBOUND_REASON_CANCELLED = 'INTERVIEW_CANCELLED'
@@ -126,6 +135,8 @@ const MIN_ROUND_NO = 1
 const MAX_ROUND_NO = 20
 const MIN_DURATION_MINUTES = 15
 const MAX_DURATION_MINUTES = 480
+/** AT-4：`ck_interview_round_label` 的 btrim 后长度上界。 */
+const MAX_ROUND_LABEL_CHARS = 200
 
 /**
  * 事务内保存点：`uq_business_task_idempotency` 撞键（并发同 key）时回到这里，
@@ -278,6 +289,15 @@ const INTERVIEWER_ID_PARAM: ParamSpec = {
   description: 'interviewer row id (UUID) — NOT the actor_id (§3.2 WITHDRAW_INTERVIEWER).',
 }
 
+/** AT-4：自定义轮次标签（显示层元数据，不改 round_no / uq_interview_slot）。 */
+const ROUND_LABEL_PARAM: ParamSpec = {
+  kind: 'string',
+  maxLength: MAX_ROUND_LABEL_CHARS,
+  description:
+    'Optional display-only round label (e.g. "加面 · 交叉评估"), 1..200 chars after trimming. '
+    + 'It never changes round_no or the (application_id, round_no, slot_code) uniqueness; omit to leave unset.',
+}
+
 /** 四个 intent 都接受的标量（`intent` + 幂等键）。 */
 const COMMON_PARAMS: ParamMap = {
   intent: INTENT_PARAM,
@@ -294,6 +314,7 @@ const CREATE_PARAMS: ParamMap = {
   timezone: TIMEZONE_PARAM,
   delivery_mode: DELIVERY_MODE_PARAM,
   interview_template_version_id: TEMPLATE_VERSION_PARAM,
+  round_label: ROUND_LABEL_PARAM,
 }
 
 /** `RESCHEDULE` 的标量。 */
@@ -302,6 +323,13 @@ const RESCHEDULE_PARAMS: ParamMap = {
   expected_record_version: EXPECTED_RECORD_VERSION_PARAM,
   scheduled_start_at: RESCHEDULE_START_PARAM,
   duration_minutes: DURATION_PARAM,
+  round_label: ROUND_LABEL_PARAM,
+}
+
+/** `REPLACE_INTERVIEWER`（AT-5）的标量：结构化对象 `replace_interviewer` 由本文件手写校验。 */
+const REPLACE_PARAMS: ParamMap = {
+  interview_id: INTERVIEW_ID_PARAM,
+  expected_record_version: EXPECTED_RECORD_VERSION_PARAM,
 }
 
 /** `CANCEL` 的标量。 */
@@ -322,6 +350,7 @@ const INTENT_PARAMS: Readonly<Record<ScheduleIntent, ParamMap>> = {
   RESCHEDULE: RESCHEDULE_PARAMS,
   CANCEL: CANCEL_PARAMS,
   WITHDRAW_INTERVIEWER: WITHDRAW_PARAMS,
+  REPLACE_INTERVIEWER: REPLACE_PARAMS,
 }
 
 /** 每个 intent 的结构化键（`args.ts` 不支持对象 / 对象数组，由本文件手写校验）。 */
@@ -330,6 +359,7 @@ const INTENT_STRUCTURED_KEYS: Readonly<Record<ScheduleIntent, readonly string[]>
   RESCHEDULE: ['meeting', 'interviewer_additions'],
   CANCEL: [],
   WITHDRAW_INTERVIEWER: [],
+  REPLACE_INTERVIEWER: ['replace_interviewer'],
 }
 
 /** 每个 intent 额外接受、但不进 `args.ts` 的键（`reason` 的 `REASON_REQUIRED` 优先级更高）。 */
@@ -338,6 +368,8 @@ const INTENT_EXTRA_KEYS: Readonly<Record<ScheduleIntent, readonly string[]>> = {
   RESCHEDULE: ['reason'],
   CANCEL: ['reason'],
   WITHDRAW_INTERVIEWER: ['reason'],
+  // AT-5：reason 首选写在 replace_interviewer 对象里；顶层 reason 也接受（与其余 intent 同口径）。
+  REPLACE_INTERVIEWER: ['reason'],
 }
 
 /**
@@ -361,6 +393,8 @@ const MODEL_SCALAR_PARAMS: ParamMap = {
   ...withoutRequired(RESCHEDULE_PARAMS),
   ...withoutRequired(CANCEL_PARAMS),
   ...withoutRequired(WITHDRAW_PARAMS),
+  ...withoutRequired(REPLACE_PARAMS),
+  round_label: ROUND_LABEL_PARAM,
   reason: REASON_PARAM,
 }
 
@@ -389,6 +423,22 @@ const INTERVIEWER_INPUT_SCHEMA: Record<string, unknown> = {
     },
   },
   required: ['actor_id'],
+  additionalProperties: false,
+}
+
+/** AT-5 `replace_interviewer` 对象的模型可见 schema（意图 `REPLACE_INTERVIEWER` 专用的结构化键）。 */
+const REPLACE_INTERVIEWER_INPUT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  description:
+    'REPLACE_INTERVIEWER only. The replacement fact: from_actor_id (the currently active interviewer on this '
+    + 'interview), to_actor_id (a different HUMAN actor in this tenant, not already assigned), and a non-empty '
+    + 'reason (1..500). Unknown keys are rejected.',
+  properties: {
+    from_actor_id: { type: 'string', description: 'Actor id (UUID text form) of the interviewer being replaced.' },
+    to_actor_id: { type: 'string', description: 'Actor id (UUID text form) of the HUMAN replacement.' },
+    reason: { type: 'string', description: 'Non-empty replacement reason, 1..500 chars (audit payload).' },
+  },
+  required: ['from_actor_id', 'to_actor_id', 'reason'],
   additionalProperties: false,
 }
 
@@ -447,6 +497,11 @@ const PARAMETERS_SCHEMA: Record<string, unknown> = (() => {
     ...MEETING_INPUT_SCHEMA,
     description: `${String(MEETING_INPUT_SCHEMA.description)} For RESCHEDULE it REPLACES the current meeting: `
       + 'the old binding is unbound (unbound_reason) and the old meeting is marked REPLACED (kept as history).',
+  }
+  properties.replace_interviewer = {
+    ...REPLACE_INTERVIEWER_INPUT_SCHEMA,
+    description: `${String(REPLACE_INTERVIEWER_INPUT_SCHEMA.description)} The old interviewer row is KEPT and marked `
+      + 'with replaced_by_interviewer_id / replaced_at / replacement_reason; only the new row owns the scorecard.',
   }
   return {
     type: 'object',
@@ -612,6 +667,8 @@ export interface CreateCommand extends CommandBase {
   readonly delivery_mode: 'VIDEO'
   readonly meeting?: ScheduleMeetingArgs
   readonly interview_template_version_id?: string
+  /** AT-4：显示层轮次标签（trim 后 1..200），省略 = 不写该列。 */
+  readonly round_label?: string
 }
 
 /** `intent=RESCHEDULE` 的规范形态。 */
@@ -629,6 +686,8 @@ export interface RescheduleCommand extends CommandBase {
   /** 只增不减；已在该场的人 → `warnings: ALREADY_ASSIGNED`。 */
   readonly interviewer_additions: readonly ScheduleInterviewerArgs[]
   readonly reason?: string
+  /** AT-4：可选；给了才在 UPDATE 里写 round_label，没给保留原值。 */
+  readonly round_label?: string
 }
 
 /** `intent=CANCEL` 的规范形态。 */
@@ -647,8 +706,19 @@ export interface WithdrawInterviewerCommand extends CommandBase {
   readonly reason: string
 }
 
-/** `parseScheduleArgs` 的返回：按 `intent` 区分的四选一命令。 */
-export type ScheduleCommand = CreateCommand | RescheduleCommand | CancelCommand | WithdrawInterviewerCommand
+/** `intent=REPLACE_INTERVIEWER` 的规范形态（AT-5）。 */
+export interface ReplaceInterviewerCommand extends CommandBase {
+  readonly intent: 'REPLACE_INTERVIEWER'
+  readonly interview_id: string
+  readonly expected_record_version: number
+  readonly from_actor_id: string
+  readonly to_actor_id: string
+  readonly reason: string
+}
+
+/** `parseScheduleArgs` 的返回：按 `intent` 区分的五选一命令。 */
+export type ScheduleCommand =
+  | CreateCommand | RescheduleCommand | CancelCommand | WithdrawInterviewerCommand | ReplaceInterviewerCommand
 
 /** 兼容旧名（`intent=CREATE` 的规范形态）。 */
 export type ScheduleArgs = CreateCommand
@@ -695,6 +765,21 @@ interface InterviewerCommandRow {
   readonly required_scorecard: boolean
   readonly interview_status: string
   readonly record_version: number
+}
+
+/** AT-5：`interviewer` 旧行 + 所属 `interview` 的行（换人准备/写入共用）。 */
+interface ReplacementInterviewerRow {
+  readonly id: string
+  readonly interview_id: string
+  readonly actor_id: string
+  readonly role_in_interview: string
+  readonly required_scorecard: boolean
+  readonly scorecard_due_at: string | Date | null
+  readonly replaced_by_interviewer_id: string | null
+  readonly interview_status: string
+  readonly record_version: number
+  readonly round_no: number
+  readonly slot_code: string
 }
 
 /** 一条 active 绑定 + 它的 meeting（`SC-X6` / §4.2 的换绑与解绑都要看 meeting 是否已发生）。 */
@@ -1206,6 +1291,23 @@ function readReason(value: unknown, required: boolean): string | undefined {
   return value
 }
 
+/**
+ * AT-4：`round_label`（可选）按 `ck_interview_round_label` 校验 btrim 后 1..200。
+ * 存进去的也是 trim 后的值（显示层元数据，不需要保留调用方的前后空白）。
+ */
+function readRoundLabel(value: unknown): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string') fail('TYPE_MISMATCH', '"round_label" 必须是字符串', { path: 'round_label' })
+  const trimmed = value.trim()
+  if (trimmed.length < 1 || trimmed.length > MAX_ROUND_LABEL_CHARS) {
+    fail('OUT_OF_RANGE', `"round_label" 去空白后必须 1..${MAX_ROUND_LABEL_CHARS} 个字符`, {
+      path: 'round_label',
+      length: trimmed.length,
+    })
+  }
+  return trimmed
+}
+
 /** `CREATE` 的形状（原切片逻辑逐条保留）。 */
 function parseCreateCommand(
   input: Record<string, unknown>,
@@ -1251,6 +1353,7 @@ function parseCreateCommand(
   const templateId = scalars.interview_template_version_id === undefined
     ? undefined
     : (scalars.interview_template_version_id as string).toLowerCase()
+  const roundLabel = readRoundLabel(scalars.round_label)
 
   return compact({
     intent: 'CREATE',
@@ -1268,6 +1371,7 @@ function parseCreateCommand(
     delivery_mode: ONLY_DELIVERY_MODE,
     meeting,
     interview_template_version_id: templateId,
+    round_label: roundLabel,
     args_digest: argsDigest,
   }) as unknown as CreateCommand
 }
@@ -1305,6 +1409,7 @@ function parseRescheduleCommand(
     ? []
     : parseInterviewerList(input.interviewer_additions, 'interviewer_additions', 'ADDITIONS')
   const reason = readReason(input.reason, false)
+  const roundLabel = readRoundLabel(scalars.round_label)
 
   return compact({
     intent: 'RESCHEDULE',
@@ -1317,6 +1422,7 @@ function parseRescheduleCommand(
     meeting,
     interviewer_additions: additions,
     reason,
+    round_label: roundLabel,
     args_digest: argsDigest,
   }) as unknown as RescheduleCommand
 }
@@ -1353,6 +1459,53 @@ function parseWithdrawInterviewerCommand(
     reason: readReason(input.reason, true),
     args_digest: argsDigest,
   }) as unknown as WithdrawInterviewerCommand
+}
+
+/** AT-5：`replace_interviewer` 对象允许的键。 */
+const REPLACE_INTERVIEWER_KEYS: readonly string[] = ['from_actor_id', 'to_actor_id', 'reason']
+
+/** `REPLACE_INTERVIEWER` 的形状（AT-5；业务校验在 prepare 里，这里只做格式/结构）。 */
+function parseReplaceInterviewerCommand(
+  input: Record<string, unknown>,
+  scalars: Record<string, unknown>,
+  idempotencyKey: string,
+  argsDigest: string,
+): ReplaceInterviewerCommand {
+  const raw = input.replace_interviewer
+  if (raw === undefined) {
+    fail('MISSING_REQUIRED', '缺少必填参数 "replace_interviewer"', { path: 'replace_interviewer' })
+  }
+  if (!isPlainObject(raw)) fail('TYPE_MISMATCH', '"replace_interviewer" 必须是对象', { path: 'replace_interviewer' })
+  assertNoUnknownKeys(raw, REPLACE_INTERVIEWER_KEYS, 'replace_interviewer')
+
+  const actors: Record<'from_actor_id' | 'to_actor_id', string> = { from_actor_id: '', to_actor_id: '' }
+  for (const key of ['from_actor_id', 'to_actor_id'] as const) {
+    const value = raw[key]
+    const path = `replace_interviewer.${key}`
+    if (value === undefined) fail('MISSING_REQUIRED', `缺少必填参数 "${path}"`, { path })
+    if (typeof value !== 'string') fail('TYPE_MISMATCH', `"${path}" 必须是字符串`, { path })
+    if (!isUuid(value)) fail('ID_NOT_UUID', `"${path}" 必须是 UUID 文本形式`, { path })
+    actors[key] = value.toLowerCase()
+  }
+  if (actors.from_actor_id === actors.to_actor_id) {
+    fail('REPLACE_SAME_ACTOR', '换人的 from_actor_id 与 to_actor_id 不能是同一个人', {
+      path: 'replace_interviewer.to_actor_id',
+      actor_id: actors.to_actor_id,
+    })
+  }
+  // reason 首选对象内；顶层 reason 作为与其余 intent 同口径的兼容入口。
+  const reason = readReason(raw.reason === undefined ? input.reason : raw.reason, true)
+
+  return compact({
+    intent: 'REPLACE_INTERVIEWER',
+    idempotency_key: idempotencyKey,
+    interview_id: (scalars.interview_id as string).toLowerCase(),
+    expected_record_version: readExpectedRecordVersion(scalars.expected_record_version),
+    from_actor_id: actors.from_actor_id,
+    to_actor_id: actors.to_actor_id,
+    reason,
+    args_digest: argsDigest,
+  }) as unknown as ReplaceInterviewerCommand
 }
 
 /**
@@ -1403,6 +1556,8 @@ function parseScheduleShape(raw: unknown): ScheduleCommand {
       return parseCancelCommand(input, scalars, idempotencyKey, argsDigest)
     case 'WITHDRAW_INTERVIEWER':
       return parseWithdrawInterviewerCommand(input, scalars, idempotencyKey, argsDigest)
+    case 'REPLACE_INTERVIEWER':
+      return parseReplaceInterviewerCommand(input, scalars, idempotencyKey, argsDigest)
   }
 }
 
@@ -2174,6 +2329,13 @@ export type ScheduleWritePlan =
     readonly row: InterviewerCommandRow
     readonly asOfIso: string
   }
+  | {
+    readonly intent: 'REPLACE_INTERVIEWER'
+    readonly command: ReplaceInterviewerCommand
+    /** 旧面试官行（连同 interview 的状态/版本/轮次）。 */
+    readonly oldRow: ReplacementInterviewerRow
+    readonly asOfIso: string
+  }
 
 /**
  * `prepareSchedule` 的结论（**internal 导出**：生产路径与测试共用，不是契约面）。
@@ -2245,6 +2407,8 @@ export async function prepareSchedule(
       return await prepareCancelCommand(client, config, command, asOfIso, options)
     case 'WITHDRAW_INTERVIEWER':
       return await prepareWithdrawInterviewerCommand(client, config, command, asOfIso, options)
+    case 'REPLACE_INTERVIEWER':
+      return await prepareReplaceInterviewerCommand(client, config, command, asOfIso, options)
   }
 }
 
@@ -2271,6 +2435,8 @@ export async function writeSchedule(
       return await writeCancelCommand(client, config, plan)
     case 'WITHDRAW_INTERVIEWER':
       return await writeWithdrawInterviewerCommand(client, config, plan)
+    case 'REPLACE_INTERVIEWER':
+      return await writeReplaceInterviewerCommand(client, config, plan)
   }
 }
 
@@ -2474,9 +2640,9 @@ async function writeCreateCommand(
   try {
     const interviewResult = await client.query<{ id: string; record_version: number }>(
       `insert into recruitment.interview
-         (tenant_id, application_id, interview_template_version_id, round_no, slot_code, stage_code,
+         (tenant_id, application_id, interview_template_version_id, round_no, slot_code, round_label, stage_code,
           status, scheduled_start_at, scheduled_end_at, timezone, status_changed_by_actor_id)
-       values ($1, $2, $3, $4, $5, $6, 'SCHEDULED', $7::timestamptz, $8::timestamptz, $9, $10)
+       values ($1, $2, $3, $4, $5, $11, $6, 'SCHEDULED', $7::timestamptz, $8::timestamptz, $9, $10)
        returning id, record_version`,
       [
         tenantId,
@@ -2489,6 +2655,7 @@ async function writeCreateCommand(
         args.scheduled_end_at,
         args.timezone,
         actorId,
+        args.round_label ?? null,
       ],
     )
     const inserted = interviewResult.rows[0]
@@ -2944,17 +3111,19 @@ async function writeRescheduleCommand(
     ? await client.query<{ id: string }>(
       `update recruitment.interview
           set scheduled_start_at = $1::timestamptz, scheduled_end_at = $2::timestamptz,
-              status = 'SCHEDULED', status_changed_by_actor_id = $3
+              status = 'SCHEDULED', status_changed_by_actor_id = $3,
+              round_label = coalesce($7::text, round_label)
         where id = $4 and tenant_id = $5 and record_version = $6
         returning id`,
-      [startIso, endIso, actorId, args.interview_id, tenantId, args.expected_record_version],
+      [startIso, endIso, actorId, args.interview_id, tenantId, args.expected_record_version, args.round_label ?? null],
     )
     : await client.query<{ id: string }>(
       `update recruitment.interview
-          set scheduled_start_at = $1::timestamptz, scheduled_end_at = $2::timestamptz
+          set scheduled_start_at = $1::timestamptz, scheduled_end_at = $2::timestamptz,
+              round_label = coalesce($6::text, round_label)
         where id = $3 and tenant_id = $4 and record_version = $5
         returning id`,
-      [startIso, endIso, args.interview_id, tenantId, args.expected_record_version],
+      [startIso, endIso, args.interview_id, tenantId, args.expected_record_version, args.round_label ?? null],
     )
   if (changed.rows[0] === undefined) {
     // 行锁已拿住仍 0 行 = 版本被并发改动（防御性翻译，不抛 500）。
@@ -3286,6 +3455,219 @@ async function writeWithdrawInterviewerCommand(
 }
 
 // ---------------------------------------------------------------------------
+//  AT-5 · REPLACE_INTERVIEWER（第五个 intent，仍在同一条管道里）
+// ---------------------------------------------------------------------------
+
+/**
+ * `intent=REPLACE_INTERVIEWER` 的**只读准备段**：
+ * 幂等 STORE → 旧面试官行（interview_id + from_actor + 同租户，且未被替换）→ 乐观并发 + 状态机 →
+ * 新人必须是同租户 HUMAN、与旧人不同、且不在该场面试官集合里（uq_interviewer 会在写入段兜底）。
+ * 与 WITHDRAW 相同：只借 `interview.record_version`，不改 `interview.status`。
+ */
+async function prepareReplaceInterviewerCommand(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  args: ReplaceInterviewerCommand,
+  asOfIso: string,
+  options: SchedulePrepareOptions,
+): Promise<SchedulePreparation> {
+  const tenantId = config.tenant_id
+
+  // 1. 幂等 STORE（重放优先；旧状态/旧版本不影响重放）。
+  const store = await loadStore(client, tenantId, args.idempotency_key)
+  if (store !== null) {
+    return { kind: 'result', value: await replayFromStore(client, config, store, args, asOfIso) }
+  }
+
+  // 2. 定位旧分配行（`interview_id` + `actor_id=from_actor_id`，跨租户一律 NOT_FOUND）。
+  //    `for update of i` 与 WITHDRAW 同一口径：锁面试行（interviewer 没有版本/行锁可用）。
+  const loaded = await client.query<ReplacementInterviewerRow>(
+    `select r.id, r.interview_id, r.actor_id, r.role_in_interview, r.required_scorecard,
+            r.scorecard_due_at, r.replaced_by_interviewer_id,
+            i.status as interview_status, i.record_version, i.round_no, i.slot_code
+       from recruitment.interviewer r
+       join recruitment.interview i
+         on i.id = r.interview_id and i.tenant_id = r.tenant_id
+      where r.tenant_id = $1 and r.interview_id = $2 and r.actor_id = $3${options.forUpdate ? ' for update of i' : ''}`,
+    [tenantId, args.interview_id, args.from_actor_id],
+  )
+  const oldRow = loaded.rows[0]
+  if (oldRow === undefined) {
+    throw contractError('NOT_FOUND', {
+      reason_code: 'INTERVIEWER_NOT_FOUND',
+      message: `该租户下没有面试 ${args.interview_id} 的面试官 ${args.from_actor_id}`,
+      detail: { interview_id: args.interview_id, actor_id: args.from_actor_id },
+    })
+  }
+
+  // 3. 乐观并发（借 interview.record_version，SC-K7）。
+  if (oldRow.record_version !== args.expected_record_version) {
+    throw versionConflictError(args.interview_id, args.expected_record_version, oldRow.record_version)
+  }
+
+  // 4. 状态机：只在 SCHEDULED/RESCHEDULED 上换人（与 CANCEL 同一允许集；CANCELLED 是死场次）。
+  if (!CANCELLABLE_STATUSES.includes(oldRow.interview_status)) {
+    fail(
+      'INVALID_STATE_TRANSITION',
+      `REPLACE_INTERVIEWER 不允许从状态 ${oldRow.interview_status} 出发`
+        + `（allowed: ${CANCELLABLE_STATUSES.join(' / ')}；状态机见 scheduling-rules §8）`,
+      { interview_id: args.interview_id, status: oldRow.interview_status, allowed_statuses: [...CANCELLABLE_STATUSES] },
+    )
+  }
+
+  // 5. 旧行必须仍然 active（AT-5：旧行不删，只标记；已替换过就不能再换一次）。
+  if (oldRow.replaced_by_interviewer_id !== null) {
+    fail('ALREADY_REPLACED', '该面试官已被替换（replaced_by_interviewer_id 非空）', {
+      interview_id: args.interview_id,
+      interviewer_id: oldRow.id,
+      replaced_by_interviewer_id: oldRow.replaced_by_interviewer_id,
+    })
+  }
+  if (args.from_actor_id === args.to_actor_id) {
+    fail('REPLACE_SAME_ACTOR', '换人的 from_actor_id 与 to_actor_id 不能是同一个人', {
+      actor_id: args.to_actor_id,
+    })
+  }
+
+  // 6. 新人：同租户存在 + kind='HUMAN'。
+  await assertInterviewerActors(client, tenantId, [args.to_actor_id])
+
+  // 7. 新人不能已在该场（uq_interviewer(interview_id, actor_id) 的显式前置检查，给清晰错误）。
+  const assigned = await client.query<{ id: string }>(
+    `select id
+       from recruitment.interviewer
+      where tenant_id = $1 and interview_id = $2 and actor_id = $3
+      limit 1`,
+    [tenantId, args.interview_id, args.to_actor_id],
+  )
+  if (assigned.rows[0] !== undefined) {
+    fail('INTERVIEWER_ALREADY_ASSIGNED', `actor ${args.to_actor_id} 已经是该场面试的面试官`, {
+      interview_id: args.interview_id,
+      actor_id: args.to_actor_id,
+      interviewer_id: assigned.rows[0].id,
+    })
+  }
+
+  return { kind: 'write', plan: { intent: 'REPLACE_INTERVIEWER', command: args, oldRow, asOfIso } }
+}
+
+/**
+ * `intent=REPLACE_INTERVIEWER` 的**写入段**（闸门已放行）：
+ * touch interview 借版本 → INSERT 新面试官行（role 复制、required_scorecard=true）→
+ * UPDATE 旧行标记 replaced_* + required_scorecard=false → 审计事件（复用 interviewer.withdrawn）→
+ * 幂等 STORE → 读回。不写 scorecard 表。
+ */
+async function writeReplaceInterviewerCommand(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  plan: Extract<ScheduleWritePlan, { readonly intent: 'REPLACE_INTERVIEWER' }>,
+): Promise<Record<string, unknown>> {
+  const args = plan.command
+  const oldRow = plan.oldRow
+  const asOfIso = plan.asOfIso
+  const tenantId = config.tenant_id
+  const created: ChangeRow[] = []
+  const updated: ChangeRow[] = []
+
+  // 1. touch interview（SC-K7：面试官集合变更借 interview 的版本；fn_row_guard 自增 record_version）。
+  const touched = await client.query<{ id: string }>(
+    `update recruitment.interview
+        set updated_at = now()
+      where id = $1 and tenant_id = $2 and record_version = $3
+      returning id`,
+    [args.interview_id, tenantId, args.expected_record_version],
+  )
+  if (touched.rows[0] === undefined) {
+    const fresh = await loadInterviewForUpdate(client, tenantId, args.interview_id)
+    throw versionConflictError(args.interview_id, args.expected_record_version, fresh.record_version)
+  }
+  updated.push({ table: 'interview', id: args.interview_id })
+
+  // 2. 追加新分配行：角色复制，**新人才拥有面评**（required_scorecard=true）；旧人不再需要交评。
+  let newInterviewerId: string
+  try {
+    const inserted = await client.query<{ id: string }>(
+      `insert into recruitment.interviewer
+         (tenant_id, interview_id, actor_id, role_in_interview, required_scorecard, scorecard_due_at)
+       values ($1, $2, $3, $4, true, $5::timestamptz)
+       returning id`,
+      [
+        tenantId,
+        args.interview_id,
+        args.to_actor_id,
+        oldRow.role_in_interview,
+        oldRow.scorecard_due_at === null ? null : toIso(oldRow.scorecard_due_at),
+      ],
+    )
+    const row = inserted.rows[0]
+    if (row === undefined) throw new RecruitmentToolError('READER_FAILED', 'interviewer insert returned no row')
+    newInterviewerId = row.id
+  } catch (error) {
+    // 并发窗口里别人先把这个人加进来了：给清晰错误，外层保存点撤销本次已写的 touch。
+    if (isUniqueViolation(error, 'uq_interviewer')) {
+      fail('INTERVIEWER_ALREADY_ASSIGNED', `actor ${args.to_actor_id} 已经是该场面试的面试官（并发）`, {
+        interview_id: args.interview_id,
+        actor_id: args.to_actor_id,
+      })
+    }
+    throw error
+  }
+  created.push({ table: 'interviewer', id: newInterviewerId })
+
+  // 3. 旧行**不删**：三列替换标记一次写齐（ck_interviewer_replacement_consistent）+ required_scorecard=false。
+  const marked = await client.query<{ id: string }>(
+    `update recruitment.interviewer
+        set replaced_by_interviewer_id = $3, replaced_at = now(), replacement_reason = $4,
+            required_scorecard = false, updated_at = now()
+      where id = $1 and tenant_id = $2 and replaced_by_interviewer_id is null
+      returning id`,
+    [oldRow.id, tenantId, newInterviewerId, args.reason],
+  )
+  if (marked.rows[0] === undefined) {
+    fail('ALREADY_REPLACED', '该面试官已被替换（并发），本次写入已撤销', {
+      interview_id: args.interview_id,
+      interviewer_id: oldRow.id,
+    })
+  }
+  updated.push({ table: 'interviewer', id: oldRow.id })
+
+  // 4. 显式审计事件：复用已登记的 interviewer.withdrawn（payload 带完整换人事实）。
+  //    故意**不**写 payload.interviewer_id —— 那是 WITHDRAW 幂等判重的键，换人不能冒充退出。
+  const eventId = await insertInternalEvent(client, tenantId, {
+    eventType: REPLACE_EVENT_TYPE,
+    idempotencyKey: auditEventKey(args, REPLACE_EVENT_TYPE),
+    sourceObjectId: oldRow.id,
+    payload: {
+      interview_id: args.interview_id,
+      from_actor_id: args.from_actor_id,
+      to_actor_id: args.to_actor_id,
+      reason: args.reason,
+      replacement_interviewer_id: newInterviewerId,
+      replaced_interviewer_id: oldRow.id,
+      intent: 'REPLACE_INTERVIEWER',
+      effective_from: asOfIso,
+    },
+  })
+  created.push({ table: 'event_inbox', id: eventId })
+
+  // 5. 幂等 STORE（与其他 intent 共用 'interview_schedule:' 前缀）。
+  const storeWrite = await insertStoreCommand(
+    client,
+    config,
+    args,
+    args.interview_id,
+    `面试官换人：第 ${oldRow.round_no} 轮 ${oldRow.slot_code}`,
+    `REPLACE_INTERVIEWER ${args.from_actor_id} → ${args.to_actor_id}（${args.reason}）`,
+  )
+  if (storeWrite.kind === 'conflict') return await replayAfterStoreConflict(client, config, args, asOfIso)
+  created.push({ table: 'business_task', id: storeWrite.taskId })
+
+  return await buildCommandResult(
+    client, config, args, args.interview_id, asOfIso, { created, updated }, [], [],
+  )
+}
+
+// ---------------------------------------------------------------------------
 //  工具定义
 // ---------------------------------------------------------------------------
 
@@ -3366,7 +3748,7 @@ function readExecContext(exec: unknown): { agent?: unknown; signal?: AbortSignal
 }
 
 /**
- * 造真实的排期工具（D-62 四合一 intent：CREATE / RESCHEDULE / CANCEL / WITHDRAW_INTERVIEWER）。
+ * 造真实的排期工具（D-62 四合一 intent + AT-5 的 REPLACE_INTERVIEWER）。
  *
  * `execute()` 是 **D-101 两阶段**：① `withReadOnly` 只读事务里 `prepareSchedule`（幂等判定 +
  * 全部业务校验 + 写库计划，行锁 `forUpdate:false`）→ 事务提交、连接归还；② 重放 /
@@ -3384,7 +3766,7 @@ export function createInterviewScheduleTool(
   return {
     name: TOOL_NAME,
     description:
-      'S8 interview scheduling with four intents (D-62): CREATE (default) creates one interview session '
+      'S8 interview scheduling with five intents (D-62 four + AT-5 REPLACE_INTERVIEWER): CREATE (default) creates one interview session '
       + '(application_id + round_no + slot_code) with its interviewer rows and optionally registers an existing '
       + 'meeting + binding; RESCHEDULE moves the SAME interview row to a new time (at least one of '
       + 'scheduled_start_at / duration_minutes), re-runs the conflict check on the new window excluding itself, '
@@ -3392,7 +3774,12 @@ export function createInterviewScheduleTool(
       + '(add-only; already assigned => warning ALREADY_ASSIGNED); CANCEL marks SCHEDULED/RESCHEDULED as CANCELLED '
       + 'with a required reason and releases not-yet-happened meetings (already-cancelled => idempotent success, '
       + 'zero writes); WITHDRAW_INTERVIEWER clears that interviewer\'s required_scorecard (never deletes the row, '
-      + 'never changes interview.status) and records an interviewer.withdrawn event. There is NO COMPLETE intent: '
+      + 'never changes interview.status) and records an interviewer.withdrawn event; REPLACE_INTERVIEWER (AT-5: '
+       + 'replace_interviewer={from_actor_id,to_actor_id,reason} appends a NEW interviewer row (role copied, '
+       + 'required_scorecard=true) and marks the OLD row with replaced_* and required_scorecard=false — the old row '
+       + 'is never deleted, only SCHEDULED/RESCHEDULED sessions are eligible, audit reuses interviewer.withdrawn). '
+       + 'CREATE and RESCHEDULE accept an optional round_label (1..200 chars after trimming): a display-only label '
+       + 'that never changes round_no or the (application_id, round_no, slot_code) uniqueness. There is NO COMPLETE intent: '
       + 'post-interview edges belong to S9. '
       + 'Every intent shares one pipeline: caller-generated idempotency_key (same key + same arguments replays the '
       + 'first result with replayed=true and empty changes; same key + different arguments fails with '
@@ -3431,13 +3818,20 @@ export function createInterviewScheduleTool(
         // 校验是严格 UUID（短号解析不了），而新建出来的 interview id 模型只能从本工具发现。
         const interviewId = textOf(interview.id)
         const applicationId = textOf(interview.application_id)
+        // AT-4/AT-5：有值才展示，没值时人读正文与旧版逐字相同（向后兼容）。
+        const roundLabel = textOf(interview.round_label)
+        const replacements = Array.isArray(interview.replacements) ? interview.replacements : []
         const lines: string[] = [
           `面试 第${String(interview.round_no)}轮 slot=${String(interview.slot_code)} `
             + `[${String(interview.status)}] 阶段=${String(interview.stage_code)} `
             + `· 本场 ${shortRef(interviewId)}  ${windowLine(interview)}`,
+          ...(roundLabel === '' ? [] : [`  轮次标签: ${scrubInternalRefs(roundLabel)}`]),
           `  申请 ${shortRef(applicationId)} · 候选人 ${shortRef(textOf(interview.candidate_id))} `
             + `· 岗位 ${shortRef(textOf(interview.job_id))} · timezone=${String(interview.timezone)}`,
           `  interviewers: ${interviewersLine(interview)}`,
+          ...replacements.filter(isPlainObject).map((row) =>
+            `  换人: ${shortRef(textOf(row.from_actor_id))} → ${shortRef(textOf(row.to_actor_id))} `
+            + `· ${scrubInternalRefs(textOf(row.reason))} @${textOf(row.replaced_at)}`),
           `  meeting_binding: ${binding === null ? 'unknown' : String(binding.state)} `
             + `(${binding === null ? 0 : String(binding.count)} active)`,
           `  intent=${String(v.intent)} replayed=${String(v.replayed)}  changes.created=${created.length}  `
@@ -3518,7 +3912,7 @@ export function unconfiguredInterviewScheduleTool(issues: readonly string[]): Re
   return {
     name: TOOL_NAME,
     description:
-      'S8 interview scheduling (CREATE / RESCHEDULE / CANCEL / WITHDRAW_INTERVIEWER). Currently NOT CONFIGURED: '
+      'S8 interview scheduling (CREATE / RESCHEDULE / CANCEL / WITHDRAW_INTERVIEWER / REPLACE_INTERVIEWER). Currently NOT CONFIGURED: '
       + 'the plugin config is missing database settings (or the database password environment variable). '
       + 'Calls return NOT_CONFIGURED.',
     parameters: PARAMETERS_SCHEMA,

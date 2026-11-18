@@ -1771,6 +1771,15 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ② **+18（4,979 → 4,997）来自本轮 `criterion.override.recorded` 事件登记**（`src/runtime/event-types.ts`）。理由：审计事件必须登记在唯一注册表（2026-11-14 事故根因就是裸字面量/手抄表）。
   ③ **排除的替代做法**：把回执重试塞进 HTTP action（超时/状态不明无法收敛）；把事件名留在工具文件里（违反单一注册表）。
   ④ **未触发 D-109 换实现条件**：无队列/调度语义变化，仍是 PG 行锁 + `SKIP LOCKED`。CEILING 同步 **4997**。
+- **D-109.15（2026-11-19，总控；`application.stage.override.recorded` 事件登记的预算追认）**：代码行口径 **4,997 → 5,015（+18）**。
+  ① **为什么必须加**：带人工原话的跳轮/豁免是新写路径，必须落一条审计事件；事件名必须登记进 `src/runtime/event-types.ts` 的唯一注册表（否则裸字面量，违反 2026-11-14 事故后定的单一注册表纪律）。
+  ② **排除的替代做法**：把事件名写在 `stage-advance.ts` 里（违反单一注册表）；复用既有 `application.current_stage_code.changed` 而不记 override 元数据（审计丢"谁按什么原话跳的"，违反 AT-7）。
+  ③ **未触发 D-109 换实现条件**：无队列/调度语义变化。CEILING 同步 **5015**。
+- **D-157（2026-11-19 总控裁决；"只加在 execute 里、不进 schema 的参数 = 模型看不见 = 等于没加"）**：
+  1. **事实**：本轮 `stage_advance` 新增可选 `override` 参数，子代理最初只在 `execute()` 接受、写进 description，**没有进 `PARAMETERS_SCHEMA`**——模型从工具 schema 看不到它，AT-6 实际不可调用。既有测试 `test/unit/stage-advance.test.ts` 恰好在断言"参数键集精确等于 `['application_id']`"，等于把这个缺陷固化住了。
+  2. **裁定**：**任何给模型用的可选参数，必须同时进 `PARAMETERS_SCHEMA`（可见）与执行期校验（可信）**；只进 execute = 接线没接（R2 同型错误）。既有"键集精确相等"的测试属于**跟随真值的收紧点**，新增参数时按真值更新，仍是精确相等、不许改成"包含"。
+  3. **配套**：`required` 不许因为加了可选参数而变化；"禁止出现的键"断言不动；每个新参数补一条"schema 声明"测试（类型/required/边界）。
+  4. **本轮落地**：`override` 已进 schema（`Object.keys(properties)` 实跑 = `["application_id","override"]`，`required=["application_id"]`），仅更新那一处断言（跟随真值）。
 - **D-156（2026-11-19 总控裁决；**"tsc 0" 只覆盖前端** —— 服务端类型检查从未运行，立基线棘轮）**：
   1. **事实**：`dsh/dsh-recruitment/tsconfig.json` 的 `include` 只有 `src/client/**` 与 `tsdown.config.ts`（注释写明"只为 tsdown/oxc 提供 JSX 设置，不参与宿主代码执行"）。因此历次 `npx tsc --noEmit` **只检查了前端**；**服务端 `src/**` 从未被类型检查**。此前所有"tsc 0"的表述，准确含义是"前端 tsc 0"，**服务端不包含在内**——这是总控的表述不严谨，记在此处更正。
   2. **实测基线（2026-11-19，HEAD + 本轮未提交改动）**：用显式 strict 参数检查服务端入口 `src/index.ts`，得到 **42 个错误 / 14 个文件**。其中 **`criterion-override` 本轮新增文件 0 错**；**邮箱模块有 4 处**（`email-pump.ts` 2、`email-fetch.ts` 至少 2）；其余为存量。

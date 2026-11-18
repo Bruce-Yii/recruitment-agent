@@ -292,6 +292,123 @@ begin
 end $$;
 
 
+-- [0018 原子写能力] AT-1~AT-7 的结构面断言。
+-- 只新增本块，既有断言与计数零改动；表/列不存在时跳过（保持旧库可跑）。
+do $$
+declare
+  v_missing text := '';
+  v_col text;
+begin
+  if to_regclass('recruitment.application_carry_over') is not null then
+    -- A · 必需列
+    for v_col in select unnest(array[
+      'id','tenant_id','application_id','source_application_id','ref_kind','ref_id',
+      'carried_by_actor_id','created_at'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.application_carry_over'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        v_missing := v_missing || v_col || ' ';
+      end if;
+    end loop;
+    if v_missing <> '' then
+      raise exception 'AT-STRUCT-01 application_carry_over 缺列：%', v_missing;
+    end if;
+
+    -- A · 唯一键（AT-3 幂等）必须存在且覆盖五列
+    if not exists (
+      select 1 from pg_constraint p
+       where p.conrelid = 'recruitment.application_carry_over'::regclass
+         and p.contype = 'u' and p.conname = 'uq_application_carry_over_ref'
+         and p.conkey = array[
+               (select attnum from pg_attribute where attrelid = p.conrelid and attname = 'tenant_id'),
+               (select attnum from pg_attribute where attrelid = p.conrelid and attname = 'application_id'),
+               (select attnum from pg_attribute where attrelid = p.conrelid and attname = 'source_application_id'),
+               (select attnum from pg_attribute where attrelid = p.conrelid and attname = 'ref_kind'),
+               (select attnum from pg_attribute where attrelid = p.conrelid and attname = 'ref_id')
+             ]::smallint[]
+    ) then
+      raise exception 'AT-STRUCT-02 application_carry_over 缺五列幂等唯一键 uq_application_carry_over_ref';
+    end if;
+
+    -- A · 闭集 / 形状 / 源≠目标 CHECK
+    v_missing := '';
+    select string_agg(t.name, ' ') into v_missing
+      from unnest(array[
+        'ck_carry_over_ref_kind','ck_carry_over_distinct_application'
+      ]) as t(name)
+     where not exists (select 1 from pg_constraint p
+                        where p.conrelid = 'recruitment.application_carry_over'::regclass
+                          and p.contype = 'c' and p.conname = t.name);
+    if coalesce(v_missing, '') <> '' then
+      raise exception 'AT-STRUCT-03 application_carry_over 缺 CHECK 约束：%', v_missing;
+    end if;
+
+    -- A · append-only：禁删 + 全列不可变 + 同候选人守卫
+    for v_col in
+      select unnest(array[
+        'trg_application_carry_over_no_delete',
+        'trg_application_carry_over_immutable',
+        'trg_application_carry_over_same_candidate'
+      ])
+    loop
+      if not exists (select 1 from pg_trigger g
+                      where g.tgrelid = 'recruitment.application_carry_over'::regclass
+                        and not g.tgisinternal and g.tgname = v_col) then
+        raise exception 'AT-STRUCT-04 application_carry_over 缺触发器：%', v_col;
+      end if;
+    end loop;
+    raise notice 'AT-STRUCT-A PASS carry_over 列/五列唯一键/CHECK/禁删/不可变/同候选人守卫齐全';
+  else
+    raise notice 'AT-STRUCT-A SKIP application_carry_over 表不存在（0018 尚未应用）';
+  end if;
+
+  -- B · interview.round_label 与 interviewer 换人三列（表在 0001 必有，列可能未加）
+  if to_regclass('recruitment.interview') is not null then
+    if not exists (select 1 from pg_attribute a
+                    where a.attrelid = 'recruitment.interview'::regclass
+                      and a.attname = 'round_label' and not a.attisdropped) then
+      raise exception 'AT-STRUCT-05 interview 缺 round_label 列';
+    end if;
+    if not exists (select 1 from pg_constraint p
+                    where p.conrelid = 'recruitment.interview'::regclass
+                      and p.contype = 'c' and p.conname = 'ck_interview_round_label') then
+      raise exception 'AT-STRUCT-06 interview 缺 ck_interview_round_label';
+    end if;
+  end if;
+  if to_regclass('recruitment.interviewer') is not null then
+    for v_col in select unnest(array[
+      'replaced_by_interviewer_id','replaced_at','replacement_reason'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.interviewer'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        raise exception 'AT-STRUCT-07 interviewer 缺换人列：%', v_col;
+      end if;
+    end loop;
+    v_missing := '';
+    select string_agg(t.name, ' ') into v_missing
+      from unnest(array[
+        'fk_interviewer_replaced_by','ck_interviewer_replacement_consistent',
+        'ck_interviewer_not_self_replaced'
+      ]) as t(name)
+     where not exists (select 1 from pg_constraint p
+                        where p.conrelid = 'recruitment.interviewer'::regclass
+                          and p.conname = t.name);
+    if coalesce(v_missing, '') <> '' then
+      raise exception 'AT-STRUCT-08 interviewer 缺换人约束：%', v_missing;
+    end if;
+    -- round_no 的唯一键语义不许被改坏（AT-4 反例）
+    if not exists (select 1 from pg_constraint p
+                    where p.conrelid = 'recruitment.interview'::regclass
+                      and p.contype = 'u' and p.conname = 'uq_interview_slot') then
+      raise exception 'AT-STRUCT-09 interview 缺原唯一键 uq_interview_slot（round_no 语义被改坏）';
+    end if;
+    raise notice 'AT-STRUCT-B PASS round_label / 换人三列 / round_no 唯一键齐全';
+  end if;
+end $$;
+
+
 \echo ''
 \echo '=================================================================='
 \echo ' 3. 状态机取值覆盖（docs/03 §3/§10/§11/§13 + docs/04 §18）'
