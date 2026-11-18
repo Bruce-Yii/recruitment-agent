@@ -18,7 +18,7 @@ const ROOT = join(HERE, '..', 'dsh', 'dsh-recruitment')
 const SELF = fileURLToPath(import.meta.url)
 
 /** 当前允许的错误数上限（只许降）。 */
-const BASELINE = 32
+const BASELINE = 0
 
 let output = ''
 try {

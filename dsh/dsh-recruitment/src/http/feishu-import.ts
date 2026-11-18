@@ -60,6 +60,12 @@ import {
   type TranscriptImportSource,
   type TranscriptImportValue,
 } from '../tools/transcript-import.ts'
+
+/**
+ * 本端点只接受连接器回读来源（入口在写事务前已用 LIVE 闸门筛掉 MANUAL 路径）。
+ * 这是 `TranscriptImportSource` 的判别联合成员，不是新运行时形状。
+ */
+type LiveTranscriptImportSource = Extract<TranscriptImportSource, { mode: 'CONNECTOR_READBACK' }>
 import { sameOrigin } from './overview.ts'
 
 // =====================================================================
@@ -663,7 +669,7 @@ async function readLiveSource(
   args: Record<string, unknown>,
   connector: FeishuConnectorDependency | undefined,
   issues: readonly string[],
-): Promise<TranscriptImportSource> {
+): Promise<LiveTranscriptImportSource> {
   const source = await resolveImportSource(args, connector, issues)
   if (source.mode !== 'CONNECTOR_READBACK') {
     // 本端点的入参只有 minute_token，不可能走人工正文路径；出现即实现错误。
@@ -834,7 +840,7 @@ async function importInTransaction(
   writeCfg: ResolvedDatabaseConfig,
   interviewId: string,
   minuteToken: string,
-  source: TranscriptImportSource,
+  source: LiveTranscriptImportSource,
 ): Promise<WriteOutcome> {
   const tenantId = writeCfg.tenant_id
   const actorId = writeCfg.actor_id

@@ -1561,7 +1561,7 @@ export async function addTeamMember(
 export async function removeTeamMember(
   client: DatabaseClient,
   input: RemoveTeamMemberInput,
-): Promise<CreateResult<TeamView>> {
+): Promise<UpdateResult<TeamView>> {
   const teamId = requireUuid(input.teamId, 'team_id')
   const actorId = requireUuid(input.actorId, 'actor_id')
 

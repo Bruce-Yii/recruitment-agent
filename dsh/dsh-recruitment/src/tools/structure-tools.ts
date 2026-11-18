@@ -12,7 +12,7 @@
 import { parseArgs, toParameterSchema } from './args.ts'
 import type { ParamMap } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
-import { RecruitmentToolError } from './errors.ts'
+import { RecruitmentToolError, type RecruitmentErrorCode } from './errors.ts'
 import {
   assertReadablePdf,
   ConverterPathError,
@@ -64,7 +64,11 @@ async function loadSerialized(
     realPath = assertReadablePdf(requested, cfg)
   } catch (error) {
     if (error instanceof ConverterPathError) {
-      throw new RecruitmentToolError(error.code, error.message)
+      // 类型口径修正：ConverterPathError.code 是 string，而 RecruitmentToolError 收
+      // 封闭错误码。converter.ts 的 assertReadablePdf 只抛 'INVALID_ARGS' / 'NOT_FOUND'
+      // / 'FORBIDDEN'，均是 RecruitmentErrorCode 成员；与同目录 page-image.ts 一致。
+      // 仅补断言对齐真实运行时类型，不改 code / message / 行为。
+      throw new RecruitmentToolError(error.code as RecruitmentErrorCode, error.message)
     }
     throw error
   }

@@ -11,11 +11,11 @@ import {
 } from '../contracts/index.ts'
 
 /** docs/19 §2.1 的四种媒体 + 2026-11-14 增补的 RTF，顺序与 `MEDIA_TYPES` 一致。 */
-export const MEDIA_PDF: MediaType = MEDIA_TYPES[0]
-export const MEDIA_DOCX: MediaType = MEDIA_TYPES[1]
-export const MEDIA_PNG: MediaType = MEDIA_TYPES[2]
-export const MEDIA_JPEG: MediaType = MEDIA_TYPES[3]
-export const MEDIA_RTF: MediaType = MEDIA_TYPES[4]
+export const MEDIA_PDF = MEDIA_TYPES[0]
+export const MEDIA_DOCX = MEDIA_TYPES[1]
+export const MEDIA_PNG = MEDIA_TYPES[2]
+export const MEDIA_JPEG = MEDIA_TYPES[3]
+export const MEDIA_RTF = MEDIA_TYPES[4]
 
 /** 嗅探/日志用的短格式名。 */
 export type MediaFormat = 'pdf' | 'docx' | 'png' | 'jpeg' | 'rtf'

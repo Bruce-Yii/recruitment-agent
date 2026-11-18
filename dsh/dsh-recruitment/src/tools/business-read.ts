@@ -1367,7 +1367,9 @@ export function toCandidateConstraintsValue(
   })
   const handoffs = toHandoffProjection(orderedHandoffRows).map((item, index) => ({
     ...item,
-    interview_ref: shortRef(orderedHandoffRows[index]?.interview_id ?? null),
+    // HANDOFF 行必带 interview_id（PIN 行才允许 null）；投影与 orderedHandoffRows 同源同序。
+    // 非空断言只补类型（编译期擦除），`?.`/`??` 与短号逻辑一行未动。
+    interview_ref: shortRef((orderedHandoffRows[index]?.interview_id ?? null)!),
   }))
   return { pins, handoffs }
 }
