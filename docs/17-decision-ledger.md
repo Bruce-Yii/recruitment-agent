@@ -1710,7 +1710,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   3. 冻结 SHA / 干净库 / 隔离 `DSH_HOME` / 独立端口等前置不变（D-122.5）。
 - **D-148（2026-11-18 总控裁决；产品语言"最后一公里"的已知残留与机检边界）**：
   1. **本轮已清**：HR / 面试官可见文案里的「证据」（按 D-145）与主要工程话——申请详情、初筛面板、面试官视图、顶栏身份、skill 五份、以及失败路径里的 `D-79` / `uq_decision_current` / `x-dsh-session` / `detail.violations` / `enum` / `契约` / `fail-closed` / `JOB_BASE` / `task-50` / `effective schema`。明细与逐条改前→改后见 `work/d5/{term-b-cleanup,copy-final,shell-copy}/REPORT*.md`。
-  2. **已知残留（未清，如实列出，不在本轮宣称"已清干净"）**：面试官面评表单里的英文枚举与内部 id（`MET / NOT_MET`、`scorecard_id / actor_id / interview_id`、`mode`、`code / reason_code`）、申请详情与工作台中少量英文枚举原值、三维标签原值渲染。**位置清单**见 `work/d5/shell-copy/REPORT.md` ③（只列未改）。判定：**由独立窗口按 D-135 判**，总控不预先认定"不判 FAIL"。
+  2. **已知残留（未清，如实列出，不在本轮宣称"已清干净"）**：面试官面评表单里的英文枚举与内部 id（`MET / NOT_MET`、`scorecard_id / actor_id / interview_id`、`mode`、`code / reason_code`）、申请详情与工作台中少量英文枚举原值、三维标签原值渲染。**位置清单**见 `work/d5/shell-copy/REPORT.md` ③（只列未改）；**"该显示什么"的口径清单见 `docs/30-frontend-display-spec.md`**（交前端实现，总控不改 `src/client/**`）。判定：**由独立窗口按 D-135 判**，总控不预先认定"不判 FAIL"。
   3. **机检边界（必须写进交验单，避免"机检绿 = 文案全清"的误解）**：`scripts/term-lint.mjs` 只查「证据」二字；扫描面 = `src/client` 引号字面量 + `src/http` 字符串 + `skill/**/*.md` + `.tsx` 非注释行（兜 JSX 文本节点）。**它不管英文枚举、字段名与裁决编号**——那类靠人工复核与 D-135 判定。
   4. **产物**：界面文案改动必须重建 `dsh/dsh-recruitment/lib/client.js`（10 个 client 源文件是构建输入），产物与源码**同一提交**；"源码改了但产物没重建"= 界面仍显示旧文案，属集成缺陷。
 - **D-149（2026-11-18 总控裁决；首轮"真人用完整场景"的结论与处置）**：
