@@ -1729,3 +1729,9 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   1. **事实**：每跑一次全量，`test/integration/budget-guard.test.ts` 用 `createIsolatedTestDatabase('budget_it')` 建 `ra_budget_it_*` 库；正常应在收尾 drop，但本机两次全量后残留 2 个（`ra_budget_it_4i4_4ggve2` / `ra_budget_it_awo_1ze6im`），已手工 drop。
   2. **影响**：本机"只剩几个库"的判断会被污染（本轮交接要求"本机只留 2 个库"，实际一度 7 个）。属**测试卫生**，不是产品缺陷。
   3. **要求（下一轮）**：该测试必须无论成败都 drop 自己建的库（`try/finally` 或进程退出钩子）；机检口径里加一条"跑完全量后 `ra_*` 只多出预期库"。**本轮不判 FAIL**，但记入交验单的已知项。
+- **D-151（2026-11-18 总控裁决；**D-105 口径更正** + engine 层归属待拍）**：
+  1. **更正事实**：`docs/17` **D-105** 标题写"研究结论，未采纳其代码"——**不准确**。仓库 `dsh/dsh-recruitment/src/engine/**`（`core/ app/ infra/ pg/ dsh/ exec/`）**确有 vendor**：来源 `dsh-superagent-prototype` commit `8c32a9d…`、MIT、逐文件改动台账在 `src/engine/VENDORED.md`；引入提交 `2bae294`（2026-11-14），**当时未写台账**（按 R5 属未决定即做）。**更正不改变 D-105 的领域结论**：Ticket/Mandate/Policy **未被采纳**为领域对象（招聘对象仍在 PG）。
+  2. **现状事实**：engine 层**已装配**（`src/index.ts:651-676`：`Store` + `Effects` 作为副作用派发器，`launch`/`delivery` → 踢 `router.tick()`；`reply` 在 v1.0 无外发通道，如实抛错）；但真 Host 跑完整链后 `engine_ticket / engine_trigger / engine_disposition / engine_outbox / engine_effect` **全部 0 行**。
+  3. **待拍（产品负责人）**：engine 层**保留为薄效应桥**，还是**退役**（拆装配、`engine_*` 表标保留）？不允许继续"装了、没人喂、也没人说不装"。
+  4. **研究依据**：`work/research/2026-11-18-dsh-native-execution.md`（DSH 原生执行能力逐条清点）、`work/research/2026-11-18-superagent-execution-model.md`（原型执行模型 + 原文引句）、`docs/27 §10`（三条线对照）。
+  5. **三条线定位（已定，不受第 3 条影响）**：真相层 = 自建 PG（DSH 与 prototype 的真相分别是会话日志/内存、单机 SQLite，都不能承担跨进程可审计任务）；执行载体 = DSH；设计形状 = prototype。详见 `docs/27 §10.3`。
