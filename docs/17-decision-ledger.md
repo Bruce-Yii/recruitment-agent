@@ -1784,6 +1784,17 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   2. **裁定**：**任何给模型用的可选参数，必须同时进 `PARAMETERS_SCHEMA`（可见）与执行期校验（可信）**；只进 execute = 接线没接（R2 同型错误）。既有"键集精确相等"的测试属于**跟随真值的收紧点**，新增参数时按真值更新，仍是精确相等、不许改成"包含"。
   3. **配套**：`required` 不许因为加了可选参数而变化；"禁止出现的键"断言不动；每个新参数补一条"schema 声明"测试（类型/required/边界）。
   4. **本轮落地**：`override` 已进 schema（`Object.keys(properties)` 实跑 = `["application_id","override"]`，`required=["application_id"]`），仅更新那一处断言（跟随真值）。
+- **D-158（2026-11-19 总控裁决；**前端最终形态 = DSH 客户端视图** —— "独立页面零改动"经实验证否）**：
+  1. **实验结论（`work/dsh-spike/REPORT.md`，240 行含命令原文）**：把一份自定义静态页交给 DSH 托管并用官方浏览器连接层通信，**NOT_FEASIBLE**。五条硬指标里 S1–S4 不过、S5 过：
+     - S1 不过：`dsh-web-app/src/index.ts::resolveDistIndex()` **硬编码** `@deepseek-ai/dsh-web-frontend/dist/index.html`，**没有配置字段**；把自定义页塞进 dist 只能当公开静态资源（200），`/` 仍是原 shell。认证链本身正常（无 token 401 → token 303+cookie → 带 cookie 200）。
+     - S2 不过：启动清单（boot manifest）**只注入 index**（`host-webserver/src/injections.ts`），自定义静态页拿不到 `<base>` / `__DSH_BOOT__` / `__ModuleLoader__`（CDP 实测四项全 undefined）。
+     - S3 不过：client bundle 可取（200 / 44KB），但页面直接 `<script>` 加载即报 `Cannot read properties of undefined (reading 'load')`（依赖注入的 `__ModuleLoader__`）；无 cookie `POST /api` → 401。
+     - S4 不过：S3 已挡；对照在 shell 里真发 prompt 能被接受，但隔离 Host 缺模型凭据，未拿到流式回复（如实记录，不冒充通过）。
+     - S5 过：同一签名 cookie 调我们插件只读接口 `/recruitment/api/overview` → 200 / 1421 B（同源缺 header → 403），说明**认证与我们的读接口这条路本来是通的**。
+  2. **裁定**：前端最终形态 = **DSH 的客户端视图**（v4 的 HTML/CSS/交互作为设计稿与移植来源，最终打包成 client bundle 挂进 shell）。**"前端页面一行不改"的最优方案不存在**，不再寻找。
+  3. **排除的替代**：① iframe 嵌 shell（3–5 人日，且要自研 postMessage 协议、两套 UI 状态，判为下策）；② 插件做 AG-UI 适配（5–10 人日，且把产品的会话协议从底座挪到自己身上，偏离 D-6/D-122 C1）；③ 改 DSH 的装配去托管自定义 index（fork 底座，不可接受）。
+  4. **代价与边界**：前端移植挂载约 **2–4 人日**；**视觉与交互不变**（UI 冻结仍有效）；`design/v4/frontend-task-01-mock-adapter.md`（抽数据适配层）**仍然是前提、不变**；任务 02 才是"挂成 DSH 客户端视图"。
+  5. **顺带确认**：我们插件的只读接口与 Host Action 在 DSH 认证下可用（S5），所以前端这一层不需要新的鉴权设计。
 - **D-156（2026-11-19 总控裁决；**"tsc 0" 只覆盖前端** —— 服务端类型检查从未运行，立基线棘轮）**：
   1. **事实**：`dsh/dsh-recruitment/tsconfig.json` 的 `include` 只有 `src/client/**` 与 `tsdown.config.ts`（注释写明"只为 tsdown/oxc 提供 JSX 设置，不参与宿主代码执行"）。因此历次 `npx tsc --noEmit` **只检查了前端**；**服务端 `src/**` 从未被类型检查**。此前所有"tsc 0"的表述，准确含义是"前端 tsc 0"，**服务端不包含在内**——这是总控的表述不严谨，记在此处更正。
   2. **实测基线（2026-11-19，HEAD + 本轮未提交改动）**：用显式 strict 参数检查服务端入口 `src/index.ts`，得到 **42 个错误 / 14 个文件**。其中 **`criterion-override` 本轮新增文件 0 错**；**邮箱模块有 4 处**（`email-pump.ts` 2、`email-fetch.ts` 至少 2）；其余为存量。

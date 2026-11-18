@@ -36,3 +36,9 @@ design/evolution-ledger.md —— 前端从最初粗原型到 v4 定版的**全�
 不是当前事实快照。
 
 
+
+## 附：前端任务 01 交付快照
+
+design/v4/task-01/ —— 前端按 rontend-task-01-mock-adapter.md 交回的交付快照：
+ecruitment_os.html（已抽出数据层）、data/adapter.js（mock|http 双实现）、data/mock.js、INTERFACE-NEEDS.md（待补接口清单）。
+验收记录见同目录 ACCEPTANCE.md（总控独立复核：1440/390 改前改后截图 SHA256 相同 = UI 零漂移）。
