@@ -108,6 +108,17 @@
 | S10-7 | 审计元数据可在 DB 独立复算：`decision.record` 事件 payload 至少含 `confirmed_at / confirmed_by_actor_id / confirmation_method / confirmation_text_sha256 / human_confirmation_preimage_version` | L2 事件 payload 键名读回 | 缺键 → FAIL | D-130 |
 | S10-8 | 决策后阶段/生命周期/唯一性正确；重复决策不产生第二条 current | L2 | 双 current → FAIL | D-123 / D-142 |
 
+### 3.6 人工逐条纠偏（OV）
+
+> 背景：AI 对岗位标准某一条判错了，人现在只能整条"通过/不通过"。纠偏 = **追加人工修正、不覆盖 AI 原判**，读的时候两者都在。
+
+| ID | 判据 | 取证 | 反例 | 来源 |
+|---|---|---|---|---|
+| **OV-1** | **追加不覆盖**：纠偏后原 AI 判定仍可读、未被改写；库里是新增行（旧行只被标记 superseded） | L2 前后读回 + 行数 | 原判定被 UPDATE 掉 → FAIL | `docs/32` 原则二 |
+| **OV-2** | **有效值正确**：`effective_state` = 最新人工值；同一维度再改一次，只有最新一条是 current | L2 读回 | 同时两条 current → FAIL | 同上 |
+| **OV-3** | **未授权零写入**：缺 `confirmation_text` / 未绑定身份 / `criterion_key` 不在该申请钉住的 rubric 内 → 拒绝且逐表行数不变 | L5 + L2 | 写进去了 → FAIL | D-114 / D-115 |
+| **OV-4** | **幂等**：同一维度同一值重复提交，不产生第二条 current | L2 | 冒出两条 current → FAIL | D-128 |
+
 ---
 
 ## 4. 跨环节判据（六条门在这里落地）
