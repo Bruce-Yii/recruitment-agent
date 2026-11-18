@@ -183,6 +183,7 @@ import { registerRecruitingHttp, type RecruitingHostContext } from './http/recru
 // owner-api-display（V5 看得见）：原文受控获取 + DSH 会话计量 + 任务状态（三个只读端点，
 // loopback + sameOrigin + fail-closed）。注册器在 src/http/api-display.ts，返回 disposer。
 import { registerApiDisplayHttp, type ApiDisplayHostContext } from './http/api-display.ts'
+import { registerIntakeUploadHttp, type IntakeUploadHostContext } from './http/intake-upload.ts'
 // D5 W1：Demo Actor（session→alias→HUMAN actor）+ Interviewer Host Remote Action
 //（scorecard form/submit）。路由用 exact path，longest-prefix 优先于 /recruitment/api。
 import { registerActorHttp, type ActorHostContext } from './http/actor.ts'
@@ -645,6 +646,16 @@ export function apply(
         databaseIssues: database.issues,
       }),
       'recruitment: api display routes',
+    )
+    // ASYNC-1/2：上传简历 → 立即 202 task_id → 后台异步解析入库（docs/29 / docs/35 G1）。
+    child.effect(
+      () => registerIntakeUploadHttp(child as unknown as IntakeUploadHostContext, {
+        database: database.resolved,
+        databaseIssues: database.issues,
+        converter: converter.resolved,
+        identity: actorIdentity,
+      }),
+      'recruitment: async intake upload route',
     )
   })
 

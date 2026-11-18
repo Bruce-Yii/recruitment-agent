@@ -8,6 +8,7 @@
 // 缺失/未绑定一律显示 fail-closed 提示，不静默退回 HR 身份。
 
 import { useEffect, useState } from 'react'
+import { CanvasRoute, type CanvasRouteTarget } from '../canvas/CanvasRoute.tsx'
 import { RecruitingWorkspace } from '../recruiting/RecruitingWorkspace.tsx'
 import { InterviewerWorkspace } from '../interviewer/InterviewerWorkspace.tsx'
 
@@ -132,6 +133,16 @@ function InterviewerPlaceholder(props: { alias: DemoActorAlias | null; sessionId
  * 产品外壳。没有渠道注入 props：session id 从 DSH localStorage 取，alias 由人选择后 PUT 到服务端。
  * @returns 两个工作视图 + 顶部身份/注意力入口。
  */
+/** 画布入口：`#/canvas/candidate/<application_id>` 或 `#/canvas/job/<job_id>`（链接直达，不新增按钮）。 */
+function readCanvasRoute(): CanvasRouteTarget {
+  if (typeof window === 'undefined') return { kind: 'empty' }
+  const match = /^#\/canvas\/(candidate|job)\/([0-9a-fA-F-]{8,})$/.exec(window.location.hash)
+  if (match === null) return { kind: 'empty' }
+  return match[1] === 'candidate'
+    ? { kind: 'candidate', applicationId: match[2]! }
+    : { kind: 'job', jobId: match[2]! }
+}
+
 export function RecruitmentShell(): JSX.Element {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [alias, setAlias] = useState<DemoActorAlias | null>(null)
@@ -140,6 +151,28 @@ export function RecruitmentShell(): JSX.Element {
   const [view, setView] = useState<'recruiting' | 'interviewer'>('recruiting')
   const [attentionOpen, setAttentionOpen] = useState(false)
   const [attention, setAttention] = useState<null | { error?: string; data?: AttentionOverview }>(null)
+  const [canvasRoute, setCanvasRoute] = useState<CanvasRouteTarget>(readCanvasRoute)
+
+  // 监听 hash 变化：链接直达画布，不刷新页面。
+  useEffect(() => {
+    const onHashChange = (): void => setCanvasRoute(readCanvasRoute())
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+
+  // 画布链接直达：只在 hash 命中 `#/canvas/...` 时接管，其余视图完全不变。
+  if (canvasRoute.kind !== 'empty') {
+    return (
+      <CanvasRoute
+        route={canvasRoute}
+        onBack={() => {
+          if (typeof window !== 'undefined') window.history.replaceState(null, '', '#')
+          setCanvasRoute({ kind: 'empty' })
+        }}
+      />
+    )
+  }
+
 
   const openAttention = (): void => {
     setAttentionOpen(true)

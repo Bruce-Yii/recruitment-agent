@@ -83,6 +83,8 @@ const TASK_ROW_COLUMNS_SQL = `
        bt.next_run_at       as next_run_at,
        bt.due_at            as due_at,
        bt.business_refs     as business_refs,
+       bt.error_code        as error_code,
+       bt.error_summary     as error_summary,
        ta.attempt_no        as current_attempt_no,
        ta.status            as current_attempt_status,
        ta.lease_expires_at  as current_attempt_lease_expires_at,
@@ -263,6 +265,10 @@ export interface TaskStatusRow {
   readonly next_run_at: string | null
   readonly due_at: string | null
   readonly age_seconds: number | null
+  /** 失败终态的机器码（只在 status=FAILED 时有值；只加字段不改契约）。 */
+  readonly error_code: string | null
+  /** 失败终态的人话原因（只在 status=FAILED 时有值；只加字段不改契约）。 */
+  readonly error_summary: string | null
   readonly current_attempt: CurrentAttemptView | null
   readonly stuck: boolean
   readonly stuck_reason: StuckReason | null
@@ -407,6 +413,8 @@ interface TaskRow {
   next_run_at: unknown
   due_at: unknown
   business_refs: unknown
+  error_code: string | null
+  error_summary: string | null
   current_attempt_no: number | null
   current_attempt_status: string | null
   current_attempt_lease_expires_at: unknown
@@ -457,6 +465,8 @@ function mapTaskRow(row: TaskRow, nowMs: number): TaskStatusRow {
     next_run_at: isoOrNull(row.next_run_at),
     due_at: isoOrNull(row.due_at),
     age_seconds: ageSecondsOf(nowMs, row.created_at),
+    error_code: typeof row.error_code === 'string' && row.error_code !== '' ? row.error_code : null,
+    error_summary: typeof row.error_summary === 'string' && row.error_summary !== '' ? row.error_summary : null,
     current_attempt: currentAttempt,
     stuck: stuckReason !== null,
     stuck_reason: stuckReason,
