@@ -56,3 +56,16 @@ design/v4/task-05-NOTES.md   # 改了什么、引用点 file:line、哪些没自
 2. 写操作后点撤销 → 旧决策行保留且 `superseded_by` 非空、新补偿决策存在（**不删历史**）；
 3. 重复撤销 → 人话"已经撤销过了"，零写入；
 4. `grep` 证明 `batch_reject` / `restore_snapshot` 不再是 `NOT_AVAILABLE`（若确实接上了）。
+
+---
+
+## 4. 追加：T5-3 画布里的写动作点通
+
+任务 04 把画布接进了工作台，但**动作还没真点过**。本轮一起验：
+
+1. 画布里的 **置顶约束 / 下一轮交接 / 跨岗调剂** 三个动作，点开 → 填内容 → 提交 → 成功提示 + 画布对应区域刷新；
+2. 提交必须带 `confirmation_text`（人点确认时输入/生成的那句），服务端会算哈希；
+3. 失败一律人话；
+4. `grep` 证明 `postCandidateConstraint` / `postApplicationTransfer` 在画布组件里**有真实调用点**（不是只定义）。
+
+验收（我这边）：真 Host + 真库点一次置顶 → `candidate_constraint` 行 +1（psql 读回）；点一次跨岗 → 目标岗申请出现。
