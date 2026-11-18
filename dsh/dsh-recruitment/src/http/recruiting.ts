@@ -272,6 +272,8 @@ export interface ApplicationCard {
   readonly screening: ScreeningSummary | null
   readonly interviews: ReadonlyArray<InterviewSummary>
   readonly decisions: ReadonlyArray<DecisionSummary>
+  /** 候选人级约束（置顶 / 上一轮交接）；表不存在（旧库 < 0019）时为空数组，不报错。 */
+  readonly constraints: ReadonlyArray<{ readonly kind: string; readonly text: string; readonly source: string; readonly from_previous_round: boolean }>
   readonly progress: {
     readonly scorecards_required: number
     readonly scorecards_submitted: number
@@ -2202,10 +2204,29 @@ async function loadApplicationCards(
   const scorecardRows: ScorecardRow[] = interviewIds.length === 0
     ? []
     : (await client.query<ScorecardRow>(SCORECARDS_SQL, [tenantId, interviewIds])).rows
+  // 候选人约束（迁移 0019）。旧库（< 0019）没有这张表：用 to_regclass 探测后跳过，不让读接口整体失败。
+  const hasConstraintTable = (await client.query<{ present: string | null }>(
+    "select to_regclass('recruitment.candidate_constraint')::text as present",
+  )).rows[0]?.present !== null
+  const constraintRows = hasConstraintTable
+    ? (await client.query<{ candidate_id: string; kind: string; text: string; source: string }>(
+        `select candidate_id::text as candidate_id, kind, text, source
+           from recruitment.candidate_constraint
+          where tenant_id = $1 and candidate_id = any($2::uuid[]) and superseded_by_constraint_id is null
+          order by created_at desc`,
+        [tenantId, rows.map((row) => row.candidate_id)],
+      )).rows
+    : []
   const transcriptRows: TranscriptCandidateRow[] = interviewIds.length === 0
     ? []
     : (await client.query<TranscriptCandidateRow>(TRANSCRIPT_CANDIDATES_SQL, [tenantId, interviewIds])).rows
 
+  const constraintsByCandidate = new Map<string, Array<{ kind: string; text: string; source: string; from_previous_round: boolean }>>()
+  for (const row of constraintRows) {
+    const list = constraintsByCandidate.get(row.candidate_id) ?? []
+    list.push({ kind: row.kind, text: row.text, source: row.source, from_previous_round: row.kind === 'HANDOFF' })
+    constraintsByCandidate.set(row.candidate_id, list)
+  }
   const screeningByApplication = new Map<string, ScreeningSummary>()
   for (const row of screeningResult.rows) {
     if (!screeningByApplication.has(row.application_id)) screeningByApplication.set(row.application_id, mapScreeningDecision(row))
@@ -2305,6 +2326,7 @@ async function loadApplicationCards(
       screening,
       interviews,
       decisions,
+      constraints: constraintsByCandidate.get(row.candidate_id) ?? [],
       progress: {
         scorecards_required: scorecardsRequired,
         scorecards_submitted: scorecardsSubmitted,
