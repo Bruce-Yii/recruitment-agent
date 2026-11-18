@@ -62,3 +62,33 @@ POST /recruitment/api/action/job/create
 
 - 上传简历（`ASYNC-1`）：本日另一条 lane 在做，形态为 `POST /recruitment/api/intake/upload`（原始字节 + `x-file-name`，立即返回 `task_id`）。
 - 批量不通过、催办、复合指令、星标、面评草稿、撤销：**未做**，前端先走 `NOT_AVAILABLE` 人话提示。
+
+## 4. 2026-11-19 追加（面试官/星标/草稿）
+
+### 候选人星标
+```
+POST /recruitment/api/action/application/star
+{ "application_id": "uuid", "starred": true|false, "confirmation_text": "人的原话" }
+→ 200
+```
+读：`GET /recruitment/api/recruiting/applications/:id` → `application.starred: boolean`（无记录 = false）。
+
+### 面试官前简报里的约束
+`GET /recruitment/api/interviewer/overview` 与 `/interviews/:id` 每场面试带：
+```
+candidate_constraints: {
+  pins:    [{ text, source, created_by, created_at }],
+  handoff: [{ text, source, created_by, created_at, from_previous_round: true }]
+}
+```
+（没有时为空数组；不吐内部 id。）
+
+### 面评草稿（自动保存，不是最终提交）
+```
+GET  /recruitment/api/action/scorecard/draft?interview_id=<uuid>
+     → 200 { draft: { assessments: {...}, note: "..." } | null }
+POST /recruitment/api/action/scorecard/draft
+{ "interview_id": "uuid", "payload": { "assessments": { "<criterion_key>": "MET|NOT_MET|NOT_OBSERVED|UNREADABLE" }, "note": "..." } }
+→ 200
+```
+**不要带 `confirmation_text`**（草稿不是人的最终判断）；已提交面评后再写草稿会被拒；提交面评成功后请清草稿。
