@@ -149,7 +149,7 @@
 | E3-2 | 幂等：重复点击、重复事件、重复导入、重复 tick 均不产生第二份事实 | L5 + L2 | 任一重复写 → FAIL |
 | E4-1 | 配置缺失 fail-closed：缺 `RECRUITMENT_*` 时逐条列 issue，不回退默认路径 | L5 清空环境变量启动 | 静默用默认值 → FAIL |
 | E4-2 | 入库文件**零机器绝对路径**、零有效凭据 | grep 扫仓库 + `--dump-config` | 出现 `D:\` 或 key → FAIL |
-| E5-1 | 全量四数（干净库）+ `runtime-budget` + `clean-load` + `tsc` + `tsdown` 全绿；`skipped>0` 必须逐条给声明式理由 | L6 命令原文与输出 | 有红/无理由 skip → FAIL |
+| E5-1 | 全量四数（干净库）+ `runtime-budget` + `clean-load` + **前端 tsc** + **服务端类型检查（D-156）** + `tsdown` 全绿；`skipped>0` 必须逐条给声明式理由 | L6 命令原文与输出 | 有红/无理由 skip → FAIL |
 | E5-2 | 界面产物 `lib/client.js` 与源码**同一提交**（源码改了产物没重建 = 界面显示旧文案） | `git show --stat` + 产物 grep | 产物落后 → FAIL |
 | E6-1 | 性能底线：单次初筛的上下文规模与耗时在可接受范围（记录实测值，不设拍脑袋阈值）；批量导入不阻塞人的即时操作 | L1 计量 + L6 日志 | 人操作排到批量后 → FAIL（D-149 P2） |
 
