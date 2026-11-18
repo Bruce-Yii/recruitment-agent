@@ -1,4 +1,4 @@
-// recruitment_email_fetch —— 邮箱收件最小链接入（Agent 可触发，工具数 30 → 31）。
+// recruitment_email_fetch —— 邮箱收件最小链接入（Agent 可触发，工具数 30 → 31；逐条标准人工纠偏再加一 = 32）。
 //
 // 职责边界（与 src/connectors/mail/** 的分工）：
 //   * 连接器（子代理 A）负责：IMAP 传输 + UID 水位 + 去重 + 附件转换 + intake 写库，

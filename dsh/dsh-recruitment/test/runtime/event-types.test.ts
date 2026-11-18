@@ -536,6 +536,18 @@ test('⑪ 注册表本身可审计：行数 + 确定性/忽略的分类计数（
   }
 })
 
+test('⑫-a criterion.override.recorded 登记为 IGNORED（schema/0001 审计事实，不建任务）', () => {
+  const registration = eventTypeRegistration(EVENT_TYPES.CRITERION_OVERRIDE_RECORDED)
+  assert.ok(registration, 'criterion.override.recorded 必须登记')
+  assert.equal(registration.type, 'criterion.override.recorded')
+  assert.equal(registration.constKey, 'CRITERION_OVERRIDE_RECORDED')
+  assert.equal(registration.normalizerVersion, 'schema/0001')
+  assert.equal(registration.routing.kind, 'IGNORED')
+  assert.ok(registration.routing.kind === 'IGNORED' && registration.routing.reason.length >= 20)
+  assert.equal(registration.producer.kind, 'TOOL')
+  assert.equal(registration.producer.file, 'src/tools/criterion-override.ts')
+})
+
 test('⑫ EVENT_TYPES 与 EVENT_TYPE_REGISTRY 双向一致（加常量忘登记 → 红）', () => {
   // 发射方引用的是 `EVENT_TYPES.X`，若只加了常量却没进注册表，上面的静态扫描看不见
   // （SQL 里是 `${EVENT_TYPES.X}` 插值，没有裸字面量），所以必须在这里双向对账：

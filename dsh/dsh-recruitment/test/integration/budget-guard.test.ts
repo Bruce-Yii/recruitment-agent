@@ -1,7 +1,7 @@
 // task-78 / DESIGN §5 证据 C：**真 PG 一次性干净库 + 真产品工具 + 真 guard 管线**的集成证据。
 //
 // 为什么这个文件不是"再写一个单测"：
-//   1. 库：`createIsolatedTestDatabase('budget_it')` 建 `ra_budget_it_*`，0001→0016 全量重放，
+//   1. 库：`createIsolatedTestDatabase('budget_it')` 建 `ra_budget_it_*`，按迁移目录全量重放（现至 0017），
 //      **绝不**碰共享库 `ra_s6s7`；跑完**不 drop**（留给总控用 psql 独立复核）。库名写进
 //      `work/d5/product-budget/evidence/integration/integration-evidence.json`。
 //   2. 写工具：直接调产品真实工具定义 `createJobCreateTool(...).execute()`（`src/tools/job-create.ts`），
@@ -32,6 +32,7 @@ import {
   DEMO_DEPARTMENT,
   assertPrivateDatabase,
   createIsolatedTestDatabase,
+  migrationFiles,
   testDatabaseConfig,
   uniqueSuffix,
   type IsolatedTestDatabase,
@@ -542,11 +543,22 @@ function assertionsForDeny(outcome: DispatchOutcome): NormalizedDenied {
 //  0) bootstrap：一次性干净库 + 全量迁移 + 表清单
 // ---------------------------------------------------------------------------
 
-test('bootstrap: isolated clean DB (ra_budget_it_*) with migrations 0001→0016, never shared', async () => {
+test('bootstrap: isolated clean DB (ra_budget_it_*) with all migrations from the directory, never shared', async () => {
+  // 真值来源 = 迁移目录本身；不写死 "16" / "0016"，下次加迁移自动跟随。
+  const onDisk = migrationFiles()
   const migrations = [...db.migrations]
-  assert.equal(migrations.length, 16, `expected 16 migrations, got ${migrations.length}: ${migrations.join(',')}`)
+  assert.deepEqual(migrations, [...onDisk], '重放清单必须与目录里的迁移文件逐项一致')
+  assert.equal(migrations.length, onDisk.length, `expected ${onDisk.length} migrations, got ${migrations.length}`)
   assert.equal(migrations[0], '0001_init.sql')
-  assert.equal(migrations[migrations.length - 1], '0016_v1_consistency.sql')
+  const lastFile = onDisk[onDisk.length - 1] ?? ''
+  assert.equal(migrations[migrations.length - 1], lastFile)
+  assert.ok(lastFile >= '0017_criterion_override.sql', `latest migration regressed: ${lastFile}`)
+  // 台账必须与目录同步（防止"表建了、台账漏记"——0017 真库曾暴露过这一缺陷）。
+  const ledger = await readback.query<{ n: string; latest: string }>(
+    'select count(*)::text as n, max(version) as latest from recruitment.schema_migration',
+  )
+  assert.equal(ledger.rows[0]?.n, String(onDisk.length), 'schema_migration 条数必须 = 迁移文件数')
+  assert.equal(ledger.rows[0]?.latest, lastFile.replace(/\.sql$/, ''), '台账末条必须 = 最后一个迁移文件')
   assertPrivateDatabase(db.name) // 不是共享 ra_s6s7
   assert.ok(db.name.startsWith('ra_budget_it_'), `unexpected db name: ${db.name}`)
 
@@ -565,7 +577,7 @@ test('bootstrap: isolated clean DB (ra_budget_it_*) with migrations 0001→0016,
     name: db.name,
     migrations,
     created_at: new Date().toISOString(),
-    note: '一次性干净库，0001→0016 全量重放；本文件**不 drop**，留给总控用 psql 独立读回',
+    note: `一次性干净库，按迁移目录全量重放（${onDisk.length} 条，末条 ${lastFile}）；本文件**不 drop**，留给总控用 psql 独立读回`,
   }
   EVIDENCE.tables = {
     count: tables.length,

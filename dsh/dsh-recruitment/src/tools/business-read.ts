@@ -64,6 +64,12 @@ import {
   resolveMaterialPath,
   type MaterialPathReason,
 } from '../runtime/task-context.ts'
+// D-（人工纠偏读投影）：当前 override 行 + human/effective 状态口径，均复用领域/DB 的单一实现。
+import { effectiveState, type HumanState } from '../domain/criterion-override.ts'
+import {
+  readOverridesForApplications,
+  type CriterionOverrideRow,
+} from '../db/criterion-override.ts'
 
 /** 两个工具名（index.ts 与测试都按名字找）。 */
 export const APPLICATION_GET_TOOL = 'recruitment_application_get'
@@ -400,7 +406,37 @@ interface JobSummaryValue {
   readonly version_id_pinned?: string
 }
 
-/** 输出：Rubric 一条 criterion 的**摘要**（D-141 ①：只给判断"这条路能不能跑"所需的键，不给全文）。 */
+/**
+ * 一条 criterion 的**当前人工纠偏**行（从 `CriterionOverrideRow` 投影出的最小形状）。
+ *
+ * `human_state` 的原值域（`PRESENT`/`ABSENT`/`UNREADABLE`/null）由领域模块 `HumanState` 说话；
+ * 这里不必再抄一份枚举。
+ */
+export interface CurrentOverride {
+  readonly criterion_key: string
+  readonly human_state: HumanState | null
+  readonly note: string | null
+  readonly created_at: Date | string
+  readonly id: string
+}
+
+/**
+ * 输出：Rubric 一条 criterion 的**摘要**（D-141 ①：只给判断"这条路能不能跑"所需的键，不给全文）。
+ *
+ * 人工纠偏读投影（五个新键 ADD-only，旧键一个不动）：
+ *   * `ai_state`       —— AI 对该条的判断。**v1.0 库里没有任何 per-criterion AI 状态列**，恒为空串
+ *                         （= 没有），字段只为前向兼容存在；**绝不编造数据**。
+ *   * `human_state`    —— 当前 override 行的人判断；没有则空串。
+ *   * `effective_state`—— `effectiveState(ai_state, human_state)`：人非空时人赢，否则 AI；两者都空则空串。
+ *   * `override_note`  —— 当前 override 行的备注；没有则空串。
+ *   * `overridden_at`  —— 当前 override 行 created_at 的 ISO；没有则空串。
+ *
+ * 为什么用空串而不是 null：DSH 的输出 schema 校验器**不支持 `type` 数组 / `type:'null'` / enum 里的 null**
+ * （见 decision-record.ts 文件头偏差 7 与 `test/unit/output-schema.test.ts`）。为了保持
+ * `additionalProperties:false` + 全部五键 required 的稳定形状，这里用空串表达"没有"，
+ * 与既有 `optional()` 省略键的口径不同 —— 因为任务要求五键恒在、形状稳定。
+ * TypeScript 侧仍用 `string` 标注（空串 ∈ string），语义在注释里说清。
+ */
 interface CriteriaSummaryItemValue {
   readonly key: string
   /** 人话标签（dimensions 里没有就不给，不编造）。 */
@@ -408,6 +444,16 @@ interface CriteriaSummaryItemValue {
   /** 封闭集合由 rubric 契约说话（MUST_HAVE / NICE_TO_HAVE / DISQUALIFIER）；这里只回显。 */
   readonly kind?: string
   readonly weight?: number
+  /** AI 判断；v1.0 没有落库列，恒空串（= 没有）。 */
+  readonly ai_state: string
+  /** 当前人工纠偏状态（PRESENT/ABSENT/UNREADABLE）；没有则空串。 */
+  readonly human_state: string
+  /** 生效状态：human 赢，否则 ai；都无则空串。 */
+  readonly effective_state: string
+  /** 当前纠偏备注；没有则空串。 */
+  readonly override_note: string
+  /** 当前纠偏时间（ISO）；没有则空串。 */
+  readonly overridden_at: string
 }
 
 /** 输出：Rubric 钉住版本的**指针 + 摘要**（完整 criteria/可执行性归 job_get，见 next_tools）。 */
@@ -679,6 +725,7 @@ const APPLICATION_VALUE_SCHEMA: Record<string, unknown> = {
         approved: { type: 'boolean' },
         criteria_count: { type: 'number' },
         // D-141 ①：判断"这条路能不能跑"所需的 criteria 摘要（最多 8 条；全文仍归 job_get）。
+        // 人工纠偏读投影：五个新键恒在（空串 = 没有），旧键一个不动。
         criteria_summary: {
           type: 'array',
           items: {
@@ -688,8 +735,16 @@ const APPLICATION_VALUE_SCHEMA: Record<string, unknown> = {
               label: { type: 'string' },
               kind: { type: 'string' },
               weight: { type: 'number' },
+              ai_state: { type: 'string' },
+              human_state: { type: 'string' },
+              effective_state: { type: 'string' },
+              override_note: { type: 'string' },
+              overridden_at: { type: 'string' },
             },
-            required: ['key'],
+            // 五键全部 required：形状稳定（值空串表示没有，不用 null / type 数组）。
+            required: [
+              'key', 'ai_state', 'human_state', 'effective_state', 'override_note', 'overridden_at',
+            ],
             additionalProperties: false,
           },
         },
@@ -1169,7 +1224,7 @@ export async function readApplicationValue(
   const rubricIds = [...new Set(rows.flatMap((row) => [row.pinned_rubric_version_id, row.current_rubric_version_id])
     .filter((value): value is string => value !== null))]
 
-  const [materials, rubrics, interviews, transcripts, scorecards, interviewers, decisions] = await Promise.all([
+  const [materials, rubrics, interviews, transcripts, scorecards, interviewers, decisions, overrides] = await Promise.all([
     queryMaterialRows(client, cfg, resumeVersionIds),
     queryRubricRows(client, cfg, rubricIds),
     queryInterviewRows(client, cfg, applicationIds),
@@ -1177,6 +1232,8 @@ export async function readApplicationValue(
     queryScorecardRows(client, cfg, applicationIds),
     queryInterviewerRows(client, cfg, applicationIds),
     queryDecisionRows(client, cfg, applicationIds),
+    // 人工纠偏读投影（SELECT-only；full history，调用方只取 current 行）。
+    readOverridesForApplications(client, cfg.tenant_id, applicationIds),
   ])
   const materialById = new Map(materials.map((row) => [row.id, row]))
   const rubricById = new Map(rubrics.map((row) => [row.id, row]))
@@ -1185,6 +1242,7 @@ export async function readApplicationValue(
   const scorecardsByApplication = groupBy(scorecards, (row) => row.application_id)
   const interviewersByApplication = groupBy(interviewers, (row) => row.application_id)
   const decisionsByApplication = groupBy(decisions, (row) => row.application_id)
+  const currentOverridesByApplication = buildCurrentOverrides(overrides)
 
   const visible = args.include_contacts === true
   const labels = await buildReadToolLabels(client, cfg.tenant_id)
@@ -1198,6 +1256,7 @@ export async function readApplicationValue(
     scorecardsByApplication.get(row.id) ?? [],
     interviewersByApplication.get(row.id) ?? [],
     decisionsByApplication.get(row.id) ?? [],
+    currentOverridesByApplication.get(row.id) ?? new Map<string, CurrentOverride>(),
     visible,
   ))
 
@@ -1229,6 +1288,41 @@ function groupBy<T>(rows: readonly T[], keyOf: (row: T) => string): Map<string, 
   return map
 }
 
+/**
+ * 纠偏全史 → `application_id → criterion_key → 当前行`（确定性）。
+ *
+ * 只取 `superseded_by_override_id === null` 的 current 行；若同一 (application, criterion) 出现
+ * 多条 current（数据库约束理论上阻止，但防御性处理），按 `created_at` 再 `id` 倒序取最新一条，
+ * 不抛错。rubric_version 不参与键：一次申请只会钉一版，纠偏的 key 属于那一版。
+ */
+export function buildCurrentOverrides(
+  rows: readonly CriterionOverrideRow[],
+): Map<string, Map<string, CurrentOverride>> {
+  const byApplication = new Map<string, Map<string, CurrentOverride>>()
+  const candidates = rows.filter((row) => row.superseded_by_override_id === null)
+  // 先按 created_at/id 升序排，后面同 key 覆盖后写即得到"最新"那条。
+  candidates.sort((a, b) => {
+    const aTime = a.created_at instanceof Date ? a.created_at.getTime() : new Date(a.created_at).getTime()
+    const bTime = b.created_at instanceof Date ? b.created_at.getTime() : new Date(b.created_at).getTime()
+    return aTime - bTime || String(a.id).localeCompare(String(b.id))
+  })
+  for (const row of candidates) {
+    let byKey = byApplication.get(row.application_id)
+    if (byKey === undefined) {
+      byKey = new Map<string, CurrentOverride>()
+      byApplication.set(row.application_id, byKey)
+    }
+    byKey.set(row.criterion_key, {
+      criterion_key: row.criterion_key,
+      human_state: row.human_state as HumanState | null,
+      note: row.note,
+      created_at: row.created_at,
+      id: row.id,
+    })
+  }
+  return byApplication
+}
+
 /** 一次申请 → 输出形状（所有可缺键一律省略，不用 null）。 */
 function toApplicationValue(
   row: ApplicationRow,
@@ -1239,6 +1333,7 @@ function toApplicationValue(
   scorecards: readonly ScorecardRow[],
   interviewers: readonly InterviewerRow[],
   decisions: readonly DecisionRow[],
+  currentOverrides: ReadonlyMap<string, CurrentOverride>,
   contactsVisible: boolean,
 ): ApplicationValue {
   const email = row.normalized_email ?? ''
@@ -1303,7 +1398,8 @@ function toApplicationValue(
           source: row.pinned_rubric_version_id !== null ? 'APPLICATION_PIN' : 'JOB_CURRENT',
           approved: rubric.approved,
           criteria_count: asArray(rubric.dimensions).length,
-          criteria_summary: summarizeRubricCriteria(rubric.dimensions).criteria_summary,
+          // 传本申请的 current override 映射；criteria_summary 仍只取前 8 条（见函数注释）。
+          criteria_summary: summarizeRubricCriteria(rubric.dimensions, 8, currentOverrides).criteria_summary,
           ...optional('payload_hash', rubric.payload_hash ?? undefined),
         } as const,
       }),
@@ -1314,18 +1410,26 @@ function toApplicationValue(
 /**
  * rubric `dimensions` → Agent 判断所需的 criteria 摘要（D-141 ①；纯函数，可单测）。
  *
- * 三条纪律：
+ * 四条纪律：
  *   1. **只投影已存在的四个键**（key/label/kind/weight），绝不带 question/notes 全文，
  *      也不重算 R-VAL 可执行性 —— 那是 `recruitment_job_get` 的职责（读工具按事实来源分权）；
- *   2. 最多 8 条，但 `criteria_count` 永远是**真实总数**（截断不是隐瞒，缺的键不编造）；
- *   3. 结构不合法（不是对象 / key 不是字符串）的条目**跳过**，不占摘要位、不伪造 key。
+ *   2. 最多 8 条，但 `criteria_count` 永远是**真实总数**（截断不是隐瞒，缺的键不编造）。
+ *      人工纠偏也遵循同一截断：第 9 条以后的 override 不会出现在摘要里（与既有行为一致）；
+ *   3. 结构不合法（不是对象 / key 不是字符串）的条目**跳过**，不占摘要位、不伪造 key；
+ *   4. `overrides` 省略时五个新键恒为空串（旧单测的默认行为完全不变）；给了映射才填值。
+ *
+ * AI per-criterion 状态：v1.0 的库里**没有任何表/列持久化 AI 对单条标准的判断**
+ * （`screening_evaluation` 存整份评估摘要，不是逐条状态），所以 `ai_state` 恒空串；
+ * 不编造数据，字段只为前向兼容存在。将来若落库，在调用方把值传进来即可。
  * @param dimensions - `rubric_version.dimensions`（jsonb，不能假设形状）。
  * @param maxItems - 摘要最多几条（默认 8）。
+ * @param overrides - 可选：`criterion_key → 当前 override 行`；未提供时五个新键全空串。
  * @returns `{ criteria_summary, criteria_count }`。
  */
 export function summarizeRubricCriteria(
   dimensions: unknown,
   maxItems = 8,
+  overrides?: ReadonlyMap<string, CurrentOverride>,
 ): { criteria_summary: readonly CriteriaSummaryItemValue[]; criteria_count: number } {
   const list = asArray(dimensions)
   const summary: CriteriaSummaryItemValue[] = []
@@ -1338,12 +1442,32 @@ export function summarizeRubricCriteria(
     const label = asString(record.label)
     const kind = asString(record.kind)
     const weight = asNumber(record.weight)
+    // ai_state：v1.0 没有 AI 逐条状态列，恒 null（→ 空串）；不编造。
+    const aiState: string | null = null
+    const current = overrides?.get(key)
+    // CurrentOverride.human_state 已是 HumanState | null，但用类型守卫收窄，
+    // 防止将来有人放宽类型时把任意字符串塞进 effectiveState 的闭集入参。
+    const rawHuman = current?.human_state ?? null
+    const humanState: HumanState | null =
+      rawHuman === 'PRESENT' || rawHuman === 'ABSENT' || rawHuman === 'UNREADABLE' ? rawHuman : null
+    const effective = effectiveState(aiState, humanState)
     summary.push({
       key,
       ...(label === undefined ? {} : { label }),
       ...(kind === undefined ? {} : { kind }),
       ...(weight === undefined ? {} : { weight }),
-    })
+      // 只有显式传了 overrides 映射才展开五个新键：toApplicationValue 恒传（哪怕是空 Map），
+      // 直接调用（既有单测）不传 → 旧形状逐字不变。
+      ...(overrides === undefined
+        ? {}
+        : {
+          ai_state: aiState ?? '',
+          human_state: humanState ?? '',
+          effective_state: effective ?? '',
+          override_note: current?.note ?? '',
+          overridden_at: current === undefined ? '' : iso(current.created_at) ?? '',
+        }),
+    } as CriteriaSummaryItemValue)
   }
   return { criteria_summary: summary, criteria_count: list.length }
 }

@@ -359,6 +359,11 @@ const TOOL_FACTORIES: Readonly<Record<string, readonly FactoryEntry[]>> = {
     { factory: 'createCandidateGetTool', args: [FAKE_DATABASE] },
     { factory: 'unconfiguredCandidateGetTool', args: [FAKE_ISSUES] },
   ],
+  // 2026-11-19（逐条标准人工纠偏）：写工具工厂 render 也进本检查；假 deps，不连库。
+  'criterion-override.ts': [
+    { factory: 'createCriterionOverrideTool', args: [{ database: FAKE_DATABASE, identity: FAKE_DEPS.identity }] },
+    { factory: 'unconfiguredCriterionOverrideTool', args: [FAKE_ISSUES] },
+  ],
   'config-pipeline.ts': [
     { factory: 'createConfigPipelineTool', args: [FAKE_DATABASE, FAKE_DEPS] },
     { factory: 'unconfiguredConfigPipelineTool', args: [FAKE_ISSUES] },

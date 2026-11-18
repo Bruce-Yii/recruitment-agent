@@ -23,6 +23,7 @@
 //   recruitment_evaluation_summarize   **S10 只读**：汇总投影（不产建议结论）
 //   recruitment_decision_record        **S10 写库**：记录人已做出的决定（必须过 ctx.approval）
 //   recruitment_email_fetch            邮箱收件（30 → 31，EVENT 触发、LIVE）：IMAP → intake
+//   recruitment_criterion_override     逐条 rubric 标准人工纠偏（31 → 32，append-only）：原话凭据 → 当前行 + 审计事件
 //
 // 配置来自 cordis.patch.yml 的 config 段，共四段：
 //   converter: python_bin / converter_dir / allowed_roots   （resume_read + intake 要）
@@ -33,7 +34,8 @@
 //              BLOCKED/TRANSPORT_NOT_CONFIGURED，不拉子进程）。**绝不放宽**成读 PATH / 环境变量。
 //   mail:      host / user / password_env / port / tls / folder（IMAP 收件）+ smtp_*（发信 Host Action）
 //              `${ENV}` 引用自行展开；未定义即 NOT_CONFIGURED（工具仍注册同名替身）。
-//              发信走 /recruitment/api/action/email/send，不新增工具（工具数只 +1）。
+//              发信走 /recruitment/api/action/email/send，不新增工具（本段工具数只 +1；
+//              人工纠偏工具另有 recruitment_criterion_override，合计工具数 30 → 31 → 32）。
 //
 // 缺任何一段时**工具仍然注册**，但调用返回 NOT_CONFIGURED 并列出缺什么——
 // 不静默降级、不假装能读、不返回假数据（沿用 unconfiguredResumeReadTool 的既有做法）。
@@ -104,6 +106,11 @@ import { createDecisionRecordTool } from './tools/decision-record.ts'
 // 产品/业务 FAIL 修复 2（task-76）：高层「记录人类决策」Agent 动作。
 // 服务端组装 basis_refs / AUTHORITY / SUMMARY / RUBRIC_VERSION / confirmation hash。
 import { createRecordHumanDecisionTool } from './tools/record-human-decision.ts'
+// 逐条 rubric 标准人工纠偏（append-only；工具数 31 → 32）：写身份装配 + 缺配置同名替身。
+import {
+  createCriterionOverrideTool,
+  unconfiguredCriterionOverrideTool,
+} from './tools/criterion-override.ts'
 import {
   createStageAdvanceTool,
   unconfiguredStageAdvanceTool,
@@ -150,6 +157,7 @@ import { startTickLoop, type TickLoop } from './runtime/tick-loop.ts'
 import { createPgEventDispositionSink } from './runtime/event-runtime.ts'
 import { resolveFeishuConnector, type FeishuConnectorConfig } from './connectors/feishu/index.ts'
 // 邮箱收件（工具数 30 → 31）：工具注册面 + 配置 fail-closed 替身。
+// 逐条标准人工纠偏（工具数 31 → 32）：与写工具同形，identity 装配 + fail-closed 替身。
 import {
   createWiredEmailFetchTool,
   unconfiguredEmailFetchTool,
@@ -280,7 +288,7 @@ export interface Config {
    */
   readonly demo_actor_map?: DemoActorMapConfig
   /**
-   * 邮箱收件连接器（`recruitment_email_fetch`，工具数 30 → 31）+ 发信 Host Action。
+   * 邮箱收件连接器（`recruitment_email_fetch`，工具数 30 → 31；人工纠偏再 +1 → 32）+ 发信 Host Action。
    * 同一账号：host/user/password_env/port/tls/folder（IMAP）+ smtp_*（SMTP 发信，不新增工具）。
    * password_env 只写变量名，口令只从环境变量读；`${ENV}` 引用由 resolveMailConfig 展开，
    * 未定义/未展开一律 fail-closed（工具仍注册替身，调用报 NOT_CONFIGURED）。
@@ -1005,7 +1013,14 @@ export function apply(
     ...configTools,
     pageImage,
     modelTextMerge,
-    // 邮箱收件（30 → 31）：配置齐全时走 A 的真实传输+编排；缺项时同名替身报 NOT_CONFIGURED。
+    // 逐条标准人工纠偏（31 → 32）：数据库配置齐全时走真实写事务；缺项时同名替身报 NOT_CONFIGURED。
+    database.resolved === null
+      ? unconfiguredCriterionOverrideTool(database.issues)
+      : createCriterionOverrideTool({
+        database: database.resolved,
+        identity: actorIdentity,
+      }),
+    // 邮箱收件（原 30 → 31；现为 31/32 中的第 31 个）：配置齐全时走 A 的真实传输+编排；缺项时同名替身报 NOT_CONFIGURED。
     mail.resolved === null || database.resolved === null || converter.resolved === null
       ? unconfiguredEmailFetchTool([
         ...mail.issues,

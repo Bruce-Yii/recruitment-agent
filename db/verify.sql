@@ -222,6 +222,76 @@ begin
 end $$;
 
 
+-- [0017 追加式人工覆盖] 新表 criterion_override 的专项断言：
+-- 表/列/CHECK/禁删触发器/当前行索引/白名单 UPDATE 护栏必须齐全。
+-- 不修改上面任何既有断言；表不存在时本块跳过（保持 verify.sql 在旧库可跑）。
+do $$
+declare
+  v_missing text := '';
+  v_col text;
+begin
+  if to_regclass('recruitment.criterion_override') is not null then
+    -- 必需列（含本轮约定的全部业务列）
+    for v_col in select unnest(array[
+      'id','tenant_id','application_id','rubric_version_id','criterion_key',
+      'human_state','note','actor_id','confirmation_method','confirmation_text_sha256',
+      'superseded_by_override_id','record_version','created_at','updated_at'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.criterion_override'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        v_missing := v_missing || v_col || ' ';
+      end if;
+    end loop;
+    if v_missing <> '' then
+      raise exception 'OV-STRUCT-01 criterion_override 缺列：%', v_missing;
+    end if;
+
+    -- 必需的 CHECK 约束（闭集 / 形状 / 长度 / 哈希）
+    v_missing := '';
+    select string_agg(t.name, ' ') into v_missing
+      from unnest(array[
+        'ck_criterion_override_key','ck_criterion_override_human_state',
+        'ck_criterion_override_note','ck_criterion_override_method',
+        'ck_criterion_override_hash','ck_criterion_override_self_supersede',
+        'ck_criterion_override_record_version'
+      ]) as t(name)
+     where not exists (select 1 from pg_constraint p
+                        where p.conrelid = 'recruitment.criterion_override'::regclass
+                          and p.contype = 'c' and p.conname = t.name);
+    if coalesce(v_missing, '') <> '' then
+      raise exception 'OV-STRUCT-02 criterion_override 缺 CHECK 约束：%', v_missing;
+    end if;
+
+    -- 历史事实禁删（append-only）
+    if not exists (select 1 from pg_trigger g
+                    where g.tgrelid = 'recruitment.criterion_override'::regclass
+                      and not g.tgisinternal and g.tgname = 'trg_criterion_override_no_delete') then
+      raise exception 'OV-STRUCT-03 criterion_override 缺 fn_block_delete 触发器';
+    end if;
+
+    -- 当前行查询索引（非唯一部分索引即可；不承诺 DB 唯一性）
+    if not exists (
+      select 1 from pg_index i
+       where i.indrelid = 'recruitment.criterion_override'::regclass
+         and i.indpred is not null and not i.indisunique
+    ) then
+      raise exception 'OV-STRUCT-04 criterion_override 缺当前行部分索引';
+    end if;
+
+    -- 只许改 superseded_by_override_id 的护栏（AI 原判定不可被覆盖）
+    if not exists (select 1 from pg_trigger g
+                    where g.tgrelid = 'recruitment.criterion_override'::regclass
+                      and not g.tgisinternal and g.tgname = 'trg_criterion_override_immutable') then
+      raise exception 'OV-STRUCT-05 criterion_override 缺不可变护栏触发器';
+    end if;
+    raise notice 'OV-STRUCT PASS criterion_override 列/CHECK/禁删/索引/不可变护栏齐全';
+  else
+    raise notice 'OV-STRUCT SKIP criterion_override 表不存在（0017 尚未应用）';
+  end if;
+end $$;
+
+
 \echo ''
 \echo '=================================================================='
 \echo ' 3. 状态机取值覆盖（docs/03 §3/§10/§11/§13 + docs/04 §18）'

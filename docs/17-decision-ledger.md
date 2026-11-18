@@ -1766,3 +1766,13 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ② **排除的替代做法**：放 HTTP action 里同步发 → 请求超时后状态不明、无法收敛；另起独立进程/自研队列 → 违背 D-109（不自研队列）；复用已退役的 engine effects → 已按 **D-154** 退役（绕 advisory lock、无人写入）。
   ③ **未触发 D-109 的换实现条件**：仍是 PG 行锁 + `FOR UPDATE SKIP LOCKED` 认领、无第二个状态 owner、无新调度器；泵与 tick loop 同源启停。
   ④ CEILING 同步 4884。
+- **D-109.14（2026-11-19，总控；发信闭环与纠偏事件登记的预算追认）**：代码行口径 **4,884 → 4,997（+113）**。分两笔，一并登记：
+  ① **+95（4,884 → 4,979）来自 `a945133` 的发信闭环**：回执三态（NOT_READ/UNREADABLE/MATCH）、退避重试、`listSentForReadback`、`createImapReadback`（自己 connect/disconnect）、错误脱敏。**当时提交漏跑 `runtime-budget`，导致该提交在红线上落地**（真缺陷流程失误，记在此处，不追改历史）。理由：回执不做重试就永远不可能 CONFIRMED（真链实测：发完立刻查 → 邮件还没到 → 判死）。
+  ② **+18（4,979 → 4,997）来自本轮 `criterion.override.recorded` 事件登记**（`src/runtime/event-types.ts`）。理由：审计事件必须登记在唯一注册表（2026-11-14 事故根因就是裸字面量/手抄表）。
+  ③ **排除的替代做法**：把回执重试塞进 HTTP action（超时/状态不明无法收敛）；把事件名留在工具文件里（违反单一注册表）。
+  ④ **未触发 D-109 换实现条件**：无队列/调度语义变化，仍是 PG 行锁 + `SKIP LOCKED`。CEILING 同步 **4997**。
+- **D-156（2026-11-19 总控裁决；**"tsc 0" 只覆盖前端** —— 服务端类型检查从未运行，立基线棘轮）**：
+  1. **事实**：`dsh/dsh-recruitment/tsconfig.json` 的 `include` 只有 `src/client/**` 与 `tsdown.config.ts`（注释写明"只为 tsdown/oxc 提供 JSX 设置，不参与宿主代码执行"）。因此历次 `npx tsc --noEmit` **只检查了前端**；**服务端 `src/**` 从未被类型检查**。此前所有"tsc 0"的表述，准确含义是"前端 tsc 0"，**服务端不包含在内**——这是总控的表述不严谨，记在此处更正。
+  2. **实测基线（2026-11-19，HEAD + 本轮未提交改动）**：用显式 strict 参数检查服务端入口 `src/index.ts`，得到 **42 个错误 / 14 个文件**。其中 **`criterion-override` 本轮新增文件 0 错**；**邮箱模块有 4 处**（`email-pump.ts` 2、`email-fetch.ts` 至少 2）；其余为存量。
+  3. **要求**：① 下一轮建 `tsconfig.server.json`（include `src/**`，排除 `src/client/**`）+ `scripts/server-typecheck.mjs`，把**当前 42** 记为基线，**只许降不许升**（棘轮口径同 runtime-budget：超基线先改台账）；② 新增/修改的服务端文件**不得增加错误数**（本轮的邮箱 4 处属违规，须在下一轮先修到 0）；③ `docs/29` 的 E5-1 补上"服务端类型检查"一项，**不再把前端 tsc 当整仓类型检查**。
+  4. **不追溯修改历史证据**：此前各提交里的"tsc 0"按第 1 条解释（前端 tsc 0），不重写历史。

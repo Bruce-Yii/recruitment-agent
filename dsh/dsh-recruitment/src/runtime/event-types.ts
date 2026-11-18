@@ -167,6 +167,8 @@ export const EVENT_TYPES = {
   APPLICATION_RUBRIC_VERSION_PINNED: 'application.rubric_version.pinned',
   /** 岗位关闭：`src/http/actions-job.ts` 在终止事务里写的审计事件。 */
   JOB_CLOSED: 'job.closed',
+  /** 逐条 rubric 标准人工纠偏落库：`src/tools/criterion-override.ts` 写的审计事件。 */
+  CRITERION_OVERRIDE_RECORDED: 'criterion.override.recorded',
 } as const
 
 /** `EVENT_TYPES` 的取值联合（发射方签名用）。 */
@@ -398,6 +400,25 @@ const WRITER_EVENTS: readonly EventTypeDefinition[] = [
       reason:
         '岗位关闭已在同一事务里终止在途申请/未开始面试/未完成任务，并由 fn_row_guard 写各状态迁移审计；'
         + '本事件是聚合审计事实，不建任务、不再自动执行，否则会重复终止。',
+    },
+  },
+  {
+    type: EVENT_TYPES.CRITERION_OVERRIDE_RECORDED,
+    constKey: 'CRITERION_OVERRIDE_RECORDED',
+    producer: {
+      kind: 'TOOL',
+      file: 'src/tools/criterion-override.ts',
+      detail: 'insertOverrideRecordedEvent()（工具 recruitment_criterion_override：逐条标准人工纠偏落库）',
+    },
+    // 与 interview.record.verified / job.rubric_version.approved 同一口径：纯审计工具事件用
+    // normalizer_version='schema/0001'，RuntimeStore.listPendingEvents 不把它当待路由触发事件。
+    normalizerVersion: 'schema/0001',
+    routing: {
+      kind: 'IGNORED',
+      reason:
+        '人工逐条纠偏已由工具在同一事务写进 criterion_override 表并把旧 current 收口；'
+        + '事件只是审计事实（时间线可读），v1.0 没有自动后续任务，再建任务会重复处理。'
+        + '（payload 带 application_id，是**明确不触发**，不是对象 id 解析失败。）',
     },
   },
 ]

@@ -292,6 +292,13 @@ const LIVE_EVIDENCE: Record<string, { readonly marker: RegExp; readonly why: str
     marker: /await deps\.fetch\(/,
     why: 'LIVE 只在 IMAP 连接成功且读到真实邮件时给出；连接失败先 fail-closed 零写入；附件 sha256 由 fetchAndIngest 逐个复算（本工具经 deps.fetch 调用该实现）',
   },
+  // 2026-11-19（逐条标准人工纠偏）：labels 由**同一份**租户判定 buildThreeAxisLabels 算，
+  // 租户被显式声明为非合成才 LIVE；本工具不读外部系统、不写标签常量，trigger=MANUAL、
+  // connection=NOT_CONNECTED（只写业务库）。与 business-read/interview-record-verify 同口径。
+  'criterion-override.ts': {
+    marker: /await buildThreeAxisLabels\(client, tenantId\)/,
+    why: '同一份租户判定（本工具不自称 LIVE，按本次调用的租户事实算）',
+  },
 }
 
 test('源码扫描：`provenance: \'LIVE\'` 字面量只允许出现在"证据闸门之后"', () => {

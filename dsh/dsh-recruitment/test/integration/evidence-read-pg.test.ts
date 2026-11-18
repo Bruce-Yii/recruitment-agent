@@ -24,6 +24,7 @@ import {
   TENANT,
   createIsolatedTestDatabase,
   hex64,
+  migrationFiles,
   one,
   parsedFields,
   seedScenario,
@@ -365,7 +366,12 @@ test('application_get execute：rubric 块给 criteria_summary（≤8 条 + 真�
     applications: readonly {
       rubric?: {
         criteria_count: number
-        criteria_summary?: readonly { key: string; label?: string; kind?: string; weight?: number }[]
+        // 人逐条纠偏 ADD-only：5 个新键恒在（旧四键一个不动）。
+        criteria_summary?: readonly {
+          key: string; label?: string; kind?: string; weight?: number
+          ai_state: string; human_state: string; effective_state: string
+          override_note: string; overridden_at: string
+        }[]
       }
     }[]
   }
@@ -373,11 +379,17 @@ test('application_get execute：rubric 块给 criteria_summary（≤8 条 + 真�
   assert.ok(rubric !== undefined)
   assert.equal(rubric.criteria_count, 10)
   assert.equal(rubric.criteria_summary?.length, 8)
+  // 精确键集：旧四键 + 人工纠偏五键（恒在，null 按项目口径编码为空串）。仍是精确相等，不改成"包含"。
   assert.deepEqual(rubric.criteria_summary?.[0], {
     key: 'criterion_0',
     label: '标准 0',
     kind: 'MUST_HAVE',
     weight: 0.1,
+    ai_state: '',
+    human_state: '',
+    effective_state: '',
+    override_note: '',
+    overridden_at: '',
   })
   // 截断之后的第 8/9/10 条不在摘要里，但 criteria_count 仍是 10（不隐瞒总数）。
   const keys = (rubric.criteria_summary ?? []).map((item) => item.key)
@@ -392,15 +404,19 @@ test('application_get execute：rubric 块给 criteria_summary（≤8 条 + 真�
   assert.ok(rubric.criteria_summary?.every((item) => typeof item.key === 'string'))
 })
 
-test('一次性库自检：0001→0016 全部重放（16 条迁移台账 + 演示租户存在），不是共享库', async () => {
+test('一次性库自检：迁移目录全量重放（台账条数 = 文件数 + 演示租户存在），不是共享库', async () => {
   const current = ctx()
-  assert.ok(current.isolated.migrations.length >= 16, `migrations=${current.isolated.migrations.length}`)
-  assert.ok(current.isolated.migrations.includes('0016_v1_consistency.sql'))
+  // 真值来源 = 迁移目录；不写死条数/末条，下次加迁移自动跟随。
+  const onDisk = migrationFiles()
+  assert.deepEqual([...current.isolated.migrations], [...onDisk], '重放清单必须与迁移目录逐项一致')
+  assert.ok(onDisk.includes('0017_criterion_override.sql'), '0017 必须在迁移目录里')
+  const lastFile = onDisk[onDisk.length - 1] ?? ''
   const ledger = await current.isolated.pool.query<{ n: string; latest: string | null }>(
     'select count(*)::text as n, max(version) as latest from recruitment.schema_migration',
   )
-  assert.equal(ledger.rows[0]?.n, '16')
-  assert.equal(ledger.rows[0]?.latest, '0016_v1_consistency')
+  assert.equal(ledger.rows[0]?.n, String(onDisk.length), '台账条数必须 = 迁移文件数')
+  assert.equal(ledger.rows[0]?.latest, lastFile.replace(/\.sql$/, ''), '台账末条必须 = 最后一个迁移文件')
+  assert.ok((ledger.rows[0]?.latest ?? '') >= '0017_criterion_override', '台账末条不得早于 0017')
   // 迁移 0002 的演示申请存在；本测试文件自己 seed 的申请是另外的随机 id（没有污染种子）。
   const demo = await current.isolated.pool.query<{ tenant_id: string }>(
     'select tenant_id from recruitment.application where id = $1',
