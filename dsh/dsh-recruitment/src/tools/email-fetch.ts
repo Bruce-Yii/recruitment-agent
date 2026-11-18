@@ -148,8 +148,9 @@ export function resolveMailConfig(
   if (issues.length > 0) return { resolved: null, issues }
   return {
     resolved: {
-      host, user, password_env: passwordEnv, password: password as string, port, tls, folder,
-      smtp_port: smtpPort, smtp_tls: smtpTls, smtp_host: smtpHost,
+      host, user, password_env: passwordEnv, password: password as string,
+      port: port ?? 993, tls: tls ?? true, folder,
+      smtp_port: smtpPort ?? 587, smtp_tls: smtpTls ?? false, smtp_host: smtpHost,
       since_days: sinceDays, since_uid: sinceUid,
       allowed_roots: [],
     },

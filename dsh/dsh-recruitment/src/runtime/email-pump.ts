@@ -300,6 +300,7 @@ function rowFields(row: ClaimedEffect): {
   maxAttempts: number
   externalId: string
   sentAt: string
+  receipt_payload: unknown
 } {
   const record = row as unknown as Record<string, unknown>
   const attempt = typeof record.attempt_count === 'number' ? record.attempt_count : 0
@@ -310,7 +311,7 @@ function rowFields(row: ClaimedEffect): {
     : typeof record.sent_at === 'object' && record.sent_at instanceof Date
       ? record.sent_at.toISOString()
       : ''
-  return { payload: record.payload, attemptCount: attempt, maxAttempts: max, externalId, sentAt }
+  return { payload: record.payload, attemptCount: attempt, maxAttempts: max, externalId, sentAt, receipt_payload: record.receipt_payload }
 }
 
 // =====================================================================

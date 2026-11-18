@@ -48,7 +48,7 @@ export function digestOf(value: unknown): string {
 /** 契约错误里能出现的 code（封闭集：`tool-contracts.md` §3.4 + S6 的身份结论）。 */
 export type ContractErrorCode = Extract<
   RecruitmentErrorCode,
-  'INVALID_ARGS' | 'NOT_FOUND' | 'BLOCKED_BY_REVIEW' | 'NO_RUBRIC' | 'FORBIDDEN' | 'READER_FAILED' | 'NOT_CONFIGURED'
+  'INVALID_ARGS' | 'NOT_FOUND' | 'BLOCKED_BY_REVIEW' | 'NO_RUBRIC' | 'FORBIDDEN' | 'READER_FAILED' | 'NOT_CONFIGURED' | 'NOT_CONNECTED' | 'AUTH_REQUIRED'
 >
 
 /** 构造一次契约错误的 detail（`blocking_items[]` / `violations[]` / `allowed[]` …）。 */
