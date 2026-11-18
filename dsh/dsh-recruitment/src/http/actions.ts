@@ -342,6 +342,43 @@ async function readJsonObject(req: IncomingMessage): Promise<Record<string, unkn
   return raw as Record<string, unknown>
 }
 
+/**
+ * 读可选的顶层 `expected_record_version`（乐观并发守卫；`stage/advance` 与 `decision/record`
+ * 两个写路由共用）。
+ *
+ *   * **不传**（键不存在）→ 返回 `undefined`；调用方不加任何字段，行为逐字不变；
+ *   * 传了 → 必须是整数且 ≥1；否则 400 `INVALID_ARGS`，
+ *     reason_code = `TYPE_MISMATCH`（类型/非整数）或 `OUT_OF_RANGE`（<1），**零写入**。
+ *
+ * 版本判断本身**不在 HTTP 层做**（绝不"读回来再比"）：这里只校验形状并把值透传给域函数，
+ * 由它在同一条 UPDATE 的 WHERE 里做原子守卫；不符时域函数抛
+ * `VERSION_CONFLICT(STALE_RECORD_VERSION)`，经 `errorResponse`/`STATUS_BY_CODE` 映射成 409，
+ * 信封 `{error:{code,reason_code,message,detail:{expected_record_version,actual_record_version}}}`。
+ */
+function readOptionalExpectedRecordVersion(body: Record<string, unknown>): number | undefined {
+  if (!Object.hasOwn(body, 'expected_record_version')) return undefined
+  const value = body.expected_record_version
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw actionHttpError(
+      400,
+      'INVALID_ARGS',
+      'TYPE_MISMATCH',
+      'expected_record_version 必须是整数（≥1）',
+      { path: 'expected_record_version', expected: 'integer >= 1' },
+    )
+  }
+  if (value < 1) {
+    throw actionHttpError(
+      400,
+      'INVALID_ARGS',
+      'OUT_OF_RANGE',
+      'expected_record_version 必须 ≥ 1',
+      { path: 'expected_record_version', value },
+    )
+  }
+  return value
+}
+
 /** 同源校验（**复用** `overview.ts::sameOrigin`；不能过就 403）。 */
 function assertSameOrigin(req: IncomingMessage, port: number): void {
   if (!sameOrigin(req, port)) {
@@ -1246,6 +1283,11 @@ async function handleDecisionAction(
 ): Promise<void> {
   const { resolved, body } = await readActionRequest(deps, req, action, DECISION_DERIVED_BODY_KEYS)
   const database = requireDatabase(deps)
+  // 只有 decision/record 端点吃顶层 expected_record_version；screening/decide 这条路径
+  // 完全不动（该字段在 screening 上仍按改动前的既有规则处理，行为逐字不变）。
+  // 校验在此、任何写之前完成；buildDecisionCommand 的返回值是 `{...body, human_confirmation}`，
+  // 所以这个（已校验的）值会随 args 原样透传给工具/域层做原子版本守卫。
+  if (mode === 'record') readOptionalExpectedRecordVersion(body)
   // screening/decide 的 scope 是端点语义；decision/record 的 scope 在 buildDecisionCommand
   // 里按 body 校验（只允许 STAGE/FINAL），这里传一个占位值，函数内会覆盖/校验。
   const scope: 'SCREENING' | 'STAGE' | 'FINAL' = mode === 'screening' ? 'SCREENING' : 'FINAL'
@@ -1285,9 +1327,15 @@ async function handleStageAdvance(
 ): Promise<void> {
   const action: ActionName = 'stage/advance'
   const { resolved, body } = await readActionRequest(deps, req, action)
+  const expectedRecordVersion = readOptionalExpectedRecordVersion(body)
   const database = requireDatabase(deps)
   const tool = createStageAdvanceTool(database, { identity: deps.identity })
-  const output = await tool.execute(body, execOf(resolved))
+  // 不传时把原始 body 原样交给工具（逐字等价）；传了才加这一个键。工具层把它当作
+  // parseArgs 的合法可选参数接收，并透传给 advanceApplicationStage 的 input 做 WHERE 守卫。
+  const toolInput = expectedRecordVersion === undefined
+    ? body
+    : { ...body, expected_record_version: expectedRecordVersion }
+  const output = await tool.execute(toolInput, execOf(resolved))
   const outputRecord = asRecord(output)
   const applicationId = typeof outputRecord.application_id === 'string' && outputRecord.application_id !== ''
     ? outputRecord.application_id

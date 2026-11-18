@@ -109,7 +109,7 @@ test('工具名 / 输入 schema：override 可见但可选，required 仍只有 
   assert.equal(TOOL.name, 'recruitment_application_stage_advance')
   const parameters = TOOL.parameters as Record<string, unknown>
   const properties = parameters.properties as Record<string, unknown>
-  assert.deepEqual(Object.keys(properties), ['application_id', 'override'])
+  assert.deepEqual(Object.keys(properties), ['application_id', 'expected_record_version', 'override'])
   assert.deepEqual(parameters.required, ['application_id'], 'override 绝不进顶层 required')
   assert.equal(parameters.additionalProperties, false)
   // 模型可见文案里必须明写 override 与"哈希由服务端算/未知键拒绝"。

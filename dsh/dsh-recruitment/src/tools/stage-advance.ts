@@ -3,7 +3,8 @@
 // 形状权威：`contracts/stage-advance/tool-contracts.md`（下称 TC）。
 // 领域实现：`src/domain/stage-advance.ts`（判定 + 版本守卫 + stage_entered_at，全部在那儿）。
 // 本文件只做三件"胶水"：
-//   1. 入参收窄到**一个**：`{application_id}`。目标阶段、actor、tenant 一概不收 ——
+//   1. 入参收窄到**一个必填键** `{application_id}`（+ 两个可选键：人工原话 `override`、
+//      乐观并发 `expected_record_version`）。目标阶段、actor、tenant 一概不收 ——
 //      本命令不新增授权，只承认已发生的事实（收 `to_stage` 就等于给模型一个"跳阶开关"）。
 //   2. 事务与身份：`withActor`（`BEGIN` + `SET LOCAL recruitment.actor_id`）——
 //      `fn_row_guard` 只认这条路径给出的 actor；缺了它会 ACTOR_REQUIRED 拒绝。
@@ -81,6 +82,22 @@ const PARAMS: ParamMap = {
       '申请 id（UUID）。目标阶段由"已发生的事实"推导'
       + '（T1 S6→S7 / T2 S7→S8 / T3 S8→S9 / T4 S9→S10，S10 是 v1.0 终态），'
       + 'actor 与 tenant 只能来自执行上下文。',
+  },
+  // 乐观并发（可选）：调用方认为的 application.record_version（先 application_get 拿 record_version）。
+  // 放进 PARAMS ⇒ 自动进 schema（D-157：新参数必须模型可见）；parseArgs 负责整数/>=1 校验。
+  // 传了 → 版本不符由领域写路径在同事务 `select … for update` 持锁读后比较并拒绝
+  //        （VERSION_CONFLICT / STALE_RECORD_VERSION，零写入、零审计事件、零版本 +1）；
+  // 不传 → undefined，领域层完全沿用原写路径（不加任何新 WHERE / 事件 / 出参改动）。
+  expected_record_version: {
+    kind: 'integer',
+    required: false,
+    min: 1,
+    description:
+      'Optional optimistic-concurrency guard: the application.record_version the caller last read '
+      + '(integer >= 1; get it first via recruitment_application_get). When supplied and it differs from '
+      + 'the stored record_version, the call fails atomically with VERSION_CONFLICT / '
+      + 'STALE_RECORD_VERSION (detail: expected_record_version, actual_record_version) with zero writes '
+      + 'and zero audit events. When omitted, behaviour is byte-for-byte unchanged.',
   },
   // AT-6/7 的 override 是**可选**参数，域类型是对象 {reason, confirmation_text}，
   // 而本插件的 ParamMap 只支持标量（string/integer/boolean/string[]）。arg 校验在
@@ -297,8 +314,9 @@ export interface StageAdvanceValue {
 /** 模型可见说明（**每一条边界都必须在这里出现**，否则模型会自己发明语义）。 */
 const DESCRIPTION = [
   'Advance ONE application\'s stage pointer by acknowledging facts that have ALREADY happened',
-  '(a derived command: it adds no new authority). Input is exactly {application_id} —',
-  'no target stage, no actor, no tenant.',
+  '(a derived command: it adds no new authority). Required input: {application_id};',
+  'two optional keys: {expected_record_version} (optimistic concurrency) and {override} (human words).',
+  'No target stage, no actor, no tenant.',
   'Ladder (four edges, in order, never skipped; the chain ends at S10):',
   '  T1 S6->S7: application.resume_version_id is set AND that material\'s parse_status is not FAILED',
   '            AND application.rubric_version_id is set (rubric version pinned);',
@@ -339,6 +357,11 @@ const DESCRIPTION = [
   'a human did it.',
   'Errors: NOT_FOUND (unknown application), VERSION_CONFLICT (concurrent change; re-read and retry),',
   'NOT_CONFIGURED, INVALID_ARGS.',
+  'OPTIONAL expected_record_version (integer >= 1): the application.record_version you last read',
+  '(get it from recruitment_application_get first). When supplied and it differs from the stored version,',
+  'the call fails atomically with VERSION_CONFLICT / STALE_RECORD_VERSION (detail:',
+  'expected_record_version, actual_record_version) and makes ZERO writes and ZERO audit events.',
+  'When omitted, behaviour is unchanged (no extra WHERE, no extra event, no output-shape change).',
   'OPTIONAL override (AT-6/7): {reason: string 1..500 chars, confirmation_text: string 1..2000 chars} —',
   'the human\'s verbatim confirmation words. Only pass it when a HUMAN has explicitly authorized',
   'skipping a gate / waiving an unsubmitted scorecard, and give the human\'s reason. Both keys are',
@@ -358,6 +381,8 @@ const DESCRIPTION = [
  * @param applicationId - 已校验的申请 id。
  * @param actorId - 本次写库的作者（Demo Actor 解析结果或测试兼容的 `config.actor_id`）。
  * @param override - AT-6/7 的人工原话授权；缺省 = 完全沿用原路径。
+ * @param expectedRecordVersion - 可选乐观并发版本；缺省时**连输入对象的键都不多一个**，
+ *   领域层看到的就是原来的 `{tenantId, applicationId}` / `{..., override}`。
  * @returns 规范输出值。
  */
 async function runStageAdvance(
@@ -365,17 +390,23 @@ async function runStageAdvance(
   applicationId: string,
   actorId: string,
   override?: StageOverride,
+  expectedRecordVersion?: number,
 ): Promise<StageAdvanceValue> {
   const pool = createPool(config)
   try {
     return await withActor(pool, actorId, async (client) => {
       // 领域层只认"事实"；调用方只提供租户与申请 id（+ 可选的人工原话 override）。
+      // 没传 expected_record_version 时用空展开 ⇒ 输入对象与改动前逐键一致（零行为漂移）。
+      const versionGuard = expectedRecordVersion === undefined
+        ? {}
+        : { expected_record_version: expectedRecordVersion }
       const result = override === undefined
-        ? await advanceApplicationStage(client, { tenantId: config.tenant_id, applicationId })
+        ? await advanceApplicationStage(client, { tenantId: config.tenant_id, applicationId, ...versionGuard })
         : await advanceApplicationStageWithOverride(client, {
           tenantId: config.tenant_id,
           applicationId,
           override,
+          ...versionGuard,
         })
       // R4：三维标签走**同一份判定实现**（candidate-get.ts 的 buildThreeAxisLabels），
       // 不在本文件另写一份（`test/unit/label-honesty.test.ts` 机检"单一实现"）。
@@ -458,7 +489,9 @@ export function createStageAdvanceTool(
       const { rest, override } = splitOverrideArg(rawArgs)
       const args = parseArgs(PARAMS, rest)
       const applicationId = args.application_id as string
-      return await runStageAdvance(config, applicationId, writeActor.actor_id, override)
+      // expected_record_version 在 PARAMS 里 ⇒ parseArgs 已做整数/≥1 校验，且它留在 args 里。
+      const expectedRecordVersion = args.expected_record_version as number | undefined
+      return await runStageAdvance(config, applicationId, writeActor.actor_id, override, expectedRecordVersion)
     },
   }
 }

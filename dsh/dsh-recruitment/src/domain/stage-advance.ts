@@ -336,12 +336,20 @@ export interface StageOverride {
   readonly confirmation_text: string
 }
 
-/** 本命令的输入：租户来自配置、申请来自入参；`override` 是唯一新增的可选键（AT-6/7）。 */
+/** 本命令的输入：租户来自配置、申请来自入参；两个可选键分别来自 AT-6/7 与乐观并发守卫。 */
 export interface AdvanceApplicationStageInput {
   readonly tenantId: string
   readonly applicationId: string
   /** AT-6/7：仅当人工提供原话确认时才可跳轮/豁免；缺省 = 原路径（一条闸门都不放宽）。 */
   readonly override?: StageOverride
+  /**
+   * 可选乐观并发：调用方认为的 `application.record_version`（整数 ≥1，由工具层校验）。
+   * 缺省 = 完全沿用原写路径（不加任何新 WHERE、不发额外查询、不改出参）。
+   * 传了 → 在任何写入（含 F1 rubric 补钉 + 审计事件）之前用同事务 `select … for update`
+   *        持锁读后比较（行锁保持到事务结束，与后续所有写串行化）；
+   * 不符 → `VERSION_CONFLICT / STALE_RECORD_VERSION`，零写入、零审计事件。
+   */
+  readonly expected_record_version?: number
 }
 
 /** 工作台视角的"责任人"（`role` 恒有；actor 能推出来才有）。 */
@@ -1672,6 +1680,65 @@ async function finishWithObstructions(
 }
 
 // =====================================================================
+//  乐观并发守卫（可选）
+// =====================================================================
+
+/**
+ * 顶层**可选**乐观锁守卫：比较的是**申请行** `application.record_version`。
+ *
+ * 与 `decision-record.ts::guardApplicationRecordVersion` 同一 B 式：`select … for update`
+ * 用调用方给的事务内 client（`withActor` 的同一个事务），行锁保持到事务结束 —— "读版本 +
+ * 比较 + 后续所有写"在锁内串行化，等价于把版本条件写进后续 UPDATE 的 WHERE。
+ * 只用这一条锁读拿到 actual；不匹配就用它直接构造错误详情，**不加第二次查询**。
+ * 命中 ⇒ 直接 return（不写、不 +1、不写审计事件）；不符 ⇒ 异常上抛，整事务回滚，
+ * 零写入、零审计事件。
+ * 不传 expected ⇒ 立即返回：零额外查询、零锁，后续 SQL 与改动前逐字相同。
+ *
+ * @param client - 事务内连接（调用方已 `SET LOCAL recruitment.actor_id`）。
+ * @param tenantId - 租户（来自配置）。
+ * @param applicationId - 申请 id。
+ * @param expected - 调用方期望的 record_version；`undefined` = 关闭守卫（原路径）。
+ */
+async function assertExpectedRecordVersion(
+  client: DatabaseClient,
+  tenantId: string,
+  applicationId: string,
+  expected: number | undefined,
+): Promise<void> {
+  if (expected === undefined) return
+
+  const { rows } = await client.query<{ record_version: number }>(
+    `select a.record_version
+       from recruitment.application a
+      where a.id = $1 and a.tenant_id = $2
+        for update`,
+    [applicationId, tenantId],
+  )
+  const actual = rows[0]?.record_version
+  if (actual === undefined) {
+    // 行不存在 / 错租户 → fail closed（与 readApplication 的 NOT_FOUND 同一口径）。
+    throw stageError(
+      'NOT_FOUND',
+      'APPLICATION_NOT_FOUND',
+      '该租户下没有这个申请（乐观锁守卫）。',
+      { application_id: applicationId },
+    )
+  }
+  if (actual !== expected) {
+    throw stageError(
+      'VERSION_CONFLICT',
+      'STALE_RECORD_VERSION',
+      `申请的 record_version 不是 ${expected}（已被并发修改）：本调用零写入、零审计事件，请重读后再决定。`,
+      {
+        application_id: applicationId,
+        expected_record_version: expected,
+        actual_record_version: actual,
+      },
+    )
+  }
+}
+
+// =====================================================================
 //  写路径
 // =====================================================================
 
@@ -1827,8 +1894,10 @@ export async function advanceApplicationStage(
   client: DatabaseClient,
   input: AdvanceApplicationStageInput,
 ): Promise<StageAdvanceResult> {
-  const { tenantId, applicationId } = input
+  const { tenantId, applicationId, expected_record_version } = input
   try {
+    // 守卫先于 diagnose：diagnose 可能做 F1 rubric 补钉（写申请行 + 审计事件）。
+    await assertExpectedRecordVersion(client, tenantId, applicationId, expected_record_version)
     const diagnosis = await diagnose(client, tenantId, applicationId, true, true)
     const app = diagnosis.app
 
@@ -2068,7 +2137,7 @@ export async function advanceApplicationStageWithOverride(
   client: DatabaseClient,
   input: AdvanceApplicationStageInput,
 ): Promise<StageOverrideResult> {
-  const { tenantId, applicationId, override } = input
+  const { tenantId, applicationId, override, expected_record_version } = input
   try {
     // 1) actor 先读：没有 actor 就 fail closed，一条写语句都不发（与 fn_row_guard 同口径）。
     const actorId = await currentActorId(client)
@@ -2082,10 +2151,14 @@ export async function advanceApplicationStageWithOverride(
     }
     // 防御：调用方漏传 override 时退回正常路径（工具层保证不会发生，这里只是不静默跳过闸门）。
     if (override === undefined) {
-      const base = await advanceApplicationStage(client, { tenantId, applicationId })
+      // 交给正常路径做守卫（只守卫一次；不在这里先跑，否则第二次会因版本已自增而误报冲突）。
+      const base = await advanceApplicationStage(client, { tenantId, applicationId, expected_record_version })
       return { ...base, override_applied: false, skipped_stages: [], waived_scorecard: false }
     }
 
+    // 守卫先于 diagnoseOverride：override 路径虽不做 F1 补钉，但诊断之后的第一跳 UPDATE
+    // 与同一事务的 override 审计事件都必须在版本确认之后才发生。
+    await assertExpectedRecordVersion(client, tenantId, applicationId, expected_record_version)
     const diagnosis = await diagnoseOverride(client, tenantId, applicationId)
     const app = diagnosis.app
     if (diagnosis.edges.length === 0) {
@@ -2217,8 +2290,10 @@ export async function deriveScreeningDecisionStage(
   client: DatabaseClient,
   input: AdvanceApplicationStageInput,
 ): Promise<ScreeningDecisionStageDerivation> {
-  const { tenantId, applicationId } = input
+  const { tenantId, applicationId, expected_record_version } = input
   try {
+    // 现有调用方（decision_record）不传 expected ⇒ 守卫立即返回，SQL/行为逐字不变。
+    await assertExpectedRecordVersion(client, tenantId, applicationId, expected_record_version)
     const diagnosis = await diagnose(client, tenantId, applicationId, true, true, SCREENING_DECISION_RULES)
     const app = diagnosis.app
 
