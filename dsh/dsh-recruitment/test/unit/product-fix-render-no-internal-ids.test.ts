@@ -331,6 +331,26 @@ const TOOL_FACTORIES: Readonly<Record<string, readonly FactoryEntry[]>> = {
     { factory: 'createApplicationIntakeTool', args: [{ converter: FAKE_CONVERTER, database: FAKE_DATABASE }, FAKE_DEPS] },
     { factory: 'unconfiguredApplicationIntakeTool', args: [FAKE_ISSUES] },
   ],
+  // 2026-11-18（邮箱连接器，D-155）：工具 render 必须被本检查执行；假 transport + 假 fetch 不连真网。
+  'email-fetch.ts': [
+    {
+      factory: 'createEmailFetchTool',
+      args: [{
+        database: FAKE_DATABASE,
+        converter: FAKE_CONVERTER,
+        mail: {
+          host: 'imap.test', user: 'hr@test', password_env: 'RECRUITMENT_MAIL_PASSWORD', password: 'x',
+          port: 993, tls: true, folder: 'INBOX', smtp_port: 587, smtp_tls: false, smtp_host: 'smtp.test',
+          since_days: 7, since_uid: 0, allowed_roots: [],
+        },
+        transport: {},
+        fetch: async () => ({
+          total: 0, ingested: 0, duplicates: 0, skipped: 0, failed: 0, connection: 'CONNECTED', results: [],
+        }),
+      }],
+    },
+    { factory: 'unconfiguredEmailFetchTool', args: [FAKE_ISSUES] },
+  ],
   'business-read.ts': [
     { factory: 'createBusinessReadTools', args: [{ database: FAKE_DATABASE, converter: FAKE_CONVERTER }], returnsArray: true },
     { factory: 'unconfiguredBusinessReadTools', args: [FAKE_ISSUES, FAKE_ISSUES], returnsArray: true },
@@ -468,6 +488,7 @@ const NOT_A_TOOL_FACTORY: Readonly<Record<string, string>> = {
 const SUB_FACTORIES: Readonly<Record<string, string>> = {
   'business-read.ts:createApplicationGetTool': '由 createBusinessReadTools 组装（本文件已执行该数组工厂）',
   'business-read.ts:createMaterialReadTool': '由 createBusinessReadTools 组装（本文件已执行该数组工厂）',
+  'email-fetch.ts:createWiredEmailFetchTool': '生产装配入口（由 apply 注入 runtime 后调用）；未注入时 fail-closed 抛 NOT_CONFIGURED，其 render 与已执行的 createEmailFetchTool 完全相同',
 }
 
 /** `src/tools/` 目录绝对路径。 */

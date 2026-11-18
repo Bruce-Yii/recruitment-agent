@@ -22,14 +22,18 @@
 //   recruitment_scorecard_submit       **S10 写库**：一位 HUMAN 面试官交自己那份面评
 //   recruitment_evaluation_summarize   **S10 只读**：汇总投影（不产建议结论）
 //   recruitment_decision_record        **S10 写库**：记录人已做出的决定（必须过 ctx.approval）
+//   recruitment_email_fetch            邮箱收件（30 → 31，EVENT 触发、LIVE）：IMAP → intake
 //
-// 配置来自 cordis.patch.yml 的 config 段，共三段：
+// 配置来自 cordis.patch.yml 的 config 段，共四段：
 //   converter: python_bin / converter_dir / allowed_roots   （resume_read + intake 要）
 //   database:  host / port / user / database / tenant_id / actor_id / password_env
 //              **密码只从环境变量读**（默认 RECRUITMENT_DB_PASSWORD），配置里不出现密码。
 //   feishu:    cli（lark-cli 的**绝对路径**）/ timeout_ms / max_attempts / page_size / max_pages
 //              **可选**：给了才装配飞书连接器传输层；缺省 = 不装配（连接器回读路径
 //              BLOCKED/TRANSPORT_NOT_CONFIGURED，不拉子进程）。**绝不放宽**成读 PATH / 环境变量。
+//   mail:      host / user / password_env / port / tls / folder（IMAP 收件）+ smtp_*（发信 Host Action）
+//              `${ENV}` 引用自行展开；未定义即 NOT_CONFIGURED（工具仍注册同名替身）。
+//              发信走 /recruitment/api/action/email/send，不新增工具（工具数只 +1）。
 //
 // 缺任何一段时**工具仍然注册**，但调用返回 NOT_CONFIGURED 并列出缺什么——
 // 不静默降级、不假装能读、不返回假数据（沿用 unconfiguredResumeReadTool 的既有做法）。
@@ -119,7 +123,12 @@ import { resolveDatabaseConfig, type DatabaseConfig } from './db/pool.ts'
 import {
   closePool,
   createPool,
+  withActor,
 } from './db/pool.ts'
+// email pump（durable_effect 派发器）：runtime.enabled 时与 G1 tick-loop 同源启停。
+// 同源 = 同一个 pool / 同一个 withActor 语义 / 同一个 disposer（先 pump、再 tick-loop、再关池）。
+import { createEmailPump, EMAIL_PUMP_INTERVAL_MS, type ReadbackFunction } from './runtime/email-pump.ts'
+import { createSmtpTransport } from './connectors/mail/smtp.ts'
 import {
   composeRuntime,
   registerRuntimeHttp,
@@ -135,6 +144,20 @@ import { startTickLoop, type TickLoop } from './runtime/tick-loop.ts'
 // （出口文件不在 lane 写范围，且它只是 re-export）。
 import { createPgEventDispositionSink } from './runtime/event-runtime.ts'
 import { resolveFeishuConnector, type FeishuConnectorConfig } from './connectors/feishu/index.ts'
+// 邮箱收件（工具数 30 → 31）：工具注册面 + 配置 fail-closed 替身。
+import {
+  createWiredEmailFetchTool,
+  unconfiguredEmailFetchTool,
+  resolveMailConfig,
+  emailFetchRuntime,
+  type MailConnectorConfig,
+  type ResolvedMailConfig,
+} from './tools/email-fetch.ts'
+// A 的收件编排与 IMAP 传输（子代理 mail-a-transport 实现；工具壳只消费其签名）。
+import { fetchAndIngest } from './connectors/mail/orchestrator.ts'
+import { createImapTransport } from './connectors/mail/transport.ts'
+// C 的发信 Host Action（POST /recruitment/api/action/email/send，不新增工具）。
+import { registerEmailSendHttp, type EmailSendHostContext } from './http/email-send.ts'
 import { registerOverviewHttp, type OverviewHostContext } from './http/overview.ts'
 import { registerRecruitingHttp, type RecruitingHostContext } from './http/recruiting.ts'
 // owner-api-display（V5 看得见）：原文受控获取 + DSH 会话计量 + 任务状态（三个只读端点，
@@ -251,6 +274,13 @@ export interface Config {
    * fail-closed（写工具报 DEMO_ACTOR_UNMAPPED），不静默回退默认值。
    */
   readonly demo_actor_map?: DemoActorMapConfig
+  /**
+   * 邮箱收件连接器（`recruitment_email_fetch`，工具数 30 → 31）+ 发信 Host Action。
+   * 同一账号：host/user/password_env/port/tls/folder（IMAP）+ smtp_*（SMTP 发信，不新增工具）。
+   * password_env 只写变量名，口令只从环境变量读；`${ENV}` 引用由 resolveMailConfig 展开，
+   * 未定义/未展开一律 fail-closed（工具仍注册替身，调用报 NOT_CONFIGURED）。
+   */
+  readonly mail?: MailConnectorConfig
 }
 
 /**
@@ -388,6 +418,13 @@ export function apply(
 ): void {
   const converter = resolveConverterConfig(config?.converter ?? {}, env)
   const database = resolveDatabaseConfig(config?.database ?? {}, env)
+  // 邮箱连接器：缺任何必填项（含 `${ENV}` 未展开）→ resolved=null，注册 NOT_CONFIGURED 替身；
+  // 只有配置齐全才装配 A 的 IMAP transport + 收件编排（并发写，通过 runtime seam 注入）。
+  const mail: { resolved: ResolvedMailConfig | null; issues: readonly string[] } = resolveMailConfig(config?.mail ?? {}, env)
+  if (mail.resolved !== null) {
+    emailFetchRuntime.fetch = fetchAndIngest as typeof emailFetchRuntime.fetch
+    emailFetchRuntime.createTransport = (resolved) => createImapTransport(resolved as never)
+  }
   // 飞书连接器（E4 接线）：**只从插件配置**装配传输层；没配 feishu.cli 时 connector=undefined，
   // 转写导入的连接器回读路径 fail-closed（BLOCKED/TRANSPORT_NOT_CONFIGURED，不拉子进程）。
   // env 只用于适配器判断凭据**存在性**（布尔），绝不用于取 CLI 路径（R7 / AGENTS.md §7.6）。
@@ -480,6 +517,21 @@ export function apply(
         },
       ),
       'recruitment: feishu import route',
+    )
+    // 邮箱发信 Host Action（C）：POST /recruitment/api/action/email/send，发信**不新增工具**。
+    // 与写动作共享同一个 actorIdentity；loopback + 同源校验由路由自己保证（非回环零注册）。
+    child.effect(
+      () => registerEmailSendHttp(
+        child as unknown as EmailSendHostContext,
+        {
+          database: database.resolved,
+          databaseIssues: database.issues,
+          identity: actorIdentity,
+          mail: mail.resolved,
+          mailIssues: mail.issues,
+        },
+      ),
+      'recruitment: email send action route',
     )
     // D5 decision（task-56）：W2b 的决策事实与写入口。
     //   * GET  /recruitment/api/decision/facts                 申请钉住的 job/rubric（含 payload_hash）+
@@ -581,6 +633,8 @@ export function apply(
           // G1：tick-loop 的启动 promise。**声明在 try 之外**：这样下面的 catch 也能收尸，
           // 否则 store/effect 装配失败时那条持咨询锁的专用连接会一直挂到进程退出。
           let tickLoopReady: Promise<TickLoop | null> = Promise.resolve(null)
+          // email pump disposer 同样**声明在 try 之外**：装配中途出错也要收掉定时器。
+          let disposeEmailPump: (() => void) | null = null
           try {
             const store = new RuntimeStore({
               pool,
@@ -638,10 +692,100 @@ export function apply(
               })
               : Promise.resolve(null)
             // engine 层（vendor 自 dsh-superagent）已于 2026-11-18 退役：无人写入、且绕过 tick 的 advisory lock；见 docs/17 D-154。真要做外发时按 src/engine/VENDORED.md 再接。
+
+            // ── email pump（与 runtime 同源启停）────────────────────────────
+            // 条件：mail 与 database 都配置齐全（mail.resolved !== null，且 runtimeDb 已存在）。
+            // 未配置时整段不启动（不注册任何定时器）；runtime.enabled=false 时更外层 if 直接跳过。
+            let emailPumpTimer: ReturnType<typeof setInterval> | null = null
+            if (mail.resolved !== null) {
+              try {
+                const smtp = createSmtpTransport(mail.resolved)
+                // 回执：用组合键（收件人 + 主题完全一致 + 发送时间 ± 窗口）查收件箱。
+                // 真机事实：服务端会改写 Message-ID，按 external_id 匹配必然落空。
+                // 若 IMAP transport 不可用则由 pump 记 UNREADABLE / NOT_FOUND，绝不假报 CONFIRMED。
+                const readback: ReadbackFunction = async (query) => {
+                  const factory = emailFetchRuntime.createTransport
+                  if (factory === null) return null
+                  const transport = factory(mail.resolved as never) as {
+                    listNew(input: { since_uid?: number; limit?: number }): Promise<readonly { uid: number; subject: string; from: string; message_id: string; date: string }[]>
+                    fetchMessage(uid: number): Promise<{ message_id: string; subject: string; headers: Readonly<Record<string, string>>; text: string }>
+                    disconnect(): Promise<void>
+                  }
+                  try {
+                    const envelopes = await transport.listNew({ limit: 100 })
+                    const center = Date.parse(query.sent_at)
+                    for (const env of envelopes) {
+                      if (env.subject !== query.subject) continue
+                      const at = Date.parse(env.date)
+                      if (!Number.isFinite(at) || !Number.isFinite(center)) continue
+                      if (Math.abs(at - center) > query.time_window_ms) continue
+                      const message = await transport.fetchMessage(env.uid)
+                      const headersTo = message.headers.to ?? ''
+                      if (headersTo !== '' && !headersTo.includes(query.to)) continue
+                      return {
+                        matched: true,
+                        matched_message_id: message.message_id || env.message_id,
+                        method: 'subject+recipient+time_window',
+                      }
+                    }
+                    return null
+                  } finally {
+                    await transport.disconnect().catch(() => undefined)
+                  }
+                }
+                const pump = createEmailPump({
+                  database: runtimeDb,
+                  mail: mail.resolved,
+                  transport: async (m) => {
+                    const sent = await smtp.send({
+                      to: m.to,
+                      subject: m.subject,
+                      body_summary: m.text,
+                      ...(m.headers === undefined ? {} : { headers: m.headers }),
+                    })
+                    return { messageId: sent.messageId }
+                  },
+                  readback,
+                  io: {
+                    // 与 G1 完全同源：同一个 pool + 同一个 actor 语义（set_config is_local）。
+                    withWrite: (fn) => withActor(pool, runtimeDb.actor_id, fn),
+                    markReadback: async (client, effectId, mark) => {
+                      // 只写回执列；带 tenant 隔离 + status='SENT' 守卫，不碰 status/record_version。
+                      await (client as { query(text: string, values: readonly unknown[]): Promise<unknown> }).query(
+                        `update recruitment.durable_effect
+                            set receipt_payload = $2::jsonb,
+                                readback_state = $3,
+                                last_readback_at = now()
+                          where id = $1 and tenant_id = $4 and status = 'SENT'`,
+                        [effectId, JSON.stringify(mark.receipt_payload), mark.readback_state, runtimeDb.tenant_id],
+                      )
+                    },
+                  },
+                })
+                const warn = (message: string): void => {
+                  const logger = (ctx as unknown as { logger?: { warn(message: string): void } }).logger
+                  logger?.warn(`recruitment: email pump tick 失败：${message}`)
+                }
+                emailPumpTimer = setInterval(() => {
+                  void pump.tick().catch((error: unknown) => {
+                    warn(error instanceof Error ? error.message : String(error))
+                  })
+                }, EMAIL_PUMP_INTERVAL_MS)
+                disposeEmailPump = () => {
+                  if (emailPumpTimer !== null) { clearInterval(emailPumpTimer); emailPumpTimer = null }
+                  void smtp.close().catch(() => undefined)
+                  pump.dispose()
+                }
+              } catch (error) {
+                // fail-soft：装配失败只 warn，不拖垮整个 runtime effect。
+                const logger = (ctx as unknown as { logger?: { warn(message: string): void } }).logger
+                logger?.warn(`recruitment: email pump 装配失败（未启动）：${error instanceof Error ? error.message : String(error)}`)
+              }
+            }
             return () => {
               disposeHttp()
-              // 关闭顺序：先停周期 tick 并**释放咨询锁**（否则别的实例得等这条连接
-              // 彻底断开才抢得到锁），再关池。
+              // 关闭顺序：先停 email pump（定时器 + dispose），再停周期 tick 并释放咨询锁，最后关池。
+              disposeEmailPump?.()
               void tickLoopReady
                 .then((loop) => loop?.dispose())
                 .catch(() => undefined)
@@ -649,6 +793,7 @@ export function apply(
             }
           } catch (error) {
             // 装配失败也要先把 tick-loop 收掉（可能已经抢到锁），再关池。
+            disposeEmailPump?.()
             void tickLoopReady
               .then((loop) => loop?.dispose())
               .catch(() => undefined)
@@ -871,6 +1016,19 @@ export function apply(
     ...configTools,
     pageImage,
     modelTextMerge,
+    // 邮箱收件（30 → 31）：配置齐全时走 A 的真实传输+编排；缺项时同名替身报 NOT_CONFIGURED。
+    mail.resolved === null || database.resolved === null || converter.resolved === null
+      ? unconfiguredEmailFetchTool([
+        ...mail.issues,
+        ...(database.resolved === null ? database.issues : []),
+        ...(converter.resolved === null ? converter.issues : []),
+      ])
+      : createWiredEmailFetchTool({
+        database: database.resolved,
+        converter: converter.resolved,
+        mail: mail.resolved,
+        identity: actorIdentity,
+      }),
   ].map(withStructuredResultContract)
     // D-141 §4：**最后**再套一层工具调用留痕（trace 必须是离注册表最近的执行边界）。
     //

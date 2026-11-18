@@ -285,6 +285,13 @@ const LIVE_EVIDENCE: Record<string, { readonly marker: RegExp; readonly why: str
     marker: /isPlainObject\(evaluation\.labels\)/,
     why: 'provenance 透传上游 screening_evaluate 的证据判定（本工具不自称 LIVE）',
   },
+  // 2026-11-18（邮箱连接器，D-155）：LIVE 只在 IMAP 连接成功且读到真实邮件时给出；
+  // connect/list 失败（AUTH_REQUIRED / NOT_CONNECTED）在出口之前 fail-closed（零写入），
+  // 每个附件的 sha256 由编排层 fetchAndIngest 逐个从原始字节复算 —— 不接真实 IMAP 就没有 LIVE。
+  'email-fetch.ts': {
+    marker: /await deps\.fetch\(/,
+    why: 'LIVE 只在 IMAP 连接成功且读到真实邮件时给出；连接失败先 fail-closed 零写入；附件 sha256 由 fetchAndIngest 逐个复算（本工具经 deps.fetch 调用该实现）',
+  },
 }
 
 test('源码扫描：`provenance: \'LIVE\'` 字面量只允许出现在"证据闸门之后"', () => {
@@ -292,6 +299,10 @@ test('源码扫描：`provenance: \'LIVE\'` 字面量只允许出现在"证据�
   // 闸门必须**出现在字面量之前**——这个顺序就是"先有证据再贴标签"的机检形式。
   const GATED: Record<string, readonly RegExp[]> = {
     'transcript-import.ts': [/if \(evaluateLiveGate\(readback\)\.gate === 'LIVE'\)/],
+    // 2026-11-18（邮箱连接器）：email_fetch 的 LIVE 只在 IMAP 连接成功、读到真实邮件后给出。
+    // 证据闸门 = 工具层把 connect/list 失败（AUTH_REQUIRED / NOT_CONNECTED）翻成错误并零写入返回；
+    // 只有穿过这两个检查才会走到出口常量。附件 sha256 由编排层逐个复算（fetchAndIngest）。
+    'email-fetch.ts': [/if \(connection === 'AUTH_REQUIRED'\)/],
   }
   for (const file of TOOL_FILES) {
     const source = readFileSync(join(TOOL_DIR, file), 'utf8')

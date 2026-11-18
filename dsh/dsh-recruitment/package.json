@@ -2,7 +2,7 @@
   "name": "@recruitment/dsh-recruitment",
   "version": "0.1.0",
   "private": true,
-  "description": "DSH 招聘工具包（30 个工具：29 个 recruitment_* + 高层 record_human_decision，S3–S10 一条 Golden Path）：读写简历/结构化、一等业务读（申请/材料）、岗位与 Rubric（含人类批准入口）、S6 接入、S7 初筛、S8 排期（D-62 四 intent）、S9 转写、S10 面评与决策（含「记录人已做的决定」高层动作）、阶段推进、执行追溯、企业自建配置；读写真连 PostgreSQL 17。",
+  "description": "DSH 招聘工具包（31 个工具（30 + email_fetch）：30 个既有工具 + recruitment_email_fetch；29 个 recruitment_* + 高层 record_human_decision，S3–S10 一条 Golden Path）：读写简历/结构化、一等业务读（申请/材料）、岗位与 Rubric（含人类批准入口）、S6 接入、S7 初筛、S8 排期（D-62 四 intent）、S9 转写、S10 面评与决策（含「记录人已做的决定」高层动作）、阶段推进、执行追溯、企业自建配置、邮箱收件；读写真连 PostgreSQL 17。",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
@@ -45,10 +45,14 @@
   "license": "UNLICENSED",
   "dependencies": {
     "@deepseek-ai/cordis": "4.1.0",
+    "imapflow": "^2.12.1",
+    "mailparser": "^3.14.5",
+    "nodemailer": "^10.6.0",
     "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/node": "22.20.0",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "8.15.5",
     "@types/react": "18.3.28",
     "tsdown": "0.22.14",
