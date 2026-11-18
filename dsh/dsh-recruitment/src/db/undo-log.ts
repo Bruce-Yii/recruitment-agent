@@ -159,6 +159,51 @@ export async function insertUndoLog(
   return existingId
 }
 
+/**
+ * 写一条「面试排期成功」的 undo_log ORIGINAL 行（最小包装，不改变 insertUndoLog 的语义）。
+ *
+ * 用途：HTTP 排期写事务在 `scheduleInTransaction` 成功之后、**同一事务 client** 里调用它，
+ * 让刚排的面试 action_id 进入撤销窗口（5 分钟）的事实来源。业务写与审计写同生共死：
+ * 任一失败由调用方的 `withActor` 整笔回滚。
+ *
+ * 字段口径（与迁移 0020 的 CHECK / 撤销补偿路径对齐）：
+ *   * `operation_type='SINGLE_SCHEDULE'`、`action_type='SCHEDULE'` → undo 接口走既有
+ *     `interview_schedule` CANCEL 补偿，不新增事件类型；
+ *   * `target_interview_id` / `target_application_id` 是撤销要用的目标引用（只存引用，不抄原文）；
+ *   * `confirmation_text_sha256` 由调用方**服务端派生**（排期 HTTP body 没有人的 confirmation_text，
+ *     D-79 批准在工具内部）；撤销时用的是撤销请求自己的确认原文 hash，不依赖这里的值；
+ *   * `occurred_at` 由数据库 `now()` 默认给出（撤销 5 分钟窗口的起算点）。
+ *
+ * 幂等、kind、唯一键、条件更新等全部沿用 `insertUndoLog`，本包装不复制任何逻辑。
+ */
+export async function insertScheduleUndoOriginal(
+  client: DatabaseClient,
+  input: {
+    readonly tenant_id: string
+    readonly action_id: string
+    readonly actor_id: string
+    readonly reason: string
+    readonly confirmation_text_sha256: string
+    readonly target_interview_id: string
+    readonly target_application_id?: string | null
+    readonly before_summary?: Record<string, unknown>
+  },
+): Promise<string> {
+  return insertUndoLog(client, {
+    tenant_id: input.tenant_id,
+    action_id: input.action_id,
+    kind: 'ORIGINAL',
+    operation_type: 'SINGLE_SCHEDULE',
+    actor_id: input.actor_id,
+    reason: input.reason,
+    confirmation_text_sha256: input.confirmation_text_sha256,
+    target_application_id: input.target_application_id ?? null,
+    target_interview_id: input.target_interview_id,
+    action_type: 'SCHEDULE',
+    before_summary: input.before_summary ?? {},
+  })
+}
+
 const UNDO_LOG_COLUMNS = `
   id, tenant_id, action_id, kind, operation_type, actor_id, occurred_at,
   reason, confirmation_text_sha256,

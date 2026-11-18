@@ -29,6 +29,8 @@ import {
 // O8（产品视角复核）：批准状态只能由 `approval` 行判（`approved_by_approval_id` 恒 null）。
 // 判据只在 `db/approval.ts` 里实现一份，本文件两处 SQL 复用同一片段，禁止再各写一遍。
 import { effectiveApprovalExistsSql } from '../db/approval.ts'
+// 候选人星标（0021）：只读投影取 application_star 最新一行；表不存在（旧库 < 0021）时为空，不当 false 假值。
+import { findLatestStarsForApplications } from '../db/application-star.ts'
 // W3b：轮次重点的判定**只有一份实现**（interviewer.ts 的 `buildRoundFocus`）。招聘方视角
 // 只展示 `round_focus`（不展示 effective_rubric），但降级/守卫语义必须与面试官视角逐字一致，
 // 否则同一场面试在两个视图里会给出不同的"本轮重点"（C-4）。
@@ -274,6 +276,8 @@ export interface ApplicationCard {
   readonly decisions: ReadonlyArray<DecisionSummary>
   /** 候选人级约束（置顶 / 上一轮交接）；表不存在（旧库 < 0019）时为空数组，不报错。 */
   readonly constraints: ReadonlyArray<{ readonly kind: string; readonly text: string; readonly source: string; readonly from_previous_round: boolean }>
+  /** 候选人星标（主推标记）：application_star 最新一行的 starred；无行 = false（只读派生，不改其它字段）。 */
+  readonly starred: boolean
   readonly progress: {
     readonly scorecards_required: number
     readonly scorecards_submitted: number
@@ -2217,6 +2221,14 @@ async function loadApplicationCards(
         [tenantId, rows.map((row) => row.candidate_id)],
       )).rows
     : []
+  // 候选人星标（迁移 0021）：取每个申请最新一行 starred；表不存在（旧库 < 0021）时跳过，
+  // 无行 = false（不造默认行）。与候选人约束同款 to_regclass 探测，不让读接口整体失败。
+  const hasStarTable = (await client.query<{ present: string | null }>(
+    "select to_regclass('recruitment.application_star')::text as present",
+  )).rows[0]?.present !== null
+  const starsByApplication = hasStarTable
+    ? await findLatestStarsForApplications(client, tenantId, applicationIds)
+    : new Map<string, boolean>()
   const transcriptRows: TranscriptCandidateRow[] = interviewIds.length === 0
     ? []
     : (await client.query<TranscriptCandidateRow>(TRANSCRIPT_CANDIDATES_SQL, [tenantId, interviewIds])).rows
@@ -2327,6 +2339,7 @@ async function loadApplicationCards(
       interviews,
       decisions,
       constraints: constraintsByCandidate.get(row.candidate_id) ?? [],
+      starred: starsByApplication.get(row.application_id) ?? false,
       progress: {
         scorecards_required: scorecardsRequired,
         scorecards_submitted: scorecardsSubmitted,

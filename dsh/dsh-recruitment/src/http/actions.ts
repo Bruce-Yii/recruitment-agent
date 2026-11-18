@@ -38,6 +38,7 @@
 //   * `readback` = 写事务提交后**另开只读连接独立 SQL 读回**的库行（不是回显请求、不是工具自述），
 //     至少含对象 id / status（有该列的表）/ record_version / actor_id；各动作字段见 CONTRACT.md。
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { randomUUID } from 'node:crypto'
 
 import {
   closePool,
@@ -61,13 +62,14 @@ import {
 import { sameOrigin } from './overview.ts'
 import { confirmationTextSha256, createDecisionRecordTool, parseDecisionArgs } from '../tools/decision-record.ts'
 import { createStageAdvanceTool } from '../tools/stage-advance.ts'
-import { createInterviewScheduleTool } from '../tools/interview-schedule.ts'
+import { makeApprovalRequest, scheduleInTransaction, type ApprovalDecision } from '../tools/interview-schedule.ts'
 import { createTranscriptImportTool, type TranscriptImportDeps } from '../tools/transcript-import.ts'
 import { createJobRubricApproveTool } from '../tools/job-rubric-approve.ts'
 import { createConfigRoleTool } from '../tools/config-role.ts'
 import { createConfigTeamTool } from '../tools/config-team.ts'
 import { createConfigPipelineTool } from '../tools/config-pipeline.ts'
 import { sha256Text } from '../domain/criterion-override.ts'
+import { insertScheduleUndoOriginal } from '../db/undo-log.ts'
 import {
   ensureActiveApplication,
   loadJob,
@@ -1373,9 +1375,55 @@ async function handleInterviewSchedule(
   const { resolved, body } = await readActionRequest(deps, req, action)
   const database = requireDatabase(deps)
   const gate = createAllowOnceGate(SCHEDULE_TOOL_NAME)
-  const tool = createInterviewScheduleTool(database, { approval: gate.approval, identity: deps.identity })
-  const output = await tool.execute(body, execOf(resolved))
-  const interviewId = requireOutputString(asRecord(output), 'interview', 'id')
+  // 闸门照旧：allow-once（第一次 allowed-once / 第二次 rejected / 工具名不符 unavailable）。
+  // makeApprovalRequest 与工具 execute() 用的是同一个函数，语义逐字不变。
+  const execContext = execOf(resolved)
+  const approve: () => Promise<ApprovalDecision> = makeApprovalRequest(gate.approval, execContext)
+  // 写身份与工具 execute() 的 resolveWriteActor(exec, identity, config.actor_id) 同源：
+  // readActionRequest 已用同一个 identity 单例把 session → alias → actor_id 解析过一遍，
+  // 所以 resolved.actor_id 就是那次写要用的 actor（产品路径永不走 legacy 回退）。
+  const writeConfig: ResolvedDatabaseConfig = { ...database, actor_id: resolved.actor_id }
+
+  // 同事务写入口：业务写（scheduleInTransaction）+ undo_log ORIGINAL 写在同一个 withActor
+  // 事务 client 里。batch-undo.ts:624 的排期撤销也是调这同一个函数（既有 CANCEL 路径），
+  // 这里完全复用，不重写任何排期业务规则、不新增事件类型、不动 src/runtime/**。
+  // 任一写失败 → withActor 整笔 ROLLBACK：不存在"业务成功但审计没落库"的半截状态。
+  const output = await withPool(database, async (pool) => withActor(pool, resolved.actor_id, async (client) => {
+    const written = asRecord(await scheduleInTransaction(client, writeConfig, body, Date.now(), approve))
+    const interviewId = requireOutputString(written, 'interview', 'id')
+    // 幂等重放没有新写（changes 为空、replayed=true）：不造第二条 ORIGINAL（撤销窗口只对真实写开放）。
+    if (written.replayed !== true && written.write === true) {
+      const interview = asRecord(written.interview)
+      const operation = typeof written.intent === 'string' ? written.intent : 'CREATE'
+      const roundNo = typeof interview.round_no === 'number' ? interview.round_no : body.round_no
+      const slotCode = typeof interview.slot_code === 'string' ? interview.slot_code : body.slot_code
+      const applicationId = typeof interview.application_id === 'string'
+        ? interview.application_id
+        : (typeof body.application_id === 'string' ? body.application_id : null)
+      // 排期 HTTP body 没有人的 confirmation_text（D-79 批准在工具内部），所以这里没有
+      // 可哈希的人话。用一个服务端派生的稳定值占位：撤销时 undo 接口用的是撤销请求自己的
+      // confirmation_text 算 sha256，不读这个 ORIGINAL 的 hash；这里只需非空且形如 sha256。
+      const confirmationTextSha256 = sha256Text(`scheduled-by:${resolved.actor_id}:${interviewId}`)
+      await insertScheduleUndoOriginal(client, {
+        tenant_id: database.tenant_id,
+        action_id: randomUUID(),
+        actor_id: resolved.actor_id,
+        // reason 只放操作摘要（CANCEL 的 reason 1..500 约束由撤销路径使用）；不抄简历/会议原文。
+        reason: `面试排期（${operation}）`,
+        confirmation_text_sha256: confirmationTextSha256,
+        target_interview_id: interviewId,
+        ...(applicationId === null ? {} : { target_application_id: applicationId }),
+        before_summary: {
+          operation,
+          ...(roundNo === undefined ? {} : { round_no: roundNo }),
+          ...(slotCode === undefined ? {} : { slot_code: slotCode }),
+        },
+      })
+    }
+    return written
+  }))
+  const interviewId = requireOutputString(output, 'interview', 'id')
+  // 写后独立读回：事务提交后另开只读连接，不回显工具输出（既有闸门不变）。
   const readback = await withPool(database, async (pool) => withReadOnly(pool, async (client) => (
     { ...(await readbackInterview(client, database.tenant_id, interviewId)) }
   )))

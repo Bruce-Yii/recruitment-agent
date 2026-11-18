@@ -273,6 +273,11 @@ export interface TaskStatusRow {
   readonly stuck: boolean
   readonly stuck_reason: StuckReason | null
   readonly application_id: string | null
+  /**
+   * 异步解析进度（只加字段不改行为）：`{done,total}` 仅在任务行**已有**两者都已知时给出，
+   * 否则 null（不编数字、不新造表/列）。当前库没有专属进度列，退化来源见 `progressOf`。
+   */
+  readonly progress: { readonly done: number; readonly total: number } | null
 }
 
 /** 一条 attempt（最近 50，join 出 task_type）。 */
@@ -396,6 +401,30 @@ export function applicationIdOf(refs: unknown): string | null {
   return null
 }
 
+/**
+ * 从任务行已有字段推导异步解析进度；**没有可靠来源就返回 null，绝不编数字**。
+ *
+ * 当前库 `business_task` / `task_attempt` 没有专属进度列（0001/0011 均无 done/total 或
+ * processed_bytes），所以唯一诚实的来源是 `business_refs` 里结构化的 `PROGRESS` 引用：
+ * `{kind:'PROGRESS', done:<整数>, total:<整数>}`。仅当 total 是 >0 的安全整数、done 是
+ * 0≤done≤total 的安全整数时给出 `{done,total}`；缺一项、脏形状、0 分母一律 null。
+ * 不新造表/列，也不把 attempt_count（重试次数）之类误当进度。
+ * @param refs - `business_task.business_refs`（jsonb → JS 数组）。
+ */
+export function progressOf(refs: unknown): { readonly done: number; readonly total: number } | null {
+  if (!Array.isArray(refs)) return null
+  for (const ref of refs) {
+    if (!isPlainObject(ref)) continue
+    if (typeof ref.kind !== 'string' || ref.kind.toUpperCase() !== 'PROGRESS') continue
+    const total = ref.total
+    const done = ref.done
+    if (typeof total !== 'number' || !Number.isSafeInteger(total) || total <= 0) continue
+    if (typeof done !== 'number' || !Number.isSafeInteger(done) || done < 0 || done > total) continue
+    return { done, total }
+  }
+  return null
+}
+
 // =====================================================================
 //  投影（只读事务内调用；纯读）
 // =====================================================================
@@ -471,6 +500,7 @@ function mapTaskRow(row: TaskRow, nowMs: number): TaskStatusRow {
     stuck: stuckReason !== null,
     stuck_reason: stuckReason,
     application_id: applicationIdOf(row.business_refs),
+    progress: progressOf(row.business_refs),
   }
 }
 

@@ -2332,7 +2332,7 @@ function normalizeSectionLimit(raw: number | undefined): number {
 }
 
 /** 一条"我的面试"已读到的事实（扩展行 + `readInterviewValue()` 的值），批量前置轮次查询的输入。 */
-interface InterviewerFact {
+export interface InterviewerFact {
   readonly interviewId: string
   readonly value: InterviewValue
   readonly extension: InterviewExtensionRow
@@ -2374,10 +2374,38 @@ async function loadPriorRoundRows(
 }
 
 /**
+ * 旧库兼容：迁移 0019 之前没有 `recruitment.candidate_constraint` 表，
+ * 直接 `select ... from recruitment.candidate_constraint` 会让整个面试官读接口 500。
+ * 用 `to_regclass` 探测一次（tenant 无关；不存在返回 null，不抛 42P01）。
+ * 真 DB 错误仍上抛，由 HTTP 层映射 5xx —— 不把所有错都吞成"表不存在"。
+ */
+const CANDIDATE_CONSTRAINT_TABLE_SQL =
+  `select to_regclass('recruitment.candidate_constraint') is not null as exists`
+
+/** 导出的纯判定：给探测结果行，决定约束读链路是否可用（便于单测旧库分支）。 */
+export function candidateConstraintTableExists(row: unknown): boolean {
+  if (typeof row !== 'object' || row === null) return false
+  const value = (row as Record<string, unknown>).exists
+  return value === true || value === 't' || value === '1'
+}
+
+/**
+ * 一次只读探测：表不存在 → false（跳过约束读，不失败）；DB 错误 → 上抛。
+ * 每次 `loadCandidateConstraints` 只调一次，不是每行都探测。
+ */
+async function probeCandidateConstraintTable(client: DatabaseClient): Promise<boolean> {
+  const { rows } = await client.query<{ exists: boolean }>(CANDIDATE_CONSTRAINT_TABLE_SQL)
+  return candidateConstraintTableExists(rows[0])
+}
+
+/**
  * docs/34 §2：批量读取候选约束（两条 SELECT，均 tenant 过滤），按 interview id 分组投影。
  *
  *   * PIN 按候选人 id 取（同一候选人可能被多场面试共享 → 每场都挂同一份投影）；
  *   * HANDOFF 按本批 interview id 取，只取本轮 interview 自己那一条（最多一条）。
+ *
+ * 旧库（< 0019）没有 candidate_constraint 表：探测为 false 时返回空 map，
+ * 每行 `candidate_constraints = {pins:[], handoff:null}`（读接口不整体失败）。
  *
  * 墓碑行由领域投影 `toPinProjection` 过滤；这里再 `filter(text !== UNPIN_TOMBSTONE_TEXT)` 双保险。
  * @param client - 只读事务内连接。
@@ -2385,13 +2413,16 @@ async function loadPriorRoundRows(
  * @param facts - 当前行（扩展行 + 规范值）。
  * @returns interview id → 候选约束投影。
  */
-async function loadCandidateConstraints(
+export async function loadCandidateConstraints(
   client: DatabaseClient,
   tenantId: string,
   facts: readonly InterviewerFact[],
 ): Promise<ReadonlyMap<string, InterviewerCandidateConstraints>> {
   const result = new Map<string, InterviewerCandidateConstraints>()
   if (facts.length === 0) return result
+
+  // 旧库兼容：只探测一次；表不存在 → 空 map（每行由 toInterviewRow 落成空约束），不读约束。
+  if (!(await probeCandidateConstraintTable(client))) return result
 
   const candidateIds = [...new Set(
     facts.map((fact) => fact.extension.candidate_id).filter((id): id is string => typeof id === 'string' && id !== ''),
