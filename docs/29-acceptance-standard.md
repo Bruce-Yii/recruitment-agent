@@ -105,6 +105,7 @@
 | S10-4 | 汇总**如实**给 `submitted / missing / waived`；缺人时平均值必须为 null，**不编** | L1 + L2 | 缺人仍给总分 → FAIL | 合同 M-1 |
 | S10-5 | 面评没齐时的正式决策 → `SCORECARD_MISSING` **零写入**（除显式带缺口确认） | L5 + L2 | 缺面评也能决策 → FAIL | 合同 TC §4.1 |
 | S10-6 | 决策必须由**真人**在**真界面**点；未绑定身份 → 409/`DEMO_ACTOR_UNMAPPED` | L4 + L2 | Agent 代点成功 → FAIL | D-115 / V3 |
+| **V3-0 入口可达（D-160）** | 每个写能力必须有**真人能点到的界面入口**（testid 可被 CDP 冒烟找到）+ 真点证据；接口通但界面点不到 = 不算完成 | L4 截图 + `docs/38` 矩阵 + `scripts/entry-reachability.mjs` | 写路由在客户端零引用 → FAIL |
 | S10-7 | 审计元数据可在 DB 独立复算：`decision.record` 事件 payload 至少含 `confirmed_at / confirmed_by_actor_id / confirmation_method / confirmation_text_sha256 / human_confirmation_preimage_version` | L2 事件 payload 键名读回 | 缺键 → FAIL | D-130 |
 | S10-8 | 决策后阶段/生命周期/唯一性正确；重复决策不产生第二条 current | L2 | 双 current → FAIL | D-123 / D-142 |
 
