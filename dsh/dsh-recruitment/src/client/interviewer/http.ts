@@ -64,14 +64,6 @@ export interface SubmitScorecardOptions {
   readonly body: ScorecardSubmitBody
 }
 
-/**
- * 统一请求封装：网络错误 / 非 2xx / 坏 JSON 都变成可读错误。
- * @param url - 同源相对路径。
- * @param sessionId - DSH session id（服务端用它解析绑定的演示身份）。
- * @param init - fetch 参数（方法/头/体/signal）。
- * @returns 解析后的 JSON（空体为 undefined）。
- * @throws {RecruitmentHttpError} 网络失败（status 0）或非 2xx（保留契约字段）。
- */
 async function requestJson(url: string, sessionId: string, init: RequestInit): Promise<unknown> {
   const headers: Record<string, string> = {
     [REQUEST_HEADER]: '1',
@@ -112,15 +104,6 @@ async function requestJson(url: string, sessionId: string, init: RequestInit): P
   }
 }
 
-/**
- * 读取一次面试官工作台投影（`GET /recruitment/api/interviewer/overview`）。
- *
- * 缺 session / alias 时**不发请求**（fail-closed）：没有身份就没有"我的分配"，
- * 发出去只会让服务端返 403/409，还会把界面引到错误分支。
- * @param options - sessionId / alias / 可选 interviewId / signal。
- * @returns 归一化后的 overview。
- * @throws {RecruitmentHttpError} `SESSION_HEADER_REQUIRED`（本地拦截）或服务端错误。
- */
 export async function fetchInterviewerOverview(options: FetchOverviewOptions): Promise<InterviewerOverview> {
   const sessionId = options.sessionId.trim()
   const alias = options.alias.trim()
@@ -143,12 +126,6 @@ export async function fetchInterviewerOverview(options: FetchOverviewOptions): P
   return normalizeInterviewerOverview(value)
 }
 
-/**
- * 读取 W1 面评表单 spec（含一次性 nonce）。
- * @param options - sessionId / interviewId / 可选 applicationId / signal。
- * @returns 归一化后的 form spec（维度键只来自服务端）。
- * @throws {RecruitmentHttpError} W1 未就绪时 status 为 404/405/501 或 0。
- */
 export async function fetchScorecardFormSpec(options: FetchFormSpecOptions): Promise<ScorecardFormSpec> {
   const sessionId = options.sessionId.trim()
   const interviewId = options.interviewId.trim()
@@ -176,15 +153,6 @@ export async function fetchScorecardFormSpec(options: FetchFormSpecOptions): Pro
   return normalizeScorecardFormSpec(value)
 }
 
-/**
- * 提交本人面评（`POST /recruitment/api/action/scorecard/submit`）。
- *
- * 提交体由 `buildScorecardSubmitBody` 构造（维度键只来自 form spec）；
- * 成功只认 2xx + 服务端 DB 读回，**没有**任何本地"假成功"。
- * @param options - sessionId + 已构造好的提交体。
- * @returns 归一化后的 DB 读回。
- * @throws {RecruitmentHttpError} 403/409（NONCE_*、ALREADY_SUBMITTED…）或其它非 2xx。
- */
 export async function submitScorecard(options: SubmitScorecardOptions): Promise<ScorecardSubmitResult> {
   const sessionId = options.sessionId.trim()
   if (sessionId === '') {
@@ -204,14 +172,6 @@ export async function submitScorecard(options: SubmitScorecardOptions): Promise<
   return normalizeSubmitResult(value)
 }
 
-/**
- * 判断错误是否表示"W1 面评提交入口尚未就绪"（契约 §2.3：404/405/网络错）。
- *
- * 为什么把 501 也算进去：宿主/隧道对未实现路由有两种常见回答（405/404 与 501）；
- * 只要不是服务端业务拒绝（400/403/409），界面就应显示"未就绪"而不是"提交失败"。
- * @param failure - 捕获到的任意错误。
- * @returns true 表示应按"入口未就绪（W1）"降级。
- */
 export function isScorecardEndpointUnavailable(failure: unknown): boolean {
   if (!(failure instanceof RecruitmentHttpError)) return false
   return failure.status === 0 || failure.status === 404 || failure.status === 405 || failure.status === 501
@@ -219,9 +179,9 @@ export function isScorecardEndpointUnavailable(failure: unknown): boolean {
 
 export const SCORECARD_DRAFT_STORAGE_PREFIX = 'ros-iw-draft-'
 
-export function readLocalScorecardDraft(interviewId: string): ScorecardDraftPayload | null {
+export function readLocalScorecardDraft(interviewId: string, scopeKey = ''): ScorecardDraftPayload | null {
   try {
-    const raw = window.localStorage.getItem(SCORECARD_DRAFT_STORAGE_PREFIX + interviewId)
+    const raw = window.localStorage.getItem(`${SCORECARD_DRAFT_STORAGE_PREFIX}${scopeKey}:${interviewId}`)
     if (!raw) return null
     return normalizeScorecardDraft(JSON.parse(raw))
   } catch {
@@ -229,26 +189,22 @@ export function readLocalScorecardDraft(interviewId: string): ScorecardDraftPayl
   }
 }
 
-export function writeLocalScorecardDraft(interviewId: string, payload: ScorecardDraftPayload): void {
+export function writeLocalScorecardDraft(interviewId: string, payload: ScorecardDraftPayload, scopeKey = ''): void {
   try {
-    window.localStorage.setItem(SCORECARD_DRAFT_STORAGE_PREFIX + interviewId, JSON.stringify(payload))
+    window.localStorage.setItem(`${SCORECARD_DRAFT_STORAGE_PREFIX}${scopeKey}:${interviewId}`, JSON.stringify(payload))
   } catch {
     // ignore storage quota errors
   }
 }
 
-export function clearLocalScorecardDraft(interviewId: string): void {
+export function clearLocalScorecardDraft(interviewId: string, scopeKey = ''): void {
   try {
-    window.localStorage.removeItem(SCORECARD_DRAFT_STORAGE_PREFIX + interviewId)
+    window.localStorage.removeItem(`${SCORECARD_DRAFT_STORAGE_PREFIX}${scopeKey}:${interviewId}`)
   } catch {
     // ignore
   }
 }
 
-/**
- * 读取服务端面评草稿（GET /recruitment/api/action/scorecard/draft?interview_id=...）。
- * 404/未就绪返回 null，不崩页面；调用方据此决定是否回退 localStorage 断网兜底。
- */
 export async function fetchScorecardDraft(options: {
   readonly sessionId: string
   readonly interviewId: string
@@ -268,10 +224,6 @@ export async function fetchScorecardDraft(options: {
   }
 }
 
-/**
- * 自动保存面评草稿（POST /recruitment/api/action/scorecard/draft）。
- * 严禁携带 confirmation_text（草稿不是最终判断，见 Task 06 T6-2）。
- */
 export async function saveScorecardDraft(options: {
   readonly sessionId: string
   readonly interviewId: string
@@ -293,12 +245,12 @@ export async function saveScorecardDraft(options: {
   return true
 }
 
-/** 提交面评成功后清理服务端与本地草稿。 */
 export async function clearScorecardDraft(options: {
   readonly sessionId: string
   readonly interviewId: string
+  readonly scopeKey?: string
 }): Promise<void> {
-  clearLocalScorecardDraft(options.interviewId)
+  clearLocalScorecardDraft(options.interviewId, options.scopeKey ?? options.sessionId)
   const sessionId = options.sessionId.trim()
   if (sessionId === '' || options.interviewId.trim() === '') return
   try {
