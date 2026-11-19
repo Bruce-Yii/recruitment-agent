@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CandidatePage, type CanvasFetcher } from './CandidatePage.tsx';
 import { JobPage } from './JobPage.tsx';
 import { CanvasEmptyState } from './bits/index.ts';
@@ -29,8 +29,10 @@ export interface UndoToastPayload {
 export interface CanvasRouteProps {
   readonly sessionId?: string;
   route: CanvasRouteTarget;
+  candidateQueue?: readonly string[];
+  isOffline?: boolean;
   onBack?: () => void;
-  onSelectApplication?: (applicationId: string) => void;
+  onSelectApplication?: (applicationId: string, queue?: string[]) => void;
   onSelectJob?: (jobId: string) => void;
   uploadTask?: ActiveUploadTask | null;
   onUploadStarted?: (task: ActiveUploadTask) => void;
@@ -198,6 +200,8 @@ function UploadProgressBanner({
 export function CanvasRoute({
   sessionId,
   route,
+  candidateQueue,
+  isOffline = false,
   onBack,
   onSelectApplication,
   onSelectJob,
@@ -211,6 +215,22 @@ export function CanvasRoute({
 }: CanvasRouteProps) {
   return (
     <section className="ros-canvas" aria-label="招聘详情画布" data-testid="v4-canvas-route">
+      {isOffline ? (
+        <div
+          role="status"
+          data-testid="canvas-offline-banner"
+          style={{
+            margin: '10px 36px 0',
+            padding: '8px 14px',
+            borderRadius: 10,
+            background: 'var(--amber-soft)',
+            color: 'var(--amber)',
+            fontSize: '12.5px',
+          }}
+        >
+          当前网络已断开，恢复连接后将自动同步最新状态。
+        </div>
+      ) : null}
       {uploadTask ? (
         <UploadProgressBanner
           task={uploadTask}
@@ -223,6 +243,8 @@ export function CanvasRoute({
         <CandidatePage
           sessionId={sessionId}
           applicationId={route.applicationId}
+          candidateQueue={candidateQueue}
+          onSelectApplication={(appId) => onSelectApplication?.(appId)}
           onBack={onBack}
           onOpenJob={onSelectJob}
           onUploadStarted={onUploadStarted}
@@ -280,23 +302,68 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
   }, [sessionId]);
   const [route, setRoute] = useState<CanvasRouteTarget>({ kind: 'empty' });
   const [prevJobId, setPrevJobId] = useState<string | null>(null);
+  const [candidateQueue, setCandidateQueue] = useState<string[]>([]);
+  const [isOffline, setIsOffline] = useState<boolean>(() => (typeof navigator !== 'undefined' ? !navigator.onLine : false));
+  const hiddenAtRef = useRef<number | null>(null);
   const [uploadTask, setUploadTask] = useState<ActiveUploadTask | null>(null);
   const [refreshNonce, setRefreshNonce] = useState<number>(0);
 
-  // T5-2: Real 5-second Undo Toast
-  const [toast, setToast] = useState<UndoToastPayload | null>(null);
+  // T5-2 + UX Polish: Hover-pausable 5-second Undo Toast with hairline countdown bar
+  const [toast, setToast] = useState<(UndoToastPayload & { id: number; durationMs: number }) | null>(null);
+  const [toastPaused, setToastPaused] = useState<boolean>(false);
+  const [toastRemainingMs, setToastRemainingMs] = useState<number>(0);
   const [undoBusy, setUndoBusy] = useState<boolean>(false);
 
-  useEffect(() => {
-    if (!toast) return;
-    const ms = toast.actionId ? 5000 : 2800;
-    const timer = setTimeout(() => setToast(null), ms);
-    return () => clearTimeout(timer);
-  }, [toast]);
+  const showToast = useCallback((notice: UndoToastPayload) => {
+    const durationMs = notice.actionId ? 5000 : 2800;
+    setToastPaused(false);
+    setToastRemainingMs(durationMs);
+    setToast({ ...notice, id: Date.now(), durationMs });
+  }, []);
 
-  const openCandidate = useCallback((applicationId: string) => {
+  useEffect(() => {
+    if (!toast || toastPaused || undoBusy) return;
+    const startedAt = Date.now();
+    const timer = setTimeout(() => setToast(null), Math.max(150, toastRemainingMs));
+    return () => {
+      clearTimeout(timer);
+      const elapsed = Date.now() - startedAt;
+      setToastRemainingMs((prev) => Math.max(150, prev - elapsed));
+    };
+  }, [toast, toastPaused, undoBusy, toastRemainingMs]);
+
+  const openCandidate = useCallback((applicationId: string, queue?: string[]) => {
+    if (queue !== undefined) setCandidateQueue(queue);
     setRoute({ kind: 'candidate', applicationId });
   }, []);
+
+  // Auto-sync silently when returning to tab after >30s or recovering from offline
+  useEffect(() => {
+    const onOffline = () => setIsOffline(true);
+    const onOnline = () => {
+      setIsOffline(false);
+      if (route.kind !== 'empty') setRefreshNonce((n) => n + 1);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAtRef.current = Date.now();
+      } else if (document.visibilityState === 'visible') {
+        const awayMs = hiddenAtRef.current !== null ? Date.now() - hiddenAtRef.current : 0;
+        hiddenAtRef.current = null;
+        if (awayMs > 30_000 && route.kind !== 'empty') {
+          setRefreshNonce((n) => n + 1);
+        }
+      }
+    };
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [route.kind]);
 
   const openJob = useCallback((jobId: string) => {
     setPrevJobId(jobId);
@@ -318,9 +385,9 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
   }, [onRefreshOverview]);
 
   const handleActionCompleted = useCallback((notice: UndoToastPayload) => {
-    setToast(notice);
+    showToast(notice);
     onRefreshOverview?.();
-  }, [onRefreshOverview]);
+  }, [onRefreshOverview, showToast]);
 
   const handleUndoClick = async () => {
     if (!toast?.actionId || undoBusy) return;
@@ -330,7 +397,7 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
         actionId: toast.actionId,
         confirmationText: `确认撤销刚刚执行的操作：${toast.message}`,
       });
-      setToast({ message: res.message });
+      showToast({ message: res.message });
       if (res.undone) {
         // Refresh from server; never physically delete local state
         setRefreshNonce((n) => n + 1);
@@ -338,7 +405,7 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
       }
     } catch (err) {
       const msg = (err as CanvasActionError)?.userMessage || '暂时无法撤销，请稍后刷新核对';
-      setToast({ message: msg });
+      showToast({ message: msg });
     } finally {
       setUndoBusy(false);
     }
@@ -350,6 +417,8 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
         <CanvasRoute
           sessionId={sessionId}
           route={route}
+          candidateQueue={candidateQueue}
+          isOffline={isOffline}
           onBack={handleBack}
           onSelectApplication={openCandidate}
           onSelectJob={openJob}
@@ -366,7 +435,13 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
       )}
 
       {toast ? (
-        <div className="ros-toast show" role="status" data-testid="canvas-undo-toast">
+        <div
+          className="ros-toast show"
+          role="status"
+          data-testid="canvas-undo-toast"
+          onMouseEnter={() => setToastPaused(true)}
+          onMouseLeave={() => setToastPaused(false)}
+        >
           <span>{toast.message}</span>
           {toast.actionId ? (
             <button
@@ -379,6 +454,14 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
               {undoBusy ? '撤销中…' : '撤销'}
             </button>
           ) : null}
+          <span
+            key={toast.id}
+            className="ros-toast-bar"
+            style={{
+              animationDuration: `${toast.durationMs}ms`,
+              animationPlayState: toastPaused || undoBusy ? 'paused' : 'running',
+            }}
+          />
         </div>
       ) : null}
     </>
