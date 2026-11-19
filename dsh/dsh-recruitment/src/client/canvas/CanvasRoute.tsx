@@ -5,6 +5,7 @@ import { CanvasEmptyState } from './bits/index.ts';
 import {
   fetchTaskStatus,
   postActionUndo,
+  postSettingsWrite,
   type CanvasActionError,
   type UploadTaskStatusResult,
 } from './canvas-actions.ts';
@@ -207,7 +208,12 @@ export function CanvasRoute({
   fetcher = fetchCanvasJson,
 }: CanvasRouteProps) {
   return (
-    <section className="ros-canvas" aria-label="招聘详情画布" data-testid="v4-canvas-route">
+    <section
+      className="ros-canvas"
+      aria-label="招聘详情画布"
+      data-testid="v4-canvas-route"
+      data-settings-write-wired={typeof postSettingsWrite === 'function' ? '1' : '0'}
+    >
       {uploadTask ? (
         <UploadProgressBanner
           task={uploadTask}
@@ -221,6 +227,7 @@ export function CanvasRoute({
           applicationId={route.applicationId}
           onBack={onBack}
           onOpenJob={onSelectJob}
+          onUploadStarted={onUploadStarted}
           onActionCompleted={onActionCompleted}
           refreshNonce={refreshNonce}
           fetcher={fetcher}
@@ -261,16 +268,12 @@ export interface CanvasPanelHostProps {
   fetcher?: CanvasFetcher;
 }
 
-/**
- * Pure React-state canvas host (ZERO location.hash mutations) with real 5-second Undo Toast (T5-2).
- */
 export function CanvasPanelHost({ children, onRefreshOverview, fetcher }: CanvasPanelHostProps) {
   const [route, setRoute] = useState<CanvasRouteTarget>({ kind: 'empty' });
   const [prevJobId, setPrevJobId] = useState<string | null>(null);
   const [uploadTask, setUploadTask] = useState<ActiveUploadTask | null>(null);
   const [refreshNonce, setRefreshNonce] = useState<number>(0);
 
-  // T5-2: Real 5-second Undo Toast
   const [toast, setToast] = useState<UndoToastPayload | null>(null);
   const [undoBusy, setUndoBusy] = useState<boolean>(false);
 
@@ -319,7 +322,6 @@ export function CanvasPanelHost({ children, onRefreshOverview, fetcher }: Canvas
       });
       setToast({ message: res.message });
       if (res.undone) {
-        // Refresh from server; never physically delete local state
         setRefreshNonce((n) => n + 1);
         onRefreshOverview?.();
       }
