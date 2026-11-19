@@ -4554,6 +4554,33 @@ window.__ModuleLoader__.load({
 				action
 			};
 		}
+		/**
+		* 乐观锁版本必须取自「被操作的那一场面试行」且是提交时的最新值。
+		*
+		* 画布打开时的 vm 是快照：S5 可能新建了后续场次、其他人也可能改过这一行，
+		* 快照里的 recordVersion 会过期（真机症状：提交 expected=1，库里实际=2 → 409）。
+		* 提交前重新 GET 一次申请详情（`cache:'no-store'` 绕开任何 HTTP 缓存），
+		* 用 interviewId 精确定位同一场面试，再读它的 record_version。
+		* 定位不到就 fail-closed（返回 null），绝不退回快照版本或申请版本顶替。
+		*/
+		async function fetchFreshInterviewVersion(applicationId, interviewId) {
+			try {
+				const res = await fetch(`/recruitment/api/recruiting/applications/${encodeURIComponent(applicationId)}`, {
+					method: "GET",
+					credentials: "same-origin",
+					cache: "no-store",
+					headers: {
+						"x-recruitment-request": "1",
+						Accept: "application/json"
+					}
+				});
+				if (!res.ok) return null;
+				const target = normalizeApplicationDetail$1(await res.json()).rounds.find((r) => r.interviewId === interviewId);
+				return target ? target.recordVersion : null;
+			} catch {
+				return null;
+			}
+		}
 		function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }) {
 			const activeSessionId = (sessionId ?? "").trim() || getCanvasSessionId();
 			const latestRound = vm.rounds[vm.rounds.length - 1];
@@ -4751,7 +4778,7 @@ window.__ModuleLoader__.load({
 							setSubmitting(false);
 							return;
 						}
-						const outcome = decisionAction && decisionAction.available && decisionAction.seam !== "" ? await postActionSeam(decisionAction, built.body, activeSessionId) : await postDecisionRecordFacade(built.body, activeSessionId);
+						const outcome = await postDecisionRecordFacade(built.body, activeSessionId);
 						if (!outcome.accepted) {
 							setErrorText(formatOutcomeError(outcome));
 							setSubmitting(false);
@@ -4829,15 +4856,27 @@ window.__ModuleLoader__.load({
 							setSubmitting(false);
 							return;
 						}
+						const targetInterviewId = latestRound?.interviewId;
+						if (!targetInterviewId) {
+							setErrorText("没找到要标记的这一场面试，请刷新档案后重试。");
+							setSubmitting(false);
+							return;
+						}
+						const freshVersion = await fetchFreshInterviewVersion(vm.applicationId, targetInterviewId);
+						if (freshVersion === null) {
+							setErrorText("没能读到这一场面试的最新版本，请刷新档案后重试。");
+							setSubmitting(false);
+							return;
+						}
 						const body = {
 							intent: "MARK_NO_SHOW",
 							confirmation_text: confirmationText.trim(),
 							idempotency_key: idempotencyKey,
 							subject: noShowSubject,
 							reason: inputText.trim() || "未按约定时间出席面试",
-							expected_record_version: latestRound?.recordVersion ?? vm.recordVersion
+							expected_record_version: freshVersion,
+							interview_id: targetInterviewId
 						};
-						if (latestRound?.interviewId) body.interview_id = latestRound.interviewId;
 						const outcome = await postActionSeam(actCheck.action, body, activeSessionId);
 						if (!outcome.accepted) {
 							setErrorText(formatOutcomeError(outcome));

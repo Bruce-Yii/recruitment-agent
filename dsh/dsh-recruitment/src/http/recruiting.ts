@@ -216,6 +216,8 @@ export interface InterviewSummary {
   readonly scheduled_start_at: string | null
   readonly scheduled_end_at: string | null
   readonly timezone: string
+  /** 本场面试行的乐观锁版本（`interview.record_version`，按行不是按申请）。 */
+  readonly record_version: number
   readonly interviewers: ReadonlyArray<InterviewerAssignment>
   readonly scorecards: {
     readonly required_total: number
@@ -1355,6 +1357,7 @@ const INTERVIEWS_SQL = `
          i.scheduled_start_at             as scheduled_start_at,
          i.scheduled_end_at               as scheduled_end_at,
          i.timezone                       as timezone,
+         i.record_version                 as record_version,
          i.created_at                     as created_at,
          a.job_id::text                   as application_job_id,
          itv.id::text                     as template_version_id,
@@ -1867,6 +1870,7 @@ interface InterviewRow extends RoundRubricFacts {
   scheduled_start_at: Date | string | null
   scheduled_end_at: Date | string | null
   timezone: string
+  record_version: number
   created_at: Date | string | null
 }
 
@@ -2150,6 +2154,7 @@ function mapInterviewSummary(
     scheduled_start_at: asIsoOrNull(interview.scheduled_start_at),
     scheduled_end_at: asIsoOrNull(interview.scheduled_end_at),
     timezone: interview.timezone,
+    record_version: asIntOrNull(interview.record_version) ?? 0,
     interviewers: assignments,
     scorecards: {
       required_total: required.length,

@@ -1051,6 +1051,12 @@ test('application detail：candidate/job/material/screening/decisions/interviews
     const interview = card.interviews[0]
     assert.ok(interview)
     assert.equal(interview.interview_id, fixture.interviewId)
+    // S14：面试行版本必须按行读回（不是拿申请版本顶替，也不能缺省为 1）。
+    const ivVersionRows = await rows<{ record_version: number }>(client,
+      'select record_version from recruitment.interview where tenant_id = $1 and id = $2::uuid',
+      [TENANT, fixture.interviewId])
+    assert.equal(interview.record_version, ivVersionRows[0]?.record_version,
+      'interview.record_version 必须等于该面试行的库内版本（乐观锁按行）')
     assert.equal(interview.status, 'POST_INTERVIEW')
     assert.equal(interview.round_no, 1)
     assert.equal(interview.scorecards.required_total, 1)
