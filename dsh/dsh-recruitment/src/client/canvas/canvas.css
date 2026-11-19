@@ -903,3 +903,158 @@
   color: var(--iris);
   font-weight: 600;
 }
+
+/* =========================================================================
+ * Canvas UX & Motion Polish (UI-FREEZE compliant: zero token/layout changes)
+ * ========================================================================= */
+
+@keyframes rosCanvasEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes rosModalBgIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes rosModalCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes rosPaperFlash {
+  0% { background-color: rgba(217, 119, 6, 0.14); }
+  45% { background-color: rgba(217, 119, 6, 0.08); }
+  100% { background-color: transparent; }
+}
+
+@keyframes rosStarPop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.24); }
+  100% { transform: scale(1); }
+}
+
+@keyframes rosSkelShimmer {
+  0% { opacity: 0.45; }
+  50% { opacity: 0.85; }
+  100% { opacity: 0.45; }
+}
+
+@keyframes rosToastDrain {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+.ros-canvas-enter {
+  animation: rosCanvasEnter 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ros-sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
+}
+
+.ros-sync-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--iris);
+  animation: rosSkelShimmer 1.1s ease-in-out infinite;
+}
+
+.ros-paper-flash {
+  border-radius: 10px;
+  animation: rosPaperFlash 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ros-doc-line {
+  transition: background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.ros-doc-line.active {
+  box-shadow: inset 2.5px 0 0 var(--iris);
+  padding-left: 10px;
+  border-radius: 4px;
+}
+
+.ros-star-btn {
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), color 140ms ease;
+  cursor: pointer;
+}
+
+.ros-star-btn.pop {
+  animation: rosStarPop 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ros-modal-bg {
+  animation: rosModalBgIn 140ms ease-out both;
+}
+
+.ros-modal {
+  animation: rosModalCardIn 170ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ros-toast {
+  position: fixed;
+  overflow: hidden;
+}
+
+.ros-toast-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgba(165, 180, 252, 0.85);
+  transform-origin: left center;
+  animation-name: rosToastDrain;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+/* Editorial warm-paper skeleton for cold load */
+.ros-skeleton-doc {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 6px 0;
+}
+
+.ros-skel-bar {
+  border-radius: 6px;
+  background: var(--subtle);
+  animation: rosSkelShimmer 1.3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ros-canvas-enter,
+  .ros-modal-bg,
+  .ros-modal,
+  .ros-paper-flash,
+  .ros-star-btn.pop,
+  .ros-sync-dot,
+  .ros-skel-bar {
+    animation: none !important;
+    transition: none !important;
+  }
+}

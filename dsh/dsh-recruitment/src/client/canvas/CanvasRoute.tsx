@@ -283,16 +283,29 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
   const [uploadTask, setUploadTask] = useState<ActiveUploadTask | null>(null);
   const [refreshNonce, setRefreshNonce] = useState<number>(0);
 
-  // T5-2: Real 5-second Undo Toast
-  const [toast, setToast] = useState<UndoToastPayload | null>(null);
+  // T5-2 + UX Polish: Hover-pausable 5-second Undo Toast with hairline countdown bar
+  const [toast, setToast] = useState<(UndoToastPayload & { id: number; durationMs: number }) | null>(null);
+  const [toastPaused, setToastPaused] = useState<boolean>(false);
+  const [toastRemainingMs, setToastRemainingMs] = useState<number>(0);
   const [undoBusy, setUndoBusy] = useState<boolean>(false);
 
+  const showToast = useCallback((notice: UndoToastPayload) => {
+    const durationMs = notice.actionId ? 5000 : 2800;
+    setToastPaused(false);
+    setToastRemainingMs(durationMs);
+    setToast({ ...notice, id: Date.now(), durationMs });
+  }, []);
+
   useEffect(() => {
-    if (!toast) return;
-    const ms = toast.actionId ? 5000 : 2800;
-    const timer = setTimeout(() => setToast(null), ms);
-    return () => clearTimeout(timer);
-  }, [toast]);
+    if (!toast || toastPaused || undoBusy) return;
+    const startedAt = Date.now();
+    const timer = setTimeout(() => setToast(null), Math.max(150, toastRemainingMs));
+    return () => {
+      clearTimeout(timer);
+      const elapsed = Date.now() - startedAt;
+      setToastRemainingMs((prev) => Math.max(150, prev - elapsed));
+    };
+  }, [toast, toastPaused, undoBusy, toastRemainingMs]);
 
   const openCandidate = useCallback((applicationId: string) => {
     setRoute({ kind: 'candidate', applicationId });
@@ -318,9 +331,9 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
   }, [onRefreshOverview]);
 
   const handleActionCompleted = useCallback((notice: UndoToastPayload) => {
-    setToast(notice);
+    showToast(notice);
     onRefreshOverview?.();
-  }, [onRefreshOverview]);
+  }, [onRefreshOverview, showToast]);
 
   const handleUndoClick = async () => {
     if (!toast?.actionId || undoBusy) return;
@@ -330,7 +343,7 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
         actionId: toast.actionId,
         confirmationText: `确认撤销刚刚执行的操作：${toast.message}`,
       });
-      setToast({ message: res.message });
+      showToast({ message: res.message });
       if (res.undone) {
         // Refresh from server; never physically delete local state
         setRefreshNonce((n) => n + 1);
@@ -338,7 +351,7 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
       }
     } catch (err) {
       const msg = (err as CanvasActionError)?.userMessage || '暂时无法撤销，请稍后刷新核对';
-      setToast({ message: msg });
+      showToast({ message: msg });
     } finally {
       setUndoBusy(false);
     }
@@ -366,7 +379,13 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
       )}
 
       {toast ? (
-        <div className="ros-toast show" role="status" data-testid="canvas-undo-toast">
+        <div
+          className="ros-toast show"
+          role="status"
+          data-testid="canvas-undo-toast"
+          onMouseEnter={() => setToastPaused(true)}
+          onMouseLeave={() => setToastPaused(false)}
+        >
           <span>{toast.message}</span>
           {toast.actionId ? (
             <button
@@ -379,6 +398,14 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
               {undoBusy ? '撤销中…' : '撤销'}
             </button>
           ) : null}
+          <span
+            key={toast.id}
+            className="ros-toast-bar"
+            style={{
+              animationDuration: `${toast.durationMs}ms`,
+              animationPlayState: toastPaused || undoBusy ? 'paused' : 'running',
+            }}
+          />
         </div>
       ) : null}
     </>
