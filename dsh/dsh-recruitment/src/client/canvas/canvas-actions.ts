@@ -49,6 +49,7 @@ async function postJsonAction<T>(path: string, body: Record<string, unknown>): P
     headers: {
       'Content-Type': 'application/json',
       'x-recruitment-request': '1',
+      ...sessionHeaders(),
       Accept: 'application/json',
     },
     body: JSON.stringify(body),
@@ -77,6 +78,30 @@ async function postJsonAction<T>(path: string, body: Record<string, unknown>): P
     throw makeError('ACTION_FAILED', summary);
   }
   return data as T;
+}
+
+/**
+ * 画布写请求的会话头（D-160/V3-1 修复）。
+ *
+ * 服务端只认 `X-DSH-Session`（身份来自当前 DSH Session），缺了就是 400 SESSION_REQUIRED。
+ * 会话 id 只能由宿主面板通过 props 传进来（`setCanvasSessionId`），**不读 localStorage、不从 URL 取**。
+ */
+let canvasSessionId: string | null = null
+
+export function setCanvasSessionId(id: string | null): void {
+  canvasSessionId = id === '' ? null : id
+}
+
+export class CanvasSessionMissingError extends Error {
+  constructor() {
+    super('请先在工作台顶部选择身份，再执行这个操作')
+    this.name = 'CanvasSessionMissingError'
+  }
+}
+
+function sessionHeaders(): Record<string, string> {
+  if (canvasSessionId === null) throw new CanvasSessionMissingError()
+  return { 'X-DSH-Session': canvasSessionId }
 }
 
 export async function postScreeningDecide(payload: {
@@ -349,6 +374,7 @@ export async function postActionUndo(payload: {
     headers: {
       'Content-Type': 'application/json',
       'x-recruitment-request': '1',
+      ...sessionHeaders(),
       Accept: 'application/json',
     },
     body: JSON.stringify({
@@ -389,6 +415,7 @@ export async function uploadResumeRaw(file: File, jobId: string): Promise<Upload
     credentials: 'same-origin',
     headers: {
       'x-recruitment-request': '1',
+      ...sessionHeaders(),
       'x-file-name': encodeURIComponent(file.name),
       'Content-Type': file.type || 'application/octet-stream',
     },
@@ -409,7 +436,7 @@ export async function fetchTaskStatus(taskId: string): Promise<UploadTaskStatusR
   const res = await fetch(`/recruitment/api/tasks/status?task_id=${encodeURIComponent(taskId)}`, {
     method: 'GET',
     credentials: 'same-origin',
-    headers: { 'x-recruitment-request': '1', Accept: 'application/json' },
+    headers: { 'x-recruitment-request': '1', Accept: 'application/json', ...sessionHeaders() },
   });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
@@ -602,6 +629,7 @@ export async function postRebindMinute(payload: {
     headers: {
       'Content-Type': 'application/json',
       'x-recruitment-request': '1',
+      ...sessionHeaders(),
       Accept: 'application/json',
     },
     body: JSON.stringify({

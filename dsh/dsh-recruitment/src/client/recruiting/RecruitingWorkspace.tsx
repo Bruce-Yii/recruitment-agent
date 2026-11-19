@@ -2129,7 +2129,7 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
     >
       <style key={STYLE_ELEMENT_KEY}>{RECRUITING_CSS}</style>
       <div className="rcw-content">
-        <CanvasPanelHost onRefreshOverview={overview.reload}>
+        <CanvasPanelHost sessionId={props.sessionId} onRefreshOverview={overview.reload}>
           {({ openCandidate }) => (
             <>
         {aliasBlocked ? (

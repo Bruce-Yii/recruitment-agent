@@ -688,6 +688,7 @@ window.__ModuleLoader__.load({
 				headers: {
 					"Content-Type": "application/json",
 					"x-recruitment-request": "1",
+					...sessionHeaders(),
 					Accept: "application/json"
 				},
 				body: JSON.stringify(body)
@@ -702,6 +703,26 @@ window.__ModuleLoader__.load({
 				throw makeError("ACTION_FAILED", typeof data.error_summary === "string" && data.error_summary.trim() ? data.error_summary : typeof data.message === "string" && data.message.trim() ? data.message : "操作未能完成，请检查输入或稍后重试");
 			}
 			return data;
+		}
+		/**
+		* 画布写请求的会话头（D-160/V3-1 修复）。
+		*
+		* 服务端只认 `X-DSH-Session`（身份来自当前 DSH Session），缺了就是 400 SESSION_REQUIRED。
+		* 会话 id 只能由宿主面板通过 props 传进来（`setCanvasSessionId`），**不读 localStorage、不从 URL 取**。
+		*/
+		let canvasSessionId = null;
+		function setCanvasSessionId(id) {
+			canvasSessionId = id === "" ? null : id;
+		}
+		var CanvasSessionMissingError = class extends Error {
+			constructor() {
+				super("请先在工作台顶部选择身份，再执行这个操作");
+				this.name = "CanvasSessionMissingError";
+			}
+		};
+		function sessionHeaders() {
+			if (canvasSessionId === null) throw new CanvasSessionMissingError();
+			return { "X-DSH-Session": canvasSessionId };
 		}
 		async function postScreeningDecide(payload) {
 			const body = {
@@ -830,6 +851,7 @@ window.__ModuleLoader__.load({
 				headers: {
 					"Content-Type": "application/json",
 					"x-recruitment-request": "1",
+					...sessionHeaders(),
 					Accept: "application/json"
 				},
 				body: JSON.stringify({
@@ -871,6 +893,7 @@ window.__ModuleLoader__.load({
 				credentials: "same-origin",
 				headers: {
 					"x-recruitment-request": "1",
+					...sessionHeaders(),
 					"x-file-name": encodeURIComponent(file.name),
 					"Content-Type": file.type || "application/octet-stream"
 				},
@@ -889,7 +912,8 @@ window.__ModuleLoader__.load({
 				credentials: "same-origin",
 				headers: {
 					"x-recruitment-request": "1",
-					Accept: "application/json"
+					Accept: "application/json",
+					...sessionHeaders()
 				}
 			});
 			const data = await res.json().catch(() => ({}));
@@ -1026,6 +1050,7 @@ window.__ModuleLoader__.load({
 				headers: {
 					"Content-Type": "application/json",
 					"x-recruitment-request": "1",
+					...sessionHeaders(),
 					Accept: "application/json"
 				},
 				body: JSON.stringify({
@@ -3182,7 +3207,11 @@ window.__ModuleLoader__.load({
 				})]
 			});
 		}
-		function CanvasPanelHost({ children, onRefreshOverview, fetcher }) {
+		function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetcher }) {
+			(0, react.useEffect)(() => {
+				setCanvasSessionId(sessionId ?? null);
+				return () => setCanvasSessionId(null);
+			}, [sessionId]);
 			const [route, setRoute] = (0, react.useState)({ kind: "empty" });
 			const [prevJobId, setPrevJobId] = (0, react.useState)(null);
 			const [uploadTask, setUploadTask] = (0, react.useState)(null);
@@ -11513,6 +11542,7 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "rcw-content",
 						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasPanelHost, {
+							sessionId: props.sessionId,
 							onRefreshOverview: overview.reload,
 							children: ({ openCandidate }) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [aliasBlocked ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: "rcw-notice",

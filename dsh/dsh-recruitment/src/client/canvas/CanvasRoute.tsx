@@ -5,6 +5,7 @@ import { CanvasEmptyState } from './bits/index.ts';
 import {
   fetchTaskStatus,
   postActionUndo,
+  setCanvasSessionId,
   postSettingsWrite,
   type CanvasActionError,
   type UploadTaskStatusResult,
@@ -258,6 +259,8 @@ export function CanvasRoute({
 }
 
 export interface CanvasPanelHostProps {
+  /** 当前 DSH Session id（写请求的 X-DSH-Session 只从这里来）。 */
+  readonly sessionId?: string;
   children: (controls: {
     openCandidate: (applicationId: string) => void;
     openJob: (jobId: string) => void;
@@ -268,7 +271,12 @@ export interface CanvasPanelHostProps {
   fetcher?: CanvasFetcher;
 }
 
-export function CanvasPanelHost({ children, onRefreshOverview, fetcher }: CanvasPanelHostProps) {
+export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetcher }: CanvasPanelHostProps) {
+  // 把宿主 session 注入画布写请求；卸载/切换 session 时清空（fail-closed）。
+  useEffect(() => {
+    setCanvasSessionId(sessionId ?? null);
+    return () => setCanvasSessionId(null);
+  }, [sessionId]);
   const [route, setRoute] = useState<CanvasRouteTarget>({ kind: 'empty' });
   const [prevJobId, setPrevJobId] = useState<string | null>(null);
   const [uploadTask, setUploadTask] = useState<ActiveUploadTask | null>(null);
