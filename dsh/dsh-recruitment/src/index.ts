@@ -191,6 +191,7 @@ import { registerJobActionHttp, type JobActionHostContext } from './http/actions
 import { registerActionsHttp, type ActionHostContext } from './http/actions.ts'
 import { registerBatchUndoHttp, type BatchUndoHostContext } from './http/batch-undo.ts'
 import { registerScorecardDraftHttp, type ScorecardDraftHostContext } from './http/scorecard-draft.ts'
+import { registerInterviewSlotsHttp, type InterviewSlotsHostContext } from './http/interview-slots.ts'
 import { registerStarHttp, type StarHostContext } from './http/star.ts'
 import { registerFeishuImportHttp, type FeishuImportHostContext } from './http/feishu-import.ts'
 import { registerSettingsHttp, type SettingsHostContext } from './http/settings.ts'
@@ -557,6 +558,40 @@ export function apply(
         { database: database.resolved, databaseIssues: database.issues, identity: actorIdentity },
       ),
       'recruitment: scorecard draft routes',
+    )
+    // 排期前空闲时段交集（只读）：GET /recruitment/api/action/interview/free-slots。读不到日历就如实 AUTH_REQUIRED，不编时段。
+    child.effect(
+      () => registerInterviewSlotsHttp(
+        child as unknown as InterviewSlotsHostContext,
+        {
+          // 配置里可能是 `${RECRUITMENT_FEISHU_CLI}` 引用：这里展开成真实路径（未设置 = null → NOT_CONNECTED）。
+          feishuCliPath: (() => {
+            const raw = config?.feishu?.cli
+            if (typeof raw !== 'string' || raw === '') return null
+            const ref = /^\$\{([A-Z0-9_]+)\}$/.exec(raw)
+            const value = ref === null ? raw : env[ref[1] as string]
+            return typeof value === 'string' && value !== '' ? value : null
+          })(),
+          platformChannel: true,
+          identity: actorIdentity,
+          // 面试官 actor_id → 飞书 open_id 映射：只从环境变量读（不猜、不回退姓名邮箱）。
+          // 格式：RECRUITMENT_FEISHU_USER_MAP={"<actor uuid>":"ou_..."}；缺失或非法 = 未绑定。
+          io: {
+            resolveInterviewerOpenId: async (actorId: string) => {
+              const raw = env.RECRUITMENT_FEISHU_USER_MAP
+              if (typeof raw !== 'string' || raw.trim() === '') return null
+              try {
+                const parsed = JSON.parse(raw) as Record<string, unknown>
+                const value = parsed[actorId]
+                return typeof value === 'string' && value.startsWith('ou_') ? value : null
+              } catch {
+                return null
+              }
+            },
+          },
+        },
+      ),
+      'recruitment: interview free-slots route',
     )
     // 工作空间设置：GET /recruitment/api/settings（只读投影）+ POST /recruitment/api/action/settings/write
     // （Host Action，人点 + confirmation_text）。配置解析所需全部注入，不读进程环境。
