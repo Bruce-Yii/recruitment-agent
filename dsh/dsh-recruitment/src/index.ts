@@ -191,6 +191,8 @@ import { registerJobActionHttp, type JobActionHostContext } from './http/actions
 import { registerActionsHttp, type ActionHostContext } from './http/actions.ts'
 import { registerBatchUndoHttp, type BatchUndoHostContext } from './http/batch-undo.ts'
 import { registerScorecardDraftHttp, type ScorecardDraftHostContext } from './http/scorecard-draft.ts'
+import { registerMinuteRebindHttp, type MinuteRebindHostContext } from './http/minute-rebind.ts'
+import { createRebindProcessRunner } from './connectors/feishu/rebind.ts'
 import { registerInterviewSlotsHttp, type InterviewSlotsHostContext } from './http/interview-slots.ts'
 import { registerStarHttp, type StarHostContext } from './http/star.ts'
 import { registerFeishuImportHttp, type FeishuImportHostContext } from './http/feishu-import.ts'
@@ -592,6 +594,21 @@ export function apply(
         },
       ),
       'recruitment: interview free-slots route',
+    )
+    // 妙记录音归属改绑（外部写，默认只允许 dry-run）：POST /recruitment/api/action/interview/rebind-minute。
+    child.effect(
+      () => registerMinuteRebindHttp(
+        child as unknown as MinuteRebindHostContext,
+        {
+          database: database.resolved,
+          databaseIssues: database.issues,
+          identity: actorIdentity,
+          connector: { runner: createRebindProcessRunner() },
+          // actor → {from_speaker_id, to_user_id} 映射：缺省为空 = 一律 422 REBIND_IDENTITY_UNMAPPED（不猜）。
+          identities: {},
+        },
+      ),
+      'recruitment: minute rebind route',
     )
     // 工作空间设置：GET /recruitment/api/settings（只读投影）+ POST /recruitment/api/action/settings/write
     // （Host Action，人点 + confirmation_text）。配置解析所需全部注入，不读进程环境。

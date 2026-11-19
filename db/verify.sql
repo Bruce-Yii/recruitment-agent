@@ -564,6 +564,95 @@ begin
 end $$;
 
 
+-- [0023 妙记改绑] minute_rebind 的专项断言：列 / CHECK / 幂等唯一键 / append-only /
+-- 审计读回索引 / 台账自登记必须齐全。只新增本块，既有断言与计数零改动；
+-- 表不存在时跳过（保持 verify.sql 在旧库可跑）。
+do $$
+declare
+  v_missing text := '';
+  v_col text;
+begin
+  if to_regclass('recruitment.minute_rebind') is not null then
+    -- REBIND-STRUCT-01 必需列（含本轮约定的全部业务列）
+    for v_col in select unnest(array[
+      'id','tenant_id','interview_id','from_actor_id','to_actor_id','requested_by_actor_id',
+      'minute_token','confirmation_text_sha256','cli_summary','dry_run','created_at'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.minute_rebind'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        v_missing := v_missing || v_col || ' ';
+      end if;
+    end loop;
+    if v_missing <> '' then
+      raise exception 'REBIND-STRUCT-01 minute_rebind 缺列：%', v_missing;
+    end if;
+
+    -- REBIND-STRUCT-02 tenant_id NOT NULL + 外键到 organization（STRUCT-02/03 同口径）
+    if not exists (select 1 from pg_attribute a
+                    where a.attrelid = 'recruitment.minute_rebind'::regclass
+                      and a.attname = 'tenant_id' and a.attnotnull and not a.attisdropped) then
+      raise exception 'REBIND-STRUCT-02 minute_rebind.tenant_id 不是 NOT NULL';
+    end if;
+    if not exists (
+      select 1 from pg_constraint p
+       where p.conrelid = 'recruitment.minute_rebind'::regclass and p.contype = 'f'
+         and p.confrelid = 'recruitment.organization'::regclass
+         and (select a.attname from pg_attribute a
+               where a.attrelid = p.conrelid and a.attnum = p.conkey[1]) = 'tenant_id') then
+      raise exception 'REBIND-STRUCT-02 minute_rebind.tenant_id 缺到 organization 的外键';
+    end if;
+
+    -- REBIND-STRUCT-03 CHECK 约束（token 形状 / sha256 / 不同 actor / cli_summary 对象）
+    v_missing := '';
+    select string_agg(t.name, ' ') into v_missing
+      from unnest(array[
+        'ck_minute_rebind_minute_token','ck_minute_rebind_sha256',
+        'ck_minute_rebind_distinct_actors','ck_minute_rebind_cli_summary_object'
+      ]) as t(name)
+     where not exists (select 1 from pg_constraint p
+                        where p.conrelid = 'recruitment.minute_rebind'::regclass
+                          and p.contype = 'c' and p.conname = t.name);
+    if coalesce(v_missing, '') <> '' then
+      raise exception 'REBIND-STRUCT-03 minute_rebind 缺 CHECK 约束：%', v_missing;
+    end if;
+
+    -- REBIND-STRUCT-04 幂等唯一键（tenant+interview+minute+to）
+    if not exists (select 1 from pg_constraint p
+                    where p.conrelid = 'recruitment.minute_rebind'::regclass
+                      and p.contype = 'u' and p.conname = 'uq_minute_rebind_idempotent') then
+      raise exception 'REBIND-STRUCT-04 minute_rebind 缺幂等唯一键 uq_minute_rebind_idempotent';
+    end if;
+
+    -- REBIND-STRUCT-05 append-only：禁删 + 整行不可改
+    for v_col in select unnest(array[
+      'trg_minute_rebind_no_delete','trg_minute_rebind_immutable'
+    ]) loop
+      if not exists (select 1 from pg_trigger g
+                      where g.tgrelid = 'recruitment.minute_rebind'::regclass
+                        and not g.tgisinternal and g.tgname = v_col) then
+        raise exception 'REBIND-STRUCT-05 minute_rebind 缺触发器：%', v_col;
+      end if;
+    end loop;
+
+    -- REBIND-STRUCT-06 审计读回索引
+    if not exists (select 1 from pg_index i
+                    where i.indrelid = 'recruitment.minute_rebind'::regclass
+                      and i.indexrelid = 'recruitment.ix_minute_rebind_interview'::regclass) then
+      raise exception 'REBIND-STRUCT-06 minute_rebind 缺索引 ix_minute_rebind_interview';
+    end if;
+
+    -- REBIND-STRUCT-07 台账自登记
+    if not exists (select 1 from recruitment.schema_migration where version = '0023_minute_rebind') then
+      raise exception 'REBIND-STRUCT-07 schema_migration 缺 0023_minute_rebind 自登记';
+    end if;
+    raise notice 'REBIND-STRUCT PASS minute_rebind 列/CHECK/幂等唯一键/禁删/不可变/审计索引/台账齐全';
+  else
+    raise notice 'REBIND-STRUCT SKIP minute_rebind 表不存在（0023 尚未应用）';
+  end if;
+end $$;
+
+
 \echo ''
 \echo '=================================================================='
 \echo ' 3. 状态机取值覆盖（docs/03 §3/§10/§11/§13 + docs/04 §18）'
