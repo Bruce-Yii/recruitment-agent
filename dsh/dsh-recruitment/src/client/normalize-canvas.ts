@@ -1,8 +1,8 @@
 /**
- * Pure normalization functions for the Recruitment OS v4 right-hand Canvas.
- * Transforms real host HTTP JSON responses (application-detail.json, job-detail.json)
- * into clean, UI-ready view models without exposing raw UUIDs, internal field names,
- * hashes, or protocol jargon.
+ * Pure normalization functions for the Recruitment OS v4 right-hand Canvas (Task 08).
+ * - Adds NO_SHOW -> '未出席' mapping (S14 fix)
+ * - Preserves recordVersion for expected_record_version optimistic locking (S15)
+ * - Preserves starred, missingScorecardNames, leadActorId, minuteToken
  */
 
 export type MatchLevel = 'green' | 'amber' | 'red';
@@ -98,6 +98,9 @@ export interface CandidateCanvasVM {
   stageLabel: string;
   isScreeningStage: boolean;
   isArchived: boolean;
+  recordVersion: number;
+  starred: boolean;
+  missingScorecardNames: string[];
   stageBlockedReason: string | null;
   nextStepLabel: string | null;
   rubricVersionLabel: string;
@@ -153,8 +156,6 @@ export interface JobCanvasVM {
   applications: JobApplicationRowVM[];
 }
 
-// ---------------- Helpers ----------------
-
 const STAGE_LABEL_MAP: Record<string, string> = {
   S1: '需求立项',
   S2: '职位发布',
@@ -209,6 +210,7 @@ const INTERVIEW_STATUS_MAP: Record<string, { text: string; tone: 'done' | 'cauti
   SCHEDULED: { text: '已排期', tone: 'now' },
   IN_PROGRESS: { text: '进行中', tone: 'now' },
   CANCELLED: { text: '已取消', tone: 'caution' },
+  NO_SHOW: { text: '未出席', tone: 'caution' },
 };
 
 function asObj(v: unknown): Record<string, unknown> {
@@ -227,7 +229,6 @@ function asNum(v: unknown, fallback = 0): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
 }
 
-/** Never expose full 36-char UUIDs in UI; return first 8 chars or business code. */
 export function shortId(id?: unknown): string {
   const s = asStr(id).trim();
   if (!s) return '—';
@@ -251,32 +252,13 @@ export function formatShortDateTime(iso?: unknown): string {
   return `${mm}-${dd} ${hh}:${mi}`;
 }
 
-/**
- * External fact labels MUST be displayed verbatim without beautification
- * (LIVE/FIXTURE, EVENT/MANUAL, CONNECTED/NOT_CONNECTED/AUTH_REQUIRED).
- */
 export function formatFactLabels(rawLabels: unknown): FactLabelChip[] {
   const l = asObj(rawLabels);
   const chips: FactLabelChip[] = [];
-
   const prov = asStr(l.provenance);
-  if (prov) {
-    chips.push({
-      dimension: '来源',
-      raw: prov,
-      tone: prov === 'LIVE' ? 'green' : 'amber',
-    });
-  }
-
+  if (prov) chips.push({ dimension: '来源', raw: prov, tone: prov === 'LIVE' ? 'green' : 'amber' });
   const trig = asStr(l.trigger);
-  if (trig) {
-    chips.push({
-      dimension: '触发',
-      raw: trig,
-      tone: 'neutral',
-    });
-  }
-
+  if (trig) chips.push({ dimension: '触发', raw: trig, tone: 'neutral' });
   const conn = asStr(l.connection);
   if (conn) {
     chips.push({
@@ -285,7 +267,6 @@ export function formatFactLabels(rawLabels: unknown): FactLabelChip[] {
       tone: conn === 'CONNECTED' ? 'green' : conn === 'AUTH_REQUIRED' ? 'amber' : 'red',
     });
   }
-
   return chips;
 }
 
@@ -307,22 +288,12 @@ function mapDimensionToCriterion(
 
   if (key.includes('work')) {
     const st = asStr(fieldStates.work_experience);
-    if (st === 'present') {
-      statusText = '已匹配';
-      level = 'green';
-    } else if (st === 'absent') {
-      statusText = '未提及';
-      level = 'red';
-    }
+    if (st === 'present') { statusText = '已匹配'; level = 'green'; }
+    else if (st === 'absent') { statusText = '未提及'; level = 'red'; }
   } else if (key.includes('edu')) {
     const st = asStr(fieldStates.education);
-    if (st === 'present') {
-      statusText = '已匹配';
-      level = 'green';
-    } else if (st === 'absent') {
-      statusText = '未提及';
-      level = 'red';
-    }
+    if (st === 'present') { statusText = '已匹配'; level = 'green'; }
+    else if (st === 'absent') { statusText = '未提及'; level = 'red'; }
   } else if (screeningVerdict === 'PASS') {
     statusText = kind === 'NICE_TO_HAVE' ? '需面试核实' : '已匹配';
     level = kind === 'NICE_TO_HAVE' ? 'amber' : 'green';
@@ -331,24 +302,12 @@ function mapDimensionToCriterion(
     level = 'red';
   }
 
-  return {
-    key,
-    label,
-    kindLabel: kind === 'MUST_HAVE' ? '硬性' : '加分',
-    weightText,
-    statusText,
-    level,
-    question,
-  };
+  return { key, label, kindLabel: kind === 'MUST_HAVE' ? '硬性' : '加分', weightText, statusText, level, question };
 }
 
 function inferMatchKeyForField(field: string, criteria: CriterionVM[]): string {
-  if (field === 'work_experience') {
-    return criteria.find((c) => c.key.includes('work'))?.key || criteria[0]?.key || 'work';
-  }
-  if (field === 'education') {
-    return criteria.find((c) => c.key.includes('edu'))?.key || criteria[0]?.key || 'edu';
-  }
+  if (field === 'work_experience') return criteria.find((c) => c.key.includes('work'))?.key || criteria[0]?.key || 'work';
+  if (field === 'education') return criteria.find((c) => c.key.includes('edu'))?.key || criteria[0]?.key || 'edu';
   return criteria[0]?.key || 'general';
 }
 
@@ -359,8 +318,6 @@ function normalizeStageBucket(stageCode: string, lifecycle: string): JobApplicat
   if (stageCode === 'S8' || stageCode === 'S9') return '面试中';
   return '终审与 Offer';
 }
-
-// ---------------- Main Normalizers ----------------
 
 export function normalizeApplicationDetail(raw: unknown): CandidateCanvasVM {
   const root = asObj(raw);
@@ -386,7 +343,6 @@ export function normalizeApplicationDetail(raw: unknown): CandidateCanvasVM {
   const rawDims = asArr(evRubric.dimensions);
   const criteria: CriterionVM[] = rawDims.map((d) => mapDimensionToCriterion(d, fieldStates, verdict));
 
-  // Build resume sections from real API fields (work_entries, education_entries, evidence_samples, fields)
   const resumeSections: ResumeSectionVM[] = [];
   const workEntries = asArr(resumeObj.work_entries);
   const eduEntries = asArr(resumeObj.education_entries);
@@ -470,7 +426,6 @@ export function normalizeApplicationDetail(raw: unknown): CandidateCanvasVM {
   const materialFileName = asStr(resumeMaterial.file_name) || null;
   const hasResumeMaterial = Boolean(assetId || materialFileName || resumeSections.length > 0);
 
-  // Transcript runs (empty array => hasTranscript = false, never crash)
   const rawTranscripts = asArr(root.transcript_runs);
   const transcriptItems: TranscriptItemVM[] = rawTranscripts.map((tr, idx) => {
     const t = asObj(tr);
@@ -483,12 +438,11 @@ export function normalizeApplicationDetail(raw: unknown): CandidateCanvasVM {
     };
   });
 
-  // Interviews -> sequential rounds (never average scores!)
   const rawInterviews = asArr(app.interviews);
   const rounds: InterviewRoundVM[] = rawInterviews.map((item, idx) => {
     const iv = asObj(item);
     const roundNo = asNum(iv.round_no, idx + 1);
-    const status = asStr(iv.status, 'SCHEDULED');
+    const status = asStr(iv.status, 'SCHEDULED').toUpperCase();
     const stInfo = INTERVIEW_STATUS_MAP[status] || { text: '进行中', tone: 'now' as const };
     const sc = asObj(iv.scorecards);
     const reqTotal = asNum(sc.required_total, 0);
@@ -534,7 +488,6 @@ export function normalizeApplicationDetail(raw: unknown): CandidateCanvasVM {
     };
   });
 
-  // Screening basis (human-readable, no raw hashes or UUIDs)
   const rawBasis = asArr(screeningEv.basis);
   const screeningBasis: ScreeningBasisVM[] = rawBasis.map((b) => {
     const bo = asObj(b);
@@ -551,46 +504,33 @@ export function normalizeApplicationDetail(raw: unknown): CandidateCanvasVM {
       const vd = asStr(detail.verdict, verdict);
       text = vd === 'PASS' ? '简历初筛评估结论为：通过' : vd ? '已完成简历初筛评估' : '等待初筛评估结论';
     }
-    return {
-      label: BASIS_KIND_MAP[kind] || '评估依据',
-      detail: text,
-    };
+    return { label: BASIS_KIND_MAP[kind] || '评估依据', detail: text };
   });
 
-  // Timeline
   const timeline: TimelineItemVM[] = asArr(root.timeline).map((ev, idx) => {
     const e = asObj(ev);
-    return {
-      id: `tl-${idx}`,
-      timeText: formatShortDateTime(e.at),
-      label: asStr(e.label, '状态更新'),
-    };
+    return { id: `tl-${idx}`, timeText: formatShortDateTime(e.at), label: asStr(e.label, '状态更新') };
   });
 
-  // Actions: surface unavailable reasons transparently (never grey out silently)
   const rawActions = asObj(root.actions);
   const unavailableActions: ActionNoticeVM[] = Object.entries(rawActions)
     .map(([key, val]) => {
       const a = asObj(val);
       const available = a.available !== false;
       const reason = asStr(a.reason) || asStr(a.blocked_reason) || (a.pending ? '已有待处理操作进行中' : undefined);
-      return {
-        key,
-        label: ACTION_LABEL_MAP[key] || key,
-        available,
-        reason,
-      };
+      return { key, label: ACTION_LABEL_MAP[key] || key, available, reason };
     })
     .filter((a) => !a.available);
 
   const summaryParts: string[] = [];
   if (asStr(screening.reason)) summaryParts.push(`初筛结论：${asStr(screening.reason)}`);
   if (asStr(nextStep.label)) summaryParts.push(asStr(nextStep.label));
-  if (summaryParts.length === 0) {
-    summaryParts.push(`当前处于「${formatStageLabel(stageCode)}」阶段。`);
-  }
+  if (summaryParts.length === 0) summaryParts.push(`当前处于「${formatStageLabel(stageCode)}」阶段。`);
 
   const rubricVersionNo = asNum(appRubric.version_no, asNum(evRubric.version_no, 1));
+  const missingScorecardNames = Array.from(
+    new Set(rounds.flatMap((rd) => rd.interviewers.filter((p) => !p.submitted).map((p) => p.displayName))),
+  );
 
   return {
     applicationId,
@@ -604,6 +544,9 @@ export function normalizeApplicationDetail(raw: unknown): CandidateCanvasVM {
     stageLabel: formatStageLabel(stageCode),
     isScreeningStage: stageCode === 'S6' || stageCode === 'S7',
     isArchived: lifecycle !== 'ACTIVE' || stageCode === 'S12',
+    recordVersion: asNum(app.record_version, 1),
+    starred: Boolean(app.starred),
+    missingScorecardNames,
     stageBlockedReason: asStr(app.stage_blocked_reason) || null,
     nextStepLabel: asStr(nextStep.label) || null,
     rubricVersionLabel: `V${rubricVersionNo}`,
@@ -658,9 +601,7 @@ export function normalizeJobDetail(raw: unknown): JobCanvasVM {
     return { label: item.label, count: item.count, state };
   });
 
-  const rubricDimensions: CriterionVM[] = asArr(rootRubric.dimensions).map((d) =>
-    mapDimensionToCriterion(d, {}, ''),
-  );
+  const rubricDimensions: CriterionVM[] = asArr(rootRubric.dimensions).map((d) => mapDimensionToCriterion(d, {}, ''));
 
   const applications: JobApplicationRowVM[] = asArr(root.applications).map((item) => {
     const a = asObj(item);
@@ -697,12 +638,7 @@ export function normalizeJobDetail(raw: unknown): JobCanvasVM {
     };
   });
 
-  const statusMap: Record<string, string> = {
-    OPEN: '招聘中',
-    PAUSED: '已暂停',
-    CLOSED: '已关闭',
-    DRAFT: '草稿',
-  };
+  const statusMap: Record<string, string> = { OPEN: '招聘中', PAUSED: '已暂停', CLOSED: '已关闭', DRAFT: '草稿' };
 
   return {
     jobId: asStr(job.job_id),
