@@ -1,27 +1,49 @@
 /**
- * Typed HTTP action clients for Recruitment OS DSH Plugin Canvas (Task 08 · D-160 Full Parity).
+ * Typed HTTP action clients for Recruitment OS DSH Plugin Canvas (Task 08c · D-160 / D-162).
  *
- * Covers ALL reachable write routes in docs/38-capability-entry-matrix.md (except deferred #9 compound):
- *  1. POST /recruitment/api/action/screening/decide
- *  2. POST /recruitment/api/decision/record
- *  3. POST /recruitment/api/action/stage/advance
- *  4. POST /recruitment/api/action/transcript/import
- *  5. POST /recruitment/api/action/interview/schedule (schedule / reschedule / replace / add_round / NO_SHOW)
- *  6. POST /recruitment/api/intake/upload?job_id=... + GET /recruitment/api/tasks/status
- *  7. POST /recruitment/api/action/application/star
- *  8. POST /recruitment/api/action/email/send
- *  9. POST /recruitment/api/action/settings/write
- * 10. POST /recruitment/api/action/decision/batch-reject & POST /recruitment/api/action/undo
- * 11. POST /recruitment/api/action/candidate/constraint & POST /recruitment/api/action/application/transfer
- * 12. POST /recruitment/api/action/job/create
- * 13. GET  /recruitment/api/action/interview/free-slots & POST /recruitment/api/action/interview/rebind-minute
- *
- * Contract rules:
- * - Same-origin cookie determines identity (frontend NEVER sends `actor`).
- * - Always carries `x-recruitment-request: 1`.
- * - Optimistic locking: passes `expected_record_version` and maps 409 version conflict to
- *   human copy "这条刚被别人改过，请刷新".
+ * Contract discipline (V3-2 / client-contract-check):
+ * - All standard recruiting write actions MUST reuse authoritative builders in
+ *   `../recruiting/actions.ts` + `postActionSeam` / `postDecisionRecordFacade` / `postJobCreate` /
+ *   `postJobDraft` / `postJobClose` in `../recruiting/use-recruiting.ts`.
+ * - This module ONLY implements canvas-exclusive actions that have no recruiting builder yet:
+ *   upload + task polling, Feishu free-slots + minute rebind, star, email send, batch-reject + undo,
+ *   candidate constraint (PIN/HANDOFF), and application transfer.
+ * - Every request carries `x-recruitment-request: 1` and `X-DSH-Session` injected from host props.
  */
+
+export {
+  buildScreeningDecisionBody,
+  buildDecisionRecordBody,
+  buildStageAdvanceBody,
+  buildTranscriptImportBody,
+  buildInterviewScheduleBody,
+  buildSettingsWriteBody,
+  buildJobCreateBody,
+  buildJobDraftBody,
+  buildJobCloseBody,
+  buildRubricApproveBody,
+  screeningDecisionBlockers,
+  decisionRecordBlockers,
+  blockerTextOf,
+  describeActionError,
+  toOffsetIso,
+  newIdempotencyKey,
+  type ActionOutcome,
+  type BodyBuildResult,
+  type DecisionFacts,
+} from '../recruiting/actions.ts';
+
+export {
+  postActionSeam,
+  postDecisionRecordFacade,
+  postJobCreate,
+  postJobDraft,
+  postJobClose,
+  fetchDecisionFacts,
+  postScreeningEvaluate,
+  type DecisionFactsProbe,
+  type DecisionFactsResource,
+} from '../recruiting/use-recruiting.ts';
 
 export const UNAVAILABLE_ACTION_MESSAGE = '这项还差最后一步，稍后开放';
 
@@ -40,6 +62,34 @@ function makeError(code: CanvasActionError['code'], userMessage: string): Canvas
 function extractErrorCode(data: Record<string, unknown>): string {
   const nested = data.error && typeof data.error === 'object' ? (data.error as Record<string, unknown>) : {};
   return String(data.reason_code || data.code || nested.reason_code || nested.code || '').toUpperCase();
+}
+
+/**
+ * 画布写请求的会话头（D-160/V3-1 修复）。
+ *
+ * 服务端只认 `X-DSH-Session`（身份来自当前 DSH Session），缺了就是 400 SESSION_REQUIRED。
+ * 会话 id 只能由宿主面板通过 props 传进来（`setCanvasSessionId`），不读 localStorage、不从 URL 取。
+ */
+let canvasSessionId: string | null = null;
+
+export function setCanvasSessionId(id: string | null): void {
+  canvasSessionId = id === '' ? null : id;
+}
+
+export function getCanvasSessionId(): string {
+  return canvasSessionId ?? '';
+}
+
+export class CanvasSessionMissingError extends Error {
+  constructor() {
+    super('请先在工作台顶部选择身份，再执行这个操作');
+    this.name = 'CanvasSessionMissingError';
+  }
+}
+
+function sessionHeaders(): Record<string, string> {
+  if (canvasSessionId === null) throw new CanvasSessionMissingError();
+  return { 'X-DSH-Session': canvasSessionId };
 }
 
 async function postJsonAction<T>(path: string, body: Record<string, unknown>): Promise<T> {
@@ -80,101 +130,7 @@ async function postJsonAction<T>(path: string, body: Record<string, unknown>): P
   return data as T;
 }
 
-/**
- * 画布写请求的会话头（D-160/V3-1 修复）。
- *
- * 服务端只认 `X-DSH-Session`（身份来自当前 DSH Session），缺了就是 400 SESSION_REQUIRED。
- * 会话 id 只能由宿主面板通过 props 传进来（`setCanvasSessionId`），**不读 localStorage、不从 URL 取**。
- */
-let canvasSessionId: string | null = null
-
-export function setCanvasSessionId(id: string | null): void {
-  canvasSessionId = id === '' ? null : id
-}
-
-export class CanvasSessionMissingError extends Error {
-  constructor() {
-    super('请先在工作台顶部选择身份，再执行这个操作')
-    this.name = 'CanvasSessionMissingError'
-  }
-}
-
-function sessionHeaders(): Record<string, string> {
-  if (canvasSessionId === null) throw new CanvasSessionMissingError()
-  return { 'X-DSH-Session': canvasSessionId }
-}
-
-export async function postScreeningDecide(payload: {
-  applicationId: string;
-  result: 'ADVANCE' | 'REJECT' | 'HOLD';
-  reason: string;
-  confirmationText: string;
-  expectedRecordVersion?: number;
-}): Promise<{ decision_id?: string; action_id?: string }> {
-  const body: Record<string, unknown> = {
-    application_id: payload.applicationId,
-    result: payload.result,
-    reason: payload.reason,
-    confirmation_text: payload.confirmationText,
-  };
-  if (typeof payload.expectedRecordVersion === 'number') {
-    body.expected_record_version = payload.expectedRecordVersion;
-  }
-  return postJsonAction('/recruitment/api/action/screening/decide', body);
-}
-
-export async function postDecisionRecord(payload: {
-  applicationId: string;
-  result: 'OFFER' | 'REJECT' | 'HOLD';
-  reason: string;
-  confirmationText: string;
-  expectedRecordVersion?: number;
-}): Promise<{ decision_id?: string; action_id?: string }> {
-  const body: Record<string, unknown> = {
-    application_id: payload.applicationId,
-    result: payload.result,
-    reason: payload.reason,
-    confirmation_text: payload.confirmationText,
-  };
-  if (typeof payload.expectedRecordVersion === 'number') {
-    body.expected_record_version = payload.expectedRecordVersion;
-  }
-  return postJsonAction('/recruitment/api/decision/record', body);
-}
-
-export async function postStageAdvance(payload: {
-  applicationId: string;
-  targetStageCode: string;
-  reason?: string;
-  confirmationText: string;
-  expectedRecordVersion?: number;
-}): Promise<{ action_id?: string }> {
-  const body: Record<string, unknown> = {
-    application_id: payload.applicationId,
-    target_stage_code: payload.targetStageCode,
-    confirmation_text: payload.confirmationText,
-  };
-  if (payload.reason) body.reason = payload.reason;
-  if (typeof payload.expectedRecordVersion === 'number') {
-    body.expected_record_version = payload.expectedRecordVersion;
-  }
-  return postJsonAction('/recruitment/api/action/stage/advance', body);
-}
-
-export async function postTranscriptImport(payload: {
-  applicationId: string;
-  interviewId?: string;
-  sourceUrlOrText: string;
-  confirmationText: string;
-}): Promise<{ artifact_id?: string; action_id?: string }> {
-  const body: Record<string, unknown> = {
-    application_id: payload.applicationId,
-    content: payload.sourceUrlOrText,
-    confirmation_text: payload.confirmationText,
-  };
-  if (payload.interviewId) body.interview_id = payload.interviewId;
-  return postJsonAction('/recruitment/api/action/transcript/import', body);
-}
+// ---------------- 1. Candidate Star ----------------
 
 export async function postApplicationStar(payload: {
   applicationId: string;
@@ -185,6 +141,8 @@ export async function postApplicationStar(payload: {
     starred: payload.starred,
   });
 }
+
+// ---------------- 2. Send Email (incl. Offer) ----------------
 
 export async function postEmailSend(payload: {
   applicationId: string;
@@ -207,26 +165,7 @@ export async function postEmailSend(payload: {
   return postJsonAction('/recruitment/api/action/email/send', body);
 }
 
-export async function postSettingsWrite(payload: {
-  agentSilentDelegation?: boolean;
-  screeningHours?: number;
-  scorecardHours?: number;
-  confirmationText: string;
-}): Promise<{ ok?: boolean; action_id?: string }> {
-  const body: Record<string, unknown> = {
-    confirmation_text: payload.confirmationText,
-  };
-  if (typeof payload.agentSilentDelegation === 'boolean') {
-    body.agent_silent_delegation = payload.agentSilentDelegation;
-  }
-  if (typeof payload.screeningHours === 'number' || typeof payload.scorecardHours === 'number') {
-    body.sla_thresholds = {
-      ...(typeof payload.screeningHours === 'number' ? { screening_hours: payload.screeningHours } : {}),
-      ...(typeof payload.scorecardHours === 'number' ? { scorecard_hours: payload.scorecardHours } : {}),
-    };
-  }
-  return postJsonAction('/recruitment/api/action/settings/write', body);
-}
+// ---------------- 3. Transfer & Candidate Constraint (PIN / HANDOFF) ----------------
 
 export interface TransferPayload {
   applicationId: string;
@@ -285,27 +224,7 @@ export async function postCandidateConstraint(payload: ConstraintPayload): Promi
   return postJsonAction('/recruitment/api/action/candidate/constraint', body);
 }
 
-export interface JobCreatePayload {
-  title: string;
-  dept?: string;
-  requisitionId?: string;
-  confirmationText: string;
-}
-
-export async function postJobCreate(payload: JobCreatePayload): Promise<{
-  job_id: string;
-  code: string;
-  rubric_status: string;
-  action_id?: string;
-}> {
-  const body: Record<string, unknown> = {
-    title: payload.title.trim(),
-    confirmation_text: payload.confirmationText,
-  };
-  if (payload.dept) body.dept = payload.dept;
-  if (payload.requisitionId) body.requisition_id = payload.requisitionId;
-  return postJsonAction('/recruitment/api/action/job/create', body);
-}
+// ---------------- 4. Batch Reject & Undo ----------------
 
 export interface BatchRejectItemResult {
   applicationId: string;
@@ -395,6 +314,8 @@ export async function postActionUndo(payload: {
   return { undone: data.status === 'undone' || res.ok, message: '已撤销' };
 }
 
+// ---------------- 5. Upload & Task Status Polling ----------------
+
 export interface UploadTaskStartResult {
   taskId: string;
   fileName: string;
@@ -465,6 +386,8 @@ export async function fetchTaskStatus(taskId: string): Promise<UploadTaskStatusR
   return { taskId, status: 'RUNNING' };
 }
 
+// ---------------- 6. Feishu Free Slots & Rebind Minute ----------------
+
 export interface FreeSlotOption {
   startIso: string;
   endIso: string;
@@ -520,7 +443,7 @@ export async function fetchInterviewFreeSlots(params: {
     const res = await fetch(`/recruitment/api/action/interview/free-slots?${qs.toString()}`, {
       method: 'GET',
       credentials: 'same-origin',
-      headers: { 'x-recruitment-request': '1', Accept: 'application/json' },
+      headers: { 'x-recruitment-request': '1', Accept: 'application/json', ...sessionHeaders() },
     });
     if (!res.ok) {
       return {
@@ -578,41 +501,6 @@ export async function fetchInterviewFreeSlots(params: {
       unavailableBanner: '日历没连上，先重连再试；也可以直接手动填时间',
     };
   }
-}
-
-export async function postInterviewSchedule(payload: {
-  applicationId: string;
-  intent: 'CREATE' | 'RESCHEDULE' | 'NO_SHOW';
-  interviewId?: string;
-  interviewerActorIds?: string[];
-  roundLabel?: string;
-  replaceInterviewer?: string;
-  startAt?: string;
-  endAt?: string;
-  noShowSubject?: 'CANDIDATE' | 'INTERVIEWER';
-  reason?: string;
-  confirmationText: string;
-  expectedRecordVersion?: number;
-}): Promise<{ interview_id?: string; action_id?: string }> {
-  const body: Record<string, unknown> = {
-    application_id: payload.applicationId,
-    intent: payload.intent,
-    confirmation_text: payload.confirmationText,
-  };
-  if (payload.interviewId) body.interview_id = payload.interviewId;
-  if (payload.interviewerActorIds && payload.interviewerActorIds.length > 0) {
-    body.interviewer_actor_ids = payload.interviewerActorIds;
-  }
-  if (payload.roundLabel) body.round_label = payload.roundLabel;
-  if (payload.replaceInterviewer) body.replace_interviewer = payload.replaceInterviewer;
-  if (payload.startAt) body.start_at = payload.startAt;
-  if (payload.endAt) body.end_at = payload.endAt;
-  if (payload.noShowSubject) body.subject = payload.noShowSubject;
-  if (payload.reason) body.reason = payload.reason;
-  if (typeof payload.expectedRecordVersion === 'number') {
-    body.expected_record_version = payload.expectedRecordVersion;
-  }
-  return postJsonAction('/recruitment/api/action/interview/schedule', body);
 }
 
 export async function postRebindMinute(payload: {

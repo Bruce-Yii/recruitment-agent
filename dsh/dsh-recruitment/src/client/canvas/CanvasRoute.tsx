@@ -6,7 +6,6 @@ import {
   fetchTaskStatus,
   postActionUndo,
   setCanvasSessionId,
-  postSettingsWrite,
   type CanvasActionError,
   type UploadTaskStatusResult,
 } from './canvas-actions.ts';
@@ -28,6 +27,7 @@ export interface UndoToastPayload {
 }
 
 export interface CanvasRouteProps {
+  readonly sessionId?: string;
   route: CanvasRouteTarget;
   onBack?: () => void;
   onSelectApplication?: (applicationId: string) => void;
@@ -196,6 +196,7 @@ function UploadProgressBanner({
 }
 
 export function CanvasRoute({
+  sessionId,
   route,
   onBack,
   onSelectApplication,
@@ -209,12 +210,7 @@ export function CanvasRoute({
   fetcher = fetchCanvasJson,
 }: CanvasRouteProps) {
   return (
-    <section
-      className="ros-canvas"
-      aria-label="招聘详情画布"
-      data-testid="v4-canvas-route"
-      data-settings-write-wired={typeof postSettingsWrite === 'function' ? '1' : '0'}
-    >
+    <section className="ros-canvas" aria-label="招聘详情画布" data-testid="v4-canvas-route">
       {uploadTask ? (
         <UploadProgressBanner
           task={uploadTask}
@@ -225,6 +221,7 @@ export function CanvasRoute({
       ) : null}
       {route.kind === 'candidate' ? (
         <CandidatePage
+          sessionId={sessionId}
           applicationId={route.applicationId}
           onBack={onBack}
           onOpenJob={onSelectJob}
@@ -235,6 +232,7 @@ export function CanvasRoute({
         />
       ) : route.kind === 'job' ? (
         <JobPage
+          sessionId={sessionId}
           jobId={route.jobId}
           onBack={onBack}
           onSelectApplication={onSelectApplication}
@@ -271,6 +269,9 @@ export interface CanvasPanelHostProps {
   fetcher?: CanvasFetcher;
 }
 
+/**
+ * Pure React-state canvas host (ZERO location.hash mutations) with real 5-second Undo Toast (T5-2).
+ */
 export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetcher }: CanvasPanelHostProps) {
   // 把宿主 session 注入画布写请求；卸载/切换 session 时清空（fail-closed）。
   useEffect(() => {
@@ -282,6 +283,7 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
   const [uploadTask, setUploadTask] = useState<ActiveUploadTask | null>(null);
   const [refreshNonce, setRefreshNonce] = useState<number>(0);
 
+  // T5-2: Real 5-second Undo Toast
   const [toast, setToast] = useState<UndoToastPayload | null>(null);
   const [undoBusy, setUndoBusy] = useState<boolean>(false);
 
@@ -330,6 +332,7 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
       });
       setToast({ message: res.message });
       if (res.undone) {
+        // Refresh from server; never physically delete local state
         setRefreshNonce((n) => n + 1);
         onRefreshOverview?.();
       }
@@ -345,6 +348,7 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
     <>
       {route.kind !== 'empty' ? (
         <CanvasRoute
+          sessionId={sessionId}
           route={route}
           onBack={handleBack}
           onSelectApplication={openCandidate}

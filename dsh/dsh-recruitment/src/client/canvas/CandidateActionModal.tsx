@@ -1,16 +1,29 @@
 import React, { useEffect, useState } from 'react';
 import type { CandidateCanvasVM } from '../normalize-canvas.ts';
+import type { ActionView } from '../recruiting/view-model.ts';
 import {
+  blockerTextOf,
+  buildDecisionRecordBody,
+  buildInterviewScheduleBody,
+  buildScreeningDecisionBody,
+  buildStageAdvanceBody,
+  buildTranscriptImportBody,
+  decisionRecordBlockers,
+  describeActionError,
+  fetchDecisionFacts,
   fetchInterviewFreeSlots,
+  getCanvasSessionId,
+  newIdempotencyKey,
+  postActionSeam,
   postApplicationTransfer,
   postCandidateConstraint,
-  postDecisionRecord,
+  postDecisionRecordFacade,
   postEmailSend,
-  postInterviewSchedule,
-  postScreeningDecide,
-  postStageAdvance,
-  postTranscriptImport,
+  screeningDecisionBlockers,
+  toOffsetIso,
+  type ActionOutcome,
   type CanvasActionError,
+  type DecisionFactsResource,
   type FreeSlotsResult,
 } from './canvas-actions.ts';
 
@@ -40,6 +53,7 @@ export interface CandidateModalSuccess {
 export interface CandidateActionModalProps {
   kind: CandidateModalKind;
   vm: CandidateCanvasVM;
+  sessionId?: string;
   onClose: () => void;
   onSuccess: (result: CandidateModalSuccess) => void;
 }
@@ -59,16 +73,67 @@ const DEFAULT_CONFIRM_MAP = (kind: CandidateModalKind, name: string): string => 
   }
 };
 
-export function CandidateActionModal({ kind, vm, onClose, onSuccess }: CandidateActionModalProps) {
+function needsConfirmationInput(kind: CandidateModalKind): boolean {
+  return kind === 'pin' || kind === 'handoff' || kind === 'transfer' || kind === 'email';
+}
+
+function formatOutcomeError(outcome: ActionOutcome): string {
+  const code = `${outcome.code} ${outcome.reasonCode}`.toUpperCase();
+  if (outcome.status === 409 && (code.includes('VERSION') || code.includes('CONFLICT') || code.includes('STALE') || code.includes('LOCK'))) {
+    return '这条刚被别人改过，请刷新';
+  }
+  if (outcome.status === 409 && (code.includes('DUPLICATE') || code.includes('ALREADY') || code.includes('DECISION_EXISTS'))) {
+    return '已处理过，不会重复写入';
+  }
+  if (code.includes('SCORECARD_MISSING')) {
+    return '还有面试官尚未提交面评，暂时不能提交终审决策';
+  }
+  return outcome.message || describeActionError(outcome.code, outcome.reasonCode) || '操作未能完成，请检查输入或稍后重试';
+}
+
+function normalizeStartAtIso(raw: string): string {
+  const trimmed = raw.trim();
+  if (/[+-]\d{2}:\d{2}$|Z$/i.test(trimmed)) return trimmed;
+  const converted = toOffsetIso(trimmed);
+  return converted || trimmed;
+}
+
+function extractOutcomeActionId(outcome: ActionOutcome): string | undefined {
+  const payload = outcome.payload;
+  if (payload && typeof payload.action_id === 'string' && payload.action_id.trim() !== '') {
+    return payload.action_id;
+  }
+  return undefined;
+}
+
+function requireAvailableAction(
+  vm: CandidateCanvasVM,
+  key: string,
+  fallbackLabel: string,
+): { ok: true; action: ActionView } | { ok: false; message: string } {
+  const action = vm.actions[key];
+  if (!action || !action.available || action.seam === '') {
+    return {
+      ok: false,
+      message: action?.reasonText || action?.pendingText || `当前阶段暂不可执行「${fallbackLabel}」`,
+    };
+  }
+  return { ok: true, action };
+}
+
+export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }: CandidateActionModalProps) {
+  const activeSessionId = (sessionId ?? '').trim() || getCanvasSessionId();
   const latestRound = vm.rounds[vm.rounds.length - 1];
   const defaultActors = vm.rounds.map((r) => r.leadActorId).filter((x): x is string => Boolean(x)).join(',');
 
   const [inputText, setInputText] = useState('');
   const [confirmText, setConfirmText] = useState(() => DEFAULT_CONFIRM_MAP(kind, vm.candidateName));
   const [targetJobId, setTargetJobId] = useState('');
-  const [screenResult, setScreenResult] = useState<'ADVANCE' | 'HOLD' | 'REJECT'>('ADVANCE');
-  const [decisionResult, setDecisionResult] = useState<'OFFER' | 'HOLD' | 'REJECT'>('OFFER');
-  const [targetStageCode, setTargetStageCode] = useState('S8');
+  const [screenResult, setScreenResult] = useState<'ADVANCE' | 'HOLD' | 'REJECT' | 'WITHDRAW'>('ADVANCE');
+  const [decisionScope, setDecisionScope] = useState<'FINAL' | 'STAGE'>('FINAL');
+  const [decisionResult, setDecisionResult] = useState<'ADVANCE' | 'HOLD' | 'REJECT'>('ADVANCE');
+  const [transcriptSourceKind, setTranscriptSourceKind] = useState<'DEMO_SAMPLE' | 'PLATFORM_EXPORT'>('DEMO_SAMPLE');
+  const [exportedFileName, setExportedFileName] = useState('');
   const [noShowSubject, setNoShowSubject] = useState<'CANDIDATE' | 'INTERVIEWER'>('CANDIDATE');
   const [emailTemplate, setEmailTemplate] = useState<'OFFER' | 'INVITE' | 'THANK_YOU'>('OFFER');
   const [emailSubject, setEmailSubject] = useState(`【通知】${vm.jobTitle}（${vm.candidateName}）`);
@@ -78,10 +143,15 @@ export function CandidateActionModal({ kind, vm, onClose, onSuccess }: Candidate
   );
   const [selectedInterviewers, setSelectedInterviewers] = useState(defaultActors);
   const [scheduleTime, setScheduleTime] = useState('');
-  const [scheduleEndTime, setScheduleEndTime] = useState('');
   const [replaceInterviewer, setReplaceInterviewer] = useState('');
+  const [idempotencyKey] = useState(() => newIdempotencyKey());
   const [freeSlotsLoading, setFreeSlotsLoading] = useState(kind === 'schedule');
   const [freeSlots, setFreeSlots] = useState<FreeSlotsResult | null>(null);
+
+  // Task 08c: Decision facts prefetch for screening / formal decision
+  const needsFacts = kind === 'screening' || kind === 'decision';
+  const [factsLoading, setFactsLoading] = useState(needsFacts);
+  const [factsRes, setFactsRes] = useState<DecisionFactsResource | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -104,12 +174,61 @@ export function CandidateActionModal({ kind, vm, onClose, onSuccess }: Candidate
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, vm.applicationId]);
 
-  const missingForOffer = kind === 'decision' && decisionResult === 'OFFER' && vm.missingScorecardNames.length > 0;
+  useEffect(() => {
+    if (!needsFacts) return;
+    const controller = new AbortController();
+    let active = true;
+    setFactsLoading(true);
+    void fetchDecisionFacts(vm.applicationId, activeSessionId, controller.signal)
+      .then((res) => {
+        if (!active) return;
+        setFactsRes(res);
+      })
+      .catch(() => {
+        if (!active) return;
+        setFactsRes({ facts: undefined, probe: 'ERROR', status: 0, error: undefined });
+      })
+      .finally(() => {
+        if (active) setFactsLoading(false);
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [needsFacts, vm.applicationId, activeSessionId]);
+
+  const missingForOffer = kind === 'decision' && decisionResult === 'ADVANCE' && vm.missingScorecardNames.length > 0;
+
+  // Compute decision-facts structural blockers (fail-closed: probe !== 'READY' blocks submit)
+  let factsBlockedMessage: string | null = null;
+  if (needsFacts && !factsLoading) {
+    if (!factsRes || factsRes.probe !== 'READY' || !factsRes.facts) {
+      factsBlockedMessage =
+        kind === 'screening'
+          ? '还没有初筛评估，先让 Agent 跑一次初筛'
+          : '决策汇总还没有生成，暂时不能提交正式决策';
+    } else if (kind === 'screening') {
+      const needsEval = screenResult === 'ADVANCE' || screenResult === 'REJECT';
+      const blockers = screeningDecisionBlockers(factsRes.facts, needsEval);
+      if (blockers.length > 0) {
+        factsBlockedMessage = blockers.includes('MISSING_SCREENING_EVALUATION')
+          ? '还没有初筛评估，先让 Agent 跑一次初筛'
+          : blockers.map((code) => blockerTextOf(code)).join('；');
+      }
+    } else if (kind === 'decision') {
+      const blockers = decisionRecordBlockers(factsRes.facts);
+      if (blockers.length > 0) {
+        factsBlockedMessage = blockers.map((code) => blockerTextOf(code)).join('；');
+      }
+    }
+  }
+
+  const submitBlocked = submitting || missingForOffer || (needsFacts && (factsLoading || factsBlockedMessage !== null));
 
   const handleSubmit = async () => {
-    if (submitting || missingForOffer) return;
+    if (submitBlocked) return;
     const confirmationText = confirmText.trim();
-    if (!confirmationText) {
+    if (needsConfirmationInput(kind) && !confirmationText) {
       setErrorText('请先填写确认原话后再提交。');
       return;
     }
@@ -148,52 +267,86 @@ export function CandidateActionModal({ kind, vm, onClose, onSuccess }: Candidate
         });
         onSuccess({ message: '已完成跨岗调剂，原岗位档案完整保留。', actionId: res.action_id });
       } else if (kind === 'screening') {
-        const res = await postScreeningDecide({
+        if (!factsRes || factsRes.probe !== 'READY' || !factsRes.facts) {
+          setErrorText('还没有初筛评估，先让 Agent 跑一次初筛');
+          setSubmitting(false);
+          return;
+        }
+        const actCheck = requireAvailableAction(vm, 'screening_decide', '记录初筛结论');
+        if (!actCheck.ok) { setErrorText(actCheck.message); setSubmitting(false); return; }
+        const built = buildScreeningDecisionBody({
+          facts: factsRes.facts,
           applicationId: vm.applicationId,
           result: screenResult,
           reason: inputText.trim() || '依据岗位标准完成初筛评估',
-          confirmationText,
-          expectedRecordVersion: vm.recordVersion,
         });
-        onSuccess({ message: '已记录初筛结论并同步落库。', actionId: res.action_id });
+        if (!built.ok) { setErrorText(built.reasonText); setSubmitting(false); return; }
+        const outcome = await postActionSeam(actCheck.action, built.body, activeSessionId);
+        if (!outcome.ok) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
+        onSuccess({ message: '已记录初筛结论并同步落库。', actionId: extractOutcomeActionId(outcome) });
       } else if (kind === 'decision') {
-        const res = await postDecisionRecord({
+        if (!factsRes || factsRes.probe !== 'READY' || !factsRes.facts) {
+          setErrorText('决策汇总还没有生成，暂时不能提交正式决策');
+          setSubmitting(false);
+          return;
+        }
+        const built = buildDecisionRecordBody({
+          facts: factsRes.facts,
           applicationId: vm.applicationId,
+          scope: decisionScope,
           result: decisionResult,
           reason: inputText.trim() || '综合各轮评估完成正式决策',
-          confirmationText,
-          expectedRecordVersion: vm.recordVersion,
         });
-        onSuccess({ message: '已记录终审正式决策并同步落库。', actionId: res.action_id });
+        if (!built.ok) { setErrorText(built.reasonText); setSubmitting(false); return; }
+        const decisionAction = vm.actions.decision_record;
+        if (decisionAction && !decisionAction.available) {
+          setErrorText(decisionAction.reasonText || decisionAction.pendingText || '当前阶段暂不可提交正式决策');
+          setSubmitting(false);
+          return;
+        }
+        const outcome =
+          decisionAction && decisionAction.available && decisionAction.seam !== ''
+            ? await postActionSeam(decisionAction, built.body, activeSessionId)
+            : await postDecisionRecordFacade(built.body, activeSessionId);
+        if (!outcome.ok) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
+        onSuccess({ message: '已记录终审正式决策并同步落库。', actionId: extractOutcomeActionId(outcome) });
       } else if (kind === 'stage_advance') {
-        const res = await postStageAdvance({
-          applicationId: vm.applicationId,
-          targetStageCode,
-          reason: inputText.trim() || undefined,
-          confirmationText,
-          expectedRecordVersion: vm.recordVersion,
-        });
-        onSuccess({ message: '已推进候选人阶段并记录确认原话。', actionId: res.action_id });
+        const actCheck = requireAvailableAction(vm, 'stage_advance', '推进阶段');
+        if (!actCheck.ok) { setErrorText(actCheck.message); setSubmitting(false); return; }
+        const built = buildStageAdvanceBody({ applicationId: vm.applicationId });
+        if (!built.ok) { setErrorText(built.reasonText); setSubmitting(false); return; }
+        const outcome = await postActionSeam(actCheck.action, built.body, activeSessionId);
+        if (!outcome.ok) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
+        onSuccess({ message: '已推进候选人阶段。', actionId: extractOutcomeActionId(outcome) });
       } else if (kind === 'transcript_import') {
-        if (!inputText.trim()) { setErrorText('请先输入转写文本或飞书妙记链接。'); setSubmitting(false); return; }
-        const res = await postTranscriptImport({
-          applicationId: vm.applicationId,
-          interviewId: latestRound?.interviewId,
-          sourceUrlOrText: inputText.trim(),
-          confirmationText,
+        if (!inputText.trim()) { setErrorText('请先输入转写文本或飞书妙记内容。'); setSubmitting(false); return; }
+        const actCheck = requireAvailableAction(vm, 'transcript_import', '导入转写');
+        if (!actCheck.ok) { setErrorText(actCheck.message); setSubmitting(false); return; }
+        const built = buildTranscriptImportBody({
+          interviewId: latestRound?.interviewId || '',
+          content: inputText.trim(),
+          sourceKind: transcriptSourceKind,
+          exportedFileName: transcriptSourceKind === 'PLATFORM_EXPORT' ? exportedFileName.trim() : undefined,
         });
-        onSuccess({ message: '已导入面试转写记录。', actionId: res.action_id });
+        if (!built.ok) { setErrorText(built.reasonText); setSubmitting(false); return; }
+        const outcome = await postActionSeam(actCheck.action, built.body, activeSessionId);
+        if (!outcome.ok) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
+        onSuccess({ message: '已导入面试转写记录。', actionId: extractOutcomeActionId(outcome) });
       } else if (kind === 'no_show') {
-        const res = await postInterviewSchedule({
-          applicationId: vm.applicationId,
+        const actCheck = requireAvailableAction(vm, 'interview_schedule', '标记未出席');
+        if (!actCheck.ok) { setErrorText(actCheck.message); setSubmitting(false); return; }
+        const body: Record<string, unknown> = {
           intent: 'NO_SHOW',
-          interviewId: latestRound?.interviewId,
-          noShowSubject,
+          application_id: vm.applicationId,
+          idempotency_key: idempotencyKey,
+          subject: noShowSubject,
           reason: inputText.trim() || '未按约定时间出席面试',
-          confirmationText,
-          expectedRecordVersion: vm.recordVersion,
-        });
-        onSuccess({ message: '已标记本场面试为「未出席」并留痕。', actionId: res.action_id });
+          expected_record_version: vm.recordVersion,
+        };
+        if (latestRound?.interviewId) body.interview_id = latestRound.interviewId;
+        const outcome = await postActionSeam(actCheck.action, body, activeSessionId);
+        if (!outcome.ok) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
+        onSuccess({ message: '已标记本场面试为「未出席」并留痕。', actionId: extractOutcomeActionId(outcome) });
       } else if (kind === 'email') {
         const res = await postEmailSend({
           applicationId: vm.applicationId,
@@ -206,22 +359,47 @@ export function CandidateActionModal({ kind, vm, onClose, onSuccess }: Candidate
         onSuccess({ message: '已发送邮件并记录外发留痕。', actionId: res.action_id });
       } else if (kind === 'schedule') {
         if (!scheduleTime.trim()) { setErrorText('请选择一个空闲时段，或手动填写面试时间。'); setSubmitting(false); return; }
+        const actCheck = requireAvailableAction(vm, 'interview_schedule', '安排面试');
+        if (!actCheck.ok) { setErrorText(actCheck.message); setSubmitting(false); return; }
         const isReplace = replaceInterviewer.trim() !== '';
         const ids = selectedInterviewers.split(/[,，\s]+/).map((x) => x.trim()).filter(Boolean);
-        const res = await postInterviewSchedule({
-          applicationId: vm.applicationId,
-          intent: scheduleIntent,
-          interviewId: scheduleIntent === 'RESCHEDULE' ? latestRound?.interviewId : undefined,
-          interviewerActorIds: ids,
-          replaceInterviewer: isReplace ? replaceInterviewer.trim() : undefined,
-          startAt: scheduleTime.trim(),
-          endAt: scheduleEndTime.trim() || undefined,
-          confirmationText,
-          expectedRecordVersion: vm.recordVersion,
-        });
+        const startIso = normalizeStartAtIso(scheduleTime);
+
+        let bodyToSend: Readonly<Record<string, unknown>>;
+        if (scheduleIntent === 'CREATE') {
+          const built = buildInterviewScheduleBody({
+            applicationId: vm.applicationId,
+            roundNo: vm.rounds.length + 1,
+            scheduledStartAt: startIso,
+            durationMinutes: 45,
+            interviewers: ids.map((actorId) => ({ actorId })),
+            idempotencyKey,
+          });
+          if (!built.ok) { setErrorText(built.reasonText); setSubmitting(false); return; }
+          bodyToSend = built.body;
+        } else {
+          const rescheduleBody: Record<string, unknown> = {
+            intent: isReplace ? 'REPLACE' : 'RESCHEDULE',
+            application_id: vm.applicationId,
+            scheduled_start_at: startIso,
+            duration_minutes: 45,
+            idempotency_key: idempotencyKey,
+            expected_record_version: vm.recordVersion,
+          };
+          if (latestRound?.interviewId) rescheduleBody.interview_id = latestRound.interviewId;
+          if (isReplace) {
+            rescheduleBody.interviewers = [{ actor_id: replaceInterviewer.trim() }];
+          } else if (ids.length > 0) {
+            rescheduleBody.interviewers = ids.map((actorId) => ({ actor_id: actorId }));
+          }
+          bodyToSend = rescheduleBody;
+        }
+
+        const outcome = await postActionSeam(actCheck.action, bodyToSend, activeSessionId);
+        if (!outcome.ok) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
         onSuccess({
           message: isReplace ? '已完成改期并更换面试官。' : '已锁定面试时间并同步排期。',
-          actionId: res.action_id,
+          actionId: extractOutcomeActionId(outcome),
           rebindPrompt:
             isReplace && latestRound?.minuteToken && latestRound.interviewId
               ? {
@@ -234,7 +412,7 @@ export function CandidateActionModal({ kind, vm, onClose, onSuccess }: Candidate
         });
       }
     } catch (err) {
-      setErrorText((err as CanvasActionError)?.userMessage || '这项操作暂时未能完成，请稍后重试。');
+      setErrorText((err as CanvasActionError)?.userMessage || (err instanceof Error ? err.message : '这项操作暂时未能完成，请稍后重试。'));
     } finally {
       setSubmitting(false);
     }
@@ -247,7 +425,7 @@ export function CandidateActionModal({ kind, vm, onClose, onSuccess }: Candidate
     schedule: `面试排期与改期换人 · ${vm.candidateName}`,
     screening: `记录初筛结论 · ${vm.candidateName}`,
     decision: `记录终审正式决策 · ${vm.candidateName}`,
-    stage_advance: `推进阶段或带原话跳轮 · ${vm.candidateName}`,
+    stage_advance: `推进阶段 · ${vm.candidateName}`,
     transcript_import: `导入面试转写 · ${vm.candidateName}`,
     no_show: `标记面试未出席 · ${vm.candidateName}`,
     email: `发送邮件 · ${vm.candidateName}`,
@@ -264,6 +442,20 @@ export function CandidateActionModal({ kind, vm, onClose, onSuccess }: Candidate
     >
       <div className="ros-modal">
         <div style={{ fontSize: '17px', fontWeight: 650 }}>{titleMap[kind]}</div>
+
+        {needsFacts && factsLoading ? (
+          <div className="ros-sec-meta" data-testid="decision-facts-loading">正在核对服务端决策依据…</div>
+        ) : null}
+
+        {needsFacts && !factsLoading && factsBlockedMessage ? (
+          <div
+            className="ros-risk-note"
+            data-testid="decision-facts-blocked"
+            style={{ borderLeftColor: 'var(--red)', color: 'var(--red)' }}
+          >
+            {factsBlockedMessage}
+          </div>
+        ) : null}
 
         {kind === 'schedule' ? (
           <>
@@ -295,7 +487,7 @@ export function CandidateActionModal({ kind, vm, onClose, onSuccess }: Candidate
                         key={slot.startIso}
                         type="button"
                         className={`ros-slot-pill ${scheduleTime === slot.startIso ? 'active' : ''}`}
-                        onClick={() => { setScheduleTime(slot.startIso); setScheduleEndTime(slot.endIso); }}
+                        onClick={() => { setScheduleTime(slot.startIso); }}
                       >
                         {slot.label}
                       </button>
@@ -308,7 +500,7 @@ export function CandidateActionModal({ kind, vm, onClose, onSuccess }: Candidate
             ) : null}
             <label className="ros-m-field">
               <span>面试开始时间</span>
-              <input data-testid="schedule-time-input" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} placeholder="点选上方时段自动填入，或手动输入" />
+              <input data-testid="schedule-time-input" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} placeholder="点选上方时段自动填入，或输入 ISO / 本地时间" />
             </label>
             <label className="ros-m-field">
               <span>更换新面试官（选填）</span>
@@ -318,9 +510,9 @@ export function CandidateActionModal({ kind, vm, onClose, onSuccess }: Candidate
         ) : kind === 'screening' ? (
           <>
             <div className="ros-slot-grid">
-              {(['ADVANCE', 'HOLD', 'REJECT'] as const).map((opt) => (
+              {(['ADVANCE', 'HOLD', 'REJECT', 'WITHDRAW'] as const).map((opt) => (
                 <button key={opt} type="button" className={`ros-slot-pill ${screenResult === opt ? 'active' : ''}`} onClick={() => setScreenResult(opt)}>
-                  {opt === 'ADVANCE' ? '通过初筛' : opt === 'HOLD' ? '待定观察' : '初筛不通过'}
+                  {opt === 'ADVANCE' ? '通过' : opt === 'HOLD' ? '待定' : opt === 'REJECT' ? '不通过' : '撤回'}
                 </button>
               ))}
             </div>
@@ -336,38 +528,43 @@ export function CandidateActionModal({ kind, vm, onClose, onSuccess }: Candidate
                 还缺 {vm.missingScorecardNames.join('、')} 的面评，暂时不能提交录用决策。
               </div>
             ) : null}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" className={`ros-slot-pill ${decisionScope === 'FINAL' ? 'active' : ''}`} onClick={() => setDecisionScope('FINAL')}>终审决策</button>
+              <button type="button" className={`ros-slot-pill ${decisionScope === 'STAGE' ? 'active' : ''}`} onClick={() => setDecisionScope('STAGE')}>阶段决策</button>
+            </div>
             <div className="ros-slot-grid">
-              {(['OFFER', 'HOLD', 'REJECT'] as const).map((opt) => (
+              {(['ADVANCE', 'HOLD', 'REJECT'] as const).map((opt) => (
                 <button key={opt} type="button" className={`ros-slot-pill ${decisionResult === opt ? 'active' : ''}`} onClick={() => setDecisionResult(opt)}>
-                  {opt === 'OFFER' ? '终审通过（发 Offer）' : opt === 'HOLD' ? '暂缓待定' : '终审不通过'}
+                  {opt === 'ADVANCE' ? '通过（推进 / 发 Offer）' : opt === 'HOLD' ? '待定' : '不通过'}
                 </button>
               ))}
             </div>
             <label className="ros-m-field">
-              <span>终审决策理由</span>
+              <span>正式决策理由</span>
               <textarea rows={3} value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="总结各轮评估后的正式决策理由…" />
             </label>
           </>
         ) : kind === 'stage_advance' ? (
+          <div className="ros-jd-box" style={{ padding: '12px 14px' }}>
+            目标阶段由服务端根据当前已完成事实自动推导并推进，前端不手工覆盖阶段码。
+          </div>
+        ) : kind === 'transcript_import' ? (
           <>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" className={`ros-slot-pill ${transcriptSourceKind === 'DEMO_SAMPLE' ? 'active' : ''}`} onClick={() => setTranscriptSourceKind('DEMO_SAMPLE')}>演示 / 文本粘贴</button>
+              <button type="button" className={`ros-slot-pill ${transcriptSourceKind === 'PLATFORM_EXPORT' ? 'active' : ''}`} onClick={() => setTranscriptSourceKind('PLATFORM_EXPORT')}>平台导出件</button>
+            </div>
+            {transcriptSourceKind === 'PLATFORM_EXPORT' ? (
+              <label className="ros-m-field">
+                <span>平台导出文件名</span>
+                <input value={exportedFileName} onChange={(e) => setExportedFileName(e.target.value)} placeholder="例如：interview-round1-export.txt" />
+              </label>
+            ) : null}
             <label className="ros-m-field">
-              <span>目标阶段</span>
-              <select value={targetStageCode} onChange={(e) => setTargetStageCode(e.target.value)} style={{ padding: '9px 11px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)' }}>
-                <option value="S8">面试安排</option>
-                <option value="S10">三面终审（支持带原话跳轮）</option>
-                <option value="S11">Offer 待确认</option>
-              </select>
-            </label>
-            <label className="ros-m-field">
-              <span>推进 / 跳轮说明</span>
-              <textarea rows={2} value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="如为跳轮豁免，请说明原因…" />
+              <span>转写正文内容</span>
+              <textarea rows={4} value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="粘贴面试转写正文…" />
             </label>
           </>
-        ) : kind === 'transcript_import' ? (
-          <label className="ros-m-field">
-            <span>转写内容或飞书妙记链接</span>
-            <textarea rows={4} value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="粘贴面试转写文本或飞书妙记链接…" />
-          </label>
         ) : kind === 'no_show' ? (
           <>
             <div className="ros-slot-grid">
@@ -409,10 +606,12 @@ export function CandidateActionModal({ kind, vm, onClose, onSuccess }: Candidate
           </label>
         )}
 
-        <label className="ros-m-field">
-          <span>确认原话（留痕必填）</span>
-          <input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="输入一句确认原话" />
-        </label>
+        {needsConfirmationInput(kind) ? (
+          <label className="ros-m-field">
+            <span>确认原话（留痕必填）</span>
+            <input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="输入一句确认原话" />
+          </label>
+        ) : null}
 
         {errorText ? (
           <div className="ros-risk-note" style={{ borderLeftColor: 'var(--red)', color: 'var(--red)' }}>{errorText}</div>
@@ -420,7 +619,7 @@ export function CandidateActionModal({ kind, vm, onClose, onSuccess }: Candidate
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button type="button" className="ros-btn" disabled={submitting} onClick={onClose}>取消</button>
-          <button type="button" className="ros-btn dark" disabled={submitting || missingForOffer} data-testid="canvas-modal-submit" onClick={() => void handleSubmit()}>
+          <button type="button" className="ros-btn dark" disabled={submitBlocked} data-testid="canvas-modal-submit" onClick={() => void handleSubmit()}>
             {submitting ? '处理中…' : '确认提交'}
           </button>
         </div>
