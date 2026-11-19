@@ -57,6 +57,8 @@ export interface InterviewerVM {
 export interface InterviewRoundVM {
   id: string;
   interviewId?: string;
+  /** 面试行的 record_version（乐观锁按行，不能拿申请版本顶）。 */
+  recordVersion: number;
   leadActorId?: string;
   minuteToken?: string;
   roundLabel: string;
@@ -555,6 +557,7 @@ export function normalizeApplicationDetail(raw: unknown): CandidateCanvasVM {
     return {
       id: shortId(iv.interview_id) || `r-${roundNo}`,
       interviewId: asStr(iv.interview_id) || undefined,
+      recordVersion: asNum(iv.record_version, 1),
       leadActorId: asStr(asObj(asArr(iv.interviewers)[0]).actor_id) || undefined,
       minuteToken,
       roundLabel: `第 ${roundNo} 轮面试`,

@@ -74,11 +74,11 @@ const DEFAULT_CONFIRM_MAP = (kind: CandidateModalKind, name: string): string => 
 };
 
 function needsConfirmationInput(kind: CandidateModalKind): boolean {
-  return kind === 'pin' || kind === 'handoff' || kind === 'transfer' || kind === 'email';
+  return kind === 'pin' || kind === 'handoff' || kind === 'transfer' || kind === 'email' || kind === 'no_show';
 }
 
 function formatOutcomeError(outcome: ActionOutcome): string {
-  const code = `${outcome.code} ${outcome.reasonCode}`.toUpperCase();
+  const code = `${outcome.error?.code ?? ''} ${outcome.error?.reasonCode ?? ''}`.toUpperCase();
   if (outcome.status === 409 && (code.includes('VERSION') || code.includes('CONFLICT') || code.includes('STALE') || code.includes('LOCK'))) {
     return '这条刚被别人改过，请刷新';
   }
@@ -88,7 +88,7 @@ function formatOutcomeError(outcome: ActionOutcome): string {
   if (code.includes('SCORECARD_MISSING')) {
     return '还有面试官尚未提交面评，暂时不能提交终审决策';
   }
-  return outcome.message || describeActionError(outcome.code, outcome.reasonCode) || '操作未能完成，请检查输入或稍后重试';
+  return outcome.error?.message || describeActionError(outcome.error?.code ?? '', outcome.error?.reasonCode ?? '') || '操作未能完成，请检查输入或稍后重试';
 }
 
 function normalizeStartAtIso(raw: string): string {
@@ -282,7 +282,7 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
         });
         if (!built.ok) { setErrorText(built.reasonText); setSubmitting(false); return; }
         const outcome = await postActionSeam(actCheck.action, built.body, activeSessionId);
-        if (!outcome.ok) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
+        if (!outcome.accepted) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
         onSuccess({ message: '已记录初筛结论并同步落库。', actionId: extractOutcomeActionId(outcome) });
       } else if (kind === 'decision') {
         if (!factsRes || factsRes.probe !== 'READY' || !factsRes.facts) {
@@ -308,7 +308,7 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
           decisionAction && decisionAction.available && decisionAction.seam !== ''
             ? await postActionSeam(decisionAction, built.body, activeSessionId)
             : await postDecisionRecordFacade(built.body, activeSessionId);
-        if (!outcome.ok) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
+        if (!outcome.accepted) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
         onSuccess({ message: '已记录终审正式决策并同步落库。', actionId: extractOutcomeActionId(outcome) });
       } else if (kind === 'stage_advance') {
         const actCheck = requireAvailableAction(vm, 'stage_advance', '推进阶段');
@@ -316,7 +316,7 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
         const built = buildStageAdvanceBody({ applicationId: vm.applicationId });
         if (!built.ok) { setErrorText(built.reasonText); setSubmitting(false); return; }
         const outcome = await postActionSeam(actCheck.action, built.body, activeSessionId);
-        if (!outcome.ok) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
+        if (!outcome.accepted) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
         onSuccess({ message: '已推进候选人阶段。', actionId: extractOutcomeActionId(outcome) });
       } else if (kind === 'transcript_import') {
         if (!inputText.trim()) { setErrorText('请先输入转写文本或飞书妙记内容。'); setSubmitting(false); return; }
@@ -330,22 +330,27 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
         });
         if (!built.ok) { setErrorText(built.reasonText); setSubmitting(false); return; }
         const outcome = await postActionSeam(actCheck.action, built.body, activeSessionId);
-        if (!outcome.ok) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
+        if (!outcome.accepted) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
         onSuccess({ message: '已导入面试转写记录。', actionId: extractOutcomeActionId(outcome) });
       } else if (kind === 'no_show') {
         const actCheck = requireAvailableAction(vm, 'interview_schedule', '标记未出席');
         if (!actCheck.ok) { setErrorText(actCheck.message); setSubmitting(false); return; }
+        if (confirmationText.trim() === '') {
+          setErrorText('标记未出席需要你写一句确认原话（留痕）。');
+          setSubmitting(false);
+          return;
+        }
         const body: Record<string, unknown> = {
-          intent: 'NO_SHOW',
-          application_id: vm.applicationId,
+          intent: 'MARK_NO_SHOW',
+          confirmation_text: confirmationText.trim(),
           idempotency_key: idempotencyKey,
           subject: noShowSubject,
           reason: inputText.trim() || '未按约定时间出席面试',
-          expected_record_version: vm.recordVersion,
+          expected_record_version: latestRound?.recordVersion ?? vm.recordVersion,
         };
         if (latestRound?.interviewId) body.interview_id = latestRound.interviewId;
         const outcome = await postActionSeam(actCheck.action, body, activeSessionId);
-        if (!outcome.ok) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
+        if (!outcome.accepted) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
         onSuccess({ message: '已标记本场面试为「未出席」并留痕。', actionId: extractOutcomeActionId(outcome) });
       } else if (kind === 'email') {
         const res = await postEmailSend({
@@ -377,26 +382,44 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
           });
           if (!built.ok) { setErrorText(built.reasonText); setSubmitting(false); return; }
           bodyToSend = built.body;
-        } else {
-          const rescheduleBody: Record<string, unknown> = {
-            intent: isReplace ? 'REPLACE' : 'RESCHEDULE',
-            application_id: vm.applicationId,
-            scheduled_start_at: startIso,
-            duration_minutes: 45,
+        } else if (isReplace) {
+          const fromActorId = latestRound?.leadActorId ?? '';
+          const toActorId = replaceInterviewer.trim();
+          if (fromActorId === '' || toActorId === '' || fromActorId === toActorId) {
+            setErrorText('换人需要明确「原面试官 → 新面试官」；当前轮次缺少原面试官信息，请刷新后重试。');
+            setSubmitting(false);
+            return;
+          }
+          bodyToSend = {
+            intent: 'REPLACE_INTERVIEWER',
             idempotency_key: idempotencyKey,
             expected_record_version: vm.recordVersion,
+            replace_interviewer: {
+              from_actor_id: fromActorId,
+              to_actor_id: toActorId,
+              reason: inputText.trim() || '更换面试官',
+            },
+            ...(latestRound?.interviewId ? { interview_id: latestRound.interviewId } : {}),
           };
-          if (latestRound?.interviewId) rescheduleBody.interview_id = latestRound.interviewId;
-          if (isReplace) {
-            rescheduleBody.interviewers = [{ actor_id: replaceInterviewer.trim() }];
-          } else if (ids.length > 0) {
-            rescheduleBody.interviewers = ids.map((actorId) => ({ actor_id: actorId }));
+        } else {
+          if (!latestRound?.interviewId) {
+            setErrorText('改期需要先有一场已排期面试；请改用「约面」。');
+            setSubmitting(false);
+            return;
           }
-          bodyToSend = rescheduleBody;
+          bodyToSend = {
+            intent: 'RESCHEDULE',
+            idempotency_key: idempotencyKey,
+            interview_id: latestRound.interviewId,
+            scheduled_start_at: startIso,
+            duration_minutes: 45,
+            expected_record_version: vm.recordVersion,
+            reason: inputText.trim() || '候选人/面试官时间调整，改期同一场',
+          };
         }
 
         const outcome = await postActionSeam(actCheck.action, bodyToSend, activeSessionId);
-        if (!outcome.ok) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
+        if (!outcome.accepted) { setErrorText(formatOutcomeError(outcome)); setSubmitting(false); return; }
         onSuccess({
           message: isReplace ? '已完成改期并更换面试官。' : '已锁定面试时间并同步排期。',
           actionId: extractOutcomeActionId(outcome),
@@ -460,7 +483,7 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
         {kind === 'schedule' ? (
           <>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button type="button" className={`ros-slot-pill ${scheduleIntent === 'CREATE' ? 'active' : ''}`} onClick={() => setScheduleIntent('CREATE')}>
+              <button type="button" data-testid="schedule-mode-create" className={`ros-slot-pill ${scheduleIntent === 'CREATE' ? 'active' : ''}`} onClick={() => setScheduleIntent('CREATE')}>
                 安排新场次
               </button>
               <button type="button" data-testid="schedule-mode-reschedule" className={`ros-slot-pill ${scheduleIntent === 'RESCHEDULE' ? 'active' : ''}`} onClick={() => setScheduleIntent('RESCHEDULE')}>
