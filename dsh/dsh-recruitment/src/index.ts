@@ -189,6 +189,7 @@ import { registerIntakeUploadHttp, type IntakeUploadHostContext } from './http/i
 import { registerActorHttp, type ActorHostContext } from './http/actor.ts'
 import { registerJobActionHttp, type JobActionHostContext } from './http/actions-job.ts'
 import { registerActionsHttp, type ActionHostContext } from './http/actions.ts'
+import { registerCompoundHttp, type CompoundHostContext } from './http/compound.ts'
 import { registerBatchUndoHttp, type BatchUndoHostContext } from './http/batch-undo.ts'
 import { registerScorecardDraftHttp, type ScorecardDraftHostContext } from './http/scorecard-draft.ts'
 import { registerMinuteRebindHttp, type MinuteRebindHostContext } from './http/minute-rebind.ts'
@@ -536,6 +537,14 @@ export function apply(
         },
       ),
       'recruitment: write action routes',
+    )
+    // 一句话多步：结构预检 + 事实预检 → 整卡拒绝零写入 → 一次确认后按顺序执行（失败即停、不回滚）。
+    child.effect(
+      () => registerCompoundHttp(
+        child as unknown as CompoundHostContext,
+        { database: database.resolved, databaseIssues: database.issues, identity: actorIdentity },
+      ),
+      'recruitment: compound confirmation route',
     )
     // 批量不通过 / 撤销（5 秒 Toast）：两条新 exact POST 路由，与写动作共享同一身份单例。
     child.effect(
