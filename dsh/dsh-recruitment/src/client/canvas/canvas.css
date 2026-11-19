@@ -875,3 +875,31 @@
   pointer-events: auto;
   transform: translateX(-50%) translateY(0);
 }
+
+/* v4 Free Slot Pills (verbatim design-tokens.md) */
+.ros-slot-grid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ros-slot-pill {
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--text);
+  transition: all .12s;
+}
+
+.ros-slot-pill:hover {
+  border-color: var(--muted);
+}
+
+.ros-slot-pill.active {
+  background: var(--iris-soft);
+  border-color: var(--iris);
+  color: var(--iris);
+  font-weight: 600;
+}

@@ -319,7 +319,9 @@ window.__ModuleLoader__.load({
 				const reqTotal = asNum(sc.required_total, 0);
 				const subTotal = asNum(sc.submitted, 0);
 				const overdue = asNum(sc.overdue, 0);
-				const trState = asStr(asObj(iv.transcript).state, "MISSING");
+				const tr = asObj(iv.transcript);
+				const trState = asStr(tr.state, "MISSING");
+				const minuteToken = asStr(tr.minute_token) || void 0;
 				const interviewers = asArr(iv.interviewers).map((p) => {
 					const ivp = asObj(p);
 					const hasSc = Boolean(ivp.scorecard);
@@ -335,6 +337,8 @@ window.__ModuleLoader__.load({
 				return {
 					id: shortId(iv.interview_id) || `r-${roundNo}`,
 					interviewId: asStr(iv.interview_id) || void 0,
+					leadActorId: asStr(asObj(asArr(iv.interviewers)[0]).actor_id) || void 0,
+					minuteToken,
 					roundLabel: `第 ${roundNo} 轮面试`,
 					statusText: stInfo.text,
 					statusTone: stInfo.tone,
@@ -836,6 +840,140 @@ window.__ModuleLoader__.load({
 				status: "RUNNING"
 			};
 		}
+		function formatLocalSlotLabel(startIso, endIso) {
+			const s = new Date(startIso);
+			const e = new Date(endIso);
+			if (Number.isNaN(s.getTime())) return startIso;
+			const weekdays = [
+				"周日",
+				"周一",
+				"周二",
+				"周三",
+				"周四",
+				"周五",
+				"周六"
+			];
+			const mm = String(s.getMonth() + 1).padStart(2, "0");
+			const dd = String(s.getDate()).padStart(2, "0");
+			const sh = String(s.getHours()).padStart(2, "0");
+			const sm = String(s.getMinutes()).padStart(2, "0");
+			const eh = Number.isNaN(e.getTime()) ? "" : String(e.getHours()).padStart(2, "0");
+			const em = Number.isNaN(e.getTime()) ? "" : String(e.getMinutes()).padStart(2, "0");
+			const range = eh ? `${sh}:${sm}–${eh}:${em}` : `${sh}:${sm}`;
+			return `${mm}-${dd} ${weekdays[s.getDay()]} ${range}`;
+		}
+		function mapUnsatisfiedReason(rawReason) {
+			const code = rawReason.toUpperCase();
+			if (code.includes("NO_CALENDAR_BINDING")) return "这位面试官还没有绑定飞书日历";
+			if (code.includes("AUTH")) return "这位面试官的飞书日历授权已过期，需要重新连接";
+			return "这位面试官的飞书日历暂时无法读取";
+		}
+		/**
+		* T7-1: Query real Feishu free slots before scheduling/rescheduling/adding a round.
+		* GET /recruitment/api/action/interview/free-slots?application_id=<id>&interviewer_actor_ids=<id,id>&days=5&duration_minutes=45
+		* NEVER mistakes calendar read failure for "no free time".
+		*/
+		async function fetchInterviewFreeSlots(params) {
+			const qs = new URLSearchParams();
+			qs.set("application_id", params.applicationId);
+			if (params.interviewerActorIds && params.interviewerActorIds.length > 0) qs.set("interviewer_actor_ids", params.interviewerActorIds.join(","));
+			qs.set("days", String(params.days ?? 5));
+			qs.set("duration_minutes", String(params.durationMinutes ?? 45));
+			try {
+				const res = await fetch(`/recruitment/api/action/interview/free-slots?${qs.toString()}`, {
+					method: "GET",
+					credentials: "same-origin",
+					headers: {
+						"x-recruitment-request": "1",
+						Accept: "application/json"
+					}
+				});
+				if (!res.ok) return {
+					slots: [],
+					unsatisfiedReasons: [],
+					calendarUnavailable: true,
+					connectionLabel: "NOT_CONNECTED",
+					unavailableBanner: "日历暂时读不到，可以手动填时间"
+				};
+				const data = await res.json().catch(() => ({}));
+				const labels = data.labels && typeof data.labels === "object" ? data.labels : {};
+				const connection = typeof labels.connection === "string" ? labels.connection : "CONNECTED";
+				const calendarUnavailable = connection !== "CONNECTED";
+				const slots = (Array.isArray(data.slots) ? data.slots : []).slice(0, 3).map((item) => {
+					const s = item && typeof item === "object" ? item : {};
+					const startIso = typeof s.start === "string" ? s.start : "";
+					const endIso = typeof s.end === "string" ? s.end : "";
+					return {
+						startIso,
+						endIso,
+						label: formatLocalSlotLabel(startIso, endIso),
+						busyConflicts: typeof s.busy_conflicts === "number" ? s.busy_conflicts : 0
+					};
+				}).filter((x) => x.startIso !== "");
+				const rawUnsat = Array.isArray(data.unsatisfied) ? data.unsatisfied : [];
+				return {
+					slots,
+					unsatisfiedReasons: Array.from(new Set(rawUnsat.map((item) => {
+						const u = item && typeof item === "object" ? item : {};
+						return mapUnsatisfiedReason(typeof u.reason === "string" ? u.reason : "");
+					}))),
+					calendarUnavailable,
+					connectionLabel: connection,
+					unavailableBanner: calendarUnavailable ? "日历暂时读不到，可以手动填时间" : null
+				};
+			} catch {
+				return {
+					slots: [],
+					unsatisfiedReasons: [],
+					calendarUnavailable: true,
+					connectionLabel: "NOT_CONNECTED",
+					unavailableBanner: "日历没连上，先重连再试；也可以直接手动填时间"
+				};
+			}
+		}
+		async function postInterviewSchedule(payload) {
+			const body = {
+				application_id: payload.applicationId,
+				mode: payload.mode,
+				start_at: payload.startAt,
+				confirmation_text: payload.confirmationText
+			};
+			if (payload.endAt) body.end_at = payload.endAt;
+			if (payload.roundLabel) body.round_label = payload.roundLabel;
+			if (payload.replaceInterviewer) body.replace_interviewer = payload.replaceInterviewer;
+			return postJsonAction("/recruitment/api/action/interview/schedule", body);
+		}
+		/**
+		* T7-2: Rebind Feishu Minutes recording ownership after replacing an interviewer.
+		* POST /recruitment/api/action/interview/rebind-minute
+		* NEVER called without explicit human click + confirmation_text.
+		* On failure, explicitly reassures that scorecards are NOT lost while ownership stays old.
+		*/
+		async function postRebindMinute(payload) {
+			const res = await fetch("/recruitment/api/action/interview/rebind-minute", {
+				method: "POST",
+				credentials: "same-origin",
+				headers: {
+					"Content-Type": "application/json",
+					"x-recruitment-request": "1",
+					Accept: "application/json"
+				},
+				body: JSON.stringify({
+					interview_id: payload.interviewId,
+					from_actor_id: payload.fromActorId,
+					to_actor_id: payload.toActorId,
+					minute_token: payload.minuteToken,
+					confirmation_text: payload.confirmationText,
+					dry_run: Boolean(payload.dryRun)
+				})
+			});
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) throw makeError("ACTION_FAILED", `${typeof data.error_summary === "string" && data.error_summary.trim() ? data.error_summary.trim() : "飞书妙记权限校验未通过或连接中断"}。面评不会因此丢，但录音归属仍是旧的。`);
+			return {
+				ok: true,
+				message: "已把录音归属改到新面试官"
+			};
+		}
 		// src/client/canvas/CandidatePage.tsx
 		function CandidatePage({ applicationId, onBack, onOpenJob, onActionCompleted, refreshNonce = 0, fetcher }) {
 			const [vm, setVm] = (0, react.useState)(null);
@@ -851,6 +989,14 @@ window.__ModuleLoader__.load({
 			const [confirmText, setConfirmText] = (0, react.useState)("");
 			const [submitting, setSubmitting] = (0, react.useState)(false);
 			const [actionFeedback, setActionFeedback] = (0, react.useState)(null);
+			const [freeSlotsLoading, setFreeSlotsLoading] = (0, react.useState)(false);
+			const [freeSlots, setFreeSlots] = (0, react.useState)(null);
+			const [scheduleTime, setScheduleTime] = (0, react.useState)("");
+			const [scheduleEndTime, setScheduleEndTime] = (0, react.useState)("");
+			const [replaceInterviewer, setReplaceInterviewer] = (0, react.useState)("");
+			const [pendingRebind, setPendingRebind] = (0, react.useState)(null);
+			const [rebindConfirmText, setRebindConfirmText] = (0, react.useState)("");
+			const [rebindSubmitting, setRebindSubmitting] = (0, react.useState)(false);
 			const load = (0, react.useCallback)(async (cancelledRef) => {
 				setLoading(true);
 				setError(null);
@@ -878,10 +1024,24 @@ window.__ModuleLoader__.load({
 				};
 			}, [load, refreshNonce]);
 			const openActionModal = (kind) => {
+				if (kind === "schedule" && vm) {
+					setFreeSlots(null);
+					setScheduleTime("");
+					setScheduleEndTime("");
+					setReplaceInterviewer("");
+					setFreeSlotsLoading(true);
+					const actorIds = vm.rounds.map((r) => r.leadActorId).filter((x) => Boolean(x));
+					fetchInterviewFreeSlots({
+						applicationId: vm.applicationId,
+						interviewerActorIds: actorIds,
+						days: 5,
+						durationMinutes: 45
+					}).then((res) => setFreeSlots(res)).finally(() => setFreeSlotsLoading(false));
+				}
 				setActionFeedback(null);
 				setInputText("");
 				setTargetJobId("");
-				setConfirmText(kind === "pin" ? `确认置顶 ${vm?.candidateName || "候选人"} 的关键约束` : kind === "handoff" ? `确认为 ${vm?.candidateName || "候选人"} 留下下一轮面试交接追问` : `确认将 ${vm?.candidateName || "候选人"} 跨岗调剂`);
+				setConfirmText(kind === "pin" ? `确认置顶 ${vm?.candidateName || "候选人"} 的关键约束` : kind === "handoff" ? `确认为 ${vm?.candidateName || "候选人"} 留下下一轮面试交接追问` : kind === "schedule" ? `确认为 ${vm?.candidateName || "候选人"} 安排/改期面试` : `确认将 ${vm?.candidateName || "候选人"} 跨岗调剂`);
 				setModalKind(kind);
 			};
 			const closeActionModal = () => {
@@ -909,6 +1069,13 @@ window.__ModuleLoader__.load({
 					setActionFeedback({
 						tone: "red",
 						text: "请填写目标岗位编号。"
+					});
+					return;
+				}
+				if (modalKind === "schedule" && !scheduleTime.trim()) {
+					setActionFeedback({
+						tone: "red",
+						text: "请选择一个空闲时段，或手动填写面试时间。"
 					});
 					return;
 				}
@@ -972,6 +1139,37 @@ window.__ModuleLoader__.load({
 							message: msg,
 							actionId: trRes.action_id
 						});
+					} else if (modalKind === "schedule") {
+						const latestRound = vm.rounds[vm.rounds.length - 1];
+						const isReplace = replaceInterviewer.trim() !== "";
+						const scRes = await postInterviewSchedule({
+							applicationId: vm.applicationId,
+							mode: isReplace ? "reschedule" : "schedule",
+							replaceInterviewer: isReplace ? replaceInterviewer.trim() : void 0,
+							startAt: scheduleTime.trim(),
+							endAt: scheduleEndTime.trim() || void 0,
+							confirmationText
+						});
+						setModalKind(null);
+						await load();
+						const msg = isReplace ? "已完成改期并更换面试官。" : "已锁定面试时间并同步排期。";
+						setActionFeedback({
+							tone: "green",
+							text: msg
+						});
+						onActionCompleted?.({
+							message: msg,
+							actionId: scRes.action_id
+						});
+						if (isReplace && latestRound?.minuteToken && latestRound.interviewId) {
+							setPendingRebind({
+								interviewId: latestRound.interviewId,
+								fromActorId: latestRound.leadActorId || "",
+								toActorId: replaceInterviewer.trim(),
+								minuteToken: latestRound.minuteToken
+							});
+							setRebindConfirmText(`确认把 ${vm.candidateName} 这场面试的录音归属改到新面试官`);
+						}
 					}
 				} catch (err) {
 					const msg = err?.userMessage || "这项操作暂时未能完成，请稍后重试。";
@@ -981,6 +1179,42 @@ window.__ModuleLoader__.load({
 					});
 				} finally {
 					setSubmitting(false);
+				}
+			};
+			const handleRebindMinute = async () => {
+				if (!pendingRebind || rebindSubmitting) return;
+				const confirmationText = rebindConfirmText.trim();
+				if (!confirmationText) {
+					setActionFeedback({
+						tone: "red",
+						text: "请先填写一句确认原话再修改录音归属。"
+					});
+					return;
+				}
+				setRebindSubmitting(true);
+				setActionFeedback(null);
+				try {
+					const res = await postRebindMinute({
+						interviewId: pendingRebind.interviewId,
+						fromActorId: pendingRebind.fromActorId,
+						toActorId: pendingRebind.toActorId,
+						minuteToken: pendingRebind.minuteToken,
+						confirmationText,
+						dryRun: false
+					});
+					setPendingRebind(null);
+					setActionFeedback({
+						tone: "green",
+						text: res.message
+					});
+				} catch (err) {
+					const msg = err?.userMessage || "录音归属修改未能完成。面评不会因此丢，但录音归属仍是旧的。";
+					setActionFeedback({
+						tone: "red",
+						text: msg
+					});
+				} finally {
+					setRebindSubmitting(false);
 				}
 			};
 			if (loading) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("header", {
@@ -1077,6 +1311,53 @@ window.__ModuleLoader__.load({
 									background: actionFeedback.tone === "green" ? "var(--green-soft)" : "var(--red-soft)"
 								},
 								children: actionFeedback.text
+							}) : null,
+							pendingRebind ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "ros-risk-note",
+								"data-testid": "rebind-minute-prompt",
+								style: {
+									display: "flex",
+									flexDirection: "column",
+									gap: 10
+								},
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										style: {
+											fontWeight: 600,
+											color: "var(--ink)"
+										},
+										children: "这把录音的归属还挂在旧面试官名下，要改到新人吗？"
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+										className: "ros-m-field",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "确认原话（外部写入必填）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											value: rebindConfirmText,
+											onChange: (e) => setRebindConfirmText(e.target.value),
+											placeholder: "输入确认原话"
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											gap: 10,
+											justifyContent: "flex-end"
+										},
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "ros-btn",
+											disabled: rebindSubmitting,
+											onClick: () => setPendingRebind(null),
+											children: "暂不修改"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "ros-btn dark",
+											disabled: rebindSubmitting,
+											"data-testid": "rebind-minute-confirm",
+											onClick: () => void handleRebindMinute(),
+											children: rebindSubmitting ? "处理中…" : "确认改到新人"
+										})]
+									})
+								]
 							}) : null,
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "ros-doc-head",
@@ -1416,6 +1697,13 @@ window.__ModuleLoader__.load({
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 											type: "button",
 											className: "ros-text-link",
+											"data-testid": "canvas-action-schedule",
+											onClick: () => openActionModal("schedule"),
+											children: "约面 / 改期换人"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "ros-text-link",
 											"data-testid": "canvas-action-transfer",
 											onClick: () => openActionModal("transfer"),
 											children: "跨岗调剂"
@@ -1444,9 +1732,64 @@ window.__ModuleLoader__.load({
 									fontSize: "17px",
 									fontWeight: 650
 								},
-								children: modalKind === "pin" ? `为 ${vm.candidateName} 置顶约束` : modalKind === "handoff" ? `为 ${vm.candidateName} 留下一轮交接追问` : `跨岗调剂 · ${vm.candidateName}`
+								children: modalKind === "pin" ? `为 ${vm.candidateName} 置顶约束` : modalKind === "handoff" ? `为 ${vm.candidateName} 留下一轮交接追问` : modalKind === "schedule" ? `面试排期与改期换人 · ${vm.candidateName}` : `跨岗调剂 · ${vm.candidateName}`
 							}),
-							modalKind === "transfer" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							modalKind === "schedule" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+								freeSlotsLoading ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-sec-meta",
+									children: "正在读取飞书日历共同空闲时段…"
+								}) : freeSlots ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+									freeSlots.unavailableBanner ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: "ros-risk-note",
+										"data-testid": "calendar-unavailable-banner",
+										children: freeSlots.unavailableBanner
+									}) : null,
+									freeSlots.unsatisfiedReasons.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: "ros-risk-note",
+										"data-testid": "calendar-unsatisfied-banner",
+										children: freeSlots.unsatisfiedReasons.join("；")
+									}) : null,
+									freeSlots.slots.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: "ros-sec-meta",
+										style: { marginBottom: 7 },
+										children: "飞书日历共同空闲时段（点击填入下方时间）"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: "ros-slot-grid",
+										"data-testid": "free-slots-grid",
+										children: freeSlots.slots.map((slot) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: `ros-slot-pill ${scheduleTime === slot.startIso ? "active" : ""}`,
+											onClick: () => {
+												setScheduleTime(slot.startIso);
+												setScheduleEndTime(slot.endIso);
+											},
+											children: slot.label
+										}, slot.startIso))
+									})] }) : !freeSlots.calendarUnavailable && freeSlots.unsatisfiedReasons.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: "ros-sec-meta",
+										"data-testid": "free-slots-empty",
+										children: "未来 5 天没有共同空闲，请直接在下方手动填写时间。"
+									}) : null
+								] }) : null,
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+									className: "ros-m-field",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "面试开始时间（点选上方时段自动填入，也可手动填写）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										"data-testid": "schedule-time-input",
+										value: scheduleTime,
+										onChange: (e) => setScheduleTime(e.target.value),
+										placeholder: "例如：2026-11-20T15:00:00+08:00 或 明天 15:00"
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+									className: "ros-m-field",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "更换新面试官（留空则仅排期/改期，填写则换人）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										"data-testid": "replace-interviewer-input",
+										value: replaceInterviewer,
+										onChange: (e) => setReplaceInterviewer(e.target.value),
+										placeholder: "选填：输入新面试官姓名或编号"
+									})]
+								})
+							] }) : modalKind === "transfer" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 								className: "ros-m-field",
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "目标岗位 ID" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 									value: targetJobId,
@@ -2233,7 +2576,7 @@ window.__ModuleLoader__.load({
 			] });
 		}
 		// recruitment-css-virtual:D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\src\client\canvas\canvas.css?css
-		const css = "/*\n * Recruitment OS v4 · Right-Hand Canvas Styles\n * Design tokens copied verbatim from design/v4/contracts/design-tokens.md.\n * Scoped under .ros-canvas to avoid colliding with DSH host styles.\n */\n\n.ros-canvas {\n  --rail: #F3F2EE;\n  --paper: #F9F8F5;\n  --surface: #FFFFFF;\n  --subtle: #F3F2EE;\n  --hover: #EAE8E2;\n  --ink: #191918;\n  --text: #42423F;\n  --muted: #787772;\n  --soft: #A6A59E;\n  --line: rgba(25, 25, 24, .08);\n  --line-soft: rgba(25, 25, 24, .05);\n  --iris: #5B5BD6;\n  --iris-soft: rgba(91, 91, 214, .09);\n  --green: #18794E;\n  --green-soft: rgba(24, 121, 78, .09);\n  --amber: #AD5700;\n  --amber-soft: rgba(173, 87, 0, .09);\n  --red: #CD2B31;\n  --red-soft: rgba(205, 43, 49, .08);\n  --shadow-card: 0 1px 2px rgba(25, 25, 24, .03), 0 10px 30px -14px rgba(25, 25, 24, .07);\n  --shadow-modal: 0 28px 72px -18px rgba(25, 25, 24, .24);\n\n  display: flex;\n  flex-direction: column;\n  height: 100%;\n  min-height: 0;\n  overflow: hidden;\n  background: var(--surface);\n  color: var(--ink);\n  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif;\n  font-size: 14px;\n  line-height: 1.55;\n  -webkit-font-smoothing: antialiased;\n}\n\n[data-theme=\"dark\"] .ros-canvas,\n.ros-canvas[data-theme=\"dark\"] {\n  --rail: #10100F;\n  --paper: #141413;\n  --surface: #1A1A19;\n  --subtle: #232321;\n  --hover: #2B2B28;\n  --ink: #F3F2EE;\n  --text: #D5D4CE;\n  --muted: #9A9992;\n  --soft: #6F6E68;\n  --line: rgba(243, 242, 238, .09);\n  --line-soft: rgba(243, 242, 238, .055);\n  --iris: #8484F5;\n  --iris-soft: rgba(132, 132, 245, .15);\n  --green: #3DD68C;\n  --green-soft: rgba(61, 214, 140, .13);\n  --amber: #F5A524;\n  --amber-soft: rgba(245, 165, 36, .14);\n  --red: #F87171;\n  --red-soft: rgba(248, 113, 113, .14);\n  --shadow-card: 0 2px 10px rgba(0, 0, 0, .35);\n  --shadow-modal: 0 28px 72px -18px rgba(0, 0, 0, .65);\n}\n\n.ros-canvas *,\n.ros-canvas *::before,\n.ros-canvas *::after {\n  box-sizing: border-box;\n}\n\n.ros-canvas button {\n  font: inherit;\n  color: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n}\n\n.ros-canvas .num {\n  font-variant-numeric: tabular-nums;\n}\n\n@keyframes rosFadeIn {\n  from { opacity: 0; transform: translateY(4px); }\n  to { opacity: 1; transform: none; }\n}\n\n@keyframes rosOrbit {\n  to { transform: rotate(360deg); }\n}\n\n@keyframes rosPulseDot {\n  0%, 100% { opacity: .3; transform: scale(.85); }\n  50% { opacity: 1; transform: scale(1.1); }\n}\n\n/* Contextual Top Bar (56px visual horizon) */\n.ros-canvas-head {\n  height: 56px;\n  padding: 0 36px;\n  border-bottom: 1px solid var(--line-soft);\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 14px;\n  flex: none;\n}\n\n.ros-head-left {\n  display: flex;\n  align-items: center;\n  gap: 16px;\n  min-width: 0;\n}\n\n.ros-head-right {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  font-size: 12px;\n  color: var(--muted);\n  flex: none;\n}\n\n.ros-crumb-bar {\n  display: flex;\n  align-items: center;\n  gap: 7px;\n  font-size: 13px;\n  color: var(--muted);\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.ros-crumb-link {\n  color: var(--muted);\n  font-size: 13px;\n  transition: color .12s;\n}\n\n.ros-crumb-link:hover {\n  color: var(--ink);\n}\n\n.ros-crumb-cur {\n  color: var(--ink);\n  font-weight: 600;\n}\n\n.ros-tabs {\n  display: inline-flex;\n  gap: 22px;\n}\n\n.ros-tab {\n  font-size: 13px;\n  font-weight: 500;\n  color: var(--muted);\n  padding: 17px 0;\n  position: relative;\n  transition: color .14s;\n  white-space: nowrap;\n}\n\n.ros-tab:hover {\n  color: var(--ink);\n}\n\n.ros-tab.active {\n  color: var(--ink);\n  font-weight: 600;\n}\n\n.ros-tab.active::after {\n  content: '';\n  position: absolute;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  height: 2px;\n  background: var(--ink);\n  border-radius: 2px;\n}\n\n/* Scrollable Reading Body */\n.ros-canvas-body {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  padding: 34px 48px 72px;\n}\n\n.ros-canvas-inner {\n  max-width: 820px;\n  margin: 0 auto;\n  display: flex;\n  flex-direction: column;\n  gap: 32px;\n  animation: rosFadeIn .2s ease-out;\n}\n\n/* Shared Editorial Typography */\n.ros-sec-head {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 12px;\n  margin-bottom: 14px;\n  flex-wrap: wrap;\n}\n\n.ros-sec-title {\n  font-size: 15px;\n  font-weight: 650;\n  letter-spacing: -.015em;\n  color: var(--ink);\n}\n\n.ros-sec-meta {\n  font-size: 12px;\n  color: var(--soft);\n}\n\n.ros-text-link {\n  font-size: 12.5px;\n  color: var(--muted);\n  transition: color .12s;\n}\n\n.ros-text-link:hover {\n  color: var(--ink);\n}\n\n.ros-text-link.active {\n  color: var(--ink);\n  font-weight: 600;\n}\n\n/* External Fact Labels (LIVE/FIXTURE, EVENT/MANUAL, CONNECTED/...) */\n.ros-fact-bar {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  flex-wrap: wrap;\n}\n\n.ros-fact-chip {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  padding: 2px 8px;\n  border-radius: 99px;\n  font-size: 11px;\n  font-weight: 500;\n  background: var(--subtle);\n  color: var(--muted);\n}\n\n.ros-fact-chip.green { background: var(--green-soft); color: var(--green); }\n.ros-fact-chip.amber { background: var(--amber-soft); color: var(--amber); }\n.ros-fact-chip.red { background: var(--red-soft); color: var(--red); }\n\n/* Status Text */\n.ros-status {\n  font-size: 12.5px;\n  font-weight: 500;\n  color: var(--muted);\n  white-space: nowrap;\n}\n.ros-status.red { color: var(--red); }\n.ros-status.amber { color: var(--amber); }\n.ros-status.iris { color: var(--iris); }\n.ros-status.green { color: var(--green); }\n\n/* 6-Stage Horizontal Breathing Progress Track */\n.ros-stage-track {\n  display: grid;\n  grid-template-columns: repeat(6, 1fr);\n  align-items: center;\n  padding: 8px 0;\n}\n\n.ros-st-node {\n  position: relative;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 6px;\n}\n\n.ros-st-node:not(:last-child)::after {\n  content: '';\n  position: absolute;\n  top: 9px;\n  left: calc(50% + 10px);\n  right: calc(-50% + 10px);\n  height: 1.5px;\n  background: var(--line);\n}\n\n.ros-st-node.done:not(:last-child)::after {\n  background: var(--green);\n}\n\n.ros-st-dot {\n  position: relative;\n  z-index: 1;\n  width: 19px;\n  height: 19px;\n  border-radius: 99px;\n  display: grid;\n  place-items: center;\n  background: var(--surface);\n  border: 1.5px solid var(--line);\n  font-size: 10px;\n  font-weight: 700;\n  color: var(--soft);\n}\n\n.ros-st-node.done .ros-st-dot {\n  border-color: var(--green);\n  background: var(--green-soft);\n  color: var(--green);\n}\n\n.ros-st-node.now .ros-st-dot {\n  border-color: var(--iris);\n  background: var(--iris-soft);\n  color: var(--iris);\n}\n\n.ros-st-node.now .ros-st-dot::after {\n  content: '';\n  position: absolute;\n  inset: -2.5px;\n  border: 1.5px solid transparent;\n  border-top-color: var(--iris);\n  border-radius: 99px;\n  animation: rosOrbit 1s linear infinite;\n}\n\n.ros-st-node.wait .ros-st-dot {\n  border-color: var(--amber);\n  background: var(--amber-soft);\n  color: var(--amber);\n}\n\n.ros-st-lbl {\n  font-size: 11.5px;\n  color: var(--muted);\n}\n\n.ros-st-node.now .ros-st-lbl,\n.ros-st-node.wait .ros-st-lbl {\n  color: var(--ink);\n  font-weight: 550;\n}\n\n/* Signature Gliding Hover List (Preserved Verbatim from v4) */\n.ros-clean-list {\n  display: flex;\n  flex-direction: column;\n  border-top: 1px solid var(--line-soft);\n}\n\n.ros-clean-row {\n  padding: 13px 4px;\n  border-bottom: 1px solid var(--line-soft);\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 14px;\n  cursor: pointer;\n  transition: background .12s, padding .12s;\n  border-radius: 8px;\n}\n\n.ros-clean-row:hover {\n  background: var(--paper);\n  padding-inline: 12px;\n  margin-inline: -8px;\n}\n\n.ros-clean-row.static {\n  cursor: default;\n}\n\n.ros-clean-row.static:hover {\n  background: transparent;\n  padding-inline: 4px;\n  margin-inline: 0;\n}\n\n.ros-cr-left {\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  min-width: 0;\n}\n\n.ros-mono {\n  width: 30px;\n  height: 30px;\n  border-radius: 99px;\n  background: var(--subtle);\n  color: var(--ink);\n  display: grid;\n  place-items: center;\n  font-size: 12px;\n  font-weight: 600;\n  flex: none;\n}\n\n.ros-cr-name {\n  font-size: 14px;\n  font-weight: 600;\n  color: var(--ink);\n  white-space: nowrap;\n}\n\n.ros-cr-role {\n  font-size: 12.5px;\n  color: var(--muted);\n  margin-left: 8px;\n  font-weight: 400;\n}\n\n/* Candidate Artifact View */\n.ros-doc-head {\n  display: flex;\n  align-items: flex-start;\n  justify-content: space-between;\n  gap: 16px;\n  padding-bottom: 20px;\n  border-bottom: 1px solid var(--line-soft);\n}\n\n.ros-doc-name {\n  font-size: 23px;\n  font-weight: 700;\n  letter-spacing: -.03em;\n  color: var(--ink);\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  flex-wrap: wrap;\n}\n\n.ros-doc-meta {\n  font-size: 13px;\n  color: var(--muted);\n  margin-top: 4px;\n}\n\n.ros-doc-block {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n}\n\n.ros-doc-line {\n  display: grid;\n  grid-template-columns: 28px 1fr;\n  gap: 12px;\n  font-size: 13.5px;\n  line-height: 1.78;\n  color: var(--text);\n  padding: 7px 10px;\n  margin: 0 -10px;\n  border-radius: 8px;\n  cursor: pointer;\n  transition: background .12s;\n  overflow-wrap: anywhere;\n}\n\n.ros-doc-line:hover {\n  background: var(--paper);\n}\n\n.ros-doc-line.active {\n  background: var(--iris-soft);\n}\n\n.ros-doc-no {\n  color: var(--soft);\n  font-size: 12px;\n  padding-top: 2px;\n}\n\n.ros-resume-group {\n  font-size: 11.5px;\n  font-weight: 600;\n  color: var(--soft);\n  letter-spacing: .03em;\n  margin: 16px 0 6px;\n  padding-top: 12px;\n  border-top: 1px solid var(--line-soft);\n}\n\n.ros-resume-group:first-child {\n  margin-top: 4px;\n  padding-top: 0;\n  border-top: 0;\n}\n\n.ros-exp-meta {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 12px;\n  margin-bottom: 4px;\n}\n\n.ros-exp-co {\n  font-size: 13.5px;\n  font-weight: 600;\n  color: var(--ink);\n}\n\n.ros-exp-time {\n  font-size: 12px;\n  color: var(--soft);\n  flex: none;\n}\n\n.ros-crit-item {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 9px 10px;\n  margin: 0 -10px;\n  border-radius: 8px;\n  cursor: pointer;\n  transition: background .12s;\n}\n\n.ros-crit-item:hover {\n  background: var(--paper);\n}\n\n.ros-crit-item.active {\n  background: var(--iris-soft);\n}\n\n/* Sequential Round Rail */\n.ros-seq-rail {\n  display: flex;\n  align-items: center;\n  padding: 16px 0;\n  border-bottom: 1px solid var(--line-soft);\n  overflow-x: auto;\n}\n\n.ros-seq-n {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex: none;\n}\n\n.ros-seq-d {\n  width: 20px;\n  height: 20px;\n  border-radius: 99px;\n  display: grid;\n  place-items: center;\n  font-size: 10.5px;\n  font-weight: 700;\n  border: 1.5px solid var(--line);\n  color: var(--soft);\n}\n\n.ros-seq-d.done { border-color: var(--green); background: var(--green-soft); color: var(--green); }\n.ros-seq-d.caution { border-color: var(--amber); background: var(--amber-soft); color: var(--amber); }\n.ros-seq-d.now { border-color: var(--iris); background: var(--iris-soft); color: var(--iris); }\n\n.ros-seq-l {\n  flex: 1;\n  min-width: 20px;\n  height: 1.5px;\n  background: var(--line);\n  margin: 0 10px;\n}\n\n.ros-seq-l.done {\n  background: var(--green);\n}\n\n/* Notes, JD Box, Transcript, Collapsible Toggle */\n.ros-risk-note {\n  padding: 12px 16px;\n  border-radius: 10px;\n  background: var(--paper);\n  border-left: 3px solid var(--amber);\n  font-size: 13px;\n  line-height: 1.68;\n  color: var(--text);\n}\n\n.ros-jd-box {\n  padding: 20px 22px;\n  border-radius: 12px;\n  background: var(--paper);\n  display: flex;\n  flex-direction: column;\n  gap: 14px;\n  font-size: 13px;\n  line-height: 1.75;\n  color: var(--text);\n  white-space: pre-line;\n}\n\n.ros-jd-sec-t {\n  font-size: 12px;\n  font-weight: 650;\n  color: var(--ink);\n  margin-bottom: 4px;\n}\n\n.ros-ts-badge {\n  font-size: 11px;\n  font-weight: 600;\n  color: var(--iris);\n  background: var(--iris-soft);\n  padding: 1px 6px;\n  border-radius: 5px;\n  margin-right: 8px;\n}\n\n.ros-auto-toggle {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 12px 0;\n  border-top: 1px solid var(--line-soft);\n  font-size: 12.5px;\n  color: var(--muted);\n  cursor: pointer;\n}\n\n.ros-auto-toggle:hover {\n  color: var(--ink);\n}\n\n.ros-btn {\n  height: 34px;\n  padding: 0 16px;\n  border-radius: 99px;\n  border: 1px solid var(--line);\n  background: var(--surface);\n  color: var(--ink);\n  font-size: 13px;\n  font-weight: 500;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  transition: all .14s;\n}\n\n.ros-btn:hover {\n  background: var(--subtle);\n}\n\n/* Empty / Loading / Error States */\n.ros-state-box {\n  padding: 40px 24px;\n  border-radius: 12px;\n  background: var(--paper);\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  text-align: center;\n  gap: 10px;\n}\n\n.ros-state-title {\n  font-size: 14.5px;\n  font-weight: 600;\n  color: var(--ink);\n}\n\n.ros-state-desc {\n  font-size: 13px;\n  color: var(--muted);\n  max-width: 380px;\n  line-height: 1.65;\n}\n\n.ros-thinking-row {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n  font-size: 13px;\n  color: var(--muted);\n}\n\n.ros-thinking-dot {\n  width: 6px;\n  height: 6px;\n  border-radius: 99px;\n  background: var(--iris);\n  animation: rosPulseDot .9s ease-in-out infinite;\n}\n\n/* Responsive (Half-screen <= 1080px & Mobile 390px) */\n@media (max-width: 1080px) {\n  .ros-canvas-head {\n    padding: 0 24px;\n  }\n  .ros-canvas-body {\n    padding: 24px 24px 64px;\n  }\n}\n\n@media (max-width: 520px) {\n  .ros-canvas-head {\n    padding: 0 16px;\n    height: auto;\n    min-height: 52px;\n    flex-wrap: wrap;\n    padding-top: 8px;\n    padding-bottom: 8px;\n  }\n  .ros-canvas-body {\n    padding: 18px 16px 48px;\n  }\n  .ros-doc-head {\n    flex-direction: column;\n  }\n  .ros-doc-name {\n    font-size: 20px;\n  }\n  .ros-cr-role {\n    display: block;\n    margin-left: 0;\n    margin-top: 2px;\n  }\n}\n\n/* v4 Footer & Centered Confirmation Modal (verbatim design-tokens.md) */\n.ros-doc-foot {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding-top: 20px;\n  border-top: 1px solid var(--line-soft);\n  flex-wrap: wrap;\n}\n\n.ros-btn.dark {\n  background: var(--ink);\n  border-color: var(--ink);\n  color: var(--surface);\n}\n\n.ros-btn.dark:hover {\n  opacity: .88;\n}\n\n.ros-btn:disabled {\n  opacity: .6;\n  cursor: not-allowed;\n}\n\n.ros-modal-bg {\n  position: fixed;\n  inset: 0;\n  z-index: 100;\n  background: rgba(25, 25, 24, .32);\n  backdrop-filter: blur(6px);\n  -webkit-backdrop-filter: blur(6px);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 24px;\n}\n\n.ros-modal {\n  width: 100%;\n  max-width: 520px;\n  background: var(--surface);\n  border-radius: 20px;\n  border: 1px solid var(--line);\n  box-shadow: var(--shadow-modal);\n  padding: 26px 28px;\n  display: flex;\n  flex-direction: column;\n  gap: 16px;\n  animation: rosFadeIn .16s ease-out;\n}\n\n.ros-m-field {\n  display: flex;\n  flex-direction: column;\n  gap: 5px;\n  font-size: 12px;\n  color: var(--muted);\n}\n\n.ros-m-field input,\n.ros-m-field textarea {\n  padding: 9px 11px;\n  border-radius: 8px;\n  border: 1px solid var(--line);\n  background: var(--surface);\n  color: var(--ink);\n  font: inherit;\n  font-size: 13px;\n  outline: none;\n}\n\n.ros-m-field input:focus,\n.ros-m-field textarea:focus {\n  border-color: var(--muted);\n}\n\n/* v4 Batch Float & 5-Second Undo Toast (verbatim design-tokens.md) */\n.ros-batch-float {\n  position: sticky;\n  bottom: 0;\n  margin-top: 12px;\n  background: var(--ink);\n  color: var(--surface);\n  padding: 10px 16px;\n  border-radius: 99px;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 14px;\n  font-size: 12.5px;\n  box-shadow: var(--shadow-modal);\n}\n\n.ros-batch-float button {\n  color: var(--surface);\n  font-size: 12px;\n  padding: 4px 10px;\n  border-radius: 99px;\n  background: rgba(128, 128, 128, .24);\n}\n\n.ros-batch-float button:hover {\n  background: rgba(128, 128, 128, .38);\n}\n\n.ros-toast {\n  position: fixed;\n  top: 20px;\n  left: 50%;\n  transform: translateX(-50%) translateY(-8px);\n  background: var(--ink);\n  color: var(--surface);\n  padding: 9px 16px;\n  border-radius: 99px;\n  font-size: 12.5px;\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  opacity: 0;\n  pointer-events: none;\n  transition: all .16s;\n  z-index: 120;\n}\n\n.ros-toast.show {\n  opacity: 1;\n  pointer-events: auto;\n  transform: translateX(-50%) translateY(0);\n}\n";
+		const css = "/*\n * Recruitment OS v4 · Right-Hand Canvas Styles\n * Design tokens copied verbatim from design/v4/contracts/design-tokens.md.\n * Scoped under .ros-canvas to avoid colliding with DSH host styles.\n */\n\n.ros-canvas {\n  --rail: #F3F2EE;\n  --paper: #F9F8F5;\n  --surface: #FFFFFF;\n  --subtle: #F3F2EE;\n  --hover: #EAE8E2;\n  --ink: #191918;\n  --text: #42423F;\n  --muted: #787772;\n  --soft: #A6A59E;\n  --line: rgba(25, 25, 24, .08);\n  --line-soft: rgba(25, 25, 24, .05);\n  --iris: #5B5BD6;\n  --iris-soft: rgba(91, 91, 214, .09);\n  --green: #18794E;\n  --green-soft: rgba(24, 121, 78, .09);\n  --amber: #AD5700;\n  --amber-soft: rgba(173, 87, 0, .09);\n  --red: #CD2B31;\n  --red-soft: rgba(205, 43, 49, .08);\n  --shadow-card: 0 1px 2px rgba(25, 25, 24, .03), 0 10px 30px -14px rgba(25, 25, 24, .07);\n  --shadow-modal: 0 28px 72px -18px rgba(25, 25, 24, .24);\n\n  display: flex;\n  flex-direction: column;\n  height: 100%;\n  min-height: 0;\n  overflow: hidden;\n  background: var(--surface);\n  color: var(--ink);\n  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif;\n  font-size: 14px;\n  line-height: 1.55;\n  -webkit-font-smoothing: antialiased;\n}\n\n[data-theme=\"dark\"] .ros-canvas,\n.ros-canvas[data-theme=\"dark\"] {\n  --rail: #10100F;\n  --paper: #141413;\n  --surface: #1A1A19;\n  --subtle: #232321;\n  --hover: #2B2B28;\n  --ink: #F3F2EE;\n  --text: #D5D4CE;\n  --muted: #9A9992;\n  --soft: #6F6E68;\n  --line: rgba(243, 242, 238, .09);\n  --line-soft: rgba(243, 242, 238, .055);\n  --iris: #8484F5;\n  --iris-soft: rgba(132, 132, 245, .15);\n  --green: #3DD68C;\n  --green-soft: rgba(61, 214, 140, .13);\n  --amber: #F5A524;\n  --amber-soft: rgba(245, 165, 36, .14);\n  --red: #F87171;\n  --red-soft: rgba(248, 113, 113, .14);\n  --shadow-card: 0 2px 10px rgba(0, 0, 0, .35);\n  --shadow-modal: 0 28px 72px -18px rgba(0, 0, 0, .65);\n}\n\n.ros-canvas *,\n.ros-canvas *::before,\n.ros-canvas *::after {\n  box-sizing: border-box;\n}\n\n.ros-canvas button {\n  font: inherit;\n  color: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n}\n\n.ros-canvas .num {\n  font-variant-numeric: tabular-nums;\n}\n\n@keyframes rosFadeIn {\n  from { opacity: 0; transform: translateY(4px); }\n  to { opacity: 1; transform: none; }\n}\n\n@keyframes rosOrbit {\n  to { transform: rotate(360deg); }\n}\n\n@keyframes rosPulseDot {\n  0%, 100% { opacity: .3; transform: scale(.85); }\n  50% { opacity: 1; transform: scale(1.1); }\n}\n\n/* Contextual Top Bar (56px visual horizon) */\n.ros-canvas-head {\n  height: 56px;\n  padding: 0 36px;\n  border-bottom: 1px solid var(--line-soft);\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 14px;\n  flex: none;\n}\n\n.ros-head-left {\n  display: flex;\n  align-items: center;\n  gap: 16px;\n  min-width: 0;\n}\n\n.ros-head-right {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  font-size: 12px;\n  color: var(--muted);\n  flex: none;\n}\n\n.ros-crumb-bar {\n  display: flex;\n  align-items: center;\n  gap: 7px;\n  font-size: 13px;\n  color: var(--muted);\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.ros-crumb-link {\n  color: var(--muted);\n  font-size: 13px;\n  transition: color .12s;\n}\n\n.ros-crumb-link:hover {\n  color: var(--ink);\n}\n\n.ros-crumb-cur {\n  color: var(--ink);\n  font-weight: 600;\n}\n\n.ros-tabs {\n  display: inline-flex;\n  gap: 22px;\n}\n\n.ros-tab {\n  font-size: 13px;\n  font-weight: 500;\n  color: var(--muted);\n  padding: 17px 0;\n  position: relative;\n  transition: color .14s;\n  white-space: nowrap;\n}\n\n.ros-tab:hover {\n  color: var(--ink);\n}\n\n.ros-tab.active {\n  color: var(--ink);\n  font-weight: 600;\n}\n\n.ros-tab.active::after {\n  content: '';\n  position: absolute;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  height: 2px;\n  background: var(--ink);\n  border-radius: 2px;\n}\n\n/* Scrollable Reading Body */\n.ros-canvas-body {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  padding: 34px 48px 72px;\n}\n\n.ros-canvas-inner {\n  max-width: 820px;\n  margin: 0 auto;\n  display: flex;\n  flex-direction: column;\n  gap: 32px;\n  animation: rosFadeIn .2s ease-out;\n}\n\n/* Shared Editorial Typography */\n.ros-sec-head {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 12px;\n  margin-bottom: 14px;\n  flex-wrap: wrap;\n}\n\n.ros-sec-title {\n  font-size: 15px;\n  font-weight: 650;\n  letter-spacing: -.015em;\n  color: var(--ink);\n}\n\n.ros-sec-meta {\n  font-size: 12px;\n  color: var(--soft);\n}\n\n.ros-text-link {\n  font-size: 12.5px;\n  color: var(--muted);\n  transition: color .12s;\n}\n\n.ros-text-link:hover {\n  color: var(--ink);\n}\n\n.ros-text-link.active {\n  color: var(--ink);\n  font-weight: 600;\n}\n\n/* External Fact Labels (LIVE/FIXTURE, EVENT/MANUAL, CONNECTED/...) */\n.ros-fact-bar {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  flex-wrap: wrap;\n}\n\n.ros-fact-chip {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  padding: 2px 8px;\n  border-radius: 99px;\n  font-size: 11px;\n  font-weight: 500;\n  background: var(--subtle);\n  color: var(--muted);\n}\n\n.ros-fact-chip.green { background: var(--green-soft); color: var(--green); }\n.ros-fact-chip.amber { background: var(--amber-soft); color: var(--amber); }\n.ros-fact-chip.red { background: var(--red-soft); color: var(--red); }\n\n/* Status Text */\n.ros-status {\n  font-size: 12.5px;\n  font-weight: 500;\n  color: var(--muted);\n  white-space: nowrap;\n}\n.ros-status.red { color: var(--red); }\n.ros-status.amber { color: var(--amber); }\n.ros-status.iris { color: var(--iris); }\n.ros-status.green { color: var(--green); }\n\n/* 6-Stage Horizontal Breathing Progress Track */\n.ros-stage-track {\n  display: grid;\n  grid-template-columns: repeat(6, 1fr);\n  align-items: center;\n  padding: 8px 0;\n}\n\n.ros-st-node {\n  position: relative;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 6px;\n}\n\n.ros-st-node:not(:last-child)::after {\n  content: '';\n  position: absolute;\n  top: 9px;\n  left: calc(50% + 10px);\n  right: calc(-50% + 10px);\n  height: 1.5px;\n  background: var(--line);\n}\n\n.ros-st-node.done:not(:last-child)::after {\n  background: var(--green);\n}\n\n.ros-st-dot {\n  position: relative;\n  z-index: 1;\n  width: 19px;\n  height: 19px;\n  border-radius: 99px;\n  display: grid;\n  place-items: center;\n  background: var(--surface);\n  border: 1.5px solid var(--line);\n  font-size: 10px;\n  font-weight: 700;\n  color: var(--soft);\n}\n\n.ros-st-node.done .ros-st-dot {\n  border-color: var(--green);\n  background: var(--green-soft);\n  color: var(--green);\n}\n\n.ros-st-node.now .ros-st-dot {\n  border-color: var(--iris);\n  background: var(--iris-soft);\n  color: var(--iris);\n}\n\n.ros-st-node.now .ros-st-dot::after {\n  content: '';\n  position: absolute;\n  inset: -2.5px;\n  border: 1.5px solid transparent;\n  border-top-color: var(--iris);\n  border-radius: 99px;\n  animation: rosOrbit 1s linear infinite;\n}\n\n.ros-st-node.wait .ros-st-dot {\n  border-color: var(--amber);\n  background: var(--amber-soft);\n  color: var(--amber);\n}\n\n.ros-st-lbl {\n  font-size: 11.5px;\n  color: var(--muted);\n}\n\n.ros-st-node.now .ros-st-lbl,\n.ros-st-node.wait .ros-st-lbl {\n  color: var(--ink);\n  font-weight: 550;\n}\n\n/* Signature Gliding Hover List (Preserved Verbatim from v4) */\n.ros-clean-list {\n  display: flex;\n  flex-direction: column;\n  border-top: 1px solid var(--line-soft);\n}\n\n.ros-clean-row {\n  padding: 13px 4px;\n  border-bottom: 1px solid var(--line-soft);\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 14px;\n  cursor: pointer;\n  transition: background .12s, padding .12s;\n  border-radius: 8px;\n}\n\n.ros-clean-row:hover {\n  background: var(--paper);\n  padding-inline: 12px;\n  margin-inline: -8px;\n}\n\n.ros-clean-row.static {\n  cursor: default;\n}\n\n.ros-clean-row.static:hover {\n  background: transparent;\n  padding-inline: 4px;\n  margin-inline: 0;\n}\n\n.ros-cr-left {\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  min-width: 0;\n}\n\n.ros-mono {\n  width: 30px;\n  height: 30px;\n  border-radius: 99px;\n  background: var(--subtle);\n  color: var(--ink);\n  display: grid;\n  place-items: center;\n  font-size: 12px;\n  font-weight: 600;\n  flex: none;\n}\n\n.ros-cr-name {\n  font-size: 14px;\n  font-weight: 600;\n  color: var(--ink);\n  white-space: nowrap;\n}\n\n.ros-cr-role {\n  font-size: 12.5px;\n  color: var(--muted);\n  margin-left: 8px;\n  font-weight: 400;\n}\n\n/* Candidate Artifact View */\n.ros-doc-head {\n  display: flex;\n  align-items: flex-start;\n  justify-content: space-between;\n  gap: 16px;\n  padding-bottom: 20px;\n  border-bottom: 1px solid var(--line-soft);\n}\n\n.ros-doc-name {\n  font-size: 23px;\n  font-weight: 700;\n  letter-spacing: -.03em;\n  color: var(--ink);\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  flex-wrap: wrap;\n}\n\n.ros-doc-meta {\n  font-size: 13px;\n  color: var(--muted);\n  margin-top: 4px;\n}\n\n.ros-doc-block {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n}\n\n.ros-doc-line {\n  display: grid;\n  grid-template-columns: 28px 1fr;\n  gap: 12px;\n  font-size: 13.5px;\n  line-height: 1.78;\n  color: var(--text);\n  padding: 7px 10px;\n  margin: 0 -10px;\n  border-radius: 8px;\n  cursor: pointer;\n  transition: background .12s;\n  overflow-wrap: anywhere;\n}\n\n.ros-doc-line:hover {\n  background: var(--paper);\n}\n\n.ros-doc-line.active {\n  background: var(--iris-soft);\n}\n\n.ros-doc-no {\n  color: var(--soft);\n  font-size: 12px;\n  padding-top: 2px;\n}\n\n.ros-resume-group {\n  font-size: 11.5px;\n  font-weight: 600;\n  color: var(--soft);\n  letter-spacing: .03em;\n  margin: 16px 0 6px;\n  padding-top: 12px;\n  border-top: 1px solid var(--line-soft);\n}\n\n.ros-resume-group:first-child {\n  margin-top: 4px;\n  padding-top: 0;\n  border-top: 0;\n}\n\n.ros-exp-meta {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 12px;\n  margin-bottom: 4px;\n}\n\n.ros-exp-co {\n  font-size: 13.5px;\n  font-weight: 600;\n  color: var(--ink);\n}\n\n.ros-exp-time {\n  font-size: 12px;\n  color: var(--soft);\n  flex: none;\n}\n\n.ros-crit-item {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 9px 10px;\n  margin: 0 -10px;\n  border-radius: 8px;\n  cursor: pointer;\n  transition: background .12s;\n}\n\n.ros-crit-item:hover {\n  background: var(--paper);\n}\n\n.ros-crit-item.active {\n  background: var(--iris-soft);\n}\n\n/* Sequential Round Rail */\n.ros-seq-rail {\n  display: flex;\n  align-items: center;\n  padding: 16px 0;\n  border-bottom: 1px solid var(--line-soft);\n  overflow-x: auto;\n}\n\n.ros-seq-n {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex: none;\n}\n\n.ros-seq-d {\n  width: 20px;\n  height: 20px;\n  border-radius: 99px;\n  display: grid;\n  place-items: center;\n  font-size: 10.5px;\n  font-weight: 700;\n  border: 1.5px solid var(--line);\n  color: var(--soft);\n}\n\n.ros-seq-d.done { border-color: var(--green); background: var(--green-soft); color: var(--green); }\n.ros-seq-d.caution { border-color: var(--amber); background: var(--amber-soft); color: var(--amber); }\n.ros-seq-d.now { border-color: var(--iris); background: var(--iris-soft); color: var(--iris); }\n\n.ros-seq-l {\n  flex: 1;\n  min-width: 20px;\n  height: 1.5px;\n  background: var(--line);\n  margin: 0 10px;\n}\n\n.ros-seq-l.done {\n  background: var(--green);\n}\n\n/* Notes, JD Box, Transcript, Collapsible Toggle */\n.ros-risk-note {\n  padding: 12px 16px;\n  border-radius: 10px;\n  background: var(--paper);\n  border-left: 3px solid var(--amber);\n  font-size: 13px;\n  line-height: 1.68;\n  color: var(--text);\n}\n\n.ros-jd-box {\n  padding: 20px 22px;\n  border-radius: 12px;\n  background: var(--paper);\n  display: flex;\n  flex-direction: column;\n  gap: 14px;\n  font-size: 13px;\n  line-height: 1.75;\n  color: var(--text);\n  white-space: pre-line;\n}\n\n.ros-jd-sec-t {\n  font-size: 12px;\n  font-weight: 650;\n  color: var(--ink);\n  margin-bottom: 4px;\n}\n\n.ros-ts-badge {\n  font-size: 11px;\n  font-weight: 600;\n  color: var(--iris);\n  background: var(--iris-soft);\n  padding: 1px 6px;\n  border-radius: 5px;\n  margin-right: 8px;\n}\n\n.ros-auto-toggle {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 12px 0;\n  border-top: 1px solid var(--line-soft);\n  font-size: 12.5px;\n  color: var(--muted);\n  cursor: pointer;\n}\n\n.ros-auto-toggle:hover {\n  color: var(--ink);\n}\n\n.ros-btn {\n  height: 34px;\n  padding: 0 16px;\n  border-radius: 99px;\n  border: 1px solid var(--line);\n  background: var(--surface);\n  color: var(--ink);\n  font-size: 13px;\n  font-weight: 500;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  transition: all .14s;\n}\n\n.ros-btn:hover {\n  background: var(--subtle);\n}\n\n/* Empty / Loading / Error States */\n.ros-state-box {\n  padding: 40px 24px;\n  border-radius: 12px;\n  background: var(--paper);\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  text-align: center;\n  gap: 10px;\n}\n\n.ros-state-title {\n  font-size: 14.5px;\n  font-weight: 600;\n  color: var(--ink);\n}\n\n.ros-state-desc {\n  font-size: 13px;\n  color: var(--muted);\n  max-width: 380px;\n  line-height: 1.65;\n}\n\n.ros-thinking-row {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n  font-size: 13px;\n  color: var(--muted);\n}\n\n.ros-thinking-dot {\n  width: 6px;\n  height: 6px;\n  border-radius: 99px;\n  background: var(--iris);\n  animation: rosPulseDot .9s ease-in-out infinite;\n}\n\n/* Responsive (Half-screen <= 1080px & Mobile 390px) */\n@media (max-width: 1080px) {\n  .ros-canvas-head {\n    padding: 0 24px;\n  }\n  .ros-canvas-body {\n    padding: 24px 24px 64px;\n  }\n}\n\n@media (max-width: 520px) {\n  .ros-canvas-head {\n    padding: 0 16px;\n    height: auto;\n    min-height: 52px;\n    flex-wrap: wrap;\n    padding-top: 8px;\n    padding-bottom: 8px;\n  }\n  .ros-canvas-body {\n    padding: 18px 16px 48px;\n  }\n  .ros-doc-head {\n    flex-direction: column;\n  }\n  .ros-doc-name {\n    font-size: 20px;\n  }\n  .ros-cr-role {\n    display: block;\n    margin-left: 0;\n    margin-top: 2px;\n  }\n}\n\n/* v4 Footer & Centered Confirmation Modal (verbatim design-tokens.md) */\n.ros-doc-foot {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding-top: 20px;\n  border-top: 1px solid var(--line-soft);\n  flex-wrap: wrap;\n}\n\n.ros-btn.dark {\n  background: var(--ink);\n  border-color: var(--ink);\n  color: var(--surface);\n}\n\n.ros-btn.dark:hover {\n  opacity: .88;\n}\n\n.ros-btn:disabled {\n  opacity: .6;\n  cursor: not-allowed;\n}\n\n.ros-modal-bg {\n  position: fixed;\n  inset: 0;\n  z-index: 100;\n  background: rgba(25, 25, 24, .32);\n  backdrop-filter: blur(6px);\n  -webkit-backdrop-filter: blur(6px);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 24px;\n}\n\n.ros-modal {\n  width: 100%;\n  max-width: 520px;\n  background: var(--surface);\n  border-radius: 20px;\n  border: 1px solid var(--line);\n  box-shadow: var(--shadow-modal);\n  padding: 26px 28px;\n  display: flex;\n  flex-direction: column;\n  gap: 16px;\n  animation: rosFadeIn .16s ease-out;\n}\n\n.ros-m-field {\n  display: flex;\n  flex-direction: column;\n  gap: 5px;\n  font-size: 12px;\n  color: var(--muted);\n}\n\n.ros-m-field input,\n.ros-m-field textarea {\n  padding: 9px 11px;\n  border-radius: 8px;\n  border: 1px solid var(--line);\n  background: var(--surface);\n  color: var(--ink);\n  font: inherit;\n  font-size: 13px;\n  outline: none;\n}\n\n.ros-m-field input:focus,\n.ros-m-field textarea:focus {\n  border-color: var(--muted);\n}\n\n/* v4 Batch Float & 5-Second Undo Toast (verbatim design-tokens.md) */\n.ros-batch-float {\n  position: sticky;\n  bottom: 0;\n  margin-top: 12px;\n  background: var(--ink);\n  color: var(--surface);\n  padding: 10px 16px;\n  border-radius: 99px;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 14px;\n  font-size: 12.5px;\n  box-shadow: var(--shadow-modal);\n}\n\n.ros-batch-float button {\n  color: var(--surface);\n  font-size: 12px;\n  padding: 4px 10px;\n  border-radius: 99px;\n  background: rgba(128, 128, 128, .24);\n}\n\n.ros-batch-float button:hover {\n  background: rgba(128, 128, 128, .38);\n}\n\n.ros-toast {\n  position: fixed;\n  top: 20px;\n  left: 50%;\n  transform: translateX(-50%) translateY(-8px);\n  background: var(--ink);\n  color: var(--surface);\n  padding: 9px 16px;\n  border-radius: 99px;\n  font-size: 12.5px;\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  opacity: 0;\n  pointer-events: none;\n  transition: all .16s;\n  z-index: 120;\n}\n\n.ros-toast.show {\n  opacity: 1;\n  pointer-events: auto;\n  transform: translateX(-50%) translateY(0);\n}\n\n/* v4 Free Slot Pills (verbatim design-tokens.md) */\n.ros-slot-grid {\n  display: flex;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.ros-slot-pill {\n  padding: 6px 12px;\n  border-radius: 10px;\n  border: 1px solid var(--line);\n  background: var(--surface);\n  font-size: 12px;\n  color: var(--text);\n  transition: all .12s;\n}\n\n.ros-slot-pill:hover {\n  border-color: var(--muted);\n}\n\n.ros-slot-pill.active {\n  background: var(--iris-soft);\n  border-color: var(--iris);\n  color: var(--iris);\n  font-weight: 600;\n}\n";
 		if (typeof document !== "undefined" && document.querySelector("style[data-recruitment-css]") === null) {
 			const style = document.createElement("style");
 			style.setAttribute("data-recruitment-css", "1");

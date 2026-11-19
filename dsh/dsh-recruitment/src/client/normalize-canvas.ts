@@ -55,6 +55,8 @@ export interface InterviewerVM {
 export interface InterviewRoundVM {
   id: string;
   interviewId?: string;
+  leadActorId?: string;
+  minuteToken?: string;
   roundLabel: string;
   statusText: string;
   statusTone: 'done' | 'caution' | 'now';
@@ -494,6 +496,7 @@ export function normalizeApplicationDetail(raw: unknown): CandidateCanvasVM {
     const overdue = asNum(sc.overdue, 0);
     const tr = asObj(iv.transcript);
     const trState = asStr(tr.state, 'MISSING');
+    const minuteToken = asStr(tr.minute_token) || undefined;
 
     const interviewers: InterviewerVM[] = asArr(iv.interviewers).map((p) => {
       const ivp = asObj(p);
@@ -517,6 +520,8 @@ export function normalizeApplicationDetail(raw: unknown): CandidateCanvasVM {
     return {
       id: shortId(iv.interview_id) || `r-${roundNo}`,
       interviewId: asStr(iv.interview_id) || undefined,
+      leadActorId: asStr(asObj(asArr(iv.interviewers)[0]).actor_id) || undefined,
+      minuteToken,
       roundLabel: `第 ${roundNo} 轮面试`,
       statusText: stInfo.text,
       statusTone: stInfo.tone,

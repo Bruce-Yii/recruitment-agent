@@ -338,3 +338,191 @@ export async function fetchTaskStatus(taskId: string): Promise<UploadTaskStatusR
 export function triggerUnavailableAction(): never {
   throw makeError('NOT_AVAILABLE', UNAVAILABLE_ACTION_MESSAGE);
 }
+
+// ---------------- Task 07: Feishu Free Slots & Rebind Minute ----------------
+
+export interface FreeSlotOption {
+  startIso: string;
+  endIso: string;
+  label: string;
+  busyConflicts: number;
+}
+
+export interface FreeSlotsResult {
+  slots: FreeSlotOption[];
+  unsatisfiedReasons: string[];
+  calendarUnavailable: boolean;
+  connectionLabel: string;
+  unavailableBanner: string | null;
+}
+
+function formatLocalSlotLabel(startIso: string, endIso: string): string {
+  const s = new Date(startIso);
+  const e = new Date(endIso);
+  if (Number.isNaN(s.getTime())) return startIso;
+  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  const mm = String(s.getMonth() + 1).padStart(2, '0');
+  const dd = String(s.getDate()).padStart(2, '0');
+  const sh = String(s.getHours()).padStart(2, '0');
+  const sm = String(s.getMinutes()).padStart(2, '0');
+  const eh = Number.isNaN(e.getTime()) ? '' : String(e.getHours()).padStart(2, '0');
+  const em = Number.isNaN(e.getTime()) ? '' : String(e.getMinutes()).padStart(2, '0');
+  const range = eh ? `${sh}:${sm}–${eh}:${em}` : `${sh}:${sm}`;
+  return `${mm}-${dd} ${weekdays[s.getDay()]} ${range}`;
+}
+
+function mapUnsatisfiedReason(rawReason: string): string {
+  const code = rawReason.toUpperCase();
+  if (code.includes('NO_CALENDAR_BINDING')) return '这位面试官还没有绑定飞书日历';
+  if (code.includes('AUTH')) return '这位面试官的飞书日历授权已过期，需要重新连接';
+  return '这位面试官的飞书日历暂时无法读取';
+}
+
+/**
+ * T7-1: Query real Feishu free slots before scheduling/rescheduling/adding a round.
+ * GET /recruitment/api/action/interview/free-slots?application_id=<id>&interviewer_actor_ids=<id,id>&days=5&duration_minutes=45
+ * NEVER mistakes calendar read failure for "no free time".
+ */
+export async function fetchInterviewFreeSlots(params: {
+  applicationId: string;
+  interviewerActorIds?: string[];
+  days?: number;
+  durationMinutes?: number;
+}): Promise<FreeSlotsResult> {
+  const qs = new URLSearchParams();
+  qs.set('application_id', params.applicationId);
+  if (params.interviewerActorIds && params.interviewerActorIds.length > 0) {
+    qs.set('interviewer_actor_ids', params.interviewerActorIds.join(','));
+  }
+  qs.set('days', String(params.days ?? 5));
+  qs.set('duration_minutes', String(params.durationMinutes ?? 45));
+
+  try {
+    const res = await fetch(`/recruitment/api/action/interview/free-slots?${qs.toString()}`, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: {
+        'x-recruitment-request': '1',
+        Accept: 'application/json',
+      },
+    });
+    if (!res.ok) {
+      return {
+        slots: [],
+        unsatisfiedReasons: [],
+        calendarUnavailable: true,
+        connectionLabel: 'NOT_CONNECTED',
+        unavailableBanner: '日历暂时读不到，可以手动填时间',
+      };
+    }
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const labels = (data.labels && typeof data.labels === 'object' ? data.labels : {}) as Record<string, unknown>;
+    const connection = typeof labels.connection === 'string' ? labels.connection : 'CONNECTED';
+    const calendarUnavailable = connection !== 'CONNECTED';
+
+    const rawSlots = Array.isArray(data.slots) ? data.slots : [];
+    const slots: FreeSlotOption[] = rawSlots.slice(0, 3).map((item) => {
+      const s = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
+      const startIso = typeof s.start === 'string' ? s.start : '';
+      const endIso = typeof s.end === 'string' ? s.end : '';
+      return {
+        startIso,
+        endIso,
+        label: formatLocalSlotLabel(startIso, endIso),
+        busyConflicts: typeof s.busy_conflicts === 'number' ? s.busy_conflicts : 0,
+      };
+    }).filter((x) => x.startIso !== '');
+
+    const rawUnsat = Array.isArray(data.unsatisfied) ? data.unsatisfied : [];
+    const unsatisfiedReasons: string[] = Array.from(
+      new Set(
+        rawUnsat.map((item) => {
+          const u = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
+          return mapUnsatisfiedReason(typeof u.reason === 'string' ? u.reason : '');
+        }),
+      ),
+    );
+
+    return {
+      slots,
+      unsatisfiedReasons,
+      calendarUnavailable,
+      connectionLabel: connection,
+      unavailableBanner: calendarUnavailable ? '日历暂时读不到，可以手动填时间' : null,
+    };
+  } catch {
+    return {
+      slots: [],
+      unsatisfiedReasons: [],
+      calendarUnavailable: true,
+      connectionLabel: 'NOT_CONNECTED',
+      unavailableBanner: '日历没连上，先重连再试；也可以直接手动填时间',
+    };
+  }
+}
+
+export async function postInterviewSchedule(payload: {
+  applicationId: string;
+  mode: 'schedule' | 'reschedule' | 'add_round';
+  roundLabel?: string;
+  replaceInterviewer?: string;
+  startAt: string;
+  endAt?: string;
+  confirmationText: string;
+}): Promise<{ interview_id?: string; action_id?: string }> {
+  const body: Record<string, unknown> = {
+    application_id: payload.applicationId,
+    mode: payload.mode,
+    start_at: payload.startAt,
+    confirmation_text: payload.confirmationText,
+  };
+  if (payload.endAt) body.end_at = payload.endAt;
+  if (payload.roundLabel) body.round_label = payload.roundLabel;
+  if (payload.replaceInterviewer) body.replace_interviewer = payload.replaceInterviewer;
+  return postJsonAction('/recruitment/api/action/interview/schedule', body);
+}
+
+/**
+ * T7-2: Rebind Feishu Minutes recording ownership after replacing an interviewer.
+ * POST /recruitment/api/action/interview/rebind-minute
+ * NEVER called without explicit human click + confirmation_text.
+ * On failure, explicitly reassures that scorecards are NOT lost while ownership stays old.
+ */
+export async function postRebindMinute(payload: {
+  interviewId: string;
+  fromActorId: string;
+  toActorId: string;
+  minuteToken: string;
+  confirmationText: string;
+  dryRun?: boolean;
+}): Promise<{ ok: boolean; message: string }> {
+  const res = await fetch('/recruitment/api/action/interview/rebind-minute', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-recruitment-request': '1',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      interview_id: payload.interviewId,
+      from_actor_id: payload.fromActorId,
+      to_actor_id: payload.toActorId,
+      minute_token: payload.minuteToken,
+      confirmation_text: payload.confirmationText,
+      dry_run: Boolean(payload.dryRun),
+    }),
+  });
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) {
+    const rawReason =
+      typeof data.error_summary === 'string' && data.error_summary.trim()
+        ? data.error_summary.trim()
+        : '飞书妙记权限校验未通过或连接中断';
+    throw makeError('ACTION_FAILED', `${rawReason}。面评不会因此丢，但录音归属仍是旧的。`);
+  }
+  return {
+    ok: true,
+    message: '已把录音归属改到新面试官',
+  };
+}

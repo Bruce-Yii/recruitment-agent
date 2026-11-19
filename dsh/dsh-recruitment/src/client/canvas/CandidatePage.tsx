@@ -13,9 +13,13 @@ import {
 } from './bits/index.ts';
 import type { UndoToastPayload } from './CanvasRoute.tsx';
 import {
+  fetchInterviewFreeSlots,
   postApplicationTransfer,
   postCandidateConstraint,
+  postInterviewSchedule,
+  postRebindMinute,
   type CanvasActionError,
+  type FreeSlotsResult,
 } from './canvas-actions.ts';
 
 export type CanvasFetcher = (path: string) => Promise<unknown>;
@@ -30,7 +34,7 @@ export interface CandidatePageProps {
 }
 
 type DocTab = 'resume' | 'transcript' | 'original';
-type CandidateModalKind = 'pin' | 'handoff' | 'transfer' | null;
+type CandidateModalKind = 'pin' | 'handoff' | 'transfer' | 'schedule' | null;
 
 export function CandidatePage({
   applicationId,
@@ -55,6 +59,23 @@ export function CandidatePage({
   const [confirmText, setConfirmText] = useState<string>('');
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [actionFeedback, setActionFeedback] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
+
+  // T7-1: Free slots inside schedule / reschedule / replace-interviewer modal
+  const [freeSlotsLoading, setFreeSlotsLoading] = useState<boolean>(false);
+  const [freeSlots, setFreeSlots] = useState<FreeSlotsResult | null>(null);
+  const [scheduleTime, setScheduleTime] = useState<string>('');
+  const [scheduleEndTime, setScheduleEndTime] = useState<string>('');
+  const [replaceInterviewer, setReplaceInterviewer] = useState<string>('');
+
+  // T7-2: Explicit human confirmation prompt to rebind Feishu Minutes recording after replacing interviewer
+  const [pendingRebind, setPendingRebind] = useState<{
+    interviewId: string;
+    fromActorId: string;
+    toActorId: string;
+    minuteToken: string;
+  } | null>(null);
+  const [rebindConfirmText, setRebindConfirmText] = useState<string>('');
+  const [rebindSubmitting, setRebindSubmitting] = useState<boolean>(false);
 
   const load = useCallback(
     async (cancelledRef?: { current: boolean }) => {
@@ -90,6 +111,22 @@ export function CandidatePage({
   }, [load, refreshNonce]);
 
   const openActionModal = (kind: Exclude<CandidateModalKind, null>) => {
+    if (kind === 'schedule' && vm) {
+      setFreeSlots(null);
+      setScheduleTime('');
+      setScheduleEndTime('');
+      setReplaceInterviewer('');
+      setFreeSlotsLoading(true);
+      const actorIds = vm.rounds.map((r) => r.leadActorId).filter((x): x is string => Boolean(x));
+      void fetchInterviewFreeSlots({
+        applicationId: vm.applicationId,
+        interviewerActorIds: actorIds,
+        days: 5,
+        durationMinutes: 45,
+      })
+        .then((res) => setFreeSlots(res))
+        .finally(() => setFreeSlotsLoading(false));
+    }
     setActionFeedback(null);
     setInputText('');
     setTargetJobId('');
@@ -98,7 +135,9 @@ export function CandidatePage({
         ? `确认置顶 ${vm?.candidateName || '候选人'} 的关键约束`
         : kind === 'handoff'
           ? `确认为 ${vm?.candidateName || '候选人'} 留下下一轮面试交接追问`
-          : `确认将 ${vm?.candidateName || '候选人'} 跨岗调剂`,
+          : kind === 'schedule'
+            ? `确认为 ${vm?.candidateName || '候选人'} 安排/改期面试`
+            : `确认将 ${vm?.candidateName || '候选人'} 跨岗调剂`,
     );
     setModalKind(kind);
   };
@@ -126,6 +165,10 @@ export function CandidatePage({
 
     if (modalKind === 'transfer' && !targetJobId.trim()) {
       setActionFeedback({ tone: 'red', text: '请填写目标岗位编号。' });
+      return;
+    }
+    if (modalKind === 'schedule' && !scheduleTime.trim()) {
+      setActionFeedback({ tone: 'red', text: '请选择一个空闲时段，或手动填写面试时间。' });
       return;
     }
 
@@ -171,12 +214,69 @@ export function CandidatePage({
         const msg = '已完成跨岗调剂，原岗位档案完整保留。';
         setActionFeedback({ tone: 'green', text: msg });
         onActionCompleted?.({ message: msg, actionId: trRes.action_id });
+      } else if (modalKind === 'schedule') {
+        const latestRound = vm.rounds[vm.rounds.length - 1];
+        const isReplace = replaceInterviewer.trim() !== '';
+        const scRes = await postInterviewSchedule({
+          applicationId: vm.applicationId,
+          mode: isReplace ? 'reschedule' : 'schedule',
+          replaceInterviewer: isReplace ? replaceInterviewer.trim() : undefined,
+          startAt: scheduleTime.trim(),
+          endAt: scheduleEndTime.trim() || undefined,
+          confirmationText,
+        });
+        setModalKind(null);
+        await load();
+        const msg = isReplace ? '已完成改期并更换面试官。' : '已锁定面试时间并同步排期。';
+        setActionFeedback({ tone: 'green', text: msg });
+        onActionCompleted?.({ message: msg, actionId: scRes.action_id });
+
+        // T7-2: Only prompt for minute rebind if interviewer was replaced AND minute_token is non-empty
+        if (isReplace && latestRound?.minuteToken && latestRound.interviewId) {
+          setPendingRebind({
+            interviewId: latestRound.interviewId,
+            fromActorId: latestRound.leadActorId || '',
+            toActorId: replaceInterviewer.trim(),
+            minuteToken: latestRound.minuteToken,
+          });
+          setRebindConfirmText(`确认把 ${vm.candidateName} 这场面试的录音归属改到新面试官`);
+        }
       }
     } catch (err) {
       const msg = (err as CanvasActionError)?.userMessage || '这项操作暂时未能完成，请稍后重试。';
       setActionFeedback({ tone: 'red', text: msg });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleRebindMinute = async () => {
+    if (!pendingRebind || rebindSubmitting) return;
+    const confirmationText = rebindConfirmText.trim();
+    if (!confirmationText) {
+      setActionFeedback({ tone: 'red', text: '请先填写一句确认原话再修改录音归属。' });
+      return;
+    }
+    setRebindSubmitting(true);
+    setActionFeedback(null);
+    try {
+      const res = await postRebindMinute({
+        interviewId: pendingRebind.interviewId,
+        fromActorId: pendingRebind.fromActorId,
+        toActorId: pendingRebind.toActorId,
+        minuteToken: pendingRebind.minuteToken,
+        confirmationText,
+        dryRun: false,
+      });
+      setPendingRebind(null);
+      setActionFeedback({ tone: 'green', text: res.message });
+    } catch (err) {
+      const msg =
+        (err as CanvasActionError)?.userMessage ||
+        '录音归属修改未能完成。面评不会因此丢，但录音归属仍是旧的。';
+      setActionFeedback({ tone: 'red', text: msg });
+    } finally {
+      setRebindSubmitting(false);
     }
   };
 
@@ -274,6 +374,42 @@ export function CandidatePage({
               }}
             >
               {actionFeedback.text}
+            </div>
+          ) : null}
+
+          {/* T7-2: 换面试官后若存在 minute_token，提示人工确认是否重绑妙记录音归属 */}
+          {pendingRebind ? (
+            <div className="ros-risk-note" data-testid="rebind-minute-prompt" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontWeight: 600, color: 'var(--ink)' }}>
+                这把录音的归属还挂在旧面试官名下，要改到新人吗？
+              </div>
+              <label className="ros-m-field">
+                <span>确认原话（外部写入必填）</span>
+                <input
+                  value={rebindConfirmText}
+                  onChange={(e) => setRebindConfirmText(e.target.value)}
+                  placeholder="输入确认原话"
+                />
+              </label>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="ros-btn"
+                  disabled={rebindSubmitting}
+                  onClick={() => setPendingRebind(null)}
+                >
+                  暂不修改
+                </button>
+                <button
+                  type="button"
+                  className="ros-btn dark"
+                  disabled={rebindSubmitting}
+                  data-testid="rebind-minute-confirm"
+                  onClick={() => void handleRebindMinute()}
+                >
+                  {rebindSubmitting ? '处理中…' : '确认改到新人'}
+                </button>
+              </div>
             </div>
           ) : null}
 
@@ -567,6 +703,14 @@ export function CandidatePage({
               <button
                 type="button"
                 className="ros-text-link"
+                data-testid="canvas-action-schedule"
+                onClick={() => openActionModal('schedule')}
+              >
+                约面 / 改期换人
+              </button>
+              <button
+                type="button"
+                className="ros-text-link"
                 data-testid="canvas-action-transfer"
                 onClick={() => openActionModal('transfer')}
               >
@@ -594,10 +738,79 @@ export function CandidatePage({
                 ? `为 ${vm.candidateName} 置顶约束`
                 : modalKind === 'handoff'
                   ? `为 ${vm.candidateName} 留下一轮交接追问`
-                  : `跨岗调剂 · ${vm.candidateName}`}
+                  : modalKind === 'schedule'
+                    ? `面试排期与改期换人 · ${vm.candidateName}`
+                    : `跨岗调剂 · ${vm.candidateName}`}
             </div>
 
-            {modalKind === 'transfer' ? (
+            {modalKind === 'schedule' ? (
+              <>
+                {freeSlotsLoading ? (
+                  <div className="ros-sec-meta">正在读取飞书日历共同空闲时段…</div>
+                ) : freeSlots ? (
+                  <>
+                    {freeSlots.unavailableBanner ? (
+                      <div className="ros-risk-note" data-testid="calendar-unavailable-banner">
+                        {freeSlots.unavailableBanner}
+                      </div>
+                    ) : null}
+
+                    {freeSlots.unsatisfiedReasons.length > 0 ? (
+                      <div className="ros-risk-note" data-testid="calendar-unsatisfied-banner">
+                        {freeSlots.unsatisfiedReasons.join('；')}
+                      </div>
+                    ) : null}
+
+                    {freeSlots.slots.length > 0 ? (
+                      <div>
+                        <div className="ros-sec-meta" style={{ marginBottom: 7 }}>
+                          飞书日历共同空闲时段（点击填入下方时间）
+                        </div>
+                        <div className="ros-slot-grid" data-testid="free-slots-grid">
+                          {freeSlots.slots.map((slot) => (
+                            <button
+                              key={slot.startIso}
+                              type="button"
+                              className={`ros-slot-pill ${scheduleTime === slot.startIso ? 'active' : ''}`}
+                              onClick={() => {
+                                setScheduleTime(slot.startIso);
+                                setScheduleEndTime(slot.endIso);
+                              }}
+                            >
+                              {slot.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : !freeSlots.calendarUnavailable && freeSlots.unsatisfiedReasons.length === 0 ? (
+                      <div className="ros-sec-meta" data-testid="free-slots-empty">
+                        未来 5 天没有共同空闲，请直接在下方手动填写时间。
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
+
+                <label className="ros-m-field">
+                  <span>面试开始时间（点选上方时段自动填入，也可手动填写）</span>
+                  <input
+                    data-testid="schedule-time-input"
+                    value={scheduleTime}
+                    onChange={(e) => setScheduleTime(e.target.value)}
+                    placeholder="例如：2026-11-20T15:00:00+08:00 或 明天 15:00"
+                  />
+                </label>
+
+                <label className="ros-m-field">
+                  <span>更换新面试官（留空则仅排期/改期，填写则换人）</span>
+                  <input
+                    data-testid="replace-interviewer-input"
+                    value={replaceInterviewer}
+                    onChange={(e) => setReplaceInterviewer(e.target.value)}
+                    placeholder="选填：输入新面试官姓名或编号"
+                  />
+                </label>
+              </>
+            ) : modalKind === 'transfer' ? (
               <label className="ros-m-field">
                 <span>目标岗位 ID</span>
                 <input
