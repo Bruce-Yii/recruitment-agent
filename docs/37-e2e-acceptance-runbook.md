@@ -67,3 +67,16 @@
 - 任何一步没法点 → **BLOCKED**（写清卡在哪、缺什么），**不许用接口结果冒充界面通过**。
 - 最终产出：`PASS / FAIL / BLOCKED` 三步表 + 每条证据路径。
 - 判据以 `docs/29` 为准；本剧本只是把判据串成一条真实工作流。
+
+---
+
+## 5. 一键复跑（可比的基线）
+
+```powershell
+$env:DSH_HOME='D:\12412\dsh-home-recruitment'; $env:RECRUITMENT_DB_PASSWORD='123456'
+D:\node.exe work/d5/e2e-real/scripts/run-runbook.mjs --port 49352 --cdp 9222 --fresh
+```
+- `--fresh`：**每轮自建一次性库 + 固定数据集**（岗位/rubric v2 已批准、一条申请、第 1/2 轮分别给 A/B、一条 A 可见的置顶约束），跑完销毁；不带 `--fresh` 只是在共享库上诊断，**结果不可比**。
+- 输出：`work/d5/e2e-real/runbook-result.json`（15 步 verdict）+ `evidence/Sxx-ui.png/txt` + `Sxx-db.txt`。
+- 基线（2026-11-19，连跑 3 次一致）：**PASS 6 / FAIL 0 / BLOCKED 9**；BLOCKED 全部等前端任务 08 的写入口。
+- **S8 特例**：受控流程下能过，但此前真机证据出现过"切身份后挂起的自动保存写进另一位面试官草稿"——前端任务 08 的 F1 必须修并加回归复现（输入 → 立刻切身份 → 等自动保存 → 断言不产生跨身份草稿）。
