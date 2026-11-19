@@ -155,6 +155,26 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
 
   const [submitting, setSubmitting] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+
+  const isDirty =
+    inputText.trim() !== '' ||
+    targetJobId.trim() !== '' ||
+    replaceInterviewer.trim() !== '' ||
+    exportedFileName.trim() !== '';
+
+  useEffect(() => {
+    setConfirmDiscard(false);
+  }, [inputText, targetJobId, replaceInterviewer, exportedFileName]);
+
+  const requestClose = () => {
+    if (submitting) return;
+    if (isDirty && !confirmDiscard) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onClose();
+  };
 
   const loadSlots = (rawIds: string) => {
     setFreeSlotsLoading(true);
@@ -422,7 +442,7 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !submitting) {
         e.preventDefault();
-        onClose();
+        requestClose();
       } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !submitBlocked) {
         e.preventDefault();
         void handleSubmit();
@@ -451,7 +471,7 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
       role="dialog"
       aria-modal="true"
       onClick={(e) => {
-        if (e.target === e.currentTarget && !submitting) onClose();
+        if (e.target === e.currentTarget && !submitting) requestClose();
       }}
     >
       <div className="ros-modal">
@@ -627,12 +647,16 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
           </label>
         ) : null}
 
+        {confirmDiscard ? (
+          <div className="ros-risk-note" data-testid="modal-dirty-guard">还有未提交的输入内容，再次按 Esc 或点击「确认放弃」将丢弃当前内容。</div>
+        ) : null}
+
         {errorText ? (
           <div className="ros-risk-note" style={{ borderLeftColor: 'var(--red)', color: 'var(--red)' }}>{errorText}</div>
         ) : null}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button type="button" className="ros-btn" title="Esc 关闭" disabled={submitting} onClick={onClose}>取消</button>
+          <button type="button" className="ros-btn" title="Esc 关闭" disabled={submitting} onClick={requestClose}>{confirmDiscard ? '确认放弃' : '取消'}</button>
           <button type="button" className="ros-btn dark" title="⌘/Ctrl + Enter 提交" disabled={submitBlocked} data-testid="canvas-modal-submit" onClick={() => void handleSubmit()}>
             {submitting ? '处理中…' : '确认提交'}
           </button>

@@ -7,6 +7,7 @@ import {
 import {
   getCachedCanvasData,
   getSavedCanvasScroll,
+  invalidateCachedCanvasData,
   prefetchCanvasPath,
   saveCanvasScroll,
   setCachedCanvasData,
@@ -36,7 +37,7 @@ export interface JobPageProps {
   readonly sessionId?: string;
   jobId: string;
   onBack?: () => void;
-  onSelectApplication?: (applicationId: string) => void;
+  onSelectApplication?: (applicationId: string, queue?: string[]) => void;
   onSelectJob?: (jobId: string) => void;
   onUploadStarted?: (task: ActiveUploadTask) => void;
   onActionCompleted?: (notice: UndoToastPayload) => void;
@@ -208,7 +209,9 @@ export function JobPage({
       setBatchOpen(false);
       setSelectedIds([]);
       setBatchResults(res.results);
-      // Always refresh from server — never locally delete rows
+      // Invalidate affected candidate caches + job cache, then refresh silently
+      selectedIds.forEach((id) => invalidateCachedCanvasData(`/recruitment/api/recruiting/applications/${encodeURIComponent(id)}`));
+      invalidateCachedCanvasData(jobPath);
       await load(undefined, { silent: true });
       if (res.failedCount === 0) {
         const msg = `已批量关闭 ${res.succeededCount} 位候选人申请`;
@@ -518,13 +521,13 @@ export function JobPage({
                         className="ros-clean-row"
                         onMouseEnter={() => scheduleRowPrefetch(app.applicationId)}
                         onMouseLeave={cancelRowPrefetch}
-                        onClick={() => onSelectApplication?.(app.applicationId)}
+                        onClick={() => onSelectApplication?.(app.applicationId, filteredApps.map((x) => x.applicationId))}
                         role="button"
                         tabIndex={0}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
-                            onSelectApplication?.(app.applicationId);
+                            onSelectApplication?.(app.applicationId, filteredApps.map((x) => x.applicationId));
                           }
                         }}
                       >

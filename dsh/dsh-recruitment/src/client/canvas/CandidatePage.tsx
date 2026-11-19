@@ -3,6 +3,8 @@ import { normalizeApplicationDetail, type CandidateCanvasVM } from '../normalize
 import {
   getCachedCanvasData,
   getSavedCanvasScroll,
+  invalidateCachedCanvasData,
+  prefetchCanvasPath,
   saveCanvasScroll,
   setCachedCanvasData,
 } from './canvas-ux.ts';
@@ -31,6 +33,8 @@ export type CanvasFetcher = (path: string) => Promise<unknown>;
 export interface CandidatePageProps {
   readonly sessionId?: string;
   applicationId: string;
+  candidateQueue?: readonly string[];
+  onSelectApplication?: (applicationId: string) => void;
   onBack?: () => void;
   onOpenJob?: (jobId: string) => void;
   onUploadStarted?: (task: ActiveUploadTask) => void;
@@ -44,6 +48,8 @@ type DocTab = 'resume' | 'transcript' | 'original';
 export function CandidatePage({
   sessionId,
   applicationId,
+  candidateQueue,
+  onSelectApplication,
   onBack,
   onOpenJob,
   onUploadStarted,
@@ -133,20 +139,39 @@ export function CandidatePage({
     el.scrollTop = getSavedCanvasScroll(routeKey);
   }, [routeKey, loading]);
 
-  // Keyboard-first Esc back when no modal or rebind prompt is open
+  const queueIndex = candidateQueue ? candidateQueue.indexOf(applicationId) : -1;
+  const prevAppId = queueIndex > 0 && candidateQueue ? candidateQueue[queueIndex - 1] : undefined;
+  const nextAppId =
+    queueIndex >= 0 && candidateQueue && queueIndex < candidateQueue.length - 1
+      ? candidateQueue[queueIndex + 1]
+      : undefined;
+
+  // Auto-prefetch next candidate in queue for instant book-flipping navigation
   useEffect(() => {
-    if (!onBack || modalKind !== null || pendingRebind !== null) return;
+    if (!nextAppId) return;
+    prefetchCanvasPath(`/recruitment/api/recruiting/applications/${encodeURIComponent(nextAppId)}`, fetcher);
+  }, [nextAppId, fetcher]);
+
+  // Keyboard-first shortcuts: Esc back, [ previous candidate, ] next candidate
+  useEffect(() => {
+    if (modalKind !== null || pendingRebind !== null) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        const tag = (e.target as HTMLElement | null)?.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key === 'Escape' && onBack) {
         e.preventDefault();
         onBack();
+      } else if (e.key === '[' && prevAppId && onSelectApplication) {
+        e.preventDefault();
+        onSelectApplication(prevAppId);
+      } else if (e.key === ']' && nextAppId && onSelectApplication) {
+        e.preventDefault();
+        onSelectApplication(nextAppId);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onBack, modalKind, pendingRebind]);
+  }, [onBack, prevAppId, nextAppId, onSelectApplication, modalKind, pendingRebind]);
 
   const handleSelectCriterion = (critKey: string) => {
     setActiveCrit(critKey);
@@ -161,6 +186,10 @@ export function CandidatePage({
 
   const handleModalSuccess = async (res: CandidateModalSuccess) => {
     setModalKind(null);
+    invalidateCachedCanvasData(detailPath);
+    if (vm?.jobId) {
+      invalidateCachedCanvasData(`/recruitment/api/recruiting/jobs/${encodeURIComponent(vm.jobId)}`);
+    }
     await load(undefined, { silent: true, flash: true });
     setActionFeedback({ tone: 'green', text: res.message });
     onActionCompleted?.({ message: res.message, actionId: res.actionId });
@@ -249,7 +278,17 @@ export function CandidatePage({
             <span className="ros-crumb-cur">{vm.candidateName}</span>
           </div>
         </div>
-        <div className="ros-head-right" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{syncing ? <span className="ros-sync-pill" data-testid="canvas-sync-pill"><i className="ros-sync-dot" />同步中</span> : null}<FactLabelsBar labels={vm.factLabels} /></div>
+        <div className="ros-head-right" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {syncing ? <span className="ros-sync-pill" data-testid="canvas-sync-pill"><i className="ros-sync-dot" />同步中</span> : null}
+          {queueIndex >= 0 && candidateQueue && candidateQueue.length > 1 && onSelectApplication ? (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '12px', color: 'var(--muted)' }} data-testid="canvas-candidate-pager">
+              <button type="button" className="ros-text-link" title="上一位 ([)" disabled={!prevAppId} style={{ opacity: prevAppId ? 1 : 0.35 }} onClick={() => prevAppId && onSelectApplication(prevAppId)}>‹</button>
+              <span className="num">{queueIndex + 1} / {candidateQueue.length}</span>
+              <button type="button" className="ros-text-link" title="下一位 (])" disabled={!nextAppId} style={{ opacity: nextAppId ? 1 : 0.35 }} onClick={() => nextAppId && onSelectApplication(nextAppId)}>›</button>
+            </div>
+          ) : null}
+          <FactLabelsBar labels={vm.factLabels} />
+        </div>
       </header>
 
       <div className="ros-canvas-body" ref={bodyScrollRef} onScroll={(e) => saveCanvasScroll(routeKey, e.currentTarget.scrollTop)}>
@@ -311,6 +350,8 @@ export function CandidatePage({
                     void postApplicationStar({ applicationId: vm.applicationId, starred: nextVal })
                       .then((res) => {
                         setStarredLocal(Boolean(res.starred));
+                        invalidateCachedCanvasData(detailPath);
+                        if (vm.jobId) invalidateCachedCanvasData(`/recruitment/api/recruiting/jobs/${encodeURIComponent(vm.jobId)}`);
                         setActionFeedback({ tone: 'green', text: res.starred ? '已标记为主推候选人' : '已取消星标标记' });
                       })
                       .catch((err) => {

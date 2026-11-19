@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CandidatePage, type CanvasFetcher } from './CandidatePage.tsx';
 import { JobPage } from './JobPage.tsx';
 import { CanvasEmptyState } from './bits/index.ts';
@@ -29,8 +29,10 @@ export interface UndoToastPayload {
 export interface CanvasRouteProps {
   readonly sessionId?: string;
   route: CanvasRouteTarget;
+  candidateQueue?: readonly string[];
+  isOffline?: boolean;
   onBack?: () => void;
-  onSelectApplication?: (applicationId: string) => void;
+  onSelectApplication?: (applicationId: string, queue?: string[]) => void;
   onSelectJob?: (jobId: string) => void;
   uploadTask?: ActiveUploadTask | null;
   onUploadStarted?: (task: ActiveUploadTask) => void;
@@ -198,6 +200,8 @@ function UploadProgressBanner({
 export function CanvasRoute({
   sessionId,
   route,
+  candidateQueue,
+  isOffline = false,
   onBack,
   onSelectApplication,
   onSelectJob,
@@ -211,6 +215,22 @@ export function CanvasRoute({
 }: CanvasRouteProps) {
   return (
     <section className="ros-canvas" aria-label="招聘详情画布" data-testid="v4-canvas-route">
+      {isOffline ? (
+        <div
+          role="status"
+          data-testid="canvas-offline-banner"
+          style={{
+            margin: '10px 36px 0',
+            padding: '8px 14px',
+            borderRadius: 10,
+            background: 'var(--amber-soft)',
+            color: 'var(--amber)',
+            fontSize: '12.5px',
+          }}
+        >
+          当前网络已断开，恢复连接后将自动同步最新状态。
+        </div>
+      ) : null}
       {uploadTask ? (
         <UploadProgressBanner
           task={uploadTask}
@@ -223,6 +243,8 @@ export function CanvasRoute({
         <CandidatePage
           sessionId={sessionId}
           applicationId={route.applicationId}
+          candidateQueue={candidateQueue}
+          onSelectApplication={(appId) => onSelectApplication?.(appId)}
           onBack={onBack}
           onOpenJob={onSelectJob}
           onUploadStarted={onUploadStarted}
@@ -280,6 +302,9 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
   }, [sessionId]);
   const [route, setRoute] = useState<CanvasRouteTarget>({ kind: 'empty' });
   const [prevJobId, setPrevJobId] = useState<string | null>(null);
+  const [candidateQueue, setCandidateQueue] = useState<string[]>([]);
+  const [isOffline, setIsOffline] = useState<boolean>(() => (typeof navigator !== 'undefined' ? !navigator.onLine : false));
+  const hiddenAtRef = useRef<number | null>(null);
   const [uploadTask, setUploadTask] = useState<ActiveUploadTask | null>(null);
   const [refreshNonce, setRefreshNonce] = useState<number>(0);
 
@@ -307,9 +332,38 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
     };
   }, [toast, toastPaused, undoBusy, toastRemainingMs]);
 
-  const openCandidate = useCallback((applicationId: string) => {
+  const openCandidate = useCallback((applicationId: string, queue?: string[]) => {
+    if (queue !== undefined) setCandidateQueue(queue);
     setRoute({ kind: 'candidate', applicationId });
   }, []);
+
+  // Auto-sync silently when returning to tab after >30s or recovering from offline
+  useEffect(() => {
+    const onOffline = () => setIsOffline(true);
+    const onOnline = () => {
+      setIsOffline(false);
+      if (route.kind !== 'empty') setRefreshNonce((n) => n + 1);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAtRef.current = Date.now();
+      } else if (document.visibilityState === 'visible') {
+        const awayMs = hiddenAtRef.current !== null ? Date.now() - hiddenAtRef.current : 0;
+        hiddenAtRef.current = null;
+        if (awayMs > 30_000 && route.kind !== 'empty') {
+          setRefreshNonce((n) => n + 1);
+        }
+      }
+    };
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [route.kind]);
 
   const openJob = useCallback((jobId: string) => {
     setPrevJobId(jobId);
@@ -363,6 +417,8 @@ export function CanvasPanelHost({ children, sessionId, onRefreshOverview, fetche
         <CanvasRoute
           sessionId={sessionId}
           route={route}
+          candidateQueue={candidateQueue}
+          isOffline={isOffline}
           onBack={handleBack}
           onSelectApplication={openCandidate}
           onSelectJob={openJob}
