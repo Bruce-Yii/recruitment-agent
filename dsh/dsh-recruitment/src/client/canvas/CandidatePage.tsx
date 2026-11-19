@@ -24,6 +24,7 @@ import {
 export type CanvasFetcher = (path: string) => Promise<unknown>;
 
 export interface CandidatePageProps {
+  readonly sessionId?: string;
   applicationId: string;
   onBack?: () => void;
   onOpenJob?: (jobId: string) => void;
@@ -36,6 +37,7 @@ export interface CandidatePageProps {
 type DocTab = 'resume' | 'transcript' | 'original';
 
 export function CandidatePage({
+  sessionId,
   applicationId,
   onBack,
   onOpenJob,
@@ -110,7 +112,6 @@ export function CandidatePage({
       return;
     }
     setRebindSubmitting(true);
-    setActionFeedback(null);
     try {
       const res = await postRebindMinute({
         interviewId: pendingRebind.interviewId,
@@ -181,7 +182,7 @@ export function CandidatePage({
       </header>
 
       <div className="ros-canvas-body">
-        <div className="ros-canvas-inner">
+        <div className="ros-canvas-inner ros-doc">
           {actionFeedback ? (
             <div
               className="ros-risk-note"
@@ -276,8 +277,16 @@ export function CandidatePage({
             <div className="ros-sec-meta">逐轮面试进展（不求平均分）</div>
             {vm.rounds.length > 0 ? (
               <>
-                <SequentialRoundRail rounds={vm.rounds} />
-                <div className="ros-clean-list" style={{ borderTop: 0 }}>
+                <SequentialRoundRail
+                  rounds={vm.rounds.map((r) => ({
+                    id: r.id,
+                    label: r.roundLabel,
+                    statusText: r.statusText,
+                    tone: r.statusTone,
+                    meta: r.scheduleText,
+                  }))}
+                />
+                <div className="ros-clean-list">
                   {vm.rounds.map((rd) => (
                     <div key={rd.id} className="ros-clean-row static">
                       <div>
@@ -329,7 +338,7 @@ export function CandidatePage({
             </div>
 
             {docTab === 'resume' ? (
-              vm.hasResumeMaterial && vm.resumeSections.length > 0 ? (
+              vm.resumeSections.length > 0 ? (
                 <div>
                   {vm.resumeSections.map((sec) => (
                     <div key={sec.title}>
@@ -385,7 +394,7 @@ export function CandidatePage({
               <div className="ros-clean-list">
                 {vm.screeningBasis.map((b, idx) => (
                   <div key={`${b.label}-${idx}`} className="ros-clean-row static">
-                    <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--ink)' }}>{b.label}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{b.label}</span>
                     <span style={{ fontSize: '12.5px', color: 'var(--muted)' }}>{b.detail}</span>
                   </div>
                 ))}
@@ -409,10 +418,10 @@ export function CandidatePage({
             {timelineOpen ? (
               vm.timeline.length > 0 ? (
                 <div className="ros-clean-list">
-                  {vm.timeline.map((ev) => (
-                    <div key={ev.id} className="ros-clean-row static" style={{ padding: '9px 4px' }}>
-                      <span style={{ fontSize: '12.5px', color: 'var(--text)' }}>{ev.label}</span>
-                      <span className="ros-sec-meta num">{ev.timeText}</span>
+                  {vm.timeline.map((t) => (
+                    <div key={t.id} className="ros-clean-row static">
+                      <span style={{ fontSize: '13px' }}>{t.label}</span>
+                      <span className="ros-sec-meta num">{t.timeText}</span>
                     </div>
                   ))}
                 </div>
@@ -442,6 +451,7 @@ export function CandidatePage({
         <CandidateActionModal
           kind={modalKind}
           vm={vm}
+          sessionId={sessionId}
           onClose={() => setModalKind(null)}
           onSuccess={(res) => void handleModalSuccess(res)}
         />

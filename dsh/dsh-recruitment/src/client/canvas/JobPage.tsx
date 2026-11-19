@@ -15,6 +15,9 @@ import {
 import type { CanvasFetcher } from './CandidatePage.tsx';
 import type { ActiveUploadTask, UndoToastPayload } from './CanvasRoute.tsx';
 import {
+  buildJobCreateBody,
+  describeActionError,
+  getCanvasSessionId,
   postBatchReject,
   postJobCreate,
   uploadResumeRaw,
@@ -23,6 +26,7 @@ import {
 } from './canvas-actions.ts';
 
 export interface JobPageProps {
+  readonly sessionId?: string;
   jobId: string;
   onBack?: () => void;
   onSelectApplication?: (applicationId: string) => void;
@@ -39,6 +43,7 @@ type StageFilter = '全部' | JobApplicationRowVM['filterBucket'];
 const STAGE_FILTERS: StageFilter[] = ['全部', '接入', '初筛', '面试中', '终审与 Offer', '已结束'];
 
 export function JobPage({
+  sessionId,
   jobId,
   onBack,
   onSelectApplication,
@@ -175,32 +180,54 @@ export function JobPage({
   const handleCreateJob = async () => {
     if (creating) return;
     const title = newJobTitle.trim();
-    const confirmationText = newJobConfirm.trim();
+    const activeSessionId = (sessionId ?? '').trim() || getCanvasSessionId();
     if (!title) {
       setFeedback({ tone: 'red', text: '请先填写岗位名称。' });
       return;
     }
-    if (!confirmationText) {
-      setFeedback({ tone: 'red', text: '请填写确认原话后再创建岗位。' });
+    const deptId = newJobDept.trim() || vm?.departmentId || '';
+    const code = `JOB-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+    const built = buildJobCreateBody({
+      code,
+      title,
+      departmentId: deptId,
+      descriptionMd: title,
+      requirementsMd: newJobConfirm.trim() || title,
+      criteria: [{ key: 'core_fit', label: '核心岗位匹配度', kind: 'MUST_HAVE', weight: 1 }],
+      status: 'DRAFT',
+    });
+    if (!built.ok) {
+      setFeedback({ tone: 'red', text: built.reasonText });
       return;
     }
     setCreating(true);
     setFeedback(null);
     try {
-      const res = await postJobCreate({
-        title,
-        dept: newJobDept.trim() || undefined,
-        confirmationText,
-      });
+      const outcome = await postJobCreate(built.body, activeSessionId);
+      if (!outcome.ok) {
+        setFeedback({
+          tone: 'red',
+          text: outcome.message || describeActionError(outcome.code, outcome.reasonCode) || '新建岗位未能完成，请稍后重试。',
+        });
+        return;
+      }
       setCreateOpen(false);
       setNewJobTitle('');
       setNewJobDept('');
       setNewJobConfirm('');
       const msg = `已创建岗位「${title}」（标准待审批），可继续完善岗位标准。`;
       setFeedback({ tone: 'green', text: msg });
-      onActionCompleted?.({ message: msg, actionId: res.action_id });
-      if (res.job_id && onSelectJob) {
-        onSelectJob(res.job_id);
+      const createdJobId =
+        outcome.payload && typeof outcome.payload.job_id === 'string'
+          ? outcome.payload.job_id
+          : undefined;
+      const actionId =
+        outcome.payload && typeof outcome.payload.action_id === 'string'
+          ? outcome.payload.action_id
+          : undefined;
+      onActionCompleted?.({ message: msg, actionId });
+      if (createdJobId && onSelectJob) {
+        onSelectJob(createdJobId);
       }
     } catch (err) {
       const msg = (err as CanvasActionError)?.userMessage || '新建岗位未能完成，请稍后重试。';
