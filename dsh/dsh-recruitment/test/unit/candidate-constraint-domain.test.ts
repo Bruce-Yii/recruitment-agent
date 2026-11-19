@@ -264,9 +264,9 @@ test('toPinProjection：过滤 superseded 与墓碑、按 created_at asc 然后 
   ]
   const projected = toPinProjection(rows)
   assert.deepEqual(projected, [
-    { text: '先', source: 'CHAT', created_by: ACTOR_A, created_at: '2026-01-01T00:00:00Z' },
-    { text: '同刻小 id 在前', source: 'CHAT', created_by: ACTOR_A, created_at: '2026-01-01T00:00:00Z' },
-    { text: '后', source: 'CHAT', created_by: ACTOR_B, created_at: '2026-01-02T00:00:00Z' },
+    { text: '先', source: 'CHAT', created_by: ACTOR_A.slice(0, 8), created_at: '2026-01-01T00:00:00Z' },
+    { text: '同刻小 id 在前', source: 'CHAT', created_by: ACTOR_A.slice(0, 8), created_at: '2026-01-01T00:00:00Z' },
+    { text: '后', source: 'CHAT', created_by: ACTOR_B.slice(0, 8), created_at: '2026-01-02T00:00:00Z' },
   ])
   for (const item of projected) {
     assert.deepEqual(Object.keys(item).sort(), ['created_at', 'created_by', 'source', 'text'])
@@ -287,8 +287,8 @@ test('toHandoffProjection：只取 HANDOFF 当前行、带 from_previous_round�
   ]
   const projected = toHandoffProjection(rows)
   assert.deepEqual(projected, [
-    { text: '交接一', source: 'CHAT', created_by: ACTOR_B, created_at: '2026-02-01T00:00:00Z', from_previous_round: true },
-    { text: '交接二', source: 'CHAT', created_by: ACTOR_A, created_at: '2026-02-02T00:00:00Z', from_previous_round: true },
+    { text: '交接一', source: 'CHAT', created_by: ACTOR_B.slice(0, 8), created_at: '2026-02-01T00:00:00Z', from_previous_round: true },
+    { text: '交接二', source: 'CHAT', created_by: ACTOR_A.slice(0, 8), created_at: '2026-02-02T00:00:00Z', from_previous_round: true },
   ])
   for (const item of projected) {
     assert.equal(Object.hasOwn(item, 'id'), false)

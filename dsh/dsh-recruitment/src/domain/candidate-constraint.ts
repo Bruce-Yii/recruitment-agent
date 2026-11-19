@@ -281,7 +281,7 @@ export function toPinProjection(rows: readonly CandidateConstraintRow[]): PinPro
     .map((row) => ({
       text: row.text,
       source: row.source,
-      created_by: row.created_by_actor_id,
+      created_by: row.created_by_actor_id.slice(0, 8),
       created_at: iso(row.created_at),
     }))
 }
@@ -302,7 +302,7 @@ export function toHandoffProjection(rows: readonly CandidateConstraintRow[]): Ha
     .map((row) => ({
       text: row.text,
       source: row.source,
-      created_by: row.created_by_actor_id,
+      created_by: row.created_by_actor_id.slice(0, 8),
       created_at: iso(row.created_at),
       from_previous_round: true as const,
     }))

@@ -124,13 +124,13 @@ test('loadCandidateConstraints：PIN 与上一轮 HANDOFF 都能读到并投影'
   assert.deepEqual(constraints.pins, [{
     text: ' 不要追问薪资 ',
     source: 'CHAT',
-    created_by: ACTOR,
+    created_by: ACTOR.slice(0, 8),
     created_at: '2026-11-18T02:00:00.000Z',
   }])
   assert.deepEqual(constraints.handoff, {
     text: '上一轮已确认技术方案，本轮不要重复提问',
     source: 'WEIXIN',
-    created_by: ACTOR,
+    created_by: ACTOR.slice(0, 8),
     created_at: '2026-11-18T03:00:00.000Z',
     from_previous_round: true,
   })
