@@ -476,7 +476,6 @@ function ListView({
   rounds,
   onSelect,
 }: {
-  readonly sessionId: string
   readonly overview: InterviewerOverview
   readonly stats: WorkspaceStats
   readonly rounds: readonly RoundFocusGroup[]
@@ -595,13 +594,18 @@ function ListView({
 /** T6-2 面后速记（2 秒防抖自动存服务端 + localStorage 断网兜底）+ T6-4 本地追问清单。 */
 function QuickNotesAndChecklist({
   sessionId,
+  alias,
   interviewId,
+  editable,
   iqs,
 }: {
   readonly sessionId: string
+  readonly alias: string
   readonly interviewId: string
+  readonly editable: boolean
   readonly iqs: readonly string[]
 }): JSX.Element {
+  const scopeKey = `${sessionId}:${alias}`
   const [note, setNote] = useState('')
   const [saveHint, setSaveHint] = useState('')
   const [checkedIqs, setCheckedIqs] = useState<Record<number, boolean>>({})
@@ -617,7 +621,7 @@ function QuickNotesAndChecklist({
         setNote(serverDraft.note)
         setSaveHint('已从服务端恢复草稿')
       } else {
-        const localDraft = readLocalScorecardDraft(interviewId)
+        const localDraft = readLocalScorecardDraft(interviewId, scopeKey)
         if (localDraft !== null) {
           setNote(localDraft.note)
           setSaveHint('已从本地缓存恢复（断网兜底）')
@@ -630,21 +634,37 @@ function QuickNotesAndChecklist({
     return () => {
       active = false
     }
-  }, [sessionId, interviewId, hydratedRef])
+  }, [sessionId, alias, scopeKey, interviewId, hydratedRef])
 
   useEffect(() => {
-    if (!hydratedRef.done) return
-    const prev = readLocalScorecardDraft(interviewId)
+    if (!hydratedRef.done || !editable || interviewId === '') return
+    // F1: Bind save strictly to (sessionId, alias, interviewId) at edit time; cancel on any switch!
+    let cancelled = false
+    const boundSession = sessionId
+    const boundInterview = interviewId
+    const prev = readLocalScorecardDraft(boundInterview, scopeKey)
     const payload = { assessments: prev?.assessments ?? {}, note }
-    writeLocalScorecardDraft(interviewId, payload)
+    writeLocalScorecardDraft(boundInterview, payload, scopeKey)
     setSaveHint('正在自动保存…')
     const timer = setTimeout(() => {
-      void saveScorecardDraft({ sessionId, interviewId, payload })
-        .then(() => setSaveHint('已自动保存草稿'))
-        .catch(() => setSaveHint('已暂存本地（离线兜底）'))
+      if (cancelled) return
+      void saveScorecardDraft({ sessionId: boundSession, interviewId: boundInterview, payload })
+        .then(() => {
+          if (!cancelled) setSaveHint('已自动保存草稿')
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return
+          const isMismatch =
+            err instanceof RecruitmentHttpError &&
+            (err.code.includes('INTERVIEWER_MISMATCH') || err.reasonCode.includes('INTERVIEWER_MISMATCH') || err.status === 403)
+          setSaveHint(isMismatch ? '当前身份与本场面试不匹配，未能保存草稿' : '已暂存本地（离线兜底）')
+        })
     }, 2000)
-    return () => clearTimeout(timer)
-  }, [note, sessionId, interviewId, hydratedRef])
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [note, sessionId, alias, scopeKey, interviewId, editable, hydratedRef])
 
   return (
     <>
@@ -683,9 +703,17 @@ function QuickNotesAndChecklist({
         <textarea
           className="iw-quicknotes"
           data-testid="quick-notes-textarea"
+          readOnly={!editable}
+          disabled={!editable}
           value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="边面边记，停顿 2 秒自动保存到服务端（断网自动暂存本地，提交面评后清空）…"
+          onChange={(e) => {
+            if (editable) setNote(e.target.value)
+          }}
+          placeholder={
+            editable
+              ? '边面边记，停顿 2 秒自动保存到服务端（断网自动暂存本地，提交面评后清空）…'
+              : '仅本人被分配且未提交的场次可编辑速记（只读）'
+          }
         />
       </div>
     </>
@@ -695,6 +723,7 @@ function QuickNotesAndChecklist({
 /** 详情页（V-I2），含两个独立分支卡片。 */
 function DetailView({
   sessionId,
+  alias,
   overview,
   row,
   labels,
@@ -703,6 +732,7 @@ function DetailView({
   onOpenScorecard,
 }: {
   readonly sessionId: string
+  readonly alias: string
   readonly overview: InterviewerOverview
   readonly row: InterviewRow
   readonly labels: WorkspaceLabels
@@ -767,8 +797,11 @@ function DetailView({
             </div>
 
             <QuickNotesAndChecklist
+              key={`${sessionId}-${alias}-${row.interview_id}`}
               sessionId={sessionId}
+              alias={alias}
               interviewId={row.interview_id}
+              editable={canSubmit && row.scorecard.state !== 'SUBMITTED'}
               iqs={row.iqs}
             />
 
@@ -1216,6 +1249,7 @@ export function InterviewerWorkspace(props: WorkspaceProps): JSX.Element {
             ? (
                 <DetailView
                   sessionId={sessionId}
+                  alias={alias}
                   overview={overview}
                   row={selectedRow}
                   labels={overview.labels}
@@ -1226,7 +1260,6 @@ export function InterviewerWorkspace(props: WorkspaceProps): JSX.Element {
               )
             : (
                 <ListView
-                  sessionId={sessionId}
                   overview={overview}
                   stats={stats}
                   rounds={rounds}
@@ -1241,7 +1274,7 @@ export function InterviewerWorkspace(props: WorkspaceProps): JSX.Element {
 
         {formTarget !== null ? (
           <ScorecardForm
-            key={`${formTarget.interview_id}-${formTarget.application_id}`}
+            key={`${sessionId}-${alias}-${formTarget.interview_id}-${formTarget.application_id}`}
             sessionId={sessionId}
             interviewId={formTarget.interview_id}
             applicationId={formTarget.application_id}
