@@ -92,6 +92,10 @@ window.__ModuleLoader__.load({
 			CANCELLED: {
 				text: "已取消",
 				tone: "caution"
+			},
+			NO_SHOW: {
+				text: "未出席",
+				tone: "caution"
 			}
 		};
 		function asObj(v) {
@@ -106,7 +110,6 @@ window.__ModuleLoader__.load({
 		function asNum(v, fallback = 0) {
 			return typeof v === "number" && Number.isFinite(v) ? v : fallback;
 		}
-		/** Never expose full 36-char UUIDs in UI; return first 8 chars or business code. */
 		function shortId(id) {
 			const s = asStr(id).trim();
 			if (!s) return "—";
@@ -123,10 +126,6 @@ window.__ModuleLoader__.load({
 			if (Number.isNaN(d.getTime())) return raw;
 			return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 		}
-		/**
-		* External fact labels MUST be displayed verbatim without beautification
-		* (LIVE/FIXTURE, EVENT/MANUAL, CONNECTED/NOT_CONNECTED/AUTH_REQUIRED).
-		*/
 		function formatFactLabels(rawLabels) {
 			const l = asObj(rawLabels);
 			const chips = [];
@@ -310,7 +309,7 @@ window.__ModuleLoader__.load({
 			const rounds = asArr(app.interviews).map((item, idx) => {
 				const iv = asObj(item);
 				const roundNo = asNum(iv.round_no, idx + 1);
-				const status = asStr(iv.status, "SCHEDULED");
+				const status = asStr(iv.status, "SCHEDULED").toUpperCase();
 				const stInfo = INTERVIEW_STATUS_MAP[status] || {
 					text: "进行中",
 					tone: "now"
@@ -391,6 +390,7 @@ window.__ModuleLoader__.load({
 			if (asStr(nextStep.label)) summaryParts.push(asStr(nextStep.label));
 			if (summaryParts.length === 0) summaryParts.push(`当前处于「${formatStageLabel(stageCode)}」阶段。`);
 			const rubricVersionNo = asNum(appRubric.version_no, asNum(evRubric.version_no, 1));
+			const missingScorecardNames = Array.from(new Set(rounds.flatMap((rd) => rd.interviewers.filter((p) => !p.submitted).map((p) => p.displayName))));
 			return {
 				applicationId,
 				shortRef: shortId(applicationId),
@@ -403,6 +403,9 @@ window.__ModuleLoader__.load({
 				stageLabel: formatStageLabel(stageCode),
 				isScreeningStage: stageCode === "S6" || stageCode === "S7",
 				isArchived: lifecycle !== "ACTIVE" || stageCode === "S12",
+				recordVersion: asNum(app.record_version, 1),
+				starred: Boolean(app.starred),
+				missingScorecardNames,
 				stageBlockedReason: asStr(app.stage_blocked_reason) || null,
 				nextStepLabel: asStr(nextStep.label) || null,
 				rubricVersionLabel: `V${rubricVersionNo}`,
@@ -644,15 +647,28 @@ window.__ModuleLoader__.load({
 		}
 		// src/client/canvas/canvas-actions.ts
 		/**
-		* Typed HTTP action clients for Recruitment OS DSH Plugin Canvas (Task 05).
+		* Typed HTTP action clients for Recruitment OS DSH Plugin Canvas (Task 08 · D-160 Full Parity).
 		*
-		* Contract rules (design/v4/contracts/available-actions.md & frontend-task-05-batch-undo.md):
+		* Covers ALL reachable write routes in docs/38-capability-entry-matrix.md (except deferred #9 compound):
+		*  1. POST /recruitment/api/action/screening/decide
+		*  2. POST /recruitment/api/decision/record
+		*  3. POST /recruitment/api/action/stage/advance
+		*  4. POST /recruitment/api/action/transcript/import
+		*  5. POST /recruitment/api/action/interview/schedule (schedule / reschedule / replace / add_round / NO_SHOW)
+		*  6. POST /recruitment/api/intake/upload?job_id=... + GET /recruitment/api/tasks/status
+		*  7. POST /recruitment/api/action/application/star
+		*  8. POST /recruitment/api/action/email/send
+		*  9. POST /recruitment/api/action/settings/write
+		* 10. POST /recruitment/api/action/decision/batch-reject & POST /recruitment/api/action/undo
+		* 11. POST /recruitment/api/action/candidate/constraint & POST /recruitment/api/action/application/transfer
+		* 12. POST /recruitment/api/action/job/create
+		* 13. GET  /recruitment/api/action/interview/free-slots & POST /recruitment/api/action/interview/rebind-minute
+		*
+		* Contract rules:
 		* - Same-origin cookie determines identity (frontend NEVER sends `actor`).
 		* - Always carries `x-recruitment-request: 1`.
-		* - Every write action requires `confirmation_text` (human verbatim confirmation).
-		* - `job/create` NEVER sends `headcount` (HC is maintained on requisitions).
-		* - `batch-reject` handles 200 partial failure per item using `message` (never `reason_code`).
-		* - `undo` maps 409 conflict states to human copy (never exposes error codes).
+		* - Optimistic locking: passes `expected_record_version` and maps 409 version conflict to
+		*   human copy "这条刚被别人改过，请刷新".
 		*/
 		const UNAVAILABLE_ACTION_MESSAGE = "这项还差最后一步，稍后开放";
 		function makeError(code, userMessage) {
@@ -660,6 +676,10 @@ window.__ModuleLoader__.load({
 			err.code = code;
 			err.userMessage = userMessage;
 			return err;
+		}
+		function extractErrorCode(data) {
+			const nested = data.error && typeof data.error === "object" ? data.error : {};
+			return String(data.reason_code || data.code || nested.reason_code || nested.code || "").toUpperCase();
 		}
 		async function postJsonAction(path, body) {
 			const res = await fetch(path, {
@@ -674,8 +694,79 @@ window.__ModuleLoader__.load({
 			});
 			if (res.status === 404 || res.status === 501) throw makeError("NOT_AVAILABLE", UNAVAILABLE_ACTION_MESSAGE);
 			const data = await res.json().catch(() => ({}));
-			if (!res.ok) throw makeError("ACTION_FAILED", typeof data.error_summary === "string" && data.error_summary.trim() ? data.error_summary : typeof data.message === "string" && data.message.trim() ? data.message : "操作未能完成，请检查输入或稍后重试");
+			if (!res.ok) {
+				const code = extractErrorCode(data);
+				if (res.status === 409 && (code.includes("VERSION") || code.includes("CONFLICT") || code.includes("STALE") || code.includes("LOCK"))) throw makeError("VERSION_CONFLICT", "这条刚被别人改过，请刷新");
+				if (res.status === 409 && (code.includes("DUPLICATE") || code.includes("ALREADY"))) throw makeError("DUPLICATE_DECISION", "已处理过，不会重复写入");
+				if (code.includes("SCORECARD_MISSING")) throw makeError("SCORECARD_MISSING", "还有面试官尚未提交面评，暂时不能提交终审决策");
+				throw makeError("ACTION_FAILED", typeof data.error_summary === "string" && data.error_summary.trim() ? data.error_summary : typeof data.message === "string" && data.message.trim() ? data.message : "操作未能完成，请检查输入或稍后重试");
+			}
 			return data;
+		}
+		async function postScreeningDecide(payload) {
+			const body = {
+				application_id: payload.applicationId,
+				result: payload.result,
+				reason: payload.reason,
+				confirmation_text: payload.confirmationText
+			};
+			if (typeof payload.expectedRecordVersion === "number") body.expected_record_version = payload.expectedRecordVersion;
+			return postJsonAction("/recruitment/api/action/screening/decide", body);
+		}
+		async function postDecisionRecord(payload) {
+			const body = {
+				application_id: payload.applicationId,
+				result: payload.result,
+				reason: payload.reason,
+				confirmation_text: payload.confirmationText
+			};
+			if (typeof payload.expectedRecordVersion === "number") body.expected_record_version = payload.expectedRecordVersion;
+			return postJsonAction("/recruitment/api/decision/record", body);
+		}
+		async function postStageAdvance(payload) {
+			const body = {
+				application_id: payload.applicationId,
+				target_stage_code: payload.targetStageCode,
+				confirmation_text: payload.confirmationText
+			};
+			if (payload.reason) body.reason = payload.reason;
+			if (typeof payload.expectedRecordVersion === "number") body.expected_record_version = payload.expectedRecordVersion;
+			return postJsonAction("/recruitment/api/action/stage/advance", body);
+		}
+		async function postTranscriptImport(payload) {
+			const body = {
+				application_id: payload.applicationId,
+				content: payload.sourceUrlOrText,
+				confirmation_text: payload.confirmationText
+			};
+			if (payload.interviewId) body.interview_id = payload.interviewId;
+			return postJsonAction("/recruitment/api/action/transcript/import", body);
+		}
+		async function postApplicationStar(payload) {
+			return postJsonAction("/recruitment/api/action/application/star", {
+				application_id: payload.applicationId,
+				starred: payload.starred
+			});
+		}
+		async function postEmailSend(payload) {
+			const body = {
+				application_id: payload.applicationId,
+				template: payload.template,
+				subject: payload.subject,
+				body: payload.bodyText,
+				confirmation_text: payload.confirmationText
+			};
+			if (typeof payload.expectedRecordVersion === "number") body.expected_record_version = payload.expectedRecordVersion;
+			return postJsonAction("/recruitment/api/action/email/send", body);
+		}
+		async function postSettingsWrite(payload) {
+			const body = { confirmation_text: payload.confirmationText };
+			if (typeof payload.agentSilentDelegation === "boolean") body.agent_silent_delegation = payload.agentSilentDelegation;
+			if (typeof payload.screeningHours === "number" || typeof payload.scorecardHours === "number") body.sla_thresholds = {
+				...typeof payload.screeningHours === "number" ? { screening_hours: payload.screeningHours } : {},
+				...typeof payload.scorecardHours === "number" ? { scorecard_hours: payload.scorecardHours } : {}
+			};
+			return postJsonAction("/recruitment/api/action/settings/write", body);
 		}
 		async function postApplicationTransfer(payload) {
 			const body = {
@@ -683,6 +774,7 @@ window.__ModuleLoader__.load({
 				target_job_id: payload.targetJobId,
 				confirmation_text: payload.confirmationText
 			};
+			if (typeof payload.expectedRecordVersion === "number") body.expected_record_version = payload.expectedRecordVersion;
 			if (payload.carryOverRefs && payload.carryOverRefs.length > 0) body.carry_over_refs = payload.carryOverRefs;
 			return postJsonAction("/recruitment/api/action/application/transfer", body);
 		}
@@ -698,10 +790,6 @@ window.__ModuleLoader__.load({
 			if (payload.interviewId) body.interview_id = payload.interviewId;
 			return postJsonAction("/recruitment/api/action/candidate/constraint", body);
 		}
-		/**
-		* NOTE: `headcount` is intentionally omitted because the backend rejects it
-		* (`400 UNSUPPORTED_FIELD`). HC belongs to the requisition.
-		*/
 		async function postJobCreate$1(payload) {
 			const body = {
 				title: payload.title.trim(),
@@ -711,12 +799,6 @@ window.__ModuleLoader__.load({
 			if (payload.requisitionId) body.requisition_id = payload.requisitionId;
 			return postJsonAction("/recruitment/api/action/job/create", body);
 		}
-		/**
-		* T5-1: Real batch reject endpoint.
-		* POST /recruitment/api/action/decision/batch-reject
-		* Partial failures still return HTTP 200 with per-item `results[]`;
-		* UI displays human `message` only (never `reason_code`).
-		*/
 		async function postBatchReject(payload) {
 			const raw = await postJsonAction("/recruitment/api/action/decision/batch-reject", {
 				application_ids: payload.applicationIds,
@@ -734,19 +816,13 @@ window.__ModuleLoader__.load({
 				};
 			});
 			const succeededCount = results.filter((x) => x.ok).length;
-			const failedCount = results.length - succeededCount;
 			return {
 				actionId: typeof raw.action_id === "string" ? raw.action_id : results.find((x) => x.ok && x.actionId)?.actionId,
 				succeededCount,
-				failedCount,
+				failedCount: results.length - succeededCount,
 				results
 			};
 		}
-		/**
-		* T5-2: Real 5-second undo endpoint.
-		* POST /recruitment/api/action/undo
-		* Maps 409 conflicts strictly to human copy without exposing error codes.
-		*/
 		async function postActionUndo(payload) {
 			const res = await fetch("/recruitment/api/action/undo", {
 				method: "POST",
@@ -763,7 +839,7 @@ window.__ModuleLoader__.load({
 			});
 			const data = await res.json().catch(() => ({}));
 			if (res.status === 409) {
-				const code = String(data.code || data.reason_code || (data.error && typeof data.error === "object" ? data.error.code : "") || "").toUpperCase();
+				const code = extractErrorCode(data);
 				if (code.includes("ALREADY_UNDONE")) return {
 					undone: false,
 					message: "这条已经撤销过了"
@@ -868,11 +944,6 @@ window.__ModuleLoader__.load({
 			if (code.includes("AUTH")) return "这位面试官的飞书日历授权已过期，需要重新连接";
 			return "这位面试官的飞书日历暂时无法读取";
 		}
-		/**
-		* T7-1: Query real Feishu free slots before scheduling/rescheduling/adding a round.
-		* GET /recruitment/api/action/interview/free-slots?application_id=<id>&interviewer_actor_ids=<id,id>&days=5&duration_minutes=45
-		* NEVER mistakes calendar read failure for "no free time".
-		*/
 		async function fetchInterviewFreeSlots(params) {
 			const qs = new URLSearchParams();
 			qs.set("application_id", params.applicationId);
@@ -934,21 +1005,20 @@ window.__ModuleLoader__.load({
 		async function postInterviewSchedule(payload) {
 			const body = {
 				application_id: payload.applicationId,
-				mode: payload.mode,
-				start_at: payload.startAt,
+				intent: payload.intent,
 				confirmation_text: payload.confirmationText
 			};
-			if (payload.endAt) body.end_at = payload.endAt;
+			if (payload.interviewId) body.interview_id = payload.interviewId;
+			if (payload.interviewerActorIds && payload.interviewerActorIds.length > 0) body.interviewer_actor_ids = payload.interviewerActorIds;
 			if (payload.roundLabel) body.round_label = payload.roundLabel;
 			if (payload.replaceInterviewer) body.replace_interviewer = payload.replaceInterviewer;
+			if (payload.startAt) body.start_at = payload.startAt;
+			if (payload.endAt) body.end_at = payload.endAt;
+			if (payload.noShowSubject) body.subject = payload.noShowSubject;
+			if (payload.reason) body.reason = payload.reason;
+			if (typeof payload.expectedRecordVersion === "number") body.expected_record_version = payload.expectedRecordVersion;
 			return postJsonAction("/recruitment/api/action/interview/schedule", body);
 		}
-		/**
-		* T7-2: Rebind Feishu Minutes recording ownership after replacing an interviewer.
-		* POST /recruitment/api/action/interview/rebind-minute
-		* NEVER called without explicit human click + confirmation_text.
-		* On failure, explicitly reassures that scorecards are NOT lost while ownership stays old.
-		*/
 		async function postRebindMinute(payload) {
 			const res = await fetch("/recruitment/api/action/interview/rebind-minute", {
 				method: "POST",
@@ -974,8 +1044,546 @@ window.__ModuleLoader__.load({
 				message: "已把录音归属改到新面试官"
 			};
 		}
+		// src/client/canvas/CandidateActionModal.tsx
+		const DEFAULT_CONFIRM_MAP = (kind, name) => {
+			switch (kind) {
+				case "pin": return `确认置顶 ${name} 的关键约束`;
+				case "handoff": return `确认为 ${name} 留下下一轮面试交接追问`;
+				case "transfer": return `确认将 ${name} 跨岗调剂`;
+				case "schedule": return `确认为 ${name} 安排或改期面试`;
+				case "screening": return `确认记录 ${name} 的初筛结论`;
+				case "decision": return `确认记录 ${name} 的终审正式决策`;
+				case "stage_advance": return `确认推进 ${name} 的招聘阶段`;
+				case "transcript_import": return `确认导入 ${name} 的面试转写`;
+				case "no_show": return `确认标记 ${name} 本场面试未出席`;
+				case "email": return `确认向 ${name} 发送邮件`;
+			}
+		};
+		function CandidateActionModal({ kind, vm, onClose, onSuccess }) {
+			const latestRound = vm.rounds[vm.rounds.length - 1];
+			const defaultActors = vm.rounds.map((r) => r.leadActorId).filter((x) => Boolean(x)).join(",");
+			const [inputText, setInputText] = (0, react.useState)("");
+			const [confirmText, setConfirmText] = (0, react.useState)(() => DEFAULT_CONFIRM_MAP(kind, vm.candidateName));
+			const [targetJobId, setTargetJobId] = (0, react.useState)("");
+			const [screenResult, setScreenResult] = (0, react.useState)("ADVANCE");
+			const [decisionResult, setDecisionResult] = (0, react.useState)("OFFER");
+			const [targetStageCode, setTargetStageCode] = (0, react.useState)("S8");
+			const [noShowSubject, setNoShowSubject] = (0, react.useState)("CANDIDATE");
+			const [emailTemplate, setEmailTemplate] = (0, react.useState)("OFFER");
+			const [emailSubject, setEmailSubject] = (0, react.useState)(`【通知】${vm.jobTitle}（${vm.candidateName}）`);
+			const [scheduleIntent, setScheduleIntent] = (0, react.useState)(vm.rounds.length > 0 ? "RESCHEDULE" : "CREATE");
+			const [selectedInterviewers, setSelectedInterviewers] = (0, react.useState)(defaultActors);
+			const [scheduleTime, setScheduleTime] = (0, react.useState)("");
+			const [scheduleEndTime, setScheduleEndTime] = (0, react.useState)("");
+			const [replaceInterviewer, setReplaceInterviewer] = (0, react.useState)("");
+			const [freeSlotsLoading, setFreeSlotsLoading] = (0, react.useState)(kind === "schedule");
+			const [freeSlots, setFreeSlots] = (0, react.useState)(null);
+			const [submitting, setSubmitting] = (0, react.useState)(false);
+			const [errorText, setErrorText] = (0, react.useState)(null);
+			const loadSlots = (rawIds) => {
+				setFreeSlotsLoading(true);
+				const ids = rawIds.split(/[,，\s]+/).map((x) => x.trim()).filter(Boolean);
+				fetchInterviewFreeSlots({
+					applicationId: vm.applicationId,
+					interviewerActorIds: ids,
+					days: 5,
+					durationMinutes: 45
+				}).then((res) => setFreeSlots(res)).finally(() => setFreeSlotsLoading(false));
+			};
+			(0, react.useEffect)(() => {
+				if (kind === "schedule") loadSlots(defaultActors);
+			}, [kind, vm.applicationId]);
+			const missingForOffer = kind === "decision" && decisionResult === "OFFER" && vm.missingScorecardNames.length > 0;
+			const handleSubmit = async () => {
+				if (submitting || missingForOffer) return;
+				const confirmationText = confirmText.trim();
+				if (!confirmationText) {
+					setErrorText("请先填写确认原话后再提交。");
+					return;
+				}
+				setSubmitting(true);
+				setErrorText(null);
+				try {
+					if (kind === "pin") {
+						if (!inputText.trim()) {
+							setErrorText("请填写需要置顶的约束内容。");
+							setSubmitting(false);
+							return;
+						}
+						onSuccess({
+							message: "已置顶候选人约束，并同步至档案与面试简报。",
+							actionId: (await postCandidateConstraint({
+								action: "PIN",
+								applicationId: vm.applicationId,
+								text: inputText.trim(),
+								source: "CHAT",
+								confirmationText
+							})).action_id
+						});
+					} else if (kind === "handoff") {
+						if (!inputText.trim()) {
+							setErrorText("请填写给下一轮面试官的交接追问。");
+							setSubmitting(false);
+							return;
+						}
+						onSuccess({
+							message: "已写入下一轮交接追问，面试官可第一眼看到。",
+							actionId: (await postCandidateConstraint({
+								action: "HANDOFF",
+								applicationId: vm.applicationId,
+								interviewId: latestRound?.interviewId,
+								text: inputText.trim(),
+								source: "CHAT",
+								confirmationText
+							})).action_id
+						});
+					} else if (kind === "transfer") {
+						if (!targetJobId.trim()) {
+							setErrorText("请填写目标岗位编号。");
+							setSubmitting(false);
+							return;
+						}
+						onSuccess({
+							message: "已完成跨岗调剂，原岗位档案完整保留。",
+							actionId: (await postApplicationTransfer({
+								applicationId: vm.applicationId,
+								targetJobId: targetJobId.trim(),
+								confirmationText,
+								expectedRecordVersion: vm.recordVersion
+							})).action_id
+						});
+					} else if (kind === "screening") onSuccess({
+						message: "已记录初筛结论并同步落库。",
+						actionId: (await postScreeningDecide({
+							applicationId: vm.applicationId,
+							result: screenResult,
+							reason: inputText.trim() || "依据岗位标准完成初筛评估",
+							confirmationText,
+							expectedRecordVersion: vm.recordVersion
+						})).action_id
+					});
+					else if (kind === "decision") onSuccess({
+						message: "已记录终审正式决策并同步落库。",
+						actionId: (await postDecisionRecord({
+							applicationId: vm.applicationId,
+							result: decisionResult,
+							reason: inputText.trim() || "综合各轮评估完成正式决策",
+							confirmationText,
+							expectedRecordVersion: vm.recordVersion
+						})).action_id
+					});
+					else if (kind === "stage_advance") onSuccess({
+						message: "已推进候选人阶段并记录确认原话。",
+						actionId: (await postStageAdvance({
+							applicationId: vm.applicationId,
+							targetStageCode,
+							reason: inputText.trim() || void 0,
+							confirmationText,
+							expectedRecordVersion: vm.recordVersion
+						})).action_id
+					});
+					else if (kind === "transcript_import") {
+						if (!inputText.trim()) {
+							setErrorText("请先输入转写文本或飞书妙记链接。");
+							setSubmitting(false);
+							return;
+						}
+						onSuccess({
+							message: "已导入面试转写记录。",
+							actionId: (await postTranscriptImport({
+								applicationId: vm.applicationId,
+								interviewId: latestRound?.interviewId,
+								sourceUrlOrText: inputText.trim(),
+								confirmationText
+							})).action_id
+						});
+					} else if (kind === "no_show") onSuccess({
+						message: "已标记本场面试为「未出席」并留痕。",
+						actionId: (await postInterviewSchedule({
+							applicationId: vm.applicationId,
+							intent: "NO_SHOW",
+							interviewId: latestRound?.interviewId,
+							noShowSubject,
+							reason: inputText.trim() || "未按约定时间出席面试",
+							confirmationText,
+							expectedRecordVersion: vm.recordVersion
+						})).action_id
+					});
+					else if (kind === "email") onSuccess({
+						message: "已发送邮件并记录外发留痕。",
+						actionId: (await postEmailSend({
+							applicationId: vm.applicationId,
+							template: emailTemplate,
+							subject: emailSubject.trim() || `关于「${vm.jobTitle}」应聘进展通知`,
+							bodyText: inputText.trim() || `您好 ${vm.candidateName}，感谢您参与「${vm.jobTitle}」招聘流程。`,
+							confirmationText,
+							expectedRecordVersion: vm.recordVersion
+						})).action_id
+					});
+					else if (kind === "schedule") {
+						if (!scheduleTime.trim()) {
+							setErrorText("请选择一个空闲时段，或手动填写面试时间。");
+							setSubmitting(false);
+							return;
+						}
+						const isReplace = replaceInterviewer.trim() !== "";
+						const ids = selectedInterviewers.split(/[,，\s]+/).map((x) => x.trim()).filter(Boolean);
+						const res = await postInterviewSchedule({
+							applicationId: vm.applicationId,
+							intent: scheduleIntent,
+							interviewId: scheduleIntent === "RESCHEDULE" ? latestRound?.interviewId : void 0,
+							interviewerActorIds: ids,
+							replaceInterviewer: isReplace ? replaceInterviewer.trim() : void 0,
+							startAt: scheduleTime.trim(),
+							endAt: scheduleEndTime.trim() || void 0,
+							confirmationText,
+							expectedRecordVersion: vm.recordVersion
+						});
+						onSuccess({
+							message: isReplace ? "已完成改期并更换面试官。" : "已锁定面试时间并同步排期。",
+							actionId: res.action_id,
+							rebindPrompt: isReplace && latestRound?.minuteToken && latestRound.interviewId ? {
+								interviewId: latestRound.interviewId,
+								fromActorId: latestRound.leadActorId || "",
+								toActorId: replaceInterviewer.trim(),
+								minuteToken: latestRound.minuteToken
+							} : void 0
+						});
+					}
+				} catch (err) {
+					setErrorText(err?.userMessage || "这项操作暂时未能完成，请稍后重试。");
+				} finally {
+					setSubmitting(false);
+				}
+			};
+			const titleMap = {
+				pin: `为 ${vm.candidateName} 置顶约束`,
+				handoff: `为 ${vm.candidateName} 留下一轮交接追问`,
+				transfer: `跨岗调剂 · ${vm.candidateName}`,
+				schedule: `面试排期与改期换人 · ${vm.candidateName}`,
+				screening: `记录初筛结论 · ${vm.candidateName}`,
+				decision: `记录终审正式决策 · ${vm.candidateName}`,
+				stage_advance: `推进阶段或带原话跳轮 · ${vm.candidateName}`,
+				transcript_import: `导入面试转写 · ${vm.candidateName}`,
+				no_show: `标记面试未出席 · ${vm.candidateName}`,
+				email: `发送邮件 · ${vm.candidateName}`
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "ros-modal-bg",
+				role: "dialog",
+				"aria-modal": "true",
+				onClick: (e) => {
+					if (e.target === e.currentTarget && !submitting) onClose();
+				},
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "ros-modal",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								fontSize: "17px",
+								fontWeight: 650
+							},
+							children: titleMap[kind]
+						}),
+						kind === "schedule" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: {
+									display: "flex",
+									gap: 10
+								},
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: `ros-slot-pill ${scheduleIntent === "CREATE" ? "active" : ""}`,
+									onClick: () => setScheduleIntent("CREATE"),
+									children: "安排新场次"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									"data-testid": "schedule-mode-reschedule",
+									className: `ros-slot-pill ${scheduleIntent === "RESCHEDULE" ? "active" : ""}`,
+									onClick: () => setScheduleIntent("RESCHEDULE"),
+									children: "改期现有场次"
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: "ros-m-field",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "选择面试官（支持多个，逗号分隔）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: {
+										display: "flex",
+										gap: 8
+									},
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										"data-testid": "schedule-interviewers-input",
+										style: { flex: 1 },
+										value: selectedInterviewers,
+										onChange: (e) => setSelectedInterviewers(e.target.value),
+										placeholder: "输入面试官编号（多个用逗号分隔）"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: "ros-btn",
+										onClick: () => loadSlots(selectedInterviewers),
+										children: "查空闲"
+									})]
+								})]
+							}),
+							freeSlotsLoading ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-sec-meta",
+								children: "正在读取飞书日历共同空闲时段…"
+							}) : freeSlots ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+								freeSlots.unavailableBanner ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-risk-note",
+									"data-testid": "calendar-unavailable-banner",
+									children: freeSlots.unavailableBanner
+								}) : null,
+								freeSlots.unsatisfiedReasons.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-risk-note",
+									"data-testid": "calendar-unsatisfied-banner",
+									children: freeSlots.unsatisfiedReasons.join("；")
+								}) : null,
+								freeSlots.slots.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-slot-grid",
+									"data-testid": "free-slots-grid",
+									children: freeSlots.slots.map((slot) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: `ros-slot-pill ${scheduleTime === slot.startIso ? "active" : ""}`,
+										onClick: () => {
+											setScheduleTime(slot.startIso);
+											setScheduleEndTime(slot.endIso);
+										},
+										children: slot.label
+									}, slot.startIso))
+								}) : !freeSlots.calendarUnavailable && freeSlots.unsatisfiedReasons.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "ros-sec-meta",
+									"data-testid": "free-slots-empty",
+									children: "未来 5 天没有共同空闲，请直接在下方手动填写时间。"
+								}) : null
+							] }) : null,
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: "ros-m-field",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "面试开始时间" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									"data-testid": "schedule-time-input",
+									value: scheduleTime,
+									onChange: (e) => setScheduleTime(e.target.value),
+									placeholder: "点选上方时段自动填入，或手动输入"
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: "ros-m-field",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "更换新面试官（选填）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									"data-testid": "replace-interviewer-input",
+									value: replaceInterviewer,
+									onChange: (e) => setReplaceInterviewer(e.target.value),
+									placeholder: "留空则仅排期/改期"
+								})]
+							})
+						] }) : kind === "screening" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "ros-slot-grid",
+							children: [
+								"ADVANCE",
+								"HOLD",
+								"REJECT"
+							].map((opt) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: `ros-slot-pill ${screenResult === opt ? "active" : ""}`,
+								onClick: () => setScreenResult(opt),
+								children: opt === "ADVANCE" ? "通过初筛" : opt === "HOLD" ? "待定观察" : "初筛不通过"
+							}, opt))
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: "ros-m-field",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "初筛判断理由 / 人工纠偏说明" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+								rows: 3,
+								value: inputText,
+								onChange: (e) => setInputText(e.target.value),
+								placeholder: "说明初筛判断依据…"
+							})]
+						})] }) : kind === "decision" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+							vm.missingScorecardNames.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "ros-risk-note",
+								"data-testid": "decision-missing-scorecards",
+								style: {
+									borderLeftColor: "var(--red)",
+									color: "var(--red)"
+								},
+								children: [
+									"还缺 ",
+									vm.missingScorecardNames.join("、"),
+									" 的面评，暂时不能提交录用决策。"
+								]
+							}) : null,
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-slot-grid",
+								children: [
+									"OFFER",
+									"HOLD",
+									"REJECT"
+								].map((opt) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: `ros-slot-pill ${decisionResult === opt ? "active" : ""}`,
+									onClick: () => setDecisionResult(opt),
+									children: opt === "OFFER" ? "终审通过（发 Offer）" : opt === "HOLD" ? "暂缓待定" : "终审不通过"
+								}, opt))
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: "ros-m-field",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "终审决策理由" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+									rows: 3,
+									value: inputText,
+									onChange: (e) => setInputText(e.target.value),
+									placeholder: "总结各轮评估后的正式决策理由…"
+								})]
+							})
+						] }) : kind === "stage_advance" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: "ros-m-field",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "目标阶段" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+								value: targetStageCode,
+								onChange: (e) => setTargetStageCode(e.target.value),
+								style: {
+									padding: "9px 11px",
+									borderRadius: 8,
+									border: "1px solid var(--line)",
+									background: "var(--surface)",
+									color: "var(--ink)"
+								},
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: "S8",
+										children: "面试安排"
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: "S10",
+										children: "三面终审（支持带原话跳轮）"
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: "S11",
+										children: "Offer 待确认"
+									})
+								]
+							})]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: "ros-m-field",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "推进 / 跳轮说明" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+								rows: 2,
+								value: inputText,
+								onChange: (e) => setInputText(e.target.value),
+								placeholder: "如为跳轮豁免，请说明原因…"
+							})]
+						})] }) : kind === "transcript_import" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: "ros-m-field",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "转写内容或飞书妙记链接" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+								rows: 4,
+								value: inputText,
+								onChange: (e) => setInputText(e.target.value),
+								placeholder: "粘贴面试转写文本或飞书妙记链接…"
+							})]
+						}) : kind === "no_show" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "ros-slot-grid",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: `ros-slot-pill ${noShowSubject === "CANDIDATE" ? "active" : ""}`,
+								onClick: () => setNoShowSubject("CANDIDATE"),
+								children: "候选人未出席"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: `ros-slot-pill ${noShowSubject === "INTERVIEWER" ? "active" : ""}`,
+								onClick: () => setNoShowSubject("INTERVIEWER"),
+								children: "面试官未出席"
+							})]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: "ros-m-field",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "未出席原因说明" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								value: inputText,
+								onChange: (e) => setInputText(e.target.value),
+								placeholder: "例如：候选人临时爽约未上线"
+							})]
+						})] }) : kind === "email" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-slot-grid",
+								children: [
+									"OFFER",
+									"INVITE",
+									"THANK_YOU"
+								].map((tpl) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: `ros-slot-pill ${emailTemplate === tpl ? "active" : ""}`,
+									onClick: () => setEmailTemplate(tpl),
+									children: tpl === "OFFER" ? "正式 Offer 邮件" : tpl === "INVITE" ? "面试邀约邮件" : "礼貌婉拒邮件"
+								}, tpl))
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: "ros-m-field",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "邮件主题" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									value: emailSubject,
+									onChange: (e) => setEmailSubject(e.target.value)
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: "ros-m-field",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "邮件正文" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+									rows: 3,
+									value: inputText,
+									onChange: (e) => setInputText(e.target.value),
+									placeholder: "输入邮件正文内容…"
+								})]
+							})
+						] }) : kind === "transfer" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: "ros-m-field",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "目标岗位 ID" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								value: targetJobId,
+								onChange: (e) => setTargetJobId(e.target.value),
+								placeholder: "输入目标岗位 ID（原岗位档案完整保留）"
+							})]
+						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: "ros-m-field",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: kind === "pin" ? "约束内容（≤500 字）" : "给下一轮面试官的交接追问（≤500 字）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+								rows: 3,
+								maxLength: 500,
+								value: inputText,
+								onChange: (e) => setInputText(e.target.value),
+								placeholder: kind === "pin" ? "例如：字节 Offer 周五截止 · 期望 45k" : "例如：重点追问并发回滚深度"
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: "ros-m-field",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "确认原话（留痕必填）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								value: confirmText,
+								onChange: (e) => setConfirmText(e.target.value),
+								placeholder: "输入一句确认原话"
+							})]
+						}),
+						errorText ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "ros-risk-note",
+							style: {
+								borderLeftColor: "var(--red)",
+								color: "var(--red)"
+							},
+							children: errorText
+						}) : null,
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							style: {
+								display: "flex",
+								justifyContent: "flex-end",
+								gap: 10
+							},
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "ros-btn",
+								disabled: submitting,
+								onClick: onClose,
+								children: "取消"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "ros-btn dark",
+								disabled: submitting || missingForOffer,
+								"data-testid": "canvas-modal-submit",
+								onClick: () => void handleSubmit(),
+								children: submitting ? "处理中…" : "确认提交"
+							})]
+						})
+					]
+				})
+			});
+		}
 		// src/client/canvas/CandidatePage.tsx
-		function CandidatePage({ applicationId, onBack, onOpenJob, onActionCompleted, refreshNonce = 0, fetcher }) {
+		function CandidatePage({ applicationId, onBack, onOpenJob, onUploadStarted, onActionCompleted, refreshNonce = 0, fetcher }) {
 			const [vm, setVm] = (0, react.useState)(null);
 			const [loading, setLoading] = (0, react.useState)(true);
 			const [error, setError] = (0, react.useState)(null);
@@ -984,16 +1592,11 @@ window.__ModuleLoader__.load({
 			const [expandedTs, setExpandedTs] = (0, react.useState)(null);
 			const [timelineOpen, setTimelineOpen] = (0, react.useState)(false);
 			const [modalKind, setModalKind] = (0, react.useState)(null);
-			const [inputText, setInputText] = (0, react.useState)("");
-			const [targetJobId, setTargetJobId] = (0, react.useState)("");
-			const [confirmText, setConfirmText] = (0, react.useState)("");
-			const [submitting, setSubmitting] = (0, react.useState)(false);
 			const [actionFeedback, setActionFeedback] = (0, react.useState)(null);
-			const [freeSlotsLoading, setFreeSlotsLoading] = (0, react.useState)(false);
-			const [freeSlots, setFreeSlots] = (0, react.useState)(null);
-			const [scheduleTime, setScheduleTime] = (0, react.useState)("");
-			const [scheduleEndTime, setScheduleEndTime] = (0, react.useState)("");
-			const [replaceInterviewer, setReplaceInterviewer] = (0, react.useState)("");
+			const [starredLocal, setStarredLocal] = (0, react.useState)(false);
+			const [starBusy, setStarBusy] = (0, react.useState)(false);
+			const [candUploading, setCandUploading] = (0, react.useState)(false);
+			const candFileRef = (0, react.useRef)(null);
 			const [pendingRebind, setPendingRebind] = (0, react.useState)(null);
 			const [rebindConfirmText, setRebindConfirmText] = (0, react.useState)("");
 			const [rebindSubmitting, setRebindSubmitting] = (0, react.useState)(false);
@@ -1005,10 +1608,8 @@ window.__ModuleLoader__.load({
 					if (cancelledRef?.current) return;
 					const next = normalizeApplicationDetail$1(raw);
 					setVm(next);
+					setStarredLocal(next.starred);
 					setActiveCrit(next.criteria[0]?.key || "");
-					setDocTab("resume");
-					setExpandedTs(null);
-					setTimelineOpen(false);
 				} catch {
 					if (cancelledRef?.current) return;
 					setError("暂时没能读取到这位候选人的档案，请稍后重试。");
@@ -1023,168 +1624,25 @@ window.__ModuleLoader__.load({
 					cancelledRef.current = true;
 				};
 			}, [load, refreshNonce]);
-			const openActionModal = (kind) => {
-				if (kind === "schedule" && vm) {
-					setFreeSlots(null);
-					setScheduleTime("");
-					setScheduleEndTime("");
-					setReplaceInterviewer("");
-					setFreeSlotsLoading(true);
-					const actorIds = vm.rounds.map((r) => r.leadActorId).filter((x) => Boolean(x));
-					fetchInterviewFreeSlots({
-						applicationId: vm.applicationId,
-						interviewerActorIds: actorIds,
-						days: 5,
-						durationMinutes: 45
-					}).then((res) => setFreeSlots(res)).finally(() => setFreeSlotsLoading(false));
-				}
-				setActionFeedback(null);
-				setInputText("");
-				setTargetJobId("");
-				setConfirmText(kind === "pin" ? `确认置顶 ${vm?.candidateName || "候选人"} 的关键约束` : kind === "handoff" ? `确认为 ${vm?.candidateName || "候选人"} 留下下一轮面试交接追问` : kind === "schedule" ? `确认为 ${vm?.candidateName || "候选人"} 安排/改期面试` : `确认将 ${vm?.candidateName || "候选人"} 跨岗调剂`);
-				setModalKind(kind);
-			};
-			const closeActionModal = () => {
-				if (submitting) return;
+			const handleModalSuccess = async (res) => {
 				setModalKind(null);
-			};
-			const handleModalSubmit = async () => {
-				if (!vm || !modalKind || submitting) return;
-				const confirmationText = confirmText.trim();
-				if (!confirmationText) {
-					setActionFeedback({
-						tone: "red",
-						text: "请先填写确认原话后再提交。"
-					});
-					return;
-				}
-				if ((modalKind === "pin" || modalKind === "handoff") && !inputText.trim()) {
-					setActionFeedback({
-						tone: "red",
-						text: modalKind === "pin" ? "请填写需要置顶的约束内容。" : "请填写给下一轮面试官的交接追问。"
-					});
-					return;
-				}
-				if (modalKind === "transfer" && !targetJobId.trim()) {
-					setActionFeedback({
-						tone: "red",
-						text: "请填写目标岗位编号。"
-					});
-					return;
-				}
-				if (modalKind === "schedule" && !scheduleTime.trim()) {
-					setActionFeedback({
-						tone: "red",
-						text: "请选择一个空闲时段，或手动填写面试时间。"
-					});
-					return;
-				}
-				setSubmitting(true);
-				setActionFeedback(null);
-				try {
-					if (modalKind === "pin") {
-						const pinRes = await postCandidateConstraint({
-							action: "PIN",
-							applicationId: vm.applicationId,
-							text: inputText.trim(),
-							source: "CHAT",
-							confirmationText
-						});
-						setModalKind(null);
-						await load();
-						const msg = "已置顶候选人约束，并同步至档案与面试简报。";
-						setActionFeedback({
-							tone: "green",
-							text: msg
-						});
-						onActionCompleted?.({
-							message: msg,
-							actionId: pinRes.action_id
-						});
-					} else if (modalKind === "handoff") {
-						const latestRound = vm.rounds[vm.rounds.length - 1];
-						const hoRes = await postCandidateConstraint({
-							action: "HANDOFF",
-							applicationId: vm.applicationId,
-							interviewId: latestRound?.interviewId || void 0,
-							text: inputText.trim(),
-							source: "CHAT",
-							confirmationText
-						});
-						setModalKind(null);
-						await load();
-						const msg = "已写入下一轮交接追问，面试官可第一眼看到。";
-						setActionFeedback({
-							tone: "green",
-							text: msg
-						});
-						onActionCompleted?.({
-							message: msg,
-							actionId: hoRes.action_id
-						});
-					} else if (modalKind === "transfer") {
-						const trRes = await postApplicationTransfer({
-							applicationId: vm.applicationId,
-							targetJobId: targetJobId.trim(),
-							confirmationText
-						});
-						setModalKind(null);
-						await load();
-						const msg = "已完成跨岗调剂，原岗位档案完整保留。";
-						setActionFeedback({
-							tone: "green",
-							text: msg
-						});
-						onActionCompleted?.({
-							message: msg,
-							actionId: trRes.action_id
-						});
-					} else if (modalKind === "schedule") {
-						const latestRound = vm.rounds[vm.rounds.length - 1];
-						const isReplace = replaceInterviewer.trim() !== "";
-						const scRes = await postInterviewSchedule({
-							applicationId: vm.applicationId,
-							mode: isReplace ? "reschedule" : "schedule",
-							replaceInterviewer: isReplace ? replaceInterviewer.trim() : void 0,
-							startAt: scheduleTime.trim(),
-							endAt: scheduleEndTime.trim() || void 0,
-							confirmationText
-						});
-						setModalKind(null);
-						await load();
-						const msg = isReplace ? "已完成改期并更换面试官。" : "已锁定面试时间并同步排期。";
-						setActionFeedback({
-							tone: "green",
-							text: msg
-						});
-						onActionCompleted?.({
-							message: msg,
-							actionId: scRes.action_id
-						});
-						if (isReplace && latestRound?.minuteToken && latestRound.interviewId) {
-							setPendingRebind({
-								interviewId: latestRound.interviewId,
-								fromActorId: latestRound.leadActorId || "",
-								toActorId: replaceInterviewer.trim(),
-								minuteToken: latestRound.minuteToken
-							});
-							setRebindConfirmText(`确认把 ${vm.candidateName} 这场面试的录音归属改到新面试官`);
-						}
-					}
-				} catch (err) {
-					const msg = err?.userMessage || "这项操作暂时未能完成，请稍后重试。";
-					setActionFeedback({
-						tone: "red",
-						text: msg
-					});
-				} finally {
-					setSubmitting(false);
+				await load();
+				setActionFeedback({
+					tone: "green",
+					text: res.message
+				});
+				onActionCompleted?.({
+					message: res.message,
+					actionId: res.actionId
+				});
+				if (res.rebindPrompt) {
+					setPendingRebind(res.rebindPrompt);
+					setRebindConfirmText(`确认把 ${vm?.candidateName || "候选人"} 这场面试的录音归属改到新面试官`);
 				}
 			};
 			const handleRebindMinute = async () => {
 				if (!pendingRebind || rebindSubmitting) return;
-				const confirmationText = rebindConfirmText.trim();
-				if (!confirmationText) {
+				if (!rebindConfirmText.trim()) {
 					setActionFeedback({
 						tone: "red",
 						text: "请先填写一句确认原话再修改录音归属。"
@@ -1199,7 +1657,7 @@ window.__ModuleLoader__.load({
 						fromActorId: pendingRebind.fromActorId,
 						toActorId: pendingRebind.toActorId,
 						minuteToken: pendingRebind.minuteToken,
-						confirmationText,
+						confirmationText: rebindConfirmText.trim(),
 						dryRun: false
 					});
 					setPendingRebind(null);
@@ -1208,10 +1666,9 @@ window.__ModuleLoader__.load({
 						text: res.message
 					});
 				} catch (err) {
-					const msg = err?.userMessage || "录音归属修改未能完成。面评不会因此丢，但录音归属仍是旧的。";
 					setActionFeedback({
 						tone: "red",
-						text: msg
+						text: err?.userMessage || "录音归属修改未能完成。面评不会因此丢，但录音归属仍是旧的。"
 					});
 				} finally {
 					setRebindSubmitting(false);
@@ -1332,8 +1789,7 @@ window.__ModuleLoader__.load({
 										className: "ros-m-field",
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "确认原话（外部写入必填）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 											value: rebindConfirmText,
-											onChange: (e) => setRebindConfirmText(e.target.value),
-											placeholder: "输入确认原话"
+											onChange: (e) => setRebindConfirmText(e.target.value)
 										})]
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -1375,8 +1831,7 @@ window.__ModuleLoader__.load({
 											className: "num",
 											children: vm.shortRef
 										}),
-										" · 标准",
-										" ",
+										" · 标准 ",
 										vm.rubricVersionLabel
 									]
 								})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -1386,9 +1841,43 @@ window.__ModuleLoader__.load({
 										alignItems: "flex-end",
 										gap: 6
 									},
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(StatusLabel, {
-										text: vm.stageLabel,
-										tone: vm.isArchived ? "" : "iris"
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											alignItems: "center",
+											gap: 10
+										},
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											"data-testid": "canvas-action-star",
+											disabled: starBusy,
+											title: starredLocal ? "取消星标主推" : "设为星标主推",
+											style: {
+												fontSize: "16px",
+												color: starredLocal ? "var(--amber)" : "var(--soft)"
+											},
+											onClick: () => {
+												if (starBusy) return;
+												setStarBusy(true);
+												postApplicationStar({
+													applicationId: vm.applicationId,
+													starred: !starredLocal
+												}).then((res) => {
+													setStarredLocal(Boolean(res.starred));
+													setActionFeedback({
+														tone: "green",
+														text: res.starred ? "已标记为主推候选人" : "已取消星标标记"
+													});
+												}).catch((err) => setActionFeedback({
+													tone: "red",
+													text: err?.userMessage || "星标更新失败"
+												})).finally(() => setStarBusy(false));
+											},
+											children: starredLocal ? "★" : "☆"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StatusLabel, {
+											text: vm.stageLabel,
+											tone: vm.isArchived ? "" : "iris"
+										})]
 									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										className: "ros-sec-meta",
 										children: vm.lifecycleLabel
@@ -1427,12 +1916,6 @@ window.__ModuleLoader__.load({
 									onClick: () => setActiveCrit(cr.key),
 									role: "button",
 									tabIndex: 0,
-									onKeyDown: (e) => {
-										if (e.key === "Enter" || e.key === " ") {
-											e.preventDefault();
-											setActiveCrit(cr.key);
-										}
-									},
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 										style: {
 											fontSize: "13.5px",
@@ -1458,10 +1941,7 @@ window.__ModuleLoader__.load({
 										text: cr.statusText,
 										tone: cr.level
 									})]
-								}, cr.key)) }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, {
-									title: "暂无岗位标准维度",
-									description: "该岗位尚未配置或锁定考核标准。"
-								})]
+								}, cr.key)) }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, { title: "暂无岗位标准维度" })]
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "ros-doc-block",
@@ -1512,7 +1992,9 @@ window.__ModuleLoader__.load({
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									style: {
 										display: "flex",
-										gap: 16
+										gap: 16,
+										alignItems: "center",
+										flexWrap: "wrap"
 									},
 									children: [
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
@@ -1532,6 +2014,46 @@ window.__ModuleLoader__.load({
 											className: `ros-text-link ${docTab === "original" ? "active" : ""}`,
 											onClick: () => setDocTab("original"),
 											children: "原件预览"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+											style: {
+												marginLeft: "auto",
+												display: "inline-flex",
+												gap: 12
+											},
+											children: [
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+													ref: candFileRef,
+													type: "file",
+													accept: ".pdf,.doc,.docx,.rtf,.txt",
+													style: { display: "none" },
+													onChange: (e) => {
+														const file = e.target.files?.[0];
+														e.target.value = "";
+														if (!file || candUploading) return;
+														setCandUploading(true);
+														uploadResumeRaw(file, vm.jobId).then((started) => onUploadStarted?.(started)).catch((err) => setActionFeedback({
+															tone: "red",
+															text: err?.userMessage || "上传未能提交"
+														})).finally(() => setCandUploading(false));
+													}
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: "ros-text-link",
+													disabled: candUploading,
+													"data-testid": "canvas-action-candidate-upload",
+													onClick: () => candFileRef.current?.click(),
+													children: candUploading ? "上传中…" : "上传简历"
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: "ros-text-link",
+													"data-testid": "canvas-action-transcript-import",
+													onClick: () => setModalKind("transcript_import"),
+													children: "导入转写"
+												})
+											]
 										})
 									]
 								}), docTab === "resume" ? vm.hasResumeMaterial && vm.resumeSections.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: vm.resumeSections.map((sec) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
@@ -1539,13 +2061,12 @@ window.__ModuleLoader__.load({
 									children: sec.title
 								}), sec.items.map((it) => {
 									lineNo += 1;
-									const noStr = lineNo < 10 ? `0${lineNo}` : String(lineNo);
 									return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										className: `ros-doc-line ${it.matchKey === activeCrit ? "active" : ""}`,
 										onClick: () => setActiveCrit(it.matchKey),
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 											className: "ros-doc-no num",
-											children: noStr
+											children: lineNo < 10 ? `0${lineNo}` : String(lineNo)
 										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [it.heading || it.period || it.pageLabel ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											className: "ros-exp-meta",
 											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
@@ -1642,12 +2163,6 @@ window.__ModuleLoader__.load({
 								onClick: () => setTimelineOpen((v) => !v),
 								role: "button",
 								tabIndex: 0,
-								onKeyDown: (e) => {
-									if (e.key === "Enter" || e.key === " ") {
-										e.preventDefault();
-										setTimelineOpen((v) => !v);
-									}
-								},
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
 									"全链路动态留痕（",
 									vm.timeline.length,
@@ -1676,7 +2191,7 @@ window.__ModuleLoader__.load({
 									style: {
 										display: "flex",
 										alignItems: "center",
-										gap: 16,
+										gap: 14,
 										flexWrap: "wrap"
 									},
 									children: [
@@ -1684,167 +2199,81 @@ window.__ModuleLoader__.load({
 											type: "button",
 											className: "ros-text-link",
 											"data-testid": "canvas-action-pin",
-											onClick: () => openActionModal("pin"),
+											onClick: () => setModalKind("pin"),
 											children: "置顶约束"
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 											type: "button",
 											className: "ros-text-link",
 											"data-testid": "canvas-action-handoff",
-											onClick: () => openActionModal("handoff"),
+											onClick: () => setModalKind("handoff"),
 											children: "下一轮交接"
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 											type: "button",
 											className: "ros-text-link",
 											"data-testid": "canvas-action-schedule",
-											onClick: () => openActionModal("schedule"),
+											onClick: () => setModalKind("schedule"),
 											children: "约面 / 改期换人"
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 											type: "button",
 											className: "ros-text-link",
 											"data-testid": "canvas-action-transfer",
-											onClick: () => openActionModal("transfer"),
+											onClick: () => setModalKind("transfer"),
 											children: "跨岗调剂"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "ros-text-link",
+											"data-testid": "canvas-action-stage-advance",
+											onClick: () => setModalKind("stage_advance"),
+											children: "推进阶段 / 跳轮"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "ros-text-link",
+											"data-testid": "canvas-action-no-show",
+											onClick: () => setModalKind("no_show"),
+											children: "标记未出席"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "ros-text-link",
+											"data-testid": "canvas-action-email",
+											onClick: () => setModalKind("email"),
+											children: "发邮件"
 										})
 									]
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "ros-sec-meta",
-									children: "高风险写操作均需人工原话确认"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: {
+										display: "flex",
+										alignItems: "center",
+										gap: 10
+									},
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: "ros-btn",
+										"data-testid": "canvas-action-screening",
+										onClick: () => setModalKind("screening"),
+										children: "初筛结论"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: "ros-btn dark",
+										"data-testid": "canvas-action-decision",
+										onClick: () => setModalKind("decision"),
+										children: "正式决策"
+									})]
 								})]
 							})
 						]
 					})
 				}),
-				modalKind ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-					className: "ros-modal-bg",
-					role: "dialog",
-					"aria-modal": "true",
-					onClick: (e) => {
-						if (e.target === e.currentTarget) closeActionModal();
-					},
-					children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: "ros-modal",
-						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								style: {
-									fontSize: "17px",
-									fontWeight: 650
-								},
-								children: modalKind === "pin" ? `为 ${vm.candidateName} 置顶约束` : modalKind === "handoff" ? `为 ${vm.candidateName} 留下一轮交接追问` : modalKind === "schedule" ? `面试排期与改期换人 · ${vm.candidateName}` : `跨岗调剂 · ${vm.candidateName}`
-							}),
-							modalKind === "schedule" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-								freeSlotsLoading ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-									className: "ros-sec-meta",
-									children: "正在读取飞书日历共同空闲时段…"
-								}) : freeSlots ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-									freeSlots.unavailableBanner ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-										className: "ros-risk-note",
-										"data-testid": "calendar-unavailable-banner",
-										children: freeSlots.unavailableBanner
-									}) : null,
-									freeSlots.unsatisfiedReasons.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-										className: "ros-risk-note",
-										"data-testid": "calendar-unsatisfied-banner",
-										children: freeSlots.unsatisfiedReasons.join("；")
-									}) : null,
-									freeSlots.slots.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-										className: "ros-sec-meta",
-										style: { marginBottom: 7 },
-										children: "飞书日历共同空闲时段（点击填入下方时间）"
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-										className: "ros-slot-grid",
-										"data-testid": "free-slots-grid",
-										children: freeSlots.slots.map((slot) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: `ros-slot-pill ${scheduleTime === slot.startIso ? "active" : ""}`,
-											onClick: () => {
-												setScheduleTime(slot.startIso);
-												setScheduleEndTime(slot.endIso);
-											},
-											children: slot.label
-										}, slot.startIso))
-									})] }) : !freeSlots.calendarUnavailable && freeSlots.unsatisfiedReasons.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-										className: "ros-sec-meta",
-										"data-testid": "free-slots-empty",
-										children: "未来 5 天没有共同空闲，请直接在下方手动填写时间。"
-									}) : null
-								] }) : null,
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-									className: "ros-m-field",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "面试开始时间（点选上方时段自动填入，也可手动填写）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										"data-testid": "schedule-time-input",
-										value: scheduleTime,
-										onChange: (e) => setScheduleTime(e.target.value),
-										placeholder: "例如：2026-11-20T15:00:00+08:00 或 明天 15:00"
-									})]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-									className: "ros-m-field",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "更换新面试官（留空则仅排期/改期，填写则换人）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										"data-testid": "replace-interviewer-input",
-										value: replaceInterviewer,
-										onChange: (e) => setReplaceInterviewer(e.target.value),
-										placeholder: "选填：输入新面试官姓名或编号"
-									})]
-								})
-							] }) : modalKind === "transfer" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-								className: "ros-m-field",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "目标岗位 ID" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									value: targetJobId,
-									onChange: (e) => setTargetJobId(e.target.value),
-									placeholder: "输入目标岗位 ID（原岗位档案将完整保留）"
-								})]
-							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-								className: "ros-m-field",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: modalKind === "pin" ? "约束内容（≤500 字）" : "给下一轮面试官的追问（≤500 字）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
-									rows: 3,
-									maxLength: 500,
-									value: inputText,
-									onChange: (e) => setInputText(e.target.value),
-									placeholder: modalKind === "pin" ? "例如：字节 Offer 周五截止 · 期望 45k" : "例如：重点追问多 Agent 并发状态回滚与幂等处理深度"
-								})]
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-								className: "ros-m-field",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "确认原话（留痕必填）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									value: confirmText,
-									onChange: (e) => setConfirmText(e.target.value),
-									placeholder: "输入一句确认原话"
-								})]
-							}),
-							actionFeedback && actionFeedback.tone === "red" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: "ros-risk-note",
-								style: {
-									borderLeftColor: "var(--red)",
-									color: "var(--red)"
-								},
-								children: actionFeedback.text
-							}) : null,
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								style: {
-									display: "flex",
-									justifyContent: "flex-end",
-									gap: 10
-								},
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									className: "ros-btn",
-									disabled: submitting,
-									onClick: closeActionModal,
-									children: "取消"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									className: "ros-btn dark",
-									disabled: submitting,
-									"data-testid": "canvas-modal-submit",
-									onClick: () => void handleModalSubmit(),
-									children: submitting ? "处理中…" : "确认提交"
-								})]
-							})
-						]
-					})
+				modalKind ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CandidateActionModal, {
+					kind: modalKind,
+					vm,
+					onClose: () => setModalKind(null),
+					onSuccess: (res) => void handleModalSuccess(res)
 				}) : null
 			] });
 		}
@@ -2718,6 +3147,7 @@ window.__ModuleLoader__.load({
 				className: "ros-canvas",
 				"aria-label": "招聘详情画布",
 				"data-testid": "v4-canvas-route",
+				"data-settings-write-wired": typeof postSettingsWrite === "function" ? "1" : "0",
 				children: [uploadTask ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(UploadProgressBanner, {
 					task: uploadTask,
 					onOpenApplication: onSelectApplication,
@@ -2727,6 +3157,7 @@ window.__ModuleLoader__.load({
 					applicationId: route.applicationId,
 					onBack,
 					onOpenJob: onSelectJob,
+					onUploadStarted,
 					onActionCompleted,
 					refreshNonce,
 					fetcher
@@ -2751,9 +3182,6 @@ window.__ModuleLoader__.load({
 				})]
 			});
 		}
-		/**
-		* Pure React-state canvas host (ZERO location.hash mutations) with real 5-second Undo Toast (T5-2).
-		*/
 		function CanvasPanelHost({ children, onRefreshOverview, fetcher }) {
 			const [route, setRoute] = (0, react.useState)({ kind: "empty" });
 			const [prevJobId, setPrevJobId] = (0, react.useState)(null);
@@ -12953,14 +13381,6 @@ window.__ModuleLoader__.load({
 		const REQUEST_HEADER = "x-recruitment-request";
 		/** 服务端唯一接受的 session 身份头（值只来自 props，不读 localStorage）。 */
 		const SESSION_HEADER = "X-DSH-Session";
-		/**
-		* 统一请求封装：网络错误 / 非 2xx / 坏 JSON 都变成可读错误。
-		* @param url - 同源相对路径。
-		* @param sessionId - DSH session id（服务端用它解析绑定的演示身份）。
-		* @param init - fetch 参数（方法/头/体/signal）。
-		* @returns 解析后的 JSON（空体为 undefined）。
-		* @throws {RecruitmentHttpError} 网络失败（status 0）或非 2xx（保留契约字段）。
-		*/
 		async function requestJson(url, sessionId, init) {
 			const headers = {
 				[REQUEST_HEADER]: "1",
@@ -12992,15 +13412,6 @@ window.__ModuleLoader__.load({
 				throw new RecruitmentHttpError(response.status, "INVALID_RESPONSE", "NOT_JSON", "宿主返回的不是 JSON", void 0);
 			}
 		}
-		/**
-		* 读取一次面试官工作台投影（`GET /recruitment/api/interviewer/overview`）。
-		*
-		* 缺 session / alias 时**不发请求**（fail-closed）：没有身份就没有"我的分配"，
-		* 发出去只会让服务端返 403/409，还会把界面引到错误分支。
-		* @param options - sessionId / alias / 可选 interviewId / signal。
-		* @returns 归一化后的 overview。
-		* @throws {RecruitmentHttpError} `SESSION_HEADER_REQUIRED`（本地拦截）或服务端错误。
-		*/
 		async function fetchInterviewerOverview(options) {
 			const sessionId = options.sessionId.trim();
 			const alias = options.alias.trim();
@@ -13013,12 +13424,6 @@ window.__ModuleLoader__.load({
 				...options.signal !== void 0 ? { signal: options.signal } : {}
 			}));
 		}
-		/**
-		* 读取 W1 面评表单 spec（含一次性 nonce）。
-		* @param options - sessionId / interviewId / 可选 applicationId / signal。
-		* @returns 归一化后的 form spec（维度键只来自服务端）。
-		* @throws {RecruitmentHttpError} W1 未就绪时 status 为 404/405/501 或 0。
-		*/
 		async function fetchScorecardFormSpec(options) {
 			const sessionId = options.sessionId.trim();
 			const interviewId = options.interviewId.trim();
@@ -13034,15 +13439,6 @@ window.__ModuleLoader__.load({
 				...options.signal !== void 0 ? { signal: options.signal } : {}
 			}));
 		}
-		/**
-		* 提交本人面评（`POST /recruitment/api/action/scorecard/submit`）。
-		*
-		* 提交体由 `buildScorecardSubmitBody` 构造（维度键只来自 form spec）；
-		* 成功只认 2xx + 服务端 DB 读回，**没有**任何本地"假成功"。
-		* @param options - sessionId + 已构造好的提交体。
-		* @returns 归一化后的 DB 读回。
-		* @throws {RecruitmentHttpError} 403/409（NONCE_*、ALREADY_SUBMITTED…）或其它非 2xx。
-		*/
 		async function submitScorecard(options) {
 			const sessionId = options.sessionId.trim();
 			if (sessionId === "") throw new RecruitmentHttpError(0, "DEMO_ACTOR_UNMAPPED", "SESSION_NOT_BOUND", "当前 Session 尚未绑定演示身份（fail-closed）：请先在顶部选择身份", void 0);
@@ -13052,42 +13448,30 @@ window.__ModuleLoader__.load({
 				body: JSON.stringify(options.body)
 			}));
 		}
-		/**
-		* 判断错误是否表示"W1 面评提交入口尚未就绪"（契约 §2.3：404/405/网络错）。
-		*
-		* 为什么把 501 也算进去：宿主/隧道对未实现路由有两种常见回答（405/404 与 501）；
-		* 只要不是服务端业务拒绝（400/403/409），界面就应显示"未就绪"而不是"提交失败"。
-		* @param failure - 捕获到的任意错误。
-		* @returns true 表示应按"入口未就绪（W1）"降级。
-		*/
 		function isScorecardEndpointUnavailable(failure) {
 			if (!(failure instanceof RecruitmentHttpError)) return false;
 			return failure.status === 0 || failure.status === 404 || failure.status === 405 || failure.status === 501;
 		}
 		const SCORECARD_DRAFT_STORAGE_PREFIX = "ros-iw-draft-";
-		function readLocalScorecardDraft(interviewId) {
+		function readLocalScorecardDraft(interviewId, scopeKey = "") {
 			try {
-				const raw = window.localStorage.getItem(SCORECARD_DRAFT_STORAGE_PREFIX + interviewId);
+				const raw = window.localStorage.getItem(`${SCORECARD_DRAFT_STORAGE_PREFIX}${scopeKey}:${interviewId}`);
 				if (!raw) return null;
 				return normalizeScorecardDraft(JSON.parse(raw));
 			} catch {
 				return null;
 			}
 		}
-		function writeLocalScorecardDraft(interviewId, payload) {
+		function writeLocalScorecardDraft(interviewId, payload, scopeKey = "") {
 			try {
-				window.localStorage.setItem(SCORECARD_DRAFT_STORAGE_PREFIX + interviewId, JSON.stringify(payload));
+				window.localStorage.setItem(`${SCORECARD_DRAFT_STORAGE_PREFIX}${scopeKey}:${interviewId}`, JSON.stringify(payload));
 			} catch {}
 		}
-		function clearLocalScorecardDraft(interviewId) {
+		function clearLocalScorecardDraft(interviewId, scopeKey = "") {
 			try {
-				window.localStorage.removeItem(SCORECARD_DRAFT_STORAGE_PREFIX + interviewId);
+				window.localStorage.removeItem(`${SCORECARD_DRAFT_STORAGE_PREFIX}${scopeKey}:${interviewId}`);
 			} catch {}
 		}
-		/**
-		* 读取服务端面评草稿（GET /recruitment/api/action/scorecard/draft?interview_id=...）。
-		* 404/未就绪返回 null，不崩页面；调用方据此决定是否回退 localStorage 断网兜底。
-		*/
 		async function fetchScorecardDraft(options) {
 			const sessionId = options.sessionId.trim();
 			if (sessionId === "" || options.interviewId.trim() === "") return null;
@@ -13100,10 +13484,6 @@ window.__ModuleLoader__.load({
 				return null;
 			}
 		}
-		/**
-		* 自动保存面评草稿（POST /recruitment/api/action/scorecard/draft）。
-		* 严禁携带 confirmation_text（草稿不是最终判断，见 Task 06 T6-2）。
-		*/
 		async function saveScorecardDraft(options) {
 			const sessionId = options.sessionId.trim();
 			if (sessionId === "" || options.interviewId.trim() === "") return false;
@@ -13120,9 +13500,8 @@ window.__ModuleLoader__.load({
 			});
 			return true;
 		}
-		/** 提交面评成功后清理服务端与本地草稿。 */
 		async function clearScorecardDraft(options) {
-			clearLocalScorecardDraft(options.interviewId);
+			clearLocalScorecardDraft(options.interviewId, options.scopeKey ?? options.sessionId);
 			const sessionId = options.sessionId.trim();
 			if (sessionId === "" || options.interviewId.trim() === "") return;
 			try {
@@ -13144,7 +13523,6 @@ window.__ModuleLoader__.load({
 			}
 		}
 		// src/client/interviewer/ScorecardForm.tsx
-		/** 把任意错误拆成可展示的 {code,reasonCode,message,status}。 */
 		function describeFailure(failure) {
 			if (failure instanceof RecruitmentHttpError) return {
 				code: failure.code,
@@ -13159,26 +13537,18 @@ window.__ModuleLoader__.load({
 				status: 0
 			};
 		}
-		/** 从表单 DOM 里按 role + 维度键找一个控件（键来自 spec；用属性比较避免选择器转义问题）。 */
 		function readControl(form, role, key) {
 			for (const element of Array.from(form.querySelectorAll(`[data-role="${role}"]`))) if (element.getAttribute("data-dim-key") === key) return element;
 			return null;
 		}
-		/** 一次性 nonce 失效：提示并允许重新取 spec（重新打开表单等价动作）。 */
 		const NONCE_PROBLEM_CODES = [
 			"NONCE_REQUIRED",
 			"NONCE_INVALID",
 			"NONCE_EXPIRED",
 			"NONCE_ALREADY_USED"
 		];
-		/**
-		* 面评表单。
-		* @param props - sessionId / interviewId / applicationId / rubricVersionId / 回调。
-		* @returns 表单弹层 JSX。
-		*/
 		function ScorecardForm(props) {
 			const formRef = (0, react.useRef)(null);
-			/** 最新回调引用：避免把回调放进 fetch effect 依赖造成循环重取。 */
 			const onUnavailableRef = (0, react.useRef)(props.onUnavailable);
 			const onCloseRef = (0, react.useRef)(props.onClose);
 			const [spec, setSpec] = (0, react.useState)(void 0);
@@ -13225,7 +13595,7 @@ window.__ModuleLoader__.load({
 						signal: controller.signal
 					});
 					if (!active) return;
-					const restored = serverDraft ?? readLocalScorecardDraft(props.interviewId);
+					const restored = serverDraft ?? readLocalScorecardDraft(props.interviewId, props.sessionId);
 					if (restored && Object.keys(restored.assessments).length > 0) setAssessments({ ...restored.assessments });
 				}).catch((failure) => {
 					if (!active || controller.signal.aborted) return;
@@ -13247,20 +13617,25 @@ window.__ModuleLoader__.load({
 			]);
 			(0, react.useEffect)(() => {
 				if (!spec || spec.mode !== "CREATE" || Object.keys(assessments).length === 0) return;
-				const existingLocal = readLocalScorecardDraft(props.interviewId);
+				let cancelled = false;
+				const existingLocal = readLocalScorecardDraft(props.interviewId, props.sessionId);
 				const draftPayload = {
 					assessments,
 					note: existingLocal?.note ?? ""
 				};
-				writeLocalScorecardDraft(props.interviewId, draftPayload);
+				writeLocalScorecardDraft(props.interviewId, draftPayload, props.sessionId);
 				const timer = setTimeout(() => {
+					if (cancelled) return;
 					saveScorecardDraft({
 						sessionId: props.sessionId,
 						interviewId: props.interviewId,
 						payload: draftPayload
 					}).catch(() => {});
 				}, 2e3);
-				return () => clearTimeout(timer);
+				return () => {
+					cancelled = true;
+					clearTimeout(timer);
+				};
 			}, [
 				assessments,
 				props.interviewId,
@@ -13312,7 +13687,8 @@ window.__ModuleLoader__.load({
 				}).then((submitted) => {
 					clearScorecardDraft({
 						sessionId: props.sessionId,
-						interviewId: props.interviewId
+						interviewId: props.interviewId,
+						scopeKey: props.sessionId
 					});
 					setResult(submitted);
 					props.onSubmitted();
@@ -13325,7 +13701,6 @@ window.__ModuleLoader__.load({
 					});
 				}).finally(() => setSubmitting(false));
 			};
-			/** 统一的弹层外壳：`[data-testid="scorecard-form"]` 永远是打开状态下的根锚点。 */
 			const shell = (mode, interviewId, children) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("section", {
 				className: "iw-overlay",
 				"data-testid": "scorecard-form",
@@ -13360,11 +13735,7 @@ window.__ModuleLoader__.load({
 					className: "iw-notice iw-notice-warn",
 					role: "alert",
 					"data-testid": "scorecard-unavailable",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "服务端面评提交入口未就绪（W1）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", { children: [
-						"读取面评表单失败（HTTP ",
-						described.status,
-						"）。本表单不会本地假写，也不会显示假成功；W1 端点就绪后重新打开即可。"
-					] })]
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "服务端面评提交入口暂未就绪" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "本表单不会本地假写，也不会显示假成功；服务端就绪后重新打开即可。" })]
 				}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "iw-errorbox",
 					role: "alert",
@@ -13394,7 +13765,7 @@ window.__ModuleLoader__.load({
 			}
 			if (spec === void 0) return shell("ERROR", props.interviewId, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 				className: "iw-formloading",
-				children: "服务端没有返回面评表单（fail-closed）。"
+				children: "暂时没能读取到面评表单，请重试。"
 			}));
 			const readonly = spec.mode !== "CREATE";
 			const nonceProblem = submitFailure !== void 0 && NONCE_PROBLEM_CODES.includes(submitFailure.code);
@@ -13405,7 +13776,7 @@ window.__ModuleLoader__.load({
 			return shell(spec.mode, spec.interview.id !== "" ? spec.interview.id : props.interviewId, /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 					className: "iw-modaldesc",
-					children: "按本轮 rubric 记录你的独立观察。Agent 不代替面试官提交；提交走 W1 Host Remote Action，写库后回显服务端 DB 读回。"
+					children: "按本轮岗位标准记录你的独立观察。Agent 不会代替面试官提交；提交后实时落库并刷新状态。"
 				}),
 				props.round !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "iw-roundctx",
@@ -13419,7 +13790,7 @@ window.__ModuleLoader__.load({
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "本轮考察重点（只读）" }),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "iw-tiny iw-muted",
-							children: props.round.serverFieldsMissing || !props.round.focus.available ? "岗位基础（JOB_BASE 降级：服务端未提供该轮配置）" : roundSourceText(props.round.focus.source)
+							children: props.round.serverFieldsMissing || !props.round.focus.available ? "岗位基础标准" : roundSourceText(props.round.focus.source)
 						}),
 						props.round.focus.available ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: props.round.focus.title }),
@@ -13431,62 +13802,23 @@ window.__ModuleLoader__.load({
 								className: "iw-tiny",
 								"data-testid": "scorecard-round-must-cover",
 								children: ["本轮必覆盖：", props.round.rubric.dimensions.filter((dimension) => dimension.mustCover).map((dimension) => dimension.label).join(" / ")]
-							}) : null,
-							props.round.rubric.scaleMin !== 0 || props.round.rubric.scaleMax !== 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
-								className: "iw-tiny iw-muted",
-								children: [
-									"本轮评分区间：",
-									props.round.rubric.scaleMin,
-									"–",
-									props.round.rubric.scaleMax
-								]
 							}) : null
-						] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: "iw-tiny iw-muted",
-							children: "服务端未提供该轮配置（JOB_BASE 降级）；提交仍按服务端 form spec 的维度键，界面不伪造本轮重点。"
-						})
+						] }) : null
 					]
 				}) : null,
-				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
-					className: "iw-tiny iw-muted",
-					children: [
-						"面试：第 ",
-						spec.interview.round_no,
-						" 轮 · ",
-						spec.interview.slot_code !== "" ? spec.interview.slot_code : "（未提供 slot）",
-						" · 状态：",
-						spec.interview.status !== "" ? spec.interview.status : "（未提供）",
-						" · rubric：",
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "iw-mono",
-							children: spec.rubric.id !== "" ? spec.rubric.id : "（未提供）"
-						})
-					]
-				}),
-				readonly ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				readonly ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 					className: "iw-notice iw-notice-warn",
 					"data-testid": "form-readonly",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("strong", { children: [
-						"该面试已有当前面评（服务端 mode=",
-						spec.mode,
-						"），本版表单只读。"
-					] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "修订提交需要服务端 revision 闭环（supersedes_scorecard_id / expected_record_version），本版不开放，避免本地伪造修订。" })]
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "本场面试你已提交过面评，当前为只读状态。" })
 				}) : null,
 				plan.mismatch ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "iw-notice iw-notice-warn",
 					role: "alert",
 					"data-testid": "round-schema-mismatch",
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: ROUND_SCHEMA_MISMATCH_TEXT }),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: "iw-tiny",
-							children: plan.mismatchText
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: "iw-tiny",
-							children: "已禁用提交：不写库，避免脏面评。请服务端修正本轮评分表与 form spec 后重试。"
-						})
-					]
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: ROUND_SCHEMA_MISMATCH_TEXT }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "iw-tiny",
+						children: "已暂时禁止提交，避免写入不一致的面评，请刷新后重试。"
+					})]
 				}) : null,
 				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("form", {
 					className: "iw-form",
@@ -13499,16 +13831,12 @@ window.__ModuleLoader__.load({
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
 							className: "iw-lockline",
 							"data-testid": "transcript-basis",
-							children: [
-								"转写依据（服务端锁定）：",
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: spec.transcript_basis.value !== "" ? spec.transcript_basis.value : "（未提供）" }),
-								spec.transcript_basis.locked ? "（locked）" : ""
-							]
+							children: ["转写依据：", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: spec.transcript_basis.value === "TRANSCRIPT" ? "含面试转写" : "无转写独立评估" })]
 						}),
 						spec.dimensions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "iw-validation",
 							role: "alert",
-							children: "服务端没有返回可填写的 rubric 维度，无法提交（fail-closed）。"
+							children: "当前没有可填写的考核维度，暂时无法提交。"
 						}) : null,
 						plannedFields.map((field) => {
 							const dimension = field.spec;
@@ -13521,54 +13849,38 @@ window.__ModuleLoader__.load({
 								children: [
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("legend", { children: [
 										field.label,
-										"（",
-										dimension.key,
-										"）",
 										field.focus ? " · 本轮重点" : "",
 										field.mustCover ? " · 本轮必覆盖" : ""
 									] }),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
 										className: "iw-fieldhelp",
-										children: [
-											"类型：",
-											dimension.kind !== "" ? dimension.kind : "未提供",
-											" · 权重：",
-											field.weight,
-											field.overridden ? ` · 本轮 effective schema（origin=${field.origin !== "" ? field.origin : "未提供"}）` : ""
-										]
+										children: ["权重：", field.weight]
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										className: "iw-field",
-										children: [
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "assessment：" }),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-												"data-role": "assessment",
-												"data-dim-key": dimension.key,
-												"aria-label": `维度 ${dimension.label} 的 assessment`,
-												defaultValue: "",
-												disabled: readonly,
-												onChange: (event) => setAssessments((previous) => ({
-													...previous,
-													[dimension.key]: event.target.value
-												})),
-												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-													value: "",
-													children: "请选择"
-												}), dimension.assessmentOptions.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-													value: option,
-													children: assessmentText(option)
-												}, option))]
-											}),
-											dimension.assessmentOptions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-												className: "iw-fieldhelp",
-												children: "服务端未给该维度的 assessment 枚举（不可提交，fail-closed）。"
-											}) : null
-										]
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "评估结论：" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+											"data-role": "assessment",
+											"data-dim-key": dimension.key,
+											"aria-label": `维度 ${dimension.label} 的评估结论`,
+											value: assessments[dimension.key] ?? "",
+											disabled: readonly,
+											onChange: (event) => setAssessments((previous) => ({
+												...previous,
+												[dimension.key]: event.target.value
+											})),
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+												value: "",
+												children: "请选择"
+											}), dimension.assessmentOptions.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+												value: option,
+												children: assessmentText(option)
+											}, option))]
+										})]
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										className: "iw-field",
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
-											"score（仅 MET / NOT_MET，",
+											"评分（",
 											dimension.scoreMin,
 											"–",
 											dimension.scoreMax,
@@ -13577,7 +13889,7 @@ window.__ModuleLoader__.load({
 											type: "number",
 											"data-role": "score",
 											"data-dim-key": dimension.key,
-											"aria-label": `维度 ${dimension.label} 的 score`,
+											"aria-label": `维度 ${dimension.label} 的评分`,
 											min: dimension.scoreMin,
 											max: dimension.scoreMax,
 											step: 1,
@@ -13587,13 +13899,13 @@ window.__ModuleLoader__.load({
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										className: "iw-field",
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
-											"note（",
+											"观察说明（",
 											dimension.noteRequired ? "必填" : "可选",
-											"，≤2000 字）："
+											"）："
 										] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
 											"data-role": "note",
 											"data-dim-key": dimension.key,
-											"aria-label": `维度 ${dimension.label} 的 note`,
+											"aria-label": `维度 ${dimension.label} 的观察说明`,
 											rows: 2,
 											maxLength: 2e3,
 											disabled: readonly
@@ -13604,28 +13916,21 @@ window.__ModuleLoader__.load({
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("fieldset", {
 							className: "iw-fieldset",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("legend", { children: "综合结论（overall）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("legend", { children: "综合结论" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "iw-field",
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "overall：" }),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-										"data-role": "overall",
-										"aria-label": "overall 综合结论",
-										defaultValue: "",
-										disabled: readonly || spec.overall_options.length === 0,
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-											value: "",
-											children: spec.overall_options.length === 0 ? "服务端未提供 overall 选项（fail-closed）" : "请选择"
-										}), spec.overall_options.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-											value: option,
-											children: overallText(option)
-										}, option))]
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-										className: "iw-fieldhelp",
-										children: "枚举只来自服务端；选择 REJECT 时服务端要求拒绝理由（本版表单未提供该输入，可能被服务端拒绝——不本地编造）。"
-									})
-								]
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "结论：" }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+									"data-role": "overall",
+									"aria-label": "综合结论",
+									defaultValue: "",
+									disabled: readonly || spec.overall_options.length === 0,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: "",
+										children: spec.overall_options.length === 0 ? "暂无可选结论" : "请选择"
+									}), spec.overall_options.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: option,
+										children: overallText(option)
+									}, option))]
+								})]
 							})]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -13658,14 +13963,8 @@ window.__ModuleLoader__.load({
 					"data-code": submitFailure.code,
 					"data-reason-code": submitFailure.reasonCode,
 					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "提交失败（服务端返回）" }),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: submitFailure.message }),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", { children: [
-							"code：",
-							submitFailure.code !== "" ? submitFailure.code : "（无）",
-							" · reason_code：",
-							submitFailure.reasonCode !== "" ? submitFailure.reasonCode : "（无）"
-						] }),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "提交未能完成" }),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: submitFailure.message || "请检查填写内容后重试（草稿已保留）。" }),
 						nonceProblem ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
 							className: "iw-btn iw-btn-sm",
@@ -13674,7 +13973,7 @@ window.__ModuleLoader__.load({
 								setSpec(void 0);
 								setGeneration((value) => value + 1);
 							},
-							children: "重新获取表单（新 nonce）"
+							children: "重新获取表单"
 						}) }) : null
 					]
 				}) : null,
@@ -13685,27 +13984,7 @@ window.__ModuleLoader__.load({
 					"data-status": result.status,
 					"data-actor-id": result.actor_id,
 					"data-record-version": String(result.record_version),
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "提交成功：服务端 DB 读回" }),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", { children: ["scorecard_id：", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", { children: result.scorecard_id !== "" ? result.scorecard_id : "（服务端未返回）" })] }),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", { children: [
-							"status：",
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", { children: result.status !== "" ? result.status : "（服务端未返回）" }),
-							" · record_version：",
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", { children: result.record_version }),
-							" · replayed：",
-							result.replayed ? "是" : "否"
-						] }),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", { children: ["actor_id：", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", { children: result.actor_id !== "" ? result.actor_id : "（服务端未返回）" })] }),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", { children: [
-							"interviewer_id：",
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", { children: result.interviewer_id !== "" ? result.interviewer_id : "（服务端未返回）" }),
-							" · interview_id：",
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", { children: result.interview_id !== "" ? result.interview_id : "（服务端未返回）" })
-						] }),
-						result.scorecard_id === "" || result.status === "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "服务端读回不完整（缺 scorecard_id/status），请勿仅凭本回显认定已写库。" }) : null,
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "已重新读取「我的面试」（overview reload）。" })
-					]
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "面评已提交" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "已同步写入并刷新「我的面试」列表，本场草稿已自动清理。" })]
 				}) : null
 			] }));
 		}
@@ -14501,7 +14780,8 @@ window.__ModuleLoader__.load({
 			})] });
 		}
 		/** T6-2 面后速记（2 秒防抖自动存服务端 + localStorage 断网兜底）+ T6-4 本地追问清单。 */
-		function QuickNotesAndChecklist({ sessionId, interviewId, iqs }) {
+		function QuickNotesAndChecklist({ sessionId, alias, interviewId, editable, iqs }) {
+			const scopeKey = `${sessionId}:${alias}`;
 			const [note, setNote] = (0, react.useState)("");
 			const [saveHint, setSaveHint] = (0, react.useState)("");
 			const [checkedIqs, setCheckedIqs] = (0, react.useState)({});
@@ -14519,7 +14799,7 @@ window.__ModuleLoader__.load({
 						setNote(serverDraft.note);
 						setSaveHint("已从服务端恢复草稿");
 					} else {
-						const localDraft = readLocalScorecardDraft(interviewId);
+						const localDraft = readLocalScorecardDraft(interviewId, scopeKey);
 						if (localDraft !== null) {
 							setNote(localDraft.note);
 							setSaveHint("已从本地缓存恢复（断网兜底）");
@@ -14532,29 +14812,47 @@ window.__ModuleLoader__.load({
 				};
 			}, [
 				sessionId,
+				alias,
+				scopeKey,
 				interviewId,
 				hydratedRef
 			]);
 			(0, react.useEffect)(() => {
-				if (!hydratedRef.done) return;
+				if (!hydratedRef.done || !editable || interviewId === "") return;
+				let cancelled = false;
+				const boundSession = sessionId;
+				const boundInterview = interviewId;
 				const payload = {
-					assessments: readLocalScorecardDraft(interviewId)?.assessments ?? {},
+					assessments: readLocalScorecardDraft(boundInterview, scopeKey)?.assessments ?? {},
 					note
 				};
-				writeLocalScorecardDraft(interviewId, payload);
+				writeLocalScorecardDraft(boundInterview, payload, scopeKey);
 				setSaveHint("正在自动保存…");
 				const timer = setTimeout(() => {
+					if (cancelled) return;
 					saveScorecardDraft({
-						sessionId,
-						interviewId,
+						sessionId: boundSession,
+						interviewId: boundInterview,
 						payload
-					}).then(() => setSaveHint("已自动保存草稿")).catch(() => setSaveHint("已暂存本地（离线兜底）"));
+					}).then(() => {
+						if (!cancelled) setSaveHint("已自动保存草稿");
+					}).catch((err) => {
+						if (cancelled) return;
+						const isMismatch = err instanceof RecruitmentHttpError && (err.code.includes("INTERVIEWER_MISMATCH") || err.reasonCode.includes("INTERVIEWER_MISMATCH") || err.status === 403);
+						setSaveHint(isMismatch ? "当前身份与本场面试不匹配，未能保存草稿" : "已暂存本地（离线兜底）");
+					});
 				}, 2e3);
-				return () => clearTimeout(timer);
+				return () => {
+					cancelled = true;
+					clearTimeout(timer);
+				};
 			}, [
 				note,
 				sessionId,
+				alias,
+				scopeKey,
 				interviewId,
+				editable,
 				hydratedRef
 			]);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [iqs.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -14607,14 +14905,18 @@ window.__ModuleLoader__.load({
 				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
 					className: "iw-quicknotes",
 					"data-testid": "quick-notes-textarea",
+					readOnly: !editable,
+					disabled: !editable,
 					value: note,
-					onChange: (e) => setNote(e.target.value),
-					placeholder: "边面边记，停顿 2 秒自动保存到服务端（断网自动暂存本地，提交面评后清空）…"
+					onChange: (e) => {
+						if (editable) setNote(e.target.value);
+					},
+					placeholder: editable ? "边面边记，停顿 2 秒自动保存到服务端（断网自动暂存本地，提交面评后清空）…" : "仅本人被分配且未提交的场次可编辑速记（只读）"
 				})]
 			})] });
 		}
 		/** 详情页（V-I2），含两个独立分支卡片。 */
-		function DetailView({ sessionId, overview, row, labels, endpointUnavailable, onBack, onOpenScorecard }) {
+		function DetailView({ sessionId, alias, overview, row, labels, endpointUnavailable, onBack, onOpenScorecard }) {
 			const candidateName = row.candidate.display_name !== "" ? row.candidate.display_name : "（候选人未提供）";
 			const jobText = row.job.title !== "" ? row.job.title : row.job.code !== "" ? row.job.code : "岗位未提供";
 			const roundText = row.round_no > 0 ? `第 ${row.round_no} 轮` : "轮次未提供";
@@ -14687,9 +14989,11 @@ window.__ModuleLoader__.load({
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(QuickNotesAndChecklist, {
 									sessionId,
+									alias,
 									interviewId: row.interview_id,
+									editable: canSubmit && row.scorecard.state !== "SUBMITTED",
 									iqs: row.iqs
-								}),
+								}, `${sessionId}-${alias}-${row.interview_id}`),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(RoundFocusCard, { row }),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(RoundRubricTable, { row }),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(PriorRoundsCard, { rounds: row.priorRounds }),
@@ -15166,6 +15470,7 @@ window.__ModuleLoader__.load({
 						}) : null,
 						showWorkspace && overview !== void 0 && stats !== void 0 ? selectedRow !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DetailView, {
 							sessionId,
+							alias,
 							overview,
 							row: selectedRow,
 							labels: overview.labels,
@@ -15173,7 +15478,6 @@ window.__ModuleLoader__.load({
 							onBack: () => setSelectedId(""),
 							onOpenScorecard: openScorecard
 						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ListView, {
-							sessionId,
 							overview,
 							stats,
 							rounds,
@@ -15192,7 +15496,7 @@ window.__ModuleLoader__.load({
 							onClose: closeScorecard,
 							onSubmitted: handleSubmitted,
 							onUnavailable: handleUnavailable
-						}, `${formTarget.interview_id}-${formTarget.application_id}`) : null
+						}, `${sessionId}-${alias}-${formTarget.interview_id}-${formTarget.application_id}`) : null
 					]
 				})]
 			});

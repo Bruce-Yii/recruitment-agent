@@ -79,16 +79,13 @@ export const ACTION_KEY_FALLBACKS = [
  * 规则：**只许降不许升**——出现基线之外的新缺口即 FAIL；基线内的补上了也照样报（提示下调）。
  */
 export const BASELINE_UNREFERENCED = [
-  '/recruitment/api/action/application/star',
   '/recruitment/api/action/compound',
   '/recruitment/api/action/config',
   '/recruitment/api/action/config/pipeline',
   '/recruitment/api/action/config/role',
   '/recruitment/api/action/config/team',
   '/recruitment/api/action/email/authorize',
-  '/recruitment/api/action/email/send',
   '/recruitment/api/action/email/send-authorized',
-  '/recruitment/api/action/settings/write',
   '/recruitment/api/feishu/import',
 ]
 

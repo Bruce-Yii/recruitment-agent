@@ -52,3 +52,26 @@
 - CDP 冒烟（`work/d5/e2e-real/smoke/check.mjs`）：7 个目标 testid **仅 1 个存在**（`canvas-action-schedule`），
   缺 `form-screening_decide` / `form-decision_record` / `form-stage_advance` / `form-transcript_import` /
   `canvas-batch-reject` / `submit-scorecard`。**这是真浏览器 DOM 证据，是任务 08 的验收清单。**
+
+---
+
+## 5. 2026-11-19 前端任务 08 交付后更新（`83b0b75` 合并）
+
+画布已接上（真 Host + 真浏览器 DOM 实测，入口按钮与 testid 均存在）：
+
+| 能力 | 入口 testid | 状态 |
+|---|---|---|
+| 上传简历 | `canvas-action-candidate-upload` | 🟢 |
+| 导入转写 | `canvas-action-transcript-import` | 🟢 |
+| 初筛结论 | `canvas-action-screening` | 🟢 |
+| 正式决策 / 缺面评拦截 | `canvas-action-decision`、`decision-missing-scorecards` | 🟢 |
+| 推进阶段 / 带原话跳轮 | `canvas-action-stage-advance` | 🟢 |
+| 约面 / 选面试官 / 改期 / 换人 | `canvas-action-schedule`、`schedule-interviewers-input`、`schedule-mode-reschedule`、`replace-interviewer-input` | 🟢 |
+| 标记未出席 | `canvas-action-no-show` | 🟢 |
+| 星标 | `canvas-action-star` | 🟢 |
+| 发邮件 | `canvas-action-email` | 🟢 |
+| 置顶约束 / 交接 / 跨岗 | `canvas-action-pin`、`canvas-action-handoff`、`canvas-action-transfer` | 🟢 |
+
+机检基线已下调：**11 → 8**（仍缺：compound、config×4、email/authorize、email/send-authorized、feishu/import）。
+真点基线（`runbook-result.json`）：PASS 7 / FAIL 0 / BLOCKED 8——但**那 8 个 BLOCKED 是驱动脚本没跟上新 testid**，
+不是界面缺失；已让 `owner-runbook-tooling` 按上表更新选择器后重跑。
