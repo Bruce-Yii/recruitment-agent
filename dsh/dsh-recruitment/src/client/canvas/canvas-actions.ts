@@ -1,27 +1,45 @@
 /**
- * Typed HTTP action clients for Recruitment OS DSH Plugin Canvas (Task 05).
+ * Typed HTTP action clients for Recruitment OS DSH Plugin Canvas (Task 08 · D-160 Full Parity).
  *
- * Contract rules (design/v4/contracts/available-actions.md & frontend-task-05-batch-undo.md):
+ * Covers ALL reachable write routes in docs/38-capability-entry-matrix.md (except deferred #9 compound):
+ *  1. POST /recruitment/api/action/screening/decide
+ *  2. POST /recruitment/api/decision/record
+ *  3. POST /recruitment/api/action/stage/advance
+ *  4. POST /recruitment/api/action/transcript/import
+ *  5. POST /recruitment/api/action/interview/schedule (schedule / reschedule / replace / add_round / NO_SHOW)
+ *  6. POST /recruitment/api/intake/upload?job_id=... + GET /recruitment/api/tasks/status
+ *  7. POST /recruitment/api/action/application/star
+ *  8. POST /recruitment/api/action/email/send
+ *  9. POST /recruitment/api/action/settings/write
+ * 10. POST /recruitment/api/action/decision/batch-reject & POST /recruitment/api/action/undo
+ * 11. POST /recruitment/api/action/candidate/constraint & POST /recruitment/api/action/application/transfer
+ * 12. POST /recruitment/api/action/job/create
+ * 13. GET  /recruitment/api/action/interview/free-slots & POST /recruitment/api/action/interview/rebind-minute
+ *
+ * Contract rules:
  * - Same-origin cookie determines identity (frontend NEVER sends `actor`).
  * - Always carries `x-recruitment-request: 1`.
- * - Every write action requires `confirmation_text` (human verbatim confirmation).
- * - `job/create` NEVER sends `headcount` (HC is maintained on requisitions).
- * - `batch-reject` handles 200 partial failure per item using `message` (never `reason_code`).
- * - `undo` maps 409 conflict states to human copy (never exposes error codes).
+ * - Optimistic locking: passes `expected_record_version` and maps 409 version conflict to
+ *   human copy "这条刚被别人改过，请刷新".
  */
 
 export const UNAVAILABLE_ACTION_MESSAGE = '这项还差最后一步，稍后开放';
 
 export interface CanvasActionError extends Error {
-  code: 'NOT_AVAILABLE' | 'ACTION_FAILED';
+  code: 'NOT_AVAILABLE' | 'VERSION_CONFLICT' | 'DUPLICATE_DECISION' | 'SCORECARD_MISSING' | 'ACTION_FAILED';
   userMessage: string;
 }
 
-function makeError(code: 'NOT_AVAILABLE' | 'ACTION_FAILED', userMessage: string): CanvasActionError {
+function makeError(code: CanvasActionError['code'], userMessage: string): CanvasActionError {
   const err = new Error(userMessage) as CanvasActionError;
   err.code = code;
   err.userMessage = userMessage;
   return err;
+}
+
+function extractErrorCode(data: Record<string, unknown>): string {
+  const nested = data.error && typeof data.error === 'object' ? (data.error as Record<string, unknown>) : {};
+  return String(data.reason_code || data.code || nested.reason_code || nested.code || '').toUpperCase();
 }
 
 async function postJsonAction<T>(path: string, body: Record<string, unknown>): Promise<T> {
@@ -40,6 +58,16 @@ async function postJsonAction<T>(path: string, body: Record<string, unknown>): P
   }
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
+    const code = extractErrorCode(data);
+    if (res.status === 409 && (code.includes('VERSION') || code.includes('CONFLICT') || code.includes('STALE') || code.includes('LOCK'))) {
+      throw makeError('VERSION_CONFLICT', '这条刚被别人改过，请刷新');
+    }
+    if (res.status === 409 && (code.includes('DUPLICATE') || code.includes('ALREADY'))) {
+      throw makeError('DUPLICATE_DECISION', '已处理过，不会重复写入');
+    }
+    if (code.includes('SCORECARD_MISSING')) {
+      throw makeError('SCORECARD_MISSING', '还有面试官尚未提交面评，暂时不能提交终审决策');
+    }
     const summary =
       typeof data.error_summary === 'string' && data.error_summary.trim()
         ? data.error_summary
@@ -51,10 +79,135 @@ async function postJsonAction<T>(path: string, body: Record<string, unknown>): P
   return data as T;
 }
 
+export async function postScreeningDecide(payload: {
+  applicationId: string;
+  result: 'ADVANCE' | 'REJECT' | 'HOLD';
+  reason: string;
+  confirmationText: string;
+  expectedRecordVersion?: number;
+}): Promise<{ decision_id?: string; action_id?: string }> {
+  const body: Record<string, unknown> = {
+    application_id: payload.applicationId,
+    result: payload.result,
+    reason: payload.reason,
+    confirmation_text: payload.confirmationText,
+  };
+  if (typeof payload.expectedRecordVersion === 'number') {
+    body.expected_record_version = payload.expectedRecordVersion;
+  }
+  return postJsonAction('/recruitment/api/action/screening/decide', body);
+}
+
+export async function postDecisionRecord(payload: {
+  applicationId: string;
+  result: 'OFFER' | 'REJECT' | 'HOLD';
+  reason: string;
+  confirmationText: string;
+  expectedRecordVersion?: number;
+}): Promise<{ decision_id?: string; action_id?: string }> {
+  const body: Record<string, unknown> = {
+    application_id: payload.applicationId,
+    result: payload.result,
+    reason: payload.reason,
+    confirmation_text: payload.confirmationText,
+  };
+  if (typeof payload.expectedRecordVersion === 'number') {
+    body.expected_record_version = payload.expectedRecordVersion;
+  }
+  return postJsonAction('/recruitment/api/decision/record', body);
+}
+
+export async function postStageAdvance(payload: {
+  applicationId: string;
+  targetStageCode: string;
+  reason?: string;
+  confirmationText: string;
+  expectedRecordVersion?: number;
+}): Promise<{ action_id?: string }> {
+  const body: Record<string, unknown> = {
+    application_id: payload.applicationId,
+    target_stage_code: payload.targetStageCode,
+    confirmation_text: payload.confirmationText,
+  };
+  if (payload.reason) body.reason = payload.reason;
+  if (typeof payload.expectedRecordVersion === 'number') {
+    body.expected_record_version = payload.expectedRecordVersion;
+  }
+  return postJsonAction('/recruitment/api/action/stage/advance', body);
+}
+
+export async function postTranscriptImport(payload: {
+  applicationId: string;
+  interviewId?: string;
+  sourceUrlOrText: string;
+  confirmationText: string;
+}): Promise<{ artifact_id?: string; action_id?: string }> {
+  const body: Record<string, unknown> = {
+    application_id: payload.applicationId,
+    content: payload.sourceUrlOrText,
+    confirmation_text: payload.confirmationText,
+  };
+  if (payload.interviewId) body.interview_id = payload.interviewId;
+  return postJsonAction('/recruitment/api/action/transcript/import', body);
+}
+
+export async function postApplicationStar(payload: {
+  applicationId: string;
+  starred: boolean;
+}): Promise<{ starred: boolean }> {
+  return postJsonAction('/recruitment/api/action/application/star', {
+    application_id: payload.applicationId,
+    starred: payload.starred,
+  });
+}
+
+export async function postEmailSend(payload: {
+  applicationId: string;
+  template: 'OFFER' | 'INVITE' | 'THANK_YOU';
+  subject: string;
+  bodyText: string;
+  confirmationText: string;
+  expectedRecordVersion?: number;
+}): Promise<{ message_id?: string; action_id?: string }> {
+  const body: Record<string, unknown> = {
+    application_id: payload.applicationId,
+    template: payload.template,
+    subject: payload.subject,
+    body: payload.bodyText,
+    confirmation_text: payload.confirmationText,
+  };
+  if (typeof payload.expectedRecordVersion === 'number') {
+    body.expected_record_version = payload.expectedRecordVersion;
+  }
+  return postJsonAction('/recruitment/api/action/email/send', body);
+}
+
+export async function postSettingsWrite(payload: {
+  agentSilentDelegation?: boolean;
+  screeningHours?: number;
+  scorecardHours?: number;
+  confirmationText: string;
+}): Promise<{ ok?: boolean; action_id?: string }> {
+  const body: Record<string, unknown> = {
+    confirmation_text: payload.confirmationText,
+  };
+  if (typeof payload.agentSilentDelegation === 'boolean') {
+    body.agent_silent_delegation = payload.agentSilentDelegation;
+  }
+  if (typeof payload.screeningHours === 'number' || typeof payload.scorecardHours === 'number') {
+    body.sla_thresholds = {
+      ...(typeof payload.screeningHours === 'number' ? { screening_hours: payload.screeningHours } : {}),
+      ...(typeof payload.scorecardHours === 'number' ? { scorecard_hours: payload.scorecardHours } : {}),
+    };
+  }
+  return postJsonAction('/recruitment/api/action/settings/write', body);
+}
+
 export interface TransferPayload {
   applicationId: string;
   targetJobId: string;
   confirmationText: string;
+  expectedRecordVersion?: number;
   carryOverRefs?: Array<{
     source_application_id: string;
     ref_kind: 'SCORECARD' | 'TRANSCRIPT' | 'DECISION';
@@ -72,6 +225,9 @@ export async function postApplicationTransfer(payload: TransferPayload): Promise
     target_job_id: payload.targetJobId,
     confirmation_text: payload.confirmationText,
   };
+  if (typeof payload.expectedRecordVersion === 'number') {
+    body.expected_record_version = payload.expectedRecordVersion;
+  }
   if (payload.carryOverRefs && payload.carryOverRefs.length > 0) {
     body.carry_over_refs = payload.carryOverRefs;
   }
@@ -111,10 +267,6 @@ export interface JobCreatePayload {
   confirmationText: string;
 }
 
-/**
- * NOTE: `headcount` is intentionally omitted because the backend rejects it
- * (`400 UNSUPPORTED_FIELD`). HC belongs to the requisition.
- */
 export async function postJobCreate(payload: JobCreatePayload): Promise<{
   job_id: string;
   code: string;
@@ -144,12 +296,6 @@ export interface BatchRejectResponse {
   results: BatchRejectItemResult[];
 }
 
-/**
- * T5-1: Real batch reject endpoint.
- * POST /recruitment/api/action/decision/batch-reject
- * Partial failures still return HTTP 200 with per-item `results[]`;
- * UI displays human `message` only (never `reason_code`).
- */
 export async function postBatchReject(payload: {
   applicationIds: string[];
   reason: string;
@@ -163,7 +309,6 @@ export async function postBatchReject(payload: {
       confirmation_text: payload.confirmationText,
     },
   );
-
   const rawResults = Array.isArray(raw.results) ? raw.results : [];
   const results: BatchRejectItemResult[] = rawResults.map((item) => {
     const r = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
@@ -180,18 +325,11 @@ export async function postBatchReject(payload: {
       actionId: typeof r.action_id === 'string' ? r.action_id : undefined,
     };
   });
-
   const succeededCount = results.filter((x) => x.ok).length;
-  const failedCount = results.length - succeededCount;
-  const topActionId =
-    typeof raw.action_id === 'string'
-      ? raw.action_id
-      : results.find((x) => x.ok && x.actionId)?.actionId;
-
   return {
-    actionId: topActionId,
+    actionId: typeof raw.action_id === 'string' ? raw.action_id : results.find((x) => x.ok && x.actionId)?.actionId,
     succeededCount,
-    failedCount,
+    failedCount: results.length - succeededCount,
     results,
   };
 }
@@ -201,11 +339,6 @@ export interface UndoResponse {
   message: string;
 }
 
-/**
- * T5-2: Real 5-second undo endpoint.
- * POST /recruitment/api/action/undo
- * Maps 409 conflicts strictly to human copy without exposing error codes.
- */
 export async function postActionUndo(payload: {
   actionId: string;
   confirmationText: string;
@@ -224,35 +357,16 @@ export async function postActionUndo(payload: {
     }),
   });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-
   if (res.status === 409) {
-    const code = String(
-      data.code || data.reason_code || (data.error && typeof data.error === 'object' ? (data.error as Record<string, unknown>).code : '') || '',
-    ).toUpperCase();
-    if (code.includes('ALREADY_UNDONE')) {
-      return { undone: false, message: '这条已经撤销过了' };
-    }
-    if (code.includes('WINDOW_EXPIRED')) {
-      return { undone: false, message: '超过 5 分钟，不能再撤销' };
-    }
-    if (code.includes('SUPERSEDED')) {
-      return { undone: false, message: '这条已经被后续操作覆盖，不能撤销' };
-    }
+    const code = extractErrorCode(data);
+    if (code.includes('ALREADY_UNDONE')) return { undone: false, message: '这条已经撤销过了' };
+    if (code.includes('WINDOW_EXPIRED')) return { undone: false, message: '超过 5 分钟，不能再撤销' };
+    if (code.includes('SUPERSEDED')) return { undone: false, message: '这条已经被后续操作覆盖，不能撤销' };
     return { undone: false, message: '当前状态已变化，无法撤销这条操作' };
   }
-
-  if (res.status === 404 || res.status === 501) {
-    throw makeError('NOT_AVAILABLE', UNAVAILABLE_ACTION_MESSAGE);
-  }
-
-  if (!res.ok) {
-    throw makeError('ACTION_FAILED', '暂时无法撤销，请刷新页面核对最新状态');
-  }
-
-  return {
-    undone: data.status === 'undone' || res.ok,
-    message: '已撤销',
-  };
+  if (res.status === 404 || res.status === 501) throw makeError('NOT_AVAILABLE', UNAVAILABLE_ACTION_MESSAGE);
+  if (!res.ok) throw makeError('ACTION_FAILED', '暂时无法撤销，请刷新页面核对最新状态');
+  return { undone: data.status === 'undone' || res.ok, message: '已撤销' };
 }
 
 export interface UploadTaskStartResult {
@@ -265,7 +379,6 @@ export interface UploadTaskStatusResult {
   status: 'RUNNING' | 'COMPLETED' | 'FAILED';
   applicationId?: string;
   candidateName?: string;
-  /** Always human-readable; never raw error_code. */
   errorSummary?: string;
 }
 
@@ -289,28 +402,18 @@ export async function uploadResumeRaw(file: File, jobId: string): Promise<Upload
         : '简历上传未能提交，请稍后重试';
     throw makeError('ACTION_FAILED', msg);
   }
-  return {
-    taskId: String(data.task_id || data.id || ''),
-    fileName: file.name,
-  };
+  return { taskId: String(data.task_id || data.id || ''), fileName: file.name };
 }
 
 export async function fetchTaskStatus(taskId: string): Promise<UploadTaskStatusResult> {
   const res = await fetch(`/recruitment/api/tasks/status?task_id=${encodeURIComponent(taskId)}`, {
     method: 'GET',
     credentials: 'same-origin',
-    headers: {
-      'x-recruitment-request': '1',
-      Accept: 'application/json',
-    },
+    headers: { 'x-recruitment-request': '1', Accept: 'application/json' },
   });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    return {
-      taskId,
-      status: 'FAILED',
-      errorSummary: '暂时无法查询解析进度，请稍后刷新查看',
-    };
+    return { taskId, status: 'FAILED', errorSummary: '暂时无法查询解析进度，请稍后刷新查看' };
   }
   const task = (data.task && typeof data.task === 'object' ? data.task : data) as Record<string, unknown>;
   const st = String(task.status || 'RUNNING').toUpperCase();
@@ -334,12 +437,6 @@ export async function fetchTaskStatus(taskId: string): Promise<UploadTaskStatusR
   }
   return { taskId, status: 'RUNNING' };
 }
-
-export function triggerUnavailableAction(): never {
-  throw makeError('NOT_AVAILABLE', UNAVAILABLE_ACTION_MESSAGE);
-}
-
-// ---------------- Task 07: Feishu Free Slots & Rebind Minute ----------------
 
 export interface FreeSlotOption {
   startIso: string;
@@ -378,11 +475,6 @@ function mapUnsatisfiedReason(rawReason: string): string {
   return '这位面试官的飞书日历暂时无法读取';
 }
 
-/**
- * T7-1: Query real Feishu free slots before scheduling/rescheduling/adding a round.
- * GET /recruitment/api/action/interview/free-slots?application_id=<id>&interviewer_actor_ids=<id,id>&days=5&duration_minutes=45
- * NEVER mistakes calendar read failure for "no free time".
- */
 export async function fetchInterviewFreeSlots(params: {
   applicationId: string;
   interviewerActorIds?: string[];
@@ -401,10 +493,7 @@ export async function fetchInterviewFreeSlots(params: {
     const res = await fetch(`/recruitment/api/action/interview/free-slots?${qs.toString()}`, {
       method: 'GET',
       credentials: 'same-origin',
-      headers: {
-        'x-recruitment-request': '1',
-        Accept: 'application/json',
-      },
+      headers: { 'x-recruitment-request': '1', Accept: 'application/json' },
     });
     if (!res.ok) {
       return {
@@ -421,17 +510,20 @@ export async function fetchInterviewFreeSlots(params: {
     const calendarUnavailable = connection !== 'CONNECTED';
 
     const rawSlots = Array.isArray(data.slots) ? data.slots : [];
-    const slots: FreeSlotOption[] = rawSlots.slice(0, 3).map((item) => {
-      const s = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
-      const startIso = typeof s.start === 'string' ? s.start : '';
-      const endIso = typeof s.end === 'string' ? s.end : '';
-      return {
-        startIso,
-        endIso,
-        label: formatLocalSlotLabel(startIso, endIso),
-        busyConflicts: typeof s.busy_conflicts === 'number' ? s.busy_conflicts : 0,
-      };
-    }).filter((x) => x.startIso !== '');
+    const slots: FreeSlotOption[] = rawSlots
+      .slice(0, 3)
+      .map((item) => {
+        const s = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
+        const startIso = typeof s.start === 'string' ? s.start : '';
+        const endIso = typeof s.end === 'string' ? s.end : '';
+        return {
+          startIso,
+          endIso,
+          label: formatLocalSlotLabel(startIso, endIso),
+          busyConflicts: typeof s.busy_conflicts === 'number' ? s.busy_conflicts : 0,
+        };
+      })
+      .filter((x) => x.startIso !== '');
 
     const rawUnsat = Array.isArray(data.unsatisfied) ? data.unsatisfied : [];
     const unsatisfiedReasons: string[] = Array.from(
@@ -463,31 +555,39 @@ export async function fetchInterviewFreeSlots(params: {
 
 export async function postInterviewSchedule(payload: {
   applicationId: string;
-  mode: 'schedule' | 'reschedule' | 'add_round';
+  intent: 'CREATE' | 'RESCHEDULE' | 'NO_SHOW';
+  interviewId?: string;
+  interviewerActorIds?: string[];
   roundLabel?: string;
   replaceInterviewer?: string;
-  startAt: string;
+  startAt?: string;
   endAt?: string;
+  noShowSubject?: 'CANDIDATE' | 'INTERVIEWER';
+  reason?: string;
   confirmationText: string;
+  expectedRecordVersion?: number;
 }): Promise<{ interview_id?: string; action_id?: string }> {
   const body: Record<string, unknown> = {
     application_id: payload.applicationId,
-    mode: payload.mode,
-    start_at: payload.startAt,
+    intent: payload.intent,
     confirmation_text: payload.confirmationText,
   };
-  if (payload.endAt) body.end_at = payload.endAt;
+  if (payload.interviewId) body.interview_id = payload.interviewId;
+  if (payload.interviewerActorIds && payload.interviewerActorIds.length > 0) {
+    body.interviewer_actor_ids = payload.interviewerActorIds;
+  }
   if (payload.roundLabel) body.round_label = payload.roundLabel;
   if (payload.replaceInterviewer) body.replace_interviewer = payload.replaceInterviewer;
+  if (payload.startAt) body.start_at = payload.startAt;
+  if (payload.endAt) body.end_at = payload.endAt;
+  if (payload.noShowSubject) body.subject = payload.noShowSubject;
+  if (payload.reason) body.reason = payload.reason;
+  if (typeof payload.expectedRecordVersion === 'number') {
+    body.expected_record_version = payload.expectedRecordVersion;
+  }
   return postJsonAction('/recruitment/api/action/interview/schedule', body);
 }
 
-/**
- * T7-2: Rebind Feishu Minutes recording ownership after replacing an interviewer.
- * POST /recruitment/api/action/interview/rebind-minute
- * NEVER called without explicit human click + confirmation_text.
- * On failure, explicitly reassures that scorecards are NOT lost while ownership stays old.
- */
 export async function postRebindMinute(payload: {
   interviewId: string;
   fromActorId: string;
@@ -521,8 +621,9 @@ export async function postRebindMinute(payload: {
         : '飞书妙记权限校验未通过或连接中断';
     throw makeError('ACTION_FAILED', `${rawReason}。面评不会因此丢，但录音归属仍是旧的。`);
   }
-  return {
-    ok: true,
-    message: '已把录音归属改到新面试官',
-  };
+  return { ok: true, message: '已把录音归属改到新面试官' };
+}
+
+export function triggerUnavailableAction(): never {
+  throw makeError('NOT_AVAILABLE', UNAVAILABLE_ACTION_MESSAGE);
 }
