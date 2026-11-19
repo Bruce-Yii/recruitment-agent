@@ -27,6 +27,8 @@
 
 import { parseContractArgs, toParameterSchema } from './args.ts'
 import type { ParamMap } from './args.ts'
+// 事件名只从唯一权威注册表取（`src/runtime/event-types.ts`），不写死字面量。
+import { EVENT_TYPES } from '../runtime/event-types.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { checkAsOf, contractError } from './contract.ts'
 import type { ContractErrorCode } from './contract.ts'
@@ -163,6 +165,22 @@ export interface EvaluationValue {
   readonly blockers: readonly EvaluationBlockerValue[]
 }
 
+/**
+ * `no_show`：只在 `status='NO_SHOW'` 时出现的读侧事实（Audit REPORT.md §③ P1）。
+ * 从 `interview.no_show` 审计事件 payload 读回；`confirmation_text` 原文从不落库，
+ * 这里只有服务端算好的 `confirmation_text_sha256`。
+ */
+export interface NoShowValue {
+  /** 谁没来：CANDIDATE / INTERVIEWER。 */
+  readonly subject: string
+  /** 人话原因（1..500）。 */
+  readonly reason: string
+  /** 事件记录时刻（ISO-8601；来自事件的 recorded_at）。 */
+  readonly recorded_at: string
+  /** sha256(确认原话)，64 位 hex；原文不返回。 */
+  readonly confirmation_text_sha256: string
+}
+
 /** `warnings[]`：本次查询看到的问题，**不改变** `status`。 */
 export interface InterviewWarningValue {
   readonly code: InterviewWarningCode
@@ -200,6 +218,8 @@ export interface InterviewValue {
   /** AT-5：换人事实汇总（只在有替换时出现，空数组不输出）。 */
   readonly replacements?: readonly InterviewerReplacementValue[]
   readonly meeting_binding: MeetingBindingBlockValue
+  /** 只在 status='NO_SHOW' 时出现：谁没来、原因、记录时刻、确认语 sha256（原文不返回）。 */
+  readonly no_show?: NoShowValue
   readonly transcript: TranscriptValue
   readonly evaluation: EvaluationValue
   readonly warnings: readonly InterviewWarningValue[]
@@ -419,6 +439,21 @@ const REPLACEMENT_SCHEMA: Record<string, unknown> = {
   required: ['from_actor_id', 'to_actor_id', 'reason', 'replaced_at'],
 }
 
+/** `no_show` 的 schema（只在 status='NO_SHOW' 时作为 optional 属性出现，老数据不受影响）。 */
+const NO_SHOW_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  description: 'Only present when status=NO_SHOW. Read back from the interview.no_show audit event payload. '
+    + 'The raw confirmation phrase is never stored; only its sha256 is returned.',
+  properties: {
+    subject: { type: 'string', enum: ['CANDIDATE', 'INTERVIEWER'] },
+    reason: { type: 'string', description: 'Human-readable reason (1..500).' },
+    recorded_at: { type: 'string', description: 'ISO-8601 instant when the audit event was recorded.' },
+    confirmation_text_sha256: { type: 'string', description: 'sha256 of the confirmation phrase (64 hex chars).' },
+  },
+  required: ['subject', 'reason', 'recorded_at', 'confirmation_text_sha256'],
+}
+
 /**
  * `interviews[]` 元素的规范 schema（SPEC §3.3）。
  * A 侧 `recruitment_interview_schedule.output.schema.interview` 直接用同一份 —— 两个工具
@@ -463,6 +498,7 @@ export const INTERVIEW_VALUE_SCHEMA: Record<string, unknown> = {
       items: REPLACEMENT_SCHEMA,
     },
     meeting_binding: MEETING_BINDING_SCHEMA,
+    no_show: NO_SHOW_SCHEMA,
     transcript: TRANSCRIPT_SCHEMA,
     evaluation: EVALUATION_SCHEMA,
     warnings: WARNINGS_SCHEMA,
@@ -710,6 +746,37 @@ async function loadInterview(
       message: `该租户下没有面试 ${interviewId}`,
       detail: { interview_id: interviewId },
     })
+  }
+
+  // Audit REPORT.md §③：`NO_SHOW` 的事实只有审计事件里才有（interview 表没有 reason / subject 列）。
+  // 一条事件按 (tenant, interview_id) 读回，取 recorded_at 最新的一条；老数据没有该事件时整个键省略。
+  let noShow: NoShowValue | undefined
+  if (interview.status === 'NO_SHOW') {
+    const eventRows = (await client.query<{
+      payload: unknown
+      recorded_at: string | Date
+    }>(
+      `select payload, recorded_at
+         from recruitment.event_inbox
+        where tenant_id = $1 and event_type = $2 and payload->>'interview_id' = $3
+        order by recorded_at desc, event_id desc
+        limit 1`,
+      [tenantId, EVENT_TYPES.INTERVIEW_NO_SHOW, interviewId],
+    )).rows
+    const eventRow = eventRows[0]
+    const payload = eventRow?.payload
+    if (eventRow !== undefined && payload !== null && typeof payload === 'object' && !Array.isArray(payload)) {
+      const fields = payload as Record<string, unknown>
+      if (typeof fields.subject === 'string' && typeof fields.reason === 'string'
+        && typeof fields.confirmation_text_sha256 === 'string') {
+        noShow = {
+          subject: fields.subject,
+          reason: fields.reason,
+          recorded_at: iso(eventRow.recorded_at),
+          confirmation_text_sha256: fields.confirmation_text_sha256,
+        }
+      }
+    }
   }
 
   const interviewerRows = (await client.query<InterviewerRow>(
@@ -998,6 +1065,7 @@ async function loadInterview(
     interviewers,
     ...(replacements.length === 0 ? {} : { replacements }),
     meeting_binding: { state: meetingBindingState, count: bindingsValue.length, bindings: bindingsValue },
+    ...(noShow === undefined ? {} : { no_show: noShow }),
     transcript: {
       state: derivation.state,
       reason_code: derivation.reason_code,

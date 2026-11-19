@@ -5,20 +5,27 @@
 //     §8 状态机、§9 幂等）——`SC-*`。
 //   * `contracts/interview/tool-contracts.md`（§1 通用、§3 schedule、§4 幂等、§5.1 写工具证明口径）。
 //
-// 五个 intent（原四个见 `docs/17` D-62 / `tool-contracts.md` §3.1；第五个见 docs/29 §3.7 AT-5）：
+// 六个 intent（原四个见 `docs/17` D-62 / `tool-contracts.md` §3.1；第五个见 docs/29 §3.7 AT-5；
+//   第六个 MARK_NO_SHOW 见审计 REPORT.md §③ P1 最小修法）：
 //   * `CREATE`               ∅ → SCHEDULED（新建一场 + 必要时登记会议绑定）；
 //   * `RESCHEDULE`           SCHEDULED/RESCHEDULED/CANCELLED → SCHEDULED（**改同一行**，H-1）；
 //   * `CANCEL`               SCHEDULED/RESCHEDULED → CANCELLED（已 CANCELLED → 幂等成功、零写入）；
 //   * `WITHDRAW_INTERVIEWER` 不改 `interview.status`：`required_scorecard=false` + 内部事件（§4.3）；
 //   * `REPLACE_INTERVIEWER`  AT-5：追加新面试官行 + 旧行标记 replaced_*（**旧行不删**），
 //                            只写 `SCHEDULED/RESCHEDULED`，复用 `interviewer.withdrawn` 审计事件。
+//   * `MARK_NO_SHOW`         SCHEDULED/POST_INTERVIEW → NO_SHOW（只 UPDATE status + 版本 + 时间，
+//                            不改时段/会议/面试官）；已 NO_SHOW → 幂等成功（already_marked=true、零写入）。
+//                            审计写 `interview.no_show`（新登记事件，payload 带 subject/reason/
+//                            confirmation_text_sha256/from_status/to_status/interview_id）。
+//                            `confirmation_text` 原文不算 digest 之外的任何落库字段：服务端只把它的
+//                            sha256 落审计 payload（原文不进 payload/changes/输出）。
 //   **没有 `COMPLETE`**：`IN_PROGRESS → POST_INTERVIEW` 等边属 S9（`scheduling-rules.md` §8 末段），
 //   本工具不实现、也不接受该取值（enum 之外 → `INVALID_ARGS(OUT_OF_RANGE)`）。
 //
 // AT-4：`round_label`（可选，CREATE/RESCHEDULE）只是显示层附加事实；`round_no` / `uq_interview_slot`
 // 语义与唯一键**一律不变**（0018 / db/verify.sql AT-STRUCT-09）。
 //
-// 五个 intent **共用同一条管道**（这正是 D-62 不拆工具的理由，代码里也必须只有一份）：
+// 六个 intent **共用同一条管道**（这正是 D-62 不拆工具的理由，代码里也必须只有一份）：
 //   1. 幂等 STORE（`business_task.idempotency_key = 'interview_schedule:' || K`）→ 重放 / 键复用；
 //   2. 业务校验（申请 / 面试官 / 状态机 / 乐观并发 / 冲突 / 会议）；
 //   3. **人机闸门（D-79）**：全部校验通过后、第一行写之前请求人工批准；approval 缺省 /
@@ -54,6 +61,7 @@
 // `RecruitmentErrorCode` 的 S6/S7 封闭集里（`errors.ts` 不属本泳道写范围），这里以**同一消息格式**
 // 构造（`Error: <CODE>: <单行 compact-json>`），运行时行为与 `contractError` 一致。
 
+import { createHash } from 'node:crypto'
 import { parseContractArgs, toParameterSchema } from './args.ts'
 import type { ParamMap, ParamSpec } from './args.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
@@ -76,6 +84,9 @@ import {
 } from '../db/pool.ts'
 // 事件名常量来自唯一权威注册表（`src/runtime/event-types.ts`），不在本文件写死字面量。
 import { EVENT_TYPES } from '../runtime/event-types.ts'
+// IANA 时区校验（审计 §③-2）：写侧不再让 UTC+5 / emoji 等伪名落库。纯函数底座见
+// src/domain/timezone.ts（子代理 B），本文件只接校验；展示侧兼容老数据由读侧处理。
+import { isValidIanaTimezone } from '../domain/timezone.ts'
 import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
 // render 口径 helper（O1 残留修复轮）：人读正文只放业务标识 / 短号；完整编号只允许出现在
 // 末尾 machine arguments 区（模型要原样复制才能调下游工具），见 render-ref.ts 文件头。
@@ -98,8 +109,10 @@ const DEFAULT_SLOT_CODE = 'DEFAULT'
 const DEFAULT_TIMEZONE = 'Asia/Shanghai'
 const ONLY_DELIVERY_MODE = 'VIDEO'
 
-/** 五个 intent（D-62 四个 + AT-5 的 `REPLACE_INTERVIEWER`）。**没有** `COMPLETE`：面试结束属 S9。 */
-const INTENTS = ['CREATE', 'RESCHEDULE', 'CANCEL', 'WITHDRAW_INTERVIEWER', 'REPLACE_INTERVIEWER'] as const
+/** 六个 intent（D-62 四个 + AT-5 的 `REPLACE_INTERVIEWER` + MARK_NO_SHOW）。**没有** `COMPLETE`：面试结束属 S9。 */
+const INTENTS = [
+  'CREATE', 'RESCHEDULE', 'CANCEL', 'WITHDRAW_INTERVIEWER', 'REPLACE_INTERVIEWER', 'MARK_NO_SHOW',
+] as const
 /** 本工具接受的 `intent` 取值。 */
 export type ScheduleIntent = (typeof INTENTS)[number]
 
@@ -107,6 +120,8 @@ export type ScheduleIntent = (typeof INTENTS)[number]
 const RESCHEDULABLE_STATUSES: readonly string[] = ['SCHEDULED', 'RESCHEDULED', 'CANCELLED']
 /** `CANCEL` 的合法源状态（§6.1：`CANCELLABLE = {SCHEDULED, RESCHEDULED}`）。 */
 const CANCELLABLE_STATUSES: readonly string[] = ['SCHEDULED', 'RESCHEDULED']
+/** `MARK_NO_SHOW` 的合法源状态：仅 `SCHEDULED`/`POST_INTERVIEW`（审计 REPORT.md §③）。 */
+const NO_SHOW_FROM_STATUSES: readonly string[] = ['SCHEDULED', 'POST_INTERVIEW']
 
 /** 幂等 STORE 的键前缀（`scheduling-rules.md` §9 SC-K1）。 */
 const STORE_KEY_PREFIX = 'interview_schedule:'
@@ -123,6 +138,12 @@ const EVENT_TRUST_LEVEL = 'INTERNAL'
 const RESCHEDULE_EVENT_TYPE = EVENT_TYPES.INTERVIEW_RESCHEDULED
 const CANCEL_EVENT_TYPE = EVENT_TYPES.INTERVIEW_CANCELLED
 const WITHDRAW_EVENT_TYPE = EVENT_TYPES.INTERVIEWER_WITHDRAWN
+// MARK_NO_SHOW 用**新登记**的事件类型（Owner 已在 src/runtime/event-types.ts 注册）。
+// 必须逐字引用 EVENT_TYPES.X：test/runtime/event-types.test.ts 会追 eventType: 右值的本地常量定义。
+const NO_SHOW_EVENT_TYPE = EVENT_TYPES.INTERVIEW_NO_SHOW
+/** `MARK_NO_SHOW.subject` 的封闭取值（谁没来）。 */
+const NO_SHOW_SUBJECTS = ['CANDIDATE', 'INTERVIEWER'] as const
+type NoShowSubject = (typeof NO_SHOW_SUBJECTS)[number]
 // AT-5 复用同一个**已登记**事件类型（producer 文件就是本文件，normalizer_version 同为
 // 'schema/interview-schedule'），不新增事件类型、不改 src/runtime/event-types.ts。
 // 必须逐字引用 EVENT_TYPES.X：test/runtime/event-types.test.ts 会追 eventType: 右值的本地常量定义。
@@ -159,13 +180,15 @@ const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9_.:-]+$/
 //  参数声明（`tool-contracts.md` §3.2：通用 / CREATE / RESCHEDULE / CANCEL / WITHDRAW）
 // ---------------------------------------------------------------------------
 
-/** `intent`（四个值，CREATE 缺省；D-62）。 */
+/** `intent`（六个值，CREATE 缺省；D-62 + AT-5 + MARK_NO_SHOW）。 */
 const INTENT_PARAM: ParamSpec = {
   kind: 'string',
   values: [...INTENTS],
   description:
     'Action. CREATE (default) creates a session; RESCHEDULE moves the SAME row to a new time; CANCEL cancels '
-    + 'SCHEDULED/RESCHEDULED sessions; WITHDRAW_INTERVIEWER only clears that interviewer\'s required_scorecard. '
+    + 'SCHEDULED/RESCHEDULED sessions; WITHDRAW_INTERVIEWER only clears that interviewer\'s required_scorecard; '
+    + 'REPLACE_INTERVIEWER appends a new interviewer row; MARK_NO_SHOW marks a SCHEDULED/POST_INTERVIEW session '
+    + 'as NO_SHOW (candidate or interviewer did not show up, with reason and a confirmation phrase). '
     + 'There is no COMPLETE intent (post-interview edges belong to S9).',
 }
 
@@ -237,7 +260,10 @@ const CREATE_DURATION_PARAM: ParamSpec = {
 const TIMEZONE_PARAM: ParamSpec = {
   kind: 'string',
   maxLength: 64,
-  description: "IANA time zone used for DISPLAY only (default 'Asia/Shanghai'); it never participates in comparisons.",
+  description:
+    "IANA time zone used for DISPLAY only (explicit default 'Asia/Shanghai' when omitted); "
+    + 'it never participates in comparisons. Must be a real IANA name such as Asia/Shanghai or '
+    + "America/New_York — offsets like 'UTC+5' and unknown names are rejected with INVALID_ARGS(INVALID_TIMEZONE).",
 }
 
 const DELIVERY_MODE_PARAM: ParamSpec = {
@@ -279,6 +305,26 @@ const REASON_PARAM: ParamSpec = {
   description:
     'Human-readable reason, 1..500 chars. Required for CANCEL / WITHDRAW_INTERVIEWER (SC-X5); optional for '
     + 'RESCHEDULE (it is written into the interview.rescheduled audit event).',
+}
+
+/** `MARK_NO_SHOW.subject`：谁没来（缺省 CANDIDATE）。 */
+const NO_SHOW_SUBJECT_PARAM: ParamSpec = {
+  kind: 'string',
+  values: [...NO_SHOW_SUBJECTS],
+  description: "Who did not show up: 'CANDIDATE' (default) or 'INTERVIEWER'. Written into the audit payload.",
+}
+
+/**
+ * `MARK_NO_SHOW.confirmation_text`：人点确认时的原话（1..500）。
+ * **原文不落库**：服务端只把它 sha256 后的摘要写进审计事件 payload 的 `confirmation_text_sha256`。
+ * 缺失/空 → `CONFIRMATION_TEXT_REQUIRED`（本 intent 手写校验，优先于 `args.ts` 的 TYPE_MISMATCH）。
+ */
+const CONFIRMATION_TEXT_PARAM: ParamSpec = {
+  kind: 'string',
+  maxLength: 500,
+  description:
+    'Confirmation phrase from the human who clicked (1..500). The raw text is NEVER stored or echoed: the server '
+    + 'sha256-hashes it and only the digest lands in the audit payload as confirmation_text_sha256.',
 }
 
 const INTERVIEWER_ID_PARAM: ParamSpec = {
@@ -344,13 +390,25 @@ const WITHDRAW_PARAMS: ParamMap = {
   expected_record_version: EXPECTED_RECORD_VERSION_PARAM,
 }
 
-/** 每个 intent 交给 `parseContractArgs` 的标量声明（`reason` 不在这里：手写判 REASON_REQUIRED）。 */
+/**
+ * `MARK_NO_SHOW` 的标量。
+ * `reason` 与 `confirmation_text` 都交给本文件手写校验（`REASON_REQUIRED` /
+ * `CONFIRMATION_TEXT_REQUIRED` 优先于 `args.ts` 的 TYPE_MISMATCH），故不进这里。
+ */
+const NO_SHOW_PARAMS: ParamMap = {
+  interview_id: INTERVIEW_ID_PARAM,
+  expected_record_version: EXPECTED_RECORD_VERSION_PARAM,
+  subject: NO_SHOW_SUBJECT_PARAM,
+}
+
+/** 每个 intent 交给 `parseContractArgs` 的标量声明（`reason` / `confirmation_text` 不在这里：手写判必填）。 */
 const INTENT_PARAMS: Readonly<Record<ScheduleIntent, ParamMap>> = {
   CREATE: CREATE_PARAMS,
   RESCHEDULE: RESCHEDULE_PARAMS,
   CANCEL: CANCEL_PARAMS,
   WITHDRAW_INTERVIEWER: WITHDRAW_PARAMS,
   REPLACE_INTERVIEWER: REPLACE_PARAMS,
+  MARK_NO_SHOW: NO_SHOW_PARAMS,
 }
 
 /** 每个 intent 的结构化键（`args.ts` 不支持对象 / 对象数组，由本文件手写校验）。 */
@@ -360,9 +418,10 @@ const INTENT_STRUCTURED_KEYS: Readonly<Record<ScheduleIntent, readonly string[]>
   CANCEL: [],
   WITHDRAW_INTERVIEWER: [],
   REPLACE_INTERVIEWER: ['replace_interviewer'],
+  MARK_NO_SHOW: [],
 }
 
-/** 每个 intent 额外接受、但不进 `args.ts` 的键（`reason` 的 `REASON_REQUIRED` 优先级更高）。 */
+/** 每个 intent 额外接受、但不进 `args.ts` 的键（`reason` / `confirmation_text` 的必填判定优先级更高）。 */
 const INTENT_EXTRA_KEYS: Readonly<Record<ScheduleIntent, readonly string[]>> = {
   CREATE: [],
   RESCHEDULE: ['reason'],
@@ -370,6 +429,7 @@ const INTENT_EXTRA_KEYS: Readonly<Record<ScheduleIntent, readonly string[]>> = {
   WITHDRAW_INTERVIEWER: ['reason'],
   // AT-5：reason 首选写在 replace_interviewer 对象里；顶层 reason 也接受（与其余 intent 同口径）。
   REPLACE_INTERVIEWER: ['reason'],
+  MARK_NO_SHOW: ['reason', 'confirmation_text'],
 }
 
 /**
@@ -394,8 +454,10 @@ const MODEL_SCALAR_PARAMS: ParamMap = {
   ...withoutRequired(CANCEL_PARAMS),
   ...withoutRequired(WITHDRAW_PARAMS),
   ...withoutRequired(REPLACE_PARAMS),
+  ...withoutRequired(NO_SHOW_PARAMS),
   round_label: ROUND_LABEL_PARAM,
   reason: REASON_PARAM,
+  confirmation_text: CONFIRMATION_TEXT_PARAM,
 }
 
 /** `interviewers[]` 元素的模型可见 schema（对象数组，`args.ts` 不支持，由本文件手写校验）。 */
@@ -561,6 +623,8 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
     status: { type: 'string' },
     write: { type: 'boolean' },
     replayed: { type: 'boolean' },
+    // MARK_NO_SHOW 专用：已是 NO_SHOW 的语义幂等成功为 true；其它 intent / 重放不输出此键。
+    already_marked: { type: 'boolean' },
     labels: {
       type: 'object',
       properties: {
@@ -698,6 +762,20 @@ export interface CancelCommand extends CommandBase {
   readonly reason: string
 }
 
+/**
+ * `intent=MARK_NO_SHOW` 的规范形态。
+ * `confirmation_text` 原文**只在内存里**用来算 sha256，命令里只留摘要字段。
+ */
+export interface MarkNoShowCommand extends CommandBase {
+  readonly intent: 'MARK_NO_SHOW'
+  readonly interview_id: string
+  readonly expected_record_version: number
+  readonly subject: NoShowSubject
+  readonly reason: string
+  /** `sha256(confirmation_text)`（不带前缀，64 位 hex）。原文不落库。 */
+  readonly confirmation_text_sha256: string
+}
+
 /** `intent=WITHDRAW_INTERVIEWER` 的规范形态。 */
 export interface WithdrawInterviewerCommand extends CommandBase {
   readonly intent: 'WITHDRAW_INTERVIEWER'
@@ -716,9 +794,10 @@ export interface ReplaceInterviewerCommand extends CommandBase {
   readonly reason: string
 }
 
-/** `parseScheduleArgs` 的返回：按 `intent` 区分的五选一命令。 */
+/** `parseScheduleArgs` 的返回：按 `intent` 区分的六选一命令。 */
 export type ScheduleCommand =
   | CreateCommand | RescheduleCommand | CancelCommand | WithdrawInterviewerCommand | ReplaceInterviewerCommand
+  | MarkNoShowCommand
 
 /** 兼容旧名（`intent=CREATE` 的规范形态）。 */
 export type ScheduleArgs = CreateCommand
@@ -1292,6 +1371,52 @@ function readReason(value: unknown, required: boolean): string | undefined {
 }
 
 /**
+ * `MARK_NO_SHOW.confirmation_text`：必填、1..500，本 intent 手写判（优先于 `args.ts` 的 TYPE_MISMATCH）。
+ * 返回**原文**给 `parseMarkNoShowCommand` 立即算 sha256；原文不进命令对象、不落库。
+ */
+function readConfirmationText(value: unknown): string {
+  if (value === undefined) {
+    fail('CONFIRMATION_TEXT_REQUIRED', '该 intent 必须给非空 confirmation_text（人点确认的原话）', {
+      path: 'confirmation_text',
+    })
+  }
+  if (typeof value !== 'string') fail('TYPE_MISMATCH', '"confirmation_text" 必须是字符串', { path: 'confirmation_text' })
+  if (value.length > 500) {
+    fail('OUT_OF_RANGE', '"confirmation_text" 不能超过 500 个字符', { path: 'confirmation_text', length: value.length })
+  }
+  if (value.trim() === '') {
+    fail('CONFIRMATION_TEXT_REQUIRED', 'confirmation_text 不能为空（人点确认的原话）', { path: 'confirmation_text' })
+  }
+  return value
+}
+
+/** `subject` 缺省 CANDIDATE（取值封闭集在 args.ts 层已由 `values` 判，这里只补缺省）。 */
+function readNoShowSubject(value: unknown): NoShowSubject {
+  if (value === undefined) return 'CANDIDATE'
+  if (typeof value !== 'string' || !(NO_SHOW_SUBJECTS as readonly string[]).includes(value)) {
+    fail('OUT_OF_RANGE', 'subject 必须是 CANDIDATE 或 INTERVIEWER', { path: 'subject', value })
+  }
+  return value as NoShowSubject
+}
+
+/**
+ * `timezone`（CREATE）：缺省取显式默认 `Asia/Shanghai`（**不是**静默 +8），
+ * 传入值必须是合法 IANA 名（Intl 构造 + 别名白名单交叉校验，见 domain/timezone.ts）。
+ * 非法值在**碰库之前**以 INVALID_ARGS(INVALID_TIMEZONE) 拒绝，人话文案给 HR 看。
+ */
+function readTimezone(value: unknown): string {
+  const timezone = (value as string | undefined) ?? DEFAULT_TIMEZONE
+  if (typeof timezone !== 'string' || !isValidIanaTimezone(timezone)) {
+    fail(
+      'INVALID_TIMEZONE',
+      '时区要写成 Asia/Shanghai 这种（合法的 IANA 时区名）',
+      { timezone },
+    )
+  }
+  return timezone
+}
+
+/**
  * AT-4：`round_label`（可选）按 `ck_interview_round_label` 校验 btrim 后 1..200。
  * 存进去的也是 trim 后的值（显示层元数据，不需要保留调用方的前后空白）。
  */
@@ -1338,7 +1463,7 @@ function parseCreateCommand(
   const duration = readDurationMinutes(scalars.duration_minutes)
   const endMs = startMs + duration * 60_000
 
-  const timezone = (scalars.timezone as string | undefined) ?? DEFAULT_TIMEZONE
+  const timezone = readTimezone(scalars.timezone)
   const deliveryMode = (scalars.delivery_mode as string | undefined) ?? ONLY_DELIVERY_MODE
   if (deliveryMode !== ONLY_DELIVERY_MODE) {
     fail(
@@ -1444,6 +1569,28 @@ function parseCancelCommand(
   }) as unknown as CancelCommand
 }
 
+/** `MARK_NO_SHOW` 的形状（confirmation_text 只在这里算 sha256，原文不进命令对象）。 */
+function parseMarkNoShowCommand(
+  input: Record<string, unknown>,
+  scalars: Record<string, unknown>,
+  idempotencyKey: string,
+  argsDigest: string,
+): MarkNoShowCommand {
+  const reason = readReason(input.reason, true)
+  const confirmationText = readConfirmationText(input.confirmation_text)
+  const confirmationTextSha256 = createHash('sha256').update(confirmationText, 'utf8').digest('hex')
+  return compact({
+    intent: 'MARK_NO_SHOW',
+    idempotency_key: idempotencyKey,
+    interview_id: (scalars.interview_id as string).toLowerCase(),
+    expected_record_version: readExpectedRecordVersion(scalars.expected_record_version),
+    subject: readNoShowSubject(scalars.subject),
+    reason,
+    confirmation_text_sha256: confirmationTextSha256,
+    args_digest: argsDigest,
+  }) as unknown as MarkNoShowCommand
+}
+
 /** `WITHDRAW_INTERVIEWER` 的形状。 */
 function parseWithdrawInterviewerCommand(
   input: Record<string, unknown>,
@@ -1540,7 +1687,9 @@ function parseScheduleShape(raw: unknown): ScheduleCommand {
   // 3. 标量交给 args.ts；`reason` 手写（见 readReason），结构化键手写。
   const scalarInput: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(input)) {
-    if (structuredKeys.includes(key) || key === 'reason') continue
+    // `reason` / `confirmation_text` 是本文件手写校验的额外键（INTENT_EXTRA_KEYS），
+    // 不进 args.ts 的标量集，否则会被 UNKNOWN_PARAM 拒掉。
+    if (structuredKeys.includes(key) || key === 'reason' || key === 'confirmation_text') continue
     scalarInput[key] = value
   }
   const scalars = parseContractArgs({ ...COMMON_PARAMS, ...intentParams }, scalarInput)
@@ -1558,6 +1707,8 @@ function parseScheduleShape(raw: unknown): ScheduleCommand {
       return parseWithdrawInterviewerCommand(input, scalars, idempotencyKey, argsDigest)
     case 'REPLACE_INTERVIEWER':
       return parseReplaceInterviewerCommand(input, scalars, idempotencyKey, argsDigest)
+    case 'MARK_NO_SHOW':
+      return parseMarkNoShowCommand(input, scalars, idempotencyKey, argsDigest)
   }
 }
 
@@ -2336,6 +2487,13 @@ export type ScheduleWritePlan =
     readonly oldRow: ReplacementInterviewerRow
     readonly asOfIso: string
   }
+  | {
+    readonly intent: 'MARK_NO_SHOW'
+    readonly command: MarkNoShowCommand
+    /** 写事务复校验里拿到的行（FOR UPDATE）。 */
+    readonly row: InterviewCommandRow
+    readonly asOfIso: string
+  }
 
 /**
  * `prepareSchedule` 的结论（**internal 导出**：生产路径与测试共用，不是契约面）。
@@ -2409,6 +2567,8 @@ export async function prepareSchedule(
       return await prepareWithdrawInterviewerCommand(client, config, command, asOfIso, options)
     case 'REPLACE_INTERVIEWER':
       return await prepareReplaceInterviewerCommand(client, config, command, asOfIso, options)
+    case 'MARK_NO_SHOW':
+      return await prepareMarkNoShowCommand(client, config, command, asOfIso, options)
   }
 }
 
@@ -2437,6 +2597,8 @@ export async function writeSchedule(
       return await writeWithdrawInterviewerCommand(client, config, plan)
     case 'REPLACE_INTERVIEWER':
       return await writeReplaceInterviewerCommand(client, config, plan)
+    case 'MARK_NO_SHOW':
+      return await writeMarkNoShowCommand(client, config, plan)
   }
 }
 
@@ -3668,6 +3830,132 @@ async function writeReplaceInterviewerCommand(
 }
 
 // ---------------------------------------------------------------------------
+//  MARK_NO_SHOW（审计 REPORT.md §③ P1）
+// ---------------------------------------------------------------------------
+
+/**
+ * 给 MARK_NO_SHOW 的出参补 `already_marked` 标记（schema 里是 optional 属性）。
+ * 其它 intent 的输出一个字都不变。
+ */
+function withAlreadyMarked(value: Record<string, unknown>, alreadyMarked: boolean): Record<string, unknown> {
+  return { ...value, already_marked: alreadyMarked }
+}
+
+/**
+ * `intent=MARK_NO_SHOW` 的**只读准备段**（D-101 两阶段，闸门在事务外）。
+ *
+ * 顺序与其它 intent 一致：幂等 STORE → 目标行 + 乐观并发 → 状态机 → 计划。
+ * 语义幂等（lead 裁决）：**已是 NO_SHOW 的任何 key 都是幂等成功**（`already_marked=true`，
+ * 零写入、不问人、不写第二条事件）——它不是 409；而其它非法状态（CANCELLED/IN_PROGRESS/
+ * DECIDED 等）仍是 `INVALID_ARGS(INVALID_STATE_TRANSITION)`。
+ */
+async function prepareMarkNoShowCommand(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  args: MarkNoShowCommand,
+  asOfIso: string,
+  options: SchedulePrepareOptions,
+): Promise<SchedulePreparation> {
+  const tenantId = config.tenant_id
+
+  const store = await loadStore(client, tenantId, args.idempotency_key)
+  if (store !== null) {
+    // 同 key 重放：replayed=true、零写入、不问人。already_marked=false（它不是"语义幂等"分支）。
+    const replayed = await replayFromStore(client, config, store, args, asOfIso)
+    return { kind: 'result', value: withAlreadyMarked(replayed, false) }
+  }
+
+  const row = await loadInterviewForUpdate(client, tenantId, args.interview_id, options.forUpdate)
+  assertExpectedVersion(row, args.expected_record_version, args.interview_id)
+
+  // 语义幂等：已是 NO_SHOW（不同 key）→ 幂等成功，零写入、不问人。
+  if (row.status === 'NO_SHOW') {
+    const result = await buildCommandResult(
+      client, config, args, args.interview_id, asOfIso, { created: [], updated: [] }, [], [],
+    )
+    return { kind: 'result', value: withAlreadyMarked(result, true) }
+  }
+
+  assertStatusAllowed(row, NO_SHOW_FROM_STATUSES, 'MARK_NO_SHOW')
+
+  return { kind: 'write', plan: { intent: 'MARK_NO_SHOW', command: args, row, asOfIso } }
+}
+
+/**
+ * `intent=MARK_NO_SHOW` 的**写入段**（闸门已放行）：
+ * 只 UPDATE `interview.status` + `status_changed_by_actor_id`（触发器自增 record_version / updated_at），
+ * 不改 `scheduled_start_at` / `scheduled_end_at` / 面试官 / 会议；显式审计事件（新类型 interview.no_show）+
+ * 幂等 STORE + 读回。任何失败由外层保存点撤销。
+ */
+async function writeMarkNoShowCommand(
+  client: DatabaseClient,
+  config: ResolvedDatabaseConfig,
+  plan: Extract<ScheduleWritePlan, { readonly intent: 'MARK_NO_SHOW' }>,
+): Promise<Record<string, unknown>> {
+  const args = plan.command
+  const asOfIso = plan.asOfIso
+  const row = plan.row
+  const tenantId = config.tenant_id
+  const actorId = config.actor_id
+
+  const created: ChangeRow[] = []
+  const updated: ChangeRow[] = []
+
+  // 1. UPDATE 同一行 → NO_SHOW（fn_row_guard 自动写 interview.status.changed 事件 + 版本自增）。
+  //    只更新状态与操作者；时段/会议/面试官一个都不碰。
+  const marked = await client.query<{ id: string }>(
+    `update recruitment.interview
+        set status = 'NO_SHOW', status_changed_by_actor_id = $1
+      where id = $2 and tenant_id = $3 and record_version = $4
+      returning id`,
+    [actorId, args.interview_id, tenantId, args.expected_record_version],
+  )
+  if (marked.rows[0] === undefined) {
+    const fresh = await loadInterviewForUpdate(client, tenantId, args.interview_id)
+    throw versionConflictError(args.interview_id, args.expected_record_version, fresh.record_version)
+  }
+  updated.push({ table: 'interview', id: args.interview_id })
+
+  // 2. 显式审计事件（新类型 interview.no_show）：人点确认的原话只留 sha256，原文不落库。
+  const eventId = await insertInternalEvent(client, tenantId, {
+    eventType: NO_SHOW_EVENT_TYPE,
+    idempotencyKey: auditEventKey(args, NO_SHOW_EVENT_TYPE),
+    sourceObjectId: args.interview_id,
+    payload: {
+      outcome: 'NO_SHOW',
+      interview_id: args.interview_id,
+      subject: args.subject,
+      reason: args.reason,
+      confirmation_text_sha256: args.confirmation_text_sha256,
+      from_status: row.status,
+      to_status: 'NO_SHOW',
+      actor_id: actorId,
+    },
+  })
+  created.push({ table: 'event_inbox', id: eventId })
+
+  // 3. 幂等 STORE（与其它 intent 共用 'interview_schedule:' 前缀）。
+  const storeWrite = await insertStoreCommand(
+    client,
+    config,
+    args,
+    args.interview_id,
+    `面试未出席：第 ${row.round_no} 轮 ${row.slot_code}`,
+    `MARK_NO_SHOW interview ${args.interview_id}（${args.subject}：${args.reason}）`,
+  )
+  if (storeWrite.kind === 'conflict') {
+    const replayed = await replayAfterStoreConflict(client, config, args, asOfIso)
+    return withAlreadyMarked(replayed, false)
+  }
+  created.push({ table: 'business_task', id: storeWrite.taskId })
+
+  return withAlreadyMarked(
+    await buildCommandResult(client, config, args, args.interview_id, asOfIso, { created, updated }, [], []),
+    false,
+  )
+}
+
+// ---------------------------------------------------------------------------
 //  工具定义
 // ---------------------------------------------------------------------------
 
@@ -3766,7 +4054,7 @@ export function createInterviewScheduleTool(
   return {
     name: TOOL_NAME,
     description:
-      'S8 interview scheduling with five intents (D-62 four + AT-5 REPLACE_INTERVIEWER): CREATE (default) creates one interview session '
+      'S8 interview scheduling with six intents (D-62 four + AT-5 REPLACE_INTERVIEWER + MARK_NO_SHOW): CREATE (default) creates one interview session '
       + '(application_id + round_no + slot_code) with its interviewer rows and optionally registers an existing '
       + 'meeting + binding; RESCHEDULE moves the SAME interview row to a new time (at least one of '
       + 'scheduled_start_at / duration_minutes), re-runs the conflict check on the new window excluding itself, '
@@ -3799,7 +4087,13 @@ export function createInterviewScheduleTool(
       + '— any status, including CANCELLED — fails with ALREADY_SCHEDULED. Interviewer and candidate conflicts '
       + 'reject the request with CONFLICT_SLOT and write nothing. Omitting meeting on CREATE is allowed and honest: '
       + 'the interview is still scheduled, warning MEETING_NOT_BOUND is returned and an INTERVIEW_MEETING_BIND task '
-      + 'is created (next_actions BIND_MEETING). This tool never writes scorecards or decisions.',
+      + 'is created (next_actions BIND_MEETING). MARK_NO_SHOW marks SCHEDULED/POST_INTERVIEW sessions as NO_SHOW: '
+      + 'required reason (1..500) and confirmation_text (1..500, hashed server-side; raw text is never stored) plus '
+      + 'optional subject (CANDIDATE default / INTERVIEWER); only status/version/time are updated (never the time '
+      + 'window, interviewers or meeting); an explicit interview.no_show audit event records the outcome, subject, '
+      + 'reason, confirmation_text_sha256, from_status, to_status and interview_id. Re-marking an already NO_SHOW '
+      + 'interview is an idempotent success (already_marked=true, zero writes, no second event), not an error. '
+      + 'This tool never writes scorecards or decisions.',
     parameters: PARAMETERS_SCHEMA,
     output: {
       schema: OUTPUT_SCHEMA,
@@ -3912,7 +4206,7 @@ export function unconfiguredInterviewScheduleTool(issues: readonly string[]): Re
   return {
     name: TOOL_NAME,
     description:
-      'S8 interview scheduling (CREATE / RESCHEDULE / CANCEL / WITHDRAW_INTERVIEWER / REPLACE_INTERVIEWER). Currently NOT CONFIGURED: '
+      'S8 interview scheduling (CREATE / RESCHEDULE / CANCEL / WITHDRAW_INTERVIEWER / REPLACE_INTERVIEWER / MARK_NO_SHOW). Currently NOT CONFIGURED: '
       + 'the plugin config is missing database settings (or the database password environment variable). '
       + 'Calls return NOT_CONFIGURED.',
     parameters: PARAMETERS_SCHEMA,

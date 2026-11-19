@@ -60,7 +60,7 @@
 
 | # | 活 | 状态 |
 |---|---|---|
-| F1 | 爽约（NO_SHOW）写路径 + 面试官未出席（subject=INTERVIEWER） | 🔄 进行中（owner-noshow-tz） |
-| F2 | 时区校验（IANA）+ 空闲时段按 IANA 动态偏移（DST 正确） | 🔄 同上 |
+| F1 | 爽约（NO_SHOW）写路径 + 面试官未出席（subject=INTERVIEWER） | ✅ 已完成（`MARK_NO_SHOW` intent，新事件 `interview.no_show`，already_marked 幂等） |
+| F2 | 时区校验（IANA）+ 空闲时段按 IANA 动态偏移（DST 正确） | ✅ 已完成（`domain/timezone.ts`，非法值 400，DST 用例覆盖） |
 | F3 | 催面评：至少在工作台给 HR 一条"提醒面试官"的可点待办（不代发消息） | 等拍板（C3） |
 | F4 | 身份核验/背调/代投：明确不修，只在范围说明写清由外部服务负责 | 文档一句（不必派活） |

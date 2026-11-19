@@ -47,6 +47,7 @@ import {
   DEFAULT_WORK_WINDOW,
   type BusyParticipant,
 } from '../domain/interview-slots.ts'
+import { getTimezoneOffsetMinutes, isValidIanaTimezone, localDateToUtcMs } from '../domain/timezone.ts'
 
 // ---------------------------------------------------------------------------
 //  契约常量
@@ -54,14 +55,18 @@ import {
 
 export const INTERVIEW_FREE_SLOTS_PATH = '/recruitment/api/action/interview/free-slots'
 
-const QUERY_KEYS = ['application_id', 'interviewer_actor_ids', 'days', 'duration_minutes'] as const
+const QUERY_KEYS = ['application_id', 'interviewer_actor_ids', 'days', 'duration_minutes', 'timezone'] as const
 const OVERRIDE_KEYS = ['actor_id', 'tenant_id'] as const
 
 const DEFAULT_DAYS = 5
 const DEFAULT_DURATION_MINUTES = 45
 const MAX_DAYS = 14
 const MAX_INTERVIEWERS = 8
-const DEFAULT_TIMEZONE_OFFSET_MINUTES = 8 * 60
+/**
+ * 显式默认时区（**不是**静默 +8）：请求未传 `timezone` 时按 `Asia/Shanghai` 处理，
+ * 该默认值写进本文件 description 与交付报告，调用方可显式传其它 IANA 名覆盖。
+ */
+const DEFAULT_TIMEZONE = 'Asia/Shanghai'
 
 /** 人话原因（不暴露机器码/字段名给 UI；错误码在 error 信封里给机器）。 */
 const REASON_TEXT: Readonly<Record<string, string>> = {
@@ -70,6 +75,7 @@ const REASON_TEXT: Readonly<Record<string, string>> = {
   NOT_CONNECTED: '飞书日历连接还没配置好，暂时无法判断大家是否有空',
   CALENDAR_READ_FAILED: '读取这位面试官的日历时出错了，不能当作他有空',
   INVALID_ARGS: '请求参数不对',
+  INVALID_TIMEZONE: '时区要写成 Asia/Shanghai 这种（合法的 IANA 时区名）',
   FORBIDDEN: '只接受本产品页面发出的请求',
   SESSION_REQUIRED: '缺当前登录身份',
   DEMO_ACTOR_UNMAPPED: '当前身份没绑定好',
@@ -189,6 +195,7 @@ interface ParsedQuery {
   readonly interviewer_actor_ids: readonly string[]
   readonly days: number
   readonly duration_minutes: number
+  readonly timezone: string
 }
 
 function parseQuery(url: URL): ParsedQuery {
@@ -222,11 +229,26 @@ function parseQuery(url: URL): ParsedQuery {
   if (!Number.isInteger(durationMinutes) || durationMinutes < 15 || durationMinutes > 180) {
     throw problem(400, 'INVALID_ARGS', 'INVALID_DURATION', 'duration_minutes 必须是 15..180 的整数')
   }
-  return { application_id: applicationId, interviewer_actor_ids: interviewerActorIds, days, duration_minutes: durationMinutes }
+  const timezone = url.searchParams.get('timezone') ?? DEFAULT_TIMEZONE
+  if (!isValidIanaTimezone(timezone)) {
+    throw problem(400, 'INVALID_ARGS', 'INVALID_TIMEZONE', REASON_TEXT.INVALID_TIMEZONE, { timezone })
+  }
+  return { application_id: applicationId, interviewer_actor_ids: interviewerActorIds, days, duration_minutes: durationMinutes, timezone }
 }
 
-/** 从 `days` 生成要覆盖的本地日期（按注入时刻与偏移取本地日）。 */
-function upcomingDates(now: Date, days: number, offsetMinutes: number): Array<{ year: number; month: number; day: number }> {
+/**
+ * 从 `days` 生成要覆盖的本地日期。
+ * IANA 路径：用该时区在注入时刻的真实偏移取"今天"（DST 当天也正确）；
+ * 兼容路径：用显式注入的固定偏移（仅测试 seam，生产不再走这里）。
+ */
+function upcomingDates(
+  now: Date,
+  days: number,
+  time: { iana?: string; offsetMinutes?: number },
+): Array<{ year: number; month: number; day: number }> {
+  const offsetMinutes = time.iana !== undefined
+    ? getTimezoneOffsetMinutes(time.iana, now.getTime())
+    : (time.offsetMinutes ?? 0)
   const shifted = new Date(now.getTime() + offsetMinutes * 60_000)
   const out: Array<{ year: number; month: number; day: number }> = []
   for (let i = 0; i < days; i += 1) {
@@ -236,18 +258,38 @@ function upcomingDates(now: Date, days: number, offsetMinutes: number): Array<{ 
   return out
 }
 
-/** 把本地日期区间转成带偏移的 ISO 查询窗口。 */
-function isoWindow(dates: readonly { year: number; month: number; day: number }[], offsetMinutes: number): { start: string; end: string } {
+/** 把带偏移的 epoch ms 格式化成 ISO-8601（毫秒恒 000，偏移随该时刻动态取）。 */
+function isoAt(ms: number, time: { iana?: string; offsetMinutes?: number }): string {
+  const offsetMinutes = time.iana !== undefined
+    ? getTimezoneOffsetMinutes(time.iana, ms)
+    : (time.offsetMinutes ?? 0)
   const pad = (n: number): string => String(n).padStart(2, '0')
   const sign = offsetMinutes < 0 ? '-' : '+'
   const abs = Math.abs(offsetMinutes)
-  const offset = `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
+  const shifted = new Date(ms + offsetMinutes * 60_000)
+  return (
+    `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
+    + `T${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}:${pad(shifted.getUTCSeconds())}`
+    + `.000${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
+  )
+}
+
+/**
+ * 把本地日期区间转成 ISO 查询窗口（给外部日历读忙闲用）。
+ * IANA 路径：`start` 取首日本地 00:00 的绝对时刻、`end` 取末日本地 23:59:59.999 的
+ * 绝对时刻，各自按**该时刻**的真实偏移格式化，DST 切换周窗口不会漂移一小时。
+ */
+function isoWindow(
+  dates: readonly { year: number; month: number; day: number }[],
+  time: { iana?: string; offsetMinutes?: number },
+): { start: string; end: string } {
   const first = dates[0]!
   const last = dates[dates.length - 1]!
-  return {
-    start: `${first.year}-${pad(first.month)}-${pad(first.day)}T00:00:00.000${offset}`,
-    end: `${last.year}-${pad(last.month)}-${pad(last.day)}T23:59:59.999${offset}`,
-  }
+  const boundary = (date: { year: number; month: number; day: number }, minute: number): number =>
+    time.iana !== undefined
+      ? localDateToUtcMs(time.iana, date, minute)
+      : Date.UTC(date.year, date.month - 1, date.day, 0, 0, 0, 0) + minute * 60_000 - (time.offsetMinutes ?? 0) * 60_000
+  return { start: isoAt(boundary(first, 0), time), end: isoAt(boundary(last, 24 * 60 - 1) + 999, time) }
 }
 
 /** 默认面试官映射：无绑定，如实返回 null（绝不猜 open_id）。 */
@@ -295,7 +337,10 @@ async function handleGet(deps: InterviewSlotsHttpDeps, req: IncomingMessage, res
   const reader = io.reader ?? defaultReader(deps)
   const resolveOpenId = io.resolveInterviewerOpenId ?? defaultResolveInterviewerOpenId
   const now = io.now ?? ((): Date => new Date())
-  const offset = io.timezone_offset_minutes ?? DEFAULT_TIMEZONE_OFFSET_MINUTES
+  // IANA 路径为生产默认；io.timezone_offset_minutes 仅作测试 seam（显式注入）时走兼容路径。
+  const time: { iana?: string; offsetMinutes?: number } = io.timezone_offset_minutes === undefined
+    ? { iana: query.timezone }
+    : { offsetMinutes: io.timezone_offset_minutes }
 
   // 未配置日历连接器：如实 NOT_CONNECTED + 空 slots + 全员 unsatisfied（不冒充空闲）。
   if (reader === null) {
@@ -307,8 +352,8 @@ async function handleGet(deps: InterviewSlotsHttpDeps, req: IncomingMessage, res
     return
   }
 
-  const dates = upcomingDates(now(), query.days, offset)
-  const window = isoWindow(dates, offset)
+  const dates = upcomingDates(now(), query.days, time)
+  const window = isoWindow(dates, time)
   const participants: BusyParticipant[] = []
   const unsatisfied: Array<{ interviewer_actor_id: string; reason: string }> = []
   let anyAuthFailure = false
@@ -355,7 +400,9 @@ async function handleGet(deps: InterviewSlotsHttpDeps, req: IncomingMessage, res
 
   const slots = computeFreeSlots({
     participants, dates,
-    timezone_offset_minutes: offset,
+    ...(time.iana !== undefined
+      ? { iana_timezone: time.iana }
+      : { timezone_offset_minutes: time.offsetMinutes ?? 0 }),
     duration_minutes: query.duration_minutes,
     proposed: DEFAULT_PROPOSED,
     work_window: DEFAULT_WORK_WINDOW,
@@ -418,7 +465,7 @@ export const INTERVIEW_SLOTS_CONTRACT = {
   path: INTERVIEW_FREE_SLOTS_PATH,
   methods: ['GET'] as const,
   queryKeys: QUERY_KEYS,
-  defaults: { days: DEFAULT_DAYS, duration_minutes: DEFAULT_DURATION_MINUTES },
+  defaults: { days: DEFAULT_DAYS, duration_minutes: DEFAULT_DURATION_MINUTES, timezone: DEFAULT_TIMEZONE },
   maxDays: MAX_DAYS,
   reasonText: REASON_TEXT,
 } as const

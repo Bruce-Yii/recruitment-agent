@@ -518,6 +518,16 @@ export interface InterviewerRow {
   readonly round_no: number
   readonly slot_code: string
   readonly status: string
+  /**
+   * 审计 REPORT.md §③：status='NO_SHOW' 时的"未出席 + 原因"事实（谁没来 / 原因 / 记录时刻 / 确认语 sha256）。
+   * 直接透传 `readInterviewValue()` 的 no_show；非 NO_SHOW 或老数据没有该事件时整个键省略。
+   */
+  readonly no_show?: {
+    readonly subject: string
+    readonly reason: string
+    readonly recorded_at: string
+    readonly confirmation_text_sha256: string
+  }
   readonly stage_code: string
   readonly scheduled_start_at: string | null
   readonly scheduled_end_at: string | null
@@ -2238,6 +2248,7 @@ export function toInterviewRow(input: ToInterviewRowInput): ToInterviewRowResult
       round_no: value.round_no,
       slot_code: value.slot_code,
       status: value.status,
+      ...(value.no_show === undefined ? {} : { no_show: value.no_show }),
       stage_code: value.stage_code,
       scheduled_start_at: value.scheduled_start_at ?? null,
       scheduled_end_at: value.scheduled_end_at ?? null,

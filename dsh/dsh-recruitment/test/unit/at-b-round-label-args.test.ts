@@ -117,13 +117,13 @@ test('AT-4 RESCHEDULE 接受 round_label；CANCEL / WITHDRAW 不接受（跨 int
 // AT-5
 // ---------------------------------------------------------------------------
 
-test('AT-5 REPLACE_INTERVIEWER：五 intent 闭集含新值，规范化出完整命令', () => {
+test('AT-5 + MARK_NO_SHOW：六 intent 闭集含两个新值，规范化出完整命令', () => {
   const tool = createInterviewScheduleTool(DATABASE)
   const params = tool.parameters as {
     properties: { intent: { enum: string[] }; replace_interviewer: { required: string[] } }
   }
   assert.deepEqual([...params.properties.intent.enum].sort(), [
-    'CREATE', 'RESCHEDULE', 'CANCEL', 'WITHDRAW_INTERVIEWER', 'REPLACE_INTERVIEWER',
+    'CREATE', 'RESCHEDULE', 'CANCEL', 'WITHDRAW_INTERVIEWER', 'REPLACE_INTERVIEWER', 'MARK_NO_SHOW',
   ].sort())
   assert.deepEqual(params.properties.replace_interviewer.required, ['from_actor_id', 'to_actor_id', 'reason'])
 

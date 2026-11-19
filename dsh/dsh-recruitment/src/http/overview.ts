@@ -46,6 +46,8 @@ import {
 } from '../db/pool.ts'
 import { digestOf, isUuid } from '../tools/contract.ts'
 import { evalError, prepareScorecard, writeScorecard } from '../tools/scorecard-submit.ts'
+// 事件名只从唯一权威注册表取（`src/runtime/event-types.ts`），不写死字面量。
+import { EVENT_TYPES } from '../runtime/event-types.ts'
 // V6-2：终态失败任务的「需要人处理」判定与人话原因（纯函数，不改 Task 状态机）。
 import { needsHuman, humanizeFailureReason } from './error-reasons.ts'
 
@@ -144,6 +146,16 @@ export interface MyInterviewRow {
   readonly round_no: number
   readonly slot_code: string
   readonly status: string
+  /**
+   * 审计 REPORT.md §③：status='NO_SHOW' 时的"未出席 + 原因"（从 interview.no_show 事件读回）。
+   * 非 NO_SHOW / 老数据没有该事件时整个键省略；既有字段一个都不改。
+   */
+  readonly no_show?: {
+    readonly subject: string
+    readonly reason: string
+    readonly recorded_at: string
+    readonly confirmation_text_sha256: string
+  }
   readonly scheduled_start_at: string | null
   readonly role_in_interview: string
   readonly required_scorecard: boolean
@@ -982,12 +994,49 @@ export async function readWorkbenchProjection(
   for (const row of pendingOwned) pendingByStage[row.stage_code] = (pendingByStage[row.stage_code] ?? 0) + 1
 
   // ---- 我的面试 ----
+  // 审计 REPORT.md §③：NO_SHOW 的"未出席 + 原因"在 interview.no_show 事件里（interview 表没有列）。
+  // 一条批量 SELECT 取回本页所有 NO_SHOW 面试的事件（只读），按 interview_id 建 map；
+  // 老数据没有事件时对应行的 no_show 键省略，既有字段与断言一个都不改。
+  const noShowIds = myInterviewsResult.rows
+    .filter((row) => row.status === 'NO_SHOW')
+    .map((row) => row.interview_id)
+  const noShowByInterview = new Map<string, MyInterviewRow['no_show']>()
+  if (noShowIds.length > 0) {
+    const eventRows = (await client.query<{
+      interview_id: string
+      payload: unknown
+      recorded_at: string | Date
+    }>(
+      `select payload->>'interview_id' as interview_id, payload, recorded_at
+         from recruitment.event_inbox
+        where tenant_id = $1 and event_type = $2 and payload->>'interview_id' = any($3::text[])
+        order by recorded_at desc, event_id desc`,
+      [tenantId, EVENT_TYPES.INTERVIEW_NO_SHOW, noShowIds],
+    )).rows
+    for (const eventRow of eventRows) {
+      if (noShowByInterview.has(eventRow.interview_id)) continue
+      const payload = eventRow.payload
+      if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) continue
+      const fields = payload as Record<string, unknown>
+      if (typeof fields.subject !== 'string' || typeof fields.reason !== 'string'
+        || typeof fields.confirmation_text_sha256 !== 'string') continue
+      noShowByInterview.set(eventRow.interview_id, {
+        subject: fields.subject,
+        reason: fields.reason,
+        recorded_at: isoOrNull(eventRow.recorded_at) ?? new Date(eventRow.recorded_at).toISOString(),
+        confirmation_text_sha256: fields.confirmation_text_sha256,
+      })
+    }
+  }
   const myInterviews: MyInterviewRow[] = myInterviewsResult.rows.map((row) => ({
     interview_id: row.interview_id,
     application_id: row.application_id,
     round_no: row.round_no,
     slot_code: row.slot_code,
     status: row.status,
+    ...(noShowByInterview.get(row.interview_id) === undefined
+      ? {}
+      : { no_show: noShowByInterview.get(row.interview_id) }),
     scheduled_start_at: isoOrNull(row.scheduled_start_at),
     role_in_interview: row.role_in_interview,
     required_scorecard: row.required_scorecard,

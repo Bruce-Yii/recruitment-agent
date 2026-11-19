@@ -19,8 +19,15 @@
 //      情况下为 0；若调用方传入的原始忙区间与合并结果不一致（不应发生），计数
 //      会如实 > 0，而不是写死 0。
 //
+import { getTimezoneOffsetMinutes, localDateToUtcMs } from './timezone.ts'
+
 // 时间统一用 **epoch 毫秒整数**做几何运算（避免时区/夏令时算错），对外再
-// 用入参里的 `timezone_offset_minutes` 还原成带偏移的 ISO-8601 字符串。
+// 用入参里的时段信息还原成带偏移的 ISO-8601 字符串：
+//   * 新路径 `iana_timezone`：用 `domain/timezone.ts` 的 Intl 纯函数按每个候选日 /
+//     每个槽的绝对时刻动态取偏移，DST 切换周不漂移一小时；
+//   * 旧路径 `timezone_offset_minutes`：固定偏移，仅为兼容既有调用方保留，
+//     **不再由 HTTP 入口使用**（`http/interview-slots.ts` 已改为 IANA）。
+// 两条路径的几何（epoch ms 交集）完全一致，区别只在窗口换算与展示偏移。
 
 /** 半开区间 `[start_ms, end_ms)`，`source` 只作诊断，不参与几何。 */
 export interface Interval {
@@ -74,8 +81,16 @@ export interface FreeSlotsInput {
    * 每天独立求交；跨天不连成一个槽（面试不跨夜）。
    */
   readonly dates: readonly { year: number; month: number; day: number }[]
-  /** 本地时区偏移（分钟，东为正，例如 +08:00 = 480）。 */
-  readonly timezone_offset_minutes: number
+  /**
+   * IANA 时区名（如 `Asia/Shanghai`、`America/New_York`）。给定时按每个候选日 /
+   * 每个槽的绝对时刻动态取偏移（DST 正确）。**推荐路径**：HTTP 入口已改用它。
+   */
+  readonly iana_timezone?: string
+  /**
+   * 本地时区偏移（分钟，东为正，例如 +08:00 = 480）。兼容旧调用方；
+   * 与 `iana_timezone` 同时给出时以 `iana_timezone` 为准。
+   */
+  readonly timezone_offset_minutes?: number
   /** 单个槽时长（分钟，1..480）。 */
   readonly duration_minutes: number
   /** 工作窗（默认 `DEFAULT_WORK_WINDOW`）。 */
@@ -197,8 +212,21 @@ export function computeFreeSlots(input: FreeSlotsInput): FreeSlot[] {
   const proposed = input.proposed ?? DEFAULT_PROPOSED
   const limit = Math.max(0, Math.min(proposed, 10))
   const source = input.source ?? 'LIVE'
-  const offset = input.timezone_offset_minutes
+  const iana = input.iana_timezone
+  // 固定偏移只在没有 IANA 时区时才用；HTTP 入口已不再传固定 +8。
+  const fallbackOffset = input.timezone_offset_minutes ?? 0
   const gridMs = SLOT_GRID_MINUTES * 60_000
+
+  /** 某本地日期的某分钟 → epoch ms（IANA 时按真实 DST 偏移换算）。 */
+  const toMs = (date: { year: number; month: number; day: number }, minuteOfDay: number): number =>
+    iana !== undefined && iana !== ''
+      ? localDateToUtcMs(iana, date, minuteOfDay)
+      : localMinuteToMs(date, minuteOfDay, fallbackOffset)
+  /** 某槽开始时刻 → 展示用的 ISO-8601（IANA 时按该时刻的真实偏移）。 */
+  const show = (ms: number): string =>
+    iana !== undefined && iana !== ''
+      ? formatWithOffset(ms, getTimezoneOffsetMinutes(iana, ms))
+      : formatWithOffset(ms, fallbackOffset)
 
   // 每个参与人的原始忙区间先合并一次（冲突计数也用这份，避免口径漂移）。
   const mergedBusyByParticipant = participants.map((p) => mergeIntervals(p.busy))
@@ -206,8 +234,8 @@ export function computeFreeSlots(input: FreeSlotsInput): FreeSlot[] {
   const slots: Array<{ start_ms: number; end_ms: number; conflicts: number }> = []
   for (const date of input.dates) {
     if (!Number.isInteger(date.year) || !Number.isInteger(date.month) || !Number.isInteger(date.day)) continue
-    const windowStartMs = localMinuteToMs(date, work.start_minute, offset)
-    const windowEndMs = localMinuteToMs(date, work.end_minute, offset)
+    const windowStartMs = toMs(date, work.start_minute)
+    const windowEndMs = toMs(date, work.end_minute)
     if (windowEndMs <= windowStartMs) continue
 
     // ① 每个参与人在工作窗内的空闲窗口。
@@ -236,8 +264,8 @@ export function computeFreeSlots(input: FreeSlotsInput): FreeSlot[] {
 
   slots.sort((a, b) => a.start_ms - b.start_ms || a.end_ms - b.end_ms)
   return slots.slice(0, limit).map((slot) => ({
-    start: formatWithOffset(slot.start_ms, offset),
-    end: formatWithOffset(slot.end_ms, offset),
+    start: show(slot.start_ms),
+    end: show(slot.end_ms),
     busy_conflicts: slot.conflicts,
     source,
   }))

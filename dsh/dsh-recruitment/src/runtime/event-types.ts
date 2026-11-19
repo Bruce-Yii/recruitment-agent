@@ -159,6 +159,15 @@ export const EVENT_TYPES = {
   INTERVIEW_CANCELLED: 'interview.cancelled',
   /** 面试官撤换：`recruitment_interview_schedule`（WITHDRAW_INTERVIEWER）的审计事件。 */
   INTERVIEWER_WITHDRAWN: 'interviewer.withdrawn',
+  /**
+   * 面试爽约：`recruitment_interview_schedule`（MARK_NO_SHOW）的审计事件。
+   *
+   * 为什么不能复用 `interview.cancelled`：爽约与取消是两个不同的业务事实——
+   * 半年后复盘"这个人当时为什么没面成"时，记成 cancelled 会直接误导统计、
+   * 催办与候选人跟踪。payload 必含 subject(CANDIDATE/INTERVIEWER) / reason /
+   * confirmation_text_sha256 / from_status / to_status / interview_id。
+   */
+  INTERVIEW_NO_SHOW: 'interview.no_show',
   /** 岗位 rubric 版本批准：`recruitment_job_rubric_approve` 的审计事件。 */
   JOB_RUBRIC_VERSION_APPROVED: 'job.rubric_version.approved',
   /** 人工核验面试记录（NEEDS_REVIEW/UNVERIFIED → READY/VERIFIED）：`recruitment_interview_record_verify` 的审计事件。 */
@@ -345,6 +354,25 @@ const WRITER_EVENTS: readonly EventTypeDefinition[] = [
       reason:
         '撤换面试官后需要重新安排，但 v1.0 没有对应的自动任务类型；事件登记为审计事实，'
         + '由人工/后续版本处理（不猜一个任务类型来假装自动）。',
+    },
+  },
+  {
+    type: EVENT_TYPES.INTERVIEW_NO_SHOW,
+    constKey: 'INTERVIEW_NO_SHOW',
+    producer: {
+      kind: 'TOOL',
+      file: 'src/tools/interview-schedule.ts',
+      detail: 'insertInternalEvent()（工具 recruitment_interview_schedule：MARK_NO_SHOW 爽约审计）',
+    },
+    // 与 interview.rescheduled / interview.cancelled 同一口径：纯审计工具事件
+    // 用 schema/interview-schedule，不进待路由队列（状态迁移由 fn_row_guard 记录）。
+    normalizerVersion: 'schema/interview-schedule',
+    routing: {
+      kind: 'IGNORED',
+      reason:
+        '爽约已由工具在同一事务内完成状态迁移并写幂等 STORE；本事件是审计事实'
+        + '（reason / subject / 人工原话哈希只能落事件 payload），'
+        + '再自动触发不会产出新业务动作，只会重复处理同一场面试。',
     },
   },
   {
