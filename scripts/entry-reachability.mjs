@@ -78,6 +78,30 @@ export const ACTION_KEY_FALLBACKS = [
  * 已知缺口基线（D-160 真点/机检确认，等前端任务 08 逐条补）。
  * 规则：**只许降不许升**——出现基线之外的新缺口即 FAIL；基线内的补上了也照样报（提示下调）。
  */
+export const HAND_ROLLED_WRITE_ACTIONS = [
+  '/recruitment/api/action/screening/decide',
+  '/recruitment/api/action/decision/record',
+  '/recruitment/api/decision/record',
+  '/recruitment/api/action/stage/advance',
+  '/recruitment/api/action/transcript/import',
+  '/recruitment/api/action/interview/schedule',
+  '/recruitment/api/action/settings/write',
+  '/recruitment/api/action/job/create',
+  '/recruitment/api/action/job/draft',
+  '/recruitment/api/action/job/close',
+  '/recruitment/api/action/job/rubric-approve',
+]
+
+/**
+ * 扫画布里"自己拼 body"的写路由字面量（D-160 / V3-2）。
+ * 这些动作仓库里已有 `recruiting/actions.ts` 的 builder + `postActionSeam`，画布不该重写合同。
+ * @param canvasActionsText - `canvas-actions.ts` 全文。
+ * @returns 仍被画布手拼的写路由清单。
+ */
+export function findHandRolledWrites(canvasActionsText) {
+  return HAND_ROLLED_WRITE_ACTIONS.filter((path) => canvasActionsText.includes(path))
+}
+
 export const BASELINE_UNREFERENCED = [
   '/recruitment/api/action/compound',
   '/recruitment/api/action/config',
@@ -347,13 +371,23 @@ function main() {
     console.log('')
     for (const r of newGaps) console.log(`  [新缺口] ${r.path} —— 不在基线内（客户端零引用）`)
   }
+  const canvasActionsFile = join(ROOT, 'src', 'client', 'canvas', 'canvas-actions.ts')
+  const handRolled = existsSync(canvasActionsFile)
+    ? findHandRolledWrites(readFileSync(canvasActionsFile, 'utf8'))
+    : []
+  if (handRolled.length > 0) {
+    console.log('')
+    for (const path of handRolled) {
+      console.log(`  [手拼写动作] ${path} —— 应复用 recruiting/actions.ts 的 builder + postActionSeam（任务 08c）`)
+    }
+  }
   const fail = newGaps.length > 0 || missingTestIds.length > 0
   console.log('')
   if (fail) {
-    console.error(`entry-reachability: FAIL（新缺口 ${newGaps.length} 条，缺失 testid ${missingTestIds.length} 个；基线内待补 ${unreferenced.length - newGaps.length} 条）`)
+    console.error(`entry-reachability: FAIL（新缺口 ${newGaps.length} 条，缺失 testid ${missingTestIds.length} 个；基线内待补 ${unreferenced.length - newGaps.length} 条；手拼写动作 ${handRolled.length} 条）`)
     process.exitCode = 1
   } else {
-    console.log(`entry-reachability: PASS（无新缺口；基线内仍待补 ${unreferenced.length} 条，补完请下调 BASELINE_UNREFERENCED）`)
+    console.log(`entry-reachability: PASS（无新缺口；基线内仍待补 ${unreferenced.length} 条；手拼写动作 ${handRolled.length} 条待 08c 归零）`)
     process.exitCode = 0
   }
 }

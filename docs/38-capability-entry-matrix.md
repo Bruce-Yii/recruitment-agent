@@ -83,3 +83,17 @@
 - 状态修正：上表 testid 只证明 **DOM 可达（🟢）**，**写入未通 = 业务上仍是 🔴**，直到会话头接上；
 - 任务书：`design/v4/frontend-task-08b-session-header.md`（P0，含 5 处修改与验收）。
 - 教训：V3-0「入口可达」之后还要一条 **V3-1「真点后库里真的有」**——两者都过才算完成。
+
+---
+
+## 6. 机检第二层：手拼写动作（V3-2，2026-11-20）
+
+真点复现（会话头修好后）：`/action/screening/decide` 返回 `400 UNKNOWN_PARAM`——画布自己拼了 body，
+绕过了仓库已有的 `recruiting/actions.ts::buildScreeningDecisionBody`（从 decision-facts 组装 `basis_refs`）
+与 `use-recruiting.ts::postActionSeam`（自带会话头）。
+
+- **规则**：有既有 builder 的写动作，画布**不许手拼 body / 自己发 POST**，必须复用 builder + seam；
+- **机检**：`scripts/entry-reachability.mjs` 增加 `findHandRolledWrites()`，输出 `[手拼写动作]` 清单；
+- **当前基线（2026-11-20）**：6 条 — screening/decide、decision/record、stage/advance、transcript/import、
+  interview/schedule、settings/write、job/create（job 系列在旧工作台有 builder）；
+- **归零任务**：`design/v4/frontend-task-08c-reuse-builders.md`。
