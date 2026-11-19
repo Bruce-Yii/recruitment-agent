@@ -41,3 +41,14 @@
 3. 结果并入机检（`docs/29` V3-0）。
 
 > 白名单当前：`/action/email/authorize`（由前端授权按钮触发，若未接则也红）、无其它。
+
+## 4. 当前基线（2026-11-19，机检实跑）
+
+- `node scripts/entry-reachability.mjs`：写路由 32 条，**零引用 11 条**（已列入 `BASELINE_UNREFERENCED`，**只许降不许升**）：
+  `application/star`、`compound`、`config`、`config/pipeline`、`config/role`、`config/team`、
+  `email/authorize`、`email/send`、`email/send-authorized`、`settings/write`、`feishu/import`；
+- 另有 5 条路由客户端用**动作键**引用（screening_decide / stage_advance / transcript_import / decision_record / rubric_approve），
+  机检已用 `ACTION_KEY_FALLBACKS` 认作可达——它们是"旧详情页有、画布没有"（前端任务 08 第 1 节）；
+- CDP 冒烟（`work/d5/e2e-real/smoke/check.mjs`）：7 个目标 testid **仅 1 个存在**（`canvas-action-schedule`），
+  缺 `form-screening_decide` / `form-decision_record` / `form-stage_advance` / `form-transcript_import` /
+  `canvas-batch-reject` / `submit-scorecard`。**这是真浏览器 DOM 证据，是任务 08 的验收清单。**
