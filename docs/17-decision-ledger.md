@@ -1906,3 +1906,11 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **配套约束**：任务 09 必须保留自动化 15 步真点依赖的 selector 契约（`design/v4/frontend-task-09-v4-shell.md` §3），重点：`application-row-<id>`、顶部页签文本、身份 select 与绑定文案、`canvas-action-*`、弹窗 testid、`input[type=file]`、面试官端 `interviewer-row/scorecard-form/submit-scorecard`。
   **已知失效**：`smoke/entries.json` 中 `form-*` 与 `canvas-batch-reject` 旧清单项在当前代码不存在，**不要求前端造假 selector**，由总控同步。
   **收口方式**：前端窗口交付 PR #7；我按 15/15 + 机检 + 1440/390 截图验收，通过后与 PR #6 一并收口。
+
+- **D-167（2026-11-20，产品负责人裁决；v4 整页为唯一基准，独立入口，测试身份与正式 UI 解耦）**
+  **裁决**：定稿 `recruitment_os_v4.html` 是唯一基准，**整页一体化**呈现；**不嵌套** DSH 左侧会话栏；正式界面**不出现**开发用身份 `<select>`/三段绑定文案/旧顶部页签；任务 09（塞进旧壳）**作废**。
+  **落地**：① 独立整页入口 `GET /recruitment/app`（同 Host 端口、同源、100% 视口，无 DSH 外壳）；② 独立前端入口 `src/app/**`，tsdown 双入口产出 `lib/app.js/css`，复用既有 `canvas/**` 组件与业务 HTTP 客户端；
+  ③ 会话：服务端下发 `rc_sid`（`session-<uuid>`）cookie，前端发 `X-DSH-Session`（既有契约不变）；④ 身份：正式页只读徽标；测试身份用 `POST /recruitment/app/session/actor` 或 `/recruitment/test?as=`（仅 loopback，正式导航不可见）；
+  ⑤ 对话：新增 `POST /recruitment/agent/turn`（SSE：delta/tool/done/error），服务端经 `ctx.inject(["agents","sessions"])` 桥到 DSH Agent；Agent 不可用 → 503，不影响业务按钮；
+  ⑥ testid 契约换成 v4 稳定 testid（前端交付时附清单，我同步 runbook/docs/38），旧壳 selector 不再要求。
+  **交付**：前端一个 PR（#7）交付整页 v4；我做整页路由/静态资源/session 与 actor 端点/Agent SSE 桥/双入口构建/脚本适配。详见 `design/v4/fullpage-integration-plan.md`。
