@@ -97,3 +97,12 @@
 - **当前基线（2026-11-20）**：6 条 — screening/decide、decision/record、stage/advance、transcript/import、
   interview/schedule、settings/write、job/create（job 系列在旧工作台有 builder）；
 - **归零任务**：`design/v4/frontend-task-08c-reuse-builders.md`。
+
+---
+
+## 7. 收口（2026-11-20）：真点 15/15
+
+- `run-runbook.mjs --fresh`（真 Host + 真库 + 真浏览器）**15 步全 PASS / 0 FAIL / 0 BLOCKED**（我本人在合并后独立复跑一次）；
+- 手拼写动作 **7 → 0**；入口机检无新缺口；`client-contract-check` PASS；
+- 08b（会话头）、08c（复用 builder/seam）、S14（面试行版本）、S12（决策走 facade）全部落地；
+- 现在写能力只剩"确实没接"的 8 条基线：compound、config×4、email/authorize、email/send-authorized、feishu/import——它们不在本轮范围，矩阵里如实标"未接"。

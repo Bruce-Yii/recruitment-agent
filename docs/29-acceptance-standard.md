@@ -279,3 +279,6 @@
 
 **其余各门在 2026-11-18 的冻结基线上已有实测证据**（真 Host 整链：`work/d5/e2e-live/`）：
 D-144 四条判据全过、决策真点真落库、面评独立提交、未绑定身份 409 且 10 张表零写入。
+
+> **2026-11-20 真点验收记录**：`work/d5/e2e-real/scripts/run-runbook.mjs --fresh` 15 步全 PASS（V3-0 入口可达 + V3-1 真点写入均满足）；
+> 证据 `work/d5/e2e-real/runbook-result.json`、`evidence/Sxx-*`。S15 为真并发（1×200 + 1×409，库只写一次）。
