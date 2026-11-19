@@ -560,6 +560,57 @@ window.__ModuleLoader__.load({
 				actions: normalizeActionMap(asObj(root.actions))
 			};
 		}
+		// src/client/canvas/canvas-ux.ts
+		/**
+		* Lightweight UX resilience helpers for Recruitment OS v4 Canvas:
+		* - Short-lived Stale-While-Revalidate (SWR) memory cache (30s TTL, max 40 entries)
+		* - In-flight deduplicated hover prefetch for 0ms candidate opening
+		* - Per-route scroll position memory (e.g. returning from Candidate -> Job preserves list scroll)
+		*/
+		const CACHE_TTL_MS = 3e4;
+		const MAX_CACHE_ENTRIES = 40;
+		const dataCache = /* @__PURE__ */ new Map();
+		const inflightPrefetch = /* @__PURE__ */ new Map();
+		const scrollMemory = /* @__PURE__ */ new Map();
+		function getCachedCanvasData(path) {
+			const entry = dataCache.get(path);
+			if (!entry) return void 0;
+			if (Date.now() - entry.ts > CACHE_TTL_MS) {
+				dataCache.delete(path);
+				return;
+			}
+			return entry.data;
+		}
+		function setCachedCanvasData(path, data) {
+			if (dataCache.size >= MAX_CACHE_ENTRIES && !dataCache.has(path)) {
+				const oldestKey = dataCache.keys().next().value;
+				if (oldestKey !== void 0) dataCache.delete(oldestKey);
+			}
+			dataCache.set(path, {
+				data,
+				ts: Date.now()
+			});
+		}
+		function invalidateCachedCanvasData(path) {
+			dataCache.delete(path);
+		}
+		function prefetchCanvasPath(path, fetcher) {
+			if (getCachedCanvasData(path) !== void 0) return;
+			if (inflightPrefetch.has(path)) return;
+			const req = fetcher(path).then((raw) => {
+				setCachedCanvasData(path, raw);
+				return raw;
+			}).catch(() => void 0).finally(() => {
+				inflightPrefetch.delete(path);
+			});
+			inflightPrefetch.set(path, req);
+		}
+		function saveCanvasScroll(routeKey, scrollTop) {
+			scrollMemory.set(routeKey, Math.max(0, scrollTop));
+		}
+		function getSavedCanvasScroll(routeKey) {
+			return scrollMemory.get(routeKey) ?? 0;
+		}
 		// src/client/canvas/bits/StageTrack.tsx
 		function StageTrack({ nodes }) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
@@ -4608,6 +4659,24 @@ window.__ModuleLoader__.load({
 			const [factsRes, setFactsRes] = (0, react.useState)(null);
 			const [submitting, setSubmitting] = (0, react.useState)(false);
 			const [errorText, setErrorText] = (0, react.useState)(null);
+			const [confirmDiscard, setConfirmDiscard] = (0, react.useState)(false);
+			const isDirty = inputText.trim() !== "" || targetJobId.trim() !== "" || replaceInterviewer.trim() !== "" || exportedFileName.trim() !== "";
+			(0, react.useEffect)(() => {
+				setConfirmDiscard(false);
+			}, [
+				inputText,
+				targetJobId,
+				replaceInterviewer,
+				exportedFileName
+			]);
+			const requestClose = () => {
+				if (submitting) return;
+				if (isDirty && !confirmDiscard) {
+					setConfirmDiscard(true);
+					return;
+				}
+				onClose();
+			};
 			const loadSlots = (rawIds) => {
 				setFreeSlotsLoading(true);
 				const ids = rawIds.split(/[,，\s]+/).map((x) => x.trim()).filter(Boolean);
@@ -4987,6 +5056,19 @@ window.__ModuleLoader__.load({
 					setSubmitting(false);
 				}
 			};
+			(0, react.useEffect)(() => {
+				const onKeyDown = (e) => {
+					if (e.key === "Escape" && !submitting) {
+						e.preventDefault();
+						requestClose();
+					} else if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !submitBlocked) {
+						e.preventDefault();
+						handleSubmit();
+					}
+				};
+				window.addEventListener("keydown", onKeyDown);
+				return () => window.removeEventListener("keydown", onKeyDown);
+			});
 			const titleMap = {
 				pin: `为 ${vm.candidateName} 置顶约束`,
 				handoff: `为 ${vm.candidateName} 留下一轮交接追问`,
@@ -5004,7 +5086,7 @@ window.__ModuleLoader__.load({
 				role: "dialog",
 				"aria-modal": "true",
 				onClick: (e) => {
-					if (e.target === e.currentTarget && !submitting) onClose();
+					if (e.target === e.currentTarget && !submitting) requestClose();
 				},
 				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "ros-modal",
@@ -5308,6 +5390,11 @@ window.__ModuleLoader__.load({
 								placeholder: "输入一句确认原话"
 							})]
 						}) : null,
+						confirmDiscard ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "ros-risk-note",
+							"data-testid": "modal-dirty-guard",
+							children: "还有未提交的输入内容，再次按 Esc 或点击「确认放弃」将丢弃当前内容。"
+						}) : null,
 						errorText ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: "ros-risk-note",
 							style: {
@@ -5325,12 +5412,14 @@ window.__ModuleLoader__.load({
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
 								className: "ros-btn",
+								title: "Esc 关闭",
 								disabled: submitting,
-								onClick: onClose,
-								children: "取消"
+								onClick: requestClose,
+								children: confirmDiscard ? "确认放弃" : "取消"
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
 								className: "ros-btn dark",
+								title: "⌘/Ctrl + Enter 提交",
 								disabled: submitBlocked,
 								"data-testid": "canvas-modal-submit",
 								onClick: () => void handleSubmit(),
@@ -5342,9 +5431,16 @@ window.__ModuleLoader__.load({
 			});
 		}
 		// src/client/canvas/CandidatePage.tsx
-		function CandidatePage({ sessionId, applicationId, onBack, onOpenJob, onUploadStarted, onActionCompleted, refreshNonce = 0, fetcher }) {
-			const [vm, setVm] = (0, react.useState)(null);
-			const [loading, setLoading] = (0, react.useState)(true);
+		function CandidatePage({ sessionId, applicationId, candidateQueue, onSelectApplication, onBack, onOpenJob, onUploadStarted, onActionCompleted, refreshNonce = 0, fetcher }) {
+			const detailPath = `/recruitment/api/recruiting/applications/${encodeURIComponent(applicationId)}`;
+			const routeKey = `candidate:${applicationId}`;
+			const [vm, setVm] = (0, react.useState)(() => {
+				const cached = getCachedCanvasData(detailPath);
+				return cached !== void 0 ? normalizeApplicationDetail$1(cached) : null;
+			});
+			const [loading, setLoading] = (0, react.useState)(() => getCachedCanvasData(detailPath) === void 0);
+			const [syncing, setSyncing] = (0, react.useState)(false);
+			const [flashTick, setFlashTick] = (0, react.useState)(0);
 			const [error, setError] = (0, react.useState)(null);
 			const [activeCrit, setActiveCrit] = (0, react.useState)("");
 			const [docTab, setDocTab] = (0, react.useState)("resume");
@@ -5353,29 +5449,45 @@ window.__ModuleLoader__.load({
 			const [modalKind, setModalKind] = (0, react.useState)(null);
 			const [actionFeedback, setActionFeedback] = (0, react.useState)(null);
 			const [starredLocal, setStarredLocal] = (0, react.useState)(false);
+			const [starPop, setStarPop] = (0, react.useState)(false);
 			const [starBusy, setStarBusy] = (0, react.useState)(false);
 			const [candUploading, setCandUploading] = (0, react.useState)(false);
 			const candFileRef = (0, react.useRef)(null);
+			const bodyScrollRef = (0, react.useRef)(null);
 			const [pendingRebind, setPendingRebind] = (0, react.useState)(null);
 			const [rebindConfirmText, setRebindConfirmText] = (0, react.useState)("");
 			const [rebindSubmitting, setRebindSubmitting] = (0, react.useState)(false);
-			const load = (0, react.useCallback)(async (cancelledRef) => {
-				setLoading(true);
+			const load = (0, react.useCallback)(async (cancelledRef, opts) => {
+				const cached = getCachedCanvasData(detailPath);
+				const hasContent = opts?.silent || cached !== void 0;
+				if (cached !== void 0 && !opts?.silent) {
+					const fast = normalizeApplicationDetail$1(cached);
+					setVm(fast);
+					setStarredLocal(fast.starred);
+					setActiveCrit((prev) => prev || fast.criteria[0]?.key || "");
+				}
+				if (hasContent) setSyncing(true);
+				else setLoading(true);
 				setError(null);
 				try {
-					const raw = await fetcher(`/recruitment/api/recruiting/applications/${encodeURIComponent(applicationId)}`);
+					const raw = await fetcher(detailPath);
 					if (cancelledRef?.current) return;
+					setCachedCanvasData(detailPath, raw);
 					const next = normalizeApplicationDetail$1(raw);
 					setVm(next);
 					setStarredLocal(next.starred);
-					setActiveCrit(next.criteria[0]?.key || "");
+					setActiveCrit((prev) => prev || next.criteria[0]?.key || "");
+					if (opts?.flash) setFlashTick((n) => n + 1);
 				} catch {
 					if (cancelledRef?.current) return;
-					setError("暂时没能读取到这位候选人的档案，请稍后重试。");
+					if (!hasContent) setError("暂时没能读取到这位候选人的档案，请稍后重试。");
 				} finally {
-					if (!cancelledRef?.current) setLoading(false);
+					if (!cancelledRef?.current) {
+						setLoading(false);
+						setSyncing(false);
+					}
 				}
-			}, [applicationId, fetcher]);
+			}, [detailPath, fetcher]);
 			(0, react.useEffect)(() => {
 				const cancelledRef = { current: false };
 				load(cancelledRef);
@@ -5383,9 +5495,63 @@ window.__ModuleLoader__.load({
 					cancelledRef.current = true;
 				};
 			}, [load, refreshNonce]);
+			(0, react.useEffect)(() => {
+				const el = bodyScrollRef.current;
+				if (!el || loading) return;
+				el.scrollTop = getSavedCanvasScroll(routeKey);
+			}, [routeKey, loading]);
+			const queueIndex = candidateQueue ? candidateQueue.indexOf(applicationId) : -1;
+			const prevAppId = queueIndex > 0 && candidateQueue ? candidateQueue[queueIndex - 1] : void 0;
+			const nextAppId = queueIndex >= 0 && candidateQueue && queueIndex < candidateQueue.length - 1 ? candidateQueue[queueIndex + 1] : void 0;
+			(0, react.useEffect)(() => {
+				if (!nextAppId) return;
+				prefetchCanvasPath(`/recruitment/api/recruiting/applications/${encodeURIComponent(nextAppId)}`, fetcher);
+			}, [nextAppId, fetcher]);
+			(0, react.useEffect)(() => {
+				if (modalKind !== null || pendingRebind !== null) return;
+				const onKeyDown = (e) => {
+					const tag = e.target?.tagName;
+					if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+					if (e.key === "Escape" && onBack) {
+						e.preventDefault();
+						onBack();
+					} else if (e.key === "[" && prevAppId && onSelectApplication) {
+						e.preventDefault();
+						onSelectApplication(prevAppId);
+					} else if (e.key === "]" && nextAppId && onSelectApplication) {
+						e.preventDefault();
+						onSelectApplication(nextAppId);
+					}
+				};
+				window.addEventListener("keydown", onKeyDown);
+				return () => window.removeEventListener("keydown", onKeyDown);
+			}, [
+				onBack,
+				prevAppId,
+				nextAppId,
+				onSelectApplication,
+				modalKind,
+				pendingRebind
+			]);
+			const handleSelectCriterion = (critKey) => {
+				setActiveCrit(critKey);
+				if (docTab !== "resume") setDocTab("resume");
+				requestAnimationFrame(() => {
+					const target = bodyScrollRef.current?.querySelector(`[data-crit-match="${critKey}"]`);
+					if (target && typeof target.scrollIntoView === "function") target.scrollIntoView({
+						behavior: "smooth",
+						block: "center"
+					});
+				});
+			};
 			const handleModalSuccess = async (res) => {
 				setModalKind(null);
-				await load();
+				invalidateCachedCanvasData(detailPath);
+				if (vm?.jobId) invalidateCachedCanvasData(`/recruitment/api/recruiting/jobs/${encodeURIComponent(vm.jobId)}`);
+				await load(void 0, {
+					silent: true,
+					flash: true
+				});
 				setActionFeedback({
 					tone: "green",
 					text: res.message
@@ -5450,7 +5616,48 @@ window.__ModuleLoader__.load({
 				className: "ros-canvas-body",
 				children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 					className: "ros-canvas-inner",
-					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasLoadingState, { label: "正在读取候选人档案与评估依据…" })
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "ros-skeleton-doc",
+						"aria-label": "正在读取候选人档案",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-skel-bar",
+								style: {
+									width: "36%",
+									height: 24
+								}
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-skel-bar",
+								style: {
+									width: "58%",
+									height: 13
+								}
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-skel-bar",
+								style: {
+									width: "100%",
+									height: 64,
+									marginTop: 8
+								}
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-skel-bar",
+								style: {
+									width: "92%",
+									height: 42
+								}
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "ros-skel-bar",
+								style: {
+									width: "86%",
+									height: 42
+								}
+							})
+						]
+					})
 				})
 			})] });
 			if (error || !vm) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("header", {
@@ -5507,15 +5714,67 @@ window.__ModuleLoader__.load({
 								})
 							]
 						})
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "ros-head-right",
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FactLabelsBar, { labels: vm.factLabels })
+						style: {
+							display: "flex",
+							alignItems: "center",
+							gap: 10
+						},
+						children: [
+							syncing ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "ros-sync-pill",
+								"data-testid": "canvas-sync-pill",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("i", { className: "ros-sync-dot" }), "同步中"]
+							}) : null,
+							queueIndex >= 0 && candidateQueue && candidateQueue.length > 1 && onSelectApplication ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: {
+									display: "inline-flex",
+									alignItems: "center",
+									gap: 6,
+									fontSize: "12px",
+									color: "var(--muted)"
+								},
+								"data-testid": "canvas-candidate-pager",
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: "ros-text-link",
+										title: "上一位 ([)",
+										disabled: !prevAppId,
+										style: { opacity: prevAppId ? 1 : .35 },
+										onClick: () => prevAppId && onSelectApplication(prevAppId),
+										children: "‹"
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "num",
+										children: [
+											queueIndex + 1,
+											" / ",
+											candidateQueue.length
+										]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: "ros-text-link",
+										title: "下一位 (])",
+										disabled: !nextAppId,
+										style: { opacity: nextAppId ? 1 : .35 },
+										onClick: () => nextAppId && onSelectApplication(nextAppId),
+										children: "›"
+									})
+								]
+							}) : null,
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FactLabelsBar, { labels: vm.factLabels })
+						]
 					})]
 				}),
 				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 					className: "ros-canvas-body",
+					ref: bodyScrollRef,
+					onScroll: (e) => saveCanvasScroll(routeKey, e.currentTarget.scrollTop),
 					children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: "ros-canvas-inner ros-doc",
+						className: "ros-canvas-inner ros-doc ros-canvas-enter",
 						children: [
 							actionFeedback ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: "ros-risk-note",
@@ -5574,7 +5833,7 @@ window.__ModuleLoader__.load({
 								]
 							}) : null,
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "ros-doc-head",
+								className: `ros-doc-head ${flashTick > 0 ? "ros-paper-flash" : ""}`,
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 									className: "ros-doc-name",
 									children: vm.candidateName
@@ -5608,6 +5867,7 @@ window.__ModuleLoader__.load({
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 											type: "button",
 											"data-testid": "canvas-action-star",
+											className: `ros-star-btn ${starPop ? "pop" : ""}`,
 											disabled: starBusy,
 											title: starredLocal ? "取消星标主推" : "设为星标主推",
 											style: {
@@ -5616,20 +5876,30 @@ window.__ModuleLoader__.load({
 											},
 											onClick: () => {
 												if (starBusy) return;
+												const prev = starredLocal;
+												const nextVal = !prev;
+												setStarredLocal(nextVal);
+												setStarPop(true);
+												setTimeout(() => setStarPop(false), 220);
 												setStarBusy(true);
 												postApplicationStar({
 													applicationId: vm.applicationId,
-													starred: !starredLocal
+													starred: nextVal
 												}).then((res) => {
 													setStarredLocal(Boolean(res.starred));
+													invalidateCachedCanvasData(detailPath);
+													if (vm.jobId) invalidateCachedCanvasData(`/recruitment/api/recruiting/jobs/${encodeURIComponent(vm.jobId)}`);
 													setActionFeedback({
 														tone: "green",
 														text: res.starred ? "已标记为主推候选人" : "已取消星标标记"
 													});
-												}).catch((err) => setActionFeedback({
-													tone: "red",
-													text: err?.userMessage || "星标更新失败"
-												})).finally(() => setStarBusy(false));
+												}).catch((err) => {
+													setStarredLocal(prev);
+													setActionFeedback({
+														tone: "red",
+														text: err?.userMessage || "星标更新失败，已恢复原状态"
+													});
+												}).finally(() => setStarBusy(false));
 											},
 											children: starredLocal ? "★" : "☆"
 										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StatusLabel, {
@@ -5641,7 +5911,7 @@ window.__ModuleLoader__.load({
 										children: vm.lifecycleLabel
 									})]
 								})]
-							}),
+							}, `head-${flashTick}`),
 							vm.stageBlockedReason ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: "ros-risk-note",
 								children: vm.stageBlockedReason
@@ -5671,7 +5941,7 @@ window.__ModuleLoader__.load({
 									]
 								}), vm.criteria.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: vm.criteria.map((cr, idx) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: `ros-crit-item ${cr.key === activeCrit ? "active" : ""}`,
-									onClick: () => setActiveCrit(cr.key),
+									onClick: () => handleSelectCriterion(cr.key),
 									role: "button",
 									tabIndex: 0,
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
@@ -5819,6 +6089,7 @@ window.__ModuleLoader__.load({
 								}), sec.items.map((it) => {
 									lineNo += 1;
 									return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										"data-crit-match": it.matchKey,
 										className: `ros-doc-line ${it.matchKey === activeCrit ? "active" : ""}`,
 										onClick: () => setActiveCrit(it.matchKey),
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
@@ -6019,7 +6290,7 @@ window.__ModuleLoader__.load({
 								})]
 							})
 						]
-					})
+					}, applicationId)
 				}),
 				modalKind ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CandidateActionModal, {
 					kind: modalKind,
@@ -6040,9 +6311,17 @@ window.__ModuleLoader__.load({
 			"已结束"
 		];
 		function JobPage({ sessionId, jobId, onBack, onSelectApplication, onSelectJob, onUploadStarted, onActionCompleted, refreshNonce = 0, fetcher }) {
-			const [vm, setVm] = (0, react.useState)(null);
-			const [loading, setLoading] = (0, react.useState)(true);
+			const jobPath = `/recruitment/api/recruiting/jobs/${encodeURIComponent(jobId)}`;
+			const routeKey = `job:${jobId}`;
+			const [vm, setVm] = (0, react.useState)(() => {
+				const cached = getCachedCanvasData(jobPath);
+				return cached !== void 0 ? normalizeJobDetail$1(cached) : null;
+			});
+			const [loading, setLoading] = (0, react.useState)(() => getCachedCanvasData(jobPath) === void 0);
+			const [syncing, setSyncing] = (0, react.useState)(false);
 			const [error, setError] = (0, react.useState)(null);
+			const bodyScrollRef = (0, react.useRef)(null);
+			const hoverTimerRef = (0, react.useRef)(null);
 			const [tab, setTab] = (0, react.useState)("pipeline");
 			const [stageFilter, setStageFilter] = (0, react.useState)("全部");
 			const [selectedIds, setSelectedIds] = (0, react.useState)([]);
@@ -6060,22 +6339,34 @@ window.__ModuleLoader__.load({
 			const [newJobConfirm, setNewJobConfirm] = (0, react.useState)("");
 			const [creating, setCreating] = (0, react.useState)(false);
 			const [feedback, setFeedback] = (0, react.useState)(null);
-			const load = (0, react.useCallback)(async (cancelledRef) => {
-				setLoading(true);
+			const load = (0, react.useCallback)(async (cancelledRef, opts) => {
+				const cached = getCachedCanvasData(jobPath);
+				const hasContent = opts?.silent || cached !== void 0;
+				if (cached !== void 0 && !opts?.silent) {
+					const fast = normalizeJobDetail$1(cached);
+					setVm(fast);
+					setBatchDimKey((prev) => prev || fast.rubricDimensions[0]?.key || "");
+				}
+				if (hasContent) setSyncing(true);
+				else setLoading(true);
 				setError(null);
 				try {
-					const raw = await fetcher(`/recruitment/api/recruiting/jobs/${encodeURIComponent(jobId)}`);
+					const raw = await fetcher(jobPath);
 					if (cancelledRef?.current) return;
+					setCachedCanvasData(jobPath, raw);
 					const next = normalizeJobDetail$1(raw);
 					setVm(next);
 					setBatchDimKey((prev) => prev || next.rubricDimensions[0]?.key || "");
 				} catch {
 					if (cancelledRef?.current) return;
-					setError("暂时没能读取到该岗位的详细资料，请稍后重试。");
+					if (!hasContent) setError("暂时没能读取到该岗位的详细资料，请稍后重试。");
 				} finally {
-					if (!cancelledRef?.current) setLoading(false);
+					if (!cancelledRef?.current) {
+						setLoading(false);
+						setSyncing(false);
+					}
 				}
-			}, [jobId, fetcher]);
+			}, [jobPath, fetcher]);
 			(0, react.useEffect)(() => {
 				const cancelledRef = { current: false };
 				load(cancelledRef);
@@ -6083,6 +6374,45 @@ window.__ModuleLoader__.load({
 					cancelledRef.current = true;
 				};
 			}, [load, refreshNonce]);
+			(0, react.useEffect)(() => {
+				const el = bodyScrollRef.current;
+				if (!el || loading) return;
+				el.scrollTop = getSavedCanvasScroll(routeKey);
+			}, [routeKey, loading]);
+			(0, react.useEffect)(() => {
+				return () => {
+					if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+				};
+			}, []);
+			(0, react.useEffect)(() => {
+				if (!onBack || batchOpen || createOpen) return;
+				const onKeyDown = (e) => {
+					if (e.key === "Escape") {
+						const tag = e.target?.tagName;
+						if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+						e.preventDefault();
+						onBack();
+					}
+				};
+				window.addEventListener("keydown", onKeyDown);
+				return () => window.removeEventListener("keydown", onKeyDown);
+			}, [
+				onBack,
+				batchOpen,
+				createOpen
+			]);
+			const scheduleRowPrefetch = (applicationId) => {
+				if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+				hoverTimerRef.current = setTimeout(() => {
+					prefetchCanvasPath(`/recruitment/api/recruiting/applications/${encodeURIComponent(applicationId)}`, fetcher);
+				}, 120);
+			};
+			const cancelRowPrefetch = () => {
+				if (hoverTimerRef.current) {
+					clearTimeout(hoverTimerRef.current);
+					hoverTimerRef.current = null;
+				}
+			};
 			const toggleSelect = (appId) => {
 				setSelectedIds((prev) => prev.includes(appId) ? prev.filter((x) => x !== appId) : [...prev, appId]);
 			};
@@ -6116,7 +6446,9 @@ window.__ModuleLoader__.load({
 					setBatchOpen(false);
 					setSelectedIds([]);
 					setBatchResults(res.results);
-					await load();
+					selectedIds.forEach((id) => invalidateCachedCanvasData(`/recruitment/api/recruiting/applications/${encodeURIComponent(id)}`));
+					invalidateCachedCanvasData(jobPath);
+					await load(void 0, { silent: true });
 					if (res.failedCount === 0) {
 						const msg = `已批量关闭 ${res.succeededCount} 位候选人申请`;
 						setFeedback({
@@ -6315,15 +6647,25 @@ window.__ModuleLoader__.load({
 								children: ["岗位标准 ", vm.rubricVersionLabel]
 							})]
 						})]
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "ros-head-right",
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FactLabelsBar, { labels: vm.factLabels })
+						style: {
+							display: "flex",
+							alignItems: "center",
+							gap: 10
+						},
+						children: [syncing ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: "ros-sync-pill",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("i", { className: "ros-sync-dot" }), "同步中"]
+						}) : null, /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FactLabelsBar, { labels: vm.factLabels })]
 					})]
 				}),
 				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 					className: "ros-canvas-body",
+					ref: bodyScrollRef,
+					onScroll: (e) => saveCanvasScroll(routeKey, e.currentTarget.scrollTop),
 					children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: "ros-canvas-inner",
+						className: "ros-canvas-inner ros-canvas-enter",
 						children: [
 							feedback ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: "ros-risk-note",
@@ -6477,13 +6819,15 @@ window.__ModuleLoader__.load({
 										const checked = selectedIds.includes(app.applicationId);
 										return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											className: "ros-clean-row",
-											onClick: () => onSelectApplication?.(app.applicationId),
+											onMouseEnter: () => scheduleRowPrefetch(app.applicationId),
+											onMouseLeave: cancelRowPrefetch,
+											onClick: () => onSelectApplication?.(app.applicationId, filteredApps.map((x) => x.applicationId)),
 											role: "button",
 											tabIndex: 0,
 											onKeyDown: (e) => {
 												if (e.key === "Enter" || e.key === " ") {
 													e.preventDefault();
-													onSelectApplication?.(app.applicationId);
+													onSelectApplication?.(app.applicationId, filteredApps.map((x) => x.applicationId));
 												}
 											},
 											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -6619,7 +6963,7 @@ window.__ModuleLoader__.load({
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: vm.requirementsMd })] }) : null]
 							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, { title: "暂无岗位原始描述" })] })] })
 						]
-					})
+					}, jobId)
 				}),
 				batchOpen ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 					className: "ros-modal-bg",
@@ -6778,7 +7122,7 @@ window.__ModuleLoader__.load({
 			] });
 		}
 		// recruitment-css-virtual:D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\src\client\canvas\canvas.css?css
-		const css = "/*\n * Recruitment OS v4 · Right-Hand Canvas Styles\n * Design tokens copied verbatim from design/v4/contracts/design-tokens.md.\n * Scoped under .ros-canvas to avoid colliding with DSH host styles.\n */\n\n.ros-canvas {\n  --rail: #F3F2EE;\n  --paper: #F9F8F5;\n  --surface: #FFFFFF;\n  --subtle: #F3F2EE;\n  --hover: #EAE8E2;\n  --ink: #191918;\n  --text: #42423F;\n  --muted: #787772;\n  --soft: #A6A59E;\n  --line: rgba(25, 25, 24, .08);\n  --line-soft: rgba(25, 25, 24, .05);\n  --iris: #5B5BD6;\n  --iris-soft: rgba(91, 91, 214, .09);\n  --green: #18794E;\n  --green-soft: rgba(24, 121, 78, .09);\n  --amber: #AD5700;\n  --amber-soft: rgba(173, 87, 0, .09);\n  --red: #CD2B31;\n  --red-soft: rgba(205, 43, 49, .08);\n  --shadow-card: 0 1px 2px rgba(25, 25, 24, .03), 0 10px 30px -14px rgba(25, 25, 24, .07);\n  --shadow-modal: 0 28px 72px -18px rgba(25, 25, 24, .24);\n\n  display: flex;\n  flex-direction: column;\n  height: 100%;\n  min-height: 0;\n  overflow: hidden;\n  background: var(--surface);\n  color: var(--ink);\n  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif;\n  font-size: 14px;\n  line-height: 1.55;\n  -webkit-font-smoothing: antialiased;\n}\n\n[data-theme=\"dark\"] .ros-canvas,\n.ros-canvas[data-theme=\"dark\"] {\n  --rail: #10100F;\n  --paper: #141413;\n  --surface: #1A1A19;\n  --subtle: #232321;\n  --hover: #2B2B28;\n  --ink: #F3F2EE;\n  --text: #D5D4CE;\n  --muted: #9A9992;\n  --soft: #6F6E68;\n  --line: rgba(243, 242, 238, .09);\n  --line-soft: rgba(243, 242, 238, .055);\n  --iris: #8484F5;\n  --iris-soft: rgba(132, 132, 245, .15);\n  --green: #3DD68C;\n  --green-soft: rgba(61, 214, 140, .13);\n  --amber: #F5A524;\n  --amber-soft: rgba(245, 165, 36, .14);\n  --red: #F87171;\n  --red-soft: rgba(248, 113, 113, .14);\n  --shadow-card: 0 2px 10px rgba(0, 0, 0, .35);\n  --shadow-modal: 0 28px 72px -18px rgba(0, 0, 0, .65);\n}\n\n.ros-canvas *,\n.ros-canvas *::before,\n.ros-canvas *::after {\n  box-sizing: border-box;\n}\n\n.ros-canvas button {\n  font: inherit;\n  color: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n}\n\n.ros-canvas .num {\n  font-variant-numeric: tabular-nums;\n}\n\n@keyframes rosFadeIn {\n  from { opacity: 0; transform: translateY(4px); }\n  to { opacity: 1; transform: none; }\n}\n\n@keyframes rosOrbit {\n  to { transform: rotate(360deg); }\n}\n\n@keyframes rosPulseDot {\n  0%, 100% { opacity: .3; transform: scale(.85); }\n  50% { opacity: 1; transform: scale(1.1); }\n}\n\n/* Contextual Top Bar (56px visual horizon) */\n.ros-canvas-head {\n  height: 56px;\n  padding: 0 36px;\n  border-bottom: 1px solid var(--line-soft);\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 14px;\n  flex: none;\n}\n\n.ros-head-left {\n  display: flex;\n  align-items: center;\n  gap: 16px;\n  min-width: 0;\n}\n\n.ros-head-right {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  font-size: 12px;\n  color: var(--muted);\n  flex: none;\n}\n\n.ros-crumb-bar {\n  display: flex;\n  align-items: center;\n  gap: 7px;\n  font-size: 13px;\n  color: var(--muted);\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.ros-crumb-link {\n  color: var(--muted);\n  font-size: 13px;\n  transition: color .12s;\n}\n\n.ros-crumb-link:hover {\n  color: var(--ink);\n}\n\n.ros-crumb-cur {\n  color: var(--ink);\n  font-weight: 600;\n}\n\n.ros-tabs {\n  display: inline-flex;\n  gap: 22px;\n}\n\n.ros-tab {\n  font-size: 13px;\n  font-weight: 500;\n  color: var(--muted);\n  padding: 17px 0;\n  position: relative;\n  transition: color .14s;\n  white-space: nowrap;\n}\n\n.ros-tab:hover {\n  color: var(--ink);\n}\n\n.ros-tab.active {\n  color: var(--ink);\n  font-weight: 600;\n}\n\n.ros-tab.active::after {\n  content: '';\n  position: absolute;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  height: 2px;\n  background: var(--ink);\n  border-radius: 2px;\n}\n\n/* Scrollable Reading Body */\n.ros-canvas-body {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  padding: 34px 48px 72px;\n}\n\n.ros-canvas-inner {\n  max-width: 820px;\n  margin: 0 auto;\n  display: flex;\n  flex-direction: column;\n  gap: 32px;\n  animation: rosFadeIn .2s ease-out;\n}\n\n/* Shared Editorial Typography */\n.ros-sec-head {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 12px;\n  margin-bottom: 14px;\n  flex-wrap: wrap;\n}\n\n.ros-sec-title {\n  font-size: 15px;\n  font-weight: 650;\n  letter-spacing: -.015em;\n  color: var(--ink);\n}\n\n.ros-sec-meta {\n  font-size: 12px;\n  color: var(--soft);\n}\n\n.ros-text-link {\n  font-size: 12.5px;\n  color: var(--muted);\n  transition: color .12s;\n}\n\n.ros-text-link:hover {\n  color: var(--ink);\n}\n\n.ros-text-link.active {\n  color: var(--ink);\n  font-weight: 600;\n}\n\n/* External Fact Labels (LIVE/FIXTURE, EVENT/MANUAL, CONNECTED/...) */\n.ros-fact-bar {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  flex-wrap: wrap;\n}\n\n.ros-fact-chip {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  padding: 2px 8px;\n  border-radius: 99px;\n  font-size: 11px;\n  font-weight: 500;\n  background: var(--subtle);\n  color: var(--muted);\n}\n\n.ros-fact-chip.green { background: var(--green-soft); color: var(--green); }\n.ros-fact-chip.amber { background: var(--amber-soft); color: var(--amber); }\n.ros-fact-chip.red { background: var(--red-soft); color: var(--red); }\n\n/* Status Text */\n.ros-status {\n  font-size: 12.5px;\n  font-weight: 500;\n  color: var(--muted);\n  white-space: nowrap;\n}\n.ros-status.red { color: var(--red); }\n.ros-status.amber { color: var(--amber); }\n.ros-status.iris { color: var(--iris); }\n.ros-status.green { color: var(--green); }\n\n/* 6-Stage Horizontal Breathing Progress Track */\n.ros-stage-track {\n  display: grid;\n  grid-template-columns: repeat(6, 1fr);\n  align-items: center;\n  padding: 8px 0;\n}\n\n.ros-st-node {\n  position: relative;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 6px;\n}\n\n.ros-st-node:not(:last-child)::after {\n  content: '';\n  position: absolute;\n  top: 9px;\n  left: calc(50% + 10px);\n  right: calc(-50% + 10px);\n  height: 1.5px;\n  background: var(--line);\n}\n\n.ros-st-node.done:not(:last-child)::after {\n  background: var(--green);\n}\n\n.ros-st-dot {\n  position: relative;\n  z-index: 1;\n  width: 19px;\n  height: 19px;\n  border-radius: 99px;\n  display: grid;\n  place-items: center;\n  background: var(--surface);\n  border: 1.5px solid var(--line);\n  font-size: 10px;\n  font-weight: 700;\n  color: var(--soft);\n}\n\n.ros-st-node.done .ros-st-dot {\n  border-color: var(--green);\n  background: var(--green-soft);\n  color: var(--green);\n}\n\n.ros-st-node.now .ros-st-dot {\n  border-color: var(--iris);\n  background: var(--iris-soft);\n  color: var(--iris);\n}\n\n.ros-st-node.now .ros-st-dot::after {\n  content: '';\n  position: absolute;\n  inset: -2.5px;\n  border: 1.5px solid transparent;\n  border-top-color: var(--iris);\n  border-radius: 99px;\n  animation: rosOrbit 1s linear infinite;\n}\n\n.ros-st-node.wait .ros-st-dot {\n  border-color: var(--amber);\n  background: var(--amber-soft);\n  color: var(--amber);\n}\n\n.ros-st-lbl {\n  font-size: 11.5px;\n  color: var(--muted);\n}\n\n.ros-st-node.now .ros-st-lbl,\n.ros-st-node.wait .ros-st-lbl {\n  color: var(--ink);\n  font-weight: 550;\n}\n\n/* Signature Gliding Hover List (Preserved Verbatim from v4) */\n.ros-clean-list {\n  display: flex;\n  flex-direction: column;\n  border-top: 1px solid var(--line-soft);\n}\n\n.ros-clean-row {\n  padding: 13px 4px;\n  border-bottom: 1px solid var(--line-soft);\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 14px;\n  cursor: pointer;\n  transition: background .12s, padding .12s;\n  border-radius: 8px;\n}\n\n.ros-clean-row:hover {\n  background: var(--paper);\n  padding-inline: 12px;\n  margin-inline: -8px;\n}\n\n.ros-clean-row.static {\n  cursor: default;\n}\n\n.ros-clean-row.static:hover {\n  background: transparent;\n  padding-inline: 4px;\n  margin-inline: 0;\n}\n\n.ros-cr-left {\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  min-width: 0;\n}\n\n.ros-mono {\n  width: 30px;\n  height: 30px;\n  border-radius: 99px;\n  background: var(--subtle);\n  color: var(--ink);\n  display: grid;\n  place-items: center;\n  font-size: 12px;\n  font-weight: 600;\n  flex: none;\n}\n\n.ros-cr-name {\n  font-size: 14px;\n  font-weight: 600;\n  color: var(--ink);\n  white-space: nowrap;\n}\n\n.ros-cr-role {\n  font-size: 12.5px;\n  color: var(--muted);\n  margin-left: 8px;\n  font-weight: 400;\n}\n\n/* Candidate Artifact View */\n.ros-doc-head {\n  display: flex;\n  align-items: flex-start;\n  justify-content: space-between;\n  gap: 16px;\n  padding-bottom: 20px;\n  border-bottom: 1px solid var(--line-soft);\n}\n\n.ros-doc-name {\n  font-size: 23px;\n  font-weight: 700;\n  letter-spacing: -.03em;\n  color: var(--ink);\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  flex-wrap: wrap;\n}\n\n.ros-doc-meta {\n  font-size: 13px;\n  color: var(--muted);\n  margin-top: 4px;\n}\n\n.ros-doc-block {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n}\n\n.ros-doc-line {\n  display: grid;\n  grid-template-columns: 28px 1fr;\n  gap: 12px;\n  font-size: 13.5px;\n  line-height: 1.78;\n  color: var(--text);\n  padding: 7px 10px;\n  margin: 0 -10px;\n  border-radius: 8px;\n  cursor: pointer;\n  transition: background .12s;\n  overflow-wrap: anywhere;\n}\n\n.ros-doc-line:hover {\n  background: var(--paper);\n}\n\n.ros-doc-line.active {\n  background: var(--iris-soft);\n}\n\n.ros-doc-no {\n  color: var(--soft);\n  font-size: 12px;\n  padding-top: 2px;\n}\n\n.ros-resume-group {\n  font-size: 11.5px;\n  font-weight: 600;\n  color: var(--soft);\n  letter-spacing: .03em;\n  margin: 16px 0 6px;\n  padding-top: 12px;\n  border-top: 1px solid var(--line-soft);\n}\n\n.ros-resume-group:first-child {\n  margin-top: 4px;\n  padding-top: 0;\n  border-top: 0;\n}\n\n.ros-exp-meta {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 12px;\n  margin-bottom: 4px;\n}\n\n.ros-exp-co {\n  font-size: 13.5px;\n  font-weight: 600;\n  color: var(--ink);\n}\n\n.ros-exp-time {\n  font-size: 12px;\n  color: var(--soft);\n  flex: none;\n}\n\n.ros-crit-item {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 9px 10px;\n  margin: 0 -10px;\n  border-radius: 8px;\n  cursor: pointer;\n  transition: background .12s;\n}\n\n.ros-crit-item:hover {\n  background: var(--paper);\n}\n\n.ros-crit-item.active {\n  background: var(--iris-soft);\n}\n\n/* Sequential Round Rail */\n.ros-seq-rail {\n  display: flex;\n  align-items: center;\n  padding: 16px 0;\n  border-bottom: 1px solid var(--line-soft);\n  overflow-x: auto;\n}\n\n.ros-seq-n {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex: none;\n}\n\n.ros-seq-d {\n  width: 20px;\n  height: 20px;\n  border-radius: 99px;\n  display: grid;\n  place-items: center;\n  font-size: 10.5px;\n  font-weight: 700;\n  border: 1.5px solid var(--line);\n  color: var(--soft);\n}\n\n.ros-seq-d.done { border-color: var(--green); background: var(--green-soft); color: var(--green); }\n.ros-seq-d.caution { border-color: var(--amber); background: var(--amber-soft); color: var(--amber); }\n.ros-seq-d.now { border-color: var(--iris); background: var(--iris-soft); color: var(--iris); }\n\n.ros-seq-l {\n  flex: 1;\n  min-width: 20px;\n  height: 1.5px;\n  background: var(--line);\n  margin: 0 10px;\n}\n\n.ros-seq-l.done {\n  background: var(--green);\n}\n\n/* Notes, JD Box, Transcript, Collapsible Toggle */\n.ros-risk-note {\n  padding: 12px 16px;\n  border-radius: 10px;\n  background: var(--paper);\n  border-left: 3px solid var(--amber);\n  font-size: 13px;\n  line-height: 1.68;\n  color: var(--text);\n}\n\n.ros-jd-box {\n  padding: 20px 22px;\n  border-radius: 12px;\n  background: var(--paper);\n  display: flex;\n  flex-direction: column;\n  gap: 14px;\n  font-size: 13px;\n  line-height: 1.75;\n  color: var(--text);\n  white-space: pre-line;\n}\n\n.ros-jd-sec-t {\n  font-size: 12px;\n  font-weight: 650;\n  color: var(--ink);\n  margin-bottom: 4px;\n}\n\n.ros-ts-badge {\n  font-size: 11px;\n  font-weight: 600;\n  color: var(--iris);\n  background: var(--iris-soft);\n  padding: 1px 6px;\n  border-radius: 5px;\n  margin-right: 8px;\n}\n\n.ros-auto-toggle {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 12px 0;\n  border-top: 1px solid var(--line-soft);\n  font-size: 12.5px;\n  color: var(--muted);\n  cursor: pointer;\n}\n\n.ros-auto-toggle:hover {\n  color: var(--ink);\n}\n\n.ros-btn {\n  height: 34px;\n  padding: 0 16px;\n  border-radius: 99px;\n  border: 1px solid var(--line);\n  background: var(--surface);\n  color: var(--ink);\n  font-size: 13px;\n  font-weight: 500;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  transition: all .14s;\n}\n\n.ros-btn:hover {\n  background: var(--subtle);\n}\n\n/* Empty / Loading / Error States */\n.ros-state-box {\n  padding: 40px 24px;\n  border-radius: 12px;\n  background: var(--paper);\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  text-align: center;\n  gap: 10px;\n}\n\n.ros-state-title {\n  font-size: 14.5px;\n  font-weight: 600;\n  color: var(--ink);\n}\n\n.ros-state-desc {\n  font-size: 13px;\n  color: var(--muted);\n  max-width: 380px;\n  line-height: 1.65;\n}\n\n.ros-thinking-row {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n  font-size: 13px;\n  color: var(--muted);\n}\n\n.ros-thinking-dot {\n  width: 6px;\n  height: 6px;\n  border-radius: 99px;\n  background: var(--iris);\n  animation: rosPulseDot .9s ease-in-out infinite;\n}\n\n/* Responsive (Half-screen <= 1080px & Mobile 390px) */\n@media (max-width: 1080px) {\n  .ros-canvas-head {\n    padding: 0 24px;\n  }\n  .ros-canvas-body {\n    padding: 24px 24px 64px;\n  }\n}\n\n@media (max-width: 520px) {\n  .ros-canvas-head {\n    padding: 0 16px;\n    height: auto;\n    min-height: 52px;\n    flex-wrap: wrap;\n    padding-top: 8px;\n    padding-bottom: 8px;\n  }\n  .ros-canvas-body {\n    padding: 18px 16px 48px;\n  }\n  .ros-doc-head {\n    flex-direction: column;\n  }\n  .ros-doc-name {\n    font-size: 20px;\n  }\n  .ros-cr-role {\n    display: block;\n    margin-left: 0;\n    margin-top: 2px;\n  }\n}\n\n/* v4 Footer & Centered Confirmation Modal (verbatim design-tokens.md) */\n.ros-doc-foot {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding-top: 20px;\n  border-top: 1px solid var(--line-soft);\n  flex-wrap: wrap;\n}\n\n.ros-btn.dark {\n  background: var(--ink);\n  border-color: var(--ink);\n  color: var(--surface);\n}\n\n.ros-btn.dark:hover {\n  opacity: .88;\n}\n\n.ros-btn:disabled {\n  opacity: .6;\n  cursor: not-allowed;\n}\n\n.ros-modal-bg {\n  position: fixed;\n  inset: 0;\n  z-index: 100;\n  background: rgba(25, 25, 24, .32);\n  backdrop-filter: blur(6px);\n  -webkit-backdrop-filter: blur(6px);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 24px;\n}\n\n.ros-modal {\n  width: 100%;\n  max-width: 520px;\n  background: var(--surface);\n  border-radius: 20px;\n  border: 1px solid var(--line);\n  box-shadow: var(--shadow-modal);\n  padding: 26px 28px;\n  display: flex;\n  flex-direction: column;\n  gap: 16px;\n  animation: rosFadeIn .16s ease-out;\n}\n\n.ros-m-field {\n  display: flex;\n  flex-direction: column;\n  gap: 5px;\n  font-size: 12px;\n  color: var(--muted);\n}\n\n.ros-m-field input,\n.ros-m-field textarea {\n  padding: 9px 11px;\n  border-radius: 8px;\n  border: 1px solid var(--line);\n  background: var(--surface);\n  color: var(--ink);\n  font: inherit;\n  font-size: 13px;\n  outline: none;\n}\n\n.ros-m-field input:focus,\n.ros-m-field textarea:focus {\n  border-color: var(--muted);\n}\n\n/* v4 Batch Float & 5-Second Undo Toast (verbatim design-tokens.md) */\n.ros-batch-float {\n  position: sticky;\n  bottom: 0;\n  margin-top: 12px;\n  background: var(--ink);\n  color: var(--surface);\n  padding: 10px 16px;\n  border-radius: 99px;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 14px;\n  font-size: 12.5px;\n  box-shadow: var(--shadow-modal);\n}\n\n.ros-batch-float button {\n  color: var(--surface);\n  font-size: 12px;\n  padding: 4px 10px;\n  border-radius: 99px;\n  background: rgba(128, 128, 128, .24);\n}\n\n.ros-batch-float button:hover {\n  background: rgba(128, 128, 128, .38);\n}\n\n.ros-toast {\n  position: fixed;\n  top: 20px;\n  left: 50%;\n  transform: translateX(-50%) translateY(-8px);\n  background: var(--ink);\n  color: var(--surface);\n  padding: 9px 16px;\n  border-radius: 99px;\n  font-size: 12.5px;\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  opacity: 0;\n  pointer-events: none;\n  transition: all .16s;\n  z-index: 120;\n}\n\n.ros-toast.show {\n  opacity: 1;\n  pointer-events: auto;\n  transform: translateX(-50%) translateY(0);\n}\n\n/* v4 Free Slot Pills (verbatim design-tokens.md) */\n.ros-slot-grid {\n  display: flex;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.ros-slot-pill {\n  padding: 6px 12px;\n  border-radius: 10px;\n  border: 1px solid var(--line);\n  background: var(--surface);\n  font-size: 12px;\n  color: var(--text);\n  transition: all .12s;\n}\n\n.ros-slot-pill:hover {\n  border-color: var(--muted);\n}\n\n.ros-slot-pill.active {\n  background: var(--iris-soft);\n  border-color: var(--iris);\n  color: var(--iris);\n  font-weight: 600;\n}\n";
+		const css = "/*\r\n * Recruitment OS v4 · Right-Hand Canvas Styles\r\n * Design tokens copied verbatim from design/v4/contracts/design-tokens.md.\r\n * Scoped under .ros-canvas to avoid colliding with DSH host styles.\r\n */\r\n\r\n.ros-canvas {\r\n  --rail: #F3F2EE;\r\n  --paper: #F9F8F5;\r\n  --surface: #FFFFFF;\r\n  --subtle: #F3F2EE;\r\n  --hover: #EAE8E2;\r\n  --ink: #191918;\r\n  --text: #42423F;\r\n  --muted: #787772;\r\n  --soft: #A6A59E;\r\n  --line: rgba(25, 25, 24, .08);\r\n  --line-soft: rgba(25, 25, 24, .05);\r\n  --iris: #5B5BD6;\r\n  --iris-soft: rgba(91, 91, 214, .09);\r\n  --green: #18794E;\r\n  --green-soft: rgba(24, 121, 78, .09);\r\n  --amber: #AD5700;\r\n  --amber-soft: rgba(173, 87, 0, .09);\r\n  --red: #CD2B31;\r\n  --red-soft: rgba(205, 43, 49, .08);\r\n  --shadow-card: 0 1px 2px rgba(25, 25, 24, .03), 0 10px 30px -14px rgba(25, 25, 24, .07);\r\n  --shadow-modal: 0 28px 72px -18px rgba(25, 25, 24, .24);\r\n\r\n  display: flex;\r\n  flex-direction: column;\r\n  height: 100%;\r\n  min-height: 0;\r\n  overflow: hidden;\r\n  background: var(--surface);\r\n  color: var(--ink);\r\n  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif;\r\n  font-size: 14px;\r\n  line-height: 1.55;\r\n  -webkit-font-smoothing: antialiased;\r\n}\r\n\r\n[data-theme=\"dark\"] .ros-canvas,\r\n.ros-canvas[data-theme=\"dark\"] {\r\n  --rail: #10100F;\r\n  --paper: #141413;\r\n  --surface: #1A1A19;\r\n  --subtle: #232321;\r\n  --hover: #2B2B28;\r\n  --ink: #F3F2EE;\r\n  --text: #D5D4CE;\r\n  --muted: #9A9992;\r\n  --soft: #6F6E68;\r\n  --line: rgba(243, 242, 238, .09);\r\n  --line-soft: rgba(243, 242, 238, .055);\r\n  --iris: #8484F5;\r\n  --iris-soft: rgba(132, 132, 245, .15);\r\n  --green: #3DD68C;\r\n  --green-soft: rgba(61, 214, 140, .13);\r\n  --amber: #F5A524;\r\n  --amber-soft: rgba(245, 165, 36, .14);\r\n  --red: #F87171;\r\n  --red-soft: rgba(248, 113, 113, .14);\r\n  --shadow-card: 0 2px 10px rgba(0, 0, 0, .35);\r\n  --shadow-modal: 0 28px 72px -18px rgba(0, 0, 0, .65);\r\n}\r\n\r\n.ros-canvas *,\r\n.ros-canvas *::before,\r\n.ros-canvas *::after {\r\n  box-sizing: border-box;\r\n}\r\n\r\n.ros-canvas button {\r\n  font: inherit;\r\n  color: inherit;\r\n  cursor: pointer;\r\n  background: none;\r\n  border: 0;\r\n}\r\n\r\n.ros-canvas .num {\r\n  font-variant-numeric: tabular-nums;\r\n}\r\n\r\n@keyframes rosFadeIn {\r\n  from { opacity: 0; transform: translateY(4px); }\r\n  to { opacity: 1; transform: none; }\r\n}\r\n\r\n@keyframes rosOrbit {\r\n  to { transform: rotate(360deg); }\r\n}\r\n\r\n@keyframes rosPulseDot {\r\n  0%, 100% { opacity: .3; transform: scale(.85); }\r\n  50% { opacity: 1; transform: scale(1.1); }\r\n}\r\n\r\n/* Contextual Top Bar (56px visual horizon) */\r\n.ros-canvas-head {\r\n  height: 56px;\r\n  padding: 0 36px;\r\n  border-bottom: 1px solid var(--line-soft);\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 14px;\r\n  flex: none;\r\n}\r\n\r\n.ros-head-left {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 16px;\r\n  min-width: 0;\r\n}\r\n\r\n.ros-head-right {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 10px;\r\n  font-size: 12px;\r\n  color: var(--muted);\r\n  flex: none;\r\n}\r\n\r\n.ros-crumb-bar {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 7px;\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n  white-space: nowrap;\r\n  overflow: hidden;\r\n  text-overflow: ellipsis;\r\n}\r\n\r\n.ros-crumb-link {\r\n  color: var(--muted);\r\n  font-size: 13px;\r\n  transition: color .12s;\r\n}\r\n\r\n.ros-crumb-link:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-crumb-cur {\r\n  color: var(--ink);\r\n  font-weight: 600;\r\n}\r\n\r\n.ros-tabs {\r\n  display: inline-flex;\r\n  gap: 22px;\r\n}\r\n\r\n.ros-tab {\r\n  font-size: 13px;\r\n  font-weight: 500;\r\n  color: var(--muted);\r\n  padding: 17px 0;\r\n  position: relative;\r\n  transition: color .14s;\r\n  white-space: nowrap;\r\n}\r\n\r\n.ros-tab:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-tab.active {\r\n  color: var(--ink);\r\n  font-weight: 600;\r\n}\r\n\r\n.ros-tab.active::after {\r\n  content: '';\r\n  position: absolute;\r\n  left: 0;\r\n  right: 0;\r\n  bottom: 0;\r\n  height: 2px;\r\n  background: var(--ink);\r\n  border-radius: 2px;\r\n}\r\n\r\n/* Scrollable Reading Body */\r\n.ros-canvas-body {\r\n  flex: 1;\r\n  min-height: 0;\r\n  overflow-y: auto;\r\n  padding: 34px 48px 72px;\r\n}\r\n\r\n.ros-canvas-inner {\r\n  max-width: 820px;\r\n  margin: 0 auto;\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 32px;\r\n  animation: rosFadeIn .2s ease-out;\r\n}\r\n\r\n/* Shared Editorial Typography */\r\n.ros-sec-head {\r\n  display: flex;\r\n  align-items: baseline;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  margin-bottom: 14px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-sec-title {\r\n  font-size: 15px;\r\n  font-weight: 650;\r\n  letter-spacing: -.015em;\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-sec-meta {\r\n  font-size: 12px;\r\n  color: var(--soft);\r\n}\r\n\r\n.ros-text-link {\r\n  font-size: 12.5px;\r\n  color: var(--muted);\r\n  transition: color .12s;\r\n}\r\n\r\n.ros-text-link:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-text-link.active {\r\n  color: var(--ink);\r\n  font-weight: 600;\r\n}\r\n\r\n/* External Fact Labels (LIVE/FIXTURE, EVENT/MANUAL, CONNECTED/...) */\r\n.ros-fact-bar {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 6px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-fact-chip {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 4px;\r\n  padding: 2px 8px;\r\n  border-radius: 99px;\r\n  font-size: 11px;\r\n  font-weight: 500;\r\n  background: var(--subtle);\r\n  color: var(--muted);\r\n}\r\n\r\n.ros-fact-chip.green { background: var(--green-soft); color: var(--green); }\r\n.ros-fact-chip.amber { background: var(--amber-soft); color: var(--amber); }\r\n.ros-fact-chip.red { background: var(--red-soft); color: var(--red); }\r\n\r\n/* Status Text */\r\n.ros-status {\r\n  font-size: 12.5px;\r\n  font-weight: 500;\r\n  color: var(--muted);\r\n  white-space: nowrap;\r\n}\r\n.ros-status.red { color: var(--red); }\r\n.ros-status.amber { color: var(--amber); }\r\n.ros-status.iris { color: var(--iris); }\r\n.ros-status.green { color: var(--green); }\r\n\r\n/* 6-Stage Horizontal Breathing Progress Track */\r\n.ros-stage-track {\r\n  display: grid;\r\n  grid-template-columns: repeat(6, 1fr);\r\n  align-items: center;\r\n  padding: 8px 0;\r\n}\r\n\r\n.ros-st-node {\r\n  position: relative;\r\n  display: flex;\r\n  flex-direction: column;\r\n  align-items: center;\r\n  gap: 6px;\r\n}\r\n\r\n.ros-st-node:not(:last-child)::after {\r\n  content: '';\r\n  position: absolute;\r\n  top: 9px;\r\n  left: calc(50% + 10px);\r\n  right: calc(-50% + 10px);\r\n  height: 1.5px;\r\n  background: var(--line);\r\n}\r\n\r\n.ros-st-node.done:not(:last-child)::after {\r\n  background: var(--green);\r\n}\r\n\r\n.ros-st-dot {\r\n  position: relative;\r\n  z-index: 1;\r\n  width: 19px;\r\n  height: 19px;\r\n  border-radius: 99px;\r\n  display: grid;\r\n  place-items: center;\r\n  background: var(--surface);\r\n  border: 1.5px solid var(--line);\r\n  font-size: 10px;\r\n  font-weight: 700;\r\n  color: var(--soft);\r\n}\r\n\r\n.ros-st-node.done .ros-st-dot {\r\n  border-color: var(--green);\r\n  background: var(--green-soft);\r\n  color: var(--green);\r\n}\r\n\r\n.ros-st-node.now .ros-st-dot {\r\n  border-color: var(--iris);\r\n  background: var(--iris-soft);\r\n  color: var(--iris);\r\n}\r\n\r\n.ros-st-node.now .ros-st-dot::after {\r\n  content: '';\r\n  position: absolute;\r\n  inset: -2.5px;\r\n  border: 1.5px solid transparent;\r\n  border-top-color: var(--iris);\r\n  border-radius: 99px;\r\n  animation: rosOrbit 1s linear infinite;\r\n}\r\n\r\n.ros-st-node.wait .ros-st-dot {\r\n  border-color: var(--amber);\r\n  background: var(--amber-soft);\r\n  color: var(--amber);\r\n}\r\n\r\n.ros-st-lbl {\r\n  font-size: 11.5px;\r\n  color: var(--muted);\r\n}\r\n\r\n.ros-st-node.now .ros-st-lbl,\r\n.ros-st-node.wait .ros-st-lbl {\r\n  color: var(--ink);\r\n  font-weight: 550;\r\n}\r\n\r\n/* Signature Gliding Hover List (Preserved Verbatim from v4) */\r\n.ros-clean-list {\r\n  display: flex;\r\n  flex-direction: column;\r\n  border-top: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-clean-row {\r\n  padding: 13px 4px;\r\n  border-bottom: 1px solid var(--line-soft);\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 14px;\r\n  cursor: pointer;\r\n  transition: background .12s, padding .12s;\r\n  border-radius: 8px;\r\n}\r\n\r\n.ros-clean-row:hover {\r\n  background: var(--paper);\r\n  padding-inline: 12px;\r\n  margin-inline: -8px;\r\n}\r\n\r\n.ros-clean-row.static {\r\n  cursor: default;\r\n}\r\n\r\n.ros-clean-row.static:hover {\r\n  background: transparent;\r\n  padding-inline: 4px;\r\n  margin-inline: 0;\r\n}\r\n\r\n.ros-cr-left {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 12px;\r\n  min-width: 0;\r\n}\r\n\r\n.ros-mono {\r\n  width: 30px;\r\n  height: 30px;\r\n  border-radius: 99px;\r\n  background: var(--subtle);\r\n  color: var(--ink);\r\n  display: grid;\r\n  place-items: center;\r\n  font-size: 12px;\r\n  font-weight: 600;\r\n  flex: none;\r\n}\r\n\r\n.ros-cr-name {\r\n  font-size: 14px;\r\n  font-weight: 600;\r\n  color: var(--ink);\r\n  white-space: nowrap;\r\n}\r\n\r\n.ros-cr-role {\r\n  font-size: 12.5px;\r\n  color: var(--muted);\r\n  margin-left: 8px;\r\n  font-weight: 400;\r\n}\r\n\r\n/* Candidate Artifact View */\r\n.ros-doc-head {\r\n  display: flex;\r\n  align-items: flex-start;\r\n  justify-content: space-between;\r\n  gap: 16px;\r\n  padding-bottom: 20px;\r\n  border-bottom: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-doc-name {\r\n  font-size: 23px;\r\n  font-weight: 700;\r\n  letter-spacing: -.03em;\r\n  color: var(--ink);\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 10px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-doc-meta {\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n  margin-top: 4px;\r\n}\r\n\r\n.ros-doc-block {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 10px;\r\n}\r\n\r\n.ros-doc-line {\r\n  display: grid;\r\n  grid-template-columns: 28px 1fr;\r\n  gap: 12px;\r\n  font-size: 13.5px;\r\n  line-height: 1.78;\r\n  color: var(--text);\r\n  padding: 7px 10px;\r\n  margin: 0 -10px;\r\n  border-radius: 8px;\r\n  cursor: pointer;\r\n  transition: background .12s;\r\n  overflow-wrap: anywhere;\r\n}\r\n\r\n.ros-doc-line:hover {\r\n  background: var(--paper);\r\n}\r\n\r\n.ros-doc-line.active {\r\n  background: var(--iris-soft);\r\n}\r\n\r\n.ros-doc-no {\r\n  color: var(--soft);\r\n  font-size: 12px;\r\n  padding-top: 2px;\r\n}\r\n\r\n.ros-resume-group {\r\n  font-size: 11.5px;\r\n  font-weight: 600;\r\n  color: var(--soft);\r\n  letter-spacing: .03em;\r\n  margin: 16px 0 6px;\r\n  padding-top: 12px;\r\n  border-top: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-resume-group:first-child {\r\n  margin-top: 4px;\r\n  padding-top: 0;\r\n  border-top: 0;\r\n}\r\n\r\n.ros-exp-meta {\r\n  display: flex;\r\n  align-items: baseline;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  margin-bottom: 4px;\r\n}\r\n\r\n.ros-exp-co {\r\n  font-size: 13.5px;\r\n  font-weight: 600;\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-exp-time {\r\n  font-size: 12px;\r\n  color: var(--soft);\r\n  flex: none;\r\n}\r\n\r\n.ros-crit-item {\r\n  display: flex;\r\n  align-items: baseline;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  padding: 9px 10px;\r\n  margin: 0 -10px;\r\n  border-radius: 8px;\r\n  cursor: pointer;\r\n  transition: background .12s;\r\n}\r\n\r\n.ros-crit-item:hover {\r\n  background: var(--paper);\r\n}\r\n\r\n.ros-crit-item.active {\r\n  background: var(--iris-soft);\r\n}\r\n\r\n/* Sequential Round Rail */\r\n.ros-seq-rail {\r\n  display: flex;\r\n  align-items: center;\r\n  padding: 16px 0;\r\n  border-bottom: 1px solid var(--line-soft);\r\n  overflow-x: auto;\r\n}\r\n\r\n.ros-seq-n {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n  flex: none;\r\n}\r\n\r\n.ros-seq-d {\r\n  width: 20px;\r\n  height: 20px;\r\n  border-radius: 99px;\r\n  display: grid;\r\n  place-items: center;\r\n  font-size: 10.5px;\r\n  font-weight: 700;\r\n  border: 1.5px solid var(--line);\r\n  color: var(--soft);\r\n}\r\n\r\n.ros-seq-d.done { border-color: var(--green); background: var(--green-soft); color: var(--green); }\r\n.ros-seq-d.caution { border-color: var(--amber); background: var(--amber-soft); color: var(--amber); }\r\n.ros-seq-d.now { border-color: var(--iris); background: var(--iris-soft); color: var(--iris); }\r\n\r\n.ros-seq-l {\r\n  flex: 1;\r\n  min-width: 20px;\r\n  height: 1.5px;\r\n  background: var(--line);\r\n  margin: 0 10px;\r\n}\r\n\r\n.ros-seq-l.done {\r\n  background: var(--green);\r\n}\r\n\r\n/* Notes, JD Box, Transcript, Collapsible Toggle */\r\n.ros-risk-note {\r\n  padding: 12px 16px;\r\n  border-radius: 10px;\r\n  background: var(--paper);\r\n  border-left: 3px solid var(--amber);\r\n  font-size: 13px;\r\n  line-height: 1.68;\r\n  color: var(--text);\r\n}\r\n\r\n.ros-jd-box {\r\n  padding: 20px 22px;\r\n  border-radius: 12px;\r\n  background: var(--paper);\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 14px;\r\n  font-size: 13px;\r\n  line-height: 1.75;\r\n  color: var(--text);\r\n  white-space: pre-line;\r\n}\r\n\r\n.ros-jd-sec-t {\r\n  font-size: 12px;\r\n  font-weight: 650;\r\n  color: var(--ink);\r\n  margin-bottom: 4px;\r\n}\r\n\r\n.ros-ts-badge {\r\n  font-size: 11px;\r\n  font-weight: 600;\r\n  color: var(--iris);\r\n  background: var(--iris-soft);\r\n  padding: 1px 6px;\r\n  border-radius: 5px;\r\n  margin-right: 8px;\r\n}\r\n\r\n.ros-auto-toggle {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  padding: 12px 0;\r\n  border-top: 1px solid var(--line-soft);\r\n  font-size: 12.5px;\r\n  color: var(--muted);\r\n  cursor: pointer;\r\n}\r\n\r\n.ros-auto-toggle:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-btn {\r\n  height: 34px;\r\n  padding: 0 16px;\r\n  border-radius: 99px;\r\n  border: 1px solid var(--line);\r\n  background: var(--surface);\r\n  color: var(--ink);\r\n  font-size: 13px;\r\n  font-weight: 500;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  gap: 6px;\r\n  transition: all .14s;\r\n}\r\n\r\n.ros-btn:hover {\r\n  background: var(--subtle);\r\n}\r\n\r\n/* Empty / Loading / Error States */\r\n.ros-state-box {\r\n  padding: 40px 24px;\r\n  border-radius: 12px;\r\n  background: var(--paper);\r\n  display: flex;\r\n  flex-direction: column;\r\n  align-items: center;\r\n  justify-content: center;\r\n  text-align: center;\r\n  gap: 10px;\r\n}\r\n\r\n.ros-state-title {\r\n  font-size: 14.5px;\r\n  font-weight: 600;\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-state-desc {\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n  max-width: 380px;\r\n  line-height: 1.65;\r\n}\r\n\r\n.ros-thinking-row {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n}\r\n\r\n.ros-thinking-dot {\r\n  width: 6px;\r\n  height: 6px;\r\n  border-radius: 99px;\r\n  background: var(--iris);\r\n  animation: rosPulseDot .9s ease-in-out infinite;\r\n}\r\n\r\n/* Responsive (Half-screen <= 1080px & Mobile 390px) */\r\n@media (max-width: 1080px) {\r\n  .ros-canvas-head {\r\n    padding: 0 24px;\r\n  }\r\n  .ros-canvas-body {\r\n    padding: 24px 24px 64px;\r\n  }\r\n}\r\n\r\n@media (max-width: 520px) {\r\n  .ros-canvas-head {\r\n    padding: 0 16px;\r\n    height: auto;\r\n    min-height: 52px;\r\n    flex-wrap: wrap;\r\n    padding-top: 8px;\r\n    padding-bottom: 8px;\r\n  }\r\n  .ros-canvas-body {\r\n    padding: 18px 16px 48px;\r\n  }\r\n  .ros-doc-head {\r\n    flex-direction: column;\r\n  }\r\n  .ros-doc-name {\r\n    font-size: 20px;\r\n  }\r\n  .ros-cr-role {\r\n    display: block;\r\n    margin-left: 0;\r\n    margin-top: 2px;\r\n  }\r\n}\r\n\r\n/* v4 Footer & Centered Confirmation Modal (verbatim design-tokens.md) */\r\n.ros-doc-foot {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  padding-top: 20px;\r\n  border-top: 1px solid var(--line-soft);\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-btn.dark {\r\n  background: var(--ink);\r\n  border-color: var(--ink);\r\n  color: var(--surface);\r\n}\r\n\r\n.ros-btn.dark:hover {\r\n  opacity: .88;\r\n}\r\n\r\n.ros-btn:disabled {\r\n  opacity: .6;\r\n  cursor: not-allowed;\r\n}\r\n\r\n.ros-modal-bg {\r\n  position: fixed;\r\n  inset: 0;\r\n  z-index: 100;\r\n  background: rgba(25, 25, 24, .32);\r\n  backdrop-filter: blur(6px);\r\n  -webkit-backdrop-filter: blur(6px);\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  padding: 24px;\r\n}\r\n\r\n.ros-modal {\r\n  width: 100%;\r\n  max-width: 520px;\r\n  background: var(--surface);\r\n  border-radius: 20px;\r\n  border: 1px solid var(--line);\r\n  box-shadow: var(--shadow-modal);\r\n  padding: 26px 28px;\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 16px;\r\n  animation: rosFadeIn .16s ease-out;\r\n}\r\n\r\n.ros-m-field {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 5px;\r\n  font-size: 12px;\r\n  color: var(--muted);\r\n}\r\n\r\n.ros-m-field input,\r\n.ros-m-field textarea {\r\n  padding: 9px 11px;\r\n  border-radius: 8px;\r\n  border: 1px solid var(--line);\r\n  background: var(--surface);\r\n  color: var(--ink);\r\n  font: inherit;\r\n  font-size: 13px;\r\n  outline: none;\r\n}\r\n\r\n.ros-m-field input:focus,\r\n.ros-m-field textarea:focus {\r\n  border-color: var(--muted);\r\n}\r\n\r\n/* v4 Batch Float & 5-Second Undo Toast (verbatim design-tokens.md) */\r\n.ros-batch-float {\r\n  position: sticky;\r\n  bottom: 0;\r\n  margin-top: 12px;\r\n  background: var(--ink);\r\n  color: var(--surface);\r\n  padding: 10px 16px;\r\n  border-radius: 99px;\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 14px;\r\n  font-size: 12.5px;\r\n  box-shadow: var(--shadow-modal);\r\n}\r\n\r\n.ros-batch-float button {\r\n  color: var(--surface);\r\n  font-size: 12px;\r\n  padding: 4px 10px;\r\n  border-radius: 99px;\r\n  background: rgba(128, 128, 128, .24);\r\n}\r\n\r\n.ros-batch-float button:hover {\r\n  background: rgba(128, 128, 128, .38);\r\n}\r\n\r\n.ros-toast {\r\n  position: fixed;\r\n  top: 20px;\r\n  left: 50%;\r\n  transform: translateX(-50%) translateY(-8px);\r\n  background: var(--ink);\r\n  color: var(--surface);\r\n  padding: 9px 16px;\r\n  border-radius: 99px;\r\n  font-size: 12.5px;\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 12px;\r\n  opacity: 0;\r\n  pointer-events: none;\r\n  transition: all .16s;\r\n  z-index: 120;\r\n}\r\n\r\n.ros-toast.show {\r\n  opacity: 1;\r\n  pointer-events: auto;\r\n  transform: translateX(-50%) translateY(0);\r\n}\r\n\r\n/* v4 Free Slot Pills (verbatim design-tokens.md) */\r\n.ros-slot-grid {\r\n  display: flex;\r\n  gap: 8px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-slot-pill {\r\n  padding: 6px 12px;\r\n  border-radius: 10px;\r\n  border: 1px solid var(--line);\r\n  background: var(--surface);\r\n  font-size: 12px;\r\n  color: var(--text);\r\n  transition: all .12s;\r\n}\r\n\r\n.ros-slot-pill:hover {\r\n  border-color: var(--muted);\r\n}\r\n\r\n.ros-slot-pill.active {\r\n  background: var(--iris-soft);\r\n  border-color: var(--iris);\r\n  color: var(--iris);\r\n  font-weight: 600;\r\n}\r\n\r\n/* =========================================================================\r\n * Canvas UX & Motion Polish (UI-FREEZE compliant: zero token/layout changes)\r\n * ========================================================================= */\r\n\r\n@keyframes rosCanvasEnter {\r\n  from {\r\n    opacity: 0;\r\n    transform: translateY(6px);\r\n  }\r\n  to {\r\n    opacity: 1;\r\n    transform: translateY(0);\r\n  }\r\n}\r\n\r\n@keyframes rosModalBgIn {\r\n  from { opacity: 0; }\r\n  to { opacity: 1; }\r\n}\r\n\r\n@keyframes rosModalCardIn {\r\n  from {\r\n    opacity: 0;\r\n    transform: translateY(5px) scale(0.985);\r\n  }\r\n  to {\r\n    opacity: 1;\r\n    transform: translateY(0) scale(1);\r\n  }\r\n}\r\n\r\n@keyframes rosPaperFlash {\r\n  0% { background-color: rgba(217, 119, 6, 0.14); }\r\n  45% { background-color: rgba(217, 119, 6, 0.08); }\r\n  100% { background-color: transparent; }\r\n}\r\n\r\n@keyframes rosStarPop {\r\n  0% { transform: scale(1); }\r\n  45% { transform: scale(1.24); }\r\n  100% { transform: scale(1); }\r\n}\r\n\r\n@keyframes rosSkelShimmer {\r\n  0% { opacity: 0.45; }\r\n  50% { opacity: 0.85; }\r\n  100% { opacity: 0.45; }\r\n}\r\n\r\n@keyframes rosToastDrain {\r\n  from { transform: scaleX(1); }\r\n  to { transform: scaleX(0); }\r\n}\r\n\r\n.ros-canvas-enter {\r\n  animation: rosCanvasEnter 180ms cubic-bezier(0.22, 1, 0.36, 1) both;\r\n}\r\n\r\n.ros-sync-pill {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 6px;\r\n  font-size: 11.5px;\r\n  color: var(--muted);\r\n  padding: 2px 8px;\r\n  border-radius: 99px;\r\n  background: var(--paper);\r\n  border: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-sync-dot {\r\n  width: 6px;\r\n  height: 6px;\r\n  border-radius: 50%;\r\n  background: var(--iris);\r\n  animation: rosSkelShimmer 1.1s ease-in-out infinite;\r\n}\r\n\r\n.ros-paper-flash {\r\n  border-radius: 10px;\r\n  animation: rosPaperFlash 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;\r\n}\r\n\r\n.ros-doc-line {\r\n  transition: background-color 180ms ease, box-shadow 180ms ease;\r\n}\r\n\r\n.ros-doc-line.active {\r\n  box-shadow: inset 2.5px 0 0 var(--iris);\r\n  padding-left: 10px;\r\n  border-radius: 4px;\r\n}\r\n\r\n.ros-star-btn {\r\n  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), color 140ms ease;\r\n  cursor: pointer;\r\n}\r\n\r\n.ros-star-btn.pop {\r\n  animation: rosStarPop 200ms cubic-bezier(0.22, 1, 0.36, 1);\r\n}\r\n\r\n.ros-modal-bg {\r\n  animation: rosModalBgIn 140ms ease-out both;\r\n}\r\n\r\n.ros-modal {\r\n  animation: rosModalCardIn 170ms cubic-bezier(0.22, 1, 0.36, 1) both;\r\n}\r\n\r\n.ros-toast {\r\n  position: fixed;\r\n  overflow: hidden;\r\n}\r\n\r\n.ros-toast-bar {\r\n  position: absolute;\r\n  left: 0;\r\n  right: 0;\r\n  bottom: 0;\r\n  height: 2px;\r\n  background: rgba(165, 180, 252, 0.85);\r\n  transform-origin: left center;\r\n  animation-name: rosToastDrain;\r\n  animation-timing-function: linear;\r\n  animation-fill-mode: forwards;\r\n}\r\n\r\n/* Editorial warm-paper skeleton for cold load */\r\n.ros-skeleton-doc {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 20px;\r\n  padding: 6px 0;\r\n}\r\n\r\n.ros-skel-bar {\r\n  border-radius: 6px;\r\n  background: var(--subtle);\r\n  animation: rosSkelShimmer 1.3s ease-in-out infinite;\r\n}\r\n\r\n@media (prefers-reduced-motion: reduce) {\r\n  .ros-canvas-enter,\r\n  .ros-modal-bg,\r\n  .ros-modal,\r\n  .ros-paper-flash,\r\n  .ros-star-btn.pop,\r\n  .ros-sync-dot,\r\n  .ros-skel-bar {\r\n    animation: none !important;\r\n    transition: none !important;\r\n  }\r\n}\r\n";
 		if (typeof document !== "undefined" && document.querySelector("style[data-recruitment-css]") === null) {
 			const style = document.createElement("style");
 			style.setAttribute("data-recruitment-css", "1");
@@ -6915,45 +7259,63 @@ window.__ModuleLoader__.load({
 				})]
 			});
 		}
-		function CanvasRoute({ sessionId, route, onBack, onSelectApplication, onSelectJob, uploadTask, onUploadStarted, onDismissUploadTask, onUploadCompleted, onActionCompleted, refreshNonce = 0, fetcher = fetchCanvasJson }) {
+		function CanvasRoute({ sessionId, route, candidateQueue, isOffline = false, onBack, onSelectApplication, onSelectJob, uploadTask, onUploadStarted, onDismissUploadTask, onUploadCompleted, onActionCompleted, refreshNonce = 0, fetcher = fetchCanvasJson }) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 				className: "ros-canvas",
 				"aria-label": "招聘详情画布",
 				"data-testid": "v4-canvas-route",
-				children: [uploadTask ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(UploadProgressBanner, {
-					task: uploadTask,
-					onOpenApplication: onSelectApplication,
-					onDismiss: onDismissUploadTask,
-					onCompleted: onUploadCompleted
-				}) : null, route.kind === "candidate" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CandidatePage, {
-					sessionId,
-					applicationId: route.applicationId,
-					onBack,
-					onOpenJob: onSelectJob,
-					onUploadStarted,
-					onActionCompleted,
-					refreshNonce,
-					fetcher
-				}) : route.kind === "job" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(JobPage, {
-					sessionId,
-					jobId: route.jobId,
-					onBack,
-					onSelectApplication,
-					onSelectJob,
-					onUploadStarted,
-					onActionCompleted,
-					refreshNonce,
-					fetcher
-				}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-					className: "ros-canvas-body",
-					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: "ros-canvas-inner",
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, {
-							title: "选择一条记录查看详情",
-							description: "从左侧工作台列表点击任意候选人或岗位，右侧画布将立即展开完整档案与进度。"
+				children: [
+					isOffline ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						role: "status",
+						"data-testid": "canvas-offline-banner",
+						style: {
+							margin: "10px 36px 0",
+							padding: "8px 14px",
+							borderRadius: 10,
+							background: "var(--amber-soft)",
+							color: "var(--amber)",
+							fontSize: "12.5px"
+						},
+						children: "当前网络已断开，恢复连接后将自动同步最新状态。"
+					}) : null,
+					uploadTask ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(UploadProgressBanner, {
+						task: uploadTask,
+						onOpenApplication: onSelectApplication,
+						onDismiss: onDismissUploadTask,
+						onCompleted: onUploadCompleted
+					}) : null,
+					route.kind === "candidate" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CandidatePage, {
+						sessionId,
+						applicationId: route.applicationId,
+						candidateQueue,
+						onSelectApplication: (appId) => onSelectApplication?.(appId),
+						onBack,
+						onOpenJob: onSelectJob,
+						onUploadStarted,
+						onActionCompleted,
+						refreshNonce,
+						fetcher
+					}) : route.kind === "job" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(JobPage, {
+						sessionId,
+						jobId: route.jobId,
+						onBack,
+						onSelectApplication,
+						onSelectJob,
+						onUploadStarted,
+						onActionCompleted,
+						refreshNonce,
+						fetcher
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "ros-canvas-body",
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "ros-canvas-inner",
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyState, {
+								title: "选择一条记录查看详情",
+								description: "从左侧工作台列表点击任意候选人或岗位，右侧画布将立即展开完整档案与进度。"
+							})
 						})
 					})
-				})]
+				]
 			});
 		}
 		/**
@@ -6966,22 +7328,70 @@ window.__ModuleLoader__.load({
 			}, [sessionId]);
 			const [route, setRoute] = (0, react.useState)({ kind: "empty" });
 			const [prevJobId, setPrevJobId] = (0, react.useState)(null);
+			const [candidateQueue, setCandidateQueue] = (0, react.useState)([]);
+			const [isOffline, setIsOffline] = (0, react.useState)(() => typeof navigator !== "undefined" ? !navigator.onLine : false);
+			const hiddenAtRef = (0, react.useRef)(null);
 			const [uploadTask, setUploadTask] = (0, react.useState)(null);
 			const [refreshNonce, setRefreshNonce] = (0, react.useState)(0);
 			const [toast, setToast] = (0, react.useState)(null);
+			const [toastPaused, setToastPaused] = (0, react.useState)(false);
+			const [toastRemainingMs, setToastRemainingMs] = (0, react.useState)(0);
 			const [undoBusy, setUndoBusy] = (0, react.useState)(false);
+			const showToast = (0, react.useCallback)((notice) => {
+				const durationMs = notice.actionId ? 5e3 : 2800;
+				setToastPaused(false);
+				setToastRemainingMs(durationMs);
+				setToast({
+					...notice,
+					id: Date.now(),
+					durationMs
+				});
+			}, []);
 			(0, react.useEffect)(() => {
-				if (!toast) return;
-				const ms = toast.actionId ? 5e3 : 2800;
-				const timer = setTimeout(() => setToast(null), ms);
-				return () => clearTimeout(timer);
-			}, [toast]);
-			const openCandidate = (0, react.useCallback)((applicationId) => {
+				if (!toast || toastPaused || undoBusy) return;
+				const startedAt = Date.now();
+				const timer = setTimeout(() => setToast(null), Math.max(150, toastRemainingMs));
+				return () => {
+					clearTimeout(timer);
+					const elapsed = Date.now() - startedAt;
+					setToastRemainingMs((prev) => Math.max(150, prev - elapsed));
+				};
+			}, [
+				toast,
+				toastPaused,
+				undoBusy,
+				toastRemainingMs
+			]);
+			const openCandidate = (0, react.useCallback)((applicationId, queue) => {
+				if (queue !== void 0) setCandidateQueue(queue);
 				setRoute({
 					kind: "candidate",
 					applicationId
 				});
 			}, []);
+			(0, react.useEffect)(() => {
+				const onOffline = () => setIsOffline(true);
+				const onOnline = () => {
+					setIsOffline(false);
+					if (route.kind !== "empty") setRefreshNonce((n) => n + 1);
+				};
+				const onVisibility = () => {
+					if (document.visibilityState === "hidden") hiddenAtRef.current = Date.now();
+					else if (document.visibilityState === "visible") {
+						const awayMs = hiddenAtRef.current !== null ? Date.now() - hiddenAtRef.current : 0;
+						hiddenAtRef.current = null;
+						if (awayMs > 3e4 && route.kind !== "empty") setRefreshNonce((n) => n + 1);
+					}
+				};
+				window.addEventListener("offline", onOffline);
+				window.addEventListener("online", onOnline);
+				document.addEventListener("visibilitychange", onVisibility);
+				return () => {
+					window.removeEventListener("offline", onOffline);
+					window.removeEventListener("online", onOnline);
+					document.removeEventListener("visibilitychange", onVisibility);
+				};
+			}, [route.kind]);
 			const openJob = (0, react.useCallback)((jobId) => {
 				setPrevJobId(jobId);
 				setRoute({
@@ -7005,9 +7415,9 @@ window.__ModuleLoader__.load({
 				onRefreshOverview?.();
 			}, [onRefreshOverview]);
 			const handleActionCompleted = (0, react.useCallback)((notice) => {
-				setToast(notice);
+				showToast(notice);
 				onRefreshOverview?.();
-			}, [onRefreshOverview]);
+			}, [onRefreshOverview, showToast]);
 			const handleUndoClick = async () => {
 				if (!toast?.actionId || undoBusy) return;
 				setUndoBusy(true);
@@ -7016,14 +7426,14 @@ window.__ModuleLoader__.load({
 						actionId: toast.actionId,
 						confirmationText: `确认撤销刚刚执行的操作：${toast.message}`
 					});
-					setToast({ message: res.message });
+					showToast({ message: res.message });
 					if (res.undone) {
 						setRefreshNonce((n) => n + 1);
 						onRefreshOverview?.();
 					}
 				} catch (err) {
 					const msg = err?.userMessage || "暂时无法撤销，请稍后刷新核对";
-					setToast({ message: msg });
+					showToast({ message: msg });
 				} finally {
 					setUndoBusy(false);
 				}
@@ -7031,6 +7441,8 @@ window.__ModuleLoader__.load({
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [route.kind !== "empty" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasRoute, {
 				sessionId,
 				route,
+				candidateQueue,
+				isOffline,
 				onBack: handleBack,
 				onSelectApplication: openCandidate,
 				onSelectJob: openJob,
@@ -7050,17 +7462,29 @@ window.__ModuleLoader__.load({
 				className: "ros-toast show",
 				role: "status",
 				"data-testid": "canvas-undo-toast",
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: toast.message }), toast.actionId ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-					type: "button",
-					disabled: undoBusy,
-					"data-testid": "canvas-undo-btn",
-					style: {
-						color: "#A5B4FC",
-						fontWeight: 600
-					},
-					onClick: () => void handleUndoClick(),
-					children: undoBusy ? "撤销中…" : "撤销"
-				}) : null]
+				onMouseEnter: () => setToastPaused(true),
+				onMouseLeave: () => setToastPaused(false),
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: toast.message }),
+					toast.actionId ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						disabled: undoBusy,
+						"data-testid": "canvas-undo-btn",
+						style: {
+							color: "#A5B4FC",
+							fontWeight: 600
+						},
+						onClick: () => void handleUndoClick(),
+						children: undoBusy ? "撤销中…" : "撤销"
+					}) : null,
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "ros-toast-bar",
+						style: {
+							animationDuration: `${toast.durationMs}ms`,
+							animationPlayState: toastPaused || undoBusy ? "paused" : "running"
+						}
+					}, toast.id)
+				]
 			}) : null] });
 		}
 		// src/client/recruiting/styles.ts
