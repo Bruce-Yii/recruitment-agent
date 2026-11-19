@@ -75,3 +75,11 @@
 机检基线已下调：**11 → 8**（仍缺：compound、config×4、email/authorize、email/send-authorized、feishu/import）。
 真点基线（`runbook-result.json`）：PASS 7 / FAIL 0 / BLOCKED 8——但**那 8 个 BLOCKED 是驱动脚本没跟上新 testid**，
 不是界面缺失；已让 `owner-runbook-tooling` 按上表更新选择器后重跑。
+
+### 5.1 2026-11-20 补记：入口可达 ≠ 能写（P0 会话头）
+
+真点复跑（`--fresh`）抓到的下一层问题：画布写请求 `canvas-actions.ts` **缺 `X-DSH-Session` 头**，
+服务端一律 `400 SESSION_REQUIRED`（入口、弹窗、填值、提交都真点成功，库里零写入）。
+- 状态修正：上表 testid 只证明 **DOM 可达（🟢）**，**写入未通 = 业务上仍是 🔴**，直到会话头接上；
+- 任务书：`design/v4/frontend-task-08b-session-header.md`（P0，含 5 处修改与验收）。
+- 教训：V3-0「入口可达」之后还要一条 **V3-1「真点后库里真的有」**——两者都过才算完成。
