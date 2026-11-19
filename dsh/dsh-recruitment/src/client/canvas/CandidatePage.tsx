@@ -1,8 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import {
-  normalizeApplicationDetail,
-  type CandidateCanvasVM,
-} from '../normalize-canvas.ts';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { normalizeApplicationDetail, type CandidateCanvasVM } from '../normalize-canvas.ts';
 import {
   CanvasEmptyState,
   CanvasErrorState,
@@ -11,16 +8,18 @@ import {
   SequentialRoundRail,
   StatusLabel,
 } from './bits/index.ts';
-import type { UndoToastPayload } from './CanvasRoute.tsx';
+import type { ActiveUploadTask, UndoToastPayload } from './CanvasRoute.tsx';
 import {
-  fetchInterviewFreeSlots,
-  postApplicationTransfer,
-  postCandidateConstraint,
-  postInterviewSchedule,
+  postApplicationStar,
   postRebindMinute,
+  uploadResumeRaw,
   type CanvasActionError,
-  type FreeSlotsResult,
 } from './canvas-actions.ts';
+import {
+  CandidateActionModal,
+  type CandidateModalKind,
+  type CandidateModalSuccess,
+} from './CandidateActionModal.tsx';
 
 export type CanvasFetcher = (path: string) => Promise<unknown>;
 
@@ -28,70 +27,53 @@ export interface CandidatePageProps {
   applicationId: string;
   onBack?: () => void;
   onOpenJob?: (jobId: string) => void;
+  onUploadStarted?: (task: ActiveUploadTask) => void;
   onActionCompleted?: (notice: UndoToastPayload) => void;
   refreshNonce?: number;
   fetcher: CanvasFetcher;
 }
 
 type DocTab = 'resume' | 'transcript' | 'original';
-type CandidateModalKind = 'pin' | 'handoff' | 'transfer' | 'schedule' | null;
 
 export function CandidatePage({
   applicationId,
   onBack,
   onOpenJob,
+  onUploadStarted,
   onActionCompleted,
   refreshNonce = 0,
   fetcher,
 }: CandidatePageProps) {
   const [vm, setVm] = useState<CandidateCanvasVM | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeCrit, setActiveCrit] = useState<string>('');
+  const [activeCrit, setActiveCrit] = useState('');
   const [docTab, setDocTab] = useState<DocTab>('resume');
   const [expandedTs, setExpandedTs] = useState<number | null>(null);
-  const [timelineOpen, setTimelineOpen] = useState<boolean>(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
 
-  // T4-2: Confirmation modal state for PIN / HANDOFF / TRANSFER
-  const [modalKind, setModalKind] = useState<CandidateModalKind>(null);
-  const [inputText, setInputText] = useState<string>('');
-  const [targetJobId, setTargetJobId] = useState<string>('');
-  const [confirmText, setConfirmText] = useState<string>('');
-  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [modalKind, setModalKind] = useState<CandidateModalKind | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
+  const [starredLocal, setStarredLocal] = useState(false);
+  const [starBusy, setStarBusy] = useState(false);
+  const [candUploading, setCandUploading] = useState(false);
+  const candFileRef = useRef<HTMLInputElement | null>(null);
 
-  // T7-1: Free slots inside schedule / reschedule / replace-interviewer modal
-  const [freeSlotsLoading, setFreeSlotsLoading] = useState<boolean>(false);
-  const [freeSlots, setFreeSlots] = useState<FreeSlotsResult | null>(null);
-  const [scheduleTime, setScheduleTime] = useState<string>('');
-  const [scheduleEndTime, setScheduleEndTime] = useState<string>('');
-  const [replaceInterviewer, setReplaceInterviewer] = useState<string>('');
-
-  // T7-2: Explicit human confirmation prompt to rebind Feishu Minutes recording after replacing interviewer
-  const [pendingRebind, setPendingRebind] = useState<{
-    interviewId: string;
-    fromActorId: string;
-    toActorId: string;
-    minuteToken: string;
-  } | null>(null);
-  const [rebindConfirmText, setRebindConfirmText] = useState<string>('');
-  const [rebindSubmitting, setRebindSubmitting] = useState<boolean>(false);
+  const [pendingRebind, setPendingRebind] = useState<CandidateModalSuccess['rebindPrompt'] | null>(null);
+  const [rebindConfirmText, setRebindConfirmText] = useState('');
+  const [rebindSubmitting, setRebindSubmitting] = useState(false);
 
   const load = useCallback(
     async (cancelledRef?: { current: boolean }) => {
       setLoading(true);
       setError(null);
       try {
-        const raw = await fetcher(
-          `/recruitment/api/recruiting/applications/${encodeURIComponent(applicationId)}`,
-        );
+        const raw = await fetcher(`/recruitment/api/recruiting/applications/${encodeURIComponent(applicationId)}`);
         if (cancelledRef?.current) return;
         const next = normalizeApplicationDetail(raw);
         setVm(next);
+        setStarredLocal(next.starred);
         setActiveCrit(next.criteria[0]?.key || '');
-        setDocTab('resume');
-        setExpandedTs(null);
-        setTimelineOpen(false);
       } catch {
         if (cancelledRef?.current) return;
         setError('暂时没能读取到这位候选人的档案，请稍后重试。');
@@ -110,150 +92,20 @@ export function CandidatePage({
     };
   }, [load, refreshNonce]);
 
-  const openActionModal = (kind: Exclude<CandidateModalKind, null>) => {
-    if (kind === 'schedule' && vm) {
-      setFreeSlots(null);
-      setScheduleTime('');
-      setScheduleEndTime('');
-      setReplaceInterviewer('');
-      setFreeSlotsLoading(true);
-      const actorIds = vm.rounds.map((r) => r.leadActorId).filter((x): x is string => Boolean(x));
-      void fetchInterviewFreeSlots({
-        applicationId: vm.applicationId,
-        interviewerActorIds: actorIds,
-        days: 5,
-        durationMinutes: 45,
-      })
-        .then((res) => setFreeSlots(res))
-        .finally(() => setFreeSlotsLoading(false));
-    }
-    setActionFeedback(null);
-    setInputText('');
-    setTargetJobId('');
-    setConfirmText(
-      kind === 'pin'
-        ? `确认置顶 ${vm?.candidateName || '候选人'} 的关键约束`
-        : kind === 'handoff'
-          ? `确认为 ${vm?.candidateName || '候选人'} 留下下一轮面试交接追问`
-          : kind === 'schedule'
-            ? `确认为 ${vm?.candidateName || '候选人'} 安排/改期面试`
-            : `确认将 ${vm?.candidateName || '候选人'} 跨岗调剂`,
-    );
-    setModalKind(kind);
-  };
-
-  const closeActionModal = () => {
-    if (submitting) return;
+  const handleModalSuccess = async (res: CandidateModalSuccess) => {
     setModalKind(null);
-  };
-
-  const handleModalSubmit = async () => {
-    if (!vm || !modalKind || submitting) return;
-    const confirmationText = confirmText.trim();
-    if (!confirmationText) {
-      setActionFeedback({ tone: 'red', text: '请先填写确认原话后再提交。' });
-      return;
-    }
-
-    if ((modalKind === 'pin' || modalKind === 'handoff') && !inputText.trim()) {
-      setActionFeedback({
-        tone: 'red',
-        text: modalKind === 'pin' ? '请填写需要置顶的约束内容。' : '请填写给下一轮面试官的交接追问。',
-      });
-      return;
-    }
-
-    if (modalKind === 'transfer' && !targetJobId.trim()) {
-      setActionFeedback({ tone: 'red', text: '请填写目标岗位编号。' });
-      return;
-    }
-    if (modalKind === 'schedule' && !scheduleTime.trim()) {
-      setActionFeedback({ tone: 'red', text: '请选择一个空闲时段，或手动填写面试时间。' });
-      return;
-    }
-
-    setSubmitting(true);
-    setActionFeedback(null);
-    try {
-      if (modalKind === 'pin') {
-        const pinRes = await postCandidateConstraint({
-          action: 'PIN',
-          applicationId: vm.applicationId,
-          text: inputText.trim(),
-          source: 'CHAT',
-          confirmationText,
-        });
-        setModalKind(null);
-        await load();
-        const msg = '已置顶候选人约束，并同步至档案与面试简报。';
-        setActionFeedback({ tone: 'green', text: msg });
-        onActionCompleted?.({ message: msg, actionId: pinRes.action_id });
-      } else if (modalKind === 'handoff') {
-        const latestRound = vm.rounds[vm.rounds.length - 1];
-        const hoRes = await postCandidateConstraint({
-          action: 'HANDOFF',
-          applicationId: vm.applicationId,
-          interviewId: latestRound?.interviewId || undefined,
-          text: inputText.trim(),
-          source: 'CHAT',
-          confirmationText,
-        });
-        setModalKind(null);
-        await load();
-        const msg = '已写入下一轮交接追问，面试官可第一眼看到。';
-        setActionFeedback({ tone: 'green', text: msg });
-        onActionCompleted?.({ message: msg, actionId: hoRes.action_id });
-      } else if (modalKind === 'transfer') {
-        const trRes = await postApplicationTransfer({
-          applicationId: vm.applicationId,
-          targetJobId: targetJobId.trim(),
-          confirmationText,
-        });
-        setModalKind(null);
-        await load();
-        const msg = '已完成跨岗调剂，原岗位档案完整保留。';
-        setActionFeedback({ tone: 'green', text: msg });
-        onActionCompleted?.({ message: msg, actionId: trRes.action_id });
-      } else if (modalKind === 'schedule') {
-        const latestRound = vm.rounds[vm.rounds.length - 1];
-        const isReplace = replaceInterviewer.trim() !== '';
-        const scRes = await postInterviewSchedule({
-          applicationId: vm.applicationId,
-          mode: isReplace ? 'reschedule' : 'schedule',
-          replaceInterviewer: isReplace ? replaceInterviewer.trim() : undefined,
-          startAt: scheduleTime.trim(),
-          endAt: scheduleEndTime.trim() || undefined,
-          confirmationText,
-        });
-        setModalKind(null);
-        await load();
-        const msg = isReplace ? '已完成改期并更换面试官。' : '已锁定面试时间并同步排期。';
-        setActionFeedback({ tone: 'green', text: msg });
-        onActionCompleted?.({ message: msg, actionId: scRes.action_id });
-
-        // T7-2: Only prompt for minute rebind if interviewer was replaced AND minute_token is non-empty
-        if (isReplace && latestRound?.minuteToken && latestRound.interviewId) {
-          setPendingRebind({
-            interviewId: latestRound.interviewId,
-            fromActorId: latestRound.leadActorId || '',
-            toActorId: replaceInterviewer.trim(),
-            minuteToken: latestRound.minuteToken,
-          });
-          setRebindConfirmText(`确认把 ${vm.candidateName} 这场面试的录音归属改到新面试官`);
-        }
-      }
-    } catch (err) {
-      const msg = (err as CanvasActionError)?.userMessage || '这项操作暂时未能完成，请稍后重试。';
-      setActionFeedback({ tone: 'red', text: msg });
-    } finally {
-      setSubmitting(false);
+    await load();
+    setActionFeedback({ tone: 'green', text: res.message });
+    onActionCompleted?.({ message: res.message, actionId: res.actionId });
+    if (res.rebindPrompt) {
+      setPendingRebind(res.rebindPrompt);
+      setRebindConfirmText(`确认把 ${vm?.candidateName || '候选人'} 这场面试的录音归属改到新面试官`);
     }
   };
 
   const handleRebindMinute = async () => {
     if (!pendingRebind || rebindSubmitting) return;
-    const confirmationText = rebindConfirmText.trim();
-    if (!confirmationText) {
+    if (!rebindConfirmText.trim()) {
       setActionFeedback({ tone: 'red', text: '请先填写一句确认原话再修改录音归属。' });
       return;
     }
@@ -265,16 +117,16 @@ export function CandidatePage({
         fromActorId: pendingRebind.fromActorId,
         toActorId: pendingRebind.toActorId,
         minuteToken: pendingRebind.minuteToken,
-        confirmationText,
+        confirmationText: rebindConfirmText.trim(),
         dryRun: false,
       });
       setPendingRebind(null);
       setActionFeedback({ tone: 'green', text: res.message });
     } catch (err) {
-      const msg =
-        (err as CanvasActionError)?.userMessage ||
-        '录音归属修改未能完成。面评不会因此丢，但录音归属仍是旧的。';
-      setActionFeedback({ tone: 'red', text: msg });
+      setActionFeedback({
+        tone: 'red',
+        text: (err as CanvasActionError)?.userMessage || '录音归属修改未能完成。面评不会因此丢，但录音归属仍是旧的。',
+      });
     } finally {
       setRebindSubmitting(false);
     }
@@ -285,19 +137,11 @@ export function CandidatePage({
       <>
         <header className="ros-canvas-head">
           <div className="ros-head-left">
-            {onBack ? (
-              <button type="button" className="ros-crumb-link" onClick={onBack}>
-                ← 返回
-              </button>
-            ) : null}
+            {onBack ? <button type="button" className="ros-crumb-link" onClick={onBack}>← 返回</button> : null}
             <span className="ros-crumb-cur">候选人档案</span>
           </div>
         </header>
-        <div className="ros-canvas-body">
-          <div className="ros-canvas-inner">
-            <CanvasLoadingState label="正在读取候选人档案与评估依据…" />
-          </div>
-        </div>
+        <div className="ros-canvas-body"><div className="ros-canvas-inner"><CanvasLoadingState label="正在读取候选人档案与评估依据…" /></div></div>
       </>
     );
   }
@@ -307,19 +151,11 @@ export function CandidatePage({
       <>
         <header className="ros-canvas-head">
           <div className="ros-head-left">
-            {onBack ? (
-              <button type="button" className="ros-crumb-link" onClick={onBack}>
-                ← 返回
-              </button>
-            ) : null}
+            {onBack ? <button type="button" className="ros-crumb-link" onClick={onBack}>← 返回</button> : null}
             <span className="ros-crumb-cur">候选人档案</span>
           </div>
         </header>
-        <div className="ros-canvas-body">
-          <div className="ros-canvas-inner">
-            <CanvasErrorState message={error || undefined} onRetry={() => void load()} />
-          </div>
-        </div>
+        <div className="ros-canvas-body"><div className="ros-canvas-inner"><CanvasErrorState message={error || undefined} onRetry={() => void load()} /></div></div>
       </>
     );
   }
@@ -331,34 +167,17 @@ export function CandidatePage({
       <header className="ros-canvas-head">
         <div className="ros-head-left">
           <div className="ros-crumb-bar">
-            {onBack ? (
-              <>
-                <button type="button" className="ros-crumb-link" onClick={onBack}>
-                  ← 返回
-                </button>
-                <span>/</span>
-              </>
-            ) : null}
+            {onBack ? (<><button type="button" className="ros-crumb-link" onClick={onBack}>← 返回</button><span>/</span></>) : null}
             {onOpenJob && vm.jobId ? (
-              <button
-                type="button"
-                className="ros-crumb-link"
-                onClick={() => onOpenJob(vm.jobId)}
-              >
-                {vm.jobTitle}
-              </button>
+              <button type="button" className="ros-crumb-link" onClick={() => onOpenJob(vm.jobId)}>{vm.jobTitle}</button>
             ) : (
               <span>{vm.jobTitle}</span>
             )}
-            <span>/</span>
-            <span>{vm.stageLabel}</span>
-            <span>/</span>
+            <span>/</span><span>{vm.stageLabel}</span><span>/</span>
             <span className="ros-crumb-cur">{vm.candidateName}</span>
           </div>
         </div>
-        <div className="ros-head-right">
-          <FactLabelsBar labels={vm.factLabels} />
-        </div>
+        <div className="ros-head-right"><FactLabelsBar labels={vm.factLabels} /></div>
       </header>
 
       <div className="ros-canvas-body">
@@ -377,110 +196,82 @@ export function CandidatePage({
             </div>
           ) : null}
 
-          {/* T7-2: 换面试官后若存在 minute_token，提示人工确认是否重绑妙记录音归属 */}
           {pendingRebind ? (
             <div className="ros-risk-note" data-testid="rebind-minute-prompt" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ fontWeight: 600, color: 'var(--ink)' }}>
-                这把录音的归属还挂在旧面试官名下，要改到新人吗？
-              </div>
+              <div style={{ fontWeight: 600, color: 'var(--ink)' }}>这把录音的归属还挂在旧面试官名下，要改到新人吗？</div>
               <label className="ros-m-field">
                 <span>确认原话（外部写入必填）</span>
-                <input
-                  value={rebindConfirmText}
-                  onChange={(e) => setRebindConfirmText(e.target.value)}
-                  placeholder="输入确认原话"
-                />
+                <input value={rebindConfirmText} onChange={(e) => setRebindConfirmText(e.target.value)} />
               </label>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  className="ros-btn"
-                  disabled={rebindSubmitting}
-                  onClick={() => setPendingRebind(null)}
-                >
-                  暂不修改
-                </button>
-                <button
-                  type="button"
-                  className="ros-btn dark"
-                  disabled={rebindSubmitting}
-                  data-testid="rebind-minute-confirm"
-                  onClick={() => void handleRebindMinute()}
-                >
+                <button type="button" className="ros-btn" disabled={rebindSubmitting} onClick={() => setPendingRebind(null)}>暂不修改</button>
+                <button type="button" className="ros-btn dark" disabled={rebindSubmitting} data-testid="rebind-minute-confirm" onClick={() => void handleRebindMinute()}>
                   {rebindSubmitting ? '处理中…' : '确认改到新人'}
                 </button>
               </div>
             </div>
           ) : null}
 
-          {/* 1. 档案头 */}
           <div className="ros-doc-head">
             <div>
               <div className="ros-doc-name">{vm.candidateName}</div>
               <div className="ros-doc-meta">
-                {vm.jobTitle}（{vm.jobCode}）· 档案号 <span className="num">{vm.shortRef}</span> · 标准{' '}
-                {vm.rubricVersionLabel}
+                {vm.jobTitle}（{vm.jobCode}）· 档案号 <span className="num">{vm.shortRef}</span> · 标准 {vm.rubricVersionLabel}
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-              <StatusLabel text={vm.stageLabel} tone={vm.isArchived ? '' : 'iris'} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button
+                  type="button"
+                  data-testid="canvas-action-star"
+                  disabled={starBusy}
+                  title={starredLocal ? '取消星标主推' : '设为星标主推'}
+                  style={{ fontSize: '16px', color: starredLocal ? 'var(--amber)' : 'var(--soft)' }}
+                  onClick={() => {
+                    if (starBusy) return;
+                    setStarBusy(true);
+                    void postApplicationStar({ applicationId: vm.applicationId, starred: !starredLocal })
+                      .then((res) => {
+                        setStarredLocal(Boolean(res.starred));
+                        setActionFeedback({ tone: 'green', text: res.starred ? '已标记为主推候选人' : '已取消星标标记' });
+                      })
+                      .catch((err) => setActionFeedback({ tone: 'red', text: (err as CanvasActionError)?.userMessage || '星标更新失败' }))
+                      .finally(() => setStarBusy(false));
+                  }}
+                >
+                  {starredLocal ? '★' : '☆'}
+                </button>
+                <StatusLabel text={vm.stageLabel} tone={vm.isArchived ? '' : 'iris'} />
+              </div>
               <span className="ros-sec-meta">{vm.lifecycleLabel}</span>
             </div>
           </div>
 
-          {vm.stageBlockedReason ? (
-            <div className="ros-risk-note">{vm.stageBlockedReason}</div>
-          ) : null}
+          {vm.stageBlockedReason ? <div className="ros-risk-note">{vm.stageBlockedReason}</div> : null}
 
-          {/* 2. 核心提炼与下一步 */}
           <div className="ros-doc-block">
             <div className="ros-sec-meta">当前状态与提炼</div>
-            <div style={{ fontSize: '14.5px', lineHeight: 1.78, color: 'var(--ink)' }}>
-              {vm.summaryText}
-            </div>
+            <div style={{ fontSize: '14.5px', lineHeight: 1.78, color: 'var(--ink)' }}>{vm.summaryText}</div>
           </div>
 
-          {/* 3. 岗位标准逐条对照（绿/黄/红，点击联动高亮简历） */}
           <div className="ros-doc-block">
-            <div className="ros-sec-meta">
-              岗位标准对照 · {vm.rubricVersionLabel}（点击联动原文）
-            </div>
+            <div className="ros-sec-meta">岗位标准对照 · {vm.rubricVersionLabel}（点击联动原文）</div>
             {vm.criteria.length > 0 ? (
               <div>
                 {vm.criteria.map((cr, idx) => (
-                  <div
-                    key={cr.key}
-                    className={`ros-crit-item ${cr.key === activeCrit ? 'active' : ''}`}
-                    onClick={() => setActiveCrit(cr.key)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setActiveCrit(cr.key);
-                      }
-                    }}
-                  >
+                  <div key={cr.key} className={`ros-crit-item ${cr.key === activeCrit ? 'active' : ''}`} onClick={() => setActiveCrit(cr.key)} role="button" tabIndex={0}>
                     <span style={{ fontSize: '13.5px', fontWeight: 500 }}>
-                      <span className="num" style={{ color: 'var(--soft)', marginRight: 8 }}>
-                        0{idx + 1}
-                      </span>
+                      <span className="num" style={{ color: 'var(--soft)', marginRight: 8 }}>0{idx + 1}</span>
                       {cr.label}
-                      <span className="ros-sec-meta" style={{ marginLeft: 8 }}>
-                        {cr.kindLabel}
-                        {cr.weightText ? ` · ${cr.weightText}` : ''}
-                      </span>
+                      <span className="ros-sec-meta" style={{ marginLeft: 8 }}>{cr.kindLabel}{cr.weightText ? ` · ${cr.weightText}` : ''}</span>
                     </span>
                     <StatusLabel text={cr.statusText} tone={cr.level} />
                   </div>
                 ))}
               </div>
-            ) : (
-              <CanvasEmptyState title="暂无岗位标准维度" description="该岗位尚未配置或锁定考核标准。" />
-            )}
+            ) : <CanvasEmptyState title="暂无岗位标准维度" />}
           </div>
 
-          {/* 4. 逐轮面试进展（独立呈现，严禁求平均分） */}
           <div className="ros-doc-block">
             <div className="ros-sec-meta">逐轮面试进展（不求平均分）</div>
             {vm.rounds.length > 0 ? (
@@ -491,53 +282,50 @@ export function CandidatePage({
                     <div key={rd.id} className="ros-clean-row static">
                       <div>
                         <div style={{ fontSize: '13.5px', fontWeight: 600 }}>
-                          {rd.roundLabel}
-                          <span className="ros-sec-meta num" style={{ marginLeft: 8 }}>
-                            {rd.scheduleText}
-                          </span>
+                          {rd.roundLabel}<span className="ros-sec-meta num" style={{ marginLeft: 8 }}>{rd.scheduleText}</span>
                         </div>
                         <div style={{ fontSize: '12.5px', color: 'var(--muted)', marginTop: 2 }}>
                           {rd.detailText} · {rd.scorecardsSummary} · {rd.transcriptStateLabel}
                           {rd.overdueCount > 0 ? ` · ${rd.overdueCount} 份面评已超时` : ''}
                         </div>
                       </div>
-                      <StatusLabel
-                        text={rd.statusText}
-                        tone={rd.statusTone === 'done' ? 'green' : rd.statusTone === 'caution' ? 'amber' : 'iris'}
-                      />
+                      <StatusLabel text={rd.statusText} tone={rd.statusTone === 'done' ? 'green' : rd.statusTone === 'caution' ? 'amber' : 'iris'} />
                     </div>
                   ))}
                 </div>
               </>
-            ) : (
-              <CanvasEmptyState title="尚未安排面试" description="当前还没有进入面试轮次。" />
-            )}
+            ) : <CanvasEmptyState title="尚未安排面试" description="当前还没有进入面试轮次。" />}
           </div>
 
-          {/* 5. 简历分段原位高亮 / 飞书妙记 / 原件预览 */}
           <div className="ros-doc-block">
-            <div style={{ display: 'flex', gap: 16 }}>
-              <button
-                type="button"
-                className={`ros-text-link ${docTab === 'resume' ? 'active' : ''}`}
-                onClick={() => setDocTab('resume')}
-              >
-                简历原文
-              </button>
-              <button
-                type="button"
-                className={`ros-text-link ${docTab === 'transcript' ? 'active' : ''}`}
-                onClick={() => setDocTab('transcript')}
-              >
-                飞书妙记
-              </button>
-              <button
-                type="button"
-                className={`ros-text-link ${docTab === 'original' ? 'active' : ''}`}
-                onClick={() => setDocTab('original')}
-              >
-                原件预览
-              </button>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button type="button" className={`ros-text-link ${docTab === 'resume' ? 'active' : ''}`} onClick={() => setDocTab('resume')}>简历原文</button>
+              <button type="button" className={`ros-text-link ${docTab === 'transcript' ? 'active' : ''}`} onClick={() => setDocTab('transcript')}>飞书妙记</button>
+              <button type="button" className={`ros-text-link ${docTab === 'original' ? 'active' : ''}`} onClick={() => setDocTab('original')}>原件预览</button>
+              <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 12 }}>
+                <input
+                  ref={candFileRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.rtf,.txt"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (!file || candUploading) return;
+                    setCandUploading(true);
+                    void uploadResumeRaw(file, vm.jobId)
+                      .then((started) => onUploadStarted?.(started))
+                      .catch((err) => setActionFeedback({ tone: 'red', text: (err as CanvasActionError)?.userMessage || '上传未能提交' }))
+                      .finally(() => setCandUploading(false));
+                  }}
+                />
+                <button type="button" className="ros-text-link" disabled={candUploading} data-testid="canvas-action-candidate-upload" onClick={() => candFileRef.current?.click()}>
+                  {candUploading ? '上传中…' : '上传简历'}
+                </button>
+                <button type="button" className="ros-text-link" data-testid="canvas-action-transcript-import" onClick={() => setModalKind('transcript_import')}>
+                  导入转写
+                </button>
+              </span>
             </div>
 
             {docTab === 'resume' ? (
@@ -548,21 +336,14 @@ export function CandidatePage({
                       <div className="ros-resume-group">{sec.title}</div>
                       {sec.items.map((it) => {
                         lineNo += 1;
-                        const noStr = lineNo < 10 ? `0${lineNo}` : String(lineNo);
                         return (
-                          <div
-                            key={it.id}
-                            className={`ros-doc-line ${it.matchKey === activeCrit ? 'active' : ''}`}
-                            onClick={() => setActiveCrit(it.matchKey)}
-                          >
-                            <span className="ros-doc-no num">{noStr}</span>
+                          <div key={it.id} className={`ros-doc-line ${it.matchKey === activeCrit ? 'active' : ''}`} onClick={() => setActiveCrit(it.matchKey)}>
+                            <span className="ros-doc-no num">{lineNo < 10 ? `0${lineNo}` : String(lineNo)}</span>
                             <div>
                               {it.heading || it.period || it.pageLabel ? (
                                 <div className="ros-exp-meta">
                                   <span className="ros-exp-co">{it.heading || ''}</span>
-                                  <span className="ros-exp-time num">
-                                    {it.period || it.pageLabel || ''}
-                                  </span>
+                                  <span className="ros-exp-time num">{it.period || it.pageLabel || ''}</span>
                                 </div>
                               ) : null}
                               <div>{it.body}</div>
@@ -573,56 +354,31 @@ export function CandidatePage({
                     </div>
                   ))}
                 </div>
-              ) : (
-                <CanvasEmptyState title="还没有简历原件" description="当前申请尚未上传或解析出简历内容。" />
-              )
+              ) : <CanvasEmptyState title="还没有简历原件" description="当前申请尚未上传或解析出简历内容。" />
             ) : docTab === 'transcript' ? (
               vm.hasTranscript ? (
                 <div>
                   {vm.transcriptItems.map((tr, idx) => (
-                    <div
-                      key={tr.id}
-                      className={`ros-doc-line ${tr.matchKey === activeCrit ? 'active' : ''}`}
-                      onClick={() => setExpandedTs(expandedTs === idx ? null : idx)}
-                    >
+                    <div key={tr.id} className={`ros-doc-line ${tr.matchKey === activeCrit ? 'active' : ''}`} onClick={() => setExpandedTs(expandedTs === idx ? null : idx)}>
                       <span className="ros-doc-no num">0{idx + 1}</span>
                       <div>
-                        <div>
-                          {tr.timestamp ? <span className="ros-ts-badge num">{tr.timestamp}</span> : null}
-                          {tr.summary}
-                        </div>
-                        {tr.context && expandedTs === idx ? (
-                          <div className="ros-jd-box" style={{ marginTop: 8, padding: '10px 12px' }}>
-                            {tr.context}
-                          </div>
-                        ) : null}
+                        <div>{tr.timestamp ? <span className="ros-ts-badge num">{tr.timestamp}</span> : null}{tr.summary}</div>
+                        {tr.context && expandedTs === idx ? <div className="ros-jd-box" style={{ marginTop: 8, padding: '10px 12px' }}>{tr.context}</div> : null}
                       </div>
                     </div>
                   ))}
                 </div>
-              ) : (
-                <CanvasEmptyState title="还没有转录" description="面试完成后将自动同步飞书妙记录音转写。" />
-              )
+              ) : <CanvasEmptyState title="还没有转录" description="面试完成后将自动同步飞书妙记录音转写。" />
             ) : vm.hasResumeMaterial && vm.materialContentUrl ? (
               <div className="ros-jd-box">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                   <span>{vm.materialFileName || '简历原件'}</span>
-                  <a
-                    href={vm.materialContentUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="ros-text-link active"
-                  >
-                    在新标签页查看原件 ↗
-                  </a>
+                  <a href={vm.materialContentUrl} target="_blank" rel="noreferrer" className="ros-text-link active">在新标签页查看原件 ↗</a>
                 </div>
               </div>
-            ) : (
-              <CanvasEmptyState title="还没有简历原件" description="当前申请尚未关联可预览的二进制原件。" />
-            )}
+            ) : <CanvasEmptyState title="还没有简历原件" description="当前申请尚未关联可预览的二进制原件。" />}
           </div>
 
-          {/* 6. 初筛依据 */}
           {vm.screeningBasis.length > 0 ? (
             <div className="ros-doc-block">
               <div className="ros-sec-meta">初筛依据</div>
@@ -637,31 +393,16 @@ export function CandidatePage({
             </div>
           ) : null}
 
-          {/* 7. 不可执行动作原因透明提示 */}
           {vm.unavailableActions.length > 0 ? (
             <div className="ros-risk-note">
               {vm.unavailableActions.map((act) => (
-                <div key={act.key}>
-                  「{act.label}」暂不可执行：{act.reason || '当前阶段或条件尚未满足'}
-                </div>
+                <div key={act.key}>「{act.label}」暂不可执行：{act.reason || '当前阶段或条件尚未满足'}</div>
               ))}
             </div>
           ) : null}
 
-          {/* 8. 全链路动态留痕 */}
           <div>
-            <div
-              className="ros-auto-toggle"
-              onClick={() => setTimelineOpen((v) => !v)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setTimelineOpen((v) => !v);
-                }
-              }}
-            >
+            <div className="ros-auto-toggle" onClick={() => setTimelineOpen((v) => !v)} role="button" tabIndex={0}>
               <span>全链路动态留痕（{vm.timeline.length}）</span>
               <span>{timelineOpen ? '收起 ▴' : '展开 ▾'}</span>
             </div>
@@ -675,198 +416,35 @@ export function CandidatePage({
                     </div>
                   ))}
                 </div>
-              ) : (
-                <CanvasEmptyState title="暂无动态留痕" />
-              )
+              ) : <CanvasEmptyState title="暂无动态留痕" />
             ) : null}
           </div>
 
-          {/* 9. v4 底部轻量确认入口（置顶约束 / 下一轮交接 / 跨岗调剂，均走居中确认卡） */}
           <div className="ros-doc-foot">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className="ros-text-link"
-                data-testid="canvas-action-pin"
-                onClick={() => openActionModal('pin')}
-              >
-                置顶约束
-              </button>
-              <button
-                type="button"
-                className="ros-text-link"
-                data-testid="canvas-action-handoff"
-                onClick={() => openActionModal('handoff')}
-              >
-                下一轮交接
-              </button>
-              <button
-                type="button"
-                className="ros-text-link"
-                data-testid="canvas-action-schedule"
-                onClick={() => openActionModal('schedule')}
-              >
-                约面 / 改期换人
-              </button>
-              <button
-                type="button"
-                className="ros-text-link"
-                data-testid="canvas-action-transfer"
-                onClick={() => openActionModal('transfer')}
-              >
-                跨岗调剂
-              </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <button type="button" className="ros-text-link" data-testid="canvas-action-pin" onClick={() => setModalKind('pin')}>置顶约束</button>
+              <button type="button" className="ros-text-link" data-testid="canvas-action-handoff" onClick={() => setModalKind('handoff')}>下一轮交接</button>
+              <button type="button" className="ros-text-link" data-testid="canvas-action-schedule" onClick={() => setModalKind('schedule')}>约面 / 改期换人</button>
+              <button type="button" className="ros-text-link" data-testid="canvas-action-transfer" onClick={() => setModalKind('transfer')}>跨岗调剂</button>
+              <button type="button" className="ros-text-link" data-testid="canvas-action-stage-advance" onClick={() => setModalKind('stage_advance')}>推进阶段 / 跳轮</button>
+              <button type="button" className="ros-text-link" data-testid="canvas-action-no-show" onClick={() => setModalKind('no_show')}>标记未出席</button>
+              <button type="button" className="ros-text-link" data-testid="canvas-action-email" onClick={() => setModalKind('email')}>发邮件</button>
             </div>
-            <span className="ros-sec-meta">高风险写操作均需人工原话确认</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button type="button" className="ros-btn" data-testid="canvas-action-screening" onClick={() => setModalKind('screening')}>初筛结论</button>
+              <button type="button" className="ros-btn dark" data-testid="canvas-action-decision" onClick={() => setModalKind('decision')}>正式决策</button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Centered Confirmation Modal (v4 tokens) */}
       {modalKind ? (
-        <div
-          className="ros-modal-bg"
-          role="dialog"
-          aria-modal="true"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closeActionModal();
-          }}
-        >
-          <div className="ros-modal">
-            <div style={{ fontSize: '17px', fontWeight: 650 }}>
-              {modalKind === 'pin'
-                ? `为 ${vm.candidateName} 置顶约束`
-                : modalKind === 'handoff'
-                  ? `为 ${vm.candidateName} 留下一轮交接追问`
-                  : modalKind === 'schedule'
-                    ? `面试排期与改期换人 · ${vm.candidateName}`
-                    : `跨岗调剂 · ${vm.candidateName}`}
-            </div>
-
-            {modalKind === 'schedule' ? (
-              <>
-                {freeSlotsLoading ? (
-                  <div className="ros-sec-meta">正在读取飞书日历共同空闲时段…</div>
-                ) : freeSlots ? (
-                  <>
-                    {freeSlots.unavailableBanner ? (
-                      <div className="ros-risk-note" data-testid="calendar-unavailable-banner">
-                        {freeSlots.unavailableBanner}
-                      </div>
-                    ) : null}
-
-                    {freeSlots.unsatisfiedReasons.length > 0 ? (
-                      <div className="ros-risk-note" data-testid="calendar-unsatisfied-banner">
-                        {freeSlots.unsatisfiedReasons.join('；')}
-                      </div>
-                    ) : null}
-
-                    {freeSlots.slots.length > 0 ? (
-                      <div>
-                        <div className="ros-sec-meta" style={{ marginBottom: 7 }}>
-                          飞书日历共同空闲时段（点击填入下方时间）
-                        </div>
-                        <div className="ros-slot-grid" data-testid="free-slots-grid">
-                          {freeSlots.slots.map((slot) => (
-                            <button
-                              key={slot.startIso}
-                              type="button"
-                              className={`ros-slot-pill ${scheduleTime === slot.startIso ? 'active' : ''}`}
-                              onClick={() => {
-                                setScheduleTime(slot.startIso);
-                                setScheduleEndTime(slot.endIso);
-                              }}
-                            >
-                              {slot.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : !freeSlots.calendarUnavailable && freeSlots.unsatisfiedReasons.length === 0 ? (
-                      <div className="ros-sec-meta" data-testid="free-slots-empty">
-                        未来 5 天没有共同空闲，请直接在下方手动填写时间。
-                      </div>
-                    ) : null}
-                  </>
-                ) : null}
-
-                <label className="ros-m-field">
-                  <span>面试开始时间（点选上方时段自动填入，也可手动填写）</span>
-                  <input
-                    data-testid="schedule-time-input"
-                    value={scheduleTime}
-                    onChange={(e) => setScheduleTime(e.target.value)}
-                    placeholder="例如：2026-11-20T15:00:00+08:00 或 明天 15:00"
-                  />
-                </label>
-
-                <label className="ros-m-field">
-                  <span>更换新面试官（留空则仅排期/改期，填写则换人）</span>
-                  <input
-                    data-testid="replace-interviewer-input"
-                    value={replaceInterviewer}
-                    onChange={(e) => setReplaceInterviewer(e.target.value)}
-                    placeholder="选填：输入新面试官姓名或编号"
-                  />
-                </label>
-              </>
-            ) : modalKind === 'transfer' ? (
-              <label className="ros-m-field">
-                <span>目标岗位 ID</span>
-                <input
-                  value={targetJobId}
-                  onChange={(e) => setTargetJobId(e.target.value)}
-                  placeholder="输入目标岗位 ID（原岗位档案将完整保留）"
-                />
-              </label>
-            ) : (
-              <label className="ros-m-field">
-                <span>{modalKind === 'pin' ? '约束内容（≤500 字）' : '给下一轮面试官的追问（≤500 字）'}</span>
-                <textarea
-                  rows={3}
-                  maxLength={500}
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  placeholder={
-                    modalKind === 'pin'
-                      ? '例如：字节 Offer 周五截止 · 期望 45k'
-                      : '例如：重点追问多 Agent 并发状态回滚与幂等处理深度'
-                  }
-                />
-              </label>
-            )}
-
-            <label className="ros-m-field">
-              <span>确认原话（留痕必填）</span>
-              <input
-                value={confirmText}
-                onChange={(e) => setConfirmText(e.target.value)}
-                placeholder="输入一句确认原话"
-              />
-            </label>
-
-            {actionFeedback && actionFeedback.tone === 'red' ? (
-              <div className="ros-risk-note" style={{ borderLeftColor: 'var(--red)', color: 'var(--red)' }}>
-                {actionFeedback.text}
-              </div>
-            ) : null}
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button type="button" className="ros-btn" disabled={submitting} onClick={closeActionModal}>
-                取消
-              </button>
-              <button
-                type="button"
-                className="ros-btn dark"
-                disabled={submitting}
-                data-testid="canvas-modal-submit"
-                onClick={() => void handleModalSubmit()}
-              >
-                {submitting ? '处理中…' : '确认提交'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <CandidateActionModal
+          kind={modalKind}
+          vm={vm}
+          onClose={() => setModalKind(null)}
+          onSuccess={(res) => void handleModalSuccess(res)}
+        />
       ) : null}
     </>
   );
