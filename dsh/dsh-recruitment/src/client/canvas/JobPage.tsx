@@ -5,6 +5,13 @@ import {
   type JobCanvasVM,
 } from '../normalize-canvas.ts';
 import {
+  getCachedCanvasData,
+  getSavedCanvasScroll,
+  prefetchCanvasPath,
+  saveCanvasScroll,
+  setCachedCanvasData,
+} from './canvas-ux.ts';
+import {
   CanvasEmptyState,
   CanvasErrorState,
   CanvasLoadingState,
@@ -53,9 +60,17 @@ export function JobPage({
   refreshNonce = 0,
   fetcher,
 }: JobPageProps) {
-  const [vm, setVm] = useState<JobCanvasVM | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const jobPath = `/recruitment/api/recruiting/jobs/${encodeURIComponent(jobId)}`;
+  const routeKey = `job:${jobId}`;
+  const [vm, setVm] = useState<JobCanvasVM | null>(() => {
+    const cached = getCachedCanvasData(jobPath);
+    return cached !== undefined ? normalizeJobDetail(cached) : null;
+  });
+  const [loading, setLoading] = useState<boolean>(() => getCachedCanvasData(jobPath) === undefined);
+  const [syncing, setSyncing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const bodyScrollRef = useRef<HTMLDivElement | null>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [tab, setTab] = useState<JobTab>('pipeline');
   const [stageFilter, setStageFilter] = useState<StageFilter>('全部');
 
@@ -79,23 +94,35 @@ export function JobPage({
   const [feedback, setFeedback] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
 
   const load = useCallback(
-    async (cancelledRef?: { current: boolean }) => {
-      setLoading(true);
+    async (cancelledRef?: { current: boolean }, opts?: { silent?: boolean }) => {
+      const cached = getCachedCanvasData(jobPath);
+      const hasContent = opts?.silent || cached !== undefined;
+      if (cached !== undefined && !opts?.silent) {
+        const fast = normalizeJobDetail(cached);
+        setVm(fast);
+        setBatchDimKey((prev) => prev || fast.rubricDimensions[0]?.key || '');
+      }
+      if (hasContent) setSyncing(true);
+      else setLoading(true);
       setError(null);
       try {
-        const raw = await fetcher(`/recruitment/api/recruiting/jobs/${encodeURIComponent(jobId)}`);
+        const raw = await fetcher(jobPath);
         if (cancelledRef?.current) return;
+        setCachedCanvasData(jobPath, raw);
         const next = normalizeJobDetail(raw);
         setVm(next);
         setBatchDimKey((prev) => prev || next.rubricDimensions[0]?.key || '');
       } catch {
         if (cancelledRef?.current) return;
-        setError('暂时没能读取到该岗位的详细资料，请稍后重试。');
+        if (!hasContent) setError('暂时没能读取到该岗位的详细资料，请稍后重试。');
       } finally {
-        if (!cancelledRef?.current) setLoading(false);
+        if (!cancelledRef?.current) {
+          setLoading(false);
+          setSyncing(false);
+        }
       }
     },
-    [jobId, fetcher],
+    [jobPath, fetcher],
   );
 
   useEffect(() => {
@@ -105,6 +132,46 @@ export function JobPage({
       cancelledRef.current = true;
     };
   }, [load, refreshNonce]);
+
+  useEffect(() => {
+    const el = bodyScrollRef.current;
+    if (!el || loading) return;
+    el.scrollTop = getSavedCanvasScroll(routeKey);
+  }, [routeKey, loading]);
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!onBack || batchOpen || createOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        const tag = (e.target as HTMLElement | null)?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        e.preventDefault();
+        onBack();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onBack, batchOpen, createOpen]);
+
+  const scheduleRowPrefetch = (applicationId: string) => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      prefetchCanvasPath(`/recruitment/api/recruiting/applications/${encodeURIComponent(applicationId)}`, fetcher);
+    }, 120);
+  };
+
+  const cancelRowPrefetch = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  };
 
   const toggleSelect = (appId: string) => {
     setSelectedIds((prev) => (prev.includes(appId) ? prev.filter((x) => x !== appId) : [...prev, appId]));
@@ -142,7 +209,7 @@ export function JobPage({
       setSelectedIds([]);
       setBatchResults(res.results);
       // Always refresh from server — never locally delete rows
-      await load();
+      await load(undefined, { silent: true });
       if (res.failedCount === 0) {
         const msg = `已批量关闭 ${res.succeededCount} 位候选人申请`;
         setFeedback({ tone: 'green', text: msg });
@@ -318,13 +385,14 @@ export function JobPage({
             </button>
           </div>
         </div>
-        <div className="ros-head-right">
+        <div className="ros-head-right" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {syncing ? <span className="ros-sync-pill"><i className="ros-sync-dot" />同步中</span> : null}
           <FactLabelsBar labels={vm.factLabels} />
         </div>
       </header>
 
-      <div className="ros-canvas-body">
-        <div className="ros-canvas-inner">
+      <div className="ros-canvas-body" ref={bodyScrollRef} onScroll={(e) => saveCanvasScroll(routeKey, e.currentTarget.scrollTop)}>
+        <div key={jobId} className="ros-canvas-inner ros-canvas-enter">
           {feedback ? (
             <div
               className="ros-risk-note"
@@ -448,6 +516,8 @@ export function JobPage({
                       <div
                         key={app.applicationId}
                         className="ros-clean-row"
+                        onMouseEnter={() => scheduleRowPrefetch(app.applicationId)}
+                        onMouseLeave={cancelRowPrefetch}
                         onClick={() => onSelectApplication?.(app.applicationId)}
                         role="button"
                         tabIndex={0}

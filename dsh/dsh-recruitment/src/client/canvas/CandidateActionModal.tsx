@@ -418,6 +418,20 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
     }
   };
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !submitting) {
+        e.preventDefault();
+        onClose();
+      } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !submitBlocked) {
+        e.preventDefault();
+        void handleSubmit();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+
   const titleMap: Record<CandidateModalKind, string> = {
     pin: `为 ${vm.candidateName} 置顶约束`,
     handoff: `为 ${vm.candidateName} 留下一轮交接追问`,
@@ -618,8 +632,8 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
         ) : null}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button type="button" className="ros-btn" disabled={submitting} onClick={onClose}>取消</button>
-          <button type="button" className="ros-btn dark" disabled={submitBlocked} data-testid="canvas-modal-submit" onClick={() => void handleSubmit()}>
+          <button type="button" className="ros-btn" title="Esc 关闭" disabled={submitting} onClick={onClose}>取消</button>
+          <button type="button" className="ros-btn dark" title="⌘/Ctrl + Enter 提交" disabled={submitBlocked} data-testid="canvas-modal-submit" onClick={() => void handleSubmit()}>
             {submitting ? '处理中…' : '确认提交'}
           </button>
         </div>
