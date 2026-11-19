@@ -11825,22 +11825,31 @@ window.__ModuleLoader__.load({
 		* @param value - 服务端原始行。
 		* @returns 安全形状；所有嵌套分支都补齐（不出现 undefined）。
 		*/
-		function normalizeConstraints(value) {
-			if (!Array.isArray(value)) return [];
+		function normalizeConstraints(value, legacy) {
 			const out = [];
-			for (const item of value) {
-				if (!item || typeof item !== "object") continue;
-				const raw = item;
-				const text = typeof raw.text === "string" ? raw.text.trim() : "";
-				if (text === "") continue;
-				const kind = (typeof raw.kind === "string" ? raw.kind.toUpperCase() : "PIN") === "HANDOFF" ? "HANDOFF" : "PIN";
-				out.push({
-					kind,
-					text,
-					source: typeof raw.source === "string" ? raw.source : "",
-					from_previous_round: Boolean(raw.from_previous_round) || kind === "HANDOFF"
-				});
+			const pushAll = (input, kind) => {
+				const list = Array.isArray(input) ? input : input && typeof input === "object" ? [input] : [];
+				for (const item of list) {
+					if (!item || typeof item !== "object") continue;
+					const raw = item;
+					const text = typeof raw.text === "string" ? raw.text.trim() : "";
+					if (text === "") continue;
+					out.push({
+						kind,
+						text,
+						source: typeof raw.source === "string" ? raw.source : "",
+						from_previous_round: kind === "HANDOFF" || Boolean(raw.from_previous_round)
+					});
+				}
+			};
+			if (value && typeof value === "object" && !Array.isArray(value)) {
+				const node = value;
+				pushAll(node.pins, "PIN");
+				pushAll(node.handoff, "HANDOFF");
+				return out;
 			}
+			pushAll(value, "PIN");
+			pushAll(legacy, "PIN");
 			return out;
 		}
 		function normalizeIqs(value) {
@@ -11898,7 +11907,7 @@ window.__ModuleLoader__.load({
 				required_scorecard: asBool(raw.required_scorecard),
 				scorecard_due_at: asText(raw.scorecard_due_at),
 				brief,
-				constraints: normalizeConstraints(raw.constraints),
+				constraints: normalizeConstraints(raw.candidate_constraints, raw.constraints),
 				iqs: normalizeIqs(raw.iqs),
 				round: normalizeRoundEffective(raw, {
 					roundNo,
