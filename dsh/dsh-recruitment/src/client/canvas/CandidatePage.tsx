@@ -1,9 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { normalizeApplicationDetail, type CandidateCanvasVM } from '../normalize-canvas.ts';
 import {
+  getCachedCanvasData,
+  getSavedCanvasScroll,
+  invalidateCachedCanvasData,
+  prefetchCanvasPath,
+  saveCanvasScroll,
+  setCachedCanvasData,
+} from './canvas-ux.ts';
+import {
   CanvasEmptyState,
   CanvasErrorState,
-  CanvasLoadingState,
   FactLabelsBar,
   SequentialRoundRail,
   StatusLabel,
@@ -26,6 +33,8 @@ export type CanvasFetcher = (path: string) => Promise<unknown>;
 export interface CandidatePageProps {
   readonly sessionId?: string;
   applicationId: string;
+  candidateQueue?: readonly string[];
+  onSelectApplication?: (applicationId: string) => void;
   onBack?: () => void;
   onOpenJob?: (jobId: string) => void;
   onUploadStarted?: (task: ActiveUploadTask) => void;
@@ -39,6 +48,8 @@ type DocTab = 'resume' | 'transcript' | 'original';
 export function CandidatePage({
   sessionId,
   applicationId,
+  candidateQueue,
+  onSelectApplication,
   onBack,
   onOpenJob,
   onUploadStarted,
@@ -46,8 +57,16 @@ export function CandidatePage({
   refreshNonce = 0,
   fetcher,
 }: CandidatePageProps) {
-  const [vm, setVm] = useState<CandidateCanvasVM | null>(null);
-  const [loading, setLoading] = useState(true);
+  const detailPath = `/recruitment/api/recruiting/applications/${encodeURIComponent(applicationId)}`;
+  const routeKey = `candidate:${applicationId}`;
+
+  const [vm, setVm] = useState<CandidateCanvasVM | null>(() => {
+    const cached = getCachedCanvasData(detailPath);
+    return cached !== undefined ? normalizeApplicationDetail(cached) : null;
+  });
+  const [loading, setLoading] = useState(() => getCachedCanvasData(detailPath) === undefined);
+  const [syncing, setSyncing] = useState(false);
+  const [flashTick, setFlashTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [activeCrit, setActiveCrit] = useState('');
   const [docTab, setDocTab] = useState<DocTab>('resume');
@@ -57,33 +76,52 @@ export function CandidatePage({
   const [modalKind, setModalKind] = useState<CandidateModalKind | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
   const [starredLocal, setStarredLocal] = useState(false);
+  const [starPop, setStarPop] = useState(false);
   const [starBusy, setStarBusy] = useState(false);
   const [candUploading, setCandUploading] = useState(false);
   const candFileRef = useRef<HTMLInputElement | null>(null);
+  const bodyScrollRef = useRef<HTMLDivElement | null>(null);
 
   const [pendingRebind, setPendingRebind] = useState<CandidateModalSuccess['rebindPrompt'] | null>(null);
   const [rebindConfirmText, setRebindConfirmText] = useState('');
   const [rebindSubmitting, setRebindSubmitting] = useState(false);
 
   const load = useCallback(
-    async (cancelledRef?: { current: boolean }) => {
-      setLoading(true);
+    async (cancelledRef?: { current: boolean }, opts?: { silent?: boolean; flash?: boolean }) => {
+      const cached = getCachedCanvasData(detailPath);
+      const hasContent = opts?.silent || cached !== undefined;
+      if (cached !== undefined && !opts?.silent) {
+        const fast = normalizeApplicationDetail(cached);
+        setVm(fast);
+        setStarredLocal(fast.starred);
+        setActiveCrit((prev) => prev || fast.criteria[0]?.key || '');
+      }
+      if (hasContent) {
+        setSyncing(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
       try {
-        const raw = await fetcher(`/recruitment/api/recruiting/applications/${encodeURIComponent(applicationId)}`);
+        const raw = await fetcher(detailPath);
         if (cancelledRef?.current) return;
+        setCachedCanvasData(detailPath, raw);
         const next = normalizeApplicationDetail(raw);
         setVm(next);
         setStarredLocal(next.starred);
-        setActiveCrit(next.criteria[0]?.key || '');
+        setActiveCrit((prev) => prev || next.criteria[0]?.key || '');
+        if (opts?.flash) setFlashTick((n) => n + 1);
       } catch {
         if (cancelledRef?.current) return;
-        setError('暂时没能读取到这位候选人的档案，请稍后重试。');
+        if (!hasContent) setError('暂时没能读取到这位候选人的档案，请稍后重试。');
       } finally {
-        if (!cancelledRef?.current) setLoading(false);
+        if (!cancelledRef?.current) {
+          setLoading(false);
+          setSyncing(false);
+        }
       }
     },
-    [applicationId, fetcher],
+    [detailPath, fetcher],
   );
 
   useEffect(() => {
@@ -94,9 +132,65 @@ export function CandidatePage({
     };
   }, [load, refreshNonce]);
 
+  // Restore scroll position on candidate open
+  useEffect(() => {
+    const el = bodyScrollRef.current;
+    if (!el || loading) return;
+    el.scrollTop = getSavedCanvasScroll(routeKey);
+  }, [routeKey, loading]);
+
+  const queueIndex = candidateQueue ? candidateQueue.indexOf(applicationId) : -1;
+  const prevAppId = queueIndex > 0 && candidateQueue ? candidateQueue[queueIndex - 1] : undefined;
+  const nextAppId =
+    queueIndex >= 0 && candidateQueue && queueIndex < candidateQueue.length - 1
+      ? candidateQueue[queueIndex + 1]
+      : undefined;
+
+  // Auto-prefetch next candidate in queue for instant book-flipping navigation
+  useEffect(() => {
+    if (!nextAppId) return;
+    prefetchCanvasPath(`/recruitment/api/recruiting/applications/${encodeURIComponent(nextAppId)}`, fetcher);
+  }, [nextAppId, fetcher]);
+
+  // Keyboard-first shortcuts: Esc back, [ previous candidate, ] next candidate
+  useEffect(() => {
+    if (modalKind !== null || pendingRebind !== null) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key === 'Escape' && onBack) {
+        e.preventDefault();
+        onBack();
+      } else if (e.key === '[' && prevAppId && onSelectApplication) {
+        e.preventDefault();
+        onSelectApplication(prevAppId);
+      } else if (e.key === ']' && nextAppId && onSelectApplication) {
+        e.preventDefault();
+        onSelectApplication(nextAppId);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onBack, prevAppId, nextAppId, onSelectApplication, modalKind, pendingRebind]);
+
+  const handleSelectCriterion = (critKey: string) => {
+    setActiveCrit(critKey);
+    if (docTab !== 'resume') setDocTab('resume');
+    requestAnimationFrame(() => {
+      const target = bodyScrollRef.current?.querySelector(`[data-crit-match="${critKey}"]`);
+      if (target && typeof (target as HTMLElement).scrollIntoView === 'function') {
+        (target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+  };
+
   const handleModalSuccess = async (res: CandidateModalSuccess) => {
     setModalKind(null);
-    await load();
+    invalidateCachedCanvasData(detailPath);
+    if (vm?.jobId) {
+      invalidateCachedCanvasData(`/recruitment/api/recruiting/jobs/${encodeURIComponent(vm.jobId)}`);
+    }
+    await load(undefined, { silent: true, flash: true });
     setActionFeedback({ tone: 'green', text: res.message });
     onActionCompleted?.({ message: res.message, actionId: res.actionId });
     if (res.rebindPrompt) {
@@ -142,7 +236,13 @@ export function CandidatePage({
             <span className="ros-crumb-cur">候选人档案</span>
           </div>
         </header>
-        <div className="ros-canvas-body"><div className="ros-canvas-inner"><CanvasLoadingState label="正在读取候选人档案与评估依据…" /></div></div>
+        <div className="ros-canvas-body"><div className="ros-canvas-inner"><div className="ros-skeleton-doc" aria-label="正在读取候选人档案">
+          <div className="ros-skel-bar" style={{ width: '36%', height: 24 }} />
+          <div className="ros-skel-bar" style={{ width: '58%', height: 13 }} />
+          <div className="ros-skel-bar" style={{ width: '100%', height: 64, marginTop: 8 }} />
+          <div className="ros-skel-bar" style={{ width: '92%', height: 42 }} />
+          <div className="ros-skel-bar" style={{ width: '86%', height: 42 }} />
+        </div></div></div>
       </>
     );
   }
@@ -178,11 +278,21 @@ export function CandidatePage({
             <span className="ros-crumb-cur">{vm.candidateName}</span>
           </div>
         </div>
-        <div className="ros-head-right"><FactLabelsBar labels={vm.factLabels} /></div>
+        <div className="ros-head-right" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {syncing ? <span className="ros-sync-pill" data-testid="canvas-sync-pill"><i className="ros-sync-dot" />同步中</span> : null}
+          {queueIndex >= 0 && candidateQueue && candidateQueue.length > 1 && onSelectApplication ? (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '12px', color: 'var(--muted)' }} data-testid="canvas-candidate-pager">
+              <button type="button" className="ros-text-link" title="上一位 ([)" disabled={!prevAppId} style={{ opacity: prevAppId ? 1 : 0.35 }} onClick={() => prevAppId && onSelectApplication(prevAppId)}>‹</button>
+              <span className="num">{queueIndex + 1} / {candidateQueue.length}</span>
+              <button type="button" className="ros-text-link" title="下一位 (])" disabled={!nextAppId} style={{ opacity: nextAppId ? 1 : 0.35 }} onClick={() => nextAppId && onSelectApplication(nextAppId)}>›</button>
+            </div>
+          ) : null}
+          <FactLabelsBar labels={vm.factLabels} />
+        </div>
       </header>
 
-      <div className="ros-canvas-body">
-        <div className="ros-canvas-inner ros-doc">
+      <div className="ros-canvas-body" ref={bodyScrollRef} onScroll={(e) => saveCanvasScroll(routeKey, e.currentTarget.scrollTop)}>
+        <div key={applicationId} className="ros-canvas-inner ros-doc ros-canvas-enter">
           {actionFeedback ? (
             <div
               className="ros-risk-note"
@@ -213,7 +323,7 @@ export function CandidatePage({
             </div>
           ) : null}
 
-          <div className="ros-doc-head">
+          <div key={`head-${flashTick}`} className={`ros-doc-head ${flashTick > 0 ? 'ros-paper-flash' : ''}`}>
             <div>
               <div className="ros-doc-name">{vm.candidateName}</div>
               <div className="ros-doc-meta">
@@ -225,18 +335,29 @@ export function CandidatePage({
                 <button
                   type="button"
                   data-testid="canvas-action-star"
+                  className={`ros-star-btn ${starPop ? 'pop' : ''}`}
                   disabled={starBusy}
                   title={starredLocal ? '取消星标主推' : '设为星标主推'}
                   style={{ fontSize: '16px', color: starredLocal ? 'var(--amber)' : 'var(--soft)' }}
                   onClick={() => {
                     if (starBusy) return;
+                    const prev = starredLocal;
+                    const nextVal = !prev;
+                    setStarredLocal(nextVal);
+                    setStarPop(true);
+                    setTimeout(() => setStarPop(false), 220);
                     setStarBusy(true);
-                    void postApplicationStar({ applicationId: vm.applicationId, starred: !starredLocal })
+                    void postApplicationStar({ applicationId: vm.applicationId, starred: nextVal })
                       .then((res) => {
                         setStarredLocal(Boolean(res.starred));
+                        invalidateCachedCanvasData(detailPath);
+                        if (vm.jobId) invalidateCachedCanvasData(`/recruitment/api/recruiting/jobs/${encodeURIComponent(vm.jobId)}`);
                         setActionFeedback({ tone: 'green', text: res.starred ? '已标记为主推候选人' : '已取消星标标记' });
                       })
-                      .catch((err) => setActionFeedback({ tone: 'red', text: (err as CanvasActionError)?.userMessage || '星标更新失败' }))
+                      .catch((err) => {
+                        setStarredLocal(prev);
+                        setActionFeedback({ tone: 'red', text: (err as CanvasActionError)?.userMessage || '星标更新失败，已恢复原状态' });
+                      })
                       .finally(() => setStarBusy(false));
                   }}
                 >
@@ -260,7 +381,7 @@ export function CandidatePage({
             {vm.criteria.length > 0 ? (
               <div>
                 {vm.criteria.map((cr, idx) => (
-                  <div key={cr.key} className={`ros-crit-item ${cr.key === activeCrit ? 'active' : ''}`} onClick={() => setActiveCrit(cr.key)} role="button" tabIndex={0}>
+                  <div key={cr.key} className={`ros-crit-item ${cr.key === activeCrit ? 'active' : ''}`} onClick={() => handleSelectCriterion(cr.key)} role="button" tabIndex={0}>
                     <span style={{ fontSize: '13.5px', fontWeight: 500 }}>
                       <span className="num" style={{ color: 'var(--soft)', marginRight: 8 }}>0{idx + 1}</span>
                       {cr.label}
@@ -346,7 +467,7 @@ export function CandidatePage({
                       {sec.items.map((it) => {
                         lineNo += 1;
                         return (
-                          <div key={it.id} className={`ros-doc-line ${it.matchKey === activeCrit ? 'active' : ''}`} onClick={() => setActiveCrit(it.matchKey)}>
+                          <div key={it.id} data-crit-match={it.matchKey} className={`ros-doc-line ${it.matchKey === activeCrit ? 'active' : ''}`} onClick={() => setActiveCrit(it.matchKey)}>
                             <span className="ros-doc-no num">{lineNo < 10 ? `0${lineNo}` : String(lineNo)}</span>
                             <div>
                               {it.heading || it.period || it.pageLabel ? (
