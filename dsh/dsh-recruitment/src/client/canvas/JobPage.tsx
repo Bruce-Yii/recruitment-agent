@@ -204,10 +204,10 @@ export function JobPage({
     setFeedback(null);
     try {
       const outcome = await postJobCreate(built.body, activeSessionId);
-      if (!outcome.ok) {
+      if (!outcome.accepted) {
         setFeedback({
           tone: 'red',
-          text: outcome.message || describeActionError(outcome.code, outcome.reasonCode) || '新建岗位未能完成，请稍后重试。',
+          text: outcome.error?.message || describeActionError(outcome.error?.code ?? '', outcome.error?.reasonCode ?? '') || '新建岗位未能完成，请稍后重试。',
         });
         return;
       }

@@ -277,15 +277,7 @@ export function CandidatePage({
             <div className="ros-sec-meta">逐轮面试进展（不求平均分）</div>
             {vm.rounds.length > 0 ? (
               <>
-                <SequentialRoundRail
-                  rounds={vm.rounds.map((r) => ({
-                    id: r.id,
-                    label: r.roundLabel,
-                    statusText: r.statusText,
-                    tone: r.statusTone,
-                    meta: r.scheduleText,
-                  }))}
-                />
+                <SequentialRoundRail rounds={vm.rounds} />
                 <div className="ros-clean-list">
                   {vm.rounds.map((rd) => (
                     <div key={rd.id} className="ros-clean-row static">

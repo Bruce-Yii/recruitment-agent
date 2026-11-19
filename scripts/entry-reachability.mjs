@@ -72,6 +72,8 @@ export const ACTION_KEY_FALLBACKS = [
   { path: '/recruitment/api/action/transcript/import', keys: ['transcript_import'] },
   { path: '/recruitment/api/action/decision/record', keys: ['decision_record'] },
   { path: '/recruitment/api/action/job/rubric-approve', keys: ['rubric_approve'] },
+  { path: '/recruitment/api/action/interview/schedule', keys: ['interview_schedule'] },
+  { path: '/recruitment/api/action/settings/write', keys: ['settings_write'] },
 ]
 
 /**
