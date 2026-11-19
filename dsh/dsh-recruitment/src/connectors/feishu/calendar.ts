@@ -263,40 +263,42 @@ export function parseFreebusyEnvelope(stdout: string): BusyInterval[] {
     })
   }
   const data = envelope.data
-  // 真机实测：应用级 scope 未开时 `+freebusy` 仍返回 ok:true 但 data:null（不报错）。
-  // 这不是「双方都有空」，而是「读不到忙闲」——如实报 AUTH_REQUIRED，绝不冒充空闲。
-  if (data === null || data === undefined) {
-    throw new CalendarReadError({ code: 'AUTH_REQUIRED', stage: 'parse', message: '飞书日历忙闲读不到（应用级日历只读权限未开通或该用户无数据）：不冒充空闲' })
-  }
-  if (typeof data !== 'object') {
-    throw new CalendarReadError({ code: 'ENVELOPE_UNRECOGNIZED', stage: 'parse', message: '日历 CLI 信封里没有 data 对象' })
-  }
-  const dataNode = data as Record<string, unknown>
-  let rawBusy: unknown
-  for (const key of ['busy', 'busy_times', 'busy_intervals']) {
-    if (Array.isArray(dataNode[key])) { rawBusy = dataNode[key]; break }
-  }
-  if (rawBusy === undefined) {
-    for (const containerKey of ['freebusys', 'items', 'users']) {
-      const container = dataNode[containerKey]
-      if (!Array.isArray(container)) continue
-      for (const entry of container) {
-        if (typeof entry !== 'object' || entry === null) continue
-        const candidate = (entry as Record<string, unknown>).busy
-        if (Array.isArray(candidate)) { rawBusy = candidate; break }
+  // 真机事实（2026-11-19 实测，跨两个窗口对比）：
+  //   · 没有忙时段时 `+freebusy` 返回 `data: null`（`ok` 仍是 true）——这是**空忙闲**，不是没权限；
+  //   · 有忙时段时返回**数组**：[{ start_time, end_time, rsvp_status }]。
+  // 所以：null → 空数组；数组 → 逐条解析；其它形状才 fail-closed（不猜语义）。
+  if (data === null || data === undefined) return []
+  let rawBusy: unknown = data
+  if (!Array.isArray(rawBusy)) {
+    if (typeof data !== 'object') {
+      throw new CalendarReadError({ code: 'ENVELOPE_UNRECOGNIZED', stage: 'parse', message: '日历 CLI 信封里 data 既不是数组也不是对象：不猜语义' })
+    }
+    const dataNode = data as Record<string, unknown>
+    for (const key of ['busy', 'busy_times', 'busy_intervals']) {
+      if (Array.isArray(dataNode[key])) { rawBusy = dataNode[key]; break }
+    }
+    if (rawBusy === data) {
+      for (const containerKey of ['freebusys', 'items', 'users']) {
+        const container = dataNode[containerKey]
+        if (!Array.isArray(container)) continue
+        for (const entry of container) {
+          if (typeof entry !== 'object' || entry === null) continue
+          const candidate = (entry as Record<string, unknown>).busy
+          if (Array.isArray(candidate)) { rawBusy = candidate; break }
+        }
+        if (rawBusy !== data) break
       }
-      if (rawBusy !== undefined) break
+    }
+    if (rawBusy === data) {
+      throw new CalendarReadError({
+        code: 'ENVELOPE_UNRECOGNIZED',
+        stage: 'parse',
+        message: '日历 CLI 信封里找不到忙区间数组（data.busy / data.freebusys[].busy）：不认识的形状不当成「空闲」',
+      })
     }
   }
-  if (!Array.isArray(rawBusy)) {
-    throw new CalendarReadError({
-      code: 'ENVELOPE_UNRECOGNIZED',
-      stage: 'parse',
-      message: '日历 CLI 信封里找不到忙区间数组（data.busy / data.freebusys[].busy）：不认识的形状不当成「空闲」',
-    })
-  }
   const busy: BusyInterval[] = []
-  for (const item of rawBusy) {
+  for (const item of rawBusy as unknown[]) {
     const interval = parseBusyInterval(item)
     if (interval !== null) busy.push(interval)
   }
