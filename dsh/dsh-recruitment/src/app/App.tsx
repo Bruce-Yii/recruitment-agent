@@ -282,6 +282,7 @@ export function App() {
 
   const interviewerOnly = isInterviewerOnly(session.roles);
   const isInterviewerRoute = route.kind === 'interviewer' || interviewerOnly;
+  const isEmbeddedDetail = !isInterviewerRoute && (route.kind === 'application' || route.kind === 'job');
   const activeSpace =
     route.kind === 'jobs' || route.kind === 'job'
       ? 'jobs'
@@ -289,7 +290,16 @@ export function App() {
         ? 'talent'
         : 'queue';
 
-  const actorRoleText = formatRolesLabel(session.roles);
+  const actorName = session.displayName || session.alias || '已认证成员';
+  const actorRoleText = formatRolesLabel(session.roles, actorName);
+
+  const actorBadgeNode = (
+    <div className="actor-badge" data-testid="app-actor-badge">
+      <i className="actor-badge-dot" />
+      <span>{actorName}</span>
+      {actorRoleText ? <span className="actor-badge-role">{actorRoleText}</span> : null}
+    </div>
+  );
 
   return (
     <div
@@ -480,8 +490,43 @@ export function App() {
 
         {/* 3. Contextual Main White Canvas */}
         <section className="canvas-col" data-testid="app-canvas">
-          <header className="canvas-head">
-            <div className="canvas-head-left">
+          {!isEmbeddedDetail ? (
+            <header className="canvas-head">
+              <div className="canvas-head-left">
+                {chatCollapsed ? (
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="展开对话栏"
+                    aria-label="展开对话栏"
+                    onClick={() => setChatCollapsed(false)}
+                  >
+                    <svg viewBox="0 0 24 24">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                  </button>
+                ) : null}
+
+                <div className="crumb-bar">
+                  {isInterviewerRoute ? (
+                    <span className="crumb-cur">我的面试与独立面评</span>
+                  ) : route.kind === 'jobs' ? (
+                    <span className="crumb-cur">在招岗位</span>
+                  ) : route.kind === 'talent' ? (
+                    <span className="crumb-cur">人才库</span>
+                  ) : (
+                    <span className="crumb-cur">今日待办</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="canvas-right-meta">
+                {isOffline ? <span style={{ color: 'var(--amber)' }}>离线</span> : null}
+                {actorBadgeNode}
+              </div>
+            </header>
+          ) : (
+            <div className="embedded-actor-slot">
               {chatCollapsed ? (
                 <button
                   type="button"
@@ -495,58 +540,12 @@ export function App() {
                   </svg>
                 </button>
               ) : null}
-
-              <div className="crumb-bar">
-                {isInterviewerRoute ? (
-                  <span className="crumb-cur">我的面试与独立面评</span>
-                ) : route.kind === 'application' ? (
-                  <>
-                    <button
-                      type="button"
-                      className="crumb-link"
-                      onClick={() => navigateToRoute({ kind: 'queue' })}
-                    >
-                      今日待办
-                    </button>
-                    <span>/</span>
-                    <span className="crumb-cur">候选人档案画布</span>
-                  </>
-                ) : route.kind === 'job' ? (
-                  <>
-                    <button
-                      type="button"
-                      className="crumb-link"
-                      onClick={() => navigateToRoute({ kind: 'jobs' })}
-                    >
-                      在招岗位
-                    </button>
-                    <span>/</span>
-                    <span className="crumb-cur">岗位详情画布</span>
-                  </>
-                ) : route.kind === 'jobs' ? (
-                  <span className="crumb-cur">在招岗位</span>
-                ) : route.kind === 'talent' ? (
-                  <span className="crumb-cur">人才库</span>
-                ) : (
-                  <span className="crumb-cur">今日待办</span>
-                )}
-              </div>
+              {actorBadgeNode}
             </div>
-
-            <div className="canvas-right-meta">
-              {isOffline ? <span style={{ color: 'var(--amber)' }}>离线</span> : null}
-              <div className="actor-badge" data-testid="app-actor-badge">
-                <i className="actor-badge-dot" />
-                <span>{session.displayName || session.alias || '已认证成员'}</span>
-                {actorRoleText ? <span className="actor-badge-role">{actorRoleText}</span> : null}
-              </div>
-            </div>
-          </header>
+          )}
 
           <div
-            className={`canvas-body ${
-              route.kind === 'application' || route.kind === 'job' ? 'embedded-canvas' : ''
-            }`}
+            className={`canvas-body ${isEmbeddedDetail ? 'embedded-canvas' : ''}`}
           >
             {isOffline ? (
               <div style={{ maxWidth: 820, margin: '0 auto 16px' }}>
@@ -560,7 +559,7 @@ export function App() {
               <div className="interviewer-host" data-testid="app-interviewer-view">
                 <InterviewerWorkspace sessionId={session.sid} alias={session.alias} />
               </div>
-            ) : route.kind === 'application' || route.kind === 'job' ? (
+            ) : isEmbeddedDetail ? (
               <CanvasRoute
                 sessionId={session.sid}
                 route={canvasRouteTarget}
@@ -641,11 +640,11 @@ export function App() {
             <div className="kv-list">
               <div className="kv-row">
                 <span className="kv-k">当前身份</span>
-                <span className="kv-v">{session.displayName || session.alias || '已绑定'}</span>
+                <span className="kv-v">{actorName}</span>
               </div>
               <div className="kv-row">
                 <span className="kv-k">角色</span>
-                <span className="kv-v">{actorRoleText || '—'}</span>
+                <span className="kv-v">{actorRoleText || actorName}</span>
               </div>
               <div className="kv-row">
                 <span className="kv-k">当前路由</span>
