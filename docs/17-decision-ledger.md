@@ -1966,3 +1966,15 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ④ `src/index.ts`：飞书 CLI 路径 / 面试官 open_id 解析抽一份，HTTP 路由与工具共用；工具面 33→35（package.json 已同步）。
   **自验（真 Host + 一次性库 + 真 HY4 模型；`work/d5/fullpage/probe-ui-dispatch.mjs`；证据 `evidence/chat-canvas-phase1-20261121/`）**：三轮 SSE 分别命中 `ui_action {navigate,talent}`、`{focus_section,criteria}`、`{suggest_action,route=application,modal=schedule}`；第 3 轮真调 `recruitment_interview_free_slots`（当前 profile 无 `RECRUITMENT_FEISHU_USER_MAP`，两位面试官未绑定日历 → 如实 `NO_CALENDAR_BINDING` 空时段，**不伪造**；真实时段须真实日历绑定后补证）；诊断头工具清单 17 只读 / 0 写；业务域表零写入；`tsc` 0、`tsdown`、server-typecheck 0/0、runtime-budget、entry-reachability、client-contract-check、term-lint 全 PASS；15 步 `--fresh` 回归 **15/15**。
   **阶段二（未完成，已通知前端）**：前端按规范 §4 一次性接入（消费 `ui_action`：navigate 切路由 / focus_section 滚动高亮 `[data-section]` / suggest_action 气泡按钮；补 `context.job_id`；快捷 pill 禁止本地硬编码）。通知/验收清单 `design/v4/frontend-phase-two-notice.md`。**规范 §5 的 1440 端到端四场景验收（含真实日历）尚未达成**，达成前不能宣称统一交互完成；未合并 main。
+
+- **D-175（2026-11-21，总控；跨窗口协作边界与“仓库文档是唯一真相源”）**
+  **背景**：产品/交互窗口与本地 Agent 出现**角色目标差异**——本地 Agent 倾向“保测试绿、最小改动、尽快收口”，因此很容易对交互做局部补丁（任务 11 的“前端硬编码 pill 切页/抢弹窗”就是失败例，已被 D-174 作废）；产品/交互窗口对整条用户链路与心智一致性负责。
+  **裁决（固定分工，后续所有功能按此跑）**：
+  ① **产品架构、交互原则、页面边界、前后端契约** = 产品/交互窗口；直接提交 `design/v4/*.md` 入库；不做局部硬编码补丁。
+  ② **服务端路由、Agent 工具、数据库读写、权限隔离与安全门禁** = 本地 Agent；按仓库契约实现，不自行发明交互语义。
+  ③ **前端界面与交互实现**（`src/app/**`、testid 清单）= 产品/交互窗口（云端前端）实现；本地 Agent 不改界面（D-168）。
+  ④ **构建、真机跑测、视觉取证、15 步回归** = 本地 Agent；证据进 `evidence/` 供产品窗口核验。
+  **流程（先规范后实现）**：交互改动或新功能 → 产品窗口先把规范写进 `design/v4/` 并入库 → 本地 Agent 合入 feat 并按契约实现服务端 → 前端按同一规范实现 UI → 本地 Agent 做 diff 复核、构建、真机验收（规范指定场景 + 15 步）→ 回抄 `docs/17`。**规范未入库的需求不开工**；不得以“保既有测试/最小改动”为由对交互做局部 patch。
+  **单一真相源**：仓库文档（`design/v4/*.md` 规范、`docs/17` 裁决、`docs/25` 交接）为准；**聊天记录/口头一致不算决定**。文档互相矛盾 → 当场裁决并回抄，不得“保持现状”。
+  **边界与反例**：产品窗口不直接改服务端/本地脚本；本地 Agent 不直接改界面；跨窗口改动一律走分支/PR + 本地验收；真机证据缺失不得宣称完成。任务 11 作为反例保留在 `design/v4/frontend-task-11-chat-quick-actions.md` 顶部（已作废）。
+  **当时状态**：阶段一（服务端派发）已完成（D-174，`f0f54ee`/`b05d312`）；阶段二前端分支 `feat/chat-canvas-phase2` 已建、尚无提交；前端提交后按本流程验收。
