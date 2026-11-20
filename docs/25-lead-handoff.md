@@ -276,3 +276,37 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 
 - **飞书 freebusy 的 `data: null` 是"没有忙时段"，不是没权限**（有会议时返回数组）。别再把 null 当 AUTH_REQUIRED；
 - **面试时段冲突是"面试官+时段"全局判定，不按 application 隔离**——写测试夹具时必须错开时间段，否则会互相 CONFLICT_SLOT，看起来像代码 bug。
+
+---
+
+## 12. 2026-11-20 交接补丁（给接手的新窗口）
+
+### 现在是什么阶段
+本地开发/验证；**没有交付**。产品 = DSH 插件（`dsh/dsh-recruitment`）+ PG17（`recruitment` schema，迁移 0001→0023）。
+
+### 接手先读这 6 个（按顺序，别读别的）
+1. `docs/24` 产品框架（业务边界，回答"这事该不该做"）
+2. `docs/17` 裁决台账：**D-167/168 是现行界面口径**（整页 v4 唯一基准；总控不许改 UI，界面诉求一律交前端）
+3. `design/v4/fullpage-integration-plan.md`（独立整页入口 + 对话接口 + 身份/测试解耦）
+4. `dsh/dsh-recruitment/src/app/TESTID-MANIFEST.md`（v4 前端 testid 清单 = 验收脚本契约）
+5. `docs/36-backlog.md` §H（当前在办：15 步剧本适配、PR 收口）
+6. `work/d5/fullpage/TESTID-MAP.md`（15 步剧本 → v4 选择器映射，正在用）
+
+### 关键事实（不知道会踩）
+- 整页入口：`GET /recruitment/app`（同 Host 端口、无 DSH 外壳）；身份测试入口 `GET /recruitment/test?as=recruiter|interviewer_a|interviewer_b&next=/recruitment/app`；会话 cookie `rc_sid`，业务 API 仍带 `X-DSH-Session`。
+- 整页前端是 `src/app/**`（PR #8/#9 已并入，`a4f6abb`/`b642e07`），双入口构建：`lib/app.js`（ESM 自包含）+ `lib/client.js`（DSH CJS）。
+- CSS 注入按**文件**独立标记（`1e12acc` 修过；整页曾因共用标记导致画布无样式）。
+- 对话 `/recruitment/agent/turn` 目前**503 AGENT_UNAVAILABLE**（桥未接线，页面已降级，业务不受影响）。接法见 `src/http/app-shell.ts` 的 `AppAgentTurnBridge`。
+- 自动化：`work/d5/e2e-real/scripts/run-runbook.mjs --fresh` 跑旧壳 15 步（15/15 过）；新整页脚本 `work/d5/fullpage/run-v4.mjs` **正在改**，未完成。
+
+### 接手要做的（按优先级）
+1. 完成 `run-v4.mjs` 适配并按 v4 重跑 15 步，出 PASS/FAIL 表（1440 口径；390 不作要求）。
+2. 任何界面缺陷：写证据 + 复现，交前端 PR，**不许自己改界面**（D-168）。
+3. 对话桥可接：用 DSH `agents/sessions`（`ctx.agents.create/followup` + `ctx.on('session/event')`），失败保持 503 降级。
+4. 收口 PR #8/#9（内容已并主线，PR 可标已合并）。
+
+### 常用命令
+- 构建：`cd dsh/dsh-recruitment && npx tsdown`（双入口）
+- 类型：`npx tsc --noEmit`；服务端棘轮：`node scripts/server-typecheck.mjs`
+- 机检：`runtime-budget` / `entry-reachability` / `client-contract-check` / `term-lint`
+- 全量：干净库重放迁移后 `node test/run-all.mjs --test-concurrency=1`
