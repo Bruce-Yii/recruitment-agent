@@ -17,6 +17,11 @@ function statusClass(tone: string): string {
   return '';
 }
 
+function cleanStageLabel(raw: string): string {
+  const parts = raw.split('/');
+  return (parts[0] ?? raw).trim() || raw;
+}
+
 export function QueueView({
   overview,
   onOpenApplication,
@@ -90,10 +95,18 @@ export function QueueView({
   return (
     <div className="canvas-inner" data-testid="app-queue-view">
       <div>
-        <div className="sec-head">
+        <div className="sec-head" style={{ marginBottom: 18 }}>
           <div>
-            <h1 className="sec-title">今日待办</h1>
-            <div className="sec-meta">点击任意候选人进入右侧完整档案与审批画布</div>
+            <div className="sec-title">待推进候选人</div>
+            <div className="editorial-stats num">
+              <span>在办 <strong>{overview.counts.applicationsActive}</strong></span>
+              <span className="dot">·</span>
+              <span>待初筛 <strong>{overview.counts.awaitingScreening}</strong></span>
+              <span className="dot">·</span>
+              <span>面试中 <strong>{overview.counts.interviewing}</strong></span>
+              <span className="dot">·</span>
+              <span>待决策 <strong>{overview.counts.awaitingDecision}</strong></span>
+            </div>
           </div>
           {defaultJobId ? (
             <div>
@@ -127,28 +140,7 @@ export function QueueView({
           </div>
         ) : null}
 
-        <div className="metrics-strip">
-          <div className="metric-card">
-            <span className="metric-label">在办申请</span>
-            <span className="metric-val num">{overview.counts.applicationsActive}</span>
-          </div>
-          <div className="metric-card">
-            <span className="metric-label">待初筛</span>
-            <span className="metric-val num">{overview.counts.awaitingScreening}</span>
-          </div>
-          <div className="metric-card">
-            <span className="metric-label">面试推进中</span>
-            <span className="metric-val num">{overview.counts.interviewing}</span>
-          </div>
-          <div className="metric-card">
-            <span className="metric-label">待正式决策</span>
-            <span className="metric-val num">{overview.counts.awaitingDecision}</span>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <div className="filter-bar" style={{ marginBottom: 12 }}>
+        <div className="filter-bar" style={{ marginBottom: 14 }}>
           <div className="filter-pills">
             <button
               type="button"
@@ -182,7 +174,7 @@ export function QueueView({
                 data-testid={`app-queue-filter-${st.code}`}
                 onClick={() => setStageFilter(st.code)}
               >
-                {st.label} ({st.count})
+                {cleanStageLabel(st.label)} ({st.count})
               </button>
             ))}
           </div>
@@ -225,7 +217,7 @@ export function QueueView({
                 </div>
                 <div className="cr-right">
                   <span className={`cr-status ${statusClass(app.stageTone)}`}>
-                    {app.stageLabel}
+                    {cleanStageLabel(app.stageLabel)}
                   </span>
                 </div>
               </button>

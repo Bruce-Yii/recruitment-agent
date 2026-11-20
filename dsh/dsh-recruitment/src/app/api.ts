@@ -74,16 +74,22 @@ export function isInterviewerOnly(roles: readonly string[]): boolean {
   return hasInterviewer && !hasRecruiter;
 }
 
-export function formatRolesLabel(roles: readonly string[]): string {
+export function formatRolesLabel(roles: readonly string[], displayName = ''): string {
   if (roles.length === 0) return '';
-  const mapped = roles.map((r) => {
-    const low = r.toLowerCase();
-    if (low.includes('recruiter')) return '招聘负责人';
-    if (low.includes('interviewer')) return '面试官';
-    if (low.includes('admin')) return '管理员';
-    return r;
-  });
-  return Array.from(new Set(mapped)).join(' · ');
+  const mapped = roles
+    .map((r) => {
+      const low = r.toLowerCase();
+      if (low.includes('recruiter')) return '招聘负责人';
+      if (low.includes('hr_specialist') || low === 'hr') return 'HR';
+      if (low.includes('interviewer')) return '面试官';
+      if (low.includes('hiring_manager') || low.includes('manager')) return '用人经理';
+      if (low.includes('admin')) return '管理员';
+      return /^[A-Z0-9_]+$/.test(r) ? '' : r;
+    })
+    .filter((label) => label.length > 0 && label !== displayName.trim());
+  const unique = Array.from(new Set(mapped));
+  if (unique.length === 0) return '';
+  return unique[0];
 }
 
 export async function fetchAppSession(): Promise<AppSessionInfo> {
