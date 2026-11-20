@@ -1,12 +1,19 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ApplicationRowView, RecruitingOverviewView } from '../client/recruiting/view-model.ts';
 import { prefetchCanvasPath } from '../client/canvas/canvas-ux.ts';
 import { uploadResumeRaw } from '../client/canvas/canvas-actions.ts';
 import type { ActiveUploadTask } from '../client/canvas/CanvasRoute.tsx';
 import { fetchAppJson, readCookie } from './api.ts';
 
+export interface QueueFilterRequest {
+  readonly filter: 'all' | 'screening' | 'interviewing';
+  readonly nonce: number;
+}
+
 export interface QueueViewProps {
   readonly overview: RecruitingOverviewView;
+  readonly filterRequest?: QueueFilterRequest | null;
+  readonly onFilterConsumed?: () => void;
   readonly onOpenApplication: (applicationId: string, queue: string[]) => void;
   readonly onUploadStarted: (task: ActiveUploadTask) => void;
 }
@@ -25,10 +32,20 @@ function cleanStageLabel(raw: string): string {
 
 export function QueueView({
   overview,
+  filterRequest,
+  onFilterConsumed,
   onOpenApplication,
   onUploadStarted,
 }: QueueViewProps) {
   const [stageFilter, setStageFilter] = useState<string>('all');
+  const lastFilterNonceRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!filterRequest || filterRequest.nonce === lastFilterNonceRef.current) return;
+    lastFilterNonceRef.current = filterRequest.nonce;
+    setStageFilter(filterRequest.filter);
+    onFilterConsumed?.();
+  }, [filterRequest, onFilterConsumed]);
   const [query, setQuery] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');

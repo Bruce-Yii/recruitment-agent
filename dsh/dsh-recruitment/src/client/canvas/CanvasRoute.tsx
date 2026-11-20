@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CandidatePage, type CanvasFetcher } from './CandidatePage.tsx';
+import type { CandidateModalKind } from './CandidateActionModal.tsx';
 import { JobPage } from './JobPage.tsx';
 import { CanvasEmptyState } from './bits/index.ts';
 import {
@@ -26,11 +27,26 @@ export interface UndoToastPayload {
   actionId?: string;
 }
 
+export interface CanvasFocusRequest {
+  readonly section: string;
+  readonly nonce: number;
+}
+
+export interface CanvasModalRequest {
+  readonly modal: CandidateModalKind;
+  readonly nonce: number;
+}
+
 export interface CanvasRouteProps {
   readonly sessionId?: string;
   route: CanvasRouteTarget;
   candidateQueue?: readonly string[];
   isOffline?: boolean;
+  focusRequest?: CanvasFocusRequest | null;
+  onFocusConsumed?: () => void;
+  openModalRequest?: CanvasModalRequest | null;
+  onModalRequestConsumed?: () => void;
+  onCandidateJobResolved?: (jobId: string) => void;
   onBack?: () => void;
   onSelectApplication?: (applicationId: string, queue?: string[]) => void;
   onSelectJob?: (jobId: string) => void;
@@ -202,6 +218,11 @@ export function CanvasRoute({
   route,
   candidateQueue,
   isOffline = false,
+  focusRequest,
+  onFocusConsumed,
+  openModalRequest,
+  onModalRequestConsumed,
+  onCandidateJobResolved,
   onBack,
   onSelectApplication,
   onSelectJob,
@@ -244,6 +265,11 @@ export function CanvasRoute({
           sessionId={sessionId}
           applicationId={route.applicationId}
           candidateQueue={candidateQueue}
+          focusRequest={focusRequest}
+          onFocusConsumed={onFocusConsumed}
+          openModalRequest={openModalRequest}
+          onModalRequestConsumed={onModalRequestConsumed}
+          onJobResolved={onCandidateJobResolved}
           onSelectApplication={(appId) => onSelectApplication?.(appId)}
           onBack={onBack}
           onOpenJob={onSelectJob}
@@ -256,6 +282,8 @@ export function CanvasRoute({
         <JobPage
           sessionId={sessionId}
           jobId={route.jobId}
+          focusRequest={focusRequest}
+          onFocusConsumed={onFocusConsumed}
           onBack={onBack}
           onSelectApplication={onSelectApplication}
           onSelectJob={onSelectJob}

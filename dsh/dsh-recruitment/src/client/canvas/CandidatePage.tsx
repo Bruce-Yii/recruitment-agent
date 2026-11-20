@@ -15,7 +15,12 @@ import {
   SequentialRoundRail,
   StatusLabel,
 } from './bits/index.ts';
-import type { ActiveUploadTask, UndoToastPayload } from './CanvasRoute.tsx';
+import type {
+  ActiveUploadTask,
+  CanvasFocusRequest,
+  CanvasModalRequest,
+  UndoToastPayload,
+} from './CanvasRoute.tsx';
 import {
   postApplicationStar,
   postRebindMinute,
@@ -34,6 +39,11 @@ export interface CandidatePageProps {
   readonly sessionId?: string;
   applicationId: string;
   candidateQueue?: readonly string[];
+  focusRequest?: CanvasFocusRequest | null;
+  onFocusConsumed?: () => void;
+  openModalRequest?: CanvasModalRequest | null;
+  onModalRequestConsumed?: () => void;
+  onJobResolved?: (jobId: string) => void;
   onSelectApplication?: (applicationId: string) => void;
   onBack?: () => void;
   onOpenJob?: (jobId: string) => void;
@@ -49,6 +59,11 @@ export function CandidatePage({
   sessionId,
   applicationId,
   candidateQueue,
+  focusRequest,
+  onFocusConsumed,
+  openModalRequest,
+  onModalRequestConsumed,
+  onJobResolved,
   onSelectApplication,
   onBack,
   onOpenJob,
@@ -85,6 +100,9 @@ export function CandidatePage({
   const [pendingRebind, setPendingRebind] = useState<CandidateModalSuccess['rebindPrompt'] | null>(null);
   const [rebindConfirmText, setRebindConfirmText] = useState('');
   const [rebindSubmitting, setRebindSubmitting] = useState(false);
+  const [focusedSection, setFocusedSection] = useState<string | null>(null);
+  const lastFocusNonceRef = useRef<number>(0);
+  const lastModalNonceRef = useRef<number>(0);
 
   const load = useCallback(
     async (cancelledRef?: { current: boolean }, opts?: { silent?: boolean; flash?: boolean }) => {
@@ -138,6 +156,57 @@ export function CandidatePage({
     if (!el || loading) return;
     el.scrollTop = getSavedCanvasScroll(routeKey);
   }, [routeKey, loading]);
+
+  // Surface current candidate's jobId to parent shell (e.g. ChatPanel context.job_id)
+  useEffect(() => {
+    if (vm?.jobId) {
+      onJobResolved?.(vm.jobId);
+    }
+  }, [vm?.jobId, onJobResolved]);
+
+  // Read-only section focus & highlight (driven by Agent ui_action focus_section)
+  useEffect(() => {
+    if (!focusRequest || loading || !vm) return;
+    if (focusRequest.nonce === lastFocusNonceRef.current) return;
+    const targetSec =
+      focusRequest.section === 'rubric' ? 'criteria' : focusRequest.section;
+    if (
+      targetSec !== 'summary' &&
+      targetSec !== 'criteria' &&
+      targetSec !== 'resume' &&
+      targetSec !== 'interviews'
+    ) {
+      return;
+    }
+    lastFocusNonceRef.current = focusRequest.nonce;
+    if (targetSec === 'resume' && docTab !== 'resume') {
+      setDocTab('resume');
+    }
+    setFocusedSection(targetSec);
+    onFocusConsumed?.();
+    const rafId = requestAnimationFrame(() => {
+      const target = bodyScrollRef.current?.querySelector(`[data-section="${targetSec}"]`);
+      if (target && typeof (target as HTMLElement).scrollIntoView === 'function') {
+        (target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+    const timer = setTimeout(() => {
+      setFocusedSection((cur) => (cur === targetSec ? null : cur));
+    }, 1800);
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(timer);
+    };
+  }, [focusRequest, loading, vm, docTab, onFocusConsumed]);
+
+  // Controlled modal opening (only after human clicks a suggest_action button in chat)
+  useEffect(() => {
+    if (!openModalRequest || loading || !vm) return;
+    if (openModalRequest.nonce === lastModalNonceRef.current) return;
+    lastModalNonceRef.current = openModalRequest.nonce;
+    setModalKind(openModalRequest.modal);
+    onModalRequestConsumed?.();
+  }, [openModalRequest, loading, vm, onModalRequestConsumed]);
 
   const queueIndex = candidateQueue ? candidateQueue.indexOf(applicationId) : -1;
   const prevAppId = queueIndex > 0 && candidateQueue ? candidateQueue[queueIndex - 1] : undefined;
@@ -371,12 +440,18 @@ export function CandidatePage({
 
           {vm.stageBlockedReason ? <div className="ros-risk-note">{vm.stageBlockedReason}</div> : null}
 
-          <div className="ros-doc-block">
+          <div
+            className={`ros-doc-block ${focusedSection === 'summary' ? 'ros-section-focus' : ''}`}
+            data-section="summary"
+          >
             <div className="ros-sec-meta">当前状态与提炼</div>
             <div style={{ fontSize: '14.5px', lineHeight: 1.78, color: 'var(--ink)' }}>{vm.summaryText}</div>
           </div>
 
-          <div className="ros-doc-block">
+          <div
+            className={`ros-doc-block ${focusedSection === 'criteria' ? 'ros-section-focus' : ''}`}
+            data-section="criteria"
+          >
             <div className="ros-sec-meta">岗位标准对照 · {vm.rubricVersionLabel}（点击联动原文）</div>
             {vm.criteria.length > 0 ? (
               <div>
@@ -394,7 +469,10 @@ export function CandidatePage({
             ) : <CanvasEmptyState title="暂无岗位标准维度" />}
           </div>
 
-          <div className="ros-doc-block">
+          <div
+            className={`ros-doc-block ${focusedSection === 'interviews' ? 'ros-section-focus' : ''}`}
+            data-section="interviews"
+          >
             <div className="ros-sec-meta">逐轮面试进展（不求平均分）</div>
             {vm.rounds.length > 0 ? (
               <>
@@ -419,7 +497,10 @@ export function CandidatePage({
             ) : <CanvasEmptyState title="尚未安排面试" description="当前还没有进入面试轮次。" />}
           </div>
 
-          <div className="ros-doc-block">
+          <div
+            className={`ros-doc-block ${focusedSection === 'resume' ? 'ros-section-focus' : ''}`}
+            data-section="resume"
+          >
             <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
               <button type="button" className={`ros-text-link ${docTab === 'resume' ? 'active' : ''}`} onClick={() => setDocTab('resume')}>简历原文</button>
               <button type="button" className={`ros-text-link ${docTab === 'transcript' ? 'active' : ''}`} onClick={() => setDocTab('transcript')}>飞书妙记</button>

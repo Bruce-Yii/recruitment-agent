@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { uploadResumeRaw } from '../client/canvas/canvas-actions.ts';
 import type { ActiveUploadTask } from '../client/canvas/CanvasRoute.tsx';
-import { streamAgentTurn, type AgentToolEvent } from './api.ts';
+import { streamAgentTurn, type AgentToolEvent, type AgentUiAction } from './api.ts';
 import { formatHashRoute, type AppRoute } from './router.ts';
 
 interface ChatMessage {
@@ -9,38 +9,97 @@ interface ChatMessage {
   readonly role: 'ai' | 'user';
   readonly text: string;
   readonly tools?: readonly AgentToolEvent[];
+  readonly uiNotices?: readonly string[];
+  readonly suggestedActions?: readonly AgentUiAction[];
   readonly streaming?: boolean;
+}
+
+interface QuickPromptItem {
+  readonly slug: string;
+  readonly prompt: string;
 }
 
 export interface ChatPanelProps {
   readonly sid: string;
   readonly route: AppRoute;
+  readonly currentJobId?: string;
   readonly defaultJobId?: string;
   readonly onCollapse: () => void;
   readonly onResizeStart: (event: React.MouseEvent) => void;
   readonly onResizeReset: () => void;
   readonly onToolCompleted: (tool: AgentToolEvent) => void;
+  readonly onUiAction: (action: AgentUiAction) => void;
+  readonly onExecuteSuggestedAction: (action: AgentUiAction) => void;
   readonly onUploadStarted: (task: ActiveUploadTask) => void;
 }
 
-function quickPromptsForRoute(route: AppRoute): readonly string[] {
+function quickPromptsForRoute(route: AppRoute): readonly QuickPromptItem[] {
   if (route.kind === 'application') {
-    return ['总结这位候选人的核心风险点', '帮我查下一轮可约时段', '对比岗位评分标准'];
+    return [
+      { slug: 'risk-summary', prompt: '总结这位候选人的核心风险点' },
+      { slug: 'free-slots', prompt: '帮我查下一轮可约时段' },
+      { slug: 'compare-rubric', prompt: '对比岗位评分标准' },
+    ];
   }
   if (route.kind === 'job') {
-    return ['汇总当前岗位各阶段推进瓶颈', '哪些候选人最值得优先推进？'];
+    return [
+      { slug: 'job-bottlenecks', prompt: '汇总当前岗位各阶段推进瓶颈' },
+      { slug: 'job-priority', prompt: '哪些候选人最值得优先推进？' },
+    ];
   }
-  return ['今天最优先处理的 3 位候选人是谁？', '查看当前待提交面评的进展'];
+  return [
+    { slug: 'today-top3', prompt: '今天最优先处理的 3 位候选人是谁？' },
+    { slug: 'pending-scorecards', prompt: '查看当前待提交面评的进展' },
+  ];
+}
+
+function formatUiActionNotice(action: AgentUiAction): string {
+  if (action.label) return action.label;
+  if (action.action === 'focus_section') {
+    const names: Record<string, string> = {
+      summary: '当前状态与提炼',
+      criteria: '岗位标准对照',
+      resume: '简历原文摘录',
+      interviews: '逐轮面试进展',
+      rubric: '岗位评分标准',
+      candidates: '候选人池',
+    };
+    return `已定位到${names[action.section ?? ''] || '对应区块'}`;
+  }
+  if (action.action === 'navigate') {
+    const names: Record<string, string> = {
+      queue: '今日待办',
+      jobs: '在招岗位',
+      talent: '人才库',
+      application: '候选人档案',
+      job: '岗位详情',
+      interviewer: '面试官视图',
+    };
+    return `已切换到${names[action.route ?? ''] || '目标画布'}`;
+  }
+  return '已联动右侧画布';
+}
+
+function suggestActionKey(action: AgentUiAction): string {
+  return `${action.modal ?? ''}|${action.route ?? ''}|${action.target_id ?? ''}|${action.label ?? ''}`;
+}
+
+function suggestActionTestId(action: AgentUiAction): string {
+  const suffix = action.modal || action.route || 'action';
+  return `app-chat-suggest-${suffix}`;
 }
 
 export function ChatPanel({
   sid,
   route,
+  currentJobId,
   defaultJobId,
   onCollapse,
   onResizeStart,
   onResizeReset,
   onToolCompleted,
+  onUiAction,
+  onExecuteSuggestedAction,
   onUploadStarted,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -122,7 +181,12 @@ export function ChatPanel({
       context: {
         route: formatHashRoute(route),
         application_id: route.kind === 'application' ? route.applicationId : undefined,
-        job_id: route.kind === 'job' ? route.jobId : undefined,
+        job_id:
+          route.kind === 'job'
+            ? route.jobId
+            : route.kind === 'application'
+              ? currentJobId
+              : undefined,
       },
       signal: controller.signal,
       onDelta: (chunk) => {
@@ -145,9 +209,35 @@ export function ChatPanel({
             return { ...m, tools: list };
           }),
         );
-        if (tool.status === 'ok') {
+        if (tool.status === 'ok' && tool.name !== 'recruitment_ui_dispatch') {
           onToolCompleted(tool);
         }
+      },
+      onUiAction: (uiAction) => {
+        if (uiAction.action === 'suggest_action') {
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id !== aiId) return m;
+              const existing = m.suggestedActions ?? [];
+              const key = suggestActionKey(uiAction);
+              if (existing.some((item) => suggestActionKey(item) === key)) {
+                return m;
+              }
+              return { ...m, suggestedActions: [...existing, uiAction] };
+            }),
+          );
+          return;
+        }
+        onUiAction(uiAction);
+        const notice = formatUiActionNotice(uiAction);
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== aiId) return m;
+            const existing = m.uiNotices ?? [];
+            if (existing.includes(notice)) return m;
+            return { ...m, uiNotices: [...existing, notice] };
+          }),
+        );
       },
       onDone: () => {
         setMessages((prev) =>
@@ -258,20 +348,46 @@ export function ChatPanel({
                 ))}
               </div>
             ) : null}
+            {msg.uiNotices && msg.uiNotices.length > 0 ? (
+              <div className="msg-ui-notices">
+                {msg.uiNotices.map((notice, idx) => (
+                  <span key={`${notice}-${idx}`} className="msg-ui-notice">
+                    ↗ {notice}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {msg.suggestedActions && msg.suggestedActions.length > 0 ? (
+              <div className="msg-suggest-list">
+                {msg.suggestedActions.map((act, idx) => (
+                  <button
+                    key={`${suggestActionKey(act)}-${idx}`}
+                    type="button"
+                    className="msg-suggest-btn"
+                    data-testid={suggestActionTestId(act)}
+                    onClick={() => onExecuteSuggestedAction(act)}
+                  >
+                    <span>{act.label || '执行建议操作'}</span>
+                    <span className="msg-suggest-arrow" aria-hidden="true">→</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
 
       <div className="quick-list">
-        {quickPrompts.map((prompt) => (
+        {quickPrompts.map((item) => (
           <button
-            key={prompt}
+            key={item.slug}
             type="button"
             className="q-pill"
+            data-testid={`app-chat-quick-${item.slug}`}
             disabled={sending}
-            onClick={() => void sendText(prompt)}
+            onClick={() => void sendText(item.prompt)}
           >
-            {prompt}
+            {item.prompt}
           </button>
         ))}
       </div>

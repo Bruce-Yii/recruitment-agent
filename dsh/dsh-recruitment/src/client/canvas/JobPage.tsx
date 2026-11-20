@@ -21,7 +21,7 @@ import {
   StatusLabel,
 } from './bits/index.ts';
 import type { CanvasFetcher } from './CandidatePage.tsx';
-import type { ActiveUploadTask, UndoToastPayload } from './CanvasRoute.tsx';
+import type { ActiveUploadTask, CanvasFocusRequest, UndoToastPayload } from './CanvasRoute.tsx';
 import {
   buildJobCreateBody,
   describeActionError,
@@ -36,6 +36,8 @@ import {
 export interface JobPageProps {
   readonly sessionId?: string;
   jobId: string;
+  focusRequest?: CanvasFocusRequest | null;
+  onFocusConsumed?: () => void;
   onBack?: () => void;
   onSelectApplication?: (applicationId: string, queue?: string[]) => void;
   onSelectJob?: (jobId: string) => void;
@@ -53,6 +55,8 @@ const STAGE_FILTERS: StageFilter[] = ['全部', '接入', '初筛', '面试中',
 export function JobPage({
   sessionId,
   jobId,
+  focusRequest,
+  onFocusConsumed,
   onBack,
   onSelectApplication,
   onSelectJob,
@@ -74,6 +78,8 @@ export function JobPage({
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [tab, setTab] = useState<JobTab>('pipeline');
   const [stageFilter, setStageFilter] = useState<StageFilter>('全部');
+  const [focusedSection, setFocusedSection] = useState<string | null>(null);
+  const lastFocusNonceRef = useRef<number>(0);
 
   // T5-1: Multi-select + real batch reject (never deletes locally; refreshes from server)
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -139,6 +145,41 @@ export function JobPage({
     if (!el || loading) return;
     el.scrollTop = getSavedCanvasScroll(routeKey);
   }, [routeKey, loading]);
+
+  // Read-only section focus & highlight (driven by Agent ui_action focus_section)
+  useEffect(() => {
+    if (!focusRequest || loading || !vm) return;
+    if (focusRequest.nonce === lastFocusNonceRef.current) return;
+    let targetSec: 'rubric' | 'candidates' | null = null;
+    if (focusRequest.section === 'rubric' || focusRequest.section === 'criteria') {
+      targetSec = 'rubric';
+      setTab('rubric');
+    } else if (focusRequest.section === 'candidates' || focusRequest.section === 'summary') {
+      targetSec = 'candidates';
+      setTab('pipeline');
+    }
+    if (!targetSec) return;
+    lastFocusNonceRef.current = focusRequest.nonce;
+    setFocusedSection(targetSec);
+    onFocusConsumed?.();
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const target = bodyScrollRef.current?.querySelector(`[data-section="${targetSec}"]`);
+        if (target && typeof (target as HTMLElement).scrollIntoView === 'function') {
+          (target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+    const timer = setTimeout(() => {
+      setFocusedSection((cur) => (cur === targetSec ? null : cur));
+    }, 1800);
+    return () => {
+      cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+      clearTimeout(timer);
+    };
+  }, [focusRequest, loading, vm, onFocusConsumed]);
 
   useEffect(() => {
     return () => {
@@ -452,7 +493,10 @@ export function JobPage({
           {vm.nextStepLabel ? <div className="ros-risk-note">{vm.nextStepLabel}</div> : null}
 
           {tab === 'pipeline' ? (
-            <div>
+            <div
+              data-section="candidates"
+              className={focusedSection === 'candidates' ? 'ros-section-focus' : undefined}
+            >
               <div
                 style={{
                   display: 'flex',
@@ -576,7 +620,10 @@ export function JobPage({
             </div>
           ) : (
             <>
-              <div>
+              <div
+                data-section="rubric"
+                className={focusedSection === 'rubric' ? 'ros-section-focus' : undefined}
+              >
                 <div className="ros-sec-head">
                   <span className="ros-sec-title">
                     考核维度与标准 {vm.rubricVersionLabel}（{vm.rubricApproved ? '已锁定' : '待确认'}）
