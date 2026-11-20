@@ -1978,3 +1978,15 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **单一真相源**：仓库文档（`design/v4/*.md` 规范、`docs/17` 裁决、`docs/25` 交接）为准；**聊天记录/口头一致不算决定**。文档互相矛盾 → 当场裁决并回抄，不得“保持现状”。
   **边界与反例**：产品窗口不直接改服务端/本地脚本；本地 Agent 不直接改界面；跨窗口改动一律走分支/PR + 本地验收；真机证据缺失不得宣称完成。任务 11 作为反例保留在 `design/v4/frontend-task-11-chat-quick-actions.md` 顶部（已作废）。
   **当时状态**：阶段一（服务端派发）已完成（D-174，`f0f54ee`/`b05d312`）；阶段二前端分支 `feat/chat-canvas-phase2` 已建、尚无提交；前端提交后按本流程验收。
+
+- **D-176（2026-11-21，总控；PR #11 阶段二验收通过：对话×画布统一交互 §5 四场景全过）**
+  **来源**：PR #11（分支 `feat/chat-canvas-phase2-v1`，2 提交 `a707f1e` + `d013826`，HEAD `d013826`，基于 `256f386`）→ feat；本地 merge **`43140f0`**（含 `lib/app.js` + `lib/client.js` 重建）。
+  **复核（未采信自述）**：`git diff` 10 文件，全部在 `src/app/**` + `src/client/canvas/**`（只读锚点/受控弹窗/CSS）+ `src/app/TESTID-MANIFEST.md`；**未动**写链路（canvas-actions/postActionSeam/builder/use-recruiting）、服务端 `src/http/**`/工具、`lib/**`（本地重建）；无既有 testid 删除、无 `@ts-ignore`；服务端 `ui_action` 契约只消费不改写。
+  **机检（合并后）**：`npx tsc --noEmit` 0；`npx tsdown` 双入口通过（lib 重建随 merge 提交）；server-typecheck 0/0、runtime-budget 5051/5051、entry-reachability、client-contract-check、term-lint 全 PASS。
+  **1440 真机四场景（预览 Host 49351 新构建，2026-11-21 04:2x；`work/d5/fullpage/probe-chat-canvas-linkage.mjs`）**：
+  ① 候选人页「对比岗位评分标准」→ hash 保持 `#/application/…0701`、`[data-section="criteria"]` 高亮并滚动到视口（top 76）、对话 notice「↗ 对照岗位评分标准」、工具链 `job_get→application_get→ui_dispatch`；
+  ② 「帮我查下一轮可约时段」→ 4 秒内**无自动弹窗**、气泡 `app-chat-suggest-schedule`（「去安排面试」）、点击后**排期弹窗打开**、工具链 `interview_get→interview_free_slots→ui_dispatch`；
+  ③ 手打「打开人才库」→ `#/talent` + `app-talent-view`；
+  ④ 手打「回到今日待办，只看待初筛」→ `#/queue` + `app-queue-filter-screening.active`。
+  探针 `pass=true`（四检查全过）；15 步 `--fresh` 合并后 **15/15 PASS**（审计 hard 0）；证据 `evidence/chat-canvas-linkage-20261121/`（probe JSON + 4 张 1440 截图 + 回归/审计）。
+  **状态**：D-175 的“规范先入库→服务端→前端→本地验收”流程首次跑通；PR #11 内容已并入 feat（可标已合并/关闭）；预览 Host 已用新构建重启（token 仅 TEMP，不入库）。**残余**：① 真实日历未绑定（无 `RECRUITMENT_FEISHU_USER_MAP`）→ 真实可约时段未证，查时段工具如实返回空+原因（未伪造）；② 全量测试未跑（非 main 合并轮）；③ 未合并 main。

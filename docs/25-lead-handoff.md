@@ -297,20 +297,21 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 - 整页前端是 `src/app/**`（PR #8/#9 已并入，`a4f6abb`/`b642e07`），双入口构建：`lib/app.js`（ESM 自包含）+ `lib/client.js`（DSH CJS）。
 - CSS 注入按**文件**独立标记（`1e12acc` 修过；整页曾因共用标记导致画布无样式）。
 - 对话 `/recruitment/agent/turn`：**已接线（D-173，2026-11-20）**——复用 DSH 既有 `ctx.agents`（同一 `rc_sid` 当 DSH session），SSE `delta/tool/done/error`；对话 Agent 工具面是**只读 allow-list**（写工具不可见），写操作仍走右侧工作台人点确认。桥/运行时不可用仍 503 降级。**改代码后需重启 Host 才生效**（预览 Host 49351 当前仍可能跑旧进程）。实现见 `src/http/agent-turn.ts`。
-- **对话×画布统一交互（D-174，2026-11-21）**：任务 11（前端硬编码 pill 切页）已作废，采用 `design/v4/chat-canvas-interaction-spec.md`。**阶段一服务端已完成**（HEAD `f0f54ee`）：新增只读 `recruitment_ui_dispatch` + `recruitment_interview_free_slots`，对话 SSE 新增 `event: ui_action`（navigate/focus_section/suggest_action，校验后下发）；工具面 33→35。**阶段二前端未接**：前端仍只显示文字，切画布/聚焦/建议按钮要等前端按 `design/v4/frontend-phase-two-notice.md` 接入；规范 §5 端到端四场景未达成。
+- **对话×画布统一交互（D-174/D-176，2026-11-21）**：任务 11（前端硬编码 pill 切页）已作废，采用 `design/v4/chat-canvas-interaction-spec.md`。**阶段一服务端**（`f0f54ee`）：只读 `recruitment_ui_dispatch` + `recruitment_interview_free_slots`，SSE 新增 `event: ui_action`（navigate/focus_section/suggest_action，校验后下发）；工具面 33→35。**阶段二前端已接并验收**（PR #11 → merge `43140f0`）：前端消费 `ui_action`，1440 四场景全过（focus 高亮 / 查时段不自动弹窗+气泡建议按钮 / 切人才库 / 切队列+待初筛），15 步回归 15/15；证据 `evidence/chat-canvas-linkage-20261121/`。预览 Host 49351 已用新构建重启。
 - 自动化：`work/d5/e2e-real/scripts/run-runbook.mjs --fresh` 跑旧壳 15 步（15/15 过）；**v4 整页 15 步已完成**：`work/d5/fullpage/run-v4.mjs --fresh --port 49347`，2026-11-20 两次独立真跑均 **15/15**，证据 `evidence/fullpage-v4-15step-20261120/`（判据/断言变更见 docs/17 D-169）。
 
 ### 接手要做的（按优先级）
 1. ~~完成 `run-v4.mjs` 适配并按 v4 重跑 15 步~~ → **已完成（D-169）**：15/15 PASS，证据 `evidence/fullpage-v4-15step-20261120/`；脚本在 `work/d5/fullpage/run-v4.mjs`（work/ 不入库）。
 2. ~~修前端 5 个类型错~~ → **已完成（D-172）**：PR #10 已并入 `af0fef5`，`tsc`=0，合并后 15/15。
 3. 任何界面缺陷：写证据 + 复现，交前端 PR，**不许自己改界面**（D-168）。
-4. ~~对话桥~~ → **v1 已接（D-173）**；对话×画布统一交互**服务端阶段一已完成（D-174）**，**前端阶段二待接**（`design/v4/frontend-phase-two-notice.md`）；剩余：Agent 缺“列表/总览”只读工具（问“今天先办谁”目前靠阶段枚举兜底）、对话内写确认卡、预览 Host 重启生效、真实飞书日历绑定（真实时段）。
+4. ~~对话桥~~ → **v1 已接（D-173）**；**对话×画布阶段一（D-174）+ 阶段二（D-176）均完成并验收**（PR #11 → `43140f0`；1440 四场景 + 15 步 15/15）。剩余：真实飞书日历绑定（真实可约时段未证）、Agent 缺“列表/总览”只读工具、对话内写确认卡、全量测试。
 5. 收口 PR #8/#9（内容已并主线，PR 可标已合并）。
 
 ### 常用命令
 - v4 15 步真点：`RECRUITMENT_DB_PASSWORD=123456 node work/d5/fullpage/run-v4.mjs --fresh --port 49347`（跑完自动删一次性库/profile/token；端口白名单 49347–49352 且排除 49351）
 - 证据审计：`node work/d5/fullpage/audit-run.mjs --result work/d5/fullpage/runbook-result.json`
 - 对话桥验收：`node work/d5/fullpage/probe-agent-turn.mjs`（HTTP 两轮：读/写请求）· `node work/d5/fullpage/probe-chat-ui.mjs`（真浏览器 ChatPanel）
+- 对话×画布四场景验收（需 49351 预览 Host 在跑）：`node work/d5/fullpage/probe-chat-canvas-linkage.mjs`（1440：focus 高亮 / 查时段建议按钮 / 切人才库 / 切队列待初筛）
 - 构建：`cd dsh/dsh-recruitment && npx tsdown`（双入口）
 - 类型：`npx tsc --noEmit`；服务端棘轮：`node scripts/server-typecheck.mjs`
 - 机检：`runtime-budget` / `entry-reachability` / `client-contract-check` / `term-lint`
@@ -341,9 +342,10 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 ### 13.5 当前状态（2026-11-20 晚）
 - 分支 `feat/unified-document-intake`，HEAD 见 `git log`；PR #8/#9 内容已并入；**PR #10（v4 前端 5 类型错）已并入 `af0fef5`**（可标已合并）。
 - 旧壳 15 步真点：**15/15 PASS**（`work/d5/e2e-real/scripts/run-runbook.mjs --fresh`）。
-- **v4 整页 15 步真点：15/15 PASS**（`work/d5/fullpage/run-v4.mjs --fresh --port 49347`；合并前 22:34/22:40 两次、合并后 23:09 一次，共三次独立跑；证据 `evidence/fullpage-v4-15step-20261120/`（合并前）、`evidence/fullpage-v4-15step-pr10-20261120/`（合并后，权威）；D-169/D-172）。
+- **v4 整页 15 步真点：15/15 PASS**（`work/d5/fullpage/run-v4.mjs --fresh --port 49347`；合并前 22:34/22:40、PR #10 后 23:09、PR #11 后 2026-11-21 04:3x 共四次独立跑；证据 `evidence/fullpage-v4-15step-20261120/`（合并前）、`…-pr10-20261120/`、`…-linkage-20261121/` 内的回归结果；D-169/D-172/D-176）。
+- **对话×画布四场景 1440：4/4 PASS**（PR #11 合并后，预览 Host 49351 新构建；evidence `chat-canvas-linkage-20261121/`；D-176）。
 - 新整页 v4：`/recruitment/app` 可用；三屏快照在 `evidence/fullpage-v4-preview-20261120/`。
-- **未完成**：① 对话×画布**前端阶段二未接**（服务端 ui_action 已就绪，前端仍不消费；D-174）；② 真实飞书日历未绑定（`RECRUITMENT_FEISHU_USER_MAP` 缺）→ 查时段只能如实返回空+原因；③ Agent 仍缺“列表/总览”只读工具；④ 8 条写能力无界面（compound/config/email authorize/feishu import）；⑤ `docs/38` 未按 v4 testid 同步；⑥ 390 不作要求；⑦ 全量测试未跑（非 main 合并轮）；⑧ 产品负责人本人手点抽检未做。
+- **未完成**：① 真实飞书日历未绑定（`RECRUITMENT_FEISHU_USER_MAP` 缺）→ 查时段只能如实返回空+原因，真实可约时段未证；② Agent 仍缺“列表/总览”只读工具；③ 8 条写能力无界面（compound/config/email authorize/feishu import）；④ `docs/38` 未按 v4 testid 同步；⑤ 390 不作要求；⑥ 全量测试未跑（非 main 合并轮）；⑦ 产品负责人本人手点抽检未做。
 
 ### 13.6 环境（缺一个就假红）
 - `DSH_HOME=D:\12412\dsh-home-recruitment`；PG `D:\12412\PostgreSQL\bin\psql.exe`，口令环境变量 `RECRUITMENT_DB_PASSWORD`（不落文件）；Python `D:\Python3.12.9\python.exe` + `RECRUITMENT_CONVERTER_DIR`。
@@ -367,7 +369,7 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 ### 13.9 未决（接手后先拍/先做）
 1. ~~15 步整页适配并重跑~~ → **已完成（D-169）**：15/15 PASS，证据 `evidence/fullpage-v4-15step-20261120/`。
 2. ~~前端 5 个类型错（D-170）~~ → **已完成（D-172）**：PR #10 并入 `af0fef5`；合并后 `tsc`=0、15 步 15/15。
-3. ~~对话桥~~ → **v1 已接（D-173）**；**对话×画布阶段一已完成（D-174）**，下一步：前端阶段二接入 + 重启预览 Host + 真实日历绑定后补 §5 端到端；Agent 总览工具/写确认卡另排。
+3. ~~对话桥~~ → **v1 已接（D-173）**；**对话×画布阶段一（D-174）+ 阶段二（D-176）均完成并验收**（PR #11 → `43140f0`；1440 四场景 + 15 步）。剩余：真实日历绑定后补真实时段、Agent 总览工具、对话内写确认卡、全量测试。
 4. 8 条写能力是否上界面（需产品负责人拍范围）；`docs/38` 按 v4 testid 同步。
 5. 交付期：部署/多租户/合规/模型口径（另立裁决）。
 
@@ -379,4 +381,4 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 - **本地 Agent（我）**：服务端路由、Agent 工具、数据库读写、权限隔离与安全门禁；`tsc/tsdown`、15 步回归、真机视觉取证；**不改界面**（D-168）。
 - **唯一真相源**：`design/v4/*.md` 规范 + `docs/17` 裁决 + 本交接文件；聊天记录/口头一致不算决定；文档矛盾当场裁决回抄。
 - **流程**：规范入库 → 我合入 feat 实现服务端 → 前端按同一规范做 UI → 我做 diff 复核 + 构建 + 规范指定场景/15 步真机 → 回抄 `docs/17`。
-- **反例**：任务 11（前端硬编码 pill 切页/抢弹窗）已作废；不得以"保测试/最小改动"为由对交互做局部 patch。当前状态：阶段一（服务端）完成（D-174），阶段二前端进行中。
+- **反例**：任务 11（前端硬编码 pill 切页/抢弹窗）已作废；不得以"保测试/最小改动"为由对交互做局部 patch。当前状态：阶段一（D-174）+ 阶段二（D-176）均完成并验收（PR #11 → `43140f0`）；下一个功能按“规范入库 → 服务端 → 前端 → 本地验收”跑。

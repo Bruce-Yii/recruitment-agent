@@ -1,0 +1,42 @@
+# 阶段二（对话×画布前端接入）验收机检（2026-11-21 · HEAD 43140f0）
+
+## PR #11 复核
+
+| 项 | 结果 |
+|---|---|
+| 提交 | `a707f1e`（phase 2 SSE linkage）+ `d013826`（focus 滚动 rAF/高亮计时修复），HEAD `d013826`，基于 `256f386` |
+| 改动面 | 10 文件：`src/app/{App,ChatPanel,QueueView,api}.tsx|ts`、`src/app/{app.css,TESTID-MANIFEST.md}`、`src/client/canvas/{CandidatePage,CanvasRoute,JobPage}.tsx`、`canvas.css` |
+| 越界 | 无：未动写链路（canvas-actions/postActionSeam/builder/use-recruiting）、服务端 `src/http/**`/工具、`lib/**`（lib 由本地重建提交） |
+| testid | 无既有 testid 删除；新增 `app-chat-quick-*`、`app-chat-suggest-<modal|route>`、`data-section` 只读锚点 |
+| 兜底 | 无 `@ts-ignore`/`any`/`eslint-disable` |
+
+## 本地门禁（合并后）
+
+| 门 | 结果 |
+|---|---|
+| `npx tsc --noEmit` | PASS（0） |
+| `npx tsdown` | PASS（双入口；`lib/app.js` 1.34MB + `lib/client.js` 重建随 merge 提交） |
+| `node scripts/server-typecheck.mjs` | PASS（0/0） |
+| `node scripts/runtime-budget.mjs` | PASS（5051/5051） |
+| `node scripts/entry-reachability.mjs` | PASS（无新缺口；手拼 0） |
+| `node scripts/client-contract-check.mjs` | PASS |
+| `node scripts/term-lint.mjs` | PASS |
+| 15 步全链路 | **15/15 PASS**（`run-v4.mjs --fresh --port 49347`，HEAD 43140f0；审计 hard 0） |
+| 干净库全量测试 | 未跑（非 main 合并轮） |
+
+## 1440 四场景（预览 Host 49351，2026-11-21 04:2x）
+
+```
+node work/d5/fullpage/probe-chat-canvas-linkage.mjs
+```
+
+- ① focus_section criteria：hash 不变、`[data-section=criteria].ros-section-focus` 出现并在视口（top 76）；notice「↗ 对照岗位评分标准」；工具 `job_get/application_get/ui_dispatch`。
+- ② free-slots suggest：4s 内无自动弹窗；`app-chat-suggest-schedule`（「去安排面试」）；点击后排期弹窗打开；工具 `interview_get/interview_free_slots/ui_dispatch`。
+- ③ navigate talent：`#/talent` + `app-talent-view`。
+- ④ navigate queue+screening：`#/queue` + `app-queue-filter-screening.active`。
+- 探针 `pass=true`，四检查全 ok；截图见上级目录。
+
+## 环境限制 / 清理
+
+- 真实日历未绑定（`RECRUITMENT_FEISHU_USER_MAP` 缺）→ 查时段空结果 + 原因；未伪造。
+- 一次性库/Chrome profile 已清理；49351 预览 Host 保持运行（新构建）；49369 未触碰。
