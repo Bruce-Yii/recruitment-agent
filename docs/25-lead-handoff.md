@@ -301,7 +301,7 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 
 ### 接手要做的（按优先级）
 1. ~~完成 `run-v4.mjs` 适配并按 v4 重跑 15 步~~ → **已完成（D-169）**：15/15 PASS，证据 `evidence/fullpage-v4-15step-20261120/`；脚本在 `work/d5/fullpage/run-v4.mjs`（work/ 不入库）。
-2. **修前端 5 个类型错**（`npx tsc --noEmit` 红：`prefetchCanvasPath` 单参 ×3、`nextStep.conclusion` ×2；`design/v4/frontend-fixes-20261120.md`），修完再谈合并门（D-170）。
+2. ~~修前端 5 个类型错~~ → **已完成（D-172）**：PR #10 已并入 `af0fef5`，`tsc`=0，合并后 15/15。
 3. 任何界面缺陷：写证据 + 复现，交前端 PR，**不许自己改界面**（D-168）。
 4. 对话桥可接：用 DSH `agents/sessions`（`ctx.agents.create/followup` + `ctx.on('session/event')`），失败保持 503 降级。
 5. 收口 PR #8/#9（内容已并主线，PR 可标已合并）。
@@ -337,11 +337,11 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 `src/tools`（Agent 能力）/ `src/domain`（判定纯函数）/ `src/db`（持久化）/ `src/http`（接口+闸门，含 `app-shell.ts` 整页入口）/ `src/client`（DSH 视图+/canvas）/ `src/app`（整页 v4）/ `src/connectors/{feishu,imap}` / `db/migrations` 0001→0023。
 
 ### 13.5 当前状态（2026-11-20 晚）
-- 分支 `feat/unified-document-intake`，HEAD 见 `git log`；PR #8/#9 内容已并入（PR 可标已合并）。
+- 分支 `feat/unified-document-intake`，HEAD 见 `git log`；PR #8/#9 内容已并入；**PR #10（v4 前端 5 类型错）已并入 `af0fef5`**（可标已合并）。
 - 旧壳 15 步真点：**15/15 PASS**（`work/d5/e2e-real/scripts/run-runbook.mjs --fresh`）。
-- **v4 整页 15 步真点：15/15 PASS**（`work/d5/fullpage/run-v4.mjs --fresh --port 49347`；2026-11-20T22:34 与 22:40 两次独立跑；证据 `evidence/fullpage-v4-15step-20261120/`；D-169）。
+- **v4 整页 15 步真点：15/15 PASS**（`work/d5/fullpage/run-v4.mjs --fresh --port 49347`；合并前 22:34/22:40 两次、合并后 23:09 一次，共三次独立跑；证据 `evidence/fullpage-v4-15step-20261120/`（合并前）、`evidence/fullpage-v4-15step-pr10-20261120/`（合并后，权威）；D-169/D-172）。
 - 新整页 v4：`/recruitment/app` 可用；三屏快照在 `evidence/fullpage-v4-preview-20261120/`。
-- **未完成**：① 前端 5 个类型错（`tsc` 红，合并门未过；`design/v4/frontend-fixes-20261120.md`）；② 对话桥未接（`/recruitment/agent/turn` 返回 503，页面已降级）；③ 8 条写能力无界面（compound/config/email authorize/feishu import）；④ `docs/38` 未按 v4 testid 同步；⑤ 390 不作要求（桌面 Web）；⑥ 全量测试本轮未跑（非合并轮）。
+- **未完成**：① 对话桥未接（`/recruitment/agent/turn` 返回 503，页面已降级）；② 8 条写能力无界面（compound/config/email authorize/feishu import）；③ `docs/38` 未按 v4 testid 同步；④ 390 不作要求（桌面 Web）；⑤ 全量测试未跑（非 main 合并轮，不得据此宣称全绿）；⑥ 产品负责人本人手点抽检未做。
 
 ### 13.6 环境（缺一个就假红）
 - `DSH_HOME=D:\12412\dsh-home-recruitment`；PG `D:\12412\PostgreSQL\bin\psql.exe`，口令环境变量 `RECRUITMENT_DB_PASSWORD`（不落文件）；Python `D:\Python3.12.9\python.exe` + `RECRUITMENT_CONVERTER_DIR`。
@@ -352,7 +352,7 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 ### 13.7 机器门禁（合并前必须全绿）
 `npx tsc --noEmit`（0）· `npx tsdown`（双入口：`lib/app.js`+`lib/client.js`）· `node scripts/server-typecheck.mjs`（0/0）· `runtime-budget.mjs`（5051 棘轮）· `entry-reachability.mjs`（基线只降）· `client-contract-check.mjs`（手拼 0）· `term-lint.mjs` · 干净库 `node test/run-all.mjs --test-concurrency=1`。
 
-> 2026-11-20 晚实测：除 `tsc` 外全绿；`tsc` 红 5 错（全在 `src/app/**`：`prefetchCanvasPath` 单参 ×3、`nextStep.conclusion` ×2），属前端待修（D-170 / `design/v4/frontend-fixes-20261120.md`）。`src/app/**` 此前不被任何 tsconfig 覆盖，本轮才纳入（收紧，不是放宽）。
+> 2026-11-20 晚实测（PR #10 合入后 `af0fef5`）：`tsc` = **0**、`tsdown`、server-typecheck 0/0、runtime-budget、entry-reachability、client-contract-check、term-lint **全绿**；15 步合并后复跑 **15/15**；三屏悬停 3/3（无 `fetcher is not a function`）。**全量测试未跑**（非 main 合并轮）；`src/app/**` 此前不被任何 tsconfig 覆盖，PR #10 前由总控纳入并暴露 5 错（D-170），现已由 PR #10 修复（D-172）。
 
 ### 13.8 必踩的坑（都踩过）
 1. **CSS 注入按文件**（`tsdown.config.ts`）：共用一个标记 → 整页画布裸文本（已修，勿回退）。
@@ -364,7 +364,7 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 
 ### 13.9 未决（接手后先拍/先做）
 1. ~~15 步整页适配并重跑~~ → **已完成（D-169）**：15/15 PASS，证据 `evidence/fullpage-v4-15step-20261120/`。
-2. 前端 5 个类型错（D-170）→ 修完 `tsc` 0，再跑一遍 15 步即可谈合并。
+2. ~~前端 5 个类型错（D-170）~~ → **已完成（D-172）**：PR #10 并入 `af0fef5`；合并后 `tsc`=0、15 步 15/15。
 3. 对话桥：DSH `ctx.agents.create/followup` + `ctx.on('session/event')`；不通保持 503 降级，不许假装。
 4. 8 条写能力是否上界面（需产品负责人拍范围）；`docs/38` 按 v4 testid 同步。
 5. 交付期：部署/多租户/合规/模型口径（另立裁决）。

@@ -1,5 +1,7 @@
 # 前端任务 10 · v4 整页类型收口（5 个 tsc 错误）
 
+> **状态**：**已完成**。PR #10（分支 `fix/task-10-app-typecheck`，提交 `2279e08`）已复核并合入 `feat/unified-document-intake`（merge `af0fef5`）；本地 `npx tsc --noEmit`=0，`npx tsdown` 通过，合并后 15 步复跑 15/15，三屏悬停 3/3。证据见 `evidence/fullpage-v4-15step-pr10-20261120/`。
+
 > **给谁**：云端前端窗口（你看不到本地 `work/`、证据和未推送提交；本指令自包含，按仓库 `feat/unified-document-intake` 当前 `src/app/**` 即可动手）。
 > **背景**：总控把 `src/app/**` 真正纳入 `npx tsc --noEmit` 后（此前 v4 前端不在任何 tsconfig 里，属于"假绿"），暴露 **5 个既有类型错误**。15 步真点本身 **15/15 PASS**，与本任务无关；本任务只把类型门禁修绿，不改产品行为。
 > **为什么现在**：合并门要求 `npx tsc --noEmit` = 0；这 5 个错不修，后续 15 步证据再全也不能合并。

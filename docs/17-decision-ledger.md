@@ -1938,3 +1938,10 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **归档**：`evidence/fullpage-v4-15step-20261120/` = README（命令/环境/证到什么没证什么）+ PASS-FAIL 表（15 行，逐条判据 + 证据文件）+ `runbook-result.json` + `evidence/S01..S15`（ui.png/ui.txt/db.txt + S08-DRAFT-OWNER.txt）+ `audit-result.json`（审计器 hard 0 / leaks 0）+ `gates.txt`（机检）。
   **边界（R7）**：证据目录内**不保存**含机器路径的脚本副本；run-v4/fresh-lib/audit-run 留在 `work/d5/fullpage/`（work/ 不入库），README 写明复跑命令与端口口径；归档目录已扫描：无当前有效 token、无 `D:\` 机器路径（CLEAN）。result 中 `host` 为 `…?token=<redacted>`。
   **为什么**：证据要可复核，但“入库文件零机器路径/零有效凭据”是硬约束；需要脚本长期可复用时，另立 task 把脚本参数化（去掉硬编码路径）后再入库，不在本轮顺手做。
+
+- **D-172（2026-11-20，总控；PR #10 收口：v4 整页 5 个 tsc 错误修复，合并门类型项恢复绿）**
+  **来源**：前端分支 `fix/task-10-app-typecheck` / 提交 `2279e08`（基于 `2392720`），PR #10；仅 3 文件 `17+/5-`：`prefetchCanvasPath` 三处补第二参 `(path) => fetchAppJson(path, readCookie('rc_sid'))`；删死字段 `nextStep.conclusion` 读取（`NextStepView` 无此字段、运行时恒 `undefined`，删后显示等价）。
+  **复核（不接受自述）**：本地 `git diff HEAD..origin/fix/task-10-app-typecheck` 核对——仅 3 个 `src/app` 文件、无 `@ts-ignore/@ts-nocheck/@ts-expect-error/any/eslint-disable`、未动 server/client/tsconfig/scripts/lib/package.json/MANIFEST；合入为 merge commit **`af0fef5`**（含 `lib/app.js` 重建，10 行）。
+  **机检（合并后）**：`npx tsc --noEmit` = **0 错**；`npx tsdown` PASS（双入口）；server-typecheck 0/0 · runtime-budget 5051/5051 · entry-reachability PASS · client-contract-check PASS · term-lint PASS；全量测试未跑（非 main 合并轮，不得据此宣称全绿）。
+  **全链路（合并后独立复跑）**：`2026-11-20T23:09:34+08:00`，HEAD `af0fef5`，`run-v4.mjs --fresh --port 49347` = **15/15 PASS**；证据审计 hard 0 / leaks 0；三屏真悬停 3/3（队列/岗位/人才库各触发一条 200 只读 GET，无 `fetcher is not a function`）。证据 `evidence/fullpage-v4-15step-pr10-20261120/`。
+  **状态**：D-170 的 5 个前端类型错**关闭**；PR #10 内容已并入 feat（可标已合并/关闭）；合并门仅剩“全量测试未跑（非 main 合并轮）”与产品侧未决项，**未合并 main**。
