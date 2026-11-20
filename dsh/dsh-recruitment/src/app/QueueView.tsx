@@ -3,6 +3,7 @@ import type { ApplicationRowView, RecruitingOverviewView } from '../client/recru
 import { prefetchCanvasPath } from '../client/canvas/canvas-ux.ts';
 import { uploadResumeRaw } from '../client/canvas/canvas-actions.ts';
 import type { ActiveUploadTask } from '../client/canvas/CanvasRoute.tsx';
+import { fetchAppJson, readCookie } from './api.ts';
 
 export interface QueueViewProps {
   readonly overview: RecruitingOverviewView;
@@ -64,7 +65,10 @@ export function QueueView({
   const handleRowHover = (app: ApplicationRowView) => {
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
     hoverTimerRef.current = setTimeout(() => {
-      prefetchCanvasPath(`/recruitment/api/recruiting/applications/${encodeURIComponent(app.id)}`);
+      prefetchCanvasPath(
+        `/recruitment/api/recruiting/applications/${encodeURIComponent(app.id)}`,
+        (path) => fetchAppJson(path, readCookie('rc_sid')),
+      );
     }, 120);
   };
 
@@ -211,7 +215,7 @@ export function QueueView({
                       <span className="cr-role">{app.jobTitle}</span>
                     </div>
                     <div className="cr-sub">
-                      {app.nextStep.conclusion || app.interviewSummary || app.screeningSummary || app.materialSummary}
+                      {app.interviewSummary || app.screeningSummary || app.materialSummary}
                     </div>
                   </div>
                 </div>

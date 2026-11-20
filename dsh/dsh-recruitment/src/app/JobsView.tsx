@@ -1,6 +1,7 @@
 import React from 'react';
 import type { RecruitingOverviewView } from '../client/recruiting/view-model.ts';
 import { prefetchCanvasPath } from '../client/canvas/canvas-ux.ts';
+import { fetchAppJson, readCookie } from './api.ts';
 
 export interface JobsViewProps {
   readonly overview: RecruitingOverviewView;
@@ -30,7 +31,10 @@ export function JobsView({ overview, onOpenJob }: JobsViewProps) {
               className="flow-row"
               data-testid={`app-job-item-${job.id}`}
               onMouseEnter={() =>
-                prefetchCanvasPath(`/recruitment/api/recruiting/jobs/${encodeURIComponent(job.id)}`)
+                prefetchCanvasPath(
+                  `/recruitment/api/recruiting/jobs/${encodeURIComponent(job.id)}`,
+                  (path) => fetchAppJson(path, readCookie('rc_sid')),
+                )
               }
               onClick={() => onOpenJob(job.id)}
             >
@@ -61,7 +65,7 @@ export function JobsView({ overview, onOpenJob }: JobsViewProps) {
                   ))}
                 </div>
               ) : (
-                <div className="sec-meta">{job.nextStep.conclusion || '点击进入岗位详情与候选人池'}</div>
+                <div className="sec-meta">{'点击进入岗位详情与候选人池'}</div>
               )}
             </button>
           ))}
