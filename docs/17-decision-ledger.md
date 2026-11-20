@@ -1994,6 +1994,16 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
 - **D-177（2026-11-21，总控；DSH 侧栏「招聘工作台」打开旧 shell，必须直接打开 v4）**
   **来源**：产品负责人 2026-11-21 反馈“左侧边的招聘工作台点开是老的垃圾，只有点第二个才有用”；取证 `evidence/legacy-sidebar-entry-20261121/`（1440 两图 + DOM/testid JSON）。
   **事实**：DSH 侧栏项仍注册旧 `RecruitmentShell`（`src/client/index.tsx:86-97`，testid `recruiting-workspace`/`overview-headline`/旧顶栏三页签）；v4 `src/app/App.tsx`（`app-chat-panel`/`app-canvas`）由 `src/http/app-shell.ts` 在 `/recruitment/app` 单独提供，未接进侧栏。与 `design/v4/frontend-task-09-v4-shell.md` 已裁决的“打开招聘工作台第一屏就是 v4，不许老首页”相违。
-  **裁决**：侧栏「招聘工作台」必须**直接打开 v4**（嵌入 `App` 或宿主内导航），旧 shell 从默认入口退役/隐藏；正常流程不要求 `/recruitment/test` 兜底；直链 `/recruitment/app` 与 15 步回归不得回归。界面改动由产品/前端窗口按 `design/v4/frontend-task-13-sidebar-entry-v4.md` 实现（本地总控不改界面，D-168/D-175）；若方案 A 需要服务端“DSH session→rc_sid/alias”绑定接口，先写契约再由本地实现。
+  **裁决（经 D-178 调整为最终口径）**：旧 DSH 侧栏入口（`RecruitmentShell`）**退役/隐藏**；产品唯一用户入口 = 独立产品页 `/recruitment/app`；**不再要求“侧栏打开 v4”**。正常流程不要求 `/recruitment/test` 兜底（正式交付用产品登录，D-178）；直链 `/recruitment/app` 与 15 步回归不得回归。界面改动由产品/前端窗口按 `design/v4/frontend-task-13-sidebar-entry-v4.md` 实现（本地总控不改界面，D-168/D-175）；若需要服务端“DSH session→rc_sid/alias”绑定接口，先写契约再由本地实现。
   **token 说明（非缺陷）**：DSH `?token=` 是进程级 launch token，首次换取持久 cookie；实测重启 Host 后免 token 直链 `/recruitment/app` 仍可进（cookie 持久），不需要每次带 token，更不应把 token 链接当产品入口。
   **状态**：待前端交付（任务 13）；验收含侧栏点击 1440 截图 + 无旧壳 testid + 15 步回归。
+
+- **D-178（2026-11-21，总控；产品入口边界：独立产品 UI，DSH 只做运行时/宿主，不作为用户界面）**
+  **来源**：产品负责人 2026-11-21 质疑——“为什么非要在 dsh 里面？我们这个产品为什么不能直接产品 UI？每次干嘛非要和 dsh 的 web 界面扯上关系？不应该点击链接就是我们的产品吗？”
+  **判断**：**对最终用户（HR/面试官）的入口必须是独立产品 UI**（v4 `/recruitment/app`，D-167），不是 DSH Web 界面。DSH 只是 Agent 运行时/宿主（D-6/R1：不自研 runtime），它的 token、侧栏、旧 `RecruitmentShell` 都是**本地开发预览脚手架**，不得进入用户路径。之前反复发 DSH token 链接、保留旧侧栏，造成了“产品在 DSH 里”的错觉——这是预览流程和旧壳遗留问题，不是产品架构要求。
+  **裁决**：
+  ① 产品入口 = **独立 URL + 产品登录**（交付期落地）；本地预览可暂用 DSH 一次性 token，但它只是开发门槛，不是产品入口；
+  ② 旧 DSH 侧栏入口（`RecruitmentShell`）**退役/隐藏**，不再把“侧栏打开 v4”当产品目标（D-177/任务 13 按此调整）；产品页面直链 `/recruitment/app` 是唯一用户入口；
+  ③ 不再新增“为了在 DSH 里好看”的界面补丁；所有新 UI 以独立产品页为准；
+  ④ 交付前必须补：产品登录/会话（替代 `/recruitment/test` 演示身份）、独立入口/域名；预览 token 仅限本机开发，正式用户不可见。
+  **状态**：D-177 任务 13 按本裁决调整为“隐藏/退役旧壳 + 保证直链产品可用”；交付期登录/部署未排期（开放项，不与本地验证混谈）。
