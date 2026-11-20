@@ -1,0 +1,43 @@
+=== DB READBACK S15 ===
+at: 2026-11-20T14:40:20.784Z
+db: ra_fresh_e2e_hhs_cz7pa7 (SELECT-only; no product code imported)
+
+SQL: -- baseline head counts
+
+
+SQL: select 'intake_asset',count(*) from recruitment.intake_asset union all select 'business_task',count(*) from recruitment.business_task union all select 'candidate_constraint',count(*) from recruitment.candidate_constraint union all select 'criterion_override',count(*) from recruitment.criterion_override union all select 'decision',count(*) from recruitment.decision union all select 'interview',count(*) from recruitment.interview union all select 'interviewer',count(*) from recruitment.interviewer union all select 'scorecard_draft',count(*) from recruitment.scorecard_draft union all select 'scorecard',count(*) from recruitment.scorecard union all select 'resume_version',count(*) from recruitment.resume_version union all select 'event_inbox',count(*) from recruitment.event_inbox union all select 'application',count(*) from recruitment.application
+intake_asset|4
+business_task|14
+candidate_constraint|2
+criterion_override|0
+decision|2
+interview|8
+interviewer|9
+scorecard_draft|2
+scorecard|4
+resume_version|4
+event_inbox|99
+application|4
+
+
+SQL: -- step SQL
+
+
+SQL: select id, status, record_version, updated_at from recruitment.interview order by created_at
+11111111-1111-4111-8111-000000000801|POST_INTERVIEW|1|2026-11-20 22:37:40.644091+08
+11111111-1111-4111-8111-000000000802|SCHEDULED|1|2026-11-20 22:37:40.644091+08
+f3bedcd7-f4b0-4c23-941a-f5926f5523e4|POST_INTERVIEW|1|2026-11-20 22:37:41.018608+08
+06686dd5-83eb-4447-96d5-5ff595e53ff3|POST_INTERVIEW|1|2026-11-20 22:37:41.019858+08
+6a307560-4e76-43d8-b88b-3fcad781449b|POST_INTERVIEW|1|2026-11-20 22:37:41.028341+08
+51b31b25-3e61-4761-a1a4-587abe6160d7|POST_INTERVIEW|1|2026-11-20 22:37:41.02898+08
+cadf9e74-3cbc-42a1-946f-15c84e0e7a0d|NO_SHOW|3|2026-11-20 22:40:05.357152+08
+312ddda8-7929-48d6-b048-b50d71bbcf18|SCHEDULED|2|2026-11-20 22:40:17.339922+08
+
+
+SQL: -- step SQL
+
+
+SQL: select event_id, event_type, recorded_at, left(payload::text,300) from recruitment.event_inbox where payload::text ilike '%STALE_RECORD_VERSION%' or event_type ilike '%conflict%' order by recorded_at
+
+
+

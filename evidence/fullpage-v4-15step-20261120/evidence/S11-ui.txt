@@ -1,0 +1,202 @@
+STEP S11 — 面试官 B 补交独立面评
+captured_at: 2026-11-20T14:39:13.059Z
+url: http://127.0.0.1:49347/?token=<redacted>
+viewport: 1440x900 (headless Chrome, CDP 9222)
+verdict: PASS
+reason: B 视角表单可达、只见本人维度，真点提交；S11-db.txt 确认 scorecard +1。
+key_visible_text: 我的独立面评 | 本轮面评已提交；修订需要服务端 revision 闭环，本版不开放。 | 面试安排 | 2026-11-19 22:37 – 2026-11-20 21:37 | 时区：Asia/Shanghai · 面试状态：POST_INTERVIEW · slot：FRESH_R2 | 会议绑定：未绑定 | 转写状态：还没收到 | 面试 id：06686dd5-83eb-4447-96d5-5ff595e53ff3 | provenance：FIXTURE | trigger：MANUAL | connection：CONNECTED | 服务端评估时间（as_of）：2026-11-20T14:39:09.000Z | 信息可见范围 | 可查看分配给你的面试、本轮 Rubric、授权材料；其他面试官的主观评分与私人备注默认不展示。 | Provenance / trigger / connection 由服务端按租
+extra: {"identity_bound":true,"round":"第 2 轮","s11":{"filled":{"ok":true,"dimensions":3,"scores":3,"notes":3,"overall":"ADVANCE"},"submit":{"ok":true,"testid":"submit-scorecard"},"dbChanged":true},"writes":[{"url":"/recruitment/api/action/scorecard/submit","method":"POST","status":200,"body":"{\"interview_id\":\"06686dd5-83eb-4447-96d5-5ff595e53ff3\",\"rubric_version_id\":\"6cb6992b-0501-4267-b72a-cabb3c263231\",\"dimensions\":{\"work_exists\":{\"assessment\":\"MET\",\"score\":4,\"note\":\"RUNBOOK 观察：候选人能说清支付回调幂等与对账细节。\"},\"edu_exists\":{\"assessment\":\"MET\",\"score\":4,\"note\":\"RUNBOOK 观察：候选人能说清支付回调幂等与对账细节。\"},\"team_lead\":{\"assessment\":\"MET\",\"score\":4,\"note\":\"RUNBOOK 观察：候选人能说清支付回调幂等与对账细节。\"}},\"transcript_basis\":\"NO","resp":"{\"scorecard_id\":\"3bc5e48e-0197-4ed3-a37d-faaff531fdaa\",\"status\":\"SUBMITTED\",\"actor_id\":\"11111111-1111-4111-8111-000000000105\",\"record_version\":1,\"interviewer_id\":\"0c41f435-b7cb-4291-a8d7-8973462e987e\",\"interview_id\":\"06686dd5-83eb-4447-96d5-5ff595e53ff3\",\"replayed\":false}"},{"url":"/recruitment/api/action/scorecard/draft?interview_id=06686dd5-83eb-4447-96d5-5ff595e53ff3","method":"DELETE","status":405,"body":"","resp":""},{"url":"/recruitment/api/action/scorecard/draft","method":"POST","status":409,"body":"{\"interview_id\":\"06686dd5-83eb-4447-96d5-5ff595e53ff3\",\"payload\":{\"assessments\":{},\"note\":\"\"}}","resp":"{\"error\":{\"code\":\"FORBIDDEN\",\"reason_code\":\"SCORECARD_ALREADY_SUBMITTED\",\"message\":\"该场面试的面评已提交/已豁免，不允许再写草稿（草稿只存在于提交之前）\"}}"},{"url":"/recruitment/api/action/scorecard/draft","method":"POST","status":409,"body":"{\"interview_id\":\"06686dd5-83eb-4447-96d5-5ff595e53ff3\",\"payload\":{\"assessments\":{\"work_exists\":\"MET\",\"edu_exists\":\"MET\",\"team_lead\":\"MET\"},\"note\":\"\"}}","resp":"{\"error\":{\"code\":\"FORBIDDEN\",\"reason_code\":\"SCORECARD_ALREADY_SUBMITTED\",\"message\":\"该场面试的面评已提交/已豁免，不允许再写草稿（草稿只存在于提交之前）\"}}"}]}
+----- PAGE innerText -----
+Recruitment OS
+我的面试
+Agent
+你好，我是招聘协作 Agent。你可以直接告诉我需要推进哪位候选人，或拖入简历文件自动建档。
+今天最优先处理的 3 位候选人是谁？
+查看当前待提交面评的进展
+我的面试与独立面评
+面试官 B
+面试官
+
+当前身份：演示-面试官 B（interviewer_b）
+
+← 返回我的面试
+INTERVIEW WORKSPACE
+候选人 T
+
+后端工程师（演示） · 第 2 轮 · 后端工程师（演示） · 当前身份：演示-面试官 B
+
+面评已提交
+本轮面试简报
+
+后端工程师（演示）
+
+候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。
+面后速记
+本轮考察重点
+第 2 轮 · 只读 · 服务端权威
+
+来源：岗位通用标准（服务端未提供本轮专属配置）
+
+JOB_BASE 降级（服务端未提供该轮配置）
+
+本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE）
+
+评分维度见下方「本轮评分表 · effective schema」（岗位底座）。
+
+本轮评分表 · effective schema
+只读 · 岗位通用标准（服务端未提供本轮专属配置）
+
+分数区间：服务端未提供分数区间 · submission rubric：6cb6992b-0501-4267-b72a-cabb3c263231
+
+简历中存在可分割的工作经历条目
+work_exists
+kind=MUST_HAVE · weight=0.5
+JOB_BASE
+简历中存在可分割的教育经历条目
+edu_exists
+kind=MUST_HAVE · weight=0.25
+JOB_BASE
+有带团队经验
+team_lead
+kind=NICE_TO_HAVE · weight=0.25
+JOB_BASE
+
+是否有 ≥1 年、≥3 人的直接带团队经历？
+
+前面几轮发生了什么
+只读 · 紧邻上一轮 · 服务端事实
+
+第 1 轮 · 面试后 · 面试官：演示-面试官
+
+面评：已提交 · 结论：推进
+
+覆盖到的维度：简历中存在可分割的工作经历条目、简历中存在可分割的教育经历条目、有带团队经验
+
+没有覆盖到的维度：无
+
+这一轮可以参考
+只读 · 参考不是指令 · 服务端事实
+
+• 可以重点了解「简历中存在可分割的工作经历条目」
+
+值得问的原因：岗位标准里这一条权重较高（0.5），前面的轮次还没有聊到这一条，材料里也没有对应的原文。
+
+• 可以重点了解「简历中存在可分割的教育经历条目」
+
+值得问的原因：岗位标准里这一条权重较高（0.25），前面的轮次还没有聊到这一条，材料里也没有对应的原文。
+
+• 可以重点了解「有带团队经验」
+
+值得问的原因：岗位标准里这一条权重较高（0.25），前面的轮次还没有聊到这一条，材料里也没有对应的原文。
+
+查看招聘方接收的简历材料
+材料分支 · Transcript
+
+转写状态：还没收到（MISSING）
+
+reason_code：NO_MEETING_BOUND · 会议绑定：未绑定 · 会议数：0
+
+这一轮的转写还没到，不影响你提交面评（面评仍可提交）；后续由 HR 决定如何处理。
+
+这张卡片只反映转写本身的状态；阶段能否推进由后续流程决定。
+
+面评分支 · 我的独立评价
+
+面评状态：已提交（SUBMITTED）
+
+scorecard_id：3bc5e48e-0197-4ed3-a37d-faaff531fdaa
+
+status：SUBMITTED · revision_no：1 · record_version：1
+
+submitted_at：2026-11-20 22:39
+
+transcript_basis：NO_TRANSCRIPT
+
+overall：ADVANCE
+
+只显示你本人的面评；其他面试官的主观评分与私人备注默认不展示。
+
+提交我的独立面评
+本轮面评已提交；修订需要服务端 revision 闭环，本版不开放。
+面试安排
+
+2026-11-19 22:37 – 2026-11-20 21:37
+
+时区：Asia/Shanghai · 面试状态：POST_INTERVIEW · slot：FRESH_R2
+
+会议绑定：未绑定
+
+转写状态：还没收到
+
+面试 id：06686dd5-83eb-4447-96d5-5ff595e53ff3
+
+provenance：FIXTURE
+trigger：MANUAL
+connection：CONNECTED
+
+服务端评估时间（as_of）：2026-11-20T14:39:09.000Z
+
+信息可见范围
+
+可查看分配给你的面试、本轮 Rubric、授权材料；其他面试官的主观评分与私人备注默认不展示。
+
+Provenance / trigger / connection 由服务端按租户现算，前端不重贴标签。
+
+我的独立面评
+×
+
+按本轮岗位标准记录你的独立观察。Agent 不会代替面试官提交；提交后实时落库并刷新状态。
+
+本轮考察重点（只读）
+
+岗位基础标准
+
+转写依据：无转写独立评估
+
+简历中存在可分割的工作经历条目
+
+权重：0.5
+
+评估结论：
+请选择
+MET（符合）
+NOT_MET（不符合）
+NOT_OBSERVED（未观察到）
+UNREADABLE（无法判读）
+评分（1–5 的整数）：
+观察说明（可选）：
+简历中存在可分割的教育经历条目
+
+权重：0.25
+
+评估结论：
+请选择
+MET（符合）
+NOT_MET（不符合）
+NOT_OBSERVED（未观察到）
+UNREADABLE（无法判读）
+评分（1–5 的整数）：
+观察说明（可选）：
+有带团队经验
+
+权重：0.25
+
+评估结论：
+请选择
+MET（符合）
+NOT_MET（不符合）
+NOT_OBSERVED（未观察到）
+UNREADABLE（无法判读）
+评分（1–5 的整数）：
+观察说明（可选）：
+综合结论
+结论：
+请选择
+ADVANCE（推进）
+HOLD（暂缓）
+REJECT（不通过）
+取消
+提交我的独立面评
+面评已提交
+
+已同步写入并刷新「我的面试」列表，本场草稿已自动清理。
