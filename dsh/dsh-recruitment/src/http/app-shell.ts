@@ -19,7 +19,8 @@ import { dirname, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 
-import type { DemoActorAlias, DemoActorIdentity } from '../demo-actor/resolve.ts'
+import type { DemoActorAlias } from '../demo-actor/alias.ts'
+import type { DemoActorIdentity } from '../demo-actor/resolve.ts'
 
 /** 宿主侧用到的 `webServer` 最小面。 */
 interface WebServerFace {

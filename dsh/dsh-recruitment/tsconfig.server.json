@@ -1,5 +1,5 @@
 {
-  "//": "服务端类型检查（D-156）：tsc 只覆盖前端的历史坑。本配置把 src/** 纳入检查，客户端代码排除。",
+  "//": "服务端类型检查（D-156）：tsc 只覆盖前端的历史坑。本配置把 src/** 纳入检查，浏览器入口排除（src/client 与 src/app 由 tsconfig.json 用 DOM lib 检查，见 docs/17 D-169）。",
   "compilerOptions": {
     "target": "ES2023",
     "module": "ESNext",
@@ -13,5 +13,5 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/client/**"]
+  "exclude": ["src/client/**", "src/app/**"]
 }

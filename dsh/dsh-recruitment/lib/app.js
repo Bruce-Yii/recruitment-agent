@@ -18861,7 +18861,7 @@ var require_client = /* @__PURE__ */ __commonJSMin(((exports) => {
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
 var import_client = require_client();
 const CSS_KEY$1 = "c61c486ea236";
-const css$1 = "/* ============================================================================\r\n * Recruitment OS v4 — Standalone Full-Page Warm-Paper Workspace\r\n * 100% faithful to finalized design/v4/recruitment_os_v4.html\r\n * ============================================================================ */\r\n\r\n:root {\r\n  --rail: #F3F2EE;\r\n  --paper: #F9F8F5;\r\n  --surface: #FFFFFF;\r\n  --subtle: #F3F2EE;\r\n  --hover: #EAE8E2;\r\n  --ink: #191918;\r\n  --text: #42423F;\r\n  --muted: #787772;\r\n  --soft: #A6A59E;\r\n  --line: rgba(25, 25, 24, 0.08);\r\n  --line-soft: rgba(25, 25, 24, 0.05);\r\n  --iris: #5B5BD6;\r\n  --iris-soft: rgba(91, 91, 214, 0.09);\r\n  --green: #18794E;\r\n  --green-soft: rgba(24, 121, 78, 0.09);\r\n  --amber: #AD5700;\r\n  --amber-soft: rgba(173, 87, 0, 0.09);\r\n  --red: #CD2B31;\r\n  --red-soft: rgba(205, 43, 49, 0.08);\r\n  --shadow-card: 0 1px 2px rgba(25, 25, 24, 0.03), 0 10px 30px -14px rgba(25, 25, 24, 0.07);\r\n  --shadow-modal: 0 28px 72px -18px rgba(25, 25, 24, 0.24);\r\n}\r\n\r\n[data-theme=\"dark\"] {\r\n  --rail: #10100F;\r\n  --paper: #141413;\r\n  --surface: #1A1A19;\r\n  --subtle: #232321;\r\n  --hover: #2B2B28;\r\n  --ink: #F3F2EE;\r\n  --text: #D5D4CE;\r\n  --muted: #9A9992;\r\n  --soft: #6F6E68;\r\n  --line: rgba(243, 242, 238, 0.09);\r\n  --line-soft: rgba(243, 242, 238, 0.055);\r\n  --iris: #8484F5;\r\n  --iris-soft: rgba(132, 132, 245, 0.15);\r\n  --green: #3DD68C;\r\n  --green-soft: rgba(61, 214, 140, 0.13);\r\n  --amber: #F5A524;\r\n  --amber-soft: rgba(245, 165, 36, 0.14);\r\n  --red: #F87171;\r\n  --red-soft: rgba(248, 113, 113, 0.14);\r\n  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.35);\r\n  --shadow-modal: 0 28px 72px -18px rgba(0, 0, 0, 0.65);\r\n}\r\n\r\n*, *::before, *::after {\r\n  box-sizing: border-box;\r\n  margin: 0;\r\n  padding: 0;\r\n}\r\n\r\nhtml, body, #root {\r\n  height: 100%;\r\n  width: 100%;\r\n  background: var(--rail);\r\n  color: var(--ink);\r\n  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif;\r\n  font-size: 14px;\r\n  line-height: 1.55;\r\n  -webkit-font-smoothing: antialiased;\r\n  overflow: hidden;\r\n}\r\n\r\nbutton, input, select, textarea {\r\n  font: inherit;\r\n  color: inherit;\r\n}\r\n\r\nbutton {\r\n  cursor: pointer;\r\n  background: none;\r\n  border: 0;\r\n}\r\n\r\n.num {\r\n  font-variant-numeric: tabular-nums;\r\n}\r\n\r\n::-webkit-scrollbar {\r\n  width: 5px;\r\n  height: 5px;\r\n}\r\n\r\n::-webkit-scrollbar-thumb {\r\n  background: rgba(128, 128, 120, 0.2);\r\n  border-radius: 99px;\r\n}\r\n\r\n@keyframes fadeIn {\r\n  from { opacity: 0; transform: translateY(4px); }\r\n  to { opacity: 1; transform: none; }\r\n}\r\n\r\n@keyframes pulseDot {\r\n  0%, 100% { opacity: 0.3; transform: scale(0.85); }\r\n  50% { opacity: 1; transform: scale(1.1); }\r\n}\r\n\r\n@keyframes orbit {\r\n  to { transform: rotate(360deg); }\r\n}\r\n\r\n/* 3-Layer Progressive Shell */\r\n.shell {\r\n  --chat-w: 324px;\r\n  display: grid;\r\n  grid-template-columns: 204px var(--chat-w) 1fr;\r\n  height: 100vh;\r\n  width: 100%;\r\n  overflow: hidden;\r\n  transition: grid-template-columns 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);\r\n}\r\n\r\n.shell.resizing { transition: none; }\r\n[data-chat=\"collapsed\"] .shell { grid-template-columns: 204px 0px 1fr; }\r\n[data-rail=\"collapsed\"] .shell { grid-template-columns: 56px var(--chat-w) 1fr; }\r\n[data-rail=\"collapsed\"][data-chat=\"collapsed\"] .shell { grid-template-columns: 56px 0px 1fr; }\r\n\r\n/* 1. Left Slim Space Rail */\r\n.space-rail {\r\n  display: flex;\r\n  flex-direction: column;\r\n  height: 100%;\r\n  min-height: 0;\r\n  overflow: hidden;\r\n  background: var(--rail);\r\n  border-right: 1px solid var(--line);\r\n  padding: 0 10px;\r\n  transition: padding 0.2s ease;\r\n}\r\n\r\n[data-rail=\"collapsed\"] .space-rail { padding: 0 8px; align-items: center; }\r\n\r\n.rail-brand {\r\n  height: 56px;\r\n  padding: 0 4px 0 8px;\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 8px;\r\n  font-size: 14px;\r\n  font-weight: 650;\r\n  letter-spacing: -0.02em;\r\n  flex: none;\r\n  width: 100%;\r\n}\r\n\r\n.brand-identity {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 9px;\r\n  min-width: 0;\r\n  overflow: hidden;\r\n}\r\n\r\n.brand-dot {\r\n  width: 22px;\r\n  height: 22px;\r\n  border-radius: 7px;\r\n  background: var(--ink);\r\n  color: var(--surface);\r\n  display: grid;\r\n  place-items: center;\r\n  flex: none;\r\n}\r\n\r\n.brand-dot svg { width: 12px; height: 12px; fill: currentColor; }\r\n\r\n[data-rail=\"collapsed\"] .rail-brand { padding: 0; justify-content: center; }\r\n[data-rail=\"collapsed\"] .brand-identity,\r\n[data-rail=\"collapsed\"] .rail-lbl,\r\n[data-rail=\"collapsed\"] .rail-cnt,\r\n[data-rail=\"collapsed\"] .rail-jobs { display: none; }\r\n[data-rail=\"collapsed\"] .rail-nav { width: 100%; align-items: center; gap: 6px; }\r\n[data-rail=\"collapsed\"] .rail-btn { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 10px; }\r\n[data-rail=\"collapsed\"] .rail-btn-l { gap: 0; justify-content: center; }\r\n[data-rail=\"collapsed\"] .rail-btn-l svg { width: 17px; height: 17px; }\r\n[data-rail=\"collapsed\"] .rail-foot { flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; width: 100%; }\r\n\r\n.rail-nav {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 2px;\r\n  padding-top: 4px;\r\n  overflow-y: auto;\r\n  flex: 1;\r\n  min-height: 0;\r\n}\r\n\r\n.rail-btn {\r\n  height: 33px;\r\n  padding: 0 10px;\r\n  border-radius: 8px;\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  font-size: 13px;\r\n  font-weight: 450;\r\n  color: var(--text);\r\n  transition: background 0.12s, color 0.12s;\r\n  text-align: left;\r\n  flex: none;\r\n}\r\n\r\n.rail-btn:hover { background: var(--hover); color: var(--ink); }\r\n.rail-btn.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(25, 25, 24, 0.06); }\r\n.rail-btn-l { display: flex; align-items: center; gap: 8px; min-width: 0; }\r\n.rail-btn-l svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); flex: none; }\r\n.rail-btn.active .rail-btn-l svg { color: var(--ink); }\r\n.rail-cnt { font-size: 11.5px; color: var(--soft); }\r\n\r\n.rail-jobs {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 1px;\r\n  margin: 4px 0 8px 16px;\r\n  padding-left: 12px;\r\n  border-left: 1px solid var(--line);\r\n}\r\n\r\n.rail-job {\r\n  height: 30px;\r\n  padding: 0 9px;\r\n  border-radius: 7px;\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 6px;\r\n  font-size: 12.5px;\r\n  color: var(--muted);\r\n  transition: background 0.12s, color 0.12s;\r\n  text-align: left;\r\n}\r\n\r\n.rail-job:hover { background: var(--hover); color: var(--ink); }\r\n.rail-job.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(25, 25, 24, 0.05); }\r\n.rail-job-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\r\n.rail-job-hc { font-size: 11px; color: var(--soft); flex: none; }\r\n\r\n.rail-foot {\r\n  margin-top: auto;\r\n  padding: 12px 4px;\r\n  border-top: 1px solid var(--line-soft);\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 4px;\r\n  flex: none;\r\n}\r\n\r\n.icon-btn {\r\n  width: 28px;\r\n  height: 28px;\r\n  border-radius: 8px;\r\n  display: grid;\r\n  place-items: center;\r\n  color: var(--muted);\r\n  transition: background 0.12s, color 0.12s;\r\n  flex: none;\r\n}\r\n\r\n.icon-btn:hover { background: var(--hover); color: var(--ink); }\r\n.icon-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }\r\n\r\n/* 2. Accompanying Agent Dialogue Column */\r\n.chat-col {\r\n  display: flex;\r\n  flex-direction: column;\r\n  height: 100%;\r\n  min-height: 0;\r\n  overflow: hidden;\r\n  background: var(--paper);\r\n  border-right: 1px solid var(--line);\r\n  position: relative;\r\n  z-index: 2;\r\n  transition: opacity 0.18s ease;\r\n}\r\n\r\n[data-chat=\"collapsed\"] .chat-col { opacity: 0; border-right-color: transparent; pointer-events: none; }\r\n.chat-resizer { position: absolute; top: 0; right: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 15; }\r\n.chat-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: transparent; transition: background 0.15s; }\r\n.chat-resizer:hover::after, .chat-resizer.dragging::after { background: var(--iris); }\r\n\r\n.drop-overlay {\r\n  position: absolute;\r\n  inset: 10px;\r\n  border-radius: 14px;\r\n  border: 1.5px dashed var(--iris);\r\n  background: rgba(249, 248, 245, 0.92);\r\n  display: none;\r\n  align-items: center;\r\n  justify-content: center;\r\n  flex-direction: column;\r\n  gap: 8px;\r\n  z-index: 25;\r\n  pointer-events: none;\r\n  color: var(--iris);\r\n  font-size: 13px;\r\n  font-weight: 500;\r\n}\r\n\r\n[data-theme=\"dark\"] .drop-overlay { background: rgba(20, 20, 19, 0.92); }\r\n.chat-col.drag-over .drop-overlay { display: flex; }\r\n\r\n.chat-head {\r\n  height: 56px;\r\n  padding: 0 14px 0 18px;\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  flex: none;\r\n  border-bottom: 1px solid var(--line-soft);\r\n}\r\n\r\n.chat-title { font-size: 12.5px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; white-space: nowrap; }\r\n.chat-stream { flex: 1; overflow-y: auto; padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 14px; }\r\n.msg { max-width: 94%; font-size: 13px; line-height: 1.68; animation: fadeIn 0.18s ease-out; white-space: pre-wrap; overflow-wrap: anywhere; }\r\n.msg.ai { align-self: flex-start; color: var(--text); }\r\n.msg.user { align-self: flex-end; background: var(--subtle); color: var(--ink); padding: 8px 12px; border-radius: 13px 13px 4px 13px; font-weight: 450; }\r\n.msg-tool-list { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }\r\n.msg-action-tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 99px; background: var(--iris-soft); color: var(--iris); font-size: 11px; font-weight: 500; width: fit-content; }\r\n.msg-action-tag.ok { background: var(--green-soft); color: var(--green); }\r\n.msg-action-tag.error { background: var(--red-soft); color: var(--red); }\r\n.thinking-row { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); }\r\n.thinking-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--iris); animation: pulseDot 0.9s ease-in-out infinite; }\r\n.agent-degraded-bar { margin: 10px 14px 0; padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); font-size: 12px; line-height: 1.5; flex: none; }\r\n.quick-list { padding: 0 18px 10px; display: flex; flex-wrap: wrap; gap: 6px; flex: none; }\r\n.q-pill { padding: 4px 10px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); font-size: 11.5px; color: var(--text); transition: all 0.14s; }\r\n.q-pill:hover { border-color: var(--muted); color: var(--ink); transform: translateY(-1px); }\r\n.composer-wrap { padding: 0 14px 16px; flex: none; }\r\n.composer { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px 8px 8px 12px; display: flex; align-items: center; gap: 8px; box-shadow: var(--shadow-card); transition: border-color 0.16s; }\r\n.composer:focus-within { border-color: var(--muted); }\r\n.composer input { flex: 1; min-width: 0; border: 0; background: transparent; font-size: 13px; color: var(--ink); outline: none; }\r\n.composer input::placeholder { color: var(--soft); }\r\n.send-circle { width: 28px; height: 28px; border-radius: 99px; background: var(--ink); color: var(--surface); display: grid; place-items: center; flex: none; transition: opacity 0.14s, transform 0.14s; }\r\n.send-circle:hover { opacity: 0.86; }\r\n.send-circle:active { transform: scale(0.95); }\r\n.send-circle:disabled { opacity: 0.35; cursor: not-allowed; }\r\n.send-circle svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }\r\n\r\n/* 3. Contextual Main White Canvas */\r\n.canvas-col { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--surface); min-width: 0; position: relative; z-index: 2; }\r\n.canvas-head { height: 56px; padding: 0 36px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 14px; flex: none; }\r\n.canvas-head-left { display: flex; align-items: center; gap: 16px; min-width: 0; overflow: hidden; }\r\n.crumb-bar { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\r\n.crumb-link { color: var(--muted); font-size: 13px; transition: color 0.12s; }\r\n.crumb-link:hover { color: var(--ink); }\r\n.crumb-cur { color: var(--ink); font-weight: 600; }\r\n.canvas-right-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); flex: none; }\r\n\r\n/* Read-only Actor Badge */\r\n.actor-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; background: var(--paper); border: 1px solid var(--line); font-size: 12px; color: var(--text); white-space: nowrap; }\r\n.actor-badge-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--green); flex: none; }\r\n.actor-badge-role { color: var(--muted); font-size: 11px; }\r\n\r\n.canvas-body { flex: 1; overflow-y: auto; padding: 34px 48px 72px; position: relative; }\r\n.canvas-body.embedded-canvas { padding: 0; }\r\n.canvas-inner { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; animation: fadeIn 0.2s ease-out; }\r\n[data-chat=\"collapsed\"] .canvas-inner { max-width: 920px; }\r\n\r\n.sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }\r\n.sec-title { font-size: 15px; font-weight: 650; letter-spacing: -0.015em; color: var(--ink); }\r\n.sec-meta { font-size: 12px; color: var(--soft); }\r\n.metrics-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }\r\n.metric-card { padding: 14px 16px; border-radius: 12px; background: var(--paper); border: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 4px; }\r\n.metric-label { font-size: 11.5px; color: var(--muted); }\r\n.metric-val { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); }\r\n\r\n.filter-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }\r\n.filter-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }\r\n.f-pill { padding: 5px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); font-size: 12px; color: var(--muted); transition: all 0.14s; }\r\n.f-pill:hover { border-color: var(--muted); color: var(--ink); }\r\n.f-pill.active { background: var(--ink); border-color: var(--ink); color: var(--surface); font-weight: 550; }\r\n.clean-search { height: 30px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--paper); font-size: 12.5px; color: var(--ink); width: 210px; outline: none; }\r\n.clean-search:focus { border-color: var(--muted); }\r\n\r\n/* Signature Gliding Hover List */\r\n.clean-list { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }\r\n.clean-row { padding: 13px 4px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 14px; cursor: pointer; transition: background 0.12s, padding 0.12s; border-radius: 8px; text-align: left; width: 100%; }\r\n.clean-row:hover { background: var(--paper); padding-inline: 12px; margin-inline: -8px; width: calc(100% + 16px); }\r\n.cr-left { display: flex; align-items: center; gap: 12px; min-width: 0; }\r\n.mono { width: 30px; height: 30px; border-radius: 99px; background: var(--subtle); color: var(--ink); display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }\r\n.cr-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }\r\n.cr-title-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }\r\n.cr-name { font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; }\r\n.cr-role { font-size: 12.5px; color: var(--muted); font-weight: 400; }\r\n.cr-sub { font-size: 12px; color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\r\n.cr-right { display: flex; align-items: center; gap: 10px; flex: none; }\r\n.cr-status { font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; padding: 2px 9px; border-radius: 99px; background: var(--subtle); }\r\n.cr-status.danger { color: var(--red); background: var(--red-soft); }\r\n.cr-status.warn { color: var(--amber); background: var(--amber-soft); }\r\n.cr-status.info { color: var(--iris); background: var(--iris-soft); }\r\n.cr-status.ok { color: var(--green); background: var(--green-soft); }\r\n\r\n/* Flow List (Jobs View) */\r\n.flow-list { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }\r\n.flow-row { padding: 20px 6px; border-bottom: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 14px; cursor: pointer; border-radius: 10px; transition: background 0.14s; text-align: left; width: 100%; }\r\n.flow-row:hover { background: var(--paper); }\r\n.flow-row:hover .flow-job-name { color: var(--iris); }\r\n.flow-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }\r\n.flow-job-name { font-size: 14.5px; font-weight: 600; color: var(--ink); transition: color 0.14s; }\r\n.flow-hc { font-size: 12px; color: var(--muted); }\r\n.stage-track { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); align-items: center; gap: 4px; }\r\n.st-node { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; }\r\n.st-dot { position: relative; z-index: 1; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 99px; display: grid; place-items: center; background: var(--surface); border: 1.5px solid var(--line); font-size: 11px; font-weight: 700; color: var(--soft); }\r\n.st-node.active .st-dot { border-color: var(--iris); background: var(--iris-soft); color: var(--iris); }\r\n.st-lbl { font-size: 11.5px; color: var(--muted); text-align: center; }\r\n.st-node.active .st-lbl { color: var(--ink); font-weight: 550; }\r\n\r\n/* Buttons & Empty / Unbound States */\r\n.btn { height: 32px; padding: 0 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.14s; white-space: nowrap; }\r\n.btn:hover { background: var(--subtle); }\r\n.btn.dark { background: var(--ink); border-color: var(--ink); color: var(--surface); }\r\n.btn.dark:hover { opacity: 0.88; }\r\n\r\n.empty-paper { padding: 40px 24px; border-radius: 14px; background: var(--paper); border: 1px dashed var(--line); text-align: center; color: var(--muted); font-size: 13px; display: flex; flex-direction: column; align-items: center; gap: 10px; }\r\n.unbound-screen { height: 100vh; width: 100%; display: grid; place-items: center; background: var(--paper); padding: 24px; }\r\n.unbound-card { max-width: 420px; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 32px 28px; box-shadow: var(--shadow-card); display: flex; flex-direction: column; gap: 12px; text-align: center; align-items: center; }\r\n.unbound-card h1 { font-size: 17px; font-weight: 650; color: var(--ink); }\r\n.unbound-card p { font-size: 13px; color: var(--muted); line-height: 1.65; }\r\n\r\n.modal-bg { position: fixed; inset: 0; z-index: 100; background: rgba(25, 25, 24, 0.32); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; }\r\n.modal-card { width: 100%; max-width: 500px; background: var(--surface); border-radius: 20px; border: 1px solid var(--line); box-shadow: var(--shadow-modal); padding: 24px 26px; display: flex; flex-direction: column; gap: 16px; animation: fadeIn 0.16s ease-out; max-height: 80vh; overflow-y: auto; }\r\n.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\r\n.modal-head h2 { font-size: 15px; font-weight: 650; color: var(--ink); }\r\n.kv-list { display: flex; flex-direction: column; gap: 8px; }\r\n.kv-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 13px; }\r\n.kv-k { color: var(--muted); }\r\n.kv-v { color: var(--ink); font-weight: 500; }\r\n.offline-banner { padding: 8px 14px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: space-between; gap: 10px; }\r\n.interviewer-host { max-width: 960px; margin: 0 auto; padding: 28px 36px 64px; }\r\n\r\n/* Responsive: Tablet / Half-screen */\r\n@media (max-width: 1080px) {\r\n  .shell { grid-template-columns: 56px 0px 1fr !important; }\r\n  .space-rail { padding: 0 8px; align-items: center; }\r\n  .rail-brand { padding: 0; justify-content: center; }\r\n  .brand-identity, .rail-lbl, .rail-cnt, .rail-jobs { display: none; }\r\n  .rail-nav { width: 100%; align-items: center; gap: 6px; }\r\n  .rail-btn { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 10px; }\r\n  .rail-foot { flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; width: 100%; }\r\n  .chat-col { position: fixed; left: 56px; top: 0; bottom: 0; width: min(340px, calc(100vw - 56px)); box-shadow: var(--shadow-modal); z-index: 50; transform: translateX(0); opacity: 1; pointer-events: auto; transition: transform 0.2s ease, opacity 0.18s ease; }\r\n  [data-chat=\"collapsed\"] .chat-col { transform: translateX(-110%); opacity: 0; pointer-events: none; }\r\n  .canvas-body { padding: 24px 24px 64px; }\r\n  .canvas-head { padding: 0 20px; }\r\n}\r\n\r\n/* Responsive: Mobile (390px acceptance) */\r\n@media (max-width: 640px) {\r\n  .shell { grid-template-columns: 48px 0px 1fr !important; }\r\n  .chat-col { left: 48px; width: calc(100vw - 48px); }\r\n  .canvas-head { padding: 0 14px; height: 52px; }\r\n  .canvas-body { padding: 18px 14px 56px; }\r\n  .metrics-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }\r\n  .clean-search { width: 100%; }\r\n  .clean-row { flex-direction: column; align-items: flex-start; gap: 8px; }\r\n  .cr-right { width: 100%; justify-content: flex-end; }\r\n  .interviewer-host { padding: 16px 12px 48px; }\r\n}\r\n";
+const css$1 = "/* ============================================================================\r\n * Recruitment OS v4 — Standalone Full-Page Warm-Paper Workspace\r\n * 100% faithful to finalized design/v4/recruitment_os_v4.html\r\n * ============================================================================ */\r\n\r\n:root {\r\n  --rail: #F3F2EE;\r\n  --paper: #F9F8F5;\r\n  --surface: #FFFFFF;\r\n  --subtle: #F3F2EE;\r\n  --hover: #EAE8E2;\r\n  --ink: #191918;\r\n  --text: #42423F;\r\n  --muted: #787772;\r\n  --soft: #A6A59E;\r\n  --line: rgba(25, 25, 24, 0.08);\r\n  --line-soft: rgba(25, 25, 24, 0.05);\r\n  --iris: #5B5BD6;\r\n  --iris-soft: rgba(91, 91, 214, 0.09);\r\n  --green: #18794E;\r\n  --green-soft: rgba(24, 121, 78, 0.09);\r\n  --amber: #AD5700;\r\n  --amber-soft: rgba(173, 87, 0, 0.09);\r\n  --red: #CD2B31;\r\n  --red-soft: rgba(205, 43, 49, 0.08);\r\n  --shadow-card: 0 1px 2px rgba(25, 25, 24, 0.03), 0 10px 30px -14px rgba(25, 25, 24, 0.07);\r\n  --shadow-modal: 0 28px 72px -18px rgba(25, 25, 24, 0.24);\r\n}\r\n\r\n[data-theme=\"dark\"] {\r\n  --rail: #10100F;\r\n  --paper: #141413;\r\n  --surface: #1A1A19;\r\n  --subtle: #232321;\r\n  --hover: #2B2B28;\r\n  --ink: #F3F2EE;\r\n  --text: #D5D4CE;\r\n  --muted: #9A9992;\r\n  --soft: #6F6E68;\r\n  --line: rgba(243, 242, 238, 0.09);\r\n  --line-soft: rgba(243, 242, 238, 0.055);\r\n  --iris: #8484F5;\r\n  --iris-soft: rgba(132, 132, 245, 0.15);\r\n  --green: #3DD68C;\r\n  --green-soft: rgba(61, 214, 140, 0.13);\r\n  --amber: #F5A524;\r\n  --amber-soft: rgba(245, 165, 36, 0.14);\r\n  --red: #F87171;\r\n  --red-soft: rgba(248, 113, 113, 0.14);\r\n  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.35);\r\n  --shadow-modal: 0 28px 72px -18px rgba(0, 0, 0, 0.65);\r\n}\r\n\r\n*, *::before, *::after {\r\n  box-sizing: border-box;\r\n  margin: 0;\r\n  padding: 0;\r\n}\r\n\r\nhtml, body, #root {\r\n  height: 100%;\r\n  width: 100%;\r\n  background: var(--rail);\r\n  color: var(--ink);\r\n  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif;\r\n  font-size: 14px;\r\n  line-height: 1.55;\r\n  -webkit-font-smoothing: antialiased;\r\n  overflow: hidden;\r\n}\r\n\r\nbutton, input, select, textarea { font: inherit; color: inherit; }\r\nbutton { cursor: pointer; background: none; border: 0; }\r\n.num { font-variant-numeric: tabular-nums; }\r\n::-webkit-scrollbar { width: 5px; height: 5px; }\r\n::-webkit-scrollbar-thumb { background: rgba(128, 128, 120, 0.2); border-radius: 99px; }\r\n\r\n@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }\r\n@keyframes pulseDot { 0%, 100% { opacity: 0.3; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.1); } }\r\n@keyframes orbit { to { transform: rotate(360deg); } }\r\n\r\n/* 3-Layer Progressive Shell */\r\n.shell {\r\n  --chat-w: 324px;\r\n  display: grid;\r\n  grid-template-columns: 204px var(--chat-w) 1fr;\r\n  height: 100vh;\r\n  width: 100%;\r\n  overflow: hidden;\r\n  transition: grid-template-columns 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);\r\n}\r\n\r\n.shell.resizing { transition: none; }\r\n[data-chat=\"collapsed\"] .shell { grid-template-columns: 204px 0px 1fr; }\r\n[data-rail=\"collapsed\"] .shell { grid-template-columns: 56px var(--chat-w) 1fr; }\r\n[data-rail=\"collapsed\"][data-chat=\"collapsed\"] .shell { grid-template-columns: 56px 0px 1fr; }\r\n\r\n/* 1. Left Slim Space Rail */\r\n.space-rail { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--rail); border-right: 1px solid var(--line); padding: 0 10px; transition: padding 0.2s ease; }\r\n[data-rail=\"collapsed\"] .space-rail { padding: 0 8px; align-items: center; }\r\n.rail-brand { height: 56px; padding: 0 4px 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 650; letter-spacing: -0.02em; flex: none; width: 100%; }\r\n.brand-identity { display: flex; align-items: center; gap: 9px; min-width: 0; overflow: hidden; }\r\n.brand-dot { width: 22px; height: 22px; border-radius: 7px; background: var(--ink); color: var(--surface); display: grid; place-items: center; flex: none; }\r\n.brand-dot svg { width: 12px; height: 12px; fill: currentColor; }\r\n\r\n[data-rail=\"collapsed\"] .rail-brand { padding: 0; justify-content: center; }\r\n[data-rail=\"collapsed\"] .brand-identity,\r\n[data-rail=\"collapsed\"] .rail-lbl,\r\n[data-rail=\"collapsed\"] .rail-cnt,\r\n[data-rail=\"collapsed\"] .rail-jobs { display: none; }\r\n[data-rail=\"collapsed\"] .rail-nav { width: 100%; align-items: center; gap: 6px; }\r\n[data-rail=\"collapsed\"] .rail-btn { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 10px; }\r\n[data-rail=\"collapsed\"] .rail-btn-l { gap: 0; justify-content: center; }\r\n[data-rail=\"collapsed\"] .rail-btn-l svg { width: 17px; height: 17px; }\r\n[data-rail=\"collapsed\"] .rail-foot { flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; width: 100%; }\r\n\r\n.rail-nav { display: flex; flex-direction: column; gap: 2px; padding-top: 4px; overflow-y: auto; flex: 1; min-height: 0; }\r\n.rail-btn { height: 33px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 450; color: var(--text); transition: background 0.12s, color 0.12s; text-align: left; flex: none; }\r\n.rail-btn:hover { background: var(--hover); color: var(--ink); }\r\n.rail-btn.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(25, 25, 24, 0.06); }\r\n.rail-btn-l { display: flex; align-items: center; gap: 8px; min-width: 0; }\r\n.rail-btn-l svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); flex: none; }\r\n.rail-btn.active .rail-btn-l svg { color: var(--ink); }\r\n.rail-cnt { font-size: 11.5px; color: var(--soft); }\r\n\r\n.rail-jobs { display: flex; flex-direction: column; gap: 1px; margin: 4px 0 8px 16px; padding-left: 12px; border-left: 1px solid var(--line); }\r\n.rail-job { height: 30px; padding: 0 9px; border-radius: 7px; display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12.5px; color: var(--muted); transition: background 0.12s, color 0.12s; text-align: left; }\r\n.rail-job:hover { background: var(--hover); color: var(--ink); }\r\n.rail-job.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(25, 25, 24, 0.05); }\r\n.rail-job-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\r\n.rail-job-hc { font-size: 11px; color: var(--soft); flex: none; }\r\n\r\n.rail-foot { margin-top: auto; padding: 12px 4px; border-top: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 4px; flex: none; }\r\n.icon-btn { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--muted); transition: background 0.12s, color 0.12s; flex: none; }\r\n.icon-btn:hover { background: var(--hover); color: var(--ink); }\r\n.icon-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }\r\n\r\n/* 2. Accompanying Agent Dialogue Column */\r\n.chat-col { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--paper); border-right: 1px solid var(--line); position: relative; z-index: 2; transition: opacity 0.18s ease; }\r\n[data-chat=\"collapsed\"] .chat-col { opacity: 0; border-right-color: transparent; pointer-events: none; }\r\n.chat-resizer { position: absolute; top: 0; right: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 15; }\r\n.chat-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: transparent; transition: background 0.15s; }\r\n.chat-resizer:hover::after, .chat-resizer.dragging::after { background: var(--iris); }\r\n\r\n.drop-overlay { position: absolute; inset: 10px; border-radius: 14px; border: 1.5px dashed var(--iris); background: rgba(249, 248, 245, 0.92); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 8px; z-index: 25; pointer-events: none; color: var(--iris); font-size: 13px; font-weight: 500; }\r\n[data-theme=\"dark\"] .drop-overlay { background: rgba(20, 20, 19, 0.92); }\r\n.chat-col.drag-over .drop-overlay { display: flex; }\r\n\r\n.chat-head { height: 56px; padding: 0 14px 0 18px; display: flex; align-items: center; justify-content: space-between; flex: none; border-bottom: 1px solid var(--line-soft); }\r\n.chat-title { font-size: 12.5px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; white-space: nowrap; }\r\n.chat-stream { flex: 1; overflow-y: auto; padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 14px; }\r\n.msg { max-width: 94%; font-size: 13px; line-height: 1.68; animation: fadeIn 0.18s ease-out; white-space: pre-wrap; overflow-wrap: anywhere; }\r\n.msg.ai { align-self: flex-start; color: var(--text); }\r\n.msg.user { align-self: flex-end; background: var(--subtle); color: var(--ink); padding: 8px 12px; border-radius: 13px 13px 4px 13px; font-weight: 450; }\r\n.msg-tool-list { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }\r\n.msg-action-tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 99px; background: var(--iris-soft); color: var(--iris); font-size: 11px; font-weight: 500; width: fit-content; }\r\n.msg-action-tag.ok { background: var(--green-soft); color: var(--green); }\r\n.msg-action-tag.error { background: var(--red-soft); color: var(--red); }\r\n.thinking-row { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); }\r\n.thinking-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--iris); animation: pulseDot 0.9s ease-in-out infinite; }\r\n.agent-degraded-bar { margin: 10px 14px 0; padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); font-size: 12px; line-height: 1.5; flex: none; }\r\n.quick-list { padding: 0 18px 10px; display: flex; flex-wrap: wrap; gap: 6px; flex: none; }\r\n.q-pill { padding: 4px 10px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); font-size: 11.5px; color: var(--text); transition: all 0.14s; }\r\n.q-pill:hover { border-color: var(--muted); color: var(--ink); transform: translateY(-1px); }\r\n.composer-wrap { padding: 0 14px 16px; flex: none; }\r\n.composer { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px 8px 8px 12px; display: flex; align-items: center; gap: 8px; box-shadow: var(--shadow-card); transition: border-color 0.16s; }\r\n.composer:focus-within { border-color: var(--muted); }\r\n.composer input { flex: 1; min-width: 0; border: 0; background: transparent; font-size: 13px; color: var(--ink); outline: none; }\r\n.composer input::placeholder { color: var(--soft); }\r\n.send-circle { width: 28px; height: 28px; border-radius: 99px; background: var(--ink); color: var(--surface); display: grid; place-items: center; flex: none; transition: opacity 0.14s, transform 0.14s; }\r\n.send-circle:hover { opacity: 0.86; }\r\n.send-circle:active { transform: scale(0.95); }\r\n.send-circle:disabled { opacity: 0.35; cursor: not-allowed; }\r\n.send-circle svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }\r\n\r\n/* 3. Contextual Main White Canvas */\r\n.canvas-col { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--surface); min-width: 0; position: relative; z-index: 2; }\r\n.canvas-head { height: 56px; padding: 0 36px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 14px; flex: none; }\r\n.canvas-head-left { display: flex; align-items: center; gap: 16px; min-width: 0; overflow: hidden; }\r\n.crumb-bar { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\r\n.crumb-link { color: var(--muted); font-size: 13px; transition: color 0.12s; }\r\n.crumb-link:hover { color: var(--ink); }\r\n.crumb-cur { color: var(--ink); font-weight: 600; }\r\n.canvas-right-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); flex: none; }\r\n\r\n/* Single 56px horizon on embedded candidate/job canvas: float actor badge cleanly inside ros-canvas-head */\r\n.embedded-actor-slot {\r\n  position: absolute;\r\n  top: 14px;\r\n  right: 24px;\r\n  z-index: 20;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n}\r\n\r\n.canvas-body.embedded-canvas .ros-canvas-head {\r\n  padding-right: 148px;\r\n}\r\n\r\n/* Read-only Actor Badge */\r\n.actor-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; background: var(--paper); border: 1px solid var(--line); font-size: 12px; color: var(--text); white-space: nowrap; }\r\n.actor-badge-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--green); flex: none; }\r\n.actor-badge-role { color: var(--muted); font-size: 11px; }\r\n\r\n.canvas-body { flex: 1; overflow-y: auto; padding: 34px 48px 72px; position: relative; }\r\n.canvas-body.embedded-canvas { padding: 0; }\r\n.canvas-inner { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; animation: fadeIn 0.2s ease-out; }\r\n[data-chat=\"collapsed\"] .canvas-inner { max-width: 920px; }\r\n\r\n.sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }\r\n.sec-title { font-size: 15px; font-weight: 650; letter-spacing: -0.015em; color: var(--ink); }\r\n.sec-meta { font-size: 12px; color: var(--soft); }\r\n\r\n/* Editorial inline stats (replaces bulky 4-box KPI strip in QueueView) */\r\n.editorial-stats { display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }\r\n.editorial-stats strong { color: var(--ink); font-weight: 600; }\r\n.editorial-stats .dot { color: var(--soft); }\r\n\r\n.filter-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }\r\n.filter-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }\r\n.f-pill { padding: 5px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); font-size: 12px; color: var(--muted); transition: all 0.14s; }\r\n.f-pill:hover { border-color: var(--muted); color: var(--ink); }\r\n.f-pill.active { background: var(--ink); border-color: var(--ink); color: var(--surface); font-weight: 550; }\r\n.clean-search { height: 30px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--paper); font-size: 12.5px; color: var(--ink); width: 210px; outline: none; }\r\n.clean-search:focus { border-color: var(--muted); }\r\n\r\n/* Signature Gliding Hover List */\r\n.clean-list { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }\r\n.clean-row { padding: 13px 4px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 14px; cursor: pointer; transition: background 0.12s, padding 0.12s; border-radius: 8px; text-align: left; width: 100%; }\r\n.clean-row:hover { background: var(--paper); padding-inline: 12px; margin-inline: -8px; width: calc(100% + 16px); }\r\n.cr-left { display: flex; align-items: center; gap: 12px; min-width: 0; }\r\n.mono { width: 30px; height: 30px; border-radius: 99px; background: var(--subtle); color: var(--ink); display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }\r\n.cr-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }\r\n.cr-title-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }\r\n.cr-name { font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; }\r\n.cr-role { font-size: 12.5px; color: var(--muted); font-weight: 400; }\r\n.cr-sub { font-size: 12px; color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\r\n.cr-right { display: flex; align-items: center; gap: 10px; flex: none; }\r\n.cr-status { font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; padding: 2px 9px; border-radius: 99px; background: var(--subtle); }\r\n.cr-status.danger { color: var(--red); background: var(--red-soft); }\r\n.cr-status.warn { color: var(--amber); background: var(--amber-soft); }\r\n.cr-status.info { color: var(--iris); background: var(--iris-soft); }\r\n.cr-status.ok { color: var(--green); background: var(--green-soft); }\r\n\r\n/* Flow List (Jobs View) */\r\n.flow-list { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }\r\n.flow-row { padding: 20px 6px; border-bottom: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 14px; cursor: pointer; border-radius: 10px; transition: background 0.14s; text-align: left; width: 100%; }\r\n.flow-row:hover { background: var(--paper); }\r\n.flow-row:hover .flow-job-name { color: var(--iris); }\r\n.flow-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }\r\n.flow-job-name { font-size: 14.5px; font-weight: 600; color: var(--ink); transition: color 0.14s; }\r\n.flow-hc { font-size: 12px; color: var(--muted); }\r\n.stage-track { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); align-items: center; gap: 4px; }\r\n.st-node { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; }\r\n.st-dot { position: relative; z-index: 1; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 99px; display: grid; place-items: center; background: var(--surface); border: 1.5px solid var(--line); font-size: 11px; font-weight: 700; color: var(--soft); }\r\n.st-node.active .st-dot { border-color: var(--iris); background: var(--iris-soft); color: var(--iris); }\r\n.st-lbl { font-size: 11.5px; color: var(--muted); text-align: center; }\r\n.st-node.active .st-lbl { color: var(--ink); font-weight: 550; }\r\n\r\n/* Buttons & Empty / Unbound States */\r\n.btn { height: 32px; padding: 0 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.14s; white-space: nowrap; }\r\n.btn:hover { background: var(--subtle); }\r\n.btn.dark { background: var(--ink); border-color: var(--ink); color: var(--surface); }\r\n.btn.dark:hover { opacity: 0.88; }\r\n\r\n.empty-paper { padding: 40px 24px; border-radius: 14px; background: var(--paper); border: 1px dashed var(--line); text-align: center; color: var(--muted); font-size: 13px; display: flex; flex-direction: column; align-items: center; gap: 10px; }\r\n.unbound-screen { height: 100vh; width: 100%; display: grid; place-items: center; background: var(--paper); padding: 24px; }\r\n.unbound-card { max-width: 420px; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 32px 28px; box-shadow: var(--shadow-card); display: flex; flex-direction: column; gap: 12px; text-align: center; align-items: center; }\r\n.unbound-card h1 { font-size: 17px; font-weight: 650; color: var(--ink); }\r\n.unbound-card p { font-size: 13px; color: var(--muted); line-height: 1.65; }\r\n\r\n.modal-bg { position: fixed; inset: 0; z-index: 100; background: rgba(25, 25, 24, 0.32); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; }\r\n.modal-card { width: 100%; max-width: 500px; background: var(--surface); border-radius: 20px; border: 1px solid var(--line); box-shadow: var(--shadow-modal); padding: 24px 26px; display: flex; flex-direction: column; gap: 16px; animation: fadeIn 0.16s ease-out; max-height: 80vh; overflow-y: auto; }\r\n.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\r\n.modal-head h2 { font-size: 15px; font-weight: 650; color: var(--ink); }\r\n.kv-list { display: flex; flex-direction: column; gap: 8px; }\r\n.kv-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 13px; }\r\n.kv-k { color: var(--muted); }\r\n.kv-v { color: var(--ink); font-weight: 500; }\r\n.offline-banner { padding: 8px 14px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: space-between; gap: 10px; }\r\n.interviewer-host { max-width: 960px; margin: 0 auto; padding: 28px 36px 64px; }\r\n\r\n/* ============================================================================\r\n * 3-Screen Snapshot Audit Polish for Reused Canvas & Confirm Card\r\n * (Zero mutations to src/client/canvas/** write paths)\r\n * ============================================================================ */\r\n.ros-canvas .ros-seq-rail + .ros-clean-list {\r\n  border-top: 0;\r\n}\r\n\r\n.ros-canvas .ros-fact-bar {\r\n  opacity: 0.72;\r\n}\r\n\r\n.ros-canvas .ros-doc-foot {\r\n  position: sticky;\r\n  bottom: 0;\r\n  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--surface) 24%);\r\n  padding: 22px 0 12px;\r\n  margin-top: 8px;\r\n}\r\n\r\n[data-theme=\"dark\"] .ros-canvas .ros-doc-foot {\r\n  background: linear-gradient(to bottom, rgba(26, 26, 25, 0), var(--surface) 24%);\r\n}\r\n\r\n.ros-canvas .ros-modal {\r\n  padding: 28px 30px;\r\n  gap: 18px;\r\n}\r\n\r\n.ros-canvas .ros-m-field {\r\n  gap: 6px;\r\n}\r\n\r\n.ros-canvas .ros-m-field textarea {\r\n  width: 100%;\r\n  min-height: 92px;\r\n  padding: 11px 13px;\r\n  border-radius: 10px;\r\n  background: var(--paper);\r\n  line-height: 1.65;\r\n  resize: vertical;\r\n}\r\n\r\n.ros-canvas .ros-modal > div:last-child {\r\n  padding-top: 14px;\r\n  border-top: 1px solid var(--line-soft);\r\n  margin-top: 2px;\r\n}\r\n\r\n/* Responsive: Tablet / Half-screen */\r\n@media (max-width: 1080px) {\r\n  .shell { grid-template-columns: 56px 0px 1fr !important; }\r\n  .space-rail { padding: 0 8px; align-items: center; }\r\n  .rail-brand { padding: 0; justify-content: center; }\r\n  .brand-identity, .rail-lbl, .rail-cnt, .rail-jobs { display: none; }\r\n  .rail-nav { width: 100%; align-items: center; gap: 6px; }\r\n  .rail-btn { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 10px; }\r\n  .rail-foot { flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; width: 100%; }\r\n  .chat-col { position: fixed; left: 56px; top: 0; bottom: 0; width: min(340px, calc(100vw - 56px)); box-shadow: var(--shadow-modal); z-index: 50; transform: translateX(0); opacity: 1; pointer-events: auto; transition: transform 0.2s ease, opacity 0.18s ease; }\r\n  [data-chat=\"collapsed\"] .chat-col { transform: translateX(-110%); opacity: 0; pointer-events: none; }\r\n  .canvas-body { padding: 24px 24px 64px; }\r\n  .canvas-head { padding: 0 20px; }\r\n}\r\n\r\n/* Responsive: Mobile (390px acceptance) */\r\n@media (max-width: 640px) {\r\n  .shell { grid-template-columns: 48px 0px 1fr !important; }\r\n  .chat-col { left: 48px; width: calc(100vw - 48px); }\r\n  .canvas-head { padding: 0 14px; height: 52px; }\r\n  .canvas-body { padding: 18px 14px 56px; }\r\n  .embedded-actor-slot { top: 10px; right: 12px; }\r\n  .canvas-body.embedded-canvas .ros-canvas-head { padding-right: 116px; }\r\n  .clean-search { width: 100%; }\r\n  .clean-row { flex-direction: column; align-items: flex-start; gap: 8px; }\r\n  .cr-right { width: 100%; justify-content: flex-end; }\r\n  .interviewer-host { padding: 16px 12px 48px; }\r\n}\r\n";
 if (typeof document !== "undefined" && document.querySelector("style[data-recruitment-css=\"c61c486ea236\"]") === null) {
 	const style = document.createElement("style");
 	style.setAttribute("data-recruitment-css", CSS_KEY$1);
@@ -29401,16 +29401,20 @@ function isInterviewerOnly(roles) {
 	const hasRecruiter = normalized.some((r) => r.includes("recruiter") || r.includes("admin") || r.includes("hr") || r.includes("owner"));
 	return hasInterviewer && !hasRecruiter;
 }
-function formatRolesLabel(roles) {
+function formatRolesLabel(roles, displayName = "") {
 	if (roles.length === 0) return "";
 	const mapped = roles.map((r) => {
 		const low = r.toLowerCase();
 		if (low.includes("recruiter")) return "招聘负责人";
+		if (low.includes("hr_specialist") || low === "hr") return "HR";
 		if (low.includes("interviewer")) return "面试官";
+		if (low.includes("hiring_manager") || low.includes("manager")) return "用人经理";
 		if (low.includes("admin")) return "管理员";
-		return r;
-	});
-	return Array.from(new Set(mapped)).join(" · ");
+		return /^[A-Z0-9_]+$/.test(r) ? "" : r;
+	}).filter((label) => label.length > 0 && label !== displayName.trim());
+	const unique = Array.from(new Set(mapped));
+	if (unique.length === 0) return "";
+	return unique[0];
 }
 async function fetchAppSession() {
 	const cookieSid = readCookie("rc_sid");
@@ -29994,6 +29998,9 @@ function statusClass(tone) {
 	if (tone === "danger" || tone === "warn" || tone === "info" || tone === "ok") return tone;
 	return "";
 }
+function cleanStageLabel(raw) {
+	return (raw.split("/")[0] ?? raw).trim() || raw;
+}
 function QueueView({ overview, onOpenApplication, onUploadStarted }) {
 	const [stageFilter, setStageFilter] = (0, import_react.useState)("all");
 	const [query, setQuery] = (0, import_react.useState)("");
@@ -30048,18 +30055,36 @@ function QueueView({ overview, onOpenApplication, onUploadStarted }) {
 			setUploading(false);
 		}
 	};
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 		className: "canvas-inner",
 		"data-testid": "app-queue-view",
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "sec-head",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", {
+				style: { marginBottom: 18 },
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 					className: "sec-title",
-					children: "今日待办"
-				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-					className: "sec-meta",
-					children: "点击任意候选人进入右侧完整档案与审批画布"
+					children: "待推进候选人"
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "editorial-stats num",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: ["在办 ", /* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: overview.counts.applicationsActive })] }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "dot",
+							children: "·"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: ["待初筛 ", /* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: overview.counts.awaitingScreening })] }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "dot",
+							children: "·"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: ["面试中 ", /* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: overview.counts.interviewing })] }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "dot",
+							children: "·"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: ["待决策 ", /* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: overview.counts.awaitingDecision })] })
+					]
 				})] }), defaultJobId ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
 					ref: fileRef,
 					type: "file",
@@ -30085,151 +30110,108 @@ function QueueView({ overview, onOpenApplication, onUploadStarted }) {
 				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: uploadError })
 			}) : null,
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "metrics-strip",
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "metric-card",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "metric-label",
-							children: "在办申请"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "metric-val num",
-							children: overview.counts.applicationsActive
-						})]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "metric-card",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "metric-label",
-							children: "待初筛"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "metric-val num",
-							children: overview.counts.awaitingScreening
-						})]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "metric-card",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "metric-label",
-							children: "面试推进中"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "metric-val num",
-							children: overview.counts.interviewing
-						})]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "metric-card",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "metric-label",
-							children: "待正式决策"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "metric-val num",
-							children: overview.counts.awaitingDecision
-						})]
-					})
-				]
-			})
-		] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			className: "filter-bar",
-			style: { marginBottom: 12 },
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "filter-pills",
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-						type: "button",
-						className: `f-pill ${stageFilter === "all" ? "active" : ""}`,
-						"data-testid": "app-queue-filter-all",
-						onClick: () => setStageFilter("all"),
-						children: [
-							"全部 (",
-							overview.applications.length,
-							")"
-						]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-						type: "button",
-						className: `f-pill ${stageFilter === "screening" ? "active" : ""}`,
-						"data-testid": "app-queue-filter-screening",
-						onClick: () => setStageFilter("screening"),
-						children: [
-							"待初筛 (",
-							overview.counts.awaitingScreening,
-							")"
-						]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-						type: "button",
-						className: `f-pill ${stageFilter === "interviewing" ? "active" : ""}`,
-						"data-testid": "app-queue-filter-interviewing",
-						onClick: () => setStageFilter("interviewing"),
-						children: [
-							"面试中 (",
-							overview.counts.interviewing,
-							")"
-						]
-					}),
-					overview.counts.byStage.map((st) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-						type: "button",
-						className: `f-pill ${stageFilter === st.code ? "active" : ""}`,
-						"data-testid": `app-queue-filter-${st.code}`,
-						onClick: () => setStageFilter(st.code),
-						children: [
-							st.label,
-							" (",
-							st.count,
-							")"
-						]
-					}, st.code))
-				]
-			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-				className: "clean-search",
-				value: query,
-				onChange: (e) => setQuery(e.target.value),
-				placeholder: "搜索姓名、岗位或阶段…",
-				"data-testid": "app-queue-search"
-			})]
-		}), filtered.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-			className: "empty-paper",
-			children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { children: "当前筛选下暂无候选人" })
-		}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-			className: "clean-list",
-			children: filtered.map((app) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-				type: "button",
-				className: "clean-row",
-				"data-testid": `app-queue-item-${app.id}`,
-				onMouseEnter: () => handleRowHover(app),
-				onMouseLeave: handleRowLeave,
-				onClick: () => onOpenApplication(app.id, queueIds),
+				className: "filter-bar",
+				style: { marginBottom: 14 },
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "cr-left",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "mono",
-						children: app.candidateInitial || app.candidateName.slice(0, 1)
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "cr-text",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "cr-title-line",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								className: "cr-name",
-								children: app.candidateName
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								className: "cr-role",
-								children: app.jobTitle
-							})]
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-							className: "cr-sub",
-							children: app.nextStep.conclusion || app.interviewSummary || app.screeningSummary || app.materialSummary
-						})]
-					})]
-				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-					className: "cr-right",
-					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: `cr-status ${statusClass(app.stageTone)}`,
-						children: app.stageLabel
-					})
+					className: "filter-pills",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: `f-pill ${stageFilter === "all" ? "active" : ""}`,
+							"data-testid": "app-queue-filter-all",
+							onClick: () => setStageFilter("all"),
+							children: [
+								"全部 (",
+								overview.applications.length,
+								")"
+							]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: `f-pill ${stageFilter === "screening" ? "active" : ""}`,
+							"data-testid": "app-queue-filter-screening",
+							onClick: () => setStageFilter("screening"),
+							children: [
+								"待初筛 (",
+								overview.counts.awaitingScreening,
+								")"
+							]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: `f-pill ${stageFilter === "interviewing" ? "active" : ""}`,
+							"data-testid": "app-queue-filter-interviewing",
+							onClick: () => setStageFilter("interviewing"),
+							children: [
+								"面试中 (",
+								overview.counts.interviewing,
+								")"
+							]
+						}),
+						overview.counts.byStage.map((st) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: `f-pill ${stageFilter === st.code ? "active" : ""}`,
+							"data-testid": `app-queue-filter-${st.code}`,
+							onClick: () => setStageFilter(st.code),
+							children: [
+								cleanStageLabel(st.label),
+								" (",
+								st.count,
+								")"
+							]
+						}, st.code))
+					]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+					className: "clean-search",
+					value: query,
+					onChange: (e) => setQuery(e.target.value),
+					placeholder: "搜索姓名、岗位或阶段…",
+					"data-testid": "app-queue-search"
 				})]
-			}, app.id))
-		})] })]
+			}),
+			filtered.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "empty-paper",
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { children: "当前筛选下暂无候选人" })
+			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "clean-list",
+				children: filtered.map((app) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+					type: "button",
+					className: "clean-row",
+					"data-testid": `app-queue-item-${app.id}`,
+					onMouseEnter: () => handleRowHover(app),
+					onMouseLeave: handleRowLeave,
+					onClick: () => onOpenApplication(app.id, queueIds),
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "cr-left",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "mono",
+							children: app.candidateInitial || app.candidateName.slice(0, 1)
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "cr-text",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "cr-title-line",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: "cr-name",
+									children: app.candidateName
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: "cr-role",
+									children: app.jobTitle
+								})]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "cr-sub",
+								children: app.nextStep.conclusion || app.interviewSummary || app.screeningSummary || app.materialSummary
+							})]
+						})]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "cr-right",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: `cr-status ${statusClass(app.stageTone)}`,
+							children: cleanStageLabel(app.stageLabel)
+						})
+					})]
+				}, app.id))
+			})
+		] })
 	});
 }
 // src/app/TalentView.tsx
@@ -30577,8 +30559,22 @@ function App() {
 	});
 	const interviewerOnly = isInterviewerOnly(session.roles);
 	const isInterviewerRoute = route.kind === "interviewer" || interviewerOnly;
+	const isEmbeddedDetail = !isInterviewerRoute && (route.kind === "application" || route.kind === "job");
 	const activeSpace = route.kind === "jobs" || route.kind === "job" ? "jobs" : route.kind === "talent" ? "talent" : "queue";
-	const actorRoleText = formatRolesLabel(session.roles);
+	const actorName = session.displayName || session.alias || "已认证成员";
+	const actorRoleText = formatRolesLabel(session.roles, actorName);
+	const actorBadgeNode = /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "actor-badge",
+		"data-testid": "app-actor-badge",
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "actor-badge-dot" }),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: actorName }),
+			actorRoleText ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+				className: "actor-badge-role",
+				children: actorRoleText
+			}) : null
+		]
+	});
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		"data-rail": railCollapsed ? "collapsed" : "expanded",
 		"data-chat": chatCollapsed ? "collapsed" : "expanded",
@@ -30821,7 +30817,7 @@ function App() {
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
 						className: "canvas-col",
 						"data-testid": "app-canvas",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", {
+						children: [!isEmbeddedDetail ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", {
 							className: "canvas-head",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								className: "canvas-head-left",
@@ -30840,31 +30836,7 @@ function App() {
 									children: isInterviewerRoute ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 										className: "crumb-cur",
 										children: "我的面试与独立面评"
-									}) : route.kind === "application" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: "crumb-link",
-											onClick: () => navigateToRoute({ kind: "queue" }),
-											children: "今日待办"
-										}),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "/" }),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "crumb-cur",
-											children: "候选人档案画布"
-										})
-									] }) : route.kind === "job" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: "crumb-link",
-											onClick: () => navigateToRoute({ kind: "jobs" }),
-											children: "在招岗位"
-										}),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "/" }),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "crumb-cur",
-											children: "岗位详情画布"
-										})
-									] }) : route.kind === "jobs" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									}) : route.kind === "jobs" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 										className: "crumb-cur",
 										children: "在招岗位"
 									}) : route.kind === "talent" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
@@ -30880,21 +30852,23 @@ function App() {
 								children: [isOffline ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 									style: { color: "var(--amber)" },
 									children: "离线"
-								}) : null, /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									className: "actor-badge",
-									"data-testid": "app-actor-badge",
-									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "actor-badge-dot" }),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: session.displayName || session.alias || "已认证成员" }),
-										actorRoleText ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "actor-badge-role",
-											children: actorRoleText
-										}) : null
-									]
-								})]
+								}) : null, actorBadgeNode]
 							})]
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "embedded-actor-slot",
+							children: [chatCollapsed ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "icon-btn",
+								title: "展开对话栏",
+								"aria-label": "展开对话栏",
+								onClick: () => setChatCollapsed(false),
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("svg", {
+									viewBox: "0 0 24 24",
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" })
+								})
+							}) : null, actorBadgeNode]
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: `canvas-body ${route.kind === "application" || route.kind === "job" ? "embedded-canvas" : ""}`,
+							className: `canvas-body ${isEmbeddedDetail ? "embedded-canvas" : ""}`,
 							children: [isOffline ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 								style: {
 									maxWidth: 820,
@@ -30911,7 +30885,7 @@ function App() {
 									sessionId: session.sid,
 									alias: session.alias
 								})
-							}) : route.kind === "application" || route.kind === "job" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CanvasRoute, {
+							}) : isEmbeddedDetail ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CanvasRoute, {
 								sessionId: session.sid,
 								route: canvasRouteTarget,
 								candidateQueue,
@@ -31007,7 +30981,7 @@ function App() {
 									children: "当前身份"
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 									className: "kv-v",
-									children: session.displayName || session.alias || "已绑定"
+									children: actorName
 								})]
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -31017,7 +30991,7 @@ function App() {
 									children: "角色"
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 									className: "kv-v",
-									children: actorRoleText || "—"
+									children: actorRoleText || actorName
 								})]
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
