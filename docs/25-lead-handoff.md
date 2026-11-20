@@ -297,15 +297,18 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 - 整页前端是 `src/app/**`（PR #8/#9 已并入，`a4f6abb`/`b642e07`），双入口构建：`lib/app.js`（ESM 自包含）+ `lib/client.js`（DSH CJS）。
 - CSS 注入按**文件**独立标记（`1e12acc` 修过；整页曾因共用标记导致画布无样式）。
 - 对话 `/recruitment/agent/turn` 目前**503 AGENT_UNAVAILABLE**（桥未接线，页面已降级，业务不受影响）。接法见 `src/http/app-shell.ts` 的 `AppAgentTurnBridge`。
-- 自动化：`work/d5/e2e-real/scripts/run-runbook.mjs --fresh` 跑旧壳 15 步（15/15 过）；新整页脚本 `work/d5/fullpage/run-v4.mjs` **正在改**，未完成。
+- 自动化：`work/d5/e2e-real/scripts/run-runbook.mjs --fresh` 跑旧壳 15 步（15/15 过）；**v4 整页 15 步已完成**：`work/d5/fullpage/run-v4.mjs --fresh --port 49347`，2026-11-20 两次独立真跑均 **15/15**，证据 `evidence/fullpage-v4-15step-20261120/`（判据/断言变更见 docs/17 D-169）。
 
 ### 接手要做的（按优先级）
-1. 完成 `run-v4.mjs` 适配并按 v4 重跑 15 步，出 PASS/FAIL 表（1440 口径；390 不作要求）。
-2. 任何界面缺陷：写证据 + 复现，交前端 PR，**不许自己改界面**（D-168）。
-3. 对话桥可接：用 DSH `agents/sessions`（`ctx.agents.create/followup` + `ctx.on('session/event')`），失败保持 503 降级。
-4. 收口 PR #8/#9（内容已并主线，PR 可标已合并）。
+1. ~~完成 `run-v4.mjs` 适配并按 v4 重跑 15 步~~ → **已完成（D-169）**：15/15 PASS，证据 `evidence/fullpage-v4-15step-20261120/`；脚本在 `work/d5/fullpage/run-v4.mjs`（work/ 不入库）。
+2. **修前端 5 个类型错**（`npx tsc --noEmit` 红：`prefetchCanvasPath` 单参 ×3、`nextStep.conclusion` ×2；`design/v4/frontend-fixes-20261120.md`），修完再谈合并门（D-170）。
+3. 任何界面缺陷：写证据 + 复现，交前端 PR，**不许自己改界面**（D-168）。
+4. 对话桥可接：用 DSH `agents/sessions`（`ctx.agents.create/followup` + `ctx.on('session/event')`），失败保持 503 降级。
+5. 收口 PR #8/#9（内容已并主线，PR 可标已合并）。
 
 ### 常用命令
+- v4 15 步真点：`RECRUITMENT_DB_PASSWORD=123456 node work/d5/fullpage/run-v4.mjs --fresh --port 49347`（跑完自动删一次性库/profile/token；端口白名单 49347–49352 且排除 49351）
+- 证据审计：`node work/d5/fullpage/audit-run.mjs --result work/d5/fullpage/runbook-result.json`
 - 构建：`cd dsh/dsh-recruitment && npx tsdown`（双入口）
 - 类型：`npx tsc --noEmit`；服务端棘轮：`node scripts/server-typecheck.mjs`
 - 机检：`runtime-budget` / `entry-reachability` / `client-contract-check` / `term-lint`
@@ -333,19 +336,23 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 ### 13.4 代码地图
 `src/tools`（Agent 能力）/ `src/domain`（判定纯函数）/ `src/db`（持久化）/ `src/http`（接口+闸门，含 `app-shell.ts` 整页入口）/ `src/client`（DSH 视图+/canvas）/ `src/app`（整页 v4）/ `src/connectors/{feishu,imap}` / `db/migrations` 0001→0023。
 
-### 13.5 当前状态（2026-11-20）
+### 13.5 当前状态（2026-11-20 晚）
 - 分支 `feat/unified-document-intake`，HEAD 见 `git log`；PR #8/#9 内容已并入（PR 可标已合并）。
 - 旧壳 15 步真点：**15/15 PASS**（`work/d5/e2e-real/scripts/run-runbook.mjs --fresh`）。
+- **v4 整页 15 步真点：15/15 PASS**（`work/d5/fullpage/run-v4.mjs --fresh --port 49347`；2026-11-20T22:34 与 22:40 两次独立跑；证据 `evidence/fullpage-v4-15step-20261120/`；D-169）。
 - 新整页 v4：`/recruitment/app` 可用；三屏快照在 `evidence/fullpage-v4-preview-20261120/`。
-- **未完成**：① `work/d5/fullpage/run-v4.mjs` 15 步适配（有映射 `TESTID-MAP.md`）；② 对话桥未接（`/recruitment/agent/turn` 返回 503，页面已降级）；③ 8 条写能力无界面（compound/config/email authorize/feishu import）；④ 390 不作要求（桌面 Web）。
+- **未完成**：① 前端 5 个类型错（`tsc` 红，合并门未过；`design/v4/frontend-fixes-20261120.md`）；② 对话桥未接（`/recruitment/agent/turn` 返回 503，页面已降级）；③ 8 条写能力无界面（compound/config/email authorize/feishu import）；④ `docs/38` 未按 v4 testid 同步；⑤ 390 不作要求（桌面 Web）；⑥ 全量测试本轮未跑（非合并轮）。
 
 ### 13.6 环境（缺一个就假红）
 - `DSH_HOME=D:\12412\dsh-home-recruitment`；PG `D:\12412\PostgreSQL\bin\psql.exe`，口令环境变量 `RECRUITMENT_DB_PASSWORD`（不落文件）；Python `D:\Python3.12.9\python.exe` + `RECRUITMENT_CONVERTER_DIR`。
 - Host 起停：`work/d5/e2e-live/scripts/start-host.ps1 -Profile <p> -Port 4934x|49347-49352 -DbPassword …`（token 落 `%TEMP%\ra-pr-host-<port>.token`，收尾必删）。
+- **端口纪律（D-169）**：lane 端口 49347–49352，**显式排除 49351**（`rec-human-20261120` 人工预览 Host，任何 preflight 不许杀）；49352 可能被本机无关进程当出站临时端口占用（本机 `GameViewerServer` → Host bind EACCES），此时用 49347。v4 15 步脚本已把白名单写成 49347–49352 排除 49351。
 - 测试库纪律：每次用一次性库重放迁移；只保留 `ra_s6s7`/`ra_freeze_final`/`ra_live_e2e_20261118`；`--fresh` 结果才可比。
 
 ### 13.7 机器门禁（合并前必须全绿）
 `npx tsc --noEmit`（0）· `npx tsdown`（双入口：`lib/app.js`+`lib/client.js`）· `node scripts/server-typecheck.mjs`（0/0）· `runtime-budget.mjs`（5051 棘轮）· `entry-reachability.mjs`（基线只降）· `client-contract-check.mjs`（手拼 0）· `term-lint.mjs` · 干净库 `node test/run-all.mjs --test-concurrency=1`。
+
+> 2026-11-20 晚实测：除 `tsc` 外全绿；`tsc` 红 5 错（全在 `src/app/**`：`prefetchCanvasPath` 单参 ×3、`nextStep.conclusion` ×2），属前端待修（D-170 / `design/v4/frontend-fixes-20261120.md`）。`src/app/**` 此前不被任何 tsconfig 覆盖，本轮才纳入（收紧，不是放宽）。
 
 ### 13.8 必踩的坑（都踩过）
 1. **CSS 注入按文件**（`tsdown.config.ts`）：共用一个标记 → 整页画布裸文本（已修，勿回退）。
@@ -356,10 +363,11 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 6. **R7**：不碰真实简历/会议原文；`work/` 不入库；证据进 `evidence/`。
 
 ### 13.9 未决（接手后先拍/先做）
-1. 15 步整页适配并重跑 → 出 PASS/FAIL 表（第一优先，先收口再谈新功能）。
-2. 对话桥：DSH `ctx.agents.create/followup` + `ctx.on('session/event')`；不通保持 503 降级，不许假装。
-3. 8 条写能力是否上界面（需产品负责人拍范围）。
-4. 交付期：部署/多租户/合规/模型口径（另立裁决）。
+1. ~~15 步整页适配并重跑~~ → **已完成（D-169）**：15/15 PASS，证据 `evidence/fullpage-v4-15step-20261120/`。
+2. 前端 5 个类型错（D-170）→ 修完 `tsc` 0，再跑一遍 15 步即可谈合并。
+3. 对话桥：DSH `ctx.agents.create/followup` + `ctx.on('session/event')`；不通保持 503 降级，不许假装。
+4. 8 条写能力是否上界面（需产品负责人拍范围）；`docs/38` 按 v4 testid 同步。
+5. 交付期：部署/多租户/合规/模型口径（另立裁决）。
 
 ### 13.10 怎么跟产品负责人共事
 只认结果与人话；先给判断再给依据；**不许把工程问题包装成产品决策去问**；不许说"已派/在跑"代替判断；他骂人但对事，改完给证据即可。裁决必须回抄 `docs/17`，否则视为未决定。

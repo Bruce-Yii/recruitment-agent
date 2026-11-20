@@ -1920,3 +1920,21 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   任何"要改/要加"的界面诉求（包括 testid、文案、布局、响应式）**一律交前端窗口**执行；我只做：服务端/构建接线、验收、问题定位与任务书。
   **对我自己的约束**：不再直接编辑 `src/app/**`、`src/client/canvas/**` 等界面文件；发现界面缺陷 → 写清证据与复现 → 交前端改 → 我按 1440 验收。
   **口径修正**：390 窄屏不作为产品要求（桌面 Web）；只要求窄窗口不崩、不丢数据（见 D-169 前一条记录）。
+
+- **D-169（2026-11-20，总控；v4 独立整页 15 步真点收口：15/15 PASS，`run-v4.mjs` 完成适配）**
+  **事实**：`work/d5/fullpage/run-v4.mjs` 已按 `work/d5/fullpage/TESTID-MAP.md` 从旧壳脚本适配到 v4 独立整页：身份走 `/recruitment/test?as=recruiter|interviewer_a|interviewer_b`（服务端写 `rc_sid`/绑定 alias，面试官自动进 `#/interviewer`）；会话 sid 从 `document.cookie.rc_sid` 读（v4 无 DSH 客户端/localStorage）；队列行 `app-queue-item-<id>` 进画布 `v4-canvas-route`；上传用画布内 `[data-testid="v4-canvas-route"] input[type=file]`；S8 用 `reloadApp()` 直达 `/recruitment/app` 保留 `rc_sid`；证据路径全部相对仓库根；`--fresh` 用一次性库 + 确定性数据集，跑完删库/删 profile/删 token/端口释放。
+  **证据**：两次独立 `--fresh` 真跑均 **15/15**：交付方 `2026-11-20T22:34:13+08:00`（work/d5/fullpage/owner-run-2231/）、总控独立复跑 `2026-11-20T22:40:24+08:00`（`evidence/fullpage-v4-15step-20261120/`，HEAD `e7a5284`）。每步三件套：1440×900 截图 + 页面 innerText + psql SELECT-only 读回；证据审计器（`work/d5/fullpage/audit-run.mjs`）硬检查 0 失败、脱敏泄漏 0；关键断言：S2 上传 202+task_id+`business_task` Δ≥1、S6 同 interview id 且 version 1→2、S8 刷新 sid 前后一致且草稿仅属 actor 104、S10 缺面评 disabled 且零写入、S12 FINAL current=1 且 scorecard=2、S13 total|current=1|1、S15 并发 200×1+409×1 且 record_version 仅 +1。
+  **本轮抓到的两个“假 PASS”（同类缺陷，已修）**：① 旧壳 S2 只断言 UI 文本含“上传/解析”，实测上传请求 400 `OUTSIDE_ALLOWED_ROOTS` 也会 PASS；根因是测试底座 fresh-lib 误把 fixture 目录插入 profile `allowed_roots`，而服务端要求落地目录落在**每一个** allowed_root 内（`src/db/intake-upload.ts:139-141,190-196`）→ 删除该 patch 后上传 202；判据改为「202+task_id+`business_task` Δ≥1」，`intake_asset` 是后台解析异步写、只作辅助。② 旧壳 S4 点不存在的“通过初筛”、填不存在的“确认原话”也能 PASS（弹窗默认 `ADVANCE`）→ 改为真点弹窗内“通过” pill 且 `active`。另收紧：S1（D-167 三判据 + 视口/pathname + 5 锚点）、S3（`.ros-crit-item.active`）、S5（`interviewer.actor_id=…104`）、S6（同 id/version+1/时间新值）、S13（原文“已处理过，不会重复写入”+ total=current=1）。无实质性放宽。
+  **不做/未证**：不改产品范围、写链路、界面（D-168）；产品负责人本人手点抽检未做（R9 的“真人”这一层仍由 CDP 驱动）；对话桥仍 503；8 条无界面写能力基线未变；390 不作要求；全量测试本轮未跑（非合并轮）。
+  **运维口径（并入本条）**：lane Host 端口 `49347–49352`，**显式排除 `49351`**（rec-human 人工预览 Host，preflight 任何情况下不许杀）；`49352` 可能被本机无关进程当出站临时端口占用（本机 `GameViewerServer`，Host bind EACCES），此时用 `49347`。证据归档 `evidence/fullpage-v4-15step-20261120/`（README/PASS-FAIL 表/result/45 个逐步证据/审计器输出/机检）；`work/` 里的 run-v4.mjs、fresh-lib.mjs 是过程脚本，按纪律不入库。
+
+- **D-170（2026-11-20，总控；类型门禁的结构性缺口与本轮修复——v4 app 此前不在任何类型检查里）**
+  **事实（HEAD `e7a5284` 实测）**：`src/app/**`（v4 整页前端）**不被任何 tsconfig 覆盖**：`tsconfig.json` 只 include `src/client/**`，`tsconfig.server.json` include `src/**` 排除 client，却把 app 扫进来 → `node scripts/server-typecheck.mjs` 实测 **19 错**（DOM API / `RequestInit.cache` 等）而基线是 0（已红）；同时 `npx tsc --noEmit` 因不含 app 而“绿”。即：**界面代码从未被类型检查**，是 D-163 类“编译绿”的结构性漏洞。
+  **裁决/修复（构建接线，非界面）**：① `tsconfig.server.json` 排除 `src/app/**`（浏览器入口不归服务端配置）；② `tsconfig.json` 纳入 `src/app/**`，让 `npx tsc --noEmit` 真检查整页前端（收紧，不是放宽）；③ 修 `src/http/app-shell.ts` 的 `DemoActorAlias` 导入（类型从 `demo-actor/alias.ts` 取）；④ 重建 `lib/app.js` 并提交（重建后哈希稳定，= 与 HEAD 源码一致；此前 HEAD 跟踪的 `app.js` 是旧构建）。
+  **暴露与交办**：`tsc` 现红 5 错，全在 `src/app/**`：`prefetchCanvasPath` 单参 ×3（`JobsView:33`/`QueueView:67`/`TalentView:76`，运行时悬停预取抛 TypeError）、`nextStep.conclusion` 无此类型 ×2（`JobsView:64`/`QueueView:214`，恒 undefined）。按 D-168 总控不改界面，已开 `design/v4/frontend-fixes-20261120.md` 交前端；**前端修完前不满足合并门**，禁止把 app 从类型检查里再拿掉换绿。
+  **修后机检**：server-typecheck PASS(0/0) · runtime-budget PASS(5051/5051) · entry-reachability PASS（基线内 8 条待补不变、手拼 0）· client-contract-check PASS · term-lint PASS · tsdown PASS；`tsc` 红 5（见上）；全量测试未跑（非合并轮）。
+
+- **D-171（2026-11-20，总控；v4 15 步证据归档与“可复跑”边界）**
+  **归档**：`evidence/fullpage-v4-15step-20261120/` = README（命令/环境/证到什么没证什么）+ PASS-FAIL 表（15 行，逐条判据 + 证据文件）+ `runbook-result.json` + `evidence/S01..S15`（ui.png/ui.txt/db.txt + S08-DRAFT-OWNER.txt）+ `audit-result.json`（审计器 hard 0 / leaks 0）+ `gates.txt`（机检）。
+  **边界（R7）**：证据目录内**不保存**含机器路径的脚本副本；run-v4/fresh-lib/audit-run 留在 `work/d5/fullpage/`（work/ 不入库），README 写明复跑命令与端口口径；归档目录已扫描：无当前有效 token、无 `D:\` 机器路径（CLEAN）。result 中 `host` 为 `…?token=<redacted>`。
+  **为什么**：证据要可复核，但“入库文件零机器路径/零有效凭据”是硬约束；需要脚本长期可复用时，另立 task 把脚本参数化（去掉硬编码路径）后再入库，不在本轮顺手做。
