@@ -1,0 +1,99 @@
+{
+  "scenarios": {
+    "focusCriteria": {
+      "candidateHash": "#/application/11111111-1111-4111-8111-000000000701",
+      "focusSeen": true,
+      "rect": {
+        "top": 76,
+        "bottom": 223
+      },
+      "hashAtFocus": "#/application/11111111-1111-4111-8111-000000000701",
+      "notice": "↗ 查看岗位标准对照",
+      "answer": "已完成 · recruitment_job_get | 已完成 · recruitment_application_get | 已完成 · recruitment_ui_dispatch | ↗ 查看岗位标准对照",
+      "hashAfter": "#/application/11111111-1111-4111-8111-000000000701",
+      "noUnavailable": true
+    },
+    "freeSlotsSuggest": {
+      "autoModalOpened": false,
+      "suggestSeen": true,
+      "suggestText": "去约面\n→",
+      "modalOpened": true,
+      "answer": "已完成 · recruitment_interview_get | 已完成 · recruitment_interview_free_slots | 已完成 · recruitment_ui_dispatch | 去约面 | →"
+    },
+    "modalClosed": {
+      "clicked": "cancel",
+      "stillOpen": false
+    },
+    "navigateTalent": {
+      "sent": {
+        "set": {
+          "ok": true
+        },
+        "sent": {
+          "ok": true
+        }
+      },
+      "hashTalent": true,
+      "talentView": true,
+      "hashAfter": "#/talent"
+    },
+    "navigateQueueScreening": {
+      "sent": {
+        "set": {
+          "ok": true
+        },
+        "sent": {
+          "ok": true
+        }
+      },
+      "hashQueue": true,
+      "filterActive": true,
+      "hashAfter": "#/queue"
+    }
+  },
+  "checks": [
+    {
+      "name": "focus_section_criteria",
+      "ok": true,
+      "detail": {
+        "focusSeen": true,
+        "hashAtFocus": "#/application/11111111-1111-4111-8111-000000000701",
+        "hashAfter": "#/application/11111111-1111-4111-8111-000000000701",
+        "rect": {
+          "top": 76,
+          "bottom": 223
+        },
+        "candidateHash": "#/application/11111111-1111-4111-8111-000000000701"
+      }
+    },
+    {
+      "name": "free_slots_suggest_no_auto_modal",
+      "ok": true,
+      "detail": {
+        "autoModalOpened": false,
+        "suggestSeen": true,
+        "modalOpened": true,
+        "suggestText": "去约面\n→"
+      }
+    },
+    {
+      "name": "navigate_talent",
+      "ok": true,
+      "detail": {
+        "hashTalent": true,
+        "talentView": true,
+        "hashAfter": "#/talent"
+      }
+    },
+    {
+      "name": "navigate_queue_screening",
+      "ok": true,
+      "detail": {
+        "hashQueue": true,
+        "filterActive": true,
+        "hashAfter": "#/queue"
+      }
+    }
+  ],
+  "pass": true
+}

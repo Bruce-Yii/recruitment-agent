@@ -1,0 +1,36 @@
+# PR #12 验收机检（2026-11-21 · merge ab7e270）
+
+## PR 复核
+
+| 项 | 结果 |
+|---|---|
+| 提交 | `9f3919d`（feat/ui-prototype-alignment）→ merge `ab7e270` |
+| 改动面 | 9 文件：`src/app/{App,ChatPanel,JobsView,QueueView,TalentView}.tsx`、`app.css`、`TESTID-MANIFEST.md`、`src/client/canvas/CandidatePage.tsx`、`canvas.css` |
+| 越界 | 无：未动服务端/写链路/既有 testid；新建岗位复用既有 builder + postJobCreate |
+| lib | 本地 `npx tsdown` 重建后随 merge 提交（app.js 1.36MB + client.js） |
+
+## 本地门禁
+
+| 门 | 结果 |
+|---|---|
+| `npx tsc --noEmit` | PASS（0） |
+| `npx tsdown` | PASS（双入口） |
+| `node scripts/server-typecheck.mjs` | PASS（0/0） |
+| `node scripts/runtime-budget.mjs` | PASS（5051/5051） |
+| `node scripts/entry-reachability.mjs` | PASS（无新缺口；手拼 0） |
+| `node scripts/client-contract-check.mjs` | PASS |
+| `node scripts/term-lint.mjs` | PASS |
+| 15 步全链路 | **15/15 PASS**（`run-v4.mjs --fresh --port 49347`，HEAD ab7e270；审计 hard 0） |
+| 对话×画布四场景 | **4/4 PASS**（`probe-chat-canvas-linkage.mjs`） |
+| 干净库全量测试 | 未跑（非 main 合并轮） |
+
+## 功能抽查（预览 Host 49351，1440）
+
+- 队列：等你拍板 1 / 初筛 24h 超时 / 行内真实原因 / 新建岗位入口 / 动态早报 / 动作快捷词。
+- 新建岗位弹窗：两个入口均可打开；部门真实下拉；取消后岗位表仍 1 条（零写入）。
+- 候选人：置顶约束标签显示（UI 写入 1 条演示约束后）；复制决策纪要成功且剪贴板内容含置顶提醒。
+- 证据：after-*.png、compare-*.png、probe-notes.json、pin-memo-notes.json。
+
+## 清理
+
+- 49351 预览 Host 保持运行（新构建）；一次性库/Chrome profile 已清理；49369 未触碰。

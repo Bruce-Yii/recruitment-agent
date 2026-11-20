@@ -2007,3 +2007,11 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ③ 不再新增“为了在 DSH 里好看”的界面补丁；所有新 UI 以独立产品页为准；
   ④ 交付前必须补：产品登录/会话（替代 `/recruitment/test` 演示身份）、独立入口/域名；预览 token 仅限本机开发，正式用户不可见。
   **状态**：D-177 任务 13 按本裁决调整为“隐藏/退役旧壳 + 保证直链产品可用”；交付期登录/部署未排期（开放项，不与本地验证混谈）。
+
+- **D-179（2026-11-21，总控；PR #12 UI 对齐定稿原型验收通过：C 类缺口关闭，A/B 归类接受）**
+  **来源**：`evidence/ui-review-20261121/` 对照包 → PR #12（`feat/ui-prototype-alignment`，`9f3919d`，9 文件 +552/−88）→ feat；本地 merge **`ab7e270`**（含 `lib/app.js`/`lib/client.js` 重建）；预览 Host 49351 已用新构建重启（pid 20000）。
+  **复核**：9 文件全在 `src/app/**` + `src/client/canvas/**`（含 TESTID-MANIFEST/CSS）；**未动**服务端/写链路/既有 testid/`lib/**`（本地重建）；新建岗位复用 `buildJobCreateBody + postJobCreate`，无新写路径。
+  **A/B/C 归类（接受 PR #12 正文）**：A 数据差异（预览 1 人 1 岗；翻页器需 >1 人）；B 本期不做（角色切换受 D-115/D-167/S1 隔离、Agent 已代办无后端投影、HC 无字段、推荐来源/年限无结构化字段）；C 已对齐（队列“等你拍板 N”/排版、行内真实紧迫度与原因、左栏与岗位页“＋新建岗位”、对话动态早报/动作快捷词、候选人置顶约束/复制决策纪要/顶栏降噪）。
+  **机检**：tsc 0；tsdown 双入口；server-typecheck 0/0、runtime-budget 5051/5051、entry-reachability、client-contract-check、term-lint 全 PASS；15 步 `--fresh` **15/15**（审计 hard 0）；对话×画布 4 场景 **4/4**。
+  **真机（1440，预览 Host 49351）**：队列“等你拍板 1”+“初筛 · 24h 超时”+真实行内原因；早报按真实计数动态生成；动作快捷词仍走同一 `/recruitment/agent/turn`；新建岗位弹窗两个入口均可打开（部门真实下拉，只开不提交，岗位表仍 1 条）；候选人置顶标签在通过 UI 写入 1 条演示约束后显示；复制决策纪要成功且剪贴板内容含置顶提醒。证据 `evidence/ui-review-pr12-20261121/`（before/after、after/prototype 并排 + 8 张 1440 + probe JSON + 回归）。
+  **如实记录**：① 预览库原本无约束，为验证置顶标签用产品 UI 真实写入 1 条演示约束（现留预览库）；② 复制纪要在 headless Chrome 默认被剪贴板权限拦截（UI 有 fallback 文案），加 `Emulation.setFocusEmulationEnabled` + 权限后成功；③ 翻页器需 >1 人未视觉触发（代码在）；④ B 类本期不做，待产品确认关闭；⑤ 全量测试未跑（非 main 合并轮）；未合并 main。
