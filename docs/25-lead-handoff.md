@@ -310,3 +310,56 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 - 类型：`npx tsc --noEmit`；服务端棘轮：`node scripts/server-typecheck.mjs`
 - 机检：`runtime-budget` / `entry-reachability` / `client-contract-check` / `term-lint`
 - 全量：干净库重放迁移后 `node test/run-all.mjs --test-concurrency=1`
+
+---
+
+## 13. 全量交接（接替全部工作的人，只看这一节即可启动）
+
+### 13.1 你接的是什么
+- **角色**：唯一总控。只做四件事：**判定**（做什么/什么算完成）、**验收**（独立复核，不接受自述）、**集成**（合并顺序/基线）、**单一权威**（裁决写进 `docs/17`，否则视为未决定）。**不写界面**（D-168：界面诉求一律交前端窗口）。
+- **产品**：DSH 插件 + PG17 的招聘 Agent。核心 = 把"投递接好、用好"：**让 HR 每个判断有依据、每个动作留痕、每个闸门由人点**。不做 sourcing、不做招聘平台。
+- **阶段**：本地开发/验证，**未交付**。交付期（部署/多租户/合规/模型口径）全部未拍。
+
+### 13.2 业务链路（产品的全部，S1→S10）
+岗位+Rubric → 简历/材料接入 → 初筛（逐条原文对照）→ 约面（双方日历）→ 面试（前简报+后转写）→ 面评（独立、不打平均分）→ 决策（缺面评必拦）→ 后续。
+每个环节只回答：**谁、在什么依据下、做了什么判断**。
+
+### 13.3 产品→工程映射（四层，别从表开始读）
+1. 对象：岗位/申请/候选人/面试/面评/决策；
+2. 真相：PG `recruitment` schema；五事实分离（业务表 / `event_inbox` / `business_task` / 执行 / 副作用）；`decision` 只有一条 `is_current`；
+3. 能力：33 工具（Agent）+ 同源 HTTP（界面）；**写链路唯一**：builder → `postActionSeam`（带 `X-DSH-Session`）→ 服务端算 `confirmation_text` sha256 → 工具落库；
+4. 界面：读模型 `/recruitment/api/recruiting/*` → VM → 独立整页 v4（`src/app`）+ 复用画布（`src/client/canvas`）；`data-testid` 是验收契约。
+
+### 13.4 代码地图
+`src/tools`（Agent 能力）/ `src/domain`（判定纯函数）/ `src/db`（持久化）/ `src/http`（接口+闸门，含 `app-shell.ts` 整页入口）/ `src/client`（DSH 视图+/canvas）/ `src/app`（整页 v4）/ `src/connectors/{feishu,imap}` / `db/migrations` 0001→0023。
+
+### 13.5 当前状态（2026-11-20）
+- 分支 `feat/unified-document-intake`，HEAD 见 `git log`；PR #8/#9 内容已并入（PR 可标已合并）。
+- 旧壳 15 步真点：**15/15 PASS**（`work/d5/e2e-real/scripts/run-runbook.mjs --fresh`）。
+- 新整页 v4：`/recruitment/app` 可用；三屏快照在 `evidence/fullpage-v4-preview-20261120/`。
+- **未完成**：① `work/d5/fullpage/run-v4.mjs` 15 步适配（有映射 `TESTID-MAP.md`）；② 对话桥未接（`/recruitment/agent/turn` 返回 503，页面已降级）；③ 8 条写能力无界面（compound/config/email authorize/feishu import）；④ 390 不作要求（桌面 Web）。
+
+### 13.6 环境（缺一个就假红）
+- `DSH_HOME=D:\12412\dsh-home-recruitment`；PG `D:\12412\PostgreSQL\bin\psql.exe`，口令环境变量 `RECRUITMENT_DB_PASSWORD`（不落文件）；Python `D:\Python3.12.9\python.exe` + `RECRUITMENT_CONVERTER_DIR`。
+- Host 起停：`work/d5/e2e-live/scripts/start-host.ps1 -Profile <p> -Port 4934x|49347-49352 -DbPassword …`（token 落 `%TEMP%\ra-pr-host-<port>.token`，收尾必删）。
+- 测试库纪律：每次用一次性库重放迁移；只保留 `ra_s6s7`/`ra_freeze_final`/`ra_live_e2e_20261118`；`--fresh` 结果才可比。
+
+### 13.7 机器门禁（合并前必须全绿）
+`npx tsc --noEmit`（0）· `npx tsdown`（双入口：`lib/app.js`+`lib/client.js`）· `node scripts/server-typecheck.mjs`（0/0）· `runtime-budget.mjs`（5051 棘轮）· `entry-reachability.mjs`（基线只降）· `client-contract-check.mjs`（手拼 0）· `term-lint.mjs` · 干净库 `node test/run-all.mjs --test-concurrency=1`。
+
+### 13.8 必踩的坑（都踩过）
+1. **CSS 注入按文件**（`tsdown.config.ts`）：共用一个标记 → 整页画布裸文本（已修，勿回退）。
+2. **双入口**：改前端要同时重建 `app.js` 与 `client.js`；`src/app` 自包含 react（devDependencies）。
+3. **身份双轨**：DSH session（`x-dsh-session`）与测试 cookie（`rc_sid`）是两套入口，别混。
+4. **旧壳 vs 整页**：旧壳 `RecruitingWorkspace` 还在（仅过渡），产品入口是 `/recruitment/app`；不要用旧壳 selector 验收整页。
+5. **端口 EACCES**：杀掉的 Host 可能占着端口不放，换 49347–49351。
+6. **R7**：不碰真实简历/会议原文；`work/` 不入库；证据进 `evidence/`。
+
+### 13.9 未决（接手后先拍/先做）
+1. 15 步整页适配并重跑 → 出 PASS/FAIL 表（第一优先，先收口再谈新功能）。
+2. 对话桥：DSH `ctx.agents.create/followup` + `ctx.on('session/event')`；不通保持 503 降级，不许假装。
+3. 8 条写能力是否上界面（需产品负责人拍范围）。
+4. 交付期：部署/多租户/合规/模型口径（另立裁决）。
+
+### 13.10 怎么跟产品负责人共事
+只认结果与人话；先给判断再给依据；**不许把工程问题包装成产品决策去问**；不许说"已派/在跑"代替判断；他骂人但对事，改完给证据即可。裁决必须回抄 `docs/17`，否则视为未决定。
