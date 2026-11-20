@@ -64,6 +64,7 @@ event: tool       data: {"name":"recruitment_interview_schedule","status":"ok","
 event: done       data: {"turn_id":"…","usage":{...}}
 event: error      data: {"code":"AGENT_UNAVAILABLE","message":"…"}
 ```
+> **2026-11-20 已落地 v1（D-173）**：实现见 `dsh/dsh-recruitment/src/http/agent-turn.ts`（复用 `ctx.agents`，同一 `rc_sid` 当 DSH session；SSE 同本契约；工具面只读 allow-list）。仍未做：对话内写操作确认卡、Agent 列表/总览只读工具。
 - 服务端实现：插件 `ctx.inject(['agents','sessions'])`，按 sid 取/建 Agent，投递 user/message，订阅 `session/event`，把 `assistant/message` 增量与 `tool/call|result` 转 SSE；
 - **Agent 不可用时**：返回 503 + `AGENT_UNAVAILABLE`，页面显示"对话暂时不可用"，**业务按钮不受影响**（两条路独立）；
 - 写操作的闸门不变：Agent 仍经既有 `confirmation_text` + 服务端哈希，页面对话里出现确认卡时走业务 API（见 §5）。

@@ -1,0 +1,40 @@
+{
+  "checks": [
+    {
+      "name": "chat_input_ok",
+      "ok": true
+    },
+    {
+      "name": "chat_send_ok",
+      "ok": true
+    },
+    {
+      "name": "assistant_answer_visible",
+      "ok": true,
+      "detail": "你好，我是招聘协作 Agent。你可以直接告诉我需要推进哪位候选人，或拖入简历文件自动建档。\n岗位代码 DEMO-BE-001 现在是否在招？一句话回答。\n是，岗位 DEMO-BE-001（后端工程师）当前状态为 OPEN，仍在招聘。\n已完成 · recruitment_job_get"
+    },
+    {
+      "name": "no_unavailable_banner",
+      "ok": true
+    },
+    {
+      "name": "tool_activity_visible",
+      "ok": true
+    }
+  ],
+  "pass": true,
+  "input": {
+    "ok": true
+  },
+  "click": {
+    "ok": true,
+    "disabled": false
+  },
+  "logText": "你好，我是招聘协作 Agent。你可以直接告诉我需要推进哪位候选人，或拖入简历文件自动建档。\n岗位代码 DEMO-BE-001 现在是否在招？一句话回答。\n是，岗位 DEMO-BE-001（后端工程师）当前状态为 OPEN，仍在招聘。\n已完成 · recruitment_job_get",
+  "unavailable": false,
+  "cleanup": {
+    "port49347": null,
+    "cdp": null,
+    "tokenExists": false
+  }
+}

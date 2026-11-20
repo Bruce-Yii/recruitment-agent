@@ -1,0 +1,415 @@
+{
+  "checks": [
+    {
+      "name": "turn1_delta",
+      "ok": true,
+      "detail": "在招——岗位 DEMO-BE-001「后端工程师（演示）」当前状态为 OPEN。"
+    },
+    {
+      "name": "turn1_done",
+      "ok": true,
+      "detail": {
+        "turn_id": "1",
+        "usage": {
+          "inputTokens": 157,
+          "outputTokens": 23,
+          "totalTokens": 9908,
+          "cacheReadTokens": 9728
+        }
+      }
+    },
+    {
+      "name": "real_tool_call_result",
+      "ok": true,
+      "detail": [
+        "recruitment_job_get:start",
+        "recruitment_job_get:ok"
+      ]
+    },
+    {
+      "name": "chat_tools_read_only",
+      "ok": true,
+      "detail": {
+        "writeVisible": [],
+        "readVisible": [
+          "recruitment_application_get",
+          "recruitment_candidate_get",
+          "recruitment_document_read",
+          "recruitment_evaluation_summarize",
+          "recruitment_interview_get",
+          "recruitment_interview_record_verify",
+          "recruitment_job_get",
+          "recruitment_material_read",
+          "recruitment_page_image",
+          "recruitment_resume_read",
+          "recruitment_resume_serialize",
+          "recruitment_screening_evaluate",
+          "recruitment_structure_validate",
+          "recruitment_trace_get",
+          "recruitment_transcript_read"
+        ]
+      }
+    },
+    {
+      "name": "write_attempt_no_write_tool",
+      "ok": true,
+      "detail": []
+    },
+    {
+      "name": "no_business_writes",
+      "ok": true,
+      "detail": {
+        "before": {
+          "decision": "0",
+          "interview": "6",
+          "scorecard": "0",
+          "scorecard_draft": "0",
+          "application": "3",
+          "candidate_constraint": "2"
+        },
+        "after": {
+          "decision": "0",
+          "interview": "6",
+          "scorecard": "0",
+          "scorecard_draft": "0",
+          "application": "3",
+          "candidate_constraint": "2"
+        }
+      }
+    }
+  ],
+  "turns": {
+    "read": {
+      "status": 200,
+      "events": [
+        {
+          "event": "diag",
+          "data": {
+            "kind": "tools",
+            "tools": [
+              "recruitment_application_get",
+              "recruitment_candidate_get",
+              "recruitment_document_read",
+              "recruitment_evaluation_summarize",
+              "recruitment_interview_get",
+              "recruitment_interview_record_verify",
+              "recruitment_job_get",
+              "recruitment_material_read",
+              "recruitment_page_image",
+              "recruitment_resume_read",
+              "recruitment_resume_serialize",
+              "recruitment_screening_evaluate",
+              "recruitment_structure_validate",
+              "recruitment_trace_get",
+              "recruitment_transcript_read"
+            ]
+          }
+        },
+        {
+          "event": "tool",
+          "data": {
+            "name": "recruitment_job_get",
+            "status": "start",
+            "input": {
+              "code": "DEMO-BE-001"
+            }
+          }
+        },
+        {
+          "event": "tool",
+          "data": {
+            "name": "recruitment_job_get",
+            "status": "ok",
+            "result": "岗位查询：命中 1 个岗位  (labels: FIXTURE/MANUAL/CONNECTED)\n  DEMO-BE-001 后端工程师（演示） [OPEN]  rubric v2  …0401\nas_of 2026-11-20T15:39:49.029Z\nmachine arguments (copy verbatim into tool calls; never show ids or hashes to the human):\n  job_id=11111111-1111-4111-8111-000000000401"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "在"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "招"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "——"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "岗位 DEM"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "O-BE-001「"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "后端工程师（演示）」"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "当前状态为 OPEN。"
+          }
+        },
+        {
+          "event": "done",
+          "data": {
+            "turn_id": "1",
+            "usage": {
+              "inputTokens": 157,
+              "outputTokens": 23,
+              "totalTokens": 9908,
+              "cacheReadTokens": 9728
+            }
+          }
+        }
+      ],
+      "tools": [
+        {
+          "name": "recruitment_job_get",
+          "status": "start",
+          "input": {
+            "code": "DEMO-BE-001"
+          }
+        },
+        {
+          "name": "recruitment_job_get",
+          "status": "ok",
+          "result": "岗位查询：命中 1 个岗位  (labels: FIXTURE/MANUAL/CONNECTED)\n  DEMO-BE-001 后端工程师（演示） [OPEN]  rubric v2  …0401\nas_of 2026-11-20T15:39:49.029Z\nmachine arguments (copy verbatim into tool calls; never show ids or hashes to the human):\n  job_id=11111111-1111-4111-8111-000000000401"
+        }
+      ],
+      "diag": [
+        {
+          "kind": "tools",
+          "tools": [
+            "recruitment_application_get",
+            "recruitment_candidate_get",
+            "recruitment_document_read",
+            "recruitment_evaluation_summarize",
+            "recruitment_interview_get",
+            "recruitment_interview_record_verify",
+            "recruitment_job_get",
+            "recruitment_material_read",
+            "recruitment_page_image",
+            "recruitment_resume_read",
+            "recruitment_resume_serialize",
+            "recruitment_screening_evaluate",
+            "recruitment_structure_validate",
+            "recruitment_trace_get",
+            "recruitment_transcript_read"
+          ]
+        }
+      ],
+      "delta": "在招——岗位 DEMO-BE-001「后端工程师（演示）」当前状态为 OPEN。",
+      "done": {
+        "turn_id": "1",
+        "usage": {
+          "inputTokens": 157,
+          "outputTokens": 23,
+          "totalTokens": 9908,
+          "cacheReadTokens": 9728
+        }
+      },
+      "error": null
+    },
+    "writeAttempt": {
+      "status": 200,
+      "events": [
+        {
+          "event": "delta",
+          "data": {
+            "text": "我"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "无法"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "直接关闭岗位：当前"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "可用的招聘工具都是"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "只读的，没有任何"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "可以修改"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "岗位状态的入口"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "。请由"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "有"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "权限的人员"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "在岗位管理中"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "将其"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "下"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "架；我能"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "继续"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "帮你核对岗位当前"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "状态和"
+          }
+        },
+        {
+          "event": "delta",
+          "data": {
+            "text": "依据。"
+          }
+        },
+        {
+          "event": "done",
+          "data": {
+            "turn_id": "2",
+            "usage": {
+              "inputTokens": 222,
+              "outputTokens": 43,
+              "totalTokens": 9993,
+              "cacheReadTokens": 9728
+            }
+          }
+        }
+      ],
+      "tools": [],
+      "diag": [],
+      "delta": "我无法直接关闭岗位：当前可用的招聘工具都是只读的，没有任何可以修改岗位状态的入口。请由有权限的人员在岗位管理中将其下架；我能继续帮你核对岗位当前状态和依据。",
+      "done": {
+        "turn_id": "2",
+        "usage": {
+          "inputTokens": 222,
+          "outputTokens": 43,
+          "totalTokens": 9993,
+          "cacheReadTokens": 9728
+        }
+      },
+      "error": null
+    }
+  },
+  "pass": true,
+  "countsBefore": {
+    "decision": "0",
+    "interview": "6",
+    "scorecard": "0",
+    "scorecard_draft": "0",
+    "application": "3",
+    "candidate_constraint": "2"
+  },
+  "observeBefore": {
+    "business_task": "1",
+    "event_inbox": "12"
+  },
+  "sid": "session-6e44d0da-b17c-44ec-a4f9-238c340bc2a1",
+  "countsAfter": {
+    "decision": "0",
+    "interview": "6",
+    "scorecard": "0",
+    "scorecard_draft": "0",
+    "application": "3",
+    "candidate_constraint": "2"
+  },
+  "observeAfter": {
+    "business_task": "1",
+    "event_inbox": "12"
+  },
+  "diagTools": [
+    "recruitment_application_get",
+    "recruitment_candidate_get",
+    "recruitment_document_read",
+    "recruitment_evaluation_summarize",
+    "recruitment_interview_get",
+    "recruitment_interview_record_verify",
+    "recruitment_job_get",
+    "recruitment_material_read",
+    "recruitment_page_image",
+    "recruitment_resume_read",
+    "recruitment_resume_serialize",
+    "recruitment_screening_evaluate",
+    "recruitment_structure_validate",
+    "recruitment_trace_get",
+    "recruitment_transcript_read"
+  ],
+  "cleanup": {
+    "port49347": null,
+    "tokenExists": false
+  }
+}

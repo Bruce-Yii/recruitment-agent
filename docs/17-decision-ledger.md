@@ -1945,3 +1945,14 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **机检（合并后）**：`npx tsc --noEmit` = **0 错**；`npx tsdown` PASS（双入口）；server-typecheck 0/0 · runtime-budget 5051/5051 · entry-reachability PASS · client-contract-check PASS · term-lint PASS；全量测试未跑（非 main 合并轮，不得据此宣称全绿）。
   **全链路（合并后独立复跑）**：`2026-11-20T23:09:34+08:00`，HEAD `af0fef5`，`run-v4.mjs --fresh --port 49347` = **15/15 PASS**；证据审计 hard 0 / leaks 0；三屏真悬停 3/3（队列/岗位/人才库各触发一条 200 只读 GET，无 `fetcher is not a function`）。证据 `evidence/fullpage-v4-15step-pr10-20261120/`。
   **状态**：D-170 的 5 个前端类型错**关闭**；PR #10 内容已并入 feat（可标已合并/关闭）；合并门仅剩“全量测试未跑（非 main 合并轮）”与产品侧未决项，**未合并 main**。
+
+- **D-173（2026-11-20，总控；v4 整页对话桥 v1 接线：对话不再 503，复用 DSH 既有 Agent 运行时）**
+  **背景/裁决**：产品负责人 2026-11-20 明确“这个项目本来就是 Agent，对话不是可选项”；此前 `/recruitment/agent/turn` 因 `agentTurn:null` 一直 503，是**未接线**，不是模型/请求头问题（D-167 当时明确降级）。
+  **实现（不新建 Runtime，只用 DSH 套壳该有的接线）**：新增 `src/http/agent-turn.ts`，`index.ts` 把桥注入 `registerAppShell`：
+  ① 用页面同一个 `rc_sid` 作为 DSH `SessionId` 找/建 Agent（`ctx.agents.get/create`，冲突时 `resume`），`agent.followup(createUserMessage 同形对象)` 投递；
+  ② 订阅 `agent/assistant-stream`（chunk/text-delta → `delta`）与 `session/event`（`tool/call`/`tool/result` → `tool`，`turn/end` → `done`/`error`），按前端契约发 SSE；
+  ③ 桥/运行时不可用仍 503 `AGENT_UNAVAILABLE`（保留降级，业务按钮不受影响）；
+  ④ **安全 fail-closed**：Agent 创建 `setup` 里 `tools.restrict({ allow: 15 个只读招聘工具 })`，写工具对对话**不可见**；写操作继续走右侧工作台人点确认。另加 `x-recruitment-agent-diag: 1` 验收诊断（仅回传本轮可见工具名，正常 UI 不发）。
+  **证据（真 Host + 一次性库 + 真 HY4 模型）**：`work/d5/fullpage/probe-agent-turn.mjs`：第 1 轮真调 `recruitment_job_get`（tool/call+result）并回答“DEMO-BE-001 在招/OPEN”；第 2 轮要求“下架岗位”→模型明确工具只读、**无写工具调用**、业务域表行数不变；诊断清单 15 个只读 `recruitment_*`、**0 写工具**。`probe-chat-ui.mjs`：真浏览器 ChatPanel 输入→发送→回答 + “已完成 · recruitment_job_get”、无降级条（1440 截图）。接线后 15 步 `--fresh` 回归 **15/15 PASS**（审计 hard 0）。归档 `evidence/agent-bridge-v1-20261120/`；HEAD `a7a9089`。
+  **机检**：tsc 0 / tsdown / server-typecheck 0/0 / runtime-budget / entry-reachability / client-contract-check / term-lint 全 PASS；全量测试未跑（非 main 合并轮）。
+  **v1 边界/未做**：① 对话只读，**对话内写操作的确认卡**未做；② Agent 缺“列表/总览”只读工具（现有读工具都按 id/code 查，问“今天先办谁”答不了）→ 下一步补 1 个复用 overview 读模型的只读工具；③ 改代码后需**重启 Host** 才生效（预览 Host 49351 当前仍可能跑旧进程）；④ 未合并 main。

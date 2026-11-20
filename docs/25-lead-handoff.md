@@ -296,19 +296,20 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 - 整页入口：`GET /recruitment/app`（同 Host 端口、无 DSH 外壳）；身份测试入口 `GET /recruitment/test?as=recruiter|interviewer_a|interviewer_b&next=/recruitment/app`；会话 cookie `rc_sid`，业务 API 仍带 `X-DSH-Session`。
 - 整页前端是 `src/app/**`（PR #8/#9 已并入，`a4f6abb`/`b642e07`），双入口构建：`lib/app.js`（ESM 自包含）+ `lib/client.js`（DSH CJS）。
 - CSS 注入按**文件**独立标记（`1e12acc` 修过；整页曾因共用标记导致画布无样式）。
-- 对话 `/recruitment/agent/turn` 目前**503 AGENT_UNAVAILABLE**（桥未接线，页面已降级，业务不受影响）。接法见 `src/http/app-shell.ts` 的 `AppAgentTurnBridge`。
+- 对话 `/recruitment/agent/turn`：**已接线（D-173，2026-11-20）**——复用 DSH 既有 `ctx.agents`（同一 `rc_sid` 当 DSH session），SSE `delta/tool/done/error`；对话 Agent 工具面是**只读 allow-list**（写工具不可见），写操作仍走右侧工作台人点确认。桥/运行时不可用仍 503 降级。**改代码后需重启 Host 才生效**（预览 Host 49351 当前仍可能跑旧进程）。实现见 `src/http/agent-turn.ts`。
 - 自动化：`work/d5/e2e-real/scripts/run-runbook.mjs --fresh` 跑旧壳 15 步（15/15 过）；**v4 整页 15 步已完成**：`work/d5/fullpage/run-v4.mjs --fresh --port 49347`，2026-11-20 两次独立真跑均 **15/15**，证据 `evidence/fullpage-v4-15step-20261120/`（判据/断言变更见 docs/17 D-169）。
 
 ### 接手要做的（按优先级）
 1. ~~完成 `run-v4.mjs` 适配并按 v4 重跑 15 步~~ → **已完成（D-169）**：15/15 PASS，证据 `evidence/fullpage-v4-15step-20261120/`；脚本在 `work/d5/fullpage/run-v4.mjs`（work/ 不入库）。
 2. ~~修前端 5 个类型错~~ → **已完成（D-172）**：PR #10 已并入 `af0fef5`，`tsc`=0，合并后 15/15。
 3. 任何界面缺陷：写证据 + 复现，交前端 PR，**不许自己改界面**（D-168）。
-4. 对话桥可接：用 DSH `agents/sessions`（`ctx.agents.create/followup` + `ctx.on('session/event')`），失败保持 503 降级。
+4. ~~对话桥~~ → **v1 已接（D-173）**：对话能回话、真调 `recruitment_*` 只读工具；写操作禁止在对话里做（确认卡下一步）。剩余：Agent 缺“列表/总览”只读工具（问“今天先办谁”答不了）；预览 Host 需重启；不通仍 503 降级。
 5. 收口 PR #8/#9（内容已并主线，PR 可标已合并）。
 
 ### 常用命令
 - v4 15 步真点：`RECRUITMENT_DB_PASSWORD=123456 node work/d5/fullpage/run-v4.mjs --fresh --port 49347`（跑完自动删一次性库/profile/token；端口白名单 49347–49352 且排除 49351）
 - 证据审计：`node work/d5/fullpage/audit-run.mjs --result work/d5/fullpage/runbook-result.json`
+- 对话桥验收：`node work/d5/fullpage/probe-agent-turn.mjs`（HTTP 两轮：读/写请求）· `node work/d5/fullpage/probe-chat-ui.mjs`（真浏览器 ChatPanel）
 - 构建：`cd dsh/dsh-recruitment && npx tsdown`（双入口）
 - 类型：`npx tsc --noEmit`；服务端棘轮：`node scripts/server-typecheck.mjs`
 - 机检：`runtime-budget` / `entry-reachability` / `client-contract-check` / `term-lint`
@@ -341,7 +342,7 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 - 旧壳 15 步真点：**15/15 PASS**（`work/d5/e2e-real/scripts/run-runbook.mjs --fresh`）。
 - **v4 整页 15 步真点：15/15 PASS**（`work/d5/fullpage/run-v4.mjs --fresh --port 49347`；合并前 22:34/22:40 两次、合并后 23:09 一次，共三次独立跑；证据 `evidence/fullpage-v4-15step-20261120/`（合并前）、`evidence/fullpage-v4-15step-pr10-20261120/`（合并后，权威）；D-169/D-172）。
 - 新整页 v4：`/recruitment/app` 可用；三屏快照在 `evidence/fullpage-v4-preview-20261120/`。
-- **未完成**：① 对话桥未接（`/recruitment/agent/turn` 返回 503，页面已降级）；② 8 条写能力无界面（compound/config/email authorize/feishu import）；③ `docs/38` 未按 v4 testid 同步；④ 390 不作要求（桌面 Web）；⑤ 全量测试未跑（非 main 合并轮，不得据此宣称全绿）；⑥ 产品负责人本人手点抽检未做。
+- **未完成**：① 对话 v1 已接但**只读 + 缺列表/总览工具**，对话内写确认卡未做（D-173）；② 8 条写能力无界面（compound/config/email authorize/feishu import）；③ `docs/38` 未按 v4 testid 同步；④ 390 不作要求（桌面 Web）；⑤ 全量测试未跑（非 main 合并轮，不得据此宣称全绿）；⑥ 产品负责人本人手点抽检未做。
 
 ### 13.6 环境（缺一个就假红）
 - `DSH_HOME=D:\12412\dsh-home-recruitment`；PG `D:\12412\PostgreSQL\bin\psql.exe`，口令环境变量 `RECRUITMENT_DB_PASSWORD`（不落文件）；Python `D:\Python3.12.9\python.exe` + `RECRUITMENT_CONVERTER_DIR`。
@@ -365,7 +366,7 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 ### 13.9 未决（接手后先拍/先做）
 1. ~~15 步整页适配并重跑~~ → **已完成（D-169）**：15/15 PASS，证据 `evidence/fullpage-v4-15step-20261120/`。
 2. ~~前端 5 个类型错（D-170）~~ → **已完成（D-172）**：PR #10 并入 `af0fef5`；合并后 `tsc`=0、15 步 15/15。
-3. 对话桥：DSH `ctx.agents.create/followup` + `ctx.on('session/event')`；不通保持 503 降级，不许假装。
+3. ~~对话桥~~ → **v1 已接（D-173）**；剩余：给 Agent 补“列表/总览”只读工具、对话内写确认卡、预览 Host 重启生效。
 4. 8 条写能力是否上界面（需产品负责人拍范围）；`docs/38` 按 v4 testid 同步。
 5. 交付期：部署/多租户/合规/模型口径（另立裁决）。
 
