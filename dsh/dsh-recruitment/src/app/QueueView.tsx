@@ -30,6 +30,48 @@ function cleanStageLabel(raw: string): string {
   return (parts[0] ?? raw).trim() || raw;
 }
 
+function deriveRowUrgency(
+  app: ApplicationRowView,
+  evaluatedAtMs: number,
+): { readonly label: string; readonly toneClass: string } {
+  const baseLabel = cleanStageLabel(app.stageLabel);
+  const overdueScorecards = app.interviews.reduce(
+    (sum, iv) => sum + (iv.scorecards?.overdue ?? 0),
+    0,
+  );
+  const enteredRaw = app.stageEnteredAt || app.appliedAt;
+  const enteredMs = enteredRaw ? Date.parse(enteredRaw) : Number.NaN;
+  const elapsedHours =
+    Number.isFinite(enteredMs) && evaluatedAtMs > enteredMs
+      ? Math.floor((evaluatedAtMs - enteredMs) / 3_600_000)
+      : 0;
+
+  if (app.filterKind === 'screening' && elapsedHours >= 24) {
+    return { label: `初筛 · ${elapsedHours}h 超时`, toneClass: 'danger' };
+  }
+  if (overdueScorecards > 0) {
+    return {
+      label: `${baseLabel} · 面评超时 ${overdueScorecards} 份`,
+      toneClass: 'danger',
+    };
+  }
+  return { label: baseLabel, toneClass: statusClass(app.stageTone) };
+}
+
+function buildRowReason(app: ApplicationRowView): string {
+  const parts: string[] = [];
+  if (app.stageBlockedReason) {
+    parts.push(app.stageBlockedReason);
+  } else if (app.nextStep.hasStep && app.nextStep.label) {
+    parts.push(app.nextStep.label);
+  }
+  const fact = app.interviewSummary || app.screeningSummary || app.materialSummary;
+  if (fact && !parts.some((p) => p.includes(fact))) {
+    parts.push(fact);
+  }
+  return parts.join(' · ');
+}
+
 export function QueueView({
   overview,
   filterRequest,
@@ -78,6 +120,10 @@ export function QueueView({
 
   const queueIds = useMemo(() => filtered.map((a) => a.id), [filtered]);
   const defaultJobId = overview.jobs[0]?.id ?? '';
+  const evaluatedAtMs = useMemo(() => {
+    const parsed = overview.evaluatedAt ? Date.parse(overview.evaluatedAt) : Number.NaN;
+    return Number.isFinite(parsed) ? parsed : Date.now();
+  }, [overview.evaluatedAt]);
 
   const handleRowHover = (app: ApplicationRowView) => {
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
@@ -214,35 +260,37 @@ export function QueueView({
           </div>
         ) : (
           <div className="clean-list">
-            {filtered.map((app) => (
-              <button
-                key={app.id}
-                type="button"
-                className="clean-row"
-                data-testid={`app-queue-item-${app.id}`}
-                onMouseEnter={() => handleRowHover(app)}
-                onMouseLeave={handleRowLeave}
-                onClick={() => onOpenApplication(app.id, queueIds)}
-              >
-                <div className="cr-left">
-                  <span className="mono">{app.candidateInitial || app.candidateName.slice(0, 1)}</span>
-                  <div className="cr-text">
-                    <div className="cr-title-line">
-                      <span className="cr-name">{app.candidateName}</span>
-                      <span className="cr-role">{app.jobTitle}</span>
-                    </div>
-                    <div className="cr-sub">
-                      {app.interviewSummary || app.screeningSummary || app.materialSummary}
+            {filtered.map((app) => {
+              const urgency = deriveRowUrgency(app, evaluatedAtMs);
+              const reasonText = buildRowReason(app);
+              return (
+                <button
+                  key={app.id}
+                  type="button"
+                  className="clean-row"
+                  data-testid={`app-queue-item-${app.id}`}
+                  onMouseEnter={() => handleRowHover(app)}
+                  onMouseLeave={handleRowLeave}
+                  onClick={() => onOpenApplication(app.id, queueIds)}
+                >
+                  <div className="cr-left">
+                    <span className="mono">{app.candidateInitial || app.candidateName.slice(0, 1)}</span>
+                    <div className="cr-text">
+                      <div className="cr-title-line">
+                        <span className="cr-name">{app.candidateName}</span>
+                        <span className="cr-role">{app.jobTitle}</span>
+                      </div>
+                      {reasonText ? <div className="cr-sub">{reasonText}</div> : null}
                     </div>
                   </div>
-                </div>
-                <div className="cr-right">
-                  <span className={`cr-status ${statusClass(app.stageTone)}`}>
-                    {cleanStageLabel(app.stageLabel)}
-                  </span>
-                </div>
-              </button>
-            ))}
+                  <div className="cr-right">
+                    <span className={`cr-status num ${urgency.toneClass}`}>
+                      {urgency.label}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

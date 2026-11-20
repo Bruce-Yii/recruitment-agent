@@ -15,6 +15,13 @@
 | `app-nav-jobs` | 左侧导航「在招岗位」 | 跳转 `#/jobs` |
 | `app-nav-talent` | 左侧导航「人才库」 | 跳转 `#/talent` |
 | `app-canvas` | 右侧主画布根节点 | 包含队列、岗位、人才库、候选人画布、岗位画布与面试官视图 |
+| `app-queue-tabs` | 队列顶栏状态页签 | 展示「等你拍板 N」（对齐原型顶栏层次） |
+| `app-rail-new-job` | 左栏岗位区「＋ 新建岗位」按钮 | 打开居中新建岗位确认弹窗（复用 `buildJobCreateBody + postJobCreate`） |
+| `app-jobs-new-job` | 岗位列表页右上角「＋ 新建岗位」按钮 | 打开同一新建岗位弹窗 |
+| `app-new-job-title` | 新建岗位弹窗岗位名称输入 | 必填 |
+| `app-new-job-dept` | 新建岗位弹窗部门下拉 | 来源 `overview.settings.departments` |
+| `app-new-job-req` | 新建岗位弹窗核心要求输入 | 选填 |
+| `app-new-job-submit` | 新建岗位弹窗确认创建按钮 | 提交 `postJobCreate`，成功后跳入新岗位画布 |
 | `app-queue-view` | 今日待办视图根 | `#/queue` 主内容区 |
 | `app-queue-filter-all` | 队列筛选「全部」 | 不过滤阶段 |
 | `app-queue-filter-screening` | 队列筛选「待初筛」 | 筛选 `filterKind === 'screening'` |
@@ -41,7 +48,8 @@
 | `app-chat-quick-job-bottlenecks` | 岗位页快捷词「汇总当前岗位各阶段推进瓶颈」 | 预设提示词，统一走 `POST /recruitment/agent/turn` |
 | `app-chat-quick-job-priority` | 岗位页快捷词「哪些候选人最值得优先推进？」 | 预设提示词，统一走 `POST /recruitment/agent/turn` |
 | `app-chat-quick-today-top3` | 队列页快捷词「今天最优先处理的 3 位候选人是谁？」 | 预设提示词，统一走 `POST /recruitment/agent/turn` |
-| `app-chat-quick-pending-scorecards` | 队列页快捷词「查看当前待提交面评的进展」 | 预设提示词，统一走 `POST /recruitment/agent/turn` |
+| `app-chat-quick-pending-scorecards` | 队列页快捷词「查看待提交面评与催办进展」 | 预设提示词，统一走 `POST /recruitment/agent/turn` |
+| `app-chat-quick-open-talent` | 队列页快捷词「打开人才库检索候选人」 | 预设提示词，统一走 `POST /recruitment/agent/turn` |
 | `app-chat-suggest-<modal\|route>` | AI 气泡底部建议动作按钮 | 仅消费 SSE `ui_action(suggest_action)`；绝不自动弹窗，点击后由人触发切路由或唤起弹窗 |
 
 ## 二、复用的画布与弹窗 `data-testid`（来自 `src/client/canvas/**`，保持与 15/15 写链路完全一致）
@@ -68,6 +76,8 @@
 | `decision-missing-scorecards` | 决策弹窗缺面评阻塞提示 |
 | `canvas-candidate-pager` | 候选人上一位 / 下一位翻页控件（`[` / `]`） |
 | `canvas-sync-pill` | 后台静默同步状态徽标 |
+| `canvas-pin-row` | 候选人头部置顶约束 / 上一轮交接标签区 |
+| `canvas-action-copy-memo` | 候选人头部「复制决策纪要」只读按钮 |
 
 ## 三、复用的面试官端 `data-testid`（来自 `src/client/interviewer/InterviewerWorkspace.tsx`）
 

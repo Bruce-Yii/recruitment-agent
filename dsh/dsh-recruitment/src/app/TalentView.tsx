@@ -8,6 +8,18 @@ export interface TalentViewProps {
   readonly onOpenApplication: (applicationId: string, queue: string[]) => void;
 }
 
+function cleanStageLabel(raw: string): string {
+  const parts = raw.split('/');
+  return (parts[0] ?? raw).trim() || raw;
+}
+
+function statusClass(tone: string): string {
+  if (tone === 'danger' || tone === 'warn' || tone === 'info' || tone === 'ok') {
+    return tone;
+  }
+  return '';
+}
+
 export function TalentView({ overview, onOpenApplication }: TalentViewProps) {
   const [query, setQuery] = useState('');
   const [jobFilter, setJobFilter] = useState('all');
@@ -94,7 +106,9 @@ export function TalentView({ overview, onOpenApplication }: TalentViewProps) {
                 </div>
               </div>
               <div className="cr-right">
-                <span className="cr-status">{app.stageLabel}</span>
+                <span className={`cr-status ${statusClass(app.stageTone)}`}>
+                  {cleanStageLabel(app.stageLabel)}
+                </span>
               </div>
             </button>
           ))}

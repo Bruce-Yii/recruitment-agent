@@ -6,9 +6,15 @@ import { fetchAppJson, readCookie } from './api.ts';
 export interface JobsViewProps {
   readonly overview: RecruitingOverviewView;
   readonly onOpenJob: (jobId: string) => void;
+  readonly onNewJob?: () => void;
 }
 
-export function JobsView({ overview, onOpenJob }: JobsViewProps) {
+function cleanStageLabel(raw: string): string {
+  const parts = raw.split('/');
+  return (parts[0] ?? raw).trim() || raw;
+}
+
+export function JobsView({ overview, onOpenJob, onNewJob }: JobsViewProps) {
   return (
     <div className="canvas-inner" data-testid="app-jobs-view">
       <div className="sec-head">
@@ -18,6 +24,16 @@ export function JobsView({ overview, onOpenJob }: JobsViewProps) {
             共 {overview.counts.jobsTotal} 个岗位，其中 {overview.counts.jobsOpen} 个在招
           </div>
         </div>
+        {onNewJob ? (
+          <button
+            type="button"
+            className="btn dark"
+            data-testid="app-jobs-new-job"
+            onClick={onNewJob}
+          >
+            ＋ 新建岗位
+          </button>
+        ) : null}
       </div>
 
       {overview.jobs.length === 0 ? (
@@ -60,7 +76,7 @@ export function JobsView({ overview, onOpenJob }: JobsViewProps) {
                       className={`st-node ${st.count > 0 ? 'active' : ''}`}
                     >
                       <span className="st-dot num">{st.count}</span>
-                      <span className="st-lbl">{st.label}</span>
+                      <span className="st-lbl">{cleanStageLabel(st.label)}</span>
                     </div>
                   ))}
                 </div>

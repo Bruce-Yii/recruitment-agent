@@ -199,7 +199,7 @@
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 36px;
   animation: rosFadeIn .2s ease-out;
 }
 
@@ -240,29 +240,28 @@
   font-weight: 600;
 }
 
-/* External Fact Labels (LIVE/FIXTURE, EVENT/MANUAL, CONNECTED/...) */
+/* External Fact Labels (quiet editorial metadata — no pill clutter in top bar) */
 .ros-fact-bar {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .ros-fact-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 99px;
+  gap: 3px;
+  padding: 0;
   font-size: 11px;
-  font-weight: 500;
-  background: var(--subtle);
-  color: var(--muted);
+  font-weight: 450;
+  background: transparent;
+  color: var(--soft);
 }
 
-.ros-fact-chip.green { background: var(--green-soft); color: var(--green); }
-.ros-fact-chip.amber { background: var(--amber-soft); color: var(--amber); }
-.ros-fact-chip.red { background: var(--red-soft); color: var(--red); }
+.ros-fact-chip.green { background: transparent; color: var(--green); }
+.ros-fact-chip.amber { background: transparent; color: var(--amber); }
+.ros-fact-chip.red { background: transparent; color: var(--red); }
 
 /* Status Text */
 .ros-status {
@@ -434,13 +433,13 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 20px;
+  gap: 18px;
+  padding-bottom: 24px;
   border-bottom: 1px solid var(--line-soft);
 }
 
 .ros-doc-name {
-  font-size: 23px;
+  font-size: 24px;
   font-weight: 700;
   letter-spacing: -.03em;
   color: var(--ink);
@@ -453,13 +452,47 @@
 .ros-doc-meta {
   font-size: 13px;
   color: var(--muted);
-  margin-top: 4px;
+  margin-top: 5px;
+}
+
+.ros-doc-head-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ros-memo-btn {
+  font-size: 11.5px;
+}
+
+.ros-pin-row {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.ros-pin-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 99px;
+  background: var(--red-soft);
+  color: var(--red);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.ros-pin-tag.neutral {
+  background: var(--subtle);
+  color: var(--text);
+  font-weight: 500;
 }
 
 .ros-doc-block {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .ros-doc-line {
