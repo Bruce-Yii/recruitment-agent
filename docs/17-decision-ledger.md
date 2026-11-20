@@ -2015,3 +2015,10 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **机检**：tsc 0；tsdown 双入口；server-typecheck 0/0、runtime-budget 5051/5051、entry-reachability、client-contract-check、term-lint 全 PASS；15 步 `--fresh` **15/15**（审计 hard 0）；对话×画布 4 场景 **4/4**。
   **真机（1440，预览 Host 49351）**：队列“等你拍板 1”+“初筛 · 24h 超时”+真实行内原因；早报按真实计数动态生成；动作快捷词仍走同一 `/recruitment/agent/turn`；新建岗位弹窗两个入口均可打开（部门真实下拉，只开不提交，岗位表仍 1 条）；候选人置顶标签在通过 UI 写入 1 条演示约束后显示；复制决策纪要成功且剪贴板内容含置顶提醒。证据 `evidence/ui-review-pr12-20261121/`（before/after、after/prototype 并排 + 8 张 1440 + probe JSON + 回归）。
   **如实记录**：① 预览库原本无约束，为验证置顶标签用产品 UI 真实写入 1 条演示约束（现留预览库）；② 复制纪要在 headless Chrome 默认被剪贴板权限拦截（UI 有 fallback 文案），加 `Emulation.setFocusEmulationEnabled` + 权限后成功；③ 翻页器需 >1 人未视觉触发（代码在）；④ B 类本期不做，待产品确认关闭；⑤ 全量测试未跑（非 main 合并轮）；未合并 main。
+
+- **D-180（2026-11-21，总控；本地预览默认身份自动绑定：不再每次走 `/recruitment/test`）**
+  **来源**：产品负责人 2026-11-21 反馈“为什么每次要绑定，真无语”。
+  **根因**：v4 独立页身份 = `rc_sid` cookie + **进程内** `SessionActorRegistry`；Host 重启后注册表清空，`/recruitment/test` 每次又新建 sid 并显式绑定，所以每次重启后都要重新走测试入口，否则 `/recruitment/app` 显示“尚未选择身份”。这是演示脚手架，不是产品登录。
+  **裁决**：**仅本地预览**启用默认身份自动绑定——`AppShellDeps.previewAlias` + 显式环境变量 `RECRUITMENT_PREVIEW_ALIAS`（`start-host.ps1 -PreviewAlias recruiter`）；仅 loopback 路由、仅 session 未绑定时自动绑定，显式绑定（`/recruitment/test`、`/recruitment/app/session/actor`）仍优先；**不传 env = 不启用，自动化/生产语义不变**；生产身份仍由真实登录替代（D-178）。
+  **验证**（`evidence/preview-auto-identity-20261121/`）：全新 Chrome profile token 一次 → 直接 `/recruitment/app` 不再出现 unbound、身份 recruiter、session `bound:true`；**重启 Host 后**同浏览器直接开 `/recruitment/app`（不带 token/test）仍进入 v4 且身份 recruiter；不带 `-PreviewAlias` 的 15 步 `--fresh` **15/15**（审计 hard 0）；tsc 0、server-typecheck 0/0、静态门禁全 PASS。
+  **边界**：需要面试官身份仍走 `/recruitment/test?as=interviewer_a` 或显式切换；token 只在浏览器首次/清 cookie 时需要（登录一次后 cookie 持久，Host 重启不必再进 token）；生产登录/域名仍未排期（D-178）。

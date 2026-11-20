@@ -582,7 +582,14 @@ export function apply(
       )
       const disposeShell = registerAppShell(
         child as unknown as AppShellHostContext,
-        { identity: actorIdentity, agentTurn: bridge },
+        {
+          identity: actorIdentity,
+          agentTurn: bridge,
+          // 仅本地预览：显式 env 才启用默认身份（生产由真实登录替代，D-178）。
+          previewAlias: typeof env.RECRUITMENT_PREVIEW_ALIAS === 'string'
+            ? env.RECRUITMENT_PREVIEW_ALIAS.trim()
+            : undefined,
+        },
       )
       return () => {
         disposeShell()

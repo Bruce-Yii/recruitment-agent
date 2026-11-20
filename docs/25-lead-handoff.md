@@ -298,6 +298,7 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 - CSS 注入按**文件**独立标记（`1e12acc` 修过；整页曾因共用标记导致画布无样式）。
 - 对话 `/recruitment/agent/turn`：**已接线（D-173，2026-11-20）**——复用 DSH 既有 `ctx.agents`（同一 `rc_sid` 当 DSH session），SSE `delta/tool/done/error`；对话 Agent 工具面是**只读 allow-list**（写工具不可见），写操作仍走右侧工作台人点确认。桥/运行时不可用仍 503 降级。**改代码后需重启 Host 才生效**（预览 Host 49351 当前仍可能跑旧进程）。实现见 `src/http/agent-turn.ts`。
 - **对话×画布统一交互（D-174/D-176，2026-11-21）**：任务 11（前端硬编码 pill 切页）已作废，采用 `design/v4/chat-canvas-interaction-spec.md`。**阶段一服务端**（`f0f54ee`）：只读 `recruitment_ui_dispatch` + `recruitment_interview_free_slots`，SSE 新增 `event: ui_action`（navigate/focus_section/suggest_action，校验后下发）；工具面 33→35。**阶段二前端已接并验收**（PR #11 → merge `43140f0`）：前端消费 `ui_action`，1440 四场景全过（focus 高亮 / 查时段不自动弹窗+气泡建议按钮 / 切人才库 / 切队列+待初筛），15 步回归 15/15；证据 `evidence/chat-canvas-linkage-20261121/`。预览 Host 49351 已用新构建重启。
+- **预览身份（D-180，2026-11-21）**：Host 49351 现以 `start-host.ps1 -PreviewAlias recruiter` 启动；直接开 `/recruitment/app` 自动落到招聘负责人身份，**不再需要每次 `/recruitment/test`**（重启 Host 后也一样；带 cookie 时连 token 都不用）。显式切换身份仍优先；不传 `-PreviewAlias` 的自动化行为不变。生产登录仍按 D-178 另做。
 - 自动化：`work/d5/e2e-real/scripts/run-runbook.mjs --fresh` 跑旧壳 15 步（15/15 过）；**v4 整页 15 步已完成**：`work/d5/fullpage/run-v4.mjs --fresh --port 49347`，2026-11-20 两次独立真跑均 **15/15**，证据 `evidence/fullpage-v4-15step-20261120/`（判据/断言变更见 docs/17 D-169）。
 
 ### 接手要做的（按优先级）

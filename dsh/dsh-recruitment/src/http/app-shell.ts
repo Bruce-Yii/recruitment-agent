@@ -52,6 +52,15 @@ export interface AppShellDeps {
   readonly agentTurn?: AppAgentTurnBridge | null
   /** 静态资源目录（缺省 = 插件根下 `lib/`）。 */
   readonly assetsDir?: string
+  /**
+   * **仅本地预览**：未绑定的新 session 自动绑定到该受控 alias（如 `recruiter`）。
+   *
+   * 为什么需要：v4 独立页的身份来自 `rc_sid` + 进程内 `SessionActorRegistry`；
+   * Host 重启后绑定丢失、直接开 `/recruitment/app` 会落到“尚未选择身份”，每次都要
+   * 走 `/recruitment/test` 重新绑定。预览环境允许默认身份（loopback + 显式 env 才启用），
+   * 省掉这一步；**生产身份仍走真实登录（D-178）**，本字段缺省 = 不启用。
+   */
+  readonly previewAlias?: string
 }
 
 const APP_PATH = '/recruitment/app'
@@ -193,11 +202,23 @@ export function registerAppShell(ctx: AppShellHostContext, deps: AppShellDeps): 
   const appJs = join(assetsDir, 'app.js')
   const appCss = join(assetsDir, 'app.css')
 
+  // 仅本地预览：未绑定 session 自动落到预览 alias；缺省/未知 alias = 关闭（行为与之前一致）。
+  const previewAlias =
+    typeof deps.previewAlias === 'string' && isKnownAlias(deps.identity, deps.previewAlias)
+      ? deps.previewAlias
+      : undefined
+  const ensurePreviewBinding = (sid: string): void => {
+    if (previewAlias === undefined) return
+    if (deps.identity.registry.get(sid) !== undefined) return
+    deps.identity.registry.bind(sid, previewAlias, { display_name: ALIAS_LABEL[previewAlias] })
+  }
+
   /** 解析或新建 sid，并在需要时回写 cookie。 */
   const ensureSid = (req: IncomingMessage, res: ServerResponse): string => {
     const fromHeader = normalizeSid(headerSid(req))
     const fromCookie = normalizeSid(readCookie(req, SID_COOKIE))
     const sid = fromHeader ?? fromCookie ?? newSid()
+    ensurePreviewBinding(sid)
     if (fromCookie !== sid) {
       res.setHeader('set-cookie', `${SID_COOKIE}=${encodeURIComponent(sid)}; Path=/; SameSite=Lax`)
     }
