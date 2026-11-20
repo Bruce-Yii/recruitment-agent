@@ -10,6 +10,7 @@
 //
 // 宿主代码（src/index.ts、src/http/*.ts）**不打包**：`main` 仍指向 `src/index.ts`，
 // DSH 直接按源码执行，构建只服务浏览器那半边。
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { defineConfig, type UserConfig } from 'tsdown'
@@ -31,11 +32,15 @@ const cssInjectionPlugin = {
     if (!id.startsWith(VIRTUAL_PREFIX)) return null
     const file = id.slice(VIRTUAL_PREFIX.length).replace(/\?css$/, '')
     const css = readFileSync(file, 'utf8')
+    // 每个 CSS 文件一个独立标记：整页入口同时 import app.css 与 canvas.css，
+    // 若共用一个标记，只会注入第一个文件，后续样式全丢（真机踩过）。
+    const key = createHash('sha1').update(file).digest('hex').slice(0, 12)
     return [
+      `const CSS_KEY = ${JSON.stringify(key)};`,
       `const css = ${JSON.stringify(css)};`,
-      `if (typeof document !== 'undefined' && document.querySelector('style[data-recruitment-css]') === null) {`,
+      `if (typeof document !== 'undefined' && document.querySelector('style[data-recruitment-css="' + CSS_KEY + '"]') === null) {`,
       `  const style = document.createElement('style');`,
-      `  style.setAttribute('data-recruitment-css', '1');`,
+      `  style.setAttribute('data-recruitment-css', CSS_KEY);`,
       `  style.textContent = css;`,
       `  document.head.appendChild(style);`,
       `}`,
