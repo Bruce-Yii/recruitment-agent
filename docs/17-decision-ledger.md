@@ -1914,3 +1914,9 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ⑤ 对话：新增 `POST /recruitment/agent/turn`（SSE：delta/tool/done/error），服务端经 `ctx.inject(["agents","sessions"])` 桥到 DSH Agent；Agent 不可用 → 503，不影响业务按钮；
   ⑥ testid 契约换成 v4 稳定 testid（前端交付时附清单，我同步 runbook/docs/38），旧壳 selector 不再要求。
   **交付**：前端一个 PR（#7）交付整页 v4；我做整页路由/静态资源/session 与 actor 端点/Agent SSE 桥/双入口构建/脚本适配。详见 `design/v4/fullpage-integration-plan.md`。
+
+- **D-168（2026-11-20，产品负责人裁决；界面以后端前端设计为准，总控不许动 UI）**
+  **裁决**：整页 v4 界面必须与前端窗口的定稿设计**一致**；**总控（我）不得擅自改界面、加界面元素或调整视觉**。
+  任何"要改/要加"的界面诉求（包括 testid、文案、布局、响应式）**一律交前端窗口**执行；我只做：服务端/构建接线、验收、问题定位与任务书。
+  **对我自己的约束**：不再直接编辑 `src/app/**`、`src/client/canvas/**` 等界面文件；发现界面缺陷 → 写清证据与复现 → 交前端改 → 我按 1440 验收。
+  **口径修正**：390 窄屏不作为产品要求（桌面 Web）；只要求窄窗口不崩、不丢数据（见 D-169 前一条记录）。
