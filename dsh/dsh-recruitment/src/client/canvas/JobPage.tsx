@@ -80,6 +80,9 @@ export function JobPage({
   const [stageFilter, setStageFilter] = useState<StageFilter>('全部');
   const [focusedSection, setFocusedSection] = useState<string | null>(null);
   const lastFocusNonceRef = useRef<number>(0);
+  const focusRaf1Ref = useRef<number | null>(null);
+  const focusRaf2Ref = useRef<number | null>(null);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // T5-1: Multi-select + real batch reject (never deletes locally; refreshes from server)
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -146,6 +149,14 @@ export function JobPage({
     el.scrollTop = getSavedCanvasScroll(routeKey);
   }, [routeKey, loading]);
 
+  useEffect(() => {
+    return () => {
+      if (focusRaf1Ref.current !== null) cancelAnimationFrame(focusRaf1Ref.current);
+      if (focusRaf2Ref.current !== null) cancelAnimationFrame(focusRaf2Ref.current);
+      if (focusTimerRef.current !== null) clearTimeout(focusTimerRef.current);
+    };
+  }, []);
+
   // Read-only section focus & highlight (driven by Agent ui_action focus_section)
   useEffect(() => {
     if (!focusRequest || loading || !vm) return;
@@ -161,24 +172,24 @@ export function JobPage({
     if (!targetSec) return;
     lastFocusNonceRef.current = focusRequest.nonce;
     setFocusedSection(targetSec);
-    onFocusConsumed?.();
-    let raf2 = 0;
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => {
+    if (focusRaf1Ref.current !== null) cancelAnimationFrame(focusRaf1Ref.current);
+    if (focusRaf2Ref.current !== null) cancelAnimationFrame(focusRaf2Ref.current);
+    if (focusTimerRef.current !== null) clearTimeout(focusTimerRef.current);
+    focusRaf1Ref.current = requestAnimationFrame(() => {
+      focusRaf1Ref.current = null;
+      focusRaf2Ref.current = requestAnimationFrame(() => {
+        focusRaf2Ref.current = null;
         const target = bodyScrollRef.current?.querySelector(`[data-section="${targetSec}"]`);
         if (target && typeof (target as HTMLElement).scrollIntoView === 'function') {
           (target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       });
     });
-    const timer = setTimeout(() => {
+    focusTimerRef.current = setTimeout(() => {
+      focusTimerRef.current = null;
       setFocusedSection((cur) => (cur === targetSec ? null : cur));
     }, 1800);
-    return () => {
-      cancelAnimationFrame(raf1);
-      if (raf2) cancelAnimationFrame(raf2);
-      clearTimeout(timer);
-    };
+    onFocusConsumed?.();
   }, [focusRequest, loading, vm, onFocusConsumed]);
 
   useEffect(() => {

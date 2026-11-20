@@ -103,6 +103,8 @@ export function CandidatePage({
   const [focusedSection, setFocusedSection] = useState<string | null>(null);
   const lastFocusNonceRef = useRef<number>(0);
   const lastModalNonceRef = useRef<number>(0);
+  const focusRafRef = useRef<number | null>(null);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(
     async (cancelledRef?: { current: boolean }, opts?: { silent?: boolean; flash?: boolean }) => {
@@ -164,6 +166,13 @@ export function CandidatePage({
     }
   }, [vm?.jobId, onJobResolved]);
 
+  useEffect(() => {
+    return () => {
+      if (focusRafRef.current !== null) cancelAnimationFrame(focusRafRef.current);
+      if (focusTimerRef.current !== null) clearTimeout(focusTimerRef.current);
+    };
+  }, []);
+
   // Read-only section focus & highlight (driven by Agent ui_action focus_section)
   useEffect(() => {
     if (!focusRequest || loading || !vm) return;
@@ -183,20 +192,20 @@ export function CandidatePage({
       setDocTab('resume');
     }
     setFocusedSection(targetSec);
-    onFocusConsumed?.();
-    const rafId = requestAnimationFrame(() => {
+    if (focusRafRef.current !== null) cancelAnimationFrame(focusRafRef.current);
+    if (focusTimerRef.current !== null) clearTimeout(focusTimerRef.current);
+    focusRafRef.current = requestAnimationFrame(() => {
+      focusRafRef.current = null;
       const target = bodyScrollRef.current?.querySelector(`[data-section="${targetSec}"]`);
       if (target && typeof (target as HTMLElement).scrollIntoView === 'function') {
         (target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     });
-    const timer = setTimeout(() => {
+    focusTimerRef.current = setTimeout(() => {
+      focusTimerRef.current = null;
       setFocusedSection((cur) => (cur === targetSec ? null : cur));
     }, 1800);
-    return () => {
-      cancelAnimationFrame(rafId);
-      clearTimeout(timer);
-    };
+    onFocusConsumed?.();
   }, [focusRequest, loading, vm, docTab, onFocusConsumed]);
 
   // Controlled modal opening (only after human clicks a suggest_action button in chat)
