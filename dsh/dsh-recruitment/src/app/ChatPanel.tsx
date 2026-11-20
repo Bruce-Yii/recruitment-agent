@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { uploadResumeRaw } from '../client/canvas/canvas-actions.ts';
 import type { ActiveUploadTask } from '../client/canvas/CanvasRoute.tsx';
+import type { RecruitingOverviewView } from '../client/recruiting/view-model.ts';
 import { streamAgentTurn, type AgentToolEvent, type AgentUiAction } from './api.ts';
 import { formatHashRoute, type AppRoute } from './router.ts';
 
@@ -22,6 +23,7 @@ interface QuickPromptItem {
 export interface ChatPanelProps {
   readonly sid: string;
   readonly route: AppRoute;
+  readonly overview?: RecruitingOverviewView | null;
   readonly currentJobId?: string;
   readonly defaultJobId?: string;
   readonly onCollapse: () => void;
@@ -33,23 +35,53 @@ export interface ChatPanelProps {
   readonly onUploadStarted: (task: ActiveUploadTask) => void;
 }
 
+function buildMorningBriefing(overview?: RecruitingOverviewView | null): string {
+  const fallback =
+    '你好，我是招聘协作 Agent。你可以直接告诉我需要推进哪位候选人，或拖入简历文件自动建档。';
+  if (!overview) return fallback;
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好';
+  const { applicationsActive, awaitingScreening, interviewing, awaitingDecision } = overview.counts;
+  if (applicationsActive === 0 && overview.applications.length === 0) {
+    return `${greeting}。当前暂无在办候选人，你可以点击左侧「＋ 新建岗位」或直接拖入简历文件开始建档。`;
+  }
+  const overdueScorecards = overview.applications.reduce(
+    (sum, app) =>
+      sum + app.interviews.reduce((s, iv) => s + (iv.scorecards?.overdue ?? 0), 0),
+    0,
+  );
+  const items: string[] = [];
+  if (awaitingScreening > 0) items.push(`待初筛 ${awaitingScreening} 人`);
+  if (interviewing > 0) items.push(`面试中 ${interviewing} 人`);
+  if (awaitingDecision > 0) items.push(`待决策 ${awaitingDecision} 人`);
+  if (overdueScorecards > 0) items.push(`${overdueScorecards} 份面评已超时`);
+  const top = overview.applications[0];
+  const topNote = top ? `当前首位待推进：${top.candidateName}（${top.jobTitle}）。` : '';
+  const summary =
+    items.length > 0
+      ? `当前有 ${applicationsActive} 位在办候选人（${items.join('、')}）。`
+      : `当前共有 ${overview.applications.length} 位候选人档案。`;
+  return `${greeting}。${summary}${topNote}点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。`;
+}
+
 function quickPromptsForRoute(route: AppRoute): readonly QuickPromptItem[] {
   if (route.kind === 'application') {
     return [
-      { slug: 'risk-summary', prompt: '总结这位候选人的核心风险点' },
+      { slug: 'risk-summary', prompt: '提炼这位候选人的核心风险点' },
       { slug: 'free-slots', prompt: '帮我查下一轮可约时段' },
       { slug: 'compare-rubric', prompt: '对比岗位评分标准' },
     ];
   }
   if (route.kind === 'job') {
     return [
-      { slug: 'job-bottlenecks', prompt: '汇总当前岗位各阶段推进瓶颈' },
-      { slug: 'job-priority', prompt: '哪些候选人最值得优先推进？' },
+      { slug: 'job-bottlenecks', prompt: '汇总当前岗位推进瓶颈' },
+      { slug: 'job-priority', prompt: '筛选最值得优先推进的候选人' },
     ];
   }
   return [
-    { slug: 'today-top3', prompt: '今天最优先处理的 3 位候选人是谁？' },
-    { slug: 'pending-scorecards', prompt: '查看当前待提交面评的进展' },
+    { slug: 'today-top3', prompt: '梳理今天最优先推进的候选人' },
+    { slug: 'pending-scorecards', prompt: '查看待提交面评与催办进展' },
+    { slug: 'open-talent', prompt: '打开人才库检索候选人' },
   ];
 }
 
@@ -92,6 +124,7 @@ function suggestActionTestId(action: AgentUiAction): string {
 export function ChatPanel({
   sid,
   route,
+  overview,
   currentJobId,
   defaultJobId,
   onCollapse,
@@ -102,13 +135,23 @@ export function ChatPanel({
   onExecuteSuggestedAction,
   onUploadStarted,
 }: ChatPanelProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
       id: 'welcome',
       role: 'ai',
-      text: '你好，我是招聘协作 Agent。你可以直接告诉我需要推进哪位候选人，或拖入简历文件自动建档。',
+      text: buildMorningBriefing(overview),
     },
   ]);
+
+  useEffect(() => {
+    if (!overview) return;
+    const nextText = buildMorningBriefing(overview);
+    setMessages((prev) => {
+      if (prev.length !== 1 || prev[0]?.id !== 'welcome') return prev;
+      if (prev[0].text === nextText) return prev;
+      return [{ ...prev[0], text: nextText }];
+    });
+  }, [overview]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [unavailableMsg, setUnavailableMsg] = useState<string | null>(null);

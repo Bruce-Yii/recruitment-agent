@@ -18861,7 +18861,7 @@ var require_client = /* @__PURE__ */ __commonJSMin(((exports) => {
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
 var import_client = require_client();
 const CSS_KEY$1 = "c61c486ea236";
-const css$1 = "/* ============================================================================\r\n * Recruitment OS v4 — Standalone Full-Page Warm-Paper Workspace\r\n * 100% faithful to finalized design/v4/recruitment_os_v4.html\r\n * ============================================================================ */\r\n\r\n:root {\r\n  --rail: #F3F2EE;\r\n  --paper: #F9F8F5;\r\n  --surface: #FFFFFF;\r\n  --subtle: #F3F2EE;\r\n  --hover: #EAE8E2;\r\n  --ink: #191918;\r\n  --text: #42423F;\r\n  --muted: #787772;\r\n  --soft: #A6A59E;\r\n  --line: rgba(25, 25, 24, 0.08);\r\n  --line-soft: rgba(25, 25, 24, 0.05);\r\n  --iris: #5B5BD6;\r\n  --iris-soft: rgba(91, 91, 214, 0.09);\r\n  --green: #18794E;\r\n  --green-soft: rgba(24, 121, 78, 0.09);\r\n  --amber: #AD5700;\r\n  --amber-soft: rgba(173, 87, 0, 0.09);\r\n  --red: #CD2B31;\r\n  --red-soft: rgba(205, 43, 49, 0.08);\r\n  --shadow-card: 0 1px 2px rgba(25, 25, 24, 0.03), 0 10px 30px -14px rgba(25, 25, 24, 0.07);\r\n  --shadow-modal: 0 28px 72px -18px rgba(25, 25, 24, 0.24);\r\n}\r\n\r\n[data-theme=\"dark\"] {\r\n  --rail: #10100F;\r\n  --paper: #141413;\r\n  --surface: #1A1A19;\r\n  --subtle: #232321;\r\n  --hover: #2B2B28;\r\n  --ink: #F3F2EE;\r\n  --text: #D5D4CE;\r\n  --muted: #9A9992;\r\n  --soft: #6F6E68;\r\n  --line: rgba(243, 242, 238, 0.09);\r\n  --line-soft: rgba(243, 242, 238, 0.055);\r\n  --iris: #8484F5;\r\n  --iris-soft: rgba(132, 132, 245, 0.15);\r\n  --green: #3DD68C;\r\n  --green-soft: rgba(61, 214, 140, 0.13);\r\n  --amber: #F5A524;\r\n  --amber-soft: rgba(245, 165, 36, 0.14);\r\n  --red: #F87171;\r\n  --red-soft: rgba(248, 113, 113, 0.14);\r\n  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.35);\r\n  --shadow-modal: 0 28px 72px -18px rgba(0, 0, 0, 0.65);\r\n}\r\n\r\n*, *::before, *::after {\r\n  box-sizing: border-box;\r\n  margin: 0;\r\n  padding: 0;\r\n}\r\n\r\nhtml, body, #root {\r\n  height: 100%;\r\n  width: 100%;\r\n  background: var(--rail);\r\n  color: var(--ink);\r\n  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif;\r\n  font-size: 14px;\r\n  line-height: 1.55;\r\n  -webkit-font-smoothing: antialiased;\r\n  overflow: hidden;\r\n}\r\n\r\nbutton, input, select, textarea { font: inherit; color: inherit; }\r\nbutton { cursor: pointer; background: none; border: 0; }\r\n.num { font-variant-numeric: tabular-nums; }\r\n::-webkit-scrollbar { width: 5px; height: 5px; }\r\n::-webkit-scrollbar-thumb { background: rgba(128, 128, 120, 0.2); border-radius: 99px; }\r\n\r\n@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }\r\n@keyframes pulseDot { 0%, 100% { opacity: 0.3; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.1); } }\r\n@keyframes orbit { to { transform: rotate(360deg); } }\r\n\r\n/* 3-Layer Progressive Shell */\r\n.shell {\r\n  --chat-w: 324px;\r\n  display: grid;\r\n  grid-template-columns: 204px var(--chat-w) 1fr;\r\n  height: 100vh;\r\n  width: 100%;\r\n  overflow: hidden;\r\n  transition: grid-template-columns 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);\r\n}\r\n\r\n.shell.resizing { transition: none; }\r\n[data-chat=\"collapsed\"] .shell { grid-template-columns: 204px 0px 1fr; }\r\n[data-rail=\"collapsed\"] .shell { grid-template-columns: 56px var(--chat-w) 1fr; }\r\n[data-rail=\"collapsed\"][data-chat=\"collapsed\"] .shell { grid-template-columns: 56px 0px 1fr; }\r\n\r\n/* 1. Left Slim Space Rail */\r\n.space-rail { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--rail); border-right: 1px solid var(--line); padding: 0 10px; transition: padding 0.2s ease; }\r\n[data-rail=\"collapsed\"] .space-rail { padding: 0 8px; align-items: center; }\r\n.rail-brand { height: 56px; padding: 0 4px 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 650; letter-spacing: -0.02em; flex: none; width: 100%; }\r\n.brand-identity { display: flex; align-items: center; gap: 9px; min-width: 0; overflow: hidden; }\r\n.brand-dot { width: 22px; height: 22px; border-radius: 7px; background: var(--ink); color: var(--surface); display: grid; place-items: center; flex: none; }\r\n.brand-dot svg { width: 12px; height: 12px; fill: currentColor; }\r\n\r\n[data-rail=\"collapsed\"] .rail-brand { padding: 0; justify-content: center; }\r\n[data-rail=\"collapsed\"] .brand-identity,\r\n[data-rail=\"collapsed\"] .rail-lbl,\r\n[data-rail=\"collapsed\"] .rail-cnt,\r\n[data-rail=\"collapsed\"] .rail-jobs { display: none; }\r\n[data-rail=\"collapsed\"] .rail-nav { width: 100%; align-items: center; gap: 6px; }\r\n[data-rail=\"collapsed\"] .rail-btn { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 10px; }\r\n[data-rail=\"collapsed\"] .rail-btn-l { gap: 0; justify-content: center; }\r\n[data-rail=\"collapsed\"] .rail-btn-l svg { width: 17px; height: 17px; }\r\n[data-rail=\"collapsed\"] .rail-foot { flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; width: 100%; }\r\n\r\n.rail-nav { display: flex; flex-direction: column; gap: 2px; padding-top: 4px; overflow-y: auto; flex: 1; min-height: 0; }\r\n.rail-btn { height: 33px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 450; color: var(--text); transition: background 0.12s, color 0.12s; text-align: left; flex: none; }\r\n.rail-btn:hover { background: var(--hover); color: var(--ink); }\r\n.rail-btn.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(25, 25, 24, 0.06); }\r\n.rail-btn-l { display: flex; align-items: center; gap: 8px; min-width: 0; }\r\n.rail-btn-l svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); flex: none; }\r\n.rail-btn.active .rail-btn-l svg { color: var(--ink); }\r\n.rail-cnt { font-size: 11.5px; color: var(--soft); }\r\n\r\n.rail-jobs { display: flex; flex-direction: column; gap: 1px; margin: 4px 0 8px 16px; padding-left: 12px; border-left: 1px solid var(--line); }\r\n.rail-job { height: 30px; padding: 0 9px; border-radius: 7px; display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12.5px; color: var(--muted); transition: background 0.12s, color 0.12s; text-align: left; }\r\n.rail-job:hover { background: var(--hover); color: var(--ink); }\r\n.rail-job.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(25, 25, 24, 0.05); }\r\n.rail-job-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\r\n.rail-job-hc { font-size: 11px; color: var(--soft); flex: none; }\r\n\r\n.rail-foot { margin-top: auto; padding: 12px 4px; border-top: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 4px; flex: none; }\r\n.icon-btn { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--muted); transition: background 0.12s, color 0.12s; flex: none; }\r\n.icon-btn:hover { background: var(--hover); color: var(--ink); }\r\n.icon-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }\r\n\r\n/* 2. Accompanying Agent Dialogue Column */\r\n.chat-col { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--paper); border-right: 1px solid var(--line); position: relative; z-index: 2; transition: opacity 0.18s ease; }\r\n[data-chat=\"collapsed\"] .chat-col { opacity: 0; border-right-color: transparent; pointer-events: none; }\r\n.chat-resizer { position: absolute; top: 0; right: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 15; }\r\n.chat-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: transparent; transition: background 0.15s; }\r\n.chat-resizer:hover::after, .chat-resizer.dragging::after { background: var(--iris); }\r\n\r\n.drop-overlay { position: absolute; inset: 10px; border-radius: 14px; border: 1.5px dashed var(--iris); background: rgba(249, 248, 245, 0.92); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 8px; z-index: 25; pointer-events: none; color: var(--iris); font-size: 13px; font-weight: 500; }\r\n[data-theme=\"dark\"] .drop-overlay { background: rgba(20, 20, 19, 0.92); }\r\n.chat-col.drag-over .drop-overlay { display: flex; }\r\n\r\n.chat-head { height: 56px; padding: 0 14px 0 18px; display: flex; align-items: center; justify-content: space-between; flex: none; border-bottom: 1px solid var(--line-soft); }\r\n.chat-title { font-size: 12.5px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; white-space: nowrap; }\r\n.chat-stream { flex: 1; overflow-y: auto; padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 14px; }\r\n.msg { max-width: 94%; font-size: 13px; line-height: 1.68; animation: fadeIn 0.18s ease-out; white-space: pre-wrap; overflow-wrap: anywhere; }\r\n.msg.ai { align-self: flex-start; color: var(--text); }\r\n.msg.user { align-self: flex-end; background: var(--subtle); color: var(--ink); padding: 8px 12px; border-radius: 13px 13px 4px 13px; font-weight: 450; }\r\n.msg-tool-list { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }\r\n.msg-action-tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 99px; background: var(--iris-soft); color: var(--iris); font-size: 11px; font-weight: 500; width: fit-content; }\r\n.msg-action-tag.ok { background: var(--green-soft); color: var(--green); }\r\n.msg-action-tag.error { background: var(--red-soft); color: var(--red); }\r\n.msg-ui-notices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }\r\n.msg-ui-notice { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; background: var(--subtle); color: var(--muted); font-size: 11px; font-weight: 500; }\r\n.msg-suggest-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }\r\n.msg-suggest-btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); color: var(--ink); font-size: 12px; font-weight: 500; box-shadow: 0 1px 2px rgba(25, 25, 24, 0.04); transition: border-color 0.14s, background 0.14s, transform 0.14s; }\r\n.msg-suggest-btn:hover { border-color: var(--ink); background: var(--hover); transform: translateY(-1px); }\r\n.msg-suggest-arrow { color: var(--muted); font-size: 11px; }\r\n.thinking-row { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); }\r\n.thinking-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--iris); animation: pulseDot 0.9s ease-in-out infinite; }\r\n.agent-degraded-bar { margin: 10px 14px 0; padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); font-size: 12px; line-height: 1.5; flex: none; }\r\n.quick-list { padding: 0 18px 10px; display: flex; flex-wrap: wrap; gap: 6px; flex: none; }\r\n.q-pill { padding: 4px 10px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); font-size: 11.5px; color: var(--text); transition: all 0.14s; }\r\n.q-pill:hover { border-color: var(--muted); color: var(--ink); transform: translateY(-1px); }\r\n.composer-wrap { padding: 0 14px 16px; flex: none; }\r\n.composer { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px 8px 8px 12px; display: flex; align-items: center; gap: 8px; box-shadow: var(--shadow-card); transition: border-color 0.16s; }\r\n.composer:focus-within { border-color: var(--muted); }\r\n.composer input { flex: 1; min-width: 0; border: 0; background: transparent; font-size: 13px; color: var(--ink); outline: none; }\r\n.composer input::placeholder { color: var(--soft); }\r\n.send-circle { width: 28px; height: 28px; border-radius: 99px; background: var(--ink); color: var(--surface); display: grid; place-items: center; flex: none; transition: opacity 0.14s, transform 0.14s; }\r\n.send-circle:hover { opacity: 0.86; }\r\n.send-circle:active { transform: scale(0.95); }\r\n.send-circle:disabled { opacity: 0.35; cursor: not-allowed; }\r\n.send-circle svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }\r\n\r\n/* 3. Contextual Main White Canvas */\r\n.canvas-col { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--surface); min-width: 0; position: relative; z-index: 2; }\r\n.canvas-head { height: 56px; padding: 0 36px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 14px; flex: none; }\r\n.canvas-head-left { display: flex; align-items: center; gap: 16px; min-width: 0; overflow: hidden; }\r\n.crumb-bar { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\r\n.crumb-link { color: var(--muted); font-size: 13px; transition: color 0.12s; }\r\n.crumb-link:hover { color: var(--ink); }\r\n.crumb-cur { color: var(--ink); font-weight: 600; }\r\n.canvas-right-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); flex: none; }\r\n\r\n/* Single 56px horizon on embedded candidate/job canvas: float actor badge cleanly inside ros-canvas-head */\r\n.embedded-actor-slot {\r\n  position: absolute;\r\n  top: 14px;\r\n  right: 24px;\r\n  z-index: 20;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n}\r\n\r\n.canvas-body.embedded-canvas .ros-canvas-head {\r\n  padding-right: 148px;\r\n}\r\n\r\n/* Read-only Actor Badge */\r\n.actor-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; background: var(--paper); border: 1px solid var(--line); font-size: 12px; color: var(--text); white-space: nowrap; }\r\n.actor-badge-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--green); flex: none; }\r\n.actor-badge-role { color: var(--muted); font-size: 11px; }\r\n\r\n.canvas-body { flex: 1; overflow-y: auto; padding: 34px 48px 72px; position: relative; }\r\n.canvas-body.embedded-canvas { padding: 0; }\r\n.canvas-inner { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; animation: fadeIn 0.2s ease-out; }\r\n[data-chat=\"collapsed\"] .canvas-inner { max-width: 920px; }\r\n\r\n.sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }\r\n.sec-title { font-size: 15px; font-weight: 650; letter-spacing: -0.015em; color: var(--ink); }\r\n.sec-meta { font-size: 12px; color: var(--soft); }\r\n\r\n/* Editorial inline stats (replaces bulky 4-box KPI strip in QueueView) */\r\n.editorial-stats { display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }\r\n.editorial-stats strong { color: var(--ink); font-weight: 600; }\r\n.editorial-stats .dot { color: var(--soft); }\r\n\r\n.filter-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }\r\n.filter-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }\r\n.f-pill { padding: 5px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); font-size: 12px; color: var(--muted); transition: all 0.14s; }\r\n.f-pill:hover { border-color: var(--muted); color: var(--ink); }\r\n.f-pill.active { background: var(--ink); border-color: var(--ink); color: var(--surface); font-weight: 550; }\r\n.clean-search { height: 30px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--paper); font-size: 12.5px; color: var(--ink); width: 210px; outline: none; }\r\n.clean-search:focus { border-color: var(--muted); }\r\n\r\n/* Signature Gliding Hover List */\r\n.clean-list { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }\r\n.clean-row { padding: 13px 4px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 14px; cursor: pointer; transition: background 0.12s, padding 0.12s; border-radius: 8px; text-align: left; width: 100%; }\r\n.clean-row:hover { background: var(--paper); padding-inline: 12px; margin-inline: -8px; width: calc(100% + 16px); }\r\n.cr-left { display: flex; align-items: center; gap: 12px; min-width: 0; }\r\n.mono { width: 30px; height: 30px; border-radius: 99px; background: var(--subtle); color: var(--ink); display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }\r\n.cr-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }\r\n.cr-title-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }\r\n.cr-name { font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; }\r\n.cr-role { font-size: 12.5px; color: var(--muted); font-weight: 400; }\r\n.cr-sub { font-size: 12px; color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\r\n.cr-right { display: flex; align-items: center; gap: 10px; flex: none; }\r\n.cr-status { font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; padding: 2px 9px; border-radius: 99px; background: var(--subtle); }\r\n.cr-status.danger { color: var(--red); background: var(--red-soft); }\r\n.cr-status.warn { color: var(--amber); background: var(--amber-soft); }\r\n.cr-status.info { color: var(--iris); background: var(--iris-soft); }\r\n.cr-status.ok { color: var(--green); background: var(--green-soft); }\r\n\r\n/* Flow List (Jobs View) */\r\n.flow-list { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }\r\n.flow-row { padding: 20px 6px; border-bottom: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 14px; cursor: pointer; border-radius: 10px; transition: background 0.14s; text-align: left; width: 100%; }\r\n.flow-row:hover { background: var(--paper); }\r\n.flow-row:hover .flow-job-name { color: var(--iris); }\r\n.flow-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }\r\n.flow-job-name { font-size: 14.5px; font-weight: 600; color: var(--ink); transition: color 0.14s; }\r\n.flow-hc { font-size: 12px; color: var(--muted); }\r\n.stage-track { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); align-items: center; gap: 4px; }\r\n.st-node { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; }\r\n.st-dot { position: relative; z-index: 1; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 99px; display: grid; place-items: center; background: var(--surface); border: 1.5px solid var(--line); font-size: 11px; font-weight: 700; color: var(--soft); }\r\n.st-node.active .st-dot { border-color: var(--iris); background: var(--iris-soft); color: var(--iris); }\r\n.st-lbl { font-size: 11.5px; color: var(--muted); text-align: center; }\r\n.st-node.active .st-lbl { color: var(--ink); font-weight: 550; }\r\n\r\n/* Buttons & Empty / Unbound States */\r\n.btn { height: 32px; padding: 0 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.14s; white-space: nowrap; }\r\n.btn:hover { background: var(--subtle); }\r\n.btn.dark { background: var(--ink); border-color: var(--ink); color: var(--surface); }\r\n.btn.dark:hover { opacity: 0.88; }\r\n\r\n.empty-paper { padding: 40px 24px; border-radius: 14px; background: var(--paper); border: 1px dashed var(--line); text-align: center; color: var(--muted); font-size: 13px; display: flex; flex-direction: column; align-items: center; gap: 10px; }\r\n.unbound-screen { height: 100vh; width: 100%; display: grid; place-items: center; background: var(--paper); padding: 24px; }\r\n.unbound-card { max-width: 420px; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 32px 28px; box-shadow: var(--shadow-card); display: flex; flex-direction: column; gap: 12px; text-align: center; align-items: center; }\r\n.unbound-card h1 { font-size: 17px; font-weight: 650; color: var(--ink); }\r\n.unbound-card p { font-size: 13px; color: var(--muted); line-height: 1.65; }\r\n\r\n.modal-bg { position: fixed; inset: 0; z-index: 100; background: rgba(25, 25, 24, 0.32); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; }\r\n.modal-card { width: 100%; max-width: 500px; background: var(--surface); border-radius: 20px; border: 1px solid var(--line); box-shadow: var(--shadow-modal); padding: 24px 26px; display: flex; flex-direction: column; gap: 16px; animation: fadeIn 0.16s ease-out; max-height: 80vh; overflow-y: auto; }\r\n.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\r\n.modal-head h2 { font-size: 15px; font-weight: 650; color: var(--ink); }\r\n.kv-list { display: flex; flex-direction: column; gap: 8px; }\r\n.kv-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 13px; }\r\n.kv-k { color: var(--muted); }\r\n.kv-v { color: var(--ink); font-weight: 500; }\r\n.offline-banner { padding: 8px 14px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: space-between; gap: 10px; }\r\n.interviewer-host { max-width: 960px; margin: 0 auto; padding: 28px 36px 64px; }\r\n\r\n/* ============================================================================\r\n * 3-Screen Snapshot Audit Polish for Reused Canvas & Confirm Card\r\n * (Zero mutations to src/client/canvas/** write paths)\r\n * ============================================================================ */\r\n.ros-canvas .ros-seq-rail + .ros-clean-list {\r\n  border-top: 0;\r\n}\r\n\r\n.ros-canvas .ros-fact-bar {\r\n  opacity: 0.72;\r\n}\r\n\r\n.ros-canvas .ros-doc-foot {\r\n  position: sticky;\r\n  bottom: 0;\r\n  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--surface) 24%);\r\n  padding: 22px 0 12px;\r\n  margin-top: 8px;\r\n}\r\n\r\n[data-theme=\"dark\"] .ros-canvas .ros-doc-foot {\r\n  background: linear-gradient(to bottom, rgba(26, 26, 25, 0), var(--surface) 24%);\r\n}\r\n\r\n.ros-canvas .ros-modal {\r\n  padding: 28px 30px;\r\n  gap: 18px;\r\n}\r\n\r\n.ros-canvas .ros-m-field {\r\n  gap: 6px;\r\n}\r\n\r\n.ros-canvas .ros-m-field textarea {\r\n  width: 100%;\r\n  min-height: 92px;\r\n  padding: 11px 13px;\r\n  border-radius: 10px;\r\n  background: var(--paper);\r\n  line-height: 1.65;\r\n  resize: vertical;\r\n}\r\n\r\n.ros-canvas .ros-modal > div:last-child {\r\n  padding-top: 14px;\r\n  border-top: 1px solid var(--line-soft);\r\n  margin-top: 2px;\r\n}\r\n\r\n/* Responsive: Tablet / Half-screen */\r\n@media (max-width: 1080px) {\r\n  .shell { grid-template-columns: 56px 0px 1fr !important; }\r\n  .space-rail { padding: 0 8px; align-items: center; }\r\n  .rail-brand { padding: 0; justify-content: center; }\r\n  .brand-identity, .rail-lbl, .rail-cnt, .rail-jobs { display: none; }\r\n  .rail-nav { width: 100%; align-items: center; gap: 6px; }\r\n  .rail-btn { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 10px; }\r\n  .rail-foot { flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; width: 100%; }\r\n  .chat-col { position: fixed; left: 56px; top: 0; bottom: 0; width: min(340px, calc(100vw - 56px)); box-shadow: var(--shadow-modal); z-index: 50; transform: translateX(0); opacity: 1; pointer-events: auto; transition: transform 0.2s ease, opacity 0.18s ease; }\r\n  [data-chat=\"collapsed\"] .chat-col { transform: translateX(-110%); opacity: 0; pointer-events: none; }\r\n  .canvas-body { padding: 24px 24px 64px; }\r\n  .canvas-head { padding: 0 20px; }\r\n}\r\n\r\n/* Responsive: Mobile (390px acceptance) */\r\n@media (max-width: 640px) {\r\n  .shell { grid-template-columns: 48px 0px 1fr !important; }\r\n  .chat-col { left: 48px; width: calc(100vw - 48px); }\r\n  .canvas-head { padding: 0 14px; height: 52px; }\r\n  .canvas-body { padding: 18px 14px 56px; }\r\n  .embedded-actor-slot { top: 10px; right: 12px; }\r\n  .canvas-body.embedded-canvas .ros-canvas-head { padding-right: 116px; }\r\n  .clean-search { width: 100%; }\r\n  .clean-row { flex-direction: column; align-items: flex-start; gap: 8px; }\r\n  .cr-right { width: 100%; justify-content: flex-end; }\r\n  .interviewer-host { padding: 16px 12px 48px; }\r\n}\r\n";
+const css$1 = "/* ============================================================================\r\n * Recruitment OS v4 — Standalone Full-Page Warm-Paper Workspace\r\n * 100% faithful to finalized design/v4/recruitment_os_v4.html\r\n * ============================================================================ */\r\n\r\n:root {\r\n  --rail: #F3F2EE;\r\n  --paper: #F9F8F5;\r\n  --surface: #FFFFFF;\r\n  --subtle: #F3F2EE;\r\n  --hover: #EAE8E2;\r\n  --ink: #191918;\r\n  --text: #42423F;\r\n  --muted: #787772;\r\n  --soft: #A6A59E;\r\n  --line: rgba(25, 25, 24, 0.08);\r\n  --line-soft: rgba(25, 25, 24, 0.05);\r\n  --iris: #5B5BD6;\r\n  --iris-soft: rgba(91, 91, 214, 0.09);\r\n  --green: #18794E;\r\n  --green-soft: rgba(24, 121, 78, 0.09);\r\n  --amber: #AD5700;\r\n  --amber-soft: rgba(173, 87, 0, 0.09);\r\n  --red: #CD2B31;\r\n  --red-soft: rgba(205, 43, 49, 0.08);\r\n  --shadow-card: 0 1px 2px rgba(25, 25, 24, 0.03), 0 10px 30px -14px rgba(25, 25, 24, 0.07);\r\n  --shadow-modal: 0 28px 72px -18px rgba(25, 25, 24, 0.24);\r\n}\r\n\r\n[data-theme=\"dark\"] {\r\n  --rail: #10100F;\r\n  --paper: #141413;\r\n  --surface: #1A1A19;\r\n  --subtle: #232321;\r\n  --hover: #2B2B28;\r\n  --ink: #F3F2EE;\r\n  --text: #D5D4CE;\r\n  --muted: #9A9992;\r\n  --soft: #6F6E68;\r\n  --line: rgba(243, 242, 238, 0.09);\r\n  --line-soft: rgba(243, 242, 238, 0.055);\r\n  --iris: #8484F5;\r\n  --iris-soft: rgba(132, 132, 245, 0.15);\r\n  --green: #3DD68C;\r\n  --green-soft: rgba(61, 214, 140, 0.13);\r\n  --amber: #F5A524;\r\n  --amber-soft: rgba(245, 165, 36, 0.14);\r\n  --red: #F87171;\r\n  --red-soft: rgba(248, 113, 113, 0.14);\r\n  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.35);\r\n  --shadow-modal: 0 28px 72px -18px rgba(0, 0, 0, 0.65);\r\n}\r\n\r\n*, *::before, *::after {\r\n  box-sizing: border-box;\r\n  margin: 0;\r\n  padding: 0;\r\n}\r\n\r\nhtml, body, #root {\r\n  height: 100%;\r\n  width: 100%;\r\n  background: var(--rail);\r\n  color: var(--ink);\r\n  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif;\r\n  font-size: 14px;\r\n  line-height: 1.55;\r\n  -webkit-font-smoothing: antialiased;\r\n  overflow: hidden;\r\n}\r\n\r\nbutton, input, select, textarea { font: inherit; color: inherit; }\r\nbutton { cursor: pointer; background: none; border: 0; }\r\n.num { font-variant-numeric: tabular-nums; }\r\n::-webkit-scrollbar { width: 5px; height: 5px; }\r\n::-webkit-scrollbar-thumb { background: rgba(128, 128, 120, 0.2); border-radius: 99px; }\r\n\r\n@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }\r\n@keyframes pulseDot { 0%, 100% { opacity: 0.3; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.1); } }\r\n@keyframes orbit { to { transform: rotate(360deg); } }\r\n\r\n/* 3-Layer Progressive Shell */\r\n.shell {\r\n  --chat-w: 324px;\r\n  display: grid;\r\n  grid-template-columns: 204px var(--chat-w) 1fr;\r\n  height: 100vh;\r\n  width: 100%;\r\n  overflow: hidden;\r\n  transition: grid-template-columns 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);\r\n}\r\n\r\n.shell.resizing { transition: none; }\r\n[data-chat=\"collapsed\"] .shell { grid-template-columns: 204px 0px 1fr; }\r\n[data-rail=\"collapsed\"] .shell { grid-template-columns: 56px var(--chat-w) 1fr; }\r\n[data-rail=\"collapsed\"][data-chat=\"collapsed\"] .shell { grid-template-columns: 56px 0px 1fr; }\r\n\r\n/* 1. Left Slim Space Rail */\r\n.space-rail { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--rail); border-right: 1px solid var(--line); padding: 0 10px; transition: padding 0.2s ease; }\r\n[data-rail=\"collapsed\"] .space-rail { padding: 0 8px; align-items: center; }\r\n.rail-brand { height: 56px; padding: 0 4px 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 650; letter-spacing: -0.02em; flex: none; width: 100%; }\r\n.brand-identity { display: flex; align-items: center; gap: 9px; min-width: 0; overflow: hidden; }\r\n.brand-dot { width: 22px; height: 22px; border-radius: 7px; background: var(--ink); color: var(--surface); display: grid; place-items: center; flex: none; }\r\n.brand-dot svg { width: 12px; height: 12px; fill: currentColor; }\r\n\r\n[data-rail=\"collapsed\"] .rail-brand { padding: 0; justify-content: center; }\r\n[data-rail=\"collapsed\"] .brand-identity,\r\n[data-rail=\"collapsed\"] .rail-lbl,\r\n[data-rail=\"collapsed\"] .rail-cnt,\r\n[data-rail=\"collapsed\"] .rail-jobs { display: none; }\r\n[data-rail=\"collapsed\"] .rail-nav { width: 100%; align-items: center; gap: 6px; }\r\n[data-rail=\"collapsed\"] .rail-btn { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 10px; }\r\n[data-rail=\"collapsed\"] .rail-btn-l { gap: 0; justify-content: center; }\r\n[data-rail=\"collapsed\"] .rail-btn-l svg { width: 17px; height: 17px; }\r\n[data-rail=\"collapsed\"] .rail-foot { flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; width: 100%; }\r\n\r\n.rail-nav { display: flex; flex-direction: column; gap: 2px; padding-top: 4px; overflow-y: auto; flex: 1; min-height: 0; }\r\n.rail-btn { height: 33px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 450; color: var(--text); transition: background 0.12s, color 0.12s; text-align: left; flex: none; }\r\n.rail-btn:hover { background: var(--hover); color: var(--ink); }\r\n.rail-btn.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(25, 25, 24, 0.06); }\r\n.rail-btn-l { display: flex; align-items: center; gap: 8px; min-width: 0; }\r\n.rail-btn-l svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); flex: none; }\r\n.rail-btn.active .rail-btn-l svg { color: var(--ink); }\r\n.rail-cnt { font-size: 11.5px; color: var(--soft); }\r\n\r\n.rail-jobs { display: flex; flex-direction: column; gap: 1px; margin: 4px 0 8px 16px; padding-left: 12px; border-left: 1px solid var(--line); }\r\n.rail-job { height: 30px; padding: 0 9px; border-radius: 7px; display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12.5px; color: var(--muted); transition: background 0.12s, color 0.12s; text-align: left; }\r\n.rail-job:hover { background: var(--hover); color: var(--ink); }\r\n.rail-job.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(25, 25, 24, 0.05); }\r\n.rail-job-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\r\n.rail-job-hc { font-size: 11px; color: var(--soft); flex: none; }\r\n.rail-job-new { color: var(--soft); font-size: 12px; }\r\n.rail-job-new:hover { color: var(--ink); }\r\n\r\n.rail-foot { margin-top: auto; padding: 12px 4px; border-top: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 4px; flex: none; }\r\n.icon-btn { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--muted); transition: background 0.12s, color 0.12s; flex: none; }\r\n.icon-btn:hover { background: var(--hover); color: var(--ink); }\r\n.icon-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }\r\n\r\n/* 2. Accompanying Agent Dialogue Column */\r\n.chat-col { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--paper); border-right: 1px solid var(--line); position: relative; z-index: 2; transition: opacity 0.18s ease; }\r\n[data-chat=\"collapsed\"] .chat-col { opacity: 0; border-right-color: transparent; pointer-events: none; }\r\n.chat-resizer { position: absolute; top: 0; right: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 15; }\r\n.chat-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: transparent; transition: background 0.15s; }\r\n.chat-resizer:hover::after, .chat-resizer.dragging::after { background: var(--iris); }\r\n\r\n.drop-overlay { position: absolute; inset: 10px; border-radius: 14px; border: 1.5px dashed var(--iris); background: rgba(249, 248, 245, 0.92); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 8px; z-index: 25; pointer-events: none; color: var(--iris); font-size: 13px; font-weight: 500; }\r\n[data-theme=\"dark\"] .drop-overlay { background: rgba(20, 20, 19, 0.92); }\r\n.chat-col.drag-over .drop-overlay { display: flex; }\r\n\r\n.chat-head { height: 56px; padding: 0 14px 0 18px; display: flex; align-items: center; justify-content: space-between; flex: none; border-bottom: 1px solid var(--line-soft); }\r\n.chat-title { font-size: 12.5px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; white-space: nowrap; }\r\n.chat-stream { flex: 1; overflow-y: auto; padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 14px; }\r\n.msg { max-width: 94%; font-size: 13px; line-height: 1.68; animation: fadeIn 0.18s ease-out; white-space: pre-wrap; overflow-wrap: anywhere; }\r\n.msg.ai { align-self: flex-start; color: var(--text); }\r\n.msg.user { align-self: flex-end; background: var(--subtle); color: var(--ink); padding: 8px 12px; border-radius: 13px 13px 4px 13px; font-weight: 450; }\r\n.msg-tool-list { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }\r\n.msg-action-tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 99px; background: var(--iris-soft); color: var(--iris); font-size: 11px; font-weight: 500; width: fit-content; }\r\n.msg-action-tag.ok { background: var(--green-soft); color: var(--green); }\r\n.msg-action-tag.error { background: var(--red-soft); color: var(--red); }\r\n.msg-ui-notices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }\r\n.msg-ui-notice { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; background: var(--subtle); color: var(--muted); font-size: 11px; font-weight: 500; }\r\n.msg-suggest-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }\r\n.msg-suggest-btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); color: var(--ink); font-size: 12px; font-weight: 500; box-shadow: 0 1px 2px rgba(25, 25, 24, 0.04); transition: border-color 0.14s, background 0.14s, transform 0.14s; }\r\n.msg-suggest-btn:hover { border-color: var(--ink); background: var(--hover); transform: translateY(-1px); }\r\n.msg-suggest-arrow { color: var(--muted); font-size: 11px; }\r\n.thinking-row { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); }\r\n.thinking-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--iris); animation: pulseDot 0.9s ease-in-out infinite; }\r\n.agent-degraded-bar { margin: 10px 14px 0; padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); font-size: 12px; line-height: 1.5; flex: none; }\r\n.quick-list { padding: 0 18px 10px; display: flex; flex-wrap: wrap; gap: 6px; flex: none; }\r\n.q-pill { padding: 4px 10px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); font-size: 11.5px; color: var(--text); transition: all 0.14s; }\r\n.q-pill:hover { border-color: var(--muted); color: var(--ink); transform: translateY(-1px); }\r\n.composer-wrap { padding: 0 14px 16px; flex: none; }\r\n.composer { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px 8px 8px 12px; display: flex; align-items: center; gap: 8px; box-shadow: var(--shadow-card); transition: border-color 0.16s; }\r\n.composer:focus-within { border-color: var(--muted); }\r\n.composer input { flex: 1; min-width: 0; border: 0; background: transparent; font-size: 13px; color: var(--ink); outline: none; }\r\n.composer input::placeholder { color: var(--soft); }\r\n.send-circle { width: 28px; height: 28px; border-radius: 99px; background: var(--ink); color: var(--surface); display: grid; place-items: center; flex: none; transition: opacity 0.14s, transform 0.14s; }\r\n.send-circle:hover { opacity: 0.86; }\r\n.send-circle:active { transform: scale(0.95); }\r\n.send-circle:disabled { opacity: 0.35; cursor: not-allowed; }\r\n.send-circle svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }\r\n\r\n/* 3. Contextual Main White Canvas */\r\n.canvas-col { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--surface); min-width: 0; position: relative; z-index: 2; }\r\n.canvas-head { height: 56px; padding: 0 36px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 14px; flex: none; }\r\n.canvas-head-left { display: flex; align-items: center; gap: 16px; min-width: 0; overflow: hidden; }\r\n.canvas-tabs { display: inline-flex; align-items: center; gap: 22px; }\r\n.c-tab { font-size: 13px; font-weight: 500; color: var(--muted); padding: 17px 0; position: relative; transition: color 0.14s; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }\r\n.c-tab.active { color: var(--ink); font-weight: 600; }\r\n.c-tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--ink); border-radius: 2px; }\r\n.c-tab-cnt { font-size: 12px; font-weight: 500; color: var(--soft); }\r\n.crumb-bar { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\r\n.crumb-link { color: var(--muted); font-size: 13px; transition: color 0.12s; }\r\n.crumb-link:hover { color: var(--ink); }\r\n.crumb-cur { color: var(--ink); font-weight: 600; }\r\n.canvas-right-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); flex: none; }\r\n\r\n/* Single 56px horizon on embedded candidate/job canvas: float actor badge cleanly inside ros-canvas-head */\r\n.embedded-actor-slot {\r\n  position: absolute;\r\n  top: 14px;\r\n  right: 24px;\r\n  z-index: 20;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n}\r\n\r\n.canvas-body.embedded-canvas .ros-canvas-head {\r\n  padding-right: 148px;\r\n}\r\n\r\n/* Read-only Actor Badge */\r\n.actor-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; background: var(--paper); border: 1px solid var(--line); font-size: 12px; color: var(--text); white-space: nowrap; }\r\n.actor-badge-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--green); flex: none; }\r\n.actor-badge-role { color: var(--muted); font-size: 11px; }\r\n\r\n.canvas-body { flex: 1; overflow-y: auto; padding: 34px 48px 72px; position: relative; }\r\n.canvas-body.embedded-canvas { padding: 0; }\r\n.canvas-inner { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; animation: fadeIn 0.2s ease-out; }\r\n[data-chat=\"collapsed\"] .canvas-inner { max-width: 920px; }\r\n\r\n.sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }\r\n.sec-title { font-size: 15px; font-weight: 650; letter-spacing: -0.015em; color: var(--ink); }\r\n.sec-meta { font-size: 12px; color: var(--soft); }\r\n\r\n/* Editorial inline stats (replaces bulky 4-box KPI strip in QueueView) */\r\n.editorial-stats { display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }\r\n.editorial-stats strong { color: var(--ink); font-weight: 600; }\r\n.editorial-stats .dot { color: var(--soft); }\r\n\r\n.filter-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }\r\n.filter-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }\r\n.f-pill { padding: 4px 11px; border-radius: 99px; border: 1px solid var(--line-soft); background: transparent; font-size: 12px; color: var(--muted); transition: all 0.14s; }\r\n.f-pill:hover { border-color: var(--line); background: var(--paper); color: var(--ink); }\r\n.f-pill.active { background: var(--ink); border-color: var(--ink); color: var(--surface); font-weight: 550; }\r\n.clean-search { height: 30px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--paper); font-size: 12.5px; color: var(--ink); width: 210px; outline: none; }\r\n.clean-search:focus { border-color: var(--muted); }\r\n\r\n/* Signature Gliding Hover List */\r\n.clean-list { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }\r\n.clean-row { padding: 13px 4px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 14px; cursor: pointer; transition: background 0.12s, padding 0.12s; border-radius: 8px; text-align: left; width: 100%; }\r\n.clean-row:hover { background: var(--paper); padding-inline: 12px; margin-inline: -8px; width: calc(100% + 16px); }\r\n.cr-left { display: flex; align-items: center; gap: 12px; min-width: 0; }\r\n.mono { width: 30px; height: 30px; border-radius: 99px; background: var(--subtle); color: var(--ink); display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }\r\n.cr-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }\r\n.cr-title-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }\r\n.cr-name { font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; }\r\n.cr-role { font-size: 12.5px; color: var(--muted); font-weight: 400; }\r\n.cr-sub { font-size: 12px; color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\r\n.cr-right { display: flex; align-items: center; gap: 10px; flex: none; }\r\n.cr-status { font-size: 12.5px; font-weight: 500; color: var(--muted); white-space: nowrap; }\r\n.cr-status.danger { color: var(--red); }\r\n.cr-status.warn { color: var(--amber); }\r\n.cr-status.info { color: var(--iris); }\r\n.cr-status.ok { color: var(--green); }\r\n\r\n/* Flow List (Jobs View) */\r\n.flow-list { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }\r\n.flow-row { padding: 20px 6px; border-bottom: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 14px; cursor: pointer; border-radius: 10px; transition: background 0.14s; text-align: left; width: 100%; }\r\n.flow-row:hover { background: var(--paper); }\r\n.flow-row:hover .flow-job-name { color: var(--iris); }\r\n.flow-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }\r\n.flow-job-name { font-size: 14.5px; font-weight: 600; color: var(--ink); transition: color 0.14s; }\r\n.flow-hc { font-size: 12px; color: var(--muted); }\r\n.stage-track { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); align-items: center; gap: 4px; }\r\n.st-node { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; }\r\n.st-dot { position: relative; z-index: 1; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 99px; display: grid; place-items: center; background: var(--surface); border: 1.5px solid var(--line); font-size: 11px; font-weight: 700; color: var(--soft); }\r\n.st-node.active .st-dot { border-color: var(--iris); background: var(--iris-soft); color: var(--iris); }\r\n.st-lbl { font-size: 11.5px; color: var(--muted); text-align: center; }\r\n.st-node.active .st-lbl { color: var(--ink); font-weight: 550; }\r\n\r\n/* Buttons & Empty / Unbound States */\r\n.btn { height: 32px; padding: 0 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.14s; white-space: nowrap; }\r\n.btn:hover { background: var(--subtle); }\r\n.btn.dark { background: var(--ink); border-color: var(--ink); color: var(--surface); }\r\n.btn.dark:hover { opacity: 0.88; }\r\n\r\n.empty-paper { padding: 40px 24px; border-radius: 14px; background: var(--paper); border: 1px dashed var(--line); text-align: center; color: var(--muted); font-size: 13px; display: flex; flex-direction: column; align-items: center; gap: 10px; }\r\n.unbound-screen { height: 100vh; width: 100%; display: grid; place-items: center; background: var(--paper); padding: 24px; }\r\n.unbound-card { max-width: 420px; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 32px 28px; box-shadow: var(--shadow-card); display: flex; flex-direction: column; gap: 12px; text-align: center; align-items: center; }\r\n.unbound-card h1 { font-size: 17px; font-weight: 650; color: var(--ink); }\r\n.unbound-card p { font-size: 13px; color: var(--muted); line-height: 1.65; }\r\n\r\n.modal-bg { position: fixed; inset: 0; z-index: 100; background: rgba(25, 25, 24, 0.32); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; }\r\n.modal-card { width: 100%; max-width: 500px; background: var(--surface); border-radius: 20px; border: 1px solid var(--line); box-shadow: var(--shadow-modal); padding: 24px 26px; display: flex; flex-direction: column; gap: 16px; animation: fadeIn 0.16s ease-out; max-height: 80vh; overflow-y: auto; }\r\n.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\r\n.modal-head h2 { font-size: 15px; font-weight: 650; color: var(--ink); }\r\n.kv-list { display: flex; flex-direction: column; gap: 8px; }\r\n.kv-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 13px; }\r\n.kv-k { color: var(--muted); }\r\n.kv-v { color: var(--ink); font-weight: 500; }\r\n.new-job-hint { padding: 11px 13px; border-radius: 10px; background: var(--paper); font-size: 12.5px; line-height: 1.6; color: var(--muted); }\r\n.form-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }\r\n.form-field input, .form-field select, .form-field textarea { padding: 9px 11px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 13px; outline: none; }\r\n.form-field textarea { min-height: 78px; resize: vertical; line-height: 1.6; }\r\n.form-field input:focus, .form-field select:focus, .form-field textarea:focus { border-color: var(--muted); }\r\n.modal-foot { display: flex; justify-content: flex-end; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line-soft); }\r\n.offline-banner { padding: 8px 14px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: space-between; gap: 10px; }\r\n.interviewer-host { max-width: 960px; margin: 0 auto; padding: 28px 36px 64px; }\r\n\r\n/* ============================================================================\r\n * 3-Screen Snapshot Audit Polish for Reused Canvas & Confirm Card\r\n * (Zero mutations to src/client/canvas/** write paths)\r\n * ============================================================================ */\r\n.ros-canvas .ros-seq-rail + .ros-clean-list {\r\n  border-top: 0;\r\n}\r\n\r\n.ros-canvas .ros-fact-bar {\r\n  opacity: 0.72;\r\n}\r\n\r\n.ros-canvas .ros-doc-foot {\r\n  position: sticky;\r\n  bottom: 0;\r\n  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--surface) 24%);\r\n  padding: 22px 0 12px;\r\n  margin-top: 8px;\r\n}\r\n\r\n[data-theme=\"dark\"] .ros-canvas .ros-doc-foot {\r\n  background: linear-gradient(to bottom, rgba(26, 26, 25, 0), var(--surface) 24%);\r\n}\r\n\r\n.ros-canvas .ros-modal {\r\n  padding: 28px 30px;\r\n  gap: 18px;\r\n}\r\n\r\n.ros-canvas .ros-m-field {\r\n  gap: 6px;\r\n}\r\n\r\n.ros-canvas .ros-m-field textarea {\r\n  width: 100%;\r\n  min-height: 92px;\r\n  padding: 11px 13px;\r\n  border-radius: 10px;\r\n  background: var(--paper);\r\n  line-height: 1.65;\r\n  resize: vertical;\r\n}\r\n\r\n.ros-canvas .ros-modal > div:last-child {\r\n  padding-top: 14px;\r\n  border-top: 1px solid var(--line-soft);\r\n  margin-top: 2px;\r\n}\r\n\r\n/* Responsive: Tablet / Half-screen */\r\n@media (max-width: 1080px) {\r\n  .shell { grid-template-columns: 56px 0px 1fr !important; }\r\n  .space-rail { padding: 0 8px; align-items: center; }\r\n  .rail-brand { padding: 0; justify-content: center; }\r\n  .brand-identity, .rail-lbl, .rail-cnt, .rail-jobs { display: none; }\r\n  .rail-nav { width: 100%; align-items: center; gap: 6px; }\r\n  .rail-btn { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 10px; }\r\n  .rail-foot { flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; width: 100%; }\r\n  .chat-col { position: fixed; left: 56px; top: 0; bottom: 0; width: min(340px, calc(100vw - 56px)); box-shadow: var(--shadow-modal); z-index: 50; transform: translateX(0); opacity: 1; pointer-events: auto; transition: transform 0.2s ease, opacity 0.18s ease; }\r\n  [data-chat=\"collapsed\"] .chat-col { transform: translateX(-110%); opacity: 0; pointer-events: none; }\r\n  .canvas-body { padding: 24px 24px 64px; }\r\n  .canvas-head { padding: 0 20px; }\r\n}\r\n\r\n/* Responsive: Mobile (390px acceptance) */\r\n@media (max-width: 640px) {\r\n  .shell { grid-template-columns: 48px 0px 1fr !important; }\r\n  .chat-col { left: 48px; width: calc(100vw - 48px); }\r\n  .canvas-head { padding: 0 14px; height: 52px; }\r\n  .canvas-body { padding: 18px 14px 56px; }\r\n  .embedded-actor-slot { top: 10px; right: 12px; }\r\n  .canvas-body.embedded-canvas .ros-canvas-head { padding-right: 116px; }\r\n  .clean-search { width: 100%; }\r\n  .clean-row { flex-direction: column; align-items: flex-start; gap: 8px; }\r\n  .cr-right { width: 100%; justify-content: flex-end; }\r\n  .interviewer-host { padding: 16px 12px 48px; }\r\n}\r\n";
 if (typeof document !== "undefined" && document.querySelector("style[data-recruitment-css=\"c61c486ea236\"]") === null) {
 	const style = document.createElement("style");
 	style.setAttribute("data-recruitment-css", CSS_KEY$1);
@@ -23747,12 +23747,44 @@ function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }) {
 	});
 }
 // src/client/canvas/CandidatePage.tsx
+function extractCandidatePins(raw) {
+	if (!raw || typeof raw !== "object") return [];
+	const obj = raw;
+	const appObj = obj.application && typeof obj.application === "object" ? obj.application : obj;
+	const list = Array.isArray(obj.constraints) ? obj.constraints : Array.isArray(appObj.constraints) ? appObj.constraints : [];
+	const out = [];
+	for (const item of list) {
+		if (!item || typeof item !== "object") continue;
+		const rec = item;
+		const text = typeof rec.text === "string" ? rec.text.trim() : "";
+		if (!text) continue;
+		const kind = typeof rec.kind === "string" ? rec.kind.trim().toUpperCase() : "PIN";
+		const fromPreviousRound = rec.from_previous_round === true || kind === "HANDOFF";
+		out.push({
+			kind,
+			text,
+			fromPreviousRound
+		});
+	}
+	return out;
+}
+function buildDecisionMemoText(vm, pins) {
+	const lines = [`【${vm.jobTitle} · ${vm.candidateName}】${vm.stageLabel}（${vm.lifecycleLabel}）`, `核心提炼：${vm.summaryText}`];
+	if (pins.length > 0) lines.push(`置顶提醒：${pins.map((p) => p.fromPreviousRound ? `[交接] ${p.text}` : p.text).join("；")}`);
+	if (vm.criteria.length > 0) lines.push(`岗位标准（${vm.rubricVersionLabel}）：${vm.criteria.map((c) => `${c.label}=${c.statusText}`).join("；")}`);
+	if (vm.rounds.length > 0) lines.push(`面试进展：${vm.rounds.map((r) => `${r.roundLabel}(${r.statusText}，${r.scorecardsSummary})`).join(" / ")}`);
+	return lines.join("\n");
+}
 function CandidatePage({ sessionId, applicationId, candidateQueue, focusRequest, onFocusConsumed, openModalRequest, onModalRequestConsumed, onJobResolved, onSelectApplication, onBack, onOpenJob, onUploadStarted, onActionCompleted, refreshNonce = 0, fetcher }) {
 	const detailPath = `/recruitment/api/recruiting/applications/${encodeURIComponent(applicationId)}`;
 	const routeKey = `candidate:${applicationId}`;
 	const [vm, setVm] = (0, import_react.useState)(() => {
 		const cached = getCachedCanvasData(detailPath);
 		return cached !== void 0 ? normalizeApplicationDetail(cached) : null;
+	});
+	const [pins, setPins] = (0, import_react.useState)(() => {
+		const cached = getCachedCanvasData(detailPath);
+		return cached !== void 0 ? extractCandidatePins(cached) : [];
 	});
 	const [loading, setLoading] = (0, import_react.useState)(() => getCachedCanvasData(detailPath) === void 0);
 	const [syncing, setSyncing] = (0, import_react.useState)(false);
@@ -23784,6 +23816,7 @@ function CandidatePage({ sessionId, applicationId, candidateQueue, focusRequest,
 		if (cached !== void 0 && !opts?.silent) {
 			const fast = normalizeApplicationDetail(cached);
 			setVm(fast);
+			setPins(extractCandidatePins(cached));
 			setStarredLocal(fast.starred);
 			setActiveCrit((prev) => prev || fast.criteria[0]?.key || "");
 		}
@@ -23796,6 +23829,7 @@ function CandidatePage({ sessionId, applicationId, candidateQueue, focusRequest,
 			setCachedCanvasData(detailPath, raw);
 			const next = normalizeApplicationDetail(raw);
 			setVm(next);
+			setPins(extractCandidatePins(raw));
 			setStarredLocal(next.starred);
 			setActiveCrit((prev) => prev || next.criteria[0]?.key || "");
 			if (opts?.flash) setFlashTick((n) => n + 1);
@@ -23905,6 +23939,25 @@ function CandidatePage({ sessionId, applicationId, candidateQueue, focusRequest,
 		modalKind,
 		pendingRebind
 	]);
+	const handleCopyDecisionMemo = () => {
+		if (!vm) return;
+		const text = buildDecisionMemoText(vm, pins);
+		if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => {
+			setActionFeedback({
+				tone: "green",
+				text: `已复制 ${vm.candidateName} 的决策纪要`
+			});
+		}).catch(() => {
+			setActionFeedback({
+				tone: "green",
+				text: `已生成 ${vm.candidateName} 的决策纪要（当前环境限制剪贴板写入）`
+			});
+		});
+		else setActionFeedback({
+			tone: "green",
+			text: `已生成 ${vm.candidateName} 的决策纪要`
+		});
+	};
 	const handleSelectCriterion = (critKey) => {
 		setActiveCrit(critKey);
 		if (docTab !== "resume") setDocTab("resume");
@@ -24206,24 +24259,35 @@ function CandidatePage({ sessionId, applicationId, candidateQueue, focusRequest,
 					}) : null,
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: `ros-doc-head ${flashTick > 0 ? "ros-paper-flash" : ""}`,
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-							className: "ros-doc-name",
-							children: vm.candidateName
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "ros-doc-meta",
-							children: [
-								vm.jobTitle,
-								"（",
-								vm.jobCode,
-								"）· 档案号 ",
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "num",
-									children: vm.shortRef
-								}),
-								" · 标准 ",
-								vm.rubricVersionLabel
-							]
-						})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "ros-doc-name",
+								children: vm.candidateName
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "ros-doc-meta",
+								children: [
+									vm.jobTitle,
+									"（",
+									vm.jobCode,
+									"）· 档案号 ",
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "num",
+										children: vm.shortRef
+									}),
+									" · 标准 ",
+									vm.rubricVersionLabel
+								]
+							}),
+							pins.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "ros-pin-row",
+								"data-testid": "canvas-pin-row",
+								children: pins.map((pin, idx) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: `ros-pin-tag ${pin.fromPreviousRound ? "neutral" : ""}`,
+									children: pin.fromPreviousRound ? `交接：${pin.text}` : pin.text
+								}, `${pin.kind}-${idx}`))
+							}) : null
+						] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							style: {
 								display: "flex",
 								flexDirection: "column",
@@ -24278,9 +24342,25 @@ function CandidatePage({ sessionId, applicationId, candidateQueue, focusRequest,
 									text: vm.stageLabel,
 									tone: vm.isArchived ? "" : "iris"
 								})]
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								className: "ros-sec-meta",
-								children: vm.lifecycleLabel
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "ros-doc-head-sub",
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "ros-sec-meta",
+										children: vm.lifecycleLabel
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "ros-sec-meta",
+										children: "·"
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: "ros-text-link ros-memo-btn",
+										"data-testid": "canvas-action-copy-memo",
+										onClick: handleCopyDecisionMemo,
+										children: "复制决策纪要"
+									})
+								]
 							})]
 						})]
 					}, `head-${flashTick}`),
@@ -25558,7 +25638,7 @@ function JobPage({ sessionId, jobId, focusRequest, onFocusConsumed, onBack, onSe
 }
 // recruitment-css-virtual:D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\src\client\canvas\canvas.css?css
 const CSS_KEY = "eb7dddf0fef9";
-const css = "/*\r\n * Recruitment OS v4 · Right-Hand Canvas Styles\r\n * Design tokens copied verbatim from design/v4/contracts/design-tokens.md.\r\n * Scoped under .ros-canvas to avoid colliding with DSH host styles.\r\n */\r\n\r\n.ros-canvas {\r\n  --rail: #F3F2EE;\r\n  --paper: #F9F8F5;\r\n  --surface: #FFFFFF;\r\n  --subtle: #F3F2EE;\r\n  --hover: #EAE8E2;\r\n  --ink: #191918;\r\n  --text: #42423F;\r\n  --muted: #787772;\r\n  --soft: #A6A59E;\r\n  --line: rgba(25, 25, 24, .08);\r\n  --line-soft: rgba(25, 25, 24, .05);\r\n  --iris: #5B5BD6;\r\n  --iris-soft: rgba(91, 91, 214, .09);\r\n  --green: #18794E;\r\n  --green-soft: rgba(24, 121, 78, .09);\r\n  --amber: #AD5700;\r\n  --amber-soft: rgba(173, 87, 0, .09);\r\n  --red: #CD2B31;\r\n  --red-soft: rgba(205, 43, 49, .08);\r\n  --shadow-card: 0 1px 2px rgba(25, 25, 24, .03), 0 10px 30px -14px rgba(25, 25, 24, .07);\r\n  --shadow-modal: 0 28px 72px -18px rgba(25, 25, 24, .24);\r\n\r\n  display: flex;\r\n  flex-direction: column;\r\n  height: 100%;\r\n  min-height: 0;\r\n  overflow: hidden;\r\n  background: var(--surface);\r\n  color: var(--ink);\r\n  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif;\r\n  font-size: 14px;\r\n  line-height: 1.55;\r\n  -webkit-font-smoothing: antialiased;\r\n}\r\n\r\n[data-theme=\"dark\"] .ros-canvas,\r\n.ros-canvas[data-theme=\"dark\"] {\r\n  --rail: #10100F;\r\n  --paper: #141413;\r\n  --surface: #1A1A19;\r\n  --subtle: #232321;\r\n  --hover: #2B2B28;\r\n  --ink: #F3F2EE;\r\n  --text: #D5D4CE;\r\n  --muted: #9A9992;\r\n  --soft: #6F6E68;\r\n  --line: rgba(243, 242, 238, .09);\r\n  --line-soft: rgba(243, 242, 238, .055);\r\n  --iris: #8484F5;\r\n  --iris-soft: rgba(132, 132, 245, .15);\r\n  --green: #3DD68C;\r\n  --green-soft: rgba(61, 214, 140, .13);\r\n  --amber: #F5A524;\r\n  --amber-soft: rgba(245, 165, 36, .14);\r\n  --red: #F87171;\r\n  --red-soft: rgba(248, 113, 113, .14);\r\n  --shadow-card: 0 2px 10px rgba(0, 0, 0, .35);\r\n  --shadow-modal: 0 28px 72px -18px rgba(0, 0, 0, .65);\r\n}\r\n\r\n.ros-canvas *,\r\n.ros-canvas *::before,\r\n.ros-canvas *::after {\r\n  box-sizing: border-box;\r\n}\r\n\r\n.ros-canvas button {\r\n  font: inherit;\r\n  color: inherit;\r\n  cursor: pointer;\r\n  background: none;\r\n  border: 0;\r\n}\r\n\r\n.ros-canvas .num {\r\n  font-variant-numeric: tabular-nums;\r\n}\r\n\r\n@keyframes rosFadeIn {\r\n  from { opacity: 0; transform: translateY(4px); }\r\n  to { opacity: 1; transform: none; }\r\n}\r\n\r\n@keyframes rosOrbit {\r\n  to { transform: rotate(360deg); }\r\n}\r\n\r\n@keyframes rosPulseDot {\r\n  0%, 100% { opacity: .3; transform: scale(.85); }\r\n  50% { opacity: 1; transform: scale(1.1); }\r\n}\r\n\r\n/* Contextual Top Bar (56px visual horizon) */\r\n.ros-canvas-head {\r\n  height: 56px;\r\n  padding: 0 36px;\r\n  border-bottom: 1px solid var(--line-soft);\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 14px;\r\n  flex: none;\r\n}\r\n\r\n.ros-head-left {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 16px;\r\n  min-width: 0;\r\n}\r\n\r\n.ros-head-right {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 10px;\r\n  font-size: 12px;\r\n  color: var(--muted);\r\n  flex: none;\r\n}\r\n\r\n.ros-crumb-bar {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 7px;\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n  white-space: nowrap;\r\n  overflow: hidden;\r\n  text-overflow: ellipsis;\r\n}\r\n\r\n.ros-crumb-link {\r\n  color: var(--muted);\r\n  font-size: 13px;\r\n  transition: color .12s;\r\n}\r\n\r\n.ros-crumb-link:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-crumb-cur {\r\n  color: var(--ink);\r\n  font-weight: 600;\r\n}\r\n\r\n.ros-tabs {\r\n  display: inline-flex;\r\n  gap: 22px;\r\n}\r\n\r\n.ros-tab {\r\n  font-size: 13px;\r\n  font-weight: 500;\r\n  color: var(--muted);\r\n  padding: 17px 0;\r\n  position: relative;\r\n  transition: color .14s;\r\n  white-space: nowrap;\r\n}\r\n\r\n.ros-tab:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-tab.active {\r\n  color: var(--ink);\r\n  font-weight: 600;\r\n}\r\n\r\n.ros-tab.active::after {\r\n  content: '';\r\n  position: absolute;\r\n  left: 0;\r\n  right: 0;\r\n  bottom: 0;\r\n  height: 2px;\r\n  background: var(--ink);\r\n  border-radius: 2px;\r\n}\r\n\r\n/* Scrollable Reading Body */\r\n.ros-canvas-body {\r\n  flex: 1;\r\n  min-height: 0;\r\n  overflow-y: auto;\r\n  padding: 34px 48px 72px;\r\n}\r\n\r\n.ros-canvas-inner {\r\n  max-width: 820px;\r\n  margin: 0 auto;\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 32px;\r\n  animation: rosFadeIn .2s ease-out;\r\n}\r\n\r\n/* Shared Editorial Typography */\r\n.ros-sec-head {\r\n  display: flex;\r\n  align-items: baseline;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  margin-bottom: 14px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-sec-title {\r\n  font-size: 15px;\r\n  font-weight: 650;\r\n  letter-spacing: -.015em;\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-sec-meta {\r\n  font-size: 12px;\r\n  color: var(--soft);\r\n}\r\n\r\n.ros-text-link {\r\n  font-size: 12.5px;\r\n  color: var(--muted);\r\n  transition: color .12s;\r\n}\r\n\r\n.ros-text-link:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-text-link.active {\r\n  color: var(--ink);\r\n  font-weight: 600;\r\n}\r\n\r\n/* External Fact Labels (LIVE/FIXTURE, EVENT/MANUAL, CONNECTED/...) */\r\n.ros-fact-bar {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 6px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-fact-chip {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 4px;\r\n  padding: 2px 8px;\r\n  border-radius: 99px;\r\n  font-size: 11px;\r\n  font-weight: 500;\r\n  background: var(--subtle);\r\n  color: var(--muted);\r\n}\r\n\r\n.ros-fact-chip.green { background: var(--green-soft); color: var(--green); }\r\n.ros-fact-chip.amber { background: var(--amber-soft); color: var(--amber); }\r\n.ros-fact-chip.red { background: var(--red-soft); color: var(--red); }\r\n\r\n/* Status Text */\r\n.ros-status {\r\n  font-size: 12.5px;\r\n  font-weight: 500;\r\n  color: var(--muted);\r\n  white-space: nowrap;\r\n}\r\n.ros-status.red { color: var(--red); }\r\n.ros-status.amber { color: var(--amber); }\r\n.ros-status.iris { color: var(--iris); }\r\n.ros-status.green { color: var(--green); }\r\n\r\n/* 6-Stage Horizontal Breathing Progress Track */\r\n.ros-stage-track {\r\n  display: grid;\r\n  grid-template-columns: repeat(6, 1fr);\r\n  align-items: center;\r\n  padding: 8px 0;\r\n}\r\n\r\n.ros-st-node {\r\n  position: relative;\r\n  display: flex;\r\n  flex-direction: column;\r\n  align-items: center;\r\n  gap: 6px;\r\n}\r\n\r\n.ros-st-node:not(:last-child)::after {\r\n  content: '';\r\n  position: absolute;\r\n  top: 9px;\r\n  left: calc(50% + 10px);\r\n  right: calc(-50% + 10px);\r\n  height: 1.5px;\r\n  background: var(--line);\r\n}\r\n\r\n.ros-st-node.done:not(:last-child)::after {\r\n  background: var(--green);\r\n}\r\n\r\n.ros-st-dot {\r\n  position: relative;\r\n  z-index: 1;\r\n  width: 19px;\r\n  height: 19px;\r\n  border-radius: 99px;\r\n  display: grid;\r\n  place-items: center;\r\n  background: var(--surface);\r\n  border: 1.5px solid var(--line);\r\n  font-size: 10px;\r\n  font-weight: 700;\r\n  color: var(--soft);\r\n}\r\n\r\n.ros-st-node.done .ros-st-dot {\r\n  border-color: var(--green);\r\n  background: var(--green-soft);\r\n  color: var(--green);\r\n}\r\n\r\n.ros-st-node.now .ros-st-dot {\r\n  border-color: var(--iris);\r\n  background: var(--iris-soft);\r\n  color: var(--iris);\r\n}\r\n\r\n.ros-st-node.now .ros-st-dot::after {\r\n  content: '';\r\n  position: absolute;\r\n  inset: -2.5px;\r\n  border: 1.5px solid transparent;\r\n  border-top-color: var(--iris);\r\n  border-radius: 99px;\r\n  animation: rosOrbit 1s linear infinite;\r\n}\r\n\r\n.ros-st-node.wait .ros-st-dot {\r\n  border-color: var(--amber);\r\n  background: var(--amber-soft);\r\n  color: var(--amber);\r\n}\r\n\r\n.ros-st-lbl {\r\n  font-size: 11.5px;\r\n  color: var(--muted);\r\n}\r\n\r\n.ros-st-node.now .ros-st-lbl,\r\n.ros-st-node.wait .ros-st-lbl {\r\n  color: var(--ink);\r\n  font-weight: 550;\r\n}\r\n\r\n/* Signature Gliding Hover List (Preserved Verbatim from v4) */\r\n.ros-clean-list {\r\n  display: flex;\r\n  flex-direction: column;\r\n  border-top: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-clean-row {\r\n  padding: 13px 4px;\r\n  border-bottom: 1px solid var(--line-soft);\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 14px;\r\n  cursor: pointer;\r\n  transition: background .12s, padding .12s;\r\n  border-radius: 8px;\r\n}\r\n\r\n.ros-clean-row:hover {\r\n  background: var(--paper);\r\n  padding-inline: 12px;\r\n  margin-inline: -8px;\r\n}\r\n\r\n.ros-clean-row.static {\r\n  cursor: default;\r\n}\r\n\r\n.ros-clean-row.static:hover {\r\n  background: transparent;\r\n  padding-inline: 4px;\r\n  margin-inline: 0;\r\n}\r\n\r\n.ros-cr-left {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 12px;\r\n  min-width: 0;\r\n}\r\n\r\n.ros-mono {\r\n  width: 30px;\r\n  height: 30px;\r\n  border-radius: 99px;\r\n  background: var(--subtle);\r\n  color: var(--ink);\r\n  display: grid;\r\n  place-items: center;\r\n  font-size: 12px;\r\n  font-weight: 600;\r\n  flex: none;\r\n}\r\n\r\n.ros-cr-name {\r\n  font-size: 14px;\r\n  font-weight: 600;\r\n  color: var(--ink);\r\n  white-space: nowrap;\r\n}\r\n\r\n.ros-cr-role {\r\n  font-size: 12.5px;\r\n  color: var(--muted);\r\n  margin-left: 8px;\r\n  font-weight: 400;\r\n}\r\n\r\n/* Candidate Artifact View */\r\n.ros-doc-head {\r\n  display: flex;\r\n  align-items: flex-start;\r\n  justify-content: space-between;\r\n  gap: 16px;\r\n  padding-bottom: 20px;\r\n  border-bottom: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-doc-name {\r\n  font-size: 23px;\r\n  font-weight: 700;\r\n  letter-spacing: -.03em;\r\n  color: var(--ink);\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 10px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-doc-meta {\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n  margin-top: 4px;\r\n}\r\n\r\n.ros-doc-block {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 10px;\r\n}\r\n\r\n.ros-doc-line {\r\n  display: grid;\r\n  grid-template-columns: 28px 1fr;\r\n  gap: 12px;\r\n  font-size: 13.5px;\r\n  line-height: 1.78;\r\n  color: var(--text);\r\n  padding: 7px 10px;\r\n  margin: 0 -10px;\r\n  border-radius: 8px;\r\n  cursor: pointer;\r\n  transition: background .12s;\r\n  overflow-wrap: anywhere;\r\n}\r\n\r\n.ros-doc-line:hover {\r\n  background: var(--paper);\r\n}\r\n\r\n.ros-doc-line.active {\r\n  background: var(--iris-soft);\r\n}\r\n\r\n.ros-doc-no {\r\n  color: var(--soft);\r\n  font-size: 12px;\r\n  padding-top: 2px;\r\n}\r\n\r\n.ros-resume-group {\r\n  font-size: 11.5px;\r\n  font-weight: 600;\r\n  color: var(--soft);\r\n  letter-spacing: .03em;\r\n  margin: 16px 0 6px;\r\n  padding-top: 12px;\r\n  border-top: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-resume-group:first-child {\r\n  margin-top: 4px;\r\n  padding-top: 0;\r\n  border-top: 0;\r\n}\r\n\r\n.ros-exp-meta {\r\n  display: flex;\r\n  align-items: baseline;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  margin-bottom: 4px;\r\n}\r\n\r\n.ros-exp-co {\r\n  font-size: 13.5px;\r\n  font-weight: 600;\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-exp-time {\r\n  font-size: 12px;\r\n  color: var(--soft);\r\n  flex: none;\r\n}\r\n\r\n.ros-crit-item {\r\n  display: flex;\r\n  align-items: baseline;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  padding: 9px 10px;\r\n  margin: 0 -10px;\r\n  border-radius: 8px;\r\n  cursor: pointer;\r\n  transition: background .12s;\r\n}\r\n\r\n.ros-crit-item:hover {\r\n  background: var(--paper);\r\n}\r\n\r\n.ros-crit-item.active {\r\n  background: var(--iris-soft);\r\n}\r\n\r\n/* Sequential Round Rail */\r\n.ros-seq-rail {\r\n  display: flex;\r\n  align-items: center;\r\n  padding: 16px 0;\r\n  border-bottom: 1px solid var(--line-soft);\r\n  overflow-x: auto;\r\n}\r\n\r\n.ros-seq-n {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n  flex: none;\r\n}\r\n\r\n.ros-seq-d {\r\n  width: 20px;\r\n  height: 20px;\r\n  border-radius: 99px;\r\n  display: grid;\r\n  place-items: center;\r\n  font-size: 10.5px;\r\n  font-weight: 700;\r\n  border: 1.5px solid var(--line);\r\n  color: var(--soft);\r\n}\r\n\r\n.ros-seq-d.done { border-color: var(--green); background: var(--green-soft); color: var(--green); }\r\n.ros-seq-d.caution { border-color: var(--amber); background: var(--amber-soft); color: var(--amber); }\r\n.ros-seq-d.now { border-color: var(--iris); background: var(--iris-soft); color: var(--iris); }\r\n\r\n.ros-seq-l {\r\n  flex: 1;\r\n  min-width: 20px;\r\n  height: 1.5px;\r\n  background: var(--line);\r\n  margin: 0 10px;\r\n}\r\n\r\n.ros-seq-l.done {\r\n  background: var(--green);\r\n}\r\n\r\n/* Notes, JD Box, Transcript, Collapsible Toggle */\r\n.ros-risk-note {\r\n  padding: 12px 16px;\r\n  border-radius: 10px;\r\n  background: var(--paper);\r\n  border-left: 3px solid var(--amber);\r\n  font-size: 13px;\r\n  line-height: 1.68;\r\n  color: var(--text);\r\n}\r\n\r\n.ros-jd-box {\r\n  padding: 20px 22px;\r\n  border-radius: 12px;\r\n  background: var(--paper);\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 14px;\r\n  font-size: 13px;\r\n  line-height: 1.75;\r\n  color: var(--text);\r\n  white-space: pre-line;\r\n}\r\n\r\n.ros-jd-sec-t {\r\n  font-size: 12px;\r\n  font-weight: 650;\r\n  color: var(--ink);\r\n  margin-bottom: 4px;\r\n}\r\n\r\n.ros-ts-badge {\r\n  font-size: 11px;\r\n  font-weight: 600;\r\n  color: var(--iris);\r\n  background: var(--iris-soft);\r\n  padding: 1px 6px;\r\n  border-radius: 5px;\r\n  margin-right: 8px;\r\n}\r\n\r\n.ros-auto-toggle {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  padding: 12px 0;\r\n  border-top: 1px solid var(--line-soft);\r\n  font-size: 12.5px;\r\n  color: var(--muted);\r\n  cursor: pointer;\r\n}\r\n\r\n.ros-auto-toggle:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-btn {\r\n  height: 34px;\r\n  padding: 0 16px;\r\n  border-radius: 99px;\r\n  border: 1px solid var(--line);\r\n  background: var(--surface);\r\n  color: var(--ink);\r\n  font-size: 13px;\r\n  font-weight: 500;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  gap: 6px;\r\n  transition: all .14s;\r\n}\r\n\r\n.ros-btn:hover {\r\n  background: var(--subtle);\r\n}\r\n\r\n/* Empty / Loading / Error States */\r\n.ros-state-box {\r\n  padding: 40px 24px;\r\n  border-radius: 12px;\r\n  background: var(--paper);\r\n  display: flex;\r\n  flex-direction: column;\r\n  align-items: center;\r\n  justify-content: center;\r\n  text-align: center;\r\n  gap: 10px;\r\n}\r\n\r\n.ros-state-title {\r\n  font-size: 14.5px;\r\n  font-weight: 600;\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-state-desc {\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n  max-width: 380px;\r\n  line-height: 1.65;\r\n}\r\n\r\n.ros-thinking-row {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n}\r\n\r\n.ros-thinking-dot {\r\n  width: 6px;\r\n  height: 6px;\r\n  border-radius: 99px;\r\n  background: var(--iris);\r\n  animation: rosPulseDot .9s ease-in-out infinite;\r\n}\r\n\r\n/* Responsive (Half-screen <= 1080px & Mobile 390px) */\r\n@media (max-width: 1080px) {\r\n  .ros-canvas-head {\r\n    padding: 0 24px;\r\n  }\r\n  .ros-canvas-body {\r\n    padding: 24px 24px 64px;\r\n  }\r\n}\r\n\r\n@media (max-width: 520px) {\r\n  .ros-canvas-head {\r\n    padding: 0 16px;\r\n    height: auto;\r\n    min-height: 52px;\r\n    flex-wrap: wrap;\r\n    padding-top: 8px;\r\n    padding-bottom: 8px;\r\n  }\r\n  .ros-canvas-body {\r\n    padding: 18px 16px 48px;\r\n  }\r\n  .ros-doc-head {\r\n    flex-direction: column;\r\n  }\r\n  .ros-doc-name {\r\n    font-size: 20px;\r\n  }\r\n  .ros-cr-role {\r\n    display: block;\r\n    margin-left: 0;\r\n    margin-top: 2px;\r\n  }\r\n}\r\n\r\n/* v4 Footer & Centered Confirmation Modal (verbatim design-tokens.md) */\r\n.ros-doc-foot {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  padding-top: 20px;\r\n  border-top: 1px solid var(--line-soft);\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-btn.dark {\r\n  background: var(--ink);\r\n  border-color: var(--ink);\r\n  color: var(--surface);\r\n}\r\n\r\n.ros-btn.dark:hover {\r\n  opacity: .88;\r\n}\r\n\r\n.ros-btn:disabled {\r\n  opacity: .6;\r\n  cursor: not-allowed;\r\n}\r\n\r\n.ros-modal-bg {\r\n  position: fixed;\r\n  inset: 0;\r\n  z-index: 100;\r\n  background: rgba(25, 25, 24, .32);\r\n  backdrop-filter: blur(6px);\r\n  -webkit-backdrop-filter: blur(6px);\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  padding: 24px;\r\n}\r\n\r\n.ros-modal {\r\n  width: 100%;\r\n  max-width: 520px;\r\n  background: var(--surface);\r\n  border-radius: 20px;\r\n  border: 1px solid var(--line);\r\n  box-shadow: var(--shadow-modal);\r\n  padding: 26px 28px;\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 16px;\r\n  animation: rosFadeIn .16s ease-out;\r\n}\r\n\r\n.ros-m-field {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 5px;\r\n  font-size: 12px;\r\n  color: var(--muted);\r\n}\r\n\r\n.ros-m-field input,\r\n.ros-m-field textarea {\r\n  padding: 9px 11px;\r\n  border-radius: 8px;\r\n  border: 1px solid var(--line);\r\n  background: var(--surface);\r\n  color: var(--ink);\r\n  font: inherit;\r\n  font-size: 13px;\r\n  outline: none;\r\n}\r\n\r\n.ros-m-field input:focus,\r\n.ros-m-field textarea:focus {\r\n  border-color: var(--muted);\r\n}\r\n\r\n/* v4 Batch Float & 5-Second Undo Toast (verbatim design-tokens.md) */\r\n.ros-batch-float {\r\n  position: sticky;\r\n  bottom: 0;\r\n  margin-top: 12px;\r\n  background: var(--ink);\r\n  color: var(--surface);\r\n  padding: 10px 16px;\r\n  border-radius: 99px;\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 14px;\r\n  font-size: 12.5px;\r\n  box-shadow: var(--shadow-modal);\r\n}\r\n\r\n.ros-batch-float button {\r\n  color: var(--surface);\r\n  font-size: 12px;\r\n  padding: 4px 10px;\r\n  border-radius: 99px;\r\n  background: rgba(128, 128, 128, .24);\r\n}\r\n\r\n.ros-batch-float button:hover {\r\n  background: rgba(128, 128, 128, .38);\r\n}\r\n\r\n.ros-toast {\r\n  position: fixed;\r\n  top: 20px;\r\n  left: 50%;\r\n  transform: translateX(-50%) translateY(-8px);\r\n  background: var(--ink);\r\n  color: var(--surface);\r\n  padding: 9px 16px;\r\n  border-radius: 99px;\r\n  font-size: 12.5px;\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 12px;\r\n  opacity: 0;\r\n  pointer-events: none;\r\n  transition: all .16s;\r\n  z-index: 120;\r\n}\r\n\r\n.ros-toast.show {\r\n  opacity: 1;\r\n  pointer-events: auto;\r\n  transform: translateX(-50%) translateY(0);\r\n}\r\n\r\n/* v4 Free Slot Pills (verbatim design-tokens.md) */\r\n.ros-slot-grid {\r\n  display: flex;\r\n  gap: 8px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-slot-pill {\r\n  padding: 6px 12px;\r\n  border-radius: 10px;\r\n  border: 1px solid var(--line);\r\n  background: var(--surface);\r\n  font-size: 12px;\r\n  color: var(--text);\r\n  transition: all .12s;\r\n}\r\n\r\n.ros-slot-pill:hover {\r\n  border-color: var(--muted);\r\n}\r\n\r\n.ros-slot-pill.active {\r\n  background: var(--iris-soft);\r\n  border-color: var(--iris);\r\n  color: var(--iris);\r\n  font-weight: 600;\r\n}\r\n\r\n/* =========================================================================\r\n * Canvas UX & Motion Polish (UI-FREEZE compliant: zero token/layout changes)\r\n * ========================================================================= */\r\n\r\n@keyframes rosCanvasEnter {\r\n  from {\r\n    opacity: 0;\r\n    transform: translateY(6px);\r\n  }\r\n  to {\r\n    opacity: 1;\r\n    transform: translateY(0);\r\n  }\r\n}\r\n\r\n@keyframes rosModalBgIn {\r\n  from { opacity: 0; }\r\n  to { opacity: 1; }\r\n}\r\n\r\n@keyframes rosModalCardIn {\r\n  from {\r\n    opacity: 0;\r\n    transform: translateY(5px) scale(0.985);\r\n  }\r\n  to {\r\n    opacity: 1;\r\n    transform: translateY(0) scale(1);\r\n  }\r\n}\r\n\r\n@keyframes rosPaperFlash {\r\n  0% { background-color: rgba(217, 119, 6, 0.14); }\r\n  45% { background-color: rgba(217, 119, 6, 0.08); }\r\n  100% { background-color: transparent; }\r\n}\r\n\r\n@keyframes rosStarPop {\r\n  0% { transform: scale(1); }\r\n  45% { transform: scale(1.24); }\r\n  100% { transform: scale(1); }\r\n}\r\n\r\n@keyframes rosSkelShimmer {\r\n  0% { opacity: 0.45; }\r\n  50% { opacity: 0.85; }\r\n  100% { opacity: 0.45; }\r\n}\r\n\r\n@keyframes rosToastDrain {\r\n  from { transform: scaleX(1); }\r\n  to { transform: scaleX(0); }\r\n}\r\n\r\n.ros-canvas-enter {\r\n  animation: rosCanvasEnter 180ms cubic-bezier(0.22, 1, 0.36, 1) both;\r\n}\r\n\r\n.ros-sync-pill {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 6px;\r\n  font-size: 11.5px;\r\n  color: var(--muted);\r\n  padding: 2px 8px;\r\n  border-radius: 99px;\r\n  background: var(--paper);\r\n  border: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-sync-dot {\r\n  width: 6px;\r\n  height: 6px;\r\n  border-radius: 50%;\r\n  background: var(--iris);\r\n  animation: rosSkelShimmer 1.1s ease-in-out infinite;\r\n}\r\n\r\n.ros-paper-flash {\r\n  border-radius: 10px;\r\n  animation: rosPaperFlash 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;\r\n}\r\n\r\n.ros-doc-line {\r\n  transition: background-color 180ms ease, box-shadow 180ms ease;\r\n}\r\n\r\n.ros-doc-line.active {\r\n  box-shadow: inset 2.5px 0 0 var(--iris);\r\n  padding-left: 10px;\r\n  border-radius: 4px;\r\n}\r\n\r\n.ros-star-btn {\r\n  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), color 140ms ease;\r\n  cursor: pointer;\r\n}\r\n\r\n.ros-star-btn.pop {\r\n  animation: rosStarPop 200ms cubic-bezier(0.22, 1, 0.36, 1);\r\n}\r\n\r\n.ros-modal-bg {\r\n  animation: rosModalBgIn 140ms ease-out both;\r\n}\r\n\r\n.ros-modal {\r\n  animation: rosModalCardIn 170ms cubic-bezier(0.22, 1, 0.36, 1) both;\r\n}\r\n\r\n.ros-toast {\r\n  position: fixed;\r\n  overflow: hidden;\r\n}\r\n\r\n.ros-toast-bar {\r\n  position: absolute;\r\n  left: 0;\r\n  right: 0;\r\n  bottom: 0;\r\n  height: 2px;\r\n  background: rgba(165, 180, 252, 0.85);\r\n  transform-origin: left center;\r\n  animation-name: rosToastDrain;\r\n  animation-timing-function: linear;\r\n  animation-fill-mode: forwards;\r\n}\r\n\r\n/* Editorial warm-paper skeleton for cold load */\r\n.ros-skeleton-doc {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 20px;\r\n  padding: 6px 0;\r\n}\r\n\r\n.ros-skel-bar {\r\n  border-radius: 6px;\r\n  background: var(--subtle);\r\n  animation: rosSkelShimmer 1.3s ease-in-out infinite;\r\n}\r\n\r\n/* Read-only section focus highlight (driven by Agent ui_action focus_section) */\r\n.ros-canvas [data-section] {\r\n  scroll-margin-top: 20px;\r\n  border-radius: 10px;\r\n}\r\n\r\n@keyframes rosSectionFocus {\r\n  0% {\r\n    background: var(--iris-soft);\r\n    box-shadow: 0 0 0 6px var(--iris-soft);\r\n  }\r\n  100% {\r\n    background: transparent;\r\n    box-shadow: 0 0 0 0 transparent;\r\n  }\r\n}\r\n\r\n.ros-section-focus {\r\n  animation: rosSectionFocus 1.6s ease-out;\r\n}\r\n\r\n@media (prefers-reduced-motion: reduce) {\r\n  .ros-canvas-enter,\r\n  .ros-modal-bg,\r\n  .ros-modal,\r\n  .ros-paper-flash,\r\n  .ros-section-focus,\r\n  .ros-star-btn.pop,\r\n  .ros-sync-dot,\r\n  .ros-skel-bar {\r\n    animation: none !important;\r\n    transition: none !important;\r\n  }\r\n}\r\n";
+const css = "/*\r\n * Recruitment OS v4 · Right-Hand Canvas Styles\r\n * Design tokens copied verbatim from design/v4/contracts/design-tokens.md.\r\n * Scoped under .ros-canvas to avoid colliding with DSH host styles.\r\n */\r\n\r\n.ros-canvas {\r\n  --rail: #F3F2EE;\r\n  --paper: #F9F8F5;\r\n  --surface: #FFFFFF;\r\n  --subtle: #F3F2EE;\r\n  --hover: #EAE8E2;\r\n  --ink: #191918;\r\n  --text: #42423F;\r\n  --muted: #787772;\r\n  --soft: #A6A59E;\r\n  --line: rgba(25, 25, 24, .08);\r\n  --line-soft: rgba(25, 25, 24, .05);\r\n  --iris: #5B5BD6;\r\n  --iris-soft: rgba(91, 91, 214, .09);\r\n  --green: #18794E;\r\n  --green-soft: rgba(24, 121, 78, .09);\r\n  --amber: #AD5700;\r\n  --amber-soft: rgba(173, 87, 0, .09);\r\n  --red: #CD2B31;\r\n  --red-soft: rgba(205, 43, 49, .08);\r\n  --shadow-card: 0 1px 2px rgba(25, 25, 24, .03), 0 10px 30px -14px rgba(25, 25, 24, .07);\r\n  --shadow-modal: 0 28px 72px -18px rgba(25, 25, 24, .24);\r\n\r\n  display: flex;\r\n  flex-direction: column;\r\n  height: 100%;\r\n  min-height: 0;\r\n  overflow: hidden;\r\n  background: var(--surface);\r\n  color: var(--ink);\r\n  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif;\r\n  font-size: 14px;\r\n  line-height: 1.55;\r\n  -webkit-font-smoothing: antialiased;\r\n}\r\n\r\n[data-theme=\"dark\"] .ros-canvas,\r\n.ros-canvas[data-theme=\"dark\"] {\r\n  --rail: #10100F;\r\n  --paper: #141413;\r\n  --surface: #1A1A19;\r\n  --subtle: #232321;\r\n  --hover: #2B2B28;\r\n  --ink: #F3F2EE;\r\n  --text: #D5D4CE;\r\n  --muted: #9A9992;\r\n  --soft: #6F6E68;\r\n  --line: rgba(243, 242, 238, .09);\r\n  --line-soft: rgba(243, 242, 238, .055);\r\n  --iris: #8484F5;\r\n  --iris-soft: rgba(132, 132, 245, .15);\r\n  --green: #3DD68C;\r\n  --green-soft: rgba(61, 214, 140, .13);\r\n  --amber: #F5A524;\r\n  --amber-soft: rgba(245, 165, 36, .14);\r\n  --red: #F87171;\r\n  --red-soft: rgba(248, 113, 113, .14);\r\n  --shadow-card: 0 2px 10px rgba(0, 0, 0, .35);\r\n  --shadow-modal: 0 28px 72px -18px rgba(0, 0, 0, .65);\r\n}\r\n\r\n.ros-canvas *,\r\n.ros-canvas *::before,\r\n.ros-canvas *::after {\r\n  box-sizing: border-box;\r\n}\r\n\r\n.ros-canvas button {\r\n  font: inherit;\r\n  color: inherit;\r\n  cursor: pointer;\r\n  background: none;\r\n  border: 0;\r\n}\r\n\r\n.ros-canvas .num {\r\n  font-variant-numeric: tabular-nums;\r\n}\r\n\r\n@keyframes rosFadeIn {\r\n  from { opacity: 0; transform: translateY(4px); }\r\n  to { opacity: 1; transform: none; }\r\n}\r\n\r\n@keyframes rosOrbit {\r\n  to { transform: rotate(360deg); }\r\n}\r\n\r\n@keyframes rosPulseDot {\r\n  0%, 100% { opacity: .3; transform: scale(.85); }\r\n  50% { opacity: 1; transform: scale(1.1); }\r\n}\r\n\r\n/* Contextual Top Bar (56px visual horizon) */\r\n.ros-canvas-head {\r\n  height: 56px;\r\n  padding: 0 36px;\r\n  border-bottom: 1px solid var(--line-soft);\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 14px;\r\n  flex: none;\r\n}\r\n\r\n.ros-head-left {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 16px;\r\n  min-width: 0;\r\n}\r\n\r\n.ros-head-right {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 10px;\r\n  font-size: 12px;\r\n  color: var(--muted);\r\n  flex: none;\r\n}\r\n\r\n.ros-crumb-bar {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 7px;\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n  white-space: nowrap;\r\n  overflow: hidden;\r\n  text-overflow: ellipsis;\r\n}\r\n\r\n.ros-crumb-link {\r\n  color: var(--muted);\r\n  font-size: 13px;\r\n  transition: color .12s;\r\n}\r\n\r\n.ros-crumb-link:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-crumb-cur {\r\n  color: var(--ink);\r\n  font-weight: 600;\r\n}\r\n\r\n.ros-tabs {\r\n  display: inline-flex;\r\n  gap: 22px;\r\n}\r\n\r\n.ros-tab {\r\n  font-size: 13px;\r\n  font-weight: 500;\r\n  color: var(--muted);\r\n  padding: 17px 0;\r\n  position: relative;\r\n  transition: color .14s;\r\n  white-space: nowrap;\r\n}\r\n\r\n.ros-tab:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-tab.active {\r\n  color: var(--ink);\r\n  font-weight: 600;\r\n}\r\n\r\n.ros-tab.active::after {\r\n  content: '';\r\n  position: absolute;\r\n  left: 0;\r\n  right: 0;\r\n  bottom: 0;\r\n  height: 2px;\r\n  background: var(--ink);\r\n  border-radius: 2px;\r\n}\r\n\r\n/* Scrollable Reading Body */\r\n.ros-canvas-body {\r\n  flex: 1;\r\n  min-height: 0;\r\n  overflow-y: auto;\r\n  padding: 34px 48px 72px;\r\n}\r\n\r\n.ros-canvas-inner {\r\n  max-width: 820px;\r\n  margin: 0 auto;\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 36px;\r\n  animation: rosFadeIn .2s ease-out;\r\n}\r\n\r\n/* Shared Editorial Typography */\r\n.ros-sec-head {\r\n  display: flex;\r\n  align-items: baseline;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  margin-bottom: 14px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-sec-title {\r\n  font-size: 15px;\r\n  font-weight: 650;\r\n  letter-spacing: -.015em;\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-sec-meta {\r\n  font-size: 12px;\r\n  color: var(--soft);\r\n}\r\n\r\n.ros-text-link {\r\n  font-size: 12.5px;\r\n  color: var(--muted);\r\n  transition: color .12s;\r\n}\r\n\r\n.ros-text-link:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-text-link.active {\r\n  color: var(--ink);\r\n  font-weight: 600;\r\n}\r\n\r\n/* External Fact Labels (quiet editorial metadata — no pill clutter in top bar) */\r\n.ros-fact-bar {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 10px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-fact-chip {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 3px;\r\n  padding: 0;\r\n  font-size: 11px;\r\n  font-weight: 450;\r\n  background: transparent;\r\n  color: var(--soft);\r\n}\r\n\r\n.ros-fact-chip.green { background: transparent; color: var(--green); }\r\n.ros-fact-chip.amber { background: transparent; color: var(--amber); }\r\n.ros-fact-chip.red { background: transparent; color: var(--red); }\r\n\r\n/* Status Text */\r\n.ros-status {\r\n  font-size: 12.5px;\r\n  font-weight: 500;\r\n  color: var(--muted);\r\n  white-space: nowrap;\r\n}\r\n.ros-status.red { color: var(--red); }\r\n.ros-status.amber { color: var(--amber); }\r\n.ros-status.iris { color: var(--iris); }\r\n.ros-status.green { color: var(--green); }\r\n\r\n/* 6-Stage Horizontal Breathing Progress Track */\r\n.ros-stage-track {\r\n  display: grid;\r\n  grid-template-columns: repeat(6, 1fr);\r\n  align-items: center;\r\n  padding: 8px 0;\r\n}\r\n\r\n.ros-st-node {\r\n  position: relative;\r\n  display: flex;\r\n  flex-direction: column;\r\n  align-items: center;\r\n  gap: 6px;\r\n}\r\n\r\n.ros-st-node:not(:last-child)::after {\r\n  content: '';\r\n  position: absolute;\r\n  top: 9px;\r\n  left: calc(50% + 10px);\r\n  right: calc(-50% + 10px);\r\n  height: 1.5px;\r\n  background: var(--line);\r\n}\r\n\r\n.ros-st-node.done:not(:last-child)::after {\r\n  background: var(--green);\r\n}\r\n\r\n.ros-st-dot {\r\n  position: relative;\r\n  z-index: 1;\r\n  width: 19px;\r\n  height: 19px;\r\n  border-radius: 99px;\r\n  display: grid;\r\n  place-items: center;\r\n  background: var(--surface);\r\n  border: 1.5px solid var(--line);\r\n  font-size: 10px;\r\n  font-weight: 700;\r\n  color: var(--soft);\r\n}\r\n\r\n.ros-st-node.done .ros-st-dot {\r\n  border-color: var(--green);\r\n  background: var(--green-soft);\r\n  color: var(--green);\r\n}\r\n\r\n.ros-st-node.now .ros-st-dot {\r\n  border-color: var(--iris);\r\n  background: var(--iris-soft);\r\n  color: var(--iris);\r\n}\r\n\r\n.ros-st-node.now .ros-st-dot::after {\r\n  content: '';\r\n  position: absolute;\r\n  inset: -2.5px;\r\n  border: 1.5px solid transparent;\r\n  border-top-color: var(--iris);\r\n  border-radius: 99px;\r\n  animation: rosOrbit 1s linear infinite;\r\n}\r\n\r\n.ros-st-node.wait .ros-st-dot {\r\n  border-color: var(--amber);\r\n  background: var(--amber-soft);\r\n  color: var(--amber);\r\n}\r\n\r\n.ros-st-lbl {\r\n  font-size: 11.5px;\r\n  color: var(--muted);\r\n}\r\n\r\n.ros-st-node.now .ros-st-lbl,\r\n.ros-st-node.wait .ros-st-lbl {\r\n  color: var(--ink);\r\n  font-weight: 550;\r\n}\r\n\r\n/* Signature Gliding Hover List (Preserved Verbatim from v4) */\r\n.ros-clean-list {\r\n  display: flex;\r\n  flex-direction: column;\r\n  border-top: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-clean-row {\r\n  padding: 13px 4px;\r\n  border-bottom: 1px solid var(--line-soft);\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 14px;\r\n  cursor: pointer;\r\n  transition: background .12s, padding .12s;\r\n  border-radius: 8px;\r\n}\r\n\r\n.ros-clean-row:hover {\r\n  background: var(--paper);\r\n  padding-inline: 12px;\r\n  margin-inline: -8px;\r\n}\r\n\r\n.ros-clean-row.static {\r\n  cursor: default;\r\n}\r\n\r\n.ros-clean-row.static:hover {\r\n  background: transparent;\r\n  padding-inline: 4px;\r\n  margin-inline: 0;\r\n}\r\n\r\n.ros-cr-left {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 12px;\r\n  min-width: 0;\r\n}\r\n\r\n.ros-mono {\r\n  width: 30px;\r\n  height: 30px;\r\n  border-radius: 99px;\r\n  background: var(--subtle);\r\n  color: var(--ink);\r\n  display: grid;\r\n  place-items: center;\r\n  font-size: 12px;\r\n  font-weight: 600;\r\n  flex: none;\r\n}\r\n\r\n.ros-cr-name {\r\n  font-size: 14px;\r\n  font-weight: 600;\r\n  color: var(--ink);\r\n  white-space: nowrap;\r\n}\r\n\r\n.ros-cr-role {\r\n  font-size: 12.5px;\r\n  color: var(--muted);\r\n  margin-left: 8px;\r\n  font-weight: 400;\r\n}\r\n\r\n/* Candidate Artifact View */\r\n.ros-doc-head {\r\n  display: flex;\r\n  align-items: flex-start;\r\n  justify-content: space-between;\r\n  gap: 18px;\r\n  padding-bottom: 24px;\r\n  border-bottom: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-doc-name {\r\n  font-size: 24px;\r\n  font-weight: 700;\r\n  letter-spacing: -.03em;\r\n  color: var(--ink);\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 10px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-doc-meta {\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n  margin-top: 5px;\r\n}\r\n\r\n.ros-doc-head-sub {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 6px;\r\n}\r\n\r\n.ros-memo-btn {\r\n  font-size: 11.5px;\r\n}\r\n\r\n.ros-pin-row {\r\n  display: flex;\r\n  gap: 7px;\r\n  flex-wrap: wrap;\r\n  margin-top: 10px;\r\n}\r\n\r\n.ros-pin-tag {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  padding: 3px 10px;\r\n  border-radius: 99px;\r\n  background: var(--red-soft);\r\n  color: var(--red);\r\n  font-size: 11.5px;\r\n  font-weight: 600;\r\n}\r\n\r\n.ros-pin-tag.neutral {\r\n  background: var(--subtle);\r\n  color: var(--text);\r\n  font-weight: 500;\r\n}\r\n\r\n.ros-doc-block {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 12px;\r\n}\r\n\r\n.ros-doc-line {\r\n  display: grid;\r\n  grid-template-columns: 28px 1fr;\r\n  gap: 12px;\r\n  font-size: 13.5px;\r\n  line-height: 1.78;\r\n  color: var(--text);\r\n  padding: 7px 10px;\r\n  margin: 0 -10px;\r\n  border-radius: 8px;\r\n  cursor: pointer;\r\n  transition: background .12s;\r\n  overflow-wrap: anywhere;\r\n}\r\n\r\n.ros-doc-line:hover {\r\n  background: var(--paper);\r\n}\r\n\r\n.ros-doc-line.active {\r\n  background: var(--iris-soft);\r\n}\r\n\r\n.ros-doc-no {\r\n  color: var(--soft);\r\n  font-size: 12px;\r\n  padding-top: 2px;\r\n}\r\n\r\n.ros-resume-group {\r\n  font-size: 11.5px;\r\n  font-weight: 600;\r\n  color: var(--soft);\r\n  letter-spacing: .03em;\r\n  margin: 16px 0 6px;\r\n  padding-top: 12px;\r\n  border-top: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-resume-group:first-child {\r\n  margin-top: 4px;\r\n  padding-top: 0;\r\n  border-top: 0;\r\n}\r\n\r\n.ros-exp-meta {\r\n  display: flex;\r\n  align-items: baseline;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  margin-bottom: 4px;\r\n}\r\n\r\n.ros-exp-co {\r\n  font-size: 13.5px;\r\n  font-weight: 600;\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-exp-time {\r\n  font-size: 12px;\r\n  color: var(--soft);\r\n  flex: none;\r\n}\r\n\r\n.ros-crit-item {\r\n  display: flex;\r\n  align-items: baseline;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  padding: 9px 10px;\r\n  margin: 0 -10px;\r\n  border-radius: 8px;\r\n  cursor: pointer;\r\n  transition: background .12s;\r\n}\r\n\r\n.ros-crit-item:hover {\r\n  background: var(--paper);\r\n}\r\n\r\n.ros-crit-item.active {\r\n  background: var(--iris-soft);\r\n}\r\n\r\n/* Sequential Round Rail */\r\n.ros-seq-rail {\r\n  display: flex;\r\n  align-items: center;\r\n  padding: 16px 0;\r\n  border-bottom: 1px solid var(--line-soft);\r\n  overflow-x: auto;\r\n}\r\n\r\n.ros-seq-n {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n  flex: none;\r\n}\r\n\r\n.ros-seq-d {\r\n  width: 20px;\r\n  height: 20px;\r\n  border-radius: 99px;\r\n  display: grid;\r\n  place-items: center;\r\n  font-size: 10.5px;\r\n  font-weight: 700;\r\n  border: 1.5px solid var(--line);\r\n  color: var(--soft);\r\n}\r\n\r\n.ros-seq-d.done { border-color: var(--green); background: var(--green-soft); color: var(--green); }\r\n.ros-seq-d.caution { border-color: var(--amber); background: var(--amber-soft); color: var(--amber); }\r\n.ros-seq-d.now { border-color: var(--iris); background: var(--iris-soft); color: var(--iris); }\r\n\r\n.ros-seq-l {\r\n  flex: 1;\r\n  min-width: 20px;\r\n  height: 1.5px;\r\n  background: var(--line);\r\n  margin: 0 10px;\r\n}\r\n\r\n.ros-seq-l.done {\r\n  background: var(--green);\r\n}\r\n\r\n/* Notes, JD Box, Transcript, Collapsible Toggle */\r\n.ros-risk-note {\r\n  padding: 12px 16px;\r\n  border-radius: 10px;\r\n  background: var(--paper);\r\n  border-left: 3px solid var(--amber);\r\n  font-size: 13px;\r\n  line-height: 1.68;\r\n  color: var(--text);\r\n}\r\n\r\n.ros-jd-box {\r\n  padding: 20px 22px;\r\n  border-radius: 12px;\r\n  background: var(--paper);\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 14px;\r\n  font-size: 13px;\r\n  line-height: 1.75;\r\n  color: var(--text);\r\n  white-space: pre-line;\r\n}\r\n\r\n.ros-jd-sec-t {\r\n  font-size: 12px;\r\n  font-weight: 650;\r\n  color: var(--ink);\r\n  margin-bottom: 4px;\r\n}\r\n\r\n.ros-ts-badge {\r\n  font-size: 11px;\r\n  font-weight: 600;\r\n  color: var(--iris);\r\n  background: var(--iris-soft);\r\n  padding: 1px 6px;\r\n  border-radius: 5px;\r\n  margin-right: 8px;\r\n}\r\n\r\n.ros-auto-toggle {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  padding: 12px 0;\r\n  border-top: 1px solid var(--line-soft);\r\n  font-size: 12.5px;\r\n  color: var(--muted);\r\n  cursor: pointer;\r\n}\r\n\r\n.ros-auto-toggle:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-btn {\r\n  height: 34px;\r\n  padding: 0 16px;\r\n  border-radius: 99px;\r\n  border: 1px solid var(--line);\r\n  background: var(--surface);\r\n  color: var(--ink);\r\n  font-size: 13px;\r\n  font-weight: 500;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  gap: 6px;\r\n  transition: all .14s;\r\n}\r\n\r\n.ros-btn:hover {\r\n  background: var(--subtle);\r\n}\r\n\r\n/* Empty / Loading / Error States */\r\n.ros-state-box {\r\n  padding: 40px 24px;\r\n  border-radius: 12px;\r\n  background: var(--paper);\r\n  display: flex;\r\n  flex-direction: column;\r\n  align-items: center;\r\n  justify-content: center;\r\n  text-align: center;\r\n  gap: 10px;\r\n}\r\n\r\n.ros-state-title {\r\n  font-size: 14.5px;\r\n  font-weight: 600;\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-state-desc {\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n  max-width: 380px;\r\n  line-height: 1.65;\r\n}\r\n\r\n.ros-thinking-row {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n}\r\n\r\n.ros-thinking-dot {\r\n  width: 6px;\r\n  height: 6px;\r\n  border-radius: 99px;\r\n  background: var(--iris);\r\n  animation: rosPulseDot .9s ease-in-out infinite;\r\n}\r\n\r\n/* Responsive (Half-screen <= 1080px & Mobile 390px) */\r\n@media (max-width: 1080px) {\r\n  .ros-canvas-head {\r\n    padding: 0 24px;\r\n  }\r\n  .ros-canvas-body {\r\n    padding: 24px 24px 64px;\r\n  }\r\n}\r\n\r\n@media (max-width: 520px) {\r\n  .ros-canvas-head {\r\n    padding: 0 16px;\r\n    height: auto;\r\n    min-height: 52px;\r\n    flex-wrap: wrap;\r\n    padding-top: 8px;\r\n    padding-bottom: 8px;\r\n  }\r\n  .ros-canvas-body {\r\n    padding: 18px 16px 48px;\r\n  }\r\n  .ros-doc-head {\r\n    flex-direction: column;\r\n  }\r\n  .ros-doc-name {\r\n    font-size: 20px;\r\n  }\r\n  .ros-cr-role {\r\n    display: block;\r\n    margin-left: 0;\r\n    margin-top: 2px;\r\n  }\r\n}\r\n\r\n/* v4 Footer & Centered Confirmation Modal (verbatim design-tokens.md) */\r\n.ros-doc-foot {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  padding-top: 20px;\r\n  border-top: 1px solid var(--line-soft);\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-btn.dark {\r\n  background: var(--ink);\r\n  border-color: var(--ink);\r\n  color: var(--surface);\r\n}\r\n\r\n.ros-btn.dark:hover {\r\n  opacity: .88;\r\n}\r\n\r\n.ros-btn:disabled {\r\n  opacity: .6;\r\n  cursor: not-allowed;\r\n}\r\n\r\n.ros-modal-bg {\r\n  position: fixed;\r\n  inset: 0;\r\n  z-index: 100;\r\n  background: rgba(25, 25, 24, .32);\r\n  backdrop-filter: blur(6px);\r\n  -webkit-backdrop-filter: blur(6px);\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  padding: 24px;\r\n}\r\n\r\n.ros-modal {\r\n  width: 100%;\r\n  max-width: 520px;\r\n  background: var(--surface);\r\n  border-radius: 20px;\r\n  border: 1px solid var(--line);\r\n  box-shadow: var(--shadow-modal);\r\n  padding: 26px 28px;\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 16px;\r\n  animation: rosFadeIn .16s ease-out;\r\n}\r\n\r\n.ros-m-field {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 5px;\r\n  font-size: 12px;\r\n  color: var(--muted);\r\n}\r\n\r\n.ros-m-field input,\r\n.ros-m-field textarea {\r\n  padding: 9px 11px;\r\n  border-radius: 8px;\r\n  border: 1px solid var(--line);\r\n  background: var(--surface);\r\n  color: var(--ink);\r\n  font: inherit;\r\n  font-size: 13px;\r\n  outline: none;\r\n}\r\n\r\n.ros-m-field input:focus,\r\n.ros-m-field textarea:focus {\r\n  border-color: var(--muted);\r\n}\r\n\r\n/* v4 Batch Float & 5-Second Undo Toast (verbatim design-tokens.md) */\r\n.ros-batch-float {\r\n  position: sticky;\r\n  bottom: 0;\r\n  margin-top: 12px;\r\n  background: var(--ink);\r\n  color: var(--surface);\r\n  padding: 10px 16px;\r\n  border-radius: 99px;\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 14px;\r\n  font-size: 12.5px;\r\n  box-shadow: var(--shadow-modal);\r\n}\r\n\r\n.ros-batch-float button {\r\n  color: var(--surface);\r\n  font-size: 12px;\r\n  padding: 4px 10px;\r\n  border-radius: 99px;\r\n  background: rgba(128, 128, 128, .24);\r\n}\r\n\r\n.ros-batch-float button:hover {\r\n  background: rgba(128, 128, 128, .38);\r\n}\r\n\r\n.ros-toast {\r\n  position: fixed;\r\n  top: 20px;\r\n  left: 50%;\r\n  transform: translateX(-50%) translateY(-8px);\r\n  background: var(--ink);\r\n  color: var(--surface);\r\n  padding: 9px 16px;\r\n  border-radius: 99px;\r\n  font-size: 12.5px;\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 12px;\r\n  opacity: 0;\r\n  pointer-events: none;\r\n  transition: all .16s;\r\n  z-index: 120;\r\n}\r\n\r\n.ros-toast.show {\r\n  opacity: 1;\r\n  pointer-events: auto;\r\n  transform: translateX(-50%) translateY(0);\r\n}\r\n\r\n/* v4 Free Slot Pills (verbatim design-tokens.md) */\r\n.ros-slot-grid {\r\n  display: flex;\r\n  gap: 8px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-slot-pill {\r\n  padding: 6px 12px;\r\n  border-radius: 10px;\r\n  border: 1px solid var(--line);\r\n  background: var(--surface);\r\n  font-size: 12px;\r\n  color: var(--text);\r\n  transition: all .12s;\r\n}\r\n\r\n.ros-slot-pill:hover {\r\n  border-color: var(--muted);\r\n}\r\n\r\n.ros-slot-pill.active {\r\n  background: var(--iris-soft);\r\n  border-color: var(--iris);\r\n  color: var(--iris);\r\n  font-weight: 600;\r\n}\r\n\r\n/* =========================================================================\r\n * Canvas UX & Motion Polish (UI-FREEZE compliant: zero token/layout changes)\r\n * ========================================================================= */\r\n\r\n@keyframes rosCanvasEnter {\r\n  from {\r\n    opacity: 0;\r\n    transform: translateY(6px);\r\n  }\r\n  to {\r\n    opacity: 1;\r\n    transform: translateY(0);\r\n  }\r\n}\r\n\r\n@keyframes rosModalBgIn {\r\n  from { opacity: 0; }\r\n  to { opacity: 1; }\r\n}\r\n\r\n@keyframes rosModalCardIn {\r\n  from {\r\n    opacity: 0;\r\n    transform: translateY(5px) scale(0.985);\r\n  }\r\n  to {\r\n    opacity: 1;\r\n    transform: translateY(0) scale(1);\r\n  }\r\n}\r\n\r\n@keyframes rosPaperFlash {\r\n  0% { background-color: rgba(217, 119, 6, 0.14); }\r\n  45% { background-color: rgba(217, 119, 6, 0.08); }\r\n  100% { background-color: transparent; }\r\n}\r\n\r\n@keyframes rosStarPop {\r\n  0% { transform: scale(1); }\r\n  45% { transform: scale(1.24); }\r\n  100% { transform: scale(1); }\r\n}\r\n\r\n@keyframes rosSkelShimmer {\r\n  0% { opacity: 0.45; }\r\n  50% { opacity: 0.85; }\r\n  100% { opacity: 0.45; }\r\n}\r\n\r\n@keyframes rosToastDrain {\r\n  from { transform: scaleX(1); }\r\n  to { transform: scaleX(0); }\r\n}\r\n\r\n.ros-canvas-enter {\r\n  animation: rosCanvasEnter 180ms cubic-bezier(0.22, 1, 0.36, 1) both;\r\n}\r\n\r\n.ros-sync-pill {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 6px;\r\n  font-size: 11.5px;\r\n  color: var(--muted);\r\n  padding: 2px 8px;\r\n  border-radius: 99px;\r\n  background: var(--paper);\r\n  border: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-sync-dot {\r\n  width: 6px;\r\n  height: 6px;\r\n  border-radius: 50%;\r\n  background: var(--iris);\r\n  animation: rosSkelShimmer 1.1s ease-in-out infinite;\r\n}\r\n\r\n.ros-paper-flash {\r\n  border-radius: 10px;\r\n  animation: rosPaperFlash 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;\r\n}\r\n\r\n.ros-doc-line {\r\n  transition: background-color 180ms ease, box-shadow 180ms ease;\r\n}\r\n\r\n.ros-doc-line.active {\r\n  box-shadow: inset 2.5px 0 0 var(--iris);\r\n  padding-left: 10px;\r\n  border-radius: 4px;\r\n}\r\n\r\n.ros-star-btn {\r\n  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), color 140ms ease;\r\n  cursor: pointer;\r\n}\r\n\r\n.ros-star-btn.pop {\r\n  animation: rosStarPop 200ms cubic-bezier(0.22, 1, 0.36, 1);\r\n}\r\n\r\n.ros-modal-bg {\r\n  animation: rosModalBgIn 140ms ease-out both;\r\n}\r\n\r\n.ros-modal {\r\n  animation: rosModalCardIn 170ms cubic-bezier(0.22, 1, 0.36, 1) both;\r\n}\r\n\r\n.ros-toast {\r\n  position: fixed;\r\n  overflow: hidden;\r\n}\r\n\r\n.ros-toast-bar {\r\n  position: absolute;\r\n  left: 0;\r\n  right: 0;\r\n  bottom: 0;\r\n  height: 2px;\r\n  background: rgba(165, 180, 252, 0.85);\r\n  transform-origin: left center;\r\n  animation-name: rosToastDrain;\r\n  animation-timing-function: linear;\r\n  animation-fill-mode: forwards;\r\n}\r\n\r\n/* Editorial warm-paper skeleton for cold load */\r\n.ros-skeleton-doc {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 20px;\r\n  padding: 6px 0;\r\n}\r\n\r\n.ros-skel-bar {\r\n  border-radius: 6px;\r\n  background: var(--subtle);\r\n  animation: rosSkelShimmer 1.3s ease-in-out infinite;\r\n}\r\n\r\n/* Read-only section focus highlight (driven by Agent ui_action focus_section) */\r\n.ros-canvas [data-section] {\r\n  scroll-margin-top: 20px;\r\n  border-radius: 10px;\r\n}\r\n\r\n@keyframes rosSectionFocus {\r\n  0% {\r\n    background: var(--iris-soft);\r\n    box-shadow: 0 0 0 6px var(--iris-soft);\r\n  }\r\n  100% {\r\n    background: transparent;\r\n    box-shadow: 0 0 0 0 transparent;\r\n  }\r\n}\r\n\r\n.ros-section-focus {\r\n  animation: rosSectionFocus 1.6s ease-out;\r\n}\r\n\r\n@media (prefers-reduced-motion: reduce) {\r\n  .ros-canvas-enter,\r\n  .ros-modal-bg,\r\n  .ros-modal,\r\n  .ros-paper-flash,\r\n  .ros-section-focus,\r\n  .ros-star-btn.pop,\r\n  .ros-sync-dot,\r\n  .ros-skel-bar {\r\n    animation: none !important;\r\n    transition: none !important;\r\n  }\r\n}\r\n";
 if (typeof document !== "undefined" && document.querySelector("style[data-recruitment-css=\"" + CSS_KEY + "\"]") === null) {
 	const style = document.createElement("style");
 	style.setAttribute("data-recruitment-css", CSS_KEY);
@@ -29816,11 +29896,28 @@ function navigateToRoute(route, replace = false) {
 	window.dispatchEvent(new HashChangeEvent("hashchange"));
 }
 // src/app/ChatPanel.tsx
+function buildMorningBriefing(overview) {
+	const fallback = "你好，我是招聘协作 Agent。你可以直接告诉我需要推进哪位候选人，或拖入简历文件自动建档。";
+	if (!overview) return fallback;
+	const hour = (/* @__PURE__ */ new Date()).getHours();
+	const greeting = hour < 12 ? "早上好" : hour < 18 ? "下午好" : "晚上好";
+	const { applicationsActive, awaitingScreening, interviewing, awaitingDecision } = overview.counts;
+	if (applicationsActive === 0 && overview.applications.length === 0) return `${greeting}。当前暂无在办候选人，你可以点击左侧「＋ 新建岗位」或直接拖入简历文件开始建档。`;
+	const overdueScorecards = overview.applications.reduce((sum, app) => sum + app.interviews.reduce((s, iv) => s + (iv.scorecards?.overdue ?? 0), 0), 0);
+	const items = [];
+	if (awaitingScreening > 0) items.push(`待初筛 ${awaitingScreening} 人`);
+	if (interviewing > 0) items.push(`面试中 ${interviewing} 人`);
+	if (awaitingDecision > 0) items.push(`待决策 ${awaitingDecision} 人`);
+	if (overdueScorecards > 0) items.push(`${overdueScorecards} 份面评已超时`);
+	const top = overview.applications[0];
+	const topNote = top ? `当前首位待推进：${top.candidateName}（${top.jobTitle}）。` : "";
+	return `${greeting}。${items.length > 0 ? `当前有 ${applicationsActive} 位在办候选人（${items.join("、")}）。` : `当前共有 ${overview.applications.length} 位候选人档案。`}${topNote}点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。`;
+}
 function quickPromptsForRoute(route) {
 	if (route.kind === "application") return [
 		{
 			slug: "risk-summary",
-			prompt: "总结这位候选人的核心风险点"
+			prompt: "提炼这位候选人的核心风险点"
 		},
 		{
 			slug: "free-slots",
@@ -29833,18 +29930,25 @@ function quickPromptsForRoute(route) {
 	];
 	if (route.kind === "job") return [{
 		slug: "job-bottlenecks",
-		prompt: "汇总当前岗位各阶段推进瓶颈"
+		prompt: "汇总当前岗位推进瓶颈"
 	}, {
 		slug: "job-priority",
-		prompt: "哪些候选人最值得优先推进？"
+		prompt: "筛选最值得优先推进的候选人"
 	}];
-	return [{
-		slug: "today-top3",
-		prompt: "今天最优先处理的 3 位候选人是谁？"
-	}, {
-		slug: "pending-scorecards",
-		prompt: "查看当前待提交面评的进展"
-	}];
+	return [
+		{
+			slug: "today-top3",
+			prompt: "梳理今天最优先推进的候选人"
+		},
+		{
+			slug: "pending-scorecards",
+			prompt: "查看待提交面评与催办进展"
+		},
+		{
+			slug: "open-talent",
+			prompt: "打开人才库检索候选人"
+		}
+	];
 }
 function formatUiActionNotice(action) {
 	if (action.label) return action.label;
@@ -29872,12 +29976,24 @@ function suggestActionKey(action) {
 function suggestActionTestId(action) {
 	return `app-chat-suggest-${action.modal || action.route || "action"}`;
 }
-function ChatPanel({ sid, route, currentJobId, defaultJobId, onCollapse, onResizeStart, onResizeReset, onToolCompleted, onUiAction, onExecuteSuggestedAction, onUploadStarted }) {
-	const [messages, setMessages] = (0, import_react.useState)([{
+function ChatPanel({ sid, route, overview, currentJobId, defaultJobId, onCollapse, onResizeStart, onResizeReset, onToolCompleted, onUiAction, onExecuteSuggestedAction, onUploadStarted }) {
+	const [messages, setMessages] = (0, import_react.useState)(() => [{
 		id: "welcome",
 		role: "ai",
-		text: "你好，我是招聘协作 Agent。你可以直接告诉我需要推进哪位候选人，或拖入简历文件自动建档。"
+		text: buildMorningBriefing(overview)
 	}]);
+	(0, import_react.useEffect)(() => {
+		if (!overview) return;
+		const nextText = buildMorningBriefing(overview);
+		setMessages((prev) => {
+			if (prev.length !== 1 || prev[0]?.id !== "welcome") return prev;
+			if (prev[0].text === nextText) return prev;
+			return [{
+				...prev[0],
+				text: nextText
+			}];
+		});
+	}, [overview]);
 	const [input, setInput] = (0, import_react.useState)("");
 	const [sending, setSending] = (0, import_react.useState)(false);
 	const [unavailableMsg, setUnavailableMsg] = (0, import_react.useState)(null);
@@ -30202,13 +30318,16 @@ function ChatPanel({ sid, route, currentJobId, defaultJobId, onCollapse, onResiz
 	});
 }
 // src/app/JobsView.tsx
-function JobsView({ overview, onOpenJob }) {
+function cleanStageLabel$2(raw) {
+	return (raw.split("/")[0] ?? raw).trim() || raw;
+}
+function JobsView({ overview, onOpenJob, onNewJob }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "canvas-inner",
 		"data-testid": "app-jobs-view",
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 			className: "sec-head",
-			children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", {
 				className: "sec-title",
 				children: "在招岗位"
 			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -30220,7 +30339,13 @@ function JobsView({ overview, onOpenJob }) {
 					overview.counts.jobsOpen,
 					" 个在招"
 				]
-			})] })
+			})] }), onNewJob ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+				type: "button",
+				className: "btn dark",
+				"data-testid": "app-jobs-new-job",
+				onClick: onNewJob,
+				children: "＋ 新建岗位"
+			}) : null]
 		}), overview.jobs.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 			className: "empty-paper",
 			children: "当前暂无在招岗位"
@@ -30262,7 +30387,7 @@ function JobsView({ overview, onOpenJob }) {
 							children: st.count
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 							className: "st-lbl",
-							children: st.label
+							children: cleanStageLabel$2(st.label)
 						})]
 					}, st.code))
 				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
@@ -30274,12 +30399,39 @@ function JobsView({ overview, onOpenJob }) {
 	});
 }
 // src/app/QueueView.tsx
-function statusClass(tone) {
+function statusClass$1(tone) {
 	if (tone === "danger" || tone === "warn" || tone === "info" || tone === "ok") return tone;
 	return "";
 }
-function cleanStageLabel(raw) {
+function cleanStageLabel$1(raw) {
 	return (raw.split("/")[0] ?? raw).trim() || raw;
+}
+function deriveRowUrgency(app, evaluatedAtMs) {
+	const baseLabel = cleanStageLabel$1(app.stageLabel);
+	const overdueScorecards = app.interviews.reduce((sum, iv) => sum + (iv.scorecards?.overdue ?? 0), 0);
+	const enteredRaw = app.stageEnteredAt || app.appliedAt;
+	const enteredMs = enteredRaw ? Date.parse(enteredRaw) : NaN;
+	const elapsedHours = Number.isFinite(enteredMs) && evaluatedAtMs > enteredMs ? Math.floor((evaluatedAtMs - enteredMs) / 36e5) : 0;
+	if (app.filterKind === "screening" && elapsedHours >= 24) return {
+		label: `初筛 · ${elapsedHours}h 超时`,
+		toneClass: "danger"
+	};
+	if (overdueScorecards > 0) return {
+		label: `${baseLabel} · 面评超时 ${overdueScorecards} 份`,
+		toneClass: "danger"
+	};
+	return {
+		label: baseLabel,
+		toneClass: statusClass$1(app.stageTone)
+	};
+}
+function buildRowReason(app) {
+	const parts = [];
+	if (app.stageBlockedReason) parts.push(app.stageBlockedReason);
+	else if (app.nextStep.hasStep && app.nextStep.label) parts.push(app.nextStep.label);
+	const fact = app.interviewSummary || app.screeningSummary || app.materialSummary;
+	if (fact && !parts.some((p) => p.includes(fact))) parts.push(fact);
+	return parts.join(" · ");
 }
 function QueueView({ overview, filterRequest, onFilterConsumed, onOpenApplication, onUploadStarted }) {
 	const [stageFilter, setStageFilter] = (0, import_react.useState)("all");
@@ -30312,6 +30464,10 @@ function QueueView({ overview, filterRequest, onFilterConsumed, onOpenApplicatio
 	]);
 	const queueIds = (0, import_react.useMemo)(() => filtered.map((a) => a.id), [filtered]);
 	const defaultJobId = overview.jobs[0]?.id ?? "";
+	const evaluatedAtMs = (0, import_react.useMemo)(() => {
+		const parsed = overview.evaluatedAt ? Date.parse(overview.evaluatedAt) : NaN;
+		return Number.isFinite(parsed) ? parsed : Date.now();
+	}, [overview.evaluatedAt]);
 	const handleRowHover = (app) => {
 		if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
 		hoverTimerRef.current = setTimeout(() => {
@@ -30441,7 +30597,7 @@ function QueueView({ overview, filterRequest, onFilterConsumed, onOpenApplicatio
 							"data-testid": `app-queue-filter-${st.code}`,
 							onClick: () => setStageFilter(st.code),
 							children: [
-								cleanStageLabel(st.label),
+								cleanStageLabel$1(st.label),
 								" (",
 								st.count,
 								")"
@@ -30461,47 +30617,58 @@ function QueueView({ overview, filterRequest, onFilterConsumed, onOpenApplicatio
 				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { children: "当前筛选下暂无候选人" })
 			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 				className: "clean-list",
-				children: filtered.map((app) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-					type: "button",
-					className: "clean-row",
-					"data-testid": `app-queue-item-${app.id}`,
-					onMouseEnter: () => handleRowHover(app),
-					onMouseLeave: handleRowLeave,
-					onClick: () => onOpenApplication(app.id, queueIds),
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "cr-left",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "mono",
-							children: app.candidateInitial || app.candidateName.slice(0, 1)
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "cr-text",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "cr-title-line",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "cr-name",
-									children: app.candidateName
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "cr-role",
-									children: app.jobTitle
-								})]
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-								className: "cr-sub",
-								children: app.interviewSummary || app.screeningSummary || app.materialSummary
+				children: filtered.map((app) => {
+					const urgency = deriveRowUrgency(app, evaluatedAtMs);
+					const reasonText = buildRowReason(app);
+					return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						type: "button",
+						className: "clean-row",
+						"data-testid": `app-queue-item-${app.id}`,
+						onMouseEnter: () => handleRowHover(app),
+						onMouseLeave: handleRowLeave,
+						onClick: () => onOpenApplication(app.id, queueIds),
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "cr-left",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "mono",
+								children: app.candidateInitial || app.candidateName.slice(0, 1)
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "cr-text",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "cr-title-line",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "cr-name",
+										children: app.candidateName
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "cr-role",
+										children: app.jobTitle
+									})]
+								}), reasonText ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "cr-sub",
+									children: reasonText
+								}) : null]
 							})]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "cr-right",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: `cr-status num ${urgency.toneClass}`,
+								children: urgency.label
+							})
 						})]
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "cr-right",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: `cr-status ${statusClass(app.stageTone)}`,
-							children: cleanStageLabel(app.stageLabel)
-						})
-					})]
-				}, app.id))
+					}, app.id);
+				})
 			})
 		] })
 	});
 }
 // src/app/TalentView.tsx
+function cleanStageLabel(raw) {
+	return (raw.split("/")[0] ?? raw).trim() || raw;
+}
+function statusClass(tone) {
+	if (tone === "danger" || tone === "warn" || tone === "info" || tone === "ok") return tone;
+	return "";
+}
 function TalentView({ overview, onOpenApplication }) {
 	const [query, setQuery] = (0, import_react.useState)("");
 	const [jobFilter, setJobFilter] = (0, import_react.useState)("all");
@@ -30595,8 +30762,8 @@ function TalentView({ overview, onOpenApplication }) {
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						className: "cr-right",
 						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "cr-status",
-							children: app.stageLabel
+							className: `cr-status ${statusClass(app.stageTone)}`,
+							children: cleanStageLabel(app.stageLabel)
 						})
 					})]
 				}, app.id))
@@ -30636,6 +30803,12 @@ function App() {
 	const [showSettings, setShowSettings] = (0, import_react.useState)(false);
 	const [showShortcuts, setShowShortcuts] = (0, import_react.useState)(false);
 	const [settingsInfo, setSettingsInfo] = (0, import_react.useState)(null);
+	const [showNewJob, setShowNewJob] = (0, import_react.useState)(false);
+	const [newJobTitle, setNewJobTitle] = (0, import_react.useState)("");
+	const [newJobDeptId, setNewJobDeptId] = (0, import_react.useState)("");
+	const [newJobReq, setNewJobReq] = (0, import_react.useState)("");
+	const [newJobBusy, setNewJobBusy] = (0, import_react.useState)(false);
+	const [newJobError, setNewJobError] = (0, import_react.useState)("");
 	const hiddenAtRef = (0, import_react.useRef)(null);
 	(0, import_react.useEffect)(() => {
 		document.documentElement.setAttribute("data-theme", theme);
@@ -30725,11 +30898,12 @@ function App() {
 			} else if (e.key === "Escape") {
 				setShowSettings(false);
 				setShowShortcuts(false);
+				if (!newJobBusy) setShowNewJob(false);
 			}
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, []);
+	}, [newJobBusy]);
 	const handleResizeStart = (0, import_react.useCallback)((e) => {
 		e.preventDefault();
 		setResizing(true);
@@ -30828,6 +31002,66 @@ function App() {
 	const handleFocusConsumed = (0, import_react.useCallback)(() => setFocusRequest(null), []);
 	const handleModalConsumed = (0, import_react.useCallback)(() => setOpenModalRequest(null), []);
 	const handleFilterConsumed = (0, import_react.useCallback)(() => setQueueFilterReq(null), []);
+	const openNewJobModal = (0, import_react.useCallback)(() => {
+		setNewJobError("");
+		setNewJobTitle("");
+		setNewJobReq("");
+		setNewJobDeptId((prev) => prev || overview?.settings.departments[0]?.id || "");
+		setShowNewJob(true);
+	}, [overview]);
+	const handleCreateJobSubmit = async () => {
+		if (newJobBusy || !session?.sid) return;
+		const title = newJobTitle.trim();
+		if (!title) {
+			setNewJobError("请先填写岗位名称。");
+			return;
+		}
+		const deptId = newJobDeptId || overview?.settings.departments[0]?.id || "";
+		if (!deptId) {
+			setNewJobError("当前暂无可用部门，请先在企业配置中添加部门。");
+			return;
+		}
+		const built = buildJobCreateBody({
+			code: `JOB-${Date.now().toString(36).toUpperCase().slice(-6)}`,
+			title,
+			departmentId: deptId,
+			descriptionMd: title,
+			requirementsMd: newJobReq.trim() || title,
+			criteria: [{
+				key: "core_fit",
+				label: "核心岗位匹配度",
+				kind: "MUST_HAVE",
+				weight: 1
+			}],
+			status: "DRAFT"
+		});
+		if (!built.ok) {
+			setNewJobError(built.reasonText);
+			return;
+		}
+		setNewJobBusy(true);
+		setNewJobError("");
+		try {
+			const outcome = await postJobCreate(built.body, session.sid);
+			if (!outcome.accepted) {
+				setNewJobError(outcome.error?.message || describeActionError(outcome.error?.code ?? "", outcome.error?.reasonCode ?? "") || "新建岗位未能完成，请稍后重试。");
+				return;
+			}
+			setShowNewJob(false);
+			setNewJobTitle("");
+			setNewJobReq("");
+			await loadOverview(session.sid);
+			const createdJobId = outcome.payload && typeof outcome.payload.job_id === "string" ? outcome.payload.job_id : void 0;
+			if (createdJobId) navigateToRoute({
+				kind: "job",
+				jobId: createdJobId
+			});
+		} catch (err) {
+			setNewJobError(err?.userMessage || "新建岗位未能完成，请稍后重试。");
+		} finally {
+			setNewJobBusy(false);
+		}
+	};
 	const canvasRouteTarget = (0, import_react.useMemo)(() => {
 		if (route.kind === "application") return {
 			kind: "candidate",
@@ -31044,9 +31278,9 @@ function App() {
 											children: overview?.counts.jobsOpen ?? 0
 										})]
 									}),
-									overview && overview.jobs.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 										className: "rail-jobs",
-										children: overview.jobs.map((job) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+										children: [overview?.jobs.map((job) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 											type: "button",
 											className: `rail-job ${route.kind === "job" && route.jobId === job.id ? "active" : ""}`,
 											onClick: () => navigateToRoute({
@@ -31060,8 +31294,14 @@ function App() {
 												className: "rail-job-hc num",
 												children: job.applicationCounts.active
 											})]
-										}, job.id))
-									}) : null,
+										}, job.id)), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "rail-job rail-job-new",
+											"data-testid": "app-rail-new-job",
+											onClick: openNewJobModal,
+											children: "＋ 新建岗位"
+										})]
+									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 										type: "button",
 										className: `rail-btn ${activeSpace === "talent" ? "active" : ""}`,
@@ -31158,6 +31398,7 @@ function App() {
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChatPanel, {
 						sid: session.sid,
 						route,
+						overview,
 						currentJobId: currentCandidateJobId,
 						defaultJobId: overview?.jobs[0]?.id,
 						onCollapse: () => setChatCollapsed(true),
@@ -31185,20 +31426,33 @@ function App() {
 										viewBox: "0 0 24 24",
 										children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" })
 									})
-								}) : null, /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								}) : null, isInterviewerRoute ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 									className: "crumb-bar",
-									children: isInterviewerRoute ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 										className: "crumb-cur",
 										children: "我的面试与独立面评"
-									}) : route.kind === "jobs" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									})
+								}) : route.kind === "jobs" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "crumb-bar",
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 										className: "crumb-cur",
 										children: "在招岗位"
-									}) : route.kind === "talent" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									})
+								}) : route.kind === "talent" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "crumb-bar",
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 										className: "crumb-cur",
 										children: "人才库"
-									}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-										className: "crumb-cur",
-										children: "今日待办"
+									})
+								}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "canvas-tabs",
+									"data-testid": "app-queue-tabs",
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+										className: "c-tab active",
+										children: ["等你拍板", /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "c-tab-cnt num",
+											children: overview?.counts.applicationsActive ?? 0
+										})]
 									})
 								})]
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -31291,7 +31545,8 @@ function App() {
 								onOpenJob: (jobId) => navigateToRoute({
 									kind: "job",
 									jobId
-								})
+								}),
+								onNewJob: openNewJobModal
 							}) : route.kind === "talent" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TalentView, {
 								overview,
 								onOpenApplication: (applicationId, queue) => {
@@ -31387,6 +31642,92 @@ function App() {
 							})
 						]
 					})]
+				})
+			}) : null,
+			showNewJob ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "modal-bg",
+				role: "dialog",
+				"aria-modal": "true",
+				onClick: () => {
+					if (!newJobBusy) setShowNewJob(false);
+				},
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "modal-card",
+					onClick: (e) => e.stopPropagation(),
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "modal-head",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "新建招聘岗位" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "btn",
+								disabled: newJobBusy,
+								onClick: () => setShowNewJob(false),
+								children: "关闭"
+							})]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "new-job-hint",
+							children: "新建后岗位标准将处于待审批状态；HC 配额由岗位需求单维护。"
+						}),
+						newJobError ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "offline-banner",
+							role: "alert",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: newJobError })
+						}) : null,
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+							className: "form-field",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "岗位名称" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								"data-testid": "app-new-job-title",
+								value: newJobTitle,
+								disabled: newJobBusy,
+								onChange: (e) => setNewJobTitle(e.target.value),
+								placeholder: "例如：资深后端工程师"
+							})]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+							className: "form-field",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "所属部门" }), overview && overview.settings.departments.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("select", {
+								"data-testid": "app-new-job-dept",
+								value: newJobDeptId || overview.settings.departments[0]?.id || "",
+								disabled: newJobBusy,
+								onChange: (e) => setNewJobDeptId(e.target.value),
+								children: overview.settings.departments.map((dept) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+									value: dept.id,
+									children: dept.name
+								}, dept.id))
+							}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "sec-meta",
+								children: "当前暂无可用部门，请先在企业配置中添加部门。"
+							})]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+							className: "form-field",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "岗位核心要求（选填）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("textarea", {
+								"data-testid": "app-new-job-req",
+								value: newJobReq,
+								disabled: newJobBusy,
+								onChange: (e) => setNewJobReq(e.target.value),
+								placeholder: "简要填写核心职责或任职要求，留空则默认沿用岗位名称"
+							})]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "modal-foot",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "btn",
+								disabled: newJobBusy,
+								onClick: () => setShowNewJob(false),
+								children: "取消"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "btn dark",
+								"data-testid": "app-new-job-submit",
+								disabled: newJobBusy || !newJobTitle.trim(),
+								onClick: () => void handleCreateJobSubmit(),
+								children: newJobBusy ? "创建中…" : "确认创建"
+							})]
+						})
+					]
 				})
 			}) : null,
 			showShortcuts ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {

@@ -7,6 +7,12 @@ import {
   type CanvasRouteTarget,
 } from '../client/canvas/CanvasRoute.tsx';
 import { invalidateCachedCanvasData } from '../client/canvas/canvas-ux.ts';
+import {
+  buildJobCreateBody,
+  describeActionError,
+  postJobCreate,
+  type CanvasActionError,
+} from '../client/canvas/canvas-actions.ts';
 import { InterviewerWorkspace } from '../client/interviewer/InterviewerWorkspace.tsx';
 import type { RecruitingOverviewView } from '../client/recruiting/view-model.ts';
 import {
@@ -63,6 +69,12 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [settingsInfo, setSettingsInfo] = useState<Record<string, unknown> | null>(null);
+  const [showNewJob, setShowNewJob] = useState(false);
+  const [newJobTitle, setNewJobTitle] = useState('');
+  const [newJobDeptId, setNewJobDeptId] = useState('');
+  const [newJobReq, setNewJobReq] = useState('');
+  const [newJobBusy, setNewJobBusy] = useState(false);
+  const [newJobError, setNewJobError] = useState('');
 
   const hiddenAtRef = useRef<number | null>(null);
 
@@ -174,11 +186,12 @@ export function App() {
       } else if (e.key === 'Escape') {
         setShowSettings(false);
         setShowShortcuts(false);
+        if (!newJobBusy) setShowNewJob(false);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [newJobBusy]);
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -296,6 +309,70 @@ export function App() {
   const handleFocusConsumed = useCallback(() => setFocusRequest(null), []);
   const handleModalConsumed = useCallback(() => setOpenModalRequest(null), []);
   const handleFilterConsumed = useCallback(() => setQueueFilterReq(null), []);
+
+  const openNewJobModal = useCallback(() => {
+    setNewJobError('');
+    setNewJobTitle('');
+    setNewJobReq('');
+    setNewJobDeptId((prev) => prev || overview?.settings.departments[0]?.id || '');
+    setShowNewJob(true);
+  }, [overview]);
+
+  const handleCreateJobSubmit = async () => {
+    if (newJobBusy || !session?.sid) return;
+    const title = newJobTitle.trim();
+    if (!title) {
+      setNewJobError('请先填写岗位名称。');
+      return;
+    }
+    const deptId = newJobDeptId || overview?.settings.departments[0]?.id || '';
+    if (!deptId) {
+      setNewJobError('当前暂无可用部门，请先在企业配置中添加部门。');
+      return;
+    }
+    const code = `JOB-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+    const built = buildJobCreateBody({
+      code,
+      title,
+      departmentId: deptId,
+      descriptionMd: title,
+      requirementsMd: newJobReq.trim() || title,
+      criteria: [{ key: 'core_fit', label: '核心岗位匹配度', kind: 'MUST_HAVE', weight: 1 }],
+      status: 'DRAFT',
+    });
+    if (!built.ok) {
+      setNewJobError(built.reasonText);
+      return;
+    }
+    setNewJobBusy(true);
+    setNewJobError('');
+    try {
+      const outcome = await postJobCreate(built.body, session.sid);
+      if (!outcome.accepted) {
+        setNewJobError(
+          outcome.error?.message ||
+            describeActionError(outcome.error?.code ?? '', outcome.error?.reasonCode ?? '') ||
+            '新建岗位未能完成，请稍后重试。',
+        );
+        return;
+      }
+      setShowNewJob(false);
+      setNewJobTitle('');
+      setNewJobReq('');
+      await loadOverview(session.sid);
+      const createdJobId =
+        outcome.payload && typeof outcome.payload.job_id === 'string'
+          ? outcome.payload.job_id
+          : undefined;
+      if (createdJobId) {
+        navigateToRoute({ kind: 'job', jobId: createdJobId });
+      }
+    } catch (err) {
+      setNewJobError((err as CanvasActionError)?.userMessage || '新建岗位未能完成，请稍后重试。');
+    } finally {
+      setNewJobBusy(false);
+    }
+  };
 
   const canvasRouteTarget = useMemo<CanvasRouteTarget>(() => {
     if (route.kind === 'application') {
@@ -464,21 +541,27 @@ export function App() {
                   <span className="rail-cnt num">{overview?.counts.jobsOpen ?? 0}</span>
                 </button>
 
-                {overview && overview.jobs.length > 0 ? (
-                  <div className="rail-jobs">
-                    {overview.jobs.map((job) => (
-                      <button
-                        key={job.id}
-                        type="button"
-                        className={`rail-job ${route.kind === 'job' && route.jobId === job.id ? 'active' : ''}`}
-                        onClick={() => navigateToRoute({ kind: 'job', jobId: job.id })}
-                      >
-                        <span className="rail-job-name">{job.title}</span>
-                        <span className="rail-job-hc num">{job.applicationCounts.active}</span>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
+                <div className="rail-jobs">
+                  {overview?.jobs.map((job) => (
+                    <button
+                      key={job.id}
+                      type="button"
+                      className={`rail-job ${route.kind === 'job' && route.jobId === job.id ? 'active' : ''}`}
+                      onClick={() => navigateToRoute({ kind: 'job', jobId: job.id })}
+                    >
+                      <span className="rail-job-name">{job.title}</span>
+                      <span className="rail-job-hc num">{job.applicationCounts.active}</span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="rail-job rail-job-new"
+                    data-testid="app-rail-new-job"
+                    onClick={openNewJobModal}
+                  >
+                    ＋ 新建岗位
+                  </button>
+                </div>
 
                 <button
                   type="button"
@@ -556,6 +639,7 @@ export function App() {
         <ChatPanel
           sid={session.sid}
           route={route}
+          overview={overview}
           currentJobId={currentCandidateJobId}
           defaultJobId={overview?.jobs[0]?.id}
           onCollapse={() => setChatCollapsed(true)}
@@ -586,17 +670,28 @@ export function App() {
                   </button>
                 ) : null}
 
-                <div className="crumb-bar">
-                  {isInterviewerRoute ? (
+                {isInterviewerRoute ? (
+                  <div className="crumb-bar">
                     <span className="crumb-cur">我的面试与独立面评</span>
-                  ) : route.kind === 'jobs' ? (
+                  </div>
+                ) : route.kind === 'jobs' ? (
+                  <div className="crumb-bar">
                     <span className="crumb-cur">在招岗位</span>
-                  ) : route.kind === 'talent' ? (
+                  </div>
+                ) : route.kind === 'talent' ? (
+                  <div className="crumb-bar">
                     <span className="crumb-cur">人才库</span>
-                  ) : (
-                    <span className="crumb-cur">今日待办</span>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <div className="canvas-tabs" data-testid="app-queue-tabs">
+                    <span className="c-tab active">
+                      等你拍板
+                      <span className="c-tab-cnt num">
+                        {overview?.counts.applicationsActive ?? 0}
+                      </span>
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="canvas-right-meta">
@@ -688,6 +783,7 @@ export function App() {
                 <JobsView
                   overview={overview}
                   onOpenJob={(jobId) => navigateToRoute({ kind: 'job', jobId })}
+                  onNewJob={openNewJobModal}
                 />
               ) : route.kind === 'talent' ? (
                 <TalentView
@@ -746,6 +842,97 @@ export function App() {
                 <span className="kv-k">配置版本</span>
                 <span className="kv-v">{settingsInfo ? '已同步' : '读取中…'}</span>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showNewJob ? (
+        <div
+          className="modal-bg"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => {
+            if (!newJobBusy) setShowNewJob(false);
+          }}
+        >
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>新建招聘岗位</h2>
+              <button
+                type="button"
+                className="btn"
+                disabled={newJobBusy}
+                onClick={() => setShowNewJob(false)}
+              >
+                关闭
+              </button>
+            </div>
+            <div className="new-job-hint">
+              新建后岗位标准将处于待审批状态；HC 配额由岗位需求单维护。
+            </div>
+            {newJobError ? (
+              <div className="offline-banner" role="alert">
+                <span>{newJobError}</span>
+              </div>
+            ) : null}
+            <label className="form-field">
+              <span>岗位名称</span>
+              <input
+                data-testid="app-new-job-title"
+                value={newJobTitle}
+                disabled={newJobBusy}
+                onChange={(e) => setNewJobTitle(e.target.value)}
+                placeholder="例如：资深后端工程师"
+              />
+            </label>
+            <label className="form-field">
+              <span>所属部门</span>
+              {overview && overview.settings.departments.length > 0 ? (
+                <select
+                  data-testid="app-new-job-dept"
+                  value={newJobDeptId || overview.settings.departments[0]?.id || ''}
+                  disabled={newJobBusy}
+                  onChange={(e) => setNewJobDeptId(e.target.value)}
+                >
+                  {overview.settings.departments.map((dept) => (
+                    <option key={dept.id} value={dept.id}>
+                      {dept.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="sec-meta">当前暂无可用部门，请先在企业配置中添加部门。</div>
+              )}
+            </label>
+            <label className="form-field">
+              <span>岗位核心要求（选填）</span>
+              <textarea
+                data-testid="app-new-job-req"
+                value={newJobReq}
+                disabled={newJobBusy}
+                onChange={(e) => setNewJobReq(e.target.value)}
+                placeholder="简要填写核心职责或任职要求，留空则默认沿用岗位名称"
+              />
+            </label>
+            <div className="modal-foot">
+              <button
+                type="button"
+                className="btn"
+                disabled={newJobBusy}
+                onClick={() => setShowNewJob(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="btn dark"
+                data-testid="app-new-job-submit"
+                disabled={newJobBusy || !newJobTitle.trim()}
+                onClick={() => void handleCreateJobSubmit()}
+              >
+                {newJobBusy ? '创建中…' : '确认创建'}
+              </button>
             </div>
           </div>
         </div>

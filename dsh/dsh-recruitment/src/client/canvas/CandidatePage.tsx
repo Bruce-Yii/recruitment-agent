@@ -55,6 +55,60 @@ export interface CandidatePageProps {
 
 type DocTab = 'resume' | 'transcript' | 'original';
 
+interface CandidatePinItem {
+  readonly kind: string;
+  readonly text: string;
+  readonly fromPreviousRound: boolean;
+}
+
+function extractCandidatePins(raw: unknown): CandidatePinItem[] {
+  if (!raw || typeof raw !== 'object') return [];
+  const obj = raw as Record<string, unknown>;
+  const appObj =
+    obj.application && typeof obj.application === 'object'
+      ? (obj.application as Record<string, unknown>)
+      : obj;
+  const list = Array.isArray(obj.constraints)
+    ? obj.constraints
+    : Array.isArray(appObj.constraints)
+      ? appObj.constraints
+      : [];
+  const out: CandidatePinItem[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    const text = typeof rec.text === 'string' ? rec.text.trim() : '';
+    if (!text) continue;
+    const kind = typeof rec.kind === 'string' ? rec.kind.trim().toUpperCase() : 'PIN';
+    const fromPreviousRound = rec.from_previous_round === true || kind === 'HANDOFF';
+    out.push({ kind, text, fromPreviousRound });
+  }
+  return out;
+}
+
+function buildDecisionMemoText(vm: CandidateCanvasVM, pins: readonly CandidatePinItem[]): string {
+  const lines: string[] = [
+    `【${vm.jobTitle} · ${vm.candidateName}】${vm.stageLabel}（${vm.lifecycleLabel}）`,
+    `核心提炼：${vm.summaryText}`,
+  ];
+  if (pins.length > 0) {
+    lines.push(
+      `置顶提醒：${pins.map((p) => (p.fromPreviousRound ? `[交接] ${p.text}` : p.text)).join('；')}`,
+    );
+  }
+  if (vm.criteria.length > 0) {
+    lines.push(
+      `岗位标准（${vm.rubricVersionLabel}）：${vm.criteria.map((c) => `${c.label}=${c.statusText}`).join('；')}`,
+    );
+  }
+  if (vm.rounds.length > 0) {
+    lines.push(
+      `面试进展：${vm.rounds.map((r) => `${r.roundLabel}(${r.statusText}，${r.scorecardsSummary})`).join(' / ')}`,
+    );
+  }
+  return lines.join('\n');
+}
+
 export function CandidatePage({
   sessionId,
   applicationId,
@@ -78,6 +132,10 @@ export function CandidatePage({
   const [vm, setVm] = useState<CandidateCanvasVM | null>(() => {
     const cached = getCachedCanvasData(detailPath);
     return cached !== undefined ? normalizeApplicationDetail(cached) : null;
+  });
+  const [pins, setPins] = useState<CandidatePinItem[]>(() => {
+    const cached = getCachedCanvasData(detailPath);
+    return cached !== undefined ? extractCandidatePins(cached) : [];
   });
   const [loading, setLoading] = useState(() => getCachedCanvasData(detailPath) === undefined);
   const [syncing, setSyncing] = useState(false);
@@ -113,6 +171,7 @@ export function CandidatePage({
       if (cached !== undefined && !opts?.silent) {
         const fast = normalizeApplicationDetail(cached);
         setVm(fast);
+        setPins(extractCandidatePins(cached));
         setStarredLocal(fast.starred);
         setActiveCrit((prev) => prev || fast.criteria[0]?.key || '');
       }
@@ -128,6 +187,7 @@ export function CandidatePage({
         setCachedCanvasData(detailPath, raw);
         const next = normalizeApplicationDetail(raw);
         setVm(next);
+        setPins(extractCandidatePins(raw));
         setStarredLocal(next.starred);
         setActiveCrit((prev) => prev || next.criteria[0]?.key || '');
         if (opts?.flash) setFlashTick((n) => n + 1);
@@ -250,6 +310,23 @@ export function CandidatePage({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onBack, prevAppId, nextAppId, onSelectApplication, modalKind, pendingRebind]);
+
+  const handleCopyDecisionMemo = () => {
+    if (!vm) return;
+    const text = buildDecisionMemoText(vm, pins);
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      void navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          setActionFeedback({ tone: 'green', text: `已复制 ${vm.candidateName} 的决策纪要` });
+        })
+        .catch(() => {
+          setActionFeedback({ tone: 'green', text: `已生成 ${vm.candidateName} 的决策纪要（当前环境限制剪贴板写入）` });
+        });
+    } else {
+      setActionFeedback({ tone: 'green', text: `已生成 ${vm.candidateName} 的决策纪要` });
+    }
+  };
 
   const handleSelectCriterion = (critKey: string) => {
     setActiveCrit(critKey);
@@ -407,6 +484,18 @@ export function CandidatePage({
               <div className="ros-doc-meta">
                 {vm.jobTitle}（{vm.jobCode}）· 档案号 <span className="num">{vm.shortRef}</span> · 标准 {vm.rubricVersionLabel}
               </div>
+              {pins.length > 0 ? (
+                <div className="ros-pin-row" data-testid="canvas-pin-row">
+                  {pins.map((pin, idx) => (
+                    <span
+                      key={`${pin.kind}-${idx}`}
+                      className={`ros-pin-tag ${pin.fromPreviousRound ? 'neutral' : ''}`}
+                    >
+                      {pin.fromPreviousRound ? `交接：${pin.text}` : pin.text}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -443,7 +532,18 @@ export function CandidatePage({
                 </button>
                 <StatusLabel text={vm.stageLabel} tone={vm.isArchived ? '' : 'iris'} />
               </div>
-              <span className="ros-sec-meta">{vm.lifecycleLabel}</span>
+              <div className="ros-doc-head-sub">
+                <span className="ros-sec-meta">{vm.lifecycleLabel}</span>
+                <span className="ros-sec-meta">·</span>
+                <button
+                  type="button"
+                  className="ros-text-link ros-memo-btn"
+                  data-testid="canvas-action-copy-memo"
+                  onClick={handleCopyDecisionMemo}
+                >
+                  复制决策纪要
+                </button>
+              </div>
             </div>
           </div>
 
