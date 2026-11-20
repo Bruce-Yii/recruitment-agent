@@ -1,0 +1,42 @@
+=== DB READBACK S06 ===
+at: 2026-11-20T15:07:50.863Z
+db: ra_fresh_e2e_hic_1514ny (SELECT-only; no product code imported)
+
+SQL: -- baseline head counts
+
+
+SQL: select 'intake_asset',count(*) from recruitment.intake_asset union all select 'business_task',count(*) from recruitment.business_task union all select 'candidate_constraint',count(*) from recruitment.candidate_constraint union all select 'criterion_override',count(*) from recruitment.criterion_override union all select 'decision',count(*) from recruitment.decision union all select 'interview',count(*) from recruitment.interview union all select 'interviewer',count(*) from recruitment.interviewer union all select 'scorecard_draft',count(*) from recruitment.scorecard_draft union all select 'scorecard',count(*) from recruitment.scorecard union all select 'resume_version',count(*) from recruitment.resume_version union all select 'event_inbox',count(*) from recruitment.event_inbox union all select 'application',count(*) from recruitment.application
+intake_asset|4
+business_task|5
+candidate_constraint|2
+criterion_override|0
+decision|1
+interview|7
+interviewer|8
+scorecard_draft|0
+scorecard|0
+resume_version|4
+event_inbox|31
+application|4
+
+
+SQL: -- step SQL
+
+
+SQL: select id, round_no, status, scheduled_start_at, record_version, created_at, updated_at from recruitment.interview order by created_at
+11111111-1111-4111-8111-000000000801|1|POST_INTERVIEW|2026-11-12 14:00:00+08|1|2026-11-20 23:06:45.671137+08|2026-11-20 23:06:45.671137+08
+11111111-1111-4111-8111-000000000802|2|SCHEDULED|2026-11-20 14:00:00+08|1|2026-11-20 23:06:45.671137+08|2026-11-20 23:06:45.671137+08
+1eb7e47a-038e-42f3-90fc-d6423e37d14d|1|POST_INTERVIEW|2026-11-18 23:06:46.185319+08|1|2026-11-20 23:06:46.185319+08|2026-11-20 23:06:46.185319+08
+f4bb5da4-8ceb-438f-af02-606a476bec2b|2|POST_INTERVIEW|2026-11-19 23:06:46.186355+08|1|2026-11-20 23:06:46.186355+08|2026-11-20 23:06:46.186355+08
+19c04a5c-0fe4-42f0-812c-f878e5218272|1|POST_INTERVIEW|2026-11-18 23:06:46.195113+08|1|2026-11-20 23:06:46.195113+08|2026-11-20 23:06:46.195113+08
+491dc2ae-ab9f-4be2-bac1-bb9057ba3b73|2|POST_INTERVIEW|2026-11-19 23:06:46.195744+08|1|2026-11-20 23:06:46.195744+08|2026-11-20 23:06:46.195744+08
+f20ccce7-4806-4f82-8ee9-db279b3ebfc6|3|SCHEDULED|2026-12-11 14:00:00+08|2|2026-11-20 23:07:34.581164+08|2026-11-20 23:07:47.544722+08
+
+
+SQL: -- step SQL
+
+
+SQL: select event_id, event_type, business_object_id, recorded_at from recruitment.event_inbox where event_type ilike '%resched%' or event_type ilike '%interview%' order by recorded_at
+a016b6b7-174d-4284-b79b-0ccb8bd0ad02|interview.rescheduled||2026-11-20 23:07:47.544722+08
+
+

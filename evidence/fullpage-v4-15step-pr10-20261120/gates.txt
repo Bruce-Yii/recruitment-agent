@@ -1,0 +1,40 @@
+# PR #10 合入后的机检与验收（2026-11-20 · HEAD af0fef5）
+
+## PR #10 复核（不合自述）
+
+| 项 | 结果 |
+|---|---|
+| 来源 | `origin/fix/task-10-app-typecheck` = `2279e08`，基于 `2392720`（当前 feat），单提交 |
+| 改动面 | `git diff HEAD..branch` 仅 3 个文件：`src/app/JobsView.tsx`(8+/2-)、`QueueView.tsx`(8+/2-)、`TalentView.tsx`(6+/1-) |
+| 越界 | 无：未动 `src/http/**`、`src/client/**`、`tsconfig*.json`、`scripts/**`、`lib/**`、`package.json`、`TESTID-MANIFEST.md` |
+| 兜底 | 无 `@ts-ignore` / `@ts-nocheck` / `@ts-expect-error` / `: any` / `as any` / `eslint-disable` |
+| 内容 | `prefetchCanvasPath` 三处补 `(path) => fetchAppJson(path, readCookie('rc_sid'))`；删死字段 `nextStep.conclusion`（运行时恒 undefined，删后显示等价） |
+| 合入 | merge commit **`af0fef5`**（含 `lib/app.js` 重建：10 行；未动其它文件） |
+
+## 机检（合并后）
+
+| 门 | 命令 | 结果 |
+|---|---|---|
+| 类型（全量） | `cd dsh/dsh-recruitment && npx tsc --noEmit` | **PASS（0 错）** |
+| 构建 | `npx tsdown` | **PASS**（双入口；`lib/app.js` 1.33MB 重建随 merge 提交） |
+| 服务端类型棘轮 | `node scripts/server-typecheck.mjs` | **PASS（0 / 0）** |
+| 调度预算 | `node scripts/runtime-budget.mjs` | **PASS（5051 / 5051）** |
+| 入口可达 | `node scripts/entry-reachability.mjs` | **PASS**（无新缺口；基线内 8 条待补不变；手拼 0） |
+| 合同复用 | `node scripts/client-contract-check.mjs` | **PASS** |
+| 文案 lint | `node scripts/term-lint.mjs` | **PASS** |
+| 干净库全量测试 | `node test/run-all.mjs --test-concurrency=1` | **未跑（NOT RUN，本轮不是 main 合并；不得据此宣称全绿）** |
+
+## 全链路（合并后独立复跑）
+
+```
+$env:RECRUITMENT_DB_PASSWORD = '123456'
+node work/d5/fullpage/run-v4.mjs --fresh --port 49347 --out work/d5/fullpage/lead-verify-pr10
+```
+
+- `2026-11-20T23:09:34+08:00`，HEAD `af0fef5`，FRESH 库 `ra_fresh_e2e_hic_1514ny` → **15/15 PASS**（本目录 `runbook-result.json` / `PASS-FAIL-TABLE.md`）。
+- 证据审计器：**HARD FAIL 0 / LEAK 0 / SOFT WARN 3**（keyText 为 DB/HTTP 摘要，预期）。
+- 三屏真悬停：**3/3**（队列/岗位/人才库各触发一条 200 只读 GET；无 `fetcher is not a function`；`hover-probe.json`）。Console 里另有 4 条 DSH host 插件自身 404（`dynamicCordisRunner/*`，来自 token 入口的宿主 UI bootstrap，与本产品页无关）。
+
+## 清理
+
+Host/Chrome 停止、token 删除、Chrome profile 删除、一次性库 drop、profile 副本删除；49347/9222 FREE；`49351` 人工预览 Host 未触碰；`ra_fresh%` 无残留。

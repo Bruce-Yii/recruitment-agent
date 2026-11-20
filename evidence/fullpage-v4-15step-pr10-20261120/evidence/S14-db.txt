@@ -1,0 +1,43 @@
+=== DB READBACK S14 ===
+at: 2026-11-20T15:09:18.084Z
+db: ra_fresh_e2e_hic_1514ny (SELECT-only; no product code imported)
+
+SQL: -- baseline head counts
+
+
+SQL: select 'intake_asset',count(*) from recruitment.intake_asset union all select 'business_task',count(*) from recruitment.business_task union all select 'candidate_constraint',count(*) from recruitment.candidate_constraint union all select 'criterion_override',count(*) from recruitment.criterion_override union all select 'decision',count(*) from recruitment.decision union all select 'interview',count(*) from recruitment.interview union all select 'interviewer',count(*) from recruitment.interviewer union all select 'scorecard_draft',count(*) from recruitment.scorecard_draft union all select 'scorecard',count(*) from recruitment.scorecard union all select 'resume_version',count(*) from recruitment.resume_version union all select 'event_inbox',count(*) from recruitment.event_inbox union all select 'application',count(*) from recruitment.application
+intake_asset|4
+business_task|10
+candidate_constraint|2
+criterion_override|0
+decision|2
+interview|7
+interviewer|8
+scorecard_draft|2
+scorecard|4
+resume_version|4
+event_inbox|93
+application|4
+
+
+SQL: -- step SQL
+
+
+SQL: select id, status, status_changed_at, record_version, updated_at from recruitment.interview order by created_at
+11111111-1111-4111-8111-000000000801|POST_INTERVIEW|2026-11-20 23:06:45.671137+08|1|2026-11-20 23:06:45.671137+08
+11111111-1111-4111-8111-000000000802|SCHEDULED|2026-11-20 23:06:45.671137+08|1|2026-11-20 23:06:45.671137+08
+1eb7e47a-038e-42f3-90fc-d6423e37d14d|POST_INTERVIEW|2026-11-20 23:06:46.185319+08|1|2026-11-20 23:06:46.185319+08
+f4bb5da4-8ceb-438f-af02-606a476bec2b|POST_INTERVIEW|2026-11-20 23:06:46.186355+08|1|2026-11-20 23:06:46.186355+08
+19c04a5c-0fe4-42f0-812c-f878e5218272|POST_INTERVIEW|2026-11-20 23:06:46.195113+08|1|2026-11-20 23:06:46.195113+08
+491dc2ae-ab9f-4be2-bac1-bb9057ba3b73|POST_INTERVIEW|2026-11-20 23:06:46.195744+08|1|2026-11-20 23:06:46.195744+08
+f20ccce7-4806-4f82-8ee9-db279b3ebfc6|NO_SHOW|2026-11-20 23:09:14.992814+08|3|2026-11-20 23:09:14.992814+08
+
+
+SQL: -- step SQL
+
+
+SQL: select event_id, event_type, business_object_id, recorded_at, left(payload::text,300) from recruitment.event_inbox where event_type ilike '%no_show%' or payload::text ilike '%NO_SHOW%' order by recorded_at
+bd9c056f-da24-481a-a0dd-cdb76932fc28|interview.status.changed||2026-11-20 23:09:14.992814+08|{"to": "NO_SHOW", "from": "SCHEDULED", "table": "interview", "column": "status", "actor_id": "11111111-1111-4111-8111-000000000103", "record_id": "f20ccce7-4806-4f82-8ee9-db279b3ebfc6"}
+850000b4-d625-400c-baca-c528e608301f|interview.no_show||2026-11-20 23:09:14.992814+08|{"reason": "未按约定时间出席面试", "outcome": "NO_SHOW", "subject": "CANDIDATE", "actor_id": "11111111-1111-4111-8111-000000000103", "to_status": "NO_SHOW", "from_status": "SCHEDULED", "interview_id": "f20ccce7-4806-4f82-8ee9-db279b3ebfc6", "confirmation_text_sha256": "a767d897031c549aa51907c60c5c3ad15dba3474
+
+

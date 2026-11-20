@@ -1,0 +1,50 @@
+=== DB READBACK S02 ===
+at: 2026-11-20T15:07:14.061Z
+db: ra_fresh_e2e_hic_1514ny (SELECT-only; no product code imported)
+
+SQL: -- baseline head counts
+
+
+SQL: select 'intake_asset',count(*) from recruitment.intake_asset union all select 'business_task',count(*) from recruitment.business_task union all select 'candidate_constraint',count(*) from recruitment.candidate_constraint union all select 'criterion_override',count(*) from recruitment.criterion_override union all select 'decision',count(*) from recruitment.decision union all select 'interview',count(*) from recruitment.interview union all select 'interviewer',count(*) from recruitment.interviewer union all select 'scorecard_draft',count(*) from recruitment.scorecard_draft union all select 'scorecard',count(*) from recruitment.scorecard union all select 'resume_version',count(*) from recruitment.resume_version union all select 'event_inbox',count(*) from recruitment.event_inbox union all select 'application',count(*) from recruitment.application
+intake_asset|4
+business_task|2
+candidate_constraint|2
+criterion_override|0
+decision|0
+interview|6
+interviewer|7
+scorecard_draft|0
+scorecard|0
+resume_version|4
+event_inbox|19
+application|4
+
+
+SQL: -- step SQL
+
+
+SQL: select id, file_name, mime_type, byte_size, left(sha256,16), validation_status, created_at from recruitment.intake_asset order by created_at
+c35290e4-28e5-48aa-8daf-bee4fff0c7b5|demo-candidate-0701.rtf|application/rtf|516|3c12527f6aba0b2a|VALID|2026-11-20 23:06:46.013116+08
+83a845e8-7fa0-44af-be03-cddc6fd17997|fresh-candidate-t.pdf|application/pdf|1024|aaaaaaaaaaaaaaaa|VALID|2026-11-20 23:06:46.179381+08
+e18127ee-2fb3-482c-8d97-02eee4803b15|fresh-s12.pdf|application/pdf|1024|cccccccccccccccc|VALID|2026-11-20 23:06:46.192983+08
+8a01b17d-4a54-470c-8e18-9de33d8a8d01|resume-ac13428dbe1f6638-synthetic-upload.pdf|application/pdf|10919|aa2f4645c7535bd8|VALID|2026-11-20 23:07:12.493669+08
+
+
+SQL: -- step SQL
+
+
+SQL: select id, task_type, status, left(title,60), attempt_count, error_code, created_at, completed_at from recruitment.business_task order by created_at
+483de652-e61e-4e35-b7f8-ecc9823ab3b4|RESUME_PARSE|RETRY_WAIT|解析新收到的简历|1|WORKER_LOST|2026-11-20 23:06:59.10153+08|
+bd007469-b3a9-482c-bb98-88a017c4665c|RESUME_PARSE|RETRY_WAIT|解析新收到的简历|1|WORKER_LOST|2026-11-20 23:07:12.002969+08|
+
+
+SQL: -- step SQL
+
+
+SQL: select id, resume_id, version_no, parse_status, parser_name, created_at from recruitment.resume_version order by created_at
+ad653405-e27f-47ef-ab0a-65c1a3be3e9b|4d96774c-476f-4ac7-bbff-b8c69118eb78|1|PARSED|striprtf|2026-11-20 23:06:46.013116+08
+3afebf0c-c421-418f-b1cc-c91444785dbb|b9bff259-78ee-4eaa-8d60-ff6d03f8c2a5|1|PARSED|fixture|2026-11-20 23:06:46.182124+08
+3bf71c93-7301-4200-8c0a-475cda911330|f783db55-acf4-4d0d-8f53-5455b6bedfae|1|PARSED|fixture|2026-11-20 23:06:46.193647+08
+4ee7a8ee-6d0c-49de-8fce-672dd241e6b7|f363c301-5a38-4ca1-9aa0-7c9f9e78ce9f|1|PARSED|pymupdf|2026-11-20 23:07:12.493669+08
+
+

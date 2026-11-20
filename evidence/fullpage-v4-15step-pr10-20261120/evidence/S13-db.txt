@@ -1,0 +1,36 @@
+=== DB READBACK S13 ===
+at: 2026-11-20T15:09:07.167Z
+db: ra_fresh_e2e_hic_1514ny (SELECT-only; no product code imported)
+
+SQL: -- baseline head counts
+
+
+SQL: select 'intake_asset',count(*) from recruitment.intake_asset union all select 'business_task',count(*) from recruitment.business_task union all select 'candidate_constraint',count(*) from recruitment.candidate_constraint union all select 'criterion_override',count(*) from recruitment.criterion_override union all select 'decision',count(*) from recruitment.decision union all select 'interview',count(*) from recruitment.interview union all select 'interviewer',count(*) from recruitment.interviewer union all select 'scorecard_draft',count(*) from recruitment.scorecard_draft union all select 'scorecard',count(*) from recruitment.scorecard union all select 'resume_version',count(*) from recruitment.resume_version union all select 'event_inbox',count(*) from recruitment.event_inbox union all select 'application',count(*) from recruitment.application
+intake_asset|4
+business_task|9
+candidate_constraint|2
+criterion_override|0
+decision|2
+interview|7
+interviewer|8
+scorecard_draft|2
+scorecard|4
+resume_version|4
+event_inbox|81
+application|4
+
+
+SQL: -- step SQL
+
+
+SQL: select count(*) as total, count(*) filter (where superseded_by_decision_id is null) as current from recruitment.decision where application_id='9eef66f1-a0d2-4940-b222-dec42f0f4e01'
+1|1
+
+
+SQL: -- step SQL
+
+
+SQL: select id, application_id, decision_scope, result, superseded_by_decision_id, record_version, created_at from recruitment.decision where application_id='9eef66f1-a0d2-4940-b222-dec42f0f4e01' order by created_at
+b2d37a1d-de09-4952-a452-6c2a47536348|9eef66f1-a0d2-4940-b222-dec42f0f4e01|FINAL|ADVANCE||1|2026-11-20 23:08:48.867161+08
+
+
