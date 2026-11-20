@@ -21,6 +21,28 @@ export interface AgentToolEvent {
   readonly message?: string;
 }
 
+export type AgentUiActionType = 'navigate' | 'focus_section' | 'suggest_action';
+export type AgentUiRouteKind = 'queue' | 'jobs' | 'talent' | 'application' | 'job' | 'interviewer';
+export type AgentUiQueueFilter = 'all' | 'screening' | 'interviewing';
+export type AgentUiSectionKind =
+  | 'summary'
+  | 'criteria'
+  | 'resume'
+  | 'interviews'
+  | 'rubric'
+  | 'candidates';
+export type AgentUiModalKind = 'schedule' | 'screening' | 'decision' | 'email' | 'transfer';
+
+export interface AgentUiAction {
+  readonly action: AgentUiActionType;
+  readonly route?: AgentUiRouteKind;
+  readonly target_id?: string;
+  readonly filter?: AgentUiQueueFilter;
+  readonly section?: AgentUiSectionKind;
+  readonly modal?: AgentUiModalKind;
+  readonly label?: string;
+}
+
 export interface StreamAgentTurnOptions {
   readonly sid: string;
   readonly text: string;
@@ -32,6 +54,7 @@ export interface StreamAgentTurnOptions {
   readonly signal?: AbortSignal;
   readonly onDelta: (chunk: string) => void;
   readonly onTool: (tool: AgentToolEvent) => void;
+  readonly onUiAction?: (action: AgentUiAction) => void;
   readonly onDone: (payload: { turnId?: string }) => void;
   readonly onUnavailable: (message: string) => void;
   readonly onError: (message: string) => void;
@@ -56,6 +79,67 @@ function asString(v: unknown, fallback = ''): string {
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+}
+
+const VALID_UI_ACTIONS: readonly AgentUiActionType[] = ['navigate', 'focus_section', 'suggest_action'];
+const VALID_UI_ROUTES: readonly AgentUiRouteKind[] = [
+  'queue',
+  'jobs',
+  'talent',
+  'application',
+  'job',
+  'interviewer',
+];
+const VALID_UI_FILTERS: readonly AgentUiQueueFilter[] = ['all', 'screening', 'interviewing'];
+const VALID_UI_SECTIONS: readonly AgentUiSectionKind[] = [
+  'summary',
+  'criteria',
+  'resume',
+  'interviews',
+  'rubric',
+  'candidates',
+];
+const VALID_UI_MODALS: readonly AgentUiModalKind[] = [
+  'schedule',
+  'screening',
+  'decision',
+  'email',
+  'transfer',
+];
+
+function parseAgentUiAction(raw: Record<string, unknown>): AgentUiAction | null {
+  const action = asString(raw.action);
+  if (!(VALID_UI_ACTIONS as readonly string[]).includes(action)) {
+    return null;
+  }
+  const routeRaw = asString(raw.route);
+  const route = (VALID_UI_ROUTES as readonly string[]).includes(routeRaw)
+    ? (routeRaw as AgentUiRouteKind)
+    : undefined;
+  const filterRaw = asString(raw.filter);
+  const filter = (VALID_UI_FILTERS as readonly string[]).includes(filterRaw)
+    ? (filterRaw as AgentUiQueueFilter)
+    : undefined;
+  const sectionRaw = asString(raw.section);
+  const section = (VALID_UI_SECTIONS as readonly string[]).includes(sectionRaw)
+    ? (sectionRaw as AgentUiSectionKind)
+    : undefined;
+  const modalRaw = asString(raw.modal);
+  const modal = (VALID_UI_MODALS as readonly string[]).includes(modalRaw)
+    ? (modalRaw as AgentUiModalKind)
+    : undefined;
+  const targetId = asString(raw.target_id) || undefined;
+  const label = asString(raw.label) || undefined;
+
+  return {
+    action: action as AgentUiActionType,
+    ...(route ? { route } : {}),
+    ...(targetId ? { target_id: targetId } : {}),
+    ...(filter ? { filter } : {}),
+    ...(section ? { section } : {}),
+    ...(modal ? { modal } : {}),
+    ...(label ? { label } : {}),
+  };
 }
 
 function extractErrorMessage(raw: unknown, fallback: string): string {
@@ -312,6 +396,11 @@ export async function streamAgentTurn(opts: StreamAgentTurnOptions): Promise<voi
         result: parsed.result,
         message: asString(parsed.message) || undefined,
       });
+    } else if (eventName === 'ui_action') {
+      const uiAction = parseAgentUiAction(parsed);
+      if (uiAction) {
+        opts.onUiAction?.(uiAction);
+      }
     } else if (eventName === 'done') {
       opts.onDone({ turnId: asString(parsed.turn_id) || undefined });
     } else if (eventName === 'error') {

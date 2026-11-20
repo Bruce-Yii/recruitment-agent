@@ -35,6 +35,14 @@
 | `app-chat-send` | 对话发送按钮 | 提交 `POST /recruitment/agent/turn`（SSE） |
 | `app-chat-upload` | 对话栏隐藏文件输入 | 左侧 `+` 按钮触发真实 `<input type="file">` |
 | `app-chat-unavailable` | Agent 不可用提示条 | 服务端返回 503 / `AGENT_UNAVAILABLE` 时显示，不阻塞右侧工作台 |
+| `app-chat-quick-risk-summary` | 候选人页快捷词「总结这位候选人的核心风险点」 | 预设提示词，统一走 `POST /recruitment/agent/turn` |
+| `app-chat-quick-free-slots` | 候选人页快捷词「帮我查下一轮可约时段」 | 预设提示词，统一走 `POST /recruitment/agent/turn` |
+| `app-chat-quick-compare-rubric` | 候选人页快捷词「对比岗位评分标准」 | 预设提示词，统一走 `POST /recruitment/agent/turn` |
+| `app-chat-quick-job-bottlenecks` | 岗位页快捷词「汇总当前岗位各阶段推进瓶颈」 | 预设提示词，统一走 `POST /recruitment/agent/turn` |
+| `app-chat-quick-job-priority` | 岗位页快捷词「哪些候选人最值得优先推进？」 | 预设提示词，统一走 `POST /recruitment/agent/turn` |
+| `app-chat-quick-today-top3` | 队列页快捷词「今天最优先处理的 3 位候选人是谁？」 | 预设提示词，统一走 `POST /recruitment/agent/turn` |
+| `app-chat-quick-pending-scorecards` | 队列页快捷词「查看当前待提交面评的进展」 | 预设提示词，统一走 `POST /recruitment/agent/turn` |
+| `app-chat-suggest-<modal\|route>` | AI 气泡底部建议动作按钮 | 仅消费 SSE `ui_action(suggest_action)`；绝不自动弹窗，点击后由人触发切路由或唤起弹窗 |
 
 ## 二、复用的画布与弹窗 `data-testid`（来自 `src/client/canvas/**`，保持与 15/15 写链路完全一致）
 

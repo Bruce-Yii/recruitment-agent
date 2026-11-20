@@ -1046,11 +1046,33 @@
   animation: rosSkelShimmer 1.3s ease-in-out infinite;
 }
 
+/* Read-only section focus highlight (driven by Agent ui_action focus_section) */
+.ros-canvas [data-section] {
+  scroll-margin-top: 20px;
+  border-radius: 10px;
+}
+
+@keyframes rosSectionFocus {
+  0% {
+    background: var(--iris-soft);
+    box-shadow: 0 0 0 6px var(--iris-soft);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.ros-section-focus {
+  animation: rosSectionFocus 1.6s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ros-canvas-enter,
   .ros-modal-bg,
   .ros-modal,
   .ros-paper-flash,
+  .ros-section-focus,
   .ros-star-btn.pop,
   .ros-sync-dot,
   .ros-skel-bar {

@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CanvasRoute,
   type ActiveUploadTask,
+  type CanvasFocusRequest,
+  type CanvasModalRequest,
   type CanvasRouteTarget,
 } from '../client/canvas/CanvasRoute.tsx';
 import { invalidateCachedCanvasData } from '../client/canvas/canvas-ux.ts';
@@ -13,11 +15,12 @@ import {
   fetchAppSession,
   formatRolesLabel,
   isInterviewerOnly,
+  type AgentUiAction,
   type AppSessionInfo,
 } from './api.ts';
 import { ChatPanel } from './ChatPanel.tsx';
 import { JobsView } from './JobsView.tsx';
-import { QueueView } from './QueueView.tsx';
+import { QueueView, type QueueFilterRequest } from './QueueView.tsx';
 import { formatHashRoute, navigateToRoute, parseHashRoute, type AppRoute } from './router.ts';
 import { TalentView } from './TalentView.tsx';
 
@@ -34,6 +37,11 @@ export function App() {
   const [candidateQueue, setCandidateQueue] = useState<string[]>([]);
   const [uploadTask, setUploadTask] = useState<ActiveUploadTask | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const [queueFilterReq, setQueueFilterReq] = useState<QueueFilterRequest | null>(null);
+  const [focusRequest, setFocusRequest] = useState<CanvasFocusRequest | null>(null);
+  const [openModalRequest, setOpenModalRequest] = useState<CanvasModalRequest | null>(null);
+  const [resolvedCandidateJobId, setResolvedCandidateJobId] = useState<string | undefined>(undefined);
+  const uiActionNonceRef = useRef(1);
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     try {
@@ -220,6 +228,74 @@ export function App() {
       }
     }
   };
+
+  useEffect(() => {
+    setResolvedCandidateJobId(undefined);
+  }, [route.kind, route.kind === 'application' ? route.applicationId : '']);
+
+  const currentCandidateJobId = useMemo(() => {
+    if (route.kind !== 'application') return undefined;
+    const fromOverview = overview?.applications.find((a) => a.id === route.applicationId)?.jobId;
+    return fromOverview || resolvedCandidateJobId;
+  }, [route, overview, resolvedCandidateJobId]);
+
+  const applyUiNavigation = useCallback(
+    (uiAction: AgentUiAction) => {
+      if (!uiAction.route) return;
+      let target: AppRoute | null = null;
+      if (uiAction.route === 'queue') {
+        if (uiAction.filter) {
+          uiActionNonceRef.current += 1;
+          setQueueFilterReq({ filter: uiAction.filter, nonce: uiActionNonceRef.current });
+        }
+        target = { kind: 'queue' };
+      } else if (uiAction.route === 'jobs') {
+        target = { kind: 'jobs' };
+      } else if (uiAction.route === 'talent') {
+        target = { kind: 'talent' };
+      } else if (uiAction.route === 'interviewer') {
+        target = { kind: 'interviewer' };
+      } else if (uiAction.route === 'application' && uiAction.target_id) {
+        target = { kind: 'application', applicationId: uiAction.target_id };
+      } else if (uiAction.route === 'job' && uiAction.target_id) {
+        target = { kind: 'job', jobId: uiAction.target_id };
+      }
+      if (target && formatHashRoute(target) !== formatHashRoute(route)) {
+        navigateToRoute(target);
+      }
+    },
+    [route],
+  );
+
+  const handleAgentUiAction = useCallback(
+    (uiAction: AgentUiAction) => {
+      if (uiAction.action === 'navigate') {
+        applyUiNavigation(uiAction);
+      } else if (uiAction.action === 'focus_section' && uiAction.section) {
+        uiActionNonceRef.current += 1;
+        setFocusRequest({ section: uiAction.section, nonce: uiActionNonceRef.current });
+      }
+      // suggest_action never auto-navigates or auto-opens modals; only executed on user click.
+    },
+    [applyUiNavigation],
+  );
+
+  const handleExecuteSuggestedAction = useCallback(
+    (uiAction: AgentUiAction) => {
+      if (uiAction.route) {
+        applyUiNavigation(uiAction);
+      }
+      if (uiAction.modal) {
+        uiActionNonceRef.current += 1;
+        setOpenModalRequest({ modal: uiAction.modal, nonce: uiActionNonceRef.current });
+      }
+    },
+    [applyUiNavigation],
+  );
+
+  const handleFocusConsumed = useCallback(() => setFocusRequest(null), []);
+  const handleModalConsumed = useCallback(() => setOpenModalRequest(null), []);
+  const handleFilterConsumed = useCallback(() => setQueueFilterReq(null), []);
 
   const canvasRouteTarget = useMemo<CanvasRouteTarget>(() => {
     if (route.kind === 'application') {
@@ -480,11 +556,14 @@ export function App() {
         <ChatPanel
           sid={session.sid}
           route={route}
+          currentJobId={currentCandidateJobId}
           defaultJobId={overview?.jobs[0]?.id}
           onCollapse={() => setChatCollapsed(true)}
           onResizeStart={handleResizeStart}
           onResizeReset={() => setChatWidth(324)}
           onToolCompleted={() => handleRefreshAll()}
+          onUiAction={handleAgentUiAction}
+          onExecuteSuggestedAction={handleExecuteSuggestedAction}
           onUploadStarted={(task) => setUploadTask(task)}
         />
 
@@ -565,6 +644,11 @@ export function App() {
                 route={canvasRouteTarget}
                 candidateQueue={candidateQueue}
                 isOffline={isOffline}
+                focusRequest={focusRequest}
+                onFocusConsumed={handleFocusConsumed}
+                openModalRequest={openModalRequest}
+                onModalRequestConsumed={handleModalConsumed}
+                onCandidateJobResolved={setResolvedCandidateJobId}
                 refreshNonce={refreshNonce}
                 uploadTask={uploadTask}
                 onBack={() =>
@@ -616,6 +700,8 @@ export function App() {
               ) : (
                 <QueueView
                   overview={overview}
+                  filterRequest={queueFilterReq}
+                  onFilterConsumed={handleFilterConsumed}
                   onOpenApplication={(applicationId, queue) => {
                     setCandidateQueue(queue);
                     navigateToRoute({ kind: 'application', applicationId });
