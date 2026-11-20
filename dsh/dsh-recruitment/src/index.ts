@@ -191,6 +191,7 @@ import { registerJobActionHttp, type JobActionHostContext } from './http/actions
 import { registerActionsHttp, type ActionHostContext } from './http/actions.ts'
 import { registerCompoundHttp, type CompoundHostContext } from './http/compound.ts'
 import { registerAppShell, type AppShellHostContext } from './http/app-shell.ts'
+import { createAppAgentTurnBridge, type AgentTurnHost } from './http/agent-turn.ts'
 import { registerBatchUndoHttp, type BatchUndoHostContext } from './http/batch-undo.ts'
 import { registerScorecardDraftHttp, type ScorecardDraftHostContext } from './http/scorecard-draft.ts'
 import { registerMinuteRebindHttp, type MinuteRebindHostContext } from './http/minute-rebind.ts'
@@ -548,14 +549,23 @@ export function apply(
       'recruitment: compound confirmation route',
     )
     // D-167：独立整页 v4（/recruitment/app）+ 会话/调试身份 + 对话入口。
-    // 对话桥本版未接线（agentTurn=null）→ 返回 503 AGENT_UNAVAILABLE；页面显示降级提示，业务按钮不受影响。
-    child.effect(
-      () => registerAppShell(
+    // 对话桥接 DSH 既有 `ctx.agents`（不新建 Agent Runtime）：同一个 rc_sid = DSH session，
+    // followup 用户消息 + 订阅 agent/assistant-stream / session/event → SSE；工具面只读 allow-list。
+    // 宿主缺 agents 服务时桥仍返回 503 AGENT_UNAVAILABLE（页面降级，业务按钮不受影响）。
+    child.effect(() => {
+      const bridge = createAppAgentTurnBridge(
+        child as unknown as AgentTurnHost,
+        { workspaceRoot: process.env.RECRUITMENT_WORKSPACE_ROOT },
+      )
+      const disposeShell = registerAppShell(
         child as unknown as AppShellHostContext,
-        { identity: actorIdentity, agentTurn: null },
-      ),
-      'recruitment: standalone v4 app shell',
-    )
+        { identity: actorIdentity, agentTurn: bridge },
+      )
+      return () => {
+        disposeShell()
+        void bridge.dispose()
+      }
+    }, 'recruitment: standalone v4 app shell')
     // 批量不通过 / 撤销（5 秒 Toast）：两条新 exact POST 路由，与写动作共享同一身份单例。
     child.effect(
       () => registerBatchUndoHttp(
