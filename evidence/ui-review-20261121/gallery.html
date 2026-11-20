@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>UI 对照包 · 实际产品 vs 定稿原型（2026-11-21）</title>
+<style>
+  body { margin: 0; background: #f6f5f1; color: #1b1a17; font: 14px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  header { padding: 24px 32px 8px; }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  p { margin: 6px 0; color: #55524c; max-width: 980px; }
+  section { padding: 24px 32px 8px; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  .frame { background: #fff; border: 1px solid #ddd8cf; border-radius: 10px; padding: 10px; overflow: auto; }
+  .frame img { display: block; width: 100%; height: auto; }
+  .cap { font-size: 12px; color: #6d6a63; margin: 8px 2px 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+  .small img { max-height: 520px; object-fit: cover; object-position: top; }
+</style>
+</head>
+<body>
+<header>
+  <h1>UI 对照包 · 实际产品 v4 vs 定稿原型</h1>
+  <p>左/上 = 实际产品 <code>/recruitment/app</code>（预览库，1 个演示候选人）；右/下 = 定稿原型 <code>design/v4/recruitment_os.html</code>（假数据，6 个候选人）。同 1440×900。</p>
+  <p>用途：产品负责人认为两边 UI 有区别，前端窗口在云端看不到本机 Host；本页为逐条核对用。差异请标注为“数据差异 / 刻意简化 / 实现缺口”。</p>
+</header>
+
+<section>
+  <h2>1. 并排：今日待办</h2>
+  <div class="frame"><img src="compare-queue-1440.png" alt="product vs prototype queue" /></div>
+  <div class="cap">重点看：右栏顶部状态（今日待办 vs 等你拍板/Agent 已代办）、行内超时原因、左栏“新建岗位”、对话区早报与动作快捷词。</div>
+</section>
+
+<section>
+  <h2>2. 并排：候选人页</h2>
+  <div class="frame"><img src="compare-candidate-1440.png" alt="product vs prototype candidate" /></div>
+  <div class="cap">重点看：候选人头部（翻页/角色页签/决策纪要/故事头）、信息密度与字号、岗位标准对照与面试区块。</div>
+</section>
+
+<section class="grid small">
+  <div><h2>实际产品 · 今日待办</h2><div class="frame"><img src="01-product-queue-1440.png" alt="" /></div></div>
+  <div><h2>实际产品 · 候选人页</h2><div class="frame"><img src="02-product-candidate-top-1440.png" alt="" /></div></div>
+  <div><h2>实际产品 · 岗位标准对照</h2><div class="frame"><img src="03-product-candidate-criteria-1440.png" alt="" /></div></div>
+  <div><h2>实际产品 · 在招岗位</h2><div class="frame"><img src="04-product-jobs-1440.png" alt="" /></div></div>
+  <div><h2>实际产品 · 人才库</h2><div class="frame"><img src="06-product-talent-1440.png" alt="" /></div></div>
+  <div><h2>定稿原型 · 今日待办</h2><div class="frame"><img src="07-prototype-queue-1440.png" alt="" /></div></div>
+  <div><h2>定稿原型 · 候选人页</h2><div class="frame"><img src="08-prototype-candidate-1440.png" alt="" /></div></div>
+</section>
+
+<section>
+  <h2>差异清单（详见 README）</h2>
+  <p>A 数据差异（非 bug）：候选人数/岗位数/姓名/轮次不同。B 待确认：队列双状态与角色切换、行内超时原因、新建岗位、对话早报/动作快捷词、候选人翻页/角色页签/纪要复制、整体字号密度。</p>
+</section>
+</body>
+</html>
