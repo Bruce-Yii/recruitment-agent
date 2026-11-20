@@ -29950,7 +29950,7 @@ function JobsView({ overview, onOpenJob }) {
 				type: "button",
 				className: "flow-row",
 				"data-testid": `app-job-item-${job.id}`,
-				onMouseEnter: () => prefetchCanvasPath(`/recruitment/api/recruiting/jobs/${encodeURIComponent(job.id)}`),
+				onMouseEnter: () => prefetchCanvasPath(`/recruitment/api/recruiting/jobs/${encodeURIComponent(job.id)}`, (path) => fetchAppJson(path, readCookie("rc_sid"))),
 				onClick: () => onOpenJob(job.id),
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					className: "flow-top",
@@ -29987,7 +29987,7 @@ function JobsView({ overview, onOpenJob }) {
 					}, st.code))
 				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 					className: "sec-meta",
-					children: job.nextStep.conclusion || "点击进入岗位详情与候选人池"
+					children: "点击进入岗位详情与候选人池"
 				})]
 			}, job.id))
 		})]
@@ -30028,7 +30028,7 @@ function QueueView({ overview, onOpenApplication, onUploadStarted }) {
 	const handleRowHover = (app) => {
 		if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
 		hoverTimerRef.current = setTimeout(() => {
-			prefetchCanvasPath(`/recruitment/api/recruiting/applications/${encodeURIComponent(app.id)}`);
+			prefetchCanvasPath(`/recruitment/api/recruiting/applications/${encodeURIComponent(app.id)}`, (path) => fetchAppJson(path, readCookie("rc_sid")));
 		}, 120);
 	};
 	const handleRowLeave = () => {
@@ -30199,7 +30199,7 @@ function QueueView({ overview, onOpenApplication, onUploadStarted }) {
 								})]
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 								className: "cr-sub",
-								children: app.nextStep.conclusion || app.interviewSummary || app.screeningSummary || app.materialSummary
+								children: app.interviewSummary || app.screeningSummary || app.materialSummary
 							})]
 						})]
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
@@ -30278,7 +30278,7 @@ function TalentView({ overview, onOpenApplication }) {
 					type: "button",
 					className: "clean-row",
 					"data-testid": `app-talent-item-${app.id}`,
-					onMouseEnter: () => prefetchCanvasPath(`/recruitment/api/recruiting/applications/${encodeURIComponent(app.id)}`),
+					onMouseEnter: () => prefetchCanvasPath(`/recruitment/api/recruiting/applications/${encodeURIComponent(app.id)}`, (path) => fetchAppJson(path, readCookie("rc_sid"))),
 					onClick: () => onOpenApplication(app.id, ids),
 					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "cr-left",

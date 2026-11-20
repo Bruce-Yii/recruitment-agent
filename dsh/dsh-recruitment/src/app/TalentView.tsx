@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { RecruitingOverviewView } from '../client/recruiting/view-model.ts';
 import { prefetchCanvasPath } from '../client/canvas/canvas-ux.ts';
+import { fetchAppJson, readCookie } from './api.ts';
 
 export interface TalentViewProps {
   readonly overview: RecruitingOverviewView;
@@ -73,7 +74,10 @@ export function TalentView({ overview, onOpenApplication }: TalentViewProps) {
               className="clean-row"
               data-testid={`app-talent-item-${app.id}`}
               onMouseEnter={() =>
-                prefetchCanvasPath(`/recruitment/api/recruiting/applications/${encodeURIComponent(app.id)}`)
+                prefetchCanvasPath(
+                  `/recruitment/api/recruiting/applications/${encodeURIComponent(app.id)}`,
+                  (path) => fetchAppJson(path, readCookie('rc_sid')),
+                )
               }
               onClick={() => onOpenApplication(app.id, ids)}
             >
