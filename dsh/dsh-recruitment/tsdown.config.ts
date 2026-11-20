@@ -12,7 +12,7 @@
 // DSH 直接按源码执行，构建只服务浏览器那半边。
 import { readFileSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'node:path'
-import { defineConfig } from 'tsdown'
+import { defineConfig, type UserConfig } from 'tsdown'
 
 // CSS 导入：构建器没装 `@tsdown/css`，而客户端组件会自然地写 `import './x.css'`。
 // 这里在**解析/加载阶段**把 CSS 变成一个注入模块：模块加载时把样式塞进 document.head（只塞一次），
@@ -44,7 +44,7 @@ const cssInjectionPlugin = {
   },
 }
 
-export default defineConfig({
+const clientConfig: UserConfig = {
   entry: { client: 'src/client/index.tsx' },
   outDir: 'lib',
   format: 'cjs',
@@ -61,4 +61,21 @@ export default defineConfig({
     footer: 'return module.exports; } });',
     intro: 'var module = { exports: {} }; var exports = module.exports;',
   },
-})
+}
+
+// 独立整页 v4（D-167）：ESM + 自包含（react/react-dom 一并打进产物；页面没有宿主模块表）。
+// CSS 仍走注入插件（运行时把样式塞进 <head>），因此不要求额外产出 app.css。
+const appConfig: UserConfig = {
+  entry: { app: 'src/app/main.tsx' },
+  outDir: 'lib',
+  format: 'esm',
+  platform: 'browser',
+  target: 'es2022',
+  dts: false,
+  clean: false,
+  plugins: [cssInjectionPlugin],
+  outputOptions: { entryFileNames: 'app.js' },
+}
+
+export default defineConfig([clientConfig, appConfig])
+
