@@ -1,0 +1,30 @@
+# 阶段一（服务端派发）机检与自验（2026-11-21 · HEAD f0f54ee）
+
+| 门 | 命令 | 结果 |
+|---|---|---|
+| 类型（全量） | `cd dsh/dsh-recruitment && npx tsc --noEmit` | PASS（0） |
+| 构建 | `npx tsdown` | PASS（双入口；本次未改 client/app 产物） |
+| 服务端类型棘轮 | `node scripts/server-typecheck.mjs` | PASS（0/0） |
+| 调度预算 | `node scripts/runtime-budget.mjs` | PASS（5051/5051） |
+| 入口可达 | `node scripts/entry-reachability.mjs` | PASS（无新缺口；手拼 0） |
+| 合同复用 | `node scripts/client-contract-check.mjs` | PASS |
+| 文案 lint | `node scripts/term-lint.mjs` | PASS |
+| 15 步全链路 | `run-v4.mjs --fresh --port 49347` | **15/15 PASS**（阶段一后；审计 hard 0） |
+| 真模型 SSE | `probe-ui-dispatch.mjs` | 3/3 ui_action 命中；free_slots 真调用；诊断 17 只读/0 写；业务域零写入 |
+| 干净库全量测试 | `node test/run-all.mjs` | **未跑**（非 main 合并轮） |
+
+## 真模型 SSE 摘要（详见 ui-dispatch-probe.json）
+
+- 打开人才库 → `ui_action {"action":"navigate","route":"talent"}`
+- 对比岗位评分标准（候选人上下文）→ `ui_action {"action":"focus_section","section":"criteria"}`
+- 查下一轮可约时段（候选人上下文）→ `recruitment_interview_get` → `recruitment_application_get` → `recruitment_interview_free_slots`（空 slots + NO_CALENDAR_BINDING，如实）→ `ui_action {"action":"suggest_action","route":"application","target_id":"…","modal":"schedule","label":"去约面"}`
+- `x-recruitment-agent-diag: 1` 工具清单（17）：application_get / candidate_get / document_read / evaluation_summarize / **interview_free_slots** / interview_get / interview_record_verify / job_get / material_read / page_image / resume_read / resume_serialize / screening_evaluate / structure_validate / trace_get / transcript_read / **ui_dispatch**；写工具 0。
+
+## 环境限制
+
+- 测试 profile 无 `RECRUITMENT_FEISHU_USER_MAP`（actor→open_id），日历读不到 → 查时段工具空结果 + 原因；未伪造时段。真机日历绑定时应返回真实 slots（同一实现，HTTP 路由已有测试）。
+- 预览 Host 49351 仍是阶段一代码**重启前**的旧进程；阶段二验收时用新代码重启。
+
+## 清理
+
+一次性库 drop、profile 副本/Chrome/token 删除、端口释放（probe 自带 finally）；49351 未触碰。
