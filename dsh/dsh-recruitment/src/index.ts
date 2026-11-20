@@ -123,6 +123,8 @@ import {
   unconfiguredStageAdvanceTool,
 } from './tools/stage-advance.ts'
 import { createTraceGetTool, unconfiguredTraceGetTool } from './tools/trace-get.ts'
+import { createUiDispatchTool } from './tools/ui-dispatch.ts'
+import { createInterviewFreeSlotsTool } from './tools/interview-free-slots.ts'
 // D-141 §4（最高优先项）：工具调用留痕接线。
 // `src/domain/trace.ts` 的记录适配器实现完整，但产品执行路径从未调用它 →
 // `recruitment.tool_call` 永远没有写入，`recruitment_trace_get` 的 TOOL_CALL 环永远是 gap。
@@ -468,6 +470,27 @@ export function apply(
   // 转写导入的连接器回读路径 fail-closed（BLOCKED/TRANSPORT_NOT_CONFIGURED，不拉子进程）。
   // env 只用于适配器判断凭据**存在性**（布尔），绝不用于取 CLI 路径（R7 / AGENTS.md §7.6）。
   const feishu = resolveFeishuConnector(config?.feishu ?? {}, env)
+  // 飞书日历 CLI 路径 + 面试官 open_id 映射：HTTP 路由与 DSH 工具共用同一份解析（不各写一份）。
+  // 只从插件配置 `${ENV}` 展开绝对路径；未配置 = null → 工具/路由如实 NOT_CONNECTED。
+  const feishuCalendarCliPath = ((): string | null => {
+    const raw = config?.feishu?.cli
+    if (typeof raw !== 'string' || raw === '') return null
+    const ref = /^\$\{([A-Z0-9_]+)\}$/.exec(raw)
+    const value = ref === null ? raw : env[ref[1] as string]
+    return typeof value === 'string' && value !== '' ? value : null
+  })()
+  /** 面试官 actor_id → 飞书 open_id（只从环境变量映射表读；缺失/非法 = 未绑定，不猜）。 */
+  const resolveInterviewerOpenId = async (actorId: string): Promise<string | null> => {
+    const raw = env.RECRUITMENT_FEISHU_USER_MAP
+    if (typeof raw !== 'string' || raw.trim() === '') return null
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>
+      const value = parsed[actorId]
+      return typeof value === 'string' && value.startsWith('ou_') ? value : null
+    } catch {
+      return null
+    }
+  }
   // D5 W1：Demo Actor 身份 = alias→UUID 映射 + **进程内** session→alias 注册表。
   // 必须是单例：写工具（工具路径）与 Host Remote Action（浏览器路径）共享同一个 registry，
   // 否则“浏览器 PUT 绑定的 session”与“Agent 工具解析的 session”对不上。
@@ -595,31 +618,12 @@ export function apply(
       () => registerInterviewSlotsHttp(
         child as unknown as InterviewSlotsHostContext,
         {
-          // 配置里可能是 `${RECRUITMENT_FEISHU_CLI}` 引用：这里展开成真实路径（未设置 = null → NOT_CONNECTED）。
-          feishuCliPath: (() => {
-            const raw = config?.feishu?.cli
-            if (typeof raw !== 'string' || raw === '') return null
-            const ref = /^\$\{([A-Z0-9_]+)\}$/.exec(raw)
-            const value = ref === null ? raw : env[ref[1] as string]
-            return typeof value === 'string' && value !== '' ? value : null
-          })(),
+          // 配置里可能是 `${RECRUITMENT_FEISHU_CLI}` 引用：与工具共用同一份展开（未设置 = null → NOT_CONNECTED）。
+          feishuCliPath: feishuCalendarCliPath,
           platformChannel: true,
           identity: actorIdentity,
-          // 面试官 actor_id → 飞书 open_id 映射：只从环境变量读（不猜、不回退姓名邮箱）。
-          // 格式：RECRUITMENT_FEISHU_USER_MAP={"<actor uuid>":"ou_..."}；缺失或非法 = 未绑定。
-          io: {
-            resolveInterviewerOpenId: async (actorId: string) => {
-              const raw = env.RECRUITMENT_FEISHU_USER_MAP
-              if (typeof raw !== 'string' || raw.trim() === '') return null
-              try {
-                const parsed = JSON.parse(raw) as Record<string, unknown>
-                const value = parsed[actorId]
-                return typeof value === 'string' && value.startsWith('ou_') ? value : null
-              } catch {
-                return null
-              }
-            },
-          },
+          // 面试官 actor_id → 飞书 open_id 映射：与工具共用同一份解析（只从环境变量读，不猜）。
+          io: { resolveInterviewerOpenId },
         },
       ),
       'recruitment: interview free-slots route',
@@ -1133,6 +1137,14 @@ export function apply(
   const traceGet = database.resolved === null
     ? unconfiguredTraceGetTool(database.issues)
     : createTraceGetTool(database.resolved)
+  // 对话×画布统一交互（design/v4/chat-canvas-interaction-spec.md）：只读 UI 派发工具。
+  const uiDispatch = createUiDispatchTool()
+  // 只读查时段（与 HTTP free-slots 同一实现）：对话里先查真实空闲，再由 uiDispatch 给建议动作。
+  const interviewFreeSlots = createInterviewFreeSlotsTool({
+    feishuCliPath: feishuCalendarCliPath,
+    platformChannel: true,
+    io: { resolveInterviewerOpenId },
+  })
   // 企业自建配置（角色权限范围 / 招聘团队 / 流水线模板）：配置是数据，企业自己建。
   const configTools = database.resolved === null
     ? [
@@ -1172,6 +1184,8 @@ export function apply(
     decisionRecord,
     recordHumanDecision,
     traceGet,
+    uiDispatch,
+    interviewFreeSlots,
     ...configTools,
     pageImage,
     modelTextMerge,

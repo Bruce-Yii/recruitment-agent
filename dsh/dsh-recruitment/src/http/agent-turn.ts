@@ -19,6 +19,8 @@ import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import type { AppAgentTurnBridge } from './app-shell.ts'
+import { normalizeUiAction, UI_DISPATCH_TOOL_NAME } from '../tools/ui-dispatch.ts'
+import { INTERVIEW_FREE_SLOTS_TOOL_NAME } from '../tools/interview-free-slots.ts'
 
 /** 桥需要的宿主最小面（Cordis Context 的窄化）。 */
 export interface AgentTurnHost {
@@ -52,6 +54,9 @@ const CHAT_READ_TOOLS: readonly string[] = [
   'recruitment_page_image',
   'recruitment_evaluation_summarize',
   'recruitment_screening_evaluate',
+  // 对话×画布统一交互（design/v4/chat-canvas-interaction-spec.md §3）：只读 UI 派发 + 只读查时段。
+  UI_DISPATCH_TOOL_NAME,
+  INTERVIEW_FREE_SLOTS_TOOL_NAME,
 ]
 
 const TURN_TIMEOUT_MS = 10 * 60 * 1000
@@ -340,6 +345,7 @@ export function createAppAgentTurnBridge(
       try {
         const agent = await ensureAgent(sid)
         const toolNames = new Map<string, string>()
+        const toolArgs = new Map<string, unknown>()
         let usage: unknown
 
         const onStream = (...args: unknown[]): void => {
@@ -363,6 +369,7 @@ export function createAppAgentTurnBridge(
             if (typeof data.arguments === 'string') {
               try { input = JSON.parse(data.arguments) } catch { input = data.arguments }
             }
+            toolArgs.set(callId, input)
             send('tool', { name, status: 'start', input })
             return
           }
@@ -380,6 +387,17 @@ export function createAppAgentTurnBridge(
                 ? { message: [errorInfo.code, errorInfo.reason].filter((x) => typeof x === 'string').join('：') }
                 : {}),
             })
+            // 统一交互 §3.2：UI 派发工具成功 → 额外下发一条 ui_action（前端据此切画布/聚焦/建议按钮）。
+            if (name === UI_DISPATCH_TOOL_NAME && !failed) {
+              const rawArgs = toolArgs.get(callId)
+              if (rawArgs !== undefined) {
+                try {
+                  send('ui_action', normalizeUiAction(rawArgs))
+                } catch {
+                  // 工具侧校验通过才会成功；这里再校验失败说明参数被上游篡改 → 不下发（fail-closed）。
+                }
+              }
+            }
             return
           }
           if (event.type === 'assistant/message') {

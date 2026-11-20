@@ -121,20 +121,24 @@ export interface InterviewSlotsIo {
   readonly timezone_offset_minutes?: number
 }
 
-export interface InterviewSlotsHttpDeps {
+/** 计算空闲时段所需的最小依赖（HTTP 路由与 DSH 工具共用；不含身份）。 */
+export interface InterviewSlotsCoreDeps {
   /** lark-cli 绝对路径；不给 = NOT_CONNECTED（不拉任何进程）。 */
   readonly feishuCliPath: string | null
   /** 是否把 runner 声明为平台通道（生产 true → 可能 LIVE；回放 false → FIXTURE）。 */
   readonly platformChannel?: boolean
-  readonly identity: DemoActorIdentity
   readonly io?: InterviewSlotsIo
+}
+
+export interface InterviewSlotsHttpDeps extends InterviewSlotsCoreDeps {
+  readonly identity: DemoActorIdentity
 }
 
 // ---------------------------------------------------------------------------
 //  HTTP 小工具
 // ---------------------------------------------------------------------------
 
-class SlotsHttpProblem extends Error {
+export class SlotsHttpProblem extends Error {
   readonly status: number
   readonly body: unknown
   constructor(status: number, body: unknown) {
@@ -190,7 +194,7 @@ function rejectOverrides(url: URL): void {
 }
 
 /** 解析并校验 query（全在碰外部之前完成）。 */
-interface ParsedQuery {
+export interface ParsedQuery {
   readonly application_id: string
   readonly interviewer_actor_ids: readonly string[]
   readonly days: number
@@ -198,14 +202,27 @@ interface ParsedQuery {
   readonly timezone: string
 }
 
-function parseQuery(url: URL): ParsedQuery {
+/**
+ * 解析并校验空闲时段查询（HTTP 路由与 DSH 工具共用）。
+ * @param url - 已构造好的查询（工具场景可用 `new URL('http://localhost/')` 拼参数）。
+ * @param options - `requireApplicationId:false` 时允许省略 application_id（工具场景）。
+ * @returns 已校验查询。
+ */
+export function parseQuery(
+  url: URL,
+  options: { readonly requireApplicationId?: boolean } = {},
+): ParsedQuery {
   rejectOverrides(url)
   const unknown = [...url.searchParams.keys()].filter((key) => !(QUERY_KEYS as readonly string[]).includes(key))
   if (unknown.length > 0) {
     throw problem(400, 'INVALID_ARGS', 'UNKNOWN_PARAM', '请求里有不认识的参数', { unknown })
   }
   const applicationId = url.searchParams.get('application_id')
-  if (!isUuid(applicationId)) {
+  if (options.requireApplicationId === false) {
+    if (applicationId !== null && !isUuid(applicationId)) {
+      throw problem(400, 'INVALID_ARGS', 'INVALID_APPLICATION_ID', 'application_id 必须是 UUID')
+    }
+  } else if (!isUuid(applicationId)) {
     throw problem(400, 'INVALID_ARGS', 'INVALID_APPLICATION_ID', 'application_id 必须是 UUID')
   }
   const rawIds = url.searchParams.get('interviewer_actor_ids') ?? ''
@@ -233,7 +250,7 @@ function parseQuery(url: URL): ParsedQuery {
   if (!isValidIanaTimezone(timezone)) {
     throw problem(400, 'INVALID_ARGS', 'INVALID_TIMEZONE', REASON_TEXT.INVALID_TIMEZONE, { timezone })
   }
-  return { application_id: applicationId, interviewer_actor_ids: interviewerActorIds, days, duration_minutes: durationMinutes, timezone }
+  return { application_id: applicationId ?? '', interviewer_actor_ids: interviewerActorIds, days, duration_minutes: durationMinutes, timezone }
 }
 
 /**
@@ -298,7 +315,7 @@ async function defaultResolveInterviewerOpenId(_actorId: string): Promise<string
 }
 
 /** 构造默认 reader（没配 CLI 绝对路径就不建，路由层据此给 NOT_CONNECTED）。 */
-function defaultReader(deps: InterviewSlotsHttpDeps): FeishuCalendarReader | null {
+function defaultReader(deps: InterviewSlotsCoreDeps): FeishuCalendarReader | null {
   if (deps.feishuCliPath === null || deps.feishuCliPath.trim() === '') return null
   return createFeishuCalendarReader({
     runner: createCalendarProcessRunner({ command: deps.feishuCliPath }),
@@ -333,6 +350,32 @@ async function handleGet(deps: InterviewSlotsHttpDeps, req: IncomingMessage, res
   const sessionId = readSessionHeader(req)
   requireBoundActor(deps, sessionId)
   const query = parseQuery(url)
+  const result = await computeInterviewFreeSlots(deps, query)
+  json(res, 200, result)
+}
+
+// ---------------------------------------------------------------------------
+//  compute（HTTP 路由与 DSH 只读工具共用同一份实现；纯计算，不写响应）
+// ---------------------------------------------------------------------------
+
+/** 空闲时段响应（HTTP 路由与 DSH 工具共用同一形状）。 */
+export type InterviewFreeSlotsResponse = {
+  readonly slots: ReturnType<typeof computeFreeSlots>
+  readonly proposed: number
+  readonly unsatisfied: readonly { readonly interviewer_actor_id: string; readonly reason: string }[]
+  readonly labels: ReturnType<typeof buildLabels>
+}
+
+/**
+ * 计算面试官交集空闲时段（HTTP 路由与 DSH 只读工具共用；不读身份、不写响应）。
+ * @param deps - 日历连接器依赖（工具场景不读 Session/身份）。
+ * @param query - 已校验的查询（`parseQuery` 产出）。
+ * @returns 与 HTTP 路由完全相同的响应体。
+ */
+export async function computeInterviewFreeSlots(
+  deps: InterviewSlotsCoreDeps,
+  query: Pick<ParsedQuery, 'interviewer_actor_ids' | 'days' | 'duration_minutes' | 'timezone'>,
+): Promise<InterviewFreeSlotsResponse> {
   const io = deps.io ?? {}
   const reader = io.reader ?? defaultReader(deps)
   const resolveOpenId = io.resolveInterviewerOpenId ?? defaultResolveInterviewerOpenId
@@ -344,12 +387,11 @@ async function handleGet(deps: InterviewSlotsHttpDeps, req: IncomingMessage, res
 
   // 未配置日历连接器：如实 NOT_CONNECTED + 空 slots + 全员 unsatisfied（不冒充空闲）。
   if (reader === null) {
-    json(res, 200, {
+    return {
       slots: [], proposed: 0,
       unsatisfied: query.interviewer_actor_ids.map((interviewer_actor_id) => ({ interviewer_actor_id, reason: 'NO_CALENDAR_BINDING' })),
       labels: buildLabels({ allLive: false, anyAuthFailure: false, readerConfigured: false }),
-    })
-    return
+    }
   }
 
   const dates = upcomingDates(now(), query.days, time)
@@ -387,15 +429,12 @@ async function handleGet(deps: InterviewSlotsHttpDeps, req: IncomingMessage, res
   }
 
   // 候选人忙闲：当前 DB 没有「候选人 → 飞书用户」映射表，且候选人是外部人。
-  // 此处**不猜**候选人的 open_id、也不把候选人当「全天空闲」来伪造交集——
-  // 只按已成功读取的面试官忙闲求交。未来若有候选人映射，由注入 resolver 补入。
-
+  // 此处**不猜**候选人的 open_id、也不把候选人当「全天空闲」来伪造交集——只按已成功读取的面试官忙闲求交。
   if (participants.length === 0) {
-    json(res, 200, {
+    return {
       slots: [], proposed: 0, unsatisfied,
       labels: buildLabels({ allLive: false, anyAuthFailure, readerConfigured: true }),
-    })
-    return
+    }
   }
 
   const slots = computeFreeSlots({
@@ -409,12 +448,11 @@ async function handleGet(deps: InterviewSlotsHttpDeps, req: IncomingMessage, res
     source: allLive ? 'LIVE' : 'FIXTURE',
   })
 
-  json(res, 200, {
+  return {
     slots, proposed: slots.length, unsatisfied,
     labels: buildLabels({ allLive, anyAuthFailure, readerConfigured: true }),
-  })
+  }
 }
-
 // ---------------------------------------------------------------------------
 //  注册器
 // ---------------------------------------------------------------------------
