@@ -1990,3 +1990,10 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ④ 手打「回到今日待办，只看待初筛」→ `#/queue` + `app-queue-filter-screening.active`。
   探针 `pass=true`（四检查全过）；15 步 `--fresh` 合并后 **15/15 PASS**（审计 hard 0）；证据 `evidence/chat-canvas-linkage-20261121/`（probe JSON + 4 张 1440 截图 + 回归/审计）。
   **状态**：D-175 的“规范先入库→服务端→前端→本地验收”流程首次跑通；PR #11 内容已并入 feat（可标已合并/关闭）；预览 Host 已用新构建重启（token 仅 TEMP，不入库）。**残余**：① 真实日历未绑定（无 `RECRUITMENT_FEISHU_USER_MAP`）→ 真实可约时段未证，查时段工具如实返回空+原因（未伪造）；② 全量测试未跑（非 main 合并轮）；③ 未合并 main。
+
+- **D-177（2026-11-21，总控；DSH 侧栏「招聘工作台」打开旧 shell，必须直接打开 v4）**
+  **来源**：产品负责人 2026-11-21 反馈“左侧边的招聘工作台点开是老的垃圾，只有点第二个才有用”；取证 `evidence/legacy-sidebar-entry-20261121/`（1440 两图 + DOM/testid JSON）。
+  **事实**：DSH 侧栏项仍注册旧 `RecruitmentShell`（`src/client/index.tsx:86-97`，testid `recruiting-workspace`/`overview-headline`/旧顶栏三页签）；v4 `src/app/App.tsx`（`app-chat-panel`/`app-canvas`）由 `src/http/app-shell.ts` 在 `/recruitment/app` 单独提供，未接进侧栏。与 `design/v4/frontend-task-09-v4-shell.md` 已裁决的“打开招聘工作台第一屏就是 v4，不许老首页”相违。
+  **裁决**：侧栏「招聘工作台」必须**直接打开 v4**（嵌入 `App` 或宿主内导航），旧 shell 从默认入口退役/隐藏；正常流程不要求 `/recruitment/test` 兜底；直链 `/recruitment/app` 与 15 步回归不得回归。界面改动由产品/前端窗口按 `design/v4/frontend-task-13-sidebar-entry-v4.md` 实现（本地总控不改界面，D-168/D-175）；若方案 A 需要服务端“DSH session→rc_sid/alias”绑定接口，先写契约再由本地实现。
+  **token 说明（非缺陷）**：DSH `?token=` 是进程级 launch token，首次换取持久 cookie；实测重启 Host 后免 token 直链 `/recruitment/app` 仍可进（cookie 持久），不需要每次带 token，更不应把 token 链接当产品入口。
+  **状态**：待前端交付（任务 13）；验收含侧栏点击 1440 截图 + 无旧壳 testid + 15 步回归。
