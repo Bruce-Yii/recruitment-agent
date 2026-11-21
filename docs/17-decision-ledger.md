@@ -45,7 +45,7 @@
 - 顺序错 → 公司/职位/时间可能错配 → 直接影响筛选结论，这是招聘侧最危险的错误
 - 40%（34/84）HARD 不是失败，是**语料真实质量**的反映（77 份里混了 PRD、行业报告、课程讲义）
 - 但要求两条配套：
-  1. 该 issue **必须带证据块**（哪些 block 顺序异常），让人一眼能判断
+  1. 该 issue **必须带核查材料块**（哪些 block 顺序异常），让人一眼能判断
   2. 人工队列要支持"**仅顺序问题**"快速放行，不能让人逐个读 40 份
 
 **不改回 SOFT 的理由**：SOFT 意味着系统自己认定"不影响"，而顺序问题恰恰是最难自动判断影响的。
@@ -181,7 +181,7 @@ G 线提出 6 个口径问题，逐条裁定：
 3. **升级有门槛**：模型把 `unreadable` 升级为 `present` 时，**每一条 entry 必须通过硬校验**（公司/学校 + 至少一个时间或职位，且值均为原文子串）；任何一条不过 → 回退到 `converter_state`
 4. **每次升级记一条 `state_upgrade` 事件**（字段名、converter_state、final_state、依据的 block_ids），用于后续质量复核
 
-**理由**：既不放弃模型层的价值，也不允许它无证据地推翻转换器的判断。
+**理由**：既不放弃模型层的价值，也不允许它无核查材料地推翻转换器的判断。
 
 ---
 
@@ -250,7 +250,7 @@ G 线提出 6 个口径问题，逐条裁定：
 ### D-34 · 授权修改 `db/verify.sql` 的 2 处夹具（冲突 1）
 
 **问题**：`verify.sql:398` 的夹具用 `current_stage_code='SCREENING'`，该值已被 **D-22** 作废、不在 S1–S12，加了外键后**必然违反**。
-证据：加 0004 前 `VERIFY PASS`；加 0004 后 `违反外键约束 fk_application_stage_catalog`。
+核查材料：加 0004 前 `VERIFY PASS`；加 0004 后 `违反外键约束 fk_application_stage_catalog`。
 
 **裁定**：**授权修改** `db/verify.sql` 两处：
 1. 给夹具租户种同一份 stage_catalog
@@ -563,7 +563,7 @@ P 线报的缺口里，有四个必须修，打包进 `0006`：
 
 ## 附录 A · 2026-11-13 起新增的裁定
 
-> 格式：裁定 / 理由 / 证据。证据一律给 `文件:行` 或命令输出，不给"我记得"。
+> 格式：裁定 / 理由 / 核查材料。核查材料一律给 `文件:行` 或命令输出，不给"我记得"。
 
 ### D-71 · 领域写路径用 TypeScript + node-postgres（`pg`），不做 Python sidecar
 
@@ -573,7 +573,7 @@ Python 只保留在它本来就是正确工具的地方：PDF 解析（PyMuPDF�
 **理由**：DSH 插件是产品面，业务逻辑不该被拆到子进程；一次工具调用起一个 Python 进程
 （~150ms）在演示规模能忍，但会让"一个领域规则"变成"两套实现"。代价是本包不再是零依赖。
 
-**证据**：`dsh/dsh-recruitment/CONTRACT.md:44-49`；commit `677a70a`；
+**核查材料**：`dsh/dsh-recruitment/CONTRACT.md:44-49`；commit `677a70a`；
 实测从本包目录连 PG 17.11 → `select count(*) from recruitment.stage_catalog` = 12 行。
 
 ### D-72 · S6「简历接入」必须有自己的工具
@@ -585,7 +585,7 @@ Python 只保留在它本来就是正确工具的地方：PDF 解析（PyMuPDF�
 **理由**：11 个契约工具里没有任何一个创建 candidate/application，而
 `recruitment_screening_evaluate` 明确只读、只吃 `application_id`。不补这个工具，链路在 S6→S7 断开。
 
-**证据**：`dsh/dsh-recruitment/contracts/job-screening/tool-contracts.md:12-20`（"只读 / advisory / 不落决策"）。
+**核查材料**：`dsh/dsh-recruitment/contracts/job-screening/tool-contracts.md:12-20`（"只读 / advisory / 不落决策"）。
 
 ### D-73 · 阶段码唯一口径 = `stage_catalog`（S1–S12），老仓 `handoff/15` 的编号不是阶段码
 
@@ -597,19 +597,19 @@ S10=综合评价与招聘决策、S11=Offer 与入职交接。契约里凡写成
 **理由**：`stage_catalog` 是唯一被外键强制的口径（`application.current_stage_code` → 0004）；
 D-22 原文也是按生命周期编号写的（"S6（简历接入）与 S7（初筛）"）。
 
-**证据**：`db/migrations/0002_seed.sql:242-243`；`docs/01-business-lifecycle.md:138/152/186`；
+**核查材料**：`db/migrations/0002_seed.sql:242-243`；`docs/01-business-lifecycle.md:138/152/186`；
 `db/STAGE-CATALOG.md`；`contracts/STAGE-CODES.md`。
 
 ### D-74 · `scorecard.items` 是**对象**，不是数组
 
 **裁定**：`items` = 以 rubric 准则 key 为键的对象，保留键 `transcript_basis`；
-证据 kind 用 `SEGMENT`（不是 `TRANSCRIPT_SEGMENT`）。
+核查材料 kind 用 `SEGMENT`（不是 `TRANSCRIPT_SEGMENT`）。
 
 **理由**：① 已提交的 `interview/transcript-rules.md` TR-E2/TR-E3 与
 `interview/tool-contracts.md` 两处依赖对象形态；② 对象天然能检出"漏评一维"（key 缺失），
 数组要扫描且允许重复 key。
 
-**证据**：`contracts/interview/transcript-rules.md:320-321`；`contracts/interview/tool-contracts.md:209`。
+**核查材料**：`contracts/interview/transcript-rules.md:320-321`；`contracts/interview/tool-contracts.md:209`。
 
 ### D-75 · 0007 的范围（决策与面评的完整性缺口）
 
@@ -623,7 +623,7 @@ D-22 原文也是按生命周期编号写的（"S6（简历接入）与 S7（初
 **理由**：这五处都是"错误写法在库层不报错"，与 0006 同一判据。
 特别是第 2 条：`decision` 现在**没有任何唯一约束**，两条互相矛盾的 FINAL 决策可以并存。
 
-**证据**：实测 `decision.stage_code` 的外键数 = 0；全库仅剩 `ai_summary.fk_ai_summary_artifact`
+**核查材料**：实测 `decision.stage_code` 的外键数 = 0；全库仅剩 `ai_summary.fk_ai_summary_artifact`
 一条多列外键不含 tenant_id；`decision` 只有 PK 与若干 FK，无 unique。
 
 ### D-76 · 0006 GAP-4 用复合外键，收紧 D-59 的字面
@@ -634,7 +634,7 @@ D-22 原文也是按生命周期编号写的（"S6（简历接入）与 S7（初
 **理由**：单列会让甲租户任务的"责任人"指向乙租户的 actor，工作台按 actor 过滤时跨租户可见。
 强度严格更强，D-59 要拦的"指向不存在 actor"照样 23503，可空语义不变。
 
-**证据**：`db/migrations/0006_integrity_gaps.sql` §4；`db/verify-0006.sql` G4-01/02/03。
+**核查材料**：`db/migrations/0006_integrity_gaps.sql` §4；`db/verify-0006.sql` G4-01/02/03。
 
 ### D-77 · 0006 GAP-3 沿用原约束名
 
@@ -642,7 +642,7 @@ D-22 原文也是按生命周期编号写的（"S6（简历接入）与 S7（初
 
 **理由**：库里只有一条"面试记录→转写版本"外键，改名会让 `SCHEMA.md` 与台账里的名字指向不存在的约束。
 
-**证据**：`db/INTEGRITY-GAPS.md` §5。
+**核查材料**：`db/INTEGRITY-GAPS.md` §5。
 
 ### D-78 · 新建租户必须先种 `stage_catalog` 再插面试
 
@@ -651,7 +651,7 @@ D-22 原文也是按生命周期编号写的（"S6（简历接入）与 S7（初
 **理由**：0006 给 `interview.stage_code` 加了 `(tenant_id, stage_code)` 外键；默认值 `'S8'`
 只保证"给了一个合法值"，救不了"该租户目录没种"。这是最可能在集成时炸的一条。
 
-**证据**：`db/migrations/0006_integrity_gaps.sql` §1；`db/verify-0006.sql` G1-01/02/03。
+**核查材料**：`db/migrations/0006_integrity_gaps.sql` §1；`db/verify-0006.sql` G1-01/02/03。
 
 ### D-79 · 人类闸门复用 DSH 的审批 seam，不自研
 
@@ -665,7 +665,7 @@ D-22 原文也是按生命周期编号写的（"S6（简历接入）与 S7（初
 DSH 自带 `@deepseek-ai/dsh-user-approval`（fail-closed）；headless profile 只有 seam 没有 UI →
 请求一律 `unavailable` → 拒绝。于是"无人值守跑批不可能落决策"是**结构性**的，不是纪律性的。
 
-**证据**：`dsh-tools/lib/types/index.d.ts` 的 `ToolExecutionInput`；
+**核查材料**：`dsh-tools/lib/types/index.d.ts` 的 `ToolExecutionInput`；
 `dsh --profile recruitment --dump-config` → `- id: approval` + `- id: ui-approval`；
 `docs/18-golden-path.md` §6。
 
@@ -681,7 +681,7 @@ DSH 自带 `@deepseek-ai/dsh-user-approval`（fail-closed）；headless profile 
 **理由**：`decision` 表没有可落幂等键的列；加列要迁移；而"重试同一请求"在工具调用里没有语义。
 承诺一个实现不了的幂等比不承诺更糟。
 
-**证据**：`decision` 表无 unique（实测）；`contracts/evaluation/decision-rules.md` DC-38/DC-41 待改。
+**核查材料**：`decision` 表无 unique（实测）；`contracts/evaluation/decision-rules.md` DC-38/DC-41 待改。
 
 ### D-81 · 模型兜底的"读"由 agent 自己承担，不另起模型调用
 
@@ -692,7 +692,7 @@ DSH 自带 `@deepseek-ai/dsh-user-approval`（fail-closed）；headless profile 
 **理由**：在插件里调模型需要一套独立凭据与配额，且模型看不到工具之外的上下文；
 而 agent 本来就在会话里。这符合"复用优先、不重复造模型通道"。
 
-**证据**：`converter/fallback/model_reader.py`（`model_call` 只能注入，包内无 provider SDK）；
+**核查材料**：`converter/fallback/model_reader.py`（`model_call` 只能注入，包内无 provider SDK）；
 `converter/fallback/README.md` §接线状态（BLOCKED：未接线）。
 
 ### D-82 · 契约里的 `work/control/…` 引用一律改指本文件
@@ -704,7 +704,7 @@ DSH 自带 `@deepseek-ai/dsh-user-approval`（fail-closed）；headless profile 
 **理由**：`work/control/` 在新仓从未存在（实测 `Test-Path` = False），`work/` 也不入库；
 行号会随追加漂移。
 
-**证据**：全仓 27 处引用，其中 20 处写的是 `work/control/`。
+**核查材料**：全仓 27 处引用，其中 20 处写的是 `work/control/`。
 
 ### D-83 · 两条口径冲突的裁定
 
@@ -714,7 +714,7 @@ DSH 自带 `@deepseek-ai/dsh-user-approval`（fail-closed）；headless profile 
 2. **PRD FR-V8（Brief 需下一轮已创建并版本化）vs DC-41/42**：**D-16 赢** ——
    Brief 派生不落表，v1.0 不版本化。FR-V8 按 v2 处理，不阻塞 v1.0。
 
-**证据**：`docs/16-design-rationale.md` §6（D-33）；D-16 正文见本文件 §C 线；
+**核查材料**：`docs/16-design-rationale.md` §6（D-33）；D-16 正文见本文件 §C 线；
 `db/migrations/0001_init.sql` 的 `trg_*_immutable`。
 
 ---
@@ -739,7 +739,7 @@ DSH 自带 `@deepseek-ai/dsh-user-approval`（fail-closed）；headless profile 
 **理由**：错误淘汰不可逆，给终局开"确认旁路"等于把四道防线降级成"记得点确认"。
 方向故意不对称：推进可以保守地少信息，淘汰不行。
 
-**证据**：`contracts/evaluation/decision-rules.md` §4.2.1 + Q-5；`docs/17` D-19（顺序 HARD）同一取向。
+**核查材料**：`contracts/evaluation/decision-rules.md` §4.2.1 + Q-5；`docs/17` D-19（顺序 HARD）同一取向。
 
 ### D-85 · 解析层唯一权威契约 = `DocumentContent`（docs/19），`converter` 是它的实现细节
 
@@ -754,7 +754,7 @@ DSH 自带 `@deepseek-ai/dsh-user-approval`（fail-closed）；headless profile 
 同一份 PDF，`converter` 直出的 block 数/文本/page/bbox 与映射后的 `DocumentContent` **逐项一致**；
 `completeness` 只有一套；`issues[].code` 由 U2 消费不得重命名。
 
-**证据**：Issue #3 与 docs/19；用户裁定原话"到底哪个好，就以哪个为准呗，并不是冲突的关系，本质上都是在做这一层"。
+**核查材料**：Issue #3 与 docs/19；用户裁定原话"到底哪个好，就以哪个为准呗，并不是冲突的关系，本质上都是在做这一层"。
 
 ---
 
@@ -771,18 +771,18 @@ DSH 自带 `@deepseek-ai/dsh-user-approval`（fail-closed）；headless profile 
 **理由**：接线点、不可逆变更、冻结合同、裁决台账并行写 = 互相覆盖。历史上 `index.ts` 被多 lane 抢改，
 导致十条工具只注册了八条、剩下两条"包内存在但入口不可达"（R2 判 BLOCKED）。
 
-**证据**：本轮 `884bc81` 之前 `index.ts` 只注册 8 个工具；`docs/21` §1。
+**核查材料**：本轮 `884bc81` 之前 `index.ts` 只注册 8 个工具；`docs/21` §1。
 
 ### D-87 · 模块委派必须是两层：Owner 自己再派并发子代理
 
 **裁定**：总控 → 模块 Owner → **Owner 必须再派下一层子代理，且并发**。单层串行不合法。
-派发必须写清五件事：写范围、不可碰清单、可执行验收标准、证据要求、停止条件。
+派发必须写清五件事：写范围、不可碰清单、可执行验收标准、核查材料要求、停止条件。
 Owner 回传必须九项齐全（见 `docs/21` §3.5），缺一项算没回传。
 
 **理由**：效率 + 上下文。S10 lane 三个子代理中途全部 failed，Owner 叫回来续跑才活下来；
 如果 Owner 自己串行写三个 80–118KB 的工具，上下文根本撑不住。
 
-**证据**：`docs/21` §3；S10 回传 §1 的三个子代理表。
+**核查材料**：`docs/21` §3；S10 回传 §1 的三个子代理表。
 
 ### D-88 · 验收必须浏览器驱动，CLI 不算验收
 
@@ -795,7 +795,7 @@ Owner 回传必须九项齐全（见 `docs/21` §3.5），缺一项算没回传�
 **落地**：`evidence/experiments/2026-11-13-web-browser-acceptance/` 是第一个按此标准做的实验记录。
 **Agent 不许替人点 approval**（D-79 的边界：闸门价值在于有真人看过）。
 
-**证据**：`docs/21` §4；`s3-02-result.png` + DB 读回一致；`s3-03-after-reload.png` 三项 PERSISTED 全 true。
+**核查材料**：`docs/21` §4；`s3-02-result.png` + DB 读回一致；`s3-03-after-reload.png` 三项 PERSISTED 全 true。
 
 ### D-89 · 动态结构必须在 UI 表单化，不许让模型自由生成
 
@@ -806,7 +806,7 @@ Owner 回传必须九项齐全（见 `docs/21` §3.5），缺一项算没回传�
 `decision.basis_refs`（弱模型把 `AUTHORITY`/`SCORECARD` 的键抄进 `RUBRIC_VERSION`，11 条 violation，
 走不到 approval）。prompt 写清楚不算修好，这是可用性问题。
 
-**证据**：`evidence/experiments/2026-11-13-web-browser-acceptance/README.md` §2.4。
+**核查材料**：`evidence/experiments/2026-11-13-web-browser-acceptance/README.md` §2.4。
 
 ### D-90 · 实验记录必须完整可审计；本地与远端必须一致
 
@@ -816,7 +816,7 @@ Owner 回传必须九项齐全（见 `docs/21` §3.5），缺一项算没回传�
 **理由**：用户原话"把这一次实验完完整整记录下来，以后方便审计"、"尽量保持本地和远端一致，方便我的 GPT 审查"。
 失败记录比成功记录更有价值——它防的是"下次又踩同一个坑"。
 
-**证据**：`docs/21` §6、§7；`evidence/experiments/README.md` 的约定。
+**核查材料**：`docs/21` §6、§7；`evidence/experiments/README.md` 的约定。
 
 ### D-91 · 产品实例必须有**自己的 DSH home**，不许复用用户桌面端的 home
 
@@ -835,7 +835,7 @@ Owner 回传必须九项齐全（见 `docs/21` §3.5），缺一项算没回传�
 - 隔离验证：新实例首屏 `暂无会话`、工作区只有 `recruitment-agent`、工具可调（`后端工程师/DRAFT` 与 DB 一致）；
   **桌面 home 会话文件数 1291 → 1291 不变**，`workspace.json` 未被写入。
 
-**证据**：`evidence/experiments/2026-11-13-web-browser-acceptance/README.md` §5、`isolated-*.png`。
+**核查材料**：`evidence/experiments/2026-11-13-web-browser-acceptance/README.md` §5、`isolated-*.png`。
 
 **教训**：第一次起服务前就该问"这个实例的数据放哪"，而不是顺手复用默认值。
 
@@ -854,7 +854,7 @@ Owner 回传必须九项齐全（见 `docs/21` §3.5），缺一项算没回传�
 **代价（已实测）**：0.1.5 时代的 provider 段搬到 0.2.2 不通；必须按 0.2.2 的写法重配（见 D-93）。
 这就是"零件不通用"的真实成本，不是环境问题。
 
-**证据**：`evidence/experiments/2026-11-14-dsh-022-base/`；`dsh/profile/recruitment/README.md`。
+**核查材料**：`evidence/experiments/2026-11-14-dsh-022-base/`；`dsh/profile/recruitment/README.md`。
 
 ### D-93 · 模型通道现状：只剩免费通道可用，付费通道全部额度用尽
 
@@ -876,7 +876,7 @@ Owner 回传必须九项齐全（见 `docs/21` §3.5），缺一项算没回传�
 **为什么这条要写进台账**：本项目多次把"额度问题"误判成"代码问题"。
 以后任何"模型调不通"，先按本表核对，再怀疑代码。
 
-**证据**：`evidence/experiments/2026-11-14-dsh-022-base/README.md` §3.3。
+**核查材料**：`evidence/experiments/2026-11-14-dsh-022-base/README.md` §3.3。
 
 ### D-94 · 产品底座跟到 `0.2.2-rc.3`（与桌面端同版）；升级只升项目副本
 
@@ -895,7 +895,7 @@ Owner 回传必须九项齐全（见 `docs/21` §3.5），缺一项算没回传�
 命中我们使用面的 guide → 只 `npm install` 到项目目录 → 浏览器验证两条 → 记录台账。
 升级不过就回滚版本号；`DSH_HOME` 永远用产品自己的。
 
-**证据**：`evidence/experiments/2026-11-14-dsh-022-rc3-upgrade/`。
+**核查材料**：`evidence/experiments/2026-11-14-dsh-022-rc3-upgrade/`。
 
 ### D-95 · 人只做**一次**决策：对话里定过就不再点第二次（修正 D-79 的落库闸门）
 
@@ -939,7 +939,7 @@ Agent 理论上可以编造 `confirmation_text`。缓解是**可审计**而不�
 | 直接 | 4/12 抽样 → 当全量下结论 |
 | 一层 | 没查"为什么是空"：视频会议录制 ≠ 妙记，后者才有 AI 转写 |
 | 二层 | 把"**我读出来是空**"当成"**数据是空的**"——违反项目自己的规则："绝不把「没读」表达成「没有」"（`readers/errors.ts` 开篇就写着） |
-| 三层（共性） | **否定性结论没有任何证据门槛**：正向结论有 R3（命令原文 + DB 读回），而"没有 X"只要一句话就发布了 |
+| 三层（共性） | **否定性结论没有任何核查材料门槛**：正向结论有 R3（命令原文 + DB 读回），而"没有 X"只要一句话就发布了 |
 
 **裁定（三条，落到机制不是自觉）**：
 
@@ -956,7 +956,7 @@ Agent 理论上可以编造 `confirmation_text`。缓解是**可审计**而不�
 **验收增量**：连接器测试必须同时有"转写存在但为空"与"转写未生成"两个 fixture，且两者输出**必须不同**。
 
 **生产后果（为什么这条是 P0）**：这类错误在线上不是"显示错"，而是**业务判断被静默污染**——
-connector 报"无转写" → HR 看到"无转写" → 面试官无法基于证据评分 → 决策在缺证据的情况下推进或淘汰。
+connector 报"无转写" → HR 看到"无转写" → 面试官无法基于核查材料评分 → 决策在缺核查材料的情况下推进或淘汰。
 本项目 16/16 PASS 而 DR/CT/FL/MET 全 0 的历史，就是同一类"没读被当成没有"的后果。
 
 **元问题（对我自己的）**：这一轮我反复出现"抽样 → 下结论"（此前还有 3 次未查库就发布结论）。
@@ -1009,7 +1009,7 @@ connector 报"无转写" → HR 看到"无转写" → 面试官无法基于证�
 **裁定**：原生文本层含未解码字形时，**该页整页转图 OCR 重读**，用 OCR 结果替换本页原生块：
 - OCR 块 `provenance='ocr'`，**绝不冒充 `native_text`**；
 - 页面级 issue 从 HARD `pdf_text_encoding_unread` 降为 SOFT **`pdf_text_recovered_by_ocr`**（恢复标记，不是失败）；
-- 身份字段（姓名/电话/公司/时间）仍按"待核证据"处理（`doc_provenance_unverified` / `doc_identity_from_unverified_source` 保留），
+- 身份字段（姓名/电话/公司/时间）仍按"待核核查材料"处理（`doc_provenance_unverified` / `doc_identity_from_unverified_source` 保留），
   因为 OCR 是机器认字，不是原文。
 
 **为什么用 OCR 而不是视觉模型**：印刷体中文 OCR 准确率更高（~97–99%）、**确定性**（同图同结果）、
@@ -1039,7 +1039,7 @@ connector 报"无转写" → HR 看到"无转写" → 面试官无法基于证�
    （D-79/D-95：闸门价值在于真人看过）。成功判据三条**同时**成立：
    (a) blocking 变 false 或 HARD 数严格减少；(b) 不出现旧内容没有的新 HARD code（禁止"换病"）；
    (c) **`step.codes`** 里的 code 全部消失（不硬编码任何 code 名，信任 plan 算出的目标）。
-   初始就不 blocking → 一步不执行（`skipped_reason='NOT_BLOCKING'`）；PDF 重读无页数证据 →
+   初始就不 blocking → 一步不执行（`skipped_reason='NOT_BLOCKING'`）；PDF 重读无页数核查材料 →
    `blocked: READER_FACTS_REQUIRED`（不浪费一次真实读取）。
 
 2. **真实语料回归进验收**（`docs/11 §11` + `test/regression/real-corpus.test.ts`）：
@@ -1060,7 +1060,7 @@ R-1 96.2%、R-2 100%（`blocking_for_structure` 阻断 0 份）、R-3 100%。
 最慢单份 46.6s（高并发时曾 127s，仍余 53s）。门槛判定从此**强制全量语料**（见 D-104），
 默认抽样只作开发回路且必须打印 `SAMPLED — 不构成门槛判定`。
 
-**证据**：`test/document/recovery-execute.test.ts`（20 条）、`test/regression/**`（9 条）、`docs/11 §11`。
+**核查材料**：`test/document/recovery-execute.test.ts`（20 条）、`test/regression/**`（9 条）、`docs/11 §11`。
 
 ### D-100 · 跨块归因要**产出结果**，不能只拦住；版式类阻断与"文字不可用"分开
 
@@ -1080,14 +1080,14 @@ R-1 96.2%、R-2 100%（`blocking_for_structure` 阻断 0 份）、R-3 100%。
 **顺带发现旧实现是错的**：它给 4 条日期行找的"最近候选组织"全是 **b4（一项竞赛名称）** —— 连线索都错，
 只是"拦住了"，没"归因对"。这正是审计 ③ 说的"发现能力 ≫ 解决能力"的具体样本。
 
-**证据**：`test/document/quality.test.ts`（37→50 条）、`src/tools/document-read.ts` 的 `layout_only_blocking` 输出。
+**核查材料**：`test/document/quality.test.ts`（37→50 条）、`src/tools/document-read.ts` 的 `layout_only_blocking` 输出。
 
 **补充（2026-11-14，D-100 续）：DOCX 表格行是精确的行身份，必须判 `same_row`**
 
 真实语料回归暴露的缺口：`doc_cross_block_attribution` 仍有 9 份 / 25 行 HARD，其中 **10 行是 DOCX
 表格行**（`一行三格：公司 | 职位 | 时间`）。DOCX 没有 bbox，旧的 `sameVisualRow` 恒为 false，
 于是这种**最常见的记录表**100% 掉进 `unresolved`——判据在"几何"上正确，在"事实"上错误：
-表格行本身就是精确的行身份，不需要几何证据。
+表格行本身就是精确的行身份，不需要几何核查材料。
 
 - 新增归属基 `AttributionBasis = 'same_table_row'`（`quality/types.ts`）：同一 `part + table_id + row`
   即同一行；**行内无组织格时归到唯一标题格**。
@@ -1098,7 +1098,7 @@ R-1 96.2%、R-2 100%（`blocking_for_structure` 阻断 0 份）、R-3 100%。
   "不许跨块拼装"）+ 10 行 PDF 只有日期的行（同页组织文本不同排/不相邻）+ 3 行长叙述行。
 
 **风险**：`same_table_row` 依赖转换器给出的 `table_id + row` 坐标；缺坐标即退回 `unresolved`（fail-closed）。
-证据：`test/document/quality.test.ts` 归因 9 / 9b / 9c（1 正 + 3 反 + 标题格）。
+核查材料：`test/document/quality.test.ts` 归因 9 / 9b / 9c（1 正 + 3 反 + 标题格）。
 
 ### D-101 · 人机闸门的事务边界：先兜住（超时 + 服务端上限），两阶段记债
 
@@ -1115,7 +1115,7 @@ Agent 可借此刷人的确认；且幂等重放会误弹）。代价是"弹窗�
 3. **两阶段重构（只读校验 → 关连接 → 问人 → 写事务重校验）是正解，但记债不做**。
    触发条件写死：出现"并发写导致人批准后被 `VERSION_CONFLICT` 拒"的实测案例，或 Web UI 开始高频驱动这两个工具时，必须改。
 
-**证据**：`src/db/pool.ts`、两个工具的闸门注释、102 条闸门测试。
+**核查材料**：`src/db/pool.ts`、两个工具的闸门注释、102 条闸门测试。
 
 ### D-102 · S6–S10 独立验收结论：**半通**，四个关键不变量是假的（2026-11-14）
 
@@ -1123,7 +1123,7 @@ Agent 可借此刷人的确认；且幂等重放会误弹）。代价是"弹窗�
 
 > **工具都能从 `apply()` 调到、真连库、测试全绿，但四个关键不变量是假的。**
 
-| # | 问题 | 严重度 | 证据 |
+| # | 问题 | 严重度 | 核查材料 |
 |---|---|---|---|
 | 1 | **S6 身份来源闸门失效**：`structured_json` 的 `agent_read` 电话/邮箱被直接 push 进 `strong`；converter 对 OCR 块抽字段仍标 `native_text` | P0 | `application-intake.ts:760/765/775`；合成块实测 `phone.provenance=native_text` |
 | 2 | **S8/S10 人机闸门未实现**：`index.ts` 只给 `decision_record` 传 approval；`scorecard_submit` / `interview_schedule` 无闸门 → Agent 可代 HR 交面评 | P0 | 回滚事务实测：scorecard 无 approval 写入 SUBMITTED；DB 中该 actor 正是必交面试官 |
@@ -1195,7 +1195,7 @@ R-1 98.1% PASS、R-2 100% PASS、R-3 100% PASS。
 语料 52 → 51。隔离后门槛跑：**51/51，read_ok 51 / read_failed 0，R-1 100%、R-2 100%**，
 R-3 因无失败样本而 **vacuous**（不冒充通过）。`EMPTY_FILE` 错误码本身不改。
 
-**证据**：`dsh/dsh-recruitment/test/regression/real-corpus.test.ts`、`docs/11 §11.2–§11.4`。
+**核查材料**：`dsh/dsh-recruitment/test/regression/real-corpus.test.ts`、`docs/11 §11.2–§11.4`。
 
 ### D-105 · 复用 dsh-superagent 原型的四个部件（研究结论，未采纳其代码）
 
@@ -1216,7 +1216,7 @@ R-3 因无失败样本而 **vacuous**（不冒充通过）。`EMPTY_FILE` 错误
 **可移植性警告（实测）**：该原型是 POSIX-only 写的，`deployment.ts:13` 的绝对路径校验为 `/^\//`，
 Windows 上插件直接不激活。我们自己的 DSH 插件凡校验路径处**必须验 Windows 绝对路径**。
 
-**证据**：`work/research/2026-11-14-dsh-superagent-assessment.md`（含 B 档受控试装记录与截图）。
+**核查材料**：`work/research/2026-11-14-dsh-superagent-assessment.md`（含 B 档受控试装记录与截图）。
 
 ### D-106 · 外部事实的机检层：读位点、事件处置、出站重试、三振
 
@@ -1316,7 +1316,7 @@ V-15 "无处置事件"告警阈值，三个数未定，实现前必须先定。
    - 单轮 tick 的派发吞吐成为瓶颈（实测当前单轮 1 个 Task，远未到）。
 4. **不做的**：不在 v1.0 引入 Redis/Kafka/独立调度平台；不为"看起来用了队列"而套一层 pg-boss。
 
-**证据**：`db/migrations/0011_task_runtime.sql`（租约回收索引与唯一约束）、
+**核查材料**：`db/migrations/0011_task_runtime.sql`（租约回收索引与唯一约束）、
 `src/runtime/task-runtime.ts`（认领/回收）、`contracts/runtime/task-runtime.md`。
 
 **补充（2026-11-14，按独立复核要求补齐四项，缺一不算通过）**：
@@ -1337,7 +1337,7 @@ V-15 "无处置事件"告警阈值，三个数未定，实现前必须先定。
    > **缺陷不是"实现超了 1,500"，是这一条从来没有可执行的度量口径**：没定义"调度相关代码"
    > 是哪几个文件、也没定义行怎么数，更没有机检。一个无法度量、无法失败的条款不是预算，
    > 是装饰。复核给的两条路里，**选 A（重新定义并批准预算 + 机检），不选 B（维持 1,500）**：
-   > B 要么要求把已通过验证的认领/租约代码删掉重写（没有任何证据支持这么做），
+   > B 要么要求把已通过验证的认领/租约代码删掉重写（没有任何核查材料支持这么做），
    > 要么要求补 pg-boss/DBOS 的 gap proof——而 D-109 上面第 1 条已经论证过真正的理由是
    > **"状态 owner 唯一"**，pg-boss 必然引入第二个 owner，所以 gap proof 是成立的、
    > 缺的从来不是理由而是**度量**。
@@ -1347,7 +1347,7 @@ V-15 "无处置事件"告警阈值，三个数未定，实现前必须先定。
    >   说成"不算调度"的三类：`event-types.ts`（事件名注册表）、`cutover.ts`（启动水位）、
    >   `worker.ts`（DSH 启动器）。把它们排除能让数字立刻好看，但那正是"用定义把预算做小"。
    > - **不计入**：只有两类，理由都是**没有运行时行为**（不是"不属于调度"）：
-   >   `evidence/**`（只读证据脚本，不参与产品运行路径）、`types.ts`（纯类型声明）、
+   >   `evidence/**`（只读核查材料脚本，不参与产品运行路径）、`types.ts`（纯类型声明）、
    >   `index.ts`（纯 re-export barrel）。
    > - **行数**：物理行数（`\n` 切分，等价 `wc -l`）。
    > - **基线实测（2026-11-14，HEAD `da2c549`）= 3,804 行**。逐文件：`store.ts` 1248 /
@@ -1363,7 +1363,7 @@ V-15 "无处置事件"告警阈值，三个数未定，实现前必须先定。
    > - **不新增运行时依赖**这条不变，仍然有效（当前只有 `@deepseek-ai/cordis` + `pg`）。
    >
    > **仍未做、明确留给后续**：`store.ts` 1,248 行是单文件最大头，需要单独审视里面是否有
-   > 非调度职责（health 读数、证据查询、恢复扫描）混入、该不该拆。**拆分不改变总行数**，
+   > 非调度职责（health 读数、核查材料查询、恢复扫描）混入、该不该拆。**拆分不改变总行数**，
    > 所以这不是预算问题，是**可维护性问题**，另开条目处理。
    >
    > **修订 D-109.2（2026-11-14，总控；棘轮第一次真的咬到人）**
@@ -1385,7 +1385,7 @@ V-15 "无处置事件"告警阈值，三个数未定，实现前必须先定。
    >    延迟投递、没有 cron、没有多消费者组、没有跨实例调度；积压/实例数/tick 吞吐三项阈值
    >    本次均未变化（增长发生在事件注册表，不在认领/租约路径）。
    >
-   > **这次咬合本身就是"预算不是装饰"的证据**：如果它没拦住，这 20 行会静默进库，
+   > **这次咬合本身就是"预算不是装饰"的核查材料**：如果它没拦住，这 20 行会静默进库，
    > 预算就退回成一句形容词。
    >
    > **修订 D-109.3（2026-11-15，总控；G1 事件自动驱动的预算追认）**
@@ -1427,9 +1427,9 @@ V-15 "无处置事件"告警阈值，三个数未定，实现前必须先定。
 > 背景：2026-11-15 总控复核推翻了交接包两条声明（工具可用性、S10 决策依据），
 > 并把 7 项待裁决重新上抛。以下 3 条是产品负责人当次给出的裁决；`docs/17` 未写 = 未决定（R5）。
 
-### D-110 · 无坐标格式的证据闸门：管"可复核"，不管"有没有坐标"
+### D-110 · 无坐标格式的核查材料闸门：管"可复核"，不管"有没有坐标"
 
-**裁定**：证据闸门不以 bbox 为门槛，以"第三方能否独立复核"为门槛。三条件同时成立才可自动通过：
+**裁定**：核查材料闸门不以 bbox 为门槛，以"第三方能否独立复核"为门槛。三条件同时成立才可自动通过：
 
 1. **原文可核**：引用绑定源文件字节级 `sha256`，独立重算一致；
 2. **定位唯一**：定位器解析到原文唯一位置。定位器按格式分型——PDF `page+bbox`；DOCX `part+paragraph`
@@ -1437,7 +1437,7 @@ V-15 "无处置事件"告警阈值，三个数未定，实现前必须先定。
 3. **原句逐字命中**：`quote` 在定位范围内逐字出现；归一化只允许契约写死的换行/空白/断连字符，禁止语义匹配。
 
 **命中多处 = 歧义，不是通过**：必须补第二定位（前后文/相邻块/章节）或转人工；**禁止取第一条命中**。
-证据记录必须带 `locator_kind` + `verification_method`；无坐标格式要标注定位器类型，下游可按证据强度区分，
+核查材料记录必须带 `locator_kind` + `verification_method`；无坐标格式要标注定位器类型，下游可按核查材料强度区分，
 但**不得仅因缺 bbox 拒收**。
 
 **理由**：坐标是"可追溯"的实现手段，不是目的；目的是任何人拿原文都能核对"这句话确实在那里"。
@@ -1450,11 +1450,11 @@ V-15 "无处置事件"告警阈值，三个数未定，实现前必须先定。
 ### D-111 · S8→S9 写入口 / S9→S10 记录闸门 / `NO_TRANSCRIPT`
 
 1. **S8→S9**：**允许**补产品写入口（`START`/`COMPLETE` → `IN_PROGRESS`/`POST_INTERVIEW`）。
-   "面试已执行"必须是产品记录的事实；转写存在只能作辅助证据，不能替代。若另一边 Web 窗口已有实现，
+   "面试已执行"必须是产品记录的事实；转写存在只能作辅助核查材料，不能替代。若另一边 Web 窗口已有实现，
    先对齐合同再接线，**禁止两套实现**。
 2. **S9→S10 是否要求 `interview_record` READY+VERIFIED**：**阶段推进不要求**；`decision` 引用
    `INTERVIEW_RECORD` 时必须 VERIFIED（DC-23 不变）。阶段闸门管"材料处理到可交代"，不是"AI 记录已核验"。
-3. **`NO_TRANSCRIPT` 能否进 S10**：**允许**。招聘 agent 的职责是把证据、缺口、风险摆到人面前由人决策，
+3. **`NO_TRANSCRIPT` 能否进 S10**：**允许**。招聘 agent 的职责是把核查材料、缺口、风险摆到人面前由人决策，
    不是用技术条件替代人决策。无转写必须分类并显式记录：
    - **确实没有**（未录制/明确不使用转写）：正常进入 S10 人工决策，决策记录 `transcript_state` 与理由；
    - **本来有、我方没取到/取不全**：生成恢复任务，同时在 S10 视图标红"缺什么、已试过什么"，
@@ -1516,7 +1516,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
 - **发布闸门（2026-11-15 独立复核 P1）**：G1 `runtime.auto_tick` 在产品 profile 置 **false**（Wave1 复核发现：单独开启会为每份简历自动拉起跑不了业务的 Worker，attempts 耗尽 → 任务 FAILED、简历解析永不完成）。**G2（Worker 能执行业务工具 + 派发前就绪检查）验收同批才翻回 true**；测试需要 tick 时用测试专用 profile/patch 显式开启，不改仓库产品 profile。`n- **D-109.4（2026-11-15，总控；G10 预算追认）**：**+391** 物理行（`event-runtime.ts` 271→617? 以脚本口径 283→629 = +346；`http.ts` +45），合计 3,961→**4,352**。理由：G10 事件处置写入（每条事件终态一行 append-only 处置 + `target_task_ids`）与 health 暴露（无处置数/最老等待秒/内部审计单列）；无队列/调度语义变化，D-109 三项阈值未触发。排除：把处置塞进 `event_inbox` 列（覆盖历史投影）、异步遥测（不落 PG 审计）、外部队列（第二 owner）。机检：`runtime-budget PASS（4352/4352）`；干净归档实测 +391（`work/control/budget-clean-g10`）。G2/G12 的增长另立 D-109.5/6，不用本条兜底。
 - **事件处置稳态口径（2026-11-15 裁决；2026-11-15 复核限定）**：`count(events)-count(disposed)` 不要求全表字面 0——`event_inbox` 同时承载内部审计事件。G10 的 `in-scope undisposed=0` 只在**新库 + tick 已跑过**时成立；`ra_s6s7` 当前 in-scope 未处置 40（0016 迁移前历史 IGNORED/ROUTED）不回溯补写，health 会如实显示缺口。
 - **D-109.5（2026-11-15，总控；预算度量为代码行 + G12 拆分追认）**：G12 把 `store.ts` 拆成 `store/` 子树后，物理行 3,961→4,275（+314），但**没有新增逻辑**；+314 全是 import/export/签名/委托/模块头等结构行。为不让"拆分"把预算变成装饰，度量切换为 **代码行 = 物理行去掉空行、整行/行尾注释、import/export-from 后的剩余行**。实测：HEAD+G10 代码 3,116 → 加 G12 **3,280（+164）**；CEILING 同步 4,352→**3,280**（代码行口径）。只排除无运行时行为的语法，不排除业务/调度逻辑；排除规则失效仍 exit 2。G2 的增长另立 D-109.6。
-- **D-109.6（2026-11-15，总控；G2 预算追认）**：代码行口径 **3,280 → 3,752（+472）**。理由：G2 长任务跨会话——七段任务书 `task-context.ts`（业务任务/业务对象/版本钉/证据 locator/未知项/工具面/输出 JSON schema/禁止项）、worker 委托与任务书端口、`task-runtime` 续跑接管既有 `agent_session`（修 P0 唯一约束）、router 注入 `taskContext`。无队列/调度语义变化（仍是 PG 行锁 + SKIP LOCKED）；排除的做法：把任务书硬拼在 `worker.ts`（不可单测）、运行时读外部模板（第二配置源）、让模型自拼上下文（违反 R3）。D-109 三项阈值未触发。
+- **D-109.6（2026-11-15，总控；G2 预算追认）**：代码行口径 **3,280 → 3,752（+472）**。理由：G2 长任务跨会话——七段任务书 `task-context.ts`（业务任务/业务对象/版本钉/核查材料 locator/未知项/工具面/输出 JSON schema/禁止项）、worker 委托与任务书端口、`task-runtime` 续跑接管既有 `agent_session`（修 P0 唯一约束）、router 注入 `taskContext`。无队列/调度语义变化（仍是 PG 行锁 + SKIP LOCKED）；排除的做法：把任务书硬拼在 `worker.ts`（不可单测）、运行时读外部模板（第二配置源）、让模型自拼上下文（违反 R3）。D-109 三项阈值未触发。
 - **D-109.7（2026-11-15，总控；复核 P1 修复）**：代码行 **3,752 → 3,764（+12）**。`runtime.workspace_root` 支持 `${ENV}` 展开（仓库 profile 零机器路径；缺失变量 fail-closed，不回退进程 cwd）；同时 auto_tick 按复核要求改回默认 true。无队列/调度语义变化。
 - **D-115（2026-11-15 裁决；D5 Web 工作台身份）**：Demo Actor 只允许 `recruiter / interviewer_a / interviewer_b` 三个 alias；浏览器只提交 alias，**不得提交 actor UUID**。服务端按受控 `x-dsh-session` 维护**进程内** session→alias 绑定；所有写工具（intake/schedule/transcript-import/scorecard/decision/stage-advance/job-rubric/config 写）从 `exec.agent.id` 解析 alias→HUMAN actor；未绑定/非法 alias → `DEMO_ACTOR_UNMAPPED` **零写入**，不回退配置 actor。Scorecard 正式提交只走 Host Remote Action（一次性 nonce 绑定 session+interview），Agent 工具路径仍走 D-79 approval；A/B 两份面评作者必须不同，未分配者 403。种子在 bootstrap 幂等补第二个 HUMAN INTERVIEWER（105，A=104/B=105）。
 - **D-116（2026-11-15 裁决；D5 Web 工作台范围）**：产品面只保留 **Recruiting workspace / Interviewer workspace 两个工作视图 + 唯一 Human Attention 全局入口**；Human Attention 只聚合既有业务记录，不新建任务事实表、同一事项不重复主入口；候选人不是系统用户；页面状态必须从真实 DB 恢复，禁止 localStorage 业务状态/模拟 Agent/假外部事件。写入只经现有 Domain Tool 或 Host Remote Action，前端 toast 不算成功。
@@ -1539,15 +1539,15 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
 - **D-123（2026-11-15 裁决；决策阶段闸门）**：`decision-record` 的 `STAGE/FINAL` 除 DC-07 写死 `decision.stage_code='S10'` 外，**还必须校验 `application.current_stage_code='S10'`**；否则 `INVALID_ARGS(STAGE_NOT_S10)` 零写入。`SCREENING` 保持 S7 写侧语义。Host facade 提前同一判据 fail-fast，工具侧权威闸门保留。独立验收发现的 `45ddd9fc`(S7)+`c645baba`(FINAL/S10) 为存量脏行，新闸门只挡新写，数据处置待验收后裁决。见合同 DC-07b。
 - **D-124（2026-11-15 裁决；角色 alias 扩展）**：Demo Actor alias 从 3 个扩到 5 个：`recruiter`(0103 HR)、`interviewer_a`(0104)、`interviewer_b`(0105)、`hiring_manager`(0102 HIRING_MANAGER)、`approver`(0101 ORG_ADMIN)。角色只决定**默认视图与可见性**；Host Action 的写授权仍只有 `recruiter`（`ACTION_ALLOWED_ALIASES` 不扩），approver/hiring_manager 写入返回 403 零写入，UI 提供显式“切换为 Recruiter 执行”并保留 403 负例。生产应改为按角色授权，届时另立裁决。
 - **D-109.11（2026-11-15，总控；P0-3 材料落地预算追认）**：代码行口径 **4,056 → 4,584（+528）**。理由：RESUME_PARSE/Worker 任务书必须把材料从 `intake_asset` 的 content-addressed 引用变成 worker workspace 可读的受控路径，才能避免全盘搜索与 180s 超时；涉及 task-context（+328：MATERIAL/UNKNOWNS/版本钉）、worker（+134：spawn cwd/材料落地）、store/readback（+60）、store/index（+6）。排除替代：只在 prompt 里写“自己找文件”（本次失败根因）、复制真实材料到仓库（R7 禁止）、让模型猜路径（违反 R3）。未触发 D-109 换实现条件。CEILING 同步 4584。
-- **D-126（2026-11-15 更晚裁决；撤销 D-124 的 5-alias 扩展）**：按 Issue #4 当前执行指令（2026-11-15 22:50，晚于 D-124），运行时**只保留 3 个 Demo alias**（recruiter / interviewer_a / interviewer_b）与**两种工作视图**（Recruiting / Interviewer）；ApproverView / HiringManagerView 不得作为产品入口，已从运行代码移除；D-124 的 hiring_manager/approver alias 作废。产品/worker profile 恢复 **LongCat / OpenCode Go 套餐端点**（D-117.1）；4.1 仅作为历史 P0-3 E2E 的非产品证据，产品默认不以 4.1 交付。
+- **D-126（2026-11-15 更晚裁决；撤销 D-124 的 5-alias 扩展）**：按 Issue #4 当前执行指令（2026-11-15 22:50，晚于 D-124），运行时**只保留 3 个 Demo alias**（recruiter / interviewer_a / interviewer_b）与**两种工作视图**（Recruiting / Interviewer）；ApproverView / HiringManagerView 不得作为产品入口，已从运行代码移除；D-124 的 hiring_manager/approver alias 作废。产品/worker profile 恢复 **LongCat / OpenCode Go 套餐端点**（D-117.1）；4.1 仅作为历史 P0-3 E2E 的非产品核查材料，产品默认不以 4.1 交付。
 - **D-125（2026-11-15 裁决；RESUME_PARSE 只读口径）**：`RESUME_PARSE` 是**只读解析任务**：intake 事件落地时已写 `resume_version/application`，worker 再写会重复。任务书仅对该 task_type 显式标注 read-only、禁止写工具，并给 `recruitment_resume_read {path}` 提示；其它任务类型不渲染。worker（独立 DSH 进程）**不授予人类写身份**；写工具仍按 session→actor 硬拒（`DEMO_ACTOR_UNMAPPED` 零写入），这不是绕过闸门。若未来需要 worker 可写，另立“受控服务身份”能力与裁决，不在本任务扩范围。
 - **D-127（2026-11-16 产品负责人直接裁决；覆盖 Issue #4 的 LongCat 子句）**：**使用 DeepSeek V4.1**（`opencode-go-openai` / `deepseek-v4.1-flash`，凭据 `OPENCODE_GO_API_KEY`）。产品/worker profile 同步；P0-3 的 Flow A/B E2E 已用该模型实测成功。Issue #4 的“恢复 LongCat”模型子句不再作为当前产品配置口径；3 alias/2 视图等其它 Gate 1 边界仍按 D-126 执行。若 4.1 限流，按 BLOCKED 记录，不擅自换模型。
 - **D-128（2026-11-16 总控裁决；产品/业务 FAIL 修复轮的集成口径）**：
   1. **Agent 工程工具面收口 = 产品要求，不是模型行为偏好**。产品 profile 与 worker profile 对 `tool-pwsh/tool-bash/tool-jobs/tool-fs/tool-fs-search/tool-working-directory/tool-web/tool-subagent/tool-subagent-fork/tool-agent-team/tool-workflow/agent-instructions`（产品另有 `office-kit/workspace-dependencies/cordis-host-runner/cordis-inspect-providers/mcp-manager/mcp-resources`）置 `disabled: true`。依据：真实 HR 会话里 Agent 为读申请/材料去 shell、psql 直连业务库、读源码、全盘找文件（`work/review/2026-11-16-notion-acceptance/14-PRODUCT-BUSINESS-VERDICT.md` §2.2）。**"别用 shell"的 prompt 不算修好**；工具不存在才算（R9 反证口径）。业务读能力由 task-75 的 `recruitment_application_get` / `recruitment_material_read` 补齐。
-  2. **工具注册面现状 = 31 个**（30 个 `recruitment_*` + 1 个高层 `record_human_decision`；2026-11-18 由 D-155.2 的登记制新增 `recruitment_email_fetch`，原口径 30），以假 ctx 调 `apply()` 的现场输出为准（`work/d5/integration/registered-tools.json`）。`record_human_decision` **不带前缀**属已交付事实：实现与已采集的真会话 `tool/call` 证据都是该名，改名会作废证据，v1.0 保持并在 `dsh/dsh-recruitment/CONTRACT.md §0.1` 如实标注，不假装 30 个都带前缀。
+  2. **工具注册面现状 = 31 个**（30 个 `recruitment_*` + 1 个高层 `record_human_decision`；2026-11-18 由 D-155.2 的登记制新增 `recruitment_email_fetch`，原口径 30），以假 ctx 调 `apply()` 的现场输出为准（`work/d5/integration/registered-tools.json`）。`record_human_decision` **不带前缀**属已交付事实：实现与已采集的真会话 `tool/call` 核查材料都是该名，改名会作废核查材料，v1.0 保持并在 `dsh/dsh-recruitment/CONTRACT.md §0.1` 如实标注，不假装 30 个都带前缀。
   3. **全量测试的权威口径 = 干净库**（`RECRUITMENT_TEST_DB` 指向 0001→0016 新建库）。原因（本轮实测）：共享演示库 `ra_s6s7` 会被真实产品会话改写（种子候选人 `…0601` 的申请已 `CLOSED`、DEMO 岗位已存在 rubric v2），导致 `intake-application-identity` 用例 F、`trace-chain` 5 例在共享库上**假红**；同一套测试在干净库上恢复。**在共享库上跑出的红/绿都不进验收报告**，只认干净库 + CI 的同口径数字。
   4. 报告四数时必须写明"跑在哪个库"；`skipped>0` 要逐条给声明式理由（converter `--no-corpus` 的 27 例是声明式 skip）。
-  5. **CI 当前不可用 = 账户计费问题，不是代码问题（2026-11-16 现场取证）**。`gh run view 43728795740`（HEAD `debcc4c`，`event=workflow_dispatch`）的每个 job 都是 `steps=0 / completed=failure`，GitHub 给出的原文注释是：**"The job was not started because recent account payments have failed or your spending limit needs to be increased."**。因此：① `debcc4c` 的"所有 job failure"**不能**读成代码回归；② 本分支 push 不触发 CI（`on.push.branches=[main]` + 本分支无 open PR）——历史上 `4d7be6a` 及更早的 CI success 在**当时**有效，之后没有 CI 证据；③ **v1.0 验收不得以"CI 绿"为证据**，机检口径 = 本地干净库全量四数（`RECRUITMENT_TEST_DB` 指向 0001→0016 新建库）+ `runtime-budget` + `clean-load`，由独立窗口复跑；④ 恢复条件 = 仓库 owner 处理 GitHub Billing（付款方式/额度），恢复后必须对新冻结 SHA 重跑 CI 并回抄本条。
+  5. **CI 当前不可用 = 账户计费问题，不是代码问题（2026-11-16 现场取证）**。`gh run view 43728795740`（HEAD `debcc4c`，`event=workflow_dispatch`）的每个 job 都是 `steps=0 / completed=failure`，GitHub 给出的原文注释是：**"The job was not started because recent account payments have failed or your spending limit needs to be increased."**。因此：① `debcc4c` 的"所有 job failure"**不能**读成代码回归；② 本分支 push 不触发 CI（`on.push.branches=[main]` + 本分支无 open PR）——历史上 `4d7be6a` 及更早的 CI success 在**当时**有效，之后没有 CI 核查材料；③ **v1.0 验收不得以"CI 绿"为核查材料**，机检口径 = 本地干净库全量四数（`RECRUITMENT_TEST_DB` 指向 0001→0016 新建库）+ `runtime-budget` + `clean-load`，由独立窗口复跑；④ 恢复条件 = 仓库 owner 处理 GitHub Billing（付款方式/额度），恢复后必须对新冻结 SHA 重跑 CI 并回抄本条。
 - **D-130（2026-11-16 总控裁决；产品/业务 FAIL 修复轮的**产品契约**口径，不涉及实现细节）**：
   1. **"记录人的决定"必须是一次高层动作，不是代码考古**。`record_human_decision` 的入参只允许业务语义（`application_id` / `decision_scope` / `result` / `reason` / `human_confirmation`）；`basis_refs` / `AUTHORITY` / `SUMMARY` / `RUBRIC_VERSION` / confirmation preimage 与 hash **全部由服务端组装**。**Agent 传 hash/digest/basis = 参数错误**（零写入）。理由：真实 HR 不接受"我拍板了，Agent 去读源码算哈希"（2 轮 42 步 3.3M tokens）。
   2. **决策的审计元数据必须能在 DB 里独立复算**。`decision.record` 事件 payload（jsonb）必须持久化 `confirmed_at` / `confirmed_by_actor_id` / `confirmation_method` / `confirmation_text_sha256` 与 `human_confirmation_preimage_version`；既有 `human_confirmation_*` 键保持不动（向后兼容）。**不新增列/表 → 不需要迁移**（payload 是 jsonb，`trg_event_inbox_immutable` 只约束 UPDATE）。
@@ -1555,7 +1555,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   4. **rubric 质量门槛是 advisory，不是判定**。它可以：新增可选输出键 `rubric_quality`、在 `warnings[]` 里加封闭枚举 `QUALITY_WARNING`、在 `verdict=PASS` 时给 summary 加 `[机械条件通过·非业务通过]` 前缀。它**不可以**：改 `verdict` / `required_human_action`、写库、自动修改 rubric 标准、把建议维度直接落成正式维度（建议维度必须由人批准）。**覆盖判定是词面匹配（启发式），同义改写会漏报** —— 这是已知边界，不许当成"语义判断"宣称。
 - **D-129（2026-11-16 总控裁决；task-78 的 lane 连续中断后的接管方式）**：`owner-product-budget` 两次在无收尾消息的情况下中断（01:11 写完全部设计后断、02:06 唤醒后立刻再断），三个子代理零产出。处置：**保留其 `DESIGN.md`（255 行，已由总控逐条通读接受，作为该能力的冻结内部契约）**，由总控直接唤醒三个子代理（`budget-core` / `budget-verify` / `budget-session`）并下发新基线（HEAD `5adab02`、注册面 30、D-128），不重派重做已完成的父级设计工作。附带两条约束：`budget.status_tool` 默认必须 `false`（否则注册数变 31 违反 D-128.2）；`installBudgetGuard` 的 `src/index.ts` 接线由总控（W0）落，lane 只交可 `git apply --check` 的 patch。
 - **D-131（2026-11-16 总控裁决；task-78 的额度阻断与 key2 取证授权）**：
-  1. **产品层 D 项判 BLOCKED，不判 FAIL**。事实：真实 DSH headless 会话已起、临时 profile 里闸门**真的装上**（verbose `guard_registrations=1`、源码 sha 与仓库一致），但模型第一步即被 provider 拒绝：`429 GoUsageLimitError`（OpenCode Go 周额度，`wrk_01KZ…`，约 2026-11-16 08:01 本地恢复）。该 run 的 `usage=[]`、0 次工具调用、DB 逐表 delta=0，**不作为证据**。
+  1. **产品层 D 项判 BLOCKED，不判 FAIL**。事实：真实 DSH headless 会话已起、临时 profile 里闸门**真的装上**（verbose `guard_registrations=1`、源码 sha 与仓库一致），但模型第一步即被 provider 拒绝：`429 GoUsageLimitError`（OpenCode Go 周额度，`wrk_01KZ…`，约 2026-11-16 08:01 本地恢复）。该 run 的 `usage=[]`、0 次工具调用、DB 逐表 delta=0，**不作为核查材料**。
   2. **授权过一次 key2 取证，结果为也 429（monthly，另一 org，≈2026-11-30）**。裁决口径（无论成败都成立）：`opencode-go-openai-key2` 是**验收取证用凭据**，不是产品生产凭据；模型仍必须是 `deepseek-v4.1-flash`；**若成功也只证明"闸门 + usage 观测链路可用"，不等于"产品凭据可用"**。产品默认仍是 `opencode-go-openai` + `OPENCODE_GO_API_KEY`（D-127）。**不换模型、不伪造 usage、不再试第三个 key**。
   3. 恢复路径已固化为一条命令：`pwsh -NoProfile -File work/d5/product-budget/evidence/session/scripts/run-formal.ps1`（两会话 + 全表 delta 自动落盘；一次性库 `ra_budget_sess_20261116_0232` 已就绪）。**独立窗口不得把"工程层零写已验证"当成"真实会话预算验收通过"** —— 两者必须分开陈述。
 - **D-132（2026-11-16 总控裁决；预算的三个口径决定）**：
@@ -1564,13 +1564,13 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   3. **`src/budget/**`（1,378 行）不计入 `scripts/runtime-budget.mjs` 的 4,584 棘轮** —— 该棘轮的口径是 `src/runtime/**`（调度运行时），budget 是插件层的业务保护，不改调度。**这里如实登记行数，避免"绕开棘轮"的嫌疑**：若未来把预算逻辑搬进 `src/runtime/**`，必须重新申报棘轮（D-109 口径）。当前 `runtime-budget: PASS（4584/4584）`。
 - **D-133（2026-11-16 产品负责人授权总控自行决定；招聘产品的"输入事实"与三处设计口径）**：
   > 授权原话：「你自己看着办」。以下为总控据此定下的口径，**同时作废总控 2026-11-16 在对话中提出的全部错误设计**（补材料流程、时间协调优化、邮件/短信沟通、审计回放页、"缺件"提示），不得再被引用。
-  1. **输入事实口径：收到什么就是什么，收到的就是全部事实依据。** 不设"期望材料清单"，不设"完整性判定"，不设"缺什么"的提示，**Agent 不主动索要材料**，收到的份数/类型不预设（一份简历、简历+作品集、只有一段文本，都是合法输入），也不要求标注文件类别。评估只在**已收到的材料**里找证据，结论只有三态：**有证据 / 没有证据 / 读不出来**；"没有证据"是结论，不是"缺件提示"。代码现状与本条一致（`application-intake` 按内容嗅探收 PDF/DOCX/RTF，无清单无上限；全仓无"缺件/必需材料"判断），**唯一相关状态 `NO_MATERIAL_BOUND` 的语义 = 该申请一份材料都还没绑定**（事实陈述，不是缺件判定）。
+  1. **输入事实口径：收到什么就是什么，收到的就是全部事实依据。** 不设"期望材料清单"，不设"完整性判定"，不设"缺什么"的提示，**Agent 不主动索要材料**，收到的份数/类型不预设（一份简历、简历+作品集、只有一段文本，都是合法输入），也不要求标注文件类别。评估只在**已收到的材料**里找核查材料，结论只有三态：**有核查材料 / 没有核查材料 / 读不出来**；"没有核查材料"是结论，不是"缺件提示"。代码现状与本条一致（`application-intake` 按内容嗅探收 PDF/DOCX/RTF，无清单无上限；全仓无"缺件/必需材料"判断），**唯一相关状态 `NO_MATERIAL_BOUND` 的语义 = 该申请一份材料都还没绑定**（事实陈述，不是缺件判定）。
   2. **由此升级的工程必需项：原始材料必须由产品自己保管。** 既然"收到的就是唯一事实依据"，事实依据就不能留在产品之外。现状 `intake_asset.storage_ref` 只是字符串 `content-addressed:sha256:<hex>`、原件仍在 `allowed_roots` 本地目录 —— 这是 v1.1 的**必需项**（不是可选项）。
   3. **轮次重点由 Agent 起草、人一句话纠偏，不做"配置表单"。** 这是 Agent 产品不是表单系统：开一场面试前，Agent 依据「JD + 岗位 rubric + 第几轮 + 上一轮结论/缺口」给出 2–4 条"这一轮重点看什么"，每条带依据；HR/面试官用自然语言纠偏；结果落为该轮重点覆盖、面试官打开即见。**不设 approval 闸门**（这是"计划"，不是"人的判定"；面评/决策才需要闸门）。实现方式同 `record_human_decision`：Agent 只传业务语义，服务端组装校验。现有 `round_focus` 只读投影与面试官端展示（task-50/53）保留，缺的只是这个写动作。
   4. **"回顾某个候选人"= 读聚合根 + 对话，不做新页面。** 上下文以 **`application`（人事合一聚合根）** 为单位存储，材料/初筛/面评/决策全挂其上；`recruitment_application_get`（task-75）已提供一次读全貌 + 引用事实 id。**不作废任何既有能力，也不新增审计页/回放看板**。
   5. **长任务执行层：叠加 DSH 协作能力，不替换 PG 任务真相；当前不引入。** 功能对比（显而易见的事实）：DSH `agent-team`/子代理有并发子工作 + 共享任务板，但**无跨进程恢复、无业务任务真相**；我们现有 worker（PG `business_task`/`task_attempt`/租约）有 kill 后续跑与人类交接状态，但一个 attempt 只有一个会话。工程对比：替换 = 扔掉已验过的恢复链路；叠加 = 外层不动、只多一层"子结果汇总为 attempt 结果"的薄代码。**判定：叠加不替换**，且**当前不引入**——`RESUME_PARSE` 是单文件解析，拆并行收益≈0，引入只增加耦合；引入条件 = 出现"确实有几件独立子活"的任务（批量简历解析、转写抓取 + 面评校验并行）。
 - **D-134（2026-11-16 产品负责人裁定；三件"外部事"全部关闭，总控不得再上报）**：
-  1. **模型额度（OpenCode Go 429）—— 暂时算了**。因此 task-78 的产品层 D 项（真实 HR 会话在预算内 / 超限交接）**保持 BLOCKED 并挂起**，**不作为 v1.0 阻塞项**、不再催、不再要求产品负责人决策。口径：**能力已交付 + 工程层证据齐全（闸门真注册、拒绝时全表 delta=0、spy 证明工具 body 未执行、反证摘掉 guard 即写成功），但"真实会话取证"缺一条，报告必须如实标 BLOCKED，不得写 PASS**。额度恢复后一条命令可补：`work/d5/product-budget/evidence/session/scripts/run-formal.ps1`。
+  1. **模型额度（OpenCode Go 429）—— 暂时算了**。因此 task-78 的产品层 D 项（真实 HR 会话在预算内 / 超限交接）**保持 BLOCKED 并挂起**，**不作为 v1.0 阻塞项**、不再催、不再要求产品负责人决策。口径：**能力已交付 + 工程层核查材料齐全（闸门真注册、拒绝时全表 delta=0、spy 证明工具 body 未执行、反证摘掉 guard 即写成功），但"真实会话取证"缺一条，报告必须如实标 BLOCKED，不得写 PASS**。额度恢复后一条命令可补：`work/d5/product-budget/evidence/session/scripts/run-formal.ps1`。
   2. **CI（GitHub 账户计费锁定）—— 不管**。CI **不作为 v1.0 验收 gate**，`I1` 的 CI 段判 **N/A**（不是 FAIL、不是 BLOCKED，是"外部不可用且不在本项目处置范围"）。机检口径固定为**本地干净库全量四数 + runtime-budget + clean-load，由独立窗口复跑**（D-128.5 的实施口径由此收窄）。
   3. **D-113（PyMuPDF 许可证）—— 不属本项目**，已按上条关闭。
   > 影响：v1.0 验收里**不再有任何"等外部条件"的条目**；剩下的只有"独立窗口按真实角色场景复验"本身。
@@ -1584,7 +1584,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
      ⑤ **Agent 行为**（主动索要材料违反 D-133、吐内部术语、该判断时硬说"无法判断"）；
      ⑥ **能力不可达**（该做的动作在真 Host 上做不到）。
   3. **判定口径**：产品视角复核的每条缺陷必须标 `class = OURS | UI_DESIGN_PENDING`；只有 `OURS` 进修复队列。**不允许用"UI 还没设计"来掩盖 ②③④⑤⑥**，也不允许把设计问题混进"必须修"来占用工期。
-  4. **验收出的 `OURS` 问题 → 总控直接派修（不再等产品负责人逐条确认）**：修完按原场景复验，复验证据落 `work/`，修不了的（外部阻断）如实 BLOCKED。
+  4. **验收出的 `OURS` 问题 → 总控直接派修（不再等产品负责人逐条确认）**：修完按原场景复验，复验核查材料落 `work/`，修不了的（外部阻断）如实 BLOCKED。
 - **D-136（2026-11-16 总控裁决；产品 Web 会话的 agent preset 收口 —— O19 安全红线）**：
   1. **事实**：产品 Web 聊天（HR 的真实入口）会话实测有 **61 个工具**，含 `pwsh`/`read`/`write`/`edit`/`glob`/`grep`/`web_search`/`web_fetch`/`plugin_manager`/`subagent`/`workflow`/`list_agents`/`send_message`/`wait_agent`，并出现过 `danger-full-access` 审批；同 profile 的 headless 会话只有 **38 个**、0 工程工具。
   2. **根因（composed config 实证）**：Web 会话跑的是 DSH **自带 agent preset `standard`**，preset 自带一整棵 plugin 子树（persona / agent-instructions / tool-bash / tool-pwsh / tool-fs / tool-fs-search / tool-jobs / tool-schedule / delegation / tool-web / tool-office / tool-plugin-manager …）。**profile 顶层的 `disabled: true` 只作用于顶层树，对 preset 子树无效**。同一根因也解释了 O10（preset 的 persona 是 "You are a coding agent…"，遮蔽顶层 `system-prompt` 人设）——即"工具面收口"此前**只在 headless 生效**。
@@ -1605,7 +1605,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   1. **唯一权威文档 = `docs/24-product-framework-v2.md`**。它与 `docs/02/03/04/05/06/07/09`、`work/review/2026-11-16-notion-acceptance/02-MATRIX.md`（73 项）、`docs/23` 冲突时**以 `docs/24` 为准**；73 项矩阵与 12 阶段清单**降为历史参考，不再作为产品验收判据**（D-122 的 C1–C3 继续有效）。
   2. **产品认知固定为**：以**人**为单位存上下文 + Agent 只做辅助（不替人初筛/决策/打分）+ 连接器只做"接进来"（通用契约，不实现具体客户对接）+ 人的闸门必须真实 + DSH 已有能力（会话/子代理/任务面板/计量）只做接上与展示、不自研。
   3. **不主动提（不主动扩范围）**：主动找人/sourcing、Offer 与入职、企业人事系统具体对接、系统内沟通协调、独立"人才沉淀"模块、角色×视图矩阵、把 CI 当验收标准、把 12 阶段当模块清单/覆盖率指标、多租户与企业级部署与合规留存、自研队列/Runtime/解析/UI 框架 —— **这些不是"永远不做"，而是"我们不主动提、不主动开、不塞进 v1.0 验收"**（产品负责人 2026-11-16 纠偏：按"不做"压得太死）。产品或客户**明确要求**时可做，但必须先说清代价（工期/复杂度/外部条件）并在本台账写一条裁决；**禁止**"自己觉得应该做就偷偷加进来"。
-  4. **AI 行为纪律（新增硬规定）**：输出固定三段（结论一句 → 依据 → 建议下一步）；**禁止反向免责话术**（"这里缺什么/不能代表/不足以判断/没有可定位证据"）、禁止索要材料或要求人补录系统未读出的字段、禁止暴露内部标识/哈希/字段名/接口路径/机器码、禁止把内部版本冲突解释成需要人解决的难题；读不到就一句话说事实然后继续。纪律的**载体 = DSH skill 文件**（`dsh/dsh-recruitment/skill/<环节>/`，仓库内版本化、可用自然语言迭代），**不自研提示词框架**。
+  4. **AI 行为纪律（新增硬规定）**：输出固定三段（结论一句 → 依据 → 建议下一步）；**禁止反向免责话术**（"这里缺什么/不能代表/不足以判断/没有可定位核查材料"）、禁止索要材料或要求人补录系统未读出的字段、禁止暴露内部标识/哈希/字段名/接口路径/机器码、禁止把内部版本冲突解释成需要人解决的难题；读不到就一句话说事实然后继续。纪律的**载体 = DSH skill 文件**（`dsh/dsh-recruitment/skill/<环节>/`，仓库内版本化、可用自然语言迭代），**不自研提示词框架**。
   5. **验收口径 v2 = 六条门**：V1 上下文闭环（三处一致）/ V2 Agent 辅助且不傻逼（禁止话术可机检）/ V3 人的闸门（真人真界面 + 零写入负例）/ V4 外部事实诚实（三维标签不撒谎）/ V5 看得见（HR 一眼看清 + DSH 计量与任务状态 + 原文按需点开）/ V6 长任务可恢复。**明确不构成验收项**：CI 红绿、测试数量、代码行数、阶段覆盖率、角色数量、界面美观度。
   6. **待设计（本轮搁置，不设计不验收）**：初筛默认行为、提示词逐条措辞、原文阅读器交互、连接器具体对接、按轮次的上下文呈现形态、计量/任务状态的展示形态 —— 需真实样本与调优。
 - **D-140（2026-11-16 产品负责人裁决；撤回"预算"能力 + 两条总控纪律）**：
@@ -1621,9 +1621,9 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   5. **skill 每会话加载约 7 秒**：**不改**。按需加载是 DSH 的正确设计（skill 内容多，全量注入更贵）；高频纪律已进 persona，skill 只放环节细节。
   6. **`job_get` 只认 UUID**：**同意，是真缺陷**（与 O20 同族：业务对象应支持业务标识查找）。补 `code`/`title` 查询，避免 Agent 用多次 `application_get` 绕找 `job_id`。
   7. **身份绑定必须工作台手工选**：**v1.0 保持手工，刻意如此**（没有登录态，自动绑定等于伪造身份）；改进只在"未绑定时第一句就引导"（错误文案已改，skill 再加一条）。登录态/租户自动绑定属企业版。
-  8. **取不到材料逐字原文**：**同意是缺口，且不是刻意限制**。业务复核需要逐字证据（D-110 要求原文哈希 + 定位唯一 + 原句逐字命中）。先查真 Host 下 `material_read` 的 `TEXT` 模式是否可用（历史上演示脚本删文件导致不可用，已修），再补齐"带 page/offset 的引文"。
+  8. **取不到材料逐字原文**：**同意是缺口，且不是刻意限制**。业务复核需要逐字核查材料（D-110 要求原文哈希 + 定位唯一 + 原句逐字命中）。先查真 Host 下 `material_read` 的 `TEXT` 模式是否可用（历史上演示脚本删文件导致不可用，已修），再补齐"带 page/offset 的引文"。
   9. **回答偏长**：**部分同意**。业务要"先结论、可展开"，不是长报告；做法是 skill 定"默认简短 + 依据列点 + 需要时展开"，**不做硬 token 预算**（D-140：不存在预算）。
-  > **优先级（总控排）**：④ 的工具调用留痕接线 ＞ ⑧ 原文证据 ＞ ③ 决策派生阶段 ＞ ⑥ job 按 code 查 ＞ ① rubric 摘要；②先查证；⑤⑦⑨ 归措辞/不主动提。
+  > **优先级（总控排）**：④ 的工具调用留痕接线 ＞ ⑧ 原文核查材料 ＞ ③ 决策派生阶段 ＞ ⑥ job 按 code 查 ＞ ① rubric 摘要；②先查证；⑤⑦⑨ 归措辞/不主动提。
 - **D-142（2026-11-16 总控裁决；两条会影响"人看到什么"的产品语义）**：
   1. **SCREENING + REJECT = 这条申请结束**。实现口径（收窄版）：同一事务内 = 决策落库（`result=REJECT`、`stage_code=S7`）+ 阶段派生 `S6→S7` + **`lifecycle_status` `ACTIVE→CLOSED`**。用**既有** `CLOSED` 取值与**既有** `application.lifecycle_status.changed` 事件，**不新增取值、不加迁移、不发新事件类型**；`WITHDRAWN` 不用（语义是候选人撤回）。理由：初筛没过仍挂 ACTIVE 会让工作台把被拒的人算进"推进中"、并提示"去安排面试"——那是**事实错**，不是显示问题；回退到 S6 又与 `decision.stage_code=S7` 自相矛盾（正是 D-141③ 要消灭的假事实）。ADVANCE 保持 `S7 + ACTIVE`。**同步修** `deriveApplicationNextStep`：`current SCREENING=REJECT` → `CLOSED`（兜历史数据行）。
   2. **允许"夹具纠正"，但不许"放宽规则"**。演示库 `0002_seed` 的 rubric v1 criteria **缺 `question`**，R-VAL-12 判定不可执行 → 演示申请钉 v1 时初筛必然 `NO_RUBRIC/RUBRIC_INVALID`。处置：`bootstrap-demo.mjs` 幂等步骤 `seed.demo_rubric_repair`，把演示申请**重绑到"已批准且可执行"的版本**（输出 `pinned_before/after` + `executable_before/after` + `state=REBOUND|NO_OP`），**不改迁移、不放宽 R-VAL-12、不伪造初筛结果**。同时：因此改动而失效的测试必须**跟随真值更新且不得放宽强度**（能读库真值的改成读真值 = 收紧；"无材料"类用例改用自造无材料申请，不得把断言改反）。
@@ -1648,12 +1648,12 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
    - **PostgreSQL 仍是唯一业务真相库**（PG 17.x，schema `recruitment`，迁移 0001→0016）。
      「不用 pg-boss」≠「不用 PostgreSQL」；也不改变「PG 权威、无第二状态 owner」（D-109）。
    - 本条只做口径回抄，**不声明新能力**：实现事实以 `package.json`（无 `pg-boss` 依赖）、
-     `src/runtime/**`（`FOR UPDATE SKIP LOCKED` + `lease_expires_at`）与独立验收证据为准。
+     `src/runtime/**`（`FOR UPDATE SKIP LOCKED` + `lease_expires_at`）与独立验收核查材料为准。
 
 2. **C2 · 真实飞书是 v1.0 的 P0 验收项（Notion 06 §02 P0 #7，更严口径）。**
    v1.0 必须有**一条真实飞书会议转写的产品链路**通过验收：真实会议 → Interview → 产品工具
    `recruitment_transcript_import` 导入 → READY → 可独立读回。
-   - **Fixture 只能用于自动化测试或明确标识的临时兜底，不得作为验收证据**；只跑 Fixture 的转写段
+   - **Fixture 只能用于自动化测试或明确标识的临时兜底，不得作为验收核查材料**；只跑 Fixture 的转写段
      一律记 `NOT_RUN`/`BLOCKED`，不记 PASS。
    - 真实读取的判据仍按 **D-1**：`provenance=LIVE` + `trigger=MANUAL` + 真实 provider artifact
      ID/revision/hash/readback 即合格；F2（产品自有 OAuth + 事件订阅）为 **P1**，不阻塞 v1.0。
@@ -1685,7 +1685,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
 收口写在这里、其它文档只引用，避免第二次口径漂移。
 
 **回抄落点**：`docs/02`、`03`、`04`、`04-scenario`、`06`、`07`、`08`、`18`、`README` 的旧口径行；
-逐项原文→新文与机检证据见 `work/review/2026-11-16-notion-acceptance/08-C1C3-RECONCILE.md`。
+逐项原文→新文与机检核查材料见 `work/review/2026-11-16-notion-acceptance/08-C1C3-RECONCILE.md`。
 
 ---
 
@@ -1696,11 +1696,11 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   2. **四条护栏（防"人照着抄"退化）**：① 建议必须带依据（哪几条标准有对应、哪几条没有），无依据不给建议；② 不给分数、不给排名、不用"淘汰 / 不合适"这类结论词，只用"倾向往下走 / 倾向再确认"；③ 三态（有对应 / 没有对应 / 读不出来）必须与建议同时出现，不许只给建议；④ 建议之后必须有一句"决定由你来做"，且不得替人调用决策工具。
   3. **落地**：`skill/recruitment-s7-screening/SKILL.md` 删掉"待设计"标记并按本条固定措辞；`docs/24 §3 / §7` 与本条回抄；`docs/26` 同步。
   4. **明确不改**：不加分数、不加自动推进、不改闸门与其负例。
-- **D-145（2026-11-18 产品负责人裁定；产品语言不用"证据"）**：
-  1. **理由（产品负责人意见）**：招聘场景里"证据"带定罪意味（取证 / 举证 / 证据链），把产品与候选人放到对立面；它本身是工程词（可复核 / 哈希 / 定位）被搬进了产品话。
+- **D-145（2026-11-18 产品负责人裁定；产品语言不用"核查材料"）**：
+  1. **理由（产品负责人意见）**：招聘场景里"核查材料"带定罪意味（取证 / 举证 / 核查材料链），把产品与候选人放到对立面；它本身是工程词（可复核 / 哈希 / 定位）被搬进了产品话。
   2. **口径（按场景分，不搞一词通吃）**：材料里的原话与位置 → **原文 / 原话 / 出处**；对上岗位标准 → **对应 / 对照**；三态 → **有对应 / 没有对应 / 读不出来**；Agent 为什么这么建议 → **依据 / 理由**；工程属性（哈希 + 定位唯一 + 逐字命中）对外说 **可复核**。
   3. **范围**：HR / 面试官能看到的文案（`src/client/**` 界面、Host Action 错误文案、工具 render 里给模型看的话）、`skill/**` 工作说明书、`docs/26` 人话部分。**工程内部保留**（代码字段名 `evidence`、`docs/17` 本台账、验收报告 L1–L6、`docs/24 §6.2` 的禁止话术清单）。
-  4. **同批附带**：界面里的工程味文案一起清（`SCREENING_EVALUATION 机器证据`、`basis_refs 分片`、`EVIDENCE_INSUFFICIENT 门禁`、`rubric 维度 / basis kinds`），依据 **D-135 ①「文案说谎 / 工程味」**，不是新需求。
+  4. **同批附带**：界面里的工程味文案一起清（`SCREENING_EVALUATION 机器核查材料`、`basis_refs 分片`、`EVIDENCE_INSUFFICIENT 门禁`、`rubric 维度 / basis kinds`），依据 **D-135 ①「文案说谎 / 工程味」**，不是新需求。
 - **D-146（2026-11-18 总控裁决；追责留痕的可见性）**：
   1. **做**，但只做"一行事实 + 可展开"：谁、何时、依据哪份材料、哪版标准、依据哪几条面评。**不做**审计看板、不做决策质量评分、不做导出审计包。
   2. **暂不排期**：实施排在真 Host 整链验证之后，避免与 `docs/24 §7` 的 UI 待设计区混在一起；本轮只落口径。
@@ -1709,18 +1709,18 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   2. **照判的**：文案说谎、数据自相矛盾、按钮点不动、错误对用户不可读、Agent 越权 / 索要材料（D-135 ②–⑥）。
   3. 冻结 SHA / 干净库 / 隔离 `DSH_HOME` / 独立端口等前置不变（D-122.5）。
 - **D-148（2026-11-18 总控裁决；产品语言"最后一公里"的已知残留与机检边界）**：
-  1. **本轮已清**：HR / 面试官可见文案里的「证据」（按 D-145）与主要工程话——申请详情、初筛面板、面试官视图、顶栏身份、skill 五份、以及失败路径里的 `D-79` / `uq_decision_current` / `x-dsh-session` / `detail.violations` / `enum` / `契约` / `fail-closed` / `JOB_BASE` / `task-50` / `effective schema`。明细与逐条改前→改后见 `work/d5/{term-b-cleanup,copy-final,shell-copy}/REPORT*.md`。
+  1. **本轮已清**：HR / 面试官可见文案里的「核查材料」（按 D-145）与主要工程话——申请详情、初筛面板、面试官视图、顶栏身份、skill 五份、以及失败路径里的 `D-79` / `uq_decision_current` / `x-dsh-session` / `detail.violations` / `enum` / `契约` / `fail-closed` / `JOB_BASE` / `task-50` / `effective schema`。明细与逐条改前→改后见 `work/d5/{term-b-cleanup,copy-final,shell-copy}/REPORT*.md`。
   2. **已知残留（未清，如实列出，不在本轮宣称"已清干净"）**：面试官面评表单里的英文枚举与内部 id（`MET / NOT_MET`、`scorecard_id / actor_id / interview_id`、`mode`、`code / reason_code`）、申请详情与工作台中少量英文枚举原值、三维标签原值渲染。**位置清单**见 `work/d5/shell-copy/REPORT.md` ③（只列未改）；**"该显示什么"的口径清单见 `docs/30-frontend-display-spec.md`**（交前端实现，总控不改 `src/client/**`）。判定：**由独立窗口按 D-135 判**，总控不预先认定"不判 FAIL"。
-  3. **机检边界（必须写进交验单，避免"机检绿 = 文案全清"的误解）**：`scripts/term-lint.mjs` 只查「证据」二字；扫描面 = `src/client` 引号字面量 + `src/http` 字符串 + `skill/**/*.md` + `.tsx` 非注释行（兜 JSX 文本节点）。**它不管英文枚举、字段名与裁决编号**——那类靠人工复核与 D-135 判定。
+  3. **机检边界（必须写进交验单，避免"机检绿 = 文案全清"的误解）**：`scripts/term-lint.mjs` 只查「核查材料」二字；扫描面 = `src/client` 引号字面量 + `src/http` 字符串 + `skill/**/*.md` + `.tsx` 非注释行（兜 JSX 文本节点）。**它不管英文枚举、字段名与裁决编号**——那类靠人工复核与 D-135 判定。
   4. **产物**：界面文案改动必须重建 `dsh/dsh-recruitment/lib/client.js`（10 个 client 源文件是构建输入），产物与源码**同一提交**；"源码改了但产物没重建"= 界面仍显示旧文案，属集成缺陷。
 - **D-149（2026-11-18 总控裁决；首轮"真人用完整场景"的结论与处置）**：
-  1. **已跑通**：真 Host（49347）+ 真 Chrome（CDP）+ HY4，`docs/26 §4` 的步骤 1–7 与步骤 9 由真实角色完成；步骤 8 因面评只到 1/3 **如实停**（不伪造）。证据：`work/d5/e2e-live/`（56 张 1440/390 截图 + body 文本 + 独立 psql 读回）。
+  1. **已跑通**：真 Host（49347）+ 真 Chrome（CDP）+ HY4，`docs/26 §4` 的步骤 1–7 与步骤 9 由真实角色完成；步骤 8 因面评只到 1/3 **如实停**（不伪造）。核查材料：`work/d5/e2e-live/`（56 张 1440/390 截图 + body 文本 + 独立 psql 读回）。
      - 初筛 **D-144 四条判据实测全过**：先摆三态 → 一句倾向建议 → 逐字"这是建议，不是决定，决定由你来做" → 无禁用话术 / 无 UUID / 无内部编号。
      - HR 真点"通过"：`decision` **0 → 1 行**（SCREENING/ADVANCE/S7、actor 为真人、basis 带 rubric hash + evaluation digest + resume sha）。
      - 面试官独立提交面评成功（首次被 `ADVANCE_WITH_UNASSESSED_DIMENSION` 拒、零写入，第二次成功）。
      - 负例：未绑定身份写操作 → HTTP 409，**10 张表行数前后完全一致**（零写入）。
   2. **真缺陷（已修）**：worker profile 顶部把模型写成 `hy4-flash-free`，但其 `opencode-go-openai.models` **未登记该模型** → 两条长任务 `RESUME_PARSE` / `EVALUATION_SYNTHESIZE` 均 `FAILED_FINAL(UNKNOWN_MODEL)`。处置：**只**在 worker profile 的模型清单补 `hy4-flash-free`（+10 行，产品 profile 未动、key2 与默认模型未动），运行时副本同步。
-     证据：worker profile 直跑会话 `exit 0` 并返回 HY4 回复（`session-0a55c3ca-…`）；**任务级待下一次真实事件复验，不得记 PASS**。
+     核查材料：worker profile 直跑会话 `exit 0` 并返回 HY4 回复（`session-0a55c3ca-…`）；**任务级待下一次真实事件复验，不得记 PASS**。
   3. **复核后否定的两条误报**（记下来，防止被当成缺陷重复报）：
      ① `decision` 表没有 `confirmed_at` 属**设计如此** —— D-130 要求持久化在 `decision.record` 事件 payload；实测 `confirmed_at / confirmed_by_actor_id / confirmation_method / confirmation_text_sha256 / human_confirmation_preimage_version` 五键齐全。
      ② 决策后 `current_stage_code` 仍是 S7 **符合** D-141③ / D-142（S6→S7 就是"进面试阶段"；演示种子本来就在 S7，派生为 NO_OP）。
@@ -1738,8 +1738,8 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
 - **D-152（2026-11-18 产品负责人要求；验收标准操作层 = `docs/29-acceptance-standard.md`）**：
   1. **效力**：`docs/24 §8` 六条门 V1–V6 仍是**上位口径**；`docs/29` 是它的**操作实现**（每条判据给"人话判据 + 取证层 + 反例 + 来源"）。两者冲突以 `docs/24` 为准；`docs/29` 不得引入 `docs/24` 之外的"门"。
   2. **不许乱想**：`docs/29` 的每一条判据必须标来源（`docs/24` / `docs/17` 裁决 / 真实现场 / 合同）。**无来源的判据不许进**；新增判据必须先补来源再补条目。
-  3. **标准先行**：任何交付单元提交前，作者自查"它影响 `docs/29` 哪几条 ID"并把证据放 `work/d5/<lane>/`；新增能力必须同时给负例（§6 风格）。**改动若触碰 §7"不判"清单，先改标准再改代码。**
-  4. **交验单必须按 `docs/29` 逐条打勾**（ID / 判定 / 证据层 / 命令 / 输出 / 读回 / 路径），不得自拟格式；`work/d5/acceptance/BRIEF-FROZEN-*.md` 只作**环境与背景说明**，判据以 `docs/29` 为准。
+  3. **标准先行**：任何交付单元提交前，作者自查"它影响 `docs/29` 哪几条 ID"并把核查材料放 `work/d5/<lane>/`；新增能力必须同时给负例（§6 风格）。**改动若触碰 §7"不判"清单，先改标准再改代码。**
+  4. **交验单必须按 `docs/29` 逐条打勾**（ID / 判定 / 核查材料层 / 命令 / 输出 / 读回 / 路径），不得自拟格式；`work/d5/acceptance/BRIEF-FROZEN-*.md` 只作**环境与背景说明**，判据以 `docs/29` 为准。
   5. **差距要明写**：`docs/29 §11` 维护"当前实现与标准的差距"清单（截至今日四条）。**已知差距不得在交验单里被省略**，也不得用"UI 未设计完""还没排期"掩盖。
 - **D-153（2026-11-18 总控裁决；V6-2 与 E6-1 的语义口径，落地于 `3b4b52a`）**：
   1. **V6-2「需要人处理」的闭集**：终态失败且 `error_class ∈ {PERMANENT, INVALID_INPUT, AUTH_REQUIRED, BUSINESS_CONFLICT}` **才**进人工待办；`WORKER_LOST / TIMED_OUT / TRANSIENT（重试耗尽）` 一律不进。理由：后三类要么已自动重试、要么是环境抖动，塞进人工队列会把真问题淹掉。
@@ -1808,7 +1808,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   1. **事实**：`dsh/dsh-recruitment/tsconfig.json` 的 `include` 只有 `src/client/**` 与 `tsdown.config.ts`（注释写明"只为 tsdown/oxc 提供 JSX 设置，不参与宿主代码执行"）。因此历次 `npx tsc --noEmit` **只检查了前端**；**服务端 `src/**` 从未被类型检查**。此前所有"tsc 0"的表述，准确含义是"前端 tsc 0"，**服务端不包含在内**——这是总控的表述不严谨，记在此处更正。
   2. **实测基线（2026-11-19，HEAD + 本轮未提交改动）**：用显式 strict 参数检查服务端入口 `src/index.ts`，得到 **42 个错误 / 14 个文件**。其中 **`criterion-override` 本轮新增文件 0 错**；**邮箱模块有 4 处**（`email-pump.ts` 2、`email-fetch.ts` 至少 2）；其余为存量。
   3. **要求**：① 下一轮建 `tsconfig.server.json`（include `src/**`，排除 `src/client/**`）+ `scripts/server-typecheck.mjs`，把**当前 42** 记为基线，**只许降不许升**（棘轮口径同 runtime-budget：超基线先改台账）；② 新增/修改的服务端文件**不得增加错误数**（本轮的邮箱 4 处属违规，须在下一轮先修到 0）；③ `docs/29` 的 E5-1 补上"服务端类型检查"一项，**不再把前端 tsc 当整仓类型检查**。
-  4. **不追溯修改历史证据**：此前各提交里的"tsc 0"按第 1 条解释（前端 tsc 0），不重写历史。
+  4. **不追溯修改历史核查材料**：此前各提交里的"tsc 0"按第 1 条解释（前端 tsc 0），不重写历史。
 
 - **D-109.17（2026-11-19，总控；`interview.no_show` 事件登记的预算追认）**：代码行口径 **5,033 → 5,051（+18）**。
   ① **为什么必须加**：候选人/面试官爽约是**独立事实**，不能记成取消；审计事件必须进唯一注册表（2026-11-14 事故纪律），payload 需带 subject/reason/确认哈希/前后状态，才能半年后复盘"这场为什么没面"。
@@ -1816,13 +1816,13 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ③ **未触发 D-109 换实现条件**：无队列/调度语义变化。CEILING 同步 **5051**。
 
 - **D-160（2026-11-19，总控；真点验收揭示的结构性问题 —— 不是"补九个按钮"）**：
-  1. **证据**：旧详情页 `application-detail.tsx` 的写入口基线是 5 个（`screening_decide` / `interview_schedule` / `transcript_import` / `stage_advance` / `decision_record`）；v4 画布实际只有 4 个（置顶约束 / 下一轮交接 / 跨岗调剂 / 排期，且排期缺"选面试官、改期、版本字段"）。**替换详情页时只迁了 1 个写入口，其余 4 个直接丢了。** 另有 6 条写路由在客户端**零引用**：`application/star`、`compound`、`email/send`、`email/send-authorized`、`email/authorize`、`settings/write`。
+  1. **核查材料**：旧详情页 `application-detail.tsx` 的写入口基线是 5 个（`screening_decide` / `interview_schedule` / `transcript_import` / `stage_advance` / `decision_record`）；v4 画布实际只有 4 个（置顶约束 / 下一轮交接 / 跨岗调剂 / 排期，且排期缺"选面试官、改期、版本字段"）。**替换详情页时只迁了 1 个写入口，其余 4 个直接丢了。** 另有 6 条写路由在客户端**零引用**：`application/star`、`compound`、`email/send`、`email/send-authorized`、`email/authorize`、`settings/write`。
   2. **根因（三层，逐层修）**：
      ① **直接原因**：UI 是"换皮式替换"，没有做新旧入口对齐；新增能力只在后端长出来。
      ② **机制原因**：交付把"完成"定义成"工具/接口可达 + 测试绿"，没有"界面入口存在且真人能点"这一条。`docs/29` 有 V3/R9，但没有做成**每轮强制的入口清单**，所以这种情况能过验收。
      ③ **结构原因**：两套界面（旧 workspace/detail 与 v4 画布）同时显示同一条申请，没有定"谁是权威"，能力落在哪套取决于实现者，验收看接口就发现不了。
   3. **裁决**：**v4 画布是权威工作界面**；旧详情页在"入口对齐（parity）完成前**保持可达**"（可切换/可直达），**不许先删再补**；旧详情页的写入口清单作为**基线契约**保留在 `docs/38`。
-  4. **配套（立刻生效）**：① `docs/38-capability-entry-matrix.md` 建"能力→入口→证据"矩阵；② 新增机检 `scripts/entry-reachability.mjs`（写路由零 client 引用 → 红；关键 testid 未在 CDP smoke 清单出现 → 红）；③ `docs/29` 增 **V3-0「入口可达」门**：任何写能力没有可达界面入口，一律不算完成。
+  4. **配套（立刻生效）**：① `docs/38-capability-entry-matrix.md` 建"能力→入口→核查材料"矩阵；② 新增机检 `scripts/entry-reachability.mjs`（写路由零 client 引用 → 红；关键 testid 未在 CDP smoke 清单出现 → 红）；③ `docs/29` 增 **V3-0「入口可达」门**：任何写能力没有可达界面入口，一律不算完成。
   5. **S8 身份串写**是独立缺陷（客户端状态绑定：切身份后挂起的自动保存仍发出），按前端任务 08 修，不并入本条。
 
 - **D-161（2026-11-20，总控；"修一轮报一轮"的根本原因与验收纪律变更）**
@@ -1837,7 +1837,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   1. **合并门 = 全链路**：任何涉及界面的合并，必须先跑 `work/d5/e2e-real/scripts/run-runbook.mjs --fresh`，**15 步全部 PASS**（或该步 BLOCKED 且明确不是产品缺陷）才允许合并；只跑编译/单测不构成验收。
   2. **三层机检必须同时绿**：① 入口可达（`scripts/entry-reachability.mjs`，基线只降）② 身份/会话（写请求必须走 `postActionSeam` 或显式 `X-DSH-Session`）③ 合同复用（`[手拼写动作]` 归零）。
   3. **合同先写再实现**：新写能力先在 `docs/38` 写"动作→builder→入口 testid→验收步"一行，缺行不许开工。
-  4. **交付必须附可复跑证据**：跑不了的环境要如实写"未跑"，并附静态自检结果；"应该能跑"不接。
+  4. **交付必须附可复跑核查材料**：跑不了的环境要如实写"未跑"，并附静态自检结果；"应该能跑"不接。
   **不改变**：产品范围、工具面、外部写口径；这是验收纪律，不是新功能。
 
 - **D-162（2026-11-20，总控；补 D-161：覆盖率不是根因，交付结构才是）**
@@ -1879,7 +1879,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   对我自己的新约束（本轮起执行）：
     a. 不接受"没有自检产物的交付"；交付方跑不了的自检，必须由我提供可跑脚本，否则不接；
     b. 每次暴露一个缺陷，先做**同类全量扫描**（脚本或穷举），再修；
-    c. 汇报只报"用户现在能做什么、证据在哪"，不报"哪个按钮接上了"；
+    c. 汇报只报"用户现在能做什么、核查材料在哪"，不报"哪个按钮接上了"；
     d. 合并前必须自己跑完全链路，**不合并"预计能过"的东西**；
     e. 不再把"验证"当自己的主要产出——验证是底线，不是交付。
 
@@ -1897,7 +1897,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **分支**：`feat/canvas-ux-polish`（3 个提交，`c04dfec`），基于 08c 基线、不含我随后的 S14/S12 修复。
   **内容**：SWR 30s 缓存 + 悬停预取、滚动记忆、编辑感动效、可悬停暂停的 5 秒撤销条、上一/下一位候选人翻页、脏表单离开守卫、跨页缓存失效、离线横幅与回前台刷新、键盘快捷键。
   **复核结论（接受）**：与我的写链路修复无冲突（决策仍走 facade；提交前仍 `no-store` 重取面试版本；`MARK_NO_SHOW` 与确认原话保留）；离线部分只是横幅+回前台刷新，**无写队列**，不会重放写请求。
-  **证据**：合并后 `tsc` 0、`tsdown` 通过、静态合同/入口机检 PASS、真点 `--fresh` **15/15**、全量 **2859/2855/0/4**。
+  **核查材料**：合并后 `tsc` 0、`tsdown` 通过、静态合同/入口机检 PASS、真点 `--fresh` **15/15**、全量 **2859/2855/0/4**。
   **提醒**：SWR 缓存对"读旧值"有 30s 窗口；写前版本重取已绕开它，其余读语境可接受。
 
 - **D-166（2026-11-20，产品负责人决策；v4 工作台外框与首页接管旧 RecruitingWorkspace）**
@@ -1918,15 +1918,15 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
 - **D-168（2026-11-20，产品负责人裁决；界面以后端前端设计为准，总控不许动 UI）**
   **裁决**：整页 v4 界面必须与前端窗口的定稿设计**一致**；**总控（我）不得擅自改界面、加界面元素或调整视觉**。
   任何"要改/要加"的界面诉求（包括 testid、文案、布局、响应式）**一律交前端窗口**执行；我只做：服务端/构建接线、验收、问题定位与任务书。
-  **对我自己的约束**：不再直接编辑 `src/app/**`、`src/client/canvas/**` 等界面文件；发现界面缺陷 → 写清证据与复现 → 交前端改 → 我按 1440 验收。
+  **对我自己的约束**：不再直接编辑 `src/app/**`、`src/client/canvas/**` 等界面文件；发现界面缺陷 → 写清核查材料与复现 → 交前端改 → 我按 1440 验收。
   **口径修正**：390 窄屏不作为产品要求（桌面 Web）；只要求窄窗口不崩、不丢数据（见 D-169 前一条记录）。
 
 - **D-169（2026-11-20，总控；v4 独立整页 15 步真点收口：15/15 PASS，`run-v4.mjs` 完成适配）**
-  **事实**：`work/d5/fullpage/run-v4.mjs` 已按 `work/d5/fullpage/TESTID-MAP.md` 从旧壳脚本适配到 v4 独立整页：身份走 `/recruitment/test?as=recruiter|interviewer_a|interviewer_b`（服务端写 `rc_sid`/绑定 alias，面试官自动进 `#/interviewer`）；会话 sid 从 `document.cookie.rc_sid` 读（v4 无 DSH 客户端/localStorage）；队列行 `app-queue-item-<id>` 进画布 `v4-canvas-route`；上传用画布内 `[data-testid="v4-canvas-route"] input[type=file]`；S8 用 `reloadApp()` 直达 `/recruitment/app` 保留 `rc_sid`；证据路径全部相对仓库根；`--fresh` 用一次性库 + 确定性数据集，跑完删库/删 profile/删 token/端口释放。
-  **证据**：两次独立 `--fresh` 真跑均 **15/15**：交付方 `2026-11-20T22:34:13+08:00`（work/d5/fullpage/owner-run-2231/）、总控独立复跑 `2026-11-20T22:40:24+08:00`（`evidence/fullpage-v4-15step-20261120/`，HEAD `e7a5284`）。每步三件套：1440×900 截图 + 页面 innerText + psql SELECT-only 读回；证据审计器（`work/d5/fullpage/audit-run.mjs`）硬检查 0 失败、脱敏泄漏 0；关键断言：S2 上传 202+task_id+`business_task` Δ≥1、S6 同 interview id 且 version 1→2、S8 刷新 sid 前后一致且草稿仅属 actor 104、S10 缺面评 disabled 且零写入、S12 FINAL current=1 且 scorecard=2、S13 total|current=1|1、S15 并发 200×1+409×1 且 record_version 仅 +1。
+  **事实**：`work/d5/fullpage/run-v4.mjs` 已按 `work/d5/fullpage/TESTID-MAP.md` 从旧壳脚本适配到 v4 独立整页：身份走 `/recruitment/test?as=recruiter|interviewer_a|interviewer_b`（服务端写 `rc_sid`/绑定 alias，面试官自动进 `#/interviewer`）；会话 sid 从 `document.cookie.rc_sid` 读（v4 无 DSH 客户端/localStorage）；队列行 `app-queue-item-<id>` 进画布 `v4-canvas-route`；上传用画布内 `[data-testid="v4-canvas-route"] input[type=file]`；S8 用 `reloadApp()` 直达 `/recruitment/app` 保留 `rc_sid`；核查材料路径全部相对仓库根；`--fresh` 用一次性库 + 确定性数据集，跑完删库/删 profile/删 token/端口释放。
+  **核查材料**：两次独立 `--fresh` 真跑均 **15/15**：交付方 `2026-11-20T22:34:13+08:00`（work/d5/fullpage/owner-run-2231/）、总控独立复跑 `2026-11-20T22:40:24+08:00`（`evidence/fullpage-v4-15step-20261120/`，HEAD `e7a5284`）。每步三件套：1440×900 截图 + 页面 innerText + psql SELECT-only 读回；核查材料审计器（`work/d5/fullpage/audit-run.mjs`）硬检查 0 失败、脱敏泄漏 0；关键断言：S2 上传 202+task_id+`business_task` Δ≥1、S6 同 interview id 且 version 1→2、S8 刷新 sid 前后一致且草稿仅属 actor 104、S10 缺面评 disabled 且零写入、S12 FINAL current=1 且 scorecard=2、S13 total|current=1|1、S15 并发 200×1+409×1 且 record_version 仅 +1。
   **本轮抓到的两个“假 PASS”（同类缺陷，已修）**：① 旧壳 S2 只断言 UI 文本含“上传/解析”，实测上传请求 400 `OUTSIDE_ALLOWED_ROOTS` 也会 PASS；根因是测试底座 fresh-lib 误把 fixture 目录插入 profile `allowed_roots`，而服务端要求落地目录落在**每一个** allowed_root 内（`src/db/intake-upload.ts:139-141,190-196`）→ 删除该 patch 后上传 202；判据改为「202+task_id+`business_task` Δ≥1」，`intake_asset` 是后台解析异步写、只作辅助。② 旧壳 S4 点不存在的“通过初筛”、填不存在的“确认原话”也能 PASS（弹窗默认 `ADVANCE`）→ 改为真点弹窗内“通过” pill 且 `active`。另收紧：S1（D-167 三判据 + 视口/pathname + 5 锚点）、S3（`.ros-crit-item.active`）、S5（`interviewer.actor_id=…104`）、S6（同 id/version+1/时间新值）、S13（原文“已处理过，不会重复写入”+ total=current=1）。无实质性放宽。
   **不做/未证**：不改产品范围、写链路、界面（D-168）；产品负责人本人手点抽检未做（R9 的“真人”这一层仍由 CDP 驱动）；对话桥仍 503；8 条无界面写能力基线未变；390 不作要求；全量测试本轮未跑（非合并轮）。
-  **运维口径（并入本条）**：lane Host 端口 `49347–49352`，**显式排除 `49351`**（rec-human 人工预览 Host，preflight 任何情况下不许杀）；`49352` 可能被本机无关进程当出站临时端口占用（本机 `GameViewerServer`，Host bind EACCES），此时用 `49347`。证据归档 `evidence/fullpage-v4-15step-20261120/`（README/PASS-FAIL 表/result/45 个逐步证据/审计器输出/机检）；`work/` 里的 run-v4.mjs、fresh-lib.mjs 是过程脚本，按纪律不入库。
+  **运维口径（并入本条）**：lane Host 端口 `49347–49352`，**显式排除 `49351`**（rec-human 人工预览 Host，preflight 任何情况下不许杀）；`49352` 可能被本机无关进程当出站临时端口占用（本机 `GameViewerServer`，Host bind EACCES），此时用 `49347`。核查材料归档 `evidence/fullpage-v4-15step-20261120/`（README/PASS-FAIL 表/result/45 个逐步核查材料/审计器输出/机检）；`work/` 里的 run-v4.mjs、fresh-lib.mjs 是过程脚本，按纪律不入库。
 
 - **D-170（2026-11-20，总控；类型门禁的结构性缺口与本轮修复——v4 app 此前不在任何类型检查里）**
   **事实（HEAD `e7a5284` 实测）**：`src/app/**`（v4 整页前端）**不被任何 tsconfig 覆盖**：`tsconfig.json` 只 include `src/client/**`，`tsconfig.server.json` include `src/**` 排除 client，却把 app 扫进来 → `node scripts/server-typecheck.mjs` 实测 **19 错**（DOM API / `RequestInit.cache` 等）而基线是 0（已红）；同时 `npx tsc --noEmit` 因不含 app 而“绿”。即：**界面代码从未被类型检查**，是 D-163 类“编译绿”的结构性漏洞。
@@ -1934,16 +1934,16 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **暴露与交办**：`tsc` 现红 5 错，全在 `src/app/**`：`prefetchCanvasPath` 单参 ×3（`JobsView:33`/`QueueView:67`/`TalentView:76`，运行时悬停预取抛 TypeError）、`nextStep.conclusion` 无此类型 ×2（`JobsView:64`/`QueueView:214`，恒 undefined）。按 D-168 总控不改界面，已开 `design/v4/frontend-fixes-20261120.md` 交前端；**前端修完前不满足合并门**，禁止把 app 从类型检查里再拿掉换绿。
   **修后机检**：server-typecheck PASS(0/0) · runtime-budget PASS(5051/5051) · entry-reachability PASS（基线内 8 条待补不变、手拼 0）· client-contract-check PASS · term-lint PASS · tsdown PASS；`tsc` 红 5（见上）；全量测试未跑（非合并轮）。
 
-- **D-171（2026-11-20，总控；v4 15 步证据归档与“可复跑”边界）**
-  **归档**：`evidence/fullpage-v4-15step-20261120/` = README（命令/环境/证到什么没证什么）+ PASS-FAIL 表（15 行，逐条判据 + 证据文件）+ `runbook-result.json` + `evidence/S01..S15`（ui.png/ui.txt/db.txt + S08-DRAFT-OWNER.txt）+ `audit-result.json`（审计器 hard 0 / leaks 0）+ `gates.txt`（机检）。
-  **边界（R7）**：证据目录内**不保存**含机器路径的脚本副本；run-v4/fresh-lib/audit-run 留在 `work/d5/fullpage/`（work/ 不入库），README 写明复跑命令与端口口径；归档目录已扫描：无当前有效 token、无 `D:\` 机器路径（CLEAN）。result 中 `host` 为 `…?token=<redacted>`。
-  **为什么**：证据要可复核，但“入库文件零机器路径/零有效凭据”是硬约束；需要脚本长期可复用时，另立 task 把脚本参数化（去掉硬编码路径）后再入库，不在本轮顺手做。
+- **D-171（2026-11-20，总控；v4 15 步核查材料归档与“可复跑”边界）**
+  **归档**：`evidence/fullpage-v4-15step-20261120/` = README（命令/环境/证到什么没证什么）+ PASS-FAIL 表（15 行，逐条判据 + 核查材料文件）+ `runbook-result.json` + `evidence/S01..S15`（ui.png/ui.txt/db.txt + S08-DRAFT-OWNER.txt）+ `audit-result.json`（审计器 hard 0 / leaks 0）+ `gates.txt`（机检）。
+  **边界（R7）**：核查材料目录内**不保存**含机器路径的脚本副本；run-v4/fresh-lib/audit-run 留在 `work/d5/fullpage/`（work/ 不入库），README 写明复跑命令与端口口径；归档目录已扫描：无当前有效 token、无 `D:\` 机器路径（CLEAN）。result 中 `host` 为 `…?token=<redacted>`。
+  **为什么**：核查材料要可复核，但“入库文件零机器路径/零有效凭据”是硬约束；需要脚本长期可复用时，另立 task 把脚本参数化（去掉硬编码路径）后再入库，不在本轮顺手做。
 
 - **D-172（2026-11-20，总控；PR #10 收口：v4 整页 5 个 tsc 错误修复，合并门类型项恢复绿）**
   **来源**：前端分支 `fix/task-10-app-typecheck` / 提交 `2279e08`（基于 `2392720`），PR #10；仅 3 文件 `17+/5-`：`prefetchCanvasPath` 三处补第二参 `(path) => fetchAppJson(path, readCookie('rc_sid'))`；删死字段 `nextStep.conclusion` 读取（`NextStepView` 无此字段、运行时恒 `undefined`，删后显示等价）。
   **复核（不接受自述）**：本地 `git diff HEAD..origin/fix/task-10-app-typecheck` 核对——仅 3 个 `src/app` 文件、无 `@ts-ignore/@ts-nocheck/@ts-expect-error/any/eslint-disable`、未动 server/client/tsconfig/scripts/lib/package.json/MANIFEST；合入为 merge commit **`af0fef5`**（含 `lib/app.js` 重建，10 行）。
   **机检（合并后）**：`npx tsc --noEmit` = **0 错**；`npx tsdown` PASS（双入口）；server-typecheck 0/0 · runtime-budget 5051/5051 · entry-reachability PASS · client-contract-check PASS · term-lint PASS；全量测试未跑（非 main 合并轮，不得据此宣称全绿）。
-  **全链路（合并后独立复跑）**：`2026-11-20T23:09:34+08:00`，HEAD `af0fef5`，`run-v4.mjs --fresh --port 49347` = **15/15 PASS**；证据审计 hard 0 / leaks 0；三屏真悬停 3/3（队列/岗位/人才库各触发一条 200 只读 GET，无 `fetcher is not a function`）。证据 `evidence/fullpage-v4-15step-pr10-20261120/`。
+  **全链路（合并后独立复跑）**：`2026-11-20T23:09:34+08:00`，HEAD `af0fef5`，`run-v4.mjs --fresh --port 49347` = **15/15 PASS**；核查材料审计 hard 0 / leaks 0；三屏真悬停 3/3（队列/岗位/人才库各触发一条 200 只读 GET，无 `fetcher is not a function`）。核查材料 `evidence/fullpage-v4-15step-pr10-20261120/`。
   **状态**：D-170 的 5 个前端类型错**关闭**；PR #10 内容已并入 feat（可标已合并/关闭）；合并门仅剩“全量测试未跑（非 main 合并轮）”与产品侧未决项，**未合并 main**。
 
 - **D-173（2026-11-20，总控；v4 整页对话桥 v1 接线：对话不再 503，复用 DSH 既有 Agent 运行时）**
@@ -1953,7 +1953,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ② 订阅 `agent/assistant-stream`（chunk/text-delta → `delta`）与 `session/event`（`tool/call`/`tool/result` → `tool`，`turn/end` → `done`/`error`），按前端契约发 SSE；
   ③ 桥/运行时不可用仍 503 `AGENT_UNAVAILABLE`（保留降级，业务按钮不受影响）；
   ④ **安全 fail-closed**：Agent 创建 `setup` 里 `tools.restrict({ allow: 15 个只读招聘工具 })`，写工具对对话**不可见**；写操作继续走右侧工作台人点确认。另加 `x-recruitment-agent-diag: 1` 验收诊断（仅回传本轮可见工具名，正常 UI 不发）。
-  **证据（真 Host + 一次性库 + 真 HY4 模型）**：`work/d5/fullpage/probe-agent-turn.mjs`：第 1 轮真调 `recruitment_job_get`（tool/call+result）并回答“DEMO-BE-001 在招/OPEN”；第 2 轮要求“下架岗位”→模型明确工具只读、**无写工具调用**、业务域表行数不变；诊断清单 15 个只读 `recruitment_*`、**0 写工具**。`probe-chat-ui.mjs`：真浏览器 ChatPanel 输入→发送→回答 + “已完成 · recruitment_job_get”、无降级条（1440 截图）。接线后 15 步 `--fresh` 回归 **15/15 PASS**（审计 hard 0）。归档 `evidence/agent-bridge-v1-20261120/`；HEAD `a7a9089`。
+  **核查材料（真 Host + 一次性库 + 真 HY4 模型）**：`work/d5/fullpage/probe-agent-turn.mjs`：第 1 轮真调 `recruitment_job_get`（tool/call+result）并回答“DEMO-BE-001 在招/OPEN”；第 2 轮要求“下架岗位”→模型明确工具只读、**无写工具调用**、业务域表行数不变；诊断清单 15 个只读 `recruitment_*`、**0 写工具**。`probe-chat-ui.mjs`：真浏览器 ChatPanel 输入→发送→回答 + “已完成 · recruitment_job_get”、无降级条（1440 截图）。接线后 15 步 `--fresh` 回归 **15/15 PASS**（审计 hard 0）。归档 `evidence/agent-bridge-v1-20261120/`；HEAD `a7a9089`。
   **机检**：tsc 0 / tsdown / server-typecheck 0/0 / runtime-budget / entry-reachability / client-contract-check / term-lint 全 PASS；全量测试未跑（非 main 合并轮）。
   **v1 边界/未做**：① 对话只读，**对话内写操作的确认卡**未做；② Agent 缺“列表/总览”只读工具（现有读工具都按 id/code 查，问“今天先办谁”答不了）→ 下一步补 1 个复用 overview 读模型的只读工具；③ 改代码后需**重启 Host** 才生效——预览 Host 49351 已于 2026-11-20 23:51 用新代码重启并 live 验收（`/recruitment/app` 200、对话真调 `recruitment_job_get` 并回答、只读工具清单、无写工具；见 `evidence/agent-bridge-v1-20261120/live-49351-check.txt`）；④ 未合并 main。
 
@@ -1964,7 +1964,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ② 新增只读工具 `recruitment_interview_free_slots`（`src/tools/interview-free-slots.ts`）：与 HTTP `/action/interview/free-slots` **共用同一实现**（从 `src/http/interview-slots.ts` 抽出 `computeInterviewFreeSlots/parseQuery`），不复制日历/时区逻辑，读不到日历如实空+原因；
   ③ `src/http/agent-turn.ts`：两个工具加入 `CHAT_READ_TOOLS`（17 个只读、0 写工具）；`tool/result` 成功且工具为 `recruitment_ui_dispatch` 时，从本轮 `tool/call` 参数**重新校验**后下发 SSE `event: ui_action`（校验失败不下发，fail-closed）；原 `delta/tool/done/error` 向后兼容；
   ④ `src/index.ts`：飞书 CLI 路径 / 面试官 open_id 解析抽一份，HTTP 路由与工具共用；工具面 33→35（package.json 已同步）。
-  **自验（真 Host + 一次性库 + 真 HY4 模型；`work/d5/fullpage/probe-ui-dispatch.mjs`；证据 `evidence/chat-canvas-phase1-20261121/`）**：三轮 SSE 分别命中 `ui_action {navigate,talent}`、`{focus_section,criteria}`、`{suggest_action,route=application,modal=schedule}`；第 3 轮真调 `recruitment_interview_free_slots`（当前 profile 无 `RECRUITMENT_FEISHU_USER_MAP`，两位面试官未绑定日历 → 如实 `NO_CALENDAR_BINDING` 空时段，**不伪造**；真实时段须真实日历绑定后补证）；诊断头工具清单 17 只读 / 0 写；业务域表零写入；`tsc` 0、`tsdown`、server-typecheck 0/0、runtime-budget、entry-reachability、client-contract-check、term-lint 全 PASS；15 步 `--fresh` 回归 **15/15**。
+  **自验（真 Host + 一次性库 + 真 HY4 模型；`work/d5/fullpage/probe-ui-dispatch.mjs`；核查材料 `evidence/chat-canvas-phase1-20261121/`）**：三轮 SSE 分别命中 `ui_action {navigate,talent}`、`{focus_section,criteria}`、`{suggest_action,route=application,modal=schedule}`；第 3 轮真调 `recruitment_interview_free_slots`（当前 profile 无 `RECRUITMENT_FEISHU_USER_MAP`，两位面试官未绑定日历 → 如实 `NO_CALENDAR_BINDING` 空时段，**不伪造**；真实时段须真实日历绑定后补证）；诊断头工具清单 17 只读 / 0 写；业务域表零写入；`tsc` 0、`tsdown`、server-typecheck 0/0、runtime-budget、entry-reachability、client-contract-check、term-lint 全 PASS；15 步 `--fresh` 回归 **15/15**。
   **阶段二（未完成，已通知前端）**：前端按规范 §4 一次性接入（消费 `ui_action`：navigate 切路由 / focus_section 滚动高亮 `[data-section]` / suggest_action 气泡按钮；补 `context.job_id`；快捷 pill 禁止本地硬编码）。通知/验收清单 `design/v4/frontend-phase-two-notice.md`。**规范 §5 的 1440 端到端四场景验收（含真实日历）尚未达成**，达成前不能宣称统一交互完成；未合并 main。
 
 - **D-175（2026-11-21，总控；跨窗口协作边界与“仓库文档是唯一真相源”）**
@@ -1973,10 +1973,10 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ① **产品架构、交互原则、页面边界、前后端契约** = 产品/交互窗口；直接提交 `design/v4/*.md` 入库；不做局部硬编码补丁。
   ② **服务端路由、Agent 工具、数据库读写、权限隔离与安全门禁** = 本地 Agent；按仓库契约实现，不自行发明交互语义。
   ③ **前端界面与交互实现**（`src/app/**`、testid 清单）= 产品/交互窗口（云端前端）实现；本地 Agent 不改界面（D-168）。
-  ④ **构建、真机跑测、视觉取证、15 步回归** = 本地 Agent；证据进 `evidence/` 供产品窗口核验。
+  ④ **构建、真机跑测、视觉取证、15 步回归** = 本地 Agent；核查材料进 `evidence/` 供产品窗口核验。
   **流程（先规范后实现）**：交互改动或新功能 → 产品窗口先把规范写进 `design/v4/` 并入库 → 本地 Agent 合入 feat 并按契约实现服务端 → 前端按同一规范实现 UI → 本地 Agent 做 diff 复核、构建、真机验收（规范指定场景 + 15 步）→ 回抄 `docs/17`。**规范未入库的需求不开工**；不得以“保既有测试/最小改动”为由对交互做局部 patch。
   **单一真相源**：仓库文档（`design/v4/*.md` 规范、`docs/17` 裁决、`docs/25` 交接）为准；**聊天记录/口头一致不算决定**。文档互相矛盾 → 当场裁决并回抄，不得“保持现状”。
-  **边界与反例**：产品窗口不直接改服务端/本地脚本；本地 Agent 不直接改界面；跨窗口改动一律走分支/PR + 本地验收；真机证据缺失不得宣称完成。任务 11 作为反例保留在 `design/v4/frontend-task-11-chat-quick-actions.md` 顶部（已作废）。
+  **边界与反例**：产品窗口不直接改服务端/本地脚本；本地 Agent 不直接改界面；跨窗口改动一律走分支/PR + 本地验收；真机核查材料缺失不得宣称完成。任务 11 作为反例保留在 `design/v4/frontend-task-11-chat-quick-actions.md` 顶部（已作废）。
   **当时状态**：阶段一（服务端派发）已完成（D-174，`f0f54ee`/`b05d312`）；阶段二前端分支 `feat/chat-canvas-phase2` 已建、尚无提交；前端提交后按本流程验收。
 
 - **D-176（2026-11-21，总控；PR #11 阶段二验收通过：对话×画布统一交互 §5 四场景全过）**
@@ -1988,7 +1988,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ② 「帮我查下一轮可约时段」→ 4 秒内**无自动弹窗**、气泡 `app-chat-suggest-schedule`（「去安排面试」）、点击后**排期弹窗打开**、工具链 `interview_get→interview_free_slots→ui_dispatch`；
   ③ 手打「打开人才库」→ `#/talent` + `app-talent-view`；
   ④ 手打「回到今日待办，只看待初筛」→ `#/queue` + `app-queue-filter-screening.active`。
-  探针 `pass=true`（四检查全过）；15 步 `--fresh` 合并后 **15/15 PASS**（审计 hard 0）；证据 `evidence/chat-canvas-linkage-20261121/`（probe JSON + 4 张 1440 截图 + 回归/审计）。
+  探针 `pass=true`（四检查全过）；15 步 `--fresh` 合并后 **15/15 PASS**（审计 hard 0）；核查材料 `evidence/chat-canvas-linkage-20261121/`（probe JSON + 4 张 1440 截图 + 回归/审计）。
   **状态**：D-175 的“规范先入库→服务端→前端→本地验收”流程首次跑通；PR #11 内容已并入 feat（可标已合并/关闭）；预览 Host 已用新构建重启（token 仅 TEMP，不入库）。**残余**：① 真实日历未绑定（无 `RECRUITMENT_FEISHU_USER_MAP`）→ 真实可约时段未证，查时段工具如实返回空+原因（未伪造）；② 全量测试未跑（非 main 合并轮）；③ 未合并 main。
 
 - **D-177（2026-11-21，总控；DSH 侧栏「招聘工作台」打开旧 shell，必须直接打开 v4）**
@@ -2013,7 +2013,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **复核**：9 文件全在 `src/app/**` + `src/client/canvas/**`（含 TESTID-MANIFEST/CSS）；**未动**服务端/写链路/既有 testid/`lib/**`（本地重建）；新建岗位复用 `buildJobCreateBody + postJobCreate`，无新写路径。
   **A/B/C 归类（接受 PR #12 正文）**：A 数据差异（预览 1 人 1 岗；翻页器需 >1 人）；B 本期不做（角色切换受 D-115/D-167/S1 隔离、Agent 已代办无后端投影、HC 无字段、推荐来源/年限无结构化字段）；C 已对齐（队列“等你拍板 N”/排版、行内真实紧迫度与原因、左栏与岗位页“＋新建岗位”、对话动态早报/动作快捷词、候选人置顶约束/复制决策纪要/顶栏降噪）。
   **机检**：tsc 0；tsdown 双入口；server-typecheck 0/0、runtime-budget 5051/5051、entry-reachability、client-contract-check、term-lint 全 PASS；15 步 `--fresh` **15/15**（审计 hard 0）；对话×画布 4 场景 **4/4**。
-  **真机（1440，预览 Host 49351）**：队列“等你拍板 1”+“初筛 · 24h 超时”+真实行内原因；早报按真实计数动态生成；动作快捷词仍走同一 `/recruitment/agent/turn`；新建岗位弹窗两个入口均可打开（部门真实下拉，只开不提交，岗位表仍 1 条）；候选人置顶标签在通过 UI 写入 1 条演示约束后显示；复制决策纪要成功且剪贴板内容含置顶提醒。证据 `evidence/ui-review-pr12-20261121/`（before/after、after/prototype 并排 + 8 张 1440 + probe JSON + 回归）。
+  **真机（1440，预览 Host 49351）**：队列“等你拍板 1”+“初筛 · 24h 超时”+真实行内原因；早报按真实计数动态生成；动作快捷词仍走同一 `/recruitment/agent/turn`；新建岗位弹窗两个入口均可打开（部门真实下拉，只开不提交，岗位表仍 1 条）；候选人置顶标签在通过 UI 写入 1 条演示约束后显示；复制决策纪要成功且剪贴板内容含置顶提醒。核查材料 `evidence/ui-review-pr12-20261121/`（before/after、after/prototype 并排 + 8 张 1440 + probe JSON + 回归）。
   **如实记录**：① 预览库原本无约束，为验证置顶标签用产品 UI 真实写入 1 条演示约束（现留预览库）；② 复制纪要在 headless Chrome 默认被剪贴板权限拦截（UI 有 fallback 文案），加 `Emulation.setFocusEmulationEnabled` + 权限后成功；③ 翻页器需 >1 人未视觉触发（代码在）；④ B 类本期不做，待产品确认关闭；⑤ 全量测试未跑（非 main 合并轮）；未合并 main。
 
 - **D-180（2026-11-21，总控；本地预览默认身份自动绑定：不再每次走 `/recruitment/test`）**
@@ -2027,15 +2027,19 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **来源**：PR #13（`feat/task-13-retire-legacy-sidebar`，`4b00388`，2 文件 +18/−93）→ feat；本地 merge **`fe1930c`**（`lib/client.js` 重建随 merge）。
   **复核**：仅 `src/client/index.tsx`（移除 `sidebar.panellist`/`main` 槽位注册与 `RecruitmentShell` 引用，保留空 `apply()` 兼容宿主装载）+ `src/app/TESTID-MANIFEST.md`；未动服务端/写链路/既有 testid/构建配置。
   **机检**：`tsc` 0；`tsdown` 双入口（`lib/client.js` 重建）；server-typecheck 0/0、runtime-budget 5051/5051、entry-reachability、client-contract-check、term-lint 全 PASS。
-  **1440 真机（预览 Host 49351 新构建 + PreviewAlias，全新 Chrome profile）**：DSH 侧栏**不再出现「招聘工作台」**、无 `recruiting-workspace` 旧壳；直链 `/recruitment/app` 正常渲染 v4（`app-chat-panel` + `app-canvas`，身份 recruiter，无 unbound）。证据 `evidence/task13-sidebar-retire-20261121/`（两图 + JSON + 15 步结果）。
+  **1440 真机（预览 Host 49351 新构建 + PreviewAlias，全新 Chrome profile）**：DSH 侧栏**不再出现「招聘工作台」**、无 `recruiting-workspace` 旧壳；直链 `/recruitment/app` 正常渲染 v4（`app-chat-panel` + `app-canvas`，身份 recruiter，无 unbound）。核查材料 `evidence/task13-sidebar-retire-20261121/`（两图 + JSON + 15 步结果）。
   **回归**：15 步 `--fresh` **15/15**（审计 hard 0）。
   **状态**：D-177/任务 13 关闭；DSH 仅作为运行时/本地预览宿主，产品入口只有独立页 `/recruitment/app`（D-178）。旧 `RecruitmentShell` 源码保留但无注册入口；旧浏览器若残留固定项/布局，属本地缓存（重开/清站点数据）。生产登录/独立域名仍是交付期开放项；全量测试未跑、未合并 main。
 
 - **D-183（2026-11-21，总控；Issue #14 只读工作台总览工具验收 + 封版准备）**
   **来源**：Issue #14（`feat/workspace-overview-tool-and-release-prep` 基线 `4cef03b`）；产品负责人要求补只读总览工具并做 main 合并准备。
   **实现**：`src/tools/workspace-overview.ts` 新增 `recruitment_workspace_overview`——直接复用 `src/http/recruiting.ts::readRecruitingOverview()`（`withReadOnly`），支持 `job_id` / `stage_filter`（all/screening/interviewing/awaiting_decision）/ `only_overdue_scorecards` / `limit`（1..50，默认 20）；返回精简 `counts/jobs[]/applications[]`（含 stage_label / overdue / blocked_reason / next_step）。注册到 `src/index.ts`（工具面 **35→36**）与 `agent-turn.ts` 的 `CHAT_READ_TOOLS`（**17→18，0 写**）。入参严格 fail-closed，未配置数据库时 `NOT_CONFIGURED` 替身。
-  **测试**：新增 `test/unit/workspace-overview-tool.test.ts`（6/6：默认/非法/过滤/空结果/limit/NOT_CONFIGURED）与 `test/integration/workspace-overview-tool-db.test.ts`（3/3：独立一次性库真读、过滤、非法输入、业务表零写入）；同时修正历史工具面 33 断言到 36、登记 LIVE 证据白名单与 render 覆盖。
-  **真模型 SSE（一次性干净库 + HY4；证据 `evidence/workspace-overview-20261121/`）**：两轮首页快捷词均命中 `recruitment_workspace_overview`；第 1 轮回答与真库一致（3 申请 / 7 份面评 / 4 超时；排序候选人与 application_get 一致），第 2 轮回答 0/7 待提交、4 超时；诊断头 **18 只读 / 0 写**；业务表计数前后不变。
+  **测试**：新增 `test/unit/workspace-overview-tool.test.ts`（6/6：默认/非法/过滤/空结果/limit/NOT_CONFIGURED）与 `test/integration/workspace-overview-tool-db.test.ts`（3/3：独立一次性库真读、过滤、非法输入、业务表零写入）；同时修正历史工具面 33 断言到 36、登记 LIVE 核查材料白名单与 render 覆盖。
+  **真模型 SSE（一次性干净库 + HY4；核查材料 `evidence/workspace-overview-20261121/`）**：两轮首页快捷词均命中 `recruitment_workspace_overview`；第 1 轮回答与真库一致（3 申请 / 7 份面评 / 4 超时；排序候选人与 application_get 一致），第 2 轮回答 0/7 待提交、4 超时；诊断头 **18 只读 / 0 写**；业务表计数前后不变。
   **机检**：tsc 0、tsdown 双入口、server-typecheck 0/0、runtime-budget 5051/5051、entry-reachability、client-contract-check、term-lint 全 PASS；干净库全量 `test/run-all.mjs --test-concurrency=1` **2868 用例 / 2864 过 / 0 红 / 4 声明式跳过**（1 真实语料缺失 + 3 upload seam；0 fail）；`run-v4.mjs --fresh` **15/15**（审计 hard 0）。
-  **阻塞/说明**：产品负责人告知 docs/17 D-182、docs/25、docs/38 已推送 `feat@2d885858`，但远端 feat 仍为 `4cef03b`、`2d885858` 不存在，仓库无 D-182/docs38 变更；本裁决未覆盖/伪造该提交，**main 合入前必须由产品窗口重新推送**。真实飞书日历（`RECRUITMENT_FEISHU_USER_MAP`）、生产登录/域名/多租户（D-178）不在本轮；release PR **#15**（feat → main）已创建，OPEN；等待产品负责人最终合入，未自行合并 main。
+  **说明**：此前推送 `2d885858` 时因 `docs/38` 锚点未命中中止，现已补齐并合入 `feat/unified-document-intake`：8 条低频无界面写能力（`compound`、`config`×4、`email/authorize`、`email/send-authorized`、`feishu/import`）明确纳入 **D-182** 本期延后（不阻塞 `main` 合入），并同步 `docs/38` v4 入口与 testid 状态。真实飞书日历（`RECRUITMENT_FEISHU_USER_MAP`）、生产登录/域名/多租户（D-178）不在本轮；release PR **#15**（feat → main）已创建，OPEN；等待产品负责人最终合入，未自行合并 main。
 
+
+- **D-182（2026-11-21，8 条低频无界面写能力本期延后，现已补齐入 `feat/unified-document-intake`）**
+  **范围**：`compound`、`config`×4（`config/role`、`config/team`、`config/pipeline`、`settings/write`）、`email/authorize`、`email/send-authorized`、`feishu/import`。
+  **裁决**：上述 8 条低频/高级配置与授权能力本期不上界面，延后至后续迭代；不阻塞当前 v4 封版与合入 `main`。

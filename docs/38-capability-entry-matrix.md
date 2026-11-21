@@ -1,8 +1,8 @@
-# 38 · 能力 → 界面入口 → 证据 矩阵（写能力必须有人能点到的入口）
+# 38 · 能力 → 界面入口 → 核查材料 矩阵（写能力必须有人能点到的入口）
 
 > 建立原因（D-160）：真点验收发现"接口都通、界面点不到"——旧详情页 5 个写入口只迁了 1 个，6 条写路由在客户端**零引用**。
 > 从今天起：**任何写能力，没有可达界面入口 = 不算完成**（`docs/29` V3-0）。
-> 维护方式：`scripts/entry-reachability.mjs` 自动扫"写路由 ↔ 客户端引用"，人工补"入口位置 / testid / 证据"三列。
+> 维护方式：`scripts/entry-reachability.mjs` 自动扫"写路由 ↔ 客户端引用"，人工补"入口位置 / testid / 核查材料"三列。
 
 ## 1. 判据
 
@@ -12,11 +12,11 @@
 | 后端 | 承载它的路由/工具 |
 | 界面入口 | 从哪进入（页面 + 控件），**空 = 不可达** |
 | testid | CDP 冒烟要检查的稳定钩子 |
-| 证据 | 真点截图/读回路径 |
+| 核查材料 | 真点截图/读回路径 |
 
 ## 2. 写能力清单（当前状态）
 
-| # | 能力 | 后端 | 界面入口 | testid | 证据 | 状态 |
+| # | 能力 | 后端 | 界面入口 | testid | 核查材料 | 状态 |
 |---|---|---|---|---|---|---|
 | 1 | 初筛结论（通过/不通过/待定 + 原话） | `/action/screening/decide` | **旧详情页有、v4 画布没有** | `form-screening_decide`（旧） | — | 🔴 画布缺失 |
 | 2 | 正式决策（终审 + 原话） | `/decision/record` | **旧详情页有、画布没有** | `form-decision_record`（旧） | — | 🔴 画布缺失 |
@@ -51,7 +51,7 @@
   机检已用 `ACTION_KEY_FALLBACKS` 认作可达——它们是"旧详情页有、画布没有"（前端任务 08 第 1 节）；
 - CDP 冒烟（`work/d5/e2e-real/smoke/check.mjs`）：7 个目标 testid **仅 1 个存在**（`canvas-action-schedule`），
   缺 `form-screening_decide` / `form-decision_record` / `form-stage_advance` / `form-transcript_import` /
-  `canvas-batch-reject` / `submit-scorecard`。**这是真浏览器 DOM 证据，是任务 08 的验收清单。**
+  `canvas-batch-reject` / `submit-scorecard`。**这是真浏览器 DOM 核查材料，是任务 08 的验收清单。**
 
 ---
 
@@ -106,3 +106,8 @@
 - 手拼写动作 **7 → 0**；入口机检无新缺口；`client-contract-check` PASS；
 - 08b（会话头）、08c（复用 builder/seam）、S14（面试行版本）、S12（决策走 facade）全部落地；
 - 现在写能力只剩"确实没接"的 8 条基线：compound、config×4、email/authorize、email/send-authorized、feishu/import——它们不在本轮范围，矩阵里如实标"未接"。
+
+## 8. 2026-11-21 v4 封版与旧侧栏退役同步
+
+- 唯一用户产品入口为独立整页 `/recruitment/app`（PR #13 / D-181 已退役 DSH 侧栏旧壳入口；`app-chat-panel` + `app-canvas` + `app-quick-* / app-suggest-* / app-rail-new-job / app-jobs-new-job / canvas-action-copy-memo / canvas-pin-row`）。
+- `compound` / `config`×4 / `email/authorize` / `email/send-authorized` / `feishu/import` 共 8 条低频无界面写能力已按 **D-182** 明确本期延后，不阻塞合 `main`。
