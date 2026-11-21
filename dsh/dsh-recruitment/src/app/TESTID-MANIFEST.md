@@ -39,7 +39,11 @@
 | `app-chat-panel` | 伴随式 Agent 对话栏根 | 支持拖拽调宽、折叠与简历拖拽上传 |
 | `app-chat-log` | 对话消息流容器 | 展示 `delta` 增量文本与 `tool` 执行状态标签 |
 | `app-chat-input` | 对话输入框 | 输入自然语言指令 |
-| `app-chat-send` | 对话发送按钮 | 提交 `POST /recruitment/agent/turn`（SSE） |
+| `app-chat-send` | 对话发送按钮 |
+| `app-chat-confirm-card` | 对话内写确认卡容器（消费 `propose_write`） |
+| `app-chat-confirm-submit` | 对话内写确认卡「确认执行」主按钮 |
+| `app-chat-confirm-cancel` | 对话内写确认卡「取消」按钮 |
+| `app-chat-confirm-fallback` | 对话内写确认卡「在弹窗微调」降级入口 | 提交 `POST /recruitment/agent/turn`（SSE） |
 | `app-chat-upload` | 对话栏隐藏文件输入 | 左侧 `+` 按钮触发真实 `<input type="file">` |
 | `app-chat-unavailable` | Agent 不可用提示条 | 服务端返回 503 / `AGENT_UNAVAILABLE` 时显示，不阻塞右侧工作台 |
 | `app-chat-quick-risk-summary` | 候选人页快捷词「总结这位候选人的核心风险点」 | 预设提示词，统一走 `POST /recruitment/agent/turn` |

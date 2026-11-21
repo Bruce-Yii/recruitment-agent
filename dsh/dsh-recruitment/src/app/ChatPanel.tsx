@@ -2,7 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { uploadResumeRaw } from '../client/canvas/canvas-actions.ts';
 import type { ActiveUploadTask } from '../client/canvas/CanvasRoute.tsx';
 import type { RecruitingOverviewView } from '../client/recruiting/view-model.ts';
-import { streamAgentTurn, type AgentToolEvent, type AgentUiAction } from './api.ts';
+import {
+  streamAgentTurn,
+  type AgentToolEvent,
+  type AgentUiAction,
+  type AgentUiModalKind,
+  type AgentUiWriteProposal,
+} from './api.ts';
+import { InlineConfirmCard } from './InlineConfirmCard.tsx';
 import { formatHashRoute, type AppRoute } from './router.ts';
 
 interface ChatMessage {
@@ -12,6 +19,7 @@ interface ChatMessage {
   readonly tools?: readonly AgentToolEvent[];
   readonly uiNotices?: readonly string[];
   readonly suggestedActions?: readonly AgentUiAction[];
+  readonly writeProposals?: readonly AgentUiWriteProposal[];
   readonly streaming?: boolean;
 }
 
@@ -32,6 +40,7 @@ export interface ChatPanelProps {
   readonly onToolCompleted: (tool: AgentToolEvent) => void;
   readonly onUiAction: (action: AgentUiAction) => void;
   readonly onExecuteSuggestedAction: (action: AgentUiAction) => void;
+  readonly onProposalCommitted?: () => void;
   readonly onUploadStarted: (task: ActiveUploadTask) => void;
 }
 
@@ -133,6 +142,7 @@ export function ChatPanel({
   onToolCompleted,
   onUiAction,
   onExecuteSuggestedAction,
+  onProposalCommitted,
   onUploadStarted,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
@@ -257,6 +267,25 @@ export function ChatPanel({
         }
       },
       onUiAction: (uiAction) => {
+        if (uiAction.action === 'propose_write' && uiAction.proposal) {
+          const proposal = uiAction.proposal;
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id !== aiId) return m;
+              const existing = m.writeProposals ?? [];
+              const key = `${proposal.intent}:${proposal.application_id}:${proposal.title}`;
+              if (
+                existing.some(
+                  (item) => `${item.intent}:${item.application_id}:${item.title}` === key,
+                )
+              ) {
+                return m;
+              }
+              return { ...m, writeProposals: [...existing, proposal] };
+            }),
+          );
+          return;
+        }
         if (uiAction.action === 'suggest_action') {
           setMessages((prev) =>
             prev.map((m) => {
@@ -397,6 +426,27 @@ export function ChatPanel({
                   <span key={`${notice}-${idx}`} className="msg-ui-notice">
                     ↗ {notice}
                   </span>
+                ))}
+              </div>
+            ) : null}
+            {msg.writeProposals && msg.writeProposals.length > 0 ? (
+              <div className="msg-confirm-list">
+                {msg.writeProposals.map((proposal, idx) => (
+                  <InlineConfirmCard
+                    key={`${proposal.intent}-${proposal.application_id}-${idx}`}
+                    sid={sid}
+                    proposal={proposal}
+                    onCommitted={() => onProposalCommitted?.()}
+                    onFallbackModal={(modal: AgentUiModalKind, applicationId: string) =>
+                      onExecuteSuggestedAction({
+                        action: 'suggest_action',
+                        route: 'application',
+                        target_id: applicationId,
+                        modal,
+                        label: '在弹窗微调',
+                      })
+                    }
+                  />
                 ))}
               </div>
             ) : null}

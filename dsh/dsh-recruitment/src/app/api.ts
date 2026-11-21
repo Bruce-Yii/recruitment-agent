@@ -21,7 +21,42 @@ export interface AgentToolEvent {
   readonly message?: string;
 }
 
-export type AgentUiActionType = 'navigate' | 'focus_section' | 'suggest_action';
+export type AgentUiActionType = 'navigate' | 'focus_section' | 'suggest_action' | 'propose_write';
+export type AgentUiWriteIntent =
+  | 'screening_decide'
+  | 'stage_advance'
+  | 'candidate_constraint'
+  | 'interview_schedule'
+  | 'decision_record';
+
+export interface AgentUiWriteSummaryItem {
+  readonly label: string;
+  readonly value: string;
+}
+
+export interface AgentUiWriteProposalPayload {
+  readonly decision?: 'PASS' | 'REJECT';
+  readonly rationale?: string;
+  readonly target_stage?: string;
+  readonly constraint_kind?: 'PIN' | 'HANDOFF';
+  readonly constraint_text?: string;
+  readonly round_number?: number;
+  readonly interviewer_id?: string;
+  readonly scheduled_start?: string;
+  readonly scheduled_end?: string;
+  readonly timezone?: string;
+  readonly final_outcome?: 'HIRE' | 'REJECT' | 'HOLD';
+}
+
+export interface AgentUiWriteProposal {
+  readonly intent: AgentUiWriteIntent;
+  readonly application_id: string;
+  readonly title: string;
+  readonly tone?: 'default' | 'danger';
+  readonly summary: readonly AgentUiWriteSummaryItem[];
+  readonly fallback_modal?: AgentUiModalKind;
+  readonly payload: AgentUiWriteProposalPayload;
+}
 export type AgentUiRouteKind = 'queue' | 'jobs' | 'talent' | 'application' | 'job' | 'interviewer';
 export type AgentUiQueueFilter = 'all' | 'screening' | 'interviewing';
 export type AgentUiSectionKind =
@@ -41,6 +76,7 @@ export interface AgentUiAction {
   readonly section?: AgentUiSectionKind;
   readonly modal?: AgentUiModalKind;
   readonly label?: string;
+  readonly proposal?: AgentUiWriteProposal;
 }
 
 export interface StreamAgentTurnOptions {
@@ -81,7 +117,78 @@ function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
 }
 
-const VALID_UI_ACTIONS: readonly AgentUiActionType[] = ['navigate', 'focus_section', 'suggest_action'];
+const VALID_UI_ACTIONS: readonly AgentUiActionType[] = [
+  'navigate',
+  'focus_section',
+  'suggest_action',
+  'propose_write',
+];
+const VALID_WRITE_INTENTS: readonly AgentUiWriteIntent[] = [
+  'screening_decide',
+  'stage_advance',
+  'candidate_constraint',
+  'interview_schedule',
+  'decision_record',
+];
+
+function parseWriteProposal(raw: unknown): AgentUiWriteProposal | undefined {
+  const obj = asRecord(raw);
+  const intentRaw = asString(obj.intent);
+  if (!(VALID_WRITE_INTENTS as readonly string[]).includes(intentRaw)) return undefined;
+  const applicationId = asString(obj.application_id);
+  const title = asString(obj.title);
+  if (!applicationId || !title) return undefined;
+  const rawSummary = Array.isArray(obj.summary) ? obj.summary : [];
+  const summary: AgentUiWriteSummaryItem[] = rawSummary
+    .map((item) => {
+      const rec = asRecord(item);
+      const label = asString(rec.label);
+      const value = asString(rec.value);
+      return label && value ? { label, value } : null;
+    })
+    .filter((item): item is AgentUiWriteSummaryItem => item !== null)
+    .slice(0, 4);
+  if (summary.length === 0) return undefined;
+  const toneRaw = asString(obj.tone);
+  const tone: 'default' | 'danger' | undefined =
+    toneRaw === 'danger' ? 'danger' : toneRaw === 'default' ? 'default' : undefined;
+  const fallbackRaw = asString(obj.fallback_modal);
+  const fallbackModal = (VALID_UI_MODALS as readonly string[]).includes(fallbackRaw)
+    ? (fallbackRaw as AgentUiModalKind)
+    : undefined;
+  const p = asRecord(obj.payload);
+  const decisionRaw = asString(p.decision);
+  const constraintKindRaw = asString(p.constraint_kind);
+  const outcomeRaw = asString(p.final_outcome);
+  const payload: AgentUiWriteProposalPayload = {
+    ...(decisionRaw === 'PASS' || decisionRaw === 'REJECT' ? { decision: decisionRaw } : {}),
+    ...(asString(p.rationale) ? { rationale: asString(p.rationale) } : {}),
+    ...(asString(p.target_stage) ? { target_stage: asString(p.target_stage) } : {}),
+    ...(constraintKindRaw === 'PIN' || constraintKindRaw === 'HANDOFF'
+      ? { constraint_kind: constraintKindRaw }
+      : {}),
+    ...(asString(p.constraint_text) ? { constraint_text: asString(p.constraint_text) } : {}),
+    ...(typeof p.round_number === 'number' && Number.isFinite(p.round_number)
+      ? { round_number: p.round_number }
+      : {}),
+    ...(asString(p.interviewer_id) ? { interviewer_id: asString(p.interviewer_id) } : {}),
+    ...(asString(p.scheduled_start) ? { scheduled_start: asString(p.scheduled_start) } : {}),
+    ...(asString(p.scheduled_end) ? { scheduled_end: asString(p.scheduled_end) } : {}),
+    ...(asString(p.timezone) ? { timezone: asString(p.timezone) } : {}),
+    ...(outcomeRaw === 'HIRE' || outcomeRaw === 'REJECT' || outcomeRaw === 'HOLD'
+      ? { final_outcome: outcomeRaw }
+      : {}),
+  };
+  return {
+    intent: intentRaw as AgentUiWriteIntent,
+    application_id: applicationId,
+    title,
+    ...(tone ? { tone } : {}),
+    summary,
+    ...(fallbackModal ? { fallback_modal: fallbackModal } : {}),
+    payload,
+  };
+}
 const VALID_UI_ROUTES: readonly AgentUiRouteKind[] = [
   'queue',
   'jobs',
@@ -130,6 +237,10 @@ function parseAgentUiAction(raw: Record<string, unknown>): AgentUiAction | null 
     : undefined;
   const targetId = asString(raw.target_id) || undefined;
   const label = asString(raw.label) || undefined;
+  const proposal = action === 'propose_write' ? parseWriteProposal(raw.proposal) : undefined;
+  if (action === 'propose_write' && !proposal) {
+    return null;
+  }
 
   return {
     action: action as AgentUiActionType,
@@ -139,6 +250,7 @@ function parseAgentUiAction(raw: Record<string, unknown>): AgentUiAction | null 
     ...(section ? { section } : {}),
     ...(modal ? { modal } : {}),
     ...(label ? { label } : {}),
+    ...(proposal ? { proposal } : {}),
   };
 }
 

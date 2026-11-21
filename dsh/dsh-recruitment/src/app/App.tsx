@@ -648,6 +648,7 @@ export function App() {
           onToolCompleted={() => handleRefreshAll()}
           onUiAction={handleAgentUiAction}
           onExecuteSuggestedAction={handleExecuteSuggestedAction}
+          onProposalCommitted={() => handleRefreshAll()}
           onUploadStarted={(task) => setUploadTask(task)}
         />
 
