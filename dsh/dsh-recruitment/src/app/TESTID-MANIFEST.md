@@ -83,7 +83,12 @@
 
 - 沿用 `InterviewerWorkspace.tsx` 既有 `interviewer-row`、`scorecard-form`、`submit-scorecard` 等全部 selector，无任何破坏。
 
-## 四、云端环境限制与需本地验证项
+## 四、产品入口与旧侧栏退役（D-178 / 任务 13）
+
+- **唯一产品入口**：独立整页 `/recruitment/app`（渲染 `app-chat-panel` + `app-canvas`，含招聘端与面试官 `#/interviewer` 视图）。
+- **旧侧栏退役**：`dsh/dsh-recruitment/src/client/index.tsx` 已停止向 DSH 注册 `sidebar.panellist`（“招聘工作台”）与 `main`（`RecruitmentShell`）槽位；DSH 侧栏不再出现指向 `recruiting-workspace` 旧壳的入口。
+
+## 五、云端环境限制与需本地验证项
 
 - 本次变更仅新增 `dsh/dsh-recruitment/src/app/**`（不改 `tsdown.config.ts`、`tsconfig.json`、`src/http/**` 与旧 `RecruitingWorkspace.tsx`，避免与本地侧双入口构建/服务端路由提交冲突）。
 - 为避免 `package.json` 尚未安装 `@types/react-dom` 导致 `tsc` 报错，已附带 `src/app/react-dom-client.d.ts`（本地安装 `@types/react-dom` 后可保留或移除）。
