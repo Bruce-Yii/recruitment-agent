@@ -346,7 +346,7 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 - **v4 整页 15 步真点：15/15 PASS**（`work/d5/fullpage/run-v4.mjs --fresh --port 49347`；合并前 22:34/22:40、PR #10 后 23:09、PR #11 后 2026-11-21 04:3x 共四次独立跑；证据 `evidence/fullpage-v4-15step-20261120/`（合并前）、`…-pr10-20261120/`、`…-linkage-20261121/` 内的回归结果；D-169/D-172/D-176）。
 - **对话×画布四场景 1440：4/4 PASS**（PR #11 合并后，预览 Host 49351 新构建；evidence `chat-canvas-linkage-20261121/`；D-176）。
 - 新整页 v4：`/recruitment/app` 可用；三屏快照在 `evidence/fullpage-v4-preview-20261120/`。
-- **未完成**：① **产品入口边界（D-178）**：最终用户入口 = 独立产品页 `/recruitment/app`；DSH 仅运行时/本地预览宿主，token/侧栏/旧壳不得进用户路径；旧侧栏（D-177）待隐藏/退役；交付期产品登录/域名未排期；② 真实飞书日历未绑定（`RECRUITMENT_FEISHU_USER_MAP` 缺）→ 查时段只能如实返回空+原因，真实可约时段未证；③ Agent 仍缺“列表/总览”只读工具；④ 8 条写能力无界面（compound/config/email authorize/feishu import）；⑤ `docs/38` 未按 v4 testid 同步；⑥ 390 不作要求；⑦ 全量测试未跑（非 main 合并轮）；⑧ 产品负责人本人手点抽检未做；⑨ **UI 与定稿原型**：A/B 已核验（B 本期不做）、C 已对齐并验收（D-179，`evidence/ui-review-pr12-20261121/`；PR #12 → `ab7e270`）。
+- **未完成**：① **产品入口边界（D-178）**：最终用户入口 = 独立产品页 `/recruitment/app`；DSH 仅运行时/本地预览宿主，token/侧栏/旧壳不得进用户路径；旧侧栏已退役（D-181，PR #13 → `fe1930c`）；交付期产品登录/域名未排期；② 真实飞书日历未绑定（`RECRUITMENT_FEISHU_USER_MAP` 缺）→ 查时段只能如实返回空+原因，真实可约时段未证；③ Agent 仍缺“列表/总览”只读工具；④ 8 条写能力无界面（compound/config/email authorize/feishu import）；⑤ `docs/38` 未按 v4 testid 同步；⑥ 390 不作要求；⑦ 全量测试未跑（非 main 合并轮）；⑧ 产品负责人本人手点抽检未做；⑨ **UI 与定稿原型**：A/B 已核验（B 本期不做）、C 已对齐并验收（D-179，`evidence/ui-review-pr12-20261121/`；PR #12 → `ab7e270`）。
 
 ### 13.6 环境（缺一个就假红）
 - `DSH_HOME=D:\12412\dsh-home-recruitment`；PG `D:\12412\PostgreSQL\bin\psql.exe`，口令环境变量 `RECRUITMENT_DB_PASSWORD`（不落文件）；Python `D:\Python3.12.9\python.exe` + `RECRUITMENT_CONVERTER_DIR`。
@@ -374,6 +374,7 @@ Agent 依据全公司招聘事实 + 日程空余给**建议时间**（不在系�
 4. 8 条写能力是否上界面（需产品负责人拍范围）；`docs/38` 按 v4 testid 同步。
 5. 交付期：部署/多租户/合规/模型口径（另立裁决）。
 6. ~~UI 与定稿原型差异~~ → **A/B 已核验（B 本期不做）、C 已对齐并验收（D-179）**：PR #12 → `ab7e270`；证据 `evidence/ui-review-pr12-20261121/`（1440 before/after + after/prototype + 功能抽查 + 15 步 + 4 场景）。
+7. ~~DSH 旧侧栏入口~~ → **已退役（D-181）**：PR #13 → `fe1930c`；侧栏不再出现「招聘工作台」、无旧壳，产品入口仅 `/recruitment/app`；证据 `evidence/task13-sidebar-retire-20261121/`。
 
 ### 13.10 怎么跟产品负责人共事
 只认结果与人话；先给判断再给依据；**不许把工程问题包装成产品决策去问**；不许说"已派/在跑"代替判断；他骂人但对事，改完给证据即可。裁决必须回抄 `docs/17`，否则视为未决定。

@@ -1996,7 +1996,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **事实**：DSH 侧栏项仍注册旧 `RecruitmentShell`（`src/client/index.tsx:86-97`，testid `recruiting-workspace`/`overview-headline`/旧顶栏三页签）；v4 `src/app/App.tsx`（`app-chat-panel`/`app-canvas`）由 `src/http/app-shell.ts` 在 `/recruitment/app` 单独提供，未接进侧栏。与 `design/v4/frontend-task-09-v4-shell.md` 已裁决的“打开招聘工作台第一屏就是 v4，不许老首页”相违。
   **裁决（经 D-178 调整为最终口径）**：旧 DSH 侧栏入口（`RecruitmentShell`）**退役/隐藏**；产品唯一用户入口 = 独立产品页 `/recruitment/app`；**不再要求“侧栏打开 v4”**。正常流程不要求 `/recruitment/test` 兜底（正式交付用产品登录，D-178）；直链 `/recruitment/app` 与 15 步回归不得回归。界面改动由产品/前端窗口按 `design/v4/frontend-task-13-sidebar-entry-v4.md` 实现（本地总控不改界面，D-168/D-175）；若需要服务端“DSH session→rc_sid/alias”绑定接口，先写契约再由本地实现。
   **token 说明（非缺陷）**：DSH `?token=` 是进程级 launch token，首次换取持久 cookie；实测重启 Host 后免 token 直链 `/recruitment/app` 仍可进（cookie 持久），不需要每次带 token，更不应把 token 链接当产品入口。
-  **状态**：待前端交付（任务 13）；验收含侧栏点击 1440 截图 + 无旧壳 testid + 15 步回归。
+  **状态**：**已完成（D-181，PR #13 → `fe1930c`）**：侧栏旧入口退役、无 `recruiting-workspace`、直链 v4 + 15 步验收通过。
 
 - **D-178（2026-11-21，总控；产品入口边界：独立产品 UI，DSH 只做运行时/宿主，不作为用户界面）**
   **来源**：产品负责人 2026-11-21 质疑——“为什么非要在 dsh 里面？我们这个产品为什么不能直接产品 UI？每次干嘛非要和 dsh 的 web 界面扯上关系？不应该点击链接就是我们的产品吗？”
@@ -2022,3 +2022,11 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **裁决**：**仅本地预览**启用默认身份自动绑定——`AppShellDeps.previewAlias` + 显式环境变量 `RECRUITMENT_PREVIEW_ALIAS`（`start-host.ps1 -PreviewAlias recruiter`）；仅 loopback 路由、仅 session 未绑定时自动绑定，显式绑定（`/recruitment/test`、`/recruitment/app/session/actor`）仍优先；**不传 env = 不启用，自动化/生产语义不变**；生产身份仍由真实登录替代（D-178）。
   **验证**（`evidence/preview-auto-identity-20261121/`）：全新 Chrome profile token 一次 → 直接 `/recruitment/app` 不再出现 unbound、身份 recruiter、session `bound:true`；**重启 Host 后**同浏览器直接开 `/recruitment/app`（不带 token/test）仍进入 v4 且身份 recruiter；不带 `-PreviewAlias` 的 15 步 `--fresh` **15/15**（审计 hard 0）；tsc 0、server-typecheck 0/0、静态门禁全 PASS。
   **边界**：需要面试官身份仍走 `/recruitment/test?as=interviewer_a` 或显式切换；token 只在浏览器首次/清 cookie 时需要（登录一次后 cookie 持久，Host 重启不必再进 token）；生产登录/域名仍未排期（D-178）。
+
+- **D-181（2026-11-21，总控；PR #13 旧侧栏退役验收通过：产品唯一入口 = `/recruitment/app`）**
+  **来源**：PR #13（`feat/task-13-retire-legacy-sidebar`，`4b00388`，2 文件 +18/−93）→ feat；本地 merge **`fe1930c`**（`lib/client.js` 重建随 merge）。
+  **复核**：仅 `src/client/index.tsx`（移除 `sidebar.panellist`/`main` 槽位注册与 `RecruitmentShell` 引用，保留空 `apply()` 兼容宿主装载）+ `src/app/TESTID-MANIFEST.md`；未动服务端/写链路/既有 testid/构建配置。
+  **机检**：`tsc` 0；`tsdown` 双入口（`lib/client.js` 重建）；server-typecheck 0/0、runtime-budget 5051/5051、entry-reachability、client-contract-check、term-lint 全 PASS。
+  **1440 真机（预览 Host 49351 新构建 + PreviewAlias，全新 Chrome profile）**：DSH 侧栏**不再出现「招聘工作台」**、无 `recruiting-workspace` 旧壳；直链 `/recruitment/app` 正常渲染 v4（`app-chat-panel` + `app-canvas`，身份 recruiter，无 unbound）。证据 `evidence/task13-sidebar-retire-20261121/`（两图 + JSON + 15 步结果）。
+  **回归**：15 步 `--fresh` **15/15**（审计 hard 0）。
+  **状态**：D-177/任务 13 关闭；DSH 仅作为运行时/本地预览宿主，产品入口只有独立页 `/recruitment/app`（D-178）。旧 `RecruitmentShell` 源码保留但无注册入口；旧浏览器若残留固定项/布局，属本地缓存（重开/清站点数据）。生产登录/独立域名仍是交付期开放项；全量测试未跑、未合并 main。

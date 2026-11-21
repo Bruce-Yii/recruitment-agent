@@ -1,0 +1,33 @@
+# PR #13 验收机检（2026-11-21 · merge fe1930c）
+
+## PR 复核
+
+| 项 | 结果 |
+|---|---|
+| 提交 | `4b00388`（feat/task-13-retire-legacy-sidebar）→ merge `fe1930c` |
+| 改动面 | 2 文件：`src/client/index.tsx`（旧侧栏/main 注册移除，空 apply 保留） + `src/app/TESTID-MANIFEST.md` |
+| 越界 | 无：未动服务端/写链路/既有 testid；`lib/app.js` 未变，`lib/client.js` 重建后随 merge 提交 |
+
+## 本地门禁
+
+| 门 | 结果 |
+|---|---|
+| `npx tsc --noEmit` | PASS（0） |
+| `npx tsdown` | PASS（双入口，`lib/client.js` 重建） |
+| `node scripts/server-typecheck.mjs` | PASS（0/0） |
+| `node scripts/runtime-budget.mjs` | PASS（5051/5051） |
+| `node scripts/entry-reachability.mjs` | PASS（无新缺口；手拼 0） |
+| `node scripts/client-contract-check.mjs` | PASS |
+| `node scripts/term-lint.mjs` | PASS |
+| 15 步全链路 | **15/15 PASS**（`run-v4.mjs --fresh --port 49347`，HEAD fe1930c；审计 hard 0） |
+| 干净库全量测试 | 未跑（非 main 合并轮） |
+
+## 1440 真机（预览 Host 49351，全新 Chrome）
+
+- DSH 侧栏：无「招聘工作台」入口（`hasLegacyEntry:false`）；无 `recruiting-workspace` 旧壳（`hasLegacyShell:false`）。
+- 直链 `/recruitment/app`：`app-chat-panel` + `app-canvas` 正常；身份「招聘负责人 HR」；无 unbound。
+- 截图：`sidebar-no-legacy-1440.png`、`direct-app-v4-1440.png`。
+
+## 清理
+
+49351 保持运行（新构建 + PreviewAlias recruiter）；一次性库/Chrome profile 已清理；49369 未触碰。
