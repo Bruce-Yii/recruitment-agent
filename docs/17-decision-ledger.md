@@ -2037,4 +2037,5 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **测试**：新增 `test/unit/workspace-overview-tool.test.ts`（6/6：默认/非法/过滤/空结果/limit/NOT_CONFIGURED）与 `test/integration/workspace-overview-tool-db.test.ts`（3/3：独立一次性库真读、过滤、非法输入、业务表零写入）；同时修正历史工具面 33 断言到 36、登记 LIVE 证据白名单与 render 覆盖。
   **真模型 SSE（一次性干净库 + HY4；证据 `evidence/workspace-overview-20261121/`）**：两轮首页快捷词均命中 `recruitment_workspace_overview`；第 1 轮回答与真库一致（3 申请 / 7 份面评 / 4 超时；排序候选人与 application_get 一致），第 2 轮回答 0/7 待提交、4 超时；诊断头 **18 只读 / 0 写**；业务表计数前后不变。
   **机检**：tsc 0、tsdown 双入口、server-typecheck 0/0、runtime-budget 5051/5051、entry-reachability、client-contract-check、term-lint 全 PASS；干净库全量 `test/run-all.mjs --test-concurrency=1` **2868 用例 / 2864 过 / 0 红 / 4 声明式跳过**（1 真实语料缺失 + 3 upload seam；0 fail）；`run-v4.mjs --fresh` **15/15**（审计 hard 0）。
-  **阻塞/说明**：产品负责人告知 docs/17 D-182、docs/25、docs/38 已推送 `feat@2d885858`，但远端 feat 仍为 `4cef03b`、`2d885858` 不存在，仓库无 D-182/docs38 变更；本裁决未覆盖/伪造该提交，**main 合入前必须由产品窗口重新推送**。真实飞书日历（`RECRUITMENT_FEISHU_USER_MAP`）、生产登录/域名/多租户（D-178）不在本轮；release PR 已创建并等待最终合入（不自行合并 main）。
+  **阻塞/说明**：产品负责人告知 docs/17 D-182、docs/25、docs/38 已推送 `feat@2d885858`，但远端 feat 仍为 `4cef03b`、`2d885858` 不存在，仓库无 D-182/docs38 变更；本裁决未覆盖/伪造该提交，**main 合入前必须由产品窗口重新推送**。真实飞书日历（`RECRUITMENT_FEISHU_USER_MAP`）、生产登录/域名/多租户（D-178）不在本轮；release PR **#15**（feat → main）已创建，OPEN；等待产品负责人最终合入，未自行合并 main。
+
