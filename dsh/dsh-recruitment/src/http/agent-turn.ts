@@ -21,6 +21,7 @@ import { resolve } from 'node:path'
 import type { AppAgentTurnBridge } from './app-shell.ts'
 import { normalizeUiAction, UI_DISPATCH_TOOL_NAME } from '../tools/ui-dispatch.ts'
 import { INTERVIEW_FREE_SLOTS_TOOL_NAME } from '../tools/interview-free-slots.ts'
+import { WORKSPACE_OVERVIEW_TOOL_NAME } from '../tools/workspace-overview.ts'
 
 /** 桥需要的宿主最小面（Cordis Context 的窄化）。 */
 export interface AgentTurnHost {
@@ -57,6 +58,7 @@ const CHAT_READ_TOOLS: readonly string[] = [
   // 对话×画布统一交互（design/v4/chat-canvas-interaction-spec.md §3）：只读 UI 派发 + 只读查时段。
   UI_DISPATCH_TOOL_NAME,
   INTERVIEW_FREE_SLOTS_TOOL_NAME,
+  WORKSPACE_OVERVIEW_TOOL_NAME,
 ]
 
 const TURN_TIMEOUT_MS = 10 * 60 * 1000

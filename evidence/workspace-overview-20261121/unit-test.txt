@@ -1,0 +1,15 @@
+run-all: 1 个测试文件（node --test ）
+✔ normalizeWorkspaceOverviewArgs：默认值与合法过滤 (1.0676ms)
+✔ normalizeWorkspaceOverviewArgs：非法输入 fail-closed (0.4769ms)
+✔ projectWorkspaceOverview：全局 counts/超时总数与精简字段 (0.6097ms)
+✔ projectWorkspaceOverview：job_id / stage_filter / overdue / limit 过滤 (1.0061ms)
+✔ projectWorkspaceOverview：无匹配时返回空数组而不是编造 (0.2153ms)
+✔ unconfiguredWorkspaceOverviewTool：如实 NOT_CONFIGURED (0.7491ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 340.7588

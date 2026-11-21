@@ -464,6 +464,17 @@ const TOOL_FACTORIES: Readonly<Record<string, readonly FactoryEntry[]>> = {
     { factory: 'createModelTextMergeTool', args: [FAKE_CONVERTER] },
     { factory: 'unconfiguredModelTextMergeTool', args: [FAKE_ISSUES] },
   ],
+  // 2026-11-21（对话×画布 + 工作台总览）：新增只读工具的 render 也必须被本检查执行。
+  'ui-dispatch.ts': [
+    { factory: 'createUiDispatchTool' },
+  ],
+  'interview-free-slots.ts': [
+    { factory: 'createInterviewFreeSlotsTool', args: [{ feishuCliPath: null, platformChannel: false }] },
+  ],
+  'workspace-overview.ts': [
+    { factory: 'createWorkspaceOverviewTool', args: [FAKE_DATABASE] },
+    { factory: 'unconfiguredWorkspaceOverviewTool', args: [FAKE_ISSUES] },
+  ],
 }
 
 /** `src/tools/` 下**不是**工具模块的文件（有理由的排除项）。 */

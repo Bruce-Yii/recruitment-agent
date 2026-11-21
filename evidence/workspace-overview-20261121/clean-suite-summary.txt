@@ -1,0 +1,10 @@
+[clean-suite] db=ra_full_clean_18o_3zkn45 migrations=23
+ℹ tests 2868
+ℹ pass 2864
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 4
+ℹ todo 0
+
+Accepted skips (from log; documented in test files, not failures):
+﹣ 真实语料回归：全量=门槛判定 / 抽样=开发回路（SAMPLED 不构成门槛）+ 失败逐条可归因（docs/11 §11） (0.4484ms) # RECRUITMENT_CORPUS_ROOT is not set: real corpus originals are not in the repo by design (R7). This is an ACCEPTED skip, not a pass — CI declares it explicitly.

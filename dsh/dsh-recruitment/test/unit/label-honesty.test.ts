@@ -306,6 +306,17 @@ const LIVE_EVIDENCE: Record<string, { readonly marker: RegExp; readonly why: str
     marker: /await buildThreeAxisLabels\(client, tenantId\)/,
     why: '同一份租户判定（本工具不自称 LIVE，按本次调用的租户事实算）',
   },
+  // 2026-11-21（对话×画布 + 工作台总览）：两者都只**透传**上游读模型的 labels，
+  // 不自己贴 LIVE；free-slots 由 computeInterviewFreeSlots/buildLabels 按真实日历回读判定，
+  // workspace-overview 由 readRecruitingOverview 的同一份投影判定。
+  'interview-free-slots.ts': {
+    marker: /labels: result\.labels/,
+    why: 'labels 透传 computeInterviewFreeSlots/buildLabels（未连日历只能 FIXTURE/NOT_CONNECTED）',
+  },
+  'workspace-overview.ts': {
+    marker: /labels: overview\.labels/,
+    why: 'labels 透传 readRecruitingOverview 的三维判定（不自己贴 LIVE）',
+  },
 }
 
 test('源码扫描：`provenance: \'LIVE\'` 字面量只允许出现在"证据闸门之后"', () => {

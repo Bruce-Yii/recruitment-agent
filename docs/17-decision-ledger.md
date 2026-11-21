@@ -2030,3 +2030,11 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **1440 真机（预览 Host 49351 新构建 + PreviewAlias，全新 Chrome profile）**：DSH 侧栏**不再出现「招聘工作台」**、无 `recruiting-workspace` 旧壳；直链 `/recruitment/app` 正常渲染 v4（`app-chat-panel` + `app-canvas`，身份 recruiter，无 unbound）。证据 `evidence/task13-sidebar-retire-20261121/`（两图 + JSON + 15 步结果）。
   **回归**：15 步 `--fresh` **15/15**（审计 hard 0）。
   **状态**：D-177/任务 13 关闭；DSH 仅作为运行时/本地预览宿主，产品入口只有独立页 `/recruitment/app`（D-178）。旧 `RecruitmentShell` 源码保留但无注册入口；旧浏览器若残留固定项/布局，属本地缓存（重开/清站点数据）。生产登录/独立域名仍是交付期开放项；全量测试未跑、未合并 main。
+
+- **D-183（2026-11-21，总控；Issue #14 只读工作台总览工具验收 + 封版准备）**
+  **来源**：Issue #14（`feat/workspace-overview-tool-and-release-prep` 基线 `4cef03b`）；产品负责人要求补只读总览工具并做 main 合并准备。
+  **实现**：`src/tools/workspace-overview.ts` 新增 `recruitment_workspace_overview`——直接复用 `src/http/recruiting.ts::readRecruitingOverview()`（`withReadOnly`），支持 `job_id` / `stage_filter`（all/screening/interviewing/awaiting_decision）/ `only_overdue_scorecards` / `limit`（1..50，默认 20）；返回精简 `counts/jobs[]/applications[]`（含 stage_label / overdue / blocked_reason / next_step）。注册到 `src/index.ts`（工具面 **35→36**）与 `agent-turn.ts` 的 `CHAT_READ_TOOLS`（**17→18，0 写**）。入参严格 fail-closed，未配置数据库时 `NOT_CONFIGURED` 替身。
+  **测试**：新增 `test/unit/workspace-overview-tool.test.ts`（6/6：默认/非法/过滤/空结果/limit/NOT_CONFIGURED）与 `test/integration/workspace-overview-tool-db.test.ts`（3/3：独立一次性库真读、过滤、非法输入、业务表零写入）；同时修正历史工具面 33 断言到 36、登记 LIVE 证据白名单与 render 覆盖。
+  **真模型 SSE（一次性干净库 + HY4；证据 `evidence/workspace-overview-20261121/`）**：两轮首页快捷词均命中 `recruitment_workspace_overview`；第 1 轮回答与真库一致（3 申请 / 7 份面评 / 4 超时；排序候选人与 application_get 一致），第 2 轮回答 0/7 待提交、4 超时；诊断头 **18 只读 / 0 写**；业务表计数前后不变。
+  **机检**：tsc 0、tsdown 双入口、server-typecheck 0/0、runtime-budget 5051/5051、entry-reachability、client-contract-check、term-lint 全 PASS；干净库全量 `test/run-all.mjs --test-concurrency=1` **2868 用例 / 2864 过 / 0 红 / 4 声明式跳过**（1 真实语料缺失 + 3 upload seam；0 fail）；`run-v4.mjs --fresh` **15/15**（审计 hard 0）。
+  **阻塞/说明**：产品负责人告知 docs/17 D-182、docs/25、docs/38 已推送 `feat@2d885858`，但远端 feat 仍为 `4cef03b`、`2d885858` 不存在，仓库无 D-182/docs38 变更；本裁决未覆盖/伪造该提交，**main 合入前必须由产品窗口重新推送**。真实飞书日历（`RECRUITMENT_FEISHU_USER_MAP`）、生产登录/域名/多租户（D-178）不在本轮；release PR 已创建并等待最终合入（不自行合并 main）。

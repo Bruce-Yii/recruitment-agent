@@ -1,0 +1,333 @@
+{
+  "turns": {
+    "topPriority": {
+      "status": 200,
+      "delta": "今天优先推进：**候选人 S12-决策隔离** → **候选人 T** → **演示候选人-张样例**。\n\n| 优先级 | 候选人 | 当前阶段 | 为什么今天推 | 下一步 |\n|---|---|---|---|---|\n| 1 | 候选人 S12-决策隔离 | 综合评价与招聘决策 | 已进入决策阶段；两轮面试均已结束，但两轮面评都未提交 | 催两位面试官补交第 1、2 轮面评；面评齐备后再做决策 |\n| 2 | 候选人 T | 面试规划与排期 | 两轮面试均已结束，面评仍未提交，每人各缺 1 份 | 同样先催两位面试官补交第 1、2 轮面评 |\n| 3 | 演示候选人-张样例 | 初筛 | 材料已解析就绪，尚未有人工作出初筛决定；另有 1 场已排面试逾期，累计缺 3 份面评 | 先由人工作出初筛决定，同时处理逾期面试安排及面评缺口 |\n\n补充：当前初筛工具无法给出有效结论，因为岗位评分标准在所选时点显示为未批准；这不影响继续收集人工决策和面评。\n\n全局面评缺口为 **0/7，其中 4 份已超时**，是今天最大的推进瓶颈。建议先集中催面评，再推进决策。",
+      "tools": [
+        {
+          "name": "recruitment_workspace_overview",
+          "status": "start",
+          "input": {
+            "stage_filter": "all",
+            "limit": 50
+          }
+        },
+        {
+          "name": "recruitment_workspace_overview",
+          "status": "ok",
+          "result": "工作台总览（LIVE/MANUAL/CONNECTED）\n计数：在招岗位 1 · 在办申请 3 · 待初筛 3 · 面试中 3 · 待决策 1 · 面评 0/7（超时 4）\n过滤：limit=50\n岗位（1）：\n- DEMO-BE-001 后端工程师（演示）（OPEN）· 在办 3 · rubric 已批准\n申请（3）：\n- 候选人 S12-决策隔离 · 后端工程师（演示） · 综合评价与招聘决策 · 面评超时 2 份 · 下一步：等待面评：面试已结束，仍有必填面评未提交\n- 候选人 T · 后端工程师（演示） · 面试规划与排期 · 面评超时 2 份 · 下一步：等待面评：面试已结束，仍有必填面评未提交\n- 演示候选人-张样例 · 后端工程师（演示） · 初筛 / Screening · 下一步：等待初筛决定：材料已就绪，还没有人工作出筛选结论\n\n机器参数（仅供后续工具调用；不要展示给 HR）：\napplication_id=b6a0cdbf-6550-40e7-8715-0b216b5f6ad1 job_id=11111111-1111-4111-8111-000000000401\napplication_id=b0f59ac5-9fc0-4152-b78c-26997ca286d2 job_id=11111111-1111-4111-8111-000000000401\napplication_id=11111111-1111-4111-8111-000000000701 job_id=11111111-1111-4111-8111-000000000401"
+        },
+        {
+          "name": "recruitment_application_get",
+          "status": "start",
+          "input": {
+            "application_id": "b6a0cdbf-6550-40e7-8715-0b216b5f6ad1"
+          }
+        },
+        {
+          "name": "recruitment_application_get",
+          "status": "start",
+          "input": {
+            "application_id": "b0f59ac5-9fc0-4152-b78c-26997ca286d2"
+          }
+        },
+        {
+          "name": "recruitment_application_get",
+          "status": "start",
+          "input": {
+            "application_id": "11111111-1111-4111-8111-000000000701"
+          }
+        },
+        {
+          "name": "recruitment_application_get",
+          "status": "ok",
+          "result": "recruitment_application_get read-only (1.0.0) labels=FIXTURE/MANUAL/CONNECTED\nquery: ONE matched=1 申请=…6ad1\n申请：候选人 S12-决策隔离 · DEMO-BE-001 后端工程师（演示） · 阶段 S10（ACTIVE, record_version=1）\n  候选人：候选人 S12-决策隔离 identity_status=ACTIVE contacts=  (visible=false)\n  岗位：DEMO-BE-001 后端工程师（演示） status=OPEN\n  rubric: v2 (source=APPLICATION_PIN, approved=true, criteria=3, 版本号 …16c2)\n    criteria: work_exists [MUST_HAVE] w=0.5 简历中存在可分割的工作经历条目; edu_exists [MUST_HAVE] w=0.25 简历中存在可分割的教育经历条目; team_lead [NICE_TO_HAVE] w=0.25 有带团队经验\n  material: resume_version=…16c7 parse_status=PARSED pages=1 hard_issues=0\n    asset: …67bf fresh-s12.pdf 1024B sha256=cccccccc… (VALID)\n  interviews: 2 [R1/POST_INTERVIEW, R2/POST_INTERVIEW]\n  transcripts: 0 (READY 0)\n  evaluations: 0/2 submitted (across rounds: required=2, submitted=0, waived=0, pending=2)\n  rubric remediation: CONTINUE_WITH_PINNED — 申请钉住的评分标准 v2 已批准：按钉住版本继续，不需要再处理其它版本。\n  decisions: 0\n  carry_over: 0 []\n  constraints: 1 条置顶 / 0 条交接\nnext tools (machine arguments — copy verbatim into tool calls; never show ids or hashes to the human):\n  recruitment_material_read {\"application_id\":\"b6a0cdbf-6550-40e7-8715-0b216b5f6ad1\",\"mode\":\"SUMMARY\"} — Read the bound material (structure summary, locators, verified sha256; TEXT mode only when the business task needs the source text). Do not read resume files with shell/file tools.\n  recruitment_job_get {\"job_id\":\"11111111-1111-4111-8111-000000000401\"} — Only when you need the full criterion text (question/notes), the JD body, or R-VAL executability / absence reasons: application_get already gives each pinned criterion's key/label/kind/weight.\n  recruitment_interview_get {\"application_id\":\"b6a0cdbf-6550-40e7-8715-0b216b5f6ad1\"} — Per-interview facts: interviewers, meeting binding, transcript state, scorecard blockers."
+        },
+        {
+          "name": "recruitment_application_get",
+          "status": "ok",
+          "result": "recruitment_application_get read-only (1.0.0) labels=FIXTURE/MANUAL/CONNECTED\nquery: ONE matched=1 申请=…86d2\n申请：候选人 T · DEMO-BE-001 后端工程师（演示） · 阶段 S8（ACTIVE, record_version=1）\n  候选人：候选人 T identity_status=ACTIVE contacts=  (visible=false)\n  岗位：DEMO-BE-001 后端工程师（演示） status=OPEN\n  rubric: v2 (source=APPLICATION_PIN, approved=true, criteria=3, 版本号 …16c2)\n    criteria: work_exists [MUST_HAVE] w=0.5 简历中存在可分割的工作经历条目; edu_exists [MUST_HAVE] w=0.25 简历中存在可分割的教育经历条目; team_lead [NICE_TO_HAVE] w=0.25 有带团队经验\n  material: resume_version=…703a parse_status=PARSED pages=1 hard_issues=0\n    asset: …464b fresh-candidate-t.pdf 1024B sha256=aaaaaaaa… (VALID)\n  interviews: 2 [R1/POST_INTERVIEW, R2/POST_INTERVIEW]\n  transcripts: 0 (READY 0)\n  evaluations: 0/2 submitted (across rounds: required=2, submitted=0, waived=0, pending=2)\n  rubric remediation: CONTINUE_WITH_PINNED — 申请钉住的评分标准 v2 已批准：按钉住版本继续，不需要再处理其它版本。\n  decisions: 0\n  carry_over: 0 []\n  constraints: 1 条置顶 / 0 条交接\nnext tools (machine arguments — copy verbatim into tool calls; never show ids or hashes to the human):\n  recruitment_material_read {\"application_id\":\"b0f59ac5-9fc0-4152-b78c-26997ca286d2\",\"mode\":\"SUMMARY\"} — Read the bound material (structure summary, locators, verified sha256; TEXT mode only when the business task needs the source text). Do not read resume files with shell/file tools.\n  recruitment_job_get {\"job_id\":\"11111111-1111-4111-8111-000000000401\"} — Only when you need the full criterion text (question/notes), the JD body, or R-VAL executability / absence reasons: application_get already gives each pinned criterion's key/label/kind/weight.\n  recruitment_interview_get {\"application_id\":\"b0f59ac5-9fc0-4152-b78c-26997ca286d2\"} — Per-interview facts: interviewers, meeting binding, transcript state, scorecard blockers."
+        },
+        {
+          "name": "recruitment_application_get",
+          "status": "ok",
+          "result": "recruitment_application_get read-only (1.0.0) labels=FIXTURE/MANUAL/CONNECTED\nquery: ONE matched=1 申请=…0701\n申请：演示候选人-张样例 · DEMO-BE-001 后端工程师（演示） · 阶段 S7（ACTIVE, record_version=4）\n  候选人：演示候选人-张样例 identity_status=ACTIVE contacts=z***@demo-recruitment.test 861****0000 (visible=false)\n  岗位：DEMO-BE-001 后端工程师（演示） status=OPEN\n  rubric: v2 (source=APPLICATION_PIN, approved=true, criteria=3, 版本号 …16c2)\n    criteria: work_exists [MUST_HAVE] w=0.5 简历中存在可分割的工作经历条目; edu_exists [MUST_HAVE] w=0.25 简历中存在可分割的教育经历条目; team_lead [NICE_TO_HAVE] w=0.25 有带团队经验\n  material: resume_version=…420f parse_status=PARSED pages=1 hard_issues=0\n    asset: …7911 demo-candidate-0701.rtf 516B sha256=3c12527f… (VALID)\n  interviews: 2 [R1/POST_INTERVIEW, R2/SCHEDULED]\n  transcripts: 0 (READY 0)\n  evaluations: 0/3 submitted (across rounds: required=3, submitted=0, waived=0, pending=3)\n  rubric remediation: CONTINUE_WITH_PINNED — 申请钉住的评分标准 v2 已批准：按钉住版本继续，不需要再处理其它版本。\n  decisions: 0\n  carry_over: 0 []\n  constraints: 0 条置顶 / 0 条交接\nnext tools (machine arguments — copy verbatim into tool calls; never show ids or hashes to the human):\n  recruitment_material_read {\"application_id\":\"11111111-1111-4111-8111-000000000701\",\"mode\":\"SUMMARY\"} — Read the bound material (structure summary, locators, verified sha256; TEXT mode only when the business task needs the source text). Do not read resume files with shell/file tools.\n  recruitment_job_get {\"job_id\":\"11111111-1111-4111-8111-000000000401\"} — Only when you need the full criterion text (question/notes), the JD body, or R-VAL executability / absence reasons: application_get already gives each pinned criterion's key/label/kind/weight.\n  recruitment_interview_get {\"application_id\":\"11111111-1111-4111-8111-000000000701\"} — Per-interview facts: interviewers, meeting binding, transcript state, scorecard blockers."
+        },
+        {
+          "name": "recruitment_interview_get",
+          "status": "start",
+          "input": {
+            "application_id": "b6a0cdbf-6550-40e7-8715-0b216b5f6ad1",
+            "as_of": "2026-11-21T14:54:52+08:00"
+          }
+        },
+        {
+          "name": "recruitment_interview_get",
+          "status": "start",
+          "input": {
+            "application_id": "b0f59ac5-9fc0-4152-b78c-26997ca286d2",
+            "as_of": "2026-11-21T14:54:52+08:00"
+          }
+        },
+        {
+          "name": "recruitment_interview_get",
+          "status": "start",
+          "input": {
+            "application_id": "11111111-1111-4111-8111-000000000701",
+            "as_of": "2026-11-21T14:54:52+08:00"
+          }
+        },
+        {
+          "name": "recruitment_screening_evaluate",
+          "status": "start",
+          "input": {
+            "application_id": "11111111-1111-4111-8111-000000000701",
+            "as_of": "2026-11-21T14:54:52+08:00"
+          }
+        },
+        {
+          "name": "recruitment_interview_get",
+          "status": "ok",
+          "result": "recruitment_interview_get 1.0.0  (labels: FIXTURE/MANUAL/CONNECTED)  as_of=2026-11-21T14:54:52+08:00\nquery: BY_APPLICATION · 申请 …6ad1  count=2\ninterview 第 1 轮 round=1 slot=S12_R1 stage=S8 [POST_INTERVIEW]  2026-11-19T14:54:54.851Z – 2026-11-20T15:54:54.851Z\n  申请 …6ad1 · 候选人 …0798 · 岗位 …0401 · 面试 …b781\n  interviewers:\n  演示-面试官(required, no scorecard)\n  meeting_binding: UNBOUND  (count=0)\n  transcript: MISSING NO_MEETING_BOUND (no_transcript=true)\n  evaluation: required=1 submitted=0 waived=0 pending=1 → evaluation_ready=false\n    blockers: SCORECARD_PENDING(…0104), RECORD_NOT_READY(-)\n  warnings: MEETING_NOT_BOUND\ninterview 第 2 轮 round=2 slot=S12_R2 stage=S8 [POST_INTERVIEW]  2026-11-20T14:54:54.852Z – 2026-11-21T13:54:54.852Z\n  申请 …6ad1 · 候选人 …0798 · 岗位 …0401 · 面试 …9046\n  interviewers:\n  演示-面试官 B(required, no scorecard)\n  meeting_binding: UNBOUND  (count=0)\n  transcript: MISSING NO_MEETING_BOUND (no_transcript=true)\n  evaluation: required=1 submitted=0 waived=0 pending=1 → evaluation_ready=false\n    blockers: SCORECARD_PENDING(…0105), RECORD_NOT_READY(-)\n  warnings: MEETING_NOT_BOUND\nmachine arguments (copy verbatim into tool calls; never show ids or hashes to the human):\n  interview_id(round=1) b988792b-d343-49f5-8af8-3e94bcd3b781\n  application_id(round=1) b6a0cdbf-6550-40e7-8715-0b216b5f6ad1\n  interview_id(round=2) f37f0de1-ac98-4d2b-9f47-9507c5af9046\n  application_id(round=2) b6a0cdbf-6550-40e7-8715-0b216b5f6ad1"
+        },
+        {
+          "name": "recruitment_interview_get",
+          "status": "ok",
+          "result": "recruitment_interview_get 1.0.0  (labels: FIXTURE/MANUAL/CONNECTED)  as_of=2026-11-21T14:54:52+08:00\nquery: BY_APPLICATION · 申请 …86d2  count=2\ninterview 第 1 轮 round=1 slot=FRESH_R1 stage=S8 [POST_INTERVIEW]  2026-11-19T14:54:54.837Z – 2026-11-20T15:54:54.837Z\n  申请 …86d2 · 候选人 …0699 · 岗位 …0401 · 面试 …e163\n  interviewers:\n  演示-面试官(required, no scorecard)\n  meeting_binding: UNBOUND  (count=0)\n  transcript: MISSING NO_MEETING_BOUND (no_transcript=true)\n  evaluation: required=1 submitted=0 waived=0 pending=1 → evaluation_ready=false\n    blockers: SCORECARD_PENDING(…0104), RECORD_NOT_READY(-)\n  warnings: MEETING_NOT_BOUND\ninterview 第 2 轮 round=2 slot=FRESH_R2 stage=S8 [POST_INTERVIEW]  2026-11-20T14:54:54.839Z – 2026-11-21T13:54:54.839Z\n  申请 …86d2 · 候选人 …0699 · 岗位 …0401 · 面试 …3dea\n  interviewers:\n  演示-面试官 B(required, no scorecard)\n  meeting_binding: UNBOUND  (count=0)\n  transcript: MISSING NO_MEETING_BOUND (no_transcript=true)\n  evaluation: required=1 submitted=0 waived=0 pending=1 → evaluation_ready=false\n    blockers: SCORECARD_PENDING(…0105), RECORD_NOT_READY(-)\n  warnings: MEETING_NOT_BOUND\nmachine arguments (copy verbatim into tool calls; never show ids or hashes to the human):\n  interview_id(round=1) 7b1a7aa2-41fa-473a-bb2b-fba78bcae163\n  application_id(round=1) b0f59ac5-9fc0-4152-b78c-26997ca286d2\n  interview_id(round=2) 5f611b68-9538-41d0-91d0-b50f47553dea\n  application_id(round=2) b0f59ac5-9fc0-4152-b78c-26997ca286d2"
+        },
+        {
+          "name": "recruitment_interview_get",
+          "status": "ok",
+          "result": "recruitment_interview_get 1.0.0  (labels: FIXTURE/MANUAL/CONNECTED)  as_of=2026-11-21T14:54:52+08:00\nquery: BY_APPLICATION · 申请 …0701  count=2\ninterview 第 1 轮 round=1 slot=DEFAULT stage=S8 [POST_INTERVIEW]  2026-11-12T06:00:00.000Z – 2026-11-12T07:00:00.000Z\n  申请 …0701 · 候选人 …0601 · 岗位 …0401 · 面试 …0801\n  interviewers:\n  演示-面试官(required, no scorecard)\n  meeting_binding: UNBOUND  (count=0)\n  transcript: MISSING NO_MEETING_BOUND (no_transcript=true)\n  evaluation: required=1 submitted=0 waived=0 pending=1 → evaluation_ready=false\n    blockers: SCORECARD_PENDING(…0104), RECORD_NOT_READY(-)\n  warnings: MEETING_NOT_BOUND\ninterview 第 2 轮 round=2 slot=DEFAULT stage=S8 [SCHEDULED]  2026-11-20T06:00:00.000Z – 2026-11-20T07:00:00.000Z\n  申请 …0701 · 候选人 …0601 · 岗位 …0401 · 面试 …0802\n  interviewers:\n  演示-面试官(required, no scorecard)\n  演示-面试官 B(required, no scorecard)\n  meeting_binding: UNBOUND  (count=0)\n  transcript: MISSING NO_MEETING_BOUND (no_transcript=true)\n  evaluation: required=2 submitted=0 waived=0 pending=2 → evaluation_ready=false\n    blockers: SCORECARD_PENDING(…0104), SCORECARD_PENDING(…0105), RECORD_NOT_READY(-)\n  warnings: MEETING_NOT_BOUND, MEETING_NOT_BOUND_OVERDUE\nmachine arguments (copy verbatim into tool calls; never show ids or hashes to the human):\n  interview_id(round=1) 11111111-1111-4111-8111-000000000801\n  application_id(round=1) 11111111-1111-4111-8111-000000000701\n  interview_id(round=2) 11111111-1111-4111-8111-000000000802\n  application_id(round=2) 11111111-1111-4111-8111-000000000701"
+        },
+        {
+          "name": "recruitment_screening_evaluate",
+          "status": "error",
+          "result": "Error: NO_RUBRIC: {\"code\":\"NO_RUBRIC\",\"detail\":{\"job_id\":\"11111111-1111-4111-8111-000000000401\",\"rubric_version_id\":\"27658981-ee50-4d91-aeb2-dba80b0f16c2\",\"status\":\"APPROVED\",\"version_no\":2},\"message\":\"该 Rubric 版本在 as_of 时刻没有处于已批准状态的审批（JR §4.2）\",\"reason_code\":\"NO_APPROVED_RUBRIC\"}",
+          "message": ""
+        },
+        {
+          "name": "recruitment_job_get",
+          "status": "start",
+          "input": {
+            "job_id": "11111111-1111-4111-8111-000000000401",
+            "as_of": "2026-11-21T14:54:52+08:00"
+          }
+        },
+        {
+          "name": "recruitment_job_get",
+          "status": "ok",
+          "result": "job DEMO-BE-001 后端工程师（演示） [OPEN]  (labels: FIXTURE/MANUAL/CONNECTED)\n  岗位 …0401  record_version=5\njob_version v1  hash=aba19e40…\n  description_md: # 后端工程师（演示岗位）\n\n演示用 JD，非真实招聘信息。\n  requirements_md: - 3 年以上后端开发经验（演示样例）\n- 熟悉 PostgreSQL 与消息队列（演示样例）\nrubric: none (NO_APPROVED_RUBRIC) — 岗位当前 Rubric v2（指针指向的版本）在 2026-11-21T14:54:52+08:00 时刻没有处于已批准状态的审批\nversions: v1(is_current=false, is_approved=false), v2(is_current=true, is_approved=false)\nas_of 2026-11-21T14:54:52+08:00\nmachine arguments (copy verbatim into tool calls; never show ids or hashes to the human):\n  job_id=11111111-1111-4111-8111-000000000401"
+        }
+      ],
+      "diag": [
+        {
+          "kind": "tools",
+          "tools": [
+            "recruitment_application_get",
+            "recruitment_candidate_get",
+            "recruitment_document_read",
+            "recruitment_evaluation_summarize",
+            "recruitment_interview_free_slots",
+            "recruitment_interview_get",
+            "recruitment_interview_record_verify",
+            "recruitment_job_get",
+            "recruitment_material_read",
+            "recruitment_page_image",
+            "recruitment_resume_read",
+            "recruitment_resume_serialize",
+            "recruitment_screening_evaluate",
+            "recruitment_structure_validate",
+            "recruitment_trace_get",
+            "recruitment_transcript_read",
+            "recruitment_ui_dispatch",
+            "recruitment_workspace_overview"
+          ]
+        }
+      ],
+      "done": {
+        "turn_id": "1",
+        "usage": {
+          "inputTokens": 352,
+          "outputTokens": 301,
+          "totalTokens": 16013,
+          "cacheReadTokens": 15360
+        }
+      },
+      "error": null
+    },
+    "pendingScorecards": {
+      "status": 200,
+      "delta": "面评整体：**0/7 已提交，7 份待提交；其中 4 份已超时**。\n\n| 候选人 | 阶段 | 待提交面评 | 超时情况 | 当前下一步 |\n|---|---|---|---|---|\n| 候选人 S12-决策隔离 | 综合评价与招聘决策 | 2 份：第 1 轮「演示-面试官」、第 2 轮「演示-面试官 B」 | 2 份超时 | 催两位面试官提交面评；齐备后再推进决策 |\n| 候选人 T | 面试规划与排期 | 2 份：第 1 轮「演示-面试官」、第 2 轮「演示-面试官 B」 | 2 份超时 | 催两位面试官提交面评 |\n| 演示候选人-张样例 | 初筛 | 3 份：第 1 轮「演示-面试官」1 份；第 2 轮「演示-面试官」「演示-面试官 B」2 份 | 总览未标记超时；第 2 轮面试排期已逾期 | 先处理逾期面试安排，并催 3 份面评 |\n\n催办进展：**目前尚无面评提交，7 份均为待提交；没有记录到已完成的催办反馈。** 另外，这些面试均未绑定会议、无可用转写，记录本身也未就绪，因此即使催回面评，也还需要先把面试记录处理到可用状态，才能用于评价汇总。\n\n建议今天先按超时顺序催：候选人 S12-决策隔离、候选人 T 各 2 份，再处理张样例的逾期排期和 3 份面评。",
+      "tools": [
+        {
+          "name": "recruitment_workspace_overview",
+          "status": "start",
+          "input": {
+            "stage_filter": "all",
+            "only_overdue_scorecards": false,
+            "limit": 50
+          }
+        },
+        {
+          "name": "recruitment_workspace_overview",
+          "status": "ok",
+          "result": "工作台总览（LIVE/MANUAL/CONNECTED）\n计数：在招岗位 1 · 在办申请 3 · 待初筛 3 · 面试中 3 · 待决策 1 · 面评 0/7（超时 4）\n过滤：limit=50\n岗位（1）：\n- DEMO-BE-001 后端工程师（演示）（OPEN）· 在办 3 · rubric 已批准\n申请（3）：\n- 候选人 S12-决策隔离 · 后端工程师（演示） · 综合评价与招聘决策 · 面评超时 2 份 · 下一步：等待面评：面试已结束，仍有必填面评未提交\n- 候选人 T · 后端工程师（演示） · 面试规划与排期 · 面评超时 2 份 · 下一步：等待面评：面试已结束，仍有必填面评未提交\n- 演示候选人-张样例 · 后端工程师（演示） · 初筛 / Screening · 下一步：等待初筛决定：材料已就绪，还没有人工作出筛选结论\n\n机器参数（仅供后续工具调用；不要展示给 HR）：\napplication_id=b6a0cdbf-6550-40e7-8715-0b216b5f6ad1 job_id=11111111-1111-4111-8111-000000000401\napplication_id=b0f59ac5-9fc0-4152-b78c-26997ca286d2 job_id=11111111-1111-4111-8111-000000000401\napplication_id=11111111-1111-4111-8111-000000000701 job_id=11111111-1111-4111-8111-000000000401"
+        },
+        {
+          "name": "recruitment_interview_get",
+          "status": "start",
+          "input": {
+            "application_id": "b6a0cdbf-6550-40e7-8715-0b216b5f6ad1"
+          }
+        },
+        {
+          "name": "recruitment_interview_get",
+          "status": "start",
+          "input": {
+            "application_id": "b0f59ac5-9fc0-4152-b78c-26997ca286d2"
+          }
+        },
+        {
+          "name": "recruitment_interview_get",
+          "status": "start",
+          "input": {
+            "application_id": "11111111-1111-4111-8111-000000000701"
+          }
+        },
+        {
+          "name": "recruitment_interview_get",
+          "status": "ok",
+          "result": "recruitment_interview_get 1.0.0  (labels: FIXTURE/MANUAL/CONNECTED)  as_of=2026-11-21T14:55:42.900Z\nquery: BY_APPLICATION · 申请 …6ad1  count=2\ninterview 第 1 轮 round=1 slot=S12_R1 stage=S8 [POST_INTERVIEW]  2026-11-19T14:54:54.851Z – 2026-11-20T15:54:54.851Z\n  申请 …6ad1 · 候选人 …0798 · 岗位 …0401 · 面试 …b781\n  interviewers:\n  演示-面试官(required, no scorecard)\n  meeting_binding: UNBOUND  (count=0)\n  transcript: MISSING NO_MEETING_BOUND (no_transcript=true)\n  evaluation: required=1 submitted=0 waived=0 pending=1 → evaluation_ready=false\n    blockers: SCORECARD_PENDING(…0104), RECORD_NOT_READY(-)\n  warnings: MEETING_NOT_BOUND\ninterview 第 2 轮 round=2 slot=S12_R2 stage=S8 [POST_INTERVIEW]  2026-11-20T14:54:54.852Z – 2026-11-21T13:54:54.852Z\n  申请 …6ad1 · 候选人 …0798 · 岗位 …0401 · 面试 …9046\n  interviewers:\n  演示-面试官 B(required, no scorecard)\n  meeting_binding: UNBOUND  (count=0)\n  transcript: MISSING NO_MEETING_BOUND (no_transcript=true)\n  evaluation: required=1 submitted=0 waived=0 pending=1 → evaluation_ready=false\n    blockers: SCORECARD_PENDING(…0105), RECORD_NOT_READY(-)\n  warnings: MEETING_NOT_BOUND\nmachine arguments (copy verbatim into tool calls; never show ids or hashes to the human):\n  interview_id(round=1) b988792b-d343-49f5-8af8-3e94bcd3b781\n  application_id(round=1) b6a0cdbf-6550-40e7-8715-0b216b5f6ad1\n  interview_id(round=2) f37f0de1-ac98-4d2b-9f47-9507c5af9046\n  application_id(round=2) b6a0cdbf-6550-40e7-8715-0b216b5f6ad1"
+        },
+        {
+          "name": "recruitment_interview_get",
+          "status": "ok",
+          "result": "recruitment_interview_get 1.0.0  (labels: FIXTURE/MANUAL/CONNECTED)  as_of=2026-11-21T14:55:42.912Z\nquery: BY_APPLICATION · 申请 …86d2  count=2\ninterview 第 1 轮 round=1 slot=FRESH_R1 stage=S8 [POST_INTERVIEW]  2026-11-19T14:54:54.837Z – 2026-11-20T15:54:54.837Z\n  申请 …86d2 · 候选人 …0699 · 岗位 …0401 · 面试 …e163\n  interviewers:\n  演示-面试官(required, no scorecard)\n  meeting_binding: UNBOUND  (count=0)\n  transcript: MISSING NO_MEETING_BOUND (no_transcript=true)\n  evaluation: required=1 submitted=0 waived=0 pending=1 → evaluation_ready=false\n    blockers: SCORECARD_PENDING(…0104), RECORD_NOT_READY(-)\n  warnings: MEETING_NOT_BOUND\ninterview 第 2 轮 round=2 slot=FRESH_R2 stage=S8 [POST_INTERVIEW]  2026-11-20T14:54:54.839Z – 2026-11-21T13:54:54.839Z\n  申请 …86d2 · 候选人 …0699 · 岗位 …0401 · 面试 …3dea\n  interviewers:\n  演示-面试官 B(required, no scorecard)\n  meeting_binding: UNBOUND  (count=0)\n  transcript: MISSING NO_MEETING_BOUND (no_transcript=true)\n  evaluation: required=1 submitted=0 waived=0 pending=1 → evaluation_ready=false\n    blockers: SCORECARD_PENDING(…0105), RECORD_NOT_READY(-)\n  warnings: MEETING_NOT_BOUND\nmachine arguments (copy verbatim into tool calls; never show ids or hashes to the human):\n  interview_id(round=1) 7b1a7aa2-41fa-473a-bb2b-fba78bcae163\n  application_id(round=1) b0f59ac5-9fc0-4152-b78c-26997ca286d2\n  interview_id(round=2) 5f611b68-9538-41d0-91d0-b50f47553dea\n  application_id(round=2) b0f59ac5-9fc0-4152-b78c-26997ca286d2"
+        },
+        {
+          "name": "recruitment_interview_get",
+          "status": "ok",
+          "result": "recruitment_interview_get 1.0.0  (labels: FIXTURE/MANUAL/CONNECTED)  as_of=2026-11-21T14:55:42.912Z\nquery: BY_APPLICATION · 申请 …0701  count=2\ninterview 第 1 轮 round=1 slot=DEFAULT stage=S8 [POST_INTERVIEW]  2026-11-12T06:00:00.000Z – 2026-11-12T07:00:00.000Z\n  申请 …0701 · 候选人 …0601 · 岗位 …0401 · 面试 …0801\n  interviewers:\n  演示-面试官(required, no scorecard)\n  meeting_binding: UNBOUND  (count=0)\n  transcript: MISSING NO_MEETING_BOUND (no_transcript=true)\n  evaluation: required=1 submitted=0 waived=0 pending=1 → evaluation_ready=false\n    blockers: SCORECARD_PENDING(…0104), RECORD_NOT_READY(-)\n  warnings: MEETING_NOT_BOUND\ninterview 第 2 轮 round=2 slot=DEFAULT stage=S8 [SCHEDULED]  2026-11-20T06:00:00.000Z – 2026-11-20T07:00:00.000Z\n  申请 …0701 · 候选人 …0601 · 岗位 …0401 · 面试 …0802\n  interviewers:\n  演示-面试官(required, no scorecard)\n  演示-面试官 B(required, no scorecard)\n  meeting_binding: UNBOUND  (count=0)\n  transcript: MISSING NO_MEETING_BOUND (no_transcript=true)\n  evaluation: required=2 submitted=0 waived=0 pending=2 → evaluation_ready=false\n    blockers: SCORECARD_PENDING(…0104), SCORECARD_PENDING(…0105), RECORD_NOT_READY(-)\n  warnings: MEETING_NOT_BOUND, MEETING_NOT_BOUND_OVERDUE\nmachine arguments (copy verbatim into tool calls; never show ids or hashes to the human):\n  interview_id(round=1) 11111111-1111-4111-8111-000000000801\n  application_id(round=1) 11111111-1111-4111-8111-000000000701\n  interview_id(round=2) 11111111-1111-4111-8111-000000000802\n  application_id(round=2) 11111111-1111-4111-8111-000000000701"
+        }
+      ],
+      "diag": [],
+      "done": {
+        "turn_id": "2",
+        "usage": {
+          "inputTokens": 1964,
+          "outputTokens": 361,
+          "totalTokens": 18709,
+          "cacheReadTokens": 16384
+        }
+      },
+      "error": null
+    }
+  },
+  "checks": [
+    {
+      "name": "turn1_workspace_overview",
+      "ok": true,
+      "detail": {
+        "tools": [
+          "recruitment_workspace_overview:start",
+          "recruitment_workspace_overview:ok",
+          "recruitment_application_get:start",
+          "recruitment_application_get:start",
+          "recruitment_application_get:start",
+          "recruitment_application_get:ok",
+          "recruitment_application_get:ok",
+          "recruitment_application_get:ok",
+          "recruitment_interview_get:start",
+          "recruitment_interview_get:start",
+          "recruitment_interview_get:start",
+          "recruitment_screening_evaluate:start",
+          "recruitment_interview_get:ok",
+          "recruitment_interview_get:ok",
+          "recruitment_interview_get:ok",
+          "recruitment_screening_evaluate:error",
+          "recruitment_job_get:start",
+          "recruitment_job_get:ok"
+        ],
+        "answer": "今天优先推进：**候选人 S12-决策隔离** → **候选人 T** → **演示候选人-张样例**。\n\n| 优先级 | 候选人 | 当前阶段 | 为什么今天推 | 下一步 |\n|---|---|---|---|---|\n| 1 | 候选人 S12-决策隔离 | 综合评价与招聘决策 | 已进入决策阶段；两轮面试均已结束，但两轮面评都未提交 | 催两位面试官补交第 1、2 轮面评；面评齐备后再做决策 |\n| 2 | 候选人 T | 面试规划与排期 | 两轮面试均已结束，面评仍未提交，每人各缺 1 份 | 同样先催两位面试官补交第 1、2 轮面评 |\n| 3 | 演示候选人-张样例 | 初筛 |"
+      }
+    },
+    {
+      "name": "turn2_workspace_overview",
+      "ok": true,
+      "detail": {
+        "tools": [
+          "recruitment_workspace_overview:start",
+          "recruitment_workspace_overview:ok",
+          "recruitment_interview_get:start",
+          "recruitment_interview_get:start",
+          "recruitment_interview_get:start",
+          "recruitment_interview_get:ok",
+          "recruitment_interview_get:ok",
+          "recruitment_interview_get:ok"
+        ],
+        "answer": "面评整体：**0/7 已提交，7 份待提交；其中 4 份已超时**。\n\n| 候选人 | 阶段 | 待提交面评 | 超时情况 | 当前下一步 |\n|---|---|---|---|---|\n| 候选人 S12-决策隔离 | 综合评价与招聘决策 | 2 份：第 1 轮「演示-面试官」、第 2 轮「演示-面试官 B」 | 2 份超时 | 催两位面试官提交面评；齐备后再推进决策 |\n| 候选人 T | 面试规划与排期 | 2 份：第 1 轮「演示-面试官」、第 2 轮「演示-面试官 B」 | 2 份超时 | 催两位面试官提交面评 |\n| 演示候选人-张样例 | 初筛 | 3 份：第 1 轮「演示-面试"
+      }
+    },
+    {
+      "name": "diag_read_only_18",
+      "ok": true,
+      "detail": {
+        "count": 18,
+        "writeVisible": []
+      }
+    },
+    {
+      "name": "no_business_writes",
+      "ok": true,
+      "detail": {
+        "countsBefore": {
+          "decision": "0",
+          "interview": "6",
+          "scorecard": "0",
+          "scorecard_draft": "0",
+          "application": "3",
+          "candidate_constraint": "2"
+        },
+        "countsAfter": {
+          "decision": "0",
+          "interview": "6",
+          "scorecard": "0",
+          "scorecard_draft": "0",
+          "application": "3",
+          "candidate_constraint": "2"
+        }
+      }
+    }
+  ],
+  "pass": true,
+  "dataset": {
+    "application_id": "b0f59ac5-9fc0-4152-b78c-26997ca286d2",
+    "job_id": "11111111-1111-4111-8111-000000000401"
+  },
+  "sid": "session-0aa48569-d49b-4b3a-aeb5-ac2256ef853a",
+  "diagTools": [
+    "recruitment_application_get",
+    "recruitment_candidate_get",
+    "recruitment_document_read",
+    "recruitment_evaluation_summarize",
+    "recruitment_interview_free_slots",
+    "recruitment_interview_get",
+    "recruitment_interview_record_verify",
+    "recruitment_job_get",
+    "recruitment_material_read",
+    "recruitment_page_image",
+    "recruitment_resume_read",
+    "recruitment_resume_serialize",
+    "recruitment_screening_evaluate",
+    "recruitment_structure_validate",
+    "recruitment_trace_get",
+    "recruitment_transcript_read",
+    "recruitment_ui_dispatch",
+    "recruitment_workspace_overview"
+  ],
+  "cleanup": {
+    "port": null,
+    "tokenExists": false
+  }
+}

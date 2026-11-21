@@ -2,7 +2,7 @@
 //
 // 覆盖：工具名 + 参数 schema 封闭（actor_id/tenant_id/sha256/hash 一律 SERVER_DERIVED_REJECTED）、
 // 缺 confirmation_text 零写入、human_state 闭集、未配置替身同名 NOT_CONFIGURED、
-// 以及 apply() 注册 33 个工具且含本工具（R2 可达性）。
+// 以及 apply() 注册 36 个工具且含本工具（R2 可达性）。
 // 真库写入/审计事件/读投影在 DB lane 的集成测试与本 lane 的
 // business-read-shape.test.ts 覆盖；这里只回答"工具形状对不对、闸门是否 fail-closed"。
 import test from 'node:test'
@@ -232,7 +232,7 @@ test('render：输出正文含工具名与 override_id', () => {
   assert.ok(text.includes(`  application_id=${APP_ID}`))
 })
 
-test('apply() 注册 33 个工具（30 + email_fetch + criterion_override + candidate_constraint），包含新工具', () => {
+test('apply() 注册 36 个工具（30 个既有 + email_fetch + criterion_override + candidate_constraint + ui_dispatch + interview_free_slots + workspace_overview），包含新工具', () => {
   const registered: { name: string; parameters: Record<string, unknown> }[] = []
   const ctx = {
     tools: { register: (tool: { name: string; parameters: Record<string, unknown> }) => registered.push(tool) },
@@ -246,7 +246,10 @@ test('apply() 注册 33 个工具（30 + email_fetch + criterion_override + cand
     },
   }, { RECRUITMENT_DB_PASSWORD: 'unused-in-this-test' })
   const names = registered.map((tool) => tool.name)
-  assert.equal(names.length, 33, `注册数必须是 33，实际 ${names.length}：${names.join(', ')}`)
-  assert.equal(new Set(names).size, 33, '工具名不得重复')
+  assert.equal(names.length, 36, `注册数必须是 36，实际 ${names.length}：${names.join(', ')}`)
+  assert.equal(new Set(names).size, 36, '工具名不得重复')
   assert.ok(names.includes(CRITERION_OVERRIDE_TOOL), `注册点少了人工纠偏工具：${names.join(', ')}`)
 })
+
+
+

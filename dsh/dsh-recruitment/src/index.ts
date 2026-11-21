@@ -125,6 +125,10 @@ import {
 import { createTraceGetTool, unconfiguredTraceGetTool } from './tools/trace-get.ts'
 import { createUiDispatchTool } from './tools/ui-dispatch.ts'
 import { createInterviewFreeSlotsTool } from './tools/interview-free-slots.ts'
+import {
+  createWorkspaceOverviewTool,
+  unconfiguredWorkspaceOverviewTool,
+} from './tools/workspace-overview.ts'
 // D-141 §4（最高优先项）：工具调用留痕接线。
 // `src/domain/trace.ts` 的记录适配器实现完整，但产品执行路径从未调用它 →
 // `recruitment.tool_call` 永远没有写入，`recruitment_trace_get` 的 TOOL_CALL 环永远是 gap。
@@ -1152,6 +1156,10 @@ export function apply(
     platformChannel: true,
     io: { resolveInterviewerOpenId },
   })
+  // 只读工作台总览（与 HTTP recruiting overview 同一投影）：对话首页“今天先办谁/待提交面评”直接读全局。
+  const workspaceOverview = database.resolved === null
+    ? unconfiguredWorkspaceOverviewTool(database.issues)
+    : createWorkspaceOverviewTool(database.resolved)
   // 企业自建配置（角色权限范围 / 招聘团队 / 流水线模板）：配置是数据，企业自己建。
   const configTools = database.resolved === null
     ? [
@@ -1193,6 +1201,7 @@ export function apply(
     traceGet,
     uiDispatch,
     interviewFreeSlots,
+    workspaceOverview,
     ...configTools,
     pageImage,
     modelTextMerge,
