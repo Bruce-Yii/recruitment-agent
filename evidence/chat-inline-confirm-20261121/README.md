@@ -19,33 +19,26 @@
   - 两轮均未落库（decision/interview/scorecard/scorecard_draft/application/candidate_constraint 前后计数一致）；诊断 18 只读 / 0 写。
 - 门禁（main `e7d5092` + 本分支）：tsc 0、tsdown 双入口、server-typecheck 0/0、runtime-budget 5051/5051、entry-reachability、client-contract-check、term-lint 全 PASS。
 
-## 阶段三（2026-11-21/22 本地临时联调）
+## 阶段三（2026-11-21/22 本地临时联调 · 最终全绿）
 
-联调分支：`tmp/chat-inline-confirm-integration`（main `e7d5092` + 阶段一 `cec1cef` + PR #18 `ad1ef4c`）。**PR #18 原样不能编译**，本地临时分支打了一行类型修复后才跑通（该修复未推送到 PR #18）：
-
-- `npx tsc --noEmit` 原报错：`src/app/InlineConfirmCard.tsx(214,26): error TS2554: Expected 2 arguments, but got 1.`
-- `screeningDecisionBlockers(factsRes.facts)` 缺 `needsEvaluation`；screening 的 PASS/REJECT 分支应传 `true`（与 `CandidateActionModal.tsx:258-259` 同口径）。
+联调分支：`tmp/chat-inline-confirm-integration`（main `e7d5092` + 阶段一 `5717b19` + PR #18 修复后 `e041218`）。**不再手工打补丁**：PR #18 `e041218` 已补齐 `screeningDecisionBlockers(..., true)` 与终审缺面评阻断逻辑，`tsc` 原生 0。
 
 ### 静态/构建（临时联调分支）
 
-- `npx tsc --noEmit` = **0**（含临时一行修复）
+- `npx tsc --noEmit` = **0**
 - `npx tsdown` 双入口通过
 - `server-typecheck` 0/0、`runtime-budget` 5051/5051、`entry-reachability`、`client-contract-check`、`term-lint` 全 PASS
 - `run-v4.mjs --fresh --port 49347`：**15/15 PASS**，审计 hard 0
 
-### 1440 真机四场景（一次性干净库 + HY4，3 个 S7/S8/S10 候选）
+### 1440 真机四场景（一次性干净库 + HY4，S7/S8/S10 三个候选）
 
 | 场景 | 结果 |
 |---|---|
-| ① 置顶提醒 | **PASS**：自然语言 → `app-chat-confirm-card`（提交前零写入）→ `app-chat-confirm-submit` → 绿字回执 + 右侧 `canvas-pin-row` 出现“二面重点追问带团队细节” + psql 读回 candidate_constraint +1 |
+| ① 置顶提醒 | **PASS**：自然语言 → `app-chat-confirm-card`（确认前零写入）→ `app-chat-confirm-submit` → 绿字回执 + 右侧 `canvas-pin-row` 出现“二面重点追问带团队细节” + psql 读回 candidate_constraint +1 |
 | ② 初筛决策 | **PASS**：自然语言 → 卡片 → `app-chat-confirm-cancel` → 卡片收起且 decision 计数不变 → 再次触发 → 确认落库 decision +1，提交按钮消失（不可重提） |
-| ③ 终审缺面评阻断 | **FAIL（PR #18 前端）**：卡片正确出现且摘要显示“两位面试官评分均未提交，系统提示暂不可确认录用”，但 `app-chat-confirm-submit` **仍可点击**；点前零写入。需要在 `InlineConfirmCard.tsx` decision pre-check 中读取缺面评事实并禁用主按钮（当前只调 `decisionRecordBlockers`，未覆盖缺面评）。证据截图 `phase3-06-decision-button-not-disabled-1440.png` |
+| ③ 终审缺面评阻断 | **PASS**：`app-chat-confirm-card` 显示“无法提交 / 还缺 演示-面试官、演示-面试官 B 的面评，暂时不能提交终审决策。”，`app-chat-confirm-submit` 为 **disabled**；点前零写入（decision 计数不变）。证据 `phase3-06-decision-blocked-disabled-1440.png` |
 | ④ 诊断头 0 写工具 | **PASS**：18 个只读工具，写工具 0 |
 
 ### 结论
 
-阶段一服务端 PR **#19** 可独立审阅；阶段三 **3/4**，阻塞在 PR #18 的两处前端问题：
-1. `InlineConfirmCard.tsx:214` 类型错误（需传 `true`）；
-2. 终审缺面评时主按钮未禁用（卡片已显示阻断文案但按钮可点）。
-
-已按约定只报告精确位置，未向 PR #18 推送 UI 改动、未改样式。PR #18 修复后需重跑阶段三四场景 + 15 步。
+阶段三 **4/4 PASS**；阶段一 PR **#19** 与阶段二 PR **#18**（`e041218`）可一起按顺序合入（由总控执行，未自行合并 main）。PR #18 的两个前端问题已修复并由本轮真机复验：`InlineConfirmCard.tsx` 的 `screeningDecisionBlockers` 第二参数、终审缺面评禁用主按钮。
