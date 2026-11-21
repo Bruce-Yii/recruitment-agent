@@ -7,6 +7,7 @@
 - **产品说明（这是什么 / 给谁用 / 现在能做什么 / 不做什么）** → [`docs/26`](docs/26-product-introduction.md)
 - **产品认知与验收口径（唯一权威）** → [`docs/24`](docs/24-product-framework-v2.md)
 - **接手交接（场景 / 判断框架 / 踩坑 / 地图）** → [`docs/25`](docs/25-lead-handoff.md)
+- **前端审美与设计方法论（新窗口改 UI 必读）** → [`design/v4/design-system-guidelines.md`](design/v4/design-system-guidelines.md)（原型：[`design/v4/recruitment_os.html`](design/v4/recruitment_os.html)）
 
 ---
 

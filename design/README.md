@@ -7,6 +7,11 @@
 | 来源 | 产品负责人 2026-11-19 03:00 提供（`D:\12412\recruitment_os.html`），**原样保存未改一个字节** |
 | PII 自查 | 0 个手机号；唯一 email 是 `hr-recruiting@company.com`（明显虚构） |
 
+## 必读入口：审美与设计方法论
+
+- **[`design/v4/design-system-guidelines.md`](v4/design-system-guidelines.md)** —— 新窗口接手前端/UI 打磨时的**首选必读**（暖纸三层材质、56px 单顶栏地平线、编辑感排版、反模式黑名单与验收门禁）。
+- **[`design/v4/chat-canvas-interaction-spec.md`](v4/chat-canvas-interaction-spec.md)** —— 对话 × 画布统一交互协议（`ui_action` 三层语义、不抢弹窗红线）。
+
 ## 这是什么 / 不是什么
 
 - **是**：v4 定版前端**设计原型**（"层层递进架构版"），用于对齐界面结构、交互与文案。
