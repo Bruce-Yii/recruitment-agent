@@ -597,8 +597,14 @@ export function createUiDispatchTool(): ReadonlyToolDefinition {
       + 'Rules: navigate needs route (and target_id for application/job); focus_section needs section; '
       + 'suggest_action needs label plus modal or route; propose_write needs proposal with intent/application_id/'
       + 'title/summary(2..4)/payload, and per-intent fields. '
-      + 'If the object, ID, interviewer, time or scorecard prerequisites are missing, fall back to suggest_action '
-      + 'instead of inventing IDs or time slots. Do not use it for business writes or data changes.',
+      + 'When the human asks for one of the five high-frequency actions (add a pin/handoff reminder, pass/reject '
+      + 'screening, advance stage, schedule an interview at an already-known time, or record a final decision) '
+      + 'and you have the real application_id plus the required business values, call propose_write instead of '
+      + 'replying that you lack write capability: propose_write is only a draft for human confirmation and does '
+      + 'not write by itself. '
+      + 'If the object id, interviewer, or exact time is missing, fall back to suggest_action instead of inventing '
+      + 'values. For decision_record, still use propose_write even when scorecards are missing: the inline card '
+      + 'shows the blocker honestly and disables confirmation. Do not use it for business writes or data changes.',
     parameters: PARAMETERS,
     output: {
       schema: OUTPUT_SCHEMA,

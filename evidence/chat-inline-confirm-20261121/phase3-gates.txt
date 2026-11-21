@@ -1,0 +1,33 @@
+# 阶段三联调门禁（临时分支 main e7d5092 + 阶段一 cec1cef + PR18 ad1ef4c）
+
+## 静态/构建
+
+| 门 | 结果 |
+|---|---|
+| `npx tsc --noEmit` | PASS（0；PR18 原样有 1 个错误，本地临时修复后 0） |
+| `npx tsdown` | PASS（双入口；lib/app.js 1.38MB） |
+| `server-typecheck` | PASS（0/0） |
+| `runtime-budget` | PASS（5051/5051） |
+| `entry-reachability` | PASS（无新缺口；手拼 0） |
+| `client-contract-check` | PASS |
+| `term-lint` | PASS |
+| `run-v4.mjs --fresh` | **15/15 PASS**，审计 hard 0 |
+
+## PR18 原样编译错误（已报告 PR #18）
+
+```
+src/app/InlineConfirmCard.tsx(214,26): error TS2554: Expected 2 arguments, but got 1.
+```
+
+原因：`screeningDecisionBlockers(factsRes.facts)` 缺 `needsEvaluation`；screening 的 PASS/REJECT 分支需传 `true`。
+
+## 1440 四场景（一次性干净库 + HY4）
+
+| # | 结果 | 说明 |
+|---|---|---|
+| ① 置顶提醒 | PASS | 提交前零写入；确认后 green receipt + canvas-pin-row + candidate_constraint +1（psql） |
+| ② 初筛取消→确认 | PASS | 取消零写入并收起；再次确认 decision +1，按钮锁死 |
+| ③ 终审缺面评阻断 | **FAIL（前端）** | 卡片出现并显示缺面评文案，但主按钮未禁用；零写入 |
+| ④ 诊断头 0 写工具 | PASS | 18 只读 / 0 写 |
+
+证据：`phase3-*.png`、`phase3-e2e-result.json`、`phase3-15step-*.json`。
