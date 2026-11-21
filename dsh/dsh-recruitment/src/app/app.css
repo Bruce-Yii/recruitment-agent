@@ -377,3 +377,30 @@ button { cursor: pointer; background: none; border: 0; }
   .cr-right { width: 100%; justify-content: flex-end; }
   .interviewer-host { padding: 16px 12px 48px; }
 }
+
+/* Inline write confirmation card (design/v4/chat-inline-confirm-spec.md §2) */
+.msg-confirm-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.msg-confirm-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.msg-confirm-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line-soft); }
+.msg-confirm-title { font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
+.msg-confirm-status { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.msg-confirm-status.is-done { color: var(--green); }
+.msg-confirm-status.is-blocked { color: var(--red); }
+.msg-confirm-rows { display: flex; flex-direction: column; }
+.msg-confirm-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; line-height: 1.45; }
+.msg-confirm-row:last-child { border-bottom: 0; }
+.msg-confirm-key { color: var(--muted); font-size: 12px; flex: none; }
+.msg-confirm-val { color: var(--text); text-align: right; word-break: break-word; }
+.msg-confirm-error { margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--red); }
+.msg-confirm-foot { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.msg-confirm-submit { height: 30px; padding: 0 12px; border-radius: 8px; background: var(--ink); color: var(--surface); font-size: 12px; font-weight: 500; transition: opacity 0.14s, background 0.14s; }
+.msg-confirm-submit:hover:not(:disabled) { opacity: 0.88; }
+.msg-confirm-submit:disabled { opacity: 0.42; cursor: not-allowed; }
+.msg-confirm-submit.is-danger { background: var(--surface); color: var(--red); border: 1px solid rgba(205, 43, 49, 0.32); }
+.msg-confirm-submit.is-danger:hover:not(:disabled) { background: var(--red-soft); opacity: 1; }
+.msg-confirm-cancel { font-size: 12px; color: var(--muted); padding: 4px 2px; transition: color 0.14s; }
+.msg-confirm-cancel:hover:not(:disabled) { color: var(--ink); }
+.msg-confirm-fallback { margin-left: auto; font-size: 11.5px; color: var(--muted); transition: color 0.14s; }
+.msg-confirm-fallback:hover:not(:disabled) { color: var(--ink); }
+.msg-confirm-done { display: flex; align-items: center; justify-content: space-between; width: 100%; font-size: 12px; color: var(--green); font-weight: 500; }
+.msg-confirm-cancelled { margin-top: 8px; font-size: 12px; color: var(--muted); }
