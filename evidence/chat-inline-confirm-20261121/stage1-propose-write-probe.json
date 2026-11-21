@@ -1,0 +1,377 @@
+{
+  "turns": {
+    "pinConstraint": {
+      "status": 200,
+      "delta": "已生成待确认的置顶提醒，内容：**二面重点追问带团队细节**。\n\n请在页面上的确认卡片中点击确认；确认前不会写入系统。",
+      "tools": [
+        {
+          "name": "recruitment_ui_dispatch",
+          "status": "start",
+          "input": {
+            "action": "propose_write",
+            "proposal": {
+              "intent": "candidate_constraint",
+              "application_id": "89e1c6c4-9848-4ed0-8a3d-3525171b0652",
+              "title": "添加置顶提醒",
+              "summary": [
+                {
+                  "label": "提醒内容",
+                  "value": "二面重点追问带团队细节"
+                }
+              ],
+              "payload": {
+                "constraint_kind": "PIN",
+                "constraint_text": "二面重点追问带团队细节"
+              }
+            }
+          }
+        },
+        {
+          "name": "recruitment_ui_dispatch",
+          "status": "error",
+          "result": "Error: INVALID_ARGS: proposal.summary 必须是 2..4 条",
+          "message": ""
+        },
+        {
+          "name": "recruitment_ui_dispatch",
+          "status": "start",
+          "input": {
+            "action": "propose_write",
+            "proposal": {
+              "intent": "candidate_constraint",
+              "application_id": "89e1c6c4-9848-4ed0-8a3d-3525171b0652",
+              "title": "添加置顶提醒",
+              "summary": [
+                {
+                  "label": "对象",
+                  "value": "当前候选人申请"
+                },
+                {
+                  "label": "提醒内容",
+                  "value": "二面重点追问带团队细节"
+                }
+              ],
+              "payload": {
+                "constraint_kind": "PIN",
+                "constraint_text": "二面重点追问带团队细节"
+              }
+            }
+          }
+        },
+        {
+          "name": "recruitment_ui_dispatch",
+          "status": "ok",
+          "result": "UI 动作已校验：待确认：添加置顶提醒（真人点击后才执行，不落库）"
+        }
+      ],
+      "uiActions": [
+        {
+          "action": "propose_write",
+          "proposal": {
+            "intent": "candidate_constraint",
+            "application_id": "89e1c6c4-9848-4ed0-8a3d-3525171b0652",
+            "title": "添加置顶提醒",
+            "summary": [
+              {
+                "label": "对象",
+                "value": "当前候选人申请"
+              },
+              {
+                "label": "提醒内容",
+                "value": "二面重点追问带团队细节"
+              }
+            ],
+            "payload": {
+              "constraint_kind": "PIN",
+              "constraint_text": "二面重点追问带团队细节"
+            }
+          }
+        }
+      ],
+      "diag": [
+        {
+          "kind": "tools",
+          "tools": [
+            "recruitment_application_get",
+            "recruitment_candidate_get",
+            "recruitment_document_read",
+            "recruitment_evaluation_summarize",
+            "recruitment_interview_free_slots",
+            "recruitment_interview_get",
+            "recruitment_interview_record_verify",
+            "recruitment_job_get",
+            "recruitment_material_read",
+            "recruitment_page_image",
+            "recruitment_resume_read",
+            "recruitment_resume_serialize",
+            "recruitment_screening_evaluate",
+            "recruitment_structure_validate",
+            "recruitment_trace_get",
+            "recruitment_transcript_read",
+            "recruitment_ui_dispatch",
+            "recruitment_workspace_overview"
+          ]
+        }
+      ],
+      "done": {
+        "turn_id": "1",
+        "usage": {
+          "inputTokens": 764,
+          "outputTokens": 36,
+          "totalTokens": 12064,
+          "cacheReadTokens": 11264
+        }
+      },
+      "error": null
+    },
+    "screeningPass": {
+      "status": 200,
+      "delta": "已生成**初筛通过**的待确认操作。需要说明的是，材料初评结果为**需人工复核**：工作、教育经历尚无可定位证据，带团队经验也需人工判断；本次是按你的指示提交通过。\n\n请在页面确认卡片中点击确认；确认前不会写入系统。",
+      "tools": [
+        {
+          "name": "recruitment_application_get",
+          "status": "start",
+          "input": {
+            "application_id": "89e1c6c4-9848-4ed0-8a3d-3525171b0652"
+          }
+        },
+        {
+          "name": "recruitment_application_get",
+          "status": "ok",
+          "result": "recruitment_application_get read-only (1.0.0) labels=FIXTURE/MANUAL/CONNECTED\nquery: ONE matched=1 申请=…0652\n申请：候选人 T · DEMO-BE-001 后端工程师（演示） · 阶段 S8（ACTIVE, record_version=1）\n  候选人：候选人 T identity_status=ACTIVE contacts=  (visible=false)\n  岗位：DEMO-BE-001 后端工程师（演示） status=OPEN\n  rubric: v2 (source=APPLICATION_PIN, approved=true, criteria=3, 版本号 …8bee)\n    criteria: work_exists [MUST_HAVE] w=0.5 简历中存在可分割的工作经历条目; edu_exists [MUST_HAVE] w=0.25 简历中存在可分割的教育经历条目; team_lead [NICE_TO_HAVE] w=0.25 有带团队经验\n  material: resume_version=…27db parse_status=PARSED pages=1 hard_issues=0\n    asset: …63ea fresh-candidate-t.pdf 1024B sha256=aaaaaaaa… (VALID)\n  interviews: 2 [R1/POST_INTERVIEW, R2/POST_INTERVIEW]\n  transcripts: 0 (READY 0)\n  evaluations: 0/2 submitted (across rounds: required=2, submitted=0, waived=0, pending=2)\n  rubric remediation: CONTINUE_WITH_PINNED — 申请钉住的评分标准 v2 已批准：按钉住版本继续，不需要再处理其它版本。\n  decisions: 0\n  carry_over: 0 []\n  constraints: 1 条置顶 / 0 条交接\nnext tools (machine arguments — copy verbatim into tool calls; never show ids or hashes to the human):\n  recruitment_material_read {\"application_id\":\"89e1c6c4-9848-4ed0-8a3d-3525171b0652\",\"mode\":\"SUMMARY\"} — Read the bound material (structure summary, locators, verified sha256; TEXT mode only when the business task needs the source text). Do not read resume files with shell/file tools.\n  recruitment_job_get {\"job_id\":\"11111111-1111-4111-8111-000000000401\"} — Only when you need the full criterion text (question/notes), the JD body, or R-VAL executability / absence reasons: application_get already gives each pinned criterion's key/label/kind/weight.\n  recruitment_interview_get {\"application_id\":\"89e1c6c4-9848-4ed0-8a3d-3525171b0652\"} — Per-interview facts: interviewers, meeting binding, transcript state, scorecard blockers."
+        },
+        {
+          "name": "recruitment_screening_evaluate",
+          "status": "start",
+          "input": {
+            "application_id": "89e1c6c4-9848-4ed0-8a3d-3525171b0652"
+          }
+        },
+        {
+          "name": "recruitment_screening_evaluate",
+          "status": "ok",
+          "result": "recruitment_screening_evaluate 1.0.0 status=OK advisory=true read_only=true\nlabels: provenance=FIXTURE trigger=MANUAL connection=CONNECTED\napplication 申请 …0652 stage=S8 lifecycle=ACTIVE rv=1\njob 后端工程师（演示） [OPEN]\nresume_version v1 parse_status=PARSED hard_issues=0 pages=1\nrubric v2 resolution=APPLICATION_PINNED what_if=false criteria=3\npreconditions: human_queue_checked=7 material_ready=true\nverdict: NEEDS_REVIEW (criteria_evaluated=true, required_human_action=REVIEW_UNREADABLE)\nsummary: 2 条硬性条件：0 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（work_exists:UNREADABLE, edu_exists:UNREADABLE）；质量门槛：EXISTENCE_ONLY/JD_REQUIREMENTS_UNCOVERED，需人判断（2 条 JD 要求未被 rubric 覆盖，已给出建议维度草案，未写库）\n  [MUST_HAVE_UNREADABLE] work_exists field=work_experience tri_state=unreadable evidence=0 — work_experience 的有效字段状态是 present，但没有可定位的证据（evidence_missing）；按未确认处理，不得据此判定不满足\n  [MUST_HAVE_UNREADABLE] edu_exists field=education tri_state=unreadable evidence=0 — education 的有效字段状态是 present，但没有可定位的证据（evidence_missing）；按未确认处理，不得据此判定不满足\n  bonus [BONUS_NEEDS_JUDGMENT] team_lead — 这条要求机器判不了（第 3 条），需要人回答 rubric 里的原问句\n  warning QUALITY_WARNING: rubric 质量门槛告警（只提示，不自动改 rubric 标准）：EXISTENCE_ONLY: 决定性维度只判\"存在性\"：2 条 MUST_HAVE/DISQUALIFIER 全是 operator=EXISTS 且 field ∈ {work_experience, education}；这些条件证明的是\"材料里读到了\"，不是\"这个人满足业务要求\"；JD_REQUIREMENTS_UNCOVERED: JD 有 2 条要求没有出现在 rubric 的任何 key/label/question/notes 里（启发式词面覆盖，不是语义判断）：「3 年以上后端开发经验（演示样例）」、「熟悉 PostgreSQL 与消息队列（演示样例）」；建议维度（需人批准）：「3 年以上后端开发经验（演示样例）」、「熟悉 PostgreSQL 与消息队列（演示样例）」\nrubric_quality: status=QUALITY_WARNING mechanical=2 judgment=1 existence_only=true jd_checked=true jd_requirements=2 uncovered=2 human_judgment_required=true\n  quality [EXISTENCE_ONLY] 决定性维度只判\"存在性\"：2 条 MUST_HAVE/DISQUALIFIER 全是 operator=EXISTS 且 field ∈ {work_experience, education}；这些条件证明的是\"材料里读到了\"，不是\"这个人满足业务要求\"\n  quality [JD_REQUIREMENTS_UNCOVERED] JD 有 2 条要求没有出现在 rubric 的任何 key/label/question/notes 里（启发式词面覆盖，不是语义判断）：「3 年以上后端开发经验（演示样例）」、「熟悉 PostgreSQL 与消息队列（演示样例）」\n  suggested jd_core_1 (REQUIREMENTS_MD)…"
+        },
+        {
+          "name": "recruitment_ui_dispatch",
+          "status": "start",
+          "input": {
+            "action": "propose_write",
+            "proposal": {
+              "intent": "screening_decide",
+              "application_id": "89e1c6c4-9848-4ed0-8a3d-3525171b0652",
+              "title": "确认初筛通过",
+              "summary": [
+                {
+                  "label": "申请",
+                  "value": "当前候选人申请"
+                },
+                {
+                  "label": "结果",
+                  "value": "初筛通过"
+                },
+                {
+                  "label": "提醒",
+                  "value": "依你指示提交；材料初评需人工复核"
+                }
+              ],
+              "payload": {
+                "decision": "PASS",
+                "rationale": "依用户指示通过初筛。材料初评为需人工复核：工作与教育经历无可定位证据，带团队经验需人工判断。"
+              }
+            }
+          }
+        },
+        {
+          "name": "recruitment_ui_dispatch",
+          "status": "ok",
+          "result": "UI 动作已校验：待确认：确认初筛通过（真人点击后才执行，不落库）"
+        }
+      ],
+      "uiActions": [
+        {
+          "action": "propose_write",
+          "proposal": {
+            "intent": "screening_decide",
+            "application_id": "89e1c6c4-9848-4ed0-8a3d-3525171b0652",
+            "title": "确认初筛通过",
+            "summary": [
+              {
+                "label": "申请",
+                "value": "当前候选人申请"
+              },
+              {
+                "label": "结果",
+                "value": "初筛通过"
+              },
+              {
+                "label": "提醒",
+                "value": "依你指示提交；材料初评需人工复核"
+              }
+            ],
+            "payload": {
+              "decision": "PASS",
+              "rationale": "依用户指示通过初筛。材料初评为需人工复核：工作与教育经历无可定位证据，带团队经验需人工判断。"
+            }
+          }
+        }
+      ],
+      "diag": [],
+      "done": {
+        "turn_id": "2",
+        "usage": {
+          "inputTokens": 720,
+          "outputTokens": 62,
+          "totalTokens": 14094,
+          "cacheReadTokens": 13312
+        }
+      },
+      "error": null
+    }
+  },
+  "checks": [
+    {
+      "name": "turn1_pin_propose",
+      "ok": true,
+      "detail": {
+        "calls": [
+          "propose_write",
+          "propose_write"
+        ],
+        "ui": [
+          {
+            "action": "propose_write",
+            "intent": "candidate_constraint"
+          }
+        ],
+        "answer": "已生成待确认的置顶提醒，内容：**二面重点追问带团队细节**。\n\n请在页面上的确认卡片中点击确认；确认前不会写入系统。"
+      }
+    },
+    {
+      "name": "turn2_screening_propose",
+      "ok": true,
+      "detail": {
+        "calls": [
+          "propose_write"
+        ],
+        "ui": [
+          {
+            "action": "propose_write",
+            "intent": "screening_decide"
+          }
+        ],
+        "answer": "已生成**初筛通过**的待确认操作。需要说明的是，材料初评结果为**需人工复核**：工作、教育经历尚无可定位证据，带团队经验也需人工判断；本次是按你的指示提交通过。\n\n请在页面确认卡片中点击确认；确认前不会写入系统。"
+      }
+    },
+    {
+      "name": "diag_zero_write_tools",
+      "ok": true,
+      "detail": {
+        "count": 18,
+        "writeVisible": []
+      }
+    },
+    {
+      "name": "no_business_writes",
+      "ok": true,
+      "detail": {
+        "countsBefore": {
+          "decision": "0",
+          "interview": "6",
+          "scorecard": "0",
+          "scorecard_draft": "0",
+          "application": "3",
+          "candidate_constraint": "2"
+        },
+        "countsAfter": {
+          "decision": "0",
+          "interview": "6",
+          "scorecard": "0",
+          "scorecard_draft": "0",
+          "application": "3",
+          "candidate_constraint": "2"
+        }
+      }
+    }
+  ],
+  "pass": true,
+  "dataset": {
+    "application_id": "89e1c6c4-9848-4ed0-8a3d-3525171b0652",
+    "job_id": "11111111-1111-4111-8111-000000000401"
+  },
+  "sid": "session-402c743d-97e3-4a43-86c8-a6c61978b701",
+  "uiActions": [
+    {
+      "action": "propose_write",
+      "proposal": {
+        "intent": "candidate_constraint",
+        "application_id": "89e1c6c4-9848-4ed0-8a3d-3525171b0652",
+        "title": "添加置顶提醒",
+        "summary": [
+          {
+            "label": "对象",
+            "value": "当前候选人申请"
+          },
+          {
+            "label": "提醒内容",
+            "value": "二面重点追问带团队细节"
+          }
+        ],
+        "payload": {
+          "constraint_kind": "PIN",
+          "constraint_text": "二面重点追问带团队细节"
+        }
+      }
+    },
+    {
+      "action": "propose_write",
+      "proposal": {
+        "intent": "screening_decide",
+        "application_id": "89e1c6c4-9848-4ed0-8a3d-3525171b0652",
+        "title": "确认初筛通过",
+        "summary": [
+          {
+            "label": "申请",
+            "value": "当前候选人申请"
+          },
+          {
+            "label": "结果",
+            "value": "初筛通过"
+          },
+          {
+            "label": "提醒",
+            "value": "依你指示提交；材料初评需人工复核"
+          }
+        ],
+        "payload": {
+          "decision": "PASS",
+          "rationale": "依用户指示通过初筛。材料初评为需人工复核：工作与教育经历无可定位证据，带团队经验需人工判断。"
+        }
+      }
+    }
+  ],
+  "diagTools": [
+    "recruitment_application_get",
+    "recruitment_candidate_get",
+    "recruitment_document_read",
+    "recruitment_evaluation_summarize",
+    "recruitment_interview_free_slots",
+    "recruitment_interview_get",
+    "recruitment_interview_record_verify",
+    "recruitment_job_get",
+    "recruitment_material_read",
+    "recruitment_page_image",
+    "recruitment_resume_read",
+    "recruitment_resume_serialize",
+    "recruitment_screening_evaluate",
+    "recruitment_structure_validate",
+    "recruitment_trace_get",
+    "recruitment_transcript_read",
+    "recruitment_ui_dispatch",
+    "recruitment_workspace_overview"
+  ],
+  "cleanup": {
+    "port": null,
+    "tokenExists": false
+  }
+}

@@ -20,11 +20,51 @@ export const UI_DISPATCH_TOOL_NAME = 'recruitment_ui_dispatch'
 /** 契约版本。 */
 export const UI_DISPATCH_CONTRACT_VERSION = '1.0.0'
 
-export type UiActionType = 'navigate' | 'focus_section' | 'suggest_action'
+export type UiActionType = 'navigate' | 'focus_section' | 'suggest_action' | 'propose_write'
 export type UiRouteKind = 'queue' | 'jobs' | 'talent' | 'application' | 'job' | 'interviewer'
 export type UiQueueFilter = 'all' | 'screening' | 'interviewing'
 export type UiSectionKind = 'summary' | 'criteria' | 'resume' | 'interviews' | 'rubric' | 'candidates'
 export type UiModalKind = 'schedule' | 'screening' | 'decision' | 'email' | 'transfer'
+
+/** 对话内确认卡支持的高频单步写意图（仅提草稿，绝不落库）。 */
+export type UiWriteIntent =
+  | 'screening_decide'
+  | 'stage_advance'
+  | 'candidate_constraint'
+  | 'interview_schedule'
+  | 'decision_record'
+
+/** 确认卡事实摘要的一行（人话键值，禁止 UUID/机器码）。 */
+export interface UiWriteSummaryItem {
+  readonly label: string
+  readonly value: string
+}
+
+/** 各 intent 的业务参数（由现有前端写合同消费）。 */
+export interface UiWritePayload {
+  readonly decision?: 'PASS' | 'REJECT'
+  readonly rationale?: string
+  readonly target_stage?: string
+  readonly constraint_kind?: 'PIN' | 'HANDOFF'
+  readonly constraint_text?: string
+  readonly round_number?: number
+  readonly interviewer_id?: string
+  readonly scheduled_start?: string
+  readonly scheduled_end?: string
+  readonly timezone?: string
+  readonly final_outcome?: 'HIRE' | 'REJECT' | 'HOLD'
+}
+
+/** 一份待真人点击确认的写动作草稿。 */
+export interface UiWriteProposal {
+  readonly intent: UiWriteIntent
+  readonly application_id: string
+  readonly title: string
+  readonly tone?: 'default' | 'danger'
+  readonly summary: readonly UiWriteSummaryItem[]
+  readonly fallback_modal?: UiModalKind
+  readonly payload: UiWritePayload
+}
 
 /** 校验后的 UI 动作（服务端原样下发给前端；前端不再猜字段）。 */
 export interface UiActionPayload {
@@ -35,15 +75,29 @@ export interface UiActionPayload {
   readonly section?: UiSectionKind
   readonly modal?: UiModalKind
   readonly label?: string
+  readonly proposal?: UiWriteProposal
 }
 
-const ACTIONS: readonly UiActionType[] = ['navigate', 'focus_section', 'suggest_action']
+const ACTIONS: readonly UiActionType[] = ['navigate', 'focus_section', 'suggest_action', 'propose_write']
 const ROUTES: readonly UiRouteKind[] = ['queue', 'jobs', 'talent', 'application', 'job', 'interviewer']
 const FILTERS: readonly UiQueueFilter[] = ['all', 'screening', 'interviewing']
 const SECTIONS: readonly UiSectionKind[] = ['summary', 'criteria', 'resume', 'interviews', 'rubric', 'candidates']
 const MODALS: readonly UiModalKind[] = ['schedule', 'screening', 'decision', 'email', 'transfer']
+const WRITE_INTENTS: readonly UiWriteIntent[] = [
+  'screening_decide', 'stage_advance', 'candidate_constraint', 'interview_schedule', 'decision_record',
+]
+const TONES: readonly NonNullable<UiWriteProposal['tone']>[] = ['default', 'danger']
+const WRITE_PAYLOAD_KEYS: Readonly<Record<UiWriteIntent, readonly string[]>> = {
+  screening_decide: ['decision', 'rationale'],
+  stage_advance: ['target_stage'],
+  candidate_constraint: ['constraint_kind', 'constraint_text'],
+  interview_schedule: ['round_number', 'interviewer_id', 'scheduled_start', 'scheduled_end', 'timezone'],
+  decision_record: ['final_outcome'],
+}
 
-const PAYLOAD_KEYS = new Set(['action', 'route', 'target_id', 'filter', 'section', 'modal', 'label'])
+const PAYLOAD_KEYS = new Set(['action', 'route', 'target_id', 'filter', 'section', 'modal', 'label', 'proposal'])
+const PROPOSAL_KEYS = new Set(['intent', 'application_id', 'title', 'tone', 'summary', 'fallback_modal', 'payload'])
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function invalid(detail: string): never {
   throw new RecruitmentToolError('INVALID_ARGS', detail)
@@ -88,6 +142,167 @@ function validateLabel(value: unknown, required: boolean): string | undefined {
   return trimmed
 }
 
+function codePointLength(value: string): number {
+  return [...value].length
+}
+
+/** 禁止把 UUID / 长 hex / 全大写机器码塞进给人看的标题/摘要。 */
+function rejectMachineText(value: string, field: string): void {
+  if (UUID_RE.test(value) || /[0-9a-f]{32,}/i.test(value) || /^[A-Z][A-Z0-9_]{2,}$/.test(value)) {
+    invalid(`${field} 不能是 UUID/机器码（只写人话）`)
+  }
+}
+
+function requireText(value: unknown, field: string, maxCodePoints: number): string {
+  if (typeof value !== 'string') invalid(`${field} 必须是字符串`)
+  const trimmed = value.trim()
+  if (trimmed === '') invalid(`${field} 不能为空`)
+  if (codePointLength(trimmed) > maxCodePoints) invalid(`${field} 过长（≤${maxCodePoints}字）`)
+  return trimmed
+}
+
+function optionalText(value: unknown, field: string, maxCodePoints: number): string | undefined {
+  if (value === undefined) return undefined
+  return requireText(value, field, maxCodePoints)
+}
+
+function requireUuid(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !UUID_RE.test(value.trim())) invalid(`${field} 必须是合法 UUID`)
+  return value.trim()
+}
+
+function validateSummary(raw: unknown): readonly UiWriteSummaryItem[] {
+  if (!Array.isArray(raw) || raw.length < 2 || raw.length > 4) invalid('proposal.summary 必须是 2..4 条')
+  const out: UiWriteSummaryItem[] = []
+  for (const item of raw) {
+    const record = asRecord(item)
+    for (const key of Object.keys(record)) {
+      if (key !== 'label' && key !== 'value') invalid(`proposal.summary 不允许字段 ${key}`)
+    }
+    const label = requireText(record.label, 'proposal.summary.label', 12)
+    const value = requireText(record.value, 'proposal.summary.value', 48)
+    rejectMachineText(label, 'proposal.summary.label')
+    rejectMachineText(value, 'proposal.summary.value')
+    out.push({ label, value })
+  }
+  return out
+}
+
+function isOffsetIso(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return false
+  return Number.isFinite(Date.parse(value))
+}
+
+function validateWritePayload(raw: unknown, intent: UiWriteIntent): UiWritePayload {
+  const record = asRecord(raw)
+  const allowed = new Set(WRITE_PAYLOAD_KEYS[intent])
+  for (const key of Object.keys(record)) {
+    if (!allowed.has(key)) invalid(`proposal.payload 不允许字段 ${key}（intent=${intent}）`)
+  }
+
+  if (intent === 'screening_decide') {
+    if (record.decision !== 'PASS' && record.decision !== 'REJECT') invalid('screening_decide.decision 必须是 PASS 或 REJECT')
+    return {
+      decision: record.decision,
+      ...(optionalText(record.rationale, 'proposal.payload.rationale', 500) === undefined
+        ? {}
+        : { rationale: optionalText(record.rationale, 'proposal.payload.rationale', 500) as string }),
+    }
+  }
+  if (intent === 'stage_advance') {
+    const target = requireText(record.target_stage, 'stage_advance.target_stage', 64)
+    rejectMachineText(target, 'stage_advance.target_stage')
+    return { target_stage: target }
+  }
+  if (intent === 'candidate_constraint') {
+    if (record.constraint_kind !== 'PIN' && record.constraint_kind !== 'HANDOFF') {
+      invalid('candidate_constraint.constraint_kind 必须是 PIN 或 HANDOFF')
+    }
+    const text = requireText(record.constraint_text, 'candidate_constraint.constraint_text', 500)
+    return { constraint_kind: record.constraint_kind, constraint_text: text }
+  }
+  if (intent === 'interview_schedule') {
+    const interviewerId = requireUuid(record.interviewer_id, 'interview_schedule.interviewer_id')
+    const start = requireText(record.scheduled_start, 'interview_schedule.scheduled_start', 64)
+    const end = requireText(record.scheduled_end, 'interview_schedule.scheduled_end', 64)
+    if (!isOffsetIso(start)) invalid('interview_schedule.scheduled_start 必须是带时区偏移的 ISO-8601')
+    if (!isOffsetIso(end)) invalid('interview_schedule.scheduled_end 必须是带时区偏移的 ISO-8601')
+    if (Date.parse(start) >= Date.parse(end)) invalid('interview_schedule.scheduled_end 必须晚于 scheduled_start')
+    let roundNumber: number | undefined
+    if (record.round_number !== undefined) {
+      if (typeof record.round_number !== 'number' || !Number.isInteger(record.round_number) || record.round_number < 1 || record.round_number > 20) {
+        invalid('interview_schedule.round_number 必须是 1..20 的整数')
+      }
+      roundNumber = record.round_number
+    }
+    let timezone: string | undefined
+    if (record.timezone !== undefined) {
+      timezone = requireText(record.timezone, 'interview_schedule.timezone', 64)
+      try {
+        new Intl.DateTimeFormat(undefined, { timeZone: timezone })
+      } catch {
+        invalid('interview_schedule.timezone 必须是合法 IANA 时区')
+      }
+    }
+    return {
+      interviewer_id: interviewerId,
+      scheduled_start: start,
+      scheduled_end: end,
+      ...(roundNumber === undefined ? {} : { round_number: roundNumber }),
+      ...(timezone === undefined ? {} : { timezone }),
+    }
+  }
+  if (record.final_outcome !== 'HIRE' && record.final_outcome !== 'REJECT' && record.final_outcome !== 'HOLD') {
+    invalid('decision_record.final_outcome 必须是 HIRE / REJECT / HOLD')
+  }
+  return { final_outcome: record.final_outcome }
+}
+
+/**
+ * 校验一份 propose_write 草稿（绝不落库；参数不全一律 INVALID_ARGS）。
+ * @param raw - 模型给的 proposal。
+ * @returns 已校验的 UiWriteProposal。
+ */
+export function validateWriteProposal(raw: unknown): UiWriteProposal {
+  const record = asRecord(raw)
+  for (const key of Object.keys(record)) {
+    if (!PROPOSAL_KEYS.has(key)) invalid(`proposal 不允许字段 ${key}`)
+  }
+  const intentRaw = record.intent
+  if (typeof intentRaw !== 'string' || !(WRITE_INTENTS as readonly string[]).includes(intentRaw)) {
+    invalid('proposal.intent 必须是 screening_decide / stage_advance / candidate_constraint / interview_schedule / decision_record 之一')
+  }
+  const intent = intentRaw as UiWriteIntent
+  const applicationId = requireUuid(record.application_id, 'proposal.application_id')
+  const title = requireText(record.title, 'proposal.title', 24)
+  rejectMachineText(title, 'proposal.title')
+  const summary = validateSummary(record.summary)
+  const payload = validateWritePayload(record.payload, intent)
+  let tone: UiWriteProposal['tone']
+  if (record.tone !== undefined) {
+    if (typeof record.tone !== 'string' || !(TONES as readonly string[]).includes(record.tone)) {
+      invalid('proposal.tone 必须是 default 或 danger')
+    }
+    tone = record.tone as UiWriteProposal['tone']
+  }
+  let fallbackModal: UiModalKind | undefined
+  if (record.fallback_modal !== undefined) {
+    if (typeof record.fallback_modal !== 'string' || !(MODALS as readonly string[]).includes(record.fallback_modal)) {
+      invalid('proposal.fallback_modal 必须是 schedule / screening / decision / email / transfer')
+    }
+    fallbackModal = record.fallback_modal as UiModalKind
+  }
+  return {
+    intent,
+    application_id: applicationId,
+    title,
+    ...(tone === undefined ? {} : { tone }),
+    summary,
+    ...(fallbackModal === undefined ? {} : { fallback_modal: fallbackModal }),
+    payload,
+  }
+}
+
 /**
  * 校验并归一化 UI 动作（工具 execute 与 SSE 派发共用同一份规则）。
  * @param raw - 模型给的 arguments。
@@ -96,14 +311,33 @@ function validateLabel(value: unknown, required: boolean): string | undefined {
 export function normalizeUiAction(raw: unknown): UiActionPayload {
   const record = asRecord(raw)
   for (const key of Object.keys(record)) {
-    if (!PAYLOAD_KEYS.has(key)) invalid(`未知参数 ${key}（只允许 action/route/target_id/filter/section/modal/label）`)
+    if (!PAYLOAD_KEYS.has(key)) {
+      invalid(`未知参数 ${key}（只允许 action/route/target_id/filter/section/modal/label/proposal）`)
+    }
   }
   const action = record.action
   if (typeof action !== 'string' || !(ACTIONS as readonly string[]).includes(action)) {
-    invalid('action 必须是 navigate / focus_section / suggest_action 之一')
+    invalid('action 必须是 navigate / focus_section / suggest_action / propose_write 之一')
   }
   const typedAction = action as UiActionType
   const label = validateLabel(record.label, typedAction === 'suggest_action')
+
+  if (typedAction !== 'propose_write' && record.proposal !== undefined) {
+    invalid('只有 action=propose_write 才允许 proposal（动作严禁混用）')
+  }
+  if (typedAction === 'propose_write') {
+    if (
+      record.route !== undefined || record.target_id !== undefined || record.filter !== undefined ||
+      record.section !== undefined || record.modal !== undefined
+    ) {
+      invalid('propose_write 不得携带 route/target_id/filter/section/modal')
+    }
+    return {
+      action: 'propose_write',
+      ...(label === undefined ? {} : { label }),
+      proposal: validateWriteProposal(record.proposal),
+    }
+  }
 
   if (typedAction === 'navigate') {
     const route = record.route
@@ -192,6 +426,9 @@ function describeAction(payload: UiActionPayload): string {
     }[payload.section ?? 'summary']
     return `页内聚焦到「${sectionName}」`
   }
+  if (payload.action === 'propose_write') {
+    return `待确认：${payload.proposal?.title ?? '写操作草稿'}（真人点击后才执行，不落库）`
+  }
   const target = payload.modal === 'schedule' ? '面试排期' : payload.modal === 'screening' ? '初筛结论'
     : payload.modal === 'decision' ? '正式决策' : payload.modal === 'email' ? '发邮件' : payload.modal === 'transfer' ? '跨岗调剂' : '目标页面'
   return `建议动作「${payload.label ?? ''}」→ ${target}`
@@ -218,6 +455,31 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
         section: { type: 'string', enum: [...SECTIONS] },
         modal: { type: 'string', enum: [...MODALS] },
         label: { type: 'string' },
+        proposal: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['intent', 'application_id', 'title', 'summary', 'payload'],
+          properties: {
+            intent: { type: 'string', enum: [...WRITE_INTENTS] },
+            application_id: { type: 'string' },
+            title: { type: 'string' },
+            tone: { type: 'string', enum: [...TONES] },
+            summary: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['label', 'value'],
+                properties: {
+                  label: { type: 'string' },
+                  value: { type: 'string' },
+                },
+              },
+            },
+            fallback_modal: { type: 'string', enum: [...MODALS] },
+            payload: { type: 'object', description: 'per-intent business fields (validated fail-closed)' },
+          },
+        },
       },
     },
   },
@@ -234,7 +496,8 @@ const PARAMETERS: Record<string, unknown> = {
       description:
         'navigate = 明确的空间/对象切换（人才库/岗位/队列/某申请/某岗位）；'
         + 'focus_section = 当前档案内对照阅读，保持页面不切走；'
-        + 'suggest_action = 需要用户再点一下的动作（查完时段去约面、总结完去初筛/决策），绝不自动弹窗。',
+        + 'suggest_action = 需要用户再点一下的动作（查完时段去约面、总结完去初筛/决策），绝不自动弹窗；'
+        + 'propose_write = 参数齐全的高频单步写动作草稿，前端渲染对话内确认卡，真人点击前绝不落库；参数不全时退回 suggest_action。',
     },
     route: {
       type: 'string',
@@ -264,6 +527,55 @@ const PARAMETERS: Record<string, unknown> = {
       type: 'string',
       description: '给用户看的简短中文说明/按钮文案，≤24 字；suggest_action 必填，其余可选。',
     },
+    proposal: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['intent', 'application_id', 'title', 'summary', 'payload'],
+      description:
+        '仅 action=propose_write：待真人确认的写动作草稿。参数必须来自真实查询；缺对象/面评/时段等参数时不要伪造，改用 suggest_action。',
+      properties: {
+        intent: {
+          type: 'string',
+          enum: [...WRITE_INTENTS],
+          description: 'screening_decide / stage_advance / candidate_constraint / interview_schedule / decision_record。',
+        },
+        application_id: { type: 'string', description: '真实 application UUID（不得伪造）。' },
+        title: { type: 'string', description: '≤24 字中文标题，如「确认初筛通过」。' },
+        tone: { type: 'string', enum: [...TONES], description: '淘汰/不通过用 danger，其余 default。' },
+        summary: {
+          type: 'array',
+          description: '2..4 条人话键值；label ≤12 字、value ≤48 字，禁止 UUID/机器码。',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['label', 'value'],
+            properties: {
+              label: { type: 'string' },
+              value: { type: 'string' },
+            },
+          },
+        },
+        fallback_modal: { type: 'string', enum: [...MODALS], description: '「在弹窗微调」对应的既有居中弹窗。' },
+        payload: {
+          type: 'object',
+          additionalProperties: false,
+          description: '按 intent 给必填业务字段（服务端会逐个校验）。',
+          properties: {
+            decision: { type: 'string', enum: ['PASS', 'REJECT'] },
+            rationale: { type: 'string' },
+            target_stage: { type: 'string' },
+            constraint_kind: { type: 'string', enum: ['PIN', 'HANDOFF'] },
+            constraint_text: { type: 'string' },
+            round_number: { type: 'integer' },
+            interviewer_id: { type: 'string' },
+            scheduled_start: { type: 'string' },
+            scheduled_end: { type: 'string' },
+            timezone: { type: 'string' },
+            final_outcome: { type: 'string', enum: ['HIRE', 'REJECT', 'HOLD'] },
+          },
+        },
+      },
+    },
   },
 }
 
@@ -276,12 +588,23 @@ export function createUiDispatchTool(): ReadonlyToolDefinition {
     name: UI_DISPATCH_TOOL_NAME,
     description:
       'Read-only UI dispatch for the v4 workspace canvas. Use it when the human asks to open/switch a space '
-      + '(navigate), to compare/read a section on the current record (focus_section), or after a read-only answer '
-      + 'when the next step may write and should stay a human click (suggest_action). '
+      + '(navigate), to compare/read a section on the current record (focus_section), when the next step may write '
+      + 'and should stay a human click (suggest_action), or when a high-frequency single-step write has every '
+      + 'required parameter from real data (propose_write). '
       + 'navigate switches the right canvas; focus_section scrolls+highlights within the current page; '
-      + 'suggest_action renders a suggested button in the chat bubble and NEVER opens a modal automatically. '
+      + 'suggest_action renders a suggested button in the chat bubble and NEVER opens a modal automatically; '
+      + 'propose_write renders an inline confirmation card and NEVER writes by itself — the human must click. '
       + 'Rules: navigate needs route (and target_id for application/job); focus_section needs section; '
-      + 'suggest_action needs label plus modal or route. Do not use it for business writes or data changes.',
+      + 'suggest_action needs label plus modal or route; propose_write needs proposal with intent/application_id/'
+      + 'title/summary(2..4)/payload, and per-intent fields. '
+      + 'When the human asks for one of the five high-frequency actions (add a pin/handoff reminder, pass/reject '
+      + 'screening, advance stage, schedule an interview at an already-known time, or record a final decision) '
+      + 'and you have the real application_id plus the required business values, call propose_write instead of '
+      + 'replying that you lack write capability: propose_write is only a draft for human confirmation and does '
+      + 'not write by itself. '
+      + 'If the object id, interviewer, or exact time is missing, fall back to suggest_action instead of inventing '
+      + 'values. For decision_record, still use propose_write even when scorecards are missing: the inline card '
+      + 'shows the blocker honestly and disables confirmation. Do not use it for business writes or data changes.',
     parameters: PARAMETERS,
     output: {
       schema: OUTPUT_SCHEMA,

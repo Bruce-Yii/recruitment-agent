@@ -1,0 +1,201 @@
+{
+  "scenarios": {
+    "pin": {
+      "pinCard": {
+        "exists": true,
+        "intent": "candidate_constraint",
+        "text": "确认置顶提醒\n待确认\n提醒内容\n二面重点追问带团队细节\n类型\n置顶提醒\n确认执行\n取消",
+        "submit": {
+          "disabled": false,
+          "text": "确认执行"
+        }
+      },
+      "zeroWriteBeforeConfirm": true,
+      "submitted": true,
+      "dbRow": true,
+      "canvasPin": true
+    },
+    "screening": {
+      "card1": {
+        "exists": true,
+        "intent": "screening_decide",
+        "text": "确认初筛通过\n待确认\n结论\n机械条件通过，建议初筛通过\n依据\n工作与教育经历均已读到，无排除项命中\n待判断\nJD 的后端年限与 PostgreSQL/消息队列要求需人工判断\n确认执行\n取消",
+        "submit": {
+          "disabled": false,
+          "text": "确认执行"
+        }
+      },
+      "cancelled": true,
+      "zeroAfterCancel": true,
+      "card2": {
+        "exists": true,
+        "intent": "screening_decide",
+        "text": "确认初筛通过\n待确认\n结论\n机械条件通过，建议初筛通过\n依据\n工作与教育经历均已读到，无排除项命中\n待判断\nJD 的后端年限与 PostgreSQL/消息队列要求需人工判断\n确认执行\n取消",
+        "submit": {
+          "disabled": false,
+          "text": "确认执行"
+        }
+      },
+      "submitted": true,
+      "decisionsBefore": 0,
+      "decisionsAfter": 1,
+      "buttonLocked": true
+    },
+    "decisionBlock": {
+      "card": {
+        "exists": true,
+        "intent": "decision_record",
+        "text": "确认录用决定\n无法提交\n结果\n录用\n评估状态\n两轮面评均未提交，存在阻断\n还缺 演示-面试官、演示-面试官 B 的面评，暂时不能提交终审决策。\n确认执行\n取消",
+        "submit": {
+          "disabled": true,
+          "text": "确认执行"
+        }
+      },
+      "decisionBody": "早上好。当前有 3 位在办候选人（待初筛 2 人、面试中 3 人、待决策 1 人、4 份面评已超时）。当前首位待推进：候选人 S12-决策隔离（后端工程师（演示））。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。\n直接给这位候选人下录用决定，结果为录用。\n正在思考并读取最新数据…\n已完成 · recruitment_application_get\n已完成 · recruitment_ui_dispatch\n确认录用决定\n无法提交\n结果\n录用\n评估状态\n两轮面评均未提交，存在阻断\n还缺 演示-面试官、演示-面试官 B 的面评，暂时不能提交终审决策。\n确认执行\n取消",
+      "blocked": true,
+      "zeroAfterBlock": true
+    },
+    "diag": {
+      "tools": [
+        "recruitment_application_get",
+        "recruitment_candidate_get",
+        "recruitment_document_read",
+        "recruitment_evaluation_summarize",
+        "recruitment_interview_free_slots",
+        "recruitment_interview_get",
+        "recruitment_interview_record_verify",
+        "recruitment_job_get",
+        "recruitment_material_read",
+        "recruitment_page_image",
+        "recruitment_resume_read",
+        "recruitment_resume_serialize",
+        "recruitment_screening_evaluate",
+        "recruitment_structure_validate",
+        "recruitment_trace_get",
+        "recruitment_transcript_read",
+        "recruitment_ui_dispatch",
+        "recruitment_workspace_overview"
+      ],
+      "writeVisible": []
+    }
+  },
+  "checks": [
+    {
+      "name": "pin_constraint",
+      "ok": true,
+      "detail": {
+        "pinCard": {
+          "exists": true,
+          "intent": "candidate_constraint",
+          "text": "确认置顶提醒\n待确认\n提醒内容\n二面重点追问带团队细节\n类型\n置顶提醒\n确认执行\n取消",
+          "submit": {
+            "disabled": false,
+            "text": "确认执行"
+          }
+        },
+        "zeroWriteBeforeConfirm": true,
+        "submitted": true,
+        "dbRow": true,
+        "canvasPin": true
+      }
+    },
+    {
+      "name": "screening_cancel_then_confirm",
+      "ok": true,
+      "detail": {
+        "card1": {
+          "exists": true,
+          "intent": "screening_decide",
+          "text": "确认初筛通过\n待确认\n结论\n机械条件通过，建议初筛通过\n依据\n工作与教育经历均已读到，无排除项命中\n待判断\nJD 的后端年限与 PostgreSQL/消息队列要求需人工判断\n确认执行\n取消",
+          "submit": {
+            "disabled": false,
+            "text": "确认执行"
+          }
+        },
+        "cancelled": true,
+        "zeroAfterCancel": true,
+        "card2": {
+          "exists": true,
+          "intent": "screening_decide",
+          "text": "确认初筛通过\n待确认\n结论\n机械条件通过，建议初筛通过\n依据\n工作与教育经历均已读到，无排除项命中\n待判断\nJD 的后端年限与 PostgreSQL/消息队列要求需人工判断\n确认执行\n取消",
+          "submit": {
+            "disabled": false,
+            "text": "确认执行"
+          }
+        },
+        "submitted": true,
+        "decisionsBefore": 0,
+        "decisionsAfter": 1,
+        "buttonLocked": true
+      }
+    },
+    {
+      "name": "decision_missing_scorecards_block",
+      "ok": true,
+      "detail": {
+        "card": {
+          "exists": true,
+          "intent": "decision_record",
+          "text": "确认录用决定\n无法提交\n结果\n录用\n评估状态\n两轮面评均未提交，存在阻断\n还缺 演示-面试官、演示-面试官 B 的面评，暂时不能提交终审决策。\n确认执行\n取消",
+          "submit": {
+            "disabled": true,
+            "text": "确认执行"
+          }
+        },
+        "decisionBody": "早上好。当前有 3 位在办候选人（待初筛 2 人、面试中 3 人、待决策 1 人、4 份面评已超时）。当前首位待推进：候选人 S12-决策隔离（后端工程师（演示））。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。\n直接给这位候选人下录用决定，结果为录用。\n正在思考并读取最新数据…\n已完成 · recruitment_application_get\n已完成 · recruitment_ui_dispatch\n确认录用决定\n无法提交\n结果\n录用\n评估状态\n两轮面评均未提交，存在阻断\n还缺 演示-面试官、演示-面试官 B 的面评，暂时不能提交终审决策。\n确认执行\n取消",
+        "blocked": true,
+        "zeroAfterBlock": true
+      }
+    },
+    {
+      "name": "diag_zero_write_tools",
+      "ok": true,
+      "detail": {
+        "tools": [
+          "recruitment_application_get",
+          "recruitment_candidate_get",
+          "recruitment_document_read",
+          "recruitment_evaluation_summarize",
+          "recruitment_interview_free_slots",
+          "recruitment_interview_get",
+          "recruitment_interview_record_verify",
+          "recruitment_job_get",
+          "recruitment_material_read",
+          "recruitment_page_image",
+          "recruitment_resume_read",
+          "recruitment_resume_serialize",
+          "recruitment_screening_evaluate",
+          "recruitment_structure_validate",
+          "recruitment_trace_get",
+          "recruitment_transcript_read",
+          "recruitment_ui_dispatch",
+          "recruitment_workspace_overview"
+        ],
+        "writeVisible": []
+      }
+    }
+  ],
+  "pass": true,
+  "apps": [
+    {
+      "id": "aecb999d-51f2-4640-a489-f5bf03857db4",
+      "stage": "S10",
+      "lifecycle": "ACTIVE"
+    },
+    {
+      "id": "11111111-1111-4111-8111-000000000701",
+      "stage": "S7",
+      "lifecycle": "ACTIVE"
+    },
+    {
+      "id": "42152275-53f7-464a-b53a-2803719a0f5e",
+      "stage": "S8",
+      "lifecycle": "ACTIVE"
+    }
+  ],
+  "picked": {
+    "s7": "11111111-1111-4111-8111-000000000701",
+    "s8": "42152275-53f7-464a-b53a-2803719a0f5e",
+    "s10": "aecb999d-51f2-4640-a489-f5bf03857db4"
+  }
+}
