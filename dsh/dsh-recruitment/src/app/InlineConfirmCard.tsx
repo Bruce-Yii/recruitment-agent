@@ -104,14 +104,37 @@ export function InlineConfirmCard({
     proposal.intent === 'decision_record',
   );
 
-  // For final decision proposals, pre-check decision facts so missing scorecards block honestly before click.
+  // For final decision proposals, pre-check live application detail (missing scorecards / action availability)
+  // alongside decision facts so missing scorecards block honestly and disable submit before click.
   useEffect(() => {
     if (proposal.intent !== 'decision_record') return;
     let active = true;
     setCheckingFacts(true);
-    fetchDecisionFacts(proposal.application_id, sid)
-      .then((res) => {
+    Promise.all([
+      fetchAppJson(
+        `/recruitment/api/recruiting/applications/${encodeURIComponent(proposal.application_id)}`,
+        sid,
+      ),
+      fetchDecisionFacts(proposal.application_id, sid),
+    ])
+      .then(([rawDetail, res]) => {
         if (!active) return;
+        const vm = normalizeApplicationDetail(rawDetail);
+        if (vm.missingScorecardNames.length > 0) {
+          setBlockerText(
+            `还缺 ${vm.missingScorecardNames.join('、')} 的面评，暂时不能提交终审决策。`,
+          );
+          return;
+        }
+        const decisionAction = vm.actions.decision_record;
+        if (decisionAction && !decisionAction.available) {
+          setBlockerText(
+            decisionAction.reasonText ||
+              decisionAction.pendingText ||
+              '当前阶段暂不可提交终审决策。',
+          );
+          return;
+        }
         if (res.probe !== 'READY' || !res.facts) {
           setBlockerText('决策汇总尚未就绪，暂时无法提交终审决策。');
           return;
@@ -211,7 +234,7 @@ export function InlineConfirmCard({
           setState({ kind: 'pending' });
           return;
         }
-        const blockers = screeningDecisionBlockers(factsRes.facts);
+        const blockers = screeningDecisionBlockers(factsRes.facts, true);
         if (blockers.length > 0) {
           setErrorText(blockers.map((b) => blockerTextOf(b)).join('；'));
           setState({ kind: 'pending' });
@@ -317,6 +340,12 @@ export function InlineConfirmCard({
       }
 
       if (proposal.intent === 'decision_record') {
+        if (vm.missingScorecardNames.length > 0) {
+          const msg = `还缺 ${vm.missingScorecardNames.join('、')} 的面评，暂时不能提交终审决策。`;
+          setBlockerText(msg);
+          setState({ kind: 'pending' });
+          return;
+        }
         const decisionAction = vm.actions.decision_record;
         if (decisionAction && !decisionAction.available) {
           setErrorText(
