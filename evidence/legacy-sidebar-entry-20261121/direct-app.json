@@ -1,0 +1,54 @@
+{
+ "afterTest": {
+  "url": "http://127.0.0.1:49351/recruitment/app",
+  "body": "Recruitment OS\n今日待办\n1\n在招岗位\n1\n后端工程师（演示）\n1\n人才库\n1\nAgent\n你好，我是招聘协作 Agent。你可以直接告诉我需要推进哪位候选人，或拖入简历文件自动建档。\n今天最优先处理的 3 位候选人是谁？\n查看当前待提交面评的进展\n今日待办\n招聘负责人\nHR\n待推进候选人\n在办 1\n·\n待初筛 1\n·\n面试中 1\n·\n待决策 0\n导入简历\n全部 (1)\n待初筛 (1)\n面试中 (1)\n初筛 (1)\n演\n演示候选人-张样例\n后端工程师（演示）\n2 轮 · 第 1 轮已面完 / 第 2 轮已排期\n初筛",
+  "testids": [
+   "app-nav-queue",
+   "app-nav-jobs",
+   "app-nav-talent",
+   "app-chat-panel",
+   "app-chat-log",
+   "app-chat-quick-today-top3",
+   "app-chat-quick-pending-scorecards",
+   "app-chat-upload",
+   "app-chat-input",
+   "app-chat-send",
+   "app-canvas",
+   "app-actor-badge",
+   "app-queue-view",
+   "app-action-upload",
+   "app-queue-filter-all",
+   "app-queue-filter-screening",
+   "app-queue-filter-interviewing",
+   "app-queue-filter-S7",
+   "app-queue-search",
+   "app-queue-item-11111111-1111-4111-8111-000000000701"
+  ]
+ },
+ "directApp": {
+  "url": "http://127.0.0.1:49351/recruitment/app",
+  "body": "Recruitment OS\n今日待办\n1\n在招岗位\n1\n后端工程师（演示）\n1\n人才库\n1\nAgent\n你好，我是招聘协作 Agent。你可以直接告诉我需要推进哪位候选人，或拖入简历文件自动建档。\n今天最优先处理的 3 位候选人是谁？\n查看当前待提交面评的进展\n今日待办\n招聘负责人\nHR\n待推进候选人\n在办 1\n·\n待初筛 1\n·\n面试中 1\n·\n待决策 0\n导入简历\n全部 (1)\n待初筛 (1)\n面试中 (1)\n初筛 (1)\n演\n演示候选人-张样例\n后端工程师（演示）\n2 轮 · 第 1 轮已面完 / 第 2 轮已排期\n初筛",
+  "testids": [
+   "app-nav-queue",
+   "app-nav-jobs",
+   "app-nav-talent",
+   "app-chat-panel",
+   "app-chat-log",
+   "app-chat-quick-today-top3",
+   "app-chat-quick-pending-scorecards",
+   "app-chat-upload",
+   "app-chat-input",
+   "app-chat-send",
+   "app-canvas",
+   "app-actor-badge",
+   "app-queue-view",
+   "app-action-upload",
+   "app-queue-filter-all",
+   "app-queue-filter-screening",
+   "app-queue-filter-interviewing",
+   "app-queue-filter-S7",
+   "app-queue-search",
+   "app-queue-item-11111111-1111-4111-8111-000000000701"
+  ]
+ }
+}

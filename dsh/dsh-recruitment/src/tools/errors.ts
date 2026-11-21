@@ -28,6 +28,13 @@ export type RecruitmentErrorCode =
   | 'FORBIDDEN'
   | 'READER_FAILED'
   | 'NOT_CONFIGURED'
+  // 配了但凭据/授权码不对（IMAP 认证失败）。与 NOT_CONFIGURED 严格区分：
+  // NOT_CONFIGURED = 压根没配（缺 host/user/password_env/端口/tls 等，注册替身）；
+  // AUTH_REQUIRED = 配置齐全但账号/授权码被拒（fail-closed，零写入，如实渲染 connection=AUTH_REQUIRED）。
+  // 原为 email-fetch.ts 的局部 MailAuthError；本轮收编进共享闭集，统一用 RecruitmentToolError 构造。
+  | 'AUTH_REQUIRED'
+  // NOT_CONNECTED = 连接层不可用（网络/服务不可达）；与 AUTH_REQUIRED（凭据被拒）区分，同样 fail-closed 零写入。
+  | 'NOT_CONNECTED'
   // S7 契约 §3.4 的另外两个（封闭集）。'INVALID_ARGS' / 'NOT_FOUND' 已在上面。
   | 'BLOCKED_BY_REVIEW'
   | 'NO_RUBRIC'

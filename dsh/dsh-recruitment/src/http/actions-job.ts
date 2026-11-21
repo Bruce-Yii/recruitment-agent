@@ -84,7 +84,7 @@ export const JOB_CREATE_CONTRACT_VERSION = 'job-create 1.0.0'
 export const JOB_CLOSE_CONTRACT_VERSION = '1.0.0'
 
 /** body 的**封闭键集**（多一个键都不接受）。 */
-const JOB_CLOSE_BODY_KEYS = ['confirm', 'job_id', 'reason'] as const
+const JOB_CLOSE_BODY_KEYS = ['confirm', 'job_id', 'reason', 'expected_record_version'] as const
 /** `reason` 的最大长度（CONTRACT §1：1..500，只进内部审计事件）。 */
 const MAX_REASON_LENGTH = 500
 /** 客户端**不许**覆盖的身份头（命中即 400，且不碰 DB）。 */
@@ -183,6 +183,12 @@ export interface CloseJobInput {
   readonly actor_alias: string
   /** 关闭原因（可选；已过 1..500 校验，只进审计事件 payload，不写业务列）。 */
   readonly reason?: string
+  /**
+   * 可选乐观锁：`job.record_version` 的期望值（整数 ≥1，已过 body 校验）。
+   * 传了 → 写之前在 `for update` 行锁内原子比较；不符 → 409 VERSION_CONFLICT/STALE_RECORD_VERSION。
+   * 不传 → 完全走既有路径（不加 SQL 谓词、不比较、不产生新事件）。
+   */
+  readonly expected_record_version?: number
 }
 
 /** 终止计数（CONTRACT §1 响应 `terminated` 的精确键集）。 */
@@ -298,6 +304,20 @@ const JOB_CLOSE_SQL = `
   update recruitment.job j
      set status = 'CLOSED'
    where j.id = $1::uuid and j.tenant_id = $2::uuid and j.status <> 'CLOSED'
+  returning j.record_version as record_version
+`
+
+/**
+ * 带可选乐观锁期望版本的岗位迁移：版本条件直接进**同一条 UPDATE 的 WHERE**（原子比较）。
+ * 行已被调用方的 `JOB_LOCK_SQL ... for update` 锁住；`record_version` 不符时这条 UPDATE 命中 0 行，
+ * 调用方翻成 409 VERSION_CONFLICT/STALE_RECORD_VERSION —— 全程零写入、零 `job.closed` 事件。
+ * 参数：$1=job_id, $2=tenant_id, $3=expected_record_version。
+ */
+const JOB_CLOSE_SQL_EXPECTED = `
+  update recruitment.job j
+     set status = 'CLOSED'
+   where j.id = $1::uuid and j.tenant_id = $2::uuid and j.status <> 'CLOSED'
+     and j.record_version = $3::integer
   returning j.record_version as record_version
 `
 
@@ -802,6 +822,7 @@ function toIso(value: Date | string | null): string | null {
 interface ParsedCloseJobBody {
   readonly job_id: string
   readonly reason?: string
+  readonly expected_record_version?: number
 }
 
 /**
@@ -811,7 +832,9 @@ interface ParsedCloseJobBody {
  *   1. 封闭键集（多键 → `UNKNOWN_BODY_KEY`）；
  *   2. 人类闸门 `confirm !== true`（缺失/false/"true"/1 → `CONFIRM_REQUIRED`）；
  *   3. `job_id` 必填且是 UUID 文本（否则 `JOB_ID_INVALID`）；
- *   4. 可选 `reason`：给了就必须是 1..500 的非空字符串（否则 `REASON_INVALID`）。
+ *   4. 可选 `reason`：给了就必须是 1..500 的非空字符串（否则 `REASON_INVALID`）；
+ *   5. 可选 `expected_record_version`：给了就必须是整数 ≥1（非整数 → `TYPE_MISMATCH`，
+ *      <1 → `OUT_OF_RANGE`；均为 400 INVALID_ARGS，碰 DB 之前，零写入）。
  * @param body - 已解析的 JSON body（已排除 actor/tenant 覆盖键）。
  */
 function parseCloseJobBody(body: Record<string, unknown>): ParsedCloseJobBody {
@@ -860,7 +883,27 @@ function parseCloseJobBody(body: Record<string, unknown>): ParsedCloseJobBody {
     }
     reason = trimmed
   }
-  return { job_id: jobId, ...(reason === undefined ? {} : { reason }) }
+  let expectedRecordVersion: number | undefined
+  if (Object.hasOwn(body, 'expected_record_version')) {
+    const rawExpected = body.expected_record_version
+    if (typeof rawExpected !== 'number' || !Number.isInteger(rawExpected)) {
+      throw jobActionError(400, 'INVALID_ARGS', 'TYPE_MISMATCH', '"expected_record_version" 必须是整数（≥1）', {
+        expected_record_version: typeof rawExpected === 'number' ? rawExpected : `[${typeof rawExpected}]`,
+      })
+    }
+    if (rawExpected < 1) {
+      throw jobActionError(400, 'INVALID_ARGS', 'OUT_OF_RANGE', '"expected_record_version" 必须 ≥ 1', {
+        expected_record_version: rawExpected,
+        min: 1,
+      })
+    }
+    expectedRecordVersion = rawExpected
+  }
+  return {
+    job_id: jobId,
+    ...(reason === undefined ? {} : { reason }),
+    ...(expectedRecordVersion === undefined ? {} : { expected_record_version: expectedRecordVersion }),
+  }
 }
 
 // =====================================================================
@@ -967,6 +1010,17 @@ export async function closeJobInTransaction(
 
   const replayed = job.status === 'CLOSED'
 
+  // 可选乐观锁：岗位行已被 `JOB_LOCK_SQL ... for update` 锁住 → 这里的比较在锁内，等价原子。
+  // 非重放路径把版本条件直接下推进 `JOB_CLOSE_SQL_EXPECTED` 的 WHERE（下一步，同一条 UPDATE）；
+  // 重放路径本来就不 UPDATE job 行，所以在此显式比较一次，保证"传了就必须校验"且零写入/零事件。
+  const expectedRecordVersion = input.expected_record_version
+  if (replayed && expectedRecordVersion !== undefined && job.record_version !== expectedRecordVersion) {
+    throw jobActionError(409, 'VERSION_CONFLICT', 'STALE_RECORD_VERSION', '岗位的 record_version 与 expected_record_version 不一致（乐观锁冲突）', {
+      expected_record_version: expectedRecordVersion,
+      actual_record_version: job.record_version,
+    })
+  }
+
   // ---- 3. 范围（全部 `for update` 锁住；分类计数基于锁内快照）----
   const applications = await client.query<ApplicationScopeRow>(APPLICATION_SCOPE_SQL, [tenantId, input.job_id])
   const applicationIds = applications.rows.map((row) => row.id)
@@ -1001,9 +1055,21 @@ export async function closeJobInTransaction(
   let recordVersionAfter = job.record_version
   let jobUpdated = false
   if (!replayed) {
-    const updated = await client.query<{ record_version: number }>(JOB_CLOSE_SQL, [input.job_id, tenantId])
+    // 未传 expected → 与改前**逐字一致**（同一 SQL 常量、同一参数数组、同一 500 兜底）。
+    // 传了 expected → 版本谓词在同一条 UPDATE 的 WHERE 里原子判定；0 行 = 版本不符 → 409。
+    const updated = expectedRecordVersion === undefined
+      ? await client.query<{ record_version: number }>(JOB_CLOSE_SQL, [input.job_id, tenantId])
+      : await client.query<{ record_version: number }>(JOB_CLOSE_SQL_EXPECTED, [input.job_id, tenantId, expectedRecordVersion])
     const row = updated.rows[0]
     if (row === undefined) {
+      if (expectedRecordVersion !== undefined) {
+        // WHERE 的 record_version 条件没命中；锁内读到的 job.record_version 就是实际版本。
+        // 这条 UPDATE 命中 0 行 → 没有任何写、没有 job.closed 事件；抛错 → 整事务回滚锁。
+        throw jobActionError(409, 'VERSION_CONFLICT', 'STALE_RECORD_VERSION', '岗位的 record_version 与 expected_record_version 不一致（乐观锁冲突）', {
+          expected_record_version: expectedRecordVersion,
+          actual_record_version: job.record_version,
+        })
+      }
       // 已持有行锁且状态 <> CLOSED，更新必然是 1 行；0 行只可能是数据异常 → 不猜、回滚。
       throw jobActionError(500, 'INTERNAL', 'JOB_UPDATE_MISSING', '岗位行已锁定但状态迁移未命中（数据异常）', {
         job_id: input.job_id,
@@ -1656,8 +1722,8 @@ async function handleJobCreate(
  * `POST /recruitment/api/job-action/job/close`
  *
  * 流程（顺序即纪律）：同源 → `x-dsh-session` → 已绑定 alias → body 形状（封闭键 +
- * `confirm===true` + job_id + reason）→ 单事务（锁行 → HUMAN → 分类终止 → 动作级事件）→
- * 提交后只读读回 → 精确键响应。
+ * `confirm===true` + job_id + reason + 可选 expected_record_version）→ 单事务（锁行 → HUMAN →
+ * 版本守卫 → 分类终止 → 动作级事件）→ 提交后只读读回 → 精确键响应。
  * @param deps - 路由依赖。
  * @param req - node 请求。
  * @param res - node 响应。
@@ -1681,6 +1747,9 @@ async function handleJobClose(
         actor_id: resolved.actor_id,
         actor_alias: resolved.alias,
         ...(input.reason === undefined ? {} : { reason: input.reason }),
+        ...(input.expected_record_version === undefined
+          ? {}
+          : { expected_record_version: input.expected_record_version }),
       }))
 
     // ---- 提交后独立只读读回（响应 job/actor 字段只来自库，不回显请求）----

@@ -1,0 +1,12 @@
+run-all: 1 个测试文件（node --test ）
+✔ workspace overview：默认读取真实数据 + 业务表零写入 (96.0592ms)
+✔ workspace overview：过滤参数生效且不改变全局 counts (374.8447ms)
+✔ workspace overview：非法 UUID / 非法 stage / 越界 limit fail-closed，且零写入 (75.4321ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2015.5726

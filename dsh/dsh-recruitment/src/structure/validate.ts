@@ -265,8 +265,11 @@ export interface ParsedDate {
 
 interface ValidationContext {
   readonly issues: ValidationIssue[]
-  readonly entries: ReadonlyMap<number, BlockIndexEntry>
-  readonly texts: ReadonlyMap<number, string>
+  // mutable Map：createContext 用 new Map 建好后在遍历中逐个 .set 填入（见下方
+  // createContext 的 entries.set / texts.set）。这里按真实运行时类型声明为可变 Map，
+  // 纯类型口径修正，不改任何行为。
+  readonly entries: Map<number, BlockIndexEntry>
+  readonly texts: Map<number, string>
   /** 被 section.block_ids 放进分区的 id -> 第一次放置它的 path（D-31 §1）。 */
   readonly placed: Map<number, string>
   /** 带合法 reason 的 ignored section 覆盖的 id -> 该 section 的 path（D-31 §2）。 */

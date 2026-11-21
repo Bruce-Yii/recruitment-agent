@@ -1,0 +1,28 @@
+# 预览默认身份自动绑定 · 机检（2026-11-21）
+
+| 项 | 结果 |
+|---|---|
+| 类型 | `cd dsh/dsh-recruitment && npx tsc --noEmit` = 0 |
+| 服务端棘轮 | `node scripts/server-typecheck.mjs` PASS（0/0） |
+| 调度预算 | `node scripts/runtime-budget.mjs` PASS（5051/5051） |
+| 入口可达 | `node scripts/entry-reachability.mjs` PASS（无新缺口；手拼 0） |
+| 合同复用 | `node scripts/client-contract-check.mjs` PASS |
+| 文案 lint | `node scripts/term-lint.mjs` PASS |
+| 15 步回归（无 PreviewAlias） | `run-v4.mjs --fresh --port 49347` **15/15 PASS**，审计 hard 0 |
+| 干净库全量测试 | 未跑（非 main 合并轮） |
+
+## 功能验证（预览 Host 49351，pid 21024，`-PreviewAlias recruiter`）
+
+- 全新 Chrome profile → token 一次 → 直接 `/recruitment/app`：无 unbound，身份 recruiter，session `bound:true`。
+- 重启 Host → 同浏览器直接 `/recruitment/app`（不带 token/test）：仍进入 v4，身份 recruiter（内存注册表已清空，由预览默认身份补绑）。
+- 不带 `-PreviewAlias` 的自动化：15/15 不受影响（环境变量缺省关闭）。
+
+## 文件
+
+- `auto-bind.json` / `auto-bind-after-restart.json`：两轮 DOM + `/recruitment/app/session` 结果。
+- `direct-app-auto-bound-1440.png` / `after-restart-direct-app-1440.png`：1440 截图。
+- `regression-15step-result.json` / `audit.json`：回归。
+
+## 清理
+
+49351 保持运行（新构建 + PreviewAlias）；一次性库/Chrome profile 已清理；49369 未触碰。

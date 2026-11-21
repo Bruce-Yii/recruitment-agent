@@ -47,12 +47,12 @@ export interface NotificationTarget {
   readonly kind: 'notice' | 'reply' | 'acknowledgement'
 }
 
-/** 一次出站登记的结果（同事务读回，状态应是 `pending`）。 */
+/** 一次出站登记的结果。engine 层已退役（D-154）：没有出站通道，字段保留只为形状兼容。 */
 export interface RuntimeNotification {
   readonly messageId: string
-  /** 本次是否**新**登记（false = 同一 message id 已存在，幂等忽略）。 */
+  /** 本次是否**新**登记（false = 同一 message id 已存在而幂等忽略；引擎退役后也恒为 false）。 */
   readonly inserted: boolean
-  /** 登记后立即从 `engine_outbox` 读回的状态。 */
+  /** 出站登记状态；engine 退役后恒为 'NOT_CONFIGURED'（没有出站通道，D-154）。 */
   readonly status: string
 }
 

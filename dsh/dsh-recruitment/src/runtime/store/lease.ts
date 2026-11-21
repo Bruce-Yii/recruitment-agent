@@ -5,8 +5,8 @@
 // 只表示 Worker 报告并解析出了成功结果；真正的业务结果校验由领域服务负责
 // （Notion §13「任务完成必须读回或校验业务结果，不能只相信 Worker 自报成功」）。
 
-import type { DatabaseClient, DatabasePool } from '../../db/pool.ts'
-import { withActor, withReadOnly } from '../../db/pool.ts'
+import type { DatabasePool } from '../../db/pool.ts'
+import { withActor } from '../../db/pool.ts'
 import type {
   AttemptStatus,
   NotificationTarget,
@@ -14,8 +14,6 @@ import type {
   TaskErrorClass,
   TaskStatus,
 } from '../types.ts'
-// runtime ↔ 引擎 Effects/Outbox 的唯一交界（type-only import，不会拉起同步桥 worker）。
-import { readReceipt, recordOutbound } from '../../engine/app/effects-async.ts'
 import { num } from './readback.ts'
 
 /** `finishAttempt` 的输入：来自 WorkerOutcome + 执行前拿到的 id。 */
@@ -41,7 +39,7 @@ export interface FinishAttemptResult {
   readonly taskStatus: TaskStatus
   readonly attemptStatus: AttemptStatus
   readonly errorCode: string | null
-  /** 本次收尾登记的出站通知（同事务读回 pending；未配置/不需要通知时为 null）。 */
+  /** 本次收尾的出站通知标记（engine 已退役后固定为 NOT_CONFIGURED；未配置/不需要通知时为 null）。 */
   readonly notification: RuntimeNotification | null
 }
 
@@ -297,10 +295,10 @@ export async function finishAttempt(
       ],
     )
 
-    // 4) 调用点 2/3：需要人/最终失败时登记出站通知，并**同事务读回**回执状态。
-    //    `recordOutbound` 会同时入队 `reply` effect；runtime 不再单独写
-    //    `engine_outbox`/`durable_effect`，避免两套回执。
-    const notificationReceipt = await writeNotification(client, tenantId, notification, {
+    // 4) 调用点 2/3：需要人/最终失败时产出出站通知标记。
+    //    engine 层已退役（D-154）：不再写 engine_outbox、不再入队 reply effect；
+    //    这里保留标记形状，状态固定为 NOT_CONFIGURED（无出站通道的事实标记）。
+    const notificationReceipt = writeNotification(notification, {
       taskId: input.taskId,
       attemptNo,
       taskStatus,
@@ -317,15 +315,18 @@ export async function finishAttempt(
 }
 
 /**
- * 登记一条任务通知并读回回执（调用点 2/3 的实现；必须在调用方事务里）。
+ * 产出任务通知标记（调用点 2/3 的实现）。
  *
- * 只有 `WAITING_EXTERNAL` / `WAITING_HUMAN` / `FAILED` 才发消息：正常自动化
- * 保持安静（Notion `04` §10）。message id 由 (task, attempt, status) 决定，
- * 同一状态重复收尾不会产生第二条回执。
+ * 只有 `WAITING_EXTERNAL` / `WAITING_HUMAN` / `FAILED` 才产生标记：正常自动化
+ * 保持安静（Notion `04` §10）。message id 仍由 (task, attempt, status) 决定，
+ * 便于既有读回形状不变。
+ *
+ * engine 层已退役（D-154）：这里**不再**登记 `engine_outbox` 回执、不再入队 `reply`
+ * effect。`inserted=false` 表示"未新登记（引擎已退役、无出站通道）"；`status` 为
+ * `'NOT_CONFIGURED'`，它是"没有出站通道"的**事实标记**，不是"待发"也不是"已发"
+ * （R4 标签铁律：绝不假报 pending/sent）。
  */
-async function writeNotification(
-  client: DatabaseClient,
-  tenantId: string,
+function writeNotification(
   notification: NotificationTarget | undefined,
   input: {
     readonly taskId: string
@@ -333,7 +334,7 @@ async function writeNotification(
     readonly taskStatus: TaskStatus
     readonly summary: string
   },
-): Promise<RuntimeNotification | null> {
+): RuntimeNotification | null {
   const target = notification
   if (target === undefined) return null
   if (input.taskStatus !== 'WAITING_EXTERNAL'
@@ -342,28 +343,15 @@ async function writeNotification(
     return null
   }
   const messageId = `task:${input.taskId}:attempt:${input.attemptNo}:${input.taskStatus}`
-  const message = {
-    id: messageId,
-    channel: {
-      source: target.source,
-      thread: target.thread,
-      address: { ...target.address },
-    },
-    text: `task ${input.taskId} attempt ${input.attemptNo} -> ${input.taskStatus}: ${input.summary}`.slice(0, 1000),
-    kind: target.kind,
-    ticketId: input.taskId,
-  }
-  const inserted = await recordOutbound(client, { tenantId: tenantId, message })
-  const receipt = await readReceipt(client, messageId)
-  const status = receipt !== undefined && typeof receipt.status === 'string' ? receipt.status : 'missing'
-  return { messageId, inserted, status }
+  return { messageId, inserted: false, status: 'NOT_CONFIGURED' }
 }
 
 /**
- * 运行时主动登记一条任务通知（运维/旁路入口；与 `finishAttempt` 同一实现）。
- * 重复调用同一 (task, attempt, status) 幂等：第二次 `inserted=false`。
+ * 运行时主动产出一条任务通知标记（运维/旁路入口；与 `finishAttempt` 同一实现）。
+ * engine 层已退役（D-154）：不再写回执表，`inserted` 恒为 false、`status` 恒为
+ * `'NOT_CONFIGURED'`；保留函数签名以维持 `RuntimeStore` 的既有装配面。
  * @param input - 任务 + attempt + 状态 + 摘要。
- * @returns 回执登记结果（同事务读回 pending）。
+ * @returns 通知标记（无出站通道的事实标记）。
  */
 export async function publishNotification(
   pool: DatabasePool,
@@ -377,20 +365,21 @@ export async function publishNotification(
     readonly summary: string
   },
 ): Promise<RuntimeNotification | null> {
-  return withActor(pool, actorId, async (client) => writeNotification(client, tenantId, notification, input))
+  // 保持 async/参数形状与既有装配面一致；函数体不再访问 DB。
+  void pool; void tenantId; void actorId
+  return writeNotification(notification, input)
 }
 
 /**
- * 读一条出站消息的当前回执（调用点 3 的读路径；插件侧派发后用同一函数确认）。
- * @param messageId - `engine_outbox.message_id`。
- * @returns 回执 JSON（status 等）；不存在返回 null。
+ * 读出站消息的回执（调用点 3 的读路径）。
+ * engine 层已退役（D-154）：没有回执表写入方，所以永远没有回执可读 —— 返回 null，不造假。
+ * @param messageId - 原 `engine_outbox.message_id`（保留参数形状）。
+ * @returns 永远为 null。
  */
 export async function readMessageReceipt(
   pool: DatabasePool,
   messageId: string,
 ): Promise<Record<string, unknown> | null> {
-  return withReadOnly(pool, async (client) => {
-    const receipt = await readReceipt(client, messageId)
-    return receipt ?? null
-  })
+  void pool; void messageId
+  return null
 }

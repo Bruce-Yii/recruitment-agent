@@ -12,7 +12,6 @@ import type {
   RouteDecision,
 } from '../types.ts'
 import { taskIdempotencyKey } from '../routing.ts'
-import { enqueueEffect } from '../../engine/app/effects-async.ts'
 import { iso, num } from './readback.ts'
 
 /** `insertEvent` 的结果：本次是新入库还是命中幂等。 */
@@ -203,7 +202,6 @@ export async function createOrWakeTask(
   return withActor(pool, actorId, async (client) => {
     let taskId: string | null = null
     let created = false
-    let existingStatus: string | null = null
     const existing = await client.query<{ id: string; status: string }>(
       `select id::text, status from recruitment.business_task
           where tenant_id = $1::uuid and idempotency_key = $2
@@ -212,7 +210,6 @@ export async function createOrWakeTask(
     )
     if (existing.rows[0] !== undefined) {
       taskId = existing.rows[0].id
-      existingStatus = existing.rows[0].status
     } else {
       const inserted = await client.query<{ id: string }>(
         `insert into recruitment.business_task (
@@ -298,17 +295,9 @@ export async function createOrWakeTask(
             where tenant_id = $1::uuid and id = $3::uuid`,
         [tenantId, eventId, taskId],
       )
-      // 调用点 1b：任务正在执行时又到达新事件 → 入队 `delivery` 副作用（同事务）。
-      // 运行时记录唤醒事实；把"新输入交给运行中的 Worker"这件异步动作留给插件侧
-      // Effects 处理器，避免 runtime 与引擎两套投递逻辑并存。
-      if (existingStatus === 'RUNNING') {
-        await enqueueEffect(client, {
-          tenantId: tenantId,
-          kind: 'delivery',
-          key: taskId,
-          payload: { ticketId: taskId },
-        })
-      }
+      // engine 层已退役（D-154）：此处原先在 RUNNING 任务被新事件唤醒时入队
+      // `delivery` effect 供插件侧派发者使用；唤醒事实由 task_wakeup 唯一约束与
+      // business_task 的状态/next_run_at 更新承载，不再写 engine_effect。
     }
     return { taskId, created: false, wakeInserted, wakeSeq: wakeInserted ? num(wake.rows[0].wake_seq) : null }
   })

@@ -32,6 +32,26 @@
           # 演示租户（0002_seed.sql §1）与 HR 专员 actor（§3，kind=HUMAN）。
           tenant_id: '11111111-1111-4111-8111-000000000001'
           actor_id: '11111111-1111-4111-8111-000000000103'
+        # 邮箱收件（recruitment_email_fetch）+ 发信 Host Action（同一账号；发信不新增工具）。
+        # 普通字符串不做 ${ENV} 插值（见下方 skill-filesystem 的注释）：这里写 ${...} 引用，
+        # resolveMailConfig 自己展开；任一引用未定义/未展开即 NOT_CONFIGURED（fail-closed）。
+        # 口令只从环境变量读，配置里只有 password_env 变量名，绝不落库/日志/payload。
+        mail:
+          host: '${RECRUITMENT_MAIL_HOST}'
+          user: '${RECRUITMENT_MAIL_USER}'
+          password_env: RECRUITMENT_MAIL_PASSWORD
+          port: 993
+          tls: true
+          folder: INBOX
+          # 首次扫描只回看 7 天窗口，禁止全量扫历史；可由 since_uid 水位覆盖。
+          since_days: 7
+          # since_uid: 0  # 可选 UID 水位（不配则用 since_days）
+          # 发信（Host Action /recruitment/api/action/email/send，不新增工具）。
+          # smtp_host 缺省 = host（同一账号），无需再配一个环境变量。
+          # smtp_tls 语义：true = 隐式 TLS（465 常用）；false = STARTTLS（587 常用）。
+          # QQ 的 587 走 STARTTLS，故这里 false；与 IMAP 的 tls:true（993 隐式）不同，不要混。
+          smtp_port: 587
+          smtp_tls: false
 
 # ---------------------------------------------------------------------------
 # 把本包自带的 DSH skill 接进技能目录扫描根（复用 @deepseek-ai/dsh-skill-filesystem，

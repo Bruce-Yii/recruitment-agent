@@ -15,7 +15,9 @@ import assert from 'node:assert/strict'
 import {
   APPLICATION_GET_TOOL,
   MATERIAL_READ_TOOL,
+  buildCurrentOverrides,
   createBusinessReadTools,
+  summarizeRubricCriteria,
   unconfiguredBusinessReadTools,
 } from '../../src/tools/business-read.ts'
 import type { ReadonlyToolDefinition } from '../../src/tools/definition.ts'
@@ -172,4 +174,98 @@ test('未配置替身：注册同一个工具名、调用报 NOT_CONFIGURED（�
   await assert.rejects(() => materialRead?.execute({ resume_version_id: 'x' }), /NOT_CONFIGURED/)
   // 未配置时也不该把工具定义成"可并发但可用"：只要求结构与真实工具一致（名字/输出 schema）。
   for (const tool of allTools()) assert.equal(typeof tool.output.schema, 'object')
+})
+
+// ---------------------------------------------------------------------------
+//  人工纠偏读投影（criteria_summary 的五个新键；ADD-only，旧键不动）
+// ---------------------------------------------------------------------------
+
+test('criteria_summary 的五个新键在 output schema 里恒在且 additionalProperties:false', () => {
+  const applicationGet = createBusinessReadTools({ database: FAKE_CONFIG })[0]
+  assert.ok(applicationGet)
+  const root = applicationGet.output.schema as Record<string, unknown>
+  const rootProps = root.properties as Record<string, Record<string, unknown>>
+  const applications = rootProps.applications as Record<string, unknown>
+  const applicationItems = applications.items as Record<string, unknown>
+  const props = applicationItems.properties as Record<string, Record<string, unknown>>
+  const rubric = props.rubric as Record<string, unknown>
+  const rubricProps = rubric.properties as Record<string, Record<string, unknown>>
+  const criteria = rubricProps.criteria_summary as Record<string, unknown>
+  const items = criteria.items as Record<string, unknown>
+  const itemProps = items.properties as Record<string, Record<string, unknown>>
+  for (const key of ['ai_state', 'human_state', 'effective_state', 'override_note', 'overridden_at']) {
+    assert.equal(itemProps[key]?.type, 'string', `${key} 必须是 type:string（DSH 不支持 null/type 数组）`)
+    assert.ok((items.required as string[]).includes(key), `${key} 必须恒在（required）`)
+  }
+})
+
+test('summarizeRubricCriteria：不传 overrides 时旧形状逐字不变（五个新键不出现）', () => {
+  const summary = summarizeRubricCriteria([{ key: 'edu_match', label: '学历匹配', kind: 'MUST_HAVE', weight: 1 }])
+  assert.deepEqual(summary.criteria_summary[0], {
+    key: 'edu_match', label: '学历匹配', kind: 'MUST_HAVE', weight: 1,
+  })
+})
+
+test('summarizeRubricCriteria：传 overrides 时合入五键，human 赢、note/time 来自当前行', () => {
+  const overrides = buildCurrentOverrides([{
+    id: 'o-1',
+    tenant_id: 't',
+    application_id: 'app-1',
+    rubric_version_id: 'rv-1',
+    criterion_key: 'edu_match',
+    human_state: 'UNREADABLE',
+    note: '材料里没写',
+    actor_id: 'a-1',
+    confirmation_method: 'IN_CHAT',
+    confirmation_text_sha256: 'f'.repeat(64),
+    superseded_by_override_id: null,
+    record_version: 1,
+    created_at: new Date('2026-01-02T03:04:05.000Z'),
+    updated_at: new Date('2026-01-02T03:04:05.000Z'),
+  }])
+  const map = overrides.get('app-1')
+  assert.ok(map)
+  const summary = summarizeRubricCriteria(
+    [{ key: 'edu_match' }, { key: 'no_override' }],
+    8,
+    map,
+  )
+  const withOverride = summary.criteria_summary[0] as Record<string, unknown>
+  assert.equal(withOverride.ai_state, '', 'v1.0 没有 AI 逐条状态列，恒空串')
+  assert.equal(withOverride.human_state, 'UNREADABLE')
+  assert.equal(withOverride.effective_state, 'UNREADABLE', '人赢')
+  assert.equal(withOverride.override_note, '材料里没写')
+  assert.equal(withOverride.overridden_at, '2026-01-02T03:04:05.000Z')
+  const without = summary.criteria_summary[1] as Record<string, unknown>
+  assert.equal(without.human_state, '')
+  assert.equal(without.effective_state, '')
+  assert.equal(without.override_note, '')
+  assert.equal(without.overridden_at, '')
+})
+
+test('buildCurrentOverrides：被取代的行不进 current；同键多条 current 取最新（确定性）', () => {
+  const row = (id: string, created: string, superseded: string | null) => ({
+    id,
+    tenant_id: 't',
+    application_id: 'app-1',
+    rubric_version_id: 'rv-1',
+    criterion_key: 'edu_match',
+    human_state: 'PRESENT' as const,
+    note: null,
+    actor_id: 'a-1',
+    confirmation_method: 'IN_CHAT',
+    confirmation_text_sha256: 'f'.repeat(64),
+    superseded_by_override_id: superseded,
+    record_version: 1,
+    created_at: new Date(created),
+    updated_at: new Date(created),
+  })
+  const map = buildCurrentOverrides([
+    row('old', '2026-01-01T00:00:00.000Z', 'new'),
+    row('new', '2026-01-02T00:00:00.000Z', null),
+    row('dup-early', '2026-01-03T00:00:00.000Z', null),
+    row('dup-late', '2026-01-04T00:00:00.000Z', null),
+  ]).get('app-1')
+  assert.ok(map)
+  assert.equal(map.get('edu_match')?.id, 'dup-late')
 })

@@ -64,6 +64,26 @@ import {
   resolveMaterialPath,
   type MaterialPathReason,
 } from '../runtime/task-context.ts'
+// D-（人工纠偏读投影）：当前 override 行 + human/effective 状态口径，均复用领域/DB 的单一实现。
+import { effectiveState, type HumanState } from '../domain/criterion-override.ts'
+import {
+  readOverridesForApplications,
+  type CriterionOverrideRow,
+} from '../db/criterion-override.ts'
+// 候选人约束读投影（碎片约束置顶 + 下一轮交接提醒）：复用 db/domain 的单一实现。
+import {
+  readPinsForCandidates,
+  readHandoffsForInterviews,
+  UNPIN_TOMBSTONE_TEXT,
+  type CandidateConstraintRow,
+} from '../db/candidate-constraint.ts'
+import {
+  CONSTRAINT_SOURCES,
+  toPinProjection,
+  toHandoffProjection,
+  type PinProjection,
+  type HandoffProjection,
+} from '../domain/candidate-constraint.ts'
 
 /** 两个工具名（index.ts 与测试都按名字找）。 */
 export const APPLICATION_GET_TOOL = 'recruitment_application_get'
@@ -373,6 +393,16 @@ interface DecisionRow {
   readonly superseded_by_decision_id: string | null
 }
 
+/** AT-1/2/3：跨岗携带历史行（append-only，源申请只读；一行 = 一次"从哪带到哪"的事实）。 */
+export interface CarryOverRow {
+  readonly application_id: string
+  readonly source_application_id: string
+  readonly ref_kind: string
+  readonly ref_id: string
+  readonly carried_by_actor_id: string
+  readonly created_at: Date | string
+}
+
 /** 输出：联系方式（永远带 visible，避免"看着像原文其实是脱敏"的误读）。 */
 interface ContactsValue {
   readonly visible: boolean
@@ -400,7 +430,37 @@ interface JobSummaryValue {
   readonly version_id_pinned?: string
 }
 
-/** 输出：Rubric 一条 criterion 的**摘要**（D-141 ①：只给判断"这条路能不能跑"所需的键，不给全文）。 */
+/**
+ * 一条 criterion 的**当前人工纠偏**行（从 `CriterionOverrideRow` 投影出的最小形状）。
+ *
+ * `human_state` 的原值域（`PRESENT`/`ABSENT`/`UNREADABLE`/null）由领域模块 `HumanState` 说话；
+ * 这里不必再抄一份枚举。
+ */
+export interface CurrentOverride {
+  readonly criterion_key: string
+  readonly human_state: HumanState | null
+  readonly note: string | null
+  readonly created_at: Date | string
+  readonly id: string
+}
+
+/**
+ * 输出：Rubric 一条 criterion 的**摘要**（D-141 ①：只给判断"这条路能不能跑"所需的键，不给全文）。
+ *
+ * 人工纠偏读投影（五个新键 ADD-only，旧键一个不动）：
+ *   * `ai_state`       —— AI 对该条的判断。**v1.0 库里没有任何 per-criterion AI 状态列**，恒为空串
+ *                         （= 没有），字段只为前向兼容存在；**绝不编造数据**。
+ *   * `human_state`    —— 当前 override 行的人判断；没有则空串。
+ *   * `effective_state`—— `effectiveState(ai_state, human_state)`：人非空时人赢，否则 AI；两者都空则空串。
+ *   * `override_note`  —— 当前 override 行的备注；没有则空串。
+ *   * `overridden_at`  —— 当前 override 行 created_at 的 ISO；没有则空串。
+ *
+ * 为什么用空串而不是 null：DSH 的输出 schema 校验器**不支持 `type` 数组 / `type:'null'` / enum 里的 null**
+ * （见 decision-record.ts 文件头偏差 7 与 `test/unit/output-schema.test.ts`）。为了保持
+ * `additionalProperties:false` + 全部五键 required 的稳定形状，这里用空串表达"没有"，
+ * 与既有 `optional()` 省略键的口径不同 —— 因为任务要求五键恒在、形状稳定。
+ * TypeScript 侧仍用 `string` 标注（空串 ∈ string），语义在注释里说清。
+ */
 interface CriteriaSummaryItemValue {
   readonly key: string
   /** 人话标签（dimensions 里没有就不给，不编造）。 */
@@ -408,6 +468,16 @@ interface CriteriaSummaryItemValue {
   /** 封闭集合由 rubric 契约说话（MUST_HAVE / NICE_TO_HAVE / DISQUALIFIER）；这里只回显。 */
   readonly kind?: string
   readonly weight?: number
+  /** AI 判断；v1.0 没有落库列，恒空串（= 没有）。 */
+  readonly ai_state: string
+  /** 当前人工纠偏状态（PRESENT/ABSENT/UNREADABLE）；没有则空串。 */
+  readonly human_state: string
+  /** 生效状态：human 赢，否则 ai；都无则空串。 */
+  readonly effective_state: string
+  /** 当前纠偏备注；没有则空串。 */
+  readonly override_note: string
+  /** 当前纠偏时间（ISO）；没有则空串。 */
+  readonly overridden_at: string
 }
 
 /** 输出：Rubric 钉住版本的**指针 + 摘要**（完整 criteria/可执行性归 job_get，见 next_tools）。 */
@@ -557,6 +627,35 @@ interface DecisionsSummaryValue {
   readonly latest?: DecisionItemValue
 }
 
+/** 输出：一条携带历史（从哪个源申请、带了什么、谁带的、什么时候带的）。 */
+export interface CarryOverItemValue {
+  readonly source_application_id: string
+  readonly ref_kind: string
+  readonly ref_id: string
+  readonly carried_by_actor_id: string
+  readonly created_at: string
+}
+
+/** 输出：跨岗携带历史摘要（`count` 与 `items` 恒在；空时 count=0 / items=[]）。 */
+export interface CarryOverValue {
+  readonly count: number
+  readonly items: readonly CarryOverItemValue[]
+}
+
+/**
+ * 输出：一条 HANDOFF 交接提醒。复用领域投影的四字段 + `from_previous_round:true`，
+ * 额外带一个**短号** `interview_ref`（不是 UUID —— 与其它读投影一致，结构化输出不吐内部 id）。
+ */
+export interface CandidateConstraintHandoffValue extends HandoffProjection {
+  readonly interview_ref: string
+}
+
+/** 输出：候选人级约束读投影（置顶 PIN + 相关 HANDOFF；恒给出，空时数组为空）。 */
+export interface CandidateConstraintsValue {
+  readonly pins: readonly PinProjection[]
+  readonly handoffs: readonly CandidateConstraintHandoffValue[]
+}
+
 /** 输出：一条申请的完整摘要。 */
 interface ApplicationValue {
   readonly application_id: string
@@ -575,6 +674,10 @@ interface ApplicationValue {
   /** O12：服务端按 approval 真值生成的 rubric 修复建议（Agent 转述，不自行编造）。 */
   readonly rubric_remediation: RubricRemediationValue
   readonly decisions: DecisionsSummaryValue
+  /** AT-1/2/3：跨岗携带历史（恒给出；空时 count=0 / items=[]，不省略块）。 */
+  readonly carry_over: CarryOverValue
+  /** 候选人级约束（碎片约束置顶 + 交接提醒；恒给出，空时 pins/handoffs 均为 []）。 */
+  readonly constraints: CandidateConstraintsValue
 }
 
 /** 输出：一次查询的入参回显。 */
@@ -635,6 +738,70 @@ const LABELS_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
 }
 
+/** AT-1/2/3：跨岗携带历史的紧凑输出 schema（恒在且形状封闭；空时用 0/[]，不用 null）。 */
+const CARRY_OVER_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    count: { type: 'number' },
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          source_application_id: { type: 'string' },
+          ref_kind: { type: 'string', enum: ['SCORECARD', 'TRANSCRIPT', 'DECISION'] },
+          ref_id: { type: 'string' },
+          carried_by_actor_id: { type: 'string' },
+          created_at: { type: 'string' },
+        },
+        required: ['source_application_id', 'ref_kind', 'ref_id', 'carried_by_actor_id', 'created_at'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['count', 'items'],
+  additionalProperties: false,
+}
+
+/** 候选人约束读投影的紧凑 schema（只有文本/来源/作者/时间 + 短号，没有任何内部 id）。 */
+const CANDIDATE_CONSTRAINTS_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    pins: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          source: { type: 'string', enum: [...CONSTRAINT_SOURCES] },
+          created_by: { type: 'string' },
+          created_at: { type: 'string' },
+        },
+        required: ['text', 'source', 'created_by', 'created_at'],
+        additionalProperties: false,
+      },
+    },
+    handoffs: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          source: { type: 'string', enum: [...CONSTRAINT_SOURCES] },
+          created_by: { type: 'string' },
+          created_at: { type: 'string' },
+          from_previous_round: { type: 'boolean' },
+          interview_ref: { type: 'string' },
+        },
+        required: ['text', 'source', 'created_by', 'created_at', 'from_previous_round', 'interview_ref'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['pins', 'handoffs'],
+  additionalProperties: false,
+}
+
 const APPLICATION_VALUE_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
@@ -679,6 +846,7 @@ const APPLICATION_VALUE_SCHEMA: Record<string, unknown> = {
         approved: { type: 'boolean' },
         criteria_count: { type: 'number' },
         // D-141 ①：判断"这条路能不能跑"所需的 criteria 摘要（最多 8 条；全文仍归 job_get）。
+        // 人工纠偏读投影：五个新键恒在（空串 = 没有），旧键一个不动。
         criteria_summary: {
           type: 'array',
           items: {
@@ -688,8 +856,16 @@ const APPLICATION_VALUE_SCHEMA: Record<string, unknown> = {
               label: { type: 'string' },
               kind: { type: 'string' },
               weight: { type: 'number' },
+              ai_state: { type: 'string' },
+              human_state: { type: 'string' },
+              effective_state: { type: 'string' },
+              override_note: { type: 'string' },
+              overridden_at: { type: 'string' },
             },
-            required: ['key'],
+            // 五键全部 required：形状稳定（值空串表示没有，不用 null / type 数组）。
+            required: [
+              'key', 'ai_state', 'human_state', 'effective_state', 'override_note', 'overridden_at',
+            ],
             additionalProperties: false,
           },
         },
@@ -838,10 +1014,16 @@ const APPLICATION_VALUE_SCHEMA: Record<string, unknown> = {
       required: ['count'],
       additionalProperties: false,
     },
+    carry_over: CARRY_OVER_SCHEMA,
+    constraints: CANDIDATE_CONSTRAINTS_SCHEMA,
   },
   required: [
     'application_id', 'stage_code', 'lifecycle_status', 'record_version',
     'candidate', 'job', 'interviews', 'transcripts', 'evaluations', 'rubric_remediation', 'decisions',
+    // 恒给出（空时 0/[]）：safe required —— 投影每次都写这个块，旧键一个不动。
+    'carry_over',
+    // 恒给出（空时 pins/handoffs=[]）：同上，safe required。
+    'constraints',
   ],
   additionalProperties: false,
 }
@@ -1125,6 +1307,91 @@ async function queryDecisionRows(
 }
 
 /**
+ * AT-1/2/3：跨岗携带历史行（**一次查询取全部申请**，与其它家族事实同一口径）。
+ *
+ * 只读 `application_carry_over`（append-only 表），租户过滤 + `any($2::uuid[])` 与 queryInterviewRows 同形。
+ */
+async function queryCarryOverRows(
+  client: DatabaseClient,
+  cfg: ResolvedDatabaseConfig,
+  applicationIds: readonly string[],
+): Promise<CarryOverRow[]> {
+  if (applicationIds.length === 0) return []
+  const { rows } = await client.query<CarryOverRow>(
+    `select application_id, source_application_id, ref_kind, ref_id, carried_by_actor_id, created_at
+       from recruitment.application_carry_over
+      where tenant_id = $1 and application_id = any($2::uuid[])
+      order by application_id, created_at, source_application_id, ref_kind, ref_id`,
+    [cfg.tenant_id, [...applicationIds]],
+  )
+  return rows
+}
+
+/** 本批申请下的面试 id（只读；tenant 过滤 + any($2::uuid[])，与 queryInterviewRows 同口径）。 */
+async function queryInterviewIdsForApplications(
+  client: DatabaseClient,
+  cfg: ResolvedDatabaseConfig,
+  applicationIds: readonly string[],
+): Promise<string[]> {
+  if (applicationIds.length === 0) return []
+  const { rows } = await client.query<{ id: string }>(
+    `select id from recruitment.interview
+      where tenant_id = $1 and application_id = any($2::uuid[])
+      order by application_id, id`,
+    [cfg.tenant_id, [...applicationIds]],
+  )
+  return rows.map((row) => row.id)
+}
+
+/**
+ * 候选约束行 → 读投影（纯函数，可单测）。
+ *
+ * 复用领域层 `toPinProjection` / `toHandoffProjection`（单一实现：过滤 superseded / 墓碑、
+ * 排序、只投影四字段）。这里只额外给每条 HANDOFF 挂一个 interview 短号 `interview_ref`
+ * ——结构化输出不吐 UUID。墓碑行双保险再过滤一次（领域投影已过滤）。
+ * 注意：HANDOFF 排序由领域投影按 created_at 升序给出，这里按同一顺序逐条附上原行的
+ * interview_id 短号（同刻多行也稳定：领域投影用 id 做次级排序，但 id 不进输出）。
+ * @param pinRows - 该候选人的 PIN 行（含墓碑，投影层过滤）。
+ * @param handoffRows - 该申请各 interview 的 HANDOFF 行。
+ */
+export function toCandidateConstraintsValue(
+  pinRows: readonly CandidateConstraintRow[],
+  handoffRows: readonly CandidateConstraintRow[],
+): CandidateConstraintsValue {
+  const pins = toPinProjection(pinRows.filter((row) => row.text !== UNPIN_TOMBSTONE_TEXT))
+  // 与 toHandoffProjection 同口径（created_at 升序、同刻按 id）排序后，逐条取 interview 短号。
+  const orderedHandoffRows = handoffRows.slice().sort((a, b) => {
+    const ta = a.created_at instanceof Date ? a.created_at.getTime() : new Date(a.created_at).getTime()
+    const tb = b.created_at instanceof Date ? b.created_at.getTime() : new Date(b.created_at).getTime()
+    return ta - tb || String(a.id).localeCompare(String(b.id))
+  })
+  const handoffs = toHandoffProjection(orderedHandoffRows).map((item, index) => ({
+    ...item,
+    // HANDOFF 行必带 interview_id（PIN 行才允许 null）；投影与 orderedHandoffRows 同源同序。
+    // 非空断言只补类型（编译期擦除），`?.`/`??` 与短号逻辑一行未动。
+    interview_ref: shortRef((orderedHandoffRows[index]?.interview_id ?? null)!),
+  }))
+  return { pins, handoffs }
+}
+
+/**
+ * 携带历史行 → 输出摘要（纯函数，可单测）。空数组 ⇒ `{count:0, items:[]}`（块不省略）。
+ */
+export function toCarryOverSummary(rows: readonly CarryOverRow[]): CarryOverValue {
+  return {
+    count: rows.length,
+    items: rows.map((row) => ({
+      source_application_id: row.source_application_id,
+      ref_kind: row.ref_kind,
+      ref_id: row.ref_id,
+      carried_by_actor_id: row.carried_by_actor_id,
+      // created_at 是 NOT NULL；iso() 万一给 undefined 时用空串，保证输出没有 null（DSH 校验器不支持）。
+      created_at: iso(row.created_at) ?? '',
+    })),
+  }
+}
+
+/**
  * 在**已有只读事务**里跑完整申请查询（`execute()` 与集成测试走同一条路径）。
  * @param client - 只读事务内客户端。
  * @param cfg - 已解析的库配置。
@@ -1169,7 +1436,10 @@ export async function readApplicationValue(
   const rubricIds = [...new Set(rows.flatMap((row) => [row.pinned_rubric_version_id, row.current_rubric_version_id])
     .filter((value): value is string => value !== null))]
 
-  const [materials, rubrics, interviews, transcripts, scorecards, interviewers, decisions] = await Promise.all([
+  // 候选人约束读投影：按候选 id 批量取 PIN，按本批申请下的 interview id 批量取 HANDOFF。
+  // 只发一次查询（与其余家族事实同口径），墓碑行由领域投影函数过滤。
+  const candidateIds = [...new Set(rows.map((row) => row.candidate_id))]
+  const [materials, rubrics, interviews, transcripts, scorecards, interviewers, decisions, overrides, carryOver, pins, handoffs] = await Promise.all([
     queryMaterialRows(client, cfg, resumeVersionIds),
     queryRubricRows(client, cfg, rubricIds),
     queryInterviewRows(client, cfg, applicationIds),
@@ -1177,6 +1447,14 @@ export async function readApplicationValue(
     queryScorecardRows(client, cfg, applicationIds),
     queryInterviewerRows(client, cfg, applicationIds),
     queryDecisionRows(client, cfg, applicationIds),
+    // 人工纠偏读投影（SELECT-only；full history，调用方只取 current 行）。
+    readOverridesForApplications(client, cfg.tenant_id, applicationIds),
+    // AT-1/2/3：跨岗携带历史（一次查询取全部申请，按 application_id 分组后挂回去）。
+    queryCarryOverRows(client, cfg, applicationIds),
+    readPinsForCandidates(client, cfg.tenant_id, candidateIds),
+    // 本批申请下的面试 id（一次查询；与 queryInterviewRows 的 tenant 过滤一致）。
+    queryInterviewIdsForApplications(client, cfg, applicationIds)
+      .then((ids) => readHandoffsForInterviews(client, cfg.tenant_id, ids)),
   ])
   const materialById = new Map(materials.map((row) => [row.id, row]))
   const rubricById = new Map(rubrics.map((row) => [row.id, row]))
@@ -1185,6 +1463,20 @@ export async function readApplicationValue(
   const scorecardsByApplication = groupBy(scorecards, (row) => row.application_id)
   const interviewersByApplication = groupBy(interviewers, (row) => row.application_id)
   const decisionsByApplication = groupBy(decisions, (row) => row.application_id)
+  const currentOverridesByApplication = buildCurrentOverrides(overrides)
+  const carryOverByApplication = groupBy(carryOver, (row) => row.application_id)
+
+  // 候选人约束：pins 按 candidate_id、handoffs 按 interview_id→application_id 分组。
+  const pinsByCandidate = groupBy(pins, (row) => row.candidate_id)
+  const applicationIdByInterview = new Map(interviews.map((row) => [row.id, row.application_id]))
+  const handoffsByApplication = new Map<string, CandidateConstraintRow[]>()
+  for (const row of handoffs) {
+    const applicationId = row.interview_id === null ? undefined : applicationIdByInterview.get(row.interview_id)
+    if (applicationId === undefined) continue
+    const bucket = handoffsByApplication.get(applicationId)
+    if (bucket === undefined) handoffsByApplication.set(applicationId, [row])
+    else bucket.push(row)
+  }
 
   const visible = args.include_contacts === true
   const labels = await buildReadToolLabels(client, cfg.tenant_id)
@@ -1198,6 +1490,12 @@ export async function readApplicationValue(
     scorecardsByApplication.get(row.id) ?? [],
     interviewersByApplication.get(row.id) ?? [],
     decisionsByApplication.get(row.id) ?? [],
+    currentOverridesByApplication.get(row.id) ?? new Map<string, CurrentOverride>(),
+    carryOverByApplication.get(row.id) ?? [],
+    toCandidateConstraintsValue(
+      pinsByCandidate.get(row.candidate_id) ?? [],
+      handoffsByApplication.get(row.id) ?? [],
+    ),
     visible,
   ))
 
@@ -1229,8 +1527,43 @@ function groupBy<T>(rows: readonly T[], keyOf: (row: T) => string): Map<string, 
   return map
 }
 
+/**
+ * 纠偏全史 → `application_id → criterion_key → 当前行`（确定性）。
+ *
+ * 只取 `superseded_by_override_id === null` 的 current 行；若同一 (application, criterion) 出现
+ * 多条 current（数据库约束理论上阻止，但防御性处理），按 `created_at` 再 `id` 倒序取最新一条，
+ * 不抛错。rubric_version 不参与键：一次申请只会钉一版，纠偏的 key 属于那一版。
+ */
+export function buildCurrentOverrides(
+  rows: readonly CriterionOverrideRow[],
+): Map<string, Map<string, CurrentOverride>> {
+  const byApplication = new Map<string, Map<string, CurrentOverride>>()
+  const candidates = rows.filter((row) => row.superseded_by_override_id === null)
+  // 先按 created_at/id 升序排，后面同 key 覆盖后写即得到"最新"那条。
+  candidates.sort((a, b) => {
+    const aTime = a.created_at instanceof Date ? a.created_at.getTime() : new Date(a.created_at).getTime()
+    const bTime = b.created_at instanceof Date ? b.created_at.getTime() : new Date(b.created_at).getTime()
+    return aTime - bTime || String(a.id).localeCompare(String(b.id))
+  })
+  for (const row of candidates) {
+    let byKey = byApplication.get(row.application_id)
+    if (byKey === undefined) {
+      byKey = new Map<string, CurrentOverride>()
+      byApplication.set(row.application_id, byKey)
+    }
+    byKey.set(row.criterion_key, {
+      criterion_key: row.criterion_key,
+      human_state: row.human_state as HumanState | null,
+      note: row.note,
+      created_at: row.created_at,
+      id: row.id,
+    })
+  }
+  return byApplication
+}
+
 /** 一次申请 → 输出形状（所有可缺键一律省略，不用 null）。 */
-function toApplicationValue(
+export function toApplicationValue(
   row: ApplicationRow,
   materialById: ReadonlyMap<string, MaterialRow>,
   rubricById: ReadonlyMap<string, RubricRow>,
@@ -1239,6 +1572,9 @@ function toApplicationValue(
   scorecards: readonly ScorecardRow[],
   interviewers: readonly InterviewerRow[],
   decisions: readonly DecisionRow[],
+  currentOverrides: ReadonlyMap<string, CurrentOverride>,
+  carryOver: readonly CarryOverRow[],
+  constraints: CandidateConstraintsValue,
   contactsVisible: boolean,
 ): ApplicationValue {
   const email = row.normalized_email ?? ''
@@ -1287,6 +1623,8 @@ function toApplicationValue(
       current: row.current_rubric_version_id === null ? undefined : rubricById.get(row.current_rubric_version_id),
     }),
     decisions: toDecisionsSummary(decisions),
+    carry_over: toCarryOverSummary(carryOver),
+    constraints,
   }
 
   const rubricId = row.pinned_rubric_version_id ?? row.current_rubric_version_id
@@ -1303,7 +1641,8 @@ function toApplicationValue(
           source: row.pinned_rubric_version_id !== null ? 'APPLICATION_PIN' : 'JOB_CURRENT',
           approved: rubric.approved,
           criteria_count: asArray(rubric.dimensions).length,
-          criteria_summary: summarizeRubricCriteria(rubric.dimensions).criteria_summary,
+          // 传本申请的 current override 映射；criteria_summary 仍只取前 8 条（见函数注释）。
+          criteria_summary: summarizeRubricCriteria(rubric.dimensions, 8, currentOverrides).criteria_summary,
           ...optional('payload_hash', rubric.payload_hash ?? undefined),
         } as const,
       }),
@@ -1314,18 +1653,26 @@ function toApplicationValue(
 /**
  * rubric `dimensions` → Agent 判断所需的 criteria 摘要（D-141 ①；纯函数，可单测）。
  *
- * 三条纪律：
+ * 四条纪律：
  *   1. **只投影已存在的四个键**（key/label/kind/weight），绝不带 question/notes 全文，
  *      也不重算 R-VAL 可执行性 —— 那是 `recruitment_job_get` 的职责（读工具按事实来源分权）；
- *   2. 最多 8 条，但 `criteria_count` 永远是**真实总数**（截断不是隐瞒，缺的键不编造）；
- *   3. 结构不合法（不是对象 / key 不是字符串）的条目**跳过**，不占摘要位、不伪造 key。
+ *   2. 最多 8 条，但 `criteria_count` 永远是**真实总数**（截断不是隐瞒，缺的键不编造）。
+ *      人工纠偏也遵循同一截断：第 9 条以后的 override 不会出现在摘要里（与既有行为一致）；
+ *   3. 结构不合法（不是对象 / key 不是字符串）的条目**跳过**，不占摘要位、不伪造 key；
+ *   4. `overrides` 省略时五个新键恒为空串（旧单测的默认行为完全不变）；给了映射才填值。
+ *
+ * AI per-criterion 状态：v1.0 的库里**没有任何表/列持久化 AI 对单条标准的判断**
+ * （`screening_evaluation` 存整份评估摘要，不是逐条状态），所以 `ai_state` 恒空串；
+ * 不编造数据，字段只为前向兼容存在。将来若落库，在调用方把值传进来即可。
  * @param dimensions - `rubric_version.dimensions`（jsonb，不能假设形状）。
  * @param maxItems - 摘要最多几条（默认 8）。
+ * @param overrides - 可选：`criterion_key → 当前 override 行`；未提供时五个新键全空串。
  * @returns `{ criteria_summary, criteria_count }`。
  */
 export function summarizeRubricCriteria(
   dimensions: unknown,
   maxItems = 8,
+  overrides?: ReadonlyMap<string, CurrentOverride>,
 ): { criteria_summary: readonly CriteriaSummaryItemValue[]; criteria_count: number } {
   const list = asArray(dimensions)
   const summary: CriteriaSummaryItemValue[] = []
@@ -1338,12 +1685,32 @@ export function summarizeRubricCriteria(
     const label = asString(record.label)
     const kind = asString(record.kind)
     const weight = asNumber(record.weight)
+    // ai_state：v1.0 没有 AI 逐条状态列，恒 null（→ 空串）；不编造。
+    const aiState: string | null = null
+    const current = overrides?.get(key)
+    // CurrentOverride.human_state 已是 HumanState | null，但用类型守卫收窄，
+    // 防止将来有人放宽类型时把任意字符串塞进 effectiveState 的闭集入参。
+    const rawHuman = current?.human_state ?? null
+    const humanState: HumanState | null =
+      rawHuman === 'PRESENT' || rawHuman === 'ABSENT' || rawHuman === 'UNREADABLE' ? rawHuman : null
+    const effective = effectiveState(aiState, humanState)
     summary.push({
       key,
       ...(label === undefined ? {} : { label }),
       ...(kind === undefined ? {} : { kind }),
       ...(weight === undefined ? {} : { weight }),
-    })
+      // 只有显式传了 overrides 映射才展开五个新键：toApplicationValue 恒传（哪怕是空 Map），
+      // 直接调用（既有单测）不传 → 旧形状逐字不变。
+      ...(overrides === undefined
+        ? {}
+        : {
+          ai_state: aiState ?? '',
+          human_state: humanState ?? '',
+          effective_state: effective ?? '',
+          override_note: current?.note ?? '',
+          overridden_at: current === undefined ? '' : iso(current.created_at) ?? '',
+        }),
+    } as CriteriaSummaryItemValue)
   }
   return { criteria_summary: summary, criteria_count: list.length }
 }
@@ -1808,6 +2175,12 @@ function renderApplicationGet(_args: unknown, value: unknown): readonly TextBloc
           ? ''
           : ` (latest ${application.decisions.latest.scope}/${application.decisions.latest.result} `
             + `@ ${application.decisions.latest.stage_code})`),
+      // AT-1/2/3：从哪些申请带了什么（短号，不给完整 UUID；完整值仍在结构化 carry_over.items）。
+      `  carry_over: ${application.carry_over?.count ?? 0} [${(application.carry_over?.items ?? [])
+        .map((item) => `R${item.ref_kind} from ${shortRef(item.source_application_id)}`).join(', ')}]`,
+      // 候选人约束：只给计数短摘要（不吐完整 id / 文本全文；全文在结构化 constraints.*）。
+      `  constraints: ${application.constraints?.pins.length ?? 0} 条置顶 / `
+        + `${application.constraints?.handoffs.length ?? 0} 条交接`,
     )
   }
   if (v.next_tools.length > 0) {

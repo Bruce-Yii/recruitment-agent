@@ -25,6 +25,7 @@ import {
   EVENT_TYPE_NAME_PATTERN,
   EVENT_TYPE_REGISTRY,
   EVENT_TYPES,
+  PRIORITY_BANDS,
   REGISTERED_EVENT_TYPES,
   ROW_GUARD_TRIGGERS,
   eventTypeRegistration,
@@ -535,6 +536,18 @@ test('⑪ 注册表本身可审计：行数 + 确定性/忽略的分类计数（
   }
 })
 
+test('⑫-a criterion.override.recorded 登记为 IGNORED（schema/0001 审计事实，不建任务）', () => {
+  const registration = eventTypeRegistration(EVENT_TYPES.CRITERION_OVERRIDE_RECORDED)
+  assert.ok(registration, 'criterion.override.recorded 必须登记')
+  assert.equal(registration.type, 'criterion.override.recorded')
+  assert.equal(registration.constKey, 'CRITERION_OVERRIDE_RECORDED')
+  assert.equal(registration.normalizerVersion, 'schema/0001')
+  assert.equal(registration.routing.kind, 'IGNORED')
+  assert.ok(registration.routing.kind === 'IGNORED' && registration.routing.reason.length >= 20)
+  assert.equal(registration.producer.kind, 'TOOL')
+  assert.equal(registration.producer.file, 'src/tools/criterion-override.ts')
+})
+
 test('⑫ EVENT_TYPES 与 EVENT_TYPE_REGISTRY 双向一致（加常量忘登记 → 红）', () => {
   // 发射方引用的是 `EVENT_TYPES.X`，若只加了常量却没进注册表，上面的静态扫描看不见
   // （SQL 里是 `${EVENT_TYPES.X}` 插值，没有裸字面量），所以必须在这里双向对账：
@@ -550,4 +563,76 @@ test('⑫ EVENT_TYPES 与 EVENT_TYPE_REGISTRY 双向一致（加常量忘登记 
     if (definition.constKey === null) continue
     assert.equal(EVENT_TYPES[definition.constKey], definition.type, `${definition.type} 的 constKey 指错了常量`)
   }
+})
+
+// ---------------------------------------------------------------------------
+//  ⑬ E6-1：人的即时操作（priority=1）优先于后台批量/常规（priority≥3）
+//
+//  验收判据：批量导入时新增一条「人在等」的任务，必须能被先认领。
+//  实现侧只改"创建任务时给什么 priority"（event-types.ts 的登记表），
+//  认领排序本身（store/claim.ts:59 的 `order by priority, next_run_at nulls first,
+//  created_at`）一个字都没动。这里用纯函数/内存证据证明四件事：
+//    ① 登记表的档位：scorecard.submit = 1（人在等）、resume.intake.received = 3（常规后台）；
+//    ② DETERMINISTIC_ROUTES 从登记表派生出的 priority 与之一致；
+//    ③ decideRoute 产出的确定性任务决策带同样的 priority；
+//    ④ 按 claim.ts 的排序键排序时，先建的 priority=3 任务输给后建的 priority=1 任务。
+//  真 DB 的优先认领正例/负例在 test/runtime/intake-routing.test.ts（需要一次性空库）。
+// ---------------------------------------------------------------------------
+test('⑬ E6-1：人在等(1) 比常规后台(3) 先认领——登记表/派生路由/路由决策/排序键四层一致', () => {
+  const scorecard = eventTypeRegistration(EVENT_TYPES.SCORECARD_SUBMIT)
+  const resume = eventTypeRegistration(EVENT_TYPES.RESUME_INTAKE_RECEIVED)
+  assert.ok(scorecard !== null && resume !== null)
+  assert.equal(scorecard.routing.kind, 'DETERMINISTIC')
+  assert.equal(resume.routing.kind, 'DETERMINISTIC')
+
+  // ① 登记表的 priority 档位（1 = 人在等，3 = 常规后台；数字越小越先认领）。
+  assert.equal(
+    scorecard.routing.priority,
+    PRIORITY_BANDS.HUMAN_WAITING,
+    'scorecard.submit（人在页面提交面评）必须是 1 = 人在等',
+  )
+  assert.equal(scorecard.routing.priority, 1)
+  assert.equal(
+    resume.routing.priority,
+    PRIORITY_BANDS.BACKGROUND,
+    'resume.intake.received（后台材料摄取）必须是 3 = 常规后台',
+  )
+  assert.equal(resume.routing.priority, 3)
+  assert.ok(scorecard.routing.priority < resume.routing.priority, '人在等的优先级必须严格高于常规后台')
+
+  // 批量档只在 constants 里留定义，本版不实现批量判定。
+  assert.equal(PRIORITY_BANDS.BATCH, 4)
+
+  // ② 派生路由表（routing.ts 从登记表 build，无第二份手抄）的 priority 与登记表一致。
+  assert.equal(DETERMINISTIC_ROUTES[normalizeEventType(EVENT_TYPES.SCORECARD_SUBMIT)]!.priority, 1)
+  assert.equal(DETERMINISTIC_ROUTES[normalizeEventType(EVENT_TYPES.RESUME_INTAKE_RECEIVED)]!.priority, 3)
+
+  // ③ decideRoute 的确定性决策确实把 priority 带出来（建任务时会写进 business_task.priority）。
+  const scorecardDecision = decideRoute(
+    eventFor(scorecard, null).event,
+    undefined,
+    eventFor(scorecard, null).resolved,
+  )
+  const resumeDecision = decideRoute(
+    eventFor(resume, { type: 'INTAKE_RECORD', id: UUID }).event,
+    undefined,
+    eventFor(resume, { type: 'INTAKE_RECORD', id: UUID }).resolved,
+  )
+  assert.equal(scorecardDecision.kind, 'deterministic')
+  assert.equal(resumeDecision.kind, 'deterministic')
+  assert.equal((scorecardDecision as { priority: number }).priority, 1)
+  assert.equal((resumeDecision as { priority: number }).priority, 3)
+
+  // ④ 纯函数排序证明"后建的 1 比先建的 3 先认领"：键与 claim.ts:59 逐字一致。
+  //    这里刻意让 3 号任务 created_at 更早（模拟批量导入已经排了一队），
+  //    1 号任务晚到；priority 是第一排序键，所以 1 号仍排在最前。
+  const queued = [
+    { label: '批量导入的常规任务(3)', priority: 3, nextRunAt: 0, createdAt: 1 },
+    { label: '人在等的新任务(1)', priority: 1, nextRunAt: 0, createdAt: 2 },
+  ]
+  const claimed = [...queued].sort(
+    (a, b) => a.priority - b.priority || a.nextRunAt - b.nextRunAt || a.createdAt - b.createdAt,
+  )
+  assert.equal(claimed[0]!.label, '人在等的新任务(1)', '后建的人等任务必须排在先建的常规任务前')
+  assert.equal(claimed[0]!.priority, 1)
 })

@@ -331,6 +331,26 @@ const TOOL_FACTORIES: Readonly<Record<string, readonly FactoryEntry[]>> = {
     { factory: 'createApplicationIntakeTool', args: [{ converter: FAKE_CONVERTER, database: FAKE_DATABASE }, FAKE_DEPS] },
     { factory: 'unconfiguredApplicationIntakeTool', args: [FAKE_ISSUES] },
   ],
+  // 2026-11-18（邮箱连接器，D-155）：工具 render 必须被本检查执行；假 transport + 假 fetch 不连真网。
+  'email-fetch.ts': [
+    {
+      factory: 'createEmailFetchTool',
+      args: [{
+        database: FAKE_DATABASE,
+        converter: FAKE_CONVERTER,
+        mail: {
+          host: 'imap.test', user: 'hr@test', password_env: 'RECRUITMENT_MAIL_PASSWORD', password: 'x',
+          port: 993, tls: true, folder: 'INBOX', smtp_port: 587, smtp_tls: false, smtp_host: 'smtp.test',
+          since_days: 7, since_uid: 0, allowed_roots: [],
+        },
+        transport: {},
+        fetch: async () => ({
+          total: 0, ingested: 0, duplicates: 0, skipped: 0, failed: 0, connection: 'CONNECTED', results: [],
+        }),
+      }],
+    },
+    { factory: 'unconfiguredEmailFetchTool', args: [FAKE_ISSUES] },
+  ],
   'business-read.ts': [
     { factory: 'createBusinessReadTools', args: [{ database: FAKE_DATABASE, converter: FAKE_CONVERTER }], returnsArray: true },
     { factory: 'unconfiguredBusinessReadTools', args: [FAKE_ISSUES, FAKE_ISSUES], returnsArray: true },
@@ -338,6 +358,16 @@ const TOOL_FACTORIES: Readonly<Record<string, readonly FactoryEntry[]>> = {
   'candidate-get.ts': [
     { factory: 'createCandidateGetTool', args: [FAKE_DATABASE] },
     { factory: 'unconfiguredCandidateGetTool', args: [FAKE_ISSUES] },
+  ],
+  // 2026-11-19（逐条标准人工纠偏）：写工具工厂 render 也进本检查；假 deps，不连库。
+  'criterion-override.ts': [
+    { factory: 'createCriterionOverrideTool', args: [{ database: FAKE_DATABASE, identity: FAKE_DEPS.identity }] },
+    { factory: 'unconfiguredCriterionOverrideTool', args: [FAKE_ISSUES] },
+  ],
+  // 2026-11-19（碎片约束置顶 + 下一轮交接提醒）：写工具工厂 render 同口径入检；假 deps，不连库。
+  'candidate-constraint.ts': [
+    { factory: 'createCandidateConstraintTool', args: [{ database: FAKE_DATABASE, identity: FAKE_DEPS.identity }] },
+    { factory: 'unconfiguredCandidateConstraintTool', args: [FAKE_ISSUES] },
   ],
   'config-pipeline.ts': [
     { factory: 'createConfigPipelineTool', args: [FAKE_DATABASE, FAKE_DEPS] },
@@ -434,6 +464,17 @@ const TOOL_FACTORIES: Readonly<Record<string, readonly FactoryEntry[]>> = {
     { factory: 'createModelTextMergeTool', args: [FAKE_CONVERTER] },
     { factory: 'unconfiguredModelTextMergeTool', args: [FAKE_ISSUES] },
   ],
+  // 2026-11-21（对话×画布 + 工作台总览）：新增只读工具的 render 也必须被本检查执行。
+  'ui-dispatch.ts': [
+    { factory: 'createUiDispatchTool' },
+  ],
+  'interview-free-slots.ts': [
+    { factory: 'createInterviewFreeSlotsTool', args: [{ feishuCliPath: null, platformChannel: false }] },
+  ],
+  'workspace-overview.ts': [
+    { factory: 'createWorkspaceOverviewTool', args: [FAKE_DATABASE] },
+    { factory: 'unconfiguredWorkspaceOverviewTool', args: [FAKE_ISSUES] },
+  ],
 }
 
 /** `src/tools/` 下**不是**工具模块的文件（有理由的排除项）。 */
@@ -468,6 +509,7 @@ const NOT_A_TOOL_FACTORY: Readonly<Record<string, string>> = {
 const SUB_FACTORIES: Readonly<Record<string, string>> = {
   'business-read.ts:createApplicationGetTool': '由 createBusinessReadTools 组装（本文件已执行该数组工厂）',
   'business-read.ts:createMaterialReadTool': '由 createBusinessReadTools 组装（本文件已执行该数组工厂）',
+  'email-fetch.ts:createWiredEmailFetchTool': '生产装配入口（由 apply 注入 runtime 后调用）；未注入时 fail-closed 抛 NOT_CONFIGURED，其 render 与已执行的 createEmailFetchTool 完全相同',
 }
 
 /** `src/tools/` 目录绝对路径。 */

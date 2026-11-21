@@ -115,7 +115,7 @@ export async function readDocument(
   filePath: string,
   cfg: ResolvedConverterConfig,
   options: ReadDocumentOptions = {},
-): Promise<ReadDocumentOutcome['content']> {
+): Promise<DocumentReadOutcome['content']> {
   return (await readDocumentDetailed(filePath, cfg, options)).content
 }
 

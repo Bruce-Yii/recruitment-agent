@@ -139,7 +139,7 @@
 //   只做 `ACTIVE → CLOSED`（其它生命周期状态不碰，零 UPDATE），事件由既有 `fn_row_guard` 写
 //   `application.lifecycle_status.changed`（from/to/actor），`status_changed_by_actor_id` = 真实人。
 
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 
 import { canonicalJson } from '../tools/contract.ts'
 import { RecruitmentToolError } from '../tools/errors.ts'
@@ -314,12 +314,42 @@ export interface StageAdvanceResult {
   readonly blockers: readonly StageBlocker[]
   /** 警告（目前只有 `STAGE_AHEAD`）。 */
   readonly warnings: readonly StageWarning[]
+  /**
+   * AT-6/7：本次是否走了 override 分支（人工原话授权跳轮 / 豁免面评）。
+   * **可选**，正常路径不写这个键 —— 旧调用方/输出 fixture 的形状一个字不变。
+   */
+  readonly override_applied?: boolean
+  /** AT-6/7：因 override 被跳过的梯子边（记终点阶段码，例如 `['S8','S9','S10']`）。可选。 */
+  readonly skipped_stages?: readonly string[]
+  /** AT-6/7：是否豁免了缺失的已提交面评（T4 的 SCORECARD_REQUIRED 被人工豁免）。可选。 */
+  readonly waived_scorecard?: boolean
 }
 
-/** 本命令的输入：租户来自配置、申请来自入参，**没有第三个**。 */
+/**
+ * AT-6/7：人工带原话的跳轮 / 面评豁免授权。
+ *
+ * `reason` / `confirmation_text` 都由工具层校验（trim 后 1..500 / 1..2000）；
+ * `confirmation_text` 是**人的原话**，本层只做 SHA-256（服务端算，绝不收模型给的哈希）。
+ */
+export interface StageOverride {
+  readonly reason: string
+  readonly confirmation_text: string
+}
+
+/** 本命令的输入：租户来自配置、申请来自入参；两个可选键分别来自 AT-6/7 与乐观并发守卫。 */
 export interface AdvanceApplicationStageInput {
   readonly tenantId: string
   readonly applicationId: string
+  /** AT-6/7：仅当人工提供原话确认时才可跳轮/豁免；缺省 = 原路径（一条闸门都不放宽）。 */
+  readonly override?: StageOverride
+  /**
+   * 可选乐观并发：调用方认为的 `application.record_version`（整数 ≥1，由工具层校验）。
+   * 缺省 = 完全沿用原写路径（不加任何新 WHERE、不发额外查询、不改出参）。
+   * 传了 → 在任何写入（含 F1 rubric 补钉 + 审计事件）之前用同事务 `select … for update`
+   *        持锁读后比较（行锁保持到事务结束，与后续所有写串行化）；
+   * 不符 → `VERSION_CONFLICT / STALE_RECORD_VERSION`，零写入、零审计事件。
+   */
+  readonly expected_record_version?: number
 }
 
 /** 工作台视角的"责任人"（`role` 恒有；actor 能推出来才有）。 */
@@ -1433,6 +1463,36 @@ async function evaluateT4(
   return { kind: 'PASS' }
 }
 
+/**
+ * 一条梯子边的统一判定入口（T1–T4）。
+ *
+ * 存在的原因：正常诊断（{@link diagnose}）与 override 诊断（{@link diagnoseOverride}）
+ * 必须走**同一套**逐边判定，不允许任何一侧另写 if/else —— 否则 override 门被豁免时
+ * 会把"事实本身"也算错。`allowPin=false` 时本函数只读（T1 不补钉）。
+ * @param client - 事务内连接。
+ * @param tenantId - 租户。
+ * @param app - 当前申请行。
+ * @param applicationId - 申请 id（T2 只需要它）。
+ * @param step - 要判定的梯子边。
+ * @param allowPin - 是否允许 T1 补钉（写路径正常模式 true；只读视图 / override 诊断 false）。
+ * @returns 三分法结局。
+ */
+async function evaluateEdge(
+  client: DatabaseClient,
+  tenantId: string,
+  app: ApplicationRow,
+  applicationId: string,
+  step: StageEdge,
+  allowPin: boolean,
+): Promise<EdgeOutcome> {
+  switch (step.rule) {
+    case 'T1': return evaluateT1(client, tenantId, app, allowPin)
+    case 'T2': return evaluateT2(client, tenantId, applicationId)
+    case 'T3': return evaluateT3(client, tenantId, app)
+    case 'T4': return evaluateT4(client, tenantId, app)
+  }
+}
+
 // =====================================================================
 //  统一诊断（写路径与只读视图共用同一套判定）
 // =====================================================================
@@ -1554,13 +1614,7 @@ async function diagnose(
     if (step === undefined) break
     // 受限派生：当前游标上那条边若不在允许集合里，就地停下（不跳阶、不继续找下一条）。
     if (allowedRules !== undefined && !allowedRules.includes(step.rule)) break
-    let outcome: EdgeOutcome
-    switch (step.rule) {
-      case 'T1': outcome = await evaluateT1(client, tenantId, app, allowPin); break
-      case 'T2': outcome = await evaluateT2(client, tenantId, applicationId); break
-      case 'T3': outcome = await evaluateT3(client, tenantId, app); break
-      case 'T4': outcome = await evaluateT4(client, tenantId, app); break
-    }
+    const outcome: EdgeOutcome = await evaluateEdge(client, tenantId, app, applicationId, step, allowPin)
     if (outcome.kind === 'BLOCKED') {
       rawBlockers.push(...outcome.blockers)
       break
@@ -1622,6 +1676,65 @@ async function finishWithObstructions(
     blockers: enriched.blockers,
     warnings: enriched.warnings,
     ...(pendingFact === undefined ? {} : { pending_fact: pendingFact }),
+  }
+}
+
+// =====================================================================
+//  乐观并发守卫（可选）
+// =====================================================================
+
+/**
+ * 顶层**可选**乐观锁守卫：比较的是**申请行** `application.record_version`。
+ *
+ * 与 `decision-record.ts::guardApplicationRecordVersion` 同一 B 式：`select … for update`
+ * 用调用方给的事务内 client（`withActor` 的同一个事务），行锁保持到事务结束 —— "读版本 +
+ * 比较 + 后续所有写"在锁内串行化，等价于把版本条件写进后续 UPDATE 的 WHERE。
+ * 只用这一条锁读拿到 actual；不匹配就用它直接构造错误详情，**不加第二次查询**。
+ * 命中 ⇒ 直接 return（不写、不 +1、不写审计事件）；不符 ⇒ 异常上抛，整事务回滚，
+ * 零写入、零审计事件。
+ * 不传 expected ⇒ 立即返回：零额外查询、零锁，后续 SQL 与改动前逐字相同。
+ *
+ * @param client - 事务内连接（调用方已 `SET LOCAL recruitment.actor_id`）。
+ * @param tenantId - 租户（来自配置）。
+ * @param applicationId - 申请 id。
+ * @param expected - 调用方期望的 record_version；`undefined` = 关闭守卫（原路径）。
+ */
+async function assertExpectedRecordVersion(
+  client: DatabaseClient,
+  tenantId: string,
+  applicationId: string,
+  expected: number | undefined,
+): Promise<void> {
+  if (expected === undefined) return
+
+  const { rows } = await client.query<{ record_version: number }>(
+    `select a.record_version
+       from recruitment.application a
+      where a.id = $1 and a.tenant_id = $2
+        for update`,
+    [applicationId, tenantId],
+  )
+  const actual = rows[0]?.record_version
+  if (actual === undefined) {
+    // 行不存在 / 错租户 → fail closed（与 readApplication 的 NOT_FOUND 同一口径）。
+    throw stageError(
+      'NOT_FOUND',
+      'APPLICATION_NOT_FOUND',
+      '该租户下没有这个申请（乐观锁守卫）。',
+      { application_id: applicationId },
+    )
+  }
+  if (actual !== expected) {
+    throw stageError(
+      'VERSION_CONFLICT',
+      'STALE_RECORD_VERSION',
+      `申请的 record_version 不是 ${expected}（已被并发修改）：本调用零写入、零审计事件，请重读后再决定。`,
+      {
+        application_id: applicationId,
+        expected_record_version: expected,
+        actual_record_version: actual,
+      },
+    )
   }
 }
 
@@ -1781,8 +1894,10 @@ export async function advanceApplicationStage(
   client: DatabaseClient,
   input: AdvanceApplicationStageInput,
 ): Promise<StageAdvanceResult> {
-  const { tenantId, applicationId } = input
+  const { tenantId, applicationId, expected_record_version } = input
   try {
+    // 守卫先于 diagnose：diagnose 可能做 F1 rubric 补钉（写申请行 + 审计事件）。
+    await assertExpectedRecordVersion(client, tenantId, applicationId, expected_record_version)
     const diagnosis = await diagnose(client, tenantId, applicationId, true, true)
     const app = diagnosis.app
 
@@ -1812,6 +1927,285 @@ export async function advanceApplicationStage(
       transitions: applied.transitions,
       blockers: diagnosis.blockers,
       warnings: diagnosis.warnings,
+    }
+  } catch (error) {
+    if (isConcurrentUpdateError(error)) {
+      throw stageError(
+        'VERSION_CONFLICT',
+        'APPLICATION_CONCURRENT_UPDATE',
+        '并发修改：另一个事务先改了这条申请。本调用已整体回滚，请重读后再决定。',
+        { application_id: applicationId },
+      )
+    }
+    throw error
+  }
+}
+
+// =====================================================================
+//  AT-6/7 · 带人工原话的跳轮 / 豁免面评（override）
+//
+//  与正常路径的**唯一**区别：override 一旦存在，梯子每条边的"事实闸门"都被人工原话
+//  明确豁免（treat as satisfied），于是可以从当前阶段一路走到 S10。除此之外：
+//    * 仍复用同一套 diagnose（拿硬约束结论 + 锁定的申请行）；
+//    * 仍复用同一个 applyTransitions 写路径（版本条件 + 三条写后断言，不复制）；
+//    * 仍要求 application ACTIVE、阶段在 S6..S10、不倒退、不越过 S10、不动生命周期、
+//      不写 decision、不建任务；
+//    * 做的每一跳都记进 transitions；被豁免的边记进 skipped_stages / waived_scorecard；
+//    * 与原阶段 UPDATE **同一事务**写一条 'application.stage.override.recorded' 审计事件。
+// =====================================================================
+
+/**
+ * AT-7 审计事件：把"谁、何时、什么原话、跳过了哪一步"落到 `event_inbox`。
+ *
+ * 形状与 {@link insertRubricPinnedEvent} 逐列一致（internal provider / FALLBACK_KEY
+ * idempotency 绑 source_object_id / payload jsonb / trust_level INTERNAL /
+ * normalizer_version 'schema/0001' / normalized_event_type 同名）。事件名**刻意写成裸字面量**：
+ * `test/runtime/event-types.test.ts` 的 DOMAIN_WRITER 反查按字面量扫描本文件。
+ * @param client - 事务内连接（与阶段 UPDATE 同一个）。
+ * @param input - 审计字段（哈希由调用方用 node:crypto 算好，本函数不收模型给的哈希）。
+ * @returns 新事件 id。
+ */
+async function insertStageOverrideEvent(
+  client: DatabaseClient,
+  input: {
+    readonly tenantId: string
+    readonly applicationId: string
+    readonly reason: string
+    readonly confirmedByActorId: string
+    readonly confirmedAt: string
+    readonly confirmationTextSha256: string
+    readonly fromStage: string
+    readonly toStage: string
+    readonly skippedStages: readonly string[]
+    readonly waivedScorecard: boolean
+  },
+): Promise<string> {
+  const payload = {
+    table: 'application',
+    column: 'current_stage_code',
+    record_id: input.applicationId,
+    application_id: input.applicationId,
+    // ---- AT-7 必含的六个字段 ----
+    reason: input.reason,
+    confirmed_by_actor_id: input.confirmedByActorId,
+    confirmed_at: input.confirmedAt,
+    confirmation_text_sha256: input.confirmationTextSha256,
+    from_stage: input.fromStage,
+    to_stage: input.toStage,
+    // ---- 可读性附件 ----
+    skipped_stages: [...input.skippedStages],
+    waived_scorecard: input.waivedScorecard,
+    source: 'recruitment.application.stage_advance.override',
+  }
+  const { rows } = await client.query<{ event_id: string }>(
+    `insert into recruitment.event_inbox
+       (tenant_id, provider, provider_event_id, event_type, schema_version,
+        occurred_at, received_at, recorded_at, correlation_id, causation_id,
+        idempotency_key, idempotency_source, source_object_id,
+        payload_ref, payload, trust_level, normalized_event_type, normalizer_version)
+     values ($1, 'internal', null, 'application.stage.override.recorded', 1,
+             now(), now(), now(), null, null,
+             $2, 'FALLBACK_KEY', $3,
+             null, $4::jsonb, 'INTERNAL', 'application.stage.override.recorded', 'schema/0001')
+     returning event_id`,
+    [
+      input.tenantId,
+      `stage-override:${randomUUID()}`,
+      input.applicationId,
+      JSON.stringify(payload),
+    ],
+  )
+  const row = rows[0]
+  if (row === undefined) {
+    throw stageError(
+      'INVARIANT_VIOLATION',
+      'OVERRIDE_AUDIT_EVENT_MISSING',
+      'override 审计事件没有写入成功，整体回滚。',
+      { application_id: input.applicationId },
+    )
+  }
+  return row.event_id
+}
+
+/** override 诊断结果（`edges` 是要真实落库的边；`skipped` 是闸门被人工豁免的边）。 */
+interface OverrideDiagnosis {
+  readonly app: ApplicationRow
+  readonly edges: readonly StageEdge[]
+  readonly skipped: readonly StageEdge[]
+  readonly waivedScorecard: boolean
+  readonly status: StageAdvanceStatus
+  readonly blockers: readonly StageBlocker[]
+  readonly warnings: readonly StageWarning[]
+}
+
+/**
+ * override 模式诊断。
+ *
+ * 分两步，刻意不复制正常路径的判定：
+ *   1. 先跑一次正常的 {@code diagnose(lock=true, allowPin=false)}：它负责目录完整性、
+ *      ACTIVE、不倒退（STAGE_AHEAD）、不插队（STAGE_NOT_ON_LADDER）这些**override 也必须守**
+ *      的硬约束，并拿回被 `for update` 锁住的申请行。命中任一硬约束就零写入返回。
+ *   2. 从当前阶段沿梯子走到 S10，逐边用 {@link evaluateEdge} 判定：无论 PASS/WAIT/BLOCKED
+ *      都记一条 `edges`（因为人工原话已豁免其闸门）；非 PASS 的额外记进 `skipped`。
+ *      T4 被豁免时再数一次已提交面评，0 份 → `waivedScorecard=true`。
+ * `allowPin=false`：override 不做 F1 rubric 补钉（补钉是正常路径承认已批准事实的动作，
+ * 与"人工豁免闸门"不是一回事，混在一起会让审计语义不清）。
+ * @param client - 事务内连接。
+ * @param tenantId - 租户。
+ * @param applicationId - 申请 id。
+ * @returns override 诊断（无落库）。
+ */
+async function diagnoseOverride(
+  client: DatabaseClient,
+  tenantId: string,
+  applicationId: string,
+): Promise<OverrideDiagnosis> {
+  const normal = await diagnose(client, tenantId, applicationId, true, false)
+  const app = normal.app
+
+  // 硬约束：override 也不许碰非 ACTIVE / 不在梯子 / 已越过终态的申请（零 UPDATE）。
+  const hardStop = normal.blockers.some(
+    (b) => b.code === 'APPLICATION_NOT_ACTIVE' || b.code === 'STAGE_NOT_ON_LADDER',
+  ) || normal.warnings.some((w) => w.code === 'STAGE_AHEAD')
+  if (hardStop) {
+    return {
+      app,
+      edges: [],
+      skipped: [],
+      waivedScorecard: false,
+      status: normal.status,
+      blockers: normal.blockers,
+      warnings: normal.warnings,
+    }
+  }
+
+  const edges: StageEdge[] = []
+  const skipped: StageEdge[] = []
+  let cursor = app.current_stage_code
+  // 每走一步都必须是梯子上的一条边；走到 S10（没有 from=S10 的边）自然停。
+  while (edges.length <= LADDER.length) {
+    const step = LADDER.find((edge) => edge.from === cursor)
+    if (step === undefined) break
+    const outcome = await evaluateEdge(client, tenantId, app, applicationId, step, false)
+    edges.push(step)
+    if (outcome.kind !== 'PASS') skipped.push(step)
+    cursor = step.to
+  }
+
+  // T4 被豁免时：是否真的"豁免了一份未交面评"（waived_scorecard）由库里的系数决定，
+  // 不看 outcome（材料没就绪时 evaluateT4 根本不数面评）。
+  const waivedScorecard = skipped.some((step) => step.rule === 'T4')
+    ? (await countSubmittedScorecards(client, tenantId, applicationId)) === 0
+    : false
+
+  return {
+    app,
+    edges,
+    skipped,
+    waivedScorecard,
+    status: edges.length > 0 ? 'ADVANCED' : 'NO_OP',
+    blockers: normal.blockers,
+    warnings: normal.warnings,
+  }
+}
+
+/** override 版的推进结果（在正常三态上补三个可选审计字段；正常路径不产出这个类型）。 */
+export interface StageOverrideResult extends StageAdvanceResult {
+  readonly override_applied: boolean
+  readonly skipped_stages: readonly string[]
+  readonly waived_scorecard: boolean
+}
+
+/**
+ * AT-6/7：带人工原话授权的阶段推进。
+ *
+ * 调用前提与 {@link advanceApplicationStage} 完全相同（调用方事务 + `SET LOCAL
+ * recruitment.actor_id`）；本函数**不**自己 begin/commit —— 阶段 UPDATE 与审计事件在同一事务，
+ * 任一步抛错都由调用方整体回滚。
+ *
+ * fail-closed 顺序（全部在任何写语句之前）：
+ *   1. GUC 里没有 actor → `INVALID_ARGS(ACTOR_REQUIRED)`，零写入；
+ *   2. 硬约束（非 ACTIVE / 不在 S6..S10 / 已越过 S10）→ 零 UPDATE、零事件；
+ *   3. 当前已在 S10 → NO_OP、零 UPDATE、零事件（不发明第 13 个码）。
+ * @param client - 事务内连接（actor 已 `SET LOCAL`）。
+ * @param input - `{tenantId, applicationId, override}`（override 已由工具层校验/裁剪）。
+ * @returns 三态结论 + 真实迁移 + 可选审计字段（`override_applied` / `skipped_stages` / `waived_scorecard`）。
+ * @throws RecruitmentToolError - `INVALID_ARGS(ACTOR_REQUIRED)` / `NOT_FOUND` / `VERSION_CONFLICT`
+ *   / `INVARIANT_VIOLATION`。
+ */
+export async function advanceApplicationStageWithOverride(
+  client: DatabaseClient,
+  input: AdvanceApplicationStageInput,
+): Promise<StageOverrideResult> {
+  const { tenantId, applicationId, override, expected_record_version } = input
+  try {
+    // 1) actor 先读：没有 actor 就 fail closed，一条写语句都不发（与 fn_row_guard 同口径）。
+    const actorId = await currentActorId(client)
+    if (actorId === null) {
+      throw stageError(
+        'INVALID_ARGS',
+        'ACTOR_REQUIRED',
+        '执行上下文没有 actor（SET LOCAL recruitment.actor_id），拒绝 override 写入。',
+        { application_id: applicationId },
+      )
+    }
+    // 防御：调用方漏传 override 时退回正常路径（工具层保证不会发生，这里只是不静默跳过闸门）。
+    if (override === undefined) {
+      // 交给正常路径做守卫（只守卫一次；不在这里先跑，否则第二次会因版本已自增而误报冲突）。
+      const base = await advanceApplicationStage(client, { tenantId, applicationId, expected_record_version })
+      return { ...base, override_applied: false, skipped_stages: [], waived_scorecard: false }
+    }
+
+    // 守卫先于 diagnoseOverride：override 路径虽不做 F1 补钉，但诊断之后的第一跳 UPDATE
+    // 与同一事务的 override 审计事件都必须在版本确认之后才发生。
+    await assertExpectedRecordVersion(client, tenantId, applicationId, expected_record_version)
+    const diagnosis = await diagnoseOverride(client, tenantId, applicationId)
+    const app = diagnosis.app
+    if (diagnosis.edges.length === 0) {
+      // 硬约束挡住 / 已在终态：零 UPDATE、零事件。
+      return {
+        application_id: app.id,
+        stage_code: app.current_stage_code,
+        record_version: app.record_version,
+        status: diagnosis.status,
+        transitions: [],
+        blockers: diagnosis.blockers,
+        warnings: diagnosis.warnings,
+        override_applied: false,
+        skipped_stages: [],
+        waived_scorecard: false,
+      }
+    }
+
+    // 2) 落库：仍走唯一的 applyTransitions（版本条件 + 三条写后断言，没有第二份实现）。
+    const applied = await applyTransitions(client, tenantId, applicationId, app, diagnosis.edges)
+    const skippedStages = diagnosis.skipped.map((edge) => edge.to)
+
+    // 3) 审计：与上面的阶段 UPDATE **同一事务**。失败 → 调用方回滚 → 阶段也不动。
+    await insertStageOverrideEvent(client, {
+      tenantId,
+      applicationId,
+      reason: override.reason,
+      confirmedByActorId: actorId,
+      confirmedAt: new Date().toISOString(),
+      confirmationTextSha256: createHash('sha256').update(override.confirmation_text, 'utf8').digest('hex'),
+      fromStage: app.current_stage_code,
+      toStage: applied.stage_code,
+      skippedStages,
+      waivedScorecard: diagnosis.waivedScorecard,
+    })
+
+    return {
+      application_id: applicationId,
+      stage_code: applied.stage_code,
+      record_version: applied.record_version,
+      status: 'ADVANCED',
+      transitions: applied.transitions,
+      blockers: diagnosis.blockers,
+      warnings: diagnosis.warnings,
+      override_applied: true,
+      skipped_stages: skippedStages,
+      waived_scorecard: diagnosis.waivedScorecard,
     }
   } catch (error) {
     if (isConcurrentUpdateError(error)) {
@@ -1896,8 +2290,10 @@ export async function deriveScreeningDecisionStage(
   client: DatabaseClient,
   input: AdvanceApplicationStageInput,
 ): Promise<ScreeningDecisionStageDerivation> {
-  const { tenantId, applicationId } = input
+  const { tenantId, applicationId, expected_record_version } = input
   try {
+    // 现有调用方（decision_record）不传 expected ⇒ 守卫立即返回，SQL/行为逐字不变。
+    await assertExpectedRecordVersion(client, tenantId, applicationId, expected_record_version)
     const diagnosis = await diagnose(client, tenantId, applicationId, true, true, SCREENING_DECISION_RULES)
     const app = diagnosis.app
 

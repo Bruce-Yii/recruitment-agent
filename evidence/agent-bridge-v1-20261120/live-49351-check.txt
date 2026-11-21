@@ -1,0 +1,13 @@
+# 预览 Host 49351 · 对话桥 live 验收（2026-11-20 23:52）
+
+- 动作：停旧进程（pid 22300）→ 用当前仓库代码重启预览 Host（`rec-human-20261120`，DB `ra_human_20261120`，pid 9148，port 49351，`work/d5/fullpage/host/` 日志）。
+- `GET /recruitment/app` → **200**
+- `POST /recruitment/agent/turn`（测试身份 recruiter，SSE）→ **200**：
+  - 诊断工具清单：15 个 `recruitment_*` **只读**工具（application_get/candidate_get/job_get/resume_read/material_read/transcript_read/trace_get/…），**0 写工具**；
+  - 真实 `tool/call`：`recruitment_job_get`（`code=DEMO-BE-001`）→ `tool/result`「命中 1 个岗位 … [OPEN]」；
+  - `delta` 拼出回答：「是的，岗位代码 DEMO-BE-001（后端工程师（演示））当前状态为 OPEN，正在招聘。」；
+  - `done`（turn_id=1，usage 正常），无 `error`。
+- 结论：**预览环境对话已可用（只读工具面）**；写操作仍走右侧工作台人点确认。
+- 清理：旧进程已停、旧 token 已删；新 token 仅存 `%TEMP%\ra-pr-host-49351.token`（本地临时文件，未入库）；49369（DSH GUI）未触碰。
+
+> 复验命令（不重启 Host）：`node work/d5/fullpage/probe-chat-live-49351.mjs`（work/ 不入库）。

@@ -335,7 +335,9 @@ function bindStep(step: RecoveryStep, capabilities: RecoveryCapabilities): StepB
     if (reRead === undefined) {
       return { kind: 'unavailable', reason: `没有 reRead 能力，${step.action} 步不可执行` }
     }
-    return { kind: 'ready', run: () => reRead(step.action) }
+    // 上面的 if 已把 step.action 收窄为这两个值；闭包内 TS 不再保留对参数属性的收窄，
+    // 故在此显式断言（类型断言在运行时被擦除，不改变任何值）。
+    return { kind: 'ready', run: () => reRead(step.action as 'retry' | 'switch_reader') }
   }
   if (step.action === 'vision_read') {
     const pages = step.vision

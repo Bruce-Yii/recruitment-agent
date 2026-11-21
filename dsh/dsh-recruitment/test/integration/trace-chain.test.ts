@@ -374,7 +374,24 @@ test('真链路 intake→screening→decision：从 application id 追溯出同�
     assert.equal(decisionRing.actor_id, HR_ACTOR)
     assert.equal(trace.counts.DECISION, 1)
     assert.equal(trace.counts.TOOL_CALL, 3)
-    assert.equal(trace.counts.EVENT, 2, '链上应有 intake 与 decision 两个内部事件')
+    // D-141③/D-142：SCREENING 决策在同一事务派生阶段多落一条
+    // application.current_stage_code.changed 事件（真值变化，不是回归）。
+    // 因此期望由 2 → 3；同时把"只数条数"的弱断言收紧为三元组集合相等：
+    // 多一条任意事件、少一条、或重复都不算过。
+    const eventStates = trace.rings
+      .filter((ring) => ring.ring === 'EVENT')
+      .map((ring) => ring.state)
+      .sort()
+    assert.deepEqual(
+      eventStates,
+      [
+        'application.current_stage_code.changed',
+        'decision.record',
+        'resume.intake.received',
+      ],
+      'EVENT 环恰好是 intake / stage.changed / decision 三条，不多不少',
+    )
+    assert.equal(trace.counts.EVENT, 3, '链上应有 intake、stage.changed 与 decision 三个内部事件')
 
     // ③ 决策的 causation 指向它自己的事件（EVENT→DECISION 有边）
     const causation = decisionRing.refs?.causation_event_id

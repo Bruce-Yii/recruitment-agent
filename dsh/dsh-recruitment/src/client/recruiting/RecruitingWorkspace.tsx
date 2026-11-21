@@ -17,6 +17,7 @@
 // `job-draft`（含 request/generate/pending/reasons/missing/rounds/criteria/edit/confirm/result）。
 
 import { useEffect, useState } from 'react'
+import { CanvasPanelHost } from '../canvas/CanvasRoute.tsx'
 import {
   useApplicationDetail,
   useDecisionFacts,
@@ -2128,6 +2129,9 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
     >
       <style key={STYLE_ELEMENT_KEY}>{RECRUITING_CSS}</style>
       <div className="rcw-content">
+        <CanvasPanelHost sessionId={props.sessionId} onRefreshOverview={overview.reload}>
+          {({ openCandidate }) => (
+            <>
         {aliasBlocked ? (
           <div className="rcw-notice" data-testid="alias-notice" role="status">
             {aliasNote}
@@ -2316,7 +2320,7 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
                   <SectionHead
                     title="此岗位下的候选人"
                     note={`共 ${String(rowsForJob.length)} 条申请 · 显示 ${String(rowsForFilter.length)} 条`}
-                    right={<span className="rcw-dim rcw-tiny">点击行查看申请详情（结论 + 渐进展开证据）</span>}
+                    right={<span className="rcw-dim rcw-tiny">点击行查看申请详情（结论 + 逐条依据）</span>}
                   />
 
                   <div className="rcw-filterbar" data-testid="application-filters">
@@ -2352,7 +2356,7 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
                           key={row.rowKey}
                           row={row}
                           jobRubric={selectedJob?.rubric ?? null}
-                          onOpen={openApplication}
+                          onOpen={(applicationId) => openCandidate(applicationId)}
                         />
                       ))
                     )}
@@ -2373,6 +2377,9 @@ export function RecruitingWorkspace(props: WorkspaceProps) {
             ) : null}
           </>
         )}
+            </>
+          )}
+        </CanvasPanelHost>
       </div>
       {/* 人类闸门：岗位关闭弹窗（取消 = 零请求；确认才 POST job/close） */}
       {closeDialogOpen ? (

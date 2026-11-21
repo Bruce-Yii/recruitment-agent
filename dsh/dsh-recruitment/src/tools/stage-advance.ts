@@ -3,7 +3,8 @@
 // 形状权威：`contracts/stage-advance/tool-contracts.md`（下称 TC）。
 // 领域实现：`src/domain/stage-advance.ts`（判定 + 版本守卫 + stage_entered_at，全部在那儿）。
 // 本文件只做三件"胶水"：
-//   1. 入参收窄到**一个**：`{application_id}`。目标阶段、actor、tenant 一概不收 ——
+//   1. 入参收窄到**一个必填键** `{application_id}`（+ 两个可选键：人工原话 `override`、
+//      乐观并发 `expected_record_version`）。目标阶段、actor、tenant 一概不收 ——
 //      本命令不新增授权，只承认已发生的事实（收 `to_stage` 就等于给模型一个"跳阶开关"）。
 //   2. 事务与身份：`withActor`（`BEGIN` + `SET LOCAL recruitment.actor_id`）——
 //      `fn_row_guard` 只认这条路径给出的 actor；缺了它会 ACTOR_REQUIRED 拒绝。
@@ -41,12 +42,14 @@ import { buildThreeAxisLabels, type ThreeAxisLabels } from './candidate-get.ts'
 import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
 import {
   advanceApplicationStage,
+  advanceApplicationStageWithOverride,
   BLOCKER_CODES,
   NEXT_ACTION_CODES,
   OWNER_ROLES,
   WARNING_CODES,
   type StageAdvanceStatus,
   type StageBlocker,
+  type StageOverride,
   type StageTransition,
   type StageWarning,
 } from '../domain/stage-advance.ts'
@@ -76,10 +79,137 @@ const PARAMS: ParamMap = {
     required: true,
     uuid: true,
     description:
-      '申请 id（UUID）。本工具只接受这一个参数：目标阶段由"已发生的事实"推导'
+      '申请 id（UUID）。目标阶段由"已发生的事实"推导'
       + '（T1 S6→S7 / T2 S7→S8 / T3 S8→S9 / T4 S9→S10，S10 是 v1.0 终态），'
       + 'actor 与 tenant 只能来自执行上下文。',
   },
+  // 乐观并发（可选）：调用方认为的 application.record_version（先 application_get 拿 record_version）。
+  // 放进 PARAMS ⇒ 自动进 schema（D-157：新参数必须模型可见）；parseArgs 负责整数/>=1 校验。
+  // 传了 → 版本不符由领域写路径在同事务 `select … for update` 持锁读后比较并拒绝
+  //        （VERSION_CONFLICT / STALE_RECORD_VERSION，零写入、零审计事件、零版本 +1）；
+  // 不传 → undefined，领域层完全沿用原写路径（不加任何新 WHERE / 事件 / 出参改动）。
+  expected_record_version: {
+    kind: 'integer',
+    required: false,
+    min: 1,
+    description:
+      'Optional optimistic-concurrency guard: the application.record_version the caller last read '
+      + '(integer >= 1; get it first via recruitment_application_get). When supplied and it differs from '
+      + 'the stored record_version, the call fails atomically with VERSION_CONFLICT / '
+      + 'STALE_RECORD_VERSION (detail: expected_record_version, actual_record_version) with zero writes '
+      + 'and zero audit events. When omitted, behaviour is byte-for-byte unchanged.',
+  },
+  // AT-6/7 的 override 是**可选**参数，域类型是对象 {reason, confirmation_text}，
+  // 而本插件的 ParamMap 只支持标量（string/integer/boolean/string[]）。arg 校验在
+  // parseOverrideArg() 里做（含 unknown key 拒绝 + 两侧长度），`additionalProperties:false`
+  // 由 toParameterSchema 生成，模型可见性由 DESCRIPTION 明文给出（保持旧 schema 用例的形状）。
+}
+
+// =====================================================================
+//  AT-6/7 入参 override：严格校验，**先于任何 DB 连接**（失败即零写入）
+// =====================================================================
+
+/** 一个 override 只允许这两个键；`confirmation_text_sha256` 等哈希键是 unknown key，一律拒绝。 */
+const OVERRIDE_KEYS: ReadonlySet<string> = new Set(['reason', 'confirmation_text'])
+
+/**
+ * 校验/裁剪模型给的 `override`。
+ *
+ *   * 缺省（没有这个键）→ `undefined`，走原路径（一扇闸门都不放宽）；
+ *   * 必须是普通对象、只含 `reason` / `confirmation_text` 两键（unknown key 全部拒绝，
+ *     包括模型自报的 `confirmation_text_sha256` —— 哈希只能由服务端算）；
+ *   * 两键都必填、都是字符串；trim 后 reason 1..500、confirmation_text 1..2000。
+ *
+ * 返回的是 **trim 后的字符串**：人话的首尾空白不是"原话"的一部分，服务端哈希的就是这份
+ * 裁剪后的原话（与审计 payload 里留存的文本一一对应）。
+ * @param raw - 模型给的 override 值。
+ * @returns 校验通过的 override；没有 override 键时 `undefined`。
+ * @throws RecruitmentToolError - `INVALID_ARGS`（任一条不满足）。
+ */
+function parseOverrideArg(raw: unknown): StageOverride | undefined {
+  if (raw === undefined) return undefined
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new RecruitmentToolError('INVALID_ARGS', 'override must be an object {reason, confirmation_text}')
+  }
+  const obj = raw as Record<string, unknown>
+  const unknown = Object.keys(obj).filter((key) => !OVERRIDE_KEYS.has(key)).sort()
+  if (unknown.length > 0) {
+    throw new RecruitmentToolError('INVALID_ARGS', `override unknown key(s): ${unknown.join(', ')}`)
+  }
+  const reason = obj.reason
+  const confirmationText = obj.confirmation_text
+  if (typeof reason !== 'string') {
+    throw new RecruitmentToolError('INVALID_ARGS', 'override.reason must be a string (1..500 chars after trim)')
+  }
+  if (typeof confirmationText !== 'string') {
+    throw new RecruitmentToolError('INVALID_ARGS', 'override.confirmation_text must be a string (1..2000 chars after trim)')
+  }
+  const trimmedReason = reason.trim()
+  const trimmedConfirmation = confirmationText.trim()
+  if (trimmedReason.length < 1 || trimmedReason.length > 500) {
+    throw new RecruitmentToolError('INVALID_ARGS', 'override.reason must be 1..500 chars after trim')
+  }
+  if (trimmedConfirmation.length < 1 || trimmedConfirmation.length > 2000) {
+    throw new RecruitmentToolError('INVALID_ARGS', 'override.confirmation_text must be 1..2000 chars after trim')
+  }
+  return { reason: trimmedReason, confirmation_text: trimmedConfirmation }
+}
+
+/**
+ * 从原始入参里摘出 `override`，其余键原样交给 `parseArgs(PARAMS, ...)`。
+ *
+ * 这样既让域层拿到 override，又让 `parseArgs` 继续守 application_id 的 UUID/必填校验
+ * 与"未知参数一律拒绝"（模型仍能借 override 传 `actor_id` 之类的东西会被 parseArgs 拒）。
+ * @param rawArgs - 模型给的原始入参。
+ * @returns `{ rest, override }`。
+ */
+function splitOverrideArg(rawArgs: unknown): { rest: unknown; override: StageOverride | undefined } {
+  if (typeof rawArgs !== 'object' || rawArgs === null || Array.isArray(rawArgs)) {
+    return { rest: rawArgs, override: undefined }
+  }
+  const input = rawArgs as Record<string, unknown>
+  if (!Object.hasOwn(input, 'override')) return { rest: rawArgs, override: undefined }
+  const override = parseOverrideArg(input.override)
+  const rest: Record<string, unknown> = { ...input }
+  delete rest.override
+  return { rest, override }
+}
+
+/**
+ * `override` 的模型可见 schema（AT-6/7）。
+ *
+ * 长度上限写在 `description` 里而**不是** `maxLength`：本插件注册的原始 JSON Schema 受
+ * DSH 官方子集约束（type/oneOf/properties/required/additionalProperties/items/enum/const
+ * + description/title/default/examples），`maxLength` 不在子集里，写进去会让整张工具定义被
+ * `assertSupportedJsonSchema` 拒绝。执行期的 1..500 / 1..2000 硬校验在 `parseOverrideArg`。
+ */
+const OVERRIDE_PARAMETER_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  description:
+    'AT-6/7：人工原话授权的跳轮/豁免面评。仅当真人明确授权时才传；'
+    + 'reason 1..500 字符（max length 500），confirmation_text 1..2000 字符（max length 2000），'
+    + '按 trim 后计长。未知键（含模型自报哈希）一律拒绝。',
+  properties: {
+    reason: {
+      type: 'string',
+      description: '为什么要跳轮/豁免（1..500 字符，max length 500，trim 后计长）。',
+    },
+    confirmation_text: {
+      type: 'string',
+      description: '人工确认原话逐字文本（1..2000 字符，max length 2000，trim 后计长）。'
+        + '服务端自行计算 SHA-256，不接受任何哈希字段。',
+    },
+  },
+  required: ['reason', 'confirmation_text'],
+  additionalProperties: false,
+}
+
+/** 生成入参 schema：`override` 只进 properties，**绝不**进顶层 required（可选参数）。 */
+function stageAdvanceParameters(): Record<string, unknown> {
+  const schema = toParameterSchema(PARAMS) as Record<string, unknown>
+  const properties = schema.properties as Record<string, unknown>
+  properties.override = OVERRIDE_PARAMETER_SCHEMA
+  return schema
 }
 
 // =====================================================================
@@ -184,8 +314,9 @@ export interface StageAdvanceValue {
 /** 模型可见说明（**每一条边界都必须在这里出现**，否则模型会自己发明语义）。 */
 const DESCRIPTION = [
   'Advance ONE application\'s stage pointer by acknowledging facts that have ALREADY happened',
-  '(a derived command: it adds no new authority). Input is exactly {application_id} —',
-  'no target stage, no actor, no tenant.',
+  '(a derived command: it adds no new authority). Required input: {application_id};',
+  'two optional keys: {expected_record_version} (optimistic concurrency) and {override} (human words).',
+  'No target stage, no actor, no tenant.',
   'Ladder (four edges, in order, never skipped; the chain ends at S10):',
   '  T1 S6->S7: application.resume_version_id is set AND that material\'s parse_status is not FAILED',
   '            AND application.rubric_version_id is set (rubric version pinned);',
@@ -226,6 +357,22 @@ const DESCRIPTION = [
   'a human did it.',
   'Errors: NOT_FOUND (unknown application), VERSION_CONFLICT (concurrent change; re-read and retry),',
   'NOT_CONFIGURED, INVALID_ARGS.',
+  'OPTIONAL expected_record_version (integer >= 1): the application.record_version you last read',
+  '(get it from recruitment_application_get first). When supplied and it differs from the stored version,',
+  'the call fails atomically with VERSION_CONFLICT / STALE_RECORD_VERSION (detail:',
+  'expected_record_version, actual_record_version) and makes ZERO writes and ZERO audit events.',
+  'When omitted, behaviour is unchanged (no extra WHERE, no extra event, no output-shape change).',
+  'OPTIONAL override (AT-6/7): {reason: string 1..500 chars, confirmation_text: string 1..2000 chars} —',
+  'the human\'s verbatim confirmation words. Only pass it when a HUMAN has explicitly authorized',
+  'skipping a gate / waiving an unsubmitted scorecard, and give the human\'s reason. Both keys are',
+  'required; unknown keys (including any confirmation_text_sha256 the model computes) are rejected.',
+  'WITHOUT override: the four edges above are never skipped and every missing gate still BLOCKS.',
+  'WITH override: all remaining gates up to S10 are treated as human-waived; the pointer advances',
+  'one edge at a time to the furthest reachable stage (<= S10), every applied edge appears in',
+  'transitions[], the waived edges are recorded, and a same-transaction audit event records the',
+  'reason, who confirmed, when, the SHA-256 of the verbatim words, and from/to stage.',
+  'override still refuses non-ACTIVE applications, stages outside S6..S10, and never regresses.',
+  'Missing reason / confirmation_text, or a missing execution actor, fails closed with zero writes.',
 ].join(' ')
 
 /**
@@ -233,21 +380,34 @@ const DESCRIPTION = [
  * @param config - 已解析的库配置（租户/连接只从这里来）。
  * @param applicationId - 已校验的申请 id。
  * @param actorId - 本次写库的作者（Demo Actor 解析结果或测试兼容的 `config.actor_id`）。
+ * @param override - AT-6/7 的人工原话授权；缺省 = 完全沿用原路径。
+ * @param expectedRecordVersion - 可选乐观并发版本；缺省时**连输入对象的键都不多一个**，
+ *   领域层看到的就是原来的 `{tenantId, applicationId}` / `{..., override}`。
  * @returns 规范输出值。
  */
 async function runStageAdvance(
   config: ResolvedDatabaseConfig,
   applicationId: string,
   actorId: string,
+  override?: StageOverride,
+  expectedRecordVersion?: number,
 ): Promise<StageAdvanceValue> {
   const pool = createPool(config)
   try {
     return await withActor(pool, actorId, async (client) => {
-      // 领域层只认"事实"；调用方只提供租户与申请 id。
-      const result = await advanceApplicationStage(client, {
-        tenantId: config.tenant_id,
-        applicationId,
-      })
+      // 领域层只认"事实"；调用方只提供租户与申请 id（+ 可选的人工原话 override）。
+      // 没传 expected_record_version 时用空展开 ⇒ 输入对象与改动前逐键一致（零行为漂移）。
+      const versionGuard = expectedRecordVersion === undefined
+        ? {}
+        : { expected_record_version: expectedRecordVersion }
+      const result = override === undefined
+        ? await advanceApplicationStage(client, { tenantId: config.tenant_id, applicationId, ...versionGuard })
+        : await advanceApplicationStageWithOverride(client, {
+          tenantId: config.tenant_id,
+          applicationId,
+          override,
+          ...versionGuard,
+        })
       // R4：三维标签走**同一份判定实现**（candidate-get.ts 的 buildThreeAxisLabels），
       // 不在本文件另写一份（`test/unit/label-honesty.test.ts` 机检"单一实现"）。
       const labels = await buildThreeAxisLabels(client, config.tenant_id)
@@ -282,7 +442,7 @@ export function createStageAdvanceTool(
   return {
     name: TOOL_NAME,
     description: DESCRIPTION,
-    parameters: toParameterSchema(PARAMS),
+    parameters: stageAdvanceParameters(),
     output: {
       schema: OUTPUT_SCHEMA,
       render(_args: unknown, value: unknown): readonly TextBlock[] {
@@ -325,9 +485,13 @@ export function createStageAdvanceTool(
     async execute(rawArgs: unknown, exec: unknown): Promise<unknown> {
       // 写身份先于任何 DB 连接解析：identity 已装配时，缺失映射在开事务前 fail-closed（零写入）。
       const writeActor = resolveWriteActor(exec, deps.identity, config.actor_id)
-      const args = parseArgs(PARAMS, rawArgs)
+      // AT-6/7：override 的严格校验也在开库之前完成（缺原话/未知键 → INVALID_ARGS，零写入）。
+      const { rest, override } = splitOverrideArg(rawArgs)
+      const args = parseArgs(PARAMS, rest)
       const applicationId = args.application_id as string
-      return await runStageAdvance(config, applicationId, writeActor.actor_id)
+      // expected_record_version 在 PARAMS 里 ⇒ parseArgs 已做整数/≥1 校验，且它留在 args 里。
+      const expectedRecordVersion = args.expected_record_version as number | undefined
+      return await runStageAdvance(config, applicationId, writeActor.actor_id, override, expectedRecordVersion)
     },
   }
 }
@@ -344,7 +508,7 @@ export function unconfiguredStageAdvanceTool(issues: readonly string[]): Readonl
       'Advance one application\'s stage pointer by acknowledging facts that already happened '
       + '(S6->S7->S8->S9->S10; S10 is the v1.0 terminal stage; derived command, no new authority). '
       + `Currently NOT CONFIGURED: ${issues.join('; ')}. Calls return NOT_CONFIGURED.`,
-    parameters: toParameterSchema(PARAMS),
+    parameters: stageAdvanceParameters(),
     output: {
       schema: OUTPUT_SCHEMA,
       render(): readonly TextBlock[] {

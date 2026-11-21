@@ -1,5 +1,10 @@
 // 持久副作用的「写半边」异步接口（本 lane 自写；不是 vendor）。
 //
+// 【已退役（D-154）】没有派发者，不要再调用：src/index.ts 的插件侧 Effects/Outbox
+// 派发者已拆除，runtime 的 launch/delivery/reply 入队也已删除；本文件仅作为
+// 未启用模块保留（代码与 engine_* 表均不删）。重新启用必须先写裁决进 docs/17，
+// 并复核 advisory-lock 不变量；见 src/engine/VENDORED.md 顶部「当前状态：已退役」。
+//
 // 为什么需要它：`src/runtime/**` 的持久化是**异步**的（`withActor`/`withReadOnly` + `DatabaseClient`），
 // 而 vendor 进来的 `Effects`/`Outbox` 建在**同步** `Store` 端口上（引擎命令需要同步事务）。
 // 两者不能直接拼在一起：同步桥有自己的连接，无法加入 runtime 的异步事务。

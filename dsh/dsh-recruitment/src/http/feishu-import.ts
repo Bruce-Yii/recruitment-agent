@@ -60,6 +60,12 @@ import {
   type TranscriptImportSource,
   type TranscriptImportValue,
 } from '../tools/transcript-import.ts'
+
+/**
+ * 本端点只接受连接器回读来源（入口在写事务前已用 LIVE 闸门筛掉 MANUAL 路径）。
+ * 这是 `TranscriptImportSource` 的判别联合成员，不是新运行时形状。
+ */
+type LiveTranscriptImportSource = Extract<TranscriptImportSource, { mode: 'CONNECTOR_READBACK' }>
 import { sameOrigin } from './overview.ts'
 
 // =====================================================================
@@ -663,7 +669,7 @@ async function readLiveSource(
   args: Record<string, unknown>,
   connector: FeishuConnectorDependency | undefined,
   issues: readonly string[],
-): Promise<TranscriptImportSource> {
+): Promise<LiveTranscriptImportSource> {
   const source = await resolveImportSource(args, connector, issues)
   if (source.mode !== 'CONNECTOR_READBACK') {
     // 本端点的入参只有 minute_token，不可能走人工正文路径；出现即实现错误。
@@ -686,8 +692,8 @@ async function readLiveSource(
         403,
         'FORBIDDEN',
         'AUTH_REQUIRED',
-        '飞书连接器读到字节，但证据不足以构成 LIVE 回读（连接态=AUTH_REQUIRED）：'
-          + `缺 ${violations.join('；')}。本入口只接受证据齐全的真实转写，未写任何行。`,
+        '飞书连接器读到字节，但可核对的信息不足以构成一次真实回读（连接态=AUTH_REQUIRED）：'
+          + `缺 ${violations.join('；')}。本入口只接受信息齐全的真实转写，未写任何行。`,
         detail,
       )
     }
@@ -695,7 +701,7 @@ async function readLiveSource(
       409,
       'BLOCKED',
       'READBACK_INVALID',
-      '飞书回读未通过 LIVE 证据闸门（缺项见 detail.violations）：本入口只接受证据齐全的真实转写，'
+      '飞书回读时信息不完整（缺哪几项在返回明细里）：本入口只接受信息齐全的真实转写，'
         + 'Fixture/不完整回读不能算通过，未写任何行。',
       detail,
     )
@@ -834,7 +840,7 @@ async function importInTransaction(
   writeCfg: ResolvedDatabaseConfig,
   interviewId: string,
   minuteToken: string,
-  source: TranscriptImportSource,
+  source: LiveTranscriptImportSource,
 ): Promise<WriteOutcome> {
   const tenantId = writeCfg.tenant_id
   const actorId = writeCfg.actor_id

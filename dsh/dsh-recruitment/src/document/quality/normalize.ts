@@ -151,7 +151,7 @@ export function locatorPage(locator: EvidenceLocator | null): number | null {
 function normalizeLinks(raw: unknown): Array<{ text: string, href: string }> {
   if (!Array.isArray(raw)) return []
   const out: Array<{ text: string, href: string }> = []
-  for (const item of raw as RawLink[]) {
+  for (const item of raw as Array<RawLink | string>) {
     if (typeof item === 'string') {
       if (item.trim() !== '') out.push({ text: item, href: item })
       continue

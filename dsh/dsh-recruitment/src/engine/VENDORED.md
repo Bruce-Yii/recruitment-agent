@@ -3,6 +3,25 @@
 > 本文件是本目录**唯一**的来源与改动台账。改动任何一个 vendor 文件，都要在这里同步。
 > 最后更新：2026-11-14（按 Notion `04｜Agent Runtime & Reuse Architecture` §08 重划范围后）
 
+## 当前状态：已退役（2026-11-18）
+
+**本目录（`src/engine/**`）已退役，当前不接线、不启用。** 决策见 `docs/17-decision-ledger.md` D-154（总控已拍板，R5 单一权威）。
+
+**为什么退役（事实，不是推断）**：
+
+1. 真 Host 跑完整链后，`engine_ticket / engine_effect / engine_outbox / engine_trigger / engine_disposition` **全部 0 行** —— 没有任何运行中的代码往这些表里写，所谓"持久副作用队列"在生产链路上是空转。
+2. 它唯一曾被装配的形态是 `src/index.ts` 里的"副作用派发器"（`launch/delivery` 转交 `router.tick()`；`reply` 因 v1.0 无外发通道直接抛错）。其 `drive()` **不检查** tick loop 持有的 advisory lock，等于开了一条**不受锁约束的派发路径**；多实例下这是"假不变量"。
+3. 综合以上：保留装配只会维持一个看起来在工作、实际没有写入者且绕过并发约束的假能力，故拆除装配。
+
+**处置口径**：
+
+- `engine_*` 表**保留但不写**：不改迁移、不动表、不清数据（照 D-140 对 `src/budget/**` 的先例处理）。
+- 代码**原样保留**为"未启用模块"：不删代码、不改实现。
+- **代码保留、不要接线**：**不要从 `src/index.ts` 或任何运行入口重新 import / handle / start** 本目录的任何模块（包括 `Store` / `Effects` / `HealthBoard` / `Outbox` / `Passes` / `effects-async.ts`）。静态守护测试 `test/unit/engine-not-wired.test.ts` 会机检这条边界。
+- **今后若要启用必须先写裁决**：写进 `docs/17-decision-ledger.md`（R5 单一权威），并按本文件恢复装配前先复核 advisory-lock 不变量（任何派发路径必须受 tick loop 的锁约束，不得再出现 `drive()` 那种绕锁路径）。
+
+**关于下文的"已接线"段落**：§4.6 / §4.9 中描述 `src/index.ts` 已装配、副作用派发"已接线"的历史段落，以及 §4.8 / §7 中的相关实测与复跑命令，都是**退役前的状态记录**，不再代表当前接线；不得据此把本目录重新接回运行入口。原有章节作为历史台账原样保留。
+
 ## 1. 来源与许可
 
 | 项 | 值 |
@@ -201,6 +220,8 @@ return () => {
 **注意**：`Store` 构造时若 `recruitment.schema_migration` 里没有 `0012_engine_state`，会直接抛错（不静默退化成空库）。
 这属于启动期错误，应当让注册失败而不是吞掉。
 
+（本节描述的是退役前的接线状态；**已退役，见顶部「当前状态：已退役」**，不得据此重新接线。）
+
 ### 4.7 与 `0011_task_runtime.sql` / `0013_trace_chain.sql` 的关系
 
 同一天另外两条 lane 新增了 `0011_task_runtime.sql`（给 `business_task`/`agent_session`/`event_inbox` 加运行时列与 `task_wakeup` 表）和 `0013_trace_chain.sql`（加 `correlation_id`）。**它们改的正是本适配层写入的表**，因此适配层按库的**实际列**工作，不假设某一边：
@@ -283,6 +304,8 @@ $ node --test test/integration/engine-effects-junction-pg.test.ts
 ✔ runtime 的异步事务写副作用 → 插件的 Effects/Outbox 派发（同一批表）
 ℹ pass 1  fail 0  skipped 0
 ```
+
+（本节描述的是退役前的接线状态；**已退役，见顶部「当前状态：已退役」**，不得据此重新接线。）
 
 ## 5. 按文档判定**没有搬**的东西（逐条理由）
 | 上游文件 | 没搬的理由 |

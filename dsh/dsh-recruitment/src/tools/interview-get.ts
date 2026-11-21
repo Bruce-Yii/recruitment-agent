@@ -27,6 +27,8 @@
 
 import { parseContractArgs, toParameterSchema } from './args.ts'
 import type { ParamMap } from './args.ts'
+// 事件名只从唯一权威注册表取（`src/runtime/event-types.ts`），不写死字面量。
+import { EVENT_TYPES } from '../runtime/event-types.ts'
 import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { checkAsOf, contractError } from './contract.ts'
 import type { ContractErrorCode } from './contract.ts'
@@ -78,6 +80,14 @@ export type InterviewWarningCode =
 /** `evaluation.blockers[].code` 的封闭取值（本刀实现三个，见 SPEC §3.3）。 */
 export type EvaluationBlockerCode = 'SCORECARD_PENDING' | 'RECORD_NOT_READY' | 'NO_REQUIRED_EVALUATOR'
 
+/** AT-5：一条面试官替换事实（从带 replaced_* 标记的 interviewer 行派生）。 */
+export interface InterviewerReplacementValue {
+  readonly from_actor_id: string
+  readonly to_actor_id: string
+  readonly reason: string
+  readonly replaced_at: string
+}
+
 /** `interviews[]` 里的面试官（`tool-contracts.md` §2.2 的 `interviewers[]`）。 */
 export interface InterviewerValue {
   readonly interviewer_id: string
@@ -87,6 +97,12 @@ export interface InterviewerValue {
   readonly required_scorecard: boolean
   /** ISO-8601；数据库 NULL 时省略这个键（不写 null）。 */
   readonly scorecard_due_at?: string
+  /** AT-5：被替换时才有；指向接替者的 interviewer 行 id（旧行不删）。 */
+  readonly replaced_by_interviewer_id?: string
+  /** AT-5：被替换时才有；ISO-8601。 */
+  readonly replaced_at?: string
+  /** AT-5：被替换时才有；换人理由。 */
+  readonly replacement_reason?: string
   /**
    * 只取**当前**那一份（`superseded_by_scorecard_id is null`）。
    * 该面试官还没有面评时整个键省略（契约写作 null，本仓库规定值里不许有 null）。
@@ -149,6 +165,22 @@ export interface EvaluationValue {
   readonly blockers: readonly EvaluationBlockerValue[]
 }
 
+/**
+ * `no_show`：只在 `status='NO_SHOW'` 时出现的读侧事实（Audit REPORT.md §③ P1）。
+ * 从 `interview.no_show` 审计事件 payload 读回；`confirmation_text` 原文从不落库，
+ * 这里只有服务端算好的 `confirmation_text_sha256`。
+ */
+export interface NoShowValue {
+  /** 谁没来：CANDIDATE / INTERVIEWER。 */
+  readonly subject: string
+  /** 人话原因（1..500）。 */
+  readonly reason: string
+  /** 事件记录时刻（ISO-8601；来自事件的 recorded_at）。 */
+  readonly recorded_at: string
+  /** sha256(确认原话)，64 位 hex；原文不返回。 */
+  readonly confirmation_text_sha256: string
+}
+
 /** `warnings[]`：本次查询看到的问题，**不改变** `status`。 */
 export interface InterviewWarningValue {
   readonly code: InterviewWarningCode
@@ -172,6 +204,8 @@ export interface InterviewValue {
   readonly stage_code: string
   readonly status: string
   readonly record_version: number
+  /** AT-4：可选自定义轮次标签（显示层元数据，round_no 语义不变）；NULL 时省略。 */
+  readonly round_label?: string
   /** 数据库 NULL 时省略（`CANCELLED` / `NO_SHOW` 行允许没有 `scheduled_start_at`）。 */
   readonly scheduled_start_at?: string
   readonly scheduled_end_at?: string
@@ -181,7 +215,11 @@ export interface InterviewValue {
   readonly status_changed_at: string
   readonly is_overdue_start: boolean
   readonly interviewers: readonly InterviewerValue[]
+  /** AT-5：换人事实汇总（只在有替换时出现，空数组不输出）。 */
+  readonly replacements?: readonly InterviewerReplacementValue[]
   readonly meeting_binding: MeetingBindingBlockValue
+  /** 只在 status='NO_SHOW' 时出现：谁没来、原因、记录时刻、确认语 sha256（原文不返回）。 */
+  readonly no_show?: NoShowValue
   readonly transcript: TranscriptValue
   readonly evaluation: EvaluationValue
   readonly warnings: readonly InterviewWarningValue[]
@@ -241,6 +279,12 @@ const INTERVIEWER_VALUE_SCHEMA: Record<string, unknown> = {
     role_in_interview: { type: 'string', description: 'Label only; it never gates anything (D-33).' },
     required_scorecard: { type: 'boolean' },
     scorecard_due_at: { type: 'string', description: 'Omitted when the interviewer has no due_at.' },
+    replaced_by_interviewer_id: {
+      type: 'string',
+      description: 'AT-5: set only when this interviewer has been replaced; points at the new interviewer row.',
+    },
+    replaced_at: { type: 'string', description: 'AT-5: set only when this interviewer has been replaced.' },
+    replacement_reason: { type: 'string', description: 'AT-5: set only when this interviewer has been replaced.' },
     scorecard: {
       type: 'object',
       additionalProperties: false,
@@ -382,6 +426,34 @@ const WARNINGS_SCHEMA: Record<string, unknown> = {
   },
 }
 
+/** AT-5：一条换人事实的 schema（只在有替换时作为 `replacements[]` 元素出现）。 */
+const REPLACEMENT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    from_actor_id: { type: 'string', description: 'Actor id of the replaced interviewer.' },
+    to_actor_id: { type: 'string', description: 'Actor id of the replacement interviewer.' },
+    reason: { type: 'string', description: 'Human-readable replacement reason.' },
+    replaced_at: { type: 'string', description: 'ISO-8601 replacement instant.' },
+  },
+  required: ['from_actor_id', 'to_actor_id', 'reason', 'replaced_at'],
+}
+
+/** `no_show` 的 schema（只在 status='NO_SHOW' 时作为 optional 属性出现，老数据不受影响）。 */
+const NO_SHOW_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  description: 'Only present when status=NO_SHOW. Read back from the interview.no_show audit event payload. '
+    + 'The raw confirmation phrase is never stored; only its sha256 is returned.',
+  properties: {
+    subject: { type: 'string', enum: ['CANDIDATE', 'INTERVIEWER'] },
+    reason: { type: 'string', description: 'Human-readable reason (1..500).' },
+    recorded_at: { type: 'string', description: 'ISO-8601 instant when the audit event was recorded.' },
+    confirmation_text_sha256: { type: 'string', description: 'sha256 of the confirmation phrase (64 hex chars).' },
+  },
+  required: ['subject', 'reason', 'recorded_at', 'confirmation_text_sha256'],
+}
+
 /**
  * `interviews[]` 元素的规范 schema（SPEC §3.3）。
  * A 侧 `recruitment_interview_schedule.output.schema.interview` 直接用同一份 —— 两个工具
@@ -398,6 +470,7 @@ export const INTERVIEW_VALUE_SCHEMA: Record<string, unknown> = {
     job_id: { type: 'string' },
     round_no: { type: 'integer' },
     slot_code: { type: 'string' },
+    round_label: { type: 'string', description: 'AT-4: optional display-only label; round_no is unchanged.' },
     stage_code: { type: 'string', description: 'S8 for interviews created by this stage (0006 sets the default).' },
     status: { type: 'string' },
     record_version: { type: 'integer' },
@@ -419,7 +492,13 @@ export const INTERVIEW_VALUE_SCHEMA: Record<string, unknown> = {
       description: 'Stable order: actor_id ascending (never the DB return order).',
       items: INTERVIEWER_VALUE_SCHEMA,
     },
+    replacements: {
+      type: 'array',
+      description: 'AT-5: one item per replaced interviewer; omitted entirely when there is no replacement.',
+      items: REPLACEMENT_SCHEMA,
+    },
     meeting_binding: MEETING_BINDING_SCHEMA,
+    no_show: NO_SHOW_SCHEMA,
     transcript: TRANSCRIPT_SCHEMA,
     evaluation: EVALUATION_SCHEMA,
     warnings: WARNINGS_SCHEMA,
@@ -482,6 +561,7 @@ interface InterviewRow {
   readonly job_id: string
   readonly round_no: number
   readonly slot_code: string
+  readonly round_label: string | null
   readonly stage_code: string
   readonly status: string
   readonly record_version: number
@@ -499,6 +579,9 @@ interface InterviewerRow {
   readonly role_in_interview: string
   readonly required_scorecard: boolean
   readonly scorecard_due_at: string | Date | null
+  readonly replaced_by_interviewer_id: string | null
+  readonly replaced_at: string | Date | null
+  readonly replacement_reason: string | null
 }
 
 /** 当前面评（`superseded_by_scorecard_id is null`）。 */
@@ -647,7 +730,7 @@ async function loadInterview(
 
   const interviewResult = await client.query<InterviewRow>(
     `select i.id, i.application_id, a.candidate_id, a.job_id,
-            i.round_no, i.slot_code, i.stage_code, i.status, i.record_version,
+            i.round_no, i.slot_code, i.round_label, i.stage_code, i.status, i.record_version,
             i.scheduled_start_at, i.scheduled_end_at, i.timezone, i.status_changed_at
        from recruitment.interview i
        join recruitment.application a
@@ -665,9 +748,41 @@ async function loadInterview(
     })
   }
 
+  // Audit REPORT.md §③：`NO_SHOW` 的事实只有审计事件里才有（interview 表没有 reason / subject 列）。
+  // 一条事件按 (tenant, interview_id) 读回，取 recorded_at 最新的一条；老数据没有该事件时整个键省略。
+  let noShow: NoShowValue | undefined
+  if (interview.status === 'NO_SHOW') {
+    const eventRows = (await client.query<{
+      payload: unknown
+      recorded_at: string | Date
+    }>(
+      `select payload, recorded_at
+         from recruitment.event_inbox
+        where tenant_id = $1 and event_type = $2 and payload->>'interview_id' = $3
+        order by recorded_at desc, event_id desc
+        limit 1`,
+      [tenantId, EVENT_TYPES.INTERVIEW_NO_SHOW, interviewId],
+    )).rows
+    const eventRow = eventRows[0]
+    const payload = eventRow?.payload
+    if (eventRow !== undefined && payload !== null && typeof payload === 'object' && !Array.isArray(payload)) {
+      const fields = payload as Record<string, unknown>
+      if (typeof fields.subject === 'string' && typeof fields.reason === 'string'
+        && typeof fields.confirmation_text_sha256 === 'string') {
+        noShow = {
+          subject: fields.subject,
+          reason: fields.reason,
+          recorded_at: iso(eventRow.recorded_at),
+          confirmation_text_sha256: fields.confirmation_text_sha256,
+        }
+      }
+    }
+  }
+
   const interviewerRows = (await client.query<InterviewerRow>(
     `select iv.id as interviewer_id, iv.actor_id, ac.display_name,
-            iv.role_in_interview, iv.required_scorecard, iv.scorecard_due_at
+            iv.role_in_interview, iv.required_scorecard, iv.scorecard_due_at,
+             iv.replaced_by_interviewer_id, iv.replaced_at, iv.replacement_reason
        from recruitment.interviewer iv
        join recruitment.actor ac
          on ac.id = iv.actor_id and ac.tenant_id = iv.tenant_id
@@ -796,6 +911,14 @@ async function loadInterview(
         role_in_interview: row.role_in_interview,
         required_scorecard: row.required_scorecard,
         ...(row.scorecard_due_at === null ? {} : { scorecard_due_at: iso(row.scorecard_due_at) }),
+        // AT-5：三列要么全有要么全空（ck_interviewer_replacement_consistent），有值才回显。
+        ...(row.replaced_by_interviewer_id === null || row.replaced_at === null || row.replacement_reason === null
+          ? {}
+          : {
+            replaced_by_interviewer_id: row.replaced_by_interviewer_id,
+            replaced_at: iso(row.replaced_at),
+            replacement_reason: row.replacement_reason,
+          }),
         ...(scorecard === undefined ? {} : {
           scorecard: {
             scorecard_id: scorecard.id,
@@ -807,6 +930,28 @@ async function loadInterview(
         }),
       }
     })
+
+  // AT-5：把带 replaced_* 标记的旧行展开成换人事实。to_actor_id 从新行的 actor_id 反查
+  // （同一 interview 的 interviewer 行都在这个数组里）；顺序按 (replaced_at, from_actor_id) 固定。
+  const actorIdByInterviewer = new Map(interviewerRows.map((row) => [row.interviewer_id, row.actor_id]))
+  const replacements: InterviewerReplacementValue[] = []
+  for (const row of interviewerRows) {
+    if (row.replaced_by_interviewer_id === null || row.replaced_at === null || row.replacement_reason === null) {
+      continue
+    }
+    const toActorId = actorIdByInterviewer.get(row.replaced_by_interviewer_id)
+    if (toActorId === undefined) continue // 防御：新行不在本场（理论上被外键与同租户约束排除）
+    replacements.push({
+      from_actor_id: row.actor_id,
+      to_actor_id: toActorId,
+      reason: row.replacement_reason,
+      replaced_at: iso(row.replaced_at),
+    })
+  }
+  replacements.sort((left, right) => {
+    if (left.replaced_at !== right.replaced_at) return left.replaced_at < right.replaced_at ? -1 : 1
+    return left.from_actor_id < right.from_actor_id ? -1 : left.from_actor_id > right.from_actor_id ? 1 : 0
+  })
 
   // ---- evaluation（只回显，不写状态）-------------------------------------
   // O14：required/submitted/waived/pending 的唯一派生在 `scorecard-progress.ts`；
@@ -905,6 +1050,7 @@ async function loadInterview(
     job_id: interview.job_id,
     round_no: interview.round_no,
     slot_code: interview.slot_code,
+    ...(interview.round_label === null ? {} : { round_label: interview.round_label }),
     stage_code: interview.stage_code,
     status: interview.status,
     record_version: interview.record_version,
@@ -917,7 +1063,9 @@ async function loadInterview(
     status_changed_at: iso(interview.status_changed_at),
     is_overdue_start: isOverdueStart,
     interviewers,
+    ...(replacements.length === 0 ? {} : { replacements }),
     meeting_binding: { state: meetingBindingState, count: bindingsValue.length, bindings: bindingsValue },
+    ...(noShow === undefined ? {} : { no_show: noShow }),
     transcript: {
       state: derivation.state,
       reason_code: derivation.reason_code,
@@ -1111,10 +1259,12 @@ export async function getInTransaction(
 /** 一行面试官（render 用）。 */
 function interviewerLine(row: InterviewerValue): string {
   const required = row.required_scorecard ? 'required' : 'optional'
-  if (row.scorecard === undefined) return `  ${row.display_name}(${required}, no scorecard)`
+  // AT-5：被替换的旧行仍在这个列表里（行不删），人读正文必须看得出来。
+  const replaced = row.replaced_at === undefined ? '' : ' · 已被替换'
+  if (row.scorecard === undefined) return `  ${row.display_name}(${required}, no scorecard)${replaced}`
   const submitted = row.scorecard.submitted_at === undefined ? '' : ` @${row.scorecard.submitted_at}`
   return `  ${row.display_name}(${required}, ${row.scorecard.status} rev${row.scorecard.revision_no}/`
-    + `${row.scorecard.transcript_basis}${submitted})`
+    + `${row.scorecard.transcript_basis}${submitted})${replaced}`
 }
 
 /** 一个元素 → 模型可见文本（§2.6 的正例格式；人读正文只给业务标识 + 短号）。 */
@@ -1123,6 +1273,7 @@ function interviewBlock(value: InterviewValue): string[] {
   const lines: string[] = [
     `interview 第 ${value.round_no} 轮 round=${value.round_no} slot=${value.slot_code} stage=${value.stage_code} `
       + `[${value.status}]  ${window}`,
+    ...(value.round_label === undefined ? [] : [`  轮次标签: ${value.round_label}`]),
     `  申请 ${shortRef(value.application_id)} · 候选人 ${shortRef(value.candidate_id)} · 岗位 ${shortRef(value.job_id)}`
       + ` · 面试 ${shortRef(value.id)}`,
   ]
@@ -1131,6 +1282,12 @@ function interviewBlock(value: InterviewValue): string[] {
   } else {
     lines.push('  interviewers:')
     for (const row of value.interviewers) lines.push(interviewerLine(row))
+  }
+  // AT-5：换人事实也给人读正文一份（理由在结构化值里回显，正文只给短号与时间）。
+  if (value.replacements !== undefined) {
+    for (const row of value.replacements) {
+      lines.push(`  换人: ${shortRef(row.from_actor_id)} → ${shortRef(row.to_actor_id)} @${row.replaced_at}`)
+    }
   }
   const binding = value.meeting_binding
   if (binding.bindings.length === 0) {

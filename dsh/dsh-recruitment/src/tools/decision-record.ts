@@ -429,6 +429,12 @@ const PARAMETERS: Record<string, unknown> = {
     override_rationale: { type: 'string', description: '同上，非空；进 confirmation_text_sha256 的 pre-image' },
     supersedes: SUPERSEDES_SCHEMA,
     approval_id: { type: 'string', description: '可选 UUID（v1.0 不要求，DC-19）' },
+    // 顶层乐观锁（**不是** supersedes.expected_record_version：那是 decision 旧行版本，DC-39）。
+    // 语义 = 申请行 `application.record_version`；不传 = 完全走既有路径（不加守卫、不加事件）。
+    expected_record_version: {
+      type: 'integer',
+      description: '可选整数 ≥1：申请行 application.record_version 的期望值；不符 → VERSION_CONFLICT/STALE_RECORD_VERSION（零写入）',
+    },
     // ---- 保留键：声明但一律拒收（TC §1.6 / DESIGN §2）----
     tenant_id: { type: 'string', description: '保留键：只能来自执行上下文，一律拒收' },
     actor_id: { type: 'string', description: '保留键：只能来自执行上下文，一律拒收' },
@@ -604,6 +610,8 @@ export interface DecisionArgs {
   readonly override_rationale?: string
   readonly supersedes?: SupersedesArgs
   readonly approval_id?: string
+  /** 顶层可选乐观锁：申请行 `application.record_version` 的期望值（整数 ≥1；不传 = 不守卫）。 */
+  readonly expected_record_version?: number
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -1152,6 +1160,19 @@ export function parseDecisionArgs(raw: unknown, nowMs: number): DecisionArgs {
   if (approvalId !== undefined && !isUuid(approvalId)) {
     pushViolation(violations, 'ID_NOT_UUID', 'approval_id', 'approval_id 必须是 UUID')
   }
+  // 顶层可选乐观锁：语义是**申请行** application.record_version（与 supersedes 的 decision 版本无关）。
+  // 整数 ≥1；缺失 → undefined（不进 args 键、不进守卫）。
+  let expectedRecordVersion: number | undefined
+  const rawExpectedVersion = raw.expected_record_version
+  if (rawExpectedVersion !== undefined) {
+    if (typeof rawExpectedVersion !== 'number' || !Number.isInteger(rawExpectedVersion)) {
+      pushViolation(violations, 'TYPE_MISMATCH', 'expected_record_version', 'expected_record_version 必须是整数')
+    } else if (rawExpectedVersion < 1) {
+      pushViolation(violations, 'OUT_OF_RANGE', 'expected_record_version', 'expected_record_version 必须 ≥ 1')
+    } else {
+      expectedRecordVersion = rawExpectedVersion
+    }
+  }
 
   if (violations.length > 0) {
     const first = violations[0] as Violation
@@ -1182,6 +1203,7 @@ export function parseDecisionArgs(raw: unknown, nowMs: number): DecisionArgs {
     ...(overrideRationale === undefined ? {} : { override_rationale: overrideRationale as string }),
     ...(supersedes === undefined ? {} : { supersedes }),
     ...(approvalId === undefined ? {} : { approval_id: approvalId as string }),
+    ...(expectedRecordVersion === undefined ? {} : { expected_record_version: expectedRecordVersion }),
   }
   return args
 }
@@ -1528,6 +1550,49 @@ async function loadApplication(
     })
   }
   return row
+}
+
+/**
+ * 顶层**可选**乐观锁守卫：比较的是**申请行** `application.record_version`
+ *（与 `supersedes.expected_record_version` —— decision 旧行版本，DC-39 —— 完全无关）。
+ *
+ * `select … for update` 用的是调用方给的事务内 `client`（`withActor` 同一个事务），
+ * 行锁保持到事务结束 → "读版本 + 比较 + 后续所有写"在锁内串行化，等价于把版本条件
+ * 写进后续 UPDATE 的 WHERE（本文件/阶段域对 application 的 UPDATE 都在 `domain/stage-advance.ts`，
+ * 不在本写域，所以不能用那种字面写法）。仅传 expected 时调用：不传 → 不加锁、不多一次查询。
+ * 不符 → 抛 VERSION_CONFLICT/STALE_RECORD_VERSION；异常上抛 → 整事务回滚，零写入、零审计事件。
+ */
+async function guardApplicationRecordVersion(
+  client: DatabaseClient,
+  tenantId: string,
+  applicationId: string,
+  expectedRecordVersion: number,
+): Promise<void> {
+  const { rows } = await client.query<{ record_version: number }>(
+    `select a.record_version
+       from recruitment.application a
+      where a.id = $1 and a.tenant_id = $2
+        for update`,
+    [applicationId, tenantId],
+  )
+  const actual = rows[0]?.record_version
+  if (actual === undefined) {
+    // loadApplication 已在调用前确认存在；0 行只能是并发删除/错租户 → fail closed。
+    throw evalError('NOT_FOUND', 'APPLICATION_NOT_FOUND', '该租户下没有这个申请（乐观锁守卫）', {
+      application_id: applicationId,
+    })
+  }
+  if (actual !== expectedRecordVersion) {
+    throw evalError(
+      'VERSION_CONFLICT',
+      'STALE_RECORD_VERSION',
+      '申请的 record_version 与 expected_record_version 不一致（乐观锁冲突）',
+      {
+        expected_record_version: expectedRecordVersion,
+        actual_record_version: actual,
+      },
+    )
+  }
 }
 
 async function loadAuthority(client: DatabaseClient, tenantId: string, jobId: string): Promise<AuthorityRow> {
@@ -3061,6 +3126,11 @@ export async function recordDecisionInTransaction(
   // `stage_code` 由 scope 写死（S7→'S7'，S10→'S10'）；查 current / 写行 / 写事件都用同一值。
   const stageCode = stageCodeOf(args.decision_scope)
   const application = await loadApplication(client, tenantId, args.application_id)
+  // 顶层可选乐观锁：在 STEP 2 拿到申请后、任何写入（decision INSERT / supersede UPDATE /
+  // 派生阶段 / 审计事件）之前做锁内比较。不传 expected 时这一段完全不执行（零查询、零锁）。
+  if (args.expected_record_version !== undefined) {
+    await guardApplicationRecordVersion(client, tenantId, args.application_id, args.expected_record_version)
+  }
   // DC-07 补（2026-11-15 独立窗口发现的真实不一致）：STAGE/FINAL 的 decision.stage_code 按 scope
   // **写死 'S10'**，但此前不校验申请**当前**阶段，导致 "S7/ACTIVE 申请却有 FINAL/S10 决策" 的
   // 假事实（application 45ddd9fc / decision c645baba）。写库前先要求申请确实已推进到 S10；

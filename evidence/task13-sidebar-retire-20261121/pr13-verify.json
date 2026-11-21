@@ -1,0 +1,23 @@
+{
+  "dsh": {
+    "url": "http://127.0.0.1:49351/",
+    "hasLegacyEntry": false,
+    "legacyText": [],
+    "hasLegacyShell": false,
+    "sidebarRows": [
+      "新建会话",
+      "插件",
+      "自动化任务",
+      "更多"
+    ],
+    "body": "新会话\nCtrl\n+\nAlt\n+\nN\n插件\n自动化任务\n更多\n工作区\nrecruitment-agent\n新会话\n查看张样例申请材料解析情况\n3天\n核对岗位与申请材料\n5天\n0701申请初筛建议\n5天\n评分标准与批准v1\n5天\n张样例后端初筛建议\n5天\n展开其余 16 个会话\n未分组\n124*****25@qq.com\n探索未至之境\n预览版\nrecruitment-agent\n招聘助手\n描述你想要构建的内容, / 调用指令, @ 文件或对话\n工作区内修改\n[免费] Hy4 Flash Free\nDefault"
+  },
+  "app": {
+    "url": "http://127.0.0.1:49351/recruitment/app",
+    "chat": true,
+    "canvas": true,
+    "queue": true,
+    "identity": "招聘负责人\nHR",
+    "unbound": false
+  }
+}

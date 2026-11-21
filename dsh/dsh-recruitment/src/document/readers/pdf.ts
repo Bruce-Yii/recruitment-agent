@@ -36,7 +36,7 @@ import { assertValidDocumentContent } from './output-guard.ts'
 
 /** converter 顶层里不属于 content、但必须留在证据里的字段。 */
 interface RawPdfOutput extends ConverterLikeOutput {
-  readonly meta?: unknown
+  readonly meta?: ConverterLikeOutput['meta']
   readonly title?: unknown
   readonly chars?: unknown
   readonly warnings?: unknown

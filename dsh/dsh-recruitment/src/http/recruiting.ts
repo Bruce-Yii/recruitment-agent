@@ -29,6 +29,8 @@ import {
 // O8（产品视角复核）：批准状态只能由 `approval` 行判（`approved_by_approval_id` 恒 null）。
 // 判据只在 `db/approval.ts` 里实现一份，本文件两处 SQL 复用同一片段，禁止再各写一遍。
 import { effectiveApprovalExistsSql } from '../db/approval.ts'
+// 候选人星标（0021）：只读投影取 application_star 最新一行；表不存在（旧库 < 0021）时为空，不当 false 假值。
+import { findLatestStarsForApplications } from '../db/application-star.ts'
 // W3b：轮次重点的判定**只有一份实现**（interviewer.ts 的 `buildRoundFocus`）。招聘方视角
 // 只展示 `round_focus`（不展示 effective_rubric），但降级/守卫语义必须与面试官视角逐字一致，
 // 否则同一场面试在两个视图里会给出不同的"本轮重点"（C-4）。
@@ -214,6 +216,8 @@ export interface InterviewSummary {
   readonly scheduled_start_at: string | null
   readonly scheduled_end_at: string | null
   readonly timezone: string
+  /** 本场面试行的乐观锁版本（`interview.record_version`，按行不是按申请）。 */
+  readonly record_version: number
   readonly interviewers: ReadonlyArray<InterviewerAssignment>
   readonly scorecards: {
     readonly required_total: number
@@ -272,6 +276,10 @@ export interface ApplicationCard {
   readonly screening: ScreeningSummary | null
   readonly interviews: ReadonlyArray<InterviewSummary>
   readonly decisions: ReadonlyArray<DecisionSummary>
+  /** 候选人级约束（置顶 / 上一轮交接）；表不存在（旧库 < 0019）时为空数组，不报错。 */
+  readonly constraints: ReadonlyArray<{ readonly kind: string; readonly text: string; readonly source: string; readonly from_previous_round: boolean }>
+  /** 候选人星标（主推标记）：application_star 最新一行的 starred；无行 = false（只读派生，不改其它字段）。 */
+  readonly starred: boolean
   readonly progress: {
     readonly scorecards_required: number
     readonly scorecards_submitted: number
@@ -1349,6 +1357,7 @@ const INTERVIEWS_SQL = `
          i.scheduled_start_at             as scheduled_start_at,
          i.scheduled_end_at               as scheduled_end_at,
          i.timezone                       as timezone,
+         i.record_version                 as record_version,
          i.created_at                     as created_at,
          a.job_id::text                   as application_job_id,
          itv.id::text                     as template_version_id,
@@ -1861,6 +1870,7 @@ interface InterviewRow extends RoundRubricFacts {
   scheduled_start_at: Date | string | null
   scheduled_end_at: Date | string | null
   timezone: string
+  record_version: number
   created_at: Date | string | null
 }
 
@@ -2144,6 +2154,7 @@ function mapInterviewSummary(
     scheduled_start_at: asIsoOrNull(interview.scheduled_start_at),
     scheduled_end_at: asIsoOrNull(interview.scheduled_end_at),
     timezone: interview.timezone,
+    record_version: asIntOrNull(interview.record_version) ?? 0,
     interviewers: assignments,
     scorecards: {
       required_total: required.length,
@@ -2202,10 +2213,37 @@ async function loadApplicationCards(
   const scorecardRows: ScorecardRow[] = interviewIds.length === 0
     ? []
     : (await client.query<ScorecardRow>(SCORECARDS_SQL, [tenantId, interviewIds])).rows
+  // 候选人约束（迁移 0019）。旧库（< 0019）没有这张表：用 to_regclass 探测后跳过，不让读接口整体失败。
+  const hasConstraintTable = (await client.query<{ present: string | null }>(
+    "select to_regclass('recruitment.candidate_constraint')::text as present",
+  )).rows[0]?.present !== null
+  const constraintRows = hasConstraintTable
+    ? (await client.query<{ candidate_id: string; kind: string; text: string; source: string }>(
+        `select candidate_id::text as candidate_id, kind, text, source
+           from recruitment.candidate_constraint
+          where tenant_id = $1 and candidate_id = any($2::uuid[]) and superseded_by_constraint_id is null
+          order by created_at desc`,
+        [tenantId, rows.map((row) => row.candidate_id)],
+      )).rows
+    : []
+  // 候选人星标（迁移 0021）：取每个申请最新一行 starred；表不存在（旧库 < 0021）时跳过，
+  // 无行 = false（不造默认行）。与候选人约束同款 to_regclass 探测，不让读接口整体失败。
+  const hasStarTable = (await client.query<{ present: string | null }>(
+    "select to_regclass('recruitment.application_star')::text as present",
+  )).rows[0]?.present !== null
+  const starsByApplication = hasStarTable
+    ? await findLatestStarsForApplications(client, tenantId, applicationIds)
+    : new Map<string, boolean>()
   const transcriptRows: TranscriptCandidateRow[] = interviewIds.length === 0
     ? []
     : (await client.query<TranscriptCandidateRow>(TRANSCRIPT_CANDIDATES_SQL, [tenantId, interviewIds])).rows
 
+  const constraintsByCandidate = new Map<string, Array<{ kind: string; text: string; source: string; from_previous_round: boolean }>>()
+  for (const row of constraintRows) {
+    const list = constraintsByCandidate.get(row.candidate_id) ?? []
+    list.push({ kind: row.kind, text: row.text, source: row.source, from_previous_round: row.kind === 'HANDOFF' })
+    constraintsByCandidate.set(row.candidate_id, list)
+  }
   const screeningByApplication = new Map<string, ScreeningSummary>()
   for (const row of screeningResult.rows) {
     if (!screeningByApplication.has(row.application_id)) screeningByApplication.set(row.application_id, mapScreeningDecision(row))
@@ -2305,6 +2343,8 @@ async function loadApplicationCards(
       screening,
       interviews,
       decisions,
+      constraints: constraintsByCandidate.get(row.candidate_id) ?? [],
+      starred: starsByApplication.get(row.application_id) ?? false,
       progress: {
         scorecards_required: scorecardsRequired,
         scorecards_submitted: scorecardsSubmitted,

@@ -794,7 +794,7 @@ export function useDecisionFacts(
           status: 0,
           code: 'CLIENT_REFUSED',
           reasonCode: 'SESSION_MISSING',
-          message: '缺少当前 DSH session id（由宿主 props 传入），客户端不读取决策事实',
+          message: '还没有识别到当前身份，客户端不会读取决策所需信息',
           rawBody: '',
         },
       })

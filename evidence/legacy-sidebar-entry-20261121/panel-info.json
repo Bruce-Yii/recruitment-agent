@@ -1,0 +1,324 @@
+{
+ "clicked": true,
+ "url": "http://127.0.0.1:49351/",
+ "testids": [
+  "recruiting-workspace",
+  "overview-headline",
+  "refresh-overview",
+  "open-settings",
+  "alias-chip",
+  "job-hero",
+  "job-select",
+  "job-status",
+  "job-rubric",
+  "job-metric-total",
+  "job-metric-active",
+  "job-metric-awaiting-screening",
+  "job-metric-interviews",
+  "job-stage-counts",
+  "next-step",
+  "next-step-label",
+  "next-step-code",
+  "job-actions",
+  "rubric-approve",
+  "rubric-approve-pending",
+  "close-job",
+  "toggle-job-detail",
+  "job-draft",
+  "job-draft-route",
+  "job-draft-request-text",
+  "job-draft-generate",
+  "job-draft-empty",
+  "application-filters",
+  "filter-all",
+  "filter-screening",
+  "filter-interviewing",
+  "filter-other",
+  "application-list",
+  "application-row-11111111-1111-4111-8111-000000000701",
+  "application-row-11111111-1111-4111-8111-000000000701-stage",
+  "application-row-11111111-1111-4111-8111-000000000701-material",
+  "application-row-11111111-1111-4111-8111-000000000701-screening",
+  "application-row-11111111-1111-4111-8111-000000000701-interviews",
+  "application-row-11111111-1111-4111-8111-000000000701-scorecards",
+  "application-row-11111111-1111-4111-8111-000000000701-transcript",
+  "application-row-11111111-1111-4111-8111-000000000701-rubric",
+  "application-row-11111111-1111-4111-8111-000000000701-next-step",
+  "job-sidebar",
+  "active-job-list",
+  "job-row-11111111-1111-4111-8111-000000000401",
+  "attention-card",
+  "attention-human",
+  "attention-wait",
+  "attention-info",
+  "counts-card",
+  "settings-entry",
+  "settings-entry-note",
+  "open-settings-from-card",
+  "settings-entry-write-state",
+  "settings-entry-available"
+ ],
+ "buttons": [
+  {
+   "tag": "BUTTON",
+   "text": "新建会话",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "收起侧边栏",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "新会话 Ctrl + Alt + N",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "插件",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "招聘工作台",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "从侧边栏取消固定招聘工作台",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "自动化任务",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "从侧边栏取消固定自动化任务",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "更多",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "搜索会话",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "视图选项",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "添加工作区",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "工作区“recruitment-agent”的操作",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "在“recruitment-agent”中新建会话",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "会话“查看张样例申请材料解析情况”的操作",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "归档会话",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "置顶会话",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "会话“核对岗位与申请材料”的操作",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "归档会话",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "置顶会话",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "会话“0701申请初筛建议”的操作",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "归档会话",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "置顶会话",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "会话“评分标准与批准v1”的操作",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "归档会话",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "置顶会话",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "会话“张样例后端初筛建议”的操作",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "归档会话",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "置顶会话",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "展开其余 16 个会话",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "124*****25@qq.com",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "招聘工作台",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "面试官工作台",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "Human Attention",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "刷新",
+   "testid": "refresh-overview"
+  },
+  {
+   "tag": "BUTTON",
+   "text": "招聘设置",
+   "testid": "open-settings"
+  },
+  {
+   "tag": "BUTTON",
+   "text": "批准 Rubric",
+   "testid": "rubric-approve"
+  },
+  {
+   "tag": "BUTTON",
+   "text": "关闭岗位",
+   "testid": "close-job"
+  },
+  {
+   "tag": "BUTTON",
+   "text": "查看岗位版本与 rubric",
+   "testid": "toggle-job-detail"
+  },
+  {
+   "tag": "BUTTON",
+   "text": "招聘设置（只读）",
+   "testid": "open-settings"
+  },
+  {
+   "tag": "BUTTON",
+   "text": "生成草案",
+   "testid": "job-draft-generate"
+  },
+  {
+   "tag": "BUTTON",
+   "text": "全部（1）",
+   "testid": "filter-all"
+  },
+  {
+   "tag": "BUTTON",
+   "text": "待初筛（1）",
+   "testid": "filter-screening"
+  },
+  {
+   "tag": "BUTTON",
+   "text": "面试中（0）",
+   "testid": "filter-interviewing"
+  },
+  {
+   "tag": "BUTTON",
+   "text": "其他（0）",
+   "testid": "filter-other"
+  },
+  {
+   "tag": "BUTTON",
+   "text": "演 演示候选人-张样例后端工程师（演示） 阶段 · 初筛 / Screening 材料 · 解析完成 · 1 页 初筛 · 未初筛 面试 · 2 轮 · 第 1",
+   "testid": "application-row-11111111-1111-4111-8111-000000000701"
+  },
+  {
+   "tag": "BUTTON",
+   "text": "后 后端工程师（演示） 研发部（演示） · 1 份申请 · 1 份推进中 招聘中",
+   "testid": "job-row-11111111-1111-4111-8111-000000000401"
+  },
+  {
+   "tag": "BUTTON",
+   "text": "打开招聘设置（create 表单）",
+   "testid": "open-settings-from-card"
+  },
+  {
+   "tag": "BUTTON",
+   "text": "新标签页",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "分栏",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "全屏",
+   "testid": null
+  },
+  {
+   "tag": "BUTTON",
+   "text": "收起右侧边栏",
+   "testid": null
+  }
+ ],
+ "body": "新会话\nCtrl\n+\nAlt\n+\nN\n插件\n招聘工作台\n自动化任务\n更多\n工作区\nrecruitment-agent\n新会话\n查看张样例申请材料解析情况\n3天\n核对岗位与申请材料\n4天\n0701申请初筛建议\n4天\n评分标准与批准v1\n4天\n张样例后端初筛建议\n4天\n展开其余 16 个会话\n未分组\n124*****25@qq.com\nRecruitment\nAGENT WORKSPACE\n招聘工作台\n面试官工作台\nHuman Attention\n演示身份\n未绑定\nRecruiter\nInterviewer A\nInterviewer B\n还没有选择身份：请先选择身份；在此之前写操作都不会提交。\nAGENT-NATIVE RECRUITMENT\n招聘总览\n招聘全流程的只读视图；写操作会先让你确认再执行。\n刷新\n招聘设置\n当前身份 · 招聘方 Recruiter\n当前招聘岗位\n后端工程师（演示）\n\n研发部（演示） · DEMO-BE-001 · 岗位版本 r1\n\n后端工程师（演示）（招聘中）\n岗位状态 · 招聘中\n岗位当前 Rubric v2 · 3 个维度 · 已批准\n1\n该岗位收到的申请\n1\n推进中的申请\n1\n待初筛（全工作区）\n1\n已排期面试（全工作区）\n初筛 / Screening · 1\n业务结论 · 下一步\n岗位下有申请等待初筛决定\n批准 Rubric\n当前评分标准已批准，无需重复批准。\n关闭岗位\n查看岗位版本与 rubric\n招聘设置（只读）\n岗位创建：2026-11-20 05:01\n状态变更：2026-11-20 05:01\n岗位编号：DEMO-BE-001\n岗位草案生成\n草案生成可用\n\n先让服务端按你的招聘需求生成一份草案，你改完确认后才创建岗位。草案只读、不写库，内容全部来自服务端返回； 本卡不编造企业事实，也不会自动批准评分标准。\n\n招聘需求原文（1..2000 字）\n生成草案\n\n还没有草案：点「生成草案」后由服务端返回；当前无数据、不编造。\n\n此岗位下的候选人共 1 条申请 · 显示 1 条\n点击行查看申请详情（结论 + 逐条依据）\n全部（1）\n待初筛（1）\n面试中（0）\n其他（0）\n演\n演示候选人-张样例后端工程师（演示）\n阶段 · 初筛 / Screening\n材料 · 解析完成 · 1 页\n初筛 · 未初筛\n面试 · 2 轮 · 第 1 轮已面完 / 第 2 轮已排期\n面评 · 已提交 0/3（第 1 轮 1 份 / 第 2 轮 2 份）\n转写 · 还没有转写\n本申请钉住 Rubric · v2 · 已批准（与岗位当前一致）\n等待初筛决定：材料已就绪，还没有人工作出筛选结论\n›\n正在招聘的岗位\n后\n后端工程师（演示）\n研发部（演示） · 1 份申请 · 1 份推进中\n招聘中\n需要你处理\n需要人工处理\n1 条\n等待中\n0 条\n进行中\n0 条\n\n逐条结论只在申请行 / 申请详情出现一次，这里只给聚合计数。\n\n招聘概况\n岗位（招聘中 / 总数）\n1 / 1\n申请（推进中 / 总数）\n1 / 1\n待初筛\n1\n面试中\n1\n待决策\n0\n已排期面试\n1\n面评份数（跨轮合计）\n0 / 3\nTranscript（就绪 / 处理中）\n0 / 0\n初筛 / Screening · 1\n招聘设置\n\n设置页已可用\n\n阶段目录版本\nv1\n业务配置项\n1 项\n部门\n1 个\n招聘团队\n1 个\n打开招聘设置（create 表单）\n设置写入口可用（role / team / pipeline 最小 create 表单）\n\n设置页已可用。"
+}

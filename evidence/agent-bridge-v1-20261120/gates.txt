@@ -1,0 +1,44 @@
+# 对话桥 v1 · 机检与验收（2026-11-20 · HEAD a7a9089）
+
+## 代码/机检
+
+| 项 | 结果 |
+|---|---|
+| `npx tsc --noEmit` | **PASS（0）** |
+| `npx tsdown` | PASS（双入口；本次仅服务端源码，未改 client/app 产物） |
+| `node scripts/server-typecheck.mjs` | PASS（0/0） |
+| `node scripts/runtime-budget.mjs` | PASS（5051/5051） |
+| `node scripts/entry-reachability.mjs` | PASS（无新缺口；手拼 0） |
+| `node scripts/client-contract-check.mjs` | PASS |
+| `node scripts/term-lint.mjs` | PASS |
+| 干净库全量测试 | 未跑（非 main 合并轮，不据此宣称全绿） |
+
+## 对话（真机，一次性库 + HY4）
+
+```
+node work/d5/fullpage/probe-agent-turn.mjs
+```
+
+- 第 1 轮（读）：`岗位代码 DEMO-BE-001 现在是否在招？` → SSE `delta` + `done`；tool 事件 `recruitment_job_get:start` / `:ok`；回答「在招——岗位 DEMO-BE-001…OPEN」。
+- 第 2 轮（写）：`把岗位代码 DEMO-BE-001 下架（关闭）。请直接操作…` → 模型回答「当前可用的招聘工具都是只读的，没有任何可以修改岗位状态的入口」；**无写工具调用**；业务域表行数前后不变：
+  `decision 0→0 · interview 6→6 · scorecard 0→0 · scorecard_draft 0→0 · application 3→3 · candidate_constraint 2→2`。
+- 诊断工具清单（`x-recruitment-agent-diag: 1`）：15 个只读 `recruitment_*` 工具；**写工具 0 个**（decision_record/interview_schedule/scorecard_submit/criterion_override/candidate_constraint/config_*/job_create/job_update/job_draft/job_rubric_approve/transcript_import/application_intake/application_stage_advance 均不可见）。
+
+```
+node work/d5/fullpage/probe-chat-ui.mjs
+```
+
+- 真浏览器 `/recruitment/app`：输入 → 发送 → 对话流出现回答 +「已完成 · recruitment_job_get」；`app-chat-unavailable` 不存在；截图 `chat-ui-1440.png`。
+
+## 15 步回归
+
+```
+node work/d5/fullpage/run-v4.mjs --fresh --port 49347 --out work/d5/fullpage/lead-verify-chat-bridge
+```
+
+- `2026-11-20T23:4x+08:00`，HEAD `a7a9089`（接线后）→ **15/15 PASS**；证据审计 hard 0 / leaks 0。
+- 结果与审计见本目录 `regression-15step-result.json` / `regression-15step-audit.json`。
+
+## 清理
+
+Host/Chrome 停止；token、Chrome profile、一次性 profile 副本删除；一次性库 drop；49347/9222 FREE；`49351` 未触碰。

@@ -1,0 +1,52 @@
+{
+  "queue": {
+    "hash": "",
+    "tabs": "等你拍板\n1",
+    "firstMessage": [
+      "早上好。当前有 1 位在办候选人（待初筛 1 人、面试中 1 人）。当前首位待推进：演示候选人-张样例（后端工程师（演示））。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。"
+    ],
+    "pills": [
+      {
+        "testid": "app-chat-quick-today-top3",
+        "text": "梳理今天最优先推进的候选人"
+      },
+      {
+        "testid": "app-chat-quick-pending-scorecards",
+        "text": "查看待提交面评与催办进展"
+      },
+      {
+        "testid": "app-chat-quick-open-talent",
+        "text": "打开人才库检索候选人"
+      }
+    ]
+  },
+  "newJobModal": {
+    "opened": true,
+    "deptOptions": [
+      {
+        "value": "11111111-1111-4111-8111-000000000010",
+        "text": "研发部（演示）"
+      }
+    ],
+    "titlePlaceholder": "例如：资深后端工程师",
+    "bodyHasHint": true
+  },
+  "jobsNewButton": true,
+  "jobsModalOpened": true,
+  "candidate": {
+    "hash": "#/application/11111111-1111-4111-8111-000000000701",
+    "pinRowPresent": false,
+    "pinText": "",
+    "memoButtonPresent": true,
+    "memoText": "复制决策纪要"
+  },
+  "copyMemo": {
+    "clicked": {
+      "ok": true,
+      "disabled": false
+    },
+    "feedback": [
+      "已生成 演示候选人-张样例 的决策纪要（当前环境限制剪贴板写入）"
+    ]
+  }
+}

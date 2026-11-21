@@ -222,6 +222,437 @@ begin
 end $$;
 
 
+-- [0017 追加式人工覆盖] 新表 criterion_override 的专项断言：
+-- 表/列/CHECK/禁删触发器/当前行索引/白名单 UPDATE 护栏必须齐全。
+-- 不修改上面任何既有断言；表不存在时本块跳过（保持 verify.sql 在旧库可跑）。
+do $$
+declare
+  v_missing text := '';
+  v_col text;
+begin
+  if to_regclass('recruitment.criterion_override') is not null then
+    -- 必需列（含本轮约定的全部业务列）
+    for v_col in select unnest(array[
+      'id','tenant_id','application_id','rubric_version_id','criterion_key',
+      'human_state','note','actor_id','confirmation_method','confirmation_text_sha256',
+      'superseded_by_override_id','record_version','created_at','updated_at'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.criterion_override'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        v_missing := v_missing || v_col || ' ';
+      end if;
+    end loop;
+    if v_missing <> '' then
+      raise exception 'OV-STRUCT-01 criterion_override 缺列：%', v_missing;
+    end if;
+
+    -- 必需的 CHECK 约束（闭集 / 形状 / 长度 / 哈希）
+    v_missing := '';
+    select string_agg(t.name, ' ') into v_missing
+      from unnest(array[
+        'ck_criterion_override_key','ck_criterion_override_human_state',
+        'ck_criterion_override_note','ck_criterion_override_method',
+        'ck_criterion_override_hash','ck_criterion_override_self_supersede',
+        'ck_criterion_override_record_version'
+      ]) as t(name)
+     where not exists (select 1 from pg_constraint p
+                        where p.conrelid = 'recruitment.criterion_override'::regclass
+                          and p.contype = 'c' and p.conname = t.name);
+    if coalesce(v_missing, '') <> '' then
+      raise exception 'OV-STRUCT-02 criterion_override 缺 CHECK 约束：%', v_missing;
+    end if;
+
+    -- 历史事实禁删（append-only）
+    if not exists (select 1 from pg_trigger g
+                    where g.tgrelid = 'recruitment.criterion_override'::regclass
+                      and not g.tgisinternal and g.tgname = 'trg_criterion_override_no_delete') then
+      raise exception 'OV-STRUCT-03 criterion_override 缺 fn_block_delete 触发器';
+    end if;
+
+    -- 当前行查询索引（非唯一部分索引即可；不承诺 DB 唯一性）
+    if not exists (
+      select 1 from pg_index i
+       where i.indrelid = 'recruitment.criterion_override'::regclass
+         and i.indpred is not null and not i.indisunique
+    ) then
+      raise exception 'OV-STRUCT-04 criterion_override 缺当前行部分索引';
+    end if;
+
+    -- 只许改 superseded_by_override_id 的护栏（AI 原判定不可被覆盖）
+    if not exists (select 1 from pg_trigger g
+                    where g.tgrelid = 'recruitment.criterion_override'::regclass
+                      and not g.tgisinternal and g.tgname = 'trg_criterion_override_immutable') then
+      raise exception 'OV-STRUCT-05 criterion_override 缺不可变护栏触发器';
+    end if;
+    raise notice 'OV-STRUCT PASS criterion_override 列/CHECK/禁删/索引/不可变护栏齐全';
+  else
+    raise notice 'OV-STRUCT SKIP criterion_override 表不存在（0017 尚未应用）';
+  end if;
+end $$;
+
+
+-- [0018 原子写能力] AT-1~AT-7 的结构面断言。
+-- 只新增本块，既有断言与计数零改动；表/列不存在时跳过（保持旧库可跑）。
+do $$
+declare
+  v_missing text := '';
+  v_col text;
+begin
+  if to_regclass('recruitment.application_carry_over') is not null then
+    -- A · 必需列
+    for v_col in select unnest(array[
+      'id','tenant_id','application_id','source_application_id','ref_kind','ref_id',
+      'carried_by_actor_id','created_at'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.application_carry_over'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        v_missing := v_missing || v_col || ' ';
+      end if;
+    end loop;
+    if v_missing <> '' then
+      raise exception 'AT-STRUCT-01 application_carry_over 缺列：%', v_missing;
+    end if;
+
+    -- A · 唯一键（AT-3 幂等）必须存在且覆盖五列
+    if not exists (
+      select 1 from pg_constraint p
+       where p.conrelid = 'recruitment.application_carry_over'::regclass
+         and p.contype = 'u' and p.conname = 'uq_application_carry_over_ref'
+         and p.conkey = array[
+               (select attnum from pg_attribute where attrelid = p.conrelid and attname = 'tenant_id'),
+               (select attnum from pg_attribute where attrelid = p.conrelid and attname = 'application_id'),
+               (select attnum from pg_attribute where attrelid = p.conrelid and attname = 'source_application_id'),
+               (select attnum from pg_attribute where attrelid = p.conrelid and attname = 'ref_kind'),
+               (select attnum from pg_attribute where attrelid = p.conrelid and attname = 'ref_id')
+             ]::smallint[]
+    ) then
+      raise exception 'AT-STRUCT-02 application_carry_over 缺五列幂等唯一键 uq_application_carry_over_ref';
+    end if;
+
+    -- A · 闭集 / 形状 / 源≠目标 CHECK
+    v_missing := '';
+    select string_agg(t.name, ' ') into v_missing
+      from unnest(array[
+        'ck_carry_over_ref_kind','ck_carry_over_distinct_application'
+      ]) as t(name)
+     where not exists (select 1 from pg_constraint p
+                        where p.conrelid = 'recruitment.application_carry_over'::regclass
+                          and p.contype = 'c' and p.conname = t.name);
+    if coalesce(v_missing, '') <> '' then
+      raise exception 'AT-STRUCT-03 application_carry_over 缺 CHECK 约束：%', v_missing;
+    end if;
+
+    -- A · append-only：禁删 + 全列不可变 + 同候选人守卫
+    for v_col in
+      select unnest(array[
+        'trg_application_carry_over_no_delete',
+        'trg_application_carry_over_immutable',
+        'trg_application_carry_over_same_candidate'
+      ])
+    loop
+      if not exists (select 1 from pg_trigger g
+                      where g.tgrelid = 'recruitment.application_carry_over'::regclass
+                        and not g.tgisinternal and g.tgname = v_col) then
+        raise exception 'AT-STRUCT-04 application_carry_over 缺触发器：%', v_col;
+      end if;
+    end loop;
+    raise notice 'AT-STRUCT-A PASS carry_over 列/五列唯一键/CHECK/禁删/不可变/同候选人守卫齐全';
+  else
+    raise notice 'AT-STRUCT-A SKIP application_carry_over 表不存在（0018 尚未应用）';
+  end if;
+
+  -- B · interview.round_label 与 interviewer 换人三列（表在 0001 必有，列可能未加）
+  if to_regclass('recruitment.interview') is not null then
+    if not exists (select 1 from pg_attribute a
+                    where a.attrelid = 'recruitment.interview'::regclass
+                      and a.attname = 'round_label' and not a.attisdropped) then
+      raise exception 'AT-STRUCT-05 interview 缺 round_label 列';
+    end if;
+    if not exists (select 1 from pg_constraint p
+                    where p.conrelid = 'recruitment.interview'::regclass
+                      and p.contype = 'c' and p.conname = 'ck_interview_round_label') then
+      raise exception 'AT-STRUCT-06 interview 缺 ck_interview_round_label';
+    end if;
+  end if;
+  if to_regclass('recruitment.interviewer') is not null then
+    for v_col in select unnest(array[
+      'replaced_by_interviewer_id','replaced_at','replacement_reason'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.interviewer'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        raise exception 'AT-STRUCT-07 interviewer 缺换人列：%', v_col;
+      end if;
+    end loop;
+    v_missing := '';
+    select string_agg(t.name, ' ') into v_missing
+      from unnest(array[
+        'fk_interviewer_replaced_by','ck_interviewer_replacement_consistent',
+        'ck_interviewer_not_self_replaced'
+      ]) as t(name)
+     where not exists (select 1 from pg_constraint p
+                        where p.conrelid = 'recruitment.interviewer'::regclass
+                          and p.conname = t.name);
+    if coalesce(v_missing, '') <> '' then
+      raise exception 'AT-STRUCT-08 interviewer 缺换人约束：%', v_missing;
+    end if;
+    -- round_no 的唯一键语义不许被改坏（AT-4 反例）
+    if not exists (select 1 from pg_constraint p
+                    where p.conrelid = 'recruitment.interview'::regclass
+                      and p.contype = 'u' and p.conname = 'uq_interview_slot') then
+      raise exception 'AT-STRUCT-09 interview 缺原唯一键 uq_interview_slot（round_no 语义被改坏）';
+    end if;
+    raise notice 'AT-STRUCT-B PASS round_label / 换人三列 / round_no 唯一键齐全';
+  end if;
+end $$;
+
+
+-- [0019 碎片约束置顶 + 下一轮交接提醒] candidate_constraint 的专项断言。
+-- 只新增本块，既有断言与计数零改动；表不存在时跳过（保持 verify.sql 在旧库可跑）。
+do $$
+declare
+  v_missing text := '';
+  v_col text;
+begin
+  if to_regclass('recruitment.candidate_constraint') is not null then
+    -- PIN-STRUCT-01 必需列（含本轮约定的全部业务列）
+    for v_col in select unnest(array[
+      'id','tenant_id','candidate_id','kind','text','source','application_id','interview_id',
+      'created_by_actor_id','created_at','superseded_by_constraint_id','record_version'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.candidate_constraint'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        v_missing := v_missing || v_col || ' ';
+      end if;
+    end loop;
+    if v_missing <> '' then
+      raise exception 'PIN-STRUCT-01 candidate_constraint 缺列：%', v_missing;
+    end if;
+
+    -- PIN-STRUCT-02 闭集 / 形状 / HANDOFF 必带 interview_id / 不可自取代 CHECK
+    v_missing := '';
+    select string_agg(t.name, ' ') into v_missing
+      from unnest(array[
+        'ck_candidate_constraint_kind','ck_candidate_constraint_source',
+        'ck_candidate_constraint_text','ck_candidate_constraint_handoff_interview',
+        'ck_candidate_constraint_record_version','ck_candidate_constraint_no_self_supersede'
+      ]) as t(name)
+     where not exists (select 1 from pg_constraint p
+                        where p.conrelid = 'recruitment.candidate_constraint'::regclass
+                          and p.contype = 'c' and p.conname = t.name);
+    if coalesce(v_missing, '') <> '' then
+      raise exception 'PIN-STRUCT-02 candidate_constraint 缺 CHECK 约束：%', v_missing;
+    end if;
+
+    -- PIN-STRUCT-03 append-only：禁删 + 全列不可变（只允许 superseded_by_constraint_id）护栏
+    for v_col in
+      select unnest(array[
+        'trg_candidate_constraint_no_delete','trg_candidate_constraint_immutable'
+      ])
+    loop
+      if not exists (select 1 from pg_trigger g
+                      where g.tgrelid = 'recruitment.candidate_constraint'::regclass
+                        and not g.tgisinternal and g.tgname = v_col) then
+        raise exception 'PIN-STRUCT-03 candidate_constraint 缺触发器：%', v_col;
+      end if;
+    end loop;
+
+    -- PIN-STRUCT-04 置顶 PIN 与交接 HANDOFF 两个查询索引必须存在
+    v_missing := '';
+    select string_agg(t.name, ' ') into v_missing
+      from unnest(array['ix_candidate_constraint_pin','ix_candidate_constraint_handoff']) as t(name)
+     where not exists (select 1 from pg_index i
+                        where i.indrelid = 'recruitment.candidate_constraint'::regclass
+                          and i.indexrelid = ('recruitment.' || t.name)::regclass);
+    if coalesce(v_missing, '') <> '' then
+      raise exception 'PIN-STRUCT-04 candidate_constraint 缺索引：%', v_missing;
+    end if;
+    raise notice 'PIN-STRUCT PASS candidate_constraint 列/CHECK/禁删/不可变/置顶与交接索引齐全';
+  else
+    raise notice 'PIN-STRUCT SKIP candidate_constraint 表不存在（0019 尚未应用）';
+  end if;
+end $$;
+
+
+-- [0022 A4 面评草稿] scorecard_draft 的专项断言：列 / CHECK / payload 上限 /
+-- append-only（禁删 + 整行不可改）/ 最新版本查询索引 / 台账自登记必须齐全。
+-- 只新增本块，既有断言与计数零改动；表不存在时跳过（保持 verify.sql 在旧库可跑）。
+do $$
+declare
+  v_missing text := '';
+  v_col text;
+begin
+  if to_regclass('recruitment.scorecard_draft') is not null then
+    -- DRAFT-STRUCT-01 必需列（含本轮约定的全部业务列）
+    for v_col in select unnest(array[
+      'id','tenant_id','interview_id','interviewer_id','interviewer_actor_id',
+      'payload','record_version','created_at'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.scorecard_draft'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        v_missing := v_missing || v_col || ' ';
+      end if;
+    end loop;
+    if v_missing <> '' then
+      raise exception 'DRAFT-STRUCT-01 scorecard_draft 缺列：%', v_missing;
+    end if;
+
+    -- DRAFT-STRUCT-02 tenant_id NOT NULL + 外键到 organization（STRUCT-02/03 同口径）
+    if not exists (select 1 from pg_attribute a
+                    where a.attrelid = 'recruitment.scorecard_draft'::regclass
+                      and a.attname = 'tenant_id' and a.attnotnull and not a.attisdropped) then
+      raise exception 'DRAFT-STRUCT-02 scorecard_draft.tenant_id 不是 NOT NULL';
+    end if;
+    if not exists (select 1 from pg_constraint p
+                    where p.conrelid = 'recruitment.scorecard_draft'::regclass
+                      and p.contype = 'f' and p.conname = 'fk_scorecard_draft_tenant_org') then
+      -- 表级外键名可能由 series 自动命名；按"confrelid = organization 且含 tenant_id 列"判定。
+      if not exists (
+        select 1 from pg_constraint p
+         where p.conrelid = 'recruitment.scorecard_draft'::regclass and p.contype = 'f'
+           and p.confrelid = 'recruitment.organization'::regclass
+           and (select a.attname from pg_attribute a
+                 where a.attrelid = p.conrelid and a.attnum = p.conkey[1]) = 'tenant_id') then
+        raise exception 'DRAFT-STRUCT-02 scorecard_draft.tenant_id 缺到 organization 的外键';
+      end if;
+    end if;
+
+    -- DRAFT-STRUCT-03 CHECK 约束（版本 ≥ 1 / payload 为对象 / payload ≤ 32KB）
+    v_missing := '';
+    select string_agg(t.name, ' ') into v_missing
+      from unnest(array[
+        'ck_scorecard_draft_record_version','ck_scorecard_draft_payload_object',
+        'ck_scorecard_draft_payload_size'
+      ]) as t(name)
+     where not exists (select 1 from pg_constraint p
+                        where p.conrelid = 'recruitment.scorecard_draft'::regclass
+                          and p.contype = 'c' and p.conname = t.name);
+    if coalesce(v_missing, '') <> '' then
+      raise exception 'DRAFT-STRUCT-03 scorecard_draft 缺 CHECK 约束：%', v_missing;
+    end if;
+
+    -- DRAFT-STRUCT-04 append-only：禁删 + 整行不可改（fn_guard_columns 无白名单）
+    for v_col in select unnest(array[
+      'trg_scorecard_draft_no_delete','trg_scorecard_draft_immutable'
+    ]) loop
+      if not exists (select 1 from pg_trigger g
+                      where g.tgrelid = 'recruitment.scorecard_draft'::regclass
+                        and not g.tgisinternal and g.tgname = v_col) then
+        raise exception 'DRAFT-STRUCT-04 scorecard_draft 缺触发器：%', v_col;
+      end if;
+    end loop;
+
+    -- DRAFT-STRUCT-05 最新版本查询索引必须存在
+    if not exists (select 1 from pg_index i
+                    where i.indrelid = 'recruitment.scorecard_draft'::regclass
+                      and i.indexrelid = 'recruitment.ix_scorecard_draft_latest'::regclass) then
+      raise exception 'DRAFT-STRUCT-05 scorecard_draft 缺最新版本查询索引 ix_scorecard_draft_latest';
+    end if;
+
+    -- DRAFT-STRUCT-06 台账自登记
+    if not exists (select 1 from recruitment.schema_migration where version = '0022_scorecard_draft') then
+      raise exception 'DRAFT-STRUCT-06 schema_migration 缺 0022_scorecard_draft 自登记';
+    end if;
+    raise notice 'DRAFT-STRUCT PASS scorecard_draft 列/CHECK/payload≤32KB/禁删/不可变/最新版本索引/台账齐全';
+  else
+    raise notice 'DRAFT-STRUCT SKIP scorecard_draft 表不存在（0022 尚未应用）';
+  end if;
+end $$;
+
+
+-- [0023 妙记改绑] minute_rebind 的专项断言：列 / CHECK / 幂等唯一键 / append-only /
+-- 审计读回索引 / 台账自登记必须齐全。只新增本块，既有断言与计数零改动；
+-- 表不存在时跳过（保持 verify.sql 在旧库可跑）。
+do $$
+declare
+  v_missing text := '';
+  v_col text;
+begin
+  if to_regclass('recruitment.minute_rebind') is not null then
+    -- REBIND-STRUCT-01 必需列（含本轮约定的全部业务列）
+    for v_col in select unnest(array[
+      'id','tenant_id','interview_id','from_actor_id','to_actor_id','requested_by_actor_id',
+      'minute_token','confirmation_text_sha256','cli_summary','dry_run','created_at'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.minute_rebind'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        v_missing := v_missing || v_col || ' ';
+      end if;
+    end loop;
+    if v_missing <> '' then
+      raise exception 'REBIND-STRUCT-01 minute_rebind 缺列：%', v_missing;
+    end if;
+
+    -- REBIND-STRUCT-02 tenant_id NOT NULL + 外键到 organization（STRUCT-02/03 同口径）
+    if not exists (select 1 from pg_attribute a
+                    where a.attrelid = 'recruitment.minute_rebind'::regclass
+                      and a.attname = 'tenant_id' and a.attnotnull and not a.attisdropped) then
+      raise exception 'REBIND-STRUCT-02 minute_rebind.tenant_id 不是 NOT NULL';
+    end if;
+    if not exists (
+      select 1 from pg_constraint p
+       where p.conrelid = 'recruitment.minute_rebind'::regclass and p.contype = 'f'
+         and p.confrelid = 'recruitment.organization'::regclass
+         and (select a.attname from pg_attribute a
+               where a.attrelid = p.conrelid and a.attnum = p.conkey[1]) = 'tenant_id') then
+      raise exception 'REBIND-STRUCT-02 minute_rebind.tenant_id 缺到 organization 的外键';
+    end if;
+
+    -- REBIND-STRUCT-03 CHECK 约束（token 形状 / sha256 / 不同 actor / cli_summary 对象）
+    v_missing := '';
+    select string_agg(t.name, ' ') into v_missing
+      from unnest(array[
+        'ck_minute_rebind_minute_token','ck_minute_rebind_sha256',
+        'ck_minute_rebind_distinct_actors','ck_minute_rebind_cli_summary_object'
+      ]) as t(name)
+     where not exists (select 1 from pg_constraint p
+                        where p.conrelid = 'recruitment.minute_rebind'::regclass
+                          and p.contype = 'c' and p.conname = t.name);
+    if coalesce(v_missing, '') <> '' then
+      raise exception 'REBIND-STRUCT-03 minute_rebind 缺 CHECK 约束：%', v_missing;
+    end if;
+
+    -- REBIND-STRUCT-04 幂等唯一键（tenant+interview+minute+to）
+    if not exists (select 1 from pg_constraint p
+                    where p.conrelid = 'recruitment.minute_rebind'::regclass
+                      and p.contype = 'u' and p.conname = 'uq_minute_rebind_idempotent') then
+      raise exception 'REBIND-STRUCT-04 minute_rebind 缺幂等唯一键 uq_minute_rebind_idempotent';
+    end if;
+
+    -- REBIND-STRUCT-05 append-only：禁删 + 整行不可改
+    for v_col in select unnest(array[
+      'trg_minute_rebind_no_delete','trg_minute_rebind_immutable'
+    ]) loop
+      if not exists (select 1 from pg_trigger g
+                      where g.tgrelid = 'recruitment.minute_rebind'::regclass
+                        and not g.tgisinternal and g.tgname = v_col) then
+        raise exception 'REBIND-STRUCT-05 minute_rebind 缺触发器：%', v_col;
+      end if;
+    end loop;
+
+    -- REBIND-STRUCT-06 审计读回索引
+    if not exists (select 1 from pg_index i
+                    where i.indrelid = 'recruitment.minute_rebind'::regclass
+                      and i.indexrelid = 'recruitment.ix_minute_rebind_interview'::regclass) then
+      raise exception 'REBIND-STRUCT-06 minute_rebind 缺索引 ix_minute_rebind_interview';
+    end if;
+
+    -- REBIND-STRUCT-07 台账自登记
+    if not exists (select 1 from recruitment.schema_migration where version = '0023_minute_rebind') then
+      raise exception 'REBIND-STRUCT-07 schema_migration 缺 0023_minute_rebind 自登记';
+    end if;
+    raise notice 'REBIND-STRUCT PASS minute_rebind 列/CHECK/幂等唯一键/禁删/不可变/审计索引/台账齐全';
+  else
+    raise notice 'REBIND-STRUCT SKIP minute_rebind 表不存在（0023 尚未应用）';
+  end if;
+end $$;
+
+
 \echo ''
 \echo '=================================================================='
 \echo ' 3. 状态机取值覆盖（docs/03 §3/§10/§11/§13 + docs/04 §18）'
@@ -843,6 +1274,196 @@ union all select 'transcript_artifact', count(*) from recruitment.transcript_art
 union all select 'scorecard', count(*) from recruitment.scorecard
 union all select 'business_task', count(*) from recruitment.business_task
 order by 1;
+
+\echo ''
+\echo '=================================================================='
+\echo ' 10. [0020 追加] 批量不通过与撤销的审计表结构断言'
+\echo '=================================================================='
+
+do $$
+declare
+  v_missing text := '';
+  v_col text;
+begin
+  -- 10.1 batch_operation：列 / 幂等唯一键 / 枚举 CHECK / 禁删 / 不可变护栏
+  if to_regclass('recruitment.batch_operation') is not null then
+    for v_col in select unnest(array[
+      'id','tenant_id','action_id','operation_type','actor_id','occurred_at',
+      'target_count','succeeded_count','failed_count','reason',
+      'confirmation_text_sha256','target_summary','superseded_by_action_id'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.batch_operation'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        v_missing := v_missing || v_col || ' ';
+      end if;
+    end loop;
+    if v_missing <> '' then
+      raise exception 'BATCH-STRUCT-01 batch_operation 缺列：%', v_missing;
+    end if;
+    if not exists (select 1 from pg_constraint p
+                    where p.conrelid = 'recruitment.batch_operation'::regclass
+                      and p.contype = 'u' and p.conname = 'uq_batch_operation_action_id') then
+      raise exception 'BATCH-STRUCT-02 batch_operation 缺 (tenant_id, action_id) 幂等唯一键';
+    end if;
+    if not exists (select 1 from pg_constraint p
+                    where p.conrelid = 'recruitment.batch_operation'::regclass
+                      and p.contype = 'c' and p.conname = 'ck_batch_operation_type') then
+      raise exception 'BATCH-STRUCT-03 batch_operation 缺 operation_type 枚举 CHECK';
+    end if;
+    if not exists (select 1 from pg_trigger g
+                    where g.tgrelid = 'recruitment.batch_operation'::regclass
+                      and not g.tgisinternal and g.tgname = 'trg_batch_operation_no_delete') then
+      raise exception 'BATCH-STRUCT-04 batch_operation 缺 fn_block_delete 禁删触发器';
+    end if;
+    if not exists (select 1 from pg_trigger g
+                    where g.tgrelid = 'recruitment.batch_operation'::regclass
+                      and not g.tgisinternal and g.tgname = 'trg_batch_operation_immutable') then
+      raise exception 'BATCH-STRUCT-05 batch_operation 缺不可变护栏触发器';
+    end if;
+    raise notice 'BATCH-STRUCT PASS batch_operation 列/幂等键/CHECK/禁删/不可变护栏齐全';
+  else
+    raise notice 'BATCH-STRUCT SKIP batch_operation 表不存在（0020 尚未应用）';
+  end if;
+
+  -- 10.2 undo_log：列 / 幂等唯一键 / 枚举 CHECK / 禁删 / 墓碑式收口护栏 / 索引
+  if to_regclass('recruitment.undo_log') is not null then
+    v_missing := '';
+    for v_col in select unnest(array[
+      'id','tenant_id','action_id','kind','operation_type',
+      'target_application_id','target_decision_id','target_interview_id','action_type',
+      'actor_id','occurred_at','reason','confirmation_text_sha256',
+      'before_summary','after_summary','compensation_action_id','superseded_by_action_id'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.undo_log'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        v_missing := v_missing || v_col || ' ';
+      end if;
+    end loop;
+    if v_missing <> '' then
+      raise exception 'UNDO-STRUCT-01 undo_log 缺列：%', v_missing;
+    end if;
+    if not exists (select 1 from pg_constraint p
+                    where p.conrelid = 'recruitment.undo_log'::regclass
+                      and p.contype = 'u' and p.conname = 'uq_undo_log_action_kind') then
+      raise exception 'UNDO-STRUCT-02 undo_log 缺 (tenant_id, action_id, kind) 幂等唯一键';
+    end if;
+    select string_agg(t.name, ' ') into v_missing
+      from unnest(array[
+        'ck_undo_log_kind','ck_undo_log_operation_type','ck_undo_log_action_type',
+        'ck_undo_log_original_action_type','ck_undo_log_reason','ck_undo_log_sha256',
+        'ck_undo_log_no_self_link'
+      ]) as t(name)
+     where not exists (select 1 from pg_constraint p
+                        where p.conrelid = 'recruitment.undo_log'::regclass
+                          and p.contype = 'c' and p.conname = t.name);
+    if coalesce(v_missing, '') <> '' then
+      raise exception 'UNDO-STRUCT-03 undo_log 缺 CHECK 约束：%', v_missing;
+    end if;
+    if not exists (select 1 from pg_trigger g
+                    where g.tgrelid = 'recruitment.undo_log'::regclass
+                      and not g.tgisinternal and g.tgname = 'trg_undo_log_no_delete') then
+      raise exception 'UNDO-STRUCT-04 undo_log 缺 fn_block_delete 禁删触发器';
+    end if;
+    if not exists (select 1 from pg_trigger g
+                    where g.tgrelid = 'recruitment.undo_log'::regclass
+                      and not g.tgisinternal and g.tgname = 'trg_undo_log_immutable'
+                      and pg_get_triggerdef(g.oid) like '%compensation_action_id%'
+                      and pg_get_triggerdef(g.oid) like '%superseded_by_action_id%') then
+      raise exception 'UNDO-STRUCT-05 undo_log 缺墓碑式收口护栏（两列白名单）';
+    end if;
+    if not exists (select 1 from pg_index i
+                    where i.indrelid = 'recruitment.undo_log'::regclass
+                      and i.indpred is not null) then
+      raise exception 'UNDO-STRUCT-06 undo_log 缺原记录时间线部分索引';
+    end if;
+    raise notice 'UNDO-STRUCT PASS undo_log 列/幂等键/CHECK/禁删/墓碑护栏/索引齐全';
+  else
+    raise notice 'UNDO-STRUCT SKIP undo_log 表不存在（0020 尚未应用）';
+  end if;
+
+  -- 10.3 迁移台账必须自登记（结构存在时）
+  if to_regclass('recruitment.batch_operation') is not null
+     and not exists (select 1 from recruitment.schema_migration where version = '0020_undo_log') then
+    raise exception 'MIGRATION-0020 batch_operation/undo_log 已存在但 schema_migration 未自登记 0020_undo_log';
+  end if;
+end $$;
+
+\echo ''
+\echo '=================================================================='
+\echo ' 11. [0021 追加] 候选人星标 application_star 的结构断言'
+\echo '=================================================================='
+
+do $$
+declare
+  v_missing text := '';
+  v_col text;
+begin
+  if to_regclass('recruitment.application_star') is not null then
+    -- STAR-STRUCT-01 必需列（一行 = 一次切换事实，取最新一条为当前值）
+    for v_col in select unnest(array[
+      'id','tenant_id','application_id','starred','actor_id',
+      'confirmation_text_sha256','created_at'
+    ]) loop
+      if not exists (select 1 from pg_attribute a
+                      where a.attrelid = 'recruitment.application_star'::regclass
+                        and a.attname = v_col and not a.attisdropped) then
+        v_missing := v_missing || v_col || ' ';
+      end if;
+    end loop;
+    if v_missing <> '' then
+      raise exception 'STAR-STRUCT-01 application_star 缺列：%', v_missing;
+    end if;
+
+    -- STAR-STRUCT-02 复合外键都带 tenant_id（防跨租户引用）
+    for v_col in select unnest(array[
+      'fk_application_star_application','fk_application_star_actor'
+    ]) loop
+      if not exists (select 1 from pg_constraint p
+                      where p.conrelid = 'recruitment.application_star'::regclass
+                        and p.contype = 'f' and p.conname = v_col
+                        and exists (select 1 from pg_attribute a
+                                     where a.attrelid = p.conrelid and a.attnum = any(p.conkey)
+                                       and a.attname = 'tenant_id')) then
+        raise exception 'STAR-STRUCT-02 application_star 复合外键缺 tenant_id：%', v_col;
+      end if;
+    end loop;
+
+    -- STAR-STRUCT-03 CHECK（sha256 形状）
+    if not exists (select 1 from pg_constraint p
+                    where p.conrelid = 'recruitment.application_star'::regclass
+                      and p.contype = 'c' and p.conname = 'ck_application_star_sha256') then
+      raise exception 'STAR-STRUCT-03 application_star 缺 ck_application_star_sha256';
+    end if;
+
+    -- STAR-STRUCT-04 append-only：禁删 + 全列不可变护栏（fn_guard_columns 无白名单）
+    for v_col in select unnest(array[
+      'trg_application_star_no_delete','trg_application_star_immutable'
+    ]) loop
+      if not exists (select 1 from pg_trigger g
+                      where g.tgrelid = 'recruitment.application_star'::regclass
+                        and not g.tgisinternal and g.tgname = v_col) then
+        raise exception 'STAR-STRUCT-04 application_star 缺触发器：%', v_col;
+      end if;
+    end loop;
+
+    -- STAR-STRUCT-05 当前值查询索引必须存在
+    if not exists (select 1 from pg_index i
+                    where i.indrelid = 'recruitment.application_star'::regclass
+                      and i.indexrelid = 'recruitment.ix_application_star_current'::regclass) then
+      raise exception 'STAR-STRUCT-05 application_star 缺当前值索引 ix_application_star_current';
+    end if;
+
+    -- STAR-STRUCT-06 台账自登记
+    if not exists (select 1 from recruitment.schema_migration where version = '0021_application_star') then
+      raise exception 'STAR-STRUCT-06 schema_migration 缺 0021_application_star 自登记';
+    end if;
+    raise notice 'STAR-STRUCT PASS application_star 列/复合外键/CHECK/禁删/不可变/当前值索引/台账齐全';
+  else
+    raise notice 'STAR-STRUCT SKIP application_star 表不存在（0021 尚未应用）';
+  end if;
+end $$;
 
 \echo ''
 \echo '=== ROLLBACK：自检不改变数据库 ==='

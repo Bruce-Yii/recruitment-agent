@@ -303,7 +303,7 @@ function ScorecardForm({
           void submit(event)
         }}
       >
-        {spec.dimensions.length === 0 ? <p role="alert">服务端没有返回任何 rubric 维度，无法填写面评（fail-closed）。</p> : null}
+        {spec.dimensions.length === 0 ? <p role="alert">服务端没有返回可填写的评分维度，本次面评无法填写，未提交。</p> : null}
         {spec.dimensions.map((dimension) => {
           const enabled = scoringEnabled(dimension.key)
           return (

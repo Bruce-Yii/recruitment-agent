@@ -75,6 +75,36 @@ export interface DeterministicObject {
   readonly byEventRow: 'INTAKE_RECORD' | null
 }
 
+/**
+ * 任务优先级档位（1..5，数字越小越先被认领；认领排序见 `store/claim.ts`：
+ * `order by priority, next_run_at nulls first, created_at`）。
+ *
+ * E6-1「人的即时操作与后台批量有优先级区分」的口径：
+ *   * **1 = 人在等**：由人在页面上触发的动作所派生的任务，必须能被先认领。
+ *     例：`scorecard.submit → EVALUATION_SYNTHESIZE`（面试官提交面评后人在等汇总）。
+ *   * **2 = 保留档**（本版未用，留给人正在盯但可稍等的派生任务）。
+ *   * **3 = 常规后台**：后台摄取/批处理派生的任务，没人当场等结果。
+ *     例：`resume.intake.received → RESUME_PARSE`（材料到达后解析）。
+ *   * **4 = 批量**：同一来源短时间大量到达时可降级（含语义准入的 ROUTER_TRIAGE）。
+ *     v1.0 只留档位定义，不实现"批量判定"——那是后续版本的范围。
+ *   * **5 = 最低档**（本版未用）。
+ *
+ * 这个常量只作**档位定义/档位说明**，不改变任何行为；行为由各登记项的
+ * `routing.priority` 决定。改这里不改登记项的 priority 不会改变认领顺序。
+ */
+export const PRIORITY_BANDS = {
+  /** 人在等：页面动作派生，先认领。 */
+  HUMAN_WAITING: 1,
+  /** 保留档。 */
+  RESERVED: 2,
+  /** 常规后台：没人当场等。 */
+  BACKGROUND: 3,
+  /** 批量：短时间大量到达时降级（v1.0 只定义，不判定）。 */
+  BATCH: 4,
+  /** 最低档。 */
+  LOWEST: 5,
+} as const
+
 /** 路由结论 + （确定性时）任务模板。 */
 export type EventRouting =
   | {
@@ -129,6 +159,15 @@ export const EVENT_TYPES = {
   INTERVIEW_CANCELLED: 'interview.cancelled',
   /** 面试官撤换：`recruitment_interview_schedule`（WITHDRAW_INTERVIEWER）的审计事件。 */
   INTERVIEWER_WITHDRAWN: 'interviewer.withdrawn',
+  /**
+   * 面试爽约：`recruitment_interview_schedule`（MARK_NO_SHOW）的审计事件。
+   *
+   * 为什么不能复用 `interview.cancelled`：爽约与取消是两个不同的业务事实——
+   * 半年后复盘"这个人当时为什么没面成"时，记成 cancelled 会直接误导统计、
+   * 催办与候选人跟踪。payload 必含 subject(CANDIDATE/INTERVIEWER) / reason /
+   * confirmation_text_sha256 / from_status / to_status / interview_id。
+   */
+  INTERVIEW_NO_SHOW: 'interview.no_show',
   /** 岗位 rubric 版本批准：`recruitment_job_rubric_approve` 的审计事件。 */
   JOB_RUBRIC_VERSION_APPROVED: 'job.rubric_version.approved',
   /** 人工核验面试记录（NEEDS_REVIEW/UNVERIFIED → READY/VERIFIED）：`recruitment_interview_record_verify` 的审计事件。 */
@@ -137,6 +176,19 @@ export const EVENT_TYPES = {
   APPLICATION_RUBRIC_VERSION_PINNED: 'application.rubric_version.pinned',
   /** 岗位关闭：`src/http/actions-job.ts` 在终止事务里写的审计事件。 */
   JOB_CLOSED: 'job.closed',
+  /** 逐条 rubric 标准人工纠偏落库：`src/tools/criterion-override.ts` 写的审计事件。 */
+  CRITERION_OVERRIDE_RECORDED: 'criterion.override.recorded',
+  /**
+   * AT-6/7 带人工原话跳轮 / 豁免面评：`src/domain/stage-advance.ts` 的 override 分支写的审计事件。
+   * payload 必含 reason / confirmed_by_actor_id / confirmed_at / confirmation_text_sha256 /
+   * from_stage / to_stage（谁、何时、什么原话、跳过了哪一步）。
+   */
+  APPLICATION_STAGE_OVERRIDE_RECORDED: 'application.stage.override.recorded',
+  /**
+   * 碎片约束置顶 / 下一轮交接提醒落库：`src/tools/candidate-constraint.ts` 写的审计事件。
+   * payload 带 candidate_id / kind / text / source / actor_id / action / inserted / constraint_id。
+   */
+  CANDIDATE_CONSTRAINT_RECORDED: 'candidate.constraint.recorded',
 } as const
 
 /** `EVENT_TYPES` 的取值联合（发射方签名用）。 */
@@ -202,7 +254,8 @@ const WRITER_EVENTS: readonly EventTypeDefinition[] = [
       kind: 'DETERMINISTIC',
       taskType: 'RESUME_PARSE',
       title: '解析新收到的简历',
-      priority: 2,
+      // 常规后台（3 = BACKGROUND）：材料到达由后台工具摄取，没有人在页面上等解析结果。
+      priority: PRIORITY_BANDS.BACKGROUND,
       object: {
         // 为什么是 INTAKE_RECORD 而不是 APPLICATION：intake 在**写事件之后**才建
         // application（application-intake.ts step 6 写事件 → step 7 ensureActiveApplication），
@@ -228,7 +281,8 @@ const WRITER_EVENTS: readonly EventTypeDefinition[] = [
       kind: 'DETERMINISTIC',
       taskType: 'EVALUATION_SYNTHESIZE',
       title: '汇总面试评价',
-      priority: 3,
+      // 人在等（1 = HUMAN_WAITING）：面试官在页面提交面评后等汇总，必须能被先认领。
+      priority: PRIORITY_BANDS.HUMAN_WAITING,
       object: {
         type: 'INTERVIEW',
         fields: ['interview_id'],
@@ -303,6 +357,25 @@ const WRITER_EVENTS: readonly EventTypeDefinition[] = [
     },
   },
   {
+    type: EVENT_TYPES.INTERVIEW_NO_SHOW,
+    constKey: 'INTERVIEW_NO_SHOW',
+    producer: {
+      kind: 'TOOL',
+      file: 'src/tools/interview-schedule.ts',
+      detail: 'insertInternalEvent()（工具 recruitment_interview_schedule：MARK_NO_SHOW 爽约审计）',
+    },
+    // 与 interview.rescheduled / interview.cancelled 同一口径：纯审计工具事件
+    // 用 schema/interview-schedule，不进待路由队列（状态迁移由 fn_row_guard 记录）。
+    normalizerVersion: 'schema/interview-schedule',
+    routing: {
+      kind: 'IGNORED',
+      reason:
+        '爽约已由工具在同一事务内完成状态迁移并写幂等 STORE；本事件是审计事实'
+        + '（reason / subject / 人工原话哈希只能落事件 payload），'
+        + '再自动触发不会产出新业务动作，只会重复处理同一场面试。',
+    },
+  },
+  {
     type: EVENT_TYPES.JOB_RUBRIC_VERSION_APPROVED,
     constKey: 'JOB_RUBRIC_VERSION_APPROVED',
     producer: {
@@ -366,6 +439,63 @@ const WRITER_EVENTS: readonly EventTypeDefinition[] = [
       reason:
         '岗位关闭已在同一事务里终止在途申请/未开始面试/未完成任务，并由 fn_row_guard 写各状态迁移审计；'
         + '本事件是聚合审计事实，不建任务、不再自动执行，否则会重复终止。',
+    },
+  },
+  {
+    type: EVENT_TYPES.CRITERION_OVERRIDE_RECORDED,
+    constKey: 'CRITERION_OVERRIDE_RECORDED',
+    producer: {
+      kind: 'TOOL',
+      file: 'src/tools/criterion-override.ts',
+      detail: 'insertOverrideRecordedEvent()（工具 recruitment_criterion_override：逐条标准人工纠偏落库）',
+    },
+    // 与 interview.record.verified / job.rubric_version.approved 同一口径：纯审计工具事件用
+    // normalizer_version='schema/0001'，RuntimeStore.listPendingEvents 不把它当待路由触发事件。
+    normalizerVersion: 'schema/0001',
+    routing: {
+      kind: 'IGNORED',
+      reason:
+        '人工逐条纠偏已由工具在同一事务写进 criterion_override 表并把旧 current 收口；'
+        + '事件只是审计事实（时间线可读），v1.0 没有自动后续任务，再建任务会重复处理。'
+        + '（payload 带 application_id，是**明确不触发**，不是对象 id 解析失败。）',
+    },
+  },
+  {
+    type: EVENT_TYPES.APPLICATION_STAGE_OVERRIDE_RECORDED,
+    constKey: 'APPLICATION_STAGE_OVERRIDE_RECORDED',
+    producer: {
+      kind: 'DOMAIN_WRITER',
+      file: 'src/domain/stage-advance.ts',
+      detail: 'insertStageOverrideEvent()（AT-6/7：带人工原话跳轮 / 豁免面评的审计事件）',
+    },
+    // 与 application.rubric_version.pinned 同一口径：纯审计领域事件用 schema/0001，
+    // RuntimeStore.listPendingEvents 不把它当待路由触发事件。
+    normalizerVersion: 'schema/0001',
+    routing: {
+      kind: 'IGNORED',
+      reason:
+        '跳轮 / 豁免面评已由 stage_advance 的 override 分支在同一事务里完成阶段 UPDATE；'
+        + '事件是 schema/0001 口径的审计事实（人工原话哈希 + 确认人 + 时间 + from/to 可回查），'
+        + '再建任务不会重复推进，只会重复执行同一跳。',
+    },
+  },
+  {
+    type: EVENT_TYPES.CANDIDATE_CONSTRAINT_RECORDED,
+    constKey: 'CANDIDATE_CONSTRAINT_RECORDED',
+    producer: {
+      kind: 'TOOL',
+      file: 'src/tools/candidate-constraint.ts',
+      detail: 'insertConstraintRecordedEvent()（工具 recruitment_candidate_constraint：碎片约束置顶 / 下一轮交接提醒落库）',
+    },
+    // 与 criterion.override.recorded 同一口径：纯审计工具事件用 schema/0001，
+    // RuntimeStore.listPendingEvents 不把它当待路由触发事件。
+    normalizerVersion: 'schema/0001',
+    routing: {
+      kind: 'IGNORED',
+      reason:
+        '置顶约束 / 交接提醒已由工具在同一事务写进 candidate_constraint 表（幂等 no-op 不写第二条事件）；'
+        + '事件只是审计事实（candidate_id / kind / text / source / actor / action / inserted 可回查），'
+        + 'v1.0 没有自动后续任务，再建任务会重复沉淀同一句原话。',
     },
   },
 ]

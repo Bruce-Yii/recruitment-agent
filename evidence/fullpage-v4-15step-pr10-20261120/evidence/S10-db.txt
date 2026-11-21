@@ -1,0 +1,36 @@
+=== DB READBACK S10 ===
+at: 2026-11-20T15:08:12.787Z
+db: ra_fresh_e2e_hic_1514ny (SELECT-only; no product code imported)
+
+SQL: -- baseline head counts
+
+
+SQL: select 'intake_asset',count(*) from recruitment.intake_asset union all select 'business_task',count(*) from recruitment.business_task union all select 'candidate_constraint',count(*) from recruitment.candidate_constraint union all select 'criterion_override',count(*) from recruitment.criterion_override union all select 'decision',count(*) from recruitment.decision union all select 'interview',count(*) from recruitment.interview union all select 'interviewer',count(*) from recruitment.interviewer union all select 'scorecard_draft',count(*) from recruitment.scorecard_draft union all select 'scorecard',count(*) from recruitment.scorecard union all select 'resume_version',count(*) from recruitment.resume_version union all select 'event_inbox',count(*) from recruitment.event_inbox union all select 'application',count(*) from recruitment.application
+intake_asset|4
+business_task|6
+candidate_constraint|2
+criterion_override|0
+decision|1
+interview|7
+interviewer|8
+scorecard_draft|2
+scorecard|1
+resume_version|4
+event_inbox|42
+application|4
+
+
+SQL: -- step SQL
+
+
+SQL: select count(*) as n from recruitment.decision
+1
+
+
+SQL: -- step SQL
+
+
+SQL: select event_id, event_type, recorded_at, left(payload::text,400) from recruitment.event_inbox where payload::text ilike '%SCORECARD_MISSING%' order by recorded_at
+
+
+

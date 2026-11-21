@@ -675,7 +675,7 @@ test('⑦ focus/must_cover 优先且按原顺序；一个都没有时按 weight 
     'RUBRIC_DIMENSION|frontend_basics',
     'RUBRIC_DIMENSION|backend_depth',
   ], 'weight desc；同权重（0.5 vs 0.5）保持原顺序')
-  assert.equal(byWeight[0]?.why, '岗位标准里这一条权重较高（0.5），前面的信息里还没有它的实际证据。')
+  assert.equal(byWeight[0]?.why, '岗位标准里这一条权重较高（0.5），前面的轮次还没有聊到这一条，材料里也没有对应的原文。')
 })
 
 test('⑦ 同 kind|ref 去重（多行重复喂同一维度 key 只出一条）；不足 2 条如实少给（不编造）', () => {

@@ -152,22 +152,22 @@ export interface ScorecardFieldDerivation {
 
 /** 旧端点（两键都缺）的固定文案：明确"不伪造本轮重点"。 */
 export const ROUND_SERVER_FIELDS_MISSING_TEXT =
-  '服务端未提供轮次配置（task-50 端点未就绪）→ JOB_BASE 降级，不伪造本轮重点'
+  '服务端这一次没有提供本轮配置，界面没有本轮单独的考察重点，请按岗位标准查看'
 
 /** fail-closed 的固定文案（W3B-CONTRACT §4.2 逐字）。 */
-export const ROUND_SCHEMA_MISMATCH_TEXT = '本轮评分表与面评表单 spec 不一致，已 fail-closed（不写库）'
+export const ROUND_SCHEMA_MISMATCH_TEXT = '本轮评分表与面评表单不一致，已停止，未写库'
 
 /** 来源文案表（W3B-CONTRACT §3 逐字）。 */
 const ROUND_SOURCE_TEXT: Readonly<Record<string, string>> = {
   ROUND_CONFIG: '轮次配置（本场有专属考察重点与评分表覆盖）',
   ROUND_OVERRIDE: '轮次覆盖（本轮评分表在岗位底座上有覆盖）',
-  JOB_BASE: '岗位基础（JOB_BASE 降级：服务端未提供该轮配置）',
-  TEMPLATE: '面试模板（旧 brief，非轮次配置）',
+  JOB_BASE: '岗位通用标准（服务端未提供本轮专属配置）',
+  TEMPLATE: '面试模板（旧的面试说明，不是本轮配置）',
 }
 
 /** 旧端点降级的来源文案（两键都缺；与普通 JOB_BASE 区分，说明 task-50 未就绪）。 */
 const ROUND_OLD_ENDPOINT_SOURCE_TEXT =
-  '岗位基础（JOB_BASE 降级：服务端未提供轮次配置，task-50 端点未就绪）'
+  '岗位通用标准（服务端未提供本轮配置，暂时无法给出本轮专属重点）'
 
 /** 取一个对象；null / 数组 / 非对象一律降级为空对象。 */
 function asRecord(value: unknown): Record<string, unknown> {
@@ -494,7 +494,7 @@ export function normalizeRoundEffective(value: unknown, options: NormalizeRoundO
   // 6. round_no 不一致：不套用轮次重点（只显示降级卡），把冲突写进 reason。
   if (hasFocus && focus.round_no > 0 && roundNo > 0 && focus.round_no !== roundNo) {
     conflictReasons.push(
-      `round_focus.round_no=${focus.round_no} 与面试 round_no=${roundNo} 不一致；不套用轮次考察重点，只显示 JOB_BASE 降级`,
+      `round_focus.round_no=${focus.round_no} 与面试 round_no=${roundNo} 不一致；不套用轮次考察重点，只显示岗位标准`,
     )
     focus = {
       ...focus,
@@ -519,7 +519,7 @@ export function normalizeRoundEffective(value: unknown, options: NormalizeRoundO
     conflictReasons.push(
       `轮次模板声明的 rubric 版本（${rubric.declaredRoundRubricVersionId}）与申请钉住的 base（${
         rubric.baseRubricVersionId !== '' ? rubric.baseRubricVersionId : '服务端未提供'
-      }）不一致；按 base/JOB_BASE 维度渲染，UI 不自行换版本`,
+      }）不一致；按岗位基础维度渲染，界面不自行换版本`,
     )
   }
 
@@ -541,7 +541,7 @@ export function normalizeRoundEffective(value: unknown, options: NormalizeRoundO
 export function roundSourceText(source: string, serverFieldsMissing = false): string {
   if (serverFieldsMissing) return ROUND_OLD_ENDPOINT_SOURCE_TEXT
   const value = asText(source)
-  if (value === '') return '未知来源（服务端未提供 source）'
+  if (value === '') return '未知来源（服务端没有说明来源）'
   return ROUND_SOURCE_TEXT[value] ?? `未知来源（${value}，原样显示）`
 }
 
@@ -554,7 +554,7 @@ export function roundFocusDegradedText(view: RoundEffectiveView): string {
   if (view.serverFieldsMissing) return ROUND_SERVER_FIELDS_MISSING_TEXT
   if (view.focus.reason !== '') return view.focus.reason
   if (view.conflict && view.conflictReason !== '') return view.conflictReason
-  return '服务端未提供本轮轮次配置（JOB_BASE 降级，不伪造本轮重点；评分维度见下方 effective schema）'
+  return '服务端未提供本轮专属配置（按岗位通用标准展示，评分维度见下方「本轮评分表 · 岗位标准」）'
 }
 
 /**
@@ -746,7 +746,7 @@ export function deriveScorecardFields(
     mismatchKeys,
     mismatchText:
       mismatchKeys.length > 0
-        ? `${ROUND_SCHEMA_MISMATCH_TEXT}（差异 key：${mismatchKeys.join('、')}）`
+        ? `${ROUND_SCHEMA_MISMATCH_TEXT}（不一致项：${mismatchKeys.join('、')}）`
         : ROUND_SCHEMA_MISMATCH_TEXT,
   }
 }

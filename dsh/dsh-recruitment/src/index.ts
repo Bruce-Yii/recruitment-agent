@@ -22,14 +22,22 @@
 //   recruitment_scorecard_submit       **S10 写库**：一位 HUMAN 面试官交自己那份面评
 //   recruitment_evaluation_summarize   **S10 只读**：汇总投影（不产建议结论）
 //   recruitment_decision_record        **S10 写库**：记录人已做出的决定（必须过 ctx.approval）
+//   recruitment_email_fetch            邮箱收件（30 → 31，EVENT 触发、LIVE）：IMAP → intake
+//   recruitment_criterion_override     逐条 rubric 标准人工纠偏（31 → 32，append-only）：原话凭据 → 当前行 + 审计事件
+//   recruitment_candidate_constraint   碎片约束置顶 + 下一轮交接提醒（32 → 33，append-only）：PIN/UNPIN/HANDOFF → 约束表 + 审计事件
 //
-// 配置来自 cordis.patch.yml 的 config 段，共三段：
+// 配置来自 cordis.patch.yml 的 config 段，共四段：
 //   converter: python_bin / converter_dir / allowed_roots   （resume_read + intake 要）
 //   database:  host / port / user / database / tenant_id / actor_id / password_env
 //              **密码只从环境变量读**（默认 RECRUITMENT_DB_PASSWORD），配置里不出现密码。
 //   feishu:    cli（lark-cli 的**绝对路径**）/ timeout_ms / max_attempts / page_size / max_pages
 //              **可选**：给了才装配飞书连接器传输层；缺省 = 不装配（连接器回读路径
 //              BLOCKED/TRANSPORT_NOT_CONFIGURED，不拉子进程）。**绝不放宽**成读 PATH / 环境变量。
+//   mail:      host / user / password_env / port / tls / folder（IMAP 收件）+ smtp_*（发信 Host Action）
+//              `${ENV}` 引用自行展开；未定义即 NOT_CONFIGURED（工具仍注册同名替身）。
+//              发信走 /recruitment/api/action/email/send，不新增工具（本段工具数只 +1；
+//              人工纠偏工具另有 recruitment_criterion_override，候选约束工具另有
+//              recruitment_candidate_constraint，合计工具数 30 → 31 → 32 → 33）。
 //
 // 缺任何一段时**工具仍然注册**，但调用返回 NOT_CONFIGURED 并列出缺什么——
 // 不静默降级、不假装能读、不返回假数据（沿用 unconfiguredResumeReadTool 的既有做法）。
@@ -100,11 +108,27 @@ import { createDecisionRecordTool } from './tools/decision-record.ts'
 // 产品/业务 FAIL 修复 2（task-76）：高层「记录人类决策」Agent 动作。
 // 服务端组装 basis_refs / AUTHORITY / SUMMARY / RUBRIC_VERSION / confirmation hash。
 import { createRecordHumanDecisionTool } from './tools/record-human-decision.ts'
+// 逐条 rubric 标准人工纠偏（append-only；工具数 31 → 32）：写身份装配 + 缺配置同名替身。
+import {
+  createCriterionOverrideTool,
+  unconfiguredCriterionOverrideTool,
+} from './tools/criterion-override.ts'
+// 碎片约束置顶 + 下一轮交接提醒（32 → 33）：写身份装配 + 缺配置同名替身。
+import {
+  createCandidateConstraintTool,
+  unconfiguredCandidateConstraintTool,
+} from './tools/candidate-constraint.ts'
 import {
   createStageAdvanceTool,
   unconfiguredStageAdvanceTool,
 } from './tools/stage-advance.ts'
 import { createTraceGetTool, unconfiguredTraceGetTool } from './tools/trace-get.ts'
+import { createUiDispatchTool } from './tools/ui-dispatch.ts'
+import { createInterviewFreeSlotsTool } from './tools/interview-free-slots.ts'
+import {
+  createWorkspaceOverviewTool,
+  unconfiguredWorkspaceOverviewTool,
+} from './tools/workspace-overview.ts'
 // D-141 §4（最高优先项）：工具调用留痕接线。
 // `src/domain/trace.ts` 的记录适配器实现完整，但产品执行路径从未调用它 →
 // `recruitment.tool_call` 永远没有写入，`recruitment_trace_get` 的 TOOL_CALL 环永远是 gap。
@@ -114,15 +138,22 @@ import { withToolCallTrace } from './tools/traced.ts'
 import { createConfigRoleTool, unconfiguredConfigRoleTool } from './tools/config-role.ts'
 import { createConfigTeamTool, unconfiguredConfigTeamTool } from './tools/config-team.ts'
 import { createConfigPipelineTool, unconfiguredConfigPipelineTool } from './tools/config-pipeline.ts'
-// 引擎持久副作用（vendor 自 dsh-superagent-prototype，MIT）：runtime 入队、这里派发。
-import { Store } from './engine/app/store.ts'
-import { Effects } from './engine/app/effects.ts'
-import { HealthBoard } from './engine/infra/health.ts'
+// engine 层已退役（D-154），不再从 src/index.ts 引入；见 src/engine/VENDORED.md。
 import { resolveDatabaseConfig, type DatabaseConfig } from './db/pool.ts'
 import {
   closePool,
   createPool,
+  withActor,
 } from './db/pool.ts'
+// email pump（durable_effect 派发器）：runtime.enabled 时与 G1 tick-loop 同源启停。
+// 同源 = 同一个 pool / 同一个 withActor 语义 / 同一个 disposer（先 pump、再 tick-loop、再关池）。
+import {
+  createEmailPump,
+  createImapReadback,
+  EMAIL_PUMP_INTERVAL_MS,
+  type ReadbackFunction,
+} from './runtime/email-pump.ts'
+import { createSmtpTransport } from './connectors/mail/smtp.ts'
 import {
   composeRuntime,
   registerRuntimeHttp,
@@ -138,17 +169,43 @@ import { startTickLoop, type TickLoop } from './runtime/tick-loop.ts'
 // （出口文件不在 lane 写范围，且它只是 re-export）。
 import { createPgEventDispositionSink } from './runtime/event-runtime.ts'
 import { resolveFeishuConnector, type FeishuConnectorConfig } from './connectors/feishu/index.ts'
+// 邮箱收件（工具数 30 → 31）：工具注册面 + 配置 fail-closed 替身。
+// 逐条标准人工纠偏（工具数 31 → 32）：与写工具同形，identity 装配 + fail-closed 替身。
+import {
+  createWiredEmailFetchTool,
+  unconfiguredEmailFetchTool,
+  resolveMailConfig,
+  emailFetchRuntime,
+  type MailConnectorConfig,
+  type ResolvedMailConfig,
+} from './tools/email-fetch.ts'
+// A 的收件编排与 IMAP 传输（子代理 mail-a-transport 实现；工具壳只消费其签名）。
+import { fetchAndIngest } from './connectors/mail/orchestrator.ts'
+import { createImapTransport } from './connectors/mail/transport.ts'
+// C 的发信 Host Action（POST /recruitment/api/action/email/send，不新增工具）。
+import { registerEmailSendHttp, type EmailSendHostContext } from './http/email-send.ts'
 import { registerOverviewHttp, type OverviewHostContext } from './http/overview.ts'
 import { registerRecruitingHttp, type RecruitingHostContext } from './http/recruiting.ts'
 // owner-api-display（V5 看得见）：原文受控获取 + DSH 会话计量 + 任务状态（三个只读端点，
 // loopback + sameOrigin + fail-closed）。注册器在 src/http/api-display.ts，返回 disposer。
 import { registerApiDisplayHttp, type ApiDisplayHostContext } from './http/api-display.ts'
+import { registerIntakeUploadHttp, type IntakeUploadHostContext } from './http/intake-upload.ts'
 // D5 W1：Demo Actor（session→alias→HUMAN actor）+ Interviewer Host Remote Action
 //（scorecard form/submit）。路由用 exact path，longest-prefix 优先于 /recruitment/api。
 import { registerActorHttp, type ActorHostContext } from './http/actor.ts'
 import { registerJobActionHttp, type JobActionHostContext } from './http/actions-job.ts'
 import { registerActionsHttp, type ActionHostContext } from './http/actions.ts'
+import { registerCompoundHttp, type CompoundHostContext } from './http/compound.ts'
+import { registerAppShell, type AppShellHostContext } from './http/app-shell.ts'
+import { createAppAgentTurnBridge, type AgentTurnHost } from './http/agent-turn.ts'
+import { registerBatchUndoHttp, type BatchUndoHostContext } from './http/batch-undo.ts'
+import { registerScorecardDraftHttp, type ScorecardDraftHostContext } from './http/scorecard-draft.ts'
+import { registerMinuteRebindHttp, type MinuteRebindHostContext } from './http/minute-rebind.ts'
+import { createRebindProcessRunner } from './connectors/feishu/rebind.ts'
+import { registerInterviewSlotsHttp, type InterviewSlotsHostContext } from './http/interview-slots.ts'
+import { registerStarHttp, type StarHostContext } from './http/star.ts'
 import { registerFeishuImportHttp, type FeishuImportHostContext } from './http/feishu-import.ts'
+import { registerSettingsHttp, type SettingsHostContext } from './http/settings.ts'
 // D5 decision（task-56）：决策 facts 只读投影 + screening/evaluate（只读 domain）+
 // decision/record facade（服务端组装 basis_refs）。独立前缀 /recruitment/api/decision。
 import { registerDecisionHttp, type DecisionHostContext } from './http/decision-read.ts'
@@ -254,6 +311,13 @@ export interface Config {
    * fail-closed（写工具报 DEMO_ACTOR_UNMAPPED），不静默回退默认值。
    */
   readonly demo_actor_map?: DemoActorMapConfig
+  /**
+   * 邮箱收件连接器（`recruitment_email_fetch`，工具数 30 → 31；人工纠偏再 +1 → 32；候选约束再 +1 → 33）+ 发信 Host Action。
+   * 同一账号：host/user/password_env/port/tls/folder（IMAP）+ smtp_*（SMTP 发信，不新增工具）。
+   * password_env 只写变量名，口令只从环境变量读；`${ENV}` 引用由 resolveMailConfig 展开，
+   * 未定义/未展开一律 fail-closed（工具仍注册替身，调用报 NOT_CONFIGURED）。
+   */
+  readonly mail?: MailConnectorConfig
 }
 
 /**
@@ -379,22 +443,58 @@ function notConfiguredTool(
 }
 
 /**
+ * cordis 的 `Context` 声明未覆盖宿主注入的 tools 服务；这里只补类型交集，
+ * 运行时的 `ctx.tools.register(tool)` 调用路径一字未改（同文件 logger 的既有口径）。
+ */
+type ContextWithTools = Context & {
+  readonly tools: { register(definition: ReadonlyToolDefinition): unknown }
+}
+
+/**
  * 挂载只读招聘工具 + S6/S7 工具。
  * @param ctx - cordis 上下文，携带 tools 服务。
  * @param config - 插件配置（来自 cordis.patch.yml）。
  * @param env - 环境变量表（默认 process.env；测试可注入）。
  */
 export function apply(
-  ctx: Context,
+  ctx: ContextWithTools,
   config?: Config,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): void {
   const converter = resolveConverterConfig(config?.converter ?? {}, env)
   const database = resolveDatabaseConfig(config?.database ?? {}, env)
+  // 邮箱连接器：缺任何必填项（含 `${ENV}` 未展开）→ resolved=null，注册 NOT_CONFIGURED 替身；
+  // 只有配置齐全才装配 A 的 IMAP transport + 收件编排（并发写，通过 runtime seam 注入）。
+  const mail: { resolved: ResolvedMailConfig | null; issues: readonly string[] } = resolveMailConfig(config?.mail ?? {}, env)
+  if (mail.resolved !== null) {
+    emailFetchRuntime.fetch = fetchAndIngest as typeof emailFetchRuntime.fetch
+    emailFetchRuntime.createTransport = (resolved) => createImapTransport(resolved as never)
+  }
   // 飞书连接器（E4 接线）：**只从插件配置**装配传输层；没配 feishu.cli 时 connector=undefined，
   // 转写导入的连接器回读路径 fail-closed（BLOCKED/TRANSPORT_NOT_CONFIGURED，不拉子进程）。
   // env 只用于适配器判断凭据**存在性**（布尔），绝不用于取 CLI 路径（R7 / AGENTS.md §7.6）。
   const feishu = resolveFeishuConnector(config?.feishu ?? {}, env)
+  // 飞书日历 CLI 路径 + 面试官 open_id 映射：HTTP 路由与 DSH 工具共用同一份解析（不各写一份）。
+  // 只从插件配置 `${ENV}` 展开绝对路径；未配置 = null → 工具/路由如实 NOT_CONNECTED。
+  const feishuCalendarCliPath = ((): string | null => {
+    const raw = config?.feishu?.cli
+    if (typeof raw !== 'string' || raw === '') return null
+    const ref = /^\$\{([A-Z0-9_]+)\}$/.exec(raw)
+    const value = ref === null ? raw : env[ref[1] as string]
+    return typeof value === 'string' && value !== '' ? value : null
+  })()
+  /** 面试官 actor_id → 飞书 open_id（只从环境变量映射表读；缺失/非法 = 未绑定，不猜）。 */
+  const resolveInterviewerOpenId = async (actorId: string): Promise<string | null> => {
+    const raw = env.RECRUITMENT_FEISHU_USER_MAP
+    if (typeof raw !== 'string' || raw.trim() === '') return null
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>
+      const value = parsed[actorId]
+      return typeof value === 'string' && value.startsWith('ou_') ? value : null
+    } catch {
+      return null
+    }
+  }
   // D5 W1：Demo Actor 身份 = alias→UUID 映射 + **进程内** session→alias 注册表。
   // 必须是单例：写工具（工具路径）与 Host Remote Action（浏览器路径）共享同一个 registry，
   // 否则“浏览器 PUT 绑定的 session”与“Agent 工具解析的 session”对不上。
@@ -467,6 +567,110 @@ export function apply(
       ),
       'recruitment: write action routes',
     )
+    // 一句话多步：结构预检 + 事实预检 → 整卡拒绝零写入 → 一次确认后按顺序执行（失败即停、不回滚）。
+    child.effect(
+      () => registerCompoundHttp(
+        child as unknown as CompoundHostContext,
+        { database: database.resolved, databaseIssues: database.issues, identity: actorIdentity },
+      ),
+      'recruitment: compound confirmation route',
+    )
+    // D-167：独立整页 v4（/recruitment/app）+ 会话/调试身份 + 对话入口。
+    // 对话桥接 DSH 既有 `ctx.agents`（不新建 Agent Runtime）：同一个 rc_sid = DSH session，
+    // followup 用户消息 + 订阅 agent/assistant-stream / session/event → SSE；工具面只读 allow-list。
+    // 宿主缺 agents 服务时桥仍返回 503 AGENT_UNAVAILABLE（页面降级，业务按钮不受影响）。
+    child.effect(() => {
+      const bridge = createAppAgentTurnBridge(
+        child as unknown as AgentTurnHost,
+        { workspaceRoot: process.env.RECRUITMENT_WORKSPACE_ROOT },
+      )
+      const disposeShell = registerAppShell(
+        child as unknown as AppShellHostContext,
+        {
+          identity: actorIdentity,
+          agentTurn: bridge,
+          // 仅本地预览：显式 env 才启用默认身份（生产由真实登录替代，D-178）。
+          previewAlias: typeof env.RECRUITMENT_PREVIEW_ALIAS === 'string'
+            ? env.RECRUITMENT_PREVIEW_ALIAS.trim()
+            : undefined,
+        },
+      )
+      return () => {
+        disposeShell()
+        void bridge.dispose()
+      }
+    }, 'recruitment: standalone v4 app shell')
+    // 批量不通过 / 撤销（5 秒 Toast）：两条新 exact POST 路由，与写动作共享同一身份单例。
+    child.effect(
+      () => registerBatchUndoHttp(
+        child as unknown as BatchUndoHostContext,
+        { database: database.resolved, databaseIssues: database.issues, identity: actorIdentity },
+      ),
+      'recruitment: batch reject / undo routes',
+    )
+    // 候选人星标（主推标记）：POST /recruitment/api/action/application/star，append-only 事实 + 独立读回当前值。
+    child.effect(
+      () => registerStarHttp(
+        child as unknown as StarHostContext,
+        { database: database.resolved, databaseIssues: database.issues, identity: actorIdentity },
+      ),
+      'recruitment: application star route',
+    )
+    // 面评草稿（自动保存，不是最终提交）：GET/POST /recruitment/api/action/scorecard/draft。
+    child.effect(
+      () => registerScorecardDraftHttp(
+        child as unknown as ScorecardDraftHostContext,
+        { database: database.resolved, databaseIssues: database.issues, identity: actorIdentity },
+      ),
+      'recruitment: scorecard draft routes',
+    )
+    // 排期前空闲时段交集（只读）：GET /recruitment/api/action/interview/free-slots。读不到日历就如实 AUTH_REQUIRED，不编时段。
+    child.effect(
+      () => registerInterviewSlotsHttp(
+        child as unknown as InterviewSlotsHostContext,
+        {
+          // 配置里可能是 `${RECRUITMENT_FEISHU_CLI}` 引用：与工具共用同一份展开（未设置 = null → NOT_CONNECTED）。
+          feishuCliPath: feishuCalendarCliPath,
+          platformChannel: true,
+          identity: actorIdentity,
+          // 面试官 actor_id → 飞书 open_id 映射：与工具共用同一份解析（只从环境变量读，不猜）。
+          io: { resolveInterviewerOpenId },
+        },
+      ),
+      'recruitment: interview free-slots route',
+    )
+    // 妙记录音归属改绑（外部写，默认只允许 dry-run）：POST /recruitment/api/action/interview/rebind-minute。
+    child.effect(
+      () => registerMinuteRebindHttp(
+        child as unknown as MinuteRebindHostContext,
+        {
+          database: database.resolved,
+          databaseIssues: database.issues,
+          identity: actorIdentity,
+          connector: { runner: createRebindProcessRunner() },
+          // actor → {from_speaker_id, to_user_id} 映射：缺省为空 = 一律 422 REBIND_IDENTITY_UNMAPPED（不猜）。
+          identities: {},
+        },
+      ),
+      'recruitment: minute rebind route',
+    )
+    // 工作空间设置：GET /recruitment/api/settings（只读投影）+ POST /recruitment/api/action/settings/write
+    // （Host Action，人点 + confirmation_text）。配置解析所需全部注入，不读进程环境。
+    child.effect(
+      () => registerSettingsHttp(
+        child as unknown as SettingsHostContext,
+        {
+          database: database.resolved,
+          databaseIssues: database.issues,
+          identity: actorIdentity,
+          mailConfig: (config?.mail ?? {}) as never,
+          mailEnv: env as never,
+          feishuConfig: (config?.feishu ?? {}) as never,
+          feishuEnv: env,
+        },
+      ),
+      'recruitment: workspace settings routes',
+    )
     // P0-7：真实飞书转写导入（真实 minute 只读回读 → 创建/复用 Meeting 绑定 → 复用
     // recruitment_transcript_import 域路径写 artifact/segment/record）。独立前缀
     // /recruitment/api/feishu；非回环 host 不注册（fail-closed）。feishuConfig 原样交给
@@ -483,6 +687,21 @@ export function apply(
         },
       ),
       'recruitment: feishu import route',
+    )
+    // 邮箱发信 Host Action（C）：POST /recruitment/api/action/email/send，发信**不新增工具**。
+    // 与写动作共享同一个 actorIdentity；loopback + 同源校验由路由自己保证（非回环零注册）。
+    child.effect(
+      () => registerEmailSendHttp(
+        child as unknown as EmailSendHostContext,
+        {
+          database: database.resolved,
+          databaseIssues: database.issues,
+          identity: actorIdentity,
+          mail: mail.resolved,
+          mailIssues: mail.issues,
+        },
+      ),
+      'recruitment: email send action route',
     )
     // D5 decision（task-56）：W2b 的决策事实与写入口。
     //   * GET  /recruitment/api/decision/facts                 申请钉住的 job/rubric（含 payload_hash）+
@@ -559,6 +778,16 @@ export function apply(
       }),
       'recruitment: api display routes',
     )
+    // ASYNC-1/2：上传简历 → 立即 202 task_id → 后台异步解析入库（docs/29 / docs/35 G1）。
+    child.effect(
+      () => registerIntakeUploadHttp(child as unknown as IntakeUploadHostContext, {
+        database: database.resolved,
+        databaseIssues: database.issues,
+        converter: converter.resolved,
+        identity: actorIdentity,
+      }),
+      'recruitment: async intake upload route',
+    )
   })
 
   // 任务运行时（Event → Business Task → Attempt → DSH Worker Session）。
@@ -584,6 +813,8 @@ export function apply(
           // G1：tick-loop 的启动 promise。**声明在 try 之外**：这样下面的 catch 也能收尸，
           // 否则 store/effect 装配失败时那条持咨询锁的专用连接会一直挂到进程退出。
           let tickLoopReady: Promise<TickLoop | null> = Promise.resolve(null)
+          // email pump disposer 同样**声明在 try 之外**：装配中途出错也要收掉定时器。
+          let disposeEmailPump: () => void = () => { /* 未启动时 noop */ }
           try {
             const store = new RuntimeStore({
               pool,
@@ -620,7 +851,7 @@ export function apply(
             )
             // G1（事件自动驱动）：进程内**唯一的周期 tick**。
             //
-            // 此前 `router.tick()` 只被 `POST /recruitment/runtime/tick` 与 engine_effect 触发；
+            // 此前（engine 层未退役时）`router.tick()` 只被 `POST /recruitment/runtime/tick` 与 engine_effect 触发；
             // 没人手工发 HTTP 时，`event_inbox` 里的 RECEIVED 永远不动 —— 事件驱动是假的。
             // 这里用**专用连接**持有 `recruitment:tick` 咨询锁再开 setInterval：
             //   * 多实例同时起：只有抢到锁的实例派发，其余实例记一次 warn 后明确放弃（不抢活）；
@@ -640,60 +871,93 @@ export function apply(
                 },
               })
               : Promise.resolve(null)
-            // 引擎持久副作用（Effects 队列）的**插件侧派发者**。
-            //
-            // runtime 在它自己的异步事务里用 `effects-async.ts` 入队（launch/delivery/reply），
-            // 那些行落在 `recruitment.engine_effect`；没有这个派发者，副作用会**安全地排队但永不执行**
-            // （不丢、不假报 sent，但也没人干活）。这里把消费端接上。
-            //
-            // 同步桥的 statement_timeout 必须压到 5s：它阻塞事件循环，长查询会冻结宿主 turn。
-            const board = new HealthBoard()
-            const engineStore = new Store(
-              { ...runtimeDb, tenant_id: runtimeDb.tenant_id, statementTimeoutMs: 5_000 },
-              (error: unknown) => {
+            // engine 层（vendor 自 dsh-superagent）已于 2026-11-18 退役：无人写入、且绕过 tick 的 advisory lock；见 docs/17 D-154。真要做外发时按 src/engine/VENDORED.md 再接。
+
+            // ── email pump（与 runtime 同源启停）────────────────────────────
+            // 条件：mail 与 database 都配置齐全（mail.resolved !== null，且 runtimeDb 已存在）。
+            // 未配置时整段不启动（不注册任何定时器）；runtime.enabled=false 时更外层 if 直接跳过。
+            let emailPumpTimer: ReturnType<typeof setInterval> | null = null
+            if (mail.resolved !== null) {
+              try {
+                const smtp = createSmtpTransport(mail.resolved)
+                // 回执：用组合键（收件人 + 主题完全一致 + 发送时间 ± 窗口）查收件箱。
+                // 真机事实：服务端会改写 Message-ID，按 external_id 匹配必然落空。
+                // 真链回执卡死根因：旧闭包直接 listNew() 而从未 connect() → guardConnected
+                // 抛 NOT_CONNECTED → 被当 UNREADABLE。现在统一走 createImapReadback
+                // （每次自己 connect / finally disconnect，异常脱敏进 receipt_payload.error）。
+                const transportFactory = emailFetchRuntime.createTransport
+                const readback: ReadbackFunction = transportFactory === null
+                  ? async () => null
+                  : createImapReadback(transportFactory as never, mail.resolved)
+                const pump = createEmailPump({
+                  database: runtimeDb,
+                  mail: mail.resolved,
+                  transport: async (m) => {
+                    const sent = await smtp.send({
+                      to: m.to,
+                      subject: m.subject,
+                      body_summary: m.text,
+                      ...(m.headers === undefined ? {} : { headers: m.headers }),
+                    })
+                    return { messageId: sent.messageId }
+                  },
+                  readback,
+                  io: {
+                    // 与 G1 完全同源：同一个 pool + 同一个 actor 语义（set_config is_local）。
+                    withWrite: (fn) => withActor(pool, runtimeDb.actor_id, fn),
+                    markReadback: async (client, effectId, mark) => {
+                      // 只写回执列 + 下次复查时间；带 tenant 隔离 + status='SENT' 守卫，
+                      // 不碰 status/record_version。next_attempt_at 为 null = 清掉重试（终态/命中）。
+                      await (client as { query(text: string, values: readonly unknown[]): Promise<unknown> }).query(
+                        `update recruitment.durable_effect
+                            set receipt_payload = $2::jsonb,
+                                readback_state = $3,
+                                last_readback_at = now(),
+                                next_attempt_at = $5::timestamptz
+                          where id = $1 and tenant_id = $4 and status = 'SENT'`,
+                        [
+                          effectId,
+                          JSON.stringify(mark.receipt_payload),
+                          mark.readback_state,
+                          runtimeDb.tenant_id,
+                          mark.next_attempt_at ?? null,
+                        ],
+                      )
+                    },
+                  },
+                })
+                const warn = (message: string): void => {
+                  const logger = (ctx as unknown as { logger?: { warn(message: string): void } }).logger
+                  logger?.warn(`recruitment: email pump tick 失败：${message}`)
+                }
+                emailPumpTimer = setInterval(() => {
+                  void pump.tick().catch((error: unknown) => {
+                    warn(error instanceof Error ? error.message : String(error))
+                  })
+                }, EMAIL_PUMP_INTERVAL_MS)
+                disposeEmailPump = () => {
+                  if (emailPumpTimer !== null) { clearInterval(emailPumpTimer); emailPumpTimer = null }
+                  void smtp.close().catch(() => undefined)
+                  pump.dispose()
+                }
+              } catch (error) {
+                // fail-soft：装配失败只 warn，不拖垮整个 runtime effect。
                 const logger = (ctx as unknown as { logger?: { warn(message: string): void } }).logger
-                logger?.warn(`recruitment: engine store error: ${String(error)}`)
-              },
-              board.claim('store'),
-            )
-            const engineEffects = new Effects(engineStore, board)
-            // launch / delivery 的消费者就是 runtime 自己的 tick —— 派发是幂等的（库里 SKIP LOCKED），
-            // 所以崩溃后重放安全。quiet：失败已经记在 effect 行上，不重复升级健康。
-            const drive = (): void => {
-              const controller = new AbortController()
-              void composed.router.tick(controller.signal).catch(() => undefined)
+                logger?.warn(`recruitment: email pump 装配失败（未启动）：${error instanceof Error ? error.message : String(error)}`)
+              }
             }
-            engineEffects.handle('launch', drive, { quiet: true })
-            engineEffects.handle('delivery', drive, { quiet: true })
-            // reply/notice 需要外部发送通道；v1.0 没有配置通道时**如实失败**，不许假装发出去。
-            engineEffects.handle('reply', () => {
-              throw new Error('no outbound channel configured (v1.0: 外发通道未配置)')
-            }, { quiet: true })
-            // 必须 start()：`Effects.dispatch()` 第一行是 `if (!this.started || this.stopped) return`，
-            // 不 start 就永远不派发（此前这里误写成 `void engineEffects.drain()`，而 drain 会置
-            // stopped=true —— 等于接了个空转的派发者，队列只进不出）。
-            engineEffects.start()
-            // runtime 走 `effects-async.ts` 在**自己的异步事务**里入队，不经过这个实例，
-            // 所以不会触发 kick；而 Effects 自己没有定时器（原型靠 Passes 的 2s interval，
-            // v1.0 未装配 Passes）。这里补一个同频 pump。
-            const pump = setInterval(() => { engineEffects.kick() }, 2_000)
             return () => {
               disposeHttp()
-              clearInterval(pump)
-              // 关闭顺序（G1 起）：先停周期 tick 并**释放咨询锁**（否则别的实例得等这条连接
-              // 彻底断开才抢得到锁），再停接新活、等运行中 effect 结束，最后关同步桥
-              // （否则 in-flight 语句会被杀在连接上）。
+              // 关闭顺序：先停 email pump（定时器 + dispose），再停周期 tick 并释放咨询锁，最后关池。
+              disposeEmailPump?.()
               void tickLoopReady
                 .then((loop) => loop?.dispose())
                 .catch(() => undefined)
-                .then(() => engineEffects.drain())
-                .finally(() => {
-                  engineStore.close()
-                  void closePool(pool)
-                })
+                .finally(() => { void closePool(pool) })
             }
           } catch (error) {
             // 装配失败也要先把 tick-loop 收掉（可能已经抢到锁），再关池。
+            disposeEmailPump?.()
             void tickLoopReady
               .then((loop) => loop?.dispose())
               .catch(() => undefined)
@@ -872,10 +1136,30 @@ export function apply(
   const stageAdvance = database.resolved === null
     ? unconfiguredStageAdvanceTool(database.issues)
     : createStageAdvanceTool(database.resolved, { identity: actorIdentity })
+  // 碎片约束置顶 + 下一轮交接提醒（32 → 33）：写的是人在对话里说的原话，不需要 approval；
+  // 但必须带写身份（created_by_actor_id）。数据库缺配置时注册同名 NOT_CONFIGURED 替身。
+  const candidateConstraint = database.resolved === null
+    ? unconfiguredCandidateConstraintTool(database.issues)
+    : createCandidateConstraintTool({
+      database: database.resolved,
+      identity: actorIdentity,
+    })
   // 执行追溯（Notion 08 §11.3 第 9 步）：只读。
   const traceGet = database.resolved === null
     ? unconfiguredTraceGetTool(database.issues)
     : createTraceGetTool(database.resolved)
+  // 对话×画布统一交互（design/v4/chat-canvas-interaction-spec.md）：只读 UI 派发工具。
+  const uiDispatch = createUiDispatchTool()
+  // 只读查时段（与 HTTP free-slots 同一实现）：对话里先查真实空闲，再由 uiDispatch 给建议动作。
+  const interviewFreeSlots = createInterviewFreeSlotsTool({
+    feishuCliPath: feishuCalendarCliPath,
+    platformChannel: true,
+    io: { resolveInterviewerOpenId },
+  })
+  // 只读工作台总览（与 HTTP recruiting overview 同一投影）：对话首页“今天先办谁/待提交面评”直接读全局。
+  const workspaceOverview = database.resolved === null
+    ? unconfiguredWorkspaceOverviewTool(database.issues)
+    : createWorkspaceOverviewTool(database.resolved)
   // 企业自建配置（角色权限范围 / 招聘团队 / 流水线模板）：配置是数据，企业自己建。
   const configTools = database.resolved === null
     ? [
@@ -903,6 +1187,8 @@ export function apply(
     intake,
     evaluate,
     stageAdvance,
+    // 碎片约束置顶 + 下一轮交接提醒（32 → 33）：人原话写入，带写身份、不接 approval。
+    candidateConstraint,
     interviewSchedule,
     interviewGet,
     transcriptImport,
@@ -913,9 +1199,32 @@ export function apply(
     decisionRecord,
     recordHumanDecision,
     traceGet,
+    uiDispatch,
+    interviewFreeSlots,
+    workspaceOverview,
     ...configTools,
     pageImage,
     modelTextMerge,
+    // 逐条标准人工纠偏（31 → 32）：数据库配置齐全时走真实写事务；缺项时同名替身报 NOT_CONFIGURED。
+    database.resolved === null
+      ? unconfiguredCriterionOverrideTool(database.issues)
+      : createCriterionOverrideTool({
+        database: database.resolved,
+        identity: actorIdentity,
+      }),
+    // 邮箱收件（原 30 → 31；现为 31/32 中的第 31 个）：配置齐全时走 A 的真实传输+编排；缺项时同名替身报 NOT_CONFIGURED。
+    mail.resolved === null || database.resolved === null || converter.resolved === null
+      ? unconfiguredEmailFetchTool([
+        ...mail.issues,
+        ...(database.resolved === null ? database.issues : []),
+        ...(converter.resolved === null ? converter.issues : []),
+      ])
+      : createWiredEmailFetchTool({
+        database: database.resolved,
+        converter: converter.resolved,
+        mail: mail.resolved,
+        identity: { identity: actorIdentity },
+      }),
   ].map(withStructuredResultContract)
     // D-141 §4：**最后**再套一层工具调用留痕（trace 必须是离注册表最近的执行边界）。
     //

@@ -78,6 +78,14 @@ import {
 } from '../db/pool.ts'
 // 可钉版本 = 有生效 APPROVED 审批的版本；判据只在 `db/approval.ts` 一份（O8 口径统一）。
 import { effectiveApprovalExistsSql } from '../db/approval.ts'
+// AT-1/2/3：跨岗携带历史的形状校验 + 事务内校验/插入（SQL 全部收在 db 层，本文件保持可读）。
+import {
+  insertCarryOverRefs,
+  parseCarryOverRefs,
+  validateCarryOverRefs,
+  CARRY_OVER_REF_KINDS,
+  type CarryOverRef,
+} from '../db/carry-over.ts'
 import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
 import {
   matchByStrongIds,
@@ -150,6 +158,40 @@ const PARAMS: ParamMap = {
       + 'from this result (converter state is preserved separately). When absent, behavior is unchanged.',
   },
 }
+
+/**
+ * 模型可见的入参 schema（标量由 `toParameterSchema` 编译，结构化键手工追加）。
+ *
+ * `ParamMap` 只支持字符串/整数/布尔/字符串数组，表达不了"对象数组"，所以 `carry_over_refs`
+ * 按 `interview-schedule.ts` 的做法手写进 PARAMETERS_SCHEMA；真正的严格校验在
+ * `db/carry-over.ts::parseCarryOverRefs()`（`execute()` 先把这个键摘出来再交给 parseContractArgs）。
+ */
+const PARAMETERS_SCHEMA: Record<string, unknown> = (() => {
+  const scalar = toParameterSchema(PARAMS)
+  const properties = { ...(scalar.properties as Record<string, unknown>) }
+  properties.carry_over_refs = {
+    type: 'array',
+    description:
+      'Optional AT-1/2/3: references from ANOTHER application of the SAME candidate to carry into the '
+      + 'application this intake resolves. Each element is exactly { source_application_id (UUID), '
+      + 'ref_kind (SCORECARD|TRANSCRIPT|DECISION), ref_id (UUID) }. Unknown keys are rejected with '
+      + 'INVALID_ARGS. Every ref is validated in the intake transaction: source/target must exist in this '
+      + 'tenant, source <> target, same candidate, and the ref must really belong to the source. Any failure '
+      + 'rolls the WHOLE transaction back (zero writes). Repeating an already-carried ref is a no-op '
+      + '(idempotent by unique key). The old/source application is never modified.',
+    items: {
+      type: 'object',
+      properties: {
+        source_application_id: { type: 'string', description: 'UUID of the source application (different from the target).' },
+        ref_kind: { type: 'string', enum: [...CARRY_OVER_REF_KINDS] },
+        ref_id: { type: 'string', description: 'UUID of the scorecard / transcript artifact / decision to carry.' },
+      },
+      required: ['source_application_id', 'ref_kind', 'ref_id'],
+      additionalProperties: false,
+    },
+  }
+  return { ...scalar, properties }
+})()
 
 /** 允许出现在结构化结果里的五个业务字段（`contracts/schema.json` §fields）。 */
 const BUSINESS_FIELDS = ['name', 'phone', 'email', 'work_experience', 'education'] as const
@@ -271,6 +313,14 @@ interface IntakeValue {
     readonly lifecycle_status: string
     readonly record_version: number
   }
+  /**
+   * AT-1/2/3：**仅当本次传了 `carry_over_refs` 才出现**（未传时整个键缺席，旧输出逐字不变）。
+   * `inserted` 是唯一键去重后真正落库的行数。
+   */
+  readonly carry_over?: {
+    readonly requested: number
+    readonly inserted: number
+  }
 }
 
 const OUTPUT_SCHEMA: Record<string, unknown> = {
@@ -387,6 +437,17 @@ const OUTPUT_SCHEMA: Record<string, unknown> = {
         record_version: { type: 'integer' },
       },
       required: ['job_id', 'job_version_id', 'stage_code', 'lifecycle_status', 'record_version'],
+      additionalProperties: false,
+    },
+    // AT-1/2/3：可选键，**故意不进 required** —— test/unit/output-schema.test.ts 的硬编码旧样本
+    // 没有这个键；加了它必须仍能通过（旧调用方输出逐字不变）。
+    carry_over: {
+      type: 'object',
+      properties: {
+        requested: { type: 'integer' },
+        inserted: { type: 'integer' },
+      },
+      required: ['requested', 'inserted'],
       additionalProperties: false,
     },
   },
@@ -1364,7 +1425,7 @@ interface JobRow {
  * @param currentRubricVersionId - `job.current_rubric_version_id`。
  * @returns 可钉的版本 id；没有则 `null`。
  */
-async function resolvePinnableRubricVersion(
+export async function resolvePinnableRubricVersion(
   client: DatabaseClient,
   tenantId: string,
   jobId: string,
@@ -1407,6 +1468,7 @@ export async function intakeInTransaction(
   cfg: ResolvedDatabaseConfig,
   material: IntakeMaterial,
   jobId: string,
+  carryOverRefs?: readonly CarryOverRef[],
 ): Promise<IntakeValue> {
   const tenantId = cfg.tenant_id
 
@@ -1554,8 +1616,20 @@ export async function intakeInTransaction(
     rubricVersionId: pinnableRubricVersionId,
   })
 
+  // 8) AT-1/2/3：跨岗携带历史。与 intake 写**同一个** withActor 事务：
+  //    先一次性校验全部引用，再 INSERT；任何一条不合法 ⇒ 抛错 ⇒ 整笔事务回滚（零写入）。
+  //    `cfg.actor_id` 是 execute() 里已解析的写 actor（withActor 的 GUC 同源），绝不用模型入参。
+  //    这里只写 application_carry_over，源申请与其它旧行一行都不改（AT-1）。
+  let carryOver: { readonly requested: number; readonly inserted: number } | undefined
+  if (carryOverRefs !== undefined) {
+    await validateCarryOverRefs(client, tenantId, application.id, carryOverRefs)
+    const inserted = await insertCarryOverRefs(client, tenantId, application.id, carryOverRefs, cfg.actor_id)
+    carryOver = { requested: carryOverRefs.length, inserted }
+  }
+
   return assemble({
     cfg,
+    carryOver,
     material,
     job,
     applicationAction: application.action,
@@ -1836,7 +1910,7 @@ async function loadVersionChain(
   return row
 }
 
-async function loadJob(client: DatabaseClient, tenantId: string, jobId: string): Promise<JobRow> {
+export async function loadJob(client: DatabaseClient, tenantId: string, jobId: string): Promise<JobRow> {
   const { rows } = await client.query<JobRow>(
     `select id, tenant_id, code, title, status, current_job_version_id, current_rubric_version_id
        from recruitment.job where id = $1 and tenant_id = $2`,
@@ -2103,6 +2177,8 @@ function sha256OfText(text: string): string {
 /** 组装规范输出（唯一出口，保证 schema 与 null-free 约束只实现一次）。 */
 function assemble(input: {
   readonly cfg: ResolvedDatabaseConfig
+  /** 未传 carry_over_refs 时为 undefined：输出里连键都不出现（旧行为逐字不变）。 */
+  readonly carryOver?: { readonly requested: number; readonly inserted: number }
   readonly material: IntakeMaterial
   readonly job: JobRow
   readonly applicationAction: 'CREATED' | 'REUSED'
@@ -2198,6 +2274,7 @@ function assemble(input: {
       lifecycle_status: input.lifecycleStatus,
       record_version: input.recordVersion,
     },
+    ...(input.carryOver === undefined ? {} : { carry_over: input.carryOver }),
   }
 }
 
@@ -2346,8 +2423,12 @@ export function createApplicationIntakeTool(
       + 'version (D-21/D-48: current is the explicit pointer, never max(version_no)). When the job has no '
       + 'approved current rubric the field stays EMPTY and intake still succeeds — receiving a resume must not '
       + 'require a rubric first; recruitment_application_stage_advance pins it later once the rubric is approved. '
-      + 'Only the create path pins: an existing (REUSED) application is never re-pinned here.',
-    parameters: toParameterSchema(PARAMS),
+      + 'Only the create path pins: an existing (REUSED) application is never re-pinned here. '
+      + 'OPTIONAL carry_over_refs: carry references (SCORECARD / TRANSCRIPT / DECISION) from ANOTHER '
+      + 'application of the SAME candidate into the application this call resolves. Validated in the same '
+      + 'transaction (same tenant, source <> target, same candidate, ref really belongs to source); any '
+      + 'failure rolls back everything, and repeats are idempotent. The source application is never modified.',
+    parameters: PARAMETERS_SCHEMA,
     output: {
       schema: OUTPUT_SCHEMA,
       render(_args: unknown, value: unknown): readonly TextBlock[] {
@@ -2383,6 +2464,9 @@ export function createApplicationIntakeTool(
             + `待人工=[${v.identity.blocked_fields.map((b) => `${b.field}:${b.reason}`).join(', ')}]`,
           `labels: provenance=${v.labels.provenance} trigger=${v.labels.trigger} connection=${v.labels.connection}`,
         ]
+        if (v.carry_over !== undefined) {
+          lines.push(`跨岗携带：requested=${v.carry_over.requested} inserted=${v.carry_over.inserted}`)
+        }
         // 机器参数区：application_id / candidate_id / resume_version_id 都是**已注册下游工具**
         // 的入参 —— application_get、material_read、stage_advance、screening_evaluate、
         // candidate_get、interview_schedule、record_human_decision —— 且这些 id 模型只能从本
@@ -2403,7 +2487,15 @@ export function createApplicationIntakeTool(
       const writeActor = resolveWriteActor(exec, deps.identity, cfg.database.actor_id)
       // 事务 GUC 与 created_by 列共用同一作者（Demo Actor 解析结果；legacy 分支 = 配置里的 actor）。
       const database: ResolvedDatabaseConfig = { ...cfg.database, actor_id: writeActor.actor_id }
-      const args = parseContractArgs(PARAMS, rawArgs)
+      // 结构化键 `carry_over_refs` 由本工具手写校验（ParamMap 表达不了对象数组）：先摘出来，
+      // 其余仍走 parseContractArgs 的严格未知键校验；形状不合法在任何副作用之前 fail-closed。
+      const rawRecord = typeof rawArgs === 'object' && rawArgs !== null && !Array.isArray(rawArgs)
+        ? rawArgs as Record<string, unknown>
+        : undefined
+      const scalarArgs: Record<string, unknown> = { ...(rawRecord ?? {}) }
+      delete scalarArgs.carry_over_refs
+      const args = parseContractArgs(PARAMS, rawRecord === undefined ? rawArgs : scalarArgs)
+      const carryOverRefs = parseCarryOverRefs(rawRecord?.carry_over_refs)
       const requested = args.path as string
       if (isAbsolute(requested) === false) {
         throw contractError('INVALID_ARGS', {
@@ -2437,7 +2529,7 @@ export function createApplicationIntakeTool(
       const pool = createPool(cfg.database)
       try {
         return await withActor(pool, database.actor_id, async (client) =>
-          intakeInTransaction(client, database, material, args.job_id as string))
+          intakeInTransaction(client, database, material, args.job_id as string, carryOverRefs))
       } finally {
         await closePool(pool)
       }
@@ -2457,7 +2549,7 @@ export function unconfiguredApplicationIntakeTool(issues: readonly string[]): Re
     description:
       'S6 resume intake. Currently NOT CONFIGURED: the plugin config is missing converter or database '
       + 'settings (or the database password environment variable). Calls return NOT_CONFIGURED.',
-    parameters: toParameterSchema(PARAMS),
+    parameters: PARAMETERS_SCHEMA,
     output: {
       schema: { type: 'object', additionalProperties: true },
       render(): readonly TextBlock[] {

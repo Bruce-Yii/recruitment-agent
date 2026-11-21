@@ -17,7 +17,13 @@
 //      其它读取失败 → overview-error + code/reason_code，绝不把故障说成"0 条"。
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchInterviewerOverview } from './http.ts'
+import {
+  fetchInterviewerOverview,
+  fetchScorecardDraft,
+  readLocalScorecardDraft,
+  saveScorecardDraft,
+  writeLocalScorecardDraft,
+} from './http.ts'
 import {
   briefSourceText,
   canSubmitScorecard,
@@ -584,8 +590,140 @@ function ListView({
   )
 }
 
+
+/** T6-2 面后速记（2 秒防抖自动存服务端 + localStorage 断网兜底）+ T6-4 本地追问清单。 */
+function QuickNotesAndChecklist({
+  sessionId,
+  alias,
+  interviewId,
+  editable,
+  iqs,
+}: {
+  readonly sessionId: string
+  readonly alias: string
+  readonly interviewId: string
+  readonly editable: boolean
+  readonly iqs: readonly string[]
+}): JSX.Element {
+  const scopeKey = `${sessionId}:${alias}`
+  const [note, setNote] = useState('')
+  const [saveHint, setSaveHint] = useState('')
+  const [checkedIqs, setCheckedIqs] = useState<Record<number, boolean>>({})
+  const hydratedRef = useState<{ done: boolean }>({ done: false })[0]
+
+  useEffect(() => {
+    let active = true
+    hydratedRef.done = false
+    setSaveHint('')
+    void fetchScorecardDraft({ sessionId, interviewId }).then((serverDraft) => {
+      if (!active) return
+      if (serverDraft !== null) {
+        setNote(serverDraft.note)
+        setSaveHint('已从服务端恢复草稿')
+      } else {
+        const localDraft = readLocalScorecardDraft(interviewId, scopeKey)
+        if (localDraft !== null) {
+          setNote(localDraft.note)
+          setSaveHint('已从本地缓存恢复（断网兜底）')
+        } else {
+          setNote('')
+        }
+      }
+      hydratedRef.done = true
+    })
+    return () => {
+      active = false
+    }
+  }, [sessionId, alias, scopeKey, interviewId, hydratedRef])
+
+  useEffect(() => {
+    if (!hydratedRef.done || !editable || interviewId === '') return
+    // F1: Bind save strictly to (sessionId, alias, interviewId) at edit time; cancel on any switch!
+    let cancelled = false
+    const boundSession = sessionId
+    const boundInterview = interviewId
+    const prev = readLocalScorecardDraft(boundInterview, scopeKey)
+    const payload = { assessments: prev?.assessments ?? {}, note }
+    writeLocalScorecardDraft(boundInterview, payload, scopeKey)
+    setSaveHint('正在自动保存…')
+    const timer = setTimeout(() => {
+      if (cancelled) return
+      void saveScorecardDraft({ sessionId: boundSession, interviewId: boundInterview, payload })
+        .then(() => {
+          if (!cancelled) setSaveHint('已自动保存草稿')
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return
+          const isMismatch =
+            err instanceof RecruitmentHttpError &&
+            (err.code.includes('INTERVIEWER_MISMATCH') || err.reasonCode.includes('INTERVIEWER_MISMATCH') || err.status === 403)
+          setSaveHint(isMismatch ? '当前身份与本场面试不匹配，未能保存草稿' : '已暂存本地（离线兜底）')
+        })
+    }, 2000)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [note, sessionId, alias, scopeKey, interviewId, editable, hydratedRef])
+
+  return (
+    <>
+      {iqs.length > 0 ? (
+        <div className="iw-insight" style={{ marginTop: 14 }} data-testid="interviewer-iqs">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+            <h3>追问清单</h3>
+            <span className="iw-tiny iw-muted">本次勾选仅留在本页</span>
+          </div>
+          <div style={{ marginTop: 6 }}>
+            {iqs.map((q, idx) => (
+              <label
+                key={`iq-${idx}`}
+                className={`iw-iq-row ${checkedIqs[idx] ? 'done' : ''}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={Boolean(checkedIqs[idx])}
+                  onChange={(e) => setCheckedIqs((prev) => ({ ...prev, [idx]: e.target.checked }))}
+                  style={{ marginTop: 4 }}
+                />
+                <span>{q}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="iw-insight" style={{ marginTop: 14 }} data-testid="interviewer-quick-notes">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+          <h3>面后速记</h3>
+          <span className="iw-tiny" style={{ color: 'var(--iw-green)' }} data-testid="draft-save-hint">
+            {saveHint}
+          </span>
+        </div>
+        <textarea
+          className="iw-quicknotes"
+          data-testid="quick-notes-textarea"
+          readOnly={!editable}
+          disabled={!editable}
+          value={note}
+          onChange={(e) => {
+            if (editable) setNote(e.target.value)
+          }}
+          placeholder={
+            editable
+              ? '边面边记，停顿 2 秒自动保存到服务端（断网自动暂存本地，提交面评后清空）…'
+              : '仅本人被分配且未提交的场次可编辑速记（只读）'
+          }
+        />
+      </div>
+    </>
+  )
+}
+
 /** 详情页（V-I2），含两个独立分支卡片。 */
 function DetailView({
+  sessionId,
+  alias,
   overview,
   row,
   labels,
@@ -593,6 +731,8 @@ function DetailView({
   onBack,
   onOpenScorecard,
 }: {
+  readonly sessionId: string
+  readonly alias: string
   readonly overview: InterviewerOverview
   readonly row: InterviewRow
   readonly labels: WorkspaceLabels
@@ -637,14 +777,33 @@ function DetailView({
               {briefText !== '' ? (
                 <p>{briefText}</p>
               ) : (
-                <p>服务端未提供本轮简报{row.brief.reason !== '' ? `（${row.brief.reason}）` : ''}。</p>
+                <p>还没有本轮简报说明。</p>
               )}
-              <p className="iw-tiny iw-muted">
-                来源：{briefSourceText(row.brief.source)}
-                {row.brief.template_version_id !== '' ? ` · template_version：${row.brief.template_version_id}` : ''}
-                {row.brief.reason !== '' ? ` · reason：${row.brief.reason}` : ''}
-              </p>
+              {row.constraints.length > 0 ? (
+                <div className="iw-pin-row" data-testid="interviewer-constraints">
+                  {row.constraints.map((c, idx) => (
+                    <span
+                      key={`con-${idx}`}
+                      className={`iw-pin-tag ${c.kind === 'HANDOFF' || c.from_previous_round ? 'handoff' : ''}`}
+                    >
+                      {c.kind === 'HANDOFF' || c.from_previous_round ? (
+                        <span className="iw-handoff-badge">上一轮留的</span>
+                      ) : null}
+                      <span>{c.text}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
+
+            <QuickNotesAndChecklist
+              key={`${sessionId}-${alias}-${row.interview_id}`}
+              sessionId={sessionId}
+              alias={alias}
+              interviewId={row.interview_id}
+              editable={canSubmit && row.scorecard.state !== 'SUBMITTED'}
+              iqs={row.iqs}
+            />
 
             {/* 本轮考察重点：task-50 轮次配置；缺配置时如实降级 JOB_BASE（不伪造）。 */}
             <RoundFocusCard row={row} />
@@ -1089,6 +1248,8 @@ export function InterviewerWorkspace(props: WorkspaceProps): JSX.Element {
           ? selectedRow !== null
             ? (
                 <DetailView
+                  sessionId={sessionId}
+                  alias={alias}
                   overview={overview}
                   row={selectedRow}
                   labels={overview.labels}
@@ -1113,7 +1274,7 @@ export function InterviewerWorkspace(props: WorkspaceProps): JSX.Element {
 
         {formTarget !== null ? (
           <ScorecardForm
-            key={`${formTarget.interview_id}-${formTarget.application_id}`}
+            key={`${sessionId}-${alias}-${formTarget.interview_id}-${formTarget.application_id}`}
             sessionId={sessionId}
             interviewId={formTarget.interview_id}
             applicationId={formTarget.application_id}

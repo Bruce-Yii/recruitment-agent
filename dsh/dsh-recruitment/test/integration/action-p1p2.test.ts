@@ -80,7 +80,7 @@ let cfg: ResolvedDatabaseConfig
 let identity: DemoActorIdentity
 let harness: Harness
 
-/** 真 `node:http` + 真实 register 契约（actor 3 条 + actions 10 条 exact path）。 */
+/** 真 `node:http` + 真实 register 契约（actor 3 条 + actions 13 条 exact path）。 */
 interface Harness {
   readonly baseUrl: string
   readonly registered: readonly { kind: string; path: string }[]
@@ -142,11 +142,11 @@ test.before(async () => {
   identity = createDemoActorIdentity().identity
   harness = await startHarness({ database: cfg, databaseIssues: [], identity })
 
-  // 真实注册表断言：actions 10 条 exact（含统一入口 config）+ actor 3 条。
+  // 真实注册表断言：actions 13 条 exact（含统一入口 config + 三条新写入口）+ actor 3 条。
   const actionRoutes = harness.registered.filter(
     (route) => route.path.startsWith('/recruitment/api/action/') && !route.path.includes('scorecard'),
   )
-  assert.equal(actionRoutes.length, 10, `action exact 路由应 10 条，实际 ${actionRoutes.map((r) => r.path).join(', ')}`)
+  assert.equal(actionRoutes.length, 13, `action exact 路由应 13 条，实际 ${actionRoutes.map((r) => r.path).join(', ')}`)
   for (const path of [
     '/recruitment/api/action/interview/schedule',
     '/recruitment/api/action/transcript/import',
@@ -155,6 +155,9 @@ test.before(async () => {
     '/recruitment/api/action/config/team',
     '/recruitment/api/action/config/pipeline',
     '/recruitment/api/action/config',
+    '/recruitment/api/action/application/transfer',
+    '/recruitment/api/action/candidate/constraint',
+    '/recruitment/api/action/job/create',
   ]) {
     assert.ok(actionRoutes.some((route) => route.path === path), `缺路由 ${path}`)
   }

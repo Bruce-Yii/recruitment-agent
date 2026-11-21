@@ -267,6 +267,21 @@ export interface ReferencePointView {
 }
 
 /** 一条"分配给我的面试"（§1.4 的 interviews[] 元素）。 */
+
+/** 候选人置顶约束 / 上一轮交接追问（Task 06 · T6-1）。 */
+export interface InterviewConstraintView {
+  readonly kind: 'PIN' | 'HANDOFF'
+  readonly text: string
+  readonly source: string
+  readonly from_previous_round: boolean
+}
+
+/** 面评草稿数据结构（Task 06 · T6-2：GET/POST /recruitment/api/action/scorecard/draft）。 */
+export interface ScorecardDraftPayload {
+  readonly assessments: Readonly<Record<string, string>>
+  readonly note: string
+}
+
 export interface InterviewRow {
   readonly interview_id: string
   readonly application_id: string
@@ -284,6 +299,8 @@ export interface InterviewRow {
   readonly required_scorecard: boolean
   readonly scorecard_due_at: string
   readonly brief: InterviewBrief
+  readonly constraints: readonly InterviewConstraintView[]
+  readonly iqs: readonly string[]
   /** 轮次级考察重点 + 本轮生效评分表（task-50 `round_focus`/`effective_rubric` 投影；缺字段时如实降级）。 */
   readonly round: RoundEffectiveView
   readonly rubric: InterviewRubric | null
@@ -792,6 +809,68 @@ export function normalizeReferencePoints(value: unknown): ReferencePointView[] {
  * @param value - 服务端原始行。
  * @returns 安全形状；所有嵌套分支都补齐（不出现 undefined）。
  */
+
+function normalizeConstraints(value: unknown, legacy?: unknown): InterviewConstraintView[] {
+  // 服务端真实形状：`candidate_constraints: { pins: [...], handoff: {...} | [...] }`（interviewer 读投影）。
+  // 旧形状（数组）保留兼容；两者都没有 = 没有约束（不编造）。
+  const out: InterviewConstraintView[] = []
+  const pushAll = (input: unknown, kind: 'PIN' | 'HANDOFF'): void => {
+    const list = Array.isArray(input) ? input : input && typeof input === 'object' ? [input] : []
+    for (const item of list) {
+      if (!item || typeof item !== 'object') continue
+      const raw = item as Record<string, unknown>
+      const text = typeof raw.text === 'string' ? raw.text.trim() : ''
+      if (text === '') continue
+      out.push({
+        kind,
+        text,
+        source: typeof raw.source === 'string' ? raw.source : '',
+        from_previous_round: kind === 'HANDOFF' || Boolean(raw.from_previous_round),
+      })
+    }
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const node = value as Record<string, unknown>
+    pushAll(node.pins, 'PIN')
+    pushAll(node.handoff, 'HANDOFF')
+    return out
+  }
+  pushAll(value, 'PIN')
+  pushAll(legacy, 'PIN')
+  return out
+}
+
+function normalizeIqs(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const out: string[] = []
+  for (const item of value) {
+    if (typeof item === 'string' && item.trim() !== '') out.push(item.trim())
+    else if (item && typeof item === 'object') {
+      const t = (item as Record<string, unknown>).t ?? (item as Record<string, unknown>).text
+      if (typeof t === 'string' && t.trim() !== '') out.push(t.trim())
+    }
+  }
+  return out
+}
+
+export function normalizeScorecardDraft(value: unknown): ScorecardDraftPayload | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Record<string, unknown>
+  const inner = (raw.payload && typeof raw.payload === 'object'
+    ? raw.payload
+    : raw.draft && typeof raw.draft === 'object'
+      ? (raw.draft as Record<string, unknown>).payload ?? raw.draft
+      : raw) as Record<string, unknown>
+  const note = typeof inner.note === 'string' ? inner.note : ''
+  const rawAss = inner.assessments && typeof inner.assessments === 'object' ? (inner.assessments as Record<string, unknown>) : {}
+  const assessments: Record<string, string> = {}
+  for (const [k, v] of Object.entries(rawAss)) {
+    if (typeof v === 'string' && v.trim() !== '') assessments[k] = v
+  }
+  if (note === '' && Object.keys(assessments).length === 0) return null
+  return { assessments, note }
+}
+
 export function normalizeInterviewRow(value: unknown): InterviewRow {
   const raw = asRecord(value)
   const candidate = asRecord(raw.candidate)
@@ -823,6 +902,8 @@ export function normalizeInterviewRow(value: unknown): InterviewRow {
     required_scorecard: asBool(raw.required_scorecard),
     scorecard_due_at: asText(raw.scorecard_due_at),
     brief,
+    constraints: normalizeConstraints(raw.candidate_constraints, raw.constraints),
+    iqs: normalizeIqs(raw.iqs),
     round: normalizeRoundEffective(raw, { roundNo, brief, rubric }),
     rubric,
     materials: normalizeMaterials(raw.materials),

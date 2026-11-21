@@ -1,0 +1,35 @@
+# Issue #14 工作台总览工具 · 门禁与测试记录（2026-11-21）
+
+## 静态/构建
+
+| 门 | 命令 | 结果 |
+|---|---|---|
+| 类型（全量） | `cd dsh/dsh-recruitment && npx tsc --noEmit` | PASS（0） |
+| 构建 | `npx tsdown` | PASS（双入口；`lib/app.js` 1.36MB） |
+| 服务端类型棘轮 | `node scripts/server-typecheck.mjs` | PASS（0/0） |
+| 调度预算 | `node scripts/runtime-budget.mjs` | PASS（5051/5051） |
+| 入口可达 | `node scripts/entry-reachability.mjs` | PASS（无新缺口；手拼 0） |
+| 合同复用 | `node scripts/client-contract-check.mjs` | PASS |
+| 文案 lint | `node scripts/term-lint.mjs` | PASS |
+
+## 测试
+
+| 项 | 结果 |
+|---|---|
+| 单测 `workspace-overview-tool.test.ts` | 6/6 PASS |
+| 集成 `workspace-overview-tool-db.test.ts`（独立一次性库） | 3/3 PASS（含零写入断言） |
+| 干净库全量（迁移 23 条；`node test/run-all.mjs --test-concurrency=1`） | **2868 tests / 2864 pass / 0 fail / 4 skipped**；skip 均为测试内声明的 accepted skip（真实语料缺失 + 3 个 upload seam） |
+| 15 步真点 `run-v4.mjs --fresh --port 49347` | **15/15 PASS**，审计 hard 0 |
+| 真模型 2 轮 SSE | 两轮均命中 `recruitment_workspace_overview`；18 只读工具 / 0 写；业务表零写入 |
+
+## 证据文件
+
+- `probe-result.json`：真模型两轮回放（工具输入/结果、答案、诊断工具清单、写库前后计数）。
+- `unit-test.txt`、`integration-test.txt`：测试输出。
+- `clean-suite-summary.txt`：干净库全量汇总（不含机器路径）。
+- `regression-15step-result.json` / `regression-15step-audit.json`：15 步结果与审计。
+
+## 清理
+
+一次性库已 drop；Chrome 已关闭；预览 Host 49351 保持运行（另行重启到新构建）；未触碰 49369。
+

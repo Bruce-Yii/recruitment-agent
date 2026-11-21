@@ -1,0 +1,22 @@
+# 本轮机检结果（2026-11-20 · HEAD e7a5284 · 总控执行）
+
+> 命令均在 `dsh/dsh-recruitment/`（tsc/tsdown）或仓库根执行；原始日志见 `work/d5/fullpage/logs/lead-gates-final.log`、`lead-tsc-final.log`（work/ 不入库）。
+
+| 门 | 命令 | 结果 | 说明 |
+|---|---|---|---|
+| 构建 | `npx tsdown` | **PASS** | 双入口：`lib/app.js`（ESM 1.33MB）+ `lib/client.js`（CJS 750.41kB）；构建确定性：重建后 `app.js` SHA256 与工作树一致 |
+| 类型（全量） | `npx tsc --noEmit` | **FAIL（5 错）** | 全部在 `src/app/**`（此前 `src/app` 不被任何 tsconfig 覆盖，本轮纳入后暴露）：<br>`src/app/JobsView.tsx(33,17) TS2554: prefetchCanvasPath 需 2 参`<br>`src/app/JobsView.tsx(64,57) TS2339: NextStepView 无 conclusion`<br>`src/app/QueueView.tsx(67,7) TS2554: prefetchCanvasPath 需 2 参`<br>`src/app/QueueView.tsx(214,37) TS2339: NextStepView 无 conclusion`<br>`src/app/TalentView.tsx(76,17) TS2554: prefetchCanvasPath 需 2 参`<br>→ 按 D-168 交前端，见 `design/v4/frontend-fixes-20261120.md`；修完前不满足合并门 |
+| 服务端类型棘轮 | `node scripts/server-typecheck.mjs` | **PASS（0 / 上限 0）** | 本轮修复：`src/http/app-shell.ts` 改从 `demo-actor/alias.ts` 取 `DemoActorAlias`；`tsconfig.server.json` 排除浏览器入口 `src/app/**`（其检查由 tsconfig.json 的 DOM lib 承担） |
+| 调度预算 | `node scripts/runtime-budget.mjs` | **PASS（5051 / 5051）** | 与基线持平 |
+| 入口可达 | `node scripts/entry-reachability.mjs` | **PASS** | 写路由 32 条；基线内仍待补 8 条（compound/config/email authorize·send-authorized/feishu import 等，不属本轮）；手拼写动作 0 条 |
+| 合同复用 | `node scripts/client-contract-check.mjs` | **PASS** | 画布写动作全部走既有 builder + postActionSeam |
+| 文案 lint | `node scripts/term-lint.mjs` | **PASS** | HR 可见文案无「证据」 |
+| 干净库全量测试 | `node test/run-all.mjs --test-concurrency=1` | **未跑（NOT RUN）** | 本轮不是合并轮；需另起干净库重放 0001→0023。不得据此宣称"全绿" |
+| 15 步全链路 | `node work/d5/fullpage/run-v4.mjs --fresh --port 49347` | **PASS 15/15** | 总控独立复跑 `2026-11-20T22:40:24+08:00`；证据见本目录 |
+| 证据审计 | `node work/d5/fullpage/audit-run.mjs --result …` | **PASS（hard 0 / soft 3 / leaks 0）** | 软告警均为 keyText 为 DB/HTTP 摘要而非页面文本，属预期 |
+
+## 环境与清理
+
+- `--fresh` 一次性库 `ra_fresh_e2e_hhs_cz7pa7` 已 drop；一次性 profile 副本 `.fresh-home-*` 已删；Host 49347 / Chrome CDP 9222 已停并 `FREE`；token 文件已删。
+- `49351`（rec-human 人工预览 Host）全程未触碰；`49352` 被无关进程 `GameViewerServer` 当出站临时端口占用（bind EACCES），本轮改用 49347。
+- 运行后 `psql` 复核：`ra_fresh%` 无残留；保留库仅既有 `ra_freeze_final` / `ra_human_20261120` / `ra_live_e2e_20261118` / `ra_s6s7`。
