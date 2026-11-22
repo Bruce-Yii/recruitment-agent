@@ -81,8 +81,64 @@ def test_render_only_requested_pages(three_page_pdf):
         assert [r["page"] for r in manifest["renders"]] == [1, 3]
         assert manifest["dpi"] == 72
         assert all(r["dpi"] == 72 for r in manifest["renders"])
+        # G-14: the total page count is native, not probed with a sentinel page.
+        assert out["page_count"] == 3
+        assert manifest["page_count"] == 3
+        assert all(r["page_count"] == 3 for r in manifest["renders"])
     finally:
         page_image.cleanup(out["out_dir"])
+
+
+def test_page_count_is_native_for_every_requested_page(three_page_pdf):
+    """render_page() reports doc.page_count without a second render."""
+    out = page_image.render_pages(three_page_pdf, [1, 2, 3], dpi=72)
+    try:
+        assert out["page_count"] == 3
+        for record in out["renders"]:
+            assert record["page_count"] == 3
+            assert isinstance(record["page_count"], int)
+            assert not isinstance(record["page_count"], bool)
+            assert record["page_count"] >= record["page"]
+    finally:
+        page_image.cleanup(out["out_dir"])
+
+
+def test_page_count_survives_all_pages_failing(three_page_pdf):
+    """A manifest with zero renders still carries the document page count."""
+    out = page_image.render_pages(three_page_pdf, [99], dpi=72)
+    try:
+        assert out["count"] == 0
+        assert [error["code"] for error in out["errors"]] == ["page_out_of_range"]
+        assert out["page_count"] == 3
+        manifest = json.loads(Path(out["manifest"]).read_text(encoding="utf-8"))
+        assert manifest["page_count"] == 3
+        assert manifest["renders"] == []
+    finally:
+        page_image.cleanup(out["out_dir"])
+
+
+def test_bridge_passes_page_count_through(three_page_pdf):
+    """fallback_bridge.py must forward render.page_count to the HTTP caller."""
+    import importlib.util
+    from pathlib import Path as _Path
+
+    bridge_path = (_Path(__file__).resolve().parents[3]
+                   / "dsh" / "dsh-recruitment" / "python" / "fallback_bridge.py")
+    assert bridge_path.is_file()
+    spec = importlib.util.spec_from_file_location("dsh_fallback_bridge", bridge_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    response = module.handle(
+        {"op": "page-image", "pdf": str(three_page_pdf), "page": 3, "dpi": 72},
+        str(page_image.PACKAGE_ROOT),
+    )
+    assert response["ok"] is True
+    assert response["render"]["page"] == 3
+    assert response["render"]["page_count"] == 3
+    assert Path(response["render"]["image_path"]).is_file()
+    assert page_image.cleanup(Path(response["render"]["image_path"]).parent) is True
 
 
 def test_page_out_of_range(three_page_pdf):

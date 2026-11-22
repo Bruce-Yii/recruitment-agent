@@ -24,6 +24,11 @@ Hard rules (fallback/README.md §A)
   sha256, timings, oversampling hint) both in the return value and in
   ``render-manifest.json`` next to the images.  A render without parameters
   cannot be reproduced or audited.
+* Report the document's **total page count** natively (``record["page_count"]``
+  from ``fitz.Document.page_count``, and ``render_pages()["page_count"]``).
+  Callers must never rasterise a sentinel page (e.g. page 1_000_000) just to
+  read it out of an out-of-range error message.  Counting pages is a property
+  of the already-open document, not a second render.
 
 What this module does **not** do: read the text layer, decide whether a page
 is readable, call a model, or keep images after the caller is done.
@@ -245,6 +250,10 @@ def _largest_embedded_image(page) -> list[int] | None:
 def render_page(pdf_path, page_no, *, dpi=None, out_dir=None, max_side=None) -> dict:
     """Render one page to PNG and return the render record.
 
+    The record includes ``page_count`` (the document's total page count read
+    from ``fitz.Document.page_count``), so callers can set ``X-Page-Count``
+    without issuing a second, sentinel-page render just to discover it.
+
     Parameters
     ----------
     pdf_path : source PDF (read-only; the file is never modified)
@@ -376,6 +385,29 @@ def render_pages(pdf_path, pages, *, dpi=None, out_dir=None, max_side=None) -> d
             raise RenderError("page_invalid", f"page numbers must be positive integers, got {raw!r}")
         if raw not in wanted:
             wanted.append(raw)
+
+    # The total page count is a property of the document, not of any single
+    # render: read it once from the already-supported fitz open path so the
+    # manifest carries it even when every requested page fails (no renders).
+    path = Path(pdf_path)
+    if not path.is_file():
+        raise RenderError("pdf_missing", f"no such file: {path}")
+    try:
+        source_doc = fitz.open(str(path))
+    except Exception as exc:  # noqa: BLE001
+        raise RenderError("pdf_open_failed",
+                          f"PDF could not be opened: {type(exc).__name__}: {exc}") from exc
+    try:
+        if getattr(source_doc, "is_encrypted", False) and not source_doc.authenticate(""):
+            raise RenderError("encrypted_pdf",
+                              "page cannot be rendered without a password")
+        document_page_count = source_doc.page_count
+    finally:
+        try:
+            source_doc.close()
+        except Exception:  # noqa: BLE001
+            pass
+
     out = Path(out_dir) if out_dir is not None else make_temp_dir()
     _assert_outside_repo(out)  # before mkdir: never create a directory in the repo
     out.mkdir(parents=True, exist_ok=True)
@@ -394,6 +426,7 @@ def render_pages(pdf_path, pages, *, dpi=None, out_dir=None, max_side=None) -> d
         "dpi": resolve_dpi(dpi),
         "max_side": max_side,
         "requested_pages": wanted,
+        "page_count": document_page_count,
         "renders": renders,
         "errors": errors,
         "total_ms": total_ms,
@@ -407,6 +440,7 @@ def render_pages(pdf_path, pages, *, dpi=None, out_dir=None, max_side=None) -> d
         "out_dir": str(out.resolve()),
         "manifest": str(manifest.resolve()),
         "dpi": payload["dpi"],
+        "page_count": document_page_count,
         "count": len(renders),
         "total_ms": total_ms,
     }
