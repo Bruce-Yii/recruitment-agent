@@ -956,6 +956,7 @@ export function App() {
                 route={canvasRouteTarget}
                 candidateQueue={candidateQueue}
                 isOffline={isOffline}
+                fetcher={(path) => fetchAppJson(path, session.sid)}
                 focusRequest={focusRequest}
                 onFocusConsumed={handleFocusConsumed}
                 openModalRequest={openModalRequest}
