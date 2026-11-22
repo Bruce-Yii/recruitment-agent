@@ -82,6 +82,11 @@
 | `canvas-sync-pill` | 后台静默同步状态徽标 |
 | `canvas-pin-row` | 候选人头部置顶约束 / 上一轮交接标签区 |
 | `canvas-action-copy-memo` | 候选人头部「复制决策纪要」只读按钮 |
+| `canvas-action-rubric-approve` | 岗位标准区「批准当前标准」按钮 |
+| `canvas-rubric-approve-submit` | 批准岗位标准确认弹窗提交按钮 |
+| `canvas-action-job-close` | 岗位详情底部「关闭岗位」轻入口 |
+| `canvas-job-close-submit` | 关闭岗位确认弹窗提交按钮 |
+| `canvas-action-screening-evaluate` | 候选人页岗位标准对照区「发起初筛评估 / 重新评估」入口 |
 
 ## 三、复用的面试官端 `data-testid`（来自 `src/client/interviewer/InterviewerWorkspace.tsx`）
 

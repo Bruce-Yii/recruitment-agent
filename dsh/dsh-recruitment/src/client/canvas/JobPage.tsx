@@ -23,10 +23,14 @@ import {
 import type { CanvasFetcher } from './CandidatePage.tsx';
 import type { ActiveUploadTask, CanvasFocusRequest, UndoToastPayload } from './CanvasRoute.tsx';
 import {
+  buildJobCloseBody,
   buildJobCreateBody,
+  buildRubricApproveBody,
   describeActionError,
   getCanvasSessionId,
+  postActionSeam,
   postBatchReject,
+  postJobClose,
   postJobCreate,
   uploadResumeRaw,
   type BatchRejectItemResult,
@@ -101,6 +105,12 @@ export function JobPage({
   const [newJobDept, setNewJobDept] = useState<string>('');
   const [newJobConfirm, setNewJobConfirm] = useState<string>('');
   const [creating, setCreating] = useState<boolean>(false);
+  const [rubricApproveOpen, setRubricApproveOpen] = useState<boolean>(false);
+  const [rubricApproveReason, setRubricApproveReason] = useState<string>('');
+  const [rubricApproving, setRubricApproving] = useState<boolean>(false);
+  const [closeJobOpen, setCloseJobOpen] = useState<boolean>(false);
+  const [closeJobReason, setCloseJobReason] = useState<string>('');
+  const [closingJob, setClosingJob] = useState<boolean>(false);
   const [feedback, setFeedback] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
 
   const load = useCallback(
@@ -299,6 +309,95 @@ export function JobPage({
     }
   };
 
+  const handleApproveRubric = async () => {
+    if (!vm || rubricApproving) return;
+    const action = vm.actions.rubric_approve;
+    if (!action || !action.available || action.seam === '') {
+      setFeedback({
+        tone: 'red',
+        text: action?.reasonText || action?.pendingText || '当前岗位标准暂不可批准。',
+      });
+      setRubricApproveOpen(false);
+      return;
+    }
+    const activeSessionId = (sessionId ?? '').trim() || getCanvasSessionId();
+    const built = buildRubricApproveBody({
+      jobId: vm.jobId,
+      rubricVersionId: vm.rubricVersionId,
+      reason: rubricApproveReason.trim() || undefined,
+    });
+    if (!built.ok) {
+      setFeedback({ tone: 'red', text: built.reasonText });
+      return;
+    }
+    setRubricApproving(true);
+    try {
+      const outcome = await postActionSeam(action, built.body, activeSessionId);
+      if (!outcome.accepted) {
+        setFeedback({
+          tone: 'red',
+          text:
+            outcome.error?.message ||
+            describeActionError(outcome.error?.code ?? '', outcome.error?.reasonCode ?? '') ||
+            '批准评分标准未能完成，请稍后重试。',
+        });
+        return;
+      }
+      setRubricApproveOpen(false);
+      setRubricApproveReason('');
+      setFeedback({ tone: 'green', text: `已批准岗位评分标准 ${vm.rubricVersionLabel}。`, });
+      invalidateCachedCanvasData(jobPath);
+      void load(undefined, { silent: true });
+      onActionCompleted?.({ message: `已批准岗位评分标准 ${vm.rubricVersionLabel}` });
+    } catch (err) {
+      setFeedback({
+        tone: 'red',
+        text: err instanceof Error ? err.message : '批准评分标准未能完成，请稍后重试。',
+      });
+    } finally {
+      setRubricApproving(false);
+    }
+  };
+
+  const handleCloseJob = async () => {
+    if (!vm || closingJob) return;
+    const activeSessionId = (sessionId ?? '').trim() || getCanvasSessionId();
+    const reason = closeJobReason.trim();
+    const built = buildJobCloseBody({ jobId: vm.jobId, reason });
+    if (!built.ok) {
+      setFeedback({ tone: 'red', text: built.reasonText });
+      return;
+    }
+    setClosingJob(true);
+    try {
+      const outcome = await postJobClose(vm.jobId, reason, activeSessionId);
+      if (!outcome.accepted) {
+        setFeedback({
+          tone: 'red',
+          text:
+            outcome.error?.message ||
+            describeActionError(outcome.error?.code ?? '', outcome.error?.reasonCode ?? '') ||
+            '关闭岗位未能完成，请稍后重试。',
+        });
+        return;
+      }
+      setCloseJobOpen(false);
+      setCloseJobReason('');
+      setFeedback({ tone: 'green', text: `已关闭岗位「${vm.title}」。` });
+      invalidateCachedCanvasData(jobPath);
+      void load(undefined, { silent: true });
+      onActionCompleted?.({ message: `已关闭岗位「${vm.title}」` });
+    } catch (err) {
+      setFeedback({
+        tone: 'red',
+        text: err instanceof Error ? err.message : '关闭岗位未能完成，请稍后重试。',
+      });
+    } finally {
+      setClosingJob(false);
+    }
+  };
+
+
   const handleCreateJob = async () => {
     if (creating) return;
     const title = newJobTitle.trim();
@@ -315,7 +414,24 @@ export function JobPage({
       departmentId: deptId,
       descriptionMd: title,
       requirementsMd: newJobConfirm.trim() || title,
-      criteria: [{ key: 'core_fit', label: '核心岗位匹配度', kind: 'MUST_HAVE', weight: 1 }],
+      criteria: [
+        {
+          key: 'work_history_present',
+          label: '有可核对的工作经历',
+          kind: 'MUST_HAVE',
+          weight: 0.5,
+          field: 'work_experience',
+          operator: 'EXISTS',
+          value: true,
+        },
+        {
+          key: 'core_fit',
+          label: '核心岗位胜任力匹配',
+          kind: 'MUST_HAVE',
+          weight: 0.5,
+          question: '候选人过往经历与核心职责是否与该岗位要求高度匹配？',
+        },
+      ],
       status: 'DRAFT',
     });
     if (!built.ok) {
@@ -639,7 +755,22 @@ export function JobPage({
                   <span className="ros-sec-title">
                     考核维度与标准 {vm.rubricVersionLabel}（{vm.rubricApproved ? '已锁定' : '待确认'}）
                   </span>
-                  <span className="ros-sec-meta">{vm.departmentName}</span>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+                    <span className="ros-sec-meta">{vm.departmentName}</span>
+                    {!vm.rubricApproved && vm.actions.rubric_approve?.available ? (
+                      <button
+                        type="button"
+                        className="ros-btn dark"
+                        data-testid="canvas-action-rubric-approve"
+                        onClick={() => {
+                          setRubricApproveReason('');
+                          setRubricApproveOpen(true);
+                        }}
+                      >
+                        批准当前标准
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 {vm.rubricDimensions.length > 0 ? (
                   <div className="ros-clean-list">
@@ -690,6 +821,35 @@ export function JobPage({
                 ) : (
                   <CanvasEmptyState title="暂无岗位原始描述" />
                 )}
+                {vm.statusLabel !== '已关闭' && vm.statusLabel !== '已结束' ? (
+                  <div
+                    style={{
+                      marginTop: 32,
+                      paddingTop: 16,
+                      borderTop: '1px solid var(--line-soft)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                    }}
+                  >
+                    <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>
+                      岗位不再接收新候选人时，可在此关闭并归档。
+                    </span>
+                    <button
+                      type="button"
+                      className="ros-text-link"
+                      style={{ color: 'var(--red)' }}
+                      data-testid="canvas-action-job-close"
+                      onClick={() => {
+                        setCloseJobReason('');
+                        setCloseJobOpen(true);
+                      }}
+                    >
+                      关闭岗位
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </>
           )}
@@ -830,6 +990,99 @@ export function JobPage({
                 onClick={() => void handleCreateJob()}
               >
                 {creating ? '处理中…' : '确认创建'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {rubricApproveOpen ? (
+        <div
+          className="ros-modal-bg"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !rubricApproving) setRubricApproveOpen(false);
+          }}
+        >
+          <div className="ros-modal">
+            <div style={{ fontSize: '17px', fontWeight: 650 }}>
+              批准岗位评分标准 {vm.rubricVersionLabel}
+            </div>
+            <div className="ros-jd-box" style={{ padding: '12px 14px' }}>
+              批准后，该版本标准将作为「{vm.title}」初筛与面试评估的锁定口径。
+            </div>
+            <label className="ros-m-field">
+              <span>审批备注（选填）</span>
+              <input
+                value={rubricApproveReason}
+                onChange={(e) => setRubricApproveReason(e.target.value)}
+                placeholder="例如：与用人经理对齐，确认启用"
+              />
+            </label>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                className="ros-btn"
+                disabled={rubricApproving}
+                onClick={() => setRubricApproveOpen(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="ros-btn dark"
+                disabled={rubricApproving}
+                data-testid="canvas-rubric-approve-submit"
+                onClick={() => void handleApproveRubric()}
+              >
+                {rubricApproving ? '提交中…' : '确认批准'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {closeJobOpen ? (
+        <div
+          className="ros-modal-bg"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !closingJob) setCloseJobOpen(false);
+          }}
+        >
+          <div className="ros-modal">
+            <div style={{ fontSize: '17px', fontWeight: 650 }}>关闭岗位「{vm.title}」</div>
+            <div className="ros-jd-box" style={{ padding: '12px 14px' }}>
+              关闭后该岗位状态将变更为已关闭，历史候选人与决策留痕完整保留。
+            </div>
+            <label className="ros-m-field">
+              <span>关闭原因（选填）</span>
+              <input
+                value={closeJobReason}
+                onChange={(e) => setCloseJobReason(e.target.value)}
+                placeholder="例如：岗位已招满 / 暂停招聘"
+              />
+            </label>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                className="ros-btn"
+                disabled={closingJob}
+                onClick={() => setCloseJobOpen(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="ros-btn"
+                style={{ color: 'var(--red)', borderColor: 'rgba(205, 43, 49, 0.35)' }}
+                disabled={closingJob}
+                data-testid="canvas-job-close-submit"
+                onClick={() => void handleCloseJob()}
+              >
+                {closingJob ? '提交中…' : '确认关闭岗位'}
               </button>
             </div>
           </div>

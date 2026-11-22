@@ -1582,9 +1582,17 @@ export function buildJobCreateBody(input: {
     weightSum += weight
     if (kind === 'MUST_HAVE' || kind === 'DISQUALIFIER') hasGate = true
     const shaped: Record<string, unknown> = { key, label, kind, weight }
-    for (const optionalKey of ['field', 'operator', 'value', 'question', 'notes']) {
+    for (const optionalKey of ['field', 'operator', 'question', 'notes']) {
       const value = entry[optionalKey]
       if (typeof value === 'string' && value.trim() !== '') shaped[optionalKey] = value
+    }
+    const rawValue = entry.value
+    if (
+      typeof rawValue === 'boolean' ||
+      (typeof rawValue === 'number' && Number.isFinite(rawValue)) ||
+      (typeof rawValue === 'string' && rawValue.trim() !== '')
+    ) {
+      shaped.value = rawValue
     }
     criteria.push(shaped)
   }
