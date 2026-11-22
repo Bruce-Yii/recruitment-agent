@@ -571,6 +571,106 @@ export async function postCriterionOverride(payload: CriterionOverridePayload): 
   };
 }
 
+export interface MaterialPageImageResult {
+  readonly kind: 'image' | 'unsupported' | 'error';
+  readonly objectUrl?: string;
+  readonly pageNumber: number;
+  readonly pageCount: number;
+  readonly message?: string;
+}
+
+export async function fetchMaterialPageImage(
+  materialContentUrl: string,
+  pageNo: number,
+  signal?: AbortSignal,
+): Promise<MaterialPageImageResult> {
+  const pageUrl = materialContentUrl.replace(/\/content(\?.*)?$/, `/page/${pageNo}`);
+  if (!pageUrl || pageUrl === materialContentUrl) {
+    return { kind: 'unsupported', pageNumber: pageNo, pageCount: 1, message: '当前原件暂不支持逐页图预览。' };
+  }
+  try {
+    const res = await fetch(pageUrl, {
+      method: 'GET',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal,
+      headers: {
+        'x-recruitment-request': '1',
+        ...sessionHeaders(),
+        Accept: 'image/png, application/json',
+      },
+    });
+    if (res.status === 415) {
+      return {
+        kind: 'unsupported',
+        pageNumber: pageNo,
+        pageCount: 1,
+        message: '该格式暂不支持逐页图预览，可下载原件或查看结构化原文。',
+      };
+    }
+    if (!res.ok) {
+      return {
+        kind: 'error',
+        pageNumber: pageNo,
+        pageCount: 1,
+        message: '暂时无法渲染该页原件预览，可点击右侧在新标签页查看原件。',
+      };
+    }
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const totalHeader = Number(res.headers.get('x-page-count') || '1');
+    const pageCount = Number.isFinite(totalHeader) && totalHeader >= 1 ? totalHeader : 1;
+    return { kind: 'image', objectUrl, pageNumber: pageNo, pageCount };
+  } catch {
+    return { kind: 'error', pageNumber: pageNo, pageCount: 1, message: '原件预览加载中断，请稍后重试。' };
+  }
+}
+
+export interface BookingInviteSlotInput {
+  readonly start: string;
+  readonly end: string;
+}
+
+export interface BookingInvitePayload {
+  readonly applicationId: string;
+  readonly roundNo: number;
+  readonly durationMinutes: number;
+  readonly interviewerActorIds: readonly string[];
+  readonly timezone: string;
+  readonly slots: readonly BookingInviteSlotInput[];
+  readonly expiresHours?: number;
+}
+
+export interface BookingInviteResult {
+  readonly inviteId: string;
+  readonly token: string;
+  readonly bookingUrl: string;
+  readonly expiresAt: string;
+}
+
+export async function postBookingInvite(payload: BookingInvitePayload): Promise<BookingInviteResult> {
+  const res = await postJsonAction<{
+    invite_id?: string;
+    token?: string;
+    booking_url?: string;
+    expires_at?: string;
+  }>('/recruitment/api/action/booking/invite', {
+    application_id: payload.applicationId,
+    round_no: payload.roundNo,
+    duration_minutes: payload.durationMinutes,
+    interviewer_actor_ids: payload.interviewerActorIds,
+    timezone: payload.timezone,
+    slots: payload.slots,
+    ...(payload.expiresHours ? { expires_hours: payload.expiresHours } : {}),
+  });
+  return {
+    inviteId: String(res.invite_id ?? ''),
+    token: String(res.token ?? ''),
+    bookingUrl: String(res.booking_url ?? ''),
+    expiresAt: String(res.expires_at ?? ''),
+  };
+}
+
 export function triggerUnavailableAction(): never {
   throw makeError('NOT_AVAILABLE', UNAVAILABLE_ACTION_MESSAGE);
 }

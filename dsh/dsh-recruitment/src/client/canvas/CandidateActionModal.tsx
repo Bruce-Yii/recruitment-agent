@@ -16,6 +16,7 @@ import {
   newIdempotencyKey,
   postActionSeam,
   postApplicationTransfer,
+  postBookingInvite,
   postCandidateConstraint,
   postDecisionRecordFacade,
   postEmailSend,
@@ -165,9 +166,12 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
   const [emailTemplate, setEmailTemplate] = useState<'OFFER' | 'INVITE' | 'THANK_YOU'>('OFFER');
   const [emailSubject, setEmailSubject] = useState(`【通知】${vm.jobTitle}（${vm.candidateName}）`);
 
-  const [scheduleIntent, setScheduleIntent] = useState<'CREATE' | 'RESCHEDULE'>(
+  const [scheduleIntent, setScheduleIntent] = useState<'CREATE' | 'RESCHEDULE' | 'SELF_BOOK'>(
     vm.rounds.length > 0 ? 'RESCHEDULE' : 'CREATE',
   );
+  const [inviteSlot2, setInviteSlot2] = useState<string>('');
+  const [inviteSlot3, setInviteSlot3] = useState<string>('');
+  const [inviteResultUrl, setInviteResultUrl] = useState<string>('');
   const [selectedInterviewers, setSelectedInterviewers] = useState(defaultActors);
   const [scheduleTime, setScheduleTime] = useState('');
   const [replaceInterviewer, setReplaceInterviewer] = useState('');
@@ -422,6 +426,44 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
           expectedRecordVersion: vm.recordVersion,
         });
         onSuccess({ message: '已发送邮件并记录外发留痕。', actionId: res.action_id });
+      } else if (kind === 'schedule' && scheduleIntent === 'SELF_BOOK') {
+        const interviewerIds = [...new Set(selectedInterviewers
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean))];
+        if (interviewerIds.length === 0) {
+          setErrorText('请先填写至少一位面试官编号。');
+          setSubmitting(false);
+          return;
+        }
+        const rawStarts = [scheduleTime.trim(), inviteSlot2.trim(), inviteSlot3.trim()].filter(Boolean);
+        if (rawStarts.length < 2) {
+          setErrorText('请至少提供 2 个可选开始时间（使用上方时间框 + 备选时段 2）。');
+          setSubmitting(false);
+          return;
+        }
+        const slots = rawStarts.map((s) => {
+          const startIso = toOffsetIso(s);
+          // 端时间必须按“本地墙钟 + 60 分钟”生成，再转带偏移 ISO；
+          // 不能把 toISOString() 的 UTC 墙钟再交给 toOffsetIso（会被二次转成 +08，产生 03:00 这样的错时段）。
+          const localStart = new Date(s);
+          const endDate = new Date(localStart.getTime() + 60 * 60000);
+          const pad = (n: number) => String(n).padStart(2, '0');
+          const endLocal = `${endDate.getFullYear()}-${pad(endDate.getMonth() + 1)}-${pad(endDate.getDate())}T${pad(endDate.getHours())}:${pad(endDate.getMinutes())}`;
+          const endIso = toOffsetIso(endLocal);
+          return { start: startIso, end: endIso };
+        });
+        const invite = await postBookingInvite({
+          applicationId: vm.applicationId,
+          roundNo: vm.rounds.length + 1,
+          durationMinutes: 60,
+          interviewerActorIds: interviewerIds,
+          timezone: 'Asia/Shanghai',
+          slots,
+        });
+        setInviteResultUrl(invite.bookingUrl);
+        setSubmitting(false);
+        return;
       } else if (kind === 'schedule') {
         if (!scheduleTime.trim()) { setErrorText('请选择一个空闲时段，或手动填写面试时间。'); setSubmitting(false); return; }
         const actCheck = requireAvailableAction(vm, 'interview_schedule', '安排面试');
@@ -563,7 +605,30 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
               <button type="button" data-testid="schedule-mode-reschedule" className={`ros-slot-pill ${scheduleIntent === 'RESCHEDULE' ? 'active' : ''}`} onClick={() => setScheduleIntent('RESCHEDULE')}>
                 改期现有场次
               </button>
+              <button type="button" data-testid="schedule-mode-self-book" className={`ros-slot-pill ${scheduleIntent === 'SELF_BOOK' ? 'active' : ''}`} onClick={() => { setScheduleIntent('SELF_BOOK'); setInviteResultUrl(''); }}>
+                发候选人自助选时段
+              </button>
             </div>
+            {scheduleIntent === 'SELF_BOOK' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div className="ros-jd-box" style={{ padding: '10px 12px', fontSize: 12.5 }}>
+                  填写 2–3 个候选人可选开始时间，生成一次性免登录预约链接发给候选人确认。
+                </div>
+                <label className="ros-m-field">
+                  <span>备选时段 2（必填，例如 2026-11-24T15:00）</span>
+                  <input data-testid="self-book-slot-2" value={inviteSlot2} onChange={(e) => setInviteSlot2(e.target.value)} placeholder="2026-11-24T15:00" />
+                </label>
+                <label className="ros-m-field">
+                  <span>备选时段 3（选填）</span>
+                  <input data-testid="self-book-slot-3" value={inviteSlot3} onChange={(e) => setInviteSlot3(e.target.value)} placeholder="2026-11-25T10:30" />
+                </label>
+                {inviteResultUrl ? (
+                  <div className="ros-jd-box" data-testid="self-book-result-url" style={{ padding: '10px 12px', color: 'var(--green)', wordBreak: 'break-all' }}>
+                    已生成预约链接：<a href={inviteResultUrl} target="_blank" rel="noreferrer">{inviteResultUrl}</a>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <label className="ros-m-field">
               <span>选择面试官（支持多个，逗号分隔）</span>
               <div style={{ display: 'flex', gap: 8 }}>

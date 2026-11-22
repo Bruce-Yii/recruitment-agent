@@ -100,6 +100,12 @@
 | `canvas-compare-copy` | 横向对比弹窗「复制摘要给用人经理」按钮 |
 | `canvas-job-rediscovery` | 岗位页底部「历史人才库再发现」只读召回区块（有命中时出现） |
 | `canvas-candidate-duplicates` | 候选人页疑似同人历史投递只读提示条（有命中时出现） |
+| `canvas-original-viewer` | 候选人页「原件预览」逐页高清图容器（G-14） |
+| `canvas-original-page-img` | 原件预览当前页 PNG 图片元素 |
+| `canvas-decision-trace` | 候选人页底部可折叠决策追责时间线容器（G-15） |
+| `canvas-decision-trace-toggle` | 展开/收起决策追责时间线按钮 |
+| `schedule-mode-self-book` | 排期弹窗「发候选人自助选时段」模式切换（G-09） |
+| `self-book-result-url` | 生成的候选人自助预约链接展示区 |
 
 ## 三、复用的面试官端 `data-testid`（来自 `src/client/interviewer/InterviewerWorkspace.tsx`）
 
