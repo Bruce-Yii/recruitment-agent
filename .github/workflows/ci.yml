@@ -248,9 +248,17 @@ jobs:
                 # ② 本机/CI 缺 Python 工具链（PyMuPDF + python-docx + Pillow）
                 *'python with PyMuPDF'*) echo "::notice title=Accepted skip::$line" ;;
                 *'reader config is invalid'*) echo "::notice title=Accepted skip::$line" ;;
+                # ③ 上传落盘 sha256 不一致路径：生产用 node:fs/promises 直接写/读，
+                #    没有可注入的 FS 故障 seam（Lane1b 声明式 standing skip；不是通过）。
+                *'STANDING SKIP: intake-upload SHA256_MISMATCH'*) echo "::notice title=Accepted skip::$line" ;;
+                # ④ 上传真库成功/幂等：本机未设 RECRUITMENT_DB_PASSWORD 时的 opt-in 门
+                #    （CI 设了口令，这两条会真跑；本机跑声明脚本时逐条承认）。
+                *'真库 opt-in 未开启'*) echo "::notice title=Accepted skip::$line" ;;
                 *) echo "::error title=Undeclared skip::不在声明清单里的 skip：$line"; UNDECLARED=$((UNDECLARED + 1)) ;;
               esac
-            done < <(grep '^﹣' "$CLEAN" || true)
+            # 用 POSIX 字符类匹配行首空白：node:test 的 spec reporter 会把 describe 里的
+            # skip 缩进两格（`  ﹣`），旧写法 `grep '^﹣'` 看不到它们 → 声明门形同虚设。
+            done < <(grep -E '^[[:space:]]*﹣' "$CLEAN" || true)
             if [ "$UNDECLARED" -gt 0 ]; then
               echo "::error title=Undeclared skip::有 $UNDECLARED 条 skip 不在声明清单里；skip 不等于通过（R3/E2）"
               exit 1
