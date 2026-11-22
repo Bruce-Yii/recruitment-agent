@@ -1486,7 +1486,12 @@ export function buildJobDraftBody(input: {
   readonly requestText: string
   readonly recruiterSupplement?: string
   readonly templateId?: string
-  readonly departmentContext?: string
+  /**
+   * 部门上下文：可传已确定的部门名（builder 包成服务端要求的 `{ department_name }`），
+   * 也可直接传服务端形状的封闭对象。服务端 `department_context` 是 object；
+   * 传 string 会被 INVALID_ARGS/CONTEXT_NOT_OBJECT 拒绝。
+   */
+  readonly departmentContext?: string | Readonly<Record<string, unknown>>
 }): BodyBuildResult {
   const requestText = typeof input.requestText === 'string' ? input.requestText.trim() : ''
   if (requestText === '') {
@@ -1498,8 +1503,13 @@ export function buildJobDraftBody(input: {
   const body: Record<string, unknown> = { request_text: requestText }
   const supplement = typeof input.recruiterSupplement === 'string' ? input.recruiterSupplement.trim() : ''
   if (supplement !== '') body.recruiter_supplement = supplement
-  const departmentContext = typeof input.departmentContext === 'string' ? input.departmentContext.trim() : ''
-  if (departmentContext !== '') body.department_context = departmentContext
+  if (typeof input.departmentContext === 'string') {
+    const departmentName = input.departmentContext.trim()
+    if (departmentName !== '') body.department_context = { department_name: departmentName }
+  } else if (typeof input.departmentContext === 'object' && input.departmentContext !== null) {
+    const departmentContext = input.departmentContext as Record<string, unknown>
+    if (Object.keys(departmentContext).length > 0) body.department_context = departmentContext
+  }
   const templateId = text(input.templateId)
   if (templateId !== '') body.template_id = templateId
   return finish(body)
