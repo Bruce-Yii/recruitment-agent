@@ -43,6 +43,30 @@
   不支持 TXT，故 TXT 也记 UNSUPPORTED）。
 - QQ IMAP 要求登录前发 `ID` 命令：imapflow 由 connect options 的 `clientInfo` 发出。
 
+## 自动轮询与自动分岗（Issue #25 / G-02）
+
+- **默认关闭**：只有显式设置 env `RECRUITMENT_IMAP_POLL_INTERVAL_MS` 为正整数（毫秒）才
+  创建定时器；未配置/0/负数/非整数 → `resolvePollIntervalMs()=0` → `createImapPoller()`
+  返回 `null`，**不启动 timer、不跑 tick**，既有手动 `job_id` 路径零回归。
+- **启动挂载点**：由调用方（工具/运行时接线层）在装配 `fetchAndIngest` 与 transport 后，
+  用 `createImapPoller({ intervalMs, runOnce, loadWatermark, saveWatermark, ... })` 造轮询器并
+  `start()`；关闭时 `await stop()`（清 timer + 等在途 tick 结束，幂等）。本目录不自行注册
+  DSH 工具或改 `src/index.ts`。
+- **单次执行互斥**：内置 `createMailLock()`（FIFO 队列）；上一轮未结束的 tick 串行排队，
+  不并发写水位。`stop()` 后不再排新 tick。
+- **水位/去重复用**：`runOnce(sinceUid)` 调 `fetchAndIngest` 并取其 `next_since_uid`；UID 水位
+  与 `event_inbox (provider='email-imap', provider_event_id)` 唯一索引、附件 sha 去重全部沿用
+  现有编排层。水位保存失败只记 `WATERMARK_SAVE_FAILED`，下轮用旧水位重试（幂等兜底），
+  单轮异常只记 `TICK_FAILED`，不杀死定时器 → 失败下周期可恢复。
+- **自动分岗**：`makeJobResolver(listOpenJobs(...))` 每轮查一次 OPEN 岗位，逐封按
+  `resolveJobForMail(subject, text)` 解析：① 主题/正文里精确岗位编码（`DEMO-BE-001` /
+  `JOB-XXXXXX`，整词等值）命中唯一在招岗位 → `EXACT_CODE`；② 否则规范化标题连续子串
+  唯一命中 → `UNIQUE_TITLE`；③ 未命中/多个编码/多个标题 ⇒ `unmatched_reason`
+  （`NO_OPEN_JOBS` / `NO_CODE_OR_TITLE_MATCH` / `AMBIGUOUS_CODE` / `AMBIGUOUS_TITLE`）
+  **fail-closed 跳过**：不写 event_inbox、不进 intake，结果标 `UNMATCHED_JOB`，并通过
+  `deps.onObservable` 留可观测痕迹。绝不猜测或乱挂岗位。
+- **手动路径不变**：不传 `jobResolver` 时仍按 `input.job_id` 原样处理，结果/计数/写库行为不变。
+
 ## 发信副作用（durable_effect，0 迁移）
 
 - 幂等键 `${application_id}:${template_key}:${template_version}`；

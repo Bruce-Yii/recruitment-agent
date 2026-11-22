@@ -59,8 +59,10 @@ export type {
 } from './parse.ts'
 
 // orchestrator.ts：收件 → intake 编排
-export { fetchAndIngest, resolveTempRoot } from './orchestrator.ts'
+export { fetchAndIngest, resolveTempRoot, makeJobResolver } from './orchestrator.ts'
 export type {
+  MailJobDecision,
+  MailJobResolutionContext,
   FetchAndIngestInput,
   FetchAndIngestDeps,
   FetchAndIngestResult,
@@ -84,6 +86,33 @@ export type {
   SmtpSendResult,
   SmtpTransport,
 } from './smtp.ts'
+
+// match.ts：自动分岗（精确编码 → 唯一标题，fail-closed + unmatched_reason）
+export {
+  resolveJobForMail,
+  extractJobCodeTokens,
+  normalizeJobTitle,
+  toJobCandidates,
+} from './match.ts'
+export type { MailJobCandidate, JobMatchResult } from './match.ts'
+
+// poll.ts：后台定时轮询（显式 env 启用；注入 timer/lock，可停止/清理）
+export {
+  MAIL_POLL_INTERVAL_ENV,
+  resolvePollIntervalMs,
+  createMailLock,
+  createImapPoller,
+} from './poll.ts'
+export type {
+  PollTimer,
+  MailAsyncLock,
+  PollTickResult,
+  ImapPollerDeps,
+  ImapPoller,
+} from './poll.ts'
+
+// job-lookup.ts：只读在招岗位（自动分岗用）
+export { listOpenJobs, OPEN_JOB_STATUS } from './job-lookup.ts'
 
 // durable-effect.ts：发信副作用 + 授权判定
 export {

@@ -42,10 +42,33 @@ import {
   type MailTransport,
 } from './contract.ts'
 import { parseRawMail, rawBytesOf } from './parse.ts'
+import { resolveJobForMail, type MailJobCandidate } from './match.ts'
 
-/** 一次拉取的输入。job_id 必填（intake 必须有目标岗位）。 */
+/** 自动分岗决策（由 match.ts 的纯函数产生，或由注入的 resolver 产生）。 */
+export type MailJobDecision =
+  | { readonly matched: true; readonly job_id: string; readonly strategy?: 'EXACT_CODE' | 'UNIQUE_TITLE' }
+  | { readonly matched: false; readonly unmatched_reason: string }
+
+/** 自动分岗 resolver 的输入（只含摘要，不含正文全文/附件内容）。 */
+export interface MailJobResolutionContext {
+  readonly subject: string
+  readonly text_summary: string
+  readonly message_id: string
+}
+
+/** 一次拉取的输入。job_id 必填（手动路径）；自动轮询可用 jobResolver 覆盖。 */
 export interface FetchAndIngestInput {
+  /**
+   * 手动路径的目标岗位 UUID。自动轮询传空串并通过 `jobResolver` 逐封解析；
+   * 未配 resolver 时仍必填且原样使用（既有手动 job_id 拉取入口不变）。
+   */
   readonly job_id: string
+  /**
+   * 可选：逐封自动分岗。返回 job_id 或 unmatched_reason。
+   * 生产由 poller 注入（内部查在招岗位后调 resolveJobForMail）；
+   * 未命中/多义时 fail-closed：不写 event_inbox、不进 intake，只记观测与结果。
+   */
+  readonly jobResolver?: (ctx: MailJobResolutionContext) => Promise<MailJobDecision> | MailJobDecision
   /** 本轮最多处理多少封（默认 20，硬上限 50，由 transport 兜底）。 */
   readonly limit?: number
   /** UID 水位：只处理 uid > since_uid 的邮件。 */
@@ -78,6 +101,16 @@ export interface FetchAndIngestDeps {
   /** 时间源（测试注入固定时间）。 */
   readonly clock?: () => Date
   /**
+   * 观测回调：自动分岗未命中/多义等可观测事件（只含原因码与短号，不含正文/PII）。
+   * 未命中邮件 fail-closed 跳过，但通过该回调留下审计痕迹。
+   */
+  readonly onObservable?: (event: {
+    readonly type: 'MAIL_JOB_UNMATCHED' | 'MAIL_JOB_MATCHED'
+    readonly message_id: string
+    readonly unmatched_reason?: string
+    readonly strategy?: string
+  }) => void
+  /**
    * **仅测试用**：注入假 pool（避免真 PG）。产品路径不传，走 createPool/closePool。
    * 真链回归用它在无真库条件下断言"无附件 → SKIPPED/SEEN_NO_ATTACHMENT 而非 FAILED"。
    */
@@ -104,7 +137,12 @@ export interface EmailFetchMessageResult {
   /** 主题短摘要（≤80 字符）。 */
   readonly subject: string
   readonly status: 'INGESTED' | 'DUPLICATE_MESSAGE' | 'DUPLICATE_ASSET' | 'SKIPPED' | 'FAILED'
-    | 'SEEN_NO_ATTACHMENT' | 'UNSUPPORTED_ATTACHMENT'
+    | 'SEEN_NO_ATTACHMENT' | 'UNSUPPORTED_ATTACHMENT' | 'UNMATCHED_JOB'
+  /**
+   * 自动分岗未命中/多义的原因码（NO_OPEN_JOBS / NO_CODE_OR_TITLE_MATCH /
+   * AMBIGUOUS_CODE / AMBIGUOUS_TITLE / RESOLVER_FAILED）。只有 UNMATCHED_JOB 时有。
+   */
+  readonly unmatched_reason?: string
   /**
    * 仅失败/跳过/重复时有：分类码。传输错误（AUTH_REQUIRED/NOT_CONNECTED/INVALID_MESSAGE…）
    * 之外还有 **DB_ERROR**（数据库写失败，不是邮箱断连）——V4 标签诚实：
@@ -261,6 +299,20 @@ export function resolveTempRoot(
   return join(base, '.mail-intake', safeId)
 }
 
+/**
+ * 由预加载的在招岗位构造自动分岗 resolver。
+ * 生产可由 poller 每轮先查一次 recruitment.job where status='OPEN' 得到候选，
+ * 再用本函数生成 resolver 注入 fetchAndIngest（纯匹配，不逐封查库）。
+ */
+export function makeJobResolver(
+  candidates: readonly MailJobCandidate[],
+): (ctx: MailJobResolutionContext) => MailJobDecision {
+  return (ctx) => {
+    const decision = resolveJobForMail(ctx.subject, ctx.text_summary, candidates)
+    return decision.matched ? { ...decision, strategy: decision.strategy } : decision
+  }
+}
+
 /** 附件落盘到受控临时目录：不在 allowed_roots 内则返回 null（由编排层报 SKIPPED 而非报错）。 */
 async function landAttachment(
   attachment: { filename: string; buffer: Buffer },
@@ -404,17 +456,54 @@ export async function fetchAndIngest(
 
       // 下载 + 解析（不在事务里，避免长事务占连接）。
       let parsed
+      let bodyHint = ''
       try {
         const message = await transport.fetchMessage(envelope.uid)
+        bodyHint = typeof message.text === 'string' ? message.text : ''
         const raw = rawBytesOf(message)
         if (raw === null) throw new MailTransportError('INVALID_MESSAGE', 'RAW_MISSING')
         parsed = await parseRawMail(raw, message)
+        // parsed.summary.text_summary 是 mailparser 解出的正文摘要（比 message.text 更全）。
+        if (parsed.summary.text_summary !== '') bodyHint = parsed.summary.text_summary
       } catch (error) {
         // 连原始字节都拿不到/解析不出来 ⇒ 还不知道有没有附件 ⇒ 按"读不出来"跳过（SKIPPED），
         // 不记 FAILED（FAILED 只留给"有附件但处理失败"，见 failResult 的注释）。
         const mapped = error instanceof MailTransportError ? error : new MailTransportError('INVALID_MESSAGE', 'PARSE_FAILED')
         results.push(unreadableResult(envelope, mapped.reason ?? 'PARSE_FAILED', mapped.kind))
         continue
+      }
+
+      // 自动分岗（仅当配置了 jobResolver；手动 job_id 路径完全不变）。
+      // 在写任何库行之前解析：未命中/多义 fail-closed，绝不乱挂岗位。
+      let resolvedJobId = input.job_id
+      const resolver = input.jobResolver
+      if (resolver !== undefined) {
+        let decision: MailJobDecision
+        try {
+          decision = await resolver({
+            subject: `${envelope.subject} ${parsed.summary.subject}`.trim(),
+            text_summary: bodyHint,
+            message_id: envelope.message_id,
+          })
+        } catch {
+          decision = { matched: false, unmatched_reason: 'RESOLVER_FAILED' }
+        }
+        if (!decision.matched) {
+          const reason = decision.unmatched_reason
+          deps.onObservable?.({ type: 'MAIL_JOB_UNMATCHED', message_id: shortMessageId(envelope.message_id), unmatched_reason: reason })
+          results.push({
+            message_id: shortMessageId(envelope.message_id),
+            subject: shortSubject(envelope.subject),
+            status: 'UNMATCHED_JOB',
+            unmatched_reason: reason,
+            reason,
+            attachments: [],
+            labels: { provenance: 'LIVE', trigger: 'EVENT', connection: 'CONNECTED' },
+          })
+          continue
+        }
+        resolvedJobId = decision.job_id
+        deps.onObservable?.({ type: 'MAIL_JOB_MATCHED', message_id: shortMessageId(envelope.message_id), strategy: decision.strategy })
       }
 
       // 没有可用附件 → 只推进位点，不进简历流程（总控第四轮补强 3）。
@@ -547,7 +636,7 @@ export async function fetchAndIngest(
             insertMailFactEvent(client, tenantId, envelope, [attachment.sha256], 'PROCESSING', now))
           // 事务 2：复用既有 intake 全链路（候选人/申请/resume/intake 三层）。
           const value = await withActor(pool, database.actor_id, (client) =>
-            intakeInTransaction(client, database, material, input.job_id))
+            intakeInTransaction(client, database, material, resolvedJobId))
           applicationInfo = {
             id_suffix: shortRef(value.application_id),
             action: value.application_action,
@@ -607,7 +696,7 @@ export async function fetchAndIngest(
   const ingested = results.filter((r) => r.status === 'INGESTED').length
   const duplicates = results.filter((r) => r.status === 'DUPLICATE_MESSAGE' || r.status === 'DUPLICATE_ASSET').length
   const skipped = results.filter((r) => r.status === 'SKIPPED' || r.status === 'SEEN_NO_ATTACHMENT'
-    || r.status === 'UNSUPPORTED_ATTACHMENT').length
+    || r.status === 'UNSUPPORTED_ATTACHMENT' || r.status === 'UNMATCHED_JOB').length
   const failed = results.filter((r) => r.status === 'FAILED').length
   return {
     total: results.length,

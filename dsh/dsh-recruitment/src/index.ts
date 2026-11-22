@@ -182,6 +182,8 @@ import {
 // A 的收件编排与 IMAP 传输（子代理 mail-a-transport 实现；工具壳只消费其签名）。
 import { fetchAndIngest } from './connectors/mail/orchestrator.ts'
 import { createImapTransport } from './connectors/mail/transport.ts'
+// PR #29 补尾巴：宿主启动接线用 helper（默认关闭 + dispose 停轮询）。
+import { createHostMailPoller } from './connectors/mail/host-poller.ts'
 // C 的发信 Host Action（POST /recruitment/api/action/email/send，不新增工具）。
 import { registerEmailSendHttp, type EmailSendHostContext } from './http/email-send.ts'
 import { registerOverviewHttp, type OverviewHostContext } from './http/overview.ts'
@@ -228,7 +230,11 @@ export const name = 'recruitment'
  * session→alias 再调用注册表中的工具（产品代码从不读这个对象）。
  * 不改变 apply 的返回语义（cordis 插件返回值会被当 disposer 处理）。
  */
-export const __testHooks: { demoActorIdentity: DemoActorIdentity | null } = { demoActorIdentity: null }
+export const __testHooks: {
+  demoActorIdentity: DemoActorIdentity | null
+  /** 仅测试用：替换 IMAP 轮询器工厂（注入假 timer / executeOnce，避免真 IMAP/PG）。 */
+  createHostMailPoller: typeof createHostMailPoller | null
+} = { demoActorIdentity: null, createHostMailPoller: null }
 
 /**
  * 所需服务：工具注册表 + 人机批准通道（D-79：正式决策只能由人放行）。
@@ -966,6 +972,34 @@ export function apply(
           }
         }, 'recruitment: task runtime routes')
       })
+    }
+  }
+
+  // ── IMAP 后台自动轮询（Issue #25 / G-02 / PR #29 补尾巴）──────────────────────
+  // **默认关闭**：只有显式 `RECRUITMENT_IMAP_POLL_INTERVAL_MS` 为正整数（见 poll.ts
+  // `resolvePollIntervalMs`）、且 database/mail/converter 三段配置齐全时才创建轮询器。
+  // 与 `runtime.enabled` 无关：轮询是邮件连接器自身能力，不依赖任务运行时 HTTP 路由。
+  // 挂载到 cordis effect：apply 时立即 start（排定时器）；插件卸载时 cleanup → stop
+  // （清 timer、等在途 tick、关 helper 懒建的在招岗位池）。未配置时整段零副作用——
+  // 不建 timer、不建 pool、不注册 effect（回归保护）。
+  if (database.resolved !== null && mail.resolved !== null && converter.resolved !== null) {
+    const pollerFactory = __testHooks.createHostMailPoller ?? createHostMailPoller
+    const poller = pollerFactory({
+      env,
+      database: database.resolved,
+      mail: mail.resolved,
+      converter: converter.resolved,
+      identity: { identity: actorIdentity },
+      onEvent: (event) => {
+        const logger = (ctx as unknown as { logger?: { warn(message: string): void } }).logger
+        logger?.warn(`recruitment: IMAP 轮询观测 ${event.type}${event.reason === undefined ? '' : `: ${event.reason}`}`)
+      },
+    })
+    if (poller !== null) {
+      ctx.effect(() => {
+        poller.start()
+        return () => { void poller.stop() }
+      }, 'recruitment: IMAP auto-poll lifecycle')
     }
   }
 
