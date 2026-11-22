@@ -72,6 +72,30 @@ function buildRowReason(app: ApplicationRowView): string {
   return parts.join(' · ');
 }
 
+interface QueueOpsSummary {
+  readonly stuckTasks: number;
+  readonly stuckEvents: number;
+  readonly failedTasks: number;
+}
+
+function parseOpsSummary(raw: Record<string, unknown>): QueueOpsSummary {
+  const stuckTasks = Array.isArray(raw.stuck_tasks) ? raw.stuck_tasks.length : 0;
+  const stuckEvents = Array.isArray(raw.stuck_events) ? raw.stuck_events.length : 0;
+  const counts =
+    raw.counts && typeof raw.counts === 'object'
+      ? (raw.counts as Record<string, unknown>)
+      : {};
+  const tasksCounts =
+    counts.tasks && typeof counts.tasks === 'object'
+      ? (counts.tasks as Record<string, unknown>)
+      : counts;
+  const failedTasks =
+    typeof tasksCounts.FAILED === 'number' && Number.isFinite(tasksCounts.FAILED)
+      ? tasksCounts.FAILED
+      : 0;
+  return { stuckTasks, stuckEvents, failedTasks };
+}
+
 export function QueueView({
   overview,
   filterRequest,
@@ -79,6 +103,7 @@ export function QueueView({
   onOpenApplication,
   onUploadStarted,
 }: QueueViewProps) {
+  const [opsSummary, setOpsSummary] = useState<QueueOpsSummary | null>(null);
   const [stageFilter, setStageFilter] = useState<string>('all');
   const lastFilterNonceRef = useRef<number>(0);
 
@@ -159,9 +184,42 @@ export function QueueView({
     }
   };
 
+  useEffect(() => {
+    let active = true;
+    const sid = readCookie('rc_sid');
+    fetchAppJson('/recruitment/api/tasks/status', sid)
+      .then((raw) => {
+        if (!active) return;
+        setOpsSummary(parseOpsSummary(raw));
+      })
+      .catch(() => {
+        if (!active) return;
+        setOpsSummary(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [overview]);
+
+  const opsIssues = useMemo(() => {
+    const items: string[] = [];
+    if (opsSummary) {
+      if (opsSummary.stuckTasks > 0) items.push(`${opsSummary.stuckTasks} 项后台任务超时未完成`);
+      if (opsSummary.stuckEvents > 0) items.push(`${opsSummary.stuckEvents} 条入站事件待处理`);
+      if (opsSummary.failedTasks > 0) items.push(`${opsSummary.failedTasks} 项解析任务失败`);
+    }
+    return items;
+  }, [opsSummary]);
+
   return (
     <div className="canvas-inner" data-testid="app-queue-view">
       <div>
+        {opsIssues.length > 0 ? (
+          <div className="ops-notice-strip num" role="status" data-testid="app-queue-ops-notice">
+            <span className="ops-notice-label">后台运行提醒</span>
+            <span className="ops-notice-text">{opsIssues.join(' · ')}</span>
+          </div>
+        ) : null}
         <div className="sec-head" style={{ marginBottom: 18 }}>
           <div>
             <div className="sec-title">待推进候选人</div>
