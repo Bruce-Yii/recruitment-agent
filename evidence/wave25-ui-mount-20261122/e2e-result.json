@@ -1,0 +1,93 @@
+{
+  "scenarios": {
+    "jobRediscovery": {
+      "jobId": "6aa4cd9b-b68e-4841-80a8-1a5db4c20c6d",
+      "approveShown": true,
+      "rediscoveryApi": {
+        "status": 200,
+        "body": "{\"tool\":\"recruitment_talent_rediscovery\",\"contract_version\":\"talent-rediscovery 1.0.0\",\"status\":\"OK\",\"read_only\":true,\"evaluated_at\":\"2026-11-22T20:51:25.589Z\",\"labels\":{\"provenance\":\"LIVE\",\"trigger\":\"MANUAL\",\"connection\":\"CONNECTED\"},\"job\":{\"job_id\":\"6aa4cd9b-b68e-4841-80a8-1a5db4c20c6d\",\"code\":\"JOB-SBARIO\",\"title\":\"Wave25再发现岗位-675783\",\"status\":\"OPEN\",\"rubric_requirements\":[{\"key\":\"work_history_present\",\"label\":\"有可核对的工作经历\",\"kind\":\"MUST_HAVE\"},{\"key\":\"core_fit\",\"label\":\"核心岗位胜任力匹配\",\"kind\":\"MUST_HAVE\"}]},\"candidates\":[{\"candidate_id\":\"11111111-1111-4111-8111-000000000798\",\"candidate_name\":\"候选人 S12-决策隔离\",\"matched_condition_count\":3,\"last_active_at\":\"2026-11-22T20:50:55.298Z\",\"basis\":[{\"code\":\"HISTORICAL_JOB\",\"label\":\"历史岗位\",\"detail\":\"后端工程师（演示）（DEMO-BE-001）· 阶段 S10\",\"source\":\"APPLICATION\",\"at\":\"2026-11-22T20:50:55.292Z\"},{\"code\":\"SECOND_INTERVIEW\",\"label\":\"曾进二面\",\"detail\":\"后端工程师（演示） 的历史面试到第 2 轮\",\"source\":\"INTERVIEW\",\"at\":\"2026-11-22T20:50:55.298Z\"},{\"code\":\"RUBRIC_FIELD:work_history_present\",\"label\":\"当前岗位要求\",\"detail\":\"有可核对的工作经历：历史材料中读到与当前要求对应的记录\",\"source\":\"MATERIAL\",\"at\":\"2026-11-22T20:50:55.291Z\"}]},{\"candidate_id\":\"11111111-1111-4111-8111-000000000699\",\"candidate_name\":\"候选人 T\",\"matched",
+        "sid": true,
+        "cookie": "rc_sid=session-1715c364-20cc-4187-ac26-1f7b57917ae8"
+      },
+      "rediscoveryVisible": true,
+      "rediscoveryText": "历史人才库再发现\n仅按历史事实召回（不评分、不排名）· 3 人\n候选人 S12-决策隔离\n历史岗位 · 曾进二面 · 当前岗位要求\n候选人 T\n历史岗位 · 曾进二面 · 当前岗位要求\n演示候选人-张样例\n历史岗位 · 曾进二面 · 当前岗位要求",
+      "noPercent": true,
+      "hasFacts": true,
+      "noScoreWords": true
+    },
+    "candidateDuplicates": {
+      "demoApp": "11111111-1111-4111-8111-000000000701",
+      "otherCand": "11111111-1111-4111-8111-000000000699",
+      "otherApp": "2b816dee-65bc-4826-9d64-13c94814a97a",
+      "aPhone": "+8613800000000",
+      "aEmail": "zhang.sample@demo-recruitment.test",
+      "mergeId": "0173474b-e127-4ea6-8b5f-d94c578253d9",
+      "newCand": "a8eb9785-4cf3-4293-92d2-a9a199b8cf42",
+      "newApp": "51642ef0-4f8d-4702-9b24-94e700c372d5",
+      "seedDebug": "merge=0173474b-e127-4ea6-8b5f-d94c578253d9;newCand=a8eb9785-4cf3-4293-92d2-a9a199b8cf42;newApp=51642ef0-4f8d-4702-9b24-94e700c372d5",
+      "duplicatesApi": {
+        "status": 200,
+        "body": "{\"contract_version\":\"candidate-dedup 1.0.0\",\"evaluated_at\":\"2026-11-22T20:51:28.290Z\",\"application_id\":\"11111111-1111-4111-8111-000000000701\",\"duplicates\":[{\"applicationId\":\"51642ef0-4f8d-4702-9b24-94e700c372d5\",\"candidateId\":\"a8eb9785-4cf3-4293-92d2-a9a199b8cf42\",\"reasons\":[\"SAME_PHONE\",\"SAME_EMAIL\"],\"matchedKeyKinds\":[\"phone\",\"email\"],\"matchedValueHints\":[\"+86 138****0000\",\"z***@demo-recruitment.test\"],\"displayName\":\"重复投递候选人-Wave25\",\"channelName\":null},{\"applicationId\":\"2b816dee-65bc-4826-9d64-13c94814a97a\",\"candidateId\":\"11111111-1111-4111-8111-000000000699\",\"reasons\":[\"SAME_HISTORY_ARCHIVE\"],\"matchedKeyKinds\":[\"history\"],\"matchedValueHints\":[\"同一历史档案标记\"],\"displayName\":\"候选人 T\",\"channelName\":null}],\"subject_hints\":{\"phone\":\"+86 138****0000\",\"email\":\"z***@demo-recruitment.test\"}}",
+        "sid": true
+      },
+      "aPhoneMasked": true,
+      "duplicatesVisible": true,
+      "duplicatesText": "疑似同人历史投递（2 条）重复投递候选人-Wave25（同手机号、同邮箱 +86 138****0000）查看· 候选人 T（同一历史档案 同一历史档案标记）查看",
+      "masked": true,
+      "reasonsShown": true,
+      "viewButton": true,
+      "hashAfter": "#/application/51642ef0-4f8d-4702-9b24-94e700c372d5",
+      "navigated": true
+    }
+  },
+  "checks": [
+    {
+      "name": "job_rediscovery_ui",
+      "ok": true,
+      "detail": {
+        "jobId": "6aa4cd9b-b68e-4841-80a8-1a5db4c20c6d",
+        "approveShown": true,
+        "rediscoveryApi": {
+          "status": 200,
+          "body": "{\"tool\":\"recruitment_talent_rediscovery\",\"contract_version\":\"talent-rediscovery 1.0.0\",\"status\":\"OK\",\"read_only\":true,\"evaluated_at\":\"2026-11-22T20:51:25.589Z\",\"labels\":{\"provenance\":\"LIVE\",\"trigger\":\"MANUAL\",\"connection\":\"CONNECTED\"},\"job\":{\"job_id\":\"6aa4cd9b-b68e-4841-80a8-1a5db4c20c6d\",\"code\":\"JOB-SBARIO\",\"title\":\"Wave25再发现岗位-675783\",\"status\":\"OPEN\",\"rubric_requirements\":[{\"key\":\"work_history_present\",\"label\":\"有可核对的工作经历\",\"kind\":\"MUST_HAVE\"},{\"key\":\"core_fit\",\"label\":\"核心岗位胜任力匹配\",\"kind\":\"MUST_HAVE\"}]},\"candidates\":[{\"candidate_id\":\"11111111-1111-4111-8111-000000000798\",\"candidate_name\":\"候选人 S12-决策隔离\",\"matched_condition_count\":3,\"last_active_at\":\"2026-11-22T20:50:55.298Z\",\"basis\":[{\"code\":\"HISTORICAL_JOB\",\"label\":\"历史岗位\",\"detail\":\"后端工程师（演示）（DEMO-BE-001）· 阶段 S10\",\"source\":\"APPLICATION\",\"at\":\"2026-11-22T20:50:55.292Z\"},{\"code\":\"SECOND_INTERVIEW\",\"label\":\"曾进二面\",\"detail\":\"后端工程师（演示） 的历史面试到第 2 轮\",\"source\":\"INTERVIEW\",\"at\":\"2026-11-22T20:50:55.298Z\"},{\"code\":\"RUBRIC_FIELD:work_history_present\",\"label\":\"当前岗位要求\",\"detail\":\"有可核对的工作经历：历史材料中读到与当前要求对应的记录\",\"source\":\"MATERIAL\",\"at\":\"2026-11-22T20:50:55.291Z\"}]},{\"candidate_id\":\"11111111-1111-4111-8111-000000000699\",\"candidate_name\":\"候选人 T\",\"matched",
+          "sid": true,
+          "cookie": "rc_sid=session-1715c364-20cc-4187-ac26-1f7b57917ae8"
+        },
+        "rediscoveryVisible": true,
+        "rediscoveryText": "历史人才库再发现\n仅按历史事实召回（不评分、不排名）· 3 人\n候选人 S12-决策隔离\n历史岗位 · 曾进二面 · 当前岗位要求\n候选人 T\n历史岗位 · 曾进二面 · 当前岗位要求\n演示候选人-张样例\n历史岗位 · 曾进二面 · 当前岗位要求",
+        "noPercent": true,
+        "hasFacts": true,
+        "noScoreWords": true
+      }
+    },
+    {
+      "name": "candidate_duplicates_ui",
+      "ok": true,
+      "detail": {
+        "demoApp": "11111111-1111-4111-8111-000000000701",
+        "otherCand": "11111111-1111-4111-8111-000000000699",
+        "otherApp": "2b816dee-65bc-4826-9d64-13c94814a97a",
+        "aPhone": "+8613800000000",
+        "aEmail": "zhang.sample@demo-recruitment.test",
+        "mergeId": "0173474b-e127-4ea6-8b5f-d94c578253d9",
+        "newCand": "a8eb9785-4cf3-4293-92d2-a9a199b8cf42",
+        "newApp": "51642ef0-4f8d-4702-9b24-94e700c372d5",
+        "seedDebug": "merge=0173474b-e127-4ea6-8b5f-d94c578253d9;newCand=a8eb9785-4cf3-4293-92d2-a9a199b8cf42;newApp=51642ef0-4f8d-4702-9b24-94e700c372d5",
+        "duplicatesApi": {
+          "status": 200,
+          "body": "{\"contract_version\":\"candidate-dedup 1.0.0\",\"evaluated_at\":\"2026-11-22T20:51:28.290Z\",\"application_id\":\"11111111-1111-4111-8111-000000000701\",\"duplicates\":[{\"applicationId\":\"51642ef0-4f8d-4702-9b24-94e700c372d5\",\"candidateId\":\"a8eb9785-4cf3-4293-92d2-a9a199b8cf42\",\"reasons\":[\"SAME_PHONE\",\"SAME_EMAIL\"],\"matchedKeyKinds\":[\"phone\",\"email\"],\"matchedValueHints\":[\"+86 138****0000\",\"z***@demo-recruitment.test\"],\"displayName\":\"重复投递候选人-Wave25\",\"channelName\":null},{\"applicationId\":\"2b816dee-65bc-4826-9d64-13c94814a97a\",\"candidateId\":\"11111111-1111-4111-8111-000000000699\",\"reasons\":[\"SAME_HISTORY_ARCHIVE\"],\"matchedKeyKinds\":[\"history\"],\"matchedValueHints\":[\"同一历史档案标记\"],\"displayName\":\"候选人 T\",\"channelName\":null}],\"subject_hints\":{\"phone\":\"+86 138****0000\",\"email\":\"z***@demo-recruitment.test\"}}",
+          "sid": true
+        },
+        "aPhoneMasked": true,
+        "duplicatesVisible": true,
+        "duplicatesText": "疑似同人历史投递（2 条）重复投递候选人-Wave25（同手机号、同邮箱 +86 138****0000）查看· 候选人 T（同一历史档案 同一历史档案标记）查看",
+        "masked": true,
+        "reasonsShown": true,
+        "viewButton": true,
+        "hashAfter": "#/application/51642ef0-4f8d-4702-9b24-94e700c372d5",
+        "navigated": true
+      }
+    }
+  ],
+  "pass": true
+}
