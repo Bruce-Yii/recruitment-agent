@@ -540,6 +540,37 @@ export async function postRebindMinute(payload: {
   return { ok: true, message: '已把录音归属改到新面试官' };
 }
 
+export type CriterionHumanState = 'PRESENT' | 'ABSENT' | 'UNREADABLE';
+
+export interface CriterionOverridePayload {
+  readonly applicationId: string;
+  readonly criterionKey: string;
+  readonly humanState: CriterionHumanState;
+  readonly note?: string;
+  readonly confirmationText: string;
+}
+
+export async function postCriterionOverride(payload: CriterionOverridePayload): Promise<{
+  readonly overrideId: string;
+  readonly effectiveState: string;
+}> {
+  const body: Record<string, unknown> = {
+    application_id: payload.applicationId,
+    criterion_key: payload.criterionKey,
+    human_state: payload.humanState,
+    confirmation_text: payload.confirmationText.trim(),
+  };
+  const trimmedNote = (payload.note ?? '').trim();
+  if (trimmedNote) body.note = trimmedNote.slice(0, 500);
+  const res = await postJsonAction<{
+    override?: { override_id?: string; effective_state?: string };
+  }>('/recruitment/api/action/criterion/override', body);
+  return {
+    overrideId: String(res.override?.override_id ?? ''),
+    effectiveState: String(res.override?.effective_state ?? payload.humanState),
+  };
+}
+
 export function triggerUnavailableAction(): never {
   throw makeError('NOT_AVAILABLE', UNAVAILABLE_ACTION_MESSAGE);
 }

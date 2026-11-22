@@ -60,12 +60,7 @@ export const READ_ONLY_ROUTES = [
  * `/action/email/authorize` 曾被列白，但那是**带条件的说明**，不是预置条目；
  * 用户明确要求默认空，所以这里不预填任何项——要不要白名单，由接入口的人显式加并写理由。
  */
-export const WHITELIST = [
-  {
-    path: '/recruitment/api/action/criterion/override',
-    reason: 'G-08 后端路由先行；前端纠偏按钮由紧接的 UI PR 挂载，挂载后删除本条临时白名单',
-  },
-]
+export const WHITELIST = []
 
 /**
  * 客户端不直接持路由字符串、而是持"动作键"（服务端 actionSeams 注入 URL）的写路由。
