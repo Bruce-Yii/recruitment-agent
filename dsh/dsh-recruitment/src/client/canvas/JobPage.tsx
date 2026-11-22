@@ -117,6 +117,14 @@ export function JobPage({
   const [compareLoading, setCompareLoading] = useState<boolean>(false);
   const [compareItems, setCompareItems] = useState<CandidateCanvasVM[]>([]);
   const [compareCopyNotice, setCompareCopyNotice] = useState<string>('');
+  const [rediscoveryList, setRediscoveryList] = useState<
+    Array<{
+      readonly candidateId: string;
+      readonly candidateName: string;
+      readonly matchedCount: number;
+      readonly basisLabels: readonly string[];
+    }>
+  >([]);
   const [feedback, setFeedback] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
 
   const load = useCallback(
@@ -403,6 +411,44 @@ export function JobPage({
     }
   };
 
+
+  useEffect(() => {
+    let active = true;
+    fetcher(`/recruitment/api/recruiting/jobs/${encodeURIComponent(jobId)}/rediscovery`)
+      .then((raw) => {
+        if (!active || !raw || typeof raw !== 'object') return;
+        const obj = raw as Record<string, unknown>;
+        const list = Array.isArray(obj.candidates) ? obj.candidates : [];
+        const parsed = list
+          .map((item) => {
+            if (!item || typeof item !== 'object') return null;
+            const rec = item as Record<string, unknown>;
+            const candidateId = typeof rec.candidate_id === 'string' ? rec.candidate_id : '';
+            const candidateName = typeof rec.candidate_name === 'string' ? rec.candidate_name : '';
+            if (!candidateId || !candidateName) return null;
+            const matchedCount =
+              typeof rec.matched_condition_count === 'number' ? rec.matched_condition_count : 0;
+            const basisRaw = Array.isArray(rec.basis) ? rec.basis : [];
+            const basisLabels = basisRaw
+              .map((b) =>
+                b && typeof b === 'object' && typeof (b as Record<string, unknown>).label === 'string'
+                  ? String((b as Record<string, unknown>).label)
+                  : '',
+              )
+              .filter(Boolean)
+              .slice(0, 3);
+            return { candidateId, candidateName, matchedCount, basisLabels };
+          })
+          .filter((x): x is NonNullable<typeof x> => x !== null);
+        setRediscoveryList(parsed);
+      })
+      .catch(() => {
+        if (active) setRediscoveryList([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [jobId, fetcher, refreshNonce]);
 
   const handleOpenCompare = async () => {
     const ids = selectedIds.slice(0, 3);
@@ -775,6 +821,38 @@ export function JobPage({
               ) : (
                 <CanvasEmptyState title="当前阶段暂无候选人" description="切换上方筛选条件可查看其他阶段候选人。" />
               )}
+
+              {rediscoveryList.length > 0 ? (
+                <div
+                  data-testid="canvas-job-rediscovery"
+                  style={{
+                    marginTop: 28,
+                    paddingTop: 20,
+                    borderTop: '1px solid var(--line-soft)',
+                  }}
+                >
+                  <div className="ros-sec-head" style={{ marginBottom: 8 }}>
+                    <span className="ros-sec-title">历史人才库再发现</span>
+                    <span className="ros-sec-meta num">
+                      仅按历史事实召回（不评分、不排名）· {rediscoveryList.length} 人
+                    </span>
+                  </div>
+                  <div className="ros-clean-list">
+                    {rediscoveryList.map((cand) => (
+                      <div key={cand.candidateId} className="ros-clean-row static">
+                        <span style={{ fontSize: '13.5px', fontWeight: 500, color: 'var(--ink)' }}>
+                          {cand.candidateName}
+                        </span>
+                        <span className="ros-sec-meta">
+                          {cand.basisLabels.length > 0
+                            ? cand.basisLabels.join(' · ')
+                            : `命中 ${cand.matchedCount} 条历史事实`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               {selectedIds.length > 0 ? (
                 <div className="ros-batch-float" data-testid="canvas-batch-float">

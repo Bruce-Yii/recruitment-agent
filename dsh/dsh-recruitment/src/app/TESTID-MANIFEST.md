@@ -98,6 +98,8 @@
 | `canvas-batch-compare-open` | 岗位候选人池勾选 2–3 人后的「横向对比」按钮 |
 | `canvas-compare-modal` | 候选人横向对比弹窗容器 |
 | `canvas-compare-copy` | 横向对比弹窗「复制摘要给用人经理」按钮 |
+| `canvas-job-rediscovery` | 岗位页底部「历史人才库再发现」只读召回区块（有命中时出现） |
+| `canvas-candidate-duplicates` | 候选人页疑似同人历史投递只读提示条（有命中时出现） |
 
 ## 三、复用的面试官端 `data-testid`（来自 `src/client/interviewer/InterviewerWorkspace.tsx`）
 
