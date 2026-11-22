@@ -167,11 +167,11 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
   const [emailSubject, setEmailSubject] = useState(`【通知】${vm.jobTitle}（${vm.candidateName}）`);
 
   const [scheduleIntent, setScheduleIntent] = useState<'CREATE' | 'RESCHEDULE' | 'SELF_BOOK'>(
+    vm.rounds.length > 0 ? 'RESCHEDULE' : 'CREATE',
+  );
   const [inviteSlot2, setInviteSlot2] = useState<string>('');
   const [inviteSlot3, setInviteSlot3] = useState<string>('');
   const [inviteResultUrl, setInviteResultUrl] = useState<string>('');
-    vm.rounds.length > 0 ? 'RESCHEDULE' : 'CREATE',
-  );
   const [selectedInterviewers, setSelectedInterviewers] = useState(defaultActors);
   const [scheduleTime, setScheduleTime] = useState('');
   const [replaceInterviewer, setReplaceInterviewer] = useState('');
@@ -436,7 +436,7 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
           setSubmitting(false);
           return;
         }
-        const rawStarts = [slotStart.trim(), inviteSlot2.trim(), inviteSlot3.trim()].filter(Boolean);
+        const rawStarts = [scheduleTime.trim(), inviteSlot2.trim(), inviteSlot3.trim()].filter(Boolean);
         if (rawStarts.length < 2) {
           setErrorText('请至少提供 2 个可选开始时间（使用上方时间框 + 备选时段 2）。');
           setSubmitting(false);
