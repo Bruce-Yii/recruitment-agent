@@ -11,6 +11,8 @@
 
 ---
 
+> **当前主干基线（2026-11-22）**：独立整页 `/recruitment/app`（v4 暖纸工作台，旧侧栏已退役 D-181）；对话 Agent 为严格只读（19 只读 / 0 写工具，支持 `navigate / focus_section / suggest_action / propose_write` 单轨联动）；Wave 1 / 2 / 2.5 已合入 `main`（建岗草案与审批/关岗、上传自动初筛摘要、IMAP 定时轮询分岗、转写自动生成待核对面评草稿、人工逐条纠偏、多候选人横向对比、历史人才再发现与候选人级去重提示）。全景竞品基准见 [`docs/39`](docs/39-recruiting-lifecycle-and-competitive-benchmark.md)，缺口路线图见 [`docs/40`](docs/40-lifecycle-gap-roadmap.md)。
+
 ## 0. 工程底座（看代码的人从这里开始）
 
 招聘 Agent。**底座重置在 DSH（DeepSeek Harness）Web 版上**，招聘语义与验收标准原样继承。

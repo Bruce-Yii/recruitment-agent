@@ -163,6 +163,15 @@ export function CandidatePage({
   const [overrideNote, setOverrideNote] = useState('');
   const [overrideConfirm, setOverrideConfirm] = useState('');
   const [overrideBusy, setOverrideBusy] = useState(false);
+  const [duplicateHints, setDuplicateHints] = useState<
+    Array<{
+      readonly applicationId: string;
+      readonly displayName: string;
+      readonly channelName: string;
+      readonly reasonLabels: readonly string[];
+      readonly valueHints: readonly string[];
+    }>
+  >([]);
   const candFileRef = useRef<HTMLInputElement | null>(null);
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -369,6 +378,45 @@ export function CandidatePage({
       setEvaluatingScreening(false);
     }
   };
+
+  useEffect(() => {
+    let active = true;
+    fetcher(`/recruitment/api/recruiting/applications/${encodeURIComponent(applicationId)}/duplicates`)
+      .then((raw) => {
+        if (!active || !raw || typeof raw !== 'object') return;
+        const obj = raw as Record<string, unknown>;
+        const list = Array.isArray(obj.duplicates) ? obj.duplicates : [];
+        const REASON_MAP: Record<string, string> = {
+          SAME_PHONE: '同手机号',
+          SAME_EMAIL: '同邮箱',
+          SAME_NAME_AND_HISTORY: '同姓名与相近经历',
+        };
+        const parsed = list
+          .map((item) => {
+            if (!item || typeof item !== 'object') return null;
+            const rec = item as Record<string, unknown>;
+            const appId = typeof rec.applicationId === 'string' ? rec.applicationId : '';
+            if (!appId) return null;
+            const displayName = typeof rec.displayName === 'string' ? rec.displayName : '历史投递';
+            const channelName = typeof rec.channelName === 'string' ? rec.channelName : '';
+            const reasonsRaw = Array.isArray(rec.reasons) ? rec.reasons : [];
+            const reasonLabels = reasonsRaw
+              .map((r) => (typeof r === 'string' ? REASON_MAP[r] || r : ''))
+              .filter(Boolean);
+            const hintsRaw = Array.isArray(rec.matchedValueHints) ? rec.matchedValueHints : [];
+            const valueHints = hintsRaw.filter((h): h is string => typeof h === 'string' && h.length > 0);
+            return { applicationId: appId, displayName, channelName, reasonLabels, valueHints };
+          })
+          .filter((x): x is NonNullable<typeof x> => x !== null);
+        setDuplicateHints(parsed);
+      })
+      .catch(() => {
+        if (active) setDuplicateHints([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [applicationId, fetcher, refreshNonce]);
 
   const handleSubmitCriterionOverride = async () => {
     if (!vm || !overrideTarget || overrideBusy) return;
@@ -663,6 +711,46 @@ export function CandidatePage({
                   ))}
                 </div>
               ) : null}
+            </div>
+          ) : null}
+
+          {duplicateHints.length > 0 ? (
+            <div
+              data-testid="canvas-candidate-duplicates"
+              style={{
+                marginBottom: 20,
+                padding: '10px 14px',
+                background: 'var(--paper)',
+                border: '1px solid var(--line)',
+                borderLeft: '2px solid var(--amber)',
+                borderRadius: 8,
+                fontSize: 12.5,
+                lineHeight: 1.55,
+                color: 'var(--text)',
+              }}
+            >
+              <span style={{ fontWeight: 600, color: 'var(--amber)', marginRight: 8 }}>
+                疑似同人历史投递（{duplicateHints.length} 条）
+              </span>
+              {duplicateHints.map((dup, idx) => (
+                <span key={dup.applicationId} style={{ marginRight: 10 }}>
+                  {idx > 0 ? '· ' : ''}
+                  {dup.displayName}
+                  {dup.reasonLabels.length > 0 ? `（${dup.reasonLabels.join('、')}` : ''}
+                  {dup.valueHints.length > 0 ? ` ${dup.valueHints[0]}` : ''}
+                  {dup.reasonLabels.length > 0 ? '）' : ''}
+                  {onSelectApplication ? (
+                    <button
+                      type="button"
+                      className="ros-text-link"
+                      style={{ marginLeft: 6 }}
+                      onClick={() => onSelectApplication(dup.applicationId)}
+                    >
+                      查看
+                    </button>
+                  ) : null}
+                </span>
+              ))}
             </div>
           ) : null}
 
