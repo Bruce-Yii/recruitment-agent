@@ -1,9 +1,18 @@
-# PR #20 复验（2026-11-22 · head 9e95cdb）
+# Issue #23 + PR #20 联调验收（2026-11-22 · 全绿）
 
-> PR：**#20** `feat/job-and-screening-loop-closure`，head **`9e95cdb`**（builder 已支持 boolean/numeric value），base `42062cb`。
-> 结论：**tsc/构建/静态/15 步全绿；1440 场景②③ PASS，场景①卡在“新岗位缺 rubric_version_id”这一接口/读模型问题。不合并 main。**
+> 新 PR：**#27** `feat/job-detail-pending-rubric-read`（head `f6b8476`，指向 main）
+> 联合 PR：#20 `feat/job-and-screening-loop-closure`（head `9e95cdb`）
+> 联调分支：`tmp/job-screening-loop`（latest main + #27 + #20）
+> 结论：**tsc/构建/静态/15 步全绿；1440 三场景 3/3 PASS。未合并 main。**
 
-## 1. 静态/构建/回归（全绿）
+## 1. Issue #23 修复
+
+- `src/http/recruiting.ts`：岗位详情在 `current_rubric_version_id` 为空时，回退查询该 job 最新一条 `rubric_version`（`version_no DESC`），返回 `rubric_version_id / version_no / criteria`；`job.rubric.approved` 严格保持 `false`。
+- 无 rubric 的 DRAFT 岗位仍返回 `rubric=null`（不编造）。
+- 只改只读投影 + 集成测试；写链路、前端未动。
+- 新增集成用例：`test/integration/recruiting-overview.test.ts`「岗位详情 pending rubric…」；该文件 **11/11 PASS**。
+
+## 2. 静态/构建/回归（全绿）
 
 | 门 | 结果 |
 |---|---|
@@ -16,34 +25,23 @@
 | `term-lint` | PASS（0 违规） |
 | `run-v4.mjs --fresh --port 49347` | **15/15 PASS**，审计 hard 0 |
 
-## 2. 1440 三场景
+## 3. 1440 三场景（一次性干净库 + HY4）
 
-### ① 新建岗位：创建成功，但“批准标准”被接口/读模型阻断
+| 场景 | 结果 |
+|---|---|
+| ① 新建岗位 → 批准标准 | **PASS**：新建成功 → 岗位标准 Tab → `canvas-action-rubric-approve` → `canvas-rubric-approve-submit` → 页面显示「已锁定 / 已批准岗位评分标准 V1」；psql 读回 `rubric_version` 有 APPROVED 审批（`rubricRow = <id>|1|1`）。截图 `01/02` |
+| ② 未评估申请发起初筛评估 | **PASS**：`canvas-action-screening-evaluate` → “评估中…” → 绿字「已更新初筛评估结果。」→ 标准对照区静默刷新。截图 `03/04` |
+| ③ 关闭新岗位 | **PASS**：`canvas-action-job-close` → `canvas-job-close-submit` → 页面「已关闭岗位」；psql 读回 `job.status=CLOSED`。截图 `05` |
 
-- 新建岗位成功落库（`jobId` 已取得，岗位出现在左栏；本轮显式进入 `#/job/<id>`）。
-- 岗位标准 Tab → `canvas-action-rubric-approve` 按钮与确认弹窗均出现。
-- 点击 `canvas-rubric-approve-submit` 后返回（页面反馈原文）：
-  ```text
-  评分标准版本编号缺失或格式不正确
-  岗位为草稿：待完善 JD / Rubric 并提交审批
-  ```
-- 根因：新岗位的 rubric version 行已创建，但 `job.current_rubric_version_id` 未指向它（job-create 只写 `current_job_version_id`）；`readJobDetail` 用 `jobRow?.rubric_version_id` 装载 rubric（`src/http/recruiting.ts:2915`），导致详情 `rubric=null`，`normalize-canvas` 得到空 `rubricVersionId`（`JobPage.tsx:326` 传给 `buildRubricApproveBody`）。服务端没有可批准的版本号。
-- 精确位置：
-  - `src/tools/job-create.ts:1262-1267`：只更新 `current_job_version_id`，未设置 current rubric 指针；
-  - `src/http/recruiting.ts:2915`：`loadRubric(ctx, jobRow?.rubric_version_id ?? null)`；
-  - `src/client/canvas/JobPage.tsx:326`：`rubricVersionId: vm.rubricVersionId`。
-- 截图：`01-new-job-created-1440.png`、`02-rubric-approve-blocked-1440.png`。
+## 4. 证据文件
 
-### ② 发起初筛评估：PASS
+- `01-new-job-created-1440.png`
+- `02-rubric-approved-1440.png`
+- `03-unevaluated-application-1440.png` / `04-screening-evaluated-1440.png`
+- `05-job-closed-1440.png`
+- `e2e-result.json`（三场景机器读数：三项全 true；含 rubricRow、jobStatus）
+- `regression-15step-result.json` / `regression-15step-audit.json`
 
-S7 未评估申请 → `canvas-action-screening-evaluate` → “评估中…” → 绿字「已更新初筛评估结果。」→ 标准对照区静默刷新。截图 `03/04`。
+## 5. 合入顺序
 
-### ③ 关闭岗位：PASS
-
-新岗位岗位标准 Tab 底部 → `canvas-action-job-close` → `canvas-job-close-submit` → 页面显示「已关闭岗位」→ psql 读回 `status=CLOSED`。截图 `05-job-closed-1440.png`。
-
-## 3. 结论 / 后续
-
-PR20 的三处 UI 改动（作用域、R-VAL criteria、boolean value 序列化）都已生效；剩余阻塞不在 PR20 前端代码，而在**新岗位的 rubric 版本读取/指向**：需要在服务端读模型或 job-create 侧把 pending rubric version 暴露给批准动作（或让 approve 端点按 job 解析 pending 版本），否则 UI 无法构造合法批准请求。按约定未改 UI 样式；未合并 main。
-
-证据：`e2e-result.json`、`01-05` 截图、`regression-15step-*`。
+总控按 **#27 → #20** 合入 main，并关闭 Issue #23。未自行合并 main。

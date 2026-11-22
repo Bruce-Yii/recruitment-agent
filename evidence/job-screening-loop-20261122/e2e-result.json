@@ -1,17 +1,17 @@
 {
   "scenarios": {
     "createApprove": {
-      "title": "验收闭环岗位-015596",
+      "title": "验收闭环岗位-801133",
       "jobRouteOk": true,
-      "jobId": "0a87eceb-e32a-4a64-a13d-40fb7bb212ce",
+      "jobId": "1dc13f53-8b22-4023-afcf-f16d66bb59ba",
       "approveShown": true,
       "approveModal": true,
-      "approveFeedback": "评分标准版本编号缺失或格式不正确 | 岗位为草稿：待完善 JD / Rubric 并提交审批",
-      "approveModalStill": true,
-      "approveUiText": "批准岗位评分标准 V1\n批准后，该版本标准将作为「验收闭环岗位-015596」初筛与面试评估的锁定口径。\n审批备注（选填）\n取消\n确认批准",
-      "approvedUi": false,
-      "rubricRow": "",
-      "rubricApproved": false
+      "approveFeedback": "已批准岗位评分标准 V1。 | 岗位为草稿：待完善 JD / Rubric 并提交审批",
+      "approveModalStill": false,
+      "approveUiText": "",
+      "approvedUi": true,
+      "rubricRow": "f445e18b-925b-4142-b21a-bf1086e564cd|1|1",
+      "rubricApproved": true
     },
     "screeningEvaluate": {
       "s7": "11111111-1111-4111-8111-000000000701",
@@ -29,19 +29,19 @@
   "checks": [
     {
       "name": "create_job_and_approve_rubric",
-      "ok": false,
+      "ok": true,
       "detail": {
-        "title": "验收闭环岗位-015596",
+        "title": "验收闭环岗位-801133",
         "jobRouteOk": true,
-        "jobId": "0a87eceb-e32a-4a64-a13d-40fb7bb212ce",
+        "jobId": "1dc13f53-8b22-4023-afcf-f16d66bb59ba",
         "approveShown": true,
         "approveModal": true,
-        "approveFeedback": "评分标准版本编号缺失或格式不正确 | 岗位为草稿：待完善 JD / Rubric 并提交审批",
-        "approveModalStill": true,
-        "approveUiText": "批准岗位评分标准 V1\n批准后，该版本标准将作为「验收闭环岗位-015596」初筛与面试评估的锁定口径。\n审批备注（选填）\n取消\n确认批准",
-        "approvedUi": false,
-        "rubricRow": "",
-        "rubricApproved": false
+        "approveFeedback": "已批准岗位评分标准 V1。 | 岗位为草稿：待完善 JD / Rubric 并提交审批",
+        "approveModalStill": false,
+        "approveUiText": "",
+        "approvedUi": true,
+        "rubricRow": "f445e18b-925b-4142-b21a-bf1086e564cd|1|1",
+        "rubricApproved": true
       }
     },
     {
@@ -65,7 +65,7 @@
       }
     }
   ],
-  "pass": false,
+  "pass": true,
   "picked": {
     "s7": "11111111-1111-4111-8111-000000000701"
   }

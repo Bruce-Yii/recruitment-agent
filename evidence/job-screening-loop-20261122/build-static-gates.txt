@@ -1,4 +1,8 @@
-# PR #20 复验门禁（head 9e95cdb）
+# Issue #23 + PR #20 联调门禁（全绿）
+
+- 新 PR：#27（head f6b8476）
+- 联合 PR：#20（head 9e95cdb）
+- 联调分支：tmp/job-screening-loop（latest main + #27 + #20）
 
 | 门 | 结果 |
 |---|---|
@@ -9,12 +13,13 @@
 | `entry-reachability` | PASS（无新缺口；手拼 0） |
 | `client-contract-check` | PASS（0 违规） |
 | `term-lint` | PASS（0 违规） |
-| `run-v4.mjs --fresh --port 49347` | 15/15 PASS，审计 hard 0 |
+| `run-v4.mjs --fresh` | 15/15 PASS，审计 hard 0 |
+| `test/integration/recruiting-overview.test.ts` | 11/11 PASS（含新增 pending rubric 用例） |
 
 ## 1440 三场景
 
-- ① 新建岗位 + 批准标准：**BLOCKED（接口/读模型）**。返回：`评分标准版本编号缺失或格式不正确 | 岗位为草稿：待完善 JD / Rubric 并提交审批`。根因：新岗位 rubric version 行存在，但 `job.current_rubric_version_id` 未指向；`readJobDetail` 用 `jobRow.rubric_version_id`（`recruiting.ts:2915`）→ `rubric=null` → `JobPage.tsx:326` 的 `rubricVersionId` 为空。
-- ② 发起初筛评估：PASS。
-- ③ 关闭新岗位：PASS（psql `status=CLOSED`）。
+- ① 新建岗位 → 批准标准：PASS（UI 已锁定；psql APPROVED 计数 1）
+- ② 发起初筛评估：PASS（绿字「已更新初筛评估结果。」）
+- ③ 关闭岗位：PASS（psql `job.status=CLOSED`）
 
-未改 UI 样式；未合并 main。
+未合并 main。
