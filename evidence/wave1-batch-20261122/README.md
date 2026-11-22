@@ -1,47 +1,56 @@
-# Wave 1 并行批次联调（2026-11-22）
+# Wave 1 尾巴复验（2026-11-23 · #28 + #29）
 
-## 三条服务端 PR
+## PR
 
-| Lane | Issue | PR | Head | 状态 |
-|---|---|---|---|---|
-| 1 | #23 | **#27** | `f6b8476` | OPEN / MERGEABLE；独立复核 11/11 测试通过 |
-| 2 | #24 / G-01 | **#28** | `16623b9` | OPEN / MERGEABLE；新增 9/9 单测通过 |
-| 3 | #25 / G-02 | **#29** | `e84eb00` | OPEN / MERGEABLE；新增 15/15 单测通过 |
+| PR | Head | 结果 |
+|---|---|---|
+| **#28** `feat/wave1-auto-screening-eval` | `f4fbe70` | 自动初筛摘要已落 task description/result_ref，并在候选人页读回 |
+| **#29** `feat/wave1-imap-auto-poll` | `be6912b` | 插件启动挂载轮询；默认关闭；dispose stop |
 
-联调分支：`tmp/wave1-batch` = latest main（`9581dde`）+ #27 + #28 + #29 + PR #20（`9e95cdb`）+ PR #26（`b0e35400`），五路合并无冲突。
+联调分支：latest main `6f0a9a4` + #28 + #29（无冲突）。
 
 ## 门禁（全 PASS）
 
 - `npx tsc --noEmit`：0
-- `npx tsdown`：双入口（lib/app.js 1.40MB）
+- `npx tsdown`：双入口（lib/app.js 1.41MB）
 - `server-typecheck`：0/0
 - `runtime-budget`：5051/5051
 - `entry-reachability`、`client-contract-check`、`term-lint`：PASS
-- 新增单测：Lane1 11/11、Lane2 9/9、Lane3 15/15；全量 unit **2058 tests / 2054 pass / 0 fail / 4 原有 skip**
+- 新增/相关单测：**41/41 PASS**（#28 自动初筛 9+读回映射；#29 生命周期 4 + 分岗/轮询 15）
 - `run-v4.mjs --fresh --port 49347`：**15/15 PASS**，审计 hard 0
 
-## 1440 真机（一次性干净库 + HY4）
+## 1440 真机
 
-| 场景 | 结果 |
-|---|---|
-| ① 新建岗位 → 批准标准 | PASS：新建岗位成功 → 岗位标准 Tab → 批准 → 「已锁定」；psql rubric APPROVED 计数 1 |
-| ① 上传新简历 → 自动初筛 | PASS（流程）：在「候选人漏斗」Tab 通过 CDP 真上传合成 PDF；未点击任何「发起初筛评估」；申请创建、`RESUME_PARSE` 任务 `SUCCEEDED`；decision 前后均为 0。自动评估的触发/跳过/失败隔离由 Lane2 的 9 个单测与接线顺序断言覆盖；由于 `screening_evaluate` 本身只读不落库，UI 无新增持久化评估结果（Issue #24 既有口径）。 |
-| ① 关闭新岗位 | PASS：`canvas-action-job-close` → `canvas-job-close-submit` → 「已关闭岗位」；psql `status=CLOSED` |
-| ② 首页队列正常态 | PASS：`app-queue-ops-notice` 不存在（无噪音）；15 步回归 15/15 |
+- 新建岗位 → 批准标准：PASS（「已锁定」；psql APPROVED=1）
+- 上传新简历（不点「发起初筛评估」）：PASS
+  - 申请创建；服务端自动初筛已执行并把摘要持久化到既有 `business_task.description`/`result_ref`；
+  - 候选人页直接显示 `canvas-auto-screening` 区块：三态原因、建议标签、“这是只读评估给出的建议，不是录用决定”；
+  - decision 前后 **0 → 0**。
+- 关闭新岗位：PASS（psql `status=CLOSED`）
+- 首页队列正常态：PASS（`app-queue-ops-notice` 不存在）
+
+### 自动初筛本次的真实结论（诚实说明）
+
+新岗位批准标准后仍是 `DRAFT`，自动初筛工具按既有 `GATE_JOB_NOT_OPEN` 规则返回 **NEEDS_REVIEW**：
+“岗位尚未开放（DRAFT/PENDING_REVIEW/APPROVED），不该有在途申请”。这不是失败——自动评估确实触发、摘要确实落库/展示，但**没有伪造 criterion 对照**；要让新岗位产出真正的 criteria 评估，产品流程还需要“开放岗位”动作（本批未新增该写入口）。
+
+另：上传任务同时可能被 runtime worker 认领（本次任务状态 `RETRY_WAIT`，worker 竞争），所以摘要额外写入 `description` 兜底；这证明任务竞争不会吞掉 HR 可见的自动初筛结果。
+
+## PR #29 生命周期
+
+- `src/index.ts` 启动路径按 `RECRUITMENT_IMAP_POLL_INTERVAL_MS` 正整数启用；未配置不建 timer/effect/pool；
+- dispose 调 `poller.stop()`，清 timer、等在途 tick、关闭懒建 pool；
+- 单测：默认关闭不启动 + 配置后 start/cleanup stop（4/4）。
 
 ## 证据文件
 
 - `01-job-approved-1440.png`
 - `02-resume-uploaded-1440.png`
-- `03-auto-screening-candidate-1440.png`
+- `03-auto-screening-candidate-1440.png`（自动初筛区块）
 - `04-job-closed-1440.png`
 - `05-queue-normal-1440.png`
-- `e2e-result.json`（四组机器读数全 true）
+- `e2e-result.json`（四组校验全 true；含 autoScreeningText/decisionZero）
 - `regression-15step-result.json` / `regression-15step-audit.json`
 - `build-static-gates.txt` / `unit-tests.txt`
 
-## 已知边界（合入前请总控确认）
-
-1. **G-01 的自动评估目前是后端只读执行**：不落 decision、无新增业务表，因此 HR 打开候选页只看到既有“岗位标准对照”，看不到“自动评估已完成”的持久化标记；若要 UI 明示，需要另开读模型/写链路任务（本批严格未越界）。
-2. **G-02 的轮询器已提供 `createImapPoller` / `listOpenJobs` / `makeJobResolver` API 与默认关闭的 env 控制**，但插件启动挂载（env 开启、水位持久化、每轮查 OPEN 岗位并 start/stop）仍需接线层调用；本 PR 只改 `connectors/mail/**`，未改 `src/index.ts`，因此“后台自动跑”尚未在宿主启动时真正开始，属于接线缺口而非本连接器 API 缺陷。
-3. 未自行合并 main；建议总控按 #27 → #28 → #29 → #20 → #26 顺序合入，并决定是否先补 G-02 接线任务。
+未合并 main；等待总控按 #28 → #29 合入并关闭 Issue #24/#25。
