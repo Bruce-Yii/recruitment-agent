@@ -77,6 +77,23 @@ export interface ScreeningBasisVM {
   detail: string;
 }
 
+/** 自动初筛建议（只读、非决定）：HR 不点"发起初筛评估"也应可见。 */
+export interface AutoScreeningVM {
+  verdict: string;
+  verdictLabel: string;
+  verdictTone: 'green' | 'amber' | 'red' | '';
+  verdictSummary: string;
+  advisoryNote: string;
+  reasons: readonly {
+    readonly code: string;
+    readonly criterionKey: string;
+    readonly triState: string;
+    readonly outcome: string;
+    readonly message: string;
+  }[];
+  summaryText: string;
+}
+
 export interface TimelineItemVM {
   id: string;
   timeText: string;
@@ -119,6 +136,7 @@ export interface CandidateCanvasVM {
   transcriptItems: TranscriptItemVM[];
   rounds: InterviewRoundVM[];
   screeningBasis: ScreeningBasisVM[];
+  autoScreening: AutoScreeningVM | null;
   timeline: TimelineItemVM[];
   actions: Record<string, ActionView>;
   unavailableActions: ActionNoticeVM[];
@@ -213,6 +231,48 @@ const BASIS_KIND_MAP: Record<string, string> = {
   AUTHORITY: '操作人权限校验',
   SCREENING_EVALUATION: '简历初筛评估',
 };
+
+const AUTO_SCREENING_VERDICT_LABELS: Record<string, string> = {
+  PASS: '建议通过',
+  FAIL: '建议不通过',
+  NEEDS_REVIEW: '建议人工复核',
+};
+const AUTO_SCREENING_VERDICT_TONES: Record<string, 'green' | 'amber' | 'red' | ''> = {
+  PASS: 'green',
+  FAIL: 'red',
+  NEEDS_REVIEW: 'amber',
+};
+const AUTO_SCREENING_DEFAULT_NOTE = '这是只读评估给出的建议，不是录用决定；请由招聘团队成员确认。';
+
+/** 归一化服务端 `application.auto_screening`（只读建议，非决定）。 */
+function normalizeAutoScreeningVM(value: unknown): AutoScreeningVM | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+  const verdict = asStr(obj.verdict);
+  const verdictSummary = asStr(obj.verdict_summary);
+  if (!verdict && !verdictSummary && !asStr(obj.advisory_note)) return null;
+  const verdictLabel = AUTO_SCREENING_VERDICT_LABELS[verdict] || (verdict ? verdict : '建议待定');
+  const advisoryNote = asStr(obj.advisory_note) || AUTO_SCREENING_DEFAULT_NOTE;
+  const reasons = (Array.isArray(obj.reasons) ? obj.reasons : []).map((item) => {
+    const r = asObj(item);
+    return {
+      code: asStr(r.code),
+      criterionKey: asStr(r.criterion_key),
+      triState: asStr(r.tri_state),
+      outcome: asStr(r.outcome),
+      message: asStr(r.message),
+    };
+  });
+  return {
+    verdict,
+    verdictLabel,
+    verdictTone: AUTO_SCREENING_VERDICT_TONES[verdict] || '',
+    verdictSummary,
+    advisoryNote,
+    reasons,
+    summaryText: [verdictLabel, verdictSummary, advisoryNote].filter(Boolean).join(' · '),
+  };
+}
 
 const INTERVIEW_STATUS_MAP: Record<string, { text: string; tone: 'done' | 'caution' | 'now' }> = {
   COMPLETED: { text: '已完成', tone: 'done' },
@@ -407,6 +467,7 @@ export function normalizeApplicationDetail(raw: unknown): CandidateCanvasVM {
   const appRubric = asObj(app.rubric);
   const material = asObj(app.material);
   const screening = asObj(app.screening);
+  const autoScreening = normalizeAutoScreeningVM(app.auto_screening);
   const screeningEval = asObj(screening.evaluation);
   const progress = asObj(app.progress);
   const nextStep = asObj(progress.next_step);
@@ -624,6 +685,8 @@ export function normalizeApplicationDetail(raw: unknown): CandidateCanvasVM {
 
   const summaryParts: string[] = [];
   if (asStr(screening.reason)) summaryParts.push(`初筛结论：${asStr(screening.reason)}`);
+  // 自动初筛建议（非决定）：即使没有人工初筛决定，也把只读评估摘要摆到最前面。
+  if (autoScreening) summaryParts.push(`自动初筛${autoScreening.verdictLabel}（建议）：${autoScreening.verdictSummary}`);
   if (asStr(nextStep.label)) summaryParts.push(asStr(nextStep.label));
   if (summaryParts.length === 0) {
     summaryParts.push(`当前处于「${formatStageLabel(stageCode)}」阶段。`);
@@ -665,6 +728,7 @@ export function normalizeApplicationDetail(raw: unknown): CandidateCanvasVM {
     transcriptItems,
     rounds,
     screeningBasis,
+    autoScreening,
     timeline,
     actions,
     unavailableActions,

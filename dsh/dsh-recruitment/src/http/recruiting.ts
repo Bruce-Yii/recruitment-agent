@@ -162,6 +162,34 @@ export interface ScreeningSummary {
   readonly evaluation: ScreeningEvaluationEvidence | null
 }
 
+/**
+ * 自动初筛**建议**（上传简历后由只读评估工具产出，落在 business_task.result_ref）。
+ *
+ * 与 `ScreeningSummary`（人工决定的 decision 投影）**严格分开**：
+ *   * 这里没有 `decision_id` / `result` / `decided_at` 等决定字段；
+ *   * `advisory=true` + `advisory_note` 明确"这是建议，不是决定"；
+ *   * `material_sha256` 是上传落盘时的原文 hash（result_ref 原文的一部分）。
+ *
+ * 读模型在 `loadApplicationCards` 里按 `business_refs` 里的 APPLICATION 引用定位该任务并解析。
+ */
+export interface AutoScreeningSummaryView {
+  readonly material_sha256: string
+  readonly verdict: string
+  readonly verdict_summary: string
+  readonly required_human_action: string
+  readonly rubric_version_id: string
+  readonly evaluation_digest: string
+  readonly reasons: ReadonlyArray<{
+    readonly code: string
+    readonly criterion_key: string
+    readonly tri_state: string
+    readonly outcome: string
+    readonly message: string
+  }>
+  readonly advisory: true
+  readonly advisory_note: string
+}
+
 /** 已提交面评摘要（不展示其他面试官的主观明细给招聘方以外的视图；这里是招聘方视图，给结论）。 */
 export interface ScorecardSummary {
   readonly scorecard_id: string
@@ -274,6 +302,11 @@ export interface ApplicationCard {
   readonly record_version: number
   readonly material: MaterialSummary | null
   readonly screening: ScreeningSummary | null
+  /**
+   * 自动初筛建议（只读评估，非决定）。无对应 business_task.result_ref 时为 null。
+   * 与 `screening`（人工决定）是两个不同事实：HR 不点"发起初筛评估"也应能看到这里。
+   */
+  readonly auto_screening: AutoScreeningSummaryView | null
   readonly interviews: ReadonlyArray<InterviewSummary>
   readonly decisions: ReadonlyArray<DecisionSummary>
   /** 候选人级约束（置顶 / 上一轮交接）；表不存在（旧库 < 0019）时为空数组，不报错。 */
@@ -1292,6 +1325,34 @@ const APPLICATION_ROWS_SQL = `
    limit $4
 `
 
+/**
+ * 自动初筛建议（G-01 / Issue #24）：按 `business_refs` 里的 APPLICATION 引用定位上传任务，
+ * 读回 `result_ref`（JSON 文本：`{ material_sha256, auto_screening }`）。
+ *
+ * 只读，不改任何事实；只取最近一条（按 created_at desc），避免历史重复任务造成歧义。
+ * `business_refs` 是 JSONB，用 `jsonb_array_elements` 展平后按 kind+id 精确匹配。
+ */
+const AUTO_SCREENING_SQL = `
+  select t.application_id::text as application_id,
+         t.result_ref as result_ref,
+         t.description as description
+    from (
+      select b.id::text as id,
+             b.result_ref as result_ref,
+             b.description as description,
+             b.created_at as created_at,
+             ref->>'id' as application_id
+        from recruitment.business_task b
+        cross join lateral jsonb_array_elements(b.business_refs) as ref
+       where b.tenant_id = $1
+         and b.task_type = 'RESUME_PARSE'
+         and ref->>'kind' = 'APPLICATION'
+         and ref->>'id' = any($2::text[])
+    ) t
+   where t.result_ref is not null or t.description like '%[auto-screening]%'
+   order by t.application_id asc, t.created_at desc, t.id desc
+ `
+
 /** 当前有效的 SCREENING 决定（`superseded_by_decision_id is null`；带申请人钉住的 rubric 作为兜底）。 */
 const SCREENING_DECISIONS_SQL = `
   select d.id::text                        as decision_id,
@@ -2032,6 +2093,62 @@ function mapScreeningDecision(row: ScreeningDecisionRow): ScreeningSummary {
   }
 }
 
+/**
+ * 解析 `business_task.result_ref` 里的 JSON 文本为自动初筛建议。
+ * 任何解析失败 / 缺少 `auto_screening` 分片 → 返回 null（诚实：没有就没有，不猜）。
+ * `material_sha256` 缺省回退空串，但只要有 auto_screening 分片就保留其余字段。
+ */
+export function mapAutoScreeningResultRef(
+  resultRef: unknown,
+  fallbackSha256: string,
+  description?: unknown,
+): AutoScreeningSummaryView | null {
+  const decode = (raw: unknown): Record<string, unknown> | null => {
+    if (typeof raw !== 'string' || raw === '') return null
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : null
+    } catch {
+      return null
+    }
+  }
+  // result_ref 是主位置；description 是兜底（upload 任务可能被 runtime worker 覆盖 result_ref）。
+  let root = decode(resultRef)
+  if (root === null && typeof description === 'string') {
+    const marker = '\n[auto-screening] '
+    const idx = description.lastIndexOf(marker)
+    if (idx >= 0) root = decode(description.slice(idx + marker.length))
+  }
+  if (root === null) return null
+  const raw = root.auto_screening
+  if (typeof raw !== 'object' || raw === null) return null
+  const obj = raw as Record<string, unknown>
+  const text = (v: unknown): string => (typeof v === 'string' ? v : '')
+  const reasons: Array<AutoScreeningSummaryView['reasons'][number]> = []
+  for (const item of Array.isArray(obj.reasons) ? obj.reasons : []) {
+    const r = (typeof item === 'object' && item !== null ? item : {}) as Record<string, unknown>
+    reasons.push({
+      code: text(r.code),
+      criterion_key: text(r.criterion_key),
+      tri_state: text(r.tri_state),
+      outcome: text(r.outcome),
+      message: text(r.message),
+    })
+  }
+  return {
+    material_sha256: text(root.material_sha256) || fallbackSha256,
+    verdict: text(obj.verdict),
+    verdict_summary: text(obj.verdict_summary),
+    required_human_action: text(obj.required_human_action),
+    rubric_version_id: text(obj.rubric_version_id),
+    evaluation_digest: text(obj.evaluation_digest),
+    reasons,
+    advisory: true,
+    advisory_note: text(obj.advisory_note)
+      || '这是只读评估给出的建议，不是录用决定；请由招聘团队成员确认。',
+  }
+}
+
 function mapDecisionRow(row: DecisionRow): DecisionSummary {
   return {
     decision_id: row.decision_id,
@@ -2225,6 +2342,10 @@ async function loadApplicationCards(
   const screeningResult = await client.query<ScreeningDecisionRow>(SCREENING_DECISIONS_SQL, [tenantId, applicationIds])
   const decisionResult = await client.query<DecisionRow>(DECISIONS_SQL, [tenantId, applicationIds])
   const interviewResult = await client.query<InterviewRow>(INTERVIEWS_SQL, [tenantId, applicationIds])
+  // 自动初筛建议：按 business_refs 的 APPLICATION 引用定位 result_ref/description（只读、非 decision）。
+  const autoScreeningResult = await client.query<{ application_id: string; result_ref: string | null; description: string | null }>(
+    AUTO_SCREENING_SQL, [tenantId, applicationIds],
+  )
   const interviewIds = interviewResult.rows.map((row) => row.interview_id)
 
   const interviewerRows: InterviewerRow[] = interviewIds.length === 0
@@ -2267,6 +2388,12 @@ async function loadApplicationCards(
   const screeningByApplication = new Map<string, ScreeningSummary>()
   for (const row of screeningResult.rows) {
     if (!screeningByApplication.has(row.application_id)) screeningByApplication.set(row.application_id, mapScreeningDecision(row))
+  }
+  const autoScreeningByApplication = new Map<string, AutoScreeningSummaryView>()
+  for (const row of autoScreeningResult.rows) {
+    if (autoScreeningByApplication.has(row.application_id)) continue
+    const summary = mapAutoScreeningResultRef(row.result_ref, '', row.description)
+    if (summary !== null) autoScreeningByApplication.set(row.application_id, summary)
   }
   const decisionsByApplication = new Map<string, DecisionSummary[]>()
   for (const row of decisionResult.rows) {
@@ -2361,6 +2488,7 @@ async function loadApplicationCards(
       record_version: asIntOrNull(row.record_version) ?? 0,
       material,
       screening,
+      auto_screening: autoScreeningByApplication.get(row.application_id) ?? null,
       interviews,
       decisions,
       constraints: constraintsByCandidate.get(row.candidate_id) ?? [],
