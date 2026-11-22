@@ -1521,6 +1521,26 @@ const RUBRIC_DIMENSIONS_SQL = `
    where rv.id = $1::uuid and rv.tenant_id = $2::uuid
 `
 
+/**
+ * 岗位最新一条 rubric_version（`version_no DESC`）。
+ *
+ * 只用于**详情读模型**的回退：新岗位可能已有 rubric_version 行，但 `job.current_rubric_version_id`
+ * 还是 null（例如 job_create 只写了 job_version 指针，rubric 仍在 PENDING 审批）。此时详情必须
+ * 能返回 pending 版本供“批准标准”按钮使用；批准真值仍由 approval 行判，**不得**把该版本标成已批准。
+ *
+ * $1 = job id，$2 = tenant id。
+ */
+const JOB_LATEST_RUBRIC_SQL = `
+  select rv.id::text       as rubric_version_id,
+         rv.version_no     as version_no,
+         rv.payload_hash   as payload_hash,
+         rv.dimensions     as dimensions
+    from recruitment.rubric_version rv
+   where rv.job_id = $1::uuid and rv.tenant_id = $2::uuid
+   order by rv.version_no desc, rv.id desc
+   limit 1
+`
+
 /** 岗位版本历史（详情用）。$2 = job id。 */
 const JOB_VERSIONS_SQL = `
   select jv.id::text     as job_version_id,
@@ -2691,6 +2711,27 @@ async function loadRubric(ctx: ReadContext, rubricVersionId: string | null): Pro
   ])
   const row = result.rows[0]
   if (row === undefined) return null
+  return rubricDetailFromRow(row)
+}
+
+/**
+ * 岗位最新一条 rubric_version（详情回退；不存在 → null）。
+ *
+ * 这里只读库，不做任何审批推断：返回的详情对象没有 `approved` 字段，调用方必须把
+ * `job.rubric.approved` 保持 false（批准真值只由 approval 行决定）。
+ */
+async function loadLatestRubricForJob(
+  ctx: ReadContext,
+  jobId: string,
+): Promise<ScreeningEvidenceDetail['rubric']> {
+  const result = await ctx.client.query<RubricDimensionRow>(JOB_LATEST_RUBRIC_SQL, [jobId, ctx.tenant_id])
+  const row = result.rows[0]
+  if (row === undefined) return null
+  return rubricDetailFromRow(row)
+}
+
+/** rubric 行 → 详情 rubric 段（统一映射，避免两处字段漂移）。 */
+function rubricDetailFromRow(row: RubricDimensionRow): NonNullable<ScreeningEvidenceDetail['rubric']> {
   return {
     rubric_version_id: row.rubric_version_id,
     version_no: asIntOrNull(row.version_no) ?? 0,
@@ -2912,13 +2953,31 @@ export async function readJobDetail(
     throw new Error(`NOT_FOUND: job ${jobId} 不存在`)
   }
   // 当前 job_version 的 JD 正文（只在详情返回；列表卡不带）。
-  const rubric = await loadRubric(ctx, jobRow?.rubric_version_id ?? null)
+  // 新岗位可能还没有 current rubric 指针：此时回退到该 job 最新一条 rubric_version（pending）。
+  // 回退只补 version id/version_no/criteria，`job.rubric.approved` 必须保持 false；
+  // 是否真的批准仍由 approval 行判定，不能因为“有版本”就标成已批准。
+  const currentRubricVersionId = jobRow?.rubric_version_id ?? null
+  const pendingRubric = currentRubricVersionId === null
+    ? await loadLatestRubricForJob(ctx, jobId)
+    : null
+  const rubric = pendingRubric ?? await loadRubric(ctx, currentRubricVersionId)
+  const job = pendingRubric !== null && jobCard.rubric === null
+    ? {
+        ...jobCard,
+        rubric: {
+          rubric_version_id: pendingRubric.rubric_version_id,
+          version_no: pendingRubric.version_no,
+          approved: false,
+          dimension_count: pendingRubric.dimensions.length,
+        },
+      }
+    : jobCard
   return {
     contract_version: RECRUITING_CONTRACT_VERSION,
     evaluated_at: ctx.evaluated_at,
     actor,
     labels: RECRUITING_LABELS,
-    job: jobCard,
+    job,
     description_md: asNonEmptyString(jobRow?.description_md),
     requirements_md: asNonEmptyString(jobRow?.requirements_md),
     versions: versionResult.rows.map((row) => ({
