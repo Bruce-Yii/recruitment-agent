@@ -23,6 +23,7 @@ import type {
 } from './CanvasRoute.tsx';
 import {
   describeActionError,
+  fetchMaterialPageImage,
   getCanvasSessionId,
   postApplicationStar,
   postCriterionOverride,
@@ -31,6 +32,7 @@ import {
   uploadResumeRaw,
   type CanvasActionError,
   type CriterionHumanState,
+  type MaterialPageImageResult,
 } from './canvas-actions.ts';
 import {
   CandidateActionModal,
@@ -163,6 +165,19 @@ export function CandidatePage({
   const [overrideNote, setOverrideNote] = useState('');
   const [overrideConfirm, setOverrideConfirm] = useState('');
   const [overrideBusy, setOverrideBusy] = useState(false);
+  const [origPageNo, setOrigPageNo] = useState<number>(1);
+  const [origPageState, setOrigPageState] = useState<MaterialPageImageResult | null>(null);
+  const [origPageLoading, setOrigPageLoading] = useState<boolean>(false);
+  const [traceExpanded, setTraceExpanded] = useState<boolean>(false);
+  const [traceItems, setTraceItems] = useState<
+    Array<{
+      readonly id: string;
+      readonly at: string;
+      readonly title: string;
+      readonly actorLabel: string;
+      readonly detail: string;
+    }>
+  >([]);
   const [duplicateHints, setDuplicateHints] = useState<
     Array<{
       readonly applicationId: string;
@@ -413,6 +428,63 @@ export function CandidatePage({
       })
       .catch(() => {
         if (active) setDuplicateHints([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [applicationId, fetcher, refreshNonce]);
+
+  useEffect(() => {
+    if (docTab !== 'original' || !vm?.hasResumeMaterial || !vm?.materialContentUrl) return;
+    let active = true;
+    let createdUrl: string | undefined;
+    const controller = new AbortController();
+    setOrigPageLoading(true);
+    fetchMaterialPageImage(vm.materialContentUrl, origPageNo, controller.signal)
+      .then((res) => {
+        if (!active) {
+          if (res.objectUrl) URL.revokeObjectURL(res.objectUrl);
+          return;
+        }
+        createdUrl = res.objectUrl;
+        setOrigPageState(res);
+      })
+      .finally(() => {
+        if (active) setOrigPageLoading(false);
+      });
+    return () => {
+      active = false;
+      controller.abort();
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [docTab, vm?.hasResumeMaterial, vm?.materialContentUrl, origPageNo]);
+
+  useEffect(() => {
+    let active = true;
+    fetcher(`/recruitment/api/recruiting/applications/${encodeURIComponent(applicationId)}/trace`)
+      .then((raw) => {
+        if (!active || !raw || typeof raw !== 'object') return;
+        const obj = raw as Record<string, unknown>;
+        const list = Array.isArray(obj.items) ? obj.items : [];
+        const parsed = list
+          .map((entry, idx) => {
+            if (!entry || typeof entry !== 'object') return null;
+            const rec = entry as Record<string, unknown>;
+            const title = typeof rec.title === 'string' ? rec.title.trim() : '';
+            if (!title) return null;
+            return {
+              id: typeof rec.id === 'string' && rec.id ? rec.id : `trace-${idx}`,
+              at: typeof rec.at === 'string' ? rec.at : '',
+              title,
+              actorLabel: typeof rec.actor_label === 'string' ? rec.actor_label : '',
+              detail: typeof rec.detail === 'string' ? rec.detail : '',
+            };
+          })
+          .filter((x): x is NonNullable<typeof x> => x !== null);
+        setTraceItems(parsed);
+      })
+      .catch(() => {
+        if (active) setTraceItems([]);
       });
     return () => {
       active = false;
@@ -910,11 +982,60 @@ export function CandidatePage({
                 </div>
               ) : <CanvasEmptyState title="还没有转录" description="面试完成后将自动同步飞书妙记录音转写。" />
             ) : vm.hasResumeMaterial && vm.materialContentUrl ? (
-              <div className="ros-jd-box">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                  <span>{vm.materialFileName || '简历原件'}</span>
-                  <a href={vm.materialContentUrl} target="_blank" rel="noreferrer" className="ros-text-link active">在新标签页查看原件 ↗</a>
+              <div data-testid="canvas-original-viewer" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, fontSize: 13 }}>
+                  <span style={{ color: 'var(--ink)', fontWeight: 500 }}>
+                    {vm.materialFileName || '简历原件'}
+                    {origPageState?.kind === 'image' ? (
+                      <span className="num" style={{ marginLeft: 10, color: 'var(--muted)', fontWeight: 400 }}>
+                        第 {origPageState.pageNumber} / {origPageState.pageCount} 页
+                      </span>
+                    ) : null}
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+                    {origPageState?.kind === 'image' && origPageState.pageCount > 1 ? (
+                      <>
+                        <button
+                          type="button"
+                          className="ros-text-link"
+                          data-testid="canvas-original-prev"
+                          disabled={origPageLoading || origPageNo <= 1}
+                          onClick={() => setOrigPageNo((p) => Math.max(1, p - 1))}
+                        >
+                          上一页
+                        </button>
+                        <button
+                          type="button"
+                          className="ros-text-link"
+                          data-testid="canvas-original-next"
+                          disabled={origPageLoading || origPageNo >= origPageState.pageCount}
+                          onClick={() => setOrigPageNo((p) => Math.min(origPageState.pageCount, p + 1))}
+                        >
+                          下一页
+                        </button>
+                      </>
+                    ) : null}
+                    <a href={vm.materialContentUrl} target="_blank" rel="noreferrer" className="ros-text-link active">
+                      下载 / 查看原件 ↗
+                    </a>
+                  </span>
                 </div>
+                {origPageLoading ? (
+                  <div className="ros-sec-meta" style={{ padding: '24px 0' }}>正在渲染高清原件预览…</div>
+                ) : origPageState?.kind === 'image' && origPageState.objectUrl ? (
+                  <div style={{ border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden', background: 'var(--paper)' }}>
+                    <img
+                      src={origPageState.objectUrl}
+                      alt={`${vm.materialFileName || '简历原件'} 第 ${origPageState.pageNumber} 页`}
+                      data-testid="canvas-original-page-img"
+                      style={{ display: 'block', width: '100%', height: 'auto' }}
+                    />
+                  </div>
+                ) : (
+                  <div className="ros-jd-box" data-testid="canvas-original-fallback">
+                    {origPageState?.message || '该格式暂不支持逐页图预览，可点击右上角下载原件或查看结构化原文。'}
+                  </div>
+                )}
               </div>
             ) : <CanvasEmptyState title="还没有简历原件" description="当前申请尚未关联可预览的二进制原件。" />}
           </div>
@@ -959,6 +1080,46 @@ export function CandidatePage({
               ) : <CanvasEmptyState title="暂无动态留痕" />
             ) : null}
           </div>
+
+          {traceItems.length > 0 ? (
+            <div
+              className="ros-doc-block"
+              data-testid="canvas-decision-trace"
+              style={{ marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--line-soft)' }}
+            >
+              <button
+                type="button"
+                className="ros-text-link"
+                data-testid="canvas-decision-trace-toggle"
+                onClick={() => setTraceExpanded((v) => !v)}
+                style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}
+              >
+                {traceExpanded ? '▾' : '▸'} 决策与流转追责记录（{traceItems.length} 条）
+              </button>
+              {traceExpanded ? (
+                <div className="ros-clean-list" style={{ marginTop: 10 }} data-testid="canvas-decision-trace-list">
+                  {traceItems.map((item) => (
+                    <div key={item.id} className="ros-clean-row static">
+                      <span style={{ fontSize: 13, color: 'var(--ink)' }}>
+                        <span className="num" style={{ color: 'var(--soft)', marginRight: 10, fontSize: 12 }}>
+                          {item.at ? item.at.slice(0, 16).replace('T', ' ') : '—'}
+                        </span>
+                        <strong>{item.title}</strong>
+                        {item.actorLabel ? (
+                          <span style={{ color: 'var(--muted)', marginLeft: 8, fontSize: 12.5 }}>
+                            · {item.actorLabel}
+                          </span>
+                        ) : null}
+                      </span>
+                      {item.detail ? (
+                        <span className="ros-sec-meta">{item.detail}</span>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="ros-doc-foot">
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
