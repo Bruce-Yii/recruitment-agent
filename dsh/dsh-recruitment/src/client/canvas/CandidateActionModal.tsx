@@ -444,10 +444,13 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
         }
         const slots = rawStarts.map((s) => {
           const startIso = toOffsetIso(s);
-          const startMs = Date.parse(startIso);
-          const endIso = Number.isFinite(startMs)
-            ? toOffsetIso(new Date(startMs + 60 * 60000).toISOString().slice(0, 16))
-            : startIso;
+          // 端时间必须按“本地墙钟 + 60 分钟”生成，再转带偏移 ISO；
+          // 不能把 toISOString() 的 UTC 墙钟再交给 toOffsetIso（会被二次转成 +08，产生 03:00 这样的错时段）。
+          const localStart = new Date(s);
+          const endDate = new Date(localStart.getTime() + 60 * 60000);
+          const pad = (n: number) => String(n).padStart(2, '0');
+          const endLocal = `${endDate.getFullYear()}-${pad(endDate.getMonth() + 1)}-${pad(endDate.getDate())}T${pad(endDate.getHours())}:${pad(endDate.getMinutes())}`;
+          const endIso = toOffsetIso(endLocal);
           return { start: startIso, end: endIso };
         });
         const invite = await postBookingInvite({
