@@ -46,7 +46,7 @@
 // 依赖方向：本文件只 import `db/pool.ts`（连接/只读事务）、`runtime/task-context.ts`
 // （定位唯一实现）、`tools/contract.ts::isUuid`（形状校验）、`http/overview.ts::sameOrigin`
 // （同源判据唯一实现）；不 import `src/index.ts` / `src/http/recruiting.ts`，也不改它们。
-import { createReadStream, lstatSync } from 'node:fs'
+import { createReadStream, lstatSync, rmSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import {
@@ -56,7 +56,9 @@ import {
   type DatabaseClient,
   type ResolvedDatabaseConfig,
 } from '../db/pool.ts'
-import { resolveMaterialPath } from '../runtime/task-context.ts'
+import { materialRootsFromEnv, resolveMaterialPath } from '../runtime/task-context.ts'
+import { resolveConverterConfig, type ResolvedConverterConfig } from '../tools/converter.ts'
+import { runFallbackBridge } from '../tools/fallback-bridge.ts'
 import { isUuid } from '../tools/contract.ts'
 import { sameOrigin } from './overview.ts'
 
@@ -73,8 +75,20 @@ export const MATERIAL_CONTENT_CONTRACT_VERSION = '1.0.0'
 /** 路径后缀：`<prefix>/<material_id>/content`。 */
 const CONTENT_PATH_SUFFIX = '/content'
 
+/**
+ * G-14 路径中段：`/page/<page_no>`。逐页图端点只接受
+ * `<prefix>/<material_id>/page/<page_no>` 这一种形状，page_no 为 1-based 正整数。
+ */
+const PAGE_PATH_MIDDLE = '/page/'
+
 /** 查询参数白名单（只这两个；其余一律 400）。 */
 const ALLOWED_QUERY_PARAMS = ['application_id', 'resume_version_id'] as const
+
+/** 逐页图端点的查询白名单：在原件白名单之上只多一个 `dpi`（缺省 144）。 */
+const ALLOWED_PAGE_QUERY_PARAMS = [...ALLOWED_QUERY_PARAMS, 'dpi'] as const
+
+/** 逐页图默认渲染分辨率（契约 §2.2；page_image.py 默认 200，这里按产品契约固定 144）。 */
+const DEFAULT_PAGE_DPI = 144
 
 /** 客户端**不许**覆盖的身份参数/头（命中即 400，且不碰 DB）。 */
 const ACTOR_OVERRIDE_QUERY = ['actor_id', 'tenant_id'] as const
@@ -131,6 +145,23 @@ export interface MaterialContentDeps {
    * 生产不传；测试注入临时目录。
    */
   readonly roots?: () => readonly string[]
+  /**
+   * G-14 逐页图渲染所需的 converter 配置（python_bin / converter_dir / timeout）。
+   * 缺省时按部署 env（RECRUITMENT_PYTHON_BIN / RECRUITMENT_CONVERTER_DIR /
+   * RECRUITMENT_ALLOWED_ROOT_*）解析；`null` = 显式未配置（页面端点 503）。
+   * 生产不传（与既有调用点兼容）；测试可注入最小假配置。
+   */
+  readonly converter?: ResolvedConverterConfig | null
+  /**
+   * G-14 桥接函数。缺省 = `runFallbackBridge`（真实调用 converter/fallback/page_image.py）。
+   * 只为单元测试注入假桥；签名与真实桥一致，生产路径零分叉。
+   */
+  readonly pageBridge?: typeof runFallbackBridge
+  /**
+   * G-14 只读元数据查询的可注入接缝（测试用）。缺省 = 走 withReadOnly + 既有 readMaterialLookup。
+   * 注入值必须保持同样的拒绝语义（不返回材料时不猜、不泄漏）；生产不传。
+   */
+  readonly materialLookup?: (materialId: string) => Promise<MaterialLookup>
 }
 
 // =====================================================================
@@ -268,6 +299,41 @@ export function parseMaterialContentPath(
   // 编码穿越（`..%2F..%2Fetc`）解码后含 `/`；非 UUID 一律 400，绝不进 DB/磁盘。
   if (!isUuid(decoded)) return { kind: 'INVALID' }
   return { kind: 'OK', materialId: decoded.toLowerCase() }
+}
+
+/**
+ * G-14：从 pathname 里取 material_id 与 1-based page_no（只接受
+ * `<prefix>/<uuid>/page/<positive-int>` 一种形状）。
+ *
+ * 纪律与 {@link parseMaterialContentPath} 相同：只 decode 中段 UUID，page_no 只认
+ * 纯十进制正整数（拒绝 `+1` / `01` / `1.0` / 超安全整数 / 编码穿越），绝不把
+ * 路径片段送进 resolver 或 DB。
+ */
+export function parseMaterialPagePath(pathname: string):
+  | { readonly kind: 'OK'; readonly materialId: string; readonly pageNo: number }
+  | { readonly kind: 'INVALID' }
+  | { readonly kind: 'NOT_FOUND' } {
+  const prefix = `${MATERIAL_CONTENT_ROUTE_PREFIX}/`
+  if (!pathname.startsWith(prefix)) return { kind: 'NOT_FOUND' }
+  const rest = pathname.slice(prefix.length)
+  const marker = rest.indexOf(PAGE_PATH_MIDDLE)
+  if (marker < 0) return { kind: 'NOT_FOUND' }
+  const materialPart = rest.slice(0, marker)
+  if (materialPart === '' || materialPart.includes('/')) return { kind: 'INVALID' }
+  const pageAndExtra = rest.slice(marker + PAGE_PATH_MIDDLE.length)
+  if (pageAndExtra.includes('/')) return { kind: 'INVALID' }
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(materialPart)
+  } catch {
+    return { kind: 'INVALID' }
+  }
+  if (!isUuid(decoded)) return { kind: 'INVALID' }
+  const rawPage = pageAndExtra
+  if (!/^[1-9][0-9]*$/.test(rawPage)) return { kind: 'INVALID' }
+  const pageNo = Number(rawPage)
+  if (!Number.isSafeInteger(pageNo) || pageNo < 1) return { kind: 'INVALID' }
+  return { kind: 'OK', materialId: decoded.toLowerCase(), pageNo }
 }
 
 // =====================================================================
@@ -513,6 +579,371 @@ function findActorOverrides(req: Pick<IncomingMessage, 'headers'>, url: URL): st
 }
 
 /**
+ * G-14 converter 配置解析：生产不注入时从部署 env 读，与 `cordis.patch.yml` 同一组变量名。
+ * 只取绝对路径；缺任何一项即返回 null（页面端点回 503 NOT_CONFIGURED，fail-closed）。
+ */
+function converterConfigFor(deps: MaterialContentDeps): ResolvedConverterConfig | null {
+  if (deps.converter !== undefined) return deps.converter
+  const env = process.env
+  const result = resolveConverterConfig({
+    python_bin: '${RECRUITMENT_PYTHON_BIN}',
+    converter_dir: '${RECRUITMENT_CONVERTER_DIR}',
+    allowed_roots: materialRootsFromEnv(env),
+    timeout_ms: 60_000,
+  }, env)
+  return result.resolved
+}
+
+/**
+ * 非 PDF 判定：mime_type 是权威事实——只要给了合法 mime 且不是 application/pdf 就 415；
+ * 只有 mime 缺失/非法（回退成 application/octet-stream）时才退而看 .pdf 后缀。
+ */
+function isPdfMaterial(asset: MaterialAssetRow): boolean {
+  const mime = contentTypeFor(asset.mime_type)
+  const declared = typeof asset.mime_type === 'string' && MEDIA_TYPE_PATTERN.test(
+    (asset.mime_type.split(';')[0] ?? '').replace(CONTROL_CHARS, '').trim().toLowerCase(),
+  )
+  if (declared) return mime === 'application/pdf'
+  return /\.pdf$/i.test(materialBaseName(asset.file_name))
+}
+
+/** 桥返回 → page_count（只接受正整数；当前 page_image.py 不返回，走超大页码探测）。 */
+function pageCountFromBridge(response: Readonly<Record<string, unknown>>): number | null {
+  const render = response.render
+  if (typeof render !== 'object' || render === null || Array.isArray(render)) return null
+  const value = (render as Record<string, unknown>).page_count
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
+/**
+ * 从 page_image.py 的 `page_out_of_range` 消息里读总页数：
+ * `page {n} > page count {total}`（python/fallback/page_image.py::render_page 原文）。
+ * 读不到就返回 null（诚实 fail-closed，不猜页数）。
+ */
+function pageCountFromMessage(message: string): number | null {
+  const matched = /page count (\d+)/i.exec(message)
+  if (matched === null) return null
+  const value = Number(matched[1])
+  return Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
+/** 删除桥产物（只删 page_image.py 命名的单文件，绝不删目录/任意路径）。 */
+function discardPng(imagePath: string): void {
+  try {
+    if (/^page-\d+@\d+dpi\.png$/.test(materialBaseName(imagePath))) rmSync(imagePath, { force: true })
+  } catch {
+    // 清理失败不改变响应（零写入契约不受影响）。
+  }
+}
+
+/**
+ * G-14：把 PNG 送出响应，并**在响应体 finished / close / error 时清理临时 PNG**。
+ *
+ * 只删桥返回的 image_path 指向的那一个临时文件（page_image.py 只产生这一个文件，
+ * 不清理整个目录，避免碰到同一目录里别人的产物）。路径先经 basename 校验：
+ * 只允许系统 temp 下 `page-*.png` 形态，绝不按外部输入删任意路径。
+ */
+function streamPngAndCleanup(res: ServerResponse, imagePath: string, headers: Record<string, string>): void {
+  let cleaned = false
+  const cleanup = (): void => {
+    if (cleaned) return
+    cleaned = true
+    discardPng(imagePath)
+  }
+  res.once('finish', cleanup)
+  res.once('close', cleanup)
+  res.once('error', cleanup)
+  const stream = createReadStream(imagePath)
+  stream.on('error', () => {
+    if (!res.headersSent) {
+      sendProblem(res, problem(500, 'INTERNAL', 'PAGE_IMAGE_READ_FAILED', '逐页图读取失败（零写入）'))
+    } else {
+      res.destroy()
+    }
+    cleanup()
+  })
+  if (res.headersSent) {
+    stream.destroy()
+    return
+  }
+  res.writeHead(200, headers)
+  // 头发出后 open 还没到也无所谓：pipe 会等；错误由上面的 handler 统一 destroy。
+  stream.pipe(res)
+}
+
+/**
+ * 处理一次 `GET /recruitment/api/material/<id>/page/<page_no>`（G-14）。
+ *
+ * 复用与 `/content` 完全相同的约束链：sameOrigin → 方法 → 路径 → 身份覆盖 →
+ * 查询白名单 → DB 配置 → withReadOnly 归属 → resolveMaterialPath → lstat 复核，
+ * 之后才走 runFallbackBridge（唯一渲染实现 page_image.py）。任何失败路径零写入、
+ * 不回本机绝对路径，错误信封与既有 material 路由一致。
+ */
+async function handleMaterialPageImage(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: MaterialContentDeps,
+  port: number,
+): Promise<void> {
+  const url = new URL(req.url ?? '/', 'http://localhost')
+
+  // ---- 1. 同源（judgement 唯一实现：overview.ts::sameOrigin）----
+  if (!sameOrigin(req, port)) {
+    sendProblem(
+      res,
+      problem(
+        403,
+        'FORBIDDEN',
+        'SAME_ORIGIN_REQUIRED',
+        '只接受同源 loopback 请求（Host=127.0.0.1/localhost:<port>，x-recruitment-request: 1）',
+      ),
+    )
+    return
+  }
+
+  // ---- 2. 方法：只有 GET（HEAD 留给 /content）----
+  if (req.method !== 'GET') {
+    if (res.headersSent) {
+      res.destroy()
+      return
+    }
+    res.writeHead(405, { allow: 'GET', ...JSON_HEADERS })
+    res.end()
+    return
+  }
+
+  // ---- 3. 路径形状 ----
+  const route = parseMaterialPagePath(url.pathname)
+  if (route.kind === 'NOT_FOUND') {
+    sendProblem(res, problem(404, 'NOT_FOUND', 'ROUTE_NOT_FOUND', '本前缀下逐页图端点是 /page/<page_no>'))
+    return
+  }
+  if (route.kind === 'INVALID') {
+    sendProblem(res, problem(400, 'INVALID_ARGS', 'PAGE_PATH_INVALID', 'material_id 必须是 UUID，page_no 必须是 1-based 正整数'))
+    return
+  }
+
+  // ---- 4. 身份覆盖（与 /content 同一判据）----
+  const overrides = findActorOverrides(req, url)
+  if (overrides.length > 0) {
+    sendProblem(
+      res,
+      problem(
+        400,
+        'INVALID_ARGS',
+        'ACTOR_OVERRIDE_REJECTED',
+        'actor/tenant 只来自插件配置，不接受客户端传入（D-33 / IR-M4d）',
+        { rejected: overrides },
+      ),
+    )
+    return
+  }
+
+  // ---- 5. 查询参数白名单 + 形状 ----
+  const unknownParams = [...url.searchParams.keys()].filter(
+    (key) => !(ALLOWED_PAGE_QUERY_PARAMS as readonly string[]).includes(key),
+  )
+  if (unknownParams.length > 0) {
+    sendProblem(
+      res,
+      problem(
+        400,
+        'INVALID_ARGS',
+        'UNKNOWN_PARAM',
+        `未声明的查询参数 "${unknownParams[0]}"（允许：${ALLOWED_PAGE_QUERY_PARAMS.join(', ')}）`,
+        { unknown: unknownParams, allowed: [...ALLOWED_PAGE_QUERY_PARAMS] },
+      ),
+    )
+    return
+  }
+  const applicationId = url.searchParams.get('application_id')
+  const resumeVersionId = url.searchParams.get('resume_version_id')
+  if (applicationId !== null && !isUuid(applicationId)) {
+    sendProblem(res, problem(400, 'INVALID_ARGS', 'ID_NOT_UUID', 'application_id 必须是 UUID 文本', { field: 'application_id' }))
+    return
+  }
+  if (resumeVersionId !== null && !isUuid(resumeVersionId)) {
+    sendProblem(res, problem(400, 'INVALID_ARGS', 'ID_NOT_UUID', 'resume_version_id 必须是 UUID 文本', { field: 'resume_version_id' }))
+    return
+  }
+  const rawDpi = url.searchParams.get('dpi')
+  let dpi = DEFAULT_PAGE_DPI
+  if (rawDpi !== null) {
+    if (!/^[1-9][0-9]*$/.test(rawDpi)) {
+      sendProblem(res, problem(400, 'INVALID_ARGS', 'DPI_INVALID', 'dpi 必须是正整数'))
+      return
+    }
+    dpi = Number(rawDpi)
+    if (!Number.isSafeInteger(dpi) || dpi < 50 || dpi > 600) {
+      sendProblem(res, problem(400, 'INVALID_ARGS', 'DPI_INVALID', 'dpi 超出范围（50..600）'))
+      return
+    }
+  }
+
+  // ---- 6. 渲染配置：缺失就 503（不猜 python 路径）----
+  const converter = converterConfigFor(deps)
+  if (converter === null) {
+    sendProblem(
+      res,
+      problem(503, 'NOT_CONFIGURED', 'PAGE_RENDERER_NOT_CONFIGURED', '逐页图渲染未配置（缺 python_bin / converter_dir / allowed_roots）'),
+    )
+    return
+  }
+
+  // ---- 7. 只读元数据（复用 /content 的归属校验与 withReadOnly）----
+  const database = deps.database
+  if (database === null) {
+    sendProblem(
+      res,
+      problem(503, 'NOT_CONFIGURED', 'NOT_CONFIGURED', '数据库未配置，取不到材料原件', { issues: [...deps.databaseIssues] }),
+    )
+    return
+  }
+  let lookup: MaterialLookup
+  if (deps.materialLookup !== undefined) {
+    try {
+      lookup = await deps.materialLookup(route.materialId)
+    } catch {
+      sendProblem(res, problem(500, 'INTERNAL', 'DB_READ_FAILED', '读取材料元数据失败'))
+      return
+    }
+  } else {
+    const pool = createPool(database)
+    try {
+      lookup = await withReadOnly(pool, (client) =>
+        readMaterialLookup(client, database, route.materialId, applicationId, resumeVersionId))
+    } catch {
+      sendProblem(res, problem(500, 'INTERNAL', 'DB_READ_FAILED', '读取材料元数据失败'))
+      return
+    } finally {
+      await closePool(pool)
+    }
+  }
+  if (lookup.kind === 'REJECT') {
+    sendProblem(res, lookup.problem)
+    return
+  }
+  const asset = lookup.asset
+
+  // ---- 8. 非 PDF：415（诚实降级，不叫渲染器猜格式）----
+  if (!isPdfMaterial(asset)) {
+    sendProblem(res, problem(415, 'INVALID_ARGS', 'UNSUPPORTED_FORMAT', '该格式暂不支持逐页图预览，可下载原件或查看结构化原文'))
+    return
+  }
+
+  // ---- 9. 定位（唯一实现）+ lstat 复核（与 /content 完全同构）----
+  const byteSize = Number(asset.byte_size)
+  if (!Number.isSafeInteger(byteSize) || byteSize <= 0) {
+    sendProblem(res, problem(500, 'INTERNAL', 'MATERIAL_BYTE_SIZE_INVALID', '材料的 byte_size 非法（数据不一致）'))
+    return
+  }
+  const roots = deps.roots === undefined ? undefined : deps.roots()
+  const resolution = resolveMaterialPath(
+    { fileName: asset.file_name, byteSize, sha256: asset.sha256 },
+    roots === undefined ? {} : { roots },
+  )
+  if (resolution.path === null) {
+    sendProblem(
+      res,
+      problem(404, 'NOT_FOUND', 'MATERIAL_ORIGINAL_NOT_LOCATED', '原件不在允许根里（或超出检索预算），拒绝提供', {
+        reason: resolution.reason,
+      }),
+    )
+    return
+  }
+  const filePath = resolution.path
+  let located: ReturnType<typeof lstatSync>
+  try {
+    located = lstatSync(filePath)
+  } catch {
+    sendProblem(
+      res,
+      problem(404, 'NOT_FOUND', 'MATERIAL_ORIGINAL_NOT_LOCATED', '原件不在允许根里（或超出检索预算），拒绝提供', {
+        reason: 'NOT_FOUND_IN_ALLOWED_ROOTS',
+      }),
+    )
+    return
+  }
+  if (located.isSymbolicLink() || !located.isFile() || located.size !== byteSize) {
+    sendProblem(
+      res,
+      problem(404, 'NOT_FOUND', 'MATERIAL_ORIGINAL_NOT_LOCATED', '原件不在允许根里（或超出检索预算），拒绝提供', {
+        reason: 'NOT_FOUND_IN_ALLOWED_ROOTS',
+      }),
+    )
+    return
+  }
+
+  // ---- 10. 调桥渲染（零重写：converter/fallback/page_image.py）----
+  const bridge = deps.pageBridge ?? runFallbackBridge
+  let response: Record<string, unknown>
+  try {
+    response = await bridge(converter, { op: 'page-image', pdf: filePath, page: route.pageNo, dpi })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    sendProblem(res, problem(500, 'INTERNAL', 'PAGE_RENDER_FAILED', '逐页图渲染失败', { reason: message.slice(0, 200) }))
+    return
+  }
+  if (response.ok !== true) {
+    const code = typeof response.code === 'string' ? response.code : 'render_failed'
+    if (code === 'page_out_of_range' || code === 'page_invalid') {
+      sendProblem(
+        res,
+        problem(400, 'INVALID_ARGS', 'PAGE_OUT_OF_RANGE', '页码超出该 PDF 的总页数', { page_no: route.pageNo }),
+      )
+    } else {
+      sendProblem(res, problem(500, 'INTERNAL', 'PAGE_RENDER_FAILED', '逐页图渲染失败', { reason: code }))
+    }
+    return
+  }
+
+  const render = response.render as Record<string, unknown>
+  const imagePath = typeof render.image_path === 'string' ? render.image_path : ''
+  if (imagePath === '') {
+    sendProblem(res, problem(500, 'INTERNAL', 'PAGE_IMAGE_MISSING', '渲染没有给出图片文件'))
+    return
+  }
+
+  // X-Page-Count：当前 page_image.py 的桥响应不带 page_count；用同一个桥以超大页码
+  // 触发 `page_out_of_range`，从它原文消息里读总页数（渲染器零重写、零本地 PDF 解析）。
+  // 未来桥带 page_count 时优先用它（测试注入的假桥即走这条）。
+  let pageCount = pageCountFromBridge(response)
+  if (pageCount === null) {
+    try {
+      const probe = await bridge(converter, { op: 'page-image', pdf: filePath, page: 1_000_000, dpi })
+      if (probe.ok !== true && typeof probe.code === 'string' && probe.code === 'page_out_of_range') {
+        const parsed = pageCountFromMessage(typeof probe.message === 'string' ? probe.message : '')
+        if (parsed !== null) pageCount = parsed
+      }
+    } catch {
+      // 探测失败不泄漏路径；下面诚实 502。
+    }
+  }
+  if (pageCount === null) {
+    discardPng(imagePath)
+    sendProblem(res, problem(500, 'INTERNAL', 'PAGE_COUNT_UNKNOWN', '无法确定 PDF 总页数'))
+    return
+  }
+  if (route.pageNo > pageCount) {
+    discardPng(imagePath)
+    sendProblem(
+      res,
+      problem(400, 'INVALID_ARGS', 'PAGE_OUT_OF_RANGE', '页码超出该 PDF 的总页数', { page_no: route.pageNo }),
+    )
+    return
+  }
+
+  // ---- 11. 200 image/png + 契约头；响应体结束即清理临时 PNG ----
+  streamPngAndCleanup(res, imagePath, {
+    'content-type': 'image/png',
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    'x-page-count': String(pageCount),
+    'x-page-number': String(route.pageNo),
+  })
+}
+
+/**
  * 处理一次 `GET|HEAD /recruitment/api/material/<id>/content`。
  *
  * 校验顺序（每一步都在下一资源之前；DB 未配置在参数校验之后，形状错误仍回 400）：
@@ -529,6 +960,13 @@ async function handleMaterialContent(
   port: number,
 ): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://localhost')
+
+  // ---- 0. G-14 分发：同一前缀下 `/page/<page_no>` 走逐页图端点，其它原样走 /content ----
+  if (url.pathname.startsWith(`${MATERIAL_CONTENT_ROUTE_PREFIX}/`)
+      && url.pathname.includes(PAGE_PATH_MIDDLE)) {
+    await handleMaterialPageImage(req, res, deps, port)
+    return
+  }
 
   // ---- 1. 同源（判据复用 overview.ts::sameOrigin，不复制第二份）----
   if (!sameOrigin(req, port)) {
