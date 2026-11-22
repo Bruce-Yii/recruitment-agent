@@ -408,7 +408,11 @@ export function registerApplicationTraceHttp(
 
       const tenantId = deps.database.tenant_id
       const loader: TraceLoader = deps.loadTraceData
-        ?? ((client, tenant, applicationId) => loadTrace(client, tenant, 'APPLICATION', applicationId))
+        ?? ((client, tenant, applicationId) => loadTrace(client, {
+          tenantId: tenant,
+          objectType: 'APPLICATION',
+          objectId: applicationId,
+        }))
       const runReadOnly = deps.runReadOnly
         ?? (async <T,>(fn: (client: DatabaseClient) => Promise<T>): Promise<T> => {
           const pool = createPool(deps.database as ResolvedDatabaseConfig)
