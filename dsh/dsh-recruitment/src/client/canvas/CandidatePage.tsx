@@ -22,8 +22,11 @@ import type {
   UndoToastPayload,
 } from './CanvasRoute.tsx';
 import {
+  describeActionError,
+  getCanvasSessionId,
   postApplicationStar,
   postRebindMinute,
+  postScreeningEvaluate,
   uploadResumeRaw,
   type CanvasActionError,
 } from './canvas-actions.ts';
@@ -152,6 +155,7 @@ export function CandidatePage({
   const [starPop, setStarPop] = useState(false);
   const [starBusy, setStarBusy] = useState(false);
   const [candUploading, setCandUploading] = useState(false);
+  const [evaluatingScreening, setEvaluatingScreening] = useState(false);
   const candFileRef = useRef<HTMLInputElement | null>(null);
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -325,6 +329,37 @@ export function CandidatePage({
         });
     } else {
       setActionFeedback({ tone: 'green', text: `已生成 ${vm.candidateName} 的决策纪要` });
+    }
+  };
+
+  const handleRunScreeningEvaluate = async () => {
+    if (!vm || evaluatingScreening) return;
+    const activeSessionId = (sessionId ?? '').trim() || getCanvasSessionId();
+    setEvaluatingScreening(true);
+    setActionFeedback(null);
+    try {
+      const outcome = await postScreeningEvaluate(vm.applicationId, activeSessionId);
+      if (!outcome.accepted) {
+        setActionFeedback({
+          tone: 'red',
+          text:
+            outcome.error?.message ||
+            describeActionError(outcome.error?.code ?? '', outcome.error?.reasonCode ?? '') ||
+            '初筛评估未能完成，请稍后重试。',
+        });
+        return;
+      }
+      setActionFeedback({ tone: 'green', text: '已更新初筛评估结果。' });
+      invalidateCachedCanvasData(detailPath);
+      void load(undefined, { silent: true });
+      onActionCompleted?.({ message: '已更新初筛评估结果' });
+    } catch (err) {
+      setActionFeedback({
+        tone: 'red',
+        text: err instanceof Error ? err.message : '初筛评估未能完成，请稍后重试。',
+      });
+    } finally {
+      setEvaluatingScreening(false);
     }
   };
 
@@ -561,7 +596,21 @@ export function CandidatePage({
             className={`ros-doc-block ${focusedSection === 'criteria' ? 'ros-section-focus' : ''}`}
             data-section="criteria"
           >
-            <div className="ros-sec-meta">岗位标准对照 · {vm.rubricVersionLabel}（点击联动原文）</div>
+            <div
+              className="ros-sec-meta"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}
+            >
+              <span>岗位标准对照 · {vm.rubricVersionLabel}（点击联动原文）</span>
+              <button
+                type="button"
+                className="ros-text-link"
+                data-testid="canvas-action-screening-evaluate"
+                disabled={evaluatingScreening}
+                onClick={() => void handleRunScreeningEvaluate()}
+              >
+                {evaluatingScreening ? '评估中…' : vm.criteria.length > 0 ? '重新评估' : '发起初筛评估'}
+              </button>
+            </div>
             {vm.criteria.length > 0 ? (
               <div>
                 {vm.criteria.map((cr, idx) => (
