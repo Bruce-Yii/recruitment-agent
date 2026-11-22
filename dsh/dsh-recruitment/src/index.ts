@@ -202,6 +202,8 @@ import { registerAppShell, type AppShellHostContext } from './http/app-shell.ts'
 import { createAppAgentTurnBridge, type AgentTurnHost } from './http/agent-turn.ts'
 import { registerBatchUndoHttp, type BatchUndoHostContext } from './http/batch-undo.ts'
 import { registerScorecardDraftHttp, type ScorecardDraftHostContext } from './http/scorecard-draft.ts'
+// Issue #31 / G-08：逐条 rubric 标准人工纠偏的受控 HTTP 写路由（复用 createCriterionOverrideTool）。
+import { registerCriterionOverrideHttp, type CriterionOverrideHostContext } from './http/criterion-override.ts'
 import { registerMinuteRebindHttp, type MinuteRebindHostContext } from './http/minute-rebind.ts'
 import { createRebindProcessRunner } from './connectors/feishu/rebind.ts'
 import { registerInterviewSlotsHttp, type InterviewSlotsHostContext } from './http/interview-slots.ts'
@@ -629,6 +631,15 @@ export function apply(
         { database: database.resolved, databaseIssues: database.issues, identity: actorIdentity },
       ),
       'recruitment: scorecard draft routes',
+    )
+    // 逐条 rubric 标准人工纠偏：POST /recruitment/api/action/criterion/override。
+    // 只加注册；域规则/写库/审计全部由 createCriterionOverrideTool 承担，身份与写工具共享单例。
+    child.effect(
+      () => registerCriterionOverrideHttp(
+        child as unknown as CriterionOverrideHostContext,
+        { database: database.resolved, databaseIssues: database.issues, identity: actorIdentity },
+      ),
+      'recruitment: criterion override route',
     )
     // 排期前空闲时段交集（只读）：GET /recruitment/api/action/interview/free-slots。读不到日历就如实 AUTH_REQUIRED，不编时段。
     child.effect(
