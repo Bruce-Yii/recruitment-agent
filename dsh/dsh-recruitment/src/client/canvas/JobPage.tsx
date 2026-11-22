@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  normalizeApplicationDetail,
   normalizeJobDetail,
+  type CandidateCanvasVM,
   type JobApplicationRowVM,
   type JobCanvasVM,
 } from '../normalize-canvas.ts';
@@ -111,6 +113,10 @@ export function JobPage({
   const [closeJobOpen, setCloseJobOpen] = useState<boolean>(false);
   const [closeJobReason, setCloseJobReason] = useState<string>('');
   const [closingJob, setClosingJob] = useState<boolean>(false);
+  const [compareOpen, setCompareOpen] = useState<boolean>(false);
+  const [compareLoading, setCompareLoading] = useState<boolean>(false);
+  const [compareItems, setCompareItems] = useState<CandidateCanvasVM[]>([]);
+  const [compareCopyNotice, setCompareCopyNotice] = useState<string>('');
   const [feedback, setFeedback] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
 
   const load = useCallback(
@@ -397,6 +403,50 @@ export function JobPage({
     }
   };
 
+
+  const handleOpenCompare = async () => {
+    const ids = selectedIds.slice(0, 3);
+    if (ids.length < 2) return;
+    setCompareOpen(true);
+    setCompareLoading(true);
+    setCompareCopyNotice('');
+    try {
+      const results = await Promise.all(
+        ids.map((id) =>
+          fetcher(`/recruitment/api/recruiting/applications/${encodeURIComponent(id)}`).then(
+            (raw) => normalizeApplicationDetail(raw),
+          ),
+        ),
+      );
+      setCompareItems(results);
+    } catch {
+      setCompareItems([]);
+      setFeedback({ tone: 'red', text: '读取候选人对比信息失败，请稍后重试。' });
+      setCompareOpen(false);
+    } finally {
+      setCompareLoading(false);
+    }
+  };
+
+  const handleCopyCompareSummary = async () => {
+    if (!vm || compareItems.length === 0) return;
+    const lines: string[] = [`【候选人横向对比】岗位：${vm.title}`, ''];
+    for (const item of compareItems) {
+      lines.push(`- ${item.candidateName}（${item.stageLabel}）`);
+      if (item.summaryText) lines.push(`  提炼：${item.summaryText}`);
+      for (const cr of item.criteria) {
+        lines.push(`  · ${cr.label}：${cr.statusText}`);
+      }
+      lines.push('');
+    }
+    const text = lines.join('\n').trim();
+    try {
+      await navigator.clipboard.writeText(text);
+      setCompareCopyNotice('已复制横向对比摘要，可直接发给用人经理。');
+    } catch {
+      setCompareCopyNotice('剪贴板不可用，请手动选中复制。');
+    }
+  };
 
   const handleCreateJob = async () => {
     if (creating) return;
@@ -730,6 +780,16 @@ export function JobPage({
                 <div className="ros-batch-float" data-testid="canvas-batch-float">
                   <span className="num">已选 {selectedIds.length} 人</span>
                   <div style={{ display: 'flex', gap: 8 }}>
+                    {selectedIds.length >= 2 && selectedIds.length <= 3 ? (
+                      <button
+                        type="button"
+                        data-testid="canvas-batch-compare-open"
+                        style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)' }}
+                        onClick={() => void handleOpenCompare()}
+                      >
+                        横向对比 ({selectedIds.length})
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       data-testid="canvas-batch-reject-open"
@@ -1037,6 +1097,96 @@ export function JobPage({
                 onClick={() => void handleApproveRubric()}
               >
                 {rubricApproving ? '提交中…' : '确认批准'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {compareOpen ? (
+        <div
+          className="ros-modal-bg"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setCompareOpen(false);
+          }}
+        >
+          <div className="ros-modal" style={{ maxWidth: 780, width: '92vw' }} data-testid="canvas-compare-modal">
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ fontSize: '17px', fontWeight: 650 }}>
+                候选人横向对比 · {vm.title}
+              </div>
+              <span className="ros-sec-meta num">{compareItems.length} 位候选人</span>
+            </div>
+            {compareLoading ? (
+              <div className="ros-sec-meta" style={{ padding: '24px 0' }}>正在加载候选人对照信息…</div>
+            ) : compareItems.length > 0 ? (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '8px 10px 8px 0', borderBottom: '1px solid var(--line)', color: 'var(--muted)', fontWeight: 500 }}>
+                        对照维度
+                      </th>
+                      {compareItems.map((item) => (
+                        <th key={item.applicationId} style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid var(--line)', color: 'var(--ink)', fontWeight: 600 }}>
+                          {item.candidateName}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={{ padding: '9px 10px 9px 0', borderBottom: '1px solid var(--line-soft)', color: 'var(--muted)' }}>当前阶段</td>
+                      {compareItems.map((item) => (
+                        <td key={item.applicationId} style={{ padding: '9px 10px', borderBottom: '1px solid var(--line-soft)', color: 'var(--text)' }}>
+                          {item.stageLabel}
+                        </td>
+                      ))}
+                    </tr>
+                    {vm.rubricDimensions.map((dim) => (
+                      <tr key={dim.key}>
+                        <td style={{ padding: '9px 10px 9px 0', borderBottom: '1px solid var(--line-soft)', color: 'var(--muted)' }}>
+                          {dim.label}
+                        </td>
+                        {compareItems.map((item) => {
+                          const matched = item.criteria.find((c) => c.key === dim.key);
+                          return (
+                            <td key={item.applicationId} style={{ padding: '9px 10px', borderBottom: '1px solid var(--line-soft)' }}>
+                              {matched ? (
+                                <StatusLabel text={matched.statusText} tone={matched.level} />
+                              ) : (
+                                <span style={{ color: 'var(--soft)' }}>待评估</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+            {compareCopyNotice ? (
+              <div style={{ fontSize: 12, color: 'var(--green)' }}>{compareCopyNotice}</div>
+            ) : null}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                className="ros-btn"
+                data-testid="canvas-compare-copy"
+                disabled={compareLoading || compareItems.length === 0}
+                onClick={() => void handleCopyCompareSummary()}
+              >
+                复制摘要给用人经理
+              </button>
+              <button
+                type="button"
+                className="ros-btn dark"
+                onClick={() => setCompareOpen(false)}
+              >
+                关闭
               </button>
             </div>
           </div>

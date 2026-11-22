@@ -93,6 +93,11 @@
 | `canvas-action-job-close` | 岗位详情底部「关闭岗位」轻入口 |
 | `canvas-job-close-submit` | 关闭岗位确认弹窗提交按钮 |
 | `canvas-action-screening-evaluate` | 候选人页岗位标准对照区「发起初筛评估 / 重新评估」入口 |
+| `canvas-criterion-override-<key>` | 候选人页岗位标准单条「纠偏」轻入口 |
+| `canvas-override-submit` | 人工逐条纠偏确认弹窗提交按钮 |
+| `canvas-batch-compare-open` | 岗位候选人池勾选 2–3 人后的「横向对比」按钮 |
+| `canvas-compare-modal` | 候选人横向对比弹窗容器 |
+| `canvas-compare-copy` | 横向对比弹窗「复制摘要给用人经理」按钮 |
 
 ## 三、复用的面试官端 `data-testid`（来自 `src/client/interviewer/InterviewerWorkspace.tsx`）
 

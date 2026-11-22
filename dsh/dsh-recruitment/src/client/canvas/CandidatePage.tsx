@@ -25,10 +25,12 @@ import {
   describeActionError,
   getCanvasSessionId,
   postApplicationStar,
+  postCriterionOverride,
   postRebindMinute,
   postScreeningEvaluate,
   uploadResumeRaw,
   type CanvasActionError,
+  type CriterionHumanState,
 } from './canvas-actions.ts';
 import {
   CandidateActionModal,
@@ -156,6 +158,11 @@ export function CandidatePage({
   const [starBusy, setStarBusy] = useState(false);
   const [candUploading, setCandUploading] = useState(false);
   const [evaluatingScreening, setEvaluatingScreening] = useState(false);
+  const [overrideTarget, setOverrideTarget] = useState<{ key: string; label: string } | null>(null);
+  const [overrideState, setOverrideState] = useState<CriterionHumanState>('PRESENT');
+  const [overrideNote, setOverrideNote] = useState('');
+  const [overrideConfirm, setOverrideConfirm] = useState('');
+  const [overrideBusy, setOverrideBusy] = useState(false);
   const candFileRef = useRef<HTMLInputElement | null>(null);
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -360,6 +367,42 @@ export function CandidatePage({
       });
     } finally {
       setEvaluatingScreening(false);
+    }
+  };
+
+  const handleSubmitCriterionOverride = async () => {
+    if (!vm || !overrideTarget || overrideBusy) return;
+    const confirmText = overrideConfirm.trim();
+    if (!confirmText) {
+      setActionFeedback({ tone: 'red', text: '请先输入一句确认原话后再提交纠偏。' });
+      return;
+    }
+    setOverrideBusy(true);
+    setActionFeedback(null);
+    try {
+      await postCriterionOverride({
+        applicationId: vm.applicationId,
+        criterionKey: overrideTarget.key,
+        humanState: overrideState,
+        note: overrideNote.trim() || undefined,
+        confirmationText: confirmText,
+      });
+      const label = overrideTarget.label;
+      setOverrideTarget(null);
+      setOverrideNote('');
+      setOverrideConfirm('');
+      setActionFeedback({ tone: 'green', text: `已记录「${label}」的人工纠偏并同步落库。` });
+      invalidateCachedCanvasData(detailPath);
+      void load(undefined, { silent: true });
+      onActionCompleted?.({ message: `已记录「${label}」的人工纠偏` });
+    } catch (err) {
+      const caErr = err as Partial<CanvasActionError> | undefined;
+      setActionFeedback({
+        tone: 'red',
+        text: caErr?.userMessage || (err instanceof Error ? err.message : '人工纠偏未能完成，请稍后重试。'),
+      });
+    } finally {
+      setOverrideBusy(false);
     }
   };
 
@@ -651,7 +694,23 @@ export function CandidatePage({
                       {cr.label}
                       <span className="ros-sec-meta" style={{ marginLeft: 8 }}>{cr.kindLabel}{cr.weightText ? ` · ${cr.weightText}` : ''}</span>
                     </span>
-                    <StatusLabel text={cr.statusText} tone={cr.level} />
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+                      <StatusLabel text={cr.statusText} tone={cr.level} />
+                      <button
+                        type="button"
+                        className="ros-text-link"
+                        data-testid={`canvas-criterion-override-${cr.key}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOverrideTarget({ key: cr.key, label: cr.label });
+                          setOverrideState('PRESENT');
+                          setOverrideNote('');
+                          setOverrideConfirm(`确认将「${cr.label}」人工核定为有对应`);
+                        }}
+                      >
+                        纠偏
+                      </button>
+                    </span>
                   </div>
                 ))}
               </div>
@@ -829,6 +888,88 @@ export function CandidatePage({
           </div>
         </div>
       </div>
+
+      {overrideTarget ? (
+        <div
+          className="ros-modal-bg"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !overrideBusy) setOverrideTarget(null);
+          }}
+        >
+          <div className="ros-modal">
+            <div style={{ fontSize: '17px', fontWeight: 650 }}>
+              人工纠偏 · {overrideTarget.label}
+            </div>
+            <div className="ros-jd-box" style={{ padding: '12px 14px' }}>
+              人工纠偏将以追加记录方式留痕，不覆盖 AI 原始判断，也不修改岗位标准定义。
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {(
+                [
+                  { id: 'PRESENT', label: '有对应' },
+                  { id: 'ABSENT', label: '没有对应' },
+                  { id: 'UNREADABLE', label: '读不出来' },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={`ros-slot-pill ${overrideState === opt.id ? 'active' : ''}`}
+                  data-testid={`canvas-override-state-${opt.id.toLowerCase()}`}
+                  disabled={overrideBusy}
+                  onClick={() => {
+                    setOverrideState(opt.id);
+                    setOverrideConfirm(`确认将「${overrideTarget.label}」人工核定为${opt.label}`);
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <label className="ros-m-field">
+              <span>补充说明（选填）</span>
+              <input
+                data-testid="canvas-override-note"
+                value={overrideNote}
+                disabled={overrideBusy}
+                onChange={(e) => setOverrideNote(e.target.value)}
+                placeholder="例如：简历第 2 页项目经历可印证该项能力"
+              />
+            </label>
+            <label className="ros-m-field">
+              <span>确认原话（留痕必填）</span>
+              <input
+                data-testid="canvas-override-confirm-input"
+                value={overrideConfirm}
+                disabled={overrideBusy}
+                onChange={(e) => setOverrideConfirm(e.target.value)}
+                placeholder="输入一句确认原话"
+              />
+            </label>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                className="ros-btn"
+                disabled={overrideBusy}
+                onClick={() => setOverrideTarget(null)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="ros-btn dark"
+                data-testid="canvas-override-submit"
+                disabled={overrideBusy || !overrideConfirm.trim()}
+                onClick={() => void handleSubmitCriterionOverride()}
+              >
+                {overrideBusy ? '提交中…' : '确认纠偏'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {modalKind ? (
         <CandidateActionModal
