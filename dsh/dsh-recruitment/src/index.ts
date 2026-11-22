@@ -188,6 +188,7 @@ import { createHostMailPoller } from './connectors/mail/host-poller.ts'
 import { registerEmailSendHttp, type EmailSendHostContext } from './http/email-send.ts'
 import { registerOverviewHttp, type OverviewHostContext } from './http/overview.ts'
 import { registerRecruitingHttp, type RecruitingHostContext } from './http/recruiting.ts'
+import { registerCandidateDedupHttp, type CandidateDedupHostContext } from './http/candidate-dedup.ts'
 // owner-api-display（V5 看得见）：原文受控获取 + DSH 会话计量 + 任务状态（三个只读端点，
 // loopback + sameOrigin + fail-closed）。注册器在 src/http/api-display.ts，返回 disposer。
 import { registerApiDisplayHttp, type ApiDisplayHostContext } from './http/api-display.ts'
@@ -736,6 +737,20 @@ export function apply(
         },
       ),
       'recruitment: decision facts/evaluate/record routes',
+    )
+    // Issue #36 / G-10：候选人去重提示（只读，独立更长前缀 /recruitment/api/recruiting/applications/）。
+    // 注册在 registerRecruitingHttp 之前；最长前缀命中本 handler，非 /duplicates 的申请详情由
+    // candidate-dedup handler 原样回退 readApplicationDetail（避免吞掉候选人页读模型）。
+    child.effect(
+      () => registerCandidateDedupHttp(
+        child as unknown as CandidateDedupHostContext,
+        {
+          database: database.resolved,
+          databaseIssues: database.issues,
+          identity: actorIdentity,
+        },
+      ),
+      'recruitment: candidate dedup route',
     )
     // D5-W2：Recruiting Workspace 只读投影（独立前缀 /recruitment/api/recruiting；
     // W0 独占接线，W2 不碰本文件）。action seam 由 W1 后续提供，未提供时写按钮 disabled。
