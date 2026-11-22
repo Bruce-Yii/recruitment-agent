@@ -649,7 +649,9 @@ export function registerTalentRediscoveryHttp(
     json(res, 404, { error: { code: 'NOT_FOUND', message: 'not found' } })
   }
 
-  return webServer.register({ kind: 'prefix', path: REDISCOVERY_ROUTE_PREFIX, handler })
+  // 宿主 prefix 匹配会检查 `pathname.startsWith(`${prefix}/`)`；注册路径不能带尾斜杠，
+  // 否则 `.../jobs//<id>/rediscovery` 永不命中。解析常量保留尾斜杠。
+  return webServer.register({ kind: 'prefix', path: REDISCOVERY_ROUTE_PREFIX.replace(/\/$/, ''), handler })
 }
 
 /** 未配置数据库时的占位（只用于测试/诊断，不返回假数据）。 */

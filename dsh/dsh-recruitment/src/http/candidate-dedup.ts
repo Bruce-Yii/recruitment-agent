@@ -485,7 +485,8 @@ export function registerCandidateDedupHttp(
 
   return webServer.register({
     kind: 'prefix',
-    path: CANDIDATE_DEDUP_REGISTER_PREFIX,
+    // 宿主 prefix 匹配会检查 `pathname.startsWith(`${prefix}/`)`；注册路径不能带尾斜杠。
+    path: CANDIDATE_DEDUP_REGISTER_PREFIX.replace(/\/$/, ''),
     handler,
   })
 }

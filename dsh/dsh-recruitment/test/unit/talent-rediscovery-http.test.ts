@@ -88,7 +88,8 @@ test('HTTP：非回环 host 不注册；回环注册更长 prefix', () => {
   assert.equal(loopback.routes.length, 1)
   assert.deepEqual(
     { kind: loopback.routes[0]!.kind, path: loopback.routes[0]!.path },
-    { kind: 'prefix', path: '/recruitment/api/recruiting/jobs/' },
+    // 注册 prefix 不能带尾斜杠：宿主匹配条件是 pathname.startsWith(`${prefix}/`)。
+    { kind: 'prefix', path: '/recruitment/api/recruiting/jobs' },
   )
 })
 
