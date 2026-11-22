@@ -34,7 +34,7 @@ function fakeCtx(injectWebServer = false) {
   return { ctx, registered, injected, effects }
 }
 
-test('apply() 注册 36 个工具（30 个既有 + email_fetch + criterion_override + candidate_constraint + ui_dispatch + interview_free_slots + workspace_overview），工具名不重复', () => {
+test('apply() 注册 37 个工具（30 个既有 + email_fetch + criterion_override + candidate_constraint + ui_dispatch + interview_free_slots + workspace_overview + talent_rediscovery），工具名不重复', () => {
   const { ctx, registered } = fakeCtx()
   apply(ctx as never, {
     database: {
@@ -43,8 +43,8 @@ test('apply() 注册 36 个工具（30 个既有 + email_fetch + criterion_overr
     },
   }, { RECRUITMENT_DB_PASSWORD: 'unused-in-this-test' })
   const names = registered.map((tool) => tool.name)
-  assert.equal(names.length, 36, `注册数必须是 36（30 个既有 + email_fetch + criterion_override + candidate_constraint + ui_dispatch + interview_free_slots + workspace_overview），实际 ${names.length}：${names.join(', ')}`)
-  assert.equal(new Set(names).size, 36, '工具名不得重复')
+  assert.equal(names.length, 37, `注册数必须是 37（30 个既有 + email_fetch + criterion_override + candidate_constraint + ui_dispatch + interview_free_slots + workspace_overview + talent_rediscovery），实际 ${names.length}：${names.join(', ')}`)
+  assert.equal(new Set(names).size, 37, '工具名不得重复')
   assert.ok(names.includes(EMAIL_FETCH_TOOL), `注册点少了邮箱收件工具：${names.join(', ')}`)
   assert.ok(names.includes('recruitment_criterion_override'), `注册点少了人工纠偏工具：${names.join(', ')}`)
 })
@@ -62,7 +62,7 @@ test('mail 未配置时仍注册同名替身，schema 封闭，调用报 NOT_CON
   assert.equal(emailTool?.parameters.additionalProperties, false)
 })
 
-test('mail 配置齐全时注册的工具仍是 36 个；发信只注册 HTTP 路由不新增工具', () => {
+test('mail 配置齐全时注册的工具仍是 37 个；发信只注册 HTTP 路由不新增工具', () => {
   const { ctx, registered, effects } = fakeCtx(true)
   apply(ctx as never, {
     database: {
@@ -77,12 +77,12 @@ test('mail 配置齐全时注册的工具仍是 36 个；发信只注册 HTTP �
     RECRUITMENT_DB_PASSWORD: 'unused-in-this-test',
     RECRUITMENT_MAIL_PASSWORD: 'unused-in-this-test',
   })
-  assert.equal(registered.length, 36, '发信不新增工具')
+  assert.equal(registered.length, 37, '发信不新增工具')
   assert.equal(registered.filter((tool) => tool.name === EMAIL_FETCH_TOOL).length, 1)
   assert.ok(effects.some((label) => label.includes('email send action route')), '发信 Host Action 路由应在 webServer 注入段注册')
 })
 
-test('mail 配置里 ${ENV} 未展开时走替身：工具数仍 36，不因缺配置消失', () => {
+test('mail 配置里 ${ENV} 未展开时走替身：工具数仍 37，不因缺配置消失', () => {
   const { ctx, registered } = fakeCtx()
   apply(ctx as never, {
     database: {
@@ -94,7 +94,7 @@ test('mail 配置里 ${ENV} 未展开时走替身：工具数仍 36，不因缺�
       password_env: 'RECRUITMENT_MAIL_PASSWORD', port: 993, tls: true, folder: 'INBOX',
     },
   }, { RECRUITMENT_DB_PASSWORD: 'unused-in-this-test' })
-  assert.equal(registered.length, 36)
+  assert.equal(registered.length, 37)
   assert.equal(registered.filter((tool) => tool.name === EMAIL_FETCH_TOOL).length, 1)
 })
 

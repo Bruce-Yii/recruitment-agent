@@ -129,6 +129,10 @@ import {
   createWorkspaceOverviewTool,
   unconfiguredWorkspaceOverviewTool,
 } from './tools/workspace-overview.ts'
+import {
+  createTalentRediscoveryTool,
+  unconfiguredTalentRediscoveryTool,
+} from './tools/talent-rediscovery.ts'
 // D-141 §4（最高优先项）：工具调用留痕接线。
 // `src/domain/trace.ts` 的记录适配器实现完整，但产品执行路径从未调用它 →
 // `recruitment.tool_call` 永远没有写入，`recruitment_trace_get` 的 TOOL_CALL 环永远是 gap。
@@ -188,6 +192,8 @@ import { createHostMailPoller } from './connectors/mail/host-poller.ts'
 import { registerEmailSendHttp, type EmailSendHostContext } from './http/email-send.ts'
 import { registerOverviewHttp, type OverviewHostContext } from './http/overview.ts'
 import { registerRecruitingHttp, type RecruitingHostContext } from './http/recruiting.ts'
+// G-12（Issue #35）：人才再发现只读路由（比 recruiting prefix 更长，命中 :jobId/rediscovery）。
+import { registerTalentRediscoveryHttp, type TalentRediscoveryHostContext } from './http/talent-rediscovery.ts'
 // owner-api-display（V5 看得见）：原文受控获取 + DSH 会话计量 + 任务状态（三个只读端点，
 // loopback + sameOrigin + fail-closed）。注册器在 src/http/api-display.ts，返回 disposer。
 import { registerApiDisplayHttp, type ApiDisplayHostContext } from './http/api-display.ts'
@@ -761,6 +767,15 @@ export function apply(
       ),
       'recruitment: recruiting workspace route',
     )
+    // G-12（Issue #35）：历史人才再发现只读路由（独立注册，不改既有 recruiting 路由）。
+    child.effect(
+      () => registerTalentRediscoveryHttp(
+        child as unknown as TalentRediscoveryHostContext,
+        database.resolved,
+        database.issues,
+      ),
+      'recruitment: talent rediscovery route',
+    )
     // D5-W3：面试官工作台（我的面试 / 简报 / Rubric / 授权材料 / 本人面评；只读投影）。
     // 身份 resolver 用 W1 的**同一个** `actorIdentity` 单例：再 new 一个 registry 会让浏览器
     // PUT 的 session→alias 绑定分裂（读路径永远 409），所以这里只适配、不另建身份来源。
@@ -1205,6 +1220,10 @@ export function apply(
   const workspaceOverview = database.resolved === null
     ? unconfiguredWorkspaceOverviewTool(database.issues)
     : createWorkspaceOverviewTool(database.resolved)
+  // G-12（Issue #35）：只读历史人才再发现（与 HTTP rediscovery 同一投影）。
+  const talentRediscovery = database.resolved === null
+    ? unconfiguredTalentRediscoveryTool(database.issues)
+    : createTalentRediscoveryTool(database.resolved)
   // 企业自建配置（角色权限范围 / 招聘团队 / 流水线模板）：配置是数据，企业自己建。
   const configTools = database.resolved === null
     ? [
@@ -1247,6 +1266,7 @@ export function apply(
     uiDispatch,
     interviewFreeSlots,
     workspaceOverview,
+    talentRediscovery,
     ...configTools,
     pageImage,
     modelTextMerge,
