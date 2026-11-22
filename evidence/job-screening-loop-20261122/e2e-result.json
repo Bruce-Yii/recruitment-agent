@@ -1,0 +1,66 @@
+{
+  "scenarios": {
+    "createApprove": {
+      "title": "验收闭环岗位-311529",
+      "jobRouteOk": false,
+      "jobId": "",
+      "approveShown": false,
+      "approveModal": false,
+      "approvedUi": false,
+      "rubricRow": "",
+      "rubricApproved": false
+    },
+    "screeningEvaluate": {
+      "s7": "11111111-1111-4111-8111-000000000701",
+      "evaluateShown": true,
+      "evaluatingSeen": true,
+      "evaluated": true,
+      "feedback": "已更新初筛评估结果。"
+    },
+    "closeJob": {
+      "closeModal": false,
+      "closedUi": false,
+      "jobStatus": ""
+    }
+  },
+  "checks": [
+    {
+      "name": "create_job_and_approve_rubric",
+      "ok": false,
+      "detail": {
+        "title": "验收闭环岗位-311529",
+        "jobRouteOk": false,
+        "jobId": "",
+        "approveShown": false,
+        "approveModal": false,
+        "approvedUi": false,
+        "rubricRow": "",
+        "rubricApproved": false
+      }
+    },
+    {
+      "name": "screening_evaluate_refresh",
+      "ok": true,
+      "detail": {
+        "s7": "11111111-1111-4111-8111-000000000701",
+        "evaluateShown": true,
+        "evaluatingSeen": true,
+        "evaluated": true,
+        "feedback": "已更新初筛评估结果。"
+      }
+    },
+    {
+      "name": "close_job",
+      "ok": false,
+      "detail": {
+        "closeModal": false,
+        "closedUi": false,
+        "jobStatus": ""
+      }
+    }
+  ],
+  "pass": false,
+  "picked": {
+    "s7": "11111111-1111-4111-8111-000000000701"
+  }
+}
