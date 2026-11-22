@@ -43,6 +43,7 @@ import type { ReadonlyToolDefinition, TextBlock } from './definition.ts'
 import { MACHINE_ARGS_HEADER, shortRef } from './render-ref.ts'
 import { closePool, createPool, withActor, type DatabaseClient, type ResolvedDatabaseConfig } from '../db/pool.ts'
 import { resolveWriteActor, type ToolActorDeps } from '../demo-actor/tool-actor.ts'
+import { tryGenerateAutoDraft, type AutoDraftLogger } from '../domain/scorecard-draft-gen.ts'
 import {
   FEISHU_MINUTES_CONNECTOR_ID,
   FEISHU_MINUTES_PROVIDER,
@@ -1155,6 +1156,11 @@ export interface TranscriptImportDeps extends ToolActorDeps {
   readonly connector_issues?: readonly string[]
   /** 已解析好的来源（`execute()` 用它避免"先读一次再在事务里读第二次"）。 */
   readonly source?: TranscriptImportSource
+  /**
+   * G-06：自动面评草稿生成失败时的日志出口（缺省用 console.warn）。
+   * 草稿失败只记日志，绝不改变转写工具的成功返回，也绝不回滚转写入库。
+   */
+  readonly logger?: AutoDraftLogger
 }
 
 /**
@@ -1485,6 +1491,20 @@ export async function importTranscriptInTransaction(
       is_current: recordRow.is_current,
     }
   }
+
+  // ---- 8. G-06：转写已成功入库，自动生成待核对面评草稿（失败只记日志）-----------------
+  // 只在**新写入**路径执行（replay 路径一行不写，不生成草稿）。
+  // helper 内部用 savepoint 隔离：草稿失败只回滚草稿写，绝不带回滚上面已成功的转写入库；
+  // 它自身也吞掉所有异常，所以本工具的输出/状态完全不受草稿生成结果影响。
+  await tryGenerateAutoDraft(client, {
+    tenantId,
+    interviewId,
+    applicationId: interview.application_id,
+    rubricVersionId: interview.rubric_version_id,
+    rubricJobOk: interview.rubric_job_ok,
+    transcriptText: content,
+    logger: deps.logger,
+  })
 
   return buildValue({
     interview,
