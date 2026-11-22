@@ -1,0 +1,107 @@
+{
+  "scenarios": {
+    "criterionOverride": {
+      "appId": "d841b4d7-4ed7-459a-83b5-fbfb472b9c84",
+      "pageLoaded": true,
+      "overrideBtn": "canvas-criterion-override-work_exists",
+      "modalReady": true,
+      "greenFeedback": true,
+      "overridesBefore": 0,
+      "overridesAfter": 1,
+      "auditsBefore": 0,
+      "auditsAfter": 1
+    },
+    "batchCompare": {
+      "jobId": "11111111-1111-4111-8111-000000000401",
+      "jobPageLoaded": true,
+      "checked": 2,
+      "compareBtnReady": true,
+      "modalOpen": true,
+      "compareText": "候选人横向对比 · 后端工程师（演示）\n2 位候选人\n对照维度\t候选人 S12-决策隔离\t候选人 T\n当前阶段\t三面终审\t面试安排\n简历中存在可分割的工作经历条目\t已匹配\t已匹配\n简历中存在可分割的教育经历条目\t已匹配\t已匹配\n有带团队经验\t待核实\t待核实\n复制摘要给用人经理\n关闭"
+    },
+    "diag": {
+      "tools": [
+        "recruitment_application_get",
+        "recruitment_candidate_get",
+        "recruitment_document_read",
+        "recruitment_evaluation_summarize",
+        "recruitment_interview_free_slots",
+        "recruitment_interview_get",
+        "recruitment_interview_record_verify",
+        "recruitment_job_get",
+        "recruitment_material_read",
+        "recruitment_page_image",
+        "recruitment_resume_read",
+        "recruitment_resume_serialize",
+        "recruitment_screening_evaluate",
+        "recruitment_structure_validate",
+        "recruitment_talent_rediscovery",
+        "recruitment_trace_get",
+        "recruitment_transcript_read",
+        "recruitment_ui_dispatch",
+        "recruitment_workspace_overview"
+      ],
+      "writeVisible": [],
+      "hasRediscovery": true
+    }
+  },
+  "checks": [
+    {
+      "name": "criterion_override_ui",
+      "ok": true,
+      "detail": {
+        "appId": "d841b4d7-4ed7-459a-83b5-fbfb472b9c84",
+        "pageLoaded": true,
+        "overrideBtn": "canvas-criterion-override-work_exists",
+        "modalReady": true,
+        "greenFeedback": true,
+        "overridesBefore": 0,
+        "overridesAfter": 1,
+        "auditsBefore": 0,
+        "auditsAfter": 1
+      }
+    },
+    {
+      "name": "batch_compare_ui",
+      "ok": true,
+      "detail": {
+        "jobId": "11111111-1111-4111-8111-000000000401",
+        "jobPageLoaded": true,
+        "checked": 2,
+        "compareBtnReady": true,
+        "modalOpen": true,
+        "compareText": "候选人横向对比 · 后端工程师（演示）\n2 位候选人\n对照维度\t候选人 S12-决策隔离\t候选人 T\n当前阶段\t三面终审\t面试安排\n简历中存在可分割的工作经历条目\t已匹配\t已匹配\n简历中存在可分割的教育经历条目\t已匹配\t已匹配\n有带团队经验\t待核实\t待核实\n复制摘要给用人经理\n关闭"
+      }
+    },
+    {
+      "name": "diag_readonly_rediscovery",
+      "ok": true,
+      "detail": {
+        "tools": [
+          "recruitment_application_get",
+          "recruitment_candidate_get",
+          "recruitment_document_read",
+          "recruitment_evaluation_summarize",
+          "recruitment_interview_free_slots",
+          "recruitment_interview_get",
+          "recruitment_interview_record_verify",
+          "recruitment_job_get",
+          "recruitment_material_read",
+          "recruitment_page_image",
+          "recruitment_resume_read",
+          "recruitment_resume_serialize",
+          "recruitment_screening_evaluate",
+          "recruitment_structure_validate",
+          "recruitment_talent_rediscovery",
+          "recruitment_trace_get",
+          "recruitment_transcript_read",
+          "recruitment_ui_dispatch",
+          "recruitment_workspace_overview"
+        ],
+        "writeVisible": [],
+        "hasRediscovery": true
+      }
+    }
+  ],
+  "pass": true
+}

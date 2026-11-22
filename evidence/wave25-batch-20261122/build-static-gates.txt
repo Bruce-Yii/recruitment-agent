@@ -1,0 +1,19 @@
+# Wave2.5 门禁（#38 ee145f1 + #39 c23f5ed + #37 6d15ac2）
+
+| 门 | 结果 |
+|---|---|
+| `npx tsc --noEmit` | PASS（0） |
+| `npx tsdown` | PASS（双入口，lib/app.js 1.43MB） |
+| `server-typecheck` | PASS（0/0） |
+| `runtime-budget` | PASS（5051/5051） |
+| `entry-reachability` | PASS；WHITELIST=[]（dedup GET 归 READ_ONLY_ROUTES） |
+| `client-contract-check` | PASS（0 违规） |
+| `term-lint` | PASS（0 违规） |
+| 全量 unit | 2118 tests / 2114 pass / 0 fail / 4 既有 skip |
+| `run-v4.mjs --fresh` | 15/15 PASS，审计 hard 0 |
+
+## 1440
+
+- 标准纠偏：PASS（绿字回执 + criterion_override +1 + audit +1）
+- 横向对比：PASS（2 人对比表渲染）
+- 诊断：PASS（19 只读 / 0 写，含 talent_rediscovery）

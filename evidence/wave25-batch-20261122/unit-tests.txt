@@ -1,0 +1,8 @@
+# Wave2.5 测试
+
+- #38 talent rediscovery：unit 8 + HTTP 4 + 真库集成 2 = 14/14 PASS
+  - 召回命中、排除已投递、非法 job fail-closed、零写入、无「证据」/无分数、CHAT_READ_TOOLS 19/0 写。
+- #39 candidate dedup：domain 9 + HTTP 7 = 16/16 PASS
+  - 同手机/同邮箱/不同人不误报、排除自身、PII 脱敏、只读零写入、闸门、非法 id、非回环不注册、405/404。
+- PR #37 前端 UI：标准纠偏 + 横向对比 1440 真机通过。
+- 全量 unit：2118 tests / 2114 pass / 0 fail / 4 既有 skip。
