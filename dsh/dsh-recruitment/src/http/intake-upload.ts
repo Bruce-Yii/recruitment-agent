@@ -18,11 +18,18 @@
 //   `resolveIntakeSource → runConverter → buildMaterial → intakeInTransaction` 完成入库；
 //   成功/失败都把任务推进到终态（FAILED 必带 error_code + 人话原因），绝不假报成功。
 //
+// G-01（Issue #24）：解析入库成功后，若该申请将用的 Rubric 此刻已批准，后台**串行**跑一次
+// `recruitment_screening_evaluate` 的只读评估。评估与人工初筛工具走同一条只读路径
+// （`withReadOnly` + `evaluateInTransaction`）：零 decision 写入、不钉 rubric、不破人类闸门。
+// 没有已批准 Rubric 或评估本身失败 → 只记日志，绝不回滚已成功的入库、上传任务仍 SUCCEEDED。
+//
 // 不新增工具、不新增迁移、不加依赖、不改 db/verify.sql。
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import type { ResolvedDatabaseConfig } from '../db/pool.ts'
-import { withActor, createPool, closePool } from '../db/pool.ts'
+import { withActor, withReadOnly, createPool, closePool } from '../db/pool.ts'
+import { isRubricVersionApproved } from '../db/approval.ts'
+import { createScreeningEvaluateTool } from '../tools/screening-evaluate.ts'
 import {
   DEMO_SESSION_HEADER,
   normalizeSessionId,
@@ -111,6 +118,11 @@ export interface IntakeUploadDeps {
   readonly defaultJobId?: string
   /** 后台解析失败时的诊断日志（由注册器从 ctx 注入；不写进任何入库文件）。 */
   readonly logger?: { warn(message: string): void }
+  /**
+   * G-01 自动初筛的可注入面（测试用）：缺省 = 真库探针 + 既有只读评估工具。
+   * 注入后不碰真库、不跑工具，便于断言"有已批准才评估 / 失败不影响入库"。
+   */
+  readonly autoScreeningHooks?: AutoScreeningHooks
 }
 
 // =====================================================================
@@ -299,6 +311,137 @@ function problemOfFailure(failure: Extract<IntakeUploadResult, { ok: false }>): 
 }
 
 // =====================================================================
+//  G-01：入库成功后的自动初筛评估（只读、串行、零 decision 写入）
+// =====================================================================
+
+/** Rubric 探针结论：`NONE` 必须带人话原因（日志要能说明为什么不评估）。 */
+export type AutoScreeningRubricProbe =
+  | { readonly kind: 'APPROVED'; readonly rubricVersionId: string }
+  | { readonly kind: 'NONE'; readonly reason: string }
+
+/** 一次自动初筛的结果（可观测；不写任何业务表）。 */
+export type AutoScreeningOutcome =
+  | { readonly kind: 'EVALUATED'; readonly applicationId: string; readonly rubricVersionId: string }
+  | { readonly kind: 'SKIPPED_NO_APPROVED_RUBRIC'; readonly applicationId: string; readonly reason: string }
+  | { readonly kind: 'SKIPPED_DUPLICATE'; readonly applicationId: string; readonly reason: string }
+  | { readonly kind: 'FAILED'; readonly applicationId: string; readonly reason: string }
+
+/**
+ * 自动初筛的注入面：把"查已批准 Rubric"与"跑评估"两个动作拆开，测试可直接 spy。
+ * 生产缺省实现见 `defaultAutoScreeningHooks()`（真库只读探针 + 既有只读工具）。
+ */
+export interface AutoScreeningHooks {
+  readonly probeApprovedRubric: (input: { readonly applicationId: string }) => Promise<AutoScreeningRubricProbe>
+  readonly evaluate: (input: {
+    readonly applicationId: string
+    readonly rubricVersionId: string
+  }) => Promise<unknown>
+}
+
+/** 进程内串行闸门：同一时刻最多一个自动初筛在跑（不引入队列/新依赖）。 */
+let autoScreeningTail: Promise<void> = Promise.resolve()
+/** 同一申请的重复/并发触发防护（先到先跑，后到只记日志跳过）。 */
+const autoScreeningInFlight = new Set<string>()
+
+/**
+ * 缺省探针：按评估工具自己的解析口径找"将用的 Rubric"——
+ * 申请钉住的版本优先，否则岗位当前版本（`job.current_rubric_version_id`，D-21/D-48 不按 max 推导）。
+ * 批准判定复用 `isRubricVersionApproved`（唯一口径），只读事务内完成。
+ */
+function defaultAutoScreeningHooks(cfg: ResolvedDatabaseConfig): AutoScreeningHooks {
+  return {
+    async probeApprovedRubric({ applicationId }) {
+      const pool = createPool(cfg)
+      try {
+        return await withReadOnly(pool, async (client) => {
+          const { rows } = await client.query<{
+            readonly rubric_version_id: string | null
+            readonly current_rubric_version_id: string | null
+          }>(
+            `select a.rubric_version_id::text as rubric_version_id,
+                    j.current_rubric_version_id::text as current_rubric_version_id
+               from recruitment.application a
+               join recruitment.job j on j.id = a.job_id and j.tenant_id = a.tenant_id
+              where a.id = $1::uuid and a.tenant_id = $2::uuid`,
+            [applicationId, cfg.tenant_id],
+          )
+          const row = rows[0]
+          if (row === undefined) {
+            return { kind: 'NONE', reason: `申请不存在 application=${applicationId}` }
+          }
+          const candidate = row.rubric_version_id ?? row.current_rubric_version_id
+          if (candidate === null) {
+            return { kind: 'NONE', reason: '岗位没有当前 Rubric 版本且申请未钉住 Rubric' }
+          }
+          const approved = await isRubricVersionApproved(client, cfg.tenant_id, candidate)
+          if (!approved) {
+            return { kind: 'NONE', reason: `Rubric 版本此刻未批准 rubric_version_id=${candidate}` }
+          }
+          return { kind: 'APPROVED', rubricVersionId: candidate }
+        })
+      } finally {
+        await closePool(pool)
+      }
+    },
+    async evaluate({ applicationId }) {
+      // 复用既有只读工具，与手动触发完全同一路径：零 decision 写入、只读事务、7 条阻断检查。
+      // **不传 rubric_version_id**：避免把评估变成 what_if（what_if 不可用于决策）。
+      // `exec` 参数由宿主传入；评估工具不消费它（只读），给空对象即可。
+      await createScreeningEvaluateTool(cfg).execute({ application_id: applicationId }, {})
+    },
+  }
+}
+
+async function executeAutoScreening(
+  applicationId: string,
+  hooks: AutoScreeningHooks,
+  logger: IntakeUploadDeps['logger'],
+): Promise<AutoScreeningOutcome> {
+  try {
+    const probe = await hooks.probeApprovedRubric({ applicationId })
+    if (probe.kind !== 'APPROVED') {
+      const reason = `自动初筛未触发：${probe.reason}（application=${applicationId}）`
+      logger?.warn(`intake-upload: ${reason}`)
+      return { kind: 'SKIPPED_NO_APPROVED_RUBRIC', applicationId, reason }
+    }
+    await hooks.evaluate({ applicationId, rubricVersionId: probe.rubricVersionId })
+    return { kind: 'EVALUATED', applicationId, rubricVersionId: probe.rubricVersionId }
+  } catch (error) {
+    // 失败只记日志：绝不向上抛、绝不回滚已成功的入库。
+    const message = error instanceof Error ? error.message : String(error)
+    logger?.warn(`intake-upload: 自动初筛评估失败（不影响入库）application=${applicationId}: ${message.slice(0, 300)}`)
+    return { kind: 'FAILED', applicationId, reason: message }
+  }
+}
+
+/**
+ * 入库成功后调用一次：串行排队 + 同申请去重 + 全程失败隔离（**永不抛错**）。
+ * 返回值只用于观测/单测；生产调用方忽略它，上传任务状态不受影响。
+ */
+export async function runAutoScreeningAfterIntake(
+  cfg: ResolvedDatabaseConfig,
+  applicationId: string,
+  hooks: AutoScreeningHooks | undefined,
+  logger: IntakeUploadDeps['logger'],
+): Promise<AutoScreeningOutcome> {
+  if (autoScreeningInFlight.has(applicationId)) {
+    const reason = `同一申请已有自动初筛在跑 application=${applicationId}`
+    logger?.warn(`intake-upload: 自动初筛跳过（重复触发）：${reason}`)
+    return { kind: 'SKIPPED_DUPLICATE', applicationId, reason }
+  }
+  autoScreeningInFlight.add(applicationId)
+  const task = autoScreeningTail.then(() =>
+    executeAutoScreening(applicationId, hooks ?? defaultAutoScreeningHooks(cfg), logger))
+  // 链尾归一为 resolved：上一轮的失败不会阻塞下一轮。
+  autoScreeningTail = task.then(() => {}, () => {})
+  try {
+    return await task
+  } finally {
+    autoScreeningInFlight.delete(applicationId)
+  }
+}
+
+// =====================================================================
 //  后台解析（不阻塞响应；复用既有 RESUME_PARSE 解析链）
 // =====================================================================
 
@@ -375,6 +518,14 @@ async function runBackgroundParse(
       `解析完成：申请 ${value.application_id}，简历版本 ${value.resume_version_id}`,
       input.sha256,
     )
+    // G-01：入库已成功、任务已 SUCCEEDED，之后才触发自动初筛。
+    // 这一步的任何异常都已在该 helper 内隔离；再套一层 catch 是双重保险：
+    // 绝不让评估把已成功的上传任务翻成 FAILED（"失败只记日志，绝不回滚入库"）。
+    await runAutoScreeningAfterIntake(
+      cfg, value.application_id, deps.autoScreeningHooks, deps.logger,
+    ).catch((error: unknown) => {
+      deps.logger?.warn(`intake-upload: 自动初筛调度异常（不影响入库）${input.taskId}: ${String(error).slice(0, 200)}`)
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     await finalizeTask(
