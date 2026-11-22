@@ -815,6 +815,18 @@ test('buildSettingsWriteBody：未知实体/读 operation/缺必填/保留键', 
 test('buildJobDraftBody / buildJobCloseBody：长度与必填', () => {
   const draft = assertBuildOk(buildJobDraftBody({ requestText: '  招一名后端工程师  ' }))
   assert.equal(draft.request_text, '招一名后端工程师')
+  // 服务端 department_context 必须是对象；部门名由 builder 包成 { department_name }。
+  const withDeptName = assertBuildOk(
+    buildJobDraftBody({ requestText: '招一名后端工程师', departmentContext: '  研发部（演示）  ' }),
+  )
+  assert.deepEqual(withDeptName.department_context, { department_name: '研发部（演示）' })
+  const withDeptObject = assertBuildOk(
+    buildJobDraftBody({
+      requestText: '招一名后端工程师',
+      departmentContext: { department_id: JOB_ID, location: '上海' },
+    }),
+  )
+  assert.deepEqual(withDeptObject.department_context, { department_id: JOB_ID, location: '上海' })
   assertBuildFail(buildJobDraftBody({ requestText: '   ' }), 'MISSING_REQUEST_TEXT')
   assertBuildFail(buildJobDraftBody({ requestText: 'x'.repeat(2001) }), 'REQUEST_TEXT_TOO_LONG')
 
