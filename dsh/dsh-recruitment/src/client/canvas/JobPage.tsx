@@ -148,95 +148,7 @@ export function JobPage({
   useEffect(() => {
     const cancelledRef = { current: false };
     void load(cancelledRef);
-    const handleApproveRubric = async () => {
-    if (!vm || rubricApproving) return;
-    const action = vm.actions.rubric_approve;
-    if (!action || !action.available || action.seam === '') {
-      setFeedback({
-        tone: 'red',
-        text: action?.reasonText || action?.pendingText || '当前岗位标准暂不可批准。',
-      });
-      setRubricApproveOpen(false);
-      return;
-    }
-    const activeSessionId = (sessionId ?? '').trim() || getCanvasSessionId();
-    const built = buildRubricApproveBody({
-      jobId: vm.jobId,
-      rubricVersionId: vm.rubricVersionId,
-      reason: rubricApproveReason.trim() || undefined,
-    });
-    if (!built.ok) {
-      setFeedback({ tone: 'red', text: built.reasonText });
-      return;
-    }
-    setRubricApproving(true);
-    try {
-      const outcome = await postActionSeam(action, built.body, activeSessionId);
-      if (!outcome.accepted) {
-        setFeedback({
-          tone: 'red',
-          text:
-            outcome.error?.message ||
-            describeActionError(outcome.error?.code ?? '', outcome.error?.reasonCode ?? '') ||
-            '批准评分标准未能完成，请稍后重试。',
-        });
-        return;
-      }
-      setRubricApproveOpen(false);
-      setRubricApproveReason('');
-      setFeedback({ tone: 'green', text: `已批准岗位评分标准 ${vm.rubricVersionLabel}。`, });
-      invalidateCachedCanvasData(jobPath);
-      void load(undefined, { silent: true });
-      onActionCompleted?.({ message: `已批准岗位评分标准 ${vm.rubricVersionLabel}` });
-    } catch (err) {
-      setFeedback({
-        tone: 'red',
-        text: err instanceof Error ? err.message : '批准评分标准未能完成，请稍后重试。',
-      });
-    } finally {
-      setRubricApproving(false);
-    }
-  };
-
-  const handleCloseJob = async () => {
-    if (!vm || closingJob) return;
-    const activeSessionId = (sessionId ?? '').trim() || getCanvasSessionId();
-    const reason = closeJobReason.trim();
-    const built = buildJobCloseBody({ jobId: vm.jobId, reason });
-    if (!built.ok) {
-      setFeedback({ tone: 'red', text: built.reasonText });
-      return;
-    }
-    setClosingJob(true);
-    try {
-      const outcome = await postJobClose(vm.jobId, reason, activeSessionId);
-      if (!outcome.accepted) {
-        setFeedback({
-          tone: 'red',
-          text:
-            outcome.error?.message ||
-            describeActionError(outcome.error?.code ?? '', outcome.error?.reasonCode ?? '') ||
-            '关闭岗位未能完成，请稍后重试。',
-        });
-        return;
-      }
-      setCloseJobOpen(false);
-      setCloseJobReason('');
-      setFeedback({ tone: 'green', text: `已关闭岗位「${vm.title}」。` });
-      invalidateCachedCanvasData(jobPath);
-      void load(undefined, { silent: true });
-      onActionCompleted?.({ message: `已关闭岗位「${vm.title}」` });
-    } catch (err) {
-      setFeedback({
-        tone: 'red',
-        text: err instanceof Error ? err.message : '关闭岗位未能完成，请稍后重试。',
-      });
-    } finally {
-      setClosingJob(false);
-    }
-  };
-
-  return () => {
+    return () => {
       cancelledRef.current = true;
     };
   }, [load, refreshNonce]);
@@ -396,6 +308,95 @@ export function JobPage({
       setUploading(false);
     }
   };
+
+  const handleApproveRubric = async () => {
+    if (!vm || rubricApproving) return;
+    const action = vm.actions.rubric_approve;
+    if (!action || !action.available || action.seam === '') {
+      setFeedback({
+        tone: 'red',
+        text: action?.reasonText || action?.pendingText || '当前岗位标准暂不可批准。',
+      });
+      setRubricApproveOpen(false);
+      return;
+    }
+    const activeSessionId = (sessionId ?? '').trim() || getCanvasSessionId();
+    const built = buildRubricApproveBody({
+      jobId: vm.jobId,
+      rubricVersionId: vm.rubricVersionId,
+      reason: rubricApproveReason.trim() || undefined,
+    });
+    if (!built.ok) {
+      setFeedback({ tone: 'red', text: built.reasonText });
+      return;
+    }
+    setRubricApproving(true);
+    try {
+      const outcome = await postActionSeam(action, built.body, activeSessionId);
+      if (!outcome.accepted) {
+        setFeedback({
+          tone: 'red',
+          text:
+            outcome.error?.message ||
+            describeActionError(outcome.error?.code ?? '', outcome.error?.reasonCode ?? '') ||
+            '批准评分标准未能完成，请稍后重试。',
+        });
+        return;
+      }
+      setRubricApproveOpen(false);
+      setRubricApproveReason('');
+      setFeedback({ tone: 'green', text: `已批准岗位评分标准 ${vm.rubricVersionLabel}。`, });
+      invalidateCachedCanvasData(jobPath);
+      void load(undefined, { silent: true });
+      onActionCompleted?.({ message: `已批准岗位评分标准 ${vm.rubricVersionLabel}` });
+    } catch (err) {
+      setFeedback({
+        tone: 'red',
+        text: err instanceof Error ? err.message : '批准评分标准未能完成，请稍后重试。',
+      });
+    } finally {
+      setRubricApproving(false);
+    }
+  };
+
+  const handleCloseJob = async () => {
+    if (!vm || closingJob) return;
+    const activeSessionId = (sessionId ?? '').trim() || getCanvasSessionId();
+    const reason = closeJobReason.trim();
+    const built = buildJobCloseBody({ jobId: vm.jobId, reason });
+    if (!built.ok) {
+      setFeedback({ tone: 'red', text: built.reasonText });
+      return;
+    }
+    setClosingJob(true);
+    try {
+      const outcome = await postJobClose(vm.jobId, reason, activeSessionId);
+      if (!outcome.accepted) {
+        setFeedback({
+          tone: 'red',
+          text:
+            outcome.error?.message ||
+            describeActionError(outcome.error?.code ?? '', outcome.error?.reasonCode ?? '') ||
+            '关闭岗位未能完成，请稍后重试。',
+        });
+        return;
+      }
+      setCloseJobOpen(false);
+      setCloseJobReason('');
+      setFeedback({ tone: 'green', text: `已关闭岗位「${vm.title}」。` });
+      invalidateCachedCanvasData(jobPath);
+      void load(undefined, { silent: true });
+      onActionCompleted?.({ message: `已关闭岗位「${vm.title}」` });
+    } catch (err) {
+      setFeedback({
+        tone: 'red',
+        text: err instanceof Error ? err.message : '关闭岗位未能完成，请稍后重试。',
+      });
+    } finally {
+      setClosingJob(false);
+    }
+  };
+
 
   const handleCreateJob = async () => {
     if (creating) return;
