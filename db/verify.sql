@@ -1465,6 +1465,67 @@ begin
   end if;
 end $$;
 
+do $$
+declare
+  v_missing text;
+begin
+  -- [0024 G-09] booking_invite 专项断言：列 / 复合外键 / CHECK / 唯一键 / 禁删 / 台账。
+  -- 表不存在时 SKIP（0024 尚未应用的旧库仍可通过 verify）。
+  if to_regclass('recruitment.booking_invite') is not null then
+    for v_missing in select unnest(array[
+      'id','tenant_id','application_id','created_by_actor_id','round_no','duration_minutes',
+      'interviewer_actor_ids','timezone','slots','token_sha256','booking_state','expires_at',
+      'created_at','updated_at','confirmed_slot_index','confirmed_interview_id','self_booked'
+    ]) loop
+      if not exists (select 1 from pg_attribute
+                      where attrelid = 'recruitment.booking_invite'::regclass
+                        and attname = v_missing and not attisdropped and attnum > 0) then
+        raise exception 'BOOKING-STRUCT-01 booking_invite 缺列：%', v_missing;
+      end if;
+    end loop;
+
+    select string_agg(conname, ', ') into v_missing
+      from pg_constraint
+     where conrelid = 'recruitment.booking_invite'::regclass and contype = 'f'
+       and conname in ('fk_booking_invite_application','fk_booking_invite_creator','fk_booking_invite_interview');
+    if v_missing is null or array_length(string_to_array(v_missing, ', '), 1) <> 3 then
+      raise exception 'BOOKING-STRUCT-02 booking_invite 复合外键不全：%', coalesce(v_missing, 'none');
+    end if;
+
+    for v_missing in select unnest(array[
+      'ck_booking_invite_booking_state','ck_booking_invite_round','ck_booking_invite_duration',
+      'ck_booking_invite_token_sha256','ck_booking_invite_timezone',
+      'ck_booking_invite_slots_shape','ck_booking_invite_interviewers_shape',
+      'ck_booking_invite_confirmed_slot'
+    ]) loop
+      if not exists (select 1 from pg_constraint
+                      where conrelid = 'recruitment.booking_invite'::regclass
+                        and contype = 'c' and conname = v_missing) then
+        raise exception 'BOOKING-STRUCT-03 booking_invite 缺 CHECK 约束：%', v_missing;
+      end if;
+    end loop;
+
+    if not exists (select 1 from pg_constraint
+                    where conrelid = 'recruitment.booking_invite'::regclass
+                      and contype = 'u' and conname = 'uq_booking_invite_token') then
+      raise exception 'BOOKING-STRUCT-04 booking_invite 缺 token 唯一键 uq_booking_invite_token';
+    end if;
+
+    if not exists (select 1 from pg_trigger g
+                    where g.tgrelid = 'recruitment.booking_invite'::regclass
+                      and not g.tgisinternal and g.tgname = 'trg_booking_invite_no_delete') then
+      raise exception 'BOOKING-STRUCT-05 booking_invite 缺禁删触发器';
+    end if;
+
+    if not exists (select 1 from recruitment.schema_migration where version = '0024_booking_invite') then
+      raise exception 'BOOKING-STRUCT-06 schema_migration 缺 0024_booking_invite 自登记';
+    end if;
+    raise notice 'BOOKING-STRUCT PASS booking_invite 列/复合外键/CHECK/token 唯一键/禁删/台账齐全';
+  else
+    raise notice 'BOOKING-STRUCT SKIP booking_invite 表不存在（0024 尚未应用）';
+  end if;
+end $$;
+
 \echo ''
 \echo '=== ROLLBACK：自检不改变数据库 ==='
 rollback;
