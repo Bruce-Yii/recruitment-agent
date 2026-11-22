@@ -389,7 +389,8 @@ export function CandidatePage({
         const REASON_MAP: Record<string, string> = {
           SAME_PHONE: '同手机号',
           SAME_EMAIL: '同邮箱',
-          SAME_NAME_AND_HISTORY: '同姓名与相近经历',
+          SAME_NAME_SAME_CHANNEL: '同姓名且来源渠道不同',
+          SAME_HISTORY_ARCHIVE: '同一历史档案',
         };
         const parsed = list
           .map((item) => {
