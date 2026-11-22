@@ -44,6 +44,7 @@ export const READ_ONLY_ROUTES = [
   { path: '/recruitment/api/usage', reason: 'GET 只读用量投影（display-usage.ts），只统计 token/次数，不写库' },
   { path: '/recruitment/api/interviewer/overview', reason: 'GET 只读面试官工作台投影，只列我的面试与面评状态' },
   { path: '/recruitment/api/recruiting', reason: 'GET 只读招聘投影前缀（recruiting.ts）：overview/applications/jobs 全是查询视图' },
+  { path: '/recruitment/api/recruiting/applications/:applicationId/duplicates', reason: 'GET 只读候选人去重提示（candidate-dedup.ts）：只读 SELECT + 脱敏提示，不删不合并' },
   { path: '/recruitment/api/material', reason: 'GET/HEAD 只读材料内容前缀（material-content.ts），按 id 取简历原文，不写库' },
   { path: '/recruitment/api/decision/facts', reason: 'GET 只读决策事实投影（decision-read.ts），basis 组装在内存里，不落库' },
   { path: '/recruitment/api/scorecard-form', reason: 'GET/POST 表单 spec 端点（overview.ts）：GET 取规格、POST 只返回预览不写业务表；真实写走 /action/scorecard/submit' },
