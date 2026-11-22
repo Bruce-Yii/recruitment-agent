@@ -1,0 +1,10 @@
+# Wave1 新增/相关测试
+
+- Issue #23 PR #27：`test/integration/recruiting-overview.test.ts` — 11/11 PASS（含 pending rubric 回退/批准后 approved=true）。
+- Issue #24 PR #28：`test/unit/intake-upload-auto-screening.test.ts` — 9/9 PASS（有批准触发、无批准跳过、失败隔离、零 decision 静态断言、去重/串行/恢复、接线顺序）。
+- Issue #25 PR #29：`test/unit/email-auto-assign.test.ts` + `test/unit/email-auto-poll.test.ts` — 15/15 PASS（编码/标题命中、歧义/未命中、UID 幂等、互斥、失败恢复、默认关闭）。
+- 全量 unit：2058 tests / 2054 pass / 0 fail / 4 原有 skip。
+
+## G-01 真机说明
+
+E2E 通过真实 UI 上传合成 PDF（CDP `DOM.setFileInputFiles`），未点击「发起初筛评估」；申请创建、`RESUME_PARSE` 任务 SUCCEEDED，decision 前后 0→0。自动评估是 read-only（`screening_evaluate` 不落业务表），故候选页没有新增持久化评估结果；触发/跳过/失败隔离由单测覆盖。
