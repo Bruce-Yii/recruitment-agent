@@ -475,6 +475,11 @@ const TOOL_FACTORIES: Readonly<Record<string, readonly FactoryEntry[]>> = {
     { factory: 'createWorkspaceOverviewTool', args: [FAKE_DATABASE] },
     { factory: 'unconfiguredWorkspaceOverviewTool', args: [FAKE_ISSUES] },
   ],
+  // 2026-11-23（G-12 / Issue #35）：新增只读工具的 render 也必须被本检查执行。
+  'talent-rediscovery.ts': [
+    { factory: 'createTalentRediscoveryTool', args: [FAKE_DATABASE] },
+    { factory: 'unconfiguredTalentRediscoveryTool', args: [FAKE_ISSUES] },
+  ],
 }
 
 /** `src/tools/` 下**不是**工具模块的文件（有理由的排除项）。 */

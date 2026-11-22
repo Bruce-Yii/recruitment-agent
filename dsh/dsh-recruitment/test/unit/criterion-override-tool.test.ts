@@ -232,7 +232,7 @@ test('render：输出正文含工具名与 override_id', () => {
   assert.ok(text.includes(`  application_id=${APP_ID}`))
 })
 
-test('apply() 注册 36 个工具（30 个既有 + email_fetch + criterion_override + candidate_constraint + ui_dispatch + interview_free_slots + workspace_overview），包含新工具', () => {
+test('apply() 注册 37 个工具（30 个既有 + email_fetch + criterion_override + candidate_constraint + ui_dispatch + interview_free_slots + workspace_overview + talent_rediscovery），包含新工具', () => {
   const registered: { name: string; parameters: Record<string, unknown> }[] = []
   const ctx = {
     tools: { register: (tool: { name: string; parameters: Record<string, unknown> }) => registered.push(tool) },
@@ -246,8 +246,8 @@ test('apply() 注册 36 个工具（30 个既有 + email_fetch + criterion_overr
     },
   }, { RECRUITMENT_DB_PASSWORD: 'unused-in-this-test' })
   const names = registered.map((tool) => tool.name)
-  assert.equal(names.length, 36, `注册数必须是 36，实际 ${names.length}：${names.join(', ')}`)
-  assert.equal(new Set(names).size, 36, '工具名不得重复')
+  assert.equal(names.length, 37, `注册数必须是 37，实际 ${names.length}：${names.join(', ')}`)
+  assert.equal(new Set(names).size, 37, '工具名不得重复')
   assert.ok(names.includes(CRITERION_OVERRIDE_TOOL), `注册点少了人工纠偏工具：${names.join(', ')}`)
 })
 

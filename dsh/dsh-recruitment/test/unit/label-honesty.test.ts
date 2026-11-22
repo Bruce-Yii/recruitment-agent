@@ -317,6 +317,12 @@ const LIVE_EVIDENCE: Record<string, { readonly marker: RegExp; readonly why: str
     marker: /labels: overview\.labels/,
     why: 'labels 透传 readRecruitingOverview 的三维判定（不自己贴 LIVE）',
   },
+  // 2026-11-23（G-12 / Issue #35）：与 workspace-overview 同构，labels 由只读投影产生，
+  // 工具本体只透传、不自己贴 LIVE。
+  'talent-rediscovery.ts': {
+    marker: /readTalentRediscovery/,
+    why: 'labels 透传 readTalentRediscovery 的三维判定（不自己贴 LIVE）',
+  },
 }
 
 test('源码扫描：`provenance: \'LIVE\'` 字面量只允许出现在"证据闸门之后"', () => {

@@ -59,6 +59,8 @@ const CHAT_READ_TOOLS: readonly string[] = [
   UI_DISPATCH_TOOL_NAME,
   INTERVIEW_FREE_SLOTS_TOOL_NAME,
   WORKSPACE_OVERVIEW_TOOL_NAME,
+  // G-12（Issue #35）：历史人才再发现，只读召回（字面量只读工具 18 → 19，仍 0 写工具）。
+  'recruitment_talent_rediscovery',
 ]
 
 const TURN_TIMEOUT_MS = 10 * 60 * 1000
