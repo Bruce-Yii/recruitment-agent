@@ -23,6 +23,7 @@
 | `app-new-job-req` | 新建岗位弹窗核心要求输入 | 选填 |
 | `app-new-job-submit` | 新建岗位弹窗确认创建按钮 | 提交 `postJobCreate`，成功后跳入新岗位画布 |
 | `app-queue-view` | 今日待办视图根 | `#/queue` 主内容区 |
+| `app-queue-ops-notice` | 首页后台运行提醒条（仅存在卡住任务/事件或失败解析任务时出现） |
 | `app-queue-filter-all` | 队列筛选「全部」 | 不过滤阶段 |
 | `app-queue-filter-screening` | 队列筛选「待初筛」 | 筛选 `filterKind === 'screening'` |
 | `app-queue-filter-interviewing` | 队列筛选「面试中」 | 筛选 `filterKind === 'interviewing'` |
