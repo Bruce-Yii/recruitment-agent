@@ -319,7 +319,7 @@ test('前一次评估失败不会阻塞后续评估（串行链尾已归一）',
 })
 
 // ---------------------------------------------------------------------------
-//  5. 接线位置（源码断言）：评估在 SUCCEEDED 之后、且自带 catch 隔离
+//  5. 接线位置（源码断言）：评估在 finalizeTask(SUCCEEDED) 之后（finally）且自带 catch 隔离
 // ---------------------------------------------------------------------------
 
 test('接线：自动初筛在 finalizeTask(SUCCEEDED) 之后调用，且被 catch 隔离', () => {
@@ -328,8 +328,8 @@ test('接线：自动初筛在 finalizeTask(SUCCEEDED) 之后调用，且被 cat
     .replace(/\r\n/g, '\n')
   const succeededAt = source.indexOf("'SUCCEEDED', null")
   // 用真实调用点（带 value.application_id 实参），不取文件顶部的导出声明。
-  const autoAt = source.indexOf('runAutoScreeningAfterIntake(\n      cfg, value.application_id')
+  const autoAt = source.indexOf('runAutoScreeningAfterIntake(', succeededAt)
   assert.ok(succeededAt >= 0 && autoAt > succeededAt, '触发点必须在入库成功终态之后')
-  const after = source.slice(autoAt, autoAt + 400)
+  const after = source.slice(autoAt, autoAt + 600)
   assert.match(after, /\.catch\(/, '自动初筛调用必须自带 catch 兜底，绝不翻盘已成功任务')
 })

@@ -1334,10 +1334,12 @@ const APPLICATION_ROWS_SQL = `
  */
 const AUTO_SCREENING_SQL = `
   select t.application_id::text as application_id,
-         t.result_ref as result_ref
+         t.result_ref as result_ref,
+         t.description as description
     from (
       select b.id::text as id,
              b.result_ref as result_ref,
+             b.description as description,
              b.created_at as created_at,
              ref->>'id' as application_id
         from recruitment.business_task b
@@ -1347,7 +1349,7 @@ const AUTO_SCREENING_SQL = `
          and ref->>'kind' = 'APPLICATION'
          and ref->>'id' = any($2::text[])
     ) t
-   where t.result_ref is not null
+   where t.result_ref is not null or t.description like '%[auto-screening]%'
    order by t.application_id asc, t.created_at desc, t.id desc
  `
 
@@ -2099,17 +2101,25 @@ function mapScreeningDecision(row: ScreeningDecisionRow): ScreeningSummary {
 export function mapAutoScreeningResultRef(
   resultRef: unknown,
   fallbackSha256: string,
+  description?: unknown,
 ): AutoScreeningSummaryView | null {
-  if (typeof resultRef !== 'string' || resultRef === '') return null
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(resultRef)
-  } catch {
-    // 老任务 result_ref 是裸 sha256（非 JSON）——没有建议，返回 null。
-    return null
+  const decode = (raw: unknown): Record<string, unknown> | null => {
+    if (typeof raw !== 'string' || raw === '') return null
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : null
+    } catch {
+      return null
+    }
   }
-  if (typeof parsed !== 'object' || parsed === null) return null
-  const root = parsed as Record<string, unknown>
+  // result_ref 是主位置；description 是兜底（upload 任务可能被 runtime worker 覆盖 result_ref）。
+  let root = decode(resultRef)
+  if (root === null && typeof description === 'string') {
+    const marker = '\n[auto-screening] '
+    const idx = description.lastIndexOf(marker)
+    if (idx >= 0) root = decode(description.slice(idx + marker.length))
+  }
+  if (root === null) return null
   const raw = root.auto_screening
   if (typeof raw !== 'object' || raw === null) return null
   const obj = raw as Record<string, unknown>
@@ -2332,8 +2342,8 @@ async function loadApplicationCards(
   const screeningResult = await client.query<ScreeningDecisionRow>(SCREENING_DECISIONS_SQL, [tenantId, applicationIds])
   const decisionResult = await client.query<DecisionRow>(DECISIONS_SQL, [tenantId, applicationIds])
   const interviewResult = await client.query<InterviewRow>(INTERVIEWS_SQL, [tenantId, applicationIds])
-  // 自动初筛建议：按 business_refs 的 APPLICATION 引用定位 result_ref（只读、非 decision）。
-  const autoScreeningResult = await client.query<{ application_id: string; result_ref: string | null }>(
+  // 自动初筛建议：按 business_refs 的 APPLICATION 引用定位 result_ref/description（只读、非 decision）。
+  const autoScreeningResult = await client.query<{ application_id: string; result_ref: string | null; description: string | null }>(
     AUTO_SCREENING_SQL, [tenantId, applicationIds],
   )
   const interviewIds = interviewResult.rows.map((row) => row.interview_id)
@@ -2382,7 +2392,7 @@ async function loadApplicationCards(
   const autoScreeningByApplication = new Map<string, AutoScreeningSummaryView>()
   for (const row of autoScreeningResult.rows) {
     if (autoScreeningByApplication.has(row.application_id)) continue
-    const summary = mapAutoScreeningResultRef(row.result_ref, '')
+    const summary = mapAutoScreeningResultRef(row.result_ref, '', row.description)
     if (summary !== null) autoScreeningByApplication.set(row.application_id, summary)
   }
   const decisionsByApplication = new Map<string, DecisionSummary[]>()

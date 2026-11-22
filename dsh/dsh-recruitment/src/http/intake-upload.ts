@@ -353,6 +353,17 @@ export interface AutoScreeningResultRef {
   readonly auto_screening?: AutoScreeningSummary
 }
 
+/**
+ * `business_task.description` 里追加的自动初筛摘要标记。
+ *
+ * 为什么还要写 description：上传任务同时可能被 runtime worker 认领；worker 的
+ * `finishAttempt` 会用 `result_ref = taskResultRef` 覆盖 result_ref（失败时为 null）。
+ * description 不被 worker 收尾更新，因此把同一 JSON 追加到这里作为**可读兜底**，
+ * 保证“入库成功但任务状态被 worker 竞争改写”时，HR 仍能看到自动初筛建议。
+ */
+export const AUTO_SCREENING_DESCRIPTION_MARKER = '\n[auto-screening] '
+
+
 /** 一次自动初筛的结果（可观测；不写任何业务表）。 */
 export type AutoScreeningOutcome =
   | {
@@ -492,11 +503,12 @@ async function persistAutoScreeningSummary(
   logger: IntakeUploadDeps['logger'],
 ): Promise<void> {
   const resultRef: AutoScreeningResultRef = { material_sha256: materialSha256, auto_screening: summary }
+  const json = JSON.stringify(resultRef)
   const pool = createPool(cfg)
   try {
     await withActor(pool, actorId, async (client) => {
-      const current = await client.query<{ business_refs: unknown; result_ref: string | null }>(
-        `select business_refs, result_ref
+      const current = await client.query<{ business_refs: unknown; result_ref: string | null; description: string | null }>(
+        `select business_refs, result_ref, description
            from recruitment.business_task
           where tenant_id = $1::uuid and id = $2::uuid`,
         [cfg.tenant_id, taskId],
@@ -514,15 +526,19 @@ async function persistAutoScreeningSummary(
           })
         : []
       refs.push({ kind: 'APPLICATION', id: applicationId })
+      // description 兜底：去掉旧标记后追加同一 JSON（worker 的 finishAttempt 不碰 description）。
+      const baseDescription = (row.description ?? '').split(AUTO_SCREENING_DESCRIPTION_MARKER)[0].trimEnd()
+      const description = `${baseDescription}${AUTO_SCREENING_DESCRIPTION_MARKER}${json}`
       await client.query(
         `update recruitment.business_task
             set result_ref = $4,
+                description = $6,
                 business_refs = $5::jsonb,
                 status_changed_at = now(),
                 status_changed_by_actor_id = $2::uuid,
                 record_version = record_version + 1
           where tenant_id = $1::uuid and id = $3::uuid`,
-        [cfg.tenant_id, actorId, taskId, JSON.stringify(resultRef), JSON.stringify(refs)],
+        [cfg.tenant_id, actorId, taskId, json, JSON.stringify(refs), description],
       )
     })
   } catch (error) {
@@ -673,20 +689,24 @@ async function runBackgroundParse(
     } finally {
       await closePool(pool)
     }
-    await finalizeTask(
-      cfg, input.actorId, input.taskId, 'SUCCEEDED', null,
-      `解析完成：申请 ${value.application_id}，简历版本 ${value.resume_version_id}`,
-      input.sha256,
-    )
-    // G-01：入库已成功、任务已 SUCCEEDED，之后才触发自动初筛。
-    // 这一步的任何异常都已在该 helper 内隔离；再套一层 catch 是双重保险：
-    // 绝不让评估把已成功的上传任务翻成 FAILED（"失败只记日志，绝不回滚入库"）。
-    await runAutoScreeningAfterIntake(
-      cfg, value.application_id, deps.autoScreeningHooks, deps.logger,
-      { actorId: input.actorId, taskId: input.taskId, materialSha256: input.sha256 },
-    ).catch((error: unknown) => {
-      deps.logger?.warn(`intake-upload: 自动初筛调度异常（不影响入库）${input.taskId}: ${String(error).slice(0, 200)}`)
-    })
+    // G-01：入库已成功。自动初筛必须独立于任务终态写入：上传任务可能同时被 runtime
+    // worker 认领并竞争改写 status/result_ref；这里把自动初筛放进 finally，确保即使
+    // finalizeTask 失败（或被 worker 抢先）也执行一次。persist 另把摘要写进 description，
+    // 不会因 worker 的 result_ref 覆盖而丢失。
+    try {
+      await finalizeTask(
+        cfg, input.actorId, input.taskId, 'SUCCEEDED', null,
+        `解析完成：申请 ${value.application_id}，简历版本 ${value.resume_version_id}`,
+        input.sha256,
+      )
+    } finally {
+      await runAutoScreeningAfterIntake(
+        cfg, value.application_id, deps.autoScreeningHooks, deps.logger,
+        { actorId: input.actorId, taskId: input.taskId, materialSha256: input.sha256 },
+      ).catch((error: unknown) => {
+        deps.logger?.warn(`intake-upload: 自动初筛调度异常（不影响入库）${input.taskId}: ${String(error).slice(0, 200)}`)
+      })
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     await finalizeTask(
