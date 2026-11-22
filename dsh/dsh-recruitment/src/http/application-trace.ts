@@ -120,6 +120,16 @@ export function humanActorLabel(
   return '系统记录'
 }
 
+const EVENT_TITLES: Readonly<Record<string, string>> = {
+  'criterion.override.recorded': '记录人工纠偏',
+  'screening.evaluated': '完成初筛评估',
+  'decision.recorded': '记录初筛结论',
+  'resume.intake.received': '收到简历',
+  'business_task.status.changed': '任务状态更新',
+  'task_attempt.status.changed': '处理步骤状态更新',
+  'agent_session.status.changed': '处理会话状态更新',
+}
+
 /** 环节类别 → 人话标题（结果状态只作为补充事实，不编造业务结论）。 */
 const RING_TITLES: Readonly<Record<string, string>> = {
   APPLICATION: '提交申请',
@@ -184,6 +194,7 @@ function titleFromRing(ring: TraceRing): string {
   const base = RING_TITLES[ring.ring] ?? '记录一次流转'
   // state 是封闭枚举时用人话结果覆盖；未知 state 只作为补充，不编业务结论。
   if (ring.ring === 'DECISION' && result !== state && state !== '') return scrubHumanText(result)
+  if (ring.ring === 'EVENT' && EVENT_TITLES[state] !== undefined) return EVENT_TITLES[state] as string
   if (ring.ring === 'TOOL_CALL' && result !== state && state !== '') return scrubHumanText(`处理步骤${result}`)
   return base
 }
