@@ -209,6 +209,8 @@ import { registerCompoundHttp, type CompoundHostContext } from './http/compound.
 import { registerAppShell, type AppShellHostContext } from './http/app-shell.ts'
 import { createAppAgentTurnBridge, type AgentTurnHost } from './http/agent-turn.ts'
 import { registerBatchUndoHttp, type BatchUndoHostContext } from './http/batch-undo.ts'
+// G-09（Issue #47）：候选人自助预约（HR 生成一次性链接 + 免登录确认 + 暖纸公开页）。
+import { registerBookingInviteHttp, type BookingInviteHostContext } from './http/booking-invite.ts'
 import { registerScorecardDraftHttp, type ScorecardDraftHostContext } from './http/scorecard-draft.ts'
 // Issue #31 / G-08：逐条 rubric 标准人工纠偏的受控 HTTP 写路由（复用 createCriterionOverrideTool）。
 import { registerCriterionOverrideHttp, type CriterionOverrideHostContext } from './http/criterion-override.ts'
@@ -836,6 +838,19 @@ export function apply(
         identity: actorIdentity,
       }),
       'recruitment: async intake upload route',
+    )
+    // G-09（Issue #47）：候选人自助预约。HR 写动作与写工具共享 actorIdentity 单例；
+    // 公开页/JSON/确认三条路由免登录，只在回环监听时注册（非回环 fail-closed）。
+    child.effect(
+      () => registerBookingInviteHttp(
+        child as unknown as BookingInviteHostContext,
+        {
+          database: database.resolved,
+          databaseIssues: database.issues,
+          identity: actorIdentity,
+        },
+      ),
+      'recruitment: booking invite routes',
     )
   })
 
