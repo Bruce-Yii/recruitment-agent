@@ -1,0 +1,127 @@
+{
+  "scenarios": {
+    "g14": {
+      "appId": "05169fbf-2975-4e2f-b7a9-904502463848",
+      "uploadInput": true,
+      "pdfSelected": true,
+      "pdfApp": "05169fbf-2975-4e2f-b7a9-904502463848",
+      "uploadDebug": "resume-04a9c7f43947653c-synthetic-resume-golden-path.pdf|application/pdf|content-addressed:sha256:9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356\r\nfresh-s12.pdf|application/pdf|fresh-s12\r\nfresh-candidate-t.pdf|application/pdf|fresh",
+      "originalTab": true,
+      "imgReady": true,
+      "pageLabel": true,
+      "originalText": "resume-04a9c7f43947653c-synthetic-resume-golden-path.pdf第 1 / 2 页\n上一页\n下一页\n下载 / 查看原件 ↗"
+    },
+    "g15": {
+      "overrideReady": true,
+      "overrideBtn": "canvas-criterion-override-work_exists",
+      "screenDebug": "",
+      "traceToggle": true,
+      "traceText": "2026-11-22 22:17收到简历· 系统记录\n状态 resume.intake.received，来源 internal，信任级别 INTERNAL\n2026-11-22 22:17创建待办任务· 招聘负责人\n状态 SUCCEEDED，任务 RESUME_PARSE\n2026-11-22 22:17提交申请· 系统记录\n状态 S6/ACTIVE，阶段 S6，状态 ACTIVE\n2026-11-22 22:17任务状态更新· 招聘负责人\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 22:17创建待办任务· 系统记录\n状态 RETRY_WAIT，任务 RESUME_PARSE\n2026-11-22 22:17任务状态更新· 招聘负责人\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 22:17执行任务· 系统记录\n状态 FAILED_RETRYABLE\n2026-11-22 22:17处理步骤状态更新· 招聘负责人\n状态 task_attempt.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 22:17记录处理过程· 系统记录\n状态 LOST，模型路由 opencode-go-openai/hy4-flash-free\n2026-11-22 22:17处理步骤状态更新· 招聘负责人\n状态 task_attempt.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 22:17任务状态更新· 招聘负责人\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 22:17处理会话状态更新· 招聘负责人\n状态 agent_session.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 22:17记录人工纠偏· 招聘负责人\n状态 criterion.override.recorded，来源 internal，信任级别 INTERNAL",
+      "traceNoUuid": true,
+      "traceNoHash": true,
+      "traceNoBanned": true,
+      "traceHasPerson": true,
+      "traceHasAction": true
+    },
+    "g09": {
+      "bookingApp": "adaf0431-9f39-4b94-8508-1e73eb4d7e4a",
+      "interviewBefore": 2,
+      "scheduleBtn": true,
+      "modalOpen": true,
+      "slotsReady": true,
+      "linkReady": true,
+      "modalDebug": "面试排期与改期换人 · 候选人 T\n安排新场次\n改期现有场次\n发候选人自助选时段\n填写 2–3 个候选人可选开始时间，生成一次性免登录预约链接发给候选人确认。\n备选时段 2（必填，例如 2026-11-24T15:00）\n备选时段 3（选填）\n已生成预约链接：\n/recruitment/book/cUw7lAg3c9zsugYbo5YzrAIzOotPHzn8iro0UlBLJoU\n选择面试官（支持多个，逗号分隔）\n查空闲\n日历暂时读不到，可以手动填时间\n这位面试官还没有绑定飞书日历\n面试开始时间\n更换新面试官（选填）\n取消\n确认提交",
+      "hostErrTail": "[llm-deepseek-api-key] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n",
+      "bookingUrl": "http://127.0.0.1:49347/recruitment/book/cUw7lAg3c9zsugYbo5YzrAIzOotPHzn8iro0UlBLJoU",
+      "publicToken": "cUw7lAg3c9zsugYbo5YzrAIzOotPHzn8iro0UlBLJoU",
+      "bookingInviteCount": 1,
+      "tamperStatus": 400,
+      "tamperBody": "{\"error\":{\"code\":\"INVALID_ARGS\",\"reason_code\":\"SLOT_INDEX_INVALID\",\"message\":\"slot_index 必须是 0..4 的整数\",\"detail\":{\"path\":\"slot_index\"}}}",
+      "interviewAfterTamper": 2,
+      "publicNoUuid": true,
+      "publicNoResume": true,
+      "publicSlots": 3,
+      "confirmed": true,
+      "interviewAfterConfirm": 3,
+      "duplicateStatus": 409,
+      "duplicateBody": "{\"error\":{\"code\":\"BOOKING_ALREADY_CONFIRMED\",\"reason_code\":\"BOOKING_ALREADY_CONFIRMED\",\"message\":\"该预约已确认，不能重复提交\"}}",
+      "interviewAfterDuplicate": 3,
+      "bookingRow": "CONSUMED|1|true"
+    }
+  },
+  "checks": [
+    {
+      "name": "g14_pdf_page_image",
+      "ok": true,
+      "detail": {
+        "appId": "05169fbf-2975-4e2f-b7a9-904502463848",
+        "uploadInput": true,
+        "pdfSelected": true,
+        "pdfApp": "05169fbf-2975-4e2f-b7a9-904502463848",
+        "uploadDebug": "resume-04a9c7f43947653c-synthetic-resume-golden-path.pdf|application/pdf|content-addressed:sha256:9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356\r\nfresh-s12.pdf|application/pdf|fresh-s12\r\nfresh-candidate-t.pdf|application/pdf|fresh",
+        "originalTab": true,
+        "imgReady": true,
+        "pageLabel": true,
+        "originalText": "resume-04a9c7f43947653c-synthetic-resume-golden-path.pdf第 1 / 2 页\n上一页\n下一页\n下载 / 查看原件 ↗"
+      }
+    },
+    {
+      "name": "g15_trace_timeline",
+      "ok": true,
+      "detail": {
+        "overrideReady": true,
+        "overrideBtn": "canvas-criterion-override-work_exists",
+        "screenDebug": "",
+        "traceToggle": true,
+        "traceText": "2026-11-22 22:17收到简历· 系统记录\n状态 resume.intake.received，来源 internal，信任级别 INTERNAL\n2026-11-22 22:17创建待办任务· 招聘负责人\n状态 SUCCEEDED，任务 RESUME_PARSE\n2026-11-22 22:17提交申请· 系统记录\n状态 S6/ACTIVE，阶段 S6，状态 ACTIVE\n2026-11-22 22:17任务状态更新· 招聘负责人\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 22:17创建待办任务· 系统记录\n状态 RETRY_WAIT，任务 RESUME_PARSE\n2026-11-22 22:17任务状态更新· 招聘负责人\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 22:17执行任务· 系统记录\n状态 FAILED_RETRYABLE\n2026-11-22 22:17处理步骤状态更新· 招聘负责人\n状态 task_attempt.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 22:17记录处理过程· 系统记录\n状态 LOST，模型路由 opencode-go-openai/hy4-flash-free\n2026-11-22 22:17处理步骤状态更新· 招聘负责人\n状态 task_attempt.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 22:17任务状态更新· 招聘负责人\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 22:17处理会话状态更新· 招聘负责人\n状态 agent_session.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 22:17记录人工纠偏· 招聘负责人\n状态 criterion.override.recorded，来源 internal，信任级别 INTERNAL",
+        "traceNoUuid": true,
+        "traceNoHash": true,
+        "traceNoBanned": true,
+        "traceHasPerson": true,
+        "traceHasAction": true
+      }
+    },
+    {
+      "name": "g09_self_booking_positive",
+      "ok": true,
+      "detail": {
+        "bookingApp": "adaf0431-9f39-4b94-8508-1e73eb4d7e4a",
+        "interviewBefore": 2,
+        "scheduleBtn": true,
+        "modalOpen": true,
+        "slotsReady": true,
+        "linkReady": true,
+        "modalDebug": "面试排期与改期换人 · 候选人 T\n安排新场次\n改期现有场次\n发候选人自助选时段\n填写 2–3 个候选人可选开始时间，生成一次性免登录预约链接发给候选人确认。\n备选时段 2（必填，例如 2026-11-24T15:00）\n备选时段 3（选填）\n已生成预约链接：\n/recruitment/book/cUw7lAg3c9zsugYbo5YzrAIzOotPHzn8iro0UlBLJoU\n选择面试官（支持多个，逗号分隔）\n查空闲\n日历暂时读不到，可以手动填时间\n这位面试官还没有绑定飞书日历\n面试开始时间\n更换新面试官（选填）\n取消\n确认提交",
+        "hostErrTail": "[llm-deepseek-api-key] model listing from https://api.deepseek.com/models loaded 2 model(s), skipped 0 row(s)\n",
+        "bookingUrl": "http://127.0.0.1:49347/recruitment/book/cUw7lAg3c9zsugYbo5YzrAIzOotPHzn8iro0UlBLJoU",
+        "publicToken": "cUw7lAg3c9zsugYbo5YzrAIzOotPHzn8iro0UlBLJoU",
+        "bookingInviteCount": 1,
+        "tamperStatus": 400,
+        "tamperBody": "{\"error\":{\"code\":\"INVALID_ARGS\",\"reason_code\":\"SLOT_INDEX_INVALID\",\"message\":\"slot_index 必须是 0..4 的整数\",\"detail\":{\"path\":\"slot_index\"}}}",
+        "interviewAfterTamper": 2,
+        "publicNoUuid": true,
+        "publicNoResume": true,
+        "publicSlots": 3,
+        "confirmed": true,
+        "interviewAfterConfirm": 3,
+        "duplicateStatus": 409,
+        "duplicateBody": "{\"error\":{\"code\":\"BOOKING_ALREADY_CONFIRMED\",\"reason_code\":\"BOOKING_ALREADY_CONFIRMED\",\"message\":\"该预约已确认，不能重复提交\"}}",
+        "interviewAfterDuplicate": 3,
+        "bookingRow": "CONSUMED|1|true"
+      }
+    },
+    {
+      "name": "g09_self_booking_negative",
+      "ok": true,
+      "detail": {
+        "tamperStatus": 400,
+        "tamperBody": "{\"error\":{\"code\":\"INVALID_ARGS\",\"reason_code\":\"SLOT_INDEX_INVALID\",\"message\":\"slot_index 必须是 0..4 的整数\",\"detail\":{\"path\":\"slot_index\"}}}",
+        "interviewAfterTamper": 2,
+        "duplicateStatus": 409,
+        "duplicateBody": "{\"error\":{\"code\":\"BOOKING_ALREADY_CONFIRMED\",\"reason_code\":\"BOOKING_ALREADY_CONFIRMED\",\"message\":\"该预约已确认，不能重复提交\"}}",
+        "interviewAfterDuplicate": 3
+      }
+    }
+  ],
+  "pass": true
+}

@@ -1,0 +1,9 @@
+{
+  "db": "ra_wave3_verify_jxo_776eyk",
+  "migrations": "24",
+  "psql_verify_exit": 0,
+  "verify_pass": true,
+  "booking_struct_pass": true,
+  "booking_struct_notice": "BOOKING-STRUCT PASS booking_invite 列/复合外键/CHECK/token 唯一键/禁删/台账齐全",
+  "note": "一次性干净库，0001→0024 应用后执行 db/verify.sql；自检 rollback，不改变数据库。"
+}
