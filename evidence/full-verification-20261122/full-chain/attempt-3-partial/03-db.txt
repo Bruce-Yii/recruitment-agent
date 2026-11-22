@@ -1,0 +1,23 @@
+=== DB READBACK MILESTONE 03 — 新候选人页人工纠偏（criterion_override +1 + 反馈） ===
+at: 2026-11-22T23:13:41.704Z
+db: ra_fresh_e2e_3nk_7xjane (SELECT-only psql; no product code imported)
+verdict: PASS
+reason: overrideReady=true; detail={"testid":"canvas-criterion-override-work_history_present","text":"纠偏","confirmReady":true,"stateBtns":[{"testid":"canvas-override-state-present","text":"有对应"},{"testid":"canvas-override-state-absent","text":"没有对应"},{"testid":"canvas-override-state-unreadable","text":"读不出来"}],"modalText":""}; criterion_override 0->1 (expect +1)
+
+-- baseline head counts
+job|2
+rubric_version|3
+approval|3
+application|4
+intake_asset|4
+decision|0
+criterion_override|1
+interview|6
+booking_invite|0
+scorecard_draft|0
+scorecard|0
+event_inbox|27
+
+-- SQL: select id,application_id,criterion_key,human_state,confirmation_method,record_version,created_at from recruitment.criterion_override where tenant_id='11111111-1111-4111-8111-000000000001' order by created_at desc limit 5
+9222e457-2d35-4cc5-b5c6-3574c4d4dea5|768c6162-c52f-403f-976f-4793a53ed938|work_history_present|ABSENT|IN_CHAT|1|2026-11-23 07:13:36.211164+08
+

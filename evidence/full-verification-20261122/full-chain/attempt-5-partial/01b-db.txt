@@ -1,0 +1,30 @@
+=== DB READBACK MILESTONE 01b — 批准岗位评分标准（自定义维度入版） ===
+at: 2026-11-22T23:24:00.499Z
+db: ra_fresh_e2e_mrc_3mkf54 (SELECT-only psql; no product code imported)
+verdict: PASS
+reason: approveButton=true; rubricApprovedDB=true
+
+-- baseline head counts
+job|2
+rubric_version|3
+approval|3
+application|3
+intake_asset|3
+decision|0
+criterion_override|0
+interview|6
+booking_invite|0
+scorecard_draft|0
+scorecard|0
+event_inbox|14
+
+-- SQL: select id,version_no,payload_hash from recruitment.rubric_version where tenant_id='11111111-1111-4111-8111-000000000001' order by created_at desc limit 3
+aecb1eb2-40be-416e-856c-890fa428a323|1|fa672fe7d1de2ca58578d274ae38f293af2fe843d6dbce270ebdb5ac39ee439b
+8503e342-2ae6-4186-8a12-9e53eb6d74ac|2|0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f
+11111111-1111-4111-8111-000000000403|1|a74e84bb9fa05063c72303924ffdf9aa497682b33f2e94f752daf2a14dc39d79
+
+-- SQL: select id,resource_type,resource_id,status from recruitment.approval where tenant_id='11111111-1111-4111-8111-000000000001' order by created_at desc limit 5
+f532609a-5435-4985-9c0a-800f535b1977|RUBRIC_VERSION|aecb1eb2-40be-416e-856c-890fa428a323|APPROVED
+02cb8a96-ee40-428d-a162-1f290bcaebd3|RUBRIC_VERSION|8503e342-2ae6-4186-8a12-9e53eb6d74ac|APPROVED
+11111111-1111-4111-8111-000000000811|RUBRIC_VERSION|11111111-1111-4111-8111-000000000403|APPROVED
+

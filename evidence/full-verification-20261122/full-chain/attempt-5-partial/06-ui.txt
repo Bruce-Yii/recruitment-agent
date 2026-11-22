@@ -1,0 +1,199 @@
+=== UI MILESTONE 06 — 面试官提交独立面评（scorecard +1，决策事实就绪） ===
+at: 2026-11-22T23:26:09.208Z
+host: http://127.0.0.1:49349
+viewport: 1440x900 (headless Chrome, CDP 9222)
+verdict: PASS
+reason: scorecard 0->2 (expect +1); decision facts probe=READY status=200 state=COMPUTED; submissions=2 ([{"alias":"interviewer_a","filled":true,"clicked":true},{"alias":"interviewer_b","filled":true,"clicked":true}])
+key_visible_text: 面评与催办进展 | 打开人才库检索候选人 | 我的面试与独立面评 | 面试官 B | 面试官 | 当前身份：演示-面试官 B（interviewer_b） | ← 返回我的面试 | INTERVIEW WORKSPACE | 林承宇 | FULLCHAIN岗位-834756 · 第 1 轮 · FULLCHAIN岗位-834756 · 当前身份：演示-面试官 B | 面评已提交 | 本轮面试简报 | FULLCHAIN岗位-834756 | 面后速记 | 本轮考察重点 | 第 1 轮 · 只读 · 服务端权威 | 来源：岗位通用标准（服务端未提供本轮专属配置） | JOB_BASE 降级（服务端未提供该轮配置） | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） | 评分维度见下方「本轮评分表 · effective schema」（岗位底座）。 | 本轮评分表 · effective schema | 只读 · 岗位通用标准（服务端未提供本轮专属配置） | 分数区间：服务端未提供分数区间 · submission rubric：aecb1eb2-40be-416e-856c-890fa428a323 | 有可核对的工作经历 | work_history_present | kind=MUST_HAVE · weight=0.4 | JOB_BASE | 核心岗位胜任力匹配 | core_fit | kind=MUST_HAVE · weight=0.4 | JOB_BASE | 候选人过往经历与核心职责是否与该岗位要求高度匹配？ | 有高并发分布式系统实战经验 | custom_r2w0_3 | kind=MUST_HA
+extra: {"scBefore6":0,"scAfter6":2,"scSubmits":[{"alias":"interviewer_a","rowsReady":true,"opened":true,"formReady":true,"openClicked":true,"filled":{"ok":true,"dimensions":3,"scores":3,"notes":3,"overall":"ADVANCE"},"submit":{"ok":true,"disabled":false,"clicked":true},"ui":"面评与催办进展 | 打开人才库检索候选人 | 我的面试与独立面评 | 面试官 A | 面试官 | 当前身份：演示-面试官（interviewer_a） | ← 返回我的面试 | INTERVIEW WORKSPACE | 林承宇 | FULLCHAIN岗位-834756 · 第 1 轮 · FULLCHAIN岗位-834756 · 当前身份：演示-面试官 | 面评已提交 | 本轮面试简报 | FULLCHAIN岗位-834756 | 面后速记 | 本轮考察重点 | 第 1 轮 · 只读 · 服务端权威 | 来源：岗位通用标准（服务端未提供本轮专属配置） | JOB_BASE 降级（服务端未提供该轮配置） | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） | 评分维度见下方「本轮评分表 · effective schema」（岗位底座）。 | 本轮评分表 · effective sche"},{"alias":"interviewer_b","rowsReady":true,"opened":true,"formReady":true,"openClicked":true,"filled":{"ok":true,"dimensions":3,"scores":3,"notes":3,"overall":"ADVANCE"},"submit":{"ok":true,"disabled":false,"clicked":true},"ui":"面评与催办进展 | 打开人才库检索候选人 | 我的面试与独立面评 | 面试官 B | 面试官 | 当前身份：演示-面试官 B（interviewer_b） | ← 返回我的面试 | INTERVIEW WORKSPACE | 林承宇 | FULLCHAIN岗位-834756 · 第 1 轮 · FULLCHAIN岗位-834756 · 当前身份：演示-面试官 B | 面评已提交 | 本轮面试简报 | FULLCHAIN岗位-834756 | 面后速记 | 本轮考察重点 | 第 1 轮 · 只读 · 服务端权威 | 来源：岗位通用标准（服务端未提供本轮专属配置） | JOB_BASE 降级（服务端未提供该轮配置） | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） | 评分维度见下方「本轮评分表 · effective schema」（岗位底座）。 | 本轮评分表 · effective "}],"facts":{"status":200,"probe":"READY","parsed":{"contract_version":"decision-facts 1.0.0","evaluation_summary_state":"COMPUTED","evaluation_summary":{"available":true,"ready_for_decision":true,"blockers":["NO_REJECTING_SCORECARD"]},"missing":[]},"raw":"{\"contract_version\":\"decision-facts 1.0.0\",\"application_id\":\"d18cd698-d7b8-466b-89cc-1af03eb9ca31\",\"stage_code\":\"S7\",\"lifecycle_status\":\"ACTIVE\",\"job\":{\"job_id\":\"36802bcb-01d2-4269-aa24-18c0241afe1a\",\"job_code\":\"JOB-SGR2YR\",\"job_title\":\"FULLCHAIN岗位-834756\",\"job_status\":\"OPEN\",\"job_version_id\":\"fbc9c18f-75fd-4485-a96c-d74e0a05239e\",\"job_payload_hash\":\"8c635a19eb6475237c422309597cbd1be440bbbc588882ba211ed0a802911785\",\"current_job_version_id\":\"fbc9c18f-75fd-4485-a96c-d74e0a05239e\",\"current_rubric_version_id\":\"aecb1eb2-40be-416e-856c-890fa428a323\"},\"rubric\":{\"rubric_version_id\":\"aecb1eb2-40be-416e-856c-890fa428a323\",\"version_no\":1,\"payload_hash\":\"fa672fe7d1de2ca58578d274ae38f293af2fe843d6dbce270ebdb5ac39ee439b\",\"dimensions\":[{\"key\":\"work_history_present\",\"label\":\"有可核对的工作经历\",\"weight\":0.4,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"core_fit\",\"label\":\"核心岗位胜任力匹配\",\"weight\":0.4,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"custom_r2w0_3\",\"label\":\"有高并发分布式系统实战经验\",\"weight\":0.2,\"required\":true,\"kind\":\"MUST_HAVE\"}],\"approved\":true},\"authority\":{\"actor_id\":\"11111111-1111-4111-8111-000000000105\",\"alias\":\"interviewer_b\",\"display_name\":\"演示-面试官 B\",\"roles\":[\"INTERVIEWER\"],\"is_hiring_manager\":false},\"scre"}}
+----- PAGE innerText -----
+Recruitment OS
+我的面试
+Agent
+你好，我是招聘协作 Agent。你可以直接告诉我需要推进哪位候选人，或拖入简历文件自动建档。
+梳理今天最优先推进的候选人
+查看待提交面评与催办进展
+打开人才库检索候选人
+我的面试与独立面评
+面试官 B
+面试官
+
+当前身份：演示-面试官 B（interviewer_b）
+
+← 返回我的面试
+INTERVIEW WORKSPACE
+林承宇
+
+FULLCHAIN岗位-834756 · 第 1 轮 · FULLCHAIN岗位-834756 · 当前身份：演示-面试官 B
+
+面评已提交
+本轮面试简报
+
+FULLCHAIN岗位-834756
+
+面后速记
+本轮考察重点
+第 1 轮 · 只读 · 服务端权威
+
+来源：岗位通用标准（服务端未提供本轮专属配置）
+
+JOB_BASE 降级（服务端未提供该轮配置）
+
+本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE）
+
+评分维度见下方「本轮评分表 · effective schema」（岗位底座）。
+
+本轮评分表 · effective schema
+只读 · 岗位通用标准（服务端未提供本轮专属配置）
+
+分数区间：服务端未提供分数区间 · submission rubric：aecb1eb2-40be-416e-856c-890fa428a323
+
+有可核对的工作经历
+work_history_present
+kind=MUST_HAVE · weight=0.4
+JOB_BASE
+核心岗位胜任力匹配
+core_fit
+kind=MUST_HAVE · weight=0.4
+JOB_BASE
+
+候选人过往经历与核心职责是否与该岗位要求高度匹配？
+
+有高并发分布式系统实战经验
+custom_r2w0_3
+kind=MUST_HAVE · weight=0.2
+JOB_BASE
+
+候选人在「有高并发分布式系统实战经验」方面是否达到该岗位预期？
+
+前面几轮发生了什么
+只读 · 紧邻上一轮 · 服务端事实
+
+这是第一轮，没有前置轮次可参考。
+
+这一轮可以参考
+只读 · 参考不是指令 · 服务端事实
+
+• 可以重点了解「有可核对的工作经历」
+
+值得问的原因：岗位标准里这一条权重较高（0.4），前面的轮次还没有聊到这一条，材料里也没有对应的原文。
+
+• 可以重点了解「核心岗位胜任力匹配」
+
+值得问的原因：岗位标准里这一条权重较高（0.4），前面的轮次还没有聊到这一条，材料里也没有对应的原文。
+
+• 可以重点了解「有高并发分布式系统实战经验」
+
+值得问的原因：岗位标准里这一条权重较高（0.2），前面的轮次还没有聊到这一条，材料里也没有对应的原文。
+
+查看招聘方接收的简历材料
+材料分支 · Transcript
+
+转写状态：还没收到（PENDING）
+
+reason_code：WAITING · 会议绑定：未绑定 · 会议数：0
+
+这一轮的转写还没到，不影响你提交面评（面评仍可提交）；后续由 HR 决定如何处理。
+
+这张卡片只反映转写本身的状态；阶段能否推进由后续流程决定。
+
+面评分支 · 我的独立评价
+
+面评状态：已提交（SUBMITTED）
+
+scorecard_id：eba82f8c-497b-4430-97a6-58056ffe7fc1
+
+status：SUBMITTED · revision_no：1 · record_version：1
+
+submitted_at：2026-11-23 07:26
+
+transcript_basis：NO_TRANSCRIPT
+
+overall：ADVANCE
+
+只显示你本人的面评；其他面试官的主观评分与私人备注默认不展示。
+
+提交我的独立面评
+本轮面评已提交；修订需要服务端 revision 闭环，本版不开放。
+面试安排
+
+2027-01-06 15:00 – 16:00
+
+时区：Asia/Shanghai · 面试状态：SCHEDULED · slot：DEFAULT
+
+会议绑定：未绑定
+
+转写状态：还没收到
+
+面试 id：76c1872b-feb6-46a4-b884-0b364a7051a6
+
+provenance：FIXTURE
+trigger：MANUAL
+connection：CONNECTED
+
+服务端评估时间（as_of）：2026-11-22T23:26:05.119Z
+
+信息可见范围
+
+可查看分配给你的面试、本轮 Rubric、授权材料；其他面试官的主观评分与私人备注默认不展示。
+
+Provenance / trigger / connection 由服务端按租户现算，前端不重贴标签。
+
+我的独立面评
+×
+
+按本轮岗位标准记录你的独立观察。Agent 不会代替面试官提交；提交后实时落库并刷新状态。
+
+本轮考察重点（只读）
+
+岗位基础标准
+
+转写依据：无转写独立评估
+
+有可核对的工作经历
+
+权重：0.4
+
+评估结论：
+请选择
+MET（符合）
+NOT_MET（不符合）
+NOT_OBSERVED（未观察到）
+UNREADABLE（无法判读）
+评分（1–5 的整数）：
+观察说明（可选）：
+核心岗位胜任力匹配
+
+权重：0.4
+
+评估结论：
+请选择
+MET（符合）
+NOT_MET（不符合）
+NOT_OBSERVED（未观察到）
+UNREADABLE（无法判读）
+评分（1–5 的整数）：
+观察说明（可选）：
+有高并发分布式系统实战经验
+
+权重：0.2
+
+评估结论：
+请选择
+MET（符合）
+NOT_MET（不符合）
+NOT_OBSERVED（未观察到）
+UNREADABLE（无法判读）
+评分（1–5 的整数）：
+观察说明（可选）：
+综合结论
+结论：
+请选择
+ADVANCE（推进）
+HOLD（暂缓）
+REJECT（不通过）
+取消
+提交我的独立面评
+面评已提交
+
+已同步写入并刷新「我的面试」列表，本场草稿已自动清理。

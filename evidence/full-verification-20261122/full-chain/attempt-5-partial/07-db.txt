@@ -1,0 +1,26 @@
+=== DB READBACK MILESTONE 07 — 记录正式终审决策（decision +1） ===
+at: 2026-11-22T23:26:26.978Z
+db: ra_fresh_e2e_mrc_3mkf54 (SELECT-only psql; no product code imported)
+verdict: FAIL
+reason: FINAL decision 0->0 (expect +1); all decisions=SCREENING|ADVANCE; detail={"modalText":"记录终审正式决策 · 林承宇\n终审决策\n阶段决策\n通过（推进 / 发 Offer）\n待定\n不通过\n正式决策理由\n取消\n确认提交","factsBlocked":false,"missingScorecards":false,"submitDisabled":false,"reasonFilled":true,"afterSubmit":"决策 1 人、4 份面评已超时）。当前首位待推进：林承宇（FULLCHAIN岗位-834756）。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。 | 提炼这位候选人的核心风险点 | 帮我查下一轮可约时段 | 对比岗位评分标准 | 招聘负责人 | HR | ← 返回 | / | FULLCHAIN岗位-834756 | / | 面试安排 | / | 林承宇 | ‹ | 1 / 4 | › | 来源 | LIVE | 触发 | MANUAL | 连接 | CONNECTED | 林承宇 | FULLCHAIN岗位-834756（JOB-SGR2YR）· 档案号 d18cd698 · 标准 V1 | ☆ | 面试安排 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 初筛结论：FULLCHAIN 实机初筛：材料齐备、人工纠偏已留痕，同意进入面试阶段。 · 自动初筛建议人工复核（建议）：3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_r2w0_3:NEEDS_JUDGMENT） · 准备面试：面试已排期或即将排期，需要准备 | 自动初筛建议（上传简历后自动生成） | 建议人工复核 | 3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_r2w0_3:NEEDS_JUDGMENT） | 这是只"}
+
+-- baseline head counts
+job|2
+rubric_version|3
+approval|3
+application|4
+intake_asset|4
+decision|1
+criterion_override|1
+interview|7
+booking_invite|1
+scorecard_draft|0
+scorecard|2
+event_inbox|58
+
+-- SQL: select id,application_id,coalesce(interview_id::text,'-'),decision_scope,result,superseded_by_decision_id,created_at from recruitment.decision where tenant_id='11111111-1111-4111-8111-000000000001' order by created_at desc limit 5
+ded0e7b9-f956-4c42-ae56-f1ef954e4dbe|d18cd698-d7b8-466b-89cc-1af03eb9ca31|-|SCREENING|ADVANCE||2026-11-23 07:24:14.355335+08
+
+-- SQL: select id,current_stage_code,lifecycle_status from recruitment.application where id='d18cd698-d7b8-466b-89cc-1af03eb9ca31'
+d18cd698-d7b8-466b-89cc-1af03eb9ca31|S8|ACTIVE
+

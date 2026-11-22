@@ -1,0 +1,26 @@
+=== DB READBACK MILESTONE 04 — 发候选人自助选时段 + 免登录确认（interview +1） ===
+at: 2026-11-22T23:13:46.007Z
+db: ra_fresh_e2e_3nk_7xjane (SELECT-only psql; no product code imported)
+verdict: PASS
+reason: selfBookMode=true; linkReady=true; token=yes; href=yes; publicSlots=3; confirmed=true; interview 0->1 (expect +1)
+
+-- baseline head counts
+job|2
+rubric_version|3
+approval|3
+application|4
+intake_asset|4
+decision|0
+criterion_override|1
+interview|7
+booking_invite|1
+scorecard_draft|0
+scorecard|0
+event_inbox|27
+
+-- SQL: select id,application_id,round_no,status,scheduled_start_at,timezone,created_at from recruitment.interview where application_id='768c6162-c52f-403f-976f-4793a53ed938' order by created_at
+078b002b-e3a4-43f0-ad87-ee846473c06c|768c6162-c52f-403f-976f-4793a53ed938|1|SCHEDULED|2027-01-06 15:00:00+08|Asia/Shanghai|2026-11-23 07:13:45.629547+08
+
+-- SQL: select id,application_id,booking_state,confirmed_slot_index,self_booked from recruitment.booking_invite where application_id='768c6162-c52f-403f-976f-4793a53ed938' order by created_at desc
+b0fdfc9b-9a61-4bed-9084-ab567185170f|768c6162-c52f-403f-976f-4793a53ed938|CONSUMED|1|t
+

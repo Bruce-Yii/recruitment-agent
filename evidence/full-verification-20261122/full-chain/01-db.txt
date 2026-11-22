@@ -1,0 +1,29 @@
+=== DB READBACK MILESTONE 01 — 新建 OPEN 岗位（AI 草案 + 自定义维度） ===
+at: 2026-11-22T23:35:13.704Z
+db: ra_fresh_e2e_di0_35byqx (SELECT-only psql; no product code imported)
+verdict: PASS
+reason: title=FULLCHAIN岗位-510664; jobId=96481928-a037-4532-9d25-7f8e050e2fed; status=OPEN; draftNotice=true; criteria=2->3; OPEN default=true
+
+-- baseline head counts
+job|2
+rubric_version|3
+approval|3
+application|3
+intake_asset|3
+decision|0
+criterion_override|0
+interview|6
+booking_invite|0
+scorecard_draft|0
+scorecard|0
+event_inbox|12
+
+-- SQL: select id,title,status,created_at from recruitment.job where tenant_id='11111111-1111-4111-8111-000000000001' order by created_at desc limit 3
+96481928-a037-4532-9d25-7f8e050e2fed|FULLCHAIN岗位-510664|OPEN|2026-11-23 07:35:11.046948+08
+11111111-1111-4111-8111-000000000401|后端工程师（演示）|OPEN|2026-11-23 07:34:53.404687+08
+
+-- SQL: select id,version_no,payload_hash from recruitment.rubric_version where tenant_id='11111111-1111-4111-8111-000000000001' order by created_at desc limit 3
+02828874-5a09-48db-a290-762768dae65c|1|9c9696fece914284e840b15dcb723d3fadbd9fe706884af9a7ab68959c64dbee
+9f1f2900-2ffc-44a4-8b24-a5967ee6a648|2|0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f
+11111111-1111-4111-8111-000000000403|1|a74e84bb9fa05063c72303924ffdf9aa497682b33f2e94f752daf2a14dc39d79
+

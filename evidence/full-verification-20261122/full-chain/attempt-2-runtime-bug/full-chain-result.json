@@ -1,0 +1,159 @@
+{
+  "generated_at": "2026-11-22T23:10:24.199Z",
+  "branch": "evidence/full-verification-chain",
+  "head": "7695243",
+  "base": "7695243",
+  "viewport": [
+    1440,
+    900
+  ],
+  "mode": "FRESH",
+  "db": "ra_fresh_e2e_h8g_5d9uri",
+  "host": "http://127.0.0.1:49349",
+  "cdp": 9222,
+  "steps": [
+    {
+      "milestone": "01",
+      "title": "新建 OPEN 岗位（AI 草案 + 自定义维度）",
+      "verdict": "PASS",
+      "reason": "title=FULLCHAIN岗位-089599; jobId=6fa1f79e-ff23-4164-b53d-f33a7a9bd35c; status=OPEN; draftNotice=true; criteria=2->3; OPEN default=true",
+      "screenshot": "evidence/full-verification-20261122/full-chain/01-job-created.png",
+      "db_readback": "evidence/full-verification-20261122/full-chain/01-db.txt",
+      "ui_text": "evidence/full-verification-20261122/full-chain/01-ui.txt",
+      "db_counts": {
+        "job": 2,
+        "rubric_version": 3,
+        "approval": 3,
+        "application": 3,
+        "intake_asset": 3,
+        "decision": 0,
+        "criterion_override": 0,
+        "interview": 6,
+        "booking_invite": 0,
+        "scorecard_draft": 0,
+        "scorecard": 0,
+        "event_inbox": 12
+      },
+      "at": "2026-11-22T23:11:35.134Z",
+      "extra": {
+        "jobTitle": "FULLCHAIN岗位-089599",
+        "jobId": "6fa1f79e-ff23-4164-b53d-f33a7a9bd35c",
+        "jobStatus": "OPEN",
+        "draftNotice": true,
+        "criteriaBefore": 2,
+        "criteriaAfter": 3,
+        "openDefault": true,
+        "customDimension": "有高并发分布式系统实战经验"
+      }
+    },
+    {
+      "milestone": "01b",
+      "title": "批准岗位评分标准（自定义维度入版）",
+      "verdict": "PASS",
+      "reason": "approveButton=true; rubricApprovedDB=true",
+      "screenshot": "evidence/full-verification-20261122/full-chain/01b-rubric-approved.png",
+      "db_readback": "evidence/full-verification-20261122/full-chain/01b-db.txt",
+      "ui_text": "evidence/full-verification-20261122/full-chain/01b-ui.txt",
+      "db_counts": {
+        "job": 2,
+        "rubric_version": 3,
+        "approval": 3,
+        "application": 3,
+        "intake_asset": 3,
+        "decision": 0,
+        "criterion_override": 0,
+        "interview": 6,
+        "booking_invite": 0,
+        "scorecard_draft": 0,
+        "scorecard": 0,
+        "event_inbox": 14
+      },
+      "at": "2026-11-22T23:11:39.266Z",
+      "extra": {
+        "approveShown": true,
+        "approvedRubric": true
+      }
+    },
+    {
+      "milestone": "02",
+      "title": "上传真实 PDF 并显示自动初筛（不写 decision）",
+      "verdict": "PASS",
+      "reason": "upload=true; appId=f3518a1a-32c9-4233-8b3f-e8c3b427260d; autoTask=uploaded resume intake (event 1eb52fd6-fb9e-4797-8bc0-e60932d2eaf1)\r\n[auto-screening] {\"material_sha256\":\"aa2f4645c7535b; autoVisible=true; decision 0->0 (must be unchanged)",
+      "screenshot": "evidence/full-verification-20261122/full-chain/02-auto-screening.png",
+      "db_readback": "evidence/full-verification-20261122/full-chain/02-db.txt",
+      "ui_text": "evidence/full-verification-20261122/full-chain/02-ui.txt",
+      "db_counts": {
+        "job": 2,
+        "rubric_version": 3,
+        "approval": 3,
+        "application": 4,
+        "intake_asset": 4,
+        "decision": 0,
+        "criterion_override": 0,
+        "interview": 6,
+        "booking_invite": 0,
+        "scorecard_draft": 0,
+        "scorecard": 0,
+        "event_inbox": 21
+      },
+      "at": "2026-11-22T23:11:48.302Z",
+      "extra": {
+        "uploadBtn": true,
+        "setFile": {
+          "ok": true,
+          "files": [
+            "work/d5/fullpage/fixtures/synthetic-upload.pdf"
+          ]
+        },
+        "appId": "f3518a1a-32c9-4233-8b3f-e8c3b427260d",
+        "autoTask": "uploaded resume intake (event 1eb52fd6-fb9e-4797-8bc0-e60932d2eaf1)\r\n[auto-screening] {\"material_sha256\":\"aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df\",\"auto_screening\":{\"verdict\":",
+        "autoVisible": true,
+        "decisionBefore2": 0,
+        "decisionAfter2": 0,
+        "autoText": "自动初筛建议（上传简历后自动生成）\n建议人工复核\n3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_b447_3:NEEDS_JUDGMENT）\n这是只读评估给出的建议，不是录用决定；请由招聘团队成员确认。\nwork_history_present三态：presentSATISFIED\nwork_experience 已读出（state=present）\ncore_fitNEEDS_JUDGMENT\n这条要求机器判不了（第 2 条），需要人回答 rubric 里的原问句\ncustom_b447_3NEEDS_JUDGMENT\n这条要求机器判不了（第 3 条），需要人回答 rubric 里的原问句"
+      }
+    }
+  ],
+  "counts": {
+    "PASS": 3,
+    "FAIL": 0,
+    "BLOCKED": 0
+  },
+  "overall_pass": false,
+  "baseline_head_counts": {
+    "job": 1,
+    "rubric_version": 2,
+    "approval": 2,
+    "application": 3,
+    "intake_asset": 3,
+    "decision": 0,
+    "criterion_override": 0,
+    "interview": 6,
+    "booking_invite": 0,
+    "scorecard_draft": 0,
+    "scorecard": 0,
+    "event_inbox": 7
+  },
+  "machine_checks": null,
+  "error": "ReferenceError: stateBtns is not defined\n    at file:///D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-chain/work/d5/fullpage/probe-full-chain.mjs:351:34",
+  "dataset": {
+    "candidate_id": "11111111-1111-4111-8111-000000000699",
+    "candidate_name": "候选人 T",
+    "application_id": "2063a185-3f87-48d8-b945-b699e889d7be",
+    "job_id": "11111111-1111-4111-8111-000000000401",
+    "rubric_version_id": "649ac735-8315-4e60-b02c-95b67d5b1c17",
+    "rubric_version_no": 2,
+    "rubric_payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
+    "interview_round1": {
+      "id": "e337cc79-7532-4389-8273-3f81efba3ce7",
+      "interviewer_actor_id": "11111111-1111-4111-8111-000000000104",
+      "label": "Interviewer A"
+    },
+    "interview_round2": {
+      "id": "98546abd-620a-4c8a-8147-5238fe8c7d4b",
+      "interviewer_actor_id": "11111111-1111-4111-8111-000000000105",
+      "label": "Interviewer B"
+    },
+    "constraint_text": "候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。"
+  }
+}

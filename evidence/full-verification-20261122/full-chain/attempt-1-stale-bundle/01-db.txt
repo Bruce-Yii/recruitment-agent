@@ -1,0 +1,27 @@
+=== DB READBACK MILESTONE 01 — 新建 OPEN 岗位（AI 草案 + 自定义维度） ===
+at: 2026-11-22T23:06:48.473Z
+db: ra_fresh_e2e_gn4_e9kw54 (SELECT-only psql; no product code imported)
+verdict: FAIL
+reason: title=FULLCHAIN岗位-564800; jobId=MISSING; status=; draftNotice=false; criteria=0->0; OPEN default=false
+
+-- baseline head counts
+job|1
+rubric_version|2
+approval|2
+application|3
+intake_asset|3
+decision|0
+criterion_override|0
+interview|6
+booking_invite|0
+scorecard_draft|0
+scorecard|0
+event_inbox|22
+
+-- SQL: select id,title,status,created_at from recruitment.job where tenant_id='11111111-1111-4111-8111-000000000001' order by created_at desc limit 3
+11111111-1111-4111-8111-000000000401|后端工程师（演示）|OPEN|2026-11-23 07:02:05.290004+08
+
+-- SQL: select id,version_no,payload_hash from recruitment.rubric_version where tenant_id='11111111-1111-4111-8111-000000000001' order by created_at desc limit 3
+3da8a9eb-7eb5-4281-b4a9-850563e0905a|2|0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f
+11111111-1111-4111-8111-000000000403|1|a74e84bb9fa05063c72303924ffdf9aa497682b33f2e94f752daf2a14dc39d79
+

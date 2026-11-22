@@ -1,0 +1,20 @@
+=== UI MILESTONE 04 — 发候选人自助选时段 + 免登录确认（interview +1） ===
+at: 2026-11-22T23:13:46.379Z
+host: http://127.0.0.1:49349
+viewport: 1440x900 (headless Chrome, CDP 9222)
+verdict: PASS
+reason: selfBookMode=true; linkReady=true; token=yes; href=yes; publicSlots=3; confirmed=true; interview 0->1 (expect +1)
+key_visible_text: 预约有关的信息。
+extra: {"scheduleShown":true,"selfBookMode":true,"linkReady":true,"bookingHref":"/recruitment/book/SEkQ2m-nAZZZMOysqDEgdhA-nNSodPxBBybZgByqfiM","publicToken":"REDACTED","publicSlots":3,"confirmed":true,"interviewBefore4":0,"interviewAfter4":1,"publicText":"FULLCHAIN岗位-195192\n\n第 1 轮 · 60 分钟 · Asia/Shanghai\n\n状态：待确认\n\nAsia/Shanghai · 2027-01-05T10:00:00+08:00 → 2027-01-05T11:00:00+08:00确认此时段\nAsia/Shanghai · 2027-01-06T15:00:00+08:00 → 2027-01-06T16:00:00+08:00确认此时段\nAsia/Shanghai · 2027-01-07T10:30:00+08:00 → 2027-01-07T11:30:00+08:00确认此时段\n\n本页面仅展示与本次面试预约有关的信息。"}
+----- PAGE innerText -----
+FULLCHAIN岗位-195192
+
+第 1 轮 · 60 分钟 · Asia/Shanghai
+
+状态：已确认
+
+Asia/Shanghai · 2027-01-05T10:00:00+08:00 → 2027-01-05T11:00:00+08:00确认此时段
+Asia/Shanghai · 2027-01-06T15:00:00+08:00 → 2027-01-06T16:00:00+08:00确认此时段
+Asia/Shanghai · 2027-01-07T10:30:00+08:00 → 2027-01-07T11:30:00+08:00确认此时段
+
+本页面仅展示与本次面试预约有关的信息。

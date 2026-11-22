@@ -1,0 +1,150 @@
+=== UI MILESTONE 07 — 记录正式终审决策（decision +1） ===
+at: 2026-11-22T23:21:14.627Z
+host: http://127.0.0.1:49349
+viewport: 1440x900 (headless Chrome, CDP 9222)
+verdict: FAIL
+reason: decision 0->0 (expect +1); detail={"modalText":"记录终审正式决策 · 林承宇\n终审决策\n阶段决策\n通过（推进 / 发 Offer）\n待定\n不通过\n正式决策理由\n取消\n确认提交","factsBlocked":false,"missingScorecards":false,"submitDisabled":false,"reasonFilled":true,"afterSubmit":"决策 1 人、4 份面评已超时）。当前首位待推进：林承宇（FULLCHAIN岗位-526929）。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。 | 提炼这位候选人的核心风险点 | 帮我查下一轮可约时段 | 对比岗位评分标准 | 招聘负责人 | HR | ← 返回 | / | FULLCHAIN岗位-526929 | / | 初筛评估 | / | 林承宇 | ‹ | 1 / 4 | › | 来源 | LIVE | 触发 | MANUAL | 连接 | CONNECTED | 林承宇 | FULLCHAIN岗位-526929（JOB-SGKHDV）· 档案号 41b64d03 · 标准 V1 | ☆ | 初筛评估 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 自动初筛建议人工复核（建议）：3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_khdm_3:NEEDS_JUDGMENT） · 等待初筛决定：材料已就绪，还没有人工作出筛选结论 | 自动初筛建议（上传简历后自动生成） | 建议人工复核 | 3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_khdm_3:NEEDS_JUDGMENT） | 这是只读评估给出的建议，不是录用决定；请由招聘团队成员确认。 | work_history_"}
+key_visible_text: 决策 1 人、4 份面评已超时）。当前首位待推进：林承宇（FULLCHAIN岗位-526929）。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。 | 提炼这位候选人的核心风险点 | 帮我查下一轮可约时段 | 对比岗位评分标准 | 招聘负责人 | HR | ← 返回 | / | FULLCHAIN岗位-526929 | / | 初筛评估 | / | 林承宇 | ‹ | 1 / 4 | › | 来源 | LIVE | 触发 | MANUAL | 连接 | CONNECTED | 林承宇 | FULLCHAIN岗位-526929（JOB-SGKHDV）· 档案号 41b64d03 · 标准 V1 | ☆ | 初筛评估 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 自动初筛建议人工复核（建议）：3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_khdm_3:NEEDS_JUDGMENT） · 等待初筛决定：材料已就绪，还没有人工作出筛选结论 | 自动初筛建议（上传简历后自动生成） | 建议人工复核 | 3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_khdm_3:NEEDS_JUDGMENT） | 这是只读评估给出的建议，不是录用决定；请由招聘团队成员确认。 | work_history_ Recruitment OS | 今日待办 | 4 | 在招岗位 | 2 | 
+extra: {"decisionBefore7":0,"decisionAfter7":0,"decisionDetail":{"modalText":"记录终审正式决策 · 林承宇\n终审决策\n阶段决策\n通过（推进 / 发 Offer）\n待定\n不通过\n正式决策理由\n取消\n确认提交","factsBlocked":false,"missingScorecards":false,"submitDisabled":false,"reasonFilled":true,"afterSubmit":"决策 1 人、4 份面评已超时）。当前首位待推进：林承宇（FULLCHAIN岗位-526929）。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。 | 提炼这位候选人的核心风险点 | 帮我查下一轮可约时段 | 对比岗位评分标准 | 招聘负责人 | HR | ← 返回 | / | FULLCHAIN岗位-526929 | / | 初筛评估 | / | 林承宇 | ‹ | 1 / 4 | › | 来源 | LIVE | 触发 | MANUAL | 连接 | CONNECTED | 林承宇 | FULLCHAIN岗位-526929（JOB-SGKHDV）· 档案号 41b64d03 · 标准 V1 | ☆ | 初筛评估 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 自动初筛建议人工复核（建议）：3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_khdm_3:NEEDS_JUDGMENT） · 等待初筛决定：材料已就绪，还没有人工作出筛选结论 | 自动初筛建议（上传简历后自动生成） | 建议人工复核 | 3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_khdm_3:NEEDS_JUDGMENT） | 这是只读评估给出的建议，不是录用决定；请由招聘团队成员确认。 | work_history_"},"stageAdvances":[{"attempt":0,"before":"S6","confirmInput":false,"submit":{"disabled":false},"after":"S7"},{"attempt":1,"before":"S7","confirmInput":false,"submit":{"disabled":false},"after":"S7"}],"appStage":"S7"}
+----- PAGE innerText -----
+Recruitment OS
+今日待办
+4
+在招岗位
+2
+后端工程师（演示）
+3
+FULLCHAIN岗位-526929
+1
+＋ 新建岗位
+人才库
+4
+Agent
+早上好。当前有 4 位在办候选人（待初筛 4 人、面试中 4 人、待决策 1 人、4 份面评已超时）。当前首位待推进：林承宇（FULLCHAIN岗位-526929）。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。
+提炼这位候选人的核心风险点
+帮我查下一轮可约时段
+对比岗位评分标准
+招聘负责人
+HR
+← 返回
+/
+FULLCHAIN岗位-526929
+/
+初筛评估
+/
+林承宇
+‹
+1 / 4
+›
+来源
+LIVE
+触发
+MANUAL
+连接
+CONNECTED
+林承宇
+FULLCHAIN岗位-526929（JOB-SGKHDV）· 档案号 41b64d03 · 标准 V1
+☆
+初筛评估
+推进中
+·
+复制决策纪要
+当前状态与提炼
+自动初筛建议人工复核（建议）：3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_khdm_3:NEEDS_JUDGMENT） · 等待初筛决定：材料已就绪，还没有人工作出筛选结论
+自动初筛建议（上传简历后自动生成）
+建议人工复核
+3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_khdm_3:NEEDS_JUDGMENT）
+这是只读评估给出的建议，不是录用决定；请由招聘团队成员确认。
+work_history_present三态：presentSATISFIED
+work_experience 已读出（state=present）
+core_fitNEEDS_JUDGMENT
+这条要求机器判不了（第 2 条），需要人回答 rubric 里的原问句
+custom_khdm_3NEEDS_JUDGMENT
+这条要求机器判不了（第 3 条），需要人回答 rubric 里的原问句
+岗位标准对照 · V1（点击联动原文）
+重新评估
+01有可核对的工作经历硬性 · 权重 40%
+已匹配
+纠偏
+02核心岗位胜任力匹配硬性 · 权重 40%
+待核实
+纠偏
+03有高并发分布式系统实战经验硬性 · 权重 20%
+待核实
+纠偏
+逐轮面试进展（不求平均分）
+1
+第 1 轮面试
+已排期
+第 1 轮面试01-06 15:00
+本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 2/2 · 还没有转录
+已排期
+简历原文
+飞书妙记
+原件预览
+上传简历
+导入转写
+工作经历
+01
+云启科技有限公司 · 后端开发工程师
+2019-07 – 2021-06
+担任 后端开发工程师
+02
+蓝海数据技术有限公司 · 高级后端工程师
+2021-07 – 2023-06
+担任 高级后端工程师
+03
+星野网络科技有限公司 · 后端开发实习生
+2018-07 – 2019-06
+担任 后端开发实习生
+教育背景
+04
+2014-09 – 2018-06
+示例理工大学　　计算机科学与技术　　本科　　2014.09-2018.06
+简历原文摘录（可点击标准联动定位）
+05
+姓名
+第 1 页
+林承宇
+06
+工作经历
+第 1 页
+云启科技有限公司 后端开发工程师 2019.07-2021.06
+07
+工作经历
+第 1 页
+蓝海数据技术有限公司 高级后端工程师 2021.07-2023.06
+08
+工作经历
+第 1 页
+星野网络科技有限公司 后端开发实习生 2018.07-2019.06
+09
+教育背景
+第 2 页
+示例理工大学 计算机科学与技术 本科 2014.09-2018.06
+基础提取信息
+10
+姓名
+林承宇
+全链路动态留痕（5）
+展开 ▾
+▸ 决策与流转追责记录（49 条）
+置顶约束
+下一轮交接
+约面 / 改期换人
+跨岗调剂
+推进阶段 / 跳轮
+标记未出席
+发邮件
+初筛结论
+正式决策
+记录终审正式决策 · 林承宇
+终审决策
+阶段决策
+通过（推进 / 发 Offer）
+待定
+不通过
+正式决策理由
+INVALID_ARGS/STAGE_NOT_S10：申请当前阶段不是 S10，不能落 STAGE/FINAL 决策（先推进阶段，DC-07）
+取消
+确认提交

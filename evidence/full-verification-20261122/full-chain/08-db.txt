@@ -1,0 +1,26 @@
+=== DB READBACK MILESTONE 08 — 展开决策追责时间线（机器校验：无 UUID / 全量 sha256 / 「证据」） ===
+at: 2026-11-22T23:36:08.199Z
+db: ra_fresh_e2e_di0_35byqx (SELECT-only psql; no product code imported)
+verdict: PASS
+reason: machine checks: {"trace_toggle":true,"trace_length":3843,"zero_uuid":true,"zero_full_sha256":true,"zero_证据":true,"has_person":true,"has_action":true,"sample":"2026-11-22 23:35收到简历· 系统记录\n状态 resume.intake.received，来源 internal，信任级别 INTERNAL\n2026-11-22 23:35创建待办任务· 招聘负责人\n状态 SUCCEEDED，任务 RESUME_PARSE\n2026-11-22 23:35提交申请· 系统记录\n状态 S10/ACTIVE，阶段 S10，状态 ACTIVE\n2026-11-22 23:35任务状态更新· 招聘负责人\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:35创建待办任务· 系统记录\n状态 RETRY_WAIT，任务 RESUME_PARSE\n2026-11-22 23:35任务状态更新· 招聘负责人\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:35执行任务· 系统记录\n状态 FAILED_RETRYABLE\n2026-11-22 23:35处理步骤状态更新· 招聘负责人\n状态 task_attempt.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:35记录处理过程· 系统记录\n状态 LOST，模型路由 opencode-go-openai/hy4-flash-free\n2026-11-22 23:35任务状态更新· 招聘负责人\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:35处理会话状态更新· 招聘负责人\n状态 agent_session.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:35处理步骤状态更新· 招聘负责人\n状态 task_attempt.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:35记录人工纠偏· 招聘负责人\n状态 criterion.override.recorded，来源 internal，信任级别 INTERNAL\n2026-11-22 23:35收到流程事件· 招聘负责人\n状态 decision.record，来源 internal，信任级别 INTERNAL\n2026-11-22 23:35收到流程事件· 招聘负责人\n状态 application.current_stage_code.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:35初筛通过· 招聘负责人\n状态"}
+
+-- baseline head counts
+job|2
+rubric_version|3
+approval|3
+application|4
+intake_asset|4
+decision|2
+criterion_override|1
+interview|7
+booking_invite|1
+scorecard_draft|2
+scorecard|2
+event_inbox|51
+
+-- SQL: select count(*) from recruitment.decision where application_id='44d4f750-863d-48a5-8b72-b046df870165'
+2
+
+-- SQL: select count(*) from recruitment.criterion_override where application_id='44d4f750-863d-48a5-8b72-b046df870165'
+1
+

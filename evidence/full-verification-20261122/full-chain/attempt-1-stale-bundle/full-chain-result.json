@@ -1,0 +1,92 @@
+{
+  "generated_at": "2026-11-22T23:02:04.357Z",
+  "branch": "evidence/full-verification-chain",
+  "head": "7695243",
+  "base": "7695243",
+  "viewport": [
+    1440,
+    900
+  ],
+  "mode": "FRESH",
+  "db": "ra_fresh_e2e_gn4_e9kw54",
+  "host": "http://127.0.0.1:49349",
+  "cdp": 9222,
+  "steps": [
+    {
+      "milestone": "01",
+      "title": "新建 OPEN 岗位（AI 草案 + 自定义维度）",
+      "verdict": "FAIL",
+      "reason": "title=FULLCHAIN岗位-564800; jobId=MISSING; status=; draftNotice=false; criteria=0->0; OPEN default=false",
+      "screenshot": "evidence/full-verification-20261122/full-chain/01-job-created.png",
+      "db_readback": "evidence/full-verification-20261122/full-chain/01-db.txt",
+      "ui_text": "evidence/full-verification-20261122/full-chain/01-ui.txt",
+      "db_counts": {
+        "job": 1,
+        "rubric_version": 2,
+        "approval": 2,
+        "application": 3,
+        "intake_asset": 3,
+        "decision": 0,
+        "criterion_override": 0,
+        "interview": 6,
+        "booking_invite": 0,
+        "scorecard_draft": 0,
+        "scorecard": 0,
+        "event_inbox": 22
+      },
+      "at": "2026-11-22T23:06:51.777Z",
+      "extra": {
+        "jobTitle": "FULLCHAIN岗位-564800",
+        "jobId": "",
+        "jobStatus": "",
+        "draftNotice": false,
+        "criteriaBefore": 0,
+        "criteriaAfter": 0,
+        "openDefault": false,
+        "customDimension": "有高并发分布式系统实战经验"
+      }
+    }
+  ],
+  "counts": {
+    "PASS": 0,
+    "FAIL": 1,
+    "BLOCKED": 0
+  },
+  "overall_pass": false,
+  "baseline_head_counts": {
+    "job": 1,
+    "rubric_version": 2,
+    "approval": 2,
+    "application": 3,
+    "intake_asset": 3,
+    "decision": 0,
+    "criterion_override": 0,
+    "interview": 6,
+    "booking_invite": 0,
+    "scorecard_draft": 0,
+    "scorecard": 0,
+    "event_inbox": 7
+  },
+  "machine_checks": null,
+  "error": "Error: step1: new job missing in DB; cannot continue chain\n    at file:///D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-chain/work/d5/fullpage/probe-full-chain.mjs:283:21",
+  "dataset": {
+    "candidate_id": "11111111-1111-4111-8111-000000000699",
+    "candidate_name": "候选人 T",
+    "application_id": "d0a02282-5faf-4ae2-9467-68fc8595241a",
+    "job_id": "11111111-1111-4111-8111-000000000401",
+    "rubric_version_id": "3da8a9eb-7eb5-4281-b4a9-850563e0905a",
+    "rubric_version_no": 2,
+    "rubric_payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
+    "interview_round1": {
+      "id": "fcc2475b-06ee-4881-bc96-8296b5d6be8e",
+      "interviewer_actor_id": "11111111-1111-4111-8111-000000000104",
+      "label": "Interviewer A"
+    },
+    "interview_round2": {
+      "id": "6118f114-c63d-4f73-b2f4-f0bc282b8576",
+      "interviewer_actor_id": "11111111-1111-4111-8111-000000000105",
+      "label": "Interviewer B"
+    },
+    "constraint_text": "候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。"
+  }
+}

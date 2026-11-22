@@ -1,0 +1,27 @@
+=== DB READBACK MILESTONE 06 — 面试官提交独立面评（scorecard +1，决策事实就绪） ===
+at: 2026-11-22T23:20:55.290Z
+db: ra_fresh_e2e_lpo_f665ce (SELECT-only psql; no product code imported)
+verdict: PASS
+reason: scorecard 0->2 (expect +1); decision facts probe=READY status=200 state=COMPUTED; submissions=2 ([{"alias":"interviewer_a","filled":true,"clicked":true},{"alias":"interviewer_b","filled":true,"clicked":true}])
+
+-- baseline head counts
+job|2
+rubric_version|3
+approval|3
+application|4
+intake_asset|4
+decision|0
+criterion_override|1
+interview|7
+booking_invite|1
+scorecard_draft|0
+scorecard|2
+event_inbox|55
+
+-- SQL: select id,interview_id,rubric_version_id,status,overall,revision_no,created_at from recruitment.scorecard where tenant_id='11111111-1111-4111-8111-000000000001' order by created_at desc limit 5
+cff5a1c9-62db-4208-b138-c51cc9827fec|9bc4535f-e29e-4dbb-9943-6ecfc8094205|82532134-f842-4077-b00d-d69c773ebb2e|SUBMITTED|ADVANCE|1|2026-11-23 07:20:51.49009+08
+2b9ba86c-a6b3-4347-b763-dbde3c5c90f3|9bc4535f-e29e-4dbb-9943-6ecfc8094205|82532134-f842-4077-b00d-d69c773ebb2e|SUBMITTED|ADVANCE|1|2026-11-23 07:20:45.886284+08
+
+-- SQL: select id,application_id,decision_scope,result,created_at from recruitment.decision where tenant_id='11111111-1111-4111-8111-000000000001' order by created_at desc limit 5
+
+

@@ -1,0 +1,128 @@
+=== UI MILESTONE 05 — 导入面试转写 → 自动面评草稿（未提交） ===
+at: 2026-11-22T23:35:41.918Z
+host: http://127.0.0.1:49349
+viewport: 1440x900 (headless Chrome, CDP 9222)
+verdict: PASS
+reason: importBtn=true; modal=true; scorecard_draft 0->2 (UI wrote >=1 draft: 2); scorecard 0->0 (must stay); transcript POST status=200; draftActor=11111111-1111-4111-8111-000000000105; draftPayload={"note": "以下为基于面试转写生成的参考草稿，请面试官核对并自行决定评价\n以下逐项均为待核对状态，请对照本场面试转写自行判断是否采纳或修改。\n待核对维度（3）：有可核对的工作经历（work_history_present）、核心岗位胜任力匹配（core_fit）、有高并发分布式系统实战经验（custom_5ken_3）", "assessments": {"core_fit": "NOT_OBSERVED", "custom_5ken_3": "NOT_OBSERVED", "work_history_
+key_visible_text: Recruitment OS | 我的面试 | Agent | 你好，我是招聘协作 Agent。你可以直接告诉我需要推进哪位候选人，或拖入简历文件自动建档。 | 梳理今天最优先推进的候选人 | 查看待提交面评与催办进展 | 打开人才库检索候选人 | 我的面试与独立面评 | 面试官 B | 面试官 | 当前身份：演示-面试官 B（interviewer_b） | ← 返回我的面试 | INTERVIEW WORKSPACE | 林承宇 | FULLCHAIN岗位-510664 · 第 1 轮 · FULLCHAIN岗位-510664 · 当前身份：演示-面试官 B | 待提交面评 | 本轮面试简报 | FULLCHAIN岗位-510664 | 面后速记 | 正在自动保存… | 本轮考察重点 | 第 1 轮 · 只读 · 服务端权威 | 来源：岗位通用标准（服务端未提供本轮专属配置） | JOB_BASE 降级（服务端未提供该轮配置） | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） | 评分维度见下方「本轮评分表 · effective schema」（岗位底座）。 | 本轮评分表 · effective schema | 只读 · 岗位通用标准（服务端未提供本轮专属配置） | 分数区间：服务端未提供分数区间 · submission rubric：02828874-5a09-48db-a290-762768dae65c | 有可核对的工作经历 | work_history_present | kind=MUST_HAVE · weight=0.4 | JOB_BASE | 核心岗位胜任力匹配 | core_fit | kind=
+extra: {"importBtn":true,"modalReady":true,"draftBefore5":0,"draftAfter5":2,"scBefore5":0,"scAfter5":0,"draftRow":"11111111-1111-4111-8111-000000000105|17f60bd3-9e42-406b-8079-b6bb77082505","draftPayload":"{\"note\": \"以下为基于面试转写生成的参考草稿，请面试官核对并自行决定评价\\n以下逐项均为待核对状态，请对照本场面试转写自行判断是否采纳或修改。\\n待核对维度（3）：有可核对的工作经历（work_history_present）、核心岗位胜任力匹配（core_fit）、有高并发分布式系统实战经验（custom_5ken_3）\", \"assessments\": {\"core_fit\": \"NOT_OBSERVED\", \"custom_5ken_3\": \"NOT_OBSERVED\", \"work_history_","draftAlias":"interviewer_b","draftUi":"","transcriptWrites":[{"url":"/recruitment/api/action/transcript/import","method":"POST","body":"{\"interview_id\":\"17f60bd3-9e42-406b-8079-b6bb77082505\",\"content\":\"FULLCHAIN 实机转写：候选人介绍高并发交易系统经验，负责订单撮合与消息队列，带 4 人小组做稳定性治理；面试官追问故障回滚与幂等，候选人给出具体案例。\",\"source_kind\":\"DEMO_SAMPLE\"}","status":200,"resp":"{\"action\":\"transcript/import\",\"actor\":{\"session_id\":\"session-e1c2f20e-4091-459f-be7d-974aaaf2fe5e\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":0,\"result\":\"not-applicable\",\"tool_names\":[]},\"result\":{\"tool\":\"recruitment_transcript_import\",\"contract_version\":\"1.0.0\",\"status\":\"OK\",\"write\":true,\"replayed\":false,\"labels\":{\"provenance\":\"FIXTURE\",\"trigger\":\"MANUAL\",\"connection\":\"NOT_CONNECTED\"},\"provenance_basis\":\"DEMO_SAMPLE_NO_PLATFORM_RECEIPT\",\"interview\":{\"id\":\"17f60bd3-9e42-406b-8079-b6bb77082505\",\"application_id\":\"44d4f750-863d-48a5-8b72-b046df870165\",\"job_id\":\"96481928-a037-4532-9d25-7f8e050e2fed\",\"round_no\":1,\"stage_code\":\"S8\",\"status\":\"SCHEDULED\"},\"meeting\":{\"id\":\"c4c0a9a0-e13d-47e2-b92f-721478d0f365\",\"provider\":\"local_demo\",\"meeting_role\":\"PRIMARY\",\"binding_id\":\"2bc24c0a-e4f1-4c99-83e1-ee930cf48035\",\"binding_method\":\"SCHEDULED\",\"extern"}],"boundInterviews":7,"bindingLog":[{"tag":"pre-0","interview_id":"11111111-1111-4111-8111-000000000801","before":0,"meetingId":"b499e6c9-4188-4a32-8dc1-3532c503b97f","meetingInsertError":"","bindingInsertId":"bb050c3c-be1f-4ac3-a433-7e5eac4cc314","bindingInsertError":""},{"tag":"pre-1","interview_id":"11111111-1111-4111-8111-000000000802","before":0,"meetingId":"537c5300-a718-4ca0-99f8-180db125a7e9","meetingInsertError":"","bindingInsertId":"905f75ea-7dc2-47d5-b162-bd4d65ab2c3c","bindingInsertError":""},{"tag":"pre-2","interview_id":"2f789337-14fc-49a7-8563-9b8731e1d128","before":0,"meetingId":"de7374bc-587e-4983-a16c-9ab1427d0887","meetingInsertError":"","bindingInsertId":"7f647beb-2650-4e3b-a1dd-93659c8855c0","bindingInsertError":""},{"tag":"pre-3","interview_id":"6b701c3f-ba60-4d5f-9209-3d32ebd545af","before":0,"meetingId":"be73f5c8-4ae8-4180-9696-9cd9d7bfbe45","meetingInsertError":"","bindingInsertId":"79f1ca41-95f5-4695-92e4-d5284c7642b6","bindingInsertError":""},{"tag":"pre-4","interview_id":"7bc97616-bcdf-491a-a650-24f0dbd604bd","before":0,"meetingId":"3cff1db8-0aa2-4682-8a08-2bee1ce62b63","meetingInsertError":"","bindingInsertId":"eb149d7b-4daa-4ab1-b9ed-b56e1ce31e79","bindingInsertError":""},{"tag":"pre-5","interview_id":"1490b945-50a7-4d9b-b53f-a6a55611a5f9","before":0,"meetingId":"2c483f6f-5707-4f81-ad12-d0b060400e51","meetingInsertError":"","bindingInsertId":"52e5074b-8663-4a85-b439-87612167b38e","bindingInsertError":""},{"tag":"pre-6","interview_id":"17f60bd3-9e42-406b-8079-b6bb77082505","before":0,"meetingId":"c4c0a9a0-e13d-47e2-b92f-721478d0f365","meetingInsertError":"","bindingInsertId":"2bc24c0a-e4f1-4c99-83e1-ee930cf48035","bindingInsertError":""}],"retryInfo":null}
+----- PAGE innerText -----
+Recruitment OS
+我的面试
+Agent
+你好，我是招聘协作 Agent。你可以直接告诉我需要推进哪位候选人，或拖入简历文件自动建档。
+梳理今天最优先推进的候选人
+查看待提交面评与催办进展
+打开人才库检索候选人
+我的面试与独立面评
+面试官 B
+面试官
+
+当前身份：演示-面试官 B（interviewer_b）
+
+← 返回我的面试
+INTERVIEW WORKSPACE
+林承宇
+
+FULLCHAIN岗位-510664 · 第 1 轮 · FULLCHAIN岗位-510664 · 当前身份：演示-面试官 B
+
+待提交面评
+本轮面试简报
+
+FULLCHAIN岗位-510664
+
+面后速记
+正在自动保存…
+本轮考察重点
+第 1 轮 · 只读 · 服务端权威
+
+来源：岗位通用标准（服务端未提供本轮专属配置）
+
+JOB_BASE 降级（服务端未提供该轮配置）
+
+本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE）
+
+评分维度见下方「本轮评分表 · effective schema」（岗位底座）。
+
+本轮评分表 · effective schema
+只读 · 岗位通用标准（服务端未提供本轮专属配置）
+
+分数区间：服务端未提供分数区间 · submission rubric：02828874-5a09-48db-a290-762768dae65c
+
+有可核对的工作经历
+work_history_present
+kind=MUST_HAVE · weight=0.4
+JOB_BASE
+核心岗位胜任力匹配
+core_fit
+kind=MUST_HAVE · weight=0.4
+JOB_BASE
+
+候选人过往经历与核心职责是否与该岗位要求高度匹配？
+
+有高并发分布式系统实战经验
+custom_5ken_3
+kind=MUST_HAVE · weight=0.2
+JOB_BASE
+
+候选人在「有高并发分布式系统实战经验」方面是否达到该岗位预期？
+
+前面几轮发生了什么
+只读 · 紧邻上一轮 · 服务端事实
+
+这是第一轮，没有前置轮次可参考。
+
+这一轮可以参考
+只读 · 参考不是指令 · 服务端事实
+
+• 可以重点了解「有可核对的工作经历」
+
+值得问的原因：岗位标准里这一条权重较高（0.4），前面的轮次还没有聊到这一条，材料里也没有对应的原文。
+
+• 可以重点了解「核心岗位胜任力匹配」
+
+值得问的原因：岗位标准里这一条权重较高（0.4），前面的轮次还没有聊到这一条，材料里也没有对应的原文。
+
+• 可以重点了解「有高并发分布式系统实战经验」
+
+值得问的原因：岗位标准里这一条权重较高（0.2），前面的轮次还没有聊到这一条，材料里也没有对应的原文。
+
+查看招聘方接收的简历材料
+材料分支 · Transcript
+
+转写状态：已收到（完整）（READY）
+
+reason_code：CANONICAL_STATUS · 会议绑定：已绑定（有效） · 会议数：1
+
+这张卡片只反映转写本身的状态；阶段能否推进由后续流程决定。
+
+面评分支 · 我的独立评价
+
+面评状态：未填（NONE）
+
+只显示你本人的面评；其他面试官的主观评分与私人备注默认不展示。
+
+提交我的独立面评
+面试安排
+
+2027-01-06 15:00 – 16:00
+
+时区：Asia/Shanghai · 面试状态：SCHEDULED · slot：DEFAULT
+
+会议绑定：已绑定（有效）
+
+转写状态：已收到（完整）
+
+面试 id：17f60bd3-9e42-406b-8079-b6bb77082505
+
+provenance：FIXTURE
+trigger：MANUAL
+connection：CONNECTED
+
+服务端评估时间（as_of）：2026-11-22T23:35:40.027Z
+
+信息可见范围
+
+可查看分配给你的面试、本轮 Rubric、授权材料；其他面试官的主观评分与私人备注默认不展示。
+
+Provenance / trigger / connection 由服务端按租户现算，前端不重贴标签。

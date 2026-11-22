@@ -1,0 +1,486 @@
+{
+  "generated_at": "2026-11-22T23:23:28.122Z",
+  "branch": "evidence/full-verification-chain",
+  "head": "7695243",
+  "base": "7695243",
+  "viewport": [
+    1440,
+    900
+  ],
+  "mode": "FRESH",
+  "db": "ra_fresh_e2e_mrc_3mkf54",
+  "host": "http://127.0.0.1:49349",
+  "cdp": 9222,
+  "steps": [
+    {
+      "milestone": "01",
+      "title": "新建 OPEN 岗位（AI 草案 + 自定义维度）",
+      "verdict": "PASS",
+      "reason": "title=FULLCHAIN岗位-834756; jobId=36802bcb-01d2-4269-aa24-18c0241afe1a; status=OPEN; draftNotice=true; criteria=2->3; OPEN default=true",
+      "screenshot": "evidence/full-verification-20261122/full-chain/01-job-created.png",
+      "db_readback": "evidence/full-verification-20261122/full-chain/01-db.txt",
+      "ui_text": "evidence/full-verification-20261122/full-chain/01-ui.txt",
+      "db_counts": {
+        "job": 2,
+        "rubric_version": 3,
+        "approval": 3,
+        "application": 3,
+        "intake_asset": 3,
+        "decision": 0,
+        "criterion_override": 0,
+        "interview": 6,
+        "booking_invite": 0,
+        "scorecard_draft": 0,
+        "scorecard": 0,
+        "event_inbox": 12
+      },
+      "at": "2026-11-22T23:23:58.432Z",
+      "extra": {
+        "jobTitle": "FULLCHAIN岗位-834756",
+        "jobId": "36802bcb-01d2-4269-aa24-18c0241afe1a",
+        "jobStatus": "OPEN",
+        "draftNotice": true,
+        "criteriaBefore": 2,
+        "criteriaAfter": 3,
+        "openDefault": true,
+        "customDimension": "有高并发分布式系统实战经验"
+      }
+    },
+    {
+      "milestone": "01b",
+      "title": "批准岗位评分标准（自定义维度入版）",
+      "verdict": "PASS",
+      "reason": "approveButton=true; rubricApprovedDB=true",
+      "screenshot": "evidence/full-verification-20261122/full-chain/01b-rubric-approved.png",
+      "db_readback": "evidence/full-verification-20261122/full-chain/01b-db.txt",
+      "ui_text": "evidence/full-verification-20261122/full-chain/01b-ui.txt",
+      "db_counts": {
+        "job": 2,
+        "rubric_version": 3,
+        "approval": 3,
+        "application": 3,
+        "intake_asset": 3,
+        "decision": 0,
+        "criterion_override": 0,
+        "interview": 6,
+        "booking_invite": 0,
+        "scorecard_draft": 0,
+        "scorecard": 0,
+        "event_inbox": 14
+      },
+      "at": "2026-11-22T23:24:01.003Z",
+      "extra": {
+        "approveShown": true,
+        "approvedRubric": true
+      }
+    },
+    {
+      "milestone": "02",
+      "title": "上传真实 PDF 并显示自动初筛（不写 decision）",
+      "verdict": "PASS",
+      "reason": "upload=true; appId=d18cd698-d7b8-466b-89cc-1af03eb9ca31; autoTask=uploaded resume intake (event d07c224d-4ae1-435a-9595-5da38c8a8849)\r\n[auto-screening] {\"material_sha256\":\"aa2f4645c7535b; autoVisible=true; decision 0->0 (must be unchanged)",
+      "screenshot": "evidence/full-verification-20261122/full-chain/02-auto-screening.png",
+      "db_readback": "evidence/full-verification-20261122/full-chain/02-db.txt",
+      "ui_text": "evidence/full-verification-20261122/full-chain/02-ui.txt",
+      "db_counts": {
+        "job": 2,
+        "rubric_version": 3,
+        "approval": 3,
+        "application": 4,
+        "intake_asset": 4,
+        "decision": 0,
+        "criterion_override": 0,
+        "interview": 6,
+        "booking_invite": 0,
+        "scorecard_draft": 0,
+        "scorecard": 0,
+        "event_inbox": 21
+      },
+      "at": "2026-11-22T23:24:06.840Z",
+      "extra": {
+        "uploadBtn": true,
+        "setFile": {
+          "ok": true,
+          "files": [
+            "work/d5/fullpage/fixtures/synthetic-upload.pdf"
+          ]
+        },
+        "appId": "d18cd698-d7b8-466b-89cc-1af03eb9ca31",
+        "autoTask": "uploaded resume intake (event d07c224d-4ae1-435a-9595-5da38c8a8849)\r\n[auto-screening] {\"material_sha256\":\"aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df\",\"auto_screening\":{\"verdict\":",
+        "autoVisible": true,
+        "decisionBefore2": 0,
+        "decisionAfter2": 0,
+        "autoText": "自动初筛建议（上传简历后自动生成）\n建议人工复核\n3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_r2w0_3:NEEDS_JUDGMENT）\n这是只读评估给出的建议，不是录用决定；请由招聘团队成员确认。\nwork_history_present三态：presentSATISFIED\nwork_experience 已读出（state=present）\ncore_fitNEEDS_JUDGMENT\n这条要求机器判不了（第 2 条），需要人回答 rubric 里的原问句\ncustom_r2w0_3NEEDS_JUDGMENT\n这条要求机器判不了（第 3 条），需要人回答 rubric 里的原问句"
+      }
+    },
+    {
+      "milestone": "03",
+      "title": "新候选人页人工纠偏（criterion_override +1 + 反馈）",
+      "verdict": "PASS",
+      "reason": "overrideReady=true; detail={\"testid\":\"canvas-criterion-override-work_history_present\",\"text\":\"纠偏\",\"confirmReady\":true,\"stateBtns\":[{\"testid\":\"canvas-override-state-present\",\"text\":\"有对应\"},{\"testid\":\"canvas-override-state-absent\",\"text\":\"没有对应\"},{\"testid\":\"canvas-override-state-unreadable\",\"text\":\"读不出来\"}],\"modalText\":\"\"}; criterion_override 0->1 (expect +1)",
+      "screenshot": "evidence/full-verification-20261122/full-chain/03-criterion-override.png",
+      "db_readback": "evidence/full-verification-20261122/full-chain/03-db.txt",
+      "ui_text": "evidence/full-verification-20261122/full-chain/03-ui.txt",
+      "db_counts": {
+        "job": 2,
+        "rubric_version": 3,
+        "approval": 3,
+        "application": 4,
+        "intake_asset": 4,
+        "decision": 1,
+        "criterion_override": 1,
+        "interview": 6,
+        "booking_invite": 0,
+        "scorecard_draft": 0,
+        "scorecard": 0,
+        "event_inbox": 24
+      },
+      "at": "2026-11-22T23:24:17.317Z",
+      "extra": {
+        "overrideBefore": 0,
+        "overrideAfter": 1,
+        "overrideDetail": {
+          "testid": "canvas-criterion-override-work_history_present",
+          "text": "纠偏",
+          "confirmReady": true,
+          "stateBtns": [
+            {
+              "testid": "canvas-override-state-present",
+              "text": "有对应"
+            },
+            {
+              "testid": "canvas-override-state-absent",
+              "text": "没有对应"
+            },
+            {
+              "testid": "canvas-override-state-unreadable",
+              "text": "读不出来"
+            }
+          ],
+          "modalText": ""
+        },
+        "screeningBtn": true,
+        "screeningDetail": {
+          "advance": true,
+          "taFilled": true,
+          "ui": "初筛 3 人、面试中 3 人、待决策 1 人、4 份面评已超时）。当前首位待推进：林承宇（FULLCHAIN岗位-834756）。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。 | 提炼这位候选人的核心风险点 | 帮我查下一轮可约时段 | 对比岗位评分标准 | 招聘负责人 | HR | ← 返回 | / | FULLCHAIN岗位-834756 | / | 初筛评估 | / | 林承宇 | ‹ | 1 / 4 | › | 来源 | LIVE | 触发 | MANUAL | 连接 | CONNECTED | 已记录初筛结论并同步落库。 | 林承宇 | FULLCHAIN岗位-834756（JOB-SGR2YR）· 档案号 d18cd698 · 标准 V1 | ☆ | 初筛评估 | 推进中 | "
+        },
+        "screeningDecisionAfter": "SCREENING|ADVANCE"
+      }
+    },
+    {
+      "milestone": "04",
+      "title": "发候选人自助选时段 + 免登录确认（interview +1）",
+      "verdict": "PASS",
+      "reason": "selfBookMode=true; linkReady=true; token=yes; href=yes; publicSlots=3; confirmed=true; interview 0->1 (expect +1)",
+      "screenshot": "evidence/full-verification-20261122/full-chain/04-booking-confirmed.png",
+      "db_readback": "evidence/full-verification-20261122/full-chain/04-db.txt",
+      "ui_text": "evidence/full-verification-20261122/full-chain/04-ui.txt",
+      "db_counts": {
+        "job": 2,
+        "rubric_version": 3,
+        "approval": 3,
+        "application": 4,
+        "intake_asset": 4,
+        "decision": 1,
+        "criterion_override": 1,
+        "interview": 7,
+        "booking_invite": 1,
+        "scorecard_draft": 0,
+        "scorecard": 0,
+        "event_inbox": 24
+      },
+      "at": "2026-11-22T23:24:20.608Z",
+      "extra": {
+        "scheduleShown": true,
+        "selfBookMode": true,
+        "linkReady": true,
+        "bookingHref": "/recruitment/book/voqvtPnLSg2Qh54XZyzBb7ltq0H6p-e6CrnuI40NkOQ",
+        "publicToken": "REDACTED",
+        "publicSlots": 3,
+        "confirmed": true,
+        "interviewBefore4": 0,
+        "interviewAfter4": 1,
+        "publicText": "FULLCHAIN岗位-834756\n\n第 1 轮 · 60 分钟 · Asia/Shanghai\n\n状态：待确认\n\nAsia/Shanghai · 2027-01-05T10:00:00+08:00 → 2027-01-05T11:00:00+08:00确认此时段\nAsia/Shanghai · 2027-01-06T15:00:00+08:00 → 2027-01-06T16:00:00+08:00确认此时段\nAsia/Shanghai · 2027-01-07T10:30:00+08:00 → 2027-01-07T11:30:00+08:00确认此时段\n\n本页面仅展示与本次面试预约有关的信息。"
+      }
+    },
+    {
+      "milestone": "05",
+      "title": "导入面试转写 → 自动面评草稿（未提交）",
+      "verdict": "FAIL",
+      "reason": "importBtn=true; modal=true; scorecard_draft 0->0 (expect +1); scorecard 0->0 (must stay); draftActor=MISSING; draftText=no marker",
+      "screenshot": "evidence/full-verification-20261122/full-chain/05-scorecard-draft.png",
+      "db_readback": "evidence/full-verification-20261122/full-chain/05-db.txt",
+      "ui_text": "evidence/full-verification-20261122/full-chain/05-ui.txt",
+      "db_counts": {
+        "job": 2,
+        "rubric_version": 3,
+        "approval": 3,
+        "application": 4,
+        "intake_asset": 4,
+        "decision": 1,
+        "criterion_override": 1,
+        "interview": 7,
+        "booking_invite": 1,
+        "scorecard_draft": 0,
+        "scorecard": 0,
+        "event_inbox": 44
+      },
+      "at": "2026-11-22T23:25:56.972Z",
+      "extra": {
+        "importBtn": true,
+        "modalReady": true,
+        "draftBefore5": 0,
+        "draftAfter5": 0,
+        "scBefore5": 0,
+        "scAfter5": 0,
+        "draftRow": "",
+        "draftAlias": "interviewer_a",
+        "draftUi": "",
+        "transcriptWrites": [
+          {
+            "url": "/recruitment/api/action/transcript/import",
+            "method": "POST",
+            "body": "{\"interview_id\":\"76c1872b-feb6-46a4-b884-0b364a7051a6\",\"content\":\"FULLCHAIN 实机转写：候选人介绍高并发交易系统经验，负责订单撮合与消息队列，带 4 人小组做稳定性治理；面试官追问故障回滚与幂等，候选人给出具体案例。\",\"source_kind\":\"DEMO_SAMPLE\"}",
+            "status": 409,
+            "resp": "{\"error\":{\"code\":\"NO_MEETING_BOUND\",\"reason_code\":\"NO_MEETING_BOUND\",\"message\":\"该面试没有处于有效绑定状态的会议（meeting_role ∈ {PRIMARY, CONTINUATION}），无法确定转写归属；未写入任何行\",\"detail\":{\"hint\":\"先在 recruitment.meeting_binding 里把平台会议绑到这场面试（binding_method=MANUAL 时必须留 bound_by_actor_id），再导入转写\",\"interview_id\":\"76c1872b-feb6-46a4-b884-0b364a7051a6\",\"meeting_count\":0}}}"
+          }
+        ],
+        "boundInterviews": 7
+      }
+    },
+    {
+      "milestone": "06",
+      "title": "面试官提交独立面评（scorecard +1，决策事实就绪）",
+      "verdict": "PASS",
+      "reason": "scorecard 0->2 (expect +1); decision facts probe=READY status=200 state=COMPUTED; submissions=2 ([{\"alias\":\"interviewer_a\",\"filled\":true,\"clicked\":true},{\"alias\":\"interviewer_b\",\"filled\":true,\"clicked\":true}])",
+      "screenshot": "evidence/full-verification-20261122/full-chain/06-scorecard.png",
+      "db_readback": "evidence/full-verification-20261122/full-chain/06-db.txt",
+      "ui_text": "evidence/full-verification-20261122/full-chain/06-ui.txt",
+      "db_counts": {
+        "job": 2,
+        "rubric_version": 3,
+        "approval": 3,
+        "application": 4,
+        "intake_asset": 4,
+        "decision": 1,
+        "criterion_override": 1,
+        "interview": 7,
+        "booking_invite": 1,
+        "scorecard_draft": 0,
+        "scorecard": 2,
+        "event_inbox": 57
+      },
+      "at": "2026-11-22T23:26:09.425Z",
+      "extra": {
+        "scBefore6": 0,
+        "scAfter6": 2,
+        "scSubmits": [
+          {
+            "alias": "interviewer_a",
+            "rowsReady": true,
+            "opened": true,
+            "formReady": true,
+            "openClicked": true,
+            "filled": {
+              "ok": true,
+              "dimensions": 3,
+              "scores": 3,
+              "notes": 3,
+              "overall": "ADVANCE"
+            },
+            "submit": {
+              "ok": true,
+              "disabled": false,
+              "clicked": true
+            },
+            "ui": "面评与催办进展 | 打开人才库检索候选人 | 我的面试与独立面评 | 面试官 A | 面试官 | 当前身份：演示-面试官（interviewer_a） | ← 返回我的面试 | INTERVIEW WORKSPACE | 林承宇 | FULLCHAIN岗位-834756 · 第 1 轮 · FULLCHAIN岗位-834756 · 当前身份：演示-面试官 | 面评已提交 | 本轮面试简报 | FULLCHAIN岗位-834756 | 面后速记 | 本轮考察重点 | 第 1 轮 · 只读 · 服务端权威 | 来源：岗位通用标准（服务端未提供本轮专属配置） | JOB_BASE 降级（服务端未提供该轮配置） | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） | 评分维度见下方「本轮评分表 · effective schema」（岗位底座）。 | 本轮评分表 · effective sche"
+          },
+          {
+            "alias": "interviewer_b",
+            "rowsReady": true,
+            "opened": true,
+            "formReady": true,
+            "openClicked": true,
+            "filled": {
+              "ok": true,
+              "dimensions": 3,
+              "scores": 3,
+              "notes": 3,
+              "overall": "ADVANCE"
+            },
+            "submit": {
+              "ok": true,
+              "disabled": false,
+              "clicked": true
+            },
+            "ui": "面评与催办进展 | 打开人才库检索候选人 | 我的面试与独立面评 | 面试官 B | 面试官 | 当前身份：演示-面试官 B（interviewer_b） | ← 返回我的面试 | INTERVIEW WORKSPACE | 林承宇 | FULLCHAIN岗位-834756 · 第 1 轮 · FULLCHAIN岗位-834756 · 当前身份：演示-面试官 B | 面评已提交 | 本轮面试简报 | FULLCHAIN岗位-834756 | 面后速记 | 本轮考察重点 | 第 1 轮 · 只读 · 服务端权威 | 来源：岗位通用标准（服务端未提供本轮专属配置） | JOB_BASE 降级（服务端未提供该轮配置） | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） | 评分维度见下方「本轮评分表 · effective schema」（岗位底座）。 | 本轮评分表 · effective "
+          }
+        ],
+        "facts": {
+          "status": 200,
+          "probe": "READY",
+          "parsed": {
+            "contract_version": "decision-facts 1.0.0",
+            "evaluation_summary_state": "COMPUTED",
+            "evaluation_summary": {
+              "available": true,
+              "ready_for_decision": true,
+              "blockers": [
+                "NO_REJECTING_SCORECARD"
+              ]
+            },
+            "missing": []
+          },
+          "raw": "{\"contract_version\":\"decision-facts 1.0.0\",\"application_id\":\"d18cd698-d7b8-466b-89cc-1af03eb9ca31\",\"stage_code\":\"S7\",\"lifecycle_status\":\"ACTIVE\",\"job\":{\"job_id\":\"36802bcb-01d2-4269-aa24-18c0241afe1a\",\"job_code\":\"JOB-SGR2YR\",\"job_title\":\"FULLCHAIN岗位-834756\",\"job_status\":\"OPEN\",\"job_version_id\":\"fbc9c18f-75fd-4485-a96c-d74e0a05239e\",\"job_payload_hash\":\"8c635a19eb6475237c422309597cbd1be440bbbc588882ba211ed0a802911785\",\"current_job_version_id\":\"fbc9c18f-75fd-4485-a96c-d74e0a05239e\",\"current_rubric_version_id\":\"aecb1eb2-40be-416e-856c-890fa428a323\"},\"rubric\":{\"rubric_version_id\":\"aecb1eb2-40be-416e-856c-890fa428a323\",\"version_no\":1,\"payload_hash\":\"fa672fe7d1de2ca58578d274ae38f293af2fe843d6dbce270ebdb5ac39ee439b\",\"dimensions\":[{\"key\":\"work_history_present\",\"label\":\"有可核对的工作经历\",\"weight\":0.4,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"core_fit\",\"label\":\"核心岗位胜任力匹配\",\"weight\":0.4,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"custom_r2w0_3\",\"label\":\"有高并发分布式系统实战经验\",\"weight\":0.2,\"required\":true,\"kind\":\"MUST_HAVE\"}],\"approved\":true},\"authority\":{\"actor_id\":\"11111111-1111-4111-8111-000000000105\",\"alias\":\"interviewer_b\",\"display_name\":\"演示-面试官 B\",\"roles\":[\"INTERVIEWER\"],\"is_hiring_manager\":false},\"scre"
+        }
+      }
+    },
+    {
+      "milestone": "07",
+      "title": "记录正式终审决策（decision +1）",
+      "verdict": "FAIL",
+      "reason": "FINAL decision 0->0 (expect +1); all decisions=SCREENING|ADVANCE; detail={\"modalText\":\"记录终审正式决策 · 林承宇\\n终审决策\\n阶段决策\\n通过（推进 / 发 Offer）\\n待定\\n不通过\\n正式决策理由\\n取消\\n确认提交\",\"factsBlocked\":false,\"missingScorecards\":false,\"submitDisabled\":false,\"reasonFilled\":true,\"afterSubmit\":\"决策 1 人、4 份面评已超时）。当前首位待推进：林承宇（FULLCHAIN岗位-834756）。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。 | 提炼这位候选人的核心风险点 | 帮我查下一轮可约时段 | 对比岗位评分标准 | 招聘负责人 | HR | ← 返回 | / | FULLCHAIN岗位-834756 | / | 面试安排 | / | 林承宇 | ‹ | 1 / 4 | › | 来源 | LIVE | 触发 | MANUAL | 连接 | CONNECTED | 林承宇 | FULLCHAIN岗位-834756（JOB-SGR2YR）· 档案号 d18cd698 · 标准 V1 | ☆ | 面试安排 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 初筛结论：FULLCHAIN 实机初筛：材料齐备、人工纠偏已留痕，同意进入面试阶段。 · 自动初筛建议人工复核（建议）：3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_r2w0_3:NEEDS_JUDGMENT） · 准备面试：面试已排期或即将排期，需要准备 | 自动初筛建议（上传简历后自动生成） | 建议人工复核 | 3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_r2w0_3:NEEDS_JUDGMENT） | 这是只\"}",
+      "screenshot": "evidence/full-verification-20261122/full-chain/07-decision.png",
+      "db_readback": "evidence/full-verification-20261122/full-chain/07-db.txt",
+      "ui_text": "evidence/full-verification-20261122/full-chain/07-ui.txt",
+      "db_counts": {
+        "job": 2,
+        "rubric_version": 3,
+        "approval": 3,
+        "application": 4,
+        "intake_asset": 4,
+        "decision": 1,
+        "criterion_override": 1,
+        "interview": 7,
+        "booking_invite": 1,
+        "scorecard_draft": 0,
+        "scorecard": 2,
+        "event_inbox": 58
+      },
+      "at": "2026-11-22T23:26:27.761Z",
+      "extra": {
+        "decisionBefore7": 0,
+        "decisionAfter7": 0,
+        "decisionDetail": {
+          "modalText": "记录终审正式决策 · 林承宇\n终审决策\n阶段决策\n通过（推进 / 发 Offer）\n待定\n不通过\n正式决策理由\n取消\n确认提交",
+          "factsBlocked": false,
+          "missingScorecards": false,
+          "submitDisabled": false,
+          "reasonFilled": true,
+          "afterSubmit": "决策 1 人、4 份面评已超时）。当前首位待推进：林承宇（FULLCHAIN岗位-834756）。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。 | 提炼这位候选人的核心风险点 | 帮我查下一轮可约时段 | 对比岗位评分标准 | 招聘负责人 | HR | ← 返回 | / | FULLCHAIN岗位-834756 | / | 面试安排 | / | 林承宇 | ‹ | 1 / 4 | › | 来源 | LIVE | 触发 | MANUAL | 连接 | CONNECTED | 林承宇 | FULLCHAIN岗位-834756（JOB-SGR2YR）· 档案号 d18cd698 · 标准 V1 | ☆ | 面试安排 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 初筛结论：FULLCHAIN 实机初筛：材料齐备、人工纠偏已留痕，同意进入面试阶段。 · 自动初筛建议人工复核（建议）：3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_r2w0_3:NEEDS_JUDGMENT） · 准备面试：面试已排期或即将排期，需要准备 | 自动初筛建议（上传简历后自动生成） | 建议人工复核 | 3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_r2w0_3:NEEDS_JUDGMENT） | 这是只"
+        },
+        "stageAdvances": [
+          {
+            "attempt": 0,
+            "before": "S7",
+            "confirmInput": false,
+            "submit": {
+              "disabled": false
+            },
+            "after": "S8",
+            "ui": "阶段。 | 林承宇 | FULLCHAIN岗位-834756（JOB-SGR2YR）· 档案号 d18cd698 · 标准 V1 | ☆ | 面试安排 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 初筛结论：FULLCHAIN 实机初筛：材料齐备、人工纠偏已留痕，同意进入面试阶段。 · 自动初筛建议人工复核（建议）：3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_r2w0_3:NEEDS_JUDGMENT） · 准备面试：面试已排期或即将排期，需要准备 | 自动初筛建议（上传简历后自动生成） | 建议人工复核 | 3 "
+          },
+          {
+            "attempt": 1,
+            "before": "S8",
+            "confirmInput": false,
+            "submit": {
+              "disabled": false
+            },
+            "after": "S8",
+            "ui": "阶段。 | 林承宇 | FULLCHAIN岗位-834756（JOB-SGR2YR）· 档案号 d18cd698 · 标准 V1 | ☆ | 面试安排 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 初筛结论：FULLCHAIN 实机初筛：材料齐备、人工纠偏已留痕，同意进入面试阶段。 · 自动初筛建议人工复核（建议）：3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_r2w0_3:NEEDS_JUDGMENT） · 准备面试：面试已排期或即将排期，需要准备 | 自动初筛建议（上传简历后自动生成） | 建议人工复核 | 3 "
+          }
+        ],
+        "appStage": "S8"
+      }
+    },
+    {
+      "milestone": "08",
+      "title": "展开决策追责时间线（机器校验：无 UUID / 全量 sha256 / 「证据」）",
+      "verdict": "PASS",
+      "reason": "machine checks: {\"trace_toggle\":true,\"trace_length\":4000,\"zero_uuid\":true,\"zero_full_sha256\":true,\"zero_证据\":true,\"has_person\":true,\"has_action\":true,\"sample\":\"2026-11-22 23:24收到简历· 系统记录\\n状态 resume.intake.received，来源 internal，信任级别 INTERNAL\\n2026-11-22 23:24创建待办任务· 招聘负责人\\n状态 SUCCEEDED，任务 RESUME_PARSE\\n2026-11-22 23:24提交申请· 系统记录\\n状态 S8/ACTIVE，阶段 S8，状态 ACTIVE\\n2026-11-22 23:24任务状态更新· 招聘负责人\\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\\n2026-11-22 23:24创建待办任务· 系统记录\\n状态 FAILED，任务 RESUME_PARSE\\n2026-11-22 23:24任务状态更新· 招聘负责人\\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\\n2026-11-22 23:24执行任务· 系统记录\\n状态 FAILED_RETRYABLE\\n2026-11-22 23:24处理步骤状态更新· 招聘负责人\\n状态 task_attempt.status.changed，来源 internal，信任级别 INTERNAL\\n2026-11-22 23:24记录处理过程· 系统记录\\n状态 LOST，模型路由 opencode-go-openai/hy4-flash-free\\n2026-11-22 23:24处理步骤状态更新· 招聘负责人\\n状态 task_attempt.status.changed，来源 internal，信任级别 INTERNAL\\n2026-11-22 23:24处理会话状态更新· 招聘负责人\\n状态 agent_session.status.changed，来源 internal，信任级别 INTERNAL\\n2026-11-22 23:24任务状态更新· 招聘负责人\\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\\n2026-11-22 23:24记录人工纠偏· 招聘负责人\\n状态 criterion.override.recorded，来源 internal，信任级别 INTERNAL\\n2026-11-22 23:24收到流程事件· 招聘负责人\\n状态 decision.record，来源 internal，信任级别 INTERNAL\\n2026-11-22 23:24收到流程事件· 招聘负责人\\n状态 application.current_stage_code.changed，来源 internal，信任级别 INTERNAL\\n2026-11-22 23:24初筛通过· 招聘负责人\\n状态 ADVAN\"}",
+      "screenshot": "evidence/full-verification-20261122/full-chain/08-trace.png",
+      "db_readback": "evidence/full-verification-20261122/full-chain/08-db.txt",
+      "ui_text": "evidence/full-verification-20261122/full-chain/08-ui.txt",
+      "db_counts": {
+        "job": 2,
+        "rubric_version": 3,
+        "approval": 3,
+        "application": 4,
+        "intake_asset": 4,
+        "decision": 1,
+        "criterion_override": 1,
+        "interview": 7,
+        "booking_invite": 1,
+        "scorecard_draft": 0,
+        "scorecard": 2,
+        "event_inbox": 58
+      },
+      "at": "2026-11-22T23:26:29.961Z",
+      "extra": {
+        "machine": {
+          "trace_toggle": true,
+          "trace_length": 4000,
+          "zero_uuid": true,
+          "zero_full_sha256": true,
+          "zero_证据": true,
+          "has_person": true,
+          "has_action": true,
+          "sample": "2026-11-22 23:24收到简历· 系统记录\n状态 resume.intake.received，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24创建待办任务· 招聘负责人\n状态 SUCCEEDED，任务 RESUME_PARSE\n2026-11-22 23:24提交申请· 系统记录\n状态 S8/ACTIVE，阶段 S8，状态 ACTIVE\n2026-11-22 23:24任务状态更新· 招聘负责人\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24创建待办任务· 系统记录\n状态 FAILED，任务 RESUME_PARSE\n2026-11-22 23:24任务状态更新· 招聘负责人\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24执行任务· 系统记录\n状态 FAILED_RETRYABLE\n2026-11-22 23:24处理步骤状态更新· 招聘负责人\n状态 task_attempt.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24记录处理过程· 系统记录\n状态 LOST，模型路由 opencode-go-openai/hy4-flash-free\n2026-11-22 23:24处理步骤状态更新· 招聘负责人\n状态 task_attempt.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24处理会话状态更新· 招聘负责人\n状态 agent_session.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24任务状态更新· 招聘负责人\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24记录人工纠偏· 招聘负责人\n状态 criterion.override.recorded，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24收到流程事件· 招聘负责人\n状态 decision.record，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24收到流程事件· 招聘负责人\n状态 application.current_stage_code.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24初筛通过· 招聘负责人\n状态 ADVAN"
+        }
+      }
+    }
+  ],
+  "counts": {
+    "PASS": 7,
+    "FAIL": 2,
+    "BLOCKED": 0
+  },
+  "overall_pass": false,
+  "baseline_head_counts": {
+    "job": 1,
+    "rubric_version": 2,
+    "approval": 2,
+    "application": 3,
+    "intake_asset": 3,
+    "decision": 0,
+    "criterion_override": 0,
+    "interview": 6,
+    "booking_invite": 0,
+    "scorecard_draft": 0,
+    "scorecard": 0,
+    "event_inbox": 7
+  },
+  "machine_checks": {
+    "trace_toggle": true,
+    "trace_length": 4000,
+    "zero_uuid": true,
+    "zero_full_sha256": true,
+    "zero_证据": true,
+    "has_person": true,
+    "has_action": true,
+    "sample": "2026-11-22 23:24收到简历· 系统记录\n状态 resume.intake.received，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24创建待办任务· 招聘负责人\n状态 SUCCEEDED，任务 RESUME_PARSE\n2026-11-22 23:24提交申请· 系统记录\n状态 S8/ACTIVE，阶段 S8，状态 ACTIVE\n2026-11-22 23:24任务状态更新· 招聘负责人\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24创建待办任务· 系统记录\n状态 FAILED，任务 RESUME_PARSE\n2026-11-22 23:24任务状态更新· 招聘负责人\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24执行任务· 系统记录\n状态 FAILED_RETRYABLE\n2026-11-22 23:24处理步骤状态更新· 招聘负责人\n状态 task_attempt.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24记录处理过程· 系统记录\n状态 LOST，模型路由 opencode-go-openai/hy4-flash-free\n2026-11-22 23:24处理步骤状态更新· 招聘负责人\n状态 task_attempt.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24处理会话状态更新· 招聘负责人\n状态 agent_session.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24任务状态更新· 招聘负责人\n状态 business_task.status.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24记录人工纠偏· 招聘负责人\n状态 criterion.override.recorded，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24收到流程事件· 招聘负责人\n状态 decision.record，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24收到流程事件· 招聘负责人\n状态 application.current_stage_code.changed，来源 internal，信任级别 INTERNAL\n2026-11-22 23:24初筛通过· 招聘负责人\n状态 ADVAN"
+  },
+  "error": null,
+  "dataset": {
+    "candidate_id": "11111111-1111-4111-8111-000000000699",
+    "candidate_name": "候选人 T",
+    "application_id": "47ebfb79-f897-4db2-b614-a1342d7640ed",
+    "job_id": "11111111-1111-4111-8111-000000000401",
+    "rubric_version_id": "8503e342-2ae6-4186-8a12-9e53eb6d74ac",
+    "rubric_version_no": 2,
+    "rubric_payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
+    "interview_round1": {
+      "id": "267622b3-7dfa-405c-83b0-7ab5679436c0",
+      "interviewer_actor_id": "11111111-1111-4111-8111-000000000104",
+      "label": "Interviewer A"
+    },
+    "interview_round2": {
+      "id": "441e969a-6c26-4022-9ac6-525915f5984a",
+      "interviewer_actor_id": "11111111-1111-4111-8111-000000000105",
+      "label": "Interviewer B"
+    },
+    "constraint_text": "候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。"
+  }
+}

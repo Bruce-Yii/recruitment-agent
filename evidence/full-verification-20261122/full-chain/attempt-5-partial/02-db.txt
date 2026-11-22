@@ -1,0 +1,35 @@
+=== DB READBACK MILESTONE 02 — 上传真实 PDF 并显示自动初筛（不写 decision） ===
+at: 2026-11-22T23:24:05.888Z
+db: ra_fresh_e2e_mrc_3mkf54 (SELECT-only psql; no product code imported)
+verdict: PASS
+reason: upload=true; appId=d18cd698-d7b8-466b-89cc-1af03eb9ca31; autoTask=uploaded resume intake (event d07c224d-4ae1-435a-9595-5da38c8a8849)
+[auto-screening] {"material_sha256":"aa2f4645c7535b; autoVisible=true; decision 0->0 (must be unchanged)
+
+-- baseline head counts
+job|2
+rubric_version|3
+approval|3
+application|4
+intake_asset|4
+decision|0
+criterion_override|0
+interview|6
+booking_invite|0
+scorecard_draft|0
+scorecard|0
+event_inbox|21
+
+-- SQL: select id,file_name,mime_type,byte_size,validation_status from recruitment.intake_asset where tenant_id='11111111-1111-4111-8111-000000000001' order by created_at desc limit 3
+42d484a8-6cce-4efb-9304-8c3601aca084|resume-d6f7df95b6faf0e5-synthetic-upload.pdf|application/pdf|10919|VALID
+ee83d731-b29c-4c0d-bdfc-2d70988e0a0a|fresh-s12.pdf|application/pdf|1024|VALID
+f746120a-f54f-4344-95f5-3910d6a6b48e|fresh-candidate-t.pdf|application/pdf|1024|VALID
+
+-- SQL: select id,application_id,decision_scope,result,created_at from recruitment.decision where tenant_id='11111111-1111-4111-8111-000000000001' order by created_at desc limit 5
+
+
+-- SQL: select id,task_type,status,left(coalesce(description,''),120),result_ref from recruitment.business_task where tenant_id='11111111-1111-4111-8111-000000000001' order by created_at desc limit 5
+f9b331ab-2894-4654-809d-d1fcdda0597e|RESUME_PARSE|RETRY_WAIT|deterministic event resume.intake.received (event d07c224d-4ae1-435a-9595-5da38c8a8849)|
+38099469-8979-49cf-93a5-cfa4a58a7419|RESUME_PARSE|SUCCEEDED|uploaded resume intake (event d07c224d-4ae1-435a-9595-5da38c8a8849)
+[auto-screening] {"material_sha256":"aa2f4645c7535bd|{"material_sha256":"aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df","auto_screening":{"verdict":"NEEDS_REVIEW","verdict_summary":"3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_r2w0_3:NEEDS_JUDGMENT）","required_human_action":"ANSWER_JUDGMENT","rubric_version_id":"aecb1eb2-40be-416e-856c-890fa428a323","evaluation_digest":"d00e1ad1e8366d8295477b82a22de8eebdec040285475e812337f5b7083a5ad2","reasons":[{"code":"MUST_HAVE_SATISFIED","criterion_key":"work_history_present","tri_state":"present","outcome":"SATISFIED","message":"work_experience 已读出（state=present）"},{"code":"MUST_HAVE_NEEDS_JUDGMENT","criterion_key":"core_fit","tri_state":"","outcome":"NEEDS_JUDGMENT","message":"这条要求机器判不了（第 2 条），需要人回答 rubric 里的原问句"},{"code":"MUST_HAVE_NEEDS_JUDGMENT","criterion_key":"custom_r2w0_3","tri_state":"","outcome":"NEEDS_JUDGMENT","message":"这条要求机器判不了（第 3 条），需要人回答 rubric 里的原问句"}],"advisory":true,"advisory_note":"这是只读评估给出的建议，不是录用决定；请由招聘团队成员确认。"}}
+a0850f0f-23e3-43ca-9575-3a93ed81de70|RESUME_PARSE|RETRY_WAIT|deterministic event resume.intake.received (event 946c0068-eca2-48b8-88c4-500a40e2ca51)|
+
