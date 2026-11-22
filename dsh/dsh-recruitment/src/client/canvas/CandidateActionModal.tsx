@@ -427,10 +427,10 @@ export function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }
         });
         onSuccess({ message: '已发送邮件并记录外发留痕。', actionId: res.action_id });
       } else if (kind === 'schedule' && scheduleIntent === 'SELF_BOOK') {
-        const interviewerIds = selectedInterviewers
+        const interviewerIds = [...new Set(selectedInterviewers
           .split(',')
           .map((s) => s.trim())
-          .filter(Boolean);
+          .filter(Boolean))];
         if (interviewerIds.length === 0) {
           setErrorText('请先填写至少一位面试官编号。');
           setSubmitting(false);
