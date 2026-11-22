@@ -1,4 +1,4 @@
-# PR #20 复验门禁（head 2e415e0）
+# PR #20 复验门禁（head 9e95cdb）
 
 | 门 | 结果 |
 |---|---|
@@ -13,9 +13,8 @@
 
 ## 1440 三场景
 
-- ② 发起初筛评估：PASS
-- ① 新建岗位：BLOCKED（`INVALID_ARGS/RUBRIC_INVALID: criteria 没有通过 R-VAL-1..13`）
-  - 根因：`buildJobCreateBody`（`src/client/recruiting/actions.ts:1585-1588`）只复制字符串可选键，`value: true` boolean 被丢弃；服务端 EXISTS 要求 value=true。
-- ③ 关闭岗位：未到达（无新岗位）
+- ① 新建岗位 + 批准标准：**BLOCKED（接口/读模型）**。返回：`评分标准版本编号缺失或格式不正确 | 岗位为草稿：待完善 JD / Rubric 并提交审批`。根因：新岗位 rubric version 行存在，但 `job.current_rubric_version_id` 未指向；`readJobDetail` 用 `jobRow.rubric_version_id`（`recruiting.ts:2915`）→ `rubric=null` → `JobPage.tsx:326` 的 `rubricVersionId` 为空。
+- ② 发起初筛评估：PASS。
+- ③ 关闭新岗位：PASS（psql `status=CLOSED`）。
 
 未改 UI 样式；未合并 main。
