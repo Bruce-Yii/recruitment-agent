@@ -1,0 +1,8 @@
+EXIT=0
+SIGNAL=
+--- STDOUT ---
+DROP DATABASE
+
+--- STDERR ---
+注意:  数据库 "ra_evidence_clean_20261122" 不存在,跳过
+

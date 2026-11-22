@@ -1,0 +1,225 @@
+{
+  "captured_at": "2026-11-22T23:12:55.309Z",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "host_port": 49347,
+  "checks": [
+    {
+      "name": "hr_invite_created",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "slotCount": 3,
+        "inviteId": "2bab9c7a-ccd7-4e55-a753-cc653bcfcf7e",
+        "error": null
+      }
+    },
+    {
+      "name": "invite_db_row",
+      "ok": true,
+      "detail": "OPEN|3|45|Asia/Shanghai|3"
+    },
+    {
+      "name": "booking_page_loaded",
+      "ok": true,
+      "detail": {
+        "url": "/recruitment/book/ZYaPOZSee0Wtx9yshKL6VGjgvRT6bwOse_1BBxT0Bww"
+      }
+    },
+    {
+      "name": "no_horizontal_overflow",
+      "ok": true,
+      "detail": {
+        "scrollWidth": 390,
+        "innerWidth": 390
+      }
+    },
+    {
+      "name": "button_touch_targets",
+      "ok": false,
+      "detail": [
+        {
+          "text": "确认此时段",
+          "x": 33,
+          "y": 282,
+          "w": 324,
+          "h": 42,
+          "disabled": false
+        },
+        {
+          "text": "确认此时段",
+          "x": 33,
+          "y": 403,
+          "w": 324,
+          "h": 42,
+          "disabled": false
+        },
+        {
+          "text": "确认此时段",
+          "x": 33,
+          "y": 524,
+          "w": 324,
+          "h": 42,
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "name": "job_title_visible",
+      "ok": true,
+      "detail": {
+        "h1": "后端工程师（演示）"
+      }
+    },
+    {
+      "name": "round_duration_timezone_visible",
+      "ok": true,
+      "detail": {
+        "meta": "第 3 轮 · 45 分钟 · Asia/Shanghai"
+      }
+    },
+    {
+      "name": "three_slot_labels_visible",
+      "ok": true,
+      "detail": [
+        "Asia/Shanghai · 2031-07-01T02:00:00.000Z → 2031-07-01T02:45:00.000Z",
+        "Asia/Shanghai · 2031-07-01T04:00:00.000Z → 2031-07-01T04:45:00.000Z",
+        "Asia/Shanghai · 2031-07-01T06:00:00.000Z → 2031-07-01T06:45:00.000Z"
+      ]
+    },
+    {
+      "name": "status_open_before",
+      "ok": true,
+      "detail": {
+        "status": "待确认"
+      }
+    },
+    {
+      "name": "first_slot_clicked",
+      "ok": true,
+      "detail": {
+        "clicked": true
+      }
+    },
+    {
+      "name": "confirmed_ui_visible",
+      "ok": true,
+      "detail": {
+        "statusAfter": "已确认"
+      }
+    },
+    {
+      "name": "confirmed_buttons_disabled",
+      "ok": true,
+      "detail": {
+        "buttonsDisabled": true
+      }
+    },
+    {
+      "name": "no_horizontal_overflow_after",
+      "ok": true,
+      "detail": {
+        "scrollWidth": 390,
+        "innerWidth": 390
+      }
+    },
+    {
+      "name": "interview_created_by_confirm",
+      "ok": true,
+      "detail": {
+        "before": 6,
+        "after": 7
+      }
+    },
+    {
+      "name": "invite_consumed",
+      "ok": true,
+      "detail": "CONSUMED|0|6e714994-a2c3-4345-a5db-df8b5cde96b6"
+    }
+  ],
+  "pass": false,
+  "db_name": "ra_fresh_e2e_aiw_c7hf5j",
+  "dataset": {
+    "candidate_id": "11111111-1111-4111-8111-000000000699",
+    "candidate_name": "候选人 T",
+    "application_id": "c3beec29-0cae-4390-b60f-4bdd51224975",
+    "job_id": "11111111-1111-4111-8111-000000000401",
+    "rubric_version_id": "5c2db61b-f233-4cc3-ac59-99461fd43332",
+    "rubric_version_no": 2,
+    "rubric_payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
+    "interview_round1": {
+      "id": "07c7bb3c-e9e3-439e-ba44-e266cf3baa5c",
+      "interviewer_actor_id": "11111111-1111-4111-8111-000000000104",
+      "label": "Interviewer A"
+    },
+    "interview_round2": {
+      "id": "fa4ae6d6-e103-4b9c-8858-276d8d0369af",
+      "interviewer_actor_id": "11111111-1111-4111-8111-000000000105",
+      "label": "Interviewer B"
+    },
+    "constraint_text": "候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。"
+  },
+  "host_pid": 30916,
+  "hr_session_sha256": "5b7c8258bf0579b6627f768b9932ccb09c7eb1ac36f9691242cfd47d1115dd6e",
+  "invite_http_status": 200,
+  "invite_id": "2bab9c7a-ccd7-4e55-a753-cc653bcfcf7e",
+  "invite_expires_at": "2026-11-25T23:13:33.701Z",
+  "invite_slot_count": 3,
+  "invite_token_sha256": "53ce6dce61af6239a6a9efd4157332d302b7cf6b6ed5be1f7f67d5ef020901b1",
+  "invite_db_row": "OPEN|3|45|Asia/Shanghai|3",
+  "interview_count_before": 6,
+  "dom_before": {
+    "innerWidth": 390,
+    "innerHeight": 844,
+    "scrollWidth": 390,
+    "scrollHeight": 844,
+    "bodyText": "后端工程师（演示）\n\n第 3 轮 · 45 分钟 · Asia/Shanghai\n\n状态：待确认\n\nAsia/Shanghai · 2031-07-01T02:00:00.000Z → 2031-07-01T02:45:00.000Z确认此时段\nAsia/Shanghai · 2031-07-01T04:00:00.000Z → 2031-07-01T04:45:00.000Z确认此时段\nAsia/Shanghai · 2031-07-01T06:00:00.000Z → 2031-07-01T06:45:00.000Z确认此时段\n\n本页面仅展示与本次面试预约有关的信息。",
+    "h1": "后端工程师（演示）",
+    "meta": "第 3 轮 · 45 分钟 · Asia/Shanghai",
+    "status": "待确认",
+    "slotLabels": [
+      "Asia/Shanghai · 2031-07-01T02:00:00.000Z → 2031-07-01T02:45:00.000Z",
+      "Asia/Shanghai · 2031-07-01T04:00:00.000Z → 2031-07-01T04:45:00.000Z",
+      "Asia/Shanghai · 2031-07-01T06:00:00.000Z → 2031-07-01T06:45:00.000Z"
+    ],
+    "buttons": [
+      {
+        "text": "确认此时段",
+        "x": 33,
+        "y": 282,
+        "w": 324,
+        "h": 42,
+        "disabled": false
+      },
+      {
+        "text": "确认此时段",
+        "x": 33,
+        "y": 403,
+        "w": 324,
+        "h": 42,
+        "disabled": false
+      },
+      {
+        "text": "确认此时段",
+        "x": 33,
+        "y": 524,
+        "w": 324,
+        "h": 42,
+        "disabled": false
+      }
+    ]
+  },
+  "screenshot_before": "D:\\12412\\DshWorktrees\\recruitment-agent\\wave3-evidence-runall\\evidence\\full-verification-20261122\\runall-mobile\\mobile-booking-390.png",
+  "dom_after": {
+    "bodyText": "后端工程师（演示）\n\n第 3 轮 · 45 分钟 · Asia/Shanghai\n\n状态：已确认\n\nAsia/Shanghai · 2031-07-01T02:00:00.000Z → 2031-07-01T02:45:00.000Z确认此时段\nAsia/Shanghai · 2031-07-01T04:00:00.000Z → 2031-07-01T04:45:00.000Z确认此时段\nAsia/Shanghai · 2031-07-01T06:00:00.000Z → 2031-07-01T06:45:00.000Z确认此时段\n\n本页面仅展示与本次面试预约有关的信息。",
+    "status": "已确认",
+    "buttonsDisabled": true,
+    "scrollWidth": 390,
+    "innerWidth": 390
+  },
+  "screenshot_after": "D:\\12412\\DshWorktrees\\recruitment-agent\\wave3-evidence-runall\\evidence\\full-verification-20261122\\runall-mobile\\mobile-booking-390-confirmed.png",
+  "interview_count_after": 7,
+  "invite_state_after": "CONSUMED|0|6e714994-a2c3-4345-a5db-df8b5cde96b6"
+}

@@ -1,0 +1,51 @@
+database=ra_evidence_clean_20261122
+migrations=24
+0001_init.sql
+0002_seed.sql
+0003_review_queue.sql
+0004_stage_catalog.sql
+0005_version_binding.sql
+0006_integrity_gaps.sql
+0007_decision_integrity.sql
+0008_decision_uniqueness.sql
+0009_application_identity.sql
+0010_migration_ledger.sql
+0011_task_runtime.sql
+0012_engine_state.sql
+0013_trace_chain.sql
+0014_tenant_config.sql
+0015_runtime_cutover.sql
+0016_v1_consistency.sql
+0017_criterion_override.sql
+0018_atomic_capabilities.sql
+0019_candidate_constraint.sql
+0020_undo_log.sql
+0021_application_star.sql
+0022_scorecard_draft.sql
+0023_minute_rebind.sql
+0024_booking_invite.sql
+--- per-file results ---
+0001_init.sql: exit=0 | DROP TRIGGER / CREATE TRIGGER / DROP TRIGGER / CREATE TRIGGER / COMMIT
+0002_seed.sql: exit=0 | INSERT 0 1 / INSERT 0 1 / SET / UPDATE 1 / COMMIT
+0003_review_queue.sql: exit=0 | CREATE TRIGGER / CREATE VIEW / CREATE VIEW / CREATE VIEW / COMMIT
+0004_stage_catalog.sql: exit=0 | DO / UPDATE 1 / DO / DO / COMMIT
+0005_version_binding.sql: exit=0 | DO / DO / DO / DO / COMMIT
+0006_integrity_gaps.sql: exit=0 | CREATE TRIGGER / DO / DO / DO / COMMIT
+0007_decision_integrity.sql: exit=0 | CREATE FUNCTION / DO / DO / DO / COMMIT
+0008_decision_uniqueness.sql: exit=0 | DO / DO / DO / DO / COMMIT
+0009_application_identity.sql: exit=0 | CREATE FUNCTION / DROP TRIGGER / CREATE TRIGGER / DO / COMMIT
+0010_migration_ledger.sql: exit=0 | CREATE TABLE / COMMENT / INSERT 0 9 / INSERT 0 1 / COMMIT
+0011_task_runtime.sql: exit=0 | DO / CREATE INDEX / DO / INSERT 0 1 / COMMIT
+0012_engine_state.sql: exit=0 | COMMENT / CREATE INDEX / DO / INSERT 0 1 / COMMIT
+0013_trace_chain.sql: exit=0 | CREATE FUNCTION / CREATE FUNCTION / DO / INSERT 0 1 / COMMIT
+0014_tenant_config.sql: exit=0 | DROP TRIGGER / CREATE TRIGGER / DO / DO / COMMIT
+0015_runtime_cutover.sql: exit=0 | CREATE TRIGGER / INSERT 0 1 / DO / DO / COMMIT
+0016_v1_consistency.sql: exit=0 | CREATE TRIGGER / INSERT 0 0 / DO / DO / COMMIT
+0017_criterion_override.sql: exit=0 | CREATE TRIGGER / DROP TRIGGER / CREATE TRIGGER / DO / COMMIT
+0018_atomic_capabilities.sql: exit=0 | ALTER TABLE / DO / CREATE INDEX / DO / COMMIT
+0019_candidate_constraint.sql: exit=0 | CREATE TRIGGER / DROP TRIGGER / CREATE TRIGGER / DO / COMMIT
+0020_undo_log.sql: exit=0 | CREATE TRIGGER / DROP TRIGGER / CREATE TRIGGER / DO / COMMIT
+0021_application_star.sql: exit=0 | CREATE TRIGGER / DROP TRIGGER / CREATE TRIGGER / DO / COMMIT
+0022_scorecard_draft.sql: exit=0 | CREATE TRIGGER / DROP TRIGGER / CREATE TRIGGER / DO / COMMIT
+0023_minute_rebind.sql: exit=0 | CREATE TRIGGER / DROP TRIGGER / CREATE TRIGGER / DO / COMMIT
+0024_booking_invite.sql: exit=0 | CREATE INDEX / DROP TRIGGER / CREATE TRIGGER / DO / COMMIT

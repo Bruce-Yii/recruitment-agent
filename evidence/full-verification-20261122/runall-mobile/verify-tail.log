@@ -1,0 +1,93 @@
+EXIT=0
+--- STDOUT TAIL (last 60) ---
+ 6. 负向测试（每条都必须 FAIL，并给出真实 SQLSTATE / 报错）
+==================================================================
+DO
+
+==================================================================
+ 7. 正向断言（约束没有把合法路径堵死）
+==================================================================
+DO
+
+==================================================================
+ 8. 不变量 → 约束 台账（逐条打印，全部必须已落地）
+==================================================================
+DO
+
+-- 应用层保证的规则（DB 无法声明，理由写在 SCHEMA.md §4）--
+   id   |                                       rule                                        
+--------+-----------------------------------------------------------------------------------
+ APP-01 | 禁止"离职事件直接把 Requisition 设为 Approved"
+ APP-02 | 同一候选人同岗位重复申请的新建/复活/冷却期由企业规则决定
+ APP-03 | 禁止只按文本哈希去重（幂等键来源由接收层决定）
+ APP-04 | 禁止模糊匹配自动写 Meeting↔Interview 关系（只允许人工或事件精确匹配）
+ APP-05 | Evaluation Ready 三条件是跨表聚合（Scorecard 全交 + Record 完成 + 可回溯）
+ APP-06 | 禁止把 PARSING 当成招聘阶段（状态轴分离由写入方保证）
+ APP-07 | Agent 不得写 Scorecard 内容 / 不得代替人做闸门决策（由 Mandate + 服务端授权校验）
+ APP-08 | 跨租户与资源访问授权（不变量 7，依赖可信服务端 + Mandate，不依赖 Prompt）
+(8 行记录)
+
+
+==================================================================
+ 9. 行数核对（脚本回滚前应为夹具行数，回滚后应为 0）
+==================================================================
+          t          | count 
+---------------------+-------
+ application         |     2
+ business_task       |     2
+ candidate           |     4
+ event_inbox         |     6
+ scorecard           |     2
+ transcript_artifact |     1
+(6 行记录)
+
+
+==================================================================
+ 10. [0020 追加] 批量不通过与撤销的审计表结构断言
+==================================================================
+DO
+
+==================================================================
+ 11. [0021 追加] 候选人星标 application_star 的结构断言
+==================================================================
+DO
+DO
+
+=== ROLLBACK：自检不改变数据库 ===
+ROLLBACK
+
+==================================================================
+ VERIFY PASS：结构断言 + 状态机覆盖 + 对象覆盖 + 32 条负向测试全部通过
+==================================================================
+
+--- STDERR TAIL ---
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1129: 注意:  N24 PASS [直接改 Candidate 身份状态（没有 Merge Record）] => sqlstate=23514 | CANDIDATE_IDENTITY_UNTRACKED: candidate aaaaaaaa-0000-0000-0000-000000000061 的 identity_status 只能由 candidate_merge 记录驱动
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1129: 注意:  N25 PASS [Candidate 合并没有匹配依据（禁止无依据归并）] => sqlstate=23514 | 关系 "candidate_merge" 的新列违反了检查约束 "ck_candidate_merge_basis"
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1129: 注意:  N26 PASS [同一租户重复创建 ACTIVE 候选人（强标识唯一）] => sqlstate=23505 | 重复键违反唯一约束"uq_candidate_active_email"
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1129: 注意:  N27 PASS [Execution Mandate 里出现业务审批动作（闸门不可绕过）] => sqlstate=23514 | 关系 "execution_mandate" 的新列违反了检查约束 "ck_execution_mandate_no_business_approval"
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1129: 注意:  N28 PASS [同一会议被绑定到第二个面试（MEETING_ALREADY_BOUND）] => sqlstate=23505 | 重复键违反唯一约束"uq_meeting_binding_active"
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1129: 注意:  N29 PASS [Interview Record 标 READY 但证据未校验] => sqlstate=23514 | 关系 "interview_record" 的新列违反了检查约束 "ck_interview_record_ready"
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1129: 注意:  N30 PASS [处理跑通成功但仍有失败 Chunk（不得把部分当完整）] => sqlstate=23514 | 关系 "transcript_processing_run" 的新列违反了检查约束 "ck_transcript_processing_run_success"
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1129: 注意:  N31 PASS [Duplicate Effect：同一幂等键再建一条（重试不得新建 Effect）] => sqlstate=23505 | 重复键违反唯一约束"uq_durable_effect_idempotency"
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1129: 注意:  N32 PASS [Event trust_level 写非法值（外部文本不可信是枚举）] => sqlstate=23514 | 关系 "event_inbox" 的新列违反了检查约束 "ck_event_inbox_trust"
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1129: 注意:  NEGATIVE SUMMARY 32 条负向测试全部按预期失败
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1206: 注意:  POS-01/02 PASS 状态迁移 → 内部事件 1 条 + record_version 自增
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1206: 注意:  POS-03 PASS 过期 record_version 更新影响 0 行（VERSION_CONFLICT 由调用方处理）
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1206: 注意:  POS-04 PASS PENDING Scorecard 可编辑（提交后才冻结）
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1206: 注意:  POS-05 PASS 合并保留全部历史 Application，且主档未被改动
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1206: 注意:  POS-06 PASS candidate.record_version 自动自增（当前 2）
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1248: 注意:  INV-1 PASS Application 必须关联 Candidate 和 Job → fk_application_candidate / fk_application_job + NOT NULL
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1248: 注意:  INV-2 PASS Candidate 合并不删除历史 Application → trg_application_no_delete + candidate_merge 不改 application + 复合外键 NO ACTION
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1248: 注意:  INV-3 PASS Requisition / Job / Job Posting 各自独立身份与状态 → 三张独立表，各自 PK 与 ck_*_status
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1248: 注意:  INV-4 PASS Interview 必须关联 Application 和面试轮次 → fk_interview_application + ck_interview_round + uq_interview_slot
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1248: 注意:  INV-5 PASS Meeting 与 Interview 靠平台 ID 绑定，不能靠标题 → meeting 表无标题列 + ck_meeting_identity + uq_meeting_binding_active
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1248: 注意:  INV-6 PASS Transcript 原文不可被 AI Summary 覆盖 → transcript_artifact 原文列在白名单外（trg_*_immutable）+ ai_summary 独立表引用 revision
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1248: 注意:  INV-7 PASS Scorecard 必须记录评价者和评分标准版本 → interviewer_id + rubric_version_id 均 NOT NULL 外键
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1248: 注意:  INV-8 PASS Workflow 状态迁移必须有来源事件/动作、时间和结果 → fn_row_guard：状态变化必须给 actor，自动写 event_inbox 并回填 status_source_event_id
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1248: 注意:  INV-9 PASS 重要审批与决策保留责任人、时间、结果、理由 → ck_approval_decided_fields / ck_decision_reason / decided_by_actor_id NOT NULL
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1248: 注意:  INV-10 PASS 配置变更不静默改变历史评价或已结束申请 → rubric_version/business_config 不可变 + scorecard.rubric_version_id 固定引用 + application.job_version_id 固定引用
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1391: 注意:  BATCH-STRUCT PASS batch_operation 列/幂等键/CHECK/禁删/不可变护栏齐全
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1391: 注意:  UNDO-STRUCT PASS undo_log 列/幂等键/CHECK/禁删/墓碑护栏/索引齐全
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1466: 注意:  STAR-STRUCT PASS application_star 列/复合外键/CHECK/禁删/不可变/当前值索引/台账齐全
+psql:D:/12412/DshWorktrees/recruitment-agent/wave3-evidence-runall/db/verify.sql:1527: 注意:  BOOKING-STRUCT PASS booking_invite 列/复合外键/CHECK/token 唯一键/禁删/台账齐全
+

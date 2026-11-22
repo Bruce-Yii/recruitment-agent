@@ -1,0 +1,31 @@
+{
+  "db": "ra_evidence_clean_20261122",
+  "migrations": [
+    "0001_init.sql",
+    "0002_seed.sql",
+    "0003_review_queue.sql",
+    "0004_stage_catalog.sql",
+    "0005_version_binding.sql",
+    "0006_integrity_gaps.sql",
+    "0007_decision_integrity.sql",
+    "0008_decision_uniqueness.sql",
+    "0009_application_identity.sql",
+    "0010_migration_ledger.sql",
+    "0011_task_runtime.sql",
+    "0012_engine_state.sql",
+    "0013_trace_chain.sql",
+    "0014_tenant_config.sql",
+    "0015_runtime_cutover.sql",
+    "0016_v1_consistency.sql",
+    "0017_criterion_override.sql",
+    "0018_atomic_capabilities.sql",
+    "0019_candidate_constraint.sql",
+    "0020_undo_log.sql",
+    "0021_application_star.sql",
+    "0022_scorecard_draft.sql",
+    "0023_minute_rebind.sql",
+    "0024_booking_invite.sql"
+  ],
+  "verifyExit": 0,
+  "createdAt": "2026-11-22T23:02:57.214Z"
+}

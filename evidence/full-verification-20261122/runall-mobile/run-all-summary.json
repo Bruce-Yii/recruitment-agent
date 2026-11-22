@@ -1,0 +1,145 @@
+{
+  "task": "task-16",
+  "lane": "Lane2a evidence owner",
+  "captured_at": "2026-11-23T07:20:00+08:00",
+  "worktree": "D:\\12412\\DshWorktrees\\recruitment-agent\\wave3-evidence-runall",
+  "branch": "evidence/full-verification-20261122",
+  "base": "origin/main 7695243",
+  "product_code_changes": false,
+  "commits_or_pushes": false,
+  "part_a_clean_db_full_test": {
+    "database": "ra_evidence_clean_20261122",
+    "created_via": "one-off work/d5/fullpage/evidence-clean-db.mjs (pg admin create database, isolated from shared ra_s6s7)",
+    "migrations_applied": 24,
+    "migrations_range": "0001_init.sql .. 0024_booking_invite.sql (all exit 0)",
+    "migration_ledger_versions": [
+      "0001_init", "0002_seed", "0003_review_queue", "0004_stage_catalog", "0005_version_binding",
+      "0006_integrity_gaps", "0007_decision_integrity", "0008_decision_uniqueness", "0009_application_identity",
+      "0010_migration_ledger", "0011_task_runtime", "0012_engine_state", "0013_trace_chain", "0014_tenant_config",
+      "0015_runtime_cutover", "0016_v1_consistency", "0017_criterion_override", "0018_atomic_capabilities",
+      "0019_candidate_constraint", "0020_undo_log", "0021_application_star", "0022_scorecard_draft",
+      "0023_minute_rebind", "0024_booking_invite"
+    ],
+    "verify_sql": {
+      "command": "psql -X -w -v ON_ERROR_STOP=1 -U postgres -h 127.0.0.1 -d ra_evidence_clean_20261122 -f db/verify.sql",
+      "exit_code": 0,
+      "result": "VERIFY PASS：结构断言 + 状态机覆盖 + 对象覆盖 + 32 条负向测试全部通过",
+      "tail": "BOOKING-STRUCT PASS booking_invite 列/复合外键/CHECK/token 唯一键/禁删/台账齐全",
+      "log": "verify-full.log",
+      "tail_log": "verify-tail.log"
+    },
+    "test_command": "node test/run-all.mjs --test-concurrency=1",
+    "test_cwd": "dsh/dsh-recruitment",
+    "env": {
+      "RECRUITMENT_DB_PASSWORD": "123456 (not recorded in file)",
+      "RECRUITMENT_TEST_DB": "ra_evidence_clean_20261122",
+      "RECRUITMENT_PYTHON": "D:\\Python3.12.9\\python.exe",
+      "RECRUITMENT_PYTHON_BIN": "D:\\Python3.12.9\\python.exe",
+      "RECRUITMENT_CONVERTER_DIR": "<worktree>\\converter",
+      "RECRUITMENT_SKILL_DIR": "<worktree>\\dsh\\dsh-recruitment\\skill"
+    },
+    "first_run": {
+      "exit_code": 1,
+      "tests": 3008,
+      "suites": 101,
+      "pass": 2997,
+      "fail": 7,
+      "skipped": 4,
+      "cancelled": 0,
+      "todo": 0,
+      "failure_cause": "Pure env wiring: evidence-read-pg.test.ts before-hook reads RECRUITMENT_PYTHON (not only RECRUITMENT_PYTHON_BIN); without it, resolveConverterConfig rejects 'config.python_bin must be absolute'. No product/test code changes made.",
+      "failed_test_names": [
+        "material_read TEXT（PDF）：逐字引文带 page+bbox+line+offset，quote 在读取器全文逐字命中，sha 对齐",
+        "material_read TEXT（DOCX）：docx_part_paragraph 定位（part+paragraph_id）+ 逐字命中",
+        "material_read TEXT（RTF）：rtf_paragraph 定位（0-based 段落 + page）+ 逐字命中",
+        "material_read TEXT（整页扫描件）：无文字层/blocks → MATERIAL_ORIGINAL_NOT_LOCATED（不假成功）",
+        "material_read TEXT（库里钉住的 sha 与磁盘不符）：find 不到原件 → 闭集 reason，不返回正文",
+        "application_get execute：rubric 块给 criteria_summary（≤8 条 + 真实 criteria_count，不带 question/notes）",
+        "一次性库自检：迁移目录全量重放（台账条数 = 文件数 + 演示租户存在），不是共享库"
+      ],
+      "log": "run-all-full-first.log"
+    },
+    "final_run": {
+      "exit_code": 0,
+      "tests": 3008,
+      "suites": 101,
+      "pass": 3004,
+      "fail": 0,
+      "skipped": 4,
+      "cancelled": 0,
+      "todo": 0,
+      "duration_ms": 451646.128,
+      "failed_test_names": [],
+      "skipped_test_names": [
+        "真实语料回归：全量=门槛判定 / 抽样=开发回路（SAMPLED 不构成门槛）+ 失败逐条可归因（docs/11 §11） — RECRUITMENT_CORPUS_ROOT is not set (R7; accepted skip, CI declares it explicitly)",
+        "成功落盘 + 复算 sha256 + 建任务（需一次性测试库，按 AGENTS.md 规范另建） — unit test lane has no DB seam; HTTP end-to-end evidence covers success path",
+        "磁盘 sha256 与内存不一致 → SHA256_MISMATCH 且清理文件（需可注入的文件系统故障 seam） — no seam, no fake green",
+        "重复上传同一 sha256 → 复用既有 event_id / task_id（需真库验证幂等） — needs real DB double-write readback"
+      ],
+      "log": "run-all-full-rerun.log",
+      "exit_log": "run-all-rerun-exit.txt"
+    }
+  },
+  "part_b_mobile_booking_390x844": {
+    "host_port": 49347,
+    "cdp_port": 9224,
+    "db_name": "ra_fresh_e2e_aiw_c7hf5j (cleaned up after evidence)",
+    "invite": {
+      "generated_via": "POST /recruitment/api/action/booking/invite with real HR session (rc_sid from /recruitment/test?as=recruiter), x-recruitment-request:1, same-origin Origin",
+      "http_status": 200,
+      "invite_id": "2bab9c7a-ccd7-4e55-a753-cc653bcfcf7e",
+      "token_sha256": "53ce6dce61af6239a6a9efd4157332d302b7cf6b6ed5be1f7f67d5ef020901b1 (plaintext token not stored in evidence)",
+      "token_length": 43,
+      "expires_at": "2026-11-25T23:13:33.701Z",
+      "slots": 3,
+      "db_row_before": "OPEN|3|45|Asia/Shanghai|3",
+      "application_id": "c3beec29-0cae-4390-b60f-4bdd51224975",
+      "job_title": "后端工程师（演示）"
+    },
+    "checks_total": 15,
+    "checks_passed": 14,
+    "checks_failed": 1,
+    "measurements": {
+      "innerWidth": 390,
+      "innerHeight": 844,
+      "scrollWidth_before": 390,
+      "scrollWidth_after": 390,
+      "horizontal_overflow": false,
+      "buttons": [
+        { "text": "确认此时段", "x": 33, "y": 282, "w": 324, "h": 42 },
+        { "text": "确认此时段", "x": 33, "y": 403, "w": 324, "h": 42 },
+        { "text": "确认此时段", "x": 33, "y": 524, "w": 324, "h": 42 }
+      ],
+      "title_visible": "后端工程师（演示）",
+      "meta_visible": "第 3 轮 · 45 分钟 · Asia/Shanghai",
+      "slot_labels_visible": 3,
+      "status_before": "待确认",
+      "status_after": "已确认",
+      "buttons_disabled_after_confirm": true,
+      "interview_count_before": 6,
+      "interview_count_after": 7,
+      "invite_state_after": "CONSUMED|0|6e714994-a2c3-4345-a5db-df8b5cde96b6"
+    },
+    "failed_check": {
+      "name": "button_touch_targets",
+      "expected": "every button bbox height >= 44 CSS px and width >= 44 CSS px",
+      "actual": "height = 42 CSS px for all three 确认此时段 buttons (width 324 passes)",
+      "root_cause": "src/http/booking-invite.ts renderBookingHtml CSS: button padding:11px 16px; font-size:14px; line-height:1.65 → 11+11+23.1 ≈ 42px. Real product finding, not blocked evidence: screenshot and DOM measurement captured.",
+      "product_code_changed": false
+    },
+    "screenshots": {
+      "before_confirm": "mobile-booking-390.png",
+      "after_confirm": "mobile-booking-390-confirmed.png"
+    },
+    "evidence_json": "mobile-booking.json",
+    "cleanup_verified": {
+      "host_port_49347": "free",
+      "cdp_port_9224": "free",
+      "host_token_file": "removed",
+      "disposable_db": "dropped",
+      "chrome_and_host_processes": "terminated"
+    }
+  },
+  "evidence_directory": "evidence/full-verification-20261122/runall-mobile/",
+  "honest_status": "Part A fully green after env correction (3004/3008 pass, 4 explicit accepted skips, 0 fail). Part B: 14/15 checks pass; one genuine 44px touch-target violation on public booking buttons (42px height) captured with screenshot and DOM measurements; no product code modified."
+}

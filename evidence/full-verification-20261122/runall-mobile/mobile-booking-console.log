@@ -1,0 +1,19 @@
+fresh env: ra_fresh_e2e_aiw_c7hf5j
+host ready, pid 30916
+HR session obtained
+PASS hr_invite_created: {"status":200,"slotCount":3,"inviteId":"2bab9c7a-ccd7-4e55-a753-cc653bcfcf7e","error":null}
+PASS invite_db_row: "OPEN|3|45|Asia/Shanghai|3"
+PASS booking_page_loaded: {"url":"/recruitment/book/ZYaPOZSee0Wtx9yshKL6VGjgvRT6bwOse_1BBxT0Bww"}
+PASS no_horizontal_overflow: {"scrollWidth":390,"innerWidth":390}
+FAIL button_touch_targets: [{"text":"确认此时段","x":33,"y":282,"w":324,"h":42,"disabled":false},{"text":"确认此时段","x":33,"y":403,"w":324,"h":42,"disabled":false},{"text":"确认此时段","x":33,"y":524,"w":324,"h":42,"disabled":false}]
+PASS job_title_visible: {"h1":"后端工程师（演示）"}
+PASS round_duration_timezone_visible: {"meta":"第 3 轮 · 45 分钟 · Asia/Shanghai"}
+PASS three_slot_labels_visible: ["Asia/Shanghai · 2031-07-01T02:00:00.000Z → 2031-07-01T02:45:00.000Z","Asia/Shanghai · 2031-07-01T04:00:00.000Z → 2031-07-01T04:45:00.000Z","Asia/Shanghai · 2031-07-01T06:00:00.000Z → 2031-07-01T06:45:00.000Z"]
+PASS status_open_before: {"status":"待确认"}
+PASS first_slot_clicked: {"clicked":true}
+PASS confirmed_ui_visible: {"statusAfter":"已确认"}
+PASS confirmed_buttons_disabled: {"buttonsDisabled":true}
+PASS no_horizontal_overflow_after: {"scrollWidth":390,"innerWidth":390}
+PASS interview_created_by_confirm: {"before":6,"after":7}
+PASS invite_consumed: "CONSUMED|0|6e714994-a2c3-4345-a5db-df8b5cde96b6"
+RESULT {"pass":false,"checks":15,"failed":["button_touch_targets"]}

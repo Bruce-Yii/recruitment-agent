@@ -1,0 +1,5 @@
+clean-db-drop.log: exit=0 stdoutLen=15 stderrLen=46
+clean-db-create.log: exit=0 stdoutLen=17 stderrLen=0
+migrations applied: 24 (exit 0 all)
+migration-ledger.log: exit=0 stdoutLen=503 stderrLen=0
+verify.sql: exit=0 stdoutLen=4263 stderrLen=14251

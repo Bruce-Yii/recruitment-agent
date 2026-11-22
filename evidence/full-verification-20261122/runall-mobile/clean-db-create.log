@@ -1,0 +1,7 @@
+EXIT=0
+SIGNAL=
+--- STDOUT ---
+CREATE DATABASE
+
+--- STDERR ---
+
