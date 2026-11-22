@@ -1,0 +1,16 @@
+# PR #20 构建与静态门禁（2026-11-22）
+
+- `npx tsc --noEmit`：**FAIL（2）**
+  - `src/client/canvas/JobPage.tsx(1019,37): error TS2304: Cannot find name 'handleApproveRubric'.`
+  - `src/client/canvas/JobPage.tsx(1065,37): error TS2304: Cannot find name 'handleCloseJob'.`
+- `npx tsdown`：PASS（双入口，lib/app.js 1.39MB）
+- `node scripts/server-typecheck.mjs`：PASS（0/0）
+- `node scripts/runtime-budget.mjs`：PASS（5051/5051）
+- `node scripts/entry-reachability.mjs`：PASS（无新缺口；手拼 0）
+- `node scripts/client-contract-check.mjs`：PASS（0 违规）
+- `node scripts/term-lint.mjs`：PASS（0 违规）
+- `run-v4.mjs --fresh --port 49347`：15/15 PASS，审计 hard 0
+
+## 结论
+
+tsc 阻断；未执行 1440 新闭环，未合并 main。需前端把两个 handler 移出 `useEffect` 作用域后复跑。

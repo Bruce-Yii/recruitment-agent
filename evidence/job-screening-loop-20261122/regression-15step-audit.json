@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-11-22T11:51:54.714Z",
+  "result_path": "work/d5/fullpage/lead-verify-job-loop/runbook-result.json",
+  "hard": [],
+  "soft": [
+    {
+      "code": "keytext_not_in_page",
+      "detail": "S8: ui.txt page text lacks keyText prefix \"刷新后 textarea = \\\"[RUN\""
+    },
+    {
+      "code": "keytext_not_in_page",
+      "detail": "S12: ui.txt page text lacks keyText prefix \"已记录终审正式决策并同步落库。 候选\""
+    },
+    {
+      "code": "keytext_not_in_page",
+      "detail": "S15: ui.txt page text lacks keyText prefix \"{\\\"error\\\":{\\\"code\\\":\\\"VE\""
+    }
+  ],
+  "leaks": [],
+  "counts": {
+    "hard_fail": 0,
+    "soft_warn": 3
+  },
+  "exit": 0
+}

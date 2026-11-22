@@ -1,0 +1,2 @@
+src/client/canvas/JobPage.tsx(1019,37): error TS2304: Cannot find name 'handleApproveRubric'.
+src/client/canvas/JobPage.tsx(1065,37): error TS2304: Cannot find name 'handleCloseJob'.
