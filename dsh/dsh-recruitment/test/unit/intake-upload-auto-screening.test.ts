@@ -211,10 +211,10 @@ test('持久化字段与 SQL 接线：result_ref JSON 含 material_sha256，busi
   const source = readFileSync(join(here, '..', '..', 'src', 'http', 'intake-upload.ts'), 'utf8')
   // result_ref 写 JSON 文本，且保留 material_sha256 原文 hash。
   assert.match(source, /material_sha256:\s*materialSha256/)
-  assert.match(source, /result_ref\s*=\s*\$4/)
+  assert.match(source, /result_ref\s*=\s*\$3/)
   // business_refs 追加 APPLICATION 引用（只用于读模型定位）。
   assert.match(source, /kind:\s*'APPLICATION'/)
-  assert.match(source, /business_refs\s*=\s*\$5::jsonb/)
+  assert.match(source, /business_refs\s*=\s*\$4::jsonb/)
   // 绝不写 decision 表（静态断言见另一条测试，这里再确认摘要写入只碰 business_task）。
   const withoutComments = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
   assert.equal(/\b(insert\s+into|update|delete\s+from)\s+recruitment\.decision\b/i.test(withoutComments), false)
@@ -333,3 +333,4 @@ test('接线：自动初筛在 finalizeTask(SUCCEEDED) 之后调用，且被 cat
   const after = source.slice(autoAt, autoAt + 600)
   assert.match(after, /\.catch\(/, '自动初筛调用必须自带 catch 兜底，绝不翻盘已成功任务')
 })
+

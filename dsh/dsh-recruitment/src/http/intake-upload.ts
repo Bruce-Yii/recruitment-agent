@@ -476,7 +476,8 @@ function defaultAutoScreeningHooks(cfg: ResolvedDatabaseConfig): AutoScreeningHo
       // 复用既有只读工具，与手动触发完全同一路径：零 decision 写入、只读事务、7 条阻断检查。
       // **不传 rubric_version_id**：避免把评估变成 what_if（what_if 不可用于决策）。
       // `exec` 参数由宿主传入；评估工具不消费它（只读），给空对象即可。
-      await createScreeningEvaluateTool(cfg).execute({ application_id: applicationId }, {})
+      // 必须 return 工具结果：自动初筛要把结构化 verdict/reasons 持久化给读模型，而不是丢弃。
+      return await createScreeningEvaluateTool(cfg).execute({ application_id: applicationId }, {})
     },
   }
 }
@@ -531,14 +532,12 @@ async function persistAutoScreeningSummary(
       const description = `${baseDescription}${AUTO_SCREENING_DESCRIPTION_MARKER}${json}`
       await client.query(
         `update recruitment.business_task
-            set result_ref = $4,
-                description = $6,
-                business_refs = $5::jsonb,
-                status_changed_at = now(),
-                status_changed_by_actor_id = $2::uuid,
+            set result_ref = $3,
+                description = $5,
+                business_refs = $4::jsonb,
                 record_version = record_version + 1
-          where tenant_id = $1::uuid and id = $3::uuid`,
-        [cfg.tenant_id, actorId, taskId, json, JSON.stringify(refs), description],
+          where tenant_id = $1::uuid and id = $2::uuid`,
+        [cfg.tenant_id, taskId, json, JSON.stringify(refs), description],
       )
     })
   } catch (error) {

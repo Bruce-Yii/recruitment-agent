@@ -171,3 +171,21 @@ test('候选人页静态断言：CandidatePage 渲染 auto-screening 且标注�
   // 不新增弹窗：区块内只有静态 doc-block，没有新的 Modal 弹窗调用。
   assert.equal(/autoScreening[\s\S]{0,200}Modal/.test(source), false)
 })
+
+test('持久化兜底：description 标记也能读回；默认 evaluate 必须返回工具输出（不得丢弃）', () => {
+  const fromDescription = mapAutoScreeningResultRef(
+    '9754a77f11b4b9733f9a5072340a078b066ad86896ea9568b975de4aa6ff2356',
+    '',
+    'uploaded resume intake (event x)\n[auto-screening] ' + RESULT_REF,
+  )
+  assert.ok(fromDescription !== null)
+  assert.equal(fromDescription.verdict, 'NEEDS_REVIEW')
+  assert.equal(fromDescription.material_sha256, MATERIAL_SHA)
+
+  const here = dirname(fileURLToPath(import.meta.url))
+  const source = readFileSync(join(here, '..', '..', 'src', 'http', 'intake-upload.ts'), 'utf8')
+  assert.match(source, /return await createScreeningEvaluateTool\(cfg\)\.execute/, '默认 evaluate 必须返回工具输出，否则摘要全空')
+  assert.match(source, /AUTO_SCREENING_DESCRIPTION_MARKER/, 'description 兜底标记必须存在')
+  assert.doesNotMatch(source, /status_changed_at = now\(\)[\s\S]{0,300}result_ref/, '写摘要不得伪造状态审计字段')
+})
+
