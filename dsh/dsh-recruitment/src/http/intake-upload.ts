@@ -319,12 +319,90 @@ export type AutoScreeningRubricProbe =
   | { readonly kind: 'APPROVED'; readonly rubricVersionId: string }
   | { readonly kind: 'NONE'; readonly reason: string }
 
+/**
+ * 落进 `business_task.result_ref` 的**只读建议**摘要（非决定）。
+ *
+ * 设计纪律（Issue #24 / G-01 补完）：
+ *   * 这是**评估工具输出的结构化投影**，不是决定——`verdict` 是工具的只读结论，
+ *     UI 必须同时展示 `advisory_note`（"这是建议，不是决定"）；
+ *   * 三态字段（`present`/`absent`/`unreadable`）逐条随 reason 保留，供读模型还原结论；
+ *   * 绝不写 `decision`、不钉 rubric、不新增表/列/迁移；只改既有 `business_task.result_ref`（text）
+ *     与 `business_refs`（jsonb）；
+ *   * `material_sha256` 必须保留——`result_ref` 原文 hash 不能丢（上传落盘证据）。
+ */
+export interface AutoScreeningSummary {
+  readonly verdict: string
+  readonly verdict_summary: string
+  readonly required_human_action: string
+  readonly rubric_version_id: string
+  readonly evaluation_digest: string
+  readonly reasons: readonly {
+    readonly code: string
+    readonly criterion_key: string
+    readonly tri_state: string
+    readonly outcome: string
+    readonly message: string
+  }[]
+  readonly advisory: true
+  readonly advisory_note: string
+}
+
+/** `business_task.result_ref` 里存的结构（JSON 文本）：material hash + 可选自动初筛建议。 */
+export interface AutoScreeningResultRef {
+  readonly material_sha256: string
+  readonly auto_screening?: AutoScreeningSummary
+}
+
 /** 一次自动初筛的结果（可观测；不写任何业务表）。 */
 export type AutoScreeningOutcome =
-  | { readonly kind: 'EVALUATED'; readonly applicationId: string; readonly rubricVersionId: string }
+  | {
+      readonly kind: 'EVALUATED'
+      readonly applicationId: string
+      readonly rubricVersionId: string
+      readonly summary: AutoScreeningSummary | null
+    }
   | { readonly kind: 'SKIPPED_NO_APPROVED_RUBRIC'; readonly applicationId: string; readonly reason: string }
   | { readonly kind: 'SKIPPED_DUPLICATE'; readonly applicationId: string; readonly reason: string }
   | { readonly kind: 'FAILED'; readonly applicationId: string; readonly reason: string }
+
+/** 建议口径常量：前端/读模型与此处共用同一句，避免各处措辞漂移。 */
+export const AUTO_SCREENING_ADVISORY_NOTE = '这是只读评估给出的建议，不是录用决定；请由招聘团队成员确认。'
+
+/**
+ * 把评估工具的规范输出投影成紧凑的**建议摘要**（纯函数，不连库）。
+ *
+ * 只取读模型/UI 真正需要的字段；任何字段缺失都回退为空串，**不猜**：
+ * `verdict` 用工具原值（PASS / FAIL / NEEDS_REVIEW），三态随每条 reason 原样保留。
+ * 输出的 `advisory: true` + `advisory_note` 保证"建议不是决定"在系统里是可观测事实。
+ */
+export function buildAutoScreeningSummary(value: unknown): AutoScreeningSummary {
+  const obj = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
+  const reasons: Array<AutoScreeningSummary['reasons'][number]> = []
+  const rawReasons = Array.isArray(obj.reasons) ? obj.reasons : []
+  for (const item of rawReasons) {
+    const r = (typeof item === 'object' && item !== null ? item : {}) as Record<string, unknown>
+    reasons.push({
+      code: typeof r.code === 'string' ? r.code : '',
+      criterion_key: typeof r.criterion_key === 'string' ? r.criterion_key : '',
+      tri_state: typeof r.tri_state === 'string' ? r.tri_state : '',
+      outcome: typeof r.outcome === 'string' ? r.outcome : '',
+      message: typeof r.message === 'string' ? r.message : '',
+    })
+  }
+  const rubric = (typeof obj.rubric === 'object' && obj.rubric !== null ? obj.rubric : {}) as Record<string, unknown>
+  const snapshot = (typeof obj.snapshot === 'object' && obj.snapshot !== null ? obj.snapshot : {}) as Record<string, unknown>
+  const text = (v: unknown): string => (typeof v === 'string' ? v : '')
+  return {
+    verdict: text(obj.verdict),
+    verdict_summary: text(obj.verdict_summary),
+    required_human_action: text(obj.required_human_action),
+    rubric_version_id: text(rubric.version_id) || text(snapshot.rubric_version_id),
+    evaluation_digest: text(obj.evaluation_digest),
+    reasons,
+    advisory: true,
+    advisory_note: AUTO_SCREENING_ADVISORY_NOTE,
+  }
+}
 
 /**
  * 自动初筛的注入面：把"查已批准 Rubric"与"跑评估"两个动作拆开，测试可直接 spy。
@@ -392,10 +470,79 @@ function defaultAutoScreeningHooks(cfg: ResolvedDatabaseConfig): AutoScreeningHo
   }
 }
 
+/**
+ * 把自动初筛的只读建议持久化到**既有** `business_task` 行（非 decision、无新 schema）。
+ *
+ * 两件事在同一个 UPDATE 里完成：
+ *   1. `result_ref` = JSON 文本 `{ material_sha256, auto_screening }`——保留原文 hash，
+ *      并把评估摘要写进可读字段（此前这里只有裸 sha256，评估输出被丢弃）；
+ *   2. `business_refs` 追加 `{ kind:'APPLICATION', id:applicationId }`——只用于读模型按申请定位，
+ *      不动任务状态/身份/乐观锁以外的任何业务事实。
+ *
+ * 幂等：重复调用不会重复追加 APPLICATION ref（先按 kind+id 过滤）。
+ * 失败只记日志：评估已成功，绝不能因为"写摘要失败"把上传任务翻成 FAILED。
+ */
+async function persistAutoScreeningSummary(
+  cfg: ResolvedDatabaseConfig,
+  actorId: string,
+  taskId: string,
+  applicationId: string,
+  materialSha256: string,
+  summary: AutoScreeningSummary,
+  logger: IntakeUploadDeps['logger'],
+): Promise<void> {
+  const resultRef: AutoScreeningResultRef = { material_sha256: materialSha256, auto_screening: summary }
+  const pool = createPool(cfg)
+  try {
+    await withActor(pool, actorId, async (client) => {
+      const current = await client.query<{ business_refs: unknown; result_ref: string | null }>(
+        `select business_refs, result_ref
+           from recruitment.business_task
+          where tenant_id = $1::uuid and id = $2::uuid`,
+        [cfg.tenant_id, taskId],
+      )
+      const row = current.rows[0]
+      if (row === undefined) {
+        logger?.warn(`intake-upload: 自动初筛摘要未写入（任务不存在）task=${taskId}`)
+        return
+      }
+      // 保留既有 refs；去掉同 kind+id 的旧项后追加，避免重复。
+      const refs = Array.isArray(row.business_refs)
+        ? row.business_refs.filter((ref) => {
+            const r = ref as Record<string, unknown>
+            return !(r?.kind === 'APPLICATION' && r?.id === applicationId)
+          })
+        : []
+      refs.push({ kind: 'APPLICATION', id: applicationId })
+      await client.query(
+        `update recruitment.business_task
+            set result_ref = $4,
+                business_refs = $5::jsonb,
+                status_changed_at = now(),
+                status_changed_by_actor_id = $2::uuid,
+                record_version = record_version + 1
+          where tenant_id = $1::uuid and id = $3::uuid`,
+        [cfg.tenant_id, actorId, taskId, JSON.stringify(resultRef), JSON.stringify(refs)],
+      )
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger?.warn(`intake-upload: 自动初筛摘要写入失败（不影响入库）task=${taskId}: ${message.slice(0, 300)}`)
+  } finally {
+    await closePool(pool)
+  }
+}
+
 async function executeAutoScreening(
   applicationId: string,
   hooks: AutoScreeningHooks,
   logger: IntakeUploadDeps['logger'],
+  persist?: {
+    readonly cfg: ResolvedDatabaseConfig
+    readonly actorId: string
+    readonly taskId: string
+    readonly materialSha256: string
+  },
 ): Promise<AutoScreeningOutcome> {
   try {
     const probe = await hooks.probeApprovedRubric({ applicationId })
@@ -404,8 +551,15 @@ async function executeAutoScreening(
       logger?.warn(`intake-upload: ${reason}`)
       return { kind: 'SKIPPED_NO_APPROVED_RUBRIC', applicationId, reason }
     }
-    await hooks.evaluate({ applicationId, rubricVersionId: probe.rubricVersionId })
-    return { kind: 'EVALUATED', applicationId, rubricVersionId: probe.rubricVersionId }
+    const evaluateOutput: unknown = await hooks.evaluate({ applicationId, rubricVersionId: probe.rubricVersionId })
+    const summary = buildAutoScreeningSummary(evaluateOutput)
+    if (persist !== undefined) {
+      await persistAutoScreeningSummary(
+        persist.cfg, persist.actorId, persist.taskId, applicationId,
+        persist.materialSha256, summary, logger,
+      )
+    }
+    return { kind: 'EVALUATED', applicationId, rubricVersionId: probe.rubricVersionId, summary }
   } catch (error) {
     // 失败只记日志：绝不向上抛、绝不回滚已成功的入库。
     const message = error instanceof Error ? error.message : String(error)
@@ -423,6 +577,11 @@ export async function runAutoScreeningAfterIntake(
   applicationId: string,
   hooks: AutoScreeningHooks | undefined,
   logger: IntakeUploadDeps['logger'],
+  persist?: {
+    readonly actorId: string
+    readonly taskId: string
+    readonly materialSha256: string
+  },
 ): Promise<AutoScreeningOutcome> {
   if (autoScreeningInFlight.has(applicationId)) {
     const reason = `同一申请已有自动初筛在跑 application=${applicationId}`
@@ -430,8 +589,9 @@ export async function runAutoScreeningAfterIntake(
     return { kind: 'SKIPPED_DUPLICATE', applicationId, reason }
   }
   autoScreeningInFlight.add(applicationId)
+  const persistInput = persist === undefined ? undefined : { cfg, ...persist }
   const task = autoScreeningTail.then(() =>
-    executeAutoScreening(applicationId, hooks ?? defaultAutoScreeningHooks(cfg), logger))
+    executeAutoScreening(applicationId, hooks ?? defaultAutoScreeningHooks(cfg), logger, persistInput))
   // 链尾归一为 resolved：上一轮的失败不会阻塞下一轮。
   autoScreeningTail = task.then(() => {}, () => {})
   try {
@@ -523,6 +683,7 @@ async function runBackgroundParse(
     // 绝不让评估把已成功的上传任务翻成 FAILED（"失败只记日志，绝不回滚入库"）。
     await runAutoScreeningAfterIntake(
       cfg, value.application_id, deps.autoScreeningHooks, deps.logger,
+      { actorId: input.actorId, taskId: input.taskId, materialSha256: input.sha256 },
     ).catch((error: unknown) => {
       deps.logger?.warn(`intake-upload: 自动初筛调度异常（不影响入库）${input.taskId}: ${String(error).slice(0, 200)}`)
     })

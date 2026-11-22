@@ -592,6 +592,37 @@ export function CandidatePage({
             <div style={{ fontSize: '14.5px', lineHeight: 1.78, color: 'var(--ink)' }}>{vm.summaryText}</div>
           </div>
 
+          {vm.autoScreening ? (
+            <div className="ros-doc-block" data-section="auto-screening" data-testid="canvas-auto-screening">
+              <div className="ros-sec-meta" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <span>自动初筛建议（上传简历后自动生成）</span>
+                <StatusLabel text={vm.autoScreening.verdictLabel} tone={vm.autoScreening.verdictTone} />
+              </div>
+              <div className="ros-risk-note" data-testid="canvas-auto-screening-note">
+                <div style={{ fontWeight: 600 }}>{vm.autoScreening.verdictSummary || '只读评估已生成建议。'}</div>
+                <div style={{ marginTop: 6, fontSize: '12.5px', color: 'var(--muted)' }}>
+                  {vm.autoScreening.advisoryNote}
+                </div>
+              </div>
+              {vm.autoScreening.reasons.length > 0 ? (
+                <div>
+                  {vm.autoScreening.reasons.map((reason, idx) => (
+                    <div key={`${reason.code}-${idx}`} className="ros-clean-row static" style={{ alignItems: 'flex-start' }}>
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 500 }}>
+                          {reason.criterionKey || reason.code || '评估项'}
+                          {reason.triState ? <span className="ros-sec-meta" style={{ marginLeft: 8 }}>三态：{reason.triState}</span> : null}
+                          {reason.outcome ? <span className="ros-sec-meta" style={{ marginLeft: 8 }}>{reason.outcome}</span> : null}
+                        </div>
+                        <div style={{ fontSize: '12.5px', color: 'var(--muted)', marginTop: 2 }}>{reason.message}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <div
             className={`ros-doc-block ${focusedSection === 'criteria' ? 'ros-section-focus' : ''}`}
             data-section="criteria"

@@ -14,6 +14,8 @@ import { fileURLToPath } from 'node:url'
 
 import type { ResolvedDatabaseConfig } from '../../src/db/pool.ts'
 import {
+  AUTO_SCREENING_ADVISORY_NOTE,
+  buildAutoScreeningSummary,
   runAutoScreeningAfterIntake,
   type AutoScreeningHooks,
   type AutoScreeningOutcome,
@@ -69,7 +71,10 @@ test('有已批准 Rubric：自动评估一次，rubric id 与 application id �
 
   const outcome = await runAutoScreeningAfterIntake(CFG, APP_1, hooks, logger)
 
-  assert.deepEqual(outcome, { kind: 'EVALUATED', applicationId: APP_1, rubricVersionId: RUBRIC_V1 })
+  assert.equal(outcome.kind, 'EVALUATED')
+  assert.equal(outcome.kind === 'EVALUATED' && outcome.applicationId, APP_1)
+  assert.equal(outcome.kind === 'EVALUATED' && outcome.rubricVersionId, RUBRIC_V1)
+  assert.equal(outcome.kind === 'EVALUATED' && outcome.summary?.verdict, 'PASS')
   assert.deepEqual(probeCalls, [APP_1])
   assert.deepEqual(evalCalls, [{ applicationId: APP_1, rubricVersionId: RUBRIC_V1 }])
   assert.equal(logger.logs.length, 0, '正常路径不需要告警')
@@ -132,6 +137,87 @@ test('评估抛错：只记日志并返回 FAILED；调用方因此不会把已�
   assert.equal(outcome.kind === 'FAILED' && outcome.reason.includes('screening tool exploded'), true)
   assert.equal(logger.logs.length, 1)
   assert.match(logger.logs[0]!.message, /不影响入库/)
+})
+
+// ---------------------------------------------------------------------------
+//  3b. 评估输出 → 结构化建议摘要（写进 result_ref，非 decision）
+// ---------------------------------------------------------------------------
+
+test('buildAutoScreeningSummary：保留 verdict / 三态 / 建议口径，不产生决定字段', () => {
+  const value = {
+    verdict: 'NEEDS_REVIEW',
+    verdict_summary: '存在未覆盖维度，建议人工复核',
+    required_human_action: 'ANSWER_JUDGMENT',
+    rubric: { version_id: RUBRIC_V1 },
+    evaluation_digest: 'abc123',
+    reasons: [
+      {
+        code: 'MUST_HAVE_NEEDS_JUDGMENT',
+        criterion_key: 'backend_exp',
+        tri_state: 'present',
+        outcome: 'NEEDS_JUDGMENT',
+        message: '需要人工判断业务经验',
+      },
+      {
+        code: 'MUST_HAVE_UNREADABLE',
+        criterion_key: 'edu',
+        tri_state: 'unreadable',
+        outcome: 'UNREADABLE',
+        message: '教育背景不可读',
+      },
+    ],
+  }
+  const summary = buildAutoScreeningSummary(value)
+  assert.equal(summary.verdict, 'NEEDS_REVIEW')
+  assert.equal(summary.verdict_summary, '存在未覆盖维度，建议人工复核')
+  assert.equal(summary.required_human_action, 'ANSWER_JUDGMENT')
+  assert.equal(summary.rubric_version_id, RUBRIC_V1)
+  assert.equal(summary.evaluation_digest, 'abc123')
+  assert.equal(summary.advisory, true)
+  assert.equal(summary.advisory_note, AUTO_SCREENING_ADVISORY_NOTE)
+  assert.match(summary.advisory_note, /建议.*不是.*决定/)
+  assert.deepEqual(summary.reasons.map((r) => r.tri_state), ['present', 'unreadable'])
+  // 非决定字段：摘要里没有 decision_id / result / decided_at 之类决定键。
+  assert.equal(Object.keys(summary).some((k) => /decision|decided/i.test(k)), false)
+})
+
+test('buildAutoScreeningSummary：坏类型 / 空输出 → 空但不崩，仍带建议口径', () => {
+  const summary = buildAutoScreeningSummary(null)
+  assert.equal(summary.verdict, '')
+  assert.deepEqual(summary.reasons, [])
+  assert.equal(summary.advisory, true)
+  assert.ok(summary.advisory_note.length > 0)
+})
+
+test('无批准 Rubric / 评估失败 → 不产生摘要（读模型不会误展示建议）', async () => {
+  const logger = makeLogger()
+  const skipped = await runAutoScreeningAfterIntake(CFG, APP_1, hooksOf(
+    async () => ({ kind: 'NONE', reason: '未批准' }),
+    async () => { throw new Error('不应被调用') },
+  ), logger)
+  assert.equal(skipped.kind, 'SKIPPED_NO_APPROVED_RUBRIC')
+  assert.equal('summary' in skipped, false)
+
+  const failed = await runAutoScreeningAfterIntake(CFG, APP_2, hooksOf(
+    async () => ({ kind: 'APPROVED', rubricVersionId: RUBRIC_V1 }),
+    async () => { throw new Error('tool failed') },
+  ), logger)
+  assert.equal(failed.kind, 'FAILED')
+  assert.equal('summary' in failed, false)
+})
+
+test('持久化字段与 SQL 接线：result_ref JSON 含 material_sha256，business_refs 追加 APPLICATION', () => {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const source = readFileSync(join(here, '..', '..', 'src', 'http', 'intake-upload.ts'), 'utf8')
+  // result_ref 写 JSON 文本，且保留 material_sha256 原文 hash。
+  assert.match(source, /material_sha256:\s*materialSha256/)
+  assert.match(source, /result_ref\s*=\s*\$4/)
+  // business_refs 追加 APPLICATION 引用（只用于读模型定位）。
+  assert.match(source, /kind:\s*'APPLICATION'/)
+  assert.match(source, /business_refs\s*=\s*\$5::jsonb/)
+  // 绝不写 decision 表（静态断言见另一条测试，这里再确认摘要写入只碰 business_task）。
+  const withoutComments = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  assert.equal(/\b(insert\s+into|update|delete\s+from)\s+recruitment\.decision\b/i.test(withoutComments), false)
 })
 
 test('零 decision 写入：入参只有 application_id，且源码无任何 decision 写语句', async () => {

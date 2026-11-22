@@ -462,6 +462,31 @@ export interface ScreeningView {
   readonly evaluation: ScreeningEvaluationView | null
 }
 
+/**
+ * 自动初筛**建议**视图（只读评估，非决定）。
+ * 与 ScreeningView 严格分开：没有决定字段，advisoryNote 明示"建议不是决定"。
+ */
+export interface AutoScreeningView {
+  readonly verdict: string
+  readonly verdictLabel: string
+  readonly verdictTone: ChipTone
+  readonly verdictSummary: string
+  readonly requiredHumanAction: string
+  readonly rubricVersionId: string
+  readonly evaluationDigest: string
+  readonly materialSha256: string
+  readonly reasons: ReadonlyArray<{
+    readonly code: string
+    readonly criterionKey: string
+    readonly triState: string
+    readonly outcome: string
+    readonly message: string
+  }>
+  readonly advisory: boolean
+  readonly advisoryNote: string
+  readonly summaryText: string
+}
+
 /** 一条简历字段摘要。 */
 export interface ResumeFieldView {
   readonly key: string
@@ -741,6 +766,8 @@ export interface ApplicationRowView extends ApplicationHeaderView {
   readonly screening: ScreeningView | null
   readonly screeningSummary: string
   readonly screeningTone: ChipTone
+  /** 自动初筛建议（只读、非决定）；HR 不点"发起初筛评估"也应可见。 */
+  readonly autoScreening: AutoScreeningView | null
   readonly interviews: ReadonlyArray<InterviewView>
   readonly interviewRoundCount: number
   readonly interviewSummary: string
@@ -1175,6 +1202,59 @@ export function normalizeScreening(value: unknown, context?: StageContext): Scre
 export function screeningSummaryOf(screening: ScreeningView | null): { readonly summary: string; readonly tone: ChipTone } {
   if (screening === null) return { summary: '未初筛', tone: 'gray' }
   return { summary: screening.resultLabel, tone: screening.resultTone }
+}
+
+const AUTO_SCREENING_VERDICT_LABELS: Readonly<Record<string, string>> = {
+  PASS: '建议通过',
+  FAIL: '建议不通过',
+  NEEDS_REVIEW: '建议人工复核',
+}
+const AUTO_SCREENING_VERDICT_TONES: Readonly<Record<string, ChipTone>> = {
+  PASS: 'green',
+  FAIL: 'red',
+  NEEDS_REVIEW: 'amber',
+}
+
+/** 归一化自动初筛建议（非决定；任何字段缺失都不猜）。 */
+export function normalizeAutoScreening(value: unknown): AutoScreeningView | null {
+  if (value === null || value === undefined) return null
+  const raw = record(value)
+  const verdict = text(raw.verdict)
+  const verdictSummary = text(raw.verdict_summary)
+  if (verdict === '' && verdictSummary === '' && text(raw.advisory_note) === '') return null
+  const reasons: Array<AutoScreeningView['reasons'][number]> = []
+  for (const item of Array.isArray(raw.reasons) ? raw.reasons : []) {
+    const r = record(item)
+    reasons.push({
+      code: text(r.code),
+      criterionKey: text(r.criterion_key),
+      triState: text(r.tri_state),
+      outcome: text(r.outcome),
+      message: text(r.message),
+    })
+  }
+  const verdictLabel = AUTO_SCREENING_VERDICT_LABELS[verdict] ?? (verdict !== '' ? verdict : '建议待定')
+  const advisoryNote = text(raw.advisory_note)
+    || '这是只读评估给出的建议，不是录用决定；请由招聘团队成员确认。'
+  const summaryText = joinTexts([
+    `自动初筛 ${verdictLabel}`,
+    verdictSummary,
+    advisoryNote,
+  ])
+  return {
+    verdict,
+    verdictLabel,
+    verdictTone: AUTO_SCREENING_VERDICT_TONES[verdict] ?? 'gray',
+    verdictSummary,
+    requiredHumanAction: text(raw.required_human_action),
+    rubricVersionId: text(raw.rubric_version_id),
+    evaluationDigest: text(raw.evaluation_digest),
+    materialSha256: text(raw.material_sha256),
+    reasons,
+    advisory: raw.advisory === true,
+    advisoryNote,
+    summaryText,
+  }
 }
 
 /** 归一化一条面评。 */
@@ -1665,6 +1745,7 @@ export function buildApplicationRow(value: unknown, context?: StageContext): App
   const materialSummary = materialSummaryOf(material)
   const screening = normalizeScreening(raw.screening, context)
   const screeningSummary = screeningSummaryOf(screening)
+  const autoScreening = normalizeAutoScreening(raw.auto_screening)
   const interviews = buildInterviews(raw.interviews, context)
   const interviewSummary = interviewSummaryOf(interviews)
   const progress = record(raw.progress)
@@ -1688,6 +1769,7 @@ export function buildApplicationRow(value: unknown, context?: StageContext): App
     screening,
     screeningSummary: screeningSummary.summary,
     screeningTone: screeningSummary.tone,
+    autoScreening,
     interviews,
     interviewRoundCount: interviewSummary.rounds,
     interviewSummary: interviewSummary.summary,
