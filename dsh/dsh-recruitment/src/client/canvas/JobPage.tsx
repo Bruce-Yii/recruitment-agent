@@ -414,7 +414,24 @@ export function JobPage({
       departmentId: deptId,
       descriptionMd: title,
       requirementsMd: newJobConfirm.trim() || title,
-      criteria: [{ key: 'core_fit', label: '核心岗位匹配度', kind: 'MUST_HAVE', weight: 1 }],
+      criteria: [
+        {
+          key: 'work_history_present',
+          label: '有可核对的工作经历',
+          kind: 'MUST_HAVE',
+          weight: 0.5,
+          field: 'work_experience',
+          operator: 'EXISTS',
+          value: true,
+        },
+        {
+          key: 'core_fit',
+          label: '核心岗位胜任力匹配',
+          kind: 'MUST_HAVE',
+          weight: 0.5,
+          question: '候选人过往经历与核心职责是否与该岗位要求高度匹配？',
+        },
+      ],
       status: 'DRAFT',
     });
     if (!built.ok) {
