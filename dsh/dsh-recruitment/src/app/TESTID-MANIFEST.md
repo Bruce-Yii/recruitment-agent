@@ -21,6 +21,11 @@
 | `app-new-job-title` | 新建岗位弹窗岗位名称输入 | 必填 |
 | `app-new-job-dept` | 新建岗位弹窗部门下拉 | 来源 `overview.settings.departments` |
 | `app-new-job-req` | 新建岗位弹窗核心要求输入 | 选填 |
+| `app-new-job-draft` | 新建岗位弹窗「AI 生成标准草案」按钮 |
+| `app-new-job-add-criterion-input` | 新建岗位弹窗新增考核维度输入框 |
+| `app-new-job-add-criterion-btn` | 新建岗位弹窗添加考核维度按钮 |
+| `app-new-job-status-open` | 新建岗位初始状态「开放招聘」切换 |
+| `app-new-job-status-draft` | 新建岗位初始状态「暂存草稿」切换 |
 | `app-new-job-submit` | 新建岗位弹窗确认创建按钮 | 提交 `postJobCreate`，成功后跳入新岗位画布 |
 | `app-queue-view` | 今日待办视图根 | `#/queue` 主内容区 |
 | `app-queue-ops-notice` | 首页后台运行提醒条（仅存在卡住任务/事件或失败解析任务时出现） |

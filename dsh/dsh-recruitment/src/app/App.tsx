@@ -9,8 +9,10 @@ import {
 import { invalidateCachedCanvasData } from '../client/canvas/canvas-ux.ts';
 import {
   buildJobCreateBody,
+  buildJobDraftBody,
   describeActionError,
   postJobCreate,
+  postJobDraft,
   type CanvasActionError,
 } from '../client/canvas/canvas-actions.ts';
 import { InterviewerWorkspace } from '../client/interviewer/InterviewerWorkspace.tsx';
@@ -29,6 +31,133 @@ import { JobsView } from './JobsView.tsx';
 import { QueueView, type QueueFilterRequest } from './QueueView.tsx';
 import { formatHashRoute, navigateToRoute, parseHashRoute, type AppRoute } from './router.ts';
 import { TalentView } from './TalentView.tsx';
+
+interface EditableJobCriterion {
+  readonly key: string;
+  readonly label: string;
+  readonly kind: 'MUST_HAVE' | 'NICE_TO_HAVE' | 'DISQUALIFIER';
+  readonly weight: number;
+  readonly field?: string;
+  readonly operator?: string;
+  readonly value?: boolean | number | string;
+  readonly question?: string;
+  readonly notes?: string;
+}
+
+const DEFAULT_NEW_JOB_CRITERIA: readonly EditableJobCriterion[] = [
+  {
+    key: 'work_history_present',
+    label: '有可核对的工作经历',
+    kind: 'MUST_HAVE',
+    weight: 0.5,
+    field: 'work_experience',
+    operator: 'EXISTS',
+    value: true,
+  },
+  {
+    key: 'core_fit',
+    label: '核心岗位胜任力匹配',
+    kind: 'MUST_HAVE',
+    weight: 0.5,
+    question: '候选人过往经历与核心职责是否与该岗位要求高度匹配？',
+  },
+];
+
+function normalizeCriteriaWeights(
+  list: readonly EditableJobCriterion[],
+): Record<string, unknown>[] {
+  if (list.length === 0) return [];
+  const rawSum = list.reduce((acc, item) => acc + (item.weight > 0 ? item.weight : 0.1), 0);
+  let assigned = 0;
+  return list.map((item, idx) => {
+    const rawW = item.weight > 0 ? item.weight : 0.1;
+    const isLast = idx === list.length - 1;
+    const weight = isLast
+      ? Number(Math.max(0.0001, 1 - assigned).toFixed(4))
+      : Number((rawW / rawSum).toFixed(4));
+    if (!isLast) assigned += weight;
+    const out: Record<string, unknown> = {
+      key: item.key,
+      label: item.label,
+      kind: item.kind,
+      weight,
+    };
+    if (item.field && item.operator && item.value !== undefined) {
+      out.field = item.field;
+      out.operator = item.operator;
+      out.value = item.value;
+    } else {
+      out.question = item.question || `候选人在「${item.label}」方面是否符合岗位要求？`;
+    }
+    if (item.notes) out.notes = item.notes;
+    return out;
+  });
+}
+
+function extractDraftCriteria(bodyText: string): {
+  criteria: EditableJobCriterion[];
+  requirementsText: string;
+} {
+  try {
+    const parsed = JSON.parse(bodyText) as Record<string, unknown>;
+    const draft = (parsed.draft && typeof parsed.draft === 'object'
+      ? parsed.draft
+      : {}) as Record<string, unknown>;
+    const rubricDraft = (draft.rubric_draft && typeof draft.rubric_draft === 'object'
+      ? draft.rubric_draft
+      : {}) as Record<string, unknown>;
+    const jobDraft = (draft.job_draft && typeof draft.job_draft === 'object'
+      ? draft.job_draft
+      : {}) as Record<string, unknown>;
+    const rawList = Array.isArray(rubricDraft.criteria) ? rubricDraft.criteria : [];
+    const criteria: EditableJobCriterion[] = [];
+    for (const entry of rawList) {
+      if (!entry || typeof entry !== 'object') continue;
+      const rec = entry as Record<string, unknown>;
+      const key = typeof rec.key === 'string' ? rec.key.trim() : '';
+      const label = typeof rec.label === 'string' ? rec.label.trim() : '';
+      const kindRaw = typeof rec.kind === 'string' ? rec.kind.trim() : 'MUST_HAVE';
+      const kind: EditableJobCriterion['kind'] =
+        kindRaw === 'NICE_TO_HAVE' || kindRaw === 'DISQUALIFIER' ? kindRaw : 'MUST_HAVE';
+      const weight = typeof rec.weight === 'number' && Number.isFinite(rec.weight) && rec.weight > 0
+        ? rec.weight
+        : 0.2;
+      if (!key || !label) continue;
+      const field = typeof rec.field === 'string' && rec.field.trim() ? rec.field.trim() : undefined;
+      const operator =
+        typeof rec.operator === 'string' && rec.operator.trim() ? rec.operator.trim() : undefined;
+      const value =
+        typeof rec.value === 'boolean' ||
+        (typeof rec.value === 'number' && Number.isFinite(rec.value)) ||
+        (typeof rec.value === 'string' && rec.value.trim())
+          ? (rec.value as boolean | number | string)
+          : undefined;
+      const question =
+        typeof rec.question === 'string' && rec.question.trim() ? rec.question.trim() : undefined;
+      criteria.push({
+        key,
+        label,
+        kind,
+        weight,
+        ...(field && operator && value !== undefined ? { field, operator, value } : { question }),
+      });
+    }
+    const reqParts: string[] = [];
+    if (Array.isArray(jobDraft.responsibilities)) {
+      for (const r of jobDraft.responsibilities) {
+        if (typeof r === 'string' && r.trim()) reqParts.push(`- ${r.trim()}`);
+      }
+    }
+    if (Array.isArray(jobDraft.must_have)) {
+      for (const m of jobDraft.must_have) {
+        if (typeof m === 'string' && m.trim()) reqParts.push(`- ${m.trim()}`);
+      }
+    }
+    return { criteria, requirementsText: reqParts.slice(0, 6).join('\n') };
+  } catch {
+    return { criteria: [], requirementsText: '' };
+  }
+}
 
 export function App() {
   const [session, setSession] = useState<AppSessionInfo | null>(null);
@@ -75,6 +204,11 @@ export function App() {
   const [newJobReq, setNewJobReq] = useState('');
   const [newJobBusy, setNewJobBusy] = useState(false);
   const [newJobError, setNewJobError] = useState('');
+  const [newJobDraftBusy, setNewJobDraftBusy] = useState<boolean>(false);
+  const [newJobStatus, setNewJobStatus] = useState<'OPEN' | 'DRAFT'>('OPEN');
+  const [newJobCriteria, setNewJobCriteria] = useState<readonly EditableJobCriterion[]>(DEFAULT_NEW_JOB_CRITERIA);
+  const [newCriterionLabel, setNewCriterionLabel] = useState<string>('');
+  const [newJobDraftNotice, setNewJobDraftNotice] = useState<string>('');
 
   const hiddenAtRef = useRef<number | null>(null);
 
@@ -312,11 +446,90 @@ export function App() {
 
   const openNewJobModal = useCallback(() => {
     setNewJobError('');
+    setNewJobDraftNotice('');
     setNewJobTitle('');
     setNewJobReq('');
+    setNewJobStatus('OPEN');
+    setNewJobCriteria(DEFAULT_NEW_JOB_CRITERIA);
+    setNewCriterionLabel('');
     setNewJobDeptId((prev) => prev || overview?.settings.departments[0]?.id || '');
     setShowNewJob(true);
   }, [overview]);
+
+  const handleGenerateJobDraft = async () => {
+    if (newJobDraftBusy || newJobBusy || !session?.sid) return;
+    const seed = [newJobTitle.trim(), newJobReq.trim()].filter(Boolean).join('：');
+    if (!seed) {
+      setNewJobError('请先填写岗位名称或简要需求，再生成标准草案。');
+      return;
+    }
+    const deptName =
+      overview?.settings.departments.find((d) => d.id === newJobDeptId)?.name || '';
+    const built = buildJobDraftBody({
+      requestText: seed,
+      departmentContext: deptName || undefined,
+    });
+    if (!built.ok) {
+      setNewJobError(built.reasonText);
+      return;
+    }
+    setNewJobDraftBusy(true);
+    setNewJobError('');
+    setNewJobDraftNotice('');
+    try {
+      const outcome = await postJobDraft(built.body, session.sid);
+      if (!outcome.accepted) {
+        setNewJobError(
+          outcome.error?.message ||
+            describeActionError(outcome.error?.code ?? '', outcome.error?.reasonCode ?? '') ||
+            '生成岗位标准草案失败，请稍后重试。',
+        );
+        return;
+      }
+      const extracted = extractDraftCriteria(outcome.bodyText);
+      if (extracted.criteria.length > 0) {
+        setNewJobCriteria(extracted.criteria);
+        setNewJobDraftNotice(`已按需求生成 ${extracted.criteria.length} 条可执行评分标准，可直接微调后创建。`);
+      } else {
+        setNewJobDraftNotice('已保留默认合规评分标准，你可按需增删维度。');
+      }
+      if (!newJobReq.trim() && extracted.requirementsText) {
+        setNewJobReq(extracted.requirementsText);
+      }
+    } catch (err) {
+      setNewJobError(err instanceof Error ? err.message : '生成岗位标准草案失败，请稍后重试。');
+    } finally {
+      setNewJobDraftBusy(false);
+    }
+  };
+
+  const handleAddNewJobCriterion = () => {
+    const label = newCriterionLabel.trim();
+    if (!label) return;
+    const slug = `custom_${Date.now().toString(36).slice(-4)}_${newJobCriteria.length + 1}`;
+    setNewJobCriteria((prev) => [
+      ...prev,
+      {
+        key: slug,
+        label,
+        kind: 'MUST_HAVE',
+        weight: 0.25,
+        question: `候选人在「${label}」方面是否达到该岗位预期？`,
+      },
+    ]);
+    setNewCriterionLabel('');
+  };
+
+  const handleRemoveNewJobCriterion = (key: string) => {
+    setNewJobCriteria((prev) => {
+      const next = prev.filter((item) => item.key !== key);
+      if (next.length === 0) return prev;
+      if (!next.some((item) => item.kind === 'MUST_HAVE' || item.kind === 'DISQUALIFIER')) {
+        return prev;
+      }
+      return next;
+    });
+  };
 
   const handleCreateJobSubmit = async () => {
     if (newJobBusy || !session?.sid) return;
@@ -330,6 +543,9 @@ export function App() {
       setNewJobError('当前暂无可用部门，请先在企业配置中添加部门。');
       return;
     }
+    const normalizedCriteria = normalizeCriteriaWeights(
+      newJobCriteria.length > 0 ? newJobCriteria : DEFAULT_NEW_JOB_CRITERIA,
+    );
     const code = `JOB-${Date.now().toString(36).toUpperCase().slice(-6)}`;
     const built = buildJobCreateBody({
       code,
@@ -337,25 +553,8 @@ export function App() {
       departmentId: deptId,
       descriptionMd: title,
       requirementsMd: newJobReq.trim() || title,
-      criteria: [
-        {
-          key: 'work_history_present',
-          label: '有可核对的工作经历',
-          kind: 'MUST_HAVE',
-          weight: 0.5,
-          field: 'work_experience',
-          operator: 'EXISTS',
-          value: true,
-        },
-        {
-          key: 'core_fit',
-          label: '核心岗位胜任力匹配',
-          kind: 'MUST_HAVE',
-          weight: 0.5,
-          question: '候选人过往经历与核心职责是否与该岗位要求高度匹配？',
-        },
-      ],
-      status: 'DRAFT',
+      criteria: normalizedCriteria,
+      status: newJobStatus,
     });
     if (!built.ok) {
       setNewJobError(built.reasonText);
@@ -924,15 +1123,103 @@ export function App() {
               )}
             </label>
             <label className="form-field">
-              <span>岗位核心要求（选填）</span>
+              <span className="form-field-head">
+                <span>岗位核心要求（选填）</span>
+                <button
+                  type="button"
+                  className="text-action-link"
+                  data-testid="app-new-job-draft"
+                  disabled={newJobBusy || newJobDraftBusy}
+                  onClick={() => void handleGenerateJobDraft()}
+                >
+                  {newJobDraftBusy ? '生成草案中…' : 'AI 生成标准草案'}
+                </button>
+              </span>
               <textarea
                 data-testid="app-new-job-req"
                 value={newJobReq}
                 disabled={newJobBusy}
                 onChange={(e) => setNewJobReq(e.target.value)}
-                placeholder="简要填写核心职责或任职要求，留空则默认沿用岗位名称"
+                placeholder="简要填写核心职责或任职要求，点击右上角可自动生成评分标准草案"
+                rows={3}
               />
             </label>
+            {newJobDraftNotice ? (
+              <div className="new-job-draft-note">{newJobDraftNotice}</div>
+            ) : null}
+            <div className="form-field">
+              <span>评分标准维度（提交自动归一化权重和为 100%）</span>
+              <div className="new-job-crit-list">
+                {newJobCriteria.map((cr, idx) => (
+                  <div key={cr.key} className="new-job-crit-row">
+                    <span className="new-job-crit-main">
+                      <span className="num new-job-crit-idx">0{idx + 1}</span>
+                      <span>{cr.label}</span>
+                      <span className="new-job-crit-kind">
+                        {cr.kind === 'NICE_TO_HAVE' ? '加分' : '必备'}
+                      </span>
+                    </span>
+                    {newJobCriteria.length > 1 ? (
+                      <button
+                        type="button"
+                        className="text-action-link muted"
+                        disabled={newJobBusy}
+                        onClick={() => handleRemoveNewJobCriterion(cr.key)}
+                      >
+                        移除
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+              <div className="new-job-crit-add">
+                <input
+                  data-testid="app-new-job-add-criterion-input"
+                  value={newCriterionLabel}
+                  disabled={newJobBusy}
+                  onChange={(e) => setNewCriterionLabel(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddNewJobCriterion();
+                    }
+                  }}
+                  placeholder="新增一条考核维度（如：有高并发分布式系统经验）"
+                />
+                <button
+                  type="button"
+                  className="btn"
+                  data-testid="app-new-job-add-criterion-btn"
+                  disabled={newJobBusy || !newCriterionLabel.trim()}
+                  onClick={handleAddNewJobCriterion}
+                >
+                  添加
+                </button>
+              </div>
+            </div>
+            <div className="form-field">
+              <span>创建后岗位状态</span>
+              <div className="new-job-status-row">
+                <button
+                  type="button"
+                  className={`status-toggle-btn${newJobStatus === 'OPEN' ? ' active' : ''}`}
+                  data-testid="app-new-job-status-open"
+                  disabled={newJobBusy}
+                  onClick={() => setNewJobStatus('OPEN')}
+                >
+                  开放招聘（推荐）
+                </button>
+                <button
+                  type="button"
+                  className={`status-toggle-btn${newJobStatus === 'DRAFT' ? ' active' : ''}`}
+                  data-testid="app-new-job-status-draft"
+                  disabled={newJobBusy}
+                  onClick={() => setNewJobStatus('DRAFT')}
+                >
+                  暂存草稿
+                </button>
+              </div>
+            </div>
             <div className="modal-foot">
               <button
                 type="button"
