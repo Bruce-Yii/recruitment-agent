@@ -1,25 +1,25 @@
 {
-  "generated_at": "2026-11-22T12:05:52.671Z",
-  "head": "925818d",
+  "generated_at": "2026-11-22T12:36:06.527Z",
+  "head": "2e415e0",
   "host": "http://127.0.0.1:49347/?token=<redacted>",
   "cdp_port": 9222,
-  "db": "ra_fresh_e2e_kfc_1wiuon",
+  "db": "ra_fresh_e2e_8r0_6ahbxc",
   "mode": "FRESH",
   "fresh_dataset": {
     "candidate_id": "11111111-1111-4111-8111-000000000699",
     "candidate_name": "候选人 T",
-    "application_id": "424ca45b-2c06-4589-af4f-3883ec1d3d6d",
+    "application_id": "cc5cacc1-35e8-4938-b786-894f0d566c71",
     "job_id": "11111111-1111-4111-8111-000000000401",
-    "rubric_version_id": "6526fb46-eca9-46e6-9b60-475dfacc3cfc",
+    "rubric_version_id": "4085d5c0-c4a0-4091-8dbb-28b8486515a2",
     "rubric_version_no": 2,
     "rubric_payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
     "interview_round1": {
-      "id": "dd88ca7c-9d39-461e-8562-d6062b5f05f7",
+      "id": "9dde55d6-f099-4dea-b9c1-65976258b711",
       "interviewer_actor_id": "11111111-1111-4111-8111-000000000104",
       "label": "Interviewer A"
     },
     "interview_round2": {
-      "id": "1bc2af11-5094-4c4d-b7ed-1c29a7ad677f",
+      "id": "14299420-d6bc-4c23-a0a4-8bdadd0b7495",
       "interviewer_actor_id": "11111111-1111-4111-8111-000000000105",
       "label": "Interviewer B"
     },
@@ -28,18 +28,18 @@
   "s12_isolation_dataset": {
     "candidate_id": "11111111-1111-4111-8111-000000000798",
     "candidate_name": "候选人 S12-决策隔离",
-    "application_id": "1f699ed9-f6bb-485a-9c99-66173375f000",
+    "application_id": "187385d7-806d-4863-a521-ea8b78d99106",
     "job_id": "11111111-1111-4111-8111-000000000401",
-    "rubric_version_id": "6526fb46-eca9-46e6-9b60-475dfacc3cfc",
+    "rubric_version_id": "4085d5c0-c4a0-4091-8dbb-28b8486515a2",
     "rubric_version_no": 2,
     "rubric_payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
     "interview_round1": {
-      "id": "c6a5deb5-f787-497f-a520-15dd40ff3f40",
+      "id": "a60df6c8-c622-4d21-8965-239802cf7ef1",
       "interviewer_actor_id": "11111111-1111-4111-8111-000000000104",
       "label": "Interviewer A"
     },
     "interview_round2": {
-      "id": "62c90a8e-b73d-455a-8a1e-c825302f312c",
+      "id": "bca34874-8b46-492b-b7b5-4f3f391ae9d5",
       "interviewer_actor_id": "11111111-1111-4111-8111-000000000105",
       "label": "Interviewer B"
     },
@@ -61,13 +61,13 @@
       "step": "S1",
       "title": "HR 打开工作台看今天待办",
       "verdict": "PASS",
-      "ui": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S01-ui.txt",
-      "db": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S01-db.txt",
+      "ui": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S01-ui.txt",
+      "db": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S01-db.txt",
       "reason": "v4 整页队列视图可见，人话待办/阶段计数齐全，无工程信息、无开发身份下拉/旧壳痕迹，只读徽标可见（D-167）。",
       "evidence": [
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S01-ui.png",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S01-ui.txt",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S01-db.txt"
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S01-ui.png",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S01-ui.txt",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S01-db.txt"
       ],
       "keyText": "待推进候选人 | 在办 3 | · | 待初筛 3 | · | 面试中 3 | · | 待决策 1 | 导入简历 | 全部 (3) | 待初筛 (3) | 面试中 (3) | 初筛 (1) | 面试规划与排期 (1) | 综合评价与招聘决策 (1) | 候 | 候选人 S12-决策隔离 | 后端工程师（演示） | 等待面评：面试已结束，仍有必填面评未提交 · 2 轮 · 第 1 轮已面完 / 第 2 轮已面完 | 综合评价与招聘决策 · 面评超时 2 份 | 候 | 候选人 T | 后端工程师（演示） | 等待面评：面试已结束，仍有必填面评未提交 · 2 轮 · 第 1 轮已面完 / 第 2 轮已面完 | 面试规划与排期 · 面评超时 2 份 | 演 | 演示候选人-张样例 | 后端工程师（演示） | 等待初筛决定：材料已就绪，还没有人工作出筛选结论 · 2 轮 · 第 1 轮已面完 / 第 2 轮已排期 | 初筛",
       "extra": {
@@ -87,19 +87,19 @@
           "今日待办"
         ]
       },
-      "at": "2026-11-22T12:03:21.826Z"
+      "at": "2026-11-22T12:33:31.453Z"
     },
     {
       "step": "S2",
       "title": "新简历进来（拖入/邮件）等待解析",
       "verdict": "PASS",
-      "ui": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S02-ui.txt",
-      "db": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S02-db.txt",
-      "reason": "真点 canvas-action-candidate-upload + CDP 用 [data-testid=\"v4-canvas-route\"] input[type=file] 塞入合成 PDF；fetch 观测 POST /intake/upload status=202 且返回 task_id，psql 独立读回 business_task Δ=2 / event_inbox Δ=7（S02-db.txt）；后台 intake_asset Δ=1（异步，非 PASS 必要条件）。",
+      "ui": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S02-ui.txt",
+      "db": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S02-db.txt",
+      "reason": "真点 canvas-action-candidate-upload + CDP 用 [data-testid=\"v4-canvas-route\"] input[type=file] 塞入合成 PDF；fetch 观测 POST /intake/upload status=202 且返回 task_id，psql 独立读回 business_task Δ=1 / event_inbox Δ=7（S02-db.txt）；后台 intake_asset Δ=1（异步，非 PASS 必要条件）。",
       "evidence": [
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S02-ui.png",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S02-ui.txt",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S02-db.txt"
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S02-ui.png",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S02-ui.txt",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S02-db.txt"
       ],
       "keyText": "上传简历 | 导入转写 | 简历原文摘录（可点击标准联动定位） | 01 | 工作经历 | 第 1 页 | 2021-2024 后端工程师（合成材料）：支付回调幂等与对账。 | 02 | 教育背景 | 第 1 页 | 本科 · 计算机科学（合成材料） | 03 | 原文片段 | 第 1 页 | 曾带领 3 人小组完成交付（待面试核实） | 全链路动态留痕（4） | 展开 ▾ | 置顶约束 | 下一轮交接 | 约面 / 改期换人 | 跨岗调剂 | 推进阶段 / 跳轮 | 标记未出席 | 发邮件 | 初筛结论 | 正式决策",
       "extra": {
@@ -118,7 +118,7 @@
           },
           "fileMeta": null,
           "uploadAccepted": true,
-          "taskDelta": 2,
+          "taskDelta": 1,
           "eventDelta": 7,
           "intakeAssetDelta": 1,
           "uploadWrite": {
@@ -126,7 +126,7 @@
             "method": "POST",
             "status": 202,
             "body": "[object File]",
-            "resp": "{\"task_id\":\"85326681-8cd9-47d9-bed1-f004bfbd16b5\",\"status\":\"RUNNING\",\"event_id\":\"956aec2f-b6a0-490a-89a6-9edddae74de6\",\"file_name\":\"resume-9cb4e63b31d1aaa8-synthetic-upload.pdf\",\"byte_size\":10919,\"sha256\":\"aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df\"}"
+            "resp": "{\"task_id\":\"6709ad54-883d-4726-bcc5-1669df285840\",\"status\":\"RUNNING\",\"event_id\":\"a2fd92cc-17b7-4d86-b6ee-4a9fe4b2c29d\",\"file_name\":\"resume-8e0e054e5224b9b4-synthetic-upload.pdf\",\"byte_size\":10919,\"sha256\":\"aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df\"}"
           }
         },
         "ui_shows_upload": true,
@@ -136,30 +136,30 @@
             "method": "POST",
             "status": 202,
             "body": "[object File]",
-            "resp": "{\"task_id\":\"85326681-8cd9-47d9-bed1-f004bfbd16b5\",\"status\":\"RUNNING\",\"event_id\":\"956aec2f-b6a0-490a-89a6-9edddae74de6\",\"file_name\":\"resume-9cb4e63b31d1aaa8-synthetic-upload.pdf\",\"byte_size\":10919,\"sha256\":\"aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df\"}"
+            "resp": "{\"task_id\":\"6709ad54-883d-4726-bcc5-1669df285840\",\"status\":\"RUNNING\",\"event_id\":\"a2fd92cc-17b7-4d86-b6ee-4a9fe4b2c29d\",\"file_name\":\"resume-8e0e054e5224b9b4-synthetic-upload.pdf\",\"byte_size\":10919,\"sha256\":\"aa2f4645c7535bd83fbc3e8066ac628051adaefc0ed236e4ee7e9695905252df\"}"
           }
         ],
         "file_meta": null,
         "ui_error": "上传简历 | 导入转写 | 简历原文摘录（可点击标准联动定位） | 01 | 工作经历 | 第 1 页 | 2021-2024 后端工程师（合成材料）：支付回调幂等与对账。 | 02 | 教育背景 | 第 1 页 | 本科 · 计算机科学（合成材料） | 03 | 原文片段 | 第 1 页 | 曾带领 3 人小组完成交付（待面试核实） | 全链路动态留痕（4） | 展开 ▾ | 置顶约束 | 下一轮交接 | 约面 / 改期换人 | 跨岗调剂 | 推进阶段 / 跳轮 | 标记未出席 | 发",
-        "task_delta": 2,
+        "task_delta": 1,
         "event_delta": 7,
         "intake_asset_delta": 1
       },
-      "at": "2026-11-22T12:03:30.780Z"
+      "at": "2026-11-22T12:33:40.250Z"
     },
     {
       "step": "S3",
       "title": "打开申请逐条看岗位标准 + 点开原文",
       "verdict": "PASS",
-      "ui": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S03-ui.txt",
-      "db": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S03-db.txt",
+      "ui": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S03-ui.txt",
+      "db": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S03-db.txt",
       "reason": "三态逐条可读；真点含「有带团队经验」的 .ros-crit-item 后出现 .ros-crit-item.active，原文摘录联动可点开。",
       "evidence": [
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S03-ui.png",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S03-ui.txt",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S03-db.txt"
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S03-ui.png",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S03-ui.txt",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S03-db.txt"
       ],
-      "keyText": "岗位标准对照 · V2（点击联动原文） | 重新评估 | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重 25% | 待核实 | 逐轮面试进展（不求平均分） | 1 | 第 1 轮面试 | 待收面评 | 2 | 第 2 轮面试 | 待收面评 | 第 1 轮面试11-20 20:02 | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 0/1 · 还没有转录 · 1 份面评已超时 | 待收面评 | 第 2 轮面试11-21 20:02 | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 0/1 · 还没有转录 · 1 份面评已超时 | 待收面评 | 简历原文 | 飞书妙记 | 原件预览 | 上传简历 | 导入转写 | 简历原文摘录（可点击标准联动定位） | 01 | 工作经历 | 第 1 页 | 2021-2024 后端工程师（合成材料）：支付回调幂等与对账。 | 02 | 教育背景 | 第 1 页 | 本科 · 计算机科学（合成材料） | 03 | 原文片段 | 第 1 页 | 曾带领 3 人小组完成交付（待面试核实） | 全链路动态留痕（4） | 展开 ▾ | 置顶约束 | 下一轮交接 | 约面 / 改期换人 | 跨岗调剂 | 推进阶段 / 跳轮 | 标记未出席 | 发邮件 | 初筛结论 | 正式决策",
+      "keyText": "岗位标准对照 · V2（点击联动原文） | 重新评估 | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重 25% | 待核实 | 逐轮面试进展（不求平均分） | 1 | 第 1 轮面试 | 待收面评 | 2 | 第 2 轮面试 | 待收面评 | 第 1 轮面试11-20 20:33 | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 0/1 · 还没有转录 · 1 份面评已超时 | 待收面评 | 第 2 轮面试11-21 20:33 | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 0/1 · 还没有转录 · 1 份面评已超时 | 待收面评 | 简历原文 | 飞书妙记 | 原件预览 | 上传简历 | 导入转写 | 简历原文摘录（可点击标准联动定位） | 01 | 工作经历 | 第 1 页 | 2021-2024 后端工程师（合成材料）：支付回调幂等与对账。 | 02 | 教育背景 | 第 1 页 | 本科 · 计算机科学（合成材料） | 03 | 原文片段 | 第 1 页 | 曾带领 3 人小组完成交付（待面试核实） | 全链路动态留痕（4） | 展开 ▾ | 置顶约束 | 下一轮交接 | 约面 / 改期换人 | 跨岗调剂 | 推进阶段 / 跳轮 | 标记未出席 | 发邮件 | 初筛结论 | 正式决策",
       "extra": {
         "entered_detail": true,
         "ros_clicked": {
@@ -168,21 +168,21 @@
         },
         "ros_active": true
       },
-      "at": "2026-11-22T12:03:35.894Z"
+      "at": "2026-11-22T12:33:45.365Z"
     },
     {
       "step": "S4",
       "title": "HR 下初筛结论并确认（人工纠偏）",
       "verdict": "PASS",
-      "ui": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S04-ui.txt",
-      "db": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S04-db.txt",
+      "ui": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S04-ui.txt",
+      "db": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S04-db.txt",
       "reason": "真点初筛结果 pill「通过」且 active，填理由后提交，decision 行 +1（S04-db.txt 独立读回）。",
       "evidence": [
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S04-ui.png",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S04-ui.txt",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S04-db.txt"
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S04-ui.png",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S04-ui.txt",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S04-db.txt"
       ],
-      "keyText": "已记录初筛结论并同步落库。 | 候选人 T | 后端工程师（演示）（DEMO-BE-001）· 档案号 424ca45b · 标准 V2 | 候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。 | ☆ | 面试安排 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 初筛结论：[RUNBOOK-S4] 合成材料：工作经历与教育背景已匹配，团队经历待面试核实。 · 等待面评：面试已结束，仍有必填面评未提交 | 岗位标准对照 · V2（点击联动原文） | 重新评估 | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重 25% | 待核实 | 逐轮面试进展（不求平均分） | 1 | 第 1 轮面试 | 待收面评 | 2 | 第 2 轮面试 | 待收面评 | 第 1 轮面试11-20 20:02 | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 0/1 · 还没有转录 · 1 份面评已超时 | 待收面评 | 第 2 轮面试11-21 20:02 | 本场面试没有绑定可用",
+      "keyText": "已记录初筛结论并同步落库。 | 候选人 T | 后端工程师（演示）（DEMO-BE-001）· 档案号 cc5cacc1 · 标准 V2 | 候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。 | ☆ | 面试安排 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 初筛结论：[RUNBOOK-S4] 合成材料：工作经历与教育背景已匹配，团队经历待面试核实。 · 等待面评：面试已结束，仍有必填面评未提交 | 岗位标准对照 · V2（点击联动原文） | 重新评估 | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重 25% | 待核实 | 逐轮面试进展（不求平均分） | 1 | 第 1 轮面试 | 待收面评 | 2 | 第 2 轮面试 | 待收面评 | 第 1 轮面试11-20 20:33 | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 0/1 · 还没有转录 · 1 份面评已超时 | 待收面评 | 第 2 轮面试11-21 20:33 | 本场面试没有绑定可用",
       "extra": {
         "entered_detail": true,
         "result_button_picked": true,
@@ -223,7 +223,7 @@
               "method": "POST",
               "path": "/recruitment/api/action/screening/decide",
               "status": 200,
-              "body": "{\"action\":\"screening/decide\",\"actor\":{\"session_id\":\"session-5c77548d-3278-4dbd-acfa-a3d21df8b441\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":1,\"result\":\"allowed-once\",\"tool_names\":[\"recruitment_decision_record\"]},\"result\":{\"tool\":\"recruitment_decision_record\",\"contract_version\":\"2.0.0\",\"status\":\"OK\",\"replayed\":false,\"labels\":{\"provenance\":\"FIXTURE\",\"trigger\":\"MANUAL\",\"connection\":\"CONNECTED\"},\"decision\":{\"id\":\"6b25b9cb-ce86-4b37-9cf3-fbaa52835144\",\"application_id\":\"424ca45b-2c06-4589-af4f-3883ec1d3d6d\",\"decision_scope\":\"SCREENING\",\"stage_code\":\"S7\",\"result\":\"ADVANCE\",\"decided_by_actor_id\":\"11111111-1111-4111-8111-000000000103\",\"decided_at\":\"2026-11-22T12:03:37.959Z\",\"record_version\":1},\"event\":{\"event_id\":\"f607b6af-00c3-40c9-b3f9-eed2b39c79c4\",\"provider\":\"internal\",\"trust_level\":\"INTERNAL\"},\"warnings\":[{\"code\":\"DECIDER_NOT_HIRING_MANAGER\",\"message\":\"决策人不是该部门的招聘负责人；v1.0 不拦截，仅记录（DC-14）\"},{\"code\":\"FIXTURE_BASIS\",\"message\":\"本次决策依据的是演练数据（provenance=FIXTURE），不是真实外部事实\"}]},\"readback\":{\"decision_id\":\"6b25b9cb-ce86-4b37-9cf3-fbaa52835144\",\"application_id\":\"424ca45b-2c06-4589-af4f-3883ec1d3d6d\",\"interview_id\":null,\"decision_scope\":\"SCREENING"
+              "body": "{\"action\":\"screening/decide\",\"actor\":{\"session_id\":\"session-9cb17e93-2c66-4680-bdbc-7c578856e820\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":1,\"result\":\"allowed-once\",\"tool_names\":[\"recruitment_decision_record\"]},\"result\":{\"tool\":\"recruitment_decision_record\",\"contract_version\":\"2.0.0\",\"status\":\"OK\",\"replayed\":false,\"labels\":{\"provenance\":\"FIXTURE\",\"trigger\":\"MANUAL\",\"connection\":\"CONNECTED\"},\"decision\":{\"id\":\"b0400024-5290-4bdb-9a80-02751731e42f\",\"application_id\":\"cc5cacc1-35e8-4938-b786-894f0d566c71\",\"decision_scope\":\"SCREENING\",\"stage_code\":\"S7\",\"result\":\"ADVANCE\",\"decided_by_actor_id\":\"11111111-1111-4111-8111-000000000103\",\"decided_at\":\"2026-11-22T12:33:47.411Z\",\"record_version\":1},\"event\":{\"event_id\":\"fd6105dd-acf4-4f6e-944a-552f2857e288\",\"provider\":\"internal\",\"trust_level\":\"INTERNAL\"},\"warnings\":[{\"code\":\"DECIDER_NOT_HIRING_MANAGER\",\"message\":\"决策人不是该部门的招聘负责人；v1.0 不拦截，仅记录（DC-14）\"},{\"code\":\"FIXTURE_BASIS\",\"message\":\"本次决策依据的是演练数据（provenance=FIXTURE），不是真实外部事实\"}]},\"readback\":{\"decision_id\":\"b0400024-5290-4bdb-9a80-02751731e42f\",\"application_id\":\"cc5cacc1-35e8-4938-b786-894f0d566c71\",\"interview_id\":null,\"decision_scope\":\"SCREENING"
             }
           ],
           "dbDeltaDecision": 1,
@@ -233,21 +233,21 @@
           }
         }
       },
-      "at": "2026-11-22T12:03:42.050Z"
+      "at": "2026-11-22T12:33:51.349Z"
     },
     {
       "step": "S5",
       "title": "约一面：选面试官 → 看空闲 → 提交",
       "verdict": "PASS",
-      "ui": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S05-ui.txt",
-      "db": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S05-db.txt",
+      "ui": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S05-ui.txt",
+      "db": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S05-db.txt",
       "reason": "真点排期弹窗：面试官输入可达；日历不可用时按人话提示手填，提交后 S05-db.txt 确认 interview 行新增、interviewer.actor_id=…104（排期弹窗无确认原话输入框）。",
       "evidence": [
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S05-ui.png",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S05-ui.txt",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S05-db.txt"
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S05-ui.png",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S05-ui.txt",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S05-db.txt"
       ],
-      "keyText": "Recruitment OS | 今日待办 | 4 | 在招岗位 | 1 | 后端工程师（演示） | 4 | ＋ 新建岗位 | 人才库 | 4 | Agent | 晚上好。当前有 4 位在办候选人（待初筛 3 人、面试中 3 人、待决策 1 人、4 份面评已超时）。当前首位待推进：林承宇（后端工程师（演示））。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。 | 提炼这位候选人的核心风险点 | 帮我查下一轮可约时段 | 对比岗位评分标准 | 招聘负责人 | HR | ← 返回 | / | 后端工程师（演示） | / | 面试安排 | / | 候选人 T | ‹ | 3 / 4 | › | 来源 | LIVE | 触发 | MANUAL | 连接 | CONNECTED | 已锁定面试时间并同步排期。 | 候选人 T | 后端工程师（演示）（DEMO-BE-001）· 档案号 424ca45b · 标准 V2 | 候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。 | ☆ | 面试安排 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 初筛结论：[RUNBOOK-S4] 合成材料：工作经历与教育背景已匹配，团队经历待面试核实。 · 准备面试：面试已排期或即将排期，需要准备 | 岗位标准对照 · V2（点击",
+      "keyText": "Recruitment OS | 今日待办 | 4 | 在招岗位 | 1 | 后端工程师（演示） | 4 | ＋ 新建岗位 | 人才库 | 4 | Agent | 晚上好。当前有 4 位在办候选人（待初筛 3 人、面试中 3 人、待决策 1 人、4 份面评已超时）。当前首位待推进：林承宇（后端工程师（演示））。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。 | 提炼这位候选人的核心风险点 | 帮我查下一轮可约时段 | 对比岗位评分标准 | 招聘负责人 | HR | ← 返回 | / | 后端工程师（演示） | / | 面试安排 | / | 候选人 T | ‹ | 3 / 4 | › | 来源 | LIVE | 触发 | MANUAL | 连接 | CONNECTED | 已锁定面试时间并同步排期。 | 候选人 T | 后端工程师（演示）（DEMO-BE-001）· 档案号 cc5cacc1 · 标准 V2 | 候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。 | ☆ | 面试安排 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 初筛结论：[RUNBOOK-S4] 合成材料：工作经历与教育背景已匹配，团队经历待面试核实。 · 准备面试：面试已排期或即将排期，需要准备 | 岗位标准对照 · V2（点击",
       "extra": {
         "entered_detail": true,
         "s5": {
@@ -280,8 +280,8 @@
             "tag": "BUTTON"
           },
           "dbChanged": true,
-          "newInterview": "aa039316-1e42-4008-94d8-735561710bd3|3|SCHEDULED|2026-12-10 10:00:00+08",
-          "interviewerRow": "4e194ff0-00ed-4699-9462-20f7f9535f81|aa039316-1e42-4008-94d8-735561710bd3|11111111-1111-4111-8111-000000000104"
+          "newInterview": "29420718-8385-4ca7-8a7f-1833ea4cc1e7|3|SCHEDULED|2026-12-10 10:00:00+08",
+          "interviewerRow": "5ba1c5db-b503-45bd-9a6a-c71765b678a1|29420718-8385-4ca7-8a7f-1833ea4cc1e7|11111111-1111-4111-8111-000000000104"
         },
         "interviewer_actor_ok": true,
         "writes": [
@@ -289,26 +289,26 @@
             "url": "/recruitment/api/action/interview/schedule",
             "method": "POST",
             "status": 200,
-            "body": "{\"intent\":\"CREATE\",\"application_id\":\"424ca45b-2c06-4589-af4f-3883ec1d3d6d\",\"round_no\":3,\"scheduled_start_at\":\"2026-12-10T10:00:00+08:00\",\"duration_minutes\":45,\"interviewers\":[{\"actor_id\":\"11111111-1111-4111-8111-000000000104\"}],\"idempotency_key\":\"ui-schedule-c2617ac5-9773-49d5-9576-927f4190aa6f\"}",
-            "resp": "{\"action\":\"interview/schedule\",\"actor\":{\"session_id\":\"session-7bd7d686-5707-4c5d-98f6-c0a5cf36be0f\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":1,\"result\":\"allowed-once\",\"tool_names\":[\"recruitment_interview_schedule\"]},\"result\":{\"tool\":\"recruitment_"
+            "body": "{\"intent\":\"CREATE\",\"application_id\":\"cc5cacc1-35e8-4938-b786-894f0d566c71\",\"round_no\":3,\"scheduled_start_at\":\"2026-12-10T10:00:00+08:00\",\"duration_minutes\":45,\"interviewers\":[{\"actor_id\":\"11111111-1111-4111-8111-000000000104\"}],\"idempotency_key\":\"ui-schedule-f86643c3-14fe-473f-9133-9d88c9fe4c15\"}",
+            "resp": "{\"action\":\"interview/schedule\",\"actor\":{\"session_id\":\"session-91d53e6d-ac75-477e-a652-92b13d5e5d39\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":1,\"result\":\"allowed-once\",\"tool_names\":[\"recruitment_interview_schedule\"]},\"result\":{\"tool\":\"recruitment_"
           }
         ]
       },
-      "at": "2026-11-22T12:03:54.838Z"
+      "at": "2026-11-22T12:34:04.163Z"
     },
     {
       "step": "S6",
       "title": "候选人改期：只改同一场，不新建；冲突说人话",
       "verdict": "PASS",
-      "ui": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S06-ui.txt",
-      "db": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S06-db.txt",
+      "ui": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S06-ui.txt",
+      "db": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S06-db.txt",
       "reason": "真点 schedule-mode-reschedule → 手填新时间 → 提交；psql 提交前后读回：id 不变=true、version 1→2、时间=2026-12-11 14:00（S06-db.txt）。",
       "evidence": [
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S06-ui.png",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S06-ui.txt",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S06-db.txt"
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S06-ui.png",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S06-ui.txt",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S06-db.txt"
       ],
-      "keyText": "Recruitment OS | 今日待办 | 4 | 在招岗位 | 1 | 后端工程师（演示） | 4 | ＋ 新建岗位 | 人才库 | 4 | Agent | 晚上好。当前有 4 位在办候选人（待初筛 3 人、面试中 3 人、待决策 1 人、4 份面评已超时）。当前首位待推进：林承宇（后端工程师（演示））。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。 | 提炼这位候选人的核心风险点 | 帮我查下一轮可约时段 | 对比岗位评分标准 | 招聘负责人 | HR | ← 返回 | / | 后端工程师（演示） | / | 面试安排 | / | 候选人 T | ‹ | 3 / 4 | › | 来源 | LIVE | 触发 | MANUAL | 连接 | CONNECTED | 已锁定面试时间并同步排期。 | 候选人 T | 后端工程师（演示）（DEMO-BE-001）· 档案号 424ca45b · 标准 V2 | 候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。 | ☆ | 面试安排 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 初筛结论：[RUNBOOK-S4] 合成材料：工作经历与教育背景已匹配，团队经历待面试核实。 · 准备面试：面试已排期或即将排期，需要准备 | 岗位标准对照 · V2（点击",
+      "keyText": "Recruitment OS | 今日待办 | 4 | 在招岗位 | 1 | 后端工程师（演示） | 4 | ＋ 新建岗位 | 人才库 | 4 | Agent | 晚上好。当前有 4 位在办候选人（待初筛 3 人、面试中 3 人、待决策 1 人、4 份面评已超时）。当前首位待推进：林承宇（后端工程师（演示））。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。 | 提炼这位候选人的核心风险点 | 帮我查下一轮可约时段 | 对比岗位评分标准 | 招聘负责人 | HR | ← 返回 | / | 后端工程师（演示） | / | 面试安排 | / | 候选人 T | ‹ | 3 / 4 | › | 来源 | LIVE | 触发 | MANUAL | 连接 | CONNECTED | 已锁定面试时间并同步排期。 | 候选人 T | 后端工程师（演示）（DEMO-BE-001）· 档案号 cc5cacc1 · 标准 V2 | 候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。 | ☆ | 面试安排 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 初筛结论：[RUNBOOK-S4] 合成材料：工作经历与教育背景已匹配，团队经历待面试核实。 · 准备面试：面试已排期或即将排期，需要准备 | 岗位标准对照 · V2（点击",
       "extra": {
         "entered_detail": true,
         "s6": {
@@ -322,7 +322,7 @@
             "testid": "schedule-mode-reschedule",
             "tag": "BUTTON"
           },
-          "before": "aa039316-1e42-4008-94d8-735561710bd3|1|2026-12-10 10:00",
+          "before": "29420718-8385-4ca7-8a7f-1833ea4cc1e7|1|2026-12-10 10:00",
           "time": {
             "ok": true,
             "testid": "schedule-time-input"
@@ -333,74 +333,74 @@
             "tag": "BUTTON"
           },
           "dbChanged": true,
-          "after": "aa039316-1e42-4008-94d8-735561710bd3|2|2026-12-11 14:00",
+          "after": "29420718-8385-4ca7-8a7f-1833ea4cc1e7|2|2026-12-11 14:00",
           "sameId": true,
           "versionIncremented": true,
           "timeUpdated": true
         },
-        "before": "aa039316-1e42-4008-94d8-735561710bd3|1|2026-12-10 10:00",
-        "after": "aa039316-1e42-4008-94d8-735561710bd3|2|2026-12-11 14:00"
+        "before": "29420718-8385-4ca7-8a7f-1833ea4cc1e7|1|2026-12-10 10:00",
+        "after": "29420718-8385-4ca7-8a7f-1833ea4cc1e7|2|2026-12-11 14:00"
       },
-      "at": "2026-11-22T12:04:08.251Z"
+      "at": "2026-11-22T12:34:17.246Z"
     },
     {
       "step": "S7",
       "title": "面试官 A 看前简报（约束/上一轮/本轮重点）",
       "verdict": "PASS",
-      "ui": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S07-ui.txt",
-      "db": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S07-db.txt",
+      "ui": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S07-ui.txt",
+      "db": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S07-db.txt",
       "reason": "简报三段齐全（置顶约束 / 上一轮 / 本轮重点）。",
       "evidence": [
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S07-ui.png",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S07-ui.txt",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S07-db.txt"
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S07-ui.png",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S07-ui.txt",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S07-db.txt"
       ],
-      "keyText": "本轮面试简报 | 后端工程师（演示） | 候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。 | 面后速记 | 本轮考察重点 | 第 1 轮 · 只读 · 服务端权威 | 来源：岗位通用标准（服务端未提供本轮专属配置） | JOB_BASE 降级（服务端未提供该轮配置） | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） | 评分维度见下方「本轮评分表 · effective schema」（岗位底座）。 | 本轮评分表 · effective schema | 只读 · 岗位通用标准（服务端未提供本轮专属配置） | 分数区间：服务端未提供分数区间 · submission rubric：6526fb46-eca9-46e6-9b60-475dfacc3cfc | 简历中存在可分割的工作经历条目 | work_exists | kind=MUST_HAVE · weight=0.5 | JOB_BASE | 简历中存在可分割的教育经历条目 | edu_exists | kind=MUST_HAVE · weight=0.25 | JOB_BASE | 有带团",
+      "keyText": "本轮面试简报 | 后端工程师（演示） | 候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。 | 面后速记 | 本轮考察重点 | 第 1 轮 · 只读 · 服务端权威 | 来源：岗位通用标准（服务端未提供本轮专属配置） | JOB_BASE 降级（服务端未提供该轮配置） | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） | 评分维度见下方「本轮评分表 · effective schema」（岗位底座）。 | 本轮评分表 · effective schema | 只读 · 岗位通用标准（服务端未提供本轮专属配置） | 分数区间：服务端未提供分数区间 · submission rubric：4085d5c0-c4a0-4091-8dbb-28b8486515a2 | 简历中存在可分割的工作经历条目 | work_exists | kind=MUST_HAVE · weight=0.5 | JOB_BASE | 简历中存在可分割的教育经历条目 | edu_exists | kind=MUST_HAVE · weight=0.25 | JOB_BASE | 有带团",
       "extra": {
         "identity_bound": true,
         "round": "第 1 轮"
       },
-      "at": "2026-11-22T12:04:12.921Z"
+      "at": "2026-11-22T12:34:21.745Z"
     },
     {
       "step": "S8",
       "title": "面后速记：中途刷新不丢、草稿落库",
       "verdict": "PASS",
-      "ui": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S08-ui.txt",
-      "db": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S08-db.txt",
+      "ui": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S08-ui.txt",
+      "db": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S08-db.txt",
       "reason": "带时间戳速记刷新仍在，且 psql 独立读回 scorecard_draft.interviewer_actor_id 仅属面试官 A（actor 104）。",
       "evidence": [
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S08-ui.png",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S08-ui.txt",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S08-db.txt"
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S08-ui.png",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S08-ui.txt",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S08-db.txt"
       ],
-      "keyText": "刷新后 textarea = \"[RUNBOOK-S8] 2026-11-22T12:04:12.923Z 面后速记：支付回调幂等与对账回答清楚；带团队经历未展开，留待追问。\" | psql owner = 4662de2e-863f-4b15-980a-bb02a1023ada|2359a6c7-ea60-4cad-a95f-b442e3b90d5b|11111111-1111-4111-8111-000000000104|演示-面试官|{\"note\": \"[RUNBOOK-S8] 2026-11-22T12:04:12.923Z 面后速记：支付回调幂等与对账回答清楚；带团队经历未展开，留待追问。\", \"assessments\": {}}|2026-11-22 20:04:15.082378+08",
+      "keyText": "刷新后 textarea = \"[RUNBOOK-S8] 2026-11-22T12:34:21.747Z 面后速记：支付回调幂等与对账回答清楚；带团队经历未展开，留待追问。\" | psql owner = d5f670a2-c54a-4b9f-9a4b-26d0894a6e65|de2f73fb-af61-43ae-80b0-9fe6491b374d|11111111-1111-4111-8111-000000000104|演示-面试官|{\"note\": \"[RUNBOOK-S8] 2026-11-22T12:34:21.747Z 面后速记：支付回调幂等与对账回答清楚；带团队经历未展开，留待追问。\", \"assessments\": {}}|2026-11-22 20:34:23.794128+08",
       "extra": {
         "draft_owner": {
           "sql": "select d.id, d.interviewer_id, d.interviewer_actor_id, a.display_name, left(d.payload::text,160) as note, d.created_at\n    from recruitment.scorecard_draft d left join recruitment.actor a on a.id=d.interviewer_actor_id and a.tenant_id=d.tenant_id\n    order by d.created_at",
-          "out": "4662de2e-863f-4b15-980a-bb02a1023ada|2359a6c7-ea60-4cad-a95f-b442e3b90d5b|11111111-1111-4111-8111-000000000104|演示-面试官|{\"note\": \"[RUNBOOK-S8] 2026-11-22T12:04:12.923Z 面后速记：支付回调幂等与对账回答清楚；带团队经历未展开，留待追问。\", \"assessments\": {}}|2026-11-22 20:04:15.082378+08",
-          "evidence": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S08-DRAFT-OWNER.txt"
+          "out": "d5f670a2-c54a-4b9f-9a4b-26d0894a6e65|de2f73fb-af61-43ae-80b0-9fe6491b374d|11111111-1111-4111-8111-000000000104|演示-面试官|{\"note\": \"[RUNBOOK-S8] 2026-11-22T12:34:21.747Z 面后速记：支付回调幂等与对账回答清楚；带团队经历未展开，留待追问。\", \"assessments\": {}}|2026-11-22 20:34:23.794128+08",
+          "evidence": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S08-DRAFT-OWNER.txt"
         },
         "owner_ok": true,
         "sid_preserved_across_refresh": true,
-        "sid_before": "session-40527774-c775-4ab1-91a8-595e4a8d8556",
-        "sid_after": "session-40527774-c775-4ab1-91a8-595e4a8d8556"
+        "sid_before": "session-2cfc9d5b-e084-4b1e-8a14-bcb77c1d67a2",
+        "sid_after": "session-2cfc9d5b-e084-4b1e-8a14-bcb77c1d67a2"
       },
-      "at": "2026-11-22T12:04:19.373Z"
+      "at": "2026-11-22T12:34:28.072Z"
     },
     {
       "step": "S9",
       "title": "面试官 A 提交独立面评（只见自己的）",
       "verdict": "PASS",
-      "ui": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S09-ui.txt",
-      "db": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S09-db.txt",
+      "ui": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S09-ui.txt",
+      "db": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S09-db.txt",
       "reason": "面评弹窗明示只见本人，并真点提交；S09-db.txt 确认 scorecard +1。",
       "evidence": [
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S09-ui.png",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S09-ui.txt",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S09-db.txt"
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S09-ui.png",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S09-ui.txt",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S09-db.txt"
       ],
-      "keyText": "我的独立面评 | 本轮面评已提交；修订需要服务端 revision 闭环，本版不开放。 | 面试安排 | 2026-11-20 20:02 – 2026-11-21 21:02 | 时区：Asia/Shanghai · 面试状态：POST_INTERVIEW · slot：FRESH_R1 | 会议绑定：未绑定 | 转写状态：还没收到 | 面试 id：dd88ca7c-9d39-461e-8562-d6062b5f05f7 | provenance：FIXTURE | trigger：MANUAL | connection：CONNECTED | 服务端评估时间（as_of）：2026-11-22T12:04:20.591Z | 信息可见范围 | 可查看分配给你的面试、本轮 Rubric、授权材料；其他面试官的主观评分与私人备注默认不展示。 | Provenance / trigger / connection 由服务端按租户现算，前端不重贴标签。 | 我的独立面评 | × | 按本轮岗位标准记录你的独立观察。Agent 不会代替面试官提交；提交后实时落库并刷新状态。 | 本轮考察重点（只读） | 岗位基础标准 | 转写依据：无转写独",
+      "keyText": "我的独立面评 | 本轮面评已提交；修订需要服务端 revision 闭环，本版不开放。 | 面试安排 | 2026-11-20 20:33 – 2026-11-21 21:33 | 时区：Asia/Shanghai · 面试状态：POST_INTERVIEW · slot：FRESH_R1 | 会议绑定：未绑定 | 转写状态：还没收到 | 面试 id：9dde55d6-f099-4dea-b9c1-65976258b711 | provenance：FIXTURE | trigger：MANUAL | connection：CONNECTED | 服务端评估时间（as_of）：2026-11-22T12:34:29.316Z | 信息可见范围 | 可查看分配给你的面试、本轮 Rubric、授权材料；其他面试官的主观评分与私人备注默认不展示。 | Provenance / trigger / connection 由服务端按租户现算，前端不重贴标签。 | 我的独立面评 | × | 按本轮岗位标准记录你的独立观察。Agent 不会代替面试官提交；提交后实时落库并刷新状态。 | 本轮考察重点（只读） | 岗位基础标准 | 转写依据：无转写独",
       "extra": {
         "s9": {
           "filled": {
@@ -418,19 +418,19 @@
         },
         "writes": []
       },
-      "at": "2026-11-22T12:04:24.535Z"
+      "at": "2026-11-22T12:34:33.294Z"
     },
     {
       "step": "S10",
       "title": "HR 在面试官 B 未交面评时尝试终审（应被拦并说清缺谁）",
       "verdict": "PASS",
-      "ui": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S10-ui.txt",
-      "db": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S10-db.txt",
+      "ui": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S10-ui.txt",
+      "db": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S10-db.txt",
       "reason": "决策弹窗出现人话拦截「还缺 演示-面试官 B、演示-面试官 的面评，暂时不能提交录用决策。 | 终审决策 | 阶段决策 | 通过（推进 / 发 Offer） | 待定 | 不通过 | 正式决策理由 | 取消 | 确认提交」，提交按钮 disabled；没有新决策行（见 S10-db.txt）。",
       "evidence": [
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S10-ui.png",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S10-ui.txt",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S10-db.txt"
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S10-ui.png",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S10-ui.txt",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S10-db.txt"
       ],
       "keyText": "还缺 演示-面试官 B、演示-面试官 的面评，暂时不能提交录用决策。 | 终审决策 | 阶段决策 | 通过（推进 / 发 Offer） | 待定 | 不通过 | 正式决策理由 | 取消 | 确认提交",
       "extra": {
@@ -447,21 +447,21 @@
           "hasMissingTestid": true
         }
       },
-      "at": "2026-11-22T12:04:30.666Z"
+      "at": "2026-11-22T12:34:39.511Z"
     },
     {
       "step": "S11",
       "title": "面试官 B 补交独立面评",
       "verdict": "PASS",
-      "ui": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S11-ui.txt",
-      "db": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S11-db.txt",
+      "ui": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S11-ui.txt",
+      "db": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S11-db.txt",
       "reason": "B 视角表单可达、只见本人维度，真点提交；S11-db.txt 确认 scorecard +1。",
       "evidence": [
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S11-ui.png",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S11-ui.txt",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S11-db.txt"
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S11-ui.png",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S11-ui.txt",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S11-db.txt"
       ],
-      "keyText": "我的独立面评 | 本轮面评已提交；修订需要服务端 revision 闭环，本版不开放。 | 面试安排 | 2026-11-21 20:02 – 2026-11-22 19:02 | 时区：Asia/Shanghai · 面试状态：POST_INTERVIEW · slot：FRESH_R2 | 会议绑定：未绑定 | 转写状态：还没收到 | 面试 id：1bc2af11-5094-4c4d-b7ed-1c29a7ad677f | provenance：FIXTURE | trigger：MANUAL | connection：CONNECTED | 服务端评估时间（as_of）：2026-11-22T12:04:35.903Z | 信息可见范围 | 可查看分配给你的面试、本轮 Rubric、授权材料；其他面试官的主观评分与私人备注默认不展示。 | Provenance / trigger / connection 由服务端按租",
+      "keyText": "我的独立面评 | 本轮面评已提交；修订需要服务端 revision 闭环，本版不开放。 | 面试安排 | 2026-11-21 20:33 – 2026-11-22 19:33 | 时区：Asia/Shanghai · 面试状态：POST_INTERVIEW · slot：FRESH_R2 | 会议绑定：未绑定 | 转写状态：还没收到 | 面试 id：14299420-d6bc-4c23-a0a4-8bdadd0b7495 | provenance：FIXTURE | trigger：MANUAL | connection：CONNECTED | 服务端评估时间（as_of）：2026-11-22T12:34:44.826Z | 信息可见范围 | 可查看分配给你的面试、本轮 Rubric、授权材料；其他面试官的主观评分与私人备注默认不展示。 | Provenance / trigger / connection 由服务端按租",
       "extra": {
         "identity_bound": true,
         "round": "第 2 轮",
@@ -484,11 +484,11 @@
             "url": "/recruitment/api/action/scorecard/submit",
             "method": "POST",
             "status": 200,
-            "body": "{\"interview_id\":\"1bc2af11-5094-4c4d-b7ed-1c29a7ad677f\",\"rubric_version_id\":\"6526fb46-eca9-46e6-9b60-475dfacc3cfc\",\"dimensions\":{\"work_exists\":{\"assessment\":\"MET\",\"score\":4,\"note\":\"RUNBOOK 观察：候选人能说清支付回调幂等与对账细节。\"},\"edu_exists\":{\"assessment\":\"MET\",\"score\":4,\"note\":\"RUNBOOK 观察：候选人能说清支付回调幂等与对账细节。\"},\"team_lead\":{\"assessment\":\"MET\",\"score\":4,\"note\":\"RUNBOOK 观察：候选人能说清支付回调幂等与对账细节。\"}},\"transcript_basis\":\"NO",
-            "resp": "{\"scorecard_id\":\"a8f0cdd6-7330-45f3-bbed-c087a1b51667\",\"status\":\"SUBMITTED\",\"actor_id\":\"11111111-1111-4111-8111-000000000105\",\"record_version\":1,\"interviewer_id\":\"46cf70dd-943c-4ccc-9e78-71456ee4a8d6\",\"interview_id\":\"1bc2af11-5094-4c4d-b7ed-1c29a7ad677f\",\"replayed\":false}"
+            "body": "{\"interview_id\":\"14299420-d6bc-4c23-a0a4-8bdadd0b7495\",\"rubric_version_id\":\"4085d5c0-c4a0-4091-8dbb-28b8486515a2\",\"dimensions\":{\"work_exists\":{\"assessment\":\"MET\",\"score\":4,\"note\":\"RUNBOOK 观察：候选人能说清支付回调幂等与对账细节。\"},\"edu_exists\":{\"assessment\":\"MET\",\"score\":4,\"note\":\"RUNBOOK 观察：候选人能说清支付回调幂等与对账细节。\"},\"team_lead\":{\"assessment\":\"MET\",\"score\":4,\"note\":\"RUNBOOK 观察：候选人能说清支付回调幂等与对账细节。\"}},\"transcript_basis\":\"NO",
+            "resp": "{\"scorecard_id\":\"2514cedd-f4fc-41da-8dad-aa1cda6a157a\",\"status\":\"SUBMITTED\",\"actor_id\":\"11111111-1111-4111-8111-000000000105\",\"record_version\":1,\"interviewer_id\":\"0d7d5b3e-934d-4fab-9f86-7f09a35c146e\",\"interview_id\":\"14299420-d6bc-4c23-a0a4-8bdadd0b7495\",\"replayed\":false}"
           },
           {
-            "url": "/recruitment/api/action/scorecard/draft?interview_id=1bc2af11-5094-4c4d-b7ed-1c29a7ad677f",
+            "url": "/recruitment/api/action/scorecard/draft?interview_id=14299420-d6bc-4c23-a0a4-8bdadd0b7495",
             "method": "DELETE",
             "status": 405,
             "body": "",
@@ -498,58 +498,58 @@
             "url": "/recruitment/api/action/scorecard/draft",
             "method": "POST",
             "status": 409,
-            "body": "{\"interview_id\":\"1bc2af11-5094-4c4d-b7ed-1c29a7ad677f\",\"payload\":{\"assessments\":{},\"note\":\"\"}}",
+            "body": "{\"interview_id\":\"14299420-d6bc-4c23-a0a4-8bdadd0b7495\",\"payload\":{\"assessments\":{},\"note\":\"\"}}",
             "resp": "{\"error\":{\"code\":\"FORBIDDEN\",\"reason_code\":\"SCORECARD_ALREADY_SUBMITTED\",\"message\":\"该场面试的面评已提交/已豁免，不允许再写草稿（草稿只存在于提交之前）\"}}"
           },
           {
             "url": "/recruitment/api/action/scorecard/draft",
             "method": "POST",
             "status": 409,
-            "body": "{\"interview_id\":\"1bc2af11-5094-4c4d-b7ed-1c29a7ad677f\",\"payload\":{\"assessments\":{\"work_exists\":\"MET\",\"edu_exists\":\"MET\",\"team_lead\":\"MET\"},\"note\":\"\"}}",
+            "body": "{\"interview_id\":\"14299420-d6bc-4c23-a0a4-8bdadd0b7495\",\"payload\":{\"assessments\":{\"work_exists\":\"MET\",\"edu_exists\":\"MET\",\"team_lead\":\"MET\"},\"note\":\"\"}}",
             "resp": "{\"error\":{\"code\":\"FORBIDDEN\",\"reason_code\":\"SCORECARD_ALREADY_SUBMITTED\",\"message\":\"该场面试的面评已提交/已豁免，不允许再写草稿（草稿只存在于提交之前）\"}}"
           }
         ]
       },
-      "at": "2026-11-22T12:04:39.947Z"
+      "at": "2026-11-22T12:34:49.034Z"
     },
     {
       "step": "S12",
       "title": "HR 终审决策（通过/拒绝）带确认原话，刷新后仍在",
       "verdict": "PASS",
-      "ui": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S12-ui.txt",
-      "db": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S12-db.txt",
+      "ui": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S12-ui.txt",
+      "db": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S12-db.txt",
       "reason": "方案 A 隔离数据集：真点提交 A(R1)/B(R2) 两轮面评（scorecard=2）；真 HTTP GET decision-facts probe=READY、evaluation_summary_state=COMPUTED（available=true, coverage submitted=2/missing=0）；真点 canvas-action-decision → 终审决策 → 通过(发 Offer) → 填理由 → 提交 → 界面「已记录终审正式决策并同步落库」；psql 读回 decision(scope=FINAL) current=1；刷新后决策仍在。",
       "evidence": [
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S12-ui.png",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S12-ui.txt",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S12-db.txt"
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S12-ui.png",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S12-ui.txt",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S12-db.txt"
       ],
-      "keyText": "已记录终审正式决策并同步落库。 | 候选人 S12-决策隔离 | 后端工程师（演示）（DEMO-BE-001）· 档案号 1f699ed9 · 标准 V2 | S12 隔离候选人：终审前须确认两轮必填面评齐备（合成材料）。 | ☆ | 三面终审 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 等待流程推进：本阶段事实已记录，等待流程或人工推进到下一阶段 | 岗位标准对照 · V2（点击联动原文） | 重新评估 | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重 25% | 待核实 | 逐轮面试进展（不求平均分） | 1 | 第 1 轮面试 | 待收面评 | 2 | 第 2 轮面试 | 待收面评 | 第 1 轮面试11-20 20:02 | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面",
+      "keyText": "已记录终审正式决策并同步落库。 | 候选人 S12-决策隔离 | 后端工程师（演示）（DEMO-BE-001）· 档案号 187385d7 · 标准 V2 | S12 隔离候选人：终审前须确认两轮必填面评齐备（合成材料）。 | ☆ | 三面终审 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 等待流程推进：本阶段事实已记录，等待流程或人工推进到下一阶段 | 岗位标准对照 · V2（点击联动原文） | 重新评估 | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重 25% | 待核实 | 逐轮面试进展（不求平均分） | 1 | 第 1 轮面试 | 待收面评 | 2 | 第 2 轮面试 | 待收面评 | 第 1 轮面试11-20 20:33 | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面",
       "extra": {
         "entered_detail": true,
         "s12": {
           "dataset": {
             "candidate_id": "11111111-1111-4111-8111-000000000798",
             "candidate_name": "候选人 S12-决策隔离",
-            "application_id": "1f699ed9-f6bb-485a-9c99-66173375f000",
+            "application_id": "187385d7-806d-4863-a521-ea8b78d99106",
             "job_id": "11111111-1111-4111-8111-000000000401",
-            "rubric_version_id": "6526fb46-eca9-46e6-9b60-475dfacc3cfc",
+            "rubric_version_id": "4085d5c0-c4a0-4091-8dbb-28b8486515a2",
             "rubric_version_no": 2,
             "rubric_payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
             "interview_round1": {
-              "id": "c6a5deb5-f787-497f-a520-15dd40ff3f40",
+              "id": "a60df6c8-c622-4d21-8965-239802cf7ef1",
               "interviewer_actor_id": "11111111-1111-4111-8111-000000000104",
               "label": "Interviewer A"
             },
             "interview_round2": {
-              "id": "62c90a8e-b73d-455a-8a1e-c825302f312c",
+              "id": "bca34874-8b46-492b-b7b5-4f3f391ae9d5",
               "interviewer_actor_id": "11111111-1111-4111-8111-000000000105",
               "label": "Interviewer B"
             },
             "constraint_text": "S12 隔离候选人：终审前须确认两轮必填面评齐备（合成材料）。"
           },
           "scorecardA": {
-            "interview_id": "c6a5deb5-f787-497f-a520-15dd40ff3f40",
+            "interview_id": "a60df6c8-c622-4d21-8965-239802cf7ef1",
             "round": "第 1 轮",
             "alias": "interviewer_a",
             "identity_bound": true,
@@ -567,7 +567,7 @@
                 "visible": true
               }
             ],
-            "formBodyExcerpt": "我的独立面评 | 面试安排 | 2026-11-20 20:02 – 2026-11-21 21:02 | 时区：Asia/Shanghai · 面试状态：POST_INTERVIEW · slot：S12_R1 | 会议绑定：未绑定 | 转写状态：还没收到 | 面试 id：c6a5deb5-f787-497f-a520-15dd40ff3f40 | provenance：FIXTURE | trigger：MANUAL | connection：CONNECTED | 服务端评估时间（as_of）：2026-11-22T12:04:40.153Z | 信息可见范围 | 可查看分配给你的面试、本轮 Rubric、授权材料；",
+            "formBodyExcerpt": "我的独立面评 | 面试安排 | 2026-11-20 20:33 – 2026-11-21 21:33 | 时区：Asia/Shanghai · 面试状态：POST_INTERVIEW · slot：S12_R1 | 会议绑定：未绑定 | 转写状态：还没收到 | 面试 id：a60df6c8-c622-4d21-8965-239802cf7ef1 | provenance：FIXTURE | trigger：MANUAL | connection：CONNECTED | 服务端评估时间（as_of）：2026-11-22T12:34:49.331Z | 信息可见范围 | 可查看分配给你的面试、本轮 Rubric、授权材料；",
             "form_visible": true,
             "filled": {
               "ok": true,
@@ -583,7 +583,7 @@
             "dbChanged": true
           },
           "scorecardB": {
-            "interview_id": "62c90a8e-b73d-455a-8a1e-c825302f312c",
+            "interview_id": "bca34874-8b46-492b-b7b5-4f3f391ae9d5",
             "round": "第 2 轮",
             "alias": "interviewer_b",
             "identity_bound": true,
@@ -601,7 +601,7 @@
                 "visible": true
               }
             ],
-            "formBodyExcerpt": "我的独立面评 | 面试安排 | 2026-11-21 20:02 – 2026-11-22 19:02 | 时区：Asia/Shanghai · 面试状态：POST_INTERVIEW · slot：S12_R2 | 会议绑定：未绑定 | 转写状态：还没收到 | 面试 id：62c90a8e-b73d-455a-8a1e-c825302f312c | provenance：FIXTURE | trigger：MANUAL | connection：CONNECTED | 服务端评估时间（as_of）：2026-11-22T12:04:49.082Z | 信息可见范围 | 可查看分配给你的面试、本轮 Rubric、授权材料；",
+            "formBodyExcerpt": "我的独立面评 | 面试安排 | 2026-11-21 20:33 – 2026-11-22 19:33 | 时区：Asia/Shanghai · 面试状态：POST_INTERVIEW · slot：S12_R2 | 会议绑定：未绑定 | 转写状态：还没收到 | 面试 id：bca34874-8b46-492b-b7b5-4f3f391ae9d5 | provenance：FIXTURE | trigger：MANUAL | connection：CONNECTED | 服务端评估时间（as_of）：2026-11-22T12:34:59.358Z | 信息可见范围 | 可查看分配给你的面试、本轮 Rubric、授权材料；",
             "form_visible": true,
             "filled": {
               "ok": true,
@@ -624,8 +624,8 @@
               "evaluation_summary_state": "COMPUTED",
               "evaluation_summary": {
                 "available": true,
-                "as_of": "2026-11-22T12:04:59.644Z",
-                "summary_digest": "2dd0d326b7f379a3e63786db1fa348b14a0b7a8688beebb19b06b443f7047c41",
+                "as_of": "2026-11-22T12:35:09.838Z",
+                "summary_digest": "9dbbd34c713a8851a9dfbf2999805b2d7ae5b68ef507b40f4219d31b40ab980a",
                 "ready_for_decision": true,
                 "coverage": {
                   "required_total": 2,
@@ -642,7 +642,7 @@
               },
               "missing": []
             },
-            "raw": "{\"contract_version\":\"decision-facts 1.0.0\",\"application_id\":\"1f699ed9-f6bb-485a-9c99-66173375f000\",\"stage_code\":\"S10\",\"lifecycle_status\":\"ACTIVE\",\"job\":{\"job_id\":\"11111111-1111-4111-8111-000000000401\",\"job_code\":\"DEMO-BE-001\",\"job_title\":\"后端工程师（演示）\",\"job_status\":\"OPEN\",\"job_version_id\":\"11111111-1111-4111-8111-000000000402\",\"job_payload_hash\":\"aba19e4085cd1b55e38297b6f79d7e7d8be19ea2e3ae37c58eebda7ec9deb07f\",\"current_job_version_id\":\"11111111-1111-4111-8111-000000000402\",\"current_rubric_version_id\":\"6526fb46-eca9-46e6-9b60-475dfacc3cfc\"},\"rubric\":{\"rubric_version_id\":\"6526fb46-eca9-46e6-9b60-475dfacc3cfc\",\"version_no\":2,\"payload_hash\":\"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f\",\"dimensions\":[{\"key\":\"work_exists\",\"label\":\"简历中存在可分割的工作经历条目\",\"weight\":0.5,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"edu_exists\",\"label\":\"简历中存在可分割的教育经历条目\",\"weight\":0.25,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"team_lead\",\"label\":\"有带团队经验\",\"weight\":0.25,\"required\":false,\"kind\":\"NICE_TO_HAVE\"}],\"approved\":true},\"authority\":{\"actor_id\":\"11111111-1111-4111-8111-000000000103\",\"alias\":\"recruiter\",\"display_name\":\"演示-HR 专员\",\"roles\":[\"HR_SPECIALIST\"],\"is_hiring_manager\":false},\"screening_evaluation\":{\"evaluation_id\":\"094961ba-cdff-5a44-8d6d-1dbeacecad7f\",\"evaluation_id_kind\":\"DERIVED_FROM_EVALUATION_DIGEST\",\"evaluation_digest\":\"c107db4d40c150d136e11da40fa455706c1d7fced843b1da1c3b713fd4ab7571\",\"verdict\":\"NEEDS_REVIEW\",\"rubric_version_id\":\"6526fb46-eca9-46e6-9b60-475dfacc3cfc\",\"rubric_payload_hash\":\"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f\",\"resume_version_id\":\"fb7637e2-07dd-457e-a637-04fbabca2272\",\"resume_content_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"as_of\":\"2026-11-22T12:04:59.644Z\",\"criteria_evaluated\":[{\"source\":\"REASON\",\"criterion_key\":\"work_exists\",\"kind\":\"MUST_HAVE\",\"outcome\":\"UNREADABLE\",\"failure_class\":\"UNREADABLE\",\"code\":\"MUST_HAVE_UNREADABLE\"},{\"source\":\"REASON\",\"criterion_key\":\"edu_exists\",\"kind\":\"MUST_HA"
+            "raw": "{\"contract_version\":\"decision-facts 1.0.0\",\"application_id\":\"187385d7-806d-4863-a521-ea8b78d99106\",\"stage_code\":\"S10\",\"lifecycle_status\":\"ACTIVE\",\"job\":{\"job_id\":\"11111111-1111-4111-8111-000000000401\",\"job_code\":\"DEMO-BE-001\",\"job_title\":\"后端工程师（演示）\",\"job_status\":\"OPEN\",\"job_version_id\":\"11111111-1111-4111-8111-000000000402\",\"job_payload_hash\":\"aba19e4085cd1b55e38297b6f79d7e7d8be19ea2e3ae37c58eebda7ec9deb07f\",\"current_job_version_id\":\"11111111-1111-4111-8111-000000000402\",\"current_rubric_version_id\":\"4085d5c0-c4a0-4091-8dbb-28b8486515a2\"},\"rubric\":{\"rubric_version_id\":\"4085d5c0-c4a0-4091-8dbb-28b8486515a2\",\"version_no\":2,\"payload_hash\":\"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f\",\"dimensions\":[{\"key\":\"work_exists\",\"label\":\"简历中存在可分割的工作经历条目\",\"weight\":0.5,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"edu_exists\",\"label\":\"简历中存在可分割的教育经历条目\",\"weight\":0.25,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"team_lead\",\"label\":\"有带团队经验\",\"weight\":0.25,\"required\":false,\"kind\":\"NICE_TO_HAVE\"}],\"approved\":true},\"authority\":{\"actor_id\":\"11111111-1111-4111-8111-000000000103\",\"alias\":\"recruiter\",\"display_name\":\"演示-HR 专员\",\"roles\":[\"HR_SPECIALIST\"],\"is_hiring_manager\":false},\"screening_evaluation\":{\"evaluation_id\":\"4fed88a7-a72a-5e0e-961b-b334091c536e\",\"evaluation_id_kind\":\"DERIVED_FROM_EVALUATION_DIGEST\",\"evaluation_digest\":\"35d9066361dccdc33be5c252e3c2a3f813ea503aef0ffb1d1566b828076e791f\",\"verdict\":\"NEEDS_REVIEW\",\"rubric_version_id\":\"4085d5c0-c4a0-4091-8dbb-28b8486515a2\",\"rubric_payload_hash\":\"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f\",\"resume_version_id\":\"232dc0ff-accc-473c-a017-cd5a26fadb69\",\"resume_content_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"as_of\":\"2026-11-22T12:35:09.838Z\",\"criteria_evaluated\":[{\"source\":\"REASON\",\"criterion_key\":\"work_exists\",\"kind\":\"MUST_HAVE\",\"outcome\":\"UNREADABLE\",\"failure_class\":\"UNREADABLE\",\"code\":\"MUST_HAVE_UNREADABLE\"},{\"source\":\"REASON\",\"criterion_key\":\"edu_exists\",\"kind\":\"MUST_HA"
           },
           "open": {
             "ok": true,
@@ -677,13 +677,13 @@
               "method": "POST",
               "path": "/recruitment/api/decision/record",
               "status": 200,
-              "body": "{\"contract_version\":\"decision-record 1.0.0\",\"action\":\"decision/record\",\"tool\":\"recruitment_decision_record\",\"actor\":{\"session_id\":\"session-d98d9870-eec9-417a-a75c-48074795e5d3\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":1,\"result\":\"allowed-once\",\"tool_names\":[\"recruitment_decision_record\"]},\"decision\":{\"decision_id\":\"7c734423-15fe-423f-80fd-7669c43addeb\",\"decision_scope\":\"FINAL\",\"result\":\"ADVANCE\",\"decided_at\":\"2026-11-22T12:05:06.386Z\",\"record_version\":1,\"stage_code\":\"S10\",\"decided_by_actor_id\":\"11111111-1111-4111-8111-000000000103\",\"is_current\":true},\"basis_refs\":[{\"kind\":\"SUMMARY\",\"summary_digest\":\"1276cb799f5321f78e2dbb8c22b99ab762501d47ef61495e27fe9fe90f3c040b\"},{\"kind\":\"RUBRIC_VERSION\",\"id\":\"6526fb46-eca9-46e6-9b60-475dfacc3cfc\",\"payload_hash\":\"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f\"},{\"kind\":\"AUTHORITY\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\",\"is_hiring_manager\":false},{\"kind\":\"SCORECARD\",\"id\":\"e7673856-c460-43ed-81f2-eecc748dde5c\",\"overall\":\"ADVANCE\",\"transcript_basis\":\"NO_TRANSCRIPT\",\"transcript_state\":\"MISSING\",\"revision_no\":1,\"interviewer_id\":\"33760ddb-7ad8-408c-97bb-94016ffe68e4\",\"pa"
+              "body": "{\"contract_version\":\"decision-record 1.0.0\",\"action\":\"decision/record\",\"tool\":\"recruitment_decision_record\",\"actor\":{\"session_id\":\"session-aea556e5-a8c6-4bb0-be76-03be8858a95b\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":1,\"result\":\"allowed-once\",\"tool_names\":[\"recruitment_decision_record\"]},\"decision\":{\"decision_id\":\"86f98a59-db89-456f-aa85-5f6e517569f6\",\"decision_scope\":\"FINAL\",\"result\":\"ADVANCE\",\"decided_at\":\"2026-11-22T12:35:16.606Z\",\"record_version\":1,\"stage_code\":\"S10\",\"decided_by_actor_id\":\"11111111-1111-4111-8111-000000000103\",\"is_current\":true},\"basis_refs\":[{\"kind\":\"SUMMARY\",\"summary_digest\":\"559e39e3a2845dc1d85c51479c5f8e9d1715a74c4c2f3a6eeaa4dd0c6f224da6\"},{\"kind\":\"RUBRIC_VERSION\",\"id\":\"4085d5c0-c4a0-4091-8dbb-28b8486515a2\",\"payload_hash\":\"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f\"},{\"kind\":\"AUTHORITY\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\",\"is_hiring_manager\":false},{\"kind\":\"SCORECARD\",\"id\":\"4b5a01c1-b022-48f9-855a-df80318b9292\",\"overall\":\"ADVANCE\",\"transcript_basis\":\"NO_TRANSCRIPT\",\"transcript_state\":\"MISSING\",\"revision_no\":1,\"interviewer_id\":\"0363c942-4070-4a7b-90af-11ec6066df1e\",\"pa"
             }
           ],
-          "uiAfterSubmit": "已记录终审正式决策并同步落库。 | 候选人 S12-决策隔离 | 后端工程师（演示）（DEMO-BE-001）· 档案号 1f699ed9 · 标准 V2 | S12 隔离候选人：终审前须确认两轮必填面评齐备（合成材料）。 | ☆ | 三面终审 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 等待流程推进：本阶段事实已记录，等待流程或人工推进到下一阶段 | 岗位标准对照 · V2（点击联动原文） | 重新评估 | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重 25% | 待核实 | 逐轮面试进展（不求平均分） | 1 | 第 1 轮面试 | 待收面评 | 2 | 第 2 轮面试 | 待收面评 | 第 1 轮面试11-20 20:02 | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面",
+          "uiAfterSubmit": "已记录终审正式决策并同步落库。 | 候选人 S12-决策隔离 | 后端工程师（演示）（DEMO-BE-001）· 档案号 187385d7 · 标准 V2 | S12 隔离候选人：终审前须确认两轮必填面评齐备（合成材料）。 | ☆ | 三面终审 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 等待流程推进：本阶段事实已记录，等待流程或人工推进到下一阶段 | 岗位标准对照 · V2（点击联动原文） | 重新评估 | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重 25% | 待核实 | 逐轮面试进展（不求平均分） | 1 | 第 1 轮面试 | 待收面评 | 2 | 第 2 轮面试 | 待收面评 | 第 1 轮面试11-20 20:33 | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面",
           "uiSuccess": true,
           "afterRefresh": true,
-          "afterRefreshText": "决策画布，或直接告诉我你想处理哪位候选人。 | 提炼这位候选人的核心风险点 | 帮我查下一轮可约时段 | 对比岗位评分标准 | 招聘负责人 | HR | ← 返回 | / | 后端工程师（演示） | / | 三面终审 | / | 候选人 S12-决策隔离 | ‹ | 2 / 4 | › | 来源 | LIVE | 触发 | MANUAL | 连接 | CONNECTED | 候选人 S12-决策隔离 | 后端工程师（演示）（DEMO-BE-001）· 档案号 1f699ed9 · 标准 V2 | S12 隔离候选人：终审前须确认两轮必填面评齐备（合成材料）。 | ☆ | 三面终审 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 等待流程推进：本阶段事实已记录，等待流程或人工推进到下一阶段 | 岗位标准对照 · V2（点击联动原文） | 重新评估 | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重",
+          "afterRefreshText": "决策画布，或直接告诉我你想处理哪位候选人。 | 提炼这位候选人的核心风险点 | 帮我查下一轮可约时段 | 对比岗位评分标准 | 招聘负责人 | HR | ← 返回 | / | 后端工程师（演示） | / | 三面终审 | / | 候选人 S12-决策隔离 | ‹ | 2 / 4 | › | 来源 | LIVE | 触发 | MANUAL | 连接 | CONNECTED | 候选人 S12-决策隔离 | 后端工程师（演示）（DEMO-BE-001）· 档案号 187385d7 · 标准 V2 | S12 隔离候选人：终审前须确认两轮必填面评齐备（合成材料）。 | ☆ | 三面终审 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 等待流程推进：本阶段事实已记录，等待流程或人工推进到下一阶段 | 岗位标准对照 · V2（点击联动原文） | 重新评估 | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重",
           "decisionFactsAfter": {
             "status": 200,
             "probe": "READY",
@@ -692,8 +692,8 @@
               "evaluation_summary_state": "COMPUTED",
               "evaluation_summary": {
                 "available": true,
-                "as_of": "2026-11-22T12:05:13.824Z",
-                "summary_digest": "3e84286cfbfcd100a342baf02e67df2c44206a8435752fe28c24cf93ba01d628",
+                "as_of": "2026-11-22T12:35:24.658Z",
+                "summary_digest": "0897cab50c3787e772ace674cc5ec9cd16154bb9160040d66717e85ed9078caa",
                 "ready_for_decision": false,
                 "coverage": {
                   "required_total": 2,
@@ -711,25 +711,25 @@
               },
               "missing": []
             },
-            "raw": "{\"contract_version\":\"decision-facts 1.0.0\",\"application_id\":\"1f699ed9-f6bb-485a-9c99-66173375f000\",\"stage_code\":\"S10\",\"lifecycle_status\":\"ACTIVE\",\"job\":{\"job_id\":\"11111111-1111-4111-8111-000000000401\",\"job_code\":\"DEMO-BE-001\",\"job_title\":\"后端工程师（演示）\",\"job_status\":\"OPEN\",\"job_version_id\":\"11111111-1111-4111-8111-000000000402\",\"job_payload_hash\":\"aba19e4085cd1b55e38297b6f79d7e7d8be19ea2e3ae37c58eebda7ec9deb07f\",\"current_job_version_id\":\"11111111-1111-4111-8111-000000000402\",\"current_rubric_version_id\":\"6526fb46-eca9-46e6-9b60-475dfacc3cfc\"},\"rubric\":{\"rubric_version_id\":\"6526fb46-eca9-46e6-9b60-475dfacc3cfc\",\"version_no\":2,\"payload_hash\":\"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f\",\"dimensions\":[{\"key\":\"work_exists\",\"label\":\"简历中存在可分割的工作经历条目\",\"weight\":0.5,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"edu_exists\",\"label\":\"简历中存在可分割的教育经历条目\",\"weight\":0.25,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"team_lead\",\"label\":\"有带团队经验\",\"weight\":0.25,\"required\":false,\"kind\":\"NICE_TO_HAVE\"}],\"approved\":true},\"authority\":{\"actor_id\":\"11111111-1111-4111-8111-000000000103\",\"alias\":\"recruiter\",\"display_name\":\"演示-HR 专员\",\"roles\":[\"HR_SPECIALIST\"],\"is_hiring_manager\":false},\"screening_evaluation\":{\"evaluation_id\":\"649d664e-382a-5e5f-b5a2-0a83a53b8d2f\",\"evaluation_id_kind\":\"DERIVED_FROM_EVALUATION_DIGEST\",\"evaluation_digest\":\"8b5d75b510328f7084ff40bcaa3c31ccf32fb88b198a5f5563ccb2e8565c6bf7\",\"verdict\":\"NEEDS_REVIEW\",\"rubric_version_id\":\"6526fb46-eca9-46e6-9b60-475dfacc3cfc\",\"rubric_payload_hash\":\"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f\",\"resume_version_id\":\"fb7637e2-07dd-457e-a637-04fbabca2272\",\"resume_content_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"as_of\":\"2026-11-22T12:05:13.824Z\",\"criteria_evaluated\":[{\"source\":\"REASON\",\"criterion_key\":\"work_exists\",\"kind\":\"MUST_HAVE\",\"outcome\":\"UNREADABLE\",\"failure_class\":\"UNREADABLE\",\"code\":\"MUST_HAVE_UNREADABLE\"},{\"source\":\"REASON\",\"criterion_key\":\"edu_exists\",\"kind\":\"MUST_HA"
+            "raw": "{\"contract_version\":\"decision-facts 1.0.0\",\"application_id\":\"187385d7-806d-4863-a521-ea8b78d99106\",\"stage_code\":\"S10\",\"lifecycle_status\":\"ACTIVE\",\"job\":{\"job_id\":\"11111111-1111-4111-8111-000000000401\",\"job_code\":\"DEMO-BE-001\",\"job_title\":\"后端工程师（演示）\",\"job_status\":\"OPEN\",\"job_version_id\":\"11111111-1111-4111-8111-000000000402\",\"job_payload_hash\":\"aba19e4085cd1b55e38297b6f79d7e7d8be19ea2e3ae37c58eebda7ec9deb07f\",\"current_job_version_id\":\"11111111-1111-4111-8111-000000000402\",\"current_rubric_version_id\":\"4085d5c0-c4a0-4091-8dbb-28b8486515a2\"},\"rubric\":{\"rubric_version_id\":\"4085d5c0-c4a0-4091-8dbb-28b8486515a2\",\"version_no\":2,\"payload_hash\":\"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f\",\"dimensions\":[{\"key\":\"work_exists\",\"label\":\"简历中存在可分割的工作经历条目\",\"weight\":0.5,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"edu_exists\",\"label\":\"简历中存在可分割的教育经历条目\",\"weight\":0.25,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"team_lead\",\"label\":\"有带团队经验\",\"weight\":0.25,\"required\":false,\"kind\":\"NICE_TO_HAVE\"}],\"approved\":true},\"authority\":{\"actor_id\":\"11111111-1111-4111-8111-000000000103\",\"alias\":\"recruiter\",\"display_name\":\"演示-HR 专员\",\"roles\":[\"HR_SPECIALIST\"],\"is_hiring_manager\":false},\"screening_evaluation\":{\"evaluation_id\":\"7c8d4572-1d86-570e-b155-3947c0efb2c3\",\"evaluation_id_kind\":\"DERIVED_FROM_EVALUATION_DIGEST\",\"evaluation_digest\":\"d96f212066d2fec2f114919531e8159d299bb467187ccb271cbba4fa2ce850c9\",\"verdict\":\"NEEDS_REVIEW\",\"rubric_version_id\":\"4085d5c0-c4a0-4091-8dbb-28b8486515a2\",\"rubric_payload_hash\":\"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f\",\"resume_version_id\":\"232dc0ff-accc-473c-a017-cd5a26fadb69\",\"resume_content_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"as_of\":\"2026-11-22T12:35:24.658Z\",\"criteria_evaluated\":[{\"source\":\"REASON\",\"criterion_key\":\"work_exists\",\"kind\":\"MUST_HAVE\",\"outcome\":\"UNREADABLE\",\"failure_class\":\"UNREADABLE\",\"code\":\"MUST_HAVE_UNREADABLE\"},{\"source\":\"REASON\",\"criterion_key\":\"edu_exists\",\"kind\":\"MUST_HA"
           },
           "finalCurrentAfter": "1",
           "scorecardCountAfter": "2"
         }
       },
-      "at": "2026-11-22T12:05:15.246Z"
+      "at": "2026-11-22T12:35:27.652Z"
     },
     {
       "step": "S13",
       "title": "同一条重复提交决策（应提示已处理过，仍只有一条 current）",
       "verdict": "PASS",
-      "ui": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S13-ui.txt",
-      "db": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S13-db.txt",
+      "ui": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S13-ui.txt",
+      "db": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S13-db.txt",
       "reason": "真点重复提交终审（canvas 弹窗，facade），界面提示「已处理过，不会重复写入 | 取消 | 确认提交」；psql 应用级读回 decision(scope=FINAL) total|current=1|1，仍只有一条 current、无新增。",
       "evidence": [
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S13-ui.png",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S13-ui.txt",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S13-db.txt"
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S13-ui.png",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S13-ui.txt",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S13-db.txt"
       ],
       "keyText": "已处理过，不会重复写入 | 取消 | 确认提交",
       "extra": {
@@ -737,18 +737,18 @@
           "dataset": {
             "candidate_id": "11111111-1111-4111-8111-000000000798",
             "candidate_name": "候选人 S12-决策隔离",
-            "application_id": "1f699ed9-f6bb-485a-9c99-66173375f000",
+            "application_id": "187385d7-806d-4863-a521-ea8b78d99106",
             "job_id": "11111111-1111-4111-8111-000000000401",
-            "rubric_version_id": "6526fb46-eca9-46e6-9b60-475dfacc3cfc",
+            "rubric_version_id": "4085d5c0-c4a0-4091-8dbb-28b8486515a2",
             "rubric_version_no": 2,
             "rubric_payload_hash": "0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f",
             "interview_round1": {
-              "id": "c6a5deb5-f787-497f-a520-15dd40ff3f40",
+              "id": "a60df6c8-c622-4d21-8965-239802cf7ef1",
               "interviewer_actor_id": "11111111-1111-4111-8111-000000000104",
               "label": "Interviewer A"
             },
             "interview_round2": {
-              "id": "62c90a8e-b73d-455a-8a1e-c825302f312c",
+              "id": "bca34874-8b46-492b-b7b5-4f3f391ae9d5",
               "interviewer_actor_id": "11111111-1111-4111-8111-000000000105",
               "label": "Interviewer B"
             },
@@ -784,27 +784,27 @@
             "testid": "canvas-modal-submit",
             "tag": "BUTTON"
           },
-          "uiBody": "Recruitment OS\n今日待办\n4\n在招岗位\n1\n后端工程师（演示）\n4\n＋ 新建岗位\n人才库\n4\nAgent\n晚上好。当前有 4 位在办候选人（待初筛 3 人、面试中 3 人）。当前首位待推进：林承宇（后端工程师（演示））。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。\n提炼这位候选人的核心风险点\n帮我查下一轮可约时段\n对比岗位评分标准\n招聘负责人\nHR\n← 返回\n/\n后端工程师（演示）\n/\n三面终审\n/\n候选人 S12-决策隔离\n‹\n2 / 4\n›\n来源\nLIVE\n触发\nMANUAL\n连接\nCONNECTED\n候选人 S12-决策隔离\n后端工程师（演示）（DEMO-BE-001）· 档案号 1f699ed9 · 标准 V2\nS12 隔离候选人：终审前须确认两轮必填面评齐备（合成材料）。\n☆\n三面终审\n推进中\n·\n复制决策纪要\n当前状态与提炼\n等待流程推进：本阶段事实已记录，等待流程或人工推进到下一阶段\n岗位标准对照 · V2（点击联动原文）\n重新评估\n01简历中存在可分割的工作经历条目硬性 · 权重 50%\n已匹配\n02简历中存在可分割的教育经历条目硬性 · 权重 25%\n已匹配\n03有带团队经验加分 · 权重 25%\n待核实\n逐轮面试进展（不求平均分）\n1\n第 1 轮面试\n待收面评\n2\n第 2 轮面试\n待收面评\n第 1 轮面试11-20 20:02\n本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 1/1 · 还没有转录\n待收面评\n第 2 轮面试11-21 20:02\n本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 1/1 · 还没有转录\n待收面评\n简历原文\n飞书妙记\n原件预览\n上传简历\n导入转写\n简历原文摘录（可点击标准联动定位）\n01\n工作经历\n第 1 页\n2021-2024 后端工程师（合成材料，S12 隔离）：支付回调幂等与对账。\n02\n教育背景\n第 1 页\n本科 · 计算机科学（合成材料，S12 隔离）\n03\n原文片段\n第 1 页\n曾带领 3 人小组完成交付（待面试核实，S12 隔离）\n全链路动态留痕（7）\n展开 ▾\n置顶约束\n下一轮交接\n约面 / 改期换人\n跨岗调剂\n推进阶段 / 跳轮\n标记未出席\n发邮件\n初筛结论\n正式决策\n记录终审正式决策 · 候选人 S12-决策隔离\n终审决策\n阶段决策\n通过（推进 / 发 Offer）\n待定\n不通过\n正式决策理由\n已处理过，不会重复写入\n取消\n确认提交",
+          "uiBody": "Recruitment OS\n今日待办\n4\n在招岗位\n1\n后端工程师（演示）\n4\n＋ 新建岗位\n人才库\n4\nAgent\n晚上好。当前有 4 位在办候选人（待初筛 3 人、面试中 3 人）。当前首位待推进：林承宇（后端工程师（演示））。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。\n提炼这位候选人的核心风险点\n帮我查下一轮可约时段\n对比岗位评分标准\n招聘负责人\nHR\n← 返回\n/\n后端工程师（演示）\n/\n三面终审\n/\n候选人 S12-决策隔离\n‹\n2 / 4\n›\n来源\nLIVE\n触发\nMANUAL\n连接\nCONNECTED\n候选人 S12-决策隔离\n后端工程师（演示）（DEMO-BE-001）· 档案号 187385d7 · 标准 V2\nS12 隔离候选人：终审前须确认两轮必填面评齐备（合成材料）。\n☆\n三面终审\n推进中\n·\n复制决策纪要\n当前状态与提炼\n等待流程推进：本阶段事实已记录，等待流程或人工推进到下一阶段\n岗位标准对照 · V2（点击联动原文）\n重新评估\n01简历中存在可分割的工作经历条目硬性 · 权重 50%\n已匹配\n02简历中存在可分割的教育经历条目硬性 · 权重 25%\n已匹配\n03有带团队经验加分 · 权重 25%\n待核实\n逐轮面试进展（不求平均分）\n1\n第 1 轮面试\n待收面评\n2\n第 2 轮面试\n待收面评\n第 1 轮面试11-20 20:33\n本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 1/1 · 还没有转录\n待收面评\n第 2 轮面试11-21 20:33\n本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 1/1 · 还没有转录\n待收面评\n简历原文\n飞书妙记\n原件预览\n上传简历\n导入转写\n简历原文摘录（可点击标准联动定位）\n01\n工作经历\n第 1 页\n2021-2024 后端工程师（合成材料，S12 隔离）：支付回调幂等与对账。\n02\n教育背景\n第 1 页\n本科 · 计算机科学（合成材料，S12 隔离）\n03\n原文片段\n第 1 页\n曾带领 3 人小组完成交付（待面试核实，S12 隔离）\n全链路动态留痕（7）\n展开 ▾\n置顶约束\n下一轮交接\n约面 / 改期换人\n跨岗调剂\n推进阶段 / 跳轮\n标记未出席\n发邮件\n初筛结论\n正式决策\n记录终审正式决策 · 候选人 S12-决策隔离\n终审决策\n阶段决策\n通过（推进 / 发 Offer）\n待定\n不通过\n正式决策理由\n已处理过，不会重复写入\n取消\n确认提交",
           "duplicateText": true,
           "duplicateExcerpt": "已处理过，不会重复写入 | 取消 | 确认提交",
           "finalCountsAfter": "1|1"
         }
       },
-      "at": "2026-11-22T12:05:25.587Z"
+      "at": "2026-11-22T12:35:38.537Z"
     },
     {
       "step": "S14",
       "title": "候选人放鸽子 → 记「未出席」并留原因",
       "verdict": "PASS",
-      "ui": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S14-ui.txt",
-      "db": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S14-db.txt",
+      "ui": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S14-ui.txt",
+      "db": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S14-db.txt",
       "reason": "真点 canvas-action-no-show → 选候选人未出席 → 填原因/原话 → 提交；S14-db.txt 复核 interview.status=NO_SHOW。",
       "evidence": [
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S14-ui.png",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S14-ui.txt",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S14-db.txt"
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S14-ui.png",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S14-ui.txt",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S14-db.txt"
       ],
-      "keyText": "未出席」并留痕。 | 候选人 T | 后端工程师（演示）（DEMO-BE-001）· 档案号 424ca45b · 标准 V2 | 候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。 | ☆ | 面试安排 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 初筛结论：[RUNBOOK-S4] 合成材料：工作经历与教育背景已匹配，团队经历待面试核实。 · 安排面试：初筛已有结论，还没有排期面试 | 岗位标准对照 · V2（点击联动原文） | 重新评估 | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重 25% | 待核实 | 逐轮面试进展（不求平均分） | 1 | 第 1 轮面试 | 待收面评 | 2 | 第 2 轮面试 | 待收面评 | 3 | 第 3 轮面试 | 未出席 | 第 1 轮面试11-20 20:02 | 本场面试没有绑定",
+      "keyText": "未出席」并留痕。 | 候选人 T | 后端工程师（演示）（DEMO-BE-001）· 档案号 cc5cacc1 · 标准 V2 | 候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。 | ☆ | 面试安排 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 初筛结论：[RUNBOOK-S4] 合成材料：工作经历与教育背景已匹配，团队经历待面试核实。 · 安排面试：初筛已有结论，还没有排期面试 | 岗位标准对照 · V2（点击联动原文） | 重新评估 | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重 25% | 待核实 | 逐轮面试进展（不求平均分） | 1 | 第 1 轮面试 | 待收面评 | 2 | 第 2 轮面试 | 待收面评 | 3 | 第 3 轮面试 | 未出席 | 第 1 轮面试11-20 20:33 | 本场面试没有绑定",
       "extra": {
         "entered_detail": true,
         "s14": {
@@ -834,26 +834,26 @@
             "url": "/recruitment/api/action/interview/schedule",
             "method": "POST",
             "status": 200,
-            "body": "{\"intent\":\"MARK_NO_SHOW\",\"confirmation_text\":\"确认标记 候选人 T 本场面试未出席\",\"idempotency_key\":\"ui-schedule-13e4ed20-8013-4394-8caf-db0df231eb8d\",\"subject\":\"CANDIDATE\",\"reason\":\"未按约定时间出席面试\",\"expected_record_version\":2,\"interview_id\":\"aa039316-1e42-4008-94d8-735561710bd3\"}",
-            "resp": "{\"action\":\"interview/schedule\",\"actor\":{\"session_id\":\"session-ed1c0505-f42e-4572-921d-b92eba3a833a\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":1,\"result\":\"allowed-once\",\"tool_names\":[\"recruitment_interview_schedule\"]},\"result\":{\"tool\":\"recruitment_"
+            "body": "{\"intent\":\"MARK_NO_SHOW\",\"confirmation_text\":\"确认标记 候选人 T 本场面试未出席\",\"idempotency_key\":\"ui-schedule-db4bcc8a-c0ce-4738-8fd6-60e73763d6fe\",\"subject\":\"CANDIDATE\",\"reason\":\"未按约定时间出席面试\",\"expected_record_version\":2,\"interview_id\":\"29420718-8385-4ca7-8a7f-1833ea4cc1e7\"}",
+            "resp": "{\"action\":\"interview/schedule\",\"actor\":{\"session_id\":\"session-5263bfd5-4ada-48ff-ad60-aef289f471f6\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":1,\"result\":\"allowed-once\",\"tool_names\":[\"recruitment_interview_schedule\"]},\"result\":{\"tool\":\"recruitment_"
           }
         ]
       },
-      "at": "2026-11-22T12:05:36.344Z"
+      "at": "2026-11-22T12:35:49.667Z"
     },
     {
       "step": "S15",
       "title": "两人同时改同一场排期（后端恰好一个 200、一个 409，只写入一次）",
       "verdict": "PASS",
-      "ui": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S15-ui.txt",
-      "db": "work/d5/fullpage/lead-verify-job-loop-final/evidence/S15-db.txt",
+      "ui": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S15-ui.txt",
+      "db": "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S15-db.txt",
       "reason": "真并发：两个同版本 RESCHEDULE 并发请求 → 恰好 200×1 + 409×1（{\"error\":{\"code\":\"VERSION_CONFLICT\",\"reason_code\":\"STALE_RECORD_VERSION\",\"message\":\"该面试已被他人修改（期望版本 1，实际 2）\",\"detail\":{\"actual_record_version\":2,\"expected_record）；psql 读回 interview.record_version 1→2（仅 +1）。UI 可见 409 人话。",
       "evidence": [
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S15-ui.png",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S15-ui.txt",
-        "work/d5/fullpage/lead-verify-job-loop-final/evidence/S15-db.txt"
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S15-ui.png",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S15-ui.txt",
+        "work/d5/fullpage/lead-verify-job-loop-final2/evidence/S15-db.txt"
       ],
-      "keyText": "{\"error\":{\"code\":\"VERSION_CONFLICT\",\"reason_code\":\"STALE_RECORD_VERSION\",\"message\":\"该面试已被他人修改（期望版本 1，实际 2）\",\"detail\":{\"actual_record_version\":2,\"expected_record_version\":1,\"interview_id\":\"4425b90a-e4c9-4347-9f65-f85978061790\"}}}",
+      "keyText": "{\"error\":{\"code\":\"VERSION_CONFLICT\",\"reason_code\":\"STALE_RECORD_VERSION\",\"message\":\"该面试已被他人修改（期望版本 1，实际 2）\",\"detail\":{\"actual_record_version\":2,\"expected_record_version\":1,\"interview_id\":\"f7186e84-74f0-454d-9afc-1d1f69071b51\"}}}",
       "extra": {
         "entered_detail": true,
         "s15": {
@@ -873,23 +873,23 @@
           },
           "prepCreate": {
             "status": 200,
-            "body": "{\"action\":\"interview/schedule\",\"actor\":{\"session_id\":\"session-1da34a43-49b4-4c7b-91f4-3e297fd3192f\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":1,\"result\":\"allowed-once\",\"tool_names\":[\"recruitment_interview_schedule\"]},\"result\":{\"tool\":\"recruitment_interview_schedule\",\"contract_version\":\"1.1.0\",\"status\":\"OK\",\"write\":true,\"replayed\":false,\"labels\":{\"provenance\":\"FIXTURE\",\"trigger\":\"MANUAL\",\"connection\":\"NOT_CONNECTED\"},\"intent\":\"CREATE\",\"command\":{\"idempotency_key\":\"runbook-s15-create-1795349144462\",\"args_digest\":\"sha256:8921ddd00b98d7d956514718b528efaa8c3459d2bab1b83ab941c57e72ea769e\"},\"interview\":{\"id\":\"4425b90a-e4c9-4347-9f65-f85978061790\",\"application_id\":\"424ca45b-2c06-4589-af4f-3883ec1d3d6d\",\"candidate_id\":\"11111111-1111-4111-8111-000000000699\",\"job_id\":\"11111111-1111-4111-8111-000000000401\",\"round_no\":9,\"slot_code\":\"S15_CONC\",\"stag"
+            "body": "{\"action\":\"interview/schedule\",\"actor\":{\"session_id\":\"session-8a124001-4baf-4089-b7d7-ee0f67946f03\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":1,\"result\":\"allowed-once\",\"tool_names\":[\"recruitment_interview_schedule\"]},\"result\":{\"tool\":\"recruitment_interview_schedule\",\"contract_version\":\"1.1.0\",\"status\":\"OK\",\"write\":true,\"replayed\":false,\"labels\":{\"provenance\":\"FIXTURE\",\"trigger\":\"MANUAL\",\"connection\":\"NOT_CONNECTED\"},\"intent\":\"CREATE\",\"command\":{\"idempotency_key\":\"runbook-s15-create-1795350957790\",\"args_digest\":\"sha256:e66386a66829ca6de3f77ef1edcd2f75c407b069c5aa4acfd8d779f321ab8e3f\"},\"interview\":{\"id\":\"f7186e84-74f0-454d-9afc-1d1f69071b51\",\"application_id\":\"cc5cacc1-35e8-4938-b786-894f0d566c71\",\"candidate_id\":\"11111111-1111-4111-8111-000000000699\",\"job_id\":\"11111111-1111-4111-8111-000000000401\",\"round_no\":9,\"slot_code\":\"S15_CONC\",\"stag"
           },
-          "interview_id": "4425b90a-e4c9-4347-9f65-f85978061790",
+          "interview_id": "f7186e84-74f0-454d-9afc-1d1f69071b51",
           "version_before": 1,
           "concurrent": [
             {
-              "status": 409,
-              "body": "{\"error\":{\"code\":\"VERSION_CONFLICT\",\"reason_code\":\"STALE_RECORD_VERSION\",\"message\":\"该面试已被他人修改（期望版本 1，实际 2）\",\"detail\":{\"actual_record_version\":2,\"expected_record_version\":1,\"interview_id\":\"4425b90a-e4c9-4347-9f65-f85978061790\"}}}"
+              "status": 200,
+              "body": "{\"action\":\"interview/schedule\",\"actor\":{\"session_id\":\"session-8a124001-4baf-4089-b7d7-ee0f67946f03\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":1,\"result\":\"allowed-once\",\"tool_names\":[\"recruitment_interview_schedule\"]},\"result\":{\"tool\":\"recruitment_interview_schedule\",\"contract_version\":\"1.1.0\",\"status\":\"OK\",\"write\":true,\"replayed\":false,\"labels\":{\"provenance\":\"FIXTURE\",\"trigger\":\"MANUAL\",\"connection\":\"NOT_CONNECTED\"},\"intent\":\"RESCHEDULE\",\"command\":{\"idempotency_key\":\"runbook-s15-a-1795350957998\",\"args_digest\":\"sha256:f839cf746d3453345d65a3ca8d8cc7dc15f3ef127297b05e178ff4df35a4b73c\"},\"interview\":{\"id\":\"f7186e84-74f0-454d-9afc-1d1f69071b51\",\"application_id\":\"cc5cacc1-35e8-4938-b786-894f0d566c71\",\"candidate_id\":\"11111111-1111-4111-8111-000000000699\",\"job_id\":\"11111111-1111-4111-8111-000000000401\",\"round_no\":9,\"slot_code\":\"S15_CONC\",\"stage_code\":\"S8\",\"status\":\"SCHEDULED\",\"record_version\":2,\"scheduled_start_at\":\"2026-12-13T03:00:00.000Z\",\"scheduled_end_at\":\"2026-12-13T03:45:00.000Z\",\"duration_minutes\":45,\"timezone\":\"Asia/Shanghai\",\"status_changed_at\":\"2026-11-22T12:35:57.840Z\",\"is_overdue_start\":false,\"interviewers\":[{\"interviewer_id\""
             },
             {
-              "status": 200,
-              "body": "{\"action\":\"interview/schedule\",\"actor\":{\"session_id\":\"session-1da34a43-49b4-4c7b-91f4-3e297fd3192f\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":1,\"result\":\"allowed-once\",\"tool_names\":[\"recruitment_interview_schedule\"]},\"result\":{\"tool\":\"recruitment_interview_schedule\",\"contract_version\":\"1.1.0\",\"status\":\"OK\",\"write\":true,\"replayed\":false,\"labels\":{\"provenance\":\"FIXTURE\",\"trigger\":\"MANUAL\",\"connection\":\"NOT_CONNECTED\"},\"intent\":\"RESCHEDULE\",\"command\":{\"idempotency_key\":\"runbook-s15-b-1795349144739-2\",\"args_digest\":\"sha256:0477208de8eb07f4ac0056170e572966602cdbc576365fbc50bb3bf99cffa3c3\"},\"interview\":{\"id\":\"4425b90a-e4c9-4347-9f65-f85978061790\",\"application_id\":\"424ca45b-2c06-4589-af4f-3883ec1d3d6d\",\"candidate_id\":\"11111111-1111-4111-8111-000000000699\",\"job_id\":\"11111111-1111-4111-8111-000000000401\",\"round_no\":9,\"slot_code\":\"S15_CONC\",\"stage_code\":\"S8\",\"status\":\"SCHEDULED\",\"record_version\":2,\"scheduled_start_at\":\"2026-12-14T07:30:00.000Z\",\"scheduled_end_at\":\"2026-12-14T08:15:00.000Z\",\"duration_minutes\":45,\"timezone\":\"Asia/Shanghai\",\"status_changed_at\":\"2026-11-22T12:05:44.499Z\",\"is_overdue_start\":false,\"interviewers\":[{\"interviewer_i"
+              "status": 409,
+              "body": "{\"error\":{\"code\":\"VERSION_CONFLICT\",\"reason_code\":\"STALE_RECORD_VERSION\",\"message\":\"该面试已被他人修改（期望版本 1，实际 2）\",\"detail\":{\"actual_record_version\":2,\"expected_record_version\":1,\"interview_id\":\"f7186e84-74f0-454d-9afc-1d1f69071b51\"}}}"
             }
           ],
           "exactlyOne200": true,
           "exactlyOne409": true,
-          "conflictBody": "{\"error\":{\"code\":\"VERSION_CONFLICT\",\"reason_code\":\"STALE_RECORD_VERSION\",\"message\":\"该面试已被他人修改（期望版本 1，实际 2）\",\"detail\":{\"actual_record_version\":2,\"expected_record_version\":1,\"interview_id\":\"4425b90a-e4c9-4347-9f65-f85978061790\"}}}",
+          "conflictBody": "{\"error\":{\"code\":\"VERSION_CONFLICT\",\"reason_code\":\"STALE_RECORD_VERSION\",\"message\":\"该面试已被他人修改（期望版本 1，实际 2）\",\"detail\":{\"actual_record_version\":2,\"expected_record_version\":1,\"interview_id\":\"f7186e84-74f0-454d-9afc-1d1f69071b51\"}}}",
           "conflictText": true,
           "version_after": 2,
           "versionDelta": 1,
@@ -903,9 +903,9 @@
           "uiNote": "UI 可见 409 人话。"
         }
       },
-      "at": "2026-11-22T12:05:48.967Z"
+      "at": "2026-11-22T12:36:02.491Z"
     }
   ],
-  "baseline_head_counts": "intake_asset|3\r\nbusiness_task|1\r\ncandidate_constraint|2\r\ncriterion_override|0\r\ndecision|0\r\ninterview|6\r\ninterviewer|7\r\nscorecard_draft|0\r\nscorecard|0\r\nresume_version|3\r\nevent_inbox|9\r\napplication|3",
+  "baseline_head_counts": "intake_asset|3\r\nbusiness_task|1\r\ncandidate_constraint|2\r\ncriterion_override|0\r\ndecision|0\r\ninterview|6\r\ninterviewer|7\r\nscorecard_draft|0\r\nscorecard|0\r\nresume_version|3\r\nevent_inbox|12\r\napplication|3",
   "note": "界面点不动=BLOCKED（不用接口结果冒充）；每步 UI+DB+截图三件齐全。"
 }

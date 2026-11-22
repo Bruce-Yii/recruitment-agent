@@ -1,7 +1,7 @@
 {
   "scenarios": {
     "createApprove": {
-      "title": "验收闭环岗位-311529",
+      "title": "验收闭环岗位-068129",
       "jobRouteOk": false,
       "jobId": "",
       "approveShown": false,
@@ -28,7 +28,7 @@
       "name": "create_job_and_approve_rubric",
       "ok": false,
       "detail": {
-        "title": "验收闭环岗位-311529",
+        "title": "验收闭环岗位-068129",
         "jobRouteOk": false,
         "jobId": "",
         "approveShown": false,
