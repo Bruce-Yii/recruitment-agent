@@ -26,6 +26,7 @@ import {
 } from '../../src/http/recruiting.ts'
 import type { DatabaseClient } from '../../src/db/pool.ts'
 import { digestOf } from '../../src/tools/contract.ts'
+import { decideRubricApprovalInTransaction } from '../../src/tools/job-create.ts'
 import { createTestPool, hex64, inRolledBackTx, testDatabaseConfig, uniqueSuffix } from './db.ts'
 
 const CFG = testDatabaseConfig()
@@ -1393,10 +1394,66 @@ test('job detail：多版本 desc、JD 正文取当前版本、rubric 维度、�
   })
 })
 
+test('岗位详情 pending rubric：无 current 指针时回退最新版本且 approved=false；批准后 approved=true', async () => {
+  await inRolledBackTx(POOL, async (client) => {
+    const job = await seedJob(client, { status: 'DRAFT', withRubric: true })
+    // 模拟 job_create 之后、rubric 批准之前的合法初始态：rubric_version 行已存在，但 job 还没有
+    // current_rubric_version_id；再追加一个更高版本，验证回退取 version_no DESC 的最新一条。
+    const latestRubricId = await oneId(
+      client,
+      `insert into recruitment.rubric_version
+         (tenant_id, job_id, version_no, dimensions, payload_hash, created_by_actor_id)
+       values ($1, $2, 2, $3::jsonb, $4, $5) returning id`,
+      [TENANT, job.jobId, JSON.stringify(DIMENSIONS), digestOf([...DIMENSIONS]), ACTOR_HR],
+    )
+    await client.query('update recruitment.job set current_rubric_version_id = null where id = $1', [job.jobId])
+
+    const pending = await readJobDetail({ database: CFG, client }, job.jobId)
+    assert.equal(pending.job.rubric?.rubric_version_id, latestRubricId)
+    assert.equal(pending.job.rubric?.version_no, 2)
+    assert.equal(pending.job.rubric?.approved, false, '未批准版本绝不能标成已批准')
+    assert.equal(pending.job.rubric?.dimension_count, DIMENSIONS.length)
+    assert.equal(pending.rubric?.rubric_version_id, latestRubricId)
+    assert.equal(pending.rubric?.version_no, 2)
+    assert.deepEqual(pending.rubric?.dimensions.map((dimension) => dimension.key), DIMENSIONS.map((dimension) => dimension.key))
+
+    // 真走人类批准动作（同一个回滚事务内），再读详情：指针被指向该版本，approved=true。
+    const hashRow = await client.query<{ payload_hash: string }>(
+      'select payload_hash from recruitment.rubric_version where id = $1 and tenant_id = $2',
+      [latestRubricId, TENANT],
+    )
+    const payloadHash = hashRow.rows[0]?.payload_hash
+    assert.ok(typeof payloadHash === 'string' && payloadHash.length > 0)
+    const approvalId = await oneId(
+      client,
+      `insert into recruitment.approval
+         (tenant_id, resource_type, resource_id, resource_record_version,
+          payload_schema_version, canonical_payload_hash, status, requested_by_actor_id)
+       values ($1, 'RUBRIC_VERSION', $2, 1, 1, $3, 'PENDING', $4) returning id`,
+      [TENANT, latestRubricId, payloadHash, ACTOR_HR],
+    )
+    const decided = await decideRubricApprovalInTransaction(
+      client,
+      CFG,
+      { approval_id: approvalId, decision: 'APPROVE' },
+      ACTOR_HR,
+    )
+    assert.equal(decided.status, 'APPROVED')
+    assert.equal(decided.resource_id, latestRubricId)
+    // 批准工具在 decide 成功后会把 current 指针指向该版本（见 job-rubric-approve.ts 规则 3）；
+    // 本用例在同一个回滚事务内复现这一步，仅用于验证读模型在“已批准”状态下的投影。
+    await client.query('update recruitment.job set current_rubric_version_id = $2 where id = $1', [job.jobId, latestRubricId])
+
+    const approved = await readJobDetail({ database: CFG, client }, job.jobId)
+    assert.equal(approved.job.rubric?.rubric_version_id, latestRubricId)
+    assert.equal(approved.job.rubric?.approved, true)
+    assert.equal(approved.rubric?.rubric_version_id, latestRubricId)
+  })
+})
+
 // =====================================================================
 //  7) 无 rubric 的 DRAFT 岗位 → rubric=null + JOB_DRAFT（不编造维度）
 // =====================================================================
-
 test('DRAFT 岗位：rubric=null、applications=[]、next_step=JOB_DRAFT', async () => {
   await inRolledBackTx(POOL, async (client) => {
     const job = await seedJob(client, { status: 'DRAFT', withRubric: false })
