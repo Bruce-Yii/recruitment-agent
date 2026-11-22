@@ -1,0 +1,98 @@
+{
+  "scenarios": {
+    "newJobAutoScreening": {
+      "title": "Wave2闭环岗位-886468",
+      "jobStatus": "OPEN",
+      "draftNotice": true,
+      "criteriaBefore": 2,
+      "criteriaAfter": 3,
+      "openDefault": true,
+      "approveShown": true,
+      "approvedUi": true,
+      "rubricApproved": true,
+      "uploadBtn": true,
+      "setFile": true,
+      "appId": "9025bbd1-71de-458b-8a47-388e4efdd103",
+      "autoTaskReady": true,
+      "decisionBefore": 0,
+      "decisionAfter": 0,
+      "autoVisible": true,
+      "autoText": "自动初筛建议（上传简历后自动生成）\n建议人工复核\n3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_2doh_3:NEEDS_JUDGMENT）\n这是只读评估给出的建议，不是录用决定；请由招聘团队成员确认。\nwork_history_present三态：presentSATISFIED\nwork_experience 已读出（state=present）\ncore_fitNEEDS_JUDGMENT\n这条要求机器判不了（第 2 条），需要人回答 rubric 里的原问句\ncustom_2doh_3NEEDS_JUDGMENT\n这条要求机器判不了（第 3 条），需要人回答 rubric 里的原问句",
+      "notGate": true
+    },
+    "transcriptAutoDraft": {
+      "importBtn": true,
+      "modalReady": true,
+      "importDone": true,
+      "transcriptModalText": "",
+      "appForTranscript": "11111111-1111-4111-8111-000000000701",
+      "interviewId": "11111111-1111-4111-8111-000000000802",
+      "interviewerActor": "11111111-1111-4111-8111-000000000104",
+      "draftRow": "11111111-1111-4111-8111-000000000104|11111111-1111-4111-8111-000000000802|{\"note\": \"以下为基于面试转写生成的参考草稿，请面试官核对并自行决定评价\\n以下逐项均为待核对状态，请对照本场面试转写自行判断是否采纳或修改。\\n待核对维度（3）：简历中存在可分割的工作经历条目（work_exists）、简历中存在可分割的教育经历条目（edu_exists）、有带团队经验（team_lead）\", \"assessments\": {\"team_lead\": \"NOT_OBSERVED\", \"edu_exists\": \"NOT_OBSERVED\", \"work_exists\": \"NOT_OB",
+      "scorecardBefore": 0,
+      "scorecardAfter": 0,
+      "interviewerVisible": true,
+      "interviewerDraft": "以下为基于面试转写生成的参考草稿，请面试官核对并自行决定评价\n以下逐项均为待核对状态，请对照本场面试转写自行判断是否采纳或修改。\n待核对维度（3）：简历中存在可分割的工作经历条目（work_exists）、简历中存在可分割的教育经历条目（edu_exists）、有带团队经验（team_lead）",
+      "draftRead": true
+    }
+  },
+  "checks": [
+    {
+      "name": "new_job_draft_open_auto_screening",
+      "ok": true,
+      "detail": {
+        "title": "Wave2闭环岗位-886468",
+        "jobStatus": "OPEN",
+        "draftNotice": true,
+        "criteriaBefore": 2,
+        "criteriaAfter": 3,
+        "openDefault": true,
+        "approveShown": true,
+        "approvedUi": true,
+        "rubricApproved": true,
+        "uploadBtn": true,
+        "setFile": true,
+        "appId": "9025bbd1-71de-458b-8a47-388e4efdd103",
+        "autoTaskReady": true,
+        "decisionBefore": 0,
+        "decisionAfter": 0,
+        "autoVisible": true,
+        "autoText": "自动初筛建议（上传简历后自动生成）\n建议人工复核\n3 条硬性条件：1 满足 / 0 反证 / 2 不确定；0 条排除条件命中 → 需人工复核（core_fit:NEEDS_JUDGMENT, custom_2doh_3:NEEDS_JUDGMENT）\n这是只读评估给出的建议，不是录用决定；请由招聘团队成员确认。\nwork_history_present三态：presentSATISFIED\nwork_experience 已读出（state=present）\ncore_fitNEEDS_JUDGMENT\n这条要求机器判不了（第 2 条），需要人回答 rubric 里的原问句\ncustom_2doh_3NEEDS_JUDGMENT\n这条要求机器判不了（第 3 条），需要人回答 rubric 里的原问句",
+        "notGate": true
+      }
+    },
+    {
+      "name": "transcript_auto_draft_visible",
+      "ok": true,
+      "detail": {
+        "importBtn": true,
+        "modalReady": true,
+        "importDone": true,
+        "transcriptModalText": "",
+        "appForTranscript": "11111111-1111-4111-8111-000000000701",
+        "interviewId": "11111111-1111-4111-8111-000000000802",
+        "interviewerActor": "11111111-1111-4111-8111-000000000104",
+        "draftRow": "11111111-1111-4111-8111-000000000104|11111111-1111-4111-8111-000000000802|{\"note\": \"以下为基于面试转写生成的参考草稿，请面试官核对并自行决定评价\\n以下逐项均为待核对状态，请对照本场面试转写自行判断是否采纳或修改。\\n待核对维度（3）：简历中存在可分割的工作经历条目（work_exists）、简历中存在可分割的教育经历条目（edu_exists）、有带团队经验（team_lead）\", \"assessments\": {\"team_lead\": \"NOT_OBSERVED\", \"edu_exists\": \"NOT_OBSERVED\", \"work_exists\": \"NOT_OB",
+        "scorecardBefore": 0,
+        "scorecardAfter": 0,
+        "interviewerVisible": true,
+        "interviewerDraft": "以下为基于面试转写生成的参考草稿，请面试官核对并自行决定评价\n以下逐项均为待核对状态，请对照本场面试转写自行判断是否采纳或修改。\n待核对维度（3）：简历中存在可分割的工作经历条目（work_exists）、简历中存在可分割的教育经历条目（edu_exists）、有带团队经验（team_lead）",
+        "draftRead": true
+      }
+    }
+  ],
+  "pass": true,
+  "bindingDebug": {
+    "meetingRun": {
+      "stdout": "05279b3b-54fe-438c-a005-40dacf9ac5fb",
+      "stderr": "",
+      "status": 0
+    },
+    "meetingId": "05279b3b-54fe-438c-a005-40dacf9ac5fb",
+    "bindingRun": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0
+    }
+  }
+}

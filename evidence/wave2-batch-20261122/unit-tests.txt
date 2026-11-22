@@ -1,0 +1,8 @@
+# Wave2 新增/相关测试
+
+- #33 `test/unit/scorecard-draft-gen.test.ts`：12/12 PASS
+  - 参考草稿首行/无「证据」、三态待核对、已有草稿不覆盖、已提交/豁免跳过、失败 savepoint 回滚不抛、正式 scorecard 零写。
+- #34 `test/unit/criterion-override-http.test.ts` + `test/integration/criterion-override-http.test.ts`：14/14 PASS
+  - 合法纠偏+独立读回+审计事件、幂等、缺原话/非 rubric/越权/伪造 hash/未绑定/同源/未知键 fail-closed 零写入。
+- #32 `test/unit/recruiting-actions.test.ts`：44/44 PASS（含 department_context string→object、object 直传）。
+- 全量 unit：2090 / 2086 pass / 0 fail / 4 既有 skip。

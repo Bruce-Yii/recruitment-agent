@@ -1,0 +1,18 @@
+# Wave2 门禁（#33 0041f40 + #34 5c64c49 + #32 0acb43e）
+
+| 门 | 结果 |
+|---|---|
+| `npx tsc --noEmit` | PASS（0） |
+| `npx tsdown` | PASS（双入口，lib/app.js 1.42MB） |
+| `server-typecheck` | PASS（0/0） |
+| `runtime-budget` | PASS（5051/5051） |
+| `entry-reachability` | PASS（criterion override 临时白名单；前端 G-08 按钮挂载后删除） |
+| `client-contract-check` | PASS（0 违规） |
+| `term-lint` | PASS（0 违规） |
+| 全量 unit | 2090 tests / 2086 pass / 0 fail / 4 既有 skip |
+| `run-v4.mjs --fresh` | 15/15 PASS，审计 hard 0 |
+
+## 1440
+
+- ① 建岗 AI 草案 + 自定义维度 + OPEN + 批准 + 上传自动初筛：PASS；decision 0→0；自动初筛不是 GATE_JOB_NOT_OPEN。
+- ② 转写导入 → 面试官自动草稿：PASS；正式 scorecard 0→0。
