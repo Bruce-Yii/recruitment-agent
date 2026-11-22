@@ -1,3 +1,4 @@
+successfully downloaded text file (SHA: 1ce5427b79a7d7ebb61c78b98fa825f5da588bb6)
 # 17 · 决策台账（唯一权威源）
 
 **来源**：旧仓 `work/control/DECISIONS-2026-11-12.md`（**旧仓**，冻结只读；2026-11-14 随旧工作区移到 `D:\12412\dsh工作区\archive\recruitment-os-legacy-work\control\`）。下面是该文件 **530 行的逐字副本**，未改一字。
@@ -2043,3 +2044,26 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
 - **D-182（2026-11-21，8 条低频无界面写能力本期延后，现已补齐入 `feat/unified-document-intake`）**
   **范围**：`compound`、`config`×4（`config/role`、`config/team`、`config/pipeline`、`settings/write`）、`email/authorize`、`email/send-authorized`、`feishu/import`。
   **裁决**：上述 8 条低频/高级配置与授权能力本期不上界面，延后至后续迭代；不阻塞当前 v4 封版与合入 `main`。
+
+- **D-184（2026-11-22，总控；对话区行内写动作确认卡 `propose_write` 落地，保持对话侧 0 写红线）**
+  **来源**：PR #16（`e7d5092`，`design/v4/chat-inline-confirm-spec.md`）、PR #19（`6d5b139`，服务端 `propose_write`）、PR #18（`42062cb`，前端 `InlineConfirmCard.tsx`）；Issue #17 关闭。
+  **裁决与实现**：扩展单轨 SSE `ui_action` 支持 `propose_write`，对话侧仍严格保持 **0 写工具**；当用户在对话中表达写意图时，模型仅产出结构化提议卡，由真人在卡片内点击确认后调用既有前端确定性写链（复用 `actions.ts` builders 与 session header），服务端落库并返回回执。
+
+- **D-185（2026-11-22，总控；Wave 1–2.5 事件驱动备餐与只读智能闭环合入 `main`）**
+  **来源**：`docs/39-recruiting-lifecycle-and-competitive-benchmark.md`（PR #21）、`docs/40-lifecycle-gap-roadmap.md`（PR #22 / #43）；Wave 1 PR #20/#26/#27/#28/#29；Wave 2 PR #32/#33/#34；Wave 2.5 PR #37/#38/#40/#41/#42；相关 Issue #23–#25、#30–#31、#35–#36 全部验收关闭。
+  **落地能力**：
+  ① **Wave 1**：待审 Rubric 读模型、岗位审批/关闭与初筛执行入口、入库自动初筛持久化到 `business_task`（`canvas-auto-screening`）、邮箱 IMAP 自动轮询接线；
+  ② **Wave 2**：建岗草案与自定义 Rubric（默认 `OPEN`）、转写导入自动生成面评草稿、初筛标准人工纠偏服务端（`POST /recruitment/api/action/criterion/override`）；
+  ③ **Wave 2.5**：人工纠偏前端挂载与 2–3 人对比弹窗（`entry-reachability WHITELIST=[]`）、跨岗历史人才再发现（`recruitment_talent_rediscovery`，严格只列历史事实、不评分不排名）、同人重复投递提示（脱敏+中文原因）、路由前缀尾斜杠与 session header 联调修复。
+  **验证**：1440 真机验收与 15 步回归全部 PASS（`evidence/wave25-ui-mount-20261122`，audit hard 0）。
+
+- **D-186（2026-11-22，总控；Wave 3 产品闭环 G-09 / G-14 / G-15 验收通过并合入 `main@7695243`）**
+  **来源**：规格 PR #44（`c7cf0c9`，`design/v4/wave3-product-loop-spec.md`）；服务端 PR #49（`e6162ad`，G-14 原件逐页 PNG）、PR #50（`e4ea96c`，G-15 人话追责时间线）、PR #51（`87f38a7`，G-09 候选人自助预约 + 迁移 `0024_booking_invite.sql`）；前端 PR #48（`7695243`）；Issue #45–#47 关闭。
+  **联调验收**：四条 PR 按 #49→#50→#51→#48 顺序合入；真机 1440 验证真 PDF 逐页渲染、纠偏后人话时间线（零 UUID / 零完整 sha256 / 零「证据」）、自助预约公开页 CSP 隔离与正反例（非法 `slot_index` 400 零写入、重提 409、真库 `interview 2→3`）；底线门禁全绿（unit 2148/2144 pass/0 fail/4 skip，24 迁移 + `db/verify.sql` PASS，15 步 15/15 hard 0；核查材料 `evidence/wave3-batch-20261122`）。遗留小债（`page_image.py` 直接返回 `page_count` 与 4 个 skip 审计、390px 手机端预约页验证）已单独立项交本地执行。
+
+- **D-187（2026-11-22，总控；客户切换路线、结构化链路架构、模型无关 Eval 体系与 `#/settings` 渐进式披露定稿）**
+  **来源**：产品负责人 2026-11-22 拍板；定稿文档 `docs/41-structured-architecture-and-eval-framework.md` 与 `design/v4/settings-progressive-disclosure-spec.md`。
+  **裁决**：
+  ① **客户切换路线**：坚持“独立 PG17 五事实真相库 + 独立产品页 `/recruitment/app` + 通用连接器”；无 ATS 团队直接替换上车，已有 ATS（飞书招聘/Moka/北森等）团队走**分阶段并行适配**（单岗零改造切入 → CSV/Webhook 轻同步回写 → 自然替换或稳态共存），既不强求第一天重迁移，也不做寄生式外挂；
+  ② **模型无关交付与 Eval 体系**：产品交付与具体模型解耦；建立 4 层模型无关 Agent Eval 评测体系（代码硬闸门 × 轨迹不变量 × Rubric LLM Judge × `pass^k` 与延迟成本帕累托）+ 18 例 S6–S10 黄金难例矩阵，围绕完整链路（Harness + Skill + Tools + Model）做回归门禁；
+  ③ **设置页（`#/settings`）规范**：单层 4-Tab 导航（连接接入 / 自动化与提醒 / 组织与招聘规范 / 行为规范与评测）+ L1→L2→L3 渐进式披露；面评催交策略、自动初筛/面评草稿开关及 D-182 延后的 `config/*` 组织规范统一收口至设置页。
