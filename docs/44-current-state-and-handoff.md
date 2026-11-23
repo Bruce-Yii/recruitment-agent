@@ -3,6 +3,7 @@
 > **本文件回答三件事**：现在代码在哪、系统由什么组成、接手的人第一步做什么。
 > **权威顺序不变**：产品与验收口径 = `docs/24`；裁决 = `docs/17`；本文件只是**当前事实快照**。快照会过期，引用前必须现场重跑命令。
 > **基线**：代码基线 `54b83ad`（PR #93、#94、#95 已合入；Issue #91/#92 仍 OPEN）。docs 刷新提交可能位于该代码基线之上；当前工作树首次阅读时先执行 `git rev-parse --short HEAD` 与 `git status --porcelain`。
+> **2026-11-24 修复批次（D-195）**：#92 三个 P1 已在本地分支修复并经未参与实现者独立终验 **PASS**（P0=0 / P1=0 / P2=2 已声明不阻断），集成分支 `fix/issue92-integration@f052502`；**未合并 main、未 push、Issue #91/#92 仍 OPEN**，等用户授权。
 
 ---
 
@@ -10,8 +11,8 @@
 
 - 产品主链、Wave 3/5 能力、G-18 配置、生产登录、CSV/Webhook、部署 kit 已合入 main。
 - **Issue #91 复验 PASS**：PR #93 修复项已在 `54b83ad` 上独立重跑；`tsc=0`、全量 3097/3095/0/2、15 步 15/15 hard 0、角色软停用 `is_active=false` + version+1、G3/auth CLI 均通过。Issue 仍 OPEN，等待总控关闭。
-- **Issue #92 复验 CONDITIONAL_PASS**：首轮 P0 已修复并独立复核；保留 3 个 P1（红队新变体、适配器未接 CLI runner、G3 两条护栏恒 null）。Issue 仍 OPEN，不能宣称 PASS/关闭。
-- 当前可声称：修复候选已通过独立复验（#91 PASS、#92 CONDITIONAL_PASS）；不可声称：Eval V2 完全通过、适配器已全量接线、G3 盲审/忠实度已真实接入。
+- **Issue #92 三个 P1 已修复并独立终验 PASS**（D-195）：红队语义不变量、适配器接 43 例 CLI（real_adapter + NO_REAL_SOURCE 诚实口径）、G3 忠实度接真实确定性源并移除盲审假护栏（3 对）；P2=2 已声明不阻断（委婉祈使/多义"继续"）。修复在本地分支与集成分支 `fix/issue92-integration@f052502`，**未合并 main**；Issue 仍 OPEN，等授权关闭。
+- 当前可声称：#91 无阻断通过复验；#92 三 P1 修复经独立终验 PASS（P2 已声明不阻断）。不可声称：修复已合入 main/已 push、#91/#92 已关闭、G3 第 4 对盲审护栏已接入。
 
 ---
 
@@ -82,12 +83,12 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 ### 3.4 Eval V2 的当前现实
 
 - 规格：43 例 corpus，L1/L2/L3 分层，G0/G1/G2/G3 分档，线上 G3 遥测。
-- 审计事实（Issue #92，基于 `ac4a695`）：
-  - 59 个 L1/L2 判分器中 **57/59 在空 payload 上直接 PASS**；
-  - 端到端真实生产接线 **0/59**；G0 只执行 11/43 例且大量使用静态 stub；
-  - 7 个 L3 判分器只有声明、无实现；32/43 例无 runner；
-  - 红队 27 检查 **17 项可绕过**。
-- PR #93 修 G3 吞错与 RESCHEDULED 漏计；PR #95 补 3 个真实生产适配器；PR #94 合入判分器/L3/runner 根修；**但尚未在 #94 后重跑独立审计**，不能宣称 Eval V2 已完成。
+- 2026-11-24 D-195 后现状（本地集成分支，未合并 main）：
+  - 66 个判分器（37 L1 + 22 L2 + 7 L3）全部注册，`{payload:{}}` 空 payload **0/66 pass**；L3 未校准/缺裁判/位置互换 fail-closed；
+  - `gate:'ALL'` 跑 43 例；**真实适配器已接 CLI**：`run-eval-v2.mjs` real 模式 `real_adapter` 3 真源（P1-01/P6-01/P6-05）+ 40 `NO_REAL_SOURCE`（不计 PASS），capture sha256/来源校验 + 真 PG fail-closed；
+  - 红队：14 个复验变体 + 原 17 变体全拦，合法对照 0 过拦；确定性判分器保留 2 条 P2（委婉祈使/多义"继续"，已声明不阻断）；
+  - G3：3 对护栏；忠实度接真实确定性引用锚定；盲审假护栏移除（待授权新增工作流）。
+- 旧审计事实（`ac4a695`，仅作历史）：57/59 空 payload PASS、端到端接线 0/59、G0 仅 11/43、7 L3 无实现、红队 17/27 绕过；均由 #93/#94/#95 + D-195 修复。
 
 ---
 
@@ -96,6 +97,7 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 ### 4.1 Git
 
 - 当前代码基线：`54b83ad`（PR #93、#94、#95 已合入；docs 刷新可能再叠加文档提交）。
+- **2026-11-24 修复批次（未合并）**：`fix/issue92-p1a-redteam` / `fix/issue92-p1b-adapters` / `fix/issue92-p1c-g3`；集成分支 `fix/issue92-integration@f052502`（三 lane 合并，经独立终验 PASS）。均未 push、未合并 main。
 - 远端：`https://github.com/Bruce-Yii/recruitment-agent.git`；`gh` 已认证。
 - 最近合并：#93 修复 `SettingsView` 重复 `record_version`、`config-role.is_active`、G3 吞错、RESCHEDULED 计数、minute-rebind 5432 硬编码；#95 新增 `test/eval/v2-real-adapters.ts`；#94 重写 `v2-graders-l1/l2`、新增 `v2-graders-l3.ts`、`v2-g0-runner`、`corpus-inventory`/`evaluation-card`/`v2-l3-calibration`。
 - **#91 和 #92 仍 OPEN**；#94 已合入但**未独立复验**，不能当作已交付。
@@ -118,6 +120,7 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 
 - Issue #91：`origin/evidence/issue91-20261124`（`3d3f442`），含 1440 截图、15 步、全量结果与 psql 读回；其中 #91 旧 P1 失败是**修复前**证据。
 - 历史 Wave 5：#72/#73 的产物已在 main；旧 `evidence/wave5-20261122` 只作历史。
+- #92 修复批次（D-195）：实现与终验证据在本地 worktree（`D:\12412\DshWorktrees\recruitment-agent\{fix92-redteam,fix92-adapters,fix92-g3,verify92-final}\work\**`，机器本地、不入库；终验报告 `verify92-final/work/review92-final/REPORT.md`）；需要长期留档时另建 `evidence/issue92-p1-fix-20261124` 分支。
 - 证据分支不合并 main；新的验收应新建日期分支。
 
 ---
@@ -126,16 +129,16 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 
 ### P0 · 本轮复验确认已无 P0
 
-首轮 P0 已由 #93/#94/#95 修复并在 `54b83ad` 独立复验：
+首轮 P0 已由 #93/#94/#95 修复并在 `54b83ad` 独立复验；2026-11-24 三 P1 修复后独立终验 P0=0：
 - 66 判分器空 payload `{payload:{}}` **0/66 pass**；66/66 manifest 注册；7 个 L3 未校准/缺裁判/位置互换 fail-closed；
 - 43 例 ALL runner 已跑；G3 SQL 42703/42P01/非法 UUID → `degraded:true` + 4/4 `ERROR`，真库 CANCELLED+RESCHEDULED 8/8 一致；
 - F5 非标 PDF 6/6、F6 L3 9/9；`minute-rebind` 隔离端口已修。
 
-### P1 · 复验保留/下一迭代
+### P1 · 复验保留（1–3 已于 2026-11-24 修复，见 §5.5）
 
-1. **红队词表新变体**：首轮 17 个变体仍全拦，但新增 14 个变体可穿透单判分器（F1/F2/F3/F4 词表覆盖问题）；需扩充语义不变量，非只加关键词。
-2. **适配器未接 CLI runner**：`v2-real-adapters.ts` 仅被自身单测导入，未接入 `run-eval.mjs`/43 例 CLI；card 已诚实标 `executionMode`，但仍不是端到端真实运行。
-3. **G3 假护栏**：盲审/忠实度两条护栏仍恒 `null`（note 已诚实标注空源）；需接 L3 抽样源，不能宣称成对护栏完整。
+1. ~~红队词表新变体~~ → **已修（D-195）**：语义不变量 + 多轮类级硬化；14/14 + 原 17/17 全拦、合法对照 0 过拦；残留 2 条 P2（委婉祈使/多义"继续"，已声明不阻断）。
+2. ~~适配器未接 CLI runner~~ → **已修（D-195）**：`run-eval-v2.mjs` 43 例 CLI + capture 完整性/来源校验 + 真 PG；`real_adapter` 3 真源 + 40 `NO_REAL_SOURCE` 不计 PASS。
+3. ~~G3 假护栏~~ → **已修（D-195 口径 B）**：忠实度接真实确定性引用锚定；盲审假护栏移除（3 对）；新增抽检工作流待用户授权。
 4. 认证与租户：production gate 覆盖范围、cookie `Secure`/轮换、演示账号替换、跨租户边界。
 5. Webhook/CSV：SSRF 允许列表、secret 生命周期、HMAC 派生文档、PII/注入负例。
 6. 测试基础设施：全量结果必须记录环境，不得把环境失败当产品失败或反之。
@@ -155,6 +158,15 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 > - **Lane A #92**：`CONDITIONAL_PASS`。隔离 PG17（49353）38/38 eval tests、全量 3097/3095/0/2；66/66 manifest、空 payload 0/66、L3 fail-closed、G3 ERROR + SQL 8/8；剩余 3 P1（红队新变体、适配器未接 CLI、G3 两护栏 null）。报告：https://github.com/Bruce-Yii/recruitment-agent/issues/92#issuecomment-7110894849
 > - **Lane B #91**：`PASS`。干净 DB（49354）全量 3097/3095/0/2、15 步 15/15 hard 0、角色软停用 `is_active=false` + version 2、G3/auth CLI 全过。报告：https://github.com/Bruce-Yii/recruitment-agent/issues/91#issuecomment-7111092251
 > - 两条 Issue 仍 OPEN；下一步先修 #92 三个 P1，再由未参与实现者做最终复核；不自行关闭/合并。
+
+### 5.5 当前修复批次（2026-11-24，已完成，未合并）
+
+> 裁决 `docs/17` D-195；三条 lane 与独立终验均未改 main、未合并、未 push。
+> - **P1-A**（`fix/issue92-p1a-redteam`）：语义不变量 + H2–H6 类级硬化；集成分支 eval 75 tests / 71 pass / 0 fail / 4 env-gated skip；空 payload 0/66；合法对照 0 过拦；P2 残留 2 条（`麻烦把系统设计这块再过一遍`、`看样子难以继续`）。
+> - **P1-B**（`fix/issue92-p1b-adapters`）：`run-eval-v2.mjs` contract 43 例 EXIT 0；real `real_adapter` 3 真源 + 40 `NO_REAL_SOURCE`、`passRate=0.3333` 仅覆盖真实执行；篡改/缺 capture/缺 PG/来源不符 exit 2；真 PG 独立 psql 对照一致；口令/库名 P2 已关闭。
+> - **P1-C**（`fix/issue92-p1c-g3`）：G3 3 对护栏；忠实度真实确定性源（真实库 0.6667 / 篡改 0.5，与独立 SQL 一致）；零引用 null + 诚实 note；degraded 3/3 ERROR；盲审待授权。
+> - **独立终验**：`verify-92-final`（未参与实现）三轮 + 单点确认，最终 **PASS（P0=0 / P1=0 / P2=2 已声明不阻断）**；报告 `verify92-final/work/review92-final/REPORT.md`（机器本地）。
+> - **状态**：集成分支 `fix/issue92-integration@f052502`；未合并 main、未关闭 #91/#92，等用户授权。
 
 ---
 
@@ -197,6 +209,12 @@ node scripts/entry-reachability.mjs   # WHITELIST=[]
 
 # 全量（干净库）
 node test/run-all.mjs --test-concurrency=1
+
+# Eval V2 43 例 CLI（D-195）
+cd dsh\dsh-recruitment
+node test/eval/run-eval-v2.mjs --mode=contract --gate=ALL
+# real 模式必须给 capture + 真 PG（口令 env 注入；capture sha256/来源不符 → exit 2）
+# node test/eval/run-eval-v2.mjs --mode=real --gate=ALL --capture=<dir> --pg-db=<db>
 
 # 15 步 preview（独立端口/临时环境；不要打 49351）
 node work/d5/fullpage/run-v4.mjs --fresh --port <49347-49352>
@@ -262,13 +280,16 @@ gh pr view 94
 6. 不要以空 payload PASS 判断分器已接线；检查 payload 来源与真实入口。
 7. 不要用实现 lane 的截图替代独立验收；不要自审。
 8. 不要把 `docs/25` 的 2026-11-17 状态、`docs/40` 的旧基线照抄进新裁决。
+9. 不要把 `work/` 里的 lane 证据当长期证据（机器本地、不入库）；长期留档另建 evidence 分支。
+10. 不要把确定性 L1 判分器当语义完备：2 条 P2（委婉祈使/多义"继续"）是明确口径，不得用"全部通过"表述，也不得用无限扩短语表冒充收口。
+11. 不要在 main 工作区跑 `tsdown`/Host 后把生成的 `lib/app.js` 留在工作树（本次已还原）；UI E2E 前重建、做完还原。
 
 ---
 
 ## 10. 文档地图
 
 - 产品/验收：`docs/24`、`docs/26`
-- 裁决：`docs/17`（最新 D-194）
+- 裁决：`docs/17`（最新 D-195）
 - 交接：`docs/25`（历史叙事）+ 本文件（当前快照）
 - 路线：`docs/40`、`docs/39`
 - 架构/评测：`docs/41`（架构设计）、`docs/42`（评测规格）

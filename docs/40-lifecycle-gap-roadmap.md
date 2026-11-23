@@ -74,8 +74,8 @@
 ## 五、2026-11-24 审计收口状态（最新，优先于上文清账）
 
 - **基线**：代码基线 `main@54b83ad`（#93/#94/#95 已合并；Issue #91/#92 仍 OPEN）。
-- **Issue #91**：复验 **PASS**。干净 DB 全量 3097/3095/0/2；`tsc=0`、tsdown、15 步 15/15 hard 0；角色创建 v1 → 软停用 `is_active=false` + `record_version=2`，无 400；G3 4 对护栏、`auth-admin` 建号/生产登录均通过。报告：Issue #91 comment 7111092251。
-- **Issue #92**：复验 **CONDITIONAL_PASS**。首轮 P0 已修复：66/66 manifest、`{payload:{}}` 0/66 pass、L3 fail-closed、G3 `degraded/ERROR` + SQL 真库 8/8、F5/F6 通过、evaluation-card 零样本 `passRate:null`、minute-rebind 隔离端口。保留 3 个 P1：红队新变体 14 项穿透、`v2-real-adapters` 未接 CLI runner、G3 盲审/忠实度两护栏仍恒 null。报告：Issue #92 comment 7110894849。
-- **当前可声称**：#91 无阻断通过复验；#92 无 P0、主修复通过独立复验。
-- **当前不可声称**：Eval V2 完全 PASS；适配器已全量接线；G3 成对护栏完整；#91/#92 已关闭。
-- **下一优先级**：修 #92 三个 P1 → 另派未参与实现者最终复核 → 决定 #92 结论/关闭 #91/#92；不自行合并。
+- **Issue #91**：复验 **PASS**。干净 DB 全量 3097/3095/0/2；`tsc=0`、tsdown、15 步 15/15 hard 0；角色创建 v1 → 软停用 `is_active=false` + `record_version=2`，无 400；G3 4 对护栏、`auth-admin` 建号/生产登录均通过。报告：Issue #91 comment 7111092251。#91 结论不变，建议用户确认后关闭。
+- **Issue #92**：复验 CONDITIONAL_PASS → **三个 P1 已修复并独立终验 PASS**（本地分支，`docs/17` D-195）：① 红队语义不变量（14 + 原 17 全拦、空 payload 0/66、合法对照 0 过拦）；② `v2-real-adapters` 三适配器接 43 例 CLI（real_adapter 3 真源 + 40 NO_REAL_SOURCE、capture 完整性与来源 fail-closed、真连 PG）；③ G3 忠实度接真实确定性源、移除盲审假护栏（3 对）。独立终验 P0=0 / P1=0 / P2=2（已声明不阻断）。报告：`verify92-final/work/review92-final/REPORT.md`（机器本地）；Issue 仍 OPEN，等授权关闭。
+- **当前可声称**：三个 P1 修复经未参与实现者独立终验 PASS（P2 已声明不阻断）；#91 无阻断通过复验。
+- **当前不可声称**：修复已合入 main/已 push；#91/#92 已关闭；G3 第 4 对盲审护栏已真实接入（未授权，不做）。
+- **下一优先级**：用户授权后合并集成分支 → 关闭 #91/#92 → 再排下一批（认证/Webhook 等 P1 与 UI 债）。
