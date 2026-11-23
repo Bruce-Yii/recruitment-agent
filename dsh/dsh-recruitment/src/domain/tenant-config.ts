@@ -2052,7 +2052,14 @@ export async function getPipeline(
 // =====================================================================
 
 /** 可写设置的 config_key 封闭集（外部连接状态只读，不在此列）。 */
-export const WORKSPACE_SETTING_KEYS = ['agent_silent_delegation', 'sla_thresholds'] as const
+export const WORKSPACE_SETTING_KEYS = [
+  'agent_silent_delegation',
+  'sla_thresholds',
+  'auto_screening_enabled',
+  'auto_scorecard_draft_enabled',
+  'scorecard_reminder_policy',
+  'booking_invite_defaults',
+] as const
 /** 一个可写设置键。 */
 export type WorkspaceSettingKey = (typeof WORKSPACE_SETTING_KEYS)[number]
 
@@ -2063,6 +2070,48 @@ export interface SlaThresholds {
   readonly screening_hours: number
   readonly scorecard_hours: number
 }
+
+/** 面评催交策略的封闭取值。 */
+export const REMINDER_OVERDUE_HOURS = [24, 48, 72] as const
+export const REMINDER_MAX_MIN = 1
+export const REMINDER_MAX_MAX = 5
+export const REMINDER_CHANNELS = ['workbench', 'feishu', 'email'] as const
+
+/** 免打扰时段（`HH:MM` 24 小时制，start != end）。 */
+export interface QuietHours {
+  readonly start: string
+  readonly end: string
+}
+
+/** 面评催交策略（校验后的形状）。 */
+export interface ScorecardReminderPolicy {
+  readonly enabled: boolean
+  readonly overdue_hours: (typeof REMINDER_OVERDUE_HOURS)[number]
+  readonly max_reminders: number
+  readonly channel: (typeof REMINDER_CHANNELS)[number]
+  readonly quiet_hours?: QuietHours
+}
+
+/** 候选人自助预约默认参数（校验后的形状）。 */
+export interface BookingInviteDefaults {
+  readonly expires_hours: number
+  readonly default_duration_min: 30 | 45 | 60 | 90
+}
+
+/** 各设置键的服务端诚实缺省（GET 响应用 defaults_applied 标注哪些键走了缺省）。 */
+export const WORKSPACE_SETTING_DEFAULTS = {
+  agent_silent_delegation: false,
+  sla_thresholds: { screening_hours: 24, scorecard_hours: 48 },
+  auto_screening_enabled: true,
+  auto_scorecard_draft_enabled: true,
+  scorecard_reminder_policy: {
+    enabled: true,
+    overdue_hours: 24,
+    max_reminders: 2,
+    channel: 'workbench',
+  },
+  booking_invite_defaults: { expires_hours: 72, default_duration_min: 60 },
+} as const
 
 /** SLA 小时数闭区间（含端点）：1 小时 .. 720 小时（30 天）。 */
 export const SLA_HOURS_MIN = 1
@@ -2143,19 +2192,154 @@ export function validateSlaThresholds(value: unknown): SlaThresholds {
 }
 
 /**
+ * 校验一个开关型设置（严格布尔；未知字段不适用）。
+ * @param value - 调用方给的值。
+ * @param key - 设置键（拼进 reason_code）。
+ */
+function validateBooleanSetting(value: unknown, key: 'auto_screening_enabled' | 'auto_scorecard_draft_enabled'): boolean {
+  if (typeof value !== 'boolean') {
+    throw configError('INVALID_ARGS', `${key.toUpperCase()}_NOT_BOOLEAN`,
+      `${key} 必须是布尔值（true / false）。`, { got: typeof value })
+  }
+  return value
+}
+
+/** `HH:MM` 24 小时制文本（00:00..23:59）。 */
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/
+
+/**
+ * 校验免打扰时段（可选）：必须是 `{start:'HH:MM', end:'HH:MM'}`，两端不等，拒绝未知字段。
+ */
+function validateQuietHours(value: unknown): QuietHours {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw configError('INVALID_ARGS', 'QUIET_HOURS_NOT_OBJECT', 'quiet_hours 必须是对象。')
+  }
+  const raw = value as Record<string, unknown>
+  const unknown = Object.keys(raw).filter((k) => k !== 'start' && k !== 'end').sort()
+  if (unknown.length > 0) {
+    throw configError('INVALID_ARGS', 'QUIET_HOURS_UNKNOWN_FIELD',
+      `quiet_hours 不接受未知字段：${unknown.join(', ')}。`, { unknown })
+  }
+  const start = raw.start
+  const end = raw.end
+  if (typeof start !== 'string' || !HHMM_RE.test(start)) {
+    throw configError('INVALID_ARGS', 'QUIET_HOURS_START_INVALID',
+      'quiet_hours.start 必须是 HH:MM（24 小时制，00:00..23:59）。', { field: 'start' })
+  }
+  if (typeof end !== 'string' || !HHMM_RE.test(end)) {
+    throw configError('INVALID_ARGS', 'QUIET_HOURS_END_INVALID',
+      'quiet_hours.end 必须是 HH:MM（24 小时制，00:00..23:59）。', { field: 'end' })
+  }
+  if (start === end) {
+    throw configError('INVALID_ARGS', 'QUIET_HOURS_SAME_START_END', 'quiet_hours.start 与 end 不能相同。')
+  }
+  return { start, end }
+}
+
+/**
+ * 校验 `scorecard_reminder_policy`：
+ * `enabled` 布尔；`overdue_hours` ∈ {24,48,72}；`max_reminders` ∈ 1..5 整数；
+ * `channel` ∈ {workbench, feishu, email}；可选 `quiet_hours`；拒绝未知/缺失字段。
+ */
+export function validateScorecardReminderPolicy(value: unknown): ScorecardReminderPolicy {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw configError('INVALID_ARGS', 'SCORECARD_REMINDER_POLICY_NOT_OBJECT', 'scorecard_reminder_policy 必须是对象。')
+  }
+  const raw = value as Record<string, unknown>
+  const allowed = ['enabled', 'overdue_hours', 'max_reminders', 'channel', 'quiet_hours'] as const
+  const unknown = Object.keys(raw).filter((k) => !(allowed as readonly string[]).includes(k)).sort()
+  if (unknown.length > 0) {
+    throw configError('INVALID_ARGS', 'SCORECARD_REMINDER_POLICY_UNKNOWN_FIELD',
+      `scorecard_reminder_policy 不接受未知字段：${unknown.join(', ')}。`, { unknown })
+  }
+  const missing = allowed.slice(0, 4).filter((k) => !Object.hasOwn(raw, k))
+  if (missing.length > 0) {
+    throw configError('INVALID_ARGS', 'SCORECARD_REMINDER_POLICY_MISSING_FIELD',
+      `scorecard_reminder_policy 缺必填字段：${missing.join(', ')}。`, { missing: [...missing] })
+  }
+  if (typeof raw.enabled !== 'boolean') {
+    throw configError('INVALID_ARGS', 'REMINDER_ENABLED_NOT_BOOLEAN', 'enabled 必须是布尔值。')
+  }
+  if (typeof raw.overdue_hours !== 'number' || !(REMINDER_OVERDUE_HOURS as readonly number[]).includes(raw.overdue_hours)) {
+    throw configError('INVALID_ARGS', 'REMINDER_OVERDUE_HOURS_INVALID',
+      'overdue_hours 必须是 24 / 48 / 72 之一。', { allowed: [...REMINDER_OVERDUE_HOURS] })
+  }
+  if (typeof raw.max_reminders !== 'number' || !Number.isInteger(raw.max_reminders)
+    || raw.max_reminders < REMINDER_MAX_MIN || raw.max_reminders > REMINDER_MAX_MAX) {
+    throw configError('INVALID_ARGS', 'REMINDER_MAX_REMINDERS_OUT_OF_RANGE',
+      `max_reminders 必须是 ${REMINDER_MAX_MIN}..${REMINDER_MAX_MAX} 的整数。`,
+      { min: REMINDER_MAX_MIN, max: REMINDER_MAX_MAX })
+  }
+  if (typeof raw.channel !== 'string' || !(REMINDER_CHANNELS as readonly string[]).includes(raw.channel)) {
+    throw configError('INVALID_ARGS', 'REMINDER_CHANNEL_INVALID',
+      `channel 必须是 ${REMINDER_CHANNELS.join(' / ')} 之一。`, { allowed: [...REMINDER_CHANNELS] })
+  }
+  return {
+    enabled: raw.enabled,
+    overdue_hours: raw.overdue_hours as (typeof REMINDER_OVERDUE_HOURS)[number],
+    max_reminders: raw.max_reminders,
+    channel: raw.channel as (typeof REMINDER_CHANNELS)[number],
+    ...(raw.quiet_hours === undefined ? {} : { quiet_hours: validateQuietHours(raw.quiet_hours) }),
+  }
+}
+
+/**
+ * 校验 `booking_invite_defaults`：
+ * `expires_hours` 整数 24..168；`default_duration_min` ∈ {30,45,60,90}；拒绝未知/缺失字段。
+ */
+export function validateBookingInviteDefaults(value: unknown): BookingInviteDefaults {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw configError('INVALID_ARGS', 'BOOKING_INVITE_DEFAULTS_NOT_OBJECT', 'booking_invite_defaults 必须是对象。')
+  }
+  const raw = value as Record<string, unknown>
+  const unknown = Object.keys(raw).filter((k) => k !== 'expires_hours' && k !== 'default_duration_min').sort()
+  if (unknown.length > 0) {
+    throw configError('INVALID_ARGS', 'BOOKING_INVITE_DEFAULTS_UNKNOWN_FIELD',
+      `booking_invite_defaults 不接受未知字段：${unknown.join(', ')}。`, { unknown })
+  }
+  const missing = (['expires_hours', 'default_duration_min'] as const).filter((k) => !Object.hasOwn(raw, k))
+  if (missing.length > 0) {
+    throw configError('INVALID_ARGS', 'BOOKING_INVITE_DEFAULTS_MISSING_FIELD',
+      `booking_invite_defaults 缺必填字段：${missing.join(', ')}。`, { missing: [...missing] })
+  }
+  if (typeof raw.expires_hours !== 'number' || !Number.isInteger(raw.expires_hours)
+    || raw.expires_hours < 24 || raw.expires_hours > 168) {
+    throw configError('INVALID_ARGS', 'BOOKING_EXPIRES_HOURS_OUT_OF_RANGE',
+      'expires_hours 必须是 24..168 的整数（含端点）。', { min: 24, max: 168 })
+  }
+  if (typeof raw.default_duration_min !== 'number' || ![30, 45, 60, 90].includes(raw.default_duration_min)) {
+    throw configError('INVALID_ARGS', 'BOOKING_DURATION_INVALID', 'default_duration_min 必须是 30 / 45 / 60 / 90 之一。')
+  }
+  return {
+    expires_hours: raw.expires_hours,
+    default_duration_min: raw.default_duration_min as 30 | 45 | 60 | 90,
+  }
+}
+
+/**
  * 按 key 校验一条设置值（写入口的唯一校验入口）。
  * @param key - 可写设置键。
  * @param value - 调用方给的值。
  * @returns 归一化后的 payload 值（可直接塞进 business_config.payload 的 `value` 字段）。
  * @throws RecruitmentToolError - `INVALID_ARGS`（含未知 key）。
  */
-export function validateWorkspaceSettingValue(key: unknown, value: unknown): boolean | SlaThresholds {
+export function validateWorkspaceSettingValue(
+  key: unknown,
+  value: unknown,
+): boolean | SlaThresholds | ScorecardReminderPolicy | BookingInviteDefaults {
   if (!isWorkspaceSettingKey(key)) {
     throw configError('INVALID_ARGS', 'SETTING_KEY_UNKNOWN',
       `未知或只读的设置键：${typeof key === 'string' ? key : typeof key}（可写：${WORKSPACE_SETTING_KEYS.join(', ')}）。`,
       { allowed: [...WORKSPACE_SETTING_KEYS] })
   }
-  return key === 'agent_silent_delegation' ? validateSilentDelegation(value) : validateSlaThresholds(value)
+  switch (key) {
+    case 'agent_silent_delegation': return validateSilentDelegation(value)
+    case 'sla_thresholds': return validateSlaThresholds(value)
+    case 'auto_screening_enabled': return validateBooleanSetting(value, key)
+    case 'auto_scorecard_draft_enabled': return validateBooleanSetting(value, key)
+    case 'scorecard_reminder_policy': return validateScorecardReminderPolicy(value)
+    case 'booking_invite_defaults': return validateBookingInviteDefaults(value)
+  }
 }
 
 /**

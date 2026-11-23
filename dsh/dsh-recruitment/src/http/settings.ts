@@ -1,9 +1,10 @@
 // 工作空间设置的 HTTP 层（docs/34 §二.2-5；docs/17 D-112 配置产品化）。
 //
 // 自包含 `registerSettingsHttp(ctx, deps)`；**接线由 src/index.ts 的 lead 完成**，
-// 本文件不碰入口。两条 exact 路由：
+// 本文件不碰入口。三条 exact 路由：
 //   * GET  /recruitment/api/settings                —— 只读投影（前端设置页）
 //   * POST /recruitment/api/action/settings/write  —— Host Action（人在界面点）
+//   * GET  /recruitment/api/config/org              —— 组织配置只读视图（角色/团队/流程）
 //
 // 闸门全部照 `src/http/actions.ts`（同源/回环/session/alias/覆盖键/错误映射），
 // 且**全部在碰 DB 之前**；未绑定 = 409 DEMO_ACTOR_UNMAPPED 零读取/零写入。
@@ -16,10 +17,30 @@
 //
 // config/env 全部由 deps 注入（不读 process.env 猜）。
 import { createHash } from 'node:crypto'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { createPool, closePool, withActor, withReadOnly, type ResolvedDatabaseConfig } from '../db/pool.ts'
 import { appendSettingVersion, readAllSettings, readSetting, type SettingView } from '../db/settings.ts'
+import {
+  WORKSPACE_SETTING_KEYS,
+  WORKSPACE_SETTING_DEFAULTS,
+  isWorkspaceSettingKey,
+  listPipelines,
+  listRoles,
+  listTeams,
+  validateConfirmationText,
+  validateWorkspaceSettingValue,
+  type WorkspaceSettingKey,
+  type ScorecardReminderPolicy,
+  type BookingInviteDefaults,
+  type SlaThresholds,
+  type PipelineTemplateView,
+  type RoleView,
+  type TeamView,
+} from '../domain/tenant-config.ts'
 import {
   DEMO_SESSION_HEADER,
   normalizeSessionId,
@@ -28,13 +49,6 @@ import {
   type DemoActorIdentity,
   type ResolvedExecutionActor,
 } from '../demo-actor/index.ts'
-import {
-  WORKSPACE_SETTING_KEYS,
-  isWorkspaceSettingKey,
-  validateConfirmationText,
-  validateWorkspaceSettingValue,
-  type WorkspaceSettingKey,
-} from '../domain/tenant-config.ts'
 import { resolveMailConfig, type MailConfigInput, type MailEnvMap } from '../connectors/mail/contract.ts'
 import {
   resolveFeishuConnector,
@@ -46,11 +60,15 @@ import { sameOrigin } from './overview.ts'
 //  契约常量
 // =====================================================================
 
-/** 两条 exact 路由（路径是契约，UI 按此调用；lead 接线时勿改）。 */
+/** 三条 exact 路由（路径是契约，UI 按此调用；lead 接线时勿改）。 */
 export const SETTINGS_PATHS = {
   read: '/recruitment/api/settings',
   write: '/recruitment/api/action/settings/write',
+  configOrg: '/recruitment/api/config/org',
 } as const
+
+/** HTTP 层导出同一份可写键白名单（与 domain 同源，不维护第二份真值）。 */
+export { WORKSPACE_SETTING_KEYS } from '../domain/tenant-config.ts'
 
 /** 写动作名（响应 `action` 字段 + 错误 detail）。 */
 const ACTION_NAME = 'settings/write'
@@ -89,10 +107,7 @@ const NO_STORE = {
 } as const
 
 /** 服务端默认（诚实缺省：GET 响应用 defaults_applied 告诉前端"这是默认不是已配置"）。 */
-const DEFAULT_SETTINGS = {
-  agent_silent_delegation: false,
-  sla_thresholds: { screening_hours: 24, scorecard_hours: 48 },
-} as const
+const DEFAULT_SETTINGS = WORKSPACE_SETTING_DEFAULTS
 
 /** 连接状态的封闭取值（与任务约定一致）。 */
 type ConnectionState = 'CONNECTED' | 'NOT_CONFIGURED' | 'AUTH_REQUIRED'
@@ -406,8 +421,77 @@ function feishuState(deps: SettingsHttpDeps): ConnectionProjection {
 }
 
 // =====================================================================
+//  治理（行为规范与评测）—— 只读，元数据来自真实 SKILL.md，Eval 摘要来自本地文件
+// =====================================================================
+
+/** 当前文件所在的 src/http 目录 → 定位 skill/ 与 evidence/eval/。 */
+const HTTP_DIR = dirname(fileURLToPath(import.meta.url))
+const SKILLS_DIR = join(HTTP_DIR, '..', '..', 'skill')
+const EVAL_SUMMARY_PATH = join(HTTP_DIR, '..', '..', 'evidence', 'eval', 'latest-summary.json')
+
+/** 治理区展示的一条工作说明书（来自 skill/recruitment-s6..s10 的真实 frontmatter/标题）。 */
+interface GovernanceSkill {
+  readonly id: string
+  readonly stage: string
+  readonly title: string
+}
+
+/**
+ * 读 S6–S10 五份 SKILL.md 的 frontmatter `name` + 首个 `# ` 标题。
+ * 读不到/解析不出就跳过该条（不编造）；只展示真实存在的元数据。
+ */
+function readGovernanceSkills(): readonly GovernanceSkill[] {
+  const out: GovernanceSkill[] = []
+  let dirs: readonly string[] = []
+  try {
+    dirs = readdirSync(SKILLS_DIR)
+  } catch {
+    return out
+  }
+  for (const dir of dirs.filter((name) => /^recruitment-s(6|7|8|9|10)-/.test(name)).sort()) {
+    const path = join(SKILLS_DIR, dir, 'SKILL.md')
+    if (!existsSync(path)) continue
+    const text = readFileSync(path, 'utf8')
+    const id = /^name:\s*(.+?)\s*$/m.exec(text)?.[1]?.replace(/^["']|["']$/g, '')
+    const title = /^#\s+(.+?)\s*$/m.exec(text)?.[1]
+    const stage = /^recruitment-s(\d+)-/.exec(dir)?.[1]
+    if (id === undefined || title === undefined || stage === undefined) continue
+    out.push({ id, stage: `S${stage}`, title })
+  }
+  return out
+}
+
+/**
+ * Eval 摘要：只从本地 `evidence/eval/latest-summary.json` 原样透传；
+ * 文件不存在 / 不是合法 JSON 对象 → `null`（绝不伪造、不猜、不造默认值）。
+ */
+function readEvalSummary(): unknown {
+  try {
+    if (!existsSync(EVAL_SUMMARY_PATH)) return null
+    const parsed: unknown = JSON.parse(readFileSync(EVAL_SUMMARY_PATH, 'utf8'))
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+// =====================================================================
 //  GET /recruitment/api/settings —— 只读投影
 // =====================================================================
+
+/** 从库值里按 key 取出可直接展示的值，否则返回 undefined（走诚实缺省）。 */
+function projectedValue(key: WorkspaceSettingKey, value: unknown): unknown {
+  switch (key) {
+    case 'agent_silent_delegation':
+    case 'auto_screening_enabled':
+    case 'auto_scorecard_draft_enabled':
+      return typeof value === 'boolean' ? value : undefined
+    case 'sla_thresholds': return isSlaThresholds(value) ? value : undefined
+    case 'scorecard_reminder_policy': return isScorecardReminderPolicy(value) ? value : undefined
+    case 'booking_invite_defaults': return isBookingInviteDefaults(value) ? value : undefined
+  }
+}
 
 async function handleRead(deps: SettingsHttpDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const sessionId = readSessionHeader(req)
@@ -420,15 +504,23 @@ async function handleRead(deps: SettingsHttpDeps, req: IncomingMessage, res: Ser
         ),
       )
 
-  const byKey = new Map(value.map((row) => [row.config_key, row.value]))
-  const silent = byKey.get('agent_silent_delegation')
-  const sla = byKey.get('sla_thresholds')
+  // 一个键可能有多条未封顶的版本行；永远取 version_no 最大的那条（不取最后一条）。
+  const byKey = new Map<string, SettingView>()
+  for (const row of value) {
+    const current = byKey.get(row.config_key)
+    if (current === undefined || row.version_no > current.version_no) byKey.set(row.config_key, row)
+  }
+  const settings: Record<string, unknown> = {}
   const defaultsApplied: string[] = []
-
-  const silentValue = typeof silent === 'boolean' ? silent : (defaultsApplied.push('agent_silent_delegation'), DEFAULT_SETTINGS.agent_silent_delegation)
-  const slaValue = isSlaThresholds(sla)
-    ? sla
-    : (defaultsApplied.push('sla_thresholds'), { ...DEFAULT_SETTINGS.sla_thresholds })
+  for (const key of WORKSPACE_SETTING_KEYS) {
+    const shown = projectedValue(key, byKey.get(key)?.value)
+    if (shown === undefined) {
+      defaultsApplied.push(key)
+      settings[key] = DEFAULT_SETTINGS[key]
+    } else {
+      settings[key] = shown
+    }
+  }
 
   json(res, 200, {
     connections: {
@@ -436,21 +528,87 @@ async function handleRead(deps: SettingsHttpDeps, req: IncomingMessage, res: Ser
       feishu_calendar: feishuState(deps),
       feishu_minutes: feishuState(deps),
     },
-    settings: {
-      agent_silent_delegation: silentValue,
-      sla_thresholds: slaValue,
+    settings,
+    defaults_applied: defaultsApplied,
+    governance: {
+      skills: readGovernanceSkills(),
+      eval_summary: readEvalSummary(),
     },
-    ...(defaultsApplied.length > 0 ? { defaults_applied: defaultsApplied } : {}),
   })
 }
 
 /** 库里读出的值是否是可直接展示的 SLA 对象（严格两字段整数；否则走诚实缺省）。 */
-function isSlaThresholds(value: unknown): value is { screening_hours: number; scorecard_hours: number } {
+function isSlaThresholds(value: unknown): value is SlaThresholds {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const raw = value as Record<string, unknown>
   return Number.isInteger(raw.screening_hours)
     && Number.isInteger(raw.scorecard_hours)
     && Object.keys(raw).every((key) => key === 'screening_hours' || key === 'scorecard_hours')
+}
+
+/** 库里的催交策略是否可直接展示（严格形状；否则走诚实缺省）。 */
+function isScorecardReminderPolicy(value: unknown): value is ScorecardReminderPolicy {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const raw = value as Record<string, unknown>
+  const keys = Object.keys(raw)
+  if (keys.some((k) => !['enabled', 'overdue_hours', 'max_reminders', 'channel', 'quiet_hours'].includes(k))) return false
+  if (typeof raw.enabled !== 'boolean' || ![24, 48, 72].includes(raw.overdue_hours as number)
+    || !Number.isInteger(raw.max_reminders) || (raw.max_reminders as number) < 1 || (raw.max_reminders as number) > 5
+    || !['workbench', 'feishu', 'email'].includes(raw.channel as string)) return false
+  if (raw.quiet_hours === undefined) return true
+  const qh = raw.quiet_hours
+  if (typeof qh !== 'object' || qh === null || Array.isArray(qh)) return false
+  const q = qh as Record<string, unknown>
+  return typeof q.start === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(q.start)
+    && typeof q.end === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(q.end)
+    && q.start !== q.end && Object.keys(q).every((k) => k === 'start' || k === 'end')
+}
+
+/** 库里的预约默认值是否可直接展示（严格形状；否则走诚实缺省）。 */
+function isBookingInviteDefaults(value: unknown): value is BookingInviteDefaults {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const raw = value as Record<string, unknown>
+  return Number.isInteger(raw.expires_hours) && (raw.expires_hours as number) >= 24 && (raw.expires_hours as number) <= 168
+    && [30, 45, 60, 90].includes(raw.default_duration_min as number)
+    && Object.keys(raw).every((k) => k === 'expires_hours' || k === 'default_duration_min')
+}
+
+// =====================================================================
+//  GET /recruitment/api/config/org —— 组织配置只读视图
+// =====================================================================
+
+interface OrgResponse {
+  readonly roles: readonly RoleView[]
+  readonly hiring_teams: readonly TeamView[]
+  readonly pipeline_templates: readonly PipelineTemplateView[]
+  readonly record_version: number
+}
+
+async function handleConfigOrg(deps: SettingsHttpDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  // 闸门顺序与 settings 一致：session → 未绑定 409（零 DB 读）→ requireDatabase。
+  const sessionId = readSessionHeader(req)
+  requireBoundActor(deps, sessionId)
+  const cfg = requireDatabase(deps)
+  const value = await withPool(cfg, (pool) =>
+    withReadOnly(pool, async (client) => ({
+      roles: await listRoles(client, { tenantId: cfg.tenant_id }),
+      hiringTeams: await listTeams(client, { tenantId: cfg.tenant_id }),
+      pipelineTemplates: await listPipelines(client, { tenantId: cfg.tenant_id }),
+    })),
+  )
+  const body: OrgResponse = {
+    roles: value.roles,
+    hiring_teams: value.hiringTeams,
+    pipeline_templates: value.pipelineTemplates,
+    // 三类配置各有自己的 record_version；这里给聚合后的最大值，调用方按行内版本做乐观锁。
+    record_version: Math.max(
+      0,
+      ...value.roles.map((r) => r.record_version),
+      ...value.hiringTeams.map((t) => t.record_version),
+      ...value.pipelineTemplates.map((p) => p.record_version),
+    ),
+  }
+  json(res, 200, body)
 }
 
 // =====================================================================
@@ -540,7 +698,7 @@ function isLoopbackHost(host: string): boolean {
 }
 
 /**
- * 注册两条设置路由；返回 disposer（插件卸载即注销）。
+ * 注册三条设置/组织配置路由；返回 disposer（插件卸载即注销）。
  * 非回环监听时不注册并 warn（fail-closed）。
  */
 export function registerSettingsHttp(ctx: SettingsHostContext, deps: SettingsHttpDeps): () => void {
@@ -557,6 +715,7 @@ export function registerSettingsHttp(ctx: SettingsHostContext, deps: SettingsHtt
   ])[] = [
     [SETTINGS_PATHS.read, 'GET', handleRead],
     [SETTINGS_PATHS.write, 'POST', handleWrite],
+    [SETTINGS_PATHS.configOrg, 'GET', handleConfigOrg],
   ]
   const disposers = routes.map(([path, method, handler]) =>
     webServer.register({

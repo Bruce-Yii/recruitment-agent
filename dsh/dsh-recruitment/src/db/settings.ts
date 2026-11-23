@@ -148,7 +148,9 @@ export async function readAllSettings(
 ): Promise<readonly SettingView[]> {
   if (configKeys.length === 0) return []
   const { rows } = await client.query<SettingRow>(
-    `select ${SETTING_COLUMNS}
+    // distinct on 保证"每个键只返回当前最大版本一行"：append-only 版本链不会关闭旧行
+    // （effective_to 仍为 null），若不过滤，调用方 Map 会拿到重复键甚至旧值。
+    `select distinct on (config_key) ${SETTING_COLUMNS}
        from recruitment.business_config
       where tenant_id = $1::uuid
         and scope = $2
