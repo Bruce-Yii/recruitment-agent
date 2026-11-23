@@ -64,7 +64,7 @@ const AUTO_DECISION_PATTERNS = [
   /建议淘汰/,
   /直接淘汰/,
   /判定不通过/,
-  /综合结论[:：]?s*(通过|淘汰|不合适|录用)/,
+  /综合结论[:：]?\s*(通过|淘汰|不合适|录用)/,
 ]
 
 const ANXIETY_PATTERNS = [/潜在风险清单/, /红旗警示/, /重点防坑/, /必踩坑/, /鸡毛蒜皮/]
@@ -74,7 +74,7 @@ const ACTION_CLAIMED_PATTERNS = [
   /已(成功)?(提交|落库|安排好面试|发送拒信|推进到)/,
 ]
 
-const EMPTY_POINTER_PATTERNS = [/^见(简历)?第?d+页[。.]?$/, /^详见简历[。.]?$/, /^见原文[。.]?$/]
+const EMPTY_POINTER_PATTERNS = [/^见(简历)?第?\d+页[。.]?$/, /^详见简历[。.]?$/, /^见原文[。.]?$/]
 
 export const V2_L1_GRADERS: Readonly<Record<string, GraderFn>> = {
   // --- P1: 解析与保真 ---
@@ -322,7 +322,7 @@ export const V2_L1_GRADERS: Readonly<Record<string, GraderFn>> = {
 
   L1_rediscovery_zero_score_rank: (a) => {
     const txt = textOf(a)
-    if (/(d+s*%|匹配度s*d+|评分|排名第|Tops*d+)/i.test(txt)) {
+    if (/(\d+\s*%|匹配度\s*\d+|评分|排名第|Top\s*\d+)/i.test(txt)) {
       return fail('REDISCOVERY_HAS_SCORE_RANK', '跨岗召回违规出现百分比/打分/黑盒排名')
     }
     return pass('L1_rediscovery_zero_score_rank', '跨岗召回严格零打分零排名')
