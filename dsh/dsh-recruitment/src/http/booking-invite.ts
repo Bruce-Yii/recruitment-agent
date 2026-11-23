@@ -409,7 +409,7 @@ export function renderBookingHtml(view: BookingPublicView, token: string): strin
     ul { list-style:none; padding:0; margin:0 0 24px; }
     li { border-top:1px solid var(--line); padding:12px 0; font-size:14px; }
     li:last-child { border-bottom:1px solid var(--line); }
-    button { width:100%; padding:11px 16px; background:var(--accent); color:#fff; border:0;
+    button { width:100%; min-height:44px; padding:11px 16px; background:var(--accent); color:#fff; border:0;
       border-radius:6px; font-size:14px; cursor:pointer; margin-top:8px; }
     button:disabled { background:#B8B5AE; cursor:default; }
     p { margin:0; font-size:14px; }

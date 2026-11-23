@@ -199,6 +199,16 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Resolve absolute python path for plugin tests
+        # test/document/fixtures.ts 与 evidence-read-pg / http-actions-three 的 bootstrap
+        # 都要求绝对解释器路径；setup-python 只把 `python` 放进 PATH，必须显式导出。
+        run: |
+          set -euo pipefail
+          PY="$(python -c 'import sys; print(sys.executable)')"
+          echo "RECRUITMENT_PYTHON=$PY" >> "$GITHUB_ENV"
+          echo "RECRUITMENT_PYTHON_BIN=$PY" >> "$GITHUB_ENV"
+          echo "RECRUITMENT_CONVERTER_DIR=$GITHUB_WORKSPACE/converter" >> "$GITHUB_ENV"
+
       - name: Install Python deps for plugin tests
         run: |
           set -euo pipefail

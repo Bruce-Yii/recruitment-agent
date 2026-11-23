@@ -166,8 +166,11 @@ const FULL_CONFIG = {
     tenant_id: TENANT, actor_id: HR_ACTOR,
   },
   converter: {
-    python_bin: 'C:/python/python.exe', converter_dir: 'C:/tmp/converter',
-    allowed_roots: ['C:/tmp/allowed'],
+    // 配置只要求绝对路径；按平台给一个存在语义的绝对路径，避免 Linux CI 把 Windows
+    // 盘符路径判成相对路径，导致 apply 里的 converter/mail 门控不成立。
+    python_bin: process.platform === 'win32' ? 'C:/python/python.exe' : '/usr/bin/python3',
+    converter_dir: process.platform === 'win32' ? 'C:/tmp/converter' : '/tmp/converter',
+    allowed_roots: [process.platform === 'win32' ? 'C:/tmp/allowed' : '/tmp/allowed'],
   },
   mail: {
     host: 'imap.example.test', user: 'hr@example.test', password_env: 'RECRUITMENT_MAIL_PASSWORD',

@@ -12,7 +12,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** 本目录（test/document）。 */
@@ -64,7 +64,20 @@ export function resolvePython(): PythonResolution {
         timeout: 30_000,
         stdio: ['ignore', 'pipe', 'pipe'],
       })
-      if (out.trim() === 'ok') return { bin, ok: true, reason: '' }
+      if (out.trim() === 'ok') {
+        // PATH 上的 `python3` / `python` 是相对命令名；converter 配置要求绝对路径，
+        // 所以返回解释器自己解析出的 sys.executable，而不是把候选命令名原样交出去。
+        const executable = execFileSync(bin, ['-c', 'import sys; print(sys.executable)'], {
+          encoding: 'utf8',
+          timeout: 30_000,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }).trim()
+        if (!isAbsolute(executable)) {
+          failures.push(`${bin}: sys.executable is not absolute: ${JSON.stringify(executable)}`)
+          continue
+        }
+        return { bin: executable, ok: true, reason: '' }
+      }
       failures.push(`${bin}: unexpected probe output ${JSON.stringify(out.trim())}`)
     } catch (error) {
       failures.push(`${bin}: ${error instanceof Error ? firstLine(error.message) : String(error)}`)
