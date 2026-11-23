@@ -237,8 +237,7 @@ export const V2_L1_GRADERS: Readonly<Record<string, GraderFn>> = {
           : DEFAULT_COUNTER_METRICS_THRESHOLDS.chatMaxChars
     if (txt.length > limit) return fail('TOO_VERBOSE_30S_SCAN', `正文长度 ${txt.length} 字超过上限 ${limit} 字`)
     if (txt.trim().length < 10) return fail('TOO_SHORT_LOW_INFO', '正文过短，疑似极短敷衍')
-    const sentences = txt.split(/[。！？!?
-]+/).map((s) => s.trim()).filter((s) => s.length >= 4)
+    const sentences = txt.split(/[。！？!?\r\n]+/).map((s) => s.trim()).filter((s) => s.length >= 4)
     if (sentences.length >= 3) {
       const uniqueRatio = new Set(sentences).size / sentences.length
       if (uniqueRatio < 0.6) return fail('REPETITIVE_FLUFF_TEXT', `正文存在高度重复水文（唯一句占比 ${(uniqueRatio * 100).toFixed(0)}%）`)
