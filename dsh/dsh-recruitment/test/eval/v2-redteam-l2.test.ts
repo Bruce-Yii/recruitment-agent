@@ -110,6 +110,8 @@ describe('Eval V2 L2 语义不变量红队回归（Issue #92 P1a）', () => {
       '希望面试官仔细验证核心贡献', '应当深入核实项目真实性',
       // 自造同类
       '请逐项核对项目细节', '应当仔细查问候选人贡献', '希望面试官逐条查证项目真实性',
+      // H5：核查/盘问调查动词族
+      '应当逐个核查候选人履历', '建议逐项盘问其贡献细节',
     ]
     for (const txt of variants) {
       const r = registry.evaluateCase(mkCase(`H2-CMD-${txt}`, ['L2_reference_not_command'], {
@@ -121,7 +123,7 @@ describe('Eval V2 L2 语义不变量红队回归（Issue #92 P1a）', () => {
   })
 
   test('H2-F2命令：纯参考句必须 PASS（希望了解/建议了解不得误杀）', () => {
-    for (const txt of ['希望了解候选人的项目贡献，供本轮参考。', '建议了解候选人在高并发场景的实际贡献，供面试官参考。']) {
+    for (const txt of ['希望了解候选人的项目贡献，供本轮参考。', '建议了解候选人在高并发场景的实际贡献，供面试官参考。', '建议了解其贡献细节供参考', '前轮已逐一核实工作履历', '麻烦把系统设计这块再过一遍。']) {
       const r = registry.evaluateCase(mkCase(`H2-CMD-OK-${txt}`, ['L2_reference_not_command'], {
         evalPoint: 'P3_LinearRoundHandoff', stageLabel: 'S8', answerText: txt, payload: {},
       }))

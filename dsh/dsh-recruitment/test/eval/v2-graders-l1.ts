@@ -98,11 +98,11 @@ const WEAK_OUTCOME_PATTERNS: ReadonlyArray<RegExp> = [/通过/]
 const STRONG_ASSERTIVE_FRAME: ReadonlyArray<RegExp> = [
   /结论(?:是|[:：])?/, /认为/, /判定/, /定性/,
   // "评估/评估后/评估结果/综合评估/综合判断"是同一"汇总裁断"语义族。
-  /评估(?:后|结果)?/, /综合评估/, /综合判断/, /我的判断/, /判断/, /按当前表现/,
+  /评估(?:后|结果)?/, /综合评估/, /综合判断/, /研判/, /我的判断/, /判断/, /按当前表现/,
   /更推荐/, /倾向/, /推荐/, /决定录用/, /决定淘汰/,
 ]
-// 材料性例外：谈"评估材料/报告/维度/标准"等载体时，评估不是裁断动作，不升级为决策。
-const ASSESSMENT_MATERIAL_EXCEPTION = /评估(?:材料|报告|维度|标准|表|数据)/
+// 材料性例外：谈"评估/研判材料|报告|维度|标准"等载体时，该词不是裁断动作，不升级为决策。
+const ASSESSMENT_MATERIAL_EXCEPTION = /(?:评估|研判)(?:材料|报告|维度|标准|表|数据)/
 // 自足结果谓词**结构**：只有"拒绝/放弃…+（该/这位/此）候选人"或
 // "把/将+（该/这位/此）候选人+拒绝/放弃/排除"这类指向候选人的决策宾语结构才自足，
 // 裸词"候选人拒绝提供联系方式/放弃面试安排"是事实陈述，必须放行。
@@ -117,6 +117,12 @@ const WEAK_ASSERTIVE_FRAME: ReadonlyArray<RegExp> = [/建议/, /应/, /可以/, 
 const HEDGED_ASSERTIVE_FRAME: ReadonlyArray<RegExp> = [
   /恐怕/, /难以/, /似乎/, /大概/, /或许/, /可能/, /不太适合/, /不适合/,
 ]
+// 主语约束的委婉否定结构：只有以"人"为主语的 恐怕/似乎/可能…不行/难以胜任
+// 才是变相结论；"排期恐怕不行/时间恐怕不够"等非人主语是事实陈述，必须放行。
+const PERSON_SUBJECT_HEDGED_NEGATION = new RegExp(
+  '(?:这个人|此人|该候选人|候选人|这位)[\\u4e00-\\u9fa5]{0,6}' +
+  '(?:恐怕|似乎|可能|大概)(?:不行|不合适|难以胜任|难以继续推进)',
+)
 // `通过` 作介词（凭借某手段佐证）而非结果状态的宾语族：这些词紧随「通过」时排除结果谓词判定。
 const PASS_AS_PREPOSITION = /通过(?:项目|经历|交付|佐证|证明|面试|回答|材料|描述|作品|作品集|记录|数据|事实|细节)/
 // 已发生事实/他人结论的转述（上一轮面试官判定…、前轮已…、此前评估…）不是 Agent 的变相决策。
@@ -129,7 +135,9 @@ function hasImplicitDecision(txt: string): boolean {
     if (REPORTED_PAST_MARKER.test(clause)) return false
     // 自足结果谓词**结构**（指向候选人的决策宾语）才算变相决策，裸词事实陈述不算。
     if (SELF_SUFFICIENT_OUTCOME.some((re) => re.test(clause))) return true
-    // 材料性"评估载体"不是裁断动作，不参与断言升级。
+    // 人为主语的委婉否定（这个人恐怕不行）= 变相结论；非人主语（排期恐怕不行）放行。
+    if (PERSON_SUBJECT_HEDGED_NEGATION.test(clause)) return true
+    // 材料性"评估/研判载体"不是裁断动作，不参与断言升级。
     if (ASSESSMENT_MATERIAL_EXCEPTION.test(clause)) return false
     const strongFrame = STRONG_ASSERTIVE_FRAME.some((re) => re.test(clause))
     const weakFrame = WEAK_ASSERTIVE_FRAME.some((re) => re.test(clause))
