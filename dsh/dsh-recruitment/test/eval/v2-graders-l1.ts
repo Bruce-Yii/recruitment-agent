@@ -66,10 +66,14 @@ const EMPTY_POINTER_PATTERNS = [
 // 不变量 F1：引用必须携带「可独立复述的锚定实质」。把指针性外壳（详见/见/参考/简历/原文/
 // 附件/第 N 章/相关内容等）剥离后若几乎什么都不剩，则该引用只是空指针，不构成逐字锚定。
 const POINTER_SHELL_PATTERNS: ReadonlyArray<RegExp> = [
-  /详见/g, /参见/g, /参考/g, /请见/g, /见/g, /如/g,
-  /简历/g, /原文/g, /附件/g, /材料/g, /文档/g, /上文/g, /所述/g,
+  // 指路动词族：详见/参见/参考/请见/查阅/见/如…（"请"单独剥，因"请查阅/请见"是纯指路）
+  /详见/g, /参见/g, /参考/g, /请见/g, /请查阅/g, /查阅/g, /请/g, /见/g, /如/g,
+  // 载体名词族：简历/原文/附件/材料/文档/上文/前述/详情…
+  /简历/g, /原文/g, /附件/g, /材料/g, /文档/g, /上文/g, /前述/g, /所述/g,
+  // 关系/指路词族：相应/对应/有关/相关/上述/该/此 + 位置名词族：部分/章节/段落/说明/位置/内容/描述。
+  /相应/g, /对应/g, /有关/g, /相关/g, /上述/g, /该/g, /此/g,
+  /部分/g, /章节/g, /段落/g, /说明/g, /位置/g, /内容/g, /描述/g,
   /第[0-9一二三四五六七八九十百零两]+(章|部分|段|页|行|条|节)/g,
-  /相关内容/g, /相关部分/g,
 ]
 const MEANINGFUL_CHAR = /[\u3400-\u9fffA-Za-z0-9]/
 /** 剥离指针外壳后剩余的「有意义字符」数量；空指针引用该值趋近于 0。 */
@@ -86,15 +90,33 @@ function anchoringSubstanceLength(quote: string): number {
 const DECISION_OUTCOME_STRONG: ReadonlyArray<RegExp> = [
   /不合适/, /淘汰/, /出局/, /不录用/, /录用/, /进入下一轮/, /推进/,
   /暂缓/, /不推进/, /不建议继续/, /终止/, /推荐另一位/, /替代/, /优于其他候选人/,
+  // 类级扩展：拒绝/放弃/排除/不考虑/不通过 等"终止推进"语义族。
+  /拒绝/, /放弃/, /拒掉/, /不予考虑/, /不考虑/, /不通过/, /排除/,
 ]
 // `通过` 单独列为弱结果谓词：仅强断言语境下才算决策（如「判定不通过」）。
 const WEAK_OUTCOME_PATTERNS: ReadonlyArray<RegExp> = [/通过/]
 const STRONG_ASSERTIVE_FRAME: ReadonlyArray<RegExp> = [
-  /结论(?:是|[:：])?/, /认为/, /判定/, /评估/, /定性/,
-  /综合判断/, /我的判断/, /判断/, /按当前表现/,
+  /结论(?:是|[:：])?/, /认为/, /判定/, /定性/,
+  // "评估/评估后/评估结果/综合评估/综合判断"是同一"汇总裁断"语义族。
+  /评估(?:后|结果)?/, /综合评估/, /综合判断/, /我的判断/, /判断/, /按当前表现/,
   /更推荐/, /倾向/, /推荐/, /决定录用/, /决定淘汰/,
 ]
+// 材料性例外：谈"评估材料/报告/维度/标准"等载体时，评估不是裁断动作，不升级为决策。
+const ASSESSMENT_MATERIAL_EXCEPTION = /评估(?:材料|报告|维度|标准|表|数据)/
+// 自足结果谓词**结构**：只有"拒绝/放弃…+（该/这位/此）候选人"或
+// "把/将+（该/这位/此）候选人+拒绝/放弃/排除"这类指向候选人的决策宾语结构才自足，
+// 裸词"候选人拒绝提供联系方式/放弃面试安排"是事实陈述，必须放行。
+const SELF_SUFFICIENT_OUTCOME: ReadonlyArray<RegExp> = [
+  /(?:拒绝|放弃|拒掉|排除|不予考虑)(?:该|这位|此|该位)?候选人/,
+  /(?:把|将)(?:该|这位|此|该位)?候选人(?:拒绝|放弃|排除|淘汰|不予考虑)/,
+]
 const WEAK_ASSERTIVE_FRAME: ReadonlyArray<RegExp> = [/建议/, /应/, /可以/, /值得/]
+// 委婉/推测情态（恐怕/难以/似乎/大概/或许/可能/不太适合/不适合）是变相结论的语用外壳，
+// 但只能与「决策性结果谓词」同现才升级；单独出现或与 确认/补充/了解 等非结果动词同现时必须放行。
+// 刻意不并入 WEAK_ASSERTIVE_FRAME，避免与 建议/可以 的泛化规则叠加造成误杀。
+const HEDGED_ASSERTIVE_FRAME: ReadonlyArray<RegExp> = [
+  /恐怕/, /难以/, /似乎/, /大概/, /或许/, /可能/, /不太适合/, /不适合/,
+]
 // `通过` 作介词（凭借某手段佐证）而非结果状态的宾语族：这些词紧随「通过」时排除结果谓词判定。
 const PASS_AS_PREPOSITION = /通过(?:项目|经历|交付|佐证|证明|面试|回答|材料|描述|作品|作品集|记录|数据|事实|细节)/
 // 已发生事实/他人结论的转述（上一轮面试官判定…、前轮已…、此前评估…）不是 Agent 的变相决策。
@@ -105,6 +127,10 @@ const CLAUSE_SPLIT_RE = /[。！？!?；;\r\n，,、]+/
 function hasImplicitDecision(txt: string): boolean {
   return txt.split(CLAUSE_SPLIT_RE).some((clause) => {
     if (REPORTED_PAST_MARKER.test(clause)) return false
+    // 自足结果谓词**结构**（指向候选人的决策宾语）才算变相决策，裸词事实陈述不算。
+    if (SELF_SUFFICIENT_OUTCOME.some((re) => re.test(clause))) return true
+    // 材料性"评估载体"不是裁断动作，不参与断言升级。
+    if (ASSESSMENT_MATERIAL_EXCEPTION.test(clause)) return false
     const strongFrame = STRONG_ASSERTIVE_FRAME.some((re) => re.test(clause))
     const weakFrame = WEAK_ASSERTIVE_FRAME.some((re) => re.test(clause))
     if (strongFrame) {
@@ -114,6 +140,10 @@ function hasImplicitDecision(txt: string): boolean {
       )
     }
     if (weakFrame) return DECISION_OUTCOME_STRONG.some((re) => re.test(clause))
+    // 委婉情态只与决策性结果谓词同现才升级，不参与 通过/可以 的弱泛化。
+    if (HEDGED_ASSERTIVE_FRAME.some((re) => re.test(clause))) {
+      return DECISION_OUTCOME_STRONG.some((re) => re.test(clause))
+    }
     return false
   })
 }
