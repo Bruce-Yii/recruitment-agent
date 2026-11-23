@@ -24,9 +24,9 @@ const CONVERTER_DIR = process.env.RECRUITMENT_CONVERTER_DIR || join(REPO_ROOT, '
 const PSQL = 'D:\\12412\\PostgreSQL\\bin\\psql.exe'
 const PG_HOST = '127.0.0.1'
 const PG_PORT = 49353
-const PG_USER = 'postgres'
-const PG_DB = 'ra_fix92_adapters'
-// 口令只进子进程 env；命令文本里只出现 `$env:PGPASSWORD`（R7 / INTERFACE-CONTRACT §命令原文）。
+const PG_USER = 'postgres' // role 名（非口令）
+let PG_DB = process.env.RECRUITMENT_CAPTURE_PG_DB || 'ra_fix92_adapters' // 一次性库名（非口令），可被 --pg-db / env 覆盖
+// 口令只从环境读取，缺失时 fail-closed；命令文本里只出现 `$env:PGPASSWORD`（R7 / INTERFACE-CONTRACT §命令原文）。
 const PGPASSWORD_PLACEHOLDER = '$env:PGPASSWORD = <injected via env>; '
 const HOST_PORT = 49349 // 禁止 49351/49303/49344
 const HOST_PROFILE = 'rec-e2e-live' // hy4-flash-free；rec-preview-pr 的 longcat-2.5-free 已 410 deprecated
@@ -156,7 +156,11 @@ function psql(db, sqlArgs, ledger, label, env = {}) {
   }
   const shownText = shown.join(' ')
   const cmd = `${PGPASSWORD_PLACEHOLDER}'${PSQL}' -X -At -v ON_ERROR_STOP=1 -h ${PG_HOST} -p ${PG_PORT} -U ${PG_USER} -d ${db} ${shownText}`
-  const result = run(PSQL, args, { env: { PGPASSWORD: 'postgres', ...env } })
+  const password = process.env.RECRUITMENT_DB_PASSWORD ?? process.env.PGPASSWORD
+  if (typeof password !== 'string' || password === '') {
+    throw new Error('PG password missing: set RECRUITMENT_DB_PASSWORD or PGPASSWORD before capture (fail-closed; no hard-coded credential)')
+  }
+  const result = run(PSQL, args, { env: { PGPASSWORD: password, ...env } })
   ledger.record(cmd, REPO_ROOT, result, { kind: `pg:${label}` })
   return result
 }
@@ -377,6 +381,12 @@ async function captureSse(outDir, ledger) {
 }
 async function main() {
   const outDir = resolve(arg('out', DEFAULT_OUT))
+  PG_DB = arg('pg-db', PG_DB)
+  const password = process.env.RECRUITMENT_DB_PASSWORD ?? process.env.PGPASSWORD
+  if (typeof password !== 'string' || password === '') {
+    console.error('[capture-real-inputs] FATAL: set RECRUITMENT_DB_PASSWORD or PGPASSWORD before capture (fail-closed; no hard-coded credential).')
+    process.exit(2)
+  }
   mkdirSync(outDir, { recursive: true })
   const { commands, record } = makeLedger()
   const capturedAt = stamp()
