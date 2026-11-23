@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { fetchAppJson, postWorkspaceSettingWrite } from './api.ts';
 import { downloadApplicationsCsv, testWebhook as postWebhookTest } from '../client/external-sync.ts';
+import { createOrgPipeline, createOrgRole, ORG_ROLE_SCOPE_OPTIONS } from '../client/org-config.ts';
 
 type SettingsTabKey = 'connections' | 'automation' | 'org' | 'governance';
 
@@ -162,6 +163,13 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
   const [webhookSecretSet, setWebhookSecretSet] = useState(false);
   const [csvBusy, setCsvBusy] = useState(false);
   const [testBusy, setTestBusy] = useState(false);
+  const [roleCode, setRoleCode] = useState('');
+  const [roleName, setRoleName] = useState('');
+  const [roleScopes, setRoleScopes] = useState<readonly string[]>(['JOB_READ', 'APPLICATION_READ']);
+  const [pipeCode, setPipeCode] = useState('');
+  const [pipeName, setPipeName] = useState('');
+  const [pipeDesc, setPipeDesc] = useState('');
+  const [orgBusy, setOrgBusy] = useState(false);
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
@@ -314,6 +322,43 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
       setFeedback({ kind: 'err', text: err instanceof Error ? err.message : '测试推送失败' });
     } finally {
       setTestBusy(false);
+    }
+  };
+
+  const handleCreateRole = async () => {
+    if (readOnly) return;
+    setOrgBusy(true);
+    setFeedback(null);
+    try {
+      await createOrgRole(sid, { code: roleCode, name: roleName, permissionScopes: roleScopes });
+      setRoleCode('');
+      setRoleName('');
+      setExpandedRow(null);
+      setFeedback({ kind: 'ok', text: '已新增角色模板' });
+      await loadOrgConfig();
+    } catch (err) {
+      setFeedback({ kind: 'err', text: err instanceof Error ? err.message : '新增角色失败' });
+    } finally {
+      setOrgBusy(false);
+    }
+  };
+
+  const handleCreatePipeline = async () => {
+    if (readOnly) return;
+    setOrgBusy(true);
+    setFeedback(null);
+    try {
+      await createOrgPipeline(sid, { code: pipeCode, name: pipeName, description: pipeDesc });
+      setPipeCode('');
+      setPipeName('');
+      setPipeDesc('');
+      setExpandedRow(null);
+      setFeedback({ kind: 'ok', text: '已新增招聘流程模板' });
+      await loadOrgConfig();
+    } catch (err) {
+      setFeedback({ kind: 'err', text: err instanceof Error ? err.message : '新增流程模板失败' });
+    } finally {
+      setOrgBusy(false);
     }
   };
 
@@ -1043,6 +1088,16 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
                     <span className="settings-status tone-muted">
                       {orgData?.roles ? `${orgData.roles.length} 个角色` : '待后端投影接入'}
                     </span>
+                    {!readOnly ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        data-testid="settings-btn-new-role"
+                        onClick={() => toggleRow('org-role')}
+                      >
+                        {expandedRow === 'org-role' ? '收起' : '新增'}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
                 {orgData?.roles && orgData.roles.length > 0 ? (
@@ -1053,6 +1108,63 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
                         <span>{(r.permission_scopes || []).length} 项权限</span>
                       </div>
                     ))}
+                  </div>
+                ) : null}
+                {expandedRow === 'org-role' && !readOnly ? (
+                  <div className="settings-l2" data-testid="settings-expand-org-role">
+                    <div className="settings-kv-row">
+                      <span>角色编码</span>
+                      <input
+                        type="text"
+                        placeholder="例如 hiring_partner"
+                        value={roleCode}
+                        onChange={(e) => setRoleCode(e.target.value)}
+                      />
+                    </div>
+                    <div className="settings-kv-row">
+                      <span>角色名称</span>
+                      <input
+                        type="text"
+                        placeholder="例如 业务招聘伙伴"
+                        value={roleName}
+                        onChange={(e) => setRoleName(e.target.value)}
+                      />
+                    </div>
+                    <div className="settings-kv-row">
+                      <span>权限范围</span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {ORG_ROLE_SCOPE_OPTIONS.map((opt) => {
+                          const checked = roleScopes.includes(opt.code);
+                          return (
+                            <label key={opt.code} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() =>
+                                  setRoleScopes((cur) =>
+                                    cur.includes(opt.code)
+                                      ? cur.filter((x) => x !== opt.code)
+                                      : [...cur, opt.code],
+                                  )
+                                }
+                              />
+                              <span>{opt.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="settings-row-actions">
+                      <button
+                        type="button"
+                        className="btn dark"
+                        data-testid="settings-save-org-role"
+                        disabled={orgBusy}
+                        onClick={() => void handleCreateRole()}
+                      >
+                        {orgBusy ? '保存中…' : '创建角色'}
+                      </button>
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -1097,6 +1209,16 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
                         ? `${orgData.pipeline_templates.length} 套模板`
                         : '待后端投影接入'}
                     </span>
+                    {!readOnly ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        data-testid="settings-btn-new-pipeline"
+                        onClick={() => toggleRow('org-pipeline')}
+                      >
+                        {expandedRow === 'org-pipeline' ? '收起' : '新增'}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
                 {orgData?.pipeline_templates && orgData.pipeline_templates.length > 0 ? (
@@ -1107,6 +1229,48 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
                         <span>{p.stage_count ?? 0} 个阶段</span>
                       </div>
                     ))}
+                  </div>
+                ) : null}
+                {expandedRow === 'org-pipeline' && !readOnly ? (
+                  <div className="settings-l2" data-testid="settings-expand-org-pipeline">
+                    <div className="settings-kv-row">
+                      <span>模板编码</span>
+                      <input
+                        type="text"
+                        placeholder="例如 tech_standard"
+                        value={pipeCode}
+                        onChange={(e) => setPipeCode(e.target.value)}
+                      />
+                    </div>
+                    <div className="settings-kv-row">
+                      <span>模板名称</span>
+                      <input
+                        type="text"
+                        placeholder="例如 研发标准三轮流程"
+                        value={pipeName}
+                        onChange={(e) => setPipeName(e.target.value)}
+                      />
+                    </div>
+                    <div className="settings-kv-row">
+                      <span>模板说明（可选）</span>
+                      <input
+                        type="text"
+                        placeholder="例如 适用于后端/算法岗"
+                        value={pipeDesc}
+                        onChange={(e) => setPipeDesc(e.target.value)}
+                      />
+                    </div>
+                    <div className="settings-row-actions">
+                      <button
+                        type="button"
+                        className="btn dark"
+                        data-testid="settings-save-org-pipeline"
+                        disabled={orgBusy}
+                        onClick={() => void handleCreatePipeline()}
+                      >
+                        {orgBusy ? '保存中…' : '创建流程模板'}
+                      </button>
+                    </div>
                   </div>
                 ) : null}
               </div>
