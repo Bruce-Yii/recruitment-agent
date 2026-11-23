@@ -1,0 +1,4 @@
+25 migrations applied on ra_wave5_clean_20261122 (0001_init .. 0025_auth_login)
+psql db/verify.sql exit 0
+AUTH-STRUCT PASS auth_user/auth_session 列/CHECK/唯一键/部分索引/台账/哈希形状齐全
+VERIFY PASS：结构断言 + 状态机覆盖 + 对象覆盖 + 32 条负向测试全部通过

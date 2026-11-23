@@ -1,0 +1,197 @@
+{
+  "events": [
+    {
+      "url": "/hook",
+      "method": "POST",
+      "headers": {
+        "host": "127.0.0.1:45871",
+        "connection": "keep-alive",
+        "content-type": "application/json",
+        "x-recruitment-event": "decision.recorded",
+        "x-recruitment-signature": "sha256=2404219bb0eec4c0799d6cb120906f86e44cd3743d6c5e105602035b672023c3",
+        "accept": "*/*",
+        "accept-language": "*",
+        "sec-fetch-mode": "cors",
+        "user-agent": "node",
+        "accept-encoding": "gzip, deflate",
+        "content-length": "106"
+      },
+      "body": "{\"event\":\"decision.recorded\",\"at\":\"2026-11-23T02:58:16.421Z\",\"data\":{\"test\":true,\"application_id\":\"test\"}}"
+    },
+    {
+      "url": "/hook",
+      "method": "POST",
+      "headers": {
+        "host": "127.0.0.1:45871",
+        "connection": "keep-alive",
+        "content-type": "application/json",
+        "x-recruitment-event": "booking.confirmed",
+        "x-recruitment-signature": "sha256=e2d123ca68d98be18b4a470e238cc41d79b94bcefffe0bf35c978070d6bb1722",
+        "accept": "*/*",
+        "accept-language": "*",
+        "sec-fetch-mode": "cors",
+        "user-agent": "node",
+        "accept-encoding": "gzip, deflate",
+        "content-length": "180"
+      },
+      "body": "{\"event\":\"booking.confirmed\",\"at\":\"2026-11-23T02:58:18.725Z\",\"data\":{\"application_id\":\"46a68c72-d975-4a8c-8ffd-11e1dbe9c985\",\"interview_id\":\"2ac1906c-d0bd-4342-a7e1-1f865d8ccb79\"}}"
+    }
+  ],
+  "checks": [
+    {
+      "name": "settings_external_sync_l1_l2_l3",
+      "ok": true,
+      "detail": {
+        "row": true,
+        "l1Before": "外部系统轻量同步（CSV / Webhook）\n未开启 · 可一键导出人话 CSV，或配置签名 Webhook 回写外部系统\n未开启\n配置",
+        "l2": true,
+        "l3": true,
+        "saved": true,
+        "whView": {
+          "enabled": true,
+          "url": "http://127.0.0.1:45871/hook",
+          "events": [
+            "decision.recorded",
+            "stage.advanced",
+            "booking.confirmed"
+          ],
+          "secret_set": true
+        },
+        "events": [
+          {
+            "event": "decision.recorded",
+            "url": "/hook"
+          },
+          {
+            "event": "booking.confirmed",
+            "url": "/hook"
+          }
+        ]
+      }
+    },
+    {
+      "name": "csv_real_download",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "contentType": "text/csv; charset=utf-8",
+        "bom": true,
+        "csvNoUuid": true,
+        "csvMasked": true,
+        "csvNoBanned": true,
+        "head": "候选人姓名,掩码手机号,掩码邮箱,应聘岗位,当前阶段,初筛结论,面评进度,终审结论,更新时间\r\n候选人 S12-决策隔离,,,后端工程师（演示）,S10,,0/0,,2026-11-23T02:57:48.217Z\r\n候选人 T,,,后端工程师（演示）,S8,,0/0,,2026-11-23T02:57:48.189Z\r\n演示候选人-张样例,'+86 138****0000,z***@demo-recruitment.test,后端工程师（演示）,S7,,0/0,,2026-11-23T02:57:48.138Z\r\n"
+      }
+    },
+    {
+      "name": "webhook_test_signed",
+      "ok": true,
+      "detail": {
+        "testClick": true,
+        "testFeedback": true,
+        "testFeedbackText": "测试推送成功（HTTP 200，签名已发送）",
+        "directTest": null,
+        "eventsAfterTest": 1,
+        "eventsAfterBooking": 2,
+        "testEvent": {
+          "event": "decision.recorded",
+          "signature": "sha256=2404219bb0eec4c0799d6cb120906f86e44cd3743d6c5e105602035b672023c3",
+          "sigOk": true
+        },
+        "bookingEvent": {
+          "event": "booking.confirmed",
+          "sigOk": true
+        },
+        "confirmStatus": 200,
+        "confirmBody": "{\"status\":\"CONFIRMED\",\"interview_id\":\"2ac1906c-d0bd-4342-a7e1-1f865d8ccb79\",\"confirmed_slot\":{\"start\":\"2031-07-01T10:00:00+08:00\",\"end\":\"2031-07-01T11:00:00+08:00\"}}",
+        "inviteStatus": 200
+      }
+    },
+    {
+      "name": "webhook_booking_confirmed_signed",
+      "ok": true,
+      "detail": {
+        "testClick": true,
+        "testFeedback": true,
+        "testFeedbackText": "测试推送成功（HTTP 200，签名已发送）",
+        "directTest": null,
+        "eventsAfterTest": 1,
+        "eventsAfterBooking": 2,
+        "testEvent": {
+          "event": "decision.recorded",
+          "signature": "sha256=2404219bb0eec4c0799d6cb120906f86e44cd3743d6c5e105602035b672023c3",
+          "sigOk": true
+        },
+        "bookingEvent": {
+          "event": "booking.confirmed",
+          "sigOk": true
+        },
+        "confirmStatus": 200,
+        "confirmBody": "{\"status\":\"CONFIRMED\",\"interview_id\":\"2ac1906c-d0bd-4342-a7e1-1f865d8ccb79\",\"confirmed_slot\":{\"start\":\"2031-07-01T10:00:00+08:00\",\"end\":\"2031-07-01T11:00:00+08:00\"}}",
+        "inviteStatus": 200
+      }
+    }
+  ],
+  "pass": true,
+  "scenarios": {
+    "settings": {
+      "row": true,
+      "l1Before": "外部系统轻量同步（CSV / Webhook）\n未开启 · 可一键导出人话 CSV，或配置签名 Webhook 回写外部系统\n未开启\n配置",
+      "l2": true,
+      "l3": true,
+      "saved": true,
+      "whView": {
+        "enabled": true,
+        "url": "http://127.0.0.1:45871/hook",
+        "events": [
+          "decision.recorded",
+          "stage.advanced",
+          "booking.confirmed"
+        ],
+        "secret_set": true
+      },
+      "events": [
+        {
+          "event": "decision.recorded",
+          "url": "/hook"
+        },
+        {
+          "event": "booking.confirmed",
+          "url": "/hook"
+        }
+      ]
+    },
+    "csv": {
+      "status": 200,
+      "contentType": "text/csv; charset=utf-8",
+      "bom": true,
+      "csvNoUuid": true,
+      "csvMasked": true,
+      "csvNoBanned": true,
+      "head": "候选人姓名,掩码手机号,掩码邮箱,应聘岗位,当前阶段,初筛结论,面评进度,终审结论,更新时间\r\n候选人 S12-决策隔离,,,后端工程师（演示）,S10,,0/0,,2026-11-23T02:57:48.217Z\r\n候选人 T,,,后端工程师（演示）,S8,,0/0,,2026-11-23T02:57:48.189Z\r\n演示候选人-张样例,'+86 138****0000,z***@demo-recruitment.test,后端工程师（演示）,S7,,0/0,,2026-11-23T02:57:48.138Z\r\n"
+    },
+    "webhook": {
+      "testClick": true,
+      "testFeedback": true,
+      "testFeedbackText": "测试推送成功（HTTP 200，签名已发送）",
+      "directTest": null,
+      "eventsAfterTest": 1,
+      "eventsAfterBooking": 2,
+      "testEvent": {
+        "event": "decision.recorded",
+        "signature": "sha256=2404219bb0eec4c0799d6cb120906f86e44cd3743d6c5e105602035b672023c3",
+        "sigOk": true
+      },
+      "bookingEvent": {
+        "event": "booking.confirmed",
+        "sigOk": true
+      },
+      "confirmStatus": 200,
+      "confirmBody": "{\"status\":\"CONFIRMED\",\"interview_id\":\"2ac1906c-d0bd-4342-a7e1-1f865d8ccb79\",\"confirmed_slot\":{\"start\":\"2031-07-01T10:00:00+08:00\",\"end\":\"2031-07-01T11:00:00+08:00\"}}",
+      "inviteStatus": 200
+    },
+    "receiver": {
+      "port": 45871,
+      "eventCount": 2
+    }
+  }
+}

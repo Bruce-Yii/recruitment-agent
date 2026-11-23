@@ -1,0 +1,65 @@
+{
+  "checks": [
+    {
+      "name": "unauth_app_redirect_login",
+      "ok": true,
+      "detail": {
+        "status": 302,
+        "location": "/recruitment/login?next=%2Frecruitment%2Fapp"
+      }
+    },
+    {
+      "name": "production_test_route_404",
+      "ok": true,
+      "detail": {
+        "status": 404
+      }
+    },
+    {
+      "name": "login_page_and_bad_password",
+      "ok": true,
+      "detail": {
+        "badError": true,
+        "badText": "用户名或密码不正确"
+      }
+    },
+    {
+      "name": "login_and_host_restart_persist",
+      "ok": true,
+      "detail": {
+        "appAfterLogin": true,
+        "appAfterRestart": true,
+        "sessionStatus": 200,
+        "cookieAfterLogin": "dsh-auth-VVE8Td-LM6iJZ4HpZOkhUY5FXmnR6HtfKAvf5N8PU6Y=v1.eyJ2ZXJzaW9uIjoxLCJhdXRob3JpdHkiOiIxMjcuMC4wLjE6NDkzNDciLCJpc3N1ZWRBdCI6MTc5NTQwMjI1MjkzOCwiZXhwaXJlc0F0IjoxNzk3OTk0MjUyOTM4fQ.r5mkbydaBJVIdvu-xsi5x7TUDBHJikdlapNnW3H9AmY; rc_auth=8fb9fd777acb960b10026bba0550d57d8486fc16db3f98c51cdc39907b11c85c; rc_sid=session-9fe7d5dd-33ef-41a9-97e1-4ecaf3e11e3a",
+        "cookieAfterRestart": "rc_auth=8fb9fd777acb960b10026bba0550d57d8486fc16db3f98c51cdc39907b11c85c; rc_sid=session-9fe7d5dd-33ef-41a9-97e1-4ecaf3e11e3a; dsh-auth-VVE8Td-LM6iJZ4HpZOkhUY5FXmnR6HtfKAvf5N8PU6Y=v1.eyJ2ZXJzaW9uIjoxLCJhdXRob3JpdHkiOiIxMjcuMC4wLjE6NDkzNDciLCJpc3N1ZWRBdCI6MTc5NTQwMjI3OTk0NiwiZXhwaXJlc0F0IjoxNzk3OTk0Mjc5OTQ2fQ.4iCkrbvDwQGYUdVYjxKMZgriviP7VQHA5qhM5zO9ZW0"
+      }
+    },
+    {
+      "name": "logout_invalidates_old_cookie",
+      "ok": true,
+      "detail": {
+        "loginAfterLogout": true,
+        "oldCookieApp": 302,
+        "oldCookieSession": 401
+      }
+    }
+  ],
+  "pass": true,
+  "scenarios": {
+    "db": "ra_fresh_e2e_q70_dfh8p7",
+    "loginPageText": "Recruitment OS\n把招聘的每一步\n放回你的掌控。\n\n候选人、岗位与面试决策，在同一个工作台里安静地流动。\n\n独立产品入口 · 安全会话\n登录工作台\n\n请使用企业分配的账号继续\n\n用户名\n密码\n登录\n登录即表示你同意仅按公司授权范围使用本工作台。",
+    "unauthStatus": 302,
+    "unauthLocation": "/recruitment/login?next=%2Frecruitment%2Fapp",
+    "test404": 404,
+    "badError": true,
+    "badText": "用户名或密码不正确",
+    "appAfterLogin": true,
+    "appAfterRestart": true,
+    "loginAfterLogout": true,
+    "cookieHasAuth": true,
+    "cookieAfterRestartHasAuth": true,
+    "oldCookieApp": 302,
+    "oldCookieSession": 401,
+    "sessionAfterRestart": 200
+  }
+}

@@ -1,0 +1,21 @@
+# 门禁（main 0565cbb + PR72 a483229 + PR73 adf93ca）
+
+| 门 | 结果 |
+|---|---|
+| npx tsc --noEmit | PASS（0） |
+| npx tsdown | PASS（双入口，lib/app.js 1.52MB） |
+| server-typecheck | PASS（0/0） |
+| runtime-budget | PASS（5051/5051） |
+| client-contract-check | PASS |
+| term-lint | PASS |
+| entry-reachability | PASS（WHITELIST=[]） |
+| 干净 DB run-all | 3076 tests / 3074 pass / 0 fail / 2 declared skips |
+| 迁移 0001→0025 + db/verify | PASS；VERIFY PASS / AUTH-STRUCT PASS |
+| 15 步 preview | 15/15 PASS；audit hard 0 / soft 3 既有 |
+| 生产 auth 真机 | 5/5 checks PASS |
+| CSV/Webhook 真机 | 4/4 checks PASS |
+
+## GitHub Actions
+
+- PR72 run 45099532989：全部执行 job PASS（acceptance corpus 条件跳过）
+- PR73 run 45101935811：全部执行 job PASS（acceptance corpus 条件跳过）

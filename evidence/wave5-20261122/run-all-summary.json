@@ -1,0 +1,25 @@
+{
+  "database": "ra_wave5_clean_20261122",
+  "migrations_applied": 25,
+  "migration_range": "0001_init .. 0025_auth_login",
+  "verify_command": "psql -X -q -v ON_ERROR_STOP=1 -f db/verify.sql",
+  "verify_exit": 0,
+  "verify_result": "VERIFY PASS：结构断言 + 状态机覆盖 + 对象覆盖 + 32 条负向测试全部通过",
+  "auth_struct": "AUTH-STRUCT PASS auth_user/auth_session 列/CHECK/唯一键/部分索引/台账/哈希形状齐全",
+  "full_run_all": {
+    "command": "node test/run-all.mjs --test-concurrency=1",
+    "tests": 3076,
+    "suites": 105,
+    "pass": 3074,
+    "fail": 0,
+    "skipped": 2,
+    "cancelled": 0,
+    "todo": 0,
+    "duration_ms": 497597.9,
+    "exit": 0
+  },
+  "skipped": [
+    "真实语料回归（RECRUITMENT_CORPUS_ROOT 未设置，R7 accepted skip）",
+    "上传 sha256 不一致 FS seam standing skip（无注入 seam）"
+  ]
+}

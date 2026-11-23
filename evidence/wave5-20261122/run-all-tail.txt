@@ -1,0 +1,20 @@
+  ✔ a source that is a directory is reported as an issue (2.0434ms)
+  ✔ a "../" file name is sanitized and cannot escape <workspaceDir>/materials (4.1227ms)
+  ✔ materials without a resolved material_path are skipped (the brief already says MATERIAL UNKNOWN) (0.6892ms)
+  ✔ an empty material list is a no-op (0.7927ms)
+  ✔ an empty or relative workspaceDir is refused instead of writing into the process cwd (1.4523ms)
+✔ landMaterials (real temp workspace) (24.7096ms)
+✔ normalizeWorkspaceOverviewArgs：默认值与合法过滤 (1.4825ms)
+✔ normalizeWorkspaceOverviewArgs：非法输入 fail-closed (0.6493ms)
+✔ projectWorkspaceOverview：全局 counts/超时总数与精简字段 (0.7518ms)
+✔ projectWorkspaceOverview：job_id / stage_filter / overdue / limit 过滤 (0.7711ms)
+✔ projectWorkspaceOverview：无匹配时返回空数组而不是编造 (0.1861ms)
+✔ unconfiguredWorkspaceOverviewTool：如实 NOT_CONFIGURED (0.348ms)
+ℹ tests 3076
+ℹ suites 105
+ℹ pass 3074
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 2
+ℹ todo 0
+ℹ duration_ms 497597.9338
