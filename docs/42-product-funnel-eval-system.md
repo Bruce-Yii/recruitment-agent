@@ -11,7 +11,8 @@
 > 1. **严禁凭空臆造**：禁止拍脑袋编造脱离真实业务的干净假简历、书面语假转写、理想化假 JD 或不存在的 HR 话术来给自己打高分；
 > 2. **先调研、后拼装、再受控扩增**：任何拟真业务环境构建，必须按「**细分类 → 网络实证调研公开真实基准/行业实录/真实故障案例 → 注明出处拼装或按真实分布受控扩增**」顺序推进；
 > 3. **来源可溯**：进入正式回归集的每一类素材，都必须标注其**真实私有语料来源**或**外部公开出处 URL**；无源头的纯自编业务场景一律不得作为有效评测依据；
-> 4. **结构化报告（Evaluation Card）**：借鉴 [arXiv:2606.09809 (Evaluation Cards, 2026-06)](https://arxiv.org/html/2606.09809v1)，评测报告不得只报一个扁平总分，必须明确披露数据来源切分、各阶段分项指标与复现条件。
+> 4. **阶段聚焦纪律**：隐私法规与合规审查统一放到**上线前收口阶段**处理，当前研发与评测阶段 100% 聚焦真实招聘业务效果、6 阶段漏斗准确度与流程可靠性，不在设计期扯隐私合规。
+> 5. **结构化报告（Evaluation Card）**：借鉴 [arXiv:2606.09809 (Evaluation Cards, 2026-06)](https://arxiv.org/html/2606.09809v1)，评测报告不得只报一个扁平总分，必须明确披露数据来源切分、各阶段分项指标与复现条件。
 
 ---
 ## 一、2026 年 10–11 月生产级 AI 产品评测行业共识
@@ -23,7 +24,7 @@
    - [Openlayer (2026-10-27)](https://www.openlayer.com/blog/agent-evaluation-complete-guide-testing-ai-agents) 明确指出生产中工具调用失误率在 3%–15% 之间，且大量故障属于 **Sequence-level monitoring gaps**（每一步单独看都合法、Schema 全过，但串起来把下游依赖状态写坏了）；
    - [DeepEval (2026-11-12)](https://deepeval.com/docs/evaluation-component-level-llm-evals) 与 [HatchWorks (2026-11-06)](https://hatchworks.com/blog/ai-agents/ai-agent-evaluation-frameworks/) 强调必须对 Trace 中的每个 Span/组件独立打分，同时追踪端到端完成率，出问题才能 1 秒归因到具体环节。
 3. **能力集（Capability Suite）→ 回归集（Regression Suite）双轨演进 + 全改动触发**：据 [Unicrew (2026-11-05)](https://unicrew.com/blog/how-to-evaluate-ai-agents/)，难例攻克后即晋升为回归门禁；任何对 Prompt/工作说明书、工具定义、解析器、检索索引或业务 API 的改动都必须触发对应层级评测（2026 行业仅 15% 团队真正做成 CI 发布门禁）。
-4. **数据集按“故障代价”而非“出现频率”加权**：[Openlayer (2026-10-27)](https://www.openlayer.com/blog/agent-evaluation-complete-guide-testing-ai-agents) 建议起步规模不少于 50+ 样本并持续扩充（约 50% 主路径 / 25% 边界异常 / 15%–35% 隐私与越权对抗 / 10% 下游故障降级），像隐私泄露、越权落库发拒信这类高代价故障必须重权重覆盖。
+4. **数据集按“故障代价”而非“出现频率”加权**：[Openlayer (2026-10-27)](https://www.openlayer.com/blog/agent-evaluation-complete-guide-testing-ai-agents) 建议起步规模不少于 50+ 样本并持续扩充（约 50% 主路径 / 25% 边界异常 / 15%–35% 越权与注入对抗 / 10% 下游故障降级），像隐私泄露、越权落库发拒信这类高代价故障必须重权重覆盖。
 5. **线下门禁 + 线上生产遥测回流飞轮（Eval Flywheel）**：评测不是发版前跑一次的静态脚本，而是贯穿产品始终的闭环——线上每一次人工纠偏、草稿大幅改写、确认卡取消与撤销操作，都是最高信噪比的线上质量指标与新回归用例来源（[HatchWorks, 2026-11-06](https://hatchworks.com/blog/ai-agents/ai-agent-evaluation-frameworks/)）。
 
 ---
@@ -176,11 +177,8 @@
 3. **防锚定盲评隔离（Anti-Anchoring Isolation）**：面试官 A 提交面评前绝对看不到面试官 B 的面评与用人经理倾向（服务端 + 前端双隔离 100%）；
 4. **超时滞后面评（24–48h SLA Breach）**：行业规范要求 24–48 小时内交面评防记忆衰减，超时后触发 `#/settings` 催交策略与待办队列优先标红。
 
-### 9.3 分类 6 实证：中国《个人信息保护法》招聘合规 3 条硬红线
-依据国家网信办 2026 年 7 月 24 日数据出境与招聘简历政策问答（参见 [锦天城律所解读 (2026-07-29)](https://www.allbrightlaw.com/SH/CN/10475/8cd77534cc2487e1.aspx)）及中国内地招聘隐私合规实践（参见 [孖士打中国内地招聘私隐公告](https://www.jsm.com/zh/legal-notice/recruitment-privacy-notice/)），将以下 3 条法律红线直接固化为评测 L1 硬闸门：
-1. **敏感个人信息最小化与脱敏**：简历中的手机号、邮箱、证件号、薪资待遇与照片在跨岗召回、同人判重、CSV 导出与公开预约页中严格脱敏或零暴露；
-2. **禁止仅基于自动化决策作出重大影响决定（个保法第 24 条）**：AI 自动初筛、面评草稿与对话助手**永远只能输出可复核参考或 `propose_write` 提议卡**，绝不允许绕过真人自动淘汰或外发拒信；
-3. **目的限定与可撤回/软关闭**：候选人历史记录仅在授权租户与合法招聘目的内可见，删除走软关闭保留审计且禁止在公开链接外溢任何内部评估。
+### 9.3 分类 6 聚焦：真实招聘流程异常与稳定性边界
+当前阶段不展开法律隐私合规（留待上线前收口），分类 6 100% 聚焦真实业务现场的高频异常：多面试官排期冲突、候选人爽约/临时改期、同人跨岗重复投递、批量操作误判撤销、以及简历隐藏 Prompt 注入与下游接口超时降级（对齐 `docs/12-layer-acceptance.md`）。
 
 ### 9.4 Batch 3 资产化契约：`dsh/dsh-recruitment/test/eval/corpus-manifest.json`
 下一步实施 [Issue #63](https://github.com/Bruce-Yii/recruitment-agent/issues/63) 时，所有 60+ 全链路漏斗用例必须先在 `corpus-manifest.json` 登记来源元数据，**无来源字段的用例 CI 直接拒收**：
