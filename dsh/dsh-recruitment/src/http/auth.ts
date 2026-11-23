@@ -100,19 +100,37 @@ function readCookie(req: IncomingMessage, name: string): string {
   return ''
 }
 
-function setLoginCookies(res: ServerResponse, token: string, sid: string): string[] {
+/** 判断当前请求是否经 HTTPS 或反向代理 HTTPS 接入（决定是否追加 Cookie Secure 标记）。 */
+export function isHttpsRequest(req: IncomingMessage): boolean {
+  const xfProto = req.headers['x-forwarded-proto']
+  const proto = Array.isArray(xfProto) ? xfProto[0] : xfProto
+  if (typeof proto === 'string' && proto.split(',')[0]?.trim().toLowerCase() === 'https') return true
+  return Boolean((req.socket as { encrypted?: boolean } | undefined)?.encrypted)
+}
+
+export function buildLoginCookieHeaders(secure: boolean, token: string, sid: string): string[] {
   const maxAge = AUTH_SESSION_TTL_HOURS * 60 * 60
+  const sec = secure ? '; Secure' : ''
   return [
-    `${AUTH_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`,
-    `${SID_COOKIE}=${encodeURIComponent(sid)}; Path=/; SameSite=Lax; Max-Age=${maxAge}`,
+    `${AUTH_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${sec}`,
+    `${SID_COOKIE}=${encodeURIComponent(sid)}; Path=/; SameSite=Lax; Max-Age=${maxAge}${sec}`,
   ]
 }
 
-function clearLoginCookies(res: ServerResponse): string[] {
+export function buildClearCookieHeaders(secure: boolean): string[] {
+  const sec = secure ? '; Secure' : ''
   return [
-    `${AUTH_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
-    `${SID_COOKIE}=; Path=/; SameSite=Lax; Max-Age=0`,
+    `${AUTH_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${sec}`,
+    `${SID_COOKIE}=; Path=/; SameSite=Lax; Max-Age=0${sec}`,
   ]
+}
+
+function setLoginCookies(req: IncomingMessage, token: string, sid: string): string[] {
+  return buildLoginCookieHeaders(isHttpsRequest(req), token, sid)
+}
+
+function clearLoginCookies(req: IncomingMessage): string[] {
+  return buildClearCookieHeaders(isHttpsRequest(req))
 }
 
 /** 受控角色标签（与 rolesOf 对齐：面试官只拿到 INTERVIEWER）。 */
@@ -206,7 +224,7 @@ async function handleLogin(deps: AuthHttpDeps, req: IncomingMessage, res: Server
   }
   const issued = await insertAuthSession(deps.database, user)
   const result = bindAlias(deps, issued.sessionId, issued.alias, issued.displayName)
-  json(res, 200, result, { 'set-cookie': setLoginCookies(res, issued.token, issued.sessionId) })
+  json(res, 200, result, { 'set-cookie': setLoginCookies(req, issued.token, issued.sessionId) })
 }
 
 async function handleLogout(deps: AuthHttpDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -218,7 +236,7 @@ async function handleLogout(deps: AuthHttpDeps, req: IncomingMessage, res: Serve
   const token = readCookie(req, AUTH_COOKIE)
   if (deps.database !== null && token !== '') await revokeAuthSession(deps.database, token)
   // 无论 cookie 是否有效都回 200（幂等），但旧 cookie 已被撤销 → 下一次请求必 401。
-  json(res, 200, { ok: true }, { 'set-cookie': clearLoginCookies(res) })
+  json(res, 200, { ok: true }, { 'set-cookie': clearLoginCookies(req) })
 }
 
 function loginPageHtml(): string {

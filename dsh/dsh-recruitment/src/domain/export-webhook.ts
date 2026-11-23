@@ -83,6 +83,28 @@ const ALLOWED_WRITE_KEYS = ['enabled', 'url', 'events', 'secret'] as const
 const ALLOWED_STORED_KEYS = ['enabled', 'url', 'events', 'secret_hash'] as const
 
 /** URL 强校验：`https://` 任意主机，或显式 opt-in 的 `http://127.0.0.1[:port]` / `http://[::1][:port]`。 */
+/** 判断主机名是否指向云元数据、私网、回环或内网域名（防 SSRF）。 */
+export function isPrivateOrMetadataHost(hostnameRaw: string): boolean {
+  const host = hostnameRaw.trim().toLowerCase().replace(/^\[/, '').replace(/\]$/, '')
+  if (host === '' || host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.localhost')) {
+    return true
+  }
+  if (host === '::1' || host === '::' || host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd')) {
+    return true
+  }
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
+  if (ipv4) {
+    const a = Number(ipv4[1])
+    const b = Number(ipv4[2])
+    if (a === 0 || a === 10 || a === 127) return true
+    if (a === 169 && b === 254) return true
+    if (a === 172 && b >= 16 && b <= 31) return true
+    if (a === 192 && b === 168) return true
+    if (a === 100 && b >= 64 && b <= 127) return true
+  }
+  return false
+}
+
 export function validateWebhookUrl(value: unknown): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 2048) {
     throw exportWebhookError('INVALID_ARGS', 'WEBHOOK_URL_INVALID',
@@ -103,7 +125,13 @@ export function validateWebhookUrl(value: unknown): string {
     throw exportWebhookError('INVALID_ARGS', 'WEBHOOK_URL_QUERY_FRAGMENT',
       'Webhook 地址不允许查询串或片段。')
   }
-  if (parsed.protocol === 'https:') return parsed.toString()
+  if (parsed.protocol === 'https:') {
+    if (isPrivateOrMetadataHost(parsed.hostname)) {
+      throw exportWebhookError('INVALID_ARGS', 'WEBHOOK_URL_SSRF_BLOCKED',
+        'Webhook 地址禁止指向内网私网、回环或云元数据地址（防 SSRF）。')
+    }
+    return parsed.toString()
+  }
   if (parsed.protocol === 'http:' && (parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]')) {
     return parsed.toString()
   }
