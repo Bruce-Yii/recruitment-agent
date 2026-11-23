@@ -158,3 +158,164 @@ export async function readPgTableRowCounts(
     criterion_override: Number(r?.criterion_override ?? 0),
   }
 }
+
+/** S7 初筛真实输出最小子集（对齐 screening-evaluate.ts）。 */
+export interface ScreeningOutputSnapshot {
+  readonly answerText: string
+  readonly criteria: ReadonlyArray<{
+    readonly state: '有对应' | '没有对应' | '读不出来'
+    readonly quote?: string
+    readonly sourceText?: string
+    readonly isClearTextSource?: boolean
+    readonly isUnreadableSource?: boolean
+  }>
+  readonly decisionRowsAdded?: number
+}
+
+/** 将 S7 初筛真实输出转换为 P2 EvalPointArtifact。 */
+export function adaptScreeningToP2Artifact(snap: ScreeningOutputSnapshot): EvalPointArtifact {
+  const states = snap.criteria.map((c) => c.state)
+  const matchedItems = snap.criteria
+    .filter((c) => c.state === '有对应')
+    .map((c) => ({ quote: c.quote ?? '', sourceText: c.sourceText ?? '' }))
+  const clearItems = snap.criteria.filter((c) => c.isClearTextSource === true)
+  const clearMarkedUnreadable = clearItems.filter((c) => c.state === '读不出来').length
+  const clearTextUnreadableRate = clearItems.length > 0 ? clearMarkedUnreadable / clearItems.length : 0
+  const unreadableMarkedAsAbsent = snap.criteria.filter(
+    (c) => c.isUnreadableSource === true && c.state === '没有对应',
+  ).length
+  const groundedCriteriaCount = matchedItems.filter(
+    (m) => m.quote.trim().length >= 4 && m.sourceText.includes(m.quote.trim()),
+  ).length
+
+  return {
+    evalPoint: 'P2_ScreeningThreeState',
+    stageLabel: 'S7',
+    answerText: snap.answerText,
+    payload: {
+      states,
+      matchedItems,
+      clearTextUnreadableRate,
+      unreadableMarkedAsAbsent,
+      groundedCriteriaCount,
+      ungroundedCount: matchedItems.length - groundedCriteriaCount,
+      decisionRowsAdded: snap.decisionRowsAdded ?? 0,
+    },
+  }
+}
+
+/** S8 跨轮参考简报真实输出最小子集。 */
+export interface HandoffBriefSnapshot {
+  readonly answerText: string
+  readonly expectedUncoveredDims: readonly string[]
+  readonly outputUncoveredDims: readonly string[]
+  readonly alreadyCoveredDims: readonly string[]
+  readonly recommendedDims: readonly string[]
+  readonly outOfRubricExtraItems: number
+  readonly priorScoreLeaked: boolean
+}
+
+/** 将 S8 跨轮参考真实输出转换为 P3 EvalPointArtifact。 */
+export function adaptHandoffBriefToP3Artifact(snap: HandoffBriefSnapshot): EvalPointArtifact {
+  return {
+    evalPoint: 'P3_LinearRoundHandoff',
+    stageLabel: 'S8',
+    answerText: snap.answerText,
+    payload: {
+      expectedUncoveredDims: snap.expectedUncoveredDims,
+      outputUncoveredDims: snap.outputUncoveredDims,
+      alreadyCoveredDims: snap.alreadyCoveredDims,
+      recommendedDims: snap.recommendedDims,
+      outOfRubricExtraItems: snap.outOfRubricExtraItems,
+      priorScoreLeaked: snap.priorScoreLeaked,
+    },
+  }
+}
+
+/** S9 转写导入与草稿真实输出最小子集（对齐 transcript-import.ts）。 */
+export interface TranscriptImportSnapshot {
+  readonly answerText: string
+  readonly sourceKind: 'MANUAL' | 'CONNECTOR_READBACK'
+  readonly connectionState: 'CONNECTED' | 'NOT_CONNECTED' | 'AUTH_REQUIRED'
+  readonly readbackHashMismatch: boolean
+  readonly outcome: 'CREATED' | 'REPLAYED' | 'BLOCKED'
+  readonly rowsWritten: number
+  readonly recordStatus: string
+  readonly verificationStatus: string
+  readonly draftCountedInSummary: boolean
+}
+
+/** 将 S9 转写导入与草稿真实输出转换为 P4 EvalPointArtifact。 */
+export function adaptTranscriptDraftToP4Artifact(snap: TranscriptImportSnapshot): EvalPointArtifact {
+  return {
+    evalPoint: 'P4_TranscriptScorecard',
+    stageLabel: 'S9',
+    answerText: snap.answerText,
+    payload: {
+      sourceKind: snap.sourceKind,
+      connectionState: snap.connectionState,
+      readbackHashMismatch: snap.readbackHashMismatch,
+      outcome: snap.outcome,
+      rowsWritten: snap.rowsWritten,
+      recordStatus: snap.recordStatus,
+      verificationStatus: snap.verificationStatus,
+      draftCountedInSummary: snap.draftCountedInSummary,
+    },
+  }
+}
+
+/** S10 汇总与决策真实输出最小子集（对齐 evaluation-summarize.ts / record-human-decision.ts）。 */
+export interface DecisionSummarySnapshot {
+  readonly answerText: string
+  readonly missingScorecardFlagged: boolean
+  readonly missingTreatedAsZero: boolean
+  readonly sideAQuoteKept: boolean
+  readonly sideBQuoteKept: boolean
+  readonly implicitSideTaken: boolean
+  readonly pinConstraintVisible: boolean
+}
+
+/** 将 S10 汇总真实输出转换为 P5 EvalPointArtifact。 */
+export function adaptDecisionSummaryToP5Artifact(snap: DecisionSummarySnapshot): EvalPointArtifact {
+  return {
+    evalPoint: 'P5_DecisionAndTrace',
+    stageLabel: 'S10',
+    answerText: snap.answerText,
+    payload: {
+      missingScorecardFlagged: snap.missingScorecardFlagged,
+      missingTreatedAsZero: snap.missingTreatedAsZero,
+      sideAQuoteKept: snap.sideAQuoteKept,
+      sideBQuoteKept: snap.sideBQuoteKept,
+      implicitSideTaken: snap.implicitSideTaken,
+      pinConstraintVisible: snap.pinConstraintVisible,
+    },
+  }
+}
+
+/** 计算 pass^k 稳定性指标（连续 k 次独立运行全部通过才算稳定通过）。 */
+export function computePassPowerK(runPassMaps: readonly Readonly<Record<string, boolean>>[]): {
+  readonly k: number
+  readonly totalCases: number
+  readonly stablePassed: number
+  readonly passPowerKRate: number | null
+  readonly flakyCaseIds: readonly string[]
+} {
+  const k = runPassMaps.length
+  if (k === 0) return { k: 0, totalCases: 0, stablePassed: 0, passPowerKRate: null, flakyCaseIds: [] }
+  const ids = Object.keys(runPassMaps[0]).sort()
+  if (ids.length === 0) return { k, totalCases: 0, stablePassed: 0, passPowerKRate: null, flakyCaseIds: [] }
+  let stablePassed = 0
+  const flaky: string[] = []
+  for (const id of ids) {
+    const passes = runPassMaps.filter((m) => m[id] === true).length
+    if (passes === k) stablePassed += 1
+    else if (passes > 0) flaky.push(id)
+  }
+  return {
+    k,
+    totalCases: ids.length,
+    stablePassed,
+    passPowerKRate: Number((stablePassed / ids.length).toFixed(4)),
+    flakyCaseIds: flaky,
+  }
+}
