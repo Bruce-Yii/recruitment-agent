@@ -2,10 +2,10 @@
 time: 2026-11-24T07:14:18.1965161+08:00
 
 ## transcript_artifact
-35d33e6c-dc66-4087-880a-f3037efd37ff|FEISHU|READY|LIVE|MANUAL|CONNECTED|9395b98fc433|is_complete=true|is_canonical=true|chars=71
+35d33e6c…|FEISHU|READY|LIVE|MANUAL|CONNECTED|9395b98fc433|is_complete=true|is_canonical=true|chars=71
 
 ## interview_record
-9870076b-a602-4741-8ce4-c2bdb8f1121e|6055c528-02ad-4600-ac79-7f7116fc4b9e|rev=1|NEEDS_REVIEW|UNVERIFIED|is_current=true
+9870076b…|6055c528…|rev=1|NEEDS_REVIEW|UNVERIFIED|is_current=true
 
 ## transcript_segment count
 4
