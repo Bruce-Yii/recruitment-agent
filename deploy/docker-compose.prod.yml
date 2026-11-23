@@ -1,0 +1,52 @@
+# Recruitment Agent — 生产交付 PG17 + 自动迁移编排（10 分钟独立部署基建）
+# 用法：
+#   cp deploy/.env.production.example deploy/.env.production
+#   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PGDATABASE:-recruitment_prod}
+      POSTGRES_USER: ${PGUSER:-recruitment}
+      POSTGRES_PASSWORD: ${PGPASSWORD:?请设置强数据库密码 PGPASSWORD}
+    ports:
+      - "127.0.0.1:${PGPORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-recruitment} -d ${PGDATABASE:-recruitment_prod}"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  db-migrate:
+    image: postgres:17-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: ${PGDATABASE:-recruitment_prod}
+      PGUSER: ${PGUSER:-recruitment}
+      PGPASSWORD: ${PGPASSWORD:?请设置强数据库密码 PGPASSWORD}
+    volumes:
+      - ../db:/workspace/db:ro
+    entrypoint:
+      - /bin/sh
+      - -euo
+      - pipefail
+      - -c
+      - |
+        for f in /workspace/db/migrations/*.sql; do
+          echo "[migrate] applying $$f"
+          psql -v ON_ERROR_STOP=1 -q -f "$$f"
+        done
+        echo "[verify] running db/verify.sql"
+        psql -v ON_ERROR_STOP=1 -q -f /workspace/db/verify.sql
+        echo "[ok] all migrations verified"
+    restart: "no"
+
+volumes:
+  pgdata:
