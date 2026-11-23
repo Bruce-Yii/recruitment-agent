@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { fetchAppJson, postWorkspaceSettingWrite } from './api.ts';
 import { downloadApplicationsCsv, testWebhook as postWebhookTest } from '../client/external-sync.ts';
-import { createOrgPipeline, createOrgRole, ORG_ROLE_SCOPE_OPTIONS } from '../client/org-config.ts';
+import { createOrgPipeline, createOrgRole, createOrgTeam, deactivateOrgPipeline, deactivateOrgRole, ORG_ROLE_SCOPE_OPTIONS } from '../client/org-config.ts';
 
 type SettingsTabKey = 'connections' | 'automation' | 'org' | 'governance';
 
@@ -82,8 +82,11 @@ interface SettingsPayload {
 interface OrgConfigPayload {
   readonly roles?: ReadonlyArray<{
     readonly id?: string;
+    readonly role_id?: string;
     readonly code: string;
     readonly name: string;
+    readonly is_active?: boolean;
+    readonly record_version?: number;
     readonly permission_scopes?: readonly string[];
     readonly record_version?: number;
   }>;
@@ -169,6 +172,9 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
   const [pipeCode, setPipeCode] = useState('');
   const [pipeName, setPipeName] = useState('');
   const [pipeDesc, setPipeDesc] = useState('');
+  const [teamCode, setTeamCode] = useState('');
+  const [teamName, setTeamName] = useState('');
+  const [teamDeptId, setTeamDeptId] = useState('');
   const [orgBusy, setOrgBusy] = useState(false);
 
   const loadSettings = useCallback(async () => {
@@ -357,6 +363,54 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
       await loadOrgConfig();
     } catch (err) {
       setFeedback({ kind: 'err', text: err instanceof Error ? err.message : '新增流程模板失败' });
+    } finally {
+      setOrgBusy(false);
+    }
+  };
+
+  const handleCreateTeam = async () => {
+    if (readOnly) return;
+    setOrgBusy(true);
+    setFeedback(null);
+    try {
+      await createOrgTeam(sid, { code: teamCode, name: teamName, departmentId: teamDeptId });
+      setTeamCode('');
+      setTeamName('');
+      setExpandedRow(null);
+      setFeedback({ kind: 'ok', text: '已新增招聘团队' });
+      await loadOrgConfig();
+    } catch (err) {
+      setFeedback({ kind: 'err', text: err instanceof Error ? err.message : '新增招聘团队失败' });
+    } finally {
+      setOrgBusy(false);
+    }
+  };
+
+  const handleDeactivateRole = async (roleId: string, recordVersion: number) => {
+    if (readOnly) return;
+    setOrgBusy(true);
+    setFeedback(null);
+    try {
+      await deactivateOrgRole(sid, roleId, recordVersion);
+      setFeedback({ kind: 'ok', text: '已软停用角色模板（历史记录完整保留）' });
+      await loadOrgConfig();
+    } catch (err) {
+      setFeedback({ kind: 'err', text: err instanceof Error ? err.message : '停用角色失败' });
+    } finally {
+      setOrgBusy(false);
+    }
+  };
+
+  const handleDeactivatePipeline = async (pipelineId: string, recordVersion: number) => {
+    if (readOnly) return;
+    setOrgBusy(true);
+    setFeedback(null);
+    try {
+      await deactivateOrgPipeline(sid, pipelineId, recordVersion);
+      setFeedback({ kind: 'ok', text: '已软停用流程模板（进行中申请不受影响）' });
+      await loadOrgConfig();
+    } catch (err) {
+      setFeedback({ kind: 'err', text: err instanceof Error ? err.message : '停用流程模板失败' });
     } finally {
       setOrgBusy(false);
     }
@@ -1102,12 +1156,30 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
                 </div>
                 {orgData?.roles && orgData.roles.length > 0 ? (
                   <div className="settings-l2">
-                    {orgData.roles.map((r) => (
-                      <div key={r.code} className="settings-kv-row">
-                        <span>{r.name}</span>
-                        <span>{(r.permission_scopes || []).length} 项权限</span>
-                      </div>
-                    ))}
+                    {orgData.roles.map((r) => {
+                      const rid = r.role_id || r.id || '';
+                      const ver = r.record_version ?? 1;
+                      const active = r.is_active !== false;
+                      return (
+                        <div key={r.code} className="settings-kv-row">
+                          <span>{r.name}{active ? '' : '（已停用）'}</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                            <span>{(r.permission_scopes || []).length} 项权限</span>
+                            {!readOnly && active && rid ? (
+                              <button
+                                type="button"
+                                className="text-action-link muted"
+                                data-testid={`settings-deactivate-role-${r.code}`}
+                                disabled={orgBusy}
+                                onClick={() => void handleDeactivateRole(rid, ver)}
+                              >
+                                停用
+                              </button>
+                            ) : null}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : null}
                 {expandedRow === 'org-role' && !readOnly ? (
@@ -1181,6 +1253,16 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
                     <span className="settings-status tone-muted">
                       {orgData?.hiring_teams ? `${orgData.hiring_teams.length} 个团队` : '待后端投影接入'}
                     </span>
+                    {!readOnly ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        data-testid="settings-btn-new-team"
+                        onClick={() => toggleRow('org-team')}
+                      >
+                        {expandedRow === 'org-team' ? '收起' : '新增'}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
                 {orgData?.hiring_teams && orgData.hiring_teams.length > 0 ? (
@@ -1191,6 +1273,48 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
                         <span>{t.member_count ?? 0} 位成员</span>
                       </div>
                     ))}
+                  </div>
+                ) : null}
+                {expandedRow === 'org-team' && !readOnly ? (
+                  <div className="settings-l2" data-testid="settings-expand-org-team">
+                    <div className="settings-kv-row">
+                      <span>团队编码</span>
+                      <input
+                        type="text"
+                        placeholder="例如 eng_backend"
+                        value={teamCode}
+                        onChange={(e) => setTeamCode(e.target.value)}
+                      />
+                    </div>
+                    <div className="settings-kv-row">
+                      <span>团队名称</span>
+                      <input
+                        type="text"
+                        placeholder="例如 后端工程招聘组"
+                        value={teamName}
+                        onChange={(e) => setTeamName(e.target.value)}
+                      />
+                    </div>
+                    <div className="settings-kv-row">
+                      <span>所属部门标识</span>
+                      <input
+                        type="text"
+                        placeholder="已有部门 UUID"
+                        value={teamDeptId}
+                        onChange={(e) => setTeamDeptId(e.target.value)}
+                      />
+                    </div>
+                    <div className="settings-row-actions">
+                      <button
+                        type="button"
+                        className="btn dark"
+                        data-testid="settings-save-org-team"
+                        disabled={orgBusy}
+                        onClick={() => void handleCreateTeam()}
+                      >
+                        {orgBusy ? '保存中…' : '创建团队'}
+                      </button>
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -1223,12 +1347,30 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
                 </div>
                 {orgData?.pipeline_templates && orgData.pipeline_templates.length > 0 ? (
                   <div className="settings-l2">
-                    {orgData.pipeline_templates.map((p) => (
-                      <div key={p.code} className="settings-kv-row">
-                        <span>{p.name}</span>
-                        <span>{p.stage_count ?? 0} 个阶段</span>
-                      </div>
-                    ))}
+                    {orgData.pipeline_templates.map((p) => {
+                      const pid = (p as { pipeline_template_id?: string; id?: string }).pipeline_template_id || (p as { id?: string }).id || '';
+                      const ver = (p as { record_version?: number }).record_version ?? 1;
+                      const active = (p as { is_active?: boolean }).is_active !== false;
+                      return (
+                        <div key={p.code} className="settings-kv-row">
+                          <span>{p.name}{active ? '' : '（已停用）'}</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                            <span>{p.stage_count ?? 0} 个阶段</span>
+                            {!readOnly && active && pid ? (
+                              <button
+                                type="button"
+                                className="text-action-link muted"
+                                data-testid={`settings-deactivate-pipeline-${p.code}`}
+                                disabled={orgBusy}
+                                onClick={() => void handleDeactivatePipeline(pid, ver)}
+                              >
+                                停用
+                              </button>
+                            ) : null}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : null}
                 {expandedRow === 'org-pipeline' && !readOnly ? (
