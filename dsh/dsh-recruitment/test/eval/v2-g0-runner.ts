@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { buildEvaluationCard, type EvaluationCard } from './evaluation-card.ts'
+import { buildEvaluationCard, type EvaluationCard, type RealCoverage } from './evaluation-card.ts'
 import { GraderRegistry } from './grader-registry.ts'
 import { registerV2L1Graders } from './v2-graders-l1.ts'
 import { registerV2L2Graders } from './v2-graders-l2.ts'
@@ -111,8 +111,10 @@ export function runEvalGateSuite(options: {
   readonly gate: 'G0' | 'G1' | 'G2' | 'ALL'
   readonly runId?: string
   readonly manifestPath?: string
-  readonly artifactProvider?: (c: ManifestCaseRecord) => EvalPointArtifact
+  /** Issue #92 P1-B：返回 null 表示 NO_REAL_SOURCE（该案例不送判分器、不计 PASS、不进分母）。 */
+  readonly artifactProvider?: (c: ManifestCaseRecord) => EvalPointArtifact | null
   readonly counterMetrics?: CounterMetricsObserved
+  readonly coverage?: Omit<RealCoverage, 'totalCases' | 'executedCases'>
 }): EvalSuiteRunResult {
   const manifest = loadEvalManifest(options.manifestPath)
   const registry = createV2FullRegistry()
@@ -124,7 +126,18 @@ export function runEvalGateSuite(options: {
   const isReal = options.artifactProvider !== undefined
   const provide = options.artifactProvider ?? buildDefaultG0Artifact
 
-  const outcomes: CaseRunOutcome[] = selected.map((c) => {
+  const outcomes: CaseRunOutcome[] = []
+  const realSourceCaseIds: string[] = []
+  const noRealSourceCaseIds: string[] = []
+
+  for (const c of selected) {
+    const artifact = provide(c)
+    if (artifact === null) {
+      // NO_REAL_SOURCE：真实模式下无真实产物的案例绝不判 PASS，也不参与判分。
+      noRealSourceCaseIds.push(c.case_id)
+      continue
+    }
+    realSourceCaseIds.push(c.case_id)
     const lifecycleCase: PersonLifecycleCase = {
       caseId: c.case_id,
       candidateKey: `cand-${c.case_id.toLowerCase()}`,
@@ -136,17 +149,29 @@ export function runEvalGateSuite(options: {
       granularity: c.eval_granularity,
       failureCostWeight: c.failure_cost_weight,
       graderIds: c.graders,
-      artifacts: [provide(c)],
+      artifacts: [artifact],
       description: c.description,
     }
-    return registry.evaluateCase(lifecycleCase)
-  })
+    outcomes.push(registry.evaluateCase(lifecycleCase))
+  }
+
+  const coverage: RealCoverage | undefined =
+    isReal
+      ? {
+          totalCases: selected.length,
+          executedCases: outcomes.length,
+          realSourceCaseIds: options.coverage?.realSourceCaseIds ?? realSourceCaseIds,
+          noRealSourceCaseIds: options.coverage?.noRealSourceCaseIds ?? noRealSourceCaseIds,
+          ...(options.coverage?.note !== undefined ? { note: options.coverage.note } : {}),
+        }
+      : undefined
 
   const card = buildEvaluationCard({
     runId: options.runId ?? `eval-${options.gate.toLowerCase()}`,
     executionMode: isReal ? 'real_adapter' : 'contract_smoke',
     outcomes,
     ...(options.counterMetrics ? { counterMetrics: options.counterMetrics } : {}),
+    ...(coverage !== undefined ? { coverage } : {}),
   })
   return { card, outcomes }
 }
@@ -154,8 +179,9 @@ export function runEvalGateSuite(options: {
 export function runG0DeterministicSuite(options?: {
   readonly runId?: string
   readonly manifestPath?: string
-  readonly artifactProvider?: (c: ManifestCaseRecord) => EvalPointArtifact
+  readonly artifactProvider?: (c: ManifestCaseRecord) => EvalPointArtifact | null
   readonly counterMetrics?: CounterMetricsObserved
+  readonly coverage?: Omit<RealCoverage, 'totalCases' | 'executedCases'>
 }): EvalSuiteRunResult {
   return runEvalGateSuite({ gate: 'G0', ...options })
 }

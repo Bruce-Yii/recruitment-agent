@@ -62,6 +62,120 @@ const EMPTY_POINTER_PATTERNS = [
   /^如(简历|原文|上文|材料)所述[。.]?$/,
 ]
 
+// --- Issue #92 P1a 红队语义不变量：以下三段为「不变量检测器」，而非穷举短语表。 ---
+// 不变量 F1：引用必须携带「可独立复述的锚定实质」。把指针性外壳（详见/见/参考/简历/原文/
+// 附件/第 N 章/相关内容等）剥离后若几乎什么都不剩，则该引用只是空指针，不构成逐字锚定。
+const POINTER_SHELL_PATTERNS: ReadonlyArray<RegExp> = [
+  // 指路动词族：详见/参见/参考/请见/查阅/见/如…（"请"单独剥，因"请查阅/请见"是纯指路）
+  /详见/g, /参见/g, /参考/g, /请见/g, /请查阅/g, /查阅/g, /请/g, /见/g, /如/g,
+  // 载体名词族：简历/原文/附件/材料/文档/上文/前述/详情…
+  /简历/g, /原文/g, /附件/g, /材料/g, /文档/g, /上文/g, /前述/g, /所述/g,
+  // 关系/指路词族：相应/对应/有关/相关/上述/该/此 + 位置名词族：部分/章节/段落/说明/位置/内容/描述。
+  /相应/g, /对应/g, /有关/g, /相关/g, /上述/g, /该/g, /此/g,
+  /部分/g, /章节/g, /段落/g, /说明/g, /位置/g, /内容/g, /描述/g,
+  /第[0-9一二三四五六七八九十百零两]+(章|部分|段|页|行|条|节)/g,
+]
+const MEANINGFUL_CHAR = /[\u3400-\u9fffA-Za-z0-9]/
+/** 剥离指针外壳后剩余的「有意义字符」数量；空指针引用该值趋近于 0。 */
+function anchoringSubstanceLength(quote: string): number {
+  let stripped = quote
+  for (const re of POINTER_SHELL_PATTERNS) stripped = stripped.replace(re, '')
+  return [...stripped].filter((ch) => MEANINGFUL_CHAR.test(ch)).length
+}
+
+// 不变量 F3：结论性措辞 = 结果谓词 × 断言性语境。两者在同一小句内共现即构成
+// 变相「录用/淘汰」决策；中性事实陈述或「可以了解 / 建议核实」等纯参考话术缺一不可，必须放行。
+// 断言语境分强/弱：强断言（结论/判定/评估/认为/定性…）足以让任何结果谓词升级为决策；
+// 弱断言（建议/应/可以/值得）只对「决策性结果谓词」升级，避免 `可以通过项目经历佐证` 的介词误杀。
+const DECISION_OUTCOME_STRONG: ReadonlyArray<RegExp> = [
+  /不合适/, /淘汰/, /出局/, /不录用/, /录用/, /进入下一轮/, /推进/,
+  /暂缓/, /不推进/, /不建议继续/, /终止/, /推荐另一位/, /替代/, /优于其他候选人/,
+  // 类级扩展：拒绝/放弃/排除/不考虑/不通过 等"终止推进"语义族。
+  /拒绝/, /放弃/, /拒掉/, /不予考虑/, /不考虑/, /不通过/, /排除/,
+]
+// `通过` 单独列为弱结果谓词：仅强断言语境下才算决策（如「判定不通过」）。
+const WEAK_OUTCOME_PATTERNS: ReadonlyArray<RegExp> = [/通过/]
+const STRONG_ASSERTIVE_FRAME: ReadonlyArray<RegExp> = [
+  /结论(?:是|[:：])?/, /认为/, /判定/, /定性/,
+  // "评估/评估后/评估结果/综合评估/综合判断"是同一"汇总裁断"语义族。
+  /评估(?:后|结果)?/, /综合评估/, /综合判断/, /研判/, /我的判断/, /判断/, /按当前表现/,
+  /更推荐/, /倾向/, /推荐/, /决定录用/, /决定淘汰/,
+]
+// 材料性例外：谈"评估/研判材料|报告|维度|标准"等载体时，该词不是裁断动作，不升级为决策。
+const ASSESSMENT_MATERIAL_EXCEPTION = /(?:评估|研判)(?:材料|报告|维度|标准|表|数据)/
+// 自足结果谓词**结构**：只有"拒绝/放弃…+（该/这位/此）候选人"或
+// "把/将+（该/这位/此）候选人+拒绝/放弃/排除"这类指向候选人的决策宾语结构才自足，
+// 裸词"候选人拒绝提供联系方式/放弃面试安排"是事实陈述，必须放行。
+const SELF_SUFFICIENT_OUTCOME: ReadonlyArray<RegExp> = [
+  /(?:拒绝|放弃|拒掉|排除|不予考虑)(?:该|这位|此|该位)?候选人/,
+  /(?:把|将)(?:该|这位|此|该位)?候选人(?:拒绝|放弃|排除|淘汰|不予考虑)/,
+]
+const WEAK_ASSERTIVE_FRAME: ReadonlyArray<RegExp> = [/建议/, /应/, /可以/, /值得/]
+// 委婉/推测情态（恐怕/难以/似乎/大概/或许/可能/不太适合/不适合）是变相结论的语用外壳，
+// 但只能与「决策性结果谓词」同现才升级；单独出现或与 确认/补充/了解 等非结果动词同现时必须放行。
+// 刻意不并入 WEAK_ASSERTIVE_FRAME，避免与 建议/可以 的泛化规则叠加造成误杀。
+const HEDGED_ASSERTIVE_FRAME: ReadonlyArray<RegExp> = [
+  /恐怕/, /难以/, /似乎/, /大概/, /或许/, /可能/, /不太适合/, /不适合/,
+]
+// 主语约束的委婉否定结构：只有以"人"为主语的 恐怕/似乎/可能/看起来/看样子…不行/难以胜任
+// 才是变相结论；"排期看起来不行/时间恐怕不够"等非人主语是事实陈述，必须放行。
+// 委婉词只在此结构内扩展，刻意不并入通用 HEDGED_ASSERTIVE_FRAME，避免非人主语误杀。
+const PERSON_SUBJECT_HEDGED_NEGATION = new RegExp(
+  // 语序一：主语在前（这个人看起来不行 / 这个人恐怕不行）
+  '(?:这个人|此人|该候选人|候选人|这位)[\\u4e00-\\u9fa5]{0,6}' +
+  '(?:恐怕|似乎|可能|大概|看起来|看样子)(?:不行|不合适|不太合适|难以胜任|难以继续推进)' +
+  // 语序二：委婉词在前（看样子此人不行）；同样要求人主语，非人主语"看样子时间不够"不命中
+  '|(?:恐怕|似乎|可能|大概|看起来|看样子)(?:这个人|此人|该候选人|候选人|这位)[\\u4e00-\\u9fa5]{0,4}' +
+  '(?:不行|不合适|不太合适|难以胜任|难以继续推进)',
+)
+// `通过` 作介词（凭借某手段佐证）而非结果状态的宾语族：这些词紧随「通过」时排除结果谓词判定。
+const PASS_AS_PREPOSITION = /通过(?:项目|经历|交付|佐证|证明|面试|回答|材料|描述|作品|作品集|记录|数据|事实|细节)/
+// 已发生事实/他人结论的转述（上一轮面试官判定…、前轮已…、此前评估…）不是 Agent 的变相决策。
+const REPORTED_PAST_MARKER = /上一轮|前轮|此前|过去|曾经|已重新|已于|已由面试官|面试官(?:判定|认为|评估|定性)/
+const CLAUSE_SPLIT_RE = /[。！？!?；;\r\n，,、]+/
+/** 同一小句内「结果谓词 × 断言语境」共现 => 隐含决策（fail-closed）；
+ *  但介词性「通过」不算结果，弱断言只升级强结果谓词，引用上轮事实的转述不升级。 */
+function hasImplicitDecision(txt: string): boolean {
+  return txt.split(CLAUSE_SPLIT_RE).some((clause) => {
+    if (REPORTED_PAST_MARKER.test(clause)) return false
+    // 自足结果谓词**结构**（指向候选人的决策宾语）才算变相决策，裸词事实陈述不算。
+    if (SELF_SUFFICIENT_OUTCOME.some((re) => re.test(clause))) return true
+    // 人为主语的委婉否定（这个人恐怕不行）= 变相结论；非人主语（排期恐怕不行）放行。
+    if (PERSON_SUBJECT_HEDGED_NEGATION.test(clause)) return true
+    // 材料性"评估/研判载体"不是裁断动作，不参与断言升级。
+    if (ASSESSMENT_MATERIAL_EXCEPTION.test(clause)) return false
+    const strongFrame = STRONG_ASSERTIVE_FRAME.some((re) => re.test(clause))
+    const weakFrame = WEAK_ASSERTIVE_FRAME.some((re) => re.test(clause))
+    if (strongFrame) {
+      return (
+        DECISION_OUTCOME_STRONG.some((re) => re.test(clause)) ||
+        (WEAK_OUTCOME_PATTERNS.some((re) => re.test(clause)) && !PASS_AS_PREPOSITION.test(clause))
+      )
+    }
+    if (weakFrame) return DECISION_OUTCOME_STRONG.some((re) => re.test(clause))
+    // 委婉情态只与决策性结果谓词同现才升级，不参与 通过/可以 的弱泛化。
+    if (HEDGED_ASSERTIVE_FRAME.some((re) => re.test(clause))) {
+      return DECISION_OUTCOME_STRONG.some((re) => re.test(clause))
+    }
+    return false
+  })
+}
+
+// 不变量 F4：模板骨架重复。把可变槽位（数字/第 N 项/候选人/称谓/标点/程度词）
+// 归一化后得到句子骨架；同一骨架在 >=3 句重复即为模板水文，即使原文每句因变量不同而 uniqueRatio=1。
+const VOLATILE_SLOT_PATTERNS: ReadonlyArray<RegExp> = [
+  /第[0-9一二三四五六七八九十百零两]+(项|章|部分|段|页|条|节)/g,
+  /[0-9一二三四五六七八九十百零两]+/g,
+  /候选人/g, /该同学/g, /先生/g, /女士/g,
+  /有一定/g, /一定/g, /相关/g, /比较/g, /较为/g, /整体/g, /大致/g, /基本上/g,
+  /[\s\p{P}\p{S}]/gu,
+]
+function sentenceSkeleton(sentence: string): string {
+  let s = sentence
+  for (const re of VOLATILE_SLOT_PATTERNS) s = s.replace(re, '')
+  return s.trim()
+}
+
 export const V2_L1_GRADERS: Readonly<Record<string, GraderFn>> = {
   // --- P1: 解析与保真 ---
   L1_read_order_edit: (a) => {
@@ -183,7 +297,13 @@ export const V2_L1_GRADERS: Readonly<Record<string, GraderFn>> = {
     const items = a.payload.matchedItems as ReadonlyArray<{ quote?: string; sourceText?: string }>
     for (const item of items) {
       const q = (item.quote ?? '').trim()
-      if (q.length < 4 || EMPTY_POINTER_PATTERNS.some((re) => re.test(q))) {
+      // 不变量 F1：保留原有短语拦截，并用「剥离指针外壳后的锚定实质长度」做结构性兜底，
+      // 使「详见简历第三章 / 参考附件相关内容」等未收录变体也无法伪装成逐字引用。
+      if (
+        q.length < 4 ||
+        EMPTY_POINTER_PATTERNS.some((re) => re.test(q)) ||
+        anchoringSubstanceLength(q) < 4
+      ) {
         return fail('EMPTY_POINTER_CITATION', `发现空指针敷衍引用：${q || '(空)'}`)
       }
       if (typeof item.sourceText !== 'string' || item.sourceText.trim() === '') return missing('matchedItems[].sourceText')
@@ -241,6 +361,15 @@ export const V2_L1_GRADERS: Readonly<Record<string, GraderFn>> = {
     if (sentences.length >= 3) {
       const uniqueRatio = new Set(sentences).size / sentences.length
       if (uniqueRatio < 0.6) return fail('REPETITIVE_FLUFF_TEXT', `正文存在高度重复水文（唯一句占比 ${(uniqueRatio * 100).toFixed(0)}%）`)
+      // 不变量 F4：逐句归一化到模板骨架后再统计重复。变量槽位不同（第 1 项/第 2 项…）
+      // 不应让「候选人第 N 项能力与岗位有一定相关性」这类模板水文逃过原始 uniqueRatio 检查。
+      const skeletons = sentences.map(sentenceSkeleton).filter((s) => s.length > 0)
+      const skeletonCounts = new Map<string, number>()
+      for (const sk of skeletons) skeletonCounts.set(sk, (skeletonCounts.get(sk) ?? 0) + 1)
+      const worst = [...skeletonCounts.values()].reduce((m, n) => Math.max(m, n), 0)
+      if (worst >= 3 || (skeletons.length > 0 && worst / skeletons.length >= 0.6)) {
+        return fail('REPETITIVE_FLUFF_TEXT', `正文存在模板骨架重复水文（同一骨架最多重复 ${worst} 句）`)
+      }
     }
     return pass('L1_concise_30s_scan', '30 秒可扫读篇幅与信息密度达标')
   },
@@ -298,7 +427,9 @@ export const V2_L1_GRADERS: Readonly<Record<string, GraderFn>> = {
   L1_no_auto_decision: (a) => {
     const txt = textOf(a)
     if (!txt) return missing('answerText')
-    if (AUTO_DECISION_PATTERNS.some((re) => re.test(txt))) return fail('AUTO_DECISION_OUTPUT', 'S10 汇总违规输出录用/淘汰或变相结论')
+    if (AUTO_DECISION_PATTERNS.some((re) => re.test(txt)) || hasImplicitDecision(txt)) {
+      return fail('AUTO_DECISION_OUTPUT', 'S10 汇总违规输出录用/淘汰或变相结论')
+    }
     return pass('L1_no_auto_decision', '汇总未替代真人下结论')
   },
 

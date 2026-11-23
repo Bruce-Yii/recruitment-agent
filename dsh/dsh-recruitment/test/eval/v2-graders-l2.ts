@@ -33,6 +33,112 @@ const COMMAND_PATTERNS = [
 const EMOTION_LEAK_PATTERNS = [/气场偏弱/, /疑似吹牛/, /感觉很水/, /印象极差/, /强烈不建议/, /差强人意/]
 const SIDE_TAKING_PATTERNS = [/我同意(前|后)者/, /更认同.*面试官/, /综合来看更偏向/]
 
+/**
+ * INVARIANT (L2_reference_not_command):
+ * 面试官参考只允许「描述可了解什么 / 供参考 / 给出理由」，不得构成对面试官的指令剧本。
+ * 结构性判定 = (祈使/情态标记 + 调查/验证类动词) 或 (强硬标记直接修饰动词) 或 (穷尽式核实指令)。
+ * 注意：「了解」「关注」属于参考性动词，只有与考察/核实/验证/深挖/追问等调查动词搭配才越界；
+ * 「建议/可以 + 了解/关注 + 理由/参考框定」是合法参考，不得误杀。
+ */
+// 单字情态标记（应/须/得/请）用负向前后顾排除「适应/响应/必须/获得/懂得」等中性复合词。
+// 类级扩展：情态族补 应当/希望（仅与调查动词同现才算指令；"希望了解…参考"不含调查动词 → 合法）。
+const COMMAND_MODAL = /请|务必|必须|一定要|需要|建议|强制|要求|应该|应当|希望|(?<![适响供效])应(?![该用对届付])|(?<!必)须(?!知)|(?<![获懂记晓使显])得(?![到知失逞体当])/
+// 强度/穷尽族补 逐个/逐项（与 逐一/逐条 同属"逐个"语义族）。
+const COMMAND_INTENSIFIER = /(?:重点|按顺序|逐一|逐个|逐项|逐条|每一|全部|深度|深入|仔细|严格|彻底)?/
+// 调查动词族补 询问/核对/查问/查证/核查/盘问（"了解/关注"仍刻意排除，保住"建议了解…供参考"）。
+const INVESTIGATION_VERB = /考察|核实|验证|深挖|追问|问清|询问|核对|查问|查证|核查|盘问|确认|排查|检查|了解详情/
+const EXHAUSTIVE_MARKER = /逐一|逐个|逐项|逐条|按顺序|每一段|每一轮|全部/
+const EXHAUSTIVE_VERB = /核实|验证|检查|确认|排查|查证|核对|查问|核查|盘问/
+const HARD_MODAL = /强制|务必|必须|一定要|要求|须/
+// 事实性护栏：已发生动作的陈述（前轮/已/此前/过去/曾经）不是对面试官的指令。
+const FACTUAL_PAST_MARKER = /已|前轮|上一轮|此前|过去|曾经/
+const CLAUSE_SPLIT_RE = /[。！？!?；;\r\n，,、]+/
+/** 若命中结构的小句本身是"已发生事实"陈述，则不判为命令。
+ *  逐小句判断，避免整句里"前轮已核实"把后半句"请逐一核实"的真实指令一并豁免。 */
+function isFactualPastMatch(txt: string, matchIndex: number): boolean {
+  const before = txt.slice(0, matchIndex)
+  const parts = before.split(CLAUSE_SPLIT_RE)
+  // 当前小句 = 命中点之前同一小句的前缀 + 命中点之后到下一个分隔符为止的内容。
+  const prefix = parts[parts.length - 1] ?? ''
+  const suffix = txt.slice(matchIndex).split(CLAUSE_SPLIT_RE)[0] ?? ''
+  return FACTUAL_PAST_MARKER.test(prefix + suffix)
+}
+
+function isCommandTone(txt: string): { source: string } | undefined {
+  // 原固定短语表必须先命中（不削弱任何既有变体）。
+  const legacy = COMMAND_PATTERNS.find((re) => re.test(txt))
+  if (legacy) return { source: legacy.source }
+
+  // 规则 A：祈使/情态标记 + (可选强度副词) + 调查动词。
+  // 例：请重点考察系统设计能力、建议重点考察并发设计、建议按顺序逐一核实项目细节、这一轮务必确认候选人主导项目。
+  const modalInvestigation = new RegExp(
+    `(?:${COMMAND_MODAL.source})${COMMAND_INTENSIFIER.source}(?:${INVESTIGATION_VERB.source})`,
+  )
+  const mA = modalInvestigation.exec(txt)
+  if (mA && !isFactualPastMatch(txt, mA.index)) return { source: modalInvestigation.source }
+
+  // 规则 A2：情态标记 + ≤4 字宾语/修饰（如「面试官」）+ 调查动词。
+  // 例：希望面试官仔细验证核心贡献。「了解/关注」仍不在调查动词族，纯参考句不受影响。
+  const modalWithObject = new RegExp(
+    `(?:${COMMAND_MODAL.source})[\\u4e00-\\u9fa5]{0,4}${COMMAND_INTENSIFIER.source}(?:${INVESTIGATION_VERB.source})`,
+  )
+  const mA2 = modalWithObject.exec(txt)
+  if (mA2 && !isFactualPastMatch(txt, mA2.index)) return { source: modalWithObject.source }
+
+  // 规则 B：强硬标记 + 有限强度副词 + 调查动词（含「强制验证」「强制深挖」等无强度副词形式）。
+  // 限制填充长度，避免把「岗标要求该维度的考察」这类中性陈述误判为指令。
+  const COMMAND_STRENGTH = /(?:重点|按顺序|逐一|每一|全部|深度|深入|仔细|严格|彻底|进行)?/
+  const hardModalVerb = new RegExp(`(?:${HARD_MODAL.source})${COMMAND_STRENGTH.source}(?:${INVESTIGATION_VERB.source})`)
+  const mB = hardModalVerb.exec(txt)
+  if (mB && !isFactualPastMatch(txt, mB.index)) return { source: hardModalVerb.source }
+
+  // 规则 C：穷尽式核实指令（逐一/按顺序/每一段 + 核实/验证/检查/确认）。
+  const exhaustive = new RegExp(`(?:${EXHAUSTIVE_MARKER.source})[\\u4e00-\\u9fa5]{0,4}(?:${EXHAUSTIVE_VERB.source})`)
+  const mC = exhaustive.exec(txt)
+  if (mC && !isFactualPastMatch(txt, mC.index)) return { source: exhaustive.source }
+
+  return undefined
+}
+
+/**
+ * INVARIANT (L2_cross_round_anchor_isolated):
+ * 跨轮简报只允许传递客观事实（维度覆盖、技术栈、量化结果），不得泄漏主观印象或对候选人的品性评判。
+ * 结构性判定 = 主观印象/直觉标记 + 定性评判，或 气场/靠谱/包装/主观印象 的结构化贬损搭配。
+ * 「上一轮讨论了…岗标尚未覆盖」「候选人负责…QPS 达到 3 万」等中性事实不受影响。
+ */
+// 不变量：主观「主体」（气场/印象/感觉/主观印象…）+ 定性「程度」（不足/偏弱/一般/
+// 不算好/不太好/不够好/差/偏差…）的语义族搭配。用结构而非逐句枚举覆盖同义说法。
+const SUBJECTIVE_MARKER = /感觉|觉得|印象|主观|气场|疑似|似乎|直觉|个人感觉|主观印象/
+const QUALITATIVE_JUDGMENT = /不足|偏弱|一般|一般般|平平|偏差|差|强|靠谱|包装|吹牛|夸大|很水|极差|不行|不好|不算好|不太好|不够好|欠佳|不佳|平庸|逊色/
+/** 主观主体语义族（可被"主观定性"修饰的对象）。 */
+const SUBJECTIVE_SUBJECT = /(?:主观|个人)?(?:印象|感觉|气场|直觉|感觉上)/
+/** 负面/弱化定性语义族（泛指"不够好"的连续谱：不足/偏弱/一般/欠佳/不佳/平庸/逊色/不太行…）。 */
+const NEGATIVE_QUALITY = /(?:不足|偏弱|一般|一般般|平平|偏差|不算好|不太好|不够好|不太行|不靠谱|很水|极差|不行|不好|欠佳|不佳|平庸|逊色|差强人意|差)/
+const SUBJECTIVE_LEAK_STRUCTURES = [
+  // 主体 + ≤2 字连接 + 负面定性：气场一般 / 印象不算好 / 感觉不太好 / 主观印象偏差。
+  new RegExp(`(?:${SUBJECTIVE_SUBJECT.source})[\\u4e00-\\u9fa5]{0,2}(?:${NEGATIVE_QUALITY.source})`),
+  /(?:不|太)靠谱/,
+  /疑似(?:包装|吹牛|夸大)/,
+  /(?:包装|吹牛|夸大)嫌疑/,
+  /(?:感觉|觉得|印象|直觉)[\\u4e00-\\u9fa5]{0,4}(?:不足|偏弱|偏差|差|强|不靠谱|很水|极差)/,
+]
+
+function isSubjectiveLeak(txt: string): { source: string } | undefined {
+  // 原固定短语表必须先命中（不削弱任何既有变体）。
+  const legacy = EMOTION_LEAK_PATTERNS.find((re) => re.test(txt))
+  if (legacy) return { source: legacy.source }
+
+  // 结构化贬损搭配优先（气场 + 不足/偏弱；疑似 + 包装；不靠谱；主观印象 + 偏差）。
+  const structured = SUBJECTIVE_LEAK_STRUCTURES.find((re) => re.test(txt))
+  if (structured) return { source: structured.source }
+
+  // 兜底：主观印象标记 + 定性评判同时出现。
+  if (SUBJECTIVE_MARKER.test(txt) && QUALITATIVE_JUDGMENT.test(txt)) {
+    return { source: `${SUBJECTIVE_MARKER.source} + ${QUALITATIVE_JUDGMENT.source}` }
+  }
+  return undefined
+}
+
 export const V2_L2_GRADERS: Readonly<Record<string, GraderFn>> = {
   L2_citation_grounded: (a) => {
     const ungrounded = num(a.payload.ungroundedCount)
@@ -72,7 +178,7 @@ export const V2_L2_GRADERS: Readonly<Record<string, GraderFn>> = {
   L2_reference_not_command: (a) => {
     const txt = textOf(a)
     if (!txt) return missing('answerText')
-    const hit = COMMAND_PATTERNS.find((re) => re.test(txt))
+    const hit = isCommandTone(txt)
     return hit ? fail('COMMAND_TONE_DETECTED', `面试官参考滑向命令式剧本：${hit.source}`) : pass('L2_reference_not_command', '保持参考而非指令定位')
   },
 
@@ -106,7 +212,7 @@ export const V2_L2_GRADERS: Readonly<Record<string, GraderFn>> = {
     const txt = textOf(a)
     const leakedScore = bool(a.payload.priorScoreLeaked)
     if (!txt || leakedScore === undefined) return missing('answerText + priorScoreLeaked')
-    const hit = EMOTION_LEAK_PATTERNS.find((re) => re.test(txt))
+    const hit = isSubjectiveLeak(txt)
     if (leakedScore || hit) return fail('CROSS_ROUND_ANCHOR_LEAK', `跨轮简报透传了上轮主观情绪或分数${hit ? '：' + hit.source : ''}`)
     return pass('L2_cross_round_anchor_isolated', '跨轮锚定偏见已隔离')
   },
