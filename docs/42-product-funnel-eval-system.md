@@ -193,3 +193,25 @@
   "graders": ["L1_no_write", "L1_no_forbidden_term", "L2_citation_grounded"]
 }
 ```
+
+---
+
+## 十、招聘业务深水区评测判据（Wave 1 业务实证：初筛水分/误杀 + 面试二轮深挖）
+
+本节把一线招聘实务中最容易让 AI 产品“看起来很聪明、实际不好用”的深水区业务陷阱，直接转化为 Stage 3 与 Stage 5 的可执行评测判据：
+
+### 10.1 Stage 3 初筛深水区：破除“AI 筛 AI”水分与防误杀（False Negatives）
+据 2026 年招聘实务调研（[Superdriven (2026-09-02)](https://superdriven.in/blog/screen-200-resumes-without-burning-out-hr-team)、[Skill IQ (2026)](https://www.skilliq.co/blog/ai-resume-screening-vs-ai-interviews)、[Hivemind HR](https://hivemind.hr/blog/automated-candidate-screening)）：大量候选人已使用 AI 润色简历，**简历本质是“自述主张（Claims）”而非既定事实**；如果初筛只奖励工整文风与关键词密度，就会陷入“AI 偏爱 AI 写的空洞简历，反而误杀表述朴实但真干过活的工程师”的致命陷阱。
+
+因此 Stage 3 初筛评测必须检验以下 **4 类真实业务判别能力**：
+1. **水分拆解（Ownership & Measurable Outcomes）**：面对“华丽大厂头衔 + 堆砌高并发/中台词汇、但零个人负责边界与零量化指标”的简历，初筛必须标出“缺少可核对的个人贡献与量化结果”，不得给高匹配背书；
+2. **朴实真干活防误杀（Anti-Keyword Tunnel Vision）**：面对用词不同但技术实质等价的简历（如未写标准 JD 关键词但有真实线上故障排障与核心代码归属），系统须基于语义与真实经历召回，不因字面缺词误杀；
+3. **生成“面试必追问疑点（Gaps for Human Follow-up）”**：对边缘擦线候选人，初筛输出不仅给逐条对照，还必须指出 1–2 个供一面面试官现场核实的具体疑点；
+4. **误杀抽检指标（False Negative Backtest）**：在私有真简历库（Tier B）中刻意混入已知“历史录用/高绩效”但简历写得朴素的样本，要求召回率达标且进入人工复核视线。
+
+### 10.2 Stage 5 面试转写与面评草稿深水区：识别“二轮追问崩塌”与“团队功劳混充”
+据 2026 年末结构化面试与问题解决能力评估实务（[SocialTalent (2026-11-03)](https://www.socialtalent.com/best-interview-questions/competency-problem-solving)、[Meta 行为面评估指南 (2026)](https://preper.app/guides/meta-behavioral-interview-prep)、[Testlify (2026-09-14)](https://testlify.com/how-to-conduct-an-effective-job-interview/)、[字节跳动高频算法/工程面试实录](https://github.com/WeThinkIn/AIGC-Interview-Book/blob/main/%E5%A4%A7%E5%8E%82%E9%AB%98%E9%A2%91%E9%9D%A2%E8%AF%95%E9%A2%98%EF%BC%88%E5%AE%9E%E6%97%B6%E6%9B%B4%E6%96%B0%EF%BC%89/%E5%AD%97%E8%8A%82%E8%B7%B3%E5%8A%A8%E9%AB%98%E9%A2%91%E9%9D%A2%E8%AF%95%E9%A2%98.md)），高拟真中文转写评测样本必须内置以下 **4 类现场信号**，检验 `scorecard-draft-gen` 能否真正抓出：
+1. **二轮追问崩塌（Collapse Under Second Probe）**：候选人开场背诵流畅，但被面试官追问细节（如“之前修过几次？为什么会复发？通信瓶颈具体卡在哪？”）时开始绕弯或自相矛盾 → 面评草稿必须明确记录“首轮叙述完整，但二轮深挖未能给出具体根因”，绝不能只摘要前半段漂亮话；
+2. **背景 90 秒 / 动作 30 秒 & 全程“我们”**：候选人大篇幅讲项目背景和团队架构，个人实际动作模糊 → 面评草稿必须区分“团队成果”与“候选人本人贡献”，严禁把团队业绩算成候选人个人能力；
+3. **高分信号三要素识别**：真正优秀的回答同时具备“踩过的弯路（wrong turn）+ 量化结果 + 事后方法改进” → 评测草稿是否准确提炼这三项，而非泛泛而谈“沟通良好、逻辑清晰”；
+4. **面试官组内校准（Panel Calibration）**：同一段转写若模拟两位面试官给出相差超过 1 档的评分，评测 S10 汇总是否触发“标准口径分歧提示”，辅助 24 小时内高效 Debrief。
