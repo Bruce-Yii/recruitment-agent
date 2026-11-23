@@ -145,13 +145,53 @@
 | 细分类 | 对应漏斗环节 | 当前状态 | 已调研落位的真实来源 / 公开基准 | 下一步实证动作 |
 |---|---|---|---|---|
 | **分类 1：真实简历原件与版式脏数据** | Stage 1 解析/渲染 | **已落位** | ① 用户手头**数百份真实 PDF/Word 简历**（私有 `RECRUITMENT_CORPUS_ROOT`，分 Tier A/B/C）；<br>② [d4rk3r/resumes-raw-pdf](https://huggingface.co/datasets/d4rk3r/resumes-raw-pdf)（1,940 份真实原始 PDF）；<br>③ [Chinese_Documents_Dataset_PDF](https://huggingface.co/datasets/HumynLabs/Chinese_Documents_Dataset_PDF) | 制定私有简历自动化脱敏与 Tier A/B/C 分级抽样脚本 |
-| **分类 2：真实市场岗位 JD 与隐性门槛** | Stage 2/3 建岗与初筛 | **Batch 1 已初查** | ① [ouxxyy/ouba-classmate](https://github.com/ouxxyy/ouba-classmate)（2026-11-14 发布，含 CC BY 4.0 中文求职与 JD-简历基准）；<br>② [datasetmaster/resumes](https://huggingface.co/datasets/datasetmaster/resumes)；<br>③ [Resume-Screening-Dataset](https://huggingface.co/datasets/AzharAli05/Resume-Screening-Dataset) | 专项调研 5 类中文高频岗（后端/算法/产品/运营/销售）真实公开 JD 的硬门槛与模糊词分布，拼装真实 Rubric 样本 |
+| **分类 2：真实市场岗位 JD 与隐性门槛** | Stage 2/3 建岗与初筛 | **Batch 2 已实证** | ① [ouxxyy/ouba-classmate](https://github.com/ouxxyy/ouba-classmate)（2026-11-14 发布，含 CC BY 4.0 中文求职与 JD-简历基准）；<br>② [datasetmaster/resumes](https://huggingface.co/datasets/datasetmaster/resumes)；<br>③ [Resume-Screening-Dataset](https://huggingface.co/datasets/AzharAli05/Resume-Screening-Dataset) | 专项调研 5 类中文高频岗（后端/算法/产品/运营/销售）真实公开 JD 的硬门槛与模糊词分布，拼装真实 Rubric 样本 |
 | **分类 3：跨文档简历×JD 推理与公平性基准** | Stage 3 客观标尺 | **已落位** | ① [Avature/jobresqa-benchmark](https://github.com/Avature/jobresqa-benchmark)（[arXiv:2601.23183](https://arxiv.org/html/2601.23183v1)，581 QA × 105 对脱敏简历-JD，含中文 `zh` 与公平性受控属性）；<br>② [arXiv:2609.14046 (2026-09)](https://arxiv.org/html/2609.14046v1)（945 条经审计的真实岗位对齐面试题基准） | 抽取 `jobresqa-benchmark` 中文子集作为独立外部交叉校验集 |
 | **分类 4：真实中文会议/面试转写与 ASR 噪音** | Stage 5 转写与面评草稿 | **Batch 1 已落位噪音源** | ① [AliMeeting (OpenSLR 119)](https://www.openslr.org/119/) / [dia-alimeeting-test](https://huggingface.co/datasets/ggfox00000/dia-alimeeting-test)（真实中文多人会议，含重叠抢话与说话人分离）；<br>② [AISHELL-4](https://huggingface.co/datasets/shenyunhang/AISHELL-4)（211 场 120 小时真实中文会议，含短停顿/噪声/快速切换） | 结合公开真实中文技术/业务面经结构 + AliMeeting/AISHELL-4 真实口语断句与串行噪音分布，拼装 15–20 段高拟真带噪转写 |
-| **分类 5：真实面试官面评写法与校准争议** | Stage 5/6 面评与终审 | **待 Batch 2 专项调研** | 初步参考 [CoMAI (arXiv:2603.16215)](https://arxiv.org/html/2603.16215v1) 结构化 Rubric 降偏见框架 | 专项调研一线互联网/科技公司公开面评模板、真实“敷衍面评”与“Hire vs No Hire 撕裂校准案例” |
-| **分类 6：真实流程异常、合规隐私与安全对抗** | Stage 4/6 & 横切安全 | **Batch 1 已初查** | ① [OWASP LLM01:2025 Scenario #6](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)（简历分段载荷 Prompt 注入）；<br>② 2026 真实 AI 面试平台隐私泄露诉讼案例（见 [2026-10 行业分析](https://medium.com/@gwrx2005/the-securitization-of-remote-work-c10566e2c35d)）；<br>③ 仓库既有 `docs/12-layer-acceptance.md` 故障注入方法论 | Batch 2 补齐国内《个人信息保护法》招聘信息脱敏要求 + 真实 ATS 排期冲突/候选人爽约/重复投递边界样本 |
+| **分类 5：真实面试官面评写法与校准争议** | Stage 5/6 面评与终审 | **Batch 2 已实证** | 初步参考 [CoMAI (arXiv:2603.16215)](https://arxiv.org/html/2603.16215v1) 结构化 Rubric 降偏见框架 | 专项调研一线互联网/科技公司公开面评模板、真实“敷衍面评”与“Hire vs No Hire 撕裂校准案例” |
+| **分类 6：真实流程异常、合规隐私与安全对抗** | Stage 4/6 & 横切安全 | **Batch 2 已实证** | ① [OWASP LLM01:2025 Scenario #6](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)（简历分段载荷 Prompt 注入）；<br>② 2026 真实 AI 面试平台隐私泄露诉讼案例（见 [2026-10 行业分析](https://medium.com/@gwrx2005/the-securitization-of-remote-work-c10566e2c35d)）；<br>③ 仓库既有 `docs/12-layer-acceptance.md` 故障注入方法论 | Batch 2 补齐国内《个人信息保护法》招聘信息脱敏要求 + 真实 ATS 排期冲突/候选人爽约/重复投递边界样本 |
 
 ### 推进顺序（严格按批实证，不跳步）
 1. **Batch 1（本轮已完成）**：确立 6 大细分类 + 写入 §0 反自嗨铁律 + 落位分类 1/3/4 外部真实公开基准；
 2. **Batch 2（下一轮专项网络调研）**：深挖分类 2（5 类中文真实市场 JD）、分类 5（真实面评写法与校准争议）、分类 6（国内招聘隐私合规与真实排期/爽约异常）；
 3. **Batch 3（资产化落地）**：把调研取证的真实素材整理为可复现的 `eval-corpus-manifest.json`（每条带外部来源 URL 或私有语料哈希指针），直接喂给 Issue #63 的 6 阶段漏斗评测引擎。
+
+---
+
+## 九、Batch 2 专项实证落盘（分类 2 / 5 / 6）与 `corpus-manifest` 资产化蓝图
+
+### 9.1 分类 2 补充实证：中文真实岗位 JD 与国内招聘生态来源
+- 新增公开中文岗位原型与数据出处：[shuheng-mo/career-ops-china (2026-04)](https://github.com/shuheng-mo/career-ops-china/blob/main/README.md)（国内招聘流程与 8 类技术/数据岗位原型）、[rovesoul/BigData-and-Analysis 智联招聘.csv](https://github.com/rovesoul/BigData-and-Analysis/blob/master/%E6%99%BA%E8%81%94%E6%8B%9B%E8%81%98.csv)（真实公开中文职位 CSV）、[ouxxyy/ouba-classmate (2026-11-14)](https://github.com/ouxxyy/ouba-classmate)（CC BY 4.0 中文求职与 JD-简历基准）。
+- **5 类高频中文岗 Rubric 拼装规范**（禁止写干净玩具标准，每岗必须包含硬门槛 + 真实模糊词 + 一票否决项）：
+  1. 后端研发（高并发/分布式/线上排障 + 模糊词“架构演进能力”）；
+  2. 算法/AI 工程（模型落地/评测迭代 + 模糊词“业务抽象能力”）；
+  3. 产品经理（B 端复杂流程/跨团队推进 + 模糊词“强自驱与拿结果”）；
+  4. 增长/运营（漏斗转化/复盘归因 + 模糊词“数据敏感度”）；
+  5. B2B 销售/职能（大客户成单周期/合规底线 + 模糊词“抗压与客户洞察”）。
+
+### 9.2 分类 5 实证：真实面试官面评规范与 4 类校准争议场景
+基于一线工程招聘实务规范（参见 [Tech Talent Drop: The Tech Interview Playbook](https://techtalentdrop.com/interview-playbook) 与 [CoMAI (arXiv:2603.16215)](https://arxiv.org/html/2603.16215v1)），Stage 5/6 评测集必须覆盖 4 类真实高痛点面评场景：
+1. **敷衍空洞面评（Zero-Evidence Feedback）**：面试官仅填“感觉基础一般，不建议录用”而无具体问答实例 → 评测 S10 汇总是否明确标出“缺少可复核依据”，而非把主观情绪放大成客观结论；
+2. **撕裂分歧面评（Split Decision：Strong Hire vs Lean No Hire）**：两轮面试结论完全相反 → 评测 S10 汇总与对话助手是否**如实并排呈现冲突点与待补验证项**，绝不和稀泥、绝不替真人拍板（遵循行业“分歧时优先补数据而非强行二选一”原则）；
+3. **防锚定盲评隔离（Anti-Anchoring Isolation）**：面试官 A 提交面评前绝对看不到面试官 B 的面评与用人经理倾向（服务端 + 前端双隔离 100%）；
+4. **超时滞后面评（24–48h SLA Breach）**：行业规范要求 24–48 小时内交面评防记忆衰减，超时后触发 `#/settings` 催交策略与待办队列优先标红。
+
+### 9.3 分类 6 实证：中国《个人信息保护法》招聘合规 3 条硬红线
+依据国家网信办 2026 年 7 月 24 日数据出境与招聘简历政策问答（参见 [锦天城律所解读 (2026-07-29)](https://www.allbrightlaw.com/SH/CN/10475/8cd77534cc2487e1.aspx)）及中国内地招聘隐私合规实践（参见 [孖士打中国内地招聘私隐公告](https://www.jsm.com/zh/legal-notice/recruitment-privacy-notice/)），将以下 3 条法律红线直接固化为评测 L1 硬闸门：
+1. **敏感个人信息最小化与脱敏**：简历中的手机号、邮箱、证件号、薪资待遇与照片在跨岗召回、同人判重、CSV 导出与公开预约页中严格脱敏或零暴露；
+2. **禁止仅基于自动化决策作出重大影响决定（个保法第 24 条）**：AI 自动初筛、面评草稿与对话助手**永远只能输出可复核参考或 `propose_write` 提议卡**，绝不允许绕过真人自动淘汰或外发拒信；
+3. **目的限定与可撤回/软关闭**：候选人历史记录仅在授权租户与合法招聘目的内可见，删除走软关闭保留审计且禁止在公开链接外溢任何内部评估。
+
+### 9.4 Batch 3 资产化契约：`dsh/dsh-recruitment/test/eval/corpus-manifest.json`
+下一步实施 [Issue #63](https://github.com/Bruce-Yii/recruitment-agent/issues/63) 时，所有 60+ 全链路漏斗用例必须先在 `corpus-manifest.json` 登记来源元数据，**无来源字段的用例 CI 直接拒收**：
+```json
+{
+  "case_id": "S7-01",
+  "stage": "Stage3_Screening",
+  "data_tier": "tier2_public_benchmark",
+  "source_ref": "https://github.com/Avature/jobresqa-benchmark",
+  "private_corpus_hash": null,
+  "failure_cost_weight": "high",
+  "graders": ["L1_no_write", "L1_no_forbidden_term", "L2_citation_grounded"]
+}
+```
