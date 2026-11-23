@@ -653,7 +653,9 @@ export function App() {
   }
 
   const interviewerOnly = isInterviewerOnly(session.roles);
-  const isInterviewerRoute = route.kind === 'interviewer' || interviewerOnly;
+  // 面试官身份默认落在“我的面试”；但 #/settings 必须仍可进入（只读），否则无法看到
+  // 服务端已提供的只读治理信息，也违背 #54 的 interviewer 只读验收口径。
+  const isInterviewerRoute = route.kind === 'interviewer' || (interviewerOnly && route.kind !== 'settings');
   const isEmbeddedDetail = !isInterviewerRoute && (route.kind === 'application' || route.kind === 'job');
   const activeSpace =
     route.kind === 'jobs' || route.kind === 'job'
