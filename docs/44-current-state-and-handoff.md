@@ -2,7 +2,7 @@
 
 > **本文件回答三件事**：现在代码在哪、系统由什么组成、接手的人第一步做什么。
 > **权威顺序不变**：产品与验收口径 = `docs/24`；裁决 = `docs/17`；本文件只是**当前事实快照**。快照会过期，引用前必须现场重跑命令。
-> **基线**：`main@ac93d6c`（含 PR #93、#95；PR #94 OPEN）。当前工作树首次阅读时先执行 `git rev-parse --short HEAD` 与 `git status --porcelain`。
+> **基线**：代码基线 `54b83ad`（PR #93、#94、#95 已合入；Issue #91/#92 仍 OPEN）。docs 刷新提交可能位于该代码基线之上；当前工作树首次阅读时先执行 `git rev-parse --short HEAD` 与 `git status --porcelain`。
 
 ---
 
@@ -10,7 +10,7 @@
 
 - 产品主链、Wave 3/5 能力、G-18 配置、生产登录、CSV/Webhook、部署 kit 已合入 main。
 - **Issue #91 的两条 P1**（SettingsView TS2300、角色软停用 400）已由 PR #93 修复并合入；**但 Issue #91 尚未重新验收/关闭**。
-- **Issue #92 的 Eval V2 审计裁决为 REJECT**：真实接线度、空 payload 判分器、L3 缺失、G3 吞错是核心问题。PR #93 已修 G3 吞错与 RESCHEDULED 漏计；PR #95 已合入 3 个真实生产适配器（converter `DocumentContent`、agent-turn SSE、PG 行数影子）；**判分器/runner 的根修仍在 PR #94（OPEN，未合并）**。适配器合入不等于审计翻案，必须再独立复验。
+- **Issue #92 的 Eval V2 审计裁决为 REJECT**：真实接线度、空 payload 判分器、L3 缺失、G3 吞错是核心问题。PR #93 修了 G3 吞错与 RESCHEDULED 漏计；PR #95 补了 3 个真实生产适配器（converter `DocumentContent`、agent-turn SSE、PG 行数影子）；PR #94 已合入判分器/L3/runner 根修。**但尚未在 #94 后的 main 上由未参与实现的独立审计复验**，因此 #92 仍为 REJECT，不能把“已合入”当“已通过”。
 - 因此当前不能宣称“Eval V2 已验收”，也不能把 #91 的旧截图当作通过证据。
 
 ---
@@ -21,7 +21,7 @@
 |---|---|---|
 | 1 | `AGENTS.md` | 总控职责、九条铁律、派发/验收/端口/密钥纪律 |
 | 2 | `docs/24-product-framework-v2.md` | 产品认知、六条门 V1–V6；**第一权威** |
-| 3 | `docs/17-decision-ledger.md` | 裁决；最新 D-191 是本轮状态刷新 |
+| 3 | `docs/17-decision-ledger.md` | 裁决；最新 D-192 是 PR #94 合入后的状态校准 |
 | 4 | 本文件 `docs/44` | 当前基线、架构、仓库、未决缺陷 |
 | 5 | `docs/25-lead-handoff.md` | 七步场景、判断框架、历史踩坑；其“当前状态”段已过期 |
 | 6 | `docs/40-lifecycle-gap-roadmap.md` | Wave 3/4/5 路线与缺口 |
@@ -87,7 +87,7 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
   - 端到端真实生产接线 **0/59**；G0 只执行 11/43 例且大量使用静态 stub；
   - 7 个 L3 判分器只有声明、无实现；32/43 例无 runner；
   - 红队 27 检查 **17 项可绕过**。
-- PR #93 已修 G3 的吞错与 RESCHEDULED 漏计；PR #95 已补 3 个真实生产适配器（converter/agent-turn/PG shadow）；**判分器/runner 的根修仍在 PR #94（OPEN）**，合入前不要宣称 Eval V2 完成。
+- PR #93 修 G3 吞错与 RESCHEDULED 漏计；PR #95 补 3 个真实生产适配器；PR #94 合入判分器/L3/runner 根修；**但尚未在 #94 后重跑独立审计**，不能宣称 Eval V2 已完成。
 
 ---
 
@@ -95,10 +95,10 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 
 ### 4.1 Git
 
-- 当前 main：`ac93d6c`（PR #93 + #95 已合入）。
+- 当前代码基线：`54b83ad`（PR #93、#94、#95 已合入；docs 刷新可能再叠加文档提交）。
 - 远端：`https://github.com/Bruce-Yii/recruitment-agent.git`；`gh` 已认证。
-- 最近合并：#93 修复 `SettingsView` 重复 `record_version`、`config-role.is_active`、G3 吞错、RESCHEDULED 计数、minute-rebind 5432 硬编码；#95 新增 `test/eval/v2-real-adapters.ts`（converter DocumentContent / agent-turn SSE / PG 影子行数）及正反例单测。
-- **#91 和 #92 仍 OPEN**；#94 仍 OPEN，不能当作已交付。
+- 最近合并：#93 修复 `SettingsView` 重复 `record_version`、`config-role.is_active`、G3 吞错、RESCHEDULED 计数、minute-rebind 5432 硬编码；#95 新增 `test/eval/v2-real-adapters.ts`；#94 重写 `v2-graders-l1/l2`、新增 `v2-graders-l3.ts`、`v2-g0-runner`、`corpus-inventory`/`evaluation-card`/`v2-l3-calibration`。
+- **#91 和 #92 仍 OPEN**；#94 已合入但**未独立复验**，不能当作已交付。
 - **工作树很多**：main 之外有大量历史 wave/lane worktree（约 20+），多数停在旧 SHA；不要复用旧 worktree 做新验收，也不要未经授权删除。
 - 生成物：`dsh/dsh-recruitment/lib/app.js`、`lib/client.js` 可能落后于 source；**做 UI 前必须 `tsdown` 重建并确认 bundle 里有目标 testid**。
 - CI：GitHub Actions 现在会跑 PR；`converter acceptance` 在无 corpus 时条件跳过。**CI 绿不是产品验收**，且不能替代本机干净库/真机验证。
@@ -126,7 +126,7 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 
 ### P0 · 必须先修并独立复验
 
-1. **Eval V2 真实接线**：空 payload 判分器、0/59 真实接线、L3 缺失、32/43 无 runner —— PR #94 处理中；PR #95 已补 3 个生产适配器但尚未完成全量接线/复验。合入 #94 后必须重新跑独立审计。
+1. **Eval V2 真实接线**：审计基线（`ac4a695`）为空 payload 判分器、0/59 真实接线、L3 缺失、32/43 无 runner；PR #93/#95/#94 已合入修复候选，但尚未独立复验。必须在 `54b83ad` 上重跑 6 道门、66 判分器、L3/runner、红队与 G3 SQL。
 2. **G3 遥测**：PR #93 已改为 `degraded/ERROR`，但需要真库 SQL 复算复核（正常/列漂移/非法租户三态）。
 3. **体系不能自证**：不要再以“59 个判分器/测试全绿”作为完成口径。
 
@@ -233,12 +233,12 @@ gh pr view 94
 
 然后：
 
-1. 读 `AGENTS.md`、`docs/24`、`docs/17`（D-191）、本文件；
+1. 读 `AGENTS.md`、`docs/24`、`docs/17`（D-192）、本文件；
 2. 现场确认 `tsc` 是否绿（#93 后应为 0，但不要凭记忆）；
 3. 新建干净库、跑 `db/verify.sql`、跑全量四数；
 4. 跑一次 15 步 preview（独立端口）；
 5. 对比 `docs/25`/`docs/40` 的旧快照，先更新文档再派新功能；
-6. 对 #94 合入后的 Eval V2 另派**未参与实现**的审计，不要由实现者自证。
+6. 对 #94 合入后的 Eval V2 另派**未参与实现**的审计（重跑 #92），不要由实现者自证；#91 也需重跑 1440。
 
 ---
 
@@ -258,7 +258,7 @@ gh pr view 94
 ## 10. 文档地图
 
 - 产品/验收：`docs/24`、`docs/26`
-- 裁决：`docs/17`（最新 D-191）
+- 裁决：`docs/17`（最新 D-192）
 - 交接：`docs/25`（历史叙事）+ 本文件（当前快照）
 - 路线：`docs/40`、`docs/39`
 - 架构/评测：`docs/41`（架构设计）、`docs/42`（评测规格）

@@ -1,8 +1,8 @@
 # 41. 结构化步骤链路架构、客户切换路线与模型无关 Agent Eval 评测体系
 
 > **状态**：架构设计基线（2026-11-22 定稿；**2026-11-24 状态校准**）
-> **适用范围**：`Bruce-Yii/recruitment-agent`（`dsh/dsh-recruitment` v4 独立工作台 `/recruitment/app`，`main@ac93d6c`，25 个 PG17 迁移）
-> **真实性边界**：本文的架构设计与 Eval 设计**不是实现验收**。2026-11-24 Issue #92 独立审计裁决 **REJECT**：59 个 L1/L2 判分器中 57/59 空 payload 直接 PASS、端到端真实生产接线 0/59、7 个 L3 无实现、G0 仅 11/43 例有 runner。PR #93 已修 G3 吞错，PR #95 补了 3 个真实生产适配器（converter/agent-turn/PG shadow），PR #94（Eval 判分器/runner 根修）仍 OPEN。当前事实快照与未决项见 [`docs/44-current-state-and-handoff.md`](44-current-state-and-handoff.md)。
+> **适用范围**：`Bruce-Yii/recruitment-agent`（`dsh/dsh-recruitment` v4 独立工作台 `/recruitment/app`，`main@54b83ad`，25 个 PG17 迁移）
+> **真实性边界**：本文的架构设计与 Eval 设计**不是实现验收**。2026-11-24 Issue #92 独立审计裁决 **REJECT**：59 个 L1/L2 判分器中 57/59 空 payload 直接 PASS、端到端真实生产接线 0/59、7 个 L3 无实现、G0 仅 11/43 例有 runner。PR #93 修 G3 吞错，PR #95 补了 3 个真实生产适配器，PR #94 合入判分器/L3/runner 根修候选；但尚未在 #94 后由独立审计复验。当前事实快照与未决项见 [`docs/44-current-state-and-handoff.md`](44-current-state-and-handoff.md)。
 > **配套文档**：[`docs/39-recruiting-lifecycle-and-competitive-benchmark.md`](./39-recruiting-lifecycle-and-competitive-benchmark.md)、[`docs/40-lifecycle-gap-roadmap.md`](./40-lifecycle-gap-roadmap.md)、[`docs/42-product-funnel-eval-system.md`](./42-product-funnel-eval-system.md)、[`design/v4/settings-progressive-disclosure-spec.md`](../design/v4/settings-progressive-disclosure-spec.md)
 
 ---
