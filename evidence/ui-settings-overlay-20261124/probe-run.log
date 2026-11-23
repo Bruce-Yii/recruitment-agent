@@ -1,0 +1,46 @@
+{
+  "pass": true,
+  "assertions": {
+    "viewport1440x900": true,
+    "settingsRendered": true,
+    "queueNotRenderedOnSettings": true,
+    "queueTabsNotRenderedOnSettings": true,
+    "settingsInsideCanvas": true,
+    "settingsBelowCanvasHead": true,
+    "headerDoesNotContainSettings": true,
+    "settingsRouteHasNoOverlapCandidate": true,
+    "queueRouteHasNoSettings": true,
+    "queueRouteRendersQueue": true
+  },
+  "errors": [],
+  "settings": {
+    "viewport": [
+      1440,
+      900
+    ],
+    "settingsRect": {
+      "x": 662.796875,
+      "y": 90,
+      "w": 642.390625,
+      "h": 412.953125,
+      "bottom": 502.953125
+    },
+    "canvasRect": {
+      "x": 528,
+      "y": 0,
+      "w": 912,
+      "h": 900,
+      "bottom": 900
+    },
+    "headRect": {
+      "x": 528,
+      "y": 0,
+      "w": 912,
+      "h": 56,
+      "bottom": 56
+    },
+    "queueViewExists": false,
+    "settingsBelowHead": true,
+    "settingsFullyInsideCanvas": true
+  }
+}

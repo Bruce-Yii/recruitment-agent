@@ -102,7 +102,7 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 - 最近合并：#93 修复 `SettingsView` 重复 `record_version`、`config-role.is_active`、G3 吞错、RESCHEDULED 计数、minute-rebind 5432 硬编码；#95 新增 `test/eval/v2-real-adapters.ts`；#94 重写 `v2-graders-l1/l2`、新增 `v2-graders-l3.ts`、`v2-g0-runner`、`corpus-inventory`/`evaluation-card`/`v2-l3-calibration`。
 - **#91 和 #92 仍 OPEN**；#94 已合入但**未独立复验**，不能当作已交付。
 - **工作树很多**：main 之外有大量历史 wave/lane worktree（约 20+），多数停在旧 SHA；不要复用旧 worktree 做新验收，也不要未经授权删除。
-- 生成物：`dsh/dsh-recruitment/lib/app.js`、`lib/client.js` 可能落后于 source；**做 UI 前必须 `tsdown` 重建并确认 bundle 里有目标 testid**。
+- 生成物：`dsh/dsh-recruitment/lib/app.js`、`lib/client.js` 可能落后于 source；**做 UI 前必须 `tsdown` 重建并确认 bundle 里有目标 testid**。2026-11-24 UI 构建批次已从 `317e094` 重建（`lib/app.js` 1.54 MB / `lib/client.js` 0.59 kB；**无 app.css**——CSS 按文件注入），1440 真机验证见 `evidence/ui-settings-overlay-20261124/`（D-197）。
 - CI：GitHub Actions 现在会跑 PR；`converter acceptance` 在无 corpus 时条件跳过。**CI 绿不是产品验收**，且不能替代本机干净库/真机验证。
 
 ### 4.2 数据库与端口
@@ -142,7 +142,7 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 4. 认证与租户：production gate 覆盖范围、cookie `Secure`/轮换、演示账号替换、跨租户边界。
 5. Webhook/CSV：SSRF 允许列表、secret 生命周期、HMAC 派生文档、PII/注入负例。
 6. 测试基础设施：全量结果必须记录环境，不得把环境失败当产品失败或反之。
-7. UI/构建：stale `lib/app.js`、设置页与队列叠影、G-18 创建/软停用端到端回归。
+7. UI/构建：stale `lib/app.js`（**已重建**，2026-11-24 D-197）、设置页与队列叠影（PR #97 修复 + D-197 1440 真机验证消除；证据 `evidence/ui-settings-overlay-20261124/`）、G-18 创建/软停用端到端回归（仍待）。
 
 ### P2 · 迭代优化
 
