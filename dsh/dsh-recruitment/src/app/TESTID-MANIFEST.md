@@ -132,6 +132,19 @@
 | `app-jobs-export-csv` | 岗位列表页「导出 CSV」入口 |
 | `app-jobs-export-error` | 岗位列表 CSV 下载失败提示 |
 | `canvas-action-export-csv` | 岗位详情画布「导出 CSV」入口（带 job_id 过滤） |
+| `settings-row-g3-telemetry` | 行为规范与评测 Tab 线上成对质量护栏（G3 只读遥测）卡片 |
+| `g3-guardrail-<id>` | 单条 G3 成对护栏指标行 |
+| `settings-btn-new-role` | 组织配置「新增角色」L2 展开按钮 |
+| `settings-expand-org-role` | 新增角色 L2 表单区 |
+| `settings-save-org-role` | 提交新建角色按钮 |
+| `settings-deactivate-role-<code>` | 软停用指定角色按钮 |
+| `settings-btn-new-team` | 组织配置「新增团队」L2 展开按钮 |
+| `settings-expand-org-team` | 新增团队 L2 表单区 |
+| `settings-save-org-team` | 提交新建团队按钮 |
+| `settings-btn-new-pipeline` | 组织配置「新增流程模板」L2 展开按钮 |
+| `settings-expand-org-pipeline` | 新增流程模板 L2 表单区 |
+| `settings-save-org-pipeline` | 提交新建流程模板按钮 |
+| `settings-deactivate-pipeline-<code>` | 软停用指定流程模板按钮 |
 
 ## 三、复用的面试官端 `data-testid`（来自 `src/client/interviewer/InterviewerWorkspace.tsx`）
 

@@ -1,6 +1,7 @@
 // G-18：企业组织配置（角色与流程模板）客户端写入口，复用既有的 POST /recruitment/api/action/config/* 路由。
 export const ORG_CONFIG_ACTION_PATHS = {
   role: '/recruitment/api/action/config/role',
+  team: '/recruitment/api/action/config/team',
   pipeline: '/recruitment/api/action/config/pipeline',
 } as const
 
@@ -101,4 +102,79 @@ export async function createOrgPipeline(
   input: CreateOrgPipelineForm,
 ): Promise<Record<string, unknown>> {
   return postOrgConfigAction(sid, ORG_CONFIG_ACTION_PATHS.pipeline, buildCreatePipelineBody(input))
+}
+
+export interface CreateOrgTeamForm {
+  readonly code: string
+  readonly name: string
+  readonly departmentId: string
+  readonly description?: string
+}
+
+export function buildCreateTeamBody(input: CreateOrgTeamForm): Record<string, unknown> {
+  const code = input.code.trim()
+  const name = input.name.trim()
+  const departmentId = input.departmentId.trim()
+  if (code === '') throw new Error('请填写团队编码（例如 eng_backend）')
+  if (name === '') throw new Error('请填写团队名称')
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(departmentId)) {
+    throw new Error('请填写合法的部门标识')
+  }
+  const body: Record<string, unknown> = {
+    operation: 'create',
+    code,
+    name,
+    department_id: departmentId,
+  }
+  if (input.description && input.description.trim() !== '') {
+    body.description = input.description.trim()
+  }
+  return body
+}
+
+export function buildDeactivateRoleBody(roleId: string, expectedRecordVersion: number): Record<string, unknown> {
+  if (!roleId.trim()) throw new Error('缺少角色标识')
+  return {
+    operation: 'update',
+    role_id: roleId.trim(),
+    expected_record_version: expectedRecordVersion,
+    is_active: false,
+  }
+}
+
+export function buildDeactivatePipelineBody(
+  pipelineTemplateId: string,
+  expectedRecordVersion: number,
+): Record<string, unknown> {
+  if (!pipelineTemplateId.trim()) throw new Error('缺少流程模板标识')
+  return {
+    operation: 'update',
+    pipeline_template_id: pipelineTemplateId.trim(),
+    expected_record_version: expectedRecordVersion,
+    is_active: false,
+  }
+}
+
+export async function createOrgTeam(sid: string, input: CreateOrgTeamForm): Promise<Record<string, unknown>> {
+  return postOrgConfigAction(sid, ORG_CONFIG_ACTION_PATHS.team, buildCreateTeamBody(input))
+}
+
+export async function deactivateOrgRole(
+  sid: string,
+  roleId: string,
+  expectedRecordVersion: number,
+): Promise<Record<string, unknown>> {
+  return postOrgConfigAction(sid, ORG_CONFIG_ACTION_PATHS.role, buildDeactivateRoleBody(roleId, expectedRecordVersion))
+}
+
+export async function deactivateOrgPipeline(
+  sid: string,
+  pipelineTemplateId: string,
+  expectedRecordVersion: number,
+): Promise<Record<string, unknown>> {
+  return postOrgConfigAction(
+    sid,
+    ORG_CONFIG_ACTION_PATHS.pipeline,
+    buildDeactivatePipelineBody(pipelineTemplateId, expectedRecordVersion),
+  )
 }
