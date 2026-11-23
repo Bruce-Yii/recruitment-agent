@@ -1,0 +1,234 @@
+{
+  "schema_version": "1.0.0",
+  "generated_at": "2026-11-23T01:03:18.824Z",
+  "mode": "deterministic",
+  "model": null,
+  "cases_total": 18,
+  "l1_passed": 144,
+  "l1_total": 144,
+  "l2_passed": 180,
+  "l2_total": 180,
+  "passed": 18,
+  "failed": 0,
+  "pass_rate": 1,
+  "adversarial_all_pass": true,
+  "gate_status": {
+    "l1": "PASS",
+    "l2": "PASS",
+    "l3": "NOT_RUN",
+    "l4": "NOT_RUN"
+  },
+  "latency_ms": {
+    "p50": null,
+    "p95": null
+  },
+  "token_usage": {
+    "per_turn": null
+  },
+  "pass_hat_k": null,
+  "per_case": [
+    {
+      "caseId": "E-01",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-02",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-03",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-04",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-05",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-06",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-07",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-08",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-09",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-10",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-11",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-12",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-13",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-14",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-15",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-16",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-17",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    },
+    {
+      "caseId": "E-18",
+      "passed": true,
+      "l1_passed": 8,
+      "l1_total": 8,
+      "l2_passed": 10,
+      "l2_total": 10,
+      "failed": [],
+      "missing": [],
+      "failedMandatory": []
+    }
+  ],
+  "live": {
+    "ran": false,
+    "reason": "deterministic mode (offline golden trajectory); no live POST issued"
+  },
+  "notes": "离线 golden 轨迹跑 18 例；模型为 null（模型无关）；live 未运行。"
+}

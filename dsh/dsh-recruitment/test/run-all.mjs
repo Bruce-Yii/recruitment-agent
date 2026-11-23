@@ -41,6 +41,13 @@ if (files.length === 0) {
   process.exit(1)
 }
 
+// Issue #55：eval graders 的正反例单测必须纳入全量套件（不能只靠 eval runner 自证）。
+// 显式守护：即便 glob 规则未来被改窄，漏掉这个文件也会红，而不是悄悄少跑。
+if (only.length === 0 && !discovered.some((file) => file.replaceAll('\\', '/') === 'test/eval/graders.test.ts')) {
+  console.error('run-all: 缺少 test/eval/graders.test.ts（Issue #55 评测判据单测）——不算通过。')
+  process.exit(1)
+}
+
 console.log(`run-all: ${files.length} 个测试文件（node --test ${nodeTestArgs.join(' ')}）`)
 const result = spawnSync(process.execPath, ['--test', ...nodeTestArgs, ...files], {
   cwd: packageRoot,
