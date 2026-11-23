@@ -2,7 +2,7 @@
 
 > **状态**：架构设计基线（2026-11-22 定稿；**2026-11-24 状态校准**）
 > **适用范围**：`Bruce-Yii/recruitment-agent`（`dsh/dsh-recruitment` v4 独立工作台 `/recruitment/app`，`main@54b83ad`，25 个 PG17 迁移）
-> **真实性边界**：本文的架构设计与 Eval 设计**不是实现验收**。首轮 Issue #92 独立审计为 **REJECT**；2026-11-24 在 `54b83ad` 上的修复后独立复验为 **CONDITIONAL_PASS**；随后三个 P1 在本地分支修复并经未参与实现者独立终验 **PASS**（P0=0 / P1=0 / P2=2 已声明不阻断；红队语义不变量、适配器接 43 例 CLI、G3 忠实度接真实确定性源，盲审假护栏按口径 B 移除，见 `docs/17` D-195）。**修复分支未合并 main，Issue #92 仍 OPEN**。当前事实快照与未决项见 [`docs/44-current-state-and-handoff.md`](44-current-state-and-handoff.md)。
+> **真实性边界**：本文的架构设计与 Eval 设计**不是实现验收**。首轮 Issue #92 独立审计为 **REJECT**；`54b83ad` 修复后复验 CONDITIONAL_PASS；随后三个 P1 修复并经未参与实现者独立终验 **PASS**（P0=0 / P1=0 / P2=2 已声明不阻断），已合并 `main@b0ebecf`、Issue #92 已关闭（`docs/17` D-195/D-196）。**G3 维持口径 B：3 对真护栏、忠实度为确定性引用锚定（非 L3 LLM 裁判），本期不新增盲审抽检工作流**。当前事实快照与未决项见 [`docs/44-current-state-and-handoff.md`](44-current-state-and-handoff.md)。
 > **配套文档**：[`docs/39-recruiting-lifecycle-and-competitive-benchmark.md`](./39-recruiting-lifecycle-and-competitive-benchmark.md)、[`docs/40-lifecycle-gap-roadmap.md`](./40-lifecycle-gap-roadmap.md)、[`docs/42-product-funnel-eval-system.md`](./42-product-funnel-eval-system.md)、[`design/v4/settings-progressive-disclosure-spec.md`](../design/v4/settings-progressive-disclosure-spec.md)
 
 ---

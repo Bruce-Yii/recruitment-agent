@@ -2136,3 +2136,15 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ② **确定性 L1 判分器口径**：以「结构不变量 + 封闭语义族」为准；无法在不误杀合法文本前提下确定性覆盖的委婉/多义表达记 P2（不阻断发版门）；不得用空值/假数据或无限扩短语表冒充收口。
   ③ **基线与合并**：本批修复位于本地分支 `fix/issue92-p1a-redteam` / `fix/issue92-p1b-adapters` / `fix/issue92-p1c-g3`，集成分支 `fix/issue92-integration@f052502`；**未合并 main、未 push、未关闭 Issue #91/#92**，需用户明确授权后执行。
   ④ **docs 回抄**：`docs/44` 当前状态、`docs/25` 状态头、`docs/40` 审计收口、`docs/41` 真实性边界、`docs/42` G3 表、`docs/README` 状态行、`AGENTS.md`/`project.json` 快照已同步；#91 复验 PASS 结论不变，建议在产品负责人确认后关闭。
+
+- **D-196（2026-11-24，总控；用户批准收口：#92 修复合入 main、CI 全绿、#91/#92 关闭、G3 维持口径 B）**
+  **来源**：产品负责人 2026-11-24 明确批准：合并并 push、关闭 #91/#92、G3 维持口径 B（本期不新增盲审抽检工作流）、确认证据归档后清理临时 worktree。
+  **执行与结果**：
+  ① **合并**：集成分支 `fix/issue92-integration@f052502` 以 `--no-ff` 合入 `main`（保留 docs-only 提交 `7383f64`）；合并提交 `b0ebecf` 已 push `origin/main`。
+  ② **CI**：`b0ebecf` 首次 CI（run 45263371117）红在 **5 条新增 env-gated skip 未在声明清单**（不是断言失败）：`test/eval/real-capture.test.ts` 4 条 + `test/integration/g3-telemetry-real.test.ts` 1 条。按 `test/SKIPS.md` 流程补声明（skip 原因改为 `ACCEPTED skip, not a pass — …`，SKIPS.md 新增 §5/§6、说明 env 门与真跑方法），**未放宽任何断言、未改 CI 门禁逻辑**；修复提交 `bf6ccf7` push 后 CI run 45264446922 **全绿**（plugin/db/converter lanes/golden path 全 success；converter acceptance 按设计条件跳过）。
+  ③ **关闭 Issue**：#91（复验 PASS）与 #92（三 P1 修复 + 独立终验 PASS，P0=0/P1=0/P2=2 已声明不阻断）已回帖终验摘要并关闭；最终 main SHA 见 Issue 回帖。
+  ④ **G3 口径 B 定案**：维持 3 对真护栏（忠实度=确定性引用锚定，非 L3 LLM 裁判）；**本期不新增**「盲审抽检」抽样表与前端工作流；将来新增须另立裁决并走产品范围/前端窗口。
+  ⑤ **证据归档与清理**：实现/终验证据（`work/`，机器本地）归档到 `D:\12412\dsh工作区\archive\recruitment-agent\2026-11-24-issue92-fix\`；本轮新增 5 个临时 worktree（fix92-redteam / fix92-adapters / fix92-g3 / fix92-integration / verify92-final）已移除；lane 分支保留作历史。
+  ⑥ **docs 回抄**：`docs/44`（基线/状态/§5.5）、`docs/25`/`docs/40`/`docs/41`/`docs/42`/`docs/README`、`AGENTS.md`/`project.json` 同步本结果。
+  **P2（不阻断、已声明）**：① `麻烦把系统设计这块再过一遍`（委婉开放祈使）② `看样子难以继续`（"继续"多义）；确定性判分器不可安全覆盖，留待真实语料/离线 L3。
+  **遗留（非本批）**：认证/租户、Webhook/CSV、测试基建、UI/构建等 P1 仍按 `docs/44 §5.2` 跟踪；G3 盲审抽检如要做须先获授权。

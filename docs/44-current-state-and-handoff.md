@@ -2,8 +2,8 @@
 
 > **本文件回答三件事**：现在代码在哪、系统由什么组成、接手的人第一步做什么。
 > **权威顺序不变**：产品与验收口径 = `docs/24`；裁决 = `docs/17`；本文件只是**当前事实快照**。快照会过期，引用前必须现场重跑命令。
-> **基线**：代码基线 `54b83ad`（PR #93、#94、#95 已合入；Issue #91/#92 仍 OPEN）。docs 刷新提交可能位于该代码基线之上；当前工作树首次阅读时先执行 `git rev-parse --short HEAD` 与 `git status --porcelain`。
-> **2026-11-24 修复批次（D-195）**：#92 三个 P1 已在本地分支修复并经未参与实现者独立终验 **PASS**（P0=0 / P1=0 / P2=2 已声明不阻断），集成分支 `fix/issue92-integration@f052502`；**未合并 main、未 push、Issue #91/#92 仍 OPEN**，等用户授权。
+> **基线**：`main@bf6ccf7`（#92 三 P1 修复 + CI skip 声明修复已合入并 push；另有 D-196 收口文档提交）。历史代码基线 `54b83ad`（PR #93、#94、#95 已合入）。当前工作树首次阅读时先执行 `git rev-parse --short HEAD` 与 `git status --porcelain`。
+> **2026-11-24 收口（D-196）**：#92 三个 P1 修复 + 独立终验 PASS（P0=0 / P1=0 / P2=2 已声明不阻断）已合入 `main` 并 push；**#91/#92 已关闭**；G3 维持口径 B（3 对真护栏，本期不新增盲审抽检工作流）。
 
 ---
 
@@ -11,8 +11,8 @@
 
 - 产品主链、Wave 3/5 能力、G-18 配置、生产登录、CSV/Webhook、部署 kit 已合入 main。
 - **Issue #91 复验 PASS**：PR #93 修复项已在 `54b83ad` 上独立重跑；`tsc=0`、全量 3097/3095/0/2、15 步 15/15 hard 0、角色软停用 `is_active=false` + version+1、G3/auth CLI 均通过。Issue 仍 OPEN，等待总控关闭。
-- **Issue #92 三个 P1 已修复并独立终验 PASS**（D-195）：红队语义不变量、适配器接 43 例 CLI（real_adapter + NO_REAL_SOURCE 诚实口径）、G3 忠实度接真实确定性源并移除盲审假护栏（3 对）；P2=2 已声明不阻断（委婉祈使/多义"继续"）。修复在本地分支与集成分支 `fix/issue92-integration@f052502`，**未合并 main**；Issue 仍 OPEN，等授权关闭。
-- 当前可声称：#91 无阻断通过复验；#92 三 P1 修复经独立终验 PASS（P2 已声明不阻断）。不可声称：修复已合入 main/已 push、#91/#92 已关闭、G3 第 4 对盲审护栏已接入。
+- **Issue #92 三个 P1 已修复、独立终验 PASS、已合入 main 并关闭**（D-195/D-196）：红队语义不变量（14 + 原 17 全拦、空 payload 0/66、合法对照 0 过拦）、适配器接 43 例 CLI（`real_adapter` 3 真源 + 40 `NO_REAL_SOURCE`、capture 完整性与来源 fail-closed、真 PG）、G3 忠实度接真实确定性源并移除盲审假护栏（3 对）；独立终验 P0=0 / P1=0 / P2=2（已声明不阻断：委婉祈使/多义"继续"）。合并提交 `b0ebecf`，Issue #92 已关闭。
+- 当前可声称：#91 无阻断通过复验并已关闭；#92 三 P1 修复经未参与实现者独立终验 PASS、已合并 main 并关闭。不可声称：G3 第 4 对盲审护栏已接入（按口径 B 本期不做）；Eval V2 语义完备（仍有 2 条已声明 P2）。
 
 ---
 
@@ -83,7 +83,7 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 ### 3.4 Eval V2 的当前现实
 
 - 规格：43 例 corpus，L1/L2/L3 分层，G0/G1/G2/G3 分档，线上 G3 遥测。
-- 2026-11-24 D-195 后现状（本地集成分支，未合并 main）：
+- 2026-11-24 D-195/D-196 后现状（已合入 main）：
   - 66 个判分器（37 L1 + 22 L2 + 7 L3）全部注册，`{payload:{}}` 空 payload **0/66 pass**；L3 未校准/缺裁判/位置互换 fail-closed；
   - `gate:'ALL'` 跑 43 例；**真实适配器已接 CLI**：`run-eval-v2.mjs` real 模式 `real_adapter` 3 真源（P1-01/P6-01/P6-05）+ 40 `NO_REAL_SOURCE`（不计 PASS），capture sha256/来源校验 + 真 PG fail-closed；
   - 红队：14 个复验变体 + 原 17 变体全拦，合法对照 0 过拦；确定性判分器保留 2 条 P2（委婉祈使/多义"继续"，已声明不阻断）；
@@ -97,7 +97,7 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 ### 4.1 Git
 
 - 当前代码基线：`54b83ad`（PR #93、#94、#95 已合入；docs 刷新可能再叠加文档提交）。
-- **2026-11-24 修复批次（未合并）**：`fix/issue92-p1a-redteam` / `fix/issue92-p1b-adapters` / `fix/issue92-p1c-g3`；集成分支 `fix/issue92-integration@f052502`（三 lane 合并，经独立终验 PASS）。均未 push、未合并 main。
+- **2026-11-24 修复批次（已合并）**：`fix/issue92-p1a-redteam` / `fix/issue92-p1b-adapters` / `fix/issue92-p1c-g3`；集成分支 `fix/issue92-integration@f052502` 以 `--no-ff` 合入 `main`（合并提交 `b0ebecf`）并 push。lane 分支保留作历史；临时 worktree 已清理。
 - 远端：`https://github.com/Bruce-Yii/recruitment-agent.git`；`gh` 已认证。
 - 最近合并：#93 修复 `SettingsView` 重复 `record_version`、`config-role.is_active`、G3 吞错、RESCHEDULED 计数、minute-rebind 5432 硬编码；#95 新增 `test/eval/v2-real-adapters.ts`；#94 重写 `v2-graders-l1/l2`、新增 `v2-graders-l3.ts`、`v2-g0-runner`、`corpus-inventory`/`evaluation-card`/`v2-l3-calibration`。
 - **#91 和 #92 仍 OPEN**；#94 已合入但**未独立复验**，不能当作已交付。
@@ -120,7 +120,7 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 
 - Issue #91：`origin/evidence/issue91-20261124`（`3d3f442`），含 1440 截图、15 步、全量结果与 psql 读回；其中 #91 旧 P1 失败是**修复前**证据。
 - 历史 Wave 5：#72/#73 的产物已在 main；旧 `evidence/wave5-20261122` 只作历史。
-- #92 修复批次（D-195）：实现与终验证据在本地 worktree（`D:\12412\DshWorktrees\recruitment-agent\{fix92-redteam,fix92-adapters,fix92-g3,verify92-final}\work\**`，机器本地、不入库；终验报告 `verify92-final/work/review92-final/REPORT.md`）；需要长期留档时另建 `evidence/issue92-p1-fix-20261124` 分支。
+- #92 修复批次（D-195/D-196）：实现与终验证据已归档到 `D:\12412\dsh工作区\archive\recruitment-agent\2026-11-24-issue92-fix\`（含终验 `REPORT.md`；机器本地、不入库）；仓库内裁决/状态见 `docs/17` D-195/D-196 与 `docs/44` §5.5。
 - 证据分支不合并 main；新的验收应新建日期分支。
 
 ---
@@ -159,14 +159,14 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 > - **Lane B #91**：`PASS`。干净 DB（49354）全量 3097/3095/0/2、15 步 15/15 hard 0、角色软停用 `is_active=false` + version 2、G3/auth CLI 全过。报告：https://github.com/Bruce-Yii/recruitment-agent/issues/91#issuecomment-7111092251
 > - 两条 Issue 仍 OPEN；下一步先修 #92 三个 P1，再由未参与实现者做最终复核；不自行关闭/合并。
 
-### 5.5 当前修复批次（2026-11-24，已完成，未合并）
+### 5.5 当前修复批次（2026-11-24，已完成、已合并、Issue 已关闭）
 
 > 裁决 `docs/17` D-195；三条 lane 与独立终验均未改 main、未合并、未 push。
 > - **P1-A**（`fix/issue92-p1a-redteam`）：语义不变量 + H2–H6 类级硬化；集成分支 eval 75 tests / 71 pass / 0 fail / 4 env-gated skip；空 payload 0/66；合法对照 0 过拦；P2 残留 2 条（`麻烦把系统设计这块再过一遍`、`看样子难以继续`）。
 > - **P1-B**（`fix/issue92-p1b-adapters`）：`run-eval-v2.mjs` contract 43 例 EXIT 0；real `real_adapter` 3 真源 + 40 `NO_REAL_SOURCE`、`passRate=0.3333` 仅覆盖真实执行；篡改/缺 capture/缺 PG/来源不符 exit 2；真 PG 独立 psql 对照一致；口令/库名 P2 已关闭。
 > - **P1-C**（`fix/issue92-p1c-g3`）：G3 3 对护栏；忠实度真实确定性源（真实库 0.6667 / 篡改 0.5，与独立 SQL 一致）；零引用 null + 诚实 note；degraded 3/3 ERROR；盲审待授权。
 > - **独立终验**：`verify-92-final`（未参与实现）三轮 + 单点确认，最终 **PASS（P0=0 / P1=0 / P2=2 已声明不阻断）**；报告 `verify92-final/work/review92-final/REPORT.md`（机器本地）。
-> - **状态**：集成分支 `fix/issue92-integration@f052502`；未合并 main、未关闭 #91/#92，等用户授权。
+> - **状态**：已合入 `main`（合并提交 `b0ebecf`）并 push；#91/#92 已关闭；G3 维持口径 B。证据归档 `D:\12412\dsh工作区\archive\recruitment-agent\2026-11-24-issue92-fix\`；临时 worktree 已清理。
 
 ---
 
@@ -289,7 +289,7 @@ gh pr view 94
 ## 10. 文档地图
 
 - 产品/验收：`docs/24`、`docs/26`
-- 裁决：`docs/17`（最新 D-195）
+- 裁决：`docs/17`（最新 D-196）
 - 交接：`docs/25`（历史叙事）+ 本文件（当前快照）
 - 路线：`docs/40`、`docs/39`
 - 架构/评测：`docs/41`（架构设计）、`docs/42`（评测规格）
