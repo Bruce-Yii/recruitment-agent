@@ -677,13 +677,15 @@ export function App() {
   const actorName = session.displayName || session.alias || '已认证成员';
   const actorRoleText = formatRolesLabel(session.roles, actorName);
 
-  const handleLogout = useCallback(async () => {
+  // 注意：这里在若干 early return 之后，不能再调用 useCallback / 任何 Hook，
+  // 否则登录/未绑定时首屏的 Hook 数量与后续渲染不一致，React 会整页白屏。
+  const handleLogout = async () => {
     try {
       await postLogout();
     } finally {
       window.location.replace('/recruitment/login');
     }
-  }, []);
+  };
 
   const actorBadgeNode = (
     <div className="actor-badge" data-testid="app-actor-badge">
