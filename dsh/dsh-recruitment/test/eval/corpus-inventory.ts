@@ -1,6 +1,4 @@
-// Issue #63 Phase 1 — 私有真简历盘点脚手架（对齐 docs/42 §4 / §7.1）。
-// 扫描 $RECRUITMENT_CORPUS_ROOT/raw/ 统计格式与版式信号，辅助 10 分钟分出 Tier A / B / C；
-// 未配置或空目录时诚实返回 CORPUS_ROOT_MISSING / CORPUS_EMPTY，绝不伪造样本。
+// Eval V2 — 私有真简历盘点脚手架（修复 Issue #92 P1-4：魔数校验、加密检测、压缩流检测、全文件头尾扫描防字体误报）。
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { extname, join, relative } from 'node:path'
 
@@ -12,6 +10,9 @@ export interface CorpusFileSignal {
   readonly sizeBytes: number
   readonly estimatedPages?: number
   readonly likelyScannedPdf?: boolean
+  readonly encryptedPdf?: boolean
+  readonly corruptedPdf?: boolean
+  readonly hasObjectStreams?: boolean
   readonly suggestedTier: 'tier_a_layout_hell' | 'tier_b_borderline' | 'tier_c_bulk'
 }
 
@@ -22,6 +23,7 @@ export interface CorpusInventoryResult {
   readonly totalFiles: number
   readonly byExtension: Readonly<Record<string, number>>
   readonly likelyScannedCount: number
+  readonly anomalousPdfCount: number
   readonly suggestedCounts: {
     readonly tier_a_layout_hell: number
     readonly tier_b_borderline: number
@@ -35,23 +37,38 @@ const SUPPORTED_EXTS = new Set(['.pdf', '.docx', '.doc', '.txt', '.md'])
 function walkFiles(dir: string, out: string[]): void {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name)
-    if (entry.isDirectory()) {
-      walkFiles(full, out)
-    } else if (entry.isFile()) {
-      const ext = extname(entry.name).toLowerCase()
-      if (SUPPORTED_EXTS.has(ext)) out.push(full)
-    }
+    if (entry.isDirectory()) walkFiles(full, out)
+    else if (entry.isFile() && SUPPORTED_EXTS.has(extname(entry.name).toLowerCase())) out.push(full)
   }
 }
 
-function inspectPdfHeuristic(filePath: string): { readonly estimatedPages: number; readonly likelyScannedPdf: boolean } {
+function inspectPdfHeuristic(filePath: string): {
+  readonly estimatedPages: number
+  readonly likelyScannedPdf: boolean
+  readonly encryptedPdf: boolean
+  readonly corruptedPdf: boolean
+  readonly hasObjectStreams: boolean
+} {
   const buf = readFileSync(filePath)
-  const latin = buf.subarray(0, Math.min(buf.length, 512 * 1024)).toString('latin1')
+  const head = buf.subarray(0, Math.min(buf.length, 16)).toString('latin1')
+  if (!head.startsWith('%PDF-')) {
+    return { estimatedPages: 0, likelyScannedPdf: false, encryptedPdf: false, corruptedPdf: true, hasObjectStreams: false }
+  }
+  // 同时扫描全量（≤ 4MB）或头+尾各 1MB，避免字体定义在文件后部导致假扫描误报
+  const latin =
+    buf.length <= 4 * 1024 * 1024
+      ? buf.toString('latin1')
+      : buf.subarray(0, 1024 * 1024).toString('latin1') + '\n' + buf.subarray(buf.length - 1024 * 1024).toString('latin1')
+
+  const encryptedPdf = /\/Encrypt\b/.test(latin)
+  const hasObjectStreams = /\/ObjStm\b/.test(latin)
   const pageMatches = latin.match(/\/Type\s*\/Page\b/g)
-  const estimatedPages = pageMatches ? pageMatches.length : 1
+  const estimatedPages = pageMatches ? pageMatches.length : hasObjectStreams ? 0 : 1
   const hasFont = /\/Font\b/.test(latin)
   const hasImage = /\/Subtype\s*\/Image\b/.test(latin)
-  return { estimatedPages, likelyScannedPdf: !hasFont && hasImage }
+  const likelyScannedPdf = !encryptedPdf && !hasObjectStreams && !hasFont && hasImage
+
+  return { estimatedPages, likelyScannedPdf, encryptedPdf, corruptedPdf: false, hasObjectStreams }
 }
 
 export function scanPrivateCorpusInventory(corpusRoot?: string): CorpusInventoryResult {
@@ -62,11 +79,7 @@ export function scanPrivateCorpusInventory(corpusRoot?: string): CorpusInventory
     return {
       status: 'CORPUS_ROOT_MISSING',
       message: '未配置 RECRUITMENT_CORPUS_ROOT 或目录不存在，已跳过私有真简历盘点（绝不伪造样本）。',
-      totalFiles: 0,
-      byExtension: {},
-      likelyScannedCount: 0,
-      suggestedCounts: emptySuggested,
-      files: [],
+      totalFiles: 0, byExtension: {}, likelyScannedCount: 0, anomalousPdfCount: 0, suggestedCounts: emptySuggested, files: [],
     }
   }
 
@@ -81,19 +94,14 @@ export function scanPrivateCorpusInventory(corpusRoot?: string): CorpusInventory
       status: 'CORPUS_EMPTY',
       scanDir,
       message: `目录 ${scanDir} 中未发现支持的简历文件（.pdf/.docx/.doc/.txt/.md）。`,
-      totalFiles: 0,
-      byExtension: {},
-      likelyScannedCount: 0,
-      suggestedCounts: emptySuggested,
-      files: [],
+      totalFiles: 0, byExtension: {}, likelyScannedCount: 0, anomalousPdfCount: 0, suggestedCounts: emptySuggested, files: [],
     }
   }
 
   const byExtension: Record<string, number> = {}
   let likelyScannedCount = 0
-  let tierA = 0
-  let tierB = 0
-  let tierC = 0
+  let anomalousPdfCount = 0
+  let tierA = 0, tierB = 0, tierC = 0
   const files: CorpusFileSignal[] = []
 
   for (const fullPath of discovered) {
@@ -103,15 +111,22 @@ export function scanPrivateCorpusInventory(corpusRoot?: string): CorpusInventory
 
     let estimatedPages: number | undefined
     let likelyScannedPdf: boolean | undefined
+    let encryptedPdf: boolean | undefined
+    let corruptedPdf: boolean | undefined
+    let hasObjectStreams: boolean | undefined
     if (ext === '.pdf') {
       const info = inspectPdfHeuristic(fullPath)
       estimatedPages = info.estimatedPages
       likelyScannedPdf = info.likelyScannedPdf
+      encryptedPdf = info.encryptedPdf
+      corruptedPdf = info.corruptedPdf
+      hasObjectStreams = info.hasObjectStreams
       if (likelyScannedPdf) likelyScannedCount += 1
+      if (encryptedPdf || corruptedPdf || hasObjectStreams) anomalousPdfCount += 1
     }
 
     let suggestedTier: CorpusFileSignal['suggestedTier'] = 'tier_c_bulk'
-    if (likelyScannedPdf || (estimatedPages !== undefined && estimatedPages >= 4) || ext === '.doc') {
+    if (likelyScannedPdf || encryptedPdf || corruptedPdf || hasObjectStreams || (estimatedPages !== undefined && estimatedPages >= 4) || ext === '.doc') {
       suggestedTier = 'tier_a_layout_hell'
       tierA += 1
     } else if (tierB < 30) {
@@ -127,6 +142,9 @@ export function scanPrivateCorpusInventory(corpusRoot?: string): CorpusInventory
       sizeBytes,
       ...(estimatedPages !== undefined ? { estimatedPages } : {}),
       ...(likelyScannedPdf !== undefined ? { likelyScannedPdf } : {}),
+      ...(encryptedPdf ? { encryptedPdf } : {}),
+      ...(corruptedPdf ? { corruptedPdf } : {}),
+      ...(hasObjectStreams ? { hasObjectStreams } : {}),
       suggestedTier,
     })
   }
@@ -134,15 +152,12 @@ export function scanPrivateCorpusInventory(corpusRoot?: string): CorpusInventory
   return {
     status: 'READY',
     scanDir,
-    message: `盘点完成：共 ${files.length} 份文件，疑似扫描 PDF ${likelyScannedCount} 份。`,
+    message: `盘点完成：共 ${files.length} 份文件，疑似扫描 PDF ${likelyScannedCount} 份，异常/加密/压缩流 PDF ${anomalousPdfCount} 份。`,
     totalFiles: files.length,
     byExtension,
     likelyScannedCount,
-    suggestedCounts: {
-      tier_a_layout_hell: tierA,
-      tier_b_borderline: tierB,
-      tier_c_bulk: tierC,
-    },
+    anomalousPdfCount,
+    suggestedCounts: { tier_a_layout_hell: tierA, tier_b_borderline: tierB, tier_c_bulk: tierC },
     files,
   }
 }
