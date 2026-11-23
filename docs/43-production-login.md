@@ -1,4 +1,4 @@
-# 41 · 生产登录（Issue #61 / Wave 5，D-178 交付项）
+# 43 · 生产登录与 10 分钟独立部署（Issue #61 / Wave 5，D-178 交付项）
 
 ## 1. 入口与模式
 
@@ -42,3 +42,20 @@
 - 生产部署必须先把历史预览库跑完 0001…0025 迁移（含 0002 种子），否则 `auth_user` 的种子账号不存在。
 - 生产环境应替换演示账号密码：用 `hashPassword()`（`src/auth/credentials.ts`）生成新哈希，更新 `auth_user.password_hash`，再删除/禁用这两个演示账号；不要直接在源码里改明文。
 - 独立域名/多租户网关不是本 Issue 范围（D-178 开放项）：当前租户由插件配置的 `database.tenant_id` 固定。
+
+## 6. 独立部署基建与正式账号替换（`deploy/` + `scripts/auth-admin.mjs`）
+
+1. **拉起 PG17 并自动跑完 0001–0025 迁移 + 校验**：
+   ```bash
+   cp deploy/.env.production.example deploy/.env.production
+   # 编辑 .env.production 填入强 PGPASSWORD 与 RECRUITMENT_AUTH_MODE=production
+   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d
+   ```
+2. **生成正式管理员建号/改密 SQL 并执行**（严禁把明文口令写进源码或迁移）：
+   ```bash
+   node scripts/auth-admin.mjs sql-upsert \
+     --tenant 00000000-0000-4000-8000-000000000001 \
+     --username hr_admin --name "招聘管理员" --alias recruiter \
+     --password "<你的强口令>" | psql -v ON_ERROR_STOP=1
+   ```
+3. **接入 HTTPS 反代**：参考 `deploy/nginx.recruitment.conf.example`（注意 `/recruitment/agent/turn` 必须设置 `proxy_buffering off;` 保障 SSE 首字延迟）。
