@@ -42,6 +42,27 @@ CI（`.github/workflows/ci.yml` 的 plugin job）按原因里的固定标记匹�
 - 分类：**(b) 需要独立环境/能力门**；保持 standing skip 并逐条声明，绝不伪造 PASS。
   若要真正覆盖，需在单独的 lane 里为生产代码加 FS seam 后再启用。
 
+## 5. Eval V2 真实采集 bundle — 环境 opt-in（2026-11-24，D-195）
+
+- 用例：`test/eval/real-capture.test.ts`（4 条 env-gated；同文件默认自包含用例仍真跑）
+  → `真实 bundle：结构 + sha256 与 manifest 一致`
+  → `真实 converter 输出确为 Python converter 命令产物`
+  → `真实 PG counts：49353 / 25 迁移 / VERIFY PASS / 独立 psql 读回`
+  → `真实 SSE：帧为真 Host delta/done 或 BLOCKED.json 不伪造`
+- 跳过标记：`ACCEPTED skip, not a pass — real capture bundle env opt-in`
+- 门：`RECRUITMENT_CAPTURE_DIR` 指向由 `test/eval/capture-real-inputs.mjs` 采集的真实 capture bundle（真 Python converter + 真 PG17 + 真 Host SSE）。
+- 如何真跑：`RECRUITMENT_CAPTURE_DIR=<bundle> node --test test/eval/real-capture.test.ts`（2026-11-24 实测 9/9 通过）。
+- 分类：**(b) 独立环境门**；默认树无真实 bundle，skip 不冒充 pass。
+
+## 6. G3 真实库忠实度 — 环境 opt-in（2026-11-24，D-195）
+
+- 用例：`test/integration/g3-telemetry-real.test.ts`
+  → `G3 真实库：readG3FunnelTelemetry 的 guardrailRate 与独立 SQL（strpos）一致，且响应不含 quote/UUID`
+- 跳过标记：`ACCEPTED skip, not a pass — G3 real DB env opt-in`
+- 门：`G3_REAL_DB=1` + `RECRUITMENT_TEST_DB_HOST/PORT/USER/PASSWORD/DB` + `RECRUITMENT_TEST_TENANT_ID`，且库内已有真实写入路径产生的带 evidence 面评。
+- 如何真跑：见 `test/integration/g3-telemetry-real.test.ts` 头部注释；2026-11-24 独立终验在真实库实测 guardrailRate=0.6667，与独立 SQL 一致。
+- 分类：**(b) 独立环境门**。
+
 ## 未发生的跳过（易被误认为 skip，实测均真跑）
 
 本机有 Python 3.12 + PyMuPDF/python-docx/Pillow 且 `converter/src/issues.py` 存在，

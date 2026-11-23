@@ -161,12 +161,16 @@ describe('Eval V2 capture bundle（自包含最小夹具，clean-checkout 可跑
   })
 })
 
-/** 真实采集证据断言：仅当 RECRUITMENT_CAPTURE_DIR 指向真实 bundle 时运行；否则声明式 skip。 */
-const realTest = REAL_CAPTURE ? test : test.skip
+/** 真实采集证据断言：仅当 RECRUITMENT_CAPTURE_DIR 指向真实 bundle 时运行；否则声明式 skip。
+ *  注意：必须用 `test(name,{skip:reason})`，不能用 `test.skip`——后者会吞掉 skip 原因，
+ *  而 CI（R3/E2）按 skip 原因标记匹配声明清单。 */
+const SKIP_REAL_CAPTURE = REAL_CAPTURE
+  ? false
+  : 'ACCEPTED skip, not a pass — real capture bundle env opt-in: RECRUITMENT_CAPTURE_DIR'
 describe('Eval V2 真实采集 bundle（env-gated，需要 RECRUITMENT_CAPTURE_DIR）', () => {
   const p = REAL_CAPTURE ? bundlePaths(REAL_CAPTURE) : undefined
 
-  realTest('真实 bundle：结构 + sha256 与 manifest 一致', () => {
+  test('真实 bundle：结构 + sha256 与 manifest 一致', { skip: SKIP_REAL_CAPTURE }, () => {
     assert.ok(p && existsSync(p.manifest), `missing ${p?.manifest}`)
     const manifest = readJson(p!.manifest)
     assert.equal(manifest.schemaVersion, '1.0')
@@ -177,7 +181,7 @@ describe('Eval V2 真实采集 bundle（env-gated，需要 RECRUITMENT_CAPTURE_D
     }
   })
 
-  realTest('真实 converter 输出确为 Python converter 命令产物', () => {
+  test('真实 converter 输出确为 Python converter 命令产物', { skip: SKIP_REAL_CAPTURE }, () => {
     const doc = readJson(p!.doc)
     assert.match(String(doc.meta?.backend ?? ''), /pymupdf/i)
     assert.ok(Array.isArray(doc.blocks) && doc.blocks.length > 0)
@@ -186,7 +190,7 @@ describe('Eval V2 真实采集 bundle（env-gated，需要 RECRUITMENT_CAPTURE_D
     assert.equal(pdfMeta.synthetic, true)
   })
 
-  realTest('真实 PG counts：49353 / 25 迁移 / VERIFY PASS / 独立 psql 读回', () => {
+  test('真实 PG counts：49353 / 25 迁移 / VERIFY PASS / 独立 psql 读回', { skip: SKIP_REAL_CAPTURE }, () => {
     const manifest = readJson(p!.manifest)
     const before = readJson(p!.before)
     const after = readJson(p!.after)
@@ -211,7 +215,7 @@ describe('Eval V2 真实采集 bundle（env-gated，需要 RECRUITMENT_CAPTURE_D
     assert.ok(kinds.includes('pg:drop-after'))
   })
 
-  realTest('真实 SSE：帧为真 Host delta/done 或 BLOCKED.json 不伪造', () => {
+  test('真实 SSE：帧为真 Host delta/done 或 BLOCKED.json 不伪造', { skip: SKIP_REAL_CAPTURE }, () => {
     const manifest = readJson(p!.manifest)
     const hasFrames = existsSync(p!.frames)
     const hasBlocked = existsSync(p!.blocked)
@@ -230,3 +234,4 @@ describe('Eval V2 真实采集 bundle（env-gated，需要 RECRUITMENT_CAPTURE_D
     assert.equal(manifest.sha256['sse/agent-turn-frames.jsonl'], sha256(p!.frames))
   })
 })
+

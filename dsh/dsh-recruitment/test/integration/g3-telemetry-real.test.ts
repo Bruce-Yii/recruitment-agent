@@ -37,11 +37,10 @@ const HAS_ENV =
   typeof TENANT_ID === 'string' && TENANT_ID !== ''
 
 // 诚实跳过：无 env 时不构造假数据、不假装通过。
-const realTest = HAS_ENV ? test : test.skip
 
-realTest(
+test(
   'G3 真实库：readG3FunnelTelemetry 的 guardrailRate 与独立 SQL（strpos）一致，且响应不含 quote/UUID',
-  { skip: HAS_ENV ? false : '缺少 G3_REAL_DB=1 或 RECRUITMENT_TEST_DB_* / RECRUITMENT_TEST_TENANT_ID 环境变量（前置：Owner 已通过产品真实写入路径准备数据）' },
+  { skip: HAS_ENV ? false : 'ACCEPTED skip, not a pass — G3 real DB env opt-in: G3_REAL_DB=1 + RECRUITMENT_TEST_DB_* / RECRUITMENT_TEST_TENANT_ID（前置：真实写入夹具）' },
   async () => {
     // 独立 pg.Pool（测试文件内直接 import pg 建池，不复用产品代码伪造 client）。
     const pool = new pg.Pool({
@@ -120,3 +119,4 @@ realTest(
     }
   },
 )
+
