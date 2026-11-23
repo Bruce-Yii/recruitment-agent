@@ -351,9 +351,13 @@ describe('T7 GET 只读投影', () => {
       enabled: true, overdue_hours: 24, max_reminders: 2, channel: 'workbench',
     })
     assert.deepEqual(settings.booking_invite_defaults, { expires_hours: 72, default_duration_min: 60 })
+    assert.deepEqual(settings.external_webhook_config, {
+      enabled: false, url: '', events: [], secret_set: false,
+    })
     assert.deepEqual(result.body.defaults_applied, [
       'agent_silent_delegation', 'sla_thresholds', 'auto_screening_enabled',
       'auto_scorecard_draft_enabled', 'scorecard_reminder_policy', 'booking_invite_defaults',
+      'external_webhook_config',
     ])
     const governance = result.body.governance as Record<string, unknown>
     assert.ok(Array.isArray(governance.skills))

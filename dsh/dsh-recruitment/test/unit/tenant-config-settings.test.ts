@@ -37,10 +37,11 @@ function reasonOf(fn: () => unknown): string {
   assert.fail('期望抛出带 reason_code 的契约错误，实际没有')
 }
 
-test('可写设置键封闭集：六项，不含外部连接状态', () => {
+test('可写设置键封闭集：七项，不含外部连接状态（Issue #60 增加 external_webhook_config）', () => {
   assert.deepEqual([...WORKSPACE_SETTING_KEYS], [
     'agent_silent_delegation', 'sla_thresholds', 'auto_screening_enabled',
     'auto_scorecard_draft_enabled', 'scorecard_reminder_policy', 'booking_invite_defaults',
+    'external_webhook_config',
   ])
   assert.deepEqual(Object.keys(WORKSPACE_SETTING_DEFAULTS), [...WORKSPACE_SETTING_KEYS])
   assert.equal(isWorkspaceSettingKey('agent_silent_delegation'), true)
@@ -49,6 +50,7 @@ test('可写设置键封闭集：六项，不含外部连接状态', () => {
   assert.equal(isWorkspaceSettingKey('auto_scorecard_draft_enabled'), true)
   assert.equal(isWorkspaceSettingKey('scorecard_reminder_policy'), true)
   assert.equal(isWorkspaceSettingKey('booking_invite_defaults'), true)
+  assert.equal(isWorkspaceSettingKey('external_webhook_config'), true)
   assert.equal(isWorkspaceSettingKey('email_connection'), false)
   assert.equal(isWorkspaceSettingKey('feishu_calendar_connection'), false)
   assert.equal(isWorkspaceSettingKey('feishu_minutes_connection'), false)

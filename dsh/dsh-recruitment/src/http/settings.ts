@@ -33,6 +33,8 @@ import {
   listTeams,
   validateConfirmationText,
   validateWorkspaceSettingValue,
+  mergeWebhookSecret,
+  webhookConfigView,
   type WorkspaceSettingKey,
   type ScorecardReminderPolicy,
   type BookingInviteDefaults,
@@ -490,6 +492,13 @@ function projectedValue(key: WorkspaceSettingKey, value: unknown): unknown {
     case 'sla_thresholds': return isSlaThresholds(value) ? value : undefined
     case 'scorecard_reminder_policy': return isScorecardReminderPolicy(value) ? value : undefined
     case 'booking_invite_defaults': return isBookingInviteDefaults(value) ? value : undefined
+    // Issue #60：GET 永不回传 secret 明文/哈希，只投影 secret_set 布尔。
+    case 'external_webhook_config': {
+      const view = webhookConfigView(value)
+      // 库值形状非法/不存在 → undefined，走诚实缺省（defaults_applied 会标注）。
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+      return view
+    }
   }
 }
 
@@ -656,12 +665,25 @@ async function handleWrite(deps: SettingsHttpDeps, req: IncomingMessage, res: Se
 
   const cfg = requireDatabase(deps)
 
+  // Issue #60：secret 未在本次写入时，保留旧 secret_hash（轮换只发生在显式给 secret 时）。
+  // 这里是唯一需要"写前读旧值"的键；其它键行为逐字不变。
+  let storedValue = value
+  if (key === 'external_webhook_config') {
+    const previous = await withPool(cfg, (pool) =>
+      withReadOnly(pool, (client) => readSetting(client, cfg.tenant_id, key)),
+    )
+    storedValue = mergeWebhookSecret(
+      value as Parameters<typeof mergeWebhookSecret>[0],
+      previous?.value,
+    )
+  }
+
   const appended = await withPool(cfg, (pool) =>
     withActor(pool, resolved.actor_id, (client) =>
       appendSettingVersion(client, {
         tenantId: cfg.tenant_id,
         configKey: key,
-        value,
+        value: storedValue,
         actorId: resolved.actor_id,
         confirmationTextSha256,
       }),
@@ -680,8 +702,11 @@ async function handleWrite(deps: SettingsHttpDeps, req: IncomingMessage, res: Se
     action: ACTION_NAME,
     version_no: readback.version_no,
     key,
-    value: readback.value,
-    changed_from: appended.changed_from,
+    // GET / 写响应都不暴露 secret 明文/哈希；只给 secret_set 布尔。
+    value: key === 'external_webhook_config' ? webhookConfigView(readback.value) : readback.value,
+    changed_from: key === 'external_webhook_config'
+      ? webhookConfigView(appended.changed_from)
+      : appended.changed_from,
     updated_by_actor_id: resolved.alias, // 业务 alias，不吐内部 UUID
     confirmation_text_sha256: confirmationTextSha256,
   }

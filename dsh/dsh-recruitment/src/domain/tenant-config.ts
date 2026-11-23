@@ -69,6 +69,15 @@
 import { canonicalJson } from '../tools/contract.ts'
 import { RecruitmentToolError } from '../tools/errors.ts'
 import type { DatabaseClient } from '../db/pool.ts'
+import {
+  validateExternalWebhookConfig,
+  mergeWebhookSecret,
+  webhookConfigView,
+  type ExternalWebhookConfigStored,
+} from './export-webhook.ts'
+
+// Issue #60：HTTP 层从同一领域真值取 helper（不维护第二份）。
+export { mergeWebhookSecret, webhookConfigView } from './export-webhook.ts'
 
 // =====================================================================
 //  封闭集（服务端校验的唯一真相；DB 侧 0014 有同一份 CHECK）
@@ -2059,6 +2068,7 @@ export const WORKSPACE_SETTING_KEYS = [
   'auto_scorecard_draft_enabled',
   'scorecard_reminder_policy',
   'booking_invite_defaults',
+  'external_webhook_config',
 ] as const
 /** 一个可写设置键。 */
 export type WorkspaceSettingKey = (typeof WORKSPACE_SETTING_KEYS)[number]
@@ -2111,6 +2121,13 @@ export const WORKSPACE_SETTING_DEFAULTS = {
     channel: 'workbench',
   },
   booking_invite_defaults: { expires_hours: 72, default_duration_min: 60 },
+  // Issue #60：未配置 = 关闭、空地址、不订阅；GET 只给 secret_set=false（无明文/哈希）。
+  external_webhook_config: {
+    enabled: false,
+    url: '',
+    events: [],
+    secret_set: false,
+  },
 } as const
 
 /** SLA 小时数闭区间（含端点）：1 小时 .. 720 小时（30 天）。 */
@@ -2326,7 +2343,7 @@ export function validateBookingInviteDefaults(value: unknown): BookingInviteDefa
 export function validateWorkspaceSettingValue(
   key: unknown,
   value: unknown,
-): boolean | SlaThresholds | ScorecardReminderPolicy | BookingInviteDefaults {
+): boolean | SlaThresholds | ScorecardReminderPolicy | BookingInviteDefaults | ExternalWebhookConfigStored {
   if (!isWorkspaceSettingKey(key)) {
     throw configError('INVALID_ARGS', 'SETTING_KEY_UNKNOWN',
       `未知或只读的设置键：${typeof key === 'string' ? key : typeof key}（可写：${WORKSPACE_SETTING_KEYS.join(', ')}）。`,
@@ -2339,6 +2356,7 @@ export function validateWorkspaceSettingValue(
     case 'auto_scorecard_draft_enabled': return validateBooleanSetting(value, key)
     case 'scorecard_reminder_policy': return validateScorecardReminderPolicy(value)
     case 'booking_invite_defaults': return validateBookingInviteDefaults(value)
+    case 'external_webhook_config': return validateExternalWebhookConfig(value)
   }
 }
 

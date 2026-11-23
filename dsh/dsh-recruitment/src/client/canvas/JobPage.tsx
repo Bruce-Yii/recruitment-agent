@@ -24,6 +24,8 @@ import {
 } from './bits/index.ts';
 import type { CanvasFetcher } from './CandidatePage.tsx';
 import type { ActiveUploadTask, CanvasFocusRequest, UndoToastPayload } from './CanvasRoute.tsx';
+// Issue #60：同源 CSV 下载复用统一客户端契约。
+import { downloadApplicationsCsv } from '../external-sync.ts';
 import {
   buildJobCloseBody,
   buildJobCreateBody,
@@ -303,6 +305,18 @@ export function JobPage({
       setFeedback({ tone: 'red', text: msg });
     } finally {
       setBatchSubmitting(false);
+    }
+  };
+
+  // Issue #60：按当前岗位导出人话 CSV（同源 + session，真实 HTTP 失败如实提示）。
+  const handleExportCsv = async () => {
+    setFeedback(null);
+    try {
+      const sid = sessionId || getCanvasSessionId();
+      await downloadApplicationsCsv(sid, jobId);
+      setFeedback({ tone: 'green', text: '已导出本岗位申请 CSV（联系方式已脱敏）。' });
+    } catch (err) {
+      setFeedback({ tone: 'red', text: err instanceof Error ? err.message : '导出失败' });
     }
   };
 
@@ -761,6 +775,14 @@ export function JobPage({
                     onClick={() => fileInputRef.current?.click()}
                   >
                     {uploading ? '上传中…' : '导入简历'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ros-text-link"
+                    data-testid="canvas-action-export-csv"
+                    onClick={() => void handleExportCsv()}
+                  >
+                    导出 CSV
                   </button>
                   <button
                     type="button"

@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { RecruitingOverviewView } from '../client/recruiting/view-model.ts';
 import { prefetchCanvasPath } from '../client/canvas/canvas-ux.ts';
 import { fetchAppJson, readCookie } from './api.ts';
+import { downloadApplicationsCsv } from '../client/external-sync.ts';
 
 export interface JobsViewProps {
   readonly overview: RecruitingOverviewView;
@@ -15,6 +16,8 @@ function cleanStageLabel(raw: string): string {
 }
 
 export function JobsView({ overview, onOpenJob, onNewJob }: JobsViewProps) {
+  const [exportError, setExportError] = useState<string>('');
+  const [exporting, setExporting] = useState(false);
   return (
     <div className="canvas-inner" data-testid="app-jobs-view">
       <div className="sec-head">
@@ -24,17 +27,35 @@ export function JobsView({ overview, onOpenJob, onNewJob }: JobsViewProps) {
             共 {overview.counts.jobsTotal} 个岗位，其中 {overview.counts.jobsOpen} 个在招
           </div>
         </div>
-        {onNewJob ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
             type="button"
-            className="btn dark"
-            data-testid="app-jobs-new-job"
-            onClick={onNewJob}
+            className="btn"
+            data-testid="app-jobs-export-csv"
+            disabled={exporting}
+            onClick={() => {
+              setExporting(true);
+              setExportError('');
+              void downloadApplicationsCsv(readCookie('rc_sid')).catch((err: unknown) => {
+                setExportError(err instanceof Error ? err.message : '导出失败');
+              }).finally(() => setExporting(false));
+            }}
           >
-            ＋ 新建岗位
+            {exporting ? '导出中…' : '导出 CSV'}
           </button>
-        ) : null}
+          {onNewJob ? (
+            <button
+              type="button"
+              className="btn dark"
+              data-testid="app-jobs-new-job"
+              onClick={onNewJob}
+            >
+              ＋ 新建岗位
+            </button>
+          ) : null}
+        </div>
       </div>
+      {exportError ? <div className="sec-meta" data-testid="app-jobs-export-error">{exportError}</div> : null}
 
       {overview.jobs.length === 0 ? (
         <div className="empty-paper">当前暂无在招岗位</div>

@@ -179,10 +179,15 @@ describe('Issue #54 · 真库写入与读回', () => {
       quiet_hours: { start: '20:00', end: '09:00' },
     },
     booking_invite_defaults: { expires_hours: 168, default_duration_min: 90 },
+    // Issue #60：库里只放 secret_hash（GET 投影为 secret_set=true；绝不落明文）。
+    external_webhook_config: {
+      enabled: false, url: 'https://ats.example.com/hook',
+      events: ['decision.recorded'], secret_hash: 'a'.repeat(64),
+    },
   }
 
-  test('S1 六键经 appendSettingVersion 追加版本，独立 SQL 读回 payload 逐字段一致', async () => {
-    assert.equal(WORKSPACE_SETTING_KEYS.length, 6)
+  test('S1 七键经 appendSettingVersion 追加版本，独立 SQL 读回 payload 逐字段一致', async () => {
+    assert.equal(WORKSPACE_SETTING_KEYS.length, 7)
     const pool = createPool(cfg)
     try {
       for (const key of WORKSPACE_SETTING_KEYS) {
@@ -246,7 +251,7 @@ describe('Issue #54 · 真库写入与读回', () => {
     assert.deepEqual(history, [1, 2], '绝不 UPDATE 旧行')
   })
 
-  test('S3 GET /settings 真库读回六键 → defaults_applied 为空数组（没有撒谎说用了默认）', async () => {
+  test('S3 GET /settings 真库读回七键 → defaults_applied 为空数组（没有撒谎说用了默认）', async () => {
     const result = await call(SETTINGS_PATHS.read, { session: SESSION, method: 'GET' })
     assert.equal(result.status, 200, result.text)
     assert.deepEqual(result.body.defaults_applied, [])
@@ -318,7 +323,7 @@ describe('Issue #54 · 真库写入与读回', () => {
     assert.deepEqual(after, before)
   })
 
-  test('S8 readAllSettings 真库只读投影含全部六键，无内部字段', async () => {
+  test('S8 readAllSettings 真库只读投影含全部七键，无内部字段', async () => {
     const pool = createPool(cfg)
     try {
       const rows = await withReadOnly(pool, (client) =>

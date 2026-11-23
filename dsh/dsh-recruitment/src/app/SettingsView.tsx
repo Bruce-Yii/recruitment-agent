@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { fetchAppJson, postWorkspaceSettingWrite } from './api.ts';
+import { downloadApplicationsCsv, testWebhook as postWebhookTest } from '../client/external-sync.ts';
 
 type SettingsTabKey = 'connections' | 'automation' | 'org' | 'governance';
 
@@ -25,6 +26,19 @@ interface BookingInviteDefaults {
   readonly default_duration_min: 30 | 45 | 60 | 90;
 }
 
+interface ExternalWebhookConfigView {
+  readonly enabled: boolean;
+  readonly url: string;
+  readonly events: readonly ('decision.recorded' | 'stage.advanced' | 'booking.confirmed')[];
+  readonly secret_set: boolean;
+}
+
+const WEBHOOK_EVENT_LABELS: Readonly<Record<string, string>> = {
+  'decision.recorded': '录用 / 淘汰终审结论',
+  'stage.advanced': '阶段推进',
+  'booking.confirmed': '候选人自助预约确认',
+};
+
 interface SettingsPayload {
   readonly connections?: {
     readonly email?: ConnectorStatusView;
@@ -38,6 +52,7 @@ interface SettingsPayload {
     readonly auto_scorecard_draft_enabled?: boolean;
     readonly scorecard_reminder_policy?: ScorecardReminderPolicy;
     readonly booking_invite_defaults?: BookingInviteDefaults;
+    readonly external_webhook_config?: ExternalWebhookConfigView;
   };
   readonly defaults_applied?: readonly string[];
   readonly governance?: {
@@ -128,6 +143,14 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
   const [quietEnd, setQuietEnd] = useState('09:00');
   const [bookingExpires, setBookingExpires] = useState(72);
   const [bookingDuration, setBookingDuration] = useState<30 | 45 | 60 | 90>(60);
+  // Issue #60：外部轻量同步（CSV / Webhook）L2 表单状态
+  const [webhookEnabled, setWebhookEnabled] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [webhookSecret, setWebhookSecret] = useState('');
+  const [webhookEvents, setWebhookEvents] = useState<string[]>([]);
+  const [webhookSecretSet, setWebhookSecretSet] = useState(false);
+  const [csvBusy, setCsvBusy] = useState(false);
+  const [testBusy, setTestBusy] = useState(false);
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
@@ -157,6 +180,14 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
         setReminderChannel(p.channel === 'feishu' || p.channel === 'email' ? p.channel : 'workbench');
         if (p.quiet_hours?.start) setQuietStart(p.quiet_hours.start);
         if (p.quiet_hours?.end) setQuietEnd(p.quiet_hours.end);
+      }
+      const wh = s?.external_webhook_config;
+      if (wh) {
+        setWebhookEnabled(Boolean(wh.enabled));
+        setWebhookUrl(typeof wh.url === 'string' ? wh.url : '');
+        setWebhookEvents(Array.isArray(wh.events) ? [...wh.events] : []);
+        setWebhookSecretSet(Boolean(wh.secret_set));
+        setWebhookSecret(''); // GET 永不返回明文/哈希；输入框保持空，仅在用户主动填写时轮换
       }
       if (s?.booking_invite_defaults) {
         const b = s.booking_invite_defaults;
@@ -223,6 +254,55 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
       });
     } finally {
       setSavingKey(null);
+    }
+  };
+
+  const downloadCsv = async (jobId?: string) => {
+    setCsvBusy(true);
+    setFeedback(null);
+    try {
+      await downloadApplicationsCsv(sid, jobId);
+      setFeedback({ kind: 'ok', text: 'CSV 已下载（含 UTF-8 BOM，联系方式已脱敏）' });
+    } catch (err) {
+      setFeedback({ kind: 'err', text: err instanceof Error ? err.message : 'CSV 下载失败' });
+    } finally {
+      setCsvBusy(false);
+    }
+  };
+
+  const saveWebhookConfig = async () => {
+    const value: Record<string, unknown> = {
+      enabled: webhookEnabled,
+      url: webhookUrl.trim(),
+      events: webhookEvents,
+    };
+    if (webhookSecret.trim() !== '') value.secret = webhookSecret;
+    await handleSaveSetting(
+      'external_webhook_config',
+      value,
+      `配置外部 Webhook 同步：${webhookEnabled ? '开启' : '关闭'}，${webhookEvents.length} 类事件`,
+    );
+    if (webhookSecret.trim() !== '') {
+      setWebhookSecret('');
+      setWebhookSecretSet(true);
+    }
+  };
+
+  const runWebhookTest = async () => {
+    setTestBusy(true);
+    setFeedback(null);
+    try {
+      const result = await postWebhookTest(sid);
+      setFeedback({
+        kind: result.ok ? 'ok' : 'err',
+        text: result.ok
+          ? `测试推送成功（HTTP ${result.status}，签名已发送）`
+          : result.message,
+      });
+    } catch (err) {
+      setFeedback({ kind: 'err', text: err instanceof Error ? err.message : '测试推送失败' });
+    } finally {
+      setTestBusy(false);
     }
   };
 
@@ -428,13 +508,139 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
                   <div className="settings-row-info">
                     <div className="settings-row-title">外部系统轻量同步（CSV / Webhook）</div>
                     <div className="settings-row-desc">
-                      供已有 ATS / HRIS 团队分阶段并行适配，将录用与淘汰终态结果回写归档。
+                      {webhookEnabled
+                        ? `已开启 · 推送 ${webhookEvents.length} 类终态事件 · ${webhookSecretSet ? '签名密钥已设置' : '尚未设置签名密钥'}`
+                        : '未开启 · 可一键导出人话 CSV，或配置签名 Webhook 回写外部系统'}
                     </div>
                   </div>
                   <div className="settings-row-actions">
-                    <span className="settings-status tone-muted">规划中</span>
+                    <span className={`settings-status ${webhookEnabled ? 'tone-ok' : 'tone-muted'}`}>
+                      {webhookEnabled ? '已开启' : '未开启'}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn"
+                      data-testid="settings-config-external-sync"
+                      onClick={() => toggleRow('external-sync')}
+                    >
+                      {expandedRow === 'external-sync' ? '收起' : '配置'}
+                    </button>
                   </div>
                 </div>
+                {expandedRow === 'external-sync' ? (
+                  <div className="settings-l2" data-testid="settings-expand-external-sync">
+                    <div className="settings-kv-row">
+                      <span>CSV 导出</span>
+                      <button
+                        type="button"
+                        className="btn"
+                        data-testid="settings-csv-download"
+                        disabled={csvBusy || readOnly}
+                        onClick={() => void downloadCsv()}
+                      >
+                        {csvBusy ? '导出中…' : '下载全部申请 CSV'}
+                      </button>
+                    </div>
+                    <div className="settings-form-grid">
+                      <label className="settings-field">
+                        <span>推送开关</span>
+                        <select
+                          disabled={readOnly}
+                          value={webhookEnabled ? 'on' : 'off'}
+                          data-testid="settings-webhook-enabled"
+                          onChange={(e) => setWebhookEnabled(e.target.value === 'on')}
+                        >
+                          <option value="off">暂停推送</option>
+                          <option value="on">开启推送</option>
+                        </select>
+                      </label>
+                      <label className="settings-field">
+                        <span>Webhook 地址（https://；本地测试可用 http://127.0.0.1）</span>
+                        <input
+                          type="text"
+                          disabled={readOnly}
+                          value={webhookUrl}
+                          data-testid="settings-webhook-url"
+                          placeholder="https://ats.example.com/hooks/recruitment"
+                          onChange={(e) => setWebhookUrl(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div className="settings-toggle-line">
+                      <span>订阅事件</span>
+                      <div data-testid="settings-webhook-events">
+                        {Object.entries(WEBHOOK_EVENT_LABELS).map(([key, label]) => (
+                          <label key={key} className="settings-field" style={{ display: 'inline-flex', marginRight: 12 }}>
+                            <input
+                              type="checkbox"
+                              disabled={readOnly}
+                              checked={webhookEvents.includes(key)}
+                              data-testid={`settings-webhook-event-${key}`}
+                              onChange={(e) => setWebhookEvents((prev) =>
+                                e.target.checked ? [...prev, key] : prev.filter((k) => k !== key))}
+                            />
+                            <span>{label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="settings-l2-foot">
+                      <button
+                        type="button"
+                        className="text-action-link muted"
+                        data-testid="settings-l3-toggle-external-sync"
+                        onClick={() => toggleL3('external-sync')}
+                      >
+                        {l3Open['external-sync'] ? '高级参数 ▾' : '高级参数 ▸'}
+                      </button>
+                      <div className="settings-l2-btns">
+                        <button
+                          type="button"
+                          className="btn"
+                          data-testid="settings-webhook-test"
+                          disabled={readOnly || testBusy || savingKey === 'external_webhook_config'}
+                          onClick={() => void runWebhookTest()}
+                        >
+                          {testBusy ? '推送中…' : '测试推送'}
+                        </button>
+                        <button type="button" className="btn" onClick={() => setExpandedRow(null)}>
+                          取消
+                        </button>
+                        <button
+                          type="button"
+                          className="btn dark"
+                          data-testid="settings-save-webhook"
+                          disabled={readOnly || savingKey === 'external_webhook_config'}
+                          onClick={() => void saveWebhookConfig()}
+                        >
+                          {savingKey === 'external_webhook_config' ? '保存中…' : '保存更改'}
+                        </button>
+                      </div>
+                    </div>
+                    {l3Open['external-sync'] ? (
+                      <div className="settings-l3 settings-form-grid" data-testid="settings-l3-external-sync">
+                        <label className="settings-field">
+                          <span>签名密钥（仅在填写时轮换；GET 永不回传明文）</span>
+                          <input
+                            type="password"
+                            disabled={readOnly}
+                            value={webhookSecret}
+                            data-testid="settings-webhook-secret"
+                            placeholder={webhookSecretSet ? '已设置 · 留空则保持不变' : '至少 16 字符'}
+                            onChange={(e) => setWebhookSecret(e.target.value)}
+                          />
+                        </label>
+                        <div className="settings-kv-row">
+                          <span>签名说明</span>
+                          <span>
+                            每条推送带 X-Recruitment-Event 与 X-Recruitment-Signature: sha256=&lt;HMAC&gt;；
+                            外发失败只记审计，绝不回滚主业务；测试推送返回真实 HTTP 状态码。
+                          </span>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}
