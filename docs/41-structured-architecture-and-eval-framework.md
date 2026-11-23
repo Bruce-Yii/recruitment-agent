@@ -1,8 +1,9 @@
 # 41. 结构化步骤链路架构、客户切换路线与模型无关 Agent Eval 评测体系
 
-> **状态**：权威基线（2026-11-22，总控定稿）  
-> **适用范围**：`Bruce-Yii/recruitment-agent`（`dsh/dsh-recruitment` v4 独立工作台 `/recruitment/app`，`main@7695243`，24 个 PG17 迁移）  
-> **配套文档**：[`docs/39-recruiting-lifecycle-and-competitive-benchmark.md`](./39-recruiting-lifecycle-and-competitive-benchmark.md)、[`docs/40-lifecycle-gap-roadmap.md`](./40-lifecycle-gap-roadmap.md)、[`design/v4/settings-progressive-disclosure-spec.md`](../design/v4/settings-progressive-disclosure-spec.md)
+> **状态**：架构设计基线（2026-11-22 定稿；**2026-11-24 状态校准**）
+> **适用范围**：`Bruce-Yii/recruitment-agent`（`dsh/dsh-recruitment` v4 独立工作台 `/recruitment/app`，`main@ac93d6c`，25 个 PG17 迁移）
+> **真实性边界**：本文的架构设计与 Eval 设计**不是实现验收**。2026-11-24 Issue #92 独立审计裁决 **REJECT**：59 个 L1/L2 判分器中 57/59 空 payload 直接 PASS、端到端真实生产接线 0/59、7 个 L3 无实现、G0 仅 11/43 例有 runner。PR #93 已修 G3 吞错，PR #95 补了 3 个真实生产适配器（converter/agent-turn/PG shadow），PR #94（Eval 判分器/runner 根修）仍 OPEN。当前事实快照与未决项见 [`docs/44-current-state-and-handoff.md`](44-current-state-and-handoff.md)。
+> **配套文档**：[`docs/39-recruiting-lifecycle-and-competitive-benchmark.md`](./39-recruiting-lifecycle-and-competitive-benchmark.md)、[`docs/40-lifecycle-gap-roadmap.md`](./40-lifecycle-gap-roadmap.md)、[`docs/42-product-funnel-eval-system.md`](./42-product-funnel-eval-system.md)、[`design/v4/settings-progressive-disclosure-spec.md`](../design/v4/settings-progressive-disclosure-spec.md)
 
 ---
 
@@ -30,7 +31,7 @@
 
 本项目已落地的三项核心设计，恰好构成“可直用、可适配、不被绑定”的底座：
 - **独立产品入口**：`/recruitment/app` + 公开候选人自助预约页 `/recruitment/book/<token>`（D-178 / D-181），不寄生在任何第三方外壳里；
-- **独立 PG17 五事实真相库**：24 个迁移（`0001→0024`）完整覆盖岗位、候选人、申请、面试、面评、决策、追责时间线与撤销链，开箱即完整；
+- **独立 PG17 五事实真相库**：25 个迁移（`0001→0025`，含 0024 预约 / 0025 生产登录）完整覆盖岗位、候选人、申请、面试、面评、决策、追责时间线、认证会话与撤销链，开箱即完整；
 - **通用无锁定连接器**：`src/connectors/mail/`（通用 IMAP/SMTP）与 `src/connectors/feishu/`（日历/妙记适配器，探活诚实降级），任何客户都能以最小接入成本开始使用。
 
 ---
