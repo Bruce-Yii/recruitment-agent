@@ -215,3 +215,24 @@
 2. **背景 90 秒 / 动作 30 秒 & 全程“我们”**：候选人大篇幅讲项目背景和团队架构，个人实际动作模糊 → 面评草稿必须区分“团队成果”与“候选人本人贡献”，严禁把团队业绩算成候选人个人能力；
 3. **高分信号三要素识别**：真正优秀的回答同时具备“踩过的弯路（wrong turn）+ 量化结果 + 事后方法改进” → 评测草稿是否准确提炼这三项，而非泛泛而谈“沟通良好、逻辑清晰”；
 4. **面试官组内校准（Panel Calibration）**：同一段转写若模拟两位面试官给出相差超过 1 档的评分，评测 S10 汇总是否触发“标准口径分歧提示”，辅助 24 小时内高效 Debrief。
+
+---
+
+## 十一、招聘业务深水区评测判据（Wave 2 业务实证：排期改期/爽约 + 银牌召回与终审权衡）
+
+### 11.1 Stage 4 排期深水区：改期常态、周一冲突潮与爽约（No-Show）现场流转
+据 2026 年真实排期运营基准（[candidate.fyi 257,946 场排期实证 (2026)](https://candidate.fyi/post/how-to-audit-interview-scheduling-workflows)、[YouCanBookMe (2026-11-09)](https://youcanbook.me/blog/interview-scheduling-best-practices)、[US Tech Automations (2026-04-11)](https://ustechautomations.com/resources/blog/interview-scheduling-automation-how-to-2026)）：
+- 真实招聘中 **14% 的面试必然发生改期**，周一面试官拒约数比周五高 **40%**；自助预约平均 **27 分钟**确认（人工协调需 243 分钟），而改期响应超 48 小时会导致 **24% 候选人直接失联（Ghosting）**。
+- 因此 Stage 4 的高拟真沙盒与评测必须覆盖 4 类真实排期异常，而非只测“一次约成功”：
+  1. **面试官负载失衡（Interviewer Bottleneck）**：3 位合格面试官中 2 位日程满档、1 位有空 → 查空推荐应优先识别真实可用面试官，避免制造“虚假无空闲”；
+  2. **临时改期与原时段释放**：候选人或面试官发起改期后，旧面试实例状态更新且新预约不产生重复有效面试；
+  3. **未回复邀约与超期失效**：自助预约链接超期（如 72 小时）未选时，系统明确标出“链接已过期需重发”，禁止静默卡死在排期中；
+  4. **候选人爽约（No-Show）留痕**：记录爽约事实并提供“重新发预约链接”或“关闭申请”的清晰分支，不混淆“未面试”与“面评未交”。
+
+### 11.2 Stage 6 与跨岗召回深水区：银牌候选人（Silver Medalist）与终审定级权衡
+据 2026 年人才库再发现与终审校准实务（[TheHireHub.ai (2026-04-20)](https://www.thehirehub.ai/blog/talent-rediscovery-ai-silver-medalists-ats-2026)、[Pin (2026-02-23)](https://www.pin.com/blog/talent-sourcing-strategy/)、[TechScreen Uber 2026 终审拆解](https://techscreen.app/articles/uber-technical-interview-process-2026)、[MentorCruise (2026-10-14)](https://mentorcruise.com/blog/reaching-final-rounds-without-an-offer-what-to-check-first/)）：
+- 曾进入终面但差一点落选的**银牌候选人**转化率是冷投递的 **3 倍**，但多数团队再触达率低于 5%；而在终审环节，高频真实决策不仅是“录用 / 淘汰”，还包括**降档定级（Down-level）**，且被拒候选人往往存在**面评缺失不对称**（导致事后复盘无据可查）。
+- 因此 Stage 3 跨岗召回与 Stage 6 终审评测新增 3 类真实业务考题：
+  1. **银牌候选人优先召回（事实驱动、零打分）**：新开同类岗位时，优先把历史进过二面/终面但因名额或方向微差未录用的候选人浮现出来，清晰展示历史岗位、到达轮次与当时落选原因（依然 100% 零百分比/零排名）；
+  2. **技术强 × 架构弱的降档/加面权衡**：当两轮编码面强通过但系统设计/Bar Raiser 偏弱时，S10 汇总与对话助手须客观呈现“降档录用 / 补加一轮架构面 / 淘汰”三种权衡依据，而非简单二元催录用；
+  3. **残缺面评强拦阻（防无据淘汰）**：当仍有已完结面试未交面评时，终审汇总必须醒目标出缺失轮次与责任面试官，避免在信息残缺下草率拍板。
