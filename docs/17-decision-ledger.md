@@ -2066,3 +2066,14 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ① **客户切换路线**：坚持“独立 PG17 五事实真相库 + 独立产品页 `/recruitment/app` + 通用连接器”；无 ATS 团队直接替换上车，已有 ATS（飞书招聘/Moka/北森等）团队走**分阶段并行适配**（单岗零改造切入 → CSV/Webhook 轻同步回写 → 自然替换或稳态共存），既不强求第一天重迁移，也不做寄生式外挂；
   ② **模型无关交付与 Eval 体系**：产品交付与具体模型解耦；建立 4 层模型无关 Agent Eval 评测体系（代码硬闸门 × 轨迹不变量 × Rubric LLM Judge × `pass^k` 与延迟成本帕累托）+ 18 例 S6–S10 黄金难例矩阵，围绕完整链路（Harness + Skill + Tools + Model）做回归门禁；
   ③ **设置页（`#/settings`）规范**：单层 4-Tab 导航（连接接入 / 自动化与提醒 / 组织与招聘规范 / 行为规范与评测）+ L1→L2→L3 渐进式披露；面评催交策略、自动初筛/面评草稿开关及 D-182 延后的 `config/*` 组织规范统一收口至设置页。
+
+- **D-188（2026-11-22，总控；Wave 5 生产登录与 CSV/HMAC Webhook 双线验收合入 `main@297c1932`）**
+  **来源**：Issue #60 / PR #72（`7000a72c`，CSV UTF-8 BOM 脱敏导出 + HMAC-SHA256 Webhook 同步）、Issue #61 / PR #73（`297c1932`，`RECRUITMENT_AUTH_MODE=production` 正式登录门禁 + 持久化会话 + 迁移 `0025_auth_login.sql`；操作手册后重命名为 `docs/43-production-login.md`）；留档分支 `origin/evidence/wave5-20261122@7a3d782`。
+  **裁决与验证**：preview 模式保持向后兼容，production 模式关闭 `/recruitment/test` 与 preview alias；全量 `run-all` 3076/3074 pass / 0 fail / 2 declared skip，15 步回归 15/15 hard 0，独立 loopback HMAC 验签与重启会话保持全部实测通过。
+
+- **D-189（2026-11-23，总控；Eval V2 唯一权威规格定稿与 Phase 1–3 工程底座全量合入 `main@1b257df8`）**
+  **来源**：`docs/42-product-funnel-eval-system.md`（PR #77/#78/#79/#80）、`test/eval/corpus-manifest.json`（v2.2.0，43 例，G0/G1/G2 分档）、Phase 1 PR #81（`7a528cfc`，关闭 Issue #63）、Phase 2 PR #82（`01a8ec90`）、Phase 3 PR #83（`1b257df8`）。
+  **裁决与落地**：
+  ① 锚定 2026 权威标准（NIST CAISI / OpenTelemetry GenAI / EN ISO/IEC 42001:2026 / Evaluation Cards）与 `docs/24` 单人线性主轴，坚持反自嗨铁律与确定性单测分账；
+  ② 完成 P1–P6 六大判断点深度细则与 6 维度总审收口（双向防 `读不出来` 膨胀 ≤5%、最小原文子串锚定、跨轮防锚定隔离、冲突面评中立、防 `Halluci-Action` 言行对账）；
+  ③ 落地以「人」为主轴的 `GraderRegistry`、Evaluation Card 切分报告器、私有真简历盘点脚手架、外部基准加载器、59 个确定性 L1/L2 判分器与 G0 执行器、L3 裁判校准协议（`κ ≥ 0.70` / `TNR ≥ 0.85`）及 G3 线上 4 对成对护栏只读遥测（挂载至 `GET /recruitment/api/settings`）。
