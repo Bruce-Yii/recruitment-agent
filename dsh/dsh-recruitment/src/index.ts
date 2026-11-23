@@ -207,6 +207,10 @@ import { registerJobActionHttp, type JobActionHostContext } from './http/actions
 import { registerActionsHttp, type ActionHostContext } from './http/actions.ts'
 import { registerCompoundHttp, type CompoundHostContext } from './http/compound.ts'
 import { registerAppShell, type AppShellHostContext } from './http/app-shell.ts'
+// Issue #61（Wave 5 / D-178）：生产登录（独立页 + scrypt 会话）+ 生产模式总闸门。
+// preview 缺省：这两个模块的安装函数在 preview 下都是 no-op，旧 15 步行为零变化。
+import { installAuthGate, resolveAuthMode } from './http/auth-gate.ts'
+import { registerAuthHttp, type AuthHostContext } from './http/auth.ts'
 import { createAppAgentTurnBridge, type AgentTurnHost } from './http/agent-turn.ts'
 import { registerBatchUndoHttp, type BatchUndoHostContext } from './http/batch-undo.ts'
 // G-09（Issue #47）：候选人自助预约（HR 生成一次性链接 + 免登录确认 + 暖纸公开页）。
@@ -544,6 +548,29 @@ export function apply(
   // （2026-11-14：现注册 27 个工具；这里的历史数字只说明"整插件会被一起拖下水"。）
   // 有 webServer 才注册路由；没有就静默跳过（面板不可用，工具照常）。
   ctx.inject(['webServer'], (child) => {
+    // ==================================================================
+    //  Issue #61 / Wave 5：生产认证总闸门（独立于 Lane A 的 webhook 注册块）。
+    //  仅在 RECRUITMENT_AUTH_MODE=production 时给 child 装 webServer 影子层：
+    //  所有 /recruitment/* 路由统一「未认证 401 / app → 登录页 / test 404」，
+    //  并每次请求按 DB 会话重绑 session→alias（Host 重启后仍有效）。
+    //  preview（缺省）完全 no-op， Demo Actor / 15 步行为不变。
+    // ==================================================================
+    const authMode = resolveAuthMode(env.RECRUITMENT_AUTH_MODE)
+    const restoreAuthGate = installAuthGate(child, authMode, database.resolved, {
+      database: database.resolved,
+      identity: actorIdentity,
+    })
+    child.effect(() => () => restoreAuthGate(), 'recruitment: restore webServer after auth gate')
+    if (authMode === 'production') {
+      child.effect(
+        () => registerAuthHttp(child as unknown as AuthHostContext, {
+          database: database.resolved,
+          identity: actorIdentity,
+        }),
+        'recruitment: production login page and auth APIs',
+      )
+    }
+
     child.effect(
       () => registerOverviewHttp(child as unknown as OverviewHostContext, database.resolved, database.issues),
       'recruitment: workbench overview route',
@@ -621,10 +648,13 @@ export function apply(
         {
           identity: actorIdentity,
           agentTurn: bridge,
+          // Issue #61：生产模式**忽略** RECRUITMENT_PREVIEW_ALIAS（正式身份只来自登录会话）。
           // 仅本地预览：显式 env 才启用默认身份（生产由真实登录替代，D-178）。
-          previewAlias: typeof env.RECRUITMENT_PREVIEW_ALIAS === 'string'
-            ? env.RECRUITMENT_PREVIEW_ALIAS.trim()
-            : undefined,
+          previewAlias: authMode === 'production' ? undefined
+            : typeof env.RECRUITMENT_PREVIEW_ALIAS === 'string'
+              ? env.RECRUITMENT_PREVIEW_ALIAS.trim()
+              : undefined,
+          authMode,
         },
       )
       return () => {

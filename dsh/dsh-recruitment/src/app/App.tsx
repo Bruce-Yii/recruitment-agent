@@ -18,11 +18,13 @@ import {
 import { InterviewerWorkspace } from '../client/interviewer/InterviewerWorkspace.tsx';
 import type { RecruitingOverviewView } from '../client/recruiting/view-model.ts';
 import {
+  AppUnauthenticatedError,
   fetchAppJson,
   fetchAppOverview,
   fetchAppSession,
   formatRolesLabel,
   isInterviewerOnly,
+  postLogout,
   type AgentUiAction,
   type AppSessionInfo,
 } from './api.ts';
@@ -262,6 +264,12 @@ export function App() {
         }
       }
     } catch (err) {
+      if (err instanceof AppUnauthenticatedError) {
+        // 生产模式：服务端会话已失效/未登录 → 回独立登录页，不带任何 DSH chrome。
+        const next = encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+        window.location.replace(`/recruitment/login?next=${next}`);
+        return;
+      }
       setSessionError(err instanceof Error ? err.message : '初始化会话失败');
     } finally {
       setSessionLoading(false);
@@ -669,11 +677,31 @@ export function App() {
   const actorName = session.displayName || session.alias || '已认证成员';
   const actorRoleText = formatRolesLabel(session.roles, actorName);
 
+  // 注意：这里在若干 early return 之后，不能再调用 useCallback / 任何 Hook，
+  // 否则登录/未绑定时首屏的 Hook 数量与后续渲染不一致，React 会整页白屏。
+  const handleLogout = async () => {
+    try {
+      await postLogout();
+    } finally {
+      window.location.replace('/recruitment/login');
+    }
+  };
+
   const actorBadgeNode = (
     <div className="actor-badge" data-testid="app-actor-badge">
       <i className="actor-badge-dot" />
       <span>{actorName}</span>
       {actorRoleText ? <span className="actor-badge-role">{actorRoleText}</span> : null}
+      <button
+        type="button"
+        className="actor-logout-btn"
+        data-testid="app-logout"
+        title="退出登录"
+        aria-label="退出登录"
+        onClick={() => void handleLogout()}
+      >
+        退出
+      </button>
     </div>
   );
 

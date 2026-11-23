@@ -1526,6 +1526,93 @@ begin
   end if;
 end $$;
 
+
+-- [0025 Issue #61 生产登录] auth_user / auth_session 专项断言：
+-- 列 / CHECK / scrypt 哈希形状 / 唯一键 / 未撤销会话索引 / 台账自登记。
+-- 只新增本块，既有断言与计数零改动；表不存在时 SKIP（旧库仍可通过 verify）。
+do $$
+declare
+  v_missing text;
+begin
+  if to_regclass('recruitment.auth_user') is not null
+     and to_regclass('recruitment.auth_session') is not null then
+    for v_missing in select unnest(array[
+      'id','tenant_id','username','password_hash','display_name','alias','disabled_at','created_at'
+    ]) loop
+      if not exists (select 1 from pg_attribute
+                      where attrelid = 'recruitment.auth_user'::regclass
+                        and attname = v_missing and not attisdropped and attnum > 0) then
+        raise exception 'AUTH-STRUCT-01 auth_user 缺列：%', v_missing;
+      end if;
+    end loop;
+    for v_missing in select unnest(array[
+      'id','tenant_id','session_id','token_sha256','username','alias','display_name',
+      'created_at','expires_at','revoked_at'
+    ]) loop
+      if not exists (select 1 from pg_attribute
+                      where attrelid = 'recruitment.auth_session'::regclass
+                        and attname = v_missing and not attisdropped and attnum > 0) then
+        raise exception 'AUTH-STRUCT-02 auth_session 缺列：%', v_missing;
+      end if;
+    end loop;
+
+    -- 三张表的 tenant_id 必须 NOT NULL（STRUCT-02 在本块再做一次专项核对）
+    if not exists (select 1 from pg_attribute
+                    where attrelid = 'recruitment.auth_user'::regclass
+                      and attname = 'tenant_id' and attnotnull)
+       or not exists (select 1 from pg_attribute
+                       where attrelid = 'recruitment.auth_session'::regclass
+                         and attname = 'tenant_id' and attnotnull) then
+      raise exception 'AUTH-STRUCT-03 auth 表 tenant_id 不是 NOT NULL';
+    end if;
+
+    for v_missing in select unnest(array[
+      'ck_auth_user_username','ck_auth_user_password_hash','ck_auth_user_display_name',
+      'ck_auth_user_alias','ck_auth_session_sid','ck_auth_session_token_sha256',
+      'ck_auth_session_username','ck_auth_session_alias','ck_auth_session_expiry'
+    ]) loop
+      if not exists (select 1 from pg_constraint
+                      where conrelid in ('recruitment.auth_user'::regclass,
+                                         'recruitment.auth_session'::regclass)
+                        and contype = 'c' and conname = v_missing) then
+        raise exception 'AUTH-STRUCT-04 auth 表缺 CHECK 约束：%', v_missing;
+      end if;
+    end loop;
+
+    if not exists (select 1 from pg_constraint
+                    where conrelid = 'recruitment.auth_user'::regclass
+                      and contype = 'u' and conname = 'uq_auth_user_tenant_username') then
+      raise exception 'AUTH-STRUCT-05 auth_user 缺用户名唯一键';
+    end if;
+    if not exists (select 1 from pg_constraint
+                    where conrelid = 'recruitment.auth_session'::regclass
+                      and contype = 'u' and conname = 'uq_auth_session_token') then
+      raise exception 'AUTH-STRUCT-06 auth_session 缺 token 唯一键';
+    end if;
+    if not exists (select 1 from pg_index i
+                    where i.indrelid = 'recruitment.auth_session'::regclass
+                      and i.indexrelid = 'recruitment.ix_auth_session_active'::regclass
+                      and i.indpred is not null) then
+      raise exception 'AUTH-STRUCT-07 auth_session 缺未撤销会话部分索引';
+    end if;
+    if not exists (select 1 from recruitment.schema_migration where version = '0025_auth_login') then
+      raise exception 'AUTH-STRUCT-08 schema_migration 缺 0025_auth_login 自登记';
+    end if;
+
+    -- 不变量：种子账号只存 scrypt 哈希，绝不出现明文口令文本。
+    if exists (select 1 from recruitment.auth_user
+                where username in ('recruiter','interviewer')
+                  and (password_hash not like 'scrypt%'
+                       or password_hash like '%Recruiter%'
+                       or password_hash like '%Interviewer%')) then
+      raise exception 'AUTH-INVARIANT 演示账号口令哈希形状非法';
+    end if;
+    raise notice 'AUTH-STRUCT PASS auth_user/auth_session 列/CHECK/唯一键/部分索引/台账/哈希形状齐全';
+  else
+    raise notice 'AUTH-STRUCT SKIP auth_user 或 auth_session 表不存在（0025 尚未应用）';
+  end if;
+end $$;
+
 \echo ''
 \echo '=== ROLLBACK：自检不改变数据库 ==='
 rollback;

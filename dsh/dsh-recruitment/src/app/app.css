@@ -464,3 +464,6 @@ button { cursor: pointer; background: none; border: 0; }
 .settings-kv-row:last-child { border-bottom: 0; }
 .settings-toggle-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--ink); padding: 4px 0; }
 .settings-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--muted); }
+
+/* Issue #61: production login/logout entry */
+.actor-logout-btn { margin-left: 8px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); font-size: 11px; line-height: 1.4; cursor: pointer; }\n.actor-logout-btn:hover { color: var(--ink); border-color: var(--ink); }

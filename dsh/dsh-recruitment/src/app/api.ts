@@ -3,6 +3,15 @@ import {
   type RecruitingOverviewView,
 } from '../client/recruiting/view-model.ts';
 import { setCanvasSessionId } from '../client/canvas/canvas-actions.ts';
+import { postAuthLogout } from '../client/auth/auth-api.ts';
+
+/** 生产模式下会话失效（401）：页面据此跳回独立登录页。 */
+export class AppUnauthenticatedError extends Error {
+  constructor(message = '会话已失效，请重新登录') {
+    super(message)
+    this.name = 'AppUnauthenticatedError'
+  }
+}
 
 export interface AppSessionInfo {
   readonly sid: string;
@@ -306,6 +315,7 @@ export async function fetchAppSession(): Promise<AppSessionInfo> {
   });
 
   if (!res.ok) {
+    if (res.status === 401) throw new AppUnauthenticatedError();
     throw new Error('无法获取当前会话信息，请刷新页面重试。');
   }
 
@@ -545,6 +555,11 @@ export async function streamAgentTurn(opts: StreamAgentTurnOptions): Promise<voi
       opts.onError('对话流意外中断，请重试。');
     }
   }
+}
+
+/** 退出登录：服务端撤销会话并清理 cookie；随后跳回独立登录页。 */
+export async function postLogout(): Promise<void> {
+  await postAuthLogout();
 }
 
 export interface WorkspaceSettingWritePayload {
