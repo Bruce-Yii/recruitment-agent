@@ -110,3 +110,6 @@ python -m src.batch_run --out reports/corpus-results.jsonl
 - 不修改旧仓库 `Recruitment-OS` 的任何内容，不向它开 PR / 改 Issue。
 - 不使用真实候选人资料；真实外部产物只存 ID / 哈希 / 脱敏摘要。
 - 依据与冲突裁决见 `docs/06-governance-and-current-state.md`；`docs/` 内文档互相冲突时按批准时间裁决。
+
+### 评测体系唯一权威总纲
+- 全链路产品级评测体系（6 阶段漏斗 × 跨步交接 × 三层真实数据源 × 既有验收资产索引）：[`docs/42-product-funnel-eval-system.md`](docs/42-product-funnel-eval-system.md)

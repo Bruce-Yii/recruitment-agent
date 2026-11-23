@@ -84,6 +84,7 @@
 - 过程产物：仓库内 `work/`（已 gitignore，不入库）
 - 总控行为约束：旧仓根 `AGENTS.md`（八条铁律 R1–R8），本项目继续沿用
 - 决策台账：**`docs/17-decision-ledger.md`**（入库，唯一权威源）；旧仓 `work/control/` 仅作历史
+- 产品评测体系总纲：**`docs/42-product-funnel-eval-system.md`**（入库，唯一权威源；涵盖 6 阶段全链路漏斗、三层真实数据源与全部既有验收资产索引，后续所有评测迭代统一更新此文件）
 
 ---
 
