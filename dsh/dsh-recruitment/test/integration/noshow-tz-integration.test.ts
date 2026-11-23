@@ -67,9 +67,10 @@ const INTERVIEWER_A = '11111111-1111-4111-8111-000000000104'
 const DIMENSIONS = [
   { key: 'work_exists', label: '有工作经历', kind: 'MUST_HAVE', weight: 1, field: 'work_experience', operator: 'EXISTS', value: true },
 ]
-/** 远期基准，避开并发 lane 的已提交排期。 */
-const SLOT_BASE_MS = Date.parse('2031-01-01T10:00:00+08:00') + Math.floor(Math.random() * 300 * 24 * 60) * 60_000
-const at = (minutes: number): string => new Date(SLOT_BASE_MS + minutes * 60_000).toISOString()
+/** 远期基准 + 单调步进 4 小时槽位：数学上保证同文件内任何 committed/rollback 用例绝不撞 CONFLICT_SLOT。 */
+const SLOT_BASE_MS = Date.parse('2031-01-01T10:00:00+08:00')
+let nextSlotSeq = 0
+const nextDisjointSlot = (): string => new Date(SLOT_BASE_MS + (++nextSlotSeq) * 4 * 60 * 60_000).toISOString()
 const allowOnce = async (): Promise<'allowed-once'> => 'allowed-once'
 
 function createArgs(applicationId: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -79,7 +80,7 @@ function createArgs(applicationId: string, overrides: Record<string, unknown> = 
     application_id: applicationId,
     round_no: 1,
     interviewers: [{ actor_id: INTERVIEWER_A }],
-    scheduled_start_at: at(0),
+    scheduled_start_at: nextDisjointSlot(),
     duration_minutes: 60,
     ...overrides,
   }
@@ -147,11 +148,9 @@ async function expectError(
 
 async function createInterview(client: DatabaseClient, overrides: Record<string, unknown> = {}) {
   const scenario = await seedScenario(client, { dimensions: DIMENSIONS })
-  // 每场面试换一个时段：本文件既有 committed 夹具（execute() 用例）也有回滚事务，
-  // 时段相同会撞 uq / INTERVIEWER_BUSY，测的就不再是 MARK 而是冲突校验。
-  const jitter = Math.floor(Math.random() * 20_000) * 60_000
+  // 单调互不重叠时段（每次 +4h）：彻底消除 Math.random 生日悖论导致的偶发 CONFLICT_SLOT。
   const value = await schedule(client, createArgs(scenario.applicationId, {
-    scheduled_start_at: new Date(SLOT_BASE_MS + jitter).toISOString(),
+    scheduled_start_at: nextDisjointSlot(),
     ...overrides,
   }))
   const interview = value.interview as Record<string, unknown>
