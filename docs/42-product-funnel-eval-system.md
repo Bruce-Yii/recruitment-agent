@@ -53,3 +53,32 @@
 ### 3.3 数据集规模与演进目标
 - **当前基线（PR #59）**：横切对话层 18 例（`E-01`～`E-18`）；
 - **下一里程碑（全链路 V2，见 Issue #62）**：扩展至 **60+ 分阶段真值用例**（每个 Stage 8–10 例，覆盖正常主路径 50% / 边界乱码与空态 25% / 越权注入与隐私对抗 15% / 下游超时故障 10%），并落地**线上质量遥测聚合视图**（直接从 PG 真库统计纠偏率、草稿修改率、撤销率、SLA 超时率，呈现到 `#/settings` 治理与评测 Tab）。
+
+---
+
+## 四、三层评测数据源策略（杜绝“自己出题考自己”）
+
+只用自己编造的干净样例做评测，本质上是“出题人与考生为同一人”，永远测不出真实世界里的脏排版、口语噪音与业务潜规则（参见 [Synthetic Data Review (2026-11-01)](https://www.researchgate.net/publication/417178730_Synthetic_Data_for_Artificial_Intelligence_A_Comprehensive_Review)、[AIObs (2026-11-02)](https://www.aiobs.cloud/how-to-evaluate-ai-agents/)、[PNAS (2026-09-23)](https://www.pnas.org/doi/10.1073/pnas.2611363123)）。本项目评测数据严格按三层来源构建：
+
+| 数据层级 | 覆盖评测对象 | 具体来源与落地方式 | 不可替代性说明 |
+|---|---|---|---|
+| **第 1 层：私有真实业务语料（最高权威，不入公库）** | ① 国内渠道脏简历（BOSS/猎聘导出 PDF、WPS 嵌套表格、截图扫描件）<br>② 真实中文面试转写（妙记说话人串行、中英混杂、打断追问）<br>③ 真实初筛拍板与纠偏标尺 | 1. 放入仓库既有私有门禁目录 `RECRUITMENT_CORPUS_ROOT`（遵循 R7 脱敏不入公库）；<br>2. 由 2–3 位真实招聘官/用人经理对 20–30 份脱敏案例盲评定标尺；<br>3. 试点后自动采集线上真实 `criterion_override`、面评草稿大幅改写与 `propose_write` 取消记录回流扩充。 | 公开数据与合成数据无法复现国内渠道的真实脏版式与团队特定用人尺度。 |
+| **第 2 层：外部公开真实基准（立即可用，打破自嗨）** | ① Stage 1 真实复杂 PDF 解析与渲染<br>② Stage 3 跨文档简历×JD 中文推理与公平性<br>③ Stage 2/3 真实技能匹配<br>④ 安全对抗（简历隐藏 Prompt 注入） | 1. 真实原始 PDF：[d4rk3r/resumes-raw-pdf](https://huggingface.co/datasets/d4rk3r/resumes-raw-pdf)（1,940 份真实原始 PDF）+ [Chinese_Documents_Dataset_PDF](https://huggingface.co/datasets/HumynLabs/Chinese_Documents_Dataset_PDF)；<br>2. 多语言（含中文 `zh`）HR 跨文档推理基准：[Avature/jobresqa-benchmark](https://github.com/Avature/jobresqa-benchmark)（[arXiv:2601.23183](https://arxiv.org/html/2601.23183v1)，581 组 QA × 105 对脱敏简历-JD）；<br>3. 真实+混合筛选集：[datasetmaster/resumes](https://huggingface.co/datasets/datasetmaster/resumes)、[Resume-Screening-Dataset](https://huggingface.co/datasets/AzharAli05/Resume-Screening-Dataset)；<br>4. 行业安全对抗范式：[OWASP LLM01:2025 Scenario #6](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)（简历分段载荷注入）。 | 独立第三方分布与行业公开标准，在客户真实语料大规模积累前提供具备外部说服力的基线。 |
+| **第 3 层：可控程序化故障注入（确定性状态机专用）** | 并发乐观锁冲突、跨时区排期、非法 `slot_index`/409 重提/403 越权、损坏字节文件、Webhook 503 超时、CSV 注入 | 按 `docs/12-layer-acceptance.md` 原则，通过程序确定性注入已知故障，验证 fail-closed 与零脏写入。 | 高代价极端边界在线上稀缺，必须靠可控故障注入 100% 锁死。 |
+
+---
+
+## 五、仓库既有验收与评测资产全景索引（统一收编，不另起炉灶）
+
+本仓库历史上已沉淀多份分层验收文档与测试脚本，统一收编进本总纲管理，后续所有评测讨论与迭代**只更新本文档**，不再分散新建零散文档：
+
+| 现有资产 | 路径 | 在本评测体系中的定位 |
+|---|---|---|
+| **PDF 转换器验收标准** | `docs/11-pdf-acceptance-criteria.md` | Stage 1 文档解析与渲染的组件级判据 |
+| **分层故障注入验收** | `docs/12-layer-acceptance.md` | 第 3 层故障注入方法论（“每层注入已知失败，验证发现与接住机制”） |
+| **S6–S10 链路验收评审** | `docs/23-acceptance-review-s6-s10.md` | 全链路早期阶段边界与历史基线参考 |
+| **操作层六门验收标准（V1–V6）** | `docs/29-acceptance-standard.md` | 独立复跑、可复算、不靠当事人自述的验收纪律总则 |
+| **15 步端到端真机剧本** | `docs/37-e2e-acceptance-runbook.md` | 浏览器 + PG17 真机回归剧本（15/15 PASS，audit hard 0） |
+| **私有真实语料门禁** | `RECRUITMENT_CORPUS_ROOT` + `converter/` acceptance | 第 1 层私有真实业务语料的隔离执行入口（R7 不入公库） |
+| **横切对话层评测套件（V1）** | `dsh/dsh-recruitment/test/eval/`（PR #59） | 横切对话层 18 例（`E-01`～`E-18`）+ L1/L2 判分器骨架 |
+| **6 阶段漏斗与线上飞轮（V2 规划）** | GitHub Issue #63 | 6 阶段 ≥60 例全链路漏斗套件 + 第 2 层公开基准接入 + PG 线上质量遥测聚合 |
