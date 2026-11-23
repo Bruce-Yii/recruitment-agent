@@ -236,3 +236,42 @@
   1. **银牌候选人优先召回（事实驱动、零打分）**：新开同类岗位时，优先把历史进过二面/终面但因名额或方向微差未录用的候选人浮现出来，清晰展示历史岗位、到达轮次与当时落选原因（依然 100% 零百分比/零排名）；
   2. **技术强 × 架构弱的降档/加面权衡**：当两轮编码面强通过但系统设计/Bar Raiser 偏弱时，S10 汇总与对话助手须客观呈现“降档录用 / 补加一轮架构面 / 淘汰”三种权衡依据，而非简单二元催录用；
   3. **残缺面评强拦阻（防无据淘汰）**：当仍有已完结面试未交面评时，终审汇总必须醒目标出缺失轮次与责任面试官，避免在信息残缺下草率拍板。
+
+---
+
+## 十二、评测引擎框架与前置准备蓝图（先搭地基，再填资产包）
+
+> **执行纪律**：在制作具体样本 JSON 资产包之前，必须先把以下 **5 块框架与前置准备地基** 定死并落地，避免样本格式与评测引擎紧耦合返工。
+
+### 12.1 底座 1：统一 6 阶段漏斗执行与判分抽象（扩展 `test/eval/types.ts`）
+现有 V1 `EvalTrajectory` 仅能描述对话层 SSE 轨迹；V2 升级为统一漏斗抽象，保留 V1 零破坏并作为横切层适配器：
+- **`StageRunArtifact`（统一单步产物）**：`{ caseId, stage, dataTier, sourceRef, suitePool, inputs, outputs, dbSnapshotBefore?, dbSnapshotAfter?, upstreamRef?, latencyMs }`；
+- **`StageAdapter`（阶段执行器接口）**：Stage 1–6 + CrossCut 共 7 个适配器各自实现 `run(caseSpec, env) => Promise<StageRunArtifact>`；
+- **`GraderRegistry`（可插拔判分注册表）**：把 `corpus-manifest.json` 中的 `graders[]` ID 映射到具体 L1/L2/L3 判分函数，缺实现即报错（防空挂名判分器）。
+
+### 12.2 底座 2：Evaluation Card 结构化报告与漏斗归因契约
+每次运行输出标准 `FunnelEvaluationCard`（JSON + Markdown），强制包含 4 块视图，**禁止把不同数据源揉成一个虚高总分**：
+1. **分阶段漏斗健康度**：7 个阶段各自的 `step_pass_rate`、`handoff_integrity_rate`、以及端到端 `funnel_completion_rate`；
+2. **按数据层级切分（Tier Split）**：`tier1_private_corpus`（真简历）/ `tier2_public_benchmark`（公开基准）/ `tier3_fault_injection`（故障注入）**分开报分**；
+3. **自动折损归因（Drop-off Attribution）**：当端到端失败时，沿 `upstreamRef` 链路标出首个失败 Stage 与具体 Grader Code；
+4. **基线 Diff 对比**：与上次报告比对，明确列出 `regressions[]`（回退项，CI 阻断）与 `newly_passed[]`（可晋升项）。
+
+### 12.3 底座 3：私有真实简历库（`RECRUITMENT_CORPUS_ROOT`）前置准备规范
+为您手头的数百份真实 PDF/Word 简历建立轻量、不入公库（gitignore）的本地目录规范，避免标注重到做不下去：
+```text
+$RECRUITMENT_CORPUS_ROOT/
+├── raw/                  # 原始真实 PDF/DOCX（只读不改）
+├── tier_a_layout_hell/   # 30–50 份：多栏/表格/扫描件/长页（Stage 1 专用）
+├── tier_b_borderline/    # 50–80 份：5 类岗擦线/水分/朴实真干活样本（Stage 2/3 专用）
+├── tier_c_bulk/          # 其余数百份：吞吐与零崩溃压测
+└── labels.local.json     # 极简人工标尺（仅 Tier B 需填 3 字段）
+```
+- `labels.local.json` 每份简历只需填 3 个极简字段：`{ file, target_role, expected_band: 'pass' | 'borderline' | 'reject', must_catch_points: string[] }`，配套前置盘点脚本自动统计文件类型、页数、加密/扫描占比，帮人 10 分钟挑出 Tier A 样本。
+
+### 12.4 底座 4：外部公开基准本地缓存与转换协议（不污染 Git 仓库）
+- 第三方大体积数据集（`jobresqa-benchmark`、`resumes-raw-pdf`、`AliMeeting` 等）统一落本地缓存目录 `work/eval-cache/`（已 gitignore），**绝不把几十 MB 外部原始文件提交进 Git**；
+- 仓库内只存轻量转换适配器（`test/eval/loaders/`）与校验哈希，把异构外部格式统一转换为内部 `EvalInputRecord`；缺缓存时诚实报 `CACHE_MISSING`（不伪造通过）。
+
+### 12.5 底座 5：能力集 vs 回归集双池闸门 + 线上遥测同构契约
+- 扩展用例元数据支持 `suite_pool: 'regression' | 'capability'`：**回归池**任何 1 条失败直接红灯阻断合入；**能力池**用于攻坚新难例，连续稳定通过后人工晋升进回归池；
+- 线上生产遥测（`governance.funnel_telemetry`）与离线报告共用同一套阶段命名与指标口径（纠偏率、草稿编辑距离、确认卡接受率、批量撤销率、SLA 按时率），实现开发期→上线后零重构衔接。
