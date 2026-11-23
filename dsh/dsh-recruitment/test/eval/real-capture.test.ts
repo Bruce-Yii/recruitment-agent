@@ -196,7 +196,12 @@ describe('Eval V2 真实采集 bundle（env-gated，需要 RECRUITMENT_CAPTURE_D
       assert.match(counts.command, /-h 127\.0\.0\.1 -p 49353/)
       assert.doesNotMatch(counts.command, /PGPASSWORD\s*=\s*postgres\b/)
     }
-    assert.equal(manifest.sources.pg.database, 'ra_fix92_adapters')
+    const expectedDb = process.env.RECRUITMENT_CAPTURE_PG_DB || process.env.RECRUITMENT_TEST_DB
+    assert.equal(typeof manifest.sources.pg.database, 'string')
+    assert.ok(manifest.sources.pg.database.length > 0, 'manifest.sources.pg.database must be non-empty')
+    if (expectedDb) assert.equal(manifest.sources.pg.database, expectedDb, 'PG DB name must match env override')
+    // counts 文件里的命令文本必须与 manifest 声明的库名一致（防手改）。
+    assert.match(before.command, new RegExp(`-d\\s+${manifest.sources.pg.database.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`))
     assert.equal(manifest.sources.pg.port, 49353)
     assert.equal(manifest.sources.pg.migrationsReplayed, 25)
     assert.match(manifest.sources.pg.verifyTail, /VERIFY PASS/)
