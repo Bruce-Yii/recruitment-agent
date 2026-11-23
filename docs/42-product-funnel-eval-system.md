@@ -275,3 +275,39 @@ $RECRUITMENT_CORPUS_ROOT/
 ### 12.5 底座 5：能力集 vs 回归集双池闸门 + 线上遥测同构契约
 - 扩展用例元数据支持 `suite_pool: 'regression' | 'capability'`：**回归池**任何 1 条失败直接红灯阻断合入；**能力池**用于攻坚新难例，连续稳定通过后人工晋升进回归池；
 - 线上生产遥测（`governance.funnel_telemetry`）与离线报告共用同一套阶段命名与指标口径（纠偏率、草稿编辑距离、确认卡接受率、批量撤销率、SLA 按时率），实现开发期→上线后零重构衔接。
+
+---
+
+## 十三、L3 裁判校准防偏见协议与核心阶段精确数学指标（研究收口 A）
+
+在进入框架代码实现前，锁死两项最容易导致“假绿”的方法论底线：L3 主观裁判怎么防偏见并经人类校准才能上岗，以及 Stage 1 / Stage 5 精确怎么算分。
+
+### 13.1 L3 主观裁判（LLM-as-Judge）校准与防偏见铁律
+结合 2026 年下半年至 11 月的裁判校准实证（[LLM-as-a-Judge Bias Calibration (2026-11-17)](https://talentme.airsota.com/resources/registry/llm-as-a-judge-bias-calibration)、[AI Atlas (2026-11-08)](https://ai.ozdemir.be/guides/llm-evals-observability)、[Hamel Husain (2026-09-18)](https://hamel.dev/blog/posts/evals-faq/)、[Scaler (2026-08-30)](https://www.scaler.com/topics/llm-as-a-judge/)、[LLM-as-a-Judge Field Guide (2026-07-25)](https://kraghavan.ca/llm-infrastructure/evaluation/2026/07/25/llm-as-a-judge-field-guide.html)、[Future AGI (2026)](https://futureagi.com/blog/llm-summarization-evaluation-deep-dive-2026/)）：
+1. **弃用模糊 1–5 / 1–10 连续打分，统一改用「维度拆解 + 二元/四档分类判决」**：
+   - 整数 Likert 量表容易发生分数聚集（80% 堆在 3–4 分，失去区分度）；
+   - 所有主观评估全部拆解为独立原子检查项，输出 **`pass / fail`** 或四档分类 **`supported / contradicted / missing / partial`**，再按维度聚合。
+2. **先引原文、后下判决（Evidence First, Verdict Second）+ 严禁外部常识**：
+   - 裁判 Prompt 强制先逐字摘录原文支撑片段再给判决；并明令“即使事实在现实世界成立，只要简历或转写原文未出现，一律判 `missing`”。
+3. **防偏见三项措施**：
+   - 成对对比评测强制做 **A/B 位置互换（Position Swapping）**，两轮不一致即判平局/待人工复核（消除位置偏见，参见 [HuggingFace Position Bias Study (2026-10-28)](https://huggingface.co/papers?q=LLM%20Judge)）；
+   - 严禁“堆叠同家族模型当陪审团”制造虚假独立性；
+   - **裁判 Prompt 与版本强制入库编号**，改裁判本身必须重跑校准集。
+4. **裁判上岗硬门槛（禁止未校准裁判进门禁）**：
+   - **绝不只看原始一致率（Raw Agreement）**（不均衡数据上全猜 Pass 也能得高分却漏掉致命 Fail）；
+   - 上岗前必须在 30–50 份人类真值校准集上同时通过：**Cohen's $\kappa \ge 0.70$**（消除随机一致）且 **TNR（抓坏例真阴性率）$\ge 0.85$**；未达标时该维度只输出趋势观测，**严禁作为 CI 阻断门禁**。
+
+### 13.2 Stage 1（PDF/Word 简历解析）精确数学指标口径
+对齐 2026 文档解析主流基准（[OmniDocBench](https://github.com/opendatalab/OmniDocBench)、[OCR Benchmarks 2026 (2026-10-21)](https://invoicedataextraction.com/blog/ocr-benchmarks)、[MPDocBench-Parse (arXiv:2605.22100)](https://arxiv.org/html/2605.22100v2)），拒绝用“提取出多少字符”糊弄：
+- **`TextEdit↓`（字符级文本编辑距离）**：衡量原文抽取保真度与乱码率；
+- **`ReadOrderEdit↓`（阅读顺序编辑距离）**：专打双栏/侧边栏简历，衡量块序是否左右串行；
+- **`TableTEDS↑`（表格树编辑距离相似度）**：专打 WPS 嵌套表格简历，衡量行列结构是否错位；
+- **`Entity F1↑`（关键履历实体规范化 F1）**：公司名、起止年月、岗位头衔、核心技能四类实体的精确率与召回率（含跨页截断恢复率）。
+
+### 13.3 Stage 5（转写→面评草稿）精确数学指标口径
+拒绝用纯字符编辑距离误伤“口语改书面语”，采用 2026 声明级原子事实审计框架（[Audit-First Claim-Level Framework (2026-10-22)](https://www.mdpi.com/2076-3417/16/21/10461/pdf)、[LoomSum (arXiv:2609.00241)](https://arxiv.org/html/2609.00241)、[Future AGI (2026)](https://futureagi.com/blog/llm-summarization-evaluation-deep-dive-2026/)）：
+先把面评草稿拆解为独立**原子事实声明（Atomic Claims）**，再逐条对照转写原文打 `supported / contradicted / missing / partial`：
+- **`Claim Faithfulness↑`** $= \#\text{supported} / \#\text{total\_claims}$：草稿事实忠实率；
+- **`Unsupported / Hallucination Rate↓`** $= (\#\text{contradicted} + \#\text{missing}) / \#\text{total\_claims}$：专抓脑补指标与“把团队功劳算成个人”；
+- **`Numeric Grounding↑`**（LoomSum）：草稿中出现的每一个定量数字（QPS、延迟、团队人数、转化率）必须在转写原文有 100% 对应出处；
+- **`Critical Signal Recall↑`**：对预埋了“二轮追问崩塌 / 满嘴‘我们’ / 说话人串行”的转写样本，草稿是否准确命中且归属到正确说话人（防 Entity/Speaker Swap）。
