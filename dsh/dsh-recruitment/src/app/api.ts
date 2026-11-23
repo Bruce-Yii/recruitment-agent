@@ -1,3 +1,4 @@
+successfully downloaded text file (SHA: e4e7484c28343a7569bc44fb83ab0c2427a64f7e)
 import {
   normalizeOverviewView,
   type RecruitingOverviewView,
@@ -57,7 +58,7 @@ export interface AgentUiWriteProposal {
   readonly fallback_modal?: AgentUiModalKind;
   readonly payload: AgentUiWriteProposalPayload;
 }
-export type AgentUiRouteKind = 'queue' | 'jobs' | 'talent' | 'application' | 'job' | 'interviewer';
+export type AgentUiRouteKind = 'queue' | 'jobs' | 'talent' | 'application' | 'job' | 'interviewer' | 'settings';
 export type AgentUiQueueFilter = 'all' | 'screening' | 'interviewing';
 export type AgentUiSectionKind =
   | 'summary'
@@ -545,4 +546,51 @@ export async function streamAgentTurn(opts: StreamAgentTurnOptions): Promise<voi
       opts.onError('对话流意外中断，请重试。');
     }
   }
+}
+
+export interface WorkspaceSettingWritePayload {
+  readonly key: string;
+  readonly value: unknown;
+  readonly confirmation_text: string;
+}
+
+export interface WorkspaceSettingWriteResponse {
+  readonly action: string;
+  readonly version_no: number;
+  readonly key: string;
+  readonly value: unknown;
+  readonly updated_by_actor_id: string;
+}
+
+export async function postWorkspaceSettingWrite(
+  sid: string,
+  payload: WorkspaceSettingWritePayload,
+): Promise<WorkspaceSettingWriteResponse> {
+  const res = await fetch('/recruitment/api/action/settings/write', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'x-recruitment-request': '1',
+      'X-DSH-Session': sid,
+    },
+    body: JSON.stringify(payload),
+  });
+  const text = await res.text();
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  } catch {
+    parsed = {};
+  }
+  if (!res.ok) {
+    const detail =
+      (typeof parsed.detail === 'string' && parsed.detail) ||
+      (typeof parsed.message === 'string' && parsed.message) ||
+      (typeof parsed.title === 'string' && parsed.title) ||
+      `保存失败（HTTP ${res.status}）`;
+    throw new Error(detail);
+  }
+  return parsed as unknown as WorkspaceSettingWriteResponse;
 }

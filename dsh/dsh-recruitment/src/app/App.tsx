@@ -1,3 +1,4 @@
+successfully downloaded text file (SHA: 67dc55bc16881b98ff668dfe16fec3ef7287800c)
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CanvasRoute,
@@ -30,6 +31,7 @@ import { ChatPanel } from './ChatPanel.tsx';
 import { JobsView } from './JobsView.tsx';
 import { QueueView, type QueueFilterRequest } from './QueueView.tsx';
 import { formatHashRoute, navigateToRoute, parseHashRoute, type AppRoute } from './router.ts';
+import { SettingsView } from './SettingsView.tsx';
 import { TalentView } from './TalentView.tsx';
 
 interface EditableJobCriterion {
@@ -402,6 +404,8 @@ export function App() {
         target = { kind: 'talent' };
       } else if (uiAction.route === 'interviewer') {
         target = { kind: 'interviewer' };
+      } else if (uiAction.route === 'settings') {
+        target = { kind: 'settings' };
       } else if (uiAction.route === 'application' && uiAction.target_id) {
         target = { kind: 'application', applicationId: uiAction.target_id };
       } else if (uiAction.route === 'job' && uiAction.target_id) {
@@ -657,7 +661,9 @@ export function App() {
       ? 'jobs'
       : route.kind === 'talent'
         ? 'talent'
-        : 'queue';
+        : route.kind === 'settings'
+          ? 'settings'
+          : 'queue';
 
   const actorName = session.displayName || session.alias || '已认证成员';
   const actorRoleText = formatRolesLabel(session.roles, actorName);
@@ -826,9 +832,10 @@ export function App() {
             <button
               type="button"
               className="icon-btn"
-              title="系统状态与用量"
-              aria-label="系统状态与用量"
-              onClick={() => void openSettings()}
+              title="工作台设置"
+              aria-label="工作台设置"
+              data-testid="app-nav-settings"
+              onClick={() => navigateToRoute({ kind: 'settings' })}
             >
               <svg viewBox="0 0 24 24">
                 <circle cx="12" cy="12" r="3" />
@@ -895,7 +902,9 @@ export function App() {
                   <div className="crumb-bar">
                     <span className="crumb-cur">在招岗位</span>
                   </div>
-                ) : route.kind === 'talent' ? (
+                ) : route.kind === 'settings' ? (
+                <SettingsView sid={session.sid} readOnly={interviewerOnly} />
+              ) : route.kind === 'talent' ? (
                   <div className="crumb-bar">
                     <span className="crumb-cur">人才库</span>
                   </div>
