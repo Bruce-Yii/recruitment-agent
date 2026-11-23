@@ -220,6 +220,12 @@ import { registerInterviewSlotsHttp, type InterviewSlotsHostContext } from './ht
 import { registerStarHttp, type StarHostContext } from './http/star.ts'
 import { registerFeishuImportHttp, type FeishuImportHostContext } from './http/feishu-import.ts'
 import { registerSettingsHttp, type SettingsHostContext } from './http/settings.ts'
+// Issue #60（Lane A）：CSV 导出 + HMAC Webhook；注册与派发器在独立块中接线。
+import {
+  createWebhookDispatcher,
+  registerExportHttp,
+  type ExportHostContext,
+} from './http/export.ts'
 // D5 decision（task-56）：决策 facts 只读投影 + screening/evaluate（只读 domain）+
 // decision/record facade（服务端组装 basis_refs）。独立前缀 /recruitment/api/decision。
 import { registerDecisionHttp, type DecisionHostContext } from './http/decision-read.ts'
@@ -569,6 +575,13 @@ export function apply(
       ),
       'recruitment: job action route',
     )
+    // Issue #60：Webhook 派发器（与写动作/自助预约共享同一个实例；无数据库时零外发）。
+    const exportDeps = {
+      database: database.resolved,
+      databaseIssues: database.issues,
+      identity: actorIdentity,
+    }
+    const webhookDispatcher = createWebhookDispatcher(exportDeps)
     // D-119：全部写操作 Host Remote Action（P0 初筛/阶段/决策、P1 排期/转写、P2 设置）。
     // 与上面 actor 路由共享**同一个** `actorIdentity`（同一 session→alias registry），
     // 且 write 工具已经在用同一个 identity：浏览器 PUT 的绑定对 HTTP 写动作与 Agent 工具同时可见。
@@ -581,6 +594,7 @@ export function apply(
           identity: actorIdentity,
           connector: feishu.connector,
           connectorIssues: feishu.issues,
+          webhookDispatcher, // Issue #60：decision/record + stage/advance 成功后异步外发
         },
       ),
       'recruitment: write action routes',
@@ -848,9 +862,16 @@ export function apply(
           database: database.resolved,
           databaseIssues: database.issues,
           identity: actorIdentity,
+          webhookDispatcher, // Issue #60：公开确认成功后异步外发
         },
       ),
       'recruitment: booking invite routes',
+    )
+    // Issue #60（Lane A）：CSV 导出 + Webhook 测试推送（单独注册块，独立于 Lane B 的接线）。
+    // 两条 exact 路由共用同一 actorIdentity；非回环 host 不注册（fail-closed）。
+    child.effect(
+      () => registerExportHttp(child as unknown as ExportHostContext, exportDeps),
+      'recruitment: CSV export and webhook test routes',
     )
   })
 

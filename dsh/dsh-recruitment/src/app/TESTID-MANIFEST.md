@@ -115,6 +115,23 @@
 | `settings-save-sla` | 队列超时阈值（SLA）保存按钮 |
 | `settings-save-reminder` | 面评催交策略保存按钮 |
 | `settings-save-booking` | 候选人自助预约默认值保存按钮 |
+| `settings-config-external-sync` | 「外部系统轻量同步」L1 配置入口（Issue #60） |
+| `settings-expand-external-sync` | 外部同步 L2 行内展开区（CSV 下载 + Webhook 配置/测试） |
+| `settings-csv-download` | L2「下载全部申请 CSV」按钮（真实同源下载） |
+| `settings-webhook-enabled` | Webhook 推送开关 |
+| `settings-webhook-url` | Webhook 地址输入（https 或 http://127.0.0.1） |
+| `settings-webhook-events` | 订阅事件勾选容器 |
+| `settings-webhook-event-decision.recorded` | 订阅「终审结论」事件复选框 |
+| `settings-webhook-event-stage.advanced` | 订阅「阶段推进」事件复选框 |
+| `settings-webhook-event-booking.confirmed` | 订阅「自助预约确认」事件复选框 |
+| `settings-webhook-test` | 「测试推送」按钮（返回真实 HTTP 状态码） |
+| `settings-save-webhook` | Webhook 配置保存按钮（走 settings/write 版本链） |
+| `settings-l3-toggle-external-sync` | 「高级参数 ▸」折叠入口 |
+| `settings-l3-external-sync` | L3 高级区（签名密钥输入 + HMAC 签名说明） |
+| `settings-webhook-secret` | 签名密钥输入（GET 永不回传明文；留空表示不轮换） |
+| `app-jobs-export-csv` | 岗位列表页「导出 CSV」入口 |
+| `app-jobs-export-error` | 岗位列表 CSV 下载失败提示 |
+| `canvas-action-export-csv` | 岗位详情画布「导出 CSV」入口（带 job_id 过滤） |
 
 ## 三、复用的面试官端 `data-testid`（来自 `src/client/interviewer/InterviewerWorkspace.tsx`）
 

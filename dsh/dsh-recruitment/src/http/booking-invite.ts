@@ -31,6 +31,8 @@ import {
   type DemoActorIdentity,
 } from '../demo-actor/index.ts'
 import { sameOrigin } from './overview.ts'
+// Issue #60：公开预约确认成功后的异步 fail-open Webhook 派发（不引入循环）。
+import { NOOP_WEBHOOK_DISPATCHER, type WebhookDispatcher } from './export.ts'
 import {
   BookingDomainError,
   bookingUrl,
@@ -312,6 +314,8 @@ interface BookingInviteDeps {
   readonly database: ResolvedDatabaseConfig | null
   readonly databaseIssues: readonly string[]
   readonly identity: DemoActorIdentity
+  /** Issue #60：确认成功后的 Webhook 派发器；缺省 no-op。 */
+  readonly webhookDispatcher?: WebhookDispatcher
 }
 
 async function handleInvite(deps: BookingInviteDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -553,11 +557,16 @@ async function handleConfirm(
     })) {
       throw problem(409, 'BOOKING_ALREADY_CONFIRMED', 'BOOKING_ALREADY_CONFIRMED', '该预约已确认，不能重复提交')
     }
-    return { interviewId, slot }
+    return { interviewId, slot, applicationId: row.application_id }
   })
   })
 
   json(res, 200, { status: 'CONFIRMED', interview_id: result.interviewId, confirmed_slot: result.slot })
+  // Issue #60：公开确认已提交（主事务已提交）后异步 fail-open 派发；失败不回滚、不延迟响应。
+  void (deps.webhookDispatcher ?? NOOP_WEBHOOK_DISPATCHER).emit('booking.confirmed', {
+    application_id: result.applicationId,
+    interview_id: result.interviewId,
+  })
 }
 
 // =====================================================================

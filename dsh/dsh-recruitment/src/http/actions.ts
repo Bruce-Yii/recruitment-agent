@@ -82,6 +82,8 @@ import {
 } from '../db/carry-over.ts'
 import { createCandidateConstraintTool } from '../tools/candidate-constraint.ts'
 import { createJobCreateTool } from '../tools/job-create.ts'
+// Issue #60：主业务成功后异步 fail-open 派发 HMAC Webhook（不引入循环：export.ts 不 import actions.ts）。
+import { NOOP_WEBHOOK_DISPATCHER, type WebhookDispatcher } from './export.ts'
 
 // =====================================================================
 //  契约常量
@@ -244,6 +246,8 @@ export interface ActionHttpDeps {
   readonly connector?: TranscriptImportDeps['connector']
   /** 连接器缺失项（只含变量名）。 */
   readonly connectorIssues?: readonly string[]
+  /** Issue #60：主业务提交成功后的 Webhook 派发器；缺省为 no-op（零外发）。 */
+  readonly webhookDispatcher?: WebhookDispatcher
 }
 
 // =====================================================================
@@ -1307,6 +1311,15 @@ async function handleDecisionAction(
     return { ...row }
   }))
   writeActionResult(res, action, resolved, gate.summary(), output, readback)
+  // Issue #60：仅在 decision/record 成功后派发；异步 fail-open，失败不回滚也不延迟响应。
+  // 主事务已在工具 execute 内提交，这里只发人话事件（零内部 id 进入响应体）。
+  if (action === 'decision/record') {
+    void (deps.webhookDispatcher ?? NOOP_WEBHOOK_DISPATCHER).emit('decision.recorded', {
+      application_id: parsed.application_id,
+      decision_scope: parsed.decision_scope,
+      result: parsed.result,
+    })
+  }
 }
 
 // =====================================================================
@@ -1349,6 +1362,13 @@ async function handleStageAdvance(
     { ...(await readbackApplication(client, database.tenant_id, applicationId)) }
   )))
   writeActionResult(res, action, resolved, noApprovalSummary(), output, readback)
+  // Issue #60：只有真正推进（status=ADVANCED）才派发；NO_OP / BLOCKED 不外发。
+  if (outputRecord.status === 'ADVANCED') {
+    void (deps.webhookDispatcher ?? NOOP_WEBHOOK_DISPATCHER).emit('stage.advanced', {
+      application_id: applicationId,
+      status: 'ADVANCED',
+    })
+  }
 }
 
 // =====================================================================
