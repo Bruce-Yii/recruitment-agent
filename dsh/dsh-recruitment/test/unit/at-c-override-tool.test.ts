@@ -6,6 +6,7 @@
 // 开库之后，这些用例会先撞 ECONNREFUSED 而不是拿到 INVALID_ARGS。
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { createStageAdvanceTool, unconfiguredStageAdvanceTool } from '../../src/tools/stage-advance.ts'
@@ -141,18 +142,22 @@ test('AT-6 模型可见性：override schema 是对象、两键 required、都�
   assert.equal(Object.hasOwn(overrideProps.confirmation_text, 'maxLength'), false)
 
   // DSH 官方子集校验器必须接受这张 schema（若本机装了 dsh-tools）。
-  const dshHome = process.env.DSH_HOME ?? 'D:\\12412\\dsh-home'
-  const officialPath = `${dshHome}\\profiles\\node_modules\\@deepseek-ai\\dsh-tools\\lib\\index.js`
-  try {
-    const official = await import(pathToFileURL(officialPath).href) as {
-      assertSupportedJsonSchema?: (schema: unknown) => void
+  // DSH_HOME 未设置时本段不适用（CI/Linux 干净检出没有本机 DSH 安装）；
+  // 显式有 DSH_HOME 时用 path.join 生成平台无关路径，避免把 Windows 反斜杠塞进 file URL。
+  const dshHome = process.env.DSH_HOME
+  if (dshHome !== undefined && dshHome !== '') {
+    const officialPath = join(dshHome, 'profiles', 'node_modules', '@deepseek-ai', 'dsh-tools', 'lib', 'index.js')
+    try {
+      const official = await import(pathToFileURL(officialPath).href) as {
+        assertSupportedJsonSchema?: (schema: unknown) => void
+      }
+      if (typeof official.assertSupportedJsonSchema === 'function') {
+        assert.doesNotThrow(() => official.assertSupportedJsonSchema?.(parameters))
+      }
+    } catch (error) {
+      // 官方模块不可用时跳过这一段（本机环境差异），上面的子集断言仍然成立。
+      assert.match(String(error), /ENOENT|ERR_MODULE_NOT_FOUND|cannot find|ERR_INVALID_MODULE_SPECIFIER|Invalid module/i)
     }
-    if (typeof official.assertSupportedJsonSchema === 'function') {
-      assert.doesNotThrow(() => official.assertSupportedJsonSchema?.(parameters))
-    }
-  } catch (error) {
-    // 官方模块不可用时跳过这一段（本机环境差异），上面的子集断言仍然成立。
-    assert.match(String(error), /ENOENT|ERR_MODULE_NOT_FOUND|cannot find/i)
   }
 })
 

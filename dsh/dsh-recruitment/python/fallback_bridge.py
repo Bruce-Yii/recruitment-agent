@@ -22,7 +22,7 @@ Requests (stdin, UTF-8 JSON)::
 
 Responses (stdout, UTF-8 JSON)::
 
-    {"ok": true, "render": {image_path, page, dpi, pixel_size, page_size_pt,
+    {"ok": true, "render": {image_path, page, page_count, dpi, pixel_size, page_size_pt,
                             source_sha256, oversampled}}
     {"ok": true, "merge": {accepted, rejections[], blocks_before, blocks_after}}
     {"ok": false, "code": "<stable code>", "message": "<one line>"}
@@ -151,6 +151,10 @@ def _op_page_image(page_image_module, request: dict) -> dict:
             # in place: the agent still has to read it (D-81).
             "image_path": record["png_path"],
             "page": record["page"],
+            # Native document page count (fitz.Document.page_count).  The HTTP
+            # caller uses this for X-Page-Count; it must never need a second
+            # sentinel-page (1_000_000) render to discover the total.
+            "page_count": record["page_count"],
             "dpi": record["dpi"],
             "pixel_size": list(record["pixel_size"]),
             "page_size_pt": list(record["page_size_pt"]),

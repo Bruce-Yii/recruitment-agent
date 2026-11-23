@@ -8,7 +8,9 @@
 //   * 只断言 HTTP 契约：200 image/png + X-Page-Count/X-Page-Number/Cache-Control-no-store、
 //     临时 PNG 在响应结束后被清理、非 PDF 415、越界 400 PAGE_OUT_OF_RANGE、非法 id/page 400、
 //     未知 query 400、同源/方法闸门；错误信封与既有 material 路由一致；
-//   * 不修改任何既有测试，不依赖真 Python / PyMuPDF / PostgreSQL。
+//     G-14 清理后页数直接来自桥的 render.page_count，**每次请求恰好一次桥调用**，
+//     无 page=1_000_000 哨兵探测、无错误消息文本解析；
+//   * 不依赖真 Python / PyMuPDF / PostgreSQL；桥由测试注入，断言全部落在 HTTP 契约与调用次数上。
 
 import test, { after, before, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -93,7 +95,6 @@ async function startFixture(): Promise<Fixture> {
   let mime = 'application/pdf'
   const calls: Array<Readonly<Record<string, unknown>>> = []
   const defaultBridge: NonNullable<MaterialContentDeps['pageBridge']> = async (_cfg, request) => {
-    calls.push(request)
     writeFileSync(pngPath, PNG_BYTES)
     return {
       ok: true,
@@ -140,7 +141,12 @@ async function startFixture(): Promise<Fixture> {
     databaseIssues: [],
     roots: () => [dir],
     converter: CONVERTER,
-    pageBridge: (...args) => bridge(...args),
+    // Record **every** bridge invocation here (not inside defaultBridge) so
+    // tests can assert the exact call count even when a custom bridge is set.
+    pageBridge: (...args) => {
+      calls.push(args[1])
+      return bridge(...args)
+    },
     materialLookup: async (materialId) => ({
       kind: 'OK',
       asset: {
@@ -355,13 +361,32 @@ describe('G-14 material page image route', () => {
     }
   })
 
-  test('真桥形状（render 无 page_count）：用同一桥探测页数，X-Page-Count 来自 page_out_of_range 消息', async () => {
-    let probeSeen = false
+  test('每次请求只调一次桥：render.page_count 原生带出 X-Page-Count，无 page=1_000_000 探测', async () => {
+    fx.calls.length = 0
+    const result = await get(fx, pagePath(2))
+    assert.equal(result.status, 200)
+    assert.equal(result.headers.get('x-page-count'), '3')
+    assert.equal(result.headers.get('x-page-number'), '2')
+    assert.deepEqual(result.body, PNG_BYTES)
+    assert.equal(fx.calls.length, 1, 'G-14 清理后每次请求必须只有一次桥调用')
+    assert.deepEqual(fx.calls[0], {
+      op: 'page-image',
+      pdf: fx.assetPath,
+      page: 2,
+      dpi: 144,
+    })
+    assert.equal(
+      fx.calls.some((call) => (call as Record<string, unknown>).page === 1_000_000),
+      false,
+      '不得再用 1000000 哨兵页码探测总页数',
+    )
+    await settle()
+    assert.equal(existsSync(fx.pngPath), false)
+  })
+
+  test('桥成功但 render 缺 page_count → 500 PAGE_COUNT_UNKNOWN 且清理临时 PNG（不探测、不猜页数）', async () => {
+    fx.calls.length = 0
     fx.setBridge(async (_cfg, request) => {
-      if ((request.page as number) === 1_000_000) {
-        probeSeen = true
-        return { ok: false, code: 'page_out_of_range', message: 'page 1000000 > page count 4' }
-      }
       writeFileSync(fx.pngPath, PNG_BYTES)
       return {
         ok: true,
@@ -373,52 +398,51 @@ describe('G-14 material page image route', () => {
           page_size_pt: [595, 842],
           source_sha256: 'x',
           oversampled: false,
+          // 故意不带 page_count：真桥已原生提供，缺字段是基础设施降级。
         },
       }
     })
     try {
-      const result = await get(fx, pagePath(2))
-      assert.equal(result.status, 200)
-      assert.equal(result.headers.get('x-page-count'), '4')
-      assert.equal(result.headers.get('x-page-number'), '2')
-      assert.deepEqual(result.body, PNG_BYTES)
-      assert.equal(probeSeen, true, '必须通过同一个桥探测总页数')
-      await settle()
-      assert.equal(existsSync(fx.pngPath), false)
+      const result = await get(fx, pagePath(1))
+      assert.equal(result.status, 500)
+      assert.equal(errorCode(result), 'PAGE_COUNT_UNKNOWN')
+      assert.equal(result.headers.get('content-type')?.startsWith('application/json'), true)
+      assert.equal(result.headers.get('x-page-count'), null)
+      assert.equal(fx.calls.length, 1, '页数缺失不得触发第二次哨兵桥调用')
+      assert.equal(existsSync(fx.pngPath), false, 'fail-closed 路径也必须清理桥已写出的 PNG')
     } finally {
       fx.setBridge(undefined)
       rmSync(fx.pngPath, { force: true })
     }
   })
 
-  test('错误路径清理：探测出页数后请求页越界 → 400 且不遗留临时 PNG', async () => {
-    fx.setBridge(async (_cfg, request) => {
-      if ((request.page as number) === 1_000_000) {
-        return { ok: false, code: 'page_out_of_range', message: 'page 1000000 > page count 2' }
+  test('桥返回畸形 page_count（0 / 非法整数）→ 500 PAGE_COUNT_UNKNOWN（不猜页数）', async () => {
+    for (const bad of [0, -1, 1.5, '3', null]) {
+      fx.setBridge(async (_cfg, request) => {
+        writeFileSync(fx.pngPath, PNG_BYTES)
+        return {
+          ok: true,
+          render: {
+            image_path: fx.pngPath,
+            page: request.page,
+            dpi: request.dpi,
+            pixel_size: [1, 1],
+            page_size_pt: [595, 842],
+            source_sha256: 'x',
+            oversampled: false,
+            page_count: bad,
+          },
+        }
+      })
+      try {
+        const result = await get(fx, pagePath(1))
+        assert.equal(result.status, 500, `page_count=${String(bad)} 应 fail-closed`)
+        assert.equal(errorCode(result), 'PAGE_COUNT_UNKNOWN')
+      } finally {
+        rmSync(fx.pngPath, { force: true })
       }
-      writeFileSync(fx.pngPath, PNG_BYTES)
-      return {
-        ok: true,
-        render: {
-          image_path: fx.pngPath,
-          page: request.page,
-          dpi: request.dpi,
-          pixel_size: [1, 1],
-          page_size_pt: [595, 842],
-          source_sha256: 'x',
-          oversampled: false,
-        },
-      }
-    })
-    try {
-      const result = await get(fx, pagePath(9))
-      assert.equal(result.status, 400)
-      assert.equal(errorCode(result), 'PAGE_OUT_OF_RANGE')
-      assert.equal(existsSync(fx.pngPath), false, '越界错误也必须清理桥已写出的 PNG')
-    } finally {
-      fx.setBridge(undefined)
-      rmSync(fx.pngPath, { force: true })
     }
+    fx.setBridge(undefined)
   })
 
   test('malformed id / page → 400（不进桥）', async () => {

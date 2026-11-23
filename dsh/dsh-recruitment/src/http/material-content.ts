@@ -607,24 +607,19 @@ function isPdfMaterial(asset: MaterialAssetRow): boolean {
   return /\.pdf$/i.test(materialBaseName(asset.file_name))
 }
 
-/** 桥返回 → page_count（只接受正整数；当前 page_image.py 不返回，走超大页码探测）。 */
+/**
+ * 桥返回 → page_count（只接受正整数）。
+ *
+ * G-14 清理后 page_image.py / fallback_bridge.py 原生带 `render.page_count`
+ * （来自 `fitz.Document.page_count`）。这里**只读**它：不再以 page=1_000_000
+ * 的哨兵渲染触发 `page_out_of_range`、也不解析错误消息文本。缺字段/形状不对
+ * 就 fail-closed（500 PAGE_COUNT_UNKNOWN），绝不猜页数、绝不第二次调桥。
+ */
 function pageCountFromBridge(response: Readonly<Record<string, unknown>>): number | null {
   const render = response.render
   if (typeof render !== 'object' || render === null || Array.isArray(render)) return null
   const value = (render as Record<string, unknown>).page_count
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
-}
-
-/**
- * 从 page_image.py 的 `page_out_of_range` 消息里读总页数：
- * `page {n} > page count {total}`（python/fallback/page_image.py::render_page 原文）。
- * 读不到就返回 null（诚实 fail-closed，不猜页数）。
- */
-function pageCountFromMessage(message: string): number | null {
-  const matched = /page count (\d+)/i.exec(message)
-  if (matched === null) return null
-  const value = Number(matched[1])
-  return Number.isSafeInteger(value) && value > 0 ? value : null
 }
 
 /** 删除桥产物（只删 page_image.py 命名的单文件，绝不删目录/任意路径）。 */
@@ -904,21 +899,11 @@ async function handleMaterialPageImage(
     return
   }
 
-  // X-Page-Count：当前 page_image.py 的桥响应不带 page_count；用同一个桥以超大页码
-  // 触发 `page_out_of_range`，从它原文消息里读总页数（渲染器零重写、零本地 PDF 解析）。
-  // 未来桥带 page_count 时优先用它（测试注入的假桥即走这条）。
-  let pageCount = pageCountFromBridge(response)
-  if (pageCount === null) {
-    try {
-      const probe = await bridge(converter, { op: 'page-image', pdf: filePath, page: 1_000_000, dpi })
-      if (probe.ok !== true && typeof probe.code === 'string' && probe.code === 'page_out_of_range') {
-        const parsed = pageCountFromMessage(typeof probe.message === 'string' ? probe.message : '')
-        if (parsed !== null) pageCount = parsed
-      }
-    } catch {
-      // 探测失败不泄漏路径；下面诚实 502。
-    }
-  }
+  // X-Page-Count：只读桥原生的 render.page_count（fitz.Document.page_count）。
+  // 不再发第二次 page=1_000_000 哨兵渲染、不再解析 page_out_of_range 消息文本：
+  // 那既浪费一次子进程 + 光栅化，又把 HTTP 契约绑死在 Python 错误消息的字面量上。
+  // 桥没带页数就诚实 fail-closed（500），清理刚写出的 PNG，不猜、不重试。
+  const pageCount = pageCountFromBridge(response)
   if (pageCount === null) {
     discardPng(imagePath)
     sendProblem(res, problem(500, 'INTERNAL', 'PAGE_COUNT_UNKNOWN', '无法确定 PDF 总页数'))

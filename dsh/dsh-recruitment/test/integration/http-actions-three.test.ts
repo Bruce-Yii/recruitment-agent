@@ -15,7 +15,7 @@
 //      目标表行数前后不变（fail-closed 零写入）。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { dirname, join } from 'node:path'
@@ -481,6 +481,22 @@ function assertError(
 }
 
 /** 跑 `scripts/bootstrap-demo.mjs`（cwd = 仓库根；env 只指向本用例的一次性库）。 */
+/** 给 bootstrap 的 python 绝对路径（显式 env 优先；否则从 PATH 解析 sys.executable）。 */
+function resolveBootstrapPython(): string {
+  const explicit = process.env.RECRUITMENT_PYTHON_BIN ?? process.env.RECRUITMENT_PYTHON
+  if (typeof explicit === 'string' && explicit.trim() !== '') return explicit.trim()
+  for (const candidate of process.platform === 'win32' ? ['python', 'python3'] : ['python3', 'python']) {
+    try {
+      const executable = execFileSync(candidate, ['-c', 'import sys; print(sys.executable)'], {
+        encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim()
+      if (executable !== '') return executable
+    } catch { /* try next */ }
+  }
+  // 最后才落到名称，让 bootstrap 的 PrerequisiteError 明确报出来（不静默）。
+  return process.platform === 'win32' ? 'D:\\Python3.12.9\\python.exe' : 'python3'
+}
+
 function runBootstrap(databaseName: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
   const base = testDatabaseConfig()
   const env: NodeJS.ProcessEnv = {}
@@ -496,8 +512,9 @@ function runBootstrap(databaseName: string): Promise<{ code: number | null; stdo
   env.RECRUITMENT_TENANT_ID = TENANT
   env.RECRUITMENT_ACTOR_ID = HR_ACTOR
   env.DEMO_APPROVAL_MODE = 'allow-once'
-  // bootstrap 的 demo 材料链要用产品 converter（S6 intake）；缺省本机 Python/converter 落位。
-  env.RECRUITMENT_PYTHON_BIN = process.env.RECRUITMENT_PYTHON_BIN ?? 'D:\\Python3.12.9\\python.exe'
+  // bootstrap 的 demo 材料链要用产品 converter（S6 intake）；显式 env 优先，
+  // 否则按平台解析 python 的绝对路径（CI/Linux 没有 D:\Python3.12.9）。
+  env.RECRUITMENT_PYTHON_BIN = resolveBootstrapPython()
   env.RECRUITMENT_CONVERTER_DIR = process.env.RECRUITMENT_CONVERTER_DIR ?? join(REPO_ROOT, 'converter')
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [BOOTSTRAP_SCRIPT], {
