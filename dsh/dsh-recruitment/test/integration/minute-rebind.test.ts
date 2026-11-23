@@ -211,7 +211,7 @@ async function startServer(deps: MinuteRebindHttpDeps): Promise<Harness> {
 function depsFor(identity: DemoActorIdentity, runner: RebindCliRunner): MinuteRebindHttpDeps {
   return {
     database: {
-      host: '127.0.0.1', port: 5432, user: 'postgres', database: db.name,
+      host: process.env.RECRUITMENT_TEST_DB_HOST ?? process.env.PGHOST ?? '127.0.0.1', port: Number(process.env.RECRUITMENT_TEST_DB_PORT ?? process.env.PGPORT ?? 5432), user: process.env.RECRUITMENT_TEST_DB_USER ?? process.env.PGUSER ?? 'postgres', database: db.name,
       password: process.env.RECRUITMENT_DB_PASSWORD ?? '', password_env: 'RECRUITMENT_DB_PASSWORD',
       tenant_id: TENANT, actor_id: ACTOR_FROM, statement_timeout_ms: 15_000,
       connect_timeout_ms: 10_000, max: 2,

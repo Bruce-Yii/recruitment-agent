@@ -1,5 +1,5 @@
 // Eval V2 Phase 3 — G3 线上生产质量成对护栏只读遥测（对齐 docs/42 §6）。
-// 纯只读聚合，零写入、零 PII/UUID 泄露、零样本诚实返回 NO_DATA，绝不除以 0。
+// 纯只读聚合，零写入、零 PII/UUID 泄露；查询失败显式标 degraded=true + status='ERROR'，绝不伪装成 NO_DATA。
 import type { DatabaseClient } from '../db/pool.ts'
 
 export interface G3RawTelemetryCounts {
@@ -26,7 +26,7 @@ export const EMPTY_G3_COUNTS: G3RawTelemetryCounts = {
   cancelledOrRescheduledInterviews: 0,
 }
 
-export type GuardrailStatus = 'OK' | 'WATCH' | 'NO_DATA'
+export type GuardrailStatus = 'OK' | 'WATCH' | 'NO_DATA' | 'ERROR'
 
 export interface PairedGuardrailItem {
   readonly id: 'override_vs_blind_audit' | 'scorecard_completion_vs_faithfulness' | 'decision_vs_undo' | 'funnel_speed_vs_rework'
@@ -39,6 +39,8 @@ export interface PairedGuardrailItem {
 
 export interface G3TelemetrySnapshot {
   readonly schema_version: '2.2.0'
+  readonly degraded: boolean
+  readonly error_code?: string
   readonly counts: G3RawTelemetryCounts
   readonly paired_guardrails: readonly PairedGuardrailItem[]
 }
@@ -46,6 +48,29 @@ export interface G3TelemetrySnapshot {
 function safeRate(numerator: number, denominator: number): number | null {
   if (denominator <= 0) return null
   return Number((numerator / denominator).toFixed(4))
+}
+
+export function buildDegradedG3Telemetry(errorCode = 'TELEMETRY_QUERY_FAILED'): G3TelemetrySnapshot {
+  const errItem = (id: PairedGuardrailItem['id'], label: string): PairedGuardrailItem => ({
+    id,
+    label,
+    primaryRate: null,
+    guardrailRate: null,
+    status: 'ERROR',
+    note: '遥测查询失败，已降级（不冒充暂无数据）',
+  })
+  return {
+    schema_version: '2.2.0',
+    degraded: true,
+    error_code: errorCode,
+    counts: EMPTY_G3_COUNTS,
+    paired_guardrails: [
+      errItem('override_vs_blind_audit', 'HR 人工纠偏率 × 盲审抽检一致率'),
+      errItem('scorecard_completion_vs_faithfulness', '面评按时提交率 × 抽样原子事实忠实度'),
+      errItem('decision_vs_undo', '决策确认 × 撤回改判率'),
+      errItem('funnel_speed_vs_rework', '面试推进 × 取消/重约返工率'),
+    ],
+  }
 }
 
 export function buildG3PairedGuardrails(counts: G3RawTelemetryCounts): G3TelemetrySnapshot {
@@ -77,6 +102,7 @@ export function buildG3PairedGuardrails(counts: G3RawTelemetryCounts): G3Telemet
 
   return {
     schema_version: '2.2.0',
+    degraded: false,
     counts,
     paired_guardrails: [
       {
@@ -90,7 +116,9 @@ export function buildG3PairedGuardrails(counts: G3RawTelemetryCounts): G3Telemet
             ? '暂无足够申请样本'
             : overrideStatus === 'WATCH'
               ? '纠偏率低于 5% 且暂无盲审抽检，建议抽样复核防橡皮图章'
-              : '指标正常',
+              : blindAuditRate === null
+                ? '主指标正常（盲审抽检源尚未接入，护栏待补）'
+                : '主指标与盲审护栏均正常',
       },
       {
         id: 'scorecard_completion_vs_faithfulness',
@@ -103,7 +131,7 @@ export function buildG3PairedGuardrails(counts: G3RawTelemetryCounts): G3Telemet
             ? '暂无面评样本'
             : scorecardStatus === 'WATCH'
               ? '待交面评偏多，需关注积压与草稿复核质量'
-              : '面评提交节奏正常',
+              : '面评提交节奏正常（L3 抽样忠实度源尚未接入，护栏待补）',
       },
       {
         id: 'decision_vs_undo',
@@ -140,7 +168,7 @@ function asInt(val: unknown): number {
   return Number.isFinite(n) ? Math.trunc(n) : 0
 }
 
-/** 在只读事务内从现有业务表聚合租户级 G3 遥测（零写入，表缺省容错不崩设置页）。 */
+/** 在只读事务内从现有业务表聚合租户级 G3 遥测（零写入；异常显式返回 degraded=true，严禁静默吞错）。 */
 export async function readG3FunnelTelemetry(
   client: DatabaseClient,
   tenantId: string,
@@ -154,7 +182,7 @@ export async function readG3FunnelTelemetry(
       total_decisions: string
       superseded_decisions: string
       total_interviews: string
-      cancelled_interviews: string
+      rework_interviews: string
     }>(
       `select
          (select count(*) from recruitment.application where tenant_id = $1::uuid)::text as total_applications,
@@ -164,7 +192,7 @@ export async function readG3FunnelTelemetry(
          (select count(*) from recruitment.decision where tenant_id = $1::uuid)::text as total_decisions,
          (select count(*) from recruitment.decision where tenant_id = $1::uuid and superseded_by_decision_id is not null)::text as superseded_decisions,
          (select count(*) from recruitment.interview where tenant_id = $1::uuid)::text as total_interviews,
-         (select count(*) from recruitment.interview where tenant_id = $1::uuid and status = 'CANCELLED')::text as cancelled_interviews`,
+         (select count(*) from recruitment.interview where tenant_id = $1::uuid and status in ('CANCELLED', 'RESCHEDULED'))::text as rework_interviews`,
       [tenantId],
     )
     const row = res.rows[0]
@@ -177,9 +205,11 @@ export async function readG3FunnelTelemetry(
       totalDecisions: asInt(row.total_decisions),
       supersededDecisions: asInt(row.superseded_decisions),
       totalInterviews: asInt(row.total_interviews),
-      cancelledOrRescheduledInterviews: asInt(row.cancelled_interviews),
+      cancelledOrRescheduledInterviews: asInt(row.rework_interviews),
     })
-  } catch {
-    return buildG3PairedGuardrails(EMPTY_G3_COUNTS)
+  } catch (err) {
+    const pgCode = typeof (err as { code?: unknown })?.code === 'string' ? (err as { code: string }).code : 'UNKNOWN'
+    console.error(`[eval-telemetry] readG3FunnelTelemetry failed (code=${pgCode})`)
+    return buildDegradedG3Telemetry('TELEMETRY_QUERY_FAILED')
   }
 }

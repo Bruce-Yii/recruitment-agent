@@ -99,6 +99,10 @@ const PARAMS: ParamMap = {
     kind: 'boolean',
     description: 'update 专用：true = 清空描述（与"不传 description"区分）。',
   },
+  is_active: {
+    kind: 'boolean',
+    description: 'update 专用：false = 软停用角色（保留审计记录），true = 重新启用。',
+  },
   permission_scopes: {
     kind: 'string[]',
     values: [...PERMISSION_SCOPES],
@@ -243,6 +247,7 @@ async function runRoleOperation(
         ...(args.permission_scopes === undefined
           ? {}
           : { permissionScopes: args.permission_scopes as readonly string[] }),
+        ...(args.is_active === undefined ? {} : { isActive: args.is_active as boolean }),
       })
       const labels = await buildThreeAxisLabels(client, config.tenant_id)
       return {

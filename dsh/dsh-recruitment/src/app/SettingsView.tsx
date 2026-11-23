@@ -67,12 +67,14 @@ interface SettingsPayload {
     } | null;
     readonly g3_telemetry?: {
       readonly schema_version?: string;
+      readonly degraded?: boolean;
+      readonly error_code?: string;
       readonly paired_guardrails?: ReadonlyArray<{
         readonly id: string;
         readonly label: string;
         readonly primaryRate: number | null;
         readonly guardrailRate: number | null;
-        readonly status: 'OK' | 'WATCH' | 'NO_DATA';
+        readonly status: 'OK' | 'WATCH' | 'NO_DATA' | 'ERROR';
         readonly note: string;
       }>;
     } | null;
@@ -86,7 +88,6 @@ interface OrgConfigPayload {
     readonly code: string;
     readonly name: string;
     readonly is_active?: boolean;
-    readonly record_version?: number;
     readonly permission_scopes?: readonly string[];
     readonly record_version?: number;
   }>;
@@ -1453,11 +1454,13 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
                   </div>
                   <div className="settings-row-actions">
                     <span className="settings-status tone-muted">
-                      {data?.governance?.g3_telemetry?.paired_guardrails?.some((g) => g.status === 'WATCH')
-                        ? '有关注项'
-                        : data?.governance?.g3_telemetry?.paired_guardrails?.some((g) => g.status === 'OK')
-                          ? '运行平稳'
-                          : '等待样本'}
+                      {data?.governance?.g3_telemetry?.degraded
+                        ? '遥测暂不可用'
+                        : data?.governance?.g3_telemetry?.paired_guardrails?.some((g) => g.status === 'WATCH')
+                          ? '有关注项'
+                          : data?.governance?.g3_telemetry?.paired_guardrails?.some((g) => g.status === 'OK')
+                            ? '运行平稳'
+                            : '等待样本'}
                     </span>
                   </div>
                 </div>
@@ -1466,7 +1469,7 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
                   <div className="settings-l2">
                     {data.governance.g3_telemetry.paired_guardrails.map((g) => {
                       const fmt = (v: number | null) => (v === null ? '—' : `${(v * 100).toFixed(1)}%`);
-                      const statusText = g.status === 'WATCH' ? '关注' : g.status === 'OK' ? '正常' : '暂无数据';
+                      const statusText = g.status === 'ERROR' ? '查询异常' : g.status === 'WATCH' ? '关注' : g.status === 'OK' ? '正常' : '暂无数据';
                       return (
                         <div key={g.id} className="settings-kv-row" data-testid={`g3-guardrail-${g.id}`}>
                           <span>

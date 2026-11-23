@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { buildG3PairedGuardrails, EMPTY_G3_COUNTS } from '../../src/domain/eval-telemetry.ts'
+import { buildG3PairedGuardrails, EMPTY_G3_COUNTS, readG3FunnelTelemetry } from '../../src/domain/eval-telemetry.ts'
 import { evaluateL3JudgeCalibration, type L3CalibrationPair } from './v2-l3-calibration.ts'
 
 describe('Eval V2 Phase 3：L3 裁判校准与 G3 成对护栏遥测', () => {
@@ -58,5 +58,19 @@ describe('Eval V2 Phase 3：L3 裁判校准与 G3 成对护栏遥测', () => {
     assert.equal(byId.scorecard_completion_vs_faithfulness.status, 'OK')
     assert.equal(byId.decision_vs_undo.status, 'WATCH')
     assert.equal(byId.funnel_speed_vs_rework.status, 'WATCH')
+  })
+
+  test('G3 查询报错不得静默吞错为 NO_DATA（P0-1 回归守卫）', async () => {
+    const failingClient = {
+      query: async () => {
+        const e = new Error('column does not exist') as Error & { code?: string }
+        e.code = '42703'
+        throw e
+      },
+    }
+    const snap = await readG3FunnelTelemetry(failingClient as never, '00000000-0000-4000-8000-000000000001')
+    assert.equal(snap.degraded, true)
+    assert.equal(snap.error_code, 'TELEMETRY_QUERY_FAILED')
+    assert.ok(snap.paired_guardrails.every((g) => g.status === 'ERROR'))
   })
 })
