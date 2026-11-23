@@ -4,7 +4,8 @@ export type AppRoute =
   | { kind: 'talent' }
   | { kind: 'application'; applicationId: string }
   | { kind: 'job'; jobId: string }
-  | { kind: 'interviewer' };
+  | { kind: 'interviewer' }
+  | { kind: 'settings' };
 
 export function parseHashRoute(hash: string): AppRoute {
   const cleaned = hash.replace(/^#/, '').trim();
@@ -19,6 +20,9 @@ export function parseHashRoute(hash: string): AppRoute {
   }
   if (cleaned === '/interviewer') {
     return { kind: 'interviewer' };
+  }
+  if (cleaned === '/settings') {
+    return { kind: 'settings' };
   }
   const appMatch = cleaned.match(/^\/application\/([^/?#]+)/);
   if (appMatch && appMatch[1]) {
@@ -41,6 +45,8 @@ export function formatHashRoute(route: AppRoute): string {
       return '#/talent';
     case 'interviewer':
       return '#/interviewer';
+    case 'settings':
+      return '#/settings';
     case 'application':
       return `#/application/${encodeURIComponent(route.applicationId)}`;
     case 'job':

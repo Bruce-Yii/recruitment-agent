@@ -30,6 +30,7 @@ import { ChatPanel } from './ChatPanel.tsx';
 import { JobsView } from './JobsView.tsx';
 import { QueueView, type QueueFilterRequest } from './QueueView.tsx';
 import { formatHashRoute, navigateToRoute, parseHashRoute, type AppRoute } from './router.ts';
+import { SettingsView } from './SettingsView.tsx';
 import { TalentView } from './TalentView.tsx';
 
 interface EditableJobCriterion {
@@ -402,6 +403,8 @@ export function App() {
         target = { kind: 'talent' };
       } else if (uiAction.route === 'interviewer') {
         target = { kind: 'interviewer' };
+      } else if (uiAction.route === 'settings') {
+        target = { kind: 'settings' };
       } else if (uiAction.route === 'application' && uiAction.target_id) {
         target = { kind: 'application', applicationId: uiAction.target_id };
       } else if (uiAction.route === 'job' && uiAction.target_id) {
@@ -650,14 +653,18 @@ export function App() {
   }
 
   const interviewerOnly = isInterviewerOnly(session.roles);
-  const isInterviewerRoute = route.kind === 'interviewer' || interviewerOnly;
+  // 面试官身份默认落在“我的面试”；但 #/settings 必须仍可进入（只读），否则无法看到
+  // 服务端已提供的只读治理信息，也违背 #54 的 interviewer 只读验收口径。
+  const isInterviewerRoute = route.kind === 'interviewer' || (interviewerOnly && route.kind !== 'settings');
   const isEmbeddedDetail = !isInterviewerRoute && (route.kind === 'application' || route.kind === 'job');
   const activeSpace =
     route.kind === 'jobs' || route.kind === 'job'
       ? 'jobs'
       : route.kind === 'talent'
         ? 'talent'
-        : 'queue';
+        : route.kind === 'settings'
+          ? 'settings'
+          : 'queue';
 
   const actorName = session.displayName || session.alias || '已认证成员';
   const actorRoleText = formatRolesLabel(session.roles, actorName);
@@ -826,9 +833,10 @@ export function App() {
             <button
               type="button"
               className="icon-btn"
-              title="系统状态与用量"
-              aria-label="系统状态与用量"
-              onClick={() => void openSettings()}
+              title="工作台设置"
+              aria-label="工作台设置"
+              data-testid="app-nav-settings"
+              onClick={() => navigateToRoute({ kind: 'settings' })}
             >
               <svg viewBox="0 0 24 24">
                 <circle cx="12" cy="12" r="3" />
@@ -895,7 +903,9 @@ export function App() {
                   <div className="crumb-bar">
                     <span className="crumb-cur">在招岗位</span>
                   </div>
-                ) : route.kind === 'talent' ? (
+                ) : route.kind === 'settings' ? (
+                <SettingsView sid={session.sid} readOnly={interviewerOnly} />
+              ) : route.kind === 'talent' ? (
                   <div className="crumb-bar">
                     <span className="crumb-cur">人才库</span>
                   </div>

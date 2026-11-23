@@ -106,6 +106,15 @@
 | `canvas-decision-trace-toggle` | 展开/收起决策追责时间线按钮 |
 | `schedule-mode-self-book` | 排期弹窗「发候选人自助选时段」模式切换（G-09） |
 | `self-book-result-url` | 生成的候选人自助预约链接展示区 |
+| `app-nav-settings` | 左栏底部「工作台设置」入口（导航至 `#/settings`） |
+| `settings-page` | `#/settings` 设置页主容器 |
+| `settings-tab-connections` | 设置页「连接接入」Tab |
+| `settings-tab-automation` | 设置页「自动化与提醒」Tab |
+| `settings-tab-org` | 设置页「组织与招聘规范」Tab |
+| `settings-tab-governance` | 设置页「行为规范与评测」Tab |
+| `settings-save-sla` | 队列超时阈值（SLA）保存按钮 |
+| `settings-save-reminder` | 面评催交策略保存按钮 |
+| `settings-save-booking` | 候选人自助预约默认值保存按钮 |
 
 ## 三、复用的面试官端 `data-testid`（来自 `src/client/interviewer/InterviewerWorkspace.tsx`）
 
