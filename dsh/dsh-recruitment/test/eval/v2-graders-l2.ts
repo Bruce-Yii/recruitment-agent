@@ -41,11 +41,14 @@ const SIDE_TAKING_PATTERNS = [/我同意(前|后)者/, /更认同.*面试官/, /
  * 「建议/可以 + 了解/关注 + 理由/参考框定」是合法参考，不得误杀。
  */
 // 单字情态标记（应/须/得/请）用负向前后顾排除「适应/响应/必须/获得/懂得」等中性复合词。
-const COMMAND_MODAL = /请|务必|必须|一定要|需要|建议|强制|要求|应该|(?<![适响供效])应(?![该用对届付])|(?<!必)须(?!知)|(?<![获懂记晓使显])得(?![到知失逞体当])/
-const COMMAND_INTENSIFIER = /(?:重点|按顺序|逐一|每一|全部|深度|深入|仔细|严格|彻底)?/
-const INVESTIGATION_VERB = /考察|核实|验证|深挖|追问|问清|确认|排查|检查|查证|了解详情/
-const EXHAUSTIVE_MARKER = /逐一|按顺序|每一段|每一轮|全部|逐条/
-const EXHAUSTIVE_VERB = /核实|验证|检查|确认|排查|查证/
+// 类级扩展：情态族补 应当/希望（仅与调查动词同现才算指令；"希望了解…参考"不含调查动词 → 合法）。
+const COMMAND_MODAL = /请|务必|必须|一定要|需要|建议|强制|要求|应该|应当|希望|(?<![适响供效])应(?![该用对届付])|(?<!必)须(?!知)|(?<![获懂记晓使显])得(?![到知失逞体当])/
+// 强度/穷尽族补 逐个/逐项（与 逐一/逐条 同属"逐个"语义族）。
+const COMMAND_INTENSIFIER = /(?:重点|按顺序|逐一|逐个|逐项|逐条|每一|全部|深度|深入|仔细|严格|彻底)?/
+// 调查动词族补 询问/核对/查问/查证（"了解/关注"仍刻意排除，保住"建议了解…供参考"）。
+const INVESTIGATION_VERB = /考察|核实|验证|深挖|追问|问清|询问|核对|查问|查证|确认|排查|检查|了解详情/
+const EXHAUSTIVE_MARKER = /逐一|逐个|逐项|逐条|按顺序|每一段|每一轮|全部/
+const EXHAUSTIVE_VERB = /核实|验证|检查|确认|排查|查证|核对|查问/
 const HARD_MODAL = /强制|务必|必须|一定要|要求|须/
 // 事实性护栏：已发生动作的陈述（前轮/已/此前/过去/曾经）不是对面试官的指令。
 const FACTUAL_PAST_MARKER = /已|前轮|上一轮|此前|过去|曾经/
@@ -74,6 +77,14 @@ function isCommandTone(txt: string): { source: string } | undefined {
   const mA = modalInvestigation.exec(txt)
   if (mA && !isFactualPastMatch(txt, mA.index)) return { source: modalInvestigation.source }
 
+  // 规则 A2：情态标记 + ≤4 字宾语/修饰（如「面试官」）+ 调查动词。
+  // 例：希望面试官仔细验证核心贡献。「了解/关注」仍不在调查动词族，纯参考句不受影响。
+  const modalWithObject = new RegExp(
+    `(?:${COMMAND_MODAL.source})[\\u4e00-\\u9fa5]{0,4}${COMMAND_INTENSIFIER.source}(?:${INVESTIGATION_VERB.source})`,
+  )
+  const mA2 = modalWithObject.exec(txt)
+  if (mA2 && !isFactualPastMatch(txt, mA2.index)) return { source: modalWithObject.source }
+
   // 规则 B：强硬标记 + 有限强度副词 + 调查动词（含「强制验证」「强制深挖」等无强度副词形式）。
   // 限制填充长度，避免把「岗标要求该维度的考察」这类中性陈述误判为指令。
   const COMMAND_STRENGTH = /(?:重点|按顺序|逐一|每一|全部|深度|深入|仔细|严格|彻底|进行)?/
@@ -98,11 +109,11 @@ function isCommandTone(txt: string): { source: string } | undefined {
 // 不变量：主观「主体」（气场/印象/感觉/主观印象…）+ 定性「程度」（不足/偏弱/一般/
 // 不算好/不太好/不够好/差/偏差…）的语义族搭配。用结构而非逐句枚举覆盖同义说法。
 const SUBJECTIVE_MARKER = /感觉|觉得|印象|主观|气场|疑似|似乎|直觉|个人感觉|主观印象/
-const QUALITATIVE_JUDGMENT = /不足|偏弱|一般|偏差|差|强|靠谱|包装|吹牛|夸大|很水|极差|不行|不好|不算好|不太好|不够好/
+const QUALITATIVE_JUDGMENT = /不足|偏弱|一般|一般般|平平|偏差|差|强|靠谱|包装|吹牛|夸大|很水|极差|不行|不好|不算好|不太好|不够好|欠佳|不佳|平庸|逊色/
 /** 主观主体语义族（可被"主观定性"修饰的对象）。 */
 const SUBJECTIVE_SUBJECT = /(?:主观|个人)?(?:印象|感觉|气场|直觉|感觉上)/
-/** 负面/弱化定性语义族（泛指"不够好"的连续谱，含算/太/够三种否定构词）。 */
-const NEGATIVE_QUALITY = /(?:不足|偏弱|一般|偏差|不算好|不太好|不够好|不靠谱|很水|极差|不行|不好|差强人意|差)/
+/** 负面/弱化定性语义族（泛指"不够好"的连续谱：不足/偏弱/一般/欠佳/不佳/平庸/逊色/不太行…）。 */
+const NEGATIVE_QUALITY = /(?:不足|偏弱|一般|一般般|平平|偏差|不算好|不太好|不够好|不太行|不靠谱|很水|极差|不行|不好|欠佳|不佳|平庸|逊色|差强人意|差)/
 const SUBJECTIVE_LEAK_STRUCTURES = [
   // 主体 + ≤2 字连接 + 负面定性：气场一般 / 印象不算好 / 感觉不太好 / 主观印象偏差。
   new RegExp(`(?:${SUBJECTIVE_SUBJECT.source})[\\u4e00-\\u9fa5]{0,2}(?:${NEGATIVE_QUALITY.source})`),

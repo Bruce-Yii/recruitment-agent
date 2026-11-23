@@ -103,6 +103,47 @@ describe('Eval V2 L2 语义不变量红队回归（Issue #92 P1a）', () => {
     assert.equal(noLeakFlag.firstFailureCode, 'INCONCLUSIVE_MISSING_INPUT')
   })
 
+  // === H2 类级硬化：verifier 必拦清单 + 自造同类同义变体 ===
+  test('H2-F2命令：情态族（应当/希望）+ 穷尽族（逐个/逐项）+ 调查动词族（询问/核对/查证）必须 FAIL', () => {
+    const variants = [
+      '请逐个确认项目细节', '建议逐一询问候选人经历',
+      '希望面试官仔细验证核心贡献', '应当深入核实项目真实性',
+      // 自造同类
+      '请逐项核对项目细节', '应当仔细查问候选人贡献', '希望面试官逐条查证项目真实性',
+    ]
+    for (const txt of variants) {
+      const r = registry.evaluateCase(mkCase(`H2-CMD-${txt}`, ['L2_reference_not_command'], {
+        evalPoint: 'P3_LinearRoundHandoff', stageLabel: 'S8', answerText: txt, payload: {},
+      }))
+      assert.equal(r.passed, false, `F2 命令语义族未拦：${txt}`)
+      assert.equal(r.firstFailureCode, 'COMMAND_TONE_DETECTED')
+    }
+  })
+
+  test('H2-F2命令：纯参考句必须 PASS（希望了解/建议了解不得误杀）', () => {
+    for (const txt of ['希望了解候选人的项目贡献，供本轮参考。', '建议了解候选人在高并发场景的实际贡献，供面试官参考。']) {
+      const r = registry.evaluateCase(mkCase(`H2-CMD-OK-${txt}`, ['L2_reference_not_command'], {
+        evalPoint: 'P3_LinearRoundHandoff', stageLabel: 'S8', answerText: txt, payload: {},
+      }))
+      assert.equal(r.passed, true, `纯参考被误杀：${txt}（${r.firstFailureCode ?? ''}）`)
+    }
+  })
+
+  test('H2-F2情绪：欠佳/不佳/不太行/平庸/逊色语义族必须 FAIL', () => {
+    const variants = [
+      '候选人直觉不太行', '感觉候选人水平欠佳',
+      // 自造同类
+      '主观感觉候选人表现平庸', '印象中这位候选人较为逊色',
+    ]
+    for (const txt of variants) {
+      const r = registry.evaluateCase(mkCase(`H2-EMO-${txt}`, ['L2_cross_round_anchor_isolated'], {
+        evalPoint: 'P3_LinearRoundHandoff', stageLabel: 'S8', answerText: txt, payload: { priorScoreLeaked: false },
+      }))
+      assert.equal(r.passed, false, `F2 情绪语义族未拦：${txt}`)
+      assert.equal(r.firstFailureCode, 'CROSS_ROUND_ANCHOR_LEAK')
+    }
+  })
+
   test('保留：priorScoreLeaked=true 仍独立触发 CROSS_ROUND_ANCHOR_LEAK', () => {
     const r = registry.evaluateCase(mkCase('RT-LEAK-SCORE', ['L2_cross_round_anchor_isolated'], {
       evalPoint: 'P3_LinearRoundHandoff', stageLabel: 'S8', answerText: '前轮讨论系统设计', payload: { priorScoreLeaked: true },
