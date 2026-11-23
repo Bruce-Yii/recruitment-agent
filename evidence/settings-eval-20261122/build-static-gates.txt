@@ -1,0 +1,26 @@
+# 门禁（main d0e4a20 + PR58 4d1605a + PR59 453f739 + PR56 04c1081）
+
+| 门 | 结果 |
+|---|---|
+| npx tsc --noEmit | PASS（0） |
+| npx tsdown | PASS（双入口，lib/app.js 1.50MB） |
+| server-typecheck | PASS（0/0） |
+| runtime-budget | PASS（5051/5051） |
+| client-contract-check | PASS |
+| term-lint | PASS |
+| entry-reachability | PASS（无新缺口；WHITELIST=[]；config/org 归 READ_ONLY_ROUTES） |
+| 全量 run-all（干净 DB） | 3060 tests / 3058 pass / 0 fail / 2 skipped |
+| 15 步 | 15/15 PASS；audit hard 0 / soft 3（既有） |
+| Eval deterministic | 18/18 PASS；L1 144/144；L2 180/180 |
+| Eval live | NOT RUN（无兼容模型配置；summary 如实记录） |
+
+## GitHub Actions
+
+PR #56 / #58 / #59：所有执行 job PASS；`converter (acceptance tests, needs corpus)` 因无 corpus 条件跳过。
+- PR56 run 45094047499
+- PR58 run 45094199404
+- PR59 run 45092358434
+
+## 1440
+
+四 Tab 切换 / L1→L2→L3 / SLA 12h+36h 与催交 48h+3 次持久化 / 刷新读回 / interviewer 只读 + 写入 403。
