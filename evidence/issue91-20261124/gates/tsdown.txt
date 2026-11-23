@@ -1,0 +1,21 @@
+ℹ tsdown v0.22.14 powered by rolldown v1.2.19
+ℹ config file: D:\12412\DshWorktrees\recruitment-agent\e2e-91\dsh\dsh-recruitment\tsdown.config.ts 
+ℹ entry: src/client/index.tsx
+ℹ target: es2022
+ℹ tsconfig: tsconfig.json
+ℹ entry: src/app/main.tsx
+ℹ target: es2022
+ℹ tsconfig: tsconfig.json
+ℹ Build start
+ℹ [CJS] lib\client.js  0.59 kB │ gzip: 0.47 kB
+ℹ [CJS] 1 files, total: 0.59 kB
+✔ Build complete in 115ms
+ℹ Hint: consider adding deps.onlyBundle option to avoid unintended bundling of dependencies, or set deps.onlyBundle: false to disable this hint.
+See more at https://tsdown.dev/options/dependencies#deps-onlybundle
+Detected dependencies in bundle:
+- react
+- scheduler
+- react-dom
+ℹ [ESM] lib\app.js  1.54 MB
+ℹ [ESM] 1 files, total: 1.54 MB
+✔ Build complete in 245ms

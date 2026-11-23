@@ -1,0 +1,46 @@
+entry-reachability: 写路由 ↔ 客户端入口可达性（D-160 / docs/29 V3-0）
+
+写路由 37 条（只读排除 14 条，白名单 0 条）：
+  [引用]   /recruitment/api/action/application/star  ← src\client\canvas\canvas-actions.ts
+  [引用]   /recruitment/api/action/application/transfer  ← src\client\canvas\canvas-actions.ts
+  [引用]   /recruitment/api/action/candidate/constraint  ← src\client\canvas\canvas-actions.ts
+  [基线缺口] /recruitment/api/action/compound  —— 已知、待补（服务端：src\http\compound.ts）
+  [引用]   /recruitment/api/action/config  ← src\client\org-config.ts
+  [引用]   /recruitment/api/action/config/pipeline  ← src\client\org-config.ts
+  [引用]   /recruitment/api/action/config/role  ← src\client\org-config.ts
+  [引用]   /recruitment/api/action/config/team  ← src\client\org-config.ts
+  [引用]   /recruitment/api/action/criterion/override  ← src\client\canvas\canvas-actions.ts
+  [引用]   /recruitment/api/action/decision/batch-reject  ← src\client\canvas\canvas-actions.ts
+  [引用]   /recruitment/api/action/decision/record  ← src\client\canvas\CandidateActionModal.tsx
+  [基线缺口] /recruitment/api/action/email/authorize  —— 已知、待补（服务端：src\http\email-send.ts）
+  [引用]   /recruitment/api/action/email/send  ← src\client\canvas\canvas-actions.ts
+  [基线缺口] /recruitment/api/action/email/send-authorized  —— 已知、待补（服务端：src\http\email-send.ts）
+  [引用]   /recruitment/api/action/interview/rebind-minute  ← src\client\canvas\canvas-actions.ts
+  [引用]   /recruitment/api/action/interview/schedule  ← action-key:interview_schedule
+  [引用]   /recruitment/api/action/job/create  ← src\client\recruiting\actions.ts, src\client\recruiting\use-recruiting.ts
+  [引用]   /recruitment/api/action/job/rubric-approve  ← action-key:rubric_approve
+  [引用]   /recruitment/api/action/scorecard/draft  ← src\client\interviewer\http.ts, src\client\interviewer\normalize.ts
+  [引用]   /recruitment/api/action/scorecard/submit  ← src\client\interviewer\http.ts, src\client\interviewer\normalize.ts
+  [引用]   /recruitment/api/action/screening/decide  ← action-key:screening_decide
+  [引用]   /recruitment/api/action/settings/write  ← action-key:settings_write
+  [引用]   /recruitment/api/action/stage/advance  ← action-key:stage_advance
+  [引用]   /recruitment/api/action/transcript/import  ← action-key:transcript_import
+  [引用]   /recruitment/api/action/undo  ← src\client\canvas\canvas-actions.ts
+  [引用]   /recruitment/api/action/webhook/test  ← src\client\external-sync.ts
+  [引用]   /recruitment/api/actor  ← src\client\canvas\CandidateActionModal.tsx, src\client\canvas\CandidatePage.tsx, src\client\canvas\canvas-actions.ts, src\client\interviewer\InterviewerWorkspace.tsx, src\client\interviewer\normalize.ts, src\client\interviewer\ScorecardForm.tsx, src\client\interviewer\styles.ts, src\client\normalize-canvas.ts, src\client\normalize.ts, src\client\recruiting\actions.ts, src\client\recruiting\application-detail.tsx, src\client\recruiting\RecruitingWorkspace.tsx, src\client\recruiting\view-model.ts, src\client\shell\RecruitmentShell.tsx, src\client\use-overview.ts, src\client\Workbench.tsx
+  [引用]   /recruitment/api/auth/login  ← src\client\auth\auth-api.ts
+  [引用]   /recruitment/api/auth/logout  ← src\client\auth\auth-api.ts
+  [引用]   /recruitment/api/decision/record  ← src\client\canvas\CandidateActionModal.tsx, src\client\recruiting\actions.ts, src\client\recruiting\application-detail.tsx, src\client\recruiting\use-recruiting.ts
+  [引用]   /recruitment/api/decision/screening/evaluate  ← src\client\recruiting\actions.ts, src\client\recruiting\application-detail.tsx, src\client\recruiting\RecruitingWorkspace.tsx, src\client\recruiting\use-recruiting.ts
+  [引用]   /recruitment/api/export/applications.csv  ← src\client\external-sync.ts
+  [基线缺口] /recruitment/api/feishu/import  —— 已知、待补（服务端：src\http\feishu-import.ts）
+  [引用]   /recruitment/api/intake/upload  ← src\client\canvas\canvas-actions.ts
+  [引用]   /recruitment/api/job-action/job/close  ← src\client\recruiting\actions.ts, src\client\recruiting\close-job-dialog.tsx
+  [引用]   /recruitment/api/job-action/job/create  ← src\client\recruiting\actions.ts, src\client\recruiting\use-recruiting.ts
+  [引用]   /recruitment/api/job-action/job/draft  ← src\client\recruiting\actions.ts, src\client\recruiting\use-recruiting.ts
+
+  ⚠ testid 清单缺失，跳过多一项：work/d5/e2e-real/smoke/entries.json 不存在，本轮只做路由检查。
+
+  [可下调] 基线里已接通 4 条：/recruitment/api/action/config, /recruitment/api/action/config/pipeline, /recruitment/api/action/config/role, /recruitment/api/action/config/team
+
+entry-reachability: PASS（无新缺口；基线内仍待补 4 条；手拼写动作 0 条待 08c 归零）

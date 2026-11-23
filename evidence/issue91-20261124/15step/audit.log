@@ -1,0 +1,11 @@
+=== EVIDENCE AUDIT SUMMARY ===
+result: evidence/issue91-20261124/15step/runbook-result.json
+steps: 15  verdicts: {"PASS":15,"FAIL":0,"BLOCKED":0}
+HARD FAIL: 0  (all hard checks passed)
+SOFT WARN (3):
+  WARN keytext_not_in_page S8: ui.txt page text lacks keyText prefix "刷新后 textarea = \"[RUN"
+  WARN keytext_not_in_page S12: ui.txt page text lacks keyText prefix "已记录终审正式决策并同步落库。 候选"
+  WARN keytext_not_in_page S15: ui.txt page text lacks keyText prefix "{\"error\":{\"code\":\"VE"
+LEAK WARN: 0
+audit json: evidence/issue91-20261124/15step/audit-result.json
+AUDIT EXIT: 0

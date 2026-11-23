@@ -1,0 +1,257 @@
+{
+  "generated_at": "2026-11-23T17:41:23.355Z",
+  "port": 49354,
+  "cdp": 9233,
+  "tenant": "11111111-1111-4111-8111-000000000001",
+  "phases": {
+    "fresh": {
+      "db": "ra_fresh_e2e_bp4_7067gp",
+      "profile": "ra-fresh-issue91ui"
+    },
+    "auth": {
+      "username": "hr_admin_e2e91",
+      "sql_exit": 0,
+      "row": "hr_admin_e2e91|recruiter|scrypt$16384$8$1$7e4130a5f9fe18ccc8183178de0ef5f4$b05b1e2b56f04374d82894075b6efaa2789d22ad85cb26402e4b74b106e4c879524c241851e03bedb0b6fe80f8a9b2058a9da779039c364bdcc1ebe60a62f5e6|t",
+      "hash_shape_ok": true,
+      "plaintext_hits": 0
+    },
+    "host": {
+      "pid": 25004,
+      "port": 49354,
+      "auth_mode": "production",
+      "chrome_pid": 21612,
+      "test_route_status": 404
+    },
+    "login": {
+      "url": "http://127.0.0.1:49354/recruitment/app",
+      "body": "Recruitment OS\n今日待办\n3\n在招岗位\n1\n后端工程师（演示）\n3\n＋ 新建岗位\n人才库\n3\nAgent\n早上好。当前有 3 位在办候选人（待初筛 3 人、面试中 3 人、待决策 1 人、4 份面评已超时）。当前首位待推进：候选人 S12-决策隔离（后端工程师（演示））。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。\n梳理今天最优先推进的候选人\n查看待提交面评与催办进展\n打开人才库检索候选人\n等你拍板\n3\nE2E 验收管理员\n招聘负责人\n退出\n待推进候选人\n在办 3\n·\n待初筛 3\n·\n面试中 3\n·\n待决策 1\n导入简历\n全部 (3)\n待初筛 (3)\n面试中 (3)\n初筛 (1)\n面试规划与排期 (1)\n综合评价与招聘决策 (1)\n候\n候选人 S12-决策隔离\n后端工程师（演示）\n等待面评：面试已结束，仍有必填面评未提交 · 2 轮 · 第 1 轮已面完 / 第 2 轮已面完\n综合评价与招聘决策 · 面评超时 2 份\n候\n候选人 T\n后端工程师（演示）\n等待面评：面试已结束，仍有必填面评未提交 · 2 轮 · 第 1 轮已面完 / 第 2 轮已面完\n面试规划与排期 · 面评超时 2 份\n演\n演示候选人-张样例\n后端工程师（演示）\n等待初筛决定：材料已就绪，还没有人工作出筛选结论 · 2 轮 · 第 1 轮已面完 / 第 2 轮已排期\n初筛",
+      "loggedIn": true,
+      "screenshot": "screenshots/auth-login-filled.png",
+      "session_readback": "1|t"
+    },
+    "g3": {
+      "rowText": "线上成对质量护栏（G3 只读遥测）\n主指标与护栏成对展示，防止单向刷高效率指标掩盖误判或橡皮图章风险。\n运行平稳\nHR 人工纠偏率 × 盲审抽检一致率（主 0.0% / 护栏 —）\n正常 · 指标正常\n面评按时提交率 × 抽样原子事实忠实度（主 — / 护栏 —）\n暂无数据 · 暂无面评样本\n决策确认 × 撤回改判率（主 — / 护栏 —）\n暂无数据 · 暂无决策样本\n面试推进 × 取消/重约返工率（主 100.0% / 护栏 0.0%）\n正常 · 排期返工率在安全范围内",
+      "cards": [
+        {
+          "id": "g3-guardrail-override_vs_blind_audit",
+          "text": "HR 人工纠偏率 × 盲审抽检一致率（主 0.0% / 护栏 —）\n正常 · 指标正常"
+        },
+        {
+          "id": "g3-guardrail-scorecard_completion_vs_faithfulness",
+          "text": "面评按时提交率 × 抽样原子事实忠实度（主 — / 护栏 —）\n暂无数据 · 暂无面评样本"
+        },
+        {
+          "id": "g3-guardrail-decision_vs_undo",
+          "text": "决策确认 × 撤回改判率（主 — / 护栏 —）\n暂无数据 · 暂无决策样本"
+        },
+        {
+          "id": "g3-guardrail-funnel_speed_vs_rework",
+          "text": "面试推进 × 取消/重约返工率（主 100.0% / 护栏 0.0%）\n正常 · 排期返工率在安全范围内"
+        }
+      ],
+      "hasNaN": false,
+      "hasUUID": false,
+      "hasBanned": false,
+      "screenshot": "screenshots/settings-governance-g3.png",
+      "api": {
+        "schema_version": "2.2.0",
+        "counts": {
+          "totalApplications": 3,
+          "criterionOverrides": 0,
+          "submittedScorecards": 0,
+          "pendingScorecards": 0,
+          "totalDecisions": 0,
+          "supersededDecisions": 0,
+          "totalInterviews": 6,
+          "cancelledOrRescheduledInterviews": 0
+        },
+        "paired_guardrails": [
+          {
+            "id": "override_vs_blind_audit",
+            "label": "HR 人工纠偏率 × 盲审抽检一致率",
+            "primaryRate": 0,
+            "guardrailRate": null,
+            "status": "OK",
+            "note": "指标正常"
+          },
+          {
+            "id": "scorecard_completion_vs_faithfulness",
+            "label": "面评按时提交率 × 抽样原子事实忠实度",
+            "primaryRate": null,
+            "guardrailRate": null,
+            "status": "NO_DATA",
+            "note": "暂无面评样本"
+          },
+          {
+            "id": "decision_vs_undo",
+            "label": "决策确认 × 撤回改判率",
+            "primaryRate": null,
+            "guardrailRate": null,
+            "status": "NO_DATA",
+            "note": "暂无决策样本"
+          },
+          {
+            "id": "funnel_speed_vs_rework",
+            "label": "面试推进 × 取消/重约返工率",
+            "primaryRate": 1,
+            "guardrailRate": 0,
+            "status": "OK",
+            "note": "排期返工率在安全范围内"
+          }
+        ]
+      },
+      "psql_counts": "3|0|0|0|0|0|6|0"
+    },
+    "role": {
+      "ui_msg": "已新增角色模板",
+      "db": "E2E_ROLE_91|E2E 验收角色|t|1",
+      "deactivate": {
+        "btn_found": true,
+        "ui_msg": "参数不合法，逐条见 detail.violations",
+        "db": "E2E_ROLE_91|E2E 验收角色|t|1",
+        "diagnostic": {
+          "withActive": {
+            "status": 400,
+            "text": "{\"error\":{\"code\":\"INVALID_ARGS\",\"reason_code\":\"UNKNOWN_PARAM\",\"message\":\"参数不合法，逐条见 detail.violations\",\"detail\":{\"allowed\":[\"operation\",\"code\",\"name\",\"description\",\"clear_description\",\"permission_scopes\",\"role_id\",\"expected_record_version\",\"include_inactive\"],\"violations\":[{\"message\":\"unknown parameter \\\"is_active\\\" (allowed: operation, code, name, description, clear_description, permission_scopes, role_id, expected_record_version, include_inactive)\",\"path\":\"is_active\",\"reason_code\":\"UNKNOWN_PARAM\"}]}}}"
+          },
+          "withoutActive": {
+            "status": 200,
+            "text": "{\"action\":\"config/role\",\"actor\":{\"session_id\":\"session-50360ca9-683c-45cc-bc70-b4b1fa7bc579\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":0,\"result\":\"not-applicable\",\"tool_names\":[]},\"result\":{\"tool\":\"recruitment_config_role\",\"contract_version\":\"1.0.0\",\"operation\":\"update\",\"status\":\"UNCHANGED\",\"role\":{\"role_id\":\"513a80db-583c-4350-ab36-95fe58ce9c08\",\"code\":\"E2E_ROLE_91\",\"name\":\"E2E 验收角色\",\"permission_scopes\":[\"APPLICATION_READ\",\"JOB_READ\"],\"is_active\":true,\"record_version\":1,\"created_by_actor_id\":\"11111111-1111-4111-8111-000000000103\",\"created_at\":\"2026-11-23T17:41:46.065Z\",\"updated_at\":\"2026-11-23T17:41:46.065Z\"},\"labels\":{\"provenance\":\"FIXTURE\",\"trigger\":\"MANUAL\",\"connection\":\"NOT_CONNECTED\"}},\"readback\":{\"role_id\":\"513a80db-583c-4350-ab36-95fe58ce9c08\",\"code\":\"E2E_ROLE_91\",\"name\":\"E2E 验收角色\",\"is_active\":true,\"record_version\":1,\"permission_scopes\":[\"APPLICATION_READ\",\"JOB_READ\"],\"actor_id\":\"11111111-1111-4111-8111-000000000103\",\"updated_at\":\"2026-11-23T17:41:46.065Z\"}}"
+          }
+        }
+      }
+    },
+    "pipeline": {
+      "ui_msg": "已新增招聘流程模板",
+      "db": "E2E_PIPE_91|E2E 验收流程|t|1",
+      "deactivate": {
+        "btn_found": true,
+        "ui_msg": "已软停用流程模板（进行中申请不受影响）",
+        "db": "E2E_PIPE_91|E2E 验收流程|f|2"
+      }
+    },
+    "team": {
+      "ui_msg": "已新增招聘团队",
+      "dept_id": "11111111-1111-4111-8111-000000000010",
+      "dept_name": "研发部（演示）",
+      "db": "E2E_TEAM_91|E2E 验收招聘组|11111111-1111-4111-8111-000000000010|研发部（演示）|t|1"
+    },
+    "org_api": {
+      "roles": [
+        {
+          "role_id": "513a80db-583c-4350-ab36-95fe58ce9c08",
+          "code": "E2E_ROLE_91",
+          "name": "E2E 验收角色",
+          "permission_scopes": [
+            "APPLICATION_READ",
+            "JOB_READ"
+          ],
+          "is_active": true,
+          "record_version": 1,
+          "created_by_actor_id": "11111111-1111-4111-8111-000000000103",
+          "created_at": "2026-11-23T17:41:46.065Z",
+          "updated_at": "2026-11-23T17:41:46.065Z"
+        },
+        {
+          "role_id": "11111111-1111-4111-8111-000000000202",
+          "code": "HIRING_MANAGER",
+          "name": "招聘负责人",
+          "permission_scopes": [],
+          "is_active": true,
+          "record_version": 1,
+          "created_at": "2026-11-23T17:41:24.129Z",
+          "updated_at": "2026-11-23T17:41:24.461Z"
+        },
+        {
+          "role_id": "11111111-1111-4111-8111-000000000203",
+          "code": "HR_SPECIALIST",
+          "name": "HR 专员",
+          "permission_scopes": [],
+          "is_active": true,
+          "record_version": 1,
+          "created_at": "2026-11-23T17:41:24.129Z",
+          "updated_at": "2026-11-23T17:41:24.461Z"
+        },
+        {
+          "role_id": "11111111-1111-4111-8111-000000000204",
+          "code": "INTERVIEWER",
+          "name": "面试官",
+          "permission_scopes": [],
+          "is_active": true,
+          "record_version": 1,
+          "created_at": "2026-11-23T17:41:24.129Z",
+          "updated_at": "2026-11-23T17:41:24.461Z"
+        },
+        {
+          "role_id": "11111111-1111-4111-8111-000000000201",
+          "code": "ORG_ADMIN",
+          "name": "企业管理员",
+          "permission_scopes": [],
+          "is_active": true,
+          "record_version": 1,
+          "created_at": "2026-11-23T17:41:24.129Z",
+          "updated_at": "2026-11-23T17:41:24.461Z"
+        }
+      ],
+      "hiring_teams": [
+        {
+          "team_id": "11111111-1111-4111-8111-000000000901",
+          "code": "DEMO_HIRING_TEAM",
+          "name": "演示招聘组",
+          "department_id": "11111111-1111-4111-8111-000000000010",
+          "department_name": "研发部（演示）",
+          "description": "演示用招聘组（合成数据，非真实组织）",
+          "is_active": true,
+          "record_version": 1,
+          "members": [
+            {
+              "actor_id": "11111111-1111-4111-8111-000000000102",
+              "display_name": "演示-招聘负责人",
+              "team_role": "HIRING_MANAGER",
+              "is_active": true,
+              "added_at": "2026-11-23T17:41:25.484Z"
+            },
+            {
+              "actor_id": "11111111-1111-4111-8111-000000000103",
+              "display_name": "演示-HR 专员",
+              "team_role": "RECRUITER",
+              "is_active": true,
+              "added_at": "2026-11-23T17:41:25.484Z"
+            },
+            {
+              "actor_id": "11111111-1111-4111-8111-000000000104",
+              "display_name": "演示-面试官",
+              "team_role": "INTERVIEWER",
+              "is_active": true,
+              "added_at": "2026-11-23T17:41:25.484Z"
+            },
+            {
+              "actor_id": "11111111-1111-4111-8111-000000000105",
+              "display_name": "演示-面试官 B",
+              "team_role": "INTERVIEWER",
+              "is_active": true,
+              "added_at": "2026-11-23T17:41:25.484Z"
+            }
+          ],
+          "created_at": "2026-11-23T17:41:25.484Z",
+          "updated_at": "2026-11-23T17:41:25.484Z"
+        },
+        {
+          "team_id": "f3f94d22-6410-4ffd-8275-ff60f9d2f2d0",
+          "code": "E2E_TEAM_91",
+          "name": "E2E 验收招聘组",
+          "department_id": "11111111-1111-4111-8111-000000000010",
+          "department_name": "研发部（演示）",
+          "is_active": true,
+          "record_version": 1,
+          "members": [],
+          "created_at": "2026-11-23T17:41:53.899Z",
+          "updated_at": "2026-11-23T17:41:53.899Z"
+        }
+      ],
+      "pipeline_templates": [],
+      "record_version": 1
+    }
+  },
+  "verdict": "COMPLETED"
+}

@@ -1,0 +1,16 @@
+{
+  "run_at": "2026-11-24T01:30:00+08:00",
+  "worktree": "D:\\12412\\DshWorktrees\\recruitment-agent\\e2e-91",
+  "branch": "evidence/issue91-20261124",
+  "head": "ac4a695",
+  "gates": [
+    { "name": "tsc --noEmit", "cmd": "npx tsc --noEmit", "cwd": "dsh/dsh-recruitment", "exit": 2, "verdict": "FAIL", "detail": "src/app/SettingsView.tsx(89,14) and (91,14): TS2300 Duplicate identifier 'record_version' in OrgConfigPayload.roles interface — real product-code defect on main ac4a695.", "log": "gates/tsc.txt" },
+    { "name": "tsdown (dual entry)", "cmd": "npx tsdown", "cwd": "dsh/dsh-recruitment", "exit": 0, "verdict": "PASS", "detail": "CJS lib/client.js 0.59 kB; ESM lib/app.js 1.54 MB; both entries built. Build artifacts restored to HEAD after capture (no product code modified).", "log": "gates/tsdown.txt" },
+    { "name": "server-typecheck", "cmd": "node ../../scripts/server-typecheck.mjs", "cwd": "dsh/dsh-recruitment", "exit": 0, "verdict": "PASS", "detail": "PASS (0 / 0)", "log": "gates/server-typecheck.txt" },
+    { "name": "runtime-budget", "cmd": "node ../../scripts/runtime-budget.mjs", "cwd": "dsh/dsh-recruitment", "exit": 0, "verdict": "PASS", "detail": "PASS (5051 / 5051, zero margin)", "log": "gates/runtime-budget.txt" },
+    { "name": "client-contract-check", "cmd": "node ../../scripts/client-contract-check.mjs", "cwd": "dsh/dsh-recruitment", "exit": 0, "verdict": "PASS", "detail": "画布写动作全部走既有 builder + postActionSeam", "log": "gates/client-contract-check.txt" },
+    { "name": "term-lint", "cmd": "node ../../scripts/term-lint.mjs", "cwd": "dsh/dsh-recruitment", "exit": 0, "verdict": "PASS", "detail": "HR 可见文案无「证据」", "log": "gates/term-lint.txt" },
+    { "name": "entry-reachability (WHITELIST=[])", "cmd": "WHITELIST=[] node ../../scripts/entry-reachability.mjs", "cwd": "dsh/dsh-recruitment", "exit": 0, "verdict": "PASS", "detail": "无新缺口；4 条 config 路由已接通（基线内仍待补 4 条）；手拼写动作 0 条", "log": "gates/entry-reachability.txt" }
+  ],
+  "summary": { "pass": 6, "fail": 1, "first_failure": "tsc --noEmit: TS2300 duplicate record_version in SettingsView.tsx:89/91" }
+}

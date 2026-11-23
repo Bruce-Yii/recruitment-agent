@@ -1,0 +1,6 @@
+stop-host: stopped pid=31092 port=49354
+removed token file: D:\12412\AppData\Temp\ra-pr-host-49354.token
+stopped chrome pid=27524
+removed chrome profile: D:\12412\AppData\Temp\ra-pr-chrome-9233
+ports after cleanup: host 49354=FREE, cdp 9233=FREE
+token file exists: false

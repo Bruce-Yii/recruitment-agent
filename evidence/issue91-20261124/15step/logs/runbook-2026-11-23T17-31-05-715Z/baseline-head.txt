@@ -1,0 +1,12 @@
+intake_asset|3
+business_task|1
+candidate_constraint|2
+criterion_override|0
+decision|0
+interview|6
+interviewer|7
+scorecard_draft|0
+scorecard|0
+resume_version|3
+event_inbox|9
+application|3

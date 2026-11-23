@@ -1,0 +1,4 @@
+row=hr_admin_e2e91|recruiter|scrypt$16384$8$1$7e4130a5f9fe18ccc8183178de0ef5f4$b05b1e2b56f04374d82894075b6efaa2789d22ad85cb26402e4b74b106e4c879524c241851e03bedb0b6fe80f8a9b2058a9da779039c364bdcc1ebe60a62f5e6|t
+hashShape=t
+plaintextCount=0
+sqlExit=0

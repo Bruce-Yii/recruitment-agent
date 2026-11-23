@@ -1,0 +1,114 @@
+{
+  "orgPayload": {
+    "roles": [
+      {
+        "role_id": "513a80db-583c-4350-ab36-95fe58ce9c08",
+        "code": "E2E_ROLE_91",
+        "name": "E2E 验收角色",
+        "permission_scopes": [
+          "APPLICATION_READ",
+          "JOB_READ"
+        ],
+        "is_active": true,
+        "record_version": 1,
+        "created_by_actor_id": "11111111-1111-4111-8111-000000000103",
+        "created_at": "2026-11-23T17:41:46.065Z",
+        "updated_at": "2026-11-23T17:41:46.065Z"
+      },
+      {
+        "role_id": "11111111-1111-4111-8111-000000000202",
+        "code": "HIRING_MANAGER",
+        "name": "招聘负责人",
+        "permission_scopes": [],
+        "is_active": true,
+        "record_version": 1,
+        "created_at": "2026-11-23T17:41:24.129Z",
+        "updated_at": "2026-11-23T17:41:24.461Z"
+      },
+      {
+        "role_id": "11111111-1111-4111-8111-000000000203",
+        "code": "HR_SPECIALIST",
+        "name": "HR 专员",
+        "permission_scopes": [],
+        "is_active": true,
+        "record_version": 1,
+        "created_at": "2026-11-23T17:41:24.129Z",
+        "updated_at": "2026-11-23T17:41:24.461Z"
+      },
+      {
+        "role_id": "11111111-1111-4111-8111-000000000204",
+        "code": "INTERVIEWER",
+        "name": "面试官",
+        "permission_scopes": [],
+        "is_active": true,
+        "record_version": 1,
+        "created_at": "2026-11-23T17:41:24.129Z",
+        "updated_at": "2026-11-23T17:41:24.461Z"
+      },
+      {
+        "role_id": "11111111-1111-4111-8111-000000000201",
+        "code": "ORG_ADMIN",
+        "name": "企业管理员",
+        "permission_scopes": [],
+        "is_active": true,
+        "record_version": 1,
+        "created_at": "2026-11-23T17:41:24.129Z",
+        "updated_at": "2026-11-23T17:41:24.461Z"
+      }
+    ],
+    "hiring_teams": [
+      {
+        "team_id": "11111111-1111-4111-8111-000000000901",
+        "code": "DEMO_HIRING_TEAM",
+        "name": "演示招聘组",
+        "department_id": "11111111-1111-4111-8111-000000000010",
+        "department_name": "研发部（演示）",
+        "description": "演示用招聘组（合成数据，非真实组织）",
+        "is_active": true,
+        "record_version": 1,
+        "members": [
+          {
+            "actor_id": "11111111-1111-4111-8111-000000000102",
+            "display_name": "演示-招聘负责人",
+            "team_role": "HIRING_MANAGER",
+            "is_active": true,
+            "added_at": "2026-11-23T17:41:25.484Z"
+          },
+          {
+            "actor_id": "11111111-1111-4111-8111-000000000103",
+            "display_name": "演示-HR 专员",
+            "team_role": "RECRUITER",
+            "is_active": true,
+            "added_at": "2026-11-23T17:41:25.484Z"
+          },
+          {
+            "actor_id": "11111111-1111-4111-8111-000000000104",
+            "display_name": "演示-面试官",
+            "team_role": "INTERVIEWER",
+            "is_active": true,
+            "added_at": "2026-11-23T17:41:25.484Z"
+          },
+          {
+            "actor_id": "11111111-1111-4111-8111-000000000105",
+            "display_name": "演示-面试官 B",
+            "team_role": "INTERVIEWER",
+            "is_active": true,
+            "added_at": "2026-11-23T17:41:25.484Z"
+          }
+        ],
+        "created_at": "2026-11-23T17:41:25.484Z",
+        "updated_at": "2026-11-23T17:41:25.484Z"
+      }
+    ],
+    "pipeline_templates": [],
+    "record_version": 1
+  },
+  "withActive": {
+    "status": 400,
+    "text": "{\"error\":{\"code\":\"INVALID_ARGS\",\"reason_code\":\"UNKNOWN_PARAM\",\"message\":\"参数不合法，逐条见 detail.violations\",\"detail\":{\"allowed\":[\"operation\",\"code\",\"name\",\"description\",\"clear_description\",\"permission_scopes\",\"role_id\",\"expected_record_version\",\"include_inactive\"],\"violations\":[{\"message\":\"unknown parameter \\\"is_active\\\" (allowed: operation, code, name, description, clear_description, permission_scopes, role_id, expected_record_version, include_inactive)\",\"path\":\"is_active\",\"reason_code\":\"UNKNOWN_PARAM\"}]}}}"
+  },
+  "withoutActive": {
+    "status": 200,
+    "text": "{\"action\":\"config/role\",\"actor\":{\"session_id\":\"session-50360ca9-683c-45cc-bc70-b4b1fa7bc579\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":0,\"result\":\"not-applicable\",\"tool_names\":[]},\"result\":{\"tool\":\"recruitment_config_role\",\"contract_version\":\"1.0.0\",\"operation\":\"update\",\"status\":\"UNCHANGED\",\"role\":{\"role_id\":\"513a80db-583c-4350-ab36-95fe58ce9c08\",\"code\":\"E2E_ROLE_91\",\"name\":\"E2E 验收角色\",\"permission_scopes\":[\"APPLICATION_READ\",\"JOB_READ\"],\"is_active\":true,\"record_version\":1,\"created_by_actor_id\":\"11111111-1111-4111-8111-000000000103\",\"created_at\":\"2026-11-23T17:41:46.065Z\",\"updated_at\":\"2026-11-23T17:41:46.065Z\"},\"labels\":{\"provenance\":\"FIXTURE\",\"trigger\":\"MANUAL\",\"connection\":\"NOT_CONNECTED\"}},\"readback\":{\"role_id\":\"513a80db-583c-4350-ab36-95fe58ce9c08\",\"code\":\"E2E_ROLE_91\",\"name\":\"E2E 验收角色\",\"is_active\":true,\"record_version\":1,\"permission_scopes\":[\"APPLICATION_READ\",\"JOB_READ\"],\"actor_id\":\"11111111-1111-4111-8111-000000000103\",\"updated_at\":\"2026-11-23T17:41:46.065Z\"}}"
+  }
+}

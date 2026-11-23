@@ -1,0 +1,128 @@
+STEP S08 — 面后速记：中途刷新不丢、草稿落库
+captured_at: 2026-11-23T17:32:43.609Z
+url: http://127.0.0.1:49354/?token=<redacted>
+viewport: 1440x900 (headless Chrome, CDP 9233)
+verdict: PASS
+reason: 带时间戳速记刷新仍在，且 psql 独立读回 scorecard_draft.interviewer_actor_id 仅属面试官 A（actor 104）。
+key_visible_text: 刷新后 textarea = "[RUNBOOK-S8] 2026-11-23T17:32:37.367Z 面后速记：支付回调幂等与对账回答清楚；带团队经历未展开，留待追问。" | psql owner = 21b33224-42e2-4be9-a8d3-b2d84d1121a1|49bbde3e-dbb1-45c6-82b3-6f9fafa3988f|11111111-1111-4111-8111-000000000104|演示-面试官|{"note": "[RUNBOOK-S8] 2026-11-23T17:32:37.367Z 面后速记：支付回调幂等与对账回答清楚；带团队经历未展开，留待追问。", "assessments": {}}|2026-11-24 01:32:39.444858+08
+extra: {"draft_owner":{"sql":"select d.id, d.interviewer_id, d.interviewer_actor_id, a.display_name, left(d.payload::text,160) as note, d.created_at\n    from recruitment.scorecard_draft d left join recruitment.actor a on a.id=d.interviewer_actor_id and a.tenant_id=d.tenant_id\n    order by d.created_at","out":"21b33224-42e2-4be9-a8d3-b2d84d1121a1|49bbde3e-dbb1-45c6-82b3-6f9fafa3988f|11111111-1111-4111-8111-000000000104|演示-面试官|{\"note\": \"[RUNBOOK-S8] 2026-11-23T17:32:37.367Z 面后速记：支付回调幂等与对账回答清楚；带团队经历未展开，留待追问。\", \"assessments\": {}}|2026-11-24 01:32:39.444858+08","evidence":"evidence/issue91-20261124/15step/evidence/S08-DRAFT-OWNER.txt"},"owner_ok":true,"sid_preserved_across_refresh":true,"sid_before":"session-459e7850-e354-422a-8674-3aa89045d20a","sid_after":"session-459e7850-e354-422a-8674-3aa89045d20a"}
+----- PAGE innerText -----
+Recruitment OS
+我的面试
+Agent
+你好，我是招聘协作 Agent。你可以直接告诉我需要推进哪位候选人，或拖入简历文件自动建档。
+梳理今天最优先推进的候选人
+查看待提交面评与催办进展
+打开人才库检索候选人
+我的面试与独立面评
+面试官 A
+面试官
+
+当前身份：演示-面试官（interviewer_a）
+
+← 返回我的面试
+INTERVIEW WORKSPACE
+候选人 T
+
+后端工程师（演示） · 第 1 轮 · 后端工程师（演示） · 当前身份：演示-面试官
+
+待提交面评
+本轮面试简报
+
+后端工程师（演示）
+
+候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。
+面后速记
+已自动保存草稿
+本轮考察重点
+第 1 轮 · 只读 · 服务端权威
+
+来源：岗位通用标准（服务端未提供本轮专属配置）
+
+JOB_BASE 降级（服务端未提供该轮配置）
+
+本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE）
+
+评分维度见下方「本轮评分表 · effective schema」（岗位底座）。
+
+本轮评分表 · effective schema
+只读 · 岗位通用标准（服务端未提供本轮专属配置）
+
+分数区间：服务端未提供分数区间 · submission rubric：c4c7f316-a2a7-4f19-bc12-49cea30fe3fa
+
+简历中存在可分割的工作经历条目
+work_exists
+kind=MUST_HAVE · weight=0.5
+JOB_BASE
+简历中存在可分割的教育经历条目
+edu_exists
+kind=MUST_HAVE · weight=0.25
+JOB_BASE
+有带团队经验
+team_lead
+kind=NICE_TO_HAVE · weight=0.25
+JOB_BASE
+
+是否有 ≥1 年、≥3 人的直接带团队经历？
+
+前面几轮发生了什么
+只读 · 紧邻上一轮 · 服务端事实
+
+这是第一轮，没有前置轮次可参考。
+
+这一轮可以参考
+只读 · 参考不是指令 · 服务端事实
+
+• 可以重点了解「简历中存在可分割的工作经历条目」
+
+值得问的原因：岗位标准里这一条权重较高（0.5），前面的轮次还没有聊到这一条，材料里也没有对应的原文。
+
+• 可以重点了解「简历中存在可分割的教育经历条目」
+
+值得问的原因：岗位标准里这一条权重较高（0.25），前面的轮次还没有聊到这一条，材料里也没有对应的原文。
+
+• 可以重点了解「有带团队经验」
+
+值得问的原因：岗位标准里这一条权重较高（0.25），前面的轮次还没有聊到这一条，材料里也没有对应的原文。
+
+查看招聘方接收的简历材料
+材料分支 · Transcript
+
+转写状态：还没收到（MISSING）
+
+reason_code：NO_MEETING_BOUND · 会议绑定：未绑定 · 会议数：0
+
+这一轮的转写还没到，不影响你提交面评（面评仍可提交）；后续由 HR 决定如何处理。
+
+这张卡片只反映转写本身的状态；阶段能否推进由后续流程决定。
+
+面评分支 · 我的独立评价
+
+面评状态：未填（NONE）
+
+只显示你本人的面评；其他面试官的主观评分与私人备注默认不展示。
+
+提交我的独立面评
+面试安排
+
+2026-11-22 01:31 – 2026-11-23 02:31
+
+时区：Asia/Shanghai · 面试状态：POST_INTERVIEW · slot：FRESH_R1
+
+会议绑定：未绑定
+
+转写状态：还没收到
+
+面试 id：fb92d1da-513d-4509-a5f5-eeaac0a26ba9
+
+provenance：FIXTURE
+trigger：MANUAL
+connection：CONNECTED
+
+服务端评估时间（as_of）：2026-11-23T17:32:39.554Z
+
+信息可见范围
+
+可查看分配给你的面试、本轮 Rubric、授权材料；其他面试官的主观评分与私人备注默认不展示。
+
+Provenance / trigger / connection 由服务端按租户现算，前端不重贴标签。

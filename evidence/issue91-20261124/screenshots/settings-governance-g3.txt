@@ -1,0 +1,24 @@
+{
+  "rowText": "线上成对质量护栏（G3 只读遥测）\n主指标与护栏成对展示，防止单向刷高效率指标掩盖误判或橡皮图章风险。\n运行平稳\nHR 人工纠偏率 × 盲审抽检一致率（主 0.0% / 护栏 —）\n正常 · 指标正常\n面评按时提交率 × 抽样原子事实忠实度（主 — / 护栏 —）\n暂无数据 · 暂无面评样本\n决策确认 × 撤回改判率（主 — / 护栏 —）\n暂无数据 · 暂无决策样本\n面试推进 × 取消/重约返工率（主 100.0% / 护栏 0.0%）\n正常 · 排期返工率在安全范围内",
+  "cards": [
+    {
+      "id": "g3-guardrail-override_vs_blind_audit",
+      "text": "HR 人工纠偏率 × 盲审抽检一致率（主 0.0% / 护栏 —）\n正常 · 指标正常"
+    },
+    {
+      "id": "g3-guardrail-scorecard_completion_vs_faithfulness",
+      "text": "面评按时提交率 × 抽样原子事实忠实度（主 — / 护栏 —）\n暂无数据 · 暂无面评样本"
+    },
+    {
+      "id": "g3-guardrail-decision_vs_undo",
+      "text": "决策确认 × 撤回改判率（主 — / 护栏 —）\n暂无数据 · 暂无决策样本"
+    },
+    {
+      "id": "g3-guardrail-funnel_speed_vs_rework",
+      "text": "面试推进 × 取消/重约返工率（主 100.0% / 护栏 0.0%）\n正常 · 排期返工率在安全范围内"
+    }
+  ],
+  "hasNaN": false,
+  "hasUUID": false,
+  "hasBanned": false
+}

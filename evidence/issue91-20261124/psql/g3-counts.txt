@@ -1,0 +1,11 @@
+3|0|0|0|0|0|6|0
+{
+  "totalApplications": 3,
+  "criterionOverrides": 0,
+  "submittedScorecards": 0,
+  "pendingScorecards": 0,
+  "totalDecisions": 0,
+  "supersededDecisions": 0,
+  "totalInterviews": 6,
+  "cancelledOrRescheduledInterviews": 0
+}

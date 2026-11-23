@@ -1,0 +1,109 @@
+STEP S04 — HR 下初筛结论并确认（人工纠偏）
+captured_at: 2026-11-23T17:32:06.244Z
+url: http://127.0.0.1:49354/?token=<redacted>
+viewport: 1440x900 (headless Chrome, CDP 9233)
+verdict: PASS
+reason: 真点初筛结果 pill「通过」且 active，填理由后提交，decision 行 +1（S04-db.txt 独立读回）。
+key_visible_text: 已记录初筛结论并同步落库。 | 候选人 T | 后端工程师（演示）（DEMO-BE-001）· 档案号 438c72bd · 标准 V2 | 候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。 | ☆ | 面试安排 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 初筛结论：[RUNBOOK-S4] 合成材料：工作经历与教育背景已匹配，团队经历待面试核实。 · 等待面评：面试已结束，仍有必填面评未提交 | 岗位标准对照 · V2（点击联动原文） | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重 25% | 待核实 | 逐轮面试进展（不求平均分） | 1 | 第 1 轮面试 | 待收面评 | 2 | 第 2 轮面试 | 待收面评 | 第 1 轮面试11-22 01:31 | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 0/1 · 还没有转录 · 1 份面评已超时 | 待收面评 | 第 2 轮面试11-23 01:31 | 本场面试没有绑定可用的轮次模板
+extra: {"entered_detail":true,"result_button_picked":true,"s4":{"open":{"ok":true,"testid":"canvas-action-screening","tag":"BUTTON"},"pickResult":{"ok":true,"text":"通过","pills":["通过","待定","不通过","撤回"]},"resultActive":{"clickedActive":true,"activePills":["通过"]},"reason":{"ok":true,"label":"初筛判断理由 / 人工纠偏说明"},"confirmSource":"screening 弹窗无确认原话输入框；服务端按 IN_APP_CONFIRM 从这次真点派生","submit":{"ok":true,"testid":"canvas-modal-submit","tag":"BUTTON"},"fetchLog":[{"method":"POST","path":"/recruitment/api/action/screening/decide","status":200,"body":"{\"action\":\"screening/decide\",\"actor\":{\"session_id\":\"session-624a10b4-a382-43ee-90f9-36584a34d626\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":1,\"result\":\"allowed-once\",\"tool_names\":[\"recruitment_decision_record\"]},\"result\":{\"tool\":\"recruitment_decision_record\",\"contract_version\":\"2.0.0\",\"status\":\"OK\",\"replayed\":false,\"labels\":{\"provenance\":\"FIXTURE\",\"trigger\":\"MANUAL\",\"connection\":\"CONNECTED\"},\"decision\":{\"id\":\"4e8ef62f-efae-4b75-ace2-c0cc01643ccf\",\"application_id\":\"438c72bd-9939-4147-b1e4-82bd69c7fe45\",\"decision_scope\":\"SCREENING\",\"stage_code\":\"S7\",\"result\":\"ADVANCE\",\"decided_by_actor_id\":\"11111111-1111-4111-8111-000000000103\",\"decided_at\":\"2026-11-23T17:32:02.352Z\",\"record_version\":1},\"event\":{\"event_id\":\"ae0aca79-db46-4b24-8d10-113cbfb9201e\",\"provider\":\"internal\",\"trust_level\":\"INTERNAL\"},\"warnings\":[{\"code\":\"DECIDER_NOT_HIRING_MANAGER\",\"message\":\"决策人不是该部门的招聘负责人；v1.0 不拦截，仅记录（DC-14）\"},{\"code\":\"FIXTURE_BASIS\",\"message\":\"本次决策依据的是演练数据（provenance=FIXTURE），不是真实外部事实\"}]},\"readback\":{\"decision_id\":\"4e8ef62f-efae-4b75-ace2-c0cc01643ccf\",\"application_id\":\"438c72bd-9939-4147-b1e4-82bd69c7fe45\",\"interview_id\":null,\"decision_scope\":\"SCREENING"}],"dbDeltaDecision":1,"rootCauseProbe":{"status":400,"body":"{\"error\":{\"code\":\"INVALID_ARGS\",\"reason_code\":\"UNKNOWN_PARAM\",\"message\":\"参数不合法，逐条见 detail.violations\",\"detail\":{\"allowed\":[\"application_id\",\"decision_scope\",\"interview_id\",\"as_of\",\"result\",\"reason\",\"basis_refs\",\"summary_digest\",\"human_confirmation\",\"missing_disposition\",\"acknowledged_missing\",\"acknowledged_dissent\",\"override_rationale\",\"supersedes\",\"approval_id\",\"expected_record_version\",\"tenant_id\",\"actor_id\",\"interviewer_id\",\"decided_by_actor_id\",\"stage_code\",\"round_no\",\"slot_code\",\"submitted_"}}}
+----- PAGE innerText -----
+Recruitment OS
+今日待办
+4
+在招岗位
+1
+后端工程师（演示）
+4
+＋ 新建岗位
+人才库
+4
+Agent
+早上好。当前有 4 位在办候选人（待初筛 3 人、面试中 3 人、待决策 1 人、4 份面评已超时）。当前首位待推进：林承宇（后端工程师（演示））。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。
+提炼这位候选人的核心风险点
+帮我查下一轮可约时段
+对比岗位评分标准
+招聘负责人
+HR
+← 返回
+/
+后端工程师（演示）
+/
+面试安排
+/
+候选人 T
+‹
+3 / 4
+›
+来源
+LIVE
+触发
+MANUAL
+连接
+CONNECTED
+已记录初筛结论并同步落库。
+候选人 T
+后端工程师（演示）（DEMO-BE-001）· 档案号 438c72bd · 标准 V2
+候选人 T 期望薪资 45k，另一 offer 本周五截止；面试中须确认可接受范围。
+☆
+面试安排
+推进中
+·
+复制决策纪要
+当前状态与提炼
+初筛结论：[RUNBOOK-S4] 合成材料：工作经历与教育背景已匹配，团队经历待面试核实。 · 等待面评：面试已结束，仍有必填面评未提交
+岗位标准对照 · V2（点击联动原文）
+01简历中存在可分割的工作经历条目硬性 · 权重 50%
+已匹配
+02简历中存在可分割的教育经历条目硬性 · 权重 25%
+已匹配
+03有带团队经验加分 · 权重 25%
+待核实
+逐轮面试进展（不求平均分）
+1
+第 1 轮面试
+待收面评
+2
+第 2 轮面试
+待收面评
+第 1 轮面试11-22 01:31
+本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 0/1 · 还没有转录 · 1 份面评已超时
+待收面评
+第 2 轮面试11-23 01:31
+本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 0/1 · 还没有转录 · 1 份面评已超时
+待收面评
+简历原文
+飞书妙记
+原件预览
+上传简历
+导入转写
+简历原文摘录（可点击标准联动定位）
+01
+工作经历
+第 1 页
+2021-2024 后端工程师（合成材料）：支付回调幂等与对账。
+02
+教育背景
+第 1 页
+本科 · 计算机科学（合成材料）
+03
+原文片段
+第 1 页
+曾带领 3 人小组完成交付（待面试核实）
+初筛依据
+岗位考核标准
+依据已锁定的岗位标准 V2 执行对照
+操作人权限校验
+由 演示-HR 专员 确认并记录
+简历初筛评估
+已完成简历初筛评估
+全链路动态留痕（6）
+展开 ▾
+置顶约束
+下一轮交接
+约面 / 改期换人
+跨岗调剂
+推进阶段 / 跳轮
+标记未出席
+发邮件
+初筛结论
+正式决策

@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "pid": 20796,
+  "profile": "ra-fresh-issue91ui",
+  "port": 49354,
+  "bin": "D:\\12412\\recruitment-runtime\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js",
+  "stdout_log": "D:\\12412\\DshWorktrees\\recruitment-agent\\e2e-91\\evidence\\issue91-20261124\\auth\\logs\\host-49354-20261124-013737.out.raw.log",
+  "stderr_log": "D:\\12412\\DshWorktrees\\recruitment-agent\\e2e-91\\evidence\\issue91-20261124\\auth\\logs\\host-49354-20261124-013737.err.raw.log",
+  "cwd": "D:\\12412\\DshWorktrees\\recruitment-agent\\e2e-91",
+  "launched_at": "2026-11-23T17:37:37.288Z"
+}

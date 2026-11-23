@@ -1,0 +1,23 @@
+{
+  "lane": "owner-product-review",
+  "profile": "ra-fresh-issue91ui",
+  "port": 49354,
+  "pid": 25004,
+  "started_at": "2026-11-24T01:41:28.2418874+08:00",
+  "ready": true,
+  "url_masked": "http://127.0.0.1:49354/?token=<redacted>",
+  "token_file": "D:\\12412\\AppData\\Temp\\ra-pr-host-49354.token",
+  "token_sha256": "FB62A38E697C6CF56876D48DBF33FBDB63F82993EF6D6F43B8D44DF4BC4AEF07",
+  "stdout_log": "D:\\12412\\DshWorktrees\\recruitment-agent\\e2e-91\\evidence\\issue91-20261124\\auth\\logs\\host-49354-20261124-014127.out.raw.log",
+  "stderr_log": "D:\\12412\\DshWorktrees\\recruitment-agent\\e2e-91\\evidence\\issue91-20261124\\auth\\logs\\host-49354-20261124-014127.err.raw.log",
+  "stdout_token_sanitized": true,
+  "db": "see profile patch",
+  "workspace_root": "D:\\12412\\DshWorktrees\\recruitment-agent\\e2e-91\\work\\d5\\fullpage\\.fresh-home-issue91ui\\workspaces",
+  "synthetic_root": "D:\\12412\\dsh工作区\\orchestration\\d5-synthetic",
+  "credentials_loaded": [
+    "DEEPSEEK_API_KEY",
+    "COMMANDCODE_API_KEY",
+    "OPENCODE_GO_API_KEY",
+    "OPENCODE_GO_API_KEY_2"
+  ]
+}

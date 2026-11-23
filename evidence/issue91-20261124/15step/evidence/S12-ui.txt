@@ -1,0 +1,101 @@
+STEP S12 — HR 终审决策（通过/拒绝）带确认原话，刷新后仍在
+captured_at: 2026-11-23T17:33:39.843Z
+url: http://127.0.0.1:49354/?token=<redacted>
+viewport: 1440x900 (headless Chrome, CDP 9233)
+verdict: PASS
+reason: 方案 A 隔离数据集：真点提交 A(R1)/B(R2) 两轮面评（scorecard=2）；真 HTTP GET decision-facts probe=READY、evaluation_summary_state=COMPUTED（available=true, coverage submitted=2/missing=0）；真点 canvas-action-decision → 终审决策 → 通过(发 Offer) → 填理由 → 提交 → 界面「已记录终审正式决策并同步落库」；psql 读回 decision(scope=FINAL) current=1；刷新后决策仍在。
+key_visible_text: 已记录终审正式决策并同步落库。 | 候选人 S12-决策隔离 | 后端工程师（演示）（DEMO-BE-001）· 档案号 dbdf278b · 标准 V2 | S12 隔离候选人：终审前须确认两轮必填面评齐备（合成材料）。 | ☆ | 三面终审 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 等待流程推进：本阶段事实已记录，等待流程或人工推进到下一阶段 | 岗位标准对照 · V2（点击联动原文） | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重 25% | 待核实 | 逐轮面试进展（不求平均分） | 1 | 第 1 轮面试 | 待收面评 | 2 | 第 2 轮面试 | 待收面评 | 第 1 轮面试11-22 01:31 | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 1/1
+extra: {"entered_detail":true,"s12":{"dataset":{"candidate_id":"11111111-1111-4111-8111-000000000798","candidate_name":"候选人 S12-决策隔离","application_id":"dbdf278b-f990-41e4-8f4c-a10eb32fc190","job_id":"11111111-1111-4111-8111-000000000401","rubric_version_id":"c4c7f316-a2a7-4f19-bc12-49cea30fe3fa","rubric_version_no":2,"rubric_payload_hash":"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f","interview_round1":{"id":"c4bdbce1-1a25-4d24-8e55-5e17280dc0ad","interviewer_actor_id":"11111111-1111-4111-8111-000000000104","label":"Interviewer A"},"interview_round2":{"id":"642cbb8d-152d-4ccf-8d6c-39f695064cc8","interviewer_actor_id":"11111111-1111-4111-8111-000000000105","label":"Interviewer B"},"constraint_text":"S12 隔离候选人：终审前须确认两轮必填面评齐备（合成材料）。"},"scorecardA":{"interview_id":"c4bdbce1-1a25-4d24-8e55-5e17280dc0ad","round":"第 1 轮","alias":"interviewer_a","identity_bound":true,"row_opened":{"ok":true},"openAttempts":[{"attempt":0,"clicked":{"clicked":true,"tag":"button","text":"提交我的独立面评"},"visible":true}],"formBodyExcerpt":"我的独立面评 | 面试安排 | 2026-11-22 01:31 – 2026-11-23 02:31 | 时区：Asia/Shanghai · 面试状态：POST_INTERVIEW · slot：S12_R1 | 会议绑定：未绑定 | 转写状态：还没收到 | 面试 id：c4bdbce1-1a25-4d24-8e55-5e17280dc0ad | provenance：FIXTURE | trigger：MANUAL | connection：CONNECTED | 服务端评估时间（as_of）：2026-11-23T17:33:05.008Z | 信息可见范围 | 可查看分配给你的面试、本轮 Rubric、授权材料；","form_visible":true,"filled":{"ok":true,"dimensions":3,"scores":3,"notes":3,"overall":"ADVANCE"},"submitButton":{"ok":true,"disabled":false},"dbChanged":true},"scorecardB":{"interview_id":"642cbb8d-152d-4ccf-8d6c-39f695064cc8","round":"第 2 轮","alias":"interviewer_b","identity_bound":true,"row_opened":{"ok":true},"openAttempts":[{"attempt":0,"clicked":{"clicked":true,"tag":"button","text":"提交我的独立面评"},"visible":true}],"formBodyExcerpt":"我的独立面评 | 面试安排 | 2026-11-23 01:31 – 2026-11-24 00:31 | 时区：Asia/Shanghai · 面试状态：POST_INTERVIEW · slot：S12_R2 | 会议绑定：未绑定 | 转写状态：还没收到 | 面试 id：642cbb8d-152d-4ccf-8d6c-39f695064cc8 | provenance：FIXTURE | trigger：MANUAL | connection：CONNECTED | 服务端评估时间（as_of）：2026-11-23T17:33:13.956Z | 信息可见范围 | 可查看分配给你的面试、本轮 Rubric、授权材料；","form_visible":true,"filled":{"ok":true,"dimensions":3,"scores":3,"notes":3,"overall":"ADVANCE"},"submitButton":{"ok":true,"disabled":false},"dbChanged":true},"decisionFactsBefore":{"status":200,"probe":"READY","parsed":{"contract_version":"decision-facts 1.0.0","evaluation_summary_state":"COMPUTED","evaluation_summary":{"available":true,"as_of":"2026-11-23T17:33:24.523Z","summary_digest":"d2f330ca868c2c1f7d17099655314687ef91b2e4dfdf72ce0bcb7c1a2043a310","ready_for_decision":true,"coverage":{"required_total":2,"submitted":2,"waived":0,"missing":0,"unusable":0,"not_required":0,"overdue":0},"blockers":["NO_REJECTING_SCORECARD"]},"missing":[]},"raw":"{\"contract_version\":\"decision-facts 1.0.0\",\"application_id\":\"dbdf278b-f990-41e4-8f4c-a10eb32fc190\",\"stage_code\":\"S10\",\"lifecycle_status\":\"ACTIVE\",\"job\":{\"job_id\":\"11111111-1111-4111-8111-000000000401\",\"job_code\":\"DEMO-BE-001\",\"job_title\":\"后端工程师（演示）\",\"job_status\":\"OPEN\",\"job_version_id\":\"11111111-1111-4111-8111-000000000402\",\"job_payload_hash\":\"360fec618ed3df6517a4a81ae21bde008dc73ff3f0214f6710ba44bf372fe691\",\"current_job_version_id\":\"11111111-1111-4111-8111-000000000402\",\"current_rubric_version_id\":\"c4c7f316-a2a7-4f19-bc12-49cea30fe3fa\"},\"rubric\":{\"rubric_version_id\":\"c4c7f316-a2a7-4f19-bc12-49cea30fe3fa\",\"version_no\":2,\"payload_hash\":\"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f\",\"dimensions\":[{\"key\":\"work_exists\",\"label\":\"简历中存在可分割的工作经历条目\",\"weight\":0.5,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"edu_exists\",\"label\":\"简历中存在可分割的教育经历条目\",\"weight\":0.25,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"team_lead\",\"label\":\"有带团队经验\",\"weight\":0.25,\"required\":false,\"kind\":\"NICE_TO_HAVE\"}],\"approved\":true},\"authority\":{\"actor_id\":\"11111111-1111-4111-8111-000000000103\",\"alias\":\"recruiter\",\"display_name\":\"演示-HR 专员\",\"roles\":[\"HR_SPECIALIST\"],\"is_hiring_manager\":false},\"screening_evaluation\":{\"evaluation_id\":\"0abfef79-614e-5791-bfca-86f37306bbe7\",\"evaluation_id_kind\":\"DERIVED_FROM_EVALUATION_DIGEST\",\"evaluation_digest\":\"9fece58345bf86fbe4ad1e72bfd51ddba6840f023cb2f15138fec2054622e5cb\",\"verdict\":\"NEEDS_REVIEW\",\"rubric_version_id\":\"c4c7f316-a2a7-4f19-bc12-49cea30fe3fa\",\"rubric_payload_hash\":\"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f\",\"resume_version_id\":\"b87293f4-01fe-4a14-90d9-aab43ca1238d\",\"resume_content_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"as_of\":\"2026-11-23T17:33:24.523Z\",\"criteria_evaluated\":[{\"source\":\"REASON\",\"criterion_key\":\"work_exists\",\"kind\":\"MUST_HAVE\",\"outcome\":\"UNREADABLE\",\"failure_class\":\"UNREADABLE\",\"code\":\"MUST_HAVE_UNREADABLE\"},{\"source\":\"REASON\",\"criterion_key\":\"edu_exists\",\"kind\":\"MUST_HA"},"open":{"ok":true,"testid":"canvas-action-decision","tag":"BUTTON"},"missingBanner":false,"factsBlocked":false,"submitDisabledBefore":false,"pickScope":{"clicked":true,"tag":"button","text":"终审决策"},"pickResult":{"clicked":true,"tag":"button","text":"通过（推进 / 发 Offer）"},"reason":{"ok":true,"label":"正式决策理由"},"confirmTextSource":"服务端 IN_APP_CONFIRM（真点提交即人的确认，不手造 hash）","submit":{"ok":true,"testid":"canvas-modal-submit","tag":"BUTTON"},"decisionFetchLog":[{"method":"POST","path":"/recruitment/api/decision/record","status":200,"body":"{\"contract_version\":\"decision-record 1.0.0\",\"action\":\"decision/record\",\"tool\":\"recruitment_decision_record\",\"actor\":{\"session_id\":\"session-e07ee427-1d2a-4437-956a-344af50f4c20\",\"alias\":\"recruiter\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\"},\"approval\":{\"requested\":1,\"result\":\"allowed-once\",\"tool_names\":[\"recruitment_decision_record\"]},\"decision\":{\"decision_id\":\"7fd4a088-14c1-4afc-a31b-2f143fd4bb3d\",\"decision_scope\":\"FINAL\",\"result\":\"ADVANCE\",\"decided_at\":\"2026-11-23T17:33:31.286Z\",\"record_version\":1,\"stage_code\":\"S10\",\"decided_by_actor_id\":\"11111111-1111-4111-8111-000000000103\",\"is_current\":true},\"basis_refs\":[{\"kind\":\"SUMMARY\",\"summary_digest\":\"7ed71107c5a88924b3026667845d48429a75d1286b966f44dd5a1c6249398cb2\"},{\"kind\":\"RUBRIC_VERSION\",\"id\":\"c4c7f316-a2a7-4f19-bc12-49cea30fe3fa\",\"payload_hash\":\"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f\"},{\"kind\":\"AUTHORITY\",\"actor_id\":\"11111111-1111-4111-8111-000000000103\",\"is_hiring_manager\":false},{\"kind\":\"SCORECARD\",\"id\":\"b31f93f7-6891-41b8-9513-79e5e9dced1f\",\"overall\":\"ADVANCE\",\"transcript_basis\":\"NO_TRANSCRIPT\",\"transcript_state\":\"MISSING\",\"revision_no\":1,\"interviewer_id\":\"0112a178-24a6-499b-8693-fa965ed107bb\",\"pa"}],"uiAfterSubmit":"已记录终审正式决策并同步落库。 | 候选人 S12-决策隔离 | 后端工程师（演示）（DEMO-BE-001）· 档案号 dbdf278b · 标准 V2 | S12 隔离候选人：终审前须确认两轮必填面评齐备（合成材料）。 | ☆ | 三面终审 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 等待流程推进：本阶段事实已记录，等待流程或人工推进到下一阶段 | 岗位标准对照 · V2（点击联动原文） | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重 25% | 待核实 | 逐轮面试进展（不求平均分） | 1 | 第 1 轮面试 | 待收面评 | 2 | 第 2 轮面试 | 待收面评 | 第 1 轮面试11-22 01:31 | 本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 1/1","uiSuccess":true,"afterRefresh":true,"afterRefreshText":"决策画布，或直接告诉我你想处理哪位候选人。 | 提炼这位候选人的核心风险点 | 帮我查下一轮可约时段 | 对比岗位评分标准 | 招聘负责人 | HR | ← 返回 | / | 后端工程师（演示） | / | 三面终审 | / | 候选人 S12-决策隔离 | ‹ | 2 / 4 | › | 来源 | LIVE | 触发 | MANUAL | 连接 | CONNECTED | 候选人 S12-决策隔离 | 后端工程师（演示）（DEMO-BE-001）· 档案号 dbdf278b · 标准 V2 | S12 隔离候选人：终审前须确认两轮必填面评齐备（合成材料）。 | ☆ | 三面终审 | 推进中 | · | 复制决策纪要 | 当前状态与提炼 | 等待流程推进：本阶段事实已记录，等待流程或人工推进到下一阶段 | 岗位标准对照 · V2（点击联动原文） | 01简历中存在可分割的工作经历条目硬性 · 权重 50% | 已匹配 | 02简历中存在可分割的教育经历条目硬性 · 权重 25% | 已匹配 | 03有带团队经验加分 · 权重 25% | ","decisionFactsAfter":{"status":200,"probe":"READY","parsed":{"contract_version":"decision-facts 1.0.0","evaluation_summary_state":"COMPUTED","evaluation_summary":{"available":true,"as_of":"2026-11-23T17:33:38.702Z","summary_digest":"74f14c0c87ba6dee1dc01467811e8ac0d4eeece8aadea0e6898b3c7e8a982b90","ready_for_decision":false,"coverage":{"required_total":2,"submitted":2,"waived":0,"missing":0,"unusable":0,"not_required":0,"overdue":0},"blockers":["ALREADY_DECIDED","NO_REJECTING_SCORECARD"]},"missing":[]},"raw":"{\"contract_version\":\"decision-facts 1.0.0\",\"application_id\":\"dbdf278b-f990-41e4-8f4c-a10eb32fc190\",\"stage_code\":\"S10\",\"lifecycle_status\":\"ACTIVE\",\"job\":{\"job_id\":\"11111111-1111-4111-8111-000000000401\",\"job_code\":\"DEMO-BE-001\",\"job_title\":\"后端工程师（演示）\",\"job_status\":\"OPEN\",\"job_version_id\":\"11111111-1111-4111-8111-000000000402\",\"job_payload_hash\":\"360fec618ed3df6517a4a81ae21bde008dc73ff3f0214f6710ba44bf372fe691\",\"current_job_version_id\":\"11111111-1111-4111-8111-000000000402\",\"current_rubric_version_id\":\"c4c7f316-a2a7-4f19-bc12-49cea30fe3fa\"},\"rubric\":{\"rubric_version_id\":\"c4c7f316-a2a7-4f19-bc12-49cea30fe3fa\",\"version_no\":2,\"payload_hash\":\"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f\",\"dimensions\":[{\"key\":\"work_exists\",\"label\":\"简历中存在可分割的工作经历条目\",\"weight\":0.5,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"edu_exists\",\"label\":\"简历中存在可分割的教育经历条目\",\"weight\":0.25,\"required\":true,\"kind\":\"MUST_HAVE\"},{\"key\":\"team_lead\",\"label\":\"有带团队经验\",\"weight\":0.25,\"required\":false,\"kind\":\"NICE_TO_HAVE\"}],\"approved\":true},\"authority\":{\"actor_id\":\"11111111-1111-4111-8111-000000000103\",\"alias\":\"recruiter\",\"display_name\":\"演示-HR 专员\",\"roles\":[\"HR_SPECIALIST\"],\"is_hiring_manager\":false},\"screening_evaluation\":{\"evaluation_id\":\"78811b36-ca7f-5e04-9276-ff3611be6b44\",\"evaluation_id_kind\":\"DERIVED_FROM_EVALUATION_DIGEST\",\"evaluation_digest\":\"1a9681d666adcf1b4a95e3cf8e5e17e75707f8385aefcb0e3523758b3429be35\",\"verdict\":\"NEEDS_REVIEW\",\"rubric_version_id\":\"c4c7f316-a2a7-4f19-bc12-49cea30fe3fa\",\"rubric_payload_hash\":\"0c95d70de3f24d669e40ea1115fe5bb8c9deee17d1cd835cd47883312249854f\",\"resume_version_id\":\"b87293f4-01fe-4a14-90d9-aab43ca1238d\",\"resume_content_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"as_of\":\"2026-11-23T17:33:38.702Z\",\"criteria_evaluated\":[{\"source\":\"REASON\",\"criterion_key\":\"work_exists\",\"kind\":\"MUST_HAVE\",\"outcome\":\"UNREADABLE\",\"failure_class\":\"UNREADABLE\",\"code\":\"MUST_HAVE_UNREADABLE\"},{\"source\":\"REASON\",\"criterion_key\":\"edu_exists\",\"kind\":\"MUST_HA"},"finalCurrentAfter":"1","scorecardCountAfter":"2"}}
+----- PAGE innerText -----
+Recruitment OS
+今日待办
+4
+在招岗位
+1
+后端工程师（演示）
+4
+＋ 新建岗位
+人才库
+4
+Agent
+早上好。当前有 4 位在办候选人（待初筛 3 人、面试中 3 人）。当前首位待推进：林承宇（后端工程师（演示））。点击右侧列表进入决策画布，或直接告诉我你想处理哪位候选人。
+提炼这位候选人的核心风险点
+帮我查下一轮可约时段
+对比岗位评分标准
+招聘负责人
+HR
+← 返回
+/
+后端工程师（演示）
+/
+三面终审
+/
+候选人 S12-决策隔离
+‹
+2 / 4
+›
+来源
+LIVE
+触发
+MANUAL
+连接
+CONNECTED
+候选人 S12-决策隔离
+后端工程师（演示）（DEMO-BE-001）· 档案号 dbdf278b · 标准 V2
+S12 隔离候选人：终审前须确认两轮必填面评齐备（合成材料）。
+☆
+三面终审
+推进中
+·
+复制决策纪要
+当前状态与提炼
+等待流程推进：本阶段事实已记录，等待流程或人工推进到下一阶段
+岗位标准对照 · V2（点击联动原文）
+01简历中存在可分割的工作经历条目硬性 · 权重 50%
+已匹配
+02简历中存在可分割的教育经历条目硬性 · 权重 25%
+已匹配
+03有带团队经验加分 · 权重 25%
+待核实
+逐轮面试进展（不求平均分）
+1
+第 1 轮面试
+待收面评
+2
+第 2 轮面试
+待收面评
+第 1 轮面试11-22 01:31
+本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 1/1 · 还没有转录
+待收面评
+第 2 轮面试11-23 01:31
+本场面试没有绑定可用的轮次模板，无法声称本轮重点；已如实降级到岗位 Rubric 底座（JOB_BASE） · 面评 1/1 · 还没有转录
+待收面评
+简历原文
+飞书妙记
+原件预览
+上传简历
+导入转写
+简历原文摘录（可点击标准联动定位）
+01
+工作经历
+第 1 页
+2021-2024 后端工程师（合成材料，S12 隔离）：支付回调幂等与对账。
+02
+教育背景
+第 1 页
+本科 · 计算机科学（合成材料，S12 隔离）
+03
+原文片段
+第 1 页
+曾带领 3 人小组完成交付（待面试核实，S12 隔离）
+全链路动态留痕（7）
+展开 ▾
+置顶约束
+下一轮交接
+约面 / 改期换人
+跨岗调剂
+推进阶段 / 跳轮
+标记未出席
+发邮件
+初筛结论
+正式决策

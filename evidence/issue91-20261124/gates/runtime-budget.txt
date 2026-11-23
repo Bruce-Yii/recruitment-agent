@@ -1,0 +1,36 @@
+D-109 §3 调度预算（代码行：非注释、非 import/export-from；口径见本文件头部）
+
+计入：
+     144  src/runtime/config.ts
+     291  src/runtime/cutover.ts
+     421  src/runtime/email-pump.ts
+      37  src/runtime/errors.ts
+     406  src/runtime/event-runtime.ts
+     361  src/runtime/event-types.ts
+     197  src/runtime/http.ts
+      86  src/runtime/router.ts
+     151  src/runtime/routing.ts
+       0  src/runtime/store.ts
+     159  src/runtime/store\claim.ts
+      46  src/runtime/store\counts.ts
+     248  src/runtime/store\events.ts
+     145  src/runtime/store\index.ts
+     280  src/runtime/store\lease.ts
+     436  src/runtime/store\readback.ts
+      66  src/runtime/store\recovery.ts
+     902  src/runtime/task-context.ts
+     152  src/runtime/task-runtime.ts
+      99  src/runtime/tick-loop.ts
+     424  src/runtime/worker.ts
+    5051  = 合计（上限 5051，余量 0）
+
+不计入（理由必须是"没有运行时行为"，不是"不属于调度"）：
+  evidence/**    只读证据脚本（dry-run / 路由复现），不参与产品运行路径
+                 命中 4 个文件：evidence\dsh-worker.evidence.ts, evidence\intake-event-routing.evidence.ts, evidence\runtime-cutover.evidence.ts, evidence\task-lifecycle.evidence.ts
+  types.ts       纯类型声明（interface / type / 常量联合），零运行时行为
+                 命中 1 个文件：types.ts
+  index.ts       纯 re-export barrel，零运行时行为
+                 命中 1 个文件：index.ts
+  （不计入部分实测合计 1328 行，仅供对账；它们不进预算，但也不许拿它们当理由说"运行时很小"）
+
+runtime-budget: PASS（5051 / 5051）

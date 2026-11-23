@@ -1,0 +1,51 @@
+=== DB READBACK S12 ===
+at: 2026-11-23T17:33:38.920Z
+db: ra_fresh_e2e_m8k_5o0y62 (SELECT-only; no product code imported)
+
+SQL: -- baseline head counts
+
+
+SQL: select 'intake_asset',count(*) from recruitment.intake_asset union all select 'business_task',count(*) from recruitment.business_task union all select 'candidate_constraint',count(*) from recruitment.candidate_constraint union all select 'criterion_override',count(*) from recruitment.criterion_override union all select 'decision',count(*) from recruitment.decision union all select 'interview',count(*) from recruitment.interview union all select 'interviewer',count(*) from recruitment.interviewer union all select 'scorecard_draft',count(*) from recruitment.scorecard_draft union all select 'scorecard',count(*) from recruitment.scorecard union all select 'resume_version',count(*) from recruitment.resume_version union all select 'event_inbox',count(*) from recruitment.event_inbox union all select 'application',count(*) from recruitment.application
+intake_asset|4
+business_task|10
+candidate_constraint|2
+criterion_override|0
+decision|2
+interview|7
+interviewer|8
+scorecard_draft|2
+scorecard|4
+resume_version|4
+event_inbox|76
+application|4
+
+
+SQL: -- step SQL
+
+
+SQL: select id, application_id, coalesce(interview_id::text,'-'), decision_scope, result, superseded_by_decision_id, record_version, created_at from recruitment.decision where application_id='dbdf278b-f990-41e4-8f4c-a10eb32fc190' order by created_at
+7fd4a088-14c1-4afc-a31b-2f143fd4bb3d|dbdf278b-f990-41e4-8f4c-a10eb32fc190|-|FINAL|ADVANCE||1|2026-11-24 01:33:31.28656+08
+
+
+SQL: -- step SQL
+
+
+SQL: select count(*) as total, count(*) filter (where superseded_by_decision_id is null) as current from recruitment.decision where application_id='dbdf278b-f990-41e4-8f4c-a10eb32fc190'
+1|1
+
+
+SQL: -- step SQL
+
+
+SQL: select id, interview_id, rubric_version_id, status, overall, revision_no, created_at from recruitment.scorecard where interview_id in (select id from recruitment.interview where application_id='dbdf278b-f990-41e4-8f4c-a10eb32fc190') order by created_at
+b20fb833-2ad7-4579-b4ae-ea030c7ded29|c4bdbce1-1a25-4d24-8e55-5e17280dc0ad|c4c7f316-a2a7-4f19-bc12-49cea30fe3fa|SUBMITTED|ADVANCE|1|2026-11-24 01:33:09.933677+08
+b31f93f7-6891-41b8-9513-79e5e9dced1f|642cbb8d-152d-4ccf-8d6c-39f695064cc8|c4c7f316-a2a7-4f19-bc12-49cea30fe3fa|SUBMITTED|ADVANCE|1|2026-11-24 01:33:18.979658+08
+
+
+SQL: -- step SQL
+
+
+SQL: select event_id, event_type, recorded_at, left(payload::text,300) from recruitment.event_inbox where payload::text ilike '%dbdf278b-f990-41e4-8f4c-a10eb32fc190%' and event_type ilike '%decision%' order by recorded_at
+bfb1d0eb-2630-4ff9-a154-992d723f82f3|decision.record|2026-11-24 01:33:31.28656+08|{"result": "ADVANCE", "actor_id": "11111111-1111-4111-8111-000000000103", "to_result": "ADVANCE", "stage_code": "S10", "approval_id": null, "decision_id": "7fd4a088-14c1-4afc-a31b-2f143fd4bb3d", "from_result": null, "confirmed_at": "2026-11-23T17:33:31.163Z", "interview_id": null, "application_id":
+
+

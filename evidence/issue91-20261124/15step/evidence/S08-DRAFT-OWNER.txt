@@ -1,0 +1,8 @@
+=== S8 INDEPENDENT DRAFT OWNER (psql SELECT-only, no product code) ===
+at: 2026-11-23T17:32:43.249Z
+db: ra_fresh_e2e_m8k_5o0y62
+SQL: select d.id, d.interviewer_id, d.interviewer_actor_id, a.display_name, left(d.payload::text,160) as note, d.created_at
+    from recruitment.scorecard_draft d left join recruitment.actor a on a.id=d.interviewer_actor_id and a.tenant_id=d.tenant_id
+    order by d.created_at
+21b33224-42e2-4be9-a8d3-b2d84d1121a1|49bbde3e-dbb1-45c6-82b3-6f9fafa3988f|11111111-1111-4111-8111-000000000104|演示-面试官|{"note": "[RUNBOOK-S8] 2026-11-23T17:32:37.367Z 面后速记：支付回调幂等与对账回答清楚；带团队经历未展开，留待追问。", "assessments": {}}|2026-11-24 01:32:39.444858+08
+

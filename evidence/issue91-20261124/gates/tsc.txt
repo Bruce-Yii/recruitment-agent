@@ -1,0 +1,2 @@
+src/app/SettingsView.tsx(89,14): error TS2300: Duplicate identifier 'record_version'.
+src/app/SettingsView.tsx(91,14): error TS2300: Duplicate identifier 'record_version'.

@@ -1,0 +1,12 @@
+[issue91-ui] fresh DB: ra_fresh_e2e_bp4_7067gp
+[issue91-ui] auth row: hr_admin_e2e91|recruiter|scrypt$16384$8$1$7e4130a5f9fe18ccc8183178de0ef5f4$b05b1e2b56f04374d82894075b6efaa2789d22ad85cb26402e4b74b106e4c879524c241851e03bedb0b6fe80f8a9b2058a9da779039c364bdcc1ebe60a62f5e6|t
+[issue91-ui] host+chrome ready
+[issue91-ui] login click: {"clicked":true,"tag":"button","text":"登录"}
+[issue91-ui] login url: http://127.0.0.1:49354/recruitment/app
+[issue91-ui] settings nav clicked: true
+[issue91-ui] G3 cards: 4 NaN false UUID false banned false
+[issue91-ui] role: E2E_ROLE_91|E2E 验收角色|t|1
+[issue91-ui] team: E2E_TEAM_91|E2E 验收招聘组|11111111-1111-4111-8111-000000000010|研发部（演示）|t|1
+[issue91-ui] stop host: stopped pid=25004 port=49354
+removed token file: D:\12412\AppData\Temp\ra-pr-host-49354.token
+[issue91-ui] done, verdict= COMPLETED
