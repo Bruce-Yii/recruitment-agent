@@ -2117,3 +2117,9 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ⑤ 截图/psql/门禁证据留档并回帖 Issue #91。
   **边界**：两条 lane 均禁止改产品代码/测试/文档、禁止 git 写；旧的 #91 evidence 只作修复前对照；完成前 #92 保持 REJECT/OPEN，#91 保持未 PASS/OPEN。
   **状态**：已派发（2026-11-24 02:41 后），等待两条复验回报；结论回抄本台账并更新 `docs/44`。
+
+- **D-194（2026-11-24，总控；Issue #92/#91 修复后独立复验结果）**
+  **基线**：代码基线 `main@54b83ad`（docs 提交 `0a92ff9` 之上无产品改动）；两条 lane 使用隔离库/端口，未改 main、未合并、未 commit/push。
+  **Lane A（Issue #92，CONDITIONAL_PASS）**：独立审计在隔离 PG17（端口 49353，`ra_recheck92`，25 迁移/78 表）复跑；`test/eval/*.test.ts` 38/38 pass；全量 `run-all` 3097 tests / 3095 pass / 0 fail / 2 skipped（首轮 5 个测试基础设施失败消失）。66 ID manifest 66/66 注册；`{payload:{}}` 0/66 pass；7 个 L3 未校准/缺裁判/位置互换/缺版本 fail-closed；G3 注入 SQL 42703/42P01/非法 UUID(22P02) 返回 `degraded:true` + 4/4 `status:'ERROR'`，前端“遥测暂不可用”，真库 CANCELLED+RESCHEDULED 8/8 计数一致；F5 非标 PDF 6/6 分类正确，F6 L3 校准 9/9；evaluation-card 零样本 `passRate:null`；minute-rebind 已读隔离端口。**保留 3 个 P1**：① 新红队 14 个变体穿透单判分器（词表覆盖）；② `v2-real-adapters.ts` 仅单测导入，未接入 `run-eval.mjs`/43 例 CLI runner（card 已诚实标 `executionMode`）；③ G3 盲审/忠实度两条护栏仍恒 `null`（note 已诚实标空源）。无 P0。报告：https://github.com/Bruce-Yii/recruitment-agent/issues/92#issuecomment-7110894849
+  **Lane B（Issue #91，PASS）**：干净 DB（`ra_issue91_recheck_20261124`，25 迁移）全量 3097 tests / 3095 pass / 0 fail / 2 skipped；`tsc --noEmit` 0；tsdown 双入口；server-typecheck/runtime-budget/client-contract/term-lint/entry-reachability 全 PASS；preview 15 步 15/15、audit hard 0；1440 角色创建 v1 → 软停用 `is_active=false` + `record_version=2`（恰好 +1，无 400）；G3 4 对护栏无 NaN/UUID/「证据」；`auth-admin` 建号无明文、production 登录/会话持久通过。无阻断项。报告：https://github.com/Bruce-Yii/recruitment-agent/issues/91#issuecomment-7111092251
+  **裁决/状态**：#91 复验 PASS、#92 复验 CONDITIONAL_PASS；两者 Issue **仍保持 OPEN**，不自行关闭/合并；下一步先修 #92 三个 P1，再由未参与实现者做最终复核；`docs/44`/`docs/25`/`docs/40`/`docs/41`/`docs/42` 与 `AGENTS.md`/`project.json` 回抄本结果。

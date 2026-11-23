@@ -1,7 +1,7 @@
 # 42. 产品级全链路评测体系总纲 V2（唯一权威源）
 
 > **状态**：V2 终稿（2026-11-22，经产品核心 × 产品链路 × 真实架构 × 红队反噬 × 2026 权威标准三轮串行深审重整定稿）
-> **2026-11-24 实现状态**：本文是**规格**，不是实现验收。独立审计 Issue #92 裁决 **REJECT**：59 个 L1/L2 判分器中 57/59 空 payload 直接 PASS、端到端真实生产接线 0/59、7 个 L3 无实现、G0 仅 11/43 例有 runner。PR #93 修 G3 吞错/重约计数；PR #95 补 3 个真实生产适配器；PR #94 合入判分器/L3/runner 根修候选；但尚未在 #94 后由未参与实现的独立审计复验，当前不得宣称评测体系通过。当前事实快照见 [`docs/44-current-state-and-handoff.md`](44-current-state-and-handoff.md)。
+> **2026-11-24 实现状态**：本文是**规格**，不是实现验收。首轮 Issue #92 独立审计为 **REJECT**；修复后在 `54b83ad` 的独立复验为 **CONDITIONAL_PASS**：66/66 manifest、空 payload 0/66 pass、L3 fail-closed、G3 `degraded/ERROR`、F5/F6 通过、零样本 `passRate:null`；保留 3 个 P1（红队新变体、`v2-real-adapters` 未接 CLI runner、G3 盲审/忠实度恒 null）。Issue #92 仍 OPEN，不能宣称完全通过。当前事实快照见 [`docs/44-current-state-and-handoff.md`](44-current-state-and-handoff.md)。
 > **上位产品权威**：[`docs/24-product-framework-v2.md`](./24-product-framework-v2.md)（一切评测对象与边界以 `docs/24` 为准，冲突时以 `docs/24` 裁决）
 > **唯一更新规则**：后续所有评测体系演进、指标调整与数据源增补**只更新本文档**，不再分散另起文档。
 

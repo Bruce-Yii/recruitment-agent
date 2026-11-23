@@ -1,7 +1,7 @@
 # Recruitment OS · 本地交接文档集
 
 **更新时间**：2026-11-12（2026-11-16 补 v1.0 验收基准唯一指针 D-122）
-**最近状态刷新**：**2026-11-24**（代码基线 `main@54b83ad`，含 #93/#94/#95；Issue #91/#92 仍 OPEN；见 `docs/17` D-192/D-193）
+**最近状态刷新**：**2026-11-24**（代码基线 `main@54b83ad`，含 #93/#94/#95；#91 复验 PASS、#92 复验 CONDITIONAL_PASS；两个 Issue 仍 OPEN；见 `docs/17` D-194）
 **依据**：Notion 主档 + 01–12 + PRD（全部逐字读过）、GitHub `docs/00`–`docs/15`、ADR-0001…0006、Issue #112、W3 独立审计。
 **原则**：不压缩、不含糊、不编造。每条实质结论标来源；文档之间冲突时显式指出，不抹平。
 
@@ -88,7 +88,7 @@
 - DSH_HOME：`D:\12412\dsh-home-recruitment`；产品 profile = `profiles/recruitment`（DSH Web）
 - 过程产物：仓库内 `work/`（已 gitignore，不入库）
 - 总控行为约束：本仓库根 `AGENTS.md`（2026-11-24 状态校准）；旧仓根 `AGENTS.md` 仅历史
-- 决策台账：**`docs/17-decision-ledger.md`**（入库，唯一权威源，最新 D-192/D-193）；旧仓 `work/control/` 仅作历史
+- 决策台账：**`docs/17-decision-ledger.md`**（入库，唯一权威源，最新 D-194）；旧仓 `work/control/` 仅作历史
 - 产品评测体系总纲：**`docs/42-product-funnel-eval-system.md`**（入库，唯一权威规格；**规格≠实现验收**，Issue #92 审计为 REJECT）；当前实现快照 `docs/44`
 
 ---

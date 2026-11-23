@@ -9,9 +9,9 @@
 ## 1. 一句话现状
 
 - 产品主链、Wave 3/5 能力、G-18 配置、生产登录、CSV/Webhook、部署 kit 已合入 main。
-- **Issue #91 的两条 P1**（SettingsView TS2300、角色软停用 400）已由 PR #93 修复并合入；**但 Issue #91 尚未重新验收/关闭**。
-- **Issue #92 的 Eval V2 审计裁决为 REJECT**：真实接线度、空 payload 判分器、L3 缺失、G3 吞错是核心问题。PR #93 修了 G3 吞错与 RESCHEDULED 漏计；PR #95 补了 3 个真实生产适配器（converter `DocumentContent`、agent-turn SSE、PG 行数影子）；PR #94 已合入判分器/L3/runner 根修。**但尚未在 #94 后的 main 上由未参与实现的独立审计复验**，因此 #92 仍为 REJECT，不能把“已合入”当“已通过”。
-- 因此当前不能宣称“Eval V2 已验收”，也不能把 #91 的旧截图当作通过证据。
+- **Issue #91 复验 PASS**：PR #93 修复项已在 `54b83ad` 上独立重跑；`tsc=0`、全量 3097/3095/0/2、15 步 15/15 hard 0、角色软停用 `is_active=false` + version+1、G3/auth CLI 均通过。Issue 仍 OPEN，等待总控关闭。
+- **Issue #92 复验 CONDITIONAL_PASS**：首轮 P0 已修复并独立复核；保留 3 个 P1（红队新变体、适配器未接 CLI runner、G3 两条护栏恒 null）。Issue 仍 OPEN，不能宣称 PASS/关闭。
+- 当前可声称：修复候选已通过独立复验（#91 PASS、#92 CONDITIONAL_PASS）；不可声称：Eval V2 完全通过、适配器已全量接线、G3 盲审/忠实度已真实接入。
 
 ---
 
@@ -21,7 +21,7 @@
 |---|---|---|
 | 1 | `AGENTS.md` | 总控职责、九条铁律、派发/验收/端口/密钥纪律 |
 | 2 | `docs/24-product-framework-v2.md` | 产品认知、六条门 V1–V6；**第一权威** |
-| 3 | `docs/17-decision-ledger.md` | 裁决；最新 D-193（复验任务书）、D-192（PR #94 后状态校准） |
+| 3 | `docs/17-decision-ledger.md` | 裁决；最新 D-194（复验结果）、D-193（任务书）、D-192（PR #94 后状态） |
 | 4 | 本文件 `docs/44` | 当前基线、架构、仓库、未决缺陷 |
 | 5 | `docs/25-lead-handoff.md` | 七步场景、判断框架、历史踩坑；其“当前状态”段已过期 |
 | 6 | `docs/40-lifecycle-gap-roadmap.md` | Wave 3/4/5 路线与缺口 |
@@ -124,19 +124,22 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 
 ## 5. 当前未决缺陷与优先级
 
-### P0 · 必须先修并独立复验
+### P0 · 本轮复验确认已无 P0
 
-1. **Eval V2 真实接线**：审计基线（`ac4a695`）为空 payload 判分器、0/59 真实接线、L3 缺失、32/43 无 runner；PR #93/#95/#94 已合入修复候选，但尚未独立复验。必须在 `54b83ad` 上重跑 6 道门、66 判分器、L3/runner、红队与 G3 SQL。
-2. **G3 遥测**：PR #93 已改为 `degraded/ERROR`，但需要真库 SQL 复算复核（正常/列漂移/非法租户三态）。
-3. **体系不能自证**：不要再以“59 个判分器/测试全绿”作为完成口径。
+首轮 P0 已由 #93/#94/#95 修复并在 `54b83ad` 独立复验：
+- 66 判分器空 payload `{payload:{}}` **0/66 pass**；66/66 manifest 注册；7 个 L3 未校准/缺裁判/位置互换 fail-closed；
+- 43 例 ALL runner 已跑；G3 SQL 42703/42P01/非法 UUID → `degraded:true` + 4/4 `ERROR`，真库 CANCELLED+RESCHEDULED 8/8 一致；
+- F5 非标 PDF 6/6、F6 L3 9/9；`minute-rebind` 隔离端口已修。
 
-### P1 · 修复后复验
+### P1 · 复验保留/下一迭代
 
-1. Issue #91 的 P1 已在 #93 修复：`tsc` 重复字段、角色软停用参数；**尚未重跑 #91 验收**。
-2. 认证与租户：production gate 覆盖范围、cookie `Secure`/轮换、演示账号替换、跨租户边界。
-3. Webhook/CSV：SSRF 允许列表、secret 生命周期、HMAC 派生文档、PII/注入负例。
-4. 测试基础设施：避免端口/库硬编码；全量结果必须记录环境，不得把环境失败当产品失败或反之。
-5. UI/构建：stale `lib/app.js`、设置页与队列叠影、G-18 创建/软停用端到端回归。
+1. **红队词表新变体**：首轮 17 个变体仍全拦，但新增 14 个变体可穿透单判分器（F1/F2/F3/F4 词表覆盖问题）；需扩充语义不变量，非只加关键词。
+2. **适配器未接 CLI runner**：`v2-real-adapters.ts` 仅被自身单测导入，未接入 `run-eval.mjs`/43 例 CLI；card 已诚实标 `executionMode`，但仍不是端到端真实运行。
+3. **G3 假护栏**：盲审/忠实度两条护栏仍恒 `null`（note 已诚实标注空源）；需接 L3 抽样源，不能宣称成对护栏完整。
+4. 认证与租户：production gate 覆盖范围、cookie `Secure`/轮换、演示账号替换、跨租户边界。
+5. Webhook/CSV：SSRF 允许列表、secret 生命周期、HMAC 派生文档、PII/注入负例。
+6. 测试基础设施：全量结果必须记录环境，不得把环境失败当产品失败或反之。
+7. UI/构建：stale `lib/app.js`、设置页与队列叠影、G-18 创建/软停用端到端回归。
 
 ### P2 · 迭代优化
 
@@ -146,17 +149,12 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 - 部署 kit 的 Nginx/cookie/备份演练；
 - G3 guardrail 的 L3 抽样源接入（目前部分 `guardrailRate=null` 是诚实空源，不是完成）。
 
-### 5.4 当前复验批次（2026-11-24，进行中）
+### 5.4 当前复验批次（2026-11-24，已完成）
 
-> 任务书也回抄在 `docs/17` D-193；以下为交接摘要。两条 lane 均不得修改 main、不得自行合并。
-
-| lane | 范围 | 隔离 | 交付 |
-|---|---|---|---|
-| **A · Issue #92 复验** | 首轮 REJECT 的 P0/P1：`eval-telemetry` SQL 42703/非法 UUID → `degraded:true + status:ERROR`（前端“遥测暂不可用”）；真库 CANCELLED+RESCHEDULED 100%；66 判分器（37 L1+22 L2+7 L3）`{payload:{}}` 0/66 pass、66/66 manifest 注册、7 个 L3 未校准 fail-closed；F1–F6 红队、evaluation-card 零样本 `passRate:null`；`v2-real-adapters` 真接线、`minute-rebind` 隔离端口 | 独立库 + 端口 **49353** | 报告回帖 Issue #92；裁决 PASS/CONDITIONAL_PASS/REJECT |
-| **B · Issue #91 复验** | `tsc=0`、tsdown、全量 run-all 0 fail、preview 15/15 hard 0；1440 角色新建+软停用（不再 400，DB `is_active=false`、`record_version` +1）；G3 4 对护栏；`auth-admin` 建号+production 登录 | 独立库 + 端口 **49354** | 证据目录 + 报告回帖 Issue #91 |
-
-- A 的结论仍以 `54b83ad` 代码基线为准；B 的旧 evidence 只作修复前对照。
-- 复验完成前：#92 保持 REJECT/OPEN，#91 保持未 PASS/OPEN。
+> 任务书 `docs/17` D-193；结果 `docs/17` D-194。两条 lane 均未改 main、未合并。
+> - **Lane A #92**：`CONDITIONAL_PASS`。隔离 PG17（49353）38/38 eval tests、全量 3097/3095/0/2；66/66 manifest、空 payload 0/66、L3 fail-closed、G3 ERROR + SQL 8/8；剩余 3 P1（红队新变体、适配器未接 CLI、G3 两护栏 null）。报告：https://github.com/Bruce-Yii/recruitment-agent/issues/92#issuecomment-7110894849
+> - **Lane B #91**：`PASS`。干净 DB（49354）全量 3097/3095/0/2、15 步 15/15 hard 0、角色软停用 `is_active=false` + version 2、G3/auth CLI 全过。报告：https://github.com/Bruce-Yii/recruitment-agent/issues/91#issuecomment-7111092251
+> - 两条 Issue 仍 OPEN；下一步先修 #92 三个 P1，再由未参与实现者做最终复核；不自行关闭/合并。
 
 ---
 
@@ -270,7 +268,7 @@ gh pr view 94
 ## 10. 文档地图
 
 - 产品/验收：`docs/24`、`docs/26`
-- 裁决：`docs/17`（最新 D-192）
+- 裁决：`docs/17`（最新 D-194）
 - 交接：`docs/25`（历史叙事）+ 本文件（当前快照）
 - 路线：`docs/40`、`docs/39`
 - 架构/评测：`docs/41`（架构设计）、`docs/42`（评测规格）
