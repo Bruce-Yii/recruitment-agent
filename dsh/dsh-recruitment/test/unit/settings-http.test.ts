@@ -19,10 +19,12 @@ const SESSION_UNBOUND = 'session-ffffffff-ffff-4fff-8fff-ffffffffffff'
 const EXPECTED_ROUTES = [
   `exact ${SETTINGS_PATHS.read}`,
   `exact ${SETTINGS_PATHS.write}`,
+  `exact ${SETTINGS_PATHS.configOrg}`,
 ]
 assert.deepEqual(EXPECTED_ROUTES, [
   'exact /recruitment/api/settings',
   'exact /recruitment/api/action/settings/write',
+  'exact /recruitment/api/config/org',
 ])
 
 interface Harness {
@@ -152,7 +154,7 @@ after(async () => {
 // ---------------------------------------------------------------------------
 
 describe('T1 路由注册', () => {
-  test('回环 host 恰好注册 2 条 exact 路由，路径逐字一致', () => {
+  test('回环 host 恰好注册 3 条 exact 路由，路径逐字一致', () => {
     assert.deepEqual(server.registered.map((r) => `${r.kind} ${r.path}`), EXPECTED_ROUTES)
     assert.deepEqual([...new Set(server.registered.map((r) => r.kind))], ['exact'])
   })
@@ -170,9 +172,9 @@ describe('T1 路由注册', () => {
     }
   })
 
-  test('disposer 调用后两条路由全部注销', async () => {
+  test('disposer 调用后三条路由全部注销', async () => {
     const h = await startServer(baseDeps)
-    assert.equal(h.routes.size, 2)
+    assert.equal(h.routes.size, 3)
     h.dispose()
     assert.equal(h.routes.size, 0, 'disposer 应注销全部路由')
     await h.close()
@@ -343,7 +345,25 @@ describe('T7 GET 只读投影', () => {
     const settings = result.body.settings as Record<string, unknown>
     assert.equal(settings.agent_silent_delegation, false)
     assert.deepEqual(settings.sla_thresholds, { screening_hours: 24, scorecard_hours: 48 })
-    assert.deepEqual(result.body.defaults_applied, ['agent_silent_delegation', 'sla_thresholds'])
+    assert.equal(settings.auto_screening_enabled, true)
+    assert.equal(settings.auto_scorecard_draft_enabled, true)
+    assert.deepEqual(settings.scorecard_reminder_policy, {
+      enabled: true, overdue_hours: 24, max_reminders: 2, channel: 'workbench',
+    })
+    assert.deepEqual(settings.booking_invite_defaults, { expires_hours: 72, default_duration_min: 60 })
+    assert.deepEqual(result.body.defaults_applied, [
+      'agent_silent_delegation', 'sla_thresholds', 'auto_screening_enabled',
+      'auto_scorecard_draft_enabled', 'scorecard_reminder_policy', 'booking_invite_defaults',
+    ])
+    const governance = result.body.governance as Record<string, unknown>
+    assert.ok(Array.isArray(governance.skills))
+    assert.deepEqual((governance.skills as { id: string }[]).map((s) => s.id).sort(), [
+      'recruitment-s10-decision', 'recruitment-s6-intake', 'recruitment-s7-screening',
+      'recruitment-s8-interview', 'recruitment-s9-transcript',
+    ])
+    assert.ok(!Object.hasOwn(governance, 'fabricated_summary'))
+    // eval_summary 要么是本地真实文件对象，要么 null；绝不是编造的通过率。
+    assert.ok(governance.eval_summary === null || typeof governance.eval_summary === 'object')
   })
 
   test('GET 未绑定 session → 409（零读取）', async () => {
@@ -367,11 +387,115 @@ describe('T7 GET 只读投影', () => {
 // ---------------------------------------------------------------------------
 
 describe('T8 不吐内部字段', () => {
-  test('GET 响应 JSON 不含 payload_hash / created_by_actor_id / "id"', async () => {
+  test('GET 响应 JSON 不含 payload_hash / created_by_actor_id / 内部 id 字段', async () => {
     const result = await call(server, SETTINGS_PATHS.read, { session: SESSION_RECRUITER, method: 'GET' })
     assert.equal(result.status, 200)
     assert.equal(result.text.includes('payload_hash'), false)
     assert.equal(result.text.includes('created_by_actor_id'), false)
-    assert.equal(/"id"\s*:/.test(result.text), false, '不得吐任何内部 id 字段')
+    // governance.skills[].id 是契约里的 skill 标识（如 recruitment-s6-intake），不是内部行 id。
+    const scoped = JSON.stringify({
+      connections: result.body.connections,
+      settings: result.body.settings,
+    })
+    assert.equal(/(payload_hash|created_by_actor_id|role_id|team_id|pipeline_template_id)/.test(scoped), false)
+    for (const skill of (result.body.governance as { skills: Record<string, unknown>[] }).skills) {
+      assert.match(String(skill.id), /^recruitment-s\d+-/)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+//  T9 新增四键：合法值到达写前钩子 / 非法值 400 零写入
+// ---------------------------------------------------------------------------
+
+describe('T9 新增四键 HTTP 契约', () => {
+  const cases: readonly { key: string; value: unknown }[] = [
+    { key: 'auto_screening_enabled', value: false },
+    { key: 'auto_scorecard_draft_enabled', value: true },
+    { key: 'scorecard_reminder_policy', value: { enabled: true, overdue_hours: 48, max_reminders: 3, channel: 'feishu', quiet_hours: { start: '20:00', end: '09:00' } } },
+    { key: 'booking_invite_defaults', value: { expires_hours: 24, default_duration_min: 45 } },
+  ]
+  const invalidCases: readonly { key: string; value: unknown; reason: string }[] = [
+    { key: 'auto_screening_enabled', value: 'false', reason: 'AUTO_SCREENING_ENABLED_NOT_BOOLEAN' },
+    { key: 'auto_scorecard_draft_enabled', value: 1, reason: 'AUTO_SCORECARD_DRAFT_ENABLED_NOT_BOOLEAN' },
+    { key: 'scorecard_reminder_policy', value: { enabled: true, overdue_hours: 36, max_reminders: 2, channel: 'workbench' }, reason: 'REMINDER_OVERDUE_HOURS_INVALID' },
+    { key: 'scorecard_reminder_policy', value: { enabled: true, overdue_hours: 24, max_reminders: 9, channel: 'workbench' }, reason: 'REMINDER_MAX_REMINDERS_OUT_OF_RANGE' },
+    { key: 'scorecard_reminder_policy', value: { enabled: true, overdue_hours: 24, max_reminders: 2, channel: 'sms' }, reason: 'REMINDER_CHANNEL_INVALID' },
+    { key: 'scorecard_reminder_policy', value: { enabled: true, overdue_hours: 24, max_reminders: 2, channel: 'email', quiet_hours: { start: '25:00', end: '09:00' } }, reason: 'QUIET_HOURS_START_INVALID' },
+    { key: 'booking_invite_defaults', value: { expires_hours: 12, default_duration_min: 60 }, reason: 'BOOKING_EXPIRES_HOURS_OUT_OF_RANGE' },
+    { key: 'booking_invite_defaults', value: { expires_hours: 72, default_duration_min: 50 }, reason: 'BOOKING_DURATION_INVALID' },
+    { key: 'scorecard_reminder_policy', value: { enabled: true, overdue_hours: 24, max_reminders: 2, channel: 'email', extra: 1 }, reason: 'SCORECARD_REMINDER_POLICY_UNKNOWN_FIELD' },
+  ]
+
+  for (const { key, value } of cases) {
+    test(`${key} 合法值过闸门（到达写前钩子，随后 503 只是无库）`, async () => {
+      writeCalls.length = 0
+      const result = await call(server, SETTINGS_PATHS.write, {
+        session: SESSION_RECRUITER,
+        body: { key, value, confirmation_text: '确认修改' },
+      })
+      assertError(result, 503, 'NOT_CONFIGURED')
+      assert.equal(writeCalls.length, 1)
+      assert.equal(writeCalls[0]?.key, key)
+      assert.deepEqual(writeCalls[0]?.value, value)
+    })
+  }
+
+  for (const { key, value, reason } of invalidCases) {
+    test(`${key} 非法值 → 400 ${reason} 且零写入`, async () => {
+      writeCalls.length = 0
+      const result = await call(server, SETTINGS_PATHS.write, {
+        session: SESSION_RECRUITER,
+        body: { key, value, confirmation_text: '确认修改' },
+      })
+      assertError(result, 400, 'INVALID_ARGS', reason)
+      assert.deepEqual(writeCalls, [])
+    })
+  }
+
+  test('未知键 → 400 SETTING_KEY_UNKNOWN 且零写入', async () => {
+    writeCalls.length = 0
+    const result = await call(server, SETTINGS_PATHS.write, {
+      session: SESSION_RECRUITER,
+      body: { key: 'not_a_setting', value: true, confirmation_text: '确认修改' },
+    })
+    assertError(result, 400, 'INVALID_ARGS', 'SETTING_KEY_UNKNOWN')
+    assert.deepEqual(writeCalls, [])
+  })
+})
+
+// ---------------------------------------------------------------------------
+//  T10 GET /recruitment/api/config/org —— 同闸门、未绑定零读
+// ---------------------------------------------------------------------------
+
+describe('T10 组织配置只读路由', () => {
+  test('未绑定 session → 409（requireDatabase/readAll 未触发，零 DB 读）', async () => {
+    const result = await call(server, SETTINGS_PATHS.configOrg, { session: SESSION_UNBOUND, method: 'GET' })
+    assertError(result, 409, 'DEMO_ACTOR_UNMAPPED', 'SESSION_NOT_BOUND')
+  })
+
+  test('缺 session → 400 SESSION_REQUIRED', async () => {
+    const result = await call(server, SETTINGS_PATHS.configOrg, { method: 'GET' })
+    assertError(result, 400, 'INVALID_ARGS', 'SESSION_REQUIRED')
+  })
+
+  test('无库配置 → 503 NOT_CONFIGURED（绑定通过才碰库）', async () => {
+    const result = await call(server, SETTINGS_PATHS.configOrg, { session: SESSION_RECRUITER, method: 'GET' })
+    assertError(result, 503, 'NOT_CONFIGURED')
+  })
+
+  test('POST 到 org 只读路径 → 405 allow:GET', async () => {
+    const result = await call(server, SETTINGS_PATHS.configOrg, {
+      session: SESSION_RECRUITER, body: {}, method: 'POST',
+    })
+    assert.equal(result.status, 405)
+    assert.equal(result.headers.get('allow'), 'GET')
+  })
+
+  test('非同源请求 → 403 FORBIDDEN', async () => {
+    const response = await fetch(`${server.baseUrl}${SETTINGS_PATHS.configOrg}`, {
+      method: 'GET', headers: { 'x-dsh-session': SESSION_RECRUITER },
+    })
+    assert.equal(response.status, 403)
   })
 })

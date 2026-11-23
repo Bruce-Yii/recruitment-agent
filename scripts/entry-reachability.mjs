@@ -52,6 +52,7 @@ export const READ_ONLY_ROUTES = [
   { path: '/recruitment/api/action/scorecard/form', reason: 'GET 只读表单 spec + 一次性 nonce（actor.ts），本身不写库；写由 /action/scorecard/submit 承担' },
   { path: '/recruitment/api/action/interview/free-slots', reason: 'GET 只读空闲时段查询（interview-slots.ts），只算可用槽位，不占槽不写库' },
   { path: '/recruitment/api/settings', reason: 'GET 只读设置投影（settings.ts 的 read 路由），写另走 /action/settings/write' },
+  { path: '/recruitment/api/config/org', reason: 'GET 只读组织规范投影（settings.ts）：活跃角色/招聘团队/流程模板，不写库' },
 ]
 
 /**

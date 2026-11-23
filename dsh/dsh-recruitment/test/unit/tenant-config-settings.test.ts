@@ -7,9 +7,12 @@ import {
   SLA_HOURS_MAX,
   SLA_HOURS_MIN,
   SETTINGS_CONFIRMATION_TEXT_MAX,
+  WORKSPACE_SETTING_DEFAULTS,
   WORKSPACE_SETTING_KEYS,
   isWorkspaceSettingKey,
+  validateBookingInviteDefaults,
   validateConfirmationText,
+  validateScorecardReminderPolicy,
   validateSlaThresholds,
   validateSilentDelegation,
   validateWorkspaceSettingValue,
@@ -34,10 +37,18 @@ function reasonOf(fn: () => unknown): string {
   assert.fail('期望抛出带 reason_code 的契约错误，实际没有')
 }
 
-test('可写设置键封闭集：只有两项，不含外部连接状态', () => {
-  assert.deepEqual([...WORKSPACE_SETTING_KEYS], ['agent_silent_delegation', 'sla_thresholds'])
+test('可写设置键封闭集：六项，不含外部连接状态', () => {
+  assert.deepEqual([...WORKSPACE_SETTING_KEYS], [
+    'agent_silent_delegation', 'sla_thresholds', 'auto_screening_enabled',
+    'auto_scorecard_draft_enabled', 'scorecard_reminder_policy', 'booking_invite_defaults',
+  ])
+  assert.deepEqual(Object.keys(WORKSPACE_SETTING_DEFAULTS), [...WORKSPACE_SETTING_KEYS])
   assert.equal(isWorkspaceSettingKey('agent_silent_delegation'), true)
   assert.equal(isWorkspaceSettingKey('sla_thresholds'), true)
+  assert.equal(isWorkspaceSettingKey('auto_screening_enabled'), true)
+  assert.equal(isWorkspaceSettingKey('auto_scorecard_draft_enabled'), true)
+  assert.equal(isWorkspaceSettingKey('scorecard_reminder_policy'), true)
+  assert.equal(isWorkspaceSettingKey('booking_invite_defaults'), true)
   assert.equal(isWorkspaceSettingKey('email_connection'), false)
   assert.equal(isWorkspaceSettingKey('feishu_calendar_connection'), false)
   assert.equal(isWorkspaceSettingKey('feishu_minutes_connection'), false)
@@ -82,6 +93,67 @@ test('validateWorkspaceSettingValue：按 key 分派，未知/只读键拒绝', 
   })
   assert.equal(reasonOf(() => validateWorkspaceSettingValue('email_connection', true)), 'SETTING_KEY_UNKNOWN')
   assert.equal(reasonOf(() => validateWorkspaceSettingValue('unknown_key', true)), 'SETTING_KEY_UNKNOWN')
+})
+
+test('诚实缺省：四个新增键的默认值逐字段固定', () => {
+  assert.deepEqual(WORKSPACE_SETTING_DEFAULTS.auto_screening_enabled, true)
+  assert.deepEqual(WORKSPACE_SETTING_DEFAULTS.auto_scorecard_draft_enabled, true)
+  assert.deepEqual(WORKSPACE_SETTING_DEFAULTS.scorecard_reminder_policy, {
+    enabled: true, overdue_hours: 24, max_reminders: 2, channel: 'workbench',
+  })
+  assert.deepEqual(WORKSPACE_SETTING_DEFAULTS.booking_invite_defaults, {
+    expires_hours: 72, default_duration_min: 60,
+  })
+})
+
+test('validateWorkspaceSettingValue：新增两布尔键严格 boolean', () => {
+  assert.equal(validateWorkspaceSettingValue('auto_screening_enabled', true), true)
+  assert.equal(validateWorkspaceSettingValue('auto_screening_enabled', false), false)
+  assert.equal(validateWorkspaceSettingValue('auto_scorecard_draft_enabled', false), false)
+  assert.equal(reasonOf(() => validateWorkspaceSettingValue('auto_screening_enabled', 'true')), 'AUTO_SCREENING_ENABLED_NOT_BOOLEAN')
+  assert.equal(reasonOf(() => validateWorkspaceSettingValue('auto_scorecard_draft_enabled', 0)), 'AUTO_SCORECARD_DRAFT_ENABLED_NOT_BOOLEAN')
+})
+
+test('validateScorecardReminderPolicy：合法对象归一化（含/不含 quiet_hours）', () => {
+  assert.deepEqual(validateScorecardReminderPolicy({ enabled: true, overdue_hours: 24, max_reminders: 2, channel: 'workbench' }), {
+    enabled: true, overdue_hours: 24, max_reminders: 2, channel: 'workbench',
+  })
+  assert.deepEqual(validateScorecardReminderPolicy({
+    enabled: false, overdue_hours: 72, max_reminders: 5, channel: 'email',
+    quiet_hours: { start: '20:00', end: '09:00' },
+  }), {
+    enabled: false, overdue_hours: 72, max_reminders: 5, channel: 'email',
+    quiet_hours: { start: '20:00', end: '09:00' },
+  })
+})
+
+test('validateScorecardReminderPolicy：非法枚举/越界/缺字段/未知字段/坏 quiet_hours 全拒', () => {
+  const base = { enabled: true, overdue_hours: 24, max_reminders: 2, channel: 'workbench' }
+  assert.equal(reasonOf(() => validateScorecardReminderPolicy(null)), 'SCORECARD_REMINDER_POLICY_NOT_OBJECT')
+  assert.equal(reasonOf(() => validateScorecardReminderPolicy([])), 'SCORECARD_REMINDER_POLICY_NOT_OBJECT')
+  assert.equal(reasonOf(() => validateScorecardReminderPolicy({ ...base, extra: 1 })), 'SCORECARD_REMINDER_POLICY_UNKNOWN_FIELD')
+  assert.equal(reasonOf(() => validateScorecardReminderPolicy({ enabled: true })), 'SCORECARD_REMINDER_POLICY_MISSING_FIELD')
+  assert.equal(reasonOf(() => validateScorecardReminderPolicy({ ...base, enabled: 'true' })), 'REMINDER_ENABLED_NOT_BOOLEAN')
+  assert.equal(reasonOf(() => validateScorecardReminderPolicy({ ...base, overdue_hours: 12 })), 'REMINDER_OVERDUE_HOURS_INVALID')
+  assert.equal(reasonOf(() => validateScorecardReminderPolicy({ ...base, max_reminders: 0 })), 'REMINDER_MAX_REMINDERS_OUT_OF_RANGE')
+  assert.equal(reasonOf(() => validateScorecardReminderPolicy({ ...base, max_reminders: 6 })), 'REMINDER_MAX_REMINDERS_OUT_OF_RANGE')
+  assert.equal(reasonOf(() => validateScorecardReminderPolicy({ ...base, max_reminders: 1.5 })), 'REMINDER_MAX_REMINDERS_OUT_OF_RANGE')
+  assert.equal(reasonOf(() => validateScorecardReminderPolicy({ ...base, channel: 'sms' })), 'REMINDER_CHANNEL_INVALID')
+  assert.equal(reasonOf(() => validateScorecardReminderPolicy({ ...base, quiet_hours: { start: '20:00', end: '09:00', extra: 1 } })), 'QUIET_HOURS_UNKNOWN_FIELD')
+  assert.equal(reasonOf(() => validateScorecardReminderPolicy({ ...base, quiet_hours: { start: '24:00', end: '09:00' } })), 'QUIET_HOURS_START_INVALID')
+  assert.equal(reasonOf(() => validateScorecardReminderPolicy({ ...base, quiet_hours: { start: '09:00', end: '09:00' } })), 'QUIET_HOURS_SAME_START_END')
+})
+
+test('validateBookingInviteDefaults：合法边界值 + 非法值 fail-closed', () => {
+  assert.deepEqual(validateBookingInviteDefaults({ expires_hours: 24, default_duration_min: 30 }), { expires_hours: 24, default_duration_min: 30 })
+  assert.deepEqual(validateBookingInviteDefaults({ expires_hours: 168, default_duration_min: 90 }), { expires_hours: 168, default_duration_min: 90 })
+  assert.equal(reasonOf(() => validateBookingInviteDefaults(null)), 'BOOKING_INVITE_DEFAULTS_NOT_OBJECT')
+  assert.equal(reasonOf(() => validateBookingInviteDefaults({ expires_hours: 23, default_duration_min: 60 })), 'BOOKING_EXPIRES_HOURS_OUT_OF_RANGE')
+  assert.equal(reasonOf(() => validateBookingInviteDefaults({ expires_hours: 169, default_duration_min: 60 })), 'BOOKING_EXPIRES_HOURS_OUT_OF_RANGE')
+  assert.equal(reasonOf(() => validateBookingInviteDefaults({ expires_hours: 72.5, default_duration_min: 60 })), 'BOOKING_EXPIRES_HOURS_OUT_OF_RANGE')
+  assert.equal(reasonOf(() => validateBookingInviteDefaults({ expires_hours: 72, default_duration_min: 45, extra: true })), 'BOOKING_INVITE_DEFAULTS_UNKNOWN_FIELD')
+  assert.equal(reasonOf(() => validateBookingInviteDefaults({ expires_hours: 72 })), 'BOOKING_INVITE_DEFAULTS_MISSING_FIELD')
+  assert.equal(reasonOf(() => validateWorkspaceSettingValue('booking_invite_defaults', { expires_hours: 72, default_duration_min: 50 })), 'BOOKING_DURATION_INVALID')
 })
 
 test('validateConfirmationText：1..2000 非空原话；哈希由服务端算，这里只校验文本', () => {
