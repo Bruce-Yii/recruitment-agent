@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto'
 
 import type { DemoActorAlias } from '../demo-actor/alias.ts'
 import type { DemoActorIdentity } from '../demo-actor/resolve.ts'
+import type { AuthMode } from './auth-gate.ts'
 
 /** 宿主侧用到的 `webServer` 最小面。 */
 interface WebServerFace {
@@ -61,6 +62,12 @@ export interface AppShellDeps {
    * 省掉这一步；**生产身份仍走真实登录（D-178）**，本字段缺省 = 不启用。
    */
   readonly previewAlias?: string
+  /**
+   * Issue #61：`production` 时不注册 `/recruitment/test`（物理 404）、不启用 previewAlias，
+   * 且未登录的 `/recruitment/app` 302 → `/recruitment/login`（会话由 auth 路由/gate 校验）。
+   * 缺省/非法值一律 `preview`（旧行为）。
+   */
+  readonly authMode?: AuthMode
 }
 
 const APP_PATH = '/recruitment/app'
@@ -202,9 +209,11 @@ export function registerAppShell(ctx: AppShellHostContext, deps: AppShellDeps): 
   const appJs = join(assetsDir, 'app.js')
   const appCss = join(assetsDir, 'app.css')
 
-  // 仅本地预览：未绑定 session 自动落到预览 alias；缺省/未知 alias = 关闭（行为与之前一致）。
+  const authMode: AuthMode = deps.authMode === 'production' ? 'production' : 'preview'
+  // 仅本地预览：未绑定 session 自动落到预览 alias；生产模式**永不**启用（Issue #61）。
   const previewAlias =
-    typeof deps.previewAlias === 'string' && isKnownAlias(deps.identity, deps.previewAlias)
+    authMode === 'preview'
+    && typeof deps.previewAlias === 'string' && isKnownAlias(deps.identity, deps.previewAlias)
       ? deps.previewAlias
       : undefined
   const ensurePreviewBinding = (sid: string): void => {
@@ -238,6 +247,10 @@ export function registerAppShell(ctx: AppShellHostContext, deps: AppShellDeps): 
     const sid = ensureSid(req, res)
     const binding = deps.identity.registry.get(sid)
     if (binding === undefined) {
+      if (authMode === 'production') {
+        json(res, 401, { error: { code: 'UNAUTHENTICATED', message: '请先登录招聘工作台' } })
+        return
+      }
       json(res, 200, { sid, bound: false, alias: null, actor_id: null, display_name: '', roles: [] })
       return
     }
@@ -253,6 +266,11 @@ export function registerAppShell(ctx: AppShellHostContext, deps: AppShellDeps): 
   }
 
   const bindActor = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    // 生产身份只来自登录会话；调试绑定入口彻底关闭（Issue #61）。
+    if (authMode === 'production') {
+      json(res, 404, { error: { code: 'NOT_FOUND', message: '生产模式不支持调试身份绑定' } })
+      return
+    }
     if (!loopbackOnly(req, port)) {
       json(res, 403, { error: { code: 'FORBIDDEN', message: 'same-origin loopback request required' } })
       return
@@ -289,6 +307,11 @@ export function registerAppShell(ctx: AppShellHostContext, deps: AppShellDeps): 
   }
 
   const testHandler = (req: IncomingMessage, res: ServerResponse): void => {
+    // Issue #61：生产模式演示身份入口物理 404（不再绑定任何 alias）。
+    if (authMode === 'production') {
+      json(res, 404, { error: { code: 'NOT_FOUND', message: '测试身份入口在生产模式不可用' } })
+      return
+    }
     if (!hostAllowed(req, port)) {
       json(res, 403, { error: { code: 'FORBIDDEN', message: 'loopback only' } })
       return
@@ -317,6 +340,15 @@ export function registerAppShell(ctx: AppShellHostContext, deps: AppShellDeps): 
       return
     }
     const sid = ensureSid(req, res)
+    if (authMode === 'production' && deps.identity.registry.get(sid) === undefined) {
+      // Issue #61 / D-178：生产模式未登录不得进入产品页；正式身份只来自登录会话。
+      res.writeHead(302, {
+        location: `/recruitment/login?next=${encodeURIComponent(APP_PATH)}`,
+        'cache-control': 'no-store',
+      })
+      res.end()
+      return
+    }
     if (!existsSync(appJs)) {
       text(
         res,
