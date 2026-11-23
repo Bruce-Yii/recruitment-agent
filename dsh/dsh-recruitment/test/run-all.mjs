@@ -48,6 +48,16 @@ if (only.length === 0 && !discovered.some((file) => file.replaceAll('\\', '/') =
   process.exit(1)
 }
 
+// P1-6：自动打印环境指纹（绝不打印密码/密钥），防止环境缺项被误判为产品失败。
+const envSummary = {
+  node: process.version,
+  pgHost: process.env.RECRUITMENT_TEST_DB_HOST ?? process.env.PGHOST ?? '127.0.0.1',
+  pgPort: process.env.RECRUITMENT_TEST_DB_PORT ?? process.env.PGPORT ?? '5432',
+  hasPython: Boolean(process.env.RECRUITMENT_PYTHON_BIN || process.env.RECRUITMENT_PYTHON),
+  hasCorpusRoot: Boolean(process.env.RECRUITMENT_CORPUS_ROOT),
+  authMode: process.env.RECRUITMENT_AUTH_MODE ?? 'preview',
+}
+console.log(`run-all-env: ${JSON.stringify(envSummary)}`)
 console.log(`run-all: ${files.length} 个测试文件（node --test ${nodeTestArgs.join(' ')}）`)
 const result = spawnSync(process.execPath, ['--test', ...nodeTestArgs, ...files], {
   cwd: packageRoot,
