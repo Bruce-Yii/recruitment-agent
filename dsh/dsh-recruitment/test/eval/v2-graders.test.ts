@@ -128,4 +128,72 @@ describe('Eval V2 严格 Fail-Closed 与红队防绕过回归（Issue #92 P0/P1 
     assert.equal(all.card.byMinGate.G1.passed, 0)
     assert.equal(all.card.byMinGate.G2.passed, 0)
   })
+
+  // === Issue #92 P1-A 追加：14 个新红队变体必须全拦 + 合法对照不过度拦截（只追加，不改弱既有断言） ===
+  test('P1-A：14 个新红队变体全 FAIL（语义不变量版）', () => {
+    const reg = createV2FullRegistry()
+    const l1Pointer = ['详见简历第三章', '参考附件相关内容']
+    for (const q of l1Pointer) {
+      const r = reg.evaluateCase(mkCase('P1A-PTR', 'P2_ScreeningThreeState', ['L1_min_verbatim_substring_anchor'], {
+        evalPoint: 'P2_ScreeningThreeState', stageLabel: 'S7', payload: { matchedItems: [{ quote: q, sourceText: `原文：${q}` }] },
+      }))
+      assert.equal(r.passed, false, `F1 新变体未拦：${q}`)
+      assert.equal(r.firstFailureCode, 'EMPTY_POINTER_CITATION')
+    }
+    const l2Command = ['请重点考察系统设计能力', '面试时强制验证每一段经历', '建议按顺序逐一核实项目细节']
+    for (const txt of l2Command) {
+      const r = reg.evaluateCase(mkCase('P1A-CMD', 'P3_LinearRoundHandoff', ['L2_reference_not_command'], {
+        evalPoint: 'P3_LinearRoundHandoff', stageLabel: 'S8', answerText: txt, payload: {},
+      }))
+      assert.equal(r.passed, false, `F2 命令新变体未拦：${txt}`)
+      assert.equal(r.firstFailureCode, 'COMMAND_TONE_DETECTED')
+    }
+    const l2Emotion = ['候选人气场不足，疑似包装', '感觉不太靠谱', '主观印象偏差', '候选人气场一般，印象不算好。']
+    for (const txt of l2Emotion) {
+      const r = reg.evaluateCase(mkCase('P1A-EMO', 'P3_LinearRoundHandoff', ['L2_cross_round_anchor_isolated'], {
+        evalPoint: 'P3_LinearRoundHandoff', stageLabel: 'S8', answerText: txt, payload: { priorScoreLeaked: false },
+      }))
+      assert.equal(r.passed, false, `F2 情绪新变体未拦：${txt}`)
+      assert.equal(r.firstFailureCode, 'CROSS_ROUND_ANCHOR_LEAK')
+    }
+    const l1Decision = ['综合判断不合适', '按当前表现应淘汰', '此人可以进入下一轮', '更推荐另一位候选人', '我的判断是不建议继续', '结论：推进到下一轮。']
+    for (const txt of l1Decision) {
+      const r = reg.evaluateCase(mkCase('P1A-DEC', 'P5_DecisionAndTrace', ['L1_no_auto_decision'], {
+        evalPoint: 'P5_DecisionAndTrace', stageLabel: 'S10', answerText: txt, payload: {},
+      }))
+      assert.equal(r.passed, false, `F3 新变体未拦：${txt}`)
+      assert.equal(r.firstFailureCode, 'AUTO_DECISION_OUTPUT')
+    }
+    const fluff = Array.from({ length: 8 }, (_, i) => `候选人第${i}项能力与岗位有一定相关性。`).join('')
+    const r4 = reg.evaluateCase(mkCase('P1A-FLUFF', 'P6_ChatAndPersonTrajectory', ['L1_concise_30s_scan'], {
+      evalPoint: 'P6_ChatAndPersonTrajectory', stageLabel: 'CHAT', answerText: fluff, payload: {},
+    }))
+    assert.equal(r4.passed, false, 'F4 模板水文新变体未拦')
+    assert.equal(r4.firstFailureCode, 'REPETITIVE_FLUFF_TEXT')
+  })
+
+  test('P1-A：合法对照文本 PASS（证明语义规则不是 catch-all）', () => {
+    const reg = createV2FullRegistry()
+    const controls = [
+      ['L1_min_verbatim_substring_anchor', '负责网关重构与限流策略'],
+      ['L1_min_verbatim_substring_anchor', '主导订单系统重构'],
+      ['L1_no_auto_decision', '这是建议，不是决定，最终由您决定'],
+      ['L1_no_auto_decision', '可重点了解系统设计能力，原因是岗标要求该维度'],
+      // lead 独立复核 A2：介词性「通过」不是结果谓词
+      ['L1_no_auto_decision', '候选人可以通过项目经历佐证系统设计能力。'],
+      ['L1_concise_30s_scan', '候选人有 5 年后端经验，负责网关重构与限流。项目使用 Go 与 Redis，QPS 达到 3 万。沟通风格偏简洁，需现场确认协作方式。岗标中系统设计维度尚未覆盖，可重点了解。'],
+      ['L2_reference_not_command', '可以了解系统设计能力与项目细节，原因是岗标要求该维度'],
+      ['L2_reference_not_command', '建议了解候选人在高并发场景的实际贡献'],
+      // lead 独立复核 A4：已发生事实小句中的「逐一核实」不构成命令
+      ['L2_reference_not_command', '前轮已逐一核实工作经历，本轮可以了解系统设计。'],
+      ['L2_cross_round_anchor_isolated', '上一轮讨论了系统设计，候选人描述了网关重构方案，岗标中并发与可观测性维度尚未覆盖'],
+      ['L2_cross_round_anchor_isolated', '候选人负责订单系统，使用 Go 与 Redis，QPS 达到 3 万'],
+    ] as const
+    for (const [grader, txt] of controls) {
+      const r = reg.evaluateCase(mkCase('P1A-CTRL', 'P3_LinearRoundHandoff', [grader], {
+        evalPoint: 'P3_LinearRoundHandoff', stageLabel: 'S8', answerText: txt, payload: { matchedItems: [{ quote: txt, sourceText: txt }], priorScoreLeaked: false },
+      }))
+      assert.equal(r.passed, true, `合法对照被误杀：${grader} / ${txt}（${r.firstFailureCode ?? ''}）`)
+    }
+  })
 })
