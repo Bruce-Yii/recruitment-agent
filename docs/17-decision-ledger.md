@@ -2099,3 +2099,21 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ③ **#91 仍不判 PASS**：PR #93 修复后仍未重跑 1440 全量 1440 验收；不得把修复前 evidence 作为通过材料。
   ④ 当前事实快照更新到 `docs/44`（`main@54b83ad`）；`docs/25`/`40`/`41`/`42`/`README` 同步 PR #94 合入与“未复验”状态。
   ⑤ 下一步：对 `54b83ad` 派独立审计（不参与 #93/#94/#95 实现）重跑 #92；对 #91 重跑 1440；两者通过前 #91/#92 不关闭。
+
+- **D-193（2026-11-24，总控；Issue #92 / #91 修复后独立复验任务书，`main@54b83ad`）**
+  **来源**：用户 2026-11-24 要求对 PR #93/#94/#95 修复后的代码基线 `54b83ad`（最新 main `1162587` 为 docs 提交）做两条并行、互不干扰的独立复验；不修改 main、不自行合并。
+  **Lane A（Issue #92，独立审计）**：
+  ① 隔离 PG17 真库 + 端口 49353；不得复用旧审计结论；
+  ② `eval-telemetry.ts` 注入 SQL 42703 / 非法 tenant UUID，必须返回 `degraded:true` + `status:'ERROR'`，前端显示“遥测暂不可用”而非“等待样本”；
+  ③ 真库复算 CANCELLED + RESCHEDULED 计数 100% 一致；
+  ④ 66 个判分器（37 L1 + 22 L2 + 7 L3）：`{payload:{}}` 通过数 0/66、manifest 66 ID 100% 注册、7 个 L3 未校准 fail-closed；
+  ⑤ 复测 F1–F6 红队与 `evaluation-card.ts` 零样本 `passRate:null`；核查 `v2-real-adapters.ts` 真接线与 `minute-rebind.test.ts` 隔离端口修复；
+  ⑥ 裁决 PASS/CONDITIONAL_PASS/REJECT，P0/P1/P2 真缺口与证据路径回帖 Issue #92。
+  **Lane B（Issue #91，1440 真机）**：
+  ① 隔离临时库 + 端口 49354；
+  ② 静态门禁 `tsc=0`、tsdown、server-typecheck/runtime-budget/client-contract/term-lint/entry-reachability，全量 `run-all` 0 fail；
+  ③ preview 15 步 15/15、audit hard 0；
+  ④ 1440：角色新建 + `settings-deactivate-role-<code>` 软停用不再 400、DB `is_active=false` 且 `record_version` +1；G3 4 对护栏；`auth-admin` 建号无明文 + production 登录；
+  ⑤ 截图/psql/门禁证据留档并回帖 Issue #91。
+  **边界**：两条 lane 均禁止改产品代码/测试/文档、禁止 git 写；旧的 #91 evidence 只作修复前对照；完成前 #92 保持 REJECT/OPEN，#91 保持未 PASS/OPEN。
+  **状态**：已派发（2026-11-24 02:41 后），等待两条复验回报；结论回抄本台账并更新 `docs/44`。

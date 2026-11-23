@@ -21,7 +21,7 @@
 |---|---|---|
 | 1 | `AGENTS.md` | 总控职责、九条铁律、派发/验收/端口/密钥纪律 |
 | 2 | `docs/24-product-framework-v2.md` | 产品认知、六条门 V1–V6；**第一权威** |
-| 3 | `docs/17-decision-ledger.md` | 裁决；最新 D-192 是 PR #94 合入后的状态校准 |
+| 3 | `docs/17-decision-ledger.md` | 裁决；最新 D-193（复验任务书）、D-192（PR #94 后状态校准） |
 | 4 | 本文件 `docs/44` | 当前基线、架构、仓库、未决缺陷 |
 | 5 | `docs/25-lead-handoff.md` | 七步场景、判断框架、历史踩坑；其“当前状态”段已过期 |
 | 6 | `docs/40-lifecycle-gap-roadmap.md` | Wave 3/4/5 路线与缺口 |
@@ -145,6 +145,18 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 - 统一 evidence 命名与 `work/INDEX.md`；
 - 部署 kit 的 Nginx/cookie/备份演练；
 - G3 guardrail 的 L3 抽样源接入（目前部分 `guardrailRate=null` 是诚实空源，不是完成）。
+
+### 5.4 当前复验批次（2026-11-24，进行中）
+
+> 任务书也回抄在 `docs/17` D-193；以下为交接摘要。两条 lane 均不得修改 main、不得自行合并。
+
+| lane | 范围 | 隔离 | 交付 |
+|---|---|---|---|
+| **A · Issue #92 复验** | 首轮 REJECT 的 P0/P1：`eval-telemetry` SQL 42703/非法 UUID → `degraded:true + status:ERROR`（前端“遥测暂不可用”）；真库 CANCELLED+RESCHEDULED 100%；66 判分器（37 L1+22 L2+7 L3）`{payload:{}}` 0/66 pass、66/66 manifest 注册、7 个 L3 未校准 fail-closed；F1–F6 红队、evaluation-card 零样本 `passRate:null`；`v2-real-adapters` 真接线、`minute-rebind` 隔离端口 | 独立库 + 端口 **49353** | 报告回帖 Issue #92；裁决 PASS/CONDITIONAL_PASS/REJECT |
+| **B · Issue #91 复验** | `tsc=0`、tsdown、全量 run-all 0 fail、preview 15/15 hard 0；1440 角色新建+软停用（不再 400，DB `is_active=false`、`record_version` +1）；G3 4 对护栏；`auth-admin` 建号+production 登录 | 独立库 + 端口 **49354** | 证据目录 + 报告回帖 Issue #91 |
+
+- A 的结论仍以 `54b83ad` 代码基线为准；B 的旧 evidence 只作修复前对照。
+- 复验完成前：#92 保持 REJECT/OPEN，#91 保持未 PASS/OPEN。
 
 ---
 
