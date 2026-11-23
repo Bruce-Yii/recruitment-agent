@@ -116,6 +116,8 @@ describe('Issue #92 P1a：L1 红队语义不变量（空指针引用 / 变相决
       '候选人放弃了本次机会。', '该岗位候选人中有一位拒绝沟通。', '上一轮已排除该风险。',
       // H4 回归2 材料性例外
       '评估材料显示候选人不通过。',
+      // H5：非人主语的委婉否定与研判材料例外必须放行
+      '排期恐怕不行，建议改约下一轮', '研判材料显示其项目经验与岗不匹配',
     ]
     for (const d of controls) {
       const r = registry.evaluateCase(
@@ -195,6 +197,8 @@ describe('Issue #92 P1a：L1 红队语义不变量（空指针引用 / 变相决
       '恐怕难以推进。', '恐怕难以进入下一轮。', '似乎不太适合继续推进。', '可能不适合录用。',
       // H4 回归2：评估断言恢复后必须仍 FAIL
       '评估不通过。', '评估结果不通过。',
+      // H5 最后一轮：研判强断言 + 人为主语委婉否定
+      '综合研判不宜录用', '这个人恐怕不行',
     ]
     for (const txt of decisions) {
       const r = registry.evaluateCase(mkCase(`H2-DEC-${txt}`, 'P5_DecisionAndTrace', ['L1_no_auto_decision'], {
