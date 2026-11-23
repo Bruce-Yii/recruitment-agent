@@ -2077,3 +2077,7 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ① 锚定 2026 权威标准（NIST CAISI / OpenTelemetry GenAI / EN ISO/IEC 42001:2026 / Evaluation Cards）与 `docs/24` 单人线性主轴，坚持反自嗨铁律与确定性单测分账；
   ② 完成 P1–P6 六大判断点深度细则与 6 维度总审收口（双向防 `读不出来` 膨胀 ≤5%、最小原文子串锚定、跨轮防锚定隔离、冲突面评中立、防 `Halluci-Action` 言行对账）；
   ③ 落地以「人」为主轴的 `GraderRegistry`、Evaluation Card 切分报告器、私有真简历盘点脚手架、外部基准加载器、59 个确定性 L1/L2 判分器与 G0 执行器、L3 裁判校准协议（`κ ≥ 0.70` / `TNR ≥ 0.85`）及 G3 线上 4 对成对护栏只读遥测（挂载至 `GET /recruitment/api/settings`）。
+
+- **D-190（2026-11-23，总控；Skill 反翻车加固、G3 护栏看板、G-18 企业配置闭环与生产独立部署包合入 `main@8e3521e8`）**
+  **来源**：PR #84（`28fc2164`，5 套 `SKILL.md` 写入 `docs/42 §8` 翻车防线）、PR #85（`8b31333a`，`#/settings` 接通 G3 4 对成对护栏）、PR #87（`cd90a17d`）+ PR #89（`8e3521e8`，G-18 角色/团队/流程模板 L2 创建与软停用 + `TESTID-MANIFEST.md`）、PR #88（`308ee87f`，`deploy/` PG17 独立部署编排、Nginx SSE 反代模板与 `scripts/auth-admin.mjs` 建号 CLI）。
+  **裁决**：路线图零外部凭据阻塞项全部清账；后续真机 1440 联调验收通过独立 Issue 交本地执行。

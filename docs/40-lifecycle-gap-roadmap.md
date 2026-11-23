@@ -66,3 +66,4 @@
 - **Wave 5 核心交付**：✅ Issue #60 CSV 导出 + HMAC Webhook 同步（PR #72）与 Issue #61 生产登录 + 持久会话 + 0025 迁移（PR #73）已 5/5 CI 全绿合入 `main`（文档归档于 `docs/43-production-login.md`）。
 - **Eval V2 全链路评测底座（`docs/42` V2 + §8.1–§8.6）**：✅ 已完成规格锁盘、43 例高信噪比清单（G0/G1/G2 分档）、Phase 1 框架底座（PR #81）、Phase 2 全部 59 个确定性 L1/L2 判分器与 G0 执行器（PR #82）、Phase 3 L3 裁判校准协议与 G3 线上成对护栏只读遥测（PR #83）。
 - **Skill 反翻车加固、G3 看板与 G-18 企业配置**：✅ 5 套 `SKILL.md` 加固（PR #84）、`#/settings` G3 成对护栏看板（PR #85）与 G-18 角色/流程模板新增界面（PR #87）均已 5/5 CI 全绿合入 `main`。
+- **生产交付最后一公里与 G-18 完整闭环**：✅ `deploy/` 生产部署编排、`scripts/auth-admin.mjs` 建号 CLI（PR #88）及 G-18 团队创建/软停用/TESTID 登记（PR #89）均已 5/5 CI 全绿合入 `main`。
