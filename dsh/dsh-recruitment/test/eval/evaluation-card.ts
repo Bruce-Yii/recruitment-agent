@@ -32,12 +32,25 @@ export interface BaselineDiff {
   readonly evalPointDelta: Readonly<Record<EvalPointId, number | null>>
 }
 
+/** Issue #92 P1-B — 真实适配器覆盖度（只补可观测字段，不参与/放宽判分）。 */
+export interface RealCoverage {
+  readonly totalCases: number
+  readonly executedCases: number
+  readonly realSourceCaseIds: readonly string[]
+  readonly noRealSourceCaseIds: readonly string[]
+  readonly note?: string
+}
+
 export interface EvaluationCard {
   readonly schemaVersion: '2.2.0'
   readonly executionMode: 'contract_smoke' | 'real_adapter'
   readonly runId: string
   readonly generatedAt: string
   readonly totalCases: number
+  /** 顶层通过率：real 模式零执行时为 null（禁止 0/0 假 100%）。 */
+  readonly passRate?: number | null
+  /** real_adapter 模式的真实源覆盖度；contract_smoke 缺省。 */
+  readonly coverage?: RealCoverage
   readonly byDataTier: Readonly<Record<DataTier, SliceStats>>
   readonly byEvalPoint: Readonly<Record<EvalPointId, SliceStats>>
   readonly bySuitePool: Readonly<Record<SuitePool, SliceStats>>
@@ -62,6 +75,8 @@ export interface EvaluationCardInput {
   readonly counterMetrics?: CounterMetricsObserved
   readonly thresholds?: CounterMetricsThresholds
   readonly baseline?: EvaluationCard
+  /** Issue #92 P1-B：由 runner 传入的真实源覆盖度，仅作报告字段。 */
+  readonly coverage?: RealCoverage
 }
 
 function summarize(items: readonly CaseRunOutcome[]): SliceStats {
@@ -166,12 +181,22 @@ export function buildEvaluationCard(input: EvaluationCardInput): EvaluationCard 
     }
   }
 
+  // Issue #92 P1-B：real 模式零执行必须通过顶层 passRate:null 暴露，不能由 0/0 变成假 100%。
+  const topLevelPassRate =
+    input.coverage !== undefined
+      ? input.coverage.executedCases === 0
+        ? null
+        : Number((outcomes.filter((o) => o.passed).length / outcomes.length).toFixed(4))
+      : undefined
+
   return {
     schemaVersion: '2.2.0',
     executionMode: input.executionMode ?? 'contract_smoke',
     runId: input.runId,
     generatedAt: input.generatedAt ?? new Date().toISOString(),
     totalCases: outcomes.length,
+    ...(topLevelPassRate !== undefined ? { passRate: topLevelPassRate } : {}),
+    ...(input.coverage !== undefined ? { coverage: input.coverage } : {}),
     byDataTier,
     byEvalPoint,
     bySuitePool,
@@ -189,6 +214,14 @@ export function formatEvaluationCardMarkdown(card: EvaluationCard): string {
   const lines: string[] = [
     `# Evaluation Card (${card.runId})`,
     `- Mode: ${card.executionMode} | Generated: ${card.generatedAt} | Cases: ${card.totalCases} | Counter-Metrics: ${card.counterMetricsOk ? 'PASS' : 'BREACHED'}`,
+    ...(card.coverage !== undefined
+      ? [
+          `- Real Source Coverage: ${card.coverage.executedCases}/${card.coverage.totalCases} executed`,
+          `- Real Source Case IDs: ${card.coverage.realSourceCaseIds.join(', ') || 'none'}`,
+          `- NO_REAL_SOURCE Case IDs: ${card.coverage.noRealSourceCaseIds.join(', ') || 'none'}`,
+          `- Overall Pass Rate: ${card.passRate === null || card.passRate === undefined ? '— (NO_DATA)' : `${(card.passRate * 100).toFixed(1)}%`}`,
+        ]
+      : []),
     '',
     '## By Eval Point (P1–P6)',
     '| Eval Point | Passed / Total | Pass Rate |',
