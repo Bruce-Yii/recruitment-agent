@@ -932,8 +932,10 @@ export function App() {
                     <span className="crumb-cur">在招岗位</span>
                   </div>
                 ) : route.kind === 'settings' ? (
-                <SettingsView sid={session.sid} readOnly={interviewerOnly} />
-              ) : route.kind === 'talent' ? (
+                  <div className="crumb-bar">
+                    <span className="crumb-cur">设置</span>
+                  </div>
+                ) : route.kind === 'talent' ? (
                   <div className="crumb-bar">
                     <span className="crumb-cur">人才库</span>
                   </div>
@@ -1033,6 +1035,10 @@ export function App() {
                     重试
                   </button>
                 </div>
+              </div>
+            ) : route.kind === 'settings' ? (
+              <div className="canvas-inner">
+                <SettingsView sid={session.sid} readOnly={interviewerOnly} />
               </div>
             ) : overview ? (
               route.kind === 'jobs' ? (
