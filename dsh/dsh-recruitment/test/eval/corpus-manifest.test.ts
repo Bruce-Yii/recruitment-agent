@@ -17,6 +17,7 @@ interface EvalCaseV2 {
   readonly case_id: string
   readonly eval_point: string
   readonly suite_pool: 'regression' | 'capability'
+  readonly min_gate: 'G0' | 'G1' | 'G2'
   readonly data_tier: 'tier1_private_corpus' | 'tier2_public_benchmark' | 'tier3_fault_injection'
   readonly source_ref: string
   readonly eval_granularity: 'step' | 'handoff' | 'funnel'
@@ -66,11 +67,15 @@ describe('eval corpus-manifest V2 产品对齐与反自嗨守卫（docs/42 V2 ×
     assert.ok(funnelCases.length >= 2, '至少应包含 2 条单人全周期贯通档案用例（funnel）')
     assert.ok(manifest.cases.some((c) => c.suite_pool === 'regression'), '缺少 regression 池用例')
     assert.ok(manifest.cases.some((c) => c.suite_pool === 'capability'), '缺少 capability 池用例')
+    for (const gate of ['G0', 'G1', 'G2'] as const) {
+      assert.ok(manifest.cases.some((c) => c.min_gate === gate), `缺少 ${gate} 门禁档位用例`)
+    }
   })
 
   test('反自嗨铁律：100% 可溯源 source_ref 且零禁用词', () => {
     for (const c of manifest.cases) {
       assert.ok(c.graders.length > 0, `${c.case_id} 缺少 graders`)
+      assert.ok(['G0', 'G1', 'G2'].includes(c.min_gate), `${c.case_id} 非法 min_gate: ${c.min_gate}`)
       assert.ok(!c.description.includes('证据'), `${c.case_id} 含禁用词`)
       if (c.data_tier === 'tier1_private_corpus') {
         assert.ok(c.source_ref.startsWith('RECRUITMENT_CORPUS_ROOT:'), `${c.case_id} Tier 1 须指向私有语料`)
