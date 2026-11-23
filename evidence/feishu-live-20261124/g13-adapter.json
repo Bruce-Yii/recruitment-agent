@@ -1,0 +1,21 @@
+{
+  "schema": "feishu-live-evidence/1",
+  "at": "2026-11-24T07:13:26.574+08:00",
+  "check": "G-13 real minutes readback via product adapter (wiring + lark-cli transport, profile=recruitment)",
+  "kind": "READ",
+  "connection_state": "CONNECTED",
+  "labels": {
+    "provenance": "LIVE",
+    "trigger": "MANUAL",
+    "connection": "CONNECTED"
+  },
+  "live_eligible": true,
+  "live_gate_violations": [],
+  "provenance_basis": "LIVE_READBACK_VERIFIED",
+  "read_receipt_ref": "lark:minutes+detail:<redacted>@sha256:<hash>",
+  "content_sha256_prefix": "9395b98fc433",
+  "raw_text_chars": 71,
+  "is_complete": true,
+  "fetched_at": "2026-11-24T07:13:26.574+08:00",
+  "note": "LIVE evidence complete: platform channel + receipt bound to content hash + hash recompute match + reread match + offset fetched_at + complete + non-empty text."
+}

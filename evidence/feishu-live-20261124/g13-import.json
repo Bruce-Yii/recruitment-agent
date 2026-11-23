@@ -1,0 +1,25 @@
+{
+  "schema": "feishu-live-evidence/1",
+  "at": "2026-11-24T07:12:32.523+08:00",
+  "check": "G-13 product HTTP POST /recruitment/api/feishu/import (real minute, in-memory token; fixture interview)",
+  "http_status": 200,
+  "labels": {
+    "provenance": "LIVE",
+    "trigger": "MANUAL",
+    "connection": "CONNECTED"
+  },
+  "artifact": {
+    "id_prefix": "35d33e6c",
+    "provider": "FEISHU",
+    "transcript_status": "READY",
+    "content_sha256_prefix": "9395b98fc433",
+    "segment_count": 4,
+    "is_canonical": true
+  },
+  "db_readback": {
+    "transcript_artifact": "FEISHU|READY|LIVE|MANUAL|CONNECTED|sha256:9395b98fc433|complete=true|canonical=true|chars=71",
+    "interview_record": "revision=1|NEEDS_REVIEW|UNVERIFIED|is_current=true",
+    "transcript_segment_count": 4
+  },
+  "note": "Human gate preserved: interview_record stays NEEDS_REVIEW/UNVERIFIED. No minute token, access/refresh token, meeting title or transcript text is included."
+}
