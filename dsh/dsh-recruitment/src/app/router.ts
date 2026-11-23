@@ -1,4 +1,3 @@
-successfully downloaded text file (SHA: ab93f4557d914d7d54b26ab34edf8fac644f9903)
 export type AppRoute =
   | { kind: 'queue' }
   | { kind: 'jobs' }

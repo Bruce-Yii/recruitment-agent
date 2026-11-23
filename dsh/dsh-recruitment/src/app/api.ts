@@ -1,4 +1,3 @@
-successfully downloaded text file (SHA: e4e7484c28343a7569bc44fb83ab0c2427a64f7e)
 import {
   normalizeOverviewView,
   type RecruitingOverviewView,

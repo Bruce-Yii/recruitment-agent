@@ -1,4 +1,3 @@
-successfully downloaded text file (SHA: 67dc55bc16881b98ff668dfe16fec3ef7287800c)
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CanvasRoute,

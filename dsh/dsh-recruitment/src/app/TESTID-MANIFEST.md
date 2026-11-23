@@ -1,4 +1,3 @@
-successfully downloaded text file (SHA: 1c6175454d40c1a50edcd1d6765e7aa1add0df07)
 # 独立整页 v4（`src/app/**`）`data-testid` 清单与交付说明
 
 > 对应对接方案：`design/v4/fullpage-integration-plan.md`（D-167）。
