@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { createV2FullRegistry } from './v2-g0-runner.ts'
+import { createV2DeterministicRegistry } from './v2-g0-runner.ts'
 import {
   adaptAgentTurnSseToP6Artifact,
   adaptConverterDocumentToP1Artifact,
@@ -12,7 +12,7 @@ import type { PersonLifecycleCase } from './v2-types.ts'
 
 describe('Eval V2 真实生产适配器（converter / agent-turn SSE / PG shadow）', () => {
   test('converter 真实输出适配器：正常解析 PASS，乱码与伪 complete 真实 FAIL', () => {
-    const reg = createV2FullRegistry()
+    const reg = createV2DeterministicRegistry()
     const okArt = adaptConverterDocumentToP1Artifact(
       {
         completeness: 'partial',
@@ -46,7 +46,7 @@ describe('Eval V2 真实生产适配器（converter / agent-turn SSE / PG shadow
   })
 
   test('agent-turn SSE + PG 行数快照适配器：真拦截越权写库与 Halluci-Action', () => {
-    const reg = createV2FullRegistry()
+    const reg = createV2DeterministicRegistry()
     const baseBefore = { application: 3, interview: 2, scorecard: 1, decision: 1, criterion_override: 0 }
 
     // 正常只读查询 + 提议确认卡
