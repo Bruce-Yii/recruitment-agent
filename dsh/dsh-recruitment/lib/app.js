@@ -20,7 +20,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 	value: mod,
 	enumerable: true
 }) : target, mod));
-// node_modules/.pnpm/react@18.3.1/node_modules/react/cjs/react.development.js
+// ../../../../../dsh工作区/projects/recruitment-agent/dsh/dsh-recruitment/node_modules/.pnpm/react@18.3.1/node_modules/react/cjs/react.development.js
 /**
 * @license React
 * react.development.js
@@ -1601,11 +1601,11 @@ current: null };
 		if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ !== "undefined" && typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop === "function") __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop(/* @__PURE__ */ new Error());
 	})();
 }));
-// node_modules/.pnpm/react@18.3.1/node_modules/react/index.js
+// ../../../../../dsh工作区/projects/recruitment-agent/dsh/dsh-recruitment/node_modules/.pnpm/react@18.3.1/node_modules/react/index.js
 var require_react = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = require_react_development();
 }));
-// node_modules/.pnpm/scheduler@0.23.2/node_modules/scheduler/cjs/scheduler.development.js
+// ../../../../../dsh工作区/projects/recruitment-agent/dsh/dsh-recruitment/node_modules/.pnpm/scheduler@0.23.2/node_modules/scheduler/cjs/scheduler.development.js
 /**
 * @license React
 * scheduler.development.js
@@ -1995,11 +1995,11 @@ var require_scheduler_development = /* @__PURE__ */ __commonJSMin(((exports) => 
 		if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ !== "undefined" && typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop === "function") __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop(/* @__PURE__ */ new Error());
 	})();
 }));
-// node_modules/.pnpm/scheduler@0.23.2/node_modules/scheduler/index.js
+// ../../../../../dsh工作区/projects/recruitment-agent/dsh/dsh-recruitment/node_modules/.pnpm/scheduler@0.23.2/node_modules/scheduler/index.js
 var require_scheduler = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = require_scheduler_development();
 }));
-// node_modules/.pnpm/react-dom@18.3.1_react@18.3.1/node_modules/react-dom/cjs/react-dom.development.js
+// ../../../../../dsh工作区/projects/recruitment-agent/dsh/dsh-recruitment/node_modules/.pnpm/react-dom@18.3.1_react@18.3.1/node_modules/react-dom/cjs/react-dom.development.js
 /**
 * @license React
 * react-dom.development.js
@@ -18840,11 +18840,11 @@ var require_react_dom_development = /* @__PURE__ */ __commonJSMin(((exports) => 
 		if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ !== "undefined" && typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop === "function") __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop(/* @__PURE__ */ new Error());
 	})();
 }));
-// node_modules/.pnpm/react-dom@18.3.1_react@18.3.1/node_modules/react-dom/index.js
+// ../../../../../dsh工作区/projects/recruitment-agent/dsh/dsh-recruitment/node_modules/.pnpm/react-dom@18.3.1_react@18.3.1/node_modules/react-dom/index.js
 var require_react_dom = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = require_react_dom_development();
 }));
-// node_modules/.pnpm/react-dom@18.3.1_react@18.3.1/node_modules/react-dom/client.js
+// ../../../../../dsh工作区/projects/recruitment-agent/dsh/dsh-recruitment/node_modules/.pnpm/react-dom@18.3.1_react@18.3.1/node_modules/react-dom/client.js
 var require_client = /* @__PURE__ */ __commonJSMin(((exports) => {
 	var m = require_react_dom();
 	var i = m.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
@@ -18857,12 +18857,12 @@ var require_client = /* @__PURE__ */ __commonJSMin(((exports) => {
 		}
 	};
 }));
-// recruitment-css-virtual:D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\src\app\app.css?css
+// recruitment-css-virtual:D:\12412\DshWorktrees\recruitment-agent\ui-build-20261124\dsh\dsh-recruitment\src\app\app.css?css
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
 var import_client = require_client();
-const CSS_KEY$1 = "c61c486ea236";
-const css$1 = "/* ============================================================================\r\n * Recruitment OS v4 — Standalone Full-Page Warm-Paper Workspace\r\n * 100% faithful to finalized design/v4/recruitment_os_v4.html\r\n * ============================================================================ */\r\n\r\n:root {\r\n  --rail: #F3F2EE;\r\n  --paper: #F9F8F5;\r\n  --surface: #FFFFFF;\r\n  --subtle: #F3F2EE;\r\n  --hover: #EAE8E2;\r\n  --ink: #191918;\r\n  --text: #42423F;\r\n  --muted: #787772;\r\n  --soft: #A6A59E;\r\n  --line: rgba(25, 25, 24, 0.08);\r\n  --line-soft: rgba(25, 25, 24, 0.05);\r\n  --iris: #5B5BD6;\r\n  --iris-soft: rgba(91, 91, 214, 0.09);\r\n  --green: #18794E;\r\n  --green-soft: rgba(24, 121, 78, 0.09);\r\n  --amber: #AD5700;\r\n  --amber-soft: rgba(173, 87, 0, 0.09);\r\n  --red: #CD2B31;\r\n  --red-soft: rgba(205, 43, 49, 0.08);\r\n  --shadow-card: 0 1px 2px rgba(25, 25, 24, 0.03), 0 10px 30px -14px rgba(25, 25, 24, 0.07);\r\n  --shadow-modal: 0 28px 72px -18px rgba(25, 25, 24, 0.24);\r\n}\r\n\r\n[data-theme=\"dark\"] {\r\n  --rail: #10100F;\r\n  --paper: #141413;\r\n  --surface: #1A1A19;\r\n  --subtle: #232321;\r\n  --hover: #2B2B28;\r\n  --ink: #F3F2EE;\r\n  --text: #D5D4CE;\r\n  --muted: #9A9992;\r\n  --soft: #6F6E68;\r\n  --line: rgba(243, 242, 238, 0.09);\r\n  --line-soft: rgba(243, 242, 238, 0.055);\r\n  --iris: #8484F5;\r\n  --iris-soft: rgba(132, 132, 245, 0.15);\r\n  --green: #3DD68C;\r\n  --green-soft: rgba(61, 214, 140, 0.13);\r\n  --amber: #F5A524;\r\n  --amber-soft: rgba(245, 165, 36, 0.14);\r\n  --red: #F87171;\r\n  --red-soft: rgba(248, 113, 113, 0.14);\r\n  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.35);\r\n  --shadow-modal: 0 28px 72px -18px rgba(0, 0, 0, 0.65);\r\n}\r\n\r\n*, *::before, *::after {\r\n  box-sizing: border-box;\r\n  margin: 0;\r\n  padding: 0;\r\n}\r\n\r\nhtml, body, #root {\r\n  height: 100%;\r\n  width: 100%;\r\n  background: var(--rail);\r\n  color: var(--ink);\r\n  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif;\r\n  font-size: 14px;\r\n  line-height: 1.55;\r\n  -webkit-font-smoothing: antialiased;\r\n  overflow: hidden;\r\n}\r\n\r\nbutton, input, select, textarea { font: inherit; color: inherit; }\r\nbutton { cursor: pointer; background: none; border: 0; }\r\n.num { font-variant-numeric: tabular-nums; }\r\n::-webkit-scrollbar { width: 5px; height: 5px; }\r\n::-webkit-scrollbar-thumb { background: rgba(128, 128, 120, 0.2); border-radius: 99px; }\r\n\r\n@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }\r\n@keyframes pulseDot { 0%, 100% { opacity: 0.3; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.1); } }\r\n@keyframes orbit { to { transform: rotate(360deg); } }\r\n\r\n/* 3-Layer Progressive Shell */\r\n.shell {\r\n  --chat-w: 324px;\r\n  display: grid;\r\n  grid-template-columns: 204px var(--chat-w) 1fr;\r\n  height: 100vh;\r\n  width: 100%;\r\n  overflow: hidden;\r\n  transition: grid-template-columns 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);\r\n}\r\n\r\n.shell.resizing { transition: none; }\r\n[data-chat=\"collapsed\"] .shell { grid-template-columns: 204px 0px 1fr; }\r\n[data-rail=\"collapsed\"] .shell { grid-template-columns: 56px var(--chat-w) 1fr; }\r\n[data-rail=\"collapsed\"][data-chat=\"collapsed\"] .shell { grid-template-columns: 56px 0px 1fr; }\r\n\r\n/* 1. Left Slim Space Rail */\r\n.space-rail { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--rail); border-right: 1px solid var(--line); padding: 0 10px; transition: padding 0.2s ease; }\r\n[data-rail=\"collapsed\"] .space-rail { padding: 0 8px; align-items: center; }\r\n.rail-brand { height: 56px; padding: 0 4px 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 650; letter-spacing: -0.02em; flex: none; width: 100%; }\r\n.brand-identity { display: flex; align-items: center; gap: 9px; min-width: 0; overflow: hidden; }\r\n.brand-dot { width: 22px; height: 22px; border-radius: 7px; background: var(--ink); color: var(--surface); display: grid; place-items: center; flex: none; }\r\n.brand-dot svg { width: 12px; height: 12px; fill: currentColor; }\r\n\r\n[data-rail=\"collapsed\"] .rail-brand { padding: 0; justify-content: center; }\r\n[data-rail=\"collapsed\"] .brand-identity,\r\n[data-rail=\"collapsed\"] .rail-lbl,\r\n[data-rail=\"collapsed\"] .rail-cnt,\r\n[data-rail=\"collapsed\"] .rail-jobs { display: none; }\r\n[data-rail=\"collapsed\"] .rail-nav { width: 100%; align-items: center; gap: 6px; }\r\n[data-rail=\"collapsed\"] .rail-btn { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 10px; }\r\n[data-rail=\"collapsed\"] .rail-btn-l { gap: 0; justify-content: center; }\r\n[data-rail=\"collapsed\"] .rail-btn-l svg { width: 17px; height: 17px; }\r\n[data-rail=\"collapsed\"] .rail-foot { flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; width: 100%; }\r\n\r\n.rail-nav { display: flex; flex-direction: column; gap: 2px; padding-top: 4px; overflow-y: auto; flex: 1; min-height: 0; }\r\n.rail-btn { height: 33px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 450; color: var(--text); transition: background 0.12s, color 0.12s; text-align: left; flex: none; }\r\n.rail-btn:hover { background: var(--hover); color: var(--ink); }\r\n.rail-btn.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(25, 25, 24, 0.06); }\r\n.rail-btn-l { display: flex; align-items: center; gap: 8px; min-width: 0; }\r\n.rail-btn-l svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); flex: none; }\r\n.rail-btn.active .rail-btn-l svg { color: var(--ink); }\r\n.rail-cnt { font-size: 11.5px; color: var(--soft); }\r\n\r\n.rail-jobs { display: flex; flex-direction: column; gap: 1px; margin: 4px 0 8px 16px; padding-left: 12px; border-left: 1px solid var(--line); }\r\n.rail-job { height: 30px; padding: 0 9px; border-radius: 7px; display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12.5px; color: var(--muted); transition: background 0.12s, color 0.12s; text-align: left; }\r\n.rail-job:hover { background: var(--hover); color: var(--ink); }\r\n.rail-job.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(25, 25, 24, 0.05); }\r\n.rail-job-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\r\n.rail-job-hc { font-size: 11px; color: var(--soft); flex: none; }\r\n.rail-job-new { color: var(--soft); font-size: 12px; }\r\n.rail-job-new:hover { color: var(--ink); }\r\n\r\n.rail-foot { margin-top: auto; padding: 12px 4px; border-top: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 4px; flex: none; }\r\n.icon-btn { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--muted); transition: background 0.12s, color 0.12s; flex: none; }\r\n.icon-btn:hover { background: var(--hover); color: var(--ink); }\r\n.icon-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }\r\n\r\n/* 2. Accompanying Agent Dialogue Column */\r\n.chat-col { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--paper); border-right: 1px solid var(--line); position: relative; z-index: 2; transition: opacity 0.18s ease; }\r\n[data-chat=\"collapsed\"] .chat-col { opacity: 0; border-right-color: transparent; pointer-events: none; }\r\n.chat-resizer { position: absolute; top: 0; right: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 15; }\r\n.chat-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: transparent; transition: background 0.15s; }\r\n.chat-resizer:hover::after, .chat-resizer.dragging::after { background: var(--iris); }\r\n\r\n.drop-overlay { position: absolute; inset: 10px; border-radius: 14px; border: 1.5px dashed var(--iris); background: rgba(249, 248, 245, 0.92); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 8px; z-index: 25; pointer-events: none; color: var(--iris); font-size: 13px; font-weight: 500; }\r\n[data-theme=\"dark\"] .drop-overlay { background: rgba(20, 20, 19, 0.92); }\r\n.chat-col.drag-over .drop-overlay { display: flex; }\r\n\r\n.chat-head { height: 56px; padding: 0 14px 0 18px; display: flex; align-items: center; justify-content: space-between; flex: none; border-bottom: 1px solid var(--line-soft); }\r\n.chat-title { font-size: 12.5px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; white-space: nowrap; }\r\n.chat-stream { flex: 1; overflow-y: auto; padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 14px; }\r\n.msg { max-width: 94%; font-size: 13px; line-height: 1.68; animation: fadeIn 0.18s ease-out; white-space: pre-wrap; overflow-wrap: anywhere; }\r\n.msg.ai { align-self: flex-start; color: var(--text); }\r\n.msg.user { align-self: flex-end; background: var(--subtle); color: var(--ink); padding: 8px 12px; border-radius: 13px 13px 4px 13px; font-weight: 450; }\r\n.msg-tool-list { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }\r\n.msg-action-tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 99px; background: var(--iris-soft); color: var(--iris); font-size: 11px; font-weight: 500; width: fit-content; }\r\n.msg-action-tag.ok { background: var(--green-soft); color: var(--green); }\r\n.msg-action-tag.error { background: var(--red-soft); color: var(--red); }\r\n.msg-ui-notices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }\r\n.msg-ui-notice { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; background: var(--subtle); color: var(--muted); font-size: 11px; font-weight: 500; }\r\n.msg-suggest-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }\r\n.msg-suggest-btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); color: var(--ink); font-size: 12px; font-weight: 500; box-shadow: 0 1px 2px rgba(25, 25, 24, 0.04); transition: border-color 0.14s, background 0.14s, transform 0.14s; }\r\n.msg-suggest-btn:hover { border-color: var(--ink); background: var(--hover); transform: translateY(-1px); }\r\n.msg-suggest-arrow { color: var(--muted); font-size: 11px; }\r\n.thinking-row { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); }\r\n.thinking-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--iris); animation: pulseDot 0.9s ease-in-out infinite; }\r\n.agent-degraded-bar { margin: 10px 14px 0; padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); font-size: 12px; line-height: 1.5; flex: none; }\r\n.quick-list { padding: 0 18px 10px; display: flex; flex-wrap: wrap; gap: 6px; flex: none; }\r\n.q-pill { padding: 4px 10px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); font-size: 11.5px; color: var(--text); transition: all 0.14s; }\r\n.q-pill:hover { border-color: var(--muted); color: var(--ink); transform: translateY(-1px); }\r\n.composer-wrap { padding: 0 14px 16px; flex: none; }\r\n.composer { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px 8px 8px 12px; display: flex; align-items: center; gap: 8px; box-shadow: var(--shadow-card); transition: border-color 0.16s; }\r\n.composer:focus-within { border-color: var(--muted); }\r\n.composer input { flex: 1; min-width: 0; border: 0; background: transparent; font-size: 13px; color: var(--ink); outline: none; }\r\n.composer input::placeholder { color: var(--soft); }\r\n.send-circle { width: 28px; height: 28px; border-radius: 99px; background: var(--ink); color: var(--surface); display: grid; place-items: center; flex: none; transition: opacity 0.14s, transform 0.14s; }\r\n.send-circle:hover { opacity: 0.86; }\r\n.send-circle:active { transform: scale(0.95); }\r\n.send-circle:disabled { opacity: 0.35; cursor: not-allowed; }\r\n.send-circle svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }\r\n\r\n/* 3. Contextual Main White Canvas */\r\n.canvas-col { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--surface); min-width: 0; position: relative; z-index: 2; }\r\n.canvas-head { height: 56px; padding: 0 36px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 14px; flex: none; }\r\n.canvas-head-left { display: flex; align-items: center; gap: 16px; min-width: 0; overflow: hidden; }\r\n.canvas-tabs { display: inline-flex; align-items: center; gap: 22px; }\r\n.c-tab { font-size: 13px; font-weight: 500; color: var(--muted); padding: 17px 0; position: relative; transition: color 0.14s; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }\r\n.c-tab.active { color: var(--ink); font-weight: 600; }\r\n.c-tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--ink); border-radius: 2px; }\r\n.c-tab-cnt { font-size: 12px; font-weight: 500; color: var(--soft); }\r\n.crumb-bar { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\r\n.crumb-link { color: var(--muted); font-size: 13px; transition: color 0.12s; }\r\n.crumb-link:hover { color: var(--ink); }\r\n.crumb-cur { color: var(--ink); font-weight: 600; }\r\n.canvas-right-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); flex: none; }\r\n\r\n/* Single 56px horizon on embedded candidate/job canvas: float actor badge cleanly inside ros-canvas-head */\r\n.embedded-actor-slot {\r\n  position: absolute;\r\n  top: 14px;\r\n  right: 24px;\r\n  z-index: 20;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n}\r\n\r\n.canvas-body.embedded-canvas .ros-canvas-head {\r\n  padding-right: 148px;\r\n}\r\n\r\n/* Read-only Actor Badge */\r\n.actor-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; background: var(--paper); border: 1px solid var(--line); font-size: 12px; color: var(--text); white-space: nowrap; }\r\n.actor-badge-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--green); flex: none; }\r\n.actor-badge-role { color: var(--muted); font-size: 11px; }\r\n\r\n.canvas-body { flex: 1; overflow-y: auto; padding: 34px 48px 72px; position: relative; }\r\n.canvas-body.embedded-canvas { padding: 0; }\r\n.canvas-inner { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; animation: fadeIn 0.2s ease-out; }\r\n[data-chat=\"collapsed\"] .canvas-inner { max-width: 920px; }\r\n\r\n.sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }\r\n.sec-title { font-size: 15px; font-weight: 650; letter-spacing: -0.015em; color: var(--ink); }\r\n.sec-meta { font-size: 12px; color: var(--soft); }\r\n\r\n/* Editorial inline stats (replaces bulky 4-box KPI strip in QueueView) */\r\n.editorial-stats { display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }\r\n.editorial-stats strong { color: var(--ink); font-weight: 600; }\r\n.editorial-stats .dot { color: var(--soft); }\r\n\r\n.filter-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }\r\n.filter-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }\r\n.f-pill { padding: 4px 11px; border-radius: 99px; border: 1px solid var(--line-soft); background: transparent; font-size: 12px; color: var(--muted); transition: all 0.14s; }\r\n.f-pill:hover { border-color: var(--line); background: var(--paper); color: var(--ink); }\r\n.f-pill.active { background: var(--ink); border-color: var(--ink); color: var(--surface); font-weight: 550; }\r\n.clean-search { height: 30px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--paper); font-size: 12.5px; color: var(--ink); width: 210px; outline: none; }\r\n.clean-search:focus { border-color: var(--muted); }\r\n\r\n/* Signature Gliding Hover List */\r\n.clean-list { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }\r\n.clean-row { padding: 13px 4px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 14px; cursor: pointer; transition: background 0.12s, padding 0.12s; border-radius: 8px; text-align: left; width: 100%; }\r\n.clean-row:hover { background: var(--paper); padding-inline: 12px; margin-inline: -8px; width: calc(100% + 16px); }\r\n.cr-left { display: flex; align-items: center; gap: 12px; min-width: 0; }\r\n.mono { width: 30px; height: 30px; border-radius: 99px; background: var(--subtle); color: var(--ink); display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }\r\n.cr-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }\r\n.cr-title-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }\r\n.cr-name { font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; }\r\n.cr-role { font-size: 12.5px; color: var(--muted); font-weight: 400; }\r\n.cr-sub { font-size: 12px; color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\r\n.cr-right { display: flex; align-items: center; gap: 10px; flex: none; }\r\n.cr-status { font-size: 12.5px; font-weight: 500; color: var(--muted); white-space: nowrap; }\r\n.cr-status.danger { color: var(--red); }\r\n.cr-status.warn { color: var(--amber); }\r\n.cr-status.info { color: var(--iris); }\r\n.cr-status.ok { color: var(--green); }\r\n\r\n/* Flow List (Jobs View) */\r\n.flow-list { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }\r\n.flow-row { padding: 20px 6px; border-bottom: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 14px; cursor: pointer; border-radius: 10px; transition: background 0.14s; text-align: left; width: 100%; }\r\n.flow-row:hover { background: var(--paper); }\r\n.flow-row:hover .flow-job-name { color: var(--iris); }\r\n.flow-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }\r\n.flow-job-name { font-size: 14.5px; font-weight: 600; color: var(--ink); transition: color 0.14s; }\r\n.flow-hc { font-size: 12px; color: var(--muted); }\r\n.stage-track { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); align-items: center; gap: 4px; }\r\n.st-node { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; }\r\n.st-dot { position: relative; z-index: 1; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 99px; display: grid; place-items: center; background: var(--surface); border: 1.5px solid var(--line); font-size: 11px; font-weight: 700; color: var(--soft); }\r\n.st-node.active .st-dot { border-color: var(--iris); background: var(--iris-soft); color: var(--iris); }\r\n.st-lbl { font-size: 11.5px; color: var(--muted); text-align: center; }\r\n.st-node.active .st-lbl { color: var(--ink); font-weight: 550; }\r\n\r\n/* Buttons & Empty / Unbound States */\r\n.btn { height: 32px; padding: 0 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.14s; white-space: nowrap; }\r\n.btn:hover { background: var(--subtle); }\r\n.btn.dark { background: var(--ink); border-color: var(--ink); color: var(--surface); }\r\n.btn.dark:hover { opacity: 0.88; }\r\n\r\n.empty-paper { padding: 40px 24px; border-radius: 14px; background: var(--paper); border: 1px dashed var(--line); text-align: center; color: var(--muted); font-size: 13px; display: flex; flex-direction: column; align-items: center; gap: 10px; }\r\n.unbound-screen { height: 100vh; width: 100%; display: grid; place-items: center; background: var(--paper); padding: 24px; }\r\n.unbound-card { max-width: 420px; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 32px 28px; box-shadow: var(--shadow-card); display: flex; flex-direction: column; gap: 12px; text-align: center; align-items: center; }\r\n.unbound-card h1 { font-size: 17px; font-weight: 650; color: var(--ink); }\r\n.unbound-card p { font-size: 13px; color: var(--muted); line-height: 1.65; }\r\n\r\n.modal-bg { position: fixed; inset: 0; z-index: 100; background: rgba(25, 25, 24, 0.32); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; }\r\n.modal-card { width: 100%; max-width: 500px; background: var(--surface); border-radius: 20px; border: 1px solid var(--line); box-shadow: var(--shadow-modal); padding: 24px 26px; display: flex; flex-direction: column; gap: 16px; animation: fadeIn 0.16s ease-out; max-height: 80vh; overflow-y: auto; }\r\n.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\r\n.modal-head h2 { font-size: 15px; font-weight: 650; color: var(--ink); }\r\n.kv-list { display: flex; flex-direction: column; gap: 8px; }\r\n.kv-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 13px; }\r\n.kv-k { color: var(--muted); }\r\n.kv-v { color: var(--ink); font-weight: 500; }\r\n.new-job-hint { padding: 11px 13px; border-radius: 10px; background: var(--paper); font-size: 12.5px; line-height: 1.6; color: var(--muted); }\r\n.form-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }\r\n.form-field input, .form-field select, .form-field textarea { padding: 9px 11px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 13px; outline: none; }\r\n.form-field textarea { min-height: 78px; resize: vertical; line-height: 1.6; }\r\n.form-field input:focus, .form-field select:focus, .form-field textarea:focus { border-color: var(--muted); }\r\n.modal-foot { display: flex; justify-content: flex-end; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line-soft); }\r\n.offline-banner { padding: 8px 14px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: space-between; gap: 10px; }\r\n.interviewer-host { max-width: 960px; margin: 0 auto; padding: 28px 36px 64px; }\r\n\r\n/* ============================================================================\r\n * 3-Screen Snapshot Audit Polish for Reused Canvas & Confirm Card\r\n * (Zero mutations to src/client/canvas/** write paths)\r\n * ============================================================================ */\r\n.ros-canvas .ros-seq-rail + .ros-clean-list {\r\n  border-top: 0;\r\n}\r\n\r\n.ros-canvas .ros-fact-bar {\r\n  opacity: 0.72;\r\n}\r\n\r\n.ros-canvas .ros-doc-foot {\r\n  position: sticky;\r\n  bottom: 0;\r\n  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--surface) 24%);\r\n  padding: 22px 0 12px;\r\n  margin-top: 8px;\r\n}\r\n\r\n[data-theme=\"dark\"] .ros-canvas .ros-doc-foot {\r\n  background: linear-gradient(to bottom, rgba(26, 26, 25, 0), var(--surface) 24%);\r\n}\r\n\r\n.ros-canvas .ros-modal {\r\n  padding: 28px 30px;\r\n  gap: 18px;\r\n}\r\n\r\n.ros-canvas .ros-m-field {\r\n  gap: 6px;\r\n}\r\n\r\n.ros-canvas .ros-m-field textarea {\r\n  width: 100%;\r\n  min-height: 92px;\r\n  padding: 11px 13px;\r\n  border-radius: 10px;\r\n  background: var(--paper);\r\n  line-height: 1.65;\r\n  resize: vertical;\r\n}\r\n\r\n.ros-canvas .ros-modal > div:last-child {\r\n  padding-top: 14px;\r\n  border-top: 1px solid var(--line-soft);\r\n  margin-top: 2px;\r\n}\r\n\r\n/* Responsive: Tablet / Half-screen */\r\n@media (max-width: 1080px) {\r\n  .shell { grid-template-columns: 56px 0px 1fr !important; }\r\n  .space-rail { padding: 0 8px; align-items: center; }\r\n  .rail-brand { padding: 0; justify-content: center; }\r\n  .brand-identity, .rail-lbl, .rail-cnt, .rail-jobs { display: none; }\r\n  .rail-nav { width: 100%; align-items: center; gap: 6px; }\r\n  .rail-btn { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 10px; }\r\n  .rail-foot { flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; width: 100%; }\r\n  .chat-col { position: fixed; left: 56px; top: 0; bottom: 0; width: min(340px, calc(100vw - 56px)); box-shadow: var(--shadow-modal); z-index: 50; transform: translateX(0); opacity: 1; pointer-events: auto; transition: transform 0.2s ease, opacity 0.18s ease; }\r\n  [data-chat=\"collapsed\"] .chat-col { transform: translateX(-110%); opacity: 0; pointer-events: none; }\r\n  .canvas-body { padding: 24px 24px 64px; }\r\n  .canvas-head { padding: 0 20px; }\r\n}\r\n\r\n/* Responsive: Mobile (390px acceptance) */\r\n@media (max-width: 640px) {\r\n  .shell { grid-template-columns: 48px 0px 1fr !important; }\r\n  .chat-col { left: 48px; width: calc(100vw - 48px); }\r\n  .canvas-head { padding: 0 14px; height: 52px; }\r\n  .canvas-body { padding: 18px 14px 56px; }\r\n  .embedded-actor-slot { top: 10px; right: 12px; }\r\n  .canvas-body.embedded-canvas .ros-canvas-head { padding-right: 116px; }\r\n  .clean-search { width: 100%; }\r\n  .clean-row { flex-direction: column; align-items: flex-start; gap: 8px; }\r\n  .cr-right { width: 100%; justify-content: flex-end; }\r\n  .interviewer-host { padding: 16px 12px 48px; }\r\n}\r\n";
-if (typeof document !== "undefined" && document.querySelector("style[data-recruitment-css=\"c61c486ea236\"]") === null) {
+const CSS_KEY$1 = "b553a45f8513";
+const css$1 = "/* ============================================================================\r\n * Recruitment OS v4 — Standalone Full-Page Warm-Paper Workspace\r\n * 100% faithful to finalized design/v4/recruitment_os_v4.html\r\n * ============================================================================ */\r\n\r\n:root {\r\n  --rail: #F3F2EE;\r\n  --paper: #F9F8F5;\r\n  --surface: #FFFFFF;\r\n  --subtle: #F3F2EE;\r\n  --hover: #EAE8E2;\r\n  --ink: #191918;\r\n  --text: #42423F;\r\n  --muted: #787772;\r\n  --soft: #A6A59E;\r\n  --line: rgba(25, 25, 24, 0.08);\r\n  --line-soft: rgba(25, 25, 24, 0.05);\r\n  --iris: #5B5BD6;\r\n  --iris-soft: rgba(91, 91, 214, 0.09);\r\n  --green: #18794E;\r\n  --green-soft: rgba(24, 121, 78, 0.09);\r\n  --amber: #AD5700;\r\n  --amber-soft: rgba(173, 87, 0, 0.09);\r\n  --red: #CD2B31;\r\n  --red-soft: rgba(205, 43, 49, 0.08);\r\n  --shadow-card: 0 1px 2px rgba(25, 25, 24, 0.03), 0 10px 30px -14px rgba(25, 25, 24, 0.07);\r\n  --shadow-modal: 0 28px 72px -18px rgba(25, 25, 24, 0.24);\r\n}\r\n\r\n[data-theme=\"dark\"] {\r\n  --rail: #10100F;\r\n  --paper: #141413;\r\n  --surface: #1A1A19;\r\n  --subtle: #232321;\r\n  --hover: #2B2B28;\r\n  --ink: #F3F2EE;\r\n  --text: #D5D4CE;\r\n  --muted: #9A9992;\r\n  --soft: #6F6E68;\r\n  --line: rgba(243, 242, 238, 0.09);\r\n  --line-soft: rgba(243, 242, 238, 0.055);\r\n  --iris: #8484F5;\r\n  --iris-soft: rgba(132, 132, 245, 0.15);\r\n  --green: #3DD68C;\r\n  --green-soft: rgba(61, 214, 140, 0.13);\r\n  --amber: #F5A524;\r\n  --amber-soft: rgba(245, 165, 36, 0.14);\r\n  --red: #F87171;\r\n  --red-soft: rgba(248, 113, 113, 0.14);\r\n  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.35);\r\n  --shadow-modal: 0 28px 72px -18px rgba(0, 0, 0, 0.65);\r\n}\r\n\r\n*, *::before, *::after {\r\n  box-sizing: border-box;\r\n  margin: 0;\r\n  padding: 0;\r\n}\r\n\r\nhtml, body, #root {\r\n  height: 100%;\r\n  width: 100%;\r\n  background: var(--rail);\r\n  color: var(--ink);\r\n  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif;\r\n  font-size: 14px;\r\n  line-height: 1.55;\r\n  -webkit-font-smoothing: antialiased;\r\n  overflow: hidden;\r\n}\r\n\r\nbutton, input, select, textarea { font: inherit; color: inherit; }\r\nbutton { cursor: pointer; background: none; border: 0; }\r\n.num { font-variant-numeric: tabular-nums; }\r\n::-webkit-scrollbar { width: 5px; height: 5px; }\r\n::-webkit-scrollbar-thumb { background: rgba(128, 128, 120, 0.2); border-radius: 99px; }\r\n\r\n@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }\r\n@keyframes pulseDot { 0%, 100% { opacity: 0.3; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.1); } }\r\n@keyframes orbit { to { transform: rotate(360deg); } }\r\n\r\n/* 3-Layer Progressive Shell */\r\n.shell {\r\n  --chat-w: 324px;\r\n  display: grid;\r\n  grid-template-columns: 204px var(--chat-w) 1fr;\r\n  height: 100vh;\r\n  width: 100%;\r\n  overflow: hidden;\r\n  transition: grid-template-columns 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);\r\n}\r\n\r\n.shell.resizing { transition: none; }\r\n[data-chat=\"collapsed\"] .shell { grid-template-columns: 204px 0px 1fr; }\r\n[data-rail=\"collapsed\"] .shell { grid-template-columns: 56px var(--chat-w) 1fr; }\r\n[data-rail=\"collapsed\"][data-chat=\"collapsed\"] .shell { grid-template-columns: 56px 0px 1fr; }\r\n\r\n/* 1. Left Slim Space Rail */\r\n.space-rail { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--rail); border-right: 1px solid var(--line); padding: 0 10px; transition: padding 0.2s ease; }\r\n[data-rail=\"collapsed\"] .space-rail { padding: 0 8px; align-items: center; }\r\n.rail-brand { height: 56px; padding: 0 4px 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 650; letter-spacing: -0.02em; flex: none; width: 100%; }\r\n.brand-identity { display: flex; align-items: center; gap: 9px; min-width: 0; overflow: hidden; }\r\n.brand-dot { width: 22px; height: 22px; border-radius: 7px; background: var(--ink); color: var(--surface); display: grid; place-items: center; flex: none; }\r\n.brand-dot svg { width: 12px; height: 12px; fill: currentColor; }\r\n\r\n[data-rail=\"collapsed\"] .rail-brand { padding: 0; justify-content: center; }\r\n[data-rail=\"collapsed\"] .brand-identity,\r\n[data-rail=\"collapsed\"] .rail-lbl,\r\n[data-rail=\"collapsed\"] .rail-cnt,\r\n[data-rail=\"collapsed\"] .rail-jobs { display: none; }\r\n[data-rail=\"collapsed\"] .rail-nav { width: 100%; align-items: center; gap: 6px; }\r\n[data-rail=\"collapsed\"] .rail-btn { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 10px; }\r\n[data-rail=\"collapsed\"] .rail-btn-l { gap: 0; justify-content: center; }\r\n[data-rail=\"collapsed\"] .rail-btn-l svg { width: 17px; height: 17px; }\r\n[data-rail=\"collapsed\"] .rail-foot { flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; width: 100%; }\r\n\r\n.rail-nav { display: flex; flex-direction: column; gap: 2px; padding-top: 4px; overflow-y: auto; flex: 1; min-height: 0; }\r\n.rail-btn { height: 33px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 450; color: var(--text); transition: background 0.12s, color 0.12s; text-align: left; flex: none; }\r\n.rail-btn:hover { background: var(--hover); color: var(--ink); }\r\n.rail-btn.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(25, 25, 24, 0.06); }\r\n.rail-btn-l { display: flex; align-items: center; gap: 8px; min-width: 0; }\r\n.rail-btn-l svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); flex: none; }\r\n.rail-btn.active .rail-btn-l svg { color: var(--ink); }\r\n.rail-cnt { font-size: 11.5px; color: var(--soft); }\r\n\r\n.rail-jobs { display: flex; flex-direction: column; gap: 1px; margin: 4px 0 8px 16px; padding-left: 12px; border-left: 1px solid var(--line); }\r\n.rail-job { height: 30px; padding: 0 9px; border-radius: 7px; display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12.5px; color: var(--muted); transition: background 0.12s, color 0.12s; text-align: left; }\r\n.rail-job:hover { background: var(--hover); color: var(--ink); }\r\n.rail-job.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(25, 25, 24, 0.05); }\r\n.rail-job-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\r\n.rail-job-hc { font-size: 11px; color: var(--soft); flex: none; }\r\n.rail-job-new { color: var(--soft); font-size: 12px; }\r\n.rail-job-new:hover { color: var(--ink); }\r\n\r\n.rail-foot { margin-top: auto; padding: 12px 4px; border-top: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 4px; flex: none; }\r\n.icon-btn { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--muted); transition: background 0.12s, color 0.12s; flex: none; }\r\n.icon-btn:hover { background: var(--hover); color: var(--ink); }\r\n.icon-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }\r\n\r\n/* 2. Accompanying Agent Dialogue Column */\r\n.chat-col { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--paper); border-right: 1px solid var(--line); position: relative; z-index: 2; transition: opacity 0.18s ease; }\r\n[data-chat=\"collapsed\"] .chat-col { opacity: 0; border-right-color: transparent; pointer-events: none; }\r\n.chat-resizer { position: absolute; top: 0; right: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 15; }\r\n.chat-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: transparent; transition: background 0.15s; }\r\n.chat-resizer:hover::after, .chat-resizer.dragging::after { background: var(--iris); }\r\n\r\n.drop-overlay { position: absolute; inset: 10px; border-radius: 14px; border: 1.5px dashed var(--iris); background: rgba(249, 248, 245, 0.92); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 8px; z-index: 25; pointer-events: none; color: var(--iris); font-size: 13px; font-weight: 500; }\r\n[data-theme=\"dark\"] .drop-overlay { background: rgba(20, 20, 19, 0.92); }\r\n.chat-col.drag-over .drop-overlay { display: flex; }\r\n\r\n.chat-head { height: 56px; padding: 0 14px 0 18px; display: flex; align-items: center; justify-content: space-between; flex: none; border-bottom: 1px solid var(--line-soft); }\r\n.chat-title { font-size: 12.5px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; white-space: nowrap; }\r\n.chat-stream { flex: 1; overflow-y: auto; padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 14px; }\r\n.msg { max-width: 94%; font-size: 13px; line-height: 1.68; animation: fadeIn 0.18s ease-out; white-space: pre-wrap; overflow-wrap: anywhere; }\r\n.msg.ai { align-self: flex-start; color: var(--text); }\r\n.msg.user { align-self: flex-end; background: var(--subtle); color: var(--ink); padding: 8px 12px; border-radius: 13px 13px 4px 13px; font-weight: 450; }\r\n.msg-tool-list { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }\r\n.msg-action-tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 99px; background: var(--iris-soft); color: var(--iris); font-size: 11px; font-weight: 500; width: fit-content; }\r\n.msg-action-tag.ok { background: var(--green-soft); color: var(--green); }\r\n.msg-action-tag.error { background: var(--red-soft); color: var(--red); }\r\n.msg-ui-notices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }\r\n.msg-ui-notice { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; background: var(--subtle); color: var(--muted); font-size: 11px; font-weight: 500; }\r\n.msg-suggest-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }\r\n.msg-suggest-btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); color: var(--ink); font-size: 12px; font-weight: 500; box-shadow: 0 1px 2px rgba(25, 25, 24, 0.04); transition: border-color 0.14s, background 0.14s, transform 0.14s; }\r\n.msg-suggest-btn:hover { border-color: var(--ink); background: var(--hover); transform: translateY(-1px); }\r\n.msg-suggest-arrow { color: var(--muted); font-size: 11px; }\r\n.thinking-row { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); }\r\n.thinking-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--iris); animation: pulseDot 0.9s ease-in-out infinite; }\r\n.agent-degraded-bar { margin: 10px 14px 0; padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); font-size: 12px; line-height: 1.5; flex: none; }\r\n.quick-list { padding: 0 18px 10px; display: flex; flex-wrap: wrap; gap: 6px; flex: none; }\r\n.q-pill { padding: 4px 10px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); font-size: 11.5px; color: var(--text); transition: all 0.14s; }\r\n.q-pill:hover { border-color: var(--muted); color: var(--ink); transform: translateY(-1px); }\r\n.composer-wrap { padding: 0 14px 16px; flex: none; }\r\n.composer { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px 8px 8px 12px; display: flex; align-items: center; gap: 8px; box-shadow: var(--shadow-card); transition: border-color 0.16s; }\r\n.composer:focus-within { border-color: var(--muted); }\r\n.composer input { flex: 1; min-width: 0; border: 0; background: transparent; font-size: 13px; color: var(--ink); outline: none; }\r\n.composer input::placeholder { color: var(--soft); }\r\n.send-circle { width: 28px; height: 28px; border-radius: 99px; background: var(--ink); color: var(--surface); display: grid; place-items: center; flex: none; transition: opacity 0.14s, transform 0.14s; }\r\n.send-circle:hover { opacity: 0.86; }\r\n.send-circle:active { transform: scale(0.95); }\r\n.send-circle:disabled { opacity: 0.35; cursor: not-allowed; }\r\n.send-circle svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }\r\n\r\n/* 3. Contextual Main White Canvas */\r\n.canvas-col { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--surface); min-width: 0; position: relative; z-index: 2; }\r\n.canvas-head { height: 56px; padding: 0 36px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 14px; flex: none; }\r\n.canvas-head-left { display: flex; align-items: center; gap: 16px; min-width: 0; overflow: hidden; }\r\n.canvas-tabs { display: inline-flex; align-items: center; gap: 22px; }\r\n.c-tab { font-size: 13px; font-weight: 500; color: var(--muted); padding: 17px 0; position: relative; transition: color 0.14s; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }\r\n.c-tab.active { color: var(--ink); font-weight: 600; }\r\n.c-tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--ink); border-radius: 2px; }\r\n.c-tab-cnt { font-size: 12px; font-weight: 500; color: var(--soft); }\r\n.crumb-bar { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\r\n.crumb-link { color: var(--muted); font-size: 13px; transition: color 0.12s; }\r\n.crumb-link:hover { color: var(--ink); }\r\n.crumb-cur { color: var(--ink); font-weight: 600; }\r\n.canvas-right-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); flex: none; }\r\n\r\n/* Single 56px horizon on embedded candidate/job canvas: float actor badge cleanly inside ros-canvas-head */\r\n.embedded-actor-slot {\r\n  position: absolute;\r\n  top: 14px;\r\n  right: 24px;\r\n  z-index: 20;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n}\r\n\r\n.canvas-body.embedded-canvas .ros-canvas-head {\r\n  padding-right: 148px;\r\n}\r\n\r\n/* Read-only Actor Badge */\r\n.actor-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; background: var(--paper); border: 1px solid var(--line); font-size: 12px; color: var(--text); white-space: nowrap; }\r\n.actor-badge-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--green); flex: none; }\r\n.actor-badge-role { color: var(--muted); font-size: 11px; }\r\n\r\n.canvas-body { flex: 1; overflow-y: auto; padding: 34px 48px 72px; position: relative; }\r\n.canvas-body.embedded-canvas { padding: 0; }\r\n.canvas-inner { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; animation: fadeIn 0.2s ease-out; }\r\n[data-chat=\"collapsed\"] .canvas-inner { max-width: 920px; }\r\n\r\n.sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }\r\n.sec-title { font-size: 15px; font-weight: 650; letter-spacing: -0.015em; color: var(--ink); }\r\n.sec-meta { font-size: 12px; color: var(--soft); }\r\n\r\n/* Editorial inline stats (replaces bulky 4-box KPI strip in QueueView) */\r\n.editorial-stats { display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }\r\n.editorial-stats strong { color: var(--ink); font-weight: 600; }\r\n.editorial-stats .dot { color: var(--soft); }\r\n\r\n.filter-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }\r\n.filter-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }\r\n.f-pill { padding: 4px 11px; border-radius: 99px; border: 1px solid var(--line-soft); background: transparent; font-size: 12px; color: var(--muted); transition: all 0.14s; }\r\n.f-pill:hover { border-color: var(--line); background: var(--paper); color: var(--ink); }\r\n.f-pill.active { background: var(--ink); border-color: var(--ink); color: var(--surface); font-weight: 550; }\r\n.clean-search { height: 30px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--paper); font-size: 12.5px; color: var(--ink); width: 210px; outline: none; }\r\n.clean-search:focus { border-color: var(--muted); }\r\n\r\n/* Signature Gliding Hover List */\r\n.clean-list { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }\r\n.clean-row { padding: 13px 4px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 14px; cursor: pointer; transition: background 0.12s, padding 0.12s; border-radius: 8px; text-align: left; width: 100%; }\r\n.clean-row:hover { background: var(--paper); padding-inline: 12px; margin-inline: -8px; width: calc(100% + 16px); }\r\n.cr-left { display: flex; align-items: center; gap: 12px; min-width: 0; }\r\n.mono { width: 30px; height: 30px; border-radius: 99px; background: var(--subtle); color: var(--ink); display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }\r\n.cr-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }\r\n.cr-title-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }\r\n.cr-name { font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; }\r\n.cr-role { font-size: 12.5px; color: var(--muted); font-weight: 400; }\r\n.cr-sub { font-size: 12px; color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\r\n.cr-right { display: flex; align-items: center; gap: 10px; flex: none; }\r\n.cr-status { font-size: 12.5px; font-weight: 500; color: var(--muted); white-space: nowrap; }\r\n.cr-status.danger { color: var(--red); }\r\n.cr-status.warn { color: var(--amber); }\r\n.cr-status.info { color: var(--iris); }\r\n.cr-status.ok { color: var(--green); }\r\n\r\n/* Flow List (Jobs View) */\r\n.flow-list { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }\r\n.flow-row { padding: 20px 6px; border-bottom: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 14px; cursor: pointer; border-radius: 10px; transition: background 0.14s; text-align: left; width: 100%; }\r\n.flow-row:hover { background: var(--paper); }\r\n.flow-row:hover .flow-job-name { color: var(--iris); }\r\n.flow-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }\r\n.flow-job-name { font-size: 14.5px; font-weight: 600; color: var(--ink); transition: color 0.14s; }\r\n.flow-hc { font-size: 12px; color: var(--muted); }\r\n.stage-track { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); align-items: center; gap: 4px; }\r\n.st-node { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; }\r\n.st-dot { position: relative; z-index: 1; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 99px; display: grid; place-items: center; background: var(--surface); border: 1.5px solid var(--line); font-size: 11px; font-weight: 700; color: var(--soft); }\r\n.st-node.active .st-dot { border-color: var(--iris); background: var(--iris-soft); color: var(--iris); }\r\n.st-lbl { font-size: 11.5px; color: var(--muted); text-align: center; }\r\n.st-node.active .st-lbl { color: var(--ink); font-weight: 550; }\r\n\r\n/* Buttons & Empty / Unbound States */\r\n.btn { height: 32px; padding: 0 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.14s; white-space: nowrap; }\r\n.btn:hover { background: var(--subtle); }\r\n.btn.dark { background: var(--ink); border-color: var(--ink); color: var(--surface); }\r\n.btn.dark:hover { opacity: 0.88; }\r\n\r\n.empty-paper { padding: 40px 24px; border-radius: 14px; background: var(--paper); border: 1px dashed var(--line); text-align: center; color: var(--muted); font-size: 13px; display: flex; flex-direction: column; align-items: center; gap: 10px; }\r\n.unbound-screen { height: 100vh; width: 100%; display: grid; place-items: center; background: var(--paper); padding: 24px; }\r\n.unbound-card { max-width: 420px; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 32px 28px; box-shadow: var(--shadow-card); display: flex; flex-direction: column; gap: 12px; text-align: center; align-items: center; }\r\n.unbound-card h1 { font-size: 17px; font-weight: 650; color: var(--ink); }\r\n.unbound-card p { font-size: 13px; color: var(--muted); line-height: 1.65; }\r\n\r\n.modal-bg { position: fixed; inset: 0; z-index: 100; background: rgba(25, 25, 24, 0.32); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; }\r\n.modal-card { width: 100%; max-width: 500px; background: var(--surface); border-radius: 20px; border: 1px solid var(--line); box-shadow: var(--shadow-modal); padding: 24px 26px; display: flex; flex-direction: column; gap: 16px; animation: fadeIn 0.16s ease-out; max-height: 80vh; overflow-y: auto; }\r\n.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\r\n.modal-head h2 { font-size: 15px; font-weight: 650; color: var(--ink); }\r\n.kv-list { display: flex; flex-direction: column; gap: 8px; }\r\n.kv-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 13px; }\r\n.kv-k { color: var(--muted); }\r\n.kv-v { color: var(--ink); font-weight: 500; }\r\n.new-job-hint { padding: 11px 13px; border-radius: 10px; background: var(--paper); font-size: 12.5px; line-height: 1.6; color: var(--muted); }\r\n.form-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }\r\n.form-field input, .form-field select, .form-field textarea { padding: 9px 11px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 13px; outline: none; }\r\n.form-field textarea { min-height: 78px; resize: vertical; line-height: 1.6; }\r\n.form-field input:focus, .form-field select:focus, .form-field textarea:focus { border-color: var(--muted); }\r\n.modal-foot { display: flex; justify-content: flex-end; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line-soft); }\r\n.offline-banner { padding: 8px 14px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: space-between; gap: 10px; }\r\n.interviewer-host { max-width: 960px; margin: 0 auto; padding: 28px 36px 64px; }\r\n\r\n/* ============================================================================\r\n * 3-Screen Snapshot Audit Polish for Reused Canvas & Confirm Card\r\n * (Zero mutations to src/client/canvas/** write paths)\r\n * ============================================================================ */\r\n.ros-canvas .ros-seq-rail + .ros-clean-list {\r\n  border-top: 0;\r\n}\r\n\r\n.ros-canvas .ros-fact-bar {\r\n  opacity: 0.72;\r\n}\r\n\r\n.ros-canvas .ros-doc-foot {\r\n  position: sticky;\r\n  bottom: 0;\r\n  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--surface) 24%);\r\n  padding: 22px 0 12px;\r\n  margin-top: 8px;\r\n}\r\n\r\n[data-theme=\"dark\"] .ros-canvas .ros-doc-foot {\r\n  background: linear-gradient(to bottom, rgba(26, 26, 25, 0), var(--surface) 24%);\r\n}\r\n\r\n.ros-canvas .ros-modal {\r\n  padding: 28px 30px;\r\n  gap: 18px;\r\n}\r\n\r\n.ros-canvas .ros-m-field {\r\n  gap: 6px;\r\n}\r\n\r\n.ros-canvas .ros-m-field textarea {\r\n  width: 100%;\r\n  min-height: 92px;\r\n  padding: 11px 13px;\r\n  border-radius: 10px;\r\n  background: var(--paper);\r\n  line-height: 1.65;\r\n  resize: vertical;\r\n}\r\n\r\n.ros-canvas .ros-modal > div:last-child {\r\n  padding-top: 14px;\r\n  border-top: 1px solid var(--line-soft);\r\n  margin-top: 2px;\r\n}\r\n\r\n/* Responsive: Tablet / Half-screen */\r\n@media (max-width: 1080px) {\r\n  .shell { grid-template-columns: 56px 0px 1fr !important; }\r\n  .space-rail { padding: 0 8px; align-items: center; }\r\n  .rail-brand { padding: 0; justify-content: center; }\r\n  .brand-identity, .rail-lbl, .rail-cnt, .rail-jobs { display: none; }\r\n  .rail-nav { width: 100%; align-items: center; gap: 6px; }\r\n  .rail-btn { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 10px; }\r\n  .rail-foot { flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; width: 100%; }\r\n  .chat-col { position: fixed; left: 56px; top: 0; bottom: 0; width: min(340px, calc(100vw - 56px)); box-shadow: var(--shadow-modal); z-index: 50; transform: translateX(0); opacity: 1; pointer-events: auto; transition: transform 0.2s ease, opacity 0.18s ease; }\r\n  [data-chat=\"collapsed\"] .chat-col { transform: translateX(-110%); opacity: 0; pointer-events: none; }\r\n  .canvas-body { padding: 24px 24px 64px; }\r\n  .canvas-head { padding: 0 20px; }\r\n}\r\n\r\n/* Responsive: Mobile (390px acceptance) */\r\n@media (max-width: 640px) {\r\n  .shell { grid-template-columns: 48px 0px 1fr !important; }\r\n  .chat-col { left: 48px; width: calc(100vw - 48px); }\r\n  .canvas-head { padding: 0 14px; height: 52px; }\r\n  .canvas-body { padding: 18px 14px 56px; }\r\n  .embedded-actor-slot { top: 10px; right: 12px; }\r\n  .canvas-body.embedded-canvas .ros-canvas-head { padding-right: 116px; }\r\n  .clean-search { width: 100%; }\r\n  .clean-row { flex-direction: column; align-items: flex-start; gap: 8px; }\r\n  .cr-right { width: 100%; justify-content: flex-end; }\r\n  .interviewer-host { padding: 16px 12px 48px; }\r\n}\r\n\r\n/* Inline write confirmation card (design/v4/chat-inline-confirm-spec.md §2) */\r\n.msg-confirm-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }\r\n.msg-confirm-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }\r\n.msg-confirm-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line-soft); }\r\n.msg-confirm-title { font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }\r\n.msg-confirm-status { font-size: 11.5px; color: var(--muted); white-space: nowrap; }\r\n.msg-confirm-status.is-done { color: var(--green); }\r\n.msg-confirm-status.is-blocked { color: var(--red); }\r\n.msg-confirm-rows { display: flex; flex-direction: column; }\r\n.msg-confirm-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; line-height: 1.45; }\r\n.msg-confirm-row:last-child { border-bottom: 0; }\r\n.msg-confirm-key { color: var(--muted); font-size: 12px; flex: none; }\r\n.msg-confirm-val { color: var(--text); text-align: right; word-break: break-word; }\r\n.msg-confirm-error { margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--red); }\r\n.msg-confirm-foot { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }\r\n.msg-confirm-submit { height: 30px; padding: 0 12px; border-radius: 8px; background: var(--ink); color: var(--surface); font-size: 12px; font-weight: 500; transition: opacity 0.14s, background 0.14s; }\r\n.msg-confirm-submit:hover:not(:disabled) { opacity: 0.88; }\r\n.msg-confirm-submit:disabled { opacity: 0.42; cursor: not-allowed; }\r\n.msg-confirm-submit.is-danger { background: var(--surface); color: var(--red); border: 1px solid rgba(205, 43, 49, 0.32); }\r\n.msg-confirm-submit.is-danger:hover:not(:disabled) { background: var(--red-soft); opacity: 1; }\r\n.msg-confirm-cancel { font-size: 12px; color: var(--muted); padding: 4px 2px; transition: color 0.14s; }\r\n.msg-confirm-cancel:hover:not(:disabled) { color: var(--ink); }\r\n.msg-confirm-fallback { margin-left: auto; font-size: 11.5px; color: var(--muted); transition: color 0.14s; }\r\n.msg-confirm-fallback:hover:not(:disabled) { color: var(--ink); }\r\n.msg-confirm-done { display: flex; align-items: center; justify-content: space-between; width: 100%; font-size: 12px; color: var(--green); font-weight: 500; }\r\n.msg-confirm-cancelled { margin-top: 8px; font-size: 12px; color: var(--muted); }\r\n\r\n/* Queue ops visibility strip (Wave 1 / G-03, zero shadow, warm paper) */\r\n.ops-notice-strip { display: flex; align-items: baseline; gap: 10px; padding: 9px 14px; margin-bottom: 20px; background: var(--paper); border: 1px solid var(--line); border-left: 2px solid var(--amber); border-radius: 8px; font-size: 12.5px; line-height: 1.5; color: var(--text); }\r\n.ops-notice-label { font-weight: 600; color: var(--amber); flex: none; }\r\n.ops-notice-text { color: var(--text); }\r\n\r\n/* Wave 2 / G-07: New Job Rubric Draft & Open Status Toggle */\r\n.form-field-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }\r\n.text-action-link { font-size: 12px; color: var(--iris); font-weight: 500; transition: opacity 0.14s; }\r\n.text-action-link:hover:not(:disabled) { opacity: 0.78; }\r\n.text-action-link:disabled { opacity: 0.45; cursor: not-allowed; }\r\n.text-action-link.muted { color: var(--muted); font-weight: 400; }\r\n.text-action-link.muted:hover:not(:disabled) { color: var(--red); opacity: 1; }\r\n.new-job-draft-note { font-size: 12px; color: var(--green); line-height: 1.5; }\r\n.new-job-crit-list { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }\r\n.new-job-crit-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; color: var(--ink); }\r\n.new-job-crit-main { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; }\r\n.new-job-crit-idx { color: var(--soft); font-size: 11.5px; }\r\n.new-job-crit-kind { font-size: 11px; color: var(--muted); }\r\n.new-job-crit-add { display: flex; align-items: center; gap: 8px; margin-top: 8px; }\r\n.new-job-crit-add input { flex: 1; min-width: 0; }\r\n.new-job-status-row { display: flex; gap: 8px; }\r\n.status-toggle-btn { flex: 1; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 12.5px; font-weight: 500; transition: border-color 0.14s, color 0.14s, background 0.14s; }\r\n.status-toggle-btn.active { border-color: var(--ink); color: var(--ink); background: var(--paper); }\r\n\r\n/* #/settings progressive disclosure (warm paper, 1px hairline, zero nested cards) */\r\n.settings-page { max-width: 860px; margin: 0 auto; }\r\n.settings-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }\r\n.settings-title { font-size: 20px; font-weight: 600; color: var(--ink); letter-spacing: -0.02em; margin: 0 0 4px; }\r\n.settings-subtitle { font-size: 13px; color: var(--muted); margin: 0; line-height: 1.5; }\r\n.settings-readonly-note { font-size: 12px; color: var(--muted); white-space: nowrap; }\r\n.settings-tabs { display: flex; align-items: center; gap: 20px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }\r\n.settings-tab { padding: 10px 2px; font-size: 13px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.14s, border-color 0.14s; }\r\n.settings-tab:hover { color: var(--ink); }\r\n.settings-tab.active { color: var(--ink); font-weight: 500; border-bottom-color: var(--ink); }\r\n.settings-feedback { padding: 8px 12px; margin-bottom: 14px; border-radius: 8px; font-size: 12.5px; border: 1px solid var(--line); background: var(--paper); }\r\n.settings-feedback.is-ok { color: var(--green); border-left: 2px solid var(--green); }\r\n.settings-feedback.is-err { color: var(--red); border-left: 2px solid var(--red); }\r\n.settings-list { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }\r\n.settings-row { border-bottom: 1px solid var(--line-soft); padding: 14px 0; }\r\n.settings-row-main { display: flex; align-items: center; justify-content: space-between; gap: 16px; }\r\n.settings-row-info { min-width: 0; flex: 1; }\r\n.settings-row-title { font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 3px; }\r\n.settings-row-desc { font-size: 12.5px; color: var(--muted); line-height: 1.5; }\r\n.settings-row-actions { display: flex; align-items: center; gap: 12px; flex: none; }\r\n.settings-status { font-size: 12px; white-space: nowrap; }\r\n.settings-status.tone-ok { color: var(--green); }\r\n.settings-status.tone-warn { color: var(--amber); }\r\n.settings-status.tone-muted { color: var(--muted); }\r\n.settings-l2 { margin-top: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; gap: 12px; }\r\n.settings-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }\r\n.settings-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }\r\n.settings-field input, .settings-field select { height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font-size: 13px; }\r\n.settings-l2-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 8px; border-top: 1px solid var(--line-soft); }\r\n.settings-l2-btns { display: flex; align-items: center; gap: 8px; }\r\n.settings-l3 { padding-top: 8px; border-top: 1px dashed var(--line-soft); font-size: 12px; color: var(--muted); line-height: 1.5; }\r\n.settings-kv-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 12.5px; color: var(--text); padding: 4px 0; border-bottom: 1px solid var(--line-soft); }\r\n.settings-kv-row:last-child { border-bottom: 0; }\r\n.settings-toggle-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--ink); padding: 4px 0; }\r\n.settings-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--muted); }\r\n\r\n/* Issue #61: production login/logout entry */\r\n.actor-logout-btn { margin-left: 8px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); font-size: 11px; line-height: 1.4; cursor: pointer; }\\n.actor-logout-btn:hover { color: var(--ink); border-color: var(--ink); }\r\n";
+if (typeof document !== "undefined" && document.querySelector("style[data-recruitment-css=\"b553a45f8513\"]") === null) {
 	const style = document.createElement("style");
 	style.setAttribute("data-recruitment-css", CSS_KEY$1);
 	style.textContent = css$1;
@@ -18912,6 +18912,50 @@ const BASIS_KIND_MAP = {
 	AUTHORITY: "操作人权限校验",
 	SCREENING_EVALUATION: "简历初筛评估"
 };
+const AUTO_SCREENING_VERDICT_LABELS$1 = {
+	PASS: "建议通过",
+	FAIL: "建议不通过",
+	NEEDS_REVIEW: "建议人工复核"
+};
+const AUTO_SCREENING_VERDICT_TONES$1 = {
+	PASS: "green",
+	FAIL: "red",
+	NEEDS_REVIEW: "amber"
+};
+const AUTO_SCREENING_DEFAULT_NOTE = "这是只读评估给出的建议，不是录用决定；请由招聘团队成员确认。";
+/** 归一化服务端 `application.auto_screening`（只读建议，非决定）。 */
+function normalizeAutoScreeningVM(value) {
+	if (!value || typeof value !== "object") return null;
+	const obj = value;
+	const verdict = asStr(obj.verdict);
+	const verdictSummary = asStr(obj.verdict_summary);
+	if (!verdict && !verdictSummary && !asStr(obj.advisory_note)) return null;
+	const verdictLabel = AUTO_SCREENING_VERDICT_LABELS$1[verdict] || (verdict ? verdict : "建议待定");
+	const advisoryNote = asStr(obj.advisory_note) || AUTO_SCREENING_DEFAULT_NOTE;
+	const reasons = (Array.isArray(obj.reasons) ? obj.reasons : []).map((item) => {
+		const r = asObj(item);
+		return {
+			code: asStr(r.code),
+			criterionKey: asStr(r.criterion_key),
+			triState: asStr(r.tri_state),
+			outcome: asStr(r.outcome),
+			message: asStr(r.message)
+		};
+	});
+	return {
+		verdict,
+		verdictLabel,
+		verdictTone: AUTO_SCREENING_VERDICT_TONES$1[verdict] || "",
+		verdictSummary,
+		advisoryNote,
+		reasons,
+		summaryText: [
+			verdictLabel,
+			verdictSummary,
+			advisoryNote
+		].filter(Boolean).join(" · ")
+	};
+}
 const INTERVIEW_STATUS_MAP = {
 	COMPLETED: {
 		text: "已完成",
@@ -19079,6 +19123,7 @@ function normalizeApplicationDetail(raw) {
 	const appRubric = asObj(app.rubric);
 	const material = asObj(app.material);
 	const screening = asObj(app.screening);
+	const autoScreening = normalizeAutoScreeningVM(app.auto_screening);
 	const screeningEval = asObj(screening.evaluation);
 	const nextStep = asObj(asObj(app.progress).next_step);
 	const resumeObj = asObj(root.resume);
@@ -19254,6 +19299,7 @@ function normalizeApplicationDetail(raw) {
 	}).filter((a) => !a.available);
 	const summaryParts = [];
 	if (asStr(screening.reason)) summaryParts.push(`初筛结论：${asStr(screening.reason)}`);
+	if (autoScreening) summaryParts.push(`自动初筛${autoScreening.verdictLabel}（建议）：${autoScreening.verdictSummary}`);
 	if (asStr(nextStep.label)) summaryParts.push(asStr(nextStep.label));
 	if (summaryParts.length === 0) summaryParts.push(`当前处于「${formatStageLabel(stageCode)}」阶段。`);
 	const rubricVersionNo = asNum(appRubric.version_no, asNum(evRubric.version_no, 1));
@@ -19287,6 +19333,7 @@ function normalizeApplicationDetail(raw) {
 		transcriptItems,
 		rounds,
 		screeningBasis,
+		autoScreening,
 		timeline,
 		actions,
 		unavailableActions
@@ -19451,7 +19498,7 @@ function saveCanvasScroll(routeKey, scrollTop) {
 function getSavedCanvasScroll(routeKey) {
 	return scrollMemory.get(routeKey) ?? 0;
 }
-// node_modules/.pnpm/react@18.3.1/node_modules/react/cjs/react-jsx-runtime.development.js
+// ../../../../../dsh工作区/projects/recruitment-agent/dsh/dsh-recruitment/node_modules/.pnpm/react@18.3.1/node_modules/react/cjs/react-jsx-runtime.development.js
 /**
 * @license React
 * react-jsx-runtime.development.js
@@ -20357,10 +20404,16 @@ function formatDateParts(date) {
 // src/client/recruiting/actions.ts
 /** 决策事实只读投影（GET；`?application_id=<uuid>`）。 */
 const DECISION_FACTS_PATH = "/recruitment/api/decision/facts";
+/** 执行初筛评估（POST，Human Host Action）。 */
+const DECISION_EVALUATE_PATH = "/recruitment/api/decision/screening/evaluate";
 /** 正式决策 facade（POST，body 由服务端从 facts 组装 basis）。 */
 const DECISION_RECORD_PATH = "/recruitment/api/decision/record";
+/** 岗位草案生成（POST，只读不写库）。 */
+const JOB_DRAFT_PATH = "/recruitment/api/job-action/job/draft";
 /** 人确认后的岗位创建（POST）。 */
 const JOB_CREATE_PATH = "/recruitment/api/job-action/job/create";
+/** 岗位关闭（POST；信封见 `work/d5/joblife/CONTRACT.md` §1）。 */
+const JOB_CLOSE_PATH = "/recruitment/api/job-action/job/close";
 /**
 * 客户端永不上送的身份 / 服务端派生键（命中即 400 `ACTOR_OVERRIDE_REJECTED`，本层发送前就拒绝）。
 *
@@ -20962,6 +21015,56 @@ function buildTranscriptImportBody(input) {
 	if (note !== "") body.note = note;
 	return finish(body);
 }
+/** `job/rubric-approve` body：`{job_id, rubric_version_id, reason?}`（reason ≤500）。 */
+function buildRubricApproveBody(input) {
+	const missing = [];
+	const jobId = text(input.jobId);
+	const rubricVersionId = text(input.rubricVersionId);
+	if (!requireUuid(jobId, "job_id", missing)) return fail("ID_NOT_UUID", "岗位编号缺失或格式不正确", missing);
+	if (!requireUuid(rubricVersionId, "rubric_version_id", missing)) return fail("ID_NOT_UUID", "评分标准版本编号缺失或格式不正确", missing);
+	const reason = typeof input.reason === "string" ? input.reason.trim() : "";
+	if (charLength(reason) > 500) return fail("REASON_OUT_OF_RANGE", "批准理由不得超过 500 字", ["reason"]);
+	return finish({
+		job_id: jobId,
+		rubric_version_id: rubricVersionId,
+		...reason !== "" ? { reason } : {}
+	});
+}
+/** `POST job/draft` body（`request_text` 1..2000；其余可选键给了才带）。 */
+function buildJobDraftBody(input) {
+	const requestText = typeof input.requestText === "string" ? input.requestText.trim() : "";
+	if (requestText === "") return fail("MISSING_REQUEST_TEXT", "岗位需求原文不能为空（1..2000 字）", ["request_text"]);
+	if (charLength(requestText) > 2e3) return fail("REQUEST_TEXT_TOO_LONG", "岗位需求原文不得超过 2000 字", ["request_text"]);
+	const body = { request_text: requestText };
+	const supplement = typeof input.recruiterSupplement === "string" ? input.recruiterSupplement.trim() : "";
+	if (supplement !== "") body.recruiter_supplement = supplement;
+	if (typeof input.departmentContext === "string") {
+		const departmentName = input.departmentContext.trim();
+		if (departmentName !== "") body.department_context = { department_name: departmentName };
+	} else if (typeof input.departmentContext === "object" && input.departmentContext !== null) {
+		const departmentContext = input.departmentContext;
+		if (Object.keys(departmentContext).length > 0) body.department_context = departmentContext;
+	}
+	const templateId = text(input.templateId);
+	if (templateId !== "") body.template_id = templateId;
+	return finish(body);
+}
+/**
+* `job/close` body（封闭键集 `job_id` / `confirm` / `reason?`；`confirm:true` 是人类裁决）。
+* 出处：`work/d5/joblife/CONTRACT.md` §1。
+*/
+function buildJobCloseBody(input) {
+	const jobId = text(input.jobId);
+	const missing = [];
+	if (!requireUuid(jobId, "job_id", missing)) return fail("JOB_ID_INVALID", "岗位编号缺失或格式不正确（关闭岗位只按编号操作）", missing);
+	const reason = typeof input.reason === "string" ? input.reason.trim() : "";
+	if (charLength(reason) > 500) return fail("REASON_INVALID", "关闭原因不得超过 500 字", ["reason"]);
+	return finish({
+		job_id: jobId,
+		confirm: true,
+		...reason !== "" ? { reason } : {}
+	});
+}
 /** job-create 的 criteria 权重和容差（`src/tools/job-create.ts`：Σweight = 1，tolerance 1e-6）。 */
 const CRITERIA_WEIGHT_TOLERANCE = 1e-6;
 /**
@@ -21011,13 +21114,14 @@ function buildJobCreateBody(input) {
 		for (const optionalKey of [
 			"field",
 			"operator",
-			"value",
 			"question",
 			"notes"
 		]) {
 			const value = entry[optionalKey];
 			if (typeof value === "string" && value.trim() !== "") shaped[optionalKey] = value;
 		}
+		const rawValue = entry.value;
+		if (typeof rawValue === "boolean" || typeof rawValue === "number" && Number.isFinite(rawValue) || typeof rawValue === "string" && rawValue.trim() !== "") shaped.value = rawValue;
 		criteria.push(shaped);
 	}
 	if (Math.abs(weightSum - 1) > CRITERIA_WEIGHT_TOLERANCE) return fail("CRITERIA_WEIGHT_SUM", `criteria 的 weight 之和必须为 1（当前 ${weightSum.toFixed(6)}；服务端容差 1e-6）`, ["criteria[].weight"]);
@@ -21588,6 +21692,56 @@ function screeningSummaryOf(screening) {
 		tone: screening.resultTone
 	};
 }
+const AUTO_SCREENING_VERDICT_LABELS = {
+	PASS: "建议通过",
+	FAIL: "建议不通过",
+	NEEDS_REVIEW: "建议人工复核"
+};
+const AUTO_SCREENING_VERDICT_TONES = {
+	PASS: "green",
+	FAIL: "red",
+	NEEDS_REVIEW: "amber"
+};
+/** 归一化自动初筛建议（非决定；任何字段缺失都不猜）。 */
+function normalizeAutoScreening(value) {
+	if (value === null || value === void 0) return null;
+	const raw = record(value);
+	const verdict = text(raw.verdict);
+	const verdictSummary = text(raw.verdict_summary);
+	if (verdict === "" && verdictSummary === "" && text(raw.advisory_note) === "") return null;
+	const reasons = [];
+	for (const item of Array.isArray(raw.reasons) ? raw.reasons : []) {
+		const r = record(item);
+		reasons.push({
+			code: text(r.code),
+			criterionKey: text(r.criterion_key),
+			triState: text(r.tri_state),
+			outcome: text(r.outcome),
+			message: text(r.message)
+		});
+	}
+	const verdictLabel = AUTO_SCREENING_VERDICT_LABELS[verdict] ?? (verdict !== "" ? verdict : "建议待定");
+	const advisoryNote = text(raw.advisory_note) || "这是只读评估给出的建议，不是录用决定；请由招聘团队成员确认。";
+	const summaryText = joinTexts([
+		`自动初筛 ${verdictLabel}`,
+		verdictSummary,
+		advisoryNote
+	]);
+	return {
+		verdict,
+		verdictLabel,
+		verdictTone: AUTO_SCREENING_VERDICT_TONES[verdict] ?? "gray",
+		verdictSummary,
+		requiredHumanAction: text(raw.required_human_action),
+		rubricVersionId: text(raw.rubric_version_id),
+		evaluationDigest: text(raw.evaluation_digest),
+		materialSha256: text(raw.material_sha256),
+		reasons,
+		advisory: raw.advisory === true,
+		advisoryNote,
+		summaryText
+	};
+}
 /** 归一化一条面评。 */
 function normalizeScorecard$1(value) {
 	if (value === null || value === void 0) return null;
@@ -22011,6 +22165,7 @@ function buildApplicationRow(value, context) {
 	const materialSummary = materialSummaryOf(material);
 	const screening = normalizeScreening(raw.screening, context);
 	const screeningSummary = screeningSummaryOf(screening);
+	const autoScreening = normalizeAutoScreening(raw.auto_screening);
 	const interviews = buildInterviews(raw.interviews, context);
 	const interviewSummary = interviewSummaryOf(interviews);
 	const progress = record(raw.progress);
@@ -22026,6 +22181,7 @@ function buildApplicationRow(value, context) {
 		screening,
 		screeningSummary: screeningSummary.summary,
 		screeningTone: screeningSummary.tone,
+		autoScreening,
 		interviews,
 		interviewRoundCount: interviewSummary.rounds,
 		interviewSummary: interviewSummary.summary,
@@ -22491,6 +22647,49 @@ async function postActionSeam(action, body, sessionId) {
 	return postWrite(action.seam, body, sessionId, action.key);
 }
 /**
+* 岗位关闭：内部固定 body `{job_id, confirm:true, reason?}`（`confirm:true` 是人的裁决）。
+* 调用方只在用户点"确认关闭"后调用；成功信封用 `parseJobCloseEnvelope(outcome.bodyText)` 解析。
+* @param jobId - 岗位 id。
+* @param reason - 可选关闭原因（≤500）。
+* @param sessionId - 当前 DSH session id（只来自形参）。
+*/
+async function postJobClose(jobId, reason, sessionId) {
+	const id = jobId.trim();
+	const trimmedReason = reason.trim();
+	if (id === "") return refusedOutcome("job_close", {
+		ok: false,
+		status: 0,
+		code: "CLIENT_REFUSED",
+		reasonCode: "JOB_ID_INVALID",
+		reasonText: "岗位 id 为空，拒绝关闭请求",
+		missing: ["job_id"]
+	});
+	const body = {
+		job_id: id,
+		confirm: true
+	};
+	if (trimmedReason !== "") body.reason = trimmedReason;
+	return postWrite(JOB_CLOSE_PATH, body, sessionId, "job_close");
+}
+/**
+* 执行初筛评估 `POST /recruitment/api/decision/screening/evaluate`（body 只有 application_id）。
+* 成功信封不是标准 action 信封：用 `outcome.payload.evaluation/.readback` 显示；随后重新 GET facts。
+* @param applicationId - 申请 id。
+* @param sessionId - 当前 DSH session id（只来自形参）。
+*/
+async function postScreeningEvaluate(applicationId, sessionId) {
+	const id = applicationId.trim();
+	if (id === "") return refusedOutcome("screening_evaluate", {
+		ok: false,
+		status: 0,
+		code: "CLIENT_REFUSED",
+		reasonCode: "MISSING_APPLICATION_ID",
+		reasonText: "申请 id 为空，拒绝初筛评估请求",
+		missing: ["application_id"]
+	});
+	return postWrite(DECISION_EVALUATE_PATH, { application_id: id }, sessionId, "screening_evaluate");
+}
+/**
 * 正式决策 facade `POST /recruitment/api/decision/record`（body 必须由 `buildDecisionRecordBody` 产出；
 * 前端不传 summary_digest / basis_refs —— facade 自己从 facts 组装）。
 * @param body - `buildDecisionRecordBody` 产出的 body。
@@ -22498,6 +22697,14 @@ async function postActionSeam(action, body, sessionId) {
 */
 async function postDecisionRecordFacade(body, sessionId) {
 	return postWrite(DECISION_RECORD_PATH, body, sessionId, "decision_record_facade");
+}
+/**
+* 岗位草案 `POST /recruitment/api/job-action/job/draft`（body 由 `buildJobDraftBody` 产出；只读不写库）。
+* @param body - `buildJobDraftBody` 产出的 body。
+* @param sessionId - 当前 DSH session id（只来自形参）。
+*/
+async function postJobDraft(body, sessionId) {
+	return postWrite(JOB_DRAFT_PATH, body, sessionId, "job_draft");
 }
 /**
 * 岗位创建 `POST /recruitment/api/job-action/job/create`（body 由 `buildJobCreateBody` 产出；人确认后才调用）。
@@ -22876,6 +23083,88 @@ async function postRebindMinute(payload) {
 		message: "已把录音归属改到新面试官"
 	};
 }
+async function postCriterionOverride(payload) {
+	const body = {
+		application_id: payload.applicationId,
+		criterion_key: payload.criterionKey,
+		human_state: payload.humanState,
+		confirmation_text: payload.confirmationText.trim()
+	};
+	const trimmedNote = (payload.note ?? "").trim();
+	if (trimmedNote) body.note = trimmedNote.slice(0, 500);
+	const res = await postJsonAction("/recruitment/api/action/criterion/override", body);
+	return {
+		overrideId: String(res.override?.override_id ?? ""),
+		effectiveState: String(res.override?.effective_state ?? payload.humanState)
+	};
+}
+async function fetchMaterialPageImage(materialContentUrl, pageNo, signal) {
+	const pageUrl = materialContentUrl.replace(/\/content(\?.*)?$/, `/page/${pageNo}`);
+	if (!pageUrl || pageUrl === materialContentUrl) return {
+		kind: "unsupported",
+		pageNumber: pageNo,
+		pageCount: 1,
+		message: "当前原件暂不支持逐页图预览。"
+	};
+	try {
+		const res = await fetch(pageUrl, {
+			method: "GET",
+			credentials: "same-origin",
+			cache: "no-store",
+			signal,
+			headers: {
+				"x-recruitment-request": "1",
+				...sessionHeaders(),
+				Accept: "image/png, application/json"
+			}
+		});
+		if (res.status === 415) return {
+			kind: "unsupported",
+			pageNumber: pageNo,
+			pageCount: 1,
+			message: "该格式暂不支持逐页图预览，可下载原件或查看结构化原文。"
+		};
+		if (!res.ok) return {
+			kind: "error",
+			pageNumber: pageNo,
+			pageCount: 1,
+			message: "暂时无法渲染该页原件预览，可点击右侧在新标签页查看原件。"
+		};
+		const blob = await res.blob();
+		const objectUrl = URL.createObjectURL(blob);
+		const totalHeader = Number(res.headers.get("x-page-count") || "1");
+		return {
+			kind: "image",
+			objectUrl,
+			pageNumber: pageNo,
+			pageCount: Number.isFinite(totalHeader) && totalHeader >= 1 ? totalHeader : 1
+		};
+	} catch {
+		return {
+			kind: "error",
+			pageNumber: pageNo,
+			pageCount: 1,
+			message: "原件预览加载中断，请稍后重试。"
+		};
+	}
+}
+async function postBookingInvite(payload) {
+	const res = await postJsonAction("/recruitment/api/action/booking/invite", {
+		application_id: payload.applicationId,
+		round_no: payload.roundNo,
+		duration_minutes: payload.durationMinutes,
+		interviewer_actor_ids: payload.interviewerActorIds,
+		timezone: payload.timezone,
+		slots: payload.slots,
+		...payload.expiresHours ? { expires_hours: payload.expiresHours } : {}
+	});
+	return {
+		inviteId: String(res.invite_id ?? ""),
+		token: String(res.token ?? ""),
+		bookingUrl: String(res.booking_url ?? ""),
+		expiresAt: String(res.expires_at ?? "")
+	};
+}
 // src/client/canvas/CandidateActionModal.tsx
 const DEFAULT_CONFIRM_MAP = (kind, name) => {
 	switch (kind) {
@@ -22894,7 +23183,7 @@ const DEFAULT_CONFIRM_MAP = (kind, name) => {
 function needsConfirmationInput(kind) {
 	return kind === "pin" || kind === "handoff" || kind === "transfer" || kind === "email" || kind === "no_show";
 }
-function formatOutcomeError(outcome) {
+function formatOutcomeError$1(outcome) {
 	const code = `${outcome.error?.code ?? ""} ${outcome.error?.reasonCode ?? ""}`.toUpperCase();
 	if (outcome.status === 409 && (code.includes("VERSION") || code.includes("CONFLICT") || code.includes("STALE") || code.includes("LOCK"))) return "这条刚被别人改过，请刷新";
 	if (outcome.status === 409 && (code.includes("DUPLICATE") || code.includes("ALREADY") || code.includes("DECISION_EXISTS"))) return "已处理过，不会重复写入";
@@ -22964,6 +23253,9 @@ function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }) {
 	const [emailTemplate, setEmailTemplate] = (0, import_react.useState)("OFFER");
 	const [emailSubject, setEmailSubject] = (0, import_react.useState)(`【通知】${vm.jobTitle}（${vm.candidateName}）`);
 	const [scheduleIntent, setScheduleIntent] = (0, import_react.useState)(vm.rounds.length > 0 ? "RESCHEDULE" : "CREATE");
+	const [inviteSlot2, setInviteSlot2] = (0, import_react.useState)("");
+	const [inviteSlot3, setInviteSlot3] = (0, import_react.useState)("");
+	const [inviteResultUrl, setInviteResultUrl] = (0, import_react.useState)("");
 	const [selectedInterviewers, setSelectedInterviewers] = (0, import_react.useState)(defaultActors);
 	const [scheduleTime, setScheduleTime] = (0, import_react.useState)("");
 	const [replaceInterviewer, setReplaceInterviewer] = (0, import_react.useState)("");
@@ -23131,7 +23423,7 @@ function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }) {
 				}
 				const outcome = await postActionSeam(actCheck.action, built.body, activeSessionId);
 				if (!outcome.accepted) {
-					setErrorText(formatOutcomeError(outcome));
+					setErrorText(formatOutcomeError$1(outcome));
 					setSubmitting(false);
 					return;
 				}
@@ -23165,7 +23457,7 @@ function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }) {
 				}
 				const outcome = await postDecisionRecordFacade(built.body, activeSessionId);
 				if (!outcome.accepted) {
-					setErrorText(formatOutcomeError(outcome));
+					setErrorText(formatOutcomeError$1(outcome));
 					setSubmitting(false);
 					return;
 				}
@@ -23188,7 +23480,7 @@ function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }) {
 				}
 				const outcome = await postActionSeam(actCheck.action, built.body, activeSessionId);
 				if (!outcome.accepted) {
-					setErrorText(formatOutcomeError(outcome));
+					setErrorText(formatOutcomeError$1(outcome));
 					setSubmitting(false);
 					return;
 				}
@@ -23221,7 +23513,7 @@ function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }) {
 				}
 				const outcome = await postActionSeam(actCheck.action, built.body, activeSessionId);
 				if (!outcome.accepted) {
-					setErrorText(formatOutcomeError(outcome));
+					setErrorText(formatOutcomeError$1(outcome));
 					setSubmitting(false);
 					return;
 				}
@@ -23264,7 +23556,7 @@ function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }) {
 				};
 				const outcome = await postActionSeam(actCheck.action, body, activeSessionId);
 				if (!outcome.accepted) {
-					setErrorText(formatOutcomeError(outcome));
+					setErrorText(formatOutcomeError$1(outcome));
 					setSubmitting(false);
 					return;
 				}
@@ -23283,7 +23575,45 @@ function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }) {
 					expectedRecordVersion: vm.recordVersion
 				})).action_id
 			});
-			else if (kind === "schedule") {
+			else if (kind === "schedule" && scheduleIntent === "SELF_BOOK") {
+				const interviewerIds = [...new Set(selectedInterviewers.split(",").map((s) => s.trim()).filter(Boolean))];
+				if (interviewerIds.length === 0) {
+					setErrorText("请先填写至少一位面试官编号。");
+					setSubmitting(false);
+					return;
+				}
+				const rawStarts = [
+					scheduleTime.trim(),
+					inviteSlot2.trim(),
+					inviteSlot3.trim()
+				].filter(Boolean);
+				if (rawStarts.length < 2) {
+					setErrorText("请至少提供 2 个可选开始时间（使用上方时间框 + 备选时段 2）。");
+					setSubmitting(false);
+					return;
+				}
+				const slots = rawStarts.map((s) => {
+					const startIso = toOffsetIso(s);
+					const localStart = new Date(s);
+					const endDate = new Date(localStart.getTime() + 36e5);
+					const pad = (n) => String(n).padStart(2, "0");
+					return {
+						start: startIso,
+						end: toOffsetIso(`${endDate.getFullYear()}-${pad(endDate.getMonth() + 1)}-${pad(endDate.getDate())}T${pad(endDate.getHours())}:${pad(endDate.getMinutes())}`)
+					};
+				});
+				const invite = await postBookingInvite({
+					applicationId: vm.applicationId,
+					roundNo: vm.rounds.length + 1,
+					durationMinutes: 60,
+					interviewerActorIds: interviewerIds,
+					timezone: "Asia/Shanghai",
+					slots
+				});
+				setInviteResultUrl(invite.bookingUrl);
+				setSubmitting(false);
+				return;
+			} else if (kind === "schedule") {
 				if (!scheduleTime.trim()) {
 					setErrorText("请选择一个空闲时段，或手动填写面试时间。");
 					setSubmitting(false);
@@ -23351,7 +23681,7 @@ function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }) {
 				}
 				const outcome = await postActionSeam(actCheck.action, bodyToSend, activeSessionId);
 				if (!outcome.accepted) {
-					setErrorText(formatOutcomeError(outcome));
+					setErrorText(formatOutcomeError$1(outcome));
 					setSubmitting(false);
 					return;
 				}
@@ -23434,20 +23764,83 @@ function CandidateActionModal({ kind, vm, sessionId, onClose, onSuccess }) {
 							display: "flex",
 							gap: 10
 						},
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							"data-testid": "schedule-mode-create",
-							className: `ros-slot-pill ${scheduleIntent === "CREATE" ? "active" : ""}`,
-							onClick: () => setScheduleIntent("CREATE"),
-							children: "安排新场次"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							"data-testid": "schedule-mode-reschedule",
-							className: `ros-slot-pill ${scheduleIntent === "RESCHEDULE" ? "active" : ""}`,
-							onClick: () => setScheduleIntent("RESCHEDULE"),
-							children: "改期现有场次"
-						})]
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								"data-testid": "schedule-mode-create",
+								className: `ros-slot-pill ${scheduleIntent === "CREATE" ? "active" : ""}`,
+								onClick: () => setScheduleIntent("CREATE"),
+								children: "安排新场次"
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								"data-testid": "schedule-mode-reschedule",
+								className: `ros-slot-pill ${scheduleIntent === "RESCHEDULE" ? "active" : ""}`,
+								onClick: () => setScheduleIntent("RESCHEDULE"),
+								children: "改期现有场次"
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								"data-testid": "schedule-mode-self-book",
+								className: `ros-slot-pill ${scheduleIntent === "SELF_BOOK" ? "active" : ""}`,
+								onClick: () => {
+									setScheduleIntent("SELF_BOOK");
+									setInviteResultUrl("");
+								},
+								children: "发候选人自助选时段"
+							})
+						]
 					}),
+					scheduleIntent === "SELF_BOOK" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							flexDirection: "column",
+							gap: 8
+						},
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "ros-jd-box",
+								style: {
+									padding: "10px 12px",
+									fontSize: 12.5
+								},
+								children: "填写 2–3 个候选人可选开始时间，生成一次性免登录预约链接发给候选人确认。"
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+								className: "ros-m-field",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "备选时段 2（必填，例如 2026-11-24T15:00）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+									"data-testid": "self-book-slot-2",
+									value: inviteSlot2,
+									onChange: (e) => setInviteSlot2(e.target.value),
+									placeholder: "2026-11-24T15:00"
+								})]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+								className: "ros-m-field",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "备选时段 3（选填）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+									"data-testid": "self-book-slot-3",
+									value: inviteSlot3,
+									onChange: (e) => setInviteSlot3(e.target.value),
+									placeholder: "2026-11-25T10:30"
+								})]
+							}),
+							inviteResultUrl ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "ros-jd-box",
+								"data-testid": "self-book-result-url",
+								style: {
+									padding: "10px 12px",
+									color: "var(--green)",
+									wordBreak: "break-all"
+								},
+								children: ["已生成预约链接：", /* @__PURE__ */ (0, import_jsx_runtime.jsx)("a", {
+									href: inviteResultUrl,
+									target: "_blank",
+									rel: "noreferrer",
+									children: inviteResultUrl
+								})]
+							}) : null
+						]
+					}) : null,
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
 						className: "ros-m-field",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "选择面试官（支持多个，逗号分隔）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -23800,6 +24193,18 @@ function CandidatePage({ sessionId, applicationId, candidateQueue, focusRequest,
 	const [starPop, setStarPop] = (0, import_react.useState)(false);
 	const [starBusy, setStarBusy] = (0, import_react.useState)(false);
 	const [candUploading, setCandUploading] = (0, import_react.useState)(false);
+	const [evaluatingScreening, setEvaluatingScreening] = (0, import_react.useState)(false);
+	const [overrideTarget, setOverrideTarget] = (0, import_react.useState)(null);
+	const [overrideState, setOverrideState] = (0, import_react.useState)("PRESENT");
+	const [overrideNote, setOverrideNote] = (0, import_react.useState)("");
+	const [overrideConfirm, setOverrideConfirm] = (0, import_react.useState)("");
+	const [overrideBusy, setOverrideBusy] = (0, import_react.useState)(false);
+	const [origPageNo, setOrigPageNo] = (0, import_react.useState)(1);
+	const [origPageState, setOrigPageState] = (0, import_react.useState)(null);
+	const [origPageLoading, setOrigPageLoading] = (0, import_react.useState)(false);
+	const [traceExpanded, setTraceExpanded] = (0, import_react.useState)(false);
+	const [traceItems, setTraceItems] = (0, import_react.useState)([]);
+	const [duplicateHints, setDuplicateHints] = (0, import_react.useState)([]);
 	const candFileRef = (0, import_react.useRef)(null);
 	const bodyScrollRef = (0, import_react.useRef)(null);
 	const [pendingRebind, setPendingRebind] = (0, import_react.useState)(null);
@@ -23957,6 +24362,170 @@ function CandidatePage({ sessionId, applicationId, candidateQueue, focusRequest,
 			tone: "green",
 			text: `已生成 ${vm.candidateName} 的决策纪要`
 		});
+	};
+	const handleRunScreeningEvaluate = async () => {
+		if (!vm || evaluatingScreening) return;
+		const activeSessionId = (sessionId ?? "").trim() || getCanvasSessionId();
+		setEvaluatingScreening(true);
+		setActionFeedback(null);
+		try {
+			const outcome = await postScreeningEvaluate(vm.applicationId, activeSessionId);
+			if (!outcome.accepted) {
+				setActionFeedback({
+					tone: "red",
+					text: outcome.error?.message || describeActionError(outcome.error?.code ?? "", outcome.error?.reasonCode ?? "") || "初筛评估未能完成，请稍后重试。"
+				});
+				return;
+			}
+			setActionFeedback({
+				tone: "green",
+				text: "已更新初筛评估结果。"
+			});
+			invalidateCachedCanvasData(detailPath);
+			load(void 0, { silent: true });
+			onActionCompleted?.({ message: "已更新初筛评估结果" });
+		} catch (err) {
+			setActionFeedback({
+				tone: "red",
+				text: err instanceof Error ? err.message : "初筛评估未能完成，请稍后重试。"
+			});
+		} finally {
+			setEvaluatingScreening(false);
+		}
+	};
+	(0, import_react.useEffect)(() => {
+		let active = true;
+		fetcher(`/recruitment/api/recruiting/applications/${encodeURIComponent(applicationId)}/duplicates`).then((raw) => {
+			if (!active || !raw || typeof raw !== "object") return;
+			const obj = raw;
+			const list = Array.isArray(obj.duplicates) ? obj.duplicates : [];
+			const REASON_MAP = {
+				SAME_PHONE: "同手机号",
+				SAME_EMAIL: "同邮箱",
+				SAME_NAME_SAME_CHANNEL: "同姓名且来源渠道不同",
+				SAME_HISTORY_ARCHIVE: "同一历史档案"
+			};
+			const parsed = list.map((item) => {
+				if (!item || typeof item !== "object") return null;
+				const rec = item;
+				const appId = typeof rec.applicationId === "string" ? rec.applicationId : "";
+				if (!appId) return null;
+				return {
+					applicationId: appId,
+					displayName: typeof rec.displayName === "string" ? rec.displayName : "历史投递",
+					channelName: typeof rec.channelName === "string" ? rec.channelName : "",
+					reasonLabels: (Array.isArray(rec.reasons) ? rec.reasons : []).map((r) => typeof r === "string" ? REASON_MAP[r] || r : "").filter(Boolean),
+					valueHints: (Array.isArray(rec.matchedValueHints) ? rec.matchedValueHints : []).filter((h) => typeof h === "string" && h.length > 0)
+				};
+			}).filter((x) => x !== null);
+			setDuplicateHints(parsed);
+		}).catch(() => {
+			if (active) setDuplicateHints([]);
+		});
+		return () => {
+			active = false;
+		};
+	}, [
+		applicationId,
+		fetcher,
+		refreshNonce
+	]);
+	(0, import_react.useEffect)(() => {
+		if (docTab !== "original" || !vm?.hasResumeMaterial || !vm?.materialContentUrl) return;
+		let active = true;
+		let createdUrl;
+		const controller = new AbortController();
+		setOrigPageLoading(true);
+		fetchMaterialPageImage(vm.materialContentUrl, origPageNo, controller.signal).then((res) => {
+			if (!active) {
+				if (res.objectUrl) URL.revokeObjectURL(res.objectUrl);
+				return;
+			}
+			createdUrl = res.objectUrl;
+			setOrigPageState(res);
+		}).finally(() => {
+			if (active) setOrigPageLoading(false);
+		});
+		return () => {
+			active = false;
+			controller.abort();
+			if (createdUrl) URL.revokeObjectURL(createdUrl);
+		};
+	}, [
+		docTab,
+		vm?.hasResumeMaterial,
+		vm?.materialContentUrl,
+		origPageNo
+	]);
+	(0, import_react.useEffect)(() => {
+		let active = true;
+		fetcher(`/recruitment/api/recruiting/applications/${encodeURIComponent(applicationId)}/trace`).then((raw) => {
+			if (!active || !raw || typeof raw !== "object") return;
+			const obj = raw;
+			const parsed = (Array.isArray(obj.items) ? obj.items : []).map((entry, idx) => {
+				if (!entry || typeof entry !== "object") return null;
+				const rec = entry;
+				const title = typeof rec.title === "string" ? rec.title.trim() : "";
+				if (!title) return null;
+				return {
+					id: typeof rec.id === "string" && rec.id ? rec.id : `trace-${idx}`,
+					at: typeof rec.at === "string" ? rec.at : "",
+					title,
+					actorLabel: typeof rec.actor_label === "string" ? rec.actor_label : "",
+					detail: typeof rec.detail === "string" ? rec.detail : ""
+				};
+			}).filter((x) => x !== null);
+			setTraceItems(parsed);
+		}).catch(() => {
+			if (active) setTraceItems([]);
+		});
+		return () => {
+			active = false;
+		};
+	}, [
+		applicationId,
+		fetcher,
+		refreshNonce
+	]);
+	const handleSubmitCriterionOverride = async () => {
+		if (!vm || !overrideTarget || overrideBusy) return;
+		const confirmText = overrideConfirm.trim();
+		if (!confirmText) {
+			setActionFeedback({
+				tone: "red",
+				text: "请先输入一句确认原话后再提交纠偏。"
+			});
+			return;
+		}
+		setOverrideBusy(true);
+		setActionFeedback(null);
+		try {
+			await postCriterionOverride({
+				applicationId: vm.applicationId,
+				criterionKey: overrideTarget.key,
+				humanState: overrideState,
+				note: overrideNote.trim() || void 0,
+				confirmationText: confirmText
+			});
+			const label = overrideTarget.label;
+			setOverrideTarget(null);
+			setOverrideNote("");
+			setOverrideConfirm("");
+			setActionFeedback({
+				tone: "green",
+				text: `已记录「${label}」的人工纠偏并同步落库。`
+			});
+			invalidateCachedCanvasData(detailPath);
+			load(void 0, { silent: true });
+			onActionCompleted?.({ message: `已记录「${label}」的人工纠偏` });
+		} catch (err) {
+			setActionFeedback({
+				tone: "red",
+				text: err?.userMessage || (err instanceof Error ? err.message : "人工纠偏未能完成，请稍后重试。")
+			});
+		} finally {
+			setOverrideBusy(false);
+		}
 	};
 	const handleSelectCriterion = (critKey) => {
 		setActiveCrit(critKey);
@@ -24383,16 +24952,136 @@ function CandidatePage({ sessionId, applicationId, candidateQueue, focusRequest,
 							children: vm.summaryText
 						})]
 					}),
+					vm.autoScreening ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "ros-doc-block",
+						"data-section": "auto-screening",
+						"data-testid": "canvas-auto-screening",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "ros-sec-meta",
+								style: {
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "space-between",
+									gap: 12
+								},
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "自动初筛建议（上传简历后自动生成）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusLabel, {
+									text: vm.autoScreening.verdictLabel,
+									tone: vm.autoScreening.verdictTone
+								})]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "ros-risk-note",
+								"data-testid": "canvas-auto-screening-note",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									style: { fontWeight: 600 },
+									children: vm.autoScreening.verdictSummary || "只读评估已生成建议。"
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									style: {
+										marginTop: 6,
+										fontSize: "12.5px",
+										color: "var(--muted)"
+									},
+									children: vm.autoScreening.advisoryNote
+								})]
+							}),
+							vm.autoScreening.reasons.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { children: vm.autoScreening.reasons.map((reason, idx) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "ros-clean-row static",
+								style: { alignItems: "flex-start" },
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									style: {
+										fontSize: "13px",
+										fontWeight: 500
+									},
+									children: [
+										reason.criterionKey || reason.code || "评估项",
+										reason.triState ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+											className: "ros-sec-meta",
+											style: { marginLeft: 8 },
+											children: ["三态：", reason.triState]
+										}) : null,
+										reason.outcome ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "ros-sec-meta",
+											style: { marginLeft: 8 },
+											children: reason.outcome
+										}) : null
+									]
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									style: {
+										fontSize: "12.5px",
+										color: "var(--muted)",
+										marginTop: 2
+									},
+									children: reason.message
+								})] })
+							}, `${reason.code}-${idx}`)) }) : null
+						]
+					}) : null,
+					duplicateHints.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						"data-testid": "canvas-candidate-duplicates",
+						style: {
+							marginBottom: 20,
+							padding: "10px 14px",
+							background: "var(--paper)",
+							border: "1px solid var(--line)",
+							borderLeft: "2px solid var(--amber)",
+							borderRadius: 8,
+							fontSize: 12.5,
+							lineHeight: 1.55,
+							color: "var(--text)"
+						},
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							style: {
+								fontWeight: 600,
+								color: "var(--amber)",
+								marginRight: 8
+							},
+							children: [
+								"疑似同人历史投递（",
+								duplicateHints.length,
+								" 条）"
+							]
+						}), duplicateHints.map((dup, idx) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							style: { marginRight: 10 },
+							children: [
+								idx > 0 ? "· " : "",
+								dup.displayName,
+								dup.reasonLabels.length > 0 ? `（${dup.reasonLabels.join("、")}` : "",
+								dup.valueHints.length > 0 ? ` ${dup.valueHints[0]}` : "",
+								dup.reasonLabels.length > 0 ? "）" : "",
+								onSelectApplication ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "ros-text-link",
+									style: { marginLeft: 6 },
+									onClick: () => onSelectApplication(dup.applicationId),
+									children: "查看"
+								}) : null
+							]
+						}, dup.applicationId))]
+					}) : null,
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: `ros-doc-block ${focusedSection === "criteria" ? "ros-section-focus" : ""}`,
 						"data-section": "criteria",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "ros-sec-meta",
-							children: [
+							style: {
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "space-between",
+								gap: 12
+							},
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
 								"岗位标准对照 · ",
 								vm.rubricVersionLabel,
 								"（点击联动原文）"
-							]
+							] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "ros-text-link",
+								"data-testid": "canvas-action-screening-evaluate",
+								disabled: evaluatingScreening,
+								onClick: () => void handleRunScreeningEvaluate(),
+								children: evaluatingScreening ? "评估中…" : vm.criteria.length > 0 ? "重新评估" : "发起初筛评估"
+							})]
 						}), vm.criteria.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { children: vm.criteria.map((cr, idx) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: `ros-crit-item ${cr.key === activeCrit ? "active" : ""}`,
 							onClick: () => handleSelectCriterion(cr.key),
@@ -24419,9 +25108,31 @@ function CandidatePage({ sessionId, applicationId, candidateQueue, focusRequest,
 										children: [cr.kindLabel, cr.weightText ? ` · ${cr.weightText}` : ""]
 									})
 								]
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusLabel, {
-								text: cr.statusText,
-								tone: cr.level
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								style: {
+									display: "inline-flex",
+									alignItems: "center",
+									gap: 12
+								},
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusLabel, {
+									text: cr.statusText,
+									tone: cr.level
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "ros-text-link",
+									"data-testid": `canvas-criterion-override-${cr.key}`,
+									onClick: (e) => {
+										e.stopPropagation();
+										setOverrideTarget({
+											key: cr.key,
+											label: cr.label
+										});
+										setOverrideState("PRESENT");
+										setOverrideNote("");
+										setOverrideConfirm(`确认将「${cr.label}」人工核定为有对应`);
+									},
+									children: "纠偏"
+								})]
 							})]
 						}, cr.key)) }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CanvasEmptyState, { title: "暂无岗位标准维度" })]
 					}),
@@ -24585,23 +25296,95 @@ function CandidatePage({ sessionId, applicationId, candidateQueue, focusRequest,
 						}, tr.id)) }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CanvasEmptyState, {
 							title: "还没有转录",
 							description: "面试完成后将自动同步飞书妙记录音转写。"
-						}) : vm.hasResumeMaterial && vm.materialContentUrl ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-							className: "ros-jd-box",
-							children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						}) : vm.hasResumeMaterial && vm.materialContentUrl ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							"data-testid": "canvas-original-viewer",
+							style: {
+								display: "flex",
+								flexDirection: "column",
+								gap: 12
+							},
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								style: {
 									display: "flex",
 									justifyContent: "space-between",
 									alignItems: "center",
-									gap: 12
+									gap: 12,
+									fontSize: 13
 								},
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: vm.materialFileName || "简历原件" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("a", {
-									href: vm.materialContentUrl,
-									target: "_blank",
-									rel: "noreferrer",
-									className: "ros-text-link active",
-									children: "在新标签页查看原件 ↗"
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+									style: {
+										color: "var(--ink)",
+										fontWeight: 500
+									},
+									children: [vm.materialFileName || "简历原件", origPageState?.kind === "image" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+										className: "num",
+										style: {
+											marginLeft: 10,
+											color: "var(--muted)",
+											fontWeight: 400
+										},
+										children: [
+											"第 ",
+											origPageState.pageNumber,
+											" / ",
+											origPageState.pageCount,
+											" 页"
+										]
+									}) : null]
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+									style: {
+										display: "inline-flex",
+										alignItems: "center",
+										gap: 10
+									},
+									children: [origPageState?.kind === "image" && origPageState.pageCount > 1 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: "ros-text-link",
+										"data-testid": "canvas-original-prev",
+										disabled: origPageLoading || origPageNo <= 1,
+										onClick: () => setOrigPageNo((p) => Math.max(1, p - 1)),
+										children: "上一页"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: "ros-text-link",
+										"data-testid": "canvas-original-next",
+										disabled: origPageLoading || origPageNo >= origPageState.pageCount,
+										onClick: () => setOrigPageNo((p) => Math.min(origPageState.pageCount, p + 1)),
+										children: "下一页"
+									})] }) : null, /* @__PURE__ */ (0, import_jsx_runtime.jsx)("a", {
+										href: vm.materialContentUrl,
+										target: "_blank",
+										rel: "noreferrer",
+										className: "ros-text-link active",
+										children: "下载 / 查看原件 ↗"
+									})]
 								})]
-							})
+							}), origPageLoading ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "ros-sec-meta",
+								style: { padding: "24px 0" },
+								children: "正在渲染高清原件预览…"
+							}) : origPageState?.kind === "image" && origPageState.objectUrl ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								style: {
+									border: "1px solid var(--line)",
+									borderRadius: 8,
+									overflow: "hidden",
+									background: "var(--paper)"
+								},
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
+									src: origPageState.objectUrl,
+									alt: `${vm.materialFileName || "简历原件"} 第 ${origPageState.pageNumber} 页`,
+									"data-testid": "canvas-original-page-img",
+									style: {
+										display: "block",
+										width: "100%",
+										height: "auto"
+									}
+								})
+							}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "ros-jd-box",
+								"data-testid": "canvas-original-fallback",
+								children: origPageState?.message || "该格式暂不支持逐页图预览，可点击右上角下载原件或查看结构化原文。"
+							})]
 						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CanvasEmptyState, {
 							title: "还没有简历原件",
 							description: "当前申请尚未关联可预览的二进制原件。"
@@ -24664,6 +25447,68 @@ function CandidatePage({ sessionId, applicationId, candidateQueue, focusRequest,
 							})]
 						}, t.id))
 					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CanvasEmptyState, { title: "暂无动态留痕" }) : null] }),
+					traceItems.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "ros-doc-block",
+						"data-testid": "canvas-decision-trace",
+						style: {
+							marginTop: 24,
+							paddingTop: 18,
+							borderTop: "1px solid var(--line-soft)"
+						},
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: "ros-text-link",
+							"data-testid": "canvas-decision-trace-toggle",
+							onClick: () => setTraceExpanded((v) => !v),
+							style: {
+								fontSize: 13,
+								fontWeight: 500,
+								color: "var(--ink)"
+							},
+							children: [
+								traceExpanded ? "▾" : "▸",
+								" 决策与流转追责记录（",
+								traceItems.length,
+								" 条）"
+							]
+						}), traceExpanded ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "ros-clean-list",
+							style: { marginTop: 10 },
+							"data-testid": "canvas-decision-trace-list",
+							children: traceItems.map((item) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "ros-clean-row static",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+									style: {
+										fontSize: 13,
+										color: "var(--ink)"
+									},
+									children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "num",
+											style: {
+												color: "var(--soft)",
+												marginRight: 10,
+												fontSize: 12
+											},
+											children: item.at ? item.at.slice(0, 16).replace("T", " ") : "—"
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: item.title }),
+										item.actorLabel ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+											style: {
+												color: "var(--muted)",
+												marginLeft: 8,
+												fontSize: 12.5
+											},
+											children: ["· ", item.actorLabel]
+										}) : null
+									]
+								}), item.detail ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: "ros-sec-meta",
+									children: item.detail
+								}) : null]
+							}, item.id))
+						}) : null]
+					}) : null,
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "ros-doc-foot",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -24748,6 +25593,102 @@ function CandidatePage({ sessionId, applicationId, candidateQueue, focusRequest,
 				]
 			}, applicationId)
 		}),
+		overrideTarget ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			className: "ros-modal-bg",
+			role: "dialog",
+			"aria-modal": "true",
+			onClick: (e) => {
+				if (e.target === e.currentTarget && !overrideBusy) setOverrideTarget(null);
+			},
+			children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "ros-modal",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							fontSize: "17px",
+							fontWeight: 650
+						},
+						children: ["人工纠偏 · ", overrideTarget.label]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "ros-jd-box",
+						style: { padding: "12px 14px" },
+						children: "人工纠偏将以追加记录方式留痕，不覆盖 AI 原始判断，也不修改岗位标准定义。"
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						style: {
+							display: "flex",
+							gap: 8
+						},
+						children: [
+							{
+								id: "PRESENT",
+								label: "有对应"
+							},
+							{
+								id: "ABSENT",
+								label: "没有对应"
+							},
+							{
+								id: "UNREADABLE",
+								label: "读不出来"
+							}
+						].map((opt) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: `ros-slot-pill ${overrideState === opt.id ? "active" : ""}`,
+							"data-testid": `canvas-override-state-${opt.id.toLowerCase()}`,
+							disabled: overrideBusy,
+							onClick: () => {
+								setOverrideState(opt.id);
+								setOverrideConfirm(`确认将「${overrideTarget.label}」人工核定为${opt.label}`);
+							},
+							children: opt.label
+						}, opt.id))
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+						className: "ros-m-field",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "补充说明（选填）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+							"data-testid": "canvas-override-note",
+							value: overrideNote,
+							disabled: overrideBusy,
+							onChange: (e) => setOverrideNote(e.target.value),
+							placeholder: "例如：简历第 2 页项目经历可印证该项能力"
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+						className: "ros-m-field",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "确认原话（留痕必填）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+							"data-testid": "canvas-override-confirm-input",
+							value: overrideConfirm,
+							disabled: overrideBusy,
+							onChange: (e) => setOverrideConfirm(e.target.value),
+							placeholder: "输入一句确认原话"
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							justifyContent: "flex-end",
+							gap: 10
+						},
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "ros-btn",
+							disabled: overrideBusy,
+							onClick: () => setOverrideTarget(null),
+							children: "取消"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "ros-btn dark",
+							"data-testid": "canvas-override-submit",
+							disabled: overrideBusy || !overrideConfirm.trim(),
+							onClick: () => void handleSubmitCriterionOverride(),
+							children: overrideBusy ? "提交中…" : "确认纠偏"
+						})]
+					})
+				]
+			})
+		}) : null,
 		modalKind ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CandidateActionModal, {
 			kind: modalKind,
 			vm,
@@ -24756,6 +25697,67 @@ function CandidatePage({ sessionId, applicationId, candidateQueue, focusRequest,
 			onSuccess: (res) => void handleModalSuccess(res)
 		}) : null
 	] });
+}
+// src/client/external-sync.ts
+const EXTERNAL_SYNC_PATHS = {
+	applicationsCsv: "/recruitment/api/export/applications.csv",
+	webhookTest: "/recruitment/api/action/webhook/test"
+};
+/** 同源真实 CSV 下载（带 DSH session；HTTP 失败如实抛错，绝不前端伪造）。 */
+async function downloadApplicationsCsv(sid, jobId) {
+	const params = new URLSearchParams();
+	if (jobId !== void 0 && jobId !== "") params.set("job_id", jobId);
+	const suffix = params.toString() === "" ? "" : `?${params.toString()}`;
+	const res = await fetch(`${EXTERNAL_SYNC_PATHS.applicationsCsv}${suffix}`, {
+		method: "GET",
+		credentials: "same-origin",
+		cache: "no-store",
+		headers: {
+			"x-recruitment-request": "1",
+			"X-DSH-Session": sid
+		}
+	});
+	if (!res.ok) throw new Error(`导出失败（HTTP ${res.status}）`);
+	const blob = await res.blob();
+	const href = URL.createObjectURL(blob);
+	try {
+		const disposition = res.headers.get("content-disposition") || "";
+		const filename = /filename="?([^";]+)"?/i.exec(disposition)?.[1] || "recruitment-applications.csv";
+		const link = document.createElement("a");
+		link.href = href;
+		link.download = filename;
+		document.body.appendChild(link);
+		link.click();
+		link.remove();
+		return { filename };
+	} finally {
+		URL.revokeObjectURL(href);
+	}
+}
+/** 测试推送：返回真实 HTTP 状态；调用方按 ok/status 展示，不伪造成功。 */
+async function testWebhook(sid) {
+	const res = await fetch(EXTERNAL_SYNC_PATHS.webhookTest, {
+		method: "POST",
+		credentials: "same-origin",
+		headers: {
+			"content-type": "application/json",
+			"x-recruitment-request": "1",
+			"X-DSH-Session": sid
+		},
+		body: JSON.stringify({})
+	});
+	const text = await res.text();
+	let message = `测试推送${res.ok ? "成功" : "失败"}（HTTP ${res.status}）`;
+	try {
+		const parsed = JSON.parse(text);
+		if (parsed.error?.message) message = parsed.error.message;
+		if (parsed.error?.detail?.error) message += `：${parsed.error.detail.error}`;
+	} catch {}
+	return {
+		ok: res.ok,
+		status: res.status,
+		message
+	};
 }
 // src/client/canvas/JobPage.tsx
 const STAGE_FILTERS = [
@@ -24799,6 +25801,17 @@ function JobPage({ sessionId, jobId, focusRequest, onFocusConsumed, onBack, onSe
 	const [newJobDept, setNewJobDept] = (0, import_react.useState)("");
 	const [newJobConfirm, setNewJobConfirm] = (0, import_react.useState)("");
 	const [creating, setCreating] = (0, import_react.useState)(false);
+	const [rubricApproveOpen, setRubricApproveOpen] = (0, import_react.useState)(false);
+	const [rubricApproveReason, setRubricApproveReason] = (0, import_react.useState)("");
+	const [rubricApproving, setRubricApproving] = (0, import_react.useState)(false);
+	const [closeJobOpen, setCloseJobOpen] = (0, import_react.useState)(false);
+	const [closeJobReason, setCloseJobReason] = (0, import_react.useState)("");
+	const [closingJob, setClosingJob] = (0, import_react.useState)(false);
+	const [compareOpen, setCompareOpen] = (0, import_react.useState)(false);
+	const [compareLoading, setCompareLoading] = (0, import_react.useState)(false);
+	const [compareItems, setCompareItems] = (0, import_react.useState)([]);
+	const [compareCopyNotice, setCompareCopyNotice] = (0, import_react.useState)("");
+	const [rediscoveryList, setRediscoveryList] = (0, import_react.useState)([]);
 	const [feedback, setFeedback] = (0, import_react.useState)(null);
 	const load = (0, import_react.useCallback)(async (cancelledRef, opts) => {
 		const cached = getCachedCanvasData(jobPath);
@@ -24987,6 +26000,21 @@ function JobPage({ sessionId, jobId, focusRequest, onFocusConsumed, onBack, onSe
 			setBatchSubmitting(false);
 		}
 	};
+	const handleExportCsv = async () => {
+		setFeedback(null);
+		try {
+			await downloadApplicationsCsv(sessionId || getCanvasSessionId(), jobId);
+			setFeedback({
+				tone: "green",
+				text: "已导出本岗位申请 CSV（联系方式已脱敏）。"
+			});
+		} catch (err) {
+			setFeedback({
+				tone: "red",
+				text: err instanceof Error ? err.message : "导出失败"
+			});
+		}
+	};
 	const handleFileChange = async (e) => {
 		const file = e.target.files?.[0];
 		e.target.value = "";
@@ -25004,6 +26032,168 @@ function JobPage({ sessionId, jobId, focusRequest, onFocusConsumed, onBack, onSe
 			});
 		} finally {
 			setUploading(false);
+		}
+	};
+	const handleApproveRubric = async () => {
+		if (!vm || rubricApproving) return;
+		const action = vm.actions.rubric_approve;
+		if (!action || !action.available || action.seam === "") {
+			setFeedback({
+				tone: "red",
+				text: action?.reasonText || action?.pendingText || "当前岗位标准暂不可批准。"
+			});
+			setRubricApproveOpen(false);
+			return;
+		}
+		const activeSessionId = (sessionId ?? "").trim() || getCanvasSessionId();
+		const built = buildRubricApproveBody({
+			jobId: vm.jobId,
+			rubricVersionId: vm.rubricVersionId,
+			reason: rubricApproveReason.trim() || void 0
+		});
+		if (!built.ok) {
+			setFeedback({
+				tone: "red",
+				text: built.reasonText
+			});
+			return;
+		}
+		setRubricApproving(true);
+		try {
+			const outcome = await postActionSeam(action, built.body, activeSessionId);
+			if (!outcome.accepted) {
+				setFeedback({
+					tone: "red",
+					text: outcome.error?.message || describeActionError(outcome.error?.code ?? "", outcome.error?.reasonCode ?? "") || "批准评分标准未能完成，请稍后重试。"
+				});
+				return;
+			}
+			setRubricApproveOpen(false);
+			setRubricApproveReason("");
+			setFeedback({
+				tone: "green",
+				text: `已批准岗位评分标准 ${vm.rubricVersionLabel}。`
+			});
+			invalidateCachedCanvasData(jobPath);
+			load(void 0, { silent: true });
+			onActionCompleted?.({ message: `已批准岗位评分标准 ${vm.rubricVersionLabel}` });
+		} catch (err) {
+			setFeedback({
+				tone: "red",
+				text: err instanceof Error ? err.message : "批准评分标准未能完成，请稍后重试。"
+			});
+		} finally {
+			setRubricApproving(false);
+		}
+	};
+	const handleCloseJob = async () => {
+		if (!vm || closingJob) return;
+		const activeSessionId = (sessionId ?? "").trim() || getCanvasSessionId();
+		const reason = closeJobReason.trim();
+		const built = buildJobCloseBody({
+			jobId: vm.jobId,
+			reason
+		});
+		if (!built.ok) {
+			setFeedback({
+				tone: "red",
+				text: built.reasonText
+			});
+			return;
+		}
+		setClosingJob(true);
+		try {
+			const outcome = await postJobClose(vm.jobId, reason, activeSessionId);
+			if (!outcome.accepted) {
+				setFeedback({
+					tone: "red",
+					text: outcome.error?.message || describeActionError(outcome.error?.code ?? "", outcome.error?.reasonCode ?? "") || "关闭岗位未能完成，请稍后重试。"
+				});
+				return;
+			}
+			setCloseJobOpen(false);
+			setCloseJobReason("");
+			setFeedback({
+				tone: "green",
+				text: `已关闭岗位「${vm.title}」。`
+			});
+			invalidateCachedCanvasData(jobPath);
+			load(void 0, { silent: true });
+			onActionCompleted?.({ message: `已关闭岗位「${vm.title}」` });
+		} catch (err) {
+			setFeedback({
+				tone: "red",
+				text: err instanceof Error ? err.message : "关闭岗位未能完成，请稍后重试。"
+			});
+		} finally {
+			setClosingJob(false);
+		}
+	};
+	(0, import_react.useEffect)(() => {
+		let active = true;
+		fetcher(`/recruitment/api/recruiting/jobs/${encodeURIComponent(jobId)}/rediscovery`).then((raw) => {
+			if (!active || !raw || typeof raw !== "object") return;
+			const obj = raw;
+			const parsed = (Array.isArray(obj.candidates) ? obj.candidates : []).map((item) => {
+				if (!item || typeof item !== "object") return null;
+				const rec = item;
+				const candidateId = typeof rec.candidate_id === "string" ? rec.candidate_id : "";
+				const candidateName = typeof rec.candidate_name === "string" ? rec.candidate_name : "";
+				if (!candidateId || !candidateName) return null;
+				return {
+					candidateId,
+					candidateName,
+					matchedCount: typeof rec.matched_condition_count === "number" ? rec.matched_condition_count : 0,
+					basisLabels: (Array.isArray(rec.basis) ? rec.basis : []).map((b) => b && typeof b === "object" && typeof b.label === "string" ? String(b.label) : "").filter(Boolean).slice(0, 3)
+				};
+			}).filter((x) => x !== null);
+			setRediscoveryList(parsed);
+		}).catch(() => {
+			if (active) setRediscoveryList([]);
+		});
+		return () => {
+			active = false;
+		};
+	}, [
+		jobId,
+		fetcher,
+		refreshNonce
+	]);
+	const handleOpenCompare = async () => {
+		const ids = selectedIds.slice(0, 3);
+		if (ids.length < 2) return;
+		setCompareOpen(true);
+		setCompareLoading(true);
+		setCompareCopyNotice("");
+		try {
+			const results = await Promise.all(ids.map((id) => fetcher(`/recruitment/api/recruiting/applications/${encodeURIComponent(id)}`).then((raw) => normalizeApplicationDetail(raw))));
+			setCompareItems(results);
+		} catch {
+			setCompareItems([]);
+			setFeedback({
+				tone: "red",
+				text: "读取候选人对比信息失败，请稍后重试。"
+			});
+			setCompareOpen(false);
+		} finally {
+			setCompareLoading(false);
+		}
+	};
+	const handleCopyCompareSummary = async () => {
+		if (!vm || compareItems.length === 0) return;
+		const lines = [`【候选人横向对比】岗位：${vm.title}`, ""];
+		for (const item of compareItems) {
+			lines.push(`- ${item.candidateName}（${item.stageLabel}）`);
+			if (item.summaryText) lines.push(`  提炼：${item.summaryText}`);
+			for (const cr of item.criteria) lines.push(`  · ${cr.label}：${cr.statusText}`);
+			lines.push("");
+		}
+		const text = lines.join("\n").trim();
+		try {
+			await navigator.clipboard.writeText(text);
+			setCompareCopyNotice("已复制横向对比摘要，可直接发给用人经理。");
+		} catch {
+			setCompareCopyNotice("剪贴板不可用，请手动选中复制。");
 		}
 	};
 	const handleCreateJob = async () => {
@@ -25025,10 +26215,19 @@ function JobPage({ sessionId, jobId, focusRequest, onFocusConsumed, onBack, onSe
 			descriptionMd: title,
 			requirementsMd: newJobConfirm.trim() || title,
 			criteria: [{
-				key: "core_fit",
-				label: "核心岗位匹配度",
+				key: "work_history_present",
+				label: "有可核对的工作经历",
 				kind: "MUST_HAVE",
-				weight: 1
+				weight: .5,
+				field: "work_experience",
+				operator: "EXISTS",
+				value: true
+			}, {
+				key: "core_fit",
+				label: "核心岗位胜任力匹配",
+				kind: "MUST_HAVE",
+				weight: .5,
+				question: "候选人过往经历与核心职责是否与该岗位要求高度匹配？"
 			}],
 			status: "DRAFT"
 		});
@@ -25308,6 +26507,13 @@ function JobPage({ sessionId, jobId, focusRequest, onFocusConsumed, onBack, onSe
 										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 											type: "button",
 											className: "ros-text-link",
+											"data-testid": "canvas-action-export-csv",
+											onClick: () => void handleExportCsv(),
+											children: "导出 CSV"
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "ros-text-link",
 											"data-testid": "canvas-action-new-job",
 											onClick: () => {
 												setFeedback(null);
@@ -25373,6 +26579,45 @@ function JobPage({ sessionId, jobId, focusRequest, onFocusConsumed, onBack, onSe
 								title: "当前阶段暂无候选人",
 								description: "切换上方筛选条件可查看其他阶段候选人。"
 							}),
+							rediscoveryList.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								"data-testid": "canvas-job-rediscovery",
+								style: {
+									marginTop: 28,
+									paddingTop: 20,
+									borderTop: "1px solid var(--line-soft)"
+								},
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "ros-sec-head",
+									style: { marginBottom: 8 },
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "ros-sec-title",
+										children: "历史人才库再发现"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+										className: "ros-sec-meta num",
+										children: [
+											"仅按历史事实召回（不评分、不排名）· ",
+											rediscoveryList.length,
+											" 人"
+										]
+									})]
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "ros-clean-list",
+									children: rediscoveryList.map((cand) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "ros-clean-row static",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											style: {
+												fontSize: "13.5px",
+												fontWeight: 500,
+												color: "var(--ink)"
+											},
+											children: cand.candidateName
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "ros-sec-meta",
+											children: cand.basisLabels.length > 0 ? cand.basisLabels.join(" · ") : `命中 ${cand.matchedCount} 条历史事实`
+										})]
+									}, cand.candidateId))
+								})]
+							}) : null,
 							selectedIds.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								className: "ros-batch-float",
 								"data-testid": "canvas-batch-float",
@@ -25388,20 +26633,38 @@ function JobPage({ sessionId, jobId, focusRequest, onFocusConsumed, onBack, onSe
 										display: "flex",
 										gap: 8
 									},
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-										type: "button",
-										"data-testid": "canvas-batch-reject-open",
-										style: {
-											background: "var(--red)",
-											color: "#fff"
-										},
-										onClick: openBatchRejectModal,
-										children: "批量不通过"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-										type: "button",
-										onClick: () => setSelectedIds([]),
-										children: "取消"
-									})]
+									children: [
+										selectedIds.length >= 2 && selectedIds.length <= 3 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+											type: "button",
+											"data-testid": "canvas-batch-compare-open",
+											style: {
+												background: "var(--surface)",
+												color: "var(--ink)",
+												border: "1px solid var(--line)"
+											},
+											onClick: () => void handleOpenCompare(),
+											children: [
+												"横向对比 (",
+												selectedIds.length,
+												")"
+											]
+										}) : null,
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "button",
+											"data-testid": "canvas-batch-reject-open",
+											style: {
+												background: "var(--red)",
+												color: "#fff"
+											},
+											onClick: openBatchRejectModal,
+											children: "批量不通过"
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "button",
+											onClick: () => setSelectedIds([]),
+											children: "取消"
+										})
+									]
 								})]
 							}) : null
 						]
@@ -25419,9 +26682,25 @@ function JobPage({ sessionId, jobId, focusRequest, onFocusConsumed, onBack, onSe
 									vm.rubricApproved ? "已锁定" : "待确认",
 									"）"
 								]
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								className: "ros-sec-meta",
-								children: vm.departmentName
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								style: {
+									display: "inline-flex",
+									alignItems: "center",
+									gap: 12
+								},
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: "ros-sec-meta",
+									children: vm.departmentName
+								}), !vm.rubricApproved && vm.actions.rubric_approve?.available ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "ros-btn dark",
+									"data-testid": "canvas-action-rubric-approve",
+									onClick: () => {
+										setRubricApproveReason("");
+										setRubricApproveOpen(true);
+									},
+									children: "批准当前标准"
+								}) : null]
 							})]
 						}), vm.rubricDimensions.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 							className: "ros-clean-list",
@@ -25458,25 +26737,56 @@ function JobPage({ sessionId, jobId, focusRequest, onFocusConsumed, onBack, onSe
 								})]
 							}, dim.key))
 						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CanvasEmptyState, { title: "尚未配置考核维度" })]
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "ros-sec-head",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "ros-sec-title",
-							children: "岗位原始信息（完整 JD）"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "ros-sec-meta num",
-							children: vm.jobCode
-						})]
-					}), vm.descriptionMd || vm.requirementsMd ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "ros-jd-box",
-						children: [vm.descriptionMd ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-							className: "ros-jd-sec-t",
-							children: "岗位职责"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { children: vm.descriptionMd })] }) : null, vm.requirementsMd ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-							className: "ros-jd-sec-t",
-							children: "任职要求"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { children: vm.requirementsMd })] }) : null]
-					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CanvasEmptyState, { title: "暂无岗位原始描述" })] })] })
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "ros-sec-head",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "ros-sec-title",
+								children: "岗位原始信息（完整 JD）"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "ros-sec-meta num",
+								children: vm.jobCode
+							})]
+						}),
+						vm.descriptionMd || vm.requirementsMd ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "ros-jd-box",
+							children: [vm.descriptionMd ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "ros-jd-sec-t",
+								children: "岗位职责"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { children: vm.descriptionMd })] }) : null, vm.requirementsMd ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "ros-jd-sec-t",
+								children: "任职要求"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { children: vm.requirementsMd })] }) : null]
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CanvasEmptyState, { title: "暂无岗位原始描述" }),
+						vm.statusLabel !== "已关闭" && vm.statusLabel !== "已结束" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							style: {
+								marginTop: 32,
+								paddingTop: 16,
+								borderTop: "1px solid var(--line-soft)",
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "space-between",
+								gap: 12
+							},
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								style: {
+									fontSize: 12.5,
+									color: "var(--muted)"
+								},
+								children: "岗位不再接收新候选人时，可在此关闭并归档。"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "ros-text-link",
+								style: { color: "var(--red)" },
+								"data-testid": "canvas-action-job-close",
+								onClick: () => {
+									setCloseJobReason("");
+									setCloseJobOpen(true);
+								},
+								children: "关闭岗位"
+							})]
+						}) : null
+					] })] })
 				]
 			}, jobId)
 		}),
@@ -25633,11 +26943,263 @@ function JobPage({ sessionId, jobId, focusRequest, onFocusConsumed, onBack, onSe
 					})
 				]
 			})
+		}) : null,
+		rubricApproveOpen ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			className: "ros-modal-bg",
+			role: "dialog",
+			"aria-modal": "true",
+			onClick: (e) => {
+				if (e.target === e.currentTarget && !rubricApproving) setRubricApproveOpen(false);
+			},
+			children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "ros-modal",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							fontSize: "17px",
+							fontWeight: 650
+						},
+						children: ["批准岗位评分标准 ", vm.rubricVersionLabel]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "ros-jd-box",
+						style: { padding: "12px 14px" },
+						children: [
+							"批准后，该版本标准将作为「",
+							vm.title,
+							"」初筛与面试评估的锁定口径。"
+						]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+						className: "ros-m-field",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "审批备注（选填）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+							value: rubricApproveReason,
+							onChange: (e) => setRubricApproveReason(e.target.value),
+							placeholder: "例如：与用人经理对齐，确认启用"
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							justifyContent: "flex-end",
+							gap: 10
+						},
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "ros-btn",
+							disabled: rubricApproving,
+							onClick: () => setRubricApproveOpen(false),
+							children: "取消"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "ros-btn dark",
+							disabled: rubricApproving,
+							"data-testid": "canvas-rubric-approve-submit",
+							onClick: () => void handleApproveRubric(),
+							children: rubricApproving ? "提交中…" : "确认批准"
+						})]
+					})
+				]
+			})
+		}) : null,
+		compareOpen ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			className: "ros-modal-bg",
+			role: "dialog",
+			"aria-modal": "true",
+			onClick: (e) => {
+				if (e.target === e.currentTarget) setCompareOpen(false);
+			},
+			children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "ros-modal",
+				style: {
+					maxWidth: 780,
+					width: "92vw"
+				},
+				"data-testid": "canvas-compare-modal",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							alignItems: "baseline",
+							justifyContent: "space-between",
+							gap: 12
+						},
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							style: {
+								fontSize: "17px",
+								fontWeight: 650
+							},
+							children: ["候选人横向对比 · ", vm.title]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							className: "ros-sec-meta num",
+							children: [compareItems.length, " 位候选人"]
+						})]
+					}),
+					compareLoading ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "ros-sec-meta",
+						style: { padding: "24px 0" },
+						children: "正在加载候选人对照信息…"
+					}) : compareItems.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						style: { overflowX: "auto" },
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("table", {
+							style: {
+								width: "100%",
+								borderCollapse: "collapse",
+								fontSize: 13
+							},
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
+								style: {
+									textAlign: "left",
+									padding: "8px 10px 8px 0",
+									borderBottom: "1px solid var(--line)",
+									color: "var(--muted)",
+									fontWeight: 500
+								},
+								children: "对照维度"
+							}), compareItems.map((item) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
+								style: {
+									textAlign: "left",
+									padding: "8px 10px",
+									borderBottom: "1px solid var(--line)",
+									color: "var(--ink)",
+									fontWeight: 600
+								},
+								children: item.candidateName
+							}, item.applicationId))] }) }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tbody", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
+								style: {
+									padding: "9px 10px 9px 0",
+									borderBottom: "1px solid var(--line-soft)",
+									color: "var(--muted)"
+								},
+								children: "当前阶段"
+							}), compareItems.map((item) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
+								style: {
+									padding: "9px 10px",
+									borderBottom: "1px solid var(--line-soft)",
+									color: "var(--text)"
+								},
+								children: item.stageLabel
+							}, item.applicationId))] }), vm.rubricDimensions.map((dim) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
+								style: {
+									padding: "9px 10px 9px 0",
+									borderBottom: "1px solid var(--line-soft)",
+									color: "var(--muted)"
+								},
+								children: dim.label
+							}), compareItems.map((item) => {
+								const matched = item.criteria.find((c) => c.key === dim.key);
+								return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
+									style: {
+										padding: "9px 10px",
+										borderBottom: "1px solid var(--line-soft)"
+									},
+									children: matched ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusLabel, {
+										text: matched.statusText,
+										tone: matched.level
+									}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										style: { color: "var(--soft)" },
+										children: "待评估"
+									})
+								}, item.applicationId);
+							})] }, dim.key))] })]
+						})
+					}) : null,
+					compareCopyNotice ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						style: {
+							fontSize: 12,
+							color: "var(--green)"
+						},
+						children: compareCopyNotice
+					}) : null,
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							justifyContent: "flex-end",
+							gap: 10
+						},
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "ros-btn",
+							"data-testid": "canvas-compare-copy",
+							disabled: compareLoading || compareItems.length === 0,
+							onClick: () => void handleCopyCompareSummary(),
+							children: "复制摘要给用人经理"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "ros-btn dark",
+							onClick: () => setCompareOpen(false),
+							children: "关闭"
+						})]
+					})
+				]
+			})
+		}) : null,
+		closeJobOpen ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			className: "ros-modal-bg",
+			role: "dialog",
+			"aria-modal": "true",
+			onClick: (e) => {
+				if (e.target === e.currentTarget && !closingJob) setCloseJobOpen(false);
+			},
+			children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "ros-modal",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							fontSize: "17px",
+							fontWeight: 650
+						},
+						children: [
+							"关闭岗位「",
+							vm.title,
+							"」"
+						]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "ros-jd-box",
+						style: { padding: "12px 14px" },
+						children: "关闭后该岗位状态将变更为已关闭，历史候选人与决策留痕完整保留。"
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+						className: "ros-m-field",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "关闭原因（选填）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+							value: closeJobReason,
+							onChange: (e) => setCloseJobReason(e.target.value),
+							placeholder: "例如：岗位已招满 / 暂停招聘"
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							justifyContent: "flex-end",
+							gap: 10
+						},
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "ros-btn",
+							disabled: closingJob,
+							onClick: () => setCloseJobOpen(false),
+							children: "取消"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "ros-btn",
+							style: {
+								color: "var(--red)",
+								borderColor: "rgba(205, 43, 49, 0.35)"
+							},
+							disabled: closingJob,
+							"data-testid": "canvas-job-close-submit",
+							onClick: () => void handleCloseJob(),
+							children: closingJob ? "提交中…" : "确认关闭岗位"
+						})]
+					})
+				]
+			})
 		}) : null
 	] });
 }
-// recruitment-css-virtual:D:\12412\dsh工作区\projects\recruitment-agent\dsh\dsh-recruitment\src\client\canvas\canvas.css?css
-const CSS_KEY = "eb7dddf0fef9";
+// recruitment-css-virtual:D:\12412\DshWorktrees\recruitment-agent\ui-build-20261124\dsh\dsh-recruitment\src\client\canvas\canvas.css?css
+const CSS_KEY = "f4edae4f5341";
 const css = "/*\r\n * Recruitment OS v4 · Right-Hand Canvas Styles\r\n * Design tokens copied verbatim from design/v4/contracts/design-tokens.md.\r\n * Scoped under .ros-canvas to avoid colliding with DSH host styles.\r\n */\r\n\r\n.ros-canvas {\r\n  --rail: #F3F2EE;\r\n  --paper: #F9F8F5;\r\n  --surface: #FFFFFF;\r\n  --subtle: #F3F2EE;\r\n  --hover: #EAE8E2;\r\n  --ink: #191918;\r\n  --text: #42423F;\r\n  --muted: #787772;\r\n  --soft: #A6A59E;\r\n  --line: rgba(25, 25, 24, .08);\r\n  --line-soft: rgba(25, 25, 24, .05);\r\n  --iris: #5B5BD6;\r\n  --iris-soft: rgba(91, 91, 214, .09);\r\n  --green: #18794E;\r\n  --green-soft: rgba(24, 121, 78, .09);\r\n  --amber: #AD5700;\r\n  --amber-soft: rgba(173, 87, 0, .09);\r\n  --red: #CD2B31;\r\n  --red-soft: rgba(205, 43, 49, .08);\r\n  --shadow-card: 0 1px 2px rgba(25, 25, 24, .03), 0 10px 30px -14px rgba(25, 25, 24, .07);\r\n  --shadow-modal: 0 28px 72px -18px rgba(25, 25, 24, .24);\r\n\r\n  display: flex;\r\n  flex-direction: column;\r\n  height: 100%;\r\n  min-height: 0;\r\n  overflow: hidden;\r\n  background: var(--surface);\r\n  color: var(--ink);\r\n  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', sans-serif;\r\n  font-size: 14px;\r\n  line-height: 1.55;\r\n  -webkit-font-smoothing: antialiased;\r\n}\r\n\r\n[data-theme=\"dark\"] .ros-canvas,\r\n.ros-canvas[data-theme=\"dark\"] {\r\n  --rail: #10100F;\r\n  --paper: #141413;\r\n  --surface: #1A1A19;\r\n  --subtle: #232321;\r\n  --hover: #2B2B28;\r\n  --ink: #F3F2EE;\r\n  --text: #D5D4CE;\r\n  --muted: #9A9992;\r\n  --soft: #6F6E68;\r\n  --line: rgba(243, 242, 238, .09);\r\n  --line-soft: rgba(243, 242, 238, .055);\r\n  --iris: #8484F5;\r\n  --iris-soft: rgba(132, 132, 245, .15);\r\n  --green: #3DD68C;\r\n  --green-soft: rgba(61, 214, 140, .13);\r\n  --amber: #F5A524;\r\n  --amber-soft: rgba(245, 165, 36, .14);\r\n  --red: #F87171;\r\n  --red-soft: rgba(248, 113, 113, .14);\r\n  --shadow-card: 0 2px 10px rgba(0, 0, 0, .35);\r\n  --shadow-modal: 0 28px 72px -18px rgba(0, 0, 0, .65);\r\n}\r\n\r\n.ros-canvas *,\r\n.ros-canvas *::before,\r\n.ros-canvas *::after {\r\n  box-sizing: border-box;\r\n}\r\n\r\n.ros-canvas button {\r\n  font: inherit;\r\n  color: inherit;\r\n  cursor: pointer;\r\n  background: none;\r\n  border: 0;\r\n}\r\n\r\n.ros-canvas .num {\r\n  font-variant-numeric: tabular-nums;\r\n}\r\n\r\n@keyframes rosFadeIn {\r\n  from { opacity: 0; transform: translateY(4px); }\r\n  to { opacity: 1; transform: none; }\r\n}\r\n\r\n@keyframes rosOrbit {\r\n  to { transform: rotate(360deg); }\r\n}\r\n\r\n@keyframes rosPulseDot {\r\n  0%, 100% { opacity: .3; transform: scale(.85); }\r\n  50% { opacity: 1; transform: scale(1.1); }\r\n}\r\n\r\n/* Contextual Top Bar (56px visual horizon) */\r\n.ros-canvas-head {\r\n  height: 56px;\r\n  padding: 0 36px;\r\n  border-bottom: 1px solid var(--line-soft);\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 14px;\r\n  flex: none;\r\n}\r\n\r\n.ros-head-left {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 16px;\r\n  min-width: 0;\r\n}\r\n\r\n.ros-head-right {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 10px;\r\n  font-size: 12px;\r\n  color: var(--muted);\r\n  flex: none;\r\n}\r\n\r\n.ros-crumb-bar {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 7px;\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n  white-space: nowrap;\r\n  overflow: hidden;\r\n  text-overflow: ellipsis;\r\n}\r\n\r\n.ros-crumb-link {\r\n  color: var(--muted);\r\n  font-size: 13px;\r\n  transition: color .12s;\r\n}\r\n\r\n.ros-crumb-link:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-crumb-cur {\r\n  color: var(--ink);\r\n  font-weight: 600;\r\n}\r\n\r\n.ros-tabs {\r\n  display: inline-flex;\r\n  gap: 22px;\r\n}\r\n\r\n.ros-tab {\r\n  font-size: 13px;\r\n  font-weight: 500;\r\n  color: var(--muted);\r\n  padding: 17px 0;\r\n  position: relative;\r\n  transition: color .14s;\r\n  white-space: nowrap;\r\n}\r\n\r\n.ros-tab:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-tab.active {\r\n  color: var(--ink);\r\n  font-weight: 600;\r\n}\r\n\r\n.ros-tab.active::after {\r\n  content: '';\r\n  position: absolute;\r\n  left: 0;\r\n  right: 0;\r\n  bottom: 0;\r\n  height: 2px;\r\n  background: var(--ink);\r\n  border-radius: 2px;\r\n}\r\n\r\n/* Scrollable Reading Body */\r\n.ros-canvas-body {\r\n  flex: 1;\r\n  min-height: 0;\r\n  overflow-y: auto;\r\n  padding: 34px 48px 72px;\r\n}\r\n\r\n.ros-canvas-inner {\r\n  max-width: 820px;\r\n  margin: 0 auto;\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 36px;\r\n  animation: rosFadeIn .2s ease-out;\r\n}\r\n\r\n/* Shared Editorial Typography */\r\n.ros-sec-head {\r\n  display: flex;\r\n  align-items: baseline;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  margin-bottom: 14px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-sec-title {\r\n  font-size: 15px;\r\n  font-weight: 650;\r\n  letter-spacing: -.015em;\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-sec-meta {\r\n  font-size: 12px;\r\n  color: var(--soft);\r\n}\r\n\r\n.ros-text-link {\r\n  font-size: 12.5px;\r\n  color: var(--muted);\r\n  transition: color .12s;\r\n}\r\n\r\n.ros-text-link:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-text-link.active {\r\n  color: var(--ink);\r\n  font-weight: 600;\r\n}\r\n\r\n/* External Fact Labels (quiet editorial metadata — no pill clutter in top bar) */\r\n.ros-fact-bar {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 10px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-fact-chip {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 3px;\r\n  padding: 0;\r\n  font-size: 11px;\r\n  font-weight: 450;\r\n  background: transparent;\r\n  color: var(--soft);\r\n}\r\n\r\n.ros-fact-chip.green { background: transparent; color: var(--green); }\r\n.ros-fact-chip.amber { background: transparent; color: var(--amber); }\r\n.ros-fact-chip.red { background: transparent; color: var(--red); }\r\n\r\n/* Status Text */\r\n.ros-status {\r\n  font-size: 12.5px;\r\n  font-weight: 500;\r\n  color: var(--muted);\r\n  white-space: nowrap;\r\n}\r\n.ros-status.red { color: var(--red); }\r\n.ros-status.amber { color: var(--amber); }\r\n.ros-status.iris { color: var(--iris); }\r\n.ros-status.green { color: var(--green); }\r\n\r\n/* 6-Stage Horizontal Breathing Progress Track */\r\n.ros-stage-track {\r\n  display: grid;\r\n  grid-template-columns: repeat(6, 1fr);\r\n  align-items: center;\r\n  padding: 8px 0;\r\n}\r\n\r\n.ros-st-node {\r\n  position: relative;\r\n  display: flex;\r\n  flex-direction: column;\r\n  align-items: center;\r\n  gap: 6px;\r\n}\r\n\r\n.ros-st-node:not(:last-child)::after {\r\n  content: '';\r\n  position: absolute;\r\n  top: 9px;\r\n  left: calc(50% + 10px);\r\n  right: calc(-50% + 10px);\r\n  height: 1.5px;\r\n  background: var(--line);\r\n}\r\n\r\n.ros-st-node.done:not(:last-child)::after {\r\n  background: var(--green);\r\n}\r\n\r\n.ros-st-dot {\r\n  position: relative;\r\n  z-index: 1;\r\n  width: 19px;\r\n  height: 19px;\r\n  border-radius: 99px;\r\n  display: grid;\r\n  place-items: center;\r\n  background: var(--surface);\r\n  border: 1.5px solid var(--line);\r\n  font-size: 10px;\r\n  font-weight: 700;\r\n  color: var(--soft);\r\n}\r\n\r\n.ros-st-node.done .ros-st-dot {\r\n  border-color: var(--green);\r\n  background: var(--green-soft);\r\n  color: var(--green);\r\n}\r\n\r\n.ros-st-node.now .ros-st-dot {\r\n  border-color: var(--iris);\r\n  background: var(--iris-soft);\r\n  color: var(--iris);\r\n}\r\n\r\n.ros-st-node.now .ros-st-dot::after {\r\n  content: '';\r\n  position: absolute;\r\n  inset: -2.5px;\r\n  border: 1.5px solid transparent;\r\n  border-top-color: var(--iris);\r\n  border-radius: 99px;\r\n  animation: rosOrbit 1s linear infinite;\r\n}\r\n\r\n.ros-st-node.wait .ros-st-dot {\r\n  border-color: var(--amber);\r\n  background: var(--amber-soft);\r\n  color: var(--amber);\r\n}\r\n\r\n.ros-st-lbl {\r\n  font-size: 11.5px;\r\n  color: var(--muted);\r\n}\r\n\r\n.ros-st-node.now .ros-st-lbl,\r\n.ros-st-node.wait .ros-st-lbl {\r\n  color: var(--ink);\r\n  font-weight: 550;\r\n}\r\n\r\n/* Signature Gliding Hover List (Preserved Verbatim from v4) */\r\n.ros-clean-list {\r\n  display: flex;\r\n  flex-direction: column;\r\n  border-top: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-clean-row {\r\n  padding: 13px 4px;\r\n  border-bottom: 1px solid var(--line-soft);\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 14px;\r\n  cursor: pointer;\r\n  transition: background .12s, padding .12s;\r\n  border-radius: 8px;\r\n}\r\n\r\n.ros-clean-row:hover {\r\n  background: var(--paper);\r\n  padding-inline: 12px;\r\n  margin-inline: -8px;\r\n}\r\n\r\n.ros-clean-row.static {\r\n  cursor: default;\r\n}\r\n\r\n.ros-clean-row.static:hover {\r\n  background: transparent;\r\n  padding-inline: 4px;\r\n  margin-inline: 0;\r\n}\r\n\r\n.ros-cr-left {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 12px;\r\n  min-width: 0;\r\n}\r\n\r\n.ros-mono {\r\n  width: 30px;\r\n  height: 30px;\r\n  border-radius: 99px;\r\n  background: var(--subtle);\r\n  color: var(--ink);\r\n  display: grid;\r\n  place-items: center;\r\n  font-size: 12px;\r\n  font-weight: 600;\r\n  flex: none;\r\n}\r\n\r\n.ros-cr-name {\r\n  font-size: 14px;\r\n  font-weight: 600;\r\n  color: var(--ink);\r\n  white-space: nowrap;\r\n}\r\n\r\n.ros-cr-role {\r\n  font-size: 12.5px;\r\n  color: var(--muted);\r\n  margin-left: 8px;\r\n  font-weight: 400;\r\n}\r\n\r\n/* Candidate Artifact View */\r\n.ros-doc-head {\r\n  display: flex;\r\n  align-items: flex-start;\r\n  justify-content: space-between;\r\n  gap: 18px;\r\n  padding-bottom: 24px;\r\n  border-bottom: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-doc-name {\r\n  font-size: 24px;\r\n  font-weight: 700;\r\n  letter-spacing: -.03em;\r\n  color: var(--ink);\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 10px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-doc-meta {\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n  margin-top: 5px;\r\n}\r\n\r\n.ros-doc-head-sub {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 6px;\r\n}\r\n\r\n.ros-memo-btn {\r\n  font-size: 11.5px;\r\n}\r\n\r\n.ros-pin-row {\r\n  display: flex;\r\n  gap: 7px;\r\n  flex-wrap: wrap;\r\n  margin-top: 10px;\r\n}\r\n\r\n.ros-pin-tag {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  padding: 3px 10px;\r\n  border-radius: 99px;\r\n  background: var(--red-soft);\r\n  color: var(--red);\r\n  font-size: 11.5px;\r\n  font-weight: 600;\r\n}\r\n\r\n.ros-pin-tag.neutral {\r\n  background: var(--subtle);\r\n  color: var(--text);\r\n  font-weight: 500;\r\n}\r\n\r\n.ros-doc-block {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 12px;\r\n}\r\n\r\n.ros-doc-line {\r\n  display: grid;\r\n  grid-template-columns: 28px 1fr;\r\n  gap: 12px;\r\n  font-size: 13.5px;\r\n  line-height: 1.78;\r\n  color: var(--text);\r\n  padding: 7px 10px;\r\n  margin: 0 -10px;\r\n  border-radius: 8px;\r\n  cursor: pointer;\r\n  transition: background .12s;\r\n  overflow-wrap: anywhere;\r\n}\r\n\r\n.ros-doc-line:hover {\r\n  background: var(--paper);\r\n}\r\n\r\n.ros-doc-line.active {\r\n  background: var(--iris-soft);\r\n}\r\n\r\n.ros-doc-no {\r\n  color: var(--soft);\r\n  font-size: 12px;\r\n  padding-top: 2px;\r\n}\r\n\r\n.ros-resume-group {\r\n  font-size: 11.5px;\r\n  font-weight: 600;\r\n  color: var(--soft);\r\n  letter-spacing: .03em;\r\n  margin: 16px 0 6px;\r\n  padding-top: 12px;\r\n  border-top: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-resume-group:first-child {\r\n  margin-top: 4px;\r\n  padding-top: 0;\r\n  border-top: 0;\r\n}\r\n\r\n.ros-exp-meta {\r\n  display: flex;\r\n  align-items: baseline;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  margin-bottom: 4px;\r\n}\r\n\r\n.ros-exp-co {\r\n  font-size: 13.5px;\r\n  font-weight: 600;\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-exp-time {\r\n  font-size: 12px;\r\n  color: var(--soft);\r\n  flex: none;\r\n}\r\n\r\n.ros-crit-item {\r\n  display: flex;\r\n  align-items: baseline;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  padding: 9px 10px;\r\n  margin: 0 -10px;\r\n  border-radius: 8px;\r\n  cursor: pointer;\r\n  transition: background .12s;\r\n}\r\n\r\n.ros-crit-item:hover {\r\n  background: var(--paper);\r\n}\r\n\r\n.ros-crit-item.active {\r\n  background: var(--iris-soft);\r\n}\r\n\r\n/* Sequential Round Rail */\r\n.ros-seq-rail {\r\n  display: flex;\r\n  align-items: center;\r\n  padding: 16px 0;\r\n  border-bottom: 1px solid var(--line-soft);\r\n  overflow-x: auto;\r\n}\r\n\r\n.ros-seq-n {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n  flex: none;\r\n}\r\n\r\n.ros-seq-d {\r\n  width: 20px;\r\n  height: 20px;\r\n  border-radius: 99px;\r\n  display: grid;\r\n  place-items: center;\r\n  font-size: 10.5px;\r\n  font-weight: 700;\r\n  border: 1.5px solid var(--line);\r\n  color: var(--soft);\r\n}\r\n\r\n.ros-seq-d.done { border-color: var(--green); background: var(--green-soft); color: var(--green); }\r\n.ros-seq-d.caution { border-color: var(--amber); background: var(--amber-soft); color: var(--amber); }\r\n.ros-seq-d.now { border-color: var(--iris); background: var(--iris-soft); color: var(--iris); }\r\n\r\n.ros-seq-l {\r\n  flex: 1;\r\n  min-width: 20px;\r\n  height: 1.5px;\r\n  background: var(--line);\r\n  margin: 0 10px;\r\n}\r\n\r\n.ros-seq-l.done {\r\n  background: var(--green);\r\n}\r\n\r\n/* Notes, JD Box, Transcript, Collapsible Toggle */\r\n.ros-risk-note {\r\n  padding: 12px 16px;\r\n  border-radius: 10px;\r\n  background: var(--paper);\r\n  border-left: 3px solid var(--amber);\r\n  font-size: 13px;\r\n  line-height: 1.68;\r\n  color: var(--text);\r\n}\r\n\r\n.ros-jd-box {\r\n  padding: 20px 22px;\r\n  border-radius: 12px;\r\n  background: var(--paper);\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 14px;\r\n  font-size: 13px;\r\n  line-height: 1.75;\r\n  color: var(--text);\r\n  white-space: pre-line;\r\n}\r\n\r\n.ros-jd-sec-t {\r\n  font-size: 12px;\r\n  font-weight: 650;\r\n  color: var(--ink);\r\n  margin-bottom: 4px;\r\n}\r\n\r\n.ros-ts-badge {\r\n  font-size: 11px;\r\n  font-weight: 600;\r\n  color: var(--iris);\r\n  background: var(--iris-soft);\r\n  padding: 1px 6px;\r\n  border-radius: 5px;\r\n  margin-right: 8px;\r\n}\r\n\r\n.ros-auto-toggle {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  padding: 12px 0;\r\n  border-top: 1px solid var(--line-soft);\r\n  font-size: 12.5px;\r\n  color: var(--muted);\r\n  cursor: pointer;\r\n}\r\n\r\n.ros-auto-toggle:hover {\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-btn {\r\n  height: 34px;\r\n  padding: 0 16px;\r\n  border-radius: 99px;\r\n  border: 1px solid var(--line);\r\n  background: var(--surface);\r\n  color: var(--ink);\r\n  font-size: 13px;\r\n  font-weight: 500;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  gap: 6px;\r\n  transition: all .14s;\r\n}\r\n\r\n.ros-btn:hover {\r\n  background: var(--subtle);\r\n}\r\n\r\n/* Empty / Loading / Error States */\r\n.ros-state-box {\r\n  padding: 40px 24px;\r\n  border-radius: 12px;\r\n  background: var(--paper);\r\n  display: flex;\r\n  flex-direction: column;\r\n  align-items: center;\r\n  justify-content: center;\r\n  text-align: center;\r\n  gap: 10px;\r\n}\r\n\r\n.ros-state-title {\r\n  font-size: 14.5px;\r\n  font-weight: 600;\r\n  color: var(--ink);\r\n}\r\n\r\n.ros-state-desc {\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n  max-width: 380px;\r\n  line-height: 1.65;\r\n}\r\n\r\n.ros-thinking-row {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n  font-size: 13px;\r\n  color: var(--muted);\r\n}\r\n\r\n.ros-thinking-dot {\r\n  width: 6px;\r\n  height: 6px;\r\n  border-radius: 99px;\r\n  background: var(--iris);\r\n  animation: rosPulseDot .9s ease-in-out infinite;\r\n}\r\n\r\n/* Responsive (Half-screen <= 1080px & Mobile 390px) */\r\n@media (max-width: 1080px) {\r\n  .ros-canvas-head {\r\n    padding: 0 24px;\r\n  }\r\n  .ros-canvas-body {\r\n    padding: 24px 24px 64px;\r\n  }\r\n}\r\n\r\n@media (max-width: 520px) {\r\n  .ros-canvas-head {\r\n    padding: 0 16px;\r\n    height: auto;\r\n    min-height: 52px;\r\n    flex-wrap: wrap;\r\n    padding-top: 8px;\r\n    padding-bottom: 8px;\r\n  }\r\n  .ros-canvas-body {\r\n    padding: 18px 16px 48px;\r\n  }\r\n  .ros-doc-head {\r\n    flex-direction: column;\r\n  }\r\n  .ros-doc-name {\r\n    font-size: 20px;\r\n  }\r\n  .ros-cr-role {\r\n    display: block;\r\n    margin-left: 0;\r\n    margin-top: 2px;\r\n  }\r\n}\r\n\r\n/* v4 Footer & Centered Confirmation Modal (verbatim design-tokens.md) */\r\n.ros-doc-foot {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 12px;\r\n  padding-top: 20px;\r\n  border-top: 1px solid var(--line-soft);\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-btn.dark {\r\n  background: var(--ink);\r\n  border-color: var(--ink);\r\n  color: var(--surface);\r\n}\r\n\r\n.ros-btn.dark:hover {\r\n  opacity: .88;\r\n}\r\n\r\n.ros-btn:disabled {\r\n  opacity: .6;\r\n  cursor: not-allowed;\r\n}\r\n\r\n.ros-modal-bg {\r\n  position: fixed;\r\n  inset: 0;\r\n  z-index: 100;\r\n  background: rgba(25, 25, 24, .32);\r\n  backdrop-filter: blur(6px);\r\n  -webkit-backdrop-filter: blur(6px);\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  padding: 24px;\r\n}\r\n\r\n.ros-modal {\r\n  width: 100%;\r\n  max-width: 520px;\r\n  background: var(--surface);\r\n  border-radius: 20px;\r\n  border: 1px solid var(--line);\r\n  box-shadow: var(--shadow-modal);\r\n  padding: 26px 28px;\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 16px;\r\n  animation: rosFadeIn .16s ease-out;\r\n}\r\n\r\n.ros-m-field {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 5px;\r\n  font-size: 12px;\r\n  color: var(--muted);\r\n}\r\n\r\n.ros-m-field input,\r\n.ros-m-field textarea {\r\n  padding: 9px 11px;\r\n  border-radius: 8px;\r\n  border: 1px solid var(--line);\r\n  background: var(--surface);\r\n  color: var(--ink);\r\n  font: inherit;\r\n  font-size: 13px;\r\n  outline: none;\r\n}\r\n\r\n.ros-m-field input:focus,\r\n.ros-m-field textarea:focus {\r\n  border-color: var(--muted);\r\n}\r\n\r\n/* v4 Batch Float & 5-Second Undo Toast (verbatim design-tokens.md) */\r\n.ros-batch-float {\r\n  position: sticky;\r\n  bottom: 0;\r\n  margin-top: 12px;\r\n  background: var(--ink);\r\n  color: var(--surface);\r\n  padding: 10px 16px;\r\n  border-radius: 99px;\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 14px;\r\n  font-size: 12.5px;\r\n  box-shadow: var(--shadow-modal);\r\n}\r\n\r\n.ros-batch-float button {\r\n  color: var(--surface);\r\n  font-size: 12px;\r\n  padding: 4px 10px;\r\n  border-radius: 99px;\r\n  background: rgba(128, 128, 128, .24);\r\n}\r\n\r\n.ros-batch-float button:hover {\r\n  background: rgba(128, 128, 128, .38);\r\n}\r\n\r\n.ros-toast {\r\n  position: fixed;\r\n  top: 20px;\r\n  left: 50%;\r\n  transform: translateX(-50%) translateY(-8px);\r\n  background: var(--ink);\r\n  color: var(--surface);\r\n  padding: 9px 16px;\r\n  border-radius: 99px;\r\n  font-size: 12.5px;\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 12px;\r\n  opacity: 0;\r\n  pointer-events: none;\r\n  transition: all .16s;\r\n  z-index: 120;\r\n}\r\n\r\n.ros-toast.show {\r\n  opacity: 1;\r\n  pointer-events: auto;\r\n  transform: translateX(-50%) translateY(0);\r\n}\r\n\r\n/* v4 Free Slot Pills (verbatim design-tokens.md) */\r\n.ros-slot-grid {\r\n  display: flex;\r\n  gap: 8px;\r\n  flex-wrap: wrap;\r\n}\r\n\r\n.ros-slot-pill {\r\n  padding: 6px 12px;\r\n  border-radius: 10px;\r\n  border: 1px solid var(--line);\r\n  background: var(--surface);\r\n  font-size: 12px;\r\n  color: var(--text);\r\n  transition: all .12s;\r\n}\r\n\r\n.ros-slot-pill:hover {\r\n  border-color: var(--muted);\r\n}\r\n\r\n.ros-slot-pill.active {\r\n  background: var(--iris-soft);\r\n  border-color: var(--iris);\r\n  color: var(--iris);\r\n  font-weight: 600;\r\n}\r\n\r\n/* =========================================================================\r\n * Canvas UX & Motion Polish (UI-FREEZE compliant: zero token/layout changes)\r\n * ========================================================================= */\r\n\r\n@keyframes rosCanvasEnter {\r\n  from {\r\n    opacity: 0;\r\n    transform: translateY(6px);\r\n  }\r\n  to {\r\n    opacity: 1;\r\n    transform: translateY(0);\r\n  }\r\n}\r\n\r\n@keyframes rosModalBgIn {\r\n  from { opacity: 0; }\r\n  to { opacity: 1; }\r\n}\r\n\r\n@keyframes rosModalCardIn {\r\n  from {\r\n    opacity: 0;\r\n    transform: translateY(5px) scale(0.985);\r\n  }\r\n  to {\r\n    opacity: 1;\r\n    transform: translateY(0) scale(1);\r\n  }\r\n}\r\n\r\n@keyframes rosPaperFlash {\r\n  0% { background-color: rgba(217, 119, 6, 0.14); }\r\n  45% { background-color: rgba(217, 119, 6, 0.08); }\r\n  100% { background-color: transparent; }\r\n}\r\n\r\n@keyframes rosStarPop {\r\n  0% { transform: scale(1); }\r\n  45% { transform: scale(1.24); }\r\n  100% { transform: scale(1); }\r\n}\r\n\r\n@keyframes rosSkelShimmer {\r\n  0% { opacity: 0.45; }\r\n  50% { opacity: 0.85; }\r\n  100% { opacity: 0.45; }\r\n}\r\n\r\n@keyframes rosToastDrain {\r\n  from { transform: scaleX(1); }\r\n  to { transform: scaleX(0); }\r\n}\r\n\r\n.ros-canvas-enter {\r\n  animation: rosCanvasEnter 180ms cubic-bezier(0.22, 1, 0.36, 1) both;\r\n}\r\n\r\n.ros-sync-pill {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 6px;\r\n  font-size: 11.5px;\r\n  color: var(--muted);\r\n  padding: 2px 8px;\r\n  border-radius: 99px;\r\n  background: var(--paper);\r\n  border: 1px solid var(--line-soft);\r\n}\r\n\r\n.ros-sync-dot {\r\n  width: 6px;\r\n  height: 6px;\r\n  border-radius: 50%;\r\n  background: var(--iris);\r\n  animation: rosSkelShimmer 1.1s ease-in-out infinite;\r\n}\r\n\r\n.ros-paper-flash {\r\n  border-radius: 10px;\r\n  animation: rosPaperFlash 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;\r\n}\r\n\r\n.ros-doc-line {\r\n  transition: background-color 180ms ease, box-shadow 180ms ease;\r\n}\r\n\r\n.ros-doc-line.active {\r\n  box-shadow: inset 2.5px 0 0 var(--iris);\r\n  padding-left: 10px;\r\n  border-radius: 4px;\r\n}\r\n\r\n.ros-star-btn {\r\n  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), color 140ms ease;\r\n  cursor: pointer;\r\n}\r\n\r\n.ros-star-btn.pop {\r\n  animation: rosStarPop 200ms cubic-bezier(0.22, 1, 0.36, 1);\r\n}\r\n\r\n.ros-modal-bg {\r\n  animation: rosModalBgIn 140ms ease-out both;\r\n}\r\n\r\n.ros-modal {\r\n  animation: rosModalCardIn 170ms cubic-bezier(0.22, 1, 0.36, 1) both;\r\n}\r\n\r\n.ros-toast {\r\n  position: fixed;\r\n  overflow: hidden;\r\n}\r\n\r\n.ros-toast-bar {\r\n  position: absolute;\r\n  left: 0;\r\n  right: 0;\r\n  bottom: 0;\r\n  height: 2px;\r\n  background: rgba(165, 180, 252, 0.85);\r\n  transform-origin: left center;\r\n  animation-name: rosToastDrain;\r\n  animation-timing-function: linear;\r\n  animation-fill-mode: forwards;\r\n}\r\n\r\n/* Editorial warm-paper skeleton for cold load */\r\n.ros-skeleton-doc {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 20px;\r\n  padding: 6px 0;\r\n}\r\n\r\n.ros-skel-bar {\r\n  border-radius: 6px;\r\n  background: var(--subtle);\r\n  animation: rosSkelShimmer 1.3s ease-in-out infinite;\r\n}\r\n\r\n/* Read-only section focus highlight (driven by Agent ui_action focus_section) */\r\n.ros-canvas [data-section] {\r\n  scroll-margin-top: 20px;\r\n  border-radius: 10px;\r\n}\r\n\r\n@keyframes rosSectionFocus {\r\n  0% {\r\n    background: var(--iris-soft);\r\n    box-shadow: 0 0 0 6px var(--iris-soft);\r\n  }\r\n  100% {\r\n    background: transparent;\r\n    box-shadow: 0 0 0 0 transparent;\r\n  }\r\n}\r\n\r\n.ros-section-focus {\r\n  animation: rosSectionFocus 1.6s ease-out;\r\n}\r\n\r\n@media (prefers-reduced-motion: reduce) {\r\n  .ros-canvas-enter,\r\n  .ros-modal-bg,\r\n  .ros-modal,\r\n  .ros-paper-flash,\r\n  .ros-section-focus,\r\n  .ros-star-btn.pop,\r\n  .ros-sync-dot,\r\n  .ros-skel-bar {\r\n    animation: none !important;\r\n    transition: none !important;\r\n  }\r\n}\r\n";
 if (typeof document !== "undefined" && document.querySelector("style[data-recruitment-css=\"" + CSS_KEY + "\"]") === null) {
 	const style = document.createElement("style");
@@ -29580,7 +31142,25 @@ function InterviewerWorkspace(props) {
 		})]
 	});
 }
+// src/client/auth/auth-api.ts
+async function postAuthLogout() {
+	await fetch("/recruitment/api/auth/logout", {
+		method: "POST",
+		credentials: "same-origin",
+		headers: {
+			"x-recruitment-request": "1",
+			Accept: "application/json"
+		}
+	});
+}
 // src/app/api.ts
+/** 生产模式下会话失效（401）：页面据此跳回独立登录页。 */
+var AppUnauthenticatedError = class extends Error {
+	constructor(message = "会话已失效，请重新登录") {
+		super(message);
+		this.name = "AppUnauthenticatedError";
+	}
+};
 function readCookie(name) {
 	if (typeof document === "undefined") return "";
 	const prefix = `${name}=`;
@@ -29600,8 +31180,64 @@ function asRecord(v) {
 const VALID_UI_ACTIONS = [
 	"navigate",
 	"focus_section",
-	"suggest_action"
+	"suggest_action",
+	"propose_write"
 ];
+const VALID_WRITE_INTENTS = [
+	"screening_decide",
+	"stage_advance",
+	"candidate_constraint",
+	"interview_schedule",
+	"decision_record"
+];
+function parseWriteProposal(raw) {
+	const obj = asRecord(raw);
+	const intentRaw = asString(obj.intent);
+	if (!VALID_WRITE_INTENTS.includes(intentRaw)) return void 0;
+	const applicationId = asString(obj.application_id);
+	const title = asString(obj.title);
+	if (!applicationId || !title) return void 0;
+	const summary = (Array.isArray(obj.summary) ? obj.summary : []).map((item) => {
+		const rec = asRecord(item);
+		const label = asString(rec.label);
+		const value = asString(rec.value);
+		return label && value ? {
+			label,
+			value
+		} : null;
+	}).filter((item) => item !== null).slice(0, 4);
+	if (summary.length === 0) return void 0;
+	const toneRaw = asString(obj.tone);
+	const tone = toneRaw === "danger" ? "danger" : toneRaw === "default" ? "default" : void 0;
+	const fallbackRaw = asString(obj.fallback_modal);
+	const fallbackModal = VALID_UI_MODALS.includes(fallbackRaw) ? fallbackRaw : void 0;
+	const p = asRecord(obj.payload);
+	const decisionRaw = asString(p.decision);
+	const constraintKindRaw = asString(p.constraint_kind);
+	const outcomeRaw = asString(p.final_outcome);
+	const payload = {
+		...decisionRaw === "PASS" || decisionRaw === "REJECT" ? { decision: decisionRaw } : {},
+		...asString(p.rationale) ? { rationale: asString(p.rationale) } : {},
+		...asString(p.target_stage) ? { target_stage: asString(p.target_stage) } : {},
+		...constraintKindRaw === "PIN" || constraintKindRaw === "HANDOFF" ? { constraint_kind: constraintKindRaw } : {},
+		...asString(p.constraint_text) ? { constraint_text: asString(p.constraint_text) } : {},
+		...typeof p.round_number === "number" && Number.isFinite(p.round_number) ? { round_number: p.round_number } : {},
+		...asString(p.interviewer_id) ? { interviewer_id: asString(p.interviewer_id) } : {},
+		...asString(p.scheduled_start) ? { scheduled_start: asString(p.scheduled_start) } : {},
+		...asString(p.scheduled_end) ? { scheduled_end: asString(p.scheduled_end) } : {},
+		...asString(p.timezone) ? { timezone: asString(p.timezone) } : {},
+		...outcomeRaw === "HIRE" || outcomeRaw === "REJECT" || outcomeRaw === "HOLD" ? { final_outcome: outcomeRaw } : {}
+	};
+	return {
+		intent: intentRaw,
+		application_id: applicationId,
+		title,
+		...tone ? { tone } : {},
+		summary,
+		...fallbackModal ? { fallback_modal: fallbackModal } : {},
+		payload
+	};
+}
 const VALID_UI_ROUTES = [
 	"queue",
 	"jobs",
@@ -29643,6 +31279,8 @@ function parseAgentUiAction(raw) {
 	const modal = VALID_UI_MODALS.includes(modalRaw) ? modalRaw : void 0;
 	const targetId = asString(raw.target_id) || void 0;
 	const label = asString(raw.label) || void 0;
+	const proposal = action === "propose_write" ? parseWriteProposal(raw.proposal) : void 0;
+	if (action === "propose_write" && !proposal) return null;
 	return {
 		action,
 		...route ? { route } : {},
@@ -29650,7 +31288,8 @@ function parseAgentUiAction(raw) {
 		...filter ? { filter } : {},
 		...section ? { section } : {},
 		...modal ? { modal } : {},
-		...label ? { label } : {}
+		...label ? { label } : {},
+		...proposal ? { proposal } : {}
 	};
 }
 function extractErrorMessage(raw, fallback) {
@@ -29691,7 +31330,10 @@ async function fetchAppSession() {
 		cache: "no-store",
 		headers
 	});
-	if (!res.ok) throw new Error("无法获取当前会话信息，请刷新页面重试。");
+	if (!res.ok) {
+		if (res.status === 401) throw new AppUnauthenticatedError();
+		throw new Error("无法获取当前会话信息，请刷新页面重试。");
+	}
 	const raw = asRecord(await res.json());
 	const actorObj = asRecord(raw.actor);
 	const sid = asString(raw.sid) || asString(raw.session_id) || cookieSid;
@@ -29859,6 +31501,404 @@ async function streamAgentTurn(opts) {
 		if (!opts.signal?.aborted) opts.onError("对话流意外中断，请重试。");
 	}
 }
+/** 退出登录：服务端撤销会话并清理 cookie；随后跳回独立登录页。 */
+async function postLogout() {
+	await postAuthLogout();
+}
+async function postWorkspaceSettingWrite(sid, payload) {
+	const res = await fetch("/recruitment/api/action/settings/write", {
+		method: "POST",
+		credentials: "same-origin",
+		headers: {
+			"Content-Type": "application/json",
+			Accept: "application/json",
+			"x-recruitment-request": "1",
+			"X-DSH-Session": sid
+		},
+		body: JSON.stringify(payload)
+	});
+	const text = await res.text();
+	let parsed = {};
+	try {
+		parsed = text ? JSON.parse(text) : {};
+	} catch {
+		parsed = {};
+	}
+	if (!res.ok) {
+		const detail = typeof parsed.detail === "string" && parsed.detail || typeof parsed.message === "string" && parsed.message || typeof parsed.title === "string" && parsed.title || `保存失败（HTTP ${res.status}）`;
+		throw new Error(detail);
+	}
+	return parsed;
+}
+// src/app/InlineConfirmCard.tsx
+function formatNowHm() {
+	const now = /* @__PURE__ */ new Date();
+	return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+}
+function formatOutcomeError(outcome) {
+	const code = `${outcome.error?.code ?? ""} ${outcome.error?.reasonCode ?? ""}`.toUpperCase();
+	if (outcome.status === 409 && (code.includes("VERSION") || code.includes("CONFLICT") || code.includes("STALE"))) return "这条记录刚被更新，请刷新后重试。";
+	if (outcome.status === 409 && (code.includes("DUPLICATE") || code.includes("ALREADY") || code.includes("DECISION_EXISTS"))) return "已处理过，不会重复写入。";
+	if (code.includes("SCORECARD_MISSING")) return "还有面试官尚未提交面评，暂时不能提交终审决策。";
+	return outcome.error?.message || describeActionError(outcome.error?.code ?? "", outcome.error?.reasonCode ?? "") || "操作未能完成，请稍后重试。";
+}
+function requireLiveAction(vm, key, fallbackLabel) {
+	const action = vm.actions[key];
+	if (!action || !action.available || action.seam === "") return {
+		ok: false,
+		message: action?.reasonText || action?.pendingText || `当前阶段暂不可执行「${fallbackLabel}」`
+	};
+	return {
+		ok: true,
+		action
+	};
+}
+function computeDurationMinutes(startIso, endIso) {
+	const s = Date.parse(startIso);
+	const e = Date.parse(endIso);
+	if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return 60;
+	const mins = Math.round((e - s) / 6e4);
+	return Math.max(15, Math.min(240, mins));
+}
+function InlineConfirmCard({ sid, proposal, onCommitted, onFallbackModal }) {
+	const [state, setState] = (0, import_react.useState)({ kind: "pending" });
+	const [errorText, setErrorText] = (0, import_react.useState)(null);
+	const [blockerText, setBlockerText] = (0, import_react.useState)(null);
+	const [checkingFacts, setCheckingFacts] = (0, import_react.useState)(proposal.intent === "decision_record");
+	(0, import_react.useEffect)(() => {
+		if (proposal.intent !== "decision_record") return;
+		let active = true;
+		setCheckingFacts(true);
+		Promise.all([fetchAppJson(`/recruitment/api/recruiting/applications/${encodeURIComponent(proposal.application_id)}`, sid), fetchDecisionFacts(proposal.application_id, sid)]).then(([rawDetail, res]) => {
+			if (!active) return;
+			const vm = normalizeApplicationDetail(rawDetail);
+			if (vm.missingScorecardNames.length > 0) {
+				setBlockerText(`还缺 ${vm.missingScorecardNames.join("、")} 的面评，暂时不能提交终审决策。`);
+				return;
+			}
+			const decisionAction = vm.actions.decision_record;
+			if (decisionAction && !decisionAction.available) {
+				setBlockerText(decisionAction.reasonText || decisionAction.pendingText || "当前阶段暂不可提交终审决策。");
+				return;
+			}
+			if (res.probe !== "READY" || !res.facts) {
+				setBlockerText("决策汇总尚未就绪，暂时无法提交终审决策。");
+				return;
+			}
+			const blockers = decisionRecordBlockers(res.facts);
+			if (blockers.length > 0) setBlockerText(blockers.map((b) => blockerTextOf(b)).join("；"));
+			else setBlockerText(null);
+		}).catch(() => {
+			if (!active) return;
+			setBlockerText("暂时无法校验面评完整状态，请使用弹窗确认。");
+		}).finally(() => {
+			if (active) setCheckingFacts(false);
+		});
+		return () => {
+			active = false;
+		};
+	}, [
+		proposal.application_id,
+		proposal.intent,
+		sid
+	]);
+	const isDanger = (0, import_react.useMemo)(() => {
+		if (proposal.tone === "danger") return true;
+		if (proposal.intent === "screening_decide" && proposal.payload.decision === "REJECT") return true;
+		if (proposal.intent === "decision_record" && proposal.payload.final_outcome === "REJECT") return true;
+		return false;
+	}, [proposal]);
+	const statusText = state.kind === "confirmed" ? "已执行" : state.kind === "submitting" ? "提交中" : blockerText ? "无法提交" : "待确认";
+	if (state.kind === "cancelled") return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "msg-confirm-cancelled",
+		"data-testid": "app-chat-confirm-card",
+		children: [
+			"已取消本次建议（",
+			proposal.title,
+			"）"
+		]
+	});
+	const handleConfirm = async () => {
+		if (state.kind !== "pending" || blockerText || checkingFacts) return;
+		setErrorText(null);
+		setState({ kind: "submitting" });
+		try {
+			const appId = proposal.application_id;
+			const p = proposal.payload;
+			if (proposal.intent === "candidate_constraint") {
+				const text = (p.constraint_text ?? "").trim();
+				const kind = p.constraint_kind === "HANDOFF" ? "HANDOFF" : "PIN";
+				if (!text) {
+					setErrorText("缺少提醒内容，请在右侧弹窗补充后提交。");
+					setState({ kind: "pending" });
+					return;
+				}
+				await postCandidateConstraint({
+					action: kind,
+					applicationId: appId,
+					text,
+					source: "CHAT",
+					confirmationText: proposal.title
+				});
+				setState({
+					kind: "confirmed",
+					message: kind === "HANDOFF" ? "已记录下一轮交接提醒" : "已添加置顶约束",
+					timeText: formatNowHm()
+				});
+				onCommitted();
+				return;
+			}
+			const vm = normalizeApplicationDetail(await fetchAppJson(`/recruitment/api/recruiting/applications/${encodeURIComponent(appId)}`, sid));
+			if (proposal.intent === "screening_decide") {
+				const actCheck = requireLiveAction(vm, "screening_decide", "初筛结论");
+				if (!actCheck.ok) {
+					setErrorText(actCheck.message);
+					setState({ kind: "pending" });
+					return;
+				}
+				const factsRes = await fetchDecisionFacts(appId, sid);
+				if (factsRes.probe !== "READY" || !factsRes.facts) {
+					setErrorText("初筛评估信息尚未就绪，请稍后重试或在弹窗中操作。");
+					setState({ kind: "pending" });
+					return;
+				}
+				const blockers = screeningDecisionBlockers(factsRes.facts, true);
+				if (blockers.length > 0) {
+					setErrorText(blockers.map((b) => blockerTextOf(b)).join("；"));
+					setState({ kind: "pending" });
+					return;
+				}
+				const result = p.decision === "REJECT" ? "REJECT" : "ADVANCE";
+				const built = buildScreeningDecisionBody({
+					facts: factsRes.facts,
+					applicationId: appId,
+					result,
+					reason: (p.rationale ?? "").trim() || "依据岗位标准完成初筛评估"
+				});
+				if (!built.ok) {
+					setErrorText(built.reasonText);
+					setState({ kind: "pending" });
+					return;
+				}
+				const outcome = await postActionSeam(actCheck.action, built.body, sid);
+				if (!outcome.accepted) {
+					setErrorText(formatOutcomeError(outcome));
+					setState({ kind: "pending" });
+					return;
+				}
+				setState({
+					kind: "confirmed",
+					message: result === "REJECT" ? "已记录初筛不通过并结束申请" : "已通过初筛并进入面试阶段",
+					timeText: formatNowHm()
+				});
+				onCommitted();
+				return;
+			}
+			if (proposal.intent === "stage_advance") {
+				const actCheck = requireLiveAction(vm, "stage_advance", "推进阶段");
+				if (!actCheck.ok) {
+					setErrorText(actCheck.message);
+					setState({ kind: "pending" });
+					return;
+				}
+				const built = buildStageAdvanceBody({ applicationId: appId });
+				if (!built.ok) {
+					setErrorText(built.reasonText);
+					setState({ kind: "pending" });
+					return;
+				}
+				const outcome = await postActionSeam(actCheck.action, built.body, sid);
+				if (!outcome.accepted) {
+					setErrorText(formatOutcomeError(outcome));
+					setState({ kind: "pending" });
+					return;
+				}
+				setState({
+					kind: "confirmed",
+					message: "已推进至下一阶段",
+					timeText: formatNowHm()
+				});
+				onCommitted();
+				return;
+			}
+			if (proposal.intent === "interview_schedule") {
+				const actCheck = requireLiveAction(vm, "interview_schedule", "安排面试");
+				if (!actCheck.ok) {
+					setErrorText(actCheck.message);
+					setState({ kind: "pending" });
+					return;
+				}
+				const startAt = (p.scheduled_start ?? "").trim();
+				const endAt = (p.scheduled_end ?? "").trim();
+				const interviewerId = (p.interviewer_id ?? "").trim();
+				if (!startAt || !interviewerId) {
+					setErrorText("面试官或时间信息不完整，请点击「在弹窗微调」继续。");
+					setState({ kind: "pending" });
+					return;
+				}
+				const built = buildInterviewScheduleBody({
+					applicationId: appId,
+					roundNo: typeof p.round_number === "number" && p.round_number >= 1 ? p.round_number : 1,
+					scheduledStartAt: startAt,
+					durationMinutes: computeDurationMinutes(startAt, endAt),
+					interviewers: [{
+						actorId: interviewerId,
+						requiredScorecard: true
+					}],
+					idempotencyKey: newIdempotencyKey(),
+					timezone: (p.timezone ?? "").trim() || "Asia/Shanghai"
+				});
+				if (!built.ok) {
+					setErrorText(built.reasonText);
+					setState({ kind: "pending" });
+					return;
+				}
+				const outcome = await postActionSeam(actCheck.action, built.body, sid);
+				if (!outcome.accepted) {
+					setErrorText(formatOutcomeError(outcome));
+					setState({ kind: "pending" });
+					return;
+				}
+				setState({
+					kind: "confirmed",
+					message: "已安排面试并同步落库",
+					timeText: formatNowHm()
+				});
+				onCommitted();
+				return;
+			}
+			if (proposal.intent === "decision_record") {
+				if (vm.missingScorecardNames.length > 0) {
+					const msg = `还缺 ${vm.missingScorecardNames.join("、")} 的面评，暂时不能提交终审决策。`;
+					setBlockerText(msg);
+					setState({ kind: "pending" });
+					return;
+				}
+				const decisionAction = vm.actions.decision_record;
+				if (decisionAction && !decisionAction.available) {
+					setErrorText(decisionAction.reasonText || decisionAction.pendingText || "当前阶段暂不可提交正式决策");
+					setState({ kind: "pending" });
+					return;
+				}
+				const factsRes = await fetchDecisionFacts(appId, sid);
+				if (factsRes.probe !== "READY" || !factsRes.facts) {
+					setErrorText("决策汇总尚未生成，暂时不能提交正式决策。");
+					setState({ kind: "pending" });
+					return;
+				}
+				const blockers = decisionRecordBlockers(factsRes.facts);
+				if (blockers.length > 0) {
+					const msg = blockers.map((b) => blockerTextOf(b)).join("；");
+					setBlockerText(msg);
+					setState({ kind: "pending" });
+					return;
+				}
+				const result = p.final_outcome === "REJECT" ? "REJECT" : p.final_outcome === "HOLD" ? "HOLD" : "ADVANCE";
+				const built = buildDecisionRecordBody({
+					facts: factsRes.facts,
+					applicationId: appId,
+					scope: "FINAL",
+					result,
+					reason: (p.rationale ?? "").trim() || "综合各轮评估完成正式决策"
+				});
+				if (!built.ok) {
+					setErrorText(built.reasonText);
+					setState({ kind: "pending" });
+					return;
+				}
+				const outcome = await postDecisionRecordFacade(built.body, sid);
+				if (!outcome.accepted) {
+					setErrorText(formatOutcomeError(outcome));
+					setState({ kind: "pending" });
+					return;
+				}
+				setState({
+					kind: "confirmed",
+					message: "已记录正式决策并同步落库",
+					timeText: formatNowHm()
+				});
+				onCommitted();
+			}
+		} catch (err) {
+			const msg = err?.userMessage || (err instanceof Error ? err.message : "操作未能完成，请稍后重试。");
+			setErrorText(msg);
+			setState({ kind: "pending" });
+		}
+	};
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "msg-confirm-card",
+		"data-testid": "app-chat-confirm-card",
+		"data-intent": proposal.intent,
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "msg-confirm-head",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					className: "msg-confirm-title",
+					children: proposal.title
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					className: `msg-confirm-status${state.kind === "confirmed" ? " is-done" : blockerText ? " is-blocked" : ""}`,
+					children: statusText
+				})]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "msg-confirm-rows",
+				children: proposal.summary.map((row, idx) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "msg-confirm-row",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						className: "msg-confirm-key",
+						children: row.label
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						className: "msg-confirm-val num",
+						children: row.value
+					})]
+				}, `${row.label}-${idx}`))
+			}),
+			blockerText ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "msg-confirm-error",
+				children: blockerText
+			}) : null,
+			errorText ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "msg-confirm-error",
+				children: errorText
+			}) : null,
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "msg-confirm-foot",
+				children: state.kind === "confirmed" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "msg-confirm-done",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: ["✓ ", state.message] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						className: "num",
+						children: state.timeText
+					})]
+				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: `msg-confirm-submit${isDanger ? " is-danger" : ""}`,
+						"data-testid": "app-chat-confirm-submit",
+						disabled: state.kind === "submitting" || checkingFacts || Boolean(blockerText),
+						onClick: () => void handleConfirm(),
+						children: state.kind === "submitting" ? "提交中…" : checkingFacts ? "校验中…" : "确认执行"
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "msg-confirm-cancel",
+						"data-testid": "app-chat-confirm-cancel",
+						disabled: state.kind === "submitting",
+						onClick: () => setState({ kind: "cancelled" }),
+						children: "取消"
+					}),
+					proposal.fallback_modal && onFallbackModal ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "msg-confirm-fallback",
+						"data-testid": "app-chat-confirm-fallback",
+						disabled: state.kind === "submitting",
+						onClick: () => onFallbackModal(proposal.fallback_modal, proposal.application_id),
+						children: "在弹窗微调"
+					}) : null
+				] })
+			})
+		]
+	});
+}
 // src/app/router.ts
 function parseHashRoute(hash) {
 	const cleaned = hash.replace(/^#/, "").trim();
@@ -29866,6 +31906,7 @@ function parseHashRoute(hash) {
 	if (cleaned === "/jobs") return { kind: "jobs" };
 	if (cleaned === "/talent") return { kind: "talent" };
 	if (cleaned === "/interviewer") return { kind: "interviewer" };
+	if (cleaned === "/settings") return { kind: "settings" };
 	const appMatch = cleaned.match(/^\/application\/([^/?#]+)/);
 	if (appMatch && appMatch[1]) return {
 		kind: "application",
@@ -29884,6 +31925,7 @@ function formatHashRoute(route) {
 		case "jobs": return "#/jobs";
 		case "talent": return "#/talent";
 		case "interviewer": return "#/interviewer";
+		case "settings": return "#/settings";
 		case "application": return `#/application/${encodeURIComponent(route.applicationId)}`;
 		case "job": return `#/job/${encodeURIComponent(route.jobId)}`;
 	}
@@ -29976,7 +32018,7 @@ function suggestActionKey(action) {
 function suggestActionTestId(action) {
 	return `app-chat-suggest-${action.modal || action.route || "action"}`;
 }
-function ChatPanel({ sid, route, overview, currentJobId, defaultJobId, onCollapse, onResizeStart, onResizeReset, onToolCompleted, onUiAction, onExecuteSuggestedAction, onUploadStarted }) {
+function ChatPanel({ sid, route, overview, currentJobId, defaultJobId, onCollapse, onResizeStart, onResizeReset, onToolCompleted, onUiAction, onExecuteSuggestedAction, onProposalCommitted, onUploadStarted }) {
 	const [messages, setMessages] = (0, import_react.useState)(() => [{
 		id: "welcome",
 		role: "ai",
@@ -30093,6 +32135,20 @@ function ChatPanel({ sid, route, overview, currentJobId, defaultJobId, onCollaps
 				if (tool.status === "ok" && tool.name !== "recruitment_ui_dispatch") onToolCompleted(tool);
 			},
 			onUiAction: (uiAction) => {
+				if (uiAction.action === "propose_write" && uiAction.proposal) {
+					const proposal = uiAction.proposal;
+					setMessages((prev) => prev.map((m) => {
+						if (m.id !== aiId) return m;
+						const existing = m.writeProposals ?? [];
+						const key = `${proposal.intent}:${proposal.application_id}:${proposal.title}`;
+						if (existing.some((item) => `${item.intent}:${item.application_id}:${item.title}` === key)) return m;
+						return {
+							...m,
+							writeProposals: [...existing, proposal]
+						};
+					}));
+					return;
+				}
 				if (uiAction.action === "suggest_action") {
 					setMessages((prev) => prev.map((m) => {
 						if (m.id !== aiId) return m;
@@ -30227,6 +32283,21 @@ function ChatPanel({ sid, route, overview, currentJobId, defaultJobId, onCollaps
 								children: ["↗ ", notice]
 							}, `${notice}-${idx}`))
 						}) : null,
+						msg.writeProposals && msg.writeProposals.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "msg-confirm-list",
+							children: msg.writeProposals.map((proposal, idx) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(InlineConfirmCard, {
+								sid,
+								proposal,
+								onCommitted: () => onProposalCommitted?.(),
+								onFallbackModal: (modal, applicationId) => onExecuteSuggestedAction({
+									action: "suggest_action",
+									route: "application",
+									target_id: applicationId,
+									modal,
+									label: "在弹窗微调"
+								})
+							}, `${proposal.intent}-${proposal.application_id}-${idx}`))
+						}) : null,
 						msg.suggestedActions && msg.suggestedActions.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 							className: "msg-suggest-list",
 							children: msg.suggestedActions.map((act, idx) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
@@ -30322,80 +32393,110 @@ function cleanStageLabel$2(raw) {
 	return (raw.split("/")[0] ?? raw).trim() || raw;
 }
 function JobsView({ overview, onOpenJob, onNewJob }) {
+	const [exportError, setExportError] = (0, import_react.useState)("");
+	const [exporting, setExporting] = (0, import_react.useState)(false);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "canvas-inner",
 		"data-testid": "app-jobs-view",
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			className: "sec-head",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", {
-				className: "sec-title",
-				children: "在招岗位"
-			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "sec-meta",
-				children: [
-					"共 ",
-					overview.counts.jobsTotal,
-					" 个岗位，其中 ",
-					overview.counts.jobsOpen,
-					" 个在招"
-				]
-			})] }), onNewJob ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-				type: "button",
-				className: "btn dark",
-				"data-testid": "app-jobs-new-job",
-				onClick: onNewJob,
-				children: "＋ 新建岗位"
-			}) : null]
-		}), overview.jobs.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-			className: "empty-paper",
-			children: "当前暂无在招岗位"
-		}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-			className: "flow-list",
-			children: overview.jobs.map((job) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-				type: "button",
-				className: "flow-row",
-				"data-testid": `app-job-item-${job.id}`,
-				onMouseEnter: () => prefetchCanvasPath(`/recruitment/api/recruiting/jobs/${encodeURIComponent(job.id)}`, (path) => fetchAppJson(path, readCookie("rc_sid"))),
-				onClick: () => onOpenJob(job.id),
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "flow-top",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-						className: "flow-job-name",
-						children: [job.title, job.departmentName ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "cr-role",
-							style: { marginLeft: 8 },
-							children: job.departmentName
-						}) : null]
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-						className: "flow-hc num",
-						children: [
-							"在办 ",
-							job.applicationCounts.active,
-							" / 总计 ",
-							job.applicationCounts.total,
-							" ·",
-							" ",
-							job.rubric?.approved ? "评分标准已批准" : "评分标准待确认"
-						]
-					})]
-				}), job.applicationCounts.byStage.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-					className: "stage-track",
-					children: job.applicationCounts.byStage.map((st) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: `st-node ${st.count > 0 ? "active" : ""}`,
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "st-dot num",
-							children: st.count
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "st-lbl",
-							children: cleanStageLabel$2(st.label)
-						})]
-					}, st.code))
-				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "sec-head",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", {
+					className: "sec-title",
+					children: "在招岗位"
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					className: "sec-meta",
-					children: "点击进入岗位详情与候选人池"
+					children: [
+						"共 ",
+						overview.counts.jobsTotal,
+						" 个岗位，其中 ",
+						overview.counts.jobsOpen,
+						" 个在招"
+					]
+				})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					style: {
+						display: "flex",
+						alignItems: "center",
+						gap: 8
+					},
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "btn",
+						"data-testid": "app-jobs-export-csv",
+						disabled: exporting,
+						onClick: () => {
+							setExporting(true);
+							setExportError("");
+							downloadApplicationsCsv(readCookie("rc_sid")).catch((err) => {
+								setExportError(err instanceof Error ? err.message : "导出失败");
+							}).finally(() => setExporting(false));
+						},
+						children: exporting ? "导出中…" : "导出 CSV"
+					}), onNewJob ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "btn dark",
+						"data-testid": "app-jobs-new-job",
+						onClick: onNewJob,
+						children: "＋ 新建岗位"
+					}) : null]
 				})]
-			}, job.id))
-		})]
+			}),
+			exportError ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "sec-meta",
+				"data-testid": "app-jobs-export-error",
+				children: exportError
+			}) : null,
+			overview.jobs.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "empty-paper",
+				children: "当前暂无在招岗位"
+			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "flow-list",
+				children: overview.jobs.map((job) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+					type: "button",
+					className: "flow-row",
+					"data-testid": `app-job-item-${job.id}`,
+					onMouseEnter: () => prefetchCanvasPath(`/recruitment/api/recruiting/jobs/${encodeURIComponent(job.id)}`, (path) => fetchAppJson(path, readCookie("rc_sid"))),
+					onClick: () => onOpenJob(job.id),
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "flow-top",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							className: "flow-job-name",
+							children: [job.title, job.departmentName ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "cr-role",
+								style: { marginLeft: 8 },
+								children: job.departmentName
+							}) : null]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							className: "flow-hc num",
+							children: [
+								"在办 ",
+								job.applicationCounts.active,
+								" / 总计 ",
+								job.applicationCounts.total,
+								" ·",
+								" ",
+								job.rubric?.approved ? "评分标准已批准" : "评分标准待确认"
+							]
+						})]
+					}), job.applicationCounts.byStage.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "stage-track",
+						children: job.applicationCounts.byStage.map((st) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: `st-node ${st.count > 0 ? "active" : ""}`,
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "st-dot num",
+								children: st.count
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "st-lbl",
+								children: cleanStageLabel$2(st.label)
+							})]
+						}, st.code))
+					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "sec-meta",
+						children: "点击进入岗位详情与候选人池"
+					})]
+				}, job.id))
+			})
+		]
 	});
 }
 // src/app/QueueView.tsx
@@ -30433,7 +32534,19 @@ function buildRowReason(app) {
 	if (fact && !parts.some((p) => p.includes(fact))) parts.push(fact);
 	return parts.join(" · ");
 }
+function parseOpsSummary(raw) {
+	const stuckTasks = Array.isArray(raw.stuck_tasks) ? raw.stuck_tasks.length : 0;
+	const stuckEvents = Array.isArray(raw.stuck_events) ? raw.stuck_events.length : 0;
+	const counts = raw.counts && typeof raw.counts === "object" ? raw.counts : {};
+	const tasksCounts = counts.tasks && typeof counts.tasks === "object" ? counts.tasks : counts;
+	return {
+		stuckTasks,
+		stuckEvents,
+		failedTasks: typeof tasksCounts.FAILED === "number" && Number.isFinite(tasksCounts.FAILED) ? tasksCounts.FAILED : 0
+	};
+}
 function QueueView({ overview, filterRequest, onFilterConsumed, onOpenApplication, onUploadStarted }) {
+	const [opsSummary, setOpsSummary] = (0, import_react.useState)(null);
 	const [stageFilter, setStageFilter] = (0, import_react.useState)("all");
 	const lastFilterNonceRef = (0, import_react.useRef)(0);
 	(0, import_react.useEffect)(() => {
@@ -30498,10 +32611,44 @@ function QueueView({ overview, filterRequest, onFilterConsumed, onOpenApplicatio
 			setUploading(false);
 		}
 	};
+	(0, import_react.useEffect)(() => {
+		let active = true;
+		fetchAppJson("/recruitment/api/tasks/status", readCookie("rc_sid")).then((raw) => {
+			if (!active) return;
+			setOpsSummary(parseOpsSummary(raw));
+		}).catch(() => {
+			if (!active) return;
+			setOpsSummary(null);
+		});
+		return () => {
+			active = false;
+		};
+	}, [overview]);
+	const opsIssues = (0, import_react.useMemo)(() => {
+		const items = [];
+		if (opsSummary) {
+			if (opsSummary.stuckTasks > 0) items.push(`${opsSummary.stuckTasks} 项后台任务超时未完成`);
+			if (opsSummary.stuckEvents > 0) items.push(`${opsSummary.stuckEvents} 条入站事件待处理`);
+			if (opsSummary.failedTasks > 0) items.push(`${opsSummary.failedTasks} 项解析任务失败`);
+		}
+		return items;
+	}, [opsSummary]);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 		className: "canvas-inner",
 		"data-testid": "app-queue-view",
 		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+			opsIssues.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "ops-notice-strip num",
+				role: "status",
+				"data-testid": "app-queue-ops-notice",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					className: "ops-notice-label",
+					children: "后台运行提醒"
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					className: "ops-notice-text",
+					children: opsIssues.join(" · ")
+				})]
+			}) : null,
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "sec-head",
 				style: { marginBottom: 18 },
@@ -30661,6 +32808,1732 @@ function QueueView({ overview, filterRequest, onFilterConsumed, onOpenApplicatio
 		] })
 	});
 }
+// src/client/org-config.ts
+const ORG_CONFIG_ACTION_PATHS = {
+	role: "/recruitment/api/action/config/role",
+	team: "/recruitment/api/action/config/team",
+	pipeline: "/recruitment/api/action/config/pipeline"
+};
+const ORG_ROLE_SCOPE_OPTIONS = [
+	{
+		code: "JOB_READ",
+		label: "查看岗位"
+	},
+	{
+		code: "JOB_WRITE",
+		label: "创建/维护岗位"
+	},
+	{
+		code: "APPLICATION_READ",
+		label: "查看候选人与申请"
+	},
+	{
+		code: "APPLICATION_WRITE",
+		label: "推进候选人阶段"
+	},
+	{
+		code: "INTERVIEW_READ",
+		label: "查看面试安排"
+	},
+	{
+		code: "INTERVIEW_WRITE",
+		label: "安排/调整面试"
+	},
+	{
+		code: "SCORECARD_SUBMIT",
+		label: "提交面试评价"
+	},
+	{
+		code: "DECISION_RECORD",
+		label: "记录正式决定"
+	},
+	{
+		code: "CONFIG_ADMIN",
+		label: "维护企业配置"
+	}
+];
+function buildCreateRoleBody(input) {
+	const code = input.code.trim();
+	const name = input.name.trim();
+	if (code === "") throw new Error("请填写角色编码（例如 hiring_partner）");
+	if (name === "") throw new Error("请填写角色名称");
+	if (input.permissionScopes.length === 0) throw new Error("请至少勾选一项权限范围");
+	const body = {
+		operation: "create",
+		code,
+		name,
+		permission_scopes: [...input.permissionScopes]
+	};
+	if (input.description && input.description.trim() !== "") body.description = input.description.trim();
+	return body;
+}
+function buildCreatePipelineBody(input) {
+	const code = input.code.trim();
+	const name = input.name.trim();
+	if (code === "") throw new Error("请填写模板编码（例如 tech_standard）");
+	if (name === "") throw new Error("请填写模板名称");
+	const body = {
+		operation: "create",
+		code,
+		name
+	};
+	if (input.description && input.description.trim() !== "") body.description = input.description.trim();
+	return body;
+}
+async function postOrgConfigAction(sid, path, body) {
+	const res = await fetch(path, {
+		method: "POST",
+		credentials: "same-origin",
+		headers: {
+			"content-type": "application/json",
+			"x-recruitment-request": "1",
+			"X-DSH-Session": sid
+		},
+		body: JSON.stringify(body)
+	});
+	const text = await res.text();
+	let parsed = {};
+	try {
+		parsed = JSON.parse(text);
+	} catch {}
+	if (!res.ok) {
+		const errObj = parsed.error;
+		throw new Error(errObj?.message || `保存企业配置失败（HTTP ${res.status}）`);
+	}
+	return parsed;
+}
+async function createOrgRole(sid, input) {
+	return postOrgConfigAction(sid, ORG_CONFIG_ACTION_PATHS.role, buildCreateRoleBody(input));
+}
+async function createOrgPipeline(sid, input) {
+	return postOrgConfigAction(sid, ORG_CONFIG_ACTION_PATHS.pipeline, buildCreatePipelineBody(input));
+}
+function buildCreateTeamBody(input) {
+	const code = input.code.trim();
+	const name = input.name.trim();
+	const departmentId = input.departmentId.trim();
+	if (code === "") throw new Error("请填写团队编码（例如 eng_backend）");
+	if (name === "") throw new Error("请填写团队名称");
+	if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(departmentId)) throw new Error("请填写合法的部门标识");
+	const body = {
+		operation: "create",
+		code,
+		name,
+		department_id: departmentId
+	};
+	if (input.description && input.description.trim() !== "") body.description = input.description.trim();
+	return body;
+}
+function buildDeactivateRoleBody(roleId, expectedRecordVersion) {
+	if (!roleId.trim()) throw new Error("缺少角色标识");
+	return {
+		operation: "update",
+		role_id: roleId.trim(),
+		expected_record_version: expectedRecordVersion,
+		is_active: false
+	};
+}
+function buildDeactivatePipelineBody(pipelineTemplateId, expectedRecordVersion) {
+	if (!pipelineTemplateId.trim()) throw new Error("缺少流程模板标识");
+	return {
+		operation: "update",
+		pipeline_template_id: pipelineTemplateId.trim(),
+		expected_record_version: expectedRecordVersion,
+		is_active: false
+	};
+}
+async function createOrgTeam(sid, input) {
+	return postOrgConfigAction(sid, ORG_CONFIG_ACTION_PATHS.team, buildCreateTeamBody(input));
+}
+async function deactivateOrgRole(sid, roleId, expectedRecordVersion) {
+	return postOrgConfigAction(sid, ORG_CONFIG_ACTION_PATHS.role, buildDeactivateRoleBody(roleId, expectedRecordVersion));
+}
+async function deactivateOrgPipeline(sid, pipelineTemplateId, expectedRecordVersion) {
+	return postOrgConfigAction(sid, ORG_CONFIG_ACTION_PATHS.pipeline, buildDeactivatePipelineBody(pipelineTemplateId, expectedRecordVersion));
+}
+// src/app/SettingsView.tsx
+const WEBHOOK_EVENT_LABELS = {
+	"decision.recorded": "录用 / 淘汰终审结论",
+	"stage.advanced": "阶段推进",
+	"booking.confirmed": "候选人自助预约确认"
+};
+const DEFAULT_SKILLS = [
+	{
+		id: "recruitment-s6-intake",
+		stage: "S6",
+		title: "建岗、简历入库与同人判重规范"
+	},
+	{
+		id: "recruitment-s7-screening",
+		stage: "S7",
+		title: "初筛对照原文出处与人工纠偏规范"
+	},
+	{
+		id: "recruitment-s8-interview",
+		stage: "S8",
+		title: "面试排期、空闲查询与自助预约规范"
+	},
+	{
+		id: "recruitment-s9-transcript",
+		stage: "S9",
+		title: "转写复核、面评草稿与面试官隔离规范"
+	},
+	{
+		id: "recruitment-s10-decision",
+		stage: "S10",
+		title: "多人对比、终审拍板与追责时间线规范"
+	}
+];
+function formatConnectionLabel(conn) {
+	const raw = String(conn?.state || conn?.status || "NOT_CONFIGURED").toUpperCase();
+	if (raw === "CONNECTED" || raw === "READY" || raw === "CONFIGURED") return {
+		label: "已配置",
+		tone: "ok"
+	};
+	if (raw === "AUTH_REQUIRED") return {
+		label: "需重新授权",
+		tone: "warn"
+	};
+	if (raw === "NOT_CONNECTED") return {
+		label: "未连接",
+		tone: "warn"
+	};
+	return {
+		label: "未配置",
+		tone: "muted"
+	};
+}
+function SettingsView({ sid, readOnly = false }) {
+	const [activeTab, setActiveTab] = (0, import_react.useState)("connections");
+	const [data, setData] = (0, import_react.useState)(null);
+	const [orgData, setOrgData] = (0, import_react.useState)(null);
+	const [loading, setLoading] = (0, import_react.useState)(true);
+	const [error, setError] = (0, import_react.useState)("");
+	const [expandedRow, setExpandedRow] = (0, import_react.useState)(null);
+	const [l3Open, setL3Open] = (0, import_react.useState)({});
+	const [savingKey, setSavingKey] = (0, import_react.useState)(null);
+	const [feedback, setFeedback] = (0, import_react.useState)(null);
+	const [screeningHours, setScreeningHours] = (0, import_react.useState)(24);
+	const [scorecardHours, setScorecardHours] = (0, import_react.useState)(48);
+	const [silentDelegation, setSilentDelegation] = (0, import_react.useState)(false);
+	const [autoScreening, setAutoScreening] = (0, import_react.useState)(true);
+	const [autoScorecardDraft, setAutoScorecardDraft] = (0, import_react.useState)(true);
+	const [reminderEnabled, setReminderEnabled] = (0, import_react.useState)(true);
+	const [reminderHours, setReminderHours] = (0, import_react.useState)(24);
+	const [reminderMax, setReminderMax] = (0, import_react.useState)(2);
+	const [reminderChannel, setReminderChannel] = (0, import_react.useState)("workbench");
+	const [quietStart, setQuietStart] = (0, import_react.useState)("20:00");
+	const [quietEnd, setQuietEnd] = (0, import_react.useState)("09:00");
+	const [bookingExpires, setBookingExpires] = (0, import_react.useState)(72);
+	const [bookingDuration, setBookingDuration] = (0, import_react.useState)(60);
+	const [webhookEnabled, setWebhookEnabled] = (0, import_react.useState)(false);
+	const [webhookUrl, setWebhookUrl] = (0, import_react.useState)("");
+	const [webhookSecret, setWebhookSecret] = (0, import_react.useState)("");
+	const [webhookEvents, setWebhookEvents] = (0, import_react.useState)([]);
+	const [webhookSecretSet, setWebhookSecretSet] = (0, import_react.useState)(false);
+	const [csvBusy, setCsvBusy] = (0, import_react.useState)(false);
+	const [testBusy, setTestBusy] = (0, import_react.useState)(false);
+	const [roleCode, setRoleCode] = (0, import_react.useState)("");
+	const [roleName, setRoleName] = (0, import_react.useState)("");
+	const [roleScopes, setRoleScopes] = (0, import_react.useState)(["JOB_READ", "APPLICATION_READ"]);
+	const [pipeCode, setPipeCode] = (0, import_react.useState)("");
+	const [pipeName, setPipeName] = (0, import_react.useState)("");
+	const [pipeDesc, setPipeDesc] = (0, import_react.useState)("");
+	const [teamCode, setTeamCode] = (0, import_react.useState)("");
+	const [teamName, setTeamName] = (0, import_react.useState)("");
+	const [teamDeptId, setTeamDeptId] = (0, import_react.useState)("");
+	const [orgBusy, setOrgBusy] = (0, import_react.useState)(false);
+	const loadSettings = (0, import_react.useCallback)(async () => {
+		setLoading(true);
+		setError("");
+		try {
+			const payload = await fetchAppJson("/recruitment/api/settings", sid);
+			setData(payload);
+			const s = payload.settings;
+			if (s?.sla_thresholds) {
+				setScreeningHours(s.sla_thresholds.screening_hours);
+				setScorecardHours(s.sla_thresholds.scorecard_hours);
+			}
+			if (typeof s?.agent_silent_delegation === "boolean") setSilentDelegation(s.agent_silent_delegation);
+			if (typeof s?.auto_screening_enabled === "boolean") setAutoScreening(s.auto_screening_enabled);
+			if (typeof s?.auto_scorecard_draft_enabled === "boolean") setAutoScorecardDraft(s.auto_scorecard_draft_enabled);
+			if (s?.scorecard_reminder_policy) {
+				const p = s.scorecard_reminder_policy;
+				setReminderEnabled(Boolean(p.enabled));
+				setReminderHours(p.overdue_hours === 48 || p.overdue_hours === 72 ? p.overdue_hours : 24);
+				setReminderMax(typeof p.max_reminders === "number" ? p.max_reminders : 2);
+				setReminderChannel(p.channel === "feishu" || p.channel === "email" ? p.channel : "workbench");
+				if (p.quiet_hours?.start) setQuietStart(p.quiet_hours.start);
+				if (p.quiet_hours?.end) setQuietEnd(p.quiet_hours.end);
+			}
+			const wh = s?.external_webhook_config;
+			if (wh) {
+				setWebhookEnabled(Boolean(wh.enabled));
+				setWebhookUrl(typeof wh.url === "string" ? wh.url : "");
+				setWebhookEvents(Array.isArray(wh.events) ? [...wh.events] : []);
+				setWebhookSecretSet(Boolean(wh.secret_set));
+				setWebhookSecret("");
+			}
+			if (s?.booking_invite_defaults) {
+				const b = s.booking_invite_defaults;
+				setBookingExpires(typeof b.expires_hours === "number" ? b.expires_hours : 72);
+				setBookingDuration(b.default_duration_min === 30 || b.default_duration_min === 45 || b.default_duration_min === 90 ? b.default_duration_min : 60);
+			}
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "加载工作台设置失败");
+		} finally {
+			setLoading(false);
+		}
+	}, [sid]);
+	const loadOrgConfig = (0, import_react.useCallback)(async () => {
+		try {
+			const payload = await fetchAppJson("/recruitment/api/config/org", sid);
+			setOrgData(payload);
+		} catch {
+			setOrgData(null);
+		}
+	}, [sid]);
+	(0, import_react.useEffect)(() => {
+		loadSettings();
+	}, [loadSettings]);
+	(0, import_react.useEffect)(() => {
+		if (activeTab === "org") loadOrgConfig();
+	}, [activeTab, loadOrgConfig]);
+	const toggleRow = (rowId) => {
+		setFeedback(null);
+		setExpandedRow((cur) => cur === rowId ? null : rowId);
+	};
+	const toggleL3 = (rowId) => {
+		setL3Open((prev) => ({
+			...prev,
+			[rowId]: !prev[rowId]
+		}));
+	};
+	const handleSaveSetting = async (key, value, confirmationText) => {
+		if (readOnly) return;
+		setSavingKey(key);
+		setFeedback(null);
+		try {
+			const res = await postWorkspaceSettingWrite(sid, {
+				key,
+				value,
+				confirmation_text: confirmationText
+			});
+			setFeedback({
+				kind: "ok",
+				text: `已保存更改（版本 v${res.version_no}）`
+			});
+			setExpandedRow(null);
+			await loadSettings();
+		} catch (err) {
+			setFeedback({
+				kind: "err",
+				text: err instanceof Error ? err.message : "保存设置失败，请稍后重试"
+			});
+		} finally {
+			setSavingKey(null);
+		}
+	};
+	const downloadCsv = async (jobId) => {
+		setCsvBusy(true);
+		setFeedback(null);
+		try {
+			await downloadApplicationsCsv(sid, jobId);
+			setFeedback({
+				kind: "ok",
+				text: "CSV 已下载（含 UTF-8 BOM，联系方式已脱敏）"
+			});
+		} catch (err) {
+			setFeedback({
+				kind: "err",
+				text: err instanceof Error ? err.message : "CSV 下载失败"
+			});
+		} finally {
+			setCsvBusy(false);
+		}
+	};
+	const saveWebhookConfig = async () => {
+		const value = {
+			enabled: webhookEnabled,
+			url: webhookUrl.trim(),
+			events: webhookEvents
+		};
+		if (webhookSecret.trim() !== "") value.secret = webhookSecret;
+		await handleSaveSetting("external_webhook_config", value, `配置外部 Webhook 同步：${webhookEnabled ? "开启" : "关闭"}，${webhookEvents.length} 类事件`);
+		if (webhookSecret.trim() !== "") {
+			setWebhookSecret("");
+			setWebhookSecretSet(true);
+		}
+	};
+	const runWebhookTest = async () => {
+		setTestBusy(true);
+		setFeedback(null);
+		try {
+			const result = await testWebhook(sid);
+			setFeedback({
+				kind: result.ok ? "ok" : "err",
+				text: result.ok ? `测试推送成功（HTTP ${result.status}，签名已发送）` : result.message
+			});
+		} catch (err) {
+			setFeedback({
+				kind: "err",
+				text: err instanceof Error ? err.message : "测试推送失败"
+			});
+		} finally {
+			setTestBusy(false);
+		}
+	};
+	const handleCreateRole = async () => {
+		if (readOnly) return;
+		setOrgBusy(true);
+		setFeedback(null);
+		try {
+			await createOrgRole(sid, {
+				code: roleCode,
+				name: roleName,
+				permissionScopes: roleScopes
+			});
+			setRoleCode("");
+			setRoleName("");
+			setExpandedRow(null);
+			setFeedback({
+				kind: "ok",
+				text: "已新增角色模板"
+			});
+			await loadOrgConfig();
+		} catch (err) {
+			setFeedback({
+				kind: "err",
+				text: err instanceof Error ? err.message : "新增角色失败"
+			});
+		} finally {
+			setOrgBusy(false);
+		}
+	};
+	const handleCreatePipeline = async () => {
+		if (readOnly) return;
+		setOrgBusy(true);
+		setFeedback(null);
+		try {
+			await createOrgPipeline(sid, {
+				code: pipeCode,
+				name: pipeName,
+				description: pipeDesc
+			});
+			setPipeCode("");
+			setPipeName("");
+			setPipeDesc("");
+			setExpandedRow(null);
+			setFeedback({
+				kind: "ok",
+				text: "已新增招聘流程模板"
+			});
+			await loadOrgConfig();
+		} catch (err) {
+			setFeedback({
+				kind: "err",
+				text: err instanceof Error ? err.message : "新增流程模板失败"
+			});
+		} finally {
+			setOrgBusy(false);
+		}
+	};
+	const handleCreateTeam = async () => {
+		if (readOnly) return;
+		setOrgBusy(true);
+		setFeedback(null);
+		try {
+			await createOrgTeam(sid, {
+				code: teamCode,
+				name: teamName,
+				departmentId: teamDeptId
+			});
+			setTeamCode("");
+			setTeamName("");
+			setExpandedRow(null);
+			setFeedback({
+				kind: "ok",
+				text: "已新增招聘团队"
+			});
+			await loadOrgConfig();
+		} catch (err) {
+			setFeedback({
+				kind: "err",
+				text: err instanceof Error ? err.message : "新增招聘团队失败"
+			});
+		} finally {
+			setOrgBusy(false);
+		}
+	};
+	const handleDeactivateRole = async (roleId, recordVersion) => {
+		if (readOnly) return;
+		setOrgBusy(true);
+		setFeedback(null);
+		try {
+			await deactivateOrgRole(sid, roleId, recordVersion);
+			setFeedback({
+				kind: "ok",
+				text: "已软停用角色模板（历史记录完整保留）"
+			});
+			await loadOrgConfig();
+		} catch (err) {
+			setFeedback({
+				kind: "err",
+				text: err instanceof Error ? err.message : "停用角色失败"
+			});
+		} finally {
+			setOrgBusy(false);
+		}
+	};
+	const handleDeactivatePipeline = async (pipelineId, recordVersion) => {
+		if (readOnly) return;
+		setOrgBusy(true);
+		setFeedback(null);
+		try {
+			await deactivateOrgPipeline(sid, pipelineId, recordVersion);
+			setFeedback({
+				kind: "ok",
+				text: "已软停用流程模板（进行中申请不受影响）"
+			});
+			await loadOrgConfig();
+		} catch (err) {
+			setFeedback({
+				kind: "err",
+				text: err instanceof Error ? err.message : "停用流程模板失败"
+			});
+		} finally {
+			setOrgBusy(false);
+		}
+	};
+	const emailStatus = formatConnectionLabel(data?.connections?.email);
+	const feishuCalStatus = formatConnectionLabel(data?.connections?.feishu_calendar);
+	const feishuMinStatus = formatConnectionLabel(data?.connections?.feishu_minutes);
+	const skillsList = data?.governance?.skills && data.governance.skills.length > 0 ? data.governance.skills : DEFAULT_SKILLS;
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "canvas-inner settings-page",
+		"data-testid": "settings-page",
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "settings-head",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", {
+					className: "settings-title",
+					children: "工作台设置"
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+					className: "settings-subtitle",
+					children: "管理连接接入、自动化与面评提醒策略、组织招聘规范及行为准则。"
+				})] }), readOnly ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					className: "settings-readonly-note",
+					children: "当前身份为只读视图"
+				}) : null]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "settings-tabs",
+				role: "tablist",
+				"aria-label": "设置分类",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						role: "tab",
+						"aria-selected": activeTab === "connections",
+						className: `settings-tab${activeTab === "connections" ? " active" : ""}`,
+						"data-testid": "settings-tab-connections",
+						onClick: () => {
+							setActiveTab("connections");
+							setExpandedRow(null);
+							setFeedback(null);
+						},
+						children: "连接接入"
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						role: "tab",
+						"aria-selected": activeTab === "automation",
+						className: `settings-tab${activeTab === "automation" ? " active" : ""}`,
+						"data-testid": "settings-tab-automation",
+						onClick: () => {
+							setActiveTab("automation");
+							setExpandedRow(null);
+							setFeedback(null);
+						},
+						children: "自动化与提醒"
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						role: "tab",
+						"aria-selected": activeTab === "org",
+						className: `settings-tab${activeTab === "org" ? " active" : ""}`,
+						"data-testid": "settings-tab-org",
+						onClick: () => {
+							setActiveTab("org");
+							setExpandedRow(null);
+							setFeedback(null);
+						},
+						children: "组织与招聘规范"
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						role: "tab",
+						"aria-selected": activeTab === "governance",
+						className: `settings-tab${activeTab === "governance" ? " active" : ""}`,
+						"data-testid": "settings-tab-governance",
+						onClick: () => {
+							setActiveTab("governance");
+							setExpandedRow(null);
+							setFeedback(null);
+						},
+						children: "行为规范与评测"
+					})
+				]
+			}),
+			feedback ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: `settings-feedback ${feedback.kind === "err" ? "is-err" : "is-ok"}`,
+				"data-testid": "settings-feedback",
+				children: feedback.text
+			}) : null,
+			loading && !data ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "empty-paper",
+				children: "正在读取设置与连接状态…"
+			}) : error && !data ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "empty-paper",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { children: error }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+					type: "button",
+					className: "btn dark",
+					onClick: () => void loadSettings(),
+					children: "重新加载"
+				})]
+			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "settings-body",
+				children: [
+					activeTab === "connections" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "settings-list",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "settings-row",
+								"data-testid": "settings-row-email",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-row-main",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-info",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-title",
+											children: "邮箱收发（IMAP / SMTP）"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-desc",
+											children: "自动拉取渠道投递简历，并在授权后发送面试通知与反馈邮件。"
+										})]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-actions",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: `settings-status tone-${emailStatus.tone}`,
+											children: emailStatus.label
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "btn",
+											onClick: () => toggleRow("email"),
+											children: expandedRow === "email" ? "收起" : "查看"
+										})]
+									})]
+								}), expandedRow === "email" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-l2",
+									"data-testid": "settings-expand-email",
+									children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-kv-row",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "当前探活状态" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: data?.connections?.email?.detail || emailStatus.label })]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-kv-row",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "收件箱地址" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: data?.connections?.email?.address || "通过宿主环境变量注入" })]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "text-action-link muted",
+											"data-testid": "settings-l3-toggle-email",
+											onClick: () => toggleL3("email"),
+											children: l3Open.email ? "高级参数 ▾" : "高级参数 ▸"
+										}),
+										l3Open.email ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-l3",
+											children: "邮箱连接凭证由运行环境安全注入，前端不落盘明文密钥；未完成真实回读前永不显示已连接。"
+										}) : null
+									]
+								}) : null]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "settings-row",
+								"data-testid": "settings-row-feishu",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-row-main",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-info",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-title",
+											children: "飞书日历与妙记"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-desc",
+											children: "读取面试官空闲时段与面试会议转写，支持一键生成面评草稿。"
+										})]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-actions",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+											className: `settings-status tone-${feishuCalStatus.tone}`,
+											children: [
+												"日历：",
+												feishuCalStatus.label,
+												" · 妙记：",
+												feishuMinStatus.label
+											]
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "btn",
+											onClick: () => toggleRow("feishu"),
+											children: expandedRow === "feishu" ? "收起" : "查看"
+										})]
+									})]
+								}), expandedRow === "feishu" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-l2",
+									"data-testid": "settings-expand-feishu",
+									children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-kv-row",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "日历探活" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: data?.connections?.feishu_calendar?.detail || feishuCalStatus.label })]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-kv-row",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "妙记探活" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: data?.connections?.feishu_minutes?.detail || feishuMinStatus.label })]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "text-action-link muted",
+											"data-testid": "settings-l3-toggle-feishu",
+											onClick: () => toggleL3("feishu"),
+											children: l3Open.feishu ? "高级参数 ▾" : "高级参数 ▸"
+										}),
+										l3Open.feishu ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-l3",
+											children: "飞书适配器遵循诚实探活原则，需配置成员映射（RECRUITMENT_FEISHU_USER_MAP）并通过真实回调验证。"
+										}) : null
+									]
+								}) : null]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "settings-row",
+								"data-testid": "settings-row-external-sync",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-row-main",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-info",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-title",
+											children: "外部系统轻量同步（CSV / Webhook）"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-desc",
+											children: webhookEnabled ? `已开启 · 推送 ${webhookEvents.length} 类终态事件 · ${webhookSecretSet ? "签名密钥已设置" : "尚未设置签名密钥"}` : "未开启 · 可一键导出人话 CSV，或配置签名 Webhook 回写外部系统"
+										})]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-actions",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: `settings-status ${webhookEnabled ? "tone-ok" : "tone-muted"}`,
+											children: webhookEnabled ? "已开启" : "未开启"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "btn",
+											"data-testid": "settings-config-external-sync",
+											onClick: () => toggleRow("external-sync"),
+											children: expandedRow === "external-sync" ? "收起" : "配置"
+										})]
+									})]
+								}), expandedRow === "external-sync" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-l2",
+									"data-testid": "settings-expand-external-sync",
+									children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-kv-row",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "CSV 导出" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "btn",
+												"data-testid": "settings-csv-download",
+												disabled: csvBusy || readOnly,
+												onClick: () => void downloadCsv(),
+												children: csvBusy ? "导出中…" : "下载全部申请 CSV"
+											})]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-form-grid",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+												className: "settings-field",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "推送开关" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
+													disabled: readOnly,
+													value: webhookEnabled ? "on" : "off",
+													"data-testid": "settings-webhook-enabled",
+													onChange: (e) => setWebhookEnabled(e.target.value === "on"),
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+														value: "off",
+														children: "暂停推送"
+													}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+														value: "on",
+														children: "开启推送"
+													})]
+												})]
+											}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+												className: "settings-field",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Webhook 地址（https://；本地测试可用 http://127.0.0.1）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+													type: "text",
+													disabled: readOnly,
+													value: webhookUrl,
+													"data-testid": "settings-webhook-url",
+													placeholder: "https://ats.example.com/hooks/recruitment",
+													onChange: (e) => setWebhookUrl(e.target.value)
+												})]
+											})]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-toggle-line",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "订阅事件" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+												"data-testid": "settings-webhook-events",
+												children: Object.entries(WEBHOOK_EVENT_LABELS).map(([key, label]) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+													className: "settings-field",
+													style: {
+														display: "inline-flex",
+														marginRight: 12
+													},
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+														type: "checkbox",
+														disabled: readOnly,
+														checked: webhookEvents.includes(key),
+														"data-testid": `settings-webhook-event-${key}`,
+														onChange: (e) => setWebhookEvents((prev) => e.target.checked ? [...prev, key] : prev.filter((k) => k !== key))
+													}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: label })]
+												}, key))
+											})]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-l2-foot",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "text-action-link muted",
+												"data-testid": "settings-l3-toggle-external-sync",
+												onClick: () => toggleL3("external-sync"),
+												children: l3Open["external-sync"] ? "高级参数 ▾" : "高级参数 ▸"
+											}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "settings-l2-btns",
+												children: [
+													/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+														type: "button",
+														className: "btn",
+														"data-testid": "settings-webhook-test",
+														disabled: readOnly || testBusy || savingKey === "external_webhook_config",
+														onClick: () => void runWebhookTest(),
+														children: testBusy ? "推送中…" : "测试推送"
+													}),
+													/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+														type: "button",
+														className: "btn",
+														onClick: () => setExpandedRow(null),
+														children: "取消"
+													}),
+													/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+														type: "button",
+														className: "btn dark",
+														"data-testid": "settings-save-webhook",
+														disabled: readOnly || savingKey === "external_webhook_config",
+														onClick: () => void saveWebhookConfig(),
+														children: savingKey === "external_webhook_config" ? "保存中…" : "保存更改"
+													})
+												]
+											})]
+										}),
+										l3Open["external-sync"] ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-l3 settings-form-grid",
+											"data-testid": "settings-l3-external-sync",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+												className: "settings-field",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "签名密钥（仅在填写时轮换；GET 永不回传明文）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+													type: "password",
+													disabled: readOnly,
+													value: webhookSecret,
+													"data-testid": "settings-webhook-secret",
+													placeholder: webhookSecretSet ? "已设置 · 留空则保持不变" : "至少 16 字符",
+													onChange: (e) => setWebhookSecret(e.target.value)
+												})]
+											}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "settings-kv-row",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "签名说明" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "每条推送带 X-Recruitment-Event 与 X-Recruitment-Signature: sha256=<HMAC>； 外发失败只记审计，绝不回滚主业务；测试推送返回真实 HTTP 状态码。" })]
+											})]
+										}) : null
+									]
+								}) : null]
+							})
+						]
+					}) : null,
+					activeTab === "automation" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "settings-list",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "settings-row",
+								"data-testid": "settings-row-sla",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-row-main",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-info",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-title",
+											children: "队列超时阈值（初筛与面评 SLA）"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-row-desc",
+											children: [
+												"初筛超过 ",
+												screeningHours,
+												" 小时、面评超过 ",
+												scorecardHours,
+												" 小时后在今日待办标红提示。"
+											]
+										})]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-actions",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+											className: "settings-status tone-ok",
+											children: [
+												screeningHours,
+												"h / ",
+												scorecardHours,
+												"h"
+											]
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "btn",
+											onClick: () => toggleRow("sla"),
+											children: expandedRow === "sla" ? "收起" : "配置"
+										})]
+									})]
+								}), expandedRow === "sla" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-l2",
+									"data-testid": "settings-expand-sla",
+									children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-form-grid",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+												className: "settings-field",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "初筛超时阈值（小时）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+													type: "number",
+													min: 1,
+													max: 720,
+													disabled: readOnly,
+													value: screeningHours,
+													onChange: (e) => setScreeningHours(Number(e.target.value) || 24)
+												})]
+											}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+												className: "settings-field",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "面评超时阈值（小时）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+													type: "number",
+													min: 1,
+													max: 720,
+													disabled: readOnly,
+													value: scorecardHours,
+													onChange: (e) => setScorecardHours(Number(e.target.value) || 48)
+												})]
+											})]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-l2-foot",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "text-action-link muted",
+												"data-testid": "settings-l3-toggle-sla",
+												onClick: () => toggleL3("sla"),
+												children: l3Open.sla ? "高级参数 ▾" : "高级参数 ▸"
+											}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "settings-l2-btns",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: "btn",
+													onClick: () => setExpandedRow(null),
+													children: "取消"
+												}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: "btn dark",
+													"data-testid": "settings-save-sla",
+													disabled: readOnly || savingKey === "sla_thresholds",
+													onClick: () => void handleSaveSetting("sla_thresholds", {
+														screening_hours: Math.max(1, Math.min(720, Math.round(screeningHours))),
+														scorecard_hours: Math.max(1, Math.min(720, Math.round(scorecardHours)))
+													}, `调整初筛超时为 ${screeningHours} 小时，面评超时为 ${scorecardHours} 小时`),
+													children: savingKey === "sla_thresholds" ? "保存中…" : "保存更改"
+												})]
+											})]
+										}),
+										l3Open.sla ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-l3",
+											children: "合法范围为 1～720 小时；保存后写入不可变版本链并立即影响待拍板队列排序。"
+										}) : null
+									]
+								}) : null]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "settings-row",
+								"data-testid": "settings-row-reminder",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-row-main",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-info",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-title",
+											children: "面评催交策略"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-desc",
+											children: reminderEnabled ? `已开启 · 面试结束 ${reminderHours} 小时后提醒，最多 ${reminderMax} 次` : "已关闭 · 仅在工作台静默标红，不主动发送催交提醒"
+										})]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-actions",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: `settings-status ${reminderEnabled ? "tone-ok" : "tone-muted"}`,
+											children: reminderEnabled ? "已开启" : "已关闭"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "btn",
+											onClick: () => toggleRow("reminder"),
+											children: expandedRow === "reminder" ? "收起" : "配置"
+										})]
+									})]
+								}), expandedRow === "reminder" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-l2",
+									"data-testid": "settings-expand-reminder",
+									children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-form-grid",
+											children: [
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+													className: "settings-field",
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "启用状态" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
+														disabled: readOnly,
+														value: reminderEnabled ? "on" : "off",
+														onChange: (e) => setReminderEnabled(e.target.value === "on"),
+														children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+															value: "on",
+															children: "开启自动催交"
+														}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+															value: "off",
+															children: "暂停催交"
+														})]
+													})]
+												}),
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+													className: "settings-field",
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "超时阈值" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
+														disabled: readOnly,
+														value: reminderHours,
+														onChange: (e) => setReminderHours(Number(e.target.value)),
+														children: [
+															/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+																value: 24,
+																children: "24 小时"
+															}),
+															/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+																value: 48,
+																children: "48 小时"
+															}),
+															/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+																value: 72,
+																children: "72 小时"
+															})
+														]
+													})]
+												}),
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+													className: "settings-field",
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "提醒通道" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
+														disabled: readOnly,
+														value: reminderChannel,
+														onChange: (e) => setReminderChannel(e.target.value),
+														children: [
+															/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+																value: "workbench",
+																children: "工作台置顶提醒"
+															}),
+															/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+																value: "feishu",
+																children: "飞书消息"
+															}),
+															/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+																value: "email",
+																children: "邮件提醒"
+															})
+														]
+													})]
+												})
+											]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-l2-foot",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "text-action-link muted",
+												"data-testid": "settings-l3-toggle-reminder",
+												onClick: () => toggleL3("reminder"),
+												children: l3Open.reminder ? "高级参数 ▾" : "高级参数 ▸"
+											}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "settings-l2-btns",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: "btn",
+													onClick: () => setExpandedRow(null),
+													children: "取消"
+												}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: "btn dark",
+													"data-testid": "settings-save-reminder",
+													disabled: readOnly || savingKey === "scorecard_reminder_policy",
+													onClick: () => void handleSaveSetting("scorecard_reminder_policy", {
+														enabled: reminderEnabled,
+														overdue_hours: reminderHours,
+														max_reminders: Math.max(1, Math.min(5, reminderMax)),
+														channel: reminderChannel,
+														quiet_hours: {
+															start: quietStart,
+															end: quietEnd
+														}
+													}, `更新面评催交策略：${reminderEnabled ? "开启" : "关闭"}，${reminderHours}h，上限 ${reminderMax} 次`),
+													children: savingKey === "scorecard_reminder_policy" ? "保存中…" : "保存更改"
+												})]
+											})]
+										}),
+										l3Open.reminder ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-l3 settings-form-grid",
+											children: [
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+													className: "settings-field",
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "最多提醒次数（1–5）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+														type: "number",
+														min: 1,
+														max: 5,
+														disabled: readOnly,
+														value: reminderMax,
+														onChange: (e) => setReminderMax(Number(e.target.value) || 2)
+													})]
+												}),
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+													className: "settings-field",
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "免打扰开始" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+														type: "text",
+														disabled: readOnly,
+														value: quietStart,
+														onChange: (e) => setQuietStart(e.target.value)
+													})]
+												}),
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+													className: "settings-field",
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "免打扰结束" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+														type: "text",
+														disabled: readOnly,
+														value: quietEnd,
+														onChange: (e) => setQuietEnd(e.target.value)
+													})]
+												})
+											]
+										}) : null
+									]
+								}) : null]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "settings-row",
+								"data-testid": "settings-row-auto-prep",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-row-main",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-info",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-title",
+											children: "入库自动初筛与转写草稿"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-desc",
+											children: "简历入库后自动对照岗位标准生成初筛参考；导入面试转写后自动起草面评（仍需真人拍板）。"
+										})]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-actions",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+											className: "settings-status tone-ok",
+											children: [
+												"初筛",
+												autoScreening ? "开" : "关",
+												" · 草稿",
+												autoScorecardDraft ? "开" : "关"
+											]
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "btn",
+											onClick: () => toggleRow("auto-prep"),
+											children: expandedRow === "auto-prep" ? "收起" : "配置"
+										})]
+									})]
+								}), expandedRow === "auto-prep" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-l2",
+									"data-testid": "settings-expand-auto-prep",
+									children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-toggle-line",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "简历入库自动初筛" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "btn",
+												disabled: readOnly || savingKey === "auto_screening_enabled",
+												onClick: () => void handleSaveSetting("auto_screening_enabled", !autoScreening, `${!autoScreening ? "开启" : "关闭"}简历入库自动初筛`),
+												children: autoScreening ? "已开启（点击关闭）" : "已关闭（点击开启）"
+											})]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-toggle-line",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "转写导入自动生成面评草稿" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "btn",
+												disabled: readOnly || savingKey === "auto_scorecard_draft_enabled",
+												onClick: () => void handleSaveSetting("auto_scorecard_draft_enabled", !autoScorecardDraft, `${!autoScorecardDraft ? "开启" : "关闭"}转写自动生成面评草稿`),
+												children: autoScorecardDraft ? "已开启（点击关闭）" : "已关闭（点击开启）"
+											})]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-toggle-line",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "允许助手在无风险场景静默代办" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "btn",
+												disabled: readOnly || savingKey === "agent_silent_delegation",
+												onClick: () => void handleSaveSetting("agent_silent_delegation", !silentDelegation, `${!silentDelegation ? "开启" : "关闭"}无风险静默代办`),
+												children: silentDelegation ? "已开启（点击关闭）" : "已关闭（点击开启）"
+											})]
+										})
+									]
+								}) : null]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "settings-row",
+								"data-testid": "settings-row-booking-defaults",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-row-main",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-info",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-title",
+											children: "候选人自助预约默认值"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-row-desc",
+											children: [
+												"发送候选人自助选时段链接时，默认有效 ",
+												bookingExpires,
+												" 小时、单次面试 ",
+												bookingDuration,
+												" 分钟。"
+											]
+										})]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-actions",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+											className: "settings-status tone-ok",
+											children: [
+												bookingExpires,
+												"h · ",
+												bookingDuration,
+												" 分钟"
+											]
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "btn",
+											onClick: () => toggleRow("booking"),
+											children: expandedRow === "booking" ? "收起" : "配置"
+										})]
+									})]
+								}), expandedRow === "booking" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-l2",
+									"data-testid": "settings-expand-booking",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-form-grid",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+											className: "settings-field",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "链接有效期（24–168 小时）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+												type: "number",
+												min: 24,
+												max: 168,
+												disabled: readOnly,
+												value: bookingExpires,
+												onChange: (e) => setBookingExpires(Number(e.target.value) || 72)
+											})]
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+											className: "settings-field",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "默认面试时长" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
+												disabled: readOnly,
+												value: bookingDuration,
+												onChange: (e) => setBookingDuration(Number(e.target.value)),
+												children: [
+													/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+														value: 30,
+														children: "30 分钟"
+													}),
+													/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+														value: 45,
+														children: "45 分钟"
+													}),
+													/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+														value: 60,
+														children: "60 分钟"
+													}),
+													/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+														value: 90,
+														children: "90 分钟"
+													})
+												]
+											})]
+										})]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-l2-foot",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-l2-btns",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "btn",
+												onClick: () => setExpandedRow(null),
+												children: "取消"
+											}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "btn dark",
+												"data-testid": "settings-save-booking",
+												disabled: readOnly || savingKey === "booking_invite_defaults",
+												onClick: () => void handleSaveSetting("booking_invite_defaults", {
+													expires_hours: Math.max(24, Math.min(168, Math.round(bookingExpires))),
+													default_duration_min: bookingDuration
+												}, `更新候选人自助预约默认值：${bookingExpires} 小时，${bookingDuration} 分钟`),
+												children: savingKey === "booking_invite_defaults" ? "保存中…" : "保存更改"
+											})]
+										})]
+									})]
+								}) : null]
+							})
+						]
+					}) : null,
+					activeTab === "org" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "settings-list",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "settings-row",
+								"data-testid": "settings-row-roles",
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-main",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-row-info",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+												className: "settings-row-title",
+												children: "角色与权限范围"
+											}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+												className: "settings-row-desc",
+												children: "按企业实际组织定义招聘角色能力边界，所有删除操作均为软关闭并保留审计记录。"
+											})]
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-row-actions",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+												className: "settings-status tone-muted",
+												children: orgData?.roles ? `${orgData.roles.length} 个角色` : "待后端投影接入"
+											}), !readOnly ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "btn",
+												"data-testid": "settings-btn-new-role",
+												onClick: () => toggleRow("org-role"),
+												children: expandedRow === "org-role" ? "收起" : "新增"
+											}) : null]
+										})]
+									}),
+									orgData?.roles && orgData.roles.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+										className: "settings-l2",
+										children: orgData.roles.map((r) => {
+											const rid = r.role_id || r.id || "";
+											const ver = r.record_version ?? 1;
+											const active = r.is_active !== false;
+											return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "settings-kv-row",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [r.name, active ? "" : "（已停用）"] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+													style: {
+														display: "inline-flex",
+														alignItems: "center",
+														gap: "8px"
+													},
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [(r.permission_scopes || []).length, " 项权限"] }), !readOnly && active && rid ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+														type: "button",
+														className: "text-action-link muted",
+														"data-testid": `settings-deactivate-role-${r.code}`,
+														disabled: orgBusy,
+														onClick: () => void handleDeactivateRole(rid, ver),
+														children: "停用"
+													}) : null]
+												})]
+											}, r.code);
+										})
+									}) : null,
+									expandedRow === "org-role" && !readOnly ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-l2",
+										"data-testid": "settings-expand-org-role",
+										children: [
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "settings-kv-row",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "角色编码" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+													type: "text",
+													placeholder: "例如 hiring_partner",
+													value: roleCode,
+													onChange: (e) => setRoleCode(e.target.value)
+												})]
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "settings-kv-row",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "角色名称" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+													type: "text",
+													placeholder: "例如 业务招聘伙伴",
+													value: roleName,
+													onChange: (e) => setRoleName(e.target.value)
+												})]
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "settings-kv-row",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "权限范围" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+													style: {
+														display: "flex",
+														flexWrap: "wrap",
+														gap: "8px"
+													},
+													children: ORG_ROLE_SCOPE_OPTIONS.map((opt) => {
+														const checked = roleScopes.includes(opt.code);
+														return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+															style: {
+																display: "inline-flex",
+																alignItems: "center",
+																gap: "4px"
+															},
+															children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+																type: "checkbox",
+																checked,
+																onChange: () => setRoleScopes((cur) => cur.includes(opt.code) ? cur.filter((x) => x !== opt.code) : [...cur, opt.code])
+															}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: opt.label })]
+														}, opt.code);
+													})
+												})]
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+												className: "settings-row-actions",
+												children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: "btn dark",
+													"data-testid": "settings-save-org-role",
+													disabled: orgBusy,
+													onClick: () => void handleCreateRole(),
+													children: orgBusy ? "保存中…" : "创建角色"
+												})
+											})
+										]
+									}) : null
+								]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "settings-row",
+								"data-testid": "settings-row-teams",
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-main",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-row-info",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+												className: "settings-row-title",
+												children: "招聘团队"
+											}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+												className: "settings-row-desc",
+												children: "维护各业务线的招聘负责人与面试官团队，用于排期与面评权限隔离。"
+											})]
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-row-actions",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+												className: "settings-status tone-muted",
+												children: orgData?.hiring_teams ? `${orgData.hiring_teams.length} 个团队` : "待后端投影接入"
+											}), !readOnly ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "btn",
+												"data-testid": "settings-btn-new-team",
+												onClick: () => toggleRow("org-team"),
+												children: expandedRow === "org-team" ? "收起" : "新增"
+											}) : null]
+										})]
+									}),
+									orgData?.hiring_teams && orgData.hiring_teams.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+										className: "settings-l2",
+										children: orgData.hiring_teams.map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-kv-row",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: t.name }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [t.member_count ?? 0, " 位成员"] })]
+										}, t.code))
+									}) : null,
+									expandedRow === "org-team" && !readOnly ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-l2",
+										"data-testid": "settings-expand-org-team",
+										children: [
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "settings-kv-row",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "团队编码" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+													type: "text",
+													placeholder: "例如 eng_backend",
+													value: teamCode,
+													onChange: (e) => setTeamCode(e.target.value)
+												})]
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "settings-kv-row",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "团队名称" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+													type: "text",
+													placeholder: "例如 后端工程招聘组",
+													value: teamName,
+													onChange: (e) => setTeamName(e.target.value)
+												})]
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "settings-kv-row",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "所属部门标识" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+													type: "text",
+													placeholder: "已有部门 UUID",
+													value: teamDeptId,
+													onChange: (e) => setTeamDeptId(e.target.value)
+												})]
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+												className: "settings-row-actions",
+												children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: "btn dark",
+													"data-testid": "settings-save-org-team",
+													disabled: orgBusy,
+													onClick: () => void handleCreateTeam(),
+													children: orgBusy ? "保存中…" : "创建团队"
+												})
+											})
+										]
+									}) : null
+								]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "settings-row",
+								"data-testid": "settings-row-pipelines",
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-main",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-row-info",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+												className: "settings-row-title",
+												children: "招聘流程与面试模板"
+											}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+												className: "settings-row-desc",
+												children: "模板更新不会静默改写进行中的申请，保障每个历史候选人的阶段可复核。"
+											})]
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-row-actions",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+												className: "settings-status tone-muted",
+												children: orgData?.pipeline_templates ? `${orgData.pipeline_templates.length} 套模板` : "待后端投影接入"
+											}), !readOnly ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "btn",
+												"data-testid": "settings-btn-new-pipeline",
+												onClick: () => toggleRow("org-pipeline"),
+												children: expandedRow === "org-pipeline" ? "收起" : "新增"
+											}) : null]
+										})]
+									}),
+									orgData?.pipeline_templates && orgData.pipeline_templates.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+										className: "settings-l2",
+										children: orgData.pipeline_templates.map((p) => {
+											const pid = p.pipeline_template_id || p.id || "";
+											const ver = p.record_version ?? 1;
+											const active = p.is_active !== false;
+											return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "settings-kv-row",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [p.name, active ? "" : "（已停用）"] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+													style: {
+														display: "inline-flex",
+														alignItems: "center",
+														gap: "8px"
+													},
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [p.stage_count ?? 0, " 个阶段"] }), !readOnly && active && pid ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+														type: "button",
+														className: "text-action-link muted",
+														"data-testid": `settings-deactivate-pipeline-${p.code}`,
+														disabled: orgBusy,
+														onClick: () => void handleDeactivatePipeline(pid, ver),
+														children: "停用"
+													}) : null]
+												})]
+											}, p.code);
+										})
+									}) : null,
+									expandedRow === "org-pipeline" && !readOnly ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-l2",
+										"data-testid": "settings-expand-org-pipeline",
+										children: [
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "settings-kv-row",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "模板编码" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+													type: "text",
+													placeholder: "例如 tech_standard",
+													value: pipeCode,
+													onChange: (e) => setPipeCode(e.target.value)
+												})]
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "settings-kv-row",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "模板名称" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+													type: "text",
+													placeholder: "例如 研发标准三轮流程",
+													value: pipeName,
+													onChange: (e) => setPipeName(e.target.value)
+												})]
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "settings-kv-row",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "模板说明（可选）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+													type: "text",
+													placeholder: "例如 适用于后端/算法岗",
+													value: pipeDesc,
+													onChange: (e) => setPipeDesc(e.target.value)
+												})]
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+												className: "settings-row-actions",
+												children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: "btn dark",
+													"data-testid": "settings-save-org-pipeline",
+													disabled: orgBusy,
+													onClick: () => void handleCreatePipeline(),
+													children: orgBusy ? "保存中…" : "创建流程模板"
+												})
+											})
+										]
+									}) : null
+								]
+							})
+						]
+					}) : null,
+					activeTab === "governance" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "settings-list",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "settings-row",
+								"data-testid": "settings-row-skills",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-row-main",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-info",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-title",
+											children: "招聘工作说明书（S6–S10 只读视图）"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-desc",
+											children: "对话助手严格遵循纯只读白名单 / 0 写红线，所有落库操作均须经真人确认。"
+										})]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+										className: "settings-row-actions",
+										children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+											className: "settings-status tone-ok",
+											children: [skillsList.length, " 套生效中"]
+										})
+									})]
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "settings-l2",
+									children: skillsList.map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-kv-row",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
+											s.stage,
+											" · ",
+											s.title
+										] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "settings-mono",
+											children: s.id
+										})]
+									}, s.id))
+								})]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "settings-row",
+								"data-testid": "settings-row-g3-telemetry",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-row-main",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-info",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-title",
+											children: "线上成对质量护栏（G3 只读遥测）"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-desc",
+											children: "主指标与护栏成对展示，防止单向刷高效率指标掩盖误判或橡皮图章风险。"
+										})]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+										className: "settings-row-actions",
+										children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "settings-status tone-muted",
+											children: data?.governance?.g3_telemetry?.degraded ? "遥测暂不可用" : data?.governance?.g3_telemetry?.paired_guardrails?.some((g) => g.status === "WATCH") ? "有关注项" : data?.governance?.g3_telemetry?.paired_guardrails?.some((g) => g.status === "OK") ? "运行平稳" : "等待样本"
+										})
+									})]
+								}), data?.governance?.g3_telemetry?.paired_guardrails && data.governance.g3_telemetry.paired_guardrails.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "settings-l2",
+									children: data.governance.g3_telemetry.paired_guardrails.map((g) => {
+										const fmt = (v) => v === null ? "—" : `${(v * 100).toFixed(1)}%`;
+										const statusText = g.status === "ERROR" ? "查询异常" : g.status === "WATCH" ? "关注" : g.status === "OK" ? "正常" : "暂无数据";
+										return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "settings-kv-row",
+											"data-testid": `g3-guardrail-${g.id}`,
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
+												g.label,
+												"（主 ",
+												fmt(g.primaryRate),
+												" / 护栏 ",
+												fmt(g.guardrailRate),
+												"）"
+											] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
+												statusText,
+												" · ",
+												g.note
+											] })]
+										}, g.id);
+									})
+								}) : null]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "settings-row",
+								"data-testid": "settings-row-eval",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-row-main",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-row-info",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-title",
+											children: "模型无关评测基线（Agent Eval）"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "settings-row-desc",
+											children: "交付与具体模型解耦；切换模型或调整工作说明书前，以 43 例全链路评测（P1–P6）与 G0–G3 分层门禁为准。"
+										})]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+										className: "settings-row-actions",
+										children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "settings-status tone-muted",
+											children: data?.governance?.eval_summary ? `${data.governance.eval_summary.passed ?? 0}/${data.governance.eval_summary.total ?? 18} 通过` : "暂无本地回归记录"
+										})
+									})]
+								}), data?.governance?.eval_summary ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "settings-l2",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-kv-row",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "稳定性指标" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: data.governance.eval_summary.pass_k || "—" })]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "settings-kv-row",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "最近运行时间" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: data.governance.eval_summary.updated_at || "—" })]
+									})]
+								}) : null]
+							})
+						]
+					}) : null
+				]
+			})
+		]
+	});
+}
 // src/app/TalentView.tsx
 function cleanStageLabel(raw) {
 	return (raw.split("/")[0] ?? raw).trim() || raw;
@@ -30772,6 +34645,96 @@ function TalentView({ overview, onOpenApplication }) {
 	});
 }
 // src/app/App.tsx
+const DEFAULT_NEW_JOB_CRITERIA = [{
+	key: "work_history_present",
+	label: "有可核对的工作经历",
+	kind: "MUST_HAVE",
+	weight: .5,
+	field: "work_experience",
+	operator: "EXISTS",
+	value: true
+}, {
+	key: "core_fit",
+	label: "核心岗位胜任力匹配",
+	kind: "MUST_HAVE",
+	weight: .5,
+	question: "候选人过往经历与核心职责是否与该岗位要求高度匹配？"
+}];
+function normalizeCriteriaWeights(list) {
+	if (list.length === 0) return [];
+	const rawSum = list.reduce((acc, item) => acc + (item.weight > 0 ? item.weight : .1), 0);
+	let assigned = 0;
+	return list.map((item, idx) => {
+		const rawW = item.weight > 0 ? item.weight : .1;
+		const isLast = idx === list.length - 1;
+		const weight = isLast ? Number(Math.max(1e-4, 1 - assigned).toFixed(4)) : Number((rawW / rawSum).toFixed(4));
+		if (!isLast) assigned += weight;
+		const out = {
+			key: item.key,
+			label: item.label,
+			kind: item.kind,
+			weight
+		};
+		if (item.field && item.operator && item.value !== void 0) {
+			out.field = item.field;
+			out.operator = item.operator;
+			out.value = item.value;
+		} else out.question = item.question || `候选人在「${item.label}」方面是否符合岗位要求？`;
+		if (item.notes) out.notes = item.notes;
+		return out;
+	});
+}
+function extractDraftCriteria(bodyText) {
+	try {
+		const parsed = JSON.parse(bodyText);
+		const draft = parsed.draft && typeof parsed.draft === "object" ? parsed.draft : {};
+		const rubricDraft = draft.rubric_draft && typeof draft.rubric_draft === "object" ? draft.rubric_draft : {};
+		const jobDraft = draft.job_draft && typeof draft.job_draft === "object" ? draft.job_draft : {};
+		const rawList = Array.isArray(rubricDraft.criteria) ? rubricDraft.criteria : [];
+		const criteria = [];
+		for (const entry of rawList) {
+			if (!entry || typeof entry !== "object") continue;
+			const rec = entry;
+			const key = typeof rec.key === "string" ? rec.key.trim() : "";
+			const label = typeof rec.label === "string" ? rec.label.trim() : "";
+			const kindRaw = typeof rec.kind === "string" ? rec.kind.trim() : "MUST_HAVE";
+			const kind = kindRaw === "NICE_TO_HAVE" || kindRaw === "DISQUALIFIER" ? kindRaw : "MUST_HAVE";
+			const weight = typeof rec.weight === "number" && Number.isFinite(rec.weight) && rec.weight > 0 ? rec.weight : .2;
+			if (!key || !label) continue;
+			const field = typeof rec.field === "string" && rec.field.trim() ? rec.field.trim() : void 0;
+			const operator = typeof rec.operator === "string" && rec.operator.trim() ? rec.operator.trim() : void 0;
+			const value = typeof rec.value === "boolean" || typeof rec.value === "number" && Number.isFinite(rec.value) || typeof rec.value === "string" && rec.value.trim() ? rec.value : void 0;
+			const question = typeof rec.question === "string" && rec.question.trim() ? rec.question.trim() : void 0;
+			criteria.push({
+				key,
+				label,
+				kind,
+				weight,
+				...field && operator && value !== void 0 ? {
+					field,
+					operator,
+					value
+				} : { question }
+			});
+		}
+		const reqParts = [];
+		if (Array.isArray(jobDraft.responsibilities)) {
+			for (const r of jobDraft.responsibilities) if (typeof r === "string" && r.trim()) reqParts.push(`- ${r.trim()}`);
+		}
+		if (Array.isArray(jobDraft.must_have)) {
+			for (const m of jobDraft.must_have) if (typeof m === "string" && m.trim()) reqParts.push(`- ${m.trim()}`);
+		}
+		return {
+			criteria,
+			requirementsText: reqParts.slice(0, 6).join("\n")
+		};
+	} catch {
+		return {
+			criteria: [],
+			requirementsText: ""
+		};
+	}
+}
 function App() {
 	const [session, setSession] = (0, import_react.useState)(null);
 	const [sessionLoading, setSessionLoading] = (0, import_react.useState)(true);
@@ -30809,6 +34772,11 @@ function App() {
 	const [newJobReq, setNewJobReq] = (0, import_react.useState)("");
 	const [newJobBusy, setNewJobBusy] = (0, import_react.useState)(false);
 	const [newJobError, setNewJobError] = (0, import_react.useState)("");
+	const [newJobDraftBusy, setNewJobDraftBusy] = (0, import_react.useState)(false);
+	const [newJobStatus, setNewJobStatus] = (0, import_react.useState)("OPEN");
+	const [newJobCriteria, setNewJobCriteria] = (0, import_react.useState)(DEFAULT_NEW_JOB_CRITERIA);
+	const [newCriterionLabel, setNewCriterionLabel] = (0, import_react.useState)("");
+	const [newJobDraftNotice, setNewJobDraftNotice] = (0, import_react.useState)("");
 	const hiddenAtRef = (0, import_react.useRef)(null);
 	(0, import_react.useEffect)(() => {
 		document.documentElement.setAttribute("data-theme", theme);
@@ -30849,6 +34817,11 @@ function App() {
 				else if (!isInterviewerOnly(info.roles)) await loadOverview(info.sid);
 			}
 		} catch (err) {
+			if (err instanceof AppUnauthenticatedError) {
+				const next = encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+				window.location.replace(`/recruitment/login?next=${next}`);
+				return;
+			}
 			setSessionError(err instanceof Error ? err.message : "初始化会话失败");
 		} finally {
 			setSessionLoading(false);
@@ -30931,18 +34904,6 @@ function App() {
 		session,
 		loadOverview
 	]);
-	const openSettings = async () => {
-		setShowSettings(true);
-		if (session?.sid) try {
-			const [settings, usage] = await Promise.all([fetchAppJson("/recruitment/api/settings", session.sid).catch(() => ({})), fetchAppJson("/recruitment/api/usage", session.sid).catch(() => ({}))]);
-			setSettingsInfo({
-				settings,
-				usage
-			});
-		} catch {
-			setSettingsInfo({});
-		}
-	};
 	(0, import_react.useEffect)(() => {
 		setResolvedCandidateJobId(void 0);
 	}, [route.kind, route.kind === "application" ? route.applicationId : ""]);
@@ -30969,6 +34930,7 @@ function App() {
 		} else if (uiAction.route === "jobs") target = { kind: "jobs" };
 		else if (uiAction.route === "talent") target = { kind: "talent" };
 		else if (uiAction.route === "interviewer") target = { kind: "interviewer" };
+		else if (uiAction.route === "settings") target = { kind: "settings" };
 		else if (uiAction.route === "application" && uiAction.target_id) target = {
 			kind: "application",
 			applicationId: uiAction.target_id
@@ -31004,11 +34966,72 @@ function App() {
 	const handleFilterConsumed = (0, import_react.useCallback)(() => setQueueFilterReq(null), []);
 	const openNewJobModal = (0, import_react.useCallback)(() => {
 		setNewJobError("");
+		setNewJobDraftNotice("");
 		setNewJobTitle("");
 		setNewJobReq("");
+		setNewJobStatus("OPEN");
+		setNewJobCriteria(DEFAULT_NEW_JOB_CRITERIA);
+		setNewCriterionLabel("");
 		setNewJobDeptId((prev) => prev || overview?.settings.departments[0]?.id || "");
 		setShowNewJob(true);
 	}, [overview]);
+	const handleGenerateJobDraft = async () => {
+		if (newJobDraftBusy || newJobBusy || !session?.sid) return;
+		const seed = [newJobTitle.trim(), newJobReq.trim()].filter(Boolean).join("：");
+		if (!seed) {
+			setNewJobError("请先填写岗位名称或简要需求，再生成标准草案。");
+			return;
+		}
+		const built = buildJobDraftBody({
+			requestText: seed,
+			departmentContext: overview?.settings.departments.find((d) => d.id === newJobDeptId)?.name || void 0
+		});
+		if (!built.ok) {
+			setNewJobError(built.reasonText);
+			return;
+		}
+		setNewJobDraftBusy(true);
+		setNewJobError("");
+		setNewJobDraftNotice("");
+		try {
+			const outcome = await postJobDraft(built.body, session.sid);
+			if (!outcome.accepted) {
+				setNewJobError(outcome.error?.message || describeActionError(outcome.error?.code ?? "", outcome.error?.reasonCode ?? "") || "生成岗位标准草案失败，请稍后重试。");
+				return;
+			}
+			const extracted = extractDraftCriteria(outcome.bodyText);
+			if (extracted.criteria.length > 0) {
+				setNewJobCriteria(extracted.criteria);
+				setNewJobDraftNotice(`已按需求生成 ${extracted.criteria.length} 条可执行评分标准，可直接微调后创建。`);
+			} else setNewJobDraftNotice("已保留默认合规评分标准，你可按需增删维度。");
+			if (!newJobReq.trim() && extracted.requirementsText) setNewJobReq(extracted.requirementsText);
+		} catch (err) {
+			setNewJobError(err instanceof Error ? err.message : "生成岗位标准草案失败，请稍后重试。");
+		} finally {
+			setNewJobDraftBusy(false);
+		}
+	};
+	const handleAddNewJobCriterion = () => {
+		const label = newCriterionLabel.trim();
+		if (!label) return;
+		const slug = `custom_${Date.now().toString(36).slice(-4)}_${newJobCriteria.length + 1}`;
+		setNewJobCriteria((prev) => [...prev, {
+			key: slug,
+			label,
+			kind: "MUST_HAVE",
+			weight: .25,
+			question: `候选人在「${label}」方面是否达到该岗位预期？`
+		}]);
+		setNewCriterionLabel("");
+	};
+	const handleRemoveNewJobCriterion = (key) => {
+		setNewJobCriteria((prev) => {
+			const next = prev.filter((item) => item.key !== key);
+			if (next.length === 0) return prev;
+			if (!next.some((item) => item.kind === "MUST_HAVE" || item.kind === "DISQUALIFIER")) return prev;
+			return next;
+		});
+	};
 	const handleCreateJobSubmit = async () => {
 		if (newJobBusy || !session?.sid) return;
 		const title = newJobTitle.trim();
@@ -31021,19 +35044,15 @@ function App() {
 			setNewJobError("当前暂无可用部门，请先在企业配置中添加部门。");
 			return;
 		}
+		const normalizedCriteria = normalizeCriteriaWeights(newJobCriteria.length > 0 ? newJobCriteria : DEFAULT_NEW_JOB_CRITERIA);
 		const built = buildJobCreateBody({
 			code: `JOB-${Date.now().toString(36).toUpperCase().slice(-6)}`,
 			title,
 			departmentId: deptId,
 			descriptionMd: title,
 			requirementsMd: newJobReq.trim() || title,
-			criteria: [{
-				key: "core_fit",
-				label: "核心岗位匹配度",
-				kind: "MUST_HAVE",
-				weight: 1
-			}],
-			status: "DRAFT"
+			criteria: normalizedCriteria,
+			status: newJobStatus
 		});
 		if (!built.ok) {
 			setNewJobError(built.reasonText);
@@ -31143,11 +35162,18 @@ function App() {
 		})
 	});
 	const interviewerOnly = isInterviewerOnly(session.roles);
-	const isInterviewerRoute = route.kind === "interviewer" || interviewerOnly;
+	const isInterviewerRoute = route.kind === "interviewer" || interviewerOnly && route.kind !== "settings";
 	const isEmbeddedDetail = !isInterviewerRoute && (route.kind === "application" || route.kind === "job");
-	const activeSpace = route.kind === "jobs" || route.kind === "job" ? "jobs" : route.kind === "talent" ? "talent" : "queue";
+	const activeSpace = route.kind === "jobs" || route.kind === "job" ? "jobs" : route.kind === "talent" ? "talent" : route.kind === "settings" ? "settings" : "queue";
 	const actorName = session.displayName || session.alias || "已认证成员";
 	const actorRoleText = formatRolesLabel(session.roles, actorName);
+	const handleLogout = async () => {
+		try {
+			await postLogout();
+		} finally {
+			window.location.replace("/recruitment/login");
+		}
+	};
 	const actorBadgeNode = /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "actor-badge",
 		"data-testid": "app-actor-badge",
@@ -31157,7 +35183,16 @@ function App() {
 			actorRoleText ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 				className: "actor-badge-role",
 				children: actorRoleText
-			}) : null
+			}) : null,
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+				type: "button",
+				className: "actor-logout-btn",
+				"data-testid": "app-logout",
+				title: "退出登录",
+				"aria-label": "退出登录",
+				onClick: () => void handleLogout(),
+				children: "退出"
+			})
 		]
 	});
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -31360,9 +35395,10 @@ function App() {
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 										type: "button",
 										className: "icon-btn",
-										title: "系统状态与用量",
-										"aria-label": "系统状态与用量",
-										onClick: () => void openSettings(),
+										title: "工作台设置",
+										"aria-label": "工作台设置",
+										"data-testid": "app-nav-settings",
+										onClick: () => navigateToRoute({ kind: "settings" }),
 										children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("svg", {
 											viewBox: "0 0 24 24",
 											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("circle", {
@@ -31407,6 +35443,7 @@ function App() {
 						onToolCompleted: () => handleRefreshAll(),
 						onUiAction: handleAgentUiAction,
 						onExecuteSuggestedAction: handleExecuteSuggestedAction,
+						onProposalCommitted: () => handleRefreshAll(),
 						onUploadStarted: (task) => setUploadTask(task)
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
@@ -31437,6 +35474,12 @@ function App() {
 									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 										className: "crumb-cur",
 										children: "在招岗位"
+									})
+								}) : route.kind === "settings" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "crumb-bar",
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "crumb-cur",
+										children: "设置"
 									})
 								}) : route.kind === "talent" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 									className: "crumb-bar",
@@ -31498,6 +35541,7 @@ function App() {
 								route: canvasRouteTarget,
 								candidateQueue,
 								isOffline,
+								fetcher: (path) => fetchAppJson(path, session.sid),
 								focusRequest,
 								onFocusConsumed: handleFocusConsumed,
 								openModalRequest,
@@ -31539,6 +35583,12 @@ function App() {
 										onClick: () => void loadOverview(session.sid),
 										children: "重试"
 									})]
+								})
+							}) : route.kind === "settings" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "canvas-inner",
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SettingsView, {
+									sid: session.sid,
+									readOnly: interviewerOnly
 								})
 							}) : overview ? route.kind === "jobs" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(JobsView, {
 								overview,
@@ -31702,12 +35752,103 @@ function App() {
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
 							className: "form-field",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "岗位核心要求（选填）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("textarea", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								className: "form-field-head",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "岗位核心要求（选填）" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "text-action-link",
+									"data-testid": "app-new-job-draft",
+									disabled: newJobBusy || newJobDraftBusy,
+									onClick: () => void handleGenerateJobDraft(),
+									children: newJobDraftBusy ? "生成草案中…" : "AI 生成标准草案"
+								})]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("textarea", {
 								"data-testid": "app-new-job-req",
 								value: newJobReq,
 								disabled: newJobBusy,
 								onChange: (e) => setNewJobReq(e.target.value),
-								placeholder: "简要填写核心职责或任职要求，留空则默认沿用岗位名称"
+								placeholder: "简要填写核心职责或任职要求，点击右上角可自动生成评分标准草案",
+								rows: 3
+							})]
+						}),
+						newJobDraftNotice ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "new-job-draft-note",
+							children: newJobDraftNotice
+						}) : null,
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "form-field",
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "评分标准维度（提交自动归一化权重和为 100%）" }),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "new-job-crit-list",
+									children: newJobCriteria.map((cr, idx) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "new-job-crit-row",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+											className: "new-job-crit-main",
+											children: [
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+													className: "num new-job-crit-idx",
+													children: ["0", idx + 1]
+												}),
+												/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: cr.label }),
+												/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+													className: "new-job-crit-kind",
+													children: cr.kind === "NICE_TO_HAVE" ? "加分" : "必备"
+												})
+											]
+										}), newJobCriteria.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "text-action-link muted",
+											disabled: newJobBusy,
+											onClick: () => handleRemoveNewJobCriterion(cr.key),
+											children: "移除"
+										}) : null]
+									}, cr.key))
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "new-job-crit-add",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+										"data-testid": "app-new-job-add-criterion-input",
+										value: newCriterionLabel,
+										disabled: newJobBusy,
+										onChange: (e) => setNewCriterionLabel(e.target.value),
+										onKeyDown: (e) => {
+											if (e.key === "Enter") {
+												e.preventDefault();
+												handleAddNewJobCriterion();
+											}
+										},
+										placeholder: "新增一条考核维度（如：有高并发分布式系统经验）"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: "btn",
+										"data-testid": "app-new-job-add-criterion-btn",
+										disabled: newJobBusy || !newCriterionLabel.trim(),
+										onClick: handleAddNewJobCriterion,
+										children: "添加"
+									})]
+								})
+							]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "form-field",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "创建后岗位状态" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "new-job-status-row",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: `status-toggle-btn${newJobStatus === "OPEN" ? " active" : ""}`,
+									"data-testid": "app-new-job-status-open",
+									disabled: newJobBusy,
+									onClick: () => setNewJobStatus("OPEN"),
+									children: "开放招聘（推荐）"
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: `status-toggle-btn${newJobStatus === "DRAFT" ? " active" : ""}`,
+									"data-testid": "app-new-job-status-draft",
+									disabled: newJobBusy,
+									onClick: () => setNewJobStatus("DRAFT"),
+									children: "暂存草稿"
+								})]
 							})]
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {

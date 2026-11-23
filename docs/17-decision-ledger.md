@@ -2148,3 +2148,9 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   ⑥ **docs 回抄**：`docs/44`（基线/状态/§5.5）、`docs/25`/`docs/40`/`docs/41`/`docs/42`/`docs/README`、`AGENTS.md`/`project.json` 同步本结果。
   **P2（不阻断、已声明）**：① `麻烦把系统设计这块再过一遍`（委婉开放祈使）② `看样子难以继续`（"继续"多义）；确定性判分器不可安全覆盖，留待真实语料/离线 L3。
   **遗留（非本批）**：认证/租户、Webhook/CSV、测试基建、UI/构建等 P1 仍按 `docs/44 §5.2` 跟踪；G3 盲审抽检如要做须先获授权。
+
+- **D-197（2026-11-24，总控；UI 构建产物重建与 P1-7 设置页/队列叠影 1440 验证）**
+  **来源**：产品负责人 2026-11-24 指示：拉取 `origin/main@317e094`（含 PR #97 SettingsView 位置修复），用轻量分支重建最新 `lib/app.js` / `lib/client.js`，1440 真机确认 `#/settings` 与队列叠影消除并截图留档，提交构建产物并提 PR（同步记录 `docs/17` / `docs/44`），等待复核合入。
+  **执行**：分支 `fix/ui-settings-overlay-build-20261124`（基于 `317e094`）；`npx tsc --noEmit` **0 错误**；`npx tsdown` 双产物（`lib/client.js` 0.59 kB CJS + `lib/app.js` 1.54 MB ESM）。**`lib/app.css` 不是构建产物**：`tsdown.config.ts` 的 `cssInjectionPlugin` 在构建时把每个 CSS 文件变成注入模块（运行时按文件写入 `<head>`），因此不生成 app.css。
+  **1440 真机**：隔离 Host 49348（临时 profile 指向本分支插件 + 一次性库 `ra_ui_build_20261124`，25 迁移 + `db/verify.sql` VERIFY PASS）+ 无头 Chrome CDP 9228 / 1440×900；探针只读 DOM/截图（`evidence/ui-settings-overlay-20261124/probe-settings-overlay.mjs`）。DOM 断言全部通过：`settings-page` 落在 `app-canvas` 内且在 `.canvas-head` 之下；settings 路由下 `app-queue-view` / `app-queue-tabs` **不存在**（不再与队列同屏）；header 不含 settings；`#/queue` 只渲染队列。截图 `settings-1440.png`（sha256 `e489c1dd…`）与 `queue-1440.png`；探针 JSON/日志/host 日志/DB 校验/构建信息同目录。
+  **裁决/状态**：构建产物 + 证据 + 文档在分支一次性提交并提 PR，**等待复核合入**；合入后 main 前端产物与 `317e094` source 对齐，`docs/44 §5.2` P1-7 的 stale `lib` 与叠影两项关闭（G-18 创建/软停用端到端回归仍待）。过程环境（临时 Host/Chrome/库/profile）已在验证后清理。
