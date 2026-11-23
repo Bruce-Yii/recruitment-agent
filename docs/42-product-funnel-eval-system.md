@@ -5,6 +5,15 @@
 
 ---
 
+## 0. 行为约束铁律：严禁自嗨造题考自己（Anti-Self-Eval Rule）
+
+> **硬性行为约束（永久生效，覆盖后续所有评测设计与样本生成）**：
+> 1. **严禁凭空臆造**：禁止拍脑袋编造脱离真实业务的干净假简历、书面语假转写、理想化假 JD 或不存在的 HR 话术来给自己打高分；
+> 2. **先调研、后拼装、再受控扩增**：任何拟真业务环境构建，必须按「**细分类 → 网络实证调研公开真实基准/行业实录/真实故障案例 → 注明出处拼装或按真实分布受控扩增**」顺序推进；
+> 3. **来源可溯**：进入正式回归集的每一类素材，都必须标注其**真实私有语料来源**或**外部公开出处 URL**；无源头的纯自编业务场景一律不得作为有效评测依据；
+> 4. **结构化报告（Evaluation Card）**：借鉴 [arXiv:2606.09809 (Evaluation Cards, 2026-06)](https://arxiv.org/html/2606.09809v1)，评测报告不得只报一个扁平总分，必须明确披露数据来源切分、各阶段分项指标与复现条件。
+
+---
 ## 一、2026 年 10–11 月生产级 AI 产品评测行业共识
 
 结合 2026 年 10 月下旬至 11 月中旬的最新一线工程实践，合格的 AI 产品评测体系必须同时满足五条铁律：
@@ -126,3 +135,23 @@
 - **输入端 100% 真实**：解析、判重、初筛面对的是你手头几百份真实世界的脏 PDF/Word，没有任何滤镜；
 - **过程端 90% 逼真**：转写带 ASR 噪音、日程带冲突、HR 提问带模糊指代、外部基准用第三方公开 `jobresqa-benchmark` 交叉校准，彻底打破“自己写干净题考自己”；
 - **上线后 100% 闭环**：一旦首个真实团队开始用，上述模拟信号直接被真实团队的纠偏率、草稿编辑距离与撤销率平滑接管，不需要推倒重来。
+
+---
+
+## 八、6 大真实评测素材细分类与分步网络调研进度（实证目录）
+
+按“分类清晰 → 逐类网络调研取证 → 有出处拼装”的顺序，把缺失的招聘业务环境拆成 6 个独立素材类逐一攻克：
+
+| 细分类 | 对应漏斗环节 | 当前状态 | 已调研落位的真实来源 / 公开基准 | 下一步实证动作 |
+|---|---|---|---|---|
+| **分类 1：真实简历原件与版式脏数据** | Stage 1 解析/渲染 | **已落位** | ① 用户手头**数百份真实 PDF/Word 简历**（私有 `RECRUITMENT_CORPUS_ROOT`，分 Tier A/B/C）；<br>② [d4rk3r/resumes-raw-pdf](https://huggingface.co/datasets/d4rk3r/resumes-raw-pdf)（1,940 份真实原始 PDF）；<br>③ [Chinese_Documents_Dataset_PDF](https://huggingface.co/datasets/HumynLabs/Chinese_Documents_Dataset_PDF) | 制定私有简历自动化脱敏与 Tier A/B/C 分级抽样脚本 |
+| **分类 2：真实市场岗位 JD 与隐性门槛** | Stage 2/3 建岗与初筛 | **Batch 1 已初查** | ① [ouxxyy/ouba-classmate](https://github.com/ouxxyy/ouba-classmate)（2026-11-14 发布，含 CC BY 4.0 中文求职与 JD-简历基准）；<br>② [datasetmaster/resumes](https://huggingface.co/datasets/datasetmaster/resumes)；<br>③ [Resume-Screening-Dataset](https://huggingface.co/datasets/AzharAli05/Resume-Screening-Dataset) | 专项调研 5 类中文高频岗（后端/算法/产品/运营/销售）真实公开 JD 的硬门槛与模糊词分布，拼装真实 Rubric 样本 |
+| **分类 3：跨文档简历×JD 推理与公平性基准** | Stage 3 客观标尺 | **已落位** | ① [Avature/jobresqa-benchmark](https://github.com/Avature/jobresqa-benchmark)（[arXiv:2601.23183](https://arxiv.org/html/2601.23183v1)，581 QA × 105 对脱敏简历-JD，含中文 `zh` 与公平性受控属性）；<br>② [arXiv:2609.14046 (2026-09)](https://arxiv.org/html/2609.14046v1)（945 条经审计的真实岗位对齐面试题基准） | 抽取 `jobresqa-benchmark` 中文子集作为独立外部交叉校验集 |
+| **分类 4：真实中文会议/面试转写与 ASR 噪音** | Stage 5 转写与面评草稿 | **Batch 1 已落位噪音源** | ① [AliMeeting (OpenSLR 119)](https://www.openslr.org/119/) / [dia-alimeeting-test](https://huggingface.co/datasets/ggfox00000/dia-alimeeting-test)（真实中文多人会议，含重叠抢话与说话人分离）；<br>② [AISHELL-4](https://huggingface.co/datasets/shenyunhang/AISHELL-4)（211 场 120 小时真实中文会议，含短停顿/噪声/快速切换） | 结合公开真实中文技术/业务面经结构 + AliMeeting/AISHELL-4 真实口语断句与串行噪音分布，拼装 15–20 段高拟真带噪转写 |
+| **分类 5：真实面试官面评写法与校准争议** | Stage 5/6 面评与终审 | **待 Batch 2 专项调研** | 初步参考 [CoMAI (arXiv:2603.16215)](https://arxiv.org/html/2603.16215v1) 结构化 Rubric 降偏见框架 | 专项调研一线互联网/科技公司公开面评模板、真实“敷衍面评”与“Hire vs No Hire 撕裂校准案例” |
+| **分类 6：真实流程异常、合规隐私与安全对抗** | Stage 4/6 & 横切安全 | **Batch 1 已初查** | ① [OWASP LLM01:2025 Scenario #6](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)（简历分段载荷 Prompt 注入）；<br>② 2026 真实 AI 面试平台隐私泄露诉讼案例（见 [2026-10 行业分析](https://medium.com/@gwrx2005/the-securitization-of-remote-work-c10566e2c35d)）；<br>③ 仓库既有 `docs/12-layer-acceptance.md` 故障注入方法论 | Batch 2 补齐国内《个人信息保护法》招聘信息脱敏要求 + 真实 ATS 排期冲突/候选人爽约/重复投递边界样本 |
+
+### 推进顺序（严格按批实证，不跳步）
+1. **Batch 1（本轮已完成）**：确立 6 大细分类 + 写入 §0 反自嗨铁律 + 落位分类 1/3/4 外部真实公开基准；
+2. **Batch 2（下一轮专项网络调研）**：深挖分类 2（5 类中文真实市场 JD）、分类 5（真实面评写法与校准争议）、分类 6（国内招聘隐私合规与真实排期/爽约异常）；
+3. **Batch 3（资产化落地）**：把调研取证的真实素材整理为可复现的 `eval-corpus-manifest.json`（每条带外部来源 URL 或私有语料哈希指针），直接喂给 Issue #63 的 6 阶段漏斗评测引擎。
