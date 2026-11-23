@@ -64,6 +64,17 @@ interface SettingsPayload {
       readonly updated_at?: string;
       readonly model_label?: string;
     } | null;
+    readonly g3_telemetry?: {
+      readonly schema_version?: string;
+      readonly paired_guardrails?: ReadonlyArray<{
+        readonly id: string;
+        readonly label: string;
+        readonly primaryRate: number | null;
+        readonly guardrailRate: number | null;
+        readonly status: 'OK' | 'WATCH' | 'NO_DATA';
+        readonly note: string;
+      }>;
+    } | null;
   };
 }
 
@@ -1109,7 +1120,7 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
                   <div className="settings-row-info">
                     <div className="settings-row-title">招聘工作说明书（S6–S10 只读视图）</div>
                     <div className="settings-row-desc">
-                      对话助手严格遵循 19 只读 / 0 写红线，所有落库操作均须经真人确认。
+                      对话助手严格遵循纯只读白名单 / 0 写红线，所有落库操作均须经真人确认。
                     </div>
                   </div>
                   <div className="settings-row-actions">
@@ -1126,12 +1137,51 @@ export function SettingsView({ sid, readOnly = false }: SettingsViewProps) {
                 </div>
               </div>
 
+              <div className="settings-row" data-testid="settings-row-g3-telemetry">
+                <div className="settings-row-main">
+                  <div className="settings-row-info">
+                    <div className="settings-row-title">线上成对质量护栏（G3 只读遥测）</div>
+                    <div className="settings-row-desc">
+                      主指标与护栏成对展示，防止单向刷高效率指标掩盖误判或橡皮图章风险。
+                    </div>
+                  </div>
+                  <div className="settings-row-actions">
+                    <span className="settings-status tone-muted">
+                      {data?.governance?.g3_telemetry?.paired_guardrails?.some((g) => g.status === 'WATCH')
+                        ? '有关注项'
+                        : data?.governance?.g3_telemetry?.paired_guardrails?.some((g) => g.status === 'OK')
+                          ? '运行平稳'
+                          : '等待样本'}
+                    </span>
+                  </div>
+                </div>
+                {data?.governance?.g3_telemetry?.paired_guardrails &&
+                data.governance.g3_telemetry.paired_guardrails.length > 0 ? (
+                  <div className="settings-l2">
+                    {data.governance.g3_telemetry.paired_guardrails.map((g) => {
+                      const fmt = (v: number | null) => (v === null ? '—' : `${(v * 100).toFixed(1)}%`);
+                      const statusText = g.status === 'WATCH' ? '关注' : g.status === 'OK' ? '正常' : '暂无数据';
+                      return (
+                        <div key={g.id} className="settings-kv-row" data-testid={`g3-guardrail-${g.id}`}>
+                          <span>
+                            {g.label}（主 {fmt(g.primaryRate)} / 护栏 {fmt(g.guardrailRate)}）
+                          </span>
+                          <span>
+                            {statusText} · {g.note}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+
               <div className="settings-row" data-testid="settings-row-eval">
                 <div className="settings-row-main">
                   <div className="settings-row-info">
                     <div className="settings-row-title">模型无关评测基线（Agent Eval）</div>
                     <div className="settings-row-desc">
-                      交付与具体模型解耦；切换模型或调整工作说明书前，以 18 例黄金难例与四层门禁为准。
+                      交付与具体模型解耦；切换模型或调整工作说明书前，以 43 例全链路评测（P1–P6）与 G0–G3 分层门禁为准。
                     </div>
                   </div>
                   <div className="settings-row-actions">
