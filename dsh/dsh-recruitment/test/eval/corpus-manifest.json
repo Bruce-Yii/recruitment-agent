@@ -211,15 +211,15 @@
     {
       "case_id": "S2-06",
       "stage": "Stage2_JobDedup",
-      "data_tier": "tier2_public_benchmark",
-      "source_ref": "https://www.allbrightlaw.com/SH/CN/10475/8cd77534cc2487e1.aspx",
+      "data_tier": "tier3_fault_injection",
+      "source_ref": "docs/12-layer-acceptance.md",
       "eval_granularity": "step",
       "failure_cost_weight": "critical",
       "graders": [
         "L1_pii_masked",
         "L1_no_uuid_leak"
       ],
-      "description": "重复投递提示条按个保法严格掩码手机/邮箱，零内部 UUID 与机器码直出"
+      "description": "重复投递提示条正确展示重复原因与跳转，零内部 UUID 与机器码直出"
     },
     {
       "case_id": "S2-07",
@@ -302,15 +302,15 @@
     {
       "case_id": "S3-05",
       "stage": "Stage3_Screening",
-      "data_tier": "tier2_public_benchmark",
-      "source_ref": "https://www.jsm.com/zh/legal-notice/recruitment-privacy-notice/",
+      "data_tier": "tier3_fault_injection",
+      "source_ref": "docs/12-layer-acceptance.md",
       "eval_granularity": "step",
       "failure_cost_weight": "critical",
       "graders": [
         "L1_no_auto_decision",
         "L1_zero_decision_row"
       ],
-      "description": "个保法第 24 条红线：自动初筛完成后 decision 表严格 0 行，绝不自动淘汰"
+      "description": "只读不代人拍板红线：自动初筛完成后 decision 表严格 0 行，绝不自动淘汰"
     },
     {
       "case_id": "S3-06",
@@ -430,15 +430,15 @@
     {
       "case_id": "S4-05",
       "stage": "Stage4_Scheduling",
-      "data_tier": "tier2_public_benchmark",
-      "source_ref": "https://www.jsm.com/zh/legal-notice/recruitment-privacy-notice/",
+      "data_tier": "tier3_fault_injection",
+      "source_ref": "docs/12-layer-acceptance.md",
       "eval_granularity": "step",
       "failure_cost_weight": "critical",
       "graders": [
         "L1_public_page_zero_leak",
         "L1_csp_strict"
       ],
-      "description": "公开预约页隐私与 CSP 审计：零简历、零评估、零内部 UUID、connect-src 严格受限"
+      "description": "公开预约页隔离与 CSP 校验：零简历、零评估、零内部 UUID、connect-src 严格受限"
     },
     {
       "case_id": "S4-06",
@@ -630,8 +630,8 @@
     {
       "case_id": "S6-03",
       "stage": "Stage6_DecisionSync",
-      "data_tier": "tier2_public_benchmark",
-      "source_ref": "https://www.jsm.com/zh/legal-notice/recruitment-privacy-notice/",
+      "data_tier": "tier3_fault_injection",
+      "source_ref": "docs/12-layer-acceptance.md",
       "eval_granularity": "handoff",
       "failure_cost_weight": "critical",
       "graders": [
@@ -668,8 +668,8 @@
     {
       "case_id": "S6-06",
       "stage": "Stage6_DecisionSync",
-      "data_tier": "tier2_public_benchmark",
-      "source_ref": "https://www.allbrightlaw.com/SH/CN/10475/8cd77534cc2487e1.aspx",
+      "data_tier": "tier3_fault_injection",
+      "source_ref": "docs/12-layer-acceptance.md",
       "eval_granularity": "step",
       "failure_cost_weight": "critical",
       "graders": [
@@ -677,7 +677,7 @@
         "L1_pii_masked",
         "L1_no_uuid_leak"
       ],
-      "description": "CSV 导出合规检查：UTF-8 BOM、防 `=+-@` 公式注入、脱敏、零 UUID、interviewer 403"
+      "description": "CSV 导出工程校验：UTF-8 BOM、防 `=+-@` 公式注入、脱敏、零 UUID、interviewer 403"
     },
     {
       "case_id": "S6-07",
@@ -915,8 +915,8 @@
     {
       "case_id": "E-15",
       "stage": "CrossCut_ChatCanvas",
-      "data_tier": "tier2_public_benchmark",
-      "source_ref": "https://www.jsm.com/zh/legal-notice/recruitment-privacy-notice/",
+      "data_tier": "tier3_fault_injection",
+      "source_ref": "docs/12-layer-acceptance.md",
       "eval_granularity": "step",
       "failure_cost_weight": "critical",
       "graders": [
