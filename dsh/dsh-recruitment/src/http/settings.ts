@@ -57,6 +57,7 @@ import {
   type FeishuConnectorConfig,
 } from '../connectors/feishu/wiring.ts'
 import { sameOrigin } from './overview.ts'
+import { buildG3PairedGuardrails, EMPTY_G3_COUNTS, readG3FunnelTelemetry, type G3TelemetrySnapshot } from '../domain/eval-telemetry.ts'
 
 // =====================================================================
 //  契约常量
@@ -505,12 +506,15 @@ function projectedValue(key: WorkspaceSettingKey, value: unknown): unknown {
 async function handleRead(deps: SettingsHttpDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const sessionId = readSessionHeader(req)
   requireBoundActor(deps, sessionId) // 未绑定 → 409，零读取（在开池之前）
+  let g3Telemetry: G3TelemetrySnapshot = buildG3PairedGuardrails(EMPTY_G3_COUNTS)
   const value = deps.hooks?.readAll !== undefined
     ? await deps.hooks.readAll('test-tenant')
     : await withPool(requireDatabase(deps), (pool) =>
-        withReadOnly(pool, (client) =>
-          readAllSettings(client, deps.database!.tenant_id, WORKSPACE_SETTING_KEYS),
-        ),
+        withReadOnly(pool, async (client) => {
+          const rows = await readAllSettings(client, deps.database!.tenant_id, WORKSPACE_SETTING_KEYS)
+          g3Telemetry = await readG3FunnelTelemetry(client, deps.database!.tenant_id)
+          return rows
+        }),
       )
 
   // 一个键可能有多条未封顶的版本行；永远取 version_no 最大的那条（不取最后一条）。
@@ -542,6 +546,7 @@ async function handleRead(deps: SettingsHttpDeps, req: IncomingMessage, res: Ser
     governance: {
       skills: readGovernanceSkills(),
       eval_summary: readEvalSummary(),
+      g3_telemetry: g3Telemetry,
     },
   })
 }
