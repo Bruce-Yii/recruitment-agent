@@ -1,0 +1,12 @@
+# Feishu minutes import — independent psql readback (sanitized; no transcript text)
+time: 2026-11-24T07:14:18.1965161+08:00
+
+## transcript_artifact
+35d33e6c…|FEISHU|READY|LIVE|MANUAL|CONNECTED|9395b98fc433|is_complete=true|is_canonical=true|chars=71
+
+## interview_record
+9870076b…|6055c528…|rev=1|NEEDS_REVIEW|UNVERIFIED|is_current=true
+
+## transcript_segment count
+4
+

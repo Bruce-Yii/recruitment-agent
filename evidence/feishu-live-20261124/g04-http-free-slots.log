@@ -1,0 +1,24 @@
+{
+  "at": "2026-11-23T23:11:29.541Z",
+  "url": "/recruitment/api/action/interview/free-slots?application_id=11111111-1111-4111-8111-000000000701&interviewer_actor_ids=11111111-1111-4111-8111-000000000104&days=3&duration_minutes=45&timezone=Asia%2FShanghai",
+  "checks": {
+    "session_cookie_present": true,
+    "http_status": 200,
+    "labels": {
+      "provenance": "LIVE",
+      "trigger": "MANUAL",
+      "connection": "CONNECTED"
+    },
+    "slots_count": 3,
+    "unsatisfied": [],
+    "proposed": 3,
+    "first_slot": {
+      "start": "2026-11-24T09:00:00.000+08:00",
+      "end": "2026-11-24T09:45:00.000+08:00",
+      "busy_conflicts": 0,
+      "source": "LIVE"
+    },
+    "error": null
+  },
+  "errors": []
+}

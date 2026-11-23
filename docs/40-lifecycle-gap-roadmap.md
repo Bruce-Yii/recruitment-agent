@@ -1,7 +1,7 @@
 # 40 · 真实招聘全链路缺口清单与优先级路线图（2026-11-24 状态刷新）
 
-> **当前基线**：`main@54b83ad`（含 PR #93、#94、#95；Wave 1 + Wave 2 + Wave 2.5 共 9 项缺口已全部合入并过 1440 真机与 15/15 回归）。
-> **真实性提醒**：本文件是路线图，不是验收结论。**Issue #91 复验 PASS（无阻断）；Issue #92 复验 CONDITIONAL_PASS（保留 3 个 P1）**；两个 Issue 仍 OPEN，等待最终复核/关闭。下文“已完成/已合入”只表示进入 main，不等于独立验收通过。最新快照见 [`docs/44-current-state-and-handoff.md`](44-current-state-and-handoff.md)。
+> **当前基线**：`main@8a8ae9b`（含 PR #93/#94/#95 与 #96–#101；Wave 1/2/2.5 已合入；#91/#92 已关闭；G-04/G-13 于 2026-11-24 实测 LIVE，见 `docs/17` D-198）。
+> **真实性提醒**：本文件是路线图，不是验收结论。Issue #91 复验 PASS、Issue #92 三 P1 修复独立终验 PASS，均已关闭；**G-04/G-13 的 LIVE 结论仅限 2026-11-24 本机实测（D-198，证据 `evidence/feishu-live-20261124/`），不等于客户生产环境验收**。下文“已完成/已合入”只表示进入 main，不等于独立验收通过。最新快照见 [`docs/44-current-state-and-handoff.md`](44-current-state-and-handoff.md)。
 > **推进顺序原则**：先打穿**不依赖外部凭据的产品体验闭环（Wave 3）** → 再收口**需外部凭据的飞书 LIVE 真链（Wave 4）** → 最后做**生产登录、独立域名与多租户交付基建（Wave 5）**，绝不在产品体验未收口前提前过度设计交付设施。
 
 ---
@@ -36,8 +36,8 @@
 
 | 排序 | 编号 | 所属环节 | 缺口项 | 阻塞条件 | 归属 |
 |---|---|---|---|---|---|
-| 4 | **G-04** | L4 约面 | **真实飞书日历 LIVE 绑定实测** | 缺 `RECRUITMENT_FEISHU_USER_MAP` 凭据 | 外部凭据 + 本地验证 |
-| 5 | **G-13** | L6 录评 | **飞书妙记真实改绑实测** | 缺真实 `speaker / open_id` 映射 + HR 在场 | 外部凭据 + 本地验证 |
+| 4 | **G-04** | L4 约面 | **✅ 真实飞书日历 LIVE 已验证（2026-11-24，D-198）**：产品 free-slots HTTP 200 / 3 个 45min 时段 / `LIVE+CONNECTED`；日历忙闲 1 段（30min） | ✅ 本机账号已通（profile `recruitment` + `RECRUITMENT_FEISHU_USER_MAP`）；客户生产环境另验 | 本地验证 + 生产配置 |
+| 5 | **G-13** | L6 录评 | **✅ 妙记回读 LIVE 已验证（2026-11-24，D-198）**：真实回读 + 产品落库 READY、`LIVE+CONNECTED`；**真实改绑（speaker-replace）仍未做** | 回读：已解除；改绑：缺真实 `speaker/open_id` 映射 + HR 在场 | 本地验证 + 后续真机 |
 
 ### Wave 5 · 生产交付与上线基建（✅ G-05 登录、CSV/Webhook 与 G-18 企业组织配置界面均已合入 `main`：PR #72/#73/#87）
 
@@ -73,9 +73,17 @@
 
 ## 五、2026-11-24 审计收口状态（最新，优先于上文清账）
 
-- **基线**：代码基线 `main@54b83ad`（#93/#94/#95 已合并；Issue #91/#92 仍 OPEN）。
-- **Issue #91**：复验 **PASS**。干净 DB 全量 3097/3095/0/2；`tsc=0`、tsdown、15 步 15/15 hard 0；角色创建 v1 → 软停用 `is_active=false` + `record_version=2`，无 400；G3 4 对护栏、`auth-admin` 建号/生产登录均通过。报告：Issue #91 comment 7111092251。#91 结论不变，建议用户确认后关闭。
+- **基线**：`main@8a8ae9b`（#92 三 P1、#96–#101、D-197 UI 构建均已合入；#91/#92 已关闭）。
+- **Issue #91**：复验 **PASS**，已关闭。干净 DB 全量 3097/3095/0/2；`tsc=0`、tsdown、15 步 15/15 hard 0；角色创建 v1 → 软停用 `is_active=false` + `record_version=2`，无 400；G3 4 对护栏、`auth-admin` 建号/生产登录均通过。报告：Issue #91 comment 7111092251。
 - **Issue #92**：复验 CONDITIONAL_PASS → **三个 P1 已修复并独立终验 PASS、已合并 main（`b0ebecf`）、Issue 已关闭**（`docs/17` D-195/D-196）：① 红队语义不变量（14 + 原 17 全拦、空 payload 0/66、合法对照 0 过拦）；② `v2-real-adapters` 三适配器接 43 例 CLI（real_adapter 3 真源 + 40 NO_REAL_SOURCE、capture 完整性与来源 fail-closed、真连 PG）；③ G3 忠实度接真实确定性源、移除盲审假护栏（3 对）。独立终验 P0=0 / P1=0 / P2=2（已声明不阻断）。报告：`archive/recruitment-agent/2026-11-24-issue92-fix/verify92-final/work/review92-final/REPORT.md`（机器本地）。
 - **当前可声称**：三个 P1 修复经未参与实现者独立终验 PASS、已合并 main、Issue #91/#92 已关闭。
 - **当前不可声称**：G3 第 4 对盲审护栏已真实接入（口径 B 本期不做）；Eval V2 语义完备（2 条已声明 P2 保留）。
 - **下一优先级**：认证/租户、Webhook/CSV、测试基建与 UI 债；G3 盲审抽检如要做须另立裁决并授权产品范围/前端窗口。
+
+---
+
+## 六、2026-11-24 飞书 LIVE 实测收口（最新）
+
+- **G-04 日历忙闲**：本机真实账号（独立 profile `recruitment`）实测通过——产品 free-slots HTTP 200、`LIVE/CONNECTED`、3 个 45min 候选时段；calendar reader 月度直读 11 月 `busy_count=1`（30min）、12 月 0；`+freebusy` 返回 `ok=true/data=null`（空忙闲/应用级授权差异，产品按 `+agenda` 取忙区间）。裁决/证据：`docs/17` D-198、`evidence/feishu-live-20261124/`。
+- **G-13 妙记回读**：真实妙记回读 `READ/CONNECTED/LIVE`（`live_eligible=true`）、回执绑定内容 sha256；产品 `POST /recruitment/api/feishu/import` 落库 READY，`interview_record=NEEDS_REVIEW/UNVERIFIED`（人类闸门保留）。**边界**：「真实改绑 speaker-replace」仍需 speaker/open_id 映射 + HR 在场，未做。
+- **口径**：以上是 2026-11-24 本机 LIVE 实测，不等于客户生产环境验收；产品自有 OAuth/事件订阅（F2）仍是后续 P1。

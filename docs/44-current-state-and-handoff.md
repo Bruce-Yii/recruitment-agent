@@ -2,17 +2,18 @@
 
 > **本文件回答三件事**：现在代码在哪、系统由什么组成、接手的人第一步做什么。
 > **权威顺序不变**：产品与验收口径 = `docs/24`；裁决 = `docs/17`；本文件只是**当前事实快照**。快照会过期，引用前必须现场重跑命令。
-> **基线**：`main@bf6ccf7`（#92 三 P1 修复 + CI skip 声明修复已合入并 push；另有 D-196 收口文档提交）。历史代码基线 `54b83ad`（PR #93、#94、#95 已合入）。当前工作树首次阅读时先执行 `git rev-parse --short HEAD` 与 `git status --porcelain`。
+> **基线**：`main@8a8ae9b`（#92 三 P1 修复、#96–#101 与 D-197 UI 构建均已合入；历史代码基线 `54b83ad`）。当前工作树首次阅读时先执行 `git rev-parse --short HEAD` 与 `git status --porcelain`。
 > **2026-11-24 收口（D-196）**：#92 三个 P1 修复 + 独立终验 PASS（P0=0 / P1=0 / P2=2 已声明不阻断）已合入 `main` 并 push；**#91/#92 已关闭**；G3 维持口径 B（3 对真护栏，本期不新增盲审抽检工作流）。
+> **2026-11-24 飞书 LIVE（D-198）**：G-04 日历忙闲与 G-13 妙记回读均在本机真实账号下实测 `LIVE/CONNECTED`；证据 `evidence/feishu-live-20261124/`；边界：G-13 真实改绑未做、产品自有 OAuth/事件订阅仍是 P1。
 
 ---
 
 ## 1. 一句话现状
 
 - 产品主链、Wave 3/5 能力、G-18 配置、生产登录、CSV/Webhook、部署 kit 已合入 main。
-- **Issue #91 复验 PASS**：PR #93 修复项已在 `54b83ad` 上独立重跑；`tsc=0`、全量 3097/3095/0/2、15 步 15/15 hard 0、角色软停用 `is_active=false` + version+1、G3/auth CLI 均通过。Issue 仍 OPEN，等待总控关闭。
+- **Issue #91 复验 PASS，已关闭**：PR #93 修复项已在 `54b83ad` 上独立重跑；`tsc=0`、全量 3097/3095/0/2、15 步 15/15 hard 0、角色软停用 `is_active=false` + version+1、G3/auth CLI 均通过。
 - **Issue #92 三个 P1 已修复、独立终验 PASS、已合入 main 并关闭**（D-195/D-196）：红队语义不变量（14 + 原 17 全拦、空 payload 0/66、合法对照 0 过拦）、适配器接 43 例 CLI（`real_adapter` 3 真源 + 40 `NO_REAL_SOURCE`、capture 完整性与来源 fail-closed、真 PG）、G3 忠实度接真实确定性源并移除盲审假护栏（3 对）；独立终验 P0=0 / P1=0 / P2=2（已声明不阻断：委婉祈使/多义"继续"）。合并提交 `b0ebecf`，Issue #92 已关闭。
-- 当前可声称：#91 无阻断通过复验并已关闭；#92 三 P1 修复经未参与实现者独立终验 PASS、已合并 main 并关闭。不可声称：G3 第 4 对盲审护栏已接入（按口径 B 本期不做）；Eval V2 语义完备（仍有 2 条已声明 P2）。
+- 当前可声称：#91 无阻断通过复验并已关闭；#92 三 P1 修复经未参与实现者独立终验 PASS、已合并 main 并关闭；**G-04/G-13 回读已在本机真实账号下实测 LIVE/CONNECTED（D-198）**。不可声称：G3 第 4 对盲审护栏已接入（按口径 B 本期不做）；Eval V2 语义完备（仍有 2 条已声明 P2）；G-13 真实改绑已完成。
 
 ---
 
@@ -22,7 +23,7 @@
 |---|---|---|
 | 1 | `AGENTS.md` | 总控职责、九条铁律、派发/验收/端口/密钥纪律 |
 | 2 | `docs/24-product-framework-v2.md` | 产品认知、六条门 V1–V6；**第一权威** |
-| 3 | `docs/17-decision-ledger.md` | 裁决；最新 D-194（复验结果）、D-193（任务书）、D-192（PR #94 后状态） |
+| 3 | `docs/17-decision-ledger.md` | 裁决；最新 D-198（飞书 LIVE）、D-195/D-196（#92 修复收口）、D-197（UI 构建） |
 | 4 | 本文件 `docs/44` | 当前基线、架构、仓库、未决缺陷 |
 | 5 | `docs/25-lead-handoff.md` | 七步场景、判断框架、历史踩坑；其“当前状态”段已过期 |
 | 6 | `docs/40-lifecycle-gap-roadmap.md` | Wave 3/4/5 路线与缺口 |
@@ -96,11 +97,11 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 
 ### 4.1 Git
 
-- 当前代码基线：`54b83ad`（PR #93、#94、#95 已合入；docs 刷新可能再叠加文档提交）。
+- 当前 main：`8a8ae9b`（#92 三 P1 修复、#96–#101 与 D-197 UI 构建均已合入；历史代码基线 `54b83ad`）。
 - **2026-11-24 修复批次（已合并）**：`fix/issue92-p1a-redteam` / `fix/issue92-p1b-adapters` / `fix/issue92-p1c-g3`；集成分支 `fix/issue92-integration@f052502` 以 `--no-ff` 合入 `main`（合并提交 `b0ebecf`）并 push。lane 分支保留作历史；临时 worktree 已清理。
 - 远端：`https://github.com/Bruce-Yii/recruitment-agent.git`；`gh` 已认证。
 - 最近合并：#93 修复 `SettingsView` 重复 `record_version`、`config-role.is_active`、G3 吞错、RESCHEDULED 计数、minute-rebind 5432 硬编码；#95 新增 `test/eval/v2-real-adapters.ts`；#94 重写 `v2-graders-l1/l2`、新增 `v2-graders-l3.ts`、`v2-g0-runner`、`corpus-inventory`/`evaluation-card`/`v2-l3-calibration`。
-- **#91 和 #92 仍 OPEN**；#94 已合入但**未独立复验**，不能当作已交付。
+- **#91/#92 已关闭**（#92 经未参与实现者独立终验 PASS）；PR #93–#101 已合入；#94 已在后续批次独立复验。
 - **工作树很多**：main 之外有大量历史 wave/lane worktree（约 20+），多数停在旧 SHA；不要复用旧 worktree 做新验收，也不要未经授权删除。
 - 生成物：`dsh/dsh-recruitment/lib/app.js`、`lib/client.js` 可能落后于 source；**做 UI 前必须 `tsdown` 重建并确认 bundle 里有目标 testid**。2026-11-24 UI 构建批次已从 `317e094` 重建（`lib/app.js` 1.54 MB / `lib/client.js` 0.59 kB；**无 app.css**——CSS 按文件注入），1440 真机验证见 `evidence/ui-settings-overlay-20261124/`（D-197）。
 - CI：GitHub Actions 现在会跑 PR；`converter acceptance` 在无 corpus 时条件跳过。**CI 绿不是产品验收**，且不能替代本机干净库/真机验证。
@@ -168,6 +169,12 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 > - **独立终验**：`verify-92-final`（未参与实现）三轮 + 单点确认，最终 **PASS（P0=0 / P1=0 / P2=2 已声明不阻断）**；报告 `verify92-final/work/review92-final/REPORT.md`（机器本地）。
 > - **状态**：已合入 `main`（合并提交 `b0ebecf`）并 push；#91/#92 已关闭；G3 维持口径 B。证据归档 `D:\12412\dsh工作区\archive\recruitment-agent\2026-11-24-issue92-fix\`；临时 worktree 已清理。
 
+### 5.6 飞书 LIVE 实测（2026-11-24，D-198）
+
+- **G-04 日历忙闲**：本机真实账号（独立 profile `recruitment` + `RECRUITMENT_FEISHU_USER_MAP`）→ 产品 free-slots HTTP 200、labels `LIVE/MANUAL/CONNECTED`、3 个 45min 候选时段；calendar reader 直读 11 月 `busy_count=1`（30min）、12 月 0；`+freebusy` `ok=true/data=null`（空忙闲/应用级授权差异，产品按 `+agenda` 取忙区间）。
+- **G-13 妙记回读**：真实妙记回读 `READ/CONNECTED/LIVE`（`live_eligible=true`、回执绑定内容 sha256）；产品 `POST /recruitment/api/feishu/import` 落库 READY，`interview_record=NEEDS_REVIEW/UNVERIFIED`（人类闸门未被绕过）；**真实改绑（speaker-replace）未做**。
+- 证据：`evidence/feishu-live-20261124/`（无 token、无会议原文，仅状态/脱敏哈希前缀/结构化回执）；边界：本机实测 ≠ 客户生产验收，产品自有 OAuth/事件订阅仍是 P1。
+
 ---
 
 ## 6. 工作方式与派发
@@ -232,8 +239,8 @@ node work/d5/fullpage/run-v4.mjs --fresh --port <49347-49352>
 | `RECRUITMENT_DB_PASSWORD` | 本地 PG 口令 | 命令注入；不写文件/仓库 |
 | `RECRUITMENT_PYTHON` / `RECRUITMENT_PYTHON_BIN` | Python/converter | 三件套缺一假红 |
 | `RECRUITMENT_CONVERTER_DIR` | converter 根目录 | 同上 |
-| `RECRUITMENT_FEISHU_CLI` | 飞书 CLI | 本机有，LIVE 凭据仍缺 |
-| `RECRUITMENT_FEISHU_USER_MAP` | 日历/妙记身份映射 | **当前缺，真实日历 LIVE 未证** |
+| `RECRUITMENT_FEISHU_CLI` | 飞书 CLI | 本机绝对路径已确认；产品 profile `recruitment` 已登录并实测 LIVE（D-198） |
+| `RECRUITMENT_FEISHU_USER_MAP` | 日历/妙记身份映射 | 临时 env 注入已实测（interviewer_a→真实 open_id，`LIVE/CONNECTED`，D-198）；生产部署仍须按环境配置 |
 | `RECRUITMENT_AUTH_MODE` | `preview`（默认）/`production` | production 才关 `/recruitment/test` |
 | `RECRUITMENT_PREVIEW_ALIAS` | 预览默认身份 | production 忽略 |
 | `RECRUITMENT_CORPUS_ROOT` | 真实语料 | **缺 → acceptance corpus 条件跳过** |
@@ -289,7 +296,7 @@ gh pr view 94
 ## 10. 文档地图
 
 - 产品/验收：`docs/24`、`docs/26`
-- 裁决：`docs/17`（最新 D-196）
+- 裁决：`docs/17`（最新 D-198）
 - 交接：`docs/25`（历史叙事）+ 本文件（当前快照）
 - 路线：`docs/40`、`docs/39`
 - 架构/评测：`docs/41`（架构设计）、`docs/42`（评测规格）
