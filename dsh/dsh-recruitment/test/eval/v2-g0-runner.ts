@@ -1,5 +1,5 @@
-// Eval V2 Phase 2 — G0 档（0-LLM 确定性快门）执行器与全量 L1/L2 注册入口。
-// 对齐 docs/42 §6（G0 ≤ 2 分钟、0 LLM）与 corpus-manifest.json（schema_version 2.2.0）。
+// Eval V2 — 全档位（G0 / G1 / G2 / ALL）评测执行器与 66 个判分器（37 L1 + 22 L2 + 7 L3）注册入口。
+// 诚实区分 contract_smoke（无真实适配器，仅检契约）与 real_adapter（由外部传入真实产物采集器）。
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +8,7 @@ import { buildEvaluationCard, type EvaluationCard } from './evaluation-card.ts'
 import { GraderRegistry } from './grader-registry.ts'
 import { registerV2L1Graders } from './v2-graders-l1.ts'
 import { registerV2L2Graders } from './v2-graders-l2.ts'
+import { registerV2L3Graders } from './v2-graders-l3.ts'
 import type {
   CaseRunOutcome,
   CounterMetricsObserved,
@@ -47,14 +48,20 @@ export function loadEvalManifest(manifestPath = DEFAULT_MANIFEST_PATH): EvalMani
   return JSON.parse(readFileSync(manifestPath, 'utf8')) as EvalManifestFile
 }
 
-export function createV2DeterministicRegistry(): GraderRegistry {
+export function createV2FullRegistry(): GraderRegistry {
   const registry = new GraderRegistry()
   registerV2L1Graders(registry)
   registerV2L2Graders(registry)
+  registerV2L3Graders(registry)
   return registry
 }
 
-/** 构造 G0 契约冒烟产物（用于验证 11 条 G0 确定性判分器链路与 Evaluation Card 生成）。 */
+/** 兼容旧导出名（包含全部 L1 + L2 + L3 注册）。 */
+export function createV2DeterministicRegistry(): GraderRegistry {
+  return createV2FullRegistry()
+}
+
+/** 仅用于 G0 契约冒烟的最小夹具（显式标 executionMode='contract_smoke'，不冒充真实生产全链路）。 */
 export function buildDefaultG0Artifact(c: ManifestCaseRecord): EvalPointArtifact {
   switch (c.case_id) {
     case 'P1-01':
@@ -91,27 +98,33 @@ export function buildDefaultG0Artifact(c: ManifestCaseRecord): EvalPointArtifact
         },
       }
     default:
-      return { evalPoint: c.eval_point, stageLabel: 'G0', payload: {} }
+      return { evalPoint: c.eval_point, stageLabel: c.min_gate, payload: {} }
   }
 }
 
-export interface G0RunResult {
+export interface EvalSuiteRunResult {
   readonly card: EvaluationCard
   readonly outcomes: readonly CaseRunOutcome[]
 }
 
-export function runG0DeterministicSuite(options?: {
+export function runEvalGateSuite(options: {
+  readonly gate: 'G0' | 'G1' | 'G2' | 'ALL'
   readonly runId?: string
   readonly manifestPath?: string
   readonly artifactProvider?: (c: ManifestCaseRecord) => EvalPointArtifact
   readonly counterMetrics?: CounterMetricsObserved
-}): G0RunResult {
-  const manifest = loadEvalManifest(options?.manifestPath)
-  const registry = createV2DeterministicRegistry()
-  const g0Cases = manifest.cases.filter((c) => c.min_gate === 'G0')
-  const provide = options?.artifactProvider ?? buildDefaultG0Artifact
+}): EvalSuiteRunResult {
+  const manifest = loadEvalManifest(options.manifestPath)
+  const registry = createV2FullRegistry()
+  const selected =
+    options.gate === 'ALL'
+      ? manifest.cases
+      : manifest.cases.filter((c) => c.min_gate === options.gate)
 
-  const outcomes: CaseRunOutcome[] = g0Cases.map((c) => {
+  const isReal = options.artifactProvider !== undefined
+  const provide = options.artifactProvider ?? buildDefaultG0Artifact
+
+  const outcomes: CaseRunOutcome[] = selected.map((c) => {
     const lifecycleCase: PersonLifecycleCase = {
       caseId: c.case_id,
       candidateKey: `cand-${c.case_id.toLowerCase()}`,
@@ -130,15 +143,19 @@ export function runG0DeterministicSuite(options?: {
   })
 
   const card = buildEvaluationCard({
-    runId: options?.runId ?? 'g0-deterministic',
+    runId: options.runId ?? `eval-${options.gate.toLowerCase()}`,
+    executionMode: isReal ? 'real_adapter' : 'contract_smoke',
     outcomes,
-    counterMetrics: options?.counterMetrics ?? {
-      clearTextUnreadableRate: 0,
-      ttftMsP95: 900,
-      pdfScreenMsP95: 1200,
-      emptyPointerCitations: 0,
-    },
+    ...(options.counterMetrics ? { counterMetrics: options.counterMetrics } : {}),
   })
-
   return { card, outcomes }
+}
+
+export function runG0DeterministicSuite(options?: {
+  readonly runId?: string
+  readonly manifestPath?: string
+  readonly artifactProvider?: (c: ManifestCaseRecord) => EvalPointArtifact
+  readonly counterMetrics?: CounterMetricsObserved
+}): EvalSuiteRunResult {
+  return runEvalGateSuite({ gate: 'G0', ...options })
 }
