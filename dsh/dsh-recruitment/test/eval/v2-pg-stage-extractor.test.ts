@@ -134,9 +134,12 @@ test('PG17 阶段提取器真漏斗闭环：从真库一次提取 P2–P5 + P6-0
     await client.query(
       `insert into recruitment.transcript_artifact
          (id, tenant_id, meeting_id, provider, provider_artifact_id, source_revision, transcript_status,
-          provenance, trigger_mode, connection_state, content_sha256, is_complete, raw_text, is_canonical)
+          provenance, trigger_mode, connection_state, content_sha256, read_receipt_ref, fetched_at,
+          is_complete, raw_text, is_canonical)
        values ($1::uuid, $2::uuid, $3::uuid, 'FEISHU', 'min-eval-001', 1, 'READY',
-          'LIVE', 'MANUAL', 'CONNECTED', $4, true, '候选人系统设计阐述清晰，无明显短板。', true)`,
+          'LIVE', 'MANUAL', 'CONNECTED', $4,
+          'lark:minutes+detail:min-eval-001@sha256:' || $4, now(),
+          true, '候选人系统设计阐述清晰，无明显短板。', true)`,
       [transcriptId, TENANT, meetingId, sha64],
     )
     await client.query(
