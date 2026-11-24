@@ -278,6 +278,33 @@ jobs:
 
           exit "$STATUS"
 
+      - name: Eval V2 G0 gate (run-eval-v2.mjs + evaluation-card check)
+        working-directory: dsh/dsh-recruitment
+        run: |
+          set -euo pipefail
+          OUT=/tmp/eval-v2-ci-card
+          node test/eval/run-eval-v2.mjs --mode=contract --gate=G0 --runs=3 --check-data --l3 --out="$OUT"
+          node -e "
+            const fs = require('node:fs');
+            const card = JSON.parse(fs.readFileSync('$OUT/evaluation-card.json', 'utf8'));
+            const passK = JSON.parse(fs.readFileSync('$OUT/pass-power-k.json', 'utf8'));
+            const l3 = JSON.parse(fs.readFileSync('$OUT/l3-report.json', 'utf8'));
+            const passedCount = Object.values(card.casePassMap || {}).filter(Boolean).length;
+            if (card.totalCases < 11 || passedCount !== card.totalCases || !card.counterMetricsOk) {
+              console.error('Eval V2 G0 gate failed:', { totalCases: card.totalCases, passedCount, counterMetricsOk: card.counterMetricsOk });
+              process.exit(1);
+            }
+            if (passK.flakyCaseIds.length > 0 || passK.passPowerKRate !== 1) {
+              console.error('Eval V2 G0 flaky cases:', { passPower3: passK.passPowerKRate, flaky: passK.flakyCaseIds });
+              process.exit(1);
+            }
+            if (l3.status !== 'L3_MODEL_NOT_CONFIGURED') {
+              console.error('Eval V2 L3 fail-closed check failed:', l3);
+              process.exit(1);
+            }
+            console.log('Eval V2 G0 gate PASS:', { executionMode: card.executionMode, totalCases: card.totalCases, passedCount, passPower3: passK.passPowerKRate, l3Status: l3.status });
+          "
+
   # 数据库：迁移链 + 每个迁移的自检 + 幂等。这一层是"业务真相归领域"的唯一执行点，
   # 之前完全没有 CI 覆盖（全靠本机 psql 手跑）。
   db:

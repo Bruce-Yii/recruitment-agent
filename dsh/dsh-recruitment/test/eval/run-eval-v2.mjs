@@ -31,6 +31,8 @@ import {
 } from './v2-real-adapters.ts'
 import { scanPrivateCorpusInventory } from './corpus-inventory.ts'
 import { BENCHMARK_REGISTRY, loadCachedBenchmark } from './benchmark-loader.ts'
+import { readL3RuntimeModelConfig, runL3AtomicJudge } from './v2-l3-runner.ts'
+import { adaptFunnelTrajectoryToP6Artifact } from './v2-funnel-driver.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_OUT = resolve(HERE, '..', '..', 'work', 'lane92-adapters', 'card')
@@ -41,6 +43,7 @@ function parseArgs(argv) {
     mode: 'contract',
     runs: 1,
     checkData: false,
+    l3: false,
     capture: undefined,
     out: DEFAULT_OUT,
     pgDb: process.env.RECRUITMENT_TEST_DB,
@@ -65,6 +68,7 @@ function parseArgs(argv) {
     else if (arg.startsWith('--runs=')) out.runs = Math.max(1, Number(arg.slice('--runs='.length)) || 1)
     else if (arg === '--runs') out.runs = Math.max(1, Number(argv[++i]) || 1)
     else if (arg === '--check-data') out.checkData = true
+    else if (arg === '--l3') out.l3 = true
     else if (arg.startsWith('--pg-tenant=')) out.pgTenant = arg.slice('--pg-tenant='.length)
     else throw new Error(`unknown argument: ${arg}`)
   }
@@ -247,12 +251,15 @@ function validateCapture(captureDir) {
     p3: join(dir, 'stages', 'p3-handoff.json'),
     p4: join(dir, 'stages', 'p4-transcript.json'),
     p5: join(dir, 'stages', 'p5-decision.json'),
+    p6Funnel: join(dir, 'stages', 'p6-funnel.json'),
+    l3Inputs: join(dir, 'stages', 'l3-inputs.json'),
   }
   const stageData = {}
   if (!errors.length) {
     for (const [k, filePath] of Object.entries(stageFiles)) {
       if (!existsSync(filePath)) continue
-      const rel = `stages/${k === 'p2' ? 'p2-screening' : k === 'p3' ? 'p3-handoff' : k === 'p4' ? 'p4-transcript' : 'p5-decision'}.json`
+      const relMap = { p2: 'p2-screening', p3: 'p3-handoff', p4: 'p4-transcript', p5: 'p5-decision', p6Funnel: 'p6-funnel', l3Inputs: 'l3-inputs' }
+      const rel = `stages/${relMap[k]}.json`
       if (typeof manifest?.sha256?.[rel] !== 'string' || manifest.sha256[rel].length !== 64) {
         errors.push(`capture integrity mismatch: ${rel} missing sha256 entry in manifest`)
         continue
@@ -303,7 +310,10 @@ function buildRealArtifactProvider(capture, liveCounts, countCheck) {
   const p5CaseIds = capture.stageData?.p5 ? ['P5-01'] : []
   // P6 真源必须同时满足：真 Host SSE 帧 + readPgTableRowCounts 真库读回 + 与 capture 独立 psql 对照一致。
   const p6CaseIds = capture.hasSse && countCheck.matchesAfter ? ['P6-01', 'P6-05'] : []
-  const realSourceCaseIds = [...p1CaseIds, ...p2CaseIds, ...p3CaseIds, ...p4CaseIds, ...p5CaseIds, ...p6CaseIds]
+  const p6FunnelCaseIds = []
+  if (capture.stageData?.p6Funnel?.p608) p6FunnelCaseIds.push('P6-08')
+  if (capture.stageData?.p6Funnel?.p609) p6FunnelCaseIds.push('P6-09')
+  const realSourceCaseIds = [...p1CaseIds, ...p2CaseIds, ...p3CaseIds, ...p4CaseIds, ...p5CaseIds, ...p6CaseIds, ...p6FunnelCaseIds]
   const providerCache = new Map()
 
   function buildForCase(c) {
@@ -329,6 +339,14 @@ function buildRealArtifactProvider(capture, liveCounts, countCheck) {
     if (p5CaseIds.includes(c.case_id) && capture.stageData?.p5) {
       callSites.push(`adaptDecisionSummaryToP5Artifact(case=${c.case_id})`)
       return adaptDecisionSummaryToP5Artifact(capture.stageData.p5)
+    }
+    if (c.case_id === 'P6-08' && capture.stageData?.p6Funnel?.p608) {
+      callSites.push(`adaptFunnelTrajectoryToP6Artifact(case=${c.case_id})`)
+      return adaptFunnelTrajectoryToP6Artifact('P6-08', capture.stageData.p6Funnel.p608)
+    }
+    if (c.case_id === 'P6-09' && capture.stageData?.p6Funnel?.p609) {
+      callSites.push(`adaptFunnelTrajectoryToP6Artifact(case=${c.case_id})`)
+      return adaptFunnelTrajectoryToP6Artifact('P6-09', capture.stageData.p6Funnel.p609)
     }
     if (p6CaseIds.includes(c.case_id)) {
       // liveCounts 由 readPgTableRowCounts() 在真 PG17 只读事务中执行 SQL 得到，绝不回放 capture 数字。
@@ -468,6 +486,33 @@ async function main() {
       'utf8',
     )
     console.log(`[run-eval-v2] data-readiness: corpus=${corpus.status} benchmarks=${Object.keys(benchmarks).length}`)
+  }
+
+  if (args.l3) {
+    const modelConfig = readL3RuntimeModelConfig()
+    const l3ProbeInputs = [
+      {
+        graderId: 'L3_screening_rationale_faithfulness',
+        judgeVersion: 'v2.0',
+        calibrationStatus: 'OBSERVATION_ONLY',
+        criterionPrompt: '判定筛选理由是否严格忠实于原文材料，无脑补无夸大。',
+        sourceMaterial: '候选人拥有 5 年 TypeScript 与 PostgreSQL 生产开发经验。',
+        candidateOutput: '该候选人具备 5 年 TypeScript 和 PostgreSQL 生产经验。',
+      },
+    ]
+    const results = []
+    for (const item of l3ProbeInputs) {
+      results.push({ graderId: item.graderId, result: await runL3AtomicJudge(item) })
+    }
+    const allUnconfigured = results.every((r) => r.result.status === 'L3_MODEL_NOT_CONFIGURED')
+    const l3Report = {
+      status: allUnconfigured ? 'L3_MODEL_NOT_CONFIGURED' : 'EXECUTED',
+      modelConfig,
+      executed: results.filter((r) => r.result.status === 'OK').length,
+      results,
+    }
+    writeFileSync(join(resolve(args.out), 'l3-report.json'), `${JSON.stringify(l3Report, null, 2)}\n`, 'utf8')
+    console.log(`[run-eval-v2] l3: status=${l3Report.status} executed=${l3Report.executed}/${results.length}`)
   }
 
   const passRate = card.passRate
