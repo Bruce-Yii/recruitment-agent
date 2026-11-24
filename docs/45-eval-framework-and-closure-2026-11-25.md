@@ -145,7 +145,7 @@
 |---|---|---|
 | P0-1 | CI G0 门空转（静态 11 例、counterMetrics 恒真、pass^k 确定性、强制 L3 未配置） | 节奏轴/证据轴错位 → Phase 2 |
 | P0-2 | L3 无可注入 invoker、CLI 仅硬编码探针、无真实校准集 | 证据轴缺 L3 → Phase 3 |
-| P0-3 | V2 CLI 无 live 模型回路；SSE 仅“收到”两帧；旧 runner 未接 | 证据轴缺 live / L4 → Phase 3 |
+| P0-3 | V2 CLI live 回路：MVP 已落地（P6-01/P6-05，2/43，见 D-202）；全 43 例/其余切片 live 仍未覆盖 | 证据轴缺 live / L4 → Phase 3 继续 |
 | P0-4 | Tier1/2 未进 CI；real 覆盖低；采集器不驱动 S6–S10 | 数据轴/对象轴 → Phase 3 |
 | P1/P2 | real 覆盖、pass^k、counter metrics、baseline、G1/G2/G3、prompt 版本、红队 live、DB 投影、旧 runner、tier 标签、docs 债 | 按切片并入 Phase 2–4 |
 
@@ -172,10 +172,10 @@
 ### Phase 3 · 补证据能力（按切片，不按全局）
 
 - [ ] L3 invoker + prompt 入库 + Tier B 校准（κ/TNR）；
-- [ ] V2 CLI live 模式（复用旧 runner `/recruitment/agent/turn`），跑真实模型 + pass^k + TTFT/token；
+- [x] V2 CLI live 模式 MVP（P6-01/P6-05 真 Host 跑通；`--runs=K` 真 POST pass^k、TTFT/token；全 43 例待扩展，见 D-202）；
 - [ ] Tier1/2 数据门与 `--require-data`；
 - [ ] S6 端到端采集（S6–S10 真动作→PG 快照），替代手写 SQL fixture；
-- [ ] counter metrics 从 live/real 采集并进卡片。
+- [x] TTFT counter metrics 已进 live 卡片（TTFT 违约时 `counterMetricsOk=false`）；其余反向指标待扩展。
 - **完成标准**：每个切片的 G2 证据能同时给出“真模型 + 真数据 + 真 UI/DB”。
 
 ### Phase 4 · 持续飞轮
