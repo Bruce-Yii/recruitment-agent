@@ -21,9 +21,16 @@ import { runEvalGateSuite } from './v2-g0-runner.ts'
 import { formatEvaluationCardMarkdown } from './evaluation-card.ts'
 import {
   adaptConverterDocumentToP1Artifact,
+  adaptScreeningToP2Artifact,
+  adaptHandoffBriefToP3Artifact,
+  adaptTranscriptDraftToP4Artifact,
+  adaptDecisionSummaryToP5Artifact,
   adaptAgentTurnSseToP6Artifact,
   readPgTableRowCounts,
+  computePassPowerK,
 } from './v2-real-adapters.ts'
+import { scanPrivateCorpusInventory } from './corpus-inventory.ts'
+import { BENCHMARK_REGISTRY, loadCachedBenchmark } from './benchmark-loader.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_OUT = resolve(HERE, '..', '..', 'work', 'lane92-adapters', 'card')
@@ -32,6 +39,8 @@ function parseArgs(argv) {
   const out = {
     gate: 'ALL',
     mode: 'contract',
+    runs: 1,
+    checkData: false,
     capture: undefined,
     out: DEFAULT_OUT,
     pgDb: process.env.RECRUITMENT_TEST_DB,
@@ -53,6 +62,9 @@ function parseArgs(argv) {
     else if (arg === '--out') out.out = argv[++i]
     else if (arg.startsWith('--pg-db=')) out.pgDb = arg.slice('--pg-db='.length)
     else if (arg === '--pg-db') out.pgDb = argv[++i]
+    else if (arg.startsWith('--runs=')) out.runs = Math.max(1, Number(arg.slice('--runs='.length)) || 1)
+    else if (arg === '--runs') out.runs = Math.max(1, Number(argv[++i]) || 1)
+    else if (arg === '--check-data') out.checkData = true
     else if (arg.startsWith('--pg-tenant=')) out.pgTenant = arg.slice('--pg-tenant='.length)
     else throw new Error(`unknown argument: ${arg}`)
   }
@@ -229,6 +241,30 @@ function validateCapture(captureDir) {
     }
   }
 
+  // 可选阶段真源（stages/p2-screening.json .. p5-decision.json）：存在时参与 sha256 校验并喂给对应真实适配器。
+  const stageFiles = {
+    p2: join(dir, 'stages', 'p2-screening.json'),
+    p3: join(dir, 'stages', 'p3-handoff.json'),
+    p4: join(dir, 'stages', 'p4-transcript.json'),
+    p5: join(dir, 'stages', 'p5-decision.json'),
+  }
+  const stageData = {}
+  if (!errors.length) {
+    for (const [k, filePath] of Object.entries(stageFiles)) {
+      if (!existsSync(filePath)) continue
+      const rel = `stages/${k === 'p2' ? 'p2-screening' : k === 'p3' ? 'p3-handoff' : k === 'p4' ? 'p4-transcript' : 'p5-decision'}.json`
+      if (typeof manifest?.sha256?.[rel] !== 'string' || manifest.sha256[rel].length !== 64) {
+        errors.push(`capture integrity mismatch: ${rel} missing sha256 entry in manifest`)
+        continue
+      }
+      try {
+        stageData[k] = readJson(filePath)
+      } catch (err) {
+        errors.push(`${rel} unreadable: ${String(err)}`)
+      }
+    }
+  }
+
   return {
     ok: errors.length === 0,
     errors,
@@ -242,6 +278,7 @@ function validateCapture(captureDir) {
     hasSse,
     hasBlocked,
     blocked: hasBlocked ? readJson(paths.sseBlocked) : undefined,
+    stageData,
   }
 }
 
@@ -260,9 +297,13 @@ function buildRealArtifactProvider(capture, liveCounts, countCheck) {
   }
 
   const p1CaseIds = ['P1-01']
+  const p2CaseIds = capture.stageData?.p2 ? ['P2-01'] : []
+  const p3CaseIds = capture.stageData?.p3 ? ['P3-01'] : []
+  const p4CaseIds = capture.stageData?.p4 ? ['P4-06'] : []
+  const p5CaseIds = capture.stageData?.p5 ? ['P5-01'] : []
   // P6 真源必须同时满足：真 Host SSE 帧 + readPgTableRowCounts 真库读回 + 与 capture 独立 psql 对照一致。
   const p6CaseIds = capture.hasSse && countCheck.matchesAfter ? ['P6-01', 'P6-05'] : []
-  const realSourceCaseIds = [...p1CaseIds, ...p6CaseIds]
+  const realSourceCaseIds = [...p1CaseIds, ...p2CaseIds, ...p3CaseIds, ...p4CaseIds, ...p5CaseIds, ...p6CaseIds]
   const providerCache = new Map()
 
   function buildForCase(c) {
@@ -272,6 +313,22 @@ function buildRealArtifactProvider(capture, liveCounts, countCheck) {
       })
       callSites.push(`adaptConverterDocumentToP1Artifact(case=${c.case_id}): files=${adapterSources.adaptConverterDocumentToP1Artifact}`)
       return art
+    }
+    if (p2CaseIds.includes(c.case_id) && capture.stageData?.p2) {
+      callSites.push(`adaptScreeningToP2Artifact(case=${c.case_id})`)
+      return adaptScreeningToP2Artifact(capture.stageData.p2)
+    }
+    if (p3CaseIds.includes(c.case_id) && capture.stageData?.p3) {
+      callSites.push(`adaptHandoffBriefToP3Artifact(case=${c.case_id})`)
+      return adaptHandoffBriefToP3Artifact(capture.stageData.p3)
+    }
+    if (p4CaseIds.includes(c.case_id) && capture.stageData?.p4) {
+      callSites.push(`adaptTranscriptDraftToP4Artifact(case=${c.case_id})`)
+      return adaptTranscriptDraftToP4Artifact(capture.stageData.p4)
+    }
+    if (p5CaseIds.includes(c.case_id) && capture.stageData?.p5) {
+      callSites.push(`adaptDecisionSummaryToP5Artifact(case=${c.case_id})`)
+      return adaptDecisionSummaryToP5Artifact(capture.stageData.p5)
     }
     if (p6CaseIds.includes(c.case_id)) {
       // liveCounts 由 readPgTableRowCounts() 在真 PG17 只读事务中执行 SQL 得到，绝不回放 capture 数字。
@@ -386,6 +443,32 @@ async function main() {
   const mdPath = join(resolve(args.out), 'evaluation-card.md')
   writeFileSync(jsonPath, `${JSON.stringify(card, null, 2)}\n`, 'utf8')
   writeFileSync(mdPath, `${formatEvaluationCardMarkdown(card)}\n`, 'utf8')
+
+  if (args.runs > 1) {
+    const maps = [card.casePassMap]
+    for (let r = 1; r < args.runs; r += 1) {
+      const extra = args.mode === 'contract'
+        ? runEvalGateSuite({ gate: args.gate, runId: `${runId}-r${r + 1}` })
+        : { card }
+      maps.push(extra.card.casePassMap)
+    }
+    const passK = computePassPowerK(maps)
+    writeFileSync(join(resolve(args.out), 'pass-power-k.json'), `${JSON.stringify(passK, null, 2)}\n`, 'utf8')
+    console.log(`[run-eval-v2] pass^${passK.k}=${passK.passPowerKRate} stable=${passK.stablePassed}/${passK.totalCases} flaky=${passK.flakyCaseIds.length}`)
+  }
+
+  if (args.checkData) {
+    const corpus = scanPrivateCorpusInventory()
+    const benchmarks = Object.fromEntries(
+      Object.keys(BENCHMARK_REGISTRY).map((id) => [id, loadCachedBenchmark(id)]),
+    )
+    writeFileSync(
+      join(resolve(args.out), 'data-readiness.json'),
+      `${JSON.stringify({ corpus, benchmarks }, null, 2)}\n`,
+      'utf8',
+    )
+    console.log(`[run-eval-v2] data-readiness: corpus=${corpus.status} benchmarks=${Object.keys(benchmarks).length}`)
+  }
 
   const passRate = card.passRate
   const selectedTotal = card.coverage?.totalCases ?? card.totalCases
