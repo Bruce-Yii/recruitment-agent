@@ -3,6 +3,7 @@
 //   1. 只读查询真实 PG17 表，绝不伪造任何阶段数据；
 //   2. 若某阶段在库中无真实记录，返回 undefined 并在 absentStages 标明原因；
 //   3. 导出的 JSON 直接对齐 v2-real-adapters.ts 与 v2-funnel-driver.ts 的真实入参。
+import { createHash } from 'node:crypto'
 import type { DatabaseClient } from '../../src/db/pool.ts'
 import type {
   DecisionSummarySnapshot,
@@ -39,10 +40,21 @@ function extractDimensionKeys(dimensions: unknown): string[] {
   return keys
 }
 
+export interface P3BriefOutputInput {
+  readonly answerText: string
+  readonly uncoveredDims: readonly string[]
+  readonly recommendedDims?: readonly string[]
+  readonly outOfRubricExtraItems?: number
+  readonly priorScoreLeaked?: boolean
+}
+
 export async function extractStagesFromPg(
   client: DatabaseClient,
   tenantId: string,
-  options?: { readonly applicationId?: string },
+  options?: {
+    readonly applicationId?: string
+    readonly p3BriefOutput?: P3BriefOutputInput
+  },
 ): Promise<ExtractedPgStages> {
   const absentStages: Record<string, string> = {}
 
@@ -192,10 +204,12 @@ export async function extractStagesFromPg(
           trigger_mode: string
           connection_state: string
           content_sha256: string | null
+          read_receipt_ref: string | null
+          raw_text: string | null
           transcript_status: string
         }>(
           `select ir.id::text, ir.interview_id::text, ir.status, ir.verification_status,
-                  ta.trigger_mode, ta.connection_state, ta.content_sha256, ta.transcript_status
+                  ta.trigger_mode, ta.connection_state, ta.content_sha256, ta.read_receipt_ref, ta.raw_text, ta.transcript_status
              from recruitment.interview_record ir
              join recruitment.transcript_artifact ta
                on ta.id = ir.transcript_artifact_id and ta.source_revision = ir.transcript_revision
@@ -209,9 +223,9 @@ export async function extractStagesFromPg(
   const scorecards = scorecardRes.rows
   const records = recordRes.rows
 
-  // --- P3: 跨轮交接参考（要求至少存在 1 场 interview 且有岗标维度）---
+  // --- P3: 跨轮交接参考（必须有真实生成的 P3 简报输出才比对；严禁拿 uncoveredDims 自比自）---
   let p3: HandoffBriefSnapshot | undefined
-  if (interviews.length > 0 && dimKeys.length > 0) {
+  if (interviews.length > 0 && dimKeys.length > 0 && options?.p3BriefOutput) {
     const coveredSet = new Set<string>()
     for (const sc of scorecards) {
       if (sc.status === 'SUBMITTED' && sc.items && typeof sc.items === 'object') {
@@ -222,20 +236,25 @@ export async function extractStagesFromPg(
     }
     const alreadyCoveredDims = dimKeys.filter((d) => coveredSet.has(d))
     const uncoveredDims = dimKeys.filter((d) => !coveredSet.has(d))
+    const brief = options.p3BriefOutput
     p3 = {
-      answerText: `已汇总 ${interviews.length} 轮面试覆盖维度，未覆盖项：${uncoveredDims.join('、') || '无'}。`,
+      answerText: brief.answerText,
       expectedUncoveredDims: uncoveredDims,
-      outputUncoveredDims: uncoveredDims,
+      outputUncoveredDims: [...brief.uncoveredDims],
       alreadyCoveredDims,
-      recommendedDims: uncoveredDims,
-      outOfRubricExtraItems: 0,
-      priorScoreLeaked: false,
+      recommendedDims: [...(brief.recommendedDims ?? brief.uncoveredDims)],
+      outOfRubricExtraItems: brief.outOfRubricExtraItems ?? 0,
+      priorScoreLeaked: brief.priorScoreLeaked ?? false,
     }
   } else {
-    absentStages.p3 = interviews.length === 0 ? 'no interview row for application' : 'no rubric dimensions'
+    absentStages.p3 = interviews.length === 0
+      ? 'no interview row for application'
+      : dimKeys.length === 0
+        ? 'no rubric dimensions'
+        : 'no captured P3 handoff brief output (refusing self-comparison)'
   }
 
-  // --- P4: 转写导入与草稿（要求真实存在 transcript_artifact + interview_record）---
+  // --- P4: 转写导入与草稿（真算 raw_text SHA-256 与 content_sha256 / read_receipt_ref 比对）---
   let p4: TranscriptImportSnapshot | undefined
   const latestRec = records[0]
   if (latestRec) {
@@ -244,11 +263,20 @@ export async function extractStagesFromPg(
       : latestRec.connection_state === 'AUTH_REQUIRED'
         ? 'AUTH_REQUIRED'
         : 'NOT_CONNECTED'
+    const storedHash = latestRec.content_sha256?.trim().toLowerCase() ?? ''
+    const computedHash = typeof latestRec.raw_text === 'string' && latestRec.raw_text.length > 0
+      ? createHash('sha256').update(latestRec.raw_text, 'utf8').digest('hex')
+      : ''
+    const receiptMatch = latestRec.read_receipt_ref?.match(/@sha256:([0-9a-f]{64})/i)?.[1]?.toLowerCase()
+    const readbackHashMismatch =
+      !storedHash ||
+      (computedHash.length > 0 && computedHash !== storedHash) ||
+      (receiptMatch !== undefined && receiptMatch !== storedHash)
     p4 = {
       answerText: `转写记录状态 ${latestRec.status} / 核验状态 ${latestRec.verification_status}。`,
       sourceKind: latestRec.trigger_mode === 'MANUAL' ? 'MANUAL' : 'CONNECTOR_READBACK',
       connectionState: conn,
-      readbackHashMismatch: !latestRec.content_sha256,
+      readbackHashMismatch,
       outcome: 'CREATED',
       rowsWritten: 1,
       recordStatus: latestRec.status,

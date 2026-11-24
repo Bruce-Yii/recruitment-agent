@@ -4,6 +4,7 @@
 //   2. 真实写入完整招聘漏斗记录后，extractStagesFromPg 一次从 PG17 提取 P2/P3/P4/P5/P6-08，
 //      直接喂给真实适配器与判分器全部跑通。
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import test, { after, before } from 'node:test'
 
 import { createIsolatedTestDatabase, DEMO_JOB, HR_ACTOR, TENANT, type IsolatedTestDatabase } from '../integration/db.ts'
@@ -131,6 +132,8 @@ test('PG17 阶段提取器真漏斗闭环：从真库一次提取 P2–P5 + P6-0
        values ($1::uuid, $2::uuid, 'FEISHU', 'mtg-eval-001', 'PRIMARY')`,
       [meetingId, TENANT],
     )
+    const rawTranscriptText = '候选人系统设计阐述清晰，无明显短板。'
+    const transcriptSha = createHash('sha256').update(rawTranscriptText, 'utf8').digest('hex')
     await client.query(
       `insert into recruitment.transcript_artifact
          (id, tenant_id, meeting_id, provider, provider_artifact_id, source_revision, transcript_status,
@@ -139,8 +142,8 @@ test('PG17 阶段提取器真漏斗闭环：从真库一次提取 P2–P5 + P6-0
        values ($1::uuid, $2::uuid, $3::uuid, 'FEISHU', 'min-eval-001', 1, 'READY',
           'LIVE', 'MANUAL', 'CONNECTED', $4,
           'lark:minutes+detail:min-eval-001@sha256:' || $4, now(),
-          true, '候选人系统设计阐述清晰，无明显短板。', true)`,
-      [transcriptId, TENANT, meetingId, sha64],
+          true, $5, true)`,
+      [transcriptId, TENANT, meetingId, transcriptSha, rawTranscriptText],
     )
     await client.query(
       `insert into recruitment.interview_record
@@ -169,13 +172,65 @@ test('PG17 阶段提取器真漏斗闭环：从真库一次提取 P2–P5 + P6-0
       [TENANT, APP_ID, interviewId, interviewStageCode, HR_ACTOR],
     )
 
-    // 4. 调真实提取器，验证 P2/P3/P4/P5/P6-08 全部自动提取且真实判分通过
-    const extracted = await extractStagesFromPg(client, TENANT, { applicationId: APP_ID })
+    // 4a. 未传真实 P3 简报输出时，P3 必须 fail-closed（绝不自比自）
+    const withoutP3 = await extractStagesFromPg(client, TENANT, { applicationId: APP_ID })
+    assert.equal(withoutP3.p3, undefined, '未提供真实 P3 输出时绝不自比自凑数')
+    assert.ok(withoutP3.absentStages.p3?.includes('no captured P3'))
+    assert.equal(withoutP3.p4?.readbackHashMismatch, false, '真实 raw_text 与 content_sha256 一致')
+
+    // 4b. 传入独立捕获的 P3 简报输出，验证 P2/P3/P4/P5/P6-08 全部提取且判分通过
+    const rubricDimsRes = await client.query<{ dimensions: unknown }>(
+      `select dimensions from recruitment.rubric_version where tenant_id = $1::uuid and id = $2::uuid`,
+      [TENANT, RUBRIC_ID],
+    )
+    const rawDims = Array.isArray(rubricDimsRes.rows[0]?.dimensions) ? rubricDimsRes.rows[0].dimensions : []
+    const uncoveredFromRubric = rawDims
+      .map((d: any) => (typeof d === 'string' ? d : d?.key ?? d?.id ?? d?.name ?? d?.code))
+      .filter((k: unknown): k is string => typeof k === 'string' && k !== 'system_design')
+    const extracted = await extractStagesFromPg(client, TENANT, {
+      applicationId: APP_ID,
+      p3BriefOutput: {
+        answerText: '本轮建议聚焦未覆盖维度',
+        uncoveredDims: uncoveredFromRubric,
+      },
+    })
     assert.ok(extracted.p2, 'P2 应已从 PG17 自动提取')
-    assert.ok(extracted.p3, 'P3 应已从 PG17 自动提取')
+    assert.ok(extracted.p3, 'P3 在有独立简报输出时应已提取')
     assert.ok(extracted.p4, 'P4 应已从 PG17 自动提取')
     assert.ok(extracted.p5, 'P5 应已从 PG17 自动提取')
     assert.ok(extracted.p6Funnel?.p608, 'P6-08 全周期漏斗应已从 PG17 自动提取')
+
+    // 4c. 插入一条 content_sha256 与 raw_text 不一致的新 revision，验证 P4 真实检出 readbackHashMismatch=true
+    const badSha = 'f'.repeat(64)
+    const badTranscriptId = '22222222-2222-4222-8222-000000000027'
+    const badRecordId = '22222222-2222-4222-8222-000000000026'
+    await client.query(
+      `update recruitment.interview_record set is_current = false, status_changed_by_actor_id = $2::uuid, status_source_event_id = $3::uuid where id = $1::uuid`,
+      [recordId, HR_ACTOR, eventId],
+    )
+    await client.query(
+      `insert into recruitment.transcript_artifact
+         (id, tenant_id, meeting_id, provider, provider_artifact_id, source_revision, transcript_status,
+          provenance, trigger_mode, connection_state, content_sha256, read_receipt_ref, fetched_at,
+          is_complete, raw_text, is_canonical)
+       values ($1::uuid, $2::uuid, $3::uuid, 'FEISHU', 'min-eval-001', 2, 'READY',
+          'LIVE', 'MANUAL', 'CONNECTED', $4,
+          'lark:minutes+detail:min-eval-001@sha256:' || $4, now(),
+          true, '与 content_sha256 对不上的转写正文', false)`,
+      [badTranscriptId, TENANT, meetingId, badSha],
+    )
+    await client.query(
+      `insert into recruitment.interview_record
+         (id, tenant_id, interview_id, transcript_artifact_id, transcript_revision, rubric_version_id,
+          prompt_version, model_id, status, verification_status, evidence_ok, is_current,
+          status_changed_by_actor_id, status_source_event_id)
+       values ($1::uuid, $2::uuid, $3::uuid, $4::uuid, 2, $5::uuid,
+          'v1', 'eval-model', 'READY', 'VERIFIED', true, true,
+          $6::uuid, $7::uuid)`,
+      [badRecordId, TENANT, interviewId, badTranscriptId, RUBRIC_ID, HR_ACTOR, eventId],
+    )
+    const tampered = await extractStagesFromPg(client, TENANT, { applicationId: APP_ID })
+    assert.equal(tampered.p4?.readbackHashMismatch, true, '正文与 content_sha256 不一致时必须检出 mismatch')
 
     const p2Art = adaptScreeningToP2Artifact(extracted.p2)
     const p3Art = adaptHandoffBriefToP3Artifact(extracted.p3)
