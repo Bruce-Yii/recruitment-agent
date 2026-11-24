@@ -28,10 +28,10 @@ test('PG17 跨租户认证隔离：租户 A 的有效 rc_auth 会话与账号绝
   assert.ok(userA !== null, '0025 种子账号 recruiter 应存在于 Tenant A')
   assert.equal(await findAuthUser(cfgB, 'recruiter'), null, 'Tenant B 绝不能查到 Tenant A 的账号')
 
-  const issued = await insertAuthSession(cfgA, userA.id)
+  const issued = await insertAuthSession(cfgA, userA)
   const sessionInA = await findAuthSession(cfgA, issued.token)
   assert.ok(sessionInA !== null, 'Tenant A 自身应能识别自己签发的会话')
-  assert.equal(sessionInA?.username, 'recruiter')
+  assert.equal(sessionInA.username, 'recruiter')
 
   const sessionInB = await findAuthSession(cfgB, issued.token)
   assert.equal(sessionInB, null, 'Tenant A 的会话 token 绝不能在 Tenant B 被识别')
