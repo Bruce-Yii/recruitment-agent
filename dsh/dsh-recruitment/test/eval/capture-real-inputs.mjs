@@ -14,6 +14,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import pgClient from 'pg'
+import { extractStagesFromPg } from './v2-pg-stage-extractor.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 export const REPO_ROOT = resolve(HERE, '..', '..', '..', '..')
@@ -379,6 +381,57 @@ async function captureSse(outDir, ledger) {
     try { if (existsSync(hostScratch)) rmSync(hostScratch, { recursive: true, force: true }) } catch { /* ignore */ }
   }
 }
+/** (d) 从真实 PG17 库自动提取 P2–P5 及 P6-08/P6-09 阶段快照，写入 stages/*.json 并计算 sha256（无真行时不伪造）。 */
+async function captureStagesFromPg(outDir, sourceDb, tenantId) {
+  const password = process.env.RECRUITMENT_DB_PASSWORD ?? process.env.PGPASSWORD
+  const pool = new pgClient.Pool({
+    host: PG_HOST,
+    port: Number(PG_PORT),
+    user: PG_USER,
+    database: sourceDb,
+    password,
+    max: 2,
+    connectionTimeoutMillis: 10_000,
+    statement_timeout: 15_000,
+    application_name: 'eval-v2-stage-capture',
+  })
+  const client = await pool.connect()
+  let extracted
+  try {
+    await client.query('begin transaction read only')
+    extracted = await extractStagesFromPg(client, tenantId)
+    await client.query('commit')
+  } catch (err) {
+    try { await client.query('rollback') } catch { /* ignore */ }
+    throw err
+  } finally {
+    client.release()
+    await pool.end()
+  }
+
+  const stagesDir = join(outDir, 'stages')
+  mkdirSync(stagesDir, { recursive: true })
+  const stageSha = {}
+  const written = []
+  const fileMap = [
+    ['p2', 'p2-screening.json'],
+    ['p3', 'p3-handoff.json'],
+    ['p4', 'p4-transcript.json'],
+    ['p5', 'p5-decision.json'],
+    ['p6Funnel', 'p6-funnel.json'],
+  ]
+  for (const [key, filename] of fileMap) {
+    const val = extracted[key]
+    if (!val) continue
+    const filePath = join(stagesDir, filename)
+    writeJson(filePath, val)
+    const rel = `stages/${filename}`
+    stageSha[rel] = sha256File(filePath)
+    written.push(rel)
+  }
+  return { written, sha256: stageSha, absentStages: extracted.absentStages, applicationId: extracted.applicationId }
+}
+
 async function main() {
   const outDir = resolve(arg('out', DEFAULT_OUT))
   PG_DB = arg('pg-db', PG_DB)
@@ -398,6 +451,12 @@ async function main() {
   process.stdout.write(`[capture-real-inputs] pg: ${pg.migrationsReplayed} migrations, ${pg.verifyTail}\n`)
   const sse = await captureSse(outDir, { commands, record })
   process.stdout.write(`[capture-real-inputs] sse: ${sse.ok ? `frames=${sse.framesCount} events=${sse.events.join(',')}` : `BLOCKED reason=${sse.reason}`}\n`)
+  const sourceDb = arg('source-db', '')
+  const tenantId = arg('pg-tenant', process.env.RECRUITMENT_TEST_TENANT_ID || '11111111-1111-4111-8111-000000000001')
+  const stages = sourceDb
+    ? await captureStagesFromPg(outDir, sourceDb, tenantId)
+    : { written: [], sha256: {}, absentStages: { all: 'pass --source-db=<populated_db> to extract live P2-P5 & funnel stages from PG17' } }
+  process.stdout.write(`[capture-real-inputs] stages: written=${stages.written.join(',') || 'none'}\n`)
 
   const sha256 = {
     'converter/document-content.json': sha256File(converter.docPath),
@@ -407,6 +466,7 @@ async function main() {
     ...(sse.ok
       ? { 'sse/agent-turn-frames.jsonl': sse.sha256 }
       : { 'sse/BLOCKED.json': sse.sha256 }),
+    ...stages.sha256,
   }
   const manifest = {
     schemaVersion: '1.0',
@@ -444,6 +504,7 @@ async function main() {
     },
     sha256,
     commands,
+    stages: { extracted: stages.written, absent: stages.absentStages, applicationId: stages.applicationId },
     capabilities: {
       converter: 'LIVE', pg: 'LIVE', sse: sse.ok ? 'LIVE' : 'NOT_CONNECTED',
     },
