@@ -200,13 +200,36 @@ test('PG17 阶段提取器真漏斗闭环：从真库一次提取 P2–P5 + P6-0
     assert.ok(extracted.p5, 'P5 应已从 PG17 自动提取')
     assert.ok(extracted.p6Funnel?.p608, 'P6-08 全周期漏斗应已从 PG17 自动提取')
 
-    // 4c. 篡改 transcript_artifact.raw_text 后，P4 必须真实检出 readbackHashMismatch=true
+    // 4c. 插入一条 content_sha256 与 raw_text 不一致的新 revision，验证 P4 真实检出 readbackHashMismatch=true
+    const badSha = 'f'.repeat(64)
+    const badRecordId = '22222222-2222-4222-8222-000000000026'
     await client.query(
-      `update recruitment.transcript_artifact set raw_text = '被篡改的正文' where id = $1::uuid`,
-      [transcriptId],
+      `update recruitment.interview_record set is_current = false, status_changed_by_actor_id = $2::uuid, status_source_event_id = $3::uuid where id = $1::uuid`,
+      [recordId, HR_ACTOR, eventId],
+    )
+    await client.query(
+      `insert into recruitment.transcript_artifact
+         (id, tenant_id, meeting_id, provider, provider_artifact_id, source_revision, transcript_status,
+          provenance, trigger_mode, connection_state, content_sha256, read_receipt_ref, fetched_at,
+          is_complete, raw_text, is_canonical)
+       values ($1::uuid, $2::uuid, $3::uuid, 'FEISHU', 'min-eval-001', 2, 'READY',
+          'LIVE', 'MANUAL', 'CONNECTED', $4,
+          'lark:minutes+detail:min-eval-001@sha256:' || $4, now(),
+          true, '与 content_sha256 对不上的转写正文', true)`,
+      [transcriptId, TENANT, meetingId, badSha],
+    )
+    await client.query(
+      `insert into recruitment.interview_record
+         (id, tenant_id, interview_id, transcript_artifact_id, transcript_revision, rubric_version_id,
+          prompt_version, model_id, status, verification_status, evidence_ok, is_current,
+          status_changed_by_actor_id, status_source_event_id)
+       values ($1::uuid, $2::uuid, $3::uuid, $4::uuid, 2, $5::uuid,
+          'v1', 'eval-model', 'READY', 'VERIFIED', true, true,
+          $6::uuid, $7::uuid)`,
+      [badRecordId, TENANT, interviewId, transcriptId, RUBRIC_ID, HR_ACTOR, eventId],
     )
     const tampered = await extractStagesFromPg(client, TENANT, { applicationId: APP_ID })
-    assert.equal(tampered.p4?.readbackHashMismatch, true, '正文被篡改但 sha256 未变时必须检出 mismatch')
+    assert.equal(tampered.p4?.readbackHashMismatch, true, '正文与 content_sha256 不一致时必须检出 mismatch')
 
     const p2Art = adaptScreeningToP2Artifact(extracted.p2)
     const p3Art = adaptHandoffBriefToP3Artifact(extracted.p3)
