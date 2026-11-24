@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import test, { after, before } from 'node:test'
 
-import { createIsolatedTestDatabase, HR_ACTOR, TENANT, type IsolatedTestDatabase } from '../integration/db.ts'
+import { createIsolatedTestDatabase, DEMO_JOB, HR_ACTOR, TENANT, type IsolatedTestDatabase } from '../integration/db.ts'
 import { extractStagesFromPg } from './v2-pg-stage-extractor.ts'
 import {
   adaptDecisionSummaryToP5Artifact,
@@ -56,13 +56,22 @@ test('PG17 阶段提取器真漏斗闭环：从真库一次提取 P2–P5 + P6-0
     await client.query('begin')
     await client.query(`select set_config('recruitment.actor_id', $1, true)`, [HR_ACTOR])
 
-    // 0. 复用 0002_seed.sql 已写入的 event_inbox 行作为 intake_record 来源事件
-    const evRes = await client.query<{ event_id: string }>(
-      `select event_id::text from recruitment.event_inbox where tenant_id = $1::uuid limit 1`,
-      [TENANT],
-    )
+    // 0. 读取种子库的 event_inbox 和 stage_catalog（完全对齐 0004/0007 外键约束）
+    const [evRes, stageRes] = await Promise.all([
+      client.query<{ event_id: string }>(
+        `select event_id::text from recruitment.event_inbox where tenant_id = $1::uuid limit 1`,
+        [TENANT],
+      ),
+      client.query<{ code: string }>(
+        `select code from recruitment.stage_catalog where tenant_id = $1::uuid order by sort_order asc`,
+        [TENANT],
+      ),
+    ])
     const eventId = evRes.rows[0]?.event_id
     assert.ok(eventId, '0002_seed.sql 应已写入至少一条 event_inbox')
+    const interviewStageCode =
+      stageRes.rows.find((r) => /INTERVIEW/i.test(r.code))?.code ?? stageRes.rows[0]?.code
+    assert.ok(interviewStageCode, '0004 stage_catalog 应包含有效阶段码')
 
     // 1. 写入真实 intake_record -> intake_asset -> resume -> resume_version 并挂到 application（P1/P2 真源）
     const intakeRecId = '22222222-2222-4222-8222-000000000009'
@@ -109,8 +118,8 @@ test('PG17 阶段提取器真漏斗闭环：从真库一次提取 P2–P5 + P6-0
     const recordId = '22222222-2222-4222-8222-000000000025'
     await client.query(
       `insert into recruitment.interview (id, tenant_id, application_id, round_no, slot_code, stage_code, status, scheduled_start_at, scheduled_end_at)
-       values ($1::uuid, $2::uuid, $3::uuid, 1, 'DEFAULT', 'INTERVIEW', 'POST_INTERVIEW', now() - interval '2 hour', now() - interval '1 hour')`,
-      [interviewId, TENANT, APP_ID],
+       values ($1::uuid, $2::uuid, $3::uuid, 1, 'DEFAULT', $4, 'POST_INTERVIEW', now() - interval '2 hour', now() - interval '1 hour')`,
+      [interviewId, TENANT, APP_ID, interviewStageCode],
     )
     await client.query(
       `insert into recruitment.interviewer (id, tenant_id, interview_id, actor_id, role_in_interview)
@@ -133,24 +142,28 @@ test('PG17 阶段提取器真漏斗闭环：从真库一次提取 P2–P5 + P6-0
     await client.query(
       `insert into recruitment.interview_record
          (id, tenant_id, interview_id, transcript_artifact_id, transcript_revision, rubric_version_id,
-          prompt_version, model_id, status, verification_status, evidence_ok, is_current)
+          prompt_version, model_id, status, verification_status, evidence_ok, is_current,
+          status_changed_by_actor_id, status_source_event_id)
        values ($1::uuid, $2::uuid, $3::uuid, $4::uuid, 1, $5::uuid,
-          'v1', 'eval-model', 'READY', 'VERIFIED', true, true)`,
-      [recordId, TENANT, interviewId, transcriptId, RUBRIC_ID],
+          'v1', 'eval-model', 'READY', 'VERIFIED', true, true,
+          $6::uuid, $7::uuid)`,
+      [recordId, TENANT, interviewId, transcriptId, RUBRIC_ID, HR_ACTOR, eventId],
     )
 
-    // 3. 写入真实 scorecard + decision（P5 真源）
+    // 3. 写入真实 scorecard + decision（P5 真源，满足 0007 job_id 与终态 actor 约束）
     await client.query(
       `insert into recruitment.scorecard
-         (tenant_id, interview_id, interviewer_id, rubric_version_id, revision_no, status, submitted_at, items, overall, rationale)
-       values ($1::uuid, $2::uuid, $3::uuid, $4::uuid, 1, 'SUBMITTED', now(), $5::jsonb, 'STRONG_HIRE', '技术深度与工程落地均扎实')`,
-      [TENANT, interviewId, interviewerId, RUBRIC_ID, JSON.stringify({ system_design: 4 })],
+         (tenant_id, interview_id, interviewer_id, job_id, rubric_version_id, revision_no, status, submitted_at, items, overall, rationale,
+          status_changed_by_actor_id, status_source_event_id)
+       values ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, 1, 'SUBMITTED', now(), $6::jsonb, 'STRONG_HIRE', '技术深度与工程落地均扎实',
+          $7::uuid, $8::uuid)`,
+      [TENANT, interviewId, interviewerId, DEMO_JOB, RUBRIC_ID, JSON.stringify({ system_design: 4 }), INTERVIEWER_ACTOR, eventId],
     )
     await client.query(
       `insert into recruitment.decision
          (tenant_id, application_id, interview_id, decision_scope, stage_code, result, decided_by_actor_id, reason)
-       values ($1::uuid, $2::uuid, $3::uuid, 'FINAL', 'INTERVIEW', 'HIRED', $4::uuid, '一轮表现扎实，真人确认录用')`,
-      [TENANT, APP_ID, interviewId, HR_ACTOR],
+       values ($1::uuid, $2::uuid, $3::uuid, 'FINAL', $4, 'HIRED', $5::uuid, '一轮表现扎实，真人确认录用')`,
+      [TENANT, APP_ID, interviewId, interviewStageCode, HR_ACTOR],
     )
 
     // 4. 调真实提取器，验证 P2/P3/P4/P5/P6-08 全部自动提取且真实判分通过
