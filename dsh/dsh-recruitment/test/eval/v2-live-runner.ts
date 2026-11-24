@@ -565,19 +565,24 @@ export async function runLiveEval(
     note: `live_host 模式：仅 ${activeCases.length}/${selected.length} 个 case 真 POST agent/turn；未定义 live 用例的 case 标 NO_LIVE_SOURCE，Host/SSE/DB 失败显式 ERROR，均不伪造产物`,
   }
 
+  const allAttempts = cases.flatMap((c) => c.attempts)
+  const ttftValues = allAttempts
+    .map((a) => a.ttftMs)
+    .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+  const ttftMsP95 = percentile(ttftValues, 0.95)
+
   const baseCard = buildEvaluationCard({
     runId: config.runId ?? `eval-v2-live-${Date.now()}`,
     executionMode: 'real_adapter',
     outcomes: firstOutcomes,
     coverage,
+    // live 模式的反向压制指标必须真进卡片：TTFT 超 3s 时 counterMetricsOk=false，
+    // 不允许出现“P6-05 TTFT_EXCEEDED 但 Card Counter-Metrics: PASS”的自相矛盾。
+    ...(ttftMsP95 === null ? {} : { counterMetrics: { ttftMsP95 } }),
   })
   const card: LiveEvaluationCard = { ...baseCard, executionMode: 'live_host' }
   const cardMarkdown = formatEvaluationCardMarkdown(baseCard).replace('Mode: real_adapter', 'Mode: live_host')
 
-  const allAttempts = cases.flatMap((c) => c.attempts)
-  const ttftValues = allAttempts
-    .map((a) => a.ttftMs)
-    .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
   let baseUrlOrigin = 'invalid'
   try {
     baseUrlOrigin = new URL(config.baseUrl).origin
