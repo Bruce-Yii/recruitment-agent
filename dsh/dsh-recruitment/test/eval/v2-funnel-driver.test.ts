@@ -28,8 +28,8 @@ const COMPLETE_HIRE_SNAP: FunnelStageSnapshot = {
 describe('Eval V2 P6-08 / P6-09 跨阶段全周期漏斗轨迹驱动', () => {
   test('P6-08 顺利录用全周期档案贯通：L1_person_lifecycle_zero_violation 与 L2_handoff_integrity_100 双过', () => {
     const art = adaptFunnelTrajectoryToP6Artifact('P6-08', COMPLETE_HIRE_SNAP)
-    assert.equal(V2_L1_GRADERS.L1_person_lifecycle_zero_violation(art).status, 'PASS')
-    assert.equal(V2_L2_GRADERS.L2_handoff_integrity_100(art).status, 'PASS')
+    assert.equal(V2_L1_GRADERS.L1_person_lifecycle_zero_violation(art).ok, true)
+    assert.equal(V2_L2_GRADERS.L2_handoff_integrity_100(art).ok, true)
   })
 
   test('P6-08 跨阶段断链或跳过人工确认（fail-closed）：两项判据精准拦截', () => {
@@ -38,8 +38,8 @@ describe('Eval V2 P6-08 / P6-09 跨阶段全周期漏斗轨迹驱动', () => {
       p3: { candidateId: 'cand-WRONG', jobId: 'job-202', briefGenerated: false },
       p5: { candidateId: 'cand-101', humanConfirmed: false, outcome: 'hire' },
     })
-    assert.equal(V2_L1_GRADERS.L1_person_lifecycle_zero_violation(broken).status, 'FAIL')
-    assert.equal(V2_L2_GRADERS.L2_handoff_integrity_100(broken).status, 'FAIL')
+    assert.equal(V2_L1_GRADERS.L1_person_lifecycle_zero_violation(broken).ok, false)
+    assert.equal(V2_L2_GRADERS.L2_handoff_integrity_100(broken).ok, false)
   })
 
   test('P6-09 纠偏+淘汰半年复盘全链完整：L1_person_lifecycle_zero_violation 与 L2_six_month_audit_complete 双过', () => {
@@ -48,8 +48,8 @@ describe('Eval V2 P6-08 / P6-09 跨阶段全周期漏斗轨迹驱动', () => {
       p2: { candidateId: 'cand-101', jobId: 'job-202', rubricVersion: 'rubric-v1', overrideRecorded: true },
       p5: { candidateId: 'cand-101', humanConfirmed: true, outcome: 'reject' },
     })
-    assert.equal(V2_L1_GRADERS.L1_person_lifecycle_zero_violation(art).status, 'PASS')
-    assert.equal(V2_L2_GRADERS.L2_six_month_audit_complete(art).status, 'PASS')
+    assert.equal(V2_L1_GRADERS.L1_person_lifecycle_zero_violation(art).ok, true)
+    assert.equal(V2_L2_GRADERS.L2_six_month_audit_complete(art).ok, true)
   })
 
   test('P6-09 复盘违规用新版岗标倒推旧决定或缺失审计节点（fail-closed）：精准拦截', () => {
@@ -62,7 +62,7 @@ describe('Eval V2 P6-08 / P6-09 跨阶段全周期漏斗轨迹驱动', () => {
       },
     })
     const res = V2_L2_GRADERS.L2_six_month_audit_complete(retro)
-    assert.equal(res.status, 'FAIL')
+    assert.equal(res.ok, false)
     assert.equal(res.code, 'RETROACTIVE_NEW_RUBRIC')
   })
 })
