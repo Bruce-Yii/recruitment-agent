@@ -3,14 +3,18 @@
 //
 //   node test/eval/run-eval-v2.mjs --gate=ALL --mode=contract
 //   node test/eval/run-eval-v2.mjs --gate=ALL --mode=real --capture=<dir> [--out=<dir>]
+//   node test/eval/run-eval-v2.mjs --gate=ALL --mode=live --base-url=http://127.0.0.1:49349 --session=<token> --pg-db=<db> [--runs=K]
 //
 // 纪律（INTERFACE-CONTRACT.md + AGENTS.md R2/R3/R4）：
 //  - contract 模式：不传 artifactProvider → runEvalGateSuite 标 executionMode='contract_smoke'。
 //  - real 模式：必须显式 --capture 且 bundle 完整；缺失/不完整 → stderr 明确报错 + exit 2，绝不回退 contract。
+//  - live 模式（Phase 3 MVP）：必须显式 --base-url/--session/--pg-db（口令仅从环境读）；
+//    缺失 → stderr 明确 FATAL + exit 2，绝不回退 contract/real。CI 不跑 live。
 //  - real 模式真实 import 并调用 v2-real-adapters.ts 的三个适配器；无真实源案例返回 null（NO_REAL_SOURCE，
 //    不送判分、不计 PASS、不计入 passRate 分母）；零执行 → card.passRate=null。
-//  - 输出 JSON + markdown evaluation card 到 <out>/evaluation-card.{json,md}。
-//  - 退出码：contract=0（runner 抛错除外）；real capture 缺失/不完整=2；真实源存在但全部执行失败=3；否则 0。
+//  - 输出 JSON + markdown evaluation card 到 <out>/evaluation-card.{json,md}；live 另写 live-report.json。
+//  - 退出码：contract=0（runner 抛错除外）；real capture 缺失/不完整=2；真实源存在但全部执行失败=3；
+//    live 配置缺失=2 / 任一 case ERROR、FAIL 或零执行=3；否则 0。
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -33,6 +37,7 @@ import { scanPrivateCorpusInventory } from './corpus-inventory.ts'
 import { BENCHMARK_REGISTRY, loadCachedBenchmark } from './benchmark-loader.ts'
 import { readL3RuntimeModelConfig, runL3AtomicJudge } from './v2-l3-runner.ts'
 import { adaptFunnelTrajectoryToP6Artifact } from './v2-funnel-driver.ts'
+import { runLiveEval } from './v2-live-runner.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_OUT = resolve(HERE, '..', '..', 'work', 'lane92-adapters', 'card')
@@ -45,6 +50,9 @@ function parseArgs(argv) {
     checkData: false,
     l3: false,
     capture: undefined,
+    // live 模式必需参数：只认显式 CLI 入参，绝不从环境偷偷补一个 Host/session 冒充已配置。
+    baseUrl: undefined,
+    session: undefined,
     out: DEFAULT_OUT,
     pgDb: process.env.RECRUITMENT_TEST_DB,
     pgHost: process.env.RECRUITMENT_PG_HOST ?? '127.0.0.1',
@@ -61,6 +69,10 @@ function parseArgs(argv) {
     else if (arg === '--mode') out.mode = argv[++i]
     else if (arg.startsWith('--capture=')) out.capture = arg.slice('--capture='.length)
     else if (arg === '--capture') out.capture = argv[++i]
+    else if (arg.startsWith('--base-url=')) out.baseUrl = arg.slice('--base-url='.length)
+    else if (arg === '--base-url') out.baseUrl = argv[++i]
+    else if (arg.startsWith('--session=')) out.session = arg.slice('--session='.length)
+    else if (arg === '--session') out.session = argv[++i]
     else if (arg.startsWith('--out=')) out.out = arg.slice('--out='.length)
     else if (arg === '--out') out.out = argv[++i]
     else if (arg.startsWith('--pg-db=')) out.pgDb = arg.slice('--pg-db='.length)
@@ -75,8 +87,8 @@ function parseArgs(argv) {
   if (!['G0', 'G1', 'G2', 'ALL'].includes(out.gate)) {
     throw new Error(`invalid --gate ${JSON.stringify(out.gate)} (expected G0|G1|G2|ALL)`)
   }
-  if (!['contract', 'real'].includes(out.mode)) {
-    throw new Error(`invalid --mode ${JSON.stringify(out.mode)} (expected contract|real)`)
+  if (!['contract', 'real', 'live'].includes(out.mode)) {
+    throw new Error(`invalid --mode ${JSON.stringify(out.mode)} (expected contract|real|live)`)
   }
   if (out.mode === 'real' && (typeof out.capture !== 'string' || out.capture.trim() === '')) {
     console.error('[run-eval-v2] FATAL: --mode=real requires --capture=<dir>; refusing to fall back to contract (fail-closed).')
@@ -86,6 +98,34 @@ function parseArgs(argv) {
   if (out.mode === 'real' && (typeof out.pgDb !== 'string' || out.pgDb.trim() === '')) {
     console.error('[run-eval-v2] FATAL: --mode=real requires --pg-db=<database> or env RECRUITMENT_TEST_DB; real PG connection is mandatory (fail-closed).')
     process.exit(2)
+  }
+  // Phase 3 live：Host / session / DB 三者缺一即 FATAL，绝不静默回退 contract/real。
+  if (out.mode === 'live') {
+    if (typeof out.baseUrl !== 'string' || out.baseUrl.trim() === '') {
+      console.error('[run-eval-v2] FATAL: --mode=live requires --base-url=<http(s)://host:port>; refusing to fall back to contract (fail-closed).')
+      process.exit(2)
+    }
+    try {
+      const parsed = new URL(out.baseUrl)
+      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(`unsupported protocol ${parsed.protocol}`)
+    } catch (error) {
+      console.error(`[run-eval-v2] FATAL: --base-url must be an http(s) URL: ${error instanceof Error ? error.message : String(error)}`)
+      process.exit(2)
+    }
+    if (typeof out.session !== 'string' || out.session.trim() === '') {
+      console.error('[run-eval-v2] FATAL: --mode=live requires --session=<x-dsh-session value>; refusing to send unauthenticated turns (fail-closed).')
+      process.exit(2)
+    }
+    if (typeof out.pgDb !== 'string' || out.pgDb.trim() === '') {
+      console.error('[run-eval-v2] FATAL: --mode=live requires --pg-db=<database> or env RECRUITMENT_TEST_DB; live PG counts readback is mandatory (fail-closed).')
+      process.exit(2)
+    }
+    // 口令只从环境读取，绝不作为 CLI 参数/产物落盘；缺失即 FATAL（不打印值）。
+    if (typeof (process.env.PGPASSWORD ?? process.env.RECRUITMENT_DB_PASSWORD) !== 'string'
+      || (process.env.PGPASSWORD ?? process.env.RECRUITMENT_DB_PASSWORD).trim() === '') {
+      console.error('[run-eval-v2] FATAL: --mode=live requires PGPASSWORD or RECRUITMENT_DB_PASSWORD env var for real PG readback; refusing to connect without credential (fail-closed).')
+      process.exit(2)
+    }
   }
   return out
 }
@@ -382,11 +422,35 @@ async function main() {
   let coverage
   let realSources = []
   let callSites = []
+  let liveResult
 
   if (args.mode === 'contract') {
     const result = runEvalGateSuite({ gate: args.gate, runId })
     card = result.card
     outcomes = result.outcomes
+  } else if (args.mode === 'live') {
+    // 真 Host + 真 PG17 只读行数；readCounts 由本 CLI 注入，runner 本身保持可离线测试。
+    const hostOrigin = new URL(args.baseUrl).origin
+    console.log(`[run-eval-v2] LIVE HOST ${hostOrigin} session=<redacted> pg=${args.pgHost}:${args.pgPort}/${args.pgDb} tenant=${args.pgTenant}`)
+    liveResult = await runLiveEval(
+      {
+        gate: args.gate,
+        runId,
+        baseUrl: args.baseUrl,
+        session: args.session,
+        runs: args.runs,
+      },
+      { readCounts: () => readLivePgCounts(args) },
+    )
+    card = liveResult.card
+    outcomes = liveResult.outcomes
+    coverage = liveResult.coverage
+    realSources = coverage.realSourceCaseIds
+    callSites = [
+      `runLiveEval: files=${fileURLToPath(new URL('./v2-live-runner.ts', import.meta.url))}`,
+      `adaptAgentTurnSseToP6Artifact: files=${fileURLToPath(new URL('./v2-real-adapters.ts', import.meta.url))}:56-130`,
+      `readPgTableRowCounts: files=${fileURLToPath(new URL('./v2-real-adapters.ts', import.meta.url))}:133-160 (real pg.Pool, read-only tx)`,
+    ]
   } else {
     const capture = validateCapture(args.capture)
     if (!capture.ok) {
@@ -460,15 +524,28 @@ async function main() {
   const jsonPath = join(resolve(args.out), 'evaluation-card.json')
   const mdPath = join(resolve(args.out), 'evaluation-card.md')
   writeFileSync(jsonPath, `${JSON.stringify(card, null, 2)}\n`, 'utf8')
-  writeFileSync(mdPath, `${formatEvaluationCardMarkdown(card)}\n`, 'utf8')
+  writeFileSync(mdPath, `${liveResult?.cardMarkdown ?? formatEvaluationCardMarkdown(card)}\n`, 'utf8')
+  if (args.mode === 'live' && liveResult) {
+    writeFileSync(
+      join(resolve(args.out), 'live-report.json'),
+      `${JSON.stringify(liveResult.liveReport, null, 2)}\n`,
+      'utf8',
+    )
+  }
 
   if (args.runs > 1) {
-    const maps = [card.casePassMap]
-    for (let r = 1; r < args.runs; r += 1) {
-      const extra = args.mode === 'contract'
-        ? runEvalGateSuite({ gate: args.gate, runId: `${runId}-r${r + 1}` })
-        : { card }
-      maps.push(extra.card.casePassMap)
+    // live 的每次运行都是真 POST，pass^k 必须来自真实重复计数，禁止复用同一张 card 冒充。
+    let maps
+    if (liveResult) {
+      maps = liveResult.passMaps
+    } else {
+      maps = [card.casePassMap]
+      for (let r = 1; r < args.runs; r += 1) {
+        const extra = args.mode === 'contract'
+          ? runEvalGateSuite({ gate: args.gate, runId: `${runId}-r${r + 1}` })
+          : { card }
+        maps.push(extra.card.casePassMap)
+      }
     }
     const passK = computePassPowerK(maps)
     writeFileSync(join(resolve(args.out), 'pass-power-k.json'), `${JSON.stringify(passK, null, 2)}\n`, 'utf8')
@@ -527,13 +604,22 @@ async function main() {
     for (const line of callSites) console.log(`[run-eval-v2] adapterCall ${line}`)
     console.log(`[run-eval-v2] coverage: real=${realSources.length} noRealSource=${coverage?.noRealSourceCaseIds?.length ?? 0}`)
   }
-  console.log(`[run-eval-v2] cards: ${jsonPath} / ${mdPath}`)
+  if (args.mode === 'live' && liveResult) {
+    const s = liveResult.liveReport.summary
+    console.log(`[run-eval-v2] live: covered=${s.liveCoveredCases}/${s.selectedCases} attempts=${s.executedAttempts} pass=${s.passedCases} fail=${s.failedCases} error=${s.errorCases} noLiveSource=${s.noLiveSourceCases} ttftP95=${s.ttftMsP95 ?? 'n/a'}ms`)
+    for (const line of callSites) console.log(`[run-eval-v2] adapterCall ${line}`)
+  }
+  console.log(`[run-eval-v2] cards: ${jsonPath} / ${mdPath}${args.mode === 'live' ? ` / ${join(resolve(args.out), 'live-report.json')}` : ''}`)
 
   if (args.mode === 'real') {
     const executed = outcomes.filter((o) => realSources.includes(o.caseId))
     if (executed.length > 0 && executed.every((o) => !o.passed)) {
       process.exitCode = 3
     }
+  }
+  if (args.mode === 'live') {
+    // 零静默：ERROR/FAIL 或零执行一律非 0，避免把没跑通当绿门。
+    if (outcomes.length === 0 || outcomes.some((o) => !o.passed)) process.exitCode = 3
   }
 }
 
