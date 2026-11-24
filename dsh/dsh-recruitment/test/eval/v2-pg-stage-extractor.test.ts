@@ -56,18 +56,37 @@ test('PG17 阶段提取器真漏斗闭环：从真库一次提取 P2–P5 + P6-0
     await client.query('begin')
     await client.query(`select set_config('recruitment.actor_id', $1, true)`, [HR_ACTOR])
 
-    // 1. 写入真实 resume + resume_version 并挂到 application（P1/P2 真源）
+    // 0. 复用 0002_seed.sql 已写入的 event_inbox 行作为 intake_record 来源事件
+    const evRes = await client.query<{ event_id: string }>(
+      `select event_id::text from recruitment.event_inbox where tenant_id = $1::uuid limit 1`,
+      [TENANT],
+    )
+    const eventId = evRes.rows[0]?.event_id
+    assert.ok(eventId, '0002_seed.sql 应已写入至少一条 event_inbox')
+
+    // 1. 写入真实 intake_record -> intake_asset -> resume -> resume_version 并挂到 application（P1/P2 真源）
+    const intakeRecId = '22222222-2222-4222-8222-000000000009'
+    const intakeAssetId = '22222222-2222-4222-8222-000000000010'
     const resumeId = '22222222-2222-4222-8222-000000000011'
     const resumeVerId = '22222222-2222-4222-8222-000000000012'
     const sha64 = 'a'.repeat(64)
     await client.query(
-      `insert into recruitment.resume (id, tenant_id, candidate_id) values ($1::uuid, $2::uuid, $3::uuid)`,
-      [resumeId, TENANT, CAND_ID],
+      `insert into recruitment.intake_record (id, tenant_id, event_id, status) values ($1::uuid, $2::uuid, $3::uuid, 'RESOLVED')`,
+      [intakeRecId, TENANT, eventId],
+    )
+    await client.query(
+      `insert into recruitment.intake_asset (id, tenant_id, intake_record_id, file_name, mime_type, byte_size, sha256, storage_ref, validation_status)
+       values ($1::uuid, $2::uuid, $3::uuid, 'eval-resume.pdf', 'application/pdf', 2048, $4, 'local://eval/eval-resume.pdf', 'VALID')`,
+      [intakeAssetId, TENANT, intakeRecId, sha64],
+    )
+    await client.query(
+      `insert into recruitment.resume (id, tenant_id, candidate_id, intake_asset_id) values ($1::uuid, $2::uuid, $3::uuid, $4::uuid)`,
+      [resumeId, TENANT, CAND_ID, intakeAssetId],
     )
     await client.query(
       `insert into recruitment.resume_version
          (id, tenant_id, resume_id, version_no, source_asset_sha256, content_sha256, parser_name, parser_version, parse_status, parsed_fields, evidence)
-       values ($1::uuid, $2::uuid, $3::uuid, 1, $4, $4, 'pymupdf', '1.0', 'READY', $5::jsonb, $6::jsonb)`,
+       values ($1::uuid, $2::uuid, $3::uuid, 1, $4, $4, 'pymupdf', '1.0', 'PARSED', $5::jsonb, $6::jsonb)`,
       [
         resumeVerId,
         TENANT,
