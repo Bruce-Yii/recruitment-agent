@@ -2184,3 +2184,10 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **闭环顺序**：Phase 1 定对象/证据标准（S6→S7/S9/S10，纯文档）→ Phase 2 修门禁语义（contract smoke vs quality；L3 显式跳过、不计 pass）→ Phase 3 补 live/L3/Tier1-2/counter metrics → Phase 4 baseline/G1/G2/G3。**Phase 1 未完成前不排 L3/live 实现 lane**，避免给错误对象打分。
   **边界**：本轮 docs-only；不改代码/CI；未跑 live 模型、未接触 Tier1 私有语料。D-200 的 P0/P1/P2 仍有效，但归属框架 closure。
 
+- **D-202（2026-11-25，总控；Phase 3 第一项落地：Eval V2 live 模式 MVP + 真机证据）**
+  **来源**：D-201 Phase 3 第一项“V2 CLI live 模式”；PR #112 合入 `main@4c28a1e`。
+  **实现**：`run-eval-v2.mjs --mode=live` 强制 `--base-url/--session/--pg-db` + 环境 DB 口令；真 POST `/recruitment/agent/turn`，解析 SSE（delta/tool/ui_action/error/done），记录 TTFT/token usage，前后真 PG 只读行数 → `adaptAgentTurnSseToP6Artifact` → 既有 P6 判分器；`--runs=K` 用真实重复 POST 计算 `pass^k`；输出 `evaluation-card`（`executionMode=live_host`）+ `live-report.json`；缺配置 exit 2、FAIL/ERROR/零执行 exit 3，**绝不回退 contract/real**。
+  **真机证据（本机）**：Host 49349 / profile `rec-e2e-live` / DB `ra_live_e2e_20261118`（PG 5432）→ P6-01 **PASS**（TTFT 5856ms、前后行数 0 变化）；P6-05 **FAIL `TTFT_EXCEEDED`**（首字 14088ms > 3000ms，真实模型延迟，不是代码错误）；卡片 `counterMetricsOk=false`、`passRate=0.5`、exit 3。修复“TTFT 违约但 Card Counter-Metrics PASS”后复跑确认 BREACHED。token/session 未落盘/未打日志；Host 与一次性 token 已清理。证据：`work/phase3-live-20261125/`（机器本地）。
+  **边界**：live 用例目前只覆盖 P6-01/P6-05（2/43），**不是**全 43 例 live；L3、Tier1/2、S6 端到端、其余切片 live 均未做；CI 不跑 live。
+  **状态**：Phase 3 第一项 MVP 完成；下一项 = L3 invoker（Phase 3 继续）。
+
