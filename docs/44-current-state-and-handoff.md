@@ -2,7 +2,8 @@
 
 > **本文件回答三件事**：现在代码在哪、系统由什么组成、接手的人第一步做什么。
 > **权威顺序不变**：产品与验收口径 = `docs/24`；裁决 = `docs/17`；本文件只是**当前事实快照**。快照会过期，引用前必须现场重跑命令。
-> **基线**：`main@8a8ae9b`（#92 三 P1 修复、#96–#101 与 D-197 UI 构建均已合入；历史代码基线 `54b83ad`）。当前工作树首次阅读时先执行 `git rev-parse --short HEAD` 与 `git status --porcelain`。
+> **基线**：`main@acaccfbb`（#96–#107 与 D-197/D-198 均已合入；历史代码基线 `54b83ad`）。当前工作树首次阅读时先执行 `git rev-parse --short HEAD` 与 `git status --porcelain`。
+> **2026-11-24 协作者批次收口（D-199/D-200）**：Eval V2 的 P2–P6 真源、CLI、L3 runner/funnel、CI G0 门与安全/测试加固等 PR #96/#97/#99–#101/#103–#107 已合入；**但评测体系覆盖未到位（P0=4，见 `docs/45`）**：CI 仅 contract G0、L3 无法真跑、无 live 模型回路、Tier1/2 未进 CI。不可宣称“评测体系完成”。
 > **2026-11-24 收口（D-196）**：#92 三个 P1 修复 + 独立终验 PASS（P0=0 / P1=0 / P2=2 已声明不阻断）已合入 `main` 并 push；**#91/#92 已关闭**；G3 维持口径 B（3 对真护栏，本期不新增盲审抽检工作流）。
 > **2026-11-24 飞书 LIVE（D-198）**：G-04 日历忙闲与 G-13 妙记回读均在本机真实账号下实测 `LIVE/CONNECTED`；证据 `evidence/feishu-live-20261124/`；边界：G-13 真实改绑未做、产品自有 OAuth/事件订阅仍是 P1。
 
@@ -13,7 +14,7 @@
 - 产品主链、Wave 3/5 能力、G-18 配置、生产登录、CSV/Webhook、部署 kit 已合入 main。
 - **Issue #91 复验 PASS，已关闭**：PR #93 修复项已在 `54b83ad` 上独立重跑；`tsc=0`、全量 3097/3095/0/2、15 步 15/15 hard 0、角色软停用 `is_active=false` + version+1、G3/auth CLI 均通过。
 - **Issue #92 三个 P1 已修复、独立终验 PASS、已合入 main 并关闭**（D-195/D-196）：红队语义不变量（14 + 原 17 全拦、空 payload 0/66、合法对照 0 过拦）、适配器接 43 例 CLI（`real_adapter` 3 真源 + 40 `NO_REAL_SOURCE`、capture 完整性与来源 fail-closed、真 PG）、G3 忠实度接真实确定性源并移除盲审假护栏（3 对）；独立终验 P0=0 / P1=0 / P2=2（已声明不阻断：委婉祈使/多义"继续"）。合并提交 `b0ebecf`，Issue #92 已关闭。
-- 当前可声称：#91 无阻断通过复验并已关闭；#92 三 P1 修复经未参与实现者独立终验 PASS、已合并 main 并关闭；**G-04/G-13 回读已在本机真实账号下实测 LIVE/CONNECTED（D-198）**。不可声称：G3 第 4 对盲审护栏已接入（按口径 B 本期不做）；Eval V2 语义完备（仍有 2 条已声明 P2）；G-13 真实改绑已完成。
+- 当前可声称：#91 无阻断通过复验并已关闭；#92 三 P1 修复经未参与实现者独立终验 PASS、已合并 main 并关闭；**G-04/G-13 回读已在本机真实账号下实测 LIVE/CONNECTED（D-198）**。不可声称：G3 第 4 对盲审护栏已接入（按口径 B 本期不做）；Eval V2 语义完备（仍有 2 条已声明 P2）；G-13 真实改绑已完成；**Eval V2 评测体系覆盖到位（D-200：P0=4，见 `docs/45`）**。
 
 ---
 
@@ -23,7 +24,7 @@
 |---|---|---|
 | 1 | `AGENTS.md` | 总控职责、九条铁律、派发/验收/端口/密钥纪律 |
 | 2 | `docs/24-product-framework-v2.md` | 产品认知、六条门 V1–V6；**第一权威** |
-| 3 | `docs/17-decision-ledger.md` | 裁决；最新 D-198（飞书 LIVE）、D-195/D-196（#92 修复收口）、D-197（UI 构建） |
+| 3 | `docs/17-decision-ledger.md` | 裁决；最新 D-200（Eval 缺口审计）、D-199（批次收口）、D-198（飞书 LIVE） |
 | 4 | 本文件 `docs/44` | 当前基线、架构、仓库、未决缺陷 |
 | 5 | `docs/25-lead-handoff.md` | 七步场景、判断框架、历史踩坑；其“当前状态”段已过期 |
 | 6 | `docs/40-lifecycle-gap-roadmap.md` | Wave 3/4/5 路线与缺口 |
@@ -79,14 +80,16 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 | 生产登录 | `/recruitment/login`、`/api/auth/login|logout` | production 模式 |
 | 候选人自助预约 | `/recruitment/book/<token>` | 公开页零内部信息 |
 | Webhook | `external_webhook_config`、`POST /action/webhook/test` | HMAC `sha256=<hmac>`；失败 fail-open 审计 |
-| Eval V2 | `test/eval/**` | 规格见 docs/42；当前审计不通过 |
+| Eval V2 | `test/eval/**` | 规格见 `docs/42`；#100–#107 已合入 P2–P6 真源/CLI/CI 门，但覆盖缺口见 `docs/45`（D-200） |
 
 ### 3.4 Eval V2 的当前现实
 
 - 规格：43 例 corpus，L1/L2/L3 分层，G0/G1/G2/G3 分档，线上 G3 遥测。
-- 2026-11-24 D-195/D-196 后现状（已合入 main）：
+- 2026-11-24 #100–#107 合入后现状（`main@acaccfbb`；完整审计见 `docs/45` / D-200）：
   - 66 个判分器（37 L1 + 22 L2 + 7 L3）全部注册，`{payload:{}}` 空 payload **0/66 pass**；L3 未校准/缺裁判/位置互换 fail-closed；
-  - `gate:'ALL'` 跑 43 例；**真实适配器已接 CLI**：`run-eval-v2.mjs` real 模式 `real_adapter` 3 真源（P1-01/P6-01/P6-05）+ 40 `NO_REAL_SOURCE`（不计 PASS），capture sha256/来源校验 + 真 PG fail-closed；
+  - 43 例 manifest（G0=11/G1=24/G2=8；Tier1=17/Tier2=16/Tier3=10）；CLI 有 contract/real、`--runs`、`--check-data`、`--l3`；
+  - **真实适配器已接 CLI**：converter→P1、agent-turn SSE→P6、PG 行数→P6 counts、PG 阶段快照→P2–P5/P6-08/09；real 模式最大真实覆盖 9/43，fresh capture 通常仅约 3 例；
+  - **覆盖缺口（P0）**：CI 的 G0 门是 contract 静态夹具 11 例 + `counterMetricsOk` 恒真 + `pass^k` 确定性 + 强制 `L3_MODEL_NOT_CONFIGURED`；L3 无可注入 invoker；V2 CLI 无 live 模型模式；Tier1/2 真实语料未进 CI；真实 S7–S10 漏斗未由采集器驱动（测试用手写 SQL fixture）；
   - 红队：14 个复验变体 + 原 17 变体全拦，合法对照 0 过拦；确定性判分器保留 2 条 P2（委婉祈使/多义"继续"，已声明不阻断）；
   - G3：3 对护栏；忠实度接真实确定性引用锚定；盲审假护栏移除（待授权新增工作流）。
 - 旧审计事实（`ac4a695`，仅作历史）：57/59 空 payload PASS、端到端接线 0/59、G0 仅 11/43、7 L3 无实现、红队 17/27 绕过；均由 #93/#94/#95 + D-195 修复。
@@ -97,7 +100,7 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 
 ### 4.1 Git
 
-- 当前 main：`8a8ae9b`（#92 三 P1 修复、#96–#101 与 D-197 UI 构建均已合入；历史代码基线 `54b83ad`）。
+- 当前 main：`acaccfbb`（#96–#107 与 D-197/D-198 均已合入；历史代码基线 `54b83ad`）。
 - **2026-11-24 修复批次（已合并）**：`fix/issue92-p1a-redteam` / `fix/issue92-p1b-adapters` / `fix/issue92-p1c-g3`；集成分支 `fix/issue92-integration@f052502` 以 `--no-ff` 合入 `main`（合并提交 `b0ebecf`）并 push。lane 分支保留作历史；临时 worktree 已清理。
 - 远端：`https://github.com/Bruce-Yii/recruitment-agent.git`；`gh` 已认证。
 - 最近合并：#93 修复 `SettingsView` 重复 `record_version`、`config-role.is_active`、G3 吞错、RESCHEDULED 计数、minute-rebind 5432 硬编码；#95 新增 `test/eval/v2-real-adapters.ts`；#94 重写 `v2-graders-l1/l2`、新增 `v2-graders-l3.ts`、`v2-g0-runner`、`corpus-inventory`/`evaluation-card`/`v2-l3-calibration`。
@@ -144,6 +147,7 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 5. Webhook/CSV：SSRF 允许列表、secret 生命周期、HMAC 派生文档、PII/注入负例。
 6. 测试基础设施：全量结果必须记录环境，不得把环境失败当产品失败或反之。
 7. UI/构建：stale `lib/app.js`（**已重建**，2026-11-24 D-197）、设置页与队列叠影（PR #97 修复 + D-197 1440 真机验证消除；证据 `evidence/ui-settings-overlay-20261124/`）、G-18 创建/软停用端到端回归（仍待）。
+8. **Eval V2 覆盖缺口（D-200，P0=4）**：CI 仅 contract G0、L3 无法真跑、无 live 模型回路、Tier1/2 未进 CI；详见 §5.7 与 `docs/45`。不可用“CI 绿/66 判分器/43 例 manifest”当评测体系完成。
 
 ### P2 · 迭代优化
 
@@ -174,6 +178,16 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 - **G-04 日历忙闲**：本机真实账号（独立 profile `recruitment` + `RECRUITMENT_FEISHU_USER_MAP`）→ 产品 free-slots HTTP 200、labels `LIVE/MANUAL/CONNECTED`、3 个 45min 候选时段；calendar reader 直读 11 月 `busy_count=1`（30min）、12 月 0；`+freebusy` `ok=true/data=null`（空忙闲/应用级授权差异，产品按 `+agenda` 取忙区间）。
 - **G-13 妙记回读**：真实妙记回读 `READ/CONNECTED/LIVE`（`live_eligible=true`、回执绑定内容 sha256）；产品 `POST /recruitment/api/feishu/import` 落库 READY，`interview_record=NEEDS_REVIEW/UNVERIFIED`（人类闸门未被绕过）；**真实改绑（speaker-replace）未做**。
 - 证据：`evidence/feishu-live-20261124/`（无 token、无会议原文，仅状态/脱敏哈希前缀/结构化回执）；边界：本机实测 ≠ 客户生产验收，产品自有 OAuth/事件订阅仍是 P1。
+
+### 5.7 Eval V2 评测体系缺口独立审计（2026-11-24，D-200）
+
+> 完整审计见 `docs/45-eval-system-gap-analysis-2026-11-24.md`；结论：**工程底座推进明显，但评测体系尚未覆盖到位**。
+
+- **P0（4 项）**：① CI 的 Eval V2 G0 门是 contract 静态夹具 11 例、`counterMetricsOk` 恒真、`pass^k` 确定性、强制 `L3_MODEL_NOT_CONFIGURED`（等于把"L3 未跑"当通过）；② L3 全仓无可注入 `L3ModelInvoker`，CLI `--l3` 仅一条硬编码探针且恒 `L3_MODEL_NOT_CONFIGURED`；③ V2 CLI 只有 contract/real（real=读 capture），无 live 模型回路，real SSE capture 仅"请只回复收到"两帧；④ Tier1/2 真实语料未进 CI（`--check-data` 只写文件不 gate），real 最大 9/43、fresh capture 约 3 例。
+- **P1（10 项）**：real 覆盖低、`pass^k` 语义错位、反向压制指标未采集、无基线 Diff、G1/G2 未进 CI、L3 prompt 未入库锁版、无真实校准集、红队只有确定性规则、P2–P5 "真实适配"仍是 DB 投影、采集器不驱动 S6–S10 真产品动作。
+- **P2（7 项）**：L3 原文锚定过弱（简单 substring）、阈值硬编码、readiness 不 gate/无趋势、contract 下 tier 标签易误读、旧 V1 live runner 未迁移、G3 无周度快照、本批合入未做独立产品验收。
+- **建议优先级（待拍）**：拆 contract smoke 与 quality gate 并修正 L3 断言 → 通 L3 invoker/prompt 版本/校准 → V2 加 live 模式与 pass^k/TTFT/token → Tier1/2 数据门 → 端到端采集（真动作→PG 快照）→ 基线/G1/G2/G3 飞轮。
+- 本次为文档审计，未改代码、未跑 live/Tier1；不可据此关闭任何评测条目。
 
 ---
 
@@ -296,7 +310,7 @@ gh pr view 94
 ## 10. 文档地图
 
 - 产品/验收：`docs/24`、`docs/26`
-- 裁决：`docs/17`（最新 D-198）
+- 裁决：`docs/17`（最新 D-200）
 - 交接：`docs/25`（历史叙事）+ 本文件（当前快照）
 - 路线：`docs/40`、`docs/39`
 - 架构/评测：`docs/41`（架构设计）、`docs/42`（评测规格）

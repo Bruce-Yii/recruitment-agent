@@ -1,6 +1,6 @@
 # 40 · 真实招聘全链路缺口清单与优先级路线图（2026-11-24 状态刷新）
 
-> **当前基线**：`main@8a8ae9b`（含 PR #93/#94/#95 与 #96–#101；Wave 1/2/2.5 已合入；#91/#92 已关闭；G-04/G-13 于 2026-11-24 实测 LIVE，见 `docs/17` D-198）。
+> **当前基线**：`main@acaccfbb`（含 PR #93/#94/#95、#96–#107；Wave 1/2/2.5 已合入；#91/#92 已关闭；G-04/G-13 于 2026-11-24 实测 LIVE，见 `docs/17` D-198；Eval V2 批次 #99–#107 已合入但**覆盖缺口见 `docs/45`/D-200**）。
 > **真实性提醒**：本文件是路线图，不是验收结论。Issue #91 复验 PASS、Issue #92 三 P1 修复独立终验 PASS，均已关闭；**G-04/G-13 的 LIVE 结论仅限 2026-11-24 本机实测（D-198，证据 `evidence/feishu-live-20261124/`），不等于客户生产环境验收**。下文“已完成/已合入”只表示进入 main，不等于独立验收通过。最新快照见 [`docs/44-current-state-and-handoff.md`](44-current-state-and-handoff.md)。
 > **推进顺序原则**：先打穿**不依赖外部凭据的产品体验闭环（Wave 3）** → 再收口**需外部凭据的飞书 LIVE 真链（Wave 4）** → 最后做**生产登录、独立域名与多租户交付基建（Wave 5）**，绝不在产品体验未收口前提前过度设计交付设施。
 
@@ -78,7 +78,15 @@
 - **Issue #92**：复验 CONDITIONAL_PASS → **三个 P1 已修复并独立终验 PASS、已合并 main（`b0ebecf`）、Issue 已关闭**（`docs/17` D-195/D-196）：① 红队语义不变量（14 + 原 17 全拦、空 payload 0/66、合法对照 0 过拦）；② `v2-real-adapters` 三适配器接 43 例 CLI（real_adapter 3 真源 + 40 NO_REAL_SOURCE、capture 完整性与来源 fail-closed、真连 PG）；③ G3 忠实度接真实确定性源、移除盲审假护栏（3 对）。独立终验 P0=0 / P1=0 / P2=2（已声明不阻断）。报告：`archive/recruitment-agent/2026-11-24-issue92-fix/verify92-final/work/review92-final/REPORT.md`（机器本地）。
 - **当前可声称**：三个 P1 修复经未参与实现者独立终验 PASS、已合并 main、Issue #91/#92 已关闭。
 - **当前不可声称**：G3 第 4 对盲审护栏已真实接入（口径 B 本期不做）；Eval V2 语义完备（2 条已声明 P2 保留）。
-- **下一优先级**：认证/租户、Webhook/CSV、测试基建与 UI 债；G3 盲审抽检如要做须另立裁决并授权产品范围/前端窗口。
+- **下一优先级**：认证/租户、Webhook/CSV、测试基建与 UI 债；G3 盲审抽检如要做须另立裁决并授权产品范围/前端窗口；**Eval V2 按 `docs/45` D-200 的 P0 先补（CI 质量门、L3 invoker、live 回路、Tier1/2 数据门、端到端采集）**。
+
+---
+
+## 七、2026-11-24 Eval V2 批次与覆盖缺口（最新，优先于上文）
+
+- **批次**：PR #96/#97/#99–#101/#103–#107 已合入 `main@acaccfbb`（Eval V2 真源/CLI/L3 runner/funnel/CI G0 门 + 安全/测试加固）；各自 PR CI 绿、main CI run `45420027569` 绿。**未做独立产品验收**（D-199）。
+- **覆盖缺口（D-200 / `docs/45`）**：P0=4——① CI G0 门是 contract 静态夹具 11 例 + `counterMetricsOk` 恒真 + `pass^k` 确定性 + 强制 `L3_MODEL_NOT_CONFIGURED`；② L3 无可注入 invoker；③ V2 CLI 无 live 模型回路（real=读 capture；SSE 仅"收到"两帧）；④ Tier1/2 未进 CI、real 最大 9/43、fresh capture 约 3 例。
+- **建议**：拆 contract smoke / quality gate；通 L3 invoker + prompt 版本 + Tier B 校准；V2 CLI 加 live 模式；Tier1/2 数据门；端到端采集（真动作→PG 快照）；G1/G2/G3 飞轮。**在 P0 关闭前，不得宣称 Eval V2 覆盖到位。**
 
 ---
 
