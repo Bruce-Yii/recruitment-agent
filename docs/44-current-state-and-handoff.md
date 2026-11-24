@@ -2,8 +2,8 @@
 
 > **本文件回答三件事**：现在代码在哪、系统由什么组成、接手的人第一步做什么。
 > **权威顺序不变**：产品与验收口径 = `docs/24`；裁决 = `docs/17`；本文件只是**当前事实快照**。快照会过期，引用前必须现场重跑命令。
-> **基线**：`main@acaccfbb`（#96–#107 与 D-197/D-198 均已合入；历史代码基线 `54b83ad`）。当前工作树首次阅读时先执行 `git rev-parse --short HEAD` 与 `git status --porcelain`。
-> **2026-11-24 协作者批次收口（D-199/D-200）**：Eval V2 的 P2–P6 真源、CLI、L3 runner/funnel、CI G0 门与安全/测试加固等 PR #96/#97/#99–#101/#103–#107 已合入；**但评测体系覆盖未到位（P0=4，见 `docs/45`）**：CI 仅 contract G0、L3 无法真跑、无 live 模型回路、Tier1/2 未进 CI。不可宣称“评测体系完成”。
+> **基线**：`main@6477540`（#96–#108 已合入；历史代码基线 `54b83ad`）。当前工作树首次阅读时先执行 `git rev-parse --short HEAD` 与 `git status --porcelain`。
+> **2026-11-24 协作者批次收口（D-199/D-200）**：Eval V2 的 P2–P6 真源、CLI、L3 runner/funnel、CI G0 门与安全/测试加固等 PR #96/#97/#99–#101/#103–#107 已合入；**但评测体系覆盖未到位（P0=4，见 `docs/45`）**：CI 仅 contract G0、L3 无法真跑、无 live 模型回路、Tier1/2 未进 CI。不可宣称“评测体系完成”。**2026-11-25 D-201 已重排为“目的→框架→闭环”**：S6 文件接入为参考切片，Phase 1 定对象/证据标准，Phase 2 修门禁语义，Phase 3 补 live/L3/数据，Phase 4 基线与飞轮（详见 `docs/45`）。
 > **2026-11-24 收口（D-196）**：#92 三个 P1 修复 + 独立终验 PASS（P0=0 / P1=0 / P2=2 已声明不阻断）已合入 `main` 并 push；**#91/#92 已关闭**；G3 维持口径 B（3 对真护栏，本期不新增盲审抽检工作流）。
 > **2026-11-24 飞书 LIVE（D-198）**：G-04 日历忙闲与 G-13 妙记回读均在本机真实账号下实测 `LIVE/CONNECTED`；证据 `evidence/feishu-live-20261124/`；边界：G-13 真实改绑未做、产品自有 OAuth/事件订阅仍是 P1。
 
@@ -24,7 +24,7 @@
 |---|---|---|
 | 1 | `AGENTS.md` | 总控职责、九条铁律、派发/验收/端口/密钥纪律 |
 | 2 | `docs/24-product-framework-v2.md` | 产品认知、六条门 V1–V6；**第一权威** |
-| 3 | `docs/17-decision-ledger.md` | 裁决；最新 D-200（Eval 缺口审计）、D-199（批次收口）、D-198（飞书 LIVE） |
+| 3 | `docs/17-decision-ledger.md` | 裁决；最新 D-201（Eval 目的/框架）、D-200（缺口清单）、D-199（批次收口） |
 | 4 | 本文件 `docs/44` | 当前基线、架构、仓库、未决缺陷 |
 | 5 | `docs/25-lead-handoff.md` | 七步场景、判断框架、历史踩坑；其“当前状态”段已过期 |
 | 6 | `docs/40-lifecycle-gap-roadmap.md` | Wave 3/4/5 路线与缺口 |
@@ -80,12 +80,12 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 | 生产登录 | `/recruitment/login`、`/api/auth/login|logout` | production 模式 |
 | 候选人自助预约 | `/recruitment/book/<token>` | 公开页零内部信息 |
 | Webhook | `external_webhook_config`、`POST /action/webhook/test` | HMAC `sha256=<hmac>`；失败 fail-open 审计 |
-| Eval V2 | `test/eval/**` | 规格见 `docs/42`；#100–#107 已合入 P2–P6 真源/CLI/CI 门，但覆盖缺口见 `docs/45`（D-200） |
+| Eval V2 | `test/eval/**` | 规格见 `docs/42`；#100–#107 已合入 P2–P6 真源/CLI/CI 门；框架/闭环见 `docs/45`（D-201），缺口清单见 D-200 |
 
 ### 3.4 Eval V2 的当前现实
 
 - 规格：43 例 corpus，L1/L2/L3 分层，G0/G1/G2/G3 分档，线上 G3 遥测。
-- 2026-11-24 #100–#107 合入后现状（`main@acaccfbb`；完整审计见 `docs/45` / D-200）：
+- 2026-11-24 #100–#107 合入后现状（`main@acaccfbb`；框架/闭环见 `docs/45` / D-201，缺口清单见 D-200）：
   - 66 个判分器（37 L1 + 22 L2 + 7 L3）全部注册，`{payload:{}}` 空 payload **0/66 pass**；L3 未校准/缺裁判/位置互换 fail-closed；
   - 43 例 manifest（G0=11/G1=24/G2=8；Tier1=17/Tier2=16/Tier3=10）；CLI 有 contract/real、`--runs`、`--check-data`、`--l3`；
   - **真实适配器已接 CLI**：converter→P1、agent-turn SSE→P6、PG 行数→P6 counts、PG 阶段快照→P2–P5/P6-08/09；real 模式最大真实覆盖 9/43，fresh capture 通常仅约 3 例；
@@ -100,7 +100,7 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 
 ### 4.1 Git
 
-- 当前 main：`acaccfbb`（#96–#107 与 D-197/D-198 均已合入；历史代码基线 `54b83ad`）。
+- 当前 main：`6477540`（#96–#107 与 D-197/D-198 均已合入；历史代码基线 `54b83ad`）。
 - **2026-11-24 修复批次（已合并）**：`fix/issue92-p1a-redteam` / `fix/issue92-p1b-adapters` / `fix/issue92-p1c-g3`；集成分支 `fix/issue92-integration@f052502` 以 `--no-ff` 合入 `main`（合并提交 `b0ebecf`）并 push。lane 分支保留作历史；临时 worktree 已清理。
 - 远端：`https://github.com/Bruce-Yii/recruitment-agent.git`；`gh` 已认证。
 - 最近合并：#93 修复 `SettingsView` 重复 `record_version`、`config-role.is_active`、G3 吞错、RESCHEDULED 计数、minute-rebind 5432 硬编码；#95 新增 `test/eval/v2-real-adapters.ts`；#94 重写 `v2-graders-l1/l2`、新增 `v2-graders-l3.ts`、`v2-g0-runner`、`corpus-inventory`/`evaluation-card`/`v2-l3-calibration`。
@@ -179,15 +179,16 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 - **G-13 妙记回读**：真实妙记回读 `READ/CONNECTED/LIVE`（`live_eligible=true`、回执绑定内容 sha256）；产品 `POST /recruitment/api/feishu/import` 落库 READY，`interview_record=NEEDS_REVIEW/UNVERIFIED`（人类闸门未被绕过）；**真实改绑（speaker-replace）未做**。
 - 证据：`evidence/feishu-live-20261124/`（无 token、无会议原文，仅状态/脱敏哈希前缀/结构化回执）；边界：本机实测 ≠ 客户生产验收，产品自有 OAuth/事件订阅仍是 P1。
 
-### 5.7 Eval V2 评测体系缺口独立审计（2026-11-24，D-200）
+### 5.7 Eval V2 评测体系：目的/框架与缺口（2026-11-24/25，D-200/D-201）
 
-> 完整审计见 `docs/45-eval-system-gap-analysis-2026-11-24.md`；结论：**工程底座推进明显，但评测体系尚未覆盖到位**。
+> 框架与闭环顺序见 `docs/45-eval-framework-and-closure-2026-11-25.md`（2026-11-25 重排）；结论：**工程底座推进明显，但评测体系尚未覆盖到位**。
 
-- **P0（4 项）**：① CI 的 Eval V2 G0 门是 contract 静态夹具 11 例、`counterMetricsOk` 恒真、`pass^k` 确定性、强制 `L3_MODEL_NOT_CONFIGURED`（等于把"L3 未跑"当通过）；② L3 全仓无可注入 `L3ModelInvoker`，CLI `--l3` 仅一条硬编码探针且恒 `L3_MODEL_NOT_CONFIGURED`；③ V2 CLI 只有 contract/real（real=读 capture），无 live 模型回路，real SSE capture 仅"请只回复收到"两帧；④ Tier1/2 真实语料未进 CI（`--check-data` 只写文件不 gate），real 最大 9/43、fresh capture 约 3 例。
-- **P1（10 项）**：real 覆盖低、`pass^k` 语义错位、反向压制指标未采集、无基线 Diff、G1/G2 未进 CI、L3 prompt 未入库锁版、无真实校准集、红队只有确定性规则、P2–P5 "真实适配"仍是 DB 投影、采集器不驱动 S6–S10 真产品动作。
-- **P2（7 项）**：L3 原文锚定过弱（简单 substring）、阈值硬编码、readiness 不 gate/无趋势、contract 下 tier 标签易误读、旧 V1 live runner 未迁移、G3 无周度快照、本批合入未做独立产品验收。
-- **建议优先级（待拍）**：拆 contract smoke 与 quality gate 并修正 L3 断言 → 通 L3 invoker/prompt 版本/校准 → V2 加 live 模式与 pass^k/TTFT/token → Tier1/2 数据门 → 端到端采集（真动作→PG 快照）→ 基线/G1/G2/G3 飞轮。
-- 本次为文档审计，未改代码、未跑 live/Tier1；不可据此关闭任何评测条目。
+- **目的**：评测不是给模型打分，是给产品决策提供可复核证据——真实动作里 AI 是否只辅助、不越权/不撒谎/不丢事实；失败可定位/回归。
+- **框架（D-201）**：对象轴（S6–S10 × 角色 × 业务对象 × 正常/失败边界）× 证据轴（L1–L6 + LIVE/FIXTURE provenance）× 节奏轴（G0 contract smoke → G1 slice gate → G2 release gate → G3 生产护栏）；**业务动作闭环为主、模型输出质量为辅**。
+- **S6 参考切片**：早期 `docs/11/12/22` 设计仍正确（保真/诚实/稳定/下游可用 + 五层故障注入 + 13 项验收）；但历史验收是 2026-11-12 旧仓一次性执行，当前 CI 仅 compile、corpus acceptance 条件跳过；`docs/19` 权威契约只在未合入分支，需恢复或 supersede。
+- **三处错位**：对象偏 payload；证据轴倒挂（L3/L4/live 空、fixture 当质量）；节奏错位（G0 smoke 当质量门、`L3_MODEL_NOT_CONFIGURED` 当通过、G1/G2 未接、Tier1/2 未进 CI）。
+- **闭环顺序**：Phase 1 定对象/证据标准（S6→S7/S9/S10）→ Phase 2 修门禁语义 → Phase 3 补 live/L3/Tier1-2/counter → Phase 4 baseline/G1/G2/G3。**Phase 1 未完成前不排 L3/live 实现 lane。**
+- 本次为文档裁决/计划，未改代码、未跑 live/Tier1；不可据此关闭任何评测条目。
 
 ---
 
@@ -310,7 +311,7 @@ gh pr view 94
 ## 10. 文档地图
 
 - 产品/验收：`docs/24`、`docs/26`
-- 裁决：`docs/17`（最新 D-200）
+- 裁决：`docs/17`（最新 D-201）
 - 交接：`docs/25`（历史叙事）+ 本文件（当前快照）
 - 路线：`docs/40`、`docs/39`
 - 架构/评测：`docs/41`（架构设计）、`docs/42`（评测规格）
@@ -318,3 +319,6 @@ gh pr view 94
 - 页面规范：`design/v4/*.md`、`TESTID-MANIFEST.md`
 - 机检/真机：`scripts/*`、`work/d5/fullpage/*`、`work/d5/e2e-live/scripts/*`
 - 证据：`evidence/<topic-date>/`
+
+
+
