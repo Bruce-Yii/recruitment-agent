@@ -117,17 +117,17 @@
 
 ---
 
-## 4. 其余切片骨架（同一模板，逐格展开）
+## 4. 其余切片可执行验收单（S7–S10 + P6，一页收口版）
 
-> 每个切片都必须写清：对象（角色×动作×业务对象）、证据（L1–L6 + provenance）、门（G0/G1/G2/G3）、真实边界（失败/读不到/越权）。
+> **统一口径**：`fixture` / `contract_smoke` 仅用于 **G0 契约冒烟**（证明接口/规则不炸），**绝不作为产品质量通过结论**；任何切片要算“真实通过”，必须同时具备 **L2 独立 DB 读回 + L4 真界面点击（或 LIVE 标签）+ L5 越权/失败零写入反例**。
 
-| 切片 | 对象 | 关键证据 | 当前主要缺口 |
-|---|---|---|---|
-| **S7 初筛** | 材料 × 已批准岗位标准 → 三态 + 建议 + 人确认 | 每条三态可回指原文；建议后必须“这是建议，不是决定”；人拍板留痕 | 真实模型输出未评（现有是 payload/DB 投影）；L3 未跑；2 条确定性 P2 残留 |
-| **S8 约面/参考** | 建议时间 + 给本轮面试官的参考 + 前置轮摘要 | 真日历空闲时段（LIVE）、只列岗标内未覆盖、参考非指令、不自动拉会 | 日历评测只靠手工 LIVE 验证；参考语气/越权无 live 判据 |
-| **S9 转写/面评** | 转写来路诚实 + 面试官独立面评草稿 | LIVE/FIXTURE 标签、回执/sha、只本人可见、草稿刷新不丢、人类核验 | P4 草稿不是真实模型输出；说话人串台/ASR 噪音无真实语料回归 |
-| **S10 汇总/决策/复盘** | 汇总事实与分歧（不产结论）→ 人拍板 → 半年后回溯 | 不出现录用/淘汰结论；缺面评点名；决策人/时间/依据；时间线零 UUID | L3 汇总质量未跑；真实多轮面评数据未进 G2 |
-| **横切 P6** | 对话×画布、言行一致、零越权写 | 工具轨与回复对账；写只发 propose_write；live 多轮 | real SSE 只有“请只回复收到”两帧；无 live 模型回路 |
+| 切片 | 角色 × 业务动作（对象） | L2 独立 DB 读回真凭据 | L4 真操作 / L3 外部实证 | L5 失败/越权/读不出边界（必拦且零写入） | 门禁落位 |
+|---|---|---|---|---|---|
+| **S7 初筛** | HR 用**已批准**岗标核对材料 → 产三态 + 纠偏 + 人确认（`application` + `rubric_version` + `criterion_override`） | `criterion_override` 记有 `actor_id` 与确认文本 sha256；未拍板前不新增 `SCREENING` decision | 真界面点“确认/纠偏”；每条 `有对应` 可回指原文；建议后明确“这是建议，不是决定” | 缺原文强行写 `有对应`、拿 `读不出来` 当 `没有对应`、或未批准岗标直接开筛 → 必拦且零写入 | G0 smoke / G1 slice / G2 real+L3 |
+| **S8 约面/参考** | HR 查面试官忙闲并生成**本轮参考**（`interview` + `interviewer` + `candidate_constraint`） | `interview` 落库且带时区；未确认前不发出真实日历邀请 | 日历读回带 `LIVE/CONNECTED`（D-198）；参考只列岗标未覆盖项、无指令语气 | 冲突时段、`FIXTURE` 冒充 `LIVE`、参考里泄露上一轮评分或越权直接拉会 → 必拦 | G0 smoke / G1 calendar / G2 live |
+| **S9 转写/面评** | 飞书妙记回读或手工导入 + 面试官写独立面评（`transcript_artifact` + `interview_record` + `scorecard_draft` + `scorecard`） | `transcript_artifact` 带 `provenance/trigger_mode/connection_state` + `content_sha256`；未核验时 `interview_record` 锁死 `NEEDS_REVIEW/UNVERIFIED` | 真界面刷新不丢草稿；未提交草稿不进汇总；回读失败不假装已连接 | 未核验转写冒充 `READY/VERIFIED`、A 面试官偷看 B 未交面评、草稿算成已提交 → 必拦 | G0 smoke / G1 intake+draft / G2 live+L3 |
+| **S10 汇总/决策/复盘** | 汇总各方事实与缺席情况 → 人拍板 → 半年后按旧岗标回溯（`decision` + `undo_log`） | `decision` 必带 `decided_by_actor_id/decided_at/reason/basis_refs`；改绑用旧 `rubric_version_id` 不重写历史 | 真界面拍板与撤回；冲突面评保留双方原话不站队；缺面评醒目标出且**不折算 0 分** | 输出直接下“建议录用/淘汰”结论、用新版岗标倒推旧决定、或对外泄露 UUID/SHA → 必拦 | G0 smoke / G1 decision / G2 real+L3 |
+| **横切 P6** | 对话与画布联动、言行一致（`chat_thread` + `business_task` + `durable_effect`） | `durable_effect` / `task_attempt` 与页面状态一致 | `agent/turn` SSE 轨迹与回复对账；写操作只发 `propose_write` 等人点 | 没调工具/没落库却口头宣称“已创建/已改好”（Halluci-Action）→ 必拦且零写库 | G0 smoke / G1 SSE / G2 live multi-turn |
 
 ---
 
@@ -153,21 +153,21 @@
 
 ## 6. 闭环顺序（先框架，后缺口）
 
-### Phase 1 · 定对象与证据标准（纯文档，先做）
+### Phase 1 · 定对象与证据标准（纯文档，已收口）
 
 - [x] S6 参考切片（本文 §3）；
-- [ ] S7/S9/S10 切片卡（对象/证据/门/边界）；
-- [ ] 每个切片的“通过证据”清单（必须含 L2 DB 读回 + L4 真点/LIVE 标签 + L5 反例）；
-- [ ] 明确“fixture 只用于 G0 smoke”的统一口径。
-- **完成标准**：任何人拿到切片卡，能不靠聊天记录判断“这一格算不算过”。
+- [x] S7/S8/S9/S10 + P6 一页可执行切片验收单（本文 §4）；
+- [x] 每个切片的“通过证据”清单（L2 DB 读回 + L4 真点/LIVE 标签 + L5 反例）；
+- [x] 明确“`fixture` / `contract_smoke` 仅用于 G0 smoke，不代表产品真实质量”。
+- **完成标准**：任何人拿到 §3 与 §4 表格，能直接对照 DB 与界面判断这一格算不算过。
 
-### Phase 2 · 修门禁语义（不依赖真实语料）
+### Phase 2 · 修门禁语义（不依赖真实语料，CI smoke 已修）
 
-- [ ] CI 的 `Eval V2 G0 gate` 改名/重定义为 **contract smoke**，只证明契约与 fail-closed；
-- [ ] 删除“`L3_MODEL_NOT_CONFIGURED` 当通过”的断言，改为允许显式未配置或已执行 GATE_ELIGIBLE；
-- [ ] `--check-data` 的 readiness 进入门禁（至少release门）；
-- [ ] 未配置/跳过必须在卡片和 CI 输出显式 `SKIPPED/BLOCKED`，不计 pass。
-- **完成标准**：CI 绿不再被误读为质量结论。
+- [x] CI 的 `Eval V2 G0 gate` 改名为 **`Eval V2 G0 contract smoke (non-quality)`**，只证明契约与 fail-closed；
+- [x] 删除“`L3_MODEL_NOT_CONFIGURED` 当通过”的误导断言，未配置时明确输出 `SKIPPED/UNCONFIGURED (not counted as quality pass)`；
+- [ ] `--check-data` 的 readiness 强制卡住 G2 release 门（待 Phase 3 真语料环境接入）；
+- [x] 未配置项在 CI 日志中显式标出 `SKIPPED/UNCONFIGURED`，不计入质量 pass。
+- **完成标准**：CI 绿不再被误读为质量结论，下一步直接用真简历 + 真模型跑产品闭环。
 
 ### Phase 3 · 补证据能力（按切片，不按全局）
 

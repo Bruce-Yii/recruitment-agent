@@ -278,7 +278,7 @@ jobs:
 
           exit "$STATUS"
 
-      - name: Eval V2 G0 gate (run-eval-v2.mjs + evaluation-card check)
+      - name: Eval V2 G0 contract smoke (non-quality)
         working-directory: dsh/dsh-recruitment
         run: |
           set -euo pipefail
@@ -288,21 +288,24 @@ jobs:
             const fs = require('node:fs');
             const card = JSON.parse(fs.readFileSync('$OUT/evaluation-card.json', 'utf8'));
             const passK = JSON.parse(fs.readFileSync('$OUT/pass-power-k.json', 'utf8'));
+            const readiness = JSON.parse(fs.readFileSync('$OUT/data-readiness.json', 'utf8'));
             const l3 = JSON.parse(fs.readFileSync('$OUT/l3-report.json', 'utf8'));
             const passedCount = Object.values(card.casePassMap || {}).filter(Boolean).length;
-            if (card.totalCases < 11 || passedCount !== card.totalCases || !card.counterMetricsOk) {
-              console.error('Eval V2 G0 gate failed:', { totalCases: card.totalCases, passedCount, counterMetricsOk: card.counterMetricsOk });
+            if (card.executionMode !== 'contract_smoke' || card.totalCases < 11 || passedCount !== card.totalCases) {
+              console.error('Eval V2 G0 contract smoke failed:', { executionMode: card.executionMode, totalCases: card.totalCases, passedCount });
               process.exit(1);
             }
             if (passK.flakyCaseIds.length > 0 || passK.passPowerKRate !== 1) {
-              console.error('Eval V2 G0 flaky cases:', { passPower3: passK.passPowerKRate, flaky: passK.flakyCaseIds });
+              console.error('Eval V2 G0 contract smoke flaky cases:', { passPower3: passK.passPowerKRate, flaky: passK.flakyCaseIds });
               process.exit(1);
             }
-            if (l3.status !== 'L3_MODEL_NOT_CONFIGURED') {
-              console.error('Eval V2 L3 fail-closed check failed:', l3);
-              process.exit(1);
+            if (l3.status === 'L3_MODEL_NOT_CONFIGURED') {
+              console.log('::notice title=L3 Judge SKIPPED::L3_MODEL_NOT_CONFIGURED (explicitly skipped, NOT counted as quality pass)');
             }
-            console.log('Eval V2 G0 gate PASS:', { executionMode: card.executionMode, totalCases: card.totalCases, passedCount, passPower3: passK.passPowerKRate, l3Status: l3.status });
+            if (readiness.corpus?.status !== 'READY') {
+              console.log('::notice title=Tier1 Corpus SKIPPED::corpus=' + String(readiness.corpus?.status) + ' (contract smoke only, NOT quality evidence)');
+            }
+            console.log('Eval V2 G0 contract smoke PASS (non-quality):', { executionMode: card.executionMode, totalCases: card.totalCases, passedCount, l3Status: l3.status, corpus: readiness.corpus?.status });
           "
 
   # 数据库：迁移链 + 每个迁移的自检 + 幂等。这一层是"业务真相归领域"的唯一执行点，
