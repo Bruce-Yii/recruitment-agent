@@ -216,7 +216,7 @@ test('PG17 阶段提取器真漏斗闭环：从真库一次提取 P2–P5 + P6-0
        values ($1::uuid, $2::uuid, $3::uuid, 'FEISHU', 'min-eval-001', 2, 'READY',
           'LIVE', 'MANUAL', 'CONNECTED', $4,
           'lark:minutes+detail:min-eval-001@sha256:' || $4, now(),
-          true, '与 content_sha256 对不上的转写正文', true)`,
+          true, '与 content_sha256 对不上的转写正文', false)`,
       [badTranscriptId, TENANT, meetingId, badSha],
     )
     await client.query(
