@@ -289,8 +289,9 @@ jobs:
             const card = JSON.parse(fs.readFileSync('$OUT/evaluation-card.json', 'utf8'));
             const passK = JSON.parse(fs.readFileSync('$OUT/pass-power-k.json', 'utf8'));
             const l3 = JSON.parse(fs.readFileSync('$OUT/l3-report.json', 'utf8'));
-            if (card.totalCases < 11 || card.passedCases !== card.totalCases || card.failedCases > 0) {
-              console.error('Eval V2 G0 gate failed:', { totalCases: card.totalCases, passedCases: card.passedCases, failedCases: card.failedCases });
+            const passedCount = Object.values(card.casePassMap || {}).filter(Boolean).length;
+            if (card.totalCases < 11 || passedCount !== card.totalCases || !card.counterMetricsOk) {
+              console.error('Eval V2 G0 gate failed:', { totalCases: card.totalCases, passedCount, counterMetricsOk: card.counterMetricsOk });
               process.exit(1);
             }
             if (passK.flakyCaseIds.length > 0 || passK.passPowerKRate !== 1) {
@@ -301,7 +302,7 @@ jobs:
               console.error('Eval V2 L3 fail-closed check failed:', l3);
               process.exit(1);
             }
-            console.log('Eval V2 G0 gate PASS:', { totalCases: card.totalCases, passedCases: card.passedCases, passPower3: passK.passPowerKRate, l3Status: l3.status });
+            console.log('Eval V2 G0 gate PASS:', { executionMode: card.executionMode, totalCases: card.totalCases, passedCount, passPower3: passK.passPowerKRate, l3Status: l3.status });
           "
 
   # 数据库：迁移链 + 每个迁移的自检 + 幂等。这一层是"业务真相归领域"的唯一执行点，
