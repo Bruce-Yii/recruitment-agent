@@ -2161,3 +2161,15 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **G-04（LIVE/CONNECTED）**：隔离 Host 49348 + 一次性库（25 迁移 + VERIFY PASS），env `RECRUITMENT_FEISHU_CLI` + `RECRUITMENT_FEISHU_USER_MAP`（interviewer_a→真实 open_id）；产品 HTTP `GET /recruitment/api/action/interview/free-slots` → **200**，`labels={LIVE,MANUAL,CONNECTED}`、`slots=3`、`unsatisfied=[]`；产品 calendar reader 直读 11 月 `READ/LIVE/busy_count=1（30min）`、12 月 `0`；`+agenda` 真实日程存在，`+freebusy` `ok=true/data=null`（空忙闲/应用级授权差异；产品按 `+agenda` 取忙区间）。
   **G-13（LIVE/CONNECTED，回读）**：产品 wiring 装配真实 transport（profile=recruitment）→ adapter `READ/CONNECTED/LIVE/live_eligible=true/violations=[]`、回执绑定内容哈希、正文 71 字符、`is_complete=true`；产品 HTTP `POST /recruitment/api/feishu/import` → **200**；独立 psql 读回 `transcript_artifact` = `FEISHU/READY/LIVE/MANUAL/CONNECTED/sha256 9395b98fc433…/complete/canonical`，`interview_record` = `NEEDS_REVIEW/UNVERIFIED`（人类闸门未被绕过）。**边界**：本次闭环的是“回读”；“真实改绑（speaker-replace）”仍需 speaker/open_id 映射 + HR 在场，未做；产品自有 OAuth/事件订阅（F2）仍是 P1。
   **裁决/状态**：G-04 与 G-13 回读从“缺凭据/未证”更新为**真实 LIVE/CONNECTED 已验证**；脱敏证据见 `evidence/feishu-live-20261124/`；`docs/40` Wave 4 与 `docs/44` 环境表/现状同步。全程未打印/未落盘任何 token 或会议原文；临时 Host/Chrome/一次性库/profile 已清理。本批以 docs+evidence 分支提 PR，等待复核合入。
+
+- **D-199（2026-11-24，总控；协作者/云端总控窗口批次合入收口：#96/#97/#99–#101/#103–#107）**
+  **背景**：本窗口并行期间，协作者窗口把 Eval V2 真实适配/CLI/L3/funnel/CI 门与安全测试等共 10 个 PR 合入 `main`（`54f0b69`→`acaccfbb`），但未回抄 `docs/17`/`docs/44`/`docs/40`（最新裁决仍 D-198，docs 基线仍 `8a8ae9b`）。本裁决按 Git/CI 证据补齐台账，避免“代码合了但无账”。
+  **合入清单**：#96 安全 HTTPS cookie/Webhook SSRF；#97 SettingsView 位置修复；#99 `CONFLICT_SLOT` flake；#100 P2–P5 真适配 + `pass^k`；#101 run-all 环境指纹 + auth/CSV 注入护栏；#104 L3 judge runner + 设置页 V2 Card；#103 V2 CLI 接 P2–P5/`--runs=K`/Tier readiness；#105 跨租户 auth 隔离测试；#106 L3 runner + P6-08/09 funnel + CI G0 门；#107 PG17 阶段快照提取（其 CI fixture 由本窗口 `7622deb` 修复后 5/5 绿、squash-merge）。
+  **验收边界**：上述合入的验收证据 = 各自 PR CI + 合入后 main CI（`acaccfbb` run `45420027569` 全绿）；**未做独立产品级验收**（无真机 15 步、无独立 DB readback、无 live 模型运行）；CI 绿 ≠ 产品验收（R3）。Eval V2 的覆盖缺口另见 D-200 / `docs/45`。
+  **状态**：代码基线 = `main@acaccfbb`；`docs/44`/`docs/40` 基线已同步；远端已合并分支保留作历史；本批以 docs-only 分支提 PR。
+
+- **D-200（2026-11-24，总控；Eval V2 评测体系缺口独立审计与优化建议，待产品负责人拍板优先级）**
+  **来源**：产品负责人 2026-11-24 指示在 #96–#107 合入后专门研究评测体系缺口、判断是否覆盖到位并给优化方向；独立审计（不采信实现者自述）见 `docs/45-eval-system-gap-analysis-2026-11-24.md`。
+  **结论摘要**：方向正确（P2–P6 真源提取、CLI `pass^k`/readiness/L3 fail-closed、CI G0 门已接），但**尚未覆盖到位**：CI 的 G0 门是 contract 静态夹具 11 例 + `counterMetricsOk` 恒真 + `pass^k` 确定性 + **强制 L3 未配置**；L3 全仓无可注入 invoker；V2 CLI 无 live 模型回路；Tier1/2 真实语料未进 CI；real 模式最大 9/43 且 fresh capture 通常仅约 3 例；真实 S7–S10 漏斗数据未由采集器驱动（测试用手写 SQL fixture）。审计分级：**P0=4、P1=10、P2=7**（详见 `docs/45`）。
+  **建议优先级（记录为建议，不改变现状，待拍）**：① 拆“contract smoke 门”与“quality gate”并修正 CI（不再把 `L3_MODEL_NOT_CONFIGURED` 当通过）；② 接通 L3 invoker + prompt 版本入库 + Tier B 校准（κ/TNR）；③ 给 V2 CLI 加 live 模式（复用旧 runner 的 `/recruitment/agent/turn` 调用），跑真实模型 + `pass^k` + TTFT/token；④ Tier1/2 数据门与 `--require-data`；⑤ 端到端采集（S6–S10 真产品动作→PG 快照），不以 SQL fixture 当真实证据；⑥ 基线 Diff/历史留存与 G1/G2/G3 飞轮。
+  **边界**：本次是文档审计，不改产品代码、不跑 live 模型、不调 Tier1 私有语料；`docs/44`/`docs/40` 已同步 Eval 现状。

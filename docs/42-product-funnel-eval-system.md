@@ -1,7 +1,7 @@
 # 42. 产品级全链路评测体系总纲 V2（唯一权威源）
 
 > **状态**：V2 终稿（2026-11-22，经产品核心 × 产品链路 × 真实架构 × 红队反噬 × 2026 权威标准三轮串行深审重整定稿）
-> **2026-11-24 实现状态**：本文是**规格**，不是实现验收。首轮 Issue #92 独立审计为 **REJECT**；`54b83ad` 修复后复验 CONDITIONAL_PASS；**三个 P1 已修复并经未参与实现者独立终验 PASS（P0=0 / P1=0 / P2=2 已声明不阻断），已合并 `main@b0ebecf`、Issue #92 已关闭（`docs/17` D-195/D-196）**：红队语义不变量、真实适配器接 43 例 CLI、G3 忠实度接真实确定性源（盲审假护栏按口径 B 移除，3 对；本期不新增盲审抽检工作流）。当前事实快照见 [`docs/44-current-state-and-handoff.md`](44-current-state-and-handoff.md)。
+> **2026-11-24 实现状态**：本文是**规格**，不是实现验收。首轮 Issue #92 独立审计为 **REJECT**；`54b83ad` 修复后复验 CONDITIONAL_PASS；**三个 P1 已修复并经未参与实现者独立终验 PASS（P0=0 / P1=0 / P2=2 已声明不阻断），已合并 `main@b0ebecf`、Issue #92 已关闭（`docs/17` D-195/D-196）**：红队语义不变量、真实适配器接 43 例 CLI、G3 忠实度接真实确定性源（盲审假护栏按口径 B 移除，3 对；本期不新增盲审抽检工作流）。**2026-11-24 覆盖审计（D-200）**：#100–#107 批次已合入 `main@acaccfbb`，但评测体系覆盖未到位（P0=4：CI 仅 contract G0、L3 未执行、无 live 模型回路、Tier1/2 未进 CI）；缺口与优化优先级见 [`docs/45`](45-eval-system-gap-analysis-2026-11-24.md)，不得据此宣称评测体系完成。当前事实快照见 [`docs/44-current-state-and-handoff.md`](44-current-state-and-handoff.md)。
 > **上位产品权威**：[`docs/24-product-framework-v2.md`](./24-product-framework-v2.md)（一切评测对象与边界以 `docs/24` 为准，冲突时以 `docs/24` 裁决）
 > **唯一更新规则**：后续所有评测体系演进、指标调整与数据源增补**只更新本文档**，不再分散另起文档。
 
