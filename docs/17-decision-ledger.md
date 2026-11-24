@@ -2169,7 +2169,18 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **状态**：代码基线 = `main@acaccfbb`；`docs/44`/`docs/40` 基线已同步；远端已合并分支保留作历史；本批以 docs-only 分支提 PR。
 
 - **D-200（2026-11-24，总控；Eval V2 评测体系缺口独立审计与优化建议，待产品负责人拍板优先级）**
-  **来源**：产品负责人 2026-11-24 指示在 #96–#107 合入后专门研究评测体系缺口、判断是否覆盖到位并给优化方向；独立审计（不采信实现者自述）见 `docs/45-eval-system-gap-analysis-2026-11-24.md`。
+  **来源**：产品负责人 2026-11-24 指示在 #96–#107 合入后专门研究评测体系缺口、判断是否覆盖到位并给优化方向；独立审计（不采信实现者自述）见 `docs/45-eval-framework-and-closure-2026-11-25.md`。
   **结论摘要**：方向正确（P2–P6 真源提取、CLI `pass^k`/readiness/L3 fail-closed、CI G0 门已接），但**尚未覆盖到位**：CI 的 G0 门是 contract 静态夹具 11 例 + `counterMetricsOk` 恒真 + `pass^k` 确定性 + **强制 L3 未配置**；L3 全仓无可注入 invoker；V2 CLI 无 live 模型回路；Tier1/2 真实语料未进 CI；real 模式最大 9/43 且 fresh capture 通常仅约 3 例；真实 S7–S10 漏斗数据未由采集器驱动（测试用手写 SQL fixture）。审计分级：**P0=4、P1=10、P2=7**（详见 `docs/45`）。
   **建议优先级（记录为建议，不改变现状，待拍）**：① 拆“contract smoke 门”与“quality gate”并修正 CI（不再把 `L3_MODEL_NOT_CONFIGURED` 当通过）；② 接通 L3 invoker + prompt 版本入库 + Tier B 校准（κ/TNR）；③ 给 V2 CLI 加 live 模式（复用旧 runner 的 `/recruitment/agent/turn` 调用），跑真实模型 + `pass^k` + TTFT/token；④ Tier1/2 数据门与 `--require-data`；⑤ 端到端采集（S6–S10 真产品动作→PG 快照），不以 SQL fixture 当真实证据；⑥ 基线 Diff/历史留存与 G1/G2/G3 飞轮。
   **边界**：本次是文档审计，不改产品代码、不跑 live 模型、不调 Tier1 私有语料；`docs/44`/`docs/40` 已同步 Eval 现状。
+  **后续（2026-11-25）**：D-201 已把本裁决重排为“目的→框架→闭环”；本裁决的 P0/P1/P2 清单作为框架下的 **closure backlog** 保留，不再是主线。
+
+- **D-201（2026-11-25，总控；Eval V2 评测体系目的、框架与闭环顺序，产品负责人已确认主从关系）**
+  **来源**：产品负责人 2026-11-25 指出“评测体系的构建是为了什么？这样延伸出评测体系的框架；框架对的前提下，再做闭环和缺口”。本裁决重排 D-200：先目的、再框架、再闭环；D-200 的缺口清单降为 closure backlog，不再作为主线。
+  **目的**：评测不是给模型打分，是给产品决策提供可复核证据——真实招聘动作里 AI 是否只辅助、不越权/不撒谎/不丢事实，且能让 HR/面试官更快做对判断；失败可定位、可回归。
+  **框架**：**对象轴**（S6–S10 × 角色 × 业务对象 × 正常/失败边界）× **证据轴**（L1–L6 + LIVE/FIXTURE provenance）× **节奏轴**（G0 contract smoke → G1 slice gate → G2 release gate → G3 生产护栏）+ 防 Goodhart 约束；**业务动作闭环为主、模型输出质量为辅**（产品负责人 2026-11-25 确认）。
+  **三个错位**：对象偏 payload；证据轴倒挂（L3/L4/live 空、fixture 当质量）；节奏错位（G0 smoke 当质量门、`L3_MODEL_NOT_CONFIGURED` 当通过、G1/G2 未接、Tier1/2 未进 CI）。
+  **S6 参考切片**：`docs/11`（保真/诚实/稳定/下游可用判据）+ `docs/12`（五层故障注入）+ `docs/22 §G`；历史验收（84 份/553 页/13 项全过/人工读 42.9%）仍有效，但报告是 2026-11-12 旧仓一次性执行，当前 CI 仅 compile、corpus acceptance 条件跳过（`ci.yml:79-100`）；`docs/19` 权威契约只在未合入分支（`6178772`）。S6 作为第一个 worked example；closure = 恢复持续 corpus acceptance + 补 S6 业务闭环用例 + 接 G0–G3。
+  **闭环顺序**：Phase 1 定对象/证据标准（S6→S7/S9/S10，纯文档）→ Phase 2 修门禁语义（contract smoke vs quality；L3 显式跳过、不计 pass）→ Phase 3 补 live/L3/Tier1-2/counter metrics → Phase 4 baseline/G1/G2/G3。**Phase 1 未完成前不排 L3/live 实现 lane**，避免给错误对象打分。
+  **边界**：本轮 docs-only；不改代码/CI；未跑 live 模型、未接触 Tier1 私有语料。D-200 的 P0/P1/P2 仍有效，但归属框架 closure。
+
