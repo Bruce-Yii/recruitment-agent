@@ -431,6 +431,7 @@ function feishuState(deps: SettingsHttpDeps): ConnectionProjection {
 const HTTP_DIR = dirname(fileURLToPath(import.meta.url))
 const SKILLS_DIR = join(HTTP_DIR, '..', '..', 'skill')
 const EVAL_SUMMARY_PATH = join(HTTP_DIR, '..', '..', 'evidence', 'eval', 'latest-summary.json')
+const EVAL_V2_CARD_PATH = join(HTTP_DIR, '..', '..', 'evidence', 'eval', 'evaluation-card.json')
 
 /** 治理区展示的一条工作说明书（来自 skill/recruitment-s6..s10 的真实 frontmatter/标题）。 */
 interface GovernanceSkill {
@@ -469,6 +470,27 @@ function readGovernanceSkills(): readonly GovernanceSkill[] {
  * 文件不存在 / 不是合法 JSON 对象 → `null`（绝不伪造、不猜、不造默认值）。
  */
 function readEvalSummary(): unknown {
+  // 优先读取 Eval V2 EvaluationCard（43 例分账报告），不存在时平滑回退 V1 latest-summary.json。
+  try {
+    if (existsSync(EVAL_V2_CARD_PATH)) {
+      const card = JSON.parse(readFileSync(EVAL_V2_CARD_PATH, 'utf8')) as Record<string, unknown>
+      if (card && typeof card === 'object' && !Array.isArray(card)) {
+        const passMap = (card.casePassMap && typeof card.casePassMap === 'object') ? (card.casePassMap as Record<string, boolean>) : {}
+        const vals = Object.values(passMap)
+        return {
+          schema: 'v2',
+          run_id: card.runId,
+          execution_mode: card.executionMode,
+          passed: vals.filter(Boolean).length,
+          total: typeof card.totalCases === 'number' ? card.totalCases : vals.length,
+          updated_at: card.generatedAt,
+          counter_metrics_ok: card.counterMetricsOk,
+        }
+      }
+    }
+  } catch {
+    /* V2 卡片损坏时回退 V1 */
+  }
   try {
     if (!existsSync(EVAL_SUMMARY_PATH)) return null
     const parsed: unknown = JSON.parse(readFileSync(EVAL_SUMMARY_PATH, 'utf8'))
