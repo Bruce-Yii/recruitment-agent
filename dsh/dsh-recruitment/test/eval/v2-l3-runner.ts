@@ -5,6 +5,7 @@
 //   3. 强制执行 A/B 位置互换双跑（正序 + 反序），两轮结论不一致则 positionSwapConsistent=false（fail-closed）；
 //   4. 强制要求“先引原文、后下原子 pass/fail 判决”，产出标准 L3AtomicJudgment 供 V2_L3_GRADERS 消费。
 import type { L3AtomicJudgment } from './v2-graders-l3.ts'
+import { getL3JudgePrompt } from './v2-l3-prompts.ts'
 
 export interface L3JudgeInput {
   readonly graderId: string
@@ -38,6 +39,17 @@ export function readL3RuntimeModelConfig(env: NodeJS.ProcessEnv = process.env): 
   return { configured: true, provider, model }
 }
 
+// Phase 3：裁判必须返回结构化判决，否则真实 invoker 无法解析。
+// 优先用 prompt registry 里锁版的 outputContract；registry 缺该维度时退回等价常量（仍 fail-closed 由 invoker 校验）。
+const L3_OUTPUT_CONTRACT_FALLBACK =
+  '严格只输出一个 JSON 对象（不要 markdown 代码块、不要解释文字），字段固定为 ' +
+  '{"verdict":"pass"|"fail","citedSourceQuote":"<原文逐字短句>","rationale":"<简要理由>"}。'
+
+function outputContractFor(graderId: string): string {
+  const prompt = getL3JudgePrompt(graderId)
+  return prompt?.outputContract ?? L3_OUTPUT_CONTRACT_FALLBACK
+}
+
 function buildOrderPrompt(input: L3JudgeInput, order: 'SOURCE_FIRST' | 'OUTPUT_FIRST'): string {
   const a = order === 'SOURCE_FIRST' ? `[原文材料]\n${input.sourceMaterial}` : `[待评产物]\n${input.candidateOutput}`
   const b = order === 'SOURCE_FIRST' ? `[待评产物]\n${input.candidateOutput}` : `[原文材料]\n${input.sourceMaterial}`
@@ -45,6 +57,7 @@ function buildOrderPrompt(input: L3JudgeInput, order: 'SOURCE_FIRST' | 'OUTPUT_F
     `评测维度：${input.graderId}（版本 ${input.judgeVersion}）`,
     `判分准则：${input.criterionPrompt}`,
     '铁律：必须先引用原文材料中的逐字短句，再输出原子结论 pass 或 fail，严禁使用外部常识脑补。',
+    `输出契约：${outputContractFor(input.graderId)}`,
     a,
     b,
   ].join('\n\n')
