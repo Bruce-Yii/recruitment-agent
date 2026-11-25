@@ -1,6 +1,6 @@
 # 40 · 真实招聘全链路缺口清单与优先级路线图（2026-11-24 状态刷新）
 
-> **当前基线**：`main@4c28a1e`（含 PR #93/#94/#95、#96–#112；Wave 1/2/2.5 已合入；#91/#92 已关闭；G-04/G-13 于 2026-11-24 实测 LIVE，见 `docs/17` D-198；Eval V2 框架/闭环见 `docs/45`/D-201，缺口清单见 D-200；Phase 3 live MVP 见 D-202）。
+> **当前基线**：`main@127cd86`（含 PR #93/#94/#95、#96–#114；Wave 1/2/2.5 已合入；#91/#92 已关闭；G-04/G-13 于 2026-11-24 实测 LIVE，见 `docs/17` D-198；Eval V2 框架/闭环见 `docs/45`/D-201，缺口清单见 D-200；Phase 3 live MVP 见 D-202）。
 > **真实性提醒**：本文件是路线图，不是验收结论。Issue #91 复验 PASS、Issue #92 三 P1 修复独立终验 PASS，均已关闭；**G-04/G-13 的 LIVE 结论仅限 2026-11-24 本机实测（D-198，证据 `evidence/feishu-live-20261124/`），不等于客户生产环境验收**。下文“已完成/已合入”只表示进入 main，不等于独立验收通过。最新快照见 [`docs/44-current-state-and-handoff.md`](44-current-state-and-handoff.md)。
 > **推进顺序原则**：先打穿**不依赖外部凭据的产品体验闭环（Wave 3）** → 再收口**需外部凭据的飞书 LIVE 真链（Wave 4）** → 最后做**生产登录、独立域名与多租户交付基建（Wave 5）**，绝不在产品体验未收口前提前过度设计交付设施。
 
@@ -88,7 +88,7 @@
 - **覆盖缺口（D-200 / `docs/45`）**：P0=4——① CI G0 门是 contract 静态夹具 11 例 + `counterMetricsOk` 恒真 + `pass^k` 确定性 + 强制 `L3_MODEL_NOT_CONFIGURED`；② L3 无可注入 invoker；③ V2 CLI 无 live 模型回路（real=读 capture；SSE 仅"收到"两帧）；④ Tier1/2 未进 CI、real 最大 9/43、fresh capture 约 3 例。
 - **建议**：拆 contract smoke / quality gate；通 L3 invoker + prompt 版本 + Tier B 校准；V2 CLI 加 live 模式；Tier1/2 数据门；端到端采集（真动作→PG 快照）；G1/G2/G3 飞轮。**在 P0 关闭前，不得宣称 Eval V2 覆盖到位。**
 - **2026-11-25 框架重排（D-201）**：先目的（给产品决策提供可复核证据）→ 框架（对象轴 S6–S10 × 证据轴 L1–L6 × 节奏轴 G0–G3，业务动作闭环为主、模型输出质量为辅）→ 闭环（Phase 1 定对象/证据标准，S6 为参考切片；Phase 2 修门禁；Phase 3 补 live/L3/数据；Phase 4 飞轮）。D-200 的 P0/P1/P2 降为框架下的 closure backlog，不再是主线。**S6 早期设计（`docs/11/12/22`）仍然正确，但历史验收是 2026-11-12 旧仓一次性执行、当前 CI 仅 compile，需恢复持续验收。**
-- **2026-11-25 Phase 3 live MVP（D-202，PR #112）**：V2 CLI `--mode=live` 真 Host 跑通 P6-01/P6-05；P6-01 PASS（TTFT 5856ms、行数 0 变化），P6-05 FAIL `TTFT_EXCEEDED`（14088ms > 3000ms），`counterMetricsOk=false`、exit 3；仅 2/43，**不是全量 live**；下一步 L3 invoker。
+- **2026-11-26 Phase 3 L3 通路（D-203，PR #114）**：invoker + 7 维 prompt registry + 16 条合成配平校准集 + 校准 CLI；真机 HY4 `κ=0.75 / TNR=1.0 / A/B 一致率 100% → GATE_ELIGIBLE`，`--l3 EXECUTED 7/7`；**合成标签 ≠ 真人标注**，正式上岗仍需 Tier B 真人集。\n- **2026-11-25 Phase 3 live MVP（D-202，PR #112）**：V2 CLI `--mode=live` 真 Host 跑通 P6-01/P6-05；P6-01 PASS（TTFT 5856ms、行数 0 变化），P6-05 FAIL `TTFT_EXCEEDED`（14088ms > 3000ms），`counterMetricsOk=false`、exit 3；仅 2/43，**不是全量 live**；下一步 L3 invoker。
 
 ---
 
@@ -97,4 +97,5 @@
 - **G-04 日历忙闲**：本机真实账号（独立 profile `recruitment`）实测通过——产品 free-slots HTTP 200、`LIVE/CONNECTED`、3 个 45min 候选时段；calendar reader 月度直读 11 月 `busy_count=1`（30min）、12 月 0；`+freebusy` 返回 `ok=true/data=null`（空忙闲/应用级授权差异，产品按 `+agenda` 取忙区间）。裁决/证据：`docs/17` D-198、`evidence/feishu-live-20261124/`。
 - **G-13 妙记回读**：真实妙记回读 `READ/CONNECTED/LIVE`（`live_eligible=true`）、回执绑定内容 sha256；产品 `POST /recruitment/api/feishu/import` 落库 READY，`interview_record=NEEDS_REVIEW/UNVERIFIED`（人类闸门保留）。**边界**：「真实改绑 speaker-replace」仍需 speaker/open_id 映射 + HR 在场，未做。
 - **口径**：以上是 2026-11-24 本机 LIVE 实测，不等于客户生产环境验收；产品自有 OAuth/事件订阅（F2）仍是后续 P1。
+
 
