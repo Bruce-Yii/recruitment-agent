@@ -36,11 +36,50 @@ import {
 import { scanPrivateCorpusInventory } from './corpus-inventory.ts'
 import { BENCHMARK_REGISTRY, loadCachedBenchmark } from './benchmark-loader.ts'
 import { readL3RuntimeModelConfig, runL3AtomicJudge } from './v2-l3-runner.ts'
+import { createL3Invoker, readL3InvokerConfig } from './v2-l3-invoker.ts'
+import { L3_JUDGE_PROMPT_REGISTRY_VERSION, listL3JudgePrompts } from './v2-l3-prompts.ts'
 import { adaptFunnelTrajectoryToP6Artifact } from './v2-funnel-driver.ts'
 import { runLiveEval } from './v2-live-runner.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_OUT = resolve(HERE, '..', '..', 'work', 'lane92-adapters', 'card')
+
+// Phase 3 --l3 探针：每个已注册 L3 grader 一条，全部为简短合成样例（无真实个资）。
+// criterionPrompt / judgeVersion / promptVersion 均来自 v2-l3-prompts.ts registry。
+const L3_PROBE_FIXTURES = {
+  L3_fluff_detection: {
+    sourceMaterial: '面试官：举一个具体问题。候选人甲：我把报表导出从十分钟优化到两分钟。',
+    candidateOutput: '候选人具备强烈的自驱力与结果导向，是团队核心驱动力。',
+  },
+  L3_claim_faithfulness: {
+    sourceMaterial: '面试官：为什么离职？候选人乙：团队模块合并，我想找更聚焦的方向。',
+    candidateOutput: '候选人因团队模块合并而离职，希望转向更聚焦的方向。',
+  },
+  L3_numeric_grounding: {
+    sourceMaterial: '面试官：这个项目做了多久？候选人丙：两年，负责接口分层。',
+    candidateOutput: '候选人有五年项目经验，主导接口分层。',
+  },
+  L3_speaker_attribution_exact: {
+    sourceMaterial: '面试官：我们季度有两次集中出差。候选人丁：希望提前一周通知。',
+    candidateOutput: '候选人丁主动提出季度两次集中出差。',
+  },
+  L3_hallucination_rate: {
+    sourceMaterial: '面试官：最熟悉的技术？候选人戊：TypeScript 与 PostgreSQL，其他接触不多。',
+    candidateOutput: '候选人主导实时推荐引擎，持有相关专利。',
+  },
+  L3_second_probe_collapse_caught: {
+    sourceMaterial: '面试官：缓存失效怎么办？候选人己：没想过，是同事处理的。',
+    candidateOutput: '候选人完整设计了缓存失效预案。',
+  },
+  L3_team_vs_individual_separated: {
+    sourceMaterial: '面试官：系统谁主导？候选人庚：五人小组共同完成，我只负责对账模块。',
+    candidateOutput: '候选人庚主导了系统整体设计与全部交付。',
+  },
+}
+const L3_PROBE_FALLBACK = {
+  sourceMaterial: '合成材料：候选人表示负责对账模块。',
+  candidateOutput: '候选人负责对账模块。',
+}
 
 function parseArgs(argv) {
   const out = {
@@ -566,30 +605,48 @@ async function main() {
   }
 
   if (args.l3) {
-    const modelConfig = readL3RuntimeModelConfig()
-    const l3ProbeInputs = [
-      {
-        graderId: 'L3_screening_rationale_faithfulness',
-        judgeVersion: 'v2.0',
-        calibrationStatus: 'OBSERVATION_ONLY',
-        criterionPrompt: '判定筛选理由是否严格忠实于原文材料，无脑补无夸大。',
-        sourceMaterial: '候选人拥有 5 年 TypeScript 与 PostgreSQL 生产开发经验。',
-        candidateOutput: '该候选人具备 5 年 TypeScript 和 PostgreSQL 生产经验。',
-      },
-    ]
+    // 探针由 prompt registry 驱动：每个已注册 L3 grader 一条，不再硬编码单一 graderId。
+    const prompts = listL3JudgePrompts()
+    const invokerConfig = readL3InvokerConfig()
+    const invoker = invokerConfig.configured && invokerConfig.config
+      ? createL3Invoker(invokerConfig.config)
+      : null
     const results = []
-    for (const item of l3ProbeInputs) {
-      results.push({ graderId: item.graderId, result: await runL3AtomicJudge(item) })
+    for (const prompt of prompts) {
+      const fixture = L3_PROBE_FIXTURES[prompt.graderId] ?? L3_PROBE_FALLBACK
+      const item = {
+        graderId: prompt.graderId,
+        judgeVersion: prompt.judgeVersion,
+        calibrationStatus: 'OBSERVATION_ONLY',
+        criterionPrompt: prompt.criterionPrompt,
+        sourceMaterial: fixture.sourceMaterial,
+        candidateOutput: fixture.candidateOutput,
+      }
+      let result
+      try {
+        // 未配置 invoker 时保持既有 fail-closed 行为：runL3AtomicJudge 返回 L3_MODEL_NOT_CONFIGURED。
+        result = invoker ? await runL3AtomicJudge(item, { invoker }) : await runL3AtomicJudge(item)
+      } catch (error) {
+        result = { status: 'L3_INVOKER_ERROR', reason: error instanceof Error ? error.message : String(error) }
+      }
+      results.push({ graderId: prompt.graderId, promptVersion: prompt.promptVersion, result })
     }
-    const allUnconfigured = results.every((r) => r.result.status === 'L3_MODEL_NOT_CONFIGURED')
+    const executed = results.filter((r) => r.result.status === 'OK').length
     const l3Report = {
-      status: allUnconfigured ? 'L3_MODEL_NOT_CONFIGURED' : 'EXECUTED',
-      modelConfig,
-      executed: results.filter((r) => r.result.status === 'OK').length,
+      // 未配置时断言契约：status=L3_MODEL_NOT_CONFIGURED 且 executed=0（CI 依赖）。
+      status: invoker ? 'EXECUTED' : 'L3_MODEL_NOT_CONFIGURED',
+      modelConfig: readL3RuntimeModelConfig(),
+      invokerConfigured: invoker !== null,
+      promptRegistryVersion: L3_JUDGE_PROMPT_REGISTRY_VERSION,
+      probes: results.length,
+      executed,
       results,
     }
     writeFileSync(join(resolve(args.out), 'l3-report.json'), `${JSON.stringify(l3Report, null, 2)}\n`, 'utf8')
-    console.log(`[run-eval-v2] l3: status=${l3Report.status} executed=${l3Report.executed}/${results.length}`)
+    console.log(
+      `[run-eval-v2] l3: status=${l3Report.status} executed=${executed}/${results.length} `
+        + `promptRegistryVersion=${L3_JUDGE_PROMPT_REGISTRY_VERSION}`,
+    )
   }
 
   const passRate = card.passRate

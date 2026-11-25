@@ -23,6 +23,14 @@ describe('Eval V2 CLI 整机接线（--runs=3 pass^k + --check-data + --l3）', 
             ...process.env,
             RECRUITMENT_EVAL_MODEL_PROVIDER: '',
             RECRUITMENT_EVAL_MODEL: '',
+            // Phase 3：本测试断言“未配置 invoker 时 L3 必须 fail-closed”，
+            // 因此必须显式清空 L3 专属键，不能依赖宿主环境恰好没有它们。
+            RECRUITMENT_EVAL_L3_BACKEND: '',
+            RECRUITMENT_EVAL_L3_BASE_URL: '',
+            RECRUITMENT_EVAL_L3_MODEL: '',
+            RECRUITMENT_EVAL_L3_API_KEY: '',
+            RECRUITMENT_EVAL_L3_SESSION: '',
+            RECRUITMENT_EVAL_L3_TIMEOUT_MS: '',
           },
         },
       )
