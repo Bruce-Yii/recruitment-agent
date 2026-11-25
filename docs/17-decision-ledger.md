@@ -2191,3 +2191,10 @@ PG 同契约校验）**本身就是人类动作，不再叠加 `ctx.approval` �
   **边界**：live 用例目前只覆盖 P6-01/P6-05（2/43），**不是**全 43 例 live；L3、Tier1/2、S6 端到端、其余切片 live 均未做；CI 不跑 live。
   **状态**：Phase 3 第一项 MVP 完成；下一项 = L3 invoker（Phase 3 继续）。
 
+- **D-203（2026-11-26，总控；Phase 3 第二项：L3 裁判 invoker + prompt 版本注册表 + 校准运行器，附真机 κ/TNR 证据）**
+  **来源**：D-201 Phase 3 第二项；PR #114 合入 `main@127cd86`。
+  **实现（仅 `test/eval/`，不改产品代码/CI）**：① `v2-l3-prompts.ts` 7 维判分准则 + 严格 JSON 输出契约，`promptSha256` 内容确定性计算、未知 grader → null；② `v2-l3-invoker.ts` 两个后端——`openai_compatible`（`/chat/completions` + `response_format=json_object`）与 `host_agent`（POST 运行中 Host `/recruitment/agent/turn`，SSE delta 拼接，复用 DSH 运行时模型）；严格 JSON 提取、错误码、**apiKey redact**、60s 超时；env 只认 `RECRUITMENT_EVAL_L3_*`；③ `v2-l3-runner.ts` 裁判 prompt 现在携带 registry 锁定的输出契约（**首跑真机 16/16 报“未找到 JSON”即此缺失，修后复跑通过**）；④ `v2-l3-calibration-data.ts` 16 条合成配平样本（8 正/8 负=50%，7 维全覆盖，无真实个资）；⑤ `v2-l3-calibrate-lib.ts` + `.mjs` 校准 CLI（exit 0/4/2）；⑥ `run-eval-v2 --l3` 由 registry 驱动 7 条探针，配置即真跑、未配置保持 `L3_MODEL_NOT_CONFIGURED`+`executed=0`（CI 契约不变）；⑦ `v2-cli-wiring.test.ts` 显式清空 `RECRUITMENT_EVAL_L3_*`。
+  **真机证据（本机 Host 49349 / profile `rec-e2e-live` / HY4；`work/l3-20261126/`）**：校准 `status=GATE_ELIGIBLE`、`totalSamples=16`、`negativeRatio=0.5`、`κ=0.75`、`TNR=1.0`、`TPR=0.75`、`agreementRate=0.875`、`positionSwapConsistency=1.0`、`errors=0`；2 条不一致（CAL-02/CAL-08）均为保守假阴性且 A/B 一致。CLI `--l3`：`status=EXECUTED executed=7/7 promptRegistryVersion=l3-prompts-v1`。
+  **边界**：校准标签是**合成标签**——κ=0.75 证明 invoker/registry/校准器/闸门在真实模型上跑通，**不等于**裁判已由真人标注校准；正式上岗仍需 Tier B 真人标注集重跑。`openai_compatible` 后端只有单测（未对真实第三方端点验证）。CI 不跑 L3（未配置时保持 fail-closed）。不声称“L3 已覆盖 43 例”。
+  **状态**：Phase 3 第二项落地；下一项 = Tier1/2 数据门或 S6 端到端采集（按 D-201 顺序）。
+

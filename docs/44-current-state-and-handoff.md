@@ -2,7 +2,7 @@
 
 > **本文件回答三件事**：现在代码在哪、系统由什么组成、接手的人第一步做什么。
 > **权威顺序不变**：产品与验收口径 = `docs/24`；裁决 = `docs/17`；本文件只是**当前事实快照**。快照会过期，引用前必须现场重跑命令。
-> **基线**：`main@4c28a1e`（#96–#112 已合入；历史代码基线 `54b83ad`）。当前工作树首次阅读时先执行 `git rev-parse --short HEAD` 与 `git status --porcelain`。
+> **基线**：`main@127cd86`（#96–#114 已合入；历史代码基线 `54b83ad`）。当前工作树首次阅读时先执行 `git rev-parse --short HEAD` 与 `git status --porcelain`。
 > **2026-11-24 协作者批次收口（D-199/D-200）**：Eval V2 的 P2–P6 真源、CLI、L3 runner/funnel、CI G0 门与安全/测试加固等 PR #96/#97/#99–#101/#103–#107 已合入；**但评测体系覆盖未到位（P0=4，见 `docs/45`）**：CI 仅 contract G0、L3 无法真跑、无 live 模型回路、Tier1/2 未进 CI。不可宣称“评测体系完成”。**2026-11-25 D-201 已重排为“目的→框架→闭环”**：S6 文件接入为参考切片，Phase 1 定对象/证据标准，Phase 2 修门禁语义，Phase 3 补 live/L3/数据，Phase 4 基线与飞轮（详见 `docs/45`）。
 > **2026-11-24 收口（D-196）**：#92 三个 P1 修复 + 独立终验 PASS（P0=0 / P1=0 / P2=2 已声明不阻断）已合入 `main` 并 push；**#91/#92 已关闭**；G3 维持口径 B（3 对真护栏，本期不新增盲审抽检工作流）。
 > **2026-11-24 飞书 LIVE（D-198）**：G-04 日历忙闲与 G-13 妙记回读均在本机真实账号下实测 `LIVE/CONNECTED`；证据 `evidence/feishu-live-20261124/`；边界：G-13 真实改绑未做、产品自有 OAuth/事件订阅仍是 P1。
@@ -24,7 +24,7 @@
 |---|---|---|
 | 1 | `AGENTS.md` | 总控职责、九条铁律、派发/验收/端口/密钥纪律 |
 | 2 | `docs/24-product-framework-v2.md` | 产品认知、六条门 V1–V6；**第一权威** |
-| 3 | `docs/17-decision-ledger.md` | 裁决；最新 D-202（live MVP）、D-201（Eval 目的/框架）、D-200（缺口清单） |
+| 3 | `docs/17-decision-ledger.md` | 裁决；最新 D-203（L3 invoker/校准）、D-201（Eval 目的/框架）、D-200（缺口清单） |
 | 4 | 本文件 `docs/44` | 当前基线、架构、仓库、未决缺陷 |
 | 5 | `docs/25-lead-handoff.md` | 七步场景、判断框架、历史踩坑；其“当前状态”段已过期 |
 | 6 | `docs/40-lifecycle-gap-roadmap.md` | Wave 3/4/5 路线与缺口 |
@@ -188,7 +188,7 @@ PostgreSQL 17 · recruitment schema · 0001→0025 migrations
 - **S6 参考切片**：早期 `docs/11/12/22` 设计仍正确（保真/诚实/稳定/下游可用 + 五层故障注入 + 13 项验收）；但历史验收是 2026-11-12 旧仓一次性执行，当前 CI 仅 compile、corpus acceptance 条件跳过；`docs/19` 权威契约只在未合入分支，需恢复或 supersede。
 - **三处错位**：对象偏 payload；证据轴倒挂（L3/L4/live 空、fixture 当质量）；节奏错位（G0 smoke 当质量门、`L3_MODEL_NOT_CONFIGURED` 当通过、G1/G2 未接、Tier1/2 未进 CI）。
 - **闭环顺序**：Phase 1 定对象/证据标准（S6→S7/S9/S10）→ Phase 2 修门禁语义 → Phase 3 补 live/L3/Tier1-2/counter → Phase 4 baseline/G1/G2/G3。**Phase 1 未完成前不排 L3/live 实现 lane。**
-- **Phase 3 第一项（D-202，PR #112）**：V2 CLI `--mode=live` MVP 已落地——P6-01/P6-05 真 Host 跑通；P6-01 PASS（TTFT 5856ms、行数 0 变化），P6-05 FAIL `TTFT_EXCEEDED`（14088ms > 3000ms，真实模型延迟），`counterMetricsOk=false`、exit 3；**仅 2/43，不是全 43 live**；token/session 未落盘，Host 已清理。下一项 L3 invoker。
+- **Phase 3 第二项（D-203，PR #114）**：L3 裁判通路已接通——invoker（openai_compatible/host_agent）+ 7 维 prompt registry + 16 条合成配平校准集 + 校准 CLI；真机 `host_agent`（HY4）跑出 `κ=0.75 / TNR=1.0 / A/B 一致率 100% → GATE_ELIGIBLE`，CLI `--l3` `EXECUTED 7/7`。**合成标签 ≠ 真人标注校准**，正式上岗仍需 Tier B 真人集。\n- **Phase 3 第一项（D-202，PR #112）**：V2 CLI `--mode=live` MVP 已落地——P6-01/P6-05 真 Host 跑通；P6-01 PASS（TTFT 5856ms、行数 0 变化），P6-05 FAIL `TTFT_EXCEEDED`（14088ms > 3000ms，真实模型延迟），`counterMetricsOk=false`、exit 3；**仅 2/43，不是全 43 live**；token/session 未落盘，Host 已清理。
 - 本次为文档裁决/计划，未改产品代码；live 真机证据仅限本机 P6-01/P6-05，不可据此关闭任何评测条目。
 
 ---
@@ -312,7 +312,7 @@ gh pr view 94
 ## 10. 文档地图
 
 - 产品/验收：`docs/24`、`docs/26`
-- 裁决：`docs/17`（最新 D-202）
+- 裁决：`docs/17`（最新 D-203）
 - 交接：`docs/25`（历史叙事）+ 本文件（当前快照）
 - 路线：`docs/40`、`docs/39`
 - 架构/评测：`docs/41`（架构设计）、`docs/42`（评测规格）
@@ -320,6 +320,7 @@ gh pr view 94
 - 页面规范：`design/v4/*.md`、`TESTID-MANIFEST.md`
 - 机检/真机：`scripts/*`、`work/d5/fullpage/*`、`work/d5/e2e-live/scripts/*`
 - 证据：`evidence/<topic-date>/`
+
 
 
 

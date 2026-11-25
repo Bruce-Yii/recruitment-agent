@@ -144,7 +144,7 @@
 | 原级别 | 内容（不重复展开） | 在框架里的位置 |
 |---|---|---|
 | P0-1 | CI G0 门空转（静态 11 例、counterMetrics 恒真、pass^k 确定性、强制 L3 未配置） | 节奏轴/证据轴错位 → Phase 2 |
-| P0-2 | L3 无可注入 invoker、CLI 仅硬编码探针、无真实校准集 | 证据轴缺 L3 → Phase 3 |
+| P0-2 | L3 通路：invoker + prompt registry + 校准运行器已落地（真机 16 合成样本 κ=0.75/TNR=1.0，见 D-203）；**真人标注集未做**，仍是 closure | 证据轴 L3 部分接通 → Phase 3 继续 |
 | P0-3 | V2 CLI live 回路：MVP 已落地（P6-01/P6-05，2/43，见 D-202）；全 43 例/其余切片 live 仍未覆盖 | 证据轴缺 live / L4 → Phase 3 继续 |
 | P0-4 | Tier1/2 未进 CI；real 覆盖低；采集器不驱动 S6–S10 | 数据轴/对象轴 → Phase 3 |
 | P1/P2 | real 覆盖、pass^k、counter metrics、baseline、G1/G2/G3、prompt 版本、红队 live、DB 投影、旧 runner、tier 标签、docs 债 | 按切片并入 Phase 2–4 |
@@ -171,7 +171,7 @@
 
 ### Phase 3 · 补证据能力（按切片，不按全局）
 
-- [ ] L3 invoker + prompt 入库 + Tier B 校准（κ/TNR）；
+- [x] L3 invoker + prompt 入库 + 校准运行器（两个后端、7 维准则锁版、16 条合成配平样本；真机 `host_agent` 跑出 κ=0.75 / TNR=1.0 / A/B 一致率 100% → GATE_ELIGIBLE，见 D-203）。**真人标注集（Tier B）仍未做**，不能据此给裁判正式上岗；
 - [x] V2 CLI live 模式 MVP（P6-01/P6-05 真 Host 跑通；`--runs=K` 真 POST pass^k、TTFT/token；全 43 例待扩展，见 D-202）；
 - [ ] Tier1/2 数据门与 `--require-data`；
 - [ ] S6 端到端采集（S6–S10 真动作→PG 快照），替代手写 SQL fixture；
